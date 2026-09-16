@@ -1599,12 +1599,13 @@ export const zh: Messages = {
       },
       auto: {
         label: '自动',
-        description: '常规操作自动放行，其余升级询问',
+        description: '分类器放行常规操作；拦截时不会弹窗，直接拒绝',
       },
       alwaysApprove: {
         label: '始终允许',
         description: '跳过常规提示，拒绝规则仍生效',
       },
+      autoFailClosedToast: 'SuperOne 下的 Grok 自动模式会直接拒绝分类器拦截的操作，不会再询问。若要弹窗确认，请留在「询问」。',
     },
     cursorPermissionModes: {
       agent: {

@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { ChevronDown } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
+import { noteAcpAutoFailClosed } from '@/lib/acp-auto-honesty'
 import { AcpPermissionModeList, acpPermissionModeOption } from './AcpPermissionModeList'
 import { ACP_PERMISSION_MODES, type AcpPermissionModeId } from './acpPermissionModes'
 import { PERMISSION_POPOVER_CLASS } from './permissionPopoverStyles'
@@ -45,6 +47,9 @@ export function AcpPermissionSelector({ compact = false }: { compact?: boolean }
         <AcpPermissionModeList
           activeMode={active.id}
           onSelect={(mode) => {
+            if (mode === 'auto') {
+              noteAcpAutoFailClosed(toast.info, t('chat.acpPermissionModes.autoFailClosedToast'))
+            }
             setPermissionMode(mode)
             setOpen(false)
           }}

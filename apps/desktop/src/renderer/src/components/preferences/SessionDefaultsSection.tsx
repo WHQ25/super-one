@@ -10,6 +10,8 @@ import { useAppStore } from '@/stores/app'
 import { invalidateDefaultPermissionModeCache } from '@/stores/chat'
 import { modes as permissionModes } from '@/components/chat/PermissionModeSelector'
 import { PermissionModeList } from '@/components/chat/PermissionModeList'
+import { AcpPermissionModeList, acpPermissionModeOption } from '@/components/chat/AcpPermissionModeList'
+import { noteAcpAutoFailClosed } from '@/lib/acp-auto-honesty'
 import { PERMISSION_POPOVER_CLASS } from '@/components/chat/permissionPopoverStyles'
 import { sandboxModes } from '@/components/chat/SandboxModeSelector'
 import {
@@ -104,12 +106,16 @@ export function SessionDefaultsSection({ harnessId, autoEligibility }: {
   const cursorOption = harnessId === 'cursor'
     ? cursorPermissionModeOption(resolveCursorPermissionMode(activePermMode))
     : null
-  const currentPerm = cursorOption
+  const acpOption = harnessId === 'acp' ? acpPermissionModeOption(activePermMode) : null
+  const currentPerm = acpOption
+    ?? cursorOption
     ?? permissionModes.find((m) => m.id === activePermMode)
     ?? permissionModes[0]!
-  const currentPermLabel = cursorOption
-    ? t(`chat.cursorPermissionModes.${cursorOption.labelKey}.label`)
-    : t(`chat.permissionModes.${currentPerm.id}.label`)
+  const currentPermLabel = acpOption
+    ? t(`chat.acpPermissionModes.${acpOption.labelKey}.label`)
+    : cursorOption
+      ? t(`chat.cursorPermissionModes.${cursorOption.labelKey}.label`)
+      : t(`chat.permissionModes.${currentPerm.id}.label`)
   const currentSandbox = sandboxModes.find((m) => m.id === activeSandboxMode) ?? sandboxModes[1]!
   const sandboxOptionDisabled = (id: SandboxMode): boolean =>
     id !== 'off' && sandboxSupportLevel === 'unsupported'
@@ -136,7 +142,18 @@ export function SessionDefaultsSection({ harnessId, autoEligibility }: {
             </button>
           </PopoverTrigger>
           <PopoverContent align="end" side="bottom" className={cn(PERMISSION_POPOVER_CLASS, 'bg-card')}>
-            {cursorOption ? (
+            {acpOption ? (
+              <AcpPermissionModeList
+                activeMode={acpOption.id}
+                onSelect={(mode) => {
+                  setPermOpen(false)
+                  if (mode === 'auto') {
+                    noteAcpAutoFailClosed(toast.info, t('chat.acpPermissionModes.autoFailClosedToast'))
+                  }
+                  void save({ defaultPermissionMode: mode }, t('settings.preferences.permissionMode.updated'))
+                }}
+              />
+            ) : cursorOption ? (
               <CursorPermissionModeList
                 activeMode={cursorOption.id}
                 availableModes={CURSOR_PERMISSION_MODES}

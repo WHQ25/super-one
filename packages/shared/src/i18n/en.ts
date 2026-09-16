@@ -1511,6 +1511,7 @@ export type Messages = {
       plan: { label: string; description: string }
       auto: { label: string; description: string }
       alwaysApprove: { label: string; description: string }
+      autoFailClosedToast: string
     }
     /** Cursor SDK modes — Agent / Plan / Full Access (sandbox is separate). */
     cursorPermissionModes: {
@@ -5311,12 +5312,13 @@ export const en: Messages = {
       },
       auto: {
         label: 'Auto',
-        description: 'Classifier allows routine work, escalates the rest',
+        description: 'Classifier allows routine work; blocks fail closed without a prompt',
       },
       alwaysApprove: {
         label: 'Always Approve',
         description: 'Skip ordinary prompts; deny rules still apply',
       },
+      autoFailClosedToast: 'Grok Auto under SuperOne will deny classifier blocks without asking. Stay on Ask if you want a prompt.',
     },
     cursorPermissionModes: {
       agent: {

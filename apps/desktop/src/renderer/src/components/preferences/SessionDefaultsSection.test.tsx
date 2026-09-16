@@ -55,13 +55,20 @@ describe('SessionDefaultsSection', () => {
    * blank, or Claude's mode, is how the phone and the desktop drifted apart.
    */
   it.each<[HarnessId, string]>([
-    ['acp', 'default'],
     ['dsh', 'plan'],
   ])('shows the first mode %s declares when nothing is configured', async (harnessId, mode) => {
     render(<SessionDefaultsSection harnessId={harnessId} />)
 
     await waitFor(() => {
       expect(screen.getByText(`chat.permissionModes.${mode}.label`)).toBeInTheDocument()
+    })
+  })
+
+  it('shows Ask for an unconfigured ACP session', async () => {
+    render(<SessionDefaultsSection harnessId="acp" />)
+
+    await waitFor(() => {
+      expect(screen.getByText('chat.acpPermissionModes.ask.label')).toBeInTheDocument()
     })
   })
 
@@ -84,8 +91,29 @@ describe('SessionDefaultsSection', () => {
     render(<SessionDefaultsSection harnessId="acp" />)
 
     await waitFor(() => {
-      expect(screen.getByText('chat.permissionModes.auto.label')).toBeInTheDocument()
+      expect(screen.getByText('chat.acpPermissionModes.auto.label')).toBeInTheDocument()
     })
+  })
+
+  it('opens the ACP list with Ask / Always Approve, not Claude Normal / Bypass', async () => {
+    render(<SessionDefaultsSection harnessId="acp" />)
+    await waitFor(() => expect(getAppSettings).toHaveBeenCalled())
+
+    await userEvent.click(screen.getByRole('button', { name: /acpPermissionModes/ }))
+
+    expect(await screen.findByText('chat.acpPermissionModes.alwaysApprove.label')).toBeInTheDocument()
+    expect(screen.queryByText('chat.permissionModes.default.label')).not.toBeInTheDocument()
+    expect(screen.queryByText('chat.permissionModes.bypassPermissions.label')).not.toBeInTheDocument()
+  })
+
+  it('keeps Claude on Normal / Bypass', async () => {
+    render(<SessionDefaultsSection harnessId="claude" />)
+    await waitFor(() => expect(getAppSettings).toHaveBeenCalled())
+
+    await userEvent.click(screen.getByRole('button', { name: /permissionModes/ }))
+
+    expect(await screen.findByText('chat.permissionModes.bypassPermissions.label')).toBeInTheDocument()
+    expect(screen.queryByText('chat.acpPermissionModes.alwaysApprove.label')).not.toBeInTheDocument()
   })
 
   it('writes the pick to that harness alone', async () => {

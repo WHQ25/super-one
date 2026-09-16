@@ -177,8 +177,8 @@ Evidence paths are under SuperOne unless noted.
 | PM-10 | cyclePermissionMode ACP subset | session-ui | partial | `cyclePermissionModeImpl` uses `ACP_PERMISSION_MODES` | chat-store tests still Claude-only | P3 |
 | PM-11 | Shift+Tab togglePlanModeShortcut plan↔default | session-ui | done | `togglePlanModeShortcutImpl` | — | — |
 | PM-12 | PermissionPrompt Always / `allow_always` for ACP | session-ui | done | `getPermissionPromptConfig` ACP + Codex 4-button when `allowAlwaysAllow` | maps to `allow-always-mcp` / `allow_always`, not yolo | — |
-| PM-13 | Auto under Generic: classifier blocks auto-deny | acp-host | missing | Grok `ClientType::Generic`; SuperOne offers Auto | no toast / eligibility; tools fail closed silently | **P1** |
-| PM-14 | Settings SessionDefaults ACP labels | session-ui | partial | `SessionDefaultsSection` uses Claude `PermissionModeList` (Normal/Bypass) | draft popover uses `AcpPermissionModeList` correctly | **P1** |
+| PM-13 | Auto under Generic: classifier blocks auto-deny | acp-host | done | one-shot toast + fail-closed Auto copy | stay Generic; do not spoof Desktop | — |
+| PM-14 | Settings SessionDefaults ACP labels | session-ui | done | `SessionDefaultsSection` uses `AcpPermissionModeList` (Ask / Always Approve) | — | — |
 | PM-15 | enable-always-approve option id | acp-host | missing | Generic never receives it | ignore unless spoofing Desktop (non-goal) | P3 |
 | PM-16 | acceptEdits / dontAsk mid-session | acp-host | missing | yolo notify cannot carry them | by wire; idle rebuild only | P3 |
 | PM-17 | Hide `/always-approve` slash | session-ui | done | `acp-slash-filter.ts` | — | — |
@@ -577,7 +577,7 @@ Shipped work (do **not** re-open as PRs): stdio lifecycle, yolo/auto meta + noti
 | **Deps** | none (can parallel PR1–PR3) |
 | **Out of scope** | Full PlanLineReview on CLI; yolo mode UI on CLI |
 
-### PR5 — Auto-mode honesty + SessionDefaults ACP labels
+### PR5 — Auto-mode honesty + SessionDefaults ACP labels  **(landed)**
 
 | | |
 |--|--|

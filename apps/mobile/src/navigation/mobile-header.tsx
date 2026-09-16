@@ -1,19 +1,20 @@
 import { WorkspaceButton } from '../ui/workspace-button'
-import { ArrowLeft, Bot, Folder, FolderClosed, FolderPlus, MonitorSmartphone, MoreHorizontal, SquareTerminal, X } from 'lucide-react-native'
+import { ArrowLeft, Bot, Folder, FolderPlus, MonitorSmartphone, MoreHorizontal, X } from 'lucide-react-native'
 import { Pressable, View } from 'react-native'
 import { Text } from '../ui/text'
 import { AnimatedSessionTitle } from '../ui/animated-session-title'
-import type { HarnessId } from '@superone/shared/agent-types'
+import type { HarnessId, SessionForkMode } from '@superone/shared/agent-types'
 import { harnessDisplayName } from '../provider-state'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { IconButton } from '../ui'
-import { AnchoredMenu, MenuRow, useMenuAnchor } from '../ui/anchored-menu'
+import { AnchoredMenu, useMenuAnchor } from '../ui/anchored-menu'
 import { SessionMetaRow } from '../ui/session-meta-row'
 import { isConnected, type DeviceStatus, type ReconnectInfo } from '../device-status'
 import type { SessionGitView } from '../session-git-status'
 import type { MobileRoute } from './mobile-navigator'
 import { TerminalMenuBody } from '../ui/terminal-menu'
 import { FilesMenuBody } from '../ui/files-menu'
+import { SessionMenuBody } from '../ui/session-menu'
 import type { TerminalTabUi } from '../terminal-runtime'
 
 /** Width the confirm action and its balancing leading slot both reserve. */
@@ -76,6 +77,8 @@ export function MobileHeader(props: {
   onOpenTerminal: () => void
   /** Browse the project's file tree from the session menu. */
   onOpenFiles: () => void
+  /** Chat only: fork the open session. Passed only when the session can fork — see `SessionMenuBody`. */
+  onFork?: (mode: SessionForkMode) => void
   /** Files only: return to the folder the browser is anchored to. */
   onOpenFilesRoot?: () => void
   /**
@@ -197,10 +200,11 @@ export function MobileHeader(props: {
             onClose={terminal.onClose}
           />
         ) : (
-          <>
-            <MenuRow label="Terminal" leading={<SquareTerminal size={18} color={tokens.colors.mutedForeground} />} onPress={() => { menu.close(); props.onOpenTerminal() }} />
-            <MenuRow label="Files" leading={<FolderClosed size={18} color={tokens.colors.mutedForeground} />} onPress={() => { menu.close(); props.onOpenFiles() }} />
-          </>
+          <SessionMenuBody
+            onOpenTerminal={() => { menu.close(); props.onOpenTerminal() }}
+            onOpenFiles={() => { menu.close(); props.onOpenFiles() }}
+            onFork={props.onFork ? (mode) => { menu.close(); props.onFork?.(mode) } : undefined}
+          />
         )}
       </AnchoredMenu>
     </View>

@@ -176,6 +176,9 @@ const realtimeTimelineRepoMocks = vi.hoisted(() => ({
 }))
 vi.mock('../session/realtime-timeline-repo', () => realtimeTimelineRepoMocks)
 
+const forkSessionMock = vi.fn()
+vi.mock('../session/session-fork', () => ({ forkSession: forkSessionMock }))
+
 vi.mock('../providers/resolver', () => ({
   resolveChatService: vi.fn(() => null),
   buildRemoteActiveService: vi.fn(() => null),
@@ -2950,6 +2953,44 @@ describe('AgentService.handleRemoteCommand', () => {
       vi.mocked(dbSessions.deleteSession).mock.invocationCallOrder[0]!,
     )
     expect(respond).toHaveBeenCalledWith('delete-1', { ok: true })
+  })
+
+  it('forks a remote session through the shared fork path and answers its result', async () => {
+    forkSessionMock.mockResolvedValue({ ok: true, sessionId: 'session-2', worktreePath: '/wt/x' })
+    const respond = vi.fn()
+    const service = new AgentService()
+
+    await service.handleRemoteCommand({
+      type: 'fork_session',
+      requestId: 'fork-1',
+      projectPath: '/project',
+      sessionId: 'session-1',
+      mode: 'worktree',
+    }, respond)
+
+    expect(dbSessions.sessionBelongsToProject).toHaveBeenCalledWith('/project', 'session-1')
+    expect(forkSessionMock).toHaveBeenCalledWith({ sessionId: 'session-1', mode: 'worktree' })
+    expect(respond).toHaveBeenCalledWith('fork-1', { ok: true, sessionId: 'session-2', worktreePath: '/wt/x' })
+  })
+
+  it('rejects a remote fork outside the requested project without touching the transcript', async () => {
+    vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(false)
+    const respond = vi.fn()
+    const service = new AgentService()
+
+    await service.handleRemoteCommand({
+      type: 'fork_session',
+      requestId: 'fork-denied',
+      projectPath: '/other-project',
+      sessionId: 'session-1',
+      mode: 'local',
+    }, respond)
+
+    expect(forkSessionMock).not.toHaveBeenCalled()
+    expect(respond).toHaveBeenCalledWith('fork-denied', expect.objectContaining({
+      ok: false,
+      error: expect.stringContaining('does not belong'),
+    }))
   })
 
   it('rejects remote session removal outside the requested project', async () => {

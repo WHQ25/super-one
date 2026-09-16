@@ -5,6 +5,11 @@ export function harnessSupportsAdditionalDirs(harness: HarnessId): boolean {
   return HARNESS_CAPABILITIES[harness].supportsAdditionalDirs
 }
 
+/** Whether the harness can clone a conversation the agent still remembers (`Harness.forkTranscript`). */
+export function harnessSupportsFork(harness: HarnessId): boolean {
+  return HARNESS_CAPABILITIES[harness].supportsFork
+}
+
 export function harnessDisplayName(harness: HarnessId): string {
   return HARNESS_CAPABILITIES[harness].displayName
 }

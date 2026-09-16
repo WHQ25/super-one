@@ -24,7 +24,7 @@ import {
 import type {
   AskUserQuestionRequest, ChatMessage, GitDirtyStatus, HarnessId, ImageAttachment, PermissionRequest,
   ListHarnessOptionsResponse, PlanApprovalRequest, RemoteCommand, RemoteHarnessOption,
-  SandboxInfo, SandboxMode, SessionAgentLaunchProposal, TodoItem, WorktreeInfo,
+  SandboxInfo, SandboxMode, SessionAgentLaunchProposal, SessionForkMode, SessionForkResult, TodoItem, WorktreeInfo,
 } from '@superone/shared/agent-types'
 import { resolveRingContextWindow, SESSION_AGENT_LAUNCHES_FIELD } from '@superone/shared/agent-types'
 import { selectedCatalogContextWindow } from '@superone/shared/model-option-params'
@@ -56,7 +56,7 @@ import { EMPTY_COMPOSER_DRAFT } from '../composer-draft-state'
 import { useComposerSuggestions } from './use-composer-suggestions'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { mobileWebViewTheme } from '../theme/tokens'
-import { harnessSupportsAdditionalDirs } from '../provider-state'
+import { harnessSupportsAdditionalDirs, harnessSupportsFork } from '../provider-state'
 import { isManualRecapCommand, shouldInterceptGrokRecap } from '../recap-command'
 import { useAutoRecap } from './use-auto-recap'
 import { harnessSupportsSandbox, sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
@@ -135,6 +135,8 @@ import { loadMcpIcons, mcpIconsRevision, mcpIconsSnapshot } from '../mcp-icons'
 import { useMobileLocale } from '../i18n/context'
 import { useOrientationLock } from './use-orientation-lock'
 const kv = mobileKv
+/** Host-side `git worktree add` plus a transcript clone; comfortably past the 15 s read default. */
+const FORK_SESSION_TIMEOUT_MS = 60_000
 export function MobileApp() {
   const styles = useMobileStyles()
   const { tokens, setHarness } = useMobileTheme()
@@ -1688,6 +1690,66 @@ export function MobileApp() {
     runUiAction(() => term.open(p.path, runtime?.sessionId), setStatus, 'terminal failed')
   }
 
+  /**
+   * The desktop's two fork entries. The host clones the transcript (and cuts a
+   * detached worktree for `worktree`), then the phone lands in the child the
+   * way it lands in any row from the list; the source is left untouched. The
+   * chat is covered while the host works so the tap is not a silent wait.
+   */
+  const forkInFlight = useRef(false)
+  const forkSession = (mode: SessionForkMode) => {
+    const client = clientRef.current
+    const p = project
+    const sourceId = runtimeRef.current?.sessionId
+    if (!client || !p || !sourceId) return
+    // One fork at a time, and never on top of an open/create in progress —
+    // each would otherwise mint a second copy on the host.
+    if (forkInFlight.current || sessionTransitionRef.current.isActive) return
+    forkInFlight.current = true
+    setSessionLoading(true)
+    runUiAction(async () => {
+      let result: SessionForkResult
+      try {
+        // A worktree fork checks out the whole tree and may copy uncommitted
+        // changes; the default 15 s is for reads.
+        result = await client.request({
+          type: 'fork_session', requestId: randomId(), projectPath: p.path, sessionId: sourceId, mode,
+        } as RemoteCommand, FORK_SESSION_TIMEOUT_MS) as SessionForkResult
+      } catch (error) {
+        setSessionLoading(false)
+        throw error
+      } finally {
+        forkInFlight.current = false
+      }
+      // Back, the drawer and the list stay live under the cover: if the user
+      // moved on while the host worked, leave them there — the fork is in the
+      // list either way, and whatever they opened owns the cover now.
+      if (runtimeRef.current?.sessionId !== sourceId) return
+      if (!result.ok) {
+        setSessionLoading(false)
+        throw new Error(result.error)
+      }
+      await openSession({
+        sessionId: result.sessionId,
+        // Mirrors the host's `forkTitle` (a fork of a fork keeps one suffix).
+        title: activeSessionTitle.endsWith('(fork)') ? activeSessionTitle : `${activeSessionTitle} (fork)`,
+        provider: selectedProvider,
+        acpAgentId: selectedAcpAgentId,
+      })
+      // A fresh worktree is not in the checkout list yet; without this the
+      // header's "worktree detached at …" chip has no head to show. Only the
+      // worktree read — `loadShellDetails` would also bump the system-info
+      // request and discard the model/effort `openSession` is restoring.
+      if (result.worktreePath) {
+        invalidateGitResources(client, p.path)
+        void requestGitResource(client, 'get_worktree_info', p.path).then(setWorktreeInfo).catch(() => {})
+      }
+    }, setStatus, 'fork failed')
+  }
+  // Same gate as the desktop menu: a worktree session forks nowhere new, and a
+  // harness without a transcript fork would hand back an amnesiac session.
+  const canForkSession = !!sessionId && harnessSupportsFork(selectedProvider) && !sessionWorktree.isWorktree
+
   const activePairing = pairings.find((item) => item.id === activePairingId)
   const deviceName = activePairing?.hostName ?? 'Desktop'
   const deviceStatus = activePairing ? discovery.statusOf(activePairing) : 'offline'
@@ -1773,6 +1835,7 @@ export function MobileApp() {
       onBack={back}
       onSwitchSession={() => setSessionSwitcherOpen(true)}
       onOpenTerminal={openTerminal}
+      onFork={route === 'chat' && canForkSession ? forkSession : undefined}
       terminal={route === 'terminal' ? {
         tabs: terminalUi.tabs,
         activeId: terminalUi.activeId,

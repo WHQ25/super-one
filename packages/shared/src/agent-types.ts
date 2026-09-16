@@ -4636,6 +4636,12 @@ export type RemoteCommand =
   | { type: 'list_pinned_sessions'; requestId: string }
   | { type: 'search_sessions'; requestId: string; query: string; limit?: number }
   | { type: 'delete_session'; requestId: string; projectPath: string; sessionId: string }
+  /**
+   * Branch a session's conversation into a new one — the desktop's fork entries
+   * on a phone. `mode` picks a fresh detached worktree or the source's own
+   * directory. Answers `SessionForkResult`.
+   */
+  | { type: 'fork_session'; requestId: string; projectPath: string; sessionId: string; mode: SessionForkMode }
   | { type: 'list_models'; requestId: string; projectPath: string }
   | { type: 'get_system_info'; requestId: string; projectPath: string; provider: HarnessId }
   /**

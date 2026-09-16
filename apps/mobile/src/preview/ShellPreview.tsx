@@ -446,6 +446,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
           else if (page === 'Collaboration task') setPage('Collaboration request')
           else setPage('New session')
         }} onSwitchSession={() => setDrawer(true)} onOpenTerminal={() => setPage('Terminal')} onOpenFiles={() => setPage('Files')}
+          onFork={page === 'Chat' ? () => {} : undefined}
           files={route === 'files' ? { kind: previewBrowserMode.kind,
             finderOpen: page === 'File search' || page === 'Go to folder',
             onToggleFinder: () => setPage(page === 'File search' ? 'Files'

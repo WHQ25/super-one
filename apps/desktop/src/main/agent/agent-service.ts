@@ -1575,6 +1575,21 @@ export class AgentService {
         await respond?.(command.requestId, { ok: true })
         break
       }
+      case 'fork_session': {
+        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
+          await respond?.(command.requestId, {
+            ok: false,
+            error: this.buildSessionAccessError(command.projectPath, command.sessionId),
+          })
+          break
+        }
+        // Same path as the desktop's SESSIONS_FORK IPC; the phone's own list
+        // refreshes off the db-layer `session_list_changed` signal.
+        const result = await forkSession({ sessionId: command.sessionId, mode: command.mode })
+        if (result.ok) this.emitSessionsChanged()
+        await respond?.(command.requestId, result)
+        break
+      }
       case 'list_models': {
         try {
           const cached = getCachedHarnessResources('claude')

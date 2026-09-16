@@ -14,23 +14,22 @@ export function CodexModeSelector() {
   if (selectedMode !== 'plan') return null
 
   return (
-    <div className="group/plan-mode inline-flex items-center gap-0.5">
-      <div className={cn('inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs', planMode.color)}>
-        <ClipboardList className="size-3.5" />
-        <span>{t('chat.plan.label')}</span>
-      </div>
-      <button
-        onClick={() => setSelectedMode('default')}
-        className={cn(
-          'inline-flex items-center justify-center rounded-full size-4 opacity-0 transition-all group-hover/plan-mode:opacity-100',
-          planMode.activeBg,
-          planMode.color,
-          planMode.hoverBg,
-        )}
-        title={t('tooltips.exitPlanMode')}
-      >
-        <X className="size-3" />
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={() => setSelectedMode('default')}
+      title={t('tooltips.exitPlanMode')}
+      className={cn(
+        'group/plan-mode inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition-colors',
+        planMode.color,
+        planMode.hoverBg,
+      )}
+    >
+      {/* Leading icon becomes the close affordance on hover, the way the
+          sidebar rows do it — the chip only gains a background, never a
+          different text colour. */}
+      <ClipboardList className="size-3.5 shrink-0 group-hover/plan-mode:hidden" />
+      <X className="hidden size-3.5 shrink-0 group-hover/plan-mode:block" />
+      <span>{t('chat.plan.label')}</span>
+    </button>
   )
 }

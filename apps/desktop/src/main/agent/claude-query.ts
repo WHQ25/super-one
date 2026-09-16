@@ -384,7 +384,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
       // even though `SDKMessage` does not name it.
       if ((msg as any).type === 'active_goal') {
         const goal = sessionGoalFromClaudeActive((msg as any).value)
-        log.info('[goal] active_goal iterations=%s objective=%s', goal?.iterations ?? '-', goal?.objective ?? '(cleared)')
+        log.info('[goal] active_goal objective=%s reason=%s', goal?.objective ?? '(cleared)', goal?.lastReason ?? '-')
         emit({ type: 'session_goal', goal })
         continue
       }

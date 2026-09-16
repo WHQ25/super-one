@@ -45,7 +45,7 @@ export class CodexGoalController {
     return this.currentGoal
   }
 
-  async get(threadId: string): Promise<CodexGoal | null> {
+  async get(threadId: string | null): Promise<CodexGoal | null> {
     const goal = await this.requestGoal(threadId, (connection, resolvedThreadId) =>
       connection.request('thread/goal/get', { threadId: resolvedThreadId }))
     const mapped = mapCodexGoal(goal.goal)
@@ -54,7 +54,7 @@ export class CodexGoalController {
     return mapped
   }
 
-  async set(threadId: string, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null> {
+  async set(threadId: string | null, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null> {
     const trimmed = objective.trim()
     if (!trimmed) throw new Error('Goal objective cannot be empty')
     const result = await this.requestGoal(threadId, (connection, resolvedThreadId) =>
@@ -69,7 +69,7 @@ export class CodexGoalController {
     return goal
   }
 
-  async setStatus(threadId: string, status: CodexGoalStatus): Promise<CodexGoal | null> {
+  async setStatus(threadId: string | null, status: CodexGoalStatus): Promise<CodexGoal | null> {
     const result = await this.requestGoal(threadId, (connection, resolvedThreadId) =>
       connection.request('thread/goal/set', { threadId: resolvedThreadId, status }))
     const goal = mapCodexGoal(result.goal)
@@ -84,7 +84,7 @@ export class CodexGoalController {
     return this.setStatus(threadId, 'paused')
   }
 
-  async clear(threadId: string): Promise<boolean> {
+  async clear(threadId: string | null): Promise<boolean> {
     const result = await this.requestGoal(threadId, (connection, resolvedThreadId) =>
       connection.request('thread/goal/clear', { threadId: resolvedThreadId }))
     if (result.cleared === true) this.setCurrentGoal(null)
@@ -117,16 +117,22 @@ export class CodexGoalController {
     if (changed) this.options.onGoalChange(goal)
   }
 
+  /**
+   * `threadId` is what the renderer knows — the thread of the latest turn —
+   * which is `null` before the first turn. Main may still hold a prewarmed
+   * thread, and `withThreadConnection` starts one otherwise, so a goal can be
+   * set on a session nobody has sent in yet.
+   */
   private async requestGoal(
-    threadId: string,
+    threadId: string | null,
     request: (connection: AppServerConnection, resolvedThreadId: string) => Promise<Record<string, unknown>>,
   ): Promise<Record<string, unknown>> {
     const session = this.options.getSession()
     if (!session) throw new Error('Codex session is not initialized')
-    if (session.threadId && session.threadId !== threadId) {
+    if (threadId && session.threadId && session.threadId !== threadId) {
       throw new Error(`Codex goal thread mismatch: expected ${session.threadId}, received ${threadId}`)
     }
-    session.threadId = threadId
+    if (threadId) session.threadId = threadId
     return withThreadConnection(
       session,
       this.options.getAuth(),

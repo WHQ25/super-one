@@ -992,6 +992,113 @@ describe('AgentService SEND_MESSAGE', () => {
     })
   })
 
+  /**
+   * The goal commands exist for `rpc`-transport harnesses only — Codex. A
+   * `slash` harness never sends them: its client posts `/goal …` as a turn.
+   */
+  it('set_session_goal remote command sets the goal, leaving the thread to the host', async () => {
+    const service = new AgentService()
+    const setCodexGoal = vi.fn().mockResolvedValue({ objective: 'Ship login', status: 'active' })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => makeMockSession({ id: 'sid-codex', projectPath: '/p', setCodexGoal })),
+    }
+    const respond = vi.fn()
+
+    await service.handleRemoteCommand(
+      { type: 'set_session_goal', requestId: 'r-goal', projectPath: '/p', sessionId: 'sid-codex', objective: 'Ship login' },
+      respond,
+    )
+
+    // `null` thread: a remote client has never seen one, and main already holds
+    // the prewarmed thread this resolves against.
+    expect(setCodexGoal).toHaveBeenCalledWith(null, 'Ship login', undefined)
+    expect(respond).toHaveBeenCalledWith('r-goal', { ok: true })
+  })
+
+  it('set_session_goal carries a status, which is how pause and resume travel', async () => {
+    const service = new AgentService()
+    const setCodexGoal = vi.fn().mockResolvedValue(null)
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => makeMockSession({ id: 'sid-codex', projectPath: '/p', setCodexGoal })),
+    }
+
+    await service.handleRemoteCommand(
+      { type: 'set_session_goal', requestId: 'r-goal', projectPath: '/p', sessionId: 'sid-codex', objective: 'Ship login', status: 'paused' },
+      vi.fn(),
+    )
+
+    expect(setCodexGoal).toHaveBeenCalledWith(null, 'Ship login', 'paused')
+  })
+
+  it('clear_session_goal remote command clears it', async () => {
+    const service = new AgentService()
+    const clearCodexGoal = vi.fn().mockResolvedValue(true)
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => makeMockSession({ id: 'sid-codex', projectPath: '/p', clearCodexGoal })),
+    }
+    const respond = vi.fn()
+
+    await service.handleRemoteCommand(
+      { type: 'clear_session_goal', requestId: 'r-goal', projectPath: '/p', sessionId: 'sid-codex' },
+      respond,
+    )
+
+    expect(clearCodexGoal).toHaveBeenCalledWith(null)
+    expect(respond).toHaveBeenCalledWith('r-goal', { ok: true })
+  })
+
+  it('set_session_goal refuses a session from another project', async () => {
+    vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(false)
+    const service = new AgentService()
+    const setCodexGoal = vi.fn()
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => makeMockSession({ id: 'sid-codex', projectPath: '/other', setCodexGoal })),
+    }
+    const respond = vi.fn()
+
+    await service.handleRemoteCommand(
+      { type: 'set_session_goal', requestId: 'r-goal', projectPath: '/p', sessionId: 'sid-codex', objective: 'Ship login' },
+      respond,
+    )
+
+    expect(setCodexGoal).not.toHaveBeenCalled()
+    expect(respond).toHaveBeenCalledWith('r-goal', {
+      ok: false,
+      error: 'Session sid-codex does not belong to project /p',
+    })
+  })
+
+  it('set_session_goal reports a harness that has no goal to set', async () => {
+    // `Session.setCodexGoal` throws for a backend without goal operations; the
+    // caller sees why rather than a silent no-op.
+    const service = new AgentService()
+    const setCodexGoal = vi.fn().mockRejectedValue(new Error('Codex goal operations are unavailable'))
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => makeMockSession({ id: 'sid-claude', projectPath: '/p', setCodexGoal })),
+    }
+    const respond = vi.fn()
+
+    await service.handleRemoteCommand(
+      { type: 'set_session_goal', requestId: 'r-goal', projectPath: '/p', sessionId: 'sid-claude', objective: 'Ship login' },
+      respond,
+    )
+
+    expect(respond).toHaveBeenCalledWith('r-goal', { ok: false, error: 'Codex goal operations are unavailable' })
+  })
+
+  it('set_session_goal reports a session that is not running', async () => {
+    const service = new AgentService()
+    ;(service as { sessionManager: unknown }).sessionManager = { getSession: vi.fn(() => undefined) }
+    const respond = vi.fn()
+
+    await service.handleRemoteCommand(
+      { type: 'set_session_goal', requestId: 'r-goal', projectPath: '/p', sessionId: 'sid-gone', objective: 'Ship login' },
+      respond,
+    )
+
+    expect(respond).toHaveBeenCalledWith('r-goal', { ok: false, error: 'Session is not running' })
+  })
+
   it('prewarm switches existing session cwd when worktreePath differs', async () => {
     const service = new AgentService()
     const switchCwd = vi.fn().mockResolvedValue(undefined)

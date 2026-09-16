@@ -114,6 +114,15 @@ export function isGrokGoalSlash(content: string): boolean {
   return /^\/goal(?:\s|$)/i.test(content.trim())
 }
 
+/**
+ * `/goal clear` specifically. Grok answers it with a host-turn "Goal cleared."
+ * and no `goal_updated`, so the host has to drop its own snapshot once the
+ * turn settles — otherwise the chip sits on the last status forever.
+ */
+export function isGrokGoalClear(content: string): boolean {
+  return /^\/goal\s+clear\s*$/i.test(content.trim())
+}
+
 export function parseGrokSessionInterjection(raw: unknown): GrokSessionInterjection | null {
   const o = asRecord(raw)
   if (!o) return null

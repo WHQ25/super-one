@@ -24,3 +24,19 @@ export function orderedPermissionModes(harness: HarnessId, available: string[]):
   }
   return [...new Set(available)].sort((a, b) => order(a) - order(b))
 }
+
+/**
+ * The plan chip's blue, read back out of the generated catalog.
+ *
+ * The goal chip borrows it: both say "this session's next turn means something
+ * other than an ordinary prompt", and the two only stay in step if they share
+ * one source. Codex has no plan mode, so the lookup runs across catalogs rather
+ * than per harness — the colour belongs to the posture, not to a harness.
+ */
+export function planTone(scheme: 'light' | 'dark'): string | null {
+  for (const catalog of Object.values(data) as PermissionPresentation[][]) {
+    const plan = catalog.find((entry) => entry.id === 'plan')
+    if (plan) return plan[scheme]
+  }
+  return null
+}

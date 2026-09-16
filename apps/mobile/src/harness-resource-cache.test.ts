@@ -21,10 +21,10 @@ describe('connection harness resources', () => {
     await preloadHarnessResources(client, '/p', ['claude', 'codex', 'claude'])
     expect(client.request).toHaveBeenCalledTimes(4)
     expect(peekHarnessResource(client, 'get_system_info', '/p', 'codex')?.models).toHaveLength(1)
-    // Served from the preloaded catalogs, so no new request. The host reported no
-    // commands; `/add-dir` is the one this client injects for a harness that
-    // accepts extra working roots.
-    expect(peekSlashCatalog(client, '/p', 'codex')?.map((command) => command.name)).toEqual(['add-dir'])
+    // Served from the preloaded catalogs, so no new request. The host reported
+    // no commands; these two are the ones this client injects for a harness that
+    // accepts extra working roots and has a session goal.
+    expect(peekSlashCatalog(client, '/p', 'codex')?.map((command) => command.name)).toEqual(['add-dir', 'goal'])
     await requestSlashCatalog(client, '/p', 'codex')
     await requestHarnessResource(client, 'get_system_info', '/p', 'claude')
     expect(client.request).toHaveBeenCalledTimes(4)

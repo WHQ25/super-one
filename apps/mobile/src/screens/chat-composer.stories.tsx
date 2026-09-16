@@ -5,6 +5,8 @@ import { Text } from '../ui/text'
 import { View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { MobileThemeProvider } from '../theme/context'
+import type { SessionGoal } from '@superone/shared/agent-types'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { ChatComposer, type ChatComposerProps } from './chat-composer'
 
 const noop = () => {}
@@ -98,6 +100,26 @@ export const StatusRowLongModelName = {
 
 export const StatusRowWithoutModelPicker = {
   args: { selection: undefined, projectDirs: ['/workspace/design-system'] },
+}
+
+/**
+ * The goal chip on the outer edge, where the come-and-go readouts live. It and
+ * the folder chip cannot collide in production — folders answer for a session
+ * being configured, a goal only exists once one is running — so the folder
+ * lists stay empty here.
+ */
+export const StatusRowWithActiveGoal = {
+  args: {
+    goalCapability: HARNESS_CAPABILITIES.codex.goal,
+    goal: { objective: 'Ship the login flow end to end', status: 'active' } satisfies SessionGoal,
+  },
+}
+
+export const StatusRowWithAchievedGoal = {
+  args: {
+    goalCapability: HARNESS_CAPABILITIES.codex.goal,
+    goal: { objective: 'Ship the login flow end to end', status: 'complete' } satisfies SessionGoal,
+  },
 }
 
 /** The ring doubles as the subscription meter: outer arc account, inner arc context. */

@@ -3,6 +3,7 @@ export { PermissionModeSelector, permissionModeLabel } from './permission-mode-s
 export { SandboxSelector } from './sandbox-selector'
 export { ContextRing } from './context-ring'
 export { AdditionalDirsChip, AdditionalDirsMenu } from './additional-dirs-chip'
+export { GoalChip, GoalMenu } from './goal-chip'
 export { SwipeSessionRow } from './swipe-session-row'
 export { SessionListBody, type SessionListActions } from './session-list-body'
 export { HarnessIcon } from './harness-icon'

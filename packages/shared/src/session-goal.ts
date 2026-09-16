@@ -17,6 +17,8 @@
  * harness id.
  */
 
+import { ALL_GOAL_LIFECYCLE_ARGS } from './harness/harness-capabilities'
+
 export type SessionGoalStatus =
   | 'active'
   | 'paused'
@@ -35,8 +37,6 @@ export interface SessionGoal {
   elapsedMs?: number
   /** Codex: cap after which the goal self-limits. `null` = uncapped. */
   tokenBudget?: number | null
-  /** Claude: how many times the evaluator has run without the condition being met. */
-  iterations?: number
   /** Why the goal is not done yet — Claude's `last_reason`, Grok's `pauseMessage`. */
   lastReason?: string
   /** Grok: agent-reported stage label. */
@@ -59,9 +59,10 @@ export interface ClaudeActiveGoalValue {
  * goal (value `null`) the moment its evaluator reports met — so the status is
  * `active` by construction rather than read from the wire.
  *
- * `set_at` / `tokens_at_start` are deliberately dropped: they are start markers,
- * and turning them into an elapsed/used figure would require a "now" the mapper
- * does not own.
+ * `set_at` / `tokens_at_start` / `iterations` are deliberately dropped: the first
+ * two are start markers, and turning them into an elapsed/used figure would
+ * require a "now" the mapper does not own. `iterations` counts evaluator passes,
+ * which no surface reports — the goal is either still being pursued or it is not.
  */
 export function sessionGoalFromClaudeActive(raw: unknown): SessionGoal | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
@@ -72,24 +73,23 @@ export function sessionGoalFromClaudeActive(raw: unknown): SessionGoal | null {
   return {
     objective: condition,
     status: 'active',
-    ...(typeof value.iterations === 'number' && Number.isFinite(value.iterations)
-      ? { iterations: value.iterations }
-      : {}),
     ...(lastReason ? { lastReason } : {}),
   }
 }
 
 export type GoalComposerAction =
-  | { type: 'dialog'; prefill: string }
+  | { type: 'compose' }
+  | { type: 'set'; objective: string }
   | { type: 'passthrough' }
 
 /**
  * Decide what a composer `/goal …` line should do.
  *
- * Whole-arg tokens the harness handles itself (`pause`, `clear`, …) pass through
- * as plain text; anything else is an objective and opens the host dialog. The
- * token list is per harness — Claude has only `clear`, Grok has four, Codex none
- * — so it comes from `HarnessCapabilities.goal.lifecycleArgs`.
+ * A bare `/goal` enters goal mode — the composer's next send becomes the
+ * objective. `/goal <text>` sets it right away. Whole-arg tokens the harness
+ * handles itself (`pause`, `clear`, …) pass through as plain text; the token
+ * list is per harness — Claude has only `clear`, Grok has four, Codex none —
+ * so it comes from `HarnessCapabilities.goal.lifecycleArgs`.
  *
  * Returns `null` when the line is not a `/goal` line at all.
  */
@@ -100,8 +100,20 @@ export function goalComposerAction(
   const match = /^\/goal(?:\s+([\s\S]*))?$/i.exec(text.trim())
   if (!match) return null
   const args = match[1]?.trim() ?? ''
+  if (!args) return { type: 'compose' }
   if (isGoalLifecycleArg(args, lifecycleArgs)) return { type: 'passthrough' }
-  return { type: 'dialog', prefill: args }
+  return { type: 'set', objective: args }
+}
+
+/**
+ * The objective a sent `/goal …` user message carries, or `null` when the line
+ * is not a goal (plain prompt, bare `/goal`, or a lifecycle token such as
+ * `/goal clear`). Harness-agnostic on purpose: a message bubble does not know
+ * which harness it was sent to.
+ */
+export function goalMessageObjective(text: string): string | null {
+  const action = goalComposerAction(text, ALL_GOAL_LIFECYCLE_ARGS)
+  return action?.type === 'set' ? action.objective : null
 }
 
 /** True when the whole argument (not a prefix of it) is a lifecycle token. */

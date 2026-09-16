@@ -1455,11 +1455,11 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.CODEX_MCP_TOOL_CALL, projectPath, threadId, serverName, toolName, toolArguments),
 
   // Codex Goal
-  codexGetGoal: (sessionId: string, threadId: string) =>
+  codexGetGoal: (sessionId: string, threadId: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_GOAL_GET, sessionId, threadId),
-  codexSetGoal: (sessionId: string, threadId: string, objective: string, status?: CodexGoalStatus) =>
+  codexSetGoal: (sessionId: string, threadId: string | null, objective: string, status?: CodexGoalStatus) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_GOAL_SET, sessionId, threadId, objective, status),
-  codexClearGoal: (sessionId: string, threadId: string) =>
+  codexClearGoal: (sessionId: string, threadId: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_GOAL_CLEAR, sessionId, threadId),
 
   // Codex Marketplace

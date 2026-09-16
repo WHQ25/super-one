@@ -46,6 +46,7 @@ import type { ChatMessageContext } from '@superone/shared/agent-types'
 import { TurnSummaryAboveFooter } from './presenters/ChatMessageIndicators'
 import { DurationFooter } from './ChatMessageFooter'
 import { collaborationLabelKey } from '@superone/chat-view/presenters/collaboration-label'
+import { goalMessageObjective } from '@superone/shared/session-goal'
 import { ChatMessagePresenter } from './presenters/ChatMessage'
 import {
   ClaudeBlockPresenter,
@@ -326,6 +327,8 @@ export const ChatMessage = memo(function ChatMessage({
       : ''),
     [isUser, message.content],
   )
+  // A sent `/goal …` reads as the objective under a Goal label, not as a slash line.
+  const goalObjective = isUser ? goalMessageObjective(userText) : null
   const { copied: userCopied, copy: copyUserText } = useCopyText()
   const assistantFooter = !isUser ? (
     <DurationFooter
@@ -352,7 +355,7 @@ export const ChatMessage = memo(function ChatMessage({
             : null
         }
         return block.type === 'text'
-          ? <UserTextBlock key={index} text={block.text} isPaste={block.isPaste} />
+          ? <UserTextBlock key={index} text={goalObjective ?? block.text} isPaste={block.isPaste} />
           : (
             <ClaudeBlockPresenter
               key={index}
@@ -411,6 +414,7 @@ export const ChatMessage = memo(function ChatMessage({
       isUser={isUser}
       isCollaboration={isCollab}
       collaborationLabel={collabLabelKey ? t(collabLabelKey) : undefined}
+      goalLabel={goalObjective ? t('chat.goal.label') : undefined}
       mailboxLabel={isMailboxWake ? t('chat.collaboration.mailboxReady') : undefined}
       initialTask={isInitialTask
         ? <CollabTaskBubble text={userText} from={message.metadata?.collaboration} />

@@ -5,6 +5,7 @@ import { CircleStop, RefreshCw } from 'lucide-react'
 import { ChatMessagePresenter } from './presenters/ChatMessage'
 import { TurnSummaryAboveFooter } from './presenters/ChatMessageIndicators'
 import { collaborationLabelKey } from './presenters/collaboration-label'
+import { goalMessageObjective } from '@superone/shared/session-goal'
 import { getAssistantCopyText } from './presenters/getAssistantCopyText'
 import { ZERO_TURN_TOKENS, type TurnTokenCounts } from './presenters/turn-footer-model'
 import { PortableCollabTaskBubble } from './PortableCollabTaskBubble'
@@ -166,6 +167,19 @@ export const PortableMessage = memo(function PortableMessage({
       : ''),
     [isInitialTask, message.content],
   )
+  // A sent `/goal …` reads as the objective under a Goal label, same as desktop.
+  const goalObjective = useMemo(
+    () => (isUser
+      ? goalMessageObjective(message.content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('\n'))
+      : null),
+    [isUser, message.content],
+  )
+  const userMessage = useMemo(
+    () => (goalObjective
+      ? { ...message, content: message.content.map((block) => (block.type === 'text' ? { ...block, text: goalObjective } : block)) }
+      : message),
+    [goalObjective, message],
+  )
   const fallback = message.metadata?.modelFallback
   const body = fallback
     ? (
@@ -179,7 +193,7 @@ export const PortableMessage = memo(function PortableMessage({
       </div>
     )
     : isUser
-      ? <PortableUserContent message={message} mentionArtwork={mentionArtwork} />
+      ? <PortableUserContent message={userMessage} mentionArtwork={mentionArtwork} />
       : isCodex
         ? <PortableCodexTurn message={message} isStreaming={isStreaming} isLastAssistant={isLastAssistant} />
         : <PortableClaudeTurn message={message} isStreaming={isStreaming} />
@@ -204,6 +218,7 @@ export const PortableMessage = memo(function PortableMessage({
           isUser={isUser}
           isCollaboration={isCollaboration}
           collaborationLabel={collabLabelKey ? t(collabLabelKey) : undefined}
+          goalLabel={goalObjective ? t('chat.goal.label') : undefined}
           initialTask={isInitialTask
             ? (
               <PortableCollabTaskBubble

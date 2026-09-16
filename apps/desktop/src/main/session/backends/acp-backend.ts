@@ -65,6 +65,7 @@ import {
 import { QueuedUserMessageQueue } from '../queued-user-message-queue'
 import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend, TaskNotificationInjectResult } from '../types'
 import {
+  isGrokGoalClear,
   isGrokGoalSlash,
   parseGrokCompactSlash,
   rewindPreviewFromPoints,
@@ -1317,6 +1318,10 @@ export class AcpBackend implements SessionBackend {
     }
 
     let emittedTerminal = false
+    // Grok confirms `/goal clear` in prose only; if no `goal_updated` arrives
+    // during the turn the host drops the snapshot itself once it settles.
+    const clearsGoal = isGrokGoalClear(request.content)
+    let goalReported = false
     const onEvent = (event: AgentEvent) => {
       const routed = this.retargetPromptEvent(event)
       if (!routed) return
@@ -1327,6 +1332,7 @@ export class AcpBackend implements SessionBackend {
       ) {
         emittedTerminal = true
       }
+      if (routed.type === 'session_goal') goalReported = true
       this.routeSessionEvent(routed, this.config.agentId ?? null, this.runtimeEpoch)
     }
 
@@ -1347,6 +1353,9 @@ export class AcpBackend implements SessionBackend {
       const turn = runtime.prompt(request.content, messageId, onEvent, request.images)
       this.activePrompt = turn
       await turn
+      if (clearsGoal && !goalReported && !this.interrupted) {
+        this.emit({ type: 'session_goal', goal: null })
+      }
     } catch (err) {
       const failId = this.liveAssistantId ?? messageId
       if (this.interrupted) {

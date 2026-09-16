@@ -66,9 +66,10 @@ test('loads a catalog with no session, for the new-session landing', async () =>
   const { result } = await mount(client)
   await act(async () => { result.current.update('/') })
   await waitFor(() => expect(result.current.slashCatalogStatus).toBe('ready'))
-  // `/add-dir` rides along: the landing is exactly where the folders a session
-  // will start with are still worth changing.
-  expect(result.current.slashHits.map((hit) => hit.name)).toEqual(['clear', 'add-dir'])
+  // `/add-dir` and `/goal` ride along: the landing is exactly where the folders
+  // a session will start with, and what it is being started for, are still
+  // worth setting.
+  expect(result.current.slashHits.map((hit) => hit.name)).toEqual(['clear', 'add-dir', 'goal'])
 })
 
 test('reports a catalog the host could not answer for', async () => {
@@ -118,7 +119,7 @@ test('a toolbar slash inserts at the caret and opens the overlay', async () => {
   await act(async () => { value = result.current.insertSnippet('/') })
 
   expect(value).toBe('/')
-  await waitFor(() => expect(result.current.slashHits.map((hit) => hit.name)).toEqual(['clear', 'add-dir']))
+  await waitFor(() => expect(result.current.slashHits.map((hit) => hit.name)).toEqual(['clear', 'add-dir', 'goal']))
 })
 
 test('a draft the app rewrote does not re-open the overlay', async () => {

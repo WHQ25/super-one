@@ -347,9 +347,9 @@ export interface SessionBackend {
   setSandbox(sandboxInfo: SandboxInfo): Promise<void>
   setAdditionalDirectories?(dirs: string[]): Promise<boolean>
   hasActiveBackgroundTasks?(): boolean
-  getCodexGoal?(threadId: string): Promise<CodexGoal | null>
-  setCodexGoal?(threadId: string, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>
-  clearCodexGoal?(threadId: string): Promise<boolean>
+  getCodexGoal?(threadId: string | null): Promise<CodexGoal | null>
+  setCodexGoal?(threadId: string | null, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>
+  clearCodexGoal?(threadId: string | null): Promise<boolean>
   stopTask?(taskId: string): Promise<void>
   /**
    * Stage an out-of-band instruction to ride the NEXT turn, using whatever the
@@ -507,9 +507,9 @@ export interface Session {
   prewarm(hint?: PrewarmHint): void
   dequeueMessage(clientMessageId: string): Promise<boolean>
   getPendingInteractions(): AgentEvent[]
-  getCodexGoal(threadId: string): Promise<CodexGoal | null>
-  setCodexGoal(threadId: string, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>
-  clearCodexGoal(threadId: string): Promise<boolean>
+  getCodexGoal(threadId: string | null): Promise<CodexGoal | null>
+  setCodexGoal(threadId: string | null, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>
+  clearCodexGoal(threadId: string | null): Promise<boolean>
   dispatchBackendCommand(cmd: BackendCommand): Promise<void>
   updateProviderConfig(nextConfig: unknown): void
   markNeedsRebuild(): void

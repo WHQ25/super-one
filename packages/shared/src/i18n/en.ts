@@ -1421,31 +1421,32 @@ export type Messages = {
     }
     goal: {
       label: string
+      /** Chip label once the harness reports the goal complete. */
+      achieved: string
       /** `{{harness}} Goal` — the harness owns the goal, so it owns the title. */
       title: string
       /** Slash-command palette row; short, unlike the dialog description. */
       commandDesc: string
       noSession: string
-      save: string
+      /** Tooltip on the goal-mode chip's close button. */
+      exitCompose: string
+      /** Tooltip on the achieved chip's close button. */
+      dismiss: string
       edit: string
       pause: string
       resume: string
       clear: string
-      status: string
-      iterations_one: string
-      iterations_other: string
       lastReason: string
       /** Copy for harnesses whose goal is something to pursue (Codex, Grok). */
       objective: {
-        description: string
         argumentHint: string
-        placeholder: string
+        /** Composer placeholder while goal mode is on. */
+        composePlaceholder: string
       }
       /** Copy for harnesses whose goal is a condition to satisfy (Claude). */
       condition: {
-        description: string
         argumentHint: string
-        placeholder: string
+        composePlaceholder: string
       }
       statuses: {
         active: string
@@ -5214,27 +5215,24 @@ export const en: Messages = {
     },
     goal: {
       label: 'Goal',
+      achieved: 'Goal Achieved',
       title: '{{harness}} Goal',
       commandDesc: "Set or clear this session's goal",
       noSession: 'Send a message first to start the session, then come back to set a goal.',
-      save: 'Save goal',
+      exitCompose: 'Exit goal mode',
+      dismiss: 'Dismiss',
       edit: 'Edit',
       pause: 'Pause',
       resume: 'Resume',
       clear: 'Clear goal',
-      status: 'Status: {{status}}',
-      iterations_one: 'Checked once so far',
-      iterations_other: 'Checked {{count}} times so far',
       lastReason: 'Latest check: {{reason}}',
       objective: {
-        description: 'Set an objective {{harness}} will pursue until it is complete. Pause, resume, or clear it from the Goal control.',
         argumentHint: '<objective>',
-        placeholder: 'e.g. Migrate the auth module to the new API and land the tests',
+        composePlaceholder: 'Describe the objective {{harness}} should pursue until it is complete…',
       },
       condition: {
-        description: 'Set a condition {{harness}} checks before it stops. It keeps working until a separate check confirms the condition is met.',
         argumentHint: '<condition>',
-        placeholder: 'e.g. The auth module runs on the new API and the whole test suite passes',
+        composePlaceholder: 'Describe the condition {{harness}} must satisfy before it stops…',
       },
       statuses: {
         active: 'Active',

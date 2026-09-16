@@ -75,7 +75,6 @@ import { requestSideChat, useCanOpenSideChat } from '@/lib/side-chat-actions'
 import { resolveChatInputPlaceholder } from './chat-input/resolveChatInputPlaceholder'
 import { CodexRealtimeVoiceButton } from './CodexRealtimeVoiceButton'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
-import { GoalDialog } from './GoalDialog'
 import { GoalIndicator } from './GoalIndicator'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { buildSessionProjectOptions, mentionQueryAllowsSpaces } from './session-mention-query'
@@ -324,7 +323,16 @@ export function ChatInput() {
     const openCodeSlashCommands = useChatStore(selectOpenCodeCommands)
     const cursorFsSlashItems = useChatStore(selectActiveCursorSlashItems)
     const codexThreadId = useActiveSession((s) => getLatestCodexThreadId(s.messages))
-    const [goalDialogState, setGoalDialogState] = useState<{ open: boolean; prefill: string }>({ open: false, prefill: '' })
+    /**
+     * Goal mode: the composer's next send is the objective, not a prompt.
+     * Local like the review panel — it is a composer posture, not session state
+     * — and dropped on a session switch so a half-typed goal cannot land on a
+     * sibling session.
+     */
+    const [goalComposing, setGoalComposing] = useState(false)
+    useEffect(() => {
+      setGoalComposing(false)
+    }, [displayedSessionId])
 
     /**
      * Codex is the one harness whose goal does not arrive unprompted: the app
@@ -377,7 +385,7 @@ export function ChatInput() {
       ?? (acpAgentId ? acpAgentDisplayName(acpAgentId) : null)
 
     // `null` here is the single gate for the whole goal surface: command row,
-    // composer interception, indicator and dialog all hang off it.
+    // composer interception, goal mode and indicator all hang off it.
     const goalCapability = resolveGoalCapability(activeProviderForResources, acpAgentId)
     // ACP is a container, so the brand a goal belongs to is the agent's.
     const goalHarnessName = activeProviderForResources === 'acp'
@@ -587,6 +595,87 @@ export function ChatInput() {
       setText(info.ed.getText())
     }, [firstLineBoundary, setText])
 
+    /**
+     * Post `/goal …` as a turn without holding the composer on the whole
+     * prompt. Grok's GoalSet/GoalResume replace the prompt and keep
+     * sampling, so awaiting `sendMessage` would leave the editor open until
+     * the goal finishes.
+     */
+    const dispatchGoalSlash = useCallback((line: string) => {
+      void sendMessage(
+        line,
+        [{ text: line, isPaste: false }],
+        [],
+        [],
+        sessionScope ?? undefined,
+      ).catch((err) => {
+        console.error('[ChatInput] goal slash failed:', err)
+      })
+    }, [sendMessage, sessionScope])
+
+    /**
+     * Goal transitions, routed by transport rather than by harness.
+     *
+     * `slash` harnesses own the goal themselves and only need the `/goal …`
+     * line posted as a turn; Codex's goal lives in the app server, so each
+     * transition is an explicit call whose result comes back as a
+     * `session_goal` event.
+     */
+    const goalActions = useMemo(() => {
+      if (!goalCapability) return null
+      if (goalCapability.transport === 'slash') {
+        return {
+          save: async (objective: string) => { dispatchGoalSlash(`/goal ${objective}`) },
+          clear: async () => { dispatchGoalSlash('/goal clear') },
+          // Grok treats session/cancel on an active goal as a user pause, so
+          // Stop is enough while a turn is live — posting `/goal pause` after
+          // that is a second prompt that just says the goal is already paused.
+          pause: async () => {
+            if (isStreaming) {
+              await scopedInterrupt()
+              return
+            }
+            dispatchGoalSlash('/goal pause')
+          },
+          resume: async () => { dispatchGoalSlash('/goal resume') },
+        }
+      }
+      // Codex needs a session row to address; the thread is resolved in main,
+      // which already holds the prewarmed one before any turn has run.
+      if (!displayedSessionId) return null
+      const sid = displayedSessionId
+      const tid = codexThreadId ?? null
+      return {
+        save: async (objective: string) => { await window.app.codexSetGoal(sid, tid, objective) },
+        clear: async () => { await window.app.codexClearGoal(sid, tid) },
+        pause: async () => {
+          if (sessionGoal) await window.app.codexSetGoal(sid, tid, sessionGoal.objective, 'paused')
+        },
+        resume: async () => {
+          if (sessionGoal) await window.app.codexSetGoal(sid, tid, sessionGoal.objective, 'active')
+        },
+      }
+    }, [goalCapability, dispatchGoalSlash, displayedSessionId, codexThreadId, sessionGoal, isStreaming, scopedInterrupt])
+
+    /**
+     * Enter goal mode, optionally seeding the composer (Edit on a live goal).
+     * Refusing with a toast rather than entering a mode that cannot send keeps
+     * the chip honest: it only ever appears when the next send will land.
+     */
+    const enterGoalCompose = useCallback((prefill?: string) => {
+      if (!goalActions) {
+        toast.error(t('chat.goal.noSession'))
+        return
+      }
+      setGoalComposing(true)
+      if (prefill) {
+        replaceEditorTextPreservingTrailingSpace(prefill)
+        setText(prefill)
+      } else {
+        editorRef.current?.commands.focus()
+      }
+    }, [goalActions, replaceEditorTextPreservingTrailingSpace, setText, t])
+
     const selectSlashCommand = useCallback(
       (cmd: SlashCommandInfo | string) => {
         const name = typeof cmd === 'string' ? cmd : cmd.name.replace(/^\//, '').trim()
@@ -654,6 +743,13 @@ export function ChatInput() {
           useChatStore.getState().setSelectedCodexCollaborationMode('plan', sessionScope ?? undefined)
           return
         }
+        // Same shape as Codex `/plan`: the row is a mode switch, not a prefix.
+        if (name === 'goal' && goalCapability) {
+          clearFirstLine()
+          setSlashIndex(-1)
+          enterGoalCompose()
+          return
+        }
         if (name === 'review' && activeProviderForResources === 'codex') {
           clearFirstLine()
           clearAttachments()
@@ -667,7 +763,7 @@ export function ChatInput() {
         replaceFirstLineWith(`/${name} `)
         setSlashIndex(-1)
       },
-      [activeProviderForResources, clearAttachments, mentions, removeMention, setShowReviewPanel, clearFirstLine, replaceFirstLineWith, replaceEditorTextPreservingTrailingSpace, setText, cursorSlashCommands, sessionScope]
+      [activeProviderForResources, clearAttachments, mentions, removeMention, setShowReviewPanel, clearFirstLine, replaceFirstLineWith, replaceEditorTextPreservingTrailingSpace, setText, cursorSlashCommands, sessionScope, goalCapability, enterGoalCompose]
     )
 
     const addDirParse = useMemo(() => {
@@ -952,67 +1048,6 @@ export function ChatInput() {
     }, [clearDraft, serializeDraft])
 
     /**
-     * Post `/goal …` as a turn without holding the dialog/indicator on the
-     * whole prompt. Grok's GoalSet/GoalResume replace the prompt and keep
-     * sampling, so awaiting `sendMessage` would leave the editor open until
-     * the goal finishes.
-     */
-    const dispatchGoalSlash = useCallback((line: string) => {
-      void sendMessage(
-        line,
-        [{ text: line, isPaste: false }],
-        [],
-        [],
-        sessionScope ?? undefined,
-      ).catch((err) => {
-        console.error('[ChatInput] goal slash failed:', err)
-      })
-    }, [sendMessage, sessionScope])
-
-    /**
-     * Goal transitions, routed by transport rather than by harness.
-     *
-     * `slash` harnesses own the goal themselves and only need the `/goal …`
-     * line posted as a turn; Codex's goal lives in the app server, so each
-     * transition is an explicit call whose result comes back as a
-     * `session_goal` event.
-     */
-    const goalActions = useMemo(() => {
-      if (!goalCapability) return null
-      if (goalCapability.transport === 'slash') {
-        return {
-          save: async (objective: string) => { dispatchGoalSlash(`/goal ${objective}`) },
-          clear: async () => { dispatchGoalSlash('/goal clear') },
-          // Grok treats session/cancel on an active goal as a user pause, so
-          // Stop is enough while a turn is live — posting `/goal pause` after
-          // that is a second prompt that just says the goal is already paused.
-          pause: async () => {
-            if (isStreaming) {
-              await scopedInterrupt()
-              return
-            }
-            dispatchGoalSlash('/goal pause')
-          },
-          resume: async () => { dispatchGoalSlash('/goal resume') },
-        }
-      }
-      // Codex cannot hold a goal before its thread exists.
-      if (!displayedSessionId || !codexThreadId) return null
-      const sid = displayedSessionId
-      const tid = codexThreadId
-      return {
-        save: async (objective: string) => { await window.app.codexSetGoal(sid, tid, objective) },
-        clear: async () => { await window.app.codexClearGoal(sid, tid) },
-        pause: async () => {
-          if (sessionGoal) await window.app.codexSetGoal(sid, tid, sessionGoal.objective, 'paused')
-        },
-        resume: async () => {
-          if (sessionGoal) await window.app.codexSetGoal(sid, tid, sessionGoal.objective, 'active')
-        },
-      }
-    }, [goalCapability, dispatchGoalSlash, displayedSessionId, codexThreadId, sessionGoal, isStreaming, scopedInterrupt])
-
-    /**
      * Plain text of the composer as the scheduler would send it — mentions in
      * their structured form, attachments dropped. The persisted row is a single
      * string, so nothing richer could survive the wait anyway.
@@ -1091,10 +1126,26 @@ export function ChatInput() {
       catch (error) { toast.error(error instanceof Error ? error.message : 'Invalid attachment'); return }
       const trimmed = text.trim()
       if (goalCapability) {
-        const action = goalComposerAction(trimmed, goalCapability.lifecycleArgs)
-        if (action?.type === 'dialog') {
+        // In goal mode the whole draft is the objective; outside it, a typed
+        // `/goal …` line is routed the same way the slash row would be.
+        const action = goalComposing
+          ? { type: 'set' as const, objective: trimmed }
+          : goalComposerAction(trimmed, goalCapability.lifecycleArgs)
+        if (action?.type === 'compose') {
           serializeAndClear()
-          setGoalDialogState({ open: true, prefill: action.prefill })
+          enterGoalCompose()
+          return
+        }
+        if (action?.type === 'set') {
+          if (!goalActions) {
+            toast.error(t('chat.goal.noSession'))
+            return
+          }
+          serializeAndClear()
+          setGoalComposing(false)
+          goalActions.save(action.objective).catch((err) => {
+            toast.error(err instanceof Error ? err.message : String(err))
+          })
           return
         }
       }
@@ -1118,7 +1169,7 @@ export function ChatInput() {
         }
         console.error('[ChatInput] sendMessage failed:', err)
       })
-    }, [goalCapability, canSend, sendMessage, serializeAndClear, sessionScope, text, draftJson, activeProject, displayedSessionId])
+    }, [goalCapability, goalComposing, goalActions, enterGoalCompose, t, canSend, sendMessage, serializeAndClear, sessionScope, text, draftJson, activeProject, displayedSessionId])
 
     const handleKeyDownCore = useCallback(
       (e: KeyboardEvent | React.KeyboardEvent): boolean => {
@@ -1127,6 +1178,11 @@ export function ChatInput() {
 
         if (e.key === 'Escape' && showReviewPanel) {
           setShowReviewPanel(false)
+          return true
+        }
+        // Leave goal mode; the draft stays so nothing typed is lost.
+        if (e.key === 'Escape' && goalComposing) {
+          setGoalComposing(false)
           return true
         }
         if (e.key === 'Escape' && addDirActive) {
@@ -1304,7 +1360,7 @@ export function ChatInput() {
 
         return false
       },
-      [handleSend, queuedMessages, editQueuedMessage, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, attachments, removeAttachment, commandPopup, dismissCommandPopup, addDirActive, workflowSlashActive, setText, showReviewPanel, setShowReviewPanel]
+      [handleSend, queuedMessages, editQueuedMessage, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, attachments, removeAttachment, commandPopup, dismissCommandPopup, addDirActive, workflowSlashActive, setText, showReviewPanel, setShowReviewPanel, goalComposing]
     )
 
     handleKeyDownRef.current = handleKeyDownCore
@@ -1474,11 +1530,13 @@ export function ChatInput() {
       codexPlanMode: isCodexPlanMode,
       acpAgentName: acpAgentName || t('chat.suggestions.acpLabel'),
     })
-    const placeholderText = mentions.length > 0
-      ? t('chat.placeholder.addInstructions')
-      : shouldShowCodexRejectHint
-        ? CODEX_REJECT_PLAN_PLACEHOLDER
-        : providerPlaceholder
+    const placeholderText = goalComposing && goalCapability
+      ? t(`chat.goal.${goalCapability.semantics}.composePlaceholder`, { harness: goalHarnessName })
+      : mentions.length > 0
+        ? t('chat.placeholder.addInstructions')
+        : shouldShowCodexRejectHint
+          ? CODEX_REJECT_PLAN_PLACEHOLDER
+          : providerPlaceholder
     placeholderTextRef.current = placeholderText
 
     const editor = useEditor({
@@ -1998,12 +2056,17 @@ export function ChatInput() {
             </IconButton>
 
             <ModelSelector onCloseAutoFocus={(e) => { e.preventDefault(); if (editor && !editor.isDestroyed) editor.commands.focus() }} />
-            {goalCapability && goalActions && sessionGoal && (
+            {goalCapability && goalActions && (sessionGoal || goalComposing) && (
               <GoalIndicator
                 goal={sessionGoal}
                 capability={goalCapability}
                 harnessName={goalHarnessName}
-                onEdit={() => setGoalDialogState({ open: true, prefill: sessionGoal.objective })}
+                composing={goalComposing}
+                onExitCompose={() => setGoalComposing(false)}
+                // Achieved goals are already gone on the harness side, so the
+                // chip is a notice: dismissing drops the local snapshot only.
+                onDismiss={() => useChatStore.setState((state) => commitPerSession(state, sessionScope ?? undefined, () => ({ sessionGoal: null })))}
+                onEdit={() => enterGoalCompose(sessionGoal?.objective)}
                 onClear={goalActions.clear}
                 onPause={goalActions.pause}
                 onResume={goalActions.resume}
@@ -2042,19 +2105,6 @@ export function ChatInput() {
           <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[inherit] border-2 border-dashed border-primary bg-primary/10">
             <span className="text-xs font-medium text-primary">{t('chat.dropToAttach')}</span>
           </div>
-        )}
-        {activeProject && goalCapability && (
-          <GoalDialog
-            open={goalDialogState.open}
-            onOpenChange={(open) => setGoalDialogState((s) => ({ ...s, open }))}
-            existing={sessionGoal}
-            capability={goalCapability}
-            harnessName={goalHarnessName}
-            prefill={goalDialogState.prefill}
-            unavailable={!goalActions}
-            onSave={(objective) => goalActions?.save(objective) ?? Promise.resolve()}
-            onClear={goalActions ? goalActions.clear : undefined}
-          />
         )}
         </div>
       </div>

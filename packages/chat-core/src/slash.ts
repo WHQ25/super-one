@@ -19,6 +19,15 @@ export const TURN_META_PREFIX = '__turn_meta__:'
 const REPORT_OUTPUT_COMMANDS = new Set(['code-review', 'security-review'])
 
 /**
+ * Slash commands that run a real agent turn and only *also* print a one-line
+ * confirmation through `<local-command-stdout>`. `/goal <condition>` is one:
+ * Claude works the condition as a prompt, then the CLI appends "Goal set: …".
+ * Dropping the turn for the confirmation would erase everything Claude did,
+ * and the goal chip already carries the state, so the line is not shown.
+ */
+const TURN_PRESERVING_COMMANDS = new Set(['goal'])
+
+/**
  * The command a sent message runs, or `''` for an ordinary message.
  *
  * The wire messages that follow — `slash_command_lifecycle`, then
@@ -278,6 +287,9 @@ export function reduceSlash(
       // message, leave "Command /x executed.", stash the text in a popup) is
       // right for commands whose output is noise (/compact) or that render in
       // their own panel (/doctor), but it silently swallows a review.
+      if (TURN_PRESERVING_COMMANDS.has(cmd)) {
+        return { _pendingSlashCommand: '' }
+      }
       if (REPORT_OUTPUT_COMMANDS.has(cmd) && event.content.trim()) {
         const reportMsg: ChatMessage = {
           id: ports.id('slash-report-'),

@@ -3,6 +3,7 @@ import type { HarnessId } from '@superone/shared/agent-types'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { peekHarnessResource, requestHarnessResource } from './harness-resource-cache'
 import { mergeSlashCatalogs, type SlashCommandInfo } from './slash'
+import { resolveGoalCapability } from '@superone/shared/harness/harness-capabilities'
 import { harnessSupportsAdditionalDirs } from './provider-state'
 
 export type SlashCatalogStatus = 'loading' | 'ready' | 'error'
@@ -47,6 +48,22 @@ const RECAP_COMMAND: SlashCommandInfo = {
   name: 'recap',
   description: 'Summarize what happened in this session',
   argumentHint: '',
+  isSkill: false,
+}
+/**
+ * `/goal` on the one gate every goal surface hangs off — `resolveGoalCapability`.
+ * Claude reports a `goal` command of its own, so `withHostCommand`'s dedupe is
+ * what keeps it from being listed twice; Grok and Codex do not report one.
+ *
+ * Unlike the desktop this stays a plain command line: selecting it writes
+ * `/goal ` into the draft and the objective is typed after it. There is no goal
+ * *mode* on a phone — a mode would need a placeholder resolver the composer does
+ * not have, to save a step the user is already taking.
+ */
+const GOAL_COMMAND: SlashCommandInfo = {
+  name: 'goal',
+  description: 'Set or clear this session goal',
+  argumentHint: '<objective>',
   isSkill: false,
 }
 /**
@@ -98,12 +115,16 @@ function buildCatalog(
   )
   return withHostCommand(
     withHostCommand(
-      withHostCommand(catalog, WORKFLOWS_COMMAND, provider === 'acp'),
-      RECAP_COMMAND,
-      provider === 'acp' && isGrokAcpAgent(acpAgentId),
+      withHostCommand(
+        withHostCommand(catalog, WORKFLOWS_COMMAND, provider === 'acp'),
+        RECAP_COMMAND,
+        provider === 'acp' && isGrokAcpAgent(acpAgentId),
+      ),
+      ADD_DIR_COMMAND,
+      harnessSupportsAdditionalDirs(provider),
     ),
-    ADD_DIR_COMMAND,
-    harnessSupportsAdditionalDirs(provider),
+    GOAL_COMMAND,
+    !!resolveGoalCapability(provider, acpAgentId),
   )
 }
 

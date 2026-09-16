@@ -4582,6 +4582,16 @@ export type RemoteCommand =
    * `auto` defaults false (manual `/recap`). Mobile/desktop auto recap pass true.
    */
   | { type: 'request_session_recap'; requestId: string; projectPath: string; sessionId: string; auto?: boolean }
+  /**
+   * Session goal for a harness whose goal lives in the host rather than in the
+   * agent's own `/goal` command — `HarnessCapabilities.goal.transport === 'rpc'`,
+   * which today means Codex. A `slash` harness needs no command: the client just
+   * sends `/goal …` as an ordinary turn.
+   *
+   * `threadId` is resolved host-side; a remote client has never seen one.
+   */
+  | { type: 'set_session_goal'; requestId: string; projectPath: string; sessionId: string; objective: string; status?: CodexGoalStatus }
+  | { type: 'clear_session_goal'; requestId: string; projectPath: string; sessionId: string }
   | { type: 'dequeue_message'; clientMessageId: string; projectPath?: string; sessionId: string }
   | { type: 'steer_queued_message'; requestId: string; projectPath: string; sessionId: string; clientMessageId: string; priority?: 'now' | 'next' }
   | { type: 'interrupt'; projectPath?: string; sessionId: string }

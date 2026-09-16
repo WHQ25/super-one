@@ -34,7 +34,6 @@ describe('applyEventToSession: session_goal', () => {
     const claudeGoal: SessionGoal = {
       objective: 'All tests pass',
       status: 'active',
-      iterations: 2,
       lastReason: 'one suite still red',
     }
     const patch = applyEventToSession(session, { type: 'session_goal', goal: claudeGoal })

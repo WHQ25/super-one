@@ -24,7 +24,7 @@ import {
 import type {
   AskUserQuestionRequest, ChatMessage, GitDirtyStatus, HarnessId, ImageAttachment, PermissionRequest,
   ListHarnessOptionsResponse, PlanApprovalRequest, RemoteCommand, RemoteHarnessOption,
-  SandboxInfo, SandboxMode, SessionAgentLaunchProposal, SessionForkMode, SessionForkResult, TodoItem, WorktreeInfo,
+  SandboxInfo, SandboxMode, SessionAgentLaunchProposal, SessionForkMode, SessionForkResult, SessionGoal, TodoItem, WorktreeInfo,
 } from '@superone/shared/agent-types'
 import { resolveRingContextWindow, SESSION_AGENT_LAUNCHES_FIELD } from '@superone/shared/agent-types'
 import { selectedCatalogContextWindow } from '@superone/shared/model-option-params'
@@ -58,6 +58,9 @@ import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { mobileWebViewTheme } from '../theme/tokens'
 import { harnessSupportsAdditionalDirs, harnessSupportsFork } from '../provider-state'
 import { isManualRecapCommand, shouldInterceptGrokRecap } from '../recap-command'
+import { resolveGoalCapability } from '@superone/shared/harness/harness-capabilities'
+import { goalComposerAction } from '@superone/shared/session-goal'
+import { sessionGoalTransitions, type GoalTransitions } from '../session-goal-actions'
 import { useAutoRecap } from './use-auto-recap'
 import { harnessSupportsSandbox, sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
@@ -235,6 +238,7 @@ export function MobileApp() {
   )
   const [workflowsOpen, setWorkflowsOpen] = useState(false)
   const [sandboxInfo, setSandboxInfo] = useState<SandboxInfo | null>(null)
+  const [sessionGoal, setSessionGoal] = useState<SessionGoal | null>(null)
   /**
    * A sandbox picked before the session exists. There is no runtime to push it
    * to yet, so it is held here, drives the chip, and rides `create_session` —
@@ -248,6 +252,15 @@ export function MobileApp() {
   // The live `rate_limit` event, already reduced by chat-core; the meter chip
   // tints on it before the next polled reading confirms the limit.
   const [rateLimit, setRateLimit] = useState<LiveRateLimit | null>(null)
+  /**
+   * The single gate for the whole goal surface: the slash row, the composer
+   * intercept and the chip all hang off it, so a harness without a goal has no
+   * goal UI rather than a disabled one.
+   */
+  const goalCapability = useMemo(
+    () => resolveGoalCapability(selectedProvider, selectedAcpAgentId),
+    [selectedProvider, selectedAcpAgentId],
+  )
   // A live session reports its own sandbox; before one exists the chip answers
   // from the pick made here, falling back to the default the host would apply.
   const composerSandboxInfo = sessionId
@@ -476,6 +489,7 @@ export function MobileApp() {
     setSlashOutput(runtime.session.slashCommandOutput)
     setPermMode(runtime.permissionMode)
     setSandboxInfo(runtime.sandboxInfo)
+    setSessionGoal(runtime.session.sessionGoal)
     setSessionWorktree((current) => {
       const next = { ...runtime.worktree, removed: runtime.session._worktreeRemoved }
       return current.isWorktree === next.isWorktree && current.worktreePath === next.worktreePath
@@ -1490,6 +1504,22 @@ export function MobileApp() {
       void runtime.requestRecap()
       return
     }
+    // Codex's goal lives in the app server, so a `/goal …` line is an RPC rather
+    // than a turn — the same intercept the desktop composer makes. A `slash`
+    // harness falls through and posts the line as written, which is its whole
+    // lifecycle. Nothing is intercepted before a session exists: the goal needs
+    // a session row to address, and the first turn is what creates one.
+    if (goalCapability?.transport === 'rpc' && runtimeRef.current) {
+      const action = goalComposerAction(text, goalCapability.lifecycleArgs)
+      // A bare `/goal` has no objective yet; leave the line in the draft rather
+      // than posting it as a prompt, since there is no goal mode to enter.
+      if (action?.type === 'compose') return
+      if (action?.type === 'set') {
+        if (composerDraft.clearSent(sentDraft.revision) && !composerDraft.editorRef.current) suggestions.update('')
+        runGoalTransition((actions) => actions.save(action.objective))
+        return
+      }
+    }
     const clientMessageId = newMessageId('user')
     if (!runtimeRef.current) {
       // Keep attachment drafts until the host confirms files are readable.
@@ -1556,6 +1586,33 @@ export function MobileApp() {
     const next = replaceFirstLine(draftRef.current, line)
     composerDraft.changeText(next)
     suggestions.applyProgrammatic(next)
+  }
+
+  /**
+   * Goal transitions for the chip and for a `/goal …` line typed into the draft.
+   *
+   * Built per call rather than memoised: every input it takes — which runtime is
+   * mounted, the live goal, whether a turn is running — changes under it, and a
+   * stale closure here would send a transition against the previous session.
+   */
+  const goalTransitions = (): GoalTransitions | null => {
+    const runtime = runtimeRef.current
+    if (!runtime?.sessionId || !goalCapability) return null
+    return sessionGoalTransitions({
+      capability: goalCapability,
+      goal: runtime.session.sessionGoal,
+      streaming: runtime.streaming,
+      send: (line) => runtime.send(line),
+      interrupt: () => runtime.interrupt(),
+      setGoal: (objective, status) => runtime.setSessionGoal(objective, status),
+      clearGoal: () => runtime.clearSessionGoal(),
+    })
+  }
+
+  const runGoalTransition = (transition: (actions: GoalTransitions) => Promise<void>) => {
+    const actions = goalTransitions()
+    if (!actions) return
+    runUiAction(() => transition(actions), setStatus, 'goal failed')
   }
 
   /**
@@ -2113,6 +2170,16 @@ export function MobileApp() {
           permissionMode={permMode}
           sandboxInfo={composerSandboxInfo}
           sandboxSupport={harnessSelection.sandboxSupport}
+          goal={sessionGoal}
+          goalCapability={goalCapability}
+          // No goal mode on a phone: Edit hands the objective back as a command
+          // line the user rewrites and sends, the way every other panel here
+          // returns its answer to the draft.
+          onGoalEdit={() => writeCommandLine(sessionGoal ? `/goal ${sessionGoal.objective}` : '/goal ')}
+          onGoalClear={() => runGoalTransition((actions) => actions.clear())}
+          onGoalPause={() => runGoalTransition((actions) => actions.pause())}
+          onGoalResume={() => runGoalTransition((actions) => actions.resume())}
+          onGoalDismiss={() => runtimeRef.current?.dismissGoal()}
           contextTokens={usage.contextTokens}
           contextWindow={ringContextWindow}
           totalCostUsd={usage.totalCostUsd}

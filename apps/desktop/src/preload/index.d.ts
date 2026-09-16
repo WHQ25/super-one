@@ -359,9 +359,10 @@ interface AppAPI {
   codexCallMcpTool(projectPath: string, threadId: string, serverName: string, toolName: string, toolArguments?: Record<string, unknown>): Promise<Record<string, unknown>>
 
   // Codex Goal
-  codexGetGoal(sessionId: string, threadId: string): Promise<CodexGoal | null>
-  codexSetGoal(sessionId: string, threadId: string, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>
-  codexClearGoal(sessionId: string, threadId: string): Promise<boolean>
+  /** `threadId` is null before the first turn; main resolves (or starts) the thread itself. */
+  codexGetGoal(sessionId: string, threadId: string | null): Promise<CodexGoal | null>
+  codexSetGoal(sessionId: string, threadId: string | null, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>
+  codexClearGoal(sessionId: string, threadId: string | null): Promise<boolean>
 
   // Codex Marketplace
   codexMarketplaceAdd(projectPath: string, request: CodexMarketplaceAddRequest): Promise<CodexMarketplaceAddResult>

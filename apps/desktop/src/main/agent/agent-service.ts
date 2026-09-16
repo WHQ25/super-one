@@ -849,6 +849,38 @@ export class AgentService {
         }
         break
       }
+      /**
+       * Goal transitions for an `rpc`-transport harness (Codex). A `slash`
+       * harness never reaches here — its client posts `/goal …` as a turn.
+       * Both answer with the projected goal so the caller can fail loudly; the
+       * authoritative update still arrives as a `session_goal` event.
+       */
+      case 'set_session_goal':
+      case 'clear_session_goal': {
+        try {
+          if (!this.canAccessSession(command.projectPath, command.sessionId)) {
+            await respond?.(command.requestId, {
+              ok: false,
+              error: this.buildSessionAccessError(command.projectPath, command.sessionId),
+            })
+            break
+          }
+          const session = this.sessionManager?.getSession(command.sessionId)
+          if (!session) {
+            await respond?.(command.requestId, { ok: false, error: 'Session is not running' })
+            break
+          }
+          if (command.type === 'clear_session_goal') {
+            await session.clearCodexGoal(null)
+          } else {
+            await session.setCodexGoal(null, command.objective, command.status)
+          }
+          await respond?.(command.requestId, { ok: true })
+        } catch (err) {
+          await respond?.(command.requestId, { ok: false, error: (err as Error).message })
+        }
+        break
+      }
       case 'respond_permission': {
         const projectPath = this.resolveRemoteProjectPath(command.projectPath, command.sessionId)
         if (!projectPath) {

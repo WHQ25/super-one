@@ -6,6 +6,7 @@ import { requestMentionSearch, type MentionSearchOptions, type MentionSearchResu
 import type {
   AgentEvent,
   ChatMessage,
+  CodexGoalStatus,
   ContentBlock,
   HarnessId,
   QuestionAnnotations,
@@ -623,6 +624,50 @@ export class ChatRuntime {
       this.flush()
       return false
     }
+  }
+
+  /**
+   * Session goal for an `rpc`-transport harness (Codex). Harnesses whose goal is
+   * a `slash` command need none of this: their lifecycle is an ordinary turn, so
+   * the composer sends `/goal …` through {@link send}.
+   *
+   * Nothing is painted optimistically — the host answers every transition with a
+   * `session_goal` event, and inventing a chip here would mean guessing at a
+   * status the app server owns.
+   */
+  async setSessionGoal(objective: string, status?: CodexGoalStatus): Promise<void> {
+    await this.goalCommand({ type: 'set_session_goal', objective, ...(status ? { status } : {}) })
+  }
+
+  async clearSessionGoal(): Promise<void> {
+    await this.goalCommand({ type: 'clear_session_goal' })
+  }
+
+  private async goalCommand(
+    command: { type: 'set_session_goal'; objective: string; status?: CodexGoalStatus } | { type: 'clear_session_goal' },
+  ): Promise<void> {
+    if (!this.sessionId || !this.projectPath) throw new Error('goal needs a running session')
+    const result = await this.client.request({
+      ...command,
+      requestId: randomId(),
+      sessionId: this.sessionId,
+      projectPath: this.projectPath,
+    } as RemoteCommand) as { ok?: boolean; error?: string }
+    if (result.error || result.ok === false) throw new Error(result.error ?? 'goal failed')
+  }
+
+  /**
+   * Take an achieved goal off the composer.
+   *
+   * Local only, and correct for every harness: a goal reaches `complete` because
+   * the harness met it and cleared its own copy, so there is nothing left to
+   * send and no later event that would bring this one back.
+   */
+  dismissGoal(): void {
+    if (!this.session.sessionGoal) return
+    this.session = { ...this.session, sessionGoal: null }
+    this.dirty = true
+    this.flush()
   }
 
   /**

@@ -1189,19 +1189,19 @@ export class CodexBackend implements SessionBackend {
     return this.goalController.active || this.realtimeHandle !== null
   }
 
-  async getCodexGoal(threadId: string): Promise<CodexGoal | null> {
+  async getCodexGoal(threadId: string | null): Promise<CodexGoal | null> {
     this.assertStarted()
     return this.goalController.get(threadId)
   }
 
-  async setCodexGoal(threadId: string, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null> {
+  async setCodexGoal(threadId: string | null, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null> {
     this.assertStarted()
     const goal = await this.goalController.set(threadId, objective, status)
     if (status === 'paused') this.interruptSession()
     return goal
   }
 
-  async clearCodexGoal(threadId: string): Promise<boolean> {
+  async clearCodexGoal(threadId: string | null): Promise<boolean> {
     this.assertStarted()
     const cleared = await this.goalController.clear(threadId)
     if (cleared) this.interruptSession()

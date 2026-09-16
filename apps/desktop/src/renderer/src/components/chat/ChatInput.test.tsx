@@ -129,6 +129,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
   const goalState = {
     threadId: undefined as string | undefined,
     getGoal: vi.fn(),
+    setGoal: vi.fn(),
   }
 
   // The queued send lives in main, so the composer only ever sees it through IPC.
@@ -276,6 +277,9 @@ vi.mock('@tiptap/react', () => {
   }
 })
 
+const toastMock = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), info: vi.fn() }))
+vi.mock('sonner', () => ({ toast: toastMock }))
+
 vi.mock('@tiptap/starter-kit', () => ({
   default: { configure: () => ({}) },
 }))
@@ -360,31 +364,25 @@ vi.mock('./GoalIndicator', () => ({
   GoalIndicator: ({
     goal,
     harnessName,
+    composing,
+    onExitCompose,
+    onEdit,
     onPause,
   }: {
-    goal: { objective: string }
+    goal: { objective: string } | null
     harnessName: string
+    composing: boolean
+    onExitCompose: () => void
+    onEdit: () => void
     onPause?: () => Promise<void>
   }) => (
-    <div data-testid="goal-indicator" data-harness={harnessName}>
-      {goal.objective}
+    <div data-testid="goal-indicator" data-harness={harnessName} data-composing={composing}>
+      {goal?.objective}
+      <button type="button" data-testid="goal-exit" onClick={onExitCompose}>Exit</button>
+      <button type="button" data-testid="goal-edit" onClick={onEdit}>Edit</button>
       {onPause ? <button type="button" data-testid="goal-pause" onClick={() => void onPause()}>Pause</button> : null}
     </div>
   ),
-}))
-
-vi.mock('./GoalDialog', () => ({
-  GoalDialog: ({
-    open,
-    prefill,
-    harnessName,
-  }: {
-    open: boolean
-    prefill?: string
-    harnessName: string
-  }) => (open
-    ? <div data-testid="goal-dialog" data-prefill={prefill ?? ''} data-harness={harnessName} />
-    : null),
 }))
 
 vi.mock('./ProviderSlashPopup', () => ({
@@ -461,6 +459,8 @@ beforeEach(() => {
   sessionScope.value = null
   goalState.threadId = undefined
   goalState.getGoal.mockReset()
+  goalState.setGoal.mockReset()
+  toastMock.error.mockReset()
   scheduledSend.row = null
   scheduledSend.listeners.clear()
   providerSelection.resolvedId = null
@@ -468,6 +468,7 @@ beforeEach(() => {
     app: {
       ...window.app,
       codexGetGoal: goalState.getGoal,
+      codexSetGoal: goalState.setGoal,
       getMediaServerPort: vi.fn(async () => 0),
       // Spreading `window.app` drops the shared proxy defaults (a proxy over an
       // empty target enumerates nothing), so these have to be named explicitly.
@@ -495,6 +496,12 @@ function typeInEditor(value: string) {
   const editor = screen.getByTestId('editor')
   editor.textContent = value
   fireEvent.input(editor)
+}
+
+/** First argument of the most recent `sendMessage` call. */
+function sentText(): string | undefined {
+  const calls = chatActions.sendMessage.mock.calls as unknown[][]
+  return calls.at(-1)?.[0] as string | undefined
 }
 
 describe('ChatInput', () => {
@@ -575,14 +582,14 @@ describe('ChatInput', () => {
     expect(indicator).toHaveAttribute('data-harness', 'Codex')
   })
 
-  it('opens the Grok goal dialog instead of sending /goal', async () => {
+  it('enters Grok goal mode from a bare /goal, then sends the draft as the goal', async () => {
     activeSessionState.preferredProvider = 'acp'
     activeSessionState.sessionProvider = 'acp'
     activeSessionState.acpAgentId = 'grok-build'
-    activeSessionState.draftText = '/goal Ship login'
-    editorState.text = '/goal Ship login'
+    activeSessionState.draftText = '/goal'
+    editorState.text = '/goal'
 
-    render(<ChatInput />)
+    const { rerender } = render(<ChatInput />)
     // The composer will not send until it knows whether this session has a
     // queued send; in the app that is one IPC round trip.
     await waitFor(() => expect(window.app.getScheduledSend).toHaveBeenCalled())
@@ -591,10 +598,92 @@ describe('ChatInput', () => {
     expect(send).toBeTruthy()
     fireEvent.click(send!)
 
+    // Nothing was posted; the chip announces the mode instead of a dialog.
     expect(chatActions.sendMessage).not.toHaveBeenCalled()
-    const dialog = screen.getByTestId('goal-dialog')
-    expect(dialog).toHaveAttribute('data-prefill', 'Ship login')
-    expect(dialog).toHaveAttribute('data-harness', 'Grok')
+    const chip = screen.getByTestId('goal-indicator')
+    expect(chip).toHaveAttribute('data-composing', 'true')
+    expect(chip).toHaveAttribute('data-harness', 'Grok')
+
+    typeInEditor('Ship login')
+    // The store mock is not reactive; the app re-renders on the draft write.
+    rerender(<ChatInput />)
+    fireEvent.click(send!)
+
+    expect(sentText()).toBe('/goal Ship login')
+    // Mode ends with the send; with no live goal there is nothing left to show.
+    expect(screen.queryByTestId('goal-indicator')).toBeNull()
+  })
+
+  it('sets a Grok goal typed inline without a detour through goal mode', async () => {
+    activeSessionState.preferredProvider = 'acp'
+    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.acpAgentId = 'grok-build'
+    activeSessionState.draftText = '/goal Ship login'
+    editorState.text = '/goal Ship login'
+
+    render(<ChatInput />)
+    await waitFor(() => expect(window.app.getScheduledSend).toHaveBeenCalled())
+
+    const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
+    fireEvent.click(send!)
+
+    expect(sentText()).toBe('/goal Ship login')
+    expect(screen.queryByTestId('goal-indicator')).toBeNull()
+  })
+
+  it('leaves goal mode on Escape and keeps the draft', async () => {
+    activeSessionState.preferredProvider = 'acp'
+    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.acpAgentId = 'grok-build'
+    activeSessionState.draftText = '/goal'
+    editorState.text = '/goal'
+
+    render(<ChatInput />)
+    await waitFor(() => expect(window.app.getScheduledSend).toHaveBeenCalled())
+    fireEvent.click(document.querySelector('button .lucide-arrow-up')!.closest('button')!)
+    expect(screen.getByTestId('goal-indicator')).toHaveAttribute('data-composing', 'true')
+
+    typeInEditor('half a thought')
+    act(() => {
+      editorState.handleKeyDown!(null, new KeyboardEvent('keydown', { key: 'Escape' }))
+    })
+
+    expect(screen.queryByTestId('goal-indicator')).toBeNull()
+    expect(screen.getByTestId('editor')).toHaveTextContent('half a thought')
+  })
+
+  it('edits a live Grok goal by re-entering goal mode with the objective in the composer', () => {
+    activeSessionState.preferredProvider = 'acp'
+    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.acpAgentId = 'grok-build'
+    activeSessionState.sessionGoal = { objective: 'Ship login', status: 'active' }
+
+    render(<ChatInput />)
+    fireEvent.click(screen.getByTestId('goal-edit'))
+
+    expect(screen.getByTestId('goal-indicator')).toHaveAttribute('data-composing', 'true')
+    expect(editorState.text).toBe('Ship login')
+  })
+
+  it('sets a Codex goal over RPC before any turn has run, leaving the thread to main', async () => {
+    activeSessionState.preferredProvider = 'codex'
+    goalState.setGoal.mockResolvedValue(null)
+    activeSessionState.draftText = '/goal'
+    editorState.text = '/goal'
+
+    const { rerender } = render(<ChatInput />)
+    await waitFor(() => expect(window.app.getScheduledSend).toHaveBeenCalled())
+    const send = document.querySelector('button .lucide-arrow-up')!.closest('button')!
+    fireEvent.click(send)
+    expect(screen.getByTestId('goal-indicator')).toHaveAttribute('data-composing', 'true')
+
+    typeInEditor('Ship the goal UX')
+    rerender(<ChatInput />)
+    fireEvent.click(send)
+
+    expect(goalState.setGoal).toHaveBeenCalledWith('session-1', null, 'Ship the goal UX')
+    expect(chatActions.sendMessage).not.toHaveBeenCalled()
+    expect(toastMock.error).not.toHaveBeenCalled()
   })
 
   it('sends Grok /goal pause through as a prompt', async () => {
@@ -612,8 +701,8 @@ describe('ChatInput', () => {
     const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
     fireEvent.click(send!)
 
-    expect(chatActions.sendMessage).toHaveBeenCalled()
-    expect(screen.queryByTestId('goal-dialog')).toBeNull()
+    expect(sentText()).toBe('/goal pause')
+    expect(screen.queryByTestId('goal-indicator')).toBeNull()
   })
 
   it('shows a live Grok goal next to the model controls', () => {
@@ -654,7 +743,7 @@ describe('ChatInput', () => {
     fireEvent.click(screen.getByTestId('goal-pause'))
 
     await waitFor(() => expect(chatActions.sendMessage).toHaveBeenCalled())
-    expect(chatActions.sendMessage.mock.calls[0][0]).toBe('/goal pause')
+    expect(sentText()).toBe('/goal pause')
     expect(chatActions.interrupt).not.toHaveBeenCalled()
   })
 
@@ -668,7 +757,7 @@ describe('ChatInput', () => {
     expect(screen.queryByTestId('goal-indicator')).toBeNull()
   })
 
-  it('opens the Claude goal dialog instead of sending /goal', async () => {
+  it('sets a Claude condition typed inline as a /goal turn', async () => {
     activeSessionState.draftText = '/goal all tests pass'
     editorState.text = '/goal all tests pass'
 
@@ -678,10 +767,8 @@ describe('ChatInput', () => {
     const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
     fireEvent.click(send!)
 
-    expect(chatActions.sendMessage).not.toHaveBeenCalled()
-    const dialog = screen.getByTestId('goal-dialog')
-    expect(dialog).toHaveAttribute('data-prefill', 'all tests pass')
-    expect(dialog).toHaveAttribute('data-harness', 'Claude')
+    expect(sentText()).toBe('/goal all tests pass')
+    expect(screen.queryByTestId('goal-indicator')).toBeNull()
   })
 
   it('sends Claude /goal clear through as a prompt', async () => {
@@ -696,8 +783,8 @@ describe('ChatInput', () => {
     const send = document.querySelector('button .lucide-arrow-up')?.closest('button')
     fireEvent.click(send!)
 
-    expect(chatActions.sendMessage).toHaveBeenCalled()
-    expect(screen.queryByTestId('goal-dialog')).toBeNull()
+    expect(sentText()).toBe('/goal clear')
+    expect(screen.queryByTestId('goal-indicator')).toBeNull()
   })
 
   it('passes the mosaic session scope as the sendMessage target', async () => {

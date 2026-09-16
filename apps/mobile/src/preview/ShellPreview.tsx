@@ -17,7 +17,8 @@ import { Text } from '../ui/text'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import { WebView } from 'react-native-webview'
-import type { ChatMessage, HarnessId, ImageAttachment, ModelOption, RemoteHarnessOption, RemoteSystemInfo, SandboxInfo, TodoItem, SessionAgentLaunchProposal } from '@superone/shared/agent-types'
+import type { ChatMessage, HarnessId, ImageAttachment, ModelOption, RemoteHarnessOption, RemoteSystemInfo, SandboxInfo, SessionGoal, TodoItem, SessionAgentLaunchProposal } from '@superone/shared/agent-types'
+import { resolveGoalCapability } from '@superone/shared/harness/harness-capabilities'
 import { MobileHeader, mobileHeaderTitle } from '../navigation/mobile-header'
 import { useMobileLocale } from '../i18n/context'
 import { MobileKeyboardFrame } from '../navigation/mobile-keyboard-frame'
@@ -192,6 +193,11 @@ const project = { name: 'super-one', path: '/workspace/super-one' }
  * What a real host answers `list_harness_options` with: ordered, labelled, and
  * with the ACP harness expanded into one row per agent.
  */
+const PREVIEW_GOAL: SessionGoal = {
+  objective: 'Ship the login flow end to end, including the reset email',
+  status: 'active',
+}
+
 const PREVIEW_HARNESS_OPTIONS: RemoteHarnessOption[] = [
   { key: 'claude', provider: 'claude', acpAgentId: null, label: 'Claude Code' },
   { key: 'codex', provider: 'codex', acpAgentId: null, label: 'Codex' },
@@ -284,6 +290,10 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
   const [mode, setMode] = useState('default')
   const [sandbox, setSandbox] = useState<SandboxInfo | null>({ enabled: true, autoAllowBash: false })
+  // A goal the chip can actually be driven against: the menu's rows move it
+  // through its states here rather than reaching a harness.
+  const [goal, setGoal] = useState<SessionGoal | null>(PREVIEW_GOAL)
+  const goalCapability = resolveGoalCapability(provider, acpAgentId)
   // `/add-dir` and the folder chips open the same page; its two steps are their
   // own preview pages so both are reachable without a live host to browse.
   const [previewDirs, setPreviewDirs] = useState<string[]>(PREVIEW_ADDITIONAL_DIRS)
@@ -420,6 +430,12 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
         onPress={() => setNativeEditor((value) => !value)} /> : null}
       {page === 'Chat' ? <Button variant="ghost" label={`Pending: ${pending}`}
         onPress={() => setPending((value) => value === 'none' ? 'sheet' : value === 'sheet' ? 'collapsed' : 'none')} /> : null}
+      {page === 'Chat' && goalCapability ? <Button variant="ghost" label={`Goal: ${goal?.status ?? 'none'}`}
+        onPress={() => setGoal((current) => current?.status === 'active'
+          ? { ...current, status: 'complete' }
+          : current
+            ? null
+            : PREVIEW_GOAL)} /> : null}
       {chat ? <Button variant="ghost" label={`Catalog: ${slashStatus}`}
         onPress={() => setSlashStatus((value) => value === 'ready' ? 'loading' : value === 'loading' ? 'error' : 'ready')} /> : null}
     </View>
@@ -479,6 +495,12 @@ todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={p
             collapsedPrompts={page === 'Chat' && pending === 'collapsed' ? [{ kind: 'permission', request: ordinaryPermission }] : undefined}
             onExpandPrompt={() => setPending('sheet')}
             sandboxInfo={sandbox} contextTokens={82_400} contextWindow={200_000} totalCostUsd={0.4213}
+            goal={page === 'Chat' ? goal : null} goalCapability={goalCapability}
+            onGoalEdit={() => changeDraft(`/goal ${goal?.objective ?? ''}`)}
+            onGoalClear={() => setGoal(null)}
+            onGoalPause={() => setGoal((current) => current && { ...current, status: 'paused', lastReason: 'paused by you' })}
+            onGoalResume={() => setGoal((current) => current && { ...current, status: 'active' })}
+            onGoalDismiss={() => setGoal(null)}
             onWebMessage={onChatMessage} onWebProcessError={() => {}} onPermissionMode={setMode}
             onSandboxMode={(next) => setSandbox(sandboxInfoFromMode(next))} onSlash={(command) => {
               // Mirror the shipping handler: with the fallback editor mounted there

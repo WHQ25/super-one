@@ -422,6 +422,25 @@ describe('reduceSlash: slash_command_output', () => {
     expect(patch.slashCommandOutput).toEqual({ command: 'doctor', content: 'all good' })
   })
 
+  /**
+   * `/goal <condition>` runs a full agent turn and the CLI only appends
+   * "Goal set: …" at the end. The default flow would drop that whole turn.
+   */
+  it('keeps the whole turn and shows no popup for /goal', () => {
+    const session = createDefaultPerSessionState()
+    session._pendingSlashCommand = 'goal'
+    session.messages = [
+      makeMessage('user', { role: 'user' }),
+      makeMessage('source', { role: 'assistant', content: [{ type: 'text', text: 'Ran the suite, all green.' }] }),
+    ]
+
+    const patch = reduceSlash(session, {
+      type: 'slash_command_output', messageId: 'source', content: 'Goal set: all tests pass',
+    } as never)
+
+    expect(patch).toEqual({ _pendingSlashCommand: '' })
+  })
+
   it('does not mint an empty report message when stdout is blank', () => {
     const session = createDefaultPerSessionState()
     session._pendingSlashCommand = 'code-review'

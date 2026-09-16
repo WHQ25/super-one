@@ -38,6 +38,7 @@ import { DEADLINE_EXCEEDED, INTERRUPT_CANCEL_TIMEOUT_MS, withDeadline } from '..
 import { trace } from '../../agent/event-trace'
 import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend, TaskNotificationInjectResult } from '../types'
 import { QueuedUserMessageQueue } from '../queued-user-message-queue'
+import { ClaudeGoalTracker } from './claude-goal-tracker'
 import { readAppSettings } from '../../app-settings-service'
 import { ensureProxy, type ProxyUpstream } from '../../providers/llm-proxy-manager'
 import { getSandboxCapability } from '../../sandbox-platform'
@@ -102,6 +103,7 @@ export class ClaudeBackend implements SessionBackend {
   private pendingInlineNotifications: Array<{ msg: SDKUserMessage; clientMessageId: string }> = []
   private pendingInstruction: string | null = null
   /** User messages stay under SuperOne control until their own turn or an explicit Steer. */
+  private readonly goalTracker = new ClaudeGoalTracker()
   private readonly queuedUserMessages = new QueuedUserMessageQueue({
     isBusy: () => this.turnResolves.size > 0,
     isAlive: () => Boolean(this.bridge && this.query),
@@ -430,6 +432,7 @@ export class ClaudeBackend implements SessionBackend {
     }
 
     const userMsg = buildUserMessage(turnRequest, this.providerSessionId ?? '')
+    for (const goalEvent of this.goalTracker.noteSend(turnRequest.content)) this.emit(goalEvent)
     this.flushPendingInstruction()
     this.bridge.push(userMsg)
 
@@ -910,7 +913,10 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private emit(rawEvent: AgentEvent): void {
-    const event = this.stripSteerAbort(rawEvent)
+    for (const event of this.goalTracker.reconcile(this.stripSteerAbort(rawEvent))) this.emitOne(event)
+  }
+
+  private emitOne(event: AgentEvent): void {
     if (
       this.stagedProviderSessionId
       && (event.type === 'content_delta' || event.type === 'message_complete' || event.type === 'message_interrupted')

@@ -5,6 +5,7 @@ import {
   buildGrokInterjectParams,
   grokForkTargetPromptIndex,
   grokPromptIndexForUserMessage,
+  isGrokGoalClear,
   isGrokGoalSlash,
   parseGrokCompactSlash,
   parseGrokForkResponse,
@@ -37,6 +38,16 @@ function assistant(id: string): ChatMessage {
     providerId: 'local',
   }
 }
+
+describe('isGrokGoalClear', () => {
+  it('matches only the whole-arg clear form', () => {
+    expect(isGrokGoalClear('/goal clear')).toBe(true)
+    expect(isGrokGoalClear('  /GOAL  clear ')).toBe(true)
+    expect(isGrokGoalClear('/goal')).toBe(false)
+    expect(isGrokGoalClear('/goal pause')).toBe(false)
+    expect(isGrokGoalClear('/goal clear the backlog')).toBe(false)
+  })
+})
 
 describe('isGrokGoalSlash', () => {
   it('matches /goal and its subcommands', () => {

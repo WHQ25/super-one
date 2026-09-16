@@ -2687,19 +2687,19 @@ function registerIpcHandlers(): void {
     )
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_GOAL_GET, (_event, sessionId: string, threadId: string) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_GOAL_GET, (_event, sessionId: string, threadId: string | null) => {
     const session = getCodexSession(sessionId)
     if (!session) throw new Error(`CODEX_GOAL_GET: no codex session found for sid=${sessionId}`)
     return session.getCodexGoal(threadId)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_GOAL_SET, (_event, sessionId: string, threadId: string, objective: string, status?: import('@superone/shared/agent-types').CodexGoalStatus) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_GOAL_SET, (_event, sessionId: string, threadId: string | null, objective: string, status?: import('@superone/shared/agent-types').CodexGoalStatus) => {
     const session = getCodexSession(sessionId)
     if (!session) throw new Error(`CODEX_GOAL_SET: no codex session found for sid=${sessionId}`)
     return session.setCodexGoal(threadId, objective, status)
   })
 
-  ipcMain.handle(AgentIpcChannels.CODEX_GOAL_CLEAR, (_event, sessionId: string, threadId: string) => {
+  ipcMain.handle(AgentIpcChannels.CODEX_GOAL_CLEAR, (_event, sessionId: string, threadId: string | null) => {
     const session = getCodexSession(sessionId)
     if (!session) throw new Error(`CODEX_GOAL_CLEAR: no codex session found for sid=${sessionId}`)
     return session.clearCodexGoal(threadId)

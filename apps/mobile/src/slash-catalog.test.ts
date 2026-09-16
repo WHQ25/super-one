@@ -45,7 +45,7 @@ describe('requestSlashCatalog', () => {
       '/work/super-one',
       'claude',
     )
-    expect(catalog.map((c) => c.name)).toEqual(['clear', 'add-dir'])
+    expect(catalog.map((c) => c.name)).toEqual(['clear', 'add-dir', 'goal'])
   })
 
   it('hides /add-dir on a harness that reads only its cwd', async () => {
@@ -65,7 +65,10 @@ describe('requestSlashCatalog', () => {
       '/work/super-one',
       'claude',
     )
-    expect(catalog).toEqual([{ name: 'add-dir', description: 'Harness owned', argumentHint: '', isSkill: false }])
+    expect(catalog).toEqual([
+      { name: 'add-dir', description: 'Harness owned', argumentHint: '', isSkill: false },
+      { name: 'goal', description: 'Set or clear this session goal', argumentHint: '<objective>', isSkill: false },
+    ])
   })
 
   it('falls back to the legacy slashCommands field', async () => {
@@ -74,7 +77,7 @@ describe('requestSlashCatalog', () => {
       '/work/super-one',
       'claude',
     )
-    expect(catalog.map((c) => c.name)).toEqual(['resume', 'add-dir'])
+    expect(catalog.map((c) => c.name)).toEqual(['resume', 'add-dir', 'goal'])
   })
 
   it('keeps system commands when project resources cannot be read', async () => {
@@ -88,7 +91,7 @@ describe('requestSlashCatalog', () => {
       '/work/super-one',
       'claude',
     )
-    expect(catalog.map((c) => c.name)).toEqual(['clear', 'add-dir'])
+    expect(catalog.map((c) => c.name)).toEqual(['clear', 'add-dir', 'goal'])
   })
 
   it('offers /recap only for Grok ACP', async () => {
@@ -108,6 +111,27 @@ describe('requestSlashCatalog', () => {
       'opencode',
     )
     expect(other.map((c) => c.name)).not.toContain('recap')
+  })
+
+  it('offers /goal only where the harness has one, and lets Claude own it', async () => {
+    // Same single gate the chip hangs off: OpenCode has no goal concept, so the
+    // row is absent rather than listed and refused.
+    const opencode = await requestSlashCatalog(
+      client({ get_system_info: { userSlashCommands: [{ name: 'clear' }] } }),
+      '/work/super-one',
+      'opencode',
+    )
+    expect(opencode.map((c) => c.name)).not.toContain('goal')
+
+    // Claude reports a `goal` command of its own; ours would shadow its hint.
+    const claude = await requestSlashCatalog(
+      client({ get_system_info: { userSlashCommands: [{ name: 'goal', description: 'Harness owned' }] } }),
+      '/work/super-one',
+      'claude',
+    )
+    expect(claude.filter((c) => c.name === 'goal')).toEqual([
+      { name: 'goal', description: 'Harness owned', argumentHint: '', isSkill: false },
+    ])
   })
 
   it('rejects when system info itself fails', async () => {

@@ -255,6 +255,34 @@ describe('AcpBackend queued send / interject', () => {
     await backend.close()
   })
 
+  it('drops the goal snapshot after /goal clear when Grok reports nothing', async () => {
+    const calls: PromptCall[] = []
+    const { backend, events } = await startBackend(calls)
+
+    const clear = backend.send({ content: '/goal clear', assistantMessageId: 'a1' })
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    calls[0].finish()
+    await clear
+
+    const goals = events.filter((e) => e.type === 'session_goal')
+    expect(goals).toEqual([{ type: 'session_goal', goal: null }])
+    await backend.close()
+  })
+
+  it('leaves a Grok-reported goal_updated alone after /goal clear', async () => {
+    const calls: PromptCall[] = []
+    const { backend, events } = await startBackend(calls)
+
+    const clear = backend.send({ content: '/goal clear', assistantMessageId: 'a1' })
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    calls[0].onEvent({ type: 'session_goal', goal: null })
+    calls[0].finish()
+    await clear
+
+    expect(events.filter((e) => e.type === 'session_goal')).toHaveLength(1)
+    await backend.close()
+  })
+
   it('cancels the live turn so a /goal slash is a new prompt, not a queued follow-up', async () => {
     const calls: PromptCall[] = []
     const { backend, events } = await startBackend(calls, {

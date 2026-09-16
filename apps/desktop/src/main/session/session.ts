@@ -1332,7 +1332,7 @@ export class Session implements SessionContract {
     })
   }
 
-  async getCodexGoal(threadId: string): Promise<CodexGoal | null> {
+  async getCodexGoal(threadId: string | null): Promise<CodexGoal | null> {
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     if (this.harnessId !== 'codex') throw new Error(`Session ${this.id} is not a Codex session`)
@@ -1341,7 +1341,7 @@ export class Session implements SessionContract {
     return this.backend.getCodexGoal(threadId)
   }
 
-  async setCodexGoal(threadId: string, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null> {
+  async setCodexGoal(threadId: string | null, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null> {
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     if (this.harnessId !== 'codex') throw new Error(`Session ${this.id} is not a Codex session`)
@@ -1350,7 +1350,7 @@ export class Session implements SessionContract {
     return this.backend.setCodexGoal(threadId, objective, status)
   }
 
-  async clearCodexGoal(threadId: string): Promise<boolean> {
+  async clearCodexGoal(threadId: string | null): Promise<boolean> {
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     if (this.harnessId !== 'codex') throw new Error(`Session ${this.id} is not a Codex session`)

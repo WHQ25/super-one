@@ -240,6 +240,15 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
  * through here rather than testing the harness id, so the one agent-level
  * exception stays in a single named place.
  */
+/**
+ * Every `/goal` lifecycle token any harness understands. Render paths that see
+ * a message without knowing its harness (a `/goal …` user bubble) use this to
+ * tell an objective from a `pause` / `clear`.
+ */
+export const ALL_GOAL_LIFECYCLE_ARGS: readonly string[] = [...new Set(
+  Object.values(HARNESS_CAPABILITIES).flatMap((caps) => caps.goal?.lifecycleArgs ?? []),
+)]
+
 export function resolveGoalCapability(
   harnessId: HarnessId | null | undefined,
   acpAgentId?: string | null,

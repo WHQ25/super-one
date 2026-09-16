@@ -1,11 +1,13 @@
 import type { HTMLAttributes, ReactNode } from 'react'
-import { Bot, Inbox, OctagonX } from 'lucide-react'
+import { Bot, Goal, Inbox, OctagonX } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 
 export interface ChatMessagePresenterProps {
   isUser: boolean
   isCollaboration: boolean
   collaborationLabel?: string
+  /** Set for a `/goal …` user message: label row above the ordinary bubble. */
+  goalLabel?: string
   mailboxLabel?: string
   initialTask?: ReactNode
   body: ReactNode
@@ -29,6 +31,7 @@ export function ChatMessagePresenter({
   isUser,
   isCollaboration,
   collaborationLabel,
+  goalLabel,
   mailboxLabel,
   initialTask,
   body,
@@ -75,6 +78,12 @@ export function ChatMessagePresenter({
           <div className="mb-1 flex items-center gap-1 px-0.5 text-xs font-medium text-primary/80">
             <Bot className="size-3 shrink-0" />
             <span>{collaborationLabel}</span>
+          </div>
+        )}
+        {isUser && goalLabel && (
+          <div className="mb-1 flex items-center gap-1 px-0.5 text-xs font-medium text-primary/80">
+            <Goal className="size-3 shrink-0" />
+            <span>{goalLabel}</span>
           </div>
         )}
         <div

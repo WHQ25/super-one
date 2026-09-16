@@ -16,6 +16,8 @@ import type {
   RemoteEffortOption, RemoteModeOption, RemoteProviderOption, SandboxInfo, SandboxMode,
   SandboxSupportLevel,
 } from '@superone/shared/agent-types'
+import type { GoalCapability } from '@superone/shared/harness/harness-capabilities'
+import type { SessionGoal } from '@superone/shared/agent-types'
 import type { SelectorCatalogParam } from '../model-picker-state'
 import type { MatchedSlashCommand } from '../slash'
 import type { SlashCatalogStatus } from '../slash-catalog'
@@ -24,7 +26,7 @@ import { mentionBreadcrumbs } from '../mention-browse-state'
 import { isSessionMentionQuery } from '../session-mention'
 import type { MentionRow } from '../mention-rows'
 import { useMobileTheme } from '../theme/context'
-import { AdditionalDirsChip, ContextRing, IconButton, PermissionModeSelector, SandboxSelector } from '../ui'
+import { AdditionalDirsChip, ContextRing, GoalChip, IconButton, PermissionModeSelector, SandboxSelector } from '../ui'
 import type { UsageMeterProps } from '../ui/usage-panel'
 import { CHIP_HEIGHT } from '../ui/chip-metrics'
 
@@ -64,6 +66,18 @@ export type ChatComposerProps = {
   sandboxInfo: SandboxInfo | null
   /** Host platform sandbox capability, reported by the harness catalog. */
   sandboxSupport?: SandboxSupportLevel
+  /**
+   * The session goal and what may be done to it, or `null` on a harness with no
+   * goal concept. Unlike desktop there is no goal *mode* here: `/goal` writes
+   * its own line into the draft, so the chip only ever reports a goal that exists.
+   */
+  goal?: SessionGoal | null
+  goalCapability?: GoalCapability | null
+  onGoalEdit?: () => void
+  onGoalClear?: () => void
+  onGoalPause?: () => void
+  onGoalResume?: () => void
+  onGoalDismiss?: () => void
   contextTokens: number; contextWindow: number | null; totalCostUsd: number
   /** The credential's subscription meter, drawn as the ring's outer arc. */
   usage?: UsageMeterProps
@@ -146,7 +160,7 @@ export function ChatComposer(props: ChatComposerProps) {
   // Two anchored groups, not one centred line. The left group is what the next
   // turn will *do* — model, effort, permission mode — and reads from the same
   // edge as the message above it; the right group is what the session currently
-  // *is*, three readouts that belong against the send side. Only the left
+  // *is*, the readouts that belong against the send side. Only the left
   // scrolls: a long model name has to stay reachable, while the readouts are
   // fixed-width glyphs that must not drift off the edge they are anchored to.
   // `flex: 1` on the scroller is what pins the right group, so it holds whether
@@ -161,10 +175,16 @@ export function ChatComposer(props: ChatComposerProps) {
       <ContextRing tokens={props.contextTokens} contextWindow={props.contextWindow} costUsd={props.totalCostUsd} usage={props.usage} />
       <SandboxSelector harness={props.provider} sandboxInfo={props.sandboxInfo}
         sandboxSupport={props.sandboxSupport} permissionMode={props.permissionMode} onChange={props.onSandboxMode} />
-      {/* Last, on the outer edge: the only one of the three that comes and goes
-          (it hides at zero), so anywhere else its arrival shifts the others. */}
+      {/* Last, on the outer edge: the two that come and go live here, so their
+          arrival never shifts the standing readouts. They cannot collide — the
+          folder chip answers for a session being configured and the goal only
+          exists once one is running. */}
       <AdditionalDirsChip projectDirs={props.projectDirs} sessionDirs={props.sessionDirs}
         onManage={props.onManageDirectories} />
+      {props.goalCapability ? <GoalChip goal={props.goal ?? null} capability={props.goalCapability}
+        onEdit={() => props.onGoalEdit?.()} onClear={() => props.onGoalClear?.()}
+        onPause={() => props.onGoalPause?.()} onResume={() => props.onGoalResume?.()}
+        onDismiss={() => props.onGoalDismiss?.()} /> : null}
     </View>
   </View>
   const attach = <IconButton icon={Paperclip} label="Add attachment" onPress={props.onAttachmentMenu} />

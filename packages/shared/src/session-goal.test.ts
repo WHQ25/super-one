@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   goalComposerAction,
+  goalMessageObjective,
   isGoalLifecycleArg,
   sessionGoalFromClaudeActive,
 } from './session-goal'
@@ -18,7 +19,6 @@ describe('sessionGoalFromClaudeActive', () => {
     ).toEqual({
       objective: 'All tests pass',
       status: 'active',
-      iterations: 3,
       lastReason: 'two suites still red',
     })
   })
@@ -31,7 +31,7 @@ describe('sessionGoalFromClaudeActive', () => {
         set_at: 1700000000000,
         tokens_at_start: 0,
       }),
-    ).toEqual({ objective: 'Ship the migration', status: 'active', iterations: 0 })
+    ).toEqual({ objective: 'Ship the migration', status: 'active' })
   })
 
   it('treats a cleared or malformed payload as no goal', () => {
@@ -44,11 +44,12 @@ describe('sessionGoalFromClaudeActive', () => {
 describe('goalComposerAction', () => {
   const GROK_ARGS = ['status', 'pause', 'resume', 'clear']
 
-  it('opens the dialog for a bare /goal and for an objective', () => {
-    expect(goalComposerAction('/goal', GROK_ARGS)).toEqual({ type: 'dialog', prefill: '' })
+  it('enters goal mode for a bare /goal and sets an inline objective', () => {
+    expect(goalComposerAction('/goal', GROK_ARGS)).toEqual({ type: 'compose' })
+    expect(goalComposerAction('/goal  ', GROK_ARGS)).toEqual({ type: 'compose' })
     expect(goalComposerAction('/goal  Fix login', GROK_ARGS)).toEqual({
-      type: 'dialog',
-      prefill: 'Fix login',
+      type: 'set',
+      objective: 'Fix login',
     })
   })
 
@@ -60,21 +61,36 @@ describe('goalComposerAction', () => {
   it('honours a narrower lifecycle list, so Claude only passes clear through', () => {
     expect(goalComposerAction('/goal clear', ['clear'])).toEqual({ type: 'passthrough' })
     expect(goalComposerAction('/goal pause', ['clear'])).toEqual({
-      type: 'dialog',
-      prefill: 'pause',
+      type: 'set',
+      objective: 'pause',
     })
   })
 
   it('treats a reserved token inside a longer objective as a set', () => {
     expect(goalComposerAction('/goal pause the rollout', GROK_ARGS)).toEqual({
-      type: 'dialog',
-      prefill: 'pause the rollout',
+      type: 'set',
+      objective: 'pause the rollout',
     })
   })
 
   it('ignores non-goal lines', () => {
     expect(goalComposerAction('/loop 30m ping', GROK_ARGS)).toBeNull()
     expect(goalComposerAction('goal Fix login', GROK_ARGS)).toBeNull()
+  })
+})
+
+describe('goalMessageObjective', () => {
+  it('returns the objective of a sent /goal line', () => {
+    expect(goalMessageObjective('/goal Ship login')).toBe('Ship login')
+    expect(goalMessageObjective('/goal  pause the rollout ')).toBe('pause the rollout')
+  })
+
+  it('is null for prompts, a bare /goal and every harness lifecycle token', () => {
+    expect(goalMessageObjective('Ship login')).toBeNull()
+    expect(goalMessageObjective('/goal')).toBeNull()
+    expect(goalMessageObjective('/goal clear')).toBeNull()
+    expect(goalMessageObjective('/goal pause')).toBeNull()
+    expect(goalMessageObjective('/goal STATUS')).toBeNull()
   })
 })
 
@@ -85,7 +101,7 @@ describe('isGoalLifecycleArg', () => {
     expect(isGoalLifecycleArg('pause now', ['pause'])).toBe(false)
   })
 
-  it('never matches an empty arg, so a bare /goal still opens the dialog', () => {
+  it('never matches an empty arg, so a bare /goal still enters goal mode', () => {
     expect(isGoalLifecycleArg('', ['clear'])).toBe(false)
   })
 })

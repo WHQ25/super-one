@@ -118,6 +118,38 @@ describe('ChatMessage fork affordance', () => {
   })
 })
 
+describe('ChatMessage goal bubble', () => {
+  const user = (text: string): ChatMessageType => ({
+    id: 'user-1',
+    role: 'user',
+    status: 'complete',
+    content: [{ type: 'text', text }],
+    createdAt: new Date().toISOString(),
+    providerId: 'user',
+  })
+
+  it('shows a sent /goal as the objective under a Goal label', () => {
+    const { container } = render(
+      <ChatMessage message={user('/goal Ship the login flow')} sessionStatus="idle" isLastAssistant={false} />,
+    )
+
+    expect(screen.getByText('Goal')).toBeInTheDocument()
+    expect(container.querySelector('.lucide-goal')).not.toBeNull()
+    expect(screen.getByText('Ship the login flow')).toBeInTheDocument()
+    expect(screen.queryByText('/goal Ship the login flow')).toBeNull()
+  })
+
+  it('keeps a lifecycle line as an ordinary bubble', () => {
+    const { container } = render(
+      <ChatMessage message={user('/goal clear')} sessionStatus="idle" isLastAssistant={false} />,
+    )
+
+    expect(screen.queryByText('Goal')).toBeNull()
+    expect(container.querySelector('.lucide-goal')).toBeNull()
+    expect(screen.getByText('/goal clear')).toBeInTheDocument()
+  })
+})
+
 describe('ChatMessage copy affordance', () => {
   it('omits copy actions from a voice user message', () => {
     const { container } = render(

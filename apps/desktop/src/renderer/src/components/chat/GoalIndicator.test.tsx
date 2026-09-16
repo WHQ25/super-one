@@ -28,6 +28,8 @@ function renderIndicator(
   props: Partial<Parameters<typeof GoalIndicator>[0]> = {},
 ) {
   const handlers = {
+    onExitCompose: vi.fn(),
+    onDismiss: vi.fn(),
     onEdit: vi.fn(),
     onClear: vi.fn().mockResolvedValue(undefined),
     onPause: vi.fn().mockResolvedValue(undefined),
@@ -38,6 +40,7 @@ function renderIndicator(
       goal={goal('active')}
       capability={PAUSABLE}
       harnessName="Grok"
+      composing={false}
       {...handlers}
       {...props}
     />,
@@ -45,7 +48,94 @@ function renderIndicator(
   return handlers
 }
 
+/** The lucide icon inside the chip — the element that carries the breathing class. */
+function chipIcon() {
+  return document.querySelector('.lucide-goal')
+}
+
 describe('GoalIndicator', () => {
+  it('breathes while the goal is being pursued and rests otherwise', () => {
+    renderIndicator()
+    expect(chipIcon()).toHaveClass('animate-pulse')
+  })
+
+  it('stops breathing once the goal is paused', () => {
+    renderIndicator({ goal: goal('paused') })
+    expect(chipIcon()).not.toHaveClass('animate-pulse')
+  })
+
+  it('turns into a green check reading Goal Achieved once the goal is complete', () => {
+    renderIndicator({ goal: goal('complete') })
+
+    const chip = screen.getByRole('button', { name: 'Goal Achieved' })
+    expect(chip).toHaveClass('text-success')
+    expect(chip.querySelector('.lucide-circle-check-big')).not.toBeNull()
+    expect(chipIcon()).toBeNull()
+  })
+
+  /**
+   * The harness clears its own goal on success, so the chip is a notice with
+   * nothing left to act on — it dismisses instead of opening the popover.
+   */
+  it('dismisses an achieved goal from the chip instead of opening the popover', () => {
+    const { onDismiss, onClear } = renderIndicator({ goal: goal('complete') })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Goal Achieved' }))
+
+    expect(onDismiss).toHaveBeenCalled()
+    expect(onClear).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Clear goal' })).toBeNull()
+  })
+
+  // Both icons are always rendered; CSS decides which one shows, so these
+  // assert the swap pair exists rather than simulating :hover.
+  it('swaps the achieved chip icon for a close mark on hover', () => {
+    renderIndicator({ goal: goal('complete') })
+    const chip = screen.getByRole('button', { name: 'Goal Achieved' })
+
+    expect(chip.querySelector('.lucide-circle-check-big')).toHaveClass('group-hover/goal-done:hidden')
+    expect(chip.querySelector('.lucide-x')).toHaveClass('group-hover/goal-done:block')
+  })
+
+  it('swaps the goal-mode chip icon for a close mark on hover', () => {
+    renderIndicator({ goal: null, composing: true })
+    const chip = screen.getByRole('button', { name: 'Goal' })
+
+    expect(chip.querySelector('.lucide-goal')).toHaveClass('group-hover/goal-mode:hidden')
+    expect(chip.querySelector('.lucide-x')).toHaveClass('group-hover/goal-mode:block')
+  })
+
+  it('offers no close mark while the goal is still being pursued', () => {
+    renderIndicator()
+    expect(screen.getByRole('button', { name: 'Goal' }).querySelector('.lucide-x')).toBeNull()
+  })
+
+  it('exits goal mode from the chip before any goal exists', () => {
+    const { onExitCompose } = renderIndicator({ goal: null, composing: true })
+
+    fireEvent.click(screen.getByTitle('Exit goal mode'))
+    expect(onExitCompose).toHaveBeenCalled()
+  })
+
+  it('shows the goal-mode chip over a live goal while it is being edited', () => {
+    renderIndicator({ composing: true })
+
+    expect(screen.getByTitle('Exit goal mode')).toBeInTheDocument()
+    // Goal mode replaces the popover trigger, so no popover is reachable.
+    fireEvent.click(screen.getByRole('button', { name: 'Goal' }))
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
+  })
+
+  it('hands Edit back to the composer instead of opening an editor of its own', () => {
+    const { onEdit } = renderIndicator()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Goal' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+
+    expect(onEdit).toHaveBeenCalled()
+  })
+
   it('resumes a paused goal from the popover', async () => {
     const { onResume } = renderIndicator({ goal: goal('paused') })
 
@@ -104,25 +194,19 @@ describe('GoalIndicator', () => {
     expect(screen.getByText('Codex Goal')).toBeInTheDocument()
   })
 
-  it('shows the evaluator count and its latest reason when the harness reports them', () => {
-    renderIndicator({
-      capability: CONDITION_ONLY,
-      harnessName: 'Claude',
-      goal: goal('active', { iterations: 3, lastReason: 'two suites still red' }),
-    })
+  it('shows the latest reason when the harness reports one', () => {
+    renderIndicator({ goal: goal('paused', { lastReason: 'two suites still red' }) })
 
     fireEvent.click(screen.getByRole('button', { name: 'Goal' }))
 
-    expect(screen.getByText('Checked 3 times so far')).toBeInTheDocument()
     expect(screen.getByText('Latest check: two suites still red')).toBeInTheDocument()
   })
 
-  it('shows no progress line for a harness that reports neither', () => {
+  it('shows no progress line for a harness that reports none', () => {
     renderIndicator()
 
     fireEvent.click(screen.getByRole('button', { name: 'Goal' }))
 
-    expect(screen.queryByText(/Checked/)).toBeNull()
     expect(screen.queryByText(/Latest check/)).toBeNull()
   })
 

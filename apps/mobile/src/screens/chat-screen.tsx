@@ -7,7 +7,8 @@ import { ActivityIndicator, Keyboard, StyleSheet, View } from 'react-native'
 import { Text } from '../ui/text'
 import { WebView } from 'react-native-webview'
 import { CHAT_VIEW_HTML } from '@superone/chat-view'
-import type { ChatMessage, HarnessId, ImageAttachment, SandboxInfo, SandboxSupportLevel, SandboxMode, TodoItem } from '@superone/shared/agent-types'
+import type { ChatMessage, HarnessId, ImageAttachment, SandboxInfo, SandboxSupportLevel, SandboxMode, SessionGoal, TodoItem } from '@superone/shared/agent-types'
+import type { GoalCapability } from '@superone/shared/harness/harness-capabilities'
 import type { MatchedSlashCommand } from '../slash'
 import type { SlashCatalogStatus } from '../slash-catalog'
 import type { MentionItem } from '../mentions'
@@ -51,6 +52,14 @@ export function ChatScreen(props: {
   sandboxInfo: SandboxInfo | null
   /** Host platform sandbox capability, reported by the harness catalog. */
   sandboxSupport?: SandboxSupportLevel
+  /** Session goal readout; see `ChatComposer` for why there is no goal mode here. */
+  goal?: SessionGoal | null
+  goalCapability?: GoalCapability | null
+  onGoalEdit?: () => void
+  onGoalClear?: () => void
+  onGoalPause?: () => void
+  onGoalResume?: () => void
+  onGoalDismiss?: () => void
   contextTokens: number
   contextWindow: number | null
   totalCostUsd: number

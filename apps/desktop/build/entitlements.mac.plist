@@ -16,5 +16,11 @@
   <true/>
   <key>com.apple.security.device.audio-input</key>
   <true/>
+  <!-- WebAuthn Touch ID credentials for the built-in browser. Must match
+       KEYCHAIN_ACCESS_GROUP in src/main/browser/browser-webauthn.ts. -->
+  <key>keychain-access-groups</key>
+  <array>
+    <string>T527W5ADUG.com.superone.app.webauthn</string>
+  </array>
 </dict>
 </plist>

@@ -36,6 +36,7 @@ import { initBrowserAutomation, resolveBrowserAutomation, rejectBrowserAutomatio
 import { detachAllCdp } from './browser/browser-cdp'
 import { registerBrowserPopupRedirect } from './browser-popup-redirect'
 import { fetchBrowserBytes, registerBrowserDownloadCapture } from './browser/browser-downloads'
+import { registerBrowserWebAuthn } from './browser/browser-webauthn'
 import { setBrowserDownloadTaskHost } from './browser/browser-download-tasks'
 import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, setAppSettingsApplier, setTerminalToolDeps, isAppStillAuthorizedInProject, addToolsChangedListener, setAppToolExecutor } from './mcp/superone-mcp-server'
 import { MobileReceiveService, type MobileReceiveTarget } from './remote/mobile-receive-service'
@@ -5708,6 +5709,7 @@ app.whenReady().then(async () => {
   })
   registerBrowserPopupRedirect()
   registerBrowserDownloadCapture()
+  registerBrowserWebAuthn()
 
   if (process.platform === 'darwin') {
     if (is.dev) {

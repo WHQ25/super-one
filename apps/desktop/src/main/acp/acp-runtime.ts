@@ -113,6 +113,7 @@ import {
   grokYoloModeNotificationParams,
 } from './acp-permission-preapprove'
 import { parseGrokBilling } from './acp-billing'
+import { pickNonInteractiveAcpAuthMethod } from './acp-auth'
 import { describeAcpRequestFailure } from './acp-request-error'
 import { pushBashOutput } from '../bash-output-watcher'
 import type {
@@ -648,21 +649,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       typeof initAny._meta?.defaultAuthMethodId === 'string'
         ? initAny._meta.defaultAuthMethodId
         : null
-    const isNonInteractiveAuth = (id: string | undefined): boolean => {
-      if (!id) return false
-      const lower = id.toLowerCase()
-      return lower === 'cached_token'
-        || lower.includes('cached')
-        || lower.includes('api_key')
-        || lower.includes('apikey')
-        || lower.includes('token')
-    }
-    const methodId =
-      (defaultAuthId && isNonInteractiveAuth(defaultAuthId) && authMethods.some((m) => m.id === defaultAuthId)
-        ? defaultAuthId
-        : null)
-      ?? authMethods.find((m) => isNonInteractiveAuth(m.id))?.id
-      ?? null
+    const methodId = pickNonInteractiveAcpAuthMethod(authMethods, defaultAuthId)
     if (methodId) {
       try {
         await connection.agent.request(methods.agent.authenticate, { methodId })

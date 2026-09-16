@@ -328,12 +328,12 @@ Host-relevant rows:
 | id | name | surface | SuperOne status | evidence | gap | priority |
 |----|------|---------|-----------------|----------|-----|----------|
 | TD-01 | Unit: preapprove + yolo create/notify | tests-docs | done | `acp-permission-preapprove.test.ts`, runtime tests | — | — |
-| TD-02 | Unit: exit_plan / ask_user wire + PlanApproval UI | tests-docs | partial | backend + PlanApprovalPrompt tests | no `AskUserQuestionPrompt.test.tsx` | P2 |
+| TD-02 | Unit: exit_plan / ask_user wire + PlanApproval UI | tests-docs | done | backend + PlanApprovalPrompt + `AskUserQuestionPrompt.test.tsx` | — | — |
 | TD-03 | Manual live grok CLI checklist | tests-docs | missing | deferred 2026-09-16 — no recorded macOS grok run in this session | owner: follow-up; Grok binary stays out of CI | **P1** |
 | TD-04 | Permissions G1–G5 boxes | tests-docs | partial | code shipped; boxes empty | PR0 + TD-03 | **P1** |
 | TD-05 | This parity matrix vs code | tests-docs | partial | this rewrite | keep living | — |
 | TD-06 | ExtNotification design vs tests | tests-docs | done | PR0: bus marked shipped; leftover at MCP-10 / RT-06 / XAI-24 | — | — |
-| TD-07 | authenticate unit | tests-docs | missing | no acp-runtime auth cases | — | P2 |
+| TD-07 | authenticate unit | tests-docs | done | `acp-auth.test.ts` cached_token / api_key / grok.com | interactive path is PR7 | — |
 | TD-08 | Live grok binary in CI | tests-docs | na | policy: mock-agent vitest | TD-03 is the substitute | na |
 | TD-09 | Event-trace of preapprove / yolo | tests-docs | missing | optional | P3 |
 
@@ -588,14 +588,13 @@ Shipped work (do **not** re-open as PRs): stdio lifecycle, yolo/auto meta + noti
 | **Deps** | none |
 | **Out of scope** | Spoofing `grok-desktop`; implementing `enable-always-approve` |
 
-### PR6 — Tests, missing units, live grok CLI checklist  **(partial)**
+### PR6 — Tests, missing units, live grok CLI checklist  **(landed; TD-03 still open)**
 
 | | |
 |--|--|
 | **Title** | `test(acp): Grok host checklist plus AskUserQuestion and authenticate coverage` |
-| **Landed** | `cyclePermissionMode` ACP Ask → Plan → Auto → Always Approve → Ask. |
-| **Deferred** | **TD-03** live `grok agent stdio` run — no recorded macOS run in this session; G1–G5 stay unchecked. `AskUserQuestionPrompt.test.tsx` and authenticate-heuristics unit still open (stories exist for ask-user). |
-| **Owner** | follow-up; Grok binary stays out of CI |
+| **Landed** | `cyclePermissionMode` ACP cycle; `AskUserQuestionPrompt.test.tsx`; `acp-auth.test.ts` heuristics. |
+| **Deferred** | **TD-03** live `grok agent stdio` run until the live-verify pass in this session (Grok binary stays out of CI). |
 
 ### PR7 — Interactive Grok auth (`x.ai/auth/*`)  **(follow-up)**
 

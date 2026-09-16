@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ActivityIndicator, Pressable, TextInput, View } from 'react-native'
+import { ActivityIndicator, Pressable, View } from 'react-native'
 import { Text } from './text'
 import { RefreshCw, Search, X, Zap } from 'lucide-react-native'
 import type {
@@ -12,7 +12,7 @@ import type {
   RemoteProviderOption,
 } from '@superone/shared/agent-types'
 import { useMobileTheme } from '../theme/context'
-import { AnchoredMenu, MenuDisclosureRow, MenuRow, MenuSeparator, useMenuAnchor } from './anchored-menu'
+import { AnchoredMenu, MenuDisclosureRow, MenuRow, MenuSeparator, MenuTextInput, useMenuAnchor } from './anchored-menu'
 import { EffortSlider } from './effort-slider'
 import { FireText, RainbowText } from './effort-easter-egg'
 import { CHIP_HEIGHT, CHIP_HIT_SLOP, chipTriggerBackground } from './chip-metrics'
@@ -143,7 +143,7 @@ export function ModelPicker(props: ModelPickerProps) {
     {/* Title row: `Models` plus refresh and search, as on desktop. The harness or
         provider name used to sit here too, but the Provider section below already
         names it and the model groups are labelled with it. */}
-    <AnchoredMenu anchor={menu.anchor} title="Models" onDismiss={close} width={320} titleAccessory={
+    <AnchoredMenu anchor={menu.anchor} title="Models" onDismiss={close} width={320} remeasure={menu.remeasure} titleAccessory={
       <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
         {props.onRefresh ? <Pressable disabled={loading} accessibilityRole="button" accessibilityLabel={t('Refresh models')} onPress={() => { void refresh() }}
           style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
@@ -159,7 +159,7 @@ export function ModelPicker(props: ModelPickerProps) {
       {searchAvailable && searchOpen
         ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8, borderBottomWidth: 1, borderColor: colors.border }}>
           <Search size={14} color={colors.mutedForeground} />
-          <TextInput value={query} onChangeText={setQuery} placeholder={t('Search models…')} accessibilityLabel={t('Search models')} autoFocus autoCorrect={false}
+          <MenuTextInput value={query} onChangeText={setQuery} placeholder={t('Search models…')} accessibilityLabel={t('Search models')} autoFocus autoCorrect={false}
             placeholderTextColor={colors.mutedForeground} style={{ minHeight: 44, flex: 1, fontSize: 13, color: colors.foreground }} />
         </View>
         : null}

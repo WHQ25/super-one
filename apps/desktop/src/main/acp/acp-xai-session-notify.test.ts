@@ -287,6 +287,71 @@ describe('mapXaiSessionUpdate — subagent', () => {
   })
 })
 
+/**
+ * Grok's goal driver spawns its planner/worker/verifier itself (recorded
+ * `updates.jsonl`: goal_updated → subagent_spawned "goal plan writer" with no
+ * tool call in between). Nothing else would put a card in the transcript.
+ */
+describe('mapXaiSessionUpdate — goal-driven subagent', () => {
+  const goal = (status: string, goal_id = 'g1') => ({
+    sessionUpdate: 'goal_updated', goal_id, objective: 'Ship it', status, phase: 'executing',
+  })
+  const spawn = (subagent_id: string, extra: Record<string, unknown> = {}) => ({
+    sessionUpdate: 'subagent_spawned', subagent_id, child_session_id: subagent_id,
+    subagent_type: 'general-purpose', description: 'goal plan writer', ...extra,
+  })
+
+  it('marks an unbound spawn during a live goal as hostSpawned', () => {
+    const state = createXaiCorrelationState({ cwd: '/p' })
+    mapXaiSessionUpdate(goal('active'), state)
+    const [started] = mapXaiSessionUpdate(spawn('planner'), state)
+    expect(started).toMatchObject({ type: 'task_started', taskId: 'planner', hostSpawned: true })
+    expect(started).not.toHaveProperty('toolUseId')
+  })
+
+  it('keeps the flag while the goal is paused', () => {
+    const state = createXaiCorrelationState()
+    mapXaiSessionUpdate(goal('user_paused'), state)
+    expect(mapXaiSessionUpdate(spawn('resumed'), state)[0]).toMatchObject({ hostSpawned: true })
+  })
+
+  it('does not flag a tool-bound or workflow-owned spawn', () => {
+    const state = createXaiCorrelationState()
+    mapXaiSessionUpdate(goal('active'), state)
+    state.subagentToolById.set('bound', 'tool_1')
+    expect(mapXaiSessionUpdate(spawn('bound'), state)[0]).not.toHaveProperty('hostSpawned')
+    expect(mapXaiSessionUpdate(spawn('wf', { workflow_run_id: 'run1' }), state)[0])
+      .not.toHaveProperty('hostSpawned')
+  })
+
+  it('stops flagging once the goal completes or is cleared', () => {
+    const state = createXaiCorrelationState()
+    mapXaiSessionUpdate(goal('active'), state)
+    mapXaiSessionUpdate(goal('complete'), state)
+    expect(mapXaiSessionUpdate(spawn('after-complete'), state)[0]).not.toHaveProperty('hostSpawned')
+
+    mapXaiSessionUpdate(goal('active', 'g2'), state)
+    // `/goal clear` reports an empty goal_id.
+    expect(mapXaiSessionUpdate(goal('cleared', ''), state)).toEqual([])
+    expect(mapXaiSessionUpdate(spawn('after-clear'), state)[0]).not.toHaveProperty('hostSpawned')
+  })
+
+  it('does not flag a spawn with no goal at all', () => {
+    const state = createXaiCorrelationState()
+    expect(mapXaiSessionUpdate(spawn('plain'), state)[0]).not.toHaveProperty('hostSpawned')
+  })
+
+  it('flags a progress-synthesized start the same way', () => {
+    const state = createXaiCorrelationState()
+    mapXaiSessionUpdate(goal('active'), state)
+    const [started] = mapXaiSessionUpdate({
+      sessionUpdate: 'subagent_progress', subagent_id: 'early', child_session_id: 'early',
+      duration_ms: 10, tool_call_count: 0, tokens_used: 0,
+    }, state)
+    expect(started).toMatchObject({ type: 'task_started', taskId: 'early', hostSpawned: true })
+  })
+})
+
 describe('mapXaiSessionUpdate — session meta', () => {
   it('maps last_turn_summary and session_recap', () => {
     const state = createXaiCorrelationState()

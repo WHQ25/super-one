@@ -1747,6 +1747,12 @@ export type AgentEventBase =
     outputFile?: string
     skipTranscript?: boolean
     /**
+     * Spawned by the harness itself (Grok's goal driver) rather than by a tool
+     * call, so no tool_use block will ever arrive for it. The transcript
+     * synthesizes the card such a task renders into.
+     */
+    hostSpawned?: boolean
+    /**
      * Registered in the background (true) or with the spawning tool call
      * blocking on it (false). A resumed subagent is always background. A later
      * move to the background arrives as a `task_updated` patch. Absent on

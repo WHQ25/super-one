@@ -333,8 +333,17 @@ export function reduceTool(
         completed: prev?.completed === true ? true : false,
         ...(event.outputFile ? { outputFile: event.outputFile } : {}),
       }
-      const patch = { taskProgress: commitTaskProgress(session.taskProgress, write, next) }
-      if (event.taskType !== 'local_agent' || event.skipTranscript) return patch
+      // Task lifecycle is liveness like tool_progress: a Grok goal subagent
+      // reports only through task_* frames, and without the bump the stall
+      // heuristic paints the turn amber while the agent is busy.
+      const patch = {
+        taskProgress: commitTaskProgress(session.taskProgress, write, next),
+        lastEventAt: ports.now(),
+      }
+      // Claude's slash-command subagents and Grok's goal-driven ones both run
+      // without a launching tool_use; only those get a synthesized card.
+      const ownsCard = event.taskType === 'local_agent' || event.hostSpawned === true
+      if (!ownsCard || event.skipTranscript) return patch
       // Key the block the same way taskProgress is keyed, so every later task_*
       // event lands on it. A toolUseId being present does not mean the block
       // arrived: a slash-command turn names one but emits no content at all.
@@ -416,6 +425,7 @@ export function reduceTool(
       return {
         messages,
         taskProgress: commitTaskProgress(session.taskProgress, write, next),
+        lastEventAt: ports.now(),
       }
     }
 
@@ -547,6 +557,7 @@ export function reduceTool(
         messages: msgs,
         browserDownloads,
         taskProgress: commitTaskProgress(session.taskProgress, write, next),
+        lastEventAt: ports.now(),
       }
     }
 

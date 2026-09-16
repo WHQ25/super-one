@@ -409,6 +409,27 @@ describe('reduceTool: subagent with no launching tool_use', () => {
     expect(JSON.parse((synth as { input: string }).input)).toMatchObject({ description: 'Review the diff' })
   })
 
+  it('synthesizes the block for a harness-spawned agent of any task type', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeAssistant('m1')]
+    const patch = reduceTool(session, {
+      type: 'task_started', taskId: 'sa_goal', description: 'goal plan writer',
+      taskType: 'general-purpose', hostSpawned: true,
+    } as never)
+    const blocks = patch.messages?.[0].content as ContentBlock[]
+    expect(blocks.find((b) => b.type === 'tool_use' && b.toolUseId === 'sa_goal'))
+      .toMatchObject({ type: 'tool_use', toolName: 'Task' })
+  })
+
+  it('leaves a tool-spawned Grok agent without a block', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeAssistant('m1')]
+    const patch = reduceTool(session, {
+      type: 'task_started', taskId: 'sa_tool', description: 'Explore', taskType: 'general-purpose',
+    } as never)
+    expect(patch.messages).toBeUndefined()
+  })
+
   it('leaves ambient housekeeping agents out of the transcript', () => {
     const session = createDefaultPerSessionState()
     session.messages = [makeAssistant('m1')]
@@ -497,6 +518,29 @@ describe('reduceTool: subagent with no launching tool_use', () => {
 })
 
 describe('reduceTool: task_progress', () => {
+  /**
+   * A Grok goal subagent reports only through task_* frames (no tool_progress
+   * heartbeat), so these must count as liveness or the stall colour trips.
+   */
+  it('bumps lastEventAt on every task lifecycle frame', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeAssistant('m1')]
+    const started = reduceTool(session, {
+      type: 'task_started', taskId: 'sa', description: 'goal plan writer', hostSpawned: true,
+    } as never)
+    expect(started.lastEventAt).toBeGreaterThan(0)
+    const progress = reduceTool(session, {
+      type: 'task_progress', taskId: 'sa', description: 'sa',
+      usage: { totalTokens: 1, toolUses: 1, durationMs: 10 },
+    } as never)
+    expect(progress.lastEventAt).toBeGreaterThan(0)
+    const done = reduceTool(session, {
+      type: 'task_notification', taskId: 'sa', taskStatus: 'completed', outputFile: '', summary: '',
+      usage: { totalTokens: 1, toolUses: 1, durationMs: 10 },
+    } as never)
+    expect(done.lastEventAt).toBeGreaterThan(0)
+  })
+
   it('pushes the previous description onto toolHistory when description changes', () => {
     const session = createDefaultPerSessionState()
     session.taskProgress = { 'task-1': { description: 'reading file', lastToolName: 'Read', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [] } }

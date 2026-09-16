@@ -136,6 +136,13 @@ export interface XaiCorrelationState {
   bgTaskById: Map<string, BgTaskInfo>
   /** goal_ids that already emitted task_started */
   goalStarted: Set<string>
+  /**
+   * Goal that is set right now (active or paused). Grok's goal driver spawns
+   * its planner/worker/verifier subagents itself — no tool call, no tool_use
+   * block — so a spawn that lands while a goal is live and binds to no tool
+   * is the goal's own agent.
+   */
+  liveGoalId: string | null
   /** last applied non-workflow eventSeq high-water */
   lastEventSeq: number | null
   /** latest usage snapshot for getContextUsage() */
@@ -176,6 +183,7 @@ export function createXaiCorrelationState(opts?: { cwd?: string; parentSessionId
     deltaToolIdByIndex: new Map(),
     bgTaskById: new Map(),
     goalStarted: new Set(),
+    liveGoalId: null,
     lastEventSeq: null,
     lastUsage: null,
     lastMessageId: null,
@@ -850,6 +858,23 @@ function takeDeferredSubagentFinish(
   return mapSubagentFinished(deferred, state)
 }
 
+/**
+ * A subagent the goal driver launched on its own. Workflow children are
+ * mirrored by workflow_updated, and a tool-bound spawn has a real tool_use
+ * to render into; the main session runs no model call while a goal is live,
+ * so an unbound spawn then can only be the goal's.
+ */
+function isGoalDrivenSpawn(
+  state: XaiCorrelationState,
+  subagentId: string,
+  workflowRunId: string | undefined,
+): boolean {
+  return state.liveGoalId != null
+    && !workflowRunId
+    && !state.workflowOwnedSubagents.has(subagentId)
+    && !state.subagentToolById.has(subagentId)
+}
+
 function mapSubagentSpawned(u: Record<string, unknown>, state: XaiCorrelationState): AgentEvent[] {
   const id = strField(u, 'subagent_id', 'subagentId')
   if (!id) return []
@@ -879,6 +904,7 @@ function mapSubagentSpawned(u: Record<string, unknown>, state: XaiCorrelationSta
       description,
       ...(subagentType ? { taskType: subagentType } : {}),
       ...(outputFile ? { outputFile } : {}),
+      ...(isGoalDrivenSpawn(state, id, workflowRunId) ? { hostSpawned: true } : {}),
     })
   }
   events.push(...takeDeferredSubagentFinish(state, id))
@@ -901,6 +927,7 @@ function mapSubagentProgress(u: Record<string, unknown>, state: XaiCorrelationSt
       ...(state.subagentToolById.get(id) ? { toolUseId: state.subagentToolById.get(id)! } : {}),
       description: id,
       ...(outputFile ? { outputFile } : {}),
+      ...(isGoalDrivenSpawn(state, id, undefined) ? { hostSpawned: true } : {}),
     })
     const flushed = takeDeferredSubagentFinish(state, id)
     events.push(...flushed)
@@ -1083,11 +1110,15 @@ function mapMonitorEvent(u: Record<string, unknown>, state: XaiCorrelationState)
 
 // ── Goal / scheduler ────────────────────────────────────────────────────────
 
+const GOAL_TERMINAL = new Set(['complete', 'completed', 'cleared', 'budget_limited'])
+
 function mapGoalUpdated(u: Record<string, unknown>, state: XaiCorrelationState): AgentEvent[] {
   const goalId = strField(u, 'goal_id', 'goalId')
+  const status = (strField(u, 'status') ?? 'active').toLowerCase()
+  // `/goal clear` reports an empty goal_id, so settle the live marker first.
+  state.liveGoalId = goalId && !GOAL_TERMINAL.has(status) ? goalId : null
   if (!goalId) return []
   const objective = strField(u, 'objective') ?? goalId
-  const status = (strField(u, 'status') ?? 'active').toLowerCase()
   const phase = strField(u, 'phase') ?? ''
   const tokensUsed = numField(u, 'tokens_used', 'tokensUsed') ?? 0
   const elapsedMs = numField(u, 'elapsed_ms', 'elapsedMs') ?? 0

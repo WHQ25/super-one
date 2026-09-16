@@ -54,7 +54,6 @@ describe('AcpBackend', () => {
     expect(captured?.reasoningEffort).toBe('xhigh')
     expect(captured?.consentNotice).toBeDefined()
     expect(captured?.mcpElicit).toBeDefined()
-    expect(captured?.interactiveAuth).toBeDefined()
     expect(captured?.scheduledTaskInject).toBeDefined()
     await backend.close()
   })

@@ -26,7 +26,7 @@ import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { MentionChipContent, isBlendedMentionKind, mentionChipIcon } from './MentionChip'
 import { PasteChipPreview } from './PasteChipPreview'
 import { PASTE_CHIP_LINE_THRESHOLD, PASTE_CHIP_CHAR_THRESHOLD } from './paste-chip-node'
-import { useChatStore } from '@/stores/chat'
+import { getActiveSessionView, useChatStore, useSessionScope } from '@/stores/chat'
 import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 import { getAssistantCopyText } from './chat-message/getAssistantCopyText'
 import { resolveMarkdownFileLinks } from './chat-shared'
@@ -47,6 +47,9 @@ import { TurnSummaryAboveFooter } from './presenters/ChatMessageIndicators'
 import { DurationFooter } from './ChatMessageFooter'
 import { collaborationLabelKey } from '@superone/chat-view/presenters/collaboration-label'
 import { goalMessageObjective } from '@superone/shared/session-goal'
+import { parseRealtimeDelegation } from '@superone/shared/realtime-timeline'
+import { RealtimeDelegationBody } from '@superone/chat-view/presenters/RealtimeDelegationBody'
+import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { ChatMessagePresenter } from './presenters/ChatMessage'
 import {
   ClaudeBlockPresenter,
@@ -329,6 +332,21 @@ export const ChatMessage = memo(function ChatMessage({
   )
   // A sent `/goal …` reads as the objective under a Goal label, not as a slash line.
   const goalObjective = isUser ? goalMessageObjective(userText) : null
+  // A `<realtime_delegation>` envelope is what the voice agent asked Codex to do:
+  // an ordinary user bubble under a Voice label, linking back to the spoken turn.
+  const delegation = isUser ? parseRealtimeDelegation(userText) : null
+  // Resolved on click, not subscribed: every bubble mounts this component and
+  // only the rare delegation row needs to know which session it belongs to.
+  const scope = useSessionScope()
+  const jumpToVoiceTurn = () => {
+    const sessionId = scope?.sessionId ?? getActiveSessionView(scope)._activeSessionId
+    if (!sessionId) return
+    const turnId = message.metadata?.codexTimeline?.turnId
+    useCodexRealtimeViewStore.getState().jumpTo(sessionId, {
+      view: 'realtime',
+      ...(turnId ? { turnId } : { messageId: message.id }),
+    })
+  }
   const { copied: userCopied, copy: copyUserText } = useCopyText()
   const assistantFooter = !isUser ? (
     <DurationFooter
@@ -338,7 +356,9 @@ export const ChatMessage = memo(function ChatMessage({
       className={message.metadata?.turnSummary ? 'mt-1' : undefined}
     />
   ) : null
-  const body = isUser ? (
+  const body = delegation ? (
+    <RealtimeDelegationBody delegation={delegation} />
+  ) : isUser ? (
     <TooltipProvider delayDuration={200}>
       {message.userSelections && message.userSelections.length > 0 && (
         <div className="mb-1.5 flex flex-wrap gap-1">
@@ -415,6 +435,8 @@ export const ChatMessage = memo(function ChatMessage({
       isCollaboration={isCollab}
       collaborationLabel={collabLabelKey ? t(collabLabelKey) : undefined}
       goalLabel={goalObjective ? t('chat.goal.label') : undefined}
+      voiceLabel={delegation ? t('chat.realtimeVoice.delegation.label') : undefined}
+      onVoiceLabelClick={delegation ? jumpToVoiceTurn : undefined}
       mailboxLabel={isMailboxWake ? t('chat.collaboration.mailboxReady') : undefined}
       initialTask={isInitialTask
         ? <CollabTaskBubble text={userText} from={message.metadata?.collaboration} />

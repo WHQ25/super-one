@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { AudioLines, MessageSquare } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -8,17 +9,21 @@ interface CodexConversationViewToggleProps {
   enabled: boolean
 }
 
-/** Header-level escape hatch between the primary voice line and its backing thread. */
+/** Header switch between the voice timeline and the backing Codex thread of one session. */
 export function CodexConversationViewToggle({ sessionId, enabled }: CodexConversationViewToggleProps) {
   const { t } = useTranslation()
   const view = useCodexRealtimeViewStore((state) => state.sessions[sessionId]?.view ?? 'realtime')
   const hasTimeline = useCodexRealtimeViewStore((state) => state.sessions[sessionId]?.hasTimeline ?? false)
   const setView = useCodexRealtimeViewStore((state) => state.setView)
+  useEffect(() => {
+    if (!enabled || !sessionId) return
+    window.app?.trace?.('realtime.view', 'toggle', { visible: hasTimeline, view }, sessionId)
+  }, [enabled, hasTimeline, sessionId, view])
   if (!enabled || !sessionId || !hasTimeline) return null
 
   const showingRealtime = view === 'realtime'
   const label = t(showingRealtime
-    ? 'chat.realtimeVoice.showDebugThread'
+    ? 'chat.realtimeVoice.showThread'
     : 'chat.realtimeVoice.showTimeline')
   return (
     <IconButton

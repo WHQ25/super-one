@@ -1153,6 +1153,12 @@ export function ChatInput() {
       const retryTarget = sessionScope ?? (activeProject && displayedSessionId ? { projectPath: activeProject, sessionId: displayedSessionId } : undefined)
       const { segments, mentions: editorMentions, attachments: sentAttachments } = serializeAndClear()
       const fullText = segments.flatMap((s) => ('attachmentId' in s ? [] : [s.text])).join('\n')
+      // A typed turn never enters the voice timeline, so a composer shown under the
+      // voice view (only possible between calls) follows its turn into the thread.
+      if (displayedSessionId && activeProviderForResources === 'codex' && !realtimeVoiceEngaged) {
+        const realtime = useCodexRealtimeViewStore.getState()
+        if (realtime.sessions[displayedSessionId]?.view === 'realtime') realtime.setView(displayedSessionId, 'thread')
+      }
       // Pass the mosaic tile (or mini-window) scope so the turn lands on this pane's
       // session even when project-active still points at a sibling tile mid-switch.
       // Catch so transport/IPC failures are not silent unhandled rejections.
@@ -1169,7 +1175,7 @@ export function ChatInput() {
         }
         console.error('[ChatInput] sendMessage failed:', err)
       })
-    }, [goalCapability, goalComposing, goalActions, enterGoalCompose, t, canSend, sendMessage, serializeAndClear, sessionScope, text, draftJson, activeProject, displayedSessionId])
+    }, [goalCapability, goalComposing, goalActions, enterGoalCompose, t, canSend, sendMessage, serializeAndClear, sessionScope, text, draftJson, activeProject, displayedSessionId, activeProviderForResources, realtimeVoiceEngaged])
 
     const handleKeyDownCore = useCallback(
       (e: KeyboardEvent | React.KeyboardEvent): boolean => {

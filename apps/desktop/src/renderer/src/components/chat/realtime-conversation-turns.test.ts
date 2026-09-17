@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ChatMessage, RealtimeTimelineSegment } from '@superone/shared/agent-types'
+import type { AgentStatus, ChatMessage, RealtimeTimelineSegment } from '@superone/shared/agent-types'
 import { buildRealtimeConversationTurns } from './realtime-conversation-turns'
 import { buildRealtimeTranscriptLayout, mapRealtimeTurnActivities } from './realtime-turn-activities'
 
@@ -90,6 +90,21 @@ describe('realtime conversation turns', () => {
     expect(activities.get('user-2')?.status).toBe('needs-decision')
   })
 
+  it.each(['__compact__:auto:900', '__turn_meta__:{"kind":"summary","text":"Still working"}'])(
+    'does not treat the system marker %s as a new conversation turn', (text) => {
+      const turns = buildRealtimeConversationTurns([segment('voice-user', 'user', 10)])
+      const marker: ChatMessage = {
+        ...normal('marker', 'assistant', 30), providerId: 'system', content: [{ type: 'text', text }],
+      }
+      const messages = [work('voice-work', 'voice-turn', 20), marker]
+
+      expect(mapRealtimeTurnActivities({ turns, messages, sessionStatus: 'background', needsDecision: false })
+        .get('voice-user')?.status).toBe('working')
+      expect(mapRealtimeTurnActivities({ turns, messages, sessionStatus: 'streaming', needsDecision: true })
+        .get('voice-user')?.status).toBe('needs-decision')
+    },
+  )
+
   it('renders newer voice turns before an earlier activity that is still working', () => {
     const turns = buildRealtimeConversationTurns([
       segment('user-1', 'user', 10),
@@ -111,47 +126,62 @@ describe('realtime conversation turns', () => {
     ])
   })
 
-  it('keeps ordinary Codex turns around the voice portion of a mixed thread', () => {
+  it.each<[AgentStatus, boolean]>([
+    ['streaming', false],
+    ['background', false],
+    ['streaming', true],
+    ['error', false],
+    ['idle', false],
+  ])('does not apply a later text turn\'s %s status (decision: %s) to completed voice work', (sessionStatus, needsDecision) => {
     const turns = buildRealtimeConversationTurns([
       segment('voice-user', 'user', 10),
       segment('voice-assistant', 'assistant', 15),
     ])
+    // Sending the user row alone must detach session-wide status from the old
+    // detail, even before the new assistant has started producing a response.
     const messages = [
-      normal('typed-before-user', 'user', 1),
-      normal('typed-before-assistant', 'assistant', 2),
-      work('voice-work', 'turn-a', 20),
+      work('voice-work', 'voice-turn', 20),
       normal('typed-after-user', 'user', 30),
-      normal('typed-after-assistant', 'assistant', 31),
     ]
-    const activities = mapRealtimeTurnActivities({
-      turns,
-      messages,
-      sessionStatus: 'idle',
-      needsDecision: false,
-    })
+    const activities = mapRealtimeTurnActivities({ turns, messages, sessionStatus, needsDecision })
 
-    expect(buildRealtimeTranscriptLayout(turns, activities, messages)).toEqual([
-      { kind: 'message', messageId: 'typed-before-user' },
-      { kind: 'message', messageId: 'typed-before-assistant' },
+    expect(activities.get('voice-user')?.status).toBe('completed')
+    expect(activities.get('voice-user')?.isTail).toBe(false)
+    // Typed turns never enter the voice timeline; they belong to the thread view.
+    expect(buildRealtimeTranscriptLayout(turns, activities)).toEqual([
       { kind: 'voice', turnId: 'voice-user' },
       { kind: 'activity', turnId: 'voice-user' },
-      { kind: 'message', messageId: 'typed-after-user' },
-      { kind: 'message', messageId: 'typed-after-assistant' },
     ])
   })
 
-  it('uses timestamps to keep unpositioned local user rows around a new voice call', () => {
-    const turns = buildRealtimeConversationTurns([{
-      ...segment('voice-user', 'user', 10),
-      startedAtMs: 2_000,
-    }])
-    const before = { ...normal('before', 'user', 1), createdAt: new Date(1_000).toISOString(), metadata: undefined }
-    const after = { ...normal('after', 'user', 2), createdAt: new Date(3_000).toISOString(), metadata: undefined }
+  it('exposes what the card needs: opening time while working, plan once it settles', () => {
+    const turns = buildRealtimeConversationTurns([segment('voice-user', 'user', 10)])
+    const running = { ...work('running', 'turn-a', 20), status: 'streaming' as const, createdAt: '2026-09-17T00:00:00.000Z' }
+    const working = mapRealtimeTurnActivities({
+      turns, messages: [running], sessionStatus: 'streaming', needsDecision: false,
+    }).get('voice-user')
+    expect(working?.status).toBe('working')
+    expect(working?.workingSince).toBe('2026-09-17T00:00:00.000Z')
+    expect(working?.plan).toBeNull()
 
-    expect(buildRealtimeTranscriptLayout(turns, new Map(), [before, after])).toEqual([
-      { kind: 'message', messageId: 'before' },
-      { kind: 'voice', turnId: 'voice-user' },
-      { kind: 'message', messageId: 'after' },
-    ])
+    const planned: ChatMessage = {
+      ...work('planned', 'turn-a', 20),
+      metadata: {
+        codex: {
+          threadId: 'thread-1',
+          turnId: 'turn-a',
+          usage: null,
+          items: [{ id: 'plan-1', type: 'plan', text: '1. Do it' }],
+        },
+        codexTimeline: { provenance: 'realtime-delegated', turnId: 'turn-a', localOrder: 20 },
+      },
+    }
+    const settled = mapRealtimeTurnActivities({
+      turns, messages: [planned], sessionStatus: 'idle', needsDecision: false,
+    }).get('voice-user')
+    expect(settled?.status).toBe('completed')
+    expect(settled?.workingSince).toBeNull()
+    expect(settled?.isTail).toBe(true)
+    expect(settled?.plan).toEqual({ text: '1. Do it', approval: null })
   })
 })

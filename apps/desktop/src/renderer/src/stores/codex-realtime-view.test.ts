@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { hydrateCodexRealtimeTimeline, useCodexRealtimeViewStore } from './codex-realtime-view'
+import { hydrateCodexRealtimeTimeline, resetCodexRealtimeHydrationForTests, useCodexRealtimeViewStore } from './codex-realtime-view'
 
 function liveTranscript(sessionId: string): { role: string; text: string }[] {
   return (useCodexRealtimeViewStore.getState().sessions[sessionId]?.liveItems ?? [])
@@ -11,6 +11,7 @@ function liveTranscript(sessionId: string): { role: string; text: string }[] {
 describe('codex realtime view store', () => {
   beforeEach(() => {
     useCodexRealtimeViewStore.setState({ sessions: {} })
+    resetCodexRealtimeHydrationForTests()
   })
 
   it('keeps a loaded timeline on screen while a remount revalidates it', () => {

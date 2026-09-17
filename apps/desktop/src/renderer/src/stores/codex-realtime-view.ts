@@ -10,6 +10,18 @@ import { mergePendingRealtimeTimelineSegments } from '@superone/shared/realtime-
 export type CodexConversationView = 'thread' | 'realtime'
 
 /**
+ * A cross-view navigation request keyed on the backing Codex turn: the thread view
+ * scrolls to that turn's first row, the voice view to the spoken turn whose
+ * delegation range contains it. `messageId` is the thread-side fallback for a live
+ * turn Codex has not numbered yet.
+ */
+export interface CodexRealtimeJumpTarget {
+  view: CodexConversationView
+  turnId?: string
+  messageId?: string
+}
+
+/**
  * One transcript item of the running call. Codex opens a separate item per speaker
  * the moment they start, so the two roles stream into two buffers and the array
  * order is the order speech began — not the order transcription happened to finish.
@@ -44,6 +56,8 @@ export interface CodexRealtimeSessionViewState {
    * exclusive branches remount the harness picker on the way through.
    */
   starting: boolean
+  /** Set by `jumpTo`; the target view consumes and clears it once it has scrolled. */
+  pendingJump: CodexRealtimeJumpTarget | null
 }
 
 export const EMPTY_CODEX_REALTIME_SESSION_VIEW: CodexRealtimeSessionViewState = {
@@ -57,6 +71,7 @@ export const EMPTY_CODEX_REALTIME_SESSION_VIEW: CodexRealtimeSessionViewState = 
   hasTimeline: false,
   nextLocalOrder: 1,
   starting: false,
+  pendingJump: null,
 }
 
 export type CodexRealtimeTranscriptItem = Omit<CodexRealtimeLiveItem, 'done'>
@@ -64,6 +79,8 @@ export type CodexRealtimeTranscriptItem = Omit<CodexRealtimeLiveItem, 'done'>
 interface CodexRealtimeViewStore {
   sessions: Record<string, CodexRealtimeSessionViewState>
   setView: (sessionId: string, view: CodexConversationView) => void
+  jumpTo: (sessionId: string, target: CodexRealtimeJumpTarget) => void
+  clearJump: (sessionId: string) => void
   setTimelineLoading: (sessionId: string) => void
   setTimelineError: (sessionId: string) => void
   setTimeline: (sessionId: string, timeline: RealtimeTimelineResult) => void
@@ -104,6 +121,17 @@ export const useCodexRealtimeViewStore = create<CodexRealtimeViewStore>((set) =>
     const current = sessionState(state.sessions, sessionId)
     if (current.view === view) return state
     return { sessions: { ...state.sessions, [sessionId]: { ...current, view } } }
+  }),
+
+  jumpTo: (sessionId, target) => set((state) => {
+    const current = sessionState(state.sessions, sessionId)
+    return { sessions: { ...state.sessions, [sessionId]: { ...current, view: target.view, pendingJump: target } } }
+  }),
+
+  clearJump: (sessionId) => set((state) => {
+    const current = sessionState(state.sessions, sessionId)
+    if (current.pendingJump === null) return state
+    return { sessions: { ...state.sessions, [sessionId]: { ...current, pendingJump: null } } }
   }),
 
   setTimelineLoading: (sessionId) => set((state) => {
@@ -272,27 +300,52 @@ function applyTimeline(sessionId: string, timeline: RealtimeTimelineResult): voi
   useCodexRealtimeViewStore.getState().setTimeline(sessionId, timeline)
 }
 
+function traceHydration(sessionId: string, step: string, data: Record<string, unknown> = {}): void {
+  window.app?.trace?.('realtime.view', step, data, sessionId)
+}
+
+/** Sessions whose local snapshot this renderer already looked for. */
+const localRestores = new Set<string>()
+
+/**
+ * Restore the local snapshot alone. It is a SQLite read keyed by our own session
+ * id, so it needs neither the backing thread nor a running backend — which is why
+ * it runs for every Codex session on screen, and why a session that once held a
+ * call keeps its voice view (and the header toggle) after a restart even before
+ * the provider copy is reachable.
+ */
+export async function restoreLocalCodexRealtimeTimeline(sessionId: string): Promise<boolean> {
+  if (localRestores.has(sessionId)) return false
+  localRestores.add(sessionId)
+  try {
+    const local = await window.agent.loadRealtimeTimeline(sessionId)
+    traceHydration(sessionId, 'local', { found: local !== null, hasTimeline: local?.hasTimeline ?? null, segments: local?.segments.length ?? 0 })
+    if (!local) return false
+    applyTimeline(sessionId, local)
+    return true
+  } catch (error) {
+    // A missing/corrupt local snapshot falls through to the provider copy.
+    traceHydration(sessionId, 'local_error', { error: error instanceof Error ? error.message : String(error) })
+    localRestores.delete(sessionId)
+    return false
+  }
+}
+
 /** Load the local snapshot first, then reconcile it with Codex in the background. */
 export function hydrateCodexRealtimeTimeline(projectPath: string, sessionId: string): Promise<void> {
   const existing = timelineHydrations.get(sessionId)
   if (existing) return existing
 
   useCodexRealtimeViewStore.getState().setTimelineLoading(sessionId)
-  let restoredLocal = false
   const hydration = (async () => {
+    const restoredLocal = await restoreLocalCodexRealtimeTimeline(sessionId)
+      || useCodexRealtimeViewStore.getState().sessions[sessionId]?.hasTimeline === true
     try {
-      const local = await window.agent.loadRealtimeTimeline(sessionId)
-      if (local) {
-        restoredLocal = true
-        applyTimeline(sessionId, local)
-      }
-    } catch {
-      // A missing/corrupt local snapshot falls through to the provider copy.
-    }
-
-    try {
-      applyTimeline(sessionId, await window.agent.getRealtimeTimeline(projectPath, sessionId))
-    } catch {
+      const timeline = await window.agent.getRealtimeTimeline(projectPath, sessionId)
+      traceHydration(sessionId, 'provider', { hasTimeline: timeline.hasTimeline, segments: timeline.segments.length })
+      applyTimeline(sessionId, timeline)
+    } catch (error) {
+      traceHydration(sessionId, 'provider_error', { restoredLocal, error: error instanceof Error ? error.message : String(error) })
       if (!restoredLocal) useCodexRealtimeViewStore.getState().setTimelineError(sessionId)
     }
   })().finally(() => {
@@ -300,6 +353,12 @@ export function hydrateCodexRealtimeTimeline(projectPath: string, sessionId: str
   })
   timelineHydrations.set(sessionId, hydration)
   return hydration
+}
+
+/** Test seam. */
+export function resetCodexRealtimeHydrationForTests(): void {
+  localRestores.clear()
+  timelineHydrations.clear()
 }
 
 export async function refreshCodexRealtimeTimeline(projectPath: string, sessionId: string): Promise<void> {

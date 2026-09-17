@@ -2,60 +2,54 @@ import { Fragment, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import type { AgentStatus, ChatMessage } from '@superone/shared/agent-types'
+import { suppressRealtimeStartupEcho } from '@superone/shared/realtime-transcript'
 import {
   EMPTY_CODEX_REALTIME_SESSION_VIEW,
-  hydrateCodexRealtimeTimeline,
+  restoreLocalCodexRealtimeTimeline,
   useCodexRealtimeViewStore,
 } from '@/stores/codex-realtime-view'
 import { realtimeSegmentsToMessage, selectRealtimeTranscript } from './codex-realtime-messages'
 import { buildRealtimeConversationTurns } from './realtime-conversation-turns'
 import { buildRealtimeTranscriptLayout, mapRealtimeTurnActivities } from './realtime-turn-activities'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
-import { ChatMessage as ChatMessageView, findLastAssistantMessageId } from './ChatMessage'
-import { PlanApprovalPrompt } from './PlanApprovalPrompt'
-import { RealtimeStartingSurface } from './RealtimeStartingSurface'
+import { ChatMessage as ChatMessageView } from './ChatMessage'
+import { RealtimeDelegationRow } from './RealtimeDelegationRow'
 
 interface CodexRealtimeTranscriptProps {
-  projectPath: string
   sessionId: string
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
   liquidGlass: boolean
+  /** The backing thread; only its delegated ranges surface here, as cards. */
   threadMessages: readonly ChatMessage[]
   sessionStatus: AgentStatus
   needsDecision: boolean
 }
 
-/** Render voice transcript and Codex work through the ordinary turn UI. */
-function TranscriptMessage({
+/** Spoken rows go through the ordinary bubble so voice reads like the rest of the app. */
+function SpokenMessage({
   message,
   sessionStatus,
-  isLastAssistant = false,
-  hideCopyActions = false,
-  collapseEntireCodexTurn = false,
+  voiceTurnId,
 }: {
   message: ChatMessage
   sessionStatus: AgentStatus
-  isLastAssistant?: boolean
-  hideCopyActions?: boolean
-  collapseEntireCodexTurn?: boolean
+  /** Set on a turn's first row; the anchor cross-view jumps scroll to. */
+  voiceTurnId?: string
 }) {
   return (
-    <div data-message-id={message.id} className="chat-message-wrapper">
-      {/* Voice transcript stays read-only; delegated Codex messages keep their normal
-          compact process disclosure and actions. */}
-      <ChatMessageView
-        message={message}
-        sessionStatus={sessionStatus}
-        isLastAssistant={isLastAssistant}
-        hideCopyActions={hideCopyActions}
-        collapseEntireCodexTurn={collapseEntireCodexTurn}
-      />
+    <div data-message-id={message.id} data-voice-turn-id={voiceTurnId} className="chat-message-wrapper">
+      <ChatMessageView message={message} sessionStatus={sessionStatus} isLastAssistant={false} hideCopyActions />
     </div>
   )
 }
 
+/**
+ * The voice view: spoken turns in the order speech began, each followed by a status
+ * line for the Codex work it delegated. Nothing from the backing thread renders
+ * inline — typed turns, tool output and the delegation prompts all belong to the
+ * thread view, and the status line is the way there.
+ */
 export function CodexRealtimeTranscript({
-  projectPath,
   sessionId,
   scrollViewportRef,
   liquidGlass,
@@ -67,11 +61,18 @@ export function CodexRealtimeTranscript({
   const realtime = useCodexRealtimeViewStore(
     (state) => state.sessions[sessionId] ?? EMPTY_CODEX_REALTIME_SESSION_VIEW,
   )
+  const jumpTo = useCodexRealtimeViewStore((state) => state.jumpTo)
+  const clearJump = useCodexRealtimeViewStore((state) => state.clearJump)
+  // The provider reconcile is ChatContent's, gated on the thread id; this view only
+  // makes sure the local snapshot is in even when mounted on its own.
   useEffect(() => {
-    void hydrateCodexRealtimeTimeline(projectPath, sessionId)
-  }, [projectPath, sessionId])
+    void restoreLocalCodexRealtimeTimeline(sessionId)
+  }, [sessionId])
 
-  const transcript = useMemo(() => selectRealtimeTranscript(realtime), [realtime])
+  const transcript = useMemo(
+    () => suppressRealtimeStartupEcho(threadMessages, selectRealtimeTranscript(realtime)),
+    [realtime, threadMessages],
+  )
   const turns = useMemo(() => buildRealtimeConversationTurns(transcript), [transcript])
   // Realtime splits one spoken reply across several items; a turn's whole assistant run
   // becomes a single markdown block.
@@ -85,96 +86,74 @@ export function CodexRealtimeTranscript({
     sessionStatus,
     needsDecision,
   }), [needsDecision, sessionStatus, threadMessages, turns])
-  const layout = useMemo(
-    () => buildRealtimeTranscriptLayout(turns, activities, threadMessages),
-    [activities, threadMessages, turns],
-  )
-  const messagesById = useMemo(
-    () => new Map(threadMessages.map((message) => [message.id, message])),
-    [threadMessages],
-  )
-  const lastAssistantMessageId = findLastAssistantMessageId(threadMessages)
+  const layout = useMemo(() => buildRealtimeTranscriptLayout(turns, activities), [activities, turns])
+
+  // A jump from the thread view lands on the spoken turn whose delegation range
+  // contains the Codex turn. Wait for the row to exist: the timeline may still be
+  // hydrating when the view switches.
+  const pendingJump = realtime.pendingJump
+  useEffect(() => {
+    if (!pendingJump || pendingJump.view !== 'realtime') return
+    const { turnId, messageId } = pendingJump
+    const voiceTurnId = [...activities.entries()].find(([, activity]) => (
+      (turnId !== undefined && activity.turnIds.includes(turnId))
+      || (messageId !== undefined && activity.messageIds.includes(messageId))
+    ))?.[0]
+    if (!voiceTurnId) return
+    const viewport = scrollViewportRef.current
+    const target = viewport?.querySelector(`[data-voice-turn-id="${CSS.escape(voiceTurnId)}"]`)
+    if (!target) return
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    clearJump(sessionId)
+  }, [activities, clearJump, pendingJump, scrollViewportRef, sessionId])
+
   const loading = realtime.loadStatus === 'idle' || realtime.loadStatus === 'loading'
-  const live = realtime.realtimeSessionId !== null || realtime.starting
-  const emptyKey = live
-    ? 'chat.realtimeVoice.waiting'
-    : realtime.loadStatus === 'error'
-      ? 'chat.realtimeVoice.timelineLoadFailed'
-      : loading
-        ? 'common.loading'
-        : 'chat.realtimeVoice.emptyTimeline'
-  // Vertical centring needs a parent with a definite height, which a ScrollArea's
-  // auto-sized content column is not. With nothing to scroll there is nothing to
-  // give up by replacing it outright.
-  if (layout.length === 0 && realtime.starting) {
-    return (
-      <div className="relative min-w-0 flex-1 overflow-hidden">
-        <RealtimeStartingSurface />
-      </div>
-    )
-  }
+  // The composer's voice mark carries the connecting state; the transcript only
+  // needs a line that does not promise speech before the channel is up.
+  const emptyKey = realtime.starting
+    ? 'chat.realtimeVoice.connecting'
+    : realtime.realtimeSessionId !== null
+      ? 'chat.realtimeVoice.waiting'
+      : realtime.loadStatus === 'error'
+        ? 'chat.realtimeVoice.timelineLoadFailed'
+        : loading
+          ? 'common.loading'
+          : 'chat.realtimeVoice.emptyTimeline'
   return (
     <div className="relative min-w-0 flex-1 overflow-hidden">
       <ScrollArea key={sessionId} className="chat-scroll-area h-full min-w-0" viewportRef={scrollViewportRef}>
         <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
           {layout.map((row) => {
-            if (row.kind === 'message') {
-              const message = messagesById.get(row.messageId)
-              return message ? (
-                <TranscriptMessage
-                  key={message.id}
-                  message={message}
-                  sessionStatus={sessionStatus}
-                  isLastAssistant={message.id === lastAssistantMessageId}
-                />
-              ) : null
-            }
             if (row.kind === 'activity') {
               const activity = activities.get(row.turnId)
-              const activityMessages = activity
-                ? threadMessages.filter((message) => activity.messageIds.includes(message.id))
-                : []
+              if (!activity) return null
               return (
-                <Fragment key={`activity-${row.turnId}`}>
-                  {activityMessages.map((message) => (
-                    <TranscriptMessage
-                      key={message.id}
-                      message={message}
-                      sessionStatus={sessionStatus}
-                      isLastAssistant={message.id === lastAssistantMessageId}
-                      collapseEntireCodexTurn
-                    />
-                  ))}
-                  {activity?.status === 'needs-decision' && <PlanApprovalPrompt />}
-                </Fragment>
+                <div key={`activity-${row.turnId}`} className="my-0.5">
+                  <RealtimeDelegationRow
+                    activity={activity}
+                    onOpen={() => jumpTo(sessionId, {
+                      view: 'thread',
+                      ...(activity.turnIds[0] !== undefined ? { turnId: activity.turnIds[0] } : {}),
+                      ...(activity.messageIds[0] !== undefined ? { messageId: activity.messageIds[0] } : {}),
+                    })}
+                  />
+                </div>
               )
             }
             const { user, assistant } = spoken.get(row.turnId) ?? { user: null, assistant: null }
             return (
               <Fragment key={`voice-${row.turnId}`}>
-                {user && (
-                  <TranscriptMessage
-                    message={user}
-                    sessionStatus={sessionStatus}
-                    hideCopyActions
-                  />
-                )}
+                {user && <SpokenMessage message={user} sessionStatus={sessionStatus} voiceTurnId={row.turnId} />}
                 {assistant && (
-                  <TranscriptMessage
+                  <SpokenMessage
                     message={assistant}
                     sessionStatus={sessionStatus}
-                    hideCopyActions
+                    voiceTurnId={user ? undefined : row.turnId}
                   />
                 )}
               </Fragment>
             )
           })}
-
-          {realtime.starting && layout.length > 0 && (
-            <div className="h-48">
-              <RealtimeStartingSurface />
-            </div>
-          )}
 
           {layout.length === 0 && (
             <p className="py-16 text-center text-sm text-muted-foreground">{t(emptyKey)}</p>

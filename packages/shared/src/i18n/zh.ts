@@ -1508,7 +1508,7 @@ export const zh: Messages = {
       waiting: '正在等待语音输入…',
       connecting: '正在接通语音…',
       showConversation: '显示对话',
-      showDebugThread: '显示后台 Codex Thread（开发者）',
+      showThread: '查看 Codex 线程',
       showTimeline: '显示语音时间线',
       emptyTimeline: '这个 thread 还没有语音转写。',
       timelineLoadFailed: '无法加载语音时间线。',

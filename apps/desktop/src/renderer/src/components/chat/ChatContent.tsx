@@ -27,9 +27,10 @@ const WorkflowFullView = lazy(() => import('./WorkflowFullView').then((m) => ({ 
 import { WorkflowNavigationContext, type WorkflowViewState } from './workflow-navigation-context'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { ChatScrollIndicator } from './ChatScrollIndicator'
-import { isRealtimeConversationTail, mergeCodexThreadMessages } from './codex-realtime-messages'
+import { mergeCodexThreadMessages } from './codex-realtime-messages'
 import { CodexRealtimeTranscript } from './CodexRealtimeTranscript'
-import { RealtimeStartingSurface } from './RealtimeStartingSurface'
+import { RealtimeCallComposer } from './RealtimeCallComposer'
+import { ComposerSwitch } from './ComposerSwitch'
 import { extractTurnOutline } from './turn-outline'
 import { ChatRootContext } from './is-focus-in-chat'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
@@ -38,8 +39,10 @@ import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import {
   EMPTY_CODEX_REALTIME_SESSION_VIEW,
   hydrateCodexRealtimeTimeline,
+  restoreLocalCodexRealtimeTimeline,
   useCodexRealtimeViewStore,
 } from '@/stores/codex-realtime-view'
+import { useRealtimeCallStore } from '@/stores/realtime-call'
 
 interface ChatContentProps {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
@@ -153,10 +156,10 @@ function ChatTranscript({
   const canSteerQueueSoon = canSteerQueue && HARNESS_CAPABILITIES[queueProvider].supportsQueuedSteerSoon
   const isLocalCodexQueue = isLocalQueue && queueProvider === 'codex'
   const canStartCodexQueue = isLocalCodexQueue && sessionStatus !== 'streaming'
-  // ChatTranscript doubles as the dev-only backing-thread view (see `showRealtime`).
-  // That view exists to show the machinery, so it keeps the delegation prompts the
-  // voice view hides.
-  const showsBackingThread = import.meta.env.DEV && hasRealtimeTimeline && realtime.view === 'thread'
+  // ChatTranscript doubles as the backing-thread view (see `showRealtime`). That view
+  // exists to show exactly what Codex was asked to do, so it keeps the delegation
+  // prompts the voice view hides.
+  const showsBackingThread = hasRealtimeTimeline && realtime.view === 'thread'
   const displayMessages = useMemo(
     () => (queueProvider === 'codex' && hasRealtimeTimeline
       ? mergeCodexThreadMessages(messages, realtime, { keepDelegationPrompts: showsBackingThread })
@@ -268,6 +271,22 @@ function ChatTranscript({
     setJumpNonce((n) => n + 1)
   }, [stopAutoScroll])
 
+  // A jump from the voice view names the backing Codex turn; land on its first row
+  // (the delegation prompt when the timeline has it, the assistant turn otherwise).
+  const pendingJump = realtime.pendingJump
+  const clearJump = useCodexRealtimeViewStore((state) => state.clearJump)
+  useEffect(() => {
+    if (!pendingJump || pendingJump.view !== 'thread' || !displayedSessionId) return
+    const { turnId, messageId } = pendingJump
+    const target = displayMessages.find((message) => (
+      turnId !== undefined
+      && (message.metadata?.codexTimeline?.turnId ?? message.metadata?.codex?.turnId) === turnId
+    )) ?? displayMessages.find((message) => message.id === messageId)
+    if (!target) return
+    jumpToMessage(target.id)
+    clearJump(displayedSessionId)
+  }, [clearJump, displayMessages, displayedSessionId, jumpToMessage, pendingJump])
+
   useEffect(() => {
     const id = pendingScrollIdRef.current
     if (!id) return
@@ -299,10 +318,10 @@ function ChatTranscript({
           // would yank the parent chat out from under the panel.
           ? <SideChatEmptyState />
           // A voice call negotiating on a session with no timeline yet would
-          // otherwise land on the harness picker, which reads as "nothing is
-          // happening" at exactly the moment something is.
+          // otherwise land on the harness picker; the composer's voice mark is
+          // already saying "connecting", so the transcript just stays quiet.
           : realtime.starting
-            ? <RealtimeStartingSurface />
+            ? <div data-testid="realtime-connecting-blank" className="flex-1" />
             : awaitingRealtimeTimeline
               ? <p className="py-16 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
               // Draft mode is a prop, not a sibling component: autosave stamps
@@ -463,12 +482,26 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     && projectPath
     && isCodexSession
     && realtime.hasTimeline
-    && (!import.meta.env.DEV || realtime.view === 'realtime'),
+    && realtime.view === 'realtime',
   )
-  const realtimeAtTail = showRealtime && isRealtimeConversationTail(threadMessages, realtime)
+  // The composer follows the call, not the view: voice has no text input while a
+  // call runs, and once it ends the ordinary composer (with its start-call entry)
+  // returns. The backing-thread view keeps the ordinary composer even mid-call so
+  // typed input can still steer the delegated turn.
+  const callEngaged = useRealtimeCallStore((store) => (
+    store.sessionId !== null && store.sessionId === displayedSessionId && store.state !== 'idle'
+  ))
+  const showRealtimeComposer = showRealtime && callEngaged
   const needsDecision = (pendingPermissions?.length ?? 0) > 0
     || pendingQuestion != null
     || pendingPlanApproval != null
+  // The local snapshot needs no backing thread, so every Codex session on screen
+  // restores it; only the provider reconcile waits for the thread id, because
+  // reaching Codex would otherwise start a backend just to read history.
+  useEffect(() => {
+    if (!displayedSessionId || !isCodexSession) return
+    void restoreLocalCodexRealtimeTimeline(displayedSessionId)
+  }, [displayedSessionId, isCodexSession])
   useEffect(() => {
     if (
       !displayedSessionId
@@ -610,12 +643,12 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             }
           }}
         />
-      ) : pendingPlanApproval && !realtimeAtTail ? (
+      ) : pendingPlanApproval ? (
         <PlanApprovalPrompt />
       ) : (
         <>
           {/* The fade belongs to arriving at a different session. Switching between
-              the unified voice feed and the dev-only raw thread keeps the frame. */}
+              the voice timeline and the backing thread keeps the frame. */}
           <div
             key={displayedSessionId ?? 'default'}
             data-transcript-frame=""
@@ -623,7 +656,6 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
           >
             {showRealtime ? (
               <CodexRealtimeTranscript
-                projectPath={projectPath!}
                 sessionId={displayedSessionId!}
                 scrollViewportRef={scrollViewportRef}
                 liquidGlass={liquidGlass}
@@ -641,11 +673,12 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
               />
             )}
           </div>
-          <div className="mx-auto w-full min-w-0 max-w-3xl">
-            <ChatComposerShell
-              showTodoPopup={!realtimeAtTail}
-            />
-          </div>
+          <ComposerSwitch
+            className="mx-auto w-full min-w-0 max-w-3xl"
+            kind={showRealtimeComposer ? 'voice' : 'text'}
+            alignTo="text"
+            render={(kind) => (kind === 'voice' ? <RealtimeCallComposer /> : <ChatComposerShell showTodoPopup />)}
+          />
         </>
       )}
       </ChatRootContext.Provider>

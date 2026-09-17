@@ -684,9 +684,7 @@ function App(): React.JSX.Element {
           {/* Mini-app controls */}
           <div className="mr-3 flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <MiniAppMediaIndicator />
-            {import.meta.env.DEV && (
-              <CodexConversationViewToggle sessionId={sessionId} enabled={isCodexSession} />
-            )}
+            <CodexConversationViewToggle sessionId={sessionId} enabled={isCodexSession} />
             {(() => {
               const terminalButton = (
                 <TooltipProvider delayDuration={300}>

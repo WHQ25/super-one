@@ -1422,7 +1422,7 @@ export type Messages = {
       waiting: string
       connecting: string
       showConversation: string
-      showDebugThread: string
+      showThread: string
       showTimeline: string
       stopping: string
       emptyTimeline: string
@@ -5272,7 +5272,7 @@ export const en: Messages = {
       waiting: 'Listening for speech…',
       connecting: 'Connecting voice…',
       showConversation: 'Show conversation',
-      showDebugThread: 'Show backing Codex thread (developer)',
+      showThread: 'Show Codex thread',
       showTimeline: 'Show voice timeline',
       emptyTimeline: 'No voice transcript in this thread yet.',
       timelineLoadFailed: 'Could not load the voice timeline.',

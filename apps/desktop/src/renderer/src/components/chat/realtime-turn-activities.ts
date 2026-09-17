@@ -1,78 +1,62 @@
-import type { AgentStatus, ChatMessage, RealtimeTimelineSegment } from '@superone/shared/agent-types'
+import type {
+  AgentStatus,
+  ChatMessage,
+  CodexPlanApprovalState,
+  RealtimeTimelineSegment,
+} from '@superone/shared/agent-types'
+import { transcriptRow } from '@superone/chat-view/transcript-rows'
 import type { RealtimeConversationTurn } from './realtime-conversation-turns'
 
 export type RealtimeTurnActivityStatus = 'working' | 'completed' | 'needs-decision' | 'failed'
 export type RealtimeTurnActivityKind = 'codex' | 'workflow' | 'command' | 'files' | 'search'
 
+/** The plan a delegated turn ended on, so the voice view can answer it in place. */
+export interface RealtimeTurnActivityPlan {
+  text: string
+  approval: CodexPlanApprovalState | null
+}
+
 export interface RealtimeTurnActivity {
   kind: RealtimeTurnActivityKind
   status: RealtimeTurnActivityStatus
   durationMs: number | null
+  /** ISO timestamp the running range opened at; null once it settles. */
+  workingSince: string | null
   messageIds: string[]
   turnIds: string[]
   summary: string | null
+  plan: RealtimeTurnActivityPlan | null
+  /** Whether the range is the session's latest turn and so owns its live status. */
+  isTail: boolean
 }
 
 export type RealtimeTranscriptLayoutRow =
   | { kind: 'voice'; turnId: string }
   | { kind: 'activity'; turnId: string }
-  | { kind: 'message'; messageId: string }
 
 /**
- * Keep unfinished delegated work at the live edge of the transcript. Realtime speech
- * can continue while that work runs, so pinning the activity to its originating voice
- * turn would make newer speech appear below an older, still-open detail block.
+ * The voice timeline is spoken turns only, each followed by the card for the Codex
+ * work it delegated. Unfinished work stays at the live edge: realtime speech can
+ * continue while that work runs, so pinning the card to its originating voice turn
+ * would make newer speech appear below an older, still-running card.
  */
 export function buildRealtimeTranscriptLayout(
   turns: readonly RealtimeConversationTurn[],
   activities: ReadonlyMap<string, RealtimeTurnActivity>,
-  messages: readonly ChatMessage[] = [],
 ): RealtimeTranscriptLayoutRow[] {
-  const blocks: Array<{
-    order: number | null
-    timestamp: number | null
-    rows: RealtimeTranscriptLayoutRow[]
-  }> = []
+  const rows: RealtimeTranscriptLayoutRow[] = []
   const trailing: RealtimeTranscriptLayoutRow[] = []
 
   for (const turn of turns) {
-    const rows: RealtimeTranscriptLayoutRow[] = [{ kind: 'voice', turnId: turn.id }]
+    rows.push({ kind: 'voice', turnId: turn.id })
     const activity = activities.get(turn.id)
-    if (activity) {
-      const row = { kind: 'activity', turnId: turn.id } as const
-      if (activity.status === 'working') trailing.push(row)
-      else rows.push(row)
-    }
-    const timestamps = [turn.user, ...turn.assistant]
-      .flatMap((segment) => segment?.startedAtMs === undefined ? [] : [segment.startedAtMs])
-    blocks.push({
-      order: turnStart(turn),
-      timestamp: timestamps.length > 0 ? Math.min(...timestamps) : null,
-      rows,
-    })
+    if (!activity) continue
+    const row = { kind: 'activity', turnId: turn.id } as const
+    if (activity.status === 'working') trailing.push(row)
+    else rows.push(row)
   }
 
-  for (const message of messages) {
-    if (message.metadata?.codexTimeline?.provenance === 'realtime-delegated') continue
-    blocks.push({
-      order: orderOfMessage(message),
-      timestamp: Number.isNaN(Date.parse(message.createdAt)) ? null : Date.parse(message.createdAt),
-      rows: [{ kind: 'message', messageId: message.id }],
-    })
-  }
-
-  // `Array#sort` is stable, so user/assistant rows sharing a Codex turn position
-  // retain the chronological order supplied by the provider timeline. Messages
-  // without provider order use timestamps while a locally observed voice segment
-  // still has one; truly unpositioned rows stay at the visible tail.
-  blocks.sort((left, right) => {
-    if (left.order !== null && right.order !== null) return left.order - right.order
-    if (left.timestamp !== null && right.timestamp !== null) return left.timestamp - right.timestamp
-    if (left.order === null && right.order !== null) return 1
-    if (left.order !== null && right.order === null) return -1
-    return 0
-  })
-  return [...blocks.flatMap((block) => block.rows), ...trailing]
+  return [...rows, ...trailing]
 }
 
 function orderOfSegment(segment: RealtimeTimelineSegment): number | null {
@@ -99,6 +83,14 @@ function activityKind(messages: readonly ChatMessage[]): RealtimeTurnActivityKin
   if (items.some((item) => item.type === 'file_change')) return 'files'
   if (items.some((item) => item.type === 'web_search')) return 'search'
   return 'codex'
+}
+
+function latestPlan(messages: readonly ChatMessage[]): RealtimeTurnActivityPlan | null {
+  const last = messages.at(-1)
+  const items = last?.metadata?.codex?.items ?? []
+  const plan = items.findLast((item) => item.type === 'plan')
+  if (!plan) return null
+  return { text: plan.text, approval: last?.metadata?.codex?.planApproval ?? null }
 }
 
 function messageSummary(messages: readonly ChatMessage[]): string | null {
@@ -131,6 +123,9 @@ export function mapRealtimeTurnActivities(input: {
   ))
   const starts = turns.map(turnStart)
   const result = new Map<string, RealtimeTurnActivity>()
+  // Compaction/summary rows are notifications, not a new turn taking ownership
+  // of the current session's status or pending decision.
+  const latestTurn = input.messages.findLast((message) => transcriptRow(message, input.messages).kind === 'turn')
 
   turns.forEach((turn, index) => {
     const start = starts[index]
@@ -141,7 +136,10 @@ export function mapRealtimeTurnActivities(input: {
       return order !== null && order >= start && (next === null || next === undefined || order < next)
     })
     if (messages.length === 0) return
-    const isTail = messages.at(-1) === delegated.at(-1)
+    // Session status belongs to the current thread turn, not the last voice task
+    // forever. A later typed user row already ends this range's ownership, even
+    // before its assistant response arrives.
+    const isTail = messages.at(-1) === latestTurn
     const failed = messages.some((message) => message.status === 'error')
     const working = messages.some((message) => message.status === 'streaming')
       || (isTail && (sessionStatus === 'streaming' || sessionStatus === 'background'))
@@ -153,16 +151,20 @@ export function mapRealtimeTurnActivities(input: {
           ? 'working'
           : 'completed'
     const durationMs = messages.reduce((total, message) => total + (message.metadata?.codex?.durationMs ?? 0), 0)
+    const openedAt = messages[0]?.createdAt
     result.set(turn.id, {
       kind: activityKind(messages),
       status,
       durationMs: durationMs > 0 ? durationMs : null,
+      workingSince: status === 'working' && openedAt && !Number.isNaN(Date.parse(openedAt)) ? openedAt : null,
       messageIds: messages.map((message) => message.id),
       turnIds: [...new Set(messages.flatMap((message) => {
         const turnId = message.metadata?.codexTimeline?.turnId ?? message.metadata?.codex?.turnId
         return turnId ? [turnId] : []
       }))],
       summary: messageSummary(messages),
+      plan: latestPlan(messages),
+      isTail,
     })
   })
   return result

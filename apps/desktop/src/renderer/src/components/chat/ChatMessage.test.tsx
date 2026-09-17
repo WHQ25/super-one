@@ -6,6 +6,7 @@ import type { ChatMessage as ChatMessageType } from '@superone/shared/agent-type
 import { ChatMessage, findLastAssistantMessageId, isRedundantTurnSummaryMarker } from './ChatMessage'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
+import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 
 vi.mock('./CodexTurnView', () => ({
   CodexTurnView: ({ isWorking }: { isWorking?: boolean }) => (
@@ -147,6 +148,54 @@ describe('ChatMessage goal bubble', () => {
     expect(screen.queryByText('Goal')).toBeNull()
     expect(container.querySelector('.lucide-goal')).toBeNull()
     expect(screen.getByText('/goal clear')).toBeInTheDocument()
+  })
+})
+
+describe('ChatMessage voice delegation bubble', () => {
+  const delegation: ChatMessageType = {
+    id: 'user-item-1',
+    role: 'user',
+    status: 'complete',
+    content: [{
+      type: 'text',
+      text: '<realtime_delegation>\n  <input>Check the diff &amp; report &lt;risks&gt;</input>\n'
+        + '  <transcript_delta>user: check it\nassistant: on it</transcript_delta>\n</realtime_delegation>',
+    }],
+    createdAt: new Date().toISOString(),
+    providerId: 'codex',
+    metadata: { codexTimeline: { provenance: 'realtime-delegated', turnId: 'turn-1' } },
+  }
+
+  beforeEach(() => {
+    useChatStore.setState({
+      activeProject: '/p',
+      projectSessions: {
+        '/p': { ...createDefaultProjectState(), _activeSessionId: 'sid-1', _sessions: { 'sid-1': createDefaultPerSessionState() } },
+      },
+    })
+  })
+  afterEach(() => {
+    useCodexRealtimeViewStore.setState({ sessions: {} })
+  })
+
+  it('shows the instruction under a Voice Delegation label that jumps to the spoken turn', () => {
+    const { container } = render(
+      <ChatMessage message={delegation} sessionStatus="idle" isLastAssistant={false} />,
+    )
+
+    expect(screen.getByText('Check the diff & report <risks>')).toBeInTheDocument()
+    expect(container.textContent).not.toContain('realtime_delegation')
+    expect(container.querySelector('.lucide-audio-lines')).not.toBeNull()
+    // Spoken context is folded until asked for.
+    expect(screen.queryByText('on it')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Transcript (2)' }))
+    expect(screen.getByText('on it')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Voice Delegation' }))
+    expect(useCodexRealtimeViewStore.getState().sessions['sid-1']).toMatchObject({
+      view: 'realtime',
+      pendingJump: { view: 'realtime', turnId: 'turn-1' },
+    })
   })
 })
 

@@ -26,6 +26,7 @@ import {
 } from './app-server-connection'
 import type { NotificationDispatcher, NotificationInbox } from './codex-notification-dispatcher'
 import type { CodexSession } from './codex-session'
+import { syncCodexThreadSelection } from './codex-thread-selection'
 import {
   deriveFinalResponse,
   mapThreadItemFromAppServer,
@@ -512,6 +513,7 @@ export async function startCodexRealtime(
     async ({ connection, threadId }) => {
       const dispatcher = session.notificationDispatcher
       if (!dispatcher) throw new Error('Codex notification dispatcher unavailable')
+      await syncCodexThreadSelection(connection, threadId, session)
       const inbox = dispatcher.registerRealtimeInbox(threadId)
       const turnInbox = dispatcher.registerRealtimeTurnInbox(threadId)
       const cancellation = { cancelled: false }

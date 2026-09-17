@@ -1,5 +1,5 @@
 import { codexAccountProviderId, CODEX_CLI_ACCOUNT_ID } from '@superone/shared/codex-accounts'
-import { mapCodexPermissionMode, resolveCodexBackendSelection } from './codex-backend-selection'
+import { applyCodexBackendSelection, mapCodexPermissionMode, resolveCodexBackendSelection, type CodexBackendSelectionPatch } from './codex-backend-selection'
 import type {
   AgentEvent,
   AskUserQuestionRequest,
@@ -29,6 +29,7 @@ import log from '../../logger'
 import { trace } from '../../agent/event-trace'
 import { recordCodexFromTurnUsage, recordCodexFromUsage } from '../../usage-stats-service'
 import type { CodexSession } from '../../codex/codex-session'
+import { syncCodexThreadSelection } from '../../codex/codex-thread-selection'
 import {
   createCodexSession,
   tearDownForkRuntime,
@@ -895,6 +896,12 @@ export class CodexBackend implements SessionBackend {
     const session = this.session
     const startOpts = this.startOpts
     if (!session || !startOpts) throw new Error('Codex realtime session is unavailable.')
+    // Voice bypasses send(), which normally applies the selection. Reapply after
+    // adopting a warm runtime so an old prewarm cannot override the current picker.
+    const selection = resolveCodexBackendSelection(startOpts)
+    session.model = selection.model
+    session.modelReasoningEffort = selection.reasoningEffort
+    session.permissionPreset = selection.permissionPreset
     let runningAssistantId: string | null = null
     let turnStartedAt = Date.now()
     const finalizeRealtimeTurn = (result: Pick<CodexRunResult, 'threadId' | 'turnId' | 'usage' | 'turnUsage'>, finalResponse?: string): void => {
@@ -1066,20 +1073,16 @@ export class CodexBackend implements SessionBackend {
     await this.setCodexSelection({ model })
   }
 
-  async setCodexSelection(selection: {
-    model?: string | null
-    reasoningEffort?: CodexReasoningEffort | null
-    serviceTier?: string | null
-  }): Promise<void> {
-    if (this.startOpts) {
-      if (selection.model !== undefined) this.startOpts.model = selection.model ?? undefined
-      if (selection.reasoningEffort !== undefined) this.startOpts.effort = selection.reasoningEffort ?? undefined
-      if (selection.serviceTier !== undefined) this.startOpts.serviceTier = selection.serviceTier
-    }
-    if (this.session) {
-      if (selection.model !== undefined) this.session.model = selection.model ?? undefined
-      if (selection.reasoningEffort !== undefined) this.session.modelReasoningEffort = selection.reasoningEffort ?? undefined
-      if (selection.serviceTier !== undefined) this.session.serviceTier = selection.serviceTier
+  async setCodexSelection(selection: CodexBackendSelectionPatch): Promise<void> {
+    applyCodexBackendSelection(this.startOpts, this.session, selection)
+    const session = this.session
+    if (!this.realtimeHandle || !session?.threadReady || !session.connectionHandle || !session.threadId) return
+    try {
+      await syncCodexThreadSelection(session.connectionHandle.connection, session.threadId, session)
+    } catch (error) {
+      // Picker broadcasts are fire-and-forget. Keep their defaults for the next
+      // start and report a failed live update without an unhandled rejection.
+      log.warn('[CodexBackend] realtime selection update failed: %s', error instanceof Error ? error.message : String(error))
     }
   }
 

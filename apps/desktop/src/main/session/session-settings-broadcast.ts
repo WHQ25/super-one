@@ -5,7 +5,7 @@ export function broadcastSessionSettings(
   patch: SessionSettingsPatch,
   target: {
     harnessId: string
-    setSelectedSettings: (settings: { model?: string; effort?: SendMessageRequest['effort'] | null }) => void
+    setSelectedSettings: (settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null }) => void
     setCodexSelection?: (selection: {
       model?: string | null
       reasoningEffort?: CodexReasoningEffort | null
@@ -16,6 +16,9 @@ export function broadcastSessionSettings(
   },
 ): void {
   if (!patch || Object.keys(patch).length === 0) return
+  if (patch.selectedCodexModel !== undefined) {
+    patch = { ...patch, selectedCodexModel: patch.selectedCodexModel?.trim() || null }
+  }
   target.mergeUiSettings(patch)
   const hasCodexSelection = target.harnessId === 'codex' && (
     patch.selectedCodexModel !== undefined
@@ -24,7 +27,7 @@ export function broadcastSessionSettings(
   )
   if (hasCodexSelection) {
     target.setSelectedSettings({
-      ...(patch.selectedCodexModel ? { model: patch.selectedCodexModel } : {}),
+      ...(patch.selectedCodexModel !== undefined ? { model: patch.selectedCodexModel } : {}),
       ...(patch.selectedCodexReasoningEffort !== undefined
         ? { effort: patch.selectedCodexReasoningEffort as SendMessageRequest['effort'] | null }
         : {}),

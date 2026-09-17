@@ -2,6 +2,8 @@
   "stable": {
     "packageName": "superone",
     "appId": "com.superone.app",
+    "macAppId": "com.superone.desktop",
+    "legacyMacAppId": "com.superone.app",
     "productName": "SuperOne",
     "artifactBaseName": "SuperOne",
     "executableName": "superone",
@@ -16,6 +18,8 @@
   "alpha": {
     "packageName": "superone-alpha",
     "appId": "com.superone.app.alpha",
+    "macAppId": "com.superone.desktop.alpha",
+    "legacyMacAppId": "com.superone.app.alpha",
     "productName": "SuperOne Alpha",
     "artifactBaseName": "SuperOne",
     "executableName": "superone-alpha",
@@ -30,6 +34,8 @@
   "dev": {
     "packageName": "superone-dev",
     "appId": "com.superone.app.dev",
+    "macAppId": "com.superone.desktop.dev",
+    "legacyMacAppId": "com.superone.app.dev",
     "productName": "SuperOne Dev",
     "artifactBaseName": "SuperOne",
     "executableName": "superone-dev",

@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEV_VARIANT_ID,
+  isRetiredMacBundle,
   isVariantId,
+  macBundleIdentifier,
+  macKeychainAccessGroup,
+  parseBundleIdentifier,
   resolveVariantId,
   VARIANTS,
   variant,
@@ -41,13 +45,24 @@ describe('variant identity table', () => {
   // productName drives app.name (logs, safeStorage), packageName drives the
   // NSIS install dir and the updater cache dir. A shared value in any one of
   // them makes the two builds overwrite each other.
-  it.each(['appId', 'productName', 'packageName', 'executableName', 'dataDirName', 'downloadPrefix', 'computerUseBundleId', 'icon'])(
+  it.each(['appId', 'macAppId', 'legacyMacAppId', 'productName', 'packageName', 'executableName', 'dataDirName', 'downloadPrefix', 'computerUseBundleId', 'icon'])(
     'gives every variant a distinct %s',
     (field) => {
       const values = entries.map(([, v]) => v[field as keyof typeof v])
       expect(new Set(values).size).toBe(entries.length)
     },
   )
+
+  it('moved every macOS bundle id off the legacy one', () => {
+    // `legacyMacAppId` is the id the bridge build still ships under; a variant
+    // whose new id equals it would never detect the bridge, and a new id under
+    // com.superone.app.* is one we cannot register (another team owns the root).
+    for (const [, v] of entries) {
+      expect(v.macAppId).not.toBe(v.legacyMacAppId)
+      expect(v.macAppId.startsWith('com.superone.app')).toBe(false)
+      expect(v.legacyMacAppId).toBe(v.appId)
+    }
+  })
 
   it('gives every variant a distinct prerelease tag so a version implies one variant', () => {
     const tags = entries.map(([, v]) => v.prereleaseTag)
@@ -70,5 +85,25 @@ describe('runtime lookup', () => {
 
   it('scopes sidecar ids under the variant appId', () => {
     expect(variantScopedId('computer-use')).toBe(`${VARIANTS[DEV_VARIANT_ID].appId}.computer-use`)
+  })
+
+  it('has no keychain group and no bundle id when unpackaged', () => {
+    expect(macKeychainAccessGroup()).toBeNull()
+    expect(macBundleIdentifier()).toBeNull()
+    expect(isRetiredMacBundle()).toBe(false)
+  })
+})
+
+describe('parseBundleIdentifier', () => {
+  it('reads CFBundleIdentifier out of an Info.plist', () => {
+    const plist = `<?xml version="1.0"?>
+<plist version="1.0"><dict>
+  <key>CFBundleDisplayName</key>
+  <string>SuperOne</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.superone.app</string>
+</dict></plist>`
+    expect(parseBundleIdentifier(plist)).toBe('com.superone.app')
+    expect(parseBundleIdentifier('<plist/>')).toBeNull()
   })
 })

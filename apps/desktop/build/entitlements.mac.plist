@@ -2,6 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <!-- Unrestricted hardened-runtime entitlements only. This file signs every
+       nested bundle (Electron helpers, Computer Use, MCP / LLM Proxy helpers)
+       and is the main app's fallback when no provisioning profile is supplied.
+       Restricted entitlements (keychain-access-groups, application-identifier)
+       must NOT go here: AMFI only honours them for a bundle carrying an
+       embedded.provisionprofile that grants them, and otherwise discards the
+       whole signature at exec — the process is SIGKILLed as "unsigned" even
+       though codesign and notarization both pass. The main app gets them from
+       mac-signing.cjs, which templates them per variant. -->
   <key>com.apple.security.cs.allow-jit</key>
   <true/>
   <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
@@ -16,11 +25,5 @@
   <true/>
   <key>com.apple.security.device.audio-input</key>
   <true/>
-  <!-- WebAuthn Touch ID credentials for the built-in browser. Must match
-       KEYCHAIN_ACCESS_GROUP in src/main/browser/browser-webauthn.ts. -->
-  <key>keychain-access-groups</key>
-  <array>
-    <string>T527W5ADUG.com.superone.app.webauthn</string>
-  </array>
 </dict>
 </plist>

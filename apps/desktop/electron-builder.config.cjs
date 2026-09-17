@@ -28,6 +28,7 @@ const yaml = require('js-yaml')
 
 const VARIANTS = require('./variants.json')
 const { resolvePackagedVersion } = require('./packaged-version.cjs')
+const { resolveMacSigning } = require('./build/mac-signing.cjs')
 const VARIANT_IDS = Object.keys(VARIANTS)
 
 function resolveVariantId() {
@@ -96,6 +97,49 @@ const extraResources = base.extraResources.map((resource) =>
  */
 const artifactBase = variant.artifactBaseName
 
+const outputDir = `dist/${variantId}`
+
+/**
+ * macOS identity is its own chain. `mac.appId` is the bundle id (new
+ * `macAppId`, or `legacyMacAppId` for a bridge build), and everything that
+ * hangs off a Developer ID profile — restricted entitlements, embedded
+ * profile, designated requirement, the keychain group the app reads at
+ * runtime — comes from build/mac-signing.cjs. Windows and Linux keep the
+ * top-level `appId` (AUMID, NSIS registry keys) and are untouched by the
+ * migration. Only meaningful on a mac host: the helper shells out to
+ * `security` / `plutil`.
+ */
+const macSigning =
+  process.platform === 'darwin'
+    ? resolveMacSigning({
+        variant,
+        variantId,
+        appRoot: __dirname,
+        baseEntitlements: base.mac.entitlements,
+        generatedDir: join(__dirname, 'build', 'generated'),
+      })
+    : null
+
+// Bridge builds carry a `-bridge` token so both mac zips of one version can
+// sit in the same R2 prefix, and so `fixedLinkName` never turns a bridge
+// artifact into the permanent download link.
+const macArtifactBase = macSigning?.bridge ? `${artifactBase}-bridge` : artifactBase
+
+// A variant with no download prefix never publishes, so it gets no feed at
+// all: electron-builder then bakes no `app-update.yml`, and the updater has
+// nothing to check. A local build must never be able to auto-update itself
+// onto a shipping line.
+const publish = variant.downloadPrefix
+  ? {
+      provider: 'generic',
+      url: `https://dl.super-one.dev/${variant.downloadPrefix}`,
+      // Explicit channel suppresses electron-builder's prerelease-derived
+      // channel, so every variant publishes `latest-*.yml` under its own prefix
+      // and "update channel" stops existing as a wire-level concept.
+      channel: 'latest',
+    }
+  : null
+
 module.exports = {
   ...base,
   appId: variant.appId,
@@ -111,13 +155,25 @@ module.exports = {
   // by building the keychain itself and handing over CSC_KEYCHAIN, which takes
   // the branch that never calls createKeychain(). Adding cscLink back silently
   // undoes that — nothing fails until a release does.
-  mac: { ...base.mac, artifactName: `${artifactBase}-\${version}-\${arch}-mac.\${ext}` },
-  dmg: { ...base.dmg, artifactName: `${artifactBase}-\${version}-\${arch}.\${ext}` },
+  mac: {
+    ...base.mac,
+    ...(macSigning && {
+      appId: macSigning.appId,
+      entitlements: macSigning.entitlements ?? base.mac.entitlements,
+      provisioningProfile: macSigning.provisioningProfile,
+      requirements: macSigning.requirements,
+      // Old-id clients poll `latest-mac.yml`; new-id clients poll
+      // `desktop-mac.yml`. See build/mac-signing.cjs.
+      publish: publish && { ...publish, channel: macSigning.publishChannel },
+    }),
+    artifactName: `${macArtifactBase}-\${version}-\${arch}-mac.\${ext}`,
+  },
+  dmg: { ...base.dmg, artifactName: `${macArtifactBase}-\${version}-\${arch}.\${ext}` },
   nsis: { ...base.nsis, artifactName: `${artifactBase}-\${version}-Setup.\${ext}` },
   // Both variants are packaged from one `out/`; separate output dirs keep the
   // two runs' channel manifests (both named `latest-*.yml`) from overwriting
   // each other when they happen on the same machine.
-  directories: { ...base.directories, output: `dist/${variantId}` },
+  directories: { ...base.directories, output: outputDir },
   linux: {
     ...base.linux,
     // electron-builder would derive this from package.json `name`; pin it so
@@ -126,20 +182,7 @@ module.exports = {
     executableName: variant.executableName,
     artifactName: `${artifactBase}-\${version}-\${arch}.\${ext}`,
   },
-  // A variant with no download prefix never publishes, so it gets no feed at
-  // all: electron-builder then bakes no `app-update.yml`, and the updater has
-  // nothing to check. A local build must never be able to auto-update itself
-  // onto a shipping line.
-  publish: variant.downloadPrefix
-    ? {
-        provider: 'generic',
-        url: `https://dl.super-one.dev/${variant.downloadPrefix}`,
-        // Explicit channel suppresses electron-builder's prerelease-derived
-        // channel, so every variant publishes `latest-*.yml` under its own prefix
-        // and "update channel" stops existing as a wire-level concept.
-        channel: 'latest',
-      }
-    : null,
+  publish,
   extraMetadata: {
     ...base.extraMetadata,
     name: variant.packageName,
@@ -148,5 +191,9 @@ module.exports = {
     // Merged into the packaged package.json before AppInfo is built, so this
     // drives artifact filenames, app.getVersion() and the update manifest.
     version,
+    // Team-prefixed keychain group the passkey authenticator stores under, or
+    // null when the build carries no profile (then passkeys stay off). Read
+    // by src/main/browser/browser-webauthn.ts; keeps the team id out of source.
+    macKeychainAccessGroup: macSigning?.keychainAccessGroup ?? null,
   },
 }

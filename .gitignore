@@ -87,3 +87,8 @@ docs/temp
 
 # Compiled output of the iOS Simulator helper (built on demand into userData).
 apps/desktop/native/ios-simulator-helper/build/
+
+# Build-time signing material: generated per variant from the provisioning
+# profile (build/mac-signing.cjs); profiles themselves are CI secrets.
+apps/desktop/build/generated/
+*.provisionprofile

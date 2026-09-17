@@ -21,7 +21,11 @@ vi.mock('electron', () => ({
 }))
 vi.mock('../logger', () => ({ default: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }))
 
-import { accountLabel, registerBrowserWebAuthn, KEYCHAIN_ACCESS_GROUP } from './browser-webauthn'
+const KEYCHAIN_ACCESS_GROUP = 'TEAM.com.superone.app.webauthn'
+const variantModule = vi.hoisted(() => ({ macKeychainAccessGroup: vi.fn<() => string | null>() }))
+vi.mock('../variant', () => variantModule)
+
+import { accountLabel, registerBrowserWebAuthn } from './browser-webauthn'
 
 const platform = process.platform
 const setPlatform = (value: string) => Object.defineProperty(process, 'platform', { value })
@@ -42,11 +46,23 @@ describe('registerBrowserWebAuthn', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setPlatform('darwin')
+    variantModule.macKeychainAccessGroup.mockReturnValue(KEYCHAIN_ACCESS_GROUP)
   })
   afterEach(() => setPlatform(platform))
 
   it('is a no-op off macOS', () => {
     setPlatform('win32')
+    registerBrowserWebAuthn()
+    expect(electron.configureWebAuthn).not.toHaveBeenCalled()
+    expect(electron.sessionOn).not.toHaveBeenCalled()
+  })
+
+  it('stays off in a build with no provisioning profile (no keychain group)', () => {
+    // The group is a restricted entitlement; a build without a profile is not
+    // signed with it, and configuring the authenticator anyway would only
+    // fail at credential creation. Dev, ad-hoc, contributor and bridge builds
+    // all take this path.
+    variantModule.macKeychainAccessGroup.mockReturnValue(null)
     registerBrowserWebAuthn()
     expect(electron.configureWebAuthn).not.toHaveBeenCalled()
     expect(electron.sessionOn).not.toHaveBeenCalled()

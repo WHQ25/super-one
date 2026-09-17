@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { app } from 'electron'
 import {
   downloadPlatformFor,
@@ -44,22 +44,81 @@ export function resolveVariantId(packagedVariant: unknown): VariantId {
   return isVariantId(packagedVariant) ? packagedVariant : DEV_VARIANT_ID
 }
 
-function readPackagedVariantField(): unknown {
+interface PackagedFields {
+  variant?: unknown
+  macKeychainAccessGroup?: unknown
+}
+
+let cachedPackaged: PackagedFields | null = null
+
+/** Fields electron-builder.config.cjs merges into the packaged package.json. */
+function packagedFields(): PackagedFields {
+  if (cachedPackaged) return cachedPackaged
   try {
-    const pkg = JSON.parse(readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')) as {
-      variant?: unknown
-    }
-    return pkg.variant
+    cachedPackaged = JSON.parse(readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')) as PackagedFields
   } catch {
-    return undefined
+    cachedPackaged = {}
   }
+  return cachedPackaged
 }
 
 let cachedId: VariantId | null = null
 
 export function variantId(): VariantId {
-  cachedId ??= resolveVariantId(readPackagedVariantField())
+  cachedId ??= resolveVariantId(packagedFields().variant)
   return cachedId
+}
+
+/**
+ * Keychain access group the browser's Touch ID passkey authenticator stores
+ * under, or null when this build carries no provisioning profile (then the
+ * authenticator must stay off: the group is a restricted entitlement, and
+ * only profile-backed builds are signed with it). Written at package time by
+ * build/mac-signing.cjs from the profile's team, so the team id never lives
+ * in source and a fork signs with its own.
+ */
+export function macKeychainAccessGroup(): string | null {
+  const value = packagedFields().macKeychainAccessGroup
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+/**
+ * Bundle identifier of the running .app, read from its own Info.plist. Null
+ * when unpackaged (Electron.app) or off macOS. Pure parse, exported for tests.
+ */
+export function parseBundleIdentifier(infoPlistXml: string): string | null {
+  const match = infoPlistXml.match(/<key>CFBundleIdentifier<\/key>\s*<string>([^<]+)<\/string>/)
+  return match ? match[1].trim() : null
+}
+
+let cachedBundleId: string | null | undefined
+
+export function macBundleIdentifier(): string | null {
+  if (cachedBundleId !== undefined) return cachedBundleId
+  if (process.platform !== 'darwin' || !app.isPackaged) return (cachedBundleId = null)
+  try {
+    // app.getAppPath() is <bundle>/Contents/Resources/app.asar
+    cachedBundleId = parseBundleIdentifier(readFileSync(resolve(app.getAppPath(), '..', '..', 'Info.plist'), 'utf8'))
+  } catch {
+    cachedBundleId = null
+  }
+  return cachedBundleId
+}
+
+/**
+ * True when this process runs under the variant's *retired* macOS bundle id.
+ *
+ * The bundle id moved (`legacyMacAppId` → `macAppId`) because restricted
+ * entitlements need a provisioning profile and the old id is registered to
+ * another Apple team. Squirrel.Mac verifies updates against the running app's
+ * designated requirement, which names the old id, so the last old-id release
+ * is a "bridge": it is packaged with SUPERONE_MAC_BRIDGE=1, keeps the legacy id,
+ * turns its updater off and asks the user to install the new-id build by hand.
+ * See mac-identity-migration.ts and docs/agent-reference/packaging.md.
+ */
+export function isRetiredMacBundle(): boolean {
+  const id = macBundleIdentifier()
+  return id !== null && id === variant().legacyMacAppId && id !== variant().macAppId
 }
 
 export function variant(): VariantIdentity {

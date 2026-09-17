@@ -105,6 +105,9 @@ extraResources:
     to: agent-presets
 
 afterPack: "./build/afterPack.cjs"
+# Executes the signed bundles once; the only check that catches an AMFI-rejected
+# signature (restricted entitlement with no provisioning profile).
+afterSign: "./build/afterSign.cjs"
 
 asarUnpack:
   # Native addons only — harness CLIs are no longer unpacked into the app.
@@ -122,6 +125,10 @@ mac:
     - zip
   category: public.app-category.developer-tools
   hardenedRuntime: true
+  # Unrestricted keys only. electron-builder.config.cjs swaps `entitlements`
+  # (main app) for a per-variant file with keychain-access-groups plus
+  # `provisioningProfile` when SUPERONE_MAC_PROVISIONING_PROFILE is set; see
+  # build/mac-signing.cjs. Helpers always keep this file.
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   notarize: true

@@ -20,28 +20,41 @@ function packagedVersion(config: Record<string, unknown>): string {
 }
 
 /** The config reads env and package.json at require time, so reload per case. */
+const ENV_KEYS = ['SUPERONE_VARIANT', 'SUPERONE_VERSION', 'SUPERONE_PRERELEASE_N', 'SUPERONE_MAC_BRIDGE', 'SUPERONE_MAC_PROVISIONING_PROFILE']
+
 function loadConfig(
   variant?: string,
   versionOverride?: string,
   prereleaseN?: string,
+  extraEnv: Record<string, string> = {},
 ): Record<string, unknown> {
   delete require_.cache[CONFIG_PATH]
   const previous = { ...process.env }
-  if (variant === undefined) delete process.env.SUPERONE_VARIANT
-  else process.env.SUPERONE_VARIANT = variant
-  if (versionOverride === undefined) delete process.env.SUPERONE_VERSION
-  else process.env.SUPERONE_VERSION = versionOverride
-  if (prereleaseN === undefined) delete process.env.SUPERONE_PRERELEASE_N
-  else process.env.SUPERONE_PRERELEASE_N = prereleaseN
+  for (const key of ENV_KEYS) delete process.env[key]
+  if (variant !== undefined) process.env.SUPERONE_VARIANT = variant
+  if (versionOverride !== undefined) process.env.SUPERONE_VERSION = versionOverride
+  if (prereleaseN !== undefined) process.env.SUPERONE_PRERELEASE_N = prereleaseN
+  Object.assign(process.env, extraEnv)
   try {
     return require_(CONFIG_PATH) as Record<string, unknown>
   } finally {
-    for (const key of ['SUPERONE_VARIANT', 'SUPERONE_VERSION', 'SUPERONE_PRERELEASE_N']) {
+    for (const key of ENV_KEYS) {
       if (previous[key] === undefined) delete process.env[key]
       else process.env[key] = previous[key]
     }
   }
 }
+
+type MacConfig = {
+  appId?: string
+  entitlements: string
+  entitlementsInherit: string
+  provisioningProfile?: string | null
+  requirements?: string | null
+  publish?: { channel: string; url: string } | null
+  artifactName: string
+}
+const macOf = (config: Record<string, unknown>) => config.mac as MacConfig
 
 beforeEach(() => {
   delete require_.cache[CONFIG_PATH]
@@ -219,5 +232,46 @@ describe('electron-builder variant config', () => {
     expect(base.productName).toBeUndefined()
     expect(base.publish).toBeUndefined()
     expect((base.linux as { executableName?: string }).executableName).toBeUndefined()
+  })
+
+  // The macOS identity chain is only resolved on a mac host (it shells out to
+  // `security` / `plutil`); elsewhere the top-level appId is all there is.
+  describe.runIf(process.platform === 'darwin')('macOS bundle identity', () => {
+    it.each(entries)('packages the new macOS bundle id with the desktop update channel (%s)', (id, v) => {
+      const mac = macOf(loadConfig(id))
+      expect(mac.appId).toBe(v.macAppId)
+      expect(mac.artifactName).toBe(`${v.artifactBaseName}-\${version}-\${arch}-mac.\${ext}`)
+      if (v.downloadPrefix) expect(mac.publish).toMatchObject({ channel: 'desktop' })
+      else expect(mac.publish).toBeNull()
+    })
+
+    it('signs with unrestricted entitlements and no profile when none is supplied', () => {
+      // Contributor / ad-hoc / CI-without-secret builds must launch; they just
+      // have no passkeys. Restricted keys with no profile would be SIGKILLed.
+      const config = loadConfig(stable)
+      const mac = macOf(config)
+      expect(mac.entitlements).toBe(mac.entitlementsInherit)
+      expect(mac.provisioningProfile).toBeNull()
+      expect(mac.requirements).toBeNull()
+      expect((config.extraMetadata as { macKeychainAccessGroup: unknown }).macKeychainAccessGroup).toBeNull()
+    })
+
+    it.each(entries)('builds the bridge under the legacy id on the frozen latest channel (%s)', (id, v) => {
+      // The bridge is the last Squirrel-installable release for old-id
+      // clients: legacy bundle id, `-bridge` artifacts so both mac zips of one
+      // version coexist, `latest-mac.yml` so old clients still see it.
+      const mac = macOf(loadConfig(id, undefined, undefined, { SUPERONE_MAC_BRIDGE: '1' }))
+      expect(mac.appId).toBe(v.legacyMacAppId)
+      expect(mac.artifactName).toBe(`${v.artifactBaseName}-bridge-\${version}-\${arch}-mac.\${ext}`)
+      expect(mac.provisioningProfile).toBeNull()
+      if (v.downloadPrefix) expect(mac.publish).toMatchObject({ channel: 'latest' })
+    })
+
+    it('keeps Windows and Linux on the historical appId', () => {
+      // NSIS registry keys and the AUMID derive from it; only macOS moved.
+      const config = loadConfig(stable)
+      expect(config.appId).toBe(VARIANTS[stable].appId)
+      expect(macOf(config).appId).not.toBe(config.appId)
+    })
   })
 })

@@ -6,6 +6,8 @@ import { ChatMessagePresenter } from './presenters/ChatMessage'
 import { TurnSummaryAboveFooter } from './presenters/ChatMessageIndicators'
 import { collaborationLabelKey } from './presenters/collaboration-label'
 import { goalMessageObjective } from '@superone/shared/session-goal'
+import { parseRealtimeDelegation } from '@superone/shared/realtime-timeline'
+import { RealtimeDelegationBody } from './presenters/RealtimeDelegationBody'
 import { getAssistantCopyText } from './presenters/getAssistantCopyText'
 import { ZERO_TURN_TOKENS, type TurnTokenCounts } from './presenters/turn-footer-model'
 import { PortableCollabTaskBubble } from './PortableCollabTaskBubble'
@@ -167,15 +169,16 @@ export const PortableMessage = memo(function PortableMessage({
       : ''),
     [isInitialTask, message.content],
   )
-  // A sent `/goal …` reads as the objective under a Goal label, same as desktop.
-  const goalObjective = useMemo(
-    () => (isUser
-      ? goalMessageObjective(message.content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('\n'))
-      : null),
+  // A sent `/goal …` reads as the objective under a Goal label, same as desktop;
+  // a `<realtime_delegation>` envelope reads as the instruction under a Voice label.
+  const userText = useMemo(
+    () => (isUser ? message.content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('\n') : ''),
     [isUser, message.content],
   )
+  const goalObjective = isUser ? goalMessageObjective(userText) : null
+  const delegation = isUser ? parseRealtimeDelegation(userText) : null
   const userMessage = useMemo(
-    () => (goalObjective
+    () => (goalObjective !== null
       ? { ...message, content: message.content.map((block) => (block.type === 'text' ? { ...block, text: goalObjective } : block)) }
       : message),
     [goalObjective, message],
@@ -192,7 +195,9 @@ export const PortableMessage = memo(function PortableMessage({
         </span>
       </div>
     )
-    : isUser
+    : delegation
+      ? <RealtimeDelegationBody delegation={delegation} />
+      : isUser
       ? <PortableUserContent message={userMessage} mentionArtwork={mentionArtwork} />
       : isCodex
         ? <PortableCodexTurn message={message} isStreaming={isStreaming} isLastAssistant={isLastAssistant} />
@@ -219,6 +224,7 @@ export const PortableMessage = memo(function PortableMessage({
           isCollaboration={isCollaboration}
           collaborationLabel={collabLabelKey ? t(collabLabelKey) : undefined}
           goalLabel={goalObjective ? t('chat.goal.label') : undefined}
+          voiceLabel={delegation ? t('chat.realtimeVoice.delegation.label') : undefined}
           initialTask={isInitialTask
             ? (
               <PortableCollabTaskBubble

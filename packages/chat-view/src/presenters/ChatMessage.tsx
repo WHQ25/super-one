@@ -1,5 +1,5 @@
 import type { HTMLAttributes, ReactNode } from 'react'
-import { Bot, Goal, Inbox, OctagonX } from 'lucide-react'
+import { AudioLines, Bot, Goal, Inbox, OctagonX } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 
 export interface ChatMessagePresenterProps {
@@ -8,6 +8,10 @@ export interface ChatMessagePresenterProps {
   collaborationLabel?: string
   /** Set for a `/goal …` user message: label row above the ordinary bubble. */
   goalLabel?: string
+  /** Label above a prompt the voice agent delegated into this thread. */
+  voiceLabel?: string
+  /** Makes the voice label a link back to the spoken turn that delegated it. */
+  onVoiceLabelClick?: () => void
   mailboxLabel?: string
   initialTask?: ReactNode
   body: ReactNode
@@ -32,6 +36,8 @@ export function ChatMessagePresenter({
   isCollaboration,
   collaborationLabel,
   goalLabel,
+  voiceLabel,
+  onVoiceLabelClick,
   mailboxLabel,
   initialTask,
   body,
@@ -85,6 +91,23 @@ export function ChatMessagePresenter({
             <Goal className="size-3 shrink-0" />
             <span>{goalLabel}</span>
           </div>
+        )}
+        {isUser && voiceLabel && (
+          onVoiceLabelClick ? (
+            <button
+              type="button"
+              onClick={onVoiceLabelClick}
+              className="mb-1 flex items-center gap-1 px-0.5 text-xs font-medium text-primary/80 transition-colors hover:text-primary"
+            >
+              <AudioLines className="size-3 shrink-0" />
+              <span>{voiceLabel}</span>
+            </button>
+          ) : (
+            <div className="mb-1 flex items-center gap-1 px-0.5 text-xs font-medium text-primary/80">
+              <AudioLines className="size-3 shrink-0" />
+              <span>{voiceLabel}</span>
+            </div>
+          )
         )}
         <div
           {...(isUser ? userBubbleProps : undefined)}

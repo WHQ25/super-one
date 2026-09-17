@@ -10,4 +10,9 @@ describe('formatCompactDuration', () => {
   it('keeps compact English duration units by default', () => {
     expect(formatCompactDuration(63_000)).toBe('1m 3s')
   })
+
+  it('rolls minutes into hours past sixty', () => {
+    expect(formatCompactDuration(4_830_000)).toBe('1h 20m 30s')
+    expect(formatCompactDuration(4_830_000, 'zh')).toBe('1小时 20分 30秒')
+  })
 })

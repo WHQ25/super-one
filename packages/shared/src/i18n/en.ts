@@ -1431,6 +1431,12 @@ export type Messages = {
       speaking: string
       silence: string
       callStartedAt: string
+      delegation: {
+        label: string
+        transcript: string
+        openThread: string
+        viewPlan: string
+      }
     }
     compactMode: {
       detail: string
@@ -5274,6 +5280,12 @@ export const en: Messages = {
       speaking: 'speaking',
       silence: 'Silent for {{duration}}',
       callStartedAt: 'Call started at {{time}}',
+      delegation: {
+        label: 'Voice Delegation',
+        transcript: 'Transcript ({{count}})',
+        openThread: 'Open in Codex thread',
+        viewPlan: 'View plan',
+      },
     },
     compactMode: {
       detail: 'Detail',

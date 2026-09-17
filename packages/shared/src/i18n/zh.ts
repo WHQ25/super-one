@@ -1517,6 +1517,12 @@ export const zh: Messages = {
       speaking: '正在说话',
       silence: '静默 {{duration}}',
       callStartedAt: '{{time}} 开始通话',
+      delegation: {
+        label: '语音委派',
+        transcript: '语音上下文（{{count}} 条）',
+        openThread: '在 Codex 线程中打开',
+        viewPlan: '查看计划',
+      },
     },
     compactMode: {
       detail: '详细过程',

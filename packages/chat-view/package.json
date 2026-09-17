@@ -13,6 +13,7 @@
     "./PortableToolRow": "./src/PortableToolRow.tsx",
     "./PortableTurnFooter": "./src/PortableTurnFooter.tsx",
     "./TurnDetailSection": "./src/TurnDetailSection.tsx",
+    "./use-working-duration": "./src/use-working-duration.ts",
     "./bridge": "./src/bridge.ts",
     "./fixtures/tool-catalog": "./src/fixtures/tool-catalog.ts",
     "./host-html": "./src/host-html.ts",
@@ -73,6 +74,7 @@
     "./presenters/computer-tool-display": "./src/presenters/computer-tool-display.ts",
     "./presenters/device-tool-display": "./src/presenters/device-tool-display.ts",
     "./presenters/duration-format": "./src/presenters/duration-format.ts",
+    "./presenters/RealtimeDelegationBody": "./src/presenters/RealtimeDelegationBody.tsx",
     "./presenters/file-chip-label": "./src/presenters/file-chip-label.ts",
     "./presenters/file-link": "./src/presenters/file-link.ts",
     "./presenters/getAssistantCopyText": "./src/presenters/getAssistantCopyText.ts",
@@ -93,7 +95,8 @@
     "./presenters/turn-footer-model": "./src/presenters/turn-footer-model.ts",
     "./presenters/turn-process-stats": "./src/presenters/turn-process-stats.ts",
     "./presenters/workflow-utils": "./src/presenters/workflow-utils.ts",
-    "./terminal-html": "./src/terminal-html.ts"
+    "./terminal-html": "./src/terminal-html.ts",
+    "./transcript-rows": "./src/transcript-rows.ts"
   },
   "scripts": {
     "build": "vite build && vite build --config vite.terminal.config.ts && bun scripts/embed-host-html.ts",

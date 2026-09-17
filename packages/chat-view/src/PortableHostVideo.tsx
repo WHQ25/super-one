@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Loader2, Play, Video } from 'lucide-react'
 import { requestNative, requestNativeAsync } from './bridge'
+import { formatClockDuration } from './presenters/duration-format'
 
 /** What the host answers a `loadVideoPoster` request with. */
 export interface VideoPosterResult {
@@ -72,12 +73,7 @@ function basename(path: string): string {
 
 /** `0:07` / `1:02:05`, the way a player's badge reads. */
 export function formatVideoDuration(durationMs: number): string {
-  const total = Math.max(0, Math.round(durationMs / 1000))
-  const hours = Math.floor(total / 3600)
-  const minutes = Math.floor((total % 3600) / 60)
-  const seconds = total % 60
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`
+  return formatClockDuration(durationMs)
 }
 
 /**

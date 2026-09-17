@@ -1,6 +1,5 @@
 import {
   Fragment,
-  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -12,6 +11,7 @@ import { ChevronDown, ChevronRight, FileDiff, List, Wrench } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import type { CodexTurnProcessStats as TurnProcessStats } from './presenters/CodexTurnView'
 import { formatCompactDuration } from './presenters/duration-format'
+import { useWorkingDuration } from './use-working-duration'
 
 /** One rendered run of a turn — see `partitionTurnForCompactMode`. */
 export interface TurnDetailRun {
@@ -118,20 +118,7 @@ function TurnDetailRegion({ expanded, children }: { expanded: boolean; children:
 export function TurnDetailSection({ runs, stats, workingSince, className }: TurnDetailSectionProps) {
   const { t, i18n } = useTranslation()
   const [expanded, setExpanded] = useState(false)
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (workingSince === undefined || expanded) return
-    const tick = () => setNow(Date.now())
-    tick()
-    const interval = setInterval(tick, 1000)
-    return () => clearInterval(interval)
-  }, [expanded, workingSince])
-  const parsedWorkingSince = typeof workingSince === 'string'
-    ? new Date(workingSince).getTime()
-    : workingSince
-  const workingDuration = parsedWorkingSince !== undefined && Number.isFinite(parsedWorkingSince)
-    ? Math.max(0, now - parsedWorkingSince)
-    : 0
+  const workingDuration = useWorkingDuration(workingSince, expanded)
   const label = !expanded && workingSince !== undefined
     ? t('chat.compactMode.workingFor', {
         duration: formatCompactDuration(workingDuration, i18n.resolvedLanguage ?? i18n.language),

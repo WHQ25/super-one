@@ -64,6 +64,9 @@ export function reduceMessageComplete(
             ...(codexCompletionMeta.durationMs !== undefined ? { durationMs: codexCompletionMeta.durationMs } : {}),
             codex: {
               threadId: codexCompletionMeta.threadId ?? prevCodex?.threadId ?? null,
+              ...((codexCompletionMeta.turnId ?? prevCodex?.turnId)
+                ? { turnId: codexCompletionMeta.turnId ?? prevCodex?.turnId }
+                : {}),
               usage: codexCompletionMeta.usage ?? prevCodex?.usage ?? null,
               items: codexCompletionMeta.items.length > 0 ? codexCompletionMeta.items : (prevCodex?.items ?? []),
               ...(prevCodex?.planApproval ? { planApproval: prevCodex.planApproval } : {}),

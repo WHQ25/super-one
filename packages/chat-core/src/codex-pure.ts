@@ -65,6 +65,7 @@ export function getCodexCompletionEventMeta(metadata: ChatMessage['metadata'] | 
   finalResponse?: string
   durationMs?: number
   threadId: string | null
+  turnId?: string
   usage: CodexUsageInfo | null
   items: CodexThreadItem[]
 } | null {
@@ -75,6 +76,7 @@ export function getCodexCompletionEventMeta(metadata: ChatMessage['metadata'] | 
     finalResponse: typeof codex.finalResponse === 'string' ? codex.finalResponse : undefined,
     durationMs: typeof codex.durationMs === 'number' && Number.isFinite(codex.durationMs) ? codex.durationMs : undefined,
     threadId: typeof codex.threadId === 'string' || codex.threadId === null ? codex.threadId : null,
+    turnId: typeof codex.turnId === 'string' ? codex.turnId : undefined,
     usage: hasValidCodexUsageSnapshot(codex.usage as CodexUsageInfo | null) ? codex.usage as CodexUsageInfo : null,
     items: Array.isArray(codex.items) ? codex.items as CodexThreadItem[] : [],
   }

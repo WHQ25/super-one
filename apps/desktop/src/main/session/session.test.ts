@@ -2205,6 +2205,7 @@ describe('Session message accumulation', () => {
           durationMs: 42,
           items: [],
           threadId: 'thread-42',
+          turnId: 'turn-42',
           usage: null,
         },
       } as unknown as Record<string, unknown>,
@@ -2212,6 +2213,8 @@ describe('Session message accumulation', () => {
     const finished = session.snapshot.messages.find((m) => m.id === 'codex_m2')
     expect(finished?.status).toBe('complete')
     expect(finished?.content).toEqual([{ type: 'text', text: 'all done' }])
+    // Persisted turn ids let fork/rewind and the realtime thread view match this row.
+    expect(finished?.metadata?.codex?.turnId).toBe('turn-42')
   })
 
   it('codex message_complete forwards consumedTokens computed by the main runtime', () => {

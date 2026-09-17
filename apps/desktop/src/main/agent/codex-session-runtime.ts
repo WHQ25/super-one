@@ -377,6 +377,8 @@ export function finalizeCodexAssistantMessage(
         ...(consumedTokens && (consumedTokens.input > 0 || consumedTokens.output > 0) ? { consumedTokens } : {}),
         codex: {
           threadId: args.result.threadId,
+          // Fork, rewind and the realtime thread view all key on the turn id.
+          ...(args.result.turnId ? { turnId: args.result.turnId } : {}),
           usage: args.result.usage,
           ...(args.result.turnUsage ? { turnUsage: args.result.turnUsage } : {}),
           items: sealCodexItems(args.result.items),
@@ -387,6 +389,7 @@ export function finalizeCodexAssistantMessage(
         durationMs: args.durationMs,
         codex: {
           threadId: args.result.threadId,
+          ...(args.result.turnId ? { turnId: args.result.turnId } : {}),
           usage: null,
           items: sealCodexItems(args.result.items),
           ...(args.model ? { model: args.model } : {}),

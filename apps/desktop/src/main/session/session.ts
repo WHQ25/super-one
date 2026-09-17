@@ -2156,6 +2156,7 @@ export class Session implements SessionContract {
         ?? (event.type === 'message_interrupted' ? 'Codex run interrupted.' : '')
       const result = codexMeta ? {
         threadId: (codexMeta.threadId as string | null) ?? null,
+        ...(typeof codexMeta.turnId === 'string' ? { turnId: codexMeta.turnId } : {}),
         finalResponse: (codexMeta.finalResponse as string | undefined) ?? '',
         usage: (codexMeta.usage as CodexSessionRuntime['lastUsageByMessageId'][string] | null) ?? null,
         turnUsage: codexMeta.turnUsage as CodexRunResult['turnUsage'],

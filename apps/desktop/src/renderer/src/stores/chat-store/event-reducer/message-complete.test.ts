@@ -127,6 +127,7 @@ describe('reduceMessageComplete: codex completion', () => {
       metadata: {
         codex: {
           threadId: 'thr-1',
+          turnId: 'turn-1',
           usage,
           items: [{ id: 'i1', type: 'agent_message', text: 'hi' }],
           finalResponse: 'final answer',
@@ -142,6 +143,8 @@ describe('reduceMessageComplete: codex completion', () => {
     expect((msg.content[0] as { text: string }).text).toBe('final answer')
     expect(msg.metadata?.durationMs).toBe(1234)
     expect(msg.metadata?.codex?.threadId).toBe('thr-1')
+    // The realtime thread view, fork and rewind all key on the turn id.
+    expect(msg.metadata?.codex?.turnId).toBe('turn-1')
   })
 
   it('falls back to session.contextWindow when codex contextWindow is 0', () => {

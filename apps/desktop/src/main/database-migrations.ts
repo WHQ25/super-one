@@ -24,7 +24,7 @@ import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-prov
 import type Database from 'better-sqlite3'
 import { ensureSessionFileDeliveriesSchema } from './db-session-deliveries'
 import { ensureTerminalCommandRulesSchema } from './db-terminal-command-rules'
-import { encryptSecret } from './crypto/secret-store'
+import { encryptSecretIfAvailable } from './crypto/secret-store'
 
 /**
  * Schema revision of `superone.db`, mirrored into `PRAGMA user_version` and
@@ -921,7 +921,7 @@ function migrateLegacyApiProviders(db: Database.Database): void {
       row.id,
       result.platform.id,
       result.platform.name,
-      encryptSecret(row.api_key || ''),
+      encryptSecretIfAvailable(row.api_key || ''),
       row.notes || '',
       row.sort_order ?? 0,
       createdAt,

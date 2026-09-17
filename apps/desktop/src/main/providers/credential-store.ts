@@ -142,9 +142,11 @@ export function updateCredential(id: string, patch: UpdateCredentialInput): Cred
   if (!existing) return undefined
   // A masked secret (starts with '***') means "unchanged" — never overwrite the stored value with the mask.
   const skipSecret = patch.secret !== undefined && patch.secret.startsWith('***')
-  const nextSecret = skipSecret
-    ? existing.secret
-    : encryptSecret(patch.secret ?? decryptSecret(existing.secret))
+  // No new secret: keep the stored ciphertext byte-for-byte. Round-tripping it
+  // through decrypt/encrypt would blank it whenever the keychain is
+  // unavailable (a denied prompt), turning a rename into data loss.
+  const nextSecret =
+    skipSecret || patch.secret === undefined ? existing.secret : encryptSecret(patch.secret)
   const nextEndpoints =
     patch.endpoints !== undefined ? serializeEndpoints(patch.endpoints) : existing.endpoints_json
   getDb()

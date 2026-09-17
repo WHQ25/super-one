@@ -13,7 +13,15 @@ vi.mock('../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }))
 
-vi.mock('electron', () => ({ safeStorage: { isEncryptionAvailable: () => false } }))
+// A working key store: on macOS an unavailable one refuses to write secrets
+// (see crypto/secret-store.ts), which is not what these cases exercise.
+vi.mock('electron', () => ({
+  safeStorage: {
+    isEncryptionAvailable: () => true,
+    encryptString: (s: string) => Buffer.from(s),
+    decryptString: (b: Buffer) => b.toString(),
+  },
+}))
 
 import { CONFIG_APPLY_FIELD, type AgentEvent } from '@superone/shared/agent-types'
 import { configApplyHandler, configReadHandler, rejectConfigConfirm, resolveConfigConfirm } from './config-tools'
@@ -91,7 +99,9 @@ describe('config_apply — ai-provider / custom-platform resources (global, not 
     expect(result.status).toBe('applied')
     const record = result.record as Record<string, unknown>
     expect(record.secret).toBe('***123456')
-    expect(runMock.mock.calls[0]).toContain('sk-abcdef123456')
+    // Stored encrypted, never as the raw key.
+    expect(runMock.mock.calls[0]).toContain(`enc:v1:${Buffer.from('sk-abcdef123456').toString('base64')}`)
+    expect(runMock.mock.calls[0]).not.toContain('sk-abcdef123456')
   })
 
   it('merges one model-mapping slot into a credential override, leaving the other overrides intact', async () => {

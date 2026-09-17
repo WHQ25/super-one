@@ -4,6 +4,7 @@ import {
   isRealtimeVoiceMessage,
   realtimeSegmentsToMessage,
   segmentKey,
+  suppressRealtimeStartupEcho,
 } from '@superone/shared/realtime-transcript'
 import type { CodexRealtimeSessionViewState } from '@/stores/codex-realtime-view'
 
@@ -143,8 +144,9 @@ export function realtimeSegmentToMessage(segment: RealtimeTimelineSegment): Chat
 
 /** Backward-compatible name for callers that need only the foreground voice line. */
 export function mergeCodexRealtimeMessages(
-  _messages: readonly ChatMessage[],
+  messages: readonly ChatMessage[],
   realtime: CodexRealtimeSessionViewState,
 ): ChatMessage[] {
-  return selectRealtimeTranscript(realtime).map(realtimeSegmentToMessage)
+  return suppressRealtimeStartupEcho(messages, selectRealtimeTranscript(realtime))
+    .map(realtimeSegmentToMessage)
 }

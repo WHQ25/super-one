@@ -31,6 +31,8 @@ describe('Codex realtime protocol mapping', () => {
 
     expect(params.initialItems).toEqual([{ role: 'developer', text: instructions }])
     expect(instructions).toMatch(/SuperOne realtime voice session/)
+    expect(instructions).toMatch(/startup context or prior thread transcript is read-only background/i)
+    expect(instructions).toMatch(/only delegate new user speech heard after the realtime session starts/i)
     expect(instructions).toMatch(/session_collab_list_agents/)
     expect(instructions).toMatch(/session_collab_request/)
     expect(instructions).toMatch(/session_collab_start/)

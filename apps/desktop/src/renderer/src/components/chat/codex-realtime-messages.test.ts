@@ -41,6 +41,25 @@ describe('Codex realtime/thread separation', () => {
     ])
   })
 
+  it('hides a startup echo of the previous typed user row from the voice transcript', () => {
+    const typed = {
+      ...message('typed-1', 'user', 'Hello'),
+      metadata: { codexTimeline: { provenance: 'codex' as const, position: 1 } },
+    }
+    const result = mergeCodexRealtimeMessages([typed], {
+      ...EMPTY_CODEX_REALTIME_SESSION_VIEW,
+      segments: [
+        { id: 'voice-user', realtimeSessionId: 'rt-1', role: 'user', text: 'Hello', position: 2 },
+        { id: 'voice-assistant', realtimeSessionId: 'rt-1', role: 'assistant', text: 'Hi again', position: 3 },
+        { id: 'voice-user-2', realtimeSessionId: 'rt-1', role: 'user', text: 'New request', position: 4 },
+      ],
+    })
+
+    expect(result.map((item) => item.content[0])).toEqual([
+      { type: 'text', text: 'New request' },
+    ])
+  })
+
   it('keeps voice items and delegation envelopes out of the backing thread', () => {
     const voice = {
       ...message('voice-1', 'assistant', 'On it'),

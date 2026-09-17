@@ -996,6 +996,7 @@ export class Session implements SessionContract {
     broadcastSessionSettings(patch, {
       harnessId: this.harnessId,
       setSelectedSettings: (settings) => this.setSelectedSettings(settings),
+      setCodexSelection: (selection) => { void this.backend.setCodexSelection?.(selection) },
       mergeUiSettings: (settings) => this.mergeUiSettings(settings),
       forwardEvent: (event) => { this.forwardEvent(event) },
     })

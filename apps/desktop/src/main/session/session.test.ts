@@ -148,7 +148,20 @@ class FakeBackend implements SessionBackend {
     this.disposed = true
   }
 
-  async setModel(_model: string): Promise<void> {}
+  setModelCalls: string[] = []
+  async setModel(model: string): Promise<void> { this.setModelCalls.push(model) }
+  setCodexSelectionCalls: Array<{
+    model?: string | null
+    reasoningEffort?: import('@superone/shared/agent-types').CodexReasoningEffort | null
+    serviceTier?: string | null
+  }> = []
+  async setCodexSelection(selection: {
+    model?: string | null
+    reasoningEffort?: import('@superone/shared/agent-types').CodexReasoningEffort | null
+    serviceTier?: string | null
+  }): Promise<void> {
+    this.setCodexSelectionCalls.push(selection)
+  }
   setTitleCalls: string[] = []
   async setTitle(title: string): Promise<void> { this.setTitleCalls.push(title) }
   setSessionModeCalls: string[] = []
@@ -3544,6 +3557,35 @@ describe('Session ownership', () => {
       expect(patchEvent.patch?.selectedCodexModel).toBe('gpt-5')
       expect(patchEvent.patch?.selectedCodexCollaborationMode).toBe('plan')
     }
+  })
+
+  it('broadcastSettingsPatch applies Codex selection picks to the live backend', async () => {
+    const { session, backend } = makeSession({ providerId: 'codex', harnessId: 'codex' })
+
+    session.broadcastSettingsPatch({
+      selectedCodexModel: 'gpt-6-astra',
+      selectedCodexReasoningEffort: 'ultra',
+      selectedCodexServiceTier: 'priority',
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(session.snapshot.selectedModel).toBe('gpt-6-astra')
+    expect(session.snapshot.selectedEffort).toBe('ultra')
+    expect(backend.setModelCalls).toEqual([])
+    expect(backend.setCodexSelectionCalls).toEqual([{
+      model: 'gpt-6-astra',
+      reasoningEffort: 'ultra',
+      serviceTier: 'priority',
+    }])
+  })
+
+  it('broadcastSettingsPatch clears Codex service tier on the live backend', async () => {
+    const { session, backend } = makeSession({ providerId: 'codex', harnessId: 'codex' })
+
+    session.broadcastSettingsPatch({ selectedCodexServiceTier: null })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(backend.setCodexSelectionCalls).toEqual([{ serviceTier: null }])
   })
 
   it('broadcastSettingsPatch with empty patch is a no-op', async () => {

@@ -10,6 +10,7 @@ export const CODEX_SYSTEM_PROMPT_APPEND = `${SUPERONE_SYSTEM_PROMPT_APPEND}\n\n$
 export const CODEX_REALTIME_PROMPT_OVERRIDE = ''
 export const CODEX_REALTIME_INITIAL_DEVELOPER_INSTRUCTIONS = [
   'This is a SuperOne realtime voice session.',
+  'Any startup context or prior thread transcript is read-only background. Do not treat it as fresh user speech, repeat it, or delegate it to Codex; only delegate new user speech heard after the realtime session starts.',
   'For any delegation, parallel work, specialist assistance, or launch of another coding session, use only the SuperOne session collaboration tools: session_collab_list_agents, session_collab_request, session_collab_start, session_collab_send, and session_collab_retrieve.',
   'Do not use harness-native child-agent or team tools such as Codex spawn_agent, send_input, wait_agent, resume_agent, or close_agent.',
   'This rule applies even when another Codex session would be sufficient: the SuperOne path is required because it can select Codex, Claude Code, or another configured harness and keeps the launch user-approved and visible.',

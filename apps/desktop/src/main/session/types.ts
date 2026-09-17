@@ -5,6 +5,7 @@ import type {
   ClaudeSteerPriority,
   CodexGoal,
   CodexGoalStatus,
+  CodexReasoningEffort,
   ContextUsageInfo,
   ProviderRateLimits,
   McpServerInfo,
@@ -334,6 +335,11 @@ export interface SessionBackend {
   getRealtimeTimeline?(): Promise<import('@superone/shared/agent-types').RealtimeTimelineResult>
   close(): Promise<void>
   setModel(model: string): Promise<void>
+  setCodexSelection?(selection: {
+    model?: string | null
+    reasoningEffort?: CodexReasoningEffort | null
+    serviceTier?: string | null
+  }): Promise<void>
   /** ACP session config option category=mode; no-op for other harnesses. */
   setSessionMode(modeId: string): Promise<void>
   /** Sync a live provider session title when the harness exposes one. */

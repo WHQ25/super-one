@@ -122,6 +122,38 @@ describe('mergeRealtimeTranscript', () => {
     ]
     expect(textOf(mergeRealtimeTranscript(spine, []))).toEqual(['looked'])
   })
+
+  it('hides only the first voice turn when it echoes the previous typed user row', () => {
+    const spine = [message('u1', 'user', 'hello', 10), message('a1', 'assistant', 'hi', 11)]
+    const segments = [
+      segment('voice-u1', 'user', 'hello', { position: 12 }),
+      segment('voice-a1', 'assistant', 'hi again', { position: 13 }),
+      segment('voice-u2', 'user', 'hello', { position: 14, startedAtMs: ms(14) }),
+      segment('voice-a2', 'assistant', 'second reply', { position: 15, startedAtMs: ms(15) }),
+    ]
+
+    expect(textOf(mergeRealtimeTranscript(spine, segments))).toEqual([
+      'hello',
+      'hi',
+      'hello',
+      'second reply',
+    ])
+  })
+
+  it('keeps a stamped first voice turn even when the user repeats the previous typed row', () => {
+    const spine = [message('u1', 'user', 'hello', 10), message('a1', 'assistant', 'hi', 11)]
+    const segments = [
+      segment('voice-u1', 'user', 'hello', { position: 12, startedAtMs: ms(12) }),
+      segment('voice-a1', 'assistant', 'hi again', { position: 13, startedAtMs: ms(13) }),
+    ]
+
+    expect(textOf(mergeRealtimeTranscript(spine, segments))).toEqual([
+      'hello',
+      'hi',
+      'hello',
+      'hi again',
+    ])
+  })
 })
 
 describe('dedupeSegmentsByItem', () => {

@@ -309,6 +309,31 @@ describe('CodexBackend lifecycle', () => {
     expect(backend.getCurrentProviderSessionId()).toBe('thread-123')
   })
 
+  it('setCodexSelection updates live Codex defaults for subsequent turns', async () => {
+    await backend.start(makeStartOpts({ model: 'gpt-5.5', effort: 'high', serviceTier: null }))
+    await backend.startRealtimeVoice({ sdp: 'offer' })
+
+    await backend.setCodexSelection({
+      model: 'gpt-6-astra',
+      reasoningEffort: 'ultra',
+      serviceTier: 'priority',
+    })
+
+    expect(backend.getStartOpts()?.model).toBe('gpt-6-astra')
+    expect(backend.getStartOpts()?.effort).toBe('ultra')
+    expect(backend.getStartOpts()?.serviceTier).toBe('priority')
+    expect((backend as unknown as { session?: { model?: string; modelReasoningEffort?: string; serviceTier?: string | null } }).session).toMatchObject({
+      model: 'gpt-6-astra',
+      modelReasoningEffort: 'ultra',
+      serviceTier: 'priority',
+    })
+
+    await backend.setCodexSelection({ serviceTier: null })
+
+    expect(backend.getStartOpts()?.serviceTier).toBeNull()
+    expect((backend as unknown as { session?: { serviceTier?: string | null } }).session?.serviceTier).toBeNull()
+  })
+
   it('publishes the backing thread id when realtime voice starts', async () => {
     const events: AgentEvent[] = []
     const providerSessionIds: string[] = []

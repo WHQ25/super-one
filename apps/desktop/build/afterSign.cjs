@@ -23,6 +23,8 @@ const { join } = require('node:path')
 
 const { isBridgeBuild } = require('./mac-signing.cjs')
 
+const EXEC_TIMEOUT_MS = 60_000
+
 // Entitlements AMFI only honours with an embedded.provisionprofile. Nested
 // bundles never carry a profile, so they must never carry these either.
 const RESTRICTED_ENTITLEMENTS = ['keychain-access-groups', 'com.apple.application-identifier']
@@ -69,12 +71,20 @@ function assertExecutes(label, executable, args, { expectCleanExit }) {
   const result = spawnSync(executable, args, {
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
     encoding: 'utf8',
-    timeout: 60_000,
+    timeout: EXEC_TIMEOUT_MS,
   })
   // A foreign-architecture slice on a host without Rosetta cannot be
   // executed at all; that says nothing about the signature.
   if (result.error && (result.error.code === 'EBADARCH' || result.error.code === 'ENOEXEC')) {
     console.warn(`[afterSign] ${label}: cannot execute on this host (${result.error.code}), skipping launch check`)
+    return
+  }
+  // Hitting the timeout (spawnSync SIGTERMs the child) means the process
+  // launched and ran, which is all this check is for: AMFI kills at exec,
+  // long before. The x64 slice runs under Rosetta on an arm64 runner, where
+  // first-run translation of the Electron framework alone can take this long.
+  if (result.error && result.error.code === 'ETIMEDOUT') {
+    console.warn(`[afterSign] ${label}: still running after ${EXEC_TIMEOUT_MS / 1000}s (Rosetta translation?); it launched, moving on`)
     return
   }
   if (result.signal === 'SIGKILL') {
@@ -130,7 +140,7 @@ exports.default = async function afterSign(context) {
 
   // Requires the RunAsNode fuse (on by default; no `electronFuses` config
   // disables it). Turning that fuse off would make this launch the GUI and
-  // time out instead of exiting — assert on the fuse first if that changes.
+  // ride out the timeout as a pass — assert on the fuse first if that changes.
   assertExecutes(`${productFilename}.app`, mainExecutable, ['-e', 'process.exit(0)'], { expectCleanExit: true })
   for (const name of nestedApps.filter((n) => n.includes(' Helper'))) {
     const executable = join(frameworksDir, name, 'Contents', 'MacOS', name.slice(0, -'.app'.length))

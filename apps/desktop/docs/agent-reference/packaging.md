@@ -223,6 +223,91 @@ because a build with the wrong identity is worse than no build.
 
 Local builds: `SUPERONE_VARIANT=alpha bun run build:mac`.
 
+#### macOS bundle ids, entitlements and the provisioning profile
+
+`variants.json` gives macOS its own identity chain: `macAppId` is the bundle id a
+build ships under (`com.superone.desktop`, `.desktop.alpha`, `.desktop.dev`);
+`appId` stays `com.superone.app*` for Windows/Linux (AUMID, NSIS registry keys) and
+is also the retired macOS id, kept as `legacyMacAppId`. The builder maps
+`macAppId` onto `mac.appId`; the Computer Use helper keeps its own ids.
+
+`build/entitlements.mac.plist` holds **unrestricted** hardened-runtime keys only and
+signs every nested bundle (Electron helpers, Computer Use, MCP / LLM Proxy helpers).
+Restricted entitlements — `keychain-access-groups` for the built-in browser's
+passkeys, plus the `com.apple.application-identifier` / `team-identifier` pair that
+goes with it — are added to the **main app only** by `build/mac-signing.cjs`, and
+only when `SUPERONE_MAC_PROVISIONING_PROFILE` points at a Developer ID provisioning
+profile for the variant's `macAppId`. The profile is embedded as
+`Contents/embedded.provisionprofile`, checked against the variant, and is also where
+the team id comes from: the keychain group (`<team>.com.superone.app.webauthn`) is
+written into the packaged `package.json` as `macKeychainAccessGroup` and read at
+runtime, and the designated requirement is rewritten to trust the team rather than
+the identifier, so nothing team-specific lives in source and a fork signs with its
+own profile. Without the env the main app falls back to the unrestricted file: it
+launches, passkeys are off. Contributor builds, `build:mac-dev` and bridge builds
+all take that path.
+
+Why the split: AMFI only honours a restricted entitlement when the bundle embeds a
+profile granting it. With no profile it discards the whole signature at exec and the
+kernel SIGKILLs the process as "completely unsigned" (`load code signature error 4`)
+— while `codesign --verify`, notarization and Gatekeeper all pass. 0.67.0-alpha.2
+shipped that way and no installed alpha could start. Nested bundles never carry a
+profile, so they must never carry a restricted key either. The keychain group is
+deliberately not tied to the bundle id — the profile grants `<team>.*` — because
+changing it would orphan every passkey users already saved.
+
+`build/afterSign.cjs` is the guard: it asserts the bundle id, that no nested bundle
+(nor ShipIt / crashpad) has a restricted key, that a main app with one has a profile,
+and then execs the main app and every Electron helper under
+`ELECTRON_RUN_AS_NODE=1 -e 'process.exit(0)'`; exit 137 means AMFI rejected the
+signature and fails the build. It runs after notarization, on the bytes that ship.
+CI supplies the profile from the `MAC_PROVISIONING_PROFILE_ALPHA` / `_STABLE` secrets
+(base64 `.provisionprofile`, one per variant because a profile is bound to one bundle
+id) and fails if the one for the variant is missing.
+
+#### The bundle id migration (bridge builds)
+
+The old id `com.superone.app` is registered to another Apple team, so no profile can
+ever exist for it; the id had to move. Two consequences shape the release that moves
+it:
+
+- **Squirrel.Mac verifies an update against the *running* app's designated
+  requirement**, which names the old identifier. Old-id clients can never be
+  auto-updated onto a new-id bundle, and offering one in their feed turns every
+  update check into an error. So macOS has two manifests: new-id builds publish
+  `<variant>/desktop-mac.yml` (`MAC_UPDATE_CHANNEL` in `mac-signing.cjs`, mirrored as
+  `MAC_UPDATE_MANIFEST` in `@superone/shared/download-links`), while
+  `<variant>/latest-mac.yml` and the bucket-root legacy ymls freeze at the bridge.
+  `set-latest` refuses to write `latest-mac.yml` from anything but a bridge manifest
+  (every artifact carries `-bridge-`), and never turns a bridge installer into a
+  fixed download link. New builds sign with a team-only designated requirement so a
+  future id change can go through Squirrel normally.
+- **The bridge build** is the same commit packaged with `SUPERONE_MAC_BRIDGE=1`
+  (`bridge: true` on `build-mac.yml`, `mac_bridge` on `release.yml`): legacy bundle
+  id, no profile, `SuperOne-bridge-<version>-<arch>` artifacts, published to
+  `latest-mac.yml`. Old-id clients reach it through Squirrel as usual. At runtime
+  `isRetiredMacBundle()` (Info.plist id == `legacyMacAppId`) turns the updater off and
+  `mac-identity-migration.ts` takes over: it reads `desktop-mac.yml`, downloads the
+  matching `.dmg` into `~/Downloads`, verifies its sha512, and on request mounts it
+  and quits so the user drags the new app over the old one. Deliberately no
+  self-install — this is the last old-id version and a bug in it has no second
+  chance. The renderer side is `IdentityMigrationDialog` (opens once per launch, again
+  from the sidebar pill; "Later" only hides it).
+- **First launch under the new id** (`mac-identity-handoff.ts`): userData is keyed by
+  productName, so sessions, projects and settings are already in place. The
+  `safeStorage` keychain item's ACL names the old signing identity, so macOS asks the
+  user on first access; the handoff shows an explanation first ("Always Allow" keeps
+  every secret) and resets `notificationsPrimedAt`, since notification authorization
+  is per bundle id. `encryptSecret` refuses to fall back to plaintext on macOS so a
+  denied prompt can never downgrade re-entered secrets; a denied prompt is asked
+  again on the next launch, and Chromium only creates a new key when the item is
+  missing, never on a denial.
+
+Release order for the migration: alpha first (`0.67.0-alpha.3` with `mac_bridge`,
+old alpha.2 users install by hand since that build cannot launch), then stable
+`0.67.0` with `mac_bridge`. From `0.68.0` on, no bridge is built and `latest-mac.yml`
+stays where it is.
+
 ### Versioning
 
 `package.json` carries the **base** version — a plain release number, no prerelease

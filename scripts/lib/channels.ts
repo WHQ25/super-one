@@ -80,6 +80,23 @@ export function rootRelativePaths(ymlText: string, variant: string): string {
   return prefixManifestPaths(ymlText, `${variant}/`)
 }
 
+// macOS manifests split by bundle-id generation. New-id builds publish
+// `desktop-mac.yml`; `latest-mac.yml` is what every client on the retired
+// `com.superone.app*` id polls and stays frozen at the bridge build forever:
+// Squirrel.Mac validates a download against the running app's designated
+// requirement, which names the old id, so a new-id zip in that feed turns
+// every old client's update into an error. The runtime constant is
+// `MAC_UPDATE_MANIFEST` in `@superone/shared/download-links`.
+export const MAC_MANIFEST = 'desktop-mac.yml'
+export const LEGACY_MAC_MANIFEST = 'latest-mac.yml'
+export const BRIDGE_ARTIFACT_TOKEN = '-bridge-'
+
+/** True when every artifact a mac manifest names is a bridge build. */
+export function isBridgeManifest(ymlText: string): boolean {
+  const paths = [...ymlText.matchAll(/^\s*-?\s*(?:url|path):\s+(.+?)\s*$/gm)].map((m) => m[1])
+  return paths.length > 0 && paths.every((p) => p.includes(BRIDGE_ARTIFACT_TOKEN))
+}
+
 // The manifest names pre-variant clients poll at the BUCKET ROOT. Those builds
 // baked in `url: https://dl.super-one.dev` with no variant segment and derived
 // the channel from their own version, so they will never look inside a variant

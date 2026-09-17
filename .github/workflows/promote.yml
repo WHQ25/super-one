@@ -25,6 +25,11 @@ on:
       linux_run_id:
         description: 'Build Linux run ID (leave blank to skip)'
         required: false
+      mac_bridge:
+        description: 'Also take the dist-mac-bridge artifact from the macOS run (bundle id migration release)'
+        required: false
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       release_tag:
@@ -51,6 +56,11 @@ on:
         description: Build Linux run ID (leave blank to skip)
         required: false
         type: string
+      mac_bridge:
+        description: Also take the dist-mac-bridge artifact from the macOS run
+        required: false
+        type: boolean
+        default: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -82,6 +92,16 @@ jobs:
           run-id: ${{ inputs.mac_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # The bridge zip/dmg (retired bundle id) ships beside the new-id build
+      # under the same version; its latest-mac.yml is what old-id clients read.
+      - name: Download macOS bridge artifact
+        if: ${{ inputs.mac_run_id != '' && inputs.mac_bridge }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: staging
+          name: dist-mac-bridge
+          run-id: ${{ inputs.mac_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download Windows artifact
         if: ${{ inputs.win_run_id != '' }}
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0

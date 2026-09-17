@@ -5,9 +5,13 @@ import { basename, join } from 'node:path'
 import VARIANTS from '../apps/desktop/variants.json'
 import {
   artifactPathCandidates,
+  BRIDGE_ARTIFACT_TOKEN,
   fixedDownloadPath,
   fixedLinkName,
+  isBridgeManifest,
+  LEGACY_MAC_MANIFEST,
   LEGACY_ROOT_YML_NAMES,
+  MAC_MANIFEST,
   prefixVersionPaths,
   rootRelativePaths,
   shouldPublish,
@@ -25,15 +29,21 @@ const LEGACY_APP_ID = 'com.superone.app'
 interface Platform {
   key: string
   ymlName: string
+  /** Only a bridge manifest may be published here; anything else strands old-id clients. */
+  bridgeOnly?: boolean
+  /** Bucket-root names pre-variant clients read; see LEGACY_ROOT_YML_NAMES. */
+  legacyRootKey?: string
 }
 
-// Every variant sets `publish.channel: latest` explicitly, so electron-builder
-// emits the same manifest names for all of them and the variant lives in the
-// R2 prefix instead of the file name.
+// Every variant sets `publish.channel: latest` explicitly for win/linux, so the
+// variant lives in the R2 prefix instead of the file name. macOS has two
+// feeds: `desktop-mac.yml` for the current bundle id and `latest-mac.yml`,
+// which only a bridge build (packaged under the retired id) may refresh.
 const PLATFORMS: Platform[] = [
-  { key: 'mac', ymlName: 'latest-mac.yml' },
-  { key: 'win', ymlName: 'latest.yml' },
-  { key: 'linux', ymlName: 'latest-linux.yml' },
+  { key: 'mac', ymlName: MAC_MANIFEST },
+  { key: 'mac-legacy', ymlName: LEGACY_MAC_MANIFEST, bridgeOnly: true, legacyRootKey: 'mac' },
+  { key: 'win', ymlName: 'latest.yml', legacyRootKey: 'win' },
+  { key: 'linux', ymlName: 'latest-linux.yml', legacyRootKey: 'linux' },
 ]
 
 interface CopyOp {
@@ -172,7 +182,7 @@ function stageLegacyRoot(
   force: boolean,
 ): void {
   const rooted = rootRelativePaths(prefixed, variant)
-  for (const name of LEGACY_ROOT_YML_NAMES[platform.key] ?? []) {
+  for (const name of (platform.legacyRootKey && LEGACY_ROOT_YML_NAMES[platform.legacyRootKey]) || []) {
     // Legacy names live at the bucket ROOT, so the key is the bare filename.
     const current = remoteVersion(name)
     if (current === null) {
@@ -238,6 +248,13 @@ async function main(): Promise<void> {
       prefixVersionPaths(readFileSync(manifestPath, 'utf8'), version),
       variant,
     )
+    if (platform.bridgeOnly && !isBridgeManifest(prefixed)) {
+      console.error(
+        `refusing to publish ${variant}/${platform.ymlName}: it names a non-bridge build. Clients on the ` +
+          'retired bundle id poll this file and Squirrel rejects any bundle under another id.',
+      )
+      process.exit(1)
+    }
 
     if (!force) {
       const current = remoteVersion(`${variant}/${platform.ymlName}`)
@@ -253,6 +270,9 @@ async function main(): Promise<void> {
 
     for (const url of parseInstallerUrls(prefixed)) {
       const fileName = basename(url)
+      // Bridge installers exist only to be auto-updated onto; the permanent
+      // download link must hand out the new-id build.
+      if (fileName.includes(BRIDGE_ARTIFACT_TOKEN)) continue
       plan.push({
         src: versionedArtifactPath(variant, version, fileName),
         dst: fixedDownloadPath(variant, fixedLinkName(fileName, version)),

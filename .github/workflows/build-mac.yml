@@ -21,6 +21,11 @@ on:
         description: 'Alpha/dev sequence after the tag (1 → X.Y.Z-alpha.1). Blank/0 = no suffix.'
         required: false
         default: ''
+      bridge:
+        description: 'Bridge build: package under the retired macOS bundle id (legacyMacAppId), no profile, publishes to latest-mac.yml. Only for the release that introduces a new bundle id.'
+        required: false
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       ref:
@@ -41,9 +46,14 @@ on:
         required: false
         type: string
         default: ''
+      bridge:
+        description: Bridge build under the retired macOS bundle id (see packaging.md, bundle id migration)
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
-  group: build-mac-${{ inputs.variant }}-${{ inputs.ref }}
+  group: build-mac-${{ inputs.variant }}-${{ inputs.ref }}-${{ inputs.bridge && 'bridge' || 'main' }}
   cancel-in-progress: true
 
 env:
@@ -105,9 +115,39 @@ jobs:
           rm -f "$CERT_PATH"
           echo "CSC_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
           security find-identity -v -p codesigning "$KEYCHAIN"
+      # Developer ID provisioning profile for this variant's macAppId. It grants
+      # the restricted keychain-access-groups entitlement the built-in browser's
+      # passkeys need; without it the main app must not carry that key at all
+      # (build/mac-signing.cjs). One secret per variant because a profile is
+      # bound to one bundle id: MAC_PROVISIONING_PROFILE_ALPHA / _STABLE, base64
+      # of the .provisionprofile. Missing is a hard failure so a release can
+      # never silently ship without passkeys. Bridge builds run under the
+      # retired id, for which no profile can exist, and skip this entirely.
+      - name: Install provisioning profile
+        if: ${{ !inputs.bridge }}
+        env:
+          PROFILE_ALPHA: ${{ secrets.MAC_PROVISIONING_PROFILE_ALPHA }}
+          PROFILE_STABLE: ${{ secrets.MAC_PROVISIONING_PROFILE_STABLE }}
+          VARIANT: ${{ inputs.variant }}
+        run: |
+          set -euo pipefail
+          case "$VARIANT" in
+            alpha) PROFILE_B64="$PROFILE_ALPHA"; SECRET_NAME=MAC_PROVISIONING_PROFILE_ALPHA ;;
+            stable) PROFILE_B64="$PROFILE_STABLE"; SECRET_NAME=MAC_PROVISIONING_PROFILE_STABLE ;;
+            *) echo "::error::no provisioning profile secret mapped for variant '$VARIANT'"; exit 1 ;;
+          esac
+          if [[ -z "$PROFILE_B64" ]]; then
+            echo "::error::${SECRET_NAME} secret is not set" >&2
+            exit 1
+          fi
+          PROFILE_PATH="$RUNNER_TEMP/superone-${VARIANT}.provisionprofile"
+          printf '%s' "$PROFILE_B64" | base64 --decode > "$PROFILE_PATH"
+          security cms -D -i "$PROFILE_PATH" | plutil -extract Name raw -
+          echo "SUPERONE_MAC_PROVISIONING_PROFILE=$PROFILE_PATH" >> "$GITHUB_ENV"
       - run: bun run build:mac -- --x64 --arm64 --publish never
         env:
           SUPERONE_VARIANT: ${{ inputs.variant }}
+          SUPERONE_MAC_BRIDGE: ${{ inputs.bridge && '1' || '' }}
           SUPERONE_VERSION: ${{ inputs.version }}
           SUPERONE_PRERELEASE_N: ${{ inputs.prerelease_n }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -124,7 +164,7 @@ jobs:
             apps/desktop/dist/${{ inputs.variant }}/*.zip
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: dist-mac
+          name: ${{ inputs.bridge && 'dist-mac-bridge' || 'dist-mac' }}
           path: |
             apps/desktop/dist/${{ inputs.variant }}/*.dmg
             apps/desktop/dist/${{ inputs.variant }}/*.zip

@@ -48,6 +48,11 @@ on:
         required: false
         type: boolean
         default: false
+      mac_bridge:
+        description: 'Also build the macOS bridge (retired bundle id → latest-mac.yml). Only for the one release that moves the bundle id; see packaging.md.'
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ inputs.variant }}
@@ -134,6 +139,24 @@ jobs:
       version: ${{ inputs.version }}
       prerelease_n: ${{ inputs.prerelease_n }}
 
+  # Same commit, packaged under the retired macOS bundle id. Old-id clients
+  # auto-update onto it through Squirrel and are then told to install the
+  # new-id build by hand; the new-id build above is what they install.
+  build-mac-bridge:
+    if: ${{ inputs.mac_bridge }}
+    needs: plan
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/build-mac.yml
+    secrets: inherit
+    with:
+      ref: ${{ inputs.ref }}
+      variant: ${{ inputs.variant }}
+      version: ${{ inputs.version }}
+      prerelease_n: ${{ inputs.prerelease_n }}
+      bridge: true
   build-win:
     needs: plan
     permissions:
@@ -164,7 +187,10 @@ jobs:
 
   # Draft GitHub Release + R2 archive. Artifacts come from this very run.
   promote:
-    needs: [plan, build-mac, build-win, build-linux]
+    # `always()` keeps this reachable when the optional bridge job is skipped;
+    # the explicit result checks keep it from running on a failed build.
+    if: ${{ always() && needs.plan.result == 'success' && needs.build-mac.result == 'success' && needs.build-win.result == 'success' && needs.build-linux.result == 'success' && (needs.build-mac-bridge.result == 'success' || needs.build-mac-bridge.result == 'skipped') }}
+    needs: [plan, build-mac, build-mac-bridge, build-win, build-linux]
     permissions:
       contents: write
       actions: write
@@ -175,6 +201,7 @@ jobs:
       variant: ${{ inputs.variant }}
       target_sha: ${{ needs.plan.outputs.sha }}
       mac_run_id: ${{ github.run_id }}
+      mac_bridge: ${{ inputs.mac_bridge }}
       win_run_id: ${{ github.run_id }}
       linux_run_id: ${{ github.run_id }}
 

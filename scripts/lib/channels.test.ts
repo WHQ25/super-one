@@ -4,6 +4,7 @@ import {
   compareVersions,
   fixedDownloadPath,
   fixedLinkName,
+  isBridgeManifest,
   LEGACY_ROOT_YML_NAMES,
   prefixVersionPaths,
   rootRelativePaths,
@@ -231,5 +232,26 @@ describe('artifactPathCandidates', () => {
     expect(artifactPathCandidates('v1.0.0/SuperOne-1.0.0-arm64-mac.zip')).toEqual([
       'v1.0.0/SuperOne-1.0.0-arm64-mac.zip',
     ])
+  })
+})
+
+describe('isBridgeManifest', () => {
+  // `latest-mac.yml` is polled by clients still on the retired bundle id, so
+  // only a manifest made of bridge artifacts may ever land there.
+  const bridge = `version: 0.67.0
+files:
+  - url: v0.67.0/SuperOne-bridge-0.67.0-arm64-mac.zip
+    sha512: a
+  - url: v0.67.0/SuperOne-bridge-0.67.0-arm64.dmg
+    sha512: b
+path: v0.67.0/SuperOne-bridge-0.67.0-arm64-mac.zip
+`
+  it('accepts a manifest whose every artifact is a bridge build', () => {
+    expect(isBridgeManifest(bridge)).toBe(true)
+  })
+
+  it('rejects a manifest with any new-id artifact, or none at all', () => {
+    expect(isBridgeManifest(bridge.replace('SuperOne-bridge-0.67.0-arm64.dmg', 'SuperOne-0.67.0-arm64.dmg'))).toBe(false)
+    expect(isBridgeManifest('version: 0.67.0\nfiles: []\n')).toBe(false)
   })
 })

@@ -47,6 +47,8 @@ interface CallMedia {
   unsubscribe: (() => void) | null
   negotiationTimer: number | null
   cueGuardTimer: number | null
+  /** Armed while ICE reports `disconnected`; a recovery cancels it, expiry ends the call. */
+  disconnectTimer: number | null
   stopInputLevelMonitor: (() => void) | null
   /** True while the ready cue is playing into a live channel. */
   cueGuarded: boolean
@@ -58,6 +60,11 @@ let media: CallMedia | null = null
 let timelineLoadedFor: string | null = null
 
 const NEGOTIATION_TIMEOUT_MS = 15_000
+// ICE `disconnected` is transient by spec: consecutive STUN checks failed, which a lossy
+// link produces routinely, and the pair usually comes back on its own. Only `failed`
+// is terminal. Tearing down on the first `disconnected` ended calls mid-sentence on
+// networks with 20-30% packet loss, so give the link a chance to recover first.
+const DISCONNECT_GRACE_MS = 15_000
 
 export interface RealtimeCallMessages {
   offerFailed: string
@@ -131,6 +138,7 @@ function releaseMedia(): void {
   if (!media) return
   if (media.negotiationTimer !== null) window.clearTimeout(media.negotiationTimer)
   if (media.cueGuardTimer !== null) window.clearTimeout(media.cueGuardTimer)
+  if (media.disconnectTimer !== null) window.clearTimeout(media.disconnectTimer)
   media.stopInputLevelMonitor?.()
   media.stopDiagnostics?.()
   media.unsubscribe?.()
@@ -289,6 +297,7 @@ export async function startRealtimeCall({
     unsubscribe: null,
     negotiationTimer: null,
     cueGuardTimer: null,
+    disconnectTimer: null,
     stopInputLevelMonitor: null,
     cueGuarded: false,
     readyCuePlayed: false,
@@ -325,6 +334,10 @@ export async function startRealtimeCall({
     peer.onconnectionstatechange = () => {
       if (!media) return
       if (peer.connectionState === 'connected') {
+        if (media.disconnectTimer !== null) {
+          window.clearTimeout(media.disconnectTimer)
+          media.disconnectTimer = null
+        }
         // The SDP answer lands earlier than this, but media only flows once ICE and
         // DTLS finish — cueing on the answer would invite the user to speak into a
         // dead channel. An ICE restart re-enters `connected`, so the cue is latched
@@ -338,9 +351,20 @@ export async function startRealtimeCall({
         playVoiceReadyCue()
         return
       }
-      if (peer.connectionState !== 'failed' && peer.connectionState !== 'disconnected') return
-      releaseMedia()
-      useRealtimeCallStore.setState({ sessionId: null, state: 'idle' })
+      const endCall = () => {
+        releaseMedia()
+        useRealtimeCallStore.setState({ sessionId: null, state: 'idle' })
+      }
+      if (peer.connectionState === 'failed') {
+        endCall()
+        return
+      }
+      if (peer.connectionState !== 'disconnected' || media.disconnectTimer !== null) return
+      media.disconnectTimer = window.setTimeout(() => {
+        if (!media || media.peer !== peer) return
+        media.disconnectTimer = null
+        if (peer.connectionState === 'disconnected' || peer.connectionState === 'failed') endCall()
+      }, DISCONNECT_GRACE_MS)
     }
     const offer = await peer.createOffer({ offerToReceiveAudio: true })
     await peer.setLocalDescription(offer)

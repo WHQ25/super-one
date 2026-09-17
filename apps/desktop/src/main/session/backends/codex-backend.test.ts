@@ -65,6 +65,7 @@ const turnMocks = vi.hoisted(() => {
     reviewCodexTurn: vi.fn(captureImpl),
     compactCodexTurn: vi.fn(captureImpl),
     steerCodex: vi.fn(async () => {}),
+    startCodexRealtimeTypedTurn: vi.fn(async () => ({ turnId: 'turn-typed' })),
     deriveFinalResponse: (items: Array<{ type?: string; text?: string }>) => {
       for (let i = items.length - 1; i >= 0; i--) {
         if (items[i]?.type === 'agent_message') return items[i].text ?? ''
@@ -92,6 +93,7 @@ vi.mock('../../codex/codex-turn', () => ({
   reviewCodexTurn: turnMocks.reviewCodexTurn,
   compactCodexTurn: turnMocks.compactCodexTurn,
   steerCodex: turnMocks.steerCodex,
+  startCodexRealtimeTypedTurn: turnMocks.startCodexRealtimeTypedTurn,
   deriveFinalResponse: turnMocks.deriveFinalResponse,
   interruptCodex: turnMocks.interruptCodex,
   resetCodexSession: turnMocks.resetCodexSession,
@@ -392,6 +394,72 @@ describe('CodexBackend lifecycle', () => {
     expect(events).toContainEqual(expect.objectContaining({
       type: 'message_complete',
       messageId: 'codex_realtime_turn-live',
+    }))
+  })
+
+  it('sends typed text to the backing thread while voice is active', async () => {
+    const events: AgentEvent[] = []
+    backend.onEvent((event) => events.push(event))
+    await backend.start(makeStartOpts({ model: 'gpt-5.5' }))
+    await backend.startRealtimeVoice({ sdp: 'offer' })
+    const handler = realtimeMocks.state.delegatedHandler as {
+      callbacks: { onTurnStarted?: (info: { turnId?: string; queued: boolean }) => void }
+    }
+    turnMocks.startCodexRealtimeTypedTurn.mockClear()
+
+    await backend.send({
+      content: 'typed during voice',
+      clientMessageId: 'user_typed-1',
+      images: [{ mimeType: 'image/png', base64: 'AAAA', name: 'shot.png' }],
+    })
+
+    expect(service.runMock).not.toHaveBeenCalled()
+    expect(turnMocks.startCodexRealtimeTypedTurn).toHaveBeenCalledWith(
+      expect.anything(),
+      '/tmp/proj',
+      expect.objectContaining({
+        prompt: 'typed during voice',
+        clientMessageId: 'user_typed-1',
+        images: [expect.objectContaining({ name: 'shot.png' })],
+        model: 'gpt-5.5',
+      }),
+    )
+    expect(events).toContainEqual({ type: 'status_change', status: 'streaming' })
+
+    // The realtime pump renders the turn; it must read as the user's own Codex
+    // turn, not as voice-delegated work.
+    handler.callbacks.onTurnStarted?.({ turnId: 'turn-typed', queued: false })
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'message_start',
+      message: expect.objectContaining({
+        metadata: { codexTimeline: { provenance: 'codex', turnId: 'turn-typed' } },
+      }),
+    }))
+  })
+
+  it('steers a streaming delegated turn with typed text without relabelling the next delegation', async () => {
+    const events: AgentEvent[] = []
+    backend.onEvent((event) => events.push(event))
+    await backend.start(makeStartOpts())
+    await backend.startRealtimeVoice({ sdp: 'offer' })
+    const handler = realtimeMocks.state.delegatedHandler as {
+      callbacks: { onTurnStarted?: (info: { turnId?: string; queued: boolean }) => void }
+      onCompleted: (result: CodexRunResult) => void
+    }
+    handler.callbacks.onTurnStarted?.({ turnId: 'turn-delegated', queued: false })
+    turnMocks.startCodexRealtimeTypedTurn.mockClear()
+
+    await backend.send({ content: 'steer it', clientMessageId: 'user_steer-1' })
+
+    expect(turnMocks.startCodexRealtimeTypedTurn).toHaveBeenCalledOnce()
+    handler.onCompleted(makeResult({ threadId: 'thread-realtime', turnId: 'turn-delegated' }))
+    handler.callbacks.onTurnStarted?.({ turnId: 'turn-next', queued: false })
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'message_start',
+      message: expect.objectContaining({
+        id: 'codex_realtime_turn-next',
+        metadata: { codexTimeline: { provenance: 'realtime-delegated', turnId: 'turn-next' } },
+      }),
     }))
   })
 

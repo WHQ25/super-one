@@ -51,6 +51,7 @@ import {
   reviewCodexTurn,
   runCodexTurn,
   startCodexQueuedTurn,
+  startCodexRealtimeTypedTurn,
   steerCodex,
   type CodexRunStreamCallbacks,
 } from '../../codex/codex-turn'
@@ -245,6 +246,10 @@ export class CodexBackend implements SessionBackend {
   private session: CodexSession | null = null
   private realtimeHandle: CodexRealtimeHandle | null = null
   private realtimeTurnPump: Promise<void> | null = null
+  /** A turn on the voice-bound thread is streaming through the realtime pump. */
+  private realtimeTurnStreaming = false
+  /** Set before a typed `turn/start` so the pump labels the next fresh turn as ordinary Codex work. */
+  private realtimeTypedTurnPending = false
   private authChangedUnsub: (() => void) | null = null
 
   private warmHandlePromise: Promise<WarmCodexHandle | null> | null = null
@@ -632,7 +637,10 @@ export class CodexBackend implements SessionBackend {
 
   async send(request: SendMessageRequest): Promise<void> {
     this.assertStarted()
-    if (this.realtimeHandle) throw new Error('Stop realtime voice before sending a text turn.')
+    if (this.realtimeHandle) {
+      await this.sendDuringRealtimeVoice(request)
+      return
+    }
     if (this.realtimeTurnPump) await this.realtimeTurnPump
     if (request.priority === 'next' || request.priority === 'later') {
       if (this.isTurnBusy()) {
@@ -790,6 +798,7 @@ export class CodexBackend implements SessionBackend {
         } else {
           const codexRequest: CodexRunRequest = {
             prompt: request.codex?.prompt ?? request.content,
+            clientMessageId: request.clientMessageId,
             images: request.images,
             model: resolvedModel,
             reasoningEffort: resolvedReasoningEffort,
@@ -888,6 +897,58 @@ export class CodexBackend implements SessionBackend {
     this.interruptSession()
   }
 
+  /**
+   * Typed text and images while voice is active go straight to the backing
+   * Codex thread — the same "send text directly to the backend agent" path the
+   * upstream voice prompt describes. The voice model hears the reply through
+   * Codex's handoff mirror; the realtime pump renders the turn like a delegated
+   * one, but with ordinary provenance so it reads as the user's own turn.
+   */
+  private async sendDuringRealtimeVoice(request: SendMessageRequest): Promise<void> {
+    const startOpts = this.startOpts
+    if (!startOpts) throw new Error('CodexBackend missing startOpts')
+    const mode = request.codex?.mode ?? 'run'
+    if (mode !== 'run') throw new Error('Stop realtime voice before running a Codex review or compaction.')
+    const selection = resolveCodexBackendSelection(startOpts, request)
+    const session = this.ensureSessionForRequest(
+      selection.model,
+      this.providerSessionId ?? undefined,
+      selection.reasoningEffort,
+      selection.permissionPreset,
+      request.codex?.serviceTier !== undefined ? request.codex.serviceTier : this.session?.serviceTier ?? null,
+    )
+    const queuedPriority = request.priority === 'next' || request.priority === 'later'
+    if (queuedPriority && this.realtimeTurnStreaming) {
+      await this.enqueueDurableMessage(request)
+      return
+    }
+    // Same contract as the ordinary path: the renderer parked this bubble as
+    // queued, and only `queued_message_consumed` takes it back out.
+    if (queuedPriority && request.clientMessageId) {
+      this.emit({ type: 'queued_message_consumed', clientMessageId: request.clientMessageId })
+    }
+    // While a delegated turn streams, Codex steers it with this input instead of
+    // starting a fresh turn, so no `turn/started` will arrive to consume the flag.
+    this.realtimeTypedTurnPending = !this.realtimeTurnStreaming
+    try {
+      await startCodexRealtimeTypedTurn(session, startOpts.projectPath, {
+        prompt: request.codex?.prompt ?? request.content,
+        clientMessageId: request.clientMessageId,
+        images: request.images,
+        model: selection.model,
+        reasoningEffort: selection.reasoningEffort,
+        permissionPreset: selection.permissionPreset,
+        serviceTier: session.serviceTier,
+        collaborationMode: request.codex?.collaborationMode,
+        additionalDirectories: startOpts.additionalDirectories,
+      })
+    } catch (error) {
+      this.realtimeTypedTurnPending = false
+      throw error
+    }
+    if (!this.realtimeTurnStreaming) this.emit({ type: 'status_change', status: 'streaming' })
+  }
+
   async startRealtimeVoice(request: RealtimeVoiceStartRequest): Promise<void> {
     this.assertStarted()
     if (this.realtimeHandle) throw new Error('Realtime voice is already active.')
@@ -944,7 +1005,10 @@ export class CodexBackend implements SessionBackend {
           callbacks: {
             ...baseCallbacks,
             onTurnStarted: ({ turnId, queued }) => {
+              this.realtimeTurnStreaming = true
               if (queued) return
+              const typed = this.realtimeTypedTurnPending
+              this.realtimeTypedTurnPending = false
               const messageId = `codex_realtime_${turnId ?? `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`}`
               this.resetSegments(messageId)
               runningAssistantId = messageId
@@ -961,7 +1025,7 @@ export class CodexBackend implements SessionBackend {
                   providerId: 'codex',
                   metadata: {
                     codexTimeline: {
-                      provenance: 'realtime-delegated',
+                      provenance: typed ? 'codex' : 'realtime-delegated',
                       ...(turnId ? { turnId } : {}),
                     },
                   },
@@ -982,12 +1046,14 @@ export class CodexBackend implements SessionBackend {
             },
           },
           onCompleted: (result) => {
+            this.realtimeTurnStreaming = false
             finalizeRealtimeTurn(result, result.finalResponse)
             this.emit({ type: 'status_change', status: 'idle' })
             this.currentMessageId = null
             this.flushPendingTaskNotifications()
           },
           onError: (error) => {
+            this.realtimeTurnStreaming = false
             if (runningAssistantId) this.failMessage(runningAssistantId, error)
             runningAssistantId = null
             this.emit({ type: 'status_change', status: 'idle' })
@@ -1004,6 +1070,8 @@ export class CodexBackend implements SessionBackend {
     const turnPump = handle.delegatedTurns.finally(() => {
       if (this.realtimeTurnPump === turnPump) this.realtimeTurnPump = null
       this.swapRunAssistantId = null
+      this.realtimeTurnStreaming = false
+      this.realtimeTypedTurnPending = false
     })
     this.realtimeTurnPump = turnPump
     void handle.closed.finally(() => {

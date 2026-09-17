@@ -66,6 +66,7 @@ const {
   prewarmCodexSession,
   isCodexEmptyRolloutError,
   isCodexThreadNotFoundError,
+  startCodexRealtimeTypedTurn,
 } = await import('./codex-turn')
 const { getActiveProviderRaw, getProviderByIdRaw } = await import('../database')
 const { resolveChatService } = await import('../providers/resolver')
@@ -2206,6 +2207,57 @@ describe('runCodexTurn turn/start payload', () => {
       effort: 'high',
       summary: 'concise',
     }))
+  })
+
+  it('forwards the local user message id so timeline copies can be matched', async () => {
+    const { handle, request } = makeConnectionDriver('thread-client', 'turn-client')
+    const session = { ...makeSession({ model: 'gpt-5.4' }) }
+    session.connectionHandle = handle as never
+    session.connectionAuth = { mode: 'auto' }
+
+    await runCodexTurn(session, { mode: 'auto' }, '/project', {
+      prompt: 'Test prompt',
+      clientMessageId: 'user_local-1',
+      permissionPreset: 'default',
+    })
+
+    expect(request).toHaveBeenCalledWith('turn/start', expect.objectContaining({
+      clientUserMessageId: 'user_local-1',
+    }))
+  })
+
+  it('startCodexRealtimeTypedTurn issues turn/start on the voice-bound thread without resolving cwd', async () => {
+    const { handle, request } = makeConnectionDriver('thread-voice', 'turn-voice')
+    const session = { ...makeSession({ model: 'gpt-5.4', threadId: 'thread-voice' }) }
+    session.threadReady = true
+    session.effectiveCwd = '/project/sub'
+    session.connectionHandle = handle as never
+    session.connectionAuth = { mode: 'auto' }
+
+    const result = await startCodexRealtimeTypedTurn(session, '/project', {
+      prompt: 'typed during voice',
+      clientMessageId: 'user_voice-1',
+      permissionPreset: 'default',
+      cwd: '/elsewhere',
+    })
+
+    expect(result).toEqual({ turnId: 'turn-voice' })
+    expect(request.mock.calls.map((call) => call[0])).toEqual(['turn/start'])
+    expect(request).toHaveBeenCalledWith('turn/start', expect.objectContaining({
+      threadId: 'thread-voice',
+      clientUserMessageId: 'user_voice-1',
+      model: 'gpt-5.4',
+      input: [expect.objectContaining({ type: 'text', text: 'typed during voice' })],
+    }))
+    // A differing requested cwd must not reset the thread the call is bound to.
+    expect(session.threadId).toBe('thread-voice')
+    expect(session.effectiveCwd).toBe('/project/sub')
+  })
+
+  it('startCodexRealtimeTypedTurn rejects without a live thread connection', async () => {
+    const session = { ...makeSession({ threadId: 'thread-voice' }) }
+    await expect(startCodexRealtimeTypedTurn(session, '/project', { prompt: 'x' }))
+      .rejects.toThrow('Codex realtime thread is unavailable.')
   })
 
   it('does not request reasoning summary when reasoning effort is absent', async () => {

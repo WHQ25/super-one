@@ -3333,6 +3333,11 @@ export interface DiscoverModelsResult {
 
 export interface CodexRunRequest {
   prompt: string
+  /**
+   * Echoed by Codex as the user item's `clientId`, so timeline copies of this
+   * turn can be matched back to the local user message.
+   */
+  clientMessageId?: string
   model?: string
   reasoningEffort?: CodexReasoningEffort
   permissionPreset?: CodexPermissionPreset

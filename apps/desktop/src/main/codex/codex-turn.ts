@@ -2510,6 +2510,77 @@ export async function prewarmCodexConnection(
   return createAppServerConnection(auth, signal, undefined, undefined, apiProviderId)
 }
 
+function buildTurnStartParams(
+  session: CodexSession,
+  threadId: string,
+  input: Array<Record<string, unknown>>,
+  request: CodexRunRequest,
+  permissionProfile: ReturnType<typeof resolvePermissionProfile>,
+  cwd: string,
+): Record<string, unknown> {
+  const collaborationMode = buildCollaborationMode(
+    request.collaborationMode,
+    session.model,
+    session.modelReasoningEffort,
+  )
+  // Consumed by this turn only. `kind: 'application'` makes the app server
+  // render it as a developer-role message inserted immediately BEFORE the
+  // user input — inside the conversation, at the tail. `developer_instructions`
+  // would land at `input[0]` instead (codex's
+  // `includes_developer_instructions_message_in_request` asserts exactly that),
+  // moving the cached prefix this fork exists to reuse.
+  const pendingInstruction = session.pendingInstruction
+  session.pendingInstruction = null
+  return compactRecord({
+    threadId,
+    input,
+    // Lands on the timeline's userMessage as `clientId`; the realtime thread
+    // view keys local user rows by id, so without it every typed turn
+    // renders twice once a voice timeline exists.
+    ...(request.clientMessageId ? { clientUserMessageId: request.clientMessageId } : {}),
+    ...(pendingInstruction
+      ? { additionalContext: { superone: { value: pendingInstruction, kind: 'application' } } }
+      : {}),
+    ...(session.model ? { model: session.model } : {}),
+    ...(session.serviceTier ? { serviceTier: session.serviceTier } : {}),
+    ...(session.modelReasoningEffort
+      ? { effort: session.modelReasoningEffort, summary: 'concise' }
+      : {}),
+    approvalPolicy: permissionProfile.approvalPolicy,
+    approvalsReviewer: permissionProfile.approvalsReviewer,
+    sandboxPolicy: buildTurnSandboxPolicy(cwd, permissionProfile, request.additionalDirectories),
+    ...(collaborationMode ? { collaborationMode } : {}),
+  })
+}
+
+/**
+ * Typed input while realtime voice owns the thread. Codex treats `turn/start`
+ * as start-or-steer, and the voice model hears the backend's replies through
+ * its handoff mirror, so this is the upstream-sanctioned "send text directly to
+ * the backend agent" path. The realtime turn pump already streams every turn on
+ * this thread; only the request is issued here.
+ */
+export async function startCodexRealtimeTypedTurn(
+  session: CodexSession,
+  projectPath: string,
+  request: CodexRunRequest,
+): Promise<{ turnId: string | null }> {
+  const connection = session.connectionHandle?.connection
+  const threadId = session.threadId
+  if (!connection || !threadId || !session.threadReady) {
+    throw new Error('Codex realtime thread is unavailable.')
+  }
+  const input = buildCodexQueuedInput(request.prompt, request.images)
+  const permissionProfile = resolvePermissionProfile(session.permissionPreset)
+  // Never `resolveCwd` here: a differing cwd would reset the thread the voice call is bound to.
+  const cwd = session.effectiveCwd || projectPath
+  const result = await connection.request(
+    'turn/start',
+    buildTurnStartParams(session, threadId, input, request, permissionProfile, cwd),
+  )
+  return { turnId: readString(asRecord(result.turn)?.id) ?? null }
+}
+
 export async function runCodexTurn(
   session: CodexSession,
   auth: CodexProjectAuth,
@@ -2529,11 +2600,6 @@ export async function runCodexTurn(
   try {
     const permissionProfile = resolvePermissionProfile(session.permissionPreset)
     const effectiveCwd = resolveCwd(session, projectPath, request.cwd)
-    const collaborationMode = buildCollaborationMode(
-      request.collaborationMode,
-      session.model,
-      session.modelReasoningEffort,
-    )
 
     const streamed = await withThreadConnection(
       session,
@@ -2552,32 +2618,9 @@ export async function runCodexTurn(
         }
 
         markMutationStarted()
-        // Consumed by this turn only. `kind: 'application'` makes the app server
-        // render it as a developer-role message inserted immediately BEFORE the
-        // user input — inside the conversation, at the tail. `developer_instructions`
-        // would land at `input[0]` instead (codex's
-        // `includes_developer_instructions_message_in_request` asserts exactly that),
-        // moving the cached prefix this fork exists to reuse.
-        const pendingInstruction = session.pendingInstruction
-        session.pendingInstruction = null
         const turnStartResult = await connection.request(
           'turn/start',
-          compactRecord({
-            threadId: resolvedThreadId,
-            input,
-            ...(pendingInstruction
-              ? { additionalContext: { superone: { value: pendingInstruction, kind: 'application' } } }
-              : {}),
-            ...(session.model ? { model: session.model } : {}),
-            ...(session.serviceTier ? { serviceTier: session.serviceTier } : {}),
-            ...(session.modelReasoningEffort
-              ? { effort: session.modelReasoningEffort, summary: 'concise' }
-              : {}),
-            approvalPolicy: permissionProfile.approvalPolicy,
-            approvalsReviewer: permissionProfile.approvalsReviewer,
-            sandboxPolicy: buildTurnSandboxPolicy(effectiveCwd, permissionProfile, request.additionalDirectories),
-            ...(collaborationMode ? { collaborationMode } : {}),
-          }),
+          buildTurnStartParams(session, resolvedThreadId, input, request, permissionProfile, effectiveCwd),
         )
         markTurnAccepted()
 

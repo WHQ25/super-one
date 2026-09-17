@@ -3184,6 +3184,79 @@ describe('Session persist hook', () => {
     expect(completed?._lastAppliedSeq).toBe(completed?.metadata?.codexTimeline?.localOrder)
   })
 
+  it('persists a backend-originated delegation prompt with a timeline stamp before its turn', () => {
+    const { session, backend } = makeSession({
+      providerId: 'codex-base',
+      harnessId: 'codex',
+    })
+    backend.emit({
+      type: 'user_message_appended',
+      message: {
+        id: 'user-item-1',
+        role: 'user',
+        status: 'complete',
+        content: [{ type: 'text', text: '<realtime_delegation>Check the diff</realtime_delegation>' }],
+        createdAt: '',
+        providerId: 'codex',
+        metadata: { codexTimeline: { provenance: 'realtime-delegated', turnId: 'turn-1' } },
+      },
+    })
+    backend.emit({
+      type: 'message_start',
+      message: {
+        id: 'delegated-1',
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: '',
+        providerId: 'codex',
+        metadata: { codexTimeline: { provenance: 'realtime-delegated', turnId: 'turn-1' } },
+      },
+    })
+
+    const [prompt, turn] = session.snapshot.messages
+    expect(prompt?.id).toBe('user-item-1')
+    expect(prompt?.metadata?.codexTimeline?.localOrder).toBe(prompt?._lastAppliedSeq)
+    expect(turn?.metadata?.codexTimeline?.localOrder).toBeGreaterThan(prompt?.metadata?.codexTimeline?.localOrder ?? 0)
+    // Re-delivery (reconnect, replay) must not duplicate the row.
+    backend.emit({
+      type: 'user_message_appended',
+      message: {
+        id: 'user-item-1', role: 'user', status: 'complete', content: [], createdAt: '', providerId: 'codex',
+      },
+    })
+    expect(session.snapshot.messages).toHaveLength(2)
+  })
+
+  it('places a delegation prompt that arrives after turn/started ahead of its assistant row', () => {
+    const { session, backend } = makeSession({
+      providerId: 'codex-base',
+      harnessId: 'codex',
+    })
+    const delegation = (id: string, text: string) => ({
+      id, role: 'user' as const, status: 'complete' as const, createdAt: '', providerId: 'codex' as const,
+      content: [{ type: 'text' as const, text: `<realtime_delegation><input>${text}</input></realtime_delegation>` }],
+      metadata: { codexTimeline: { provenance: 'realtime-delegated' as const, turnId: 'turn-1' } },
+    })
+    // Codex announces the turn before the user item that opened it.
+    backend.emit({
+      type: 'message_start',
+      message: {
+        id: 'delegated-1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'codex',
+        metadata: { codexTimeline: { provenance: 'realtime-delegated', turnId: 'turn-1' } },
+      },
+    })
+    backend.emit({ type: 'user_message_appended', message: delegation('prompt-1', 'Open the tab') })
+    // A mid-turn steer from the voice agent joins the prompts, still ahead of the row.
+    backend.emit({ type: 'user_message_appended', message: delegation('prompt-2', 'And search for it') })
+
+    const ids = session.snapshot.messages.map((message) => message.id)
+    expect(ids).toEqual(['prompt-1', 'prompt-2', 'delegated-1'])
+    const orders = session.snapshot.messages.map((message) => message.metadata?.codexTimeline?.localOrder)
+    expect(orders[0]).toBe(orders[2])
+    expect(orders[1]).toBe(orders[2])
+  })
+
   it('waits for cold backend startup shared with timeline before starting voice', async () => {
     const { session, backend } = makeSession({
       providerId: 'codex-base',

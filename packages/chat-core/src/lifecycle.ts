@@ -1,5 +1,5 @@
 import type { AgentEvent } from '@superone/shared/agent-types'
-import { applySeqToMessage } from '@superone/shared/event-seq-utils'
+import { insertCodexTimelineRow, stampCodexTimelineOrder } from '@superone/shared/codex-timeline-rows'
 import { DEFAULT_PROVIDER } from './transformers'
 import type { ChatCoreSession } from './types'
 import { retractContentBlocks, sealCodexMetadata, sealStreamingTools } from './shared'
@@ -54,22 +54,7 @@ export function reduceLifecycle(
 
     case 'message_start': {
       const existingIdx = session.messages.findIndex((m) => m.id === event.message.id)
-      const timeline = event.message.metadata?.codexTimeline
-      const message = {
-        ...event.message,
-        ...applySeqToMessage(event),
-        ...(timeline && event.seq !== undefined
-          ? {
-              metadata: {
-                ...event.message.metadata,
-                codexTimeline: {
-                  ...timeline,
-                  localOrder: timeline.localOrder ?? event.seq,
-                },
-              },
-            }
-          : {}),
-      }
+      const message = stampCodexTimelineOrder(event.message, event)
       const nextMessages = existingIdx === -1
         ? [...session.messages, message]
         : session.messages
@@ -99,7 +84,10 @@ export function reduceLifecycle(
     case 'user_message_appended': {
       if (session.messages.some((m) => m.id === event.message.id)) return {}
       return {
-        messages: [...session.messages, event.message],
+        // A backend-originated Codex row (the voice agent's delegation prompt)
+        // takes its timeline order from the event like an assistant start does,
+        // and lands ahead of the assistant row of the turn it opened.
+        messages: insertCodexTimelineRow(session.messages, stampCodexTimelineOrder(event.message, event)),
         lastEventAt: ports.now(),
       }
     }

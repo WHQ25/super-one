@@ -115,6 +115,11 @@ export interface CodexRunStreamCallbacks {
   onThreadStarted?: (threadId: string) => void
   /** A provider-created turn surfaced on the shared thread notification stream. */
   onTurnStarted?: (info: { turnId?: string; queued: boolean }) => void
+  /**
+   * A user item Codex opened that SuperOne did not send — today the
+   * `<realtime_delegation>` prompt the voice agent injects into the thread.
+   */
+  onProviderUserMessage?: (info: { itemId: string; turnId?: string; text: string }) => void
   onItemDelta?: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => void
   emitForkItem?: (forkThreadId: string, phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => void
   onUsageDelta?: (usage: CodexUsageInfo) => void
@@ -2167,6 +2172,20 @@ export async function streamTurnEvents(
           const clientMessageId = readString(rawItem.clientId)
           if (clientMessageId && method === 'item/started') {
             callbacks?.onQueuedMessageConsumed?.(clientMessageId)
+          }
+          // No clientId means SuperOne never sent it: the row originated inside the
+          // provider and the transcript has no other record of it.
+          const itemId = readString(rawItem.id)
+          if (!clientMessageId && itemId && method === 'item/started') {
+            const text = (Array.isArray(rawItem.content) ? rawItem.content : [])
+              .map((input) => {
+                const inputRecord = asRecord(input)
+                return readString(inputRecord?.type) === 'text' ? readString(inputRecord?.text) : null
+              })
+              .filter((part): part is string => part !== null)
+              .join('\n')
+            const turnId = readNotificationTurnId(params)
+            callbacks?.onProviderUserMessage?.({ itemId, ...(turnId ? { turnId } : {}), text })
           }
           break
         }

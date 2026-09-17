@@ -86,4 +86,53 @@ describe('realtime voice reduction', () => {
     )
     expect(patch.realtimeSegments?.map((segment) => segment.text)).toEqual(['first', 'second'])
   })
+
+  it('stamps a backend-originated delegation prompt with the event order', () => {
+    const message = {
+      id: 'user-item-1',
+      role: 'user' as const,
+      status: 'complete' as const,
+      content: [{ type: 'text' as const, text: '<realtime_delegation>Check the diff</realtime_delegation>' }],
+      createdAt: '',
+      providerId: 'codex' as const,
+      metadata: { codexTimeline: { provenance: 'realtime-delegated' as const, turnId: 'turn-1' } },
+    }
+    const patch = applyEventToSession(session(), { type: 'user_message_appended', message, seq: 41 })
+    expect(patch.messages?.[0]).toMatchObject({
+      id: 'user-item-1',
+      _lastAppliedSeq: 41,
+      metadata: { codexTimeline: { provenance: 'realtime-delegated', turnId: 'turn-1', localOrder: 41 } },
+    })
+    // An ordinary appended row (no timeline metadata) is stored as sent.
+    const plain = applyEventToSession(session(), {
+      type: 'user_message_appended', message: { ...message, id: 'plain', metadata: undefined }, seq: 42,
+    })
+    expect(plain.messages?.[0]?.metadata).toBeUndefined()
+  })
+
+  it('places a delegation prompt ahead of the assistant row of its turn', () => {
+    const assistant = {
+      id: 'delegated-1',
+      role: 'assistant' as const,
+      status: 'streaming' as const,
+      content: [],
+      createdAt: '',
+      providerId: 'codex' as const,
+      metadata: { codexTimeline: { provenance: 'realtime-delegated' as const, turnId: 'turn-1', localOrder: 40 } },
+    }
+    const prompt = {
+      id: 'user-item-1',
+      role: 'user' as const,
+      status: 'complete' as const,
+      content: [{ type: 'text' as const, text: '<realtime_delegation><input>Check the diff</input></realtime_delegation>' }],
+      createdAt: '',
+      providerId: 'codex' as const,
+      metadata: { codexTimeline: { provenance: 'realtime-delegated' as const, turnId: 'turn-1' } },
+    }
+    const patch = applyEventToSession(session({ messages: [assistant] }), {
+      type: 'user_message_appended', message: prompt, seq: 41,
+    })
+    expect(patch.messages?.map((row) => row.id)).toEqual(['user-item-1', 'delegated-1'])
+    expect(patch.messages?.[0]?.metadata?.codexTimeline?.localOrder).toBe(40)
+  })
 })

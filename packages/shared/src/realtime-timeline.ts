@@ -9,6 +9,70 @@ export function isRealtimeDelegationText(text: string): boolean {
     && normalized.endsWith(REALTIME_DELEGATION_CLOSE)
 }
 
+export type RealtimeDelegationSource = 'handoff' | 'transcript_tail_flush'
+
+export interface RealtimeTranscriptLine {
+  role: string
+  text: string
+}
+
+/**
+ * The envelope Codex's voice agent injects into the thread, decoded:
+ *
+ *   <realtime_delegation>
+ *     [<source>transcript_tail_flush</source>]
+ *     <input>…what the voice agent asked Codex to do…</input>
+ *     [<transcript_delta>role: text⏎role: text…</transcript_delta>]
+ *   </realtime_delegation>
+ *
+ * `input` is the handoff instruction (or, for a tail flush after the call ends,
+ * a fixed "acknowledge the handoff" sentence); `transcript` is the spoken context
+ * since the previous handoff. Field text is XML-escaped and capped at 4 KiB.
+ */
+export interface RealtimeDelegation {
+  source: RealtimeDelegationSource
+  input: string
+  transcript: RealtimeTranscriptLine[]
+}
+
+function unescapeXmlText(text: string): string {
+  return text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+}
+
+function readTag(body: string, tag: string): string | null {
+  const match = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(body)
+  return match ? match[1] : null
+}
+
+/** Decode a delegation envelope, or null for ordinary text. */
+export function parseRealtimeDelegation(text: string): RealtimeDelegation | null {
+  if (!isRealtimeDelegationText(text)) return null
+  const normalized = text.trim()
+  const body = normalized.slice(REALTIME_DELEGATION_OPEN.length, normalized.length - REALTIME_DELEGATION_CLOSE.length)
+  const input = readTag(body, 'input')
+  const delta = readTag(body, 'transcript_delta')
+  return {
+    source: readTag(body, 'source')?.trim() === 'transcript_tail_flush' ? 'transcript_tail_flush' : 'handoff',
+    // An envelope without fields (older builds) is its own instruction.
+    input: unescapeXmlText(input ?? body).trim(),
+    transcript: (delta ? unescapeXmlText(delta) : '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const separator = line.indexOf(': ')
+        return separator > 0
+          ? { role: line.slice(0, separator), text: line.slice(separator + 2) }
+          : { role: '', text: line }
+      }),
+  }
+}
+
+/** The instruction inside a delegation envelope, or null for ordinary text. */
+export function realtimeDelegationText(text: string): string | null {
+  return parseRealtimeDelegation(text)?.input ?? null
+}
+
 /** Remove duplicate canonical entries without collapsing legitimate repeated speech. */
 export function dedupeRealtimeTimelineSegments(
   segments: RealtimeTimelineSegment[],

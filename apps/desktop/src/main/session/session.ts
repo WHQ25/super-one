@@ -1,5 +1,6 @@
 import { admitTurnAttachments } from '@superone/shared/attachment-turn'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
+import { insertCodexTimelineRow, stampCodexTimelineOrder } from '@superone/shared/codex-timeline-rows'
 import { buildCompactBoundaryMessage, compactBoundaryInsertIndex, isCompactSlashSend } from '@superone/shared/compact-boundary'
 import { newMessageId } from '@superone/shared/message-id'
 import { SessionShutdown } from './session-shutdown'
@@ -2117,25 +2118,15 @@ export class Session implements SessionContract {
       streamingTokensByMessageId: this._streamingTokensByMessageId,
       lastUsageByMessageId: this._lastUsageByMessageId,
     }
-    if (event.type === 'message_start') {
+    // A backend-originated user row (the voice agent's delegation prompt) is
+    // persisted here like an assistant start: same seq stamp, same dedupe, but
+    // placed ahead of the assistant row of the turn it belongs to.
+    if (event.type === 'message_start' || event.type === 'user_message_appended') {
       const existing = this._messages.find((m) => m.id === event.message.id)
       if (!existing) {
-        const timeline = event.message.metadata?.codexTimeline
-        const message = timeline && event.seq !== undefined
-          ? {
-              ...event.message,
-              _lastAppliedSeq: event.seq,
-              ...(event.epoch === undefined ? {} : { _lastAppliedEpoch: event.epoch }),
-              metadata: {
-                ...event.message.metadata,
-                codexTimeline: {
-                  ...timeline,
-                  localOrder: timeline.localOrder ?? event.seq,
-                },
-              },
-            }
-          : event.message
-        this.replaceMessages([...this._messages, message])
+        const next = insertCodexTimelineRow(this._messages, stampCodexTimelineOrder(event.message, event))
+        // Inserting mid-transcript shifts every sort_order after the row.
+        this.replaceMessages(next, { fullPersist: next[next.length - 1]?.id !== event.message.id })
       }
       return
     }

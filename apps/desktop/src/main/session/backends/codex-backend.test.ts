@@ -397,6 +397,30 @@ describe('CodexBackend lifecycle', () => {
     }))
   })
 
+  it('surfaces the delegation prompt as a user row under the provider item id', async () => {
+    const events: AgentEvent[] = []
+    backend.onEvent((event) => events.push(event))
+    await backend.start(makeStartOpts())
+    await backend.startRealtimeVoice({ sdp: 'offer' })
+    const handler = realtimeMocks.state.delegatedHandler as { callbacks: CodexRunStreamCallbacksDeps }
+    const delegation = '<realtime_delegation>Check the diff</realtime_delegation>'
+
+    handler.callbacks.onProviderUserMessage?.({ itemId: 'user-item-1', turnId: 'turn-live', text: delegation })
+    // Any other provider-originated user row is not a delegation and stays out of the transcript.
+    handler.callbacks.onProviderUserMessage?.({ itemId: 'user-item-2', turnId: 'turn-live', text: 'plain' })
+
+    const rows = events.filter((event) => event.type === 'user_message_appended')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toEqual(expect.objectContaining({
+      message: expect.objectContaining({
+        id: 'user-item-1',
+        role: 'user',
+        content: [{ type: 'text', text: delegation }],
+        metadata: { codexTimeline: { provenance: 'realtime-delegated', turnId: 'turn-live' } },
+      }),
+    }))
+  })
+
   it('sends typed text to the backing thread while voice is active', async () => {
     const events: AgentEvent[] = []
     backend.onEvent((event) => events.push(event))

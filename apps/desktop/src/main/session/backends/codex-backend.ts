@@ -24,6 +24,7 @@ import type {
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import { buildAgentErrorInfo } from '@superone/shared/agent-error'
+import { isRealtimeDelegationText } from '@superone/shared/realtime-timeline'
 import { readCodexErrorOverrides } from '@superone/codex'
 import log from '../../logger'
 import { trace } from '../../agent/event-trace'
@@ -73,6 +74,7 @@ import type { BackendCommand, BackendStartOptions, HarnessId, SessionBackend, Ta
 export interface CodexRunStreamCallbacksDeps {
   onThreadStarted?: (threadId: string) => void
   onTurnStarted?: (info: { turnId?: string; queued: boolean }) => void
+  onProviderUserMessage?: (info: { itemId: string; turnId?: string; text: string }) => void
   onItemDelta?: (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => void
   onUsageDelta?: (usage: CodexUsageInfo) => void
   onUsageAccounted?: (threadId: string, usage: CodexUsageInfo) => void
@@ -1004,6 +1006,30 @@ export class CodexBackend implements SessionBackend {
         {
           callbacks: {
             ...baseCallbacks,
+            // The envelope is the only record of what the voice agent asked Codex to
+            // do. Surface it as the delegated turn's user row as soon as Codex opens
+            // it, under the id the provider timeline will later carry, so the
+            // restored copy overlays rather than duplicates this one.
+            onProviderUserMessage: ({ itemId, turnId, text }) => {
+              if (!isRealtimeDelegationText(text)) return
+              this.emit({
+                type: 'user_message_appended',
+                message: {
+                  id: itemId,
+                  role: 'user',
+                  status: 'complete',
+                  content: [{ type: 'text', text }],
+                  createdAt: new Date().toISOString(),
+                  providerId: 'codex',
+                  metadata: {
+                    codexTimeline: {
+                      provenance: 'realtime-delegated',
+                      ...(turnId ? { turnId } : {}),
+                    },
+                  },
+                },
+              })
+            },
             onTurnStarted: ({ turnId, queued }) => {
               this.realtimeTurnStreaming = true
               if (queued) return

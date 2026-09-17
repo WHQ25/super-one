@@ -1330,6 +1330,60 @@ describe('streamTurnEvents auto-compaction with a queued message', () => {
   })
 })
 
+describe('streamTurnEvents provider user rows', () => {
+  it('reports a user item Codex opened without a clientId, once, with its turn', async () => {
+    const session = { ...makeSession(), threadId: 'main-thread' }
+    const delegation = '<realtime_delegation>Check the diff</realtime_delegation>'
+    const notifications: Array<{ method: string; params: Record<string, unknown> }> = [
+      { method: 'turn/started', params: { threadId: 'main-thread', turn: { id: 'turn-1' } } },
+      {
+        method: 'item/started',
+        params: {
+          threadId: 'main-thread', turnId: 'turn-1',
+          item: { id: 'user-1', type: 'userMessage', content: [{ type: 'text', text: delegation }] },
+        },
+      },
+      {
+        method: 'item/completed',
+        params: {
+          threadId: 'main-thread', turnId: 'turn-1',
+          item: { id: 'user-1', type: 'userMessage', content: [{ type: 'text', text: delegation }] },
+        },
+      },
+      // A row SuperOne sent carries its clientId and is a queued-message consume, not a provider row.
+      {
+        method: 'item/started',
+        params: {
+          threadId: 'main-thread', turnId: 'turn-1',
+          item: { id: 'user-2', type: 'userMessage', clientId: 'typed', content: [{ type: 'text', text: 'typed' }] },
+        },
+      },
+      { method: 'turn/completed', params: { threadId: 'main-thread', turn: { id: 'turn-1', status: 'completed' } } },
+    ]
+    const connection = {
+      request: vi.fn().mockResolvedValue({}),
+      respond: vi.fn().mockResolvedValue(undefined),
+      notify: vi.fn().mockResolvedValue(undefined),
+      nextNotification: vi.fn().mockImplementation(async () => {
+        const next = notifications.shift()
+        if (!next) throw new Error('no notification')
+        return next
+      }),
+    } as never
+
+    const onProviderUserMessage = vi.fn()
+    const onQueuedMessageConsumed = vi.fn()
+    await streamTurnEvents(connection, session, 'turn-1', new AbortController(), {
+      onProviderUserMessage,
+      onQueuedMessageConsumed,
+    })
+
+    expect(onProviderUserMessage).toHaveBeenCalledTimes(1)
+    expect(onProviderUserMessage).toHaveBeenCalledWith({ itemId: 'user-1', turnId: 'turn-1', text: delegation })
+    expect(onQueuedMessageConsumed).toHaveBeenCalledWith('typed')
+  })
+})
+
 describe('streamTurnEvents child-thread routing', () => {
   beforeEach(() => {
     vi.clearAllMocks()

@@ -31,6 +31,7 @@ export class MobileBroadcaster {
         type: 'session_activity',
         activity: summarizeSessionActivity({
           ...session.snapshot,
+          seenCompletedMessageId: session.seenCompletedMessageId,
           // Backend liveness can change before the awaited send updates the snapshot.
           ...(event.type === 'status_change' ? { status: event.status } : {}),
         }, session.getPendingInteractions()),

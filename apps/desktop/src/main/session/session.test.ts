@@ -1812,6 +1812,66 @@ describe('firstTurnPreamble', () => {
   })
 })
 
+describe('Session read receipt', () => {
+  const reply: ChatMessage = {
+    id: 'reply-1', role: 'assistant', status: 'complete', content: [{ type: 'text', text: 'done' }],
+    createdAt: '', providerId: 'claude',
+  }
+
+  it('records the latest completion as read when the session comes on screen, once per completion', () => {
+    const { session } = makeSession({ initialMessages: [reply] })
+    const received: AgentEvent[] = []
+    session.on((e) => received.push(e))
+    expect(session.seenCompletedMessageId).toBeNull()
+
+    session.setForeground(true)
+    expect(session.seenCompletedMessageId).toBe('reply-1')
+    expect(received).toEqual([expect.objectContaining({ type: 'session_seen', messageId: 'reply-1', sessionId: 'sess-1' })])
+
+    // A second viewer (mosaic tile) and an explicit phone receipt add nothing new.
+    session.setForeground(true)
+    session.markSeen()
+    expect(received).toHaveLength(1)
+  })
+
+  it('reads a run that finishes while on screen, after the idle itself', () => {
+    const { session, backend } = makeSession()
+    session.setForeground(true)
+    const received: AgentEvent[] = []
+    session.on((e) => received.push(e))
+
+    backend.emit({ type: 'message_start', message: { ...reply, status: 'streaming' } })
+    backend.emit({ type: 'message_complete', messageId: 'reply-1', metadata: {} })
+    backend.emit({ type: 'status_change', status: 'idle' })
+
+    expect(received.map((e) => e.type)).toEqual(['message_start', 'message_complete', 'status_change', 'session_seen'])
+    expect(session.seenCompletedMessageId).toBe('reply-1')
+  })
+
+  it('does not count a receipt as agent activity: recency and idle release are untouched', () => {
+    const { session, backend } = makeSession({ initialMessages: [reply] })
+    backend.activeRuntime = true
+    const lastEventAt = session.snapshot.lastEventAt
+    const idleAt = Date.now() + 60_000
+    expect(session.isRuntimeIdle(idleAt, 30_000)).toBe(true)
+
+    session.markSeen()
+    expect(session.snapshot.lastEventAt).toBe(lastEventAt)
+    expect(session.isRuntimeIdle(idleAt, 30_000)).toBe(true)
+  })
+
+  it('leaves a run that finishes off screen unread until a client reports it', () => {
+    const { session, backend } = makeSession()
+    backend.emit({ type: 'message_start', message: { ...reply, status: 'streaming' } })
+    backend.emit({ type: 'message_complete', messageId: 'reply-1', metadata: {} })
+    backend.emit({ type: 'status_change', status: 'idle' })
+    expect(session.seenCompletedMessageId).toBeNull()
+
+    session.markSeen()
+    expect(session.seenCompletedMessageId).toBe('reply-1')
+  })
+})
+
 describe('Session event forwarding', () => {
   it('forwards backend events with sessionId tagged', async () => {
     const { session, backend } = makeSession()

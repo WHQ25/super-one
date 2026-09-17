@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionActivity } from '@superone/shared/session-activity'
-import { countAttentionSessions, mergeSessionActivity, projectHasAttention, sessionActivityIconStatus } from './session-activity-state'
+import { completionSeen, countAttentionSessions, mergeSessionActivity, projectHasAttention, sessionActivityIconStatus } from './session-activity-state'
 
 const idle: SessionActivity = { sessionId: 'other', projectPath: '/project', provider: 'codex', status: 'idle', completedMessageId: 'reply-1', pendingCount: 0, pendingReason: { en: null, zh: null } }
 
@@ -25,6 +25,16 @@ describe('unseen session completion', () => {
   })
   it('marks an unopened background session from the terminal push', () => {
     expect(mergeSessionActivity(undefined, idle, null, true).isUnseen).toBe(true)
+  })
+  it('clears a completion the host recorded as read elsewhere, and keeps one read before the latest reply', () => {
+    const unread = mergeSessionActivity({ ...idle, status: 'streaming' }, idle, 'current', true)
+    expect(mergeSessionActivity(unread, { ...idle, seenCompletedMessageId: 'reply-1' }, 'current').isUnseen).toBe(false)
+    expect(mergeSessionActivity(unread, { ...idle, completedMessageId: 'reply-2', seenCompletedMessageId: 'reply-1' }, 'current').isUnseen).toBe(true)
+    expect(completionSeen({ completedMessageId: 'reply-1', seenCompletedMessageId: 'reply-1' })).toBe(true)
+    expect(completionSeen({ completedMessageId: 'reply-1' })).toBe(false)
+  })
+  it('keeps the local unread flag on a host without seen tracking', () => {
+    expect(mergeSessionActivity({ ...idle, status: 'streaming' }, idle, 'current', true).isUnseen).toBe(true)
   })
 })
 

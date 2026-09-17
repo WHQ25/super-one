@@ -11,6 +11,7 @@ import { getPendingReason } from '@/components/sidebar/session-state-utils'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { cn } from '@superone/ui/lib/utils'
 import { createDragCapture } from '@/lib/drag-capture'
+import { clearUnseenCompleted } from '@/stores/chat-store/helpers/unseen-completed'
 
 const OFFSET = 8
 const DEFAULT_PANEL_W = 360
@@ -109,19 +110,9 @@ export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchor
     if (!state.activeProject) return
     const proj = state.projectSessions[state.activeProject]
     if (!proj?._activeSessionId) return
-    if (!proj.unseenCompletedSessions.has(proj._activeSessionId)) return
-    useChatStore.setState((s) => {
-      const p = s.activeProject ? s.projectSessions[s.activeProject] : null
-      if (!p?._activeSessionId) return {}
-      const next = new Set(p.unseenCompletedSessions)
-      next.delete(p._activeSessionId)
-      return {
-        projectSessions: {
-          ...s.projectSessions,
-          [s.activeProject!]: { ...p, unseenCompletedSessions: next },
-        },
-      }
-    })
+    const { activeProject } = state
+    const sessionId = proj._activeSessionId
+    useChatStore.setState((s) => clearUnseenCompleted(s, activeProject, sessionId))
   }, [isOpen])
 
   const scrollViewportRef = useRef<HTMLDivElement>(null)

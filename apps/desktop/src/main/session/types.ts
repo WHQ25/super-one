@@ -445,6 +445,10 @@ export interface Session {
   claim(owner: Extract<SessionOwner, { kind: 'remote' }>): void
   release(deviceId: string, reason?: SessionLeaveReason): void
   setForeground(visible: boolean): void
+  /** Host-recorded read receipt for the latest completion; null until something is read. */
+  readonly seenCompletedMessageId: string | null
+  /** Record the latest completion as read on behalf of whichever client is showing it. */
+  markSeen(): void
   hasActiveRuntime(): boolean
   isRuntimeIdle(now: number, timeoutMs: number): boolean
   releaseRuntime(reason: 'idle', afterRelease?: () => Promise<void>): Promise<boolean>

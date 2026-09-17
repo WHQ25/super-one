@@ -26,6 +26,7 @@ import {
   inferProviderFromHarnessId,
   resolveProvider,
 } from './helpers/provider-routing'
+import { clearUnseenCompleted } from './helpers/unseen-completed'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
 import { extractPartialToolInput } from './event-reducer/partial-tool-input'
 import type { AccountInfo, AgentEvent, AgentInfo, AgentPrewarmHint, AgentStatus, AskUserQuestionRequest, ChatMessage, ChatMessageContext, ClaudeResources, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, ContextUsageInfo, EffortLevel, HarnessId, HarnessResourcesMap, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SkillInfo, SlashCommandInfo, TodoItem, UserQuestion } from '@superone/shared/agent-types'
@@ -717,13 +718,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     }
 
     if (project.unseenCompletedSessions.has(sessionId)) {
-      set((s) => {
-        const proj = s.projectSessions[activeProject]
-        if (!proj) return {}
-        const next = new Set(proj.unseenCompletedSessions)
-        next.delete(sessionId)
-        return { projectSessions: { ...s.projectSessions, [activeProject]: { ...proj, unseenCompletedSessions: next } } }
-      })
+      set((s) => clearUnseenCompleted(s, activeProject, sessionId))
     }
 
     // Case A: Session already in _sessions (background streaming or parked)

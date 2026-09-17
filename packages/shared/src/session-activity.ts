@@ -13,12 +13,18 @@ export interface SessionActivity {
   title?: string | null
   /** Latest finished assistant message, used by each client to track unread completions. */
   completedMessageId?: string | null
+  /**
+   * The completion some client has already looked at, as recorded by the host.
+   * Equal to `completedMessageId` means "read somewhere" — a desktop read clears
+   * the phone's dot and vice versa. Absent on hosts that predate seen tracking.
+   */
+  seenCompletedMessageId?: string | null
   pendingCount: number
   pendingReason: Record<Locale, string | null>
 }
 
 export function summarizeSessionActivity(
-  snapshot: { id: string; projectPath: string; status: string; harnessId: HarnessId; acpAgentId?: string | null; title?: string | null; messages?: readonly ChatMessage[] },
+  snapshot: { id: string; projectPath: string; status: string; harnessId: HarnessId; acpAgentId?: string | null; title?: string | null; messages?: readonly ChatMessage[]; seenCompletedMessageId?: string | null },
   interactions: AgentEvent[],
 ): SessionActivity {
   const permissions = interactions.flatMap(event => event.type === 'permission_request' ? [event.request] : [])
@@ -34,6 +40,7 @@ export function summarizeSessionActivity(
     provider: snapshot.harnessId, acpAgentId: snapshot.acpAgentId,
     ...(snapshot.title ? { title: snapshot.title } : {}),
     ...(snapshot.messages ? { completedMessageId: lastCompletedMessageId(snapshot.messages) } : {}),
+    ...(snapshot.seenCompletedMessageId !== undefined ? { seenCompletedMessageId: snapshot.seenCompletedMessageId } : {}),
     pendingCount: new Set([...permissions.map(request => `permission:${request.requestId}`), ...questions.map(request => `question:${request.requestId}`), ...plans.map(request => `plan:${request.requestId}`)]).size,
     pendingReason: { en: reason('en'), zh: reason('zh') },
   }
@@ -41,7 +48,7 @@ export function summarizeSessionActivity(
 
 export const SESSION_ACTIVITY_EVENTS: ReadonlySet<string> = new Set([
   'permission_request', 'ask_user_question', 'plan_approval', 'interaction_resolved',
-  'status_change', 'message_interrupted', 'session_ended',
+  'status_change', 'message_interrupted', 'session_ended', 'session_seen',
 ])
 
 function lastCompletedMessage(messages: readonly ChatMessage[]): ChatMessage | null {
@@ -52,7 +59,7 @@ function lastCompletedMessage(messages: readonly ChatMessage[]): ChatMessage | n
   return null
 }
 
-function lastCompletedMessageId(messages: readonly ChatMessage[]): string | null {
+export function lastCompletedMessageId(messages: readonly ChatMessage[]): string | null {
   return lastCompletedMessage(messages)?.id ?? null
 }
 

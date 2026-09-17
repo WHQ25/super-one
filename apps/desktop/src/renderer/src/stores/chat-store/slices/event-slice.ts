@@ -15,6 +15,7 @@ import type { ChatProvider, ChatStore, PerSessionState } from '../types'
 import { buildSlashCommands } from '../helpers/chat-helpers'
 import { accumulateCodexFooterTokens, getCodexUsageStepTokens } from '../helpers/codex-helpers'
 import { mergeMessagesByMaxSeq } from '../helpers/event-helpers'
+import { clearUnseenCompleted } from '../helpers/unseen-completed'
 import { inferProviderFromHarnessId } from '../helpers/provider-routing'
 import { createDefaultPerSessionState, createDefaultProjectState, getDefaultEffortForModel } from '../defaults'
 import { clearStreamingToolInputsForSession } from '../event-reducer/shared'
@@ -192,6 +193,17 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
           },
         }
       })
+      return
+    }
+
+    // A read receipt from the host: the completion was looked at somewhere —
+    // this window, another window, or a phone. Only the sidebar dot is
+    // involved, so it never routes through the per-session reducer.
+    if (event.type === 'session_seen') {
+      if (event.projectPath && event.sessionId) {
+        const { projectPath, sessionId } = event
+        set((s) => clearUnseenCompleted(s, projectPath, sessionId))
+      }
       return
     }
 

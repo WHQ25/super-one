@@ -50,7 +50,7 @@ test('replaces stale attention on reconnect and clears it when switching hosts',
 
 
 test('keeps unseen completion through later pushes and clears it when the session opens', async () => {
-  const client = { request: jest.fn(() => Promise.resolve({ sessions: [] })) } as unknown as RelayClient
+  const client = { request: jest.fn(() => Promise.resolve({ sessions: [] })), send: jest.fn() } as unknown as RelayClient
   const result = await renderWithTheme(<Probe client={client} />)
   await act(async () => current.ingest([
     { type: 'session_activity', activity: { ...row, status: 'streaming' } },
@@ -69,8 +69,59 @@ test('keeps unseen completion through later pushes and clears it when the sessio
   expect(current.pendingCount).toBe(0)
 })
 
+test('reports a read to the host when the session opens or finishes on screen, and takes the host receipt for reads elsewhere', async () => {
+  const send = jest.fn()
+  const client = { request: jest.fn(() => Promise.resolve({ sessions: [] })), send } as unknown as RelayClient
+  const result = await renderWithTheme(<Probe client={client} />)
+  const done = { ...row, pendingCount: 0, completedMessageId: 'reply-1' }
+  await act(async () => current.ingest([
+    { type: 'session_activity', activity: { ...done, status: 'streaming' } },
+    { type: 'session_activity', activity: done, completed: true },
+  ]))
+  expect(current.sessions.background.isUnseen).toBe(true)
+  expect(send).not.toHaveBeenCalled()
+
+  // Read on desktop: the host receipt matches the completion, the dot goes without a round trip.
+  await act(async () => current.ingest([{ type: 'session_activity', activity: { ...done, seenCompletedMessageId: 'reply-1' } }]))
+  expect(current.sessions.background.isUnseen).toBe(false)
+  expect(send).not.toHaveBeenCalled()
+
+  // A newer reply the desktop has not seen: unread again, and opening it here reports the read.
+  await act(async () => current.ingest([{ type: 'session_activity', activity: { ...done, completedMessageId: 'reply-2', seenCompletedMessageId: 'reply-1' }, completed: true }]))
+  expect(current.sessions.background.isUnseen).toBe(true)
+  await result.rerender(<Probe client={client} viewed="background" />)
+  expect(current.sessions.background.isUnseen).toBe(false)
+  expect(send).toHaveBeenCalledWith({ type: 'mark_session_seen', projectPath: '/other', sessionId: 'background' })
+
+  // A run finishing while on screen is read as it lands.
+  send.mockClear()
+  await act(async () => current.ingest([{ type: 'session_activity', activity: { ...done, completedMessageId: 'reply-3', seenCompletedMessageId: 'reply-2' }, completed: true }]))
+  expect(current.sessions.background.isUnseen).toBe(false)
+  expect(send).toHaveBeenCalledTimes(1)
+})
+
+test('re-reports the on-screen session from the reconnect snapshot and survives a dead socket', async () => {
+  const done = { ...row, pendingCount: 0, completedMessageId: 'reply-1' }
+  const send = jest.fn(() => { throw new Error('not connected') })
+  const request = jest.fn<() => Promise<unknown>>().mockResolvedValue({ sessions: [done] })
+  const client = { request, send } as unknown as RelayClient
+  const result = await renderWithTheme(<Probe client={client} viewed="background" />)
+  await act(async () => {})
+  // Read on screen; the host has no receipt yet, so the snapshot triggers one.
+  expect(send).toHaveBeenCalledWith({ type: 'mark_session_seen', projectPath: '/other', sessionId: 'background' })
+  expect(current.sessions.background.isUnseen).toBe(false)
+
+  // Host already holds the receipt: nothing to report on the next reconnect.
+  send.mockClear()
+  request.mockResolvedValue({ sessions: [{ ...done, seenCompletedMessageId: 'reply-1' }] })
+  await result.rerender(<Probe client={client} connected={false} viewed="background" />)
+  await result.rerender(<Probe client={client} viewed="background" />)
+  await act(async () => {})
+  expect(send).not.toHaveBeenCalled()
+})
+
 test('counts sessions needing attention once across multiple requests and unread completions', async () => {
-  const client = { request: jest.fn(() => Promise.resolve({ sessions: [] })) } as unknown as RelayClient
+  const client = { request: jest.fn(() => Promise.resolve({ sessions: [] })), send: jest.fn() } as unknown as RelayClient
   const result = await renderWithTheme(<Probe client={client} />)
   await act(async () => current.ingest([
     { type: 'session_activity', activity: row },

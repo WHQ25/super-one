@@ -1829,6 +1829,8 @@ export type AgentEventBase =
   | { type: 'remote_session_start'; remoteProjectPath: string; remoteSessionId: string; isSubscribe?: boolean; harnessId?: HarnessId; /** ACP agent (e.g. grok-build) so desktop can brand a mobile-owned session. */ acpAgentId?: string | null }
   | { type: 'remote_session_end'; remoteProjectPath: string; remoteSessionId: string; isSubscribe?: boolean }
   | { type: 'interaction_resolved'; interactionType: 'permission' | 'question' | 'plan_approval'; requestId: string; approved?: boolean; feedback?: string }
+  /** Host-recorded read receipt: some client looked at this completion. `messageId` null when nothing has completed yet. */
+  | { type: 'session_seen'; messageId: string | null }
   | { type: 'codex_collaboration_mode_change'; mode: string }
   | { type: 'codex_plan_approval'; messageId: string; status: 'approved' | 'rejected'; feedback?: string }
   | { type: 'api_retry'; attempt: number; maxRetries?: number; delayMs: number; message?: string; phase?: 'retrying' | 'exhausted' | 'failed' }
@@ -4635,6 +4637,8 @@ export type RemoteCommand =
   | { type: 'codex_plan_approval'; messageId: string; status: 'approved' | 'rejected'; feedback?: string; projectPath?: string; sessionId: string }
   | { type: 'subscribe_session'; projectPath: string; sessionId: string; requestId?: string; progressive?: boolean }
   | { type: 'unsubscribe_session'; sessionId?: string }
+  /** The phone is showing this session in the foreground; the host records its latest completion as read. */
+  | { type: 'mark_session_seen'; projectPath: string; sessionId: string }
   | { type: 'leave_session'; sessionId: string }
   | { type: 'subscribe_detail'; requestId: string; projectPath: string; sessionId: string; detailRef: string; subscriptionId: string }
   | { type: 'unsubscribe_detail'; requestId: string; projectPath: string; sessionId: string; subscriptionId: string }

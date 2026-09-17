@@ -949,6 +949,27 @@ describe('idle eviction', () => {
     expect(after._sessions['b']).toBeDefined()
     expect(after.unseenCompletedSessions.has('b')).toBe(false)
   })
+
+  it('clears the unseen dot on a session_seen receipt from the host (read on a phone or another window)', () => {
+    setupProject('/test')
+    const proj = useChatStore.getState().projectSessions['/test']
+    useChatStore.setState({
+      projectSessions: {
+        '/test': { ...proj, _activeSessionId: 'a', _sessions: { a: createDefaultPerSessionState() } },
+      },
+    })
+    useChatStore.getState().handleAgentEvent(makeEvent({ type: 'status_change', sessionId: 'b', status: 'idle' }))
+    expect(useChatStore.getState().projectSessions['/test'].unseenCompletedSessions.has('b')).toBe(true)
+
+    useChatStore.getState().handleAgentEvent(makeEvent({ type: 'session_seen', sessionId: 'b', messageId: 'reply-1' }))
+    const after = useChatStore.getState().projectSessions
+    expect(after['/test'].unseenCompletedSessions.has('b')).toBe(false)
+    expect(after['/test']._sessions['b']).toBeUndefined()
+
+    // A receipt for a session with no dot is a no-op, not a store churn.
+    useChatStore.getState().handleAgentEvent(makeEvent({ type: 'session_seen', sessionId: 'b', messageId: 'reply-1' }))
+    expect(useChatStore.getState().projectSessions).toBe(after)
+  })
 })
 
 describe('hasPendingInteraction', () => {

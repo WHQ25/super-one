@@ -41,6 +41,11 @@ export function countAttentionSessions(activity: WorkspaceActivity): number {
   return Object.values(activity).filter(sessionNeedsAttention).length
 }
 
+/** The host recorded this completion as read — here, on desktop, or on another phone. */
+export function completionSeen(activity: Pick<SessionActivity, 'completedMessageId' | 'seenCompletedMessageId'>): boolean {
+  return activity.seenCompletedMessageId !== undefined && activity.seenCompletedMessageId === (activity.completedMessageId ?? null)
+}
+
 export function mergeSessionActivity(
   previous: MobileSessionActivity | undefined,
   incoming: SessionActivity,
@@ -52,7 +57,10 @@ export function mergeSessionActivity(
     (incoming.completedMessageId != null && previous !== undefined && incoming.completedMessageId !== previous.completedMessageId)
     || (completed && (!previous || LIVE_SESSION_STATUSES.has(previous.status)))
   )
-  return { ...incoming, isUnseen: incoming.sessionId !== viewedSessionId && (!!previous?.isUnseen || newCompletion) }
+  const isUnseen = incoming.sessionId !== viewedSessionId
+    && (!!previous?.isUnseen || newCompletion)
+    && !completionSeen(incoming)
+  return { ...incoming, isUnseen }
 }
 
 /** Running and background states take precedence, as in the desktop sidebar. */

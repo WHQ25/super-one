@@ -26,6 +26,7 @@ import type {
 } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
+import { lastCompletedMessageId } from '@superone/shared/session-activity'
 import log from '../logger'
 import { trace } from '../agent/event-trace'
 import { getSandboxCapability } from '../sandbox-platform'
@@ -327,6 +328,32 @@ export class Session implements SessionContract {
   private _startPromise: Promise<void> | null = null
 
   private _foregroundRefCount = 0
+  /** Read receipt shared by every client; see `markSeen`. */
+  private _seenCompletedMessageId: string | null = null
+
+  get seenCompletedMessageId(): string | null {
+    return this._seenCompletedMessageId
+  }
+
+  /**
+   * Record the latest completion as read. Desktop calls it through
+   * `setForeground` (a displayed session is a read one, focused window or not,
+   * matching the renderer's own unseen rule); the phone sends
+   * `mark_session_seen` when the session is on screen in the foreground. Either
+   * way the receipt goes out as `session_seen`, so the *other* client clears its
+   * dot — and the receipt also rides on every `session_activity` summary.
+   */
+  markSeen(): void {
+    if (this.recordSeen()) this.forwardEvent({ type: 'session_seen', messageId: this._seenCompletedMessageId })
+  }
+
+  /** Silent half of `markSeen`; true when the receipt moved. */
+  private recordSeen(): boolean {
+    const next = lastCompletedMessageId(this._messages)
+    if (next === this._seenCompletedMessageId) return false
+    this._seenCompletedMessageId = next
+    return true
+  }
 
   /**
    * A session can be rendered in more than one place at once (e.g. a mosaic tile
@@ -341,6 +368,7 @@ export class Session implements SessionContract {
     this._foregroundRefCount = Math.max(0, this._foregroundRefCount + (visible ? 1 : -1))
     const next = this._foregroundRefCount
     if (prev === next) return
+    if (next > 0) this.markSeen()
     if (this.harnessId !== 'acp') return
     // Empty drafts have nothing to summarize — never enter the away-recap poll
     // (dev harness-switch spam used to fire x.ai/recap for every abandoned draft).
@@ -1791,8 +1819,12 @@ export class Session implements SessionContract {
   }
 
   private forwardEvent(event: AgentEvent): AgentEvent {
-    this._lastEventAt = Date.now()
-    this.touchRuntimeActivity()
+    // A read receipt is about the user, not the agent: it must neither bump
+    // the session's recency nor postpone its idle runtime release.
+    if (event.type !== 'session_seen') {
+      this._lastEventAt = Date.now()
+      this.touchRuntimeActivity()
+    }
     // Codex publishes two transcript streams and a call may only produce the
     // item-scoped one, so titling has to accept either. Reading just the flat stream
     // left voice-only sessions untitled — they showed up in the sidebar as
@@ -1889,6 +1921,11 @@ export class Session implements SessionContract {
       }
     }
     this.applyReducer(sequenced)
+    // A run that finishes while the session is on a desktop screen is read as
+    // it lands. Recorded before fan-out so the idle-triggered activity summary
+    // already carries the receipt; the `session_seen` itself follows the idle.
+    const seenOnIdle = sequenced.type === 'status_change' && sequenced.status === 'idle'
+      && this._foregroundRefCount > 0 && this.recordSeen()
     const outbound = this.enrichOutboundEvent(sequenced)
     const existingProjectPath = (sequenced as { projectPath?: string }).projectPath
     const tagged = { ...outbound, sessionId: this.id, projectPath: existingProjectPath ?? this.projectPath } as AgentEvent
@@ -1902,6 +1939,7 @@ export class Session implements SessionContract {
     for (const cb of this.eventListeners) {
       try { cb(tagged) } catch (err) { log.warn('[Session] event listener error:', err) }
     }
+    if (seenOnIdle) this.forwardEvent({ type: 'session_seen', messageId: this._seenCompletedMessageId })
     // Append after the notification itself is out, so the row lands before the
     // assistant turn the wake triggers. appendTranscriptMessage persists it and
     // re-emits it as user_message_appended — renderer and mobile both pick it up

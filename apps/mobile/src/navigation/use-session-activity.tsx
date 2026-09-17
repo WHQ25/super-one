@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { RelayClient } from '@superone/relay-client'
 import type { SessionActivity } from '@superone/shared/session-activity'
 import { AppState } from 'react-native'
-import { countAttentionSessions, mergeSessionActivity, type MobileSessionActivity, type WorkspaceActivity } from '../session-activity-state'
+import { completionSeen, countAttentionSessions, mergeSessionActivity, type MobileSessionActivity, type WorkspaceActivity } from '../session-activity-state'
 import { randomId } from '../ids'
 
 export const SessionActivityContext = createContext<WorkspaceActivity>({})
@@ -18,19 +18,38 @@ export const useSessionActivity = (sessionId: string) => useContext(SessionActiv
  */
 export function useWorkspaceActivity(client: RelayClient | null, connected: boolean, viewedSessionId: string | null = null) {
   const [sessions, setSessions] = useState<Record<string, MobileSessionActivity>>({})
+  const latest = useRef(sessions)
+  latest.current = sessions
   const updates = useRef<Record<string, SessionActivity>>({})
   const viewed = useRef(viewedSessionId)
   viewed.current = viewedSessionId
   const visibleSession = useCallback(() => AppState.currentState === 'background' || AppState.currentState === 'inactive' ? null : viewed.current, [])
+  /**
+   * Tell the host this completion was read here, so the desktop sidebar (and
+   * any other phone) drops its dot too. Best-effort: the local flag is already
+   * cleared, the host echoes the receipt back on `session_activity`, and a
+   * receipt lost to a dead socket is re-sent from the reconnect snapshot below.
+   */
+  const reportSeen = useCallback((activity: Pick<SessionActivity, 'sessionId' | 'projectPath' | 'completedMessageId' | 'seenCompletedMessageId'>) => {
+    if (!client || completionSeen(activity)) return
+    try {
+      client.send({ type: 'mark_session_seen', projectPath: activity.projectPath, sessionId: activity.sessionId })
+    } catch {
+      // `send` throws while the socket is down (app resumed before reconnect).
+    }
+  }, [client])
   useEffect(() => {
     const clearViewed = () => {
       const id = visibleSession()
-      if (id) setSessions(current => current[id]?.isUnseen ? { ...current, [id]: { ...current[id], isUnseen: false } } : current)
+      const session = id ? latest.current[id] : undefined
+      if (!session?.isUnseen) return
+      reportSeen(session)
+      setSessions(current => ({ ...current, [id!]: { ...current[id!]!, isUnseen: false } }))
     }
     clearViewed()
     const subscription = AppState.addEventListener('change', clearViewed)
     return () => subscription.remove()
-  }, [viewedSessionId, visibleSession])
+  }, [viewedSessionId, visibleSession, reportSeen])
   const ingest = useCallback((events: unknown[]) => {
     const changed: { activity: SessionActivity; completed?: boolean }[] = []
     for (const event of events) {
@@ -40,6 +59,8 @@ export function useWorkspaceActivity(client: RelayClient | null, connected: bool
     if (!changed.length) return
     for (const frame of changed) updates.current[frame.activity.sessionId] = frame.activity
     const viewing = visibleSession()
+    // A run finishing in the session on screen is read as it lands.
+    for (const frame of changed) if (frame.completed && frame.activity.sessionId === viewing) reportSeen(frame.activity)
     setSessions(current => {
       const next = { ...current }
       for (const frame of changed) {
@@ -48,7 +69,7 @@ export function useWorkspaceActivity(client: RelayClient | null, connected: bool
       }
       return next
     })
-  }, [visibleSession])
+  }, [visibleSession, reportSeen])
   useEffect(() => { setSessions({}); updates.current = {} }, [client])
   useEffect(() => {
     if (!client || !connected) return
@@ -59,6 +80,9 @@ export function useWorkspaceActivity(client: RelayClient | null, connected: bool
       const rows = (result as { sessions?: SessionActivity[] }).sessions
       if (rows) {
         const viewing = visibleSession()
+        // The session on screen was read whatever happened while offline.
+        const shown = rows.find(row => row.sessionId === viewing)
+        if (shown?.completedMessageId) reportSeen(shown)
         setSessions(current => {
           const next: Record<string, MobileSessionActivity> = {}
           // Idle runtimes may have been released; unread completions belong to
@@ -74,6 +98,6 @@ export function useWorkspaceActivity(client: RelayClient | null, connected: bool
       }
     }).catch(() => {})
     return () => { active = false }
-  }, [client, connected, visibleSession])
+  }, [client, connected, visibleSession, reportSeen])
   return { sessions, ingest, pendingCount: countAttentionSessions(sessions) }
 }

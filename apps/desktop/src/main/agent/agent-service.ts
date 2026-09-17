@@ -1102,6 +1102,11 @@ export class AgentService {
         }
         break
       }
+      case 'mark_session_seen': {
+        if (!this.canAccessSession(command.projectPath, command.sessionId)) break
+        this.sessionManager?.getSession(command.sessionId)?.markSeen()
+        break
+      }
       case 'unsubscribe_session': {
         if (!command.sessionId || isProgressiveSession(deviceId, command.sessionId)) setProgressiveSession(deviceId)
         const targetSessionId = command.sessionId
@@ -1542,7 +1547,7 @@ export class AgentService {
       case 'list_session_activity': {
         const sessions: SessionActivity[] = []
         this.sessionManager?.forEachSession((session) => {
-          if (!session.ephemeral) sessions.push(summarizeSessionActivity({ ...session.snapshot, status: session.isStreaming() ? 'streaming' : session.snapshot.status }, session.getPendingInteractions()))
+          if (!session.ephemeral) sessions.push(summarizeSessionActivity({ ...session.snapshot, seenCompletedMessageId: session.seenCompletedMessageId, status: session.isStreaming() ? 'streaming' : session.snapshot.status }, session.getPendingInteractions()))
         })
         await respond?.(command.requestId, { sessions })
         break

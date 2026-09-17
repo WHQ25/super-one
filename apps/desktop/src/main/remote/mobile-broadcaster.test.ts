@@ -157,6 +157,25 @@ it('broadcasts pending summaries for an unopened session and clears them after r
   expect(transport.sent[1].event).toMatchObject({ type: 'session_activity', activity: { pendingCount: 0, pendingReason: { en: null, zh: null } } })
 })
 
+it('carries the host read receipt on the summary and re-summarizes on session_seen', async () => {
+  const transport = makeFakeTransport()
+  const session = {
+    ...makeFakeSession({ id: 'read', subscribers: ['phone'] }),
+    snapshot: { id: 'read', projectPath: '/p', harnessId: 'claude', status: 'idle',
+      messages: [{ id: 'reply-1', role: 'assistant', status: 'complete' }] },
+    seenCompletedMessageId: 'reply-1',
+    getPendingInteractions: () => [],
+  } as unknown as Session
+  const broadcaster = new MobileBroadcaster(makeFakeManager(new Map([['read', session]])), transport)
+  await broadcaster.broadcast({ type: 'session_seen', messageId: 'reply-1', sessionId: 'read' })
+  expect(transport.sent[0]).toEqual({ targets: undefined, event: expect.objectContaining({
+    type: 'session_activity',
+    activity: expect.objectContaining({ completedMessageId: 'reply-1', seenCompletedMessageId: 'reply-1' }),
+  }) })
+  // The receipt itself still reaches the phone showing the session.
+  expect(transport.sent[1]).toEqual({ targets: ['phone'], event: expect.objectContaining({ type: 'session_seen' }) })
+})
+
 it('broadcasts idle completion even while the send snapshot still reports streaming', async () => {
   const transport = makeFakeTransport()
   const session = {

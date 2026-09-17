@@ -147,6 +147,7 @@ import {
   openNewIdentityInstallerAndQuit,
   revealNewIdentityInstaller,
 } from './mac-identity-migration'
+import { runIdentityHandoff } from './mac-identity-handoff'
 import { startWatching, stopWatching } from './file-watcher'
 import { detectTextOrBinary, maxReadableBytes } from './file-read-limits'
 import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
@@ -5755,6 +5756,9 @@ app.whenReady().then(async () => {
   }
 
   await initMainI18n()
+  // Before anything reads safeStorage: the keychain prompt on the first
+  // new-bundle-id launch needs an explanation first.
+  await runIdentityHandoff()
 
   if (getBackfillStatus() !== 'done') {
     setImmediate(() => {

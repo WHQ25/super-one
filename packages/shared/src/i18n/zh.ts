@@ -641,6 +641,11 @@ export const zh: Messages = {
       noSpace: '空间不足',
     },
   },
+  identityHandoff: {
+    title: 'SuperOne 更换了应用标识',
+    body: 'macOS 接下来会询问是否允许 SuperOne 使用钥匙串中保存密钥的条目。请选择"始终允许"，否则已保存的 API 密钥和登录状态需要重新填写。',
+    continue: '继续',
+  },
   notifications: {
     prime: {
       title: '通知已开启',

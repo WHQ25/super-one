@@ -604,6 +604,7 @@ export type Messages = {
     }
   }
   /** First launch under the new macOS bundle id, before the keychain is touched. */
+  identityHandoff: { title: string; body: string; continue: string }
   notifications: {
     prime: { title: string; body: string }
     untitledSession: string
@@ -4383,6 +4384,11 @@ export const en: Messages = {
     mosaic: {
       noSpace: 'Not enough space',
     },
+  },
+  identityHandoff: {
+    title: 'SuperOne has a new application identity',
+    body: 'macOS will now ask whether SuperOne may use the keychain item that holds your saved keys. Choose "Always Allow" — otherwise your saved API keys and sign-ins will need to be entered again.',
+    continue: 'Continue',
   },
   notifications: {
     prime: {

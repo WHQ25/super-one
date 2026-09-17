@@ -41,8 +41,7 @@ Every alpha release keeps its own notes on its GitHub Release.
   rule). Agent tabs appear in the dock and stay on the session
   that opened them. Chat shows the screen the agent saw. Settings
   lists and revokes always-allow rules.
-- Built-in browser on macOS can use Touch ID passkeys in signed
-  builds.
+- Built-in browser on macOS can use Touch ID passkeys.
 - Maximizing an activity tab folds the sidebar and collapses
   floating chat.
 - The files previewer is named in the always-on rendering rules.
@@ -62,9 +61,20 @@ Every alpha release keeps its own notes on its GitHub Release.
   session keeps the new-session title.
 - Git failures that are not "not a repo" (Xcode license, missing
   binary) show a warning chip instead of an Init Git button.
+- Saved API keys are never written unencrypted on macOS when the
+  keychain is denied, and a denied prompt no longer blanks a
+  credential.
 
 ### Changed
 
+- macOS: SuperOne now runs under bundle id `com.superone.desktop`,
+  signed with a Developer ID provisioning profile. This update
+  arrives as a bridge build that asks for a one-time reinstall:
+  it downloads the new package to Downloads and opens the
+  installer; drag SuperOne into Applications and choose Replace.
+  The first launch then explains the keychain prompt — choose
+  "Always Allow". Sessions, projects, settings and saved keys
+  carry over.
 - Agent skills and product manuals load only what the current
   task needs.
 
@@ -72,6 +82,30 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 - Mobile reconnects reuse workspace caches; host payloads are
   compressed. Upgrade desktop and phone together.
+
+## [0.67.0-alpha.3] - 2026-09-17
+
+### Added
+
+- macOS: the app now runs under bundle id `com.superone.desktop.alpha`,
+  signed with a Developer ID provisioning profile, which is what the
+  built-in browser's Touch ID passkeys require. Existing installs
+  auto-update into a bridge build that shows a one-time reinstall
+  dialog, downloads the new package to Downloads (checksum verified)
+  and opens the installer; "Later" leaves a sidebar pill. The first
+  launch under the new id explains the keychain prompt before macOS
+  shows it — choose "Always Allow". Sessions, projects, settings and
+  saved keys carry over.
+
+### Fixed
+
+- macOS 0.67.0-alpha.2 was killed at launch: it carried the passkey
+  entitlements without the provisioning profile they require. Users
+  on alpha.2 must download this version manually; auto-update cannot
+  reach an app that does not start.
+- Saved API keys are never written unencrypted on macOS when the
+  keychain is denied, and a denied prompt no longer blanks a
+  credential.
 
 ## [0.67.0-alpha.2] - 2026-09-17
 

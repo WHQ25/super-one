@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { AudioLines, Loader2, Mic, MicOff, Power, Volume2, VolumeX } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -38,14 +37,6 @@ export function CodexRealtimeVoiceButton({
   ))
   const microphoneMuted = useRealtimeCallStore((store) => store.microphoneMuted)
   const outputMuted = useRealtimeCallStore((store) => store.outputMuted)
-
-  // A call belongs to the session on screen. Navigating away unmounts this button,
-  // and a call the user can neither hear about nor hang up is worse than a dropped
-  // one — so leaving the session ends it, as it did before the call was lifted out
-  // of this component.
-  useEffect(() => () => {
-    if (useRealtimeCallStore.getState().sessionId === sessionId) void stopRealtimeCall()
-  }, [sessionId])
 
   if (callState === 'active' || callState === 'stopping') {
     // Keep the call controls visually consistent; the tooltip carries the destructive

@@ -434,12 +434,17 @@ describe('realtime voice surfaces', () => {
     expect(mergeCodexRealtimeMessages([], view)).toHaveLength(1)
   })
 
-  it('ends the call when the session leaves the screen', async () => {
+  it('keeps the call alive when the session leaves the screen', async () => {
     const { unmount } = render(<VoiceSurfaces />)
     await reachConnectedCall()
 
     unmount()
 
-    await waitFor(() => expect(stopRealtimeVoice).toHaveBeenCalledWith('/repo', 'session-1'))
+    expect(stopRealtimeVoice).not.toHaveBeenCalled()
+    expect(useRealtimeCallStore.getState()).toMatchObject({
+      sessionId: 'session-1',
+      state: 'active',
+    })
+    expect(microphoneTrack.stop).not.toHaveBeenCalled()
   })
 })

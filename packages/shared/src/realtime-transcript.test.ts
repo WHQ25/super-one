@@ -6,6 +6,7 @@ import {
   isRealtimeDelegationMessage,
   isRealtimeVoiceMessage,
   mergeRealtimeTranscript,
+  suppressRealtimeStartupEcho,
 } from './realtime-transcript'
 
 const at = (seconds: number) => new Date(Date.UTC(2026, 8, 8, 0, 0, seconds)).toISOString()
@@ -153,6 +154,46 @@ describe('mergeRealtimeTranscript', () => {
       'hello',
       'hi again',
     ])
+  })
+})
+
+describe('restored startup echo suppression', () => {
+  it.each(['event-seq', 'local-order'] as const)('does not compare %s to provider positions', (source) => {
+    const typed = message('typed', 'user', 'previous request', 1)
+    if (source === 'event-seq') typed._lastAppliedSeq = 50_000
+    else typed.metadata = { codexTimeline: { provenance: 'codex', localOrder: 50_000 } }
+    const echo = segment('echo', 'user', 'previous request', { position: 2 })
+    expect(suppressRealtimeStartupEcho([typed], [echo])).toEqual([])
+  })
+
+  it('does not treat a local voice sequence as a provider position after restart', () => {
+    const typed = message('typed', 'user', 'previous request', 1)
+    typed.metadata = { codexTimeline: { provenance: 'codex', position: 200 } }
+    const echo = segment('echo', 'user', 'previous request', { localOrder: 2 })
+    expect(suppressRealtimeStartupEcho([typed], [echo])).toEqual([])
+  })
+
+  it('ignores a typed message known to follow the voice turn', () => {
+    const typed = message('typed', 'user', 'same words', 10)
+    typed.metadata = { codexTimeline: { provenance: 'codex', position: 20 } }
+    const spoken = segment('spoken', 'user', 'same words', { position: 2 })
+    expect(suppressRealtimeStartupEcho([typed], [spoken])).toEqual([spoken])
+  })
+
+  it('sorts a restored provider timeline before identifying its startup echo', () => {
+    const typed = message('typed', 'user', 'previous request', 1)
+    const segments = [
+      segment('reply', 'assistant', 'echo reply', { position: 3 }),
+      segment('echo', 'user', 'previous request', { position: 2 }),
+      segment('new', 'user', 'new question', { position: 4, startedAtMs: ms(4) }),
+    ]
+    expect(textOf(mergeRealtimeTranscript([typed], segments))).toEqual(['previous request', 'new question'])
+  })
+
+  it('preserves an assistant-first greeting and subsequent repeated user speech', () => {
+    const typed = message('typed', 'user', 'hello', 1)
+    const segments = [segment('greeting', 'assistant', 'Welcome'), segment('spoken', 'user', 'hello')]
+    expect(suppressRealtimeStartupEcho([typed], segments)).toEqual(segments)
   })
 })
 

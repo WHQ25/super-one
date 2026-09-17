@@ -140,25 +140,19 @@ function normalizeEchoText(text: string): string {
 function latestOrdinaryUserTextBeforeVoice(
   spine: readonly ChatMessage[],
   firstVoicePosition: number | undefined,
-  firstVoiceStartedAt: number | null,
 ): string | null {
   for (let index = spine.length - 1; index >= 0; index -= 1) {
     const message = spine[index]
     if (message.role !== 'user') continue
     if (isRealtimeVoiceMessage(message) || isRealtimeDelegationMessage(message)) continue
+    // Provider positions and process-local event sequences have unrelated scales.
     const position = message.metadata?.codexTimeline?.position
-      ?? message.metadata?.codexTimeline?.localOrder
-      ?? message._lastAppliedSeq
     if (
       firstVoicePosition !== undefined
       && typeof position === 'number'
       && position > firstVoicePosition
     ) {
       continue
-    }
-    if (firstVoiceStartedAt !== null) {
-      const createdAt = Date.parse(message.createdAt)
-      if (Number.isFinite(createdAt) && createdAt > firstVoiceStartedAt) continue
     }
     const text = normalizeEchoText(textOfMessage(message))
     if (text) return text
@@ -167,23 +161,23 @@ function latestOrdinaryUserTextBeforeVoice(
 }
 
 /**
- * Realtime sessions receive prior thread context at startup. If the provider echoes
- * the last typed user row as the first spoken turn, hide that projected voice copy
- * from merged transcripts while preserving later real speech.
+ * Suppress an unstamped, restored startup turn matching the last typed user row.
+ * This is a conservative history-display heuristic, not live echo detection:
+ * stamped speech may intentionally repeat typed text and must remain visible.
+ * Live startup-context handling belongs to the realtime developer instructions.
+ * Callers must supply segments in conversation order.
  */
 export function suppressRealtimeStartupEcho(
   messages: readonly ChatMessage[],
   segments: readonly RealtimeTimelineSegment[],
-): RealtimeTimelineSegment[] {
+): readonly RealtimeTimelineSegment[] {
   const turns = buildRealtimeConversationTurns(segments)
   const first = turns[0]
   if (!first?.user) return segments
   const userText = normalizeEchoText(first.user.text)
   if (!userText) return segments
-  const firstVoicePosition = first.user.position ?? first.user.localOrder
-  const firstVoiceStartedAt = turnStartedAt(first)
-  if (firstVoiceStartedAt !== null) return segments
-  if (latestOrdinaryUserTextBeforeVoice(messages, firstVoicePosition, firstVoiceStartedAt) !== userText) {
+  if (turnStartedAt(first) !== null) return segments
+  if (latestOrdinaryUserTextBeforeVoice(messages, first.user.position) !== userText) {
     return segments
   }
   const drop = new Set(
@@ -233,7 +227,7 @@ export function mergeRealtimeTranscript(
   const spine = messages.filter((message) => !isRealtimeDelegationMessage(message))
   if (!segments || segments.length === 0) return spine
 
-  const deduped = suppressRealtimeStartupEcho(spine, dedupeSegmentsByItem(segments))
+  const deduped = dedupeSegmentsByItem(segments)
   // Provider positions are authoritative among voice segments, but only once every
   // segment has one; a partial set would sort the stamped ones out of the stream.
   const ordered = deduped.every((segment) => segment.position !== undefined)
@@ -244,7 +238,7 @@ export function mergeRealtimeTranscript(
   const out: ChatMessage[] = []
   let cursor = 0
 
-  for (const turn of buildRealtimeConversationTurns(ordered)) {
+  for (const turn of buildRealtimeConversationTurns(suppressRealtimeStartupEcho(spine, ordered))) {
     const startedAt = turnStartedAt(turn)
     if (startedAt !== null) {
       while (cursor < spine.length) {

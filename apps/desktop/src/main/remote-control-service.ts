@@ -150,6 +150,20 @@ export class RemoteControlService {
     return online
   }
 
+  /**
+   * Whether some paired phone can actually receive from this host right now.
+   * `connectedDevices` keeps relay entries across a relay outage (the DO
+   * re-announces peers on reconnect), so a relay device only counts while the
+   * relay socket is open; a LAN device holds its own socket.
+   */
+  hasReachableDevice(): boolean {
+    const relayUp = this.isRelayConnected()
+    for (const info of this.connectedDevices.values()) {
+      if (info.transports.has('lan') || (relayUp && info.transports.has('relay'))) return true
+    }
+    return false
+  }
+
   getLanPort(): number | null {
     return this.lanServer?.getPort() ?? null
   }

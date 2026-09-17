@@ -21,6 +21,14 @@ export interface NotificationServiceDeps {
    * enough and a system banner would be redundant noise.
    */
   isAppFocused(): boolean
+  /**
+   * True while any paired phone holds a live transport to this host. The user
+   * chose to be reached on the phone, whose UI already surfaces the request;
+   * a desktop banner on top of that is noise. Coarse by design — "connected"
+   * is not "in the foreground" — and accepted as such until a mobile push
+   * channel exists.
+   */
+  hasMobileOnline(): boolean
   describeSession: IntentContext['describeSession']
   t: IntentContext['t']
   now?: () => number
@@ -83,10 +91,14 @@ export class NotificationService {
     // must not ring later just because the window happens to be blurred by
     // then — that reads as a banner arriving out of nowhere.
     this.active.add(intent.id)
+    // Logged, not silent: "why did I not get a notification" is the first
+    // question this feature will ever be debugged for.
     if (this.deps.isAppFocused()) {
-      // Logged, not silent: "why did I not get a notification" is the first
-      // question this feature will ever be debugged for.
       log.info('[notifications] suppressed (app focused) kind=%s id=%s', intent.kind, intent.id)
+      return
+    }
+    if (this.deps.hasMobileOnline()) {
+      log.info('[notifications] suppressed (mobile online) kind=%s id=%s', intent.kind, intent.id)
       return
     }
 

@@ -36,16 +36,19 @@ function permissionEvent(requestId = 'req-1'): AgentEvent {
 describe('NotificationService', () => {
   let settings: NotificationSettings
   let focused: boolean
+  let mobileOnline: boolean
 
   beforeEach(() => {
     settings = structuredClone(DEFAULT_NOTIFICATION_SETTINGS)
     focused = false
+    mobileOnline = false
   })
 
   function makeService() {
     return new NotificationService({
       readSettings: () => settings,
       isAppFocused: () => focused,
+      hasMobileOnline: () => mobileOnline,
       describeSession: () => ({ title: 'Session', projectPath: '/repo' }),
       t: (key) => key,
       now: () => 1,
@@ -88,6 +91,22 @@ describe('NotificationService', () => {
 
     service.handleEvent(permissionEvent())
 
+    expect(channel.delivered).toHaveLength(0)
+  })
+
+  it('suppresses delivery while a phone is connected, and does not ring later for the same request', () => {
+    mobileOnline = true
+    const service = makeService()
+    const channel = fakeChannel()
+    service.registerChannel(channel)
+
+    service.handleEvent(permissionEvent())
+    expect(channel.delivered).toHaveLength(0)
+
+    // Phone drops off and the pending request is replayed: it was already
+    // surfaced on the phone, so the slot stays claimed.
+    mobileOnline = false
+    service.handleEvent(permissionEvent())
     expect(channel.delivered).toHaveLength(0)
   })
 

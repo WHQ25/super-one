@@ -711,6 +711,7 @@ const notificationService = new NotificationService({
   // Whole-app focus: if any SuperOne window has focus the in-app UI already
   // shows the request, and an OS banner would only duplicate it.
   isAppFocused: () => [...allWindows].some((win) => !win.isDestroyed() && win.isFocused()),
+  hasMobileOnline: () => remoteControlService.hasReachableDevice(),
   describeSession: (sessionId) => {
     const session = sessionManager.getSession(sessionId)
     if (!session) return undefined

@@ -488,6 +488,27 @@ describe('RemoteControlService connected devices', () => {
   })
 })
 
+describe('RemoteControlService hasReachableDevice', () => {
+  it('counts a relay device only while the relay socket is open, and a LAN device always', () => {
+    const service = new RemoteControlService('wss://relay.example', { onCommand: vi.fn() })
+    const internals = service as unknown as {
+      markDeviceOnline: (name: string, id: string, via: 'lan' | 'relay') => void
+      relayWs: { readyState: number } | null
+    }
+    expect(service.hasReachableDevice()).toBe(false)
+
+    internals.markDeviceOnline('Phone', 'dev-1', 'relay')
+    expect(service.hasReachableDevice()).toBe(false)
+    internals.relayWs = { readyState: WebSocket.OPEN }
+    expect(service.hasReachableDevice()).toBe(true)
+    internals.relayWs = null
+    expect(service.hasReachableDevice()).toBe(false)
+
+    internals.markDeviceOnline('Tablet', 'dev-2', 'lan')
+    expect(service.hasReachableDevice()).toBe(true)
+  })
+})
+
 describe('RemoteControlService content_delta ordering', () => {
   function makeService(): { service: RemoteControlService; captured: AgentEvent[] } {
     const captured: AgentEvent[] = []

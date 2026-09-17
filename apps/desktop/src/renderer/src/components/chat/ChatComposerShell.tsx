@@ -10,9 +10,7 @@ import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
 import { RemoteComposerBanner } from './RemoteComposerBanner'
-import { RealtimeCallIndicator } from './RealtimeCallIndicator'
-import { PermissionPrompt } from './PermissionPrompt'
-import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
+import { SessionDecisionPrompts } from './SessionDecisionPrompts'
 import { CursorApiKeyDialog } from './CursorApiKeyDialog'
 import { TodoPopup } from './TodoPopup'
 
@@ -107,9 +105,7 @@ export const ChatComposerShell = memo(function ChatComposerShell({ showTodoPopup
   }
   return (
     <>
-      <RealtimeCallIndicator />
-      <PermissionPrompt />
-      <AskUserQuestionPrompt />
+      <SessionDecisionPrompts />
       <CursorApiKeyDialog />
       {showTodoPopup && <TodoPopup />}
       <ChatInput />

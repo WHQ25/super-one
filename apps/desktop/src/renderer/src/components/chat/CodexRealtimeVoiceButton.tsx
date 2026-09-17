@@ -1,13 +1,8 @@
-import { AudioLines, Loader2, Mic, MicOff, Power, Volume2, VolumeX } from 'lucide-react'
+import { AudioLines, Loader2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
-import {
-  startRealtimeCall,
-  stopRealtimeCall,
-  toggleRealtimeMicrophone,
-  toggleRealtimeOutput,
-  useRealtimeCallStore,
-} from '@/stores/realtime-call'
+import { startRealtimeCall, useRealtimeCallStore } from '@/stores/realtime-call'
+import { RealtimeCallControls } from './RealtimeCallControls'
 
 export interface CodexRealtimeVoiceButtonProps {
   projectPath: string
@@ -17,13 +12,10 @@ export interface CodexRealtimeVoiceButtonProps {
 }
 
 /**
- * Realtime voice controls for the composer toolbar.
+ * Realtime voice entry point for the composer toolbar.
  *
- * Idle it is a single entry point; connected it becomes the call's whole control set
- * — microphone, speaker, hang up. They live here rather than on the indicator above
- * the composer because this strip is where every other action on a turn already is,
- * and a control that only exists on hover is a control most people never find.
- * The indicator stays a pure status surface.
+ * Idle it is a single button; connected it hands over to `RealtimeCallControls`, the
+ * same set the voice composer shows, so a call is controllable from both views.
  */
 export function CodexRealtimeVoiceButton({
   projectPath,
@@ -35,51 +27,12 @@ export function CodexRealtimeVoiceButton({
   const callState = useRealtimeCallStore((store) => (
     store.sessionId === sessionId ? store.state : 'idle'
   ))
-  const microphoneMuted = useRealtimeCallStore((store) => store.microphoneMuted)
-  const outputMuted = useRealtimeCallStore((store) => store.outputMuted)
 
+  // Connected, the button becomes the call's whole control set. It lives here rather
+  // than on the indicator above the composer because this strip is where every other
+  // action on a turn already is.
   if (callState === 'active' || callState === 'stopping') {
-    // Keep the call controls visually consistent; the tooltip carries the destructive
-    // meaning without turning the hang-up action into a red alert.
-    const busy = callState === 'stopping'
-    return (
-      <>
-        <IconButton
-          size="sm"
-          variant="ghost"
-          disabled={busy}
-          aria-pressed={microphoneMuted}
-          tooltip={t(microphoneMuted
-            ? 'chat.realtimeVoice.unmuteMicrophone'
-            : 'chat.realtimeVoice.muteMicrophone')}
-          onClick={toggleRealtimeMicrophone}
-        >
-          {microphoneMuted ? <MicOff /> : <Mic />}
-        </IconButton>
-        <IconButton
-          size="sm"
-          variant="ghost"
-          disabled={busy}
-          aria-pressed={outputMuted}
-          tooltip={t(outputMuted
-            ? 'chat.realtimeVoice.unmuteOutput'
-            : 'chat.realtimeVoice.muteOutput')}
-          onClick={toggleRealtimeOutput}
-        >
-          {outputMuted ? <VolumeX /> : <Volume2 />}
-        </IconButton>
-        <IconButton
-          size="sm"
-          variant="ghost"
-          disabled={busy}
-          tooltip={t('chat.realtimeVoice.stop')}
-          className="rounded-full bg-muted-foreground text-background hover:bg-foreground hover:text-background"
-          onClick={() => { void stopRealtimeCall() }}
-        >
-          <Power />
-        </IconButton>
-      </>
-    )
+    return <RealtimeCallControls disabled={callState === 'stopping'} />
   }
 
   const busy = callState === 'starting'

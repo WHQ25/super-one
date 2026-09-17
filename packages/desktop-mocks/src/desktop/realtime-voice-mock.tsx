@@ -177,7 +177,7 @@ export function CodexConversationViewToggleMock({
   if (!enabled || !hasTimeline) return null
 
   const showingRealtime = currentView === "realtime"
-  const label = t(showingRealtime ? "chat.realtimeVoice.showDebugThread" : "chat.realtimeVoice.showTimeline")
+  const label = t(showingRealtime ? "chat.realtimeVoice.showThread" : "chat.realtimeVoice.showTimeline")
 
   return (
     <IconButton
@@ -192,8 +192,8 @@ export function CodexConversationViewToggleMock({
   )
 }
 
-const MARK_SIZE = 64
-const GLYPH_SIZE = 23
+const MARK_SIZE = 84
+const GLYPH_SIZE = 30
 
 export type RealtimeActivityMock = "listening" | "user-speaking" | "assistant-speaking" | "thinking"
 

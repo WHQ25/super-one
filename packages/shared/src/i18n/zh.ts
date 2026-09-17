@@ -1514,6 +1514,7 @@ export const zh: Messages = {
       timelineLoadFailed: '无法加载语音时间线。',
       offerFailed: '无法创建 WebRTC 连接请求。',
       connectionTimedOut: '实时语音连接超时。',
+      stopping: '正在结束语音对话…',
       speaking: '正在说话',
       silence: '静默 {{duration}}',
       callStartedAt: '{{time}} 开始通话',

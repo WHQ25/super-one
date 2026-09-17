@@ -1424,6 +1424,7 @@ export type Messages = {
       showConversation: string
       showDebugThread: string
       showTimeline: string
+      stopping: string
       emptyTimeline: string
       timelineLoadFailed: string
       offerFailed: string
@@ -5277,6 +5278,7 @@ export const en: Messages = {
       timelineLoadFailed: 'Could not load the voice timeline.',
       offerFailed: 'Could not create the WebRTC offer.',
       connectionTimedOut: 'Realtime voice connection timed out.',
+      stopping: 'Ending voice conversation…',
       speaking: 'speaking',
       silence: 'Silent for {{duration}}',
       callStartedAt: 'Call started at {{time}}',

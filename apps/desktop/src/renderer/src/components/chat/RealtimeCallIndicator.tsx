@@ -4,10 +4,10 @@ import { useTranslation } from 'react-i18next'
 import { CodexCloudMark, CodexCloudOutline } from '@superone/ui/components/harness/CodexSessionIcon'
 import { cn } from '@superone/ui/lib/utils'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
-import { useRealtimeCallStore } from '@/stores/realtime-call'
+import { useRealtimeCallStore, type RealtimeCallState } from '@/stores/realtime-call'
 
-const MARK_SIZE = 64
-const GLYPH_SIZE = 23
+const MARK_SIZE = 84
+const GLYPH_SIZE = 30
 const NO_LIVE_ITEMS: never[] = []
 
 /** Matches the cloud, so the three columns share one baseline box. */
@@ -72,9 +72,19 @@ function CaptionColumn({
  * composer toolbar beside the session's other actions, rather than hiding behind a
  * hover on this one.
  */
-export function RealtimeCallIndicator() {
+interface RealtimeCallIndicatorProps {
+  /**
+   * Render as if the call were in this state once the store has gone idle. The
+   * voice composer uses it to keep the mark on screen while it slides out after
+   * a hang-up, instead of vanishing a frame before its exit animation starts.
+   */
+  frozenState?: RealtimeCallState
+}
+
+export function RealtimeCallIndicator({ frozenState }: RealtimeCallIndicatorProps = {}) {
   const { t } = useTranslation()
-  const state = useRealtimeCallStore((store) => store.state)
+  const liveState = useRealtimeCallStore((store) => store.state)
+  const state = liveState === 'idle' && frozenState ? frozenState : liveState
   const sessionId = useRealtimeCallStore((store) => store.sessionId)
   const activity = useRealtimeCallStore((store) => store.activity)
   const inputLevel = useRealtimeCallStore((store) => store.inputLevel)
@@ -82,8 +92,10 @@ export function RealtimeCallIndicator() {
     sessionId ? store.sessions[sessionId]?.liveItems ?? NO_LIVE_ITEMS : NO_LIVE_ITEMS
   ))
 
-  // While `starting`, the transcript area already shows the full connecting surface.
-  if (state !== 'active' && state !== 'stopping') return null
+  if (state === 'idle') return null
+  // One mark, one place, from the first click: while the offer is out it breathes
+  // in the same spot it will listen from, so nothing jumps when the answer lands.
+  const connecting = state === 'starting'
 
   const pending = liveItems.filter((item) => !item.done && item.text.trim().length > 0)
   const assistantCaption = pending.findLast((item) => item.role === 'assistant')?.text ?? ''
@@ -92,13 +104,13 @@ export function RealtimeCallIndicator() {
   return (
     <div
       data-testid="realtime-call-indicator"
-      aria-label={t('chat.realtimeVoice.listening')}
-      className="flex items-center justify-center gap-3 px-2 py-2"
+      aria-label={t(connecting ? 'chat.realtimeVoice.connecting' : 'chat.realtimeVoice.listening')}
+      className="flex w-full items-center justify-center gap-3 px-2 pt-2"
     >
       <CaptionColumn text={assistantCaption} side="left" testId="realtime-caption-assistant" />
       <span
         data-testid="realtime-voice-mark"
-        data-activity={activity}
+        data-activity={connecting ? 'connecting' : activity}
         className="realtime-voice-mark shrink-0 text-primary"
         style={{ '--voice-level': inputLevel } as CSSProperties}
       >
@@ -114,7 +126,7 @@ export function RealtimeCallIndicator() {
           />
         </span>
         <span className="realtime-voice-mark-shell">
-          <CodexCloudMark size={MARK_SIZE} motion="still">
+          <CodexCloudMark size={MARK_SIZE} motion={connecting ? 'pulse' : 'still'}>
             <AudioLines
               className="text-white"
               strokeWidth={2}

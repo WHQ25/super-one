@@ -138,7 +138,8 @@ describe('realtime voice surfaces', () => {
       expect(view?.starting).toBe(true)
     })
     expect(useCodexRealtimeViewStore.getState().sessions['session-1']?.realtimeSessionId).toBeNull()
-    expect(screen.queryByTestId('realtime-call-indicator')).toBeNull()
+    // The mark is up from the first click, breathing in its final place.
+    expect(screen.getByTestId('realtime-voice-mark')).toHaveAttribute('data-activity', 'connecting')
   })
 
   it('clears the starting state when the call never connects', async () => {
@@ -268,7 +269,7 @@ describe('realtime voice surfaces', () => {
     for (const testId of ['realtime-caption-assistant', 'realtime-caption-user']) {
       const column = screen.getByTestId(testId)
       expect(column).toHaveClass('overflow-y-auto')
-      expect(column.style.height).toBe('64px')
+      expect(column.style.height).toBe('84px')
       // Centring lives on an inner wrapper, never on the scroll container itself:
       // an overflowing item centred inside a scroller loses its first lines to a
       // scrollTop that cannot go negative.

@@ -43,6 +43,13 @@ vi.mock('electron-updater', () => ({ default: { autoUpdater } }))
 vi.mock('electron', () => ({ BrowserWindow: class {} }))
 vi.mock('@electron-toolkit/utils', () => ({ is: { dev: false } }))
 vi.mock('./logger', () => ({ default: { info: vi.fn(), warn: vi.fn() } }))
+// Not a bridge build: the updater must reach Squirrel as before.
+const identity = vi.hoisted(() => ({ retired: false, init: vi.fn(async () => {}) }))
+vi.mock('./variant', () => ({ isRetiredMacBundle: () => identity.retired }))
+vi.mock('./mac-identity-migration', () => ({
+  initIdentityMigration: identity.init,
+  isQuittingForMigrationInstall: () => false,
+}))
 
 vi.mock('./harness/service', () => ({
   prefetchEnabledHarnessesForAppUpdate: vi.fn(async () => ({ prepared: [], failed: [] })),
@@ -348,5 +355,20 @@ describe('renderer catch-up', () => {
     fire('update-available', { version: '9.9.9' })
 
     expect(sent).toEqual([{ type: 'available', version: '9.9.9', releaseNotes: undefined }])
+  })
+
+  it('never touches Squirrel in a bridge build and hands the window to the migration flow', async () => {
+    // The bridge runs under the retired bundle id: its feed is frozen at
+    // itself, and any Squirrel check would only produce errors. The
+    // migration module announces itself through the same event channel.
+    identity.retired = true
+    const checksBefore = autoUpdater.checkForUpdates.mock.calls.length
+    try {
+      initUpdater({ isDestroyed: () => true } as never)
+      expect(autoUpdater.checkForUpdates.mock.calls.length).toBe(checksBefore)
+      expect(identity.init).toHaveBeenCalledTimes(1)
+    } finally {
+      identity.retired = false
+    }
   })
 })

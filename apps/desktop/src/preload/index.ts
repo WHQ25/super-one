@@ -1304,6 +1304,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.UPDATER_SIMULATE),
 
   getUpdateState: () => ipcRenderer.invoke(AgentIpcChannels.UPDATER_GET_STATE),
+  // macOS bundle-id bridge: manual install of the new-id build.
+  migrationDownload: () => ipcRenderer.invoke(AgentIpcChannels.UPDATER_MIGRATION_DOWNLOAD),
+  migrationOpenInstaller: () => ipcRenderer.invoke(AgentIpcChannels.UPDATER_MIGRATION_OPEN_INSTALLER),
+  migrationReveal: () => ipcRenderer.invoke(AgentIpcChannels.UPDATER_MIGRATION_REVEAL),
 
   onUpdateEvent: (callback: (event: unknown) => void) => {
     const handler = (_ipcEvent: Electron.IpcRendererEvent, event: unknown): void => {

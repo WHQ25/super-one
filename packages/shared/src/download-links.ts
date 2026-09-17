@@ -16,6 +16,21 @@ export type DownloadArch = 'arm64' | 'x64'
 
 export const DOWNLOAD_BASE_URL = 'https://dl.super-one.dev'
 
+/**
+ * Update manifest read by macOS builds under the current bundle id. Kept
+ * separate from `latest-mac.yml` because Squirrel.Mac validates an update
+ * against the *running* app's designated requirement, which names the bundle
+ * id: clients on the retired id must keep polling `latest-mac.yml` (frozen at
+ * the bridge build) and never be offered a new-id zip. The producing half is
+ * `MAC_UPDATE_CHANNEL` in `apps/desktop/build/mac-signing.cjs`.
+ */
+export const MAC_UPDATE_CHANNEL = 'desktop'
+export const MAC_UPDATE_MANIFEST = `${MAC_UPDATE_CHANNEL}-mac.yml`
+
+export function macUpdateManifestUrl(downloadPrefix: string, baseUrl: string = DOWNLOAD_BASE_URL): string {
+  return `${baseUrl.replace(/\/+$/, '')}/${downloadPrefix}/${MAC_UPDATE_MANIFEST}`
+}
+
 /** Map a Node `process.platform` onto the three platforms we publish for. */
 export function downloadPlatformFor(nodePlatform: string): DownloadPlatform {
   if (nodePlatform === 'darwin') return 'mac'

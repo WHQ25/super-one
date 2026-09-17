@@ -53,6 +53,11 @@ type UpdateStatus =
   | 'ready'
   | 'up-to-date'
   | 'error'
+  // macOS bundle-id bridge: the new-id build is installed by hand.
+  | 'migration-required'
+  | 'migration-downloading'
+  | 'migration-downloaded'
+  | 'migration-error'
 export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'usage' | 'automations' | 'app-settings' | 'appearance' | 'browser' | 'computer-use' | 'terminal' | 'harnesses'
 
 /** Nested config pages opened from Settings → Harnesses (reuse existing page components). */
@@ -130,6 +135,10 @@ interface AppState {
   updatePhase: 'app' | 'harness' | null
   updateHarnessId: string | null
   updateErrorMessage: string | null
+  /** Downloaded new-id installer (migration-downloaded). */
+  migrationInstallerPath: string | null
+  /** The migration dialog opens itself once per launch and on demand from the sidebar pill. */
+  migrationDialogOpen: boolean
 
   // Per-project worktree state
   _worktrees: Record<string, WorktreeState>
@@ -201,6 +210,10 @@ interface AppState {
   /** Retry harness pre-fetch after harness-error (app binary already local). */
   retryUpdateHarness: () => void
   dismissUpdate: () => void
+  setMigrationDialogOpen: (open: boolean) => void
+  migrationDownload: () => void
+  migrationOpenInstaller: () => void
+  migrationReveal: () => void
 
   // Remote control
   remoteConfig: RemoteDeviceConfig | null
@@ -622,6 +635,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   updatePhase: null,
   updateHarnessId: null,
   updateErrorMessage: null,
+  migrationInstallerPath: null,
+  migrationDialogOpen: false,
   installStatus: 'idle',
   installOutput: '',
   onboardingStep: 'welcome',
@@ -775,6 +790,37 @@ export const useAppStore = create<AppState>((set, get) => ({
           updatePhase: null,
         })
         break
+      case 'identity-migration': {
+        // First sighting per launch opens the dialog; later stages only update it.
+        const firstSighting = !get().updateStatus.startsWith('migration-')
+        const base = {
+          updateVersion: event.version,
+          updatePhase: null,
+          updateHarnessId: null,
+          ...(firstSighting && { migrationDialogOpen: true }),
+        }
+        switch (event.stage) {
+          case 'required':
+            set({ ...base, updateStatus: 'migration-required', updateProgress: 0, updateErrorMessage: null })
+            break
+          case 'downloading':
+            set({ ...base, updateStatus: 'migration-downloading', updateProgress: event.percent, updateErrorMessage: null })
+            break
+          case 'downloaded':
+            set({
+              ...base,
+              updateStatus: 'migration-downloaded',
+              updateProgress: 100,
+              updateErrorMessage: null,
+              migrationInstallerPath: event.path,
+            })
+            break
+          case 'error':
+            set({ ...base, updateStatus: 'migration-error', updateErrorMessage: event.message })
+            break
+        }
+        break
+      }
     }
   },
 
@@ -825,6 +871,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       updateHarnessId: null,
       updateErrorMessage: null,
     })
+  },
+
+  setMigrationDialogOpen: (open) => set({ migrationDialogOpen: open }),
+
+  migrationDownload: () => {
+    const status = get().updateStatus
+    if (status !== 'migration-required' && status !== 'migration-error') return
+    set({ updateStatus: 'migration-downloading', updateProgress: 0, updateErrorMessage: null })
+    void window.app.migrationDownload()
+  },
+
+  migrationOpenInstaller: () => {
+    void window.app.migrationOpenInstaller()
+  },
+
+  migrationReveal: () => {
+    void window.app.migrationReveal()
   },
 
   removeRecentFolder: async (folderPath: string) => {

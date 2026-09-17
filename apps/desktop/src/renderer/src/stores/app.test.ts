@@ -106,6 +106,9 @@ const mockWindowApp = {
   connectClaude: vi.fn().mockResolvedValue({ models: [], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }),
   connectCodex: vi.fn().mockResolvedValue({ models: [] }),
   getUpdateState: vi.fn().mockResolvedValue(null),
+  migrationDownload: vi.fn().mockResolvedValue(undefined),
+  migrationOpenInstaller: vi.fn().mockResolvedValue(undefined),
+  migrationReveal: vi.fn().mockResolvedValue(undefined),
 }
 
 const mockEnvironment = {
@@ -909,5 +912,58 @@ describe('update state catch-up', () => {
 
     expect(useAppStore.getState().updateStatus).toBe('downloading')
     expect(useAppStore.getState().updateProgress).toBe(40)
+  })
+})
+
+describe('macOS identity migration (bridge build)', () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      updateStatus: 'idle',
+      updateVersion: null,
+      updateProgress: 0,
+      updateErrorMessage: null,
+      migrationInstallerPath: null,
+      migrationDialogOpen: false,
+    })
+  })
+
+  it('opens the dialog on the first sighting only, then tracks stages silently', () => {
+    const { handleUpdateEvent } = useAppStore.getState()
+    handleUpdateEvent({ type: 'identity-migration', stage: 'required', version: null })
+    expect(useAppStore.getState().updateStatus).toBe('migration-required')
+    expect(useAppStore.getState().migrationDialogOpen).toBe(true)
+
+    // "Later" hides it; the version arriving from the manifest must not reopen it.
+    useAppStore.getState().setMigrationDialogOpen(false)
+    handleUpdateEvent({ type: 'identity-migration', stage: 'required', version: '0.67.0' })
+    expect(useAppStore.getState().updateVersion).toBe('0.67.0')
+    expect(useAppStore.getState().migrationDialogOpen).toBe(false)
+
+    handleUpdateEvent({ type: 'identity-migration', stage: 'downloading', version: '0.67.0', percent: 37 })
+    expect(useAppStore.getState().updateStatus).toBe('migration-downloading')
+    expect(useAppStore.getState().updateProgress).toBe(37)
+
+    handleUpdateEvent({ type: 'identity-migration', stage: 'downloaded', version: '0.67.0', path: '/Users/me/Downloads/SuperOne-0.67.0-arm64.dmg' })
+    expect(useAppStore.getState().updateStatus).toBe('migration-downloaded')
+    expect(useAppStore.getState().migrationInstallerPath).toBe('/Users/me/Downloads/SuperOne-0.67.0-arm64.dmg')
+    expect(useAppStore.getState().migrationDialogOpen).toBe(false)
+  })
+
+  it('records a failed download and lets the user retry from it', () => {
+    const { handleUpdateEvent } = useAppStore.getState()
+    handleUpdateEvent({ type: 'identity-migration', stage: 'error', version: '0.67.0', message: 'HTTP 503' })
+    expect(useAppStore.getState().updateStatus).toBe('migration-error')
+    expect(useAppStore.getState().updateErrorMessage).toBe('HTTP 503')
+
+    useAppStore.getState().migrationDownload()
+    expect(useAppStore.getState().updateStatus).toBe('migration-downloading')
+    expect(mockWindowApp.migrationDownload).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not start a download from a non-migration state', () => {
+    useAppStore.setState({ updateStatus: 'available' })
+    useAppStore.getState().migrationDownload()
+    expect(mockWindowApp.migrationDownload).not.toHaveBeenCalled()
+    expect(useAppStore.getState().updateStatus).toBe('available')
   })
 })

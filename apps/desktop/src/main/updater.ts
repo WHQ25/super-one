@@ -5,6 +5,8 @@ import { is } from '@electron-toolkit/utils'
 import log from './logger'
 import { AgentIpcChannels, type UpdateEvent } from '@superone/shared/agent-types'
 import { prefetchEnabledHarnessesForAppUpdate } from './harness/service'
+import { initIdentityMigration, isQuittingForMigrationInstall } from './mac-identity-migration'
+import { isRetiredMacBundle } from './variant'
 
 let win: BrowserWindow | null = null
 let updaterState: UpdateEvent['type'] = 'not-available'
@@ -93,6 +95,10 @@ function send(event: UpdateEvent): void {
     case 'downloaded':
       menuLabel = 'Restart to Update'
       menuEnabled = true
+      break
+    case 'identity-migration':
+      menuLabel = event.stage === 'downloaded' ? 'Open New Version Installer…' : 'Download New Version…'
+      menuEnabled = event.stage !== 'downloading'
       break
     default:
       menuLabel = 'Check for Updates...'
@@ -195,6 +201,12 @@ export function initUpdater(mainWindow: BrowserWindow): void {
   win = mainWindow
   installingUpdate = false
   lastEvent = null
+  // A bridge build must never touch Squirrel: its feed is frozen at itself
+  // and the new-id build has to be installed by hand.
+  if (isRetiredMacBundle()) {
+    void initIdentityMigration(send)
+    return
+  }
   const testUpdater = process.env.TEST_UPDATER === '1'
   if (is.dev && !testUpdater) return
   autoUpdater.logger = log
@@ -248,7 +260,7 @@ export function initUpdater(mainWindow: BrowserWindow): void {
 }
 
 export function isInstallingUpdate(): boolean {
-  return installingUpdate
+  return installingUpdate || isQuittingForMigrationInstall()
 }
 
 export function installUpdate(): void {

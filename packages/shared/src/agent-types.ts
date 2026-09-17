@@ -3398,6 +3398,16 @@ export type UpdateEvent =
   /** App binary ready but harness pre-fetch failed — Restart blocked. */
   | { type: 'harness-error'; version: string; message: string }
   | { type: 'error'; message: string }
+  /**
+   * macOS bridge build: this app runs under a retired bundle id and Squirrel
+   * cannot install the new-id build over it, so the user installs it by hand.
+   * `version` is the new-id release the manifest currently offers (null until
+   * the manifest has been read); `path` is the downloaded installer.
+   */
+  | { type: 'identity-migration'; stage: 'required'; version: string | null }
+  | { type: 'identity-migration'; stage: 'downloading'; version: string; percent: number }
+  | { type: 'identity-migration'; stage: 'downloaded'; version: string; path: string }
+  | { type: 'identity-migration'; stage: 'error'; version: string | null; message: string }
 
 // --- Bash output events ---
 
@@ -4065,6 +4075,10 @@ export const AgentIpcChannels = {
   UPDATER_SIMULATE: 'updater:simulate',
   /** Pull the last updater event so a late/reloaded renderer can catch up. */
   UPDATER_GET_STATE: 'updater:getState',
+  /** macOS bundle-id bridge (see UpdateEvent 'identity-migration'). */
+  UPDATER_MIGRATION_DOWNLOAD: 'updater:migrationDownload',
+  UPDATER_MIGRATION_OPEN_INSTALLER: 'updater:migrationOpenInstaller',
+  UPDATER_MIGRATION_REVEAL: 'updater:migrationReveal',
 
   // File watcher
   FILE_WATCH_START: 'app:file-watch-start',

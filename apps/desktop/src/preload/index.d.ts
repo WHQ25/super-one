@@ -269,6 +269,10 @@ interface AppAPI {
   onUpdateEvent(callback: (event: UpdateEvent) => void): () => void
   /** Last updater event, for a renderer that mounted after it was pushed. */
   getUpdateState(): Promise<UpdateEvent | null>
+  /** macOS bundle-id bridge (UpdateEvent 'identity-migration'). */
+  migrationDownload(): Promise<void>
+  migrationOpenInstaller(): Promise<void>
+  migrationReveal(): Promise<void>
   onSetupEvent(callback: (event: SetupEvent) => void): () => void
 
   // Plugins

@@ -9,6 +9,7 @@ import { CodingWorkspace } from '@/components/coding/CodingWorkspace'
 import { ActivityPanel } from '@/components/activity/ActivityPanel'
 import { useActivityPanelOnScreen } from '@/hooks/useActivityPanelOnScreen'
 import { SideChatConfirmDialog } from '@/components/chat/SideChatConfirmDialog'
+import { IdentityMigrationDialog } from '@/components/IdentityMigrationDialog'
 import { openBrowserTab, beginMosaicRecording, replayMosaicOpenedPanels } from '@/components/activity/activity-panel-api'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { MosaicDropZone } from '@/components/mosaic/MosaicDropZone'
@@ -658,6 +659,7 @@ function App(): React.JSX.Element {
         />
 
         <SideChatConfirmDialog />
+        <IdentityMigrationDialog />
 
         {/* Main area */}
         <div data-main-area="" className={cn(

@@ -14,6 +14,7 @@ const hoisted = vi.hoisted(() => {
     installUpdate: vi.fn(),
     retryUpdateHarness: vi.fn(),
     dismissUpdate: vi.fn(),
+    setMigrationDialogOpen: vi.fn(),
   }
   return { appState }
 })
@@ -29,6 +30,8 @@ vi.mock('react-i18next', () => ({
       if (key === 'shell.update.preparingShort') return 'Preparing'
       if (key === 'shell.update.restart') return 'Restart'
       if (key === 'shell.update.retryHarness') return 'Retry'
+      if (key === 'shell.update.migration.pill') return 'Reinstall'
+      if (key === 'shell.update.migration.pillDownloaded') return 'Open installer'
       if (key === 'shell.update.preparing') return `Preparing update ${opts?.version}...`
       if (key === 'shell.update.availableHint') return `Update ${opts?.version} available`
       if (key === 'shell.update.downloadingHarnessWithProgress') {
@@ -60,6 +63,7 @@ describe('sidebar update pill', () => {
     hoisted.appState.updateVersion = '1.2.3'
     hoisted.appState.updateProgress = 0
     hoisted.appState.downloadUpdate.mockClear()
+    hoisted.appState.setMigrationDialogOpen.mockClear()
   })
 
   it('starts the download when clicked in the available state', () => {
@@ -112,5 +116,35 @@ describe('sidebar update pill', () => {
     fireEvent.click(screen.getByRole('button'))
     expect(hoisted.appState.retryUpdateHarness).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('button').textContent).toContain('Retry')
+  })
+
+  it('reopens the migration dialog from the bridge pill instead of downloading', () => {
+    // The bridge build's pill is only a way back to the dialog: every action
+    // (download, open installer) lives there, so the pill never talks to the
+    // updater directly.
+    hoisted.appState.updateStatus = 'migration-required'
+    render(<UpdateStatusIcon />)
+    const button = screen.getByRole('button')
+    expect(button.textContent).toContain('Reinstall')
+    fireEvent.click(button)
+    expect(hoisted.appState.setMigrationDialogOpen).toHaveBeenCalledWith(true)
+    expect(hoisted.appState.downloadUpdate).not.toHaveBeenCalled()
+  })
+
+  it('shows installer progress while the new-id build downloads and blocks clicks', () => {
+    hoisted.appState.updateStatus = 'migration-downloading'
+    hoisted.appState.updateProgress = 63
+    render(<UpdateStatusIcon />)
+    const button = screen.getByRole('button')
+    expect(button.textContent).toContain('63%')
+    expect(button).toHaveAttribute('aria-busy', 'true')
+    fireEvent.click(button)
+    expect(hoisted.appState.setMigrationDialogOpen).not.toHaveBeenCalled()
+  })
+
+  it('offers the installer once the download finished', () => {
+    hoisted.appState.updateStatus = 'migration-downloaded'
+    render(<UpdateStatusIcon />)
+    expect(screen.getByRole('button').textContent).toContain('Open installer')
   })
 })

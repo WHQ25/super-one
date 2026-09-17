@@ -26,8 +26,11 @@ export function UpdateStatusIcon(): React.JSX.Element | null {
   const installUpdate = useAppStore((s) => s.installUpdate)
   const retryUpdateHarness = useAppStore((s) => s.retryUpdateHarness)
   const dismissUpdate = useAppStore((s) => s.dismissUpdate)
+  const setMigrationDialogOpen = useAppStore((s) => s.setMigrationDialogOpen)
 
+  const migration = updateStatus.startsWith('migration-')
   if (
+    !migration &&
     updateStatus !== 'available' &&
     updateStatus !== 'preparing' &&
     updateStatus !== 'downloading' &&
@@ -46,10 +49,24 @@ export function UpdateStatusIcon(): React.JSX.Element | null {
   const harnessError = updateStatus === 'harness-error'
   const ready = updateStatus === 'ready'
   const percent = Math.min(100, Math.max(0, Math.round(updateProgress)))
-  const interactive = available || ready || harnessError
-  const busy = preparing || downloading || downloadingHarness
+  const migrationDownloading = updateStatus === 'migration-downloading'
+  const migrationDownloaded = updateStatus === 'migration-downloaded'
+  const migrationError = updateStatus === 'migration-error'
+  const interactive = available || ready || harnessError || (migration && !migrationDownloading)
+  const busy = preparing || downloading || downloadingHarness || migrationDownloading
 
-  const tooltip = ready
+  // The bridge pill only reopens the dialog; every action lives there.
+  const migrationTooltip = migrationDownloading
+    ? t('shell.update.migration.pillDownloading', { progress: percent })
+    : migrationDownloaded
+      ? t('shell.update.migration.pillDownloaded')
+      : migrationError
+        ? t('shell.update.migration.pillError')
+        : t('shell.update.migration.title')
+
+  const tooltip = migration
+    ? migrationTooltip
+    : ready
     ? t('shell.update.ready', { version: updateVersion })
     : harnessError
       ? t('shell.update.harnessError', {
@@ -69,6 +86,10 @@ export function UpdateStatusIcon(): React.JSX.Element | null {
             : t('shell.update.availableHint', { version })
 
   const handleClick = (): void => {
+    if (migration) {
+      setMigrationDialogOpen(true)
+      return
+    }
     if (ready) {
       if (import.meta.env.DEV) dismissUpdate()
       else installUpdate()
@@ -90,12 +111,21 @@ export function UpdateStatusIcon(): React.JSX.Element | null {
             className={cn(
               'ml-auto h-4.5 gap-0.5 rounded-full px-1.5 text-[10px] font-medium leading-none',
               !interactive && 'cursor-default',
-              harnessError && 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
+              (harnessError || migrationError) && 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
             )}
             aria-busy={busy}
             onClick={interactive ? handleClick : undefined}
           >
-            {ready ? (
+            {migrationDownloading ? (
+              <>
+                <Download className="size-2.5" />
+                <span className="tabular-nums">{percent}%</span>
+              </>
+            ) : migrationDownloaded ? (
+              t('shell.update.migration.pillDownloaded')
+            ) : migration ? (
+              t('shell.update.migration.pill')
+            ) : ready ? (
               t('shell.update.restart')
             ) : harnessError ? (
               t('shell.update.retryHarness')

@@ -142,6 +142,11 @@ import {
   type ComputerUseDisplayInfo,
 } from '@superone/shared/agent-types'
 import { initUpdater, installUpdate, checkForUpdates, downloadUpdate, retryUpdateHarnessPrefetch, simulateUpdate, simulateNotAvailable, getUpdaterState, getUpdaterSnapshot, setUpdaterWindow, getUpdateMenuState, setOnMenuChange, isInstallingUpdate } from './updater'
+import {
+  downloadNewIdentityInstaller,
+  openNewIdentityInstallerAndQuit,
+  revealNewIdentityInstaller,
+} from './mac-identity-migration'
 import { startWatching, stopWatching } from './file-watcher'
 import { detectTextOrBinary, maxReadableBytes } from './file-read-limits'
 import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
@@ -4112,6 +4117,14 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.UPDATER_GET_STATE, () => getUpdaterSnapshot())
 
+  ipcMain.handle(AgentIpcChannels.UPDATER_MIGRATION_DOWNLOAD, () => {
+    downloadNewIdentityInstaller()
+  })
+  ipcMain.handle(AgentIpcChannels.UPDATER_MIGRATION_OPEN_INSTALLER, () => openNewIdentityInstallerAndQuit())
+  ipcMain.handle(AgentIpcChannels.UPDATER_MIGRATION_REVEAL, () => {
+    revealNewIdentityInstaller()
+  })
+
   ipcMain.handle(AgentIpcChannels.FILE_WATCH_START, (_e, folderPath: string) => {
     startWatching(getMainWindow(), folderPath, () => {
       gitStatusSnapshot.invalidate(folderPath)
@@ -5926,6 +5939,15 @@ app.whenReady().then(async () => {
           { role: 'about' },
           { type: 'separator' },
           { label: updateLabel, enabled: updateEnabled, click: () => {
+            if (getUpdaterState() === 'identity-migration') {
+              const snapshot = getUpdaterSnapshot()
+              if (snapshot?.type === 'identity-migration' && snapshot.stage === 'downloaded') {
+                void openNewIdentityInstallerAndQuit()
+              } else {
+                downloadNewIdentityInstaller()
+              }
+              return
+            }
             if (getUpdaterState() === 'downloaded') {
               if (is.dev) {
                 devUpdateToggle = false

@@ -579,11 +579,31 @@ export type Messages = {
       retryHarness: string
       ready: string
       restart: string
+      migration: {
+        pill: string
+        pillDownloading: string
+        pillDownloaded: string
+        pillError: string
+        title: string
+        body: string
+        keeps: string
+        download: string
+        downloadVersion: string
+        downloading: string
+        downloadedWhere: string
+        downloadedSteps: string
+        openAndQuit: string
+        reveal: string
+        later: string
+        retry: string
+        error: string
+      }
     }
     mosaic: {
       noSpace: string
     }
   }
+  /** First launch under the new macOS bundle id, before the keychain is touched. */
   notifications: {
     prime: { title: string; body: string }
     untitledSession: string
@@ -4340,6 +4360,25 @@ export const en: Messages = {
       retryHarness: 'Retry',
       ready: 'v{{version}} is ready',
       restart: 'Restart',
+      migration: {
+        pill: 'Reinstall',
+        pillDownloading: 'Downloading new version… {{progress}}%',
+        pillDownloaded: 'Open installer',
+        pillError: 'Download failed — click to retry',
+        title: 'SuperOne needs a one-time reinstall',
+        body: 'To support system features such as Touch ID passkeys, SuperOne has changed its application identity. This step cannot happen automatically: download the new version once and replace the current app with it.',
+        keeps: 'Your sessions, projects, settings and sign-ins are kept.',
+        download: 'Download New Version',
+        downloadVersion: 'Download {{version}}',
+        downloading: 'Downloading {{version}}… {{progress}}%',
+        downloadedWhere: 'Saved to your Downloads folder as {{file}}.',
+        downloadedSteps: 'The button below opens the installer and quits SuperOne. Drag SuperOne into Applications, choose Replace when asked, then open SuperOne again.',
+        openAndQuit: 'Open Installer and Quit',
+        reveal: 'Show in Finder',
+        later: 'Later',
+        retry: 'Retry',
+        error: 'Download failed: {{message}}',
+      },
     },
     mosaic: {
       noSpace: 'Not enough space',

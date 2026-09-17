@@ -178,11 +178,15 @@ export function UsagePanel({ usage, rateLimit, onConsumeResetCredit }: Pick<Usag
   const livePercent = live?.utilization != null ? Math.round(live.utilization * 100) : null
   const liveReset = live ? formatResetIn(live.resetsAt ?? null) : null
   // The live event can arrive before any polled reading (a harness whose meter
-  // is not exposed, or a first turn rejected outright): the note stands alone.
+  // is not exposed, or a first turn rejected outright): the note stands alone
+  // and carries the numbers. With a reading, the window rows below already
+  // show usage and reset, so the note is just the label.
+  const liveDetail = live && !usage ? [
+    livePercent != null && live.status !== 'rejected' ? `${livePercent}% ${t('used')}` : null,
+    liveReset ? (liveReset === 'soon' ? t('Resets soon') : `${t('Resets in')} ${liveReset}`) : null,
+  ].filter(Boolean) : []
   const liveNote = live ? <Text accessibilityRole="alert" style={{ color: toneColor(live.status === 'rejected' ? 'error' : 'warning'), fontSize: 12 }}>
-    {live.status === 'rejected' ? t('Rate limited') : t('Approaching limit')}
-    {livePercent != null && live.status !== 'rejected' ? ` · ${livePercent}% ${t('used')}` : ''}
-    {liveReset ? ` · ${liveReset === 'soon' ? t('Resets soon') : `${t('Resets in')} ${liveReset}`}` : ''}
+    {[live.status === 'rejected' ? t('Rate limited') : t('Approaching limit'), ...liveDetail].join(' · ')}
   </Text> : null
   if (!usage) return liveNote
   const agoMinutes = updatedAgoMinutes(usage.fetchedAt)

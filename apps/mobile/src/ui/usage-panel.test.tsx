@@ -61,6 +61,12 @@ test('a live rejection is spelled out above the windows, and stands alone withou
   expect(screen.getByText('Rate limited · Resets in 10m')).toBeTruthy()
 })
 
+test('a live warning next to a reading is just the label; the windows carry the numbers', async () => {
+  await renderWithTheme(<UsagePanel usage={claude} rateLimit={{ status: 'allowed_warning', utilization: 0.77, resetsAt: Math.round(now / 1000) + 600 }} />)
+  expect(screen.getByText('Approaching limit')).toBeTruthy()
+  expect(screen.queryByText(/77%/)).toBeNull()
+})
+
 test('an expired live warning is not shown', async () => {
   await renderWithTheme(<UsagePanel usage={claude} rateLimit={{ status: 'allowed_warning', resetsAt: Math.round(now / 1000) - 5 }} />)
   expect(screen.queryByText(/Approaching limit/)).toBeNull()

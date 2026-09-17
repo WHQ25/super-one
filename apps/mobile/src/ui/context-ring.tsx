@@ -83,9 +83,6 @@ export function ContextRing(props: ContextRingProps) {
   const { usage, live, hasContext, hasReading, hasWindow, occupancy, percent, contextFill, usedLabel, badge } = useRingModel(props)
 
   const usageFill = badge ? toneColor(usageTone(badge.usedPercent)) : colors.mutedForeground
-  // The live event outranks the polled meter: a rejected turn tints the chip
-  // even when the last reading still said there was room.
-  const highlight = live ? toneColor(live.status === 'rejected' ? 'error' : 'warning') : null
 
   const open = () => { meter?.onOpen?.(); menu.open() }
   const contextLabel = hasWindow ? `${t('Context used:')} ${percent}%` : `${t('Context used:')} ${usedLabel} ${t('tokens')}`
@@ -98,13 +95,11 @@ export function ContextRing(props: ContextRingProps) {
   const contextArc = hasContext ? (hasWindow ? occupancy : 1) : 0
   const contextArcColor = hasWindow ? contextFill : colors.mutedForeground
 
-  // A live limit tints the whole chip, the way the desktop gauge's border
-  // lights up: the ring alone is too small to carry a warning at a glance.
   return <>
     <Pressable ref={menu.ref} accessibilityRole="button" testID="context-ring" accessibilityLabel={label}
       accessibilityState={{ expanded: !!menu.anchor }} onPress={open} hitSlop={CHIP_HIT_SLOP}
       style={({ pressed }) => ({ minHeight: CHIP_HEIGHT, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', borderRadius: 8,
-        backgroundColor: highlight && !pressed && !menu.anchor ? `${highlight}26` : chipTriggerBackground({ pressed, open: !!menu.anchor }, colors.muted) })}>
+        backgroundColor: chipTriggerBackground({ pressed, open: !!menu.anchor }, colors.muted) })}>
       <Svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`}>
         {hasReading
           ? <>

@@ -69,6 +69,10 @@ export function useHarnessSelection() {
     'bypassPermissions',
   ])
   const [sandboxSupport, setSandboxSupport] = useState<SandboxSupportLevel>('always')
+  // `false` between a harness reset and its catalog: the ids below are unknown
+  // then, not "host default", and readers keyed on them must not treat the gap
+  // as a change of credential.
+  const [catalogReady, setCatalogReady] = useState(false)
   const draftIdentity = useRef(false)
 
   /**
@@ -140,6 +144,7 @@ export function useHarnessSelection() {
     }
 
     setSystemInfo(info)
+    setCatalogReady(true)
     // The catalog is the only thing that carries the host's brand hue, so this is
     // where the transcript's colour is kept honest — every path that refreshes a
     // harness goes through here.
@@ -180,6 +185,7 @@ export function useHarnessSelection() {
     claimed.current = emptyClaimed()
     setSelectedProvider(provider)
     setSystemInfo({})
+    setCatalogReady(false)
     setModels([])
     setPermissionModes([])
     setPermissionModeState('default')
@@ -324,6 +330,7 @@ export function useHarnessSelection() {
      * interactive chip whose every pick the host silently coerces back to off.
      */
     sandboxSupport,
+    catalogReady,
     applySystemInfo,
     resetForProvider,
     restoreDraft,

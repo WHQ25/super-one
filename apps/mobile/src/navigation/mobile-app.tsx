@@ -320,7 +320,8 @@ export function MobileApp() {
   })
   const composerUsage = useComposerUsage({
     clientRef, projectPath: project?.path, provider: selectedProvider, sessionId,
-    apiProviderId: harnessSelection.selectedProviderId, acpAgentId: selectedAcpAgentId, streaming, rateLimit,
+    apiProviderId: harnessSelection.selectedProviderId, acpAgentId: selectedAcpAgentId,
+    catalogReady: harnessSelection.catalogReady, streaming, rateLimit,
   })
   const additionalDirs = useAdditionalDirs({
     clientRef, projectPath: project?.path, provider: selectedProvider, sessionId,

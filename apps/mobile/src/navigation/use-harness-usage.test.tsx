@@ -4,7 +4,7 @@ import { useRef } from 'react'
 import type { RelayClient } from '@superone/relay-client'
 import type { RemoteUsage } from '@superone/shared/agent-types'
 import type { UsageTarget } from '../harness-usage'
-import { useHarnessUsage } from './use-harness-usage'
+import { useComposerUsage, useHarnessUsage } from './use-harness-usage'
 
 const claude: UsageTarget = { projectPath: '/p', provider: 'claude', sessionId: 's1', apiProviderId: null, acpAgentId: null }
 
@@ -85,4 +85,55 @@ test('no target means no request', async () => {
   const client = { request } as unknown as RelayClient
   await renderUsage(client, { target: null, streaming: false })
   expect(request).not.toHaveBeenCalled()
+})
+
+test('returning to a credential shows its last reading at once while the host confirms it', async () => {
+  const request = jest.fn(async (command: { provider: string }) => ({
+    usage: meter(Date.now(), command.provider === 'codex' ? '7d' : '5h'),
+  }))
+  const client = { request } as unknown as RelayClient
+  const { result, rerender } = await renderUsage(client, { target: claude, streaming: false })
+  await waitFor(() => expect(result.current.usage?.windows[0]?.label).toBe('5h'))
+
+  await rerender({ target: { ...claude, provider: 'codex' }, streaming: false })
+  await waitFor(() => expect(result.current.usage?.windows[0]?.label).toBe('7d'))
+
+  let release: (value: { usage: RemoteUsage }) => void = () => {}
+  request.mockImplementationOnce(() => new Promise((resolve) => { release = resolve }))
+  await rerender({ target: claude, streaming: false })
+  // The cached Claude reading is on screen before the host answers, and the host is still asked.
+  expect(result.current.usage?.windows[0]?.label).toBe('5h')
+  expect(request).toHaveBeenCalledTimes(3)
+  await act(async () => { release({ usage: meter(Date.now(), '5h') }) })
+})
+
+test('the composer meter keeps its credential while an opened session waits for its catalog', async () => {
+  const request = jest.fn(async () => ({ usage: meter(Date.now()) }))
+  const client = { request } as unknown as RelayClient
+  type Props = { sessionId: string; apiProviderId: string | null; catalogReady: boolean }
+  const { result, rerender } = await renderHook(
+    (props: Props) => {
+      const clientRef = useRef(client)
+      return useComposerUsage({
+        clientRef, projectPath: '/p', provider: 'claude', acpAgentId: null, streaming: false, rateLimit: null, ...props,
+      })
+    },
+    { initialProps: { sessionId: 's1', apiProviderId: 'cred-a', catalogReady: true } },
+  )
+  await waitFor(() => expect(result.current.usage).not.toBeNull())
+  expect(request).toHaveBeenLastCalledWith(expect.objectContaining({ apiProviderId: 'cred-a' }))
+
+  // Opening s2 blanks the selection until its catalog answers: not a change of credential.
+  await rerender({ sessionId: 's2', apiProviderId: null, catalogReady: false })
+  expect(result.current.usage).not.toBeNull()
+  expect(request).toHaveBeenCalledTimes(1)
+
+  await rerender({ sessionId: 's2', apiProviderId: 'cred-a', catalogReady: true })
+  expect(result.current.usage).not.toBeNull()
+  expect(request).toHaveBeenCalledTimes(1)
+
+  // The catalog naming another credential is a real switch.
+  await rerender({ sessionId: 's2', apiProviderId: 'cred-b', catalogReady: true })
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(2))
+  expect(request).toHaveBeenLastCalledWith(expect.objectContaining({ apiProviderId: 'cred-b' }))
 })

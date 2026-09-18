@@ -376,3 +376,15 @@ test.each<HarnessId>(['opencode', 'cursor', 'dsh'])(
     expect(result.current.permissionMode).toBe('plan')
   },
 )
+
+test('catalogReady is false from a harness reset until its catalog lands', async () => {
+  const { result } = await mount()
+  expect(result.current.catalogReady).toBe(false)
+  await act(async () => { result.current.applySystemInfo('claude', claudeInfo) })
+  expect(result.current.catalogReady).toBe(true)
+
+  await act(async () => { result.current.resetForProvider('claude') })
+  expect(result.current.catalogReady).toBe(false)
+  await act(async () => { result.current.applySystemInfo('claude', claudeInfo) })
+  expect(result.current.catalogReady).toBe(true)
+})

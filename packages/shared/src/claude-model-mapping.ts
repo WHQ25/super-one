@@ -1,13 +1,6 @@
-import { hasOneM, type ModelBucket, type ModelOption, type ProviderModelEnv } from './agent-types'
+import { claudeIdToBucket, hasOneM, type ModelBucket, type ModelOption, type ProviderModelEnv } from './agent-types'
 
-/** Which mapping slot a Claude catalog id falls into (`opus[1m]` and `opus` share one). */
-export function claudeIdToBucket(id: string): ModelBucket {
-  const lower = id.toLowerCase()
-  if (lower.includes('opus')) return 'opus'
-  if (lower.includes('sonnet')) return 'sonnet'
-  if (lower.includes('haiku')) return 'haiku'
-  return 'default'
-}
+export { claudeIdToBucket }
 
 export interface ResolvedClaudeEntry {
   model: ModelOption

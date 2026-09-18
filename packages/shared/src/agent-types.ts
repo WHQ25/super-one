@@ -3522,27 +3522,47 @@ export function hasProviderModelMappingEnv(env: Record<string, string | undefine
   return MODEL_MAPPING_ENV_IDS.some((key) => !!env[key])
 }
 
+/** Which mapping slot a Claude catalog id falls into (`opus[1m]` and `opus` share one). */
+export function claudeIdToBucket(id: string): ModelBucket {
+  const lower = id.toLowerCase()
+  if (lower.includes('opus')) return 'opus'
+  if (lower.includes('sonnet')) return 'sonnet'
+  if (lower.includes('haiku')) return 'haiku'
+  return 'default'
+}
+
 /**
- * The model id handed to the Claude SDK, with the alias-side `[1m]` dropped when
- * a provider model mapping is live.
+ * The model id handed to the Claude SDK when a provider model mapping is live.
  *
  * Under a mapping the session model is only a *slot selector* (`opus` picks
  * whatever `ANTHROPIC_DEFAULT_OPUS_MODEL` points at), so the 1M decision belongs
  * to the slot id — the credential editor's 1M toggle stores `qwen3.8-max[1m]`.
- * An alias-side `[1m]` is therefore never user intent there; it can only arrive
- * from the official catalog's 1M rows being picked as a fallback default. Claude
- * Code re-attaches it to the substituted id (`opus[1m]` → `qwen3.8-max[1m]`),
- * which the provider rejects with 404.
+ * Two catalog shapes defeat that when passed through verbatim:
  *
- * Mapping slot ids are untouched: a slot the user explicitly set to `[1m]` still
- * reaches the harness verbatim.
+ * - `default` (and any `[1m]` alias row): Claude Code expands it to `opus[1m]`
+ *   and re-attaches the suffix to the substituted id (`kimi-for-coding[1m]`),
+ *   which goes out as the `context-1m` beta. Providers key 1M entitlement off
+ *   that header, so a 256K plan answers 401 even though the slot id is right.
+ * - A full id such as `claude-fable-5-1[1m]`: the env mapping only rewrites
+ *   aliases, so the Anthropic id reaches the provider untouched and is rejected.
+ *
+ * So the session model is folded onto its bucket: `opus` / `sonnet` / `haiku`
+ * become the plain alias when that slot is set, everything else becomes the
+ * `ANTHROPIC_MODEL` slot id itself (`opus` when only that slot exists). Slot ids
+ * are untouched: one the user explicitly set to `[1m]` still reaches the
+ * harness verbatim. Without a mapping the id passes through unchanged.
  */
 export function resolveMappedClaudeModelId(
   model: string | undefined,
   env: Record<string, string | undefined> | undefined | null,
 ): string | undefined {
-  if (!model || !hasOneM(model)) return model
-  return hasProviderModelMappingEnv(env) ? stripOneM(model) : model
+  if (!model || !env || !hasProviderModelMappingEnv(env)) return model
+  const bucket = claudeIdToBucket(model)
+  if (bucket !== 'default' && env[BUCKET_ENV_KEYS[bucket].id]) return bucket
+  const defaultSlot = env[BUCKET_ENV_KEYS.default.id]
+  if (defaultSlot) return defaultSlot
+  if (env[BUCKET_ENV_KEYS.opus.id]) return 'opus'
+  return stripOneM(model)
 }
 
 // Consumer-facing capability, orthogonal to wire protocol. See @superone/shared/platform-registry.

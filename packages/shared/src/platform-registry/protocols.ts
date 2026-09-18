@@ -159,14 +159,34 @@ export const FAMILY_PATH: Record<ProtocolFamily, string> = {
   google: '/v1beta',
 }
 
+/** A root that already carries its version segment (`/v1`, `/api/v3`, `/v1beta`, …). */
+const VERSIONED_ROOT = /\/(?:api\/)?v\d+(?:alpha|beta)?$/
+
+function isVersionedRoot(url: string): boolean {
+  return VERSIONED_ROOT.test(url)
+}
+
 /**
  * Base URL for a family. Already-versioned roots are left alone so a pasted
  * `https://ark.cn-beijing.volces.com/api/v3` survives verbatim.
  */
 export function familyBaseUrl(family: ProtocolFamily, baseUrl: string): string {
   const trimmed = baseUrl.replace(/\/+$/, '')
-  if (!trimmed || /\/(?:api\/)?v\d+(?:alpha|beta)?$/.test(trimmed)) return trimmed
+  if (!trimmed || isVersionedRoot(trimmed)) return trimmed
   return `${trimmed}${FAMILY_PATH[family]}`
+}
+
+/**
+ * Append `prefix` onto `root` without doubling a version segment.
+ *
+ * Users paste `https://host/v1` or `https://host/v1/chat/completions` as a site root; both already
+ * include what FAMILY_PATH would add. Custom prefixes (`/api/anthropic`) still append.
+ */
+function joinRootAndPrefix(root: string, prefix: string, family: ProtocolFamily): string {
+  if (!prefix) return root
+  if (root.endsWith(prefix)) return root
+  if (prefix === FAMILY_PATH[family] && isVersionedRoot(root)) return root
+  return `${root}${prefix}`
 }
 
 /**
@@ -314,10 +334,24 @@ export function endpointBaseUrl(
   // An empty root means "whatever the vendor SDK defaults to" (official OpenAI / Gemini / Vertex).
   // Prefixing a route onto nothing would turn that into a relative URL, so leave it empty.
   if (!root) return ''
+  const family = PROTOCOL_FAMILY[protocol]
   const route = endpointRoute(endpoint, protocol)
   const suffix = PROTOCOL_ROUTE[protocol]
-  const prefix = route.endsWith(suffix) ? route.slice(0, route.length - suffix.length) : FAMILY_PATH[PROTOCOL_FAMILY[protocol]]
-  return `${root}${prefix}`
+  // A pasted full request URL is already the SDK base plus the driver suffix — strip the suffix
+  // rather than appending FAMILY_PATH on top (`…/v1/chat/completions` + `/v1` → 404).
+  if (root.endsWith(suffix)) return root.slice(0, root.length - suffix.length)
+  const prefix = route.endsWith(suffix) ? route.slice(0, route.length - suffix.length) : FAMILY_PATH[family]
+  return joinRootAndPrefix(root, prefix, family)
+}
+
+/** Full request URL the driver will hit: SDK base + the segment it appends. */
+export function protocolRequestUrl(
+  siteRoot: string,
+  endpoint: Pick<ServiceEndpoint, 'baseUrl' | 'routes'>,
+  protocol: WireProtocol,
+): string {
+  const base = endpointBaseUrl(siteRoot, endpoint, protocol)
+  return base ? `${base}${PROTOCOL_ROUTE[protocol]}` : ''
 }
 
 /** Whether a hand-edited route is one `endpointBaseUrl` can honour. */

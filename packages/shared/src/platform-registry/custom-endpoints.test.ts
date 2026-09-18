@@ -9,6 +9,7 @@ import {
   PROTOCOL_FAMILY,
   PROTOCOL_ROUTE,
   protocolForRoute,
+  protocolRequestUrl,
   protocolRoute,
   protocolsForSlot,
   slotTasks,
@@ -109,6 +110,33 @@ describe('endpointBaseUrl', () => {
   it('keeps an empty root empty rather than turning it into a relative path', () => {
     const endpoint = { id: 'openai', protocols: ['openai-chat' as const] }
     expect(endpointBaseUrl('', endpoint, 'openai-chat')).toBe('')
+  })
+
+  it('does not double /v1 when the site root is already versioned or a pasted chat URL', () => {
+    const [openai] = customEndpointsFor(['openai-chat'])
+    expect(endpointBaseUrl('https://cc.example/v1', openai, 'openai-chat')).toBe('https://cc.example/v1')
+    expect(endpointBaseUrl('https://cc.example/v1/', openai, 'openai-chat')).toBe('https://cc.example/v1')
+    expect(endpointBaseUrl('https://cc.example/v1/chat/completions', openai, 'openai-chat')).toBe(
+      'https://cc.example/v1',
+    )
+    expect(protocolRequestUrl('https://cc.example/v1', openai, 'openai-chat')).toBe(
+      'https://cc.example/v1/chat/completions',
+    )
+    expect(protocolRequestUrl('https://cc.example', openai, 'openai-chat')).toBe(
+      'https://cc.example/v1/chat/completions',
+    )
+  })
+
+  it('does not double /v1 when the stored route is the default /v1/chat/completions', () => {
+    const openai = {
+      id: 'openai',
+      protocols: ['openai-chat' as const],
+      routes: { 'openai-chat': '/v1/chat/completions' },
+    }
+    expect(endpointBaseUrl('https://cc.example/v1', openai, 'openai-chat')).toBe('https://cc.example/v1')
+    expect(protocolRequestUrl('https://cc.example/v1', openai, 'openai-chat')).toBe(
+      'https://cc.example/v1/chat/completions',
+    )
   })
 })
 

@@ -41,6 +41,14 @@ describe('endpoint-test isolation', () => {
     expect(testEndpointModelsUrl('https://relay.com', openai)).toBe('https://relay.com/v1/models')
   })
 
+  it('does not probe /v1/v1/models when the site root already includes /v1', () => {
+    const openai: ServiceEndpoint = { id: 'openai', protocols: ['openai-chat'] }
+    expect(testEndpointModelsUrl('https://cc.example/v1', openai)).toBe('https://cc.example/v1/models')
+    expect(testEndpointModelsUrl('https://cc.example/v1/chat/completions', openai)).toBe(
+      'https://cc.example/v1/models',
+    )
+  })
+
   it('keeps moonshot-style dual paths apart, off one site root', () => {
     // The shape every real relay has: one host, each format on its own path. The probe has to
     // follow the endpoint's route, not the family default, or a routed endpoint tests the wrong URL.

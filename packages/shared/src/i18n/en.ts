@@ -2840,6 +2840,15 @@ export type Messages = {
       failed: string
       tryAgain: string
     }
+    compaction: {
+      compacted: string
+      compacting: string
+      failed: string
+      triggerAuto: string
+      triggerManual: string
+      showHistory: string
+      hideHistory: string
+    }
     slashCommand: {
       groupCommands: string
       groupSkills: string
@@ -6697,6 +6706,15 @@ export const en: Messages = {
       exhausted: 'API retries exhausted',
       failed: 'API request failed',
       tryAgain: 'Try Again',
+    },
+    compaction: {
+      compacted: 'Conversation Compacted',
+      compacting: 'Compacting conversation…',
+      failed: 'Compaction failed',
+      triggerAuto: 'auto',
+      triggerManual: 'manual',
+      showHistory: 'Show history',
+      hideHistory: 'Hide history',
     },
     slashCommand: {
       groupCommands: 'Slash commands',

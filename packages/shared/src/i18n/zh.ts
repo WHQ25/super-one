@@ -2930,6 +2930,15 @@ export const zh: Messages = {
       failed: 'API 请求失败',
       tryAgain: '再试一次',
     },
+    compaction: {
+      compacted: '对话已压缩',
+      compacting: '正在压缩对话…',
+      failed: '压缩失败',
+      triggerAuto: '自动',
+      triggerManual: '手动',
+      showHistory: '显示历史',
+      hideHistory: '隐藏历史',
+    },
     slashCommand: {
       groupCommands: '命令',
       groupSkills: '技能',

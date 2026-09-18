@@ -201,16 +201,17 @@ export function CompactIndicator({
   expanded?: boolean
   onToggle?: () => void
 }) {
+  const { t } = useTranslation()
   const pillClass = 'inline-flex items-center whitespace-nowrap rounded bg-primary/15 px-1.5 py-px text-xs text-primary/80'
   return (
     <div className="my-0.5 flex items-center gap-1.5 rounded bg-primary/10 px-2 py-1.5 text-xs">
       <Minimize2 className="size-3 shrink-0 text-primary" />
-      <span className="shrink-0 font-medium text-primary">Conversation Compacted</span>
+      <span className="shrink-0 font-medium text-primary">{t('chat.compaction.compacted')}</span>
       {/* The leftover slot between the title and the toggle owns the pills.
           When it cannot hold them, drop the whole group rather than wrapping. */}
       <div className="@container min-w-0 flex-1 overflow-hidden">
         <div className="compact-indicator-meta">
-          <span className={pillClass}>{trigger === 'auto' ? 'auto' : 'manual'}</span>
+          <span className={pillClass}>{t(trigger === 'auto' ? 'chat.compaction.triggerAuto' : 'chat.compaction.triggerManual')}</span>
           {preTokens > 0 && (
             <span className={pillClass}>
               {formatCompactTokens(preTokens)}
@@ -224,7 +225,7 @@ export function CompactIndicator({
       </div>
       {onToggle && (
         <button type="button" aria-expanded={expanded ?? false} onClick={onToggle} className="flex shrink-0 items-center gap-1 text-primary/60 transition-colors hover:text-primary">
-          <span>{expanded ? 'Hide history' : 'Show history'}</span>
+          <span>{t(expanded ? 'chat.compaction.hideHistory' : 'chat.compaction.showHistory')}</span>
           <ChevronRight aria-hidden className={expanded ? 'size-3 -rotate-90' : 'size-3 rotate-90'} />
         </button>
       )}
@@ -233,6 +234,7 @@ export function CompactIndicator({
 }
 
 export function CompactingIndicator({ startedAt }: { startedAt?: number | null }) {
+  const { t } = useTranslation()
   // Mount time is only the fallback for callers that do not track the start in
   // session state. Anchoring on it would restart the count every time the chat
   // remounts — which is exactly what switching sessions and back does.
@@ -247,7 +249,7 @@ export function CompactingIndicator({ startedAt }: { startedAt?: number | null }
   return (
     <div className="my-0.5 flex items-center gap-1.5 rounded bg-warning/10 px-2 py-1.5 text-xs">
       <Loader2 className="size-3 shrink-0 animate-spin text-warning" />
-      <span className="font-medium text-warning">Compacting conversation…</span>
+      <span className="font-medium text-warning">{t('chat.compaction.compacting')}</span>
       {elapsed > 0 && <span className="text-warning/60">{elapsed}s</span>}
     </div>
   )
@@ -260,10 +262,11 @@ export function CompactErrorIndicator({
   error: string
   onDismiss?: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <div className="my-0.5 flex items-center gap-1.5 rounded bg-error/10 px-2 py-1.5 text-xs">
       <AlertTriangle className="size-3 shrink-0 text-error" />
-      <span className="font-medium text-error">Compaction failed</span>
+      <span className="font-medium text-error">{t('chat.compaction.failed')}</span>
       <span className="truncate text-error/60">{error}</span>
       {onDismiss && (
         <button onClick={onDismiss} className="ml-auto shrink-0 text-error/60 transition-colors hover:text-error">

@@ -20,6 +20,9 @@ import {
   catalogProviderIdFor,
   defaultOverridesForPlan,
   isCustomPlatform,
+  mergeEndpoint,
+  protocolRequestUrl,
+  protocolRoute,
   resolveEndpointModels,
   type Credential,
   type EndpointModel,
@@ -27,7 +30,6 @@ import {
   type Platform,
   type Plan,
   type ServiceEndpoint,
-  protocolRoute,
 } from '@superone/shared/platform-registry'
 
 import { useModelCatalog } from '@/hooks/useModelCatalog'
@@ -382,6 +384,10 @@ export function EndpointOverrideFields({
   const supportsModelMapping = isAnthropic || (endpoint.protocols.includes('openai-chat') && !planHasAnthropic)
   const isCustom = isCustomPlatform(platform)
   const canTest = !!testContext && (testContext.canTest !== false)
+  const previewProtocol = endpoint.protocols[0]
+  const previewUrl = previewProtocol
+    ? protocolRequestUrl(siteRoot, mergeEndpoint(endpoint, value), previewProtocol)
+    : ''
 
   const testThisEndpoint = useCallback(() => {
     if (!testContext) return
@@ -429,10 +435,9 @@ export function EndpointOverrideFields({
               )}
             </div>
           ))}
-          <span className="text-[10px] text-muted-foreground/70">
-            {siteRoot}
-            {value.routes?.[endpoint.protocols[0]] || protocolRoute(endpoint.protocols[0])}
-          </span>
+          {previewUrl ? (
+            <span className="text-[10px] text-muted-foreground/70">{previewUrl}</span>
+          ) : null}
           {canTest && <TestConnectionStatus state={testState} />}
         </div>
       )}

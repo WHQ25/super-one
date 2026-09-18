@@ -13,6 +13,7 @@ import {
   SUPERONE_MCP_SESSION_HEADER,
 } from './superone-mcp-auth'
 import { setSuperoneMcpHttpSessionCloser } from './superone-mcp-http-state'
+import { observeMcpHttpRequest } from './superone-mcp-http-diagnostics'
 import { createSuperoneMcpServer, getSessionHost, setToolSyncCallbacks } from './superone-mcp-server'
 import { executeSuperoneMcpTool, listSuperoneMcpTools } from './superone-mcp-tool-surface'
 import { runInLocalCallScope } from './artifact-registry'
@@ -229,14 +230,19 @@ async function closeHttpSessionsForSuperoneSession(owner: IpcState, sessionId: s
 }
 
 async function handleHttpRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const diagnostic = observeMcpHttpRequest(req, res)
+  const reject = (status: number, reason: string, message: string) => {
+    diagnostic.rejected(reason)
+    writeHttpError(res, status, message)
+  }
   const current = state
   if (!current) {
-    writeHttpError(res, 503, 'SuperOne MCP server is unavailable')
+    reject(503, 'bridge_unavailable', 'SuperOne MCP server is unavailable')
     return
   }
 
   if (req.url !== '/mcp') {
-    writeHttpError(res, 404, 'Not found')
+    reject(404, 'invalid_path', 'Not found')
     return
   }
   const superoneSessionId = headerValue(req, SUPERONE_MCP_SESSION_HEADER.toLowerCase())
@@ -245,12 +251,13 @@ async function handleHttpRequest(req: IncomingMessage, res: ServerResponse): Pro
     : null
   if (!superoneSessionId || !isValidSuperoneMcpSessionToken(current.token, superoneSessionId, bearer)) {
     res.setHeader('WWW-Authenticate', 'Bearer')
-    writeHttpError(res, 401, 'Unauthorized')
+    reject(401, 'unauthorized', 'Unauthorized')
     return
   }
+  diagnostic.authenticated(superoneSessionId)
   const expectedHost = new URL(current.httpUrl).host
   if (req.headers.host !== expectedHost) {
-    writeHttpError(res, 403, 'Invalid host')
+    reject(403, 'invalid_host', 'Invalid host')
     return
   }
 
@@ -260,14 +267,15 @@ async function handleHttpRequest(req: IncomingMessage, res: ServerResponse): Pro
   let body: unknown
   try {
     if (req.method === 'POST') body = await readJsonBody(req)
+    diagnostic.parsed(body)
   } catch (err) {
-    writeHttpError(res, 400, err instanceof Error ? err.message : 'Invalid request body')
+    reject(400, 'invalid_body', err instanceof Error ? err.message : 'Invalid request body')
     return
   }
 
   if (session) {
     if (session.superoneSessionId !== superoneSessionId) {
-      writeHttpError(res, 403, 'MCP session does not belong to this SuperOne session')
+      reject(403, 'session_mismatch', 'MCP session does not belong to this SuperOne session')
       return
     }
   } else if (!transportId && req.method === 'POST' && isInitializeRequest(body)) {
@@ -297,11 +305,11 @@ async function handleHttpRequest(req: IncomingMessage, res: ServerResponse): Pro
     } catch (err) {
       if (session) await closeHttpSession(current, session)
       log.warn('[mcp-http] initialization failed: %s', err instanceof Error ? err.message : String(err))
-      writeHttpError(res, 500, 'Failed to initialize MCP server')
+      reject(500, 'initialization_failed', 'Failed to initialize MCP server')
       return
     }
   } else {
-    writeHttpError(res, transportId ? 404 : 400, 'No valid MCP session')
+    reject(transportId ? 404 : 400, 'invalid_transport_session', 'No valid MCP session')
     return
   }
 
@@ -313,7 +321,7 @@ async function handleHttpRequest(req: IncomingMessage, res: ServerResponse): Pro
   } catch (err) {
     if (createdSession) await closeHttpSession(current, session)
     log.warn('[mcp-http] request failed: %s', err instanceof Error ? err.message : String(err))
-    writeHttpError(res, 500, 'Internal MCP server error')
+    reject(500, 'transport_failed', 'Internal MCP server error')
   }
 }
 

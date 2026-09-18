@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import * as z from 'zod/v4'
+import log from '../logger'
 
 const mocks = vi.hoisted(() => ({
   closedSessionIds: [] as string[],
@@ -73,6 +74,8 @@ function makeClient(sessionId: string, authorization?: string) {
 
 describe('superone MCP shared HTTP transport', () => {
   beforeEach(async () => {
+    vi.mocked(log.info).mockClear()
+    vi.mocked(log.warn).mockClear()
     mocks.closedSessionIds = []
     mocks.protocolClosedSessionIds = []
     await startSuperoneMcpStdioBridge()
@@ -99,12 +102,26 @@ describe('superone MCP shared HTTP transport', () => {
     })
 
     await client.close()
+    const entries = vi.mocked(log.info).mock.calls
+      .filter(([prefix]) => prefix === '[mcp-http] request %s')
+      .map(([, json]) => JSON.parse(String(json)))
+    expect(entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sessionId: 'session-http-a', rpcMethod: 'initialize', status: 200 }),
+      expect.objectContaining({ sessionId: 'session-http-a', rpcMethod: 'tools/list', status: 200 }),
+    ]))
+    expect(JSON.stringify(entries)).not.toContain('Bearer ')
+    expect(JSON.stringify(entries)).not.toContain('whoami')
   })
 
   it('rejects clients with the wrong bearer token', async () => {
     const { client, transport } = makeClient('session-http-a', 'Bearer wrong')
     await expect(client.connect(transport)).rejects.toThrow()
     await client.close().catch(() => undefined)
+    const entries = vi.mocked(log.warn).mock.calls
+      .filter(([prefix]) => prefix === '[mcp-http] request %s')
+      .map(([, json]) => JSON.parse(String(json)))
+    expect(entries).toContainEqual(expect.objectContaining({ status: 401, reason: 'unauthorized', hasAuthorization: true }))
+    expect(JSON.stringify(entries)).not.toContain('Bearer wrong')
   })
 
   it('does not allow an MCP transport id to be reused by another SuperOne session', async () => {

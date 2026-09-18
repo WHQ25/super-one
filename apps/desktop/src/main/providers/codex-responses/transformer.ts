@@ -2,6 +2,21 @@ import { responsesToChatCompletions } from './request'
 import type { CodexChatReasoningConfig } from './reasoning'
 import { chatCompletionToResponse, chatErrorToResponseError } from './response'
 import { createResponsesSseStreamFromChat } from './stream'
+import { asArray, asObject, asString } from './helpers'
+
+function toolSummary(body: unknown) {
+  const tools = asArray(asObject(body)?.tools) ?? []
+  const summary = { total: tools.length, function: 0, namespace: 0, other: 0, superone: 0 }
+  for (const tool of tools) {
+    const entry = asObject(tool)
+    if (entry?.type === 'function') summary.function++
+    else if (entry?.type === 'namespace') summary.namespace++
+    else summary.other++
+    const name = asString(entry?.name) ?? asString(asObject(entry?.function)?.name)
+    if (name?.startsWith('mcp__superone__')) summary.superone++
+  }
+  return summary
+}
 
 function passthroughHeaders(source: Headers, contentType: string): Headers {
   const headers = new Headers()
@@ -24,7 +39,12 @@ export class CodexResponsesTransformer {
   }
 
   async transformRequestOut(request: unknown): Promise<Record<string, unknown>> {
-    return responsesToChatCompletions(request, this.reasoningConfig)
+    const result = responsesToChatCompletions(request, this.reasoningConfig)
+    // This sidecar's stderr is persisted by llm-proxy-manager in packaged builds.
+    // Counts distinguish MCP discovery from provider conversion; no prompts,
+    // tool descriptions, schemas, arguments, or credentials enter the log.
+    process.stderr.write(`[codex-mcp-tools] ${JSON.stringify({ input: toolSummary(request), output: toolSummary(result) })}\n`)
+    return result
   }
 
   async transformResponseIn(response: Response): Promise<Response> {

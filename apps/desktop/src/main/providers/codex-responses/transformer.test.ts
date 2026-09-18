@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { CodexResponsesTransformer } from './transformer'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -35,6 +35,28 @@ describe('CodexResponsesTransformer (@musistudio endpoint surface)', () => {
     expect(messages[0].role).toBe('system')
     expect(messages[1].role).toBe('user')
     expect(messages[1].content).toBe('hi')
+  })
+
+  it('forwards SuperOne function tools and logs only conversion counts', async () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
+    try {
+      const chat = await transformer.transformRequestOut({
+        model: 'kimi,kimi-k2', instructions: 'private prompt',
+        tools: [
+          { type: 'function', name: 'mcp__superone__session_rename', description: 'private description', parameters: { type: 'object' } },
+          { type: 'namespace', name: 'private namespace', tools: [] },
+        ],
+      })
+      expect(chat.tools).toEqual([
+        { type: 'function', function: { name: 'mcp__superone__session_rename', description: 'private description', parameters: { type: 'object' } } },
+      ])
+      const output = stderr.mock.calls.map(([text]) => String(text)).join('')
+      expect(output).toContain('[codex-mcp-tools]')
+      expect(output).toContain('"input":{"total":2,"function":1,"namespace":1,"other":0,"superone":1}')
+      expect(output).toContain('"output":{"total":1,"function":1,"namespace":0,"other":0,"superone":1}')
+      expect(output).not.toContain('private')
+      expect(output).not.toContain('session_rename')
+    } finally { stderr.mockRestore() }
   })
 
   it('transformResponseIn maps a JSON chat completion into a Responses object', async () => {

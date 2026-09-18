@@ -1,5 +1,6 @@
 import { EventEmitter, PassThrough } from 'stream'
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import log from '../logger'
 
 vi.mock('../logger', () => ({
   default: {
@@ -152,6 +153,57 @@ async function nextTick(): Promise<void> {
 describe('createAppServerConnection', () => {
   beforeEach(() => {
     spawnMock.mockReset()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllEnvs()
+  })
+
+  it('logs retry and waiting diagnostics in production without exposing credentials or turn content', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    vi.mocked(log.info).mockClear()
+    vi.mocked(log.warn).mockClear()
+    const child = createFakeChild()
+    spawnMock.mockReturnValueOnce(child)
+    const handlePromise = createAppServerConnection({ mode: 'apiKey', apiKey: 'private-key-123' })
+    await nextTick()
+    writeLineToChild(child, { id: 1, result: {} })
+    const handle = await handlePromise
+    const pending = handle.connection.request('turn/start', {
+      threadId: 'thread-diagnostic', model: 'relay-model', input: [{ text: 'private user prompt' }],
+    })
+    await nextTick()
+    writeLineToChild(child, { id: 2, result: { turn: { id: 'turn-diagnostic' } } })
+    await pending
+    writeLineToChild(child, {
+      method: 'turn/started', params: { threadId: 'thread-diagnostic', turn: { id: 'turn-diagnostic' } },
+    })
+    writeLineToChild(child, {
+      method: 'error', params: {
+        threadId: 'thread-diagnostic', turnId: 'turn-diagnostic', willRetry: true,
+        error: { message: 'HTTP 403 private-key-123', codexErrorInfo: { httpConnectionFailed: { httpStatusCode: 403 } } },
+      },
+    })
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(60_000)
+    const warnings = JSON.stringify(vi.mocked(log.warn).mock.calls)
+    expect(warnings).toContain('provider_error')
+    expect(warnings).toContain('waiting')
+    expect(warnings).toContain('403')
+    expect(warnings).toContain('turn-diagnostic')
+    expect(warnings).not.toContain('private-key-123')
+    expect(JSON.stringify(vi.mocked(log.info).mock.calls)).not.toContain('private user prompt')
+    writeLineToChild(child, {
+      method: 'turn/completed', params: { threadId: 'thread-diagnostic', turn: { id: 'turn-diagnostic', status: 'completed' } },
+    })
+    await nextTick()
+    const warnCount = vi.mocked(log.warn).mock.calls.length
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(log.warn).toHaveBeenCalledTimes(warnCount)
+    await handle.close()
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('completes initialize handshake and returns a usable connection', async () => {

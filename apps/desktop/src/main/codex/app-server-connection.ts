@@ -16,6 +16,7 @@ import { resolveChatService } from '../providers/resolver'
 import { resolveCodexChatReasoning, supportsCodexChatReasoning } from '../providers/codex-responses/reasoning'
 import { ensureCodexProxyUrl, getCodexProxyUrl } from '../providers/llm-proxy-manager'
 import { ProcessTitle } from '../process-titles'
+import { createCodexConnectionDiagnostics } from './connection-diagnostics'
 import { buildSafeEnv, mergeLoopbackNoProxy } from '../spawn-env'
 import {
   CODEX_PERMISSION_PRESETS,
@@ -550,7 +551,14 @@ export async function createAppServerConnection(
   resolveHarnessRuntime('codex')
 
   const baseEnv = envOverride ?? buildAppServerEnv(auth, apiProviderId)
-  await ensureCodexProxyUrl(apiProviderId)
+  const connectionId = `codex-${process.pid}-${++nextAppServerConnectionId}`
+  const diagnostics = createCodexConnectionDiagnostics({
+    connectionId, env: baseEnv,
+    provider: auth.accountId ? null : resolveChatService('codex', apiProviderId ?? null),
+    apiProviderId: auth.accountId ? codexAccountProviderId(auth.accountId) : apiProviderId,
+    explicitCliOverrides: cliOverrides !== undefined,
+  })
+  await diagnostics.request('proxy/ensure', undefined, () => ensureCodexProxyUrl(apiProviderId))
   const overrideArgs = [
     ...(cliOverrides ?? buildCodexProviderCliOverridesFor(apiProviderId)),
     ...(auth.accountId ? codexAccountStore().cliOverrides(codexAccountProviderId(auth.accountId)) : []),
@@ -570,7 +578,6 @@ export async function createAppServerConnection(
     : null
   const preferredBinary = managedBinary ?? bundledBinary
   const systemCodexCli = !preferredBinary ? findSystemCodexCli() : null
-  const connectionId = `codex-${process.pid}-${++nextAppServerConnectionId}`
   log.info(
     '[codex] app-server launch conn=%s platform=%s arch=%s mode=%s expectedPackage=%s managedBinary=%s bundledBinary=%s systemCodex=%s',
     connectionId,
@@ -630,6 +637,7 @@ export async function createAppServerConnection(
   child.stderr?.setEncoding('utf8')
   child.stderr?.on('data', (chunk: string) => {
     stderrChunks.push(chunk)
+    diagnostics.stderr(chunk)
     if (liveStderr) {
       const line = chunk.replace(/\s+$/, '')
       if (line) log.info('[codex.stderr] %s', line)
@@ -644,6 +652,7 @@ export async function createAppServerConnection(
   const closedListeners = new Set<(info: AppServerExitInfo) => void>()
   let exitInfo: AppServerExitInfo | null = null
   child.on('exit', (code, sigName) => {
+    diagnostics.close()
     exitInfo = { code, signal: sigName, stderr: stderrChunks.join('') }
     log.info('[codex] app-server process exited conn=%s pid=%s code=%s signal=%s', connectionId, child.pid ?? 'unknown', code, sigName)
     trace('codex.connection', 'exit', {
@@ -704,6 +713,7 @@ export async function createAppServerConnection(
   }
 
   const setConnectionError = (error: unknown): Error => {
+    diagnostics.close()
     const nextError = error instanceof Error ? error : new Error(String(error))
     if (!readerError) readerError = nextError
     rejectAllWaiters(readerError)
@@ -728,6 +738,7 @@ export async function createAppServerConnection(
   }
 
   const dispatchNotification = (notif: AppServerNotification): void => {
+    diagnostics.notification(notif.method, notif.params)
     const waiter = notificationWaiters.shift()
     if (waiter) waiter(notif)
     else notificationQueue.push(notif)
@@ -803,7 +814,7 @@ export async function createAppServerConnection(
 
   const isDev = process.env.NODE_ENV === 'development'
 
-  const sendOnce = async (method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>> => {
+  const sendOnce = (method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>> => diagnostics.request(method, params, async () => {
     const requestId = nextRequestId
     nextRequestId += 1
     if (isDev) trace('codex.appserver.request', method, { requestId, params }, String(requestId))
@@ -816,7 +827,7 @@ export async function createAppServerConnection(
       if (isDev) trace('codex.appserver.response', method, { requestId, ok: false, error: (err as Error).message }, String(requestId))
       throw err
     }
-  }
+  })
 
   const connection: AppServerConnection = {
     request: async (method, params) => {
@@ -898,6 +909,7 @@ export async function createAppServerConnection(
   const close = async (): Promise<void> => {
     if (closed) return
     closed = true
+    diagnostics.close()
     log.info('[codex] app-server close requested conn=%s pid=%s', connectionId, child.pid ?? 'unknown')
     trace('codex.connection', 'close', { connectionId, pid: child.pid ?? null }, connectionId)
     signal?.removeEventListener('abort', onAbort)

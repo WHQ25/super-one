@@ -57,3 +57,49 @@ For packaged builds, electron-log uses the running variant's app name for its
 log directory. Read the actual path for that variant rather than assuming
 `SuperOne` for a dev or alpha build. `src/main/logger.ts` owns file logging;
 `src/main/variant.ts` and `variants.json` own identity.
+
+### Codex can chat but has no SuperOne tools
+
+Packaged builds persist the following metadata in the normal application log;
+no dev build or `RUST_LOG` setting is required. Correlate `connectionId`,
+`sessionId`, `threadId`, and timestamps. Codex connects directly to the local
+HTTP MCP server; third-party chat providers use a separate model proxy.
+
+| Log | What it establishes |
+|---|---|
+| `[mcp-transport]` | The bridge bound its local HTTP port. A preceding `[mcp-stdio-ipc] failed to start` means injection may be absent even when chat starts. |
+| `[codex.diagnostic]` / `mcp_config` | The thread start/resume received SuperOne's URL and auth header. `injected:false` means the bridge runtime was unavailable at configuration time. |
+| `[mcp-http] request` | `initialize` and `tools/list` reached the server, with HTTP status and elapsed time. Failures include an allowlisted reason such as `unauthorized`, `invalid_host`, or `invalid_transport_session`. |
+| `[codex.diagnostic]` / `mcp_startup`, `mcp_stderr` | Codex's startup result and redacted MCP warnings/errors, including failures that do not stop chat. |
+| `[codex.diagnostic]` / `mcp_snapshot` | When the MCP status panel queries Codex: server presence, runtime/auth status, tool count, and discovery error. `hasNextPage:true` means absence on this page is inconclusive. |
+| `[codex-mcp-tools]` | For the Responses-to-Chat proxy, tool counts before/after conversion, including direct SuperOne function tools and namespace counts. This establishes conversion output, not provider acceptance or model execution. |
+
+For Windows reports, collect the app log around a fresh session and its first
+turn, the SuperOne/Codex versions, and the MCP status panel result. An injected
+config with no HTTP handshake narrows investigation to Codex config/startup or
+local connectivity (including proxy/security software); it does not prove which
+one failed. A successful handshake and forwarded tools move investigation to
+provider/model tool calling. Diagnostics omit auth values, request bodies,
+tool arguments, and schemas.
+
+### Codex provider stalls in production
+
+Search the main log for `[codex.diagnostic]`. These entries are enabled in packaged
+builds and use `connectionId` to correlate with the existing app-server launch
+(binary path) and initialization (runtime version) logs.
+
+- `provider`: selected credential/endpoint, protocol, sanitized base URL, direct
+  versus Chat Completions proxy route, and API key/proxy environment presence.
+- `request_started` / `request_completed` / `request_failed`: proxy startup,
+  initialization, thread creation/resume, and turn submission timings.
+- `provider_error`: upstream error category, HTTP status when supplied by Codex,
+  and `willRetry`, including retries that do not surface as terminal UI errors.
+- `first_output`: first non-empty text or reasoning delta, without its contents.
+- `waiting`: emitted every 60 seconds for pending lifecycle requests or active
+  turns; includes elapsed time, latest notification, output presence, and the
+  latest sanitized stderr warning when available. This does not cancel the turn.
+
+For a user-specific failure, collect `main.log` and `main.log.old` immediately
+after reproduction, the approximate time/session, and the working CLI version.
+New diagnostics omit request/response bodies and redact known credentials and URL
+query values. They do not require development mode or raw event tracing.

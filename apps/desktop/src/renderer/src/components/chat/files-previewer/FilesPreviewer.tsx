@@ -58,11 +58,15 @@ export function FilesPreviewer({ payload, projectPath }: FilesPreviewerProps) {
     setFiles((prev) => prev.map((f) => (f.absolutePath === file.absolutePath ? { ...next, note: f.note } : f)))
   }, [restat, file.absolutePath])
 
+  // The fullscreen renders inside this element through a portal, so its keys
+  // bubble here through the React tree as well as to its own window listener.
+  // React commits this handler's update before the native event reaches
+  // `window`, so answering here too would move twice per press.
   const onKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (isStageControlTarget(e.target)) return
+    if (fullscreen || isStageControlTarget(e.target)) return
     if (e.key === 'ArrowLeft' && hasPrev) { e.preventDefault(); goTo(index - 1) }
     else if (e.key === 'ArrowRight' && hasNext) { e.preventDefault(); goTo(index + 1) }
-  }, [hasPrev, hasNext, index, goTo])
+  }, [fullscreen, hasPrev, hasNext, index, goTo])
 
   // Capture phase: a click anywhere in the stage means "open", except on media
   // controls and the stage's own buttons. Links and copy buttons inside a

@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { flushSync } from 'react-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NativeWidgetPayload, PreviewerFile } from '@superone/shared/generative-ui/native-widgets'
 import { FilesPreviewer } from './FilesPreviewer'
@@ -147,5 +148,24 @@ describe('files previewer card', () => {
     expect(fullscreen.textContent).toContain('3 / 3')
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(card().dataset.index).toBe('2')
+  })
+
+  it('moves exactly one file per arrow key while the fullscreen is open', () => {
+    render(<FilesPreviewer payload={payload([image, text, clip])} />)
+    fireEvent.click(stage())
+    const fullscreen = screen.getByTestId('previewer-fullscreen')
+    // A real key press runs a microtask checkpoint between listeners, so React commits
+    // the card's handler before the event reaches `window`. Emulate that from `document`,
+    // which sits between React's root listener and the fullscreen's window listener.
+    const commitBetweenListeners = () => flushSync(() => {})
+    document.addEventListener('keydown', commitBetweenListeners)
+    try {
+      fireEvent.keyDown(within(fullscreen).getByTestId('previewer-fullscreen-stage'), { key: 'ArrowRight' })
+      expect(fullscreen.textContent).toContain('2 / 3')
+      fireEvent.keyDown(within(fullscreen).getByTestId('previewer-fullscreen-stage'), { key: 'ArrowLeft' })
+      expect(fullscreen.textContent).toContain('1 / 3')
+    } finally {
+      document.removeEventListener('keydown', commitBetweenListeners)
+    }
   })
 })

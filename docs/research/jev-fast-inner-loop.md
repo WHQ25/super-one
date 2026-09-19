@@ -580,6 +580,20 @@ npm 搜索 → 点建议项 → SPA 客户端导航（fetch ≈ 0.8 s 后才 `pu
 - 等待结束与 `changed_page` 用同一个 marker，由构造保证两者一致。
 - 未覆盖：页面完全静止但网络在等（DOM 不动）只能等到上限；需要时再加页内 in-flight 请求计数（Playwright networkidle 思路），是加法不是替代。
 
+### 8.17 2026-09-19 WebVoyager 抽样：点击不设门槛、动作后等变化、折叠导航标 Expand
+
+用 5 个真实站点（Cambridge Dictionary、arXiv、Hugging Face、GitHub、Apple）加 Wikipedia / npm 回归抽样，全部 Grok 4.6 / high、无 `done_when`、dev 面板 748 px（含窄视口/汉堡布局，故意不放大）。首轮暴露三类机制缺口（不是站点特例）：
+
+1. **动作后快照太早**（第三次撞到）：点击触发的菜单/下拉/SPA 导航在 2 帧 / 50 ms 后还没出现，`changed=False`，Jev 下一步看到同一页。→ `settleAfter` 改成事件驱动：等页面相对**动作前** marker 变化（MutationObserver + tick），上限 500 ms，变了再等两帧；combobox 保留"等可见 option"。与 8.16 的 WAIT 共用一个 `changeWaitExpr`。直连探针：Apple Menu 点击后 15 ms 即测得 12→16 元素。
+2. **低风险点击被置信门槛拦**：arXiv 首页正确的 "Search" 链接 Jev 只给 0.36、HF 的 Tasks 0.49，都被 `read` 0.6 拦成 `uncertain` pause。风险已由 `next_step_risk` 单独判（两例 ≈0.1），点错安全元素只赔一步重观察，pause 却赔主模型一整轮。→ 删掉 click 的置信门槛（`THRESHOLDS.read`），只保留 `next_step_risk ≥ 0.5` 的 risky pause 和 type 的 0.7 门槛。jev-ultrafast 同样从不设门槛。
+3. **折叠导航 Jev 认不出**：GitHub / Apple 窄布局把搜索藏在 `aria-expanded=false` 的汉堡后。→ 候选标签按 8.15 "把动作写进标签"的规律，`expanded=false` 的按钮显示为 "Expand <label>"（`clickVerb`），并加一条 RULE：控件不在页面时先展开折叠导航再滚动或等待。
+
+### 8.18 尚未解决（同批暴露）
+
+- **完成检测**：arXiv 实际走到了正确的 `/abs/` 摘要页（目标页），但 `goal_satisfied` 在该页只到 0.45–0.50，未过 0.7，未 done，最终 no-progress 暂停。降阈值会引入误 done，属 `goalSatisfied` 校准与"第一条结果"这类无法从单屏证实的目标的固有张力。
+- **水合竞态**：Apple 的 Menu 是 React globalnav，`readyState=complete` 后处理器仍未挂上，loop 约 1 s 时点击是无效点击（`cdpClick` 与手动探针逐字节相同，手动稍后点击可展开），`changed=False` 后被 stuck 规则永久剔除 → 暂停。候选修法：click 后无变化时先 WAIT 再重观察、重试一次，而不是立即剔除。
+- **窄布局语义**：GitHub 的 "Toggle navigation" 即便标成 Expand + RULE，Jev 仍给 0.18 并选择滚动，没意识到搜索在汉堡里。属 Jev 语义能力边界，非机制问题。
+
 ## 9. 非目标
 
 - 不替换现有 `*_snapshot` / `*_act` / `*_query`；`*_run` 是并列的 goal 级工具，主模型按工具 description 里的路由指引选
@@ -739,18 +753,21 @@ Verification: Jev/browser surface, the built-in tool catalog and device presente
 - computer 保持后台控制（目标 app 不被激活）。`hidesOnDeactivate` 的系统面板（Fonts、Colors 等 NSPanel）只在目标 app 前台时存在：直连 helper 实测 TextEdit 前台时 `list_windows` 返回 `Fonts` AX root，切到后台即消失（CG 层面同样如此，面板在 layer 3 且离屏）。这类面板在 `computer_run` 下无法观察，`newRoot` 不会命中；不通过激活目标 app 来规避，选题时避开。
 - device 不提供键盘 Enter、OCR 坐标候选或无 tree 降级；已有 device_act 处理这些情况。device 的 live 数据仅为功能 smoke，未作 A/B 性能结论。
 
-### 10.6 browser 范式验证（Grok 4.6 / high，dev 版，无 `done_when`）
+### 10.6 browser 范式抽样（Grok 4.6 / high，dev 版，无 `done_when`，面板 748 px）
 
-主模型只给 `goal` + `presets`，由 Jev 判完成与风险（8.15）。
+含 8.16 / 8.17 全部改动后（提交 `a766a53b` stale、`668140c8` WAIT、本批 settle/门槛/Expand）：
 
-| 任务 | 结果 | 主模型 | Jev |
-| --- | --- | --- | --- |
-| Wikipedia 三跳导航 | done，0 pause | 8 calls / 62.6 s | 7 步，risk 头导航步 0.08–0.12，完成页 goal_satisfied 0.83（阈值据此从 0.9 降到 0.7） |
-| npm：搜 zod → 包页 → Versions，run 1 | 前两次 `browser_run` 返回 `[Error] Target changed or is covered`，第三次 done | 16 calls / 179 s | browser 自己的 `StalePage` 未映射到 loop 的 `StaleObservation`，`ddf57282` 重构时漏的契约（computer / device 一直抛后者） |
-| npm，run 2（stale 修复后） | 未完成：点建议项后观察到的仍是首页，scroll → 低置信 → no-progress 暂停 | — | trace `rd4198244`，见 8.16 |
-| npm，run 3（8.16 之后） | **done，0 pause，1 次 `browser_run`** | 5 calls / 43.1 s / $0.0397 | 7 步 2.7 s（Jev 累计 3.7 s），完成页 goal_satisfied 0.85 两次确认，trace `r12a977fb` |
+| 任务 | 结果 | `browser_run` | 主模型 | Jev | 备注 |
+| --- | --- | --- | --- | --- | --- |
+| Wikipedia 三跳（回归） | ✅ done | 1 | 6 calls / 51.5 s / $0.040 | — | |
+| npm 搜 zod → Versions（回归） | ✅ done | 1 | 6 calls / 55.4 s / $0.038 | 6 步，完成页 goal_satisfied 0.83/0.84 两次确认 | 过渡页靠 scroll 的整页新鲜度判 stale 重观察，WAIT 未触发 |
+| Cambridge Dictionary 查词 | ✅ done | 1 | 8 calls / 118.8 s / $0.038 | 4 步 | |
+| arXiv 搜索 → 首条摘要 | △ 走到正确 `/abs/` 页但未判 done | 2（后一次 abort） | 6 calls / 87.8 s / $0.050 | 7 步：Search 链接 0.5（删门槛后才可点）→ WAIT 等搜索页 → 输入 → Search → 点首条 → 摘要页 | 8.18 完成检测：gs 在目标页仅 0.45–0.50 |
+| Hugging Face 筛选+排序 | △ 筛选对（text-classification），排序错（trending 非 downloads） | 3 | 10 calls / 98.9 s / $0.067 | — | |
+| GitHub 搜仓库 → Issues | ✗ 首页 no-progress | 2 | 7 calls / 68.2 s / $0.038 | 2 步：Toggle navigation 标成 Expand 仍只 0.18，选择滚动 | 8.18 窄布局语义 |
+| Apple → MacBook Air → Tech Specs | ✗ 首页 no-progress | 2 | 8 calls / 79.1 s / $0.038 | 2 步：Menu 点击无效（水合竞态）后被剔除 | 8.18 水合竞态 |
 
-run 3 里 WAIT 分支其实没被走到：过渡页上 `still_loading` 0.55（新问法，旧问法同页 0.16），低于 0.7，Jev 选 scroll，是 scroll 的整页 marker 新鲜度检查判 stale 后重观察才看到包页。新问法把这个信号从 0.16 抬到 0.55–0.59，阈值是否降到 0.5 待更多 trace 再定：事件驱动之后一次误 WAIT 的代价只有 ≤ 1 s + 1 次 Jev。
+**净读数**：干净完成 3/7，目标达成但未判完成 1（arXiv），部分 1（HF），失败 2（GitHub / Apple）。改动的确救回 arXiv（此前首页即 abort），并把 npm 收敛到 1 次干净调用；剩余失败是 8.18 的三类独立难题，不是补丁能一次抹平的。同批也重申了失败代价：一次 pause→abort 让主模型多花一整轮（60–100 s），窄布局/水合类任务目前用 `browser_run` 反而比逐步 `browser_act` 贵——定位上，`browser_run` 更适合主模型已确认是纯点击/填表流程的委托。
 
 ## 参考
 

@@ -18,8 +18,11 @@ export const THRESHOLDS = {
    * finished page, at most 0.09 on every page before it.
    */
   goalSatisfied: 0.7,
-  /** Official confidence-routing floor: below this the model is not acted on at all. */
-  read: 0.6,
+  /**
+   * Typing is gated (a wrong field gets wrong text); clicks are not — Jev's
+   * risk verdict decides what needs a confirmation, and a wrong safe click
+   * costs one re-observation.
+   */
   write: 0.7,
   presetMatch: 0.7,
   /**
@@ -214,21 +217,9 @@ export function decide(input: DecideInput): Decision {
     // page as a whole while the target head still singles out the one row
     // that matters (Finder: fifty apps and one folder).
     if (chosen === 'none_useful' && p < THRESHOLDS.overrideNone) return noneUseful()
-    // Only the target head is gated. The action head is a 4–5 way choice whose
-    // confidence is structurally low even when "click vs type" is obvious, and
-    // picking the wrong operation on the right element is cheap and reversible.
-    if (p < THRESHOLDS.read) {
-      return {
-        kind: 'pause',
-        mode: 'click',
-        question: {
-          type: 'choice',
-          reason: 'uncertain',
-          options: [...topK(space, target.probabilities), ABORT],
-          context: { why: `Low confidence click target (${p.toFixed(2)})`, page, decision: summary },
-        },
-      }
-    }
+    // No confidence gate on clicks: Jev already judged the step's risk, and a
+    // wrong click on a safe element costs one re-observation while a pause
+    // costs the caller a whole turn (arXiv: the right "Search" link at 0.36).
     if (risk >= THRESHOLDS.risk) return riskyPause('click', target.choice, el, target.probabilities)
     return { kind: 'click', key: target.choice, element: el, probability: p, risk }
   }

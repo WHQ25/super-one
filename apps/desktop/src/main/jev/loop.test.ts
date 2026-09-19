@@ -267,6 +267,23 @@ describe('FastRun', () => {
     expect(result.since_last).toEqual(['Click [1] Issues (no change)'])
   })
 
+  it('offers a collapsed control as "Expand" and records it that way once clicked', async () => {
+    // GitHub at 748 px: the search box is behind a "Toggle navigation" hamburger.
+    const NARROW = page([el({ node: 1, role: 'button', label: 'Toggle navigation', expanded: 'false' })], { text: 'Home' })
+    const OPENED = page([el({ node: 1, role: 'button', label: 'Toggle navigation', expanded: 'true' })], { text: 'Home with nav' })
+    const seen: Array<{ criteria: string; completed: string[] }> = []
+    const { deps } = harness([NARROW, OPENED], (request) => {
+      const criteria = request.questions.click_target ? JSON.stringify((request.questions.click_target as { criteria: unknown }).criteria) : ''
+      seen.push({ criteria, completed: (request.state as { completed_actions: string[] }).completed_actions })
+      return { still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0), action: pick('click', actionsOf(request)), click_target: pick('1', clicksOf(request)) }
+    })
+    deps.checkDone = async () => false
+    await new FastRun(opts({ maxSteps: 2 }), deps).start()
+    expect(seen[0].criteria).toContain('[1] Expand Toggle navigation')
+    expect(seen[1].completed).toEqual(['Expand Toggle navigation'])
+    expect(seen[1].criteria).toContain('"[1] Toggle navigation"')
+  })
+
   it('finishes on Jev\'s verdict only after a fresh observation agrees', async () => {
     const verdicts: number[] = []
     const { deps, acts } = harness([CREATED], (request) => {

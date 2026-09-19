@@ -3,7 +3,7 @@
  * questions. Code consumes only the heads the chosen action needs.
  */
 
-import { type ActionSpace, clickKindOf, type HistoryEntry, type SpaceElement } from './action-space'
+import { type ActionSpace, clickKindOf, clickVerb, type HistoryEntry, type SpaceElement } from './action-space'
 import type { JevQuestion, JevRequest } from './typesafe-client'
 
 export interface Preset {
@@ -26,6 +26,7 @@ const RULES = [
   'Fill required fields before anything that submits. A typed query still needs its matching suggestion clicked.',
   'Do not toggle a control already in the requested state.',
   'Prefer a useful visible element over scrolling. Choose none_useful only when no offered element advances the goal.',
+  'If the control the goal needs is not on the page, expand collapsed navigation or menus (expanded=false) before scrolling or waiting.',
 ].join(' ')
 
 export interface StateElement {
@@ -51,9 +52,10 @@ function candidateCriteria(space: ActionSpace, keys: readonly string[]): Record<
     const kind = clickKindOf(key)
     const el = space.elements.find((e) => e.index === key.replace(/^(open|submit):/, ''))
     if (!el) continue
-    const element = kind === 'open' ? `[${el.index}] Open ${el.label}`
-      : kind === 'submit' ? `[${el.index}] Press Enter in ${el.label} to submit it`
-        : `[${el.index}] ${el.label}`
+    const verb = clickVerb(kind, el)
+    const element = verb === 'Click' ? `[${el.index}] ${el.label}`
+      : verb === 'Press Enter in' ? `[${el.index}] Press Enter in ${el.label} to submit it`
+        : `[${el.index}] ${verb} ${el.label}`
     criteria[key] = {
       element,
       role: el.role,

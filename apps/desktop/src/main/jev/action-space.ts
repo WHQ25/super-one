@@ -88,6 +88,18 @@ export function clickKindOf(key: string): ClickKind {
   return key.startsWith('open:') ? 'open' : key.startsWith('submit:') ? 'submit' : 'click'
 }
 
+/**
+ * The verb Jev sees for a click candidate and later in completed_actions. A
+ * collapsed control (`aria-expanded=false`: hamburger menus, disclosure
+ * buttons) is offered as "Expand" so revealing hidden navigation reads as a
+ * step rather than a property Jev must infer.
+ */
+export function clickVerb(kind: ClickKind, el: Pick<RawElement, 'expanded'>): 'Open' | 'Press Enter in' | 'Expand' | 'Click' {
+  if (kind === 'open') return 'Open'
+  if (kind === 'submit') return 'Press Enter in'
+  return el.expanded === 'false' ? 'Expand' : 'Click'
+}
+
 export function elementByIndex(space: ActionSpace, key: string): SpaceElement | undefined {
   const index = key.replace(/^(open|submit):/, '')
   return space.elements.find((el) => el.index === index)

@@ -60,7 +60,7 @@ function depsFor(sessionId: string, tab: string | undefined, doneWhen?: DoneWhen
     pressEnter: (node) => pressEnterInNode(target, node),
     type: (node, text) => typeIntoNode(target, node, text),
     scroll: (page, deltaY) => scrollPage(target, page, deltaY),
-    settle: (opts) => settleAfter(target, opts),
+    settle: (page, opts) => settleAfter(target, page, opts),
     waitReady: (timeoutMs) => waitForDocumentComplete(target, timeoutMs),
     waitForChange: (page, timeoutMs) => waitForPageChange(target, page, timeoutMs),
     checkDone: () => doneWhen ? checkDoneWhen(target, doneWhen) : Promise.resolve(false),

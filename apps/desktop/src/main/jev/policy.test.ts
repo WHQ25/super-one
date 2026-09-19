@@ -42,11 +42,12 @@ describe('decide', () => {
     expect(decide(input({ answers: { ...answers, goal_satisfied: noul(THRESHOLDS.goalSatisfied - 0.01) } })).kind).toBe('click')
   })
 
-  it('clicks a confident target, and pauses with top-k on a weak one', () => {
+  it('clicks the chosen target whether Jev is sure or not, as long as the step is safe', () => {
     const strong = { ...calm, action: pick('click', ACTIONS), click_target: pick('3', CLICKS, 0.9) }
     expect(decide(input({ answers: strong }))).toMatchObject({ kind: 'click', key: '3', risk: 0.05 })
-    const weak = { ...strong, click_target: pick('3', CLICKS, 0.5) }
-    expect(decide(input({ answers: weak }))).toMatchObject({ kind: 'pause', mode: 'click', question: { reason: 'uncertain' } })
+    // arXiv: the right "Search" link at 0.36. A wrong safe click costs one re-observation; a pause costs a turn.
+    const weak = { ...strong, click_target: pick('3', CLICKS, 0.36) }
+    expect(decide(input({ answers: weak }))).toMatchObject({ kind: 'click', key: '3', probability: 0.36 })
   })
 
   it('asks before a step Jev rates irreversible, offering that step first', () => {

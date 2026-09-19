@@ -204,62 +204,63 @@ export async function scrollPage(webContentsId: number, page: PageObservation, d
 }
 
 /**
- * Give the page two frames (and, after typing into a combobox, up to 200 ms for
- * suggestions) before the next observation. Read-only; a navigation in the
- * middle is not an error.
+ * In-page wait for the page to differ from `page`: resolves true after two
+ * frames once the marker changed (or, after typing into an ARIA combobox,
+ * once its options are visible), false when the cap passes unchanged.
+ * Checks run `quietMs` after the last DOM mutation and every `tickMs` as a
+ * floor, so a page that never goes quiet is still compared.
  */
-export async function settleAfter(webContentsId: number, opts: { node?: number; typed?: boolean }): Promise<void> {
-  const expr = `(new Promise((resolve) => {
+function changeWaitExpr(page: PageObservation, timeoutMs: number, opts: { node?: number; typed?: boolean; quietMs: number; tickMs: number }): string {
+  return `((seen, timeoutMs) => new Promise((resolve) => {
     const field = window.__soneJev?.nodes.get(${opts.node ?? -1});
     const autocomplete = ${opts.typed === true} && field?.getAttribute('role') === 'combobox';
-    let frames = 0, stopped = false;
-    const finish = () => { stopped = true; resolve(true); };
-    setTimeout(finish, autocomplete ? 200 : 50);
-    const ready = () => {
-      if (stopped) return;
+    const optionsVisible = () => {
       const ids = (field?.getAttribute('aria-controls') || field?.getAttribute('aria-owns') || '').split(/\\s+/).filter(Boolean);
       const roots = ids.length ? ids.map((id) => document.getElementById(id)).filter(Boolean) : [document];
-      const options = roots.flatMap((root) => [...root.querySelectorAll('[role="option"]')]);
-      if (++frames >= 2 && (!autocomplete || options.some((e) => { const r = e.getBoundingClientRect(); return r.width && r.height && r.bottom > 0 && r.top < innerHeight; }))) finish();
-      else requestAnimationFrame(ready);
+      return roots.flatMap((root) => [...root.querySelectorAll('[role="option"]')])
+        .some((e) => { const r = e.getBoundingClientRect(); return r.width && r.height && r.bottom > 0 && r.top < innerHeight; });
     };
-    requestAnimationFrame(ready);
-  }))`
+    const changed = () => autocomplete ? optionsVisible() : (() => { const s = ${OBSERVE_SCRIPT}; return !s || JSON.stringify(s.marker) !== seen; })();
+    let done = false, quiet = 0;
+    const observer = new MutationObserver(() => { clearTimeout(quiet); quiet = setTimeout(check, ${opts.quietMs}); });
+    const finish = (result) => {
+      if (done) return;
+      done = true; observer.disconnect(); clearTimeout(quiet); clearTimeout(cap); clearInterval(tick);
+      resolve(result);
+    };
+    function check() {
+      if (done) return;
+      if (changed()) requestAnimationFrame(() => requestAnimationFrame(() => finish(true)));
+    }
+    const cap = setTimeout(() => finish(false), timeoutMs);
+    const tick = setInterval(check, ${opts.tickMs});
+    observer.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+    check();
+  }))(${JSON.stringify(JSON.stringify(page.marker))}, ${timeoutMs})`
+}
+
+const ACT_SETTLE_MS = 500
+
+/**
+ * After input: wait for the page to react to the action (menus that animate
+ * in, suggestion lists, in-page navigation) instead of a fixed two frames.
+ * Read-only; a navigation in the middle is not an error.
+ */
+export async function settleAfter(webContentsId: number, page: PageObservation, opts: { node?: number; typed?: boolean }): Promise<void> {
   try {
-    await evaluate(webContentsId, expr, true)
+    await evaluate(webContentsId, changeWaitExpr(page, ACT_SETTLE_MS, { ...opts, quietMs: 50, tickMs: 100 }), true)
   } catch {
     // navigating — the next observe retries until the document is back
   }
 }
 
 /**
- * Jev asked to wait: block until the page differs from the one it saw, then
- * give the render two frames. Resolves false when nothing changed before the
- * cap. Checks run 100 ms after the last DOM mutation and every 250 ms as a
- * floor, so a page that never goes quiet is still compared. A navigation in
- * the middle destroys the context and counts as a change.
+ * Jev asked to wait: block until the page differs from the one it saw. A
+ * navigation in the middle destroys the context and counts as a change.
  */
 export async function waitForPageChange(webContentsId: number, page: PageObservation, timeoutMs: number): Promise<boolean> {
-  const expr = `((seen, timeoutMs) => new Promise((resolve) => {
-    const same = () => { const s = ${OBSERVE_SCRIPT}; return !s || JSON.stringify(s.marker) === seen; };
-    let done = false, quiet = 0;
-    const observer = new MutationObserver(() => { clearTimeout(quiet); quiet = setTimeout(check, 100); });
-    const finish = (changed) => {
-      if (done) return;
-      done = true; observer.disconnect(); clearTimeout(quiet); clearTimeout(cap); clearInterval(tick);
-      resolve(changed);
-    };
-    function check() {
-      if (done) return;
-      if (!same()) requestAnimationFrame(() => requestAnimationFrame(() => finish(true)));
-    }
-    const cap = setTimeout(() => finish(false), timeoutMs);
-    const tick = setInterval(check, 250);
-    observer.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
-    check();
-  }))(${JSON.stringify(JSON.stringify(page.marker))}, ${timeoutMs})`
   try {
-    return (await evaluate<boolean>(webContentsId, expr, true)) === true
+    return (await evaluate<boolean>(webContentsId, changeWaitExpr(page, timeoutMs, { quietMs: 100, tickMs: 250 }), true)) === true
   } catch {
     return true // navigating — the next observe retries until the document is back
   }

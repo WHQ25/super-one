@@ -5,7 +5,7 @@
  */
 
 import { randomUUID } from 'crypto'
-import { type ActionSpace, buildActionSpace, clickKindOf, elementByIndex, type HistoryEntry, type SpaceElement } from './action-space'
+import { type ActionSpace, buildActionSpace, clickKindOf, clickVerb, elementByIndex, type HistoryEntry, type SpaceElement } from './action-space'
 import type { RawElement, RunObservation } from './observation'
 import { decide, type Decision, presetByHint, type Question, type QuestionOption } from './policy'
 import { buildRequest, type Preset } from './questions'
@@ -23,7 +23,12 @@ export interface RunDeps<Page extends RunObservation = RunObservation> {
   pressEnter(node: number, signal?: AbortSignal): Promise<void>
   type(node: number, text: string, signal?: AbortSignal): Promise<void>
   scroll(page: Page, deltaY: number, signal?: AbortSignal): Promise<void>
-  settle(opts: { node?: number; typed?: boolean }, signal?: AbortSignal): Promise<void>
+  /**
+   * After input: let the page react before the next observation. `page` is the
+   * observation the action was taken on, so an adapter can wait for a change
+   * relative to it instead of a fixed delay.
+   */
+  settle(page: Page, opts: { node?: number; typed?: boolean }, signal?: AbortSignal): Promise<void>
   waitReady(timeoutMs: number, signal?: AbortSignal): Promise<boolean>
   /**
    * Jev asked to wait: resolve true as soon as the page differs from `page`,
@@ -338,7 +343,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
           return this.result('done', decision.why)
         }
         this.doneCandidate = true
-        await this.deps.settle({ node: -1 }, signal)
+        await this.deps.settle(page, { node: -1 }, signal)
         page = null
         continue
       }
@@ -411,7 +416,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
         ? {
           node: decision.element.node,
           kind: clickKind === 'submit' ? 'submit' : 'click',
-          label: `${clickKind === 'open' ? 'Open' : clickKind === 'submit' ? 'Press Enter in' : 'Click'} [${decision.element.index}] ${decision.element.label}`,
+          label: `${clickVerb(clickKind ?? 'click', decision.element)} [${decision.element.index}] ${decision.element.label}`,
           changedPage: null,
           ...(approved ? { approved: true } : {}),
         }
@@ -425,10 +430,10 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     } else if (decision.kind === 'click') {
       if (clickKind === 'submit') await this.deps.pressEnter(decision.element.node, signal)
       else await this.deps.click(decision.element.node, signal)
-      await this.deps.settle({ node: decision.element.node }, signal)
+      await this.deps.settle(page, { node: decision.element.node }, signal)
     } else {
       await this.deps.type(decision.element.node, decision.text, signal)
-      await this.deps.settle({ node: decision.element.node, typed: true }, signal)
+      await this.deps.settle(page, { node: decision.element.node, typed: true }, signal)
     }
     } catch (error) {
       if (error instanceof StaleObservation) this.history.pop()

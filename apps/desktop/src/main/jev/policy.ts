@@ -17,6 +17,12 @@ export const THRESHOLDS = {
   read: 0.6,
   write: 0.7,
   presetMatch: 0.7,
+  /**
+   * A click target this sure overrides an action head that said none_useful.
+   * The action head weighs the whole page; the target head answers "which
+   * one, if a click" and puts its mass on none_of_these when nothing fits.
+   */
+  overrideNone: 0.8,
 } as const
 
 export type PauseReason = 'uncertain' | 'guarded-only' | 'no-progress' | 'budget'
@@ -80,6 +86,12 @@ function topK(space: ActionSpace, probabilities: Record<string, number>, k = 5):
 const ABORT: QuestionOption = { key: 'abort', label: 'Stop; hand control back to you' }
 /** Safe candidates appended to a guarded-only pause; the rest are still visible in the snapshot. */
 const MAX_SAFE_OPTIONS = 20
+/**
+ * Guarded options offered in a pause. A desktop app exposes every menu
+ * command as a guarded element; the adapter orders on-screen content first,
+ * so a cap keeps the question answerable without hiding the count.
+ */
+const MAX_GUARDED_OPTIONS = 24
 
 function decisionSummary(answers: Record<string, JevAnswer>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
@@ -161,6 +173,8 @@ export function decide(input: DecideInput): Decision {
         const el = elementByIndex(space, key)
         return el ? [{ ...option(el), key }] : []
       })
+      const guarded = space.guarded.slice(0, MAX_GUARDED_OPTIONS)
+      const guardedOmitted = space.guarded.length - guarded.length
       return {
         kind: 'pause',
         mode: 'click',
@@ -168,7 +182,7 @@ export function decide(input: DecideInput): Decision {
           type: 'choice',
           reason: 'guarded-only',
           options: [
-            ...space.guarded.map((el) => option(el)),
+            ...guarded.map((el) => option(el)),
             ...space.guardedSubmits.map((el) => ({ key: `submit:${el.index}`, label: `press Enter in ${el.role} ${el.label}` })),
             ...safe,
             ABORT,
@@ -176,9 +190,10 @@ export function decide(input: DecideInput): Decision {
           context: {
             why: 'No safe action advances the goal; guarded elements remain. Safe candidates are listed after them in case one should be retried.',
             guarded: [
-              ...space.guarded.map((el) => ({ index: el.index, label: el.label, reason: el.reason })),
+              ...guarded.map((el) => ({ index: el.index, label: el.label, reason: el.reason })),
               ...space.guardedSubmits.map((el) => ({ index: `submit:${el.index}`, label: `Enter in ${el.label}`, reason: 'submit' })),
             ],
+            ...(guardedOmitted > 0 ? { guardedOmitted, hint: 'More guarded elements exist than are offered; take a snapshot and act directly if the one you need is not listed.' } : {}),
             page,
             decision: summary,
           },
@@ -198,16 +213,20 @@ export function decide(input: DecideInput): Decision {
     }
   }
 
-  if (chosen === 'invalid' || chosen === 'none_useful') return noneUseful()
+  if (chosen === 'invalid') return noneUseful()
   if (chosen === 'scroll_down') return { kind: 'scroll', direction: 'down' }
   if (chosen === 'scroll_up') return { kind: 'scroll', direction: 'up' }
 
-  if (chosen === 'click') {
+  if (chosen === 'click' || chosen === 'none_useful') {
     const target = validateChoice(answers.click_target, [...space.clickCandidates, NONE])
     if (!target || target.choice === NONE) return noneUseful()
     const el = elementByIndex(space, target.choice)
     const p = target.probabilities[target.choice]
     if (!el) return noneUseful()
+    // A long list of mostly-guarded items makes the action head give up on the
+    // page as a whole while the target head still singles out the one safe
+    // row that matters (Finder: fifty apps and one folder).
+    if (chosen === 'none_useful' && p < THRESHOLDS.overrideNone) return noneUseful()
     // Only the target head is gated. The action head is a 4–5 way choice whose
     // confidence is structurally low even when "click vs type" is obvious, and
     // picking the wrong operation on the right element is cheap and reversible.

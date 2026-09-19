@@ -80,4 +80,20 @@ describe('decide', () => {
     const answers = { action: { type: 'choice', choice: 'launch_missiles', probabilities: { launch_missiles: 1 }, confidence: 1 } as never }
     expect(decide(input({ answers }))).toMatchObject({ kind: 'pause', question: { reason: 'guarded-only' } })
   })
+
+  it('caps the guarded options of a pause but reports how many were left out', () => {
+    const many = Array.from({ length: 40 }, (_, i) => el({ node: i + 1, role: 'button', label: `Command ${i}` }))
+    const big = buildActionSpace({ page: page(many), origins, allow: [], avoid: [], history: [] })
+    const answers = { still_loading: noul(0.1), goal_satisfied: noul(0.1), action: pick('none_useful', ACTIONS) }
+    const d = decide(input({ answers, space: big })) as { question: { options: Array<{ key: string }>; context: { guardedOmitted?: number } } }
+    expect(d.question.options.map((o) => o.key)).toEqual([...many.slice(0, 24).map((_, i) => String(i + 1)), 'abort'])
+    expect(d.question.context.guardedOmitted).toBe(16)
+  })
+
+  it('lets a very confident click target override a none_useful action head', () => {
+    const base = { still_loading: noul(0.1), goal_satisfied: noul(0.1), action: pick('none_useful', ACTIONS) }
+    expect(decide(input({ answers: { ...base, click_target: pick('1', CLICKS, 0.9) } }))).toMatchObject({ kind: 'click', key: '1' })
+    expect(decide(input({ answers: { ...base, click_target: pick('1', CLICKS, 0.7) } })).kind).toBe('pause')
+    expect(decide(input({ answers: { ...base, click_target: pick(NONE, CLICKS, 0.9) } })).kind).toBe('pause')
+  })
 })

@@ -46,7 +46,7 @@ function harness(pages: PageObservation[], script: Script) {
 }
 
 function opts(overrides: Partial<RunOptions> = {}): RunOptions {
-  return { goal: 'Create an issue titled Hello', presets: [], allow: [], avoid: [], maxSteps: 30, maxWallMs: 60_000, ...overrides }
+  return { goal: 'Create an issue titled Hello', presets: [], maxSteps: 30, maxWallMs: 60_000, ...overrides }
 }
 
 function actionsOf(request: JevRequest): string[] {
@@ -68,11 +68,11 @@ describe('FastRun', () => {
     const { deps } = harness(pages, (request) => {
       states.push(request.state as typeof states[number])
       return {
-        still_loading: noul(states.length === 1 ? 1 : 0), goal_satisfied: noul(0),
+        still_loading: noul(states.length === 1 ? 1 : 0), goal_satisfied: noul(0), next_step_risk: noul(0),
         action: pick('click', actionsOf(request)), click_target: pick('1', clicksOf(request)),
       }
     })
-    const run = new FastRun(opts({ allow: ['Step'], maxSteps: 11 }), deps)
+    const run = new FastRun(opts({ maxSteps: 11 }), deps)
     const paused = await run.start()
     expect(states[0].completed_actions).toEqual([])
     expect(states[1].completed_actions).toEqual([])
@@ -98,21 +98,22 @@ describe('FastRun', () => {
     expect(guard).toEqual([true, false])
   })
 
-  it('runs safe steps, pauses on the guarded submit, executes it on resume, and finishes on done_when', async () => {
+  it('runs plain steps, asks before the submit Jev rates irreversible, executes it on resume, and finishes on done_when', async () => {
     const { deps, acts, guard } = harness([HOME, FORM, FILLED, CREATED], (request) => {
       const state = request.state as { page: { url: string }; elements: Array<{ label: string; value?: string }> }
-      const base = { still_loading: noul(0.05), goal_satisfied: noul(0.1) }
+      const base = { still_loading: noul(0.05), goal_satisfied: noul(0.1), next_step_risk: noul(0.05) }
       if (state.page.url.endsWith('jev-ultrafast')) return { ...base, action: pick('click', actionsOf(request)), click_target: pick('1', clicksOf(request)) }
       if (!state.elements[0].value) return { ...base, action: pick('type_text', actionsOf(request)), type_text_target: pick('1', typesOf(request)) }
-      return { ...base, action: pick('none_useful', actionsOf(request)) }
+      // Submitting the issue is the irreversible step: Jev says so itself.
+      return { ...base, next_step_risk: noul(0.9), action: pick('click', actionsOf(request)), click_target: pick('2', clicksOf(request)) }
     })
     const run = new FastRun(opts({ presets: [{ key: 'Title', value: 'Hello', field: 'title' }], hasDoneWhen: true }), deps)
 
     const paused = await run.start()
     expect(paused.status).toBe('paused')
-    expect(paused.question).toMatchObject({ reason: 'guarded-only', type: 'choice' })
-    // Guarded first (the Create button, then Enter in the filled title), then the safe candidate Jev declined.
-    expect(paused.question!.options!.map((o) => o.key)).toEqual(['2', 'submit:1', 'open:1', 'abort'])
+    expect(paused.question).toMatchObject({ reason: 'risky', type: 'choice' })
+    // The risky step first, then the alternatives, then abort.
+    expect(paused.question!.options!.map((o) => o.key)).toEqual(['2', 'open:1', 'submit:1', 'abort'])
     expect(paused.since_last).toEqual(['Click [1] Issues', 'Type presets.Title → [1] Add a title'])
     expect(acts).toEqual(['click:1', 'type:10:Hello'])
     // The focus guard is released while paused so the user can use the tab.
@@ -128,7 +129,7 @@ describe('FastRun', () => {
 
   it('keeps the answer through guard drift when the same node is still there, and discards it once the target is gone', async () => {
     const script: Script = (request) => ({
-      still_loading: noul(0), goal_satisfied: noul(0), action: pick('none_useful', actionsOf(request)),
+      still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0.9), action: pick('click', actionsOf(request)), click_target: pick('2', clicksOf(request)),
     })
     // Guard drift only (the form's surroundings changed): same node, same label → still executed.
     const drifted = harness([FORM, FORM], script)
@@ -154,7 +155,7 @@ describe('FastRun', () => {
   })
 
   it('aborts on request and refuses a mismatched question id', async () => {
-    const { deps } = harness([FORM], (request) => ({ still_loading: noul(0), goal_satisfied: noul(0), action: pick('none_useful', actionsOf(request)) }))
+    const { deps } = harness([FORM], (request) => ({ still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0.9), action: pick('click', actionsOf(request)), click_target: pick('2', clicksOf(request)) }))
     const run = new FastRun(opts({ hasDoneWhen: true }), deps)
     const paused = await run.start()
     expect((await run.resume({ questionId: 'q99', choice: '2' })).status).toBe('aborted')
@@ -168,7 +169,7 @@ describe('FastRun', () => {
   it('pauses on budget and continues with a fresh step budget', async () => {
     const scrolled = (n: number) => page(HOME.elements, { text: `scrolled ${n}`, scroll: { y: n * 560, height: 5000, viewport: 800 } })
     const { deps, acts } = harness([HOME, scrolled(1), scrolled(2), scrolled(3), scrolled(4)], (request) => ({
-      still_loading: noul(0), goal_satisfied: noul(0), action: pick('scroll_down', actionsOf(request)),
+      still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0), action: pick('scroll_down', actionsOf(request)),
     }))
     const run = new FastRun(opts({ maxSteps: 2, hasDoneWhen: true }), deps)
     const paused = await run.start()
@@ -181,8 +182,8 @@ describe('FastRun', () => {
 
   it('pauses with no-progress after three unchanged actions', async () => {
     const { deps } = harness([HOME], (request) => request.questions.click_target
-      ? { still_loading: noul(0), goal_satisfied: noul(0), action: pick('click', actionsOf(request)), click_target: pick('1', clicksOf(request)) }
-      : { still_loading: noul(0), goal_satisfied: noul(0), action: pick('scroll_down', actionsOf(request)) })
+      ? { still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0), action: pick('click', actionsOf(request)), click_target: pick('1', clicksOf(request)) }
+      : { still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0), action: pick('scroll_down', actionsOf(request)) })
     // Every click leaves the same page; the stuck rule drops [1] after the first
     // miss, so the next steps have no click candidate and scroll instead.
     const run = new FastRun(opts({ hasDoneWhen: true }), deps)
@@ -192,36 +193,53 @@ describe('FastRun', () => {
     expect(paused.since_last[0]).toBe('Click [1] Issues (no change)')
   })
 
-  it('never offers the NONE sentinel as an element and keeps guarded elements visible in state', async () => {
+  it('offers every element to Jev, never the NONE sentinel as one, and asks the risk question each step', async () => {
     let seen: JevRequest | null = null
     const { deps } = harness([FORM], (request) => {
       seen = request
-      return { still_loading: noul(0), goal_satisfied: noul(0), action: pick('none_useful', actionsOf(request)) }
+      return { still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0), action: pick('none_useful', actionsOf(request)) }
     })
     await new FastRun(opts({ hasDoneWhen: true }), deps).start()
-    const state = (seen as unknown as JevRequest).state as { elements: Array<{ label: string; guarded?: true }> }
-    expect(state.elements.find((e) => e.label === 'Create')?.guarded).toBe(true)
-    expect(clicksOf(seen as unknown as JevRequest)).toEqual(['open:1', NONE])
+    const request = seen as unknown as JevRequest
+    expect(clicksOf(request).sort()).toEqual(['2', NONE, 'open:1'].sort())
+    expect(request.questions.next_step_risk?.type).toBe('noul')
   })
 
-  it('presses Enter in a filled field when the caller answers submit:N, and offers it to Jev when allowed', async () => {
-    const script: Script = (request) => ({ still_loading: noul(0), goal_satisfied: noul(0), action: pick('none_useful', actionsOf(request)) })
-    const answered = harness([FILLED, CREATED], script)
-    const run = new FastRun(opts({ hasDoneWhen: true }), answered.deps)
-    const paused = await run.start()
-    const done = await run.resume({ questionId: paused.question!.id, choice: 'submit:1' })
-    expect(answered.acts).toEqual(['enter:10'])
+  it('finishes on Jev\'s verdict only after a fresh observation agrees', async () => {
+    const verdicts: number[] = []
+    const { deps, acts } = harness([CREATED], (request) => {
+      const p = verdicts.shift() ?? 0
+      return { still_loading: noul(0), goal_satisfied: noul(p), next_step_risk: noul(0), action: pick('none_useful', actionsOf(request)) }
+    })
+    // Sure once, then not: the run keeps going instead of finishing on a glimpse.
+    verdicts.push(0.95, 0.2, 0.95, 0.96)
+    deps.checkDone = async () => false
+    const run = new FastRun(opts({ maxSteps: 6 }), deps)
+    const result = await run.start()
+    expect(result).toMatchObject({ status: 'done', why: 'goal_satisfied 0.96', steps: 4 })
+    // The doubtful middle read acted normally (a scroll); nothing was clicked on a glimpse.
+    expect(acts).toEqual(['scroll'])
+  })
+
+  it('presses Enter in a filled field when Jev chooses submit:N, or when the caller answers it after a risky pause', async () => {
+    let offered: string[] = []
+    const chosen = harness([FILLED, CREATED], (request) => {
+      offered = clicksOf(request)
+      return { still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0.1), action: pick('click', actionsOf(request)), click_target: pick('submit:1', clicksOf(request)) }
+    })
+    const run = new FastRun(opts({ hasDoneWhen: true }), chosen.deps)
+    const done = await run.start()
+    expect(offered).toContain('submit:1')
+    expect(chosen.acts).toEqual(['enter:10'])
     expect(done.status).toBe('done')
     expect(done.since_last).toEqual(['Press Enter in [1] Add a title'])
 
-    let offered: string[] = []
-    const allowed = harness([FILLED, CREATED], (request) => {
-      offered = clicksOf(request)
-      return { still_loading: noul(0), goal_satisfied: noul(0), action: pick('click', actionsOf(request)), click_target: pick('submit:1', clicksOf(request)) }
-    })
-    const run2 = new FastRun(opts({ allow: ['Enter'], hasDoneWhen: true }), allowed.deps)
-    expect((await run2.start()).status).toBe('done')
-    expect(offered).toContain('submit:1')
-    expect(allowed.acts).toEqual(['enter:10'])
+    const risky = harness([FILLED, CREATED], (request) => ({ still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0.9), action: pick('click', actionsOf(request)), click_target: pick('submit:1', clicksOf(request)) }))
+    const run2 = new FastRun(opts({ hasDoneWhen: true }), risky.deps)
+    const paused = await run2.start()
+    expect(paused.question).toMatchObject({ reason: 'risky' })
+    expect(paused.question!.options![0]).toMatchObject({ key: 'submit:1', label: 'press Enter in textbox Add a title' })
+    expect((await run2.resume({ questionId: paused.question!.id, choice: 'submit:1' })).status).toBe('done')
+    expect(risky.acts).toEqual(['enter:10'])
   })
 })

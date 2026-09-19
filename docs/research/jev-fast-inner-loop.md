@@ -99,7 +99,7 @@ TYPE_TEXT 的文本由一个小 LLM（Mercury）根据 goal + 字段 + 页面文
 ### 3.1 三方分工
 
 ```
-主模型（System 2）   发起：goal、presets、avoid/allow、done_when、description
+主模型（System 2）   发起：goal、presets、done_when（可选）、description
                      被问：Jev 拿不准 / 只剩受控动作 / 没进展 / 预算到
 代码                 控制流、动作空间构造与风险分类、历史与去重、新鲜度、预算、完成判定、执行、中止
 Jev（System 1）      每步一次请求：在安全动作集合里选下一步；预设值属于哪个字段（后置）；元判断兜底
@@ -117,9 +117,7 @@ browser_run(
       goal: string,
       tab?: string,
       presets?: Array<{ key: string; value: string; field?: string }>,   // 预设的字段值；field 是字段提示
-      allow?: string[],                 // 允许 Jev 自己执行的受控动作（按 label 匹配）
-      avoid?: string[],                 // 从动作空间剔除
-      done_when?: Condition,            // 复用现有 conditionSchema；browser 额外支持 urlMatches
+      done_when?: Condition,            // 可选加速器：复用现有 conditionSchema；browser 额外支持 urlMatches（8.15）
       maxSteps?: number,                // 默认 30
       maxWallMs?: number,               // 默认取当前 harness 工具超时的 60%，到点 pause(budget)
     }
@@ -140,6 +138,7 @@ browser_run(
 - `Condition` 不新造类型：直接用 computer 的 `conditionSchema` / device 的 `DeviceCondition`，browser 加 `{ kind: 'urlMatches', pattern }`
 - `maxWallMs` 是硬约束：Claude SDK `MCP_TOOL_TIMEOUT`、Codex `tool_timeout_sec` 都是 per-call 墙钟，内循环必须在超时前主动 pause 返回 `runId`
 - 密码类字段永不参与 presets；遇到 password 输入框见 3.5
+- 没有 `allow` / `avoid`：主模型派活时看不到页面，让它预判哪些按钮可按等于让它代劳；风险和完成都在现场由 Jev 判断（8.15）
 - 工具 description 里要写清路由：**多步、目标明确、动作以点击/填表为主** → `*_run`；单步、需要像素判断、drag/hover/上传/组合键 → 现有 `*_snapshot` / `*_act`
 
 ### 3.3 协作协议：pause / resume
@@ -240,27 +239,20 @@ interface Answer {
 
 **MVP 不做的问题**：`select`（选项候选会撞上限，且现有 `selectScript` 已能按 label 选，交主模型）、`obstructed`（cookie banner / login wall 由 guarded 集合 + no-progress 兜住）、`field_for_*` 先用代码按 `presets[].field` 与元素 label 匹配，匹配不上 pause，Jev 匹配后置。
 
-### 3.5 动作空间构造与风险分类（代码）
+### 3.5 动作空间构造（代码）
 
-每个元素分为 **safe** 或 **guarded**。**用白名单定义 safe，其余一律 guarded**（不认识的就是受控的，与 8.9 一致）：
+**页面上每个可操作元素都是候选**；代码不做风险分类，只做两件事：
 
 ```
-safe    ←  同源 <a>（href 与 run 发起时的 origin 集合同源）
-        ←  textbox / searchbox / combobox 输入本身及其 open 候选
-        ←  tab / menuitem / treeitem / 展开折叠（aria-expanded）
-        ←  button 且 label 命中导航类白名单（Issues, New …, Next, Search, Filter, Sort, Open, Show more, Cancel, Close dialog …）
-        ←  主模型 allow 从 guarded 移回的
-guarded ←  其余全部：submit / form 内 button / checkbox / radio / switch / 跨域链接 / 空 label 图标按钮
-        ←  label 命中高危关键词（create, submit, send, post, publish, pay, buy, order, delete, remove, confirm, resolve, close issue, merge …）→ 高危档，pause 时 audience 按 3.3
-        ←  主模型 avoid（同时从 elements 表里整个移除）
-        ←  computer 线：tier=click 时 type_text 候选在构造期整个剔除（不等执行时 TIER_BLOCKED）
-        ←  password 输入框：不进 type_text 候选，Jev 选到它所在 form 且无其他可填 → pause(secret, audience: user)
+剔除    ←  password / secure 字段（永不进任何候选：没有 preset 可填，点它也无意义）
+        ←  disabled；adapter 标记 clickable=false 的纯文本
+候选    ←  其余全部：链接（含跨域）、按钮（含 submit）、tab / menuitem / 行、可编辑字段本身及其 open 候选
+        ←  已填写字段的 `submit:N`（按 Enter 提交）——npm、GitHub 的搜索框靠这个
+历史    ←  上次页面变化以来，`(node, kind)` 执行后 changed_page=false → 本步剔除该候选；页面一变即重置
 ```
 
-- 发给 Jev 的 `click_target` 只含 safe 元素
-- run 发起时记录 origin 集合（当前 tab origin + goal 里出现的 URL 的 origin）；跨 origin 导航是 guarded，这是对"Jev 不把 state 当敌对内容"的主要防线——页面文本能诱导它点一个看起来无害的链接，但点不出 origin 集合
-- 历史规则：上一步 `(node, kind)` 且 `changed_page=false` → 本步剔除该候选；**提交类元素点过后、页面未变前不再出现（这条优先于 3.3 的答案复用）**
-- Jev 永远不判断风险，也永远不会选到 guarded 元素
+- 风险由 Jev 对**它选中的那一步**回答 `next_step_risk`（3.4），代码按阈值决定是否 pause；不再有 safe / guarded、`HIGH_RISK_LABEL`、`NAV_LABEL`、origin 集合这些标签规则（8.15）
+- 剩下的硬边界只有权限边界：切到未授权 app（computer）、设备控制权（device）——这不是风险判断，是 grant
 
 ### 3.6 每步的代码决策
 
@@ -274,12 +266,13 @@ observe 之后、问 Jev 之前：
 
 answers 回来后，按顺序：
 1. still_loading ≥ 0.7 且平台无加载信号           → WAIT（rAF 等待，200 ms 上限）；连续 WAIT ≤ 3
-2. goal_satisfied ≥ 0.85 且 done_when 未给       → pause(reason: uncertain, choice{accept, continue})
-   goal_satisfied 高但 done_when 不成立           → 忽略 goal_satisfied，继续
+2. goal_satisfied ≥ 0.9 且 done_when 未给        → 候选完成：settle 后重新观察再问一次，仍 ≥ 0.9 → done（8.15）
+   done_when 已给                                → 由 0b 决定，goal_satisfied 只记录
 3. action = none_useful（或 target = none_of_these）
-     且页面存在 guarded 元素                     → pause(reason: guarded-only, choice = guarded 候选 + abort；高危档 audience: user)
-     且无 guarded 元素                           → scroll 或 pause(no-progress)
-4. action 置信度 < 阈值（读取类 0.6 / 写入类 0.7） → pause(reason: uncertain, choice = Jev 的 top-k)
+     且 click_target 对某候选 ≥ 0.8              → 按 click 处理（action 头在一屏相似项前会整体放弃，target 头仍能挑出那一行）
+     否则                                        → 可下滚且本页未滚过 → scroll；否则 pause(no-progress, choice = 候选 ≤ 24 + abort)
+4. target 置信度 < 阈值（读取类 0.6 / 写入类 0.7） → pause(reason: uncertain, choice = Jev 的 top-k)
+4b. next_step_risk ≥ 0.5                         → pause(reason: risky, choice = 该步 + top-k 替代 + abort)；主模型答该步的 key 即执行
 5. action = type_text：
      代码按 presets[].field 匹配到 preset       → 用 preset 正文 replace 输入（不 append）
      否则                                        → pause(reason: uncertain, value{text}，context 含 presets 和候选概率)
@@ -511,17 +504,21 @@ jev-ultrafast 把最近 10 步放进 state，用途是防重复、判断上一�
 
 pause 时主模型需要知道从上次返回以来内循环做了什么（尤其是预设值填进了哪个字段），但不需要每步概率和累积全量历史。改为每步一行的增量；概率、延迟、模型版本进 trace 日志给 UI 和调参用。
 
-### 8.9 风险判断不交给 Jev
+### 8.9 风险判断不交给 Jev（已被 8.15 推翻）
 
 第一版设计了 `risky_N` Noul 让 Jev 判断每个点击候选是否不可逆。否决：按快慢思考的逻辑，"这个动作要不要认真想"本身就是 System 2 的判断，不能让 System 1 决定 System 2 该不该介入。改为代码分类 `safe | guarded`，Jev 只在 safe 集合里选；Jev 答 `none_useful` 且页面有 guarded 元素 → pause 交主模型裁定；主模型可用 `allow` 预先放行。这样也顺带解决了"图标按钮 Jev 判不了"的问题——不认识的一律 guarded。
+
+实测推翻了这条（见 8.15）：白名单在桌面上等于"每个任务把要按的键抄进 allow"，主模型派活时根本没有这些信息。
 
 ### 8.10 预设匹配不确定时 pause，不降级
 
 场景：Jev 选了往某字段输入，但对哪个 preset 属于它只有 0.61。两个选项：pause 问主模型，或当作没匹配上让 Jev 换动作（赌下一步会更确定）。决定 pause：Jev 拿不准就是需要慢思考；填错字段虽可逆，但主模型多一轮成本很低。附带措施：`presets[].field` 让主模型给字段提示，降低这种情况的发生率。
 
-### 8.11 完成判定：机器条件优先
+### 8.11 完成判定：机器条件优先（已被 8.15 修订）
 
 `done_when` 成立即 done，`goal_satisfied` 只是佐证；Jev 说满足但机器条件不成立或未给 → pause。理由：AGENTS.md 原则 "DONE 不是证据"，机器条件比 Jev 的判断硬。
+
+修订：`done_when` 仍然优先，但它是可选的；没给时 Jev 的判定（重观察确认后）直接结束 run，不再 pause 问主模型。
 
 ### 8.12 原待定项（已定）
 
@@ -556,6 +553,18 @@ pause 时主模型需要知道从上次返回以来内循环做了什么（尤�
 
 原文按"落地难度"把 computer 排第一：adapter 最薄、`stateId` / outcome 现成。评审指出"落地容易"≠"能校准"：阈值必须用 10–20 个可复现任务的 trace 钉死，browser 用公开站点即可，computer 受 macOS + 功能开关 + 逐 app grant 限制，样本难攒且不可复现。内核做成平台无关后，adapter 顺序只影响谁先拿到校准数据，所以 browser 先。
 
+### 8.15 2026-09-19 范式修订：派活与判断分开（browser 先行）
+
+Finder 与 Calculator 两组 desktop 实测（10.4）暴露的不是 Jev 决策问题，而是契约问题：主模型调用 `*_run` 时**看不到页面**，它只负责派活；`allow` 白名单要求它预判哪些按钮可按——网页上链接/tab 天然安全所以很少需要，桌面上一切都是 button，结果是每个任务把要按的键抄一遍进 `allow`（Grok 还抄漏了两个）。这不是委托，是代劳。是否完成同理：8.11 让 Jev 说"完成"时还要 pause 问主模型一轮，而"这一屏是不是目标状态"恰恰是 Jev 最擅长的 noul 题。
+
+决定：
+
+- **删掉 `allow` / `avoid`**。接口只剩 `goal`、`presets`（主模型独有的信息：要输入的值）、可选 `done_when`。
+- **风险由 Jev 判**：每步多一个 noul 头 `next_step_risk`，只问它选中的那一步是否不可逆（提交/发送/付款/删除/改设置/离开当前站点或 app）。≥ 0.5 → `pause(risky)`，选项第一条就是该步，主模型确认即执行。代码里的标签规则（`HIGH_RISK_LABEL`、`NAV_LABEL`、submit guarded、跨域 guarded、桌面菜单命令分类）全部删除；只保留权限边界（未授权 app、设备控制权）和 password 剔除。
+- **完成由 Jev 判**：`goal_satisfied ≥ 0.9` → settle 后重观察再问一次，仍成立 → `done`，返回最终快照（主模型本来就会核对）。`done_when` 给了就提前结束，是加速器不是前提。
+- 与 8.9 的原则冲突，明知故犯：8.9 的"System 1 不该决定 System 2 是否介入"在理论上成立，但代价是主模型必须在无信息的情况下替 System 1 预判，实践上更差。误放行的代价是"做了一个不该做的动作"，由阈值和 trace 校准兜；误 done 的代价是主模型看快照后再发起一次。
+- 顺序：browser 线先落地并重跑 10.1/10.2 的两个任务确认范式，再迁移 computer / device。
+
 ## 9. 非目标
 
 - 不替换现有 `*_snapshot` / `*_act` / `*_query`；`*_run` 是并列的 goal 级工具，主模型按工具 description 里的路由指引选
@@ -572,7 +581,7 @@ browser、computer 和 device 线 MVP 已落地。三条线共用一个 `FastRun
 | --- | --- |
 | `typesafe-client.ts` | 1.1 · 3.4（预算校验、答案校验、钉 `jev-1.13.0`、429/529 退避、AbortSignal） |
 | `browser-page.ts` | 3.7 browser adapter：移植 `snapshot.js`（`window.__soneJev` 节点身份、scoped `guard` / `pageKey` / `marker`、视口内文本 ≤ 4k、≤ 250 元素）、CDP click / replace-type（select-all + `Input.insertText`，contenteditable 可用）/ 滚动、执行前 hit-test、执行后 rAF settle、`readyState` 机器加载信号、`done_when` 机器判定 |
-| `action-space.ts` | 3.5：safe 白名单（同源链接、可编辑字段及其 `open:` 候选、tab/menuitem/option、导航类 label 按钮、带 `aria-expanded` 的按钮）+ 高危关键词 + origin 集合 + `allow` / `avoid` + 历史规则（未变页面前不重复、guarded 已点不再出现） |
+| `action-space.ts` | 3.5：所有可操作元素为候选（password 剔除）、`open:` / `submit:` 候选、历史规则（未变页面前不重复）；风险由 Jev 的 `next_step_risk` 判（8.15） |
 | `questions.ts` | 3.4：`goal_satisfied` / `still_loading` Noul、`action` / `click_target` / `type_text_target` Choice、每个 preset 一个 `field_for_<key>` |
 | `policy.ts` | 3.6 决策表与阈值（target 头概率：读 0.6 / 写 0.7；preset 0.7；loading 0.7；satisfied 0.85。`action` 头只取 argmax，不设门槛，见 10.1） |
 | `loop.ts` | 3.3 / 3.6 / 3.8：`FastRun` 协程，pause / resume、答案复用只在目标 guard 未变时、guarded 已执行记录、连续 3 步无变化 → no-progress、`maxSteps` + `maxWallMs`（默认 45 s，低于 Codex 60 s 工具超时）→ budget、focus guard 在段首/段尾、AbortSignal 贯穿 |

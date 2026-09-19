@@ -30,7 +30,7 @@ function fixture(tier: CapabilityTier = 'full') {
   adapter.trace = () => {}
   return { service, backend, ask, adapter }
 }
-const options = { goal: 'Fill Title with Hello', presets: [{ key: 'Title', value: 'Hello' }], allow: [], avoid: [], maxSteps: 3, maxWallMs: 45000 }
+const options = { goal: 'Fill Title with Hello', presets: [{ key: 'Title', value: 'Hello' }], maxSteps: 3, maxWallMs: 45000 }
 
 describe('computer fast-loop adapter', () => {
   it('returns the verified new panel and uses its nodes after crossing roots', async () => {
@@ -43,7 +43,7 @@ describe('computer fast-loop adapter', () => {
     const ask = vi.fn(async (request: JevRequest) => ({ answers: { goal_satisfied: noul(0), still_loading: noul(0), action: pick('click', Object.keys(request.questions.action.criteria!)), click_target: pick('1', Object.keys(request.questions.click_target.criteria!)) }, model: 'test', usage: {}, latencyMs: 1 }))
     const adapter = createComputerAdapter({ service, ask, doneWhen: { kind: 'newRoot', title: 'Fonts' }, resolve: async () => (await service.resolveTargetRoot()).rootId })
     adapter.trace = () => {}
-    const run = new FastRun({ ...options, goal: 'Show Fonts', presets: [], allow: ['Show Fonts'], hasDoneWhen: true }, adapter)
+    const run = new FastRun({ ...options, goal: 'Show Fonts', presets: [], hasDoneWhen: true }, adapter)
     const result = await run.start()
     expect(result.status).toBe('done')
     expect(result.snapshot?.title).toContain('Fonts')
@@ -86,9 +86,8 @@ describe('computer fast-loop adapter', () => {
     expect(page.text).not.toContain('Recent Secret.pdf')
     // On-screen content precedes app menu commands.
     expect(labels.indexOf('New Folder')).toBeGreaterThan(labels.indexOf('Open Folder 69'))
-    const space = buildActionSpace({ page, origins: new Set(), allow: [], avoid: [], history: [] })
-    const file = page.elements.find((element) => element.label === 'Open Readme.txt')!
-    expect(space.guarded.map((element) => element.node)).toContain(file.node)
+    const space = buildActionSpace({ page, history: [] })
+    expect(space.clickCandidates).toContain(String(page.elements.find((element) => element.label === 'Open Readme.txt')!.node))
     expect(space.clickCandidates).toContain(String(page.elements.find((element) => element.label === 'Open Folder 69')!.node))
   })
 
@@ -105,7 +104,7 @@ describe('computer fast-loop adapter', () => {
     const obs = await service.observe(undefined, 'semantic')
     const outline = axTreeToOutline({ index: 1, role: 'AXTextField', name: 'Search', value: 'cats', settable: true })
     const page = computerPage({ ...obs, outline }, service)
-    const space = buildActionSpace({ page, origins: new Set(), allow: ['Enter'], avoid: [], history: [] })
+    const space = buildActionSpace({ page, history: [] })
     expect(space.typeCandidates).toHaveLength(1)
     expect(space.clickCandidates.some((candidate) => candidate.startsWith('submit:'))).toBe(false)
   })
@@ -190,16 +189,18 @@ describe('computer fast-loop adapter', () => {
     expect(page.elements.some((e) => e.label === 'Disabled')).toBe(false)
     const read = fixture('read')
     const result = await new FastRun(options, read.adapter).start()
-    expect(result).toMatchObject({ status: 'paused', question: { reason: 'guarded-only' } })
+    expect(result).toMatchObject({ status: 'paused', question: { reason: 'no-progress' } })
     expect(read.ask).not.toHaveBeenCalled()
   })
 
-  it('keeps the shared risk whitelist independent of capability grants', async () => {
+  it('offers every enabled control at full tier; risk is Jev\'s call, not a label rule', async () => {
     const { adapter } = fixture()
     await adapter.resolveTarget()
-    const space = buildActionSpace({ page: await adapter.observe(), origins: new Set(), allow: [], avoid: [], history: [] })
-    expect(space.guarded.map((e) => e.label)).toContain('Delete')
-    expect(space.clickCandidates).toContain(space.elements.find((e) => e.label === 'Next')?.index)
+    const space = buildActionSpace({ page: await adapter.observe(), history: [] })
+    const index = (label: string) => space.elements.find((e) => e.label === label)?.index
+    expect(space.clickCandidates).toContain(index('Delete'))
+    expect(space.clickCandidates).toContain(index('Next'))
+    expect(index('Disabled')).toBeUndefined()
   })
 
   it('invalidates states after a competing write and always reads anew on resume', async () => {
@@ -222,7 +223,7 @@ describe('computer fast-loop adapter', () => {
     const { adapter, service } = fixture()
     const act = vi.spyOn(service, 'act').mockRejectedValue(new ComputerUseError(code, 'Blocked test action'))
     const result = await new FastRun(options, adapter).start()
-    expect(result.question).toMatchObject({ reason: 'guarded-only', context: { why: 'Blocked test action' } })
+    expect(result.question).toMatchObject({ reason: 'no-progress', context: { why: 'Blocked test action' } })
     expect(act).toHaveBeenCalledTimes(1)
   })
 

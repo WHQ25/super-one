@@ -13,8 +13,6 @@ export const runInputShape = {
     value: z.string().describe('The full text to type.'),
     field: z.string().optional().describe('Hint naming the field it belongs in, e.g. "the title textbox".'),
   })).max(20).optional().describe('Values the loop may type. Never include passwords.'),
-  allow: z.array(z.string()).optional().describe('Button labels (substring, case-insensitive) the loop may press without asking, e.g. ["Create"]. "Enter" allows pressing Enter in any filled field (keyboard submit).'),
-  avoid: z.array(z.string()).optional().describe('Element labels to remove from the page entirely.'),
   maxSteps: z.number().int().min(1).max(100).optional().describe('Default 30.'),
   maxWallMs: z.number().int().min(5_000).max(300_000).optional().describe('Wall-clock budget per call before pausing. Default 45000.'),
   runId: z.string().optional().describe('From a paused result. Resumes that run with `answer`.'),
@@ -48,7 +46,7 @@ export function jevClient(): JevClient {
 
 export function runOptions(args: z.infer<typeof commonSchema> & { done_when?: unknown }): RunOptions {
   return {
-    goal: args.goal!, presets: args.presets ?? [], allow: args.allow ?? [], avoid: args.avoid ?? [],
+    goal: args.goal!, presets: args.presets ?? [],
     hasDoneWhen: args.done_when != null, maxSteps: args.maxSteps ?? 30, maxWallMs: args.maxWallMs ?? 45_000,
   }
 }

@@ -716,7 +716,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
   },
   {
     "name": "browser_run",
-    "description": "Experimental (requires the Jev fast loop setting): pursue a multi-step page goal — clicks, typing, scrolling — with a fast model choosing each step, so you do not pay a turn per click. Start with goal (+ presets for values to type, done_when for a machine-checkable finish, allow/avoid for buttons). Risky buttons (submit, delete, pay, cross-origin links) are never pressed without asking: the call returns status=paused with a question; answer it by calling again with runId + answer. Use for click/fill-heavy tasks on one tab; use browser_act for single steps, drag, keys, uploads.",
+    "description": "Experimental (requires the Jev fast loop setting): delegate a multi-step page goal — clicks, typing, scrolling — to a fast model that chooses each step and judges completion itself, so you do not pay a turn per click. Start with goal; add presets for values it may type (never passwords) and, optionally, done_when when the finish is machine-checkable. Before anything irreversible (submit, pay, delete, send, leaving the site) or when unsure, the call returns status=paused with a question; answer it by calling again with runId + answer. Every result carries the final snapshot: verify it. Use for click/fill-heavy tasks on one tab; use browser_act for single steps, drag, keys, uploads.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -760,22 +760,8 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
             "additionalProperties": false
           }
         },
-        "allow": {
-          "description": "Button labels (substring, case-insensitive) the loop may press without asking, e.g. [\"Create\"]. \"Enter\" allows pressing Enter in any filled field (keyboard submit).",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "avoid": {
-          "description": "Element labels to remove from the page entirely.",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
         "done_when": {
-          "description": "Machine-checkable completion condition (AND-combined, same vocabulary as browser_wait_for). Strongly recommended.",
+          "description": "Optional machine-checkable finish (AND-combined, same vocabulary as browser_wait_for). The loop judges completion itself; give this when a URL or element defines it exactly.",
           "type": "object",
           "properties": {
             "selector": {

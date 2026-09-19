@@ -17,10 +17,10 @@ import { type PausedRun, storePausedRun, takePausedRun } from './run-store'
 import { jevClient, runInputShape } from './run-tool-common'
 
 export const BROWSER_RUN_DESCRIPTION =
-  'Experimental (requires the Jev fast loop setting): pursue a multi-step page goal — clicks, typing, scrolling — with a fast model choosing each step, so you do not pay a turn per click. '
-  + 'Start with goal (+ presets for values to type, done_when for a machine-checkable finish, allow/avoid for buttons). '
-  + 'Risky buttons (submit, delete, pay, cross-origin links) are never pressed without asking: the call returns status=paused with a question; answer it by calling again with runId + answer. '
-  + 'Use for click/fill-heavy tasks on one tab; use browser_act for single steps, drag, keys, uploads.'
+  'Experimental (requires the Jev fast loop setting): delegate a multi-step page goal — clicks, typing, scrolling — to a fast model that chooses each step and judges completion itself, so you do not pay a turn per click. '
+  + 'Start with goal; add presets for values it may type (never passwords) and, optionally, done_when when the finish is machine-checkable. '
+  + 'Before anything irreversible (submit, pay, delete, send, leaving the site) or when unsure, the call returns status=paused with a question; answer it by calling again with runId + answer. '
+  + 'Every result carries the final snapshot: verify it. Use for click/fill-heavy tasks on one tab; use browser_act for single steps, drag, keys, uploads.'
 
 export const browserRunInputShape = {
   ...runInputShape,
@@ -31,7 +31,7 @@ export const browserRunInputShape = {
     text: z.string().optional(),
     urlIncludes: z.string().optional(),
     urlMatches: z.string().optional().describe('JavaScript regex source matched against the page URL.'),
-  }).optional().describe('Machine-checkable completion condition (AND-combined, same vocabulary as browser_wait_for). Strongly recommended.'),
+  }).optional().describe('Optional machine-checkable finish (AND-combined, same vocabulary as browser_wait_for). The loop judges completion itself; give this when a URL or element defines it exactly.'),
 }
 
 const browserRunSchema = z.object(browserRunInputShape)
@@ -102,8 +102,6 @@ export async function executeBrowserRun(sessionId: string, rawArgs: Record<strin
     const run = new FastRun({
       goal: args.goal,
       presets: args.presets ?? [],
-      allow: args.allow ?? [],
-      avoid: args.avoid ?? [],
       hasDoneWhen: hasDoneWhen(args.done_when),
       maxSteps: args.maxSteps ?? DEFAULT_MAX_STEPS,
       maxWallMs: args.maxWallMs ?? DEFAULT_MAX_WALL_MS,

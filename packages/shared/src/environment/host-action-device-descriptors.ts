@@ -340,7 +340,7 @@ export const HOST_ACTION_DEVICE_DESCRIPTORS: HostActionSuperoneToolDescriptor[] 
   },
   {
     "name": "device_run",
-    "description": "Experimental (Jev setting): pursue a multi-step touch-device goal with taps, typing and scrolling chosen without a model turn per step. Requires existing device_request_control approval; never requests control inside the loop. Start with goal and optional device, presets, allow/avoid and done_when. Example: done_when={kind:\"exists\",label:\"About\"}; use device_wait_for conditions with label or identifier. Risky or uncertain controls pause; resume with runId + answer. Missing accessibility trees pause for inspection. Use device_act for known action sequences, single steps, gestures or pixels.",
+    "description": "Experimental (Jev setting): pursue a multi-step touch-device goal with taps, typing and scrolling chosen without a model turn per step. Requires existing device_request_control approval; never requests control inside the loop. Start with goal and optional device, presets and done_when; the loop judges risk and completion itself. Example: done_when={kind:\"exists\",label:\"About\"}; use device_wait_for conditions with label or identifier. Risky or uncertain controls pause; resume with runId + answer. Missing accessibility trees pause for inspection. Use device_act for known action sequences, single steps, gestures or pixels.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -380,20 +380,6 @@ export const HOST_ACTION_DEVICE_DESCRIPTORS: HostActionSuperoneToolDescriptor[] 
               "value"
             ],
             "additionalProperties": false
-          }
-        },
-        "allow": {
-          "description": "Button labels (substring, case-insensitive) the loop may press without asking, e.g. [\"Create\"]. \"Enter\" allows pressing Enter in any filled field (keyboard submit).",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "avoid": {
-          "description": "Element labels to remove from the page entirely.",
-          "type": "array",
-          "items": {
-            "type": "string"
           }
         },
         "maxSteps": {

@@ -6,7 +6,6 @@ import { ComputerUseError, type ActResult, type ComputerUseState, type Condition
 import { planNodeAction, type NodeActionPlan } from '../computer-use/node-action-plan'
 import { type RunDeps, RunPaused, StaleObservation } from './loop'
 import type { RawElement, RunObservation } from './observation'
-import { computerCommandRisk } from './computer-command-risk'
 
 export interface ComputerPage extends RunObservation {
   stateId: string
@@ -78,9 +77,6 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
       const command = node.nativeTarget?.scope === 'menuBar'
       const source = node.value || node.name ? node : labelSource(node)
       const itemLabel = (source?.value || source?.name || '').trim()
-      // Native file metadata sits on the name field, not on the row or cell
-      // around it; the container inherits it along with the label.
-      const itemKind = node.itemKind ?? source?.itemKind
       const label = kind === 'select' || kind === 'open' ? `${kind === 'select' ? 'Select' : 'Open'} ${itemLabel}` : node.name || (editable ? value : '')
       // A row, its name cell and the cell's text field all open the same item:
       // one candidate per intent. Nothing unlabelled is offered either — Jev
@@ -92,11 +88,8 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
       const id = elements.length + 1
       refs.set(id, node)
       if (kind) clickKinds.set(id, kind)
-      const riskHint = kind === 'select' ? { risk: 'safe' as const }
-        : kind === 'open' ? { risk: itemKind === 'folder' ? 'safe' as const : 'guarded' as const, reason: itemKind === 'folder' ? undefined : 'opening a file or unknown item may launch an app' }
-          : command ? computerCommandRisk(label) : undefined
       elements.push({ node: id, ref: node.ref, role: command || kind === 'select' || kind === 'open' ? 'button' : ROLE_MAP[role] ?? role,
-        label, value: kind === 'select' ? (node.selected ? 'selected' : 'not selected') : value, riskHint,
+        label, value: kind === 'select' ? (node.selected ? 'selected' : 'not selected') : value,
         editable: kind !== 'select' && kind !== 'open' && editable, clickable: !!kind,
         canSubmit: !!planNodeAction(node, { kind: 'enter' }, tier), password: false, submit: false, disabled: false })
     }
@@ -116,7 +109,7 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
     stateId: result.stateId, rootId: result.root.rootId, bundleId: result.root.bundleId, refs, clickKinds, scrollRef,
     target: { app: result.root.app, bundleId: result.root.bundleId, root: result.root.rootId },
     signature: JSON.stringify(result.outline),
-    ...(tier === 'read' ? { blocked: { reason: 'guarded-only' as const, why: 'The app grant has tier=read; computer_run needs click or full access. Use computer_apps to resolve the grant.' } } : {}),
+    ...(tier === 'read' ? { blocked: { reason: 'no-progress' as const, why: 'The app grant has tier=read; computer_run needs click or full access. Use computer_apps to resolve the grant.' } } : {}),
   }
 }
 
@@ -158,13 +151,13 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
       const result = await service.act(page.stateId, plan.actions, { delivery: plan.delivery, signal, expect: plan.expect, timeoutMs: 1200 })
       const state = service.getStateStore().get(result.successorStateId)
       if (!state) throw new RunPaused('no-progress', 'The action completed but its successor state is unavailable. Inspect before retrying.')
-      if (state.root.bundleId !== bundleId) throw new RunPaused('guarded-only', 'The action switched applications. Resolve the new app grant with computer_apps before continuing.')
+      if (state.root.bundleId !== bundleId) throw new RunPaused('no-progress', 'The action switched applications. Resolve the new app grant with computer_apps before continuing.')
       successor = { ...computerPage(computerObservation(state), service), outcome: result }
       root = state.root.rootId
     } catch (error) {
       if (error instanceof ComputerUseError) {
         if (error.code === 'STALE_STATE') throw new StaleObservation(error.message)
-        if (['MODAL_BLOCKED', 'TIER_BLOCKED', 'NOT_GRANTED'].includes(error.code)) throw new RunPaused('guarded-only', error.message)
+        if (['MODAL_BLOCKED', 'TIER_BLOCKED', 'NOT_GRANTED'].includes(error.code)) throw new RunPaused('no-progress', error.message)
         throw new RunPaused('no-progress', `${error.code}: ${error.message}`)
       }
       throw error
@@ -175,7 +168,7 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
     resolveTarget: async (signal) => {
       root = await options.resolve(signal)
       const target = await service.resolveTargetRoot(root)
-      if (bundleId && target.bundleId !== bundleId) throw new RunPaused('guarded-only', 'The target app changed while paused; start a new computer_run.')
+      if (bundleId && target.bundleId !== bundleId) throw new RunPaused('no-progress', 'The target app changed while paused; start a new computer_run.')
       bundleId = target.bundleId
       successor = undefined
     },

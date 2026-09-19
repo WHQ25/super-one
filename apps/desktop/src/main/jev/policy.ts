@@ -5,14 +5,15 @@
  * every probability so they can be re-fit from real runs.
  */
 
-import { type ActionSpace, elementByIndex, type SpaceElement } from './action-space'
+import { type ActionSpace, clickKindOf, elementByIndex, type SpaceElement } from './action-space'
 
 import { NONE, type ActionOption, ACTION_OPTIONS, type Preset } from './questions'
 import { type JevAnswer, readNoul, validateChoice } from './typesafe-client'
 
 export const THRESHOLDS = {
   stillLoading: 0.7,
-  goalSatisfied: 0.85,
+  /** Jev's own completion verdict; the loop confirms it on a fresh observation before finishing. */
+  goalSatisfied: 0.9,
   /** Official confidence-routing floor: below this the model is not acted on at all. */
   read: 0.6,
   write: 0.7,
@@ -23,9 +24,11 @@ export const THRESHOLDS = {
    * one, if a click" and puts its mass on none_of_these when nothing fits.
    */
   overrideNone: 0.8,
+  /** Jev's verdict that the chosen step is irreversible; at or above it the caller is asked first. */
+  risk: 0.5,
 } as const
 
-export type PauseReason = 'uncertain' | 'guarded-only' | 'no-progress' | 'budget'
+export type PauseReason = 'uncertain' | 'risky' | 'no-progress' | 'budget'
 
 export interface QuestionOption {
   key: string
@@ -44,9 +47,10 @@ export interface Question {
 
 export type Decision =
   | { kind: 'wait'; why: string }
-  | { kind: 'done'; why: string }
-  | { kind: 'click'; key: string; element: SpaceElement; probability: number }
-  | { kind: 'type_text'; element: SpaceElement; text: string; presetKey: string; probability: number }
+  /** Jev rates the goal satisfied; the loop re-observes once and asks again before it trusts this. */
+  | { kind: 'done'; why: string; probability: number }
+  | { kind: 'click'; key: string; element: SpaceElement; probability: number; risk: number }
+  | { kind: 'type_text'; element: SpaceElement; text: string; presetKey: string; probability: number; risk: number }
   | { kind: 'scroll'; direction: 'down' | 'up' }
   | {
     kind: 'pause'
@@ -62,6 +66,7 @@ export interface DecideInput {
   answers: Record<string, JevAnswer>
   space: ActionSpace
   presets: readonly Preset[]
+  /** A machine condition decides completion; Jev's verdict is only recorded. */
   doneWhenGiven: boolean
   consecutiveWaits: number
   scrolledSinceChange: boolean
@@ -84,14 +89,8 @@ function topK(space: ActionSpace, probabilities: Record<string, number>, k = 5):
 }
 
 const ABORT: QuestionOption = { key: 'abort', label: 'Stop; hand control back to you' }
-/** Safe candidates appended to a guarded-only pause; the rest are still visible in the snapshot. */
-const MAX_SAFE_OPTIONS = 20
-/**
- * Guarded options offered in a pause. A desktop app exposes every menu
- * command as a guarded element; the adapter orders on-screen content first,
- * so a cap keeps the question answerable without hiding the count.
- */
-const MAX_GUARDED_OPTIONS = 24
+/** Candidates offered in a no-progress pause; the rest are still visible in the snapshot. */
+const MAX_PAUSE_OPTIONS = 24
 
 function decisionSummary(answers: Record<string, JevAnswer>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
@@ -136,23 +135,14 @@ export function decide(input: DecideInput): Decision {
   if (loading != null && loading >= THRESHOLDS.stillLoading && consecutiveWaits < 3) {
     return { kind: 'wait', why: `still_loading ${loading.toFixed(2)}` }
   }
+  // Completion is Jev's call: it sees the page, the caller does not. A given
+  // done_when is the caller's stricter definition and the loop checks it before
+  // asking; then Jev's verdict is only recorded.
   const satisfied = readNoul(answers.goal_satisfied)
   if (satisfied != null && satisfied >= THRESHOLDS.goalSatisfied && !doneWhenGiven) {
-    return {
-      kind: 'pause',
-      mode: 'accept',
-      question: {
-        type: 'choice',
-        reason: 'uncertain',
-        options: [
-          { key: 'accept', label: 'Goal looks complete — finish', probability: satisfied },
-          { key: 'continue', label: 'Not done yet — keep going' },
-          ABORT,
-        ],
-        context: { why: `Jev thinks the goal is satisfied (${satisfied.toFixed(2)}) but no done_when was given`, page, decision: summary },
-      },
-    }
+    return { kind: 'done', why: `goal_satisfied ${satisfied.toFixed(2)}`, probability: satisfied }
   }
+  const risk = readNoul(answers.next_step_risk) ?? 0
 
   const offered = ACTION_OPTIONS.filter((o) => {
     if (o === 'click') return space.clickCandidates.length > 0
@@ -165,53 +155,46 @@ export function decide(input: DecideInput): Decision {
   const chosen: ActionOption | 'invalid' = action ? (action.choice as ActionOption) : 'invalid'
 
   const noneUseful = (): Decision => {
-    if (space.guarded.length > 0 || space.guardedSubmits.length > 0) {
-      // Guarded first, then the safe candidates Jev declined: the caller may
-      // know a safe click is right after all (a button whose first click was
-      // swallowed) and should be able to say so instead of aborting.
-      const safe = space.clickCandidates.slice(0, MAX_SAFE_OPTIONS).flatMap((key) => {
-        const el = elementByIndex(space, key)
-        return el ? [{ ...option(el), key }] : []
-      })
-      const guarded = space.guarded.slice(0, MAX_GUARDED_OPTIONS)
-      const guardedOmitted = space.guarded.length - guarded.length
-      return {
-        kind: 'pause',
-        mode: 'click',
-        question: {
-          type: 'choice',
-          reason: 'guarded-only',
-          options: [
-            ...guarded.map((el) => option(el)),
-            ...space.guardedSubmits.map((el) => ({ key: `submit:${el.index}`, label: `press Enter in ${el.role} ${el.label}` })),
-            ...safe,
-            ABORT,
-          ],
-          context: {
-            why: 'No safe action advances the goal; guarded elements remain. Safe candidates are listed after them in case one should be retried.',
-            guarded: [
-              ...guarded.map((el) => ({ index: el.index, label: el.label, reason: el.reason })),
-              ...space.guardedSubmits.map((el) => ({ index: `submit:${el.index}`, label: `Enter in ${el.label}`, reason: 'submit' })),
-            ],
-            ...(guardedOmitted > 0 ? { guardedOmitted, hint: 'More guarded elements exist than are offered; take a snapshot and act directly if the one you need is not listed.' } : {}),
-            page,
-            decision: summary,
-          },
-        },
-      }
-    }
     if (space.canScrollDown && !input.scrolledSinceChange) return { kind: 'scroll', direction: 'down' }
+    const candidates = [...space.clickCandidates, ...space.typeCandidates.filter((k) => !space.clickCandidates.includes(`open:${k}`))]
     return {
       kind: 'pause',
       mode: 'click',
       question: {
         type: 'choice',
         reason: 'no-progress',
-        options: [...space.elements.filter((el) => !el.password && el.clickable !== false).map((el) => option(el)), ABORT],
-        context: { why: 'No offered action advances the goal and nothing is guarded; pick an element or take over', page, decision: summary },
+        options: [...candidates.slice(0, MAX_PAUSE_OPTIONS).flatMap((key) => {
+          const el = elementByIndex(space, key)
+          return el ? [{ ...option(el), key }] : []
+        }), ABORT],
+        context: {
+          why: 'No offered action advances the goal; pick an element or take over',
+          ...(candidates.length > MAX_PAUSE_OPTIONS ? { omitted: candidates.length - MAX_PAUSE_OPTIONS, hint: 'More elements exist than are offered; take a snapshot and act directly if the one you need is not listed.' } : {}),
+          page,
+          decision: summary,
+        },
       },
     }
   }
+
+  // Jev rated the step it picked as irreversible: the caller confirms that one
+  // step (or redirects) before anything is submitted, paid, deleted or sent.
+  const riskyPause = (mode: 'click' | 'type_text', key: string, el: SpaceElement, probabilities: Record<string, number>, presetKey?: string): Decision => ({
+    kind: 'pause',
+    mode,
+    element: el,
+    presetKey,
+    question: {
+      type: 'choice',
+      reason: 'risky',
+      options: [
+        { ...option(el, probabilities[key]), key, label: `${mode === 'type_text' ? 'type into' : clickKindOf(key) === 'submit' ? 'press Enter in' : 'click'} ${el.role} ${el.label}` },
+        ...topK(space, probabilities).filter((o) => o.key !== key),
+        ABORT,
+      ],
+      context: { why: `Jev rates this step irreversible (${risk.toFixed(2)}); confirm it, choose another target, or take over`, page, decision: summary },
+    },
+  })
 
   if (chosen === 'invalid') return noneUseful()
   if (chosen === 'scroll_down') return { kind: 'scroll', direction: 'down' }
@@ -223,9 +206,9 @@ export function decide(input: DecideInput): Decision {
     const el = elementByIndex(space, target.choice)
     const p = target.probabilities[target.choice]
     if (!el) return noneUseful()
-    // A long list of mostly-guarded items makes the action head give up on the
-    // page as a whole while the target head still singles out the one safe
-    // row that matters (Finder: fifty apps and one folder).
+    // A long list of mostly similar items makes the action head give up on the
+    // page as a whole while the target head still singles out the one row
+    // that matters (Finder: fifty apps and one folder).
     if (chosen === 'none_useful' && p < THRESHOLDS.overrideNone) return noneUseful()
     // Only the target head is gated. The action head is a 4–5 way choice whose
     // confidence is structurally low even when "click vs type" is obvious, and
@@ -242,7 +225,8 @@ export function decide(input: DecideInput): Decision {
         },
       }
     }
-    return { kind: 'click', key: target.choice, element: el, probability: p }
+    if (risk >= THRESHOLDS.risk) return riskyPause('click', target.choice, el, target.probabilities)
+    return { kind: 'click', key: target.choice, element: el, probability: p, risk }
   }
 
   // type_text
@@ -267,7 +251,8 @@ export function decide(input: DecideInput): Decision {
     }
   }
   if (matched) {
-    return { kind: 'type_text', element: el, text: matched.preset.value, presetKey: matched.preset.key, probability: matched.probability }
+    if (risk >= THRESHOLDS.risk) return riskyPause('type_text', target.choice, el, target.probabilities, matched.preset.key)
+    return { kind: 'type_text', element: el, text: matched.preset.value, presetKey: matched.preset.key, probability: matched.probability, risk }
   }
   return {
     kind: 'pause',

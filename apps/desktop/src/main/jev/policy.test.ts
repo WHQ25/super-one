@@ -1,26 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import { buildActionSpace } from './action-space'
-import { decide, type DecideInput } from './policy'
+import { decide, type DecideInput, THRESHOLDS } from './policy'
 import { NONE } from './questions'
 import { el, noul, page, pick } from './test-fixtures'
 
-const origins = new Set(['https://github.com'])
 const elements = [
   el({ node: 1, role: 'link', label: 'Issues', href: 'https://github.com/x/issues' }),
   el({ node: 2, role: 'textbox', label: 'Add a title', editable: true }),
   el({ node: 3, role: 'button', label: 'Create', submit: true }),
 ]
-const space = buildActionSpace({ page: page(elements), origins, allow: [], avoid: [], history: [] })
+const space = buildActionSpace({ page: page(elements), history: [] })
 const ACTIONS = ['click', 'type_text', 'scroll_down', 'none_useful']
 const CLICKS = [...space.clickCandidates, NONE]
 const TYPES = [...space.typeCandidates, NONE]
+const calm = { still_loading: noul(0.1), goal_satisfied: noul(0.1), next_step_risk: noul(0.05) }
 
 function input(overrides: Partial<DecideInput>): DecideInput {
   return {
     answers: {},
     space,
     presets: [],
-    doneWhenGiven: true,
+    doneWhenGiven: false,
     consecutiveWaits: 0,
     scrolledSinceChange: false,
     page: { url: 'https://github.com/x', title: 'x' },
@@ -30,39 +30,46 @@ function input(overrides: Partial<DecideInput>): DecideInput {
 
 describe('decide', () => {
   it('waits while Jev sees loading, but at most three times in a row', () => {
-    const answers = { still_loading: noul(0.9), goal_satisfied: noul(0.1), action: pick('click', ACTIONS), click_target: pick('1', CLICKS) }
+    const answers = { ...calm, still_loading: noul(0.9), action: pick('click', ACTIONS), click_target: pick('1', CLICKS) }
     expect(decide(input({ answers })).kind).toBe('wait')
     expect(decide(input({ answers, consecutiveWaits: 3 })).kind).toBe('click')
   })
 
-  it('pauses to confirm completion when Jev is sure but no done_when was given', () => {
-    const answers = { still_loading: noul(0.1), goal_satisfied: noul(0.95), action: pick('none_useful', ACTIONS) }
-    const d = decide(input({ answers, doneWhenGiven: false }))
-    expect(d).toMatchObject({ kind: 'pause', mode: 'accept', question: { reason: 'uncertain' } })
-    // With done_when the machine condition decides; Jev's opinion is ignored.
-    expect(decide(input({ answers, doneWhenGiven: true })).kind).toBe('pause')
-    expect((decide(input({ answers, doneWhenGiven: true })) as { question: { reason: string } }).question.reason).toBe('guarded-only')
+  it('finishes on Jev\'s completion verdict unless a done_when owns completion', () => {
+    const answers = { ...calm, goal_satisfied: noul(0.95), action: pick('click', ACTIONS), click_target: pick('1', CLICKS) }
+    expect(decide(input({ answers }))).toMatchObject({ kind: 'done', probability: 0.95 })
+    expect(decide(input({ answers, doneWhenGiven: true })).kind).toBe('click')
+    expect(decide(input({ answers: { ...answers, goal_satisfied: noul(THRESHOLDS.goalSatisfied - 0.01) } })).kind).toBe('click')
   })
 
-  it('offers the guarded elements when nothing safe helps', () => {
-    const answers = { still_loading: noul(0.1), goal_satisfied: noul(0.1), action: pick('none_useful', ACTIONS) }
-    const d = decide(input({ answers }))
-    expect(d).toMatchObject({ kind: 'pause', mode: 'click', question: { reason: 'guarded-only' } })
-    const keys = (d as { question: { options: Array<{ key: string }> } }).question.options.map((o) => o.key)
-    // Guarded button first, then the safe clicks Jev passed on, so the caller can retry one.
-    expect(keys).toEqual(['3', '1', 'open:2', 'abort'])
+  it('clicks a confident target, and pauses with top-k on a weak one', () => {
+    const strong = { ...calm, action: pick('click', ACTIONS), click_target: pick('3', CLICKS, 0.9) }
+    expect(decide(input({ answers: strong }))).toMatchObject({ kind: 'click', key: '3', risk: 0.05 })
+    const weak = { ...strong, click_target: pick('3', CLICKS, 0.5) }
+    expect(decide(input({ answers: weak }))).toMatchObject({ kind: 'pause', mode: 'click', question: { reason: 'uncertain' } })
   })
 
-  it('clicks a confident safe target and pauses with top-k on a weak one', () => {
-    const strong = { still_loading: noul(0.1), goal_satisfied: noul(0.1), action: pick('click', ACTIONS), click_target: pick('1', CLICKS, 0.9) }
-    expect(decide(input({ answers: strong }))).toMatchObject({ kind: 'click', key: '1' })
-    const weak = { ...strong, click_target: pick('1', CLICKS, 0.5) }
-    const d = decide(input({ answers: weak }))
-    expect(d).toMatchObject({ kind: 'pause', mode: 'click', question: { reason: 'uncertain' } })
+  it('asks before a step Jev rates irreversible, offering that step first', () => {
+    const answers = { ...calm, next_step_risk: noul(0.8), action: pick('click', ACTIONS), click_target: pick('3', CLICKS, 0.9) }
+    const d = decide(input({ answers })) as { question: { reason: string; options: Array<{ key: string; label: string }> }; element: { index: string } }
+    expect(d).toMatchObject({ kind: 'pause', mode: 'click', question: { reason: 'risky' }, element: { index: '3' } })
+    expect(d.question.options[0]).toMatchObject({ key: '3', label: 'click button Create' })
+    expect(d.question.options.at(-1)?.key).toBe('abort')
+    // The same verdict on a typed step keeps the matched preset for the resume.
+    const typed = { ...calm, next_step_risk: noul(0.6), action: pick('type_text', ACTIONS), type_text_target: pick('2', TYPES, 0.9) }
+    expect(decide(input({ answers: typed, presets: [{ key: 'Title', value: 'Hello', field: 'title' }] }))).toMatchObject({ kind: 'pause', mode: 'type_text', presetKey: 'Title', question: { reason: 'risky' } })
+  })
+
+  it('pauses with no-progress when nothing useful is left and the page cannot scroll further', () => {
+    const answers = { ...calm, action: pick('none_useful', ACTIONS) }
+    expect(decide(input({ answers }))).toMatchObject({ kind: 'scroll', direction: 'down' })
+    const d = decide(input({ answers, scrolledSinceChange: true }))
+    expect(d).toMatchObject({ kind: 'pause', mode: 'click', question: { reason: 'no-progress' } })
+    expect((d as { question: { options: Array<{ key: string }> } }).question.options.map((o) => o.key)).toEqual(['1', 'open:2', '3', 'abort'])
   })
 
   it('types a preset matched by field hint, else by Jev, else pauses for a value', () => {
-    const base = { still_loading: noul(0.1), goal_satisfied: noul(0.1), action: pick('type_text', ACTIONS), type_text_target: pick('2', TYPES, 0.9) }
+    const base = { ...calm, action: pick('type_text', ACTIONS), type_text_target: pick('2', TYPES, 0.9) }
     const hinted = decide(input({ answers: base, presets: [{ key: 'Title', value: 'Hello', field: 'title' }] }))
     expect(hinted).toMatchObject({ kind: 'type_text', text: 'Hello', presetKey: 'Title' })
 
@@ -77,23 +84,23 @@ describe('decide', () => {
   })
 
   it('treats an invalid answer as none_useful rather than acting on it', () => {
-    const answers = { action: { type: 'choice', choice: 'launch_missiles', probabilities: { launch_missiles: 1 }, confidence: 1 } as never }
-    expect(decide(input({ answers }))).toMatchObject({ kind: 'pause', question: { reason: 'guarded-only' } })
+    const answers = { ...calm, action: { type: 'choice', choice: 'launch_missiles', probabilities: { launch_missiles: 1 }, confidence: 1 } as never }
+    expect(decide(input({ answers, scrolledSinceChange: true }))).toMatchObject({ kind: 'pause', question: { reason: 'no-progress' } })
   })
 
-  it('caps the guarded options of a pause but reports how many were left out', () => {
+  it('caps the options of a no-progress pause but reports how many were left out', () => {
     const many = Array.from({ length: 40 }, (_, i) => el({ node: i + 1, role: 'button', label: `Command ${i}` }))
-    const big = buildActionSpace({ page: page(many), origins, allow: [], avoid: [], history: [] })
-    const answers = { still_loading: noul(0.1), goal_satisfied: noul(0.1), action: pick('none_useful', ACTIONS) }
-    const d = decide(input({ answers, space: big })) as { question: { options: Array<{ key: string }>; context: { guardedOmitted?: number } } }
+    const big = buildActionSpace({ page: page(many), history: [] })
+    const answers = { ...calm, action: pick('none_useful', ACTIONS) }
+    const d = decide(input({ answers, space: big, scrolledSinceChange: true })) as { question: { options: Array<{ key: string }>; context: { omitted?: number } } }
     expect(d.question.options.map((o) => o.key)).toEqual([...many.slice(0, 24).map((_, i) => String(i + 1)), 'abort'])
-    expect(d.question.context.guardedOmitted).toBe(16)
+    expect(d.question.context.omitted).toBe(16)
   })
 
   it('lets a very confident click target override a none_useful action head', () => {
-    const base = { still_loading: noul(0.1), goal_satisfied: noul(0.1), action: pick('none_useful', ACTIONS) }
+    const base = { ...calm, action: pick('none_useful', ACTIONS) }
     expect(decide(input({ answers: { ...base, click_target: pick('1', CLICKS, 0.9) } }))).toMatchObject({ kind: 'click', key: '1' })
-    expect(decide(input({ answers: { ...base, click_target: pick('1', CLICKS, 0.7) } })).kind).toBe('pause')
-    expect(decide(input({ answers: { ...base, click_target: pick(NONE, CLICKS, 0.9) } })).kind).toBe('pause')
+    expect(decide(input({ answers: { ...base, click_target: pick('1', CLICKS, 0.7) } })).kind).toBe('scroll')
+    expect(decide(input({ answers: { ...base, click_target: pick(NONE, CLICKS, 0.9) } })).kind).toBe('scroll')
   })
 })

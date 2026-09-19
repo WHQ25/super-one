@@ -6,7 +6,6 @@ import { axTreeToOutline } from '../platform/ax-outline'
 import { MacosPlatformAdapter } from '../platform/macos-adapter'
 import { planNodeAction } from '../node-action-plan'
 import { createComputerAdapter } from '../../jev/computer-page'
-import { classify } from '../../jev/action-space'
 import { outlineToRows } from '../outline-toon'
 
 function fixture() {
@@ -51,7 +50,7 @@ describe('native item selection and opening', () => {
     expect(selected.diff.changed).toContainEqual(expect.objectContaining({ field: 'selected', to: 'true' }))
   })
 
-  it('dispatches distinct select/open plans and guards file or unknown opens', async () => {
+  it('dispatches distinct select/open plans through the fast-loop adapter', async () => {
     const { service } = fixture()
     const adapter = createComputerAdapter({ service, ask: vi.fn(), resolve: async () => (await service.resolveTargetRoot()).rootId })
     await adapter.resolveTarget()
@@ -60,14 +59,11 @@ describe('native item selection and opening', () => {
     await adapter.click(page.elements[0].node)
     page = await adapter.observe()
     const folder = page.elements.find((element) => element.label === 'Open Utilities')!
-    expect(classify(folder, new Set(), []).risk).toBe('safe')
     await adapter.click(folder.node)
     page = await adapter.observe()
     const file = page.elements.find((element) => element.label === 'Select Console')!
-    expect(classify(file, new Set(), []).risk).toBe('safe')
-    for (const label of ['Open Console', 'Open Unknown']) {
-      expect(classify(page.elements.find((element) => element.label === label)!, new Set(), []).risk).toBe('guarded')
-    }
+    // Files and unknown items are offered too; whether opening one is wanted is Jev's call.
+    expect(page.elements.map((element) => element.label)).toEqual(expect.arrayContaining(['Open Console', 'Open Unknown']))
     await adapter.click(file.node)
     page = await adapter.observe()
     expect(page.elements.some((element) => element.label === 'Select Console')).toBe(false)

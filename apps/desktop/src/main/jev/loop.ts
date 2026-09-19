@@ -5,7 +5,7 @@
  */
 
 import { randomUUID } from 'crypto'
-import { type ActionSpace, buildActionSpace, clickKindOf, elementByIndex, type HistoryEntry, originOf, type SpaceElement } from './action-space'
+import { type ActionSpace, buildActionSpace, clickKindOf, elementByIndex, type HistoryEntry, type SpaceElement } from './action-space'
 import type { RawElement, RunObservation } from './observation'
 import { decide, type Decision, presetByHint, type Question, type QuestionOption } from './policy'
 import { buildRequest, type Preset } from './questions'
@@ -40,8 +40,6 @@ export interface RunDeps<Page extends RunObservation = RunObservation> {
 export interface RunOptions {
   goal: string
   presets: Preset[]
-  allow: string[]
-  avoid: string[]
   hasDoneWhen?: boolean
   maxSteps: number
   maxWallMs: number
@@ -67,7 +65,7 @@ export interface RunResult {
     target?: Record<string, string>
     url: string
     title: string
-    elements: Array<{ index: string; role: string; label: string; value?: string; guarded?: true; ref?: string }>
+    elements: Array<{ index: string; role: string; label: string; value?: string; ref?: string }>
     text: string
   } | null
   steps: number
@@ -97,7 +95,8 @@ export class FastRun<Page extends RunObservation = RunObservation> {
   private consecutiveWaits = 0
   private scrolledSinceChange = false
   private continueDespiteSatisfied = false
-  private readonly origins = new Set<string>()
+  /** Jev called the goal satisfied once; a fresh observation must agree before the run finishes. */
+  private doneCandidate = false
   private pending: Pending<Page> | null = null
   private lastPage: Page | null = null
   private readonly startedAt: number
@@ -106,10 +105,6 @@ export class FastRun<Page extends RunObservation = RunObservation> {
 
   constructor(private readonly opts: RunOptions, private readonly deps: RunDeps<Page>) {
     this.startedAt = this.now()
-    for (const m of opts.goal.match(/https?:\/\/[^\s)"']+/g) ?? []) {
-      const origin = originOf(m)
-      if (origin) this.origins.add(origin)
-    }
   }
 
   private now(): number {
@@ -199,9 +194,9 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     }
     if (execPage) {
       this.lastPage = await this.execute(
-        text != null ? { kind: 'type_text', element, text, presetKey, probability: 1 } : { kind: 'click', key: clickKey, element, probability: 1 },
+        text != null ? { kind: 'type_text', element, text, presetKey, probability: 1, risk: 0 } : { kind: 'click', key: clickKey, element, probability: 1, risk: 0 },
         execPage,
-        element.risk === 'guarded' || clickKindOf(clickKey) === 'submit',
+        true,
         true,
         signal,
       )
@@ -268,16 +263,12 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       const observeMs = this.now() - observeStart
       this.lastPage = page
       if (page.blocked) throw new RunPaused(page.blocked.reason, page.blocked.why)
-      if (this.origins.size === 0) {
-        const origin = originOf(page.url)
-        if (origin) this.origins.add(origin)
-      }
 
       // Machine signals first: document loading, then done_when.
       if (page.loading && this.consecutiveWaits < 3) {
         this.consecutiveWaits++
         await this.deps.waitReady(1500, signal)
-        this.history.push({ node: -1, kind: 'wait', label: 'Wait (loading)', changedPage: null, guarded: false })
+        this.history.push({ node: -1, kind: 'wait', label: 'Wait (loading)', changedPage: null })
         page = null
         continue
       }
@@ -287,7 +278,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
         return this.result('done', 'done_when satisfied')
       }
 
-      const space = buildActionSpace({ page, origins: this.origins, allow: this.opts.allow, avoid: this.opts.avoid, history: this.history })
+      const space = buildActionSpace({ page, history: this.history })
       const request = buildRequest({ goal: this.opts.goal, page, space, presets: this.opts.presets, last: this.history[this.history.length - 1], history: this.history })
       const response = await this.deps.ask(request, signal)
       const decision = decide({
@@ -319,7 +310,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
 
       if (decision.kind === 'wait') {
         this.consecutiveWaits++
-        this.history.push({ node: -1, kind: 'wait', label: 'Wait', changedPage: null, guarded: false })
+        this.history.push({ node: -1, kind: 'wait', label: 'Wait', changedPage: null })
         this.emit(trace)
         await new Promise((resolve) => setTimeout(resolve, WAIT_MS))
         page = null
@@ -327,9 +318,18 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       }
       if (decision.kind === 'done') {
         this.emit(trace)
-        this.lastPage = page
-        return this.result('done', decision.why)
+        // Jev judges completion from one observation; a page mid-transition can
+        // look finished. Trust it only when a fresh read says so again.
+        if (this.doneCandidate) {
+          this.lastPage = page
+          return this.result('done', decision.why)
+        }
+        this.doneCandidate = true
+        await this.deps.settle({ node: -1 }, signal)
+        page = null
+        continue
       }
+      this.doneCandidate = false
       if (decision.kind === 'pause') {
         this.emit(trace)
         return this.pause(decision.question, page, space, decision.mode, decision.element, decision.presetKey)
@@ -379,19 +379,19 @@ export class FastRun<Page extends RunObservation = RunObservation> {
   }
 
   /** Perform one decided action and return the observation that followed it. */
-  private async execute(decision: Exclude<Decision, { kind: 'wait' | 'done' | 'pause' }>, page: Page, guarded: boolean, answered = false, signal?: AbortSignal): Promise<Page> {
+  private async execute(decision: Exclude<Decision, { kind: 'wait' | 'done' | 'pause' }>, page: Page, approved: boolean, answered = false, signal?: AbortSignal): Promise<Page> {
     const clickKind = decision.kind === 'click' ? clickKindOf(decision.key) : null
     const entry: HistoryEntry = decision.kind === 'scroll'
-      ? { node: -1, kind: 'scroll', label: `Scroll ${decision.direction}`, changedPage: null, guarded: false }
+      ? { node: -1, kind: 'scroll', label: `Scroll ${decision.direction}`, changedPage: null }
       : decision.kind === 'click'
         ? {
           node: decision.element.node,
           kind: clickKind === 'submit' ? 'submit' : 'click',
           label: `${clickKind === 'open' ? 'Open' : clickKind === 'submit' ? 'Press Enter in' : 'Click'} [${decision.element.index}] ${decision.element.label}`,
           changedPage: null,
-          guarded: guarded || decision.element.highRisk || clickKind === 'submit',
+          ...(approved ? { approved: true } : {}),
         }
-        : { node: decision.element.node, kind: 'type_text', label: `Type presets.${decision.presetKey} → [${decision.element.index}] ${decision.element.label}`, changedPage: null, guarded }
+        : { node: decision.element.node, kind: 'type_text', label: `Type presets.${decision.presetKey} → [${decision.element.index}] ${decision.element.label}`, changedPage: null, ...(approved ? { approved: true } : {}) }
     // Record before acting: a navigation that interrupts the post-action observe must not erase the action.
     this.history.push(entry)
     try {
@@ -429,7 +429,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
         url: page.url,
         elements: page.elements.length,
         textChars: page.text.length,
-        decision: { kind: 'answer', ...describeDecision(decision), guarded },
+        decision: { kind: 'answer', ...describeDecision(decision), approved },
         changedPage: changed,
       })
     }
@@ -447,7 +447,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
 
   private async pause(question: Omit<Question, 'id'>, page: Page | null, space: ActionSpace | null, mode: Pending<Page>['mode'], element?: SpaceElement, presetKey?: string, withoutObserve = false): Promise<RunResult> {
     const observed = page ?? (withoutObserve ? null : await this.deps.observe())
-    const built = space ?? (observed ? buildActionSpace({ page: observed, origins: this.origins, allow: this.opts.allow, avoid: this.opts.avoid, history: this.history }) : null)
+    const built = space ?? (observed ? buildActionSpace({ page: observed, history: this.history }) : null)
     const id = `q${++this.questionSeq}`
     const full: Question = { id, ...question }
     this.pending = { question: full, page: observed, space: built, mode, element, presetKey }
@@ -476,7 +476,6 @@ export class FastRun<Page extends RunObservation = RunObservation> {
         role: el.role,
         label: el.label,
         ...(el.value ? { value: el.value.slice(0, 120) } : {}),
-        ...(el.risk === 'guarded' ? { guarded: true as const } : {}),
       })),
       text: page.text.slice(0, 2000),
     }
@@ -486,7 +485,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     this.status = status
     this.pending = null
     const page = this.lastPage
-    const space = page ? buildActionSpace({ page, origins: this.origins, allow: this.opts.allow, avoid: this.opts.avoid, history: this.history }) : null
+    const space = page ? buildActionSpace({ page, history: this.history }) : null
     return {
       status,
       runId: this.runId,
@@ -506,14 +505,15 @@ export class FastRun<Page extends RunObservation = RunObservation> {
 function describeDecision(d: Decision): Record<string, unknown> {
   switch (d.kind) {
     case 'wait':
-    case 'done':
       return { kind: d.kind, why: d.why }
+    case 'done':
+      return { kind: d.kind, why: d.why, probability: d.probability }
     case 'scroll':
       return { kind: 'scroll', direction: d.direction }
     case 'click':
-      return { kind: 'click', key: d.key, label: d.element.label, probability: d.probability }
+      return { kind: 'click', key: d.key, label: d.element.label, probability: d.probability, risk: d.risk }
     case 'type_text':
-      return { kind: 'type_text', index: d.element.index, label: d.element.label, preset: d.presetKey, probability: d.probability }
+      return { kind: 'type_text', index: d.element.index, label: d.element.label, preset: d.presetKey, probability: d.probability, risk: d.risk }
     case 'pause':
       return { kind: 'pause', reason: d.question.reason, type: d.question.type, why: d.question.context.why }
   }
@@ -521,7 +521,7 @@ function describeDecision(d: Decision): Record<string, unknown> {
 
 /** Adapter refusals that require the caller to resolve a capability or UI boundary. */
 export class RunPaused extends Error {
-  constructor(readonly reason: 'guarded-only' | 'no-progress', message: string) { super(message) }
+  constructor(readonly reason: 'no-progress', message: string) { super(message) }
 }
 
 /** Only throw before input has been dispatched; a rejected target is safe to re-observe. */

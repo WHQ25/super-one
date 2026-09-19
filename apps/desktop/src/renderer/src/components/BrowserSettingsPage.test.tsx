@@ -15,10 +15,12 @@ const getAppSettings = vi.fn()
 const saveAppSettings = vi.fn()
 const getDefaultDownloadDir = vi.fn()
 const selectFolder = vi.fn()
+const getJevApiKeyStatus = vi.fn()
+const setJevApiKey = vi.fn()
 
 Object.defineProperty(window, 'app', {
   configurable: true,
-  value: { getAppSettings, saveAppSettings, getDefaultDownloadDir, selectFolder },
+  value: { getAppSettings, saveAppSettings, getDefaultDownloadDir, selectFolder, getJevApiKeyStatus, setJevApiKey },
 })
 
 const { BrowserSettingsPage } = await import('./BrowserSettingsPage')
@@ -34,6 +36,7 @@ function settings(overrides: Record<string, unknown> = {}) {
     cdpCookiesEnabled: false,
     cdpMockEnabled: false,
     cdpEmulateEnabled: false,
+    jevFastLoopEnabled: false,
     browserDownloadDir: null,
     webmcpEnabled: true,
     webmcpTrustedOrigins: [] as WebmcpTrustedOrigin[],
@@ -60,6 +63,64 @@ beforeEach(() => {
   getDefaultDownloadDir.mockReset()
   getDefaultDownloadDir.mockResolvedValue('/Users/dev/Downloads')
   selectFolder.mockReset()
+  getJevApiKeyStatus.mockReset()
+  getJevApiKeyStatus.mockResolvedValue({ configured: false, masked: '' })
+  setJevApiKey.mockReset()
+})
+
+describe('browser settings — Jev fast inner loop', () => {
+  function jevSwitch(): HTMLElement {
+    const row = screen.getByText('Jev Fast Inner Loop').closest('.flex')
+    return row!.querySelector('[role="switch"]') as HTMLElement
+  }
+
+  it('asks for a key instead of enabling when none is stored, then enables once the key is saved', async () => {
+    await renderPage()
+    fireEvent.click(jevSwitch())
+
+    const input = await screen.findByLabelText('Jev API Key')
+    expect(saveAppSettings).not.toHaveBeenCalled()
+    expect(jevSwitch().getAttribute('data-state')).toBe('unchecked')
+
+    setJevApiKey.mockResolvedValue({ configured: true, masked: '***abc123' })
+    saveAppSettings.mockResolvedValue(settings({ jevFastLoopEnabled: true }))
+    fireEvent.change(input, { target: { value: 'ts-secret-abc123' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Key' }))
+
+    await waitFor(() => expect(saveAppSettings).toHaveBeenCalledWith({ jevFastLoopEnabled: true }))
+    expect(setJevApiKey).toHaveBeenCalledWith('ts-secret-abc123')
+    expect(await screen.findByText('***abc123')).toBeInTheDocument()
+    expect(jevSwitch().getAttribute('data-state')).toBe('checked')
+  })
+
+  it('toggles directly and shows the masked key when one is already stored', async () => {
+    getJevApiKeyStatus.mockResolvedValue({ configured: true, masked: '***zz9999' })
+    await renderPage()
+    saveAppSettings.mockResolvedValue(settings({ jevFastLoopEnabled: true }))
+    fireEvent.click(jevSwitch())
+
+    await waitFor(() => expect(saveAppSettings).toHaveBeenCalledWith({ jevFastLoopEnabled: true }))
+    expect(await screen.findByText('***zz9999')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Change Key' })).toBeInTheDocument()
+  })
+
+  it('surfaces a refused key store without enabling the loop', async () => {
+    await renderPage()
+    fireEvent.click(jevSwitch())
+    setJevApiKey.mockRejectedValue(new Error('Secure storage is unavailable'))
+    fireEvent.change(await screen.findByLabelText('Jev API Key'), { target: { value: 'ts-x' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Key' }))
+
+    expect(await screen.findByText('Secure storage is unavailable')).toBeInTheDocument()
+    expect(saveAppSettings).not.toHaveBeenCalled()
+  })
+
+  it('stays disabled without CDP like the other experimental rows', async () => {
+    getJevApiKeyStatus.mockResolvedValue({ configured: true, masked: '***zz9999' })
+    await renderPage({ cdpEnabled: false, jevFastLoopEnabled: true })
+    expect(jevSwitch().getAttribute('data-disabled')).not.toBeNull()
+    expect(screen.queryByText('***zz9999')).toBeNull()
+  })
 })
 
 describe('browser settings — WebMCP grants', () => {

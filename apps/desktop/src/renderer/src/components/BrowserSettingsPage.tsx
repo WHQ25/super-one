@@ -5,6 +5,7 @@ import type { WebmcpTrustedOrigin } from '@superone/shared/agent-types'
 import { cn } from '@superone/ui/lib/utils'
 import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
+import { Input } from '@superone/ui/components/ui/input'
 import { Switch } from '@superone/ui/components/ui/switch'
 
 function ExperimentalRow({
@@ -41,6 +42,11 @@ export function BrowserSettingsPage() {
   const [cookiesEnabled, setCookiesEnabled] = useState(false)
   const [mockEnabled, setMockEnabled] = useState(false)
   const [emulateEnabled, setEmulateEnabled] = useState(false)
+  const [jevEnabled, setJevEnabled] = useState(false)
+  const [jevKey, setJevKey] = useState<{ configured: boolean; masked: string }>({ configured: false, masked: '' })
+  const [jevKeyEditing, setJevKeyEditing] = useState(false)
+  const [jevKeyDraft, setJevKeyDraft] = useState('')
+  const [jevKeyError, setJevKeyError] = useState<string | null>(null)
   const [downloadDir, setDownloadDir] = useState<string | null>(null)
   const [systemDownloadDir, setSystemDownloadDir] = useState('')
   const [loading, setLoading] = useState(true)
@@ -55,11 +61,15 @@ export function BrowserSettingsPage() {
       setCookiesEnabled(settings.cdpCookiesEnabled)
       setMockEnabled(settings.cdpMockEnabled)
       setEmulateEnabled(settings.cdpEmulateEnabled)
+      setJevEnabled(settings.jevFastLoopEnabled)
       setDownloadDir(settings.browserDownloadDir)
       setLoading(false)
     })
     window.app.getDefaultDownloadDir().then((dir) => {
       if (mounted) setSystemDownloadDir(dir)
+    })
+    window.app.getJevApiKeyStatus().then((status) => {
+      if (mounted) setJevKey(status)
     })
     return () => { mounted = false }
   }, [])
@@ -70,6 +80,35 @@ export function BrowserSettingsPage() {
     setCookiesEnabled(result.cdpCookiesEnabled)
     setMockEnabled(result.cdpMockEnabled)
     setEmulateEnabled(result.cdpEmulateEnabled)
+  }
+
+  // Turning the loop on without a key opens the key form instead; the setting
+  // flips only once a key is stored, so "enabled" always means "usable".
+  async function handleJevToggle(enabled: boolean) {
+    if (enabled && !jevKey.configured) {
+      setJevKeyEditing(true)
+      return
+    }
+    const result = await window.app.saveAppSettings({ jevFastLoopEnabled: enabled })
+    setJevEnabled(result.jevFastLoopEnabled)
+  }
+
+  async function saveJevKey() {
+    const key = jevKeyDraft.trim()
+    if (!key) return
+    setJevKeyError(null)
+    try {
+      const status = await window.app.setJevApiKey(key)
+      setJevKey(status)
+      setJevKeyDraft('')
+      setJevKeyEditing(false)
+      if (!jevEnabled) {
+        const result = await window.app.saveAppSettings({ jevFastLoopEnabled: true })
+        setJevEnabled(result.jevFastLoopEnabled)
+      }
+    } catch (err) {
+      setJevKeyError(err instanceof Error ? err.message : String(err))
+    }
   }
 
   async function pickDownloadDir() {
@@ -245,6 +284,61 @@ export function BrowserSettingsPage() {
             setMockEnabled(r.cdpMockEnabled)
           }}
         />
+        <ExperimentalRow
+          label={t('settings.browser.experimental.jev.label')}
+          description={t('settings.browser.experimental.jev.description')}
+          checked={cdpEnabled && jevEnabled}
+          disabled={expDisabled}
+          onCheckedChange={handleJevToggle}
+        />
+        {cdpEnabled && (jevEnabled || jevKeyEditing) && (
+          <div className="border-t border-border p-4">
+            <p className="text-sm font-medium">{t('settings.browser.experimental.jev.apiKey.label')}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{t('settings.browser.experimental.jev.apiKey.description')}</p>
+            {jevKeyEditing ? (
+              <form
+                className="mt-2 flex items-center gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void saveJevKey()
+                }}
+              >
+                <Input
+                  type="password"
+                  autoFocus
+                  aria-label={t('settings.browser.experimental.jev.apiKey.label')}
+                  placeholder={t('settings.browser.experimental.jev.apiKey.placeholder')}
+                  value={jevKeyDraft}
+                  onChange={(e) => setJevKeyDraft(e.target.value)}
+                  className="max-w-sm font-mono text-xs"
+                />
+                <Button type="submit" size="sm" disabled={!jevKeyDraft.trim()}>
+                  {t('settings.browser.experimental.jev.apiKey.save')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setJevKeyEditing(false)
+                    setJevKeyDraft('')
+                    setJevKeyError(null)
+                  }}
+                >
+                  {t('settings.browser.experimental.jev.apiKey.cancel')}
+                </Button>
+              </form>
+            ) : (
+              <div className="mt-2 flex items-center gap-2">
+                <p className="font-mono text-xs">{jevKey.masked}</p>
+                <Button variant="outline" size="sm" onClick={() => setJevKeyEditing(true)}>
+                  {t('settings.browser.experimental.jev.apiKey.change')}
+                </Button>
+              </div>
+            )}
+            {jevKeyError && <p className="mt-1 text-xs text-destructive">{jevKeyError}</p>}
+          </div>
+        )}
       </div>
     </div>
   )

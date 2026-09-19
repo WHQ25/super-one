@@ -9,12 +9,14 @@ const BASE = {
   cdpCookiesEnabled: true,
   cdpMockEnabled: false,
   cdpEmulateEnabled: false,
+  jevFastLoopEnabled: false,
   browserDownloadDir: null as string | null,
   webmcpEnabled: false,
   webmcpTrustedOrigins: [] as WebmcpTrustedOrigin[],
 }
 
 let settings = { ...BASE }
+let jevKey = { configured: false, masked: '' }
 
 mockIpc('app', 'getAppSettings', async () => settings)
 mockIpc('app', 'getDefaultDownloadDir', async () => '/Users/dev/Downloads')
@@ -23,14 +25,20 @@ mockIpc('app', 'saveAppSettings', async (patch: unknown) => {
   settings = { ...settings, ...(patch as Partial<typeof settings>) }
   return settings
 })
+mockIpc('app', 'getJevApiKeyStatus', async () => jevKey)
+mockIpc('app', 'setJevApiKey', async (key: unknown) => {
+  jevKey = { configured: true, masked: `***${String(key).slice(-6)}` }
+  return jevKey
+})
 
 /**
  * The page loads its state from `getAppSettings` on mount, so a story picks its variant by
  * seeding the shared mock during render — before that effect runs.
  */
-function seed(patch: Partial<typeof BASE>) {
+function seed(patch: Partial<typeof BASE>, key: { configured: boolean; masked: string } = { configured: false, masked: '' }) {
   return (Story: () => ReactElement) => {
     settings = { ...BASE, ...patch }
+    jevKey = key
     return <Story />
   }
 }
@@ -86,4 +94,14 @@ export const WebMcpWithGrants: Story = {
 /** CDP off — the experimental rows below WebMCP go disabled, but the WebMCP panel does not. */
 export const CdpDisabled: Story = {
   decorators: [seed({ cdpEnabled: false, webmcpEnabled: true })],
+}
+
+/** Jev loop on with a stored key — the masked key and its replace control show under the row. */
+export const JevFastLoopEnabled: Story = {
+  decorators: [seed({ jevFastLoopEnabled: true }, { configured: true, masked: '***k7q2m9' })],
+}
+
+/** Jev loop off and no key yet — flipping the switch opens the key form instead of enabling. */
+export const JevFastLoopNeedsKey: Story = {
+  decorators: [seed({ jevFastLoopEnabled: false })],
 }

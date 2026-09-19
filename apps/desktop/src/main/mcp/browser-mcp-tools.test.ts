@@ -1096,6 +1096,13 @@ describe('compact browser surface', () => {
     }
   })
 
+  it('advertises browser_run but fails closed until the Jev experimental setting is on', async () => {
+    const tools = buildCompact()
+    const reply = await tools.get('browser_run')!({ goal: 'open the issues tab' })
+    expect(reply.isError).toBe(true)
+    expect(resultText(reply)).toContain("'Jev fast inner loop' experimental browser tool is disabled")
+  })
+
   it('still executes legacy primitive aliases', async () => {
     vi.mocked(browserAutomationCall).mockResolvedValueOnce({ ok: true, selector: '#x' })
     const reply = await executeBrowserTool('sess-1', 'browser_hover', { selector: '#x' })

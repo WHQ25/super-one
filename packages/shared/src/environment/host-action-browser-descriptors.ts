@@ -715,6 +715,141 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
     }
   },
   {
+    "name": "browser_run",
+    "description": "Experimental (requires the Jev fast loop setting): pursue a multi-step page goal — clicks, typing, scrolling — with a fast model choosing each step, so you do not pay a turn per click. Start with goal (+ presets for values to type, done_when for a machine-checkable finish, allow/avoid for buttons). Risky buttons (submit, delete, pay, cross-origin links) are never pressed without asking: the call returns status=paused with a question; answer it by calling again with runId + answer. Use for click/fill-heavy tasks on one tab; use browser_act for single steps, drag, keys, uploads.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "description": "Short, human-friendly summary of the goal for the user watching, in the conversation's language.",
+          "type": "string"
+        },
+        "goal": {
+          "description": "What to achieve on the current page, including when to stop. Required to start a run.",
+          "type": "string"
+        },
+        "tab": {
+          "description": "Browser view id. Omit to target the focused browser view.",
+          "type": "string"
+        },
+        "presets": {
+          "description": "Values the loop may type. Never include passwords.",
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Short name, e.g. Title."
+              },
+              "value": {
+                "type": "string",
+                "description": "The full text to type."
+              },
+              "field": {
+                "description": "Hint naming the field it belongs in, e.g. \"the title textbox\".",
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "allow": {
+          "description": "Button labels (substring, case-insensitive) the loop may press without asking, e.g. [\"Create\"]. \"Enter\" allows pressing Enter in any filled field (keyboard submit).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "avoid": {
+          "description": "Element labels to remove from the page entirely.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "done_when": {
+          "description": "Machine-checkable completion condition (AND-combined, same vocabulary as browser_wait_for). Strongly recommended.",
+          "type": "object",
+          "properties": {
+            "selector": {
+              "type": "string"
+            },
+            "selectorGone": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "urlIncludes": {
+              "type": "string"
+            },
+            "urlMatches": {
+              "description": "JavaScript regex source matched against the page URL.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "maxSteps": {
+          "description": "Default 30.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "maxWallMs": {
+          "description": "Wall-clock budget per call before pausing. Default 45000.",
+          "type": "integer",
+          "minimum": 5000,
+          "maximum": 300000
+        },
+        "runId": {
+          "description": "From a paused result. Resumes that run with `answer`.",
+          "type": "string"
+        },
+        "answer": {
+          "description": "Reply to the pending question when resuming.",
+          "type": "object",
+          "properties": {
+            "questionId": {
+              "type": "string"
+            },
+            "choice": {
+              "description": "An option key from the question, or \"abort\".",
+              "type": "string"
+            },
+            "value": {
+              "description": "For type=value questions: { text }.",
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            "goal": {
+              "description": "Optionally revise the goal.",
+              "type": "string"
+            },
+            "abort": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "questionId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "browser_action",
     "description": "Saved semantic browser actions (dynamic catalog — list then do). action=list (optional domain/name; includeArchived to find archived flows). action=read returns one complete definition by domain+name. action=archive hides a flow and prevents execution; archived=false restores it. action=do runs one saved action with input. action=save creates or replaces a named flow (domain+name) — read the manual first. This does not record prior browser calls. Use browser_act for one-off clicks/types.",
     "inputSchema": {

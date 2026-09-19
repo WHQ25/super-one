@@ -108,6 +108,7 @@ describe('app-settings-service', () => {
     cdpCookiesEnabled: false,
     cdpMockEnabled: false,
     cdpEmulateEnabled: false,
+    jevFastLoopEnabled: false,
     browserDownloadDir: null,
     agentPreference: {
       claude: defaultClaude,
@@ -223,6 +224,7 @@ describe('app-settings-service', () => {
         cdpCookiesEnabled: false,
         cdpMockEnabled: false,
         cdpEmulateEnabled: false,
+        jevFastLoopEnabled: false,
         browserDownloadDir: null,
         agentPreference: {
           claude: {
@@ -377,6 +379,7 @@ describe('app-settings-service', () => {
         cdpCookiesEnabled: false,
         cdpMockEnabled: false,
         cdpEmulateEnabled: false,
+        jevFastLoopEnabled: false,
         browserDownloadDir: null,
         agentPreference: {
           claude: defaultClaude,

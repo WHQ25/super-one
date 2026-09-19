@@ -45,6 +45,7 @@ export const BROWSER_PRIMITIVE_TOOL_NAMES = [
   'browser_emulate',
   'browser_mock',
   'browser_perf_measure',
+  'browser_run',
   'browser_tools_list',
   'browser_tools_call',
 ] as const
@@ -72,6 +73,7 @@ export const BROWSER_COMPACT_TOOL_NAMES = [
   'browser_network',
   'browser_perf',
   'browser_action',
+  'browser_run',
   'browser_tools_list',
   'browser_tools_call',
 ] as const

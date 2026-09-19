@@ -315,3 +315,19 @@ describe('browser_act rendering', () => {
     expect(browserInputSummary('act', {})).toBe('')
   })
 })
+
+describe('browser_run', () => {
+  it('maps to the run op with goal / answer summaries and status-aware results', () => {
+    expect(getBrowserOp('browser_run')).toBe('run')
+    expect(browserVerbKey('run')).toBe('run')
+    expect(browserVerbKey('run', true)).toBe('running')
+    expect(isReadBrowserOp('run')).toBe(true)
+    expect(browserInputSummary('run', { goal: 'Create an issue titled Hello' })).toBe('Create an issue titled Hello')
+    expect(browserInputSummary('run', { runId: 'r1', answer: { questionId: 'q1', choice: '8' } })).toBe('↩ 8')
+    expect(browserInputSummary('run', { runId: 'r1', answer: { questionId: 'q1', abort: true } })).toBe('↩ abort')
+
+    expect(parseBrowserResult('run', JSON.stringify({ status: 'paused', steps: 5 }), false)).toEqual({ status: 'neutral', run: { status: 'paused', steps: 5 } })
+    expect(parseBrowserResult('run', JSON.stringify({ status: 'done', steps: 7 }), false)).toEqual({ status: 'ok', run: { status: 'done', steps: 7 } })
+    expect(parseBrowserResult('run', '[Error] disabled', true).status).toBe('error')
+  })
+})

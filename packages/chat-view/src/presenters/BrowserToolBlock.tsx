@@ -198,7 +198,9 @@ function BrowserOperationBlock({
     ? t(`chat.toolBlock.browser.${info.count.kind === 'tabs' ? 'tabsCount' : info.count.kind === 'cookies' ? 'cookiesCount' : info.count.kind}`, { count: info.count.n })
     : info.notFound
       ? t('chat.toolBlock.browser.notFound')
-      : ''
+      : info.run
+        ? t(`chat.toolBlock.browser.run${info.run.status === 'paused' ? 'Paused' : info.run.status === 'done' ? 'Done' : 'Aborted'}`)
+        : ''
   const primary = failed
     ? (denied ? (description || inputSummary) : (info.errorText || description || inputSummary))
     : (description || inputSummary)

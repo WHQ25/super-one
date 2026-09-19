@@ -981,6 +981,11 @@ export type Messages = {
         cookies: { label: string; description: string }
         emulate: { label: string; description: string }
         mock: { label: string; description: string }
+        jev: {
+          label: string
+          description: string
+          apiKey: { label: string; description: string; placeholder: string; save: string; cancel: string; change: string }
+        }
       }
     }
     terminal: {
@@ -2481,6 +2486,11 @@ export type Messages = {
         listingPageTools: string
         toolsCall: string
         callingPageTool: string
+        run: string
+        running: string
+        runPaused: string
+        runDone: string
+        runAborted: string
         pageToolsListed_one: string
         pageToolsListed_other: string
         pageToolsEmpty: string
@@ -4837,6 +4847,18 @@ export const en: Messages = {
           label: 'Network Mocking',
           description: 'Let the agent intercept and modify requests and responses — including login credentials and cookies. Only enable in trusted scenarios; misuse can hang pages (reload the tab to recover).',
         },
+        jev: {
+          label: 'Jev Fast Inner Loop',
+          description: 'Adds browser_run: a fast model (TypeSafe Jev) picks each click and field on the page so the agent does not spend a full turn per step. Risky buttons still pause and ask. Page text is sent to TypeSafe; pricing is per token.',
+          apiKey: {
+            label: 'Jev API Key',
+            description: 'Stored encrypted on this machine and used only from the main process.',
+            placeholder: 'ts-…',
+            save: 'Save Key',
+            cancel: 'Cancel',
+            change: 'Change Key',
+          },
+        },
       },
     },
     terminal: {
@@ -6350,6 +6372,11 @@ export const en: Messages = {
         listingPageTools: 'Listing Page Tools',
         toolsCall: 'Call Page Tool',
         callingPageTool: 'Calling Page Tool',
+        run: 'Run Goal',
+        running: 'Working through the page…',
+        runPaused: 'Paused for a decision',
+        runDone: 'Goal reached',
+        runAborted: 'Handed back',
         pageToolsListed_one: 'Listed {{count}} Tool',
         pageToolsListed_other: 'Listed {{count}} Tools',
         pageToolsEmpty: 'No Page Tools',

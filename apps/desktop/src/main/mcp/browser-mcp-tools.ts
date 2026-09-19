@@ -50,6 +50,7 @@ import {
 } from './browser-tool-surface'
 import { readAppSettings, saveAppSettings } from '../app-settings-service'
 import { imageNote } from './show-your-work-notes'
+import { BROWSER_RUN_DESCRIPTION, browserRunInputShape, executeBrowserRun } from '../jev/browser-run-tool'
 export { BROWSER_TOOL_NAMES, BROWSER_COMPACT_TOOL_NAMES, BROWSER_LEGACY_TOOL_NAMES }
 
 interface ScreenshotResult {
@@ -721,6 +722,12 @@ function installBrowserAliasCallFallback(server: McpServer, sessionId: string): 
 
 function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcpEnabled: boolean): void {
   registerBrowserActionTools(server, sessionId, executeBrowserTool)
+
+  server.registerTool(
+    'browser_run',
+    { description: BROWSER_RUN_DESCRIPTION, inputSchema: browserRunInputShape },
+    (args, extra) => executeBrowserRun(sessionId, args as Record<string, unknown>, extra?.signal),
+  )
 
   if (webMcpEnabled) {
     server.registerTool(

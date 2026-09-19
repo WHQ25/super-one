@@ -18,6 +18,7 @@ import {
   BROWSER_TOOLS_LIST_DESCRIPTION,
 } from './browser-webmcp-tool-defs'
 import { imageNote, recordingNote } from './show-your-work-notes'
+import { BROWSER_RUN_DESCRIPTION, browserRunInputShape, executeBrowserRun } from '../jev/browser-run-tool'
 
 const tabField = {
   tab: z
@@ -652,6 +653,12 @@ export function registerCompactBrowserTools(
       if (!primitive) return browserErrorReply(new Error(`Unknown network action: ${String(action)}`))
       return runPrimitive(primitive, args)
     },
+  )
+
+  server.registerTool(
+    'browser_run',
+    { description: BROWSER_RUN_DESCRIPTION, inputSchema: browserRunInputShape },
+    (args, extra) => executeBrowserRun(sessionId, args as Record<string, unknown>, extra?.signal),
   )
 
   server.registerTool(

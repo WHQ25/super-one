@@ -4038,6 +4038,9 @@ export const AgentIpcChannels = {
   APP_SETTINGS_CHANGED: 'app:settings-changed',
   /** Resolved OS Downloads folder, shown as the placeholder for an unset download directory. */
   APP_DEFAULT_DOWNLOAD_DIR: 'app:default-download-dir',
+  /** Jev (TypeSafe) API key for the experimental browser fast loop: configured? / replace. */
+  JEV_API_KEY_STATUS: 'app:jev-api-key-status',
+  JEV_API_KEY_SET: 'app:jev-api-key-set',
   /** What the session sync zone holds and what a sweep would free; the sweep itself. */
   SYNC_ZONE_USAGE_GET: 'app:sync-zone-usage',
   SYNC_ZONE_RECLAIM: 'app:sync-zone-reclaim',
@@ -5170,6 +5173,12 @@ export interface AppSettings {
   cdpMockEnabled: boolean
   cdpEmulateEnabled: boolean
   /**
+   * Experimental Jev fast inner loop for `browser_run` (TypeSafe System One).
+   * Requires CDP and a stored Jev API key (kept encrypted in the main process,
+   * never in this settings object). Default off.
+   */
+  jevFastLoopEnabled: boolean
+  /**
    * Where built-in browser downloads land — both agent-driven `browser_download`
    * and files the user or page starts. Null → the OS Downloads folder.
    * A `browser_download` call may still override it per download.
@@ -5325,6 +5334,7 @@ export interface AppSettingsPatch {
   cdpCookiesEnabled?: boolean
   cdpMockEnabled?: boolean
   cdpEmulateEnabled?: boolean
+  jevFastLoopEnabled?: boolean
   /** Empty string or null resets to the OS Downloads folder. */
   browserDownloadDir?: string | null
   computerUseEnabled?: boolean

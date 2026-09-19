@@ -524,6 +524,10 @@ interface AppAPI {
   saveAppSettings(patch: AppSettingsPatch): Promise<AppSettings>
   /** OS Downloads folder — the effective target when `browserDownloadDir` is unset. */
   getDefaultDownloadDir(): Promise<string>
+  /** Whether a Jev (TypeSafe) API key is stored for the experimental browser fast loop; never the key itself. */
+  getJevApiKeyStatus(): Promise<{ configured: boolean; masked: string }>
+  /** Store a Jev API key (empty string clears). Rejects when secure storage refuses. */
+  setJevApiKey(key: string): Promise<{ configured: boolean; masked: string }>
   getSyncZoneUsage(): Promise<SyncZoneUsage>
   reclaimSyncZone(): Promise<SyncZoneReclaimResult>
   retrySyncZoneHandoffs(): Promise<{ retried: number }>

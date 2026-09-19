@@ -378,6 +378,14 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         read: (s) => s.cdpEmulateEnabled,
         toPatch: (v) => ({ cdpEmulateEnabled: v as boolean }),
       },
+      {
+        key: 'jevFastLoopEnabled',
+        label: 'Jev Fast Inner Loop',
+        type: 'boolean',
+        note: 'Experimental browser_run tool driven by TypeSafe Jev. Needs CDP and a Jev API key entered in Settings → Browser.',
+        read: (s) => s.jevFastLoopEnabled,
+        toPatch: (v) => ({ jevFastLoopEnabled: v as boolean }),
+      },
     ],
   },
   {

@@ -36,6 +36,7 @@ export type BrowserOp =
   | 'action_save'
   | 'action_do'
   | 'act'
+  | 'run'
   | 'tools_list'
   | 'tools_call'
 
@@ -45,11 +46,11 @@ const BROWSER_OPS = new Set<BrowserOp>([
   'wait_for', 'press', 'scroll', 'drag', 'select', 'open', 'close', 'evaluate', 'tabs', 'resize',
   'network_start', 'network_stop', 'network_wait', 'network_body', 'cookies', 'upload_file',
   'download', 'list_downloads', 'emulate', 'mock', 'action_list', 'action_save', 'action_do',
-  'act', 'tools_list', 'tools_call',
+  'act', 'run', 'tools_list', 'tools_call',
 ])
 
 /** Read-only ops whose JSON result is worth expanding; the rest are lean actions. */
-const READ_OPS = new Set<BrowserOp>(['snapshot', 'query', 'inspect', 'tabs', 'evaluate', 'network_stop', 'network_wait', 'network_body', 'cookies', 'list_downloads', 'action_list', 'tools_list'])
+const READ_OPS = new Set<BrowserOp>(['snapshot', 'query', 'inspect', 'tabs', 'evaluate', 'network_stop', 'network_wait', 'network_body', 'cookies', 'list_downloads', 'action_list', 'tools_list', 'run'])
 
 /** Ops that report success/failure via an `ok` field (or an error). */
 const ACTION_OPS = new Set<BrowserOp>(['click', 'hover', 'type', 'press', 'scroll', 'drag', 'select', 'navigate', 'wait_for', 'open', 'close', 'resize', 'network_start', 'upload_file', 'download', 'emulate', 'mock', 'action_save', 'action_do', 'act', 'tools_call'])
@@ -165,6 +166,7 @@ const VERB_BASE: Record<BrowserOp, string> = {
   action_save: 'actionSave',
   action_do: 'actionDo',
   act: 'act',
+  run: 'run',
   tools_list: 'toolsList',
   tools_call: 'toolsCall',
 }
@@ -206,6 +208,7 @@ const VERB_STREAMING: Record<BrowserOp, string> = {
   action_save: 'savingAction',
   action_do: 'doingAction',
   act: 'acting',
+  run: 'running',
   tools_list: 'listingPageTools',
   tools_call: 'callingPageTool',
 }
@@ -369,6 +372,14 @@ export function browserInputSummary(op: BrowserOp, p: Record<string, unknown>): 
       return s(p.domain)
     case 'act':
       return ''
+    case 'run': {
+      if (p.runId != null) {
+        const answer = p.answer && typeof p.answer === 'object' ? (p.answer as Record<string, unknown>) : {}
+        const reply = answer.abort ? 'abort' : answer.choice != null ? s(answer.choice) : answer.value != null ? 'value' : ''
+        return reply ? `↩ ${reply}` : '↩'
+      }
+      return truncate(s(p.goal), 60)
+    }
     case 'memory_read':
     case 'memory_write':
       return [s(p.domain), s(p.topic)].filter(Boolean).join('/')
@@ -399,6 +410,8 @@ export interface BrowserDownloadInfo {
 export interface BrowserResultInfo {
   status: 'ok' | 'error' | 'denied' | 'neutral'
   errorText?: string
+  /** browser_run only: where the run stopped, plus how many loop steps it took. */
+  run?: { status: 'paused' | 'done' | 'aborted'; steps?: number }
   count?: { kind: 'elements' | 'matches' | 'tabs' | 'requests' | 'cookies' | 'downloads' | 'actions'; n: number }
   notFound?: boolean
   imagePath?: string
@@ -468,6 +481,12 @@ export function parseBrowserResult(op: BrowserOp, result: string | undefined, is
     case 'inspect':
       if (obj && obj.exists === false) return { status: 'neutral', notFound: true }
       return { status: 'neutral' }
+    case 'run': {
+      const runStatus = obj?.status === 'paused' || obj?.status === 'done' || obj?.status === 'aborted' ? obj.status : undefined
+      return runStatus
+        ? { status: runStatus === 'done' ? 'ok' : 'neutral', run: { status: runStatus, ...(typeof obj?.steps === 'number' ? { steps: obj.steps } : {}) } }
+        : { status: 'neutral' }
+    }
     case 'screenshot': {
       const nested = obj?.screenshot && typeof obj.screenshot === 'object' && !Array.isArray(obj.screenshot)
         ? (obj.screenshot as Record<string, unknown>).path

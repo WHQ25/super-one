@@ -1809,6 +1809,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.APP_SETTINGS_SAVE, patch),
   getDefaultDownloadDir: () =>
     ipcRenderer.invoke(AgentIpcChannels.APP_DEFAULT_DOWNLOAD_DIR),
+  getJevApiKeyStatus: () =>
+    ipcRenderer.invoke(AgentIpcChannels.JEV_API_KEY_STATUS),
+  setJevApiKey: (key: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.JEV_API_KEY_SET, key),
   getSyncZoneUsage: () =>
     ipcRenderer.invoke(AgentIpcChannels.SYNC_ZONE_USAGE_GET),
   reclaimSyncZone: () =>

@@ -117,6 +117,7 @@ const defaults: AppSettings = {
   cdpCookiesEnabled: false,
   cdpMockEnabled: false,
   cdpEmulateEnabled: false,
+  jevFastLoopEnabled: false,
   browserDownloadDir: null,
   computerUseEnabled: false,
   computerUsePictureInPicture: true,
@@ -630,6 +631,7 @@ export function readAppSettings(): AppSettings {
       cdpCookiesEnabled: typeof data.cdpCookiesEnabled === 'boolean' ? data.cdpCookiesEnabled : defaults.cdpCookiesEnabled,
       cdpMockEnabled: typeof data.cdpMockEnabled === 'boolean' ? data.cdpMockEnabled : defaults.cdpMockEnabled,
       cdpEmulateEnabled: typeof data.cdpEmulateEnabled === 'boolean' ? data.cdpEmulateEnabled : defaults.cdpEmulateEnabled,
+      jevFastLoopEnabled: typeof data.jevFastLoopEnabled === 'boolean' ? data.jevFastLoopEnabled : defaults.jevFastLoopEnabled,
       browserDownloadDir: readBrowserDownloadDir(data.browserDownloadDir),
       computerUseEnabled: typeof data.computerUseEnabled === 'boolean' ? data.computerUseEnabled : defaults.computerUseEnabled,
       computerUsePictureInPicture: typeof data.computerUsePictureInPicture === 'boolean'
@@ -710,6 +712,7 @@ export function readAppSettings(): AppSettings {
       cdpCookiesEnabled: defaults.cdpCookiesEnabled,
       cdpMockEnabled: defaults.cdpMockEnabled,
       cdpEmulateEnabled: defaults.cdpEmulateEnabled,
+      jevFastLoopEnabled: defaults.jevFastLoopEnabled,
       browserDownloadDir: defaults.browserDownloadDir,
       computerUseEnabled: defaults.computerUseEnabled,
       computerUsePictureInPicture: defaults.computerUsePictureInPicture,
@@ -837,6 +840,7 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     cdpCookiesEnabled: patch.cdpCookiesEnabled === undefined ? current.cdpCookiesEnabled : patch.cdpCookiesEnabled,
     cdpMockEnabled: patch.cdpMockEnabled === undefined ? current.cdpMockEnabled : patch.cdpMockEnabled,
     cdpEmulateEnabled: patch.cdpEmulateEnabled === undefined ? current.cdpEmulateEnabled : patch.cdpEmulateEnabled,
+    jevFastLoopEnabled: patch.jevFastLoopEnabled === undefined ? current.jevFastLoopEnabled : patch.jevFastLoopEnabled,
     browserDownloadDir: patch.browserDownloadDir === undefined
       ? current.browserDownloadDir
       : readBrowserDownloadDir(patch.browserDownloadDir),

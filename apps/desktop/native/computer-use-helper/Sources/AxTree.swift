@@ -539,7 +539,11 @@ func discoverAxTransientRoots(
         AXUIElementSetMessagingTimeout(element, messagingTimeout)
         if elements.contains(where: { CFEqual($0, element) }) { return }
         let metadata = windowMetadata(element)
-        guard classifyAxWindow(metadata).kind != "window",
+        // Floating panels (for example Fonts) use a nonzero CG window layer,
+        // so the ordinary layer-zero window inventory does not include them.
+        // Keep their non-modal window classification while registering an AX root.
+        let floating = metadata.role == "AXWindow" && metadata.subrole == "AXFloatingWindow"
+        guard (classifyAxWindow(metadata).kind != "window" || floating),
               axBool(element, "AXVisible") != false,
               let frame = axFrame(element),
               frame.width > 1, frame.height > 1 else { return }

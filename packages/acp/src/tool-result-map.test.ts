@@ -67,6 +67,31 @@ describe('tool result capping', () => {
     expect(summaryOf(completed(payload))).toBe(payload)
   })
 
+  it('keeps a browser_run payload whole so the block can find its runId', () => {
+    // The run envelope embeds the final snapshot's element list, so a real run
+    // is past 4k. Cut, the renderer loses the runId and shows raw JSON instead
+    // of the actions the loop took.
+    const payload = JSON.stringify({
+      status: 'done',
+      runId: 'rd258ced9',
+      since_last: ['Click [2] Search', 'Type presets.Query \u2192 [1] Search Wikipedia'],
+      steps: 12,
+      snapshot: {
+        url: 'https://en.wikipedia.org/w/index.php?title=TypeScript&action=history',
+        title: 'Revision history',
+        text: 'x'.repeat(500),
+        elements: Array.from({ length: 200 }, (_, i) => ({ index: String(i), role: 'link', label: `Revision ${i}` })),
+      },
+    })
+    expect(payload.length).toBeGreaterThan(4000)
+    expect(summaryOf(completed(payload))).toBe(payload)
+  })
+
+  it('still caps a result that only names one of the run statuses', () => {
+    const payload = JSON.stringify({ status: 'done', runId: 'r1', blob: 'y'.repeat(20000) })
+    expect(summaryOf(completed(payload)).length).toBe(4000)
+  })
+
   it('still caps an unrelated oversized result', () => {
     expect(summaryOf(completed(JSON.stringify({ logs: 'x'.repeat(20000) }))).length).toBe(4000)
   })

@@ -11,6 +11,7 @@ import {
   looksLikeComputerUseOutline,
   looksLikeComputerUseResult,
 } from '@superone/shared/computer-use-result-shape'
+import { isJevRunToolName, looksLikeJevRunResult } from '@superone/shared/jev-run-result-shape'
 import { formatAgentToolOutput } from '@superone/shared/tool-ui'
 import { normalizeAcpTool } from './tool-normalization'
 
@@ -152,6 +153,7 @@ function shouldKeepFullToolResult(summary: string, toolName?: string): boolean {
   if (looksLikeSessionArchiveToon(summary)) return true
   if (isComputerUseToolName(toolName)) return true
   if (looksLikeComputerUseOutline(summary)) return true
+  if (isJevRunToolName(toolName)) return true
   const trimmed = summary.trim()
   if (!trimmed.startsWith('{')) return false
   try {
@@ -163,6 +165,7 @@ function shouldKeepFullToolResult(summary: string, toolName?: string): boolean {
       || looksLikeCollabResult(obj)
       || looksLikeSessionArchiveJson(obj)
       || looksLikeComputerUseResult(obj)
+      || looksLikeJevRunResult(obj)
   } catch {
     return false
   }

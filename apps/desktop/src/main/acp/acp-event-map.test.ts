@@ -974,6 +974,37 @@ describe('formatAcpRawOutput', () => {
     expect(() => JSON.parse(summary)).not.toThrow()
   })
 
+  it('keeps a large browser_run payload untruncated so the block finds its runId', () => {
+    // The run envelope embeds the final snapshot's element list, so a real run is
+    // past 4k. Cut, the renderer cannot parse out the runId and the block shows
+    // raw JSON instead of the actions the loop took.
+    const payload = JSON.stringify({
+      status: 'done',
+      runId: 'rd258ced9',
+      since_last: ['Click [2] Search', 'Type presets.Query \u2192 [1] Search Wikipedia'],
+      steps: 12,
+      elapsed_ms: 48000,
+      snapshot: {
+        url: 'https://en.wikipedia.org/w/index.php?title=TypeScript&action=history',
+        title: 'Revision history',
+        text: 'x'.repeat(500),
+        elements: Array.from({ length: 200 }, (_, i) => ({ index: String(i), role: 'link', label: `Revision ${i}` })),
+      },
+    })
+    expect(payload.length).toBeGreaterThan(4000)
+
+    const events = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_browser_run',
+      status: 'completed',
+      content: [{ type: 'content', content: { type: 'text', text: payload } }],
+    } as never, ctx)
+    const result = events.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')
+    const summary = (result as { delta: { summary: string } }).delta.summary
+    expect(() => JSON.parse(summary)).not.toThrow()
+    expect(JSON.parse(summary).runId).toBe('rd258ced9')
+  })
+
   it('still truncates an unrelated large JSON tool result at 4000 chars', () => {
     const payload = JSON.stringify({ status: 'ok', items: Array.from({ length: 400 }, (_, i) => `entry-${i}`) })
     expect(payload.length).toBeGreaterThan(4000)

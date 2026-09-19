@@ -21,7 +21,7 @@ import {
 import { resolveVideoConfirm, rejectVideoConfirm } from '../../mcp/media-tools'
 import { resolveConfigConfirm, rejectConfigConfirm } from '../../mcp/config-tools'
 import { resolveComputerUseGrant, rejectComputerUseGrant } from '../../computer-use/grant-request'
-import { inspectClaudeTranscript } from '@superone/claude'
+import { inspectClaudeTranscript, providerSettingsEnv } from '@superone/claude'
 import { buildSafeEnv } from '../../spawn-env'
 import type {
   AgentEvent,
@@ -175,6 +175,7 @@ export class ClaudeBackend implements SessionBackend {
     } else if (config.baseUrl) {
       custom.ANTHROPIC_BASE_URL = config.baseUrl
     }
+    const settingsEnv = providerSettingsEnv(custom)
     const { canUseTool, trackPlanFile } = this.ensurePermissionHandles()
     const claudePref = readAppSettings().agentPreference.claude
     const disabled = claudePref.disabledSkills
@@ -197,7 +198,8 @@ export class ClaudeBackend implements SessionBackend {
       resume: opts.providerSessionId,
       abortController: opts.abortController,
       additionalDirectories: opts.additionalDirectories,
-      env: Object.keys(custom).length > 0 ? buildSafeEnv(custom) : undefined,
+      env: settingsEnv ? buildSafeEnv(custom) : undefined,
+      settingsEnv,
       enabledSkills,
       askUserQuestionPreviewFormat: claudePref.askUserQuestionPreviewFormat,
       systemPromptAppend: opts.systemPromptAppend,

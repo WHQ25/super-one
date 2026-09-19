@@ -54,6 +54,11 @@ export interface SessionQueryOptions {
   abortController?: AbortController
   additionalDirectories?: string[]
   env?: Record<string, string | undefined>
+  /**
+   * Provider env keys that must beat the `env` blocks of the user's settings files.
+   * Applied through the SDK `settings` (flag-settings) layer; see `providerSettingsEnv`.
+   */
+  settingsEnv?: Record<string, string>
   taskBudget?: number
   warmupManager?: WarmupManager
   enabledSkills?: string[]
@@ -129,6 +134,8 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     abortController: opts.abortController,
     additionalDirectories: opts.additionalDirectories,
     env: opts.env,
+    // Derived from the same keys as `env`, so WarmupManager.keyOf needs no extra field.
+    ...(opts.settingsEnv ? { settings: { env: opts.settingsEnv } } : {}),
     spawnClaudeCodeProcess: makeClaudeSpawn({
       onStderr: (data) => {
         log.warn('[claude-cli]', data.trimEnd())

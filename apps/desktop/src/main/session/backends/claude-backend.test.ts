@@ -250,6 +250,28 @@ describe('ClaudeBackend', () => {
       const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[0]!
       expect((opts as { env?: unknown }).env).toBeUndefined()
     })
+
+    it('mirrors only the provider keys into settingsEnv and blanks a foreign ANTHROPIC_AUTH_TOKEN', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start({
+        ...makeStartOpts(),
+        config: { apiKey: 'sk-abc', baseUrl: 'https://proxy.example.com', extraEnv: { CUSTOM_VAR: 'x' } },
+      })
+      const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[0]!
+      expect((opts as { settingsEnv?: unknown }).settingsEnv).toEqual({
+        ANTHROPIC_API_KEY: 'sk-abc',
+        ANTHROPIC_AUTH_TOKEN: '',
+        ANTHROPIC_BASE_URL: 'https://proxy.example.com',
+        CUSTOM_VAR: 'x',
+      })
+    })
+
+    it('sends no settingsEnv for the first-party account so user settings files apply as-is', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start({ ...makeStartOpts(), config: {} })
+      const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[0]!
+      expect((opts as { settingsEnv?: unknown }).settingsEnv).toBeUndefined()
+    })
   })
 
   describe('event forwarding', () => {

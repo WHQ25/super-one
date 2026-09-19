@@ -117,6 +117,25 @@ describe('buildClaudeOptions permissionMode', () => {
   })
 })
 
+describe('buildClaudeOptions settingsEnv', () => {
+  const base = { projectPath: '/repo', cwd: '/repo', permissionMode: 'default' as const }
+
+  it('mirrors provider env into the flag-settings layer so settings-file env blocks cannot override it', () => {
+    const options = buildClaudeOptions({
+      ...base,
+      env: { ...process.env, ANTHROPIC_BASE_URL: 'https://proxy.example.com' },
+      settingsEnv: { ANTHROPIC_BASE_URL: 'https://proxy.example.com' },
+    })
+    expect(options.settings).toEqual({ env: { ANTHROPIC_BASE_URL: 'https://proxy.example.com' } })
+    // Files still load: the override is a layer above them, not a replacement.
+    expect(options.settingSources).toEqual(['user', 'project', 'local'])
+  })
+
+  it('leaves settings absent when the provider forces no env, so user files apply untouched', () => {
+    expect('settings' in buildClaudeOptions(base)).toBe(false)
+  })
+})
+
 describe('buildClaudeOptions model', () => {
   const MAPPED_ENV = {
     ANTHROPIC_BASE_URL: 'https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic',

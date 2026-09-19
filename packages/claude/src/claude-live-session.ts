@@ -15,6 +15,7 @@ import type { SessionTurnEvent } from '@superone/shared/environment'
 import { MessageBridge } from './message-bridge'
 import { createClaudeAgentEventMapper } from './agent-event-mapper'
 import { applySdkMessage, createSdkMapState } from './map-sdk-message'
+import { providerSettingsEnv } from './provider-settings-env'
 import { resolveSdkClaudeBinary } from './resolve-sdk-binary'
 import { applyRootPermissionGuard } from './root-permission-guard'
 import { resolveAskUserQuestion } from './ask-user-question-bridge'
@@ -202,6 +203,7 @@ function buildLiveOptions(
   const env = opts.env
     ? ({ ...process.env, ...opts.env } as Record<string, string | undefined>)
     : undefined
+  const settingsEnv = providerSettingsEnv(opts.env)
 
   const sandbox =
     opts.sandboxMode === 'on' || opts.sandboxMode === 'auto'
@@ -264,6 +266,7 @@ function buildLiveOptions(
     ...(opts.resumeSessionAt ? { resumeSessionAt: opts.resumeSessionAt } : {}),
     ...(opts.resumeDropsTurn ? { resumeDropsTurn: opts.resumeDropsTurn } : {}),
     ...(env ? { env } : {}),
+    ...(settingsEnv ? { settings: { env: settingsEnv } } : {}),
   }
 
   return {

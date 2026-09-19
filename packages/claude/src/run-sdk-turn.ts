@@ -14,6 +14,7 @@ import { CLAUDE_SYSTEM_PROMPT_APPEND } from '@superone/shared/superone-system-pr
 import { isStaticHostOwnedSuperoneToolQualified } from '@superone/shared/superone-host-owned-tools'
 import { applySdkMessage, createSdkMapState } from './map-sdk-message'
 import { createClaudeAgentEventMapper } from './agent-event-mapper'
+import { providerSettingsEnv } from './provider-settings-env'
 import { resolveSdkClaudeBinary } from './resolve-sdk-binary'
 import { applyRootPermissionGuard } from './root-permission-guard'
 import { resolveAskUserQuestion } from './ask-user-question-bridge'
@@ -120,6 +121,7 @@ function buildOptions(opts: RunClaudeSdkTurnOptions, timing: { pausedMs: number 
   const env = opts.env
     ? ({ ...process.env, ...opts.env } as Record<string, string | undefined>)
     : undefined
+  const settingsEnv = providerSettingsEnv(opts.env)
 
   const binaryPath =
     (opts.binaryPath && existsSync(opts.binaryPath) ? opts.binaryPath : null) ??
@@ -196,6 +198,7 @@ function buildOptions(opts: RunClaudeSdkTurnOptions, timing: { pausedMs: number 
     ...(opts.resumeSessionAt ? { resumeSessionAt: opts.resumeSessionAt } : {}),
     ...(opts.resumeDropsTurn ? { resumeDropsTurn: opts.resumeDropsTurn } : {}),
     ...(env ? { env } : {}),
+    ...(settingsEnv ? { settings: { env: settingsEnv } } : {}),
   }
 
   return {

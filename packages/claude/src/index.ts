@@ -7,6 +7,7 @@
  */
 
 export { runClaudeSdkTurn } from './run-sdk-turn'
+export { providerSettingsEnv } from './provider-settings-env'
 export { MessageBridge } from './message-bridge'
 export {
   ClaudeLiveSession,

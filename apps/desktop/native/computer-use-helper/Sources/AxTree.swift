@@ -98,7 +98,7 @@ func axString(_ el: AXUIElement, _ attr: String) -> String? {
     return nil
 }
 
-private func axBool(_ el: AXUIElement, _ attr: String) -> Bool? {
+func axBool(_ el: AXUIElement, _ attr: String) -> Bool? {
     var raw: CFTypeRef?
     guard AXUIElementCopyAttributeValue(el, attr as CFString, &raw) == .success,
           let v = raw else { return nil }
@@ -161,7 +161,7 @@ func axValueString(_ el: AXUIElement) -> String? {
     return String(describing: v)
 }
 
-private func axActions(_ el: AXUIElement) -> [String] {
+func axActions(_ el: AXUIElement) -> [String] {
     var raw: CFArray?
     guard AXUIElementCopyActionNames(el, &raw) == .success,
           let arr = raw as? [String] else { return [] }
@@ -350,6 +350,13 @@ private func nodeDicts(
         "secure": secure,
     ]
     if let focusedElement, CFEqual(el, focusedElement) { dict["appFocused"] = true }
+    if ["AXRow", "AXCell", "AXImage", "AXListItem"].contains(role), axCanSelect(el) {
+        dict["selectable"] = true
+        if let selected = axItemSelected(el) { dict["selected"] = selected }
+    }
+    if actions.contains(where: { ["axopen", "open"].contains($0.lowercased()) }), let itemKind = axItemKind(el) {
+        dict["itemKind"] = itemKind
+    }
     if let name, !name.isEmpty { dict["name"] = name }
     if let value, !value.isEmpty {
         // Cap value length to keep wire JSON small.

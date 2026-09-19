@@ -164,6 +164,9 @@ export function diffOutlines(
         to: String(a.enabled ?? true),
       })
     }
+    if ((b.selected ?? false) !== (a.selected ?? false)) {
+      changed.push({ ref, field: 'selected', from: String(b.selected ?? false), to: String(a.selected ?? false) })
+    }
   }
 
   return { added, removed, changed }

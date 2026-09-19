@@ -893,6 +893,8 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         }
       }
       case 'press':
+      case 'select':
+      case 'open':
       case 'setText':
         // Prefer AX even under app-directed when the agent targets a ref.
         return new MacosSemanticExecutor(this.client, this.showActionCursor.bind(this), this.coordinatePayload.bind(this)).act(action, target)

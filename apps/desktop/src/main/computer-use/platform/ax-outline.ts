@@ -34,6 +34,8 @@ function capabilitiesFromAx(node: HelperAxNode): UiNodeCapabilities {
   const role = mapAxRole(node.role)
   return {
     press: actions.has('axpress') || actions.has('press'),
+    select: node.selectable === true,
+    open: actions.has('axopen') || actions.has('open'),
     setText: !!node.settable,
     typeText: !!node.settable || EDITABLE_ROLES.has(role),
     scroll:
@@ -58,6 +60,8 @@ export function axTreeToOutline(root: HelperAxNode, menuBar?: HelperAxNode): UiO
       ref: `@e${n.index + offset}`,
       ...(menu ? { nativeTarget: { scope: 'menuBar' as const, index: n.index } } : {}),
       role: mapAxRole(n.role),
+      selected: n.selected,
+      itemKind: n.itemKind,
       name: n.name,
       value: n.secure || /secure|password/i.test(n.role) ? undefined : n.value,
       secure: n.secure || /secure|password/i.test(n.role),

@@ -27,6 +27,12 @@ const DISPLAY: CoordinateSpace = {
 }
 
 export interface FakeElementSpec {
+  selectable?: boolean
+  openable?: boolean
+  selected?: boolean
+  itemKind?: 'folder' | 'file'
+  selectView?: { title: string; tree: FakeElementSpec }
+  openView?: { title: string; tree: FakeElementSpec }
   role: string
   name?: string
   value?: string
@@ -61,6 +67,12 @@ export interface FakeAppSpec {
 }
 
 interface LiveElement {
+  selectable?: boolean
+  openable?: boolean
+  selected?: boolean
+  itemKind?: 'folder' | 'file'
+  selectView?: FakeElementSpec['selectView']
+  openView?: FakeElementSpec['openView']
   id: string
   /** Stable public ref across looks for the same live node (`@eN`). */
   publicRef?: string
@@ -351,6 +363,12 @@ export class FakePlatformBackend implements PlatformAdapter {
     const id = `live-${this.elementSeq}`
     return {
       id,
+      selectable: spec.selectable,
+      openable: spec.openable,
+      selected: spec.selected,
+      itemKind: spec.itemKind,
+      selectView: spec.selectView,
+      openView: spec.openView,
       role: spec.role,
       name: spec.name,
       value: spec.value,
@@ -404,12 +422,16 @@ export class FakePlatformBackend implements PlatformAdapter {
     const node: UiOutlineNode = {
       ref,
       role: el.role,
+      selected: el.selected,
+      itemKind: el.itemKind,
       name: el.name,
       value: el.value,
       bounds: { ...el.bounds },
       enabled: el.enabled,
       focused: el.focused,
       capabilities: {
+        select: el.selectable,
+        open: el.openable,
         press: el.role === 'button' || el.role === 'checkbox' || el.role === 'menuBarItem' || el.role === 'menuItem' || el.toggle,
         setText: el.role === 'textField' || el.role === 'textArea',
         typeText: el.role === 'textField' || el.role === 'textArea',
@@ -471,6 +493,19 @@ export class FakePlatformBackend implements PlatformAdapter {
     }
 
     switch (action.type) {
+      case 'select':
+      case 'open': {
+        const el = this.findByRef(win, action.ref)
+        if (!el || !el.enabled || (action.type === 'select' ? !el.selectable : !el.openable)) {
+          return { applied: false, description: `${action.type}: unsupported ref ${action.ref}`, focusRef }
+        }
+        if (el.ignoreEvents) return { applied: true, confirmedNoEffect: true, description: `${action.type}: ignored`, focusRef }
+        if (action.type === 'select') el.selected = true
+        const view = action.type === 'select' ? el.selectView : el.openView
+        if (view) { win.title = view.title; win.tree = this.buildElement(view.tree); win.topologyGen++ }
+        if (action.type === 'open' && el.opensModal) return this.activate(app, win, el, action.ref)
+        return { applied: true, unknown: action.type === 'open' && !view, description: `${action.type}(${action.ref})`, focusRef: action.ref }
+      }
       case 'press':
       case 'click': {
         const ref =

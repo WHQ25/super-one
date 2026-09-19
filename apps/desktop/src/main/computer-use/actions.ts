@@ -26,7 +26,9 @@ function parseOne(item: unknown, index: number): UiAction {
   }
   switch (type) {
     case 'press':
-      return { type: 'press', ref: reqString(a, 'ref', index) }
+    case 'select':
+    case 'open':
+      return { type, ref: reqString(a, 'ref', index) }
     case 'click':
       return {
         type: 'click',

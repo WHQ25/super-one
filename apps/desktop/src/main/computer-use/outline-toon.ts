@@ -16,7 +16,7 @@ import type { UiOutlineNode } from './types'
  */
 
 /** Order is stable so the `can` column reads the same way across snapshots. */
-const CAPABILITY_KEYS = ['press', 'setText', 'typeText', 'scroll', 'focus'] as const
+const CAPABILITY_KEYS = ['press', 'select', 'open', 'setText', 'typeText', 'scroll', 'focus'] as const
 
 interface OutlineRow {
   ref: string
@@ -45,6 +45,8 @@ function stateList(node: UiOutlineNode): string {
   const flags: string[] = []
   if (node.enabled === false) flags.push('disabled')
   if (node.focused) flags.push('focused')
+  if (node.selected) flags.push('selected')
+  if (node.itemKind) flags.push(node.itemKind)
   return flags.join('|')
 }
 

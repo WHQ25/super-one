@@ -25,6 +25,9 @@ export class MacosSemanticExecutor {
     },
   ): Promise<PlatformActStepResult> {
     switch (action.type) {
+      case 'select':
+      case 'open':
+        return this.axActionStep(target, action.ref, action.type)
       case 'press': {
         return this.axActionStep(target, action.ref, 'press')
       }
@@ -143,7 +146,9 @@ export class MacosSemanticExecutor {
       const after = { value: res.afterValue, name: res.afterName }
       let unknown = true
       let confirmedNoEffect = false
-      if (action === 'set_value' && value != null) {
+      if (action === 'select' && res.afterSelected === true) {
+        unknown = false
+      } else if (action === 'set_value' && value != null) {
         if (res.afterValue === value || (res.afterValue ?? '').includes(value)) {
           unknown = false
         } else if (res.afterValue === res.beforeValue) {

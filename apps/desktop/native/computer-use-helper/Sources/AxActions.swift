@@ -164,11 +164,16 @@ func axPerform(
     // above still reject a changed command; visibility is not a prerequisite.
 
     let beforeValue = axElementValue(el)
+    let beforeSelected = axItemSelected(el)
     let beforeName = axString(el, kAXTitleAttribute as String)
         ?? axString(el, kAXDescriptionAttribute as String)
 
     let act = action.lowercased()
     switch act {
+    case "select":
+        try axSelectItem(el)
+    case "open":
+        try axOpenItem(el)
     case "press", "axpress":
         let err = AXUIElementPerformAction(el, kAXPressAction as CFString)
         if err != .success {
@@ -228,6 +233,8 @@ func axPerform(
         "role": axRole(el),
     ]
     if let beforeValue { result["beforeValue"] = beforeValue }
+    if let beforeSelected { result["beforeSelected"] = beforeSelected }
+    if let selected = axItemSelected(el) { result["afterSelected"] = selected }
     if let afterValue { result["afterValue"] = afterValue }
     if let beforeName { result["beforeName"] = beforeName }
     if let afterName { result["afterName"] = afterName }

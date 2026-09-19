@@ -1,7 +1,7 @@
 import type { CapabilityTier, Condition, DeliveryMode, UiAction, UiOutlineNode } from './types'
 
 type NodeIntent =
-  | { kind: 'press' | 'enter' }
+  | { kind: 'press' | 'enter' | 'select' | 'open' }
   | { kind: 'setText'; text: string }
   | { kind: 'scroll'; dy: number }
 
@@ -21,6 +21,9 @@ export function planNodeAction(node: UiOutlineNode | undefined, intent: NodeInte
   const role = node.role.replace(/^AX/, '').toLowerCase()
   if (tier === 'read' || node.enabled === false || node.pictureOnly || node.secure || /secure|password/.test(role)) return
   const can = node.capabilities ?? {}
+  if ((intent.kind === 'select' || intent.kind === 'open') && can[intent.kind]) {
+    return { actions: [{ type: intent.kind, ref: node.ref }], delivery: 'semantic' }
+  }
   if (intent.kind === 'press' && can.press) {
     return { actions: [{ type: 'press', ref: node.ref }], delivery: 'semantic' }
   }

@@ -87,6 +87,8 @@ export interface UiRootIdentity {
 
 export interface UiNodeCapabilities {
   press?: boolean
+  select?: boolean
+  open?: boolean
   setText?: boolean
   typeText?: boolean
   scroll?: boolean
@@ -95,6 +97,9 @@ export interface UiNodeCapabilities {
 
 /** Full internal outline node (complete tree kept in StateStore). */
 export interface UiOutlineNode {
+  selected?: boolean
+  /** Only supplied when native file metadata identifies the item. Packages are files. */
+  itemKind?: 'folder' | 'file'
   /** App-level AX targets have their own DFS namespace, outside the window. */
   nativeTarget?: { scope: 'menuBar'; index: number }
   /** Secure AX controls must never expose their value to a fast loop. */
@@ -139,6 +144,7 @@ export interface ComputerUseState {
 
 export type UiAction =
   | { type: 'press'; ref: string }
+  | { type: 'select' | 'open'; ref: string }
   | { type: 'click'; ref?: string; x?: number; y?: number; button?: 'left' | 'right' }
   | { type: 'setText'; ref: string; text: string }
   | { type: 'typeText'; ref?: string; text: string }

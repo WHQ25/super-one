@@ -146,6 +146,9 @@ export interface HelperCaptureResult {
 
 /** Nested AX node from helper `ax_tree` (DFS `index` is 1-based). */
 export interface HelperAxNode {
+  selectable?: boolean
+  selected?: boolean
+  itemKind?: 'folder' | 'file'
   index: number
   role: string
   name?: string
@@ -179,6 +182,8 @@ export interface HelperAxTreeResult {
 }
 
 export interface HelperAxActionResult {
+  beforeSelected?: boolean
+  afterSelected?: boolean
   ok: boolean
   requestedIndex?: number
   index: number

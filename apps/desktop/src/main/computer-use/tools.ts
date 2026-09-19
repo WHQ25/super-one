@@ -133,6 +133,8 @@ function zodShapeToJsonSchema(shape: Record<string, ZodTypeAny>): Record<string,
 const actionSchema = z.object({
   type: z.enum([
     'press',
+    'select',
+    'open',
     'click',
     'setText',
     'typeText',
@@ -225,7 +227,7 @@ const toolDefs: Array<{
       + 'The outline is a TOON table, not JSON: a header row outline[N]{ref,depth,role,name,value,x,y,w,h,can,state}: '
       + 'followed by one CSV-style row per node, in depth-first reading order. '
       + 'depth is the nesting level (a row is a child of the nearest row above it with a smaller depth). '
-      + 'can lists only the supported actions, pipe-joined (press|setText|typeText|scroll|focus); empty means the node is inert. '
+      + 'can lists only the supported actions, pipe-joined (press|select|open|setText|typeText|scroll|focus); empty means the node is inert. '
       + 'state lists only non-default flags (disabled|focused). x,y,w,h are the frame in capture space, empty when the node reports none. '
       + 'truncation.nodesOmitted > 0 means the returned outline was folded — reach the rest with computer_query, do not recapture. '
       + 'truncation.sourceTruncated means the native accessibility walk itself hit a limit, so those nodes are missing from the full tree too and computer_query cannot reach them either — narrow the target with capture=window or a specific rootId instead. '
@@ -273,7 +275,7 @@ const toolDefs: Array<{
     description:
       'Submit 1–20 related UI actions as a checked transaction against a stateId. Batch a known button sequence here; prefer computer_run when each next target must be found from new UI state and Jev is enabled. '
       + 'Set delivery explicitly when you can; that field describes how the three modes differ. '
-      + 'Actions: click, typeText, keypress, scroll(dx,dy[,x,y|ref]), drag(path≥2 points), moveMouse, press/setText (AX). '
+      + 'Actions: click, typeText, keypress, scroll(dx,dy[,x,y|ref]), drag(path≥2 points), moveMouse, press/select/open/setText (AX). select chooses a selectable item; open invokes its observed native open action.  '
       + 'scroll: positive dy scrolls content down; aim with x,y (capture space) or ref center; else window/outline center. '
       + 'drag: path is capture-space points; virtual cursor animates along the path. '
       + 'Returns outcome worked|didnt|unknown based on re-observation (not API success codes): '
@@ -295,7 +297,7 @@ const toolDefs: Array<{
         .enum(['semantic', 'app-directed', 'physical'])
         .optional()
         .describe(
-          'semantic — pure AX; prefer it whenever actions use @eN refs and the action is press/setText/click(ref)/typeText(ref), the most reliable path for labeled controls. '
+          'semantic — pure AX; prefer it whenever actions use @eN refs and the action is press/select/open/setText/click(ref)/typeText(ref), the most reliable path for labeled controls. '
             + 'app-directed — the default when omitted; for coordinate click/type/scroll/drag/keypress or when no usable AX ref exists. Posts CGEvent to the target app PID in the background without stealing frontmost. '
             + 'physical — global HID; only when app-directed fails. Requires frontmost and is disruptive.',
         ),

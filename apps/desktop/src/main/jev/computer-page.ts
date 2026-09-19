@@ -13,6 +13,7 @@ export interface ComputerPage extends RunObservation {
   rootId: string
   bundleId: string
   refs: Map<number, UiOutlineNode>
+  clickKinds: Map<number, 'press' | 'select' | 'open'>
   signature: string
   scrollRef?: string
   outcome?: ActResult
@@ -24,6 +25,7 @@ export function computerPage(result: ObserveResult, service: ComputerUseService)
   const tier = service.policy.tierFor(result.root.bundleId)
   const elements: RawElement[] = []
   const refs = new Map<number, UiOutlineNode>()
+  const clickKinds = new Map<number, 'press' | 'select' | 'open'>()
   const text: string[] = []
   let scrollRef: string | undefined
   const walk = (node: UiOutlineNode) => {
@@ -33,17 +35,31 @@ export function computerPage(result: ObserveResult, service: ComputerUseService)
     if (!secure) text.push([node.name, value].filter(Boolean).join(' '))
     const enabled = node.enabled !== false && !node.pictureOnly && !secure
     const editable = !!planNodeAction(node, { kind: 'setText', text: '' }, tier)
-    const clickable = !!planNodeAction(node, { kind: 'press' }, tier)
+    const select = planNodeAction(node, { kind: 'select' }, tier)
+    const press = planNodeAction(node, { kind: 'press' }, tier)
+    const open = planNodeAction(node, { kind: 'open' }, tier)
     if (!scrollRef && planNodeAction(node, { kind: 'scroll', dy: 1 }, tier)) scrollRef = node.ref
-    if (elements.length < 250 && enabled && (editable || clickable)) {
-      const id = Number(node.ref.replace(/^@e/, ''))
-      if (Number.isSafeInteger(id) && id > 0) {
-        refs.set(id, node)
-        const command = node.nativeTarget?.scope === 'menuBar'
-        elements.push({ node: id, ref: node.ref, role: command ? 'button' : ROLE_MAP[role] ?? role, label: node.name ?? '', value,
-          ...(command ? { riskHint: computerCommandRisk(node.name ?? '') } : {}),
-          editable, clickable, canSubmit: !!planNodeAction(node, { kind: 'enter' }, tier), password: false, submit: false, disabled: false })
-      }
+    const kinds: Array<'press' | 'select' | 'open' | undefined> = []
+    if (select && !node.selected) kinds.push('select')
+    else if (!select && (press || editable)) kinds.push(press ? 'press' : undefined)
+    if (open) kinds.push('open')
+    for (const kind of kinds) {
+      if (!enabled || elements.length >= 250) break
+      // Each executable intent gets its own candidate. Native refs remain in
+      // refs; these IDs only address adapter plans inside one observation.
+      const id = elements.length + 1
+      refs.set(id, node)
+      if (kind) clickKinds.set(id, kind)
+      const command = node.nativeTarget?.scope === 'menuBar'
+      const itemLabel = node.value || node.name || ''
+      const label = kind === 'select' || kind === 'open' ? `${kind === 'select' ? 'Select' : 'Open'} ${itemLabel}` : node.name ?? ''
+      const riskHint = kind === 'select' ? { risk: 'safe' as const }
+        : kind === 'open' ? { risk: node.itemKind === 'folder' ? 'safe' as const : 'guarded' as const, reason: node.itemKind === 'folder' ? undefined : 'opening a file or unknown item may launch an app' }
+          : command ? computerCommandRisk(label) : undefined
+      elements.push({ node: id, ref: node.ref, role: command || kind === 'select' || kind === 'open' ? 'button' : ROLE_MAP[role] ?? role,
+        label, value: kind === 'select' ? (node.selected ? 'selected' : 'not selected') : value, riskHint,
+        editable: kind !== 'select' && kind !== 'open' && editable, clickable: !!kind,
+        canSubmit: !!planNodeAction(node, { kind: 'enter' }, tier), password: false, submit: false, disabled: false })
     }
     if (!secure) for (const child of node.children ?? []) walk(child)
   }
@@ -52,7 +68,7 @@ export function computerPage(result: ObserveResult, service: ComputerUseService)
     url: '', title: `${result.root.app} — ${result.root.title}`, text: text.filter(Boolean).join('\n').slice(0, 4000),
     elements, omitted: result.truncation.nodesOmitted, loading: false,
     scroll: { y: 0, height: 0, viewport: 0 }, canScroll: { down: !!scrollRef, up: !!scrollRef },
-    stateId: result.stateId, rootId: result.root.rootId, bundleId: result.root.bundleId, refs, scrollRef,
+    stateId: result.stateId, rootId: result.root.rootId, bundleId: result.root.bundleId, refs, clickKinds, scrollRef,
     target: { app: result.root.app, bundleId: result.root.bundleId, root: result.root.rootId },
     signature: JSON.stringify(result.outline),
     ...(tier === 'read' ? { blocked: { reason: 'guarded-only' as const, why: 'The app grant has tier=read; computer_run needs click or full access. Use computer_apps to resolve the grant.' } } : {}),
@@ -128,7 +144,11 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
     reobserveOnResume: true,
     sameTarget: (before, after, element) => before.rootId === after.rootId && before.signature === after.signature
       && after.elements.some((e) => e.node === element.node && e.label === element.label && e.editable === element.editable),
-    click: (id, signal) => act(planNodeAction(requirePage().refs.get(id), { kind: 'press' }, service.policy.tierFor(requirePage().bundleId)), signal),
+    click: (id, signal) => {
+      const page = requirePage()
+      const kind = page.clickKinds.get(id)
+      return act(kind && planNodeAction(page.refs.get(id), { kind }, service.policy.tierFor(page.bundleId)), signal)
+    },
     type: async (id, text, signal) => {
       const node = requirePage().refs.get(id)
       await act(node && planNodeAction(node, { kind: 'setText', text }, service.policy.tierFor(requirePage().bundleId)), signal)

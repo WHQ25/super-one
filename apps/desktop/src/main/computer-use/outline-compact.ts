@@ -50,7 +50,7 @@ function isLeaf(node: UiOutlineNode): boolean {
  */
 function hasRealCapability(node: UiOutlineNode): boolean {
   const c = caps(node)
-  return !!(c.setText || c.typeText || c.scroll || c.focus)
+  return !!(c.select || c.open || c.setText || c.typeText || c.scroll || c.focus)
 }
 
 /** A blank container: nothing to read, nothing to do, no reason to keep a row. */
@@ -58,14 +58,14 @@ function isEmptyWrapper(node: UiOutlineNode): boolean {
   if (!WRAPPER_ROLES.has(node.role)) return false
   if (label(node)) return false
   const c = caps(node)
-  return !(c.press || c.setText || c.typeText || c.scroll || c.focus)
+  return !(c.press || c.select || c.open || c.setText || c.typeText || c.scroll || c.focus)
 }
 
 function isDecorative(node: UiOutlineNode): boolean {
   if (!DECORATIVE_ROLES.has(node.role)) return false
   if (label(node) || !isLeaf(node)) return false
   const c = caps(node)
-  return !(c.press || c.setText || c.typeText || c.scroll || c.focus)
+  return !(c.press || c.select || c.open || c.setText || c.typeText || c.scroll || c.focus)
 }
 
 /**
@@ -86,7 +86,7 @@ function isForwardingWrapper(
   if (!WRAPPER_ROLES.has(node.role)) return false
   if (label(node)) return false
   const c = caps(node)
-  return !!c.press && !c.setText && !c.typeText && !c.scroll
+  return !!c.press && !c.select && !c.open && !c.setText && !c.typeText && !c.scroll
 }
 
 /**

@@ -6,6 +6,7 @@ import { ComputerUseError, type ActResult, type Condition, type ObserveResult, t
 import { planNodeAction, type NodeActionPlan } from '../computer-use/node-action-plan'
 import { type RunDeps, RunPaused, StaleObservation } from './loop'
 import type { RawElement, RunObservation } from './observation'
+import { computerCommandRisk } from './computer-command-risk'
 
 export interface ComputerPage extends RunObservation {
   stateId: string
@@ -38,7 +39,9 @@ export function computerPage(result: ObserveResult, service: ComputerUseService)
       const id = Number(node.ref.replace(/^@e/, ''))
       if (Number.isSafeInteger(id) && id > 0) {
         refs.set(id, node)
-        elements.push({ node: id, ref: node.ref, role: ROLE_MAP[role] ?? role, label: node.name ?? '', value,
+        const command = node.nativeTarget?.scope === 'menuBar'
+        elements.push({ node: id, ref: node.ref, role: command ? 'button' : ROLE_MAP[role] ?? role, label: node.name ?? '', value,
+          ...(command ? { riskHint: computerCommandRisk(node.name ?? '') } : {}),
           editable, clickable, canSubmit: !!planNodeAction(node, { kind: 'enter' }, tier), password: false, submit: false, disabled: false })
       }
     }

@@ -83,9 +83,10 @@ export function originOf(url: string): string | null {
 }
 
 export function classify(el: RawElement, origins: ReadonlySet<string>, allow: readonly string[]): { risk: Risk; reason?: string; highRisk: boolean } {
-  const highRisk = HIGH_RISK_LABEL.test(el.label)
+  const highRisk = !!el.riskHint?.highRisk || HIGH_RISK_LABEL.test(el.label)
   if (matchesAny(el.label, allow)) return { risk: 'safe', highRisk }
-  if (highRisk) return { risk: 'guarded', reason: 'high-risk label', highRisk }
+  if (highRisk) return { risk: 'guarded', reason: el.riskHint?.reason ?? 'high-risk label', highRisk }
+  if (el.riskHint) return { risk: el.riskHint.risk, reason: el.riskHint.reason, highRisk }
   if (el.editable) return { risk: 'safe', highRisk }
   if (el.role === 'link') {
     const origin = el.href ? originOf(el.href) : null

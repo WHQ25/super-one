@@ -4,6 +4,8 @@ export interface RawElement {
   node: number
   /** Adapter capability, independent of risk. Absent preserves browser defaults. */
   clickable?: boolean
+  /** Adapter-specific risk facts; explicit allow still uses the shared contract. */
+  riskHint?: { risk: 'safe' | 'guarded'; reason?: string; highRisk?: boolean }
   canSubmit?: boolean
   /** Native ref for inspection by the caller, never interpreted by Jev. */
   ref?: string
@@ -37,4 +39,3 @@ export interface RunObservation {
   blocked?: { reason: 'guarded-only' | 'no-progress'; why: string }
   canScroll?: { down: boolean; up: boolean }
 }
-

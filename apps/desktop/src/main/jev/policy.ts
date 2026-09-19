@@ -19,6 +19,12 @@ export const THRESHOLDS = {
    */
   goalSatisfied: 0.7,
   /**
+   * Enough to finish only when the action head is also sure nothing on the page
+   * advances the goal. Calibration: finished pages read 0.63–0.86, pages short
+   * of the goal at most 0.11.
+   */
+  goalSatisfiedIdle: 0.5,
+  /**
    * Typing is gated (a wrong field gets wrong text); clicks are not — Jev's
    * risk verdict decides what needs a confirmation, and a wrong safe click
    * costs one re-observation.
@@ -160,6 +166,19 @@ export function decide(input: DecideInput): Decision {
   })
   const action = validateChoice(answers.action, offered)
   const chosen: ActionOption | 'invalid' = action ? (action.choice as ActionOption) : 'invalid'
+
+  // Two heads agreeing carry further than one: "nothing here advances the goal"
+  // plus a middling completion verdict is a finished page whose evidence sits in
+  // the viewport. Scrolling on instead scrolls that evidence away and the verdict
+  // collapses (arXiv: 0.63 on the abstract page, 0.42 once scrolled to the
+  // footer). A fresh observation still has to agree before the run ends.
+  if (
+    chosen === 'none_useful' && !doneWhenGiven
+    && satisfied != null && satisfied >= THRESHOLDS.goalSatisfiedIdle
+    && (action?.probabilities[chosen] ?? 0) >= THRESHOLDS.overrideNone
+  ) {
+    return { kind: 'done', why: `goal_satisfied ${satisfied.toFixed(2)} with no action left`, probability: satisfied }
+  }
 
   const noneUseful = (): Decision => {
     if (space.canScrollDown && !input.scrolledSinceChange) return { kind: 'scroll', direction: 'down' }

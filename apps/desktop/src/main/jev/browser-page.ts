@@ -79,6 +79,11 @@ const OBSERVE_SCRIPT = `(() => {
     if (['file', 'hidden'].includes(e.type) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
     const r = e.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2, rname = role(e);
     if (!rname || r.width <= 0 || r.height <= 0 || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue;
+    // Same hit test the executor applies before dispatching input. Offering an
+    // element an open overlay covers (arXiv's search panel over the page's own
+    // Search button) makes Jev pick it every turn and the click refuse every
+    // turn, until the budget is gone.
+    if (!e.contains(document.elementFromPoint(x, y))) continue;
     if (elements.length >= ${MAX_ELEMENTS}) { omitted++; continue; }
     const editable = !e.readOnly && e.getAttribute('aria-readonly') !== 'true' && e.type !== 'password'
       && (['textbox', 'searchbox', 'spinbutton'].includes(rname) || (rname === 'combobox' && ['INPUT', 'TEXTAREA'].includes(e.tagName)) || e.isContentEditable);

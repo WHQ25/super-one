@@ -50,6 +50,20 @@ describe('decide', () => {
     expect(decide(input({ answers: weak }))).toMatchObject({ kind: 'click', key: '3', probability: 0.36 })
   })
 
+  it('finishes when Jev has no action left and the goal already reads satisfied', () => {
+    // arXiv: the abstract page reads 0.63, and scrolling on would scroll the evidence away.
+    const idle = { ...calm, goal_satisfied: noul(0.63), action: pick('none_useful', ACTIONS, 0.98) }
+    expect(decide(input({ answers: idle }))).toMatchObject({ kind: 'done', probability: 0.63 })
+    // A weak completion verdict still scrolls rather than finishing.
+    const unsure = { ...idle, goal_satisfied: noul(0.4) }
+    expect(decide(input({ answers: unsure }))).toMatchObject({ kind: 'scroll' })
+    // So does an action head that is not sure the page is exhausted.
+    const wavering = { ...idle, action: pick('none_useful', ACTIONS, 0.6) }
+    expect(decide(input({ answers: wavering }))).toMatchObject({ kind: 'scroll' })
+    // A caller-owned done_when keeps completion out of Jev's hands.
+    expect(decide(input({ answers: idle, doneWhenGiven: true }))).toMatchObject({ kind: 'scroll' })
+  })
+
   it('asks before a step Jev rates irreversible, offering that step first', () => {
     const answers = { ...calm, next_step_risk: noul(0.8), action: pick('click', ACTIONS), click_target: pick('3', CLICKS, 0.9) }
     const d = decide(input({ answers })) as { question: { reason: string; options: Array<{ key: string; label: string }> }; element: { index: string } }

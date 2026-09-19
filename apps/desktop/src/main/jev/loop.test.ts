@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { PageObservation } from './browser-page'
-import { BrowserRun, type RunDeps, type RunOptions } from './loop'
+import { FastRun, type RunDeps, type RunOptions } from './loop'
 import { NONE } from './questions'
 import { el, noul, page, pick } from './test-fixtures'
 import type { JevAnswer, JevRequest } from './typesafe-client'
@@ -26,18 +26,19 @@ function harness(pages: PageObservation[], script: Script) {
   let current = queue.shift()!
   const acts: string[] = []
   const guard: boolean[] = []
-  const deps: RunDeps = {
+  const deps: RunDeps<PageObservation> = {
     ask: async (request) => ({ answers: script(request), model: 'jev-test', usage: {}, latencyMs: 1 }),
-    resolveTarget: async () => 7,
+    resolveTarget: async () => {},
     observe: async () => current,
     isFresh: async () => true,
-    click: async (_wc, node) => { acts.push(`click:${node}`); current = queue.shift() ?? current },
-    pressEnter: async (_wc, node) => { acts.push(`enter:${node}`); current = queue.shift() ?? current },
-    type: async (_wc, node, text) => { acts.push(`type:${node}:${text}`); current = queue.shift() ?? current },
+    click: async (node) => { acts.push(`click:${node}`); current = queue.shift() ?? current },
+    pressEnter: async (node) => { acts.push(`enter:${node}`); current = queue.shift() ?? current },
+    type: async (node, text) => { acts.push(`type:${node}:${text}`); current = queue.shift() ?? current },
     scroll: async () => { acts.push('scroll'); current = queue.shift() ?? current },
     settle: async () => {},
     waitReady: async () => true,
-    checkDone: async (_wc, cond) => !!cond.urlMatches && new RegExp(cond.urlMatches).test(current.url),
+    checkDone: async () => /\/issues\/\d+$/.test(current.url),
+    changed: (before, after) => JSON.stringify(before.marker) !== JSON.stringify(after.marker),
     focusGuard: async (active) => { guard.push(active) },
     trace: () => {},
   }
@@ -58,7 +59,7 @@ function typesOf(request: JevRequest): string[] {
   return Object.keys((request.questions.type_text_target as { criteria: Record<string, unknown> }).criteria)
 }
 
-describe('BrowserRun', () => {
+describe('FastRun', () => {
   it('runs safe steps, pauses on the guarded submit, executes it on resume, and finishes on done_when', async () => {
     const { deps, acts, guard } = harness([HOME, FORM, FILLED, CREATED], (request) => {
       const state = request.state as { page: { url: string }; elements: Array<{ label: string; value?: string }> }
@@ -67,7 +68,7 @@ describe('BrowserRun', () => {
       if (!state.elements[0].value) return { ...base, action: pick('type_text', actionsOf(request)), type_text_target: pick('1', typesOf(request)) }
       return { ...base, action: pick('none_useful', actionsOf(request)) }
     })
-    const run = new BrowserRun(opts({ presets: [{ key: 'Title', value: 'Hello', field: 'title' }], doneWhen: { urlMatches: '/issues/\\d+$' } }), deps)
+    const run = new FastRun(opts({ presets: [{ key: 'Title', value: 'Hello', field: 'title' }], hasDoneWhen: true }), deps)
 
     const paused = await run.start()
     expect(paused.status).toBe('paused')
@@ -94,7 +95,7 @@ describe('BrowserRun', () => {
     // Guard drift only (the form's surroundings changed): same node, same label → still executed.
     const drifted = harness([FORM, FORM], script)
     drifted.deps.isFresh = vi.fn(async () => false)
-    const run = new BrowserRun(opts({ doneWhen: { urlMatches: 'never' }, maxSteps: 2 }), drifted.deps)
+    const run = new FastRun(opts({ hasDoneWhen: true, maxSteps: 2 }), drifted.deps)
     const paused = await run.start()
     await run.resume({ questionId: paused.question!.id, choice: '2' })
     expect(drifted.acts[0]).toBe('click:11')
@@ -102,7 +103,7 @@ describe('BrowserRun', () => {
     // The button itself was replaced: the answer no longer names anything on the page.
     const replaced = harness([FORM], script)
     replaced.deps.isFresh = vi.fn(async () => false)
-    const run2 = new BrowserRun(opts({ doneWhen: { urlMatches: 'never' }, maxSteps: 2 }), replaced.deps)
+    const run2 = new FastRun(opts({ hasDoneWhen: true, maxSteps: 2 }), replaced.deps)
     const paused2 = await run2.start()
     replaced.deps.observe = async () => page([
       el({ node: 10, role: 'textbox', label: 'Add a title', editable: true }),
@@ -116,11 +117,11 @@ describe('BrowserRun', () => {
 
   it('aborts on request and refuses a mismatched question id', async () => {
     const { deps } = harness([FORM], (request) => ({ still_loading: noul(0), goal_satisfied: noul(0), action: pick('none_useful', actionsOf(request)) }))
-    const run = new BrowserRun(opts({ doneWhen: { urlMatches: 'never' } }), deps)
+    const run = new FastRun(opts({ hasDoneWhen: true }), deps)
     const paused = await run.start()
     expect((await run.resume({ questionId: 'q99', choice: '2' })).status).toBe('aborted')
 
-    const run2 = new BrowserRun(opts({ doneWhen: { urlMatches: 'never' } }), deps)
+    const run2 = new FastRun(opts({ hasDoneWhen: true }), deps)
     const paused2 = await run2.start()
     expect((await run2.resume({ questionId: paused2.question!.id, abort: true })).status).toBe('aborted')
     expect(paused.runId).not.toBe(paused2.runId)
@@ -131,7 +132,7 @@ describe('BrowserRun', () => {
     const { deps, acts } = harness([HOME, scrolled(1), scrolled(2), scrolled(3), scrolled(4)], (request) => ({
       still_loading: noul(0), goal_satisfied: noul(0), action: pick('scroll_down', actionsOf(request)),
     }))
-    const run = new BrowserRun(opts({ maxSteps: 2, doneWhen: { urlMatches: 'never' } }), deps)
+    const run = new FastRun(opts({ maxSteps: 2, hasDoneWhen: true }), deps)
     const paused = await run.start()
     expect(paused).toMatchObject({ status: 'paused', question: { reason: 'budget' }, steps: 2 })
     expect(acts).toEqual(['scroll', 'scroll'])
@@ -146,7 +147,7 @@ describe('BrowserRun', () => {
       : { still_loading: noul(0), goal_satisfied: noul(0), action: pick('scroll_down', actionsOf(request)) })
     // Every click leaves the same page; the stuck rule drops [1] after the first
     // miss, so the next steps have no click candidate and scroll instead.
-    const run = new BrowserRun(opts({ doneWhen: { urlMatches: 'never' } }), deps)
+    const run = new FastRun(opts({ hasDoneWhen: true }), deps)
     const paused = await run.start()
     expect(paused.status).toBe('paused')
     expect(paused.question?.reason).toBe('no-progress')
@@ -159,7 +160,7 @@ describe('BrowserRun', () => {
       seen = request
       return { still_loading: noul(0), goal_satisfied: noul(0), action: pick('none_useful', actionsOf(request)) }
     })
-    await new BrowserRun(opts({ doneWhen: { urlMatches: 'never' } }), deps).start()
+    await new FastRun(opts({ hasDoneWhen: true }), deps).start()
     const state = (seen as unknown as JevRequest).state as { elements: Array<{ label: string; guarded?: true }> }
     expect(state.elements.find((e) => e.label === 'Create')?.guarded).toBe(true)
     expect(clicksOf(seen as unknown as JevRequest)).toEqual(['open:1', NONE])
@@ -168,7 +169,7 @@ describe('BrowserRun', () => {
   it('presses Enter in a filled field when the caller answers submit:N, and offers it to Jev when allowed', async () => {
     const script: Script = (request) => ({ still_loading: noul(0), goal_satisfied: noul(0), action: pick('none_useful', actionsOf(request)) })
     const answered = harness([FILLED, CREATED], script)
-    const run = new BrowserRun(opts({ doneWhen: { urlMatches: '/issues/\\d+$' } }), answered.deps)
+    const run = new FastRun(opts({ hasDoneWhen: true }), answered.deps)
     const paused = await run.start()
     const done = await run.resume({ questionId: paused.question!.id, choice: 'submit:1' })
     expect(answered.acts).toEqual(['enter:10'])
@@ -180,7 +181,7 @@ describe('BrowserRun', () => {
       offered = clicksOf(request)
       return { still_loading: noul(0), goal_satisfied: noul(0), action: pick('click', actionsOf(request)), click_target: pick('submit:1', clicksOf(request)) }
     })
-    const run2 = new BrowserRun(opts({ allow: ['Enter'], doneWhen: { urlMatches: '/issues/\\d+$' } }), allowed.deps)
+    const run2 = new FastRun(opts({ allow: ['Enter'], hasDoneWhen: true }), allowed.deps)
     expect((await run2.start()).status).toBe('done')
     expect(offered).toContain('submit:1')
     expect(allowed.acts).toEqual(['enter:10'])

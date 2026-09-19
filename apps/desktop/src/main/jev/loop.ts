@@ -1,30 +1,33 @@
 /**
- * The browser fast inner loop: observe → machine checks → ask Jev → decide → act,
+ * The shared fast inner loop: observe → machine checks → ask Jev → decide → act,
  * suspendable through pause/resume. Everything with a side effect is behind
  * `RunDeps`, so the loop itself is exercised offline against recorded pages.
  */
 
 import { randomUUID } from 'crypto'
 import { type ActionSpace, buildActionSpace, clickKindOf, elementByIndex, type HistoryEntry, originOf, type SpaceElement } from './action-space'
-import type { DoneWhen, PageObservation } from './browser-page'
+import type { RunObservation } from './observation'
 import { decide, type Decision, presetByHint, type Question, type QuestionOption } from './policy'
 import { buildRequest, type Preset } from './questions'
 import { appendJevTrace, type TraceStep } from './trace'
 import { estimateTokens, type JevRequest, type JevResponse } from './typesafe-client'
 
-export interface RunDeps {
+export interface RunDeps<Page extends RunObservation = RunObservation> {
   ask(request: JevRequest, signal?: AbortSignal): Promise<JevResponse>
-  resolveTarget(): Promise<number>
-  observe(webContentsId: number): Promise<PageObservation>
-  isFresh(webContentsId: number, page: PageObservation, node?: number): Promise<boolean>
-  click(webContentsId: number, node: number): Promise<void>
+  /** Resolve and retain the platform target inside the adapter. */
+  resolveTarget(): Promise<void>
+  observe(): Promise<Page>
+  isFresh(page: Page, node?: number): Promise<boolean>
+  click(node: number): Promise<void>
   /** Focus the field and press Enter — the keyboard form submit. */
-  pressEnter(webContentsId: number, node: number): Promise<void>
-  type(webContentsId: number, node: number, text: string): Promise<void>
-  scroll(webContentsId: number, page: PageObservation, deltaY: number): Promise<void>
-  settle(webContentsId: number, opts: { node?: number; typed?: boolean }): Promise<void>
-  waitReady(webContentsId: number, timeoutMs: number): Promise<boolean>
-  checkDone(webContentsId: number, cond: DoneWhen): Promise<boolean>
+  pressEnter(node: number): Promise<void>
+  type(node: number, text: string): Promise<void>
+  scroll(page: Page, deltaY: number): Promise<void>
+  settle(opts: { node?: number; typed?: boolean }): Promise<void>
+  waitReady(timeoutMs: number): Promise<boolean>
+  /** Evaluate the adapter's native completion condition. */
+  checkDone(): Promise<boolean>
+  changed(before: Page, after: Page): boolean | null
   focusGuard(active: boolean): Promise<void>
   trace?(entry: TraceStep): void
   now?(): number
@@ -35,7 +38,7 @@ export interface RunOptions {
   presets: Preset[]
   allow: string[]
   avoid: string[]
-  doneWhen?: DoneWhen
+  hasDoneWhen?: boolean
   maxSteps: number
   maxWallMs: number
 }
@@ -66,9 +69,9 @@ export interface RunResult {
   why?: string
 }
 
-interface Pending {
+interface Pending<Page extends RunObservation> {
   question: Question
-  page: PageObservation
+  page: Page
   space: ActionSpace
   /** What answering with an element index means. */
   mode: 'click' | 'type_text' | 'accept'
@@ -79,10 +82,9 @@ interface Pending {
 const SCROLL_DELTA = 560
 const WAIT_MS = 200
 
-export class BrowserRun {
+export class FastRun<Page extends RunObservation = RunObservation> {
   readonly runId = `r${randomUUID().slice(0, 8)}`
   status: RunStatus | 'running' = 'running'
-  private wc = -1
   private readonly history: HistoryEntry[] = []
   private sinceLast: string[] = []
   private steps = 0
@@ -90,13 +92,13 @@ export class BrowserRun {
   private scrolledSinceChange = false
   private continueDespiteSatisfied = false
   private readonly origins = new Set<string>()
-  private pending: Pending | null = null
-  private lastPage: PageObservation | null = null
+  private pending: Pending<Page> | null = null
+  private lastPage: Page | null = null
   private readonly startedAt: number
   private segmentStartedAt = 0
   private questionSeq = 0
 
-  constructor(private readonly opts: RunOptions, private readonly deps: RunDeps) {
+  constructor(private readonly opts: RunOptions, private readonly deps: RunDeps<Page>) {
     this.startedAt = this.now()
     for (const m of opts.goal.match(/https?:\/\/[^\s)"']+/g) ?? []) {
       const origin = originOf(m)
@@ -113,7 +115,7 @@ export class BrowserRun {
   }
 
   async start(signal?: AbortSignal): Promise<RunResult> {
-    this.wc = await this.deps.resolveTarget()
+    await this.deps.resolveTarget()
     return this.segment(signal)
   }
 
@@ -127,7 +129,7 @@ export class BrowserRun {
       return this.result('aborted', `Answer names question ${answer.questionId}; the pending one is ${this.pending.question.id}`)
     }
     // The tab may have been closed while paused; re-resolving is what tells us.
-    this.wc = await this.deps.resolveTarget()
+    await this.deps.resolveTarget()
     const pending = this.pending
     this.pending = null
     this.status = 'running'
@@ -171,9 +173,9 @@ export class BrowserRun {
     // combobox, or suggestions appeared next to it) a re-observation that still
     // shows the same node with the same label is close enough — the answer was
     // about that element, not about its surroundings.
-    let execPage: PageObservation | null = (await this.deps.isFresh(this.wc, pending.page, element.node)) ? pending.page : null
+    let execPage: Page | null = (await this.deps.isFresh(pending.page, element.node)) ? pending.page : null
     if (!execPage) {
-      const next = await this.deps.observe(this.wc)
+      const next = await this.deps.observe()
       if (next.elements.some((e) => e.node === element!.node && e.label === element!.label)) execPage = next
     }
     if (execPage) {
@@ -190,7 +192,7 @@ export class BrowserRun {
     return this.segment(signal)
   }
 
-  private async pauseForValue(element: SpaceElement, page: PageObservation, space: ActionSpace, _signal?: AbortSignal): Promise<RunResult> {
+  private async pauseForValue(element: SpaceElement, page: Page, space: ActionSpace, _signal?: AbortSignal): Promise<RunResult> {
     return this.pause({
       type: 'value',
       reason: 'uncertain',
@@ -224,7 +226,7 @@ export class BrowserRun {
       if (this.now() - this.segmentStartedAt >= this.opts.maxWallMs) return this.pauseBudget(page, `maxWallMs ${this.opts.maxWallMs} reached`)
 
       const observeStart = this.now()
-      if (!page) page = await this.deps.observe(this.wc)
+      if (!page) page = await this.deps.observe()
       const observeMs = this.now() - observeStart
       if (this.origins.size === 0) {
         const origin = originOf(page.url)
@@ -234,12 +236,12 @@ export class BrowserRun {
       // Machine signals first: document loading, then done_when.
       if (page.loading && this.consecutiveWaits < 3) {
         this.consecutiveWaits++
-        await this.deps.waitReady(this.wc, 1500)
+        await this.deps.waitReady(1500)
         this.history.push({ node: -1, kind: 'wait', label: 'Wait (loading)', changedPage: null, guarded: false })
         page = null
         continue
       }
-      if (this.opts.doneWhen && (await this.deps.checkDone(this.wc, this.opts.doneWhen))) {
+      if (this.opts.hasDoneWhen && (await this.deps.checkDone())) {
         this.lastPage = page
         return this.result('done', 'done_when satisfied')
       }
@@ -251,7 +253,7 @@ export class BrowserRun {
         answers: response.answers,
         space,
         presets: this.opts.presets,
-        doneWhenGiven: !!this.opts.doneWhen || this.continueDespiteSatisfied,
+        doneWhenGiven: !!this.opts.hasDoneWhen || this.continueDespiteSatisfied,
         consecutiveWaits: this.consecutiveWaits,
         scrolledSinceChange: this.scrolledSinceChange,
         page: { url: page.url, title: page.title },
@@ -289,7 +291,7 @@ export class BrowserRun {
         return this.pause(decision.question, page, space, decision.mode, decision.element, decision.presetKey)
       }
 
-      const fresh = decision.kind === 'scroll' ? true : await this.deps.isFresh(this.wc, page, decision.element.node)
+      const fresh = decision.kind === 'scroll' ? true : await this.deps.isFresh(page, decision.element.node)
       if (!fresh) {
         trace.stale = true
         this.emit(trace)
@@ -324,7 +326,7 @@ export class BrowserRun {
   }
 
   /** Perform one decided action and return the observation that followed it. */
-  private async execute(decision: Exclude<Decision, { kind: 'wait' | 'done' | 'pause' }>, page: PageObservation, guarded: boolean, answered = false): Promise<PageObservation> {
+  private async execute(decision: Exclude<Decision, { kind: 'wait' | 'done' | 'pause' }>, page: Page, guarded: boolean, answered = false): Promise<Page> {
     const clickKind = decision.kind === 'click' ? clickKindOf(decision.key) : null
     const entry: HistoryEntry = decision.kind === 'scroll'
       ? { node: -1, kind: 'scroll', label: `Scroll ${decision.direction}`, changedPage: null, guarded: false }
@@ -340,19 +342,19 @@ export class BrowserRun {
     // Record before acting: a navigation that interrupts the post-action observe must not erase the action.
     this.history.push(entry)
     if (decision.kind === 'scroll') {
-      await this.deps.scroll(this.wc, page, decision.direction === 'down' ? SCROLL_DELTA : -SCROLL_DELTA)
+      await this.deps.scroll(page, decision.direction === 'down' ? SCROLL_DELTA : -SCROLL_DELTA)
       this.scrolledSinceChange = true
     } else if (decision.kind === 'click') {
-      if (clickKind === 'submit') await this.deps.pressEnter(this.wc, decision.element.node)
-      else await this.deps.click(this.wc, decision.element.node)
-      await this.deps.settle(this.wc, { node: decision.element.node })
+      if (clickKind === 'submit') await this.deps.pressEnter(decision.element.node)
+      else await this.deps.click(decision.element.node)
+      await this.deps.settle({ node: decision.element.node })
     } else {
-      await this.deps.type(this.wc, decision.element.node, decision.text)
-      await this.deps.settle(this.wc, { node: decision.element.node, typed: true })
+      await this.deps.type(decision.element.node, decision.text)
+      await this.deps.settle({ node: decision.element.node, typed: true })
     }
     this.consecutiveWaits = 0
-    const next = await this.deps.observe(this.wc)
-    const changed = JSON.stringify(next.marker) !== JSON.stringify(page.marker)
+    const next = await this.deps.observe()
+    const changed = this.deps.changed(page, next)
     entry.changedPage = changed
     if (changed && decision.kind !== 'scroll') this.scrolledSinceChange = false
     this.sinceLast.push(`${entry.label}${changed ? '' : ' (no change)'}`)
@@ -373,7 +375,7 @@ export class BrowserRun {
     return next
   }
 
-  private pauseBudget(page: PageObservation | null, why: string): Promise<RunResult> {
+  private pauseBudget(page: Page | null, why: string): Promise<RunResult> {
     return this.pause({
       type: 'choice',
       reason: 'budget',
@@ -382,8 +384,8 @@ export class BrowserRun {
     }, page, null, 'accept')
   }
 
-  private async pause(question: Omit<Question, 'id'>, page: PageObservation | null, space: ActionSpace | null, mode: Pending['mode'], element?: SpaceElement, presetKey?: string): Promise<RunResult> {
-    const observed = page ?? (await this.deps.observe(this.wc))
+  private async pause(question: Omit<Question, 'id'>, page: Page | null, space: ActionSpace | null, mode: Pending<Page>['mode'], element?: SpaceElement, presetKey?: string): Promise<RunResult> {
+    const observed = page ?? (await this.deps.observe())
     const built = space ?? buildActionSpace({ page: observed, origins: this.origins, allow: this.opts.allow, avoid: this.opts.avoid, history: this.history })
     const id = `q${++this.questionSeq}`
     const full: Question = { id, ...question }
@@ -401,7 +403,7 @@ export class BrowserRun {
     }
   }
 
-  private snapshot(page: PageObservation, space: ActionSpace): RunResult['snapshot'] {
+  private snapshot(page: Page, space: ActionSpace): RunResult['snapshot'] {
     return {
       url: page.url,
       title: page.title,

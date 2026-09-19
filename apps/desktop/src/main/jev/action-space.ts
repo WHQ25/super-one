@@ -7,7 +7,7 @@
  * guarded one. Guarded elements reach the main model through a pause instead.
  */
 
-import type { PageObservation, RawElement } from './browser-page'
+import type { RunObservation, RawElement } from './observation'
 
 export type Risk = 'safe' | 'guarded'
 
@@ -28,7 +28,7 @@ export interface HistoryEntry {
 }
 
 export interface ActionSpaceInput {
-  page: PageObservation
+  page: RunObservation
   origins: ReadonlySet<string>
   allow: readonly string[]
   avoid: readonly string[]

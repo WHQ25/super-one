@@ -1,4 +1,10 @@
-import type { BrowserRun } from './loop'
+import type { Answer, RunResult } from './loop'
+
+/** Only the suspended coroutine crosses the tool/store boundary. */
+export interface PausedRun {
+  readonly runId: string
+  resume(answer: Answer, signal?: AbortSignal): Promise<RunResult>
+}
 
 /**
  * Paused runs, keyed by runId and owned by the session that started them. A
@@ -8,7 +14,7 @@ import type { BrowserRun } from './loop'
 const TTL_MS = 5 * 60_000
 
 interface Entry {
-  run: BrowserRun
+  run: PausedRun
   sessionId: string
   pausedAt: number
 }
@@ -21,12 +27,12 @@ function sweep(now: number): void {
   }
 }
 
-export function storePausedRun(sessionId: string, run: BrowserRun, now = Date.now()): void {
+export function storePausedRun(sessionId: string, run: PausedRun, now = Date.now()): void {
   sweep(now)
   runs.set(run.runId, { run, sessionId, pausedAt: now })
 }
 
-export function takePausedRun(sessionId: string, runId: string, now = Date.now()): BrowserRun | 'expired' | 'foreign' | 'missing' {
+export function takePausedRun(sessionId: string, runId: string, now = Date.now()): PausedRun | 'expired' | 'foreign' | 'missing' {
   const entry = runs.get(runId)
   if (!entry) return 'missing'
   if (entry.sessionId !== sessionId) return 'foreign'

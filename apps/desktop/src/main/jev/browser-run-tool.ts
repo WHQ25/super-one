@@ -10,10 +10,10 @@ import { readAppSettings } from '../app-settings-service'
 import { browserFocusGuard } from '../browser/browser-automation-bridge'
 import { isCdpEnabled, resolveCdpTarget } from '../browser/browser-cdp'
 import { browserErrorReply, browserTextReply, type BrowserToolReply } from '../mcp/browser-mcp-replies'
-import { checkDoneWhen, clickNode, hasDoneWhen, isFresh, observePage, pressEnterInNode, scrollPage, settleAfter, typeIntoNode, waitForDocumentComplete } from './browser-page'
+import { type PageObservation, type DoneWhen, checkDoneWhen, clickNode, hasDoneWhen, isFresh, observePage, pressEnterInNode, scrollPage, settleAfter, typeIntoNode, waitForDocumentComplete } from './browser-page'
 import { getJevApiKey } from './jev-api-key'
-import { type Answer, BrowserRun, type RunDeps, type RunResult } from './loop'
-import { storePausedRun, takePausedRun } from './run-store'
+import { type Answer, FastRun, type RunDeps, type RunResult } from './loop'
+import { type PausedRun, storePausedRun, takePausedRun } from './run-store'
 import { createJevClient, type JevClient } from './typesafe-client'
 
 export const BROWSER_RUN_DESCRIPTION =
@@ -78,24 +78,26 @@ function jevClient(): JevClient {
   return client
 }
 
-function depsFor(sessionId: string, tab: string | undefined): RunDeps {
+function depsFor(sessionId: string, tab: string | undefined, doneWhen?: DoneWhen): RunDeps<PageObservation> {
+  let target = -1
   return {
     ask: (request, signal) => jevClient().ask(request, signal),
-    resolveTarget: () => resolveCdpTarget(sessionId, tab),
-    observe: observePage,
-    isFresh,
-    click: clickNode,
-    pressEnter: pressEnterInNode,
-    type: typeIntoNode,
-    scroll: scrollPage,
-    settle: settleAfter,
-    waitReady: waitForDocumentComplete,
-    checkDone: checkDoneWhen,
+    resolveTarget: async () => { target = await resolveCdpTarget(sessionId, tab) },
+    observe: () => observePage(target),
+    isFresh: (page, node) => isFresh(target, page, node),
+    click: (node) => clickNode(target, node),
+    pressEnter: (node) => pressEnterInNode(target, node),
+    type: (node, text) => typeIntoNode(target, node, text),
+    scroll: (page, deltaY) => scrollPage(target, page, deltaY),
+    settle: (opts) => settleAfter(target, opts),
+    waitReady: (timeoutMs) => waitForDocumentComplete(target, timeoutMs),
+    checkDone: () => doneWhen ? checkDoneWhen(target, doneWhen) : Promise.resolve(false),
+    changed: (before, after) => JSON.stringify(before.marker) !== JSON.stringify(after.marker),
     focusGuard: (active) => browserFocusGuard(sessionId, active),
   }
 }
 
-function reply(sessionId: string, run: BrowserRun, result: RunResult): BrowserToolReply {
+function reply(sessionId: string, run: PausedRun, result: RunResult): BrowserToolReply {
   if (result.status === 'paused') {
     storePausedRun(sessionId, run)
     return browserTextReply({
@@ -126,15 +128,15 @@ export async function executeBrowserRun(sessionId: string, rawArgs: Record<strin
       return reply(sessionId, taken, await taken.resume(args.answer as Answer, signal))
     }
     if (!args.goal?.trim()) return browserErrorReply(new Error('`goal` is required to start a run (or pass runId + answer to resume).'))
-    const run = new BrowserRun({
+    const run = new FastRun({
       goal: args.goal,
       presets: args.presets ?? [],
       allow: args.allow ?? [],
       avoid: args.avoid ?? [],
-      doneWhen: hasDoneWhen(args.done_when) ? args.done_when : undefined,
+      hasDoneWhen: hasDoneWhen(args.done_when),
       maxSteps: args.maxSteps ?? DEFAULT_MAX_STEPS,
       maxWallMs: args.maxWallMs ?? DEFAULT_MAX_WALL_MS,
-    }, depsFor(sessionId, args.tab))
+    }, depsFor(sessionId, args.tab, args.done_when))
     return reply(sessionId, run, await run.start(signal))
   } catch (err) {
     return browserErrorReply(err)

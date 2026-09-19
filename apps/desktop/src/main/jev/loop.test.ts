@@ -205,6 +205,26 @@ describe('FastRun', () => {
     expect(request.questions.next_step_risk?.type).toBe('noul')
   })
 
+  it('re-observes when the target vanishes under a decision instead of failing the run', async () => {
+    // npm search: the results page replaced the form between observe and click.
+    const { deps, acts } = harness([FORM, CREATED], (request) => {
+      const state = request.state as { page: { url: string } }
+      if (/\/issues\/\d+$/.test(state.page.url)) return { still_loading: noul(0), goal_satisfied: noul(0.95), next_step_risk: noul(0), action: pick('none_useful', actionsOf(request)) }
+      return { still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0), action: pick('click', actionsOf(request)), click_target: pick('2', clicksOf(request)) }
+    })
+    const click = deps.click
+    deps.click = async (node) => {
+      deps.click = click
+      await click(node)
+      throw new StaleObservation('Target changed or is covered')
+    }
+    deps.checkDone = async () => false
+    const result = await new FastRun(opts(), deps).start()
+    expect(result).toMatchObject({ status: 'done', why: 'goal_satisfied 0.95' })
+    expect(acts).toEqual(['click:11'])
+    expect(result.since_last).toEqual([])
+  })
+
   it('finishes on Jev\'s verdict only after a fresh observation agrees', async () => {
     const verdicts: number[] = []
     const { deps, acts } = harness([CREATED], (request) => {

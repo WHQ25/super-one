@@ -11,6 +11,7 @@
 
 import { cdpClick, cdpSend } from '../browser/browser-cdp'
 
+import { StaleObservation } from './loop'
 import type { RawElement, RunObservation } from './observation'
 export type { RawElement } from './observation'
 
@@ -18,13 +19,6 @@ export interface PageObservation extends RunObservation {
   marker: unknown
   pageKey: unknown
   guards: Record<string, unknown>
-}
-
-export class StalePage extends Error {
-  constructor(message = 'Page changed since this decision') {
-    super(message)
-    this.name = 'StalePage'
-  }
 }
 
 const MAX_ELEMENTS = 250
@@ -129,7 +123,7 @@ interface EvalResult<T> {
 
 async function evaluate<T>(webContentsId: number, expression: string, awaitPromise = false): Promise<T | null> {
   const res = await cdpSend<EvalResult<T>>(webContentsId, 'Runtime.evaluate', { expression, returnByValue: true, awaitPromise })
-  if (res.exceptionDetails) throw new StalePage('Document changed during evaluation')
+  if (res.exceptionDetails) throw new StaleObservation('Document changed during evaluation')
   return res.result?.value ?? null
 }
 
@@ -139,11 +133,11 @@ export async function observePage(webContentsId: number): Promise<PageObservatio
       const page = await evaluate<PageObservation>(webContentsId, OBSERVE_SCRIPT)
       if (page) return page
     } catch (err) {
-      if (!(err instanceof StalePage) || attempt === 9) throw err
+      if (!(err instanceof StaleObservation) || attempt === 9) throw err
     }
     await sleep(50)
   }
-  throw new StalePage('Page did not settle')
+  throw new StaleObservation('Page did not settle')
 }
 
 /**
@@ -176,7 +170,7 @@ const TARGET_POINT = (node: number, requireEditable: boolean) => `(() => {
 
 async function resolveTarget(webContentsId: number, node: number, requireEditable: boolean): Promise<{ x: number; y: number }> {
   const point = await evaluate<{ x: number; y: number }>(webContentsId, TARGET_POINT(node, requireEditable))
-  if (!point) throw new StalePage('Target changed or is covered')
+  if (!point) throw new StaleObservation('Target changed or is covered')
   return point
 }
 

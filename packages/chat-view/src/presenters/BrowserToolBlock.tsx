@@ -18,6 +18,8 @@ import {
   BrowserPageToolsListBlockPresenter,
   type BrowserPageToolsBlockPresenterProps,
 } from './BrowserPageTools'
+import type { JevRunAction } from '@superone/shared/agent-types'
+import { SubagentScrollArea } from './SubagentBlock'
 import { ToolName, ToolRow, ToolSummary, type ToolRowTone } from './ToolRow'
 
 export interface BrowserDownloadRuntime {
@@ -54,6 +56,8 @@ export interface BrowserToolBlockPresenterProps {
   onSaveFile?: (path: string, filename: string) => Promise<'saved' | 'cancelled' | 'error'>
   recording?: ReactNode
   downloadRuntime?: BrowserDownloadRuntime
+  /** browser_run only: the actions the loop has taken so far, oldest first. */
+  runActions?: JevRunAction[]
   pageTools?: Pick<BrowserPageToolsBlockPresenterProps, 'renderPageIcon' | 'renderJson'>
   onExpandedChange?: (expanded: boolean) => void
   /** Lets a remote surface expand before the full result has arrived. */
@@ -107,6 +111,7 @@ export function BrowserToolBlockPresenter(props: BrowserToolBlockPresenterProps)
     onSaveFile,
     recording,
     downloadRuntime,
+    runActions,
     pageTools,
     onExpandedChange,
     pendingDetails,
@@ -159,6 +164,7 @@ export function BrowserToolBlockPresenter(props: BrowserToolBlockPresenterProps)
       onSaveFile={onSaveFile}
       recording={recording}
       downloadRuntime={downloadRuntime}
+      runActions={runActions}
       onExpandedChange={onExpandedChange}
       pendingDetails={pendingDetails}
     />
@@ -182,6 +188,7 @@ function BrowserOperationBlock({
   renderFile,
   onSaveFile,
   recording,
+  runActions,
   onExpandedChange,
   pendingDetails,
 }: BrowserToolBlockPresenterProps) {
@@ -208,11 +215,16 @@ function BrowserOperationBlock({
   const rightCount = !failed && primary && countLabel ? countLabel : ''
   const screenshotLabel = hasScreenshot ? (primary || t('chat.toolBlock.browser.viewport')) : ''
   const isMockDetail = op === 'mock' && params.clear !== true && !failed
+  const runRows = op === 'run' && runActions && runActions.length > 0 ? runActions : null
   const expandable = allowExpand
-    && !isStreaming
-    && (isMockDetail || pendingDetails != null || (!!result && (isReadBrowserOp(op) || info.status === 'error' || denied || hasScreenshot || !!recording)))
+    && (runRows
+      ? true
+      : !isStreaming
+        && (isMockDetail || pendingDetails != null || (!!result && (isReadBrowserOp(op) || info.status === 'error' || denied || hasScreenshot || !!recording))))
   let details: ReactNode = null
-  if (recording) {
+  if (runRows) {
+    details = <RunActionList actions={runRows} />
+  } else if (recording) {
     details = recording
   } else if (hasScreenshot && renderScreenshot) {
     details = renderScreenshot(
@@ -270,6 +282,35 @@ function BrowserOperationBlock({
       ) : middle ? <ToolSummary>{middle}</ToolSummary> : null}
     </ToolRow>
   )
+}
+
+/**
+ * What a run did, one row per action, worded exactly as the matching
+ * single-action call would be. A long run is bounded and follows its tail, the
+ * way a subagent's nested calls are.
+ */
+function RunActionList({ actions }: { actions: JevRunAction[] }): ReactNode {
+  const { t } = useTranslation()
+  return (
+    <SubagentScrollArea maxHeightClass="max-h-40" className="space-y-0.5 py-1 text-xs">
+      {actions.map((action, i) => (
+        <div key={i} className="flex min-w-0 items-baseline gap-1.5">
+          <span className="shrink-0 text-muted-foreground">{t(`chat.toolBlock.browser.${runActionVerbKey(action)}`)}</span>
+          {action.target ? <span className="truncate text-foreground/80">{runActionTarget(action, t)}</span> : null}
+        </div>
+      ))}
+    </SubagentScrollArea>
+  )
+}
+
+/** Scrolling has no element; its direction reads as the target instead. */
+function runActionTarget(action: JevRunAction, t: (key: string) => string): string {
+  if (action.op !== 'scroll') return action.target ?? ''
+  return action.target === 'up' ? t('chat.toolBlock.browser.scrollUp') : t('chat.toolBlock.browser.scrollDown')
+}
+
+function runActionVerbKey(action: JevRunAction): string {
+  return action.op === 'wait' ? 'waitFor' : browserVerbKey(action.op)
 }
 
 function BrowserDownloadBlock({

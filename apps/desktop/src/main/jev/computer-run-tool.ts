@@ -3,7 +3,7 @@ import type { ComputerUseService } from '../computer-use/computer-use-service'
 import { conditionSchema, parseCondition } from '../computer-use/conditions'
 import { createComputerAdapter } from './computer-page'
 import { FastRun } from './loop'
-import { finishRun, jevClient, resumeRun, runInputShape, runOptions } from './run-tool-common'
+import { finishRun, jevClient, resumeRun, runInputShape, runOptions, reportRun } from './run-tool-common'
 
 export const COMPUTER_RUN_DESCRIPTION =
   'Experimental (Jev setting): pursue desktop UI goals with clicks, typing and scrolling chosen without a model turn per step. Start with app or root and goal. If the exact sequence of buttons is already known, use computer_act with a batch instead. Example: presets=[{key:"Query",value:"cats",field:"Search"}], done_when={kind:"valueEquals",ref:"@e7",value:"cats"}. Native computer_wait_for conditions bind at run start. The loop judges each step\'s risk and the goal\'s completion itself; before anything irreversible (save, send, delete, quit, leaving the app) or when unsure it pauses with a question. Resume a pause with runId + answer. Uses existing grants and tiers; skips secure fields. Use computer_act for single steps, drag, shortcuts or pixels.'
@@ -35,5 +35,6 @@ export async function executeComputerRun(
     ask: (request, signal) => jevClient().ask(request, signal),
   })
   const run = new FastRun(runOptions(args), adapter)
+  reportRun(sessionId, 'computer', run)
   return finishRun(sessionId, 'computer', run, await run.start(signal))
 }

@@ -2426,6 +2426,8 @@ export type Messages = {
         pressing: string
         scroll: string
         scrolling: string
+        scrollDown: string
+        scrollUp: string
         drag: string
         dragging: string
         select: string
@@ -6322,6 +6324,8 @@ export const en: Messages = {
         pressing: 'Pressing',
         scroll: 'Scroll',
         scrolling: 'Scrolling',
+        scrollDown: 'down',
+        scrollUp: 'up',
         drag: 'Drag',
         dragging: 'Dragging',
         select: 'Select',

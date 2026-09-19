@@ -287,6 +287,29 @@ describe('reduceTool: task_notification identity share', () => {
   })
 })
 
+describe('reduceTool: jev_run_update', () => {
+  it('collects a run\'s actions and clears the active run when it ends', () => {
+    let session = createDefaultPerSessionState()
+    session = { ...session, ...reduceTool(session, { type: 'jev_run_update', runId: 'r1', platform: 'browser', action: { op: 'click', target: 'Menu' } }) }
+    session = { ...session, ...reduceTool(session, { type: 'jev_run_update', runId: 'r1', platform: 'browser', action: { op: 'scroll', target: 'down' } }) }
+    expect(session.jevRuns.r1.actions).toEqual([{ op: 'click', target: 'Menu' }, { op: 'scroll', target: 'down' }])
+    // While it runs, a block with no result yet finds it through the active id.
+    expect(session._activeJevRunId).toBe('r1')
+    session = { ...session, ...reduceTool(session, { type: 'jev_run_update', runId: 'r1', platform: 'browser', outcome: 'done' }) }
+    expect(session.jevRuns.r1).toMatchObject({ outcome: 'done', actions: [{ op: 'click', target: 'Menu' }, { op: 'scroll', target: 'down' }] })
+    expect(session._activeJevRunId).toBeNull()
+  })
+
+  it('keeps the tail of a long run rather than growing without bound', () => {
+    let session = createDefaultPerSessionState()
+    for (let i = 0; i < 260; i++) {
+      session = { ...session, ...reduceTool(session, { type: 'jev_run_update', runId: 'r2', platform: 'computer', action: { op: 'click', target: `Row ${i}` } }) }
+    }
+    expect(session.jevRuns.r2.actions).toHaveLength(200)
+    expect(session.jevRuns.r2.actions.at(-1)).toEqual({ op: 'click', target: 'Row 259' })
+  })
+})
+
 describe('reduceTool: browser_download_update identity share', () => {
   it('preserves non-target message refs when patching a download tool_result', () => {
     const otherMsg = makeAssistant('m0', [toolUseBlock('t0', 'Read')])

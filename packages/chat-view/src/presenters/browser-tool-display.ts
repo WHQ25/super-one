@@ -410,8 +410,8 @@ export interface BrowserDownloadInfo {
 export interface BrowserResultInfo {
   status: 'ok' | 'error' | 'denied' | 'neutral'
   errorText?: string
-  /** browser_run only: where the run stopped, plus how many loop steps it took. */
-  run?: { status: 'paused' | 'done' | 'aborted'; steps?: number }
+  /** browser_run only: where the run stopped, how many loop steps it took, and which run it was. */
+  run?: { status: 'paused' | 'done' | 'aborted'; steps?: number; runId?: string }
   count?: { kind: 'elements' | 'matches' | 'tabs' | 'requests' | 'cookies' | 'downloads' | 'actions'; n: number }
   notFound?: boolean
   imagePath?: string
@@ -484,7 +484,14 @@ export function parseBrowserResult(op: BrowserOp, result: string | undefined, is
     case 'run': {
       const runStatus = obj?.status === 'paused' || obj?.status === 'done' || obj?.status === 'aborted' ? obj.status : undefined
       return runStatus
-        ? { status: runStatus === 'done' ? 'ok' : 'neutral', run: { status: runStatus, ...(typeof obj?.steps === 'number' ? { steps: obj.steps } : {}) } }
+        ? {
+            status: runStatus === 'done' ? 'ok' : 'neutral',
+            run: {
+              status: runStatus,
+              ...(typeof obj?.steps === 'number' ? { steps: obj.steps } : {}),
+              ...(typeof obj?.runId === 'string' ? { runId: obj.runId } : {}),
+            },
+          }
         : { status: 'neutral' }
     }
     case 'screenshot': {

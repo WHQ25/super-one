@@ -8,6 +8,7 @@ import {
   createDefaultProjectState,
   useChatStore,
 } from '@/stores/chat'
+import type { JevRunAction } from '@superone/shared/agent-types'
 import { BROWSER_LEGACY_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 
 const SB_PROJECT = '__storybook__'
@@ -72,6 +73,33 @@ function toolByName(name: string, input: Record<string, unknown>, result?: strin
       result={result}
     />
   )
+}
+
+/** Seeds what a run has reported so far, the way the loop's host events would. */
+function seedRun(runId: string, actions: JevRunAction[], opts: { active?: boolean } = {}): void {
+  const session = createDefaultPerSessionState()
+  session.jevRuns = { [runId]: { platform: 'browser', actions } }
+  session._activeJevRunId = opts.active === false ? null : runId
+  const project = createDefaultProjectState()
+  project._activeSessionId = SB_SESSION
+  project._sessions = { [SB_SESSION]: session }
+  useChatStore.setState({
+    activeProject: SB_PROJECT,
+    projectSessions: { [SB_PROJECT]: project },
+  })
+}
+
+const RUN_ACTIONS: JevRunAction[] = [
+  { op: 'click', target: 'Menu' },
+  { op: 'click', target: 'Mac menu' },
+  { op: 'click', target: 'MacBook Air' },
+  { op: 'scroll', target: 'down' },
+  { op: 'click', target: 'Local Nav Open Menu' },
+  { op: 'click', target: 'Tech Specs' },
+]
+
+function runResult(status: 'done' | 'paused' | 'aborted', steps: number, runId: string): string {
+  return JSON.stringify({ status, runId, steps, snapshot: { url: 'https://www.apple.com/macbook-air/specs/', title: 'MacBook Air Tech Specs' } })
 }
 
 function seedBrowserDownload(
@@ -559,4 +587,84 @@ export const BrowserPageTools: Story = {
       </Note>
     </StoryShell>
   ),
+}
+
+/** A run still going: the block shows the actions it has taken so far. */
+export const BrowserRunRunning: Story = {
+  render: () => {
+    seedRun('r1b3edbf0', RUN_ACTIONS.slice(0, 3))
+    return (
+      <StoryShell>
+        <Section title="browser_run · running">
+          <Note>Each row reads the way the matching browser_act row would; the loop's step numbers stay in the trace.</Note>
+          <ToolBlock
+            toolName="mcp__superone__browser_run"
+            input={JSON.stringify({ goal: 'Open the MacBook Air tech specs page' })}
+            status="streaming"
+          />
+        </Section>
+      </StoryShell>
+    )
+  },
+}
+
+/** Finished: the block finds its run through the runId in its own result. */
+export const BrowserRunDone: Story = {
+  render: () => {
+    seedRun('r1b3edbf0', RUN_ACTIONS, { active: false })
+    return (
+      <StoryShell>
+        <Section title="browser_run · done">
+          <ToolBlock
+            toolName="mcp__superone__browser_run"
+            input={JSON.stringify({ goal: 'Open the MacBook Air tech specs page' })}
+            status="complete"
+            result={runResult('done', 16, 'r1b3edbf0')}
+          />
+        </Section>
+      </StoryShell>
+    )
+  },
+}
+
+/** Paused for a question, and a long run: the list is bounded and follows its tail. */
+export const BrowserRunPausedAndLong: Story = {
+  render: () => {
+    const long: JevRunAction[] = Array.from({ length: 30 }, (_, i) => (
+      i % 4 === 3 ? { op: 'scroll', target: 'down' } : { op: 'click', target: `Result ${i + 1}` }
+    ))
+    seedRun('rlong', long, { active: false })
+    return (
+      <StoryShell width={380}>
+        <Section title="browser_run · paused, narrow, 30 actions">
+          <Note>Bounded height with the tail in view, like a subagent's nested calls.</Note>
+          <ToolBlock
+            toolName="mcp__superone__browser_run"
+            input={JSON.stringify({ goal: 'Find the cheapest fare' })}
+            status="complete"
+            result={runResult('paused', 30, 'rlong')}
+          />
+        </Section>
+      </StoryShell>
+    )
+  },
+}
+
+/** A run that took no action at all still renders as an ordinary row. */
+export const BrowserRunNoActions: Story = {
+  render: () => {
+    seedRun('rempty', [], { active: false })
+    return (
+      <StoryShell>
+        <Section title="browser_run · nothing done">
+          <ToolBlock
+            toolName="mcp__superone__browser_run"
+            input={JSON.stringify({ goal: 'Open the settings page' })}
+            status="complete"
+            result={runResult('aborted', 0, 'rempty')}
+          />
+        </Section>
+      </StoryShell>
+    )
+  },
 }

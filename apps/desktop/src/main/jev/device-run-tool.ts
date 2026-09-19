@@ -3,7 +3,7 @@ import { conditionSchema, parseCondition } from '../device-agent/conditions'
 import type { DeviceAgentSession } from '../device-agent/execute'
 import { createDeviceAdapter } from './device-page'
 import { FastRun } from './loop'
-import { finishRun, jevClient, resumeRun, runInputShape, runOptions } from './run-tool-common'
+import { finishRun, jevClient, resumeRun, runInputShape, runOptions, reportRun } from './run-tool-common'
 
 export const DEVICE_RUN_DESCRIPTION =
   'Experimental (Jev setting): pursue a multi-step touch-device goal with taps, typing and scrolling chosen without a model turn per step. '
@@ -43,5 +43,6 @@ export async function executeDeviceRun(
     ask: (request, signal) => jevClient().ask(request, signal),
   })
   const run = new FastRun(runOptions(args), adapter)
+  reportRun(sessionId, 'device', run)
   return finishRun(sessionId, 'device', run, await run.start(signal))
 }

@@ -6,6 +6,7 @@ import {
 } from '@superone/chat-view/presenters/BrowserToolBlock'
 import { parseBrowserResult, type BrowserOp } from './browser-tool-display'
 import { getStallColor, type StallLevel } from '@/lib/stall-utils'
+import type { JevRunAction } from '@superone/shared/agent-types'
 import { useChatStore } from '@/stores/chat-store'
 import { ToolIcon } from './ToolIcon'
 import { FileChip } from './ToolBlock'
@@ -66,6 +67,18 @@ function DesktopBrowserToolBlock(props: BrowserToolBlockProps) {
     return project._sessions[sessionId]?.browserDownloads[taskId]
   })
   const recording = useMemo(() => parseActionRecording(props.result), [props.result])
+  // A finished run names itself in its result; one still in flight is the session's
+  // active run, because a session runs one at a time.
+  const runId = info.run?.runId
+  const runActions = useChatStore((state): JevRunAction[] | undefined => {
+    if (props.op !== 'run' || !state.activeProject) return undefined
+    const project = state.projectSessions[state.activeProject]
+    const sessionId = project?._activeSessionId
+    if (!sessionId) return undefined
+    const session = project._sessions[sessionId]
+    const id = runId ?? session?._activeJevRunId
+    return id ? session?.jevRuns[id]?.actions : undefined
+  })
 
   return (
     <BrowserToolBlockPresenter
@@ -80,6 +93,7 @@ function DesktopBrowserToolBlock(props: BrowserToolBlockProps) {
       onSaveFile={saveFile}
       recording={recording ? <ActionRecordingView recording={recording} /> : undefined}
       downloadRuntime={live}
+      runActions={runActions}
     />
   )
 }

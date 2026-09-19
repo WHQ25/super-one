@@ -34,6 +34,8 @@ export function createDefaultChatCoreSession(): ChatCoreSession {
     subagentTokens: {},
     _streamingToolInputPreviews: {},
     browserDownloads: {},
+    jevRuns: {},
+    _activeJevRunId: null,
     videoGenStatuses: {},
     totalCostUsd: 0,
     contextTokens: 0,

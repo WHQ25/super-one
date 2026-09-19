@@ -6,6 +6,7 @@
 
 import { randomUUID } from 'crypto'
 import { type ActionSpace, buildActionSpace, clickKindOf, clickVerb, elementByIndex, type HistoryEntry, type SpaceElement } from './action-space'
+import type { JevRunAction } from '@superone/shared/agent-types'
 import type { RawElement, RunObservation } from './observation'
 import { decide, type Decision, presetByHint, type Question, type QuestionOption } from './policy'
 import { buildRequest, type Preset } from './questions'
@@ -113,6 +114,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
   private sinceLast: string[] = []
   private steps = 0
   private consecutiveWaits = 0
+  private reporter?: (action: JevRunAction) => void
   /** What the adapter's settle concluded, for the trace. */
   private lastSettle: SettleReport | void = undefined
   private scrolledSinceChange = false
@@ -540,8 +542,43 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     }
   }
 
+  /**
+   * Report each action, in the vocabulary of this platform's single-action tool,
+   * so the chat can show what the run did while the call is still open. Jev's
+   * step numbers and confidences are not part of it — they belong to the trace.
+   * Set after construction because the runId the events carry is the run's own.
+   */
+  setReporter(report: (action: JevRunAction) => void): void {
+    this.reporter = report
+  }
+
   private emit(entry: TraceStep): void {
     ;(this.deps.trace ?? appendJevTrace)({ ...entry, platform: this.deps.platform ?? 'browser' })
+    const action = reportableAction(entry.decision)
+    if (action) this.reporter?.(action)
+  }
+}
+
+/** What the chat shows for a step: the same op a single-action call would report. */
+function reportableAction(decision: Record<string, unknown>): JevRunAction | null {
+  const target = typeof decision.label === 'string' ? decision.label : undefined
+  switch (decision.kind) {
+    case 'click':
+      // Pressing Enter to submit a filled field is a key press, not a click.
+      return clickKindOf(String(decision.key ?? '')) === 'submit'
+        ? { op: 'press', target }
+        : { op: 'click', target }
+    case 'type_text':
+      // The value itself stays out of the row: it came from the caller's own
+      // `presets`, which the tool block already shows.
+      return { op: 'type', target }
+    case 'scroll':
+      return { op: 'scroll', target: String(decision.direction ?? '') }
+    case 'wait':
+      return { op: 'wait' }
+    default:
+      // done / pause are the run's outcome, reported by the tool, not an action.
+      return null
   }
 }
 

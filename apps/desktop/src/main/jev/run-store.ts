@@ -1,9 +1,11 @@
+import type { JevRunAction } from '@superone/shared/agent-types'
 import type { Answer, RunResult } from './loop'
 
 /** Only the suspended coroutine crosses the tool/store boundary. */
 export interface PausedRun {
   readonly runId: string
   resume(answer: Answer, signal?: AbortSignal): Promise<RunResult>
+  setReporter(report: (action: JevRunAction) => void): void
 }
 
 /**

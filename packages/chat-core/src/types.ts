@@ -9,6 +9,9 @@ import type {
   CodexUsageInfo,
   EffortLevel,
   HarnessId,
+  JevRunAction,
+  JevRunOutcome,
+  JevRunPlatform,
   McpServerInfo,
   ModelOption,
   PermissionMode,
@@ -108,6 +111,13 @@ export interface ChatCoreSession {
     url?: string
     error?: string
   }>
+  /**
+   * What each `*_run` loop has done so far, keyed by runId. The run's tool block
+   * renders these as ordinary action rows; `_activeJevRunId` points at the run
+   * still in flight, which is how a block that has no result yet finds its own.
+   */
+  jevRuns: Record<string, { platform: JevRunPlatform; actions: JevRunAction[]; outcome?: JevRunOutcome }>
+  _activeJevRunId: string | null
   videoGenStatuses: Record<string, {
     status: string
     generationId: string

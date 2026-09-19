@@ -190,7 +190,10 @@ type ToolEvent = Extract<AgentEvent, {
     | 'task_progress'
     | 'task_notification'
     | 'browser_download_update'
+    | 'jev_run_update'
 }>
+
+const MAX_RUN_ACTIONS = 200
 
 function patchBrowserDownloadToolResult(
   messages: ChatCoreSession['messages'],
@@ -558,6 +561,23 @@ export function reduceTool(
         browserDownloads,
         taskProgress: commitTaskProgress(session.taskProgress, write, next),
         lastEventAt: ports.now(),
+      }
+    }
+
+    // A run reports the actions it takes while the tool call is still open, so the
+    // block can show what it did rather than only that it was busy. Capped: a long
+    // run must not grow the session state without bound.
+    case 'jev_run_update': {
+      const prev = session.jevRuns[event.runId]
+      const actions = event.action
+        ? [...(prev?.actions ?? []), event.action].slice(-MAX_RUN_ACTIONS)
+        : prev?.actions ?? []
+      return {
+        jevRuns: {
+          ...session.jevRuns,
+          [event.runId]: { platform: event.platform, actions, ...(event.outcome ? { outcome: event.outcome } : prev?.outcome ? { outcome: prev.outcome } : {}) },
+        },
+        _activeJevRunId: event.outcome ? null : event.runId,
       }
     }
 

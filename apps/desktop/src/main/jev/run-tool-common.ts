@@ -3,6 +3,7 @@ import { readAppSettings } from '../app-settings-service'
 import { getJevApiKey } from './jev-api-key'
 import { createJevClient, type JevClient } from './typesafe-client'
 import type { RunOptions, RunResult } from './loop'
+import { runReporter } from './run-events'
 import { type PausedRun, storePausedRun, takePausedRun, type RunPlatform } from './run-store'
 
 export const runInputShape = {
@@ -58,10 +59,17 @@ export function resumeRun(sessionId: string, platform: RunPlatform, args: { runI
   if (!args.answer) throw new Error('Resuming a run needs `answer`.')
   const run = takePausedRun(sessionId, args.runId, Date.now(), platform)
   if (typeof run === 'string') throw new Error(`Cannot resume ${platform}_run ${args.runId}: ${run}. Start a new run with goal.`)
+  reportRun(sessionId, platform, run)
   return run
 }
 
+/** Report this run's actions to the chat for as long as the call is open. */
+export function reportRun(sessionId: string, platform: RunPlatform, run: PausedRun): void {
+  run.setReporter(runReporter(sessionId, run.runId, platform).action)
+}
+
 export function finishRun(sessionId: string, platform: RunPlatform, run: PausedRun, result: RunResult): RunResult & { next?: string } {
+  runReporter(sessionId, result.runId, platform).outcome(result.status)
   if (result.status !== 'paused') return result
   storePausedRun(sessionId, run, Date.now(), platform)
   return { ...result, next: `Call ${platform}_run with { runId, answer: { questionId, choice | value } }. You may inspect with other ${platform} tools first; answer.abort=true hands control back.` }

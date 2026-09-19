@@ -2522,6 +2522,8 @@ export const zh: Messages = {
         pressing: '正在按键',
         scroll: '滚动',
         scrolling: '正在滚动',
+        scrollDown: '向下',
+        scrollUp: '向上',
         drag: '拖拽',
         dragging: '正在拖拽',
         select: '选择',

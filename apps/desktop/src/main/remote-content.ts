@@ -432,7 +432,7 @@ function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, 
       return block
     }
     if (!agentIds?.has(block.toolUseId) && block.summary.length > TOOL_RESULT_MAX_LEN) {
-      return { ...block, summary: compactMediaToolResult(block.summary) ?? compactTerminalToolResult(block.summary) ?? block.summary.slice(0, TOOL_RESULT_MAX_LEN) + '…' }
+      return { ...block, summary: compactRunToolResult(block.summary) ?? compactMediaToolResult(block.summary) ?? compactTerminalToolResult(block.summary) ?? block.summary.slice(0, TOOL_RESULT_MAX_LEN) + '…' }
     }
   }
   return block
@@ -482,6 +482,29 @@ function mediaObject(value: unknown): Record<string, unknown> | null {
  * locate the image. Returns `null` when the summary is not such a result, in
  * which case the caller falls back to plain character truncation.
  */
+/**
+ * A `*_run` result is JSON whose bulk is the final page snapshot, so truncating
+ * it leaves the phone unable to parse the run at all. Keep the outcome — which
+ * is what the block renders, and what ties it to its reported actions — and drop
+ * the snapshot.
+ */
+export function compactRunToolResult(summary: string): string | null {
+  const text = unwrapMcpEnvelope(summary)
+  if (text.charCodeAt(0) !== 123 /* { */) return null
+  let parsed: unknown
+  try { parsed = JSON.parse(text) } catch { return null }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  const obj = parsed as Record<string, unknown>
+  if (typeof obj.runId !== 'string') return null
+  if (obj.status !== 'paused' && obj.status !== 'done' && obj.status !== 'aborted') return null
+  return JSON.stringify({
+    status: obj.status,
+    runId: obj.runId,
+    ...(typeof obj.steps === 'number' ? { steps: obj.steps } : {}),
+    ...(typeof obj.why === 'string' ? { why: obj.why } : {}),
+  })
+}
+
 export function compactMediaToolResult(summary: string): string | null {
   const text = unwrapMcpEnvelope(summary)
   if (text.charCodeAt(0) !== 123 /* { */) return null

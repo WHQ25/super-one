@@ -1815,6 +1815,13 @@ export type AgentEventBase =
   }
   /** Host browser_download task progress / completion for chat tool UI (taskId is bdl_*). */
   | { type: 'browser_download_update'; taskId: string; status: 'progressing' | 'completed' | 'failed'; path?: string; filename?: string; bytes?: number; totalBytes?: number; mimeType?: string; url?: string; error?: string }
+  /**
+   * One action a `*_run` fast loop performed, while it is still running. The
+   * chat shows a run as the actions it took, in the same words a single-action
+   * tool call would use — the loop's own step numbers and confidences stay in
+   * the trace.
+   */
+  | { type: 'jev_run_update'; runId: string; platform: JevRunPlatform; action?: JevRunAction; outcome?: JevRunOutcome }
   | { type: 'auth_status'; isAuthenticating: boolean; output: string[]; error?: string }
   | { type: 'slash_command_output'; messageId: string; content: string }
   /**
@@ -1954,6 +1961,19 @@ export type AgentEventBase =
     }
   | { type: 'realtime_error'; error: string }
   | { type: 'realtime_closed'; reason?: string }
+
+export type JevRunPlatform = 'browser' | 'computer' | 'device'
+
+/** An action a run performed, in the vocabulary of that platform's single-action tool. */
+export interface JevRunAction {
+  op: 'click' | 'type' | 'press' | 'scroll' | 'wait'
+  /** What the action was aimed at: an element's label, or a scroll direction. */
+  target?: string
+  /** Typed text, already redacted by the emitter when it looks like a secret. */
+  text?: string
+}
+
+export type JevRunOutcome = 'paused' | 'done' | 'aborted'
 
 export type AgentEvent = AgentEventBase & { remoteView?: 'summary'; projectPath?: string; sessionId?: string; draftSessionId?: string; seq?: number; epoch?: number }
 

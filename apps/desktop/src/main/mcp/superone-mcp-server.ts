@@ -4,6 +4,7 @@ import { McpServer, type RegisteredTool } from '@modelcontextprotocol/sdk/server
 import { randomUUID } from 'crypto'
 import { BrowserWindow } from 'electron'
 import log from '../logger'
+import { setJevRunHostEventResolver } from '../jev/run-events'
 import type { MiniAppToolDefinition, MiniAppToolInterceptOpenRequest } from '@superone/shared/miniapp-types'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
 import { getPreapprovedByPath } from '../miniapp/miniapp-packager'
@@ -194,6 +195,13 @@ let sessionHostProvider: (() => SessionTitleHost | null) | null = null
 export function setSessionHostProvider(provider: (() => SessionTitleHost | null) | null): void {
   sessionHostProvider = provider
   setBrowserWebMcpHostEventResolver((sessionId) => {
+    const session = sessionHostProvider?.()?.getSession(sessionId)
+    if (!session?.emitHostEvent) return null
+    return (event) => session.emitHostEvent!(event)
+  })
+  // The `*_run` loops report each action they take so the chat can show the run
+  // as what it did; same one-way dependency as the two resolvers around it.
+  setJevRunHostEventResolver((sessionId) => {
     const session = sessionHostProvider?.()?.getSession(sessionId)
     if (!session?.emitHostEvent) return null
     return (event) => session.emitHostEvent!(event)

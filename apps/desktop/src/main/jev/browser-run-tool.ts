@@ -14,7 +14,8 @@ import { type PageObservation, type DoneWhen, checkDoneWhen, clickNode, hasDoneW
 import { getJevApiKey } from './jev-api-key'
 import { type Answer, FastRun, type RunDeps, type RunResult } from './loop'
 import { type PausedRun, storePausedRun, takePausedRun } from './run-store'
-import { jevClient, runInputShape } from './run-tool-common'
+import { runReporter } from './run-events'
+import { jevClient, reportRun, runInputShape } from './run-tool-common'
 
 export const BROWSER_RUN_DESCRIPTION =
   'Experimental (requires the Jev fast loop setting): delegate a multi-step page goal — clicks, typing, scrolling — to a fast model that chooses each step and judges completion itself, so you do not pay a turn per click. '
@@ -70,6 +71,7 @@ function depsFor(sessionId: string, tab: string | undefined, doneWhen?: DoneWhen
 }
 
 function reply(sessionId: string, run: PausedRun, result: RunResult): BrowserToolReply {
+  runReporter(sessionId, result.runId, 'browser').outcome(result.status)
   if (result.status === 'paused') {
     storePausedRun(sessionId, run)
     return browserTextReply({
@@ -97,6 +99,7 @@ export async function executeBrowserRun(sessionId: string, rawArgs: Record<strin
               : `Run ${args.runId} belongs to another session.`,
         ))
       }
+      reportRun(sessionId, 'browser', taken)
       return reply(sessionId, taken, await taken.resume(args.answer as Answer, signal))
     }
     if (!args.goal?.trim()) return browserErrorReply(new Error('`goal` is required to start a run (or pass runId + answer to resume).'))
@@ -107,6 +110,7 @@ export async function executeBrowserRun(sessionId: string, rawArgs: Record<strin
       maxSteps: args.maxSteps ?? DEFAULT_MAX_STEPS,
       maxWallMs: args.maxWallMs ?? DEFAULT_MAX_WALL_MS,
     }, depsFor(sessionId, args.tab, args.done_when))
+    reportRun(sessionId, 'browser', run)
     return reply(sessionId, run, await run.start(signal))
   } catch (err) {
     return browserErrorReply(err)

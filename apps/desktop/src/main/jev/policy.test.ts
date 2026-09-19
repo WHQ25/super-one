@@ -36,8 +36,8 @@ describe('decide', () => {
   })
 
   it('finishes on Jev\'s completion verdict unless a done_when owns completion', () => {
-    const answers = { ...calm, goal_satisfied: noul(0.95), action: pick('click', ACTIONS), click_target: pick('1', CLICKS) }
-    expect(decide(input({ answers }))).toMatchObject({ kind: 'done', probability: 0.95 })
+    const answers = { ...calm, goal_satisfied: noul(0.8), action: pick('click', ACTIONS), click_target: pick('1', CLICKS) }
+    expect(decide(input({ answers }))).toMatchObject({ kind: 'done', probability: 0.8 })
     expect(decide(input({ answers, doneWhenGiven: true })).kind).toBe('click')
     expect(decide(input({ answers: { ...answers, goal_satisfied: noul(THRESHOLDS.goalSatisfied - 0.01) } })).kind).toBe('click')
   })

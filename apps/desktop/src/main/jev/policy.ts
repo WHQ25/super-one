@@ -12,8 +12,12 @@ import { type JevAnswer, readNoul, validateChoice } from './typesafe-client'
 
 export const THRESHOLDS = {
   stillLoading: 0.7,
-  /** Jev's own completion verdict; the loop confirms it on a fresh observation before finishing. */
-  goalSatisfied: 0.9,
+  /**
+   * Jev's own completion verdict; the loop confirms it on a fresh observation
+   * before finishing. Calibration (Wikipedia history task): 0.81–0.82 on the
+   * finished page, at most 0.09 on every page before it.
+   */
+  goalSatisfied: 0.7,
   /** Official confidence-routing floor: below this the model is not acted on at all. */
   read: 0.6,
   write: 0.7,

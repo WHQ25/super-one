@@ -266,7 +266,7 @@ observe 之后、问 Jev 之前：
 
 answers 回来后，按顺序：
 1. still_loading ≥ 0.7 且平台无加载信号           → WAIT（rAF 等待，200 ms 上限）；连续 WAIT ≤ 3
-2. goal_satisfied ≥ 0.9 且 done_when 未给        → 候选完成：settle 后重新观察再问一次，仍 ≥ 0.9 → done（8.15）
+2. goal_satisfied ≥ 0.7 且 done_when 未给        → 候选完成：settle 后重新观察再问一次，仍 ≥ 0.7 → done（8.15；Wikipedia 完成页 0.82，之前各页 ≤ 0.09）
    done_when 已给                                → 由 0b 决定，goal_satisfied 只记录
 3. action = none_useful（或 target = none_of_these）
      且 click_target 对某候选 ≥ 0.8              → 按 click 处理（action 头在一屏相似项前会整体放弃，target 头仍能挑出那一行）

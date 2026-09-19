@@ -9,7 +9,7 @@ import { type ActionSpace, buildActionSpace, clickKindOf, elementByIndex, type H
 import type { RunObservation } from './observation'
 import { decide, type Decision, presetByHint, type Question, type QuestionOption } from './policy'
 import { buildRequest, type Preset } from './questions'
-import { appendJevTrace, type TraceStep } from './trace'
+import { appendJevTrace, topChoiceProbabilities, traceRequestState, type TraceStep } from './trace'
 import { estimateTokens, type JevRequest, type JevResponse } from './typesafe-client'
 
 export interface RunDeps<Page extends RunObservation = RunObservation> {
@@ -267,6 +267,9 @@ export class FastRun<Page extends RunObservation = RunObservation> {
         elements: space.elements.length,
         textChars: page.text.length,
         requestTokens: estimateTokens(request),
+        usage: response.usage,
+        state: traceRequestState(request.state, this.opts.presets),
+        topChoices: topChoiceProbabilities(response.answers),
         answers: response.answers,
         model: response.model,
         latencyMs: { jev: response.latencyMs, observe: observeMs },

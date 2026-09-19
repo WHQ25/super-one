@@ -55,7 +55,10 @@ function candidateCriteria(space: ActionSpace, keys: readonly string[]): Record<
     const verb = clickVerb(kind, el)
     const element = verb === 'Click' ? `[${el.index}] ${el.label}`
       : verb === 'Press Enter in' ? `[${el.index}] Press Enter in ${el.label} to submit it`
-        : `[${el.index}] ${verb} ${el.label}`
+        // What expanding is for is not visible until it happens, and a collapsed
+        // hamburger is where a narrow layout keeps its search and navigation.
+        : verb === 'Expand' ? `[${el.index}] Expand ${el.label} to reveal controls that are not on the page right now`
+          : `[${el.index}] ${verb} ${el.label}`
     criteria[key] = {
       element,
       role: el.role,
@@ -92,7 +95,7 @@ export function buildRequest(input: BuildQuestionsInput): JevRequest {
   }
 
   const actions: Record<string, string> = {}
-  if (space.clickCandidates.length) actions.click = 'Click an offered element: a link, button, option, suggestion, tab; open a field\'s popup; or press Enter in a filled field where offered.'
+  if (space.clickCandidates.length) actions.click = 'Click an offered element: a link, button, option, suggestion, tab; expand collapsed navigation or a menu; open a field\'s popup; or press Enter in a filled field where offered.'
   if (space.typeCandidates.length) actions.type_text = 'Replace the text in an editable field with a preset value.'
   if (space.canScrollDown) actions.scroll_down = 'Scroll down to reveal more of the page.'
   if (space.canScrollUp) actions.scroll_up = 'Scroll up.'

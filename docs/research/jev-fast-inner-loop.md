@@ -608,10 +608,11 @@ now: {"node":1,"role":"link","label":"Apple","value":"",…}              ← �
 - **settle 等的是"可观察状态稳定"，不是 DOM 安静**。Apple 的菜单用 CSS 过渡把条目显现出来，**不产生 mutation**，以 DOM 安静为准会在展开到一半时返回（同一份代码两次跑出 16 与 39 个元素的差异）。改为：差异成立后持续采样 marker，直到它 200 ms 不变，或 `graceMs` 1000 ms 用尽；上限 2000 ms。
 - **滚动之后没有 settle**。`execute()` 里只有 click / type 调 settle，而滚轮是平滑动画，观察发生在滚动落地之前，于是每次滚动都报"无变化"，三次即触发 no-progress——但页面其实一直在滚（探针读到 `scrollY` 已达 6346）。
 
-### 8.19 尚未解决
+### 8.19 候选标签要说明动作会揭示什么
 
-- **完成检测**：arXiv 走到了正确的 `/abs/` 页，`goal_satisfied` 却只有 0.45–0.50。需在新数据上重新校准（8.18 之前的读数不可用）。
-- **窄布局语义**：GitHub 首页 748 px 下搜索框在 "Toggle navigation" 后面，Jev 给 0.18 并选择滚动。Apple 的同类控件（"Local Nav Open Menu"）最终被选中（0.74），说明标签文字本身比 `expanded` 属性更起作用。
+GitHub 首页在 748 px 下把搜索框收进 "Toggle navigation"。标成 `Expand Toggle navigation` 后 Jev 仍只给 0.16，选择滚动；Apple 的同类控件因为 aria-label 字面写着 "Local Nav Open Menu" 而拿到 0.74。差别在标签文字，不在 `expanded` 属性——Jev 无法从"这个控件可展开"推出"我要的搜索框在里面"。
+
+把结果写进标签（`Expand <label> to reveal controls that are not on the page right now`），同一控件升到 0.53–0.64，GitHub 全程走通。这是 8.15 "把动作写进标签"的延伸：**属性描述状态，标签描述后果，Jev 对后者反应好得多**。
 
 ## 9. 非目标
 
@@ -774,19 +775,24 @@ Verification: Jev/browser surface, the built-in tool catalog and device presente
 
 ### 10.6 browser 范式抽样（Grok 4.6 / high，dev 版，无 `done_when`，面板 748 px）
 
-> 8.18 之前的所有抽样读数已作废：settle 与 WAIT 因跨边界比较 marker 而从未真正等待，任何"等待没用"的结论都建立在空转之上。下表只记录 8.18 修复后实测过的任务，其余待重跑。
+> 8.18 之前的读数已作废：settle 与 WAIT 因跨边界比较 marker 而从未真正等待。下表是修复后逐个跑通的实测。
 
-| 任务 | 结果 | `browser_run` | 主模型 | Jev | 备注 |
+| 任务 | 结果 | `browser_run` | 主模型 | Jev | 修复前 |
 | --- | --- | --- | --- | --- | --- |
-| Apple → MacBook Air → Tech Specs | ✅ done（`/macbook-air/specs/`） | 1 | 7 calls / 131.1 s / $0.0387 | 16 步：Menu → Mac menu → MacBook Air → 8×scroll → Local Nav Open Menu(0.74) → Tech Specs(0.98) → 完成 0.83/0.82 两次确认 | 修复前同一任务两次都卡在首页第 1 步 |
+| Apple → MacBook Air → Tech Specs | ✅ done | 1 | 7 calls / 131.1 s / $0.0387 | 16 步；Local Nav Open Menu 0.74 → Tech Specs 0.98；完成 0.83/0.82 | 首页第 1 步即卡住 |
+| arXiv 搜索 → 首条摘要 | ✅ done | 1 | 6 calls / 61.5 s / $0.0515 | 6 步；浮层展开后只剩 2 个候选 → `submit` 回车提交；完成 0.88/0.85 | 覆盖元素死循环，或到了目标页判不出完成 |
+| Hugging Face 筛选 + 排序 | ✅ done（`sort=downloads`） | 1 | 7 calls / 69.1 s / $0.0510 | 8 步；第 7 步走"无动作可做即完成"(0.63)，确认读数 0.93 | 排序错成 trending，3 次调用 |
+| GitHub 搜仓库 → Issues | ✅ done | 1 | 7 calls / 207.9 s / $0.0440 | 11 步；Expand Toggle navigation 0.53→ 搜索框 → 提交 → 仓库 → Issues；完成 0.96 | 首页 no-progress，Toggle navigation 仅 0.16 |
 
-同一任务在修复过程中的推进（同一 prompt、同一模型）：
+Apple 一例在修复过程中的推进（同一 prompt、同一模型），可见每一层各自的贡献：
 
 | 构建 | 结果 |
 | --- | --- |
-| 8.17 状态（settle 空转） | 第 1 步 click Menu 即报"无变化"，候选被 stuck 规则剔除 → no-progress 暂停 |
-| + marker 规范化 | 导航三步全对，落到 `/macbook-air/`，但滚动全部报"无变化" → 三次即暂停 |
+| 8.17 状态（settle 空转） | 第 1 步 click Menu 即报"无变化"，候选被 stuck 规则剔除 → no-progress |
+| + marker 规范化 | 导航三步全对，落到 `/macbook-air/`，但滚动全报"无变化" → 三次即暂停 |
 | + 滚动 settle + 状态稳定判定 | 全程走通并自判完成 |
+
+**这批修复按影响排序**：跨边界 marker 比较（8.18，让等待全部失效）> 遮挡元素仍被提供（Jev 每轮选它、执行器每轮拒绝）> 完成判定问的是"每条要求"而非"终点状态"（同一页 0.49 → 0.88）> 折叠控件标签没说明展开会揭示什么（0.16 → 0.53）。四者都不是模型能力问题：每一例里 Jev 的选择在它看到的信息下都是合理的。
 
 ## 参考
 

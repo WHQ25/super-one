@@ -296,7 +296,7 @@ describe('FastRun', () => {
     })
     deps.checkDone = async () => false
     await new FastRun(opts({ maxSteps: 2 }), deps).start()
-    expect(seen[0].criteria).toContain('[1] Expand Toggle navigation')
+    expect(seen[0].criteria).toContain('[1] Expand Toggle navigation to reveal controls that are not on the page right now')
     expect(seen[1].completed).toEqual(['Expand Toggle navigation'])
     expect(seen[1].criteria).toContain('"[1] Toggle navigation"')
   })

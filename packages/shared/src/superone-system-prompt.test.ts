@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SUPERONE_SYSTEM_PROMPT_APPEND } from './superone-system-prompt'
+import { TERMINAL_TABS_DESCRIPTION } from './superone-tool-descriptions'
 import { BROWSER_MEMORY_DISCOVERY_HINT, MEMORY_READ_POLICY, MEMORY_WRITE_POLICY } from './browser-memory'
 import { COMPUTER_MEMORY_DISCOVERY_HINT, DEVICE_MEMORY_DISCOVERY_HINT, INTERACTION_MEMORY_TOOL_DEFS } from './interaction-memory'
 
@@ -9,6 +10,19 @@ describe('SUPERONE_SYSTEM_PROMPT_APPEND', () => {
     expect(SUPERONE_SYSTEM_PROMPT_APPEND).toMatch(/Always include `tags`/)
     expect(SUPERONE_SYSTEM_PROMPT_APPEND).toMatch(/invent/)
     expect(SUPERONE_SYSTEM_PROMPT_APPEND).not.toMatch(/do not invent/i)
+  })
+
+  it('routes commands by lifecycle, not by duration or by the built-in preference', () => {
+    // The generic "prefer built-in tools" rule predates terminal_tabs; without an
+    // explicit carve-out the model reads terminal_tabs run as the suitable built-in
+    // for every command and routes builds and tests through it.
+    expect(SUPERONE_SYSTEM_PROMPT_APPEND).toMatch(/Running commands is the exception: your own shell tool stays the default/)
+    const terminals = SUPERONE_SYSTEM_PROMPT_APPEND.match(/^Terminals: .*$/m)?.[0].replace(/\s+/g, ' ')
+    expect(terminals).toMatch(/finish without input in your shell tool, regardless of duration/)
+    expect(terminals).toMatch(/terminal_tabs run only for commands that run until stopped .* or need keyboard input/)
+    expect(terminals).not.toMatch(/would not work in the shell tool/)
+    expect(TERMINAL_TABS_DESCRIPTION).toMatch(/^Only for commands that run until stopped/)
+    expect(TERMINAL_TABS_DESCRIPTION).toMatch(/use your shell tool, even if slow/)
   })
 
   it('points file delivery to the phone at Markdown links, not at a tool', () => {

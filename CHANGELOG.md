@@ -40,7 +40,8 @@ Every alpha release keeps its own notes on its GitHub Release.
   (approve once or always in this project, with an agent-proposed
   rule). Agent tabs appear in the dock and stay on the session
   that opened them. Chat shows the screen the agent saw. Settings
-  lists and revokes always-allow rules.
+  lists and revokes always-allow rules. Commands that finish on
+  their own stay in the agent's shell tool, however slow.
 - Built-in browser on macOS can use Touch ID passkeys.
 - Maximizing an activity tab folds the sidebar and collapses
   floating chat.

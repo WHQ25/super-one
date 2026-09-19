@@ -178,12 +178,12 @@ export const AUTOMATION_DELETE_DESCRIPTION =
 
 
 export const TERMINAL_TABS_DESCRIPTION =
-  'Manage activity-panel terminal tabs for long-lived or interactive processes: dev servers, watch modes, REPLs, TUIs, ssh, wizards. ' +
-  'One-shot commands (build, test, git) belong in your shell tool. ' +
+  'Only for commands that run until stopped (servers, watchers) or need keyboard input (REPLs, TUIs, ssh, wizards). ' +
+  'Non-interactive commands that finish (build, test, install, git) use your shell tool, even if slow. ' +
   'action=list (default) returns this session\'s tabs plus the user\'s as a TOON table; other sessions\' tabs are hidden. ' +
   'action=run asks to approve `command`, types it into a new or idle tab, and returns the screen; you control the tab only while that command is in the foreground. ' +
   'action=attach asks to control a command already running in a user tab. ' +
-  'action=close kills a tab you opened, never one the user is using. Follow with terminal_act / terminal_wait_for / terminal_snapshot.'
+  'action=close kills a tab you opened, never one the user is using. For open tabs: terminal_act / terminal_wait_for / terminal_snapshot.'
 
 export const TERMINAL_SNAPSHOT_DESCRIPTION =
   'Read a terminal tab as rendered text. `include` picks sections: screen (visible rows, default), scrollback (last `tail` lines including scrolled-off output), cursor, meta (title, cwd, status, foreground command, control). ' +
@@ -199,4 +199,4 @@ export const TERMINAL_ACT_DESCRIPTION =
 
 export const TERMINAL_WAIT_FOR_DESCRIPTION =
   'Block until a terminal tab reaches a state; conditions AND-combine: text (substring visible on screen or in new output), textGone, idleMs (no output for that long), exited (foreground command finished). ' +
-  'Use after terminal_tabs run or terminal_act when output arrives asynchronously (a server banner, a build finishing). timeoutMs default 15000, max 120000. Do not sleep+poll with terminal_snapshot yourself.'
+  'Use after terminal_tabs run or terminal_act when output arrives asynchronously (a server banner, a watch rebuild finishing). timeoutMs default 15000, max 120000. Do not sleep+poll with terminal_snapshot yourself.'

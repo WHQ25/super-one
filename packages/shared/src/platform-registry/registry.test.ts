@@ -53,7 +53,7 @@ describe('builtin registry', () => {
       { id: 'zhipu-cn', planId: 'coding', openaiBase: 'https://open.bigmodel.cn/api/coding/paas/v4' },
       { id: 'zhipu-cn', planId: 'api', openaiBase: 'https://open.bigmodel.cn/api/paas/v4' },
       { id: 'zhipu-global', planId: 'coding', openaiBase: 'https://api.z.ai/api/coding/paas/v4' },
-      { id: 'minimax', planId: 'cn', openaiBase: 'https://api.minimaxi.com/v1' },
+      { id: 'minimax', planId: 'cn', openaiBase: 'https://api.minimax.cn/v1' },
       { id: 'minimax', planId: 'global', openaiBase: 'https://api.minimax.io/v1' },
       { id: 'volcengine', planId: 'coding', openaiBase: 'https://ark.cn-beijing.volces.com/api/coding/v3' },
       { id: 'volcengine', planId: 'agent', openaiBase: 'https://ark.cn-beijing.volces.com/api/plan/v3' },
@@ -78,35 +78,44 @@ describe('builtin registry', () => {
     const moonshot = findPlatform(BUILTIN_PLATFORMS, 'moonshot')
     expect(kimi?.brand).toBe('kimi')
     expect(moonshot?.brand).toBe('moonshot')
-    expect(kimi?.plans.map((p) => p.id)).toEqual(['andante', 'moderato', 'allegretto'])
+    expect(kimi?.plans.map((p) => p.id)).toEqual(['plus', 'pro', 'max', 'andante', 'moderato', 'allegretto'])
     expect(moonshot?.plans.map((p) => p.id).sort()).toEqual(['cn', 'global'])
     for (const plan of [...(kimi?.plans ?? []), ...(moonshot?.plans ?? [])]) {
       expect(plan.endpoints.some((e) => e.protocols.includes('anthropic-messages'))).toBe(true)
       expect(plan.endpoints.some((e) => e.protocols.includes('openai-chat'))).toBe(true)
     }
 
+    // Plans on sale: Plus caps K3 at 256K, Pro and Max unlock 1M + HighSpeed and share one config.
+    const plus = findPlan(kimi, 'plus')?.endpoints.find((e) => e.id === 'anthropic')
+    expect(plus?.defaults?.modelMapping?.default?.id).toBe('k3-256k')
+    expect(plus?.models?.map((m) => m.id)).toEqual(['k3', 'k3-256k', 'kimi-for-coding'])
+    expect(plus?.defaults?.extraEnv?.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe('262144')
+    expect(plus?.defaults?.extraEnv?.CLAUDE_CODE_EFFORT_LEVEL).toBe('high')
+
+    const pro = findPlan(kimi, 'pro')?.endpoints.find((e) => e.id === 'anthropic')
+    expect(pro?.defaults?.modelMapping?.default?.id).toBe('k3[1m]')
+    expect(pro?.models?.map((m) => m.id)).toEqual(['k3', 'k3-256k', 'kimi-for-coding', 'kimi-for-coding-highspeed'])
+    expect(pro?.defaults?.extraEnv?.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe('1048576')
+    expect(pro?.defaults?.extraEnv?.CLAUDE_CODE_MAX_CONTEXT_TOKENS).toBe('1048576')
+    expect(pro?.defaults?.extraEnv?.CLAUDE_CODE_EFFORT_LEVEL).toBe('high')
+    expect(findPlan(kimi, 'max')?.endpoints.find((e) => e.id === 'anthropic')?.defaults).toEqual(pro?.defaults)
+
+    // Retired tiers stay resolvable for existing credentials and track the plan they map onto.
     const andante = findPlan(kimi, 'andante')?.endpoints.find((e) => e.id === 'anthropic')
     expect(andante?.defaults?.modelMapping?.default?.id).toBe('kimi-for-coding')
     expect(andante?.models?.map((m) => m.id)).toEqual(['kimi-for-coding'])
-    expect(andante?.defaults?.extraEnv?.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe('262144')
+    expect(andante?.defaults?.extraEnv?.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe('1048576')
     expect(andante?.defaults?.extraEnv?.CLAUDE_CODE_EFFORT_LEVEL).toBeUndefined()
 
     const moderato = findPlan(kimi, 'moderato')?.endpoints.find((e) => e.id === 'anthropic')
     expect(moderato?.defaults?.modelMapping?.default?.id).toBe('k3')
-    expect(moderato?.models?.map((m) => m.id)).toEqual(['k3', 'kimi-for-coding'])
-    expect(moderato?.defaults?.extraEnv?.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe('262144')
-    expect(moderato?.defaults?.extraEnv?.CLAUDE_CODE_EFFORT_LEVEL).toBe('max')
+    expect(moderato?.models).toEqual(plus?.models)
+    expect(moderato?.defaults?.extraEnv).toEqual(plus?.defaults?.extraEnv)
 
     const allegretto = findPlan(kimi, 'allegretto')?.endpoints.find((e) => e.id === 'anthropic')
     expect(allegretto?.defaults?.modelMapping?.default?.id).toBe('k3[1m]')
-    expect(allegretto?.models?.map((m) => m.id)).toEqual([
-      'k3',
-      'kimi-for-coding',
-      'kimi-for-coding-highspeed',
-    ])
-    expect(allegretto?.defaults?.extraEnv?.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe('1048576')
-    expect(allegretto?.defaults?.extraEnv?.CLAUDE_CODE_MAX_CONTEXT_TOKENS).toBe('1048576')
-    expect(allegretto?.defaults?.extraEnv?.CLAUDE_CODE_EFFORT_LEVEL).toBe('max')
+    expect(allegretto?.models).toEqual(pro?.models)
+    expect(allegretto?.defaults?.extraEnv).toEqual(pro?.defaults?.extraEnv)
 
     for (const [planId, base] of [
       ['cn', 'https://api.moonshot.cn/anthropic'],
@@ -118,7 +127,7 @@ describe('builtin registry', () => {
     }
     expect(
       findPlan(moonshot, 'cn')?.endpoints.find((e) => e.id === 'anthropic')?.defaults?.modelMapping?.default?.id,
-    ).toBe('kimi-k3')
+    ).toBe('kimi-k3[1m]')
   })
 
   it('defaults ENABLE_TOOL_SEARCH=true on builtin anthropic endpoints except Kimi/Moonshot presets', () => {

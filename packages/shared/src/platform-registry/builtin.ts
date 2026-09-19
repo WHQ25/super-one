@@ -56,10 +56,11 @@ function openaiChat(
 
 // --- shared model mappings ----------------------------------------------------
 
+// mimo-v2.5-pro serves 1M context once the id carries the `[1m]` suffix (mimo.mi.com Claude Code guide).
 const XIAOMI_MODELS: ProviderModelEnv = {
-  default: { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro' },
-  opus: { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro' },
-  sonnet: { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro' },
+  default: { id: 'mimo-v2.5-pro[1m]', name: 'MiMo V2.5 Pro' },
+  opus: { id: 'mimo-v2.5-pro[1m]', name: 'MiMo V2.5 Pro' },
+  sonnet: { id: 'mimo-v2.5-pro[1m]', name: 'MiMo V2.5 Pro' },
   haiku: { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro' },
 }
 
@@ -72,11 +73,11 @@ const BAILIAN_CODING_PLAN_MODELS: ProviderModelEnv = {
 }
 
 const BAILIAN_TOKEN_PLAN_MODELS: ProviderModelEnv = {
-  default: { id: 'qwen3.7-max', name: 'Qwen 3.7 Max' },
-  opus: { id: 'qwen3.7-max', name: 'Qwen 3.7 Max' },
-  sonnet: { id: 'qwen3.7-max', name: 'Qwen 3.7 Max' },
+  default: { id: 'qwen3.8-flash', name: 'Qwen 3.8 Flash' },
+  opus: { id: 'qwen3.8-flash', name: 'Qwen 3.8 Flash' },
+  sonnet: { id: 'qwen3.8-flash', name: 'Qwen 3.8 Flash' },
   haiku: { id: 'qwen3.6-flash', name: 'Qwen 3.6 Flash' },
-  subagent: { id: 'qwen3.7-max', name: 'Qwen 3.7 Max' },
+  subagent: { id: 'qwen3.8-flash', name: 'Qwen 3.8 Flash' },
 }
 
 const BAILIAN_API_MODELS: ProviderModelEnv = {
@@ -88,24 +89,27 @@ const BAILIAN_API_MODELS: ProviderModelEnv = {
 }
 
 const GLM_MODELS: ProviderModelEnv = {
-  default: { id: 'glm-5.2[1m]', name: 'GLM-5.2' },
-  opus: { id: 'glm-5.2[1m]', name: 'GLM-5.2' },
-  sonnet: { id: 'glm-5.2[1m]', name: 'GLM-5.2' },
-  haiku: { id: 'glm-4.5-air', name: 'GLM-4.5 Air' },
+  default: { id: 'glm-5.3[1m]', name: 'GLM-5.3' },
+  opus: { id: 'glm-5.3[1m]', name: 'GLM-5.3' },
+  sonnet: { id: 'glm-5.3[1m]', name: 'GLM-5.3' },
+  haiku: { id: 'glm-5.3-flash[1m]', name: 'GLM-5.3 Flash' },
 }
 
 const MINIMAX_MODELS: ProviderModelEnv = {
   default: { id: 'MiniMax-M3[1m]', name: 'MiniMax M3' },
   opus: { id: 'MiniMax-M3[1m]', name: 'MiniMax M3' },
-  sonnet: { id: 'MiniMax-M3', name: 'MiniMax M3' },
-  haiku: { id: 'MiniMax-M3', name: 'MiniMax M3' },
+  sonnet: { id: 'MiniMax-M3[1m]', name: 'MiniMax M3' },
+  haiku: { id: 'MiniMax-M3[1m]', name: 'MiniMax M3' },
 }
 
+// Ark's pay-as-you-go "recommended" coding model: a rolling id (1M context) that Ark upgrades weekly,
+// so it survives the dated doubao-seed-* snapshots being retired.
 const DOUBAO_MODELS: ProviderModelEnv = {
-  default: { id: 'doubao-seed-2-0-code-preview-latest', name: 'Doubao Seed 2.0 Code' },
-  opus: { id: 'doubao-seed-2-0-code-preview-latest', name: 'Doubao Seed 2.0 Code' },
-  sonnet: { id: 'doubao-seed-2-0-code-preview-latest', name: 'Doubao Seed 2.0 Code' },
-  haiku: { id: 'doubao-seed-2-0-code-preview-latest', name: 'Doubao Seed 2.0 Code' },
+  default: { id: 'doubao-seed-evolving', name: 'Doubao Seed Evolving' },
+  opus: { id: 'doubao-seed-evolving', name: 'Doubao Seed Evolving' },
+  sonnet: { id: 'doubao-seed-evolving', name: 'Doubao Seed Evolving' },
+  haiku: { id: 'doubao-seed-evolving', name: 'Doubao Seed Evolving' },
+  subagent: { id: 'doubao-seed-evolving', name: 'Doubao Seed Evolving' },
 }
 
 /**
@@ -141,15 +145,46 @@ const ARK_CODE_MODELS: ProviderModelEnv = {
   opus: { id: 'ark-code-latest', name: 'Ark Code Latest' },
   sonnet: { id: 'ark-code-latest', name: 'Ark Code Latest' },
   haiku: { id: 'ark-code-latest', name: 'Ark Code Latest' },
+  subagent: { id: 'ark-code-latest', name: 'Ark Code Latest' },
 }
 
 const KIMI_API_MODELS: ProviderModelEnv = {
-  default: { id: 'kimi-k3', name: 'Kimi K3' },
-  opus: { id: 'kimi-k3', name: 'Kimi K3' },
-  sonnet: { id: 'kimi-k3', name: 'Kimi K3' },
-  haiku: { id: 'kimi-k2.7-code-highspeed', name: 'Kimi K2.7 Code HighSpeed' },
-  subagent: { id: 'kimi-k3', name: 'Kimi K3' },
+  default: { id: 'kimi-k3[1m]', name: 'Kimi K3' },
+  opus: { id: 'kimi-k3[1m]', name: 'Kimi K3' },
+  sonnet: { id: 'kimi-k3[1m]', name: 'Kimi K3' },
+  haiku: { id: 'kimi-k2.7-code', name: 'Kimi K2.7 Code' },
+  subagent: { id: 'kimi-k3[1m]', name: 'Kimi K3' },
 }
+
+// Kimi Code membership. Plus / Pro / Max are the plans on sale; Andante / Moderato / Allegretto are
+// the retired names they replaced (Andante→Plus without K3, Moderato→Plus, Allegretto→Pro). Pro and
+// Max share one model set — Max only buys more quota — so they share constants below.
+const KIMI_PLUS_MODELS: ProviderModelEnv = {
+  default: { id: 'k3-256k', name: 'Kimi K3 (256K)' },
+  opus: { id: 'k3-256k', name: 'Kimi K3 (256K)' },
+  sonnet: { id: 'k3-256k', name: 'Kimi K3 (256K)' },
+  haiku: { id: 'k3-256k', name: 'Kimi K3 (256K)' },
+  subagent: { id: 'k3-256k', name: 'Kimi K3 (256K)' },
+}
+
+const KIMI_PLUS_ENDPOINT_MODELS: EndpointModel[] = [
+  { id: 'k3', name: 'Kimi K3', tasks: ['chat'] },
+  { id: 'k3-256k', name: 'Kimi K3 (256K)', tasks: ['chat'] },
+  { id: 'kimi-for-coding', name: 'Kimi for Coding', tasks: ['chat'] },
+]
+
+const KIMI_PRO_MODELS: ProviderModelEnv = {
+  default: { id: 'k3[1m]', name: 'Kimi K3' },
+  opus: { id: 'k3[1m]', name: 'Kimi K3' },
+  sonnet: { id: 'k3[1m]', name: 'Kimi K3' },
+  haiku: { id: 'k3[1m]', name: 'Kimi K3' },
+  subagent: { id: 'k3[1m]', name: 'Kimi K3' },
+}
+
+const KIMI_PRO_ENDPOINT_MODELS: EndpointModel[] = [
+  ...KIMI_PLUS_ENDPOINT_MODELS,
+  { id: 'kimi-for-coding-highspeed', name: 'Kimi for Coding HighSpeed', tasks: ['chat'] },
+]
 
 const KIMI_ANDANTE_MODELS: ProviderModelEnv = {
   default: { id: 'kimi-for-coding', name: 'Kimi for Coding' },
@@ -171,10 +206,7 @@ const KIMI_MODERATO_MODELS: ProviderModelEnv = {
   subagent: { id: 'k3', name: 'Kimi K3' },
 }
 
-const KIMI_MODERATO_ENDPOINT_MODELS: EndpointModel[] = [
-  { id: 'k3', name: 'Kimi K3', tasks: ['chat'] },
-  { id: 'kimi-for-coding', name: 'Kimi for Coding', tasks: ['chat'] },
-]
+const KIMI_MODERATO_ENDPOINT_MODELS: EndpointModel[] = KIMI_PLUS_ENDPOINT_MODELS
 
 const KIMI_ALLEGRETTO_MODELS: ProviderModelEnv = {
   default: { id: 'k3[1m]', name: 'Kimi K3' },
@@ -184,11 +216,15 @@ const KIMI_ALLEGRETTO_MODELS: ProviderModelEnv = {
   subagent: { id: 'k3[1m]', name: 'Kimi K3' },
 }
 
-const KIMI_ALLEGRETTO_ENDPOINT_MODELS: EndpointModel[] = [
-  { id: 'k3', name: 'Kimi K3', tasks: ['chat'] },
-  { id: 'kimi-for-coding', name: 'Kimi for Coding', tasks: ['chat'] },
-  { id: 'kimi-for-coding-highspeed', name: 'Kimi for Coding HighSpeed', tasks: ['chat'] },
-]
+const KIMI_ALLEGRETTO_ENDPOINT_MODELS: EndpointModel[] = KIMI_PRO_ENDPOINT_MODELS
+
+const KAT_CODER_MODELS: ProviderModelEnv = {
+  default: { id: 'kat-coder-pro-v2.5', name: 'KAT-Coder Pro V2.5' },
+  opus: { id: 'kat-coder-pro-v2.5', name: 'KAT-Coder Pro V2.5' },
+  sonnet: { id: 'kat-coder-pro-v2.5', name: 'KAT-Coder Pro V2.5' },
+  haiku: { id: 'kat-coder-pro-v2.5', name: 'KAT-Coder Pro V2.5' },
+  subagent: { id: 'kat-coder-pro-v2.5', name: 'KAT-Coder Pro V2.5' },
+}
 
 const NVIDIA_MODELS: ProviderModelEnv = {
   default: { id: 'moonshotai/kimi-k3', name: 'Kimi K3' },
@@ -200,6 +236,13 @@ const NVIDIA_MODELS: ProviderModelEnv = {
 const CODING_TIMEOUT = { API_TIMEOUT_MS: '3000000' }
 const DISABLE_NONESSENTIAL = { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1' }
 const EMPTY_AUTH_TOKEN = { ANTHROPIC_AUTH_TOKEN: '' }
+
+const MINIMAX_EXTRA_ENV = {
+  ...CODING_TIMEOUT,
+  CLAUDE_CODE_AUTO_COMPACT_WINDOW: '1000000',
+  ...DISABLE_NONESSENTIAL,
+  ...EMPTY_AUTH_TOKEN,
+}
 
 const KIMI_BASE_EXTRA_ENV = {
   ...CODING_TIMEOUT,
@@ -218,26 +261,31 @@ const KIMI_CTX_1M = {
   CLAUDE_CODE_MAX_CONTEXT_TOKENS: '1048576',
 }
 
+// kimi-for-coding serves 1M on every tier; K3 is 256K on Plus / Moderato and 1M from Pro / Allegretto.
 const KIMI_ANDANTE_EXTRA_ENV = {
   ...KIMI_BASE_EXTRA_ENV,
-  ...KIMI_CTX_256K,
+  ...KIMI_CTX_1M,
 }
 
-const KIMI_MODERATO_EXTRA_ENV = {
+const KIMI_PLUS_EXTRA_ENV = {
   ...KIMI_BASE_EXTRA_ENV,
   ...KIMI_CTX_256K,
-  CLAUDE_CODE_EFFORT_LEVEL: 'max',
+  CLAUDE_CODE_EFFORT_LEVEL: 'high',
 }
 
-const KIMI_ALLEGRETTO_EXTRA_ENV = {
+const KIMI_PRO_EXTRA_ENV = {
   ...KIMI_BASE_EXTRA_ENV,
   ...KIMI_CTX_1M,
-  CLAUDE_CODE_EFFORT_LEVEL: 'max',
+  CLAUDE_CODE_EFFORT_LEVEL: 'high',
 }
+
+const KIMI_MODERATO_EXTRA_ENV = KIMI_PLUS_EXTRA_ENV
+const KIMI_ALLEGRETTO_EXTRA_ENV = KIMI_PRO_EXTRA_ENV
 
 const KIMI_EXTRA_ENV = {
   ...KIMI_BASE_EXTRA_ENV,
   ...KIMI_CTX_1M,
+  CLAUDE_CODE_EFFORT_LEVEL: 'max',
 }
 
 // --- built-in platforms -------------------------------------------------------
@@ -394,9 +442,66 @@ export const BUILTIN_PLATFORMS: Platform[] = [
     catalogProviderId: 'moonshotai',
     plans: [
       {
+        id: 'plus',
+        name: 'Plus',
+        description: 'Kimi Code Plus — k3-256k / kimi-for-coding，K3 限 256k 上下文',
+        auth: 'api-key',
+        baseUrl: 'https://api.kimi.com',
+        apiKeyUrl: 'https://www.kimi.com/code/console',
+        endpoints: [
+          anthropic('/coding', {
+            extraEnv: KIMI_PLUS_EXTRA_ENV,
+            modelMapping: KIMI_PLUS_MODELS,
+            models: KIMI_PLUS_ENDPOINT_MODELS,
+          }),
+          openaiChat('/coding/v1', {
+            modelMapping: KIMI_PLUS_MODELS,
+            models: KIMI_PLUS_ENDPOINT_MODELS,
+          }),
+        ],
+      },
+      {
+        id: 'pro',
+        name: 'Pro',
+        description: 'Kimi Code Pro — k3[1m] / HighSpeed，最高 1M 上下文',
+        auth: 'api-key',
+        baseUrl: 'https://api.kimi.com',
+        apiKeyUrl: 'https://www.kimi.com/code/console',
+        endpoints: [
+          anthropic('/coding', {
+            extraEnv: KIMI_PRO_EXTRA_ENV,
+            modelMapping: KIMI_PRO_MODELS,
+            models: KIMI_PRO_ENDPOINT_MODELS,
+          }),
+          openaiChat('/coding/v1', {
+            modelMapping: KIMI_PRO_MODELS,
+            models: KIMI_PRO_ENDPOINT_MODELS,
+          }),
+        ],
+      },
+      {
+        id: 'max',
+        name: 'Max',
+        description: 'Kimi Code Max — 与 Pro 同模型集，额度更高',
+        auth: 'api-key',
+        baseUrl: 'https://api.kimi.com',
+        apiKeyUrl: 'https://www.kimi.com/code/console',
+        endpoints: [
+          anthropic('/coding', {
+            extraEnv: KIMI_PRO_EXTRA_ENV,
+            modelMapping: KIMI_PRO_MODELS,
+            models: KIMI_PRO_ENDPOINT_MODELS,
+          }),
+          openaiChat('/coding/v1', {
+            modelMapping: KIMI_PRO_MODELS,
+            models: KIMI_PRO_ENDPOINT_MODELS,
+          }),
+        ],
+      },
+      {
         id: 'andante',
-        name: 'Andante',
-        description: 'Kimi Code Andante — kimi-for-coding，256k 上下文',
+        name: 'Andante（已停售）',
+        description: 'Kimi Code Andante（旧套餐，已停售）— kimi-for-coding，1M 上下文',
         auth: 'api-key',
         baseUrl: 'https://api.kimi.com',
         apiKeyUrl: 'https://www.kimi.com/code/console',
@@ -414,8 +519,8 @@ export const BUILTIN_PLATFORMS: Platform[] = [
       },
       {
         id: 'moderato',
-        name: 'Moderato',
-        description: 'Kimi Code Moderato — k3 / kimi-for-coding，256k 上下文',
+        name: 'Moderato（已停售）',
+        description: 'Kimi Code Moderato（旧套餐，已停售，对应 Plus）— k3 / kimi-for-coding，K3 限 256k 上下文',
         auth: 'api-key',
         baseUrl: 'https://api.kimi.com',
         apiKeyUrl: 'https://www.kimi.com/code/console',
@@ -433,8 +538,8 @@ export const BUILTIN_PLATFORMS: Platform[] = [
       },
       {
         id: 'allegretto',
-        name: 'Allegretto+',
-        description: 'Kimi Code Allegretto 及以上 — k3[1m] / HighSpeed，最高 1M 上下文',
+        name: 'Allegretto+（已停售）',
+        description: 'Kimi Code Allegretto 及以上（旧套餐，已停售，对应 Pro）— k3[1m] / HighSpeed，最高 1M 上下文',
         auth: 'api-key',
         baseUrl: 'https://api.kimi.com',
         apiKeyUrl: 'https://www.kimi.com/code/console',
@@ -508,11 +613,11 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         name: '中国版',
         description: 'MiniMax 编程套餐或 API — 中国区，海螺 AI 代码模型',
         auth: 'api-key',
-        baseUrl: 'https://api.minimaxi.com',
-        apiKeyUrl: 'https://platform.minimaxi.com/user-center/basic-information/interface-key',
+        baseUrl: 'https://api.minimax.cn',
+        apiKeyUrl: 'https://platform.minimax.cn/user-center/basic-information/interface-key',
         endpoints: [
           anthropic('/anthropic', {
-            extraEnv: { ...CODING_TIMEOUT, ...DISABLE_NONESSENTIAL, ...EMPTY_AUTH_TOKEN },
+            extraEnv: MINIMAX_EXTRA_ENV,
             modelMapping: MINIMAX_MODELS,
           }),
           openaiChat('/v1', {
@@ -529,7 +634,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         apiKeyUrl: 'https://platform.minimax.io/user-center/basic-information/interface-key',
         endpoints: [
           anthropic('/anthropic', {
-            extraEnv: { ...CODING_TIMEOUT, ...DISABLE_NONESSENTIAL, ...EMPTY_AUTH_TOKEN },
+            extraEnv: MINIMAX_EXTRA_ENV,
             modelMapping: MINIMAX_MODELS,
           }),
           openaiChat('/v1', {
@@ -556,7 +661,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         catalogProviderId: 'volcengine-agent-plan',
         endpoints: [
           anthropic('/api/plan', {
-            extraEnv: { ...CODING_TIMEOUT, ...EMPTY_AUTH_TOKEN },
+            extraEnv: { ...CODING_TIMEOUT, ...DISABLE_NONESSENTIAL, ...EMPTY_AUTH_TOKEN },
             modelMapping: ARK_CODE_MODELS,
           }),
           // Agent Plan OpenAI path — do not use /api/v3 (bypasses plan quota).
@@ -574,7 +679,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         catalogProviderId: 'volcengine-coding-plan',
         endpoints: [
           anthropic('/api/coding', {
-            extraEnv: { ...CODING_TIMEOUT, ...EMPTY_AUTH_TOKEN },
+            extraEnv: { ...CODING_TIMEOUT, ...DISABLE_NONESSENTIAL, ...EMPTY_AUTH_TOKEN },
             modelMapping: ARK_CODE_MODELS,
           }),
           // Coding Plan OpenAI path — do not use /api/v3 (bypasses plan quota).
@@ -592,7 +697,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         catalogProviderId: 'volcengine',
         endpoints: [
           anthropic('/api/compatible', {
-            extraEnv: { ...CODING_TIMEOUT, ...EMPTY_AUTH_TOKEN },
+            extraEnv: { ...CODING_TIMEOUT, ...DISABLE_NONESSENTIAL, ...EMPTY_AUTH_TOKEN },
             modelMapping: DOUBAO_MODELS,
           }),
           openaiChat('/api/v3', {
@@ -674,12 +779,13 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         id: 'token',
         name: 'Token Plan',
         auth: 'api-key',
-        baseUrl: 'https://dashscope.aliyuncs.com',
+        baseUrl: 'https://token-plan.cn-beijing.maas.aliyuncs.com',
         apiKeyUrl: 'https://bailian.console.aliyun.com/?tab=model#/api-key',
         catalogProviderId: 'alibaba-token-plan-cn',
         endpoints: [
           anthropic('/apps/anthropic', {
-            extraEnv: { ...EMPTY_AUTH_TOKEN },
+            // qwen3.8-flash's usable window as published in the Token Plan Claude Code guide.
+            extraEnv: { ...EMPTY_AUTH_TOKEN, CLAUDE_CODE_MAX_CONTEXT_TOKENS: '983616' },
             modelMapping: BAILIAN_TOKEN_PLAN_MODELS,
           }),
           openaiChat('/compatible-mode/v1', {
@@ -710,23 +816,39 @@ export const BUILTIN_PLATFORMS: Platform[] = [
     id: 'kat-coder',
     brand: 'kwaikat',
     name: 'KAT-Coder',
-    description: 'KAT-Coder — 快手旗下 AI 编程模型（需填入 Vanchin Endpoint ID）',
+    description: 'KAT-Coder — 快手旗下 AI 编程模型（StreamLake 万擎）',
     plans: [
       {
         id: 'coding',
         name: 'Coding Plan',
+        description: 'StreamLake Coding Plan — 订阅额度，固定 Claude Code 网关',
         auth: 'api-key',
         baseUrl: 'https://vanchin.streamlake.ai',
-        apiKeyUrl: 'https://console.streamlake.com/console/wanqing/api-key',
+        apiKeyUrl: 'https://console.streamlake.ai/console/home/index',
         endpoints: [
-          anthropic('/api/gateway/v1/endpoints/${ENDPOINT_ID}/claude-code-proxy', {
-            extraEnv: { ...EMPTY_AUTH_TOKEN },
-            modelMapping: {
-              default: { id: 'kat-coder-pro-v2', name: 'KAT-Coder Pro V2' },
-              opus: { id: 'kat-coder-pro-v2', name: 'KAT-Coder Pro V2' },
-              sonnet: { id: 'kat-coder-pro-v2', name: 'KAT-Coder Pro V2' },
-              haiku: { id: 'KAT-Coder-Air V1', name: 'KAT-Coder Air V1' },
-            },
+          anthropic('/api/gateway/coding/kat-coder-pro-v2.5/claude-code-proxy', {
+            extraEnv: { ...CODING_TIMEOUT, ...EMPTY_AUTH_TOKEN },
+            modelMapping: KAT_CODER_MODELS,
+          }),
+          openaiChat('/api/gateway/coding/v1', {
+            modelMapping: KAT_CODER_MODELS,
+          }),
+        ],
+      },
+      {
+        id: 'api',
+        name: 'API',
+        description: 'StreamLake 按量计费 — 按实际 token 付费',
+        auth: 'api-key',
+        baseUrl: 'https://vanchin.streamlake.ai',
+        apiKeyUrl: 'https://console.streamlake.ai/console/home/index',
+        endpoints: [
+          anthropic('/api/gateway/v1/endpoints/kat-coder-pro-v2.5/claude-code-proxy', {
+            extraEnv: { ...CODING_TIMEOUT, ...EMPTY_AUTH_TOKEN },
+            modelMapping: KAT_CODER_MODELS,
+          }),
+          openaiChat('/api/gateway/v1/endpoints', {
+            modelMapping: KAT_CODER_MODELS,
           }),
         ],
       },
@@ -748,14 +870,14 @@ export const BUILTIN_PLATFORMS: Platform[] = [
           anthropic('/anthropic', {
             extraEnv: {
               ...EMPTY_AUTH_TOKEN,
-              CLAUDE_CODE_MAX_OUTPUT_TOKENS: '6000',
+              CLAUDE_CODE_MAX_OUTPUT_TOKENS: '131072',
               ...DISABLE_NONESSENTIAL,
             },
             modelMapping: {
-              default: { id: 'LongCat-Flash-Chat', name: 'LongCat Flash Chat' },
-              opus: { id: 'LongCat-Flash-Chat', name: 'LongCat Flash Chat' },
-              sonnet: { id: 'LongCat-Flash-Chat', name: 'LongCat Flash Chat' },
-              haiku: { id: 'LongCat-Flash-Chat', name: 'LongCat Flash Chat' },
+              default: { id: 'LongCat-2.0', name: 'LongCat 2.0' },
+              opus: { id: 'LongCat-2.0', name: 'LongCat 2.0' },
+              sonnet: { id: 'LongCat-2.0', name: 'LongCat 2.0' },
+              haiku: { id: 'LongCat-2.0', name: 'LongCat 2.0' },
             },
           }),
         ],
@@ -807,7 +929,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
               default: { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
               opus: { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
               sonnet: { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
-              haiku: { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' },
+              haiku: { id: 'deepseek-flash', name: 'DeepSeek Flash' },
               subagent: { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
             },
           }),
@@ -853,10 +975,10 @@ export const BUILTIN_PLATFORMS: Platform[] = [
           anthropic('', {
             extraEnv: { ...EMPTY_AUTH_TOKEN },
             modelMapping: {
-              default: { id: 'ZhipuAI/GLM-5.1', name: 'GLM-5.1' },
-              opus: { id: 'ZhipuAI/GLM-5.1', name: 'GLM-5.1' },
-              sonnet: { id: 'ZhipuAI/GLM-5.1', name: 'GLM-5.1' },
-              haiku: { id: 'ZhipuAI/GLM-5.1', name: 'GLM-5.1' },
+              default: { id: 'ZhipuAI/GLM-5.2', name: 'GLM-5.2' },
+              opus: { id: 'ZhipuAI/GLM-5.2', name: 'GLM-5.2' },
+              sonnet: { id: 'ZhipuAI/GLM-5.2', name: 'GLM-5.2' },
+              haiku: { id: 'ZhipuAI/GLM-5.2', name: 'GLM-5.2' },
             },
           }),
         ],

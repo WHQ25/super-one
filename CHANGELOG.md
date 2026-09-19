@@ -88,6 +88,16 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Mobile reconnects reuse workspace caches; host payloads are
   compressed. Upgrade desktop and phone together.
 
+- Built-in providers follow each vendor's current Claude Code
+  guide: GLM defaults to GLM-5.3 (Flash for haiku), MiniMax to
+  M3 at 1M on `api.minimax.cn`, Moonshot to K3 1M, Volcengine
+  pay-as-you-go to Doubao Seed Evolving, Bailian Token Plan to
+  Qwen 3.8 Flash on its own host, DeepSeek's small model to
+  `deepseek-flash`, Longcat to LongCat-2.0, ModelScope to GLM-5.2,
+  and Xiaomi MiMo to 1M context. Kimi Code gains the Plus / Pro /
+  Max plans (the retired Andante / Moderato / Allegretto stay for
+  existing keys). KAT-Coder no longer needs an endpoint id and adds
+  a pay-as-you-go plan.
 ## [0.67.0-alpha.3] - 2026-09-17
 
 ### Added

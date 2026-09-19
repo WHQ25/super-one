@@ -640,6 +640,12 @@ GitHub 首页在 748 px 下把搜索框收进 "Toggle navigation"。标成 `Expa
 - computer 的 settle 把稳定后的观察写回 successor，**并保留 act 的 outcome** —— 否则 `changed` 读不到动作的结论，每步都报 "change unknown"。
 - computer 的 `loading` 保持 `false`：AX 没有 `readyState` 的等价物，稳定性由 settle 负责，这是诚实的而不是漏接。
 
+**实测（Calculator，sin(pi/6)，Grok 4.6 / high）暴露了签名的第一版漏洞。** 7 步里有 3 步（Pi、Divide、6）报 `settled: unchanged`：按这些键**只动显示屏**，而显示屏是 static label——所有元素的 role/label/value 原封不动，变化只出现在 `page.text` 里（`sine (, π ÷ 6, implicit )`）。第一版签名把 text 排除在外，理由是"桌面 outline 的 text 会 churn"；trace 说这个理由不成立，而单元测试当时断言的是**我的假设**而不是平台的事实。把 text 纳入后重跑，7/7 步都是 `settled: changed ['observation']`，显示读到 `zero point five`。
+
+教训与 8.18 同源：**判据必须对着被判断的东西取**。8.18 是比错了序列化边界，这次是取了一个不包含目标信号的字段集，两次都不报错，只是安静地永远给同一个答案。
+
+顺带暴露一个**不属于 wait 范围**的问题：`checkDone` 把 `done_when` 绑在第一次观察的 stateId 上（`conditionStateId ??= current.stateId`），而 Calculator 任务必须先 Basic → Scientific，位置性 ref 随之失效——结果算对了（`Edit field = zero point five`）但完成条件永不满足，run 多走一次 scroll 再 no-progress 暂停，由主模型 abort 收尾。这是 10.4 记的 Calculator 反例的另一个侧面，留待单独处理。
+
 ## 9. 非目标
 
 - 不替换现有 `*_snapshot` / `*_act` / `*_query`；`*_run` 是并列的 goal 级工具，主模型按工具 description 里的路由指引选

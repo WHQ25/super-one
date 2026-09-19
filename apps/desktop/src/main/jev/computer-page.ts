@@ -5,6 +5,7 @@ import { findNode } from '../computer-use/outline'
 import { ComputerUseError, type ActResult, type ComputerUseState, type Condition, type ObserveResult, type UiOutlineNode } from '../computer-use/types'
 import { planNodeAction, type NodeActionPlan } from '../computer-use/node-action-plan'
 import { type RunDeps, RunPaused, StaleObservation } from './loop'
+import { settleByPolling, waitForChangeByPolling, waitReadyByPolling } from './settle'
 import type { RawElement, RunObservation } from './observation'
 
 export interface ComputerPage extends RunObservation {
@@ -142,6 +143,17 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
     const state = service.getStateStore().get(page.stateId)
     return !!state && state.epoch === service.getScheduler().epoch(state.resourceKey)
   }
+  /**
+   * A live read, bypassing the pending successor. Settling has to watch the
+   * surface move; replaying the state the action already produced would report
+   * "stable" on its first sample every time.
+   */
+  const observeFresh = async (signal?: AbortSignal) => {
+    signal?.throwIfAborted()
+    const observed = await service.observe(root, 'semantic')
+    signal?.throwIfAborted()
+    return pageFor(observed.stateId)
+  }
   const act = async (plan: NodeActionPlan | undefined, signal?: AbortSignal) => {
     if (!plan) throw new RunPaused('no-progress', 'The observed target does not support this computer_act operation. Inspect a fresh snapshot before continuing.')
     const page = requirePage()
@@ -218,8 +230,23 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
       const node = state && findNode(state.outline, page.scrollRef)
       await act(node && planNodeAction(node, { kind: 'scroll', dy: deltaY }, service.policy.tierFor(page.bundleId)), signal)
     },
-    settle: async () => {}, // service.act already observes and verifies the successor.
-    waitReady: async () => true,
+    /**
+     * `service.act` only holds for an `expect` condition, and the plans a run
+     * makes carry one for setText alone — a click returns the moment the first
+     * read comes back, mid-animation. So the run settles for itself.
+     *
+     * The settled observation replaces the act's successor while keeping its
+     * verdict, so `changed` still sees what the action did and the loop's next
+     * `observe()` costs nothing.
+     */
+    settle: async (page, _opts, signal) => {
+      const outcome = successor?.outcome
+      const settled = await settleByPolling(page, observeFresh, signal)
+      if (settled.page) successor = outcome ? { ...settled.page, outcome } : settled.page
+      return settled.report
+    },
+    waitReady: (timeoutMs, signal) => waitReadyByPolling(timeoutMs, observeFresh, signal),
+    waitForChange: (page, timeoutMs, signal) => waitForChangeByPolling(page, timeoutMs, observeFresh, signal),
     checkDone: async (signal) => {
       if (!options.doneWhen || !conditionStateId) return false
       // waitFor binds the ref to native identity; row insertions must not turn

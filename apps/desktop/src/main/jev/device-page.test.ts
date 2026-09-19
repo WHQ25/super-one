@@ -37,6 +37,20 @@ describe('device fast-loop adapter', () => {
     expect(backend.addressed[0]).toBe(backend.observations[0])
   })
 
+  it('answers a wait itself, because its changed() reports the last action, not the screen', async () => {
+    // The loop's fallback decides by calling changed(before, after) on a fresh
+    // observation — but that verdict only exists on an act's successor, so the
+    // fallback could never see a screen settle and every wait burned its cap.
+    const { adapter, session } = fixture([initial, final])
+    expect(adapter.waitForChange).toBeDefined()
+    const before = await adapter.observe()
+    expect(adapter.changed(before, before)).toBeNull()
+
+    // The next read is a different screen, so waiting resolves at once.
+    await session.observeForRun()
+    await expect(adapter.waitForChange!(before, 1000)).resolves.toBe(true)
+  })
+
   it('requires the current snapshot before every action', async () => {
     const { adapter, session, backend } = fixture([initial, initial])
     await adapter.resolveTarget()

@@ -53,6 +53,23 @@ describe('computer fast-loop adapter', () => {
     expect(page.elements.map((element) => element.label)).not.toContain('Show Fonts')
   })
 
+  it('waits and settles for itself, because act only holds for an expect and changed() reads its verdict', async () => {
+    // Two gaps the browser adapter closed long ago: computer_act returns on its
+    // first read unless the plan carries an `expect` (only setText does), and
+    // the loop's wait fallback decides with changed(), whose verdict lives on
+    // an act's successor — never on a plain observation.
+    const { adapter } = fixture()
+    expect(adapter.waitForChange).toBeDefined()
+    const page = await adapter.observe()
+    expect(adapter.changed(page, page)).toBeNull()
+
+    // Settling keeps the act's verdict on the observation it hands back, or the
+    // loop would read "change unknown" for every action it took.
+    const run = new FastRun(options, adapter)
+    const result = await run.start()
+    expect(result.since_last.join(' ')).not.toContain('change unknown')
+  })
+
   it('names list rows by their text, offers one candidate per intent and sees past the fold budget', async () => {
     // A Finder list: unnamed rows whose name cell and its text field both open the item.
     const row = (name: string, itemKind: 'folder' | 'file') => ({ role: 'row', selectable: true, children: [

@@ -614,6 +614,32 @@ GitHub 首页在 748 px 下把搜索框收进 "Toggle navigation"。标成 `Expa
 
 把结果写进标签（`Expand <label> to reveal controls that are not on the page right now`），同一控件升到 0.53–0.64，GitHub 全程走通。这是 8.15 "把动作写进标签"的延伸：**属性描述状态，标签描述后果，Jev 对后者反应好得多**。
 
+### 8.20 2026-09-19 wait 范式移植到 computer / device：只继承了一半
+
+8.16–8.18 的 wait 工作分三层，只有第一层在共享 `loop.ts` 里。移植时发现 computer / device 只拿到了那一层：
+
+| 机制 | 归属 | browser | computer（移植前） | device（移植前） |
+|---|---|---|---|---|
+| Jev 判要不要等、1/2/4 s 阶梯、≤3 连续、no-progress 兜底 | 共享 loop | ✓ | ✓ | ✓ |
+| `waitForChange`（等到界面真变） | 适配器 | ✓ 页内观察态对比 | ✗ | ✗ |
+| `settle`（动作后等稳定） | 适配器 | ✓ 2 s 稳定 + 1 s grace | ✗ no-op | ✗ no-op（**但下层已做**） |
+| `loading` 机器信号 | 适配器 | ✓ `readyState` | ✗ 硬编码 `false` | ✓ `!settled` |
+| `waitReady` | 适配器 | ✓ 轮询 readyState | ✗ 恒 `true` | ✗ 恒 `true` |
+
+**缺陷一：wait 的轮询兜底对这两个平台是死的。** 没有 `waitForChange` dep 时 loop 退化成每 150 ms 调一次 `changed(page, observe())`。但 computer / device 的 `changed` 只读 `after.outcome`，而 `outcome` 只在 `act()` 的 successor 上赋值，`observe()` 产生的页面没有它 —— 恒返回 `null`，于是**每次 wait 都等满 1/2/4 s**。参数写成 `_before` 就是信号：它根本没在做前后对比。与 8.18 同类：判据取错了对象。
+
+**缺陷二：computer 点击后不等任何东西。** `settle` 是 no-op，理由写的是"`service.act` 已验证 successor"。但 `act` 只在传了 `expect` 时才轮询等待，而 `planNodeAction` 只给 `setText` 配了 expect —— click / scroll / enter 发完输入立刻 `look()` 一次就返回。桌面的菜单展开、sheet 下拉比网页的 CSS 过渡更普遍，正是 8.18 那个"16 vs 39 个元素"的同类。
+
+**device 不需要补 settle。** `android-backend.observe()` 内部按截屏哈希 settle（2.5 s 上限，60 ms 采样），`runAct` 的 successor 也走同一条路 —— 交给它的每个观察都已经停稳了。原注释是准确的，盲目叠一层只会把每步的墙钟再翻一倍。
+
+移植结果（`jev/settle.ts`）：
+
+- 观察签名取 **loop 真正读的字段**（elements 的 node/role/label/value/checked/selected/expanded/disabled + title），不是平台原始树。computer 现成的 `signature: JSON.stringify(outline)` 不能用 —— 代码里早有注释说它会在两次读之间因焦点标志churn，拿它判稳定永远判不出来。
+- 采样节奏按成本分档：browser 在页内 30 ms tick，一次 CDP 往返；computer 每次采样是一次跨进程 AX 读，用 150 ms / 总预算 1500 ms / grace 600 ms（browser 是 2000 / 1000）；device 的 observe 自带 settle，只用 25 ms 下限兜底。
+- **下限不能是 0**。让循环推进完全依赖 observe 耗时，一个立刻返回的读就会空转，deadline 永远到不了。
+- computer 的 settle 把稳定后的观察写回 successor，**并保留 act 的 outcome** —— 否则 `changed` 读不到动作的结论，每步都报 "change unknown"。
+- computer 的 `loading` 保持 `false`：AX 没有 `readyState` 的等价物，稳定性由 settle 负责，这是诚实的而不是漏接。
+
 ## 9. 非目标
 
 - 不替换现有 `*_snapshot` / `*_act` / `*_query`；`*_run` 是并列的 goal 级工具，主模型按工具 description 里的路由指引选

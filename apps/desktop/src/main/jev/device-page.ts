@@ -4,6 +4,7 @@ import { evaluateCondition, type DeviceCondition } from '../device-agent/conditi
 import type { DeviceAgentSession } from '../device-agent/execute'
 import type { DeviceState } from '../device-agent/state-store'
 import { RunPaused, StaleObservation, type RunDeps } from './loop'
+import { SETTLED_ADAPTER_POLL_MS, waitForChangeByPolling, waitReadyByPolling } from './settle'
 import type { RawElement, RunObservation } from './observation'
 
 export interface DevicePage extends RunObservation {
@@ -80,6 +81,16 @@ export function createDeviceAdapter(options: DeviceAdapterOptions): RunDeps<Devi
     if (!current) throw new RunPaused('no-progress', 'The device has not been observed.')
     return current
   }
+  /**
+   * A live read, bypassing the pending successor: waiting has to watch the
+   * screen move, and replaying the state the action already produced would
+   * report a change on its first sample every time.
+   */
+  const observeFresh = async (signal?: AbortSignal) => {
+    options.assertControl()
+    signal?.throwIfAborted()
+    return devicePage(await session.observeForRun(signal), options.deviceId)
+  }
   const act = async (actions: Array<Record<string, unknown>>, signal?: AbortSignal) => {
     options.assertControl()
     const page = requirePage()
@@ -116,8 +127,20 @@ export function createDeviceAdapter(options: DeviceAdapterOptions): RunDeps<Devi
     ], signal),
     pressEnter: async () => { throw new RunPaused('no-progress', 'Device keyboard submit is not offered. Select a visible submit control with device_act.') },
     scroll: (page, deltaY, signal) => act([{ type: 'swipe', ref: page.scrollRef, direction: deltaY > 0 ? 'up' : 'down', distance: 0.55 }], signal),
-    settle: async () => {}, // The session executor owns focus settling and successor capture.
-    waitReady: async () => true,
+    /**
+     * Nothing to add: the backend settles on pixels inside every observation —
+     * both the one `act` takes for its successor and the one `observe` takes —
+     * so a page handed to the loop has already stopped moving, or has told us
+     * it has not via `loading`.
+     */
+    settle: async () => {},
+    waitReady: (timeoutMs, signal) => waitReadyByPolling(timeoutMs, observeFresh, signal, { pollMs: SETTLED_ADAPTER_POLL_MS }),
+    /**
+     * The loop's fallback decides with `changed`, which here reports the last
+     * action's verdict rather than comparing two observations — so it could
+     * never see a screen settle and every wait burned its whole cap.
+     */
+    waitForChange: (page, timeoutMs, signal) => waitForChangeByPolling(page, timeoutMs, observeFresh, signal, { pollMs: SETTLED_ADAPTER_POLL_MS }),
     checkDone: async () => {
       options.assertControl()
       const page = requirePage()

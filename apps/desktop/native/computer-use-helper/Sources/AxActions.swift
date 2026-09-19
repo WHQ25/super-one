@@ -129,6 +129,7 @@ func axPerform(
     windowTitle: String? = nil,
     axRootId: String? = nil,
     windowId: Int? = nil,
+    source: String? = nil,
     targetHint: AxTargetHint? = nil
 ) throws -> [String: Any] {
     guard axTrusted() else {
@@ -138,16 +139,30 @@ func axPerform(
         throw HelperError(code: "INVALID", message: "index must be >= 1")
     }
     let app = axApplication(pid)
-    let rootEl = try resolveAxRoot(
-        app: app,
-        pid: pid,
-        axRootId: axRootId,
-        windowId: windowId,
-        windowTitle: windowTitle
-    )
+    if let source, source != "menuBar" {
+        throw HelperError(code: "INVALID", message: "Unknown AX source")
+    }
+    let rootEl: AXUIElement
+    if source == "menuBar" {
+        guard let menu = axMenuBar(app) else {
+            throw HelperError(code: "AX_STALE_REF", message: "The app menu bar is no longer available")
+        }
+        rootEl = menu
+    } else {
+        rootEl = try resolveAxRoot(
+            app: app,
+            pid: pid,
+            axRootId: axRootId,
+            windowId: windowId,
+            windowTitle: windowTitle
+        )
+    }
 
     let resolved = try resolveTarget(root: rootEl, requestedIndex: index, hint: targetHint)
     let el = resolved.element
+    if source == "menuBar", !axMenuElementVisible(el) {
+        throw HelperError(code: "AX_STALE_REF", message: "The observed menu item is no longer visible")
+    }
 
     let beforeValue = axElementValue(el)
     let beforeName = axString(el, kAXTitleAttribute as String)

@@ -1,3 +1,10 @@
+import { zoomState } from './zoom-state'
+import { queryState } from './query-state'
+import { bindCondition, evaluateBoundCondition } from './condition-evaluation'
+export { evaluateCondition } from './condition-evaluation'
+import { buildDiff } from './state-diff'
+import { sleep, throwIfAborted } from './async-control'
+import { waitForCondition } from './wait-for'
 import { parseActions } from './actions'
 import {
   looksLikeBundleId,
@@ -7,12 +14,8 @@ import {
 } from './app-identity'
 import { refineActOutcome } from './outcome'
 import {
-  collectRefs,
-  diffOutlines,
-  expandSubtree,
   findNode,
   foldOutline,
-  searchOutline,
 } from './outline'
 import { compactOutline, dropOccludedWebAreas } from './outline-compact'
 import { ComputerUsePolicy } from './policy'
@@ -38,7 +41,6 @@ import {
   type ObserveMode,
   type ObserveResult,
   type QueryResult,
-  type StateDiff,
   type UiAction,
   type UiRootIdentity,
   type WaitResult,
@@ -555,28 +557,7 @@ export class ComputerUseService {
     const state = this.requireState(stateId)
     this.requireGranted(state.root.bundleId)
 
-    const image = this.adapter.zoom
-      ? await this.adapter.zoom(state.root, region, state.coordinateSpace)
-      : {
-          mimeType: 'image/png' as const,
-          data: `zoom:${region.join(',')}`,
-          width: Math.max(1, region[2] - region[0]),
-          height: Math.max(1, region[3] - region[1]),
-        }
-
-    return {
-      image,
-      region,
-      // Critical invariant: zoom never establishes a new coordinate space.
-      coordinateSpace: { ...state.coordinateSpace },
-      stateId,
-      // Surface target identity so chat UI can show the app icon without a second lookup.
-      root: {
-        app: state.root.app,
-        bundleId: state.root.bundleId,
-        title: state.root.title,
-      },
-    }
+    return zoomState(this.adapter, state, stateId, region)
   }
 
   // ── computer_query ───────────────────────────────────────
@@ -588,43 +569,7 @@ export class ComputerUseService {
   ): Promise<QueryResult> {
     this.requireEnabled()
     const state = this.requireState(stateId)
-    const root = targetIdentity(state.root)
-    // Query is read-only on cached state — no grant re-check beyond existence,
-    // but still require the feature be enabled. Refs are state-scoped.
-
-    if (op === 'search') {
-      if (!args.text) {
-        throw new ComputerUseError('INVALID_ACTION', 'search requires text')
-      }
-      return { matches: searchOutline(state.outline, args.text), root }
-    }
-    if (op === 'expand') {
-      if (!args.ref) {
-        throw new ComputerUseError('INVALID_ACTION', 'expand requires ref')
-      }
-      const subtree = expandSubtree(state.outline, args.ref, args.depth ?? 3)
-      if (!subtree) {
-        throw new ComputerUseError('UNKNOWN_REF', `ref ${args.ref} not in ${stateId}`, {
-          ref: args.ref,
-          stateId,
-        })
-      }
-      return { subtree, root }
-    }
-    // inspect
-    if (!args.ref) {
-      throw new ComputerUseError('INVALID_ACTION', 'inspect requires ref')
-    }
-    const element = findNode(state.outline, args.ref)
-    if (!element) {
-      throw new ComputerUseError('UNKNOWN_REF', `ref ${args.ref} not in ${stateId}`, {
-        ref: args.ref,
-        stateId,
-      })
-    }
-    // Return node without children for a compact inspect.
-    const { children: _c, ...rest } = element
-    return { element: rest, root }
+    return queryState(state, stateId, op, args)
   }
 
   // ── computer_act ─────────────────────────────────────────
@@ -694,11 +639,14 @@ export class ComputerUseService {
         )
       }
 
+      const menuTransaction = actions.every((action) => (action.type === 'press' || (delivery === 'semantic' && action.type === 'click'))
+        && action.ref && findNode(base.outline, action.ref)?.nativeTarget?.scope === 'menuBar')
       const blockingModals = this.roots.list().filter(
         (root) => root.rootId !== currentRoot.rootId
           && root.resourceKey === currentRoot.resourceKey
           && root.pid === currentRoot.pid
           && root.modal
+          && !(menuTransaction && root.kind === 'menu')
           && root.visible
           && !root.minimized,
       )
@@ -900,68 +848,11 @@ export class ComputerUseService {
     throwIfAborted(signal)
     const base = this.requireState(stateId)
     this.requireGranted(base.root.bundleId)
-    const binding = bindCondition(condition, base.outline)
-
-    // preexisting: condition already true on base state
-    if (evaluateBoundCondition(binding, base.outline)) {
-      // Still produce a successor observation for a stable stateId contract.
-      const obs = await this.observe(base.root.rootId, base.mode, base.capture)
-      throwIfAborted(signal)
-      return {
-        status: 'preexisting',
-        successorStateId: obs.stateId,
-        successorRoot: targetIdentity(obs.root),
-      }
-    }
-
-    // Poll on the AX outline alone. Conditions never read the screenshot, and a
-    // capture every 50ms is what the user sees as the software cursor flickering.
-    // `visual` has no AX outline to poll, so it keeps its own mode.
-    const pollMode: ObserveMode = base.mode === 'visual' ? 'visual' : 'semantic'
-    const interval = 50
-    const maxAttempts = Math.max(1, Math.ceil(timeoutMs / interval))
-    for (let i = 0; i < maxAttempts; i++) {
-      throwIfAborted(signal)
-      if (this.fake) this.fake.advanceTime(interval)
-      else await sleep(interval, signal)
-
-      const obs = await this.observe(base.root.rootId, pollMode, base.capture)
-      throwIfAborted(signal)
-      const state = this.requireState(obs.stateId)
-      if (evaluateBoundCondition(binding, state.outline)) {
-        const successor = await this.waitSuccessor(base, obs, pollMode, signal)
-        return {
-          status: 'verified',
-          successorStateId: successor.stateId,
-          successorRoot: targetIdentity(successor.root),
-        }
-      }
-    }
-
-    const last = await this.observe(base.root.rootId, base.mode, base.capture)
-    throwIfAborted(signal)
-    return {
-      status: 'failed',
-      successorStateId: last.stateId,
-      successorRoot: targetIdentity(last.root),
-    }
-  }
-
-  /**
-   * The successor state must carry the modality the caller has been working in:
-   * a fused base gets a fused successor (with screenshot), not the semantic poll
-   * that happened to verify the condition.
-   */
-  private async waitSuccessor(
-    base: { root: UiRootIdentity; mode: ObserveMode; capture: CaptureScope },
-    polled: ObserveResult,
-    pollMode: ObserveMode,
-    signal?: AbortSignal,
-  ): Promise<ObserveResult> {
-    if (pollMode === base.mode) return polled
-    const successor = await this.observe(base.root.rootId, base.mode, base.capture)
-    throwIfAborted(signal)
-    return successor
+    return waitForCondition(base, condition, timeoutMs, {
+      observe: this.observe.bind(this),
+      requireState: this.requireState.bind(this),
+      delay: async (ms, signal) => { if (this.fake) this.fake.advanceTime(ms); else await sleep(ms, signal) },
+    }, signal)
   }
 
   /**
@@ -1096,177 +987,4 @@ export class ComputerUseService {
   private resolveRoot(rootId?: string): UiRootIdentity {
     return resolveUiRoot(this.roots.list(), { rootId, preferredBundleId: this.preferredBundleId })
   }
-}
-
-function buildDiff(
-  before: import('./types').UiOutlineNode,
-  after: import('./types').UiOutlineNode,
-): StateDiff {
-  const d = diffOutlines(before, after)
-  const beforeRefs = new Set(collectRefs(before))
-  const afterRefs = new Set(collectRefs(after))
-  // If almost nothing overlaps, identity is ambiguous → full view fallback.
-  let overlap = 0
-  for (const r of afterRefs) if (beforeRefs.has(r)) overlap += 1
-  const fullViewFallback =
-    beforeRefs.size > 0 && afterRefs.size > 0 && overlap / Math.max(beforeRefs.size, afterRefs.size) < 0.2
-
-  return {
-    added: d.added,
-    removed: d.removed,
-    changed: d.changed,
-    fullViewFallback,
-  }
-}
-
-export function evaluateCondition(
-  condition: Condition,
-  outline: import('./types').UiOutlineNode,
-): boolean {
-  switch (condition.kind) {
-    case 'exists':
-      return !!findNode(outline, condition.ref)
-    case 'notExists':
-      return !findNode(outline, condition.ref)
-    case 'textEquals': {
-      const n = findNode(outline, condition.ref)
-      return !!n && (n.name === condition.text || n.value === condition.text)
-    }
-    case 'textContains': {
-      const n = findNode(outline, condition.ref)
-      if (!n) return false
-      return (n.name ?? '').includes(condition.text) || (n.value ?? '').includes(condition.text)
-    }
-    case 'valueEquals': {
-      const n = findNode(outline, condition.ref)
-      return !!n && n.value === condition.value
-    }
-    default: {
-      const _e: never = condition
-      return _e
-    }
-  }
-}
-
-interface ConditionBinding {
-  condition: Condition
-  target?: import('./types').UiOutlineNode
-  matchName: boolean
-}
-
-type ConditionTargetResolution =
-  | { status: 'found'; node: import('./types').UiOutlineNode }
-  | { status: 'missing' | 'ambiguous' }
-
-function bindCondition(
-  condition: Condition,
-  outline: import('./types').UiOutlineNode,
-): ConditionBinding {
-  return {
-    condition,
-    target: findNode(outline, condition.ref),
-    // Text conditions may intentionally wait for either name or value to change.
-    matchName: condition.kind !== 'textEquals' && condition.kind !== 'textContains',
-  }
-}
-
-function evaluateBoundCondition(
-  binding: ConditionBinding,
-  outline: import('./types').UiOutlineNode,
-): boolean {
-  if (!binding.target) {
-    // Preserve missing-ref behavior for callers waiting on a future raw ref.
-    return evaluateCondition(binding.condition, outline)
-  }
-
-  const resolution = resolveConditionTarget(binding, outline)
-  if (binding.condition.kind === 'notExists') {
-    return resolution.status === 'missing'
-  }
-  if (resolution.status !== 'found') return false
-
-  const node = resolution.node
-  switch (binding.condition.kind) {
-    case 'exists':
-      return true
-    case 'textEquals':
-      return node.name === binding.condition.text || node.value === binding.condition.text
-    case 'textContains':
-      return (node.name ?? '').includes(binding.condition.text)
-        || (node.value ?? '').includes(binding.condition.text)
-    case 'valueEquals':
-      return node.value === binding.condition.value
-    default: {
-      const _condition: never = binding.condition
-      return _condition
-    }
-  }
-}
-
-function resolveConditionTarget(
-  binding: ConditionBinding,
-  outline: import('./types').UiOutlineNode,
-): ConditionTargetResolution {
-  const expected = binding.target!
-  const candidates: import('./types').UiOutlineNode[] = []
-  const stack = [outline]
-  while (stack.length) {
-    const node = stack.pop()!
-    if (
-      node.role === expected.role
-      && node.pictureOnly === expected.pictureOnly
-      && (!binding.matchName || node.name === expected.name)
-    ) {
-      candidates.push(node)
-    }
-    if (node.children) stack.push(...node.children)
-  }
-
-  if (candidates.length === 0) return { status: 'missing' }
-  if (candidates.length === 1) return { status: 'found', node: candidates[0]! }
-  if (!expected.bounds) return { status: 'ambiguous' }
-
-  const ranked = candidates
-    .filter((node) => node.bounds)
-    .map((node) => ({ node, distance: boundsDistance(expected.bounds!, node.bounds!) }))
-    .sort((a, b) => a.distance - b.distance)
-  if (ranked.length === 0) return { status: 'ambiguous' }
-  if (ranked.length === 1 || ranked[0]!.distance + 0.5 < ranked[1]!.distance) {
-    return { status: 'found', node: ranked[0]!.node }
-  }
-  return { status: 'ambiguous' }
-}
-
-function boundsDistance(a: import('./types').Bounds, b: import('./types').Bounds): number {
-  const ax = a.x + a.width / 2
-  const ay = a.y + a.height / 2
-  const bx = b.x + b.width / 2
-  const by = b.y + b.height / 2
-  return Math.hypot(ax - bx, ay - by, a.width - b.width, a.height - b.height)
-}
-
-function abortError(signal: AbortSignal): Error {
-  if (signal.reason instanceof Error) return signal.reason
-  return new DOMException('The operation was aborted', 'AbortError')
-}
-
-function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) throw abortError(signal)
-}
-
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  if (!signal) return new Promise((resolve) => setTimeout(resolve, ms))
-  throwIfAborted(signal)
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort)
-      resolve()
-    }, ms)
-    const onAbort = () => {
-      clearTimeout(timer)
-      signal.removeEventListener('abort', onAbort)
-      reject(abortError(signal))
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
-  })
 }

@@ -50,10 +50,13 @@ function capabilitiesFromAx(node: HelperAxNode): UiNodeCapabilities {
  * Convert helper AX tree into UiOutlineNode forest with refs `@e{index}`.
  * Indices match the helper DFS walk used by `ax_action`.
  */
-export function axTreeToOutline(root: HelperAxNode): UiOutlineNode {
-  function walk(n: HelperAxNode): UiOutlineNode {
+export function axTreeToOutline(root: HelperAxNode, menuBar?: HelperAxNode): UiOutlineNode {
+  let maxIndex = 0
+  function walk(n: HelperAxNode, offset = 0, menu = false): UiOutlineNode {
+    maxIndex = Math.max(maxIndex, n.index + offset)
     const node: UiOutlineNode = {
-      ref: `@e${n.index}`,
+      ref: `@e${n.index + offset}`,
+      ...(menu ? { nativeTarget: { scope: 'menuBar' as const, index: n.index } } : {}),
       role: mapAxRole(n.role),
       name: n.name,
       value: n.secure || /secure|password/i.test(n.role) ? undefined : n.value,
@@ -73,11 +76,15 @@ export function axTreeToOutline(root: HelperAxNode): UiOutlineNode {
       capabilities: capabilitiesFromAx(n),
     }
     if (n.children?.length) {
-      node.children = n.children.map(walk)
+      node.children = n.children.map((child) => walk(child, offset, menu))
     }
     return node
   }
-  return walk(root)
+  const outline = walk(root)
+  // App navigation must survive folding a large document window. Window refs
+  // stay unchanged even though the menu is presented first.
+  if (menuBar) outline.children = [walk(menuBar, maxIndex, true), ...(outline.children ?? [])]
+  return outline
 }
 
 /** Parse `@e12` → 12. Returns undefined if not an element ref. */

@@ -57,6 +57,7 @@ export interface FakeAppSpec {
   bundleId: string
   pid: number
   windows: FakeWindowSpec[]
+  menuBar?: FakeElementSpec
 }
 
 interface LiveElement {
@@ -76,6 +77,7 @@ interface LiveElement {
 }
 
 interface LiveWindow {
+  menuBar?: LiveElement
   key: string
   windowId?: number
   title: string
@@ -185,6 +187,15 @@ export class FakePlatformBackend implements PlatformAdapter {
     // postconditions can re-evaluate by ref after re-observation. New nodes
     // (modals, delayed children) allocate fresh @eN ids.
     const outline = this.toOutline(win.tree)
+    if (win.menuBar) {
+      const menu = this.toOutline(win.menuBar)
+      const mark = (node: UiOutlineNode) => {
+        node.nativeTarget = { scope: 'menuBar', index: Number(node.ref.slice(2)) }
+        node.children?.forEach(mark)
+      }
+      mark(menu)
+      outline.children = [...(outline.children ?? []), menu]
+    }
     const coordinateSpace = capture === 'display'
       ? { ...DISPLAY }
       : {
@@ -313,11 +324,13 @@ export class FakePlatformBackend implements PlatformAdapter {
   // ── private ──────────────────────────────────────────────
 
   private buildApp(spec: FakeAppSpec): LiveApp {
+    const menuBar = spec.menuBar ? this.buildElement(spec.menuBar) : undefined
     return {
       app: spec.app,
       bundleId: spec.bundleId,
       pid: spec.pid,
       windows: spec.windows.map((w, i) => ({
+        menuBar,
         key: `${spec.pid}:${w.title}`,
         windowId: w.windowId,
         title: w.title,
@@ -397,7 +410,7 @@ export class FakePlatformBackend implements PlatformAdapter {
       enabled: el.enabled,
       focused: el.focused,
       capabilities: {
-        press: el.role === 'button' || el.role === 'checkbox' || el.toggle,
+        press: el.role === 'button' || el.role === 'checkbox' || el.role === 'menuBarItem' || el.role === 'menuItem' || el.toggle,
         setText: el.role === 'textField' || el.role === 'textArea',
         typeText: el.role === 'textField' || el.role === 'textArea',
         focus: true,
@@ -419,7 +432,7 @@ export class FakePlatformBackend implements PlatformAdapter {
       }
       return undefined
     }
-    return walk(win.tree)
+    return walk(win.tree) ?? (win.menuBar ? walk(win.menuBar) : undefined)
   }
 
   private findLiveByName(

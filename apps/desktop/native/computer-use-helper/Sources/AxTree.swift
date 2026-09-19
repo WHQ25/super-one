@@ -109,6 +109,18 @@ private func axBool(_ el: AXUIElement, _ attr: String) -> Bool? {
     return nil
 }
 
+func axMenuBar(_ app: AXUIElement) -> AXUIElement? {
+    axAttributeElement(app, kAXMenuBarAttribute as String)
+}
+
+func axMenuElementVisible(_ element: AXUIElement) -> Bool {
+    if axBool(element, "AXVisible") == false { return false }
+    let role = axRole(element)
+    if role == "AXMenuBar" || role == "AXMenuBarItem" { return true }
+    guard let frame = axFrame(element) else { return false }
+    return frame.width > 1 && frame.height > 1
+}
+
 // Not private: `Mirror.swift` reads the same attributes off the mirroring window.
 func axCGPoint(_ el: AXUIElement, _ attr: String) -> CGPoint? {
     var raw: CFTypeRef?
@@ -263,13 +275,20 @@ private func nodeDicts(
     depth: Int,
     insideWebArea: Bool,
     coordinateTransform: AxCoordinateTransform,
-    focusedElement: AXUIElement?
+    focusedElement: AXUIElement?,
+    visibleMenusOnly: Bool = false
 ) -> [[String: Any]] {
     if state.count >= state.limits.maxNodes {
         state.truncated = true
         return []
     }
 
+    // Closed menus may expose their entire command tree. Keep its DFS slots
+    // but never offer invisible commands as currently observed targets.
+    if visibleMenusOnly && axRole(el) == "AXMenu" && !axMenuElementVisible(el) {
+        state.index += axSubtreeSize(el)
+        return []
+    }
     state.index += 1
     let idx = state.index
 
@@ -324,7 +343,8 @@ private func nodeDicts(
                 el: child, state: state, depth: depth + 1,
                 insideWebArea: childrenInWebArea,
                 coordinateTransform: coordinateTransform,
-                focusedElement: focusedElement
+                focusedElement: focusedElement,
+                visibleMenusOnly: visibleMenusOnly
             ))
         }
     } else {
@@ -810,7 +830,6 @@ func axTreeSnapshot(
         windowTitle: windowTitle
     )
 
-    let state = AxWalkState(limits: AxWalkLimits(maxNodes: max(1, maxNodes), maxDepth: max(1, maxDepth)))
     let display = mainDisplaySizePoints()
     let coordinateTransform = AxCoordinateTransform(
         originX: captureX ?? 0,
@@ -820,23 +839,36 @@ func axTreeSnapshot(
         coordinateWidth: captureWidth ?? display.width,
         coordinateHeight: captureHeight ?? display.height
     )
+    let focused = axAppFocusedElement(app)
+    let menuState = AxWalkState(limits: AxWalkLimits(maxNodes: min(250, max(1, maxNodes / 3)), maxDepth: max(1, maxDepth)))
+    let menu: [String: Any]?
+    if axRootId == nil, axRole(rootEl) == "AXWindow", let menuBar = axMenuBar(app) {
+        menu = nodeDicts(el: menuBar, state: menuState, depth: 0, insideWebArea: false,
+                         coordinateTransform: coordinateTransform, focusedElement: focused,
+                         visibleMenusOnly: true).first
+    } else {
+        menu = nil
+    }
+    let state = AxWalkState(limits: AxWalkLimits(maxNodes: max(1, maxNodes - menuState.count), maxDepth: max(1, maxDepth)))
     let nodes = nodeDicts(
         el: rootEl, state: state, depth: 0, insideWebArea: false,
         coordinateTransform: coordinateTransform,
-        focusedElement: axAppFocusedElement(app)
+        focusedElement: focused
     )
     guard let tree = nodes.first else {
         throw HelperError(code: "AX_EMPTY", message: "No accessibility nodes for pid \(pid)")
     }
-    return [
+    var result: [String: Any] = [
         "tree": tree,
-        "nodeCount": state.count,
-        "truncated": state.truncated,
+        "nodeCount": state.count + menuState.count,
+        "truncated": state.truncated || menuState.truncated,
         "maxNodes": maxNodes,
         "maxDepth": maxDepth,
         "display": ["width": display.width, "height": display.height],
         "pid": Int(pid),
     ]
+    if let menu { result["menuBar"] = menu }
+    return result
 }
 
 /// Re-walk tree to find the Nth DFS node (1-based index matching snapshot).

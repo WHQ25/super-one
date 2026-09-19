@@ -163,6 +163,8 @@ export interface HelperAxNode {
 
 export interface HelperAxTreeResult {
   tree: HelperAxNode
+  /** The target app's menu bar, with independent 1-based AX indices. */
+  menuBar?: HelperAxNode
   nodeCount: number
   /**
    * Set by the helper when a node budget or the depth limit cut the walk short.

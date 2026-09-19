@@ -28,17 +28,7 @@ export function foldOutline(root: UiOutlineNode, options: FoldOptions = {}): Fol
       return null
     }
     nodesSeen += 1
-    const copy: UiOutlineNode = {
-      ref: node.ref,
-      role: node.role,
-      name: node.name,
-      value: node.value,
-      bounds: node.bounds ? { ...node.bounds } : undefined,
-      enabled: node.enabled,
-      focused: node.focused,
-      pictureOnly: node.pictureOnly,
-      capabilities: node.capabilities ? { ...node.capabilities } : undefined,
-    }
+    const copy = cloneNode(node)
     if (depth >= maxDepth || !node.children?.length) {
       if (node.children?.length) {
         nodesOmitted += node.children.reduce((n, c) => n + 1 + countDescendants(c), 0)
@@ -83,17 +73,7 @@ export function expandSubtree(
 }
 
 function cloneToDepth(node: UiOutlineNode, depth: number): UiOutlineNode {
-  const copy: UiOutlineNode = {
-    ref: node.ref,
-    role: node.role,
-    name: node.name,
-    value: node.value,
-    bounds: node.bounds ? { ...node.bounds } : undefined,
-    enabled: node.enabled,
-    focused: node.focused,
-    pictureOnly: node.pictureOnly,
-    capabilities: node.capabilities ? { ...node.capabilities } : undefined,
-  }
+  const copy = cloneNode(node)
   if (depth > 0 && node.children?.length) {
     copy.children = node.children.map((c) => cloneToDepth(c, depth - 1))
   }
@@ -192,4 +172,14 @@ export function diffOutlines(
 function indexNodes(node: UiOutlineNode, map: Map<string, UiOutlineNode>): void {
   map.set(node.ref, node)
   for (const c of node.children ?? []) indexNodes(c, map)
+}
+
+/** Clone all semantic identity and capability fields while folding children separately. */
+function cloneNode(node: UiOutlineNode): UiOutlineNode {
+  const { children: _children, ...fields } = node
+  return { ...fields,
+    bounds: node.bounds ? { ...node.bounds } : undefined,
+    capabilities: node.capabilities ? { ...node.capabilities } : undefined,
+    ...(node.nativeTarget ? { nativeTarget: { ...node.nativeTarget } } : {}),
+  }
 }

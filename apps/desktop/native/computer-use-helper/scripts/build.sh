@@ -84,6 +84,8 @@ fi
 # ── Incremental: skip compile when binary is newer than sources ─────────────
 SOURCES=(
   "$ROOT/Sources/main.swift"
+  "$ROOT/Sources/HelperProtocol.swift"
+  "$ROOT/Sources/Permissions.swift"
   "$ROOT/Sources/Capture.swift"
   "$ROOT/Sources/CoordinateSpace.swift"
   "$ROOT/Sources/Input.swift"
@@ -215,6 +217,8 @@ swiftc -O \
   ${SDKROOT:+-sdk "$SDKROOT"} \
   -o "$OUT" \
   "$ROOT/Sources/main.swift" \
+  "$ROOT/Sources/HelperProtocol.swift" \
+  "$ROOT/Sources/Permissions.swift" \
   "$ROOT/Sources/Capture.swift" \
   "$ROOT/Sources/CoordinateSpace.swift" \
   "$ROOT/Sources/Input.swift" \

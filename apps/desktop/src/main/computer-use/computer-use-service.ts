@@ -22,6 +22,7 @@ import type { PlatformLook } from './platform/types'
 import { ResourceScheduler } from './resource-scheduler'
 import { boundText, clearContinuations } from './result-view'
 import { RootRegistry } from './root-registry'
+import { resolveUiRoot, selectAppRoot } from './root-selection'
 import { StateStore } from './state-store'
 import {
   ComputerUseError,
@@ -191,11 +192,12 @@ export class ComputerUseService {
 
   /**
    * Resolve which app a tool call will touch (for HITL grant before observe/act).
-   * Defaults to the focused root when rootId is omitted.
+   * An explicit root is exact. Otherwise select a usable content root in the
+   * requested app, the last launch/focus app, or the frontmost app.
    */
-  async resolveTargetRoot(rootId?: string): Promise<UiRootIdentity> {
+  async resolveTargetRoot(rootId?: string, bundleId?: string): Promise<UiRootIdentity> {
     await this.refreshRoots()
-    return this.resolveRoot(rootId)
+    return resolveUiRoot(this.roots.list(), { rootId, bundleId, preferredBundleId: this.preferredBundleId })
   }
 
   /**
@@ -316,9 +318,7 @@ export class ComputerUseService {
           const discoveredAgain = await this.adapter.listRoots()
           this.roots.sync(discoveredAgain)
         }
-        const root = this.roots
-          .list()
-          .find((r) => r.bundleId === target!.bundleId)
+        const root = selectAppRoot(this.roots.list().filter((r) => r.bundleId === target!.bundleId))
         if (root) {
           targetRootId = root.rootId
           break
@@ -1094,26 +1094,7 @@ export class ComputerUseService {
   }
 
   private resolveRoot(rootId?: string): UiRootIdentity {
-    if (rootId) {
-      const r = this.roots.get(rootId)
-      if (!r) {
-        throw new ComputerUseError('UNKNOWN_ROOT', `Unknown root ${rootId}`, { rootId })
-      }
-      return r
-    }
-    const list = this.roots.list()
-    // Prefer last launch/focus target over OS frontmost (often SuperOne).
-    if (this.preferredBundleId) {
-      const preferred =
-        list.find((r) => r.bundleId === this.preferredBundleId && r.focused)
-        ?? list.find((r) => r.bundleId === this.preferredBundleId)
-      if (preferred) return preferred
-    }
-    const focused = list.find((r) => r.focused) ?? list[0]
-    if (!focused) {
-      throw new ComputerUseError('UNKNOWN_ROOT', 'No UI roots available')
-    }
-    return focused
+    return resolveUiRoot(this.roots.list(), { rootId, preferredBundleId: this.preferredBundleId })
   }
 }
 

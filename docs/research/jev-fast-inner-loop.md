@@ -643,9 +643,9 @@ browser、computer 和 device 线 MVP 已落地。三条线共用一个 `FastRun
 
 ### 10.4 Desktop: task selection and the Calculator counterexample (Grok)
 
-The desktop adapter is registered on both tool surfaces and the remote descriptor catalog, with running / paused / done / aborted chat labels in English and Chinese. It reuses the existing app identity and grant path, semantic action executor, state store and native `computer_wait_for` conditions. The experimental setting and API key are shared with the browser loop. `read` grants pause; secure fields are excluded; obstruction and capability failures return a pause. Native refs are re-observed on resume and an answer is discarded when the outline changed. Return requires the same app-focused AX field; scrolling requires the same frontmost window. There is no physical-input fallback.
+The desktop adapter is registered on both tool surfaces and the remote descriptor catalog, with running / paused / done / aborted chat labels in English and Chinese. It reuses the existing app identity and grant path, semantic action executor, state store and native `computer_wait_for` conditions. The experimental setting and API key are shared with the browser loop. `read` grants pause; secure fields are excluded; obstruction and capability failures return a pause. Native refs are re-observed on resume and an answer is discarded when the outline changed. Return requires the same app-focused AX field; scrolling uses the same app-directed delivery as `computer_act`. There is no physical-input fallback.
 
-**Task type matters.** Fast loops suit tasks that must find the next target on the current screen: navigation, forms, search and lists. A known button sequence is a poor fit; the main model can send a `computer_act` batch faster and more accurately. The tool description explicitly routes known sequences to `computer_act`. Menu navigation is the next primary comparison task; its A/B run remains pending user approval.
+**Task type matters.** Tasks with observable next-step candidates and a native completion condition are potential fast-loop targets; no desktop navigation gain was established by the initial tests. A known button sequence is a poor fit; the main model can send a `computer_act` batch faster and more accurately. The tool description explicitly routes known sequences to `computer_act`.
 
 The following attempted comparison is retained as a counterexample, **not a successful paired benchmark**. Both sessions used Grok 4.6 / high and the same Calculator task: clear Basic mode, press visible buttons for `(123 + 456) × 2`, verify `1,158`. Calls and cost include setup and cleanup. These sessions ran in the repository workspace; later diagnostics use an empty workspace.
 
@@ -661,6 +661,12 @@ A single diagnostic in `/private/tmp/jev-clean-bench/workspace` reproduced the w
 A second, single diagnostic added `completed_actions` (at most eight executed labels) and changed step 3 to digit 3 at 0.99 (`rce269e87`). All seven actions were correct, ending at `123 + 456`; it then paused at the diagnostic step budget and was aborted. The field is retained with a regression test (see §8.7). The full calculation and performance gain were not tested in this experiment.
 
 The live investigation also exposed an independent root-selection issue: macOS can publish a tiny auxiliary window for Calculator. App resolution now prefers the visible ordinary window while retaining modal and transient priority. The native adapter uses the action successor state rather than another screenshot, and normal turn cleanup owns desktop visuals so pause/resume does not invalidate its window.
+
+The follow-up found two desktop contract gaps independent of Jev decisions: window outlines omitted the app menu bar, and native completion conditions could not express a newly opened panel. The fixes expose visible menu nodes in ordinary snapshots and route their refs through the existing semantic `computer_act` executor. Candidate construction and dispatch now share a native action planner: a candidate requires the actual grant, node capability and delivery prerequisites. `typeText` alone does not imply safe text replacement; secure and disabled nodes remain excluded.
+
+Native `Condition` now includes `newRoot`, shared by `computer_act.expect`, `computer_wait_for` and `computer_run.done_when`. It matches a newly visible root in the same app/process using exact `title` and/or semantic `text` substring, with an optional `rootKind` filter; all supplied constraints must match. Existing windows and title-only changes do not qualify. Actions and the run follow the new root, and completion returns its verified snapshot. No Jev request shape or policy threshold changed in this follow-up.
+
+Commits: menu support `dbef5b82`, shared action planner `38e45368`, pure service split `b035f2ec`, native completion `4c91e993`. Completion verification: 148 targeted tests passed; related checks 5,433 passed / 39 skipped; node and web typechecks passed.
 
 ### 10.5 Device functionality smoke (Grok; not A/B)
 
@@ -682,11 +688,12 @@ Verification: Jev/browser surface, the built-in tool catalog and device presente
 与设计文档的偏差（MVP 有意收窄）：
 
 - `audience: 'user'` 未实现：password 字段直接不进候选，登录类页面会以 `no-progress` 交回主模型
-- `done_when` 按平台复用：browser 用 selector / selectorGone / text / urlIncludes / urlMatches；computer 和 device 用各自已有 Condition。computer 将原始 ref 绑定到 native identity，原始状态若被有界 state store 淘汰，需要开始新的 run。
+- `done_when` 按平台复用：browser 用 selector / selectorGone / text / urlIncludes / urlMatches；computer 和 device 用各自已有 Condition。computer 将原始 ref 绑定到 native identity，并增加原生 newRoot 条件识别同应用新窗口；原始状态若被有界 state store 淘汰，需要开始新的 run。
 - run 绑定 session 而非 `toolUseId`（同 session 并行子代理各自 runId 不冲突，只是 TTL 清理按 session）
 - 无 select、无 `obstructed`、无 host event 逐步进度（UI 只见 tool row 的 paused / done / aborted）
-- 阈值未校准；Calculator 的已知按键序列是已复现的模型决策边界，不据此宣称 desktop 性能提升。菜单导航 A/B 尚待放行。
+- 阈值未校准；Calculator 的已知按键序列是已复现的模型决策边界，不据此宣称 desktop 性能提升。菜单节点与新窗口条件补齐后，再单独记录菜单导航 A/B。
 - computer 输入只使用原生能力：替换文本要求 setText；不支持的输入路径暂停交回 computer_act。
+- computer 保持后台控制（目标 app 不被激活）。`hidesOnDeactivate` 的系统面板（Fonts、Colors 等 NSPanel）只在目标 app 前台时存在：直连 helper 实测 TextEdit 前台时 `list_windows` 返回 `Fonts` AX root，切到后台即消失（CG 层面同样如此，面板在 layer 3 且离屏）。这类面板在 `computer_run` 下无法观察，`newRoot` 不会命中；不通过激活目标 app 来规避，选题时避开。
 - device 不提供键盘 Enter、OCR 坐标候选或无 tree 降级；已有 device_act 处理这些情况。device 的 live 数据仅为功能 smoke，未作 A/B 性能结论。
 
 ## 参考

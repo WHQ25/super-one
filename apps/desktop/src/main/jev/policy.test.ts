@@ -21,6 +21,7 @@ function input(overrides: Partial<DecideInput>): DecideInput {
     space,
     presets: [],
     doneWhenGiven: false,
+    satisfiedOverruled: false,
     consecutiveWaits: 0,
     scrolledSinceChange: false,
     page: { url: 'https://github.com/x', title: 'x' },
@@ -35,11 +36,24 @@ describe('decide', () => {
     expect(decide(input({ answers, consecutiveWaits: 3 })).kind).toBe('click')
   })
 
-  it('finishes on Jev\'s completion verdict unless a done_when owns completion', () => {
+  it('finishes on Jev\'s completion verdict, and says so when the caller\'s own condition never matched', () => {
     const answers = { ...calm, goal_satisfied: noul(0.8), action: pick('click', ACTIONS), click_target: pick('1', CLICKS) }
     expect(decide(input({ answers }))).toMatchObject({ kind: 'done', probability: 0.8 })
-    expect(decide(input({ answers, doneWhenGiven: true })).kind).toBe('click')
+    // The loop checks done_when before every ask, so reaching here means it did
+    // not match — often because its ref names an element the app has replaced.
+    // Refusing to finish on that basis left a Calculator run circling a result
+    // it had already produced.
+    expect(decide(input({ answers, doneWhenGiven: true }))).toMatchObject({
+      kind: 'done', why: 'goal_satisfied 0.80 (done_when never matched)',
+    })
     expect(decide(input({ answers: { ...answers, goal_satisfied: noul(THRESHOLDS.goalSatisfied - 0.01) } })).kind).toBe('click')
+  })
+
+  it('does not finish on a verdict the caller already overruled', () => {
+    // Answering "continue" to a goal_satisfied pause means "not done yet"; the
+    // same verdict must not end the run on the very next step.
+    const answers = { ...calm, goal_satisfied: noul(0.8), action: pick('click', ACTIONS), click_target: pick('1', CLICKS) }
+    expect(decide(input({ answers, satisfiedOverruled: true })).kind).toBe('click')
   })
 
   it('clicks the chosen target whether Jev is sure or not, as long as the step is safe', () => {
@@ -60,8 +74,10 @@ describe('decide', () => {
     // So does an action head that is not sure the page is exhausted.
     const wavering = { ...idle, action: pick('none_useful', ACTIONS, 0.6) }
     expect(decide(input({ answers: wavering }))).toMatchObject({ kind: 'scroll' })
-    // A caller-owned done_when keeps completion out of Jev's hands.
-    expect(decide(input({ answers: idle, doneWhenGiven: true }))).toMatchObject({ kind: 'scroll' })
+    // A done_when that never matched does not veto the verdict, but an
+    // overruled one does.
+    expect(decide(input({ answers: idle, doneWhenGiven: true }))).toMatchObject({ kind: 'done' })
+    expect(decide(input({ answers: idle, satisfiedOverruled: true }))).toMatchObject({ kind: 'scroll' })
   })
 
   it('asks before a step Jev rates irreversible, offering that step first', () => {

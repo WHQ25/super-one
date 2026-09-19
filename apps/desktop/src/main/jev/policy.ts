@@ -79,11 +79,26 @@ export interface DecideInput {
   answers: Record<string, JevAnswer>
   space: ActionSpace
   presets: readonly Preset[]
-  /** A machine condition decides completion; Jev's verdict is only recorded. */
+  /**
+   * The caller supplied a machine condition. It is a fast path — the loop
+   * checks it before every ask — not the only way to finish, so it only
+   * changes how a completion is worded.
+   */
   doneWhenGiven: boolean
+  /**
+   * The caller was already told the goal looked satisfied and answered
+   * "continue". The same verdict must not end the run a second time.
+   */
+  satisfiedOverruled: boolean
   consecutiveWaits: number
   scrolledSinceChange: boolean
   page: { url: string; title: string }
+}
+
+/** A caller who gave a condition needs to know its own test never confirmed this. */
+function doneWhy(satisfied: number, doneWhenGiven: boolean): string {
+  const base = `goal_satisfied ${satisfied.toFixed(2)}`
+  return doneWhenGiven ? `${base} (done_when never matched)` : base
 }
 
 function option(el: SpaceElement, probability?: number, prefix = ''): QuestionOption {
@@ -142,18 +157,21 @@ export function presetByJev(el: SpaceElement, presets: readonly Preset[], answer
 }
 
 export function decide(input: DecideInput): Decision {
-  const { answers, space, presets, doneWhenGiven, consecutiveWaits, page } = input
+  const { answers, space, presets, doneWhenGiven, satisfiedOverruled, consecutiveWaits, page } = input
   const summary = decisionSummary(answers)
   const loading = readNoul(answers.still_loading)
   if (loading != null && loading >= THRESHOLDS.stillLoading && consecutiveWaits < 3) {
     return { kind: 'wait', why: `still_loading ${loading.toFixed(2)}` }
   }
   // Completion is Jev's call: it sees the page, the caller does not. A given
-  // done_when is the caller's stricter definition and the loop checks it before
-  // asking; then Jev's verdict is only recorded.
+  // done_when is checked before every ask, so reaching here means it has not
+  // matched — but a condition bound to a ref the app has since replaced can
+  // never match, and refusing to finish on that basis leaves a run circling a
+  // goal it already reached. The verdict still stands; the wording says the
+  // caller's condition did not confirm it.
   const satisfied = readNoul(answers.goal_satisfied)
-  if (satisfied != null && satisfied >= THRESHOLDS.goalSatisfied && !doneWhenGiven) {
-    return { kind: 'done', why: `goal_satisfied ${satisfied.toFixed(2)}`, probability: satisfied }
+  if (satisfied != null && satisfied >= THRESHOLDS.goalSatisfied && !satisfiedOverruled) {
+    return { kind: 'done', why: doneWhy(satisfied, doneWhenGiven), probability: satisfied }
   }
   const risk = readNoul(answers.next_step_risk) ?? 0
 
@@ -173,11 +191,11 @@ export function decide(input: DecideInput): Decision {
   // collapses (arXiv: 0.63 on the abstract page, 0.42 once scrolled to the
   // footer). A fresh observation still has to agree before the run ends.
   if (
-    chosen === 'none_useful' && !doneWhenGiven
+    chosen === 'none_useful' && !satisfiedOverruled
     && satisfied != null && satisfied >= THRESHOLDS.goalSatisfiedIdle
     && (action?.probabilities[chosen] ?? 0) >= THRESHOLDS.overrideNone
   ) {
-    return { kind: 'done', why: `goal_satisfied ${satisfied.toFixed(2)} with no action left`, probability: satisfied }
+    return { kind: 'done', why: `${doneWhy(satisfied, doneWhenGiven)} with no action left`, probability: satisfied }
   }
 
   const noneUseful = (): Decision => {

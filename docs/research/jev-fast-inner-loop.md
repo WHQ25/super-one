@@ -646,6 +646,22 @@ GitHub 首页在 748 px 下把搜索框收进 "Toggle navigation"。标成 `Expa
 
 顺带暴露一个**不属于 wait 范围**的问题：`checkDone` 把 `done_when` 绑在第一次观察的 stateId 上（`conditionStateId ??= current.stateId`），而 Calculator 任务必须先 Basic → Scientific，位置性 ref 随之失效——结果算对了（`Edit field = zero point five`）但完成条件永不满足，run 多走一次 scroll 再 no-progress 暂停，由主模型 abort 收尾。这是 10.4 记的 Calculator 反例的另一个侧面，留待单独处理。
 
+### 8.21 2026-09-19 `done_when` 不该否决 Jev 的完成判定
+
+8.15 把完成判定交给了 Jev，但 policy 里两条 done 规则都写着 `&& !doneWhenGiven`——**只要调用方传了 `done_when`，Jev 的判断就完全不采纳**。注释说的是"done_when 是调用方更严格的定义"，实现出来却是"给了条件就只认条件"。
+
+Calculator 实测把这个矛盾逼了出来。第 8 步 Jev 给 `goal_satisfied 0.83` + `action: none_useful 0.97`（显示已是 `zero point five`，正是 done_when 要的值），两条 done 规则都因 `doneWhenGiven` 跳过，落到 `noneUseful()` → 滚动 → 第 9 步再 none_useful → no-progress 暂停，由主模型 abort 收尾。**任务早就做完了，run 却在原地打转。**
+
+而 `done_when` 本身永远不会命中：它的 ref 绑在**第一次观察**的 state 上（`conditionStateId ??= current.stateId`），这个任务必须先 Basic → Scientific，树重排后 `resolveConditionTarget` 按 role + bounds 距离重定位失败。两条完成路径同时失效，于是谁也收不了尾。
+
+**这不是 computer 特有的。** 同一条门控对三个平台一视同仁；browser 没暴露，只因为 10.6 的抽样 prompt 一律写着"不要传 done_when，让循环自己判完成"。
+
+修法：`doneWhenGiven` 原本承载了两个意思——"调用方给了条件"和"调用方在 goal_satisfied 暂停后答了继续"。拆成两个参数，只有后者（`satisfiedOverruled`）继续否决完成判定；前者只影响措辞。`done_when` 仍是快速路径（每次 ask 之前先查，命中就立刻结束，省一次 Jev 请求），但不再是唯一裁判。走到 policy 就说明它没命中，所以完成理由里如实写上 `(done_when never matched)`，调用方自己判断要不要接受。
+
+修复后同一任务：8 步、22.6 s、`status: done`、`why: goal_satisfied 0.80 (done_when never matched)`，最终快照 `Edit field = zero point five`。
+
+一个参数同时表达两件事，是这类缺陷的温床——它让"给了条件"悄悄继承了"用户说还没完"的否决权。
+
 ## 9. 非目标
 
 - 不替换现有 `*_snapshot` / `*_act` / `*_query`；`*_run` 是并列的 goal 级工具，主模型按工具 description 里的路由指引选

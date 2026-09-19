@@ -789,6 +789,18 @@ Verification: Jev/browser surface, the built-in tool catalog and device presente
 
 **7/7 通过，每个任务只用一次 `browser_run`、零暂停。** 三个原本已通过的任务同时回归确认，且完成判定普遍升高（npm 0.83→0.94、Dictionary 0.85→0.97），说明 8.18 的终点状态问法不只救了 arXiv，也让 0.7 阈值的余量变大。一次 Wikipedia 运行在 Jev 判完成（0.96）之后卡在主模型侧未收尾、被 runner 的 480 s 上限掐断，重跑正常——属 harness 偶发，与循环无关。
 
+#### 更难的一批（多约束筛选、自动补全、日期选择器）
+
+| 任务 | 结果 | `browser_run` | 主模型 | Jev 步数 / 完成判定 | 暴露的问题 |
+| --- | --- | --- | --- | --- | --- |
+| Google Flights 单程 ZRH→LHR 2026-10-15 | ✅ done | 1 | 9 calls / 359.8 s / $0.0360 | 18 步 / 0.94·0.95 | — （4 步 stale 重试，22%） |
+| Coursera 搜索 + Beginner 级别筛选 | ✅ done | 2（一次 no-progress 暂停后恢复） | 8 calls / 71.5 s / $0.0723 | 8 步 / 0.76→0.85 | 隐藏 input + label 代理 |
+| Allrecipes 搜索 → 首条食谱 | ✅ done | 1 | 7 calls / 65.5 s / $0.0689 | 6 步 / 0.86·0.87 | `<noscript>` 标记污染可访问名 |
+
+Google Flights 是 jev-ultrafast 自己发布过数据的任务（17 次 Jev 请求 / 10 动作 + 1 次 WAIT / 7.07 s，约 35% 决策因 stale 作废）。我们这次 18 次请求、13 个动作 + 2 次 WAIT，**4 次 stale（22%）**；它完成了机票类型切换、两处自动补全城市选择、日期选择器选日，全程无暂停。总时长 359.8 s 绝大部分是主模型的轮次，循环自身约 16 s。
+
+Coursera 一例值得单独记：Level 展开后页面文字里明明写着 "Beginner ( 4,765 )"，动作空间里却什么可点的都没有——该站把真正的 `<input type=checkbox>` 设为 `opacity: 0`，可见的是样式化 label。这类"隐藏 input + 代理"在设计系统里极常见，观察层必须把**能接住点击的那个节点**（label）作为候选节点，同时保留 input 的语义（role / name / checked）。修好后该复选框得分 1.00。
+
 Apple 一例在修复过程中的推进（同一 prompt、同一模型），可见每一层各自的贡献：
 
 | 构建 | 结果 |

@@ -43,10 +43,20 @@ import {
   type ObserveResult,
   type QueryResult,
   type UiAction,
+  type UiOutlineNode,
   type UiRootIdentity,
   type WaitResult,
   type ZoomResult,
 } from './types'
+
+/** How long an unchanged successor outline is re-read before it counts as unchanged. */
+const ACT_SETTLE_MS = 600
+const ACT_SETTLE_POLL_MS = 80
+
+function outlineMoved(before: UiOutlineNode, after: UiOutlineNode): boolean {
+  const d = buildDiff(before, after)
+  return d.added.length > 0 || d.removed.length > 0 || d.changed.length > 0
+}
 
 type RunningAppMeta = {
   app: string
@@ -633,9 +643,24 @@ export class ComputerUseService {
             this.roots.register(identity)
             expectHolds = evaluate()
           }
-        } else if (recordingActive) {
-          // Keep one visible tail frame when no explicit completion signal exists.
-          await sleep(250, options.signal)
+        } else {
+          // SwiftUI apps publish their accessibility update a few hundred
+          // milliseconds after the action; a snapshot taken at once reports
+          // "nothing changed" and every caller downstream believes it. Give an
+          // unchanged outline a short chance to move before it becomes the fact.
+          const deadline = this.clock() + ACT_SETTLE_MS
+          while (this.clock() < deadline && !outlineMoved(base.outline, look.outline)) {
+            throwIfAborted(options.signal)
+            if (this.fake) this.fake.advanceTime(ACT_SETTLE_POLL_MS)
+            else await sleep(ACT_SETTLE_POLL_MS, options.signal)
+            look = await this.adapter.look(identity, reobserveMode, base.capture)
+            throwIfAborted(options.signal)
+            identity = { ...look.root, rootId: successorRoot.rootId }
+          }
+          if (recordingActive) {
+            // Keep one visible tail frame when no explicit completion signal exists.
+            await sleep(250, options.signal)
+          }
         }
 
         if (recordingActive) {

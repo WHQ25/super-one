@@ -53,6 +53,45 @@ describe('computer fast-loop adapter', () => {
     expect(page.elements.map((element) => element.label)).not.toContain('Show Fonts')
   })
 
+  it('names list rows by their text, offers one candidate per intent and sees past the fold budget', async () => {
+    // A Finder list: unnamed rows whose name cell and its text field both open the item.
+    const row = (name: string, itemKind: 'folder' | 'file') => ({ role: 'row', selectable: true, children: [
+      // Only the name field carries file metadata, as on macOS; the cell must inherit it.
+      { role: 'cell', openable: true, children: [{ role: 'textField', name: '', value: name, openable: true, itemKind }] },
+      { role: 'cell', children: [{ role: 'staticText', value: 'Sep 3' }] },
+      { role: 'cell', children: [{ role: 'staticText', value: '--' }] },
+      { role: 'cell', children: [{ role: 'staticText', value: 'Folder' }] },
+    ] })
+    const rows = Array.from({ length: 70 }, (_, i) => row(`Folder ${String(i).padStart(2, '0')}`, 'folder'))
+    const backend = new FakePlatformBackend([{ app: 'Finder', bundleId: 'com.test.finder', pid: 7,
+      menuBar: { role: 'menuBar', children: [
+        { role: 'menuBarItem', name: 'Apple', children: [{ role: 'menuItem', name: 'Recent Secret.pdf' }] },
+        { role: 'menuBarItem', name: 'File', children: [{ role: 'menuItem', name: 'New Folder' }] },
+      ] },
+      windows: [{ title: 'Macintosh HD', tree: { role: 'window', children: [...rows, row('Readme.txt', 'file')] } }],
+    }])
+    const service = new ComputerUseService({ adapter: backend })
+    service.policy.setEnabled(true)
+    service.policy.grantSession({ app: 'Finder', bundleId: 'com.test.finder', tier: 'full' })
+    const adapter = createComputerAdapter({ service, ask: vi.fn(), resolve: async () => (await service.resolveTargetRoot()).rootId })
+    await adapter.resolveTarget()
+    const page = await adapter.observe()
+    const labels = page.elements.map((element) => element.label)
+    expect(labels.filter((label) => label === 'Open Folder 07')).toHaveLength(1)
+    expect(labels).toContain('Select Folder 07')
+    // 70 rows (630 nodes) are more than the model-facing fold keeps, but the run reads the complete state.
+    expect(labels).toContain('Open Folder 69')
+    expect(labels.some((label) => /^(Open|Select) ?$/.test(label))).toBe(false)
+    expect(labels).not.toContain('Recent Secret.pdf')
+    expect(page.text).not.toContain('Recent Secret.pdf')
+    // On-screen content precedes app menu commands.
+    expect(labels.indexOf('New Folder')).toBeGreaterThan(labels.indexOf('Open Folder 69'))
+    const space = buildActionSpace({ page, origins: new Set(), allow: [], avoid: [], history: [] })
+    const file = page.elements.find((element) => element.label === 'Open Readme.txt')!
+    expect(space.guarded.map((element) => element.node)).toContain(file.node)
+    expect(space.clickCandidates).toContain(String(page.elements.find((element) => element.label === 'Open Folder 69')!.node))
+  })
+
   it('offers only replacements supported by the semantic delivery path', async () => {
     const { service } = fixture()
     const obs = await service.observe(undefined, 'semantic')
@@ -171,7 +210,12 @@ describe('computer fast-loop adapter', () => {
     await service.act(page.stateId, [{ type: 'press', ref: next.ref! }], { delivery: 'semantic' })
     expect(await adapter.isFresh(page, next.node)).toBe(false)
     expect(adapter.reobserveOnResume).toBe(true)
-    expect(adapter.sameTarget?.(page, { ...page, signature: 'changed' }, next)).toBe(false)
+    // Menu churn alone must not discard the answer; a moved element must.
+    expect(adapter.sameTarget?.(page, { ...page, signature: 'changed' }, next)).toBe(true)
+    const moved = new Map(page.refs)
+    moved.set(next.node, { ...page.refs.get(next.node)!, ref: '@e99' })
+    expect(adapter.sameTarget?.(page, { ...page, refs: moved }, next)).toBe(false)
+    expect(adapter.sameTarget?.(page, { ...page, elements: page.elements.map((e) => e.node === next.node ? { ...e, label: 'Other' } : e) }, next)).toBe(false)
   })
 
   it.each(['MODAL_BLOCKED', 'TIER_BLOCKED'] as const)('pauses once on %s instead of retrying', async (code) => {

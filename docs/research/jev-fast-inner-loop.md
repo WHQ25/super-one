@@ -221,7 +221,7 @@ interface Answer {
 {
   // 元判断（Noul，各自独立；只在机器信号缺席时兜底，见 3.6）
   goal_satisfied: noul("Is every requirement in `goal` visibly satisfied by `page` and `elements`?"),
-  still_loading:  noul("Is `page` still loading or waiting for results to appear?"),
+  still_loading:  noul("Should the next step wait for `page` to update instead of acting: is the control `goal` needs next absent or disabled, or are submitted results or suggestions still arriving?"),  // 8.16
 
   // 动作（Choice）——候选只含安全元素
   action:           choice("Which single action best advances `goal` from the current `page`?",
@@ -265,7 +265,7 @@ observe 之后、问 Jev 之前：
 0c. 平台错误：MODAL_BLOCKED → 当作页面存在 guarded 弹窗，走 3；STALE_STATE → re-observe；treeUnavailable → pause(no-progress)
 
 answers 回来后，按顺序：
-1. still_loading ≥ 0.7 且平台无加载信号           → WAIT（rAF 等待，200 ms 上限）；连续 WAIT ≤ 3
+1. still_loading ≥ 0.7 且平台无加载信号           → WAIT：等页面相对 Jev 看到的那份 marker 发生变化，事件驱动、提前返回；上限按连续次数递增 1 / 2 / 4 s；连续 WAIT ≤ 3，之后必须选动作（8.16）
 2. goal_satisfied ≥ 0.7 且 done_when 未给        → 候选完成：settle 后重新观察再问一次，仍 ≥ 0.7 → done（8.15；Wikipedia 完成页 0.82，之前各页 ≤ 0.09）
    done_when 已给                                → 由 0b 决定，goal_satisfied 只记录
 3. action = none_useful（或 target = none_of_these）
@@ -565,6 +565,21 @@ Finder 与 Calculator 两组 desktop 实测（10.4）暴露的不是 Jev 决策�
 - 与 8.9 的原则冲突，明知故犯：8.9 的"System 1 不该决定 System 2 是否介入"在理论上成立，但代价是主模型必须在无信息的情况下替 System 1 预判，实践上更差。误放行的代价是"做了一个不该做的动作"，由阈值和 trace 校准兜；误 done 的代价是主模型看快照后再发起一次。
 - 顺序：browser 线先落地并重跑 10.1/10.2 的两个任务确认范式，再迁移 computer / device。
 
+### 8.16 2026-09-19 WAIT：Jev 判要不要等，代码判等什么
+
+npm 搜索 → 点建议项 → SPA 客户端导航（fetch ≈ 0.8 s 后才 `pushState`）。按 3.7 的 2 帧 / 50 ms settle 与 `readyState` 信号，点击后立刻观察到的仍是一张**完整的首页**，Jev 对 "Is page still loading?" 答 0.16，选 scroll，两轮后 no-progress 暂停（trace `rd4198244`）。
+
+对照 jev-ultrafast：它在适配器层没有更聪明的等待（同款 settle），而是把 WAIT 当动作候选交给 Jev，规则写的是 "**WAIT only when the needed control is absent/disabled**, or submitted results are still loading"（`questions.py:10`），然后固定 sleep 100 ms 再问一遍——Google Flights 记录里 17 请求 / 11 动作有一部分就是这么来的。
+
+决定：
+
+- **要不要等由 Jev 判**：`still_loading` 改成 jev-ultrafast 的问法（目标需要的控件不在 / 已提交的结果没出来），它问的是页面上可见的事实，不是网络状态。
+- **等什么、等多久由代码判**：Jev 说等，含义就是"我要的还没出现"，代码要等的就是页面变化。browser 在页内挂 MutationObserver（100 ms 安静后重算 marker，另有 250 ms 兜底 tick），marker 与 **Jev 看到的那份**比较（决策与等待之间已发生的变化立即命中），变了再等两帧返回；整页导航销毁 context 视为变化。computer / device 走 loop 里的 observe + changed 轮询兜底。
+- **不让 Jev 选时长**：时长不是页面上可观察的事实；事件驱动下短上限也省不了时间，只多一次 Jev 往返。
+- **上限递增 1 / 2 / 4 s，连续 ≤ 3**：上限只在页面不变时付代价；连续几轮 Jev 独立重看后仍说"没出现"，可信度递增，就给更长的耐心；三轮后必须选动作。最坏 7 s + 3 次 Jev；npm 那种 0.8 s 导航只多付 1 次。
+- 等待结束与 `changed_page` 用同一个 marker，由构造保证两者一致。
+- 未覆盖：页面完全静止但网络在等（DOM 不动）只能等到上限；需要时再加页内 in-flight 请求计数（Playwright networkidle 思路），是加法不是替代。
+
 ## 9. 非目标
 
 - 不替换现有 `*_snapshot` / `*_act` / `*_query`；`*_run` 是并列的 goal 级工具，主模型按工具 description 里的路由指引选
@@ -580,7 +595,7 @@ browser、computer 和 device 线 MVP 已落地。三条线共用一个 `FastRun
 | 文件 | 对应章节 |
 | --- | --- |
 | `typesafe-client.ts` | 1.1 · 3.4（预算校验、答案校验、钉 `jev-1.13.0`、429/529 退避、AbortSignal） |
-| `browser-page.ts` | 3.7 browser adapter：移植 `snapshot.js`（`window.__soneJev` 节点身份、scoped `guard` / `pageKey` / `marker`、视口内文本 ≤ 4k、≤ 250 元素）、CDP click / replace-type（select-all + `Input.insertText`，contenteditable 可用）/ 滚动、执行前 hit-test、执行后 rAF settle、`readyState` 机器加载信号、`done_when` 机器判定 |
+| `browser-page.ts` | 3.7 browser adapter：移植 `snapshot.js`（`window.__soneJev` 节点身份、scoped `guard` / `pageKey` / `marker`、视口内文本 ≤ 4k、≤ 250 元素）、CDP click / replace-type（select-all + `Input.insertText`，contenteditable 可用）/ 滚动、执行前 hit-test、执行后 rAF settle、`readyState` 机器加载信号、`waitForPageChange`（MutationObserver + 250 ms 兜底 tick 重算 marker，与 Jev 看到的比较，变了再等两帧）、`done_when` 机器判定；stale 统一抛 loop 的 `StaleObservation` |
 | `action-space.ts` | 3.5：所有可操作元素为候选（password 剔除）、`open:` / `submit:` 候选、历史规则（未变页面前不重复）；风险由 Jev 的 `next_step_risk` 判（8.15） |
 | `questions.ts` | 3.4：`goal_satisfied` / `still_loading` Noul、`action` / `click_target` / `type_text_target` Choice、每个 preset 一个 `field_for_<key>` |
 | `policy.ts` | 3.6 决策表与阈值（target 头概率：读 0.6 / 写 0.7；preset 0.7；loading 0.7；satisfied 0.85。`action` 头只取 argmax，不设门槛，见 10.1） |
@@ -723,6 +738,19 @@ Verification: Jev/browser surface, the built-in tool catalog and device presente
 - computer 输入只使用原生能力：替换文本要求 setText；不支持的输入路径暂停交回 computer_act。
 - computer 保持后台控制（目标 app 不被激活）。`hidesOnDeactivate` 的系统面板（Fonts、Colors 等 NSPanel）只在目标 app 前台时存在：直连 helper 实测 TextEdit 前台时 `list_windows` 返回 `Fonts` AX root，切到后台即消失（CG 层面同样如此，面板在 layer 3 且离屏）。这类面板在 `computer_run` 下无法观察，`newRoot` 不会命中；不通过激活目标 app 来规避，选题时避开。
 - device 不提供键盘 Enter、OCR 坐标候选或无 tree 降级；已有 device_act 处理这些情况。device 的 live 数据仅为功能 smoke，未作 A/B 性能结论。
+
+### 10.6 browser 范式验证（Grok 4.6 / high，dev 版，无 `done_when`）
+
+主模型只给 `goal` + `presets`，由 Jev 判完成与风险（8.15）。
+
+| 任务 | 结果 | 主模型 | Jev |
+| --- | --- | --- | --- |
+| Wikipedia 三跳导航 | done，0 pause | 8 calls / 62.6 s | 7 步，risk 头导航步 0.08–0.12，完成页 goal_satisfied 0.83（阈值据此从 0.9 降到 0.7） |
+| npm：搜 zod → 包页 → Versions，run 1 | 前两次 `browser_run` 返回 `[Error] Target changed or is covered`，第三次 done | 16 calls / 179 s | browser 自己的 `StalePage` 未映射到 loop 的 `StaleObservation`，`ddf57282` 重构时漏的契约（computer / device 一直抛后者） |
+| npm，run 2（stale 修复后） | 未完成：点建议项后观察到的仍是首页，scroll → 低置信 → no-progress 暂停 | — | trace `rd4198244`，见 8.16 |
+| npm，run 3（8.16 之后） | **done，0 pause，1 次 `browser_run`** | 5 calls / 43.1 s / $0.0397 | 7 步 2.7 s（Jev 累计 3.7 s），完成页 goal_satisfied 0.85 两次确认，trace `r12a977fb` |
+
+run 3 里 WAIT 分支其实没被走到：过渡页上 `still_loading` 0.55（新问法，旧问法同页 0.16），低于 0.7，Jev 选 scroll，是 scroll 的整页 marker 新鲜度检查判 stale 后重观察才看到包页。新问法把这个信号从 0.16 抬到 0.55–0.59，阈值是否降到 0.5 待更多 trace 再定：事件驱动之后一次误 WAIT 的代价只有 ≤ 1 s + 1 次 Jev。
 
 ## 参考
 

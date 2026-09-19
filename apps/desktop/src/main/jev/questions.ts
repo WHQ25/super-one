@@ -103,7 +103,7 @@ export function buildRequest(input: BuildQuestionsInput): JevRequest {
     },
     still_loading: {
       type: 'noul',
-      instructions: 'Is `page` still loading, or waiting for results or suggestions to appear?',
+      instructions: 'Should the next step wait for `page` to update instead of acting: is the control `goal` needs next absent or disabled, or are submitted results or suggestions still arriving? Answer no when a useful control for the next step is already visible.',
     },
     action: {
       type: 'choice',

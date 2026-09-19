@@ -232,6 +232,39 @@ export async function settleAfter(webContentsId: number, opts: { node?: number; 
   }
 }
 
+/**
+ * Jev asked to wait: block until the page differs from the one it saw, then
+ * give the render two frames. Resolves false when nothing changed before the
+ * cap. Checks run 100 ms after the last DOM mutation and every 250 ms as a
+ * floor, so a page that never goes quiet is still compared. A navigation in
+ * the middle destroys the context and counts as a change.
+ */
+export async function waitForPageChange(webContentsId: number, page: PageObservation, timeoutMs: number): Promise<boolean> {
+  const expr = `((seen, timeoutMs) => new Promise((resolve) => {
+    const same = () => { const s = ${OBSERVE_SCRIPT}; return !s || JSON.stringify(s.marker) === seen; };
+    let done = false, quiet = 0;
+    const observer = new MutationObserver(() => { clearTimeout(quiet); quiet = setTimeout(check, 100); });
+    const finish = (changed) => {
+      if (done) return;
+      done = true; observer.disconnect(); clearTimeout(quiet); clearTimeout(cap); clearInterval(tick);
+      resolve(changed);
+    };
+    function check() {
+      if (done) return;
+      if (!same()) requestAnimationFrame(() => requestAnimationFrame(() => finish(true)));
+    }
+    const cap = setTimeout(() => finish(false), timeoutMs);
+    const tick = setInterval(check, 250);
+    observer.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+    check();
+  }))(${JSON.stringify(JSON.stringify(page.marker))}, ${timeoutMs})`
+  try {
+    return (await evaluate<boolean>(webContentsId, expr, true)) === true
+  } catch {
+    return true // navigating — the next observe retries until the document is back
+  }
+}
+
 /** Machine loading signal: readyState. Returns true once the document is complete or the wait expired. */
 export async function waitForDocumentComplete(webContentsId: number, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs

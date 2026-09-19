@@ -10,7 +10,7 @@ import { readAppSettings } from '../app-settings-service'
 import { browserFocusGuard } from '../browser/browser-automation-bridge'
 import { isCdpEnabled, resolveCdpTarget } from '../browser/browser-cdp'
 import { browserErrorReply, browserTextReply, type BrowserToolReply } from '../mcp/browser-mcp-replies'
-import { type PageObservation, type DoneWhen, checkDoneWhen, clickNode, hasDoneWhen, isFresh, observePage, pressEnterInNode, scrollPage, settleAfter, typeIntoNode, waitForDocumentComplete } from './browser-page'
+import { type PageObservation, type DoneWhen, checkDoneWhen, clickNode, hasDoneWhen, isFresh, observePage, pressEnterInNode, scrollPage, settleAfter, typeIntoNode, waitForDocumentComplete, waitForPageChange } from './browser-page'
 import { getJevApiKey } from './jev-api-key'
 import { type Answer, FastRun, type RunDeps, type RunResult } from './loop'
 import { type PausedRun, storePausedRun, takePausedRun } from './run-store'
@@ -62,6 +62,7 @@ function depsFor(sessionId: string, tab: string | undefined, doneWhen?: DoneWhen
     scroll: (page, deltaY) => scrollPage(target, page, deltaY),
     settle: (opts) => settleAfter(target, opts),
     waitReady: (timeoutMs) => waitForDocumentComplete(target, timeoutMs),
+    waitForChange: (page, timeoutMs) => waitForPageChange(target, page, timeoutMs),
     checkDone: () => doneWhen ? checkDoneWhen(target, doneWhen) : Promise.resolve(false),
     changed: (before, after) => JSON.stringify(before.marker) !== JSON.stringify(after.marker),
     focusGuard: (active) => browserFocusGuard(sessionId, active),

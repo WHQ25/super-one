@@ -225,6 +225,48 @@ describe('FastRun', () => {
     expect(result.since_last).toEqual([])
   })
 
+  it('waits for the page to change when Jev says the needed control is absent, with growing patience, then acts', async () => {
+    // A click started an in-page navigation; the old page is still showing.
+    const caps: number[] = []
+    const asked: number[] = []
+    const { deps, acts } = harness([HOME, CREATED], (request) => {
+      const state = request.state as { page: { url: string } }
+      asked.push(1)
+      if (/\/issues\/\d+$/.test(state.page.url)) return { still_loading: noul(0), goal_satisfied: noul(0.95), next_step_risk: noul(0), action: pick('none_useful', actionsOf(request)) }
+      return { still_loading: noul(0.9), goal_satisfied: noul(0), next_step_risk: noul(0), action: pick('none_useful', actionsOf(request)) }
+    })
+    let current = HOME
+    deps.observe = async () => current
+    deps.waitForChange = async (_page, timeoutMs) => {
+      caps.push(timeoutMs)
+      if (caps.length < 3) return false
+      current = CREATED
+      return true
+    }
+    deps.checkDone = async () => false
+    const result = await new FastRun(opts(), deps).start()
+    expect(result).toMatchObject({ status: 'done', why: 'goal_satisfied 0.95' })
+    expect(caps).toEqual([1000, 2000, 4000])
+    expect(acts).toEqual([])
+    expect(result.since_last).toEqual([])
+  })
+
+  it('stops waiting after three unchanged waits and falls back to polling observe when the adapter has no event source', async () => {
+    const asked: string[] = []
+    const { deps } = harness([HOME], (request) => {
+      asked.push('ask')
+      return { still_loading: noul(0.95), goal_satisfied: noul(0), next_step_risk: noul(0), action: pick('click', actionsOf(request)), click_target: pick('1', clicksOf(request)) }
+    })
+    let clock = 0
+    deps.now = () => clock
+    const observe = deps.observe
+    deps.observe = async () => { clock += 2500; return observe() }
+    const result = await new FastRun(opts({ maxSteps: 4 }), deps).start()
+    // Three waits polled the same page until each cap, then the fourth ask had to act.
+    expect(asked).toHaveLength(4)
+    expect(result.since_last).toEqual(['Click [1] Issues (no change)'])
+  })
+
   it('finishes on Jev\'s verdict only after a fresh observation agrees', async () => {
     const verdicts: number[] = []
     const { deps, acts } = harness([CREATED], (request) => {

@@ -25,6 +25,12 @@ export interface RunDeps<Page extends RunObservation = RunObservation> {
   scroll(page: Page, deltaY: number, signal?: AbortSignal): Promise<void>
   settle(opts: { node?: number; typed?: boolean }, signal?: AbortSignal): Promise<void>
   waitReady(timeoutMs: number, signal?: AbortSignal): Promise<boolean>
+  /**
+   * Jev asked to wait: resolve true as soon as the page differs from `page`,
+   * false once `timeoutMs` passes unchanged. Adapters without an event source
+   * get a polling fallback.
+   */
+  waitForChange?(page: Page, timeoutMs: number, signal?: AbortSignal): Promise<boolean>
   /** Evaluate the adapter's native completion condition. */
   checkDone(signal?: AbortSignal): Promise<boolean | Page>
   changed(before: Page, after: Page): boolean | null
@@ -84,7 +90,9 @@ interface Pending<Page extends RunObservation> {
 }
 
 const SCROLL_DELTA = 560
-const WAIT_MS = 200
+/** Jev's consecutive waits get more patience each time: 1 s, 2 s, 4 s, then it must act. */
+const WAIT_CAPS_MS = [1000, 2000, 4000]
+const WAIT_POLL_MS = 150
 
 export class FastRun<Page extends RunObservation = RunObservation> {
   readonly runId = `r${randomUUID().slice(0, 8)}`
@@ -309,10 +317,15 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       }
 
       if (decision.kind === 'wait') {
+        const cap = WAIT_CAPS_MS[Math.min(this.consecutiveWaits, WAIT_CAPS_MS.length - 1)]
         this.consecutiveWaits++
-        this.history.push({ node: -1, kind: 'wait', label: 'Wait', changedPage: null })
+        const entry: HistoryEntry = { node: -1, kind: 'wait', label: 'Wait', changedPage: null }
+        this.history.push(entry)
+        const waitStart = this.now()
+        entry.changedPage = await this.waitForChange(page, cap, signal)
+        trace.latencyMs!.wait = this.now() - waitStart
+        trace.changedPage = entry.changedPage
         this.emit(trace)
-        await new Promise((resolve) => setTimeout(resolve, WAIT_MS))
         page = null
         continue
       }
@@ -379,6 +392,17 @@ export class FastRun<Page extends RunObservation = RunObservation> {
   }
 
   /** Perform one decided action and return the observation that followed it. */
+  private async waitForChange(page: Page, timeoutMs: number, signal?: AbortSignal): Promise<boolean> {
+    if (this.deps.waitForChange) return this.deps.waitForChange(page, timeoutMs, signal)
+    const deadline = this.now() + timeoutMs
+    for (;;) {
+      signal?.throwIfAborted()
+      if (this.deps.changed(page, await this.deps.observe(signal)) === true) return true
+      if (this.now() >= deadline) return false
+      await new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS))
+    }
+  }
+
   private async execute(decision: Exclude<Decision, { kind: 'wait' | 'done' | 'pause' }>, page: Page, approved: boolean, answered = false, signal?: AbortSignal): Promise<Page> {
     const clickKind = decision.kind === 'click' ? clickKindOf(decision.key) : null
     const entry: HistoryEntry = decision.kind === 'scroll'

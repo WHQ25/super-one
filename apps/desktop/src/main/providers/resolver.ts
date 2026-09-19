@@ -2,6 +2,7 @@ import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import { expandProviderModelEnv, type EffortLevel, type RemoteActiveProvider } from '@superone/shared/agent-types'
 import {
   CONSUMER_TASK,
+  claudeThirdPartyEnv,
   effectiveEndpoints,
   enabledEndpointModels,
   endpointServes,
@@ -194,6 +195,7 @@ export function resolveServiceFromCredential(
 export function buildClaudeEnv(resolved: ResolvedService | null): Record<string, string> {
   if (!resolved) return {}
   const env: Record<string, string> = {
+    ...claudeThirdPartyEnv(resolved),
     ...(resolved.extraEnv ?? {}),
     ...expandProviderModelEnv(resolved.modelMapping ?? {}),
   }

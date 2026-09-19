@@ -54,6 +54,21 @@ describe('resolve-service', () => {
 
     const env = buildHarnessEnv('claude', resolved)
     expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-test-secret-abcdef')
+    expect(env.CLAUDE_CODE_MODEL_CAPABILITIES).toBeUndefined()
+  })
+
+  it('denies mid-conversation tool changes on an Anthropic-compatible host', () => {
+    const cred = store.createCredential({
+      platformId: 'bailian',
+      planId: 'api',
+      name: 'bailian',
+      secret: 'sk-bailian-444444',
+    })
+    store.setBinding({ consumer: 'chat:claude', credentialId: cred.id })
+
+    const env = buildHarnessEnv('claude', resolveHarnessService(store, 'claude', null))
+    expect(env.ANTHROPIC_BASE_URL).toBe('https://dashscope.aliyuncs.com/apps/anthropic')
+    expect(env.CLAUDE_CODE_MODEL_CAPABILITIES).toBe('-mid_conv_tool_change')
   })
 
   it('prefers explicit apiProviderId over consumer binding', () => {

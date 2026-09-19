@@ -6,6 +6,7 @@ import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import {
   BUILTIN_PLATFORMS,
   CONSUMER_TASK,
+  claudeThirdPartyEnv,
   effectiveEndpoints,
   endpointBaseUrl,
   findPlan,
@@ -135,7 +136,10 @@ export function listHarnessApiProviders(
 /** Build process env for Claude / Codex from a resolved service. */
 export function buildHarnessEnv(harness: string, resolved: ResolvedService | null): Record<string, string> {
   if (!resolved) return {}
-  const env: Record<string, string> = { ...(resolved.extraEnv ?? {}) }
+  const env: Record<string, string> = {
+    ...(harness === 'claude' ? claudeThirdPartyEnv(resolved) : {}),
+    ...(resolved.extraEnv ?? {}),
+  }
   if (harness === 'claude') {
     if (resolved.apiKey) {
       env.ANTHROPIC_API_KEY = resolved.apiKey

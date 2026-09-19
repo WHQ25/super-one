@@ -50,6 +50,10 @@ Every alpha release keeps its own notes on its GitHub Release.
 ### Fixed
 
 - A Claude refusal fallback no longer wipes the rest of the turn.
+- Claude on a third-party Anthropic-compatible provider (Bailian,
+  Kimi, custom…) no longer gets every turn rejected with 400 after
+  an MCP server joins mid-session: the harness stops announcing
+  late tools with wire blocks those hosts do not understand.
 - Worktree status updates to the attached branch at turn end;
   long branch names wrap and show the diff stat; a clean checkout
   reads `clean`; rows keep a uniform height. The phone keeps the

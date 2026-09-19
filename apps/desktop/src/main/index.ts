@@ -107,7 +107,7 @@ import { shutdownAll as shutdownAllProxies } from './providers/llm-proxy-manager
 import { getBinding } from './providers/credential-store'
 import type { Session as SessionContract, SessionProvider } from './session/types'
 import { claudeAccountCredentialDir, expandProviderModelEnv } from '@superone/shared/agent-types'
-import { PROXY_TRANSFORMERS_ENV } from '@superone/shared/platform-registry'
+import { claudeThirdPartyEnv, PROXY_TRANSFORMERS_ENV } from '@superone/shared/platform-registry'
 import { detectBuiltinAgents } from './acp/acp-detect'
 import { getBuiltinAgent } from './acp/agent-catalog'
 import { readAcpResourcesCache, writeAcpResourcesCache, refreshAcpModelsOnce } from './acp/acp-model-cache'
@@ -385,7 +385,7 @@ function resolveBaseProviderConfig(provider: SessionProvider, apiProviderId: str
       models: Object.values(modelMapping).map((s) => s?.id).filter(Boolean) as string[],
       transformerUse: transformersRaw.split(',').map((t) => t.trim()).filter(Boolean),
     }
-    const env: Record<string, string> = {}
+    const env: Record<string, string> = claudeThirdPartyEnv(resolved)
     for (const [key, value] of Object.entries(resolved.extraEnv ?? {})) {
       if (key !== PROXY_TRANSFORMERS_ENV) env[key] = value
     }

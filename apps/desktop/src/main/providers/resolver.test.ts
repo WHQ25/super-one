@@ -240,6 +240,25 @@ describe('buildClaudeEnv', () => {
     expect(env.ANTHROPIC_AUTH_TOKEN).toBe('sk-123')
     expect(env.ANTHROPIC_BASE_URL).toBe('https://base')
     expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe('glm-opus')
+    expect(env.CLAUDE_CODE_MODEL_CAPABILITIES).toBe('-mid_conv_tool_change')
+  })
+
+  it('lets the endpoint extraEnv override the third-party capability default', () => {
+    const env = buildClaudeEnv({
+      platformId: 'relay',
+      brand: 'relay',
+      planId: 'api',
+      endpointId: 'anthropic',
+      credentialId: 'cred1',
+      task: 'chat',
+      protocol: 'anthropic-messages',
+      baseUrl: 'https://relay',
+      apiKey: 'sk-123',
+      auth: 'api-key',
+      models: [],
+      extraEnv: { CLAUDE_CODE_MODEL_CAPABILITIES: 'mid_conv_tool_change' },
+    })
+    expect(env.CLAUDE_CODE_MODEL_CAPABILITIES).toBe('mid_conv_tool_change')
   })
 
   it('returns an empty env for a null service (oauth default login)', () => {

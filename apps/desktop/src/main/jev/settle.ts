@@ -45,12 +45,19 @@ const realClock: SettleClock = {
 }
 
 /**
- * The facts a decision is made from: which elements are there, what they say,
- * and what state they are in. Deliberately not the platform's raw tree.
+ * The facts a decision is made from: the text Jev is shown, which elements are
+ * there, what they say, and what state they are in. Deliberately not the
+ * platform's raw tree, whose focus flags churn between two reads of one window.
+ *
+ * `text` has to be in it. A calculator press moves nothing but the display, and
+ * the display is a static label — every element keeps its role, label and
+ * value, so a signature over elements alone calls the whole calculation
+ * "unchanged" and settles on a screen that is still mid-update.
  */
 export function observationSignature(page: RunObservation): string {
   return JSON.stringify([
     page.title,
+    page.text,
     page.elements.length,
     page.elements.map((e: RawElement) => [e.node, e.role, e.label, e.value, e.checked, e.selected, e.expanded, e.disabled]),
   ])

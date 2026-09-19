@@ -46,15 +46,20 @@ describe('observationSignature', () => {
     expect(observationSignature(menu)).toBe(observationSignature(page([el({ node: 1, role: 'button', label: 'File' })])))
   })
 
-  it('ignores platform noise the loop never reads', () => {
-    // A desktop outline churns on scroll offsets and text between two reads of
-    // the same window; hashing the raw tree would call that a change and no
-    // surface would ever be judged stable.
-    const noisy = page([el({ node: 1, role: 'button', label: 'File' })], {
-      text: 'different body text',
+  it('ignores the scroll offset, which no decision is made from', () => {
+    const scrolled = page([el({ node: 1, role: 'button', label: 'File' })], {
       scroll: { y: 120, height: 3000, viewport: 700 },
     })
-    expect(observationSignature(noisy)).toBe(observationSignature(menu))
+    expect(observationSignature(scrolled)).toBe(observationSignature(menu))
+  })
+
+  it('notices a change that lives only in the text', () => {
+    // A calculator press moves nothing but the display, and the display is a
+    // static label — every element keeps its role, label and value. Reading
+    // elements alone called the whole calculation "unchanged".
+    const typing = page([el({ node: 1, role: 'button', label: 'File' })], { text: 'sine (, π ÷, implicit )' })
+    const typed = page([el({ node: 1, role: 'button', label: 'File' })], { text: 'sine (, π ÷ 6, implicit )' })
+    expect(observationSignature(typing)).not.toBe(observationSignature(typed))
   })
 
   it('notices a control changing state without the element list moving', () => {

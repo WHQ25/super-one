@@ -6,6 +6,8 @@ export function evaluateCondition(
   outline: import('./types').UiOutlineNode,
 ): boolean {
   switch (condition.kind) {
+    case 'newRoot':
+      return false // Requires the observation's app root inventory, not just an outline.
     case 'exists':
       return !!findNode(outline, condition.ref)
     case 'notExists':
@@ -46,7 +48,7 @@ export function bindCondition(
 ): ConditionBinding {
   return {
     condition,
-    target: findNode(outline, condition.ref),
+    target: 'ref' in condition ? findNode(outline, condition.ref) : undefined,
     // Text conditions may intentionally wait for either name or value to change.
     matchName: condition.kind !== 'textEquals' && condition.kind !== 'textContains',
   }
@@ -69,6 +71,8 @@ export function evaluateBoundCondition(
 
   const node = resolution.node
   switch (binding.condition.kind) {
+    case 'newRoot':
+      return false
     case 'exists':
       return true
     case 'textEquals':

@@ -391,11 +391,13 @@ describe('Computer Use P0 contract', () => {
     const obs = await service.observe()
     const share = searchOutline(service.getStateStore().get(obs.stateId)!.outline, 'Share')[0]
     const opened = await service.act(obs.stateId, [{ type: 'press', ref: share.ref }])
-    const parentState = service.getStateStore().get(opened.successorStateId)!
+    expect(opened.successorRoot?.title).toBe('Share Note')
+    const parent = await service.observe(obs.root.rootId)
+    const parentState = service.getStateStore().get(parent.stateId)!
     const save = searchOutline(parentState.outline, 'Save')[0]
 
     await expect(
-      service.act(opened.successorStateId, [{ type: 'press', ref: save.ref }]),
+      service.act(parent.stateId, [{ type: 'press', ref: save.ref }]),
     ).rejects.toMatchObject({
       code: 'MODAL_BLOCKED',
       details: {

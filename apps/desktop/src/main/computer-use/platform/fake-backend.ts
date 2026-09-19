@@ -36,7 +36,7 @@ export interface FakeElementSpec {
   /** Clicks / presses are accepted by the API but produce no effect. */
   ignoreEvents?: boolean
   /** When pressed, append a modal dialog root. */
-  opensModal?: { title: string; buttonName: string }
+  opensModal?: { title: string; buttonName: string; kind?: UiRootIdentity['kind']; text?: string }
   /** When pressed, toggle value between 'off' and 'on'. */
   toggle?: boolean
   children?: FakeElementSpec[]
@@ -71,7 +71,7 @@ interface LiveElement {
   enabled: boolean
   focused: boolean
   ignoreEvents: boolean
-  opensModal?: { title: string; buttonName: string }
+  opensModal?: FakeElementSpec['opensModal']
   toggle: boolean
   children: LiveElement[]
 }
@@ -626,18 +626,18 @@ export class FakePlatformBackend implements PlatformAdapter {
         app.windows.push({
           key: `${app.pid}:${modalTitle}`,
           title: modalTitle,
-          kind: 'dialog',
+          kind: el.opensModal.kind ?? 'dialog',
           bounds: { x: 200, y: 160, width: 400, height: 240 },
           focused: true,
           visible: true,
           minimized: false,
-          modal: true,
+          modal: el.opensModal.kind !== 'window',
           topologyGen: 0,
           tree: this.buildElement({
-            role: 'dialog',
+            role: el.opensModal.kind ?? 'dialog',
             name: modalTitle,
             children: [
-              { role: 'staticText', name: 'Confirm?' },
+              { role: 'staticText', name: el.opensModal.text ?? 'Confirm?' },
               { role: 'button', name: el.opensModal.buttonName },
             ],
           }),

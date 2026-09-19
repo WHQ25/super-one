@@ -1,4 +1,5 @@
 import { listAppCatalog } from './app-catalog'
+import { newRootMatches, selectNewAppRoot } from './new-root'
 import { zoomState } from './zoom-state'
 import { queryState } from './query-state'
 import { bindCondition, evaluateBoundCondition } from './condition-evaluation'
@@ -378,6 +379,7 @@ export class ComputerUseService {
         resourceKey: identity.resourceKey,
         epoch,
         root: identity,
+        observedRootIds: this.roots.list().filter((candidate) => candidate.bundleId === root.bundleId && candidate.pid === root.pid).map((candidate) => candidate.rootId),
         capturedAt: this.clock(),
         outline: look.outline,
         image: look.image,
@@ -547,6 +549,7 @@ export class ComputerUseService {
 
       // Epoch already advanced — side effects may proceed.
       void claimedEpoch
+      const rootsBefore = this.roots.list().map((root) => root.rootId)
 
       let recording: Awaited<ReturnType<NonNullable<PlatformAdapter['stopRecording']>>> | undefined
       let recordingActive = false
@@ -574,10 +577,12 @@ export class ComputerUseService {
       // Re-observe successor (same resource). Prefer fused/semantic so outcome
       // heuristics can read AX values; visual-only stays picture-only.
       const reobserveMode = base.mode === 'visual' ? 'visual' : base.mode
-      let successorRoot = base.root
+      await this.refreshRoots()
+      throwIfAborted(options.signal)
+      let successorRoot = selectNewAppRoot(base.root, rootsBefore, this.roots.list(), options.expect?.kind === 'newRoot' ? options.expect : undefined) ?? base.root
       let look: PlatformLook
       try {
-        look = await this.adapter.look(base.root, reobserveMode, base.capture)
+        look = await this.adapter.look(successorRoot, reobserveMode, base.capture)
         throwIfAborted(options.signal)
       } catch (error) {
         throwIfAborted(options.signal)
@@ -608,17 +613,25 @@ export class ComputerUseService {
         let expectHolds: boolean | null = null
         if (options.expect) {
           const binding = bindCondition(options.expect, base.outline)
-          expectHolds = evaluateBoundCondition(binding, look.outline)
+          const evaluate = () => options.expect!.kind === 'newRoot'
+            ? !rootsBefore.includes(identity.rootId) && newRootMatches(options.expect as Extract<Condition, { kind: 'newRoot' }>, identity, look.outline)
+            : evaluateBoundCondition(binding, look.outline)
+          expectHolds = evaluate()
           const deadline = this.clock() + (options.timeoutMs ?? 5000)
           while (!expectHolds && this.clock() < deadline) {
             throwIfAborted(options.signal)
             if (this.fake) this.fake.advanceTime(50)
             else await sleep(50, options.signal)
+            if (options.expect.kind === 'newRoot') {
+              await this.refreshRoots()
+              successorRoot = selectNewAppRoot(base.root, rootsBefore, this.roots.list(), options.expect) ?? successorRoot
+              identity = successorRoot
+            }
             look = await this.adapter.look(identity, reobserveMode, base.capture)
             throwIfAborted(options.signal)
             identity = { ...look.root, rootId: successorRoot.rootId }
             this.roots.register(identity)
-            expectHolds = evaluateBoundCondition(binding, look.outline)
+            expectHolds = evaluate()
           }
         } else if (recordingActive) {
           // Keep one visible tail frame when no explicit completion signal exists.
@@ -637,6 +650,7 @@ export class ComputerUseService {
         resourceKey: identity.resourceKey,
         epoch: successorEpoch,
         root: identity,
+        observedRootIds: this.roots.list().filter((candidate) => candidate.bundleId === identity.bundleId && candidate.pid === identity.pid).map((candidate) => candidate.rootId),
         capturedAt: this.clock(),
         outline: look.outline,
         image: look.image,
@@ -711,6 +725,7 @@ export class ComputerUseService {
       observe: this.observe.bind(this),
       requireState: this.requireState.bind(this),
       delay: async (ms, signal) => { if (this.fake) this.fake.advanceTime(ms); else await sleep(ms, signal) },
+      listRoots: async () => { await this.refreshRoots(); return this.roots.list() },
     }, signal)
   }
 

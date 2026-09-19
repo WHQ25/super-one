@@ -120,6 +120,8 @@ export interface UiOutlineNode {
 }
 
 export interface ComputerUseState {
+  /** App roots present when this observation was captured, for newRoot conditions. */
+  observedRootIds?: string[]
   stateId: string
   resourceKey: string
   epoch: number
@@ -151,6 +153,7 @@ export type Condition =
   | { kind: 'textEquals'; ref: string; text: string }
   | { kind: 'textContains'; ref: string; text: string }
   | { kind: 'valueEquals'; ref: string; value: string }
+  | { kind: 'newRoot'; title?: string; text?: string; rootKind?: RootKind }
 
 export interface StateDiff {
   added: string[]

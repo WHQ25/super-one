@@ -285,20 +285,36 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS = [
                 "notExists",
                 "textEquals",
                 "textContains",
-                "valueEquals"
+                "valueEquals",
+                "newRoot"
               ]
             },
             "ref": {
-              "description": "Required for every kind: the target element ref from the starting snapshot.",
+              "description": "Required except for newRoot: the target element ref from the starting snapshot.",
               "type": "string"
             },
             "text": {
-              "description": "Required for textEquals/textContains: compare against the element name or value.",
+              "description": "For textEquals/textContains: element name or value. For newRoot: substring in the new root outline.",
               "type": "string"
             },
             "value": {
               "description": "Required for valueEquals: the exact element value to wait for.",
               "type": "string"
+            },
+            "title": {
+              "description": "newRoot: exact title of a visible window, panel, sheet or menu in the same app that was absent at the starting snapshot.",
+              "type": "string"
+            },
+            "rootKind": {
+              "description": "newRoot: optional kind filter. Supply title and/or text; all supplied filters must match.",
+              "type": "string",
+              "enum": [
+                "window",
+                "sheet",
+                "dialog",
+                "menu",
+                "popover"
+              ]
             }
           },
           "required": [
@@ -449,7 +465,7 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS = [
           "type": "string"
         },
         "done_when": {
-          "description": "Same conditions as computer_wait_for. Example: {kind:\"valueEquals\",ref:\"@e7\",value:\"cats\"}. Use a ref from the starting snapshot; the run binds it to the observed element so later row insertions do not retarget the condition.",
+          "description": "Same conditions as computer_wait_for. Bind ref to an element in the starting snapshot, or use {kind:\"newRoot\",title:\"Fonts\"} for a new same-app window/panel. newRoot needs title and/or text; supplied filters must all match. No future ref is needed.",
           "type": "object",
           "properties": {
             "kind": {
@@ -459,20 +475,36 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS = [
                 "notExists",
                 "textEquals",
                 "textContains",
-                "valueEquals"
+                "valueEquals",
+                "newRoot"
               ]
             },
             "ref": {
-              "description": "Required for every kind: the target element ref from the starting snapshot.",
+              "description": "Required except for newRoot: the target element ref from the starting snapshot.",
               "type": "string"
             },
             "text": {
-              "description": "Required for textEquals/textContains: compare against the element name or value.",
+              "description": "For textEquals/textContains: element name or value. For newRoot: substring in the new root outline.",
               "type": "string"
             },
             "value": {
               "description": "Required for valueEquals: the exact element value to wait for.",
               "type": "string"
+            },
+            "title": {
+              "description": "newRoot: exact title of a visible window, panel, sheet or menu in the same app that was absent at the starting snapshot.",
+              "type": "string"
+            },
+            "rootKind": {
+              "description": "newRoot: optional kind filter. Supply title and/or text; all supplied filters must match.",
+              "type": "string",
+              "enum": [
+                "window",
+                "sheet",
+                "dialog",
+                "menu",
+                "popover"
+              ]
             }
           },
           "required": [
@@ -512,20 +544,36 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS = [
                 "notExists",
                 "textEquals",
                 "textContains",
-                "valueEquals"
+                "valueEquals",
+                "newRoot"
               ]
             },
             "ref": {
-              "description": "Required for every kind: the target element ref from the starting snapshot.",
+              "description": "Required except for newRoot: the target element ref from the starting snapshot.",
               "type": "string"
             },
             "text": {
-              "description": "Required for textEquals/textContains: compare against the element name or value.",
+              "description": "For textEquals/textContains: element name or value. For newRoot: substring in the new root outline.",
               "type": "string"
             },
             "value": {
               "description": "Required for valueEquals: the exact element value to wait for.",
               "type": "string"
+            },
+            "title": {
+              "description": "newRoot: exact title of a visible window, panel, sheet or menu in the same app that was absent at the starting snapshot.",
+              "type": "string"
+            },
+            "rootKind": {
+              "description": "newRoot: optional kind filter. Supply title and/or text; all supplied filters must match.",
+              "type": "string",
+              "enum": [
+                "window",
+                "sheet",
+                "dialog",
+                "menu",
+                "popover"
+              ]
             }
           },
           "required": [

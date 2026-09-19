@@ -156,7 +156,14 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
       // waitFor binds the ref to native identity; row insertions must not turn
       // the completion condition into a claim about a different element.
       const result = await service.waitFor(conditionStateId, options.doneWhen, 0, signal)
-      return result.status === 'verified' || result.status === 'preexisting'
+      if (result.status !== 'verified' && result.status !== 'preexisting') return false
+      const state = service.getStateStore().get(result.successorStateId)
+      if (!state) throw new RunPaused('no-progress', 'The verified completion snapshot expired. Inspect the app before continuing.')
+      const folded = foldOutline(compactOutline(dropOccludedWebAreas(state.outline)))
+      current = computerPage({ ...state, outline: folded.outline, truncation: folded }, service)
+      root = current.rootId
+      successor = undefined
+      return current
     },
     changed: (_before, after) => {
       const result = after.outcome

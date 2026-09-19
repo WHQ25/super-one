@@ -13,7 +13,7 @@ export const computerRunInputShape = {
   description: z.string().trim().min(1).max(160).describe("Short, human-friendly explanation of the goal for the user watching, in the conversation's language."),
   app: z.string().optional().describe('App name or bundle id. Resolves the existing app grant; launch it with computer_apps first if it has no window. Use app or root, not both.'),
   root: z.string().optional().describe('Root id from computer_snapshot/computer_apps. Omit to use the existing target.'),
-  done_when: conditionSchema.optional().describe('Same conditions as computer_wait_for. Example: {kind:"valueEquals",ref:"@e7",value:"cats"}. Use a ref from the starting snapshot; the run binds it to the observed element so later row insertions do not retarget the condition.'),
+  done_when: conditionSchema.optional().describe('Same conditions as computer_wait_for. Bind ref to an element in the starting snapshot, or use {kind:"newRoot",title:"Fonts"} for a new same-app window/panel. newRoot needs title and/or text; supplied filters must all match. No future ref is needed.'),
 }
 const schema = z.object(computerRunInputShape)
 

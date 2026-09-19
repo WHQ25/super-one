@@ -33,6 +33,26 @@ function fixture(tier: CapabilityTier = 'full') {
 const options = { goal: 'Fill Title with Hello', presets: [{ key: 'Title', value: 'Hello' }], allow: [], avoid: [], maxSteps: 3, maxWallMs: 45000 }
 
 describe('computer fast-loop adapter', () => {
+  it('returns the verified new panel and uses its nodes after crossing roots', async () => {
+    const backend = new FakePlatformBackend([{ app: 'Editor', bundleId: 'com.test.editor', pid: 7, windows: [{ title: 'Document', tree: {
+      role: 'window', children: [{ role: 'button', name: 'Show Fonts', opensModal: { title: 'Fonts', kind: 'window', buttonName: 'Close' } }],
+    } }] }])
+    const service = new ComputerUseService({ adapter: backend })
+    service.policy.setEnabled(true)
+    service.policy.grantSession({ app: 'Editor', bundleId: 'com.test.editor', tier: 'full' })
+    const ask = vi.fn(async (request: JevRequest) => ({ answers: { goal_satisfied: noul(0), still_loading: noul(0), action: pick('click', Object.keys(request.questions.action.criteria!)), click_target: pick('1', Object.keys(request.questions.click_target.criteria!)) }, model: 'test', usage: {}, latencyMs: 1 }))
+    const adapter = createComputerAdapter({ service, ask, doneWhen: { kind: 'newRoot', title: 'Fonts' }, resolve: async () => (await service.resolveTargetRoot()).rootId })
+    adapter.trace = () => {}
+    const run = new FastRun({ ...options, goal: 'Show Fonts', presets: [], allow: ['Show Fonts'], hasDoneWhen: true }, adapter)
+    const result = await run.start()
+    expect(result.status).toBe('done')
+    expect(result.snapshot?.title).toContain('Fonts')
+    expect(ask).toHaveBeenCalledTimes(1)
+    const page = await adapter.observe()
+    expect(page.elements.map((element) => element.label)).toContain('Close')
+    expect(page.elements.map((element) => element.label)).not.toContain('Show Fonts')
+  })
+
   it('offers only replacements supported by the semantic delivery path', async () => {
     const { service } = fixture()
     const obs = await service.observe(undefined, 'semantic')

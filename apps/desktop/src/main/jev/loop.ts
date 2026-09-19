@@ -26,7 +26,7 @@ export interface RunDeps<Page extends RunObservation = RunObservation> {
   settle(opts: { node?: number; typed?: boolean }, signal?: AbortSignal): Promise<void>
   waitReady(timeoutMs: number, signal?: AbortSignal): Promise<boolean>
   /** Evaluate the adapter's native completion condition. */
-  checkDone(signal?: AbortSignal): Promise<boolean>
+  checkDone(signal?: AbortSignal): Promise<boolean | Page>
   changed(before: Page, after: Page): boolean | null
   focusGuard(active: boolean): Promise<void>
   trace?(entry: TraceStep): void
@@ -281,8 +281,9 @@ export class FastRun<Page extends RunObservation = RunObservation> {
         page = null
         continue
       }
-      if (this.opts.hasDoneWhen && (await this.deps.checkDone(signal))) {
-        this.lastPage = page
+      const completed = this.opts.hasDoneWhen && (await this.deps.checkDone(signal))
+      if (completed) {
+        this.lastPage = typeof completed === 'object' ? completed : page
         return this.result('done', 'done_when satisfied')
       }
 

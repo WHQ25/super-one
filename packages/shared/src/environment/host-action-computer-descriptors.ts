@@ -354,7 +354,7 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS = [
   },
   {
     "name": "computer_run",
-    "description": "Experimental (Jev setting): pursue desktop UI goals with clicks, typing and scrolling chosen without a model turn per step. Start with app or root and goal. If the exact sequence of buttons is already known, use computer_act with a batch instead. Example: presets=[{key:\"Query\",value:\"cats\",field:\"Search\"}], done_when={kind:\"valueEquals\",ref:\"@e7\",value:\"cats\"}. Native computer_wait_for conditions bind at run start. Unrecognised or risky controls pause; resume with runId + answer. Uses existing grants and tiers; skips secure fields. Use computer_act for single steps, drag, shortcuts or pixels.",
+    "description": "Experimental (Jev setting): pursue desktop UI goals with clicks, typing and scrolling chosen without a model turn per step. Start with app or root and goal. If the exact sequence of buttons is already known, use computer_act with a batch instead. Example: presets=[{key:\"Query\",value:\"cats\",field:\"Search\"}], done_when={kind:\"valueEquals\",ref:\"@e7\",value:\"cats\"}. Native computer_wait_for conditions bind at run start. Only navigation-shaped controls (links, tabs, menus, folders, list rows, Next/Back/Search) are pressed on their own; every other button and menu command pauses unless its label is in allow, so list the labels the goal needs up front, e.g. allow=[\"Scientific\",\"Radians\",\"Sine\",\"Pi\",\"Equals\"]. Resume a pause with runId + answer. Uses existing grants and tiers; skips secure fields. Use computer_act for single steps, drag, shortcuts or pixels.",
     "inputSchema": {
       "type": "object",
       "properties": {

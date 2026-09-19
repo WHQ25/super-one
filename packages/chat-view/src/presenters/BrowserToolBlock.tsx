@@ -1,7 +1,7 @@
 import { InteractionMemoryToolBlock } from './InteractionMemoryToolBlock'
 import { useCallback, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Download, Globe, ImageIcon, Video } from 'lucide-react'
+import { Download, Globe, ImageIcon, MousePointer2, Video } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
 import { BrowserListDownloadsViewPresenter } from './BrowserListDownloadsView'
@@ -216,6 +216,10 @@ function BrowserOperationBlock({
   const screenshotLabel = hasScreenshot ? (primary || t('chat.toolBlock.browser.viewport')) : ''
   const isMockDetail = op === 'mock' && params.clear !== true && !failed
   const runRows = op === 'run' && runActions && runActions.length > 0 ? runActions : null
+  // Collapsed and still working, the row reports how far the run has got. What
+  // it actually did needs the width the goal is already using, so it waits
+  // behind the chevron.
+  const runCount = runRows && isStreaming ? runRows.length : 0
   const expandable = allowExpand
     && (runRows
       ? true
@@ -223,7 +227,7 @@ function BrowserOperationBlock({
         && (isMockDetail || pendingDetails != null || (!!result && (isReadBrowserOp(op) || info.status === 'error' || denied || hasScreenshot || !!recording))))
   let details: ReactNode = null
   if (runRows) {
-    details = <RunActionList actions={runRows} />
+    details = <RunActionList actions={runRows} renderIcon={renderIcon} />
   } else if (recording) {
     details = recording
   } else if (hasScreenshot && renderScreenshot) {
@@ -267,6 +271,15 @@ function BrowserOperationBlock({
       onExpandedChange={onExpandedChange}
       trailing={(
         <div className="flex shrink-0 items-center gap-1.5">
+          {runCount ? (
+            <span className="flex shrink-0 items-center gap-0.5 text-muted-foreground/70">
+              <MousePointer2
+                className="size-3"
+                aria-label={t('chat.toolBlock.browser.runActions', { count: runCount })}
+              />
+              {runCount}
+            </span>
+          ) : null}
           {rightCount ? <span className="text-muted-foreground/70">{rightCount}</span> : null}
           {recording ? <Video className="size-3 text-muted-foreground/70" aria-label="Action recording" /> : null}
           {isStreaming ? elapsed(elapsedSeconds, elapsedClassName) : null}
@@ -289,15 +302,15 @@ function BrowserOperationBlock({
  * single-action call would be. A long run is bounded and follows its tail, the
  * way a subagent's nested calls are.
  */
-function RunActionList({ actions }: { actions: JevRunAction[] }): ReactNode {
+function RunActionList({ actions, renderIcon }: { actions: JevRunAction[]; renderIcon: (kind: 'globe' | 'download') => ReactNode }): ReactNode {
   const { t } = useTranslation()
   return (
-    <SubagentScrollArea maxHeightClass="max-h-40" className="space-y-0.5 py-1 text-xs">
+    <SubagentScrollArea maxHeightClass="max-h-40" className="tool-rows space-y-0.5">
       {actions.map((action, i) => (
-        <div key={i} className="flex min-w-0 items-baseline gap-1.5">
-          <span className="shrink-0 text-muted-foreground">{t(`chat.toolBlock.browser.${runActionVerbKey(action)}`)}</span>
-          {action.target ? <span className="truncate text-foreground/80">{runActionTarget(action, t)}</span> : null}
-        </div>
+        <ToolRow key={i} icon={renderIcon('globe')} showStatusBadge={false}>
+          <ToolName>{t(`chat.toolBlock.browser.${runActionVerbKey(action)}`)}</ToolName>
+          {action.target ? <ToolSummary>{runActionTarget(action, t)}</ToolSummary> : null}
+        </ToolRow>
       ))}
     </SubagentScrollArea>
   )

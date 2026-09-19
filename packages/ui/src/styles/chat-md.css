@@ -188,7 +188,11 @@
     border-left: 2px solid color-mix(in oklch, var(--border), transparent 40%);
   }
 
-  .subagent-container .tool-node {
+  /* Tool rows nested inside another tool's expanded body (a subagent's calls, a
+     run's actions) sit on that tool's timeline already — a rule of their own
+     would just double the line. */
+  .subagent-container .tool-node,
+  .tool-rows .tool-node {
     margin-left: 0;
     border-left: none;
     border-radius: var(--radius-sm);

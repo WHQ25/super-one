@@ -300,6 +300,15 @@ describe('reduceTool: jev_run_update', () => {
     expect(session._activeJevRunId).toBeNull()
   })
 
+  it('reaches the tool reducer through the event dispatcher', async () => {
+    // Calling reduceTool directly cannot catch an event the dispatcher never routes
+    // to it, which is exactly how the actions first failed to reach the UI.
+    const { applyEventToSession } = await import('@superone/chat-core')
+    const session = createDefaultPerSessionState()
+    const next = applyEventToSession(session, { type: 'jev_run_update', runId: 'r9', platform: 'browser', action: { op: 'click', target: 'Menu' } })
+    expect({ ...session, ...next }.jevRuns.r9?.actions).toEqual([{ op: 'click', target: 'Menu' }])
+  })
+
   it('keeps the tail of a long run rather than growing without bound', () => {
     let session = createDefaultPerSessionState()
     for (let i = 0; i < 260; i++) {

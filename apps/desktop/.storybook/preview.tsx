@@ -1,5 +1,5 @@
 import type { Preview } from '@storybook/react-vite'
-import React, { useEffect } from 'react'
+import React, { useEffect, useRef } from 'react'
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import '../src/renderer/src/styles/index.css'
@@ -114,9 +114,14 @@ const ThemeDecorator = (
     document.documentElement.classList.toggle('dark', theme === 'dark')
   }, [theme])
 
-  useEffect(() => {
+  // During render, not in an effect: a story's own seeding runs in its effects,
+  // and a child's effects fire before this decorator's would. Resetting the
+  // session there wiped whatever the story had just put in the store.
+  const appliedHarness = useRef<HarnessId | null>(null)
+  if (appliedHarness.current !== harness) {
+    appliedHarness.current = harness
     applyHarness(harness)
-  }, [harness])
+  }
 
   useEffect(() => {
     if (i18n.language !== locale) void i18n.changeLanguage(locale)

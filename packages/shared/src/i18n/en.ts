@@ -2490,6 +2490,8 @@ export type Messages = {
         callingPageTool: string
         run: string
         running: string
+        runActions_one: string
+        runActions_other: string
         runPaused: string
         runDone: string
         runAborted: string
@@ -6386,8 +6388,10 @@ export const en: Messages = {
         listingPageTools: 'Listing Page Tools',
         toolsCall: 'Call Page Tool',
         callingPageTool: 'Calling Page Tool',
-        run: 'Run Goal',
-        running: 'Working through the page…',
+        run: 'Browse',
+        running: 'Browsing',
+        runActions_one: '{{count}} action',
+        runActions_other: '{{count}} actions',
         runPaused: 'Paused for a decision',
         runDone: 'Goal reached',
         runAborted: 'Handed back',

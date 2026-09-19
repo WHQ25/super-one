@@ -59,6 +59,7 @@ export function applyEventToSession(
     case 'task_progress':
     case 'task_notification':
     case 'browser_download_update':
+    case 'jev_run_update':
       return reduceTool(session, event, ports)
 
     case 'permission_request':

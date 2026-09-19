@@ -75,6 +75,16 @@ function toolByName(name: string, input: Record<string, unknown>, result?: strin
   )
 }
 
+/**
+ * Seeds store state before the blocks below it read it. Writing during render
+ * leaves the first commit reading the previous snapshot, so the seeded run
+ * never reaches the block.
+ */
+function Seed({ seed }: { seed: () => void }): null {
+  useLayoutEffect(seed, [seed])
+  return null
+}
+
 /** Seeds what a run has reported so far, the way the loop's host events would. */
 function seedRun(runId: string, actions: JevRunAction[], opts: { active?: boolean } = {}): void {
   const session = createDefaultPerSessionState()
@@ -592,9 +602,10 @@ export const BrowserPageTools: Story = {
 /** A run still going: the block shows the actions it has taken so far. */
 export const BrowserRunRunning: Story = {
   render: () => {
-    seedRun('r1b3edbf0', RUN_ACTIONS.slice(0, 3))
+    const seed = () => seedRun('r1b3edbf0', RUN_ACTIONS.slice(0, 3))
     return (
       <StoryShell>
+        <Seed seed={seed} />
         <Section title="browser_run · running">
           <Note>Each row reads the way the matching browser_act row would; the loop's step numbers stay in the trace.</Note>
           <ToolBlock
@@ -611,9 +622,10 @@ export const BrowserRunRunning: Story = {
 /** Finished: the block finds its run through the runId in its own result. */
 export const BrowserRunDone: Story = {
   render: () => {
-    seedRun('r1b3edbf0', RUN_ACTIONS, { active: false })
+    const seed = () => seedRun('r1b3edbf0', RUN_ACTIONS, { active: false })
     return (
       <StoryShell>
+        <Seed seed={seed} />
         <Section title="browser_run · done">
           <ToolBlock
             toolName="mcp__superone__browser_run"
@@ -633,9 +645,10 @@ export const BrowserRunPausedAndLong: Story = {
     const long: JevRunAction[] = Array.from({ length: 30 }, (_, i) => (
       i % 4 === 3 ? { op: 'scroll', target: 'down' } : { op: 'click', target: `Result ${i + 1}` }
     ))
-    seedRun('rlong', long, { active: false })
+    const seed = () => seedRun('rlong', long, { active: false })
     return (
       <StoryShell width={380}>
+        <Seed seed={seed} />
         <Section title="browser_run · paused, narrow, 30 actions">
           <Note>Bounded height with the tail in view, like a subagent's nested calls.</Note>
           <ToolBlock
@@ -653,9 +666,10 @@ export const BrowserRunPausedAndLong: Story = {
 /** A run that took no action at all still renders as an ordinary row. */
 export const BrowserRunNoActions: Story = {
   render: () => {
-    seedRun('rempty', [], { active: false })
+    const seed = () => seedRun('rempty', [], { active: false })
     return (
       <StoryShell>
+        <Seed seed={seed} />
         <Section title="browser_run · nothing done">
           <ToolBlock
             toolName="mcp__superone__browser_run"

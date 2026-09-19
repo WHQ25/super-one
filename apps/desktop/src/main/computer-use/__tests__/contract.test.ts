@@ -56,8 +56,8 @@ describe('Computer Use P0 contract', () => {
 
   // ── tool surface ─────────────────────────────────────────
 
-  it('exposes exactly six stable tool names', () => {
-    expect(COMPUTER_USE_TOOL_NAMES).toHaveLength(6)
+  it('exposes the seven stable tool names', () => {
+    expect(COMPUTER_USE_TOOL_NAMES).toHaveLength(7)
     const names = getComputerUseToolDescriptors().map((d) => d.name)
     expect(names).toEqual([...COMPUTER_USE_TOOL_NAMES])
     for (const d of getComputerUseToolDescriptors()) {

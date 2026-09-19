@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { PageObservation } from './browser-page'
-import { FastRun, type RunDeps, type RunOptions } from './loop'
+import { FastRun, StaleObservation, type RunDeps, type RunOptions } from './loop'
 import { NONE } from './questions'
 import { el, noul, page, pick } from './test-fixtures'
 import type { JevAnswer, JevRequest } from './typesafe-client'
@@ -60,6 +60,44 @@ function typesOf(request: JevRequest): string[] {
 }
 
 describe('FastRun', () => {
+  it('sends only the last eight completed action labels across pauses, without waits or stale indices', async () => {
+    const states: Array<{ completed_actions: string[] }> = []
+    const pages = Array.from({ length: 12 }, (_, i) => page([
+      el({ node: 1, role: 'button', label: `Step ${i}` }),
+    ], { text: `Screen ${i}` }))
+    const { deps } = harness(pages, (request) => {
+      states.push(request.state as typeof states[number])
+      return {
+        still_loading: noul(states.length === 1 ? 1 : 0), goal_satisfied: noul(0),
+        action: pick('click', actionsOf(request)), click_target: pick('1', clicksOf(request)),
+      }
+    })
+    const run = new FastRun(opts({ allow: ['Step'], maxSteps: 11 }), deps)
+    const paused = await run.start()
+    expect(states[0].completed_actions).toEqual([])
+    expect(states[1].completed_actions).toEqual([])
+    expect(states[2].completed_actions).toEqual(['Click Step 0'])
+    expect(states.at(-1)?.completed_actions).toEqual(Array.from({ length: 8 }, (_, i) => `Click Step ${i + 1}`))
+    deps.ask = async (request) => {
+      expect((request.state as typeof states[number]).completed_actions).toEqual(Array.from({ length: 8 }, (_, i) => `Click Step ${i + 2}`))
+      return { answers: { goal_satisfied: noul(1) }, model: 'test', usage: {}, latencyMs: 1 }
+    }
+    await run.resume({ questionId: paused.question!.id, choice: 'continue' })
+  })
+
+  it('keeps stale recovery inside the focus guard and converts adapter obstructions to pauses', async () => {
+    const { deps, guard } = harness([HOME], () => ({}))
+    deps.resolveTarget = async () => { throw new StaleObservation('Target moved') }
+    deps.observe = async () => {
+      expect(guard.at(-1)).toBe(true)
+      return { ...HOME, blocked: { reason: 'no-progress', why: 'Tree unavailable' } }
+    }
+    expect(await new FastRun(opts(), deps).start()).toMatchObject({
+      status: 'paused', question: { reason: 'no-progress', context: { why: 'Tree unavailable' } },
+    })
+    expect(guard).toEqual([true, false])
+  })
+
   it('runs safe steps, pauses on the guarded submit, executes it on resume, and finishes on done_when', async () => {
     const { deps, acts, guard } = harness([HOME, FORM, FILLED, CREATED], (request) => {
       const state = request.state as { page: { url: string }; elements: Array<{ label: string; value?: string }> }

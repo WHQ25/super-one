@@ -56,7 +56,8 @@ export function axTreeToOutline(root: HelperAxNode): UiOutlineNode {
       ref: `@e${n.index}`,
       role: mapAxRole(n.role),
       name: n.name,
-      value: n.value,
+      value: n.secure || /secure|password/i.test(n.role) ? undefined : n.value,
+      secure: n.secure || /secure|password/i.test(n.role),
       bounds: n.bounds
         ? {
             x: n.bounds.x,

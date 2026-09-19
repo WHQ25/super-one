@@ -434,3 +434,15 @@ describe('parseComputerResult', () => {
     ).toBe('com.iqiyi.player')
   })
 })
+
+it('renders fast run phases without treating a pause as an error', () => {
+  expect(getComputerOp('computer_run')).toBe('run')
+  expect(computerVerbKey('run', {}, true)).toBe('running')
+  for (const status of ['paused', 'done', 'aborted'] as const) {
+    const info = parseComputerResult('run', JSON.stringify({ status, snapshot: { target: { app: 'Notes', bundleId: 'com.apple.Notes' } } }), false)
+    expect(info.runStatus).toBe(status)
+    expect(info.status).not.toBe('error')
+    expect(computerVerbKey('run', {}, false, info.runStatus)).toBe(status === 'paused' ? 'runPaused' : status === 'done' ? 'runDone' : 'runAborted')
+    expect(info.bundleId).toBe('com.apple.Notes')
+  }
+})

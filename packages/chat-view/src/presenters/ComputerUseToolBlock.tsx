@@ -133,7 +133,7 @@ function ComputerUseToolBlockOperation({
     [op, result, isError, params],
   )
   const verb = t(
-    `chat.toolBlock.computer.${computerVerbKey(op, params, isStreaming)}`,
+    `chat.toolBlock.computer.${computerVerbKey(op, params, isStreaming, info.runStatus)}`,
   )
   const description =
     typeof params.description === 'string' ? params.description.trim() : ''

@@ -501,9 +501,11 @@ jev-ultrafast 里 Jev 的输入是索引化的元素表，输出是索引；操�
 - state 过滤：视口内、≤ 60 元素、≤ 4k 文本；反引号路径引用
 - 用 `@typesafe-ai/sdk`，钉 `jev-1.13.0`
 
-### 8.7 `recent_actions` 去掉，只留 `last_action`
+### 8.7 从仅保留 `last_action` 到有界 `completed_actions`
 
 jev-ultrafast 把最近 10 步放进 state，用途是防重复、判断上一步有没有效果、WAIT 计数。按官方"历史由代码持有，state 只放观察事实"的指导，逐项检查后：防重复和 WAIT 预算都是确定性规则，移到代码；"上一步有没有效果"是 Jev 观察不到的事实，值得保留，但只需一条。jev-ultrafast 里那句 "Recent WAIT actions are not evidence of loading" 本身就是历史进 state 导致过度解读的症状。
+
+2026-09-19 desktop diagnostic revision: a Calculator task reproducibly selected Equals at step 3 despite observing `12` and being given the exact sequence. One controlled diagnostic added only `completed_actions`, the last eight executed action labels with transient indices removed. With `["Click 1", "Click 2"]`, the same step chose digit 3 at 0.99; all seven observed actions followed the intended sequence (`rce269e87`, versus `r407e1325` without history). Retain this bounded field alongside `last_action`. Waiting, failed dispatches and future plans are excluded; the list survives budget pauses. Code still owns risk, retries, loading budgets and completion checks. This single diagnostic supports the state change, not a general performance claim or a reason to route known sequences away from batching.
 
 ### 8.8 `steps` 改为 `since_last`
 
@@ -564,7 +566,7 @@ pause 时主模型需要知道从上次返回以来内循环做了什么（尤�
 
 ## 10. 实现状态（2026-09-19）
 
-browser 线 MVP 已落地，代码在 `apps/desktop/src/main/jev/`：
+browser 和 computer 线 MVP 已落地；device adapter 正在接线。三条线共用一个 `FastRun`，代码在 `apps/desktop/src/main/jev/`：
 
 | 文件 | 对应章节 |
 | --- | --- |
@@ -573,10 +575,11 @@ browser 线 MVP 已落地，代码在 `apps/desktop/src/main/jev/`：
 | `action-space.ts` | 3.5：safe 白名单（同源链接、可编辑字段及其 `open:` 候选、tab/menuitem/option、导航类 label 按钮、带 `aria-expanded` 的按钮）+ 高危关键词 + origin 集合 + `allow` / `avoid` + 历史规则（未变页面前不重复、guarded 已点不再出现） |
 | `questions.ts` | 3.4：`goal_satisfied` / `still_loading` Noul、`action` / `click_target` / `type_text_target` Choice、每个 preset 一个 `field_for_<key>` |
 | `policy.ts` | 3.6 决策表与阈值（target 头概率：读 0.6 / 写 0.7；preset 0.7；loading 0.7；satisfied 0.85。`action` 头只取 argmax，不设门槛，见 10.1） |
-| `loop.ts` | 3.3 / 3.6 / 3.8：`BrowserRun` 协程，pause / resume、答案复用只在目标 guard 未变时、guarded 已执行记录、连续 3 步无变化 → no-progress、`maxSteps` + `maxWallMs`（默认 45 s，低于 Codex 60 s 工具超时）→ budget、focus guard 在段首/段尾、AbortSignal 贯穿 |
+| `loop.ts` | 3.3 / 3.6 / 3.8：`FastRun` 协程，pause / resume、答案复用只在目标 guard 未变时、guarded 已执行记录、连续 3 步无变化 → no-progress、`maxSteps` + `maxWallMs`（默认 45 s，低于 Codex 60 s 工具超时）→ budget、focus guard 在段首/段尾、AbortSignal 贯穿 |
 | `run-store.ts` | 挂起的 run：`runId` → run，绑定 session，TTL 5 min |
-| `trace.ts` | 3.9：`userData/jev-traces/<runId>.jsonl`，每步全部概率、延迟、决策、stale |
+| `trace.ts` | 3.9：`userData/jev-traces/<runId>.jsonl`，每步脱敏 request state、全部概率及前三选项、实际 usage、延迟、决策、stale |
 | `jev-api-key.ts` | TypeSafe key：`app_meta` 表 + `safeStorage` 加密，从不进 `AppSettings` |
+| `computer-page.ts` / `computer-run-tool.ts` | 3.7 computer adapter：semantic outline / capabilities / state epoch、原生 act 与 Condition、授权和 tier 门控、resume 重新观察；继承共享 pause / resume 协议 |
 | `browser-run-tool.ts` | `browser_run` 契约与门控（`jevFastLoopEnabled` + `cdpEnabled` + 有 key，执行时判定） |
 
 接线：`browser_run` 同时登记在 compact 与 legacy 两个 surface、`BROWSER_TOOL_NAMES`（host-owned 放行）、远程节点 host-action 目录、chat ToolBlock（`run` op）。设置：Settings → Browser → Experimental Tools → "Jev Fast Inner Loop"，开启时若无 key 先弹 key 表单，key 存好才置位。
@@ -637,13 +640,35 @@ browser 线 MVP 已落地，代码在 `apps/desktop/src/main/jev/`：
 
 阈值仍未系统校准；`jev-traces/*.jsonl` 已在记录。
 
+### 10.4 Desktop: task selection and the Calculator counterexample (Grok)
+
+The desktop adapter is registered on both tool surfaces and the remote descriptor catalog, with running / paused / done / aborted chat labels in English and Chinese. It reuses the existing app identity and grant path, semantic action executor, state store and native `computer_wait_for` conditions. The experimental setting and API key are shared with the browser loop. `read` grants pause; secure fields are excluded; obstruction and capability failures return a pause. Native refs are re-observed on resume and an answer is discarded when the outline changed. Return requires the same app-focused AX field; scrolling requires the same frontmost window. There is no physical-input fallback.
+
+**Task type matters.** Fast loops suit tasks that must find the next target on the current screen: navigation, forms, search and lists. A known button sequence is a poor fit; the main model can send a `computer_act` batch faster and more accurately. The tool description explicitly routes known sequences to `computer_act`. Menu navigation is the next primary comparison task; its A/B run remains pending user approval.
+
+The following attempted comparison is retained as a counterexample, **not a successful paired benchmark**. Both sessions used Grok 4.6 / high and the same Calculator task: clear Basic mode, press visible buttons for `(123 + 456) × 2`, verify `1,158`. Calls and cost include setup and cleanup. These sessions ran in the repository workspace; later diagnostics use an empty workspace.
+
+| Task | Mode | Main-model tool calls | Wall time | Main-model cost | Context | Jev |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Calculator arithmetic: known button sequence | `computer_act` batches | 16 | 153.0 s | $0.125199 | 47.1k | —; correct result, two action batches |
+| Same task | `computer_run`, then recovery and interruption | 28 | Incomplete; at least 271.1 s | $0.268996 | 72.3k | 7 requests; 13,514 input tokens; about $0.000568; 1 uncertain pause, then aborted; wrong result `24` |
+
+The first Jev call started 173.2 s after the user message, after 23 main-model tool calls (including 8 tool searches and source inspection). That setup time is separate from the 3.485 s summed Jev API latency. Baseline batching already reduced the actual calculation to two main-model action rounds; it did not pay a turn for every button. An earlier recorder incorrectly followed the active chat and copied the baseline session into the Jev result; its reported 47.444 s is invalid and excluded. The recorder now pins both project and session ID.
+
+A single diagnostic in `/private/tmp/jev-clean-bench/workspace` reproduced the wrong sequence with Grok 4.6 / high (`r407e1325`, seven-step budget, then abort). At step 3, the exact Jev request contained `Edit field 12`, the prior action `Click [10] 2`, and correctly labelled candidates `[11] 3`, `[12] Add`, `[14] Equals`. Nevertheless, `click_target` ranked Equals at 0.86, Multiply at 0.06, and digit 1 at 0.02. This rules out missing display text and a mislabelled button for that decision. It demonstrates a sequence-decision limitation; it does not establish a general navigation-task failure. Full redacted request state and top-three probabilities now remain in each run trace for diagnosis.
+
+A second, single diagnostic added `completed_actions` (at most eight executed labels) and changed step 3 to digit 3 at 0.99 (`rce269e87`). All seven actions were correct, ending at `123 + 456`; it then paused at the diagnostic step budget and was aborted. The field is retained with a regression test (see §8.7). The full calculation and performance gain were not tested in this experiment.
+
+The live investigation also exposed an independent root-selection issue: macOS can publish a tiny auxiliary window for Calculator. App resolution now prefers the visible ordinary window while retaining modal and transient priority. The native adapter uses the action successor state rather than another screenshot, and normal turn cleanup owns desktop visuals so pause/resume does not invalidate its window.
+
 与设计文档的偏差（MVP 有意收窄）：
 
 - `audience: 'user'` 未实现：password 字段直接不进候选，登录类页面会以 `no-progress` 交回主模型
-- `done_when` 用 browser 自己的 `wait_for` 词汇表（selector / selectorGone / text / urlIncludes / urlMatches），不是 computer 的 `conditionSchema`
+- `done_when` 按平台复用：browser 用 selector / selectorGone / text / urlIncludes / urlMatches；computer 用已有 Condition。computer 将原始 ref 绑定到 native identity，原始状态若被有界 state store 淘汰，需要开始新的 run。
 - run 绑定 session 而非 `toolUseId`（同 session 并行子代理各自 runId 不冲突，只是 TTL 清理按 session）
 - 无 select、无 `obstructed`、无 host event 逐步进度（UI 只见 tool row 的 paused / done / aborted）
-- 阈值未校准
+- 阈值未校准；Calculator 的已知按键序列是已复现的模型决策边界，不据此宣称 desktop 性能提升。菜单导航 A/B 尚待放行。
+- computer 输入只使用原生能力：替换文本要求 setText；不支持的输入路径暂停交回 computer_act。
 
 ## 参考
 

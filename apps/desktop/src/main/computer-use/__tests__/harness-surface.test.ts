@@ -19,16 +19,16 @@ describe('Computer Use harness surface', () => {
     )
   })
 
-  it('exposes exactly six bare tool names shared by every surface', () => {
+  it('exposes the seven bare tool names shared by every surface', () => {
     expect(bareComputerUseToolNames()).toEqual([...COMPUTER_USE_TOOL_NAMES])
-    expect(COMPUTER_USE_TOOL_NAMES).toHaveLength(6)
+    expect(COMPUTER_USE_TOOL_NAMES).toHaveLength(7)
   })
 
   it('qualified names use mcp__superone__ prefix (Claude permission path)', () => {
     const q = computerUseQualifiedNames()
     expect(q).toContain('mcp__superone__computer_apps')
     expect(q).toContain('mcp__superone__computer_act')
-    expect(q).toHaveLength(6)
+    expect(q).toHaveLength(7)
     expect(q.every((n) => n.startsWith('mcp__superone__computer_'))).toBe(true)
     expect(isComputerUseQualifiedName('mcp__superone__computer_snapshot')).toBe(true)
     expect(isComputerUseQualifiedName('mcp__superone__browser_click')).toBe(false)

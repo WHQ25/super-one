@@ -13,7 +13,10 @@ export interface PausedRun {
  */
 const TTL_MS = 5 * 60_000
 
+export type RunPlatform = 'browser' | 'computer' | 'device'
+
 interface Entry {
+  platform: RunPlatform
   run: PausedRun
   sessionId: string
   pausedAt: number
@@ -27,15 +30,16 @@ function sweep(now: number): void {
   }
 }
 
-export function storePausedRun(sessionId: string, run: PausedRun, now = Date.now()): void {
+export function storePausedRun(sessionId: string, run: PausedRun, now = Date.now(), platform: RunPlatform = 'browser'): void {
   sweep(now)
-  runs.set(run.runId, { run, sessionId, pausedAt: now })
+  runs.set(run.runId, { run, sessionId, pausedAt: now, platform })
 }
 
-export function takePausedRun(sessionId: string, runId: string, now = Date.now()): PausedRun | 'expired' | 'foreign' | 'missing' {
+export function takePausedRun(sessionId: string, runId: string, now = Date.now(), platform: RunPlatform = 'browser'): PausedRun | 'expired' | 'foreign' | 'missing' | 'wrong-platform' {
   const entry = runs.get(runId)
   if (!entry) return 'missing'
   if (entry.sessionId !== sessionId) return 'foreign'
+  if (entry.platform !== platform) return 'wrong-platform'
   runs.delete(runId)
   if (now - entry.pausedAt > TTL_MS) return 'expired'
   return entry.run

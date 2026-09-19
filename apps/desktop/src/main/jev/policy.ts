@@ -192,7 +192,7 @@ export function decide(input: DecideInput): Decision {
       question: {
         type: 'choice',
         reason: 'no-progress',
-        options: [...space.elements.filter((el) => !el.password).map((el) => option(el)), ABORT],
+        options: [...space.elements.filter((el) => !el.password && el.clickable !== false).map((el) => option(el)), ABORT],
         context: { why: 'No offered action advances the goal and nothing is guarded; pick an element or take over', page, decision: summary },
       },
     }

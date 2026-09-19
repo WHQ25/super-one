@@ -1064,7 +1064,7 @@ export const zh: Messages = {
         },
         jev: {
           label: 'Jev 快速内循环',
-          description: '新增 browser_run 工具：由快速模型（TypeSafe Jev）在页面上逐步选择点击和填写目标，智能体不再为每一步付一轮。高风险按钮仍会暂停询问。页面文本会发送给 TypeSafe，按 token 计费。',
+          description: '为浏览器和桌面任务提供快速目标执行。TypeSafe Jev 选择点击、输入和滚动，减少主模型逐步往返。受控操作会暂停等待决策。可见界面文字会发送给 TypeSafe，按 token 计费。',
           apiKey: {
             label: 'Jev API Key',
             description: '加密保存在本机，仅主进程使用。',
@@ -2616,6 +2616,11 @@ export const zh: Messages = {
         mockBody: '响应体',
       },
       computer: {
+        run: '执行目标',
+        running: '正在执行目标',
+        runPaused: '等待决策',
+        runDone: '目标已完成',
+        runAborted: '执行已停止',
         memory: interactionMemoryZh,
         apps: '应用列表',
         listingApps: '正在列出应用',

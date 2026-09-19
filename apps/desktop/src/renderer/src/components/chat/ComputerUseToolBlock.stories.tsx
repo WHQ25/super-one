@@ -413,3 +413,15 @@ export const ComputerObserve: Story = {
     </StoryShell>
   ),
 };
+
+export const FastRunStates: Story = {
+  render: () => (
+    <StoryShell width={360}>
+      {tool('run', { description: 'Fill the scratch note title', status: 'streaming' })}
+      {(['paused', 'done', 'aborted'] as const).map((status) => (
+        <div key={status}>{tool('run', { description: 'Fill the scratch note title', result: JSON.stringify({ status, steps: 3, snapshot: { target: { app: 'Notes', bundleId: 'com.apple.Notes' } } }) })}</div>
+      ))}
+      {tool('run', { description: 'Fill the scratch note title', result: '[Error] Jev fast loop is disabled', isError: true })}
+    </StoryShell>
+  ),
+};

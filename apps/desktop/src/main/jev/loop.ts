@@ -6,7 +6,7 @@
 
 import { randomUUID } from 'crypto'
 import { type ActionSpace, buildActionSpace, clickKindOf, elementByIndex, type HistoryEntry, originOf, type SpaceElement } from './action-space'
-import type { RunObservation } from './observation'
+import type { RawElement, RunObservation } from './observation'
 import { decide, type Decision, presetByHint, type Question, type QuestionOption } from './policy'
 import { buildRequest, type Preset } from './questions'
 import { appendJevTrace, topChoiceProbabilities, traceRequestState, type TraceStep } from './trace'
@@ -15,22 +15,26 @@ import { estimateTokens, type JevRequest, type JevResponse } from './typesafe-cl
 export interface RunDeps<Page extends RunObservation = RunObservation> {
   ask(request: JevRequest, signal?: AbortSignal): Promise<JevResponse>
   /** Resolve and retain the platform target inside the adapter. */
-  resolveTarget(): Promise<void>
-  observe(): Promise<Page>
-  isFresh(page: Page, node?: number): Promise<boolean>
-  click(node: number): Promise<void>
+  resolveTarget(signal?: AbortSignal): Promise<void>
+  observe(signal?: AbortSignal): Promise<Page>
+  isFresh(page: Page, node?: number, signal?: AbortSignal): Promise<boolean>
+  click(node: number, signal?: AbortSignal): Promise<void>
   /** Focus the field and press Enter — the keyboard form submit. */
-  pressEnter(node: number): Promise<void>
-  type(node: number, text: string): Promise<void>
-  scroll(page: Page, deltaY: number): Promise<void>
-  settle(opts: { node?: number; typed?: boolean }): Promise<void>
-  waitReady(timeoutMs: number): Promise<boolean>
+  pressEnter(node: number, signal?: AbortSignal): Promise<void>
+  type(node: number, text: string, signal?: AbortSignal): Promise<void>
+  scroll(page: Page, deltaY: number, signal?: AbortSignal): Promise<void>
+  settle(opts: { node?: number; typed?: boolean }, signal?: AbortSignal): Promise<void>
+  waitReady(timeoutMs: number, signal?: AbortSignal): Promise<boolean>
   /** Evaluate the adapter's native completion condition. */
-  checkDone(): Promise<boolean>
+  checkDone(signal?: AbortSignal): Promise<boolean>
   changed(before: Page, after: Page): boolean | null
   focusGuard(active: boolean): Promise<void>
   trace?(entry: TraceStep): void
   now?(): number
+  platform?: 'browser' | 'computer' | 'device'
+  /** Positional native refs must never reuse a paused snapshot. */
+  reobserveOnResume?: boolean
+  sameTarget?(before: Page, after: Page, element: RawElement): boolean
 }
 
 export interface RunOptions {
@@ -59,9 +63,11 @@ export interface RunResult {
   question?: Question
   since_last: string[]
   snapshot: {
+    stateId?: string
+    target?: Record<string, string>
     url: string
     title: string
-    elements: Array<{ index: string; role: string; label: string; value?: string; guarded?: true }>
+    elements: Array<{ index: string; role: string; label: string; value?: string; guarded?: true; ref?: string }>
     text: string
   } | null
   steps: number
@@ -71,8 +77,8 @@ export interface RunResult {
 
 interface Pending<Page extends RunObservation> {
   question: Question
-  page: Page
-  space: ActionSpace
+  page: Page | null
+  space: ActionSpace | null
   /** What answering with an element index means. */
   mode: 'click' | 'type_text' | 'accept'
   element?: SpaceElement
@@ -115,11 +121,17 @@ export class FastRun<Page extends RunObservation = RunObservation> {
   }
 
   async start(signal?: AbortSignal): Promise<RunResult> {
-    await this.deps.resolveTarget()
-    return this.segment(signal)
+    return this.segment(signal, async () => {
+      await this.deps.resolveTarget(signal)
+      return this.loop(signal)
+    })
   }
 
   async resume(answer: Answer, signal?: AbortSignal): Promise<RunResult> {
+    return this.segment(signal, () => this.resumeAnswer(answer, signal))
+  }
+
+  private async resumeAnswer(answer: Answer, signal?: AbortSignal): Promise<RunResult> {
     if (this.status !== 'paused' || !this.pending) {
       return this.result('aborted', 'This run is not paused')
     }
@@ -128,14 +140,18 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     if (answer.questionId !== this.pending.question.id) {
       return this.result('aborted', `Answer names question ${answer.questionId}; the pending one is ${this.pending.question.id}`)
     }
-    // The tab may have been closed while paused; re-resolving is what tells us.
-    await this.deps.resolveTarget()
+    signal?.throwIfAborted()
+    // The target may have closed or lost its grant while paused.
+    await this.deps.resolveTarget(signal)
     const pending = this.pending
     this.pending = null
     this.status = 'running'
     this.sinceLast = []
 
     if (answer.choice === 'abort') return this.result('aborted', 'Aborted by the caller')
+    if (pending.question.type === 'choice' && !pending.question.options?.some((o) => o.key === answer.choice)) {
+      return this.result('aborted', 'Answer did not name an offered option')
+    }
     if (pending.mode === 'accept') {
       if (answer.choice === 'accept') return this.result('done', 'Accepted by the caller')
       // "continue" after a budget pause restarts the step budget; after a
@@ -143,8 +159,9 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       if (pending.question.reason === 'budget') this.steps = 0
       else this.continueDespiteSatisfied = true
       this.lastPage = null
-      return this.segment(signal)
+      return this.loop(signal)
     }
+    if (!pending.page || !pending.space) return this.loop(signal)
     let element: SpaceElement | undefined
     let text: string | undefined
     let presetKey = 'answer'
@@ -173,10 +190,12 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     // combobox, or suggestions appeared next to it) a re-observation that still
     // shows the same node with the same label is close enough — the answer was
     // about that element, not about its surroundings.
-    let execPage: Page | null = (await this.deps.isFresh(pending.page, element.node)) ? pending.page : null
+    let execPage: Page | null = !this.deps.reobserveOnResume && (await this.deps.isFresh(pending.page, element.node, signal)) ? pending.page : null
     if (!execPage) {
-      const next = await this.deps.observe()
-      if (next.elements.some((e) => e.node === element!.node && e.label === element!.label)) execPage = next
+      const next = await this.deps.observe(signal)
+      const same = this.deps.sameTarget?.(pending.page, next, element)
+        ?? next.elements.some((e) => e.node === element!.node && e.label === element!.label)
+      if (same && !next.blocked) execPage = next
     }
     if (execPage) {
       this.lastPage = await this.execute(
@@ -184,12 +203,13 @@ export class FastRun<Page extends RunObservation = RunObservation> {
         execPage,
         element.risk === 'guarded' || clickKindOf(clickKey) === 'submit',
         true,
+        signal,
       )
     } else {
       this.lastPage = null
       this.sinceLast.push('Page changed while paused; answer discarded')
     }
-    return this.segment(signal)
+    return this.loop(signal)
   }
 
   private async pauseForValue(element: SpaceElement, page: Page, space: ActionSpace, _signal?: AbortSignal): Promise<RunResult> {
@@ -201,14 +221,32 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     }, page, space, 'type_text', element)
   }
 
-  private async segment(signal?: AbortSignal): Promise<RunResult> {
+  private async segment(signal: AbortSignal | undefined, work: () => Promise<RunResult>): Promise<RunResult> {
     this.segmentStartedAt = this.now()
     await this.deps.focusGuard(true)
     try {
-      return await this.loop(signal)
-    } catch (err) {
-      if (signal?.aborted) return this.result('aborted', 'Interrupted')
-      throw err
+      for (let attempt = 0; ; attempt++) {
+        try {
+          signal?.throwIfAborted()
+          return await work()
+        } catch (err) {
+          if (signal?.aborted) return this.result('aborted', 'Interrupted')
+          if (err instanceof StaleObservation) {
+            this.lastPage = null
+            if (attempt < 5) {
+              work = () => this.loop(signal)
+              continue
+            }
+            err = new RunPaused('no-progress', err.message)
+          }
+          if (err instanceof RunPaused) return await this.pause({
+            type: 'choice', reason: err.reason,
+            options: [{ key: 'continue', label: 'Re-observe after resolving the obstruction' }, { key: 'abort', label: 'Stop; hand control back to you' }],
+            context: { why: err.message },
+          }, this.lastPage, null, 'accept', undefined, undefined, true)
+          throw err
+        }
+      }
     } finally {
       await this.deps.focusGuard(false)
     }
@@ -226,8 +264,10 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       if (this.now() - this.segmentStartedAt >= this.opts.maxWallMs) return this.pauseBudget(page, `maxWallMs ${this.opts.maxWallMs} reached`)
 
       const observeStart = this.now()
-      if (!page) page = await this.deps.observe()
+      if (!page) page = await this.deps.observe(signal)
       const observeMs = this.now() - observeStart
+      this.lastPage = page
+      if (page.blocked) throw new RunPaused(page.blocked.reason, page.blocked.why)
       if (this.origins.size === 0) {
         const origin = originOf(page.url)
         if (origin) this.origins.add(origin)
@@ -236,18 +276,18 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       // Machine signals first: document loading, then done_when.
       if (page.loading && this.consecutiveWaits < 3) {
         this.consecutiveWaits++
-        await this.deps.waitReady(1500)
+        await this.deps.waitReady(1500, signal)
         this.history.push({ node: -1, kind: 'wait', label: 'Wait (loading)', changedPage: null, guarded: false })
         page = null
         continue
       }
-      if (this.opts.hasDoneWhen && (await this.deps.checkDone())) {
+      if (this.opts.hasDoneWhen && (await this.deps.checkDone(signal))) {
         this.lastPage = page
         return this.result('done', 'done_when satisfied')
       }
 
       const space = buildActionSpace({ page, origins: this.origins, allow: this.opts.allow, avoid: this.opts.avoid, history: this.history })
-      const request = buildRequest({ goal: this.opts.goal, page, space, presets: this.opts.presets, last: this.history[this.history.length - 1] })
+      const request = buildRequest({ goal: this.opts.goal, page, space, presets: this.opts.presets, last: this.history[this.history.length - 1], history: this.history })
       const response = await this.deps.ask(request, signal)
       const decision = decide({
         answers: response.answers,
@@ -294,7 +334,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
         return this.pause(decision.question, page, space, decision.mode, decision.element, decision.presetKey)
       }
 
-      const fresh = decision.kind === 'scroll' ? true : await this.deps.isFresh(page, decision.element.node)
+      const fresh = await this.deps.isFresh(page, decision.kind === 'scroll' ? undefined : decision.element.node, signal)
       if (!fresh) {
         trace.stale = true
         this.emit(trace)
@@ -309,9 +349,18 @@ export class FastRun<Page extends RunObservation = RunObservation> {
         }
         continue
       }
-      staleRetries = 0
       const actStart = this.now()
-      page = await this.execute(decision, page, false)
+      try {
+        page = await this.execute(decision, page, false, false, signal)
+      } catch (err) {
+        if (!(err instanceof StaleObservation)) throw err
+        trace.stale = true
+        this.emit(trace)
+        page = null
+        if (++staleRetries > 5) throw new RunPaused('no-progress', err.message)
+        continue
+      }
+      staleRetries = 0
       trace.latencyMs!.act = this.now() - actStart
       trace.changedPage = this.history[this.history.length - 1]?.changedPage
       this.emit(trace)
@@ -321,7 +370,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
         return this.pause({
           type: 'choice',
           reason: 'no-progress',
-          options: [...space.elements.filter((el) => !el.password).map((el): QuestionOption => ({ key: el.index, label: `${el.role} ${el.label}` })), { key: 'abort', label: 'Stop; hand control back to you' }],
+          options: [...space.elements.filter((el) => !el.password && el.clickable !== false).map((el): QuestionOption => ({ key: el.index, label: `${el.role} ${el.label}` })), { key: 'abort', label: 'Stop; hand control back to you' }],
           context: { why: 'Three actions in a row changed nothing', page: { url: page.url, title: page.title } },
         }, page, space, 'click')
       }
@@ -329,7 +378,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
   }
 
   /** Perform one decided action and return the observation that followed it. */
-  private async execute(decision: Exclude<Decision, { kind: 'wait' | 'done' | 'pause' }>, page: Page, guarded: boolean, answered = false): Promise<Page> {
+  private async execute(decision: Exclude<Decision, { kind: 'wait' | 'done' | 'pause' }>, page: Page, guarded: boolean, answered = false, signal?: AbortSignal): Promise<Page> {
     const clickKind = decision.kind === 'click' ? clickKindOf(decision.key) : null
     const entry: HistoryEntry = decision.kind === 'scroll'
       ? { node: -1, kind: 'scroll', label: `Scroll ${decision.direction}`, changedPage: null, guarded: false }
@@ -339,28 +388,36 @@ export class FastRun<Page extends RunObservation = RunObservation> {
           kind: clickKind === 'submit' ? 'submit' : 'click',
           label: `${clickKind === 'open' ? 'Open' : clickKind === 'submit' ? 'Press Enter in' : 'Click'} [${decision.element.index}] ${decision.element.label}`,
           changedPage: null,
-          guarded,
+          guarded: guarded || decision.element.highRisk || clickKind === 'submit',
         }
         : { node: decision.element.node, kind: 'type_text', label: `Type presets.${decision.presetKey} → [${decision.element.index}] ${decision.element.label}`, changedPage: null, guarded }
     // Record before acting: a navigation that interrupts the post-action observe must not erase the action.
     this.history.push(entry)
+    try {
     if (decision.kind === 'scroll') {
-      await this.deps.scroll(page, decision.direction === 'down' ? SCROLL_DELTA : -SCROLL_DELTA)
+      await this.deps.scroll(page, decision.direction === 'down' ? SCROLL_DELTA : -SCROLL_DELTA, signal)
       this.scrolledSinceChange = true
     } else if (decision.kind === 'click') {
-      if (clickKind === 'submit') await this.deps.pressEnter(decision.element.node)
-      else await this.deps.click(decision.element.node)
-      await this.deps.settle({ node: decision.element.node })
+      if (clickKind === 'submit') await this.deps.pressEnter(decision.element.node, signal)
+      else await this.deps.click(decision.element.node, signal)
+      await this.deps.settle({ node: decision.element.node }, signal)
     } else {
-      await this.deps.type(decision.element.node, decision.text)
-      await this.deps.settle({ node: decision.element.node, typed: true })
+      await this.deps.type(decision.element.node, decision.text, signal)
+      await this.deps.settle({ node: decision.element.node, typed: true }, signal)
     }
+    } catch (error) {
+      if (error instanceof StaleObservation) this.history.pop()
+      throw error
+    }
+    entry.completed = true
+    signal?.throwIfAborted()
     this.consecutiveWaits = 0
-    const next = await this.deps.observe()
+    const next = await this.deps.observe(signal)
+    this.lastPage = next
     const changed = this.deps.changed(page, next)
     entry.changedPage = changed
     if (changed && decision.kind !== 'scroll') this.scrolledSinceChange = false
-    this.sinceLast.push(`${entry.label}${changed ? '' : ' (no change)'}`)
+    this.sinceLast.push(`${entry.label}${changed === null ? ' (change unknown)' : changed ? '' : ' (no change)'}`)
     if (answered) {
       // Answered actions never went through decide(); trace them so a run's
       // history is complete for calibration.
@@ -387,9 +444,9 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     }, page, null, 'accept')
   }
 
-  private async pause(question: Omit<Question, 'id'>, page: Page | null, space: ActionSpace | null, mode: Pending<Page>['mode'], element?: SpaceElement, presetKey?: string): Promise<RunResult> {
-    const observed = page ?? (await this.deps.observe())
-    const built = space ?? buildActionSpace({ page: observed, origins: this.origins, allow: this.opts.allow, avoid: this.opts.avoid, history: this.history })
+  private async pause(question: Omit<Question, 'id'>, page: Page | null, space: ActionSpace | null, mode: Pending<Page>['mode'], element?: SpaceElement, presetKey?: string, withoutObserve = false): Promise<RunResult> {
+    const observed = page ?? (withoutObserve ? null : await this.deps.observe())
+    const built = space ?? (observed ? buildActionSpace({ page: observed, origins: this.origins, allow: this.opts.allow, avoid: this.opts.avoid, history: this.history }) : null)
     const id = `q${++this.questionSeq}`
     const full: Question = { id, ...question }
     this.pending = { question: full, page: observed, space: built, mode, element, presetKey }
@@ -400,7 +457,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       runId: this.runId,
       question: full,
       since_last: this.sinceLast,
-      snapshot: this.snapshot(observed, built),
+      snapshot: observed && built ? this.snapshot(observed, built) : null,
       steps: this.steps,
       elapsed_ms: this.now() - this.startedAt,
     }
@@ -408,10 +465,13 @@ export class FastRun<Page extends RunObservation = RunObservation> {
 
   private snapshot(page: Page, space: ActionSpace): RunResult['snapshot'] {
     return {
+      ...(page.stateId ? { stateId: page.stateId } : {}),
+      ...(page.target ? { target: page.target } : {}),
       url: page.url,
       title: page.title,
       elements: space.elements.slice(0, 80).map((el) => ({
         index: el.index,
+        ...(el.ref ? { ref: el.ref } : {}),
         role: el.role,
         label: el.label,
         ...(el.value ? { value: el.value.slice(0, 120) } : {}),
@@ -438,7 +498,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
   }
 
   private emit(entry: TraceStep): void {
-    ;(this.deps.trace ?? appendJevTrace)(entry)
+    ;(this.deps.trace ?? appendJevTrace)({ ...entry, platform: this.deps.platform ?? 'browser' })
   }
 }
 
@@ -457,3 +517,11 @@ function describeDecision(d: Decision): Record<string, unknown> {
       return { kind: 'pause', reason: d.question.reason, type: d.question.type, why: d.question.context.why }
   }
 }
+
+/** Adapter refusals that require the caller to resolve a capability or UI boundary. */
+export class RunPaused extends Error {
+  constructor(readonly reason: 'guarded-only' | 'no-progress', message: string) { super(message) }
+}
+
+/** Only throw before input has been dispatched; a rejected target is safe to re-observe. */
+export class StaleObservation extends Error {}

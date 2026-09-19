@@ -155,6 +155,7 @@ export interface HelperAxNode {
   focused?: boolean
   /** True on the single element the application reports as AXFocusedUIElement. */
   appFocused?: boolean
+  secure?: boolean
   settable?: boolean
   actions?: string[]
   children?: HelperAxNode[]

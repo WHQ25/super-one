@@ -2,6 +2,11 @@
 
 export interface RawElement {
   node: number
+  /** Adapter capability, independent of risk. Absent preserves browser defaults. */
+  clickable?: boolean
+  canSubmit?: boolean
+  /** Native ref for inspection by the caller, never interpreted by Jev. */
+  ref?: string
   role: string
   label: string
   /** Current value for inputs / contenteditable, '' otherwise. */
@@ -27,5 +32,9 @@ export interface RunObservation {
   omitted: number
   scroll: { y: number; height: number; viewport: number }
   loading: boolean
+  stateId?: string
+  target?: Record<string, string>
+  blocked?: { reason: 'guarded-only' | 'no-progress'; why: string }
+  canScroll?: { down: boolean; up: boolean }
 }
 

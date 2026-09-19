@@ -6,6 +6,7 @@ export type ComputerOp =
   | 'snapshot'
   | 'zoom'
   | 'query'
+  | 'run'
   | 'act'
   | 'wait_for'
 
@@ -15,6 +16,7 @@ const COMPUTER_OPS = new Set<ComputerOp>([
   'snapshot',
   'zoom',
   'query',
+  'run',
   'act',
   'wait_for',
 ])
@@ -31,6 +33,7 @@ export interface ComputerResultInfo {
   bundleId?: string
   title?: string
   stateId?: string
+  runStatus?: 'paused' | 'done' | 'aborted'
   outcome?: ComputerOutcome
   waitStatus?: ComputerWaitStatus
   counts?: {
@@ -196,10 +199,12 @@ export function computerVerbKey(
   op: ComputerOp,
   params: Record<string, unknown>,
   streaming = false,
+  runStatus?: ComputerResultInfo['runStatus'],
 ): string {
   if (op === 'memory_read' || op === 'memory_write') {
     return `memory.${op === 'memory_read' ? 'read' : params.status === 'deprecated' ? 'archive' : params.status === 'stable' ? 'restore' : 'write'}.${streaming ? 'streaming' : 'done'}`
   }
+  if (op === 'run') return streaming ? 'running' : runStatus === 'paused' ? 'runPaused' : runStatus === 'aborted' ? 'runAborted' : runStatus === 'done' ? 'runDone' : 'run'
   if (op === 'apps') {
     const action =
       params.action === 'focus' || params.action === 'launch'
@@ -265,7 +270,7 @@ export function computerVerbKey(
   }
 
   const keys: Record<
-    Exclude<ComputerOp, 'apps' | 'query' | 'act' | 'memory_read' | 'memory_write'>,
+    Exclude<ComputerOp, 'apps' | 'query' | 'act' | 'run' | 'memory_read' | 'memory_write'>,
     [string, string]
   > = {
     snapshot: ['snapshot', 'snapshotting'],
@@ -280,6 +285,7 @@ export function computerInputSummary(
   params: Record<string, unknown>,
 ): string {
   switch (op) {
+    case 'run': return truncate(stringValue(params.goal), 80)
     case 'memory_read':
     case 'memory_write':
       return [params.platform, params.appId, params.topic].filter(value => typeof value === 'string').join('/')
@@ -623,6 +629,12 @@ export function parseComputerResult(
 
   if (op === 'apps') {
     info = parseAppsResult(obj, params)
+  } else if (op === 'run') {
+    const snapshot = asRecord(obj.snapshot)
+    info = { status: obj.status === 'done' ? 'ok' : 'neutral',
+      runStatus: obj.status === 'paused' || obj.status === 'done' || obj.status === 'aborted' ? obj.status : undefined,
+      ...rootIdentity(snapshot?.target), stateId: typeof snapshot?.stateId === 'string' ? snapshot.stateId : undefined,
+    }
   } else if (op === 'snapshot') {
     const root = rootIdentity(obj.root)
     info = {

@@ -14,7 +14,7 @@ import { type PageObservation, type DoneWhen, checkDoneWhen, clickNode, hasDoneW
 import { getJevApiKey } from './jev-api-key'
 import { type Answer, FastRun, type RunDeps, type RunResult } from './loop'
 import { type PausedRun, storePausedRun, takePausedRun } from './run-store'
-import { createJevClient, type JevClient } from './typesafe-client'
+import { jevClient, runInputShape } from './run-tool-common'
 
 export const BROWSER_RUN_DESCRIPTION =
   'Experimental (requires the Jev fast loop setting): pursue a multi-step page goal — clicks, typing, scrolling — with a fast model choosing each step, so you do not pay a turn per click. '
@@ -23,16 +23,8 @@ export const BROWSER_RUN_DESCRIPTION =
   + 'Use for click/fill-heavy tasks on one tab; use browser_act for single steps, drag, keys, uploads.'
 
 export const browserRunInputShape = {
-  description: z.string().optional().describe("Short, human-friendly summary of the goal for the user watching, in the conversation's language."),
-  goal: z.string().optional().describe('What to achieve on the current page, including when to stop. Required to start a run.'),
+  ...runInputShape,
   tab: z.string().optional().describe('Browser view id. Omit to target the focused browser view.'),
-  presets: z.array(z.object({
-    key: z.string().min(1).describe('Short name, e.g. Title.'),
-    value: z.string().describe('The full text to type.'),
-    field: z.string().optional().describe('Hint naming the field it belongs in, e.g. "the title textbox".'),
-  })).max(20).optional().describe('Values the loop may type. Never include passwords.'),
-  allow: z.array(z.string()).optional().describe('Button labels (substring, case-insensitive) the loop may press without asking, e.g. ["Create"]. "Enter" allows pressing Enter in any filled field (keyboard submit).'),
-  avoid: z.array(z.string()).optional().describe('Element labels to remove from the page entirely.'),
   done_when: z.object({
     selector: z.string().optional(),
     selectorGone: z.string().optional(),
@@ -40,16 +32,6 @@ export const browserRunInputShape = {
     urlIncludes: z.string().optional(),
     urlMatches: z.string().optional().describe('JavaScript regex source matched against the page URL.'),
   }).optional().describe('Machine-checkable completion condition (AND-combined, same vocabulary as browser_wait_for). Strongly recommended.'),
-  maxSteps: z.number().int().min(1).max(100).optional().describe('Default 30.'),
-  maxWallMs: z.number().int().min(5_000).max(300_000).optional().describe('Wall-clock budget per call before pausing. Default 45000.'),
-  runId: z.string().optional().describe('From a paused result. Resumes that run with `answer`.'),
-  answer: z.object({
-    questionId: z.string(),
-    choice: z.string().optional().describe('An option key from the question, or "abort".'),
-    value: z.record(z.string(), z.unknown()).optional().describe('For type=value questions: { text }.'),
-    goal: z.string().optional().describe('Optionally revise the goal.'),
-    abort: z.boolean().optional(),
-  }).optional().describe('Reply to the pending question when resuming.'),
 }
 
 const browserRunSchema = z.object(browserRunInputShape)
@@ -66,17 +48,6 @@ export function jevGateError(): string | null {
   return null
 }
 
-let client: JevClient | null = null
-let clientKey = ''
-
-function jevClient(): JevClient {
-  const key = getJevApiKey()
-  if (!client || clientKey !== key) {
-    client = createJevClient({ apiKey: key })
-    clientKey = key
-  }
-  return client
-}
 
 function depsFor(sessionId: string, tab: string | undefined, doneWhen?: DoneWhen): RunDeps<PageObservation> {
   let target = -1

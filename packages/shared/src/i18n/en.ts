@@ -2520,6 +2520,11 @@ export type Messages = {
         mockBody: string
       }
       computer: {
+        run: string
+        running: string
+        runPaused: string
+        runDone: string
+        runAborted: string
         memory: typeof interactionMemoryEn
         apps: string
         listingApps: string
@@ -4849,7 +4854,7 @@ export const en: Messages = {
         },
         jev: {
           label: 'Jev Fast Inner Loop',
-          description: 'Adds browser_run: a fast model (TypeSafe Jev) picks each click and field on the page so the agent does not spend a full turn per step. Risky buttons still pause and ask. Page text is sent to TypeSafe; pricing is per token.',
+          description: 'Adds fast goal runs for browser and desktop tasks. TypeSafe Jev picks clicks, fields and scrolling without a full agent turn per step. Risky controls pause for a decision. Visible UI text is sent to TypeSafe; pricing is per token.',
           apiKey: {
             label: 'Jev API Key',
             description: 'Stored encrypted on this machine and used only from the main process.',
@@ -6406,6 +6411,11 @@ export const en: Messages = {
         mockBody: 'Body',
       },
       computer: {
+        run: 'Run Goal',
+        running: 'Pursuing goal',
+        runPaused: 'Paused for a Decision',
+        runDone: 'Goal Completed',
+        runAborted: 'Run Stopped',
         memory: interactionMemoryEn,
         apps: 'Apps',
         listingApps: 'Listing Apps',

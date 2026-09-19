@@ -85,6 +85,12 @@ export const BROWSER_TOOL_NAMES = [
   ),
 ] as const
 
+// Feature-gated by the desktop; deliberately excluded from static admission.
+export const COMPUTER_USE_TOOL_NAMES = [
+  'computer_apps', 'computer_snapshot', 'computer_zoom', 'computer_query',
+  'computer_act', 'computer_run', 'computer_wait_for',
+] as const
+
 /**
  * Touch-device control (phones / tablets). Host-owned like the browser tools rather
  * than feature-gated like `computer_*`: these drive a simulator, which is a sandbox

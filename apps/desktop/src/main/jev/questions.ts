@@ -71,6 +71,7 @@ export interface BuildQuestionsInput {
   space: ActionSpace
   presets: readonly Preset[]
   last: HistoryEntry | undefined
+  history?: readonly HistoryEntry[]
 }
 
 export function buildRequest(input: BuildQuestionsInput): JevRequest {
@@ -79,6 +80,7 @@ export function buildRequest(input: BuildQuestionsInput): JevRequest {
     goal,
     page: { url: page.url, title: page.title, text: page.text },
     elements: space.elements.map(stateElement),
+    completed_actions: (input.history ?? []).filter((entry) => entry.completed).slice(-8).map((entry) => entry.label.replace(/\[\d+\] /, '')),
     ...(presets.length
       ? { presets: presets.map((p) => ({ key: p.key, hint: p.value.slice(0, 80), ...(p.field ? { field: p.field } : {}) })) }
       : {}),

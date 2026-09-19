@@ -7,7 +7,11 @@ import {
 } from './computer-use-service'
 import { createComputerUseService } from './create-service'
 import { ensureComputerUseAppGrant } from './grant-request'
-import { ComputerUseError, type Condition } from './types'
+import { ComputerUseError } from './types'
+import { conditionSchema, parseCondition } from './conditions'
+import { COMPUTER_RUN_DESCRIPTION, computerRunInputShape, executeComputerRun } from '../jev/computer-run-tool'
+import { jevSettingError } from '../jev/run-tool-common'
+import { COMPUTER_USE_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 import type { SuperoneMcpToolDescriptor } from '../mcp/superone-mcp-types'
 import { readAppSettings } from '../app-settings-service'
 import { persistComputerUseScreenshot } from './screenshot-store'
@@ -19,14 +23,7 @@ import { publishArtifact } from '../environment/zone-delivery'
 import { outlineToToon } from './outline-toon'
 import { imageNote, recordingNote } from '../mcp/show-your-work-notes'
 
-export const COMPUTER_USE_TOOL_NAMES = [
-  'computer_apps',
-  'computer_snapshot',
-  'computer_zoom',
-  'computer_query',
-  'computer_act',
-  'computer_wait_for',
-] as const
+export { COMPUTER_USE_TOOL_NAMES }
 
 export type ComputerUseToolName = (typeof COMPUTER_USE_TOOL_NAMES)[number]
 
@@ -155,12 +152,6 @@ const actionSchema = z.object({
   path: z.array(z.object({ x: z.number(), y: z.number() })).optional(),
 })
 
-const conditionSchema = z.object({
-  kind: z.enum(['exists', 'notExists', 'textEquals', 'textContains', 'valueEquals']),
-  ref: z.string().optional(),
-  text: z.string().optional(),
-  value: z.string().optional(),
-})
 
 const descriptionField = {
   description: z
@@ -188,7 +179,7 @@ const toolDefs: Array<{
       + 'Rows are sorted running/frontmost/granted first. '
       + 'action=focus|launch accepts display name (any locale) or reverse-DNS bundleId; host resolves to a stable bundleId before the permission grant so one allow covers later snapshot/act. '
       + 'Launch/focus returns a slim {target} confirmation. If the user only asks to open an app, launch once and stop when target is returned. '
-      + 'Driving an app is computer_snapshot + computer_act; focus only puts a window in front.',
+      + 'For navigation, forms or search, prefer computer_run when Jev is enabled; batch known button sequences with computer_act. Focus only puts a window in front.',
     shape: {
       ...descriptionField,
       action: z.enum(['list', 'focus', 'launch']).optional().describe('Default list'),
@@ -280,7 +271,7 @@ const toolDefs: Array<{
   {
     name: 'computer_act',
     description:
-      'Submit 1–20 related UI actions as a checked transaction against a stateId. '
+      'Submit 1–20 related UI actions as a checked transaction against a stateId. Batch a known button sequence here; prefer computer_run when each next target must be found from new UI state and Jev is enabled. '
       + 'Set delivery explicitly when you can; that field describes how the three modes differ. '
       + 'Actions: click, typeText, keypress, scroll(dx,dy[,x,y|ref]), drag(path≥2 points), moveMouse, press/setText (AX). '
       + 'scroll: positive dy scrolls content down; aim with x,y (capture space) or ref center; else window/outline center. '
@@ -310,6 +301,7 @@ const toolDefs: Array<{
         ),
     },
   },
+  { name: 'computer_run', description: COMPUTER_RUN_DESCRIPTION, shape: computerRunInputShape },
   {
     name: 'computer_wait_for',
     description:
@@ -323,29 +315,6 @@ const toolDefs: Array<{
     },
   },
 ]
-
-function parseCondition(raw: unknown): Condition | undefined {
-  if (!raw || typeof raw !== 'object') return undefined
-  const c = raw as Record<string, unknown>
-  const kind = c.kind
-  if (kind === 'exists' || kind === 'notExists') {
-    if (typeof c.ref !== 'string') throw new ComputerUseError('INVALID_ACTION', 'condition.ref required')
-    return { kind, ref: c.ref }
-  }
-  if (kind === 'textEquals' || kind === 'textContains') {
-    if (typeof c.ref !== 'string' || typeof c.text !== 'string') {
-      throw new ComputerUseError('INVALID_ACTION', 'condition.ref and text required')
-    }
-    return { kind, ref: c.ref, text: c.text }
-  }
-  if (kind === 'valueEquals') {
-    if (typeof c.ref !== 'string' || typeof c.value !== 'string') {
-      throw new ComputerUseError('INVALID_ACTION', 'condition.ref and value required')
-    }
-    return { kind, ref: c.ref, value: c.value }
-  }
-  throw new ComputerUseError('INVALID_ACTION', `unknown condition.kind: ${String(kind)}`)
-}
 
 /** Build stable MCP tool descriptors (schema only). */
 export function getComputerUseToolDescriptors(): SuperoneMcpToolDescriptor[] {
@@ -671,6 +640,11 @@ async function executeComputerUseToolInner(
     )
   }
   context.signal?.throwIfAborted()
+  if (normalized === 'computer_run') {
+    if (!isComputerUseEnabled()) return errorReply(new Error('Computer Use is disabled. Enable it in Settings before calling computer_run.'))
+    const gate = jevSettingError()
+    if (gate) return errorReply(new Error(gate))
+  }
 
   let service: ComputerUseService
   try {
@@ -713,6 +687,22 @@ async function executeComputerUseToolInner(
           includeRoots: args.includeRoots === true,
         })
         return withMemoryDiscoveryHint(toonReply(result), COMPUTER_MEMORY_DISCOVERY_HINT)
+      }
+      case 'computer_run': {
+        return textReply(await executeComputerRun(sessionId, args, service, async (target, signal) => {
+          signal?.throwIfAborted()
+          let root = target.root
+          if (target.app) {
+            const identity = await service.resolveAppIdentity(target.app)
+            await ensureComputerUseAppGrant({ sessionId, service, ...identity, toolName: normalized })
+            signal?.throwIfAborted()
+            root = (await service.resolveTargetRoot(undefined, identity.bundleId)).rootId
+          } else {
+            await ensureGrantForRoot(sessionId, service, normalized, root)
+          }
+          signal?.throwIfAborted()
+          return (await service.resolveTargetRoot(root)).rootId
+        }, context.signal))
       }
       case 'computer_snapshot': {
         await ensureGrantForRoot(

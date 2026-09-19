@@ -95,6 +95,8 @@ export interface UiNodeCapabilities {
 
 /** Full internal outline node (complete tree kept in StateStore). */
 export interface UiOutlineNode {
+  /** Secure AX controls must never expose their value to a fast loop. */
+  secure?: boolean
   ref: string
   role: string
   name?: string

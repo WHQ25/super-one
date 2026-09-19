@@ -11,6 +11,7 @@ import type { JevAnswer } from './typesafe-client'
  */
 export interface TraceStep {
   runId: string
+  platform?: 'browser' | 'computer' | 'device'
   step: number
   at: number
   url: string

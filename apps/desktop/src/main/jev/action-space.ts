@@ -25,6 +25,8 @@ export interface HistoryEntry {
   label: string
   changedPage: boolean | null
   guarded: boolean
+  /** Input finished dispatching; this does not claim its intended effect worked. */
+  completed?: true
 }
 
 export interface ActionSpaceInput {
@@ -112,11 +114,11 @@ export function buildActionSpace(input: ActionSpaceInput): ActionSpace {
     const h = history[i]
     if (h.changedPage === true) break
     if (h.kind === 'wait' || h.kind === 'scroll') continue
-    if (h.changedPage === false) stuck.add(`${h.node}:${h.kind}`)
+    if (h.changedPage === false || h.guarded || h.kind === 'submit') stuck.add(`${h.node}:${h.kind}`)
   }
   const elements: SpaceElement[] = []
   for (const raw of page.elements) {
-    if (matchesAny(raw.label, avoid)) continue
+    if (raw.disabled || raw.password || matchesAny(raw.label, avoid)) continue
     const c = classify(raw, origins, allow)
     elements.push({ ...raw, index: String(elements.length + 1), risk: c.risk, reason: c.reason, highRisk: c.highRisk })
   }
@@ -129,21 +131,21 @@ export function buildActionSpace(input: ActionSpaceInput): ActionSpace {
     // fill it (no preset may hold a password) and clicking it achieves nothing.
     if (el.password) continue
     if (el.risk === 'guarded') {
-      if (!stuck.has(`${el.node}:click`)) guarded.push(el)
+      if (el.clickable !== false && !stuck.has(`${el.node}:click`)) guarded.push(el)
       continue
     }
     if (el.editable) {
       if (!stuck.has(`${el.node}:type_text`)) typeCandidates.push(el.index)
-      if (!stuck.has(`${el.node}:click`)) clickCandidates.push(`open:${el.index}`)
+      if (el.clickable !== false && !stuck.has(`${el.node}:click`)) clickCandidates.push(`open:${el.index}`)
       // Enter in a filled field is how many search boxes submit when their
       // button loses the race against an autocomplete blur (npm, GitHub).
-      if (el.value && !stuck.has(`${el.node}:submit`)) {
+      if (el.canSubmit !== false && el.value && !stuck.has(`${el.node}:submit`)) {
         if (submitAllowed(el, allow)) clickCandidates.push(`submit:${el.index}`)
         else guardedSubmits.push(el)
       }
       continue
     }
-    if (!stuck.has(`${el.node}:click`)) clickCandidates.push(el.index)
+    if (el.clickable !== false && !stuck.has(`${el.node}:click`)) clickCandidates.push(el.index)
   }
   return {
     elements,
@@ -151,8 +153,8 @@ export function buildActionSpace(input: ActionSpaceInput): ActionSpace {
     typeCandidates,
     guarded,
     guardedSubmits,
-    canScrollDown: page.scroll.y + page.scroll.viewport < page.scroll.height - 2,
-    canScrollUp: page.scroll.y > 0,
+    canScrollDown: page.canScroll?.down ?? page.scroll.y + page.scroll.viewport < page.scroll.height - 2,
+    canScrollUp: page.canScroll?.up ?? page.scroll.y > 0,
   }
 }
 

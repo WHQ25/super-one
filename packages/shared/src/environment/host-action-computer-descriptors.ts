@@ -1,9 +1,9 @@
 import type { HostActionSuperoneToolDescriptor } from './host-action-superone-descriptors'
 
-export const HOST_ACTION_COMPUTER_DESCRIPTORS: HostActionSuperoneToolDescriptor[] = [
+export const HOST_ACTION_COMPUTER_DESCRIPTORS = [
   {
     "name": "computer_apps",
-    "description": "Discover and open desktop apps. action=list (default) returns a compact TOON app catalog: one row per app with app, bundleId, running, frontmost, granted, grantScope, pid, windows. Use query to keyword-filter by display name / bundle id / localized aliases (e.g. query=Notes or com.apple.TextEdit). Paginate with offset + limit (default limit 25, max 100); hasMore means call again with offset+=limit. Rows are sorted running/frontmost/granted first. action=focus|launch accepts display name (any locale) or reverse-DNS bundleId; host resolves to a stable bundleId before the permission grant so one allow covers later snapshot/act. Launch/focus returns a slim {target} confirmation. If the user only asks to open an app, launch once and stop when target is returned. Driving an app is computer_snapshot + computer_act; focus only puts a window in front.",
+    "description": "Discover and open desktop apps. action=list (default) returns a compact TOON app catalog: one row per app with app, bundleId, running, frontmost, granted, grantScope, pid, windows. Use query to keyword-filter by display name / bundle id / localized aliases (e.g. query=Notes or com.apple.TextEdit). Paginate with offset + limit (default limit 25, max 100); hasMore means call again with offset+=limit. Rows are sorted running/frontmost/granted first. action=focus|launch accepts display name (any locale) or reverse-DNS bundleId; host resolves to a stable bundleId before the permission grant so one allow covers later snapshot/act. Launch/focus returns a slim {target} confirmation. If the user only asks to open an app, launch once and stop when target is returned. For navigation, forms or search, prefer computer_run when Jev is enabled; batch known button sequences with computer_act. Focus only puts a window in front.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -95,7 +95,7 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS: HostActionSuperoneToolDescriptor[
   },
   {
     "name": "computer_zoom",
-    "description": "Re-sample a region of the last observation at higher detail, preserving its window/display scope. Saves the image to a temporary file and returns image.path (not base64); Read the path if you need pixels. Does NOT create a new coordinate space \u2014 click coordinates still use the parent stateId space.",
+    "description": "Re-sample a region of the last observation at higher detail, preserving its window/display scope. Saves the image to a temporary file and returns image.path (not base64); Read the path if you need pixels. Does NOT create a new coordinate space — click coordinates still use the parent stateId space.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -184,7 +184,7 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS: HostActionSuperoneToolDescriptor[
   },
   {
     "name": "computer_act",
-    "description": "Submit 1\u201320 related UI actions as a checked transaction against a stateId. Set delivery explicitly when you can; that field describes how the three modes differ. Actions: click, typeText, keypress, scroll(dx,dy[,x,y|ref]), drag(path\u22652 points), moveMouse, press/setText (AX). scroll: positive dy scrolls content down; aim with x,y (capture space) or ref center; else window/outline center. drag: path is capture-space points; virtual cursor animates along the path. Returns outcome worked|didnt|unknown based on re-observation (not API success codes): worked when AX readback, expect, typed text, or a meaningful successor outline diff confirms effect; unknown only when applied but unprovable; didnt on hard failure or failed expect. When the successor has pixels, successorImage.path contains the fresh screenshot. Set recording=true to save a short video containing only this action transaction. Stale stateId (UI changed since snapshot) is rejected before side effects. delivery=semantic never silently upgrades to app-directed/physical input.",
+    "description": "Submit 1–20 related UI actions as a checked transaction against a stateId. Batch a known button sequence here; prefer computer_run when each next target must be found from new UI state and Jev is enabled. Set delivery explicitly when you can; that field describes how the three modes differ. Actions: click, typeText, keypress, scroll(dx,dy[,x,y|ref]), drag(path≥2 points), moveMouse, press/setText (AX). scroll: positive dy scrolls content down; aim with x,y (capture space) or ref center; else window/outline center. drag: path is capture-space points; virtual cursor animates along the path. Returns outcome worked|didnt|unknown based on re-observation (not API success codes): worked when AX readback, expect, typed text, or a meaningful successor outline diff confirms effect; unknown only when applied but unprovable; didnt on hard failure or failed expect. When the successor has pixels, successorImage.path contains the fresh screenshot. Set recording=true to save a short video containing only this action transaction. Stale stateId (UI changed since snapshot) is rejected before side effects. delivery=semantic never silently upgrades to app-directed/physical input.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -289,12 +289,15 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS: HostActionSuperoneToolDescriptor[
               ]
             },
             "ref": {
+              "description": "Required for every kind: the target element ref from the starting snapshot.",
               "type": "string"
             },
             "text": {
+              "description": "Required for textEquals/textContains: compare against the element name or value.",
               "type": "string"
             },
             "value": {
+              "description": "Required for valueEquals: the exact element value to wait for.",
               "type": "string"
             }
           },
@@ -303,15 +306,15 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS: HostActionSuperoneToolDescriptor[
           ],
           "additionalProperties": false
         },
-        "recording": {
-          "description": "Save a video of only this action transaction. Default false.",
-          "type": "boolean"
-        },
         "timeoutMs": {
           "description": "Maximum wait for expect before the action is judged. Default 5000.",
           "type": "integer",
           "minimum": 100,
           "maximum": 60000
+        },
+        "recording": {
+          "description": "Save a video of only this action transaction. Default false.",
+          "type": "boolean"
         },
         "delivery": {
           "description": "semantic — pure AX; prefer it whenever actions use @eN refs and the action is press/setText/click(ref)/typeText(ref), the most reliable path for labeled controls. app-directed — the default when omitted; for coordinate click/type/scroll/drag/keypress or when no usable AX ref exists. Posts CGEvent to the target app PID in the background without stealing frontmost. physical — global HID; only when app-directed fails. Requires frontmost and is disruptive.",
@@ -327,6 +330,159 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS: HostActionSuperoneToolDescriptor[
         "description",
         "stateId",
         "actions"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "computer_run",
+    "description": "Experimental (Jev setting): pursue desktop UI goals with clicks, typing and scrolling chosen without a model turn per step. Start with app or root and goal. If the exact sequence of buttons is already known, use computer_act with a batch instead. Example: presets=[{key:\"Query\",value:\"cats\",field:\"Search\"}], done_when={kind:\"valueEquals\",ref:\"@e7\",value:\"cats\"}. Native computer_wait_for conditions bind at run start. Unrecognised or risky controls pause; resume with runId + answer. Uses existing grants and tiers; skips secure fields. Use computer_act for single steps, drag, shortcuts or pixels.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "Short, human-friendly explanation of the goal for the user watching, in the conversation's language."
+        },
+        "goal": {
+          "description": "What to achieve on the current page, including when to stop. Required to start a run.",
+          "type": "string"
+        },
+        "presets": {
+          "description": "Values the loop may type. Never include passwords.",
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Short name, e.g. Title."
+              },
+              "value": {
+                "type": "string",
+                "description": "The full text to type."
+              },
+              "field": {
+                "description": "Hint naming the field it belongs in, e.g. \"the title textbox\".",
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "allow": {
+          "description": "Button labels (substring, case-insensitive) the loop may press without asking, e.g. [\"Create\"]. \"Enter\" allows pressing Enter in any filled field (keyboard submit).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "avoid": {
+          "description": "Element labels to remove from the page entirely.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "maxSteps": {
+          "description": "Default 30.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "maxWallMs": {
+          "description": "Wall-clock budget per call before pausing. Default 45000.",
+          "type": "integer",
+          "minimum": 5000,
+          "maximum": 300000
+        },
+        "runId": {
+          "description": "From a paused result. Resumes that run with `answer`.",
+          "type": "string"
+        },
+        "answer": {
+          "description": "Reply to the pending question when resuming.",
+          "type": "object",
+          "properties": {
+            "questionId": {
+              "type": "string"
+            },
+            "choice": {
+              "description": "An option key from the question, or \"abort\".",
+              "type": "string"
+            },
+            "value": {
+              "description": "For type=value questions: { text }.",
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            "goal": {
+              "description": "Optionally revise the goal.",
+              "type": "string"
+            },
+            "abort": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "questionId"
+          ],
+          "additionalProperties": false
+        },
+        "app": {
+          "description": "App name or bundle id. Resolves the existing app grant; launch it with computer_apps first if it has no window. Use app or root, not both.",
+          "type": "string"
+        },
+        "root": {
+          "description": "Root id from computer_snapshot/computer_apps. Omit to use the existing target.",
+          "type": "string"
+        },
+        "done_when": {
+          "description": "Same conditions as computer_wait_for. Example: {kind:\"valueEquals\",ref:\"@e7\",value:\"cats\"}. Use a ref from the starting snapshot; the run binds it to the observed element so later row insertions do not retarget the condition.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "exists",
+                "notExists",
+                "textEquals",
+                "textContains",
+                "valueEquals"
+              ]
+            },
+            "ref": {
+              "description": "Required for every kind: the target element ref from the starting snapshot.",
+              "type": "string"
+            },
+            "text": {
+              "description": "Required for textEquals/textContains: compare against the element name or value.",
+              "type": "string"
+            },
+            "value": {
+              "description": "Required for valueEquals: the exact element value to wait for.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "description"
       ],
       "additionalProperties": false
     }
@@ -360,12 +516,15 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS: HostActionSuperoneToolDescriptor[
               ]
             },
             "ref": {
+              "description": "Required for every kind: the target element ref from the starting snapshot.",
               "type": "string"
             },
             "text": {
+              "description": "Required for textEquals/textContains: compare against the element name or value.",
               "type": "string"
             },
             "value": {
+              "description": "Required for valueEquals: the exact element value to wait for.",
               "type": "string"
             }
           },
@@ -389,4 +548,4 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS: HostActionSuperoneToolDescriptor[
       "additionalProperties": false
     }
   }
-]
+] satisfies HostActionSuperoneToolDescriptor[]

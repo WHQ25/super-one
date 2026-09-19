@@ -42,7 +42,10 @@ const OBSERVE_SCRIPT = `(() => {
     return referenced || e.getAttribute('aria-label')
       || [...(e.labels || [])].map((l) => name(l, seen)).filter(Boolean).join(' ')
       || (['button', 'submit', 'reset'].includes(e.type) ? e.value : '') || e.getAttribute('alt')
-      || (e.tagName === 'INPUT' ? '' : [...e.childNodes].map((n) => n.nodeType === 3 ? n.textContent : n.nodeType === 1 && n.getAttribute('aria-hidden') !== 'true' ? name(n, seen) : '').join(' ').trim())
+      || (e.tagName === 'INPUT' ? '' : [...e.childNodes].map((n) => n.nodeType === 3 ? n.textContent
+        // A <noscript> holds its markup as a text node, and reading it turns a
+        // lazy-loaded image's fallback into the element's name (allrecipes).
+        : n.nodeType === 1 && !['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE'].includes(n.tagName) && n.getAttribute('aria-hidden') !== 'true' ? name(n, seen) : '').join(' ').trim())
       || e.getAttribute('title') || e.getAttribute('placeholder') || '';
   };
   const roles = ['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'menuitemradio', 'menuitemcheckbox', 'option', 'treeitem', 'combobox', 'textbox', 'searchbox', 'spinbutton'];
@@ -73,23 +76,36 @@ const OBSERVE_SCRIPT = `(() => {
       e.getAttribute('aria-checked'), e.getAttribute('aria-selected'), e.getAttribute('href'),
       (scope?.innerText || '').slice(0, 4000)];
   };
+  // Can a click at this element's centre reach it? Same test the executor applies
+  // before dispatching input; offering an element an open overlay covers (arXiv's
+  // panel over the page's own Search button) makes Jev pick it every turn and the
+  // click refuse every turn, until the budget is gone.
+  const reachable = (c) => {
+    if (!visible(c)) return false;
+    const r = c.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
+    if (r.width <= 0 || r.height <= 0 || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return false;
+    return c.contains(document.elementFromPoint(x, y));
+  };
+  // Design systems hide the real input (opacity 0) behind a styled label that
+  // takes the click (Coursera's filter checkboxes). The label is what can be
+  // clicked; the input still says what it means.
+  const clickTarget = (e) => {
+    if (reachable(e)) return e;
+    for (const l of e.labels || []) if (reachable(l)) return l;
+    return null;
+  };
   const elements = [];
   let omitted = 0;
   for (const e of document.querySelectorAll(selector)) {
-    if (['file', 'hidden'].includes(e.type) || !visible(e) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
-    const r = e.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2, rname = role(e);
-    if (!rname || r.width <= 0 || r.height <= 0 || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue;
-    // Same hit test the executor applies before dispatching input. Offering an
-    // element an open overlay covers (arXiv's search panel over the page's own
-    // Search button) makes Jev pick it every turn and the click refuse every
-    // turn, until the budget is gone.
-    if (!e.contains(document.elementFromPoint(x, y))) continue;
+    if (['file', 'hidden'].includes(e.type) || e.matches(':disabled') || e.closest('[aria-disabled="true"]')) continue;
+    const rname = role(e), hit = rname ? clickTarget(e) : null;
+    if (!hit) continue;
     if (elements.length >= ${MAX_ELEMENTS}) { omitted++; continue; }
     const editable = !e.readOnly && e.getAttribute('aria-readonly') !== 'true' && e.type !== 'password'
       && (['textbox', 'searchbox', 'spinbutton'].includes(rname) || (rname === 'combobox' && ['INPUT', 'TEXTAREA'].includes(e.tagName)) || e.isContentEditable);
     const value = 'value' in e && e.tagName !== 'BUTTON' ? String(e.value ?? '') : (e.isContentEditable || rname === 'combobox' ? (e.innerText || '').trim() : '');
     const item = {
-      node: identity(e), role: rname, label: (name(e) || rname).slice(0, 120), value: value.slice(0, 200),
+      node: identity(hit), role: rname, label: (name(e) || rname).slice(0, 120), value: value.slice(0, 200),
       editable, password: e.type === 'password',
       submit: e.type === 'submit' || (rname === 'button' && !!e.closest('form')),
       disabled: false,

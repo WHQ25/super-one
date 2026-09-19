@@ -26,6 +26,8 @@ export interface TraceStep {
   latencyMs?: { jev?: number; act?: number; observe?: number; wait?: number }
   decision: Record<string, unknown>
   changedPage?: boolean | null
+  /** What the adapter's post-action settle concluded, when it reports one. */
+  settled?: { changed: boolean; fields?: string[]; elements?: number; elementsAfter: number }
   stale?: boolean
 }
 

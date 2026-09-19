@@ -12,6 +12,13 @@ import { buildRequest, type Preset } from './questions'
 import { appendJevTrace, topChoiceProbabilities, traceRequestState, type TraceStep } from './trace'
 import { estimateTokens, type JevRequest, type JevResponse } from './typesafe-client'
 
+/** An adapter's verdict on whether the page reacted to the action it just dispatched. */
+export interface SettleReport {
+  changed: boolean
+  fields?: string[]
+  elements?: number
+}
+
 export interface RunDeps<Page extends RunObservation = RunObservation> {
   ask(request: JevRequest, signal?: AbortSignal): Promise<JevResponse>
   /** Resolve and retain the platform target inside the adapter. */
@@ -28,7 +35,7 @@ export interface RunDeps<Page extends RunObservation = RunObservation> {
    * observation the action was taken on, so an adapter can wait for a change
    * relative to it instead of a fixed delay.
    */
-  settle(page: Page, opts: { node?: number; typed?: boolean }, signal?: AbortSignal): Promise<void>
+  settle(page: Page, opts: { node?: number; typed?: boolean }, signal?: AbortSignal): Promise<SettleReport | void>
   waitReady(timeoutMs: number, signal?: AbortSignal): Promise<boolean>
   /**
    * Jev asked to wait: resolve true as soon as the page differs from `page`,
@@ -106,6 +113,8 @@ export class FastRun<Page extends RunObservation = RunObservation> {
   private sinceLast: string[] = []
   private steps = 0
   private consecutiveWaits = 0
+  /** What the adapter's settle concluded, for the trace. */
+  private lastSettle: SettleReport | void = undefined
   private scrolledSinceChange = false
   private continueDespiteSatisfied = false
   /** Jev called the goal satisfied once; a fresh observation must agree before the run finishes. */
@@ -382,6 +391,8 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       staleRetries = 0
       trace.latencyMs!.act = this.now() - actStart
       trace.changedPage = this.history[this.history.length - 1]?.changedPage
+      if (this.lastSettle) trace.settled = { ...this.lastSettle, elementsAfter: this.lastPage?.elements.length ?? -1 }
+      this.lastSettle = undefined
       this.emit(trace)
 
       const recent = this.history.filter((h) => h.kind !== 'wait').slice(-3)
@@ -426,14 +437,17 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     try {
     if (decision.kind === 'scroll') {
       await this.deps.scroll(page, decision.direction === 'down' ? SCROLL_DELTA : -SCROLL_DELTA, signal)
+      // Wheel scrolling is animated: without settling, the next observation is
+      // taken before the page has moved and every scroll reports no change.
+      this.lastSettle = await this.deps.settle(page, { node: -1 }, signal)
       this.scrolledSinceChange = true
     } else if (decision.kind === 'click') {
       if (clickKind === 'submit') await this.deps.pressEnter(decision.element.node, signal)
       else await this.deps.click(decision.element.node, signal)
-      await this.deps.settle(page, { node: decision.element.node }, signal)
+      this.lastSettle = await this.deps.settle(page, { node: decision.element.node }, signal)
     } else {
       await this.deps.type(decision.element.node, decision.text, signal)
-      await this.deps.settle(page, { node: decision.element.node, typed: true }, signal)
+      this.lastSettle = await this.deps.settle(page, { node: decision.element.node, typed: true }, signal)
     }
     } catch (error) {
       if (error instanceof StaleObservation) this.history.pop()

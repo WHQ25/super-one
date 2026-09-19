@@ -204,14 +204,28 @@ export async function scrollPage(webContentsId: number, page: PageObservation, d
 }
 
 /**
- * In-page wait for the page to differ from `page`: resolves true after two
- * frames once the marker changed (or, after typing into an ARIA combobox,
- * once its options are visible), false when the cap passes unchanged.
- * Checks run `quietMs` after the last DOM mutation and every `tickMs` as a
- * floor, so a page that never goes quiet is still compared.
+ * In-page wait for the page to settle into a state that differs from `page`
+ * (or, after typing into an ARIA combobox, for its options to be visible).
+ *
+ * A difference must hold across a tick before it counts: animated heroes and
+ * rotating promos flip a viewport-text marker for a frame and flip it back,
+ * and returning on one of those observes the page before it has reacted at
+ * all. Once it holds, the observable state itself must stop changing — a menu
+ * that transitions its items into view (apple.com) reveals them without
+ * mutating the DOM, so DOM quiet is not evidence that it finished.
  */
-function changeWaitExpr(page: PageObservation, timeoutMs: number, opts: { node?: number; typed?: boolean; quietMs: number; tickMs: number }): string {
-  return `((seen, timeoutMs) => new Promise((resolve) => {
+export interface SettleOutcome {
+  changed: boolean
+  /** Whether anything differed when it concluded, and how much was on screen. */
+  fields: string[]
+  elements: number
+}
+
+/**
+ * Builds that wait, as an expression evaluated in the page.
+ */
+function changeWaitExpr(page: PageObservation, timeoutMs: number, opts: { node?: number; typed?: boolean; graceMs: number }): string {
+  return `((seen, timeoutMs, graceMs) => new Promise((resolve) => {
     const field = window.__soneJev?.nodes.get(${opts.node ?? -1});
     const autocomplete = ${opts.typed === true} && field?.getAttribute('role') === 'combobox';
     const optionsVisible = () => {
@@ -220,37 +234,73 @@ function changeWaitExpr(page: PageObservation, timeoutMs: number, opts: { node?:
       return roots.flatMap((root) => [...root.querySelectorAll('[role="option"]')])
         .some((e) => { const r = e.getBoundingClientRect(); return r.width && r.height && r.bottom > 0 && r.top < innerHeight; });
     };
-    const changed = () => autocomplete ? optionsVisible() : (() => { const s = ${OBSERVE_SCRIPT}; return !s || JSON.stringify(s.marker) !== seen; })();
-    let done = false, quiet = 0;
-    const observer = new MutationObserver(() => { clearTimeout(quiet); quiet = setTimeout(check, ${opts.quietMs}); });
+    // The marker arrives as a string Node built from a CDP-returned copy, whose
+    // object keys the debugger transport reorders. Both sides are canonicalised
+    // here so the comparison sees data, not key order.
+    const canon = (v) => Array.isArray(v) ? v.map(canon)
+      : v && typeof v === 'object' ? Object.keys(v).sort().reduce((o, k) => { o[k] = canon(v[k]); return o; }, {})
+        : v;
+    const before = JSON.stringify(canon(JSON.parse(seen)));
+    const cheap = () => location.href + '|' + scrollY + '|' + document.title;
+    let done = false, differs = false, mutations = 0, seenMutations = -1;
+    let lastCheap = cheap(), marker = null, stableSince = null, firstDiff = null, elements = -1;
+    const start = performance.now();
+    const observer = new MutationObserver(() => { mutations++; });
     const finish = (result) => {
       if (done) return;
-      done = true; observer.disconnect(); clearTimeout(quiet); clearTimeout(cap); clearInterval(tick);
-      resolve(result);
+      done = true; observer.disconnect(); clearInterval(tick);
+      resolve({ changed: result, elements, fields: differs ? ['marker'] : [] });
     };
-    function check() {
+    const sample = () => {
+      if (autocomplete) { differs = optionsVisible(); return; }
+      const s = ${OBSERVE_SCRIPT};
+      if (!s) { differs = true; marker = null; stableSince = performance.now(); return; }
+      const next = JSON.stringify(canon(s.marker));
+      elements = s.elements.length;
+      differs = next !== before;
+      if (next !== marker) { marker = next; stableSince = performance.now(); }
+    };
+    const tick = setInterval(() => {
       if (done) return;
-      if (changed()) requestAnimationFrame(() => requestAnimationFrame(() => finish(true)));
-    }
-    const cap = setTimeout(() => finish(false), timeoutMs);
-    const tick = setInterval(check, ${opts.tickMs});
+      const now = performance.now();
+      // Before anything changed, sampling is gated on a mutation, a navigation or a
+      // scroll; afterwards the page is polled, because CSS transitions reveal
+      // elements without mutating the DOM and the state must be seen to settle.
+      if (firstDiff !== null || mutations !== seenMutations || cheap() !== lastCheap) {
+        seenMutations = mutations; lastCheap = cheap(); sample();
+      }
+      if (!differs) { firstDiff = null; }
+      else {
+        if (firstDiff === null) firstDiff = now;
+        // Settled once the observable state has held still, or the grace window is spent.
+        else if ((stableSince !== null && now - stableSince >= 200) || now - firstDiff >= graceMs) return finish(true);
+      }
+      if (now - start >= timeoutMs) finish(differs);
+    }, 30);
     observer.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
-    check();
-  }))(${JSON.stringify(JSON.stringify(page.marker))}, ${timeoutMs})`
+  }))(${JSON.stringify(JSON.stringify(page.marker))}, ${timeoutMs}, ${opts.graceMs})`
 }
 
-const ACT_SETTLE_MS = 500
+/**
+ * Menus and panels that animate open take up to a second on a busy page, so the
+ * cap has to outlast them; the grace window bounds what an endlessly animating
+ * page can cost per action.
+ */
+const ACT_SETTLE_MS = 2000
+const ACT_GRACE_MS = 1000
 
 /**
  * After input: wait for the page to react to the action (menus that animate
  * in, suggestion lists, in-page navigation) instead of a fixed two frames.
  * Read-only; a navigation in the middle is not an error.
  */
-export async function settleAfter(webContentsId: number, page: PageObservation, opts: { node?: number; typed?: boolean }): Promise<void> {
+export async function settleAfter(webContentsId: number, page: PageObservation, opts: { node?: number; typed?: boolean }): Promise<SettleOutcome> {
   try {
-    await evaluate(webContentsId, changeWaitExpr(page, ACT_SETTLE_MS, { ...opts, quietMs: 50, tickMs: 100 }), true)
+    return (await evaluate<SettleOutcome>(webContentsId, changeWaitExpr(page, ACT_SETTLE_MS, { ...opts, graceMs: ACT_GRACE_MS }), true))
+      ?? { changed: true, fields: ['unknown'], elements: -1 }
   } catch {
     // navigating — the next observe retries until the document is back
+    return { changed: true, fields: ['navigating'], elements: -1 }
   }
 }
 
@@ -260,7 +310,7 @@ export async function settleAfter(webContentsId: number, page: PageObservation, 
  */
 export async function waitForPageChange(webContentsId: number, page: PageObservation, timeoutMs: number): Promise<boolean> {
   try {
-    return (await evaluate<boolean>(webContentsId, changeWaitExpr(page, timeoutMs, { quietMs: 100, tickMs: 250 }), true)) === true
+    return (await evaluate<SettleOutcome>(webContentsId, changeWaitExpr(page, timeoutMs, { graceMs: ACT_GRACE_MS }), true))?.changed === true
   } catch {
     return true // navigating — the next observe retries until the document is back
   }

@@ -588,11 +588,30 @@ npm 搜索 → 点建议项 → SPA 客户端导航（fetch ≈ 0.8 s 后才 `pu
 2. **低风险点击被置信门槛拦**：arXiv 首页正确的 "Search" 链接 Jev 只给 0.36、HF 的 Tasks 0.49，都被 `read` 0.6 拦成 `uncertain` pause。风险已由 `next_step_risk` 单独判（两例 ≈0.1），点错安全元素只赔一步重观察，pause 却赔主模型一整轮。→ 删掉 click 的置信门槛（`THRESHOLDS.read`），只保留 `next_step_risk ≥ 0.5` 的 risky pause 和 type 的 0.7 门槛。jev-ultrafast 同样从不设门槛。
 3. **折叠导航 Jev 认不出**：GitHub / Apple 窄布局把搜索藏在 `aria-expanded=false` 的汉堡后。→ 候选标签按 8.15 "把动作写进标签"的规律，`expanded=false` 的按钮显示为 "Expand <label>"（`clickVerb`），并加一条 RULE：控件不在页面时先展开折叠导航再滚动或等待。
 
-### 8.18 尚未解决（同批暴露）
+### 8.18 2026-09-19 根因：跨边界比较 marker，settle 与 WAIT 从未真正等待
 
-- **完成检测**：arXiv 实际走到了正确的 `/abs/` 摘要页（目标页），但 `goal_satisfied` 在该页只到 0.45–0.50，未过 0.7，未 done，最终 no-progress 暂停。降阈值会引入误 done，属 `goalSatisfied` 校准与"第一条结果"这类无法从单屏证实的目标的固有张力。
-- **水合竞态**：Apple 的 Menu 是 React globalnav，`readyState=complete` 后处理器仍未挂上，loop 约 1 s 时点击是无效点击（`cdpClick` 与手动探针逐字节相同，手动稍后点击可展开），`changed=False` 后被 stuck 规则永久剔除 → 暂停。候选修法：click 后无变化时先 WAIT 再重观察、重试一次，而不是立即剔除。
-- **窄布局语义**：GitHub 的 "Toggle navigation" 即便标成 Expand + RULE，Jev 仍给 0.18 并选择滚动，没意识到搜索在汉堡里。属 Jev 语义能力边界，非机制问题。
+8.16 / 8.17 的等待全部是空转，直到 apple.com 的"点了 Menu 却报没变化"被追到底。诊断顺序：先把 settle 的结论写进 trace（`settled`），再让它报出差异的 marker 字段，最后把差异的元素**以原始字符串**记录——真相才出现：
+
+```
+was: {"disabled":…,"editable":…,"href":…,"label":"Apple","node":1,…}   ← 字母序
+now: {"node":1,"role":"link","label":"Apple","value":"",…}              ← 插入序
+```
+
+同一份数据，键序不同。Electron 的 `webContents.debugger` 在 `returnByValue` 时按字母序重排对象键，而 settle 比较的是 **Node 侧序列化的字符串**与**页面内序列化的字符串**，于是 `JSON.stringify(s.marker) !== seen` 恒为真：每个动作后 settle 立刻返回"已变化"，Jev 的 WAIT 也立刻返回（arXiv trace 里的 `wait: 7` ms 即是）。
+
+这个 bug 能长期隐藏，是因为 `deps.changed` 与 `isFresh` 比较的两侧都来自 CDP，排序一致因而正确；只有 settle / WAIT 跨了边界。**用裸 WebSocket 直连 CDP 的探针复现不出来**（那条路径保留键序），一度把排查引向"水合竞态"等错误假设。
+
+修法：不跨边界比字符串，在页面内对两侧做同一套递归键排序后再比。
+
+同时修正的两处（都由 Apple 的真实时序逼出）：
+
+- **settle 等的是"可观察状态稳定"，不是 DOM 安静**。Apple 的菜单用 CSS 过渡把条目显现出来，**不产生 mutation**，以 DOM 安静为准会在展开到一半时返回（同一份代码两次跑出 16 与 39 个元素的差异）。改为：差异成立后持续采样 marker，直到它 200 ms 不变，或 `graceMs` 1000 ms 用尽；上限 2000 ms。
+- **滚动之后没有 settle**。`execute()` 里只有 click / type 调 settle，而滚轮是平滑动画，观察发生在滚动落地之前，于是每次滚动都报"无变化"，三次即触发 no-progress——但页面其实一直在滚（探针读到 `scrollY` 已达 6346）。
+
+### 8.19 尚未解决
+
+- **完成检测**：arXiv 走到了正确的 `/abs/` 页，`goal_satisfied` 却只有 0.45–0.50。需在新数据上重新校准（8.18 之前的读数不可用）。
+- **窄布局语义**：GitHub 首页 748 px 下搜索框在 "Toggle navigation" 后面，Jev 给 0.18 并选择滚动。Apple 的同类控件（"Local Nav Open Menu"）最终被选中（0.74），说明标签文字本身比 `expanded` 属性更起作用。
 
 ## 9. 非目标
 
@@ -755,19 +774,19 @@ Verification: Jev/browser surface, the built-in tool catalog and device presente
 
 ### 10.6 browser 范式抽样（Grok 4.6 / high，dev 版，无 `done_when`，面板 748 px）
 
-含 8.16 / 8.17 全部改动后（提交 `a766a53b` stale、`668140c8` WAIT、本批 settle/门槛/Expand）：
+> 8.18 之前的所有抽样读数已作废：settle 与 WAIT 因跨边界比较 marker 而从未真正等待，任何"等待没用"的结论都建立在空转之上。下表只记录 8.18 修复后实测过的任务，其余待重跑。
 
 | 任务 | 结果 | `browser_run` | 主模型 | Jev | 备注 |
 | --- | --- | --- | --- | --- | --- |
-| Wikipedia 三跳（回归） | ✅ done | 1 | 6 calls / 51.5 s / $0.040 | — | |
-| npm 搜 zod → Versions（回归） | ✅ done | 1 | 6 calls / 55.4 s / $0.038 | 6 步，完成页 goal_satisfied 0.83/0.84 两次确认 | 过渡页靠 scroll 的整页新鲜度判 stale 重观察，WAIT 未触发 |
-| Cambridge Dictionary 查词 | ✅ done | 1 | 8 calls / 118.8 s / $0.038 | 4 步 | |
-| arXiv 搜索 → 首条摘要 | △ 走到正确 `/abs/` 页但未判 done | 2（后一次 abort） | 6 calls / 87.8 s / $0.050 | 7 步：Search 链接 0.5（删门槛后才可点）→ WAIT 等搜索页 → 输入 → Search → 点首条 → 摘要页 | 8.18 完成检测：gs 在目标页仅 0.45–0.50 |
-| Hugging Face 筛选+排序 | △ 筛选对（text-classification），排序错（trending 非 downloads） | 3 | 10 calls / 98.9 s / $0.067 | — | |
-| GitHub 搜仓库 → Issues | ✗ 首页 no-progress | 2 | 7 calls / 68.2 s / $0.038 | 2 步：Toggle navigation 标成 Expand 仍只 0.18，选择滚动 | 8.18 窄布局语义 |
-| Apple → MacBook Air → Tech Specs | ✗ 首页 no-progress | 2 | 8 calls / 79.1 s / $0.038 | 2 步：Menu 点击无效（水合竞态）后被剔除 | 8.18 水合竞态 |
+| Apple → MacBook Air → Tech Specs | ✅ done（`/macbook-air/specs/`） | 1 | 7 calls / 131.1 s / $0.0387 | 16 步：Menu → Mac menu → MacBook Air → 8×scroll → Local Nav Open Menu(0.74) → Tech Specs(0.98) → 完成 0.83/0.82 两次确认 | 修复前同一任务两次都卡在首页第 1 步 |
 
-**净读数**：干净完成 3/7，目标达成但未判完成 1（arXiv），部分 1（HF），失败 2（GitHub / Apple）。改动的确救回 arXiv（此前首页即 abort），并把 npm 收敛到 1 次干净调用；剩余失败是 8.18 的三类独立难题，不是补丁能一次抹平的。同批也重申了失败代价：一次 pause→abort 让主模型多花一整轮（60–100 s），窄布局/水合类任务目前用 `browser_run` 反而比逐步 `browser_act` 贵——定位上，`browser_run` 更适合主模型已确认是纯点击/填表流程的委托。
+同一任务在修复过程中的推进（同一 prompt、同一模型）：
+
+| 构建 | 结果 |
+| --- | --- |
+| 8.17 状态（settle 空转） | 第 1 步 click Menu 即报"无变化"，候选被 stuck 规则剔除 → no-progress 暂停 |
+| + marker 规范化 | 导航三步全对，落到 `/macbook-air/`，但滚动全部报"无变化" → 三次即暂停 |
+| + 滚动 settle + 状态稳定判定 | 全程走通并自判完成 |
 
 ## 参考
 

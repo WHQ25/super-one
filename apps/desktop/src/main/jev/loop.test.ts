@@ -267,6 +267,23 @@ describe('FastRun', () => {
     expect(result.since_last).toEqual(['Click [1] Issues (no change)'])
   })
 
+  it('settles after scrolling so an animated wheel scroll is not reported as no change', async () => {
+    const settles: Array<{ node?: number }> = []
+    const { deps } = harness([HOME, CREATED], (request) => {
+      const state = request.state as { page: { url: string } }
+      if (/\/issues\/\d+$/.test(state.page.url)) return { still_loading: noul(0), goal_satisfied: noul(0.95), next_step_risk: noul(0), action: pick('none_useful', actionsOf(request)) }
+      return { still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0), action: pick('scroll_down', actionsOf(request)) }
+    })
+    deps.settle = async (_page, opts) => { settles.push(opts); return { changed: true } }
+    deps.checkDone = async () => false
+    const result = await new FastRun(opts({ maxSteps: 4 }), deps).start()
+    expect(result.status).toBe('done')
+    // One settle for the scroll itself, one for the completion re-observation.
+    expect(settles).toEqual([{ node: -1 }, { node: -1 }])
+    // Without the scroll settle this reads 'Scroll down (no change)'.
+    expect(result.since_last).toEqual(['Scroll down'])
+  })
+
   it('offers a collapsed control as "Expand" and records it that way once clicked', async () => {
     // GitHub at 748 px: the search box is behind a "Toggle navigation" hamburger.
     const NARROW = page([el({ node: 1, role: 'button', label: 'Toggle navigation', expanded: 'false' })], { text: 'Home' })

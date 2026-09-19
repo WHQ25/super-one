@@ -777,12 +777,17 @@ Verification: Jev/browser surface, the built-in tool catalog and device presente
 
 > 8.18 之前的读数已作废：settle 与 WAIT 因跨边界比较 marker 而从未真正等待。下表是修复后逐个跑通的实测。
 
-| 任务 | 结果 | `browser_run` | 主模型 | Jev | 修复前 |
+| 任务 | 结果 | `browser_run` | 主模型 | Jev 步数 / 完成判定 | 修复前 |
 | --- | --- | --- | --- | --- | --- |
-| Apple → MacBook Air → Tech Specs | ✅ done | 1 | 7 calls / 131.1 s / $0.0387 | 16 步；Local Nav Open Menu 0.74 → Tech Specs 0.98；完成 0.83/0.82 | 首页第 1 步即卡住 |
-| arXiv 搜索 → 首条摘要 | ✅ done | 1 | 6 calls / 61.5 s / $0.0515 | 6 步；浮层展开后只剩 2 个候选 → `submit` 回车提交；完成 0.88/0.85 | 覆盖元素死循环，或到了目标页判不出完成 |
-| Hugging Face 筛选 + 排序 | ✅ done（`sort=downloads`） | 1 | 7 calls / 69.1 s / $0.0510 | 8 步；第 7 步走"无动作可做即完成"(0.63)，确认读数 0.93 | 排序错成 trending，3 次调用 |
-| GitHub 搜仓库 → Issues | ✅ done | 1 | 7 calls / 207.9 s / $0.0440 | 11 步；Expand Toggle navigation 0.53→ 搜索框 → 提交 → 仓库 → Issues；完成 0.96 | 首页 no-progress，Toggle navigation 仅 0.16 |
+| Wikipedia 三跳 | ✅ done | 1 | 7 calls / 105.1 s / $0.0533 | 6 步 / 0.95·0.96 | 通过（0.82） |
+| npm 搜 zod → Versions | ✅ done | 1 | 7 calls / 105.6 s / $0.0464 | 5 步 / 0.93·0.94 | 通过（0.83） |
+| Cambridge Dictionary 查词 | ✅ done | 1 | 6 calls / 79.5 s / $0.0603 | 4 步 / 0.96·0.97 | 通过（0.85） |
+| Apple → MacBook Air → Tech Specs | ✅ done | 1 | 7 calls / 131.1 s / $0.0387 | 16 步 / 0.83·0.82 | 首页第 1 步即卡住 |
+| arXiv 搜索 → 首条摘要 | ✅ done | 1 | 6 calls / 61.5 s / $0.0515 | 6 步 / 0.88·0.85 | 覆盖元素死循环 |
+| Hugging Face 筛选 + 排序 | ✅ done（`sort=downloads`） | 1 | 7 calls / 69.1 s / $0.0510 | 8 步 / 0.63→0.93 | 排序错成 trending |
+| GitHub 搜仓库 → Issues | ✅ done | 1 | 7 calls / 207.9 s / $0.0440 | 11 步 / 0.96 | 首页 no-progress |
+
+**7/7 通过，每个任务只用一次 `browser_run`、零暂停。** 三个原本已通过的任务同时回归确认，且完成判定普遍升高（npm 0.83→0.94、Dictionary 0.85→0.97），说明 8.18 的终点状态问法不只救了 arXiv，也让 0.7 阈值的余量变大。一次 Wikipedia 运行在 Jev 判完成（0.96）之后卡在主模型侧未收尾、被 runner 的 480 s 上限掐断，重跑正常——属 harness 偶发，与循环无关。
 
 Apple 一例在修复过程中的推进（同一 prompt、同一模型），可见每一层各自的贡献：
 

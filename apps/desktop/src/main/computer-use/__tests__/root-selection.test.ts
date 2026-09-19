@@ -17,6 +17,7 @@ describe('app root selection', () => {
     expect(resolveUiRoot([strip, other, main])).toBe(main)
     expect(resolveUiRoot([other, strip, main], { bundleId: main.bundleId })).toBe(main)
     expect(resolveUiRoot([other, strip, main], { preferredBundleId: main.bundleId })).toBe(main)
+    expect(selectAppRoot([main, { ...strip, kind: 'dialog', modal: false }])).toBe(main)
   })
 
   it('excludes empty, tiny, hidden and minimized ordinary windows', () => {

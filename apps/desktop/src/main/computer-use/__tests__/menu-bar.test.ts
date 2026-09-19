@@ -4,6 +4,7 @@ import { FakePlatformBackend } from '../platform/fake-backend'
 import { axTreeToOutline } from '../platform/ax-outline'
 import { MacosPlatformAdapter } from '../platform/macos-adapter'
 import type { UiOutlineNode, UiRootIdentity } from '../types'
+import { computerPage } from '../../jev/computer-page'
 
 const flatten = (node: UiOutlineNode): UiOutlineNode[] => [node, ...(node.children ?? []).flatMap(flatten)]
 
@@ -59,6 +60,28 @@ describe('app menu bar in window outlines', () => {
     const next = service.getStateStore().get(result.successorStateId)!
     expect(flatten(next.outline).find((node) => node.ref === menu.ref)?.value).toBe('on')
     expect(flatten(next.outline).find((node) => node.ref === button.ref)?.value).toBeUndefined()
+  })
+
+  it('enumerates closed submenus and directly presses a nested command', async () => {
+    const backend = new FakePlatformBackend([{ app: 'Editor', bundleId: 'com.test.editor', pid: 7,
+      menuBar: { role: 'menuBar', children: [{ role: 'menuBarItem', name: 'Format', children: [
+        { role: 'menu', children: [{ role: 'menuItem', name: 'Font', children: [
+          { role: 'menu', children: [{ role: 'menuItem', name: 'Show Fonts',
+            bounds: { x: 0, y: 0, width: 0, height: 0 },
+            opensModal: { title: 'Fonts', kind: 'window', buttonName: 'Close' } }] },
+        ] }] },
+      ] }] },
+      windows: [{ title: 'Document', tree: { role: 'window' } }],
+    }])
+    const service = new ComputerUseService({ adapter: backend, bypassPolicy: true })
+    service.policy.grantSession({ app: 'Editor', bundleId: 'com.test.editor', tier: 'full' })
+    const observation = await service.observe(undefined, 'semantic')
+    const command = flatten(observation.outline).find((node) => node.name === 'Show Fonts')!
+    expect(command.nativeTarget?.scope).toBe('menuBar')
+    expect(computerPage(observation, service).elements).toContainEqual(expect.objectContaining({ label: 'Show Fonts', clickable: true }))
+    const result = await service.act(observation.stateId, [{ type: 'press', ref: command.ref }], { delivery: 'semantic' })
+    expect(result.successorRoot?.title).toBe('Fonts')
+    expect((await service.waitFor(observation.stateId, { kind: 'newRoot', title: 'Fonts' }, 0)).status).toBe('verified')
   })
 
   it.each(['menu', 'dialog'] as const)('keeps %s obstruction scoped to the actual target', async (blocker) => {

@@ -1,8 +1,14 @@
 import { ComputerUseError, type UiRootIdentity } from './types'
 
+/** Exclude tiny window chrome while retaining real menu/popover surfaces. */
+export function isUsableAppRoot(root: UiRootIdentity): boolean {
+  return root.visible && !root.minimized && (root.modal || root.kind === 'menu' || root.kind === 'popover'
+    || (root.bounds.width >= 80 && root.bounds.height >= 80))
+}
+
 /** Pick the app's content window, not a screen-sharing strip or other tiny helper. */
 export function selectAppRoot(roots: UiRootIdentity[]): UiRootIdentity | undefined {
-  const visible = roots.filter((root) => root.visible && !root.minimized)
+  const visible = roots.filter(isUsableAppRoot)
   const modal = visible.find((root) => root.modal && root.focused) ?? visible.find((root) => root.modal)
   if (modal) return modal
   // Open menus/popovers remain the active surface even when smaller than a window.

@@ -1,4 +1,4 @@
-import { selectAppRoot } from './root-selection'
+import { isUsableAppRoot, selectAppRoot } from './root-selection'
 import type { Condition, UiOutlineNode, UiRootIdentity } from './types'
 
 export type NewRootCondition = Extract<Condition, { kind: 'newRoot' }>
@@ -6,7 +6,7 @@ export type NewRootCondition = Extract<Condition, { kind: 'newRoot' }>
 export function newAppRoots(base: UiRootIdentity, knownIds: readonly string[], roots: UiRootIdentity[]): UiRootIdentity[] {
   const known = new Set(knownIds)
   return roots.filter((root) => root.bundleId === base.bundleId && root.pid === base.pid
-    && !known.has(root.rootId) && root.visible && !root.minimized)
+    && !known.has(root.rootId) && isUsableAppRoot(root))
 }
 
 export function newRootMatches(condition: NewRootCondition, root: UiRootIdentity, outline?: UiOutlineNode): boolean {

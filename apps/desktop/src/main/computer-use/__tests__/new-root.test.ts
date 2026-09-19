@@ -71,6 +71,8 @@ describe('native newRoot completion', () => {
     const { service } = fixture()
     const { root } = await service.observe(undefined, 'semantic')
     expect(newAppRoots(root, [], [{ ...root, visible: false }, { ...root, minimized: true }])).toEqual([])
+    const sharingStrip = { ...root, kind: 'dialog' as const, title: 'Window', focused: true, modal: false, bounds: { x: 0, y: 0, width: 66, height: 20 } }
+    expect(newAppRoots(root, [], [sharingStrip])).toEqual([])
     expect(newRootMatches({ kind: 'newRoot', text: 'secret' }, root, { ref: '@e1', role: 'textField', secure: true, value: 'secret' })).toBe(false)
   })
 

@@ -160,9 +160,8 @@ func axPerform(
 
     let resolved = try resolveTarget(root: rootEl, requestedIndex: index, hint: targetHint)
     let el = resolved.element
-    if source == "menuBar", !axMenuElementVisible(el) {
-        throw HelperError(code: "AX_STALE_REF", message: "The observed menu item is no longer visible")
-    }
+    // Closed menu commands remain actionable through AXPress. Identity hints
+    // above still reject a changed command; visibility is not a prerequisite.
 
     let beforeValue = axElementValue(el)
     let beforeName = axString(el, kAXTitleAttribute as String)

@@ -113,14 +113,6 @@ func axMenuBar(_ app: AXUIElement) -> AXUIElement? {
     axAttributeElement(app, kAXMenuBarAttribute as String)
 }
 
-func axMenuElementVisible(_ element: AXUIElement) -> Bool {
-    if axBool(element, "AXVisible") == false { return false }
-    let role = axRole(element)
-    if role == "AXMenuBar" || role == "AXMenuBarItem" { return true }
-    guard let frame = axFrame(element) else { return false }
-    return frame.width > 1 && frame.height > 1
-}
-
 // Not private: `Mirror.swift` reads the same attributes off the mirroring window.
 func axCGPoint(_ el: AXUIElement, _ attr: String) -> CGPoint? {
     var raw: CFTypeRef?
@@ -275,20 +267,13 @@ private func nodeDicts(
     depth: Int,
     insideWebArea: Bool,
     coordinateTransform: AxCoordinateTransform,
-    focusedElement: AXUIElement?,
-    visibleMenusOnly: Bool = false
+    focusedElement: AXUIElement?
 ) -> [[String: Any]] {
     if state.count >= state.limits.maxNodes {
         state.truncated = true
         return []
     }
 
-    // Closed menus may expose their entire command tree. Keep its DFS slots
-    // but never offer invisible commands as currently observed targets.
-    if visibleMenusOnly && axRole(el) == "AXMenu" && !axMenuElementVisible(el) {
-        state.index += axSubtreeSize(el)
-        return []
-    }
     state.index += 1
     let idx = state.index
 
@@ -343,8 +328,7 @@ private func nodeDicts(
                 el: child, state: state, depth: depth + 1,
                 insideWebArea: childrenInWebArea,
                 coordinateTransform: coordinateTransform,
-                focusedElement: focusedElement,
-                visibleMenusOnly: visibleMenusOnly
+                focusedElement: focusedElement
             ))
         }
     } else {
@@ -843,9 +827,10 @@ func axTreeSnapshot(
     let menuState = AxWalkState(limits: AxWalkLimits(maxNodes: min(250, max(1, maxNodes / 3)), maxDepth: max(1, maxDepth)))
     let menu: [String: Any]?
     if axRootId == nil, axRole(rootEl) == "AXWindow", let menuBar = axMenuBar(app) {
+        // Cocoa exposes command subtrees while menus are closed. Their leaf
+        // AXPress actions work directly, including for background applications.
         menu = nodeDicts(el: menuBar, state: menuState, depth: 0, insideWebArea: false,
-                         coordinateTransform: coordinateTransform, focusedElement: focused,
-                         visibleMenusOnly: true).first
+                         coordinateTransform: coordinateTransform, focusedElement: focused).first
     } else {
         menu = nil
     }

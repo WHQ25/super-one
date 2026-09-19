@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import { ComputerUseGrantPrompt } from "./ComputerUseGrantPrompt";
 import { ToolBlock } from "./ToolBlock";
 import type { ComputerOp } from "./computer-tool-display";
+import type { JevRunAction } from "@superone/shared/agent-types";
+import { RunSeed, seedRun } from "./run-story-seed";
 
 function StoryShell({
   children,
@@ -414,6 +416,23 @@ export const ComputerObserve: Story = {
   ),
 };
 
+const RUN_ACTIONS: JevRunAction[] = [
+  { op: 'click', target: 'Notes' },
+  { op: 'click', target: 'New Note' },
+  { op: 'type', target: 'Title' },
+  { op: 'scroll', target: 'down' },
+  { op: 'press', target: 'Return' },
+];
+
+function runResult(status: 'paused' | 'done' | 'aborted', runId: string): string {
+  return JSON.stringify({
+    status,
+    runId,
+    steps: 5,
+    snapshot: { target: { app: 'Notes', bundleId: 'com.apple.Notes' } },
+  });
+}
+
 export const FastRunStates: Story = {
   render: () => (
     <StoryShell width={360}>
@@ -424,4 +443,48 @@ export const FastRunStates: Story = {
       {tool('run', { description: 'Fill the scratch note title', result: '[Error] Jev fast loop is disabled', isError: true })}
     </StoryShell>
   ),
+};
+
+/** A run still going: the collapsed row counts the actions it has taken. */
+export const FastRunRunning: Story = {
+  render: () => {
+    const seed = () => seedRun('computer', 'rcomputer1', RUN_ACTIONS.slice(0, 3));
+    return (
+      <StoryShell width={420}>
+        <RunSeed seed={seed} />
+        <Note>Each row reads the way the matching computer_act row would.</Note>
+        {tool('run', { description: 'Fill the scratch note title', status: 'streaming' })}
+      </StoryShell>
+    );
+  },
+};
+
+/** Finished: the block finds its run through the runId in its own result. */
+export const FastRunDone: Story = {
+  render: () => {
+    const seed = () => seedRun('computer', 'rcomputer1', RUN_ACTIONS, { active: false });
+    return (
+      <StoryShell width={420}>
+        <RunSeed seed={seed} />
+        {tool('run', { description: 'Fill the scratch note title', result: runResult('done', 'rcomputer1') })}
+      </StoryShell>
+    );
+  },
+};
+
+/** Paused, narrow, and long: the list is bounded and follows its tail. */
+export const FastRunPausedAndLong: Story = {
+  render: () => {
+    const long: JevRunAction[] = Array.from({ length: 30 }, (_, i) => (
+      i % 4 === 3 ? { op: 'scroll', target: 'down' } : { op: 'click', target: `Row ${i + 1}` }
+    ));
+    const seed = () => seedRun('computer', 'rlongcomputer', long, { active: false });
+    return (
+      <StoryShell width={340}>
+        <RunSeed seed={seed} />
+        <Note>Bounded height with the tail in view, like a subagent's nested calls.</Note>
+        {tool('run', { description: 'Work through the long settings list', result: runResult('paused', 'rlongcomputer') })}
+      </StoryShell>
+    );
+  },
 };

@@ -439,10 +439,14 @@ it('renders fast run phases without treating a pause as an error', () => {
   expect(getComputerOp('computer_run')).toBe('run')
   expect(computerVerbKey('run', {}, true)).toBe('running')
   for (const status of ['paused', 'done', 'aborted'] as const) {
-    const info = parseComputerResult('run', JSON.stringify({ status, snapshot: { target: { app: 'Notes', bundleId: 'com.apple.Notes' } } }), false)
+    const info = parseComputerResult('run', JSON.stringify({ status, runId: 'rc1', snapshot: { target: { app: 'Notes', bundleId: 'com.apple.Notes' } } }), false)
     expect(info.runStatus).toBe(status)
+    // The block finds the actions it should list through this id.
+    expect(info.runId).toBe('rc1')
     expect(info.status).not.toBe('error')
-    expect(computerVerbKey('run', {}, false, info.runStatus)).toBe(status === 'paused' ? 'runPaused' : status === 'done' ? 'runDone' : 'runAborted')
+    // The name stays put whatever became of the run; the status reads on the right.
+    expect(computerVerbKey('run', {}, false)).toBe('run')
+    expect(computerVerbKey('run', {}, false)).not.toBe(`run${status}`)
     expect(info.bundleId).toBe('com.apple.Notes')
   }
 })

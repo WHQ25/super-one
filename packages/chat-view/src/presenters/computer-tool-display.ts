@@ -34,6 +34,8 @@ export interface ComputerResultInfo {
   title?: string
   stateId?: string
   runStatus?: 'paused' | 'done' | 'aborted'
+  /** Which run this block belongs to, so the chat can show the steps it took. */
+  runId?: string
   outcome?: ComputerOutcome
   waitStatus?: ComputerWaitStatus
   counts?: {
@@ -199,12 +201,13 @@ export function computerVerbKey(
   op: ComputerOp,
   params: Record<string, unknown>,
   streaming = false,
-  runStatus?: ComputerResultInfo['runStatus'],
 ): string {
   if (op === 'memory_read' || op === 'memory_write') {
     return `memory.${op === 'memory_read' ? 'read' : params.status === 'deprecated' ? 'archive' : params.status === 'stable' ? 'restore' : 'write'}.${streaming ? 'streaming' : 'done'}`
   }
-  if (op === 'run') return streaming ? 'running' : runStatus === 'paused' ? 'runPaused' : runStatus === 'aborted' ? 'runAborted' : runStatus === 'done' ? 'runDone' : 'run'
+  // A run keeps its own name whatever became of it; where it stopped is a
+  // status, and statuses read on the right like every other tool's.
+  if (op === 'run') return streaming ? 'running' : 'run'
   if (op === 'apps') {
     const action =
       params.action === 'focus' || params.action === 'launch'
@@ -633,6 +636,7 @@ export function parseComputerResult(
     const snapshot = asRecord(obj.snapshot)
     info = { status: obj.status === 'done' ? 'ok' : 'neutral',
       runStatus: obj.status === 'paused' || obj.status === 'done' || obj.status === 'aborted' ? obj.status : undefined,
+      ...(typeof obj.runId === 'string' ? { runId: obj.runId } : {}),
       ...rootIdentity(snapshot?.target), stateId: typeof snapshot?.stateId === 'string' ? snapshot.stateId : undefined,
     }
   } else if (op === 'snapshot') {

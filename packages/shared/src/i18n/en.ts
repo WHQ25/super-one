@@ -2526,6 +2526,10 @@ export type Messages = {
       computer: {
         run: string
         running: string
+        runActions_one: string
+        runActions_other: string
+        scrollUp: string
+        scrollDown: string
         runPaused: string
         runDone: string
         runAborted: string
@@ -2631,6 +2635,10 @@ export type Messages = {
       device: {
         run: string
         runRunning: string
+        runActions_one: string
+        runActions_other: string
+        swipeUp: string
+        swipeDown: string
         runPaused: string
         runDone: string
         runAborted: string
@@ -6424,8 +6432,12 @@ export const en: Messages = {
         mockBody: 'Body',
       },
       computer: {
-        run: 'Run Goal',
-        running: 'Pursuing goal',
+        run: 'Operate',
+        running: 'Operating',
+        runActions_one: '{{count}} action',
+        runActions_other: '{{count}} actions',
+        scrollUp: 'up',
+        scrollDown: 'down',
         runPaused: 'Paused for a Decision',
         runDone: 'Goal Completed',
         runAborted: 'Run Stopped',
@@ -6529,8 +6541,12 @@ export const en: Messages = {
         revealTab: 'Show in terminal panel',
       },
       device: {
-        run: 'Run Goal',
-        runRunning: 'Pursuing goal',
+        run: 'Operate',
+        runRunning: 'Operating',
+        runActions_one: '{{count}} action',
+        runActions_other: '{{count}} actions',
+        swipeUp: 'up',
+        swipeDown: 'down',
         runPaused: 'Paused for a Decision',
         runDone: 'Goal Completed',
         runAborted: 'Run Stopped',

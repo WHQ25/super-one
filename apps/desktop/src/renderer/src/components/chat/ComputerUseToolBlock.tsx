@@ -4,6 +4,7 @@ import {
   type ComputerUseToolBlockPresenterProps,
 } from '@superone/chat-view/presenters/ComputerUseToolBlock'
 import { useAppIcon } from '@/hooks/use-app-icon'
+import { useJevRunActions } from '@/hooks/use-jev-run-actions'
 import { getStallColor, type StallLevel } from '@/lib/stall-utils'
 import { ActionRecordingView, parseActionRecording } from './ActionRecordingView'
 import {
@@ -20,6 +21,7 @@ interface ComputerUseToolBlockProps extends Omit<
   | 'renderScreenshot'
   | 'renderResult'
   | 'recording'
+  | 'runActions'
 > {
   stallLevel: StallLevel
 }
@@ -50,6 +52,7 @@ function DesktopComputerUseToolBlock({
   )
   const appIcon = useAppIcon(bundleId)
   const recording = useMemo(() => parseActionRecording(result), [result])
+  const runActions = useJevRunActions(op === 'run', info.runId)
 
   return (
     <ComputerUseToolBlockPresenter
@@ -72,6 +75,7 @@ function DesktopComputerUseToolBlock({
       )}
       renderResult={(text) => <ComputerResultView text={text} />}
       recording={recording ? <ActionRecordingView recording={recording} /> : undefined}
+      runActions={runActions}
     />
   )
 }

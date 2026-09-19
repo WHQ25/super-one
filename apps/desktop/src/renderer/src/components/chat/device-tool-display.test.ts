@@ -385,10 +385,14 @@ describe('device fast-loop display', () => {
   it('routes run results and renders each terminal or paused status without preset values', () => {
     expect(getDeviceOp('device_run')).toBe('run')
     expect(deviceVerbKey('run', {}, true)).toBe('runRunning')
-    for (const [status, verb] of [['paused', 'runPaused'], ['done', 'runDone'], ['aborted', 'runAborted']] as const) {
-      const result = parseDeviceResult('run', JSON.stringify({ status, snapshot: { target: { device: 'Phone' } } }), false)
+    for (const status of ['paused', 'done', 'aborted'] as const) {
+      const result = parseDeviceResult('run', JSON.stringify({ status, runId: 'rd1', snapshot: { target: { device: 'Phone' } } }), false)
       expect(result.device).toBe('Phone')
-      expect(deviceVerbKey('run', {}, false, result.runStatus)).toBe(verb)
+      expect(result.runStatus).toBe(status)
+      // The block finds the actions it should list through this id.
+      expect(result.runId).toBe('rd1')
+      // The name stays put whatever became of the run; the status reads on the right.
+      expect(deviceVerbKey('run', {}, false)).toBe('run')
     }
     expect(deviceInputSummary('run', { goal: 'Open Settings', presets: [{ value: 'private' }] })).toBe('Open Settings')
     expect(parseDeviceResult('run', '[Error] disabled', true).status).toBe('error')

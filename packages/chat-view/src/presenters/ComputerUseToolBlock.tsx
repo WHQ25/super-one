@@ -17,6 +17,8 @@ import {
 } from './computer-tool-display'
 import { ToolScreenshotViewPresenter } from './ToolScreenshotView'
 import { ToolName, ToolRow, ToolSummary, type ToolRowTone } from './ToolRow'
+import { RunActionCount, RunActionRows, type RunActionVocabulary } from './RunActions'
+import type { JevRunAction } from '@superone/shared/agent-types'
 
 export interface ComputerUseToolBlockPresenterProps {
   op: ComputerOp
@@ -34,8 +36,22 @@ export interface ComputerUseToolBlockPresenterProps {
   renderScreenshot?: (path: string, label: string, unavailableLabel: string) => ReactNode
   renderResult?: (text: string) => ReactNode
   recording?: ReactNode
+  /** computer_run only: the actions the loop has taken so far, oldest first. */
+  runActions?: JevRunAction[]
   onExpandedChange?: (expanded: boolean) => void
   pendingDetails?: ReactNode
+}
+
+/** A run on the desktop speaks the computer tools' own verbs. */
+const RUN_VOCAB: RunActionVocabulary = {
+  click: 'chat.toolBlock.computer.click',
+  type: 'chat.toolBlock.computer.type',
+  press: 'chat.toolBlock.computer.press',
+  scroll: 'chat.toolBlock.computer.scroll',
+  wait: 'chat.toolBlock.computer.waitFor',
+  scrollUp: 'chat.toolBlock.computer.scrollUp',
+  scrollDown: 'chat.toolBlock.computer.scrollDown',
+  count: 'chat.toolBlock.computer.runActions',
 }
 
 function defaultResult(text: string) {
@@ -78,6 +94,12 @@ function resultSummary(
         count: info.counts.matches,
       }),
       right: '',
+    }
+  }
+  if (op === 'run' && info.runStatus) {
+    return {
+      middle: '',
+      right: t(`chat.toolBlock.computer.run${info.runStatus === 'paused' ? 'Paused' : info.runStatus === 'aborted' ? 'Aborted' : 'Done'}`),
     }
   }
   if (op === 'act' && info.outcome) {
@@ -124,6 +146,7 @@ function ComputerUseToolBlockOperation({
   renderScreenshot,
   renderResult = defaultResult,
   recording,
+  runActions,
   onExpandedChange,
   pendingDetails,
 }: ComputerUseToolBlockPresenterProps) {
@@ -133,7 +156,7 @@ function ComputerUseToolBlockOperation({
     [op, result, isError, params],
   )
   const verb = t(
-    `chat.toolBlock.computer.${computerVerbKey(op, params, isStreaming, info.runStatus)}`,
+    `chat.toolBlock.computer.${computerVerbKey(op, params, isStreaming)}`,
   )
   const description =
     typeof params.description === 'string' ? params.description.trim() : ''
@@ -160,12 +183,16 @@ function ComputerUseToolBlockOperation({
       : parsedSummary.right ||
         (description && op === 'query' ? parsedSummary.middle : '')
   const screenshotAsPrimary = hasScreenshot && !primary
+  const runRows = op === 'run' && runActions && runActions.length > 0 ? runActions : null
   // Header expand reveals the body. With a screenshot, body shows image + a
   // nested collapsed JSON row; without one, body is the full PrettyJSON.
+  // A run opens whenever it has steps to show, in flight or finished.
   const expandable =
     allowExpand
-    && !isStreaming
-    && (pendingDetails != null || (!!result && (failed || hasScreenshot || isReadComputerOp(op, params) || op === 'act')))
+    && (runRows
+      ? true
+      : !isStreaming
+        && (pendingDetails != null || (!!result && (failed || hasScreenshot || isReadComputerOp(op, params) || op === 'act'))))
 
   return (
     <ToolRow
@@ -175,7 +202,13 @@ function ComputerUseToolBlockOperation({
       mountDetails="expanded"
       detailsClassName="px-2 pb-1.5"
       onExpandedChange={onExpandedChange}
-      details={expandable ? (
+      details={runRows ? (
+        <RunActionRows
+          actions={runRows}
+          icon={identityIcon ?? <MousePointer2 className="size-3 shrink-0 text-muted-foreground" />}
+          vocab={RUN_VOCAB}
+        />
+      ) : expandable ? (
         <div className="flex flex-col gap-1.5">
           {hasScreenshot && info.imagePath && (
             renderScreenshot?.(
@@ -197,6 +230,7 @@ function ComputerUseToolBlockOperation({
       ) : undefined}
       trailing={(
         <div className="flex shrink-0 items-center gap-1.5">
+          <RunActionCount count={runRows && isStreaming ? runRows.length : 0} vocab={RUN_VOCAB} />
           {hasScreenshot && !screenshotAsPrimary && (
             <ImageIcon
               className="size-3 text-muted-foreground/70"

@@ -1,7 +1,7 @@
 import { InteractionMemoryToolBlock } from './InteractionMemoryToolBlock'
 import { useCallback, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Download, Globe, ImageIcon, MousePointer2, Video } from 'lucide-react'
+import { Download, Globe, ImageIcon, Video } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
 import { BrowserListDownloadsViewPresenter } from './BrowserListDownloadsView'
@@ -19,7 +19,7 @@ import {
   type BrowserPageToolsBlockPresenterProps,
 } from './BrowserPageTools'
 import type { JevRunAction } from '@superone/shared/agent-types'
-import { SubagentScrollArea } from './SubagentBlock'
+import { RunActionCount, RunActionRows, type RunActionVocabulary } from './RunActions'
 import { ToolName, ToolRow, ToolSummary, type ToolRowTone } from './ToolRow'
 
 export interface BrowserDownloadRuntime {
@@ -171,6 +171,18 @@ export function BrowserToolBlockPresenter(props: BrowserToolBlockPresenterProps)
   )
 }
 
+/** A run on a page speaks the browser tools' own verbs. */
+const RUN_VOCAB: RunActionVocabulary = {
+  click: 'chat.toolBlock.browser.click',
+  type: 'chat.toolBlock.browser.type',
+  press: 'chat.toolBlock.browser.press',
+  scroll: 'chat.toolBlock.browser.scroll',
+  wait: 'chat.toolBlock.browser.waitFor',
+  scrollUp: 'chat.toolBlock.browser.scrollUp',
+  scrollDown: 'chat.toolBlock.browser.scrollDown',
+  count: 'chat.toolBlock.browser.runActions',
+}
+
 function BrowserOperationBlock({
   op,
   params,
@@ -227,7 +239,7 @@ function BrowserOperationBlock({
         && (isMockDetail || pendingDetails != null || (!!result && (isReadBrowserOp(op) || info.status === 'error' || denied || hasScreenshot || !!recording))))
   let details: ReactNode = null
   if (runRows) {
-    details = <RunActionList actions={runRows} renderIcon={renderIcon} />
+    details = <RunActionRows actions={runRows} icon={renderIcon('globe')} vocab={RUN_VOCAB} />
   } else if (recording) {
     details = recording
   } else if (hasScreenshot && renderScreenshot) {
@@ -271,15 +283,7 @@ function BrowserOperationBlock({
       onExpandedChange={onExpandedChange}
       trailing={(
         <div className="flex shrink-0 items-center gap-1.5">
-          {runCount ? (
-            <span className="flex shrink-0 items-center gap-0.5 text-muted-foreground/70">
-              <MousePointer2
-                className="size-3"
-                aria-label={t('chat.toolBlock.browser.runActions', { count: runCount })}
-              />
-              {runCount}
-            </span>
-          ) : null}
+          <RunActionCount count={runCount} vocab={RUN_VOCAB} />
           {rightCount ? <span className="text-muted-foreground/70">{rightCount}</span> : null}
           {recording ? <Video className="size-3 text-muted-foreground/70" aria-label="Action recording" /> : null}
           {isStreaming ? elapsed(elapsedSeconds, elapsedClassName) : null}
@@ -295,35 +299,6 @@ function BrowserOperationBlock({
       ) : middle ? <ToolSummary>{middle}</ToolSummary> : null}
     </ToolRow>
   )
-}
-
-/**
- * What a run did, one row per action, worded exactly as the matching
- * single-action call would be. A long run is bounded and follows its tail, the
- * way a subagent's nested calls are.
- */
-function RunActionList({ actions, renderIcon }: { actions: JevRunAction[]; renderIcon: (kind: 'globe' | 'download') => ReactNode }): ReactNode {
-  const { t } = useTranslation()
-  return (
-    <SubagentScrollArea maxHeightClass="max-h-40" className="tool-rows space-y-0.5">
-      {actions.map((action, i) => (
-        <ToolRow key={i} icon={renderIcon('globe')} showStatusBadge={false}>
-          <ToolName>{t(`chat.toolBlock.browser.${runActionVerbKey(action)}`)}</ToolName>
-          {action.target ? <ToolSummary>{runActionTarget(action, t)}</ToolSummary> : null}
-        </ToolRow>
-      ))}
-    </SubagentScrollArea>
-  )
-}
-
-/** Scrolling has no element; its direction reads as the target instead. */
-function runActionTarget(action: JevRunAction, t: (key: string) => string): string {
-  if (action.op !== 'scroll') return action.target ?? ''
-  return action.target === 'up' ? t('chat.toolBlock.browser.scrollUp') : t('chat.toolBlock.browser.scrollDown')
-}
-
-function runActionVerbKey(action: JevRunAction): string {
-  return action.op === 'wait' ? 'waitFor' : browserVerbKey(action.op)
 }
 
 function BrowserDownloadBlock({

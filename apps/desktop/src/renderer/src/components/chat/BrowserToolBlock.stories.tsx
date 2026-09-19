@@ -1,6 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ReactElement, ReactNode } from 'react'
-import { useLayoutEffect } from 'react'
 import { ToolBlock } from './ToolBlock'
 import type { BrowserOp } from './browser-tool-display'
 import {
@@ -8,11 +7,9 @@ import {
   createDefaultProjectState,
   useChatStore,
 } from '@/stores/chat'
+import { RunSeed, SB_PROJECT, SB_SESSION, seedRun as seedPlatformRun } from './run-story-seed'
 import type { JevRunAction } from '@superone/shared/agent-types'
 import { BROWSER_LEGACY_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
-
-const SB_PROJECT = '__storybook__'
-const SB_SESSION = 'sb'
 
 function StoryShell({ children, width = 720 }: { children: ReactNode; width?: number }) {
   return (
@@ -75,29 +72,8 @@ function toolByName(name: string, input: Record<string, unknown>, result?: strin
   )
 }
 
-/**
- * Seeds store state before the blocks below it read it. Writing during render
- * leaves the first commit reading the previous snapshot, so the seeded run
- * never reaches the block.
- */
-function Seed({ seed }: { seed: () => void }): null {
-  useLayoutEffect(seed, [seed])
-  return null
-}
-
-/** Seeds what a run has reported so far, the way the loop's host events would. */
-function seedRun(runId: string, actions: JevRunAction[], opts: { active?: boolean } = {}): void {
-  const session = createDefaultPerSessionState()
-  session.jevRuns = { [runId]: { platform: 'browser', actions } }
-  session._activeJevRunId = opts.active === false ? null : runId
-  const project = createDefaultProjectState()
-  project._activeSessionId = SB_SESSION
-  project._sessions = { [SB_SESSION]: session }
-  useChatStore.setState({
-    activeProject: SB_PROJECT,
-    projectSessions: { [SB_PROJECT]: project },
-  })
-}
+const seedRun = (runId: string, actions: JevRunAction[], opts?: { active?: boolean }) =>
+  seedPlatformRun('browser', runId, actions, opts)
 
 const RUN_ACTIONS: JevRunAction[] = [
   { op: 'click', target: 'Menu' },
@@ -605,7 +581,7 @@ export const BrowserRunRunning: Story = {
     const seed = () => seedRun('r1b3edbf0', RUN_ACTIONS.slice(0, 3))
     return (
       <StoryShell>
-        <Seed seed={seed} />
+        <RunSeed seed={seed} />
         <Section title="browser_run · running">
           <Note>Each row reads the way the matching browser_act row would; the loop's step numbers stay in the trace.</Note>
           <ToolBlock
@@ -625,7 +601,7 @@ export const BrowserRunDone: Story = {
     const seed = () => seedRun('r1b3edbf0', RUN_ACTIONS, { active: false })
     return (
       <StoryShell>
-        <Seed seed={seed} />
+        <RunSeed seed={seed} />
         <Section title="browser_run · done">
           <ToolBlock
             toolName="mcp__superone__browser_run"
@@ -648,7 +624,7 @@ export const BrowserRunPausedAndLong: Story = {
     const seed = () => seedRun('rlong', long, { active: false })
     return (
       <StoryShell width={380}>
-        <Seed seed={seed} />
+        <RunSeed seed={seed} />
         <Section title="browser_run · paused, narrow, 30 actions">
           <Note>Bounded height with the tail in view, like a subagent's nested calls.</Note>
           <ToolBlock
@@ -669,7 +645,7 @@ export const BrowserRunNoActions: Story = {
     const seed = () => seedRun('rempty', [], { active: false })
     return (
       <StoryShell>
-        <Seed seed={seed} />
+        <RunSeed seed={seed} />
         <Section title="browser_run · nothing done">
           <ToolBlock
             toolName="mcp__superone__browser_run"

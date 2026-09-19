@@ -3,6 +3,8 @@ import type { ReactNode } from 'react'
 import { DeviceToolBlock } from './DeviceToolBlock'
 import { ToolBlock } from './ToolBlock'
 import type { DeviceOp } from './device-tool-display'
+import type { JevRunAction } from '@superone/shared/agent-types'
+import { RunSeed, seedRun } from './run-story-seed'
 
 function StoryShell({ children, width = 720 }: { children: ReactNode; width?: number }) {
   return (
@@ -412,4 +414,65 @@ export const FastRunStates: Story = {
       {tool('run', { description: 'Open the device information page', result: '[Error] This session controls no device', isError: true })}
     </StoryShell>
   ),
+}
+
+const RUN_ACTIONS: JevRunAction[] = [
+  { op: 'click', target: 'Settings' },
+  { op: 'scroll', target: 'down' },
+  { op: 'click', target: 'General' },
+  { op: 'click', target: 'About' },
+  { op: 'type', target: 'Name' },
+]
+
+function runResult(status: 'paused' | 'done' | 'aborted', runId: string): string {
+  return JSON.stringify({
+    status,
+    runId,
+    steps: 5,
+    snapshot: { target: { device: 'iPhone 17 Pro Max' } },
+  })
+}
+
+/** A run still going: the collapsed row counts the actions it has taken. */
+export const FastRunRunning: Story = {
+  render: () => {
+    const seed = () => seedRun('device', 'rdevice1', RUN_ACTIONS.slice(0, 3))
+    return (
+      <StoryShell width={420}>
+        <RunSeed seed={seed} />
+        <Note>Each row reads the way the matching device_act row would — a phone taps and swipes.</Note>
+        {tool('run', { description: 'Open the device information page', status: 'streaming' })}
+      </StoryShell>
+    )
+  },
+}
+
+/** Finished: the block finds its run through the runId in its own result. */
+export const FastRunDone: Story = {
+  render: () => {
+    const seed = () => seedRun('device', 'rdevice1', RUN_ACTIONS, { active: false })
+    return (
+      <StoryShell width={420}>
+        <RunSeed seed={seed} />
+        {tool('run', { description: 'Open the device information page', result: runResult('done', 'rdevice1') })}
+      </StoryShell>
+    )
+  },
+}
+
+/** Paused, narrow, and long: the list is bounded and follows its tail. */
+export const FastRunPausedAndLong: Story = {
+  render: () => {
+    const long: JevRunAction[] = Array.from({ length: 30 }, (_, i) => (
+      i % 4 === 3 ? { op: 'scroll', target: 'up' } : { op: 'click', target: `Row ${i + 1}` }
+    ))
+    const seed = () => seedRun('device', 'rlongdevice', long, { active: false })
+    return (
+      <StoryShell width={340}>
+        <RunSeed seed={seed} />
+        <Note>Bounded height with the tail in view, like a subagent's nested calls.</Note>
+        {tool('run', { description: 'Work through the long settings list', result: runResult('paused', 'rlongdevice') })}
+      </StoryShell>
+    )
+  },
 }

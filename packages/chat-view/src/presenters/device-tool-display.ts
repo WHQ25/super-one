@@ -54,6 +54,8 @@ export interface DeviceResultInfo {
   orientation?: DeviceOrientation
   outcome?: DeviceActOutcome
   runStatus?: 'paused' | 'done' | 'aborted'
+  /** Which run this block belongs to, so the chat can show the steps it took. */
+  runId?: string
   /** Why the outcome was judged that way — the one line worth surfacing on `didnt`. */
   reason?: string
   /** Set when the backend refused the input outright, rather than it not landing. */
@@ -145,13 +147,14 @@ export function deviceVerbKey(
   op: DeviceOp,
   params: Record<string, unknown>,
   streaming = false,
-  runStatus?: DeviceResultInfo['runStatus'],
 ): string {
   if (op === 'memory_read' || op === 'memory_write') {
     return `memory.${op === 'memory_read' ? 'read' : params.status === 'deprecated' ? 'archive' : params.status === 'stable' ? 'restore' : 'write'}.${streaming ? 'streaming' : 'done'}`
   }
   if (op === 'list') return streaming ? 'listing' : 'list'
-  if (op === 'run') return streaming ? 'runRunning' : runStatus === 'paused' ? 'runPaused' : runStatus === 'aborted' ? 'runAborted' : runStatus === 'done' ? 'runDone' : 'run'
+  // A run keeps its own name whatever became of it; where it stopped is a
+  // status, and statuses read on the right like every other tool's.
+  if (op === 'run') return streaming ? 'runRunning' : 'run'
   if (op === 'boot') return streaming ? 'booting' : 'boot'
   if (op === 'request_control') return streaming ? 'requestingControl' : 'requestControl'
   if (op === 'release') return streaming ? 'releasing' : 'release'
@@ -358,6 +361,7 @@ export function parseDeviceResult(
     return {
       status: obj.status === 'done' ? 'ok' : 'neutral',
       runStatus: obj.status === 'paused' || obj.status === 'done' || obj.status === 'aborted' ? obj.status : undefined,
+      ...(typeof obj.runId === 'string' ? { runId: obj.runId } : {}),
       ...(typeof target?.device === 'string' ? { device: target.device } : {}),
     }
   }

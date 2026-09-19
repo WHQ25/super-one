@@ -1,8 +1,9 @@
 /** Desktop adapter: retain the service's state/epoch and use its action evidence. */
 import { type ComputerUseService } from '../computer-use/computer-use-service'
 import { compactOutline, dropOccludedWebAreas } from '../computer-use/outline-compact'
-import { foldOutline } from '../computer-use/outline'
-import { ComputerUseError, type ActResult, type Condition, type ObserveResult, type UiAction, type UiOutlineNode } from '../computer-use/types'
+import { findNode, foldOutline } from '../computer-use/outline'
+import { ComputerUseError, type ActResult, type Condition, type ObserveResult, type UiOutlineNode } from '../computer-use/types'
+import { planNodeAction, type NodeActionPlan } from '../computer-use/node-action-plan'
 import { type RunDeps, RunPaused, StaleObservation } from './loop'
 import type { RawElement, RunObservation } from './observation'
 
@@ -16,7 +17,6 @@ export interface ComputerPage extends RunObservation {
   outcome?: ActResult
 }
 
-const TEXT_ROLES = new Set(['textfield', 'textarea', 'searchfield', 'combobox', 'textbox', 'searchbox', 'group'])
 const ROLE_MAP: Record<string, string> = { textfield: 'textbox', textarea: 'textbox', searchfield: 'searchbox', combobox: 'combobox', radiobutton: 'radio', popupbutton: 'button', menubaritem: 'menuitem' }
 
 export function computerPage(result: ObserveResult, service: ComputerUseService): ComputerPage {
@@ -30,17 +30,16 @@ export function computerPage(result: ObserveResult, service: ComputerUseService)
     const secure = node.secure === true || /secure|password/.test(role)
     const value = secure ? '' : node.value ?? ''
     if (!secure) text.push([node.name, value].filter(Boolean).join(' '))
-    const can = node.capabilities ?? {}
     const enabled = node.enabled !== false && !node.pictureOnly && !secure
-    const editable = enabled && tier === 'full' && TEXT_ROLES.has(role) && !!(can.setText || can.typeText)
-    const clickable = enabled && tier !== 'read' && !!can.press
-    if (enabled && tier !== 'read' && can.scroll && node.bounds && !scrollRef) scrollRef = node.ref
+    const editable = !!planNodeAction(node, { kind: 'setText', text: '' }, tier)
+    const clickable = !!planNodeAction(node, { kind: 'press' }, tier)
+    if (!scrollRef && planNodeAction(node, { kind: 'scroll', dy: 1 }, tier)) scrollRef = node.ref
     if (elements.length < 250 && enabled && (editable || clickable)) {
       const id = Number(node.ref.replace(/^@e/, ''))
       if (Number.isSafeInteger(id) && id > 0) {
         refs.set(id, node)
         elements.push({ node: id, ref: node.ref, role: ROLE_MAP[role] ?? role, label: node.name ?? '', value,
-          editable, clickable, canSubmit: editable && tier === 'full', password: false, submit: false, disabled: false })
+          editable, clickable, canSubmit: !!planNodeAction(node, { kind: 'enter' }, tier), password: false, submit: false, disabled: false })
       }
     }
     if (!secure) for (const child of node.children ?? []) walk(child)
@@ -81,12 +80,13 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
     const state = service.getStateStore().get(page.stateId)
     return !!state && state.epoch === service.getScheduler().epoch(state.resourceKey)
   }
-  const act = async (actions: UiAction[], signal?: AbortSignal, expect?: Condition, delivery: 'semantic' | 'app-directed' = 'semantic') => {
+  const act = async (plan: NodeActionPlan | undefined, signal?: AbortSignal) => {
+    if (!plan) throw new RunPaused('no-progress', 'The observed target does not support this computer_act operation. Inspect a fresh snapshot before continuing.')
     const page = requirePage()
     if (!fresh(page)) throw new StaleObservation('The desktop resource changed before input.')
     signal?.throwIfAborted()
     try {
-      const result = await service.act(page.stateId, actions, { delivery, signal, expect, timeoutMs: 1200 })
+      const result = await service.act(page.stateId, plan.actions, { delivery: plan.delivery, signal, expect: plan.expect, timeoutMs: 1200 })
       const state = service.getStateStore().get(result.successorStateId)
       if (!state) throw new RunPaused('no-progress', 'The action completed but its successor state is unavailable. Inspect before retrying.')
       if (state.root.bundleId !== bundleId) throw new RunPaused('guarded-only', 'The action switched applications. Resolve the new app grant with computer_apps before continuing.')
@@ -125,11 +125,10 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
     reobserveOnResume: true,
     sameTarget: (before, after, element) => before.rootId === after.rootId && before.signature === after.signature
       && after.elements.some((e) => e.node === element.node && e.label === element.label && e.editable === element.editable),
-    click: (id, signal) => act([{ type: 'press', ref: requirePage().refs.get(id)!.ref }], signal),
+    click: (id, signal) => act(planNodeAction(requirePage().refs.get(id), { kind: 'press' }, service.policy.tierFor(requirePage().bundleId)), signal),
     type: async (id, text, signal) => {
       const node = requirePage().refs.get(id)
-      if (!node || !node.capabilities?.setText) throw new RunPaused('no-progress', 'This field does not support replacing text through accessibility; use computer_act to inspect its input path.')
-      await act([{ type: 'setText', ref: node.ref, text }], signal, { kind: 'valueEquals', ref: node.ref, value: text })
+      await act(node && planNodeAction(node, { kind: 'setText', text }, service.policy.tierFor(requirePage().bundleId)), signal)
     },
     pressEnter: async (id, signal) => {
       const page = requirePage()
@@ -140,16 +139,15 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
       const focused = observed.refs.get(id)
       if (observed.signature !== page.signature || !focused?.appFocused) throw new StaleObservation('The submit field is not the app-focused AX element. Focus it with computer_act before resuming.')
       current = observed
-      await act([{ type: 'keypress', keys: ['Return'] }], signal, undefined, 'app-directed')
+      await act(planNodeAction(focused, { kind: 'enter' }, service.policy.tierFor(page.bundleId)), signal)
     },
     scroll: async (page, deltaY, signal) => {
-      const target = await service.resolveTargetRoot(root)
-      const apps = await service.listRunningApps()
-      if (!target.focused || !apps.some((app) => app.bundleId === page.bundleId && app.frontmost) || !fresh(page)) {
-        throw new StaleObservation('The scroll target is no longer the frontmost fresh window.')
-      }
       if (!page.scrollRef) throw new RunPaused('no-progress', 'No accessible scroll target is available.')
-      await act([{ type: 'scroll', ref: page.scrollRef, dy: deltaY }], signal, undefined, 'app-directed')
+      // computer_act app-directed scrolling is scoped to the target PID; it
+      // does not require activating the app or global physical input.
+      const state = service.getStateStore().get(page.stateId)
+      const node = state && findNode(state.outline, page.scrollRef)
+      await act(node && planNodeAction(node, { kind: 'scroll', dy: deltaY }, service.policy.tierFor(page.bundleId)), signal)
     },
     settle: async () => {}, // service.act already observes and verifies the successor.
     waitReady: async () => true,

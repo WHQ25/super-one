@@ -33,6 +33,68 @@ function fixture(tier: CapabilityTier = 'full') {
 const options = { goal: 'Fill Title with Hello', presets: [{ key: 'Title', value: 'Hello' }], allow: [], avoid: [], maxSteps: 3, maxWallMs: 45000 }
 
 describe('computer fast-loop adapter', () => {
+  it('offers only replacements supported by the semantic delivery path', async () => {
+    const { service } = fixture()
+    const obs = await service.observe(undefined, 'semantic')
+    const outline = axTreeToOutline({ index: 1, role: 'AXTextField', name: 'Keyboard only', settable: false })
+    expect(outline.capabilities?.typeText).toBe(true)
+    expect(computerPage({ ...obs, outline }, service).elements).toEqual([])
+  })
+
+  it('withholds submit candidates for fields without application focus', async () => {
+    const { service } = fixture()
+    const obs = await service.observe(undefined, 'semantic')
+    const outline = axTreeToOutline({ index: 1, role: 'AXTextField', name: 'Search', value: 'cats', settable: true })
+    const page = computerPage({ ...obs, outline }, service)
+    const space = buildActionSpace({ page, origins: new Set(), allow: ['Enter'], avoid: [], history: [] })
+    expect(space.typeCandidates).toHaveLength(1)
+    expect(space.clickCandidates.some((candidate) => candidate.startsWith('submit:'))).toBe(false)
+  })
+
+  it('dispatches observed presses through semantic computer_act', async () => {
+    const { adapter, service } = fixture()
+    await adapter.resolveTarget()
+    const page = await adapter.observe()
+    const button = page.elements.find((element) => element.label === 'Next')!
+    const act = vi.spyOn(service, 'act')
+    await adapter.click(button.node)
+    expect(act).toHaveBeenCalledWith(page.stateId, [{ type: 'press', ref: button.ref }], expect.objectContaining({ delivery: 'semantic' }))
+  })
+
+  it('keeps focused Return executable after outline folding', async () => {
+    const { adapter, backend, service } = fixture()
+    const look = backend.look.bind(backend)
+    vi.spyOn(backend, 'look').mockImplementation(async (...args) => {
+      const observed = await look(...args)
+      observed.outline.children![0].appFocused = true
+      observed.outline.children![0].value = 'cats'
+      return observed
+    })
+    await adapter.resolveTarget()
+    const page = await adapter.observe()
+    const field = page.elements.find((element) => element.label === 'Title')!
+    expect(field.canSubmit).toBe(true)
+    const act = vi.spyOn(service, 'act')
+    await adapter.pressEnter(field.node)
+    expect(act).toHaveBeenCalledWith(expect.any(String), [{ type: 'keypress', keys: ['Return'] }], expect.objectContaining({ delivery: 'app-directed' }))
+  })
+
+  it('dispatches scroll through the same app-directed path as computer_act', async () => {
+    const { adapter, backend, service } = fixture()
+    const look = backend.look.bind(backend)
+    vi.spyOn(backend, 'look').mockImplementation(async (...args) => {
+      const observed = await look(...args)
+      observed.outline.children!.push({ ref: '@e99', role: 'scrollArea', capabilities: { scroll: true }, bounds: { x: 0, y: 0, width: 300, height: 200 } })
+      return observed
+    })
+    await adapter.resolveTarget()
+    const page = await adapter.observe()
+    expect(page.canScroll?.down).toBe(true)
+    const act = vi.spyOn(service, 'act')
+    await adapter.scroll(page, 600)
+    expect(act).toHaveBeenCalledWith(page.stateId, [{ type: 'scroll', ref: '@e99', dy: 600 }], expect.objectContaining({ delivery: 'app-directed' }))
+  })
+
   it('uses semantic replacement, verifies valueEquals and reuses the successor observation', async () => {
     const { adapter, service, ask } = fixture()
     await adapter.resolveTarget()

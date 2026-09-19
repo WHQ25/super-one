@@ -566,7 +566,7 @@ pause 时主模型需要知道从上次返回以来内循环做了什么（尤�
 
 ## 10. 实现状态（2026-09-19）
 
-browser 和 computer 线 MVP 已落地；device adapter 正在接线。三条线共用一个 `FastRun`，代码在 `apps/desktop/src/main/jev/`：
+browser、computer 和 device 线 MVP 已落地。三条线共用一个 `FastRun`，代码在 `apps/desktop/src/main/jev/`：
 
 | 文件 | 对应章节 |
 | --- | --- |
@@ -579,6 +579,7 @@ browser 和 computer 线 MVP 已落地；device adapter 正在接线。三条线
 | `run-store.ts` | 挂起的 run：`runId` → run，绑定 session，TTL 5 min |
 | `trace.ts` | 3.9：`userData/jev-traces/<runId>.jsonl`，每步脱敏 request state、全部概率及前三选项、实际 usage、延迟、决策、stale |
 | `jev-api-key.ts` | TypeSafe key：`app_meta` 表 + `safeStorage` 加密，从不进 `AppSettings` |
+| `device-page.ts` / `device-run-tool.ts` | 3.7 device adapter：现有控制权校验、当前 snapshot / semantic tree、tap / setText / swipe、原生 device Condition；无 tree 暂停、resume 总是重新观察、独立 device_release 清理 |
 | `computer-page.ts` / `computer-run-tool.ts` | 3.7 computer adapter：semantic outline / capabilities / state epoch、原生 act 与 Condition、授权和 tier 门控、resume 重新观察；继承共享 pause / resume 协议 |
 | `browser-run-tool.ts` | `browser_run` 契约与门控（`jevFastLoopEnabled` + `cdpEnabled` + 有 key，执行时判定） |
 
@@ -661,14 +662,32 @@ A second, single diagnostic added `completed_actions` (at most eight executed la
 
 The live investigation also exposed an independent root-selection issue: macOS can publish a tiny auxiliary window for Calculator. App resolution now prefers the visible ordinary window while retaining modal and transient priority. The native adapter uses the action successor state rather than another screenshot, and normal turn cleanup owns desktop visuals so pause/resume does not invalidate its window.
 
+### 10.5 Device functionality smoke (Grok; not A/B)
+
+`device_run` uses the same `FastRun`, policy, questions, action space, trace and session/platform-bound run store. Its adapter uses `DeviceAgentSession` for observation, input and outcome checks. Both tool surfaces, shared host-owned names, remote descriptors and chat labels are wired. There is one shared experimental setting. The loop requires a device already granted to the session; missing control returns the same `NO_DEVICE` error as `device_act` and never opens a control prompt. Resume re-observes, and positional answers survive only an unchanged tree. Secure, disabled, offscreen and OCR-only controls are excluded. A missing accessibility tree pauses with context instead of guessing from pixels.
+
+Only a functionality smoke was authorized; **no baseline or A/B comparison was run**. The clean-workspace session used Grok 4.6 / high and iPhone 17 Pro Max (`427A175E-DCA5-4F31-B916-89FC00483162`, iOS 26.4 runtime; About reports 26.4.1), initially shut down. Task: Home → Settings → General → About, change nothing, inspect and release the device.
+
+| Task | Mode | Main-model tool calls | Wall time | Main-model cost | Context | Jev |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| Settings navigation; functionality smoke | `device_run` | 14 | 205.1 s | $0.136097 | 50.1k | 4 requests · 5,199 input tokens · about $0.000218 · API latency 2.819 s · 2 pauses · 0 stale retries |
+| Same task | Baseline | — | Not run | — | — | A/B remains paused |
+
+Run `r97cbf4cf` selected Settings (1.00), General (1.00) and About (0.99), and reached the correct About page. The first pause was `no-progress` after the cold Settings launch returned no usable tree (17.638 s from run start; the action/settle capture accounted for 15.866 s). The caller inspected and resumed once, using a fresh snapshot. The second pause was `guarded-only`: the requested exact condition `label:"Model Name"` did not match the actual accessibility name `Model Name, iPhone 17 Pro Max`. The existing condition vocabulary behaved correctly; there was no false `done`. The observed stable identifier was `ProductModelName`; the tool schema now explains whole-label matching and recommends an observed identifier. This was an over-narrow smoke input, not an adapter failure, so no repeat was run.
+
+The caller aborted the paused run, captured a settled About screenshot and called `device_release`. The release returned `outcome:"shutdown"`, `running:false`, and the simulator was independently confirmed shut down. Abort ends the loop and returns control to the caller; `device_release` remains the explicit device-ownership cleanup. No settings or credentials were changed. End-to-end time includes discovery, boot, control, inspection, pauses and shutdown; it is not a claimed latency improvement.
+
+Verification: Jev/browser surface, the built-in tool catalog and device presenter checks: 130 tests passed. Related checks: 5,924 passed / 39 skipped (426 files passed / 3 skipped). Node and web typechecks passed. Stories cover running, paused, done, aborted and error at a narrow width. The exact completion condition was deliberately not weakened to substring matching; the same native vocabulary remains shared with `device_wait_for`.
+
 与设计文档的偏差（MVP 有意收窄）：
 
 - `audience: 'user'` 未实现：password 字段直接不进候选，登录类页面会以 `no-progress` 交回主模型
-- `done_when` 按平台复用：browser 用 selector / selectorGone / text / urlIncludes / urlMatches；computer 用已有 Condition。computer 将原始 ref 绑定到 native identity，原始状态若被有界 state store 淘汰，需要开始新的 run。
+- `done_when` 按平台复用：browser 用 selector / selectorGone / text / urlIncludes / urlMatches；computer 和 device 用各自已有 Condition。computer 将原始 ref 绑定到 native identity，原始状态若被有界 state store 淘汰，需要开始新的 run。
 - run 绑定 session 而非 `toolUseId`（同 session 并行子代理各自 runId 不冲突，只是 TTL 清理按 session）
 - 无 select、无 `obstructed`、无 host event 逐步进度（UI 只见 tool row 的 paused / done / aborted）
 - 阈值未校准；Calculator 的已知按键序列是已复现的模型决策边界，不据此宣称 desktop 性能提升。菜单导航 A/B 尚待放行。
 - computer 输入只使用原生能力：替换文本要求 setText；不支持的输入路径暂停交回 computer_act。
+- device 不提供键盘 Enter、OCR 坐标候选或无 tree 降级；已有 device_act 处理这些情况。device 的 live 数据仅为功能 smoke，未作 A/B 性能结论。
 
 ## 参考
 

@@ -128,7 +128,7 @@ function DeviceToolBlockOperation({
   const needsAttention = !failed && deviceNeedsAttention(info)
   const tone: ToolRowTone = declined ? 'denied' : info.status === 'error' ? 'error'
     : needsAttention ? 'warning' : 'default'
-  const label = t(`chat.toolBlock.device.${deviceVerbKey(op, params, isStreaming)}`)
+  const label = t(`chat.toolBlock.device.${deviceVerbKey(op, params, isStreaming, info.runStatus)}`)
 
   if (!allowExpand) {
     return (

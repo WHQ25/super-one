@@ -339,6 +339,159 @@ export const HOST_ACTION_DEVICE_DESCRIPTORS: HostActionSuperoneToolDescriptor[] 
     }
   },
   {
+    "name": "device_run",
+    "description": "Experimental (Jev setting): pursue a multi-step touch-device goal with taps, typing and scrolling chosen without a model turn per step. Requires existing device_request_control approval; never requests control inside the loop. Start with goal and optional device, presets, allow/avoid and done_when. Example: done_when={kind:\"exists\",label:\"About\"}; use device_wait_for conditions with label or identifier. Risky or uncertain controls pause; resume with runId + answer. Missing accessibility trees pause for inspection. Use device_act for known action sequences, single steps, gestures or pixels.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "Short, human-friendly explanation of the goal for the user watching, in the conversation's language."
+        },
+        "goal": {
+          "description": "What to achieve on the current page, including when to stop. Required to start a run.",
+          "type": "string"
+        },
+        "presets": {
+          "description": "Values the loop may type. Never include passwords.",
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Short name, e.g. Title."
+              },
+              "value": {
+                "type": "string",
+                "description": "The full text to type."
+              },
+              "field": {
+                "description": "Hint naming the field it belongs in, e.g. \"the title textbox\".",
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "allow": {
+          "description": "Button labels (substring, case-insensitive) the loop may press without asking, e.g. [\"Create\"]. \"Enter\" allows pressing Enter in any filled field (keyboard submit).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "avoid": {
+          "description": "Element labels to remove from the page entirely.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "maxSteps": {
+          "description": "Default 30.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "maxWallMs": {
+          "description": "Wall-clock budget per call before pausing. Default 45000.",
+          "type": "integer",
+          "minimum": 5000,
+          "maximum": 300000
+        },
+        "runId": {
+          "description": "From a paused result. Resumes that run with `answer`.",
+          "type": "string"
+        },
+        "answer": {
+          "description": "Reply to the pending question when resuming.",
+          "type": "object",
+          "properties": {
+            "questionId": {
+              "type": "string"
+            },
+            "choice": {
+              "description": "An option key from the question, or \"abort\".",
+              "type": "string"
+            },
+            "value": {
+              "description": "For type=value questions: { text }.",
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            "goal": {
+              "description": "Optionally revise the goal.",
+              "type": "string"
+            },
+            "abort": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "questionId"
+          ],
+          "additionalProperties": false
+        },
+        "device": {
+          "description": "A device already controlled by this session. Required when starting with more than one held device. A resumed run keeps its original device.",
+          "type": "string"
+        },
+        "done_when": {
+          "description": "Same vocabulary as device_wait_for. label matches the entire accessibility name, which may combine a title and value; prefer an observed identifier. Refs are positional. Example: {kind:\"exists\",identifier:\"details-page\"}.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "exists",
+                "notExists",
+                "textEquals",
+                "textContains"
+              ]
+            },
+            "ref": {
+              "description": "Only valid within the snapshot it came from; prefer label or identifier when waiting.",
+              "type": "string"
+            },
+            "label": {
+              "description": "Visible name of the element.",
+              "type": "string"
+            },
+            "identifier": {
+              "description": "Developer-assigned id. Survives copy changes and translation — the most durable target.",
+              "type": "string"
+            },
+            "text": {
+              "description": "The string textEquals/textContains compares against. Required by those two kinds, and NOT a way to name an element — use label for that.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "description"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "device_wait_for",
     "description": "Wait until the screen satisfies a condition, instead of snapshotting in a loop. Target the element by label or identifier, never by ref: refs belong to one snapshot and what you are waiting for usually does not exist yet — text only says what to compare, it never selects. Returns a fresh settled stateId and tree, and reports preexisting vs verified.",
     "inputSchema": {

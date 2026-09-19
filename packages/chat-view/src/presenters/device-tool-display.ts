@@ -8,11 +8,11 @@
 
 export type DeviceOp =
   | 'memory_read' | 'memory_write'
-  | 'list' | 'boot' | 'request_control' | 'snapshot' | 'query' | 'act' | 'wait_for' | 'release'
+  | 'list' | 'boot' | 'request_control' | 'snapshot' | 'query' | 'act' | 'run' | 'wait_for' | 'release'
 
 const DEVICE_OPS = new Set<DeviceOp>([
   'memory_read', 'memory_write',
-  'list', 'boot', 'request_control', 'snapshot', 'query', 'act', 'wait_for', 'release',
+  'list', 'boot', 'request_control', 'snapshot', 'query', 'act', 'run', 'wait_for', 'release',
 ])
 
 export type DeviceActOutcome = 'worked' | 'didnt' | 'unknown'
@@ -53,6 +53,7 @@ export interface DeviceResultInfo {
   device?: string
   orientation?: DeviceOrientation
   outcome?: DeviceActOutcome
+  runStatus?: 'paused' | 'done' | 'aborted'
   /** Why the outcome was judged that way — the one line worth surfacing on `didnt`. */
   reason?: string
   /** Set when the backend refused the input outright, rather than it not landing. */
@@ -144,11 +145,13 @@ export function deviceVerbKey(
   op: DeviceOp,
   params: Record<string, unknown>,
   streaming = false,
+  runStatus?: DeviceResultInfo['runStatus'],
 ): string {
   if (op === 'memory_read' || op === 'memory_write') {
     return `memory.${op === 'memory_read' ? 'read' : params.status === 'deprecated' ? 'archive' : params.status === 'stable' ? 'restore' : 'write'}.${streaming ? 'streaming' : 'done'}`
   }
   if (op === 'list') return streaming ? 'listing' : 'list'
+  if (op === 'run') return streaming ? 'runRunning' : runStatus === 'paused' ? 'runPaused' : runStatus === 'aborted' ? 'runAborted' : runStatus === 'done' ? 'runDone' : 'run'
   if (op === 'boot') return streaming ? 'booting' : 'boot'
   if (op === 'request_control') return streaming ? 'requestingControl' : 'requestControl'
   if (op === 'release') return streaming ? 'releasing' : 'release'
@@ -264,6 +267,7 @@ export function formatDeviceCondition(value: unknown): string {
  */
 export function deviceInputSummary(op: DeviceOp, params: Record<string, unknown>): string {
   switch (op) {
+    case 'run': return truncate(stringValue(params.goal), 80)
     case 'memory_read':
     case 'memory_write':
       return [params.platform, params.appId, params.topic].filter(value => typeof value === 'string').join('/')
@@ -348,6 +352,15 @@ export function parseDeviceResult(
   }
   const obj = asRecord(parsed)
   if (!obj) return { status: 'neutral' }
+
+  if (op === 'run') {
+    const target = asRecord(asRecord(obj.snapshot)?.target)
+    return {
+      status: obj.status === 'done' ? 'ok' : 'neutral',
+      runStatus: obj.status === 'paused' || obj.status === 'done' || obj.status === 'aborted' ? obj.status : undefined,
+      ...(typeof target?.device === 'string' ? { device: target.device } : {}),
+    }
+  }
 
   const common: DeviceResultInfo = {
     status: 'ok',

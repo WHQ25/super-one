@@ -2625,6 +2625,11 @@ export type Messages = {
         revealTab: string
       }
       device: {
+        run: string
+        runRunning: string
+        runPaused: string
+        runDone: string
+        runAborted: string
         memory: typeof interactionMemoryEn
         list: string
         listing: string
@@ -4854,7 +4859,7 @@ export const en: Messages = {
         },
         jev: {
           label: 'Jev Fast Inner Loop',
-          description: 'Adds fast goal runs for browser and desktop tasks. TypeSafe Jev picks clicks, fields and scrolling without a full agent turn per step. Risky controls pause for a decision. Visible UI text is sent to TypeSafe; pricing is per token.',
+          description: 'Adds fast goal runs for browser, desktop and device tasks. TypeSafe Jev picks clicks, fields and scrolling without a full agent turn per step. Risky controls pause for a decision. Visible UI text is sent to TypeSafe; pricing is per token.',
           apiKey: {
             label: 'Jev API Key',
             description: 'Stored encrypted on this machine and used only from the main process.',
@@ -6516,6 +6521,11 @@ export const en: Messages = {
         revealTab: 'Show in terminal panel',
       },
       device: {
+        run: 'Run Goal',
+        runRunning: 'Pursuing goal',
+        runPaused: 'Paused for a Decision',
+        runDone: 'Goal Completed',
+        runAborted: 'Run Stopped',
         memory: interactionMemoryEn,
         list: 'List Devices',
         listing: 'Listing devices',

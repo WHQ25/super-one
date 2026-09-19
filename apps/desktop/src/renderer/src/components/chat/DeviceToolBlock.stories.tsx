@@ -401,3 +401,15 @@ export const DeviceWaitFor: Story = {
     </StoryShell>
   ),
 }
+
+export const FastRunStates: Story = {
+  render: () => (
+    <StoryShell width={360}>
+      {tool('run', { description: 'Open the device information page', status: 'streaming' })}
+      {(['paused', 'done', 'aborted'] as const).map((status) => (
+        <div key={status}>{tool('run', { description: 'Open the device information page', result: JSON.stringify({ status, steps: 3, snapshot: { target: { device: 'iPhone 17 Pro Max' } } }) })}</div>
+      ))}
+      {tool('run', { description: 'Open the device information page', result: '[Error] This session controls no device', isError: true })}
+    </StoryShell>
+  ),
+}

@@ -204,10 +204,11 @@ export function uiautomatorToTree(
 
     const attributes = element.attributes
     const role = roleForClass(attributes.class ?? '', attributes.clickable === 'true')
-    const node: DeviceUiNode = { ref, role }
+    const secure = attributes.password === 'true'
+    const node: DeviceUiNode = { ref, role, ...(secure ? { secure: true } : {}) }
 
     const described = attributes['content-desc']?.trim() ?? ''
-    const text = attributes.text?.trim() ?? ''
+    const text = secure ? '' : attributes.text?.trim() ?? ''
     // A content description is the label whenever the app wrote one. Otherwise the
     // visible text is what a person would call this control, and putting it in `label`
     // is what makes a query written against iOS find the same button here. An editable

@@ -1,5 +1,33 @@
+import { z } from 'zod'
 import type { DeviceUiNode } from '@superone/shared/device-agent'
 import { DeviceAgentError } from './types'
+
+/**
+ * A condition always names an element, and the text kinds always carry text.
+ *
+ * JSON Schema cannot say "at least one of these three" in a form every harness
+ * enforces, so the requirement is stated in the descriptions for the model and
+ * checked by `parseCondition` for the wire. The refinements below only cover the
+ * in-process SDK path, where args are parsed against this schema before they reach
+ * the tool — they are the fast, specific failure, not the guarantee.
+ */
+export const conditionSchema = z.object({
+  kind: z.enum(['exists', 'notExists', 'textEquals', 'textContains']),
+  ref: z.string().optional().describe('Only valid within the snapshot it came from; prefer label or identifier when waiting.'),
+  label: z.string().optional().describe('Visible name of the element.'),
+  identifier: z.string().optional().describe('Developer-assigned id. Survives copy changes and translation — the most durable target.'),
+  text: z.string().min(1).optional()
+    .describe('The string textEquals/textContains compares against. Required by those two kinds, and NOT a way to name an element — use label for that.'),
+})
+  .refine(
+    (value) => Boolean(value.ref ?? value.label ?? value.identifier),
+    { message: 'A condition must name the element with ref, label or identifier.' },
+  )
+  .refine(
+    (value) => !(value.kind === 'textEquals' || value.kind === 'textContains') || Boolean(value.text),
+    { message: 'textEquals and textContains need text.' },
+  )
+
 
 /**
  * A claim about the screen, shared by `device_act`'s postcondition and

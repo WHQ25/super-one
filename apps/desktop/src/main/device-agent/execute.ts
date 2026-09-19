@@ -226,6 +226,15 @@ export class DeviceAgentSession {
     }
   }
 
+  /** A semantic run tolerates a missing tree so it can pause with useful context. */
+  async observeForRun(signal?: AbortSignal) {
+    throwIfDeviceOperationAborted(signal)
+    const observation = await this.backend.observe({ tree: 'optional', maxNodes: 400, signal })
+    const state = this.store.put(observation)
+    throwIfDeviceOperationAborted(signal)
+    return state
+  }
+
   snapshot(args: { mode?: string; maxNodes?: number }, signal?: AbortSignal): Promise<DeviceToolReply> {
     return this.guard(() => this.runSnapshot(args, signal), signal)
   }

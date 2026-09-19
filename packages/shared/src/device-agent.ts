@@ -30,6 +30,8 @@ export interface DeviceUiNode {
    * survives copy changes and does not vary by language.
    */
   identifier?: string
+  /** Password/secure input; never a fast-loop candidate. */
+  secure?: boolean
   enabled?: boolean
   focused?: boolean
   bounds?: DeviceUiBounds

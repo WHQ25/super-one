@@ -25,6 +25,9 @@ import type { TouchDeviceBackend } from './types'
 import { recordAction } from './record-action'
 import { actionRecordingFromPath, adoptActionRecording } from '../agent/action-recording-store'
 import { recordingNote } from '../mcp/show-your-work-notes'
+import { executeDeviceRun } from '../jev/device-run-tool'
+import { jevSettingError } from '../jev/run-tool-common'
+import { DeviceAgentError } from './types'
 
 
 export {
@@ -270,6 +273,21 @@ export async function executeDeviceAgentTool(
       // inheriting refs into a device that has since rebooted.
       if (sessions.get(result.device.id)?.sessionId === sessionId) sessions.delete(result.device.id)
       return reply(result)
+    }
+    if (name === 'device_run') {
+      const gate = jevSettingError()
+      if (gate) throw new Error(gate)
+      return reply(await executeDeviceRun(sessionId, args, (device) => {
+        const deviceId = resolveHeldDevice(heldDevicesFor(sessionId), device)
+        const session = sessionFor(sessionId, deviceId)
+        return { deviceId, session, assertControl: () => {
+          resolveHeldDevice(heldDevicesFor(sessionId), deviceId)
+          if (sessions.get(deviceId)?.session !== session) {
+            throw new DeviceAgentError('STALE_STATE', 'The device session changed while paused. Start a new device_run.')
+          }
+          viewfinderClaimSink?.({ sessionId, deviceId })
+        } }
+      }, signal))
     }
     // Every remaining tool drives one device, so which one is settled first — and
     // refused rather than guessed when the session holds more than one.

@@ -1064,7 +1064,7 @@ export const zh: Messages = {
         },
         jev: {
           label: 'Jev 快速内循环',
-          description: '为浏览器和桌面任务提供快速目标执行。TypeSafe Jev 选择点击、输入和滚动，减少主模型逐步往返。受控操作会暂停等待决策。可见界面文字会发送给 TypeSafe，按 token 计费。',
+          description: '为浏览器、桌面和移动设备任务提供快速目标执行。TypeSafe Jev 选择点击、输入和滚动，减少主模型逐步往返。受控操作会暂停等待决策。可见界面文字会发送给 TypeSafe，按 token 计费。',
           apiKey: {
             label: 'Jev API Key',
             description: '加密保存在本机，仅主进程使用。',
@@ -2721,6 +2721,11 @@ export const zh: Messages = {
         revealTab: '在终端面板中显示',
       },
       device: {
+        run: '执行目标',
+        runRunning: '正在执行目标',
+        runPaused: '等待决策',
+        runDone: '目标已完成',
+        runAborted: '执行已停止',
         memory: interactionMemoryZh,
         list: '列出设备',
         listing: '正在列出设备',

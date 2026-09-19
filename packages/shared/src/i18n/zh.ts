@@ -2189,6 +2189,7 @@ export const zh: Messages = {
       collapseTask: '收起',
     },
     askUser: {
+      yourAnswer: '你的回答',
       answered: '已回答',
       otherOption: '其他...',
       selectOptionPreview: '选择一个选项以预览',

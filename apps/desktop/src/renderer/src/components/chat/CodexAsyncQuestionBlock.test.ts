@@ -83,6 +83,10 @@ describe('formatCodexAsyncQuestionReply', () => {
       'Which environment?\nProduction\n\nWhat deadline?\nFriday',
     ))
     await waitFor(() => expect(screen.getByText('chat.askUser.answered')).toBeTruthy())
+    expect(screen.getAllByRole('term').map(node => node.textContent)).toEqual(['Which environment?', 'What deadline?'])
+    expect(screen.getAllByRole('definition').map(node => node.textContent)).toEqual([
+      'chat.askUser.yourAnswerProduction', 'chat.askUser.yourAnswerFriday',
+    ])
     expect(screen.queryByRole('button', { name: 'chat.askUser.submit' })).toBeNull()
   })
   it('keeps the question pending until steer succeeds and restores the answer on remount', async () => {

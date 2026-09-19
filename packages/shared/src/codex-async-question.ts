@@ -16,6 +16,24 @@ export function formatCodexAsyncQuestionReply(questions: CodexAsyncUserInputQues
   return questions.map((question, index) => `${question.title}\n${answers[index]?.trim() ?? ''}`).join('\n\n')
 }
 
+/** Recover display pairs from saved replies; preserve the original text if boundaries are ambiguous. */
+export function parseCodexAsyncQuestionReply(questions: CodexAsyncUserInputQuestion[], reply: string): string[] | null {
+  if (questions.length === 1) return [reply]
+  if (questions.length === 0 || !reply.startsWith(`${questions[0].title}\n`)) return null
+
+  const answers: string[] = []
+  let start = questions[0].title.length + 1
+  for (let index = 1; index < questions.length; index++) {
+    const separator = `\n\n${questions[index].title}\n`
+    const end = reply.indexOf(separator, start)
+    if (end < 0 || reply.indexOf(separator, end + separator.length) >= 0) return null
+    answers.push(reply.slice(start, end))
+    start = end + separator.length
+  }
+  answers.push(reply.slice(start))
+  return answers
+}
+
 export type CodexAsyncQuestionAnswerCommand = {
   type: 'codex_async_question_answer'
   requestId: string

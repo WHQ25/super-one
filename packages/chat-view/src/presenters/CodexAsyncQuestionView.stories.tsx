@@ -92,6 +92,22 @@ export const MultipleAnswered: Story = {
   },
 }
 
+export const MultilineAnswered: Story = {
+  name: 'Answered · paragraphs stay with their question',
+  args: {
+    ...MultipleQuestions.args,
+    submittedReply: formatCodexAsyncQuestionReply(MultipleQuestions.args!.questions!, [
+      'Use the preview deployment.\n\nKeep production available for the current release.',
+      'Friday afternoon\nBefore the release review.',
+    ]),
+  },
+}
+
+export const LegacyReply: Story = {
+  name: 'Answered · unstructured history preserved',
+  args: { ...MultipleQuestions.args, submittedReply: 'Use staging and finish by Friday afternoon.' },
+}
+
 export const Failed: Story = {
   name: 'Failed · retry preserves the answer',
   args: { answers: ['Production'], error: 'No active Codex turn to steer' },
@@ -123,4 +139,18 @@ export const NarrowAnswered: Story = {
   name: 'Narrow pane · answered',
   decorators: NarrowLongContent.decorators,
   args: { submittedReply: 'Staging (Recommended)' },
+}
+
+export const ChineseAnswered: Story = {
+  name: 'Narrow pane · Chinese answers · dark',
+  decorators: NarrowLongContent.decorators,
+  globals: { locale: 'zh', theme: 'dark' },
+  args: {
+    questions: [
+      { title: '这次改动应该在哪个环境中验证？', options: ['预发布环境（推荐）', '生产环境'] },
+      { title: '你希望什么时候完成验证？', options: null },
+    ],
+    answers: ['预发布环境（推荐）', '周五下午，发布评审之前。'],
+    submittedReply: '这次改动应该在哪个环境中验证？\n预发布环境（推荐）\n\n你希望什么时候完成验证？\n周五下午，发布评审之前。',
+  },
 }

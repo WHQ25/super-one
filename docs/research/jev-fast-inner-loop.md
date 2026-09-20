@@ -859,6 +859,91 @@ Apple 一例在修复过程中的推进（同一 prompt、同一模型），可�
 
 **这批修复按影响排序**：跨边界 marker 比较（8.18，让等待全部失效）> 遮挡元素仍被提供（Jev 每轮选它、执行器每轮拒绝）> 完成判定问的是"每条要求"而非"终点状态"（同一页 0.49 → 0.88）> 折叠控件标签没说明展开会揭示什么（0.16 → 0.53）。四者都不是模型能力问题：每一例里 Jev 的选择在它看到的信息下都是合理的。
 
+### 10.7 Jev 前后的配对基准（Grok 4.6 / high，dev 版，computer_use）
+
+前面几节比的是"循环能不能跑通"。这节比的是接入 Jev 到底省了什么：同一 prompt、同一模型、同一台机器，只把导航段从"主模型逐步 `computer_act`"换成"一次 `computer_run`"，两腿之间用脚本把应用状态复位。
+
+`totalCostUsd` 只记主模型（Grok 4.6 / high）的账；Jev 自己的请求走另一条链路，单列在最后一栏，不并进成本列。
+
+| | 计算器 `sin(π/6)` | | | Finder 三级目录导航 | | |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| | 逐步 `_act` | `_run` | 差 | 逐步 `_act` | `_run` | 差 |
+| 墙钟 | 127.2 s | 113.2 s | **−11%** | 200.9 s | 124.5 s | **−38%** |
+| 工具调用（总） | 12 | 10 | −17% | 14 | 11 | −21% |
+| 工具调用（任务相关） | 6 | 4 | −33% | 11 | 4 | **−64%** |
+| 主模型成本 | $0.1059 | $0.0707 | **−33%** | $0.1951 | $0.0997 | **−49%** |
+| 上下文 | 73.9k | 56.4k | −24% | 99.1k | 61.7k | **−38%** |
+| Jev 自身 | — | 9 req / 37.9k tok / 7.45 s | | — | 3 req / 34.4k tok / 3.52 s | |
+
+**收益随"每步之间观察的成本"放大，而不是随步数放大。** 计算器的按键全部在第一张快照里就可见且位置不变，主模型每次 `computer_act` 之间并不需要重新观察，所以省下的主要是工具往返；Finder 每打开一层目录整张 AX 表就换一遍（66 → 82 → 190 → 109 个元素），逐步模式必须把每一张都读进上下文，于是上下文 −38%、成本 −49%。**这条规律决定了 `computer_run` 该用在哪：状态在步与步之间大幅改变的导航型任务，而不是坐标稳定的定点操作。**
+
+Finder 的 `computer_run` 三步全部一次命中（click_target 0.75 / 0.83 / 0.78），无暂停、无 stale 重试，循环自身 23.9 s，其余时间都在主模型的解析与汇报轮次上。
+
+§10.4 已有一组更早的 Finder 配对（基线 20 calls / 236.4 s / $0.2605 / 97.5k，`computer_run` 9 calls / 102.0 s / $0.0986 / 58.7k）。两次独立配对方向一致，且**`computer_run` 那条腿高度可复现**（$0.0986 vs $0.0997，58.7k vs 61.7k），波动几乎全来自基线腿（20 calls vs 14 calls）——主模型自己决定要看几张快照、要不要 `computer_query`，而把导航交给 Jev 之后这个自由度就没了。这也是为什么单次配对的绝对百分比不该当结论用，但方向可以。
+
+#### 两条一开始没跑通的腿
+
+**计算器首跑结果是 `0.0091384`** —— 不是代码缺陷，是我的复位脚本没生效：`killall Calculator` + `open` **不会重置角度模式**，基线腿从弧度开始、Jev 腿从角度开始并多做了一次切换。也就是说计算器那列的对比是**对 Jev 不利**的（它多走了一步），真实差距只会更大。AppleScript 读不到计算器按钮（`window 1` 只返回红绿灯，`entire contents` 里 `class of e is button` 匹配不到任何东西），这条路要复位得另找办法。
+
+**Finder 的 Jev 腿首跑在第 1 步就 `no-progress` 暂停**，报 `The observed target does not support this computer_act operation`。根因在 `action-space.ts`：
+
+```ts
+if (el.editable) {
+  ...
+  clickCandidates.push(`open:${el.index}`)   // 无条件
+  continue                                    // ← 从这里跳出
+}
+if (el.clickable === false) continue          // ← 永远轮不到 editable 元素
+```
+
+`clickable === false` 这道闸写在 `continue` 之后，对 editable 元素完全失效。**在 DOM 里 `editable ⇒ clickable` 恒成立（`<input>` 一定能点），移植到 AX 树上这个蕴含关系就断了**：Finder 行的名称单元格是 `AXTextField`，可以改名（`setText` 有 plan），但**没有 `AXPress`**。`computer-page.ts` 正确地把它标成 `clickable: false` 且不登记 `clickKinds`，动作空间却照样把它当点击候选发给 Jev；Jev 选中它（一个执行不了的选项凭空占走概率质量），适配器查不到 plan，第 1 步即暂停。修掉后同一 prompt 一次跑通。browser-page 从不设置 `clickable` 字段（恒为 `undefined`），所以这个缺陷在浏览器侧不可能触发——**只有移植到第二个平台才会暴露"共享层里藏着的平台假设"。**
+
+同一次排查还暴露了一个诊断缺陷：`loop.ts` 的 act catch 只对 `StaleObservation` 写 trace，`RunPaused` 直接 rethrow，于是**唯一会让人想读 trace 的那一步，恰好是 trace 文件里没有的那一步**（该 runId 根本没有生成 `.jsonl`）。已改为抛出前先 `emit(trace)`。
+
+#### 方法与口径
+
+- 两腿都经 `scripts/cdp-eval.mjs` 驱动 dev 版渲染进程，跑在同一个基准工作区 `/private/tmp/jev-clean-bench/workspace`，每腿 `resetSession()` 开新会话。
+- 成本与上下文读自会话 store 的 `totalCostUsd` / `contextTokens`，在该腿结束后、下一腿开始前立即采样。
+- "任务相关调用"排除框架开销（`SearchTools`、`session_rename`）。计算器：`computer_apps` + 快照 + `computer_act` / `computer_run`；Finder 基线为 `computer_apps`×1 + `computer_snapshot`×4 + `computer_act`×3 + `computer_query`×2 + `computer_wait_for`×1，Jev 腿为 `computer_apps`×1 + `computer_snapshot`×2 + `computer_run`×1。
+- **单次配对，不是统计结论**：主模型的轮次长度波动很大（§10.6 里同一任务出现过 65 s 与 360 s 的差距），这两组只说明量级和方向。
+
+
+### 10.8 Finder 两个补充案例：菜单栏与长列表（2026-09-20，Grok 4.6 / high，dev 版）
+
+§10.7 之后又加了两个专挑未覆盖路径的案例：**B 菜单栏**（View ▸ Sort By ▸ Date Modified，验收用 `AXMenuItemMarkChar` 的 ✓）和 **A 长列表**（/System/Library 163 项，目标在倒数第 2 行，验收用窗口标题）。两个首跑都失败，各挖出一串缺陷；修完后 B 一次 press 完成（3 步 6.9 s，`goal_satisfied 0.81`），A 10 步 31.9 s 到达（5 次滚动每次视口都在推进，最后 `Open WorkflowResponsiveness` 置信度 1.0）。
+
+#### B：后台 app 的菜单命令是死的，而且没有后台路径
+
+昨晚的判断（"关闭时 `enabled` 不可信"）是错的，真因是**前台 vs 后台**：AppKit 的 `validateMenuItem:` 按 active app 的 key window 校验，后台 app 没有 key window，41 个 View 菜单项只剩 3 个 enabled；AXPress 报 `ok:true` 但排序列不变，Finder 切到前台后同一操作立刻生效。逐条实测的替代路径全部无效：`CGEventPostToPid` 快捷键（⌘1 在前台变 icon view、后台不变）、直接 AXPress 关闭菜单树里的叶子、先用 AX 把窗口设 AXMain/AXFocusedWindow 再按、System Events `click menu item`、SkyLight 私有 `_SLPSSetFrontProcessWithOptions(kCPSNoWindows)`（非前台进程调用被忽略）、以及"AX 读取刷新了 enabled 之后再按"。`AXEnabled` 不可写。
+
+落地的是**事务性激活**（helper `axPressMenuCommand`）：叶子命令 press 时若 app 不在前台 → `activate()` → 沿菜单栏往下枚举 children 直到该项 `AXEnabled` 变 true（AppKit 在激活后的下一轮 run loop 重新校验，实测 0.25–1.0 s；单独读那个元素**不会**刷新，必须枚举祖先菜单的 children）→ AXPress → `previous.activate()`。18/18 成功，整个事务 ≈ 1 s，用户看到目标 app 闪一下、焦点自动回来；这 1 s 内用户按键会落进目标 app，是已知代价。两个陷阱：激活后立刻按（不等 enabled）0/6 成功，即使 app 已 active；激活前就读到 true 的 flag 是上次校验的残留，只能等满 1.1 s 再信。菜单栏项和带子菜单的项**不**激活（按了只是把菜单打开，恢复前台又立刻关掉），观察层也不再把它们当候选——闭合菜单树是完整的，一条菜单路径就是对叶子的一次 press。`computer_apps focus` 新增 `activate` 参数，留给确实要连续前台操作的序列；service 侧不设闸门。后台读到的菜单 `enabled` 全部上报为 true（helper `unvalidatedMenuFlags`），不再把"没有 key window"当成命令自身的状态。
+
+同一案例顺带揪出四个 TS 侧缺陷：
+
+- **`continueDespiteSatisfied` 是死功能的残留**：goal_satisfied 的 accept 暂停早已删除，但对任何非 budget 的 accept 暂停回答 `continue` 仍会置位，此后 Jev 的完成判定被永久否决——run 在第 3 步已经排好序，`goal_satisfied 0.84` 照样继续滚到 maxSteps。已删。
+- **候选按 label 去重把菜单命令吞掉**：列标题 "Date Modified" 先出现，菜单里的 "Date Modified" 命令被当重复丢弃，run 只能点列标题（违反"只用菜单栏"）。改为按名称来源节点的 ref 去重（row / cell / textfield 三者共享同一个来源，仍合并）。
+- **`AXMenuItem` 一律回答 `AXExpanded=false`**：叶子命令被标成折叠，Jev 看到 "Expand Date Modified" 以为还有下一步，连按 7 次。helper 只在有 AXMenu 子节点时上报 `expanded`。
+- **菜单项的状态在 ✓ 里不在 value 里**：`AXMenuItemMarkChar` → `checked`，Jev 第一次能看见"已选 Date Modified"，完成判定从 0.5 跳到 0.8+。
+
+#### A：滚动从来没生效过，而观察也看不到滚动的结果
+
+- **app-directed 滚轮事件被后台 app 丢弃**。昨晚和今天前几轮的 `changedPage: True` 全来自 act diff 的噪声（光标/焦点标志），列表一动没动；用户肉眼看到的正是这个。给事件补上 `kCGMouseEventWindowUnderMousePointer` 字段、把窗口 AXRaise 到最前都没用，只有 Finder 在前台时滚轮才动（且带惯性、行为怪异）。**能后台滚动的是 AXScrollBar 的 `AXValue`**：可写、立即生效、精确分页（0.5 → InternetAccounts，1.0 → SetupAssistantBundles）。`delivery=semantic` 的 scroll 现在写 scroller 值，Δvalue = Δpx ÷ (内容高 − 视口高)；run 的 scroll 计划改走 semantic；`canScroll` 由 scroller 值决定。
+- **AX 树把整张表的所有行都暴露出来**：/System/Library 一次 `ax_tree` 12.6 s、1500 节点上限处截断在第 114 行，目标行永远读不到；就算滚动生效，候选也永远是树开头的 250 个。helper 的 `axChildren` 对超过 30 个子节点的表/大纲只保留 `AXVisibleRows`：12.6 s → 0.44 s，33 行可见行的 y 全在窗口内，滚动后候选集随视口变化——这才是浏览器那边一直享有的"观察即视口"语义。
+- **settle 在大树上纯亏**：单次 observe 9 s，预算 1.5 s，七步全报 `budget` 零收敛。规则：act（输入 + 后继读取）本身已超过 settle 预算时，后继就是 settled 观察，跳过采样（`act-outlasted-budget`）；按每次 act 度量，离开大列表后 settle 自动恢复。trace 的 `latencyMs` 新增 `settle`。
+
+#### 启动也是 host 的事，不是主模型的
+
+`computer_run app=X` 之前只解析已运行 app 的窗口，工具描述让主模型"先用 computer_apps launch"；基准 prompt 又硬性要求先 list、再 snapshot，于是每次 run 前固定多 2–3 个主模型工具轮次。app 是否在运行、启动它、等第一个窗口，全是确定性 host 事实，不该问任何模型（也不该问 Jev——Jev 是逐步判定器，不是编排器）。现在 `rootForApp` 在没窗口时走后台 `launch` 并等首窗（≤ 8 s），描述改为 "no computer_apps or computer_snapshot call is needed first"。Calculator 冷启动实测：主模型直接 `computer_run app="Calculator"`，**工具调用 4 次**（2 次 SearchTools + run + 验证快照），run 8 步 25.5 s 算出 19，前台始终是 SuperOne。
+
+同一轮揪出菜单命令平铺的一个副作用：闭合菜单树里 View ▸ Decimal Places ▸ "12" 作为候选只剩一个 "12"，目标里写 "enter 12"，Jev 就点了它（0.54）而不是数字键，算出 7.5。命令标签现在带最近一级菜单名（"Decimal Places ▸ 12"、"Sort By ▸ Date Modified"、"File ▸ New Folder"）。另外 Calculator 会恢复上次的显示值（重启后仍是 0.5），目标要显式先 All Clear——run 自己判断不出"显示的不是我的数"。
+
+#### 方法上的教训
+
+- 昨晚"关闭 vs 打开"的结论来自一次读数对照，但两次读数之间还有一个没控制的变量（AppleScript 先 `activate` 了）。今天所有结论都先用 helper 直连 socket 做 A/B（前台 / 后台各一遍），再改代码。
+- Finder 的 `list view options` 的 `sort column` 读写都不可靠（读到 name column 时菜单里 ✓ 在 Date Modified），reset 脚本一度用它自欺；改用真实菜单点击 + ✓ 验收。
+- `bun run dev` 运行期间重建 helper 会把 dev 实例带下去（helper 被替换 → app 干净退出），要先关再建。
+
+
 ## 参考
 
 - `~/Developer/Github/jev-ultrafast/jev_ultrafast/{agent.py, browser.py, snapshot.js, model.py, questions.py}`、`docs/performance.md`

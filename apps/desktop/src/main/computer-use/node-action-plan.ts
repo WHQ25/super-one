@@ -27,8 +27,10 @@ export function planNodeAction(node: UiOutlineNode | undefined, intent: NodeInte
   if (intent.kind === 'press' && can.press) {
     return { actions: [{ type: 'press', ref: node.ref }], delivery: 'semantic' }
   }
+  // Semantic: the scroll bar's value is set, which works on a background app
+  // where posted wheel events do not.
   if (intent.kind === 'scroll' && can.scroll && node.bounds && node.bounds.width > 0 && node.bounds.height > 0) {
-    return { actions: [{ type: 'scroll', ref: node.ref, dy: intent.dy }], delivery: 'app-directed' }
+    return { actions: [{ type: 'scroll', ref: node.ref, dy: intent.dy }], delivery: 'semantic' }
   }
   if (tier !== 'full' || !TEXT_ROLES.has(role)) return
   if (intent.kind === 'setText' && can.setText) {

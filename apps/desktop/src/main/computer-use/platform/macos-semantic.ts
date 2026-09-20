@@ -5,6 +5,32 @@ import type { PlatformActStepResult } from './types'
 import type { HelperAxActionResult } from './helper-protocol'
 import type { MacosHelperClient } from './macos-helper-client'
 
+/**
+ * Scroll by writing the scroll bar's value, the one way to scroll an app in the
+ * background: wheel events posted to a pid are dropped by an inactive app
+ * (Finder's list never moved through twelve of them), while a scroller's
+ * AXValue is settable and takes effect at once. The value is a fraction of the
+ * scrollable range, so a pixel delta maps through content minus viewport.
+ */
+export function scrollBarSetting(area: UiOutlineNode | undefined, dx: number, dy: number): { ref: string; value: number } | undefined {
+  if (!area?.bounds) return undefined
+  const vertical = Math.abs(dy) >= Math.abs(dx)
+  const children = area.children ?? []
+  const bar = children.find((c) => c.role === 'scrollBar' && !!c.bounds && (c.bounds.height > c.bounds.width) === vertical)
+  const content = children.filter((c) => c.role !== 'scrollBar' && c.bounds).sort((a, b) => extent(b, vertical) - extent(a, vertical))[0]
+  if (!bar || !content) return undefined
+  const range = extent(content, vertical) - extent(area, vertical)
+  if (range <= 0) return undefined
+  const current = Number(bar.value)
+  const next = Math.min(1, Math.max(0, (Number.isFinite(current) ? current : 0) + (vertical ? dy : dx) / range))
+  if (Math.abs(next - current) < 1e-6) return undefined
+  return { ref: bar.ref, value: Math.round(next * 1e4) / 1e4 }
+}
+
+function extent(node: UiOutlineNode, vertical: boolean): number {
+  return vertical ? node.bounds?.height ?? 0 : node.bounds?.width ?? 0
+}
+
 export class MacosSemanticExecutor {
   constructor(
     private readonly client: MacosHelperClient,
@@ -64,17 +90,18 @@ export class MacosSemanticExecutor {
         }
         const dy = action.dy ?? 0
         const dx = action.dx ?? 0
-        // Map dominant axis to AX scroll page action via ax_action names we may add later.
-        // For now: semantic scroll uses wheel at element bounds (still HID) is forbidden —
-        // only true AX would be allowed. Fail closed with a clear message.
         if (dx === 0 && dy === 0) {
           return { applied: false, description: 'scroll: requires dx and/or dy' }
         }
-        return {
-          applied: false,
-          description:
-            'scroll under delivery=semantic: AX page-scroll not wired yet; use delivery=app-directed',
+        const area = target.outline ? findNode(target.outline, action.ref) : undefined
+        const bar = scrollBarSetting(area, dx, dy)
+        if (!bar) {
+          return {
+            applied: false,
+            description: 'scroll under delivery=semantic: the target has no scroll bar with room to move in that direction; use delivery=app-directed for a wheel at x,y',
+          }
         }
+        return this.axActionStep(target, bar.ref, 'set_value', String(bar.value))
       }
       case 'keypress':
       case 'drag':

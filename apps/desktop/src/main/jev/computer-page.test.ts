@@ -188,7 +188,7 @@ describe('computer fast-loop adapter', () => {
     expect(act).toHaveBeenCalledWith(expect.any(String), [{ type: 'keypress', keys: ['Return'] }], expect.objectContaining({ delivery: 'app-directed' }))
   })
 
-  it('dispatches scroll through the same app-directed path as computer_act', async () => {
+  it('dispatches scroll as a semantic scroll-bar write, the same path computer_act takes with delivery=semantic', async () => {
     const { adapter, backend, service } = fixture()
     const look = backend.look.bind(backend)
     vi.spyOn(backend, 'look').mockImplementation(async (...args) => {
@@ -201,7 +201,7 @@ describe('computer fast-loop adapter', () => {
     expect(page.canScroll?.down).toBe(true)
     const act = vi.spyOn(service, 'act')
     await adapter.scroll(page, 600)
-    expect(act).toHaveBeenCalledWith(page.stateId, [{ type: 'scroll', ref: '@e99', dy: 600 }], expect.objectContaining({ delivery: 'app-directed' }))
+    expect(act).toHaveBeenCalledWith(page.stateId, [{ type: 'scroll', ref: '@e99', dy: 600 }], expect.objectContaining({ delivery: 'semantic' }))
   })
 
   it('uses semantic replacement, verifies valueEquals and reuses the successor observation', async () => {

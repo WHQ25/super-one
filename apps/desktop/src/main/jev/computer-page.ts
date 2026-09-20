@@ -70,6 +70,12 @@ function outcomeChanged(result: ActResult | undefined): boolean | null {
   return result.outcome === 'worked' ? true : result.outcome === 'didnt' ? false : null
 }
 
+/** Where a scroller sits in its range, 0…1; a list with no scroller reads as the middle so both directions stay offered. */
+function scrollPosition(bar: UiOutlineNode | undefined): number {
+  const value = Number(bar?.value)
+  return bar && Number.isFinite(value) ? value : 0.5
+}
+
 /** The first readable descendant — a Finder row is named by its name cell, not by itself. */
 function labelSource(node: UiOutlineNode): UiOutlineNode | undefined {
   const stack = [...(node.children ?? [])]
@@ -104,6 +110,7 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
   const text: string[] = []
   const seen = new Set<string>()
   let scrollRef: string | undefined
+  let scrollBar: UiOutlineNode | undefined
   // `menu` is the menu a command sits in — "Sort By" for Date Modified,
   // "Decimal Places" for Calculator's 12. On its own a command's name says
   // too little: Jev read "12" as the digits the goal asked for, chose the
@@ -126,7 +133,11 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
     const select = planNodeAction(node, { kind: 'select' }, tier)
     const press = planNodeAction(node, { kind: 'press' }, tier)
     const open = planNodeAction(node, { kind: 'open' }, tier)
-    if (!scrollRef && planNodeAction(node, { kind: 'scroll', dy: 1 }, tier)) scrollRef = node.ref
+    if (!scrollRef && planNodeAction(node, { kind: 'scroll', dy: 1 }, tier)) {
+      scrollRef = node.ref
+      // The vertical scroller's value says whether there is more above or below.
+      scrollBar = node.children?.find((c) => c.role === 'scrollBar' && !!c.bounds && c.bounds.height > c.bounds.width)
+    }
     const kinds: Array<'press' | 'select' | 'open' | undefined> = []
     if (select && !node.selected) kinds.push('select')
     else if (!select && (press || editable)) kinds.push(press ? 'press' : undefined)
@@ -182,7 +193,8 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
   return {
     url: '', title: `${result.root.app} — ${result.root.title}`, text: text.filter(Boolean).join('\n').slice(0, MAX_TEXT),
     elements, omitted: result.nodesOmitted ?? 0, loading: false,
-    scroll: { y: 0, height: 0, viewport: 0 }, canScroll: { down: !!scrollRef, up: !!scrollRef },
+    scroll: { y: 0, height: 0, viewport: 0 },
+    canScroll: { down: !!scrollRef && scrollPosition(scrollBar) < 1, up: !!scrollRef && scrollPosition(scrollBar) > 0 },
     stateId: result.stateId, rootId: result.root.rootId, bundleId: result.root.bundleId, refs, clickKinds, scrollRef,
     target: { app: result.root.app, bundleId: result.root.bundleId, root: result.root.rootId },
     signature: JSON.stringify(result.outline),

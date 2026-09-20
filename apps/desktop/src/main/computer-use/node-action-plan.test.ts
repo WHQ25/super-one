@@ -10,8 +10,9 @@ describe('observed node action plans', () => {
     expect(planNodeAction(field, { kind: 'setText', text: 'cats' }, 'full')).toEqual({ actions: [{ type: 'setText', ref: '@e2', text: 'cats' }], delivery: 'semantic', expect: { kind: 'valueEquals', ref: '@e2', value: 'cats' } })
   })
 
-  it('maps scroll and focused Return to app-directed actions', () => {
-    expect(planNodeAction({ ...field, capabilities: { scroll: true }, bounds: { x: 0, y: 0, width: 200, height: 100 } }, { kind: 'scroll', dy: 600 }, 'click')).toEqual({ actions: [{ type: 'scroll', ref: '@e2', dy: 600 }], delivery: 'app-directed' })
+  it('maps scroll to the semantic scroll bar and focused Return to an app-directed key', () => {
+    // A wheel posted to a background app's pid is dropped; its scroll bar's value is not.
+    expect(planNodeAction({ ...field, capabilities: { scroll: true }, bounds: { x: 0, y: 0, width: 200, height: 100 } }, { kind: 'scroll', dy: 600 }, 'click')).toEqual({ actions: [{ type: 'scroll', ref: '@e2', dy: 600 }], delivery: 'semantic' })
     expect(planNodeAction(field, { kind: 'enter' }, 'full')).toEqual({ actions: [{ type: 'keypress', keys: ['Return'] }], delivery: 'app-directed' })
   })
 

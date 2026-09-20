@@ -621,6 +621,33 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     expect(res.steps[0]?.unknown).toBe(false)
   })
 
+  it('act semantic scroll writes the scroll bar value, one page per delta', async () => {
+    // Wheel events posted to a background app's pid are dropped — twelve of
+    // them left Finder's list where it was — while a scroller's AXValue is
+    // settable and moves the list at once. 560px of a 3277px list in a 610px
+    // viewport is 560 / (3277 − 610) of the scroller's range.
+    call.mockImplementation(async (method: string) => {
+      if (method === 'ax_action') return { ok: true, index: 4, action: 'set_value', beforeValue: '0', afterValue: '0.21' }
+      return { ok: true }
+    })
+    const outline = {
+      ref: '@e1', role: 'window',
+      children: [{ ref: '@e2', role: 'scrollArea', capabilities: { scroll: true }, bounds: { x: 94, y: 121, width: 1100, height: 610 }, children: [
+        { ref: '@e3', role: 'outline', bounds: { x: 93, y: -2545, width: 1102, height: 3277 } },
+        { ref: '@e4', role: 'scrollBar', value: '0', bounds: { x: 1180, y: 121, width: 14, height: 610 } },
+      ] }],
+    }
+    const res = await adapter.act({ root: root(), actions: [{ type: 'scroll', ref: '@e2', dy: 560 }], delivery: 'semantic', outline })
+    expect(call).toHaveBeenCalledWith('ax_action', expect.objectContaining({ index: 4, action: 'set_value', value: '0.21' }))
+    expect(res.steps[0]?.applied).toBe(true)
+    // At the end of the range there is nothing to write; the step fails closed instead of pretending.
+    call.mockClear()
+    outline.children[0].children[1].value = '1'
+    const end = await adapter.act({ root: root(), actions: [{ type: 'scroll', ref: '@e2', dy: 560 }], delivery: 'semantic', outline })
+    expect(end.steps[0]?.applied).toBe(false)
+    expect(call).not.toHaveBeenCalledWith('ax_action', expect.anything())
+  })
+
   it('press on a relabeling control counts the name change as evidence', async () => {
     // A control that has no AXValue now reports undefined instead of echoing
     // its title, so a title flip is the only evidence that the press landed.

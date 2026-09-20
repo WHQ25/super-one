@@ -260,12 +260,23 @@ func axPerform(
         if check != .success || !settable.boolValue {
             throw HelperError(code: "AX_NOT_SETTABLE", message: "AXValue is not settable on this element")
         }
+        // A scroller's AXValue is a number (0…1), and setting it is the one way
+        // to scroll an app in the background: wheel events posted to a pid are
+        // dropped by an inactive app, raised window or not. Written in the
+        // element's own type; a string on a numeric value fails.
+        var currentRaw: CFTypeRef?
+        AXUIElementCopyAttributeValue(el, kAXValueAttribute as CFString, &currentRaw)
+        let numeric = currentRaw is NSNumber
+        let payload: CFTypeRef = numeric ? (NSNumber(value: Double(value) ?? 0) as CFTypeRef) : (value as CFTypeRef)
         // Chromium contenteditables may accept AXSetValue while unfocused but
         // defer exposing/applying it until a later focus change. Focus first so
         // the write and the bounded readback belong to the same transaction.
-        AXUIElementSetAttributeValue(el, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-        usleep(25_000)
-        let err = AXUIElementSetAttributeValue(el, kAXValueAttribute as CFString, value as CFTypeRef)
+        // A scroller is never focused.
+        if !numeric {
+            AXUIElementSetAttributeValue(el, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+            usleep(25_000)
+        }
+        let err = AXUIElementSetAttributeValue(el, kAXValueAttribute as CFString, payload)
         if err != .success {
             throw HelperError(code: "AX_ACTION", message: "AXSetValue failed (\(err.rawValue))")
         }

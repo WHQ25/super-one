@@ -944,6 +944,51 @@ if (el.clickable === false) continue          // ← 永远轮不到 editable �
 - `bun run dev` 运行期间重建 helper 会把 dev 实例带下去（helper 被替换 → app 干净退出），要先关再建。
 
 
+### 10.9 动作覆盖第一批：展开/选中与 sheet，以及后台 ⌘ 快捷键的真相（2026-09-20，Grok 4.6 / high，dev 版）
+
+§10.8 之后按"每个 computer_act 动作至少一个用例"做了覆盖审计，缺的有：disclosure triangle 的 Expand、行的 select、sheet/dialog 根、逐键 typeText、`textContains` 等待、物理坐标点击与右键菜单、zoom / 视觉快照 / 录屏 / 拖拽。第一批跑了前三个：**Finder 展开 Users 并选中 Shared**（不打开、不用侧栏，标题保持 Macintosh HD）和 **TextEdit File ▸ Save… 填名保存**（sheet 根）。两个首跑都"看起来成功"，trace 说明不是。
+
+#### Finder：三角形没有名字，行的状态不在文本里
+
+首跑 `r72a995cc`：第 1 步点了一个 **label 为空** 的候选（0.99），第 2 步 Select Shared（0.97），然后 `goal_satisfied 0.53 with no action left`——步骤对了，Jev 却不确定自己做完了。Finder 列表里每行一个 `AXDisclosureTriangle`：没有名字，**不回答 AXExpanded**，状态在 AXValue 里是 "0"/"1"。页面把四个三角形当成四个无名候选、value 全是 "0"；Jev 靠列表顺序猜中了 Users 的那个，展开之后页面文本里仍只有 "Users\n1"，看不出有什么变了。第二次跑 `r8efb3b2f` 暴露另一半：Select Shared 之后这一行**从候选里消失**（已选中的行不再提供 select），文本却没有任何"已选中"的痕迹，Jev 读成页面没变，滚了一下，`no-progress` 暂停。
+
+修法都在"把状态放进 Jev 判定完成所依据的那段文本"：helper 把 AppKit 三角形的 AXValue 上报为 `expanded`；页面用所在行的名字给三角形命名并以 Expand 提供；文本里写 `(Users: expanded)`、`(Users: selected)`。修完 `rf4cabeb8`：Expand Users 1.0 → Select Shared 1.0 → `goal_satisfied 0.85`，9.4 s，前台始终是 SuperOne。快照的 TOON 大纲同样加了 expanded/collapsed/checked 状态列——主模型也不该从一个数字里解码状态。
+
+#### TextEdit sheet：四个观察缺陷和一个 settle 假设
+
+`rd0500e96` / `r18f45d6d` 都以 `goal_satisfied 0.60–0.69 with no action left` 结束，文件确实保存了，但过程里每一步都有毛病：
+
+- **标尺把二十个数字放在文档前面**。TextEdit 的 ruler 每个制表位一个 `AXRulerMarker`，value 是偏移量（"1.2698412698"…），页面文本以此开头。位置类角色（ruler / scroll bar / splitter / slider）不进文本。
+- **无名的 pop-up 是 "button "**。保存 sheet 的文件格式菜单没有标题，只有当前选项 "Rich Text Document"；现在无名控件以它显示的值为名，既无名又无值的不再提供。
+- **禁用的滚动条照样提供 scroll_down**（`rddf9f7d6` 第 4 步）。一行文档的 scroller `enabled=false` 是 AppKit 在说"内容装得下"，现在读成两个方向都不能滚。
+- **标题栏配件被当成 dialog 根**：macOS 27 的窗口共享按钮是一个 66×20、标题为 "Window" 的 AXDialog，瞬态根发现把它列在真正的 sheet 旁边，主模型进去找保存表单。根要有最小尺寸。
+- **File ▸ Save… 之后 settle 被跳过了**（`act-outlasted-budget`）。§10.8 的规则"act 超过预算就把后继当 settled"假设 act 慢是因为读窗口慢；菜单命令慢是因为激活 + 等菜单校验（1–2 s），TextEdit 窗口本身 300 ms 就读完，而 sheet 正是 settle 该等的东西。现在同时要求读取本身也超过预算的一半才跳过。
+
+修完 `rd6bca69f` / `rddf9f7d6` 的 Save… 之后都是真 settle（`observation`）。仍然软的一点：Save 之后 `goal_satisfied` 只有 0.57–0.62、`none_useful` 0.7，两个都在阈值之下，于是一次点了 File ▸ Save As…（0.46，risky 暂停）、一次滚动（禁用滚动条修掉了这条路）。阈值按设计保留，等下一批再看。
+
+#### 插曲：`computer_act keypress cmd+s` 在后台为什么什么都不发生
+
+同一个 helper、同一个 sheet：`computer_run` 通过菜单 press 能打开，`computer_act` 的 app-directed `cmd+s` 却毫无反应。先排除了两个误判：
+
+1. **helper 根本没把 "s" 当键**。`keypress` 的 keycode 表只有数字和导航键，字母走 unicode 回退——keycode 0 的事件上挂一个字符。AppKit 按**虚拟 keycode** 匹配菜单快捷键，`cmd+s` 于是以 ⌘A 的 keycode 到达、字符是 "s"，谁也不认——**前台也一样失败**。表补齐了字母、符号、F 键（§10.8 的 `cmd+1..3` 修的是同一个 bug 的数字那一半）。
+2. 补上 keycode 后前台通了、后台还是不通。逐条实测所有按 pid 投递的通道（`CGEventPostToPid`、SkyLight `SLEventPostToPid`、带 window 字段、先 AXRaise）：**⌘ 组合键在后台 app 一律被丢弃、不留痕迹，普通按键则照常到达 first responder**。原因和 §10.8 的菜单校验是同一个：⌘ 快捷键就是菜单命令，AppKit 只在自认 active 的 app 里派发。
+
+如果全走物理投递（HID），每个快捷键都要抢前台、抢键盘，用户在别的 app 打字会被截走——退回到 §10.8 那次"闪一下"的体验之下。于是调研了别家：Codex Computer Use 能"聚焦到 app 但不到前台"，靠的是 `SyntheticAppFocusEnforcer`。**app 的 active 信念和 window server 的前台进程是两件事**：前者由 window server 发给 app 的通知设置（`NSApp.isActive`、key window），后者决定谁的菜单栏在屏幕上、真实输入路由给谁。伪造前者、不动后者：给 app 发一条 AppKit-defined 的 `ApplicationActivated` 事件（subtype 1），再发一个路由到它窗口的左键（`CGEventField` 91/92 = windowID，位置 (−5000, −5000) 所以点不到任何控件——mouse-down 是让窗口成为 key 的动作），app 就跑它的前台逻辑：菜单校验通过、AXPress 生效、发到它 pid 的 ⌘S 打开保存 sheet，而屏幕上什么都不变；事后发 subtype 2 `ApplicationDeactivated` 收回。**不收回 app 会卡死**：TextEdit 留在"自认 active"的状态后，后续真实激活再也建立不了 key window，连前台 ⌘S 都没反应，只能重启。
+
+落地在 helper 里（`SyntheticActivation.swift`），菜单 press 和 ⌘ 快捷键共用，每一步都用 AX 验证（`AXFrontmost` 变 true 且 `AXFocusedWindow` 出现），拿不到就退回真实激活。两个性能坑：
+
+- **发完事件立刻探 AX 会把 app 主线程占住**——它既要处理事件也要回答 AX，press 拖到 1.4 s。先歇 30 ms，再等 `AXFrontmost` 翻转（那是 app 自己的信念，处理完激活事件才会变）。
+- **AppKit 的菜单校验有约 0.85 s 的缓存**。观察时 `ax_tree` 走了一遍后台菜单树（全部 disabled），一秒内的 press 读到的还是那份缓存，只能等它过期。改成**按 app 租约**（`SyntheticActivationLease`）：菜单遍历、press、快捷键都在同一份信念下校验，观察到的 enabled 是真的，press 立即；最后一次请求 2 s 后收回，用户真实激活时（`didActivateApplicationNotification`）静默放弃。press 从 ≈1.4 s 降到 ≈430 ms。
+
+结果：Finder View ▸ Sort By ▸ Date Modified `rc5f65309` 一次 press 完成（4.6 s，`goal_satisfied 0.87`），**前台从头到尾没有变过**——§10.8 的"闪一下 + 1 s 内按键会落进目标 app"这条代价不存在了；TextEdit 后台 `computer_act keypress cmd+s` 现在直接打开 Save sheet。`computer_apps focus activate=true` 只剩给确实需要连续前台操作的序列。工具描述改为"菜单命令和 ⌘ 快捷键在后台可用；系统级热键（⌘Space、⌘Tab、截屏）才需要 physical"。
+
+#### 方法上的教训
+
+- "看起来成功"的 run 要读 trace 里的置信度：`with no action left` 的 done 和 0.5x 的 goal_satisfied 都在说观察层少给了什么。
+- 后台通道能不能用，先用独立 helper（`/tmp/claude/menu-probe`）直连 socket 做前台 / 后台 A/B，再改代码；这次 keycode 那个 bug 就是 A/B 时前台也失败才暴露的。
+- 重复给同一个 app 发合成激活事件而不收回会把它弄坏，探针脚本每轮先 `fresh.sh` 重启 TextEdit。
+
+
 ## 参考
 
 - `~/Developer/Github/jev-ultrafast/jev_ultrafast/{agent.py, browser.py, snapshot.js, model.py, questions.py}`、`docs/performance.md`

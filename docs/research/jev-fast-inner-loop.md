@@ -1130,24 +1130,41 @@ B 的范式就是 `presets`：把带参数的动作拆成几个选择题，每�
 
 每步做完用 Finder / TextEdit / Mail 各一个用例跑 trace，看 `action` 头扩到 9 项后的置信度是否还撑得住 §10.1 的"argmax 不设门槛"；撑不住就在 `policy.ts` 给新动词加门槛，而不是回退动作。
 
-### 11.4 第五步：能力交接——Jev 决定动作，主模型填参数，run 执行（2026-09-21 决定）
+### 11.4 第五步：能力交接——Jev 判定需要输入，主模型给数据，run 执行（2026-09-21 决定）
 
-§11.1 把"参数是坐标/自由文本、目标无 AX 名"划为永远不给 Jev。这条边界改掉：按快慢思考的分工，Jev（快）负责判断**下一步需要什么**，主模型（慢）只负责**填 Jev 填不了的参数**，执行仍归 run。现有的 pause / resume 协议只有三种触发（`risky` 要批准、`uncertain` 要选、`no-progress` 没东西可做），这是第四种：`capability`。
+§11.1 把"参数是坐标/自由文本、目标无 AX 名"划为永远不给 Jev。这条边界改掉：按快慢思考的分工，Jev（快）负责判断**下一步需要外部输入**，主模型（慢）看暂停附带的观察和截图**给出数据**，执行仍归 run。现有 pause / resume 只有三种触发（`risky` 要批准、`uncertain` 要选、`no-progress` 没东西可做），这是第四种：`capability`。
 
-**Jev 侧。** `action` 头再加两个选项：`needs_pointer`（目标需要坐标或路径：拖到某个位置、画布上点、拖滑块）、`needs_text`（需要 presets 里没有的文字）。配一个 `hand_target` 头（它关乎哪个候选，可 `none_of_these`）。两者都是从 goal + 页面文本能判断的事；为此 `pictureOnly` 区域要以 `(picture-only: <名字>)` 进 `text`，否则 Jev 不知道有画布。和其他动词一样不设门槛，过度交接靠 trace 分布看。
+**Jev 侧。** `action` 头加一个选项 `needs_input`：目标需要候选里没有的东西——一个位置、一段路径、presets 里没有的文字、某个控件里没列出的值。配两个头：`hand_target`（它关乎哪个候选，可 `none_of_these`）和 `input_kind`（闭集 `position | path | text | value | other`，**只作提示，不选 schema**：Jev 判错一次不该把主模型锁进错的表单）。为此 `pictureOnly` 区域要以 `(picture-only: <名字>)` 进 `text`，否则 Jev 不知道有画布。和其他动词一样不设门槛，过度交接靠 trace 分布看。
 
-**暂停携带的东西**（§8.4 的具体化）。所有暂停——不只 `capability`——都返回一份**暂停时刻的新鲜 fused 观察**：`snapshot.stateId` 指向它，`snapshot.image = { path, width, height, relevance }`，`snapshot.coordinateSpace` 与 `computer_snapshot` 同义。图只回 **path**（和 `computer_snapshot` / `computer_act` 一样，`toAgentImage` 落盘、base64 不进工具结果），读不读由主模型决定，所以带图的成本只是一次窗口级抓取，不是上下文。`relevance` 由暂停原因查表得出，不问 Jev：`pointer` → `required`（要定坐标），`risky` → `useful`，`uncertain` / `no-progress` / `budget` → `optional`。不给 Jev 一个"要不要截图"的头：它只看文本，判不出比这张表更多的东西，而它判错的代价正好是多一次 snapshot 调用；歧义是视觉性的（同名按钮靠位置区分）时，`hand_target` 答 none 加 `why` 已经能把主模型引向读图。主模型不再需要额外调用 snapshot / zoom 才能回答。`capability` 暂停另带 `question.context = { verb, target: { index, ref, label, bounds }, why }` 和 `question.schema`：
+**为什么 answer 的 schema 是固定的、且就是平台的 `*_act` 动作。** Jev 只有 choice / noul 头，说不出自由文本的需求，也生不出 JSON schema，所以"需要什么"只能由代码从它的答案（target + kind + 落选候选）拼出提示，而 answer 必须是一个事先固定的形状。最通用又不新增词汇的形状：**`{ actions?: <本平台 act 动作数组>, presets?: Preset[] }`**——主模型早就会写 `computer_act` / `browser_act` / `device_act` 的 actions，三个平台各用自己的；文本走 `presets` 回填，Jev 之后自己打，并且 `field_for_<key>` 头随之出现，一次交接可覆盖后续字段；两者可同时给（先点开画布再打字）。
 
-| mode | schema | run 怎么执行 |
-| --- | --- | --- |
-| `pointer` | `{ action: 'click' \| 'drag' \| 'scroll', x?, y?, path?, dx?, dy? }`，坐标在 `snapshot.coordinateSpace` 里 | `RunDeps.pointer(stateId, action)`：computer 走 `service.act`（stale 检查照常），browser 走 CDP `Input.dispatchMouseEvent`，device 走 tap / swipe |
-| `text` | `{ text, field?: index }` | 文本存为新 preset（key 取自 goal 或 `answer`），用现有 `type` 打进 `field ?? hand_target`；此后 `field_for_<key>` 头自动出现，同一次交接可覆盖后续字段 |
+**暂停携带的东西**（§8.4 的具体化）。所有暂停——不只 `capability`——都返回一份**暂停时刻的新鲜 fused 观察**：`snapshot.stateId` 指向它，`snapshot.image = { path, width, height, relevance }`，`snapshot.coordinateSpace` 与 `computer_snapshot` 同义。图只回 **path**（和 `computer_snapshot` / `computer_act` 一样，`toAgentImage` 落盘、base64 不进工具结果），读不读由主模型决定，所以带图的成本只是一次窗口级抓取，不是上下文。`relevance` 由暂停原因查表得出，不问 Jev：`capability` → `required`，`risky` → `useful`，`uncertain` / `no-progress` / `budget` → `optional`。不给 Jev 一个"要不要截图"的头：它只看文本，判不出比这张表更多的东西，而它判错的代价正好是多一次 snapshot 调用。
 
-**为什么 run 执行而不是主模型自己 `computer_act`。** 主模型已经拿到截图和坐标空间，把参数塞回 answer 比再发一次 `computer_act` 少一个工具往返；这一步进 run 的 history / trace（`kind: 'handed'`，带参数），`changedPage` 与 settle 照常计算，后续 Jev 判断有据可依；执行路径只有一条（`service.act`），不会出现主模型执行完 run 又重放的重复。
+`capability` 暂停另带：
 
-**边界。** `capability` 暂停不替代 `risky`：交接来的动作若被 `next_step_risk` 判为不可逆，仍先暂停要批准（同一次 pause 合并两问）。budget 内每次交接计一步。
+```json
+{
+  "reason": "capability",
+  "question": {
+    "type": "value",
+    "context": {
+      "goal": "…",
+      "target": { "index": "7", "ref": "@e12", "label": "Canvas", "bounds": [x, y, w, h] },
+      "hint": "position",
+      "offered": ["…click_target 前 5 个候选…"],
+      "why": "goal asks for a place on the picture; no offered element is it"
+    },
+    "schema": { "actions?": "<computer_act actions>", "presets?": "[{ key, value, field? }]" }
+  },
+  "snapshot": { "stateId": "…", "image": { "path": "…", "relevance": "required" }, "coordinateSpace": { "…": "…" } }
+}
+```
 
-**顺序。** 排在 §11.3 四步之后，作为第 5 步；依赖第 1 步的 `RunDeps` 可选方法模式。验证用例：Finder 图标视图里把文件拖到窗口某处（`needs_pointer` + drag）、备忘录新建一条并写正文（`needs_text`）、Preview 在图片上点一个位置（`pictureOnly` 进文本）。
+**resume。** `presets` 合并进 run；`actions` 经新的可选 `RunDeps.act(stateId, actions)` 执行——computer 走 `service.act`（stale 检查照常），browser 走 CDP，device 走 device act——进 history / trace（`kind: 'handed'`，带 actions），settle 与 `changedPage` 照常；交接来的动作若被 `next_step_risk` 判不可逆，同一次 pause 合并批准。budget 内每次交接计一步。
+
+**为什么 run 执行而不是主模型自己 `computer_act`。** 主模型已经拿到截图和坐标空间，把 actions 塞回 answer 比再发一次 `computer_act` 少一个工具往返；这一步进 run 的记录，后续 Jev 判断有据可依；执行路径只有一条，不会出现主模型执行完 run 又重放的重复。
+
+**顺序。** 排在 §11.3 四步之后作第 5 步；依赖第 1 步的 `RunDeps` 可选方法模式。验证用例：Finder 图标视图里把文件拖到窗口某处（position / path）、备忘录新建一条并写正文（text → presets）、Preview 在图片上点一个位置（`pictureOnly` 进文本）。
 
 ## 参考
 

@@ -9,7 +9,7 @@ import { createComputerUseService } from './create-service'
 import { ensureComputerUseAppGrant } from './grant-request'
 import { ComputerUseError } from './types'
 import { conditionSchema, parseCondition } from './conditions'
-import { COMPUTER_RUN_DESCRIPTION, computerRunInputShape, executeComputerRun } from '../jev/computer-run-tool'
+import { COMPUTER_RUN_DESCRIPTION, computerRunInputShape, executeComputerRun, rootForApp } from '../jev/computer-run-tool'
 import { jevSettingError } from '../jev/run-tool-common'
 import { COMPUTER_USE_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 import type { SuperoneMcpToolDescriptor } from '../mcp/superone-mcp-types'
@@ -703,7 +703,7 @@ async function executeComputerUseToolInner(
             const identity = await service.resolveAppIdentity(target.app)
             await ensureComputerUseAppGrant({ sessionId, service, ...identity, toolName: normalized })
             signal?.throwIfAborted()
-            root = (await service.resolveTargetRoot(undefined, identity.bundleId)).rootId
+            root = await rootForApp(service, identity.bundleId, signal)
           } else {
             await ensureGrantForRoot(sessionId, service, normalized, root)
           }

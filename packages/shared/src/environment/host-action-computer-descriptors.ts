@@ -358,7 +358,7 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS = [
   },
   {
     "name": "computer_run",
-    "description": "Experimental (Jev setting): pursue desktop UI goals with clicks, typing and scrolling chosen without a model turn per step. Start with app or root and goal. If the exact sequence of buttons is already known, use computer_act with a batch instead. Example: presets=[{key:\"Query\",value:\"cats\",field:\"Search\"}], done_when={kind:\"valueEquals\",ref:\"@e7\",value:\"cats\"}. Native computer_wait_for conditions bind at run start. The loop judges each step's risk and the goal's completion itself; before anything irreversible (save, send, delete, quit, leaving the app) or when unsure it pauses with a question. Resume a pause with runId + answer. Uses existing grants and tiers; skips secure fields. Use computer_act for single steps, drag, shortcuts or pixels.",
+    "description": "Experimental (Jev setting): pursue desktop UI goals with clicks, typing and scrolling chosen without a model turn per step. Start with app (launched in the background if it is not running) or root, and goal; no computer_apps or computer_snapshot call is needed first. If the exact sequence of buttons is already known, use computer_act with a batch instead. Example: presets=[{key:\"Query\",value:\"cats\",field:\"Search\"}], done_when={kind:\"valueEquals\",ref:\"@e7\",value:\"cats\"}. Native computer_wait_for conditions bind at run start. The loop judges each step's risk and the goal's completion itself; before anything irreversible (save, send, delete, quit, leaving the app) or when unsure it pauses with a question. Resume a pause with runId + answer. Uses existing grants and tiers; skips secure fields. Use computer_act for single steps, drag, shortcuts or pixels.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -449,7 +449,7 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS = [
           "additionalProperties": false
         },
         "app": {
-          "description": "App name or bundle id. Resolves the existing app grant; launch it with computer_apps first if it has no window. Use app or root, not both.",
+          "description": "App name (any locale) or bundle id. Resolves the app grant and its window; an app that is not running or has no window is launched in the background and its first window awaited. Use app or root, not both.",
           "type": "string"
         },
         "root": {

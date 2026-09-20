@@ -195,10 +195,15 @@ struct SyntheticActivation {
 /// real and the window server's own notifications take over.
 enum SyntheticActivationLease {
     private static let lock = NSLock()
-    private static var held: [pid_t: (activation: SyntheticActivation, generation: Int)] = [:]
+    private static var held: [pid_t: (activation: SyntheticActivation, generation: Int, lastRequest: Date)] = [:]
     private static var generation = 0
     private static var observing = false
     private static let idle: TimeInterval = 2.0
+    /// How long an open menu keeps the belief alive with no request coming in.
+    /// A context menu is a pop-up-level window, above the user's own; one the
+    /// agent forgot would otherwise sit there, and the app believe itself
+    /// active, until the user closed it.
+    static let menuHoldLimit: TimeInterval = 60
 
     /// True when the app now believes it is active, freshly or already.
     @discardableResult
@@ -208,7 +213,7 @@ enum SyntheticActivationLease {
         lock.lock()
         if let current = held[pid] {
             generation += 1
-            held[pid] = (current.activation, generation)
+            held[pid] = (current.activation, generation, Date())
             scheduleRelease(pid: pid, generation: generation)
             lock.unlock()
             return true
@@ -217,7 +222,7 @@ enum SyntheticActivationLease {
         guard let activation = SyntheticActivation.activate(pid: pid, windowId: windowId) else { return false }
         lock.lock()
         generation += 1
-        held[pid] = (activation, generation)
+        held[pid] = (activation, generation, Date())
         scheduleRelease(pid: pid, generation: generation)
         lock.unlock()
         return true
@@ -233,11 +238,15 @@ enum SyntheticActivationLease {
             // A menu the app opened under this belief — a context menu from a
             // background right-click — closes the moment the app hears it is
             // no longer active. It is there to be read and pressed; keep the
-            // belief until it has gone.
+            // belief until it has gone, or until nobody has asked for the app
+            // in `menuHoldLimit`: then the menu is dismissed here first.
             if hasOpenMenu(pid: pid) {
-                lock.unlock()
-                scheduleRelease(pid: pid, generation: generation)
-                return
+                if Date().timeIntervalSince(current.lastRequest) < menuHoldLimit {
+                    lock.unlock()
+                    scheduleRelease(pid: pid, generation: generation)
+                    return
+                }
+                cancelOpenMenus(pid: pid)
             }
             held[pid] = nil
             lock.unlock()
@@ -254,6 +263,16 @@ enum SyntheticActivationLease {
         let menuLevel = Int(CGWindowLevelForKey(.popUpMenuWindow))
         return list.contains { info in
             (info[kCGWindowOwnerPID as String] as? Int) == Int(pid) && (info[kCGWindowLayer as String] as? Int) == menuLevel
+        }
+    }
+
+    /// Dismiss the app's open menus through AX — `AXCancel` on each `AXMenu`
+    /// the app lists — rather than with a posted Escape, which anything else
+    /// with the key focus would also hear.
+    private static func cancelOpenMenus(pid: pid_t) {
+        let app = AXUIElementCreateApplication(pid)
+        for child in axChildren(app) where axRole(child) == "AXMenu" {
+            AXUIElementPerformAction(child, kAXCancelAction as CFString)
         }
     }
 

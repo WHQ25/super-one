@@ -973,7 +973,7 @@ if (el.clickable === false) continue          // ← 永远轮不到 editable �
 1. **helper 根本没把 "s" 当键**。`keypress` 的 keycode 表只有数字和导航键，字母走 unicode 回退——keycode 0 的事件上挂一个字符。AppKit 按**虚拟 keycode** 匹配菜单快捷键，`cmd+s` 于是以 ⌘A 的 keycode 到达、字符是 "s"，谁也不认——**前台也一样失败**。表补齐了字母、符号、F 键（§10.8 的 `cmd+1..3` 修的是同一个 bug 的数字那一半）。
 2. 补上 keycode 后前台通了、后台还是不通。逐条实测所有按 pid 投递的通道（`CGEventPostToPid`、SkyLight `SLEventPostToPid`、带 window 字段、先 AXRaise）：**⌘ 组合键在后台 app 一律被丢弃、不留痕迹，普通按键则照常到达 first responder**。原因和 §10.8 的菜单校验是同一个：⌘ 快捷键就是菜单命令，AppKit 只在自认 active 的 app 里派发。
 
-如果全走物理投递（HID），每个快捷键都要抢前台、抢键盘，用户在别的 app 打字会被截走——退回到 §10.8 那次"闪一下"的体验之下。于是调研了别家：Codex Computer Use 能"聚焦到 app 但不到前台"，靠的是 `SyntheticAppFocusEnforcer`。**app 的 active 信念和 window server 的前台进程是两件事**：前者由 window server 发给 app 的通知设置（`NSApp.isActive`、key window），后者决定谁的菜单栏在屏幕上、真实输入路由给谁。伪造前者、不动后者：给 app 发一条 AppKit-defined 的 `ApplicationActivated` 事件（subtype 1），再发一个路由到它窗口的左键（`CGEventField` 91/92 = windowID，位置 (−5000, −5000) 所以点不到任何控件——mouse-down 是让窗口成为 key 的动作），app 就跑它的前台逻辑：菜单校验通过、AXPress 生效、发到它 pid 的 ⌘S 打开保存 sheet，而屏幕上什么都不变；事后发 subtype 2 `ApplicationDeactivated` 收回。**不收回 app 会卡死**：TextEdit 留在"自认 active"的状态后，后续真实激活再也建立不了 key window，连前台 ⌘S 都没反应，只能重启。
+如果全走物理投递（HID），每个快捷键都要抢前台、抢键盘，用户在别的 app 打字会被截走——退回到 §10.8 那次"闪一下"的体验之下。于是调研了别家：Codex Computer Use 能"聚焦到 app 但不到前台"，靠的是 `SyntheticAppFocusEnforcer`。**app 的 active 信念和 window server 的前台进程是两件事**：前者由 window server 发给 app 的通知设置（`NSApp.isActive`、key window），后者决定谁的菜单栏在屏幕上、真实输入路由给谁。伪造前者、不动后者：给 app 发一条 AppKit-defined 的 `ApplicationActivated` 事件（subtype 1），再发一个路由到它窗口的左键（`CGEventField` 91/92 = windowID；当时打在 (−5000, −5000)，以为点不到任何控件就无害——§10.10 证明打不中 view 的 mouse-down 会被重放，现在打在标题文字上；mouse-down 是让窗口成为 key 的动作），app 就跑它的前台逻辑：菜单校验通过、AXPress 生效、发到它 pid 的 ⌘S 打开保存 sheet，而屏幕上什么都不变；事后发 subtype 2 `ApplicationDeactivated` 收回。**不收回 app 会卡死**：TextEdit 留在"自认 active"的状态后，后续真实激活再也建立不了 key window，连前台 ⌘S 都没反应，只能重启。
 
 落地在 helper 里（`SyntheticActivation.swift`），菜单 press 和 ⌘ 快捷键共用，每一步都用 AX 验证（`AXFrontmost` 变 true 且 `AXFocusedWindow` 出现），拿不到就退回真实激活。两个性能坑：
 
@@ -987,6 +987,41 @@ if (el.clickable === false) continue          // ← 永远轮不到 editable �
 - "看起来成功"的 run 要读 trace 里的置信度：`with no action left` 的 done 和 0.5x 的 goal_satisfied 都在说观察层少给了什么。
 - 后台通道能不能用，先用独立 helper（`/tmp/claude/menu-probe`）直连 socket 做前台 / 后台 A/B，再改代码；这次 keycode 那个 bug 就是 A/B 时前台也失败才暴露的。
 - 重复给同一个 app 发合成激活事件而不收回会把它弄坏，探针脚本每轮先 `fresh.sh` 重启 TextEdit。
+
+
+### 10.10 动作覆盖第二到第四批：逐键输入、后台指针、视觉证据（2026-09-20，Grok 4.6 / high，dev 版）
+
+§10.9 之后把剩下的动作跑完：**逐键 `typeText` + `textContains`/`textEquals` 等待**（TextEdit 正文与 Save sheet）、**坐标点击 / 右键菜单 / physical**（Finder 列表）、**zoom / 视觉快照 / 录屏 / 拖拽 / moveMouse**（TextEdit）。每批都是主模型通过 `computer_act` 做单步探测，不经 Jev；目标是"默认纯后台"——宿主预选投递路径、agent 只给操作，physical 最终去掉——所以每种后台投递都得可靠。三批共 15 个缺陷，全部在导出树上带测试提交；下面按发现顺序记，数字来自 `/tmp/claude/cu-cases/*.out` 与 `/tmp/claude/menu-probe` 的直连探针。
+
+#### 第二批：逐键输入（`e1d16907` … `da61e558`）
+
+- **act diff 按 ref 配对，一个新节点让整条菜单栏"改名"**。TextEdit 第一次击键后标题栏多出 "Edited"，其后每个 ref 移一位，diff 报出几百条 "@e49 name from Apple"，真正的改动埋在 4000 字符 cap 之外，而且按条数任何 act 都算 worked。改成在配对的父节点下按 role+name、再按 role 配对，剩余才是 added/removed。
+- **`typeText` 开头先发一个 Escape**。Escape 是 Cancel 的键等价物：physical 投递到 Save sheet 时 sheet 关了、文字进了后面的文档。
+- **沙盒 app 的 Save/Open sheet 由 ViewBridge XPC service 托管**。sheet 是 app 的窗口，里面的控件活在 service 进程里，window server 把 HID 键盘事件直接交给 service；投给 app pid 的键事件停在 app（前台也一样），AX 又报的是 app 的 pid。通过 responsibility API 找到 app 的 service，谁持有焦点窗口就投给谁——后台往 Save sheet 里打 "jev-typed 你好" 落地。
+- **`wait_for` 超时只说 `failed`**。"second line" 被 TextEdit 自动首字母大写成 "Second line"，主模型只能再拍一张快照找原因。失败结果现在带 `observed`（ref/name/value）；描述里说明 typeText 是击键、受 app 自动纠正影响，setText 才是精确赋值。
+- 66×20 的窗口共享指示器还留在 CG 窗口列表里当 dialog 根（§10.9 只滤了 AX 侧）。
+
+#### 第三批：后台指针（`55c9b1bb` … `47f498dc`）
+
+**投给 pid 的鼠标事件一直是无效的**，之前 `changedPage: True` 全是 diff 噪声。HID 指针事件到 app 时由 window server 填好窗口号和窗内位置；posted 事件两者皆无，`windowNumber` 为 0，NSApplication 直接丢。窗口号在 `CGEventField` 51（把 windowID 逐个写进每个字段试出来的），窗内位置是独立记录（私有 `CGEventSetWindowLocation`）；两者都填上之后，后台坐标点击选中 Finder 行、右键弹出 20+ 项的上下文菜单、滚轮翻页 /System/Library 全通，前台始终是 Electron。顺带修的：表格的 AXValue 是元素指针，每次读地址都变、diff 恒有噪声；`selected` 翻转本身就算 act 生效（一行被点中只改 4 处，低于"内容刷新"的 8 处阈值）；`newRoot` 等待的起点就是那个菜单根时回 `preexisting` 而不是 `failed`。
+
+租约的两个时序坑：**释放事件打到刚被用户真实激活的 app 上**（Finder 被拉到前台做 physical 点击的两秒后收到 `ApplicationDeactivated`，自己退到后台，physical 点击因"不是 frontmost"被拒）——释放改到主队列、对已 active 的 app 什么都不发；**上下文菜单随租约一起关掉**——菜单是 app 自己的窗口，只在它自认 active 时存活，2 s 租约到期菜单就没了，agent 还没读；目标 pid 有 pop-up menu 层（level 101）的窗口就推迟释放。physical 那条腿最后一次复跑是 `TIER_BLOCKED`（前台是 Electron）——这正是要去掉的路径，不修。
+
+#### 第四批：拖拽、视觉快照、zoom、录屏、moveMouse（`ff3f212e` … `e15e2a95`）
+
+用例 `visual-jev-{1..4}`：语义快照 → 窗口视觉快照 → zoom 文本行 → 带录屏的 moveMouse → 拖选整行并 typeText 替换 → `textEquals` 等待 → 整屏视觉快照，全程 app-directed、TextEdit 在后台。首跑除 zoom 外全部 worked，但三个结果是假的：
+
+- **后台拖拽根本不生效，单击也只成功过一次**。直连探针：click 把光标放到 "Jev sheet |benchmark"，drag 之后 typeText 落在第 0 位。自建了一个可插桩的 AppKit 实验 app（`/tmp/claude/dragprobe/lab`，在 `sendEvent`/`mouseDown` 上打日志），看到的是：§10.9 那个"位置 (−5000, −5000) 所以点不到任何控件"的 key-making click **确实让窗口变 key，但没打中任何 view 的 mouseDown 会被 AppKit 留下来，在下一次点击之后重放给 first responder**——日志里紧跟着 `textview mouseDown at {60,288}` 的是 `textview mouseDown at {-1,333}`，光标被拽到了文本开头；拖选同理坍缩。窗口圆角处的 (1,1) 一样被重放；打在标题文字上、标尺上、目标点上的都不重放。另外 NSTextView 不接受 first mouse：没有 key window 时它的第一次点击被吞掉只用来变 key，而 Calculator 的按钮是 click-through，第一次就生效——所以"点两次"对按钮会双击、对标题栏正中在统一工具栏（Finder）里会按到控件。落地：key-making click 打在 AXWindow 的 `AXTitleUIElement` 中心，没有标题元素就打在关闭按钮左侧 6 px 的窗框上，两者都没有就不点（它的第一次真实点击自会让窗口变 key）。修后 TextEdit 后台单击 2/2、拖选替换 2/2（"dragged"），Finder 点击/右键/滚动与 Calculator 按钮无回归。
+- **zoom 不放大**。它把窗口按同样的逻辑尺寸重拍一遍再裁剪，320×40 的区域回来还是 320×40 像素，看不到快照里没有的东西——`SCDisplay.width` 是点数，由它推出的 scale 恒为 1。现在从 display mode 取真实像素宽度，只对区域用 `sourceRect` 拍一张 2× 的图（640×80）。第二个坑：窗口过滤器上的 `sourceRect` 平时按窗口坐标解释，**一旦同一窗口上有 SCStream 在跑（取景器的 PiP 镜像），就变成显示器坐标**，zoom 拍到的是标题栏；直连探针复现了 PiP 开/关两种结果。区域裁剪改走"只包含这个窗口的显示器过滤器"，坐标语义只有一种。
+- **moveMouse 报 worked**。diff 里几十条菜单项 `enabled` true→false、"Browse All Versions…"→"No Document"，把 unknown 提成了 worked。菜单栏的 enabled 是校验状态——取决于 app 此刻是否自认 active、AppKit 上次何时校验——不是 act 改的。菜单栏整个不进 diff；"内容被替换"的比例也只按被比较的节点算（菜单栏占了小窗口大纲的大半，分母不扣它，一个没变的窗口会被判成整页重绘，hover 照样 worked）。修后 hover 是 `unknown`、diff 为空。
+
+其余按预期：窗口视觉快照 586×488（逻辑尺寸）、整屏 1440×931（`maxCaptureWidth` 缩放）、录屏 mp4 1172×976 / 0.67–1.4 s / 9 帧（录屏是原生 2×，快照是 1×）、拖选 + typeText 的 diff 只有 `@e3 value "Jev sheet benchmark" → "dragged"` 加几条标尺刻度、`textEquals` 立即 `preexisting`。
+
+#### 方法上的教训
+
+- 真实 app 看不到 AppKit 内部状态时，写一个几十行的替身 app 打日志比猜源码快：这次 "重放的 mouseDown" 和 "NSTextView 不接受 first mouse" 都是日志直接给出的。
+- 同一个 helper、同样的参数，直连探针对、走宿主就错——差异必然在环境（这次是 PiP 的 SCStream）。把宿主在动作前后做的副作用（取景器、录屏）逐个加进探针，而不是在宿主里加日志。
+- 每一个 "worked" 都要看 diff 内容：hover 能 worked，说明效果判定被环境噪声喂饱了。
 
 
 ## 参考

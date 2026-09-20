@@ -172,8 +172,14 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
       // accessible name there. Name such a field for what it is instead.
       const anonymous = editable ? EDITABLE_ROLE_LABEL[mapped] ?? 'Text field' : ''
       const itemLabel = (disclosure ? row ?? '' : source?.value || source?.name || '').trim() || anonymous
+      // A menu item's state is its check mark, not its value.
+      const checked = node.checked != null ? String(node.checked) : checkedFrom(role, value)
+      // A nameless pop-up button is known by what it shows — the save sheet's
+      // file-format menu reads "Rich Text Document" and nothing else — while a
+      // toggle's value is its state, which `checked` already carries.
+      const shown = checked == null && !disclosure ? value : ''
       const label = kind === 'select' || kind === 'open' ? `${kind === 'select' ? 'Select' : 'Open'} ${itemLabel}`
-        : command && menu ? `${menu} ▸ ${node.name}` : disclosure ? itemLabel : node.name || (editable ? value : '') || anonymous
+        : command && menu ? `${menu} ▸ ${node.name}` : disclosure ? itemLabel : node.name || shown || anonymous
       // A row, its name cell and the cell's text field all open the same item:
       // one candidate per intent, keyed on the node the name was read from,
       // which those three share. Keyed on the label it also swallowed a
@@ -183,15 +189,13 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
       // is offered either — Jev cannot choose it and the main model cannot
       // approve it.
       const identity = `${kind}:${source?.ref ?? node.ref}`
-      if (kind ? !itemLabel || seen.has(identity) : !label.trim()) continue
+      if (!label.trim() || (kind && (!itemLabel || seen.has(identity)))) continue
       if (kind) seen.add(identity)
       // Each executable intent gets its own candidate. Native refs remain in
       // refs; these IDs only address adapter plans inside one observation.
       const id = elements.length + 1
       refs.set(id, node)
       if (kind) clickKinds.set(id, kind)
-      // A menu item's state is its check mark, not its value.
-      const checked = node.checked != null ? String(node.checked) : checkedFrom(role, value)
       elements.push({ node: id, ref: node.ref, role: mapped,
         label, value: kind === 'select' ? (node.selected ? 'selected' : 'not selected') : disclosure ? '' : value,
         ...(checked ? { checked } : {}),

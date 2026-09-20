@@ -365,6 +365,25 @@ describe('computer fast-loop adapter', () => {
     expect(page.elements.map((e) => [e.label, e.checked])).toEqual([['Wi-Fi', 'true'], ['Bluetooth', 'false'], ['Done', undefined]])
   })
 
+  it('names a nameless pop-up button by what it shows', async () => {
+    // TextEdit's save sheet: the file-format menu has no title, only its
+    // current choice, and was offered as "button " next to a named Cancel.
+    const backend = new FakePlatformBackend([{ app: 'TextEdit', bundleId: 'com.test.textedit', pid: 7, windows: [{ title: 'Save', focused: true,
+      tree: { role: 'window', children: [
+        { role: 'popUpButton', value: 'Rich Text Document', toggle: true },
+        { role: 'checkbox', value: '1' },
+        { role: 'button', name: 'Cancel' },
+      ] },
+    }] }])
+    const service = new ComputerUseService({ adapter: backend })
+    service.policy.setEnabled(true)
+    service.policy.grantSession({ app: 'TextEdit', bundleId: 'com.test.textedit', tier: 'full' })
+    const observed = await service.observe((await service.resolveTargetRoot()).rootId, 'semantic')
+    const page = computerPage(computerObservation(service.getStateStore().get(observed.stateId)!), service)
+    // The toggle's value is its state; unnamed, it still has nothing to be called.
+    expect(page.elements.map((e) => e.label)).toEqual(['Rich Text Document', 'Cancel'])
+  })
+
   it('offers menu commands by their check mark, never the menus that open on the way', async () => {
     // The helper presses a command in the closed menu tree directly, activating
     // a background app for it, so a menu path is one press: "View" and

@@ -143,7 +143,8 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
       const id = elements.length + 1
       refs.set(id, node)
       if (kind) clickKinds.set(id, kind)
-      const checked = checkedFrom(role, value)
+      // A menu item's state is its check mark, not its value.
+      const checked = node.checked != null ? String(node.checked) : checkedFrom(role, value)
       elements.push({ node: id, ref: node.ref, role: mapped,
         label, value: kind === 'select' ? (node.selected ? 'selected' : 'not selected') : value,
         ...(checked ? { checked } : {}),

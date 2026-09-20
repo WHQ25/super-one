@@ -148,8 +148,10 @@ export interface HelperCaptureResult {
 export interface HelperAxNode {
   selectable?: boolean
   selected?: boolean
-  /** AXExpanded. */
+  /** AXExpanded; on a menu item only when it has a submenu. */
   expanded?: boolean
+  /** A menu item's check mark (AXMenuItemMarkChar), the state a chosen command shows. */
+  checked?: boolean
   itemKind?: 'folder' | 'file'
   index: number
   role: string

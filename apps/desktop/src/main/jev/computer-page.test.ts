@@ -340,6 +340,32 @@ describe('computer fast-loop adapter', () => {
     expect(page.elements.map((e) => [e.label, e.checked])).toEqual([['Wi-Fi', 'true'], ['Bluetooth', 'false'], ['Done', undefined]])
   })
 
+  it('offers a menu command by its check mark, and a submenu parent by its expanded flag', async () => {
+    // A chosen sort or view mode is shown nowhere but the command's check
+    // mark (AXMenuItemMarkChar; AXValue is empty). An AXMenuItem answers
+    // AXExpanded=false whether or not it has a submenu, so a leaf command
+    // read as collapsed: View ▸ Sort By ▸ Date Modified was offered as
+    // "Expand Date Modified" after it had already been chosen, and the loop
+    // kept pressing it. The helper reports the flag on submenu parents only.
+    const { service } = fixture()
+    const obs = await service.observe(undefined, 'semantic')
+    const outline = axTreeToOutline({ index: 1, role: 'AXWindow', children: [{ index: 2, role: 'AXButton', name: 'Kind', actions: ['AXPress'] }] }, { index: 1, role: 'AXMenuBar', children: [
+      { index: 2, role: 'AXMenuBarItem', name: 'View', actions: ['AXPress'], children: [{ index: 3, role: 'AXMenu', children: [
+        { index: 4, role: 'AXMenuItem', name: 'Sort By', actions: ['AXPress'], expanded: false, children: [{ index: 5, role: 'AXMenu', children: [
+          { index: 6, role: 'AXMenuItem', name: 'Name', actions: ['AXPress'] },
+          { index: 7, role: 'AXMenuItem', name: 'Date Modified', actions: ['AXPress'], checked: true },
+        ] }] },
+      ] }] },
+    ] })
+    const page = computerPage({ ...obs, outline }, service)
+    const labels = page.elements.map((e) => e.label)
+    expect(labels).toEqual(['Kind', 'View', 'Sort By', 'Name', 'Date Modified'])
+    expect(page.elements[2]).toMatchObject({ expanded: 'false' })
+    expect(page.elements[3].checked).toBeUndefined()
+    expect(page.elements[4]).toMatchObject({ checked: 'true' })
+    expect(page.elements[4].expanded).toBeUndefined()
+  })
+
   it('re-resolves the app root when the observed window is replaced', async () => {
     // System Settings swaps its whole window when the sidebar search resolves;
     // the helper then refuses the old window id and the error escaped the run

@@ -370,7 +370,19 @@ private func nodeDicts(
     // AXExpanded only: an AppKit outline row answers AXDisclosing whether or not
     // it can disclose anything, so reading that too labelled all 90 sidebar rows
     // of System Settings collapsed and the loop offered to "Expand Wi-Fi".
-    if let expanded = axBool(el, "AXExpanded") {
+    // An AXMenuItem answers AXExpanded=false whether or not it has a submenu,
+    // so a leaf command read as collapsed: Finder's View ▸ Sort By ▸ Date
+    // Modified was offered as "Expand Date Modified" after it had already been
+    // chosen, and the loop kept pressing it. Only an item with a submenu can
+    // expand; the check mark is what a chosen item shows instead.
+    if role == "AXMenuItem" {
+        if childElements.contains(where: { axRole($0) == "AXMenu" }), let expanded = axBool(el, "AXExpanded") {
+            dict["expanded"] = expanded
+        }
+        if let mark = axString(el, "AXMenuItemMarkChar") {
+            dict["checked"] = !mark.isEmpty
+        }
+    } else if let expanded = axBool(el, "AXExpanded") {
         dict["expanded"] = expanded
     }
     if let name, !name.isEmpty { dict["name"] = name }

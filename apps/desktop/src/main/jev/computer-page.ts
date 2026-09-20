@@ -35,6 +35,9 @@ const EDITABLE_ROLE_LABEL: Record<string, string> = { searchbox: 'Search field',
 
 const TOGGLE_ROLES = new Set(['checkbox', 'radio', 'switch', 'menuitem', 'togglebutton'])
 
+/** Outlines whose rows are places to drop things: Finder's sidebar, Mail's mailbox list. */
+const CONTAINER_OUTLINE = /sidebar|mailbox|source list|favorites/i
+
 /** What a scroll area's content is called by its role, when the container has no name of its own. */
 const SCROLL_CONTENT_LABEL: Record<string, string> = { table: 'table', outline: 'list', list: 'list', textarea: 'text', webarea: 'web content', browser: 'columns', grid: 'grid' }
 
@@ -171,8 +174,9 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
   // `row` is the name of the selectable row a node sits in, for the one
   // control that has no name of its own and is only meaningful as the row's:
   // its disclosure triangle.
-  const walk = (node: UiOutlineNode, menu?: string, row?: string) => {
+  const walk = (node: UiOutlineNode, menu?: string, row?: string, inContainerList = false) => {
     const role = node.role.replace(/^AX/, '').toLowerCase()
+    const containerList = inContainerList || (role === 'outline' && CONTAINER_OUTLINE.test(node.name ?? ''))
     const secure = node.secure === true || /secure|password/.test(role)
     const value = secure ? '' : node.value ?? ''
     // A disclosure triangle has no name and its value is its state, which the
@@ -225,6 +229,17 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
         canScrollUp ||= position.up
       }
     }
+    const hasBounds = !!node.bounds && node.bounds.width > 0 && node.bounds.height > 0
+    // A selected row is what a drag moves. It has no Select candidate left, so
+    // it stands in `elements` as itself — not a click — and gets one
+    // `drag_target_for_*` head when the page has somewhere to drop it.
+    if (select && node.selected && enabled && hasBounds && rowName && elements.length < MAX_ELEMENTS && !seen.has(`drag:${node.ref}`)) {
+      seen.add(`drag:${node.ref}`)
+      const id = elements.length + 1
+      refs.set(id, node)
+      elements.push({ node: id, ref: node.ref, role: ROLE_MAP[role] ?? role, label: rowName, value: 'selected', selected: 'true', dragSource: true,
+        editable: false, clickable: false, canSubmit: false, password: false, submit: false, disabled: false })
+    }
     const kinds: Array<'press' | 'select' | 'open' | undefined> = []
     if (select && !node.selected) kinds.push('select')
     else if (!select && (press || editable)) kinds.push(press ? 'press' : undefined)
@@ -235,7 +250,11 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
     // read from: a row, its name cell and the cell's text field are one item,
     // and a selected row — no Select candidate left — is reached through the
     // cell's Open one, which is the common case after a select.
-    const rightClickable = !command && !!(select || press || open) && !!node.bounds && node.bounds.width > 0 && node.bounds.height > 0
+    const rightClickable = !command && !!(select || press || open) && hasBounds
+    // Where a dragged item can go: a folder (native file metadata says so) or a
+    // row of a container list. Not an item that is itself selected — that is
+    // what would be dragged.
+    const droppable = !command && hasBounds && !node.selected && (node.itemKind === 'folder' || (containerList && !!select))
     for (const kind of kinds) {
       if (!enabled || elements.length >= MAX_ELEMENTS) break
       const source = disclosure ? undefined : node.value || node.name ? node : labelSource(node)
@@ -276,11 +295,15 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
       const contextIdentity = `context:${source?.ref ?? node.ref}`
       const rightClick = rightClickable && !seen.has(contextIdentity)
       if (rightClick) seen.add(contextIdentity)
+      const dropIdentity = `drop:${source?.ref ?? node.ref}`
+      const drop = droppable && !seen.has(dropIdentity)
+      if (drop) seen.add(dropIdentity)
       elements.push({ node: id, ref: node.ref, role: mapped,
         label, value: kind === 'select' ? (node.selected ? 'selected' : 'not selected') : disclosure ? '' : value,
         ...(checked ? { checked } : {}),
         ...(node.expanded != null ? { expanded: String(node.expanded) } : {}),
         ...(rightClick ? { contextMenu: true } : {}),
+        ...(drop ? { dropTarget: true } : {}),
         editable: isEditable, clickable: !!kind,
         // A multi-line text area (TextEdit's document, a mail body) takes a
         // preset after its text; a field is replaced whole.
@@ -289,7 +312,7 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
         // focused TextEdit document was offered as "Press Enter in" at 0.78.
         canSubmit: role !== 'textarea' && !!planNodeAction(node, { kind: 'enter' }, tier), password: false, submit: false, disabled: false })
     }
-    if (!secure) for (const child of node.children ?? []) walk(child, command && node.name ? node.name : menu, rowName)
+    if (!secure) for (const child of node.children ?? []) walk(child, command && node.name ? node.name : menu, rowName, containerList)
   }
   // Window content first, app menus last, so the element budget and the pause
   // option list favour what is on screen. The Apple menu is never an in-app
@@ -472,6 +495,19 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
       await act(planNodeAction(focused, { kind: 'enter' }, service.policy.tierFor(page.bundleId)), signal)
     },
     dismiss: (signal) => act({ actions: [{ type: 'keypress', keys: ['escape'] }] }, signal),
+    /**
+     * Center to center, in the state's coordinate space — the same points a
+     * `computer_act` drag takes. The move itself is the app's; the run reads
+     * the result like any other action.
+     */
+    drag: async (id, target, signal) => {
+      const page = requirePage()
+      const from = page.refs.get(id)?.bounds
+      const to = page.refs.get(target)?.bounds
+      if (!from || !to) throw new StaleObservation('The dragged item or its destination is gone.')
+      const center = (b: NonNullable<typeof from>) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
+      await act({ actions: [{ type: 'drag', path: [center(from), center(to)] }] }, signal)
+    },
     contextMenu: async (id, signal) => {
       const node = requirePage().refs.get(id)
       await act(node && { actions: [{ type: 'click', ref: node.ref, button: 'right' }] }, signal)

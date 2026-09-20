@@ -38,6 +38,10 @@ export interface RawElement {
   root?: string
   /** A right-click here opens a context menu the next observation lands on. Desktop only. */
   contextMenu?: boolean
+  /** A selected item that can be dragged; one `drag_target_for_*` head is asked for it. Desktop only. */
+  dragSource?: boolean
+  /** A folder, mailbox or group a dragged item can be dropped into. Desktop only. */
+  dropTarget?: boolean
 }
 
 export interface RunObservation {

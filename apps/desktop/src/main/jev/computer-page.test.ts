@@ -715,4 +715,48 @@ describe('computer fast-loop adapter', () => {
       persist.mockRestore()
     }
   })
+
+  it('offers a drag only for selected items, onto folders and container-list rows, center to center', async () => {
+    // Finder: Report.pdf selected in the list, Projects a folder beside it, the
+    // sidebar an outline named "sidebar". The selected row moves; folders and
+    // sidebar rows are where it can go; another file is not.
+    const row = (name: string, itemKind: 'folder' | 'file', bounds: { x: number; y: number; width: number; height: number }, selected = false) => ({
+      role: 'row', selectable: true, selected, bounds, children: [{ role: 'cell', openable: true, bounds, children: [{ role: 'textField', name: '', value: name, openable: true, itemKind, bounds }] }],
+    })
+    const backend = new FakePlatformBackend([{ app: 'Finder', bundleId: 'com.test.finder', pid: 7, windows: [{ title: 'Documents', tree: { role: 'window', children: [
+      { role: 'scrollArea', bounds: { x: 0, y: 0, width: 200, height: 400 }, children: [{ role: 'outline', name: 'sidebar', children: [
+        { role: 'row', selectable: true, bounds: { x: 0, y: 10, width: 200, height: 20 }, children: [{ role: 'staticText', value: 'Desktop' }] },
+      ] }] },
+      { role: 'scrollArea', bounds: { x: 200, y: 0, width: 600, height: 400 }, children: [{ role: 'outline', name: 'list view', children: [
+        row('Report.pdf', 'file', { x: 200, y: 10, width: 600, height: 20 }, true),
+        row('Notes.txt', 'file', { x: 200, y: 30, width: 600, height: 20 }),
+        row('Projects', 'folder', { x: 200, y: 50, width: 600, height: 20 }),
+      ] }] },
+    ] } }] }])
+    const service = new ComputerUseService({ adapter: backend })
+    service.policy.setEnabled(true)
+    service.policy.grantSession({ app: 'Finder', bundleId: 'com.test.finder', tier: 'full' })
+    const adapter = createComputerAdapter({ service, ask: vi.fn(), resolve: async () => (await service.resolveTargetRoot()).rootId })
+    await adapter.resolveTarget()
+    const page = await adapter.observe()
+    const source = page.elements.find((e) => e.dragSource)!
+    expect(source).toMatchObject({ role: 'row', label: 'Report.pdf', value: 'selected', clickable: false })
+    // One drop target per item, whichever of its nodes carries the folder metadata (the fake keeps it on the name field).
+    expect(page.elements.filter((e) => e.dropTarget).map((e) => e.label)).toEqual(['Select Desktop', 'Projects'])
+    const space = buildActionSpace({ page, history: [] })
+    expect(space.dragSources).toEqual([String(source.node)])
+    expect(space.clickCandidates).not.toContain(String(source.node))
+    const request = buildRequest({ goal: 'g', page, space, presets: [], last: undefined, history: [] })
+    expect(request.questions.action.criteria).toHaveProperty('drag')
+    const projects = page.elements.find((e) => e.dropTarget && e.label === 'Projects')!
+    expect(request.questions.drag_target_for_Report_pdf!.criteria![String(projects.node)]).toMatchObject({ element: `[${projects.node}] Drop onto Projects` })
+    const act = vi.spyOn(service, 'act')
+    await adapter.drag!(source.node, projects.node)
+    expect(act).toHaveBeenCalledWith(page.stateId, [{ type: 'drag', path: [{ x: 500, y: 20 }, { x: 500, y: 60 }] }], expect.any(Object))
+    // Nothing selected: no source, no drag, no heads.
+    const none = computerPage({ ...(await service.observe(undefined, 'semantic')), outline: axTreeToOutline({ index: 1, role: 'AXRow', actions: [], bounds: { x: 0, y: 0, width: 100, height: 20 }, children: [{ index: 2, role: 'AXTextField', value: 'Projects', itemKind: 'folder' as const, actions: ['AXOpen'], bounds: { x: 0, y: 0, width: 100, height: 20 } }] }) }, service)
+    const empty = buildActionSpace({ page: none, history: [] })
+    expect(empty.dragSources).toEqual([])
+    expect(Object.keys(buildRequest({ goal: 'g', page: none, space: empty, presets: [], last: undefined, history: [] }).questions).some((k) => k.startsWith('drag_target_for_'))).toBe(false)
+  })
 })

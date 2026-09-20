@@ -7,7 +7,7 @@
 
 import { type ActionSpace, clickKindOf, elementByIndex, type SpaceElement } from './action-space'
 
-import { NONE, type ActionOption, ACTION_OPTIONS, type Preset } from './questions'
+import { dragHeads, NONE, type ActionOption, ACTION_OPTIONS, type Preset } from './questions'
 import { type JevAnswer, readNoul, validateChoice } from './typesafe-client'
 
 export const THRESHOLDS = {
@@ -76,11 +76,15 @@ export type Decision =
   | { kind: 'switch'; element: SpaceElement; probability: number; risk: number }
   /** Right-click the element; the next observation is its context menu, whose items are ordinary clicks. */
   | { kind: 'context_menu'; element: SpaceElement; probability: number; risk: number }
+  /** Drag the selected `element` onto `target`, center to center. */
+  | { kind: 'drag'; element: SpaceElement; target: SpaceElement; probability: number; risk: number }
   | {
     kind: 'pause'
     question: Omit<Question, 'id'>
     /** What an answered element index means when the run resumes. */
-    mode: 'click' | 'type_text' | 'append' | 'switch' | 'context_menu' | 'escape' | 'accept'
+    mode: 'click' | 'type_text' | 'append' | 'switch' | 'context_menu' | 'drag' | 'escape' | 'accept'
+    /** For a drag pause: the item that would move; the answer names where. */
+    target?: SpaceElement
     element?: SpaceElement
     /** Preset already matched to the offered field, so a resume can type it without asking again. */
     presetKey?: string
@@ -230,6 +234,7 @@ export function decide(input: DecideInput): Decision {
     if (o === 'escape') return space.canEscape
     if (o === 'switch') return space.switchCandidates.length > 0
     if (o === 'context_menu') return space.contextMenuCandidates.length > 0
+    if (o === 'drag') return space.dragSources.length > 0 && space.dropTargets.length > 0
     if (o === 'scroll_down') return space.canScrollDown
     if (o === 'scroll_up') return space.canScrollUp
     return true
@@ -326,6 +331,39 @@ export function decide(input: DecideInput): Decision {
       }
     }
     return { kind: 'escape', risk }
+  }
+  if (chosen === 'drag') {
+    // Several items may be selected; the one whose head is surest of a
+    // container is the one to move. Where every head answered none_of_these,
+    // nothing on the page is the destination.
+    let best: { source: SpaceElement; target: SpaceElement; probability: number; probabilities: Record<string, number> } | undefined
+    for (const { head, source } of dragHeads(space)) {
+      const a = validateChoice(answers[head], [...space.dropTargets, NONE])
+      const target = a && a.choice !== NONE ? elementByIndex(space, a.choice) : undefined
+      if (!a || !target) continue
+      const p = a.probabilities[a.choice] ?? 0
+      if (!best || p > best.probability) best = { source, target, probability: p, probabilities: a.probabilities }
+    }
+    if (!best) return noneUseful()
+    if (risk >= THRESHOLDS.risk) {
+      return {
+        kind: 'pause',
+        mode: 'drag',
+        element: best.source,
+        target: best.target,
+        question: {
+          type: 'choice',
+          reason: 'risky',
+          options: [
+            { key: best.target.index, label: `drag ${best.source.label} onto ${best.target.role} ${best.target.label}`, probability: best.probability },
+            ...topK(space, best.probabilities).filter((o) => o.key !== best!.target.index),
+            ABORT,
+          ],
+          context: { why: `Jev rates this step irreversible — ${heads}. Confirm the destination, choose another, or take over.`, page, decision: summary },
+        },
+      }
+    }
+    return { kind: 'drag', element: best.source, target: best.target, probability: best.probability, risk }
   }
   if (chosen === 'switch' || chosen === 'context_menu') {
     const [head, candidates] = chosen === 'switch'

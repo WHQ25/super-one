@@ -12,7 +12,29 @@ export interface Preset {
   field?: string
 }
 
-export const ACTION_OPTIONS = ['click', 'type_text', 'append', 'scroll_down', 'scroll_up', 'escape', 'switch', 'context_menu', 'none_useful'] as const
+export const ACTION_OPTIONS = ['click', 'type_text', 'append', 'scroll_down', 'scroll_up', 'escape', 'switch', 'context_menu', 'drag', 'none_useful'] as const
+/** Selected items a request asks a drag head for; more would only pad the fan-out. */
+const MAX_DRAG_SOURCES = 3
+
+/**
+ * The drag heads of a request: one `drag_target_for_<label>` per selected
+ * item (at most MAX_DRAG_SOURCES), named so the policy can find each item's
+ * answer again. No other head starts with this prefix, so uniqueness is only
+ * among themselves.
+ */
+export function dragHeads(space: ActionSpace): Array<{ head: string; source: SpaceElement }> {
+  if (!space.dropTargets.length) return []
+  const taken = new Set<string>()
+  return space.dragSources.slice(0, MAX_DRAG_SOURCES).flatMap((key) => {
+    const source = space.elements.find((e) => e.index === key)
+    if (!source) return []
+    const base = `drag_target_for_${source.label.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'item'}`
+    let head = base
+    for (let n = 2; taken.has(head); n++) head = `${base}_${n}`
+    taken.add(head)
+    return [{ head, source }]
+  })
+}
 export type ActionOption = (typeof ACTION_OPTIONS)[number]
 export const NONE = 'none_of_these'
 
@@ -51,7 +73,7 @@ export function stateElement(el: SpaceElement): StateElement {
  * for a scroll area, "Append to" for a text area — so the criterion reads as
  * the step Jev would be choosing, not as a bare element.
  */
-function candidateCriteria(space: ActionSpace, keys: readonly string[], verb?: 'Scroll' | 'Append to' | 'Switch to' | 'Right-click'): Record<string, unknown> {
+function candidateCriteria(space: ActionSpace, keys: readonly string[], verb?: 'Scroll' | 'Append to' | 'Switch to' | 'Right-click' | 'Drop onto'): Record<string, unknown> {
   const criteria: Record<string, unknown> = {}
   for (const key of keys) {
     const kind = clickKindOf(key)
@@ -60,7 +82,7 @@ function candidateCriteria(space: ActionSpace, keys: readonly string[], verb?: '
     const clickable = clickVerb(kind, el)
     // A row's candidate is labelled for its click ("Select Shared"); the
     // right-click is on the row itself.
-    const element = verb ? `[${el.index}] ${verb} ${verb === 'Right-click' ? el.label.replace(/^(Select|Open) /, '') : el.label}`
+    const element = verb ? `[${el.index}] ${verb} ${verb === 'Right-click' || verb === 'Drop onto' ? el.label.replace(/^(Select|Open) /, '') : el.label}`
       : clickable === 'Click' ? `[${el.index}] ${el.label}`
       : clickable === 'Press Enter in' ? `[${el.index}] Press Enter in ${el.label} to submit it`
         // What expanding is for is not visible until it happens, and a collapsed
@@ -111,6 +133,7 @@ export function buildRequest(input: BuildQuestionsInput): JevRequest {
   if (space.canEscape) actions.escape = 'Press Escape: close the open menu, popover, sheet or dialog, or cancel an edit in progress, without saving anything.'
   if (space.switchCandidates.length) actions.switch = 'Switch to another window, sheet or panel of this app listed in `elements` and continue there; the current one stays open.'
   if (space.contextMenuCandidates.length) actions.context_menu = 'Right-click an offered element to open its context menu; the menu\'s commands are chosen in the next step.'
+  if (space.dragSources.length && space.dropTargets.length) actions.drag = 'Drag a selected item onto an offered folder or group, moving it there.'
   actions.none_useful = 'No offered action advances the goal from here.'
 
   const questions: Record<string, JevQuestion> = {
@@ -162,6 +185,16 @@ export function buildRequest(input: BuildQuestionsInput): JevRequest {
       type: 'choice',
       instructions: { goal, operation: 'append', rules: 'Choose the text area to add a preset to if the next action is append. Its current text stays; the preset goes after it. Choose only an offered index.' },
       criteria: candidateCriteria(space, space.appendCandidates, 'Append to'),
+    }
+  }
+  // One head per selected item, over the containers on the page: which item
+  // moves is known before the ask (it is selected), so the heads stay
+  // independent of each other, as every head in a request must be.
+  for (const { head, source } of dragHeads(space)) {
+    questions[head] = {
+      type: 'choice',
+      instructions: { goal, operation: 'drag', rules: `Choose where to drop the selected item [${source.index}] ${source.label} if the next action is drag: the folder or group \`goal\` wants it in. Choose only an offered index.` },
+      criteria: candidateCriteria(space, space.dropTargets, 'Drop onto'),
     }
   }
   if (space.contextMenuCandidates.length) {

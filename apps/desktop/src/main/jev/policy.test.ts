@@ -218,12 +218,16 @@ describe('decide', () => {
       el({ node: 4, role: 'button', label: 'Done' }),
       el({ node: 5, role: 'window', label: 'Document', clickable: false, root: '@r1' }),
       el({ node: 6, role: 'button', label: 'Select Report.pdf', contextMenu: true }),
+      el({ node: 7, role: 'row', label: 'Notes.txt', value: 'selected', selected: 'true', clickable: false, dragSource: true }),
+      el({ node: 8, role: 'button', label: 'Open Projects', dropTarget: true }),
+      el({ node: 9, role: 'button', label: 'Select Desktop', dropTarget: true }),
     ], { canScroll: { up: true, down: true }, canEscape: true }), history: [] })
     const AREAS = [...desktop.scrollCandidates, NONE]
     const APPENDS = [...desktop.appendCandidates, NONE]
     const ROOTS = [...desktop.switchCandidates, NONE]
     const MENUS = [...desktop.contextMenuCandidates, NONE]
-    const DESKTOP_ACTIONS = ['click', 'type_text', 'append', 'scroll_down', 'scroll_up', 'escape', 'switch', 'context_menu', 'none_useful']
+    const DROPS = [...desktop.dropTargets, NONE]
+    const DESKTOP_ACTIONS = ['click', 'type_text', 'append', 'scroll_down', 'scroll_up', 'escape', 'switch', 'context_menu', 'drag', 'none_useful']
 
     it('offers scroll areas, appendable text areas, roots and Escape only when the page flags them', () => {
       expect(space.scrollCandidates).toEqual([])
@@ -255,6 +259,19 @@ describe('decide', () => {
       expect(decide(input({ space: desktop, answers: { ...calm, next_step_risk: noul(0.6), action: pick('context_menu', DESKTOP_ACTIONS), context_menu_target: pick('6', MENUS) } })))
         .toMatchObject({ kind: 'pause', mode: 'context_menu', question: { reason: 'risky', options: [expect.objectContaining({ key: '6', label: 'right-click button Select Report.pdf' }), expect.objectContaining({ key: 'abort' })] } })
       expect(decide(input({ answers: { ...calm, action: pick('context_menu', [...ACTIONS, 'context_menu']) } })).kind).not.toBe('context_menu')
+    })
+
+    it('drags the selected item onto the container its head names, asking first when Jev rates the move irreversible', () => {
+      expect(desktop.dragSources).toEqual(['7'])
+      expect(desktop.dropTargets).toEqual(['8', '9'])
+      expect(desktop.clickCandidates).not.toContain('7')
+      expect(decide(input({ space: desktop, answers: { ...calm, action: pick('drag', DESKTOP_ACTIONS), drag_target_for_Notes_txt: pick('8', DROPS) } })))
+        .toMatchObject({ kind: 'drag', element: { index: '7' }, target: { index: '8' }, probability: 0.9 })
+      expect(decide(input({ space: desktop, answers: { ...calm, action: pick('drag', DESKTOP_ACTIONS), drag_target_for_Notes_txt: pick(NONE, DROPS) } })).kind).toBe('scroll')
+      const risky = decide(input({ space: desktop, answers: { ...calm, next_step_risk: noul(0.7), action: pick('drag', DESKTOP_ACTIONS), drag_target_for_Notes_txt: pick('9', DROPS) } }))
+      expect(risky).toMatchObject({ kind: 'pause', mode: 'drag', element: { index: '7' }, target: { index: '9' }, question: { reason: 'risky', options: [expect.objectContaining({ key: '9', label: 'drag Notes.txt onto button Select Desktop' }), expect.objectContaining({ key: '8' }), expect.objectContaining({ key: 'abort' })] } })
+      // Nothing selected on a browser page: drag is never offered there.
+      expect(decide(input({ answers: { ...calm, action: pick('drag', [...ACTIONS, 'drag']) } })).kind).not.toBe('drag')
     })
 
     it('switches to the root Jev names, or falls through when it names none', () => {

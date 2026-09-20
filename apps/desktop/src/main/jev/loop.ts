@@ -44,6 +44,8 @@ export interface RunDeps<Page extends RunObservation = RunObservation> {
   switchRoot?(rootId: string, signal?: AbortSignal): Promise<void>
   /** Right-click the element; the observation that follows is the context menu it opened. */
   contextMenu?(node: number, signal?: AbortSignal): Promise<void>
+  /** Drag the selected element onto the target, center to center. */
+  drag?(node: number, target: number, signal?: AbortSignal): Promise<void>
   /**
    * A fresh visual observation for a pause: the caller answers a question
    * about a page it has never seen, and a path to a picture of it costs one
@@ -147,9 +149,11 @@ interface Pending<Page extends RunObservation> {
   page: Page | null
   space: ActionSpace | null
   /** What answering with an element index means. */
-  mode: 'click' | 'type_text' | 'append' | 'switch' | 'context_menu' | 'escape' | 'accept'
+  mode: 'click' | 'type_text' | 'append' | 'switch' | 'context_menu' | 'drag' | 'escape' | 'accept'
   element?: SpaceElement
   presetKey?: string
+  /** For a drag pause: the item that would move. */
+  target?: SpaceElement
 }
 
 const SCROLL_DELTA = 560
@@ -257,6 +261,19 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     } else if (typeof answer.choice === 'string') {
       element = elementByIndex(pending.space, answer.choice)
       clickKey = answer.choice
+      if (element && pending.mode === 'drag' && pending.element && element.dropTarget) {
+        // The answer names the destination; the item that moves was the pause's own.
+        const source = pending.element
+        const next = await this.deps.observe(signal)
+        const still = next.elements.some((e) => e.node === source.node && e.dragSource) && next.elements.some((e) => e.node === element!.node && e.dropTarget)
+        if (!still || next.blocked) {
+          this.lastPage = null
+          this.progress.note = 'Page changed while paused; answer discarded'
+          return this.loop(signal)
+        }
+        this.lastPage = await this.execute({ kind: 'drag', element: source, target: element, probability: 1, risk: 0 }, next, true, true, signal)
+        return this.loop(signal)
+      }
       if (element && (pending.mode === 'type_text' || pending.mode === 'append')) {
         const preset = (pending.presetKey && pending.element?.node === element.node
           ? this.opts.presets.find((p) => p.key === pending.presetKey)
@@ -432,7 +449,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       this.doneCandidate = false
       if (decision.kind === 'pause') {
         this.emit(trace)
-        return this.pause(decision.question, page, space, decision.mode, decision.element, decision.presetKey)
+        return this.pause(decision.question, page, space, decision.mode, decision.element, decision.presetKey, false, decision.target)
       }
 
       const fresh = await this.deps.isFresh(page, 'element' in decision ? decision.element?.node : undefined, signal)
@@ -512,6 +529,8 @@ export class FastRun<Page extends RunObservation = RunObservation> {
           ? { node: decision.element.node, kind: 'switch', label: `Switch to [${decision.element.index}] ${decision.element.label}`, changedPage: null, ...approvedFlag }
           : decision.kind === 'context_menu'
             ? { node: decision.element.node, kind: 'context_menu', label: `Right-click [${decision.element.index}] ${decision.element.label}`, changedPage: null, ...approvedFlag }
+          : decision.kind === 'drag'
+            ? { node: decision.element.node, kind: 'drag', label: `Drag [${decision.element.index}] ${decision.element.label} onto [${decision.target.index}] ${decision.target.label}`, changedPage: null, ...approvedFlag }
           : decision.kind === 'click'
             ? {
               node: decision.element.node,
@@ -543,6 +562,10 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     } else if (decision.kind === 'context_menu') {
       if (!this.deps.contextMenu) throw new RunPaused('no-progress', 'This platform cannot open a context menu.')
       await this.deps.contextMenu(decision.element.node, signal)
+      await this.settle(page, { node: decision.element.node }, signal)
+    } else if (decision.kind === 'drag') {
+      if (!this.deps.drag) throw new RunPaused('no-progress', 'This platform cannot drag.')
+      await this.deps.drag(decision.element.node, decision.target.node, signal)
       await this.settle(page, { node: decision.element.node }, signal)
     } else if (decision.kind === 'click') {
       if (clickKind === 'submit') await this.deps.pressEnter(decision.element.node, signal)
@@ -596,12 +619,12 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     }, page, null, 'accept')
   }
 
-  private async pause(question: Omit<Question, 'id'>, page: Page | null, space: ActionSpace | null, mode: Pending<Page>['mode'], element?: SpaceElement, presetKey?: string, withoutObserve = false): Promise<RunResult> {
+  private async pause(question: Omit<Question, 'id'>, page: Page | null, space: ActionSpace | null, mode: Pending<Page>['mode'], element?: SpaceElement, presetKey?: string, withoutObserve = false, target?: SpaceElement): Promise<RunResult> {
     const observed = page ?? (withoutObserve ? null : await this.deps.observe())
     const built = space ?? (observed ? buildActionSpace({ page: observed, history: this.history }) : null)
     const id = `q${++this.questionSeq}`
     const full: Question = { id, ...question }
-    this.pending = { question: full, page: observed, space: built, mode, element, presetKey }
+    this.pending = { question: full, page: observed, space: built, mode, element, presetKey, target }
     this.lastPage = observed
     this.status = 'paused'
     // Which pause reasons a picture helps with is a table, not a question for
@@ -699,6 +722,8 @@ function reportableAction(decision: Record<string, unknown>): JevRunAction | nul
       return { op: 'press', target: `Switch to ${target ?? ''}`.trim() }
     case 'context_menu':
       return { op: 'click', target: `Right-click ${target ?? ''}`.trim() }
+    case 'drag':
+      return { op: 'press', target: `Drag ${target ?? ''} onto ${String(decision.onto ?? '')}`.trim() }
     case 'wait':
       return { op: 'wait' }
     default:
@@ -726,6 +751,8 @@ function describeDecision(d: Decision): Record<string, unknown> {
       return { kind: 'switch', index: d.element.index, label: d.element.label, root: d.element.root, probability: d.probability, risk: d.risk }
     case 'context_menu':
       return { kind: 'context_menu', index: d.element.index, label: d.element.label, probability: d.probability, risk: d.risk }
+    case 'drag':
+      return { kind: 'drag', index: d.element.index, label: d.element.label, onto: d.target.label, targetIndex: d.target.index, probability: d.probability, risk: d.risk }
     case 'pause':
       return { kind: 'pause', reason: d.question.reason, type: d.question.type, why: d.question.context.why }
   }

@@ -477,6 +477,28 @@ describe('FastRun', () => {
     expect(menu.acts).toEqual(['context_menu:1'])
     expect(opened.progress.completed).toEqual([{ label: 'Right-click [1] Select Report.pdf', outcome: 'worked' }])
     expect(opened.status).toBe('done')
+
+    // A drag pauses as risky when Jev says so; the answer names the destination and the run drags.
+    const LIST2 = page([
+      el({ node: 1, role: 'row', label: 'Report.pdf', value: 'selected', selected: 'true', clickable: false, dragSource: true }),
+      el({ node: 2, role: 'button', label: 'Open Projects', dropTarget: true }),
+    ], { text: 'Documents' })
+    const MOVED = page([el({ node: 2, role: 'button', label: 'Open Projects', dropTarget: true })], { text: 'Documents moved' })
+    let round = 0
+    const drag = harness([LIST2, LIST2, MOVED], (request) => {
+      round++
+      if (round === 1) return { still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0.8), action: pick('drag', actionsOf(request)), drag_target_for_Report_pdf: pick('2', Object.keys(request.questions.drag_target_for_Report_pdf!.criteria!)) }
+      return { still_loading: noul(0), goal_satisfied: noul(0.95), next_step_risk: noul(0), action: pick('none_useful', actionsOf(request)) }
+    })
+    drag.deps.checkDone = async () => false
+    drag.deps.drag = async (node, target) => { drag.acts.push(`drag:${node}->${target}`); drag.next(); drag.next() }
+    const dragRun = new FastRun(opts({ goal: 'Move the report into Projects', maxSteps: 4 }), drag.deps)
+    const asked = await dragRun.start()
+    expect(asked.question).toMatchObject({ reason: 'risky', options: [expect.objectContaining({ key: '2', label: 'drag Report.pdf onto button Open Projects' }), expect.objectContaining({ key: 'abort' })] })
+    const moved = await dragRun.resume({ questionId: asked.question!.id, choice: '2' })
+    expect(drag.acts).toEqual(['drag:1->2'])
+    expect(moved.progress.completed).toEqual([{ label: 'Drag [1] Report.pdf onto [2] Open Projects', outcome: 'worked' }])
+    expect(moved.status).toBe('done')
     // A browser page offers neither.
     let offered: string[] = []
     const browser = harness([HOME], (request) => {
@@ -487,6 +509,7 @@ describe('FastRun', () => {
     expect(offered).not.toContain('escape')
     expect(offered).not.toContain('switch')
     expect(offered).not.toContain('context_menu')
+    expect(offered).not.toContain('drag')
   })
 
   it('reports progress and a pause-time picture with every pause, and starts the progress afresh on resume', async () => {

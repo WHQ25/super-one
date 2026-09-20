@@ -84,16 +84,26 @@ describe('app menu bar in window outlines', () => {
     expect((await service.waitFor(observation.stateId, { kind: 'newRoot', title: 'Fonts' }, 0)).status).toBe('verified')
   })
 
-  it('only makes an app frontmost on focus activate', async () => {
-    // Plain focus raises the window and keeps the app in the background;
-    // activate is for holding it in front.
+  it('presses a menu command in a background app and only makes it frontmost on focus activate', async () => {
+    // AppKit validates menu items against the active app's key window, so the
+    // helper activates the app for the press and hands the previous app back;
+    // the service neither gates on frontmost nor changes it. Plain focus keeps
+    // the app in the background; activate is for holding it in front.
     const backend = new FakePlatformBackend([
       { app: 'Chat', bundleId: 'com.test.chat', pid: 3, windows: [{ title: 'Chat', focused: true, tree: { role: 'window' } }] },
-      { app: 'Editor', bundleId: 'com.test.editor', pid: 7, windows: [{ title: 'Document', focused: false, tree: { role: 'window' } }] },
+      { app: 'Editor', bundleId: 'com.test.editor', pid: 7,
+        menuBar: { role: 'menuBar', children: [{ role: 'menuBarItem', name: 'Format', toggle: true }] },
+        windows: [{ title: 'Document', focused: false, tree: { role: 'window' } }] },
     ])
     const service = new ComputerUseService({ adapter: backend })
     service.policy.setEnabled(true)
     service.policy.grantSession({ app: 'Editor', bundleId: 'com.test.editor', tier: 'full' })
+    const root = (await service.listUiRoots()).find((candidate) => candidate.title === 'Document')!
+    const observation = await service.observe(root.rootId, 'semantic')
+    const menu = flatten(observation.outline).find((node) => node.name === 'Format' && node.nativeTarget)!
+    expect((await service.act(observation.stateId, [{ type: 'press', ref: menu.ref }], { delivery: 'semantic' })).outcome).toBe('worked')
+    expect(await backend.frontmost()).toMatchObject({ bundleId: 'com.test.chat' })
+
     await service.apps('focus', 'com.test.editor')
     expect(await backend.frontmost()).toMatchObject({ bundleId: 'com.test.chat' })
     await service.apps('focus', 'com.test.editor', { activate: true })

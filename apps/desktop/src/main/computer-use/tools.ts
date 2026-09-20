@@ -182,7 +182,7 @@ const toolDefs: Array<{
       + 'action=focus|launch accepts display name (any locale) or reverse-DNS bundleId; host resolves to a stable bundleId before the permission grant so one allow covers later snapshot/act. '
       + 'Launch/focus returns a slim {target} confirmation. If the user only asks to open an app, launch once and stop when target is returned. '
       + 'For navigation, forms or search, prefer computer_run when Jev is enabled; batch known button sequences with computer_act. '
-      + 'Focus only raises the window and leaves the app in the background; pass activate=true only when the app must stay the active app for a sequence of foreground-only steps.',
+      + 'Focus only raises the window and leaves the app in the background; pass activate=true only when the app must stay the active app for a sequence of foreground-only steps (a single menu bar command needs no activation: the host brings the app forward for the press and hands the previous app back).',
     shape: {
       ...descriptionField,
       action: z.enum(['list', 'focus', 'launch']).optional().describe('Default list'),
@@ -195,7 +195,7 @@ const toolDefs: Array<{
       activate: z
         .boolean()
         .optional()
-        .describe('focus only: make the app frontmost and keep it there. Leave unset so the user keeps their current app.'),
+        .describe('focus only: make the app frontmost and keep it there. Leave unset so the user keeps their current app; menu bar commands do not need it.'),
       query: z
         .string()
         .optional()

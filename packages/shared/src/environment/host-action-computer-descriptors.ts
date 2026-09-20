@@ -3,7 +3,7 @@ import type { HostActionSuperoneToolDescriptor } from './host-action-superone-de
 export const HOST_ACTION_COMPUTER_DESCRIPTORS = [
   {
     "name": "computer_apps",
-    "description": "Discover and open desktop apps. action=list (default) returns a compact TOON app catalog: one row per app with app, bundleId, running, frontmost, granted, grantScope, pid, windows. Use query to keyword-filter by display name / bundle id / localized aliases (e.g. query=Notes or com.apple.TextEdit). Paginate with offset + limit (default limit 25, max 100); hasMore means call again with offset+=limit. Rows are sorted running/frontmost/granted first. action=focus|launch accepts display name (any locale) or reverse-DNS bundleId; host resolves to a stable bundleId before the permission grant so one allow covers later snapshot/act. Launch/focus returns a slim {target} confirmation. If the user only asks to open an app, launch once and stop when target is returned. For navigation, forms or search, prefer computer_run when Jev is enabled; batch known button sequences with computer_act. Focus only raises the window and leaves the app in the background; pass activate=true only when the app must stay the active app for a sequence of foreground-only steps.",
+    "description": "Discover and open desktop apps. action=list (default) returns a compact TOON app catalog: one row per app with app, bundleId, running, frontmost, granted, grantScope, pid, windows. Use query to keyword-filter by display name / bundle id / localized aliases (e.g. query=Notes or com.apple.TextEdit). Paginate with offset + limit (default limit 25, max 100); hasMore means call again with offset+=limit. Rows are sorted running/frontmost/granted first. action=focus|launch accepts display name (any locale) or reverse-DNS bundleId; host resolves to a stable bundleId before the permission grant so one allow covers later snapshot/act. Launch/focus returns a slim {target} confirmation. If the user only asks to open an app, launch once and stop when target is returned. For navigation, forms or search, prefer computer_run when Jev is enabled; batch known button sequences with computer_act. Focus only raises the window and leaves the app in the background; pass activate=true only when the app must stay the active app for a sequence of foreground-only steps (a single menu bar command needs no activation: the host brings the app forward for the press and hands the previous app back).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -27,7 +27,7 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS = [
           "type": "string"
         },
         "activate": {
-          "description": "focus only: make the app frontmost and keep it there. Leave unset so the user keeps their current app.",
+          "description": "focus only: make the app frontmost and keep it there. Leave unset so the user keeps their current app; menu bar commands do not need it.",
           "type": "boolean"
         },
         "query": {

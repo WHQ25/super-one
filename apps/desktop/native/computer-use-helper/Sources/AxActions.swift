@@ -1,3 +1,4 @@
+import AppKit
 import ApplicationServices
 import Foundation
 
@@ -121,6 +122,68 @@ private func resolveTarget(root: AXUIElement, requestedIndex: Int, hint: AxTarge
     return AxResolvedTarget(element: best.element, index: best.index, recovered: true)
 }
 
+/// A leaf menu command, as opposed to a menu bar item or a submenu parent
+/// whose press only opens a menu.
+private func axIsMenuCommand(_ el: AXUIElement) -> Bool {
+    axRole(el) == "AXMenuItem" && !axChildren(el).contains { axRole($0) == "AXMenu" }
+}
+
+/// How long AppKit gets to re-validate the app's menus after activation before
+/// the command is pressed anyway (a command that is disabled in the foreground
+/// too is simply disabled). Measured on Finder: the flag turns on 0.25–1.0s
+/// after activate.
+private let axMenuValidationTimeout: TimeInterval = 1.5
+/// A flag that already read true before activation is the last validation's
+/// result, left from before the app went to the background; nothing observable
+/// distinguishes it from a fresh one, so it only counts after the longest
+/// validation delay seen has passed.
+private let axMenuStaleFlagSettle: TimeInterval = 1.1
+
+/// Press a menu command in an app that may be in the background.
+///
+/// AppKit validates menu items against the active app's key window, so a
+/// background app's commands are disabled and AXPress on one reports success
+/// while doing nothing — Finder's View ▸ Sort By ▸ Date Modified left the sort
+/// column alone, and so did its key equivalent posted to the pid, System Events,
+/// an AX-focused window, and a press after AX reads had refreshed the flag.
+/// There is no background route. What there is: make the app active for the
+/// time it takes AppKit to re-validate, press, and hand the previous app
+/// straight back. Pressing before validation does nothing even with the app
+/// active, so the wait is for the flag, not for activation. Pressing the
+/// command in the closed menu tree means no menu opens on screen and the whole
+/// path is one press, so a menu bar goal is one blink of the target app.
+private func axPressMenuCommand(_ el: AXUIElement, pid: pid_t) -> AXError {
+    let target = NSRunningApplication(processIdentifier: pid)
+    let previous = NSWorkspace.shared.frontmostApplication
+    let needsActivation = target != nil && previous?.processIdentifier != pid
+    if needsActivation, let target {
+        // The item's own AXEnabled is not refreshed on read; enumerating the
+        // menus above it, as a tree read does, is what refreshes it.
+        var ancestors: [AXUIElement] = []
+        var cursor: AXUIElement? = axAttributeElement(el, kAXParentAttribute as String)
+        while let node = cursor, ancestors.count < 12 {
+            ancestors.insert(node, at: 0)
+            if axRole(node) == "AXMenuBar" { break }
+            cursor = axAttributeElement(node, kAXParentAttribute as String)
+        }
+        let wasEnabled = axBool(el, kAXEnabledAttribute as String) == true
+        target.activate()
+        let activated = Date()
+        let deadline = activated.addingTimeInterval(axMenuValidationTimeout)
+        while Date() < deadline {
+            for node in ancestors { _ = axChildren(node) }
+            if axBool(el, kAXEnabledAttribute as String) == true,
+               !wasEnabled || Date().timeIntervalSince(activated) >= axMenuStaleFlagSettle { break }
+            usleep(10_000)
+        }
+    }
+    let err = AXUIElementPerformAction(el, kAXPressAction as CFString)
+    if needsActivation, let previous, previous.processIdentifier != pid, !previous.isTerminated {
+        previous.activate()
+    }
+    return err
+}
+
 func axPerform(
     pid: pid_t,
     index: Int,
@@ -175,7 +238,9 @@ func axPerform(
     case "open":
         try axOpenItem(el)
     case "press", "axpress":
-        let err = AXUIElementPerformAction(el, kAXPressAction as CFString)
+        let err = source == "menuBar" && axIsMenuCommand(el)
+            ? axPressMenuCommand(el, pid: pid)
+            : AXUIElementPerformAction(el, kAXPressAction as CFString)
         if err != .success {
             throw HelperError(code: "AX_ACTION", message: "AXPress failed (\(err.rawValue))")
         }

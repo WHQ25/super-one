@@ -82,6 +82,12 @@ private final class AxWalkState {
     /// caller cannot infer this: a depth-pruned tree can finish well under
     /// maxNodes, and a tree that happens to fill the budget exactly is complete.
     var truncated = false
+    /// AppKit validates menu items against the active app's key window, so a
+    /// background app's menu `AXEnabled` flags describe no key window at all:
+    /// Finder's View menu reads 3 of 41 commands enabled until Finder is
+    /// active. A walk with this set reports every menu node enabled instead
+    /// of reporting those flags as if they were the commands' own state.
+    var unvalidatedMenuFlags = false
     let limits: AxWalkLimits
     init(limits: AxWalkLimits) { self.limits = limits }
 }
@@ -344,7 +350,7 @@ private func nodeDicts(
         "index": idx,
         "role": role,
         "actions": actions,
-        "enabled": axBool(el, kAXEnabledAttribute as String) ?? true,
+        "enabled": state.unvalidatedMenuFlags ? true : (axBool(el, kAXEnabledAttribute as String) ?? true),
         "focused": axBool(el, kAXFocusedAttribute as String) ?? false,
         "settable": settable,
         "secure": secure,
@@ -522,7 +528,7 @@ private func windowMetadata(_ element: AXUIElement) -> AxWindowMetadata {
     )
 }
 
-private func axAttributeElement(_ element: AXUIElement, _ attribute: String) -> AXUIElement? {
+func axAttributeElement(_ element: AXUIElement, _ attribute: String) -> AXUIElement? {
     var raw: CFTypeRef?
     guard AXUIElementCopyAttributeValue(element, attribute as CFString, &raw) == .success,
           let raw else { return nil }
@@ -848,8 +854,10 @@ func axTreeSnapshot(
     let menuState = AxWalkState(limits: AxWalkLimits(maxNodes: min(250, max(1, maxNodes / 3)), maxDepth: max(1, maxDepth)))
     let menu: [String: Any]?
     if axRootId == nil, axRole(rootEl) == "AXWindow", let menuBar = axMenuBar(app) {
-        // Cocoa exposes command subtrees while menus are closed. Their leaf
-        // AXPress actions work directly, including for background applications.
+        // Cocoa exposes command subtrees while menus are closed, and `ax_action`
+        // presses a command in them directly — activating a background app for
+        // the press, whose menu flags are meaningless until then.
+        menuState.unvalidatedMenuFlags = NSWorkspace.shared.frontmostApplication?.processIdentifier != pid
         menu = nodeDicts(el: menuBar, state: menuState, depth: 0, insideWebArea: false,
                          coordinateTransform: coordinateTransform, focusedElement: focused).first
     } else {

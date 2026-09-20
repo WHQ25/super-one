@@ -183,6 +183,11 @@ func axValueString(_ el: AXUIElement) -> String? {
     guard AXUIElementCopyAttributeValue(el, kAXValueAttribute as CFString, &raw) == .success,
           let v = raw else { return nil }
     if let n = v as? NSNumber { return n.stringValue }
+    // An element's value can be another element (a table's AXValue is its
+    // selected row's); its description is an address that changes with every
+    // read and showed up in every act diff as a value change.
+    let type = CFGetTypeID(v)
+    if type == AXUIElementGetTypeID() || type == CFArrayGetTypeID() { return nil }
     return String(describing: v)
 }
 

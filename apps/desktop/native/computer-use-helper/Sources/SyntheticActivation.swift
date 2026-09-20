@@ -91,8 +91,21 @@ struct SyntheticActivation {
     /// a drag-selection collapsed the same way. A click on the window's title
     /// label, or on the frame just left of the close button, is handled by
     /// the title bar as a window drag that never moves and is not replayed.
-    /// A window with neither gets no click: its first real click makes it key
-    /// by itself, swallowed only by a view that refuses first mouse.
+    ///
+    /// A web view (Chromium: Chrome, Electron; WebKit) is the exception that
+    /// needs the off-screen click. Its content refuses first mouse, so with
+    /// no frame to click the first click posted into it is swallowed to make
+    /// the window key and never reaches the page — a click into an input did
+    /// not focus it, typing went nowhere, a button did nothing until clicked
+    /// again. Chromium windows have no title label, and with a hidden title
+    /// bar (Electron `hiddenInset`, SuperOne, Cursor) the strip beside the
+    /// traffic lights is web content too, where a click is a drag-region
+    /// press that makes nothing key. The off-screen click makes such a window
+    /// key, and Chromium does not replay it: the next click into a button
+    /// fires once, a drag-selection holds.
+    ///
+    /// A window with none of these gets no click: its first real click makes
+    /// it key by itself, swallowed only by a view that refuses first mouse.
     private func postKeyMakingClick() {
         guard let point = keyMakingPoint(),
               let window = try? liveWindowGeometry(windowId: Int(windowId)) else { return }
@@ -118,11 +131,39 @@ struct SyntheticActivation {
         let closeButton = axChildren(window.element).first {
             axString($0, kAXSubroleAttribute as String) == kAXCloseButtonSubrole
         }
+        // Only the frame handles this click as a title-bar press: under a
+        // hidden title bar the same point is content (Cursor's traffic lights
+        // sit 14 pt in, over its web view), so ask what is there first.
         if let closeButton, let frame = axFrame(closeButton),
            frame.minX - bounds.minX >= Self.closeButtonClearance * 2 {
-            return CGPoint(x: frame.minX - Self.closeButtonClearance, y: frame.midY)
+            let point = CGPoint(x: frame.minX - Self.closeButtonClearance, y: frame.midY)
+            if let hit = axElementAt(pid: pid, point: point), CFEqual(hit, window.element) {
+                return point
+            }
         }
+        if hostsWebArea(window.element) { return Self.offScreenPoint }
         return nil
+    }
+
+    /// Where a click hits nothing: off every display, so no view of the
+    /// window — or of anything else — is under it.
+    private static let offScreenPoint = CGPoint(x: -5000, y: -5000)
+    private static let webAreaSearchBudget = 200
+
+    /// Whether the window's content is a web view. Breadth-first, because the
+    /// web area sits a few levels down (Electron: right under the content
+    /// group; Chrome: below the tab strip and toolbar) while the tree beneath
+    /// it is unbounded; the budget keeps a native window's walk short.
+    private func hostsWebArea(_ window: AXUIElement) -> Bool {
+        var queue = axChildren(window)
+        var visited = 0
+        while !queue.isEmpty, visited < Self.webAreaSearchBudget {
+            let element = queue.removeFirst()
+            visited += 1
+            if axRole(element) == "AXWebArea" { return true }
+            queue.append(contentsOf: axChildren(element))
+        }
+        return false
     }
 
     /// The app's frontmost normal-layer window, front to back as the window

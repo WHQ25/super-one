@@ -575,6 +575,17 @@ func axAttributeElement(_ element: AXUIElement, _ attribute: String) -> AXUIElem
     return (raw as! AXUIElement)
 }
 
+/// The deepest element of the app under a screen point, as the app's own
+/// hit-test reports it — the window itself for a point on its frame.
+func axElementAt(pid: pid_t, point: CGPoint) -> AXUIElement? {
+    var element: AXUIElement?
+    let app = AXUIElementCreateApplication(pid)
+    guard AXUIElementCopyElementAtPosition(app, Float(point.x), Float(point.y), &element) == .success else {
+        return nil
+    }
+    return element
+}
+
 private func axRootTitle(_ element: AXUIElement, metadata: AxWindowMetadata) -> String {
     let candidates = [
         axString(element, kAXTitleAttribute as String),

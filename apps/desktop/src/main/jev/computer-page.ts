@@ -24,6 +24,25 @@ const ROLE_MAP: Record<string, string> = { textfield: 'textbox', textarea: 'text
 /** What to call an editable control that carries no readable name of its own. */
 const EDITABLE_ROLE_LABEL: Record<string, string> = { searchbox: 'Search field', textbox: 'Text field', combobox: 'Combo box' }
 
+const TOGGLE_ROLES = new Set(['checkbox', 'radio', 'switch', 'menuitem', 'disclosuretriangle', 'togglebutton'])
+
+/**
+ * Whether a toggle is on, in the shape the shared layer already speaks
+ * ('true' / 'false' / 'mixed' — the web reads it off `aria-checked`).
+ *
+ * AXValue on a toggle is a number, so the raw observation carries "0", "1" or
+ * "2" and nothing downstream recognised it: Jev was told a checkbox's value was
+ * "1" and never told whether it was checked, and the settle signature could not
+ * see a toggle flip either.
+ */
+function checkedFrom(role: string, value: string): string | undefined {
+  if (!TOGGLE_ROLES.has(role)) return undefined
+  if (value === '1' || value === 'true') return 'true'
+  if (value === '0' || value === 'false') return 'false'
+  if (value === '2' || value === 'mixed') return 'mixed'
+  return undefined
+}
+
 const MAX_ELEMENTS = 250
 const MAX_TEXT = 6000
 
@@ -100,8 +119,10 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
       const id = elements.length + 1
       refs.set(id, node)
       if (kind) clickKinds.set(id, kind)
+      const checked = checkedFrom(role, value)
       elements.push({ node: id, ref: node.ref, role: mapped,
         label, value: kind === 'select' ? (node.selected ? 'selected' : 'not selected') : value,
+        ...(checked ? { checked } : {}),
         ...(node.expanded != null ? { expanded: String(node.expanded) } : {}),
         editable: kind !== 'select' && kind !== 'open' && editable, clickable: !!kind,
         canSubmit: !!planNodeAction(node, { kind: 'enter' }, tier), password: false, submit: false, disabled: false })

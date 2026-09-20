@@ -286,6 +286,26 @@ describe('computer fast-loop adapter', () => {
     expect(buildActionSpace({ page, history: [] }).typeCandidates).toEqual([String(field!.node)])
   })
 
+  it('reports a toggle as checked, not as the raw AX number', async () => {
+    // AXValue on a checkbox is a number, so the observation carried "1" and the
+    // shared layer — which speaks aria-checked's 'true'/'false' — saw nothing.
+    // Jev was never told whether a switch was on, and the settle signature
+    // could not see one flip either.
+    const backend = new FakePlatformBackend([{ app: 'Settings', bundleId: 'com.test.settings', pid: 7, windows: [{ title: 'Network', focused: true,
+      tree: { role: 'window', children: [
+        { role: 'checkbox', name: 'Wi-Fi', value: '1' },
+        { role: 'checkbox', name: 'Bluetooth', value: '0' },
+        { role: 'button', name: 'Done' },
+      ] },
+    }] }])
+    const service = new ComputerUseService({ adapter: backend })
+    service.policy.setEnabled(true)
+    service.policy.grantSession({ app: 'Settings', bundleId: 'com.test.settings', tier: 'full' })
+    const observed = await service.observe((await service.resolveTargetRoot()).rootId, 'semantic')
+    const page = computerPage(computerObservation(service.getStateStore().get(observed.stateId)!), service)
+    expect(page.elements.map((e) => [e.label, e.checked])).toEqual([['Wi-Fi', 'true'], ['Bluetooth', 'false'], ['Done', undefined]])
+  })
+
   it('honors cancellation before dispatching an input', async () => {
     const { adapter, service } = fixture()
     const controller = new AbortController()

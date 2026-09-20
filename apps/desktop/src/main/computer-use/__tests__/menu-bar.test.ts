@@ -78,7 +78,7 @@ describe('app menu bar in window outlines', () => {
     const observation = await service.observe(undefined, 'semantic')
     const command = flatten(observation.outline).find((node) => node.name === 'Show Fonts')!
     expect(command.nativeTarget?.scope).toBe('menuBar')
-    expect(computerPage(observation, service).elements).toContainEqual(expect.objectContaining({ label: 'Show Fonts', clickable: true }))
+    expect(computerPage(observation, service).elements).toContainEqual(expect.objectContaining({ label: 'Font ▸ Show Fonts', clickable: true }))
     const result = await service.act(observation.stateId, [{ type: 'press', ref: command.ref }], { delivery: 'semantic' })
     expect(result.successorRoot?.title).toBe('Fonts')
     expect((await service.waitFor(observation.stateId, { kind: 'newRoot', title: 'Fonts' }, 0)).status).toBe('verified')

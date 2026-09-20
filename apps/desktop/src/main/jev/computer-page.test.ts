@@ -135,8 +135,8 @@ describe('computer fast-loop adapter', () => {
     expect(labels.some((label) => /^(Open|Select) ?$/.test(label))).toBe(false)
     expect(labels).not.toContain('Recent Secret.pdf')
     expect(page.text).not.toContain('Recent Secret.pdf')
-    // On-screen content precedes app menu commands.
-    expect(labels.indexOf('New Folder')).toBeGreaterThan(labels.indexOf('Open Folder 69'))
+    // On-screen content precedes app menu commands, which carry their menu's name.
+    expect(labels.indexOf('File ▸ New Folder')).toBeGreaterThan(labels.indexOf('Open Folder 69'))
     const space = buildActionSpace({ page, history: [] })
     expect(space.clickCandidates).toContain(String(page.elements.find((element) => element.label === 'Open Readme.txt')!.node))
     expect(space.clickCandidates).toContain(String(page.elements.find((element) => element.label === 'Open Folder 69')!.node))
@@ -360,7 +360,9 @@ describe('computer fast-loop adapter', () => {
     ] })
     const page = computerPage({ ...obs, outline }, service)
     const labels = page.elements.map((e) => e.label)
-    expect(labels).toEqual(['Date Modified', 'Name', 'Date Modified'])
+    // A command carries its menu's name: on its own, "12" under Decimal Places
+    // read as the digits a goal asked for.
+    expect(labels).toEqual(['Date Modified', 'Sort By ▸ Name', 'Sort By ▸ Date Modified'])
     expect(page.elements[1]).toMatchObject({ clickable: true })
     expect(page.elements[1].checked).toBeUndefined()
     expect(page.elements[2]).toMatchObject({ checked: 'true' })

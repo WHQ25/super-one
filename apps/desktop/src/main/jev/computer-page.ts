@@ -104,7 +104,11 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
   const text: string[] = []
   const seen = new Set<string>()
   let scrollRef: string | undefined
-  const walk = (node: UiOutlineNode) => {
+  // `menu` is the menu a command sits in — "Sort By" for Date Modified,
+  // "Decimal Places" for Calculator's 12. On its own a command's name says
+  // too little: Jev read "12" as the digits the goal asked for, chose the
+  // decimal-places command over the two digit keys, and the sum came out 7.5.
+  const walk = (node: UiOutlineNode, menu?: string) => {
     const role = node.role.replace(/^AX/, '').toLowerCase()
     const secure = node.secure === true || /secure|password/.test(role)
     const value = secure ? '' : node.value ?? ''
@@ -139,7 +143,8 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
       // accessible name there. Name such a field for what it is instead.
       const anonymous = editable ? EDITABLE_ROLE_LABEL[mapped] ?? 'Text field' : ''
       const itemLabel = (source?.value || source?.name || '').trim() || anonymous
-      const label = kind === 'select' || kind === 'open' ? `${kind === 'select' ? 'Select' : 'Open'} ${itemLabel}` : node.name || (editable ? value : '') || anonymous
+      const label = kind === 'select' || kind === 'open' ? `${kind === 'select' ? 'Select' : 'Open'} ${itemLabel}`
+        : command && menu ? `${menu} ▸ ${node.name}` : node.name || (editable ? value : '') || anonymous
       // A row, its name cell and the cell's text field all open the same item:
       // one candidate per intent, keyed on the node the name was read from,
       // which those three share. Keyed on the label it also swallowed a
@@ -165,7 +170,7 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
         editable: kind !== 'select' && kind !== 'open' && editable, clickable: !!kind,
         canSubmit: !!planNodeAction(node, { kind: 'enter' }, tier), password: false, submit: false, disabled: false })
     }
-    if (!secure) for (const child of node.children ?? []) walk(child)
+    if (!secure) for (const child of node.children ?? []) walk(child, command && node.name ? node.name : menu)
   }
   // Window content first, app menus last, so the element budget and the pause
   // option list favour what is on screen. The Apple menu is never an in-app

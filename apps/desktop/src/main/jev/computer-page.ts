@@ -256,6 +256,8 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
   let successor: ComputerPage | undefined
   /** Wall time of the act that produced `successor`, input and successor read included. */
   let actMs = 0
+  /** Wall time of the last live read of the window, which is what a settle sample costs. */
+  let readMs = 0
   let conditionStateId: string | undefined
   const requirePage = () => {
     if (!current) throw new RunPaused('no-progress', 'Take a new computer snapshot before continuing.')
@@ -281,6 +283,7 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
    * observation, which is why this one survived that fix.
    */
   const observeRoot = async (signal?: AbortSignal) => {
+    const started = Date.now()
     try {
       return await service.observe(root, 'semantic')
     } catch (error) {
@@ -290,6 +293,8 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
       signal?.throwIfAborted()
       root = target.rootId
       return await service.observe(root, 'semantic')
+    } finally {
+      readMs = Date.now() - started
     }
   }
   /**
@@ -402,10 +407,16 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
      * confirming stillness, which takes two. So when the act spanned the
      * budget the successor stands as the settled observation. Measured per
      * act, so a run that leaves the long list gets its settle back.
+     *
+     * Only when it was the read that took the time, though. A menu command in
+     * a background app is pressed by activating the app and waiting for its
+     * menus to validate, ~1–2s on its own, and TextEdit's File ▸ Save… spanned
+     * the budget that way with a window that reads in 300ms: the sheet it
+     * opens is exactly what a settle is for, and one is affordable.
      */
     settle: async (page, _opts, signal) => {
       const outcome = successor?.outcome
-      if (outcome && actMs >= SETTLE_BUDGET_MS) {
+      if (outcome && actMs >= SETTLE_BUDGET_MS && readMs >= SETTLE_BUDGET_MS / 2) {
         return { changed: outcomeChanged(outcome) === true, fields: ['act-outlasted-budget'], elements: successor!.elements.length }
       }
       const settled = await settleByPolling(page, observeFresh, signal)

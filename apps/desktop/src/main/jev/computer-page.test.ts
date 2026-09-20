@@ -77,26 +77,34 @@ describe('computer fast-loop adapter', () => {
     // nothing. Measured per act, so a cheap act settles as before.
     const { service, adapter } = fixture()
     await adapter.resolveTarget()
-    const page = await adapter.observe()
-    const next = page.elements.find((element) => element.label === 'Next')!.node
     const act = service.act.bind(service)
+    const read = service.observe.bind(service)
     vi.useFakeTimers({ toFake: ['Date'] })
+    const slow = <T,>(fn: () => Promise<T>, ms: number) => async () => { const result = await fn(); vi.setSystemTime(Date.now() + ms); return result }
+    let next = 0
     try {
-      vi.spyOn(service, 'act').mockImplementation(async (...args) => {
-        const result = await act(...args)
-        vi.setSystemTime(Date.now() + 9000)
-        return result
-      })
+      // The window reads in 9s, and the act's successor read is one such read.
+      const observe = vi.spyOn(service, 'observe').mockImplementation((...args) => slow(() => read(...args), 9000)())
+      vi.spyOn(service, 'act').mockImplementation((...args) => slow(() => act(...args), 9000)())
+      const page = await adapter.observe()
+      next = page.elements.find((element) => element.label === 'Next')!.node
       await adapter.click(next)
-      const observe = vi.spyOn(service, 'observe')
+      observe.mockClear()
       expect(await adapter.settle(page, { node: next })).toMatchObject({ changed: true, fields: ['act-outlasted-budget'] })
       expect(observe).not.toHaveBeenCalled()
       // The act's verdict still reaches the loop through its successor.
       expect(adapter.changed(page, await adapter.observe())).toBe(true)
+      // A slow act on a window that reads quickly — a menu command pressed by
+      // activating a background app — still settles: the read is affordable.
+      observe.mockImplementation((...args) => slow(() => read(...args), 300)())
+      const fresh = await adapter.observe()
+      await adapter.click(next)
+      expect((await adapter.settle(fresh, { node: next }))?.fields).not.toEqual(['act-outlasted-budget'])
     } finally {
       vi.restoreAllMocks()
       vi.useRealTimers()
     }
+    await adapter.observe()
     const observe = vi.spyOn(service, 'observe')
     await adapter.click(next)
     const report = await adapter.settle(await adapter.observe(), { node: next })

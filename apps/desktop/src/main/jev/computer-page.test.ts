@@ -306,6 +306,28 @@ describe('computer fast-loop adapter', () => {
     expect(page.elements.map((e) => [e.label, e.checked])).toEqual([['Wi-Fi', 'true'], ['Bluetooth', 'false'], ['Done', undefined]])
   })
 
+  it('re-resolves the app root when the observed window is replaced', async () => {
+    // System Settings swaps its whole window when the sidebar search resolves;
+    // the helper then refuses the old window id and the error escaped the run
+    // as a failed tool call, with the typed query already on screen.
+    const { adapter, service } = fixture()
+    await adapter.resolveTarget()
+    const real = service.observe.bind(service)
+    let thrown = false
+    vi.spyOn(service, 'observe').mockImplementation(async (root, mode) => {
+      if (!thrown) {
+        thrown = true
+        // The helper raises a plain Error with a `code`, never a
+        // ComputerUseError — matching on the class alone caught nothing, which
+        // is how this escaped `computer_run` twice as a failed tool call.
+        throw Object.assign(new Error('Window 8570 no longer exists'), { code: 'WINDOW_UNAVAILABLE' })
+      }
+      return real(root, mode)
+    })
+    const page = await adapter.observe()
+    expect(page.elements.length).toBeGreaterThan(0)
+  })
+
   it('honors cancellation before dispatching an input', async () => {
     const { adapter, service } = fixture()
     const controller = new AbortController()

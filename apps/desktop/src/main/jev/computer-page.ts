@@ -43,6 +43,23 @@ function checkedFrom(role: string, value: string): string | undefined {
   return undefined
 }
 
+/** The observed window is gone; the app is not. Re-resolve instead of failing the run. */
+const VANISHED_ROOT_CODES = new Set(['WINDOW_UNAVAILABLE', 'AX_ROOT_NOT_FOUND'])
+
+/**
+ * The native helper raises a plain `Error` carrying a `code` property, and the
+ * service passes it through untouched — it is never a `ComputerUseError`. So
+ * matching on the class alone silently skipped every helper-originated failure:
+ * a vanished window escaped `computer_run` as a failed tool call, and the
+ * STALE_STATE / MODAL_BLOCKED / TIER_BLOCKED / NOT_GRANTED mapping below never
+ * fired for those either. Match the code, whichever shape carries it.
+ */
+function errorCode(error: unknown): string | undefined {
+  if (error instanceof ComputerUseError) return error.code
+  const code = (error as { code?: unknown } | null | undefined)?.code
+  return typeof code === 'string' ? code : undefined
+}
+
 const MAX_ELEMENTS = 250
 const MAX_TEXT = 6000
 
@@ -177,13 +194,35 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
     return !!state && state.epoch === service.getScheduler().epoch(state.resourceKey)
   }
   /**
+   * An app may replace its window rather than update it — System Settings swaps
+   * the whole window when its sidebar search resolves — and the helper then
+   * refuses the old window id outright. The app is still running and still
+   * granted, so re-resolve its current root and read that, rather than letting
+   * the error escape `computer_run` as a failed tool call. The browser line got
+   * the same recovery in a766a53b; the note there that "the computer adapter
+   * already throws StaleObservation" held for the act path only, not for
+   * observation, which is why this one survived that fix.
+   */
+  const observeRoot = async (signal?: AbortSignal) => {
+    try {
+      return await service.observe(root, 'semantic')
+    } catch (error) {
+      const code = errorCode(error)
+      if (!code || !VANISHED_ROOT_CODES.has(code) || !bundleId) throw error
+      const target = await service.resolveTargetRoot(undefined, bundleId)
+      signal?.throwIfAborted()
+      root = target.rootId
+      return await service.observe(root, 'semantic')
+    }
+  }
+  /**
    * A live read, bypassing the pending successor. Settling has to watch the
    * surface move; replaying the state the action already produced would report
    * "stable" on its first sample every time.
    */
   const observeFresh = async (signal?: AbortSignal) => {
     signal?.throwIfAborted()
-    const observed = await service.observe(root, 'semantic')
+    const observed = await observeRoot(signal)
     signal?.throwIfAborted()
     return pageFor(observed.stateId)
   }
@@ -200,10 +239,14 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
       successor = { ...computerPage(computerObservation(state), service), outcome: result }
       root = state.root.rootId
     } catch (error) {
-      if (error instanceof ComputerUseError) {
-        if (error.code === 'STALE_STATE') throw new StaleObservation(error.message)
-        if (['MODAL_BLOCKED', 'TIER_BLOCKED', 'NOT_GRANTED'].includes(error.code)) throw new RunPaused('no-progress', error.message)
-        throw new RunPaused('no-progress', `${error.code}: ${error.message}`)
+      const code = errorCode(error)
+      if (code) {
+        const message = error instanceof Error ? error.message : String(error)
+        // The window this action was aimed at is gone; the next observation
+        // re-resolves the app's current root, so this is stale, not fatal.
+        if (code === 'STALE_STATE' || VANISHED_ROOT_CODES.has(code)) throw new StaleObservation(message)
+        if (['MODAL_BLOCKED', 'TIER_BLOCKED', 'NOT_GRANTED'].includes(code)) throw new RunPaused('no-progress', message)
+        throw new RunPaused('no-progress', `${code}: ${message}`)
       }
       throw error
     }
@@ -220,7 +263,7 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
     observe: async (signal) => {
       signal?.throwIfAborted()
       if (successor && fresh(successor)) { current = successor; successor = undefined; return current }
-      const observed = await service.observe(root, 'semantic')
+      const observed = await observeRoot(signal)
       signal?.throwIfAborted()
       current = pageFor(observed.stateId)
       conditionStateId ??= current.stateId

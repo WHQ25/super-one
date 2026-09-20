@@ -1055,6 +1055,18 @@ if (el.clickable === false) continue          // ← 永远轮不到 editable �
 - **命中测试胜过几何阈值**。"关闭按钮左侧 12 pt 是框"在 Chrome 上碰巧对、在 Cursor 上错；问 app 那一点是什么，三种 UI 栈一次分清。
 - 探针脚本点到用户真实窗口要三思：一次坐标点击落在 YouTube 的视频链接上，导航了用户的标签页（⌘← 撤回）。后续 Chrome 用例改为 ⌘T 开自己的标签、⌘W 关掉，全程 app-directed。
 
+### 10.12 focus-steal 防护：被驱动的 app 自己抢前台时还回去（2026-09-20，直连探针）
+
+"默认纯后台"的最后一块：被驱动的 app 在后台"自认 active"，有些操作会让它**真的**调 `NSApp.activate`。先量哪些会：TextEdit 的 ⌘N / ⌘O（Open 面板）/ ⌘P 都不会；**Electron 新开一个 `BrowserWindow`（⌘⇧N）一秒内就把自己切到前台**，用户在 SuperOne 里的输入焦点被截走；`dialog.showMessageBox` 是 sheet，不抢。Codex 为此有 `SystemFocusStealPreventer`，我们现在也有一个（`FocusStealGuard.swift`）。
+
+判定"抢"而不是"用户自己切过去"靠两个条件：这个 app 在最近 3 s 内被驱动过（投过事件、持有合成激活租约、做过 AX 动作），且最近 0.5 s 没有任何 HID 输入。后者读窗口服务器的 `CGEventSource.secondsSinceLastEventType(.hidSystemState, …)`——**投给 pid 的事件不计入 HID 也不计入 session 状态**（探针里投了三个 ⌘ 组合键，两个时钟都纹丝不动），所以它能把用户的手和 helper 的手分开。判定为抢就把之前在前台的 app `activate()` 回来（helper 作为后台进程调它是有效的，菜单 press 的 fallback 一直这么用）。helper 自己要求的激活——`focus_app`/`launch_app` 带 `activate`、`focus_window`、菜单 press 的真实激活兜底——先登记再做，不会被还回去。
+
+验证（Electron 44 探针，每次重启）：后台 ⌘⇧N 后 1.5 s 前台仍是 SuperOne，helper 日志 "Electron took the front while driven; returning it to SuperOne Alpha"；先过 HID tap 投一个零位移滚轮再切过去（模拟用户之手）→ 切换成立；纯脚本切换（无 HID）→ 被还回；`focus_app activate=true` 与 `focus_window` → 成立。
+
+未做、记一笔：
+- 用户真的切到目标 app 之后，agent 的 app-directed 输入仍会投进去，会和用户的击键交错。要不要在"用户正在目标 app 里操作"时把 act 判成 `didnt` 并说明，是策略问题，待定。
+- 后台右键菜单是 pop-up 层窗口，浮在用户窗口之上；租约为了让 agent 读菜单会一直延期到菜单关闭，agent 忘了关它就一直在。可以给延期加上限（到点用 AX `AXCancel` 关菜单），未做。
+
 ## 参考
 
 - `~/Developer/Github/jev-ultrafast/jev_ultrafast/{agent.py, browser.py, snapshot.js, model.py, questions.py}`、`docs/performance.md`

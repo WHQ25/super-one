@@ -1063,9 +1063,11 @@ if (el.clickable === false) continue          // ← 永远轮不到 editable �
 
 验证（Electron 44 探针，每次重启）：后台 ⌘⇧N 后 1.5 s 前台仍是 SuperOne，helper 日志 "Electron took the front while driven; returning it to SuperOne Alpha"；先过 HID tap 投一个零位移滚轮再切过去（模拟用户之手）→ 切换成立；纯脚本切换（无 HID）→ 被还回；`focus_app activate=true` 与 `focus_window` → 成立。
 
-未做、记一笔：
-- 用户真的切到目标 app 之后，agent 的 app-directed 输入仍会投进去，会和用户的击键交错。要不要在"用户正在目标 app 里操作"时把 act 判成 `didnt` 并说明，是策略问题，待定。
-- 后台右键菜单是 pop-up 层窗口，浮在用户窗口之上；租约为了让 agent 读菜单会一直延期到菜单关闭，agent 忘了关它就一直在。可以给延期加上限（到点用 AX `AXCancel` 关菜单），未做。
+两个后续决定（2026-09-21）：
+
+- **用户真的切到目标 app 之后 agent 照投不管**。app-directed 按 pid 投递、不看前台，用户的击键和 agent 的会在同一个输入框里交错；讨论过"目标 app 真实前台 + 最近 0.5 s 有 HID 输入就把 act 判成 `didnt`"，决定不做，保持现状。
+- **右键菜单读完即关、按项时重开**。矩阵测试时用户看到备忘录的右键菜单盖在 SuperOne 上——菜单是 app 自己的 pop-up 层窗口，不管谁在前台都画在最上面，agent 读它、决策的几秒到几十秒里一直可见。现在动作打开的菜单被读进后继状态后立刻取下（helper `dismiss_root`：对 AXMenu 做 `AXCancel`，等价于 Escape 但不投事件）；那个状态照常可用——在它上面 act / snapshot / zoom 时，服务重放打开它的动作（右键或 press）、把重开的菜单绑回原来的 rootId（ref 按遍历序号解析，同一菜单重开后序号一致：TextEdit 82 项同序）、用完再取下，除非动作本身已把它关掉（按了一项）。用户自己打开的菜单不碰（不在 rootsBefore 之外的不取）。`ContextMenuLedger`（`context-menu.ts`）承载全部逻辑，fake backend 把取下的菜单收起、opener 再按时原样放回，契约测试 5 条。租约另加一道兜底：菜单撑着租约超过 60 s 没有任何请求，就用 AX 关掉菜单并释放。
+- 代价：每次对菜单状态操作多一次重开（右键 + 等菜单出现，≈0.3–0.8 s）；对菜单状态做文本类 wait 会每 50 ms 重开一次（闪），菜单是静态的，实际不会这么等。
 
 ## 参考
 

@@ -4,7 +4,7 @@ import { FakePlatformBackend } from '../computer-use/platform/fake-backend'
 import { axTreeToOutline } from '../computer-use/platform/ax-outline'
 import { ComputerUseError, type CapabilityTier } from '../computer-use/types'
 import { createComputerAdapter, computerPage, computerObservation } from './computer-page'
-import { buildActionSpace } from './action-space'
+import { buildActionSpace, clickVerb } from './action-space'
 import { FastRun } from './loop'
 import { noul, pick } from './test-fixtures'
 import type { JevRequest } from './typesafe-client'
@@ -140,6 +140,31 @@ describe('computer fast-loop adapter', () => {
     const space = buildActionSpace({ page, history: [] })
     expect(space.clickCandidates).toContain(String(page.elements.find((element) => element.label === 'Open Readme.txt')!.node))
     expect(space.clickCandidates).toContain(String(page.elements.find((element) => element.label === 'Open Folder 69')!.node))
+  })
+
+  it('names a row\'s disclosure triangle after the row and offers it as Expand', async () => {
+    // Finder's triangle has no name and keeps its state in AXValue ("0"/"1").
+    // Offered as it came, four triangles were four unlabelled candidates: Jev
+    // picked the right one by list order alone and, once Users had expanded,
+    // could not see that it had.
+    const { service } = fixture()
+    const obs = await service.observe(undefined, 'semantic')
+    const row = (index: number, name: string, expanded: boolean) => ({ index, role: 'AXRow', selectable: true, actions: [], children: [
+      { index: index + 1, role: 'AXTextField', value: name, actions: ['AXOpen'], itemKind: 'folder' as const },
+      { index: index + 2, role: 'AXDisclosureTriangle', value: expanded ? '1' : '0', expanded, actions: ['AXPress'] },
+    ] })
+    const outline = axTreeToOutline({ index: 1, role: 'AXOutline', actions: [], children: [row(2, 'System', false), { ...row(5, 'Users', true), selected: true }] })
+    const page = computerPage({ ...obs, outline }, service)
+    // The state is in the text, where completion is judged: not "1", and a
+    // selected row no longer just disappears from the candidates.
+    expect(page.text).toContain('System\n(System: collapsed)')
+    expect(page.text).toContain('(Users: selected)\nUsers\n(Users: expanded)')
+    const triangles = page.elements.filter((e) => e.role === 'disclosuretriangle')
+    expect(triangles.map((e) => [e.label, e.expanded, e.value])).toEqual([['System', 'false', ''], ['Users', 'true', '']])
+    expect(triangles.map((e) => e.checked)).toEqual([undefined, undefined])
+    expect(page.elements.map((e) => e.label)).toContain('Select System')
+    const space = buildActionSpace({ page, history: [] })
+    expect(clickVerb('click', space.elements.find((e) => e.index === String(triangles[0]!.node))!)).toBe('Expand')
   })
 
   it('offers only replacements supported by the semantic delivery path', async () => {

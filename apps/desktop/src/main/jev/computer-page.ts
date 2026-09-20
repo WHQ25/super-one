@@ -24,7 +24,7 @@ const ROLE_MAP: Record<string, string> = { textfield: 'textbox', textarea: 'text
 /** What to call an editable control that carries no readable name of its own. */
 const EDITABLE_ROLE_LABEL: Record<string, string> = { searchbox: 'Search field', textbox: 'Text field', combobox: 'Combo box' }
 
-const TOGGLE_ROLES = new Set(['checkbox', 'radio', 'switch', 'menuitem', 'disclosuretriangle', 'togglebutton'])
+const TOGGLE_ROLES = new Set(['checkbox', 'radio', 'switch', 'menuitem', 'togglebutton'])
 
 /**
  * Whether a toggle is on, in the shape the shared layer already speaks
@@ -81,7 +81,8 @@ function labelSource(node: UiOutlineNode): UiOutlineNode | undefined {
   const stack = [...(node.children ?? [])]
   while (stack.length) {
     const n = stack.shift()!
-    if (n.secure) continue
+    // A disclosure triangle's value is its state, not a name.
+    if (n.secure || /disclosuretriangle/i.test(n.role)) continue
     if ((n.value || n.name || '').trim()) return n
     stack.unshift(...(n.children ?? []))
   }
@@ -115,11 +116,29 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
   // "Decimal Places" for Calculator's 12. On its own a command's name says
   // too little: Jev read "12" as the digits the goal asked for, chose the
   // decimal-places command over the two digit keys, and the sum came out 7.5.
-  const walk = (node: UiOutlineNode, menu?: string) => {
+  // `row` is the name of the selectable row a node sits in, for the one
+  // control that has no name of its own and is only meaningful as the row's:
+  // its disclosure triangle.
+  const walk = (node: UiOutlineNode, menu?: string, row?: string) => {
     const role = node.role.replace(/^AX/, '').toLowerCase()
     const secure = node.secure === true || /secure|password/.test(role)
     const value = secure ? '' : node.value ?? ''
-    if (!secure) text.push([node.name, value].filter(Boolean).join(' '))
+    // A disclosure triangle has no name and its value is its state, which the
+    // outline already carries as `expanded`. Offered as it came, Finder's four
+    // triangles were four unlabelled candidates with a value of "0": Jev
+    // picked the right one by list order alone and could not tell afterwards
+    // that "Users" had expanded. It is the row's triangle; name it so.
+    const disclosure = role === 'disclosuretriangle'
+    const select = planNodeAction(node, { kind: 'select' }, tier)
+    const rowName = select ? (node.name || labelSource(node)?.value || labelSource(node)?.name || '').trim() : row
+    // The text is what Jev judges completion on, so a row's state goes in it
+    // in words: "Users\n1" said nothing about an expanded folder, and a row
+    // once selected vanished from the candidates without a trace — the run
+    // that had just selected Shared read the page as unchanged and scrolled.
+    if (secure) { /* nothing of a secure field is read */ }
+    else if (disclosure) text.push(row && node.expanded != null ? `(${row}: ${node.expanded ? 'expanded' : 'collapsed'})` : '')
+    else if (select && node.selected && !node.name) text.push(`(${rowName}: selected)`)
+    else text.push([node.name, value, node.selected ? '(selected)' : ''].filter(Boolean).join(' '))
     // The menu tree is read closed, complete with submenus, and the helper
     // presses a command in it directly — activating a background app for the
     // press, since AppKit only validates menu items in the active app. So a
@@ -130,7 +149,6 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
     const opensMenu = command && (role === 'menubaritem' || node.expanded != null)
     const enabled = !opensMenu && node.enabled !== false && !node.pictureOnly && !secure
     const editable = !!planNodeAction(node, { kind: 'setText', text: '' }, tier)
-    const select = planNodeAction(node, { kind: 'select' }, tier)
     const press = planNodeAction(node, { kind: 'press' }, tier)
     const open = planNodeAction(node, { kind: 'open' }, tier)
     if (!scrollRef && planNodeAction(node, { kind: 'scroll', dy: 1 }, tier)) {
@@ -144,7 +162,7 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
     if (open) kinds.push('open')
     for (const kind of kinds) {
       if (!enabled || elements.length >= MAX_ELEMENTS) break
-      const source = node.value || node.name ? node : labelSource(node)
+      const source = disclosure ? undefined : node.value || node.name ? node : labelSource(node)
       const mapped = command || kind === 'select' || kind === 'open' ? 'button' : ROLE_MAP[role] ?? role
       // An empty macOS text field is anonymous: no AXTitle, no AXDescription,
       // no AXLabel, and no value to read either. System Settings' sidebar
@@ -153,9 +171,9 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
       // never needed this — a placeholder or aria-label lands in the
       // accessible name there. Name such a field for what it is instead.
       const anonymous = editable ? EDITABLE_ROLE_LABEL[mapped] ?? 'Text field' : ''
-      const itemLabel = (source?.value || source?.name || '').trim() || anonymous
+      const itemLabel = (disclosure ? row ?? '' : source?.value || source?.name || '').trim() || anonymous
       const label = kind === 'select' || kind === 'open' ? `${kind === 'select' ? 'Select' : 'Open'} ${itemLabel}`
-        : command && menu ? `${menu} ▸ ${node.name}` : node.name || (editable ? value : '') || anonymous
+        : command && menu ? `${menu} ▸ ${node.name}` : disclosure ? itemLabel : node.name || (editable ? value : '') || anonymous
       // A row, its name cell and the cell's text field all open the same item:
       // one candidate per intent, keyed on the node the name was read from,
       // which those three share. Keyed on the label it also swallowed a
@@ -175,13 +193,13 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
       // A menu item's state is its check mark, not its value.
       const checked = node.checked != null ? String(node.checked) : checkedFrom(role, value)
       elements.push({ node: id, ref: node.ref, role: mapped,
-        label, value: kind === 'select' ? (node.selected ? 'selected' : 'not selected') : value,
+        label, value: kind === 'select' ? (node.selected ? 'selected' : 'not selected') : disclosure ? '' : value,
         ...(checked ? { checked } : {}),
         ...(node.expanded != null ? { expanded: String(node.expanded) } : {}),
         editable: kind !== 'select' && kind !== 'open' && editable, clickable: !!kind,
         canSubmit: !!planNodeAction(node, { kind: 'enter' }, tier), password: false, submit: false, disabled: false })
     }
-    if (!secure) for (const child of node.children ?? []) walk(child, command && node.name ? node.name : menu)
+    if (!secure) for (const child of node.children ?? []) walk(child, command && node.name ? node.name : menu, rowName)
   }
   // Window content first, app menus last, so the element budget and the pause
   // option list favour what is on screen. The Apple menu is never an in-app

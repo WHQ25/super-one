@@ -401,6 +401,10 @@ private func nodeDicts(
         }
     } else if let expanded = axBool(el, "AXExpanded") {
         dict["expanded"] = expanded
+    } else if role == "AXDisclosureTriangle", let value, let state = Int(value) {
+        // An AppKit disclosure triangle (Finder's list view, outline rows)
+        // answers no AXExpanded at all; its AXValue is the state, 0 or 1.
+        dict["expanded"] = state != 0
     }
     if let name, !name.isEmpty { dict["name"] = name }
     if let value, !value.isEmpty {

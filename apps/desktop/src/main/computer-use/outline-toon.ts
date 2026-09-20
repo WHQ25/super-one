@@ -46,6 +46,8 @@ function stateList(node: UiOutlineNode): string {
   if (node.enabled === false) flags.push('disabled')
   if (node.focused) flags.push('focused')
   if (node.selected) flags.push('selected')
+  if (node.expanded != null) flags.push(node.expanded ? 'expanded' : 'collapsed')
+  if (node.checked) flags.push('checked')
   if (node.itemKind) flags.push(node.itemKind)
   return flags.join('|')
 }

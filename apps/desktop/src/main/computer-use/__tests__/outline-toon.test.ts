@@ -66,6 +66,20 @@ describe('outline-toon', () => {
     expect(rows[3]!.state).toBe('disabled')
   })
 
+  it('shows a disclosure or menu item state, which its value column does not', () => {
+    // Finder's disclosure triangle carries "0"/"1" in value; a chosen menu
+    // command shows nothing but its check mark. The model reading the outline
+    // needs the state named, not decoded from a digit.
+    const t = tree()
+    t.children![0]!.children!.push(
+      { ref: '@e16', role: 'disclosureTriangle', value: '0', expanded: false },
+      { ref: '@e17', role: 'menuItem', name: 'Date Modified', checked: true },
+    )
+    const rows = outlineToRows(t)
+    expect(rows[4]!.state).toBe('collapsed')
+    expect(rows[5]!.state).toBe('checked')
+  })
+
   it('leaves a missing frame empty rather than collapsing it to 0,0', () => {
     // 0 is a real coordinate — emitting it for "no frame" would send a click
     // to the top-left corner of the capture.

@@ -244,16 +244,46 @@ export function decide(input: DecideInput): Decision {
   if (chosen === 'scroll_down') return { kind: 'scroll', direction: 'down' }
   if (chosen === 'scroll_up') return { kind: 'scroll', direction: 'up' }
 
-  if (chosen === 'click' || chosen === 'none_useful') {
+  if (chosen === 'click' || chosen === 'none_useful') return clickAction(chosen, true)
+  return typeText(true)
+
+  /**
+   * "None of these" from a target head is narrower than "nothing here helps":
+   * it rules out one kind of action, not the page. The action head weighs the
+   * whole screen and gets that split wrong in both directions — System
+   * Settings' sidebar answered click 0.57 while click_target said none_of_these
+   * and the search box read 0.99, and the same screen with text already in the
+   * box answered type_text 0.57 while type_text_target said none_of_these and
+   * `submit:` on that box read 0.66. Either way the step was stranded into a
+   * scroll and then a pause offering the entire sidebar.
+   *
+   * So each branch hands over to the other, but only when the other head's
+   * answer would actually be acted on: typing must clear its own write gate,
+   * while a click has no gate beyond naming a target. `mayHandOff` is false on
+   * the receiving side, so a handoff never bounces back.
+   */
+  function clickTargetActionable(): boolean {
+    const t = validateChoice(answers.click_target, [...space.clickCandidates, NONE])
+    return !!t && t.choice !== NONE && !!elementByIndex(space, t.choice)
+  }
+
+  function typeTargetActionable(): boolean {
+    const t = validateChoice(answers.type_text_target, [...space.typeCandidates, NONE])
+    return !!t && t.choice !== NONE && (t.probabilities[t.choice] ?? 0) >= THRESHOLDS.write
+  }
+
+  function clickAction(mode: 'click' | 'none_useful', mayHandOff: boolean): Decision {
     const target = validateChoice(answers.click_target, [...space.clickCandidates, NONE])
-    if (!target || target.choice === NONE) return noneUseful()
+    if (!target || target.choice === NONE) {
+      return mayHandOff && mode === 'click' && typeTargetActionable() ? typeText(false) : noneUseful()
+    }
     const el = elementByIndex(space, target.choice)
     const p = target.probabilities[target.choice]
     if (!el) return noneUseful()
     // A long list of mostly similar items makes the action head give up on the
     // page as a whole while the target head still singles out the one row
     // that matters (Finder: fifty apps and one folder).
-    if (chosen === 'none_useful' && p < THRESHOLDS.overrideNone) return noneUseful()
+    if (mode === 'none_useful' && p < THRESHOLDS.overrideNone) return noneUseful()
     // No confidence gate on clicks: Jev already judged the step's risk, and a
     // wrong click on a safe element costs one re-observation while a pause
     // costs the caller a whole turn (arXiv: the right "Search" link at 0.36).
@@ -261,46 +291,50 @@ export function decide(input: DecideInput): Decision {
     return { kind: 'click', key: target.choice, element: el, probability: p, risk }
   }
 
-  // type_text
-  const target = validateChoice(answers.type_text_target, [...space.typeCandidates, NONE])
-  if (!target || target.choice === NONE) return noneUseful()
-  const el = elementByIndex(space, target.choice)
-  const p = target.probabilities[target.choice]
-  if (!el) return noneUseful()
-  const hinted = presetByHint(el, presets)
-  const matched = hinted ? { preset: hinted, probability: 1 } : presetByJev(el, presets, answers, space.typeCandidates)
-  if (p < THRESHOLDS.write) {
+  function typeText(mayHandOff: boolean): Decision {
+    const target = validateChoice(answers.type_text_target, [...space.typeCandidates, NONE])
+    if (!target || target.choice === NONE) {
+      return mayHandOff && clickTargetActionable() ? clickAction('click', false) : noneUseful()
+    }
+    const el = elementByIndex(space, target.choice)
+    const p = target.probabilities[target.choice]
+    if (!el) return noneUseful()
+    const hinted = presetByHint(el, presets)
+    const matched = hinted ? { preset: hinted, probability: 1 } : presetByJev(el, presets, answers, space.typeCandidates)
+    if (p < THRESHOLDS.write) {
+      return {
+        kind: 'pause',
+        mode: 'type_text',
+        presetKey: matched?.preset.key,
+        question: {
+          type: 'choice',
+          reason: 'uncertain',
+          options: [...topK(space, target.probabilities), ABORT],
+          context: { why: `Low confidence type_text target (${p.toFixed(2)})`, page, decision: summary },
+        },
+      }
+    }
+    if (matched) {
+      if (risk >= THRESHOLDS.risk) return riskyPause('type_text', target.choice, el, target.probabilities, matched.preset.key)
+      return { kind: 'type_text', element: el, text: matched.preset.value, presetKey: matched.preset.key, probability: matched.probability, risk }
+    }
     return {
       kind: 'pause',
       mode: 'type_text',
-      presetKey: matched?.preset.key,
+      element: el,
       question: {
-        type: 'choice',
+        type: 'value',
         reason: 'uncertain',
-        options: [...topK(space, target.probabilities), ABORT],
-        context: { why: `Low confidence type_text target (${p.toFixed(2)})`, page, decision: summary },
+        schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+        context: {
+          why: `Jev wants to type into [${el.index}] ${el.label} but no preset matches`,
+          target: { index: el.index, role: el.role, label: el.label, value: el.value },
+          presets: presets.map((pr) => pr.key),
+          page,
+          decision: summary,
+        },
       },
     }
   }
-  if (matched) {
-    if (risk >= THRESHOLDS.risk) return riskyPause('type_text', target.choice, el, target.probabilities, matched.preset.key)
-    return { kind: 'type_text', element: el, text: matched.preset.value, presetKey: matched.preset.key, probability: matched.probability, risk }
-  }
-  return {
-    kind: 'pause',
-    mode: 'type_text',
-    element: el,
-    question: {
-      type: 'value',
-      reason: 'uncertain',
-      schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
-      context: {
-        why: `Jev wants to type into [${el.index}] ${el.label} but no preset matches`,
-        target: { index: el.index, role: el.role, label: el.label, value: el.value },
-        presets: presets.map((pr) => pr.key),
-        page,
-        decision: summary,
-      },
-    },
-  }
+
 }

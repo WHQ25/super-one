@@ -30,6 +30,60 @@ function input(overrides: Partial<DecideInput>): DecideInput {
 }
 
 describe('decide', () => {
+  it('types when the click head has no target but the field is named with certainty', () => {
+    // System Settings' sidebar: the only way forward is the search box, yet the
+    // action head still leaned to clicking (0.57 vs type_text 0.41) while
+    // click_target answered none_of_these and type_text_target named the field
+    // at 0.99. The run used to scroll once and then pause with the whole
+    // sidebar as options, never typing a character.
+    const answers = {
+      ...calm,
+      action: pick('click', ACTIONS),
+      click_target: pick(NONE, CLICKS),
+      type_text_target: pick('2', TYPES),
+      field_for_Query: pick('2', TYPES),
+    }
+    const presets = [{ key: 'Query', value: 'About' }]
+    expect(decide(input({ answers, presets }))).toMatchObject({ kind: 'type_text', text: 'About' })
+  })
+
+  it('clicks when the type head has no field but a click target is named', () => {
+    // The same sidebar one step later, with "About" already in the search box:
+    // type_text 0.57 led the action head, type_text_target answered
+    // none_of_these 0.77 (correctly — there is nothing left to type) and
+    // click_target named `submit:` on that box at 0.66. Clicks carry no
+    // confidence gate, so a named target is one the loop would have executed
+    // had the action head said click.
+    const filled = buildActionSpace({ page: page([
+      el({ node: 1, role: 'button', label: 'About, General' }),
+      el({ node: 2, role: 'textbox', label: 'About', value: 'About', editable: true }),
+    ]), history: [] })
+    expect(filled.clickCandidates).toContain('submit:2')
+    const answers = {
+      ...calm,
+      action: pick('type_text', ['click', 'type_text', 'scroll_down', 'none_useful']),
+      type_text_target: pick(NONE, [...filled.typeCandidates, NONE]),
+      click_target: { type: 'choice' as const, choice: 'submit:2', confidence: 0.66,
+        probabilities: { 'submit:2': 0.66, '1': 0.14, 'open:2': 0.1, [NONE]: 0.1 } },
+    }
+    expect(decide(input({ answers, space: filled }))).toMatchObject({ kind: 'click', key: 'submit:2' })
+  })
+
+  it('reports no progress when neither head resolves a target', () => {
+    const answers = { ...calm, action: pick('type_text', ACTIONS), type_text_target: pick(NONE, TYPES), click_target: pick(NONE, CLICKS) }
+    expect(decide(input({ answers })).kind).toBe('scroll')
+  })
+
+  it('still reports no progress when the field is only a guess', () => {
+    const answers = {
+      ...calm,
+      action: pick('click', ACTIONS),
+      click_target: pick(NONE, CLICKS),
+      type_text_target: { type: 'choice' as const, choice: '2', confidence: 0.5, probabilities: { '2': 0.5, [NONE]: 0.5 } },
+    }
+    expect(decide(input({ answers, presets: [{ key: 'Query', value: 'About' }] })).kind).toBe('scroll')
+  })
+
   it('waits while Jev sees loading, but at most three times in a row', () => {
     const answers = { ...calm, still_loading: noul(0.9), action: pick('click', ACTIONS), click_target: pick('1', CLICKS) }
     expect(decide(input({ answers })).kind).toBe('wait')

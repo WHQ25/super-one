@@ -1024,6 +1024,37 @@ if (el.clickable === false) continue          // ← 永远轮不到 editable �
 - 每一个 "worked" 都要看 diff 内容：hover 能 worked，说明效果判定被环境噪声喂饱了。
 
 
+### 10.11 后台输入兼容矩阵：Chromium 窗口吃掉第一次点击（2026-09-20，直连探针，无 Jev）
+
+§10.10 之后"默认纯后台"还差一个证据：不同 UI 栈的 app 在后台各跑一遍点击 + 打字 + 右键 + ⌘ 快捷键。矩阵是 **Chrome**（Chromium 原生框架）、**Cursor**（Electron，隐藏标题栏，SuperOne 自己的形状）、**系统设置**（SwiftUI/AppKit）、**备忘录**（AppKit）、再加 TextEdit / Finder 回归；全程 SuperOne 在前台，每一步都用 AX 读回目标控件验证，不看 `ok`。Cursor 一开始就全灭：点进输入框不聚焦、打字落空、⌘N 无反应、右键什么都没有；Chrome 却全绿。
+
+#### 根因：refuse-first-mouse 的窗口没有可点的框
+
+用仓库里的 Electron 44 起一个几十行的探针 app（`/tmp/claude/matrix/eprobe`，可选 `titleBarStyle` / `trafficLightPosition`），每次测试前重启拿到干净状态，很快分出真假：**一个尚未成为 key 的 Chromium 窗口会吞掉第一次点击**——按钮在第二次点击才触发、输入框第二次才聚焦、点两下就全通（`TWO=1` 对照）。这是 Chromium 内容视图 `acceptsFirstMouse` 为 NO 的正常行为，§10.10 已经为 NSTextView 撞过一次，所以 helper 才有那个"让窗口变 key 的点击"。问题在它落在哪：
+
+- 有标题文字（TextEdit / Finder / Calculator）→ 点标题文字，正确；
+- 没有标题文字时点关闭按钮左侧 6 pt 的"窗框"，条件是关闭按钮离左边 ≥ 12 pt。Chrome 是 12 → 点中 Chromium 的 views 区域（标签栏），碰巧能变 key；Electron 默认标题栏是 8/11 → 不点，第一次点击被吃；**Cursor 是 14 → 点中的是它 HTML 标题栏的拖拽区**，一次拖拽区按下什么都不变 key。用 `AXUIElementCopyElementAtPosition` 对候选点做命中测试：TextEdit 返回 AXWindow 本身，Chrome/Cursor 返回 AXGroup，Electron 返回 AXWebArea——**只有 app 说这一点就是窗口本体时它才是框**。
+- 让 Chromium 窗口变 key 的办法试了一圈：AXRaise 能通但会把窗口提到其它 app 的窗口之上（CG 窗口序 9 → 3）；设 `AXFocused` / `AXFocusedWindow` / `AXMain` 在干净实例上都无效（之前看到的"有效"是同一实例上一次两连击留下的粘性状态——**变过 key 的窗口在租约释放后仍是"上一个 key 窗口"，下次合成激活会恢复它**，所以实验必须重启目标）；§10.9 那个 (−5000, −5000) 的离屏点击对 Chromium 窗口有效，而且 Chromium **不重放**它：之后按钮只触发一次、拖选 + 输入替换正确。
+
+落地在 `SyntheticActivation.keyMakingPoint`：标题文字 → 命中测试通过的框点 → 窗口内容含 `AXWebArea`（广度优先、200 节点预算）则离屏点击 → 否则不点。AppKit 无标题窗口仍不点，避开 §10.10 的重放。
+
+#### 矩阵结果（修后）
+
+| app | 点击聚焦 | 打字 | 右键 | ⌘ 快捷键 | 备注 |
+|---|---|---|---|---|---|
+| Chrome | ✓ 页内输入框 | ✓ | ✓ 原生菜单 | ✓ ⌘L / ⌘T / ⌘W | 修前经 views 框点击也通；修后走离屏路径，尚未在 Chrome 上复跑（用户正在用） |
+| Electron 44 探针（default / hiddenInset / 交通灯内缩 20 pt） | ✓ 一次 | ✓ | — | ✓ ⌘N 菜单加速键 | 修前 hiddenInset 与内缩形状均需两次点击 |
+| Cursor | ✓ | ✓ | ✓ HTML 菜单（在窗口 AX 树里是 AXMenuItem，不是新根） | ✓ ⌘A / ⌘⇧P | 修前全灭 |
+| 系统设置 | ✓ 侧栏行选中、搜索框 | ✓ | 无菜单可测 | ✓ ⌘F | |
+| 备忘录 | — | 正文 AXTextArea 不回 value，无法读回 | ✓ 原生菜单 | ⌘N 返回 ok，效果读不到 | 窗口 AX 树里只有文件夹大纲，笔记列表不暴露 |
+| TextEdit | ✓ 光标不跳 | ✓ | | | 拖选替换 ✓（起点要在文字内，容器 inset 里按下不会开始选择） |
+
+#### 方法上的教训
+
+- **实验对象要能重置**。Chromium 的 key 状态是粘的，同一个 Cursor 实例上先后跑五种策略全"有效"，只有第一种真的有效；换成每次重启的 Electron 探针后半小时就定位了。
+- **命中测试胜过几何阈值**。"关闭按钮左侧 12 pt 是框"在 Chrome 上碰巧对、在 Cursor 上错；问 app 那一点是什么，三种 UI 栈一次分清。
+- 探针脚本点到用户真实窗口要三思：一次坐标点击落在 YouTube 的视频链接上，导航了用户的标签页（⌘← 撤回）。后续 Chrome 用例改为 ⌘T 开自己的标签、⌘W 关掉，全程 app-directed。
+
 ## 参考
 
 - `~/Developer/Github/jev-ultrafast/jev_ultrafast/{agent.py, browser.py, snapshot.js, model.py, questions.py}`、`docs/performance.md`

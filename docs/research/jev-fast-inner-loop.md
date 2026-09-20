@@ -1083,7 +1083,7 @@ if (el.clickable === false) continue          // ← 永远轮不到 editable �
 
 保留的约束：AX 路径失败不悄悄换成 posted 事件——这条原来是 "semantic never silently upgrades" 的 agent 契约，现在是宿主内部规则。`ActResult.grounding` 一并删除，每步走的路径在 `evidence[].description` 里（`ax press @e3` / `click(…) via app_post`）。`service.assertFrontmost` 与 `adapter.frontmost` 门控随 physical 一起删除。
 
-未动的部分：helper 的 `InputDelivery.global` 通道（`Input.swift` / `main.swift`）和 lab 的 S13PhysicalNoAX 场景仍在，TS 侧不再发 `delivery: 'global'`；系统级热键（⌘Space / ⌘Tab / 截屏）此后在工具描述里明说不可用，等有确定性替代（`open -a`、独立工具）再补。
+helper 同步清掉：`InputDelivery` / `parseDelivery` / `requireFrontmost` 与 `.cghidEventTap` 投递整个删除，六个输入 handler 统一走 `inputTargetPid`（没有可解析的 pid 直接拒绝，而不是退到 HID），`postEvent` 只剩 `postToPid`；wire 上 `delivery` / `requireFrontmostBundleId` 字段不再发也不再回。lab 的 `deliveries` 元数据随之删除，S13 改名 Zero AX（同一块无 AX 画板，验收改为"lab 在后台、全部坐标操作都改变 HUD"）。系统级热键（⌘Space / ⌘Tab / 截屏）此后在工具描述里明说不可用，等有确定性替代（`open -a`、独立工具）再补。
 
 ## 参考
 

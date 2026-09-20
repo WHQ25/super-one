@@ -1085,6 +1085,51 @@ if (el.clickable === false) continue          // ← 永远轮不到 editable �
 
 helper 同步清掉：`InputDelivery` / `parseDelivery` / `requireFrontmost` 与 `.cghidEventTap` 投递整个删除，六个输入 handler 统一走 `inputTargetPid`（没有可解析的 pid 直接拒绝，而不是退到 HID），`postEvent` 只剩 `postToPid`；wire 上 `delivery` / `requireFrontmostBundleId` 字段不再发也不再回。lab 的 `deliveries` 元数据随之删除，S13 改名 Zero AX（同一块无 AX 画板，验收改为"lab 在后台、全部坐标操作都改变 HUD"）。系统级热键（⌘Space / ⌘Tab / 截屏）此后在工具描述里明说不可用，等有确定性替代（`open -a`、独立工具）再补。
 
+## 11. `computer_run` 动作空间扩展（2026-09-21 决定）
+
+### 11.1 哪些动作可以交给 Jev
+
+Jev 在这个集成里的能力是固定的：只读文本状态，从给定候选里选一个（choice），或对一句话判是/否（noul），每步无记忆，不产生自由文本、不产生坐标。由此四条判据，全满足才交给它：
+
+| 判据 | 含义 | 不满足时的症状 |
+| --- | --- | --- |
+| A. 目标可枚举 | 目标是观察里一个有名字的候选，不是坐标、不是"那个红的" | 无法出题 |
+| B. 参数可枚举或调用方给出 | 动作的每个参数，要么能从观察里枚举，要么由调用方预先给出（preset） | Jev 编不出参数 |
+| C. 效果进文本 | 动作做完后 `text` / `elements` 里能看到变化 | `changedPage=false` 被判 stuck，或 `goal_satisfied` 永远上不去 |
+| D. 错了便宜 | 错选一次只花一次重观察；不便宜的靠 `next_step_risk` 暂停兜底 | 不可逆误操作 |
+
+B 的范式就是 `presets`：把带参数的动作拆成几个选择题，每题的选项集在提问前已知（`action` 选动词、`type_text_target` 选字段、`field_for_<preset>` 每个 preset 一题）。约束：同一请求里各头**互相独立**，后一个头不能以前一个头的答案为条件，所以展开依据只能是提问前已知的东西（preset、selected 项、root 列表），依赖上一步答案的要拆成两步（press 开菜单 → 下一步在菜单 root 里选项，pop-up 已经这么走）。
+
+永远不给 Jev：参数是坐标/几何（点像素、画路径、hover）、参数是自由文本（写正文）、目标没有 AX 名（canvas / pictureOnly）、启动/切换 app 与授权（host 事实，§10.8）、执行不可逆动作（Jev 可以选，但必须暂停给主模型，现状保持）。
+
+### 11.2 `computer_act` 十个动作对照
+
+| `computer_act` 动作 | Jev 现状 | 计划 | 拆法 |
+| --- | --- | --- | --- |
+| `press` / `select` / `open` ref | ✓ `click` 候选 | 保持 | |
+| `setText` ref + preset | ✓ `type_text_target` + `field_for_<preset>` | 保持 | 整篇替换 |
+| `keypress` Return（聚焦字段） | ✓ `submit:N` | 保持 | |
+| `scroll` ref | △ 只取第一个 scroll area | **扩：`scroll_area` 头** | 每个 area 一个候选，方向仍来自 `action` |
+| `click` ref, button=right | ✗ | **扩：`action=context_menu` + `context_menu_target` 头** | 两步：这步开菜单（ledger 读完即关），下一步在菜单 root 里 `click_target` |
+| `typeText` ref（追加） | ✗ | **扩：`action=append` + `append_target` 头** | 执行 = click 末尾 + typeText preset；文本仍来自 preset |
+| `keypress` Escape | ✗ | **扩：`action=escape`** | 闭集常量，只此一个；⌘ 快捷键 = 菜单命令，已覆盖 |
+| `drag` | ✗ | **扩：`action=drag` + `drag_target_for_<selected>` 头** | 只在有 selected 项时出题，目标 = 可见容器（文件夹/邮箱/组）；执行 `drag` 中心到中心 |
+| `click` x,y / `typeText` 自由文本 / 任意 `keypress` / `moveMouse` / 自由路径 `drag` | ✗ | 不给 | 几何、自由文本、开集、效果不进文本 |
+| （不在 `_act` 里）切换 root / 窗口 | ✗ | **扩：`action=switch` + `switch_target` 头** | 候选 = 同 app 的 root 列表 |
+
+汇总：`action` 头从 5 项扩到 9 项（+ append / context_menu / escape / switch / drag，其中 drag 只在有 selected 项时出现），新增 4 个目标头（`scroll_area` / `append_target` / `context_menu_target` / `switch_target`）和 1 类按 selected 项展开的头（`drag_target_for_*`）。browser / device adapter 不提供这些候选时头就不出，不受影响。
+
+### 11.3 顺序与验证
+
+按"改动面 × 收益"：
+
+1. `scroll_area` + `append` —— 只动 `computer-page.ts` 和 `questions.ts` / `policy.ts`
+2. `escape` + `switch` —— `RunDeps` 加可选的 `dismiss` / `switchRoot`（browser 不实现）
+3. `context_menu` —— 两步协议，靠 `ContextMenuLedger` 已有的读完即关；run 的观察要能落在菜单 root 上
+4. `drag` —— 最后，候选对最需要看真实分布
+
+每步做完用 Finder / TextEdit / Mail 各一个用例跑 trace，看 `action` 头扩到 9 项后的置信度是否还撑得住 §10.1 的"argmax 不设门槛"；撑不住就在 `policy.ts` 给新动词加门槛，而不是回退动作。
+
 ## 参考
 
 - `~/Developer/Github/jev-ultrafast/jev_ultrafast/{agent.py, browser.py, snapshot.js, model.py, questions.py}`、`docs/performance.md`

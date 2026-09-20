@@ -118,15 +118,9 @@ func typeText(
     if delivery == .global {
         try requireFrontmost(bundleId: requireFrontmostBundleId)
     }
-
-    if let escape = CGEvent(keyboardEventSource: nil, virtualKey: 0x35, keyDown: true) {
-        try postEvent(escape, delivery: delivery, pid: targetPid)
-        if let escapeUp = CGEvent(keyboardEventSource: nil, virtualKey: 0x35, keyDown: false) {
-            try postEvent(escapeUp, delivery: delivery, pid: targetPid)
-        }
-    }
-    Thread.sleep(forTimeInterval: 0.05)
-
+    // No Escape ahead of the text: it is the key equivalent of Cancel, and
+    // typing into a save sheet dismissed the sheet and put the text in the
+    // document behind it.
     for cluster in text {
         var utf16 = Array(String(cluster).utf16)
         if let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true) {

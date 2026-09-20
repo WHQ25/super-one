@@ -1069,6 +1069,22 @@ if (el.clickable === false) continue          // ← 永远轮不到 editable �
 - **右键菜单读完即关、按项时重开**。矩阵测试时用户看到备忘录的右键菜单盖在 SuperOne 上——菜单是 app 自己的 pop-up 层窗口，不管谁在前台都画在最上面，agent 读它、决策的几秒到几十秒里一直可见。现在动作打开的菜单被读进后继状态后立刻取下（helper `dismiss_root`：对 AXMenu 做 `AXCancel`，等价于 Escape 但不投事件）；那个状态照常可用——在它上面 act / snapshot / zoom 时，服务重放打开它的动作（右键或 press）、把重开的菜单绑回原来的 rootId（ref 按遍历序号解析，同一菜单重开后序号一致：TextEdit 82 项同序）、用完再取下，除非动作本身已把它关掉（按了一项）。用户自己打开的菜单不碰（不在 rootsBefore 之外的不取）。`ContextMenuLedger`（`context-menu.ts`）承载全部逻辑，fake backend 把取下的菜单收起、opener 再按时原样放回，契约测试 5 条。租约另加一道兜底：菜单撑着租约超过 60 s 没有任何请求，就用 AX 关掉菜单并释放。
 - 代价：每次对菜单状态操作多一次重开（右键 + 等菜单出现，≈0.3–0.8 s）；对菜单状态做文本类 wait 会每 50 ms 重开一次（闪），菜单是静态的，实际不会这么等。
 
+### 10.13 `delivery` 从 `computer_act` 移除：路径由宿主按动作选（2026-09-21）
+
+§10.9–10.12 把每种输入都做到了后台可靠之后，`delivery` 三个值里已经没有 agent 需要表达的信息：`semantic` 与 `app-directed` 的区别只取决于动作类型和 ref 有没有原生动作，`physical` 的用途（系统级热键）目标根本不是某个 app 进程。字段整个从 schema 去掉，选择下沉到 `MacosPlatformAdapter.applyOne`：
+
+| 动作 | 路径 |
+| --- | --- |
+| press / select / open / setText | AX 动作 |
+| click(ref) | ref 有 `press` 能力 → AXPress；否则 ref 中心的 posted 点击 |
+| click(x,y) / typeText / keypress / drag / moveMouse | posted 事件（typeText 带 ref 时先 AX focus） |
+| scroll(ref) | ref 下有 scroll bar → 写 AXValue；bar 已到头 → `didnt`（不改投滚轮）；没有 bar（web view）→ ref 中心的滚轮 |
+| scroll(x,y) | 滚轮 |
+
+保留的约束：AX 路径失败不悄悄换成 posted 事件——这条原来是 "semantic never silently upgrades" 的 agent 契约，现在是宿主内部规则。`ActResult.grounding` 一并删除，每步走的路径在 `evidence[].description` 里（`ax press @e3` / `click(…) via app_post`）。`service.assertFrontmost` 与 `adapter.frontmost` 门控随 physical 一起删除。
+
+未动的部分：helper 的 `InputDelivery.global` 通道（`Input.swift` / `main.swift`）和 lab 的 S13PhysicalNoAX 场景仍在，TS 侧不再发 `delivery: 'global'`；系统级热键（⌘Space / ⌘Tab / 截屏）此后在工具描述里明说不可用，等有确定性替代（`open -a`、独立工具）再补。
+
 ## 参考
 
 - `~/Developer/Github/jev-ultrafast/jev_ultrafast/{agent.py, browser.py, snapshot.js, model.py, questions.py}`、`docs/performance.md`

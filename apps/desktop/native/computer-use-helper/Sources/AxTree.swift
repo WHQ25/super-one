@@ -144,12 +144,29 @@ func axCGSize(_ el: AXUIElement, _ attr: String) -> CGSize? {
     return size
 }
 
-// Not private: `Mirror.swift` reads the same attributes off the mirroring window.
+/// Below this many children a container is walked whole; above it, a table's
+/// off-screen rows are dropped (one extra attribute read per such container).
+private let axVisibleRowsThreshold = 30
+
+/// The children every walk agrees on — snapshot, action resolution and subtree
+/// accounting all number nodes by this order, so it is the one place to decide
+/// what a walk sees.
+///
+/// A table or outline exposes every row it holds, on screen or not:
+/// /System/Library's 163 rows took 12s to read and overran the 1500-node
+/// budget before the row the run was scrolling towards, and no scroll could
+/// change which rows the walk started with. What the table shows is the
+/// observation; the rest come into view by scrolling, which is what a run does.
+///
+/// Not private: `Mirror.swift` reads the same attributes off the mirroring window.
 func axChildren(_ el: AXUIElement) -> [AXUIElement] {
     var raw: CFTypeRef?
     guard AXUIElementCopyAttributeValue(el, kAXChildrenAttribute as CFString, &raw) == .success,
           let arr = raw as? [AXUIElement] else { return [] }
-    return arr
+    guard arr.count > axVisibleRowsThreshold,
+          AXUIElementCopyAttributeValue(el, "AXVisibleRows" as CFString, &raw) == .success,
+          let visible = raw as? [AXUIElement] else { return arr }
+    return arr.filter { child in axRole(child) != "AXRow" || visible.contains { CFEqual($0, child) } }
 }
 
 /// Read AXValue as text.

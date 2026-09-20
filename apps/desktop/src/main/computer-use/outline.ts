@@ -127,6 +127,14 @@ export function collectRefs(root: UiOutlineNode): string[] {
   return out
 }
 
+/** Nodes `diffOutlines` compares: the outline without its menu bar. */
+export function countComparedNodes(root: UiOutlineNode): number {
+  if (root.role === 'menuBar') return 0
+  let count = 1
+  for (const c of root.children ?? []) count += countComparedNodes(c)
+  return count
+}
+
 /**
  * Diff two outlines by what each node is, not by where it came in the walk.
  *
@@ -142,6 +150,12 @@ export function collectRefs(root: UiOutlineNode): string[] {
  * state the caller acts on next. `stable` counts the pairs that read the
  * same on both sides: when almost none do, the window's content has been
  * replaced and the diff is a rewrite, not a report.
+ *
+ * The menu bar is left out. Which commands a background app enables is
+ * validation state — whether it believes it is active just then, and when
+ * AppKit last validated — not something the act changed: between a snapshot
+ * and an act's re-observation TextEdit's whole File menu flipped to disabled
+ * and "No Document" for a hover, and the hover read as worked.
  */
 export function diffOutlines(
   before: UiOutlineNode,
@@ -154,6 +168,7 @@ export function diffOutlines(
   let stable = 0
 
   const compare = (b: UiOutlineNode, a: UiOutlineNode) => {
+    if (a.role === 'menuBar') return
     const seen = changed.length
     if ((b.name ?? '') !== (a.name ?? '')) changed.push({ ref: a.ref, field: 'name', from: b.name, to: a.name })
     if ((b.value ?? '') !== (a.value ?? '')) changed.push({ ref: a.ref, field: 'value', from: b.value, to: a.value })

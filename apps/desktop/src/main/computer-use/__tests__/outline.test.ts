@@ -7,6 +7,7 @@ import {
   foldOutline,
   searchOutline,
 } from '../outline'
+import { buildDiff } from '../state-diff'
 import type { UiOutlineNode } from '../types'
 
 function tree(): UiOutlineNode {
@@ -98,6 +99,39 @@ describe('outline helpers', () => {
     const d = diffOutlines(t, after)
     expect(d.added).toContain('@e6')
     expect(d.changed.some((c) => c.ref === '@e5' && c.to === 'Final')).toBe(true)
+  })
+
+  it('leaves the menu bar out of the diff, whose flags are validation state, not an effect', () => {
+    // The commands a background app enables depend on whether it believes it
+    // is active and on when AppKit last validated them; between a snapshot and
+    // an act's re-observation they flipped for a hover, which read as worked.
+    const menuBar = (enabled: boolean, revert: string): UiOutlineNode => ({ ref: '@e5', role: 'menuBar', children: [
+      { ref: '@e6', role: 'menuBarItem', name: 'File', children: [
+        { ref: '@e7', role: 'menuItem', name: 'Save', enabled },
+        { ref: '@e8', role: 'menuItem', name: revert, enabled },
+      ] },
+    ] })
+    const before: UiOutlineNode = { ref: '@e1', role: 'window', name: 'Untitled', children: [
+      { ref: '@e4', role: 'textArea', value: 'Jev' }, menuBar(true, 'Browse All Versions…'),
+    ] }
+    const after: UiOutlineNode = { ref: '@e1', role: 'window', name: 'Untitled', children: [
+      { ref: '@e4', role: 'textArea', value: 'Jev' }, menuBar(false, 'No Document'),
+    ] }
+    const d = diffOutlines(before, after)
+    expect(d.changed).toEqual([])
+    expect(d.added).toEqual([])
+    expect(d.removed).toEqual([])
+  })
+
+  it('does not call an unchanged window replaced because its menu bar outnumbers it', () => {
+    const items = Array.from({ length: 40 }, (_, i) => ({ ref: `@e${10 + i}`, role: 'menuItem', name: `Command ${i}` }))
+    const window = (): UiOutlineNode => ({ ref: '@e1', role: 'window', name: 'Untitled', children: [
+      { ref: '@e2', role: 'textArea', value: 'Jev' },
+      { ref: '@e3', role: 'menuBar', children: [{ ref: '@e4', role: 'menuBarItem', name: 'File', children: items }] },
+    ] })
+    const d = buildDiff(window(), window())
+    expect(d.fullViewFallback).toBe(false)
+    expect(d.changed).toEqual([])
   })
 
   it('diffs nodes by what they are, so one inserted node does not shift the rest', () => {

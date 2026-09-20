@@ -45,6 +45,19 @@ export class RootRegistry {
     return this.list()
   }
 
+  /**
+   * Give the root listed under `from` the identity `to` — a context menu
+   * reopened for a state taken from it keeps that state's rootId.
+   */
+  rebind(from: string, to: string): UiRootIdentity | undefined {
+    const root = this.roots.get(from)
+    if (!root) return undefined
+    this.roots.delete(from)
+    const rebound = { ...root, rootId: to }
+    this.roots.set(to, rebound)
+    return rebound
+  }
+
   /** Force-register a single root (tests / fake backend bootstrap). */
   register(root: UiRootIdentity): void {
     this.roots.set(root.rootId, root)

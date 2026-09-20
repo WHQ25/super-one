@@ -305,6 +305,13 @@ func handle(request: HelperRequest) async -> HelperResponse {
             let activate = (params["activate"] as? Bool) ?? false
             try focusApp(query: app, activate: activate)
             return .success(id: request.id, result: ["ok": true, "activated": activate])
+        case "dismiss_root":
+            guard let pid = AnyCodable.int(params, "pid").map({ pid_t($0) }),
+                  let axRootId = AnyCodable.string(params, "axRootId") else {
+                throw HelperError(code: "INVALID", message: "pid and axRootId required")
+            }
+            try dismissMenuRoot(pid: pid, axRootId: axRootId)
+            return .success(id: request.id, result: ["ok": true])
         case "focus_window":
             guard let pid = AnyCodable.int(params, "pid"),
                   let windowId = AnyCodable.int(params, "windowId") else {

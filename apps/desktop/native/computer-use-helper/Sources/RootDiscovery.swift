@@ -177,6 +177,24 @@ func focusApp(query: String, activate: Bool = false) throws {
     }
 }
 
+/// Close a context menu the agent opened, once its items have been read. The
+/// menu is the app's own pop-up-level window and draws above everything on
+/// screen, the user's window included; `AXCancel` on the `AXMenu` takes it
+/// down the way Escape would, without an event anything else could hear.
+/// Only a menu: a sheet or dialog left open is the agent's to deal with.
+func dismissMenuRoot(pid: pid_t, axRootId: String) throws {
+    let element = try resolveRegisteredAxRoot(id: axRootId, pid: pid)
+    guard axRole(element) == "AXMenu" else {
+        throw HelperError(code: "INVALID", message: "Root \(axRootId) is not a menu")
+    }
+    let result = AXUIElementPerformAction(element, kAXCancelAction as CFString)
+    // The menu may already be gone — pressing an item closed it — and a
+    // vanished element reports invalid rather than success.
+    if result != .success && result != .invalidUIElement {
+        throw HelperError(code: "AX_ACTION", message: "Failed to dismiss menu \(axRootId) (\(result.rawValue))")
+    }
+}
+
 /// Bring one exact Computer Use target window to the front after its PiP is clicked.
 func focusWindow(pid: Int, windowId: Int, windowTitle: String? = nil) throws {
     guard axTrusted() else {

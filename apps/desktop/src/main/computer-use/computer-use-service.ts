@@ -6,6 +6,7 @@ import { bindCondition, evaluateBoundCondition } from './condition-evaluation'
 export { evaluateCondition } from './condition-evaluation'
 import { buildDiff } from './state-diff'
 import { sleep, throwIfAborted } from './async-control'
+import { ContextMenuLedger } from './context-menu'
 import { waitForCondition } from './wait-for'
 import { parseActions } from './actions'
 import {
@@ -106,6 +107,7 @@ export class ComputerUseService {
    * do not fall back to SuperOne (still frontmost after background launch).
    */
   private preferredBundleId: string | null = null
+  private readonly menus: ContextMenuLedger
 
   constructor(options: ComputerUseServiceOptions = {}) {
     this.policy = options.policy ?? new ComputerUsePolicy()
@@ -114,6 +116,12 @@ export class ComputerUseService {
     this.states = new StateStore(options.stateLimit)
     this.bypassPolicy = options.bypassPolicy ?? false
     this.clock = options.clock ?? (() => Date.now())
+    this.menus = new ContextMenuLedger({
+      adapter: this.adapter,
+      roots: this.roots,
+      refreshRoots: () => this.refreshRoots(),
+      delay: (ms, signal) => this.delay(ms, signal),
+    })
   }
 
   /** Test accessor. */
@@ -371,7 +379,8 @@ export class ComputerUseService {
   ): Promise<ObserveResult> {
     this.requireEnabled()
     await this.refreshRoots()
-    const root = this.resolveRoot(rootId)
+    const dismissedMenu = rootId !== undefined && this.menus.isDismissed(rootId)
+    const root = dismissedMenu ? await this.menus.reopen(rootId!) : this.resolveRoot(rootId)
     this.requireGranted(root.bundleId)
 
     return this.scheduler.runExclusive(root.resourceKey, async () => {
@@ -382,6 +391,7 @@ export class ComputerUseService {
         rootId: root.rootId,
       }
       this.roots.register(identity)
+      if (dismissedMenu) await this.menus.dismissAgain(root.rootId)
 
       const epoch = this.scheduler.ensure(identity.resourceKey)
       const stateId = nextStateId()
@@ -429,7 +439,13 @@ export class ComputerUseService {
     const state = this.requireState(stateId)
     this.requireGranted(state.root.bundleId)
 
-    return zoomState(this.adapter, state, stateId, region)
+    if (!this.menus.isDismissed(state.root.rootId)) return zoomState(this.adapter, state, stateId, region)
+    const root = await this.menus.reopen(state.root.rootId)
+    try {
+      return await zoomState(this.adapter, { ...state, root }, stateId, region)
+    } finally {
+      await this.menus.dismissAgain(root.rootId)
+    }
   }
 
   // ── computer_query ───────────────────────────────────────
@@ -459,8 +475,8 @@ export class ComputerUseService {
   ): Promise<ActResult> {
     this.requireEnabled()
     throwIfAborted(options.signal)
-    const base = this.requireState(stateId)
-    this.requireGranted(base.root.bundleId)
+    const stored = this.requireState(stateId)
+    this.requireGranted(stored.root.bundleId)
 
     const actions = parseActions(actionsInput)
     // Default: app-directed (background postToPid). Does not steal the user's frontmost app.
@@ -468,7 +484,7 @@ export class ComputerUseService {
     const delivery = options.delivery ?? 'app-directed'
 
     for (const a of actions) {
-      this.requireActionAllowed(base.root.bundleId, a)
+      this.requireActionAllowed(stored.root.bundleId, a)
     }
 
     // Semantic delivery must never silently upgrade to physical / app-directed.
@@ -483,11 +499,17 @@ export class ComputerUseService {
     // Global HID only: require target to be frontmost (events go to system pointer).
     // app-directed posts to the target PID and must not force activation.
     if (delivery === 'physical') {
-      await this.assertFrontmost(base.root.bundleId)
+      await this.assertFrontmost(stored.root.bundleId)
       throwIfAborted(options.signal)
     }
 
-    return this.scheduler.runExclusive(base.resourceKey, async () => {
+    return this.scheduler.runExclusive(stored.resourceKey, async () => {
+      throwIfAborted(options.signal)
+      // A state taken from a dismissed context menu: bring the menu back
+      // first, and act on it as it is now.
+      const base = this.menus.isDismissed(stored.root.rootId)
+        ? { ...stored, root: await this.menus.reopen(stored.root.rootId, options.signal) }
+        : stored
       throwIfAborted(options.signal)
       await this.refreshRoots()
       throwIfAborted(options.signal)
@@ -687,6 +709,11 @@ export class ComputerUseService {
       }
       this.states.put(successor)
 
+      // A menu this action opened has been read into the successor; take it
+      // down. A menu this action was replayed into, and did not close, too.
+      await this.menus.dismissOpened(identity, rootsBefore, { base, actions, delivery })
+      await this.menus.dismissAgain(base.root.rootId)
+
       const evidence = platformResult.steps.map((s) => ({
         description: s.description,
         before: s.before,
@@ -848,6 +875,11 @@ export class ComputerUseService {
     } catch {
       // non-fatal
     }
+  }
+
+  private async delay(ms: number, signal?: AbortSignal): Promise<void> {
+    if (this.fake) this.fake.advanceTime(ms)
+    else await sleep(ms, signal)
   }
 
   private requireState(stateId: string) {

@@ -637,6 +637,17 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     }
   }
 
+  async dismissRoot(root: UiRootIdentity): Promise<void> {
+    if (!root.axRootId) return
+    try {
+      await this.client.call('dismiss_root', { pid: root.pid, axRootId: root.axRootId })
+    } catch (err) {
+      // Already gone — the press that was acted closed it — is the result wanted.
+      if ((err as { code?: string }).code === 'AX_ROOT_NOT_FOUND') return
+      throw err
+    }
+  }
+
   async focusApp(app: string, options: { activate?: boolean } = {}): Promise<void> {
     // Never steal frontmost by default — background Computer Use.
     await this.client.call('focus_app', { app, activate: options.activate === true })

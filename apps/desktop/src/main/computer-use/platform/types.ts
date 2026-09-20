@@ -81,6 +81,12 @@ export interface PlatformAdapter {
     coordinateSpace: CoordinateSpace,
   ): Promise<CapturedImage>
   /**
+   * Optional: close a context menu the agent opened, once it has been read.
+   * A menu is the app's own pop-up-level window and draws above the user's;
+   * a state taken from it stays usable, the service reopens the menu to act.
+   */
+  dismissRoot?(root: UiRootIdentity): Promise<void>
+  /**
    * Optional: bring app/window forward or launch. `activate` makes the app
    * frontmost — off by default, because Computer Use works in the background;
    * on for the one thing a background app cannot do, its menu bar.

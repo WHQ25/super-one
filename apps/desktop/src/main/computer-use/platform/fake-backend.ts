@@ -117,6 +117,9 @@ interface LiveApp {
  */
 export class FakePlatformBackend implements PlatformAdapter {
   private apps: LiveApp[] = []
+  /** Titles of menus dismissed through `dismissRoot`, in order (tests). */
+  readonly dismissals: string[] = []
+  private readonly dismissedMenus = new Map<string, LiveWindow>()
   private elementSeq = 0
   private lookSeq = 0
   private frontmostPid: number | null = null
@@ -134,6 +137,7 @@ export class FakePlatformBackend implements PlatformAdapter {
     this.lookSeq = 0
     this.silentDelivery = false
     this.nowMs = 0
+    this.dismissedMenus.clear()
     this.apps = specs.map((s) => this.buildApp(s))
     this.frontmostPid = this.apps[0]?.pid ?? null
     for (const app of this.apps) {
@@ -230,6 +234,21 @@ export class FakePlatformBackend implements PlatformAdapter {
       coordinateSpace,
       nativeLookId: `look-${this.lookSeq}-g${win.topologyGen}`,
     }
+  }
+
+  /**
+   * A dismissed menu leaves the window list but is kept aside: the press
+   * that opened it brings the same live window back, items and refs intact,
+   * as reopening a real context menu does.
+   */
+  async dismissRoot(root: UiRootIdentity): Promise<void> {
+    const app = this.apps.find((a) => a.pid === root.pid)
+    if (!app) return
+    const menu = app.windows.find((w) => w.kind === 'menu' && w.title === root.title)
+    if (!menu) return
+    app.windows = app.windows.filter((w) => w !== menu)
+    this.dismissedMenus.set(menu.key, menu)
+    this.dismissals.push(root.title)
   }
 
   async act(req: PlatformActRequest): Promise<PlatformActResult> {
@@ -663,7 +682,12 @@ export class FakePlatformBackend implements PlatformAdapter {
     }
     if (el.opensModal) {
       const modalTitle = el.opensModal.title
-      if (!app.windows.some((w) => w.title === modalTitle)) {
+      const dismissed = this.dismissedMenus.get(`${app.pid}:${modalTitle}`)
+      if (dismissed) {
+        this.dismissedMenus.delete(dismissed.key)
+        app.windows.push(dismissed)
+        win.focused = false
+      } else if (!app.windows.some((w) => w.title === modalTitle)) {
         app.windows.push({
           key: `${app.pid}:${modalTitle}`,
           title: modalTitle,

@@ -11,6 +11,7 @@ export type HelperMethod =
   | 'ax_action'
   | 'focus_app'
   | 'focus_window'
+  | 'dismiss_root'
   | 'launch_app'
   | 'capture'
   | 'record_start'

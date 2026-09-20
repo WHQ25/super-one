@@ -1136,7 +1136,7 @@ B 的范式就是 `presets`：把带参数的动作拆成几个选择题，每�
 
 **Jev 侧。** `action` 头再加两个选项：`needs_pointer`（目标需要坐标或路径：拖到某个位置、画布上点、拖滑块）、`needs_text`（需要 presets 里没有的文字）。配一个 `hand_target` 头（它关乎哪个候选，可 `none_of_these`）。两者都是从 goal + 页面文本能判断的事；为此 `pictureOnly` 区域要以 `(picture-only: <名字>)` 进 `text`，否则 Jev 不知道有画布。和其他动词一样不设门槛，过度交接靠 trace 分布看。
 
-**暂停携带的东西**（§8.4 的具体化）。所有暂停——不只 `capability`——都返回一份**暂停时刻的新鲜观察 + 截图**：`snapshot.stateId` 指向一个 fused 观察，`snapshot.image = { path, width, height }`，`snapshot.coordinateSpace` 与 `computer_snapshot` 同义。主模型不再需要额外调用 snapshot / zoom 才能回答。`capability` 暂停另带 `question.context = { verb, target: { index, ref, label, bounds }, why }` 和 `question.schema`：
+**暂停携带的东西**（§8.4 的具体化）。所有暂停——不只 `capability`——都返回一份**暂停时刻的新鲜 fused 观察**：`snapshot.stateId` 指向它，`snapshot.image = { path, width, height, relevance }`，`snapshot.coordinateSpace` 与 `computer_snapshot` 同义。图只回 **path**（和 `computer_snapshot` / `computer_act` 一样，`toAgentImage` 落盘、base64 不进工具结果），读不读由主模型决定，所以带图的成本只是一次窗口级抓取，不是上下文。`relevance` 由暂停原因查表得出，不问 Jev：`pointer` → `required`（要定坐标），`risky` → `useful`，`uncertain` / `no-progress` / `budget` → `optional`。不给 Jev 一个"要不要截图"的头：它只看文本，判不出比这张表更多的东西，而它判错的代价正好是多一次 snapshot 调用；歧义是视觉性的（同名按钮靠位置区分）时，`hand_target` 答 none 加 `why` 已经能把主模型引向读图。主模型不再需要额外调用 snapshot / zoom 才能回答。`capability` 暂停另带 `question.context = { verb, target: { index, ref, label, bounds }, why }` 和 `question.schema`：
 
 | mode | schema | run 怎么执行 |
 | --- | --- | --- |

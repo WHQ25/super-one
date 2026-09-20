@@ -1,5 +1,5 @@
 import { targetIdentity } from './app-identity'
-import { bindCondition, evaluateBoundCondition } from './condition-evaluation'
+import { bindCondition, describeConditionTarget, evaluateBoundCondition } from './condition-evaluation'
 import { throwIfAborted } from './async-control'
 import { newAppRoots, newRootMatches, type NewRootCondition } from './new-root'
 import { ComputerUseError, type CaptureScope, type ComputerUseState, type Condition, type ObserveMode, type ObserveResult, type UiRootIdentity, type WaitResult } from './types'
@@ -53,10 +53,12 @@ export async function waitForCondition(base: ComputerUseState, condition: Condit
 
   const last = await deps.observe(base.root.rootId, base.mode, base.capture)
   throwIfAborted(signal)
+  const observed = describeConditionTarget(binding, deps.requireState(last.stateId).outline)
   return {
     status: 'failed',
     successorStateId: last.stateId,
     successorRoot: targetIdentity(last.root),
+    ...(observed ? { observed } : {}),
   }
 }
 

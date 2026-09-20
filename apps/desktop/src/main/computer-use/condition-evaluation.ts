@@ -89,6 +89,22 @@ export function evaluateBoundCondition(
   }
 }
 
+/**
+ * What the condition's target reads as in `outline`, for a wait that ran out:
+ * "second line" never appeared because the app had capitalised it, and the
+ * caller had to take another snapshot to learn that.
+ */
+export function describeConditionTarget(
+  binding: ConditionBinding,
+  outline: import('./types').UiOutlineNode,
+): { ref: string; name?: string; value?: string } | undefined {
+  if (!binding.target) return undefined
+  const resolution = resolveConditionTarget(binding, outline)
+  if (resolution.status !== 'found') return undefined
+  const { ref, name, value } = resolution.node
+  return { ref, ...(name != null ? { name } : {}), ...(value != null ? { value } : {}) }
+}
+
 function resolveConditionTarget(
   binding: ConditionBinding,
   outline: import('./types').UiOutlineNode,

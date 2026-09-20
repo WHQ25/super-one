@@ -165,6 +165,19 @@ describe('computer_wait_for with real polling', () => {
     expect(result.status).toBe('failed')
   })
 
+  it('reports what the element read as when a wait runs out', async () => {
+    // TextEdit capitalised "second line" as it was typed; the wait for the
+    // lowercase text ran out, and the caller needed another snapshot to see
+    // why. The failed result carries the element's final text instead.
+    const service = serviceFor([
+      outline([statusNode('@e2', 'Loading')]),
+      outline([statusNode('@e2', 'Second line')]),
+    ])
+    const base = await service.observe(undefined, 'semantic')
+    const result = await service.waitFor(base.stateId, { kind: 'textContains', ref: '@e2', text: 'second line' }, 100)
+    expect(result).toMatchObject({ status: 'failed', observed: { ref: '@e2', name: 'Status', value: 'Second line' } })
+  })
+
   it('does not treat a reused ref as the original target still existing', async () => {
     const service = serviceFor([
       outline([statusNode('@e2', 'Visible')]),

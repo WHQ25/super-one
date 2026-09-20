@@ -513,7 +513,7 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS = [
   },
   {
     "name": "computer_wait_for",
-    "description": "Wait until a UI condition holds. Distinguishes preexisting (already true) from verified (became true). Do not sleep+poll with snapshot yourself.",
+    "description": "Wait until a UI condition holds. Distinguishes preexisting (already true) from verified (became true); failed means the timeout ran out, and observed then carries what the element read as. Do not sleep+poll with snapshot yourself.",
     "inputSchema": {
       "type": "object",
       "properties": {

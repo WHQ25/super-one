@@ -205,6 +205,8 @@ export interface WaitResult {
   successorStateId: string
   /** Target observed by the wait result, for stable app identity in chat UI. */
   successorRoot: Pick<UiRootIdentity, 'app' | 'bundleId' | 'title'>
+  /** On `failed`, what the condition's element read as when the wait ran out. */
+  observed?: { ref: string; name?: string; value?: string }
 }
 
 export type GrantScope = 'session' | 'always'

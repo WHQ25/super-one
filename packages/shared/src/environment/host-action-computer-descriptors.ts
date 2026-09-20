@@ -188,7 +188,7 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS = [
   },
   {
     "name": "computer_act",
-    "description": "Submit 1–20 related UI actions as a checked transaction against a stateId. Batch a known button sequence here; prefer computer_run when each next target must be found from new UI state and Jev is enabled. Set delivery explicitly when you can; that field describes how the three modes differ. Actions: click, typeText, keypress, scroll(dx,dy[,x,y|ref]), drag(path≥2 points), moveMouse, press/select/open/setText (AX). select chooses a selectable item; open invokes its observed native open action. typeText is keystrokes at the insertion point, subject to the app's own autocorrect and auto-capitalisation; setText sets a value exactly. scroll: positive dy scrolls content down; aim with x,y (capture space) or ref center; else window/outline center. drag: path is capture-space points; virtual cursor animates along the path. Returns outcome worked|didnt|unknown based on re-observation (not API success codes): worked when AX readback, expect, typed text, or a meaningful successor outline diff confirms effect; unknown only when applied but unprovable; didnt on hard failure or failed expect. When the successor has pixels, successorImage.path contains the fresh screenshot. Set recording=true to save a short video containing only this action transaction. Stale stateId (UI changed since snapshot) is rejected before side effects. delivery=semantic never silently upgrades to app-directed/physical input.",
+    "description": "Submit 1–20 related UI actions as a checked transaction against a stateId. Batch a known button sequence here; prefer computer_run when each next target must be found from new UI state and Jev is enabled. Everything runs in the background: the host drives a ref through its native action when it has one and otherwise posts input to the app; the app is never brought forward and the user keeps their keyboard and pointer. Menu bar commands and ⌘ shortcuts (keypress keys=[\"cmd+s\"]) work there too. Actions: click, typeText, keypress, scroll(dx,dy[,x,y|ref]), drag(path≥2 points), moveMouse, press/select/open/setText (AX). click on a ref with a native press is that press; otherwise a pointer click at x,y or the ref's center. select chooses a selectable item; open invokes its observed native open action. typeText is keystrokes at the insertion point, subject to the app's own autocorrect and auto-capitalisation; setText sets a value exactly. scroll: positive dy scrolls content down; a ref with a scroll bar is paged by the bar and reports when it has no room left; else a wheel at x,y (capture space), the ref center or the window center. drag: path is capture-space points; virtual cursor animates along the path. Returns outcome worked|didnt|unknown based on re-observation (not API success codes): worked when AX readback, expect, typed text, or a meaningful successor outline diff confirms effect; unknown only when applied but unprovable; didnt on hard failure or failed expect. When the successor has pixels, successorImage.path contains the fresh screenshot. Set recording=true to save a short video containing only this action transaction. Stale stateId (UI changed since snapshot) is rejected before side effects. System-wide hotkeys (⌘Space, ⌘Tab, screenshots) are not available; they belong to no app.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -337,15 +337,6 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS = [
         "recording": {
           "description": "Save a video of only this action transaction. Default false.",
           "type": "boolean"
-        },
-        "delivery": {
-          "description": "semantic — pure AX; prefer it whenever actions use @eN refs and the action is press/select/open/setText/click(ref)/typeText(ref), the most reliable path for labeled controls. app-directed — the default when omitted; for coordinate click/type/scroll/drag/keypress or when no usable AX ref exists. Posts CGEvent to the target app PID in the background without stealing frontmost; a ⌘ shortcut (keys=[\"cmd+s\"]) works there too, the app is made to believe it is active for it. physical — global HID, only for system-wide hotkeys (⌘Space, ⌘Tab, screenshots). Not a fallback for app-directed: it needs the target frontmost and takes the user's keyboard and pointer while it runs.",
-          "type": "string",
-          "enum": [
-            "semantic",
-            "app-directed",
-            "physical"
-          ]
         }
       },
       "required": [

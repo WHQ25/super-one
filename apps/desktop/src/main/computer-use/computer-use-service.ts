@@ -40,7 +40,6 @@ import {
   type AppsSnapshot,
   type CaptureScope,
   type Condition,
-  type DeliveryMode,
   type ObserveMode,
   type ObserveResult,
   type QueryResult,
@@ -467,7 +466,6 @@ export class ComputerUseService {
     actionsInput: unknown,
     options: {
       expect?: Condition
-      delivery?: DeliveryMode
       recordingPath?: string
       signal?: AbortSignal
       timeoutMs?: number
@@ -479,28 +477,11 @@ export class ComputerUseService {
     this.requireGranted(stored.root.bundleId)
 
     const actions = parseActions(actionsInput)
-    // Default: app-directed (background postToPid). Does not steal the user's frontmost app.
-    // physical = global HID (requires frontmost; disruptive). semantic = AX (P3).
-    const delivery = options.delivery ?? 'app-directed'
-
+    // Every action runs in the background: an AX action on its ref, or an
+    // event posted to the target app. Which one is the platform's choice per
+    // action; nothing here activates the app or takes the user's input.
     for (const a of actions) {
       this.requireActionAllowed(stored.root.bundleId, a)
-    }
-
-    // Semantic delivery must never silently upgrade to physical / app-directed.
-    if (delivery === 'semantic') {
-      const needsPhysical = actions.some(
-        (a) => a.type === 'click' || a.type === 'typeText' || a.type === 'keypress' || a.type === 'drag',
-      )
-      // Still pass through — adapter fails closed if semantic unsupported.
-      void needsPhysical
-    }
-
-    // Global HID only: require target to be frontmost (events go to system pointer).
-    // app-directed posts to the target PID and must not force activation.
-    if (delivery === 'physical') {
-      await this.assertFrontmost(stored.root.bundleId)
-      throwIfAborted(options.signal)
     }
 
     return this.scheduler.runExclusive(stored.resourceKey, async () => {
@@ -533,7 +514,7 @@ export class ComputerUseService {
         )
       }
 
-      const menuTransaction = actions.every((action) => (action.type === 'press' || (delivery === 'semantic' && action.type === 'click'))
+      const menuTransaction = actions.every((action) => (action.type === 'press' || action.type === 'click')
         && action.ref && findNode(base.outline, action.ref)?.nativeTarget?.scope === 'menuBar')
       const blockingModals = this.roots.list().filter(
         (root) => root.rootId !== currentRoot.rootId
@@ -601,7 +582,6 @@ export class ComputerUseService {
         const platformResult = await this.adapter.act({
           root: base.root,
           actions,
-          delivery,
           coordinateSpace: base.coordinateSpace,
           outline: base.outline,
         })
@@ -711,7 +691,7 @@ export class ComputerUseService {
 
       // A menu this action opened has been read into the successor; take it
       // down. A menu this action was replayed into, and did not close, too.
-      await this.menus.dismissOpened(identity, rootsBefore, { base, actions, delivery })
+      await this.menus.dismissOpened(identity, rootsBefore, { base, actions })
       await this.menus.dismissAgain(base.root.rootId)
 
       const evidence = platformResult.steps.map((s) => ({
@@ -733,7 +713,6 @@ export class ComputerUseService {
       return {
         outcome: finalOutcome,
         evidence,
-        grounding: delivery,
         stoppedAt: platformResult.stoppedAt,
         successorStateId,
         successorRoot: identity,
@@ -812,32 +791,6 @@ export class ComputerUseService {
     this.policy.assertActionAllowed(bundleId, action.type)
     if (action.type === 'click') {
       this.policy.assertClickButton(bundleId, action.button ?? 'left')
-    }
-  }
-
-  /**
-   * Frontmost gate for delivery=physical (global HID) only.
-   * app-directed / semantic must not call this — background Computer Use is the
-   * default. Menu bar commands and ⌘ shortcuts, which AppKit only dispatches
-   * in the active app, are the helper's business: it makes the app believe it
-   * is active for them without bringing it forward.
-   */
-  private async assertFrontmost(bundleId: string): Promise<void> {
-    if (this.bypassPolicy) return
-    if (!this.adapter.frontmost) return
-    const front = await this.adapter.frontmost()
-    if (!front) {
-      throw new ComputerUseError(
-        'BACKEND',
-        'Unable to determine frontmost app before physical (global HID) input',
-      )
-    }
-    if (front.bundleId !== bundleId) {
-      throw new ComputerUseError(
-        'TIER_BLOCKED',
-        `Foreground gate (delivery=physical only): frontmost is ${front.app} (${front.bundleId}), target is ${bundleId}. Prefer default delivery=app-directed for background control, or focus the target app first.`,
-        { frontmost: front.bundleId, target: bundleId },
-      )
     }
   }
 

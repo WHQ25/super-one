@@ -6,13 +6,14 @@ import type { HelperAxActionResult } from './helper-protocol'
 import type { MacosHelperClient } from './macos-helper-client'
 
 /**
- * Scroll by writing the scroll bar's value, the one way to scroll an app in the
- * background: wheel events posted to a pid are dropped by an inactive app
- * (Finder's list never moved through twelve of them), while a scroller's
- * AXValue is settable and takes effect at once. The value is a fraction of the
- * scrollable range, so a pixel delta maps through content minus viewport.
+ * Scroll by writing the scroll bar's value, the reliable way to scroll an app
+ * in the background: a scroller's AXValue is settable, takes effect at once
+ * and pages exactly, where a posted wheel carries inertia. The value is a
+ * fraction of the scrollable range, so a pixel delta maps through content
+ * minus viewport. `room: false` is a bar that exists but cannot move further
+ * in that direction — the end of the list, not a reason to post a wheel.
  */
-export function scrollBarSetting(area: UiOutlineNode | undefined, dx: number, dy: number): { ref: string; value: number } | undefined {
+export function scrollBarSetting(area: UiOutlineNode | undefined, dx: number, dy: number): { ref: string; value: number; room: boolean } | undefined {
   if (!area?.bounds) return undefined
   const vertical = Math.abs(dy) >= Math.abs(dx)
   const children = area.children ?? []
@@ -23,8 +24,8 @@ export function scrollBarSetting(area: UiOutlineNode | undefined, dx: number, dy
   if (range <= 0) return undefined
   const current = Number(bar.value)
   const next = Math.min(1, Math.max(0, (Number.isFinite(current) ? current : 0) + (vertical ? dy : dx) / range))
-  if (Math.abs(next - current) < 1e-6) return undefined
-  return { ref: bar.ref, value: Math.round(next * 1e4) / 1e4 }
+  if (Math.abs(next - current) < 1e-6) return { ref: bar.ref, value: current, room: false }
+  return { ref: bar.ref, value: Math.round(next * 1e4) / 1e4, room: true }
 }
 
 function extent(node: UiOutlineNode, vertical: boolean): number {
@@ -38,7 +39,9 @@ export class MacosSemanticExecutor {
     private readonly coordinatePayload: (space?: CoordinateSpace) => Record<string, unknown>,
   ) {}
   /**
-   * delivery=semantic — AX only; never post CGEvent / HID.
+   * AX only; never posts a CGEvent. The adapter sends an action here when its
+   * ref supports the native action, and a failure stays a failure — it does
+   * not fall through to posted input.
    */
   async act(
     action: UiAction,
@@ -61,32 +64,15 @@ export class MacosSemanticExecutor {
         return this.axActionStep(target, action.ref, 'set_value', action.text)
       }
       case 'click': {
-        // Semantic click = AXPress on ref; coordinates are not semantic.
+        // A click on a pressable ref is its native press.
         if (!action.ref) {
-          return {
-            applied: false,
-            description: 'click under delivery=semantic requires ref (use app-directed for x,y)',
-          }
+          return { applied: false, description: 'click: an AX press needs a ref' }
         }
         return this.axActionStep(target, action.ref, 'press')
       }
-      case 'typeText': {
-        if (!action.ref) {
-          return {
-            applied: false,
-            description:
-              'typeText under delivery=semantic requires ref with settable AXValue (use app-directed for keyboard typing)',
-          }
-        }
-        return this.axActionStep(target, action.ref, 'set_value', action.text)
-      }
       case 'scroll': {
-        // Prefer AX page scroll actions when available; fail closed otherwise.
         if (!action.ref) {
-          return {
-            applied: false,
-            description: 'scroll under delivery=semantic requires ref (use app-directed for wheel at x,y)',
-          }
+          return { applied: false, description: 'scroll: a scroll bar write needs a ref' }
         }
         const dy = action.dy ?? 0
         const dx = action.dx ?? 0
@@ -96,20 +82,18 @@ export class MacosSemanticExecutor {
         const area = target.outline ? findNode(target.outline, action.ref) : undefined
         const bar = scrollBarSetting(area, dx, dy)
         if (!bar) {
-          return {
-            applied: false,
-            description: 'scroll under delivery=semantic: the target has no scroll bar with room to move in that direction; use delivery=app-directed for a wheel at x,y',
-          }
+          return { applied: false, description: 'scroll: the target has no scroll bar' }
+        }
+        if (!bar.room) {
+          return { applied: false, description: 'scroll: the scroll bar has no room to move in that direction' }
         }
         return this.axActionStep(target, bar.ref, 'set_value', String(bar.value))
       }
+      case 'typeText':
       case 'keypress':
       case 'drag':
       case 'moveMouse':
-        return {
-          applied: false,
-          description: `${action.type}: not available under delivery=semantic (AX-only)`,
-        }
+        return { applied: false, description: `${action.type}: not an AX action` }
       default: {
         const _e: never = action
         return { applied: false, description: `unknown action ${JSON.stringify(_e)}` }

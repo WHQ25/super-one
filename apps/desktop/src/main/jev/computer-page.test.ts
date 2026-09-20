@@ -175,7 +175,7 @@ describe('computer fast-loop adapter', () => {
     expect(clickVerb('click', space.elements.find((e) => e.index === String(triangles[0]!.node))!)).toBe('Expand')
   })
 
-  it('offers only replacements supported by the semantic delivery path', async () => {
+  it('offers only replacements the target can take as an exact value', async () => {
     const { service } = fixture()
     const obs = await service.observe(undefined, 'semantic')
     const outline = axTreeToOutline({ index: 1, role: 'AXTextField', name: 'Keyboard only', settable: false })
@@ -200,7 +200,7 @@ describe('computer fast-loop adapter', () => {
     const button = page.elements.find((element) => element.label === 'Next')!
     const act = vi.spyOn(service, 'act')
     await adapter.click(button.node)
-    expect(act).toHaveBeenCalledWith(page.stateId, [{ type: 'press', ref: button.ref }], expect.objectContaining({ delivery: 'semantic' }))
+    expect(act).toHaveBeenCalledWith(page.stateId, [{ type: 'press', ref: button.ref }], expect.any(Object))
   })
 
   it('keeps focused Return executable after outline folding', async () => {
@@ -218,10 +218,10 @@ describe('computer fast-loop adapter', () => {
     expect(field.canSubmit).toBe(true)
     const act = vi.spyOn(service, 'act')
     await adapter.pressEnter(field.node)
-    expect(act).toHaveBeenCalledWith(expect.any(String), [{ type: 'keypress', keys: ['Return'] }], expect.objectContaining({ delivery: 'app-directed' }))
+    expect(act).toHaveBeenCalledWith(expect.any(String), [{ type: 'keypress', keys: ['Return'] }], expect.any(Object))
   })
 
-  it('dispatches scroll as a semantic scroll-bar write, the same path computer_act takes with delivery=semantic', async () => {
+  it('dispatches scroll on the scroll area ref, which computer_act pages by its scroll bar', async () => {
     const { adapter, backend, service } = fixture()
     const look = backend.look.bind(backend)
     vi.spyOn(backend, 'look').mockImplementation(async (...args) => {
@@ -234,7 +234,7 @@ describe('computer fast-loop adapter', () => {
     expect(page.canScroll?.down).toBe(true)
     const act = vi.spyOn(service, 'act')
     await adapter.scroll(page, 600)
-    expect(act).toHaveBeenCalledWith(page.stateId, [{ type: 'scroll', ref: '@e99', dy: 600 }], expect.objectContaining({ delivery: 'semantic' }))
+    expect(act).toHaveBeenCalledWith(page.stateId, [{ type: 'scroll', ref: '@e99', dy: 600 }], expect.any(Object))
   })
 
   it('uses semantic replacement, verifies valueEquals and reuses the successor observation', async () => {
@@ -246,7 +246,7 @@ describe('computer fast-loop adapter', () => {
     const observe = vi.spyOn(service, 'observe')
     await adapter.type(field.node, 'Hello')
     const next = await adapter.observe()
-    expect(act).toHaveBeenCalledWith(initial.stateId, [{ type: 'setText', ref: field.ref, text: 'Hello' }], expect.objectContaining({ delivery: 'semantic', expect: { kind: 'valueEquals', ref: field.ref, value: 'Hello' } }))
+    expect(act).toHaveBeenCalledWith(initial.stateId, [{ type: 'setText', ref: field.ref, text: 'Hello' }], expect.objectContaining({ expect: { kind: 'valueEquals', ref: field.ref, value: 'Hello' } }))
     expect(observe).not.toHaveBeenCalled()
     expect(next.elements.find((e) => e.node === field.node)?.value).toBe('Hello')
     expect(adapter.changed(initial, next)).toBe(true)
@@ -292,7 +292,7 @@ describe('computer fast-loop adapter', () => {
     await adapter.resolveTarget()
     const page = await adapter.observe()
     const next = page.elements.find((e) => e.label === 'Next')!
-    await service.act(page.stateId, [{ type: 'press', ref: next.ref! }], { delivery: 'semantic' })
+    await service.act(page.stateId, [{ type: 'press', ref: next.ref! }])
     expect(await adapter.isFresh(page, next.node)).toBe(false)
     expect(adapter.reobserveOnResume).toBe(true)
     // Menu churn alone must not discard the answer; a moved element must.

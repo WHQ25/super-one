@@ -17,7 +17,7 @@ function fixture() {
 
 async function openMenu(service: ComputerUseService) {
   const base = await service.observe(undefined, 'semantic')
-  const acted = await service.act(base.stateId, [{ type: 'press', ref: base.outline.children![0].ref }], { delivery: 'semantic' })
+  const acted = await service.act(base.stateId, [{ type: 'press', ref: base.outline.children![0].ref }])
   expect(acted.successorRoot).toMatchObject({ title: 'Context', kind: 'menu' })
   return { base, acted }
 }
@@ -38,7 +38,7 @@ describe('context menus are read and dismissed', () => {
     const { acted } = await openMenu(service)
     const menuState = service.getStateStore().get(acted.successorStateId)!
     const item = menuState.outline.children!.find((node) => node.name === 'Rename')!
-    const pressed = await service.act(acted.successorStateId, [{ type: 'press', ref: item.ref }], { delivery: 'semantic' })
+    const pressed = await service.act(acted.successorStateId, [{ type: 'press', ref: item.ref }])
     expect(pressed.outcome).not.toBe('didnt')
     expect(pressed.evidence.map((step) => step.description)).toEqual(['activate(Rename)'])
     // Reopened for the press (one more "More" press in the fake), then dismissed again.
@@ -70,7 +70,7 @@ describe('context menus are read and dismissed', () => {
     backend.reset(specs)
     const doc = (await service.listUiRoots()).find((root) => root.title === 'Document')!
     const base = await service.observe(doc.rootId, 'semantic')
-    await service.act(base.stateId, [{ type: 'press', ref: base.outline.children![0].ref }], { delivery: 'semantic' })
+    await service.act(base.stateId, [{ type: 'press', ref: base.outline.children![0].ref }])
     expect(backend.dismissals).toEqual([])
     void state
   })
@@ -82,6 +82,6 @@ describe('context menus are read and dismissed', () => {
     const item = menuState.outline.children!.find((node) => node.name === 'Rename')!
     // The opener's button is gone: nothing replays.
     backend.reset([{ app: 'Editor', bundleId: 'com.test.editor', pid: 7, windows: [{ title: 'Document', windowId: 100, tree: { role: 'window' } }] }])
-    await expect(service.act(acted.successorStateId, [{ type: 'press', ref: item.ref }], { delivery: 'semantic' })).rejects.toMatchObject({ code: 'STALE_STATE' })
+    await expect(service.act(acted.successorStateId, [{ type: 'press', ref: item.ref }])).rejects.toMatchObject({ code: 'STALE_STATE' })
   })
 })

@@ -97,15 +97,14 @@ describe('P2 service policy + foreground gate', () => {
     clearInstalledAppCacheForTests()
   })
 
-  it('default delivery is app-directed and does not require frontmost', async () => {
+  it('acts in the background without a frontmost gate', async () => {
     frontmostBundle = 'com.google.Chrome' // user is elsewhere
     const obs = await service.observe()
     const result = await service.act(obs.stateId, [{ type: 'click', x: 10, y: 20 }])
     // Same visual outline before/after → still unknown (no AX/diff proof).
     expect(result.outcome).toBe('unknown')
-    expect(result.grounding).toBe('app-directed')
     expect(adapter.act).toHaveBeenCalledWith(
-      expect.objectContaining({ delivery: 'app-directed' }),
+      expect.any(Object),
     )
     expect(adapter.frontmost).not.toHaveBeenCalled()
   })
@@ -223,11 +222,7 @@ describe('P2 service policy + foreground gate', () => {
     adapter.listRoots = vi.fn(async () => [root])
 
     const obs = await service.observe(undefined, 'fused')
-    const result = await service.act(
-      obs.stateId,
-      [{ type: 'press', ref: '@e2' }],
-      { delivery: 'semantic' },
-    )
+    const result = await service.act(obs.stateId, [{ type: 'press', ref: '@e2' }])
     expect(result.outcome).toBe('worked')
     // The feed's texts are paired with the history's by role, so the diff
     // reads as the window renamed, two texts rewritten and the third gone.
@@ -255,25 +250,6 @@ describe('P2 service policy + foreground gate', () => {
     const acted = await service.act(displayObs.stateId, [{ type: 'click', x: 10, y: 20 }])
     expect(adapter.look).toHaveBeenLastCalledWith(expect.anything(), 'fused', 'display')
     expect(service.getStateStore().get(acted.successorStateId)?.capture).toBe('display')
-  })
-
-  it('blocks physical act when frontmost mismatches', async () => {
-    frontmostBundle = 'com.google.Chrome'
-    const obs = await service.observe()
-    await expect(
-      service.act(obs.stateId, [{ type: 'click', x: 10, y: 20 }], { delivery: 'physical' }),
-    ).rejects.toMatchObject({ code: 'TIER_BLOCKED' })
-    expect(adapter.act).not.toHaveBeenCalled()
-  })
-
-  it('allows physical act when frontmost matches', async () => {
-    frontmostBundle = 'com.apple.TextEdit'
-    const obs = await service.observe()
-    const result = await service.act(obs.stateId, [{ type: 'click', x: 10, y: 20 }], {
-      delivery: 'physical',
-    })
-    expect(result.grounding).toBe('physical')
-    expect(adapter.act).toHaveBeenCalled()
   })
 
   it('exposes grantedBundleIds for capture exclusion', () => {

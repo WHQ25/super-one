@@ -23,7 +23,7 @@ describe('native newRoot completion', () => {
     const { service } = fixture(kind)
     const base = await service.observe(undefined, 'fused')
     const button = base.outline.children![0]
-    const acted = await service.act(base.stateId, [{ type: 'press', ref: button.ref }], { delivery: 'semantic' })
+    const acted = await service.act(base.stateId, [{ type: 'press', ref: button.ref }])
     expect(acted.successorRoot).toMatchObject({ title: 'Fonts', kind })
     expect(acted.successorRoot?.rootId).not.toBe(base.root.rootId)
     const result = await service.waitFor(base.stateId, { kind: 'newRoot', title: 'Fonts', text: 'Font collection', rootKind: kind }, 0)
@@ -37,8 +37,7 @@ describe('native newRoot completion', () => {
   it('shares newRoot with computer_act expect, including native outline text', async () => {
     const { service } = fixture()
     const base = await service.observe(undefined, 'semantic')
-    const result = await service.act(base.stateId, [{ type: 'press', ref: base.outline.children![0].ref }], {
-      delivery: 'semantic', expect: { kind: 'newRoot', title: 'Fonts', text: 'Font collection' }, timeoutMs: 0,
+    const result = await service.act(base.stateId, [{ type: 'press', ref: base.outline.children![0].ref }], { expect: { kind: 'newRoot', title: 'Fonts', text: 'Font collection' }, timeoutMs: 0,
     })
     expect(result.outcome).toBe('worked')
     expect(result.successorRoot?.title).toBe('Fonts')
@@ -49,7 +48,7 @@ describe('native newRoot completion', () => {
     // for that menu from the menu's own state is not a wait for anything new.
     const { service } = fixture('popover')
     const base = await service.observe(undefined, 'semantic')
-    const acted = await service.act(base.stateId, [{ type: 'press', ref: base.outline.children![0].ref }], { delivery: 'semantic' })
+    const acted = await service.act(base.stateId, [{ type: 'press', ref: base.outline.children![0].ref }])
     const result = await service.waitFor(acted.successorStateId, { kind: 'newRoot', rootKind: 'popover', text: 'Font collection' }, 0)
     expect(result).toMatchObject({ status: 'preexisting', successorRoot: { title: 'Fonts' } })
   })
@@ -72,7 +71,7 @@ describe('native newRoot completion', () => {
   it('requires every supplied title, kind and text filter to match', async () => {
     const { service } = fixture()
     const base = await service.observe(undefined, 'semantic')
-    await service.act(base.stateId, [{ type: 'press', ref: base.outline.children![0].ref }], { delivery: 'semantic' })
+    await service.act(base.stateId, [{ type: 'press', ref: base.outline.children![0].ref }])
     expect((await service.waitFor(base.stateId, { kind: 'newRoot', title: 'Fonts', text: 'Missing' }, 0)).status).toBe('failed')
     expect((await service.waitFor(base.stateId, { kind: 'newRoot', title: 'Fonts', rootKind: 'sheet' }, 0)).status).toBe('failed')
   })

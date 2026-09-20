@@ -259,7 +259,7 @@ export class FakePlatformBackend implements PlatformAdapter {
 
     for (let i = 0; i < req.actions.length; i++) {
       const action = req.actions[i]!
-      const step = this.applyOne(app, win, action, focusRef, req.delivery)
+      const step = this.applyOne(app, win, action, focusRef)
       steps.push(step)
       if (step.focusRef) focusRef = step.focusRef
       if (!step.applied || step.confirmedNoEffect || step.unknown) {
@@ -506,7 +506,6 @@ export class FakePlatformBackend implements PlatformAdapter {
     win: LiveWindow,
     action: UiAction,
     focusRef: string | undefined,
-    _delivery: string,
   ): PlatformActStepResult {
     if (this.silentDelivery) {
       return {

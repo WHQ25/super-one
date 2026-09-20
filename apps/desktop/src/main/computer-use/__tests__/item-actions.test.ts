@@ -40,13 +40,13 @@ describe('native item selection and opening', () => {
   it('uses the shared service for a sidebar selection, folder open and file selection', async () => {
     const { service } = fixture()
     const base = await service.observe(undefined, 'semantic')
-    const sidebar = await service.act(base.stateId, [{ type: 'select', ref: base.outline.children![0].ref }], { delivery: 'semantic' })
+    const sidebar = await service.act(base.stateId, [{ type: 'select', ref: base.outline.children![0].ref }])
     expect(sidebar.successorRoot?.title).toBe('Applications')
     const folder = service.getStateStore().get(sidebar.successorStateId)!.outline.children![0]
-    const opened = await service.act(sidebar.successorStateId, [{ type: 'open', ref: folder.ref }], { delivery: 'semantic' })
+    const opened = await service.act(sidebar.successorStateId, [{ type: 'open', ref: folder.ref }])
     expect(opened.successorRoot?.title).toBe('Utilities')
     const file = service.getStateStore().get(opened.successorStateId)!.outline.children![0]
-    const selected = await service.act(opened.successorStateId, [{ type: 'select', ref: file.ref }], { delivery: 'semantic' })
+    const selected = await service.act(opened.successorStateId, [{ type: 'select', ref: file.ref }])
     expect(selected.diff.changed).toContainEqual(expect.objectContaining({ field: 'selected', to: 'true' }))
   })
 
@@ -75,7 +75,7 @@ describe('native item selection and opening', () => {
     const observation = await service.observe(undefined, 'semantic')
     const call = vi.fn(async (_method: string, _params?: unknown) => ({ ok: true, afterSelected: type === 'select' }))
     const adapter = new MacosPlatformAdapter({ client: { call } as never, getGrantedBundleIds: () => ['com.test.finder'] })
-    await adapter.act({ root: observation.root, actions: [{ type, ref: observation.outline.children![0].ref }], delivery: 'semantic', outline: observation.outline })
+    await adapter.act({ root: observation.root, actions: [{ type, ref: observation.outline.children![0].ref }], outline: observation.outline })
     expect(call).toHaveBeenCalledWith('ax_action', expect.objectContaining({ action: type }))
     expect(call.mock.calls.some(([method]) => method === 'click')).toBe(false)
   })

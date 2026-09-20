@@ -1,13 +1,12 @@
 import { selectNewAppRoot } from './new-root'
 import type { PlatformAdapter } from './platform/types'
 import type { RootRegistry } from './root-registry'
-import { ComputerUseError, type ComputerUseState, type DeliveryMode, type UiAction, type UiRootIdentity } from './types'
+import { ComputerUseError, type ComputerUseState, type UiAction, type UiRootIdentity } from './types'
 
 /** What opened a menu: the state it was opened from and the actions that did it. */
 export interface MenuOpener {
   base: ComputerUseState
   actions: UiAction[]
-  delivery: DeliveryMode
 }
 
 interface DismissedMenu {
@@ -75,11 +74,11 @@ export class ContextMenuLedger {
   async reopen(rootId: string, signal?: AbortSignal): Promise<UiRootIdentity> {
     const entry = this.dismissed.get(rootId)
     if (!entry) throw new ComputerUseError('UNKNOWN_ROOT', `Unknown root ${rootId}`, { rootId })
-    const { base, actions, delivery } = entry.openedBy
+    const { base, actions } = entry.openedBy
     const origin = await this.ensureOpen(base.root, signal)
     await this.deps.refreshRoots()
     const rootsBefore = this.deps.roots.list().map((root) => root.rootId)
-    await this.deps.adapter.act({ root: origin, actions, delivery, coordinateSpace: base.coordinateSpace, outline: base.outline })
+    await this.deps.adapter.act({ root: origin, actions, coordinateSpace: base.coordinateSpace, outline: base.outline })
     for (let waited = 0; ; waited += REOPEN_POLL_MS) {
       await this.deps.refreshRoots()
       const reopened = selectNewAppRoot(origin, rootsBefore, this.deps.roots.list(), { kind: 'newRoot', rootKind: 'menu' })

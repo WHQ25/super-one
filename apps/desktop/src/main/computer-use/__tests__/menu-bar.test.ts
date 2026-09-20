@@ -33,7 +33,7 @@ describe('app menu bar in window outlines', () => {
       minimized: false, modal: false, resourceKey: 'pid:42' }
     const look = await adapter.look(root, 'semantic')
     const menu = flatten(look.outline).find((node) => node.name === 'Format' && node.nativeTarget)!
-    await adapter.act({ root, actions: [{ type: 'press', ref: menu.ref }], delivery: 'semantic', outline: look.outline })
+    await adapter.act({ root, actions: [{ type: 'press', ref: menu.ref }], outline: look.outline })
     expect(call).toHaveBeenCalledWith('ax_action', expect.objectContaining({ pid: 42, index: 2, axSource: 'menuBar', action: 'press', expectedName: 'Format' }))
     expect(call.mock.calls.some(([name]) => name === 'click')).toBe(false)
   })
@@ -55,7 +55,7 @@ describe('app menu bar in window outlines', () => {
     const button = nodes.find((node) => node.name === 'Format' && !node.nativeTarget)!
     expect(menu.ref).not.toBe(button.ref)
     expect(await service.query(observation.stateId, 'inspect', { ref: menu.ref })).toMatchObject({ element: { role: 'menuBarItem', name: 'Format' } })
-    const result = await service.act(observation.stateId, [{ type: 'press', ref: menu.ref }], { delivery: 'semantic' })
+    const result = await service.act(observation.stateId, [{ type: 'press', ref: menu.ref }])
     expect(result.outcome).toBe('worked')
     const next = service.getStateStore().get(result.successorStateId)!
     expect(flatten(next.outline).find((node) => node.ref === menu.ref)?.value).toBe('on')
@@ -79,7 +79,7 @@ describe('app menu bar in window outlines', () => {
     const command = flatten(observation.outline).find((node) => node.name === 'Show Fonts')!
     expect(command.nativeTarget?.scope).toBe('menuBar')
     expect(computerPage(observation, service).elements).toContainEqual(expect.objectContaining({ label: 'Font ▸ Show Fonts', clickable: true }))
-    const result = await service.act(observation.stateId, [{ type: 'press', ref: command.ref }], { delivery: 'semantic' })
+    const result = await service.act(observation.stateId, [{ type: 'press', ref: command.ref }])
     expect(result.successorRoot?.title).toBe('Fonts')
     expect((await service.waitFor(observation.stateId, { kind: 'newRoot', title: 'Fonts' }, 0)).status).toBe('verified')
   })
@@ -102,7 +102,7 @@ describe('app menu bar in window outlines', () => {
     const root = (await service.listUiRoots()).find((candidate) => candidate.title === 'Document')!
     const observation = await service.observe(root.rootId, 'semantic')
     const menu = flatten(observation.outline).find((node) => node.name === 'Format' && node.nativeTarget)!
-    expect((await service.act(observation.stateId, [{ type: 'press', ref: menu.ref }], { delivery: 'semantic' })).outcome).toBe('worked')
+    expect((await service.act(observation.stateId, [{ type: 'press', ref: menu.ref }])).outcome).toBe('worked')
     expect(await backend.frontmost()).toMatchObject({ bundleId: 'com.test.chat' })
 
     await service.apps('focus', 'com.test.editor')
@@ -117,7 +117,7 @@ describe('app menu bar in window outlines', () => {
     const root = roots.find((candidate) => candidate.title === 'Document')!
     const observation = await service.observe(root.rootId, 'semantic')
     const menu = flatten(observation.outline).find((node) => node.name === 'Format' && node.nativeTarget)!
-    const transaction = service.act(observation.stateId, [{ type: 'press', ref: menu.ref }], { delivery: 'semantic' })
+    const transaction = service.act(observation.stateId, [{ type: 'press', ref: menu.ref }])
     if (blocker === 'menu') expect((await transaction).outcome).toBe('worked')
     else await expect(transaction).rejects.toMatchObject({ code: 'MODAL_BLOCKED' })
   })

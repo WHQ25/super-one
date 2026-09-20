@@ -315,7 +315,7 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
     signal?.throwIfAborted()
     const started = Date.now()
     try {
-      const result = await service.act(page.stateId, plan.actions, { delivery: plan.delivery, signal, expect: plan.expect, timeoutMs: 1200 })
+      const result = await service.act(page.stateId, plan.actions, { signal, expect: plan.expect, timeoutMs: 1200 })
       actMs = Date.now() - started
       const state = service.getStateStore().get(result.successorStateId)
       if (!state) throw new RunPaused('no-progress', 'The action completed but its successor state is unavailable. Inspect before retrying.')
@@ -384,8 +384,8 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
     },
     scroll: async (page, deltaY, signal) => {
       if (!page.scrollRef) throw new RunPaused('no-progress', 'No accessible scroll target is available.')
-      // computer_act app-directed scrolling is scoped to the target PID; it
-      // does not require activating the app or global physical input.
+      // A scroll with a ref is a scroll bar value write, scoped to the target
+      // app; it does not require activating the app.
       const state = service.getStateStore().get(page.stateId)
       const node = state && findNode(state.outline, page.scrollRef)
       await act(node && planNodeAction(node, { kind: 'scroll', dy: deltaY }, service.policy.tierFor(page.bundleId)), signal)

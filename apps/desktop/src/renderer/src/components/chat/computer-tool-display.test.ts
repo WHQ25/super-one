@@ -373,7 +373,6 @@ describe('parseComputerResult', () => {
       'act',
       JSON.stringify({
         outcome: 'unknown',
-        grounding: 'semantic',
         successorStateId: 'S2',
         successorRoot: {
           app: '爱奇艺',
@@ -383,7 +382,7 @@ describe('parseComputerResult', () => {
         evidence: [{ description: 'ax press @e32' }],
       }),
       false,
-      { stateId: 'S1', delivery: 'semantic' },
+      { stateId: 'S1' },
     )
     expect(info).toMatchObject({
       outcome: 'unknown',
@@ -393,7 +392,7 @@ describe('parseComputerResult', () => {
     expect(
       computerTargetBundleId(
         'act',
-        { stateId: 'S1', delivery: 'semantic' },
+        { stateId: 'S1' },
         info,
       ),
     ).toBe('com.iqiyi.player')

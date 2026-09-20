@@ -9,8 +9,6 @@ export type ObserveMode = 'visual' | 'semantic' | 'fused'
 
 export type CaptureScope = 'window' | 'display'
 
-export type DeliveryMode = 'semantic' | 'app-directed' | 'physical'
-
 export type ActionOutcome = 'worked' | 'didnt' | 'unknown'
 
 export type CapabilityTier = 'read' | 'click' | 'full'
@@ -182,7 +180,6 @@ export interface ActEvidence {
 export interface ActResult {
   outcome: ActionOutcome
   evidence: ActEvidence[]
-  grounding: DeliveryMode
   stoppedAt?: number
   successorStateId: string
   /** Root observed after the action; may change when a transient root closes. */

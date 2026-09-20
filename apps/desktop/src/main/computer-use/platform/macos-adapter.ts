@@ -1,10 +1,9 @@
-import { MacosSemanticExecutor, axTargetHintFields } from './macos-semantic'
+import { MacosSemanticExecutor, axTargetHintFields, scrollBarSetting } from './macos-semantic'
 import type { ComputerUseViewfinderClaim, Locale } from '@superone/shared/agent-types'
 import type {
   CapturedImage,
   CaptureScope,
   CoordinateSpace,
-  DeliveryMode,
   ObserveMode,
   UiAction,
   UiOutlineNode,
@@ -68,9 +67,10 @@ export interface MacosAdapterOptions {
 
 /**
  * macOS adapter: visual capture + coordinate / keyboard input + P3 AX tree.
- * Default delivery is app-directed (CGEvent.postToPid) so the agent can operate
- * apps in the background without stealing the user's frontmost app.
- * delivery=semantic uses AX only and never silently upgrades to HID.
+ * Every action runs in the background: an AX action when the ref supports
+ * one, otherwise a CGEvent posted to the target app's pid. Neither path
+ * takes the user's frontmost app, keyboard or pointer, and an AX action that
+ * fails never falls through to a posted event.
  */
 export class MacosPlatformAdapter implements PlatformAdapter {
   private readonly client: MacosHelperClient
@@ -573,7 +573,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     for (let i = 0; i < req.actions.length; i++) {
       const action = req.actions[i]!
       try {
-        const step = await this.applyOne(action, target, req.delivery)
+        const step = await this.applyOne(action, target)
         steps.push(step)
         if (!step.applied) {
           stoppedAt = i
@@ -661,39 +661,28 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     return this.client.call('frontmost')
   }
 
-  private helperDelivery(delivery: DeliveryMode): 'app_post' | 'global' {
-    return delivery === 'physical' ? 'global' : 'app_post'
-  }
-
-  private targetPayload(
-    target: {
-      bundleId: string
-      pid: number
-      root: UiRootIdentity
-      coordinateSpace?: CoordinateSpace
-    },
-    delivery: DeliveryMode,
-  ): Record<string, unknown> {
-    const overlay = this.windowOverlayFields(target.root)
-    if (delivery === 'physical') {
-      return {
-        delivery: 'global',
-        requireFrontmostBundleId: target.bundleId,
-        targetBundleId: target.bundleId,
-        targetPid: target.pid,
-        ...this.coordinatePayload(target.coordinateSpace),
-        ...overlay,
-      }
-    }
+  /** Events are posted to the target app's pid: the helper routes them to the window. */
+  private targetPayload(target: {
+    bundleId: string
+    pid: number
+    root: UiRootIdentity
+    coordinateSpace?: CoordinateSpace
+  }): Record<string, unknown> {
     return {
       delivery: 'app_post',
       targetBundleId: target.bundleId,
       targetPid: target.pid,
       ...this.coordinatePayload(target.coordinateSpace),
-      ...overlay,
+      ...this.windowOverlayFields(target.root),
     }
   }
 
+  /**
+   * One action, on the path its target allows. A ref with a native action is
+   * driven through AX (press, select, open, setText, a scroll bar's value);
+   * everything else is an event posted to the app. The choice is made here,
+   * once, so neither the agent nor the fast loop has to say how to deliver.
+   */
   private async applyOne(
     action: UiAction,
     target: {
@@ -703,19 +692,22 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       outline?: UiOutlineNode
       coordinateSpace?: CoordinateSpace
     },
-    delivery: DeliveryMode,
   ): Promise<PlatformActStepResult> {
-    if (delivery === 'semantic') {
-      return new MacosSemanticExecutor(this.client, this.showActionCursor.bind(this), this.coordinatePayload.bind(this)).act(action, target)
-    }
+    const semantic = () => new MacosSemanticExecutor(this.client, this.showActionCursor.bind(this), this.coordinatePayload.bind(this)).act(action, target)
+    const node = action.type !== 'keypress' && action.type !== 'drag' && action.type !== 'moveMouse' && action.ref && target.outline
+      ? findNode(target.outline, action.ref)
+      : undefined
 
-    const targetFields = this.targetPayload(target, delivery)
+    const targetFields = this.targetPayload(target)
     switch (action.type) {
       case 'click': {
+        // A control with a native press is pressed, the reliable path for a
+        // labeled control; a ref without one gets a pointer click at its center.
+        if (node?.capabilities?.press) return semantic()
         let x = action.x
         let y = action.y
-        if ((x == null || y == null) && action.ref && target.outline) {
-          const center = boundsCenter(findNode(target.outline, action.ref)?.bounds)
+        if ((x == null || y == null) && node) {
+          const center = boundsCenter(node.bounds)
           if (center) {
             x = center.x
             y = center.y
@@ -747,7 +739,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         return {
           applied: true,
           unknown: true,
-          description: `click(${x},${y}) via ${this.helperDelivery(delivery)}`,
+          description: `click(${x},${y}) via app_post`,
         }
       }
       case 'typeText': {
@@ -761,7 +753,6 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         if (action.ref) {
           const idx = parseElementIndex(action.ref)
           if (idx != null) {
-            const node = target.outline ? findNode(target.outline, action.ref) : undefined
             try {
               await this.client.call('ax_action', {
                 pid: target.pid,
@@ -789,7 +780,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         return {
           applied: true,
           unknown: true,
-          description: `typeText(${action.text.length} chars) via ${this.helperDelivery(delivery)}`,
+          description: `typeText(${action.text.length} chars) via app_post`,
         }
       }
       case 'keypress': {
@@ -807,7 +798,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         return {
           applied: true,
           unknown: true,
-          description: `keypress(${action.keys.join('+')}) via ${this.helperDelivery(delivery)}`,
+          description: `keypress(${action.keys.join('+')}) via app_post`,
         }
       }
       case 'moveMouse': {
@@ -826,15 +817,21 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         return {
           applied: true,
           unknown: true,
-          description: `moveMouse(${action.x},${action.y}) via ${this.helperDelivery(delivery)}`,
+          description: `moveMouse(${action.x},${action.y}) via app_post`,
         }
       }
       case 'scroll': {
+        // A scroll area with a scroll bar is scrolled by writing the bar's
+        // value: exact paging, no inertia, and a bar with no room left says
+        // so instead of posting a wheel that does nothing. A ref without a
+        // bar (a web view) gets the wheel at its center.
+        const bar = scrollBarSetting(node, action.dx ?? 0, action.dy ?? 0)
+        if (bar) return semantic()
         // Priority: explicit x,y → ref bounds center → outline/window center.
         let x: number | undefined = action.x
         let y: number | undefined = action.y
-        if ((x == null || y == null) && action.ref && target.outline) {
-          const center = boundsCenter(findNode(target.outline, action.ref)?.bounds)
+        if ((x == null || y == null) && node) {
+          const center = boundsCenter(node.bounds)
           if (center) {
             x = center.x
             y = center.y
@@ -876,7 +873,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         return {
           applied: true,
           unknown: true,
-          description: `scroll(dx=${dx},dy=${dy}) at (${Math.round(x)},${Math.round(y)}) via ${this.helperDelivery(delivery)}`,
+          description: `scroll(dx=${dx},dy=${dy}) at (${Math.round(x)},${Math.round(y)}) via app_post`,
         }
       }
       case 'drag': {
@@ -900,15 +897,14 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         return {
           applied: true,
           unknown: true,
-          description: `drag(${a.x},${a.y})→(${b.x},${b.y}) n=${action.path.length} via ${this.helperDelivery(delivery)}`,
+          description: `drag(${a.x},${a.y})→(${b.x},${b.y}) n=${action.path.length} via app_post`,
         }
       }
       case 'press':
       case 'select':
       case 'open':
       case 'setText':
-        // Prefer AX even under app-directed when the agent targets a ref.
-        return new MacosSemanticExecutor(this.client, this.showActionCursor.bind(this), this.coordinatePayload.bind(this)).act(action, target)
+        return semantic()
       default: {
         const _e: never = action
         return { applied: false, description: `unknown action ${JSON.stringify(_e)}` }

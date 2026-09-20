@@ -2,7 +2,6 @@ import type {
   CapturedImage,
   CaptureScope,
   CoordinateSpace,
-  DeliveryMode,
   ObserveMode,
   UiAction,
   UiOutlineNode,
@@ -26,14 +25,14 @@ export interface PlatformLook {
 export interface PlatformActRequest {
   root: UiRootIdentity
   actions: UiAction[]
-  delivery: DeliveryMode
   /** Coordinate space that the state outline bounds were measured in. */
   coordinateSpace?: CoordinateSpace
   /** Focused element ref inherited across steps (service-managed). */
   focusRef?: string
   /**
    * Outline from the state being acted on (for ref → AX index / bounds).
-   * Required for ref-targeted and delivery=semantic actions.
+   * Required for ref-targeted actions; the platform picks the input path
+   * (AX action or posted event) per action from it.
    */
   outline?: UiOutlineNode
 }
@@ -89,13 +88,13 @@ export interface PlatformAdapter {
   /**
    * Optional: bring app/window forward or launch. `activate` makes the app
    * frontmost — off by default, because Computer Use works in the background;
-   * on for the one thing a background app cannot do, its menu bar.
+   * on only for a sequence of steps that needs the app to stay active.
    */
   focusApp?(app: string, options?: { activate?: boolean }): Promise<void>
   launchApp?(app: string): Promise<void>
   /** Optional: running apps (bundle + frontmost) for computer_apps. */
   listApps?(): Promise<Array<{ app: string; bundleId: string; pid: number; frontmost: boolean }>>
-  /** Optional: frontmost process for action-level gate. */
+  /** Optional: frontmost process, for computer_apps and tests. */
   frontmost?(): Promise<{ app: string; bundleId: string; pid: number } | null>
   /**
    * Hide software cursor + menu-bar control chip immediately.

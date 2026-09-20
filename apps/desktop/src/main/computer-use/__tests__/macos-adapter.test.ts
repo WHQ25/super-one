@@ -580,17 +580,29 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     expect(look.coordinateSpace).toMatchObject({ kind: 'display', fullScreen: true })
   })
 
-  it('act semantic rejects coordinate-only click (AX-only)', async () => {
-    const res = await adapter.act({
-      root: root(),
-      actions: [{ type: 'click', x: 10, y: 20 }],
-      delivery: 'semantic',
+  it('routes a click by its ref: a native press when the control has one, else a pointer click at its center', async () => {
+    call.mockImplementation(async (method: string) => {
+      if (method === 'ax_action') return { ok: true, index: 2, action: 'press', beforeName: 'OK', afterName: 'OK' }
+      return { ok: true, unknown: true }
     })
-    expect(res.steps[0]?.applied).toBe(false)
-    expect(res.steps[0]?.description).toMatch(/semantic requires ref/)
+    const outline = {
+      ref: '@e1', role: 'window',
+      children: [
+        { ref: '@e2', role: 'button', name: 'OK', bounds: { x: 100, y: 200, width: 80, height: 40 }, capabilities: { press: true } },
+        { ref: '@e3', role: 'row', name: 'Applications', bounds: { x: 0, y: 300, width: 400, height: 20 }, capabilities: { select: true } },
+      ],
+    }
+    await adapter.act({ root: root(), actions: [{ type: 'click', ref: '@e2' }], outline })
+    expect(call).toHaveBeenCalledWith('ax_action', expect.objectContaining({ index: 2, action: 'press' }))
+    expect(call).not.toHaveBeenCalledWith('click', expect.anything())
+
+    call.mockClear()
+    await adapter.act({ root: root(), actions: [{ type: 'click', ref: '@e3' }], outline })
+    expect(call).not.toHaveBeenCalledWith('ax_action', expect.anything())
+    expect(call).toHaveBeenCalledWith('click', expect.objectContaining({ x: 200, y: 310, delivery: 'app_post', targetPid: 42 }))
   })
 
-  it('act semantic press uses ax_action', async () => {
+  it('act press uses ax_action', async () => {
     call.mockImplementation(async (method: string) => {
       if (method === 'ax_action') {
         return {
@@ -606,7 +618,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     const res = await adapter.act({
       root: root(),
       actions: [{ type: 'press', ref: '@e3' }],
-      delivery: 'semantic',
       outline: {
         ref: '@e1',
         role: 'window',
@@ -621,11 +632,10 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     expect(res.steps[0]?.unknown).toBe(false)
   })
 
-  it('act semantic scroll writes the scroll bar value, one page per delta', async () => {
-    // Wheel events posted to a background app's pid are dropped — twelve of
-    // them left Finder's list where it was — while a scroller's AXValue is
-    // settable and moves the list at once. 560px of a 3277px list in a 610px
-    // viewport is 560 / (3277 − 610) of the scroller's range.
+  it('act scroll on a ref writes the scroll bar value, one page per delta', async () => {
+    // A scroller's AXValue is settable and moves the list at once, with no
+    // inertia and exact paging. 560px of a 3277px list in a 610px viewport
+    // is 560 / (3277 − 610) of the scroller's range.
     call.mockImplementation(async (method: string) => {
       if (method === 'ax_action') return { ok: true, index: 4, action: 'set_value', beforeValue: '0', afterValue: '0.21' }
       return { ok: true }
@@ -637,15 +647,29 @@ describe('MacosPlatformAdapter (mocked client)', () => {
         { ref: '@e4', role: 'scrollBar', value: '0', bounds: { x: 1180, y: 121, width: 14, height: 610 } },
       ] }],
     }
-    const res = await adapter.act({ root: root(), actions: [{ type: 'scroll', ref: '@e2', dy: 560 }], delivery: 'semantic', outline })
+    const res = await adapter.act({ root: root(), actions: [{ type: 'scroll', ref: '@e2', dy: 560 }], outline })
     expect(call).toHaveBeenCalledWith('ax_action', expect.objectContaining({ index: 4, action: 'set_value', value: '0.21' }))
     expect(res.steps[0]?.applied).toBe(true)
-    // At the end of the range there is nothing to write; the step fails closed instead of pretending.
+    // At the end of the range there is nothing to write; the step fails closed
+    // instead of pretending, and no wheel is posted in its place.
     call.mockClear()
     outline.children[0].children[1].value = '1'
-    const end = await adapter.act({ root: root(), actions: [{ type: 'scroll', ref: '@e2', dy: 560 }], delivery: 'semantic', outline })
+    const end = await adapter.act({ root: root(), actions: [{ type: 'scroll', ref: '@e2', dy: 560 }], outline })
     expect(end.steps[0]?.applied).toBe(false)
+    expect(end.steps[0]?.description).toMatch(/no room/)
     expect(call).not.toHaveBeenCalledWith('ax_action', expect.anything())
+    expect(call).not.toHaveBeenCalledWith('scroll', expect.anything())
+  })
+
+  it('act scroll on a ref without a scroll bar posts a wheel at its center', async () => {
+    call.mockResolvedValue({ ok: true, unknown: true })
+    const outline = {
+      ref: '@e1', role: 'window',
+      children: [{ ref: '@e2', role: 'webArea', bounds: { x: 0, y: 0, width: 800, height: 600 } }],
+    }
+    await adapter.act({ root: root(), actions: [{ type: 'scroll', ref: '@e2', dy: 300 }], outline })
+    expect(call).not.toHaveBeenCalledWith('ax_action', expect.anything())
+    expect(call).toHaveBeenCalledWith('scroll', expect.objectContaining({ x: 400, y: 300, dy: 300, delivery: 'app_post', targetPid: 42 }))
   })
 
   it('press on a relabeling control counts the name change as evidence', async () => {
@@ -660,7 +684,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     const res = await adapter.act({
       root: root(),
       actions: [{ type: 'press', ref: '@e3' }],
-      delivery: 'semantic',
       outline: {
         ref: '@e1',
         role: 'window',
@@ -680,7 +703,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     const res = await adapter.act({
       root: root(),
       actions: [{ type: 'press', ref: '@e3' }],
-      delivery: 'semantic',
       outline: {
         ref: '@e1',
         role: 'window',
@@ -705,7 +727,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
         axRootId: 'axr:11',
       }),
       actions: [{ type: 'press', ref: '@e2' }],
-      delivery: 'semantic',
       coordinateSpace: {
         width: 400,
         height: 240,
@@ -748,7 +769,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     const res = await adapter.act({
       root: root(),
       actions: [{ type: 'setText', ref: '@e2', text: 'hello' }],
-      delivery: 'semantic',
       coordinateSpace: { width: 800, height: 500, scale: 2, fullScreen: true },
       outline: {
         ref: '@e1',
@@ -799,7 +819,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     const res = await adapter.act({
       root: root(),
       actions: [{ type: 'setText', ref: '@e2', text: 'hello' }],
-      delivery: 'semantic',
       coordinateSpace: { width: 800, height: 500, scale: 2, fullScreen: true },
       outline: {
         ref: '@e1',
@@ -837,7 +856,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     await adapter.act({
       root: root(),
       actions: [{ type: 'click', x: 100, y: 200 }],
-      delivery: 'app-directed',
     })
 
     expect(call).toHaveBeenCalledWith('overlay_show_target', expect.objectContaining({
@@ -853,7 +871,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     const res = await adapter.act({
       root: root(),
       actions: [{ type: 'click', x: 100, y: 200, button: 'left' }],
-      delivery: 'app-directed',
     })
     // Software cursor is painted before HID so the hop is visible during the click.
     expect(call).toHaveBeenCalledWith('overlay_show_target', expect.objectContaining({
@@ -890,7 +907,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     await adapter.act({
       root: root({ bounds: coordinateSpace.capturedBounds }),
       actions: [{ type: 'click', x: 600, y: 450 }],
-      delivery: 'app-directed',
       coordinateSpace,
     })
 
@@ -935,7 +951,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     await dedicatedAdapter.act({
       root: root({ bounds: { x: 0, y: 20, width: 800, height: 600 } }),
       actions: [{ type: 'click', x: 400, y: 300 }],
-      delivery: 'app-directed',
       coordinateSpace: {
         width: 800,
         height: 600,
@@ -977,7 +992,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     const result = await dedicatedAdapter.act({
       root: root(),
       actions: [{ type: 'click', x: 10, y: 20 }],
-      delivery: 'app-directed',
       coordinateSpace: {
         width: 800,
         height: 600,
@@ -1005,7 +1019,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     const res = await adapter.act({
       root: root(),
       actions: [{ type: 'click', x: 10, y: 20 }],
-      delivery: 'app-directed',
       coordinateSpace: {
         width: 800,
         height: 600,
@@ -1037,7 +1050,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     })
     const res = await adapter.act({
       root: root(),
-      delivery: 'app-directed',
       outline: {
         ref: '@e1',
         role: 'screen',
@@ -1065,26 +1077,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     }))
   })
 
-  it('act physical uses global HID + frontmost gate', async () => {
-    call.mockResolvedValue({ ok: true, unknown: true })
-    await adapter.act({
-      root: root(),
-      actions: [{ type: 'click', x: 1, y: 2 }],
-      delivery: 'physical',
-    })
-    expect(call).toHaveBeenCalledWith('click', {
-      x: 1,
-      y: 2,
-      button: 'left',
-      count: 1,
-      delivery: 'global',
-      requireFrontmostBundleId: 'com.apple.TextEdit',
-      targetBundleId: 'com.apple.TextEdit',
-      targetPid: 42,
-      ...overlayFields,
-    })
-  })
-
   it('act typeText / keypress go through helper with app_post', async () => {
     call.mockResolvedValue({ ok: true, unknown: true })
     await adapter.act({
@@ -1093,7 +1085,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
         { type: 'typeText', text: 'hi' },
         { type: 'keypress', keys: ['Return'] },
       ],
-      delivery: 'app-directed',
     })
     expect(call).toHaveBeenCalledWith('type_text', {
       text: 'hi',
@@ -1116,7 +1107,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     await adapter.act({
       root: root({ bounds: { x: 1512, y: 0, width: 800, height: 600 } }),
       actions: [{ type: 'keypress', keys: ['Return'] }],
-      delivery: 'app-directed',
       coordinateSpace: {
         width: 1200,
         height: 900,
@@ -1140,7 +1130,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     const res = await adapter.act({
       root: root(),
       actions: [{ type: 'scroll', dy: 120 }],
-      delivery: 'app-directed',
       outline: {
         ref: '@e1',
         role: 'screen',
@@ -1166,7 +1155,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     await adapter.act({
       root: root(),
       actions: [{ type: 'scroll', x: 700, y: 380, dy: 200 }],
-      delivery: 'physical',
       outline: {
         ref: '@e1',
         role: 'screen',
@@ -1179,7 +1167,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
         x: 700,
         y: 380,
         dy: 200,
-        delivery: 'global',
+        delivery: 'app_post',
         targetPid: 42,
       }),
     )
@@ -1198,7 +1186,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
           ],
         },
       ],
-      delivery: 'app-directed',
     })
     expect(call).toHaveBeenCalledWith(
       'drag',
@@ -1220,7 +1207,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     await adapter.act({
       root: root(),
       actions: [{ type: 'moveMouse', x: 50, y: 60 }],
-      delivery: 'app-directed',
     })
     expect(call).toHaveBeenCalledWith(
       'move_mouse',

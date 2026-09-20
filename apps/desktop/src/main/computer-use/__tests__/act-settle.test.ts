@@ -30,7 +30,7 @@ describe('act settles an unchanged successor outline', () => {
       }
       return originalLook(...args)
     }
-    const result = await service.act(base.stateId, [{ type: 'press', ref: base.outline.children![1].ref }], { delivery: 'semantic' })
+    const result = await service.act(base.stateId, [{ type: 'press', ref: base.outline.children![1].ref }])
     expect(result.diff.changed.length + result.diff.added.length).toBeGreaterThan(0)
     expect(backend.nowMs).toBeGreaterThanOrEqual(250)
     expect(backend.nowMs).toBeLessThan(600)
@@ -39,7 +39,7 @@ describe('act settles an unchanged successor outline', () => {
   it('gives up after the settle budget when nothing moves', async () => {
     const { backend, service } = fixture()
     const base = await service.observe(undefined, 'semantic')
-    const result = await service.act(base.stateId, [{ type: 'press', ref: base.outline.children![1].ref }], { delivery: 'semantic' })
+    const result = await service.act(base.stateId, [{ type: 'press', ref: base.outline.children![1].ref }])
     expect(result.diff).toMatchObject({ added: [], removed: [], changed: [] })
     expect(backend.nowMs).toBeGreaterThanOrEqual(600)
   })

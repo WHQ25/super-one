@@ -5,18 +5,18 @@ import type { UiOutlineNode } from './types'
 const field: UiOutlineNode = { ref: '@e2', role: 'textField', name: 'Search', appFocused: true, capabilities: { setText: true, typeText: true } }
 
 describe('observed node action plans', () => {
-  it('maps press and replacement to semantic computer_act actions', () => {
-    expect(planNodeAction({ ...field, capabilities: { press: true } }, { kind: 'press' }, 'click')).toEqual({ actions: [{ type: 'press', ref: '@e2' }], delivery: 'semantic' })
-    expect(planNodeAction(field, { kind: 'setText', text: 'cats' }, 'full')).toEqual({ actions: [{ type: 'setText', ref: '@e2', text: 'cats' }], delivery: 'semantic', expect: { kind: 'valueEquals', ref: '@e2', value: 'cats' } })
+  it('maps press and replacement to native computer_act actions', () => {
+    expect(planNodeAction({ ...field, capabilities: { press: true } }, { kind: 'press' }, 'click')).toEqual({ actions: [{ type: 'press', ref: '@e2' }] })
+    expect(planNodeAction(field, { kind: 'setText', text: 'cats' }, 'full')).toEqual({ actions: [{ type: 'setText', ref: '@e2', text: 'cats' }], expect: { kind: 'valueEquals', ref: '@e2', value: 'cats' } })
   })
 
-  it('maps scroll to the semantic scroll bar and focused Return to an app-directed key', () => {
-    // A wheel posted to a background app's pid is dropped; its scroll bar's value is not.
-    expect(planNodeAction({ ...field, capabilities: { scroll: true }, bounds: { x: 0, y: 0, width: 200, height: 100 } }, { kind: 'scroll', dy: 600 }, 'click')).toEqual({ actions: [{ type: 'scroll', ref: '@e2', dy: 600 }], delivery: 'semantic' })
-    expect(planNodeAction(field, { kind: 'enter' }, 'full')).toEqual({ actions: [{ type: 'keypress', keys: ['Return'] }], delivery: 'app-directed' })
+  it('maps scroll to the scroll area ref and focused Return to a key', () => {
+    // The platform writes the area's scroll bar value for a scroll with a ref.
+    expect(planNodeAction({ ...field, capabilities: { scroll: true }, bounds: { x: 0, y: 0, width: 200, height: 100 } }, { kind: 'scroll', dy: 600 }, 'click')).toEqual({ actions: [{ type: 'scroll', ref: '@e2', dy: 600 }] })
+    expect(planNodeAction(field, { kind: 'enter' }, 'full')).toEqual({ actions: [{ type: 'keypress', keys: ['Return'] }] })
   })
 
-  it('does not confuse keyboard typing with semantic replacement', () => {
+  it('does not confuse keyboard typing with exact replacement', () => {
     expect(planNodeAction({ ...field, capabilities: { typeText: true } }, { kind: 'setText', text: 'cats' }, 'full')).toBeUndefined()
   })
 

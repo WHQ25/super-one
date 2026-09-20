@@ -123,7 +123,6 @@ describe('transient root lifecycle', () => {
     const observed = await service.observe(sheet.rootId, 'semantic')
 
     const result = await service.act(observed.stateId, [{ type: 'press', ref: '@e2' }], {
-      delivery: 'semantic',
     })
 
     expect(result.successorRoot).toMatchObject({ kind: 'window', windowId: 101 })
@@ -144,7 +143,6 @@ describe('transient root lifecycle', () => {
     })
 
     await expect(service.act(observed.stateId, [{ type: 'press', ref: '@e2' }], {
-      delivery: 'semantic',
     })).rejects.toThrow('capture failed')
   })
 
@@ -157,7 +155,6 @@ describe('transient root lifecycle', () => {
     const observed = await service.observe(sheet.rootId, 'semantic')
 
     const result = await service.act(observed.stateId, [{ type: 'press', ref: '@e2' }], {
-      delivery: 'semantic',
     })
 
     expect(result.successorRoot).toMatchObject({ kind: 'window', windowId: 101 })
@@ -173,7 +170,6 @@ describe('transient root lifecycle', () => {
     const observed = await service.observe(sheet.rootId, 'semantic')
 
     const result = await service.act(observed.stateId, [{ type: 'press', ref: '@e2' }], {
-      delivery: 'semantic',
     })
 
     expect(result.successorRoot).toMatchObject({ kind: 'window', windowId: 101 })

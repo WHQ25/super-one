@@ -45,6 +45,13 @@ export interface RunDeps<Page extends RunObservation = RunObservation> {
   /** Right-click the element; the observation that follows is the context menu it opened. */
   contextMenu?(node: number, signal?: AbortSignal): Promise<void>
   /**
+   * A fresh visual observation for a pause: the caller answers a question
+   * about a page it has never seen, and a path to a picture of it costs one
+   * capture, not context (research doc §11.4). Best effort — a failed capture
+   * leaves the pause without an image, never without the question.
+   */
+  capture?(signal?: AbortSignal): Promise<PauseCapture | null>
+  /**
    * After input: let the page react before the next observation. `page` is the
    * observation the action was taken on, so an adapter can wait for a change
    * relative to it instead of a fixed delay.
@@ -87,11 +94,38 @@ export interface Answer {
 
 export type RunStatus = 'paused' | 'done' | 'aborted'
 
+/** What the adapter captured for a pause, in the vocabulary of its own snapshot tool. */
+export interface PauseCapture {
+  /** The state the picture belongs to, when the platform has states; it replaces the snapshot's. */
+  stateId?: string
+  image: { path: string; width: number; height: number }
+  coordinateSpace?: Record<string, unknown>
+}
+
+/** The single-action tool's own vocabulary for what a step did: no new words for the caller to learn. */
+export type StepOutcome = 'worked' | 'didnt' | 'unknown'
+
+/**
+ * The run's own account of its progress since the last pause — what the
+ * caller could not otherwise tell apart: a run that is nearly done but whose
+ * completion Jev cannot see, and one that never moved (§11.4). Three runs that
+ * had already reached their goal were aborted for want of this.
+ */
+export interface RunProgress {
+  /** Steps since the previous pause (or the start); reset on resume. */
+  completed: Array<{ label: string; outcome: StepOutcome }>
+  /** Jev's last verdicts before the pause, when it was asked at all. */
+  goal_satisfied?: number
+  still_loading?: number
+  /** Something that happened to the run itself rather than a step, e.g. an answer discarded. */
+  note?: string
+}
+
 export interface RunResult {
   status: RunStatus
   runId: string
   question?: Question
-  since_last: string[]
+  progress: RunProgress
   snapshot: {
     stateId?: string
     target?: Record<string, string>
@@ -99,6 +133,9 @@ export interface RunResult {
     title: string
     elements: Array<{ index: string; role: string; label: string; value?: string; ref?: string }>
     text: string
+    /** A picture of the page at pause time; `relevance` says how much the question depends on it. */
+    image?: PauseCapture['image'] & { relevance: 'required' | 'useful' | 'optional' }
+    coordinateSpace?: Record<string, unknown>
   } | null
   steps: number
   elapsed_ms: number
@@ -124,7 +161,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
   readonly runId = `r${randomUUID().slice(0, 8)}`
   status: RunStatus | 'running' = 'running'
   private readonly history: HistoryEntry[] = []
-  private sinceLast: string[] = []
+  private progress: RunProgress = { completed: [] }
   private steps = 0
   private consecutiveWaits = 0
   private reporter?: (action: JevRunAction) => void
@@ -183,12 +220,14 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     const pending = this.pending
     this.pending = null
     this.status = 'running'
-    this.sinceLast = []
+    this.progress = { completed: [] }
 
     if (answer.choice === 'abort') return this.result('aborted', 'Aborted by the caller')
     if (pending.question.type === 'choice' && !pending.question.options?.some((o) => o.key === answer.choice)) {
       return this.result('aborted', 'Answer did not name an offered option')
     }
+    // Offered on a no-progress pause: the caller, who can read the page, says the goal is reached.
+    if (answer.choice === 'accept' && pending.mode !== 'accept') return this.result('done', 'Accepted by the caller')
     if (pending.mode === 'accept') {
       if (answer.choice === 'accept') return this.result('done', 'Accepted by the caller')
       // "continue" after a budget pause restarts the step budget; after an
@@ -257,7 +296,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       )
     } else {
       this.lastPage = null
-      this.sinceLast.push('Page changed while paused; answer discarded')
+      this.progress.note = 'Page changed while paused; answer discarded'
     }
     return this.loop(signal)
   }
@@ -336,6 +375,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       const space = buildActionSpace({ page, history: this.history })
       const request = buildRequest({ goal: this.opts.goal, page, space, presets: this.opts.presets, last: this.history[this.history.length - 1], history: this.history })
       const response = await this.deps.ask(request, signal)
+      this.recordVerdicts(response)
       const decision = decide({
         answers: response.answers,
         space,
@@ -436,7 +476,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
         return this.pause({
           type: 'choice',
           reason: 'no-progress',
-          options: [...space.elements.filter((el) => !el.password && el.clickable !== false).map((el): QuestionOption => ({ key: el.index, label: `${el.role} ${el.label}` })), { key: 'abort', label: 'Stop; hand control back to you' }],
+          options: [...space.elements.filter((el) => !el.password && el.clickable !== false).map((el): QuestionOption => ({ key: el.index, label: `${el.role} ${el.label}` })), { key: 'accept', label: 'Finish: the goal is reached as the page stands' }, { key: 'abort', label: 'Stop; hand control back to you' }],
           context: { why: 'Three actions in a row changed nothing', page: { url: page.url, title: page.title } },
         }, page, space, 'click')
       }
@@ -529,7 +569,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     const changed = decision.kind === 'switch' ? true : this.deps.changed(page, next)
     entry.changedPage = changed
     if (changed && decision.kind !== 'scroll') this.scrolledSinceChange = false
-    this.sinceLast.push(`${entry.label}${changed === null ? ' (change unknown)' : changed ? '' : ' (no change)'}`)
+    this.progress.completed.push({ label: entry.label, outcome: changed === null ? 'unknown' : changed ? 'worked' : 'didnt' })
     if (answered) {
       // Answered actions never went through decide(); trace them so a run's
       // history is complete for calibration.
@@ -564,20 +604,32 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     this.pending = { question: full, page: observed, space: built, mode, element, presetKey }
     this.lastPage = observed
     this.status = 'paused'
+    // Which pause reasons a picture helps with is a table, not a question for
+    // Jev: it reads text and could not answer it better than the table does.
+    const relevance = question.reason === 'risky' ? 'useful' : 'optional'
+    const capture = observed && this.deps.capture ? await this.deps.capture().catch(() => null) : null
     return {
       status: 'paused',
       runId: this.runId,
       question: full,
-      since_last: this.sinceLast,
-      snapshot: observed && built ? this.snapshot(observed, built) : null,
+      progress: this.progress,
+      snapshot: observed && built ? this.snapshot(observed, built, capture ? { ...capture, relevance } : undefined) : null,
       steps: this.steps,
       elapsed_ms: this.now() - this.startedAt,
     }
   }
 
-  private snapshot(page: Page, space: ActionSpace): RunResult['snapshot'] {
+  private recordVerdicts(response: JevResponse): void {
+    const goal = response.answers.goal_satisfied
+    const loading = response.answers.still_loading
+    if (goal?.type === 'noul') this.progress.goal_satisfied = goal.noul
+    if (loading?.type === 'noul') this.progress.still_loading = loading.noul
+  }
+
+  private snapshot(page: Page, space: ActionSpace, capture?: PauseCapture & { relevance: 'required' | 'useful' | 'optional' }): RunResult['snapshot'] {
     return {
-      ...(page.stateId ? { stateId: page.stateId } : {}),
+      ...(capture?.stateId ? { stateId: capture.stateId } : page.stateId ? { stateId: page.stateId } : {}),
+      ...(capture ? { image: { ...capture.image, relevance: capture.relevance }, ...(capture.coordinateSpace ? { coordinateSpace: capture.coordinateSpace } : {}) } : {}),
       ...(page.target ? { target: page.target } : {}),
       url: page.url,
       title: page.title,
@@ -600,7 +652,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     return {
       status,
       runId: this.runId,
-      since_last: this.sinceLast,
+      progress: this.progress,
       snapshot: page && space ? this.snapshot(page, space) : null,
       steps: this.steps,
       elapsed_ms: this.now() - this.startedAt,

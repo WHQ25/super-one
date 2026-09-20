@@ -116,7 +116,7 @@ describe('FastRun', () => {
     expect(paused.question).toMatchObject({ reason: 'risky', type: 'choice' })
     // The risky step first, then the alternatives, then abort.
     expect(paused.question!.options!.map((o) => o.key)).toEqual(['2', 'open:1', 'submit:1', 'abort'])
-    expect(paused.since_last).toEqual(['Click [1] Issues', 'Type presets.Title → [1] Add a title'])
+    expect(paused.progress.completed).toEqual([{ label: 'Click [1] Issues', outcome: 'worked' }, { label: 'Type presets.Title → [1] Add a title', outcome: 'worked' }])
     expect(acts).toEqual(['click:1', 'type:10:Hello'])
     // The focus guard is released while paused so the user can use the tab.
     expect(guard).toEqual([true, false])
@@ -125,7 +125,7 @@ describe('FastRun', () => {
     expect(done.status).toBe('done')
     expect(done.why).toBe('done_when satisfied')
     expect(acts).toEqual(['click:1', 'type:10:Hello', 'click:11'])
-    expect(done.since_last).toEqual(['Click [2] Create'])
+    expect(done.progress.completed).toEqual([{ label: 'Click [2] Create', outcome: 'worked' }])
     expect(guard).toEqual([true, false, true, false])
   })
 
@@ -152,7 +152,7 @@ describe('FastRun', () => {
     ], { url: FORM.url, text: 'New issue v2' })
     const next = await run2.resume({ questionId: paused2.question!.id, choice: '2' })
     expect(replaced.acts).toEqual([])
-    expect(next.since_last[0]).toBe('Page changed while paused; answer discarded')
+    expect(next.progress.note).toBe('Page changed while paused; answer discarded')
     expect(next.status).toBe('paused')
   })
 
@@ -206,6 +206,16 @@ describe('FastRun', () => {
     expect(await run.resume({ questionId: paused.question!.id, choice: 'continue' })).toMatchObject({ status: 'done' })
   })
 
+  it('finishes as done when the caller accepts a no-progress pause', async () => {
+    const { deps } = harness([HOME], (request) => ({ still_loading: noul(0), goal_satisfied: noul(0.3), next_step_risk: noul(0), action: pick('none_useful', actionsOf(request)), click_target: pick(NONE, clicksOf(request)) }))
+    deps.checkDone = async () => false
+    // HOME scrolls, so the first none_useful scrolls; the second pauses.
+    const run = new FastRun(opts(), deps)
+    const paused = await run.start()
+    expect(paused.question).toMatchObject({ reason: 'no-progress', options: expect.arrayContaining([expect.objectContaining({ key: 'accept' })]) })
+    expect(await run.resume({ questionId: paused.question!.id, choice: 'accept' })).toMatchObject({ status: 'done', why: 'Accepted by the caller' })
+  })
+
   it('pauses with no-progress after three unchanged actions', async () => {
     const { deps } = harness([HOME], (request) => request.questions.click_target
       ? { still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0), action: pick('click', actionsOf(request)), click_target: pick('1', clicksOf(request)) }
@@ -216,7 +226,7 @@ describe('FastRun', () => {
     const paused = await run.start()
     expect(paused.status).toBe('paused')
     expect(paused.question?.reason).toBe('no-progress')
-    expect(paused.since_last[0]).toBe('Click [1] Issues (no change)')
+    expect(paused.progress.completed[0]).toEqual({ label: 'Click [1] Issues', outcome: 'didnt' })
   })
 
   it('offers every element to Jev, never the NONE sentinel as one, and asks the risk question each step', async () => {
@@ -248,7 +258,7 @@ describe('FastRun', () => {
     const result = await new FastRun(opts(), deps).start()
     expect(result).toMatchObject({ status: 'done', why: 'goal_satisfied 0.95' })
     expect(acts).toEqual(['click:11'])
-    expect(result.since_last).toEqual([])
+    expect(result.progress.completed).toEqual([])
   })
 
   it('waits for the page to change when Jev says the needed control is absent, with growing patience, then acts', async () => {
@@ -274,7 +284,7 @@ describe('FastRun', () => {
     expect(result).toMatchObject({ status: 'done', why: 'goal_satisfied 0.95' })
     expect(caps).toEqual([1000, 2000, 4000])
     expect(acts).toEqual([])
-    expect(result.since_last).toEqual([])
+    expect(result.progress.completed).toEqual([])
   })
 
   it('stops waiting after three unchanged waits and falls back to polling observe when the adapter has no event source', async () => {
@@ -290,7 +300,7 @@ describe('FastRun', () => {
     const result = await new FastRun(opts({ maxSteps: 4 }), deps).start()
     // Three waits polled the same page until each cap, then the fourth ask had to act.
     expect(asked).toHaveLength(4)
-    expect(result.since_last).toEqual(['Click [1] Issues (no change)'])
+    expect(result.progress.completed).toEqual([{ label: 'Click [1] Issues', outcome: 'didnt' }])
   })
 
   it('settles after scrolling so an animated wheel scroll is not reported as no change', async () => {
@@ -307,7 +317,7 @@ describe('FastRun', () => {
     // One settle for the scroll itself, one for the completion re-observation.
     expect(settles).toEqual([{ node: -1 }, { node: -1 }])
     // Without the scroll settle this reads 'Scroll down (no change)'.
-    expect(result.since_last).toEqual(['Scroll down'])
+    expect(result.progress.completed).toEqual([{ label: 'Scroll down', outcome: 'worked' }])
   })
 
   it('records how long the settle took, apart from the act that contains it', async () => {
@@ -375,7 +385,7 @@ describe('FastRun', () => {
     expect(offered).toContain('submit:1')
     expect(chosen.acts).toEqual(['enter:10'])
     expect(done.status).toBe('done')
-    expect(done.since_last).toEqual(['Press Enter in [1] Add a title'])
+    expect(done.progress.completed).toEqual([{ label: 'Press Enter in [1] Add a title', outcome: 'worked' }])
 
     const risky = harness([FILLED, CREATED], (request) => ({ still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0.9), action: pick('click', actionsOf(request)), click_target: pick('submit:1', clicksOf(request)) }))
     const run2 = new FastRun(opts({ hasDoneWhen: true }), risky.deps)
@@ -414,7 +424,7 @@ describe('FastRun', () => {
     expect(actionsOf({ questions: { action: { criteria: Object.fromEntries(['append'].map((k) => [k, ''])) } } } as unknown as JevRequest)).toEqual(['append'])
     expect(acts).toEqual(['scrollArea:2:560', 'append:3:\nSecond line'])
     expect(result.status).toBe('done')
-    expect(result.since_last).toEqual(['Scroll down in [2] Text starting at First line (no change)', 'Append presets.Line → [3] First line'])
+    expect(result.progress.completed).toEqual([{ label: 'Scroll down in [2] Text starting at First line', outcome: 'didnt' }, { label: 'Append presets.Line → [3] First line', outcome: 'worked' }])
 
     const browser = harness([HOME], (request) => {
       heads.push(Object.keys(request.questions))
@@ -450,7 +460,7 @@ describe('FastRun', () => {
     const result = await run.resume({ questionId: paused.question!.id, choice: 'escape' })
     expect(acts).toEqual(['escape', 'switch:@r1'])
     expect(result.status).toBe('done')
-    expect(result.since_last).toEqual(['Press Escape (no change)', 'Switch to [2] Document'])
+    expect(result.progress.completed).toEqual([{ label: 'Press Escape', outcome: 'didnt' }, { label: 'Switch to [2] Document', outcome: 'worked' }])
 
     // A right-click is its own step; the menu it opens is the next page.
     const LIST = page([el({ node: 1, role: 'button', label: 'Select Report.pdf', contextMenu: true })], { text: 'Documents' })
@@ -465,7 +475,7 @@ describe('FastRun', () => {
     menu.deps.contextMenu = async (node) => { menu.acts.push(`context_menu:${node}`); menu.next() }
     const opened = await new FastRun(opts({ goal: 'Rename the report', maxSteps: 4 }), menu.deps).start()
     expect(menu.acts).toEqual(['context_menu:1'])
-    expect(opened.since_last).toEqual(['Right-click [1] Select Report.pdf'])
+    expect(opened.progress.completed).toEqual([{ label: 'Right-click [1] Select Report.pdf', outcome: 'worked' }])
     expect(opened.status).toBe('done')
     // A browser page offers neither.
     let offered: string[] = []
@@ -477,5 +487,39 @@ describe('FastRun', () => {
     expect(offered).not.toContain('escape')
     expect(offered).not.toContain('switch')
     expect(offered).not.toContain('context_menu')
+  })
+
+  it('reports progress and a pause-time picture with every pause, and starts the progress afresh on resume', async () => {
+    // Three runs that had already reached their goal were aborted because a
+    // pause said nothing about what the run had done or how Jev read the page.
+    const { deps, acts } = harness([HOME, FORM, FORM], (request) => {
+      const goal = request.state && (request.state as { page: { text: string } }).page.text === 'New issue' ? 0.42 : 0.03
+      return {
+        still_loading: noul(0.08), goal_satisfied: noul(goal), next_step_risk: noul(0.9),
+        action: pick('click', actionsOf(request)), click_target: pick(request.questions.click_target ? clicksOf(request)[0]! : NONE, clicksOf(request)),
+      }
+    })
+    deps.checkDone = async () => false
+    let captures = 0
+    deps.capture = async () => { captures++; return { stateId: 'S9', image: { path: '/tmp/shot.png', width: 800, height: 600 }, coordinateSpace: { width: 800, height: 600 } } }
+    const run = new FastRun(opts({ maxSteps: 4 }), deps)
+    const first = await run.start()
+    // Nothing done yet; a risky step is where a picture helps.
+    expect(first.question?.reason).toBe('risky')
+    expect(first.progress).toEqual({ completed: [], goal_satisfied: 0.03, still_loading: 0.08 })
+    expect(first.snapshot).toMatchObject({ stateId: 'S9', image: { path: '/tmp/shot.png', width: 800, height: 600, relevance: 'useful' }, coordinateSpace: { width: 800, height: 600 } })
+    expect(first.question?.context.why).toContain('action: click 0.90')
+    expect(first.question?.context.why).toContain('next_step_risk 0.90')
+    const second = await run.resume({ questionId: first.question!.id, choice: '1' })
+    expect(second.progress.completed).toEqual([{ label: 'Click [1] Issues', outcome: 'worked' }])
+    expect(second.progress.goal_satisfied).toBe(0.42)
+    expect(captures).toBe(2)
+    // A failed capture leaves the question standing without a picture.
+    deps.capture = async () => { throw new Error('no screen recording') }
+    const third = await run.resume({ questionId: second.question!.id, choice: second.question!.options![0]!.key })
+    expect(third.status).toBe('paused')
+    expect(third.snapshot?.image).toBeUndefined()
+    expect(third.snapshot?.stateId).toBeUndefined()
+    expect(acts).toEqual(['click:1', 'click:11'])
   })
 })

@@ -143,7 +143,7 @@ describe('decide', () => {
     expect(decide(input({ answers }))).toMatchObject({ kind: 'scroll', direction: 'down' })
     const d = decide(input({ answers, scrolledSinceChange: true }))
     expect(d).toMatchObject({ kind: 'pause', mode: 'click', question: { reason: 'no-progress' } })
-    expect((d as { question: { options: Array<{ key: string }> } }).question.options.map((o) => o.key)).toEqual(['1', 'open:2', '3', 'abort'])
+    expect((d as { question: { options: Array<{ key: string }> } }).question.options.map((o) => o.key)).toEqual(['1', 'open:2', '3', 'accept', 'abort'])
   })
 
   it('types a preset matched by field hint, else by Jev, else pauses for a value', () => {
@@ -161,9 +161,34 @@ describe('decide', () => {
     expect(unmatched).toMatchObject({ kind: 'pause', mode: 'type_text', question: { type: 'value' } })
   })
 
+  it('translates the heads into the pause\'s why, never inferring beyond them', () => {
+    const answers = {
+      ...calm,
+      goal_satisfied: noul(0.45),
+      action: pick('none_useful', ACTIONS, 0.64),
+      click_target: pick(NONE, CLICKS, 0.98),
+      type_text_target: pick(NONE, TYPES, 0.67),
+    }
+    const paused = decide(input({ answers, scrolledSinceChange: true }))
+    expect(paused.kind).toBe('pause')
+    const why = String((paused as { question: { context: { why: string } } }).question.context.why)
+    expect(why).toMatch(/^No offered action advances the goal and the page cannot scroll further — action: none_useful 0\.64, then /)
+    expect(why).toContain('click_target: none_of_these 0.98 (best element [')
+    expect(why).toContain('goal_satisfied 0.45; still_loading 0.10; next_step_risk 0.05. Pick an element or take over.')
+    // No preset for the field: the field heads are read out, not guessed.
+    const value = decide(input({ answers: { ...calm, action: pick('type_text', ACTIONS), type_text_target: pick('2', TYPES), field_for_Body: pick(NONE, TYPES) }, presets: [{ key: 'Body', value: 'x' }] }))
+    expect(String((value as { question: { context: { why: string } } }).question.context.why)).toContain('field_for_Body: none_of_these 0.90')
+  })
+
   it('treats an invalid answer as none_useful rather than acting on it', () => {
     const answers = { ...calm, action: { type: 'choice', choice: 'launch_missiles', probabilities: { launch_missiles: 1 }, confidence: 1 } as never }
     expect(decide(input({ answers, scrolledSinceChange: true }))).toMatchObject({ kind: 'pause', question: { reason: 'no-progress' } })
+  })
+
+  it('lets the caller finish a no-progress pause when the page already shows the goal', () => {
+    // Below the idle threshold, so Jev's own completion path does not fire.
+    const paused = decide(input({ answers: { ...calm, goal_satisfied: noul(0.3), action: pick('none_useful', ACTIONS), click_target: pick(NONE, CLICKS) }, scrolledSinceChange: true }))
+    expect((paused as { question: { options: Array<{ key: string }> } }).question.options.slice(-2).map((o) => o.key)).toEqual(['accept', 'abort'])
   })
 
   it('caps the options of a no-progress pause but reports how many were left out', () => {
@@ -171,7 +196,7 @@ describe('decide', () => {
     const big = buildActionSpace({ page: page(many), history: [] })
     const answers = { ...calm, action: pick('none_useful', ACTIONS) }
     const d = decide(input({ answers, space: big, scrolledSinceChange: true })) as { question: { options: Array<{ key: string }>; context: { omitted?: number } } }
-    expect(d.question.options.map((o) => o.key)).toEqual([...many.slice(0, 24).map((_, i) => String(i + 1)), 'abort'])
+    expect(d.question.options.map((o) => o.key)).toEqual([...many.slice(0, 24).map((_, i) => String(i + 1)), 'accept', 'abort'])
     expect(d.question.context.omitted).toBe(16)
   })
 

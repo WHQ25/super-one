@@ -4,6 +4,7 @@ import { FakePlatformBackend } from '../computer-use/platform/fake-backend'
 import { axTreeToOutline } from '../computer-use/platform/ax-outline'
 import { ComputerUseError, type CapabilityTier } from '../computer-use/types'
 import { createComputerAdapter, computerPage, computerObservation } from './computer-page'
+import * as screenshotStore from '../computer-use/screenshot-store'
 import { buildActionSpace, clickVerb } from './action-space'
 import { FastRun, StaleObservation } from './loop'
 import { buildRequest } from './questions'
@@ -68,7 +69,7 @@ describe('computer fast-loop adapter', () => {
     // loop would read "change unknown" for every action it took.
     const run = new FastRun(options, adapter)
     const result = await run.start()
-    expect(result.since_last.join(' ')).not.toContain('change unknown')
+    expect(result.progress.completed.map((step) => step.outcome)).not.toContain('unknown')
   })
 
   it('lets the successor stand when the act itself outlasted the settle budget', async () => {
@@ -690,5 +691,28 @@ describe('computer fast-loop adapter', () => {
     await adapter.click(rename.node)
     expect(act).toHaveBeenLastCalledWith(menu.stateId, [{ type: 'press', ref: rename.ref }], expect.any(Object))
     expect(backend.dismissals).toEqual(['Context', 'Context'])
+  })
+
+  it('captures a fused snapshot for a pause: path only, aligned to a state the caller can act on', async () => {
+    const { service } = fixture()
+    const persist = vi.spyOn(screenshotStore, 'persistComputerUseScreenshot').mockReturnValue({ path: '/zone/shot.jpg', mimeType: 'image/jpeg', width: 400, height: 300 } as never)
+    try {
+      const withSession = createComputerAdapter({ service, ask: vi.fn(), sessionId: 'sess', resolve: async () => (await service.resolveTargetRoot()).rootId })
+      await withSession.resolveTarget()
+      const page = await withSession.observe()
+      const capture = await withSession.capture!()
+      expect(capture).toMatchObject({ stateId: expect.any(String), image: { path: '/zone/shot.jpg', width: 400, height: 300 }, coordinateSpace: expect.objectContaining({ width: expect.any(Number) }) })
+      expect(capture!.stateId).not.toBe(page.stateId)
+      expect(service.getStateStore().get(capture!.stateId!)?.image).toMatchObject({ path: '/zone/shot.jpg', width: 400, height: 300 })
+      expect(persist).toHaveBeenCalledWith(expect.any(String), expect.any(String), expect.any(Object), { sessionId: 'sess' })
+      // The paused page is still fresh: an observation claims no write.
+      expect(await withSession.isFresh(page)).toBe(true)
+      // Without a session there is nowhere to write the picture to.
+      const anonymous = createComputerAdapter({ service, ask: vi.fn(), resolve: async () => (await service.resolveTargetRoot()).rootId })
+      await anonymous.resolveTarget()
+      expect(await anonymous.capture!()).toBeNull()
+    } finally {
+      persist.mockRestore()
+    }
   })
 })

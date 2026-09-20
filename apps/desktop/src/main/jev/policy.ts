@@ -123,6 +123,12 @@ function topK(space: ActionSpace, probabilities: Record<string, number>, k = 5):
 }
 
 const ABORT: QuestionOption = { key: 'abort', label: 'Stop; hand control back to you' }
+/**
+ * A no-progress pause on a page that already shows the goal: Jev's verdict fell
+ * short of the threshold, the caller can see it did not. Without this the only
+ * way to close such a run was `abort`, and three finished runs ended that way.
+ */
+const ACCEPT: QuestionOption = { key: 'accept', label: 'Finish: the goal is reached as the page stands' }
 /** Candidates offered in a no-progress pause; the rest are still visible in the snapshot. */
 const MAX_PAUSE_OPTIONS = 24
 
@@ -132,6 +138,41 @@ function decisionSummary(answers: Record<string, JevAnswer>): Record<string, unk
     out[id] = a.type === 'noul' ? a.noul : { choice: a.choice, confidence: a.confidence, probabilities: a.probabilities }
   }
   return out
+}
+
+/** The target heads, in the order they are read out. */
+const TARGET_HEADS = ['click_target', 'type_text_target', 'append_target', 'scroll_area', 'switch_target', 'context_menu_target'] as const
+
+/**
+ * The heads in one sentence, for a pause's `why`. Jev writes no prose, so the
+ * sentence is a translation of what it answered — each clause traces to one
+ * head's numbers — never an inference about what it meant (research doc
+ * §11.4). The caller reads this before deciding whether to answer, redirect
+ * or take over, and the full tables stay in `decision` beside it.
+ */
+export function describeHeads(answers: Record<string, JevAnswer>, space: ActionSpace): string {
+  const name = (key: string) => {
+    if (key === NONE) return NONE
+    const el = elementByIndex(space, key)
+    return el ? `[${key}] ${el.label}` : key
+  }
+  const ranked = (a: JevAnswer | undefined) => a?.type === 'choice'
+    ? Object.entries(a.probabilities ?? {}).filter(([, p]) => Number.isFinite(p)).sort((x, y) => y[1] - x[1])
+    : []
+  const clauses: string[] = []
+  const action = ranked(answers.action)
+  if (action.length) clauses.push(`action: ${action[0]![0]} ${action[0]![1].toFixed(2)}${action[1] ? `, then ${action[1][0]} ${action[1][1].toFixed(2)}` : ''}`)
+  for (const head of TARGET_HEADS) {
+    const top = ranked(answers[head])
+    if (!top.length) continue
+    const best = top.find(([key]) => key !== NONE)
+    clauses.push(`${head}: ${name(top[0]![0])} ${top[0]![1].toFixed(2)}${top[0]![0] === NONE && best ? ` (best element ${name(best[0])} ${best[1].toFixed(2)})` : ''}`)
+  }
+  for (const head of ['goal_satisfied', 'still_loading', 'next_step_risk'] as const) {
+    const p = readNoul(answers[head])
+    if (p != null) clauses.push(`${head} ${p.toFixed(2)}`)
+  }
+  return clauses.join('; ')
 }
 
 /** Words too generic to identify a field on their own. */
@@ -165,6 +206,7 @@ export function presetByJev(el: SpaceElement, presets: readonly Preset[], answer
 export function decide(input: DecideInput): Decision {
   const { answers, space, presets, doneWhenGiven, consecutiveWaits, page } = input
   const summary = decisionSummary(answers)
+  const heads = describeHeads(answers, space)
   const loading = readNoul(answers.still_loading)
   if (loading != null && loading >= THRESHOLDS.stillLoading && consecutiveWaits < 3) {
     return { kind: 'wait', why: `still_loading ${loading.toFixed(2)}` }
@@ -235,9 +277,9 @@ export function decide(input: DecideInput): Decision {
         options: [...candidates.slice(0, MAX_PAUSE_OPTIONS).flatMap((key) => {
           const el = elementByIndex(space, key)
           return el ? [{ ...option(el), key }] : []
-        }), ABORT],
+        }), ACCEPT, ABORT],
         context: {
-          why: 'No offered action advances the goal; pick an element or take over',
+          why: `No offered action advances the goal and the page cannot scroll further — ${heads}. Pick an element or take over.`,
           ...(candidates.length > MAX_PAUSE_OPTIONS ? { omitted: candidates.length - MAX_PAUSE_OPTIONS, hint: 'More elements exist than are offered; take a snapshot and act directly if the one you need is not listed.' } : {}),
           page,
           decision: summary,
@@ -261,7 +303,7 @@ export function decide(input: DecideInput): Decision {
         ...topK(space, probabilities).filter((o) => o.key !== key),
         ABORT,
       ],
-      context: { why: `Jev rates this step irreversible (${risk.toFixed(2)}); confirm it, choose another target, or take over`, page, decision: summary },
+      context: { why: `Jev rates this step irreversible — ${heads}. Confirm it, choose another target, or take over.`, page, decision: summary },
     },
   })
 
@@ -279,7 +321,7 @@ export function decide(input: DecideInput): Decision {
           type: 'choice',
           reason: 'risky',
           options: [{ key: 'escape', label: 'press Escape', probability: action?.probabilities.escape }, ABORT],
-          context: { why: `Jev rates pressing Escape here irreversible (${risk.toFixed(2)}); confirm it or take over`, page, decision: summary },
+          context: { why: `Jev rates pressing Escape here irreversible — ${heads}. Confirm it or take over.`, page, decision: summary },
         },
       }
     }
@@ -369,7 +411,7 @@ export function decide(input: DecideInput): Decision {
           type: 'choice',
           reason: 'uncertain',
           options: [...topK(space, target.probabilities), ABORT],
-          context: { why: `Low confidence ${kind} target (${p.toFixed(2)})`, page, decision: summary },
+          context: { why: `The ${kind} target is below the write gate (${p.toFixed(2)} < ${THRESHOLDS.write}) — ${heads}. Choose the field or take over.`, page, decision: summary },
         },
       }
     }
@@ -386,7 +428,7 @@ export function decide(input: DecideInput): Decision {
         reason: 'uncertain',
         schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
         context: {
-          why: `Jev wants to ${kind === 'append' ? 'append to' : 'type into'} [${el.index}] ${el.label} but no preset matches`,
+          why: `Jev wants to ${kind === 'append' ? 'append to' : 'type into'} [${el.index}] ${el.label} and no preset matched it${presets.length ? ` (${presets.map((pr) => { const a = validateChoice(answers[`field_for_${pr.key}`], [...space.typeCandidates, NONE]); return `field_for_${pr.key}: ${a ? `${a.choice} ${(a.probabilities[a.choice] ?? 0).toFixed(2)}` : 'not asked'}` }).join(', ')})` : ''} — ${heads}. Supply the text or take over.`,
           target: { index: el.index, role: el.role, label: el.label, value: el.value },
           presets: presets.map((pr) => pr.key),
           page,

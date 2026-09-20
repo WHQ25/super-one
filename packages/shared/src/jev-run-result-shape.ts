@@ -1,7 +1,7 @@
 /**
  * Shape detection for SuperOne `*_run` (Jev fast loop) tool results.
  *
- * A run returns a JSON envelope — status / runId / since_last / snapshot — and
+ * A run returns a JSON envelope — status / runId / progress / snapshot — and
  * the chat UI JSON.parse()s it to learn which run this block belongs to, so it
  * can show the actions the loop took. The envelope embeds the final snapshot's
  * element list, so it routinely exceeds the generic 4000-char ACP tool-result
@@ -26,11 +26,12 @@ export function isJevRunToolName(toolName: string | undefined): boolean {
  * The shape has to be narrow, because matching opts a payload out of the size
  * cap. A `status` string beside an id is common; requiring the run's own
  * vocabulary — one of three terminal statuses, a runId, and the step history
- * the block renders — is what makes it specific to a run.
+ * the block renders (`progress`, or `since_last` from older results) — is what
+ * makes it specific to a run.
  */
 export function looksLikeJevRunResult(obj: Record<string, unknown>): boolean {
   const status = obj.status
   if (status !== 'paused' && status !== 'done' && status !== 'aborted') return false
   if (typeof obj.runId !== 'string') return false
-  return Array.isArray(obj.since_last) || typeof obj.steps === 'number'
+  return Array.isArray(obj.since_last) || (typeof obj.progress === 'object' && obj.progress !== null) || typeof obj.steps === 'number'
 }

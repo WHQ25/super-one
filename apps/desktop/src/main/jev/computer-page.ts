@@ -4,6 +4,7 @@ import { compactOutline, dropOccludedWebAreas } from '../computer-use/outline-co
 import { findNode } from '../computer-use/outline'
 import { ComputerUseError, type ActResult, type ComputerUseState, type Condition, type ObserveResult, type RootKind, type UiOutlineNode } from '../computer-use/types'
 import { planNodeAction, type NodeActionPlan } from '../computer-use/node-action-plan'
+import { persistComputerUseScreenshot } from '../computer-use/screenshot-store'
 import { type RunDeps, RunPaused, StaleObservation } from './loop'
 import { SETTLE_BUDGET_MS, settleByPolling, waitForChangeByPolling, waitReadyByPolling } from './settle'
 import type { RawElement, RunObservation } from './observation'
@@ -327,6 +328,8 @@ export interface ComputerAdapterOptions {
   root?: string
   doneWhen?: Condition
   ask: RunDeps['ask']
+  /** Owner of the screenshots a pause persists; without one they are not written. */
+  sessionId?: string
   /** The existing identity/grant path, called only at a tool-call boundary. */
   resolve(signal?: AbortSignal): Promise<string>
 }
@@ -492,6 +495,23 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
       root = rootId
       successor = undefined
       current = undefined
+    },
+    /**
+     * A fused read of the current root for a pause: the same picture, path and
+     * coordinate space `computer_snapshot` would return, and a state the
+     * caller can act on with coordinates. Nothing here claims a write, so the
+     * paused page stays fresh for the answer.
+     */
+    capture: async (signal) => {
+      if (!options.sessionId) return null
+      const observed = await service.observe(root, 'fused')
+      signal?.throwIfAborted()
+      if (!observed.image?.data) return null
+      const persisted = persistComputerUseScreenshot(observed.image.data, observed.image.mimeType, { width: observed.image.width, height: observed.image.height }, { sessionId: options.sessionId })
+      if (!persisted) return null
+      const image = { path: persisted.path, width: persisted.width, height: persisted.height }
+      service.alignStateVisual(observed.stateId, { ...image, mimeType: persisted.mimeType })
+      return { stateId: observed.stateId, image, coordinateSpace: { ...observed.coordinateSpace } }
     },
     scrollArea: async (id, deltaY, signal) => {
       const page = requirePage()

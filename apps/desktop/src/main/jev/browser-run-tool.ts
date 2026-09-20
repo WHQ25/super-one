@@ -7,7 +7,8 @@
 
 import { z } from 'zod'
 import { readAppSettings } from '../app-settings-service'
-import { browserFocusGuard } from '../browser/browser-automation-bridge'
+import { persistScreenshot } from '../agent/browser-screenshot-store'
+import { browserAutomationCall, browserFocusGuard } from '../browser/browser-automation-bridge'
 import { isCdpEnabled, resolveCdpTarget } from '../browser/browser-cdp'
 import { browserErrorReply, browserTextReply, type BrowserToolReply } from '../mcp/browser-mcp-replies'
 import { type PageObservation, type DoneWhen, checkDoneWhen, clickNode, hasDoneWhen, isFresh, observePage, pressEnterInNode, scrollPage, settleAfter, typeIntoNode, waitForDocumentComplete, waitForPageChange } from './browser-page'
@@ -15,7 +16,7 @@ import { getJevApiKey } from './jev-api-key'
 import { type Answer, FastRun, type RunDeps, type RunResult } from './loop'
 import { type PausedRun, storePausedRun, takePausedRun } from './run-store'
 import { runReporter } from './run-events'
-import { jevClient, reportRun, runInputShape } from './run-tool-common'
+import { jevClient, PAUSE_NEXT_HINT, reportRun, runInputShape } from './run-tool-common'
 
 export const BROWSER_RUN_DESCRIPTION =
   'Experimental (requires the Jev fast loop setting): delegate a multi-step page goal — clicks, typing, scrolling — to a fast model that chooses each step and judges completion itself, so you do not pay a turn per click. '
@@ -67,6 +68,13 @@ function depsFor(sessionId: string, tab: string | undefined, doneWhen?: DoneWhen
     checkDone: () => doneWhen ? checkDoneWhen(target, doneWhen) : Promise.resolve(false),
     changed: (before, after) => JSON.stringify(before.marker) !== JSON.stringify(after.marker),
     focusGuard: (active) => browserFocusGuard(sessionId, active),
+    // The renderer's capture, as browser_screenshot takes it: it is the one
+    // path that un-scales a picture-in-picture webview before reading pixels.
+    capture: async () => {
+      const shot = await browserAutomationCall(sessionId, 'screenshot', { tab }) as { data: string; mimeType: string; width: number; height: number }
+      const path = persistScreenshot(sessionId, shot.data, shot.mimeType)
+      return path ? { image: { path, width: shot.width, height: shot.height }, coordinateSpace: { width: shot.width, height: shot.height } } : null
+    },
   }
 }
 
@@ -76,7 +84,7 @@ function reply(sessionId: string, run: PausedRun, result: RunResult): BrowserToo
     storePausedRun(sessionId, run)
     return browserTextReply({
       ...result,
-      next: 'Answer by calling browser_run again with { runId, answer: { questionId, choice | value } }. You may inspect the page with other browser tools first; pass answer.abort=true to take over.',
+      next: PAUSE_NEXT_HINT('browser'),
     })
   }
   return browserTextReply(result)

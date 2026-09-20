@@ -68,9 +68,18 @@ export function reportRun(sessionId: string, platform: RunPlatform, run: PausedR
   run.setReporter(runReporter(sessionId, run.runId, platform).action)
 }
 
+/**
+ * What a paused result tells the caller to do with it. `progress` and the
+ * pause-time picture are named here because a caller who does not know they
+ * exist reads a pause as "it stopped again" — and aborts a run that has
+ * already reached its goal.
+ */
+export const PAUSE_NEXT_HINT = (platform: RunPlatform): string =>
+  `Read progress first: progress.completed lists the steps since the last pause with the ${platform}_act outcome of each (unknown means no evidence either way, not failure), and progress.goal_satisfied / still_loading are Jev's last verdicts on the current page. snapshot is the page at pause time; snapshot.image.path is a picture of it (image.relevance says how much the question depends on it) and snapshot.stateId can be acted on with ${platform}_act. Then call ${platform}_run with { runId, answer: { questionId, choice | value } }; answer.abort=true hands control back.`
+
 export function finishRun(sessionId: string, platform: RunPlatform, run: PausedRun, result: RunResult): RunResult & { next?: string } {
   runReporter(sessionId, result.runId, platform).outcome(result.status)
   if (result.status !== 'paused') return result
   storePausedRun(sessionId, run, Date.now(), platform)
-  return { ...result, next: `Call ${platform}_run with { runId, answer: { questionId, choice | value } }. You may inspect with other ${platform} tools first; answer.abort=true hands control back.` }
+  return { ...result, next: PAUSE_NEXT_HINT(platform) }
 }

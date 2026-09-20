@@ -69,17 +69,19 @@ describe('device fast-loop adapter', () => {
     const resumed = await run.resume({ questionId: paused.question!.id, choice: '2' })
     expect(backend.observations.length).toBeGreaterThanOrEqual(2)
     expect(backend.performed).toHaveLength(0)
-    expect(resumed.since_last).toContain('Page changed while paused; answer discarded')
+    expect(resumed.progress.note).toBe('Page changed while paused; answer discarded')
   })
 
   it('reuses an answered target only when the re-observed tree is identical', async () => {
-    const { adapter, backend, ask } = fixture([initial, initial, final])
+    // The pause itself reads the screen once more, for the picture it returns.
+    const { adapter, backend, ask } = fixture([initial, initial, initial, final])
     ask.mockImplementation(async (req) => ({ answers: { goal_satisfied: noul(0), still_loading: noul(0), action: pick('none_useful', Object.keys(req.questions.action.criteria!)) }, model: 'test', usage: {}, latencyMs: 1 }))
     const run = new FastRun({ ...opts, hasDoneWhen: true }, adapter)
     const paused = await run.start()
+    expect(paused.snapshot?.image).toMatchObject({ path: expect.any(String), relevance: 'optional' })
     expect((await run.resume({ questionId: paused.question!.id, choice: '2' })).status).toBe('done')
-    expect(backend.observations).toHaveLength(3)
-    expect(backend.addressed[0]).toBe(backend.observations[1])
+    expect(backend.observations).toHaveLength(4)
+    expect(backend.addressed[0]).toBe(backend.observations[2])
   })
 
   it('pauses before Jev on treeUnavailable or an OCR-only screen', async () => {

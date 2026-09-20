@@ -118,6 +118,16 @@ export function createDeviceAdapter(options: DeviceAdapterOptions): RunDeps<Devi
       current = devicePage(await session.observeForRun(signal), options.deviceId)
       return current
     },
+    // A fused device_snapshot for a pause: path, size and the screen the
+    // coordinates are ratios of. It becomes the latest state, which is fine —
+    // a resume re-observes before it acts.
+    capture: async (signal) => {
+      options.assertControl()
+      const reply = await session.snapshot({ mode: 'fused' }, signal)
+      const value = JSON.parse(reply.content[0].text) as { stateId?: string; image?: { path: string; width: number; height: number }; screen?: { width: number; height: number } }
+      if (reply.isError || !value.image?.path) return null
+      return { stateId: value.stateId, image: value.image, ...(value.screen ? { coordinateSpace: value.screen } : {}) }
+    },
     isFresh: async (page) => session.store.latest?.stateId === page.stateId,
     sameTarget: (before, after, element) => before.signature === after.signature
       && after.elements.some((e) => e.node === element.node && e.label === element.label && e.editable === element.editable),

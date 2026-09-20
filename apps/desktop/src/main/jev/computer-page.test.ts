@@ -382,6 +382,9 @@ describe('computer fast-loop adapter', () => {
     const observed = await service.observe((await service.resolveTargetRoot()).rootId, 'semantic')
     const page = computerPage(computerObservation(service.getStateStore().get(observed.stateId)!), service)
     expect(page.text).toBe('Jev sheet benchmark')
+    // A disabled scroller means the content fits; nothing to scroll to.
+    expect(page.scrollRef).toBeDefined()
+    expect(page.canScroll).toEqual({ up: false, down: false })
   })
 
   it('names a nameless pop-up button by what it shows', async () => {

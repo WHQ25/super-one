@@ -78,10 +78,17 @@ function outcomeChanged(result: ActResult | undefined): boolean | null {
   return result.outcome === 'worked' ? true : result.outcome === 'didnt' ? false : null
 }
 
-/** Where a scroller sits in its range, 0…1; a list with no scroller reads as the middle so both directions stay offered. */
-function scrollPosition(bar: UiOutlineNode | undefined): number {
+/**
+ * Where a scroller sits in its range, 0…1; a list with no scroller reads as
+ * the middle so both directions stay offered. A disabled scroller is AppKit
+ * saying the content fits — TextEdit's one-line document offered scroll_down,
+ * and a run that had reached its goal took it instead of finishing.
+ */
+function scrollPosition(bar: UiOutlineNode | undefined): { up: boolean; down: boolean } {
+  if (bar?.enabled === false) return { up: false, down: false }
   const value = Number(bar?.value)
-  return bar && Number.isFinite(value) ? value : 0.5
+  const at = bar && Number.isFinite(value) ? value : 0.5
+  return { up: at > 0, down: at < 1 }
 }
 
 /** The first readable descendant — a Finder row is named by its name cell, not by itself. */
@@ -224,7 +231,7 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
     url: '', title: `${result.root.app} — ${result.root.title}`, text: text.filter(Boolean).join('\n').slice(0, MAX_TEXT),
     elements, omitted: result.nodesOmitted ?? 0, loading: false,
     scroll: { y: 0, height: 0, viewport: 0 },
-    canScroll: { down: !!scrollRef && scrollPosition(scrollBar) < 1, up: !!scrollRef && scrollPosition(scrollBar) > 0 },
+    canScroll: { down: !!scrollRef && scrollPosition(scrollBar).down, up: !!scrollRef && scrollPosition(scrollBar).up },
     stateId: result.stateId, rootId: result.root.rootId, bundleId: result.root.bundleId, refs, clickKinds, scrollRef,
     target: { app: result.root.app, bundleId: result.root.bundleId, root: result.root.rootId },
     signature: JSON.stringify(result.outline),

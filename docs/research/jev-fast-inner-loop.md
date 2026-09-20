@@ -1130,6 +1130,25 @@ B 的范式就是 `presets`：把带参数的动作拆成几个选择题，每�
 
 每步做完用 Finder / TextEdit / Mail 各一个用例跑 trace，看 `action` 头扩到 9 项后的置信度是否还撑得住 §10.1 的"argmax 不设门槛"；撑不住就在 `policy.ts` 给新动词加门槛，而不是回退动作。
 
+### 11.4 第五步：能力交接——Jev 决定动作，主模型填参数，run 执行（2026-09-21 决定）
+
+§11.1 把"参数是坐标/自由文本、目标无 AX 名"划为永远不给 Jev。这条边界改掉：按快慢思考的分工，Jev（快）负责判断**下一步需要什么**，主模型（慢）只负责**填 Jev 填不了的参数**，执行仍归 run。现有的 pause / resume 协议只有三种触发（`risky` 要批准、`uncertain` 要选、`no-progress` 没东西可做），这是第四种：`capability`。
+
+**Jev 侧。** `action` 头再加两个选项：`needs_pointer`（目标需要坐标或路径：拖到某个位置、画布上点、拖滑块）、`needs_text`（需要 presets 里没有的文字）。配一个 `hand_target` 头（它关乎哪个候选，可 `none_of_these`）。两者都是从 goal + 页面文本能判断的事；为此 `pictureOnly` 区域要以 `(picture-only: <名字>)` 进 `text`，否则 Jev 不知道有画布。和其他动词一样不设门槛，过度交接靠 trace 分布看。
+
+**暂停携带的东西**（§8.4 的具体化）。所有暂停——不只 `capability`——都返回一份**暂停时刻的新鲜观察 + 截图**：`snapshot.stateId` 指向一个 fused 观察，`snapshot.image = { path, width, height }`，`snapshot.coordinateSpace` 与 `computer_snapshot` 同义。主模型不再需要额外调用 snapshot / zoom 才能回答。`capability` 暂停另带 `question.context = { verb, target: { index, ref, label, bounds }, why }` 和 `question.schema`：
+
+| mode | schema | run 怎么执行 |
+| --- | --- | --- |
+| `pointer` | `{ action: 'click' \| 'drag' \| 'scroll', x?, y?, path?, dx?, dy? }`，坐标在 `snapshot.coordinateSpace` 里 | `RunDeps.pointer(stateId, action)`：computer 走 `service.act`（stale 检查照常），browser 走 CDP `Input.dispatchMouseEvent`，device 走 tap / swipe |
+| `text` | `{ text, field?: index }` | 文本存为新 preset（key 取自 goal 或 `answer`），用现有 `type` 打进 `field ?? hand_target`；此后 `field_for_<key>` 头自动出现，同一次交接可覆盖后续字段 |
+
+**为什么 run 执行而不是主模型自己 `computer_act`。** 主模型已经拿到截图和坐标空间，把参数塞回 answer 比再发一次 `computer_act` 少一个工具往返；这一步进 run 的 history / trace（`kind: 'handed'`，带参数），`changedPage` 与 settle 照常计算，后续 Jev 判断有据可依；执行路径只有一条（`service.act`），不会出现主模型执行完 run 又重放的重复。
+
+**边界。** `capability` 暂停不替代 `risky`：交接来的动作若被 `next_step_risk` 判为不可逆，仍先暂停要批准（同一次 pause 合并两问）。budget 内每次交接计一步。
+
+**顺序。** 排在 §11.3 四步之后，作为第 5 步；依赖第 1 步的 `RunDeps` 可选方法模式。验证用例：Finder 图标视图里把文件拖到窗口某处（`needs_pointer` + drag）、备忘录新建一条并写正文（`needs_text`）、Preview 在图片上点一个位置（`pictureOnly` 进文本）。
+
 ## 参考
 
 - `~/Developer/Github/jev-ultrafast/jev_ultrafast/{agent.py, browser.py, snapshot.js, model.py, questions.py}`、`docs/performance.md`

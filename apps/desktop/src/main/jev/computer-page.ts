@@ -5,7 +5,7 @@ import { findNode } from '../computer-use/outline'
 import { ComputerUseError, type ActResult, type ComputerUseState, type Condition, type ObserveResult, type UiOutlineNode } from '../computer-use/types'
 import { planNodeAction, type NodeActionPlan } from '../computer-use/node-action-plan'
 import { type RunDeps, RunPaused, StaleObservation } from './loop'
-import { settleByPolling, waitForChangeByPolling, waitReadyByPolling } from './settle'
+import { SETTLE_BUDGET_MS, settleByPolling, waitForChangeByPolling, waitReadyByPolling } from './settle'
 import type { RawElement, RunObservation } from './observation'
 
 export interface ComputerPage extends RunObservation {
@@ -62,6 +62,13 @@ function errorCode(error: unknown): string | undefined {
 
 const MAX_ELEMENTS = 250
 const MAX_TEXT = 6000
+
+/** The action's own verdict, which the adapter's `changed` reads instead of comparing observations. */
+function outcomeChanged(result: ActResult | undefined): boolean | null {
+  if (!result) return null
+  if (result.diff && (result.diff.added.length || result.diff.removed.length || result.diff.changed.length)) return true
+  return result.outcome === 'worked' ? true : result.outcome === 'didnt' ? false : null
+}
 
 /** The first readable descendant — a Finder row is named by its name cell, not by itself. */
 function labelSource(node: UiOutlineNode): UiOutlineNode | undefined {
@@ -179,6 +186,8 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
   let bundleId: string | undefined
   let current: ComputerPage | undefined
   let successor: ComputerPage | undefined
+  /** Wall time of the act that produced `successor`, input and successor read included. */
+  let actMs = 0
   let conditionStateId: string | undefined
   const requirePage = () => {
     if (!current) throw new RunPaused('no-progress', 'Take a new computer snapshot before continuing.')
@@ -231,8 +240,10 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
     const page = requirePage()
     if (!fresh(page)) throw new StaleObservation('The desktop resource changed before input.')
     signal?.throwIfAborted()
+    const started = Date.now()
     try {
       const result = await service.act(page.stateId, plan.actions, { delivery: plan.delivery, signal, expect: plan.expect, timeoutMs: 1200 })
+      actMs = Date.now() - started
       const state = service.getStateStore().get(result.successorStateId)
       if (!state) throw new RunPaused('no-progress', 'The action completed but its successor state is unavailable. Inspect before retrying.')
       if (state.root.bundleId !== bundleId) throw new RunPaused('no-progress', 'The action switched applications. Resolve the new app grant with computer_apps before continuing.')
@@ -314,9 +325,21 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
      * The settled observation replaces the act's successor while keeping its
      * verdict, so `changed` still sees what the action did and the loop's next
      * `observe()` costs nothing.
+     *
+     * Settling assumes a sample is cheap next to its budget, which holds for a
+     * small window (~300ms) and not for a 250-node Finder list (~9s a read).
+     * There the act itself — input plus the successor read — already outlasts
+     * the whole budget: the successor was read after any moment a settle could
+     * have waited for, and one more sample costs another full read while never
+     * confirming stillness, which takes two. So when the act spanned the
+     * budget the successor stands as the settled observation. Measured per
+     * act, so a run that leaves the long list gets its settle back.
      */
     settle: async (page, _opts, signal) => {
       const outcome = successor?.outcome
+      if (outcome && actMs >= SETTLE_BUDGET_MS) {
+        return { changed: outcomeChanged(outcome) === true, fields: ['act-outlasted-budget'], elements: successor!.elements.length }
+      }
       const settled = await settleByPolling(page, observeFresh, signal)
       if (settled.page) successor = outcome ? { ...settled.page, outcome } : settled.page
       return settled.report
@@ -334,12 +357,7 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
       successor = undefined
       return current
     },
-    changed: (_before, after) => {
-      const result = after.outcome
-      if (!result) return null
-      if (result.diff && (result.diff.added.length || result.diff.removed.length || result.diff.changed.length)) return true
-      return result.outcome === 'worked' ? true : result.outcome === 'didnt' ? false : null
-    },
+    changed: (_before, after) => outcomeChanged(after.outcome),
     // Each service call releases its resource lane. The normal turn lifecycle
     // owns visuals and dedicated-display placement, including while paused.
     focusGuard: async () => {},

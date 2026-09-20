@@ -70,6 +70,40 @@ describe('computer fast-loop adapter', () => {
     expect(result.since_last.join(' ')).not.toContain('change unknown')
   })
 
+  it('lets the successor stand when the act itself outlasted the settle budget', async () => {
+    // A 250-node Finder list costs ~9s a read. The act reads the successor
+    // once; a settle then read it again, could never confirm stillness on a
+    // single sample, and reported 'budget' every step — 18s a step for
+    // nothing. Measured per act, so a cheap act settles as before.
+    const { service, adapter } = fixture()
+    await adapter.resolveTarget()
+    const page = await adapter.observe()
+    const next = page.elements.find((element) => element.label === 'Next')!.node
+    const act = service.act.bind(service)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.spyOn(service, 'act').mockImplementation(async (...args) => {
+        const result = await act(...args)
+        vi.setSystemTime(Date.now() + 9000)
+        return result
+      })
+      await adapter.click(next)
+      const observe = vi.spyOn(service, 'observe')
+      expect(await adapter.settle(page, { node: next })).toMatchObject({ changed: true, fields: ['act-outlasted-budget'] })
+      expect(observe).not.toHaveBeenCalled()
+      // The act's verdict still reaches the loop through its successor.
+      expect(adapter.changed(page, await adapter.observe())).toBe(true)
+    } finally {
+      vi.restoreAllMocks()
+      vi.useRealTimers()
+    }
+    const observe = vi.spyOn(service, 'observe')
+    await adapter.click(next)
+    const report = await adapter.settle(await adapter.observe(), { node: next })
+    expect(report?.fields).not.toEqual(['act-outlasted-budget'])
+    expect(observe).toHaveBeenCalled()
+  })
+
   it('names list rows by their text, offers one candidate per intent and sees past the fold budget', async () => {
     // A Finder list: unnamed rows whose name cell and its text field both open the item.
     const row = (name: string, itemKind: 'folder' | 'file') => ({ role: 'row', selectable: true, children: [

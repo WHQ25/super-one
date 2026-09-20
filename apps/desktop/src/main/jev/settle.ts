@@ -26,8 +26,12 @@ const POLL_MS = 150
  * to be slow.
  */
 export const SETTLED_ADAPTER_POLL_MS = 25
-/** Total budget for a post-action settle. The browser allows 2s of near-free sampling. */
-const SETTLE_BUDGET_MS = 1500
+/**
+ * Total budget for a post-action settle. The browser allows 2s of near-free
+ * sampling. Exported so an adapter can tell when the action itself already
+ * outlasted it — see the computer adapter's settle.
+ */
+export const SETTLE_BUDGET_MS = 1500
 /** Unchanged this long after an action means the action changed nothing. */
 const SETTLE_GRACE_MS = 600
 

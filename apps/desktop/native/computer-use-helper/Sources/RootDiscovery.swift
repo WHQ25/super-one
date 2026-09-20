@@ -56,6 +56,9 @@ func listWindows(scanBundleIds: [String] = []) -> [[String: Any]] {
         let width = bounds?["Width"] as? CGFloat ?? 0
         let height = bounds?["Height"] as? CGFloat ?? 0
         let windowId = window[kCGWindowNumber as String] as? Int ?? 0
+        // The sharing indicator on a captured window's title bar is a layer-0
+        // window too; see axRootMinimumSize.
+        guard width >= axRootMinimumSize.width, height >= axRootMinimumSize.height else { continue }
         let bundleId = NSRunningApplication(processIdentifier: pid_t(pid))?.bundleIdentifier ?? ""
         // A CG window row is cheap and always reported; only its AX enrichment is
         // skipped once the budget is gone, so a stalled app costs detail, not rows.

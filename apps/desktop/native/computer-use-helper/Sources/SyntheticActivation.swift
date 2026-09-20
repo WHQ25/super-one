@@ -29,12 +29,9 @@ struct SyntheticActivation {
     let pid: pid_t
     let windowId: CGWindowID
 
-    /// Event fields the window server fills in when it routes a pointer event
-    /// to a window; set by hand they make a posted event land in that window
-    /// even with the pointer elsewhere, and with the location far outside the
-    /// window the click reaches no control at all.
-    private static let windowUnderPointerField = CGEventField(rawValue: 91)!
-    private static let windowThatCanHandleEventField = CGEventField(rawValue: 92)!
+    /// The click that makes the window key is routed to it by window id only
+    /// (see `routeToWindow`); with no location in the window it reaches no
+    /// control at all.
     private static let offscreenPoint = CGPoint(x: -5000, y: -5000)
     private static let keyWindowTimeout: TimeInterval = 0.4
 
@@ -89,8 +86,8 @@ struct SyntheticActivation {
                 windowNumber: Int(windowId), context: nil, eventNumber: 1, clickCount: 1, pressure: pressure
             )?.cgEvent else { continue }
             event.location = point
-            event.setIntegerValueField(Self.windowUnderPointerField, value: Int64(windowId))
-            event.setIntegerValueField(Self.windowThatCanHandleEventField, value: Int64(windowId))
+            event.setIntegerValueField(windowUnderPointerField, value: Int64(windowId))
+            event.setIntegerValueField(windowThatCanHandleEventField, value: Int64(windowId))
             event.postToPid(pid)
             usleep(30_000)
         }

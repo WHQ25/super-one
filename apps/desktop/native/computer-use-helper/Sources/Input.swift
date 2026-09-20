@@ -26,6 +26,60 @@ func parseDelivery(_ raw: String?) -> InputDelivery {
     }
 }
 
+/// The window a posted pointer event is aimed at.
+struct PointerWindow {
+    let id: CGWindowID
+    let bounds: CGRect
+}
+
+/// Event fields the window server fills in when it routes a pointer event to
+/// a window. `windowNumberField` is the one AppKit reads `NSEvent.windowNumber`
+/// from (found by posting the window id in every field in turn); 91 and 92
+/// name the window under the pointer and the one that can handle the event.
+let windowNumberField = CGEventField(rawValue: 51)!
+let windowUnderPointerField = CGEventField(rawValue: 91)!
+let windowThatCanHandleEventField = CGEventField(rawValue: 92)!
+
+/// `CGEventSetWindowLocation`: the window-relative point the window server
+/// records with a routed pointer event, which AppKit serves as
+/// `locationInWindow`. Private, like the field above.
+private typealias SetWindowLocation = @convention(c) (CGEvent, CGPoint) -> Void
+private let setWindowLocation: SetWindowLocation? = {
+    guard let handle = dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", RTLD_NOW),
+          let symbol = dlsym(handle, "CGEventSetWindowLocation") else { return nil }
+    return unsafeBitCast(symbol, to: SetWindowLocation.self)
+}()
+
+/// Aim a posted pointer event at a window the way the window server would.
+///
+/// A HID pointer event reaches an app with its window number and its
+/// location in that window filled in by the window server. A posted event
+/// has neither: it arrives with `windowNumber` 0 and NSApplication drops it —
+/// a click posted to Finder's or TextEdit's pid did nothing, in the
+/// foreground too — and the window-under-pointer fields alone do not change
+/// that. With both set the click lands where a HID click would, and the
+/// app's real front status does not matter, except to a view that refuses
+/// first mouse: Finder's list swallows a click into a window whose app does
+/// not believe it is active, so the caller holds a synthetic activation.
+func routeToWindow(_ event: CGEvent, at point: CGPoint, window: PointerWindow) {
+    event.setIntegerValueField(windowNumberField, value: Int64(window.id))
+    event.setIntegerValueField(windowUnderPointerField, value: Int64(window.id))
+    event.setIntegerValueField(windowThatCanHandleEventField, value: Int64(window.id))
+    setWindowLocation?(event, CGPoint(x: point.x - window.bounds.minX, y: point.y - window.bounds.minY))
+}
+
+/// Post a pointer event; an app-directed one aimed at `window` is routed like
+/// HID input and the app is made to believe it is active for it.
+func postPointer(
+    _ event: CGEvent, at point: CGPoint, delivery: InputDelivery, pid: pid_t?, window: PointerWindow?
+) throws {
+    if delivery == .appPost, let window {
+        routeToWindow(event, at: point, window: window)
+        if let pid { SyntheticActivationLease.hold(pid: pid, windowId: window.id) }
+    }
+    try postEvent(event, delivery: delivery, pid: pid)
+}
+
 func postEvent(_ event: CGEvent, delivery: InputDelivery, pid: pid_t?) throws {
     switch delivery {
     case .appPost:
@@ -48,6 +102,7 @@ func postClick(
     count: Int,
     delivery: InputDelivery,
     targetPid: pid_t?,
+    window: PointerWindow?,
     requireFrontmostBundleId: String?
 ) throws {
     if !axTrusted() {
@@ -82,7 +137,7 @@ func postClick(
         mouseCursorPosition: point,
         mouseButton: .left
     ) {
-        try postEvent(move, delivery: delivery, pid: targetPid)
+        try postPointer(move, at: point, delivery: delivery, pid: targetPid, window: window)
     }
     for clickState in 1...max(1, count) {
         if let down = CGEvent(
@@ -92,7 +147,7 @@ func postClick(
             mouseButton: mouseButton
         ) {
             down.setIntegerValueField(.mouseEventClickState, value: Int64(clickState))
-            try postEvent(down, delivery: delivery, pid: targetPid)
+            try postPointer(down, at: point, delivery: delivery, pid: targetPid, window: window)
         }
         if let up = CGEvent(
             mouseEventSource: nil,
@@ -101,7 +156,7 @@ func postClick(
             mouseButton: mouseButton
         ) {
             up.setIntegerValueField(.mouseEventClickState, value: Int64(clickState))
-            try postEvent(up, delivery: delivery, pid: targetPid)
+            try postPointer(up, at: point, delivery: delivery, pid: targetPid, window: window)
         }
     }
 }
@@ -279,6 +334,7 @@ func postScroll(
     dy: Double,
     delivery: InputDelivery,
     targetPid: pid_t?,
+    window: PointerWindow?,
     requireFrontmostBundleId: String?
 ) throws {
     if !axTrusted() {
@@ -296,7 +352,7 @@ func postScroll(
         mouseCursorPosition: point,
         mouseButton: .left
     ) {
-        try postEvent(move, delivery: delivery, pid: targetPid)
+        try postPointer(move, at: point, delivery: delivery, pid: targetPid, window: window)
     }
 
     func ticks(_ value: Double) -> Int32 {
@@ -332,7 +388,7 @@ func postScroll(
             wheel3: 0
         ) {
             scroll.location = point
-            try postEvent(scroll, delivery: delivery, pid: targetPid)
+            try postPointer(scroll, at: point, delivery: delivery, pid: targetPid, window: window)
         }
         if step % 2 == 0 {
             AgentOverlayController.shared.moveCursor(quartz: point, pulse: false)
@@ -346,6 +402,7 @@ func postDrag(
     path: [CGPoint],
     delivery: InputDelivery,
     targetPid: pid_t?,
+    window: PointerWindow?,
     requireFrontmostBundleId: String?
 ) throws {
     if !axTrusted() {
@@ -372,7 +429,7 @@ func postDrag(
         mouseCursorPosition: start,
         mouseButton: .left
     ) {
-        try postEvent(move, delivery: delivery, pid: targetPid)
+        try postPointer(move, at: start, delivery: delivery, pid: targetPid, window: window)
     }
     Thread.sleep(forTimeInterval: 0.05)
     if let down = CGEvent(
@@ -381,7 +438,7 @@ func postDrag(
         mouseCursorPosition: start,
         mouseButton: .left
     ) {
-        try postEvent(down, delivery: delivery, pid: targetPid)
+        try postPointer(down, at: start, delivery: delivery, pid: targetPid, window: window)
     }
     Thread.sleep(forTimeInterval: 0.04)
 
@@ -394,7 +451,7 @@ func postDrag(
             mouseCursorPosition: point,
             mouseButton: .left
         ) {
-            try postEvent(drag, delivery: delivery, pid: targetPid)
+            try postPointer(drag, at: point, delivery: delivery, pid: targetPid, window: window)
         }
         Thread.sleep(forTimeInterval: stepSleep)
     }
@@ -406,7 +463,7 @@ func postDrag(
         mouseCursorPosition: end,
         mouseButton: .left
     ) {
-        try postEvent(up, delivery: delivery, pid: targetPid)
+        try postPointer(up, at: end, delivery: delivery, pid: targetPid, window: window)
     }
     AgentOverlayController.shared.placeCursorImmediate(quartz: end, pulse: true)
 }

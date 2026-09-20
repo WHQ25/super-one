@@ -160,6 +160,15 @@ final class HostLifecycle {
     }
 }
 
+/// The window an app-directed pointer event is aimed at, from the act's
+/// coordinate metadata; nil for HID delivery, which the window server routes.
+func pointerWindow(_ params: [String: Any], delivery: InputDelivery) -> PointerWindow? {
+    guard delivery == .appPost,
+          let id = AnyCodable.int(params, "coordinateWindowId") ?? AnyCodable.int(params, "windowId"),
+          let geometry = try? liveWindowGeometry(windowId: id) else { return nil }
+    return PointerWindow(id: CGWindowID(id), bounds: geometry.bounds)
+}
+
 func handle(request: HelperRequest) async -> HelperResponse {
     let params = request.params?.mapValues { $0.value } ?? [:]
     do {
@@ -405,6 +414,7 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 count: count,
                 delivery: delivery,
                 targetPid: pid,
+                window: pointerWindow(params, delivery: delivery),
                 requireFrontmostBundleId: front
             )
             return .success(id: request.id, result: [
@@ -480,6 +490,7 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 x: point.x, y: point.y, dx: dx, dy: dy,
                 delivery: delivery,
                 targetPid: pid,
+                window: pointerWindow(params, delivery: delivery),
                 requireFrontmostBundleId: front
             )
             return .success(id: request.id, result: [
@@ -534,6 +545,7 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 path: points,
                 delivery: delivery,
                 targetPid: pid,
+                window: pointerWindow(params, delivery: delivery),
                 requireFrontmostBundleId: front
             )
             return .success(id: request.id, result: [
@@ -563,7 +575,7 @@ func handle(request: HelperRequest) async -> HelperResponse {
             // HID post is best-effort; cursor still shows if pid missing.
             if let move = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left) {
                 do {
-                    try postEvent(move, delivery: delivery, pid: pid)
+                    try postPointer(move, at: point, delivery: delivery, pid: pid, window: pointerWindow(params, delivery: delivery))
                 } catch {
                     // still return ok for visual path
                 }

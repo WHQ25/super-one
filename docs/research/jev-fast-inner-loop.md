@@ -1140,7 +1140,7 @@ B 的范式就是 `presets`：把带参数的动作拆成几个选择题，每�
 
 **暂停携带的东西**（§8.4 的具体化）。所有暂停——不只 `capability`——都返回一份**暂停时刻的新鲜 fused 观察**：`snapshot.stateId` 指向它，`snapshot.image = { path, width, height, relevance }`，`snapshot.coordinateSpace` 与 `computer_snapshot` 同义。图只回 **path**（和 `computer_snapshot` / `computer_act` 一样，`toAgentImage` 落盘、base64 不进工具结果），读不读由主模型决定，所以带图的成本只是一次窗口级抓取，不是上下文。`relevance` 由暂停原因查表得出，不问 Jev：`capability` → `required`，`risky` → `useful`，`uncertain` / `no-progress` / `budget` → `optional`。不给 Jev 一个"要不要截图"的头：它只看文本，判不出比这张表更多的东西，而它判错的代价正好是多一次 snapshot 调用。
 
-`capability` 暂停另带：
+`capability` 暂停另带的 `context` 只放主模型还不知道的东西——goal 是它自己写的、候选全在 `snapshot.elements` 里、presets 是它给的，都不回传；留下的三项都是 Jev 的判断：
 
 ```json
 {
@@ -1148,11 +1148,9 @@ B 的范式就是 `presets`：把带参数的动作拆成几个选择题，每�
   "question": {
     "type": "value",
     "context": {
-      "goal": "…",
-      "target": { "index": "7", "ref": "@e12", "label": "Canvas", "bounds": [x, y, w, h] },
+      "target": { "index": "7", "bounds": [x, y, w, h] },
       "hint": "position",
-      "offered": ["…click_target 前 5 个候选…"],
-      "why": "goal asks for a place on the picture; no offered element is it"
+      "why": "the goal asks for a place on the picture; no offered element is it"
     },
     "schema": { "actions?": "<computer_act actions>", "presets?": "[{ key, value, field? }]" }
   },

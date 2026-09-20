@@ -27,6 +27,14 @@ const EDITABLE_ROLE_LABEL: Record<string, string> = { searchbox: 'Search field',
 const TOGGLE_ROLES = new Set(['checkbox', 'radio', 'switch', 'menuitem', 'togglebutton'])
 
 /**
+ * Controls whose value is a position, not something a person reads: TextEdit's
+ * ruler put twenty tab-stop offsets ("1.2698412698", "2.5396825396"…) at the
+ * top of the page text, ahead of the document, and Jev judged completion on
+ * that.
+ */
+const POSITION_ROLES = new Set(['rulermarker', 'ruler', 'scrollbar', 'splitter', 'valueindicator', 'slider'])
+
+/**
  * Whether a toggle is on, in the shape the shared layer already speaks
  * ('true' / 'false' / 'mixed' — the web reads it off `aria-checked`).
  *
@@ -135,7 +143,7 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
     // in words: "Users\n1" said nothing about an expanded folder, and a row
     // once selected vanished from the candidates without a trace — the run
     // that had just selected Shared read the page as unchanged and scrolled.
-    if (secure) { /* nothing of a secure field is read */ }
+    if (secure || POSITION_ROLES.has(role)) { /* nothing of a secure field is read; a position is not text */ }
     else if (disclosure) text.push(row && node.expanded != null ? `(${row}: ${node.expanded ? 'expanded' : 'collapsed'})` : '')
     else if (select && node.selected && !node.name) text.push(`(${rowName}: selected)`)
     else text.push([node.name, value, node.selected ? '(selected)' : ''].filter(Boolean).join(' '))

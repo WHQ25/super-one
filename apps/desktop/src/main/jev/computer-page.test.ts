@@ -365,6 +365,25 @@ describe('computer fast-loop adapter', () => {
     expect(page.elements.map((e) => [e.label, e.checked])).toEqual([['Wi-Fi', 'true'], ['Bluetooth', 'false'], ['Done', undefined]])
   })
 
+  it('keeps ruler and scroller positions out of the page text', async () => {
+    // TextEdit's ruler put twenty tab-stop offsets ahead of the document text.
+    const backend = new FakePlatformBackend([{ app: 'TextEdit', bundleId: 'com.test.textedit', pid: 7, windows: [{ title: 'Untitled', focused: true,
+      tree: { role: 'window', children: [
+        { role: 'scrollArea', bounds: { x: 0, y: 0, width: 586, height: 420 }, children: [
+          { role: 'textArea', value: 'Jev sheet benchmark' },
+          { role: 'ruler', children: [{ role: 'rulerMarker', value: '1.2698412698' }, { role: 'rulerMarker', value: '2.5396825396' }] },
+          { role: 'scrollBar', value: '0.5', enabled: false, bounds: { x: 570, y: 0, width: 16, height: 420 } },
+        ] },
+      ] },
+    }] }])
+    const service = new ComputerUseService({ adapter: backend })
+    service.policy.setEnabled(true)
+    service.policy.grantSession({ app: 'TextEdit', bundleId: 'com.test.textedit', tier: 'full' })
+    const observed = await service.observe((await service.resolveTargetRoot()).rootId, 'semantic')
+    const page = computerPage(computerObservation(service.getStateStore().get(observed.stateId)!), service)
+    expect(page.text).toBe('Jev sheet benchmark')
+  })
+
   it('names a nameless pop-up button by what it shows', async () => {
     // TextEdit's save sheet: the file-format menu has no title, only its
     // current choice, and was offered as "button " next to a named Cancel.

@@ -6,7 +6,6 @@ final class S09Ambiguous: LabScenario {
     let title = "Ambiguous Controls"
     let summary = "Three Save buttons share name; only accessibilityIdentifier differs."
     let tools = ["computer_act", "computer_query"]
-    let deliveries = ["semantic"]
 
     private var sink: ((String) -> Void)?
     private var result: NSTextField!

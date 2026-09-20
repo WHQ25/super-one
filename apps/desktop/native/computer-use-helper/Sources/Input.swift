@@ -3,29 +3,6 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 
-func requireFrontmost(bundleId: String?) throws {
-    guard let bundleId, !bundleId.isEmpty else { return }
-    let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-    if front != bundleId {
-        throw HelperError(
-            code: "FOREGROUND_MISMATCH",
-            message: "Frontmost is \(front ?? "nil"), required \(bundleId)"
-        )
-    }
-}
-
-enum InputDelivery: String {
-    case appPost = "app_post"
-    case global = "global"
-}
-
-func parseDelivery(_ raw: String?) -> InputDelivery {
-    switch raw {
-    case "global", "physical": return .global
-    default: return .appPost
-    }
-}
-
 /// The window a posted pointer event is aimed at.
 struct PointerWindow {
     let id: CGWindowID
@@ -68,32 +45,22 @@ func routeToWindow(_ event: CGEvent, at point: CGPoint, window: PointerWindow) {
     setWindowLocation?(event, CGPoint(x: point.x - window.bounds.minX, y: point.y - window.bounds.minY))
 }
 
-/// Post a pointer event; an app-directed one aimed at `window` is routed like
-/// HID input and the app is made to believe it is active for it.
-func postPointer(
-    _ event: CGEvent, at point: CGPoint, delivery: InputDelivery, pid: pid_t?, window: PointerWindow?
-) throws {
-    if delivery == .appPost, let window {
+/// Post a pointer event to the app; one aimed at `window` is routed like HID
+/// input and the app is made to believe it is active for it.
+func postPointer(_ event: CGEvent, at point: CGPoint, pid: pid_t, window: PointerWindow?) {
+    if let window {
         routeToWindow(event, at: point, window: window)
-        if let pid { SyntheticActivationLease.hold(pid: pid, windowId: window.id) }
+        SyntheticActivationLease.hold(pid: pid, windowId: window.id)
     }
-    try postEvent(event, delivery: delivery, pid: pid)
+    postEvent(event, pid: pid)
 }
 
-func postEvent(_ event: CGEvent, delivery: InputDelivery, pid: pid_t?) throws {
-    switch delivery {
-    case .appPost:
-        guard let pid else {
-            throw HelperError(
-                code: "INVALID",
-                message: "app_post delivery requires targetPid (or resolvable bundleId)"
-            )
-        }
-        FocusStealGuard.noteDriven(pid: pid)
-        event.postToPid(pid)
-    case .global:
-        event.post(tap: .cghidEventTap)
-    }
+/// Every event the helper sends goes to a pid. Nothing is posted to the HID
+/// tap: that would need the app frontmost and take the user's keyboard and
+/// pointer, which background Computer Use never does.
+func postEvent(_ event: CGEvent, pid: pid_t) {
+    FocusStealGuard.noteDriven(pid: pid)
+    event.postToPid(pid)
 }
 
 func postClick(
@@ -101,16 +68,11 @@ func postClick(
     y: Double,
     button: String,
     count: Int,
-    delivery: InputDelivery,
-    targetPid: pid_t?,
-    window: PointerWindow?,
-    requireFrontmostBundleId: String?
+    targetPid: pid_t,
+    window: PointerWindow?
 ) throws {
     if !axTrusted() {
         throw HelperError(code: "AX_MISSING", message: "Accessibility permission missing")
-    }
-    if delivery == .global {
-        try requireFrontmost(bundleId: requireFrontmostBundleId)
     }
 
     let mouseButton: CGMouseButton
@@ -138,7 +100,7 @@ func postClick(
         mouseCursorPosition: point,
         mouseButton: .left
     ) {
-        try postPointer(move, at: point, delivery: delivery, pid: targetPid, window: window)
+        postPointer(move, at: point, pid: targetPid, window: window)
     }
     for clickState in 1...max(1, count) {
         if let down = CGEvent(
@@ -148,7 +110,7 @@ func postClick(
             mouseButton: mouseButton
         ) {
             down.setIntegerValueField(.mouseEventClickState, value: Int64(clickState))
-            try postPointer(down, at: point, delivery: delivery, pid: targetPid, window: window)
+            postPointer(down, at: point, pid: targetPid, window: window)
         }
         if let up = CGEvent(
             mouseEventSource: nil,
@@ -157,36 +119,28 @@ func postClick(
             mouseButton: mouseButton
         ) {
             up.setIntegerValueField(.mouseEventClickState, value: Int64(clickState))
-            try postPointer(up, at: point, delivery: delivery, pid: targetPid, window: window)
+            postPointer(up, at: point, pid: targetPid, window: window)
         }
     }
 }
 
-func typeText(
-    _ text: String,
-    delivery: InputDelivery,
-    targetPid: pid_t?,
-    requireFrontmostBundleId: String?
-) throws {
+func typeText(_ text: String, targetPid: pid_t) throws {
     if !axTrusted() {
         throw HelperError(code: "AX_MISSING", message: "Accessibility permission missing")
-    }
-    if delivery == .global {
-        try requireFrontmost(bundleId: requireFrontmostBundleId)
     }
     // No Escape ahead of the text: it is the key equivalent of Cancel, and
     // typing into a save sheet dismissed the sheet and put the text in the
     // document behind it.
-    let pid = targetPid.map(keyboardTargetPid)
+    let pid = keyboardTargetPid(for: targetPid)
     for cluster in text {
         var utf16 = Array(String(cluster).utf16)
         if let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true) {
             down.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: &utf16)
-            try postEvent(down, delivery: delivery, pid: pid)
+            postEvent(down, pid: pid)
         }
         if let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) {
             up.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: &utf16)
-            try postEvent(up, delivery: delivery, pid: pid)
+            postEvent(up, pid: pid)
         }
     }
 }
@@ -266,18 +220,9 @@ private let keyCodes: [String: CGKeyCode] = [
     "minus": 0x1B, "equal": 0x18, "comma": 0x2B, "period": 0x2F, "slash": 0x2C,
 ]
 
-func keypress(
-    _ key: String,
-    delivery: InputDelivery,
-    targetPid: pid_t?,
-    windowId: CGWindowID?,
-    requireFrontmostBundleId: String?
-) throws {
+func keypress(_ key: String, targetPid: pid_t, windowId: CGWindowID?) throws {
     if !axTrusted() {
         throw HelperError(code: "AX_MISSING", message: "Accessibility permission missing")
-    }
-    if delivery == .global {
-        try requireFrontmost(bundleId: requireFrontmostBundleId)
     }
 
     let parts = key.split(separator: "+").map(String.init)
@@ -298,19 +243,19 @@ func keypress(
     // trace, whatever the transport. Plain keys reach the first responder
     // regardless. So for a chord the app is made to believe it is active for
     // the duration — see SyntheticActivation.
-    if delivery == .appPost, flags.contains(.maskCommand), let targetPid {
+    if flags.contains(.maskCommand) {
         SyntheticActivationLease.hold(pid: targetPid, windowId: windowId)
     }
-    let pid = targetPid.map(keyboardTargetPid)
+    let pid = keyboardTargetPid(for: targetPid)
 
     if let code = keyCodes[mainKey.lowercased()] {
         if let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true) {
             down.flags = flags
-            try postEvent(down, delivery: delivery, pid: pid)
+            postEvent(down, pid: pid)
         }
         if let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false) {
             up.flags = flags
-            try postEvent(up, delivery: delivery, pid: pid)
+            postEvent(up, pid: pid)
         }
         return
     }
@@ -319,12 +264,12 @@ func keypress(
     if let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true) {
         down.flags = flags
         down.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: &utf16)
-        try postEvent(down, delivery: delivery, pid: pid)
+        postEvent(down, pid: pid)
     }
     if let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) {
         up.flags = flags
         up.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: &utf16)
-        try postEvent(up, delivery: delivery, pid: pid)
+        postEvent(up, pid: pid)
     }
 }
 
@@ -333,16 +278,11 @@ func postScroll(
     y: Double,
     dx: Double,
     dy: Double,
-    delivery: InputDelivery,
-    targetPid: pid_t?,
-    window: PointerWindow?,
-    requireFrontmostBundleId: String?
+    targetPid: pid_t,
+    window: PointerWindow?
 ) throws {
     if !axTrusted() {
         throw HelperError(code: "AX_MISSING", message: "Accessibility permission missing")
-    }
-    if delivery == .global {
-        try requireFrontmost(bundleId: requireFrontmostBundleId)
     }
 
     let point = CGPoint(x: x, y: y)
@@ -353,7 +293,7 @@ func postScroll(
         mouseCursorPosition: point,
         mouseButton: .left
     ) {
-        try postPointer(move, at: point, delivery: delivery, pid: targetPid, window: window)
+        postPointer(move, at: point, pid: targetPid, window: window)
     }
 
     func ticks(_ value: Double) -> Int32 {
@@ -389,7 +329,7 @@ func postScroll(
             wheel3: 0
         ) {
             scroll.location = point
-            try postPointer(scroll, at: point, delivery: delivery, pid: targetPid, window: window)
+            postPointer(scroll, at: point, pid: targetPid, window: window)
         }
         if step % 2 == 0 {
             AgentOverlayController.shared.moveCursor(quartz: point, pulse: false)
@@ -401,16 +341,11 @@ func postScroll(
 
 func postDrag(
     path: [CGPoint],
-    delivery: InputDelivery,
-    targetPid: pid_t?,
-    window: PointerWindow?,
-    requireFrontmostBundleId: String?
+    targetPid: pid_t,
+    window: PointerWindow?
 ) throws {
     if !axTrusted() {
         throw HelperError(code: "AX_MISSING", message: "Accessibility permission missing")
-    }
-    if delivery == .global {
-        try requireFrontmost(bundleId: requireFrontmostBundleId)
     }
     guard path.count >= 2 else {
         throw HelperError(code: "INVALID", message: "drag path needs at least 2 points")
@@ -430,7 +365,7 @@ func postDrag(
         mouseCursorPosition: start,
         mouseButton: .left
     ) {
-        try postPointer(move, at: start, delivery: delivery, pid: targetPid, window: window)
+        postPointer(move, at: start, pid: targetPid, window: window)
     }
     Thread.sleep(forTimeInterval: 0.05)
     if let down = CGEvent(
@@ -439,7 +374,7 @@ func postDrag(
         mouseCursorPosition: start,
         mouseButton: .left
     ) {
-        try postPointer(down, at: start, delivery: delivery, pid: targetPid, window: window)
+        postPointer(down, at: start, pid: targetPid, window: window)
     }
     Thread.sleep(forTimeInterval: 0.04)
 
@@ -452,7 +387,7 @@ func postDrag(
             mouseCursorPosition: point,
             mouseButton: .left
         ) {
-            try postPointer(drag, at: point, delivery: delivery, pid: targetPid, window: window)
+            postPointer(drag, at: point, pid: targetPid, window: window)
         }
         Thread.sleep(forTimeInterval: stepSleep)
     }
@@ -464,7 +399,7 @@ func postDrag(
         mouseCursorPosition: end,
         mouseButton: .left
     ) {
-        try postPointer(up, at: end, delivery: delivery, pid: targetPid, window: window)
+        postPointer(up, at: end, pid: targetPid, window: window)
     }
     AgentOverlayController.shared.placeCursorImmediate(quartz: end, pulse: true)
 }

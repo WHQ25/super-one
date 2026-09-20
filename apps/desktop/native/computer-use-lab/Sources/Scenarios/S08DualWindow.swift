@@ -6,7 +6,6 @@ final class S08DualWindow: LabScenario {
     let title = "Dual Window"
     let summary = "Second window shares title; distinguish via windowId / content."
     let tools = ["computer_apps", "computer_snapshot", "computer_act"]
-    let deliveries = ["semantic", "app-directed"]
 
     private var sink: ((String) -> Void)?
     private var twin: NSWindow?

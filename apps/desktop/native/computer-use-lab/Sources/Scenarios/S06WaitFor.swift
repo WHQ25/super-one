@@ -6,7 +6,6 @@ final class S06WaitFor: LabScenario {
     let title = "Wait For"
     let summary = "Start transitions Loading → Ready after ~0.6s for wait_for."
     let tools = ["computer_wait_for", "computer_act"]
-    let deliveries = ["semantic"]
 
     private var sink: ((String) -> Void)?
     private var statusLabel: NSTextField!

@@ -599,7 +599,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     call.mockClear()
     await adapter.act({ root: root(), actions: [{ type: 'click', ref: '@e3' }], outline })
     expect(call).not.toHaveBeenCalledWith('ax_action', expect.anything())
-    expect(call).toHaveBeenCalledWith('click', expect.objectContaining({ x: 200, y: 310, delivery: 'app_post', targetPid: 42 }))
+    expect(call).toHaveBeenCalledWith('click', expect.objectContaining({ x: 200, y: 310, targetPid: 42 }))
   })
 
   it('act press uses ax_action', async () => {
@@ -669,7 +669,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     }
     await adapter.act({ root: root(), actions: [{ type: 'scroll', ref: '@e2', dy: 300 }], outline })
     expect(call).not.toHaveBeenCalledWith('ax_action', expect.anything())
-    expect(call).toHaveBeenCalledWith('scroll', expect.objectContaining({ x: 400, y: 300, dy: 300, delivery: 'app_post', targetPid: 42 }))
+    expect(call).toHaveBeenCalledWith('scroll', expect.objectContaining({ x: 400, y: 300, dy: 300, targetPid: 42 }))
   })
 
   it('press on a relabeling control counts the name change as evidence', async () => {
@@ -866,7 +866,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     }))
   })
 
-  it('act click defaults path uses app_post with target pid (background)', async () => {
+  it('act click posts to the target pid (background)', async () => {
     call.mockResolvedValue({ ok: true, unknown: true })
     const res = await adapter.act({
       root: root(),
@@ -882,14 +882,13 @@ describe('MacosPlatformAdapter (mocked client)', () => {
       y: 200,
       button: 'left',
       count: 1,
-      delivery: 'app_post',
       targetBundleId: 'com.apple.TextEdit',
       targetPid: 42,
       ...overlayFields,
     })
     expect(res.steps[0]?.applied).toBe(true)
     expect(res.steps[0]?.unknown).toBe(true)
-    expect(res.steps[0]?.description).toContain('app_post')
+    expect(res.steps[0]?.description).toContain('posted to pid')
   })
 
   it('passes window-local coordinates and capture geometry to helper input', async () => {
@@ -1077,7 +1076,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     }))
   })
 
-  it('act typeText / keypress go through helper with app_post', async () => {
+  it('act typeText / keypress go through the helper to the target pid', async () => {
     call.mockResolvedValue({ ok: true, unknown: true })
     await adapter.act({
       root: root(),
@@ -1088,14 +1087,12 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     })
     expect(call).toHaveBeenCalledWith('type_text', {
       text: 'hi',
-      delivery: 'app_post',
       targetBundleId: 'com.apple.TextEdit',
       targetPid: 42,
       ...overlayFields,
     })
     expect(call).toHaveBeenCalledWith('keypress', {
       key: 'Return',
-      delivery: 'app_post',
       targetBundleId: 'com.apple.TextEdit',
       targetPid: 42,
       ...overlayFields,
@@ -1143,7 +1140,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
         y: 300,
         dx: 0,
         dy: 120,
-        delivery: 'app_post',
         targetPid: 42,
       }),
     )
@@ -1167,7 +1163,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
         x: 700,
         y: 380,
         dy: 200,
-        delivery: 'app_post',
         targetPid: 42,
       }),
     )
@@ -1194,7 +1189,6 @@ describe('MacosPlatformAdapter (mocked client)', () => {
           { x: 10, y: 20 },
           { x: 100, y: 200 },
         ],
-        delivery: 'app_post',
         targetPid: 42,
       }),
     )
@@ -1210,7 +1204,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     })
     expect(call).toHaveBeenCalledWith(
       'move_mouse',
-      expect.objectContaining({ x: 50, y: 60, delivery: 'app_post' }),
+      expect.objectContaining({ x: 50, y: 60, targetPid: 42 }),
     )
   })
 

@@ -6,7 +6,6 @@ final class S10StaleRef: LabScenario {
     let title = "Stale Ref Recovery"
     let summary = "Mutate tree so DFS index of Target shifts; recovery must re-bind."
     let tools = ["computer_snapshot", "computer_act"]
-    let deliveries = ["semantic"]
 
     private var sink: ((String) -> Void)?
     private var hostStack: NSStackView!

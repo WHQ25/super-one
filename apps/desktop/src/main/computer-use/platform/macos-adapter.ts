@@ -669,7 +669,6 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     coordinateSpace?: CoordinateSpace
   }): Record<string, unknown> {
     return {
-      delivery: 'app_post',
       targetBundleId: target.bundleId,
       targetPid: target.pid,
       ...this.coordinatePayload(target.coordinateSpace),
@@ -739,7 +738,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         return {
           applied: true,
           unknown: true,
-          description: `click(${x},${y}) via app_post`,
+          description: `click(${x},${y}) posted to pid`,
         }
       }
       case 'typeText': {
@@ -780,7 +779,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         return {
           applied: true,
           unknown: true,
-          description: `typeText(${action.text.length} chars) via app_post`,
+          description: `typeText(${action.text.length} chars) posted to pid`,
         }
       }
       case 'keypress': {
@@ -798,7 +797,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         return {
           applied: true,
           unknown: true,
-          description: `keypress(${action.keys.join('+')}) via app_post`,
+          description: `keypress(${action.keys.join('+')}) posted to pid`,
         }
       }
       case 'moveMouse': {
@@ -817,7 +816,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         return {
           applied: true,
           unknown: true,
-          description: `moveMouse(${action.x},${action.y}) via app_post`,
+          description: `moveMouse(${action.x},${action.y}) posted to pid`,
         }
       }
       case 'scroll': {
@@ -873,7 +872,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         return {
           applied: true,
           unknown: true,
-          description: `scroll(dx=${dx},dy=${dy}) at (${Math.round(x)},${Math.round(y)}) via app_post`,
+          description: `scroll(dx=${dx},dy=${dy}) at (${Math.round(x)},${Math.round(y)}) posted to pid`,
         }
       }
       case 'drag': {
@@ -897,7 +896,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
         return {
           applied: true,
           unknown: true,
-          description: `drag(${a.x},${a.y})→(${b.x},${b.y}) n=${action.path.length} via app_post`,
+          description: `drag(${a.x},${a.y})→(${b.x},${b.y}) n=${action.path.length} posted to pid`,
         }
       }
       case 'press':

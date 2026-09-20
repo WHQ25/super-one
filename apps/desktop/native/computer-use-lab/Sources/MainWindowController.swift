@@ -188,8 +188,7 @@ final class MainWindowController: NSWindowController, NSTableViewDataSource, NST
         let scenario = scenarios[index]
         current = scenario
         detailField.stringValue = scenario.summary
-        toolsField.stringValue =
-            "tools: \(scenario.tools.joined(separator: ", "))  ·  delivery: \(scenario.deliveries.joined(separator: ", "))"
+        toolsField.stringValue = "tools: \(scenario.tools.joined(separator: ", "))"
 
         stageContent?.removeFromSuperview()
         let content = scenario.makeStage { [weak self] text in

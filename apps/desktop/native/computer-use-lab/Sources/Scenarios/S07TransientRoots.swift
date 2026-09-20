@@ -6,7 +6,6 @@ final class S07TransientRoots: LabScenario {
     let title = "Modal / Sheet / Menu"
     let summary = "AppKit sheet, menu, and popover as transient UI roots."
     let tools = ["computer_apps", "computer_snapshot", "computer_act"]
-    let deliveries = ["semantic", "app-directed"]
 
     private var sink: ((String) -> Void)?
     private weak var parentWindow: NSWindow?

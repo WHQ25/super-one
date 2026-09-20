@@ -6,7 +6,6 @@ final class S03Press: LabScenario {
     let title = "Press / Navigate"
     let summary = "AX press on labeled controls; history-style nav without label change."
     let tools = ["computer_act"]
-    let deliveries = ["semantic"]
 
     private var sink: ((String) -> Void)?
     private var page: NSTextField!
@@ -34,7 +33,7 @@ final class S03Press: LabScenario {
             LabUI.card("Actions", body: LabUI.hstack([toggle, history, home], spacing: 10)),
             LabUI.card("Content", body: LabUI.vstack([page, detail], spacing: 8)),
             LabUI.label(
-                "Prefer delivery=semantic press on @refs. Expect outcome=worked when History rewrites the outline even though 历史 label is unchanged.",
+                "Press @refs. Expect outcome=worked when History rewrites the outline even though 历史 label is unchanged.",
                 size: 12
             ),
         ], spacing: 14)

@@ -160,13 +160,24 @@ final class HostLifecycle {
     }
 }
 
-/// The window an app-directed pointer event is aimed at, from the act's
-/// coordinate metadata; nil for HID delivery, which the window server routes.
-func pointerWindow(_ params: [String: Any], delivery: InputDelivery) -> PointerWindow? {
-    guard delivery == .appPost,
-          let id = AnyCodable.int(params, "coordinateWindowId") ?? AnyCodable.int(params, "windowId"),
+/// The window a posted pointer event is aimed at, from the act's coordinate
+/// metadata; nil when the act names no window.
+func pointerWindow(_ params: [String: Any]) -> PointerWindow? {
+    guard let id = AnyCodable.int(params, "coordinateWindowId") ?? AnyCodable.int(params, "windowId"),
           let geometry = try? liveWindowGeometry(windowId: id) else { return nil }
     return PointerWindow(id: CGWindowID(id), bounds: geometry.bounds)
+}
+
+/// The app an input request drives. Every event is posted to a pid, so a
+/// request that names no running app is refused before anything is sent.
+func inputTargetPid(_ params: [String: Any]) throws -> pid_t {
+    guard let pid = resolvePid(
+        bundleId: AnyCodable.string(params, "targetBundleId"),
+        pid: AnyCodable.int(params, "targetPid")
+    ) else {
+        throw HelperError(code: "INVALID", message: "input requires targetPid (or a running targetBundleId)")
+    }
+    return pid
 }
 
 func handle(request: HelperRequest) async -> HelperResponse {
@@ -406,12 +417,7 @@ func handle(request: HelperRequest) async -> HelperResponse {
             }
             let button = AnyCodable.string(params, "button") ?? "left"
             let count = AnyCodable.int(params, "count") ?? 1
-            let delivery = parseDelivery(AnyCodable.string(params, "delivery"))
-            let front = AnyCodable.string(params, "requireFrontmostBundleId")
-            let pid = resolvePid(
-                bundleId: AnyCodable.string(params, "targetBundleId") ?? front,
-                pid: AnyCodable.int(params, "targetPid")
-            )
+            let pid = try inputTargetPid(params)
             let point = try resolveCoordinatePoint(params, x: x, y: y)
             // Paint software cursor BEFORE HID so spring hop is visible during the click.
             // Host owns visibility duration — do not auto-hide after this action.
@@ -421,64 +427,33 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 y: point.y,
                 button: button,
                 count: count,
-                delivery: delivery,
                 targetPid: pid,
-                window: pointerWindow(params, delivery: delivery),
-                requireFrontmostBundleId: front
+                window: pointerWindow(params)
             )
-            return .success(id: request.id, result: [
-                "ok": true,
-                "unknown": true,
-                "delivery": delivery.rawValue,
-            ])
+            return .success(id: request.id, result: ["ok": true, "unknown": true])
         case "type_text":
             guard let text = AnyCodable.string(params, "text") else {
                 throw HelperError(code: "INVALID", message: "text required")
             }
-            let delivery = parseDelivery(AnyCodable.string(params, "delivery"))
-            let front = AnyCodable.string(params, "requireFrontmostBundleId")
-            let pid = resolvePid(
-                bundleId: AnyCodable.string(params, "targetBundleId") ?? front,
-                pid: AnyCodable.int(params, "targetPid")
-            )
+            let pid = try inputTargetPid(params)
             _ = try validateCoordinateGeometry(params)
             // Menu-bar chip (and cursor if host already placed one via overlay_show_target).
             maybeShowOverlayFromParams(params, cursor: nil, pulseCursor: false, pulseRing: true)
-            try typeText(
-                text,
-                delivery: delivery,
-                targetPid: pid,
-                requireFrontmostBundleId: front
-            )
-            return .success(id: request.id, result: [
-                "ok": true,
-                "unknown": true,
-                "delivery": delivery.rawValue,
-            ])
+            try typeText(text, targetPid: pid)
+            return .success(id: request.id, result: ["ok": true, "unknown": true])
         case "keypress":
             guard let key = AnyCodable.string(params, "key") else {
                 throw HelperError(code: "INVALID", message: "key required")
             }
-            let delivery = parseDelivery(AnyCodable.string(params, "delivery"))
-            let front = AnyCodable.string(params, "requireFrontmostBundleId")
-            let pid = resolvePid(
-                bundleId: AnyCodable.string(params, "targetBundleId") ?? front,
-                pid: AnyCodable.int(params, "targetPid")
-            )
+            let pid = try inputTargetPid(params)
             _ = try validateCoordinateGeometry(params)
             maybeShowOverlayFromParams(params, cursor: nil, pulseCursor: false, pulseRing: false)
             try keypress(
                 key,
-                delivery: delivery,
                 targetPid: pid,
-                windowId: AnyCodable.int(params, "windowId").map { CGWindowID($0) },
-                requireFrontmostBundleId: front
+                windowId: AnyCodable.int(params, "windowId").map { CGWindowID($0) }
             )
-            return .success(id: request.id, result: [
-                "ok": true,
-                "unknown": true,
-                "delivery": delivery.rawValue,
-            ])
+            return .success(id: request.id, result: ["ok": true, "unknown": true])
         case "scroll":
             guard let x = AnyCodable.double(params, "x"),
                   let y = AnyCodable.double(params, "y") else {
@@ -486,26 +461,18 @@ func handle(request: HelperRequest) async -> HelperResponse {
             }
             let dx = AnyCodable.double(params, "dx") ?? 0
             let dy = AnyCodable.double(params, "dy") ?? 0
-            let delivery = parseDelivery(AnyCodable.string(params, "delivery"))
-            let front = AnyCodable.string(params, "requireFrontmostBundleId")
-            let pid = resolvePid(
-                bundleId: AnyCodable.string(params, "targetBundleId") ?? front,
-                pid: AnyCodable.int(params, "targetPid")
-            )
+            let pid = try inputTargetPid(params)
             let point = try resolveCoordinatePoint(params, x: x, y: y)
             // Menu-bar chip + cursor first, then postScroll owns mid-scroll pulses.
             maybeShowOverlayFromParams(params, cursor: point, pulseCursor: true, pulseRing: false)
             try postScroll(
                 x: point.x, y: point.y, dx: dx, dy: dy,
-                delivery: delivery,
                 targetPid: pid,
-                window: pointerWindow(params, delivery: delivery),
-                requireFrontmostBundleId: front
+                window: pointerWindow(params)
             )
             return .success(id: request.id, result: [
                 "ok": true,
                 "unknown": true,
-                "delivery": delivery.rawValue,
                 "dx": dx,
                 "dy": dy,
             ])
@@ -541,26 +508,18 @@ func handle(request: HelperRequest) async -> HelperResponse {
             points = try points.map {
                 try resolveCoordinatePoint(params, x: $0.x, y: $0.y, validatedWindow: windowGeometry)
             }
-            let delivery = parseDelivery(AnyCodable.string(params, "delivery"))
-            let front = AnyCodable.string(params, "requireFrontmostBundleId")
-            let pid = resolvePid(
-                bundleId: AnyCodable.string(params, "targetBundleId") ?? front,
-                pid: AnyCodable.int(params, "targetPid")
-            )
+            let pid = try inputTargetPid(params)
             maybeShowOverlayFromParams(params, cursor: points.first, pulseCursor: true, pulseRing: false)
             // postDrag densifies path and drives the virtual cursor step-by-step
             // (async animateCursor alone races and is easy to miss).
             try postDrag(
                 path: points,
-                delivery: delivery,
                 targetPid: pid,
-                window: pointerWindow(params, delivery: delivery),
-                requireFrontmostBundleId: front
+                window: pointerWindow(params)
             )
             return .success(id: request.id, result: [
                 "ok": true,
                 "unknown": true,
-                "delivery": delivery.rawValue,
                 "points": points.count,
             ])
         case "move_mouse":
@@ -568,31 +527,17 @@ func handle(request: HelperRequest) async -> HelperResponse {
                   let y = AnyCodable.double(params, "y") else {
                 throw HelperError(code: "INVALID", message: "x,y required")
             }
-            let delivery = parseDelivery(AnyCodable.string(params, "delivery"))
-            let front = AnyCodable.string(params, "requireFrontmostBundleId")
-            let pid = resolvePid(
-                bundleId: AnyCodable.string(params, "targetBundleId") ?? front,
-                pid: AnyCodable.int(params, "targetPid")
-            )
+            let pid = try inputTargetPid(params)
             let point = try resolveCoordinatePoint(params, x: x, y: y)
             // Always paint the software cursor first — visibility must not depend on HID.
             // maybeShowOverlay already waits for the hop; do not double-moveCursor.
             maybeShowOverlayFromParams(params, cursor: point, pulseCursor: true, pulseRing: false)
-            if delivery == .global {
-                try requireFrontmost(bundleId: front)
-            }
-            // HID post is best-effort; cursor still shows if pid missing.
             if let move = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left) {
-                do {
-                    try postPointer(move, at: point, delivery: delivery, pid: pid, window: pointerWindow(params, delivery: delivery))
-                } catch {
-                    // still return ok for visual path
-                }
+                postPointer(move, at: point, pid: pid, window: pointerWindow(params))
             }
             return .success(id: request.id, result: [
                 "ok": true,
                 "unknown": true,
-                "delivery": delivery.rawValue,
                 "cursor": ["x": Double(point.x), "y": Double(point.y)],
             ])
         case "overlay_set_enabled":

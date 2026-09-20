@@ -6,7 +6,6 @@ final class S01LaunchFocus: LabScenario {
     let title = "Launch / Focus"
     let summary = "Stable app identity for computer_apps list, launch, focus."
     let tools = ["computer_apps"]
-    let deliveries = ["n/a"]
 
     private var sink: ((String) -> Void)?
     private var pulse = 0

@@ -6,7 +6,6 @@ final class S12CanvasNoAX: LabScenario {
     let title = "Canvas / No AX"
     let summary = "Picture-like canvas without child accessibility nodes."
     let tools = ["computer_act", "computer_snapshot"]
-    let deliveries = ["app-directed", "physical"]
 
     private var sink: ((String) -> Void)?
     private var canvas: NoAXCanvasView!

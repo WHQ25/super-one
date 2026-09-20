@@ -6,7 +6,6 @@ final class S02Snapshot: LabScenario {
     let title = "Snapshot / Query"
     let summary = "Deep AX outline + visible chrome for fused/semantic/visual modes."
     let tools = ["computer_snapshot", "computer_query", "computer_zoom"]
-    let deliveries = ["n/a"]
 
     private var sink: ((String) -> Void)?
 

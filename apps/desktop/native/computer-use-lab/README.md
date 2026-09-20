@@ -37,7 +37,7 @@ Ad-hoc sign (`-`) is the default. TCC grants may reset after every ad-hoc rebuil
 2. computer_snapshot mode=fused
 3. computer_query search text=S03  (or click sidebar scenario via semantic press)
 4. Run the steps in SCENARIOS.md for each S01–S13
-   (S13 = zero-AX playfield for physical click/scroll/drag/type)
+   (S13 = zero-AX playfield for coordinate click/scroll/drag/type)
 ```
 
 

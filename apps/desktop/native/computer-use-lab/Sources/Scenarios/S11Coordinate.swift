@@ -1,12 +1,11 @@
 import AppKit
 
-/// Large painted hit zones for coordinate click (app-directed / physical).
+/// Large painted hit zones for coordinate click.
 final class S11Coordinate: LabScenario {
     let id = "S11"
     let title = "Coordinate Click"
     let summary = "Three colored zones with known labels for x,y clicks."
     let tools = ["computer_act", "computer_snapshot"]
-    let deliveries = ["app-directed", "physical"]
 
     private var sink: ((String) -> Void)?
     private var result: NSTextField!

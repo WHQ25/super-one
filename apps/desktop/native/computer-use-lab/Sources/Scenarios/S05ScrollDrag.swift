@@ -1,12 +1,11 @@
 import AppKit
 
-/// Scroll wheel target + drag handle for app-directed delivery.
+/// Scroll wheel target + drag handle for posted pointer input.
 final class S05ScrollDrag: LabScenario {
     let id = "S05"
     let title = "Scroll / Drag"
     let summary = "Scrollable list and draggable knob for app-directed input."
     let tools = ["computer_act"]
-    let deliveries = ["app-directed", "physical"]
 
     private var sink: ((String) -> Void)?
     private var scrollInfo: NSTextField!
@@ -69,7 +68,7 @@ final class S05ScrollDrag: LabScenario {
         let stack = LabUI.vstack([
             LabUI.card("Scroll", body: LabUI.vstack([scrollInfo, scrollView], spacing: 8)),
             LabUI.card("Drag", body: LabUI.vstack([dragInfo, pad], spacing: 8)),
-            LabUI.label("Prefer delivery=app-directed scroll/drag. physical only if needed.", size: 12),
+            LabUI.label("Scroll by wheel at x,y and drag by path; both are posted to this app.", size: 12),
         ], spacing: 14)
         return LabUI.stage("cu.lab.s05.stage", stack)
     }

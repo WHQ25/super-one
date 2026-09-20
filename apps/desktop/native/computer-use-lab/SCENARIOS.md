@@ -60,7 +60,6 @@ Select a scenario: semantic **press** the sidebar row label, or click list coord
 | | |
 |---|---|
 | Tools | `computer_act` |
-| Delivery | **semantic** |
 | Stage ids | `cu.lab.s03.toggle`, `cu.lab.s03.history`, `cu.lab.s03.page` |
 
 **Steps**
@@ -80,15 +79,14 @@ Select a scenario: semantic **press** the sidebar row label, or click list coord
 | | |
 |---|---|
 | Tools | `computer_act` |
-| Delivery | semantic setText; app-directed typeText |
 | Stage ids | `cu.lab.s04.field`, `cu.lab.s04.mirror`, `cu.lab.s04.clear` |
 
 **Steps**
 
 1. Reset. Snapshot.
-2. `setText` ref=field text=`苹果公司` delivery=semantic → mirror contains 苹果.
+2. `setText` ref=field text=`苹果公司` → mirror contains 苹果.
 3. `setText` clear or press Clear.
-4. Focus field + `typeText` `hello` delivery=app-directed → mirror updates.
+4. Focus field + `typeText` `hello` → mirror updates.
 5. Seed CJK button optional.
 
 **Pass:** CJK setText readback works; typeText append/replace path works.
@@ -100,7 +98,6 @@ Select a scenario: semantic **press** the sidebar row label, or click list coord
 | | |
 |---|---|
 | Tools | `computer_act` |
-| Delivery | **app-directed** (physical last resort) |
 | Stage ids | `cu.lab.s05.scroll`, `cu.lab.s05.knob`, `cu.lab.s05.scrollInfo`, `cu.lab.s05.dragInfo` |
 
 **Steps**
@@ -117,7 +114,6 @@ Select a scenario: semantic **press** the sidebar row label, or click list coord
 | | |
 |---|---|
 | Tools | `computer_act`, `computer_wait_for` |
-| Delivery | semantic |
 | Stage ids | `cu.lab.s06.start`, `cu.lab.s06.status` |
 
 **Steps**
@@ -171,7 +167,6 @@ Select a scenario: semantic **press** the sidebar row label, or click list coord
 | | |
 |---|---|
 | Tools | `computer_query`, `computer_act` |
-| Delivery | semantic |
 | Stage ids | `cu.lab.s09.save.a/b/c`, `cu.lab.s09.result` |
 
 **Steps**
@@ -189,7 +184,6 @@ Select a scenario: semantic **press** the sidebar row label, or click list coord
 | | |
 |---|---|
 | Tools | `computer_snapshot`, `computer_act` |
-| Delivery | semantic |
 | Stage ids | `cu.lab.s10.target`, `cu.lab.s10.mutate` |
 
 **Steps**
@@ -208,13 +202,12 @@ Select a scenario: semantic **press** the sidebar row label, or click list coord
 | | |
 |---|---|
 | Tools | `computer_snapshot`, `computer_act` |
-| Delivery | **app-directed** |
 | Stage ids | `cu.lab.s11.zone.a/b/c`, `cu.lab.s11.result` |
 
 **Steps**
 
 1. Fused snapshot; compute center of Zone B from bounds.
-2. `click` x,y delivery=app-directed.
+2. `click` x,y.
 3. Result **last zone: B**.
 
 **Pass:** coordinate path hits the correct zone.
@@ -226,7 +219,6 @@ Select a scenario: semantic **press** the sidebar row label, or click list coord
 | | |
 |---|---|
 | Tools | `computer_snapshot`, `computer_act` |
-| Delivery | **app-directed** / physical |
 | Stage ids | `cu.lab.s12.canvas`, `cu.lab.s12.readout` |
 
 **Steps**
@@ -239,12 +231,11 @@ Select a scenario: semantic **press** the sidebar row label, or click list coord
 
 ---
 
-## S13 Physical / Zero AX
+## S13 Zero AX
 
 | | |
 |---|---|
 | Tools | `computer_snapshot`, `computer_act` |
-| Delivery | **physical** (primary), app-directed secondary |
 | Stage | Fully painted playfield — **no AX content nodes** |
 
 Stage paints (pixel-only HUD, no AX labels/buttons/fields):
@@ -254,21 +245,20 @@ Stage paints (pixel-only HUD, no AX labels/buttons/fields):
 | Red / green / blue **A B C** | `click` x,y |
 | **SCROLL PANE** | `scroll` x,y on pane + dy (older rows) |
 | **DRAG KNOB** (orange) | `drag` path ≥2 points |
-| Type strip | click strip → `typeText` (physical/app-directed) |
+| Type strip | click strip → `typeText` |
 
 **Steps**
 
-1. Select **S13 Physical / Zero AX**.
+1. Select **S13 Zero AX**.
 2. `computer_snapshot` `mode=fused` — content should be picture-only / no A/B/C AX refs.
-3. Prefer `delivery=physical`:
+3. With the lab in the background (SuperOne stays frontmost):
    - `click` center of **B** → status / HUD `click=B`
    - `scroll` with **x,y inside SCROLL PANE**, `dy` large → HUD `scroll=N` changes
    - `drag` orange knob → HUD `drag=(x,y)`
    - click type strip then `typeText` → HUD `type="…"`
-4. Optional: same steps with `app-directed` to compare (may fail on some hosts; physical is the contract).
-5. **semantic press/setText must fail or find no refs** for these targets.
+4. **press/setText must find no refs** for these targets.
 
-**Pass:** all four physical interactions change the painted HUD; semantic cannot drive them via AX.
+**Pass:** all four coordinate interactions change the painted HUD without the lab coming forward; nothing here is reachable through AX.
 
 ---
 
@@ -278,7 +268,7 @@ Stage paints (pixel-only HUD, no AX labels/buttons/fields):
 S01 → S02 → S03 → S04 → S06 → S05 → S11 → S12 → S13 → S07 → S08 → S09 → S10
 ```
 
-Core semantic path first; coordinate / no-AX / physical last; multi-root and recovery after.
+AX path first; coordinate / no-AX last; multi-root and recovery after.
 
 ## Reset
 

@@ -6,7 +6,6 @@ final class S04TextInput: LabScenario {
     let title = "Text Input"
     let summary = "AX setText and keyboard typeText with CJK readback."
     let tools = ["computer_act"]
-    let deliveries = ["semantic", "app-directed"]
 
     private var sink: ((String) -> Void)?
     private var field: NSTextField!

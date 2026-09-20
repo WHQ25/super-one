@@ -10,8 +10,6 @@ protocol LabScenario: AnyObject {
     var summary: String { get }
     /// Tools primarily exercised
     var tools: [String] { get }
-    /// delivery modes to prefer
-    var deliveries: [String] { get }
 
     /// Build (or rebuild) the stage content. Caller owns the returned view.
     func makeStage(statusSink: @escaping (String) -> Void) -> NSView
@@ -32,7 +30,6 @@ struct ScenarioMeta {
     let title: String
     let summary: String
     let tools: [String]
-    let deliveries: [String]
 }
 
 enum ScenarioCatalog {
@@ -50,7 +47,7 @@ enum ScenarioCatalog {
             S10StaleRef(),
             S11Coordinate(),
             S12CanvasNoAX(),
-            S13PhysicalNoAX(),
+            S13ZeroAX(),
         ]
     }
 }

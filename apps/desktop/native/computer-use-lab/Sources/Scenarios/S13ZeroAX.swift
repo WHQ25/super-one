@@ -1,22 +1,21 @@
 import AppKit
 
-/// Entire stage is custom-drawn with **zero** accessibility exposure — physical /
-/// coordinate Computer Use only (like WeChat-style picture-only UIs).
-final class S13PhysicalNoAX: LabScenario {
+/// Entire stage is custom-drawn with **zero** accessibility exposure — coordinate
+/// Computer Use only, every event posted to the app (like WeChat-style picture-only UIs).
+final class S13ZeroAX: LabScenario {
     let id = "S13"
-    let title = "Physical / Zero AX"
-    let summary = "No AX on stage: click, scroll, drag, type via physical / app-directed only."
+    let title = "Zero AX"
+    let summary = "No AX on stage: click, scroll, drag, type by coordinates only."
     let tools = ["computer_snapshot", "computer_act"]
-    let deliveries = ["physical", "app-directed"]
 
     private var sink: ((String) -> Void)?
-    private var playfield: PhysicalPlayfieldView!
+    private var playfield: PixelPlayfieldView!
 
     func makeStage(statusSink: @escaping (String) -> Void) -> NSView {
         sink = statusSink
-        statusSink("S13 zero-AX playfield · use physical")
+        statusSink("S13 zero-AX playfield · coordinates only")
 
-        playfield = PhysicalPlayfieldView()
+        playfield = PixelPlayfieldView()
         playfield.translatesAutoresizingMaskIntoConstraints = false
         playfield.onStatus = { [weak self] text in
             self?.sink?(text)
@@ -52,7 +51,7 @@ final class S13PhysicalNoAX: LabScenario {
 
 /// All interaction targets are drawn pixels + AppKit mouse/key handlers.
 /// No AX children, not an accessibility element — snapshot is picture-only for content.
-final class PhysicalPlayfieldView: NSView {
+final class PixelPlayfieldView: NSView {
     var onStatus: ((String) -> Void)?
 
     // Layout in view coordinates (isFlipped = true → top-left origin).
@@ -186,7 +185,7 @@ final class PhysicalPlayfieldView: NSView {
         for i in 0..<rowCount {
             let y = contentTop + CGFloat(i) * rowH
             if y + rowH < scrollArea.minY || y > scrollArea.maxY { continue }
-            let label = String(format: "Row %02d — physical scroll target", i) as NSString
+            let label = String(format: "Row %02d — wheel scroll target", i) as NSString
             label.draw(
                 at: NSPoint(x: scrollArea.minX + 12, y: y),
                 withAttributes: [
@@ -244,7 +243,7 @@ final class PhysicalPlayfieldView: NSView {
         border.stroke()
 
         let prompt = typed.isEmpty
-            ? (typeFocused ? "typing…" : "CLICK then typeText (physical) — no AX field")
+            ? (typeFocused ? "typing…" : "CLICK then typeText — no AX field")
             : typed
         (prompt as NSString).draw(
             at: NSPoint(x: typePad.minX + 12, y: typePad.midY - 8),
@@ -258,7 +257,7 @@ final class PhysicalPlayfieldView: NSView {
     private func drawLegend() {
         let y = bounds.height - 28
         let text =
-            "No accessibility nodes in this stage. Prefer delivery=physical. app-directed may also work via postToPid."
+            "No accessibility nodes in this stage. Click, scroll, drag and type by coordinates; the host posts every event to this app."
         (text as NSString).draw(
             at: NSPoint(x: 24, y: y),
             withAttributes: [

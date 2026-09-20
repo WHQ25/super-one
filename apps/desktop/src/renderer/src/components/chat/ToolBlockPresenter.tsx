@@ -213,8 +213,6 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
 
   if (isHiddenToolBlock(toolName, result)) return null
 
-  const isQuestionDismissed = toolName === 'AskUserQuestion' && !!result && (isDenied || result.includes('dismissed'))
-
   if (toolName === 'Bash') {
     const timeout = typeof params.timeout === 'number' ? params.timeout : undefined
     const runInBackground = params.run_in_background === true || params.background === true

@@ -162,6 +162,20 @@ export const CursorBridgeDismissed: Story = {
   ),
 }
 
+/** Claude reports a dismissal as a permission deny, so the row must not wear the denied/error chrome. */
+export const ClaudeDismissed: Story = {
+  name: 'Claude · dismissed (deny wire shape)',
+  render: () => (
+    <ToolBlock
+      toolName="AskUserQuestion"
+      status="complete"
+      isError
+      input={JSON.stringify({ questions: CURSOR_QUESTIONS })}
+      result="[denied] User dismissed the question"
+    />
+  ),
+}
+
 export const CursorBridgeInvalidInput: Story = {
   name: 'Cursor bridge · rejected input',
   render: () => (

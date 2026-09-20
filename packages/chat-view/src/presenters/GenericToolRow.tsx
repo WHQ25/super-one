@@ -256,7 +256,11 @@ export function GenericToolRowPresenter({
     if (isError) setExpanded(false)
   }, [isError])
 
+  // A dismissed question arrives as a permission deny (`[denied] …` + is_error), but it is an
+  // ordinary outcome, not a refusal: the whole row keeps the default chrome and only the badge says so.
   const isQuestionDismissed = toolName === 'AskUserQuestion' && !!result && (isDenied || result.includes('dismissed'))
+  const showDenied = isDenied && !isQuestionDismissed
+  const showError = !!isError && !isQuestionDismissed
   const hasResult = !!cleanResult && (hasDeferredDetails || (!isStreaming && !isDenied && toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'))
   const hasQA = toolName === 'AskUserQuestion' && !!cleanResult && !isStreaming && !isQuestionDismissed
   const expandable = allowExpand && (hasDeferredDetails || hasDiff || hasResult || hasQA)
@@ -289,9 +293,9 @@ export function GenericToolRowPresenter({
       data-tool-use-id={toolUseId}
       className={cn(
         'tool-node my-0.5 min-w-0 rounded transition-colors',
-        isDenied ? 'denied bg-error/10' : isError ? 'errored bg-warning/10' : 'bg-muted/20',
+        showDenied ? 'denied bg-error/10' : showError ? 'errored bg-warning/10' : 'bg-muted/20',
         expandable && 'cursor-pointer',
-        expandable && (isDenied ? 'hover:bg-error/20' : isError ? 'hover:bg-warning/20' : 'hover:bg-muted/40')
+        expandable && (showDenied ? 'hover:bg-error/20' : showError ? 'hover:bg-warning/20' : 'hover:bg-muted/40')
       )}
     >
       <div
@@ -301,9 +305,9 @@ export function GenericToolRowPresenter({
         className="tool-node-header flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-xs"
         onClick={expandable ? () => setExpanded((e) => !e) : undefined}
       >
-        {isDenied ? (
+        {showDenied ? (
           <Ban className="size-3 shrink-0 text-error" />
-        ) : isError ? (
+        ) : showError ? (
           <TriangleAlert className="size-3 shrink-0 text-warning" />
         ) : isMcp && ports.mcpIconSrc ? (
           <img src={ports.mcpIconSrc} alt={mcpInfo.serverName} className="size-3.5 shrink-0 rounded-sm object-cover" />
@@ -312,7 +316,7 @@ export function GenericToolRowPresenter({
         )}
         <ToolName
           streaming={isStreaming}
-          tone={isDenied && toolName !== 'AskUserQuestion' ? 'denied' : isError ? 'error' : 'default'}
+          tone={showDenied ? 'denied' : showError ? 'error' : 'default'}
         >
           {isStreaming
             ? toolName === 'Bash' ? t('chat.toolBlock.running') : <>{getToolVerb(toolName)}…</>

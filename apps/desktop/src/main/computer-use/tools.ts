@@ -280,7 +280,7 @@ const toolDefs: Array<{
     description:
       'Submit 1–20 related UI actions as a checked transaction against a stateId. Batch a known button sequence here; prefer computer_run when each next target must be found from new UI state and Jev is enabled. '
       + 'Set delivery explicitly when you can; that field describes how the three modes differ. '
-      + 'Actions: click, typeText, keypress, scroll(dx,dy[,x,y|ref]), drag(path≥2 points), moveMouse, press/select/open/setText (AX). select chooses a selectable item; open invokes its observed native open action.  '
+      + 'Actions: click, typeText, keypress, scroll(dx,dy[,x,y|ref]), drag(path≥2 points), moveMouse, press/select/open/setText (AX). select chooses a selectable item; open invokes its observed native open action. typeText is keystrokes at the insertion point, subject to the app\'s own autocorrect and auto-capitalisation; setText sets a value exactly. '
       + 'scroll: positive dy scrolls content down; aim with x,y (capture space) or ref center; else window/outline center. '
       + 'drag: path is capture-space points; virtual cursor animates along the path. '
       + 'Returns outcome worked|didnt|unknown based on re-observation (not API success codes): '

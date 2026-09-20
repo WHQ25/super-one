@@ -64,7 +64,10 @@ export function buildActionSpace(input: ActionSpaceInput): ActionSpace {
     if (el.password || el.disabled) continue
     if (el.editable) {
       if (!stuck.has(`${el.node}:type_text`)) typeCandidates.push(el.index)
-      if (!stuck.has(`${el.node}:click`)) clickCandidates.push(`open:${el.index}`)
+      // Editable does not imply clickable. A Finder name cell is an AX text
+      // field that can be renamed but has no press action at all, so offering
+      // it as a click sends the adapter looking for a plan that cannot exist.
+      if (el.clickable !== false && !stuck.has(`${el.node}:click`)) clickCandidates.push(`open:${el.index}`)
       // Enter in a filled field is how many search boxes submit when their
       // button loses the race against an autocomplete blur (npm, GitHub).
       if (el.value && el.canSubmit !== false && !stuck.has(`${el.node}:submit`)) clickCandidates.push(`submit:${el.index}`)

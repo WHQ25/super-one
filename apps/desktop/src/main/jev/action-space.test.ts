@@ -32,6 +32,18 @@ describe('buildActionSpace', () => {
     expect(space.typeCandidates).toEqual(['1', '2'])
   })
 
+  it('will not click a field that is editable but has no press action', () => {
+    // A Finder row's name cell is an AXTextField: renameable, but the AX tree
+    // offers no press. Clicking it asks the adapter for a plan that does not
+    // exist, and the run pauses on its first step with "does not support this
+    // computer_act operation". Typing into it is still legitimate.
+    // Typing and Enter stay: both name a plan the adapter can actually build.
+    const nameCell = [el({ node: 1, role: 'textbox', label: 'Applications', value: 'Applications', editable: true, clickable: false })]
+    const space = buildActionSpace({ page: page(nameCell), history: [] })
+    expect(space.clickCandidates).toEqual(['submit:1'])
+    expect(space.typeCandidates).toEqual(['1'])
+  })
+
   it('withholds a candidate that did nothing since the page last changed, per intent', () => {
     const history: HistoryEntry[] = [{ node: 1, kind: 'click', label: 'Click Issues', changedPage: false }]
     const space = buildActionSpace({ page: page(elements), history })

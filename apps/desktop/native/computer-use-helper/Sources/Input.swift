@@ -89,6 +89,7 @@ func postEvent(_ event: CGEvent, delivery: InputDelivery, pid: pid_t?) throws {
                 message: "app_post delivery requires targetPid (or resolvable bundleId)"
             )
         }
+        FocusStealGuard.noteDriven(pid: pid)
         event.postToPid(pid)
     case .global:
         event.post(tap: .cghidEventTap)

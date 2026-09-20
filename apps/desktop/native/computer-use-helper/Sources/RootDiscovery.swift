@@ -171,7 +171,10 @@ func focusApp(query: String, activate: Bool = false) throws {
         throw HelperError(code: "APP_NOT_FOUND", message: "App not found: \(query)")
     }
     if match.isHidden { match.unhide() }
-    if activate { match.activate() }
+    if activate {
+        FocusStealGuard.expectActivation(pid: match.processIdentifier)
+        match.activate()
+    }
 }
 
 /// Bring one exact Computer Use target window to the front after its PiP is clicked.
@@ -197,6 +200,7 @@ func focusWindow(pid: Int, windowId: Int, windowTitle: String? = nil) throws {
     AXUIElementSetAttributeValue(target, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
     AXUIElementSetAttributeValue(target, kAXMainAttribute as CFString, kCFBooleanTrue)
     AXUIElementSetAttributeValue(app, kAXFocusedWindowAttribute as CFString, target)
+    FocusStealGuard.expectActivation(pid: processId)
     runningApp.activate()
 
     let result = AXUIElementPerformAction(target, kAXRaiseAction as CFString)
@@ -210,17 +214,15 @@ func focusWindow(pid: Int, windowId: Int, windowTitle: String? = nil) throws {
 
 /// Launch without frontmost activation so Computer Use can work in the background.
 func launchApp(query: String, activate: Bool = false) throws {
-    if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: query) {
-        let config = NSWorkspace.OpenConfiguration()
-        config.activates = activate
-        NSWorkspace.shared.openApplication(at: url, configuration: config)
-        return
-    }
     let config = NSWorkspace.OpenConfiguration()
     config.activates = activate
-    if let url = NSWorkspace.shared.urlForApplication(
-        toOpen: URL(fileURLWithPath: "/Applications/\(query).app")
-    ) {
+    let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: query)
+        ?? NSWorkspace.shared.urlForApplication(toOpen: URL(fileURLWithPath: "/Applications/\(query).app"))
+    if let url {
+        // A launch the caller wants in front is the helper's own activation.
+        if activate, let bundleId = Bundle(url: url)?.bundleIdentifier {
+            FocusStealGuard.expectActivation(bundleId: bundleId)
+        }
         NSWorkspace.shared.openApplication(at: url, configuration: config)
         return
     }

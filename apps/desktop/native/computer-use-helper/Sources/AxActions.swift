@@ -191,6 +191,7 @@ private func axPressMenuCommand(_ el: AXUIElement, pid: pid_t, believesActive: B
         waitForValidation(true)
         err = AXUIElementPerformAction(el, kAXPressAction as CFString)
     } else {
+        FocusStealGuard.expectActivation(pid: pid)
         target.activate()
         waitForValidation(false)
         err = AXUIElementPerformAction(el, kAXPressAction as CFString)
@@ -225,6 +226,7 @@ func axPerform(
     if let source, source != "menuBar" {
         throw HelperError(code: "INVALID", message: "Unknown AX source")
     }
+    FocusStealGuard.noteDriven(pid: pid)
     let rootEl: AXUIElement
     // The app believes it is active from before the walk that resolves the
     // target, so the walk validates the menu in the state the press needs —

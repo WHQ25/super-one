@@ -204,6 +204,7 @@ enum SyntheticActivationLease {
     @discardableResult
     static func hold(pid: pid_t, windowId: CGWindowID?) -> Bool {
         observeRealActivation()
+        FocusStealGuard.noteDriven(pid: pid)
         lock.lock()
         if let current = held[pid] {
             generation += 1

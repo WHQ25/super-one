@@ -124,7 +124,6 @@ export class FastRun<Page extends RunObservation = RunObservation> {
    */
   private lastSettleMs = 0
   private scrolledSinceChange = false
-  private continueDespiteSatisfied = false
   /** Jev called the goal satisfied once; a fresh observation must agree before the run finishes. */
   private doneCandidate = false
   private pending: Pending<Page> | null = null
@@ -179,10 +178,12 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     }
     if (pending.mode === 'accept') {
       if (answer.choice === 'accept') return this.result('done', 'Accepted by the caller')
-      // "continue" after a budget pause restarts the step budget; after a
-      // goal_satisfied pause it means "not done yet".
+      // "continue" after a budget pause restarts the step budget; after an
+      // obstruction pause it re-observes. It used to also mean "not done yet"
+      // after a goal_satisfied pause, and that flag outlived the pause: a run
+      // resumed past a menu-bar obstruction had Jev's completion verdict
+      // overruled for good and circled a goal it had reached.
       if (pending.question.reason === 'budget') this.steps = 0
-      else this.continueDespiteSatisfied = true
       this.lastPage = null
       return this.loop(signal)
     }
@@ -316,7 +317,6 @@ export class FastRun<Page extends RunObservation = RunObservation> {
         space,
         presets: this.opts.presets,
         doneWhenGiven: !!this.opts.hasDoneWhen,
-        satisfiedOverruled: this.continueDespiteSatisfied,
         consecutiveWaits: this.consecutiveWaits,
         scrolledSinceChange: this.scrolledSinceChange,
         page: { url: page.url, title: page.title },

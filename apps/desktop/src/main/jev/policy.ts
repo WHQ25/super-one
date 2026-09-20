@@ -85,11 +85,6 @@ export interface DecideInput {
    * changes how a completion is worded.
    */
   doneWhenGiven: boolean
-  /**
-   * The caller was already told the goal looked satisfied and answered
-   * "continue". The same verdict must not end the run a second time.
-   */
-  satisfiedOverruled: boolean
   consecutiveWaits: number
   scrolledSinceChange: boolean
   page: { url: string; title: string }
@@ -157,7 +152,7 @@ export function presetByJev(el: SpaceElement, presets: readonly Preset[], answer
 }
 
 export function decide(input: DecideInput): Decision {
-  const { answers, space, presets, doneWhenGiven, satisfiedOverruled, consecutiveWaits, page } = input
+  const { answers, space, presets, doneWhenGiven, consecutiveWaits, page } = input
   const summary = decisionSummary(answers)
   const loading = readNoul(answers.still_loading)
   if (loading != null && loading >= THRESHOLDS.stillLoading && consecutiveWaits < 3) {
@@ -170,7 +165,7 @@ export function decide(input: DecideInput): Decision {
   // goal it already reached. The verdict still stands; the wording says the
   // caller's condition did not confirm it.
   const satisfied = readNoul(answers.goal_satisfied)
-  if (satisfied != null && satisfied >= THRESHOLDS.goalSatisfied && !satisfiedOverruled) {
+  if (satisfied != null && satisfied >= THRESHOLDS.goalSatisfied) {
     return { kind: 'done', why: doneWhy(satisfied, doneWhenGiven), probability: satisfied }
   }
   const risk = readNoul(answers.next_step_risk) ?? 0
@@ -191,7 +186,7 @@ export function decide(input: DecideInput): Decision {
   // collapses (arXiv: 0.63 on the abstract page, 0.42 once scrolled to the
   // footer). A fresh observation still has to agree before the run ends.
   if (
-    chosen === 'none_useful' && !satisfiedOverruled
+    chosen === 'none_useful'
     && satisfied != null && satisfied >= THRESHOLDS.goalSatisfiedIdle
     && (action?.probabilities[chosen] ?? 0) >= THRESHOLDS.overrideNone
   ) {

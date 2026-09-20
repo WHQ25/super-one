@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { PageObservation } from './browser-page'
-import { FastRun, StaleObservation, type RunDeps, type RunOptions } from './loop'
+import { FastRun, RunPaused, StaleObservation, type RunDeps, type RunOptions } from './loop'
 import { NONE } from './questions'
 import { el, noul, page, pick } from './test-fixtures'
 import type { JevAnswer, JevRequest } from './typesafe-client'
@@ -178,6 +178,30 @@ describe('FastRun', () => {
     const again = await run.resume({ questionId: paused.question!.id, choice: 'continue' })
     expect(again.question?.reason).toBe('budget')
     expect(acts).toHaveLength(4)
+  })
+
+  it('still finishes on Jev\'s verdict after an obstruction pause was continued', async () => {
+    // "continue" after an obstruction used to set the flag meant for a
+    // goal_satisfied pause — a pause that no longer exists — and the run then
+    // ignored every later completion verdict: View ▸ Sort By ▸ Date Modified
+    // was chosen at step 3 and the loop went on until its step budget ran out.
+    let blocked = true
+    const { deps } = harness([HOME, CREATED], (request) => {
+      const state = request.state as { page: { url: string } }
+      if (/\/issues\/\d+$/.test(state.page.url)) return { still_loading: noul(0), goal_satisfied: noul(0.9), next_step_risk: noul(0), action: pick('none_useful', actionsOf(request)) }
+      return { still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0), action: pick('click', actionsOf(request)), click_target: pick('1', clicksOf(request)) }
+    })
+    const click = deps.click
+    deps.click = async (node) => {
+      if (blocked) throw new RunPaused('no-progress', 'Menu bar commands only work in the active app')
+      await click(node)
+    }
+    deps.checkDone = async () => false
+    const run = new FastRun(opts(), deps)
+    const paused = await run.start()
+    expect(paused).toMatchObject({ status: 'paused', question: { reason: 'no-progress', context: { why: 'Menu bar commands only work in the active app' } } })
+    blocked = false
+    expect(await run.resume({ questionId: paused.question!.id, choice: 'continue' })).toMatchObject({ status: 'done' })
   })
 
   it('pauses with no-progress after three unchanged actions', async () => {

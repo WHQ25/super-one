@@ -21,7 +21,6 @@ function input(overrides: Partial<DecideInput>): DecideInput {
     space,
     presets: [],
     doneWhenGiven: false,
-    satisfiedOverruled: false,
     consecutiveWaits: 0,
     scrolledSinceChange: false,
     page: { url: 'https://github.com/x', title: 'x' },
@@ -103,13 +102,6 @@ describe('decide', () => {
     expect(decide(input({ answers: { ...answers, goal_satisfied: noul(THRESHOLDS.goalSatisfied - 0.01) } })).kind).toBe('click')
   })
 
-  it('does not finish on a verdict the caller already overruled', () => {
-    // Answering "continue" to a goal_satisfied pause means "not done yet"; the
-    // same verdict must not end the run on the very next step.
-    const answers = { ...calm, goal_satisfied: noul(0.8), action: pick('click', ACTIONS), click_target: pick('1', CLICKS) }
-    expect(decide(input({ answers, satisfiedOverruled: true })).kind).toBe('click')
-  })
-
   it('clicks the chosen target whether Jev is sure or not, as long as the step is safe', () => {
     const strong = { ...calm, action: pick('click', ACTIONS), click_target: pick('3', CLICKS, 0.9) }
     expect(decide(input({ answers: strong }))).toMatchObject({ kind: 'click', key: '3', risk: 0.05 })
@@ -128,10 +120,8 @@ describe('decide', () => {
     // So does an action head that is not sure the page is exhausted.
     const wavering = { ...idle, action: pick('none_useful', ACTIONS, 0.6) }
     expect(decide(input({ answers: wavering }))).toMatchObject({ kind: 'scroll' })
-    // A done_when that never matched does not veto the verdict, but an
-    // overruled one does.
+    // A done_when that never matched does not veto the verdict.
     expect(decide(input({ answers: idle, doneWhenGiven: true }))).toMatchObject({ kind: 'done' })
-    expect(decide(input({ answers: idle, satisfiedOverruled: true }))).toMatchObject({ kind: 'scroll' })
   })
 
   it('asks before a step Jev rates irreversible, offering that step first', () => {

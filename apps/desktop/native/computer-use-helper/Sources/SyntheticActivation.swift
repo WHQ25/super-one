@@ -161,9 +161,30 @@ enum SyntheticActivationLease {
         DispatchQueue.main.asyncAfter(deadline: .now() + idle) {
             lock.lock()
             guard let current = held[pid], current.generation == generation else { lock.unlock(); return }
+            // A menu the app opened under this belief — a context menu from a
+            // background right-click — closes the moment the app hears it is
+            // no longer active. It is there to be read and pressed; keep the
+            // belief until it has gone.
+            if hasOpenMenu(pid: pid) {
+                lock.unlock()
+                scheduleRelease(pid: pid, generation: generation)
+                return
+            }
             held[pid] = nil
             lock.unlock()
             current.activation.deactivate()
+        }
+    }
+
+    /// Whether the app has a menu window up: the window server lists them at
+    /// the pop-up menu level.
+    private static func hasOpenMenu(pid: pid_t) -> Bool {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return false
+        }
+        let menuLevel = Int(CGWindowLevelForKey(.popUpMenuWindow))
+        return list.contains { info in
+            (info[kCGWindowOwnerPID as String] as? Int) == Int(pid) && (info[kCGWindowLayer as String] as? Int) == menuLevel
         }
     }
 

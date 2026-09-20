@@ -44,6 +44,16 @@ describe('native newRoot completion', () => {
     expect(result.successorRoot?.title).toBe('Fonts')
   })
 
+  it('reports preexisting when the starting state is the root asked for', async () => {
+    // A right-click's act result already lands on the context menu; a wait
+    // for that menu from the menu's own state is not a wait for anything new.
+    const { service } = fixture('popover')
+    const base = await service.observe(undefined, 'semantic')
+    const acted = await service.act(base.stateId, [{ type: 'press', ref: base.outline.children![0].ref }], { delivery: 'semantic' })
+    const result = await service.waitFor(acted.successorStateId, { kind: 'newRoot', rootKind: 'popover', text: 'Font collection' }, 0)
+    expect(result).toMatchObject({ status: 'preexisting', successorRoot: { title: 'Fonts' } })
+  })
+
   it('does not treat an existing panel, a title change, or another app as a new root', async () => {
     const { backend, service } = fixture()
     const initial = world()

@@ -64,6 +64,14 @@ export async function waitForCondition(base: ComputerUseState, condition: Condit
 
 async function waitForNewRoot(base: ComputerUseState, condition: NewRootCondition, timeoutMs: number, deps: WaitForDeps, signal?: AbortSignal): Promise<WaitResult> {
   if (!base.observedRootIds) throw new ComputerUseError('INVALID_ACTION', 'newRoot requires a fresh computer_snapshot with an app root inventory.')
+  // A right-click's successor state is the context menu itself; waiting for
+  // that menu from there is asking for a root already in hand. Nothing new
+  // can appear that way, and "failed" said the menu was not there.
+  if (newRootMatches(condition, base.root, base.outline)) {
+    const obs = await deps.observe(base.root.rootId, base.mode, base.capture)
+    throwIfAborted(signal)
+    return { status: 'preexisting', successorStateId: obs.stateId, successorRoot: targetIdentity(obs.root) }
+  }
   const pollMode = base.mode === 'visual' ? 'fused' : 'semantic'
   const attempts = Math.max(1, Math.ceil(timeoutMs / 50))
   let last: ObserveResult | undefined

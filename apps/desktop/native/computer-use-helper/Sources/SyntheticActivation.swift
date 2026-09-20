@@ -15,11 +15,12 @@ import Foundation
 /// `ApplicationActivated` event the window server would, then a synthetic
 /// click routed to its window (a mouse-down is what makes a window key), and
 /// the app runs its foreground logic — menus validate, `AXPress` on a command
-/// works, a ⌘S posted to its pid opens the save sheet — while the user's app
-/// stays in front and nothing on screen changes. `ApplicationDeactivated`
-/// afterwards puts the app back; without it the app is left believing it is
-/// active, and a later real activation no longer establishes a key window
-/// (seen on TextEdit: even a foreground ⌘S then did nothing until relaunch).
+/// works, a ⌘S posted to its pid opens the save sheet, a click posted to a
+/// text view places the caret — while the user's app stays in front and
+/// nothing on screen changes. `ApplicationDeactivated` afterwards puts the
+/// app back; without it the app is left believing it is active, and a later
+/// real activation no longer establishes a key window (seen on TextEdit:
+/// even a foreground ⌘S then did nothing until relaunch).
 ///
 /// This is how Codex Computer Use does it (`SyntheticAppFocusEnforcer`). The
 /// event shapes are AppKit's own but undocumented; every step is verified
@@ -29,11 +30,10 @@ struct SyntheticActivation {
     let pid: pid_t
     let windowId: CGWindowID
 
-    /// The click that makes the window key is routed to it by window id only
-    /// (see `routeToWindow`); with no location in the window it reaches no
-    /// control at all.
-    private static let offscreenPoint = CGPoint(x: -5000, y: -5000)
     private static let keyWindowTimeout: TimeInterval = 0.4
+    /// How far left of the close button the key-making click lands when the
+    /// window has no title label: on the frame, clear of the button.
+    private static let closeButtonClearance: CGFloat = 6
 
     /// Returns nil when the app is already the real frontmost app (nothing to
     /// do), has no window to make key, or never reports a focused window — the
@@ -83,19 +83,46 @@ struct SyntheticActivation {
         event.postToPid(pid)
     }
 
+    /// The mouse-down that makes the window key has to land on a view. One
+    /// that hits nothing — posted off screen, or on the rounded corner of the
+    /// frame — still makes the window key, but AppKit keeps it and delivers
+    /// it to the first responder after the next click: a caret placed by a
+    /// click into TextEdit's text view jumped to the start of the text, and
+    /// a drag-selection collapsed the same way. A click on the window's title
+    /// label, or on the frame just left of the close button, is handled by
+    /// the title bar as a window drag that never moves and is not replayed.
+    /// A window with neither gets no click: its first real click makes it key
+    /// by itself, swallowed only by a view that refuses first mouse.
     private func postKeyMakingClick() {
-        let point = Self.offscreenPoint
+        guard let point = keyMakingPoint(),
+              let window = try? liveWindowGeometry(windowId: Int(windowId)) else { return }
         for (type, pressure) in [(NSEvent.EventType.leftMouseDown, Float(1)), (.leftMouseUp, 0)] {
             guard let event = NSEvent.mouseEvent(
                 with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                 windowNumber: Int(windowId), context: nil, eventNumber: 1, clickCount: 1, pressure: pressure
             )?.cgEvent else { continue }
             event.location = point
-            event.setIntegerValueField(windowUnderPointerField, value: Int64(windowId))
-            event.setIntegerValueField(windowThatCanHandleEventField, value: Int64(windowId))
+            routeToWindow(event, at: point, window: PointerWindow(id: windowId, bounds: window.bounds))
             event.postToPid(pid)
             usleep(30_000)
         }
+    }
+
+    private func keyMakingPoint() -> CGPoint? {
+        guard let window = try? resolveAxWindow(pid: pid, windowId: Int(windowId)),
+              let bounds = axFrame(window.element) else { return nil }
+        if let title = axAttributeElement(window.element, kAXTitleUIElementAttribute as String),
+           let frame = axFrame(title), frame.width > 0, frame.height > 0, bounds.contains(frame) {
+            return CGPoint(x: frame.midX, y: frame.midY)
+        }
+        let closeButton = axChildren(window.element).first {
+            axString($0, kAXSubroleAttribute as String) == kAXCloseButtonSubrole
+        }
+        if let closeButton, let frame = axFrame(closeButton),
+           frame.minX - bounds.minX >= Self.closeButtonClearance * 2 {
+            return CGPoint(x: frame.minX - Self.closeButtonClearance, y: frame.midY)
+        }
+        return nil
     }
 
     /// The app's frontmost normal-layer window, front to back as the window

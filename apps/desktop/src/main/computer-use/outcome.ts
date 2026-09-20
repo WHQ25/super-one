@@ -38,6 +38,10 @@ export function diffIndicatesEffect(diff: StateDiff): boolean {
   if (structural >= 1 && changed >= 3) return true
   // Stable ref identity but many labels/values swapped (content region refresh).
   if (changed >= 8) return true
+  // A selection is what a click on a row makes; nothing ambient changes it.
+  // A physical click on Finder's Applications row read as unknown with the
+  // row's selected flag and the status bar's "1 of 6 selected" both in the diff.
+  if (diff.changed.some((c) => c.field === 'selected')) return true
   return false
 }
 

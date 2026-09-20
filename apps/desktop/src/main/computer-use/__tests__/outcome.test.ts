@@ -55,6 +55,20 @@ describe('diffIndicatesEffect', () => {
     ).toBe(false)
   })
 
+  it('accepts a selection change on its own', () => {
+    // A physical click on Finder's Applications row: the row's selected flag
+    // and the status bar are all that change, and that is the click's effect.
+    expect(
+      diffIndicatesEffect({
+        ...emptyDiff(),
+        changed: [
+          { ref: '@e7', field: 'selected', from: 'false', to: 'true' },
+          { ref: '@e62', field: 'value', from: '6 items', to: '1 of 6 selected' },
+        ],
+      }),
+    ).toBe(true)
+  })
+
   it('accepts multi-node structural navigation', () => {
     expect(
       diffIndicatesEffect({

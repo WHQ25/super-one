@@ -357,7 +357,9 @@ describe('Computer Use P0 contract', () => {
     expect(r.diff?.fullViewFallback).toBe(false)
 
     // Now replace between observe and act using stale path differently:
-    // Observe S, replace tree (new refs), act keypress → successor has almost no overlap with S outline
+    // Observe S, replace tree, act keypress → almost nothing in the successor
+    // reads as it did in S (the text is paired with the old one by role but
+    // rewritten; the rest is new), so the diff is a rewrite, not a report.
     const s = await service.observe()
     service.getFake().replaceWindowTree(1001, 'Notes', {
       role: 'window',
@@ -365,6 +367,9 @@ describe('Computer Use P0 contract', () => {
       children: [
         { role: 'button', name: 'OnlyButton' },
         { role: 'staticText', name: 'OnlyText' },
+        { role: 'button', name: 'OtherButton' },
+        { role: 'checkbox', name: 'OnlyBox' },
+        { role: 'link', name: 'OnlyLink' },
       ],
     })
     const r2 = await service.act(s.stateId, [{ type: 'keypress', keys: ['a'] }])

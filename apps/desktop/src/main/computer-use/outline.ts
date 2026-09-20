@@ -127,54 +127,79 @@ export function collectRefs(root: UiOutlineNode): string[] {
   return out
 }
 
-/** Structural diff of two outlines by ref identity. */
+/**
+ * Diff two outlines by what each node is, not by where it came in the walk.
+ *
+ * A ref is a preorder index, so one node appearing early — the "Edited"
+ * label a title bar gains on the first keystroke — moves every ref after it
+ * by one, and a ref-keyed diff then reported the whole menu bar as changed:
+ * "@e49 name from Apple", "@e50 name to Apple"… hundreds of entries, the
+ * one real change buried, and an act that did nothing judged to have worked
+ * by their count. Nodes are paired instead under their paired parent, first
+ * by role and name in sibling order, then whatever is left by role alone in
+ * sibling order (a label whose text changed), and only the remainder is
+ * added or removed. Refs in the result are the successor's, which is the
+ * state the caller acts on next. `stable` counts the pairs that read the
+ * same on both sides: when almost none do, the window's content has been
+ * replaced and the diff is a rewrite, not a report.
+ */
 export function diffOutlines(
   before: UiOutlineNode,
   after: UiOutlineNode,
-): { added: string[]; removed: string[]; changed: Array<{ ref: string; field: string; from?: string; to?: string }> } {
-  const beforeMap = new Map<string, UiOutlineNode>()
-  const afterMap = new Map<string, UiOutlineNode>()
-  indexNodes(before, beforeMap)
-  indexNodes(after, afterMap)
-
+): { added: string[]; removed: string[]; changed: Array<{ ref: string; field: string; from?: string; to?: string }>; stable: number } {
   const added: string[] = []
   const removed: string[] = []
   const changed: Array<{ ref: string; field: string; from?: string; to?: string }> = []
+  /** Paired nodes that read the same on both sides. */
+  let stable = 0
 
-  for (const ref of afterMap.keys()) {
-    if (!beforeMap.has(ref)) added.push(ref)
-  }
-  for (const ref of beforeMap.keys()) {
-    if (!afterMap.has(ref)) removed.push(ref)
-  }
-  for (const [ref, a] of afterMap) {
-    const b = beforeMap.get(ref)
-    if (!b) continue
-    if ((b.name ?? '') !== (a.name ?? '')) {
-      changed.push({ ref, field: 'name', from: b.name, to: a.name })
-    }
-    if ((b.value ?? '') !== (a.value ?? '')) {
-      changed.push({ ref, field: 'value', from: b.value, to: a.value })
-    }
+  const compare = (b: UiOutlineNode, a: UiOutlineNode) => {
+    const seen = changed.length
+    if ((b.name ?? '') !== (a.name ?? '')) changed.push({ ref: a.ref, field: 'name', from: b.name, to: a.name })
+    if ((b.value ?? '') !== (a.value ?? '')) changed.push({ ref: a.ref, field: 'value', from: b.value, to: a.value })
     if ((b.enabled ?? true) !== (a.enabled ?? true)) {
-      changed.push({
-        ref,
-        field: 'enabled',
-        from: String(b.enabled ?? true),
-        to: String(a.enabled ?? true),
-      })
+      changed.push({ ref: a.ref, field: 'enabled', from: String(b.enabled ?? true), to: String(a.enabled ?? true) })
     }
     if ((b.selected ?? false) !== (a.selected ?? false)) {
-      changed.push({ ref, field: 'selected', from: String(b.selected ?? false), to: String(a.selected ?? false) })
+      changed.push({ ref: a.ref, field: 'selected', from: String(b.selected ?? false), to: String(a.selected ?? false) })
     }
+    if (changed.length === seen) stable += 1
+    pairChildren(b.children ?? [], a.children ?? [])
   }
 
-  return { added, removed, changed }
-}
+  const pairChildren = (befores: UiOutlineNode[], afters: UiOutlineNode[]) => {
+    const pairs: Array<[UiOutlineNode, UiOutlineNode]> = []
+    let leftB = befores
+    let leftA = afters
+    for (const key of [(n: UiOutlineNode) => `${n.role}\u0000${n.name ?? ''}`, (n: UiOutlineNode) => n.role]) {
+      const queue = new Map<string, UiOutlineNode[]>()
+      for (const b of leftB) {
+        const k = key(b)
+        queue.set(k, [...(queue.get(k) ?? []), b])
+      }
+      const unpairedA: UiOutlineNode[] = []
+      for (const a of leftA) {
+        const b = queue.get(key(a))?.shift()
+        if (b) pairs.push([b, a])
+        else unpairedA.push(a)
+      }
+      leftB = [...queue.values()].flat()
+      leftA = unpairedA
+    }
+    for (const b of leftB) removed.push(...collectRefs(b))
+    for (const a of leftA) added.push(...collectRefs(a))
+    for (const [b, a] of pairs) compare(b, a)
+  }
 
-function indexNodes(node: UiOutlineNode, map: Map<string, UiOutlineNode>): void {
-  map.set(node.ref, node)
-  for (const c of node.children ?? []) indexNodes(c, map)
+  if (before.role === after.role) compare(before, after)
+  else {
+    removed.push(...collectRefs(before))
+    added.push(...collectRefs(after))
+  }
+  // In outline order, so the window's content reads before its menus.
+  const order = (ref: string) => Number(ref.replace(/\D/g, '')) || 0
+  changed.sort((x, y) => order(x.ref) - order(y.ref))
+  return { added: added.sort((x, y) => order(x) - order(y)), removed: removed.sort((x, y) => order(x) - order(y)), changed, stable }
 }
 
 /** Clone all semantic identity and capability fields while folding children separately. */

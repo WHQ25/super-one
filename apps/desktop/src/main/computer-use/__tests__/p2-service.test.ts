@@ -229,7 +229,10 @@ describe('P2 service policy + foreground gate', () => {
       { delivery: 'semantic' },
     )
     expect(result.outcome).toBe('worked')
-    expect(result.diff?.removed.length ?? 0).toBeGreaterThanOrEqual(3)
+    // The feed's texts are paired with the history's by role, so the diff
+    // reads as the window renamed, two texts rewritten and the third gone.
+    expect(result.diff).toMatchObject({ added: [], removed: ['@e5'] })
+    expect(result.diff!.changed.map((c) => c.field)).toEqual(['name', 'value', 'value'])
   })
 
   it('defaults to window capture and preserves explicit display scope', async () => {

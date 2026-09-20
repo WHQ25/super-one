@@ -6,13 +6,9 @@ export function buildDiff(
   after: import('./types').UiOutlineNode,
 ): StateDiff {
   const d = diffOutlines(before, after)
-  const beforeRefs = new Set(collectRefs(before))
-  const afterRefs = new Set(collectRefs(after))
-  // If almost nothing overlaps, identity is ambiguous → full view fallback.
-  let overlap = 0
-  for (const r of afterRefs) if (beforeRefs.has(r)) overlap += 1
-  const fullViewFallback =
-    beforeRefs.size > 0 && afterRefs.size > 0 && overlap / Math.max(beforeRefs.size, afterRefs.size) < 0.2
+  // If almost nothing survived unchanged, the content was replaced → full view fallback.
+  const larger = Math.max(collectRefs(before).length, collectRefs(after).length)
+  const fullViewFallback = larger > 0 && d.stable / larger < 0.2
 
   return {
     added: d.added,

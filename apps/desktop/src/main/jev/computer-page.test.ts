@@ -340,13 +340,12 @@ describe('computer fast-loop adapter', () => {
     expect(page.elements.map((e) => [e.label, e.checked])).toEqual([['Wi-Fi', 'true'], ['Bluetooth', 'false'], ['Done', undefined]])
   })
 
-  it('offers a menu command by its check mark, and a submenu parent by its expanded flag', async () => {
-    // A chosen sort or view mode is shown nowhere but the command's check
-    // mark (AXMenuItemMarkChar; AXValue is empty). An AXMenuItem answers
-    // AXExpanded=false whether or not it has a submenu, so a leaf command
-    // read as collapsed: View ▸ Sort By ▸ Date Modified was offered as
-    // "Expand Date Modified" after it had already been chosen, and the loop
-    // kept pressing it. The helper reports the flag on submenu parents only.
+  it('offers menu commands by their check mark, never the menus that open on the way', async () => {
+    // The helper presses a command in the closed menu tree directly, activating
+    // a background app for it, so a menu path is one press: "View" and
+    // "Expand Sort By" are not steps. A chosen sort or view mode is shown
+    // nowhere but the command's check mark (AXMenuItemMarkChar; AXValue is
+    // empty).
     const { service } = fixture()
     const obs = await service.observe(undefined, 'semantic')
     const outline = axTreeToOutline({ index: 1, role: 'AXWindow', children: [{ index: 2, role: 'AXButton', name: 'Kind', actions: ['AXPress'] }] }, { index: 1, role: 'AXMenuBar', children: [
@@ -359,11 +358,11 @@ describe('computer fast-loop adapter', () => {
     ] })
     const page = computerPage({ ...obs, outline }, service)
     const labels = page.elements.map((e) => e.label)
-    expect(labels).toEqual(['Kind', 'View', 'Sort By', 'Name', 'Date Modified'])
-    expect(page.elements[2]).toMatchObject({ expanded: 'false' })
-    expect(page.elements[3].checked).toBeUndefined()
-    expect(page.elements[4]).toMatchObject({ checked: 'true' })
-    expect(page.elements[4].expanded).toBeUndefined()
+    expect(labels).toEqual(['Kind', 'Name', 'Date Modified'])
+    expect(page.elements[1]).toMatchObject({ clickable: true })
+    expect(page.elements[1].checked).toBeUndefined()
+    expect(page.elements[2]).toMatchObject({ checked: 'true' })
+    expect(page.elements[2].expanded).toBeUndefined()
   })
 
   it('re-resolves the app root when the observed window is replaced', async () => {

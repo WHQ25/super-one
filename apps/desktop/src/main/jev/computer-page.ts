@@ -109,7 +109,15 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
     const secure = node.secure === true || /secure|password/.test(role)
     const value = secure ? '' : node.value ?? ''
     if (!secure) text.push([node.name, value].filter(Boolean).join(' '))
-    const enabled = node.enabled !== false && !node.pictureOnly && !secure
+    // The menu tree is read closed, complete with submenus, and the helper
+    // presses a command in it directly — activating a background app for the
+    // press, since AppKit only validates menu items in the active app. So a
+    // menu path is one press on its command; the menus on the way are not
+    // steps. Offering "View" or "Expand Sort By" sent the run through a menu
+    // that opened on screen with every command still disabled.
+    const command = node.nativeTarget?.scope === 'menuBar'
+    const opensMenu = command && (role === 'menubaritem' || node.expanded != null)
+    const enabled = !opensMenu && node.enabled !== false && !node.pictureOnly && !secure
     const editable = !!planNodeAction(node, { kind: 'setText', text: '' }, tier)
     const select = planNodeAction(node, { kind: 'select' }, tier)
     const press = planNodeAction(node, { kind: 'press' }, tier)
@@ -121,7 +129,6 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
     if (open) kinds.push('open')
     for (const kind of kinds) {
       if (!enabled || elements.length >= MAX_ELEMENTS) break
-      const command = node.nativeTarget?.scope === 'menuBar'
       const source = node.value || node.name ? node : labelSource(node)
       const mapped = command || kind === 'select' || kind === 'open' ? 'button' : ROLE_MAP[role] ?? role
       // An empty macOS text field is anonymous: no AXTitle, no AXDescription,

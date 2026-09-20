@@ -38,9 +38,18 @@ describe('context menus are read and dismissed', () => {
     const { acted } = await openMenu(service)
     const menuState = service.getStateStore().get(acted.successorStateId)!
     const item = menuState.outline.children!.find((node) => node.name === 'Rename')!
+    // The reopened menu has a new helper identity; the act's geometry must
+    // name it, not the one the state was captured with (that menu is gone,
+    // and the helper rejects input validated against it).
+    const seen: Array<string | undefined> = []
+    const act = backend.act.bind(backend)
+    backend.act = async (req) => { seen.push(req.coordinateSpace?.axRootId); return act(req) }
     const pressed = await service.act(acted.successorStateId, [{ type: 'press', ref: item.ref }])
     expect(pressed.outcome).not.toBe('didnt')
     expect(pressed.evidence.map((step) => step.description)).toEqual(['activate(Rename)'])
+    expect(menuState.coordinateSpace.axRootId).toBeDefined()
+    expect(seen.at(-1)).toBe(pressed.successorRoot?.axRootId ?? seen.at(-1))
+    expect(seen.at(-1)).not.toBe(menuState.coordinateSpace.axRootId)
     // Reopened for the press (one more "More" press in the fake), then dismissed again.
     expect(backend.dismissals).toEqual(['Context', 'Context'])
     expect((await service.listUiRoots()).map((root) => root.title)).toEqual(['Document'])

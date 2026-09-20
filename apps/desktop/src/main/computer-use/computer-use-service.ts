@@ -451,11 +451,11 @@ export class ComputerUseService {
     this.requireGranted(state.root.bundleId)
 
     if (!this.menus.isDismissed(state.root.rootId)) return zoomState(this.adapter, state, stateId, region)
-    const root = await this.menus.reopen(state.root.rootId)
+    const rebased = await this.menus.rebase(state)
     try {
-      return await zoomState(this.adapter, { ...state, root }, stateId, region)
+      return await zoomState(this.adapter, rebased, stateId, region)
     } finally {
-      await this.menus.dismissAgain(root.rootId)
+      await this.menus.dismissAgain(rebased.root.rootId)
     }
   }
 
@@ -501,7 +501,7 @@ export class ComputerUseService {
       // A state taken from a dismissed context menu: bring the menu back
       // first, and act on it as it is now.
       const base = this.menus.isDismissed(stored.root.rootId)
-        ? { ...stored, root: await this.menus.reopen(stored.root.rootId, options.signal) }
+        ? await this.menus.rebase(stored, options.signal)
         : stored
       throwIfAborted(options.signal)
       await this.refreshRoots()

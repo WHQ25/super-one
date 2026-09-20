@@ -92,6 +92,13 @@ interface LiveWindow {
   menuBar?: LiveElement
   key: string
   windowId?: number
+  /**
+   * A menu's helper identity, as the real helper hands one out: a new id
+   * every time the menu is (re)opened, and input geometry is validated
+   * against it — so a state captured on a menu since taken down names an id
+   * that no longer resolves.
+   */
+  axRootId?: string
   title: string
   kind: UiRootIdentity['kind']
   bounds: Bounds
@@ -117,6 +124,7 @@ interface LiveApp {
  */
 export class FakePlatformBackend implements PlatformAdapter {
   private apps: LiveApp[] = []
+  private axRootSeq = 0
   /** Titles of menus dismissed through `dismissRoot`, in order (tests). */
   readonly dismissals: string[] = []
   private readonly dismissedMenus = new Map<string, LiveWindow>()
@@ -221,6 +229,7 @@ export class FakePlatformBackend implements PlatformAdapter {
           fullScreen: false,
           kind: 'window' as const,
           capturedBounds: { ...win.bounds },
+          ...(win.axRootId ? { axRootId: win.axRootId } : {}),
         }
     const image =
       mode === 'semantic'
@@ -256,6 +265,12 @@ export class FakePlatformBackend implements PlatformAdapter {
     const steps: PlatformActStepResult[] = []
     let focusRef = req.focusRef
     let stoppedAt: number | undefined
+    // The helper validates input geometry against the coordinate space's AX
+    // root; a menu since taken down does not resolve and every action fails.
+    const axRootId = req.coordinateSpace?.axRootId
+    if (axRootId && !app.windows.some((w) => w.axRootId === axRootId)) {
+      return { steps: req.actions.map((action) => ({ applied: false, description: `${action.type}: AX_ROOT_NOT_FOUND: AX root ${axRootId} is not registered` })), stoppedAt: 0 }
+    }
 
     for (let i = 0; i < req.actions.length; i++) {
       const action = req.actions[i]!
@@ -421,6 +436,7 @@ export class FakePlatformBackend implements PlatformAdapter {
       modal: win.modal,
       resourceKey: `pid:${app.pid}`,
       ...(typeof win.windowId === 'number' ? { windowId: win.windowId } : {}),
+      ...(win.axRootId ? { axRootId: win.axRootId } : {}),
     }
   }
 
@@ -684,11 +700,13 @@ export class FakePlatformBackend implements PlatformAdapter {
       const dismissed = this.dismissedMenus.get(`${app.pid}:${modalTitle}`)
       if (dismissed) {
         this.dismissedMenus.delete(dismissed.key)
+        dismissed.axRootId = `axr:${++this.axRootSeq}`
         app.windows.push(dismissed)
         win.focused = false
       } else if (!app.windows.some((w) => w.title === modalTitle)) {
         app.windows.push({
           key: `${app.pid}:${modalTitle}`,
+          ...(el.opensModal.kind === 'menu' ? { axRootId: `axr:${++this.axRootSeq}` } : {}),
           title: modalTitle,
           kind: el.opensModal.kind ?? 'dialog',
           bounds: { x: 200, y: 160, width: 400, height: 240 },

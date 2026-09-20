@@ -95,6 +95,24 @@ export class ContextMenuLedger {
     throw new ComputerUseError('STALE_STATE', `The menu ${rootId} could not be reopened`, { rootId })
   }
 
+  /**
+   * A dismissed menu's state, rebased onto the menu as reopened. The root is
+   * the reopened identity; so is the coordinate space's `axRootId` — the
+   * helper validates input geometry against that id, and the one the state
+   * was captured with names a menu that no longer exists. Left as it was,
+   * every action on a reopened menu failed geometry validation and read as
+   * `didnt`; the fake backend has no geometry to validate, so only a real
+   * Finder showed it.
+   */
+  async rebase(state: ComputerUseState, signal?: AbortSignal): Promise<ComputerUseState> {
+    const root = await this.reopen(state.root.rootId, signal)
+    return {
+      ...state,
+      root,
+      coordinateSpace: state.coordinateSpace.axRootId ? { ...state.coordinateSpace, axRootId: root.axRootId } : state.coordinateSpace,
+    }
+  }
+
   /** The root as it is now: reopened if it is a dismissed menu, else as listed. */
   async ensureOpen(root: UiRootIdentity, signal?: AbortSignal): Promise<UiRootIdentity> {
     if (this.dismissed.has(root.rootId)) return this.reopen(root.rootId, signal)

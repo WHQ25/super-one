@@ -64,9 +64,14 @@ struct SyntheticActivation {
     }
 
     /// Tell the app it is no longer active — unless it really is by now, in
-    /// which case the window server's own notification is the truth.
+    /// which case the window server's own notification is the truth. Told
+    /// otherwise, an app that has just been activated for real deactivates
+    /// itself and hands the front back: Finder, activated for a physical
+    /// click two seconds after a background right-click, was behind Electron
+    /// again by the time the click came.
     func deactivate() {
         if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid { return }
+        if NSRunningApplication(processIdentifier: pid)?.isActive == true { return }
         post(appKitSubtype: .applicationDeactivated)
     }
 
@@ -149,8 +154,11 @@ enum SyntheticActivationLease {
         return true
     }
 
+    /// Released on the main queue, where the real-activation observer runs,
+    /// so a lease the user's activation has already dropped is never released
+    /// a moment later with a deactivation the app should not hear.
     private static func scheduleRelease(pid: pid_t, generation: Int) {
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + idle) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + idle) {
             lock.lock()
             guard let current = held[pid], current.generation == generation else { lock.unlock(); return }
             held[pid] = nil
@@ -165,7 +173,7 @@ enum SyntheticActivationLease {
         guard !observing else { return }
         observing = true
         NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: nil
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             lock.lock()

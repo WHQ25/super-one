@@ -117,6 +117,12 @@ export class FastRun<Page extends RunObservation = RunObservation> {
   private reporter?: (action: JevRunAction) => void
   /** What the adapter's settle concluded, for the trace. */
   private lastSettle: SettleReport | void = undefined
+  /**
+   * How long that settle took. `act` covers input, settle and the read after
+   * it; on a 250-node AX tree each read is seconds, and without this split the
+   * trace could not say which of the three a slow step was spending them on.
+   */
+  private lastSettleMs = 0
   private scrolledSinceChange = false
   private continueDespiteSatisfied = false
   /** Jev called the goal satisfied once; a fresh observation must agree before the run finishes. */
@@ -396,6 +402,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       staleRetries = 0
       trace.latencyMs!.act = this.now() - actStart
       trace.changedPage = this.history[this.history.length - 1]?.changedPage
+      trace.latencyMs!.settle = this.lastSettleMs
       if (this.lastSettle) trace.settled = { ...this.lastSettle, elementsAfter: this.lastPage?.elements.length ?? -1 }
       this.lastSettle = undefined
       this.emit(trace)
@@ -410,6 +417,12 @@ export class FastRun<Page extends RunObservation = RunObservation> {
         }, page, space, 'click')
       }
     }
+  }
+
+  private async settle(page: Page, opts: { node?: number; typed?: boolean }, signal?: AbortSignal): Promise<void> {
+    const start = this.now()
+    this.lastSettle = await this.deps.settle(page, opts, signal)
+    this.lastSettleMs = this.now() - start
   }
 
   /** Perform one decided action and return the observation that followed it. */
@@ -444,15 +457,15 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       await this.deps.scroll(page, decision.direction === 'down' ? SCROLL_DELTA : -SCROLL_DELTA, signal)
       // Wheel scrolling is animated: without settling, the next observation is
       // taken before the page has moved and every scroll reports no change.
-      this.lastSettle = await this.deps.settle(page, { node: -1 }, signal)
+      await this.settle(page, { node: -1 }, signal)
       this.scrolledSinceChange = true
     } else if (decision.kind === 'click') {
       if (clickKind === 'submit') await this.deps.pressEnter(decision.element.node, signal)
       else await this.deps.click(decision.element.node, signal)
-      this.lastSettle = await this.deps.settle(page, { node: decision.element.node }, signal)
+      await this.settle(page, { node: decision.element.node }, signal)
     } else {
       await this.deps.type(decision.element.node, decision.text, signal)
-      this.lastSettle = await this.deps.settle(page, { node: decision.element.node, typed: true }, signal)
+      await this.settle(page, { node: decision.element.node, typed: true }, signal)
     }
     } catch (error) {
       if (error instanceof StaleObservation) this.history.pop()

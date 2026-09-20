@@ -284,6 +284,27 @@ describe('FastRun', () => {
     expect(result.since_last).toEqual(['Scroll down'])
   })
 
+  it('records how long the settle took, apart from the act that contains it', async () => {
+    // A 250-node AX tree costs seconds per read and the settle reads once
+    // more than the act does; a trace with only `act` could not show which.
+    const traces: Array<{ latencyMs?: { act?: number; settle?: number } }> = []
+    let now = 0
+    const list = page([el({ node: 1, role: 'button', label: 'Open Library' })], { text: 'Macintosh HD' })
+    const { deps } = harness([list, CREATED], (request) => {
+      const state = request.state as { page: { url: string } }
+      if (/\/issues\/\d+$/.test(state.page.url)) return { still_loading: noul(0), goal_satisfied: noul(0.95), next_step_risk: noul(0), action: pick('none_useful', actionsOf(request)) }
+      return { still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0), action: pick('click', actionsOf(request)), click_target: pick('1', clicksOf(request)) }
+    })
+    const click = deps.click
+    deps.now = () => now
+    deps.click = async (node) => { now += 100; await click(node) }
+    deps.settle = async () => { now += 900; return { changed: true } }
+    deps.trace = (entry) => { traces.push(entry) }
+    const result = await new FastRun(opts(), deps).start()
+    expect(result.status).toBe('done')
+    expect(traces[0]?.latencyMs).toMatchObject({ act: 1000, settle: 900 })
+  })
+
   it('offers a collapsed control as "Expand" and records it that way once clicked', async () => {
     // GitHub at 748 px: the search box is behind a "Toggle navigation" hamburger.
     const NARROW = page([el({ node: 1, role: 'button', label: 'Toggle navigation', expanded: 'false' })], { text: 'Home' })

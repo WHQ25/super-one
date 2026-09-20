@@ -23,7 +23,7 @@ export interface TraceStep {
   topChoices?: Record<string, Array<{ choice: string; probability: number }>>
   answers?: Record<string, unknown>
   model?: string
-  latencyMs?: { jev?: number; act?: number; observe?: number; wait?: number }
+  latencyMs?: { jev?: number; act?: number; observe?: number; wait?: number; settle?: number }
   decision: Record<string, unknown>
   changedPage?: boolean | null
   /** What the adapter's post-action settle concluded, when it reports one. */

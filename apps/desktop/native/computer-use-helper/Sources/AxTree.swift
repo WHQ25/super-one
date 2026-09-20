@@ -580,6 +580,9 @@ private func axRootTitle(_ element: AXUIElement, metadata: AxWindowMetadata) -> 
         .first(where: { !$0.isEmpty }) ?? metadata.role
 }
 
+/// Smaller than this and an AX "window" is a title bar accessory, not a root.
+private let axTransientRootMinimumSize = CGSize(width: 80, height: 24)
+
 func discoverAxTransientRoots(
     pid: pid_t,
     includeDescendants: Bool,
@@ -599,10 +602,14 @@ func discoverAxTransientRoots(
         // so the ordinary layer-zero window inventory does not include them.
         // Keep their non-modal window classification while registering an AX root.
         let floating = metadata.role == "AXWindow" && metadata.subrole == "AXFloatingWindow"
+        // A title bar accessory is a window of its own — the window-sharing
+        // button is a 66×20 AXDialog titled "Window" — and was listed as a
+        // dialog root the model then went looking into. No sheet, dialog or
+        // popover a person can act in is that small.
         guard (classifyAxWindow(metadata).kind != "window" || floating),
               axBool(element, "AXVisible") != false,
               let frame = axFrame(element),
-              frame.width > 1, frame.height > 1 else { return }
+              frame.width >= axTransientRootMinimumSize.width, frame.height >= axTransientRootMinimumSize.height else { return }
         elements.append(element)
     }
 

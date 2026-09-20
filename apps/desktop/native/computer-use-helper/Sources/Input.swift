@@ -121,18 +121,69 @@ func typeText(
     // No Escape ahead of the text: it is the key equivalent of Cancel, and
     // typing into a save sheet dismissed the sheet and put the text in the
     // document behind it.
+    let pid = targetPid.map(keyboardTargetPid)
     for cluster in text {
         var utf16 = Array(String(cluster).utf16)
         if let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true) {
             down.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: &utf16)
-            try postEvent(down, delivery: delivery, pid: targetPid)
+            try postEvent(down, delivery: delivery, pid: pid)
         }
         if let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) {
             up.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: &utf16)
-            try postEvent(up, delivery: delivery, pid: targetPid)
+            try postEvent(up, delivery: delivery, pid: pid)
         }
     }
 }
+
+/// The process that holds keyboard focus in `pid`'s key window.
+///
+/// A sandboxed app's save and open panels, share sheet and password prompts
+/// are hosted by an AppKit XPC service (ViewBridge): the sheet is the app's
+/// window, the controls in it live in the service, and the window server
+/// hands HID key events straight to that service. A key event posted to the
+/// app's own pid stops in the app — TextEdit's Save As field received nothing
+/// — and AX cannot say so: the bridged elements report the app's pid. What
+/// does say so is the service itself, which answers AX under its own pid and,
+/// while it hosts the panel, has a focused window with a focused control.
+func keyboardTargetPid(for pid: pid_t) -> pid_t {
+    for host in hostedServices(of: pid) {
+        let app = AXUIElementCreateApplication(host)
+        if axAttributeElement(app, kAXFocusedWindowAttribute as String) != nil,
+           let focused = axAttributeElement(app, kAXFocusedUIElementAttribute as String),
+           axBool(focused, kAXFocusedAttribute as String) == true {
+            return host
+        }
+    }
+    return pid
+}
+
+/// The processes launchd started on `pid`'s behalf: its XPC services. The
+/// app's own child processes (a browser's renderers) have the app as parent
+/// and are not services.
+private func hostedServices(of pid: pid_t) -> [pid_t] {
+    guard let responsible = responsibleProcess else { return [] }
+    var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
+    var size = 0
+    guard sysctl(&mib, 4, nil, &size, nil, 0) == 0, size > 0 else { return [] }
+    var procs = [kinfo_proc](repeating: kinfo_proc(), count: size / MemoryLayout<kinfo_proc>.stride + 16)
+    size = procs.count * MemoryLayout<kinfo_proc>.stride
+    guard sysctl(&mib, 4, &procs, &size, nil, 0) == 0 else { return [] }
+    return procs[0..<(size / MemoryLayout<kinfo_proc>.stride)].compactMap { info in
+        let candidate = info.kp_proc.p_pid
+        guard candidate != pid, info.kp_eproc.e_ppid == 1, responsible(candidate) == pid else { return nil }
+        return candidate
+    }
+}
+
+/// `responsibility_get_pid_responsible_for_pid`: the process on whose behalf
+/// launchd runs another, which is how the system attributes an XPC service
+/// to its app.
+private typealias ResponsibleProcess = @convention(c) (pid_t) -> pid_t
+private let responsibleProcess: ResponsibleProcess? = {
+    guard let handle = dlopen("/usr/lib/system/libquarantine.dylib", RTLD_NOW),
+          let symbol = dlsym(handle, "responsibility_get_pid_responsible_for_pid") else { return nil }
+    return unsafeBitCast(symbol, to: ResponsibleProcess.self)
+}()
 
 /// ANSI virtual keycodes. AppKit matches a menu key equivalent by keycode, so
 /// a chord has to arrive on the real one: the unicode fallback below (a
@@ -194,15 +245,16 @@ func keypress(
     if delivery == .appPost, flags.contains(.maskCommand), let targetPid {
         SyntheticActivationLease.hold(pid: targetPid, windowId: windowId)
     }
+    let pid = targetPid.map(keyboardTargetPid)
 
     if let code = keyCodes[mainKey.lowercased()] {
         if let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true) {
             down.flags = flags
-            try postEvent(down, delivery: delivery, pid: targetPid)
+            try postEvent(down, delivery: delivery, pid: pid)
         }
         if let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false) {
             up.flags = flags
-            try postEvent(up, delivery: delivery, pid: targetPid)
+            try postEvent(up, delivery: delivery, pid: pid)
         }
         return
     }
@@ -211,12 +263,12 @@ func keypress(
     if let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true) {
         down.flags = flags
         down.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: &utf16)
-        try postEvent(down, delivery: delivery, pid: targetPid)
+        try postEvent(down, delivery: delivery, pid: pid)
     }
     if let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) {
         up.flags = flags
         up.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: &utf16)
-        try postEvent(up, delivery: delivery, pid: targetPid)
+        try postEvent(up, delivery: delivery, pid: pid)
     }
 }
 

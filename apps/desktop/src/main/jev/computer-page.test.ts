@@ -3,7 +3,7 @@ import { ComputerUseService } from '../computer-use/computer-use-service'
 import { FakePlatformBackend } from '../computer-use/platform/fake-backend'
 import { axTreeToOutline } from '../computer-use/platform/ax-outline'
 import { ComputerUseError, type CapabilityTier } from '../computer-use/types'
-import { createComputerAdapter, computerPage } from './computer-page'
+import { createComputerAdapter, computerPage, computerObservation } from './computer-page'
 import { buildActionSpace } from './action-space'
 import { FastRun } from './loop'
 import { noul, pick } from './test-fixtures'
@@ -261,6 +261,29 @@ describe('computer fast-loop adapter', () => {
     const act = vi.spyOn(service, 'act')
     await expect(adapter.pressEnter(page.elements[0].node)).rejects.toThrow('not the app-focused')
     expect(act).not.toHaveBeenCalled()
+  })
+
+  it('offers an anonymous text field, which is what a macOS search box is', async () => {
+    // System Settings' sidebar search has no AXTitle, AXDescription or AXLabel,
+    // and an empty one has no value either. It used to be dropped outright: the
+    // live run saw 112 elements, every one of them a button, so the action head
+    // was never offered type_text and could only click and scroll until it
+    // paused. Every other fixture here names its fields, which is why no test
+    // caught it.
+    const backend = new FakePlatformBackend([{ app: 'Settings', bundleId: 'com.test.settings', pid: 7, windows: [{ title: 'General', focused: true,
+      tree: { role: 'window', children: [
+        { role: 'textField', value: '' },
+        { role: 'button', name: 'General' },
+      ] },
+    }] }])
+    const service = new ComputerUseService({ adapter: backend })
+    service.policy.setEnabled(true)
+    service.policy.grantSession({ app: 'Settings', bundleId: 'com.test.settings', tier: 'full' })
+    const observed = await service.observe((await service.resolveTargetRoot()).rootId, 'semantic')
+    const page = computerPage(computerObservation(service.getStateStore().get(observed.stateId)!), service)
+    const field = page.elements.find((e) => e.editable)
+    expect(field).toMatchObject({ role: 'textbox', label: 'Text field' })
+    expect(buildActionSpace({ page, history: [] }).typeCandidates).toEqual([String(field!.node)])
   })
 
   it('honors cancellation before dispatching an input', async () => {

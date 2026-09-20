@@ -21,6 +21,9 @@ export interface ComputerPage extends RunObservation {
 
 const ROLE_MAP: Record<string, string> = { textfield: 'textbox', textarea: 'textbox', searchfield: 'searchbox', combobox: 'combobox', radiobutton: 'radio', popupbutton: 'button', menubaritem: 'menuitem' }
 
+/** What to call an editable control that carries no readable name of its own. */
+const EDITABLE_ROLE_LABEL: Record<string, string> = { searchbox: 'Search field', textbox: 'Text field', combobox: 'Combo box' }
+
 const MAX_ELEMENTS = 250
 const MAX_TEXT = 6000
 
@@ -77,8 +80,16 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
       if (!enabled || elements.length >= MAX_ELEMENTS) break
       const command = node.nativeTarget?.scope === 'menuBar'
       const source = node.value || node.name ? node : labelSource(node)
-      const itemLabel = (source?.value || source?.name || '').trim()
-      const label = kind === 'select' || kind === 'open' ? `${kind === 'select' ? 'Select' : 'Open'} ${itemLabel}` : node.name || (editable ? value : '')
+      const mapped = command || kind === 'select' || kind === 'open' ? 'button' : ROLE_MAP[role] ?? role
+      // An empty macOS text field is anonymous: no AXTitle, no AXDescription,
+      // no AXLabel, and no value to read either. System Settings' sidebar
+      // search is exactly that, and the rule below dropped it, so `type_text`
+      // was never offered and the run could only click and scroll. The web
+      // never needed this — a placeholder or aria-label lands in the
+      // accessible name there. Name such a field for what it is instead.
+      const anonymous = editable ? EDITABLE_ROLE_LABEL[mapped] ?? 'Text field' : ''
+      const itemLabel = (source?.value || source?.name || '').trim() || anonymous
+      const label = kind === 'select' || kind === 'open' ? `${kind === 'select' ? 'Select' : 'Open'} ${itemLabel}` : node.name || (editable ? value : '') || anonymous
       // A row, its name cell and the cell's text field all open the same item:
       // one candidate per intent. Nothing unlabelled is offered either — Jev
       // cannot choose it and the main model cannot approve it.
@@ -89,7 +100,7 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
       const id = elements.length + 1
       refs.set(id, node)
       if (kind) clickKinds.set(id, kind)
-      elements.push({ node: id, ref: node.ref, role: command || kind === 'select' || kind === 'open' ? 'button' : ROLE_MAP[role] ?? role,
+      elements.push({ node: id, ref: node.ref, role: mapped,
         label, value: kind === 'select' ? (node.selected ? 'selected' : 'not selected') : value,
         editable: kind !== 'select' && kind !== 'open' && editable, clickable: !!kind,
         canSubmit: !!planNodeAction(node, { kind: 'enter' }, tier), password: false, submit: false, disabled: false })

@@ -84,6 +84,22 @@ describe('app menu bar in window outlines', () => {
     expect((await service.waitFor(observation.stateId, { kind: 'newRoot', title: 'Fonts' }, 0)).status).toBe('verified')
   })
 
+  it('only makes an app frontmost on focus activate', async () => {
+    // Plain focus raises the window and keeps the app in the background;
+    // activate is for holding it in front.
+    const backend = new FakePlatformBackend([
+      { app: 'Chat', bundleId: 'com.test.chat', pid: 3, windows: [{ title: 'Chat', focused: true, tree: { role: 'window' } }] },
+      { app: 'Editor', bundleId: 'com.test.editor', pid: 7, windows: [{ title: 'Document', focused: false, tree: { role: 'window' } }] },
+    ])
+    const service = new ComputerUseService({ adapter: backend })
+    service.policy.setEnabled(true)
+    service.policy.grantSession({ app: 'Editor', bundleId: 'com.test.editor', tier: 'full' })
+    await service.apps('focus', 'com.test.editor')
+    expect(await backend.frontmost()).toMatchObject({ bundleId: 'com.test.chat' })
+    await service.apps('focus', 'com.test.editor', { activate: true })
+    expect(await backend.frontmost()).toMatchObject({ bundleId: 'com.test.editor' })
+  })
+
   it.each(['menu', 'dialog'] as const)('keeps %s obstruction scoped to the actual target', async (blocker) => {
     const service = fixture(blocker)
     const roots = await service.listUiRoots()

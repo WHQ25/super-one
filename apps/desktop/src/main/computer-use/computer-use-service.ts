@@ -33,6 +33,7 @@ import {
   ComputerUseError,
   type ActResult,
   type AppsActionResult,
+  type AppsFocusOptions,
   type AppsListOptions,
   type AppsListResult,
   type AppsSnapshot,
@@ -274,12 +275,12 @@ export class ComputerUseService {
   async apps(
     action: 'list' | 'focus' | 'launch' = 'list',
     app?: string,
-    listOptions: AppsListOptions = {},
+    options: AppsListOptions & AppsFocusOptions = {},
   ): Promise<AppsSnapshot> {
     this.requireEnabled()
 
     if (action === 'list') {
-      return this.listAppCatalog(listOptions)
+      return this.listAppCatalog(options)
     }
 
     if (!app) {
@@ -292,7 +293,7 @@ export class ComputerUseService {
     const resolvedQuery = identity.bundleId
     const resolveAliases = [app, identity.app, identity.bundleId]
     if (action === 'focus') {
-      await this.adapter.focusApp?.(identity.bundleId)
+      await this.adapter.focusApp?.(identity.bundleId, { activate: options.activate === true })
     } else {
       await this.adapter.launchApp?.(identity.bundleId)
     }

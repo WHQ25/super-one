@@ -275,12 +275,13 @@ export class FakePlatformBackend implements PlatformAdapter {
     }
   }
 
-  async focusApp(appName: string): Promise<void> {
+  async focusApp(appName: string, options: { activate?: boolean } = {}): Promise<void> {
     const app = this.apps.find(
       (a) => a.app === appName || a.bundleId === appName,
     )
     if (!app) throw new Error(`fake: app not found: ${appName}`)
-    this.frontmostPid = app.pid
+    // Like the real helper: raising the window does not make the app active.
+    if (options.activate) this.frontmostPid = app.pid
     for (const a of this.apps) {
       for (const w of a.windows) w.focused = a.pid === app.pid && !w.modal
     }
@@ -317,6 +318,11 @@ export class FakePlatformBackend implements PlatformAdapter {
       }),
     )
     this.frontmostPid = pid
+  }
+
+  async frontmost(): Promise<{ app: string; bundleId: string; pid: number } | null> {
+    const app = this.apps.find((a) => a.pid === this.frontmostPid)
+    return app ? { app: app.app, bundleId: app.bundleId, pid: app.pid } : null
   }
 
   listAppsMeta(): Array<{

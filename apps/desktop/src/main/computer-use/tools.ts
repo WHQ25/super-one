@@ -181,7 +181,8 @@ const toolDefs: Array<{
       + 'Rows are sorted running/frontmost/granted first. '
       + 'action=focus|launch accepts display name (any locale) or reverse-DNS bundleId; host resolves to a stable bundleId before the permission grant so one allow covers later snapshot/act. '
       + 'Launch/focus returns a slim {target} confirmation. If the user only asks to open an app, launch once and stop when target is returned. '
-      + 'For navigation, forms or search, prefer computer_run when Jev is enabled; batch known button sequences with computer_act. Focus only puts a window in front.',
+      + 'For navigation, forms or search, prefer computer_run when Jev is enabled; batch known button sequences with computer_act. '
+      + 'Focus only raises the window and leaves the app in the background; pass activate=true only when the app must stay the active app for a sequence of foreground-only steps.',
     shape: {
       ...descriptionField,
       action: z.enum(['list', 'focus', 'launch']).optional().describe('Default list'),
@@ -191,6 +192,10 @@ const toolDefs: Array<{
         .describe(
           'Display name (any locale) or reverse-DNS bundle id for focus/launch. Prefer bundleId from a prior list when known.',
         ),
+      activate: z
+        .boolean()
+        .optional()
+        .describe('focus only: make the app frontmost and keep it there. Leave unset so the user keeps their current app.'),
       query: z
         .string()
         .optional()
@@ -678,7 +683,7 @@ async function executeComputerUseToolInner(
           })
           // Pass the stable bundle id into apps() so launch/focus matching is locale-safe.
           // Never auto-grant a different bundleId than the user-approved identity.
-          const result = await service.apps(action, identity.bundleId)
+          const result = await service.apps(action, identity.bundleId, { activate: args.activate === true })
           // Slim launch/focus payload — still TOON for consistency.
           return withMemoryDiscoveryHint(toonReply(result), COMPUTER_MEMORY_DISCOVERY_HINT)
         }

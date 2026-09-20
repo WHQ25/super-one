@@ -637,9 +637,9 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     }
   }
 
-  async focusApp(app: string): Promise<void> {
+  async focusApp(app: string, options: { activate?: boolean } = {}): Promise<void> {
     // Never steal frontmost by default — background Computer Use.
-    await this.client.call('focus_app', { app, activate: false })
+    await this.client.call('focus_app', { app, activate: options.activate === true })
   }
 
   async launchApp(app: string): Promise<void> {

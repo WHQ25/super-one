@@ -80,8 +80,12 @@ export interface PlatformAdapter {
     region: [number, number, number, number],
     coordinateSpace: CoordinateSpace,
   ): Promise<CapturedImage>
-  /** Optional: bring app/window forward or launch. */
-  focusApp?(app: string): Promise<void>
+  /**
+   * Optional: bring app/window forward or launch. `activate` makes the app
+   * frontmost — off by default, because Computer Use works in the background;
+   * on for the one thing a background app cannot do, its menu bar.
+   */
+  focusApp?(app: string, options?: { activate?: boolean }): Promise<void>
   launchApp?(app: string): Promise<void>
   /** Optional: running apps (bundle + frontmost) for computer_apps. */
   listApps?(): Promise<Array<{ app: string; bundleId: string; pid: number; frontmost: boolean }>>

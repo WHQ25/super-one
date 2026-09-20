@@ -100,6 +100,8 @@ export interface UiOutlineNode {
   selected?: boolean
   /** A collapsed control conceals what it would reveal; the loop offers it as "Expand". */
   expanded?: boolean
+  /** A menu item's check mark: the only place a chosen sort or view mode is shown. */
+  checked?: boolean
   /** Only supplied when native file metadata identifies the item. Packages are files. */
   itemKind?: 'folder' | 'file'
   /** App-level AX targets have their own DFS namespace, outside the window. */
@@ -284,6 +286,11 @@ export interface AppsListOptions {
   limit?: number
   /** When true, also attach discoverable UI roots (token-heavy). Default false. */
   includeRoots?: boolean
+}
+
+export interface AppsFocusOptions {
+  /** Make the app frontmost, which its menu bar commands require. Default false. */
+  activate?: boolean
 }
 
 export interface ObserveResult {

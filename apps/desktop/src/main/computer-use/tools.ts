@@ -303,8 +303,8 @@ const toolDefs: Array<{
         .optional()
         .describe(
           'semantic — pure AX; prefer it whenever actions use @eN refs and the action is press/select/open/setText/click(ref)/typeText(ref), the most reliable path for labeled controls. '
-            + 'app-directed — the default when omitted; for coordinate click/type/scroll/drag/keypress or when no usable AX ref exists. Posts CGEvent to the target app PID in the background without stealing frontmost; a ⌘ shortcut (keys=["cmd+s"]) works there too, the app is made to believe it is active for it. System-wide hotkeys (⌘Space, ⌘Tab, screenshots) need physical. '
-            + 'physical — global HID; only when app-directed fails. Requires frontmost and is disruptive.',
+            + 'app-directed — the default when omitted; for coordinate click/type/scroll/drag/keypress or when no usable AX ref exists. Posts CGEvent to the target app PID in the background without stealing frontmost; a ⌘ shortcut (keys=["cmd+s"]) works there too, the app is made to believe it is active for it. '
+            + 'physical — global HID, only for system-wide hotkeys (⌘Space, ⌘Tab, screenshots). Not a fallback for app-directed: it needs the target frontmost and takes the user\'s keyboard and pointer while it runs.',
         ),
     },
   },

@@ -1206,6 +1206,18 @@ B 的范式就是 `presets`：把带参数的动作拆成几个选择题，每�
 
 **门槛校准（`goalSatisfiedIdle` 0.5 → 0.4）。** 桌面上"已完成"页面的 `goal_satisfied` 系统性低于网页：§10.9 Save 后 0.57 / 0.62，本轮 append 后 0.45、Escape 后 0.49，四次都配着 none_useful ≥ 0.64；而所有 trace 里未完成的桌面页面最高 0.18（Finder 选中前一步）。0.5 把两次已完成的 run 判成 no-progress 暂停，0.4 在现有数据上仍把两类分开，browser 的校准（完成 0.63–0.86，未完成 ≤ 0.11）不受影响。这条路径仍要求 none_useful ≥ 0.8 且重新观察后再问一次同意。
 
+### 11.7 暂停 payload 与第三、四步落地（2026-09-21，Grok 4.6 / high，dev 版）
+
+**暂停 payload（`febc6b1e`）。** 每次结果带 `progress = { completed: [{label, outcome: worked|didnt|unknown}], goal_satisfied, still_loading, note? }`（取代 `since_last`，resume 清零；outcome 来自 `changed` 三态）；每次暂停经可选 `RunDeps.capture()` 拿一份新鲜 fused 观察——computer 走 `service.observe(root,'fused')` + `persistComputerUseScreenshot` + `alignStateVisual`（`snapshot.stateId` 指向它，暂停页的 epoch 不变所以仍 fresh），browser 走渲染进程截图，device 走 fused `device_snapshot`——回 `snapshot.image = {path,width,height,relevance}`（risky → useful，其余 optional；capability → required 留给第 5 步）与 `coordinateSpace`；抓图失败只丢图不丢问题。`question.context.why` 改为 reason 短句 + `describeHeads()` 对头的逐条翻译（"action: none_useful 0.64, then append 0.35; click_target: none_of_these 0.98 (best element [1] … 0.02); goal_satisfied 0.45; …"），`decision` 表照旧并列。另加：**no-progress 暂停多一个 `accept` 选项**（"Finish: the goal is reached as the page stands"）→ run 以 `done: Accepted by the caller` 结束——之前三个已达成目标的 run 只能 abort 收尾，正是因为没有这个出口。
+
+重跑两个 abort 用例：TextEdit 追加 `r6253e2db` **3 步 done**（append 0.92、`field_for_Line` 0.85 直接匹配，随后 `goal_satisfied 0.46 / 0.50 with no action left`）；Save sheet Escape `r16e9c662` **3 步 done**（Press Escape worked）。两条都没再暂停——是 §11.6 的 0.4 门槛在起作用，payload 本身这两条上没被触发；`progress` 在第四步的 budget 暂停里被主模型读到（见下）。
+
+**第三步 `context_menu`（`e4d049d9` + `20c75f35`）。** 首跑 `r7f07d1ad`：第 1 步 `action` context_menu 0.97、`context_menu_target` "Select Report.txt" 0.99，右键后观察落在菜单 root（title "AXMenu"，96 元素，settle 走 `menu-root` 不采样），第 2 步 `click_target` Get Info **1.0**——但 press 报 `didnt`，Info 窗口没出现。helper 直连三种序列（直接按、dismiss → 重开 → 按旧 index、菜单 root 一出现就按）全部成功，问题在 service：`act` 重开菜单时换了 `root`，**`coordinateSpace.axRootId` 还是被 dismiss 掉的旧菜单 id**，helper 的 `validateCoordinateGeometry` 按旧 id 找不到 AX root，`ax_action` 抛错被 `axActionStep` 吞成 `applied:false` → `didnt`。fake backend 没有几何校验，五条契约测试因此全绿；现在 fake 给菜单每次（重）开分配新 `axRootId`、按缺失 id 校验拒绝，契约测试在修复前变红。修法 `ContextMenuLedger.rebase()`：重开后 root 与 `coordinateSpace.axRootId` 一起换（act / zoom 两处）。修后 `r8064a401` **4 步 done**：context_menu 0.96 → Get Info 1.0（`changed: observation`，act 3.5 s 含重开）→ `goal_satisfied 0.60 / 0.62`；前台始终是 SuperOne。同一批还修了宿主路由：`click button:'right'` 打在有 press 能力的 ref 上原来走 AXPress（左键语义），现在右键一律 posted。
+
+**第四步 `drag`（`b619ae70`）——决策对，投递不到。** `rfdf5bd30`：第 1 步 `action` drag **0.96**、`drag_target_for_Report_txt` → Archive 0.86，之后两次 0.95；`next_step_risk` 0.32（未到 0.5，没暂停确认——把文件移进文件夹 Jev 没算不可逆）。三次 drag 文件都没进 Archive（第一次 `changed: observation` 是拖过时 Archive 被 spring-load 展开），maxSteps 用尽 budget 暂停，主模型读了 `progress`（"3 次 drag 只 1 次 worked"）后 abort。直连探针：**同一条 posted drag 在 Finder 后台不落 drop，Finder 在前台时文件就进去了**；`postPointer` 对每个指针事件都已持有合成激活租约，所以"自认 active"对拖放不够——Finder 的拖放会话（drag manager）只在真正前台的 app 里接受 drop。这是 §10.10 之后没测过的路径（那里只验证了 TextEdit 拖选文字）。选项：(a) 拖拽走事务性真实激活（§10.8 菜单命令最初的做法：activate → drag → previous.activate，≈1 s 前台闪一下，期间用户按键会落进目标 app）；(b) 保留 drag，只在目标 app 恰在前台时有效，描述里写明；(c) 拿掉 drag，"移入文件夹"交给菜单命令（Edit ▸ Copy 与 ⌥ 变体 Move Item Here 都在 AX 菜单树里）。待定。
+
+**跑 case 的两个脚本坑（bench 基础设施，非产品）。** AppleScript `key code 126 using command down`（⌘↑）在 Finder 是 Enclosing Folder，把 /System/Library 的窗口带回了 /System；`make new Finder window to X` 后紧接 `set current view` / `set bounds` 有时目标不生效，创建和设置分两次 osascript 调用。
+
 ## 参考
 
 - `~/Developer/Github/jev-ultrafast/jev_ultrafast/{agent.py, browser.py, snapshot.js, model.py, questions.py}`、`docs/performance.md`

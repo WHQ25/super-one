@@ -169,6 +169,7 @@ func keypress(
     _ key: String,
     delivery: InputDelivery,
     targetPid: pid_t?,
+    windowId: CGWindowID?,
     requireFrontmostBundleId: String?
 ) throws {
     if !axTrusted() {
@@ -189,6 +190,15 @@ func keypress(
         case "ctrl", "control": flags.insert(.maskControl)
         default: break
         }
+    }
+
+    // A ⌘ chord is a menu command by another name, and AppKit only dispatches
+    // it in the active app: posted to a background pid it is dropped without a
+    // trace, whatever the transport. Plain keys reach the first responder
+    // regardless. So for a chord the app is made to believe it is active for
+    // the duration — see SyntheticActivation.
+    if delivery == .appPost, flags.contains(.maskCommand), let targetPid {
+        SyntheticActivationLease.hold(pid: targetPid, windowId: windowId)
     }
 
     if let code = keyCodes[mainKey.lowercased()] {

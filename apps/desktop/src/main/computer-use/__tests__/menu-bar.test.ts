@@ -86,7 +86,8 @@ describe('app menu bar in window outlines', () => {
 
   it('presses a menu command in a background app and only makes it frontmost on focus activate', async () => {
     // AppKit validates menu items against the active app's key window, so the
-    // helper activates the app for the press and hands the previous app back;
+    // helper makes the app believe it is active for the press, without
+    // bringing it forward;
     // the service neither gates on frontmost nor changes it. Plain focus keeps
     // the app in the background; activate is for holding it in front.
     const backend = new FakePlatformBackend([

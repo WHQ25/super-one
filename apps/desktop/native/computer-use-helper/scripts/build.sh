@@ -90,6 +90,7 @@ SOURCES=(
   "$ROOT/Sources/CoordinateSpace.swift"
   "$ROOT/Sources/Input.swift"
   "$ROOT/Sources/AxActions.swift"
+  "$ROOT/Sources/SyntheticActivation.swift"
   "$ROOT/Sources/AxItemActions.swift"
   "$ROOT/Sources/AxTree.swift"
   "$ROOT/Sources/RootDiscovery.swift"
@@ -224,6 +225,7 @@ swiftc -O \
   "$ROOT/Sources/CoordinateSpace.swift" \
   "$ROOT/Sources/Input.swift" \
   "$ROOT/Sources/AxActions.swift" \
+  "$ROOT/Sources/SyntheticActivation.swift" \
   "$ROOT/Sources/AxItemActions.swift" \
   "$ROOT/Sources/AxTree.swift" \
   "$ROOT/Sources/RootDiscovery.swift" \

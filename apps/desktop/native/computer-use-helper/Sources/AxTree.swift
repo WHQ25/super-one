@@ -85,8 +85,10 @@ private final class AxWalkState {
     /// AppKit validates menu items against the active app's key window, so a
     /// background app's menu `AXEnabled` flags describe no key window at all:
     /// Finder's View menu reads 3 of 41 commands enabled until Finder is
-    /// active. A walk with this set reports every menu node enabled instead
-    /// of reporting those flags as if they were the commands' own state.
+    /// active. The walk makes the app believe it is active first (see
+    /// SyntheticActivationLease); when that is not possible, a walk with this
+    /// set reports every menu node enabled instead of reporting those flags
+    /// as if they were the commands' own state.
     var unvalidatedMenuFlags = false
     let limits: AxWalkLimits
     init(limits: AxWalkLimits) { self.limits = limits }
@@ -895,9 +897,11 @@ func axTreeSnapshot(
     let menu: [String: Any]?
     if axRootId == nil, axRole(rootEl) == "AXWindow", let menuBar = axMenuBar(app) {
         // Cocoa exposes command subtrees while menus are closed, and `ax_action`
-        // presses a command in them directly — activating a background app for
-        // the press, whose menu flags are meaningless until then.
-        menuState.unvalidatedMenuFlags = NSWorkspace.shared.frontmostApplication?.processIdentifier != pid
+        // presses a command in them directly. A background app validates its
+        // menus only once it believes it is active, so it is told so for the
+        // walk — and stays told for the press that usually follows.
+        let background = NSWorkspace.shared.frontmostApplication?.processIdentifier != pid
+        menuState.unvalidatedMenuFlags = background && !SyntheticActivationLease.hold(pid: pid, windowId: windowId.map { CGWindowID($0) })
         menu = nodeDicts(el: menuBar, state: menuState, depth: 0, insideWebArea: false,
                          coordinateTransform: coordinateTransform, focusedElement: focused).first
     } else {

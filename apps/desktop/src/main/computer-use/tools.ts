@@ -182,7 +182,7 @@ const toolDefs: Array<{
       + 'action=focus|launch accepts display name (any locale) or reverse-DNS bundleId; host resolves to a stable bundleId before the permission grant so one allow covers later snapshot/act. '
       + 'Launch/focus returns a slim {target} confirmation. If the user only asks to open an app, launch once and stop when target is returned. '
       + 'For navigation, forms or search, prefer computer_run when Jev is enabled; batch known button sequences with computer_act. '
-      + 'Focus only raises the window and leaves the app in the background; pass activate=true only when the app must stay the active app for a sequence of foreground-only steps (a single menu bar command needs no activation: the host brings the app forward for the press and hands the previous app back).',
+      + 'Focus only raises the window and leaves the app in the background; pass activate=true only when the app must stay the active app for a sequence of foreground-only steps (menu bar commands and ⌘ shortcuts work in the background; no activation is needed for them).',
     shape: {
       ...descriptionField,
       action: z.enum(['list', 'focus', 'launch']).optional().describe('Default list'),
@@ -303,7 +303,7 @@ const toolDefs: Array<{
         .optional()
         .describe(
           'semantic — pure AX; prefer it whenever actions use @eN refs and the action is press/select/open/setText/click(ref)/typeText(ref), the most reliable path for labeled controls. '
-            + 'app-directed — the default when omitted; for coordinate click/type/scroll/drag/keypress or when no usable AX ref exists. Posts CGEvent to the target app PID in the background without stealing frontmost. '
+            + 'app-directed — the default when omitted; for coordinate click/type/scroll/drag/keypress or when no usable AX ref exists. Posts CGEvent to the target app PID in the background without stealing frontmost; a ⌘ shortcut (keys=["cmd+s"]) works there too, the app is made to believe it is active for it. System-wide hotkeys (⌘Space, ⌘Tab, screenshots) need physical. '
             + 'physical — global HID; only when app-directed fails. Requires frontmost and is disruptive.',
         ),
     },

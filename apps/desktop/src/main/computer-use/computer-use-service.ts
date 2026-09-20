@@ -791,9 +791,9 @@ export class ComputerUseService {
   /**
    * Frontmost gate for delivery=physical (global HID) only.
    * app-directed / semantic must not call this — background Computer Use is the
-   * default. Menu bar commands, which AppKit only validates in the active app,
-   * are the helper's business: it activates the app for the press and hands
-   * the previous app back.
+   * default. Menu bar commands and ⌘ shortcuts, which AppKit only dispatches
+   * in the active app, are the helper's business: it makes the app believe it
+   * is active for them without bringing it forward.
    */
   private async assertFrontmost(bundleId: string): Promise<void> {
     if (this.bypassPolicy) return

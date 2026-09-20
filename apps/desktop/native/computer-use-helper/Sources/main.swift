@@ -452,6 +452,7 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 key,
                 delivery: delivery,
                 targetPid: pid,
+                windowId: AnyCodable.int(params, "windowId").map { CGWindowID($0) },
                 requireFrontmostBundleId: front
             )
             return .success(id: request.id, result: [

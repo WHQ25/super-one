@@ -114,9 +114,12 @@ describe('decide', () => {
     // arXiv: the abstract page reads 0.63, and scrolling on would scroll the evidence away.
     const idle = { ...calm, goal_satisfied: noul(0.63), action: pick('none_useful', ACTIONS, 0.98) }
     expect(decide(input({ answers: idle }))).toMatchObject({ kind: 'done', probability: 0.63 })
-    // A weak completion verdict still scrolls rather than finishing.
-    const unsure = { ...idle, goal_satisfied: noul(0.4) }
+    // A weak completion verdict still scrolls rather than finishing. Desktop
+    // finished pages read as low as 0.45 (TextEdit after an append / an
+    // Escape), unfinished ones at most 0.18; the line sits between.
+    const unsure = { ...idle, goal_satisfied: noul(THRESHOLDS.goalSatisfiedIdle - 0.05) }
     expect(decide(input({ answers: unsure }))).toMatchObject({ kind: 'scroll' })
+    expect(decide(input({ answers: { ...idle, goal_satisfied: noul(0.45) } }))).toMatchObject({ kind: 'done', probability: 0.45 })
     // So does an action head that is not sure the page is exhausted.
     const wavering = { ...idle, action: pick('none_useful', ACTIONS, 0.6) }
     expect(decide(input({ answers: wavering }))).toMatchObject({ kind: 'scroll' })
@@ -188,17 +191,41 @@ describe('decide', () => {
       el({ node: 2, role: 'scrollarea', label: 'Table starting at Applications', clickable: false, scroll: { up: true, down: true } }),
       el({ node: 3, role: 'textbox', label: 'First line', value: 'First line', editable: true, appendable: true }),
       el({ node: 4, role: 'button', label: 'Done' }),
-    ], { canScroll: { up: true, down: true } }), history: [] })
+      el({ node: 5, role: 'window', label: 'Document', clickable: false, root: '@r1' }),
+    ], { canScroll: { up: true, down: true }, canEscape: true }), history: [] })
     const AREAS = [...desktop.scrollCandidates, NONE]
     const APPENDS = [...desktop.appendCandidates, NONE]
-    const DESKTOP_ACTIONS = ['click', 'type_text', 'append', 'scroll_down', 'scroll_up', 'none_useful']
+    const ROOTS = [...desktop.switchCandidates, NONE]
+    const DESKTOP_ACTIONS = ['click', 'type_text', 'append', 'scroll_down', 'scroll_up', 'escape', 'switch', 'none_useful']
 
-    it('offers scroll areas and appendable text areas only when the page flags them', () => {
+    it('offers scroll areas, appendable text areas, roots and Escape only when the page flags them', () => {
       expect(space.scrollCandidates).toEqual([])
       expect(space.appendCandidates).toEqual([])
+      expect(space.switchCandidates).toEqual([])
+      expect(space.canEscape).toBe(false)
       expect(desktop.scrollCandidates).toEqual(['1', '2'])
       expect(desktop.appendCandidates).toEqual(['3'])
+      expect(desktop.switchCandidates).toEqual(['5'])
+      expect(desktop.canEscape).toBe(true)
       expect(desktop.clickCandidates).not.toContain('1')
+      expect(desktop.clickCandidates).not.toContain('5')
+    })
+
+    it('presses Escape on Jev\'s word, asking first only when it rates the cancel irreversible', () => {
+      expect(decide(input({ space: desktop, answers: { ...calm, action: pick('escape', DESKTOP_ACTIONS) } }))).toEqual({ kind: 'escape', risk: 0.05 })
+      const risky = decide(input({ space: desktop, answers: { ...calm, next_step_risk: noul(0.8), action: pick('escape', DESKTOP_ACTIONS) } }))
+      expect(risky).toMatchObject({ kind: 'pause', mode: 'escape', question: { reason: 'risky', options: [{ key: 'escape', label: 'press Escape', probability: 0.9 }, { key: 'abort' }] } })
+      // A browser page never offers it; an answer naming it is invalid there.
+      expect(decide(input({ answers: { ...calm, action: pick('escape', [...ACTIONS, 'escape']) } })).kind).not.toBe('escape')
+    })
+
+    it('switches to the root Jev names, or falls through when it names none', () => {
+      expect(decide(input({ space: desktop, answers: { ...calm, action: pick('switch', DESKTOP_ACTIONS), switch_target: pick('5', ROOTS) } })))
+        .toMatchObject({ kind: 'switch', element: { index: '5', root: '@r1' }, probability: 0.9 })
+      expect(decide(input({ space: desktop, answers: { ...calm, action: pick('switch', DESKTOP_ACTIONS), switch_target: pick(NONE, ROOTS) } })))
+        .toMatchObject({ kind: 'scroll' })
+      expect(decide(input({ space: desktop, answers: { ...calm, next_step_risk: noul(0.7), action: pick('switch', DESKTOP_ACTIONS), switch_target: pick('5', ROOTS) } })))
+        .toMatchObject({ kind: 'pause', mode: 'switch', element: { index: '5' }, question: { reason: 'risky', options: [expect.objectContaining({ key: '5', label: 'switch to window Document' }), expect.objectContaining({ key: 'abort' })] } })
     })
 
     it('scrolls the area Jev names, or the likeliest one that can move that way', () => {

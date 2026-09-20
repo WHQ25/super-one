@@ -425,4 +425,40 @@ describe('FastRun', () => {
     expect(heads.at(-1)).not.toEqual(expect.arrayContaining(['scroll_area']))
     expect(heads.at(-1)).not.toEqual(expect.arrayContaining(['append_target']))
   })
+
+  it('presses Escape and switches roots through the optional deps, and answers a risky Escape pause by pressing it', async () => {
+    const SHEET = page([
+      el({ node: 1, role: 'button', label: 'Save' }),
+      el({ node: 2, role: 'window', label: 'Document', clickable: false, root: '@r1' }),
+    ], { text: 'Save sheet', canEscape: true })
+    const DOC = page([el({ node: 1, role: 'button', label: 'Show Fonts' })], { text: 'Document', canEscape: true })
+    let step = 0
+    const { deps, acts, next } = harness([SHEET, SHEET, DOC], (request) => {
+      step++
+      const actions = actionsOf(request)
+      if (step === 1) return { still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0.9), action: pick('escape', actions) }
+      if (step === 2) return { still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0), action: pick('switch', actions), switch_target: pick('2', Object.keys(request.questions.switch_target!.criteria!)) }
+      return { still_loading: noul(0), goal_satisfied: noul(0.95), next_step_risk: noul(0), action: pick('none_useful', actions) }
+    })
+    deps.checkDone = async () => false
+    deps.dismiss = async () => { acts.push('escape') }
+    deps.switchRoot = async (rootId) => { acts.push(`switch:${rootId}`); next() }
+    const run = new FastRun(opts({ goal: 'Back to the document', maxSteps: 6 }), deps)
+    const paused = await run.start()
+    expect(paused).toMatchObject({ status: 'paused', question: { reason: 'risky', options: [{ key: 'escape' }, { key: 'abort' }] } })
+    expect(acts).toEqual([])
+    const result = await run.resume({ questionId: paused.question!.id, choice: 'escape' })
+    expect(acts).toEqual(['escape', 'switch:@r1'])
+    expect(result.status).toBe('done')
+    expect(result.since_last).toEqual(['Press Escape (no change)', 'Switch to [2] Document'])
+    // A browser page offers neither.
+    let offered: string[] = []
+    const browser = harness([HOME], (request) => {
+      offered = actionsOf(request)
+      return { still_loading: noul(0), goal_satisfied: noul(0.95), next_step_risk: noul(0), action: pick('none_useful', offered) }
+    })
+    await new FastRun(opts(), browser.deps).start()
+    expect(offered).not.toContain('escape')
+    expect(offered).not.toContain('switch')
+  })
 })

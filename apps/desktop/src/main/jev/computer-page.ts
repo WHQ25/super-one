@@ -143,13 +143,13 @@ function isAppleMenu(node: UiOutlineNode): boolean {
 }
 
 /** An observation the adapter can work from: the state's complete outline, only compacted. */
-export type ComputerObservation = Pick<ObserveResult, 'stateId' | 'root'> & { outline: UiOutlineNode; nodesOmitted?: number }
+export type ComputerObservation = Pick<ObserveResult, 'stateId' | 'root'> & { outline: UiOutlineNode; nodesOmitted?: number; observedRootIds?: string[] }
 
 export function computerObservation(state: ComputerUseState): ComputerObservation {
   // The folded outline `observe` returns is for a model reading a table; the
   // fast loop needs every semantic target, or a list longer than the fold
   // budget silently loses the row it is looking for.
-  return { stateId: state.stateId, root: state.root, outline: compactOutline(dropOccludedWebAreas(state.outline)) }
+  return { stateId: state.stateId, root: state.root, outline: compactOutline(dropOccludedWebAreas(state.outline)), observedRootIds: state.observedRootIds }
 }
 
 export function computerPage(result: ComputerObservation, service: ComputerUseService): ComputerPage {
@@ -284,12 +284,25 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
   const menuBar = result.outline.children?.find((n) => n.nativeTarget?.scope === 'menuBar')
   const content = (result.outline.children ?? []).filter((n) => n !== menuBar)
   walk({ ...result.outline, children: content })
+  // The app's other roots at the time of this observation — the document
+  // behind a Save sheet, a Fonts panel, a second window — are offered under
+  // `switch`: the run continues in whichever one the goal's next control is
+  // in. Menus are not roots to switch to; a dismissed context menu is not
+  // listed any more and drops out here.
+  for (const other of service.knownRoots(result.observedRootIds ?? [])) {
+    if (other.rootId === result.root.rootId || other.kind === 'menu' || other.minimized || elements.length >= MAX_ELEMENTS) continue
+    const id = elements.length + 1
+    elements.push({ node: id, ref: other.rootId, role: other.kind, label: other.title || other.kind, value: '', root: other.rootId,
+      editable: false, clickable: false, canSubmit: false, password: false, submit: false, disabled: false })
+  }
   for (const menu of menuBar?.children ?? []) if (!isAppleMenu(menu)) walk(menu)
   return {
     url: '', title: `${result.root.app} — ${result.root.title}`, text: text.filter(Boolean).join('\n').slice(0, MAX_TEXT),
     elements, omitted: result.nodesOmitted ?? 0, loading: false,
     scroll: { y: 0, height: 0, viewport: 0 },
     canScroll: { down: canScrollDown, up: canScrollUp },
+    // Escape is posted as a key: it reaches the app's first responder in the background.
+    canEscape: true,
     stateId: result.stateId, rootId: result.root.rootId, bundleId: result.root.bundleId, refs, clickKinds, scrollRef,
     target: { app: result.root.app, bundleId: result.root.bundleId, root: result.root.rootId },
     signature: JSON.stringify(result.outline),
@@ -417,9 +430,12 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
     // Menus and focus flags churn between two reads of the same window, so a
     // whole-outline signature would discard nearly every paused answer. The
     // element is the same when its id, label and native ref all agree.
-    sameTarget: (before, after, element) => before.rootId === after.rootId
-      && after.refs.get(element.node)?.ref === before.refs.get(element.node)?.ref
-      && after.elements.some((e) => e.node === element.node && e.label === element.label && e.editable === element.editable),
+    sameTarget: (before, after, element) => element.root
+      // A switch target is the root it names; its index may move as windows come and go.
+      ? after.elements.some((e) => e.root === element.root)
+      : before.rootId === after.rootId
+        && after.refs.get(element.node)?.ref === before.refs.get(element.node)?.ref
+        && after.elements.some((e) => e.node === element.node && e.label === element.label && e.editable === element.editable),
     click: (id, signal) => {
       const page = requirePage()
       const kind = page.clickKinds.get(id)
@@ -439,6 +455,27 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
       if (observed.signature !== page.signature || !focused?.appFocused) throw new StaleObservation('The submit field is not the app-focused AX element. Focus it with computer_act before resuming.')
       current = observed
       await act(planNodeAction(focused, { kind: 'enter' }, service.policy.tierFor(page.bundleId)), signal)
+    },
+    dismiss: (signal) => act({ actions: [{ type: 'keypress', keys: ['escape'] }] }, signal),
+    /**
+     * Continue in another root of the same app. Nothing is pressed: the
+     * adapter's target moves and the next observation reads that root. A root
+     * that has gone since it was offered is a stale choice, not a failure.
+     */
+    switchRoot: async (rootId, signal) => {
+      let target
+      try {
+        target = await service.resolveTargetRoot(rootId)
+      } catch (error) {
+        const code = errorCode(error)
+        if (code === 'UNKNOWN_ROOT' || (code && VANISHED_ROOT_CODES.has(code))) throw new StaleObservation(`The root ${rootId} is no longer available.`)
+        throw error
+      }
+      signal?.throwIfAborted()
+      if (target.bundleId !== bundleId) throw new RunPaused('no-progress', 'The chosen root belongs to another app; resolve its grant with computer_apps before continuing.')
+      root = rootId
+      successor = undefined
+      current = undefined
     },
     scrollArea: async (id, deltaY, signal) => {
       const page = requirePage()

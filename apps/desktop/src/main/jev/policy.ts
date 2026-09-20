@@ -20,10 +20,14 @@ export const THRESHOLDS = {
   goalSatisfied: 0.7,
   /**
    * Enough to finish only when the action head is also sure nothing on the page
-   * advances the goal. Calibration: finished pages read 0.63–0.86, pages short
-   * of the goal at most 0.11.
+   * advances the goal. Calibration, browser: finished pages read 0.63–0.86,
+   * pages short of the goal at most 0.11. Desktop finished pages read lower —
+   * 0.57 / 0.62 after TextEdit's Save (§10.9), 0.45 after an append and 0.49
+   * after an Escape (§11.5–11.6), each with none_useful ≥ 0.64 — while every
+   * unfinished desktop page read at most 0.18; at 0.5 two finished runs ended
+   * in a no-progress pause instead.
    */
-  goalSatisfiedIdle: 0.5,
+  goalSatisfiedIdle: 0.4,
   /**
    * Typing is gated (a wrong field gets wrong text); clicks are not — Jev's
    * risk verdict decides what needs a confirmation, and a wrong safe click
@@ -66,11 +70,15 @@ export type Decision =
   | { kind: 'type_text' | 'append'; element: SpaceElement; text: string; presetKey: string; probability: number; risk: number }
   /** `element` is the scroll area Jev chose; absent, the adapter scrolls its default one. */
   | { kind: 'scroll'; direction: 'down' | 'up'; element?: SpaceElement }
+  /** Press Escape: the one key with a closed meaning the loop offers on its own. */
+  | { kind: 'escape'; risk: number }
+  /** Continue in another root of the same app; `element.root` names it. */
+  | { kind: 'switch'; element: SpaceElement; probability: number; risk: number }
   | {
     kind: 'pause'
     question: Omit<Question, 'id'>
     /** What an answered element index means when the run resumes. */
-    mode: 'click' | 'type_text' | 'append' | 'accept'
+    mode: 'click' | 'type_text' | 'append' | 'switch' | 'escape' | 'accept'
     element?: SpaceElement
     /** Preset already matched to the offered field, so a resume can type it without asking again. */
     presetKey?: string
@@ -175,6 +183,8 @@ export function decide(input: DecideInput): Decision {
     if (o === 'click') return space.clickCandidates.length > 0
     if (o === 'type_text') return space.typeCandidates.length > 0
     if (o === 'append') return space.appendCandidates.length > 0
+    if (o === 'escape') return space.canEscape
+    if (o === 'switch') return space.switchCandidates.length > 0
     if (o === 'scroll_down') return space.canScrollDown
     if (o === 'scroll_up') return space.canScrollUp
     return true
@@ -235,7 +245,7 @@ export function decide(input: DecideInput): Decision {
 
   // Jev rated the step it picked as irreversible: the caller confirms that one
   // step (or redirects) before anything is submitted, paid, deleted or sent.
-  const riskyPause = (mode: 'click' | 'type_text' | 'append', key: string, el: SpaceElement, probabilities: Record<string, number>, presetKey?: string): Decision => ({
+  const riskyPause = (mode: 'click' | 'type_text' | 'append' | 'switch', key: string, el: SpaceElement, probabilities: Record<string, number>, presetKey?: string): Decision => ({
     kind: 'pause',
     mode,
     element: el,
@@ -244,7 +254,7 @@ export function decide(input: DecideInput): Decision {
       type: 'choice',
       reason: 'risky',
       options: [
-        { ...option(el, probabilities[key]), key, label: `${mode === 'type_text' ? 'type into' : mode === 'append' ? 'append to' : clickKindOf(key) === 'submit' ? 'press Enter in' : 'click'} ${el.role} ${el.label}` },
+        { ...option(el, probabilities[key]), key, label: `${mode === 'type_text' ? 'type into' : mode === 'append' ? 'append to' : mode === 'switch' ? 'switch to' : clickKindOf(key) === 'submit' ? 'press Enter in' : 'click'} ${el.role} ${el.label}` },
         ...topK(space, probabilities).filter((o) => o.key !== key),
         ABORT,
       ],
@@ -255,6 +265,30 @@ export function decide(input: DecideInput): Decision {
   if (chosen === 'invalid') return noneUseful()
   if (chosen === 'scroll_down') return scroll('down')
   if (chosen === 'scroll_up') return scroll('up')
+  if (chosen === 'escape') {
+    // Escape cancels whatever is open; when Jev rates that irreversible (a
+    // sheet whose changes would be discarded) the caller confirms the key.
+    if (risk >= THRESHOLDS.risk) {
+      return {
+        kind: 'pause',
+        mode: 'escape',
+        question: {
+          type: 'choice',
+          reason: 'risky',
+          options: [{ key: 'escape', label: 'press Escape', probability: action?.probabilities.escape }, ABORT],
+          context: { why: `Jev rates pressing Escape here irreversible (${risk.toFixed(2)}); confirm it or take over`, page, decision: summary },
+        },
+      }
+    }
+    return { kind: 'escape', risk }
+  }
+  if (chosen === 'switch') {
+    const target = validateChoice(answers.switch_target, [...space.switchCandidates, NONE])
+    const el = target && target.choice !== NONE ? elementByIndex(space, target.choice) : undefined
+    if (!target || !el) return noneUseful()
+    if (risk >= THRESHOLDS.risk) return riskyPause('switch', target.choice, el, target.probabilities)
+    return { kind: 'switch', element: el, probability: target.probabilities[target.choice], risk }
+  }
 
   if (chosen === 'click' || chosen === 'none_useful') return clickAction(chosen, true)
   if (chosen === 'append') return writeText('append', false)

@@ -12,7 +12,7 @@ export interface Preset {
   field?: string
 }
 
-export const ACTION_OPTIONS = ['click', 'type_text', 'append', 'scroll_down', 'scroll_up', 'none_useful'] as const
+export const ACTION_OPTIONS = ['click', 'type_text', 'append', 'scroll_down', 'scroll_up', 'escape', 'switch', 'none_useful'] as const
 export type ActionOption = (typeof ACTION_OPTIONS)[number]
 export const NONE = 'none_of_these'
 
@@ -51,7 +51,7 @@ export function stateElement(el: SpaceElement): StateElement {
  * for a scroll area, "Append to" for a text area — so the criterion reads as
  * the step Jev would be choosing, not as a bare element.
  */
-function candidateCriteria(space: ActionSpace, keys: readonly string[], verb?: 'Scroll' | 'Append to'): Record<string, unknown> {
+function candidateCriteria(space: ActionSpace, keys: readonly string[], verb?: 'Scroll' | 'Append to' | 'Switch to'): Record<string, unknown> {
   const criteria: Record<string, unknown> = {}
   for (const key of keys) {
     const kind = clickKindOf(key)
@@ -106,6 +106,8 @@ export function buildRequest(input: BuildQuestionsInput): JevRequest {
   if (space.appendCandidates.length) actions.append = 'Add a preset value at the end of a text area, keeping the text already in it.'
   if (space.canScrollDown) actions.scroll_down = 'Scroll down to reveal more of the page.'
   if (space.canScrollUp) actions.scroll_up = 'Scroll up.'
+  if (space.canEscape) actions.escape = 'Press Escape: close the open menu, popover, sheet or dialog, or cancel an edit in progress, without saving anything.'
+  if (space.switchCandidates.length) actions.switch = 'Switch to another window, sheet or panel of this app listed in `elements` and continue there; the current one stays open.'
   actions.none_useful = 'No offered action advances the goal from here.'
 
   const questions: Record<string, JevQuestion> = {
@@ -157,6 +159,13 @@ export function buildRequest(input: BuildQuestionsInput): JevRequest {
       type: 'choice',
       instructions: { goal, operation: 'append', rules: 'Choose the text area to add a preset to if the next action is append. Its current text stays; the preset goes after it. Choose only an offered index.' },
       criteria: candidateCriteria(space, space.appendCandidates, 'Append to'),
+    }
+  }
+  if (space.switchCandidates.length) {
+    questions.switch_target = {
+      type: 'choice',
+      instructions: { goal, operation: 'switch', rules: 'Choose the window, sheet or panel to continue in if the next action is switch: the one where the control `goal` needs next is. Choose only an offered index.' },
+      criteria: candidateCriteria(space, space.switchCandidates, 'Switch to'),
     }
   }
   // A window can hold several scroll areas (Finder: sidebar and list). The

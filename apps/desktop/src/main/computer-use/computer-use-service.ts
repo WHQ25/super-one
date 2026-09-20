@@ -212,6 +212,18 @@ export class ComputerUseService {
   }
 
   /**
+   * Roots by id as last listed, without a refresh; ids no longer listed are
+   * skipped. A state's `observedRootIds` resolved through this is what a fast
+   * loop offers as switch targets.
+   */
+  knownRoots(rootIds: readonly string[]): UiRootIdentity[] {
+    return rootIds.flatMap((rootId) => {
+      const root = this.roots.get(rootId)
+      return root ? [root] : []
+    })
+  }
+
+  /**
    * Resolve which app a tool call will touch (for HITL grant before observe/act).
    * An explicit root is exact. Otherwise select a usable content root in the
    * requested app, the last launch/focus app, or the frontmost app.

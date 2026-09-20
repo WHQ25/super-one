@@ -1158,6 +1158,24 @@ B 的范式就是 `presets`：把带参数的动作拆成几个选择题，每�
 }
 ```
 
+**暂停 payload 的完整定义。** 每次暂停返回 `question`、`snapshot`、`progress`、`steps`、`elapsed_ms`，其中 `progress` 是 run 自己已经知道、不必再问 Jev 的进度报告，取代原来只有动作标签的 `since_last`：
+
+```json
+"progress": {
+  "completed": [
+    { "label": "Append Line to Text area", "outcome": "worked" },
+    { "label": "Scroll down list view", "outcome": "unknown" }
+  ],
+  "goal_satisfied": 0.45,
+  "still_loading": 0.08
+}
+```
+
+- `completed` **只含上次暂停（或开始）以来的步骤**：resume 时清零，主模型每次只收到新的进度，跨暂停的全程只在 trace 里。`outcome` 沿用 `computer_act` 的 `worked | didnt | unknown`（browser 用 settle 的 `changed`），主模型不用学新词。
+- `goal_satisfied` / `still_loading` 是暂停前最后一次 Jev 的判定。没有它主模型分不清"快完了但 Jev 看不出"（去核对或宣布完成）和"根本没推进"（改 goal 或接管）——TextEdit append 那次主模型看到的只是"又停了"，于是 abort 了一个其实已经成功的 run。
+
+`question.context.why` 的生成规则：Jev 不生成文本，`why` 只能是**对头的翻译，不能是推断**。按 `input_kind` 分支用句子模板（`position` → "A point on [7] Canvas is needed; no offered element is that place"，`text` → "Text for [7] Body is needed and no preset holds it"，`value` → "[7] Date needs a value not among its options"，`other` → 退回概率表），再接一句落选头的翻译（"no click target stood out (best: [3] Open 0.31)"）。每个分句都能回溯到某个头的数值；"goal asks for a place on the picture" 这种超出任何头答案的话不许出现。
+
 **resume。** `presets` 合并进 run；`actions` 经新的可选 `RunDeps.act(stateId, actions)` 执行——computer 走 `service.act`（stale 检查照常），browser 走 CDP，device 走 device act——进 history / trace（`kind: 'handed'`，带 actions），settle 与 `changedPage` 照常；交接来的动作若被 `next_step_risk` 判不可逆，同一次 pause 合并批准。budget 内每次交接计一步。
 
 **为什么 run 执行而不是主模型自己 `computer_act`。** 主模型已经拿到截图和坐标空间，把 actions 塞回 answer 比再发一次 `computer_act` 少一个工具往返；这一步进 run 的记录，后续 Jev 判断有据可依；执行路径只有一条，不会出现主模型执行完 run 又重放的重复。
@@ -1177,6 +1195,16 @@ B 的范式就是 `presets`：把带参数的动作拆成几个选择题，每�
 - **滚动区的名字读成了容器的描述**："List starting at list view"——Finder 给 AXOutline 起名 "list view" / "sidebar"，`labelSource` 把它当第一行。现在容器的名字是内容种类，第一行从容器的后代里取："list view starting at Applications"、"sidebar starting at AirDrop"。
 - **滚动条自己成了滚动区候选**：`scroll` 能力按角色名含 "scroll" 授予，AXScrollBar 也有，候选里多出 "area starting at 0.42"（它的 value indicator）。位置类角色不再当区。
 - **没有 bar 的列表滚八次全是 "change unknown"**：无 bar 时投滚轮，act 结论 unknown、diff 空，`changed` 恒 null，三步无变化的 no-progress 规则永远不触发，run 一直滚到 maxSteps。settle 明明看到没动（`unchanged`）：现在 act 结论说不上话时读 settle 的结论（`settledChange`），与 browser 的 marker 语义一致。
+
+### 11.6 第二步落地：`escape` + `switch`（2026-09-21，Grok 4.6 / high，dev 版）
+
+`RunDeps` 加可选 `dismiss()`（computer：`service.act` 投 `keypress escape`，后台到达 first responder）和 `switchRoot(rootId)`（不按任何东西：adapter 的目标 root 换成它，下一次 observe 读那个 root；root 不在了抛 StaleObservation 而不是失败）。`switch` 的候选是同 app 其它 root——从 state 的 `observedRootIds` 经新的 `service.knownRoots()` 解析，排除 menu、最小化和当前 root——以 `RawElement.root` 标记进 `elements`（role = window/sheet/dialog，label = 标题），`switch_target` 头只在有候选时出；`escape` 由 `RunObservation.canEscape` 门控，computer 恒 true（闭集常量，§11.2）。browser / device 两者都不出，请求形状不变。switch 后的 `changedPage` 恒 true（换了页面，无需和 act 结论比）；风险判定沿用 `next_step_risk`，escape 的 risky 暂停选项是 `escape` 本身。
+
+**TextEdit Save sheet → Escape（`rd938ec27`）。** run 从 sheet root 起步（模态 root 优先），第 1 步 `action` escape **1.0**，`click_target` none_of_these 0.97（Cancel 只有 0.03——goal 说了别按 Cancel），`switch_target` 给后面的文档窗口 0.52。Escape 投出后 act 的 successor 落到文档窗口（transient 关闭 → `waitForTransientSuccessor`），sheet root 消失。第 2 步 none_useful 0.93、`goal_satisfied` **0.49**——差 0.01 没到 idle 门槛 0.5，no-progress 暂停，主模型 abort 收尾；`computer_apps` 确认 sheet 已不在。
+
+**两个文档 → 切窗口再追加（`reac49eb7`）。** run 起在错的（更大的）窗口："Untitled 40 / Jev sheet benchmark"。第 1 步 `action` switch 0.74（none_useful 0.12、escape 0.11），`switch_target` "Untitled 39" 0.82，`append_target` 在这页答 none_of_these 0.99（没有 Second document 可写——头之间分得开）；第 2 步在新 root 上 append 0.82、`append_target` 0.99、`field_for_Line` 0.97（这次 preset 的 field 提示 "the Second document text area" 里 "second"/"document" 能命中标签，直接走 hint 匹配）；第 3–4 步 `goal_satisfied` 0.85 两次确认 → **4 步 done**。escape 作为常驻选项在每步拿 0.11–0.21 的底噪，没有一次赢过正确动词。
+
+**门槛校准（`goalSatisfiedIdle` 0.5 → 0.4）。** 桌面上"已完成"页面的 `goal_satisfied` 系统性低于网页：§10.9 Save 后 0.57 / 0.62，本轮 append 后 0.45、Escape 后 0.49，四次都配着 none_useful ≥ 0.64；而所有 trace 里未完成的桌面页面最高 0.18（Finder 选中前一步）。0.5 把两次已完成的 run 判成 no-progress 暂停，0.4 在现有数据上仍把两类分开，browser 的校准（完成 0.63–0.86，未完成 ≤ 0.11）不受影响。这条路径仍要求 none_useful ≥ 0.8 且重新观察后再问一次同意。
 
 ## 参考
 

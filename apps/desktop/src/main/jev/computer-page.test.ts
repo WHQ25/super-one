@@ -5,7 +5,7 @@ import { axTreeToOutline } from '../computer-use/platform/ax-outline'
 import { ComputerUseError, type CapabilityTier } from '../computer-use/types'
 import { createComputerAdapter, computerPage, computerObservation } from './computer-page'
 import { buildActionSpace, clickVerb } from './action-space'
-import { FastRun } from './loop'
+import { FastRun, StaleObservation } from './loop'
 import { buildRequest } from './questions'
 import { noul, pick } from './test-fixtures'
 import type { JevRequest } from './typesafe-client'
@@ -597,5 +597,52 @@ describe('computer fast-loop adapter', () => {
     click.policy.grantSession({ app: 'TextEdit', bundleId: 'com.test.textedit', tier: 'click' })
     const observed = await click.observe((await click.resolveTargetRoot()).rootId, 'semantic')
     expect(computerPage(computerObservation(click.getStateStore().get(observed.stateId)!), click).elements.some((e) => e.appendable)).toBe(false)
+  })
+
+  it('offers the app\'s other roots as switch targets, switches by re-observing, and presses Escape as a key', async () => {
+    // A Fonts panel opened from a document: the run's root moves to the panel
+    // (the act's successor), and the document behind it is where the goal may
+    // continue. It is offered under `switch`; choosing it re-observes that
+    // root, nothing is pressed.
+    const backend = new FakePlatformBackend([{ app: 'Editor', bundleId: 'com.test.editor', pid: 7, windows: [{ title: 'Document', tree: {
+      role: 'window', children: [{ role: 'button', name: 'Show Fonts', opensModal: { title: 'Fonts', kind: 'window', buttonName: 'Close' } }],
+    } }] }])
+    const service = new ComputerUseService({ adapter: backend })
+    service.policy.setEnabled(true)
+    service.policy.grantSession({ app: 'Editor', bundleId: 'com.test.editor', tier: 'full' })
+    const adapter = createComputerAdapter({ service, ask: vi.fn(), resolve: async () => (await service.resolveTargetRoot()).rootId })
+    await adapter.resolveTarget()
+    const document = await adapter.observe()
+    expect(document.canEscape).toBe(true)
+    expect(document.elements.some((e) => e.root)).toBe(false)
+    const space0 = buildActionSpace({ page: document, history: [] })
+    expect(space0.switchCandidates).toEqual([])
+    expect(Object.keys(buildRequest({ goal: 'g', page: document, space: space0, presets: [], last: undefined, history: [] }).questions.action.criteria!)).toContain('escape')
+    await adapter.click(document.elements.find((e) => e.label === 'Show Fonts')!.node)
+    const fonts = await adapter.observe()
+    expect(fonts.title).toContain('Fonts')
+    const back = fonts.elements.find((e) => e.root)!
+    expect(back).toMatchObject({ role: 'window', label: 'Document', root: document.rootId, clickable: false, editable: false })
+    const space = buildActionSpace({ page: fonts, history: [] })
+    expect(space.switchCandidates).toEqual([String(back.node)])
+    expect(space.clickCandidates).not.toContain(String(back.node))
+    const request = buildRequest({ goal: 'g', page: fonts, space, presets: [], last: undefined, history: [] })
+    expect(request.questions.action.criteria).toHaveProperty('switch')
+    expect(request.questions.switch_target!.criteria![String(back.node)]).toMatchObject({ element: `[${back.node}] Switch to Document`, role: 'window' })
+    // A switch target survives a re-observation under a new index: it is the root it names.
+    expect(adapter.sameTarget!(fonts, { ...fonts, elements: [{ ...back, node: 9 }] }, back)).toBe(true)
+    const act = vi.spyOn(service, 'act')
+    await adapter.switchRoot!(back.root!)
+    const again = await adapter.observe()
+    expect(act).not.toHaveBeenCalled()
+    expect(again.rootId).toBe(document.rootId)
+    expect(again.elements.map((e) => e.label)).toContain('Show Fonts')
+    expect(again.elements.find((e) => e.root)).toMatchObject({ label: 'Fonts', root: fonts.rootId })
+    // Escape is a posted key on the current state.
+    await adapter.dismiss!()
+    expect(act).toHaveBeenCalledWith(again.stateId, [{ type: 'keypress', keys: ['escape'] }], expect.any(Object))
+    // A root that has gone is a stale choice, not a failed run.
+    await adapter.observe()
+    await expect(adapter.switchRoot!('@r99')).rejects.toBeInstanceOf(StaleObservation)
   })
 })

@@ -38,6 +38,10 @@ export interface RunDeps<Page extends RunObservation = RunObservation> {
   append?(node: number, text: string, signal?: AbortSignal): Promise<void>
   /** Scroll one named scroll area rather than the page's default; only adapters that offer `scroll` elements need it. */
   scrollArea?(node: number, deltaY: number, signal?: AbortSignal): Promise<void>
+  /** Press Escape on the current target; offered as an action only when present. */
+  dismiss?(signal?: AbortSignal): Promise<void>
+  /** Continue in another root of the same app (`RawElement.root`); the next observe reads it. */
+  switchRoot?(rootId: string, signal?: AbortSignal): Promise<void>
   /**
    * After input: let the page react before the next observation. `page` is the
    * observation the action was taken on, so an adapter can wait for a change
@@ -104,7 +108,7 @@ interface Pending<Page extends RunObservation> {
   page: Page | null
   space: ActionSpace | null
   /** What answering with an element index means. */
-  mode: 'click' | 'type_text' | 'append' | 'accept'
+  mode: 'click' | 'type_text' | 'append' | 'switch' | 'escape' | 'accept'
   element?: SpaceElement
   presetKey?: string
 }
@@ -195,6 +199,11 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       return this.loop(signal)
     }
     if (!pending.page || !pending.space) return this.loop(signal)
+    if (pending.mode === 'escape') {
+      // The key was the question; a fresh page is what it acts on.
+      this.lastPage = await this.execute({ kind: 'escape', risk: 0 }, await this.deps.observe(signal), true, true, signal)
+      return this.loop(signal)
+    }
     let element: SpaceElement | undefined
     let text: string | undefined
     let presetKey = 'answer'
@@ -234,7 +243,9 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       this.lastPage = await this.execute(
         text != null
           ? { kind: pending.mode === 'append' ? 'append' : 'type_text', element, text, presetKey, probability: 1, risk: 0 }
-          : { kind: 'click', key: clickKey, element, probability: 1, risk: 0 },
+          : pending.mode === 'switch' && element.root
+            ? { kind: 'switch', element, probability: 1, risk: 0 }
+            : { kind: 'click', key: clickKey, element, probability: 1, risk: 0 },
         execPage,
         true,
         true,
@@ -380,7 +391,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
         return this.pause(decision.question, page, space, decision.mode, decision.element, decision.presetKey)
       }
 
-      const fresh = await this.deps.isFresh(page, decision.element?.node, signal)
+      const fresh = await this.deps.isFresh(page, 'element' in decision ? decision.element?.node : undefined, signal)
       if (!fresh) {
         trace.stale = true
         this.emit(trace)
@@ -448,17 +459,22 @@ export class FastRun<Page extends RunObservation = RunObservation> {
 
   private async execute(decision: Exclude<Decision, { kind: 'wait' | 'done' | 'pause' }>, page: Page, approved: boolean, answered = false, signal?: AbortSignal): Promise<Page> {
     const clickKind = decision.kind === 'click' ? clickKindOf(decision.key) : null
+    const approvedFlag = approved ? { approved: true as const } : {}
     const entry: HistoryEntry = decision.kind === 'scroll'
       ? { node: decision.element?.node ?? -1, kind: 'scroll', label: `Scroll ${decision.direction}${decision.element ? ` in [${decision.element.index}] ${decision.element.label}` : ''}`, changedPage: null }
-      : decision.kind === 'click'
-        ? {
-          node: decision.element.node,
-          kind: clickKind === 'submit' ? 'submit' : 'click',
-          label: `${clickVerb(clickKind ?? 'click', decision.element)} [${decision.element.index}] ${decision.element.label}`,
-          changedPage: null,
-          ...(approved ? { approved: true } : {}),
-        }
-        : { node: decision.element.node, kind: decision.kind, label: `${decision.kind === 'append' ? 'Append' : 'Type'} presets.${decision.presetKey} → [${decision.element.index}] ${decision.element.label}`, changedPage: null, ...(approved ? { approved: true } : {}) }
+      : decision.kind === 'escape'
+        ? { node: -1, kind: 'escape', label: 'Press Escape', changedPage: null, ...approvedFlag }
+        : decision.kind === 'switch'
+          ? { node: decision.element.node, kind: 'switch', label: `Switch to [${decision.element.index}] ${decision.element.label}`, changedPage: null, ...approvedFlag }
+          : decision.kind === 'click'
+            ? {
+              node: decision.element.node,
+              kind: clickKind === 'submit' ? 'submit' : 'click',
+              label: `${clickVerb(clickKind ?? 'click', decision.element)} [${decision.element.index}] ${decision.element.label}`,
+              changedPage: null,
+              ...approvedFlag,
+            }
+            : { node: decision.element.node, kind: decision.kind, label: `${decision.kind === 'append' ? 'Append' : 'Type'} presets.${decision.presetKey} → [${decision.element.index}] ${decision.element.label}`, changedPage: null, ...approvedFlag }
     // Record before acting: a navigation that interrupts the post-action observe must not erase the action.
     this.history.push(entry)
     try {
@@ -470,6 +486,14 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       // taken before the page has moved and every scroll reports no change.
       await this.settle(page, { node: decision.element?.node ?? -1 }, signal)
       this.scrolledSinceChange = true
+    } else if (decision.kind === 'escape') {
+      if (!this.deps.dismiss) throw new RunPaused('no-progress', 'This platform cannot press Escape.')
+      await this.deps.dismiss(signal)
+      await this.settle(page, { node: -1 }, signal)
+    } else if (decision.kind === 'switch') {
+      if (!this.deps.switchRoot || !decision.element.root) throw new RunPaused('no-progress', 'This platform cannot switch roots.')
+      // A switch is a new page by definition; there is nothing to settle against.
+      await this.deps.switchRoot(decision.element.root, signal)
     } else if (decision.kind === 'click') {
       if (clickKind === 'submit') await this.deps.pressEnter(decision.element.node, signal)
       else await this.deps.click(decision.element.node, signal)
@@ -492,7 +516,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     this.consecutiveWaits = 0
     const next = await this.deps.observe(signal)
     this.lastPage = next
-    const changed = this.deps.changed(page, next)
+    const changed = decision.kind === 'switch' ? true : this.deps.changed(page, next)
     entry.changedPage = changed
     if (changed && decision.kind !== 'scroll') this.scrolledSinceChange = false
     this.sinceLast.push(`${entry.label}${changed === null ? ' (change unknown)' : changed ? '' : ' (no change)'}`)
@@ -607,6 +631,10 @@ function reportableAction(decision: Record<string, unknown>): JevRunAction | nul
       return { op: 'type', target }
     case 'scroll':
       return { op: 'scroll', target: String(decision.direction ?? '') }
+    case 'escape':
+      return { op: 'press', target: 'Escape' }
+    case 'switch':
+      return { op: 'press', target: `Switch to ${target ?? ''}`.trim() }
     case 'wait':
       return { op: 'wait' }
     default:
@@ -628,6 +656,10 @@ function describeDecision(d: Decision): Record<string, unknown> {
     case 'type_text':
     case 'append':
       return { kind: d.kind, index: d.element.index, label: d.element.label, preset: d.presetKey, probability: d.probability, risk: d.risk }
+    case 'escape':
+      return { kind: 'escape', risk: d.risk }
+    case 'switch':
+      return { kind: 'switch', index: d.element.index, label: d.element.label, root: d.element.root, probability: d.probability, risk: d.risk }
     case 'pause':
       return { kind: 'pause', reason: d.question.reason, type: d.question.type, why: d.question.context.why }
   }

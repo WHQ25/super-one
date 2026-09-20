@@ -16,7 +16,7 @@ export interface SpaceElement extends RawElement {
 
 export interface HistoryEntry {
   node: number
-  kind: 'click' | 'submit' | 'type_text' | 'append' | 'scroll' | 'wait'
+  kind: 'click' | 'submit' | 'type_text' | 'append' | 'scroll' | 'escape' | 'switch' | 'wait'
   label: string
   changedPage: boolean | null
   /** Set once the dispatch finished, so `completed_actions` lists real steps only. */
@@ -43,8 +43,11 @@ export interface ActionSpace {
   scrollCandidates: string[]
   /** Text areas a preset can be appended to; empty unless the adapter offers them. */
   appendCandidates: string[]
+  /** Other roots of the same app; empty unless the adapter offers them. */
+  switchCandidates: string[]
   canScrollDown: boolean
   canScrollUp: boolean
+  canEscape: boolean
 }
 
 export function buildActionSpace(input: ActionSpaceInput): ActionSpace {
@@ -64,12 +67,17 @@ export function buildActionSpace(input: ActionSpaceInput): ActionSpace {
   const typeCandidates: string[] = []
   const scrollCandidates: string[] = []
   const appendCandidates: string[] = []
+  const switchCandidates: string[] = []
   for (const el of elements) {
     // A password field is never a candidate of either kind: the loop cannot
     // fill it (no preset may hold a password) and clicking it achieves nothing.
     if (el.password || el.disabled) continue
     if (el.scroll) {
       if (el.scroll.up || el.scroll.down) scrollCandidates.push(el.index)
+      continue
+    }
+    if (el.root) {
+      if (!stuck.has(`${el.node}:switch`)) switchCandidates.push(el.index)
       continue
     }
     if (el.editable) {
@@ -93,8 +101,10 @@ export function buildActionSpace(input: ActionSpaceInput): ActionSpace {
     typeCandidates,
     scrollCandidates,
     appendCandidates,
+    switchCandidates,
     canScrollDown: page.canScroll?.down ?? page.scroll.y + page.scroll.viewport < page.scroll.height - 2,
     canScrollUp: page.canScroll?.up ?? page.scroll.y > 0,
+    canEscape: page.canEscape === true,
   }
 }
 

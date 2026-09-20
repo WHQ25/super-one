@@ -31,6 +31,11 @@ export interface RawElement {
   scroll?: { up: boolean; down: boolean }
   /** An editable text area that takes keystrokes at its end, keeping what it holds. */
   appendable?: boolean
+  /**
+   * Another root (window, sheet, panel) of the same app this element stands
+   * for; choosing it re-observes that root. Desktop only.
+   */
+  root?: string
 }
 
 export interface RunObservation {
@@ -45,4 +50,6 @@ export interface RunObservation {
   target?: Record<string, string>
   blocked?: { reason: 'no-progress'; why: string }
   canScroll?: { down: boolean; up: boolean }
+  /** The adapter can press Escape — the one closed-set key the loop offers (research doc §11.2). */
+  canEscape?: boolean
 }

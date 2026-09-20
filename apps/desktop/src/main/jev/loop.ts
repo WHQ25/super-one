@@ -384,7 +384,9 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       try {
         page = await this.execute(decision, page, false, false, signal)
       } catch (err) {
-        if (!(err instanceof StaleObservation)) throw err
+        // The step that failed to act is the one a trace is read for; without
+        // this the run that pauses inside execute() leaves nothing behind.
+        if (!(err instanceof StaleObservation)) { this.emit(trace); throw err }
         trace.stale = true
         this.emit(trace)
         page = null

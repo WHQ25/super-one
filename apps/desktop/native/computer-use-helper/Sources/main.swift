@@ -382,6 +382,8 @@ func handle(request: HelperRequest) async -> HelperResponse {
             let result = try await captureZoom(
                 grantedBundleIds: granted,
                 region: region,
+                parentWidth: AnyCodable.double(params, "coordinateWidth"),
+                parentHeight: AnyCodable.double(params, "coordinateHeight"),
                 allowAllApps: allowAll,
                 maxWidth: maxWidth,
                 capture: capture,

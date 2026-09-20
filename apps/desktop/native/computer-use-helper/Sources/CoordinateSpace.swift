@@ -24,6 +24,22 @@ func activeDisplay(for rect: CGRect) -> (bounds: CGRect, scale: Double)? {
     }
 }
 
+/// Pixels per point of the display holding `rect`. `CGDisplayPixelsWide`
+/// (and `SCDisplay.width`) report points on a Retina display, so the capture
+/// scale derived from them is 1; the display mode carries the pixel width.
+func displayPixelScale(for rect: CGRect) -> Double {
+    var count: UInt32 = 0
+    guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return 1 }
+    var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
+    guard CGGetActiveDisplayList(count, &ids, &count) == .success else { return 1 }
+    let best = ids.prefix(Int(count)).max { lhs, rhs in
+        CGDisplayBounds(lhs).intersection(rect).width * CGDisplayBounds(lhs).intersection(rect).height
+            < CGDisplayBounds(rhs).intersection(rect).width * CGDisplayBounds(rhs).intersection(rect).height
+    }
+    guard let best, let mode = CGDisplayCopyDisplayMode(best) else { return 1 }
+    return Double(mode.pixelWidth) / max(Double(CGDisplayBounds(best).width), 1)
+}
+
 func liveWindowGeometry(windowId: Int) throws -> LiveWindowGeometry {
     let options: CGWindowListOption = [.optionIncludingWindow, .excludeDesktopElements]
     guard let rows = CGWindowListCopyWindowInfo(options, CGWindowID(windowId)) as? [[String: Any]],

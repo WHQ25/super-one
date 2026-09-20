@@ -53,6 +53,15 @@ private func captureSize(
     return (width, height)
 }
 
+/// A part of a capture, in points local to the captured bounds, taken at the
+/// display's real pixel scale: `SCDisplay.width` is in points, so the scale
+/// `backingScale` derives from it is 1 and a whole capture is logical-size.
+/// A zoom is the one capture that has to show more than the observation did.
+struct DetailCrop {
+    let rect: CGRect
+    let pixelScale: Double
+}
+
 private func encodeCapture(
     filter: SCContentFilter,
     bounds: CGRect,
@@ -61,21 +70,31 @@ private func encodeCapture(
     windowId: Int?,
     axRootId: String? = nil,
     sourceRect: CGRect? = nil,
+    detail: DetailCrop? = nil,
     maxWidth: Int?,
     grantedBundleIds: [String],
     allowAllApps: Bool,
     excludedAppCount: Int
 ) async throws -> [String: Any] {
-    let scale = backingScale(for: display)
-    let naturalWidth = kind == "window" ? Double(bounds.width) * scale : Double(display.width)
-    let naturalHeight = kind == "window" ? Double(bounds.height) * scale : Double(display.height)
+    let scale = detail?.pixelScale ?? backingScale(for: display)
+    let naturalWidth: Double
+    let naturalHeight: Double
+    var captureRect = sourceRect
+    if let detail {
+        naturalWidth = Double(detail.rect.width) * scale
+        naturalHeight = Double(detail.rect.height) * scale
+        captureRect = detail.rect.offsetBy(dx: sourceRect?.minX ?? 0, dy: sourceRect?.minY ?? 0)
+    } else {
+        naturalWidth = kind == "window" ? Double(bounds.width) * scale : Double(display.width)
+        naturalHeight = kind == "window" ? Double(bounds.height) * scale : Double(display.height)
+    }
     let size = captureSize(sourceWidth: naturalWidth, sourceHeight: naturalHeight, maxWidth: maxWidth)
     let cfg = SCStreamConfiguration()
     cfg.width = size.width
     cfg.height = size.height
     cfg.showsCursor = false
     cfg.captureResolution = .best
-    if let sourceRect { cfg.sourceRect = sourceRect }
+    if let captureRect { cfg.sourceRect = captureRect }
     if kind == "window" {
         cfg.ignoreShadowsSingleWindow = true
     }
@@ -113,7 +132,8 @@ func captureAxRoot(
     pid: pid_t,
     grantedBundleIds: [String],
     maxWidth: Int?,
-    allowAllApps: Bool
+    allowAllApps: Bool,
+    detail: DetailCrop? = nil
 ) async throws -> [String: Any] {
     if !screenRecordingTrusted() {
         throw HelperError(code: "SCREEN_MISSING", message: "Screen Recording is not granted for Computer Use helper")
@@ -151,6 +171,7 @@ func captureAxRoot(
         windowId: nil,
         axRootId: axRootId,
         sourceRect: localBounds,
+        detail: detail,
         maxWidth: maxWidth,
         grantedBundleIds: grantedBundleIds,
         allowAllApps: allowAllApps,
@@ -162,7 +183,8 @@ func captureDisplay(
     grantedBundleIds: [String],
     maxWidth: Int?,
     allowAllApps: Bool,
-    targetWindowId: Int? = nil
+    targetWindowId: Int? = nil,
+    detail: DetailCrop? = nil
 ) async throws -> [String: Any] {
     if !screenRecordingTrusted() {
         throw HelperError(
@@ -193,6 +215,7 @@ func captureDisplay(
         display: display,
         kind: "display",
         windowId: nil,
+        detail: detail,
         maxWidth: maxWidth,
         grantedBundleIds: grantedBundleIds,
         allowAllApps: allowAllApps,
@@ -204,7 +227,8 @@ func captureWindow(
     windowId: Int,
     grantedBundleIds: [String],
     maxWidth: Int?,
-    allowAllApps: Bool
+    allowAllApps: Bool,
+    detail: DetailCrop? = nil
 ) async throws -> [String: Any] {
     if !screenRecordingTrusted() {
         throw HelperError(code: "SCREEN_MISSING", message: "Screen Recording is not granted for Computer Use helper")
@@ -223,13 +247,28 @@ func captureWindow(
     guard let display = bestDisplay(for: window.frame, in: content.displays) else {
         throw HelperError(code: "NO_DISPLAY", message: "No display contains window \(windowId)")
     }
-    let filter = SCContentFilter(desktopIndependentWindow: window)
+    // A detail crop goes through a display filter that shows only this
+    // window: `sourceRect` on a window filter is window-relative until a
+    // stream on the same window exists (the viewfinder's mirror), when it
+    // turns display-relative; a display filter reads it as display-relative
+    // either way.
+    let filter = detail == nil
+        ? SCContentFilter(desktopIndependentWindow: window)
+        : SCContentFilter(display: display, including: [window])
+    let localBounds = detail == nil ? nil : CGRect(
+        x: window.frame.minX - display.frame.minX,
+        y: window.frame.minY - display.frame.minY,
+        width: window.frame.width,
+        height: window.frame.height
+    )
     return try await encodeCapture(
         filter: filter,
         bounds: window.frame,
         display: display,
         kind: "window",
         windowId: windowId,
+        sourceRect: localBounds,
+        detail: detail,
         maxWidth: maxWidth,
         grantedBundleIds: grantedBundleIds,
         allowAllApps: allowAllApps,
@@ -237,9 +276,14 @@ func captureWindow(
     )
 }
 
+/// `region` is in the parent observation's capture space, `parentWidth` ×
+/// `parentHeight` (the captured bounds when nothing was downscaled); nil
+/// means the region is already in points of the captured bounds.
 func captureZoom(
     grantedBundleIds: [String],
     region: [Double],
+    parentWidth: Double?,
+    parentHeight: Double?,
     allowAllApps: Bool,
     maxWidth: Int?,
     capture: String,
@@ -250,6 +294,35 @@ func captureZoom(
     guard region.count == 4 else {
         throw HelperError(code: "INVALID", message: "region must be [x0,y0,x1,y1]")
     }
+    let bounds: CGRect
+    if capture == "window" {
+        if let axRootId, let pid {
+            bounds = try liveAxRootGeometry(id: axRootId, pid: pid).bounds
+        } else if let windowId {
+            bounds = try liveWindowGeometry(windowId: windowId).bounds
+        } else {
+            throw HelperError(code: "INVALID", message: "window capture requires windowId or axRootId")
+        }
+    } else {
+        guard let display = activeDisplay(for: (try? liveWindowGeometry(windowId: windowId ?? 0))?.bounds ?? .zero)
+            ?? activeDisplay(for: CGRect(x: 0, y: 0, width: 1, height: 1)) else {
+            throw HelperError(code: "NO_DISPLAY", message: "No active display")
+        }
+        bounds = display.bounds
+    }
+    let factorX = Double(bounds.width) / max(parentWidth ?? Double(bounds.width), 1)
+    let factorY = Double(bounds.height) / max(parentHeight ?? Double(bounds.height), 1)
+    let x0 = min(max(0, region[0] * factorX), Double(bounds.width))
+    let y0 = min(max(0, region[1] * factorY), Double(bounds.height))
+    let x1 = min(max(0, region[2] * factorX), Double(bounds.width))
+    let y1 = min(max(0, region[3] * factorY), Double(bounds.height))
+    guard x1 - x0 >= 1, y1 - y0 >= 1 else {
+        throw HelperError(code: "INVALID", message: "region is empty or outside the capture")
+    }
+    let detail = DetailCrop(
+        rect: CGRect(x: x0, y: y0, width: x1 - x0, height: y1 - y0),
+        pixelScale: displayPixelScale(for: bounds)
+    )
     let full: [String: Any]
     if capture == "window" {
         if let axRootId, let pid {
@@ -258,52 +331,32 @@ func captureZoom(
                 pid: pid,
                 grantedBundleIds: grantedBundleIds,
                 maxWidth: maxWidth,
-                allowAllApps: allowAllApps
-            )
-        } else if let windowId {
-            full = try await captureWindow(
-                windowId: windowId,
-                grantedBundleIds: grantedBundleIds,
-                maxWidth: maxWidth,
-                allowAllApps: allowAllApps
+                allowAllApps: allowAllApps,
+                detail: detail
             )
         } else {
-            throw HelperError(code: "INVALID", message: "window capture requires windowId or axRootId")
+            full = try await captureWindow(
+                windowId: windowId!,
+                grantedBundleIds: grantedBundleIds,
+                maxWidth: maxWidth,
+                allowAllApps: allowAllApps,
+                detail: detail
+            )
         }
     } else {
         full = try await captureDisplay(
             grantedBundleIds: grantedBundleIds,
             maxWidth: maxWidth,
             allowAllApps: allowAllApps,
-            targetWindowId: windowId
+            targetWindowId: windowId,
+            detail: detail
         )
-    }
-    guard let dataB64 = full["data"] as? String,
-          let data = Data(base64Encoded: dataB64),
-          let provider = CGDataProvider(data: data as CFData),
-          let source = CGImage(
-            pngDataProviderSource: provider,
-            decode: nil,
-            shouldInterpolate: false,
-            intent: .defaultIntent
-          ) else {
-        throw HelperError(code: "DECODE", message: "Failed to decode capture for zoom")
-    }
-    let x0 = max(0, Int(region[0].rounded()))
-    let y0 = max(0, Int(region[1].rounded()))
-    let x1 = min(source.width, Int(region[2].rounded()))
-    let y1 = min(source.height, Int(region[3].rounded()))
-    let width = max(1, x1 - x0)
-    let height = max(1, y1 - y0)
-    guard let cropped = source.cropping(to: CGRect(x: x0, y: y0, width: width, height: height)),
-          let png = cropped.pngData() else {
-        throw HelperError(code: "CROP", message: "Failed to crop zoom region")
     }
     return [
         "mimeType": "image/png",
-        "data": png.base64EncodedString(),
-        "width": cropped.width,
-        "height": cropped.height,
+        "data": full["data"] as Any,
+        "width": full["width"] as Any,
+        "height": full["height"] as Any,
     ]
 }
 

@@ -348,7 +348,9 @@ describe('computer fast-loop adapter', () => {
     // empty).
     const { service } = fixture()
     const obs = await service.observe(undefined, 'semantic')
-    const outline = axTreeToOutline({ index: 1, role: 'AXWindow', children: [{ index: 2, role: 'AXButton', name: 'Kind', actions: ['AXPress'] }] }, { index: 1, role: 'AXMenuBar', children: [
+    // The window's own "Date Modified" — a column header — is a different
+    // control with the same name; both are offered.
+    const outline = axTreeToOutline({ index: 1, role: 'AXWindow', children: [{ index: 2, role: 'AXButton', name: 'Date Modified', actions: ['AXPress'] }] }, { index: 1, role: 'AXMenuBar', children: [
       { index: 2, role: 'AXMenuBarItem', name: 'View', actions: ['AXPress'], children: [{ index: 3, role: 'AXMenu', children: [
         { index: 4, role: 'AXMenuItem', name: 'Sort By', actions: ['AXPress'], expanded: false, children: [{ index: 5, role: 'AXMenu', children: [
           { index: 6, role: 'AXMenuItem', name: 'Name', actions: ['AXPress'] },
@@ -358,11 +360,13 @@ describe('computer fast-loop adapter', () => {
     ] })
     const page = computerPage({ ...obs, outline }, service)
     const labels = page.elements.map((e) => e.label)
-    expect(labels).toEqual(['Kind', 'Name', 'Date Modified'])
+    expect(labels).toEqual(['Date Modified', 'Name', 'Date Modified'])
     expect(page.elements[1]).toMatchObject({ clickable: true })
     expect(page.elements[1].checked).toBeUndefined()
     expect(page.elements[2]).toMatchObject({ checked: 'true' })
     expect(page.elements[2].expanded).toBeUndefined()
+    const space = buildActionSpace({ page, history: [] })
+    expect(space.elements.filter((e) => e.label.endsWith('Date Modified')).map((e) => e.checked)).toEqual([undefined, 'true'])
   })
 
   it('re-resolves the app root when the observed window is replaced', async () => {

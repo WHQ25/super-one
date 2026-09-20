@@ -141,10 +141,16 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
       const itemLabel = (source?.value || source?.name || '').trim() || anonymous
       const label = kind === 'select' || kind === 'open' ? `${kind === 'select' ? 'Select' : 'Open'} ${itemLabel}` : node.name || (editable ? value : '') || anonymous
       // A row, its name cell and the cell's text field all open the same item:
-      // one candidate per intent. Nothing unlabelled is offered either — Jev
-      // cannot choose it and the main model cannot approve it.
-      if (kind ? !itemLabel || seen.has(`${kind}:${itemLabel}`) : !label.trim()) continue
-      if (kind) seen.add(`${kind}:${itemLabel}`)
+      // one candidate per intent, keyed on the node the name was read from,
+      // which those three share. Keyed on the label it also swallowed a
+      // different control that happened to share one — Finder's "Date
+      // Modified" column header hid the View ▸ Sort By ▸ Date Modified
+      // command, and the run sorted by clicking the header. Nothing unlabelled
+      // is offered either — Jev cannot choose it and the main model cannot
+      // approve it.
+      const identity = `${kind}:${source?.ref ?? node.ref}`
+      if (kind ? !itemLabel || seen.has(identity) : !label.trim()) continue
+      if (kind) seen.add(identity)
       // Each executable intent gets its own candidate. Native refs remain in
       // refs; these IDs only address adapter plans inside one observation.
       const id = elements.length + 1

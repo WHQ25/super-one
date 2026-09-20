@@ -148,6 +148,8 @@ export interface HelperCaptureResult {
 export interface HelperAxNode {
   selectable?: boolean
   selected?: boolean
+  /** AXExpanded. */
+  expanded?: boolean
   itemKind?: 'folder' | 'file'
   index: number
   role: string

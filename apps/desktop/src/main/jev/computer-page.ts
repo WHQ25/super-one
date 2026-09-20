@@ -102,6 +102,7 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
       if (kind) clickKinds.set(id, kind)
       elements.push({ node: id, ref: node.ref, role: mapped,
         label, value: kind === 'select' ? (node.selected ? 'selected' : 'not selected') : value,
+        ...(node.expanded != null ? { expanded: String(node.expanded) } : {}),
         editable: kind !== 'select' && kind !== 'open' && editable, clickable: !!kind,
         canSubmit: !!planNodeAction(node, { kind: 'enter' }, tier), password: false, submit: false, disabled: false })
     }

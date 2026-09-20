@@ -61,6 +61,7 @@ export function axTreeToOutline(root: HelperAxNode, menuBar?: HelperAxNode): UiO
       ...(menu ? { nativeTarget: { scope: 'menuBar' as const, index: n.index } } : {}),
       role: mapAxRole(n.role),
       selected: n.selected,
+      expanded: n.expanded,
       itemKind: n.itemKind,
       name: n.name,
       value: n.secure || /secure|password/i.test(n.role) ? undefined : n.value,

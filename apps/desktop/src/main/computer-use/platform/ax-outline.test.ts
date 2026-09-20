@@ -20,6 +20,18 @@ describe('ax-outline', () => {
     expect(parseElementIndex('e1')).toBeUndefined()
   })
 
+  it('carries the collapsed/expanded flag the loop words as "Expand"', () => {
+    const tree: HelperAxNode = {
+      index: 1, role: 'AXWindow', actions: [], children: [
+        { index: 2, role: 'AXDisclosureTriangle', name: 'Advanced', actions: ['AXPress'], expanded: false },
+        { index: 3, role: 'AXRow', name: 'Network', actions: ['AXPress'], expanded: true },
+        { index: 4, role: 'AXButton', name: 'Done', actions: ['AXPress'] },
+      ],
+    }
+    const out = axTreeToOutline(tree)
+    expect(out.children?.map((c) => c.expanded)).toEqual([false, true, undefined])
+  })
+
   it('converts helper tree to outline with @eN refs and capabilities', () => {
     const tree: HelperAxNode = {
       index: 1,

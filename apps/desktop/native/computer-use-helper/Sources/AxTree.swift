@@ -357,6 +357,16 @@ private func nodeDicts(
     if actions.contains(where: { ["axopen", "open"].contains($0.lowercased()) }), let itemKind = axItemKind(el) {
         dict["itemKind"] = itemKind
     }
+    // A collapsed control hides whatever is behind it, and "Expand" is a
+    // different offer from "Click" — the web line gained 0.16 → 0.53 on that
+    // wording alone. AppKit splits the flag in two: AXExpanded on popups,
+    // combo boxes and disclosure triangles, AXDisclosing on outline rows.
+    // AXExpanded only: an AppKit outline row answers AXDisclosing whether or not
+    // it can disclose anything, so reading that too labelled all 90 sidebar rows
+    // of System Settings collapsed and the loop offered to "Expand Wi-Fi".
+    if let expanded = axBool(el, "AXExpanded") {
+        dict["expanded"] = expanded
+    }
     if let name, !name.isEmpty { dict["name"] = name }
     if let value, !value.isEmpty {
         // Cap value length to keep wire JSON small.

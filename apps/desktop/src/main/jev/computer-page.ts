@@ -2,7 +2,7 @@
 import { type ComputerUseService } from '../computer-use/computer-use-service'
 import { compactOutline, dropOccludedWebAreas } from '../computer-use/outline-compact'
 import { findNode } from '../computer-use/outline'
-import { ComputerUseError, type ActResult, type ComputerUseState, type Condition, type ObserveResult, type UiOutlineNode } from '../computer-use/types'
+import { ComputerUseError, type ActResult, type ComputerUseState, type Condition, type ObserveResult, type RootKind, type UiOutlineNode } from '../computer-use/types'
 import { planNodeAction, type NodeActionPlan } from '../computer-use/node-action-plan'
 import { type RunDeps, RunPaused, StaleObservation } from './loop'
 import { SETTLE_BUDGET_MS, settleByPolling, waitForChangeByPolling, waitReadyByPolling } from './settle'
@@ -11,6 +11,7 @@ import type { RawElement, RunObservation } from './observation'
 export interface ComputerPage extends RunObservation {
   stateId: string
   rootId: string
+  rootKind: RootKind
   bundleId: string
   refs: Map<number, UiOutlineNode>
   clickKinds: Map<number, 'press' | 'select' | 'open'>
@@ -227,6 +228,13 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
     if (select && !node.selected) kinds.push('select')
     else if (!select && (press || editable)) kinds.push(press ? 'press' : undefined)
     if (open) kinds.push('open')
+    // A row or a control with a pointer position has a context menu; the
+    // right-click is posted at its center, whatever its click does. Offered
+    // once per item, keyed like the click candidates on the node the name was
+    // read from: a row, its name cell and the cell's text field are one item,
+    // and a selected row — no Select candidate left — is reached through the
+    // cell's Open one, which is the common case after a select.
+    const rightClickable = !command && !!(select || press || open) && !!node.bounds && node.bounds.width > 0 && node.bounds.height > 0
     for (const kind of kinds) {
       if (!enabled || elements.length >= MAX_ELEMENTS) break
       const source = disclosure ? undefined : node.value || node.name ? node : labelSource(node)
@@ -264,10 +272,14 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
       refs.set(id, node)
       if (kind) clickKinds.set(id, kind)
       const isEditable = kind !== 'select' && kind !== 'open' && editable
+      const contextIdentity = `context:${source?.ref ?? node.ref}`
+      const rightClick = rightClickable && !seen.has(contextIdentity)
+      if (rightClick) seen.add(contextIdentity)
       elements.push({ node: id, ref: node.ref, role: mapped,
         label, value: kind === 'select' ? (node.selected ? 'selected' : 'not selected') : disclosure ? '' : value,
         ...(checked ? { checked } : {}),
         ...(node.expanded != null ? { expanded: String(node.expanded) } : {}),
+        ...(rightClick ? { contextMenu: true } : {}),
         editable: isEditable, clickable: !!kind,
         // A multi-line text area (TextEdit's document, a mail body) takes a
         // preset after its text; a field is replaced whole.
@@ -303,7 +315,7 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
     canScroll: { down: canScrollDown, up: canScrollUp },
     // Escape is posted as a key: it reaches the app's first responder in the background.
     canEscape: true,
-    stateId: result.stateId, rootId: result.root.rootId, bundleId: result.root.bundleId, refs, clickKinds, scrollRef,
+    stateId: result.stateId, rootId: result.root.rootId, rootKind: result.root.kind, bundleId: result.root.bundleId, refs, clickKinds, scrollRef,
     target: { app: result.root.app, bundleId: result.root.bundleId, root: result.root.rootId },
     signature: JSON.stringify(result.outline),
     ...(tier === 'read' ? { blocked: { reason: 'no-progress' as const, why: 'The app grant has tier=read; computer_run needs click or full access. Use computer_apps to resolve the grant.' } } : {}),
@@ -457,6 +469,10 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
       await act(planNodeAction(focused, { kind: 'enter' }, service.policy.tierFor(page.bundleId)), signal)
     },
     dismiss: (signal) => act({ actions: [{ type: 'keypress', keys: ['escape'] }] }, signal),
+    contextMenu: async (id, signal) => {
+      const node = requirePage().refs.get(id)
+      await act(node && { actions: [{ type: 'click', ref: node.ref, button: 'right' }] }, signal)
+    },
     /**
      * Continue in another root of the same app. Nothing is pressed: the
      * adapter's target moves and the next observation reads that root. A root
@@ -521,6 +537,14 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
       const outcome = successor?.outcome
       if (outcome && actMs >= SETTLE_BUDGET_MS && readMs >= SETTLE_BUDGET_MS / 2) {
         return { changed: outcomeChanged(outcome) === true, fields: ['act-outlasted-budget'], elements: successor!.elements.length }
+      }
+      // A context menu the action opened was read whole and taken down
+      // (ContextMenuLedger); every sample would replay the right-click to
+      // bring it back on screen and take it down again. The menu is static:
+      // its state is the settled observation.
+      if (successor && successor.rootKind === 'menu' && successor.rootId !== page.rootId) {
+        successor = { ...successor, settledChange: true }
+        return { changed: true, fields: ['menu-root'], elements: successor.elements.length }
       }
       const settled = await settleByPolling(page, observeFresh, signal)
       if (settled.page) successor = { ...settled.page, ...(outcome ? { outcome } : {}), settledChange: settled.report.changed }

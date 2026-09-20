@@ -36,6 +36,8 @@ export interface RawElement {
    * for; choosing it re-observes that root. Desktop only.
    */
   root?: string
+  /** A right-click here opens a context menu the next observation lands on. Desktop only. */
+  contextMenu?: boolean
 }
 
 export interface RunObservation {

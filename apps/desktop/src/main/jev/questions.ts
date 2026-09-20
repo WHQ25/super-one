@@ -12,7 +12,7 @@ export interface Preset {
   field?: string
 }
 
-export const ACTION_OPTIONS = ['click', 'type_text', 'append', 'scroll_down', 'scroll_up', 'escape', 'switch', 'none_useful'] as const
+export const ACTION_OPTIONS = ['click', 'type_text', 'append', 'scroll_down', 'scroll_up', 'escape', 'switch', 'context_menu', 'none_useful'] as const
 export type ActionOption = (typeof ACTION_OPTIONS)[number]
 export const NONE = 'none_of_these'
 
@@ -51,14 +51,16 @@ export function stateElement(el: SpaceElement): StateElement {
  * for a scroll area, "Append to" for a text area — so the criterion reads as
  * the step Jev would be choosing, not as a bare element.
  */
-function candidateCriteria(space: ActionSpace, keys: readonly string[], verb?: 'Scroll' | 'Append to' | 'Switch to'): Record<string, unknown> {
+function candidateCriteria(space: ActionSpace, keys: readonly string[], verb?: 'Scroll' | 'Append to' | 'Switch to' | 'Right-click'): Record<string, unknown> {
   const criteria: Record<string, unknown> = {}
   for (const key of keys) {
     const kind = clickKindOf(key)
     const el = space.elements.find((e) => e.index === key.replace(/^(open|submit):/, ''))
     if (!el) continue
     const clickable = clickVerb(kind, el)
-    const element = verb ? `[${el.index}] ${verb} ${el.label}`
+    // A row's candidate is labelled for its click ("Select Shared"); the
+    // right-click is on the row itself.
+    const element = verb ? `[${el.index}] ${verb} ${verb === 'Right-click' ? el.label.replace(/^(Select|Open) /, '') : el.label}`
       : clickable === 'Click' ? `[${el.index}] ${el.label}`
       : clickable === 'Press Enter in' ? `[${el.index}] Press Enter in ${el.label} to submit it`
         // What expanding is for is not visible until it happens, and a collapsed
@@ -108,6 +110,7 @@ export function buildRequest(input: BuildQuestionsInput): JevRequest {
   if (space.canScrollUp) actions.scroll_up = 'Scroll up.'
   if (space.canEscape) actions.escape = 'Press Escape: close the open menu, popover, sheet or dialog, or cancel an edit in progress, without saving anything.'
   if (space.switchCandidates.length) actions.switch = 'Switch to another window, sheet or panel of this app listed in `elements` and continue there; the current one stays open.'
+  if (space.contextMenuCandidates.length) actions.context_menu = 'Right-click an offered element to open its context menu; the menu\'s commands are chosen in the next step.'
   actions.none_useful = 'No offered action advances the goal from here.'
 
   const questions: Record<string, JevQuestion> = {
@@ -159,6 +162,13 @@ export function buildRequest(input: BuildQuestionsInput): JevRequest {
       type: 'choice',
       instructions: { goal, operation: 'append', rules: 'Choose the text area to add a preset to if the next action is append. Its current text stays; the preset goes after it. Choose only an offered index.' },
       criteria: candidateCriteria(space, space.appendCandidates, 'Append to'),
+    }
+  }
+  if (space.contextMenuCandidates.length) {
+    questions.context_menu_target = {
+      type: 'choice',
+      instructions: { goal, operation: 'context_menu', rules: 'Choose the element to right-click if the next action is context_menu: the item whose context menu holds the command `goal` needs. Choose only an offered index.' },
+      criteria: candidateCriteria(space, space.contextMenuCandidates, 'Right-click'),
     }
   }
   if (space.switchCandidates.length) {

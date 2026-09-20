@@ -702,7 +702,9 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       case 'click': {
         // A control with a native press is pressed, the reliable path for a
         // labeled control; a ref without one gets a pointer click at its center.
-        if (node?.capabilities?.press) return semantic()
+        // A right-click is never a press: it asks for the context menu, which
+        // only the pointer can, so it is posted whatever the ref can do.
+        if (node?.capabilities?.press && action.button !== 'right') return semantic()
         let x = action.x
         let y = action.y
         if ((x == null || y == null) && node) {

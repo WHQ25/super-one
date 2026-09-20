@@ -645,4 +645,50 @@ describe('computer fast-loop adapter', () => {
     await adapter.observe()
     await expect(adapter.switchRoot!('@r99')).rejects.toBeInstanceOf(StaleObservation)
   })
+
+  it('right-clicks an offered element, lands the next observation on its context menu, and clicks the menu\'s items', async () => {
+    // The menu an action opens is read whole and taken down (ContextMenuLedger).
+    // The run observes that state without bringing the menu back, must not
+    // settle-poll it (each sample would reopen it on screen), and a click on
+    // one of its items replays the right-click before pressing.
+    const row = (name: string) => ({ role: 'row', selectable: true, children: [{ role: 'cell', openable: true, children: [{ role: 'staticText', value: name }] }] })
+    const backend = new FakePlatformBackend([{ app: 'Finder', bundleId: 'com.test.finder', pid: 7, windows: [{ title: 'Documents', windowId: 100, tree: {
+      role: 'window', children: [
+        { role: 'button', name: 'More', opensModal: { title: 'Context', kind: 'menu', text: 'Actions', buttonName: 'Rename' } },
+        row('Report.pdf'),
+        { ...row('Notes.txt'), selected: true },
+      ],
+    } }] }])
+    const service = new ComputerUseService({ adapter: backend })
+    service.policy.setEnabled(true)
+    service.policy.grantSession({ app: 'Finder', bundleId: 'com.test.finder', tier: 'full' })
+    const adapter = createComputerAdapter({ service, ask: vi.fn(), resolve: async () => (await service.resolveTargetRoot()).rootId })
+    await adapter.resolveTarget()
+    const page = await adapter.observe()
+    // One right-click target per node: the row's Select candidate, or its Open one when it is already selected.
+    expect(page.elements.filter((e) => e.contextMenu).map((e) => e.label)).toEqual(['More', 'Select Report.pdf', 'Open Notes.txt'])
+    const space = buildActionSpace({ page, history: [] })
+    const request = buildRequest({ goal: 'g', page, space, presets: [], last: undefined, history: [] })
+    expect(request.questions.action.criteria).toHaveProperty('context_menu')
+    const report = page.elements.find((e) => e.label === 'Select Report.pdf')!
+    expect(request.questions.context_menu_target!.criteria![String(report.node)]).toMatchObject({ element: `[${report.node}] Right-click Report.pdf` })
+    const act = vi.spyOn(service, 'act')
+    const more = page.elements.find((e) => e.label === 'More')!
+    await adapter.contextMenu!(more.node)
+    expect(act).toHaveBeenCalledWith(page.stateId, [{ type: 'click', ref: more.ref, button: 'right' }], expect.any(Object))
+    expect(await adapter.settle(page, { node: more.node })).toMatchObject({ changed: true, fields: ['menu-root'] })
+    const menu = await adapter.observe()
+    expect(menu.rootKind).toBe('menu')
+    expect(menu.title).toContain('Context')
+    expect(adapter.changed(page, menu)).toBe(true)
+    // The screen shows no menu while Jev decides; the state still has its items as clicks.
+    expect(backend.dismissals).toEqual(['Context'])
+    const rename = menu.elements.find((e) => e.label === 'Rename')!
+    expect(buildActionSpace({ page: menu, history: [] }).clickCandidates).toContain(String(rename.node))
+    // And the window behind it is a switch target, the way back without choosing an item.
+    expect(menu.elements.find((e) => e.root)).toMatchObject({ label: 'Documents', root: page.rootId })
+    await adapter.click(rename.node)
+    expect(act).toHaveBeenLastCalledWith(menu.stateId, [{ type: 'press', ref: rename.ref }], expect.any(Object))
+    expect(backend.dismissals).toEqual(['Context', 'Context'])
+  })
 })

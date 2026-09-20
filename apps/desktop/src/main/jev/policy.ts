@@ -74,11 +74,13 @@ export type Decision =
   | { kind: 'escape'; risk: number }
   /** Continue in another root of the same app; `element.root` names it. */
   | { kind: 'switch'; element: SpaceElement; probability: number; risk: number }
+  /** Right-click the element; the next observation is its context menu, whose items are ordinary clicks. */
+  | { kind: 'context_menu'; element: SpaceElement; probability: number; risk: number }
   | {
     kind: 'pause'
     question: Omit<Question, 'id'>
     /** What an answered element index means when the run resumes. */
-    mode: 'click' | 'type_text' | 'append' | 'switch' | 'escape' | 'accept'
+    mode: 'click' | 'type_text' | 'append' | 'switch' | 'context_menu' | 'escape' | 'accept'
     element?: SpaceElement
     /** Preset already matched to the offered field, so a resume can type it without asking again. */
     presetKey?: string
@@ -185,6 +187,7 @@ export function decide(input: DecideInput): Decision {
     if (o === 'append') return space.appendCandidates.length > 0
     if (o === 'escape') return space.canEscape
     if (o === 'switch') return space.switchCandidates.length > 0
+    if (o === 'context_menu') return space.contextMenuCandidates.length > 0
     if (o === 'scroll_down') return space.canScrollDown
     if (o === 'scroll_up') return space.canScrollUp
     return true
@@ -245,7 +248,7 @@ export function decide(input: DecideInput): Decision {
 
   // Jev rated the step it picked as irreversible: the caller confirms that one
   // step (or redirects) before anything is submitted, paid, deleted or sent.
-  const riskyPause = (mode: 'click' | 'type_text' | 'append' | 'switch', key: string, el: SpaceElement, probabilities: Record<string, number>, presetKey?: string): Decision => ({
+  const riskyPause = (mode: 'click' | 'type_text' | 'append' | 'switch' | 'context_menu', key: string, el: SpaceElement, probabilities: Record<string, number>, presetKey?: string): Decision => ({
     kind: 'pause',
     mode,
     element: el,
@@ -254,7 +257,7 @@ export function decide(input: DecideInput): Decision {
       type: 'choice',
       reason: 'risky',
       options: [
-        { ...option(el, probabilities[key]), key, label: `${mode === 'type_text' ? 'type into' : mode === 'append' ? 'append to' : mode === 'switch' ? 'switch to' : clickKindOf(key) === 'submit' ? 'press Enter in' : 'click'} ${el.role} ${el.label}` },
+        { ...option(el, probabilities[key]), key, label: `${mode === 'type_text' ? 'type into' : mode === 'append' ? 'append to' : mode === 'switch' ? 'switch to' : mode === 'context_menu' ? 'right-click' : clickKindOf(key) === 'submit' ? 'press Enter in' : 'click'} ${el.role} ${el.label}` },
         ...topK(space, probabilities).filter((o) => o.key !== key),
         ABORT,
       ],
@@ -282,12 +285,15 @@ export function decide(input: DecideInput): Decision {
     }
     return { kind: 'escape', risk }
   }
-  if (chosen === 'switch') {
-    const target = validateChoice(answers.switch_target, [...space.switchCandidates, NONE])
+  if (chosen === 'switch' || chosen === 'context_menu') {
+    const [head, candidates] = chosen === 'switch'
+      ? [answers.switch_target, space.switchCandidates]
+      : [answers.context_menu_target, space.contextMenuCandidates]
+    const target = validateChoice(head, [...candidates, NONE])
     const el = target && target.choice !== NONE ? elementByIndex(space, target.choice) : undefined
     if (!target || !el) return noneUseful()
-    if (risk >= THRESHOLDS.risk) return riskyPause('switch', target.choice, el, target.probabilities)
-    return { kind: 'switch', element: el, probability: target.probabilities[target.choice], risk }
+    if (risk >= THRESHOLDS.risk) return riskyPause(chosen, target.choice, el, target.probabilities)
+    return { kind: chosen, element: el, probability: target.probabilities[target.choice], risk }
   }
 
   if (chosen === 'click' || chosen === 'none_useful') return clickAction(chosen, true)

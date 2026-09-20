@@ -42,6 +42,8 @@ export interface RunDeps<Page extends RunObservation = RunObservation> {
   dismiss?(signal?: AbortSignal): Promise<void>
   /** Continue in another root of the same app (`RawElement.root`); the next observe reads it. */
   switchRoot?(rootId: string, signal?: AbortSignal): Promise<void>
+  /** Right-click the element; the observation that follows is the context menu it opened. */
+  contextMenu?(node: number, signal?: AbortSignal): Promise<void>
   /**
    * After input: let the page react before the next observation. `page` is the
    * observation the action was taken on, so an adapter can wait for a change
@@ -108,7 +110,7 @@ interface Pending<Page extends RunObservation> {
   page: Page | null
   space: ActionSpace | null
   /** What answering with an element index means. */
-  mode: 'click' | 'type_text' | 'append' | 'switch' | 'escape' | 'accept'
+  mode: 'click' | 'type_text' | 'append' | 'switch' | 'context_menu' | 'escape' | 'accept'
   element?: SpaceElement
   presetKey?: string
 }
@@ -245,7 +247,9 @@ export class FastRun<Page extends RunObservation = RunObservation> {
           ? { kind: pending.mode === 'append' ? 'append' : 'type_text', element, text, presetKey, probability: 1, risk: 0 }
           : pending.mode === 'switch' && element.root
             ? { kind: 'switch', element, probability: 1, risk: 0 }
-            : { kind: 'click', key: clickKey, element, probability: 1, risk: 0 },
+            : pending.mode === 'context_menu' && element.contextMenu
+              ? { kind: 'context_menu', element, probability: 1, risk: 0 }
+              : { kind: 'click', key: clickKey, element, probability: 1, risk: 0 },
         execPage,
         true,
         true,
@@ -466,6 +470,8 @@ export class FastRun<Page extends RunObservation = RunObservation> {
         ? { node: -1, kind: 'escape', label: 'Press Escape', changedPage: null, ...approvedFlag }
         : decision.kind === 'switch'
           ? { node: decision.element.node, kind: 'switch', label: `Switch to [${decision.element.index}] ${decision.element.label}`, changedPage: null, ...approvedFlag }
+          : decision.kind === 'context_menu'
+            ? { node: decision.element.node, kind: 'context_menu', label: `Right-click [${decision.element.index}] ${decision.element.label}`, changedPage: null, ...approvedFlag }
           : decision.kind === 'click'
             ? {
               node: decision.element.node,
@@ -494,6 +500,10 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       if (!this.deps.switchRoot || !decision.element.root) throw new RunPaused('no-progress', 'This platform cannot switch roots.')
       // A switch is a new page by definition; there is nothing to settle against.
       await this.deps.switchRoot(decision.element.root, signal)
+    } else if (decision.kind === 'context_menu') {
+      if (!this.deps.contextMenu) throw new RunPaused('no-progress', 'This platform cannot open a context menu.')
+      await this.deps.contextMenu(decision.element.node, signal)
+      await this.settle(page, { node: decision.element.node }, signal)
     } else if (decision.kind === 'click') {
       if (clickKind === 'submit') await this.deps.pressEnter(decision.element.node, signal)
       else await this.deps.click(decision.element.node, signal)
@@ -635,6 +645,8 @@ function reportableAction(decision: Record<string, unknown>): JevRunAction | nul
       return { op: 'press', target: 'Escape' }
     case 'switch':
       return { op: 'press', target: `Switch to ${target ?? ''}`.trim() }
+    case 'context_menu':
+      return { op: 'click', target: `Right-click ${target ?? ''}`.trim() }
     case 'wait':
       return { op: 'wait' }
     default:
@@ -660,6 +672,8 @@ function describeDecision(d: Decision): Record<string, unknown> {
       return { kind: 'escape', risk: d.risk }
     case 'switch':
       return { kind: 'switch', index: d.element.index, label: d.element.label, root: d.element.root, probability: d.probability, risk: d.risk }
+    case 'context_menu':
+      return { kind: 'context_menu', index: d.element.index, label: d.element.label, probability: d.probability, risk: d.risk }
     case 'pause':
       return { kind: 'pause', reason: d.question.reason, type: d.question.type, why: d.question.context.why }
   }

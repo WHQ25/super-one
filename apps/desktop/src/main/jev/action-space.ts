@@ -16,7 +16,7 @@ export interface SpaceElement extends RawElement {
 
 export interface HistoryEntry {
   node: number
-  kind: 'click' | 'submit' | 'type_text' | 'append' | 'scroll' | 'escape' | 'switch' | 'wait'
+  kind: 'click' | 'submit' | 'type_text' | 'append' | 'scroll' | 'escape' | 'switch' | 'context_menu' | 'wait'
   label: string
   changedPage: boolean | null
   /** Set once the dispatch finished, so `completed_actions` lists real steps only. */
@@ -45,6 +45,8 @@ export interface ActionSpace {
   appendCandidates: string[]
   /** Other roots of the same app; empty unless the adapter offers them. */
   switchCandidates: string[]
+  /** Elements a right-click opens a context menu on; empty unless the adapter offers them. */
+  contextMenuCandidates: string[]
   canScrollDown: boolean
   canScrollUp: boolean
   canEscape: boolean
@@ -68,6 +70,7 @@ export function buildActionSpace(input: ActionSpaceInput): ActionSpace {
   const scrollCandidates: string[] = []
   const appendCandidates: string[] = []
   const switchCandidates: string[] = []
+  const contextMenuCandidates: string[] = []
   for (const el of elements) {
     // A password field is never a candidate of either kind: the loop cannot
     // fill it (no preset may hold a password) and clicking it achieves nothing.
@@ -80,6 +83,7 @@ export function buildActionSpace(input: ActionSpaceInput): ActionSpace {
       if (!stuck.has(`${el.node}:switch`)) switchCandidates.push(el.index)
       continue
     }
+    if (el.contextMenu && !stuck.has(`${el.node}:context_menu`)) contextMenuCandidates.push(el.index)
     if (el.editable) {
       if (!stuck.has(`${el.node}:type_text`)) typeCandidates.push(el.index)
       if (el.appendable && !stuck.has(`${el.node}:append`)) appendCandidates.push(el.index)
@@ -102,6 +106,7 @@ export function buildActionSpace(input: ActionSpaceInput): ActionSpace {
     scrollCandidates,
     appendCandidates,
     switchCandidates,
+    contextMenuCandidates,
     canScrollDown: page.canScroll?.down ?? page.scroll.y + page.scroll.viewport < page.scroll.height - 2,
     canScrollUp: page.canScroll?.up ?? page.scroll.y > 0,
     canEscape: page.canEscape === true,

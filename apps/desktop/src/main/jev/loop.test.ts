@@ -451,6 +451,22 @@ describe('FastRun', () => {
     expect(acts).toEqual(['escape', 'switch:@r1'])
     expect(result.status).toBe('done')
     expect(result.since_last).toEqual(['Press Escape (no change)', 'Switch to [2] Document'])
+
+    // A right-click is its own step; the menu it opens is the next page.
+    const LIST = page([el({ node: 1, role: 'button', label: 'Select Report.pdf', contextMenu: true })], { text: 'Documents' })
+    const MENU = page([el({ node: 1, role: 'menuitem', label: 'Rename' })], { text: 'Rename' })
+    let turn = 0
+    const menu = harness([LIST, MENU], (request) => {
+      turn++
+      if (turn === 1) return { still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0), action: pick('context_menu', actionsOf(request)), context_menu_target: pick('1', Object.keys(request.questions.context_menu_target!.criteria!)) }
+      return { still_loading: noul(0), goal_satisfied: noul(0.95), next_step_risk: noul(0), action: pick('none_useful', actionsOf(request)) }
+    })
+    menu.deps.checkDone = async () => false
+    menu.deps.contextMenu = async (node) => { menu.acts.push(`context_menu:${node}`); menu.next() }
+    const opened = await new FastRun(opts({ goal: 'Rename the report', maxSteps: 4 }), menu.deps).start()
+    expect(menu.acts).toEqual(['context_menu:1'])
+    expect(opened.since_last).toEqual(['Right-click [1] Select Report.pdf'])
+    expect(opened.status).toBe('done')
     // A browser page offers neither.
     let offered: string[] = []
     const browser = harness([HOME], (request) => {
@@ -460,5 +476,6 @@ describe('FastRun', () => {
     await new FastRun(opts(), browser.deps).start()
     expect(offered).not.toContain('escape')
     expect(offered).not.toContain('switch')
+    expect(offered).not.toContain('context_menu')
   })
 })

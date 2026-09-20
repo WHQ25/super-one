@@ -192,11 +192,13 @@ describe('decide', () => {
       el({ node: 3, role: 'textbox', label: 'First line', value: 'First line', editable: true, appendable: true }),
       el({ node: 4, role: 'button', label: 'Done' }),
       el({ node: 5, role: 'window', label: 'Document', clickable: false, root: '@r1' }),
+      el({ node: 6, role: 'button', label: 'Select Report.pdf', contextMenu: true }),
     ], { canScroll: { up: true, down: true }, canEscape: true }), history: [] })
     const AREAS = [...desktop.scrollCandidates, NONE]
     const APPENDS = [...desktop.appendCandidates, NONE]
     const ROOTS = [...desktop.switchCandidates, NONE]
-    const DESKTOP_ACTIONS = ['click', 'type_text', 'append', 'scroll_down', 'scroll_up', 'escape', 'switch', 'none_useful']
+    const MENUS = [...desktop.contextMenuCandidates, NONE]
+    const DESKTOP_ACTIONS = ['click', 'type_text', 'append', 'scroll_down', 'scroll_up', 'escape', 'switch', 'context_menu', 'none_useful']
 
     it('offers scroll areas, appendable text areas, roots and Escape only when the page flags them', () => {
       expect(space.scrollCandidates).toEqual([])
@@ -206,6 +208,8 @@ describe('decide', () => {
       expect(desktop.scrollCandidates).toEqual(['1', '2'])
       expect(desktop.appendCandidates).toEqual(['3'])
       expect(desktop.switchCandidates).toEqual(['5'])
+      expect(desktop.contextMenuCandidates).toEqual(['6'])
+      expect(space.contextMenuCandidates).toEqual([])
       expect(desktop.canEscape).toBe(true)
       expect(desktop.clickCandidates).not.toContain('1')
       expect(desktop.clickCandidates).not.toContain('5')
@@ -217,6 +221,15 @@ describe('decide', () => {
       expect(risky).toMatchObject({ kind: 'pause', mode: 'escape', question: { reason: 'risky', options: [{ key: 'escape', label: 'press Escape', probability: 0.9 }, { key: 'abort' }] } })
       // A browser page never offers it; an answer naming it is invalid there.
       expect(decide(input({ answers: { ...calm, action: pick('escape', [...ACTIONS, 'escape']) } })).kind).not.toBe('escape')
+    })
+
+    it('right-clicks the element Jev names for a context menu; a browser page is never offered it', () => {
+      expect(decide(input({ space: desktop, answers: { ...calm, action: pick('context_menu', DESKTOP_ACTIONS), context_menu_target: pick('6', MENUS) } })))
+        .toMatchObject({ kind: 'context_menu', element: { index: '6' }, probability: 0.9 })
+      expect(decide(input({ space: desktop, answers: { ...calm, action: pick('context_menu', DESKTOP_ACTIONS), context_menu_target: pick(NONE, MENUS) } })).kind).toBe('scroll')
+      expect(decide(input({ space: desktop, answers: { ...calm, next_step_risk: noul(0.6), action: pick('context_menu', DESKTOP_ACTIONS), context_menu_target: pick('6', MENUS) } })))
+        .toMatchObject({ kind: 'pause', mode: 'context_menu', question: { reason: 'risky', options: [expect.objectContaining({ key: '6', label: 'right-click button Select Report.pdf' }), expect.objectContaining({ key: 'abort' })] } })
+      expect(decide(input({ answers: { ...calm, action: pick('context_menu', [...ACTIONS, 'context_menu']) } })).kind).not.toBe('context_menu')
     })
 
     it('switches to the root Jev names, or falls through when it names none', () => {

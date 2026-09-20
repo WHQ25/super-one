@@ -600,6 +600,13 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     await adapter.act({ root: root(), actions: [{ type: 'click', ref: '@e3' }], outline })
     expect(call).not.toHaveBeenCalledWith('ax_action', expect.anything())
     expect(call).toHaveBeenCalledWith('click', expect.objectContaining({ x: 200, y: 310, targetPid: 42 }))
+
+    // A right-click asks for the context menu; on a pressable control it used
+    // to become a plain press instead.
+    call.mockClear()
+    await adapter.act({ root: root(), actions: [{ type: 'click', ref: '@e2', button: 'right' }], outline })
+    expect(call).not.toHaveBeenCalledWith('ax_action', expect.anything())
+    expect(call).toHaveBeenCalledWith('click', expect.objectContaining({ x: 140, y: 220, button: 'right', targetPid: 42 }))
   })
 
   it('act press uses ax_action', async () => {

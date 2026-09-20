@@ -22,6 +22,15 @@ export interface RawElement {
   /** type=submit, or a button inside a <form>. */
   submit: boolean
   disabled: boolean
+  /**
+   * A scroll area, and where it can still move. Only the desktop adapter sets
+   * it: a window holds several (Finder's sidebar and its list), and a scroll
+   * aimed at the first one found scrolled the sidebar when the goal was three
+   * pages down the list.
+   */
+  scroll?: { up: boolean; down: boolean }
+  /** An editable text area that takes keystrokes at its end, keeping what it holds. */
+  appendable?: boolean
 }
 
 export interface RunObservation {

@@ -12,7 +12,7 @@ export interface Preset {
   field?: string
 }
 
-export const ACTION_OPTIONS = ['click', 'type_text', 'scroll_down', 'scroll_up', 'none_useful'] as const
+export const ACTION_OPTIONS = ['click', 'type_text', 'append', 'scroll_down', 'scroll_up', 'none_useful'] as const
 export type ActionOption = (typeof ACTION_OPTIONS)[number]
 export const NONE = 'none_of_these'
 
@@ -46,19 +46,25 @@ export function stateElement(el: SpaceElement): StateElement {
   return out
 }
 
-function candidateCriteria(space: ActionSpace, keys: readonly string[]): Record<string, unknown> {
+/**
+ * `verb` names the operation a head is about when it is not a click — "Scroll"
+ * for a scroll area, "Append to" for a text area — so the criterion reads as
+ * the step Jev would be choosing, not as a bare element.
+ */
+function candidateCriteria(space: ActionSpace, keys: readonly string[], verb?: 'Scroll' | 'Append to'): Record<string, unknown> {
   const criteria: Record<string, unknown> = {}
   for (const key of keys) {
     const kind = clickKindOf(key)
     const el = space.elements.find((e) => e.index === key.replace(/^(open|submit):/, ''))
     if (!el) continue
-    const verb = clickVerb(kind, el)
-    const element = verb === 'Click' ? `[${el.index}] ${el.label}`
-      : verb === 'Press Enter in' ? `[${el.index}] Press Enter in ${el.label} to submit it`
+    const clickable = clickVerb(kind, el)
+    const element = verb ? `[${el.index}] ${verb} ${el.label}`
+      : clickable === 'Click' ? `[${el.index}] ${el.label}`
+      : clickable === 'Press Enter in' ? `[${el.index}] Press Enter in ${el.label} to submit it`
         // What expanding is for is not visible until it happens, and a collapsed
         // hamburger is where a narrow layout keeps its search and navigation.
-        : verb === 'Expand' ? `[${el.index}] Expand ${el.label} to reveal controls that are not on the page right now`
-          : `[${el.index}] ${verb} ${el.label}`
+        : clickable === 'Expand' ? `[${el.index}] Expand ${el.label} to reveal controls that are not on the page right now`
+          : `[${el.index}] ${clickable} ${el.label}`
     criteria[key] = {
       element,
       role: el.role,
@@ -97,6 +103,7 @@ export function buildRequest(input: BuildQuestionsInput): JevRequest {
   const actions: Record<string, string> = {}
   if (space.clickCandidates.length) actions.click = 'Click an offered element: a link, button, option, suggestion, tab; expand collapsed navigation or a menu; open a field\'s popup; or press Enter in a filled field where offered.'
   if (space.typeCandidates.length) actions.type_text = 'Replace the text in an editable field with a preset value.'
+  if (space.appendCandidates.length) actions.append = 'Add a preset value at the end of a text area, keeping the text already in it.'
   if (space.canScrollDown) actions.scroll_down = 'Scroll down to reveal more of the page.'
   if (space.canScrollUp) actions.scroll_up = 'Scroll up.'
   actions.none_useful = 'No offered action advances the goal from here.'
@@ -143,6 +150,23 @@ export function buildRequest(input: BuildQuestionsInput): JevRequest {
         instructions: `Which element in \`elements\` is the field that the preset \`${preset.key}\`${preset.field ? ` (${preset.field})` : ''} belongs in? Choose ${NONE} if that field is not visible.`,
         criteria: candidateCriteria(space, space.typeCandidates),
       }
+    }
+  }
+  if (space.appendCandidates.length) {
+    questions.append_target = {
+      type: 'choice',
+      instructions: { goal, operation: 'append', rules: 'Choose the text area to add a preset to if the next action is append. Its current text stays; the preset goes after it. Choose only an offered index.' },
+      criteria: candidateCriteria(space, space.appendCandidates, 'Append to'),
+    }
+  }
+  // A window can hold several scroll areas (Finder: sidebar and list). The
+  // direction comes from `action`; this head says which area, so the two stay
+  // independent as every head in a request must be.
+  if (space.scrollCandidates.length && (space.canScrollDown || space.canScrollUp)) {
+    questions.scroll_area = {
+      type: 'choice',
+      instructions: { goal, operation: 'scroll', rules: 'Choose the scroll area to move if the next action is a scroll: the one holding the content `goal` needs more of. Choose only an offered index.' },
+      criteria: candidateCriteria(space, space.scrollCandidates, 'Scroll'),
     }
   }
   return { state, questions }

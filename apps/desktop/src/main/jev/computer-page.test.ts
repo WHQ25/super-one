@@ -6,6 +6,7 @@ import { ComputerUseError, type CapabilityTier } from '../computer-use/types'
 import { createComputerAdapter, computerPage, computerObservation } from './computer-page'
 import { buildActionSpace, clickVerb } from './action-space'
 import { FastRun } from './loop'
+import { buildRequest } from './questions'
 import { noul, pick } from './test-fixtures'
 import type { JevRequest } from './typesafe-client'
 
@@ -474,5 +475,127 @@ describe('computer fast-loop adapter', () => {
     const act = vi.spyOn(service, 'act')
     expect((await new FastRun(options, adapter).start(controller.signal)).status).toBe('aborted')
     expect(act).not.toHaveBeenCalled()
+  })
+
+  it('offers every scroll area by what it holds, and scrolls the one Jev names', async () => {
+    // A Finder window has two: the sidebar and the list. Only the first DFS hit
+    // used to be the scroll target, so a goal three pages down the list scrolled
+    // the sidebar. Each area with room to move is a candidate named by its
+    // content; the direction still comes from the action head.
+    const row = (name: string) => ({ role: 'row', selectable: true, children: [{ role: 'cell', children: [{ role: 'staticText', value: name }] }] })
+    const backend = new FakePlatformBackend([{ app: 'Finder', bundleId: 'com.test.finder', pid: 7, windows: [{ title: 'Macintosh HD', focused: true,
+      tree: { role: 'window', children: [
+        // Finder names its containers ("sidebar", "list view"); that name is
+        // the kind of content, not a row — read as one it gave "List starting
+        // at list view".
+        { role: 'scrollArea', bounds: { x: 0, y: 0, width: 200, height: 400 }, children: [
+          { role: 'outline', name: 'sidebar', children: [row('AirDrop'), row('Recents')] },
+          { role: 'scrollBar', value: '0', bounds: { x: 184, y: 0, width: 16, height: 400 } },
+        ] },
+        { role: 'scrollArea', bounds: { x: 200, y: 0, width: 600, height: 400 }, children: [
+          { role: 'table', children: [row('Applications'), row('Library')] },
+          { role: 'scrollBar', value: '0.3', bounds: { x: 784, y: 0, width: 16, height: 400 } },
+        ] },
+        // Content that fits is not somewhere to scroll.
+        { role: 'scrollArea', bounds: { x: 0, y: 400, width: 800, height: 100 }, children: [
+          { role: 'textArea', value: 'Status' },
+          { role: 'scrollBar', value: '0', enabled: false, bounds: { x: 784, y: 400, width: 16, height: 100 } },
+        ] },
+      ] },
+    }] }])
+    const service = new ComputerUseService({ adapter: backend })
+    service.policy.setEnabled(true)
+    service.policy.grantSession({ app: 'Finder', bundleId: 'com.test.finder', tier: 'full' })
+    const adapter = createComputerAdapter({ service, ask: vi.fn(), resolve: async () => (await service.resolveTargetRoot()).rootId })
+    await adapter.resolveTarget()
+    const page = await adapter.observe()
+    const areas = page.elements.filter((e) => e.scroll)
+    // The bars carry the scroll capability by role name; they are not areas.
+    expect(areas.map((e) => [e.role, e.label, e.scroll])).toEqual([
+      ['scrollarea', 'sidebar starting at AirDrop', { up: false, down: true }],
+      ['scrollarea', 'table starting at Applications', { up: true, down: true }],
+    ])
+    expect(areas.every((e) => e.clickable === false && !e.editable)).toBe(true)
+    expect(page.text).not.toContain('starting at')
+    expect(page.canScroll).toEqual({ down: true, up: true })
+    const space = buildActionSpace({ page, history: [] })
+    expect(space.scrollCandidates).toEqual(areas.map((e) => String(e.node)))
+    expect(space.clickCandidates).not.toContain(String(areas[0]!.node))
+    const request = buildRequest({ goal: 'g', page, space, presets: [], last: undefined, history: [] })
+    expect(Object.keys(request.questions.scroll_area!.criteria!)).toEqual([...space.scrollCandidates, 'none_of_these'])
+    expect(request.questions.scroll_area!.criteria![space.scrollCandidates[1]!]).toMatchObject({ element: `[${areas[1]!.node}] Scroll table starting at Applications` })
+    const act = vi.spyOn(service, 'act')
+    await adapter.scrollArea!(areas[1]!.node, 560)
+    expect(act).toHaveBeenCalledWith(page.stateId, [{ type: 'scroll', ref: areas[1]!.ref, dy: 560 }], expect.any(Object))
+    // A scroll that names no area still goes to the first one found.
+    await adapter.observe()
+    await adapter.scroll(page, 560)
+    expect(act).toHaveBeenLastCalledWith(expect.any(String), [{ type: 'scroll', ref: areas[0]!.ref, dy: 560 }], expect.any(Object))
+    // A wheel posted at a list with no scroll bar has no verdict of its own.
+    // Eight of them on a list that already fit were each "change unknown", so
+    // the no-progress rule never fired; the settle saw nothing move and gets
+    // to say so.
+    const real = ComputerUseService.prototype.act
+    act.mockImplementation(async (...args) => ({ ...(await real.apply(service, args)), outcome: 'unknown', diff: undefined }))
+    const before = await adapter.observe()
+    await adapter.scrollArea!(areas[1]!.node, 560)
+    expect(await adapter.settle(before, { node: areas[1]!.node })).toMatchObject({ changed: false })
+    expect(adapter.changed(before, await adapter.observe())).toBe(false)
+    // Off the real AX tree the bar's role name grants it the scroll capability too.
+    const obs = await service.observe(undefined, 'semantic')
+    const outline = axTreeToOutline({ index: 1, role: 'AXScrollArea', bounds: { x: 0, y: 0, width: 600, height: 400 }, children: [
+      { index: 2, role: 'AXTable', children: [{ index: 3, role: 'AXRow', children: [{ index: 4, role: 'AXStaticText', value: 'Applications' }] }] },
+      { index: 5, role: 'AXScrollBar', value: '0.42', bounds: { x: 584, y: 0, width: 16, height: 400 }, children: [{ index: 6, role: 'AXValueIndicator', value: '0.42' }] },
+    ] })
+    expect(computerPage({ ...obs, outline }, service).elements.filter((e) => e.scroll).map((e) => e.label)).toEqual(['table starting at Applications'])
+  })
+
+  it('offers a text area for append and appends by focusing it, ⌘↓ and keystrokes', async () => {
+    // TextEdit's document: type_text replaces the whole body, and a goal that
+    // adds a line had no move. A text area is offered for append as well; a
+    // single-line field is not, since replacing is what filling a field means.
+    const backend = new FakePlatformBackend([{ app: 'TextEdit', bundleId: 'com.test.textedit', pid: 7, windows: [{ title: 'Untitled', focused: true,
+      tree: { role: 'window', children: [
+        { role: 'textArea', value: 'First line', bounds: { x: 0, y: 0, width: 500, height: 300 } },
+        { role: 'textField', name: 'Title', value: '' },
+      ] },
+    }] }])
+    const service = new ComputerUseService({ adapter: backend })
+    service.policy.setEnabled(true)
+    service.policy.grantSession({ app: 'TextEdit', bundleId: 'com.test.textedit', tier: 'full' })
+    const adapter = createComputerAdapter({ service, ask: vi.fn(), resolve: async () => (await service.resolveTargetRoot()).rootId })
+    await adapter.resolveTarget()
+    const page = await adapter.observe()
+    const body = page.elements.find((e) => e.label === 'First line')!
+    expect(body).toMatchObject({ editable: true, appendable: true })
+    expect(page.elements.find((e) => e.label === 'Title')!.appendable).toBeUndefined()
+    const space = buildActionSpace({ page, history: [] })
+    expect(space.appendCandidates).toEqual([String(body.node)])
+    expect(space.typeCandidates).toContain(String(body.node))
+    const request = buildRequest({ goal: 'g', page, space, presets: [{ key: 'Line', value: '\nSecond line' }], last: undefined, history: [] })
+    expect(request.questions.action.criteria).toHaveProperty('append')
+    expect(request.questions.append_target!.criteria![String(body.node)]).toMatchObject({ element: `[${body.node}] Append to First line` })
+    const act = vi.spyOn(service, 'act')
+    await adapter.append!(body.node, '\nSecond line')
+    expect(act).toHaveBeenCalledWith(page.stateId, [
+      { type: 'click', ref: body.ref },
+      { type: 'keypress', keys: ['cmd+down'] },
+      { type: 'typeText', text: '\nSecond line' },
+    ], expect.not.objectContaining({ expect: expect.anything() }))
+    const next = await adapter.observe()
+    expect(next.elements.find((e) => e.node === body.node)?.value).toBe('First line\nSecond line')
+    expect(adapter.changed(page, next)).toBe(true)
+    // Return in the focused document is a newline, not a submit; the live run
+    // offered "Press Enter in" the document at 0.78 as its click target.
+    const obs = await service.observe(undefined, 'semantic')
+    const focused = computerPage({ ...obs, outline: axTreeToOutline({ index: 1, role: 'AXTextArea', value: 'First line', settable: true, appFocused: true, bounds: { x: 0, y: 0, width: 500, height: 300 } }) }, service)
+    expect(focused.elements[0]).toMatchObject({ appendable: true, canSubmit: false })
+    expect(buildActionSpace({ page: focused, history: [] }).clickCandidates.some((c) => c.startsWith('submit:'))).toBe(false)
+    // At click tier there is nothing to type, so nothing to append either.
+    const click = new ComputerUseService({ adapter: backend })
+    click.policy.setEnabled(true)
+    click.policy.grantSession({ app: 'TextEdit', bundleId: 'com.test.textedit', tier: 'click' })
+    const observed = await click.observe((await click.resolveTargetRoot()).rootId, 'semantic')
+    expect(computerPage(computerObservation(click.getStateStore().get(observed.stateId)!), click).elements.some((e) => e.appendable)).toBe(false)
   })
 })

@@ -16,7 +16,7 @@ export interface SpaceElement extends RawElement {
 
 export interface HistoryEntry {
   node: number
-  kind: 'click' | 'submit' | 'type_text' | 'scroll' | 'wait'
+  kind: 'click' | 'submit' | 'type_text' | 'append' | 'scroll' | 'wait'
   label: string
   changedPage: boolean | null
   /** Set once the dispatch finished, so `completed_actions` lists real steps only. */
@@ -39,6 +39,10 @@ export interface ActionSpace {
    */
   clickCandidates: string[]
   typeCandidates: string[]
+  /** Scroll areas with room to move in at least one direction; empty unless the adapter offers them. */
+  scrollCandidates: string[]
+  /** Text areas a preset can be appended to; empty unless the adapter offers them. */
+  appendCandidates: string[]
   canScrollDown: boolean
   canScrollUp: boolean
 }
@@ -58,12 +62,19 @@ export function buildActionSpace(input: ActionSpaceInput): ActionSpace {
   const elements: SpaceElement[] = page.elements.map((raw, i) => ({ ...raw, index: String(i + 1) }))
   const clickCandidates: string[] = []
   const typeCandidates: string[] = []
+  const scrollCandidates: string[] = []
+  const appendCandidates: string[] = []
   for (const el of elements) {
     // A password field is never a candidate of either kind: the loop cannot
     // fill it (no preset may hold a password) and clicking it achieves nothing.
     if (el.password || el.disabled) continue
+    if (el.scroll) {
+      if (el.scroll.up || el.scroll.down) scrollCandidates.push(el.index)
+      continue
+    }
     if (el.editable) {
       if (!stuck.has(`${el.node}:type_text`)) typeCandidates.push(el.index)
+      if (el.appendable && !stuck.has(`${el.node}:append`)) appendCandidates.push(el.index)
       // Editable does not imply clickable. A Finder name cell is an AX text
       // field that can be renamed but has no press action at all, so offering
       // it as a click sends the adapter looking for a plan that cannot exist.
@@ -80,6 +91,8 @@ export function buildActionSpace(input: ActionSpaceInput): ActionSpace {
     elements,
     clickCandidates,
     typeCandidates,
+    scrollCandidates,
+    appendCandidates,
     canScrollDown: page.canScroll?.down ?? page.scroll.y + page.scroll.viewport < page.scroll.height - 2,
     canScrollUp: page.canScroll?.up ?? page.scroll.y > 0,
   }

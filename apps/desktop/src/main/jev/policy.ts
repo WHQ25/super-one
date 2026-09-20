@@ -63,13 +63,14 @@ export type Decision =
   /** Jev rates the goal satisfied; the loop re-observes once and asks again before it trusts this. */
   | { kind: 'done'; why: string; probability: number }
   | { kind: 'click'; key: string; element: SpaceElement; probability: number; risk: number }
-  | { kind: 'type_text'; element: SpaceElement; text: string; presetKey: string; probability: number; risk: number }
-  | { kind: 'scroll'; direction: 'down' | 'up' }
+  | { kind: 'type_text' | 'append'; element: SpaceElement; text: string; presetKey: string; probability: number; risk: number }
+  /** `element` is the scroll area Jev chose; absent, the adapter scrolls its default one. */
+  | { kind: 'scroll'; direction: 'down' | 'up'; element?: SpaceElement }
   | {
     kind: 'pause'
     question: Omit<Question, 'id'>
     /** What an answered element index means when the run resumes. */
-    mode: 'click' | 'type_text' | 'accept'
+    mode: 'click' | 'type_text' | 'append' | 'accept'
     element?: SpaceElement
     /** Preset already matched to the offered field, so a resume can type it without asking again. */
     presetKey?: string
@@ -173,6 +174,7 @@ export function decide(input: DecideInput): Decision {
   const offered = ACTION_OPTIONS.filter((o) => {
     if (o === 'click') return space.clickCandidates.length > 0
     if (o === 'type_text') return space.typeCandidates.length > 0
+    if (o === 'append') return space.appendCandidates.length > 0
     if (o === 'scroll_down') return space.canScrollDown
     if (o === 'scroll_up') return space.canScrollUp
     return true
@@ -193,8 +195,23 @@ export function decide(input: DecideInput): Decision {
     return { kind: 'done', why: `${doneWhy(satisfied, doneWhenGiven)} with no action left`, probability: satisfied }
   }
 
+  /**
+   * The scroll area for a direction: Jev's choice when it can move that way,
+   * else the most likely area that can. The head is asked without knowing the
+   * direction, so a sidebar already at its top may win for a scroll_up.
+   */
+  const scroll = (direction: 'down' | 'up'): Decision => {
+    const area = validateChoice(answers.scroll_area, [...space.scrollCandidates, NONE])
+    const movable = (key: string) => elementByIndex(space, key)?.scroll?.[direction] === true
+    const key = area && area.choice !== NONE && movable(area.choice)
+      ? area.choice
+      : Object.entries(area?.probabilities ?? {}).filter(([k]) => k !== NONE && movable(k)).sort((a, b) => b[1] - a[1])[0]?.[0]
+      ?? space.scrollCandidates.find(movable)
+    return { kind: 'scroll', direction, ...(key ? { element: elementByIndex(space, key) } : {}) }
+  }
+
   const noneUseful = (): Decision => {
-    if (space.canScrollDown && !input.scrolledSinceChange) return { kind: 'scroll', direction: 'down' }
+    if (space.canScrollDown && !input.scrolledSinceChange) return scroll('down')
     const candidates = [...space.clickCandidates, ...space.typeCandidates.filter((k) => !space.clickCandidates.includes(`open:${k}`))]
     return {
       kind: 'pause',
@@ -218,7 +235,7 @@ export function decide(input: DecideInput): Decision {
 
   // Jev rated the step it picked as irreversible: the caller confirms that one
   // step (or redirects) before anything is submitted, paid, deleted or sent.
-  const riskyPause = (mode: 'click' | 'type_text', key: string, el: SpaceElement, probabilities: Record<string, number>, presetKey?: string): Decision => ({
+  const riskyPause = (mode: 'click' | 'type_text' | 'append', key: string, el: SpaceElement, probabilities: Record<string, number>, presetKey?: string): Decision => ({
     kind: 'pause',
     mode,
     element: el,
@@ -227,7 +244,7 @@ export function decide(input: DecideInput): Decision {
       type: 'choice',
       reason: 'risky',
       options: [
-        { ...option(el, probabilities[key]), key, label: `${mode === 'type_text' ? 'type into' : clickKindOf(key) === 'submit' ? 'press Enter in' : 'click'} ${el.role} ${el.label}` },
+        { ...option(el, probabilities[key]), key, label: `${mode === 'type_text' ? 'type into' : mode === 'append' ? 'append to' : clickKindOf(key) === 'submit' ? 'press Enter in' : 'click'} ${el.role} ${el.label}` },
         ...topK(space, probabilities).filter((o) => o.key !== key),
         ABORT,
       ],
@@ -236,11 +253,12 @@ export function decide(input: DecideInput): Decision {
   })
 
   if (chosen === 'invalid') return noneUseful()
-  if (chosen === 'scroll_down') return { kind: 'scroll', direction: 'down' }
-  if (chosen === 'scroll_up') return { kind: 'scroll', direction: 'up' }
+  if (chosen === 'scroll_down') return scroll('down')
+  if (chosen === 'scroll_up') return scroll('up')
 
   if (chosen === 'click' || chosen === 'none_useful') return clickAction(chosen, true)
-  return typeText(true)
+  if (chosen === 'append') return writeText('append', false)
+  return writeText('type_text', true)
 
   /**
    * "None of these" from a target head is narrower than "nothing here helps":
@@ -270,7 +288,7 @@ export function decide(input: DecideInput): Decision {
   function clickAction(mode: 'click' | 'none_useful', mayHandOff: boolean): Decision {
     const target = validateChoice(answers.click_target, [...space.clickCandidates, NONE])
     if (!target || target.choice === NONE) {
-      return mayHandOff && mode === 'click' && typeTargetActionable() ? typeText(false) : noneUseful()
+      return mayHandOff && mode === 'click' && typeTargetActionable() ? writeText('type_text', false) : noneUseful()
     }
     const el = elementByIndex(space, target.choice)
     const p = target.probabilities[target.choice]
@@ -286,8 +304,14 @@ export function decide(input: DecideInput): Decision {
     return { kind: 'click', key: target.choice, element: el, probability: p, risk }
   }
 
-  function typeText(mayHandOff: boolean): Decision {
-    const target = validateChoice(answers.type_text_target, [...space.typeCandidates, NONE])
+  /**
+   * type_text replaces a field; append adds to a text area. Both take their
+   * text from a preset and share the write gate — a wrong target gets wrong
+   * text either way — and differ only in the target head they read.
+   */
+  function writeText(kind: 'type_text' | 'append', mayHandOff: boolean): Decision {
+    const candidates = kind === 'append' ? space.appendCandidates : space.typeCandidates
+    const target = validateChoice(answers[kind === 'append' ? 'append_target' : 'type_text_target'], [...candidates, NONE])
     if (!target || target.choice === NONE) {
       return mayHandOff && clickTargetActionable() ? clickAction('click', false) : noneUseful()
     }
@@ -299,30 +323,30 @@ export function decide(input: DecideInput): Decision {
     if (p < THRESHOLDS.write) {
       return {
         kind: 'pause',
-        mode: 'type_text',
+        mode: kind,
         presetKey: matched?.preset.key,
         question: {
           type: 'choice',
           reason: 'uncertain',
           options: [...topK(space, target.probabilities), ABORT],
-          context: { why: `Low confidence type_text target (${p.toFixed(2)})`, page, decision: summary },
+          context: { why: `Low confidence ${kind} target (${p.toFixed(2)})`, page, decision: summary },
         },
       }
     }
     if (matched) {
-      if (risk >= THRESHOLDS.risk) return riskyPause('type_text', target.choice, el, target.probabilities, matched.preset.key)
-      return { kind: 'type_text', element: el, text: matched.preset.value, presetKey: matched.preset.key, probability: matched.probability, risk }
+      if (risk >= THRESHOLDS.risk) return riskyPause(kind, target.choice, el, target.probabilities, matched.preset.key)
+      return { kind, element: el, text: matched.preset.value, presetKey: matched.preset.key, probability: matched.probability, risk }
     }
     return {
       kind: 'pause',
-      mode: 'type_text',
+      mode: kind,
       element: el,
       question: {
         type: 'value',
         reason: 'uncertain',
         schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
         context: {
-          why: `Jev wants to type into [${el.index}] ${el.label} but no preset matches`,
+          why: `Jev wants to ${kind === 'append' ? 'append to' : 'type into'} [${el.index}] ${el.label} but no preset matches`,
           target: { index: el.index, role: el.role, label: el.label, value: el.value },
           presets: presets.map((pr) => pr.key),
           page,

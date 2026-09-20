@@ -17,6 +17,13 @@ export interface ComputerPage extends RunObservation {
   signature: string
   scrollRef?: string
   outcome?: ActResult
+  /**
+   * What the post-action settle saw, relative to the page acted on. Read when
+   * the act's own verdict is `unknown` — a wheel scroll posted at a list with
+   * no scroll bar says nothing about itself, and eight of them on a list that
+   * already fit were "change unknown" each, so the no-progress rule never fired.
+   */
+  settledChange?: boolean
 }
 
 const ROLE_MAP: Record<string, string> = { textfield: 'textbox', textarea: 'textbox', searchfield: 'searchbox', combobox: 'combobox', radiobutton: 'radio', popupbutton: 'button', menubaritem: 'menuitem' }
@@ -25,6 +32,9 @@ const ROLE_MAP: Record<string, string> = { textfield: 'textbox', textarea: 'text
 const EDITABLE_ROLE_LABEL: Record<string, string> = { searchbox: 'Search field', textbox: 'Text field', combobox: 'Combo box' }
 
 const TOGGLE_ROLES = new Set(['checkbox', 'radio', 'switch', 'menuitem', 'togglebutton'])
+
+/** What a scroll area's content is called by its role, when the container has no name of its own. */
+const SCROLL_CONTENT_LABEL: Record<string, string> = { table: 'table', outline: 'list', list: 'list', textarea: 'text', webarea: 'web content', browser: 'columns', grid: 'grid' }
 
 /**
  * Controls whose value is a position, not something a person reads: TextEdit's
@@ -91,6 +101,30 @@ function scrollPosition(bar: UiOutlineNode | undefined): { up: boolean; down: bo
   return { up: at > 0, down: at < 1 }
 }
 
+/**
+ * A scroll area's name for the `scroll_area` head: its own name when AppKit
+ * gives one, else its content container and the first text in it — Finder's
+ * two areas read "sidebar starting at AirDrop" and "list view starting at
+ * Applications" — because Jev has to tell two areas apart by content, not by
+ * tree order. The container's own description is the kind of content, not its
+ * first row: read as a row it produced "List starting at list view".
+ */
+function scrollAreaLabel(node: UiOutlineNode): string {
+  if (node.name?.trim()) return node.name.trim()
+  const stack = [...(node.children ?? [])]
+  let container: UiOutlineNode | undefined
+  while (stack.length && !container) {
+    const n = stack.shift()!
+    const role = n.role.replace(/^AX/, '').toLowerCase()
+    if (SCROLL_CONTENT_LABEL[role]) container = n
+    else stack.unshift(...(n.children ?? []))
+  }
+  const kind = container?.name?.trim() || (container ? SCROLL_CONTENT_LABEL[container.role.replace(/^AX/, '').toLowerCase()]! : 'area')
+  const first = labelSource(container ?? node)
+  const text = (first?.value || first?.name || '').trim().slice(0, 40)
+  return text ? `${kind} starting at ${text}` : kind
+}
+
 /** The first readable descendant — a Finder row is named by its name cell, not by itself. */
 function labelSource(node: UiOutlineNode): UiOutlineNode | undefined {
   const stack = [...(node.children ?? [])]
@@ -126,7 +160,8 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
   const text: string[] = []
   const seen = new Set<string>()
   let scrollRef: string | undefined
-  let scrollBar: UiOutlineNode | undefined
+  let canScrollDown = false
+  let canScrollUp = false
   // `menu` is the menu a command sits in — "Sort By" for Date Modified,
   // "Decimal Places" for Calculator's 12. On its own a command's name says
   // too little: Jev read "12" as the digits the goal asked for, chose the
@@ -166,10 +201,27 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
     const editable = !!planNodeAction(node, { kind: 'setText', text: '' }, tier)
     const press = planNodeAction(node, { kind: 'press' }, tier)
     const open = planNodeAction(node, { kind: 'open' }, tier)
-    if (!scrollRef && planNodeAction(node, { kind: 'scroll', dy: 1 }, tier)) {
-      scrollRef = node.ref
+    // The scroll capability is granted by role name too, so a scroll bar
+    // carries it: offered as an area it read "area starting at 0.42", its own
+    // value indicator. Only the area itself is somewhere to scroll.
+    if (!POSITION_ROLES.has(role) && planNodeAction(node, { kind: 'scroll', dy: 1 }, tier)) {
       // The vertical scroller's value says whether there is more above or below.
-      scrollBar = node.children?.find((c) => c.role === 'scrollBar' && !!c.bounds && c.bounds.height > c.bounds.width)
+      const position = scrollPosition(node.children?.find((c) => c.role === 'scrollBar' && !!c.bounds && c.bounds.height > c.bounds.width))
+      // Every scroll area with room to move is its own candidate, so the
+      // `scroll_area` head can send a scroll to the list rather than the
+      // sidebar. The first one found stays the default for a scroll that
+      // names no area. One that cannot move either way is not offered: a
+      // disabled scroller is AppKit saying the content fits.
+      scrollRef ??= node.ref
+      if ((position.up || position.down) && elements.length < MAX_ELEMENTS && !seen.has(`scroll:${node.ref}`)) {
+        seen.add(`scroll:${node.ref}`)
+        const id = elements.length + 1
+        refs.set(id, node)
+        elements.push({ node: id, ref: node.ref, role: 'scrollarea', label: scrollAreaLabel(node), value: '', scroll: position,
+          editable: false, clickable: false, canSubmit: false, password: false, submit: false, disabled: false })
+        canScrollDown ||= position.down
+        canScrollUp ||= position.up
+      }
     }
     const kinds: Array<'press' | 'select' | 'open' | undefined> = []
     if (select && !node.selected) kinds.push('select')
@@ -211,12 +263,18 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
       const id = elements.length + 1
       refs.set(id, node)
       if (kind) clickKinds.set(id, kind)
+      const isEditable = kind !== 'select' && kind !== 'open' && editable
       elements.push({ node: id, ref: node.ref, role: mapped,
         label, value: kind === 'select' ? (node.selected ? 'selected' : 'not selected') : disclosure ? '' : value,
         ...(checked ? { checked } : {}),
         ...(node.expanded != null ? { expanded: String(node.expanded) } : {}),
-        editable: kind !== 'select' && kind !== 'open' && editable, clickable: !!kind,
-        canSubmit: !!planNodeAction(node, { kind: 'enter' }, tier), password: false, submit: false, disabled: false })
+        editable: isEditable, clickable: !!kind,
+        // A multi-line text area (TextEdit's document, a mail body) takes a
+        // preset after its text; a field is replaced whole.
+        ...(isEditable && role === 'textarea' && planNodeAction(node, { kind: 'append', text: '' }, tier) ? { appendable: true } : {}),
+        // Return in a multi-line text area is a newline, not a submit: the
+        // focused TextEdit document was offered as "Press Enter in" at 0.78.
+        canSubmit: role !== 'textarea' && !!planNodeAction(node, { kind: 'enter' }, tier), password: false, submit: false, disabled: false })
     }
     if (!secure) for (const child of node.children ?? []) walk(child, command && node.name ? node.name : menu, rowName)
   }
@@ -231,7 +289,7 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
     url: '', title: `${result.root.app} — ${result.root.title}`, text: text.filter(Boolean).join('\n').slice(0, MAX_TEXT),
     elements, omitted: result.nodesOmitted ?? 0, loading: false,
     scroll: { y: 0, height: 0, viewport: 0 },
-    canScroll: { down: !!scrollRef && scrollPosition(scrollBar).down, up: !!scrollRef && scrollPosition(scrollBar).up },
+    canScroll: { down: canScrollDown, up: canScrollUp },
     stateId: result.stateId, rootId: result.root.rootId, bundleId: result.root.bundleId, refs, clickKinds, scrollRef,
     target: { app: result.root.app, bundleId: result.root.bundleId, root: result.root.rootId },
     signature: JSON.stringify(result.outline),
@@ -382,6 +440,14 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
       current = observed
       await act(planNodeAction(focused, { kind: 'enter' }, service.policy.tierFor(page.bundleId)), signal)
     },
+    scrollArea: async (id, deltaY, signal) => {
+      const page = requirePage()
+      await act(planNodeAction(page.refs.get(id), { kind: 'scroll', dy: deltaY }, service.policy.tierFor(page.bundleId)), signal)
+    },
+    append: async (id, text, signal) => {
+      const page = requirePage()
+      await act(planNodeAction(page.refs.get(id), { kind: 'append', text }, service.policy.tierFor(page.bundleId)), signal)
+    },
     scroll: async (page, deltaY, signal) => {
       if (!page.scrollRef) throw new RunPaused('no-progress', 'No accessible scroll target is available.')
       // A scroll with a ref is a scroll bar value write, scoped to the target
@@ -420,7 +486,7 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
         return { changed: outcomeChanged(outcome) === true, fields: ['act-outlasted-budget'], elements: successor!.elements.length }
       }
       const settled = await settleByPolling(page, observeFresh, signal)
-      if (settled.page) successor = outcome ? { ...settled.page, outcome } : settled.page
+      if (settled.page) successor = { ...settled.page, ...(outcome ? { outcome } : {}), settledChange: settled.report.changed }
       return settled.report
     },
     waitReady: (timeoutMs, signal) => waitReadyByPolling(timeoutMs, observeFresh, signal),
@@ -436,7 +502,7 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
       successor = undefined
       return current
     },
-    changed: (_before, after) => outcomeChanged(after.outcome),
+    changed: (_before, after) => outcomeChanged(after.outcome) ?? after.settledChange ?? null,
     // Each service call releases its resource lane. The normal turn lifecycle
     // owns visuals and dedicated-display placement, including while paused.
     focusGuard: async () => {},

@@ -32,6 +32,13 @@ export interface RunDeps<Page extends RunObservation = RunObservation> {
   type(node: number, text: string, signal?: AbortSignal): Promise<void>
   scroll(page: Page, deltaY: number, signal?: AbortSignal): Promise<void>
   /**
+   * Add text at the end of a text area, keeping what it holds. Optional: an
+   * adapter that offers no `appendable` element is never asked to.
+   */
+  append?(node: number, text: string, signal?: AbortSignal): Promise<void>
+  /** Scroll one named scroll area rather than the page's default; only adapters that offer `scroll` elements need it. */
+  scrollArea?(node: number, deltaY: number, signal?: AbortSignal): Promise<void>
+  /**
    * After input: let the page react before the next observation. `page` is the
    * observation the action was taken on, so an adapter can wait for a change
    * relative to it instead of a fixed delay.
@@ -97,7 +104,7 @@ interface Pending<Page extends RunObservation> {
   page: Page | null
   space: ActionSpace | null
   /** What answering with an element index means. */
-  mode: 'click' | 'type_text' | 'accept'
+  mode: 'click' | 'type_text' | 'append' | 'accept'
   element?: SpaceElement
   presetKey?: string
 }
@@ -200,7 +207,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     } else if (typeof answer.choice === 'string') {
       element = elementByIndex(pending.space, answer.choice)
       clickKey = answer.choice
-      if (element && pending.mode === 'type_text') {
+      if (element && (pending.mode === 'type_text' || pending.mode === 'append')) {
         const preset = (pending.presetKey && pending.element?.node === element.node
           ? this.opts.presets.find((p) => p.key === pending.presetKey)
           : undefined) ?? presetByHint(element, this.opts.presets)
@@ -225,7 +232,9 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     }
     if (execPage) {
       this.lastPage = await this.execute(
-        text != null ? { kind: 'type_text', element, text, presetKey, probability: 1, risk: 0 } : { kind: 'click', key: clickKey, element, probability: 1, risk: 0 },
+        text != null
+          ? { kind: pending.mode === 'append' ? 'append' : 'type_text', element, text, presetKey, probability: 1, risk: 0 }
+          : { kind: 'click', key: clickKey, element, probability: 1, risk: 0 },
         execPage,
         true,
         true,
@@ -371,7 +380,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
         return this.pause(decision.question, page, space, decision.mode, decision.element, decision.presetKey)
       }
 
-      const fresh = await this.deps.isFresh(page, decision.kind === 'scroll' ? undefined : decision.element.node, signal)
+      const fresh = await this.deps.isFresh(page, decision.element?.node, signal)
       if (!fresh) {
         trace.stale = true
         this.emit(trace)
@@ -440,7 +449,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
   private async execute(decision: Exclude<Decision, { kind: 'wait' | 'done' | 'pause' }>, page: Page, approved: boolean, answered = false, signal?: AbortSignal): Promise<Page> {
     const clickKind = decision.kind === 'click' ? clickKindOf(decision.key) : null
     const entry: HistoryEntry = decision.kind === 'scroll'
-      ? { node: -1, kind: 'scroll', label: `Scroll ${decision.direction}`, changedPage: null }
+      ? { node: decision.element?.node ?? -1, kind: 'scroll', label: `Scroll ${decision.direction}${decision.element ? ` in [${decision.element.index}] ${decision.element.label}` : ''}`, changedPage: null }
       : decision.kind === 'click'
         ? {
           node: decision.element.node,
@@ -449,22 +458,29 @@ export class FastRun<Page extends RunObservation = RunObservation> {
           changedPage: null,
           ...(approved ? { approved: true } : {}),
         }
-        : { node: decision.element.node, kind: 'type_text', label: `Type presets.${decision.presetKey} → [${decision.element.index}] ${decision.element.label}`, changedPage: null, ...(approved ? { approved: true } : {}) }
+        : { node: decision.element.node, kind: decision.kind, label: `${decision.kind === 'append' ? 'Append' : 'Type'} presets.${decision.presetKey} → [${decision.element.index}] ${decision.element.label}`, changedPage: null, ...(approved ? { approved: true } : {}) }
     // Record before acting: a navigation that interrupts the post-action observe must not erase the action.
     this.history.push(entry)
     try {
     if (decision.kind === 'scroll') {
-      await this.deps.scroll(page, decision.direction === 'down' ? SCROLL_DELTA : -SCROLL_DELTA, signal)
+      const delta = decision.direction === 'down' ? SCROLL_DELTA : -SCROLL_DELTA
+      if (decision.element && this.deps.scrollArea) await this.deps.scrollArea(decision.element.node, delta, signal)
+      else await this.deps.scroll(page, delta, signal)
       // Wheel scrolling is animated: without settling, the next observation is
       // taken before the page has moved and every scroll reports no change.
-      await this.settle(page, { node: -1 }, signal)
+      await this.settle(page, { node: decision.element?.node ?? -1 }, signal)
       this.scrolledSinceChange = true
     } else if (decision.kind === 'click') {
       if (clickKind === 'submit') await this.deps.pressEnter(decision.element.node, signal)
       else await this.deps.click(decision.element.node, signal)
       await this.settle(page, { node: decision.element.node }, signal)
     } else {
-      await this.deps.type(decision.element.node, decision.text, signal)
+      if (decision.kind === 'append') {
+        if (!this.deps.append) throw new RunPaused('no-progress', 'This platform cannot append to a text area.')
+        await this.deps.append(decision.element.node, decision.text, signal)
+      } else {
+        await this.deps.type(decision.element.node, decision.text, signal)
+      }
       await this.settle(page, { node: decision.element.node, typed: true }, signal)
     }
     } catch (error) {
@@ -585,6 +601,7 @@ function reportableAction(decision: Record<string, unknown>): JevRunAction | nul
         ? { op: 'press', target }
         : { op: 'click', target }
     case 'type_text':
+    case 'append':
       // The value itself stays out of the row: it came from the caller's own
       // `presets`, which the tool block already shows.
       return { op: 'type', target }
@@ -605,11 +622,12 @@ function describeDecision(d: Decision): Record<string, unknown> {
     case 'done':
       return { kind: d.kind, why: d.why, probability: d.probability }
     case 'scroll':
-      return { kind: 'scroll', direction: d.direction }
+      return { kind: 'scroll', direction: d.direction, ...(d.element ? { index: d.element.index, label: d.element.label } : {}) }
     case 'click':
       return { kind: 'click', key: d.key, label: d.element.label, probability: d.probability, risk: d.risk }
     case 'type_text':
-      return { kind: 'type_text', index: d.element.index, label: d.element.label, preset: d.presetKey, probability: d.probability, risk: d.risk }
+    case 'append':
+      return { kind: d.kind, index: d.element.index, label: d.element.label, preset: d.presetKey, probability: d.probability, risk: d.risk }
     case 'pause':
       return { kind: 'pause', reason: d.question.reason, type: d.question.type, why: d.question.context.why }
   }

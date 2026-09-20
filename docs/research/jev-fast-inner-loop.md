@@ -1164,6 +1164,20 @@ B 的范式就是 `presets`：把带参数的动作拆成几个选择题，每�
 
 **顺序。** 排在 §11.3 四步之后作第 5 步；依赖第 1 步的 `RunDeps` 可选方法模式。验证用例：Finder 图标视图里把文件拖到窗口某处（position / path）、备忘录新建一条并写正文（text → presets）、Preview 在图片上点一个位置（`pictureOnly` 进文本）。
 
+### 11.5 第一步落地：`scroll_area` + `append`（2026-09-21，Grok 4.6 / high，dev 版）
+
+实现方式是 §11.2 说的"adapter 不提供候选头就不出"：`RawElement` 多两个可选能力标记——`scroll: {up, down}`（这个元素是一个滚动区，以及它还能往哪动）和 `appendable`（可在末尾续写的多行文本区）——`buildActionSpace` 据此产出 `scrollCandidates` / `appendCandidates`，`buildRequest` 只在非空时发 `scroll_area` / `append_target` 头和 `append` 选项。browser / device 页面不设标记，请求形状不变（`loop.test` 有断言）。`RunDeps` 加可选的 `scrollArea(node, dy)` 与 `append(node, text)`，computer 实现：滚动 = 对该区的 `planNodeAction(scroll)`（有 bar 写 AXValue）；追加 = `click ref` → `keypress cmd+down`（Cocoa 的 moveToEndOfDocument:，End 键不是）→ `typeText`，不带 `expect`（app 会自动纠正，猜出来的 valueEquals 会把成功等成超时）。方向仍由 `action` 头出，`scroll_area` 头不知道方向：Jev 选的区不能朝那边动时，取该头里能动的最高概率区；都不能则用 adapter 默认区。
+
+**TextEdit 追加（`rae236c55`）。** 第 1 步 `action`：append **0.88** / none_useful 0.08 / click 0.03 / type_text 0.01；`append_target` 文本区 0.80；`type_text_target` 反而答 none_of_these 0.52——两个写入头分得开。但 `field_for_Line` 只有 0.68（阈值 0.7），preset 的 `field` 提示 "the document text area" 里 text / area 都是停用词、"document" 不在标签里（文本区的标签是它的内容），于是走了 value 暂停；主模型填回文本后追加成功，文档变成两行。第 2 步 `goal_satisfied` 0.45、none_useful 0.64（append 掉到 0.35）——两条 done 规则都差一点没到（0.5 / 0.8），no-progress 暂停由主模型 abort 收尾。goal 写的是"文档以 … 结尾"，而 `text` 里文档之后还跟着格式工具栏的文字，措辞问题多于观察问题；先记录，不调阈值。
+
+同一条 trace 揪出一个候选错误：`click_target` 把 **`submit:1`（在文档里按 Return）给到 0.78**。多行文本区里 Return 是换行不是提交，`canSubmit` 现在对 textarea 恒 false。
+
+**Finder 长列表（`r1ec4b958`，/System/Library 163 项，目标倒数第 4 行）。** 8 步 28 s `done`，`goal_satisfied 0.90`：5 次滚动每次 `scroll_area` 都给 "list view starting at …" **0.98–1.0**，sidebar ≤ 0.01，`action` scroll_down 0.89–0.96；第 6 步 `click_target` Select WorkflowResponsiveness 0.99；之后两轮 none_useful 0.96–0.97 + goal_satisfied 0.90 收尾。首跑（`r7fd69d76`，reset 脚本里的 ⌘↑ 把窗口带回了 /System，9 项装得下）虽然环境错了，却暴露三个观察层问题，都已修：
+
+- **滚动区的名字读成了容器的描述**："List starting at list view"——Finder 给 AXOutline 起名 "list view" / "sidebar"，`labelSource` 把它当第一行。现在容器的名字是内容种类，第一行从容器的后代里取："list view starting at Applications"、"sidebar starting at AirDrop"。
+- **滚动条自己成了滚动区候选**：`scroll` 能力按角色名含 "scroll" 授予，AXScrollBar 也有，候选里多出 "area starting at 0.42"（它的 value indicator）。位置类角色不再当区。
+- **没有 bar 的列表滚八次全是 "change unknown"**：无 bar 时投滚轮，act 结论 unknown、diff 空，`changed` 恒 null，三步无变化的 no-progress 规则永远不触发，run 一直滚到 maxSteps。settle 明明看到没动（`unchanged`）：现在 act 结论说不上话时读 settle 的结论（`settledChange`），与 browser 的 marker 语义一致。
+
 ## 参考
 
 - `~/Developer/Github/jev-ultrafast/jev_ultrafast/{agent.py, browser.py, snapshot.js, model.py, questions.py}`、`docs/performance.md`

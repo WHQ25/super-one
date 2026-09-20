@@ -2,7 +2,7 @@ import type { CapabilityTier, Condition, UiAction, UiOutlineNode } from './types
 
 type NodeIntent =
   | { kind: 'press' | 'enter' | 'select' | 'open' }
-  | { kind: 'setText'; text: string }
+  | { kind: 'setText' | 'append'; text: string }
   | { kind: 'scroll'; dy: number }
 
 export interface NodeActionPlan {
@@ -35,6 +35,14 @@ export function planNodeAction(node: UiOutlineNode | undefined, intent: NodeInte
   if (tier !== 'full' || !TEXT_ROLES.has(role)) return
   if (intent.kind === 'setText' && can.setText) {
     return { actions: [{ type: 'setText', ref: node.ref, text: intent.text }], expect: { kind: 'valueEquals', ref: node.ref, value: intent.text } }
+  }
+  // Append is keystrokes after the existing text: a click to focus the area
+  // (and make its window key), ⌘↓ to the end of the document — the Cocoa
+  // text system's moveToEndOfDocument:, which a posted End key is not — then
+  // the text. No `expect`: the app may auto-correct what was typed, and
+  // valueEquals on the guessed result would time out on a success.
+  if (intent.kind === 'append' && can.typeText && node.bounds && node.bounds.width > 0 && node.bounds.height > 0) {
+    return { actions: [{ type: 'click', ref: node.ref }, { type: 'keypress', keys: ['cmd+down'] }, { type: 'typeText', text: intent.text }] }
   }
   if (intent.kind === 'enter' && node.appFocused && (can.setText || can.typeText)) {
     return { actions: [{ type: 'keypress', keys: ['Return'] }] }

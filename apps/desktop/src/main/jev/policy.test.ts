@@ -178,4 +178,52 @@ describe('decide', () => {
     expect(decide(input({ answers: { ...base, click_target: pick('1', CLICKS, 0.7) } })).kind).toBe('scroll')
     expect(decide(input({ answers: { ...base, click_target: pick(NONE, CLICKS, 0.9) } })).kind).toBe('scroll')
   })
+
+  describe('desktop-only heads', () => {
+    // A desktop page offers scroll areas and text areas as elements; a browser
+    // page never sets these flags, so its space has neither list and the
+    // decisions below cannot arise there.
+    const desktop = buildActionSpace({ page: page([
+      el({ node: 1, role: 'scrollarea', label: 'List starting at AirDrop', clickable: false, scroll: { up: false, down: true } }),
+      el({ node: 2, role: 'scrollarea', label: 'Table starting at Applications', clickable: false, scroll: { up: true, down: true } }),
+      el({ node: 3, role: 'textbox', label: 'First line', value: 'First line', editable: true, appendable: true }),
+      el({ node: 4, role: 'button', label: 'Done' }),
+    ], { canScroll: { up: true, down: true } }), history: [] })
+    const AREAS = [...desktop.scrollCandidates, NONE]
+    const APPENDS = [...desktop.appendCandidates, NONE]
+    const DESKTOP_ACTIONS = ['click', 'type_text', 'append', 'scroll_down', 'scroll_up', 'none_useful']
+
+    it('offers scroll areas and appendable text areas only when the page flags them', () => {
+      expect(space.scrollCandidates).toEqual([])
+      expect(space.appendCandidates).toEqual([])
+      expect(desktop.scrollCandidates).toEqual(['1', '2'])
+      expect(desktop.appendCandidates).toEqual(['3'])
+      expect(desktop.clickCandidates).not.toContain('1')
+    })
+
+    it('scrolls the area Jev names, or the likeliest one that can move that way', () => {
+      const chosen = decide(input({ space: desktop, answers: { ...calm, action: pick('scroll_down', DESKTOP_ACTIONS), scroll_area: pick('2', AREAS) } }))
+      expect(chosen).toMatchObject({ kind: 'scroll', direction: 'down', element: { index: '2' } })
+      // The head does not know the direction: the sidebar at its top wins the
+      // head but cannot scroll up, so the scroll goes to the list.
+      const redirected = decide(input({ space: desktop, answers: { ...calm, action: pick('scroll_up', DESKTOP_ACTIONS), scroll_area: pick('1', AREAS) } }))
+      expect(redirected).toMatchObject({ kind: 'scroll', direction: 'up', element: { index: '2' } })
+      // Without an answer the adapter's default area is used.
+      expect(decide(input({ space: desktop, answers: { ...calm, action: pick('scroll_down', DESKTOP_ACTIONS) } }))).toEqual({ kind: 'scroll', direction: 'down', element: expect.objectContaining({ index: '1' }) })
+      // A browser page still scrolls without naming an area.
+      expect(decide(input({ answers: { ...calm, action: pick('scroll_down', ACTIONS) } }))).toEqual({ kind: 'scroll', direction: 'down' })
+    })
+
+    it('appends the matched preset, gated like a write, and pauses in append mode when unsure', () => {
+      const presets = [{ key: 'Line', value: '\nSecond line' }]
+      const sure = { ...calm, action: pick('append', DESKTOP_ACTIONS), append_target: pick('3', APPENDS), field_for_Line: pick('3', [...desktop.typeCandidates, NONE]) }
+      expect(decide(input({ space: desktop, presets, answers: sure }))).toMatchObject({ kind: 'append', element: { index: '3' }, text: '\nSecond line', presetKey: 'Line' })
+      const unsure = { ...sure, append_target: pick('3', APPENDS, THRESHOLDS.write - 0.1) }
+      expect(decide(input({ space: desktop, presets, answers: unsure }))).toMatchObject({ kind: 'pause', mode: 'append', presetKey: 'Line', question: { reason: 'uncertain' } })
+      const risky = { ...sure, next_step_risk: noul(0.9) }
+      expect(decide(input({ space: desktop, presets, answers: risky }))).toMatchObject({ kind: 'pause', mode: 'append', question: { reason: 'risky', options: [expect.objectContaining({ key: '3', label: 'append to textbox First line' }), expect.objectContaining({ key: 'abort' })] } })
+      // No preset names the area: the caller supplies the text.
+      expect(decide(input({ space: desktop, presets: [], answers: { ...calm, action: pick('append', DESKTOP_ACTIONS), append_target: pick('3', APPENDS) } }))).toMatchObject({ kind: 'pause', mode: 'append', question: { type: 'value' } })
+    })
+  })
 })

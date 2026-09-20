@@ -42,7 +42,9 @@ function harness(pages: PageObservation[], script: Script) {
     focusGuard: async (active) => { guard.push(active) },
     trace: () => {},
   }
-  return { deps, acts, guard }
+  /** Advance the page queue from a dep a test adds itself. */
+  const next = () => { current = queue.shift() ?? current }
+  return { deps, acts, guard, next }
 }
 
 function opts(overrides: Partial<RunOptions> = {}): RunOptions {
@@ -382,5 +384,45 @@ describe('FastRun', () => {
     expect(paused.question!.options![0]).toMatchObject({ key: 'submit:1', label: 'press Enter in textbox Add a title' })
     expect((await run2.resume({ questionId: paused.question!.id, choice: 'submit:1' })).status).toBe('done')
     expect(risky.acts).toEqual(['enter:10'])
+  })
+
+  it('routes append and a named scroll through the optional deps, and asks neither of a browser page', async () => {
+    // A desktop page flags scroll areas and text areas; the loop dispatches
+    // those through `append` / `scrollArea` and records them as steps. A
+    // browser page sets no flags, so its request carries no such heads and
+    // the two deps are never needed.
+    const DOC = page([
+      el({ node: 1, role: 'scrollarea', label: 'List starting at AirDrop', clickable: false, scroll: { up: false, down: true } }),
+      el({ node: 2, role: 'scrollarea', label: 'Text starting at First line', clickable: false, scroll: { up: true, down: true } }),
+      el({ node: 3, role: 'textbox', label: 'First line', value: 'First line', editable: true, appendable: true }),
+    ], { text: 'First line', canScroll: { up: true, down: true } })
+    const APPENDED = page([...DOC.elements.slice(0, 2), { ...DOC.elements[2]!, value: 'First line\nSecond line' }], { text: 'First line\nSecond line', canScroll: { up: true, down: true } })
+    const heads: string[][] = []
+    const { deps, acts, next } = harness([DOC, DOC, APPENDED], (request) => {
+      heads.push(Object.keys(request.questions))
+      const actions = actionsOf(request)
+      if (heads.length === 1) return { still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0), action: pick('scroll_down', actions), scroll_area: pick('2', Object.keys(request.questions.scroll_area!.criteria!)) }
+      if (heads.length === 2) return { still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0), action: pick('append', actions), append_target: pick('3', Object.keys(request.questions.append_target!.criteria!)), field_for_Line: pick('3', typesOf(request)) }
+      return { still_loading: noul(0), goal_satisfied: noul(0.95), next_step_risk: noul(0), action: pick('none_useful', actions) }
+    })
+    deps.checkDone = async () => false
+    deps.scrollArea = async (node, delta) => { acts.push(`scrollArea:${node}:${delta}`); next() }
+    deps.append = async (node, text) => { acts.push(`append:${node}:${text}`); next() }
+    const run = new FastRun(opts({ goal: 'Add a second line', presets: [{ key: 'Line', value: '\nSecond line' }], maxSteps: 6 }), deps)
+    const result = await run.start()
+    expect(heads[0]).toEqual(expect.arrayContaining(['scroll_area', 'append_target']))
+    expect(actionsOf({ questions: { action: { criteria: Object.fromEntries(['append'].map((k) => [k, ''])) } } } as unknown as JevRequest)).toEqual(['append'])
+    expect(acts).toEqual(['scrollArea:2:560', 'append:3:\nSecond line'])
+    expect(result.status).toBe('done')
+    expect(result.since_last).toEqual(['Scroll down in [2] Text starting at First line (no change)', 'Append presets.Line → [3] First line'])
+
+    const browser = harness([HOME], (request) => {
+      heads.push(Object.keys(request.questions))
+      expect(actionsOf(request)).not.toContain('append')
+      return { still_loading: noul(0), goal_satisfied: noul(0.95), next_step_risk: noul(0), action: pick('none_useful', actionsOf(request)) }
+    })
+    await new FastRun(opts(), browser.deps).start()
+    expect(heads.at(-1)).not.toEqual(expect.arrayContaining(['scroll_area']))
+    expect(heads.at(-1)).not.toEqual(expect.arrayContaining(['append_target']))
   })
 })

@@ -28,7 +28,7 @@ export function CodexAsyncQuestionView({
       ? questions.map((question, index) => ({ question: question.title, answer: submittedAnswers[index] }))
       : [{ question: questions.map(question => question.title).join('\n\n'), answer: submittedReply }]
     return (
-      <div className="my-2 flex min-w-0 flex-col gap-2 overflow-hidden rounded-lg border border-border/70 bg-background p-3">
+      <div className="my-2 flex min-w-0 flex-col gap-2 overflow-hidden rounded-lg border border-border/70 bg-muted/20 p-3">
         <Badge variant="outline" role="status" className="border-success/25 bg-success/10 text-success">
           <Check aria-hidden="true" />
           {t('chat.askUser.answered')}
@@ -37,7 +37,7 @@ export function CodexAsyncQuestionView({
           {pairs.map((pair, index) => (
             <div key={index} className="flex min-w-0 flex-col gap-2">
               <dt className="whitespace-pre-wrap text-sm font-medium leading-relaxed text-foreground [overflow-wrap:anywhere]">{pair.question}</dt>
-              <dd className="flex flex-col gap-1.5 rounded-md bg-muted/60 px-3 py-2.5">
+              <dd className="flex flex-col gap-1.5 rounded-md bg-muted/30 px-3 py-2.5">
                 <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <UserRound aria-hidden="true" className="size-3.5" />
                   {t('chat.askUser.yourAnswer')}
@@ -52,7 +52,7 @@ export function CodexAsyncQuestionView({
   }
 
   return (
-    <div className="my-2 min-w-0 overflow-hidden rounded-lg border border-border/70 bg-background">
+    <div className="my-2 min-w-0 overflow-hidden rounded-lg border border-border/70 bg-muted/20">
       <div className="flex flex-col gap-4 p-3">
         {questions.map((question, questionIndex) => (
           <fieldset key={questionIndex} disabled={disabled || submitting} className="flex min-w-0 flex-col gap-2.5">

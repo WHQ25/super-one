@@ -871,6 +871,85 @@ describe('ClaudeBackend', () => {
       expect(complete.metadata?.terminalReason).toBe('aborted_tools')
     })
 
+    it('keeps the host queue closed while a priority-next steer runs its continuation turn', async () => {
+      const backend = new ClaudeBackend()
+      const events: AgentEvent[] = []
+      backend.onEvent((e) => events.push(e))
+      await backend.start(makeStartOpts())
+      const firstSend = backend.send({ content: 'turn 1', clientMessageId: 'user_1' })
+      await new Promise((r) => setTimeout(r, 0))
+      await backend.send({ content: 'steer this', clientMessageId: 'user_2', priority: 'next' })
+      await backend.handleCommand({ kind: 'claude.steer_queued', clientMessageId: 'user_2', priority: 'next' })
+
+      // claude-query sees the SDK echo the steered message: it closes turn 1
+      // and opens a continuation turn that no send() is awaiting.
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: hoisted.captured.getCurrentMessageId?.() ?? '', metadata: {} })
+      await firstSend
+      hoisted.captured.onQueuedTurnStart?.('msg_continuation')
+      hoisted.captured.emit?.({
+        type: 'message_start',
+        message: { id: 'msg_continuation', role: 'assistant', status: 'streaming', content: [], createdAt: new Date().toISOString(), providerId: 'claude' },
+      })
+      hoisted.captured.emit?.({ type: 'status_change', status: 'streaming' })
+
+      const bridgePushSpy = vi.spyOn(hoisted.captured.bridge as { push: (...args: unknown[]) => void }, 'push')
+      await backend.send({ content: 'queued', clientMessageId: 'user_3', priority: 'next' })
+      expect(bridgePushSpy).not.toHaveBeenCalled()
+      expect(events).not.toContainEqual({ type: 'queued_message_consumed', clientMessageId: 'user_3' })
+
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: 'msg_continuation', metadata: {} })
+      await new Promise((r) => setTimeout(r, 0))
+
+      expect(bridgePushSpy).toHaveBeenCalledTimes(1)
+      expect(bridgePushSpy.mock.calls[0]?.[0]).toMatchObject({ message: { content: 'queued' }, priority: undefined })
+      expect(events).toContainEqual({ type: 'queued_message_consumed', clientMessageId: 'user_3' })
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: hoisted.captured.getCurrentMessageId?.() ?? '', metadata: {} })
+    })
+
+    it('holds queued messages across the aborted result of a priority-now steer', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      const firstSend = backend.send({ content: 'turn 1', clientMessageId: 'user_1' })
+      await new Promise((r) => setTimeout(r, 0))
+      await backend.send({ content: 'steer this', clientMessageId: 'user_2', priority: 'next' })
+      await backend.send({ content: 'queued', clientMessageId: 'user_3', priority: 'later' })
+      await backend.handleCommand({ kind: 'claude.steer_queued', clientMessageId: 'user_2' })
+
+      // The SDK drains the bridge as it would live: the steer tag is consumed
+      // but claude-query has not yet seen its continuation turn start.
+      const bridge = hoisted.captured.bridge as AsyncIterable<unknown> & { drainConsumedTag(): string | undefined }
+      const iterator = bridge[Symbol.asyncIterator]()
+      await iterator.next()
+      await iterator.next()
+
+      const bridgePushSpy = vi.spyOn(hoisted.captured.bridge as { push: (...args: unknown[]) => void }, 'push')
+      // priority:'now' aborts the tools; the SDK closes turn 1 before running the steer.
+      hoisted.captured.emit?.({
+        type: 'message_complete',
+        messageId: hoisted.captured.getCurrentMessageId?.() ?? '',
+        metadata: { terminalReason: 'aborted_tools' },
+      })
+      await firstSend
+      await new Promise((r) => setTimeout(r, 0))
+      expect(bridgePushSpy).not.toHaveBeenCalled()
+
+      bridge.drainConsumedTag()
+      hoisted.captured.onQueuedTurnStart?.('msg_continuation')
+      await backend.send({ content: 'typed mid-steer', clientMessageId: 'user_4', priority: 'next' })
+      expect(bridgePushSpy).not.toHaveBeenCalled()
+
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: 'msg_continuation', metadata: {} })
+      await new Promise((r) => setTimeout(r, 0))
+      expect(bridgePushSpy).toHaveBeenCalledTimes(1)
+      expect(bridgePushSpy.mock.calls[0]?.[0]).toMatchObject({ message: { content: 'queued' }, priority: undefined })
+
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: hoisted.captured.getCurrentMessageId?.() ?? '', metadata: {} })
+      await new Promise((r) => setTimeout(r, 0))
+      expect(bridgePushSpy).toHaveBeenCalledTimes(2)
+      expect(bridgePushSpy.mock.calls[1]?.[0]).toMatchObject({ message: { content: 'typed mid-steer' } })
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: hoisted.captured.getCurrentMessageId?.() ?? '', metadata: {} })
+    })
+
     it('rejects queued steer when there is no active Claude turn', async () => {
       const backend = new ClaudeBackend()
       await backend.start(makeStartOpts())

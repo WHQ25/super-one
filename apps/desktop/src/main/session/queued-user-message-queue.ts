@@ -19,6 +19,9 @@ import type { AgentEvent, SendMessageRequest } from '@superone/shared/agent-type
  *   finally { this.queuedMessages.flush() }
  * }
  * ```
+ *
+ * Claude flushes from its terminal-event handler instead: a steered message
+ * runs as a continuation turn that no `send()` awaits.
  */
 export class QueuedUserMessageQueue {
   private items: SendMessageRequest[] = []

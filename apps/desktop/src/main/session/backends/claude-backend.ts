@@ -312,10 +312,12 @@ export class ClaudeBackend implements SessionBackend {
       (messageId) => {
         const oldId = this.currentMessageId
         const pending = oldId ? this.turnResolves.get(oldId) : undefined
-        if (pending && oldId && oldId !== messageId) {
-          this.turnResolves.delete(oldId)
-          this.turnResolves.set(messageId, pending)
-        }
+        if (pending && oldId && oldId !== messageId) this.turnResolves.delete(oldId)
+        // A continuation turn (steer, task-notification wake) has no send()
+        // awaiting it, but it is a live SDK turn all the same: keep isBusy()
+        // true so composer sends stay host-queued instead of landing mid-turn
+        // in the SDK, where they would become SDK-steered.
+        this.turnResolves.set(messageId, pending ?? (() => {}))
         this.currentMessageId = messageId
         this.currentStartTime = Date.now()
         this.interrupted = false
@@ -438,12 +440,7 @@ export class ClaudeBackend implements SessionBackend {
     for (const goalEvent of this.goalTracker.noteSend(turnRequest.content)) this.emit(goalEvent)
     this.flushPendingInstruction()
     this.bridge.push(userMsg)
-
-    try {
-      await turnDone
-    } finally {
-      this.queuedUserMessages.flush()
-    }
+    await turnDone
   }
 
   private flushPendingInlineNotifications(): void {
@@ -946,6 +943,14 @@ export class ClaudeBackend implements SessionBackend {
       if (resolve) {
         resolve()
         this.turnResolves.delete(mid)
+      }
+      // Queued sends are released on the terminal event rather than from
+      // send(): a continuation turn ends without any send() to flush from. A
+      // consumed-but-undrained bridge tag means a steered message is already
+      // in the SDK and its turn has not started yet (priority 'now' closes
+      // the current turn first) — releasing now would push into that turn.
+      if (this.turnResolves.size === 0 && (this.bridge?.consumedTags.length ?? 0) === 0) {
+        this.queuedUserMessages.flush()
       }
     }
   }

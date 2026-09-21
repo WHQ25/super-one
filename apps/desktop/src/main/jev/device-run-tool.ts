@@ -6,11 +6,10 @@ import { FastRun } from './loop'
 import { finishRun, jevClient, resumeRun, runInputShape, runOptions, reportRun } from './run-tool-common'
 
 export const DEVICE_RUN_DESCRIPTION =
-  'Experimental (Jev setting): pursue a multi-step touch-device goal with taps, typing and scrolling chosen without a model turn per step. '
-  + 'Requires existing device_request_control approval; never requests control inside the loop. Start with goal and optional device, presets and done_when; the loop judges risk and completion itself. '
-  + 'Example: done_when={kind:"exists",label:"About"}; use device_wait_for conditions with label or identifier. '
-  + 'Risky or uncertain controls pause; resume with runId + answer. Missing accessibility trees pause for inspection. '
-  + 'Use device_act for known action sequences, single steps, gestures or pixels.'
+  'Experimental (Jev setting): pursue a multi-step touch-device goal with taps, typing, swipes on the list that needs them, going back and long-presses chosen without a model turn per step. '
+  + 'Requires existing device_request_control approval; never requests control. Start with goal (said as what the screen shows when done), optional device, presets and done_when; the loop judges risk and completion itself. '
+  + 'Example: done_when={kind:"exists",label:"About"}. Risky or uncertain steps pause; resume with runId + answer. A capability pause takes device_act actions; its target bounds are screen fractions. '
+  + 'Use device_act for known sequences, single steps, gestures or pixels.'
 
 export const deviceRunInputShape = {
   ...runInputShape,

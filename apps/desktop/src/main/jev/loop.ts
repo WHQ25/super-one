@@ -9,7 +9,7 @@ import { type ActionSpace, buildActionSpace, clickKindOf, clickVerb, elementByIn
 import type { JevRunAction, JevRunActionOutcome } from '@superone/shared/agent-types'
 import type { RawElement, RunObservation } from './observation'
 import { decide, type Decision, presetByHint, type Question, type QuestionOption } from './policy'
-import { buildRequest, type Preset } from './questions'
+import { buildRequest, DESKTOP_WORDS, type Preset, type RunWords } from './questions'
 import { appendJevTrace, topChoiceProbabilities, traceRequestState, type TraceStep } from './trace'
 import { estimateTokens, type JevRequest, type JevResponse } from './typesafe-client'
 
@@ -79,6 +79,8 @@ export interface RunDeps<Page extends RunObservation = RunObservation> {
   trace?(entry: TraceStep): void
   now?(): number
   platform?: 'browser' | 'computer' | 'device'
+  /** This platform's words for Escape and the secondary press; desktop wording when absent. */
+  words?: RunWords
   /** Positional native refs must never reuse a paused snapshot. */
   reobserveOnResume?: boolean
   sameTarget?(before: Page, after: Page, element: RawElement): boolean
@@ -205,6 +207,10 @@ export class FastRun<Page extends RunObservation = RunObservation> {
 
   constructor(private readonly opts: RunOptions, private readonly deps: RunDeps<Page>) {
     this.startedAt = this.now()
+  }
+
+  private get words(): RunWords {
+    return this.deps.words ?? DESKTOP_WORDS
   }
 
   private now(): number {
@@ -438,7 +444,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       }
 
       const space = buildActionSpace({ page, history: this.history })
-      const request = buildRequest({ goal: this.opts.goal, page, space, presets: this.opts.presets, last: this.history[this.history.length - 1], history: this.history })
+      const request = buildRequest({ goal: this.opts.goal, page, space, presets: this.opts.presets, last: this.history[this.history.length - 1], history: this.history, words: this.words })
       const response = await this.deps.ask(request, signal)
       this.recordVerdicts(response)
       const decision = decide({
@@ -574,11 +580,11 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       : decision.kind === 'handed'
         ? { node: decision.target?.node ?? -1, kind: 'handed', label: `Handed ${describeHanded(decision.actions)}${decision.target ? ` at [${decision.target.index}] ${decision.target.label}` : ''}`, changedPage: null, approved: true }
       : decision.kind === 'escape'
-        ? { node: -1, kind: 'escape', label: 'Press Escape', changedPage: null, ...approvedFlag }
+        ? { node: -1, kind: 'escape', label: this.words.escape.label, changedPage: null, ...approvedFlag }
         : decision.kind === 'switch'
           ? { node: decision.element.node, kind: 'switch', label: `Switch to [${decision.element.index}] ${decision.element.label}`, changedPage: null, ...approvedFlag }
           : decision.kind === 'context_menu'
-            ? { node: decision.element.node, kind: 'context_menu', label: `Right-click [${decision.element.index}] ${decision.element.label}`, changedPage: null, ...approvedFlag }
+            ? { node: decision.element.node, kind: 'context_menu', label: `${this.words.contextMenu.verb} [${decision.element.index}] ${decision.element.label}`, changedPage: null, ...approvedFlag }
           : decision.kind === 'drag'
             ? { node: decision.element.node, kind: 'drag', label: `Drag [${decision.element.index}] ${decision.element.label} onto [${decision.target.index}] ${decision.target.label}`, changedPage: null, ...approvedFlag }
           : decision.kind === 'click'
@@ -646,7 +652,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     const changed = decision.kind === 'switch' ? true : this.deps.changed(page, next)
     entry.changedPage = changed
     if (changed && decision.kind !== 'scroll') this.scrolledSinceChange = false
-    const shown = reportableAction(describeDecision(decision))
+    const shown = reportableAction(describeDecision(decision), this.words)
     this.progress.completed.push({ label: entry.label, outcome: outcomeOf(changed), ...(shown ? { op: shown.op, ...(shown.target ? { target: shown.target } : {}) } : {}) })
     if (answered) {
       // Answered actions never went through decide(); trace them so a run's
@@ -755,7 +761,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
 
   private emit(entry: TraceStep): void {
     ;(this.deps.trace ?? appendJevTrace)({ ...entry, platform: this.deps.platform ?? 'browser' })
-    const action = reportableAction(entry.decision)
+    const action = reportableAction(entry.decision, this.words)
     // A step is emitted after its settle, so the verdict travels with the row.
     if (action) this.reporter?.(entry.changedPage === undefined ? action : { ...action, outcome: outcomeOf(entry.changedPage) })
   }
@@ -766,7 +772,7 @@ function outcomeOf(changed: boolean | null): StepOutcome {
 }
 
 /** What the chat shows for a step: the same op a single-action call would report. */
-function reportableAction(decision: Record<string, unknown>): JevRunAction | null {
+function reportableAction(decision: Record<string, unknown>, words: RunWords): JevRunAction | null {
   const target = typeof decision.label === 'string' ? decision.label : undefined
   switch (decision.kind) {
     case 'click':
@@ -782,11 +788,11 @@ function reportableAction(decision: Record<string, unknown>): JevRunAction | nul
     case 'scroll':
       return { op: 'scroll', target: String(decision.direction ?? '') }
     case 'escape':
-      return { op: 'press', target: 'Escape' }
+      return { op: 'press', target: words.escape.target }
     case 'switch':
       return { op: 'press', target: `Switch to ${target ?? ''}`.trim() }
     case 'context_menu':
-      return { op: 'click', target: `Right-click ${target ?? ''}`.trim() }
+      return { op: 'click', target: `${words.contextMenu.verb} ${target ?? ''}`.trim() }
     case 'drag':
       return { op: 'press', target: `Drag ${target ?? ''} onto ${String(decision.onto ?? '')}`.trim() }
     case 'handed':

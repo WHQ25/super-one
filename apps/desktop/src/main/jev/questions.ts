@@ -12,6 +12,23 @@ export interface Preset {
   field?: string
 }
 
+/**
+ * The words a platform uses for the two actions whose meaning differs by
+ * platform: the closed-set dismiss (Escape on a desktop, Back on a phone)
+ * and the secondary press that opens an item's menu (right-click,
+ * long-press). Jev reads `action`; the history and the reported row use
+ * `label` / `target` / `verb`.
+ */
+export interface RunWords {
+  escape: { label: string; target: string; action: string }
+  contextMenu: { verb: string; action: string }
+}
+
+export const DESKTOP_WORDS: RunWords = {
+  escape: { label: 'Press Escape', target: 'Escape', action: 'Press Escape: close the open menu, popover, sheet or dialog, or cancel an edit in progress, without saving anything.' },
+  contextMenu: { verb: 'Right-click', action: 'Right-click an offered element to open its context menu; the menu\'s commands are chosen in the next step.' },
+}
+
 export const ACTION_OPTIONS = ['click', 'type_text', 'append', 'scroll_down', 'scroll_up', 'escape', 'switch', 'context_menu', 'drag', 'needs_input', 'none_useful'] as const
 /** What a hand-over is for; a hint to the caller, never a schema (§11.4). */
 export const INPUT_KINDS = ['position', 'path', 'text', 'value', 'other'] as const
@@ -76,7 +93,7 @@ export function stateElement(el: SpaceElement): StateElement {
  * for a scroll area, "Append to" for a text area — so the criterion reads as
  * the step Jev would be choosing, not as a bare element.
  */
-function candidateCriteria(space: ActionSpace, keys: readonly string[], verb?: 'Scroll' | 'Append to' | 'Switch to' | 'Right-click' | 'Drop onto' | 'Hand over input for'): Record<string, unknown> {
+function candidateCriteria(space: ActionSpace, keys: readonly string[], verb?: string): Record<string, unknown> {
   const criteria: Record<string, unknown> = {}
   for (const key of keys) {
     const kind = clickKindOf(key)
@@ -85,7 +102,7 @@ function candidateCriteria(space: ActionSpace, keys: readonly string[], verb?: '
     const clickable = clickVerb(kind, el)
     // A row's candidate is labelled for its click ("Select Shared"); the
     // right-click is on the row itself.
-    const element = verb ? `[${el.index}] ${verb} ${verb === 'Right-click' || verb === 'Drop onto' ? el.label.replace(/^(Select|Open) /, '') : el.label}`
+    const element = verb ? `[${el.index}] ${verb} ${verb === 'Right-click' || verb === 'Long-press' || verb === 'Drop onto' ? el.label.replace(/^(Select|Open) /, '') : el.label}`
       : clickable === 'Click' ? `[${el.index}] ${el.label}`
       : clickable === 'Press Enter in' ? `[${el.index}] Press Enter in ${el.label} to submit it`
         // What expanding is for is not visible until it happens, and a collapsed
@@ -111,10 +128,11 @@ export interface BuildQuestionsInput {
   presets: readonly Preset[]
   last: HistoryEntry | undefined
   history: readonly HistoryEntry[]
+  words?: RunWords
 }
 
 export function buildRequest(input: BuildQuestionsInput): JevRequest {
-  const { goal, page, space, presets, last, history } = input
+  const { goal, page, space, presets, last, history, words = DESKTOP_WORDS } = input
   const completed = history.filter((h) => h.completed).slice(-COMPLETED_MAX).map((h) => h.label.replace(/\[\d+\] /, ''))
   const state = {
     goal,
@@ -133,9 +151,9 @@ export function buildRequest(input: BuildQuestionsInput): JevRequest {
   if (space.appendCandidates.length) actions.append = 'Add a preset value at the end of a text area, keeping the text already in it.'
   if (space.canScrollDown) actions.scroll_down = 'Scroll down to reveal more of the page.'
   if (space.canScrollUp) actions.scroll_up = 'Scroll up.'
-  if (space.canEscape) actions.escape = 'Press Escape: close the open menu, popover, sheet or dialog, or cancel an edit in progress, without saving anything.'
+  if (space.canEscape) actions.escape = words.escape.action
   if (space.switchCandidates.length) actions.switch = 'Switch to another window, sheet or panel of this app listed in `elements` and continue there; the current one stays open.'
-  if (space.contextMenuCandidates.length) actions.context_menu = 'Right-click an offered element to open its context menu; the menu\'s commands are chosen in the next step.'
+  if (space.contextMenuCandidates.length) actions.context_menu = words.contextMenu.action
   if (space.dragSources.length && space.dropTargets.length) actions.drag = 'Drag a selected item onto an offered folder or group, moving it there.'
   actions.needs_input = 'The next step needs something no offered element or preset supplies — a point or path on a picture or canvas, text no preset holds, a value a control does not list — which the caller will provide.'
   actions.none_useful = 'No offered action advances the goal from here.'
@@ -226,8 +244,8 @@ export function buildRequest(input: BuildQuestionsInput): JevRequest {
   if (space.contextMenuCandidates.length) {
     questions.context_menu_target = {
       type: 'choice',
-      instructions: { goal, operation: 'context_menu', rules: 'Choose the element to right-click if the next action is context_menu: the item whose context menu holds the command `goal` needs. Choose only an offered index.' },
-      criteria: candidateCriteria(space, space.contextMenuCandidates, 'Right-click'),
+      instructions: { goal, operation: 'context_menu', rules: `Choose the element to ${words.contextMenu.verb.toLowerCase()} if the next action is context_menu: the item whose context menu holds the command \`goal\` needs. Choose only an offered index.` },
+      criteria: candidateCriteria(space, space.contextMenuCandidates, words.contextMenu.verb),
     }
   }
   if (space.switchCandidates.length) {

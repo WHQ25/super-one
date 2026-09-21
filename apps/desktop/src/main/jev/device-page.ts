@@ -1,9 +1,11 @@
 /** Touch-device adapter over the existing session executor and current-state store. */
 import type { DeviceUiNode } from '@superone/shared/device-agent'
+import { DEVICE_PROVIDER_PLATFORM, parseDeviceId, type DevicePlatform } from '@superone/shared/device'
 import { evaluateCondition, type DeviceCondition } from '../device-agent/conditions'
 import type { DeviceAgentSession } from '../device-agent/execute'
 import type { DeviceState } from '../device-agent/state-store'
 import { RunPaused, StaleObservation, type RunDeps } from './loop'
+import type { RunWords } from './questions'
 import { SETTLED_ADAPTER_POLL_MS, waitForChangeByPolling, waitReadyByPolling } from './settle'
 import type { RawElement, RunObservation } from './observation'
 
@@ -16,49 +18,227 @@ export interface DevicePage extends RunObservation {
   scrollRef?: string
 }
 
+/**
+ * A phone has no Escape key and no right button. What it has instead: the
+ * system Back button (Android) or the edge swipe back (iOS), and the long
+ * press that opens an item's menu on both.
+ */
+export const DEVICE_WORDS: RunWords = {
+  escape: { label: 'Go back', target: 'Back', action: 'Go back: leave this screen for the one before it, or dismiss the open sheet, menu or keyboard, without saving anything.' },
+  contextMenu: { verb: 'Long-press', action: 'Long-press an offered item to open its context menu or actions; the commands are chosen in the next step.' },
+}
+
 const ROLES: Record<string, string> = {
   textfield: 'textbox', textview: 'textbox', textentry: 'textbox', textarea: 'textbox',
   edittext: 'textbox', searchfield: 'searchbox', searchtext: 'searchbox', searchtextfield: 'searchbox',
   togglebutton: 'switch', radiobutton: 'radio', tabbutton: 'tab',
 }
 const CLICK_ROLES = new Set(['button', 'link', 'cell', 'tab', 'menuitem', 'option', 'checkbox', 'radio', 'switch', 'treeitem'])
+/** Containers that scroll on their own: a swipe inside moves their content, not the screen. */
+const SCROLL_ROLES = new Set(['scrollview', 'scrollarea', 'list', 'table', 'collectionview', 'collection', 'grid', 'pager'])
+/** Content items a long press opens a menu on; buttons count only when they are rows of a list. */
+const ITEM_ROLES = new Set(['cell', 'link', 'image', 'treeitem', 'option'])
+const PICTURE_ROLES = new Set(['image', 'imageview', 'map', 'mapview'])
+const OVERLAY_ROLES = new Set(['alert', 'sheet', 'dialog', 'popover', 'actionsheet'])
+const TITLE_ROLES = new Set(['navigationbar', 'toolbar'])
+const TEXT_ROLES = new Set(['text', 'statictext', 'heading', 'label'])
+/** iOS reports a switch as a checkbox valued "1"/"0"; Android as checked/unchecked. */
+const ON = new Set(['1', 'true', 'checked', 'on']), OFF = new Set(['0', 'false', 'unchecked', 'off'])
+const MAX_ELEMENTS = 250
+const MAX_TEXT = 4000
+const MAX_PICTURES = 12
+const MAX_FIELDS = 6
+
+export function devicePlatform(deviceId: string): DevicePlatform {
+  const provider = parseDeviceId(deviceId)?.provider
+  return provider ? DEVICE_PROVIDER_PLATFORM[provider] : 'ios'
+}
+
+function roleOf(node: DeviceUiNode): string {
+  const raw = node.role.replace(/^AX|^XCUIElementType/, '').split('.').pop()!.toLowerCase()
+  return ROLES[raw] ?? raw
+}
+
+function rect(bounds: DeviceUiNode['bounds']): RawElement['bounds'] | undefined {
+  return bounds ? { x: bounds[0], y: bounds[1], width: bounds[2], height: bounds[3] } : undefined
+}
+
+function idTail(node: DeviceUiNode): string | undefined {
+  const tail = node.identifier?.split(/[/:.]/).pop()?.replace(/_/g, ' ').trim()
+  return tail || undefined
+}
+
+/** The first labelled text descendants, depth-first: what a person calls a row whose button has no name of its own. */
+function textsBelow(node: DeviceUiNode, out: DeviceUiNode[] = []): DeviceUiNode[] {
+  for (const child of node.children ?? []) {
+    if (out.length >= 3) break
+    if (child.source === 'ocr' || child.secure) continue
+    if (TEXT_ROLES.has(roleOf(child)) && child.label) out.push(child)
+    else textsBelow(child, out)
+  }
+  return out
+}
+
+function isSwitch(role: string, value: string | undefined): value is string {
+  return (role === 'checkbox' || role === 'switch' || role === 'toggle' || role === 'radio') && value != null && (ON.has(value.toLowerCase()) || OFF.has(value.toLowerCase()))
+}
+
+function clickableRole(node: DeviceUiNode): boolean {
+  return CLICK_ROLES.has(roleOf(node))
+}
+
+/**
+ * A list on iOS is a plain `group` to the accessibility bridge: nothing says
+ * it scrolls. Three or more rows filling half the screen is one.
+ */
+function implicitList(node: DeviceUiNode, role: string): boolean {
+  if (role !== 'group' || !node.bounds || !node.children) return false
+  const rows = node.children.filter((c) => clickableRole(c) && c.bounds)
+  if (rows.length < 3) return false
+  const top = Math.min(...rows.map((r) => r.bounds![1]))
+  const bottom = Math.max(...rows.map((r) => r.bounds![1] + r.bounds![3]))
+  return bottom - top >= 0.5
+}
+
+function scrollable(node: DeviceUiNode, role: string): boolean {
+  return SCROLL_ROLES.has(role) || implicitList(node, role)
+}
+
+function containsScrollable(node: DeviceUiNode): boolean {
+  return (node.children ?? []).some((c) => scrollable(c, roleOf(c)) || containsScrollable(c))
+}
+
+/**
+ * Where a scroll area can still move, from the rows that stick out of it. A
+ * tree lists only what is on screen, so no evidence means both ways are
+ * offered rather than none: a swipe on a list that fits does nothing.
+ */
+function scrollRoom(node: DeviceUiNode): { up: boolean; down: boolean } {
+  const [, top, , height] = node.bounds ?? [0, 0, 1, 1]
+  const bottom = top + height
+  let above = false, below = false
+  const visit = (n: DeviceUiNode) => {
+    for (const c of n.children ?? []) {
+      if (c.bounds) {
+        if (c.bounds[1] < top - 0.005) above = true
+        if (c.bounds[1] + c.bounds[3] > bottom + 0.005) below = true
+      }
+      visit(c)
+    }
+  }
+  visit(node)
+  return above || below ? { up: above, down: below } : { up: true, down: true }
+}
 
 export function devicePage(state: DeviceState, deviceId: string): DevicePage {
   const observation = state.observation
   const elements: RawElement[] = []
   const refs = new Map<number, DeviceUiNode>()
   const text: string[] = []
+  const fields: string[] = []
+  const pictures: string[] = []
+  const overlays: string[] = []
+  /** Text nodes whose words became a control's label: not repeated as lines of their own. */
+  const consumed = new Set<string>()
   let scrollRef: string | undefined
-  const walk = (node: DeviceUiNode) => {
-    const rawRole = node.role.replace(/^AX|^XCUIElementType/, '').split('.').pop()!.toLowerCase()
-    const role = ROLES[rawRole] ?? rawRole
-    const secure = node.secure === true || /secure|password/.test(rawRole)
+  let app: string | undefined
+  let title: string | undefined
+  let keyboard = false
+
+  const add = (node: DeviceUiNode, el: Omit<RawElement, 'node' | 'ref' | 'bounds'>): void => {
+    if (elements.length >= MAX_ELEMENTS) return
+    const id = elements.length + 1
+    refs.set(id, node)
+    const bounds = rect(node.bounds)
+    elements.push({ node: id, ref: node.ref, ...el, ...(bounds ? { bounds } : {}) })
+  }
+
+  const walk = (node: DeviceUiNode, scrollArea: DeviceUiNode | undefined, insideControl: string | undefined) => {
+    const role = roleOf(node)
+    const secure = node.secure === true || /secure|password/.test(node.role.toLowerCase())
     // OCR boxes do not prove a clickable control and are outside this loop's contract.
     const semantic = node.source !== 'ocr'
-    if (!secure && semantic) text.push([node.label, node.value].filter(Boolean).join(' '))
     const bounds = node.bounds
     const visible = !!bounds && bounds[2] > 0 && bounds[3] > 0 && bounds[0] < 1 && bounds[1] < 1 && bounds[0] + bounds[2] > 0 && bounds[1] + bounds[3] > 0
     const enabled = semantic && node.enabled !== false && !secure && visible
-    if (enabled && /scroll|table|list|collection/.test(role) && !scrollRef) scrollRef = node.ref
+    const disabled = semantic && node.enabled === false
+
+    if (role === 'application' && node.label) app ??= node.label
+    if (OVERLAY_ROLES.has(role)) overlays.push(`${role === 'alert' ? 'an' : 'a'} ${role}${node.label ? ` "${node.label}"` : ''}`)
+    if (role === 'keyboard') keyboard = true
+    if (title === undefined) {
+      // The bar's own name, or the large/inline title heading at the top. A
+      // navigation bar the bridge names only by identifier (Text Replacement)
+      // still carries the title there, as long as it is a word, not an id.
+      if (node.label && (TITLE_ROLES.has(role) || /toolbar|action_bar|app_bar/.test(node.identifier ?? ''))) title = node.label
+      else if (role === 'group' && bounds && bounds[1] < 0.1 && bounds[3] < 0.1 && bounds[2] > 0.9 && node.identifier && !/[:/.]/.test(node.identifier)) title = node.identifier
+      else if (role === 'heading' && node.label && node.label.length > 1 && bounds && bounds[1] < 0.15) title = node.label
+    }
+
     const editable = enabled && ['textbox', 'searchbox', 'combobox'].includes(role)
     const clickable = enabled && (editable || CLICK_ROLES.has(role))
-    if (elements.length < 250 && clickable) {
-      const id = Number(node.ref.replace(/^@e/, ''))
-      if (Number.isSafeInteger(id) && id >= 0) {
-        refs.set(id, node)
-        elements.push({ node: id, ref: node.ref, role, label: node.label ?? node.identifier ?? '', value: node.value ?? '',
-          editable, clickable, canSubmit: false, password: false, submit: false, disabled: false })
-      }
+    // An Android row is a nameless button whose words are the texts inside
+    // it; the nameless switch inside that row is called what the row is.
+    let label = node.label ?? ''
+    let value = node.value ?? ''
+    if (clickable && !label) {
+      const below = textsBelow(node)
+      if (below.length) {
+        label = below[0].label!
+        value = value || below.slice(1).map((t) => t.label).join(', ').slice(0, 80)
+        for (const t of below) consumed.add(t.ref)
+      } else label = insideControl || idTail(node) || ''
     }
-    if (!secure) for (const child of node.children ?? []) walk(child)
+    const toggled = isSwitch(role, value) ? (ON.has(value.toLowerCase()) ? 'true' : 'false') : undefined
+    if (toggled) value = toggled === 'true' ? 'on' : 'off'
+
+    if (!secure && semantic && role !== 'application' && !consumed.has(node.ref)) {
+      const line = [label, toggled ? `: ${value}` : value ? ` ${value}` : ''].join('')
+      if (line) text.push(disabled ? `${line} (disabled)` : line)
+    }
+
+    // Each scroll area with nothing scrollable inside it is its own candidate,
+    // so the `scroll_area` head can aim at the list rather than the page that
+    // holds it. The first one found stays the default for an unnamed scroll.
+    let area = scrollArea
+    if (enabled && scrollable(node, role) && !containsScrollable(node)) {
+      scrollRef ??= node.ref
+      const room = scrollRoom(node)
+      add(node, { role: 'scrollarea', label: label || idTail(node) || textsBelow(node)[0]?.label || 'list', value: '', scroll: room,
+        editable: false, clickable: false, canSubmit: false, password: false, submit: false, disabled: false })
+      area = node
+    }
+
+    if (clickable) {
+      if (editable && fields.length < MAX_FIELDS) fields.push(`(text field "${label.slice(0, 40)}": ${node.focused ? 'focused, ' : ''}${value ? `holds "${value.slice(0, 80)}"` : 'empty'})`)
+      const item = ITEM_ROLES.has(role) || (role === 'button' && !!scrollArea)
+      add(node, { role, label, value, ...(toggled ? { checked: toggled } : {}), ...(item ? { contextMenu: true } : {}),
+        editable, clickable, canSubmit: false, password: false, submit: false, disabled: false })
+    } else if (semantic && insideControl === undefined && PICTURE_ROLES.has(role) && visible && bounds![2] >= 0.1 && bounds![3] >= 0.05 && pictures.length < MAX_PICTURES) {
+      // A picture with no controls of its own: nothing to do to it, but the
+      // place a handed-over point or path would land (§11.4).
+      const name = label || 'Picture'
+      pictures.push(`(picture-only: ${name})`)
+      add(node, { role: 'image', label: name, value: '', picture: true, editable: false, clickable: false, canSubmit: false, password: false, submit: false, disabled: false })
+    }
+
+    if (!secure) for (const child of node.children ?? []) walk(child, area, clickable ? label : insideControl)
   }
-  walk(observation.root)
+  walk(observation.root, undefined, undefined)
+
+  const scrolls = elements.filter((e) => e.scroll)
   const unavailable = observation.treeUnavailable || (elements.length === 0 && text.every((s) => !s))
+  const observing = `(observing: ${app ? `${app} ` : ''}screen${title ? ` "${title}"` : ''}; ${overlays.length ? `${overlays.join(' and ')} open` : 'no alert or sheet open'}${keyboard ? '; keyboard shown' : ''})`
   return {
     stateId: state.stateId, state, refs, scrollRef,
-    url: '', title: deviceId, target: { device: deviceId }, text: text.filter(Boolean).join('\n').slice(0, 4000), elements,
+    url: '', title: title ?? deviceId, target: { device: deviceId }, elements,
+    text: [observing, ...fields, ...pictures, ...text.filter(Boolean)].join('\n').slice(0, MAX_TEXT),
     omitted: observation.truncated ? 1 : 0, loading: !observation.settled,
-    scroll: { y: 0, height: 0, viewport: 0 }, canScroll: { down: !!scrollRef, up: !!scrollRef },
+    scroll: { y: 0, height: 0, viewport: 0 },
+    // A screen with no list or scroll area on it has nowhere to swipe; a
+    // swipe on a form that fits is a gesture on whatever sits under it.
+    canScroll: { down: scrolls.some((s) => s.scroll!.down), up: scrolls.some((s) => s.scroll!.up) },
+    canEscape: true,
     signature: JSON.stringify(observation.root),
     ...(unavailable ? { blocked: { reason: 'no-progress' as const, why: 'No usable accessibility tree is available. Use device_snapshot mode=visual and take over with device_act.' } } : {}),
   }
@@ -75,6 +255,7 @@ export interface DeviceAdapterOptions {
 
 export function createDeviceAdapter(options: DeviceAdapterOptions): RunDeps<DevicePage> {
   const { session } = options
+  const platform = devicePlatform(options.deviceId)
   let current: DevicePage | undefined
   let successor: DevicePage | undefined
   const requirePage = () => {
@@ -108,8 +289,9 @@ export function createDeviceAdapter(options: DeviceAdapterOptions): RunDeps<Devi
     successor = { ...devicePage(state, options.deviceId), outcome: value.outcome as DevicePage['outcome'] }
     if (value.failure) throw new RunPaused('no-progress', `Device input failed: ${String(value.failure)}. Inspect before retrying.`)
   }
+  const swipe = (ref: string | undefined, deltaY: number) => ({ type: 'swipe', ...(ref ? { ref } : {}), direction: deltaY > 0 ? 'up' : 'down', distance: 0.55 })
   return {
-    platform: 'device', ask: options.ask, reobserveOnResume: true,
+    platform: 'device', words: DEVICE_WORDS, ask: options.ask, reobserveOnResume: true,
     resolveTarget: async () => { options.assertControl(); successor = undefined },
     observe: async (signal) => {
       options.assertControl()
@@ -133,12 +315,28 @@ export function createDeviceAdapter(options: DeviceAdapterOptions): RunDeps<Devi
       && after.elements.some((e) => e.node === element.node && e.label === element.label && e.editable === element.editable),
     /** Actions handed over at a capability pause, in `device_act`'s vocabulary; the same gate as a device_act call. */
     act: (_page, actions, signal) => act(actions as Array<Record<string, unknown>>, signal),
-    click: (id, signal) => act([{ type: 'tap', ref: requirePage().refs.get(id)!.ref }], signal),
+    /**
+     * iOS presses through accessibility: a switch's row is one element whose
+     * centre is its label, where a tap toggles nothing (run rb524a586 tapped
+     * Haptic Feedback three times). Android refuses `press` and takes the tap.
+     */
+    click: (id, signal) => act([{ type: platform === 'android' ? 'tap' : 'press', ref: requirePage().refs.get(id)!.ref }], signal),
     type: (id, text, signal) => act([
       { type: 'tap', ref: requirePage().refs.get(id)!.ref }, { type: 'setText', text },
     ], signal),
     pressEnter: async () => { throw new RunPaused('no-progress', 'Device keyboard submit is not offered. Select a visible submit control with device_act.') },
-    scroll: (page, deltaY, signal) => act([{ type: 'swipe', ref: page.scrollRef, direction: deltaY > 0 ? 'up' : 'down', distance: 0.55 }], signal),
+    scroll: (page, deltaY, signal) => act([swipe(page.scrollRef, deltaY)], signal),
+    scrollArea: (id, deltaY, signal) => act([swipe(requirePage().refs.get(id)!.ref, deltaY)], signal),
+    /** Long-press the item: its context menu or actions are what the next observation shows. */
+    contextMenu: (id, signal) => act([{ type: 'longPress', ref: requirePage().refs.get(id)!.ref }], signal),
+    /**
+     * Back, the way the platform does it: Android's system button; on iOS
+     * the edge swipe that pops a navigation stack, which has no button to
+     * press when the bar's back control is not in the tree.
+     */
+    dismiss: (signal) => act([platform === 'android'
+      ? { type: 'key', button: 'back' }
+      : { type: 'swipe', x: 0.005, y: 0.5, toX: 0.7, toY: 0.5, durationMs: 400 }], signal),
     /**
      * Nothing to add: the backend settles on pixels inside every observation —
      * both the one `act` takes for its successor and the one `observe` takes —

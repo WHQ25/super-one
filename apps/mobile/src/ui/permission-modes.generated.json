@@ -124,7 +124,7 @@
     {
       "id": "auto",
       "label": "Auto",
-      "description": "Classifier allows routine work, escalates the rest",
+      "description": "Classifier allows routine work; blocks fail closed without a prompt",
       "icon": "Zap",
       "triggerIcon": "Zap",
       "light": "#fe9a00",

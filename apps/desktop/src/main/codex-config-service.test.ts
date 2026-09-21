@@ -1,5 +1,5 @@
 import { join } from 'path'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { existsSyncMock, mkdirSyncMock, readFileSyncMock, writeFileSyncMock } = vi.hoisted(() => ({
   existsSyncMock: vi.fn(),
@@ -28,14 +28,20 @@ import {
   toggleCodexMcpConfig,
 } from './codex-config-service'
 
-describe('listCodexMcpConfigs', () => {
-  beforeEach(() => {
-    existsSyncMock.mockReset()
-    mkdirSyncMock.mockReset()
-    readFileSyncMock.mockReset()
-    writeFileSyncMock.mockReset()
-  })
+beforeEach(() => {
+  // Use the mocked home even when the test runner inherits CODEX_HOME.
+  vi.stubEnv('CODEX_HOME', undefined)
+  existsSyncMock.mockReset()
+  mkdirSyncMock.mockReset()
+  readFileSyncMock.mockReset()
+  writeFileSyncMock.mockReset()
+})
 
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
+
+describe('listCodexMcpConfigs', () => {
   it('returns empty array when no config files exist', () => {
     existsSyncMock.mockReturnValue(false)
 
@@ -193,13 +199,6 @@ model = "gpt-4o"
 })
 
 describe('saveCodexMcpConfig', () => {
-  beforeEach(() => {
-    existsSyncMock.mockReset()
-    mkdirSyncMock.mockReset()
-    readFileSyncMock.mockReset()
-    writeFileSyncMock.mockReset()
-  })
-
   it('writes a stdio server to user config', () => {
     existsSyncMock.mockReturnValue(false)
 
@@ -255,13 +254,6 @@ describe('saveCodexMcpConfig', () => {
 })
 
 describe('toggleCodexMcpConfig', () => {
-  beforeEach(() => {
-    existsSyncMock.mockReset()
-    mkdirSyncMock.mockReset()
-    readFileSyncMock.mockReset()
-    writeFileSyncMock.mockReset()
-  })
-
   it('writes enabled = false when disabling a server', () => {
     existsSyncMock.mockReturnValue(true)
     readFileSyncMock.mockReturnValue(`
@@ -297,13 +289,6 @@ enabled = false
 })
 
 describe('deleteCodexMcpConfig', () => {
-  beforeEach(() => {
-    existsSyncMock.mockReset()
-    mkdirSyncMock.mockReset()
-    readFileSyncMock.mockReset()
-    writeFileSyncMock.mockReset()
-  })
-
   it('removes the target server from config', () => {
     existsSyncMock.mockReturnValue(true)
     readFileSyncMock.mockReturnValue(`

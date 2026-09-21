@@ -13,8 +13,8 @@ const enabled = (query: string, capabilityIds?: unknown) =>
 describe('host capability settings to mobile mention menu', () => {
   it('enables computer and browser only when the connected host has them on', () => {
     const ids = availableMentionCapabilityIds({ computerUseEnabled: true, cdpEnabled: true }, 'darwin')
-    // The `@session` portal rides along with the capabilities and is always on.
-    expect(enabled('', ids)).toEqual(['computer', 'browser', 'widget', 'debug', 'session'])
+    // Session and Git portals are independent of host capability settings.
+    expect(enabled('', ids)).toEqual(['computer', 'browser', 'widget', 'debug', 'session', 'git', 'gh'])
     expect(mentionTokenFromItem(buildMentionRows('computer use', { remote: [], agentProfiles: [], capabilityIds: ids })[0]!.item)?.kind)
       .toBe('computer')
     expect(enabled('browser', availableMentionCapabilityIds({ cdpEnabled: false }, 'darwin'))).toEqual([])
@@ -29,8 +29,8 @@ describe('host capability settings to mobile mention menu', () => {
 
   it('uses the host platform and retains safe legacy-host behavior', () => {
     expect(mentionCapabilityAvailability({ computerUseEnabled: true }, 'win32').computer).toBe(false)
-    expect(enabled('')).toEqual(['widget', 'debug', 'session'])
-    expect(enabled('', [])).toEqual(['session'])
-    expect(enabled('', ['unknown', 'browser', null])).toEqual(['browser', 'session'])
+    expect(enabled('')).toEqual(['widget', 'debug', 'session', 'git', 'gh'])
+    expect(enabled('', [])).toEqual(['session', 'git', 'gh'])
+    expect(enabled('', ['unknown', 'browser', null])).toEqual(['browser', 'session', 'git', 'gh'])
   })
 })

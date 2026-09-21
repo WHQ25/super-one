@@ -135,8 +135,8 @@ final class HostLifecycle {
                 eventMask: .exit,
                 queue: self.queue,
             )
-            source.setEventHandler { [weak self] in
-                self?.handleHostExit()
+            source.setEventHandler {
+                self.handleHostExit()
             }
             self.processSource = source
             source.resume()

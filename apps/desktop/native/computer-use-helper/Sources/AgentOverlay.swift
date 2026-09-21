@@ -504,8 +504,8 @@ final class AgentOverlayController {
     func scheduleHide(afterMs: Int = 1600) {
         DispatchQueue.main.async {
             self.cancelScheduledHide()
-            let work = DispatchWorkItem { [weak self] in
-                self?.hideNow()
+            let work = DispatchWorkItem {
+                self.hideNow()
             }
             self.hideWorkItem = work
             DispatchQueue.main.asyncAfter(

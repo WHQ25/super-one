@@ -349,7 +349,7 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS = [
   },
   {
     "name": "computer_run",
-    "description": "Experimental (Jev setting): pursue desktop UI goals with clicks, typing and scrolling chosen without a model turn per step. Start with app (launched in the background if it is not running) or root, and goal; no computer_apps or computer_snapshot call is needed first. If the exact sequence of buttons is already known, use computer_act with a batch instead. Example: presets=[{key:\"Query\",value:\"cats\",field:\"Search\"}], done_when={kind:\"valueEquals\",ref:\"@e7\",value:\"cats\"}. Native computer_wait_for conditions bind at run start. The loop judges each step's risk and the goal's completion itself; before anything irreversible (save, send, delete, quit, leaving the app) or when unsure it pauses with a question. Resume a pause with runId + answer. Uses existing grants and tiers; skips secure fields. Use computer_act for single steps, drag, shortcuts or pixels.",
+    "description": "Experimental (Jev setting): pursue desktop UI goals with clicks, typing and scrolling chosen without a model turn per step. Start with app (launched in the background if it is not running) or root, and goal; no computer_apps or computer_snapshot call is needed first. If the exact sequence of buttons is already known, use computer_act with a batch instead. Example: presets=[{key:\"Query\",value:\"cats\",field:\"Search\"}], done_when={kind:\"valueEquals\",ref:\"@e7\",value:\"cats\"}. Native computer_wait_for conditions bind at run start. The loop judges each step's risk and the goal's completion itself; before anything irreversible (save, send, delete, quit, leaving the app) or when unsure it pauses with a question. Resume a pause with runId + answer. Phrase goal as the end state the window will show — a row inside a folder, a text area ending with a line, no sheet open, an icon in a corner of the icon view — since the loop reads state sentences like these off the window; prefer done_when when a condition can say it. Uses existing grants and tiers; skips secure fields. Use computer_act for single steps, drag, shortcuts or pixels.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -360,7 +360,7 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS = [
           "description": "Short, human-friendly explanation of the goal for the user watching, in the conversation's language."
         },
         "goal": {
-          "description": "What to achieve on the current page, including when to stop. Required to start a run.",
+          "description": "What to achieve, said as what the page shows when it is done: the loop judges completion from the page text, so name the visible end state, not the steps. \"Report.txt is listed inside Archive\" rather than \"drag Report.txt onto Archive\"; \"no sheet is open over the document window\" rather than \"press Escape\". When a native condition can say it, pass done_when as well. Required to start a run.",
           "type": "string"
         },
         "presets": {
@@ -419,7 +419,7 @@ export const HOST_ACTION_COMPUTER_DESCRIPTORS = [
               "type": "string"
             },
             "value": {
-              "description": "For type=value questions: { text }.",
+              "description": "For type=value questions: { text }; for reason=capability: { actions?: <this platform's *_act actions, run on snapshot.stateId>, presets?: [{ key, value, field? }] }.",
               "type": "object",
               "propertyNames": {
                 "type": "string"

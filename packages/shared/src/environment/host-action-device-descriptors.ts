@@ -351,7 +351,7 @@ export const HOST_ACTION_DEVICE_DESCRIPTORS: HostActionSuperoneToolDescriptor[] 
           "description": "Short, human-friendly explanation of the goal for the user watching, in the conversation's language."
         },
         "goal": {
-          "description": "What to achieve on the current page, including when to stop. Required to start a run.",
+          "description": "What to achieve, said as what the page shows when it is done: the loop judges completion from the page text, so name the visible end state, not the steps. \"Report.txt is listed inside Archive\" rather than \"drag Report.txt onto Archive\"; \"no sheet is open over the document window\" rather than \"press Escape\". When a native condition can say it, pass done_when as well. Required to start a run.",
           "type": "string"
         },
         "presets": {
@@ -410,7 +410,7 @@ export const HOST_ACTION_DEVICE_DESCRIPTORS: HostActionSuperoneToolDescriptor[] 
               "type": "string"
             },
             "value": {
-              "description": "For type=value questions: { text }.",
+              "description": "For type=value questions: { text }; for reason=capability: { actions?: <this platform's *_act actions, run on snapshot.stateId>, presets?: [{ key, value, field? }] }.",
               "type": "object",
               "propertyNames": {
                 "type": "string"

@@ -726,7 +726,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
   server.registerTool(
     'browser_run',
     { description: BROWSER_RUN_DESCRIPTION, inputSchema: browserRunInputShape },
-    (args, extra) => executeBrowserRun(sessionId, args as Record<string, unknown>, extra?.signal),
+    (args, extra) => executeBrowserRun(sessionId, args as Record<string, unknown>, (name, primitiveArgs) => runPrimitive(sessionId, name, primitiveArgs), extra?.signal),
   )
 
   if (webMcpEnabled) {

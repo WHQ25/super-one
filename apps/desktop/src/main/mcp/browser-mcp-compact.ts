@@ -10,6 +10,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { browserErrorReply, browserTextReply, type BrowserToolReply } from './browser-mcp-replies'
 import { browserActionSchema } from '../browser/browser-actions'
+import { actItemSchema, isExplicitFailure, parseReply, replyText, runBrowserActions, type PrimitiveRunner } from './browser-act'
 import { browserAutomationCall } from '../browser/browser-automation-bridge'
 import { persistActionRecording } from '../agent/action-recording-store'
 import {
@@ -35,51 +36,6 @@ const descriptionField = {
       "A short, human-friendly explanation of what this action accomplishes, phrased for the end user watching. Shown in the UI in place of the raw selector. Write it in the conversation's language.",
     ),
 }
-
-const ACT_TYPES = ['click', 'hover', 'type', 'press', 'scroll', 'drag', 'select', 'upload'] as const
-type ActType = (typeof ACT_TYPES)[number]
-
-const ACT_PRIMITIVE: Record<ActType, string> = {
-  click: 'browser_click',
-  hover: 'browser_hover',
-  type: 'browser_type',
-  press: 'browser_press',
-  scroll: 'browser_scroll',
-  drag: 'browser_drag',
-  select: 'browser_select',
-  upload: 'browser_upload_file',
-}
-
-const dragTarget = z.object({
-  selector: z.string().optional(),
-  text: z.string().optional(),
-  x: z.number().optional(),
-  y: z.number().optional(),
-})
-
-const actItemSchema = z.object({
-  type: z.enum(ACT_TYPES),
-  selector: z.string().optional(),
-  text: z.string().optional(),
-  x: z.number().optional(),
-  y: z.number().optional(),
-  clear: z.boolean().optional(),
-  key: z.string().optional(),
-  modifiers: z.array(z.enum(['Alt', 'Control', 'Meta', 'Shift'])).optional(),
-  deltaX: z.number().optional(),
-  deltaY: z.number().optional(),
-  from: dragTarget.optional(),
-  to: dragTarget.optional(),
-  steps: z.number().int().optional(),
-  holdMs: z.number().int().optional(),
-  humanize: z.boolean().optional(),
-  value: z.string().optional(),
-  label: z.string().optional(),
-  index: z.number().int().optional(),
-  checked: z.boolean().optional(),
-  files: z.array(z.string()).optional(),
-  engine: z.enum(['auto', 'cdp', 'synthetic']).optional(),
-})
 
 const NETWORK_ACTIONS = [
   'start',
@@ -118,32 +74,9 @@ const EMULATE_ONLY_KEYS = [
   'longitude',
 ] as const
 
-export type PrimitiveRunner = (name: string, args: Record<string, unknown>) => Promise<BrowserToolReply>
+export type { PrimitiveRunner }
 
-function replyText(reply: BrowserToolReply): string {
-  return reply.content.map((c) => ('text' in c ? c.text : '')).join('')
-}
-
-function parseJson(reply: BrowserToolReply): unknown {
-  const text = replyText(reply)
-  try {
-    return JSON.parse(text)
-  } catch {
-    return text
-  }
-}
-
-function isExplicitFailure(parsed: unknown): boolean {
-  return Boolean(parsed && typeof parsed === 'object' && !Array.isArray(parsed) && (parsed as { ok?: unknown }).ok === false)
-}
-
-function failureMessage(reply: BrowserToolReply, parsed: unknown): string {
-  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-    const err = (parsed as { error?: unknown }).error
-    if (typeof err === 'string' && err.trim()) return err
-  }
-  return replyText(reply)
-}
+const parseJson = parseReply
 
 export const BROWSER_TABS_DESCRIPTION =
   'Discover and change browser tabs for this session. '
@@ -463,43 +396,7 @@ export function registerCompactBrowserTools(
 
       let actionReply: BrowserToolReply = browserTextReply({ ok: false, error: 'Action did not run' })
       try {
-        const executed: Array<{ type: string; ok: true }> = []
-        let last: unknown = null
-        actionReply = browserTextReply({ ok: true, stepsExecuted: 0, last })
-        for (const action of actions) {
-          const type = action.type as ActType
-          const primitive = ACT_PRIMITIVE[type]
-          if (!primitive) {
-            actionReply = browserErrorReply(new Error(`Unknown action type: ${String(action.type)}`))
-            break
-          }
-          const { type: _t, ...rest } = action
-          if ((type === 'type' || type === 'press') && rest.engine === 'auto') {
-            delete rest.engine
-          }
-          const reply = await runPrimitive(primitive, { ...rest, tab: operationTab, description })
-          const parsed = parseJson(reply)
-          const failed = reply.isError || isExplicitFailure(parsed)
-          if (failed) {
-            actionReply = {
-              content: [{
-                type: 'text' as const,
-                text: JSON.stringify({
-                  ok: false,
-                  failedAt: type,
-                  step: executed.length,
-                  executed,
-                  error: failureMessage(reply, parsed),
-                }),
-              }],
-              isError: true,
-            }
-            break
-          }
-          executed.push({ type, ok: true })
-          last = parsed
-          actionReply = browserTextReply({ ok: true, stepsExecuted: executed.length, last })
-        }
+        actionReply = await runBrowserActions(runPrimitive, actions, { tab: operationTab, description })
 
         if (!actionReply.isError && args.expect) {
           const waitReply = await runPrimitive('browser_wait_for', {
@@ -658,7 +555,7 @@ export function registerCompactBrowserTools(
   server.registerTool(
     'browser_run',
     { description: BROWSER_RUN_DESCRIPTION, inputSchema: browserRunInputShape },
-    (args, extra) => executeBrowserRun(sessionId, args as Record<string, unknown>, extra?.signal),
+    (args, extra) => executeBrowserRun(sessionId, args as Record<string, unknown>, runPrimitive, extra?.signal),
   )
 
   server.registerTool(

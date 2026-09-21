@@ -11,7 +11,8 @@ import { persistScreenshot } from '../agent/browser-screenshot-store'
 import { browserAutomationCall, browserFocusGuard } from '../browser/browser-automation-bridge'
 import { isCdpEnabled, resolveCdpTarget } from '../browser/browser-cdp'
 import { browserErrorReply, browserTextReply, type BrowserToolReply } from '../mcp/browser-mcp-replies'
-import { type PageObservation, type DoneWhen, checkDoneWhen, clickNode, hasDoneWhen, isFresh, observePage, pressEnterInNode, scrollPage, settleAfter, typeIntoNode, waitForDocumentComplete, waitForPageChange } from './browser-page'
+import { type PageObservation, type DoneWhen, actOnPage, checkDoneWhen, clickNode, hasDoneWhen, isFresh, observePage, pressEnterInNode, scrollPage, settleAfter, typeIntoNode, waitForDocumentComplete, waitForPageChange } from './browser-page'
+import type { PrimitiveRunner } from '../mcp/browser-act'
 import { getJevApiKey } from './jev-api-key'
 import { type Answer, FastRun, type RunDeps, type RunResult } from './loop'
 import { type PausedRun, storePausedRun, takePausedRun } from './run-store'
@@ -51,13 +52,15 @@ export function jevGateError(): string | null {
 }
 
 
-function depsFor(sessionId: string, tab: string | undefined, doneWhen?: DoneWhen): RunDeps<PageObservation> {
+function depsFor(sessionId: string, tab: string | undefined, runPrimitive: PrimitiveRunner, doneWhen?: DoneWhen): RunDeps<PageObservation> {
   let target = -1
   return {
     ask: (request, signal) => jevClient().ask(request, signal),
     resolveTarget: async () => { target = await resolveCdpTarget(sessionId, tab) },
     observe: () => observePage(target),
     isFresh: (page, node) => isFresh(target, page, node),
+    // A hand-over runs through browser_act's own primitives on the same tab.
+    act: (page, actions) => actOnPage(target, page, actions as Array<Record<string, unknown>>, runPrimitive, tab),
     click: (node) => clickNode(target, node),
     pressEnter: (node) => pressEnterInNode(target, node),
     type: (node, text) => typeIntoNode(target, node, text),
@@ -90,7 +93,12 @@ function reply(sessionId: string, run: PausedRun, result: RunResult): BrowserToo
   return browserTextReply(result)
 }
 
-export async function executeBrowserRun(sessionId: string, rawArgs: Record<string, unknown>, signal?: AbortSignal): Promise<BrowserToolReply> {
+/**
+ * `runPrimitive` is the session's browser primitive executor, injected by the
+ * tool registration that owns it, so a hand-over runs the very functions
+ * `browser_act` runs.
+ */
+export async function executeBrowserRun(sessionId: string, rawArgs: Record<string, unknown>, runPrimitive: PrimitiveRunner, signal?: AbortSignal): Promise<BrowserToolReply> {
   const gate = jevGateError()
   if (gate) return browserErrorReply(new Error(gate))
   const parsed = browserRunSchema.safeParse(rawArgs)
@@ -117,7 +125,7 @@ export async function executeBrowserRun(sessionId: string, rawArgs: Record<strin
       hasDoneWhen: hasDoneWhen(args.done_when),
       maxSteps: args.maxSteps ?? DEFAULT_MAX_STEPS,
       maxWallMs: args.maxWallMs ?? DEFAULT_MAX_WALL_MS,
-    }, depsFor(sessionId, args.tab, args.done_when))
+    }, depsFor(sessionId, args.tab, runPrimitive, args.done_when))
     reportRun(sessionId, 'browser', run)
     return reply(sessionId, run, await run.start(signal))
   } catch (err) {

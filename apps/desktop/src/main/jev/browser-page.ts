@@ -10,8 +10,9 @@
  */
 
 import { cdpClick, cdpSend } from '../browser/browser-cdp'
+import { browserActionsFailure, type PrimitiveRunner, runBrowserActions } from '../mcp/browser-act'
 
-import { StaleObservation } from './loop'
+import { RunPaused, StaleObservation } from './loop'
 import type { RawElement, RunObservation } from './observation'
 export type { RawElement } from './observation'
 
@@ -118,6 +119,20 @@ const OBSERVE_SCRIPT = `(() => {
     if (e.tagName === 'A') item.href = e.href;
     elements.push(item);
   }
+  // A picture, canvas or map with no controls of its own: nothing the loop can
+  // do to it, but where a handed-over point or path would land (§11.4). Listed
+  // with its viewport box — browser_act's x/y space — and said in the text so
+  // the needs_input verdict and the hand_target head can name it.
+  const pictures = [];
+  for (const e of document.querySelectorAll('canvas,img,svg,video,[role="img"],map area')) {
+    if (pictures.length >= 12 || !reachable(e) || e.closest(selector)) continue;
+    const r = e.getBoundingClientRect();
+    if (r.width < 48 || r.height < 48) continue;
+    const label = (name(e) || (e.tagName === 'CANVAS' ? 'Canvas' : 'Picture')).slice(0, 120);
+    pictures.push({ node: identity(e), role: 'image', label, value: '', editable: false, password: false, submit: false, disabled: false,
+      clickable: false, picture: true, bounds: { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) } });
+  }
+  for (const p of pictures) if (elements.length < ${MAX_ELEMENTS}) elements.push(p);
   const words = [], walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   const range = document.createRange(); let node, length = 0;
   while ((node = walker.nextNode()) && length < ${MAX_TEXT}) {
@@ -128,6 +143,7 @@ const OBSERVE_SCRIPT = `(() => {
       words.push(value); length += value.length;
     }
   }
+  for (const p of pictures) words.push('(picture-only: ' + p.label + ')');
   const text = words.join('\\n').slice(0, ${MAX_TEXT}), height = document.documentElement.scrollHeight;
   const pageKey = cache.pageKey(), guards = {};
   for (const el of elements) guards[el.node] = cache.guard(cache.nodes.get(el.node));
@@ -217,6 +233,27 @@ export async function pressEnterInNode(webContentsId: number, node: number): Pro
   const key = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 }
   await cdpSend(webContentsId, 'Input.dispatchKeyEvent', { type: 'keyDown', ...key, text: '\r' })
   await cdpSend(webContentsId, 'Input.dispatchKeyEvent', { type: 'keyUp', ...key })
+}
+
+/**
+ * Actions the caller handed over at a `capability` pause, in `browser_act`'s
+ * own vocabulary, run by the tool's own mapping (§11.4). They were written
+ * against the pause snapshot: a page whose marker has moved since is stale,
+ * and the loop re-observes before it acts. A failed action is the tool's own
+ * failure line, raised so the run pauses on it rather than reading the page
+ * as if the action had happened.
+ */
+export async function actOnPage(
+  webContentsId: number,
+  page: PageObservation,
+  actions: ReadonlyArray<Record<string, unknown>>,
+  runPrimitive: PrimitiveRunner,
+  tab: string | undefined,
+): Promise<void> {
+  if (!(await isFresh(webContentsId, page))) throw new StaleObservation('The page changed before the handed-over actions could run.')
+  const reply = await runBrowserActions(runPrimitive, actions, { tab })
+  const failure = browserActionsFailure(reply)
+  if (failure) throw new RunPaused('no-progress', `Handed-over browser action failed: ${failure}`)
 }
 
 export async function scrollPage(webContentsId: number, page: PageObservation, deltaY: number): Promise<void> {

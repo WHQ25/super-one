@@ -103,3 +103,29 @@ For a user-specific failure, collect `main.log` and `main.log.old` immediately
 after reproduction, the approximate time/session, and the working CLI version.
 New diagnostics omit request/response bodies and redact known credentials and URL
 query values. They do not require development mode or raw event tracing.
+
+### Computer Use window discovery and dedicated displays
+
+Search the packaged app's main log for `[computer-use.diagnostic]`. Collect the
+log and rotated `.old` file soon after a report, together with its approximate
+time and session. No development mode or event trace is required.
+
+- `discovery`: connected display bounds/scales, ordinary window IDs/PIDs and
+  on-screen status, returned inventory, app hidden state, AX failures and scan
+  budget exhaustion. The additional all-window inventory is diagnostic only.
+- `selection`: requested app/root, bounded candidate metadata and selected root
+  (null on failure); titles are represented only by `hasTitle`.
+- `placement`: requested display, original/target/readback bounds, `onTarget`
+  using the existing 80 percent containment rule, and whether readback existed.
+  This records the immediate result, not proof that later layout has settled.
+- `placement_skipped` / `placement_ignored`: missing window ID or a placement
+  failure ignored during observation under the existing policy.
+- `capture` / `helper_failed`: capture coordinate space or native error code,
+  correlated by session/window/PID where supplied. Error messages are omitted.
+
+Identical entries are suppressed for 60 seconds. Inventories are capped at 80
+windows/apps; counts and truncation metadata identify incomplete diagnostics.
+Titles, UI text, input, image data and raw RPC payloads are not logged. The new
+native inventory/placement fields require a rebuilt helper; an older helper
+reports null diagnostics. Window selection, movement and failure policy are
+unchanged by this instrumentation.

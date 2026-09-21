@@ -67,6 +67,7 @@ type RunningAppMeta = {
 }
 
 export interface ComputerUseServiceOptions {
+  sessionId?: string
   adapter?: PlatformAdapter
   policy?: ComputerUsePolicy
   stateLimit?: number
@@ -93,6 +94,7 @@ export function resetComputerUseIds(): void {
  * helper sessions or snapshot stores of their own.
  */
 export class ComputerUseService {
+  private readonly sessionId: string | undefined
   readonly policy: ComputerUsePolicy
   private readonly adapter: PlatformAdapter
   private readonly states: StateStore
@@ -109,6 +111,7 @@ export class ComputerUseService {
   private readonly menus: ContextMenuLedger
 
   constructor(options: ComputerUseServiceOptions = {}) {
+    this.sessionId = options.sessionId
     this.policy = options.policy ?? new ComputerUsePolicy()
     this.adapter = options.adapter ?? new FakePlatformBackend()
     this.fake = this.adapter instanceof FakePlatformBackend ? this.adapter : null
@@ -242,7 +245,7 @@ export class ComputerUseService {
    */
   async resolveTargetRoot(rootId?: string, bundleId?: string): Promise<UiRootIdentity> {
     await this.refreshRoots()
-    return resolveUiRoot(this.roots.list(), { rootId, bundleId, preferredBundleId: this.preferredBundleId })
+    return resolveUiRoot(this.roots.list(), { rootId, bundleId, preferredBundleId: this.preferredBundleId, sessionId: this.sessionId })
   }
 
   /**
@@ -897,6 +900,6 @@ export class ComputerUseService {
   }
 
   private resolveRoot(rootId?: string): UiRootIdentity {
-    return resolveUiRoot(this.roots.list(), { rootId, preferredBundleId: this.preferredBundleId })
+    return resolveUiRoot(this.roots.list(), { rootId, preferredBundleId: this.preferredBundleId, sessionId: this.sessionId })
   }
 }

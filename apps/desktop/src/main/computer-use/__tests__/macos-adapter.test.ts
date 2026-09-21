@@ -247,6 +247,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     ])
     expect(call).toHaveBeenCalledWith('list_windows', {
       scanBundleIds: ['com.apple.TextEdit'],
+      sessionId: 'session-a',
     })
   })
 
@@ -308,6 +309,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     })
     const look = await adapter.look(root(), 'visual')
     expect(call).toHaveBeenCalledWith('capture', {
+      sessionId: 'session-a',
       allowAllApps: false,
       grantedBundleIds: ['com.apple.TextEdit'],
       maxWidth: 800,
@@ -541,6 +543,7 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     })
     await allowAllAdapter.look(root(), 'visual')
     expect(call).toHaveBeenCalledWith('capture', {
+      sessionId: '',
       allowAllApps: true,
       grantedBundleIds: [],
       maxWidth: 800,

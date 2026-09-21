@@ -101,14 +101,19 @@ final class WindowPlacementController {
             throw HelperError(code: "DISPLAY_UNAVAILABLE", message: "Display \(rawDisplayId) has no usable area")
         }
 
+        func diagnostic(_ after: CGRect, readbackAvailable: Bool = true) -> [String: Any] {
+            ["before": rectDict(currentFrame), "target": rectDict(targetFrame),
+             "after": rectDict(after), "readbackAvailable": readbackAvailable,
+             "onTarget": mostlyContained(after, in: targetFrame)]
+        }
         let existing = placements[windowId]
         if existing?.sessionId == sessionId,
            existing?.targetDisplayId == displayId,
            mostlyContained(currentFrame, in: targetFrame) {
-            return ["ok": true, "moved": false, "bounds": rectDict(currentFrame)]
+            return ["ok": true, "moved": false, "bounds": rectDict(currentFrame), "diagnostics": diagnostic(currentFrame)]
         }
         if existing == nil, mostlyContained(currentFrame, in: targetFrame) {
-            return ["ok": true, "moved": false, "bounds": rectDict(currentFrame)]
+            return ["ok": true, "moved": false, "bounds": rectDict(currentFrame), "diagnostics": diagnostic(currentFrame)]
         }
 
         let originalFrame = existing?.originalFrame ?? currentFrame
@@ -117,8 +122,8 @@ final class WindowPlacementController {
             y: targetFrame.minY + max(0, (targetFrame.height - currentFrame.height) / 2)
         )
         try setPosition(destination, for: metadata.element, windowId: windowId)
-        let movedFrame = axFrame(metadata.element)
-            ?? CGRect(origin: destination, size: currentFrame.size)
+        let readback = axFrame(metadata.element)
+        let movedFrame = readback ?? CGRect(origin: destination, size: currentFrame.size)
 
         placements[windowId] = WindowPlacement(
             sessionId: sessionId,
@@ -127,7 +132,7 @@ final class WindowPlacementController {
             element: metadata.element,
             originalFrame: originalFrame
         )
-        return ["ok": true, "moved": true, "bounds": rectDict(movedFrame)]
+        return ["ok": true, "moved": true, "bounds": rectDict(movedFrame), "diagnostics": diagnostic(movedFrame, readbackAvailable: readback != nil)]
     }
 
     @discardableResult

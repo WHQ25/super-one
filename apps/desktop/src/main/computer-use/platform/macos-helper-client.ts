@@ -1,4 +1,5 @@
 import { createConnection, type Socket } from 'node:net'
+import { diagnoseHelperCall } from '../diagnostics'
 import {
   cpSync,
   existsSync,
@@ -321,6 +322,10 @@ export class MacosHelperClient {
   }
 
   async call<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> {
+    return diagnoseHelperCall(method, params ?? {}, () => this.callUnchecked<T>(method, params))
+  }
+
+  private async callUnchecked<T>(method: string, params?: Record<string, unknown>): Promise<T> {
     const res = await this.request(method, params ?? {})
     if (!res.ok) {
       const err = new Error(res.error?.message ?? 'helper error') as Error & { code?: string }

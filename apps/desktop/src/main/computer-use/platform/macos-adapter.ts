@@ -1,3 +1,4 @@
+import { computerUseDiagnostic, diagnosticRoot } from '../diagnostics'
 import { MacosSemanticExecutor, axTargetHintFields, scrollBarSetting } from './macos-semantic'
 import type { ComputerUseViewfinderClaim, Locale } from '@superone/shared/agent-types'
 import type {
@@ -151,7 +152,11 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     options: { failClosed?: boolean } = {},
   ): Promise<UiRootIdentity> {
     const displayId = this.getDedicatedDisplayId()
-    if (!displayId || typeof root.windowId !== 'number') return root
+    if (!displayId) return root
+    if (typeof root.windowId !== 'number') {
+      computerUseDiagnostic('placement_skipped', { sessionId: this.sessionId, displayId, reason: 'no_window_id', root: diagnosticRoot(root) })
+      return root
+    }
     try {
       const result = await this.client.call<{
         moved?: boolean
@@ -168,6 +173,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
       return { ...root, bounds: { ...bounds } }
     } catch (error) {
       if (options.failClosed) throw error
+      computerUseDiagnostic('placement_ignored', { sessionId: this.sessionId, displayId, windowId: root.windowId })
       // Display disconnected, helper unavailable, or window rejects AXPosition.
       return root
     }
@@ -337,6 +343,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
   async listRoots(): Promise<Array<Omit<UiRootIdentity, 'rootId'>>> {
     const res = await this.client.call<{ windows: HelperWindowInfo[] }>('list_windows', {
       scanBundleIds: this.getGrantedBundleIds(),
+      sessionId: this.sessionId,
     })
     const windows = res.windows ?? []
     const front = await this.client.call<HelperAppInfo | null>('frontmost').catch(() => null)
@@ -417,6 +424,7 @@ export class MacosPlatformAdapter implements PlatformAdapter {
     // already excludes its own process (window captures are single-window, display
     // captures exclude the helper app), so hiding it here only made it blink.
     const capture = await this.client.call<HelperCaptureResult>('capture', {
+      sessionId: this.sessionId,
       allowAllApps: allowAll,
       grantedBundleIds: allowAll ? [] : granted,
       maxWidth: this.maxCaptureWidth,

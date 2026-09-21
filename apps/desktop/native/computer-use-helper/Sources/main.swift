@@ -213,9 +213,9 @@ func handle(request: HelperRequest) async -> HelperResponse {
         case "list_windows":
             return .success(
                 id: request.id,
-                result: ["windows": listWindows(
+                result: windowDiscoverySnapshot(
                     scanBundleIds: AnyCodable.stringArray(params, "scanBundleIds")
-                )]
+                )
             )
         case "ax_tree":
             guard let pid = AnyCodable.int(params, "pid").map({ pid_t($0) }) else {

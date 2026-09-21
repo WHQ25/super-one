@@ -1,3 +1,4 @@
+import { computerUseDiagnostic, diagnosticRoot } from './diagnostics'
 import { ComputerUseError, type UiRootIdentity } from './types'
 
 /** Exclude tiny window chrome while retaining real menu/popover surfaces. */
@@ -19,7 +20,7 @@ export function selectAppRoot(roots: UiRootIdentity[]): UiRootIdentity | undefin
     .sort((a, b) => b.bounds.width * b.bounds.height - a.bounds.width * a.bounds.height)[0]
 }
 
-export function resolveUiRoot(
+function resolveUiRootUnchecked(
   roots: UiRootIdentity[],
   options: { rootId?: string; bundleId?: string; preferredBundleId?: string | null } = {},
 ): UiRootIdentity {
@@ -38,4 +39,24 @@ export function resolveUiRoot(
   const selected = front && selectAppRoot(roots.filter((root) => root.bundleId === front.bundleId))
   if (!selected) throw new ComputerUseError('UNKNOWN_ROOT', 'No usable UI roots available. Choose an explicit root for an auxiliary window.')
   return selected
+}
+
+export function resolveUiRoot(
+  roots: UiRootIdentity[],
+  options: { rootId?: string; bundleId?: string; preferredBundleId?: string | null; sessionId?: string } = {},
+): UiRootIdentity {
+  let selected: UiRootIdentity | undefined
+  try {
+    selected = resolveUiRootUnchecked(roots, options)
+    return selected
+  } finally {
+    const candidates = roots.filter((root) => !options.bundleId || root.bundleId === options.bundleId)
+    computerUseDiagnostic('selection', {
+      ...options, selected: selected ? diagnosticRoot(selected) : null,
+      candidateCount: candidates.length, truncated: candidates.length > 80,
+      candidates: candidates.slice(0, 80).map((root) => ({
+        ...diagnosticRoot(root), usable: isUsableAppRoot(root),
+      })),
+    })
+  }
 }

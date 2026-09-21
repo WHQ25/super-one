@@ -34,13 +34,27 @@ func frontmostApp() -> [String: Any]? {
 /// host's RPC timeout. Degrading (returning fewer roots) beats answering nothing.
 let axDiscoveryBudget: TimeInterval = 3
 
-func listWindows(scanBundleIds: [String] = []) -> [[String: Any]] {
+func listWindows(
+    scanBundleIds: [String] = [],
+    diagnostics: ([String: Any]) -> Void = { _ in }
+) -> [[String: Any]] {
+    var axFailures: [String: Int] = [:]
+    var budgetExceeded = false
+    var returnedCount = 0
+    var cgListAvailable = false
+    defer {
+        diagnostics([
+            "axTrusted": axTrusted(), "cgListAvailable": cgListAvailable,
+            "axBudgetExceeded": budgetExceeded, "axFailures": axFailures,
+            "returnedCount": returnedCount,
+        ])
+    }
     let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
     guard let info = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] else {
         return []
     }
     let deadline = Date().addingTimeInterval(axDiscoveryBudget)
-    var budgetExceeded = false
+    cgListAvailable = true
     let selfPid = Int(ProcessInfo.processInfo.processIdentifier)
     var roots: [[String: Any]] = []
     for window in info {
@@ -65,12 +79,15 @@ func listWindows(scanBundleIds: [String] = []) -> [[String: Any]] {
         var axMetadata: AxWindowMetadata?
         if axTrusted() && windowId > 0 {
             if Date() < deadline {
-                axMetadata = try? resolveAxWindow(
-                    pid: pid_t(pid),
-                    windowId: windowId,
-                    windowTitle: title,
-                    messagingTimeout: axDiscoveryMessagingTimeout
-                )
+                do {
+                    axMetadata = try resolveAxWindow(
+                        pid: pid_t(pid), windowId: windowId, windowTitle: title,
+                        messagingTimeout: axDiscoveryMessagingTimeout
+                    )
+                } catch {
+                    let code = (error as? HelperError)?.code ?? "UNKNOWN"
+                    axFailures[code, default: 0] += 1
+                }
             } else {
                 budgetExceeded = true
             }
@@ -93,6 +110,7 @@ func listWindows(scanBundleIds: [String] = []) -> [[String: Any]] {
         ])
     }
 
+    returnedCount = roots.count
     guard axTrusted() else { return roots }
     let frontPid = NSWorkspace.shared.frontmostApplication?.processIdentifier
     let apps = NSWorkspace.shared.runningApplications.filter {
@@ -158,6 +176,7 @@ func listWindows(scanBundleIds: [String] = []) -> [[String: Any]] {
             "[superone-cu-helper] list_windows exceeded \(axDiscoveryBudget)s AX budget — result is partial\n".utf8
         ))
     }
+    returnedCount = roots.count
     return roots
 }
 
@@ -256,4 +275,42 @@ func resolvePid(bundleId: String?, pid: Int?) -> pid_t? {
     return NSWorkspace.shared.runningApplications
         .first(where: { $0.bundleIdentifier == bundleId })?
         .processIdentifier
+}
+
+/// Diagnostic inventory only: never supplies roots or changes visibility policy.
+/// No window titles, display names, UI content or screenshots leave this function.
+func windowDiscoverySnapshot(scanBundleIds: [String]) -> [String: Any] {
+    var diagnostics: [String: Any] = [:]
+    let windows = listWindows(scanBundleIds: scanBundleIds) { diagnostics = $0 }
+    let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
+    let pids = Set(apps.map { Int($0.processIdentifier) })
+    let all = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID)
+        as? [[String: Any]]
+    let candidates = (all ?? []).filter {
+        pids.contains($0[kCGWindowOwnerPID as String] as? Int ?? 0)
+            && ($0[kCGWindowLayer as String] as? Int) == 0
+    }
+    diagnostics["inventoryAvailable"] = all != nil
+    diagnostics["candidateCount"] = candidates.count
+    diagnostics["truncated"] = candidates.count > 80
+    diagnostics["windows"] = candidates.prefix(80).map { row -> [String: Any] in
+        let id = row[kCGWindowNumber as String] as? Int ?? 0
+        return [
+            "windowId": id,
+            "pid": row[kCGWindowOwnerPID as String] as? Int ?? 0,
+            "onScreen": row[kCGWindowIsOnscreen as String] as? Bool ?? false,
+            "bounds": row[kCGWindowBounds as String] as? [String: Any] ?? [:],
+            "returned": windows.contains { ($0["windowId"] as? Int) == id },
+        ]
+    }
+    diagnostics["apps"] = apps.prefix(80).map { app -> [String: Any] in
+        ["pid": Int(app.processIdentifier), "bundleId": app.bundleIdentifier ?? "",
+         "hidden": app.isHidden, "active": app.isActive]
+    }
+    diagnostics["appCount"] = apps.count
+    diagnostics["displays"] = NSScreen.screens.map { screen -> [String: Any] in
+        let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+        return ["id": String(id), "bounds": rectDict(CGDisplayBounds(id)), "scale": screen.backingScaleFactor]
+    }
+    return ["windows": windows, "diagnostics": diagnostics]
 }

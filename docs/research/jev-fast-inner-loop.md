@@ -1353,7 +1353,22 @@ helper 侧是一个事务：复位在 `defer`，drag 抛错也回前台；对 `F
 - iOS 的开关只能 AX press：这是 device 适配器与 `device_act` 默认建议（"prefer press"）本来就一致的地方，MVP 里用 tap 是错的。
 - Jev 选 escape 的条件是**没有可点的返回控件**：iOS Text Replacement 页 0.85 选了 Go back；Android 有 "Navigate up" 时 0.65 选点击、0.35 选 Back。Android 的 `key back` 路径只有单元测试和 `device_act` 自身覆盖，真跑里没被选中。
 - `Haptic Feedback` 这种可逆开关 next_step_risk 0.50–0.53 触发 risky 暂停（Android 的 Airplane mode 0.47 没触发），阈值边缘；本轮不动阈值。
-- 未做：long-press 的真跑（Settings 没有长按菜单，launcher 的 `Workspace` 不是滚动角色，图标不会成为候选）；`append`（`type` 插在光标处，tap 决定不了光标在末尾）；Android 冷启动无 tree 的等待；A/B 基线仍未跑。
+- 未做：`append`（`type` 插在光标处，tap 决定不了光标在末尾）；Android 冷启动无 tree 的等待；A/B 基线仍未跑。
+
+### 13.4 长按与 Android Back 的真跑（2026-09-21，`24e4fa6b`）
+
+模拟器上能长按的东西比预想的少：iOS 的 Reminders 列表在 AXPTranslator 里是几个空 `group`，Safari 正文和 SpringBoard 主屏只有 OCR，Notes / Files / Contacts 不在这个 runtime 里；Photos 的网格是六个 `image "Photo" #PXGGridLayout-Info`，长按出 Share / Favorite / Delete / Copy / Duplicate / Hide / Add to Album 和 `button "Dismiss context menu"`。Android launcher 的图标是 `scrollview #workspace` 里的 `button "Photos"`，长按出 `popup_container`（App info / Pause app / Widgets / Remove），弹出后树里**只剩弹层**，没有 "Navigate up"——正是 Back 键的用例。
+
+按树改了三处：独立的带名 `image`（≥10%×5% 屏、不在控件内）从"只能交接的图片"变成内容——可点（tap，AX 没有 press）、可长按、仍是 hand target；滚动容器对其内部的元素一律算"列表里的项"，不管它是不是最内层那个被提供的滚动区（workspace 里套着 smartspace 的 `list`，之前图标因此不算项）；Android 对话框按 `android:id/alertTitle` 写进 observing 句（ANR 弹窗 "Process system isn't responding" 就是这么出现的）。
+
+| 用例 | run | Jev 的选择 | `goal_satisfied` | 收尾 |
+|---|---|---|---|---|
+| iOS Photos：打开第一张照片的上下文菜单 | `rd3e6540c` | context_menu 0.97 → 长按失败 `iOS helper request touch.update timed out`（dev 实例刚起、helper 的第一次触摸；照片被当作 tap 打开进了 One-Up） | 0.03 | no-progress 暂停，abort |
+| 同上，重跑 | `rec40a366` | context_menu **0.97** → 长按 worked | 0.03 → **0.91 / 0.92** | done |
+| Android launcher：打开 Photos 图标的快捷菜单 | `r8425fc8e` | context_menu **0.94** → 长按 worked | 0.02 → **0.75 / 0.83** | done |
+| Android：关掉那个快捷菜单 | `r8c356041` | **escape 0.87**（`key back`）worked | 0.08 → **0.85 / 0.85** | done |
+
+三个平台的 escape / context_menu 至此都有真跑：桌面 Escape / 右键（§11.6–§11.7），iOS 左缘滑动 / 长按，Android Back 键 / 长按。`touch.update` 超时只出现在 dev 实例启动后的第一次触摸，之后三次 run 没有复现；先记着，不在这轮追。
 
 ## 参考
 

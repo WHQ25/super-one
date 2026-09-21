@@ -165,6 +165,7 @@ export function devicePage(state: DeviceState, deviceId: string): DevicePage {
 
     if (role === 'application' && node.label) app ??= node.label
     if (OVERLAY_ROLES.has(role)) overlays.push(`${role === 'alert' ? 'an' : 'a'} ${role}${node.label ? ` "${node.label}"` : ''}`)
+    else if (node.identifier === 'android:id/alertTitle' && node.label) overlays.push(`a dialog "${node.label}"`)
     if (role === 'keyboard') keyboard = true
     if (title === undefined) {
       // The bar's own name, or the large/inline title heading at the top. A
@@ -176,7 +177,11 @@ export function devicePage(state: DeviceState, deviceId: string): DevicePage {
     }
 
     const editable = enabled && ['textbox', 'searchbox', 'combobox'].includes(role)
-    const clickable = enabled && (editable || CLICK_ROLES.has(role))
+    // A picture standing on its own (a photo in the grid, a map) is content
+    // on a phone: tapped to open, long-pressed for its menu — and still the
+    // place a handed-over point or path would land (§11.4).
+    const picture = semantic && insideControl === undefined && PICTURE_ROLES.has(role) && visible && bounds![2] >= 0.1 && bounds![3] >= 0.05
+    const clickable = enabled && (editable || CLICK_ROLES.has(role) || picture)
     // An Android row is a nameless button whose words are the texts inside
     // it; the nameless switch inside that row is called what the row is.
     let label = node.label ?? ''
@@ -201,25 +206,23 @@ export function devicePage(state: DeviceState, deviceId: string): DevicePage {
     // so the `scroll_area` head can aim at the list rather than the page that
     // holds it. The first one found stays the default for an unnamed scroll.
     let area = scrollArea
-    if (enabled && scrollable(node, role) && !containsScrollable(node)) {
-      scrollRef ??= node.ref
-      const room = scrollRoom(node)
-      add(node, { role: 'scrollarea', label: label || idTail(node) || textsBelow(node)[0]?.label || 'list', value: '', scroll: room,
-        editable: false, clickable: false, canSubmit: false, password: false, submit: false, disabled: false })
+    if (enabled && scrollable(node, role)) {
+      // What is inside a scroll container is a list item wherever the
+      // container sits; only the innermost one is offered as a place to swipe.
       area = node
+      if (!containsScrollable(node)) {
+        scrollRef ??= node.ref
+        add(node, { role: 'scrollarea', label: label || idTail(node) || textsBelow(node)[0]?.label || 'list', value: '', scroll: scrollRoom(node),
+          editable: false, clickable: false, canSubmit: false, password: false, submit: false, disabled: false })
+      }
     }
 
     if (clickable) {
       if (editable && fields.length < MAX_FIELDS) fields.push(`(text field "${label.slice(0, 40)}": ${node.focused ? 'focused, ' : ''}${value ? `holds "${value.slice(0, 80)}"` : 'empty'})`)
       const item = ITEM_ROLES.has(role) || (role === 'button' && !!scrollArea)
-      add(node, { role, label, value, ...(toggled ? { checked: toggled } : {}), ...(item ? { contextMenu: true } : {}),
+      if (picture) { label ||= 'Picture'; if (pictures.length < MAX_PICTURES) pictures.push(`(picture-only: ${label})`) }
+      add(node, { role: picture ? 'image' : role, label, value, ...(toggled ? { checked: toggled } : {}), ...(item ? { contextMenu: true } : {}), ...(picture ? { picture: true } : {}),
         editable, clickable, canSubmit: false, password: false, submit: false, disabled: false })
-    } else if (semantic && insideControl === undefined && PICTURE_ROLES.has(role) && visible && bounds![2] >= 0.1 && bounds![3] >= 0.05 && pictures.length < MAX_PICTURES) {
-      // A picture with no controls of its own: nothing to do to it, but the
-      // place a handed-over point or path would land (§11.4).
-      const name = label || 'Picture'
-      pictures.push(`(picture-only: ${name})`)
-      add(node, { role: 'image', label: name, value: '', picture: true, editable: false, clickable: false, canSubmit: false, password: false, submit: false, disabled: false })
     }
 
     if (!secure) for (const child of node.children ?? []) walk(child, area, clickable ? label : insideControl)
@@ -320,7 +323,10 @@ export function createDeviceAdapter(options: DeviceAdapterOptions): RunDeps<Devi
      * centre is its label, where a tap toggles nothing (run rb524a586 tapped
      * Haptic Feedback three times). Android refuses `press` and takes the tap.
      */
-    click: (id, signal) => act([{ type: platform === 'android' ? 'tap' : 'press', ref: requirePage().refs.get(id)!.ref }], signal),
+    click: (id, signal) => {
+      const node = requirePage().refs.get(id)!
+      return act([{ type: platform === 'android' || PICTURE_ROLES.has(roleOf(node)) ? 'tap' : 'press', ref: node.ref }], signal)
+    },
     type: (id, text, signal) => act([
       { type: 'tap', ref: requirePage().refs.get(id)!.ref }, { type: 'setText', text },
     ], signal),

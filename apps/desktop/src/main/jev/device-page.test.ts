@@ -206,11 +206,33 @@ describe('device fast-loop adapter', () => {
     expect(page.elements.find((e) => e.label === 'Internet')).toMatchObject({ value: 'AndroidWifi', contextMenu: true })
     expect(page.elements.find((e) => e.role === 'switch')).toMatchObject({ checked: 'false', value: 'off' })
     expect(lines).toContain('Airplane mode: off')
-    expect(page.elements.find((e) => e.picture)).toMatchObject({ clickable: false, bounds: { x: 0, y: 0.5, width: 1, height: 0.3 } })
+    // A photo is content: tapped to open, long-pressed for its menu, and a hand target.
+    expect(page.elements.find((e) => e.picture)).toMatchObject({ clickable: true, contextMenu: true, bounds: { x: 0, y: 0.5, width: 1, height: 0.3 } })
     // Only the recycler view is offered: the scrollview around it holds it. The last row sticks out below.
     expect(page.elements.filter((e) => e.scroll)).toHaveLength(1)
     expect(page.elements.find((e) => e.scroll)?.scroll).toEqual({ up: false, down: true })
     expect(page.canScroll).toEqual({ down: true, up: false })
+  })
+
+  it('treats launcher icons inside a paged workspace as long-press items and names an Android dialog', () => {
+    // The launcher: icons sit in `scrollview #workspace`, which holds a nested list, so the
+    // workspace is not the offered scroll area — but its icons are still items in it.
+    const home = devicePage({ stateId: 's0', createdAt: 0, observation: { orientation: 'portrait', screen: { width: 1080, height: 2400 }, settled: true, root: {
+      ref: '@e0', role: 'group', bounds: [0, 0, 1, 1], children: [
+        { ref: '@e6', role: 'scrollview', identifier: 'launcher:id/workspace', bounds: [0, 0, 1, 1], children: [
+          { ref: '@e12', role: 'list', bounds: [0.046, 0.039, 0.907, 0.109], children: [node('@e15', 'Mon, Sep 21', 'button', { bounds: [0.065, 0.082, 0.229, 0.022] })] },
+          node('@e16', 'Play Store', 'button', { bounds: [0.046, 0.645, 0.2, 0.109] }),
+          node('@e18', 'Photos', 'button', { bounds: [0.518, 0.645, 0.2, 0.109] }),
+        ] },
+      ] } } }, 'android:avd:Pixel')
+    expect(home.elements.filter((e) => e.scroll).map((e) => e.ref)).toEqual(['@e12'])
+    expect(home.elements.find((e) => e.label === 'Photos')?.contextMenu).toBe(true)
+    const anr = devicePage({ stateId: 's1', createdAt: 0, observation: { orientation: 'portrait', screen: { width: 1080, height: 2400 }, settled: true, root: {
+      ref: '@e0', role: 'group', bounds: [0.026, 0.395, 0.948, 0.211], children: [
+        node('@e6', "Process system isn't responding", 'text', { identifier: 'android:id/alertTitle', bounds: [0.12, 0.43, 0.75, 0.026] }),
+        node('@e10', 'Close app', 'button', { bounds: [0.065, 0.474, 0.87, 0.052] }),
+      ] } } }, 'android:avd:Pixel')
+    expect(anr.text.split('\n')[0]).toBe('(observing: screen; a dialog "Process system isn\'t responding" open)')
   })
 
   it('goes back with the platform\'s own gesture, long-presses an item and swipes the chosen scroll area', async () => {

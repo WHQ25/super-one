@@ -227,6 +227,8 @@ export function applyContentDelta(
  * its tail (`applyContentDelta` folds consecutive same-parent deltas), so only
  * the refused prefix is stripped. Last-match is safe because the retraction
  * arrives before, or right as, the replacement starts streaming.
+ * Dead-stream refs use `fromEnd` instead: only the latest block's suffix is
+ * withdrawn, preserving any confirmed text already merged before it.
  *
  * Same `content` ref back when nothing matched — idempotent by contract.
  * Single source of truth for the renderer store AND the main-process runtime.
@@ -255,6 +257,18 @@ export function retractContentBlocks(content: ContentBlock[], blocks: RetractedB
         if (value !== undefined && test(value)) return i
       }
       return -1
+    }
+    // A dead stream is withdrawn before its replacement starts. Its deltas
+    // may have merged onto confirmed content, so remove only the newest suffix.
+    // Do not search older blocks for equal text: those may be confirmed repeats.
+    if (ref.fromEnd) {
+      const idx = lastIndexWhere(() => true)
+      if (idx === -1 || !own(next[idx])!.endsWith(payload)) continue
+      const rest = own(next[idx])!.slice(0, -payload.length)
+      next = rest
+        ? next.map((b, i) => i === idx ? { ...b, ...(ref.type === 'text' ? { text: rest } : { thinking: rest }) } as ContentBlock : b)
+        : next.filter((_, i) => i !== idx)
+      continue
     }
     let idx = lastIndexWhere((value) => value === payload)
     if (idx === -1) idx = lastIndexWhere((value) => value.startsWith(payload))

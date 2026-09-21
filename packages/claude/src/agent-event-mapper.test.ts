@@ -82,6 +82,45 @@ describe('createClaudeAgentEventMapper', () => {
     expect(events.some((e) => e.type === 'model_fallback' && e.refusalCategory === 'cyber')).toBe(true)
   })
 
+  it('evicts the tool row a dead stream opened once the SDK silently retries the call', () => {
+    const events: AgentEvent[] = []
+    const mapper = createClaudeAgentEventMapper({ messageId: 'm1', emit: (event) => events.push(event) })
+
+    // Attempt 1 opens an Agent row, then the socket dies: no assistant frame,
+    // no api_retry — the SDK just starts over with new block ids.
+    mapper.apply({ type: 'stream_event', event: { type: 'message_start', message: { id: 'api-dead', model: 'claude-opus-5' } } })
+    mapper.apply({ type: 'stream_event', event: { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'tu-dead', name: 'Agent' } } })
+    mapper.apply({ type: 'stream_event', event: { type: 'message_start', message: { id: 'api-live', model: 'claude-opus-5' } } })
+    mapper.apply({ type: 'stream_event', event: { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'tu-live', name: 'Agent' } } })
+    mapper.apply({ type: 'assistant', uuid: 'u-live', message: { id: 'api-live', content: [{ type: 'tool_use', id: 'tu-live', name: 'Agent', input: { prompt: 'x' } }] } })
+    mapper.apply({ type: 'user', uuid: 'u-result', message: { content: [{ type: 'tool_result', tool_use_id: 'tu-live', content: 'done' }] } })
+    mapper.apply({ type: 'result', subtype: 'success', usage: {} })
+
+    const retractedAt = events.findIndex((e) => e.type === 'content_retracted')
+    const liveStartAt = events.findIndex((e) => e.type === 'stream_message_start' && e.apiMessageId === 'api-live')
+    expect(events.filter((e) => e.type === 'content_retracted')).toEqual([
+      { type: 'content_retracted', messageId: 'm1', blocks: [{ type: 'tool_use', toolUseId: 'tu-dead' }] },
+    ])
+    expect(retractedAt).toBeGreaterThan(-1)
+    expect(retractedAt).toBeLessThan(liveStartAt)
+  })
+
+  it('evicts a dead stream\'s leftovers at end of turn unless the user interrupted', () => {
+    const run = (isInterrupted: boolean): AgentEvent[] => {
+      const events: AgentEvent[] = []
+      const mapper = createClaudeAgentEventMapper({ messageId: 'm1', emit: (event) => events.push(event), isInterrupted: () => isInterrupted })
+      mapper.apply({ type: 'stream_event', event: { type: 'message_start', message: { id: 'api-dead', model: 'claude-opus-5' } } })
+      mapper.apply({ type: 'stream_event', event: { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'tu-dead', name: 'Agent' } } })
+      mapper.apply({ type: 'result', subtype: 'error_during_execution', errors: ['stream idle timeout'], usage: {} })
+      return events.filter((e) => e.type === 'content_retracted')
+    }
+
+    expect(run(false)).toEqual([
+      { type: 'content_retracted', messageId: 'm1', blocks: [{ type: 'tool_use', toolUseId: 'tu-dead' }] },
+    ])
+    expect(run(true)).toEqual([])
+  })
+
   it('preserves desktop tool-result classification and task metadata', () => {
     const events: AgentEvent[] = []
     const mapper = createClaudeAgentEventMapper({ messageId: 'm1', emit: (event) => events.push(event) })

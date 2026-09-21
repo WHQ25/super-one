@@ -590,6 +590,96 @@ describe('createSessionQuery', () => {
     expect(events.some((e) => e.type === 'model_fallback' && e.refusalCategory === 'cyber')).toBe(true)
   })
 
+  it('evicts the tool row a dead stream opened once the SDK silently retries the call', async () => {
+    const agentInput = { description: 'Review the doc', name: 'reviewer', prompt: 'Review it' }
+    state.messages = [
+      // Attempt 1 opens an Agent row, then the socket dies (sleep/wake): no
+      // assistant frame, no api_retry — the SDK just starts over.
+      { type: 'stream_event', event: { type: 'message_start', message: { id: 'api-dead', model: 'claude-opus-5' } } },
+      { type: 'stream_event', event: { type: 'content_block_start', index: 0, content_block: { type: 'thinking' } } },
+      { type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'half a ' } } },
+      { type: 'stream_event', event: { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'tu-dead', name: 'Agent' } } },
+      { type: 'stream_event', event: { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"desc' } } },
+      // Attempt 2 is the one that runs.
+      { type: 'stream_event', event: { type: 'message_start', message: { id: 'api-live', model: 'claude-opus-5' } } },
+      { type: 'stream_event', event: { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'tu-live', name: 'Agent' } } },
+      { type: 'assistant', uuid: 'u-live', message: { id: 'api-live', content: [{ type: 'tool_use', id: 'tu-live', name: 'Agent', input: agentInput }] } },
+      { type: 'user', uuid: 'u-result', message: { content: [{ type: 'tool_result', tool_use_id: 'tu-live', content: 'done' }] } },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-turn',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    const retractedAt = events.findIndex((e) => e.type === 'content_retracted')
+    const liveStartAt = events.findIndex((e) => e.type === 'stream_message_start' && e.apiMessageId === 'api-live')
+    expect(events.filter((e) => e.type === 'content_retracted')).toEqual([
+      {
+        type: 'content_retracted',
+        messageId: 'msg-turn',
+        blocks: [{ type: 'tool_use', toolUseId: 'tu-dead' }, { type: 'thinking', thinking: 'half a ', fromEnd: true }],
+      },
+    ])
+    // Evicted before the retry's deltas can merge onto the ghost.
+    expect(retractedAt).toBeGreaterThan(-1)
+    expect(retractedAt).toBeLessThan(liveStartAt)
+    expect(events.some((e) => e.type === 'message_complete')).toBe(true)
+  })
+
+  it('evicts a dead stream\'s tool row at end of turn when the SDK gave up instead of retrying', async () => {
+    state.messages = [
+      { type: 'stream_event', event: { type: 'message_start', message: { id: 'api-dead', model: 'claude-opus-5' } } },
+      { type: 'stream_event', event: { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'tu-dead', name: 'Agent' } } },
+      { type: 'result', subtype: 'error_during_execution', errors: ['stream idle timeout'], usage: {} },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-turn',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    expect(events.filter((e) => e.type === 'content_retracted')).toEqual([
+      { type: 'content_retracted', messageId: 'msg-turn', blocks: [{ type: 'tool_use', toolUseId: 'tu-dead' }] },
+    ])
+    expect(events.some((e) => e.type === 'message_error')).toBe(true)
+  })
+
+  it('keeps a half-streamed tool row when the user interrupted the turn', async () => {
+    state.messages = [
+      { type: 'stream_event', event: { type: 'message_start', message: { id: 'api-1', model: 'claude-opus-5' } } },
+      { type: 'stream_event', event: { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'tu-stopped', name: 'Bash' } } },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-turn',
+      () => Date.now() - 50,
+      () => true,
+    )
+    await handle.iterationDone
+
+    expect(events.some((e) => e.type === 'content_retracted')).toBe(false)
+    expect(events.some((e) => e.type === 'message_interrupted')).toBe(true)
+  })
+
   it('emits message_error on non-success result subtype and idle when no background tasks active', async () => {
     state.messages = [
       {

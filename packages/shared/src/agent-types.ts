@@ -116,13 +116,14 @@ export type ContentBlock = ContentBlockData & { remoteDetail?: string }
 /**
  * How a retracted SDK frame names the blocks it produced in our flat content
  * array. Tool blocks are keyed by id; text/thinking carry the frame's full
- * payload, which is exactly the block our stream merge built from its deltas.
+ * payload. `fromEnd` identifies a dead stream's suffix, withdrawn before its
+ * replacement starts; omitted refs retain the refusal-fallback prefix semantics.
  */
 export type RetractedBlockRef =
   | { type: 'tool_use'; toolUseId: string }
   | { type: 'tool_result'; toolUseId: string }
-  | { type: 'text'; text: string }
-  | { type: 'thinking'; thinking: string }
+  | { type: 'text'; text: string; fromEnd?: boolean }
+  | { type: 'thinking'; thinking: string; fromEnd?: boolean }
 
 type ContentBlockData =
   | { type: 'text'; text: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: DiffTokenLine[] | null }>; isPaste?: boolean }

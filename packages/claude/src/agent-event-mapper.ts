@@ -6,6 +6,7 @@
  * state and emits IPC-safe AgentEvents.
  */
 import type { AgentEvent, MessageMetadata } from '@superone/shared/agent-types'
+import { createDeadStreamLedger } from '@superone/shared/dead-stream-ledger'
 import { createRetractionLedger, mapModelFallbackWire } from '@superone/shared/model-fallback-wire'
 import { readTerminalSlashCommands } from '@superone/shared/slash-commands'
 import { sessionGoalFromClaudeActive } from '@superone/shared/session-goal'
@@ -206,6 +207,9 @@ export function createClaudeAgentEventMapper(
   // `retracted_message_uuids` / `supersedes` evict just the refused partial —
   // never the whole turn the frame belongs to.
   const retractions = createRetractionLedger()
+  // Blocks a `stream_event` announced that no `assistant` frame confirmed: the
+  // leftovers of an API attempt that died mid-stream and was silently retried.
+  const deadStreams = createDeadStreamLedger()
   let lastReplayCheckpointId = ''
   let lastAssistantTypedError: string | undefined
   let lastAssistantRequestId: string | undefined
@@ -551,6 +555,9 @@ export function createClaudeAgentEventMapper(
           const requestId = raw.request_id ?? raw.requestId
           if (requestId) lastAssistantRequestId = String(requestId)
           if (raw.message?.model) lastAssistantModel = String(raw.message.model)
+          // The frame is the API attempt's authoritative block list; whatever it
+          // names is no longer a dead-stream candidate.
+          deadStreams.confirm(assistantParent, raw.message?.content)
           if (!assistantParent) {
             lastTopLevelAssistantUuid = raw.uuid ?? ''
             // The replacement frame after a refusal names what it supersedes;
@@ -632,16 +639,19 @@ export function createClaudeAgentEventMapper(
             const toolName = event.content_block.name ?? 'unknown'
             activeToolBlocks.set(event.index, toolUseId)
             toolIdToName.set(toolUseId, toolName)
+            deadStreams.announceToolUse(streamParent, messageId, toolUseId)
             emit({ type: 'content_delta', messageId, delta: { type: 'tool_use', toolName, toolUseId, input: '', status: 'streaming', parentToolUseId: streamParent } })
           } else if (event.type === 'content_block_start' && event.content_block?.type === 'thinking') {
             const timestamp = now()
             emit({ type: 'content_delta', messageId, delta: { type: 'thinking', thinking: '', parentToolUseId: streamParent, startedAt: timestamp, endedAt: timestamp } })
           } else if (event.type === 'content_block_delta') {
             if (event.delta?.type === 'text_delta' && event.delta.text) {
+              deadStreams.announceText(streamParent, messageId, event.delta.text)
               emit({ type: 'content_delta', messageId, delta: { type: 'text', text: event.delta.text, parentToolUseId: streamParent } })
               return { ...emptyResult(sessionId), textDelta: event.delta.text }
             }
             if (event.delta?.type === 'thinking_delta' && typeof event.delta.thinking === 'string') {
+              deadStreams.announceThinking(streamParent, messageId, event.delta.thinking)
               emit({ type: 'content_delta', messageId, delta: { type: 'thinking', thinking: event.delta.thinking, parentToolUseId: streamParent, endedAt: now() } })
             } else if (event.delta?.type === 'input_json_delta' && event.delta.partial_json) {
               emit({
@@ -655,6 +665,10 @@ export function createClaudeAgentEventMapper(
           } else if (event.type === 'content_block_stop') {
             activeToolBlocks.delete(event.index)
           } else if (event.type === 'message_start') {
+            // A new attempt in this scope: whatever the previous one streamed but
+            // never confirmed is a dead stream's leftovers — evict before the
+            // retry's deltas land behind it.
+            for (const retracted of deadStreams.begin(streamParent, messageId)) emit(retracted)
             emit({ type: 'stream_message_start', messageId, apiMessageId: event.message?.id ?? '', model: event.message?.model ?? '', parentToolUseId: streamParent })
           } else if (event.type === 'message_stop') {
             emit({ type: 'stream_message_stop', messageId, parentToolUseId: streamParent })
@@ -727,6 +741,11 @@ export function createClaudeAgentEventMapper(
             rejectedRateLimit: hasRejectedRateLimit,
             resetsAt: rejectedRateLimitResetsAt,
           })
+          // Ghosts of an attempt the SDK never retried (it gave up, or the dead
+          // stream was the last step). An interrupt is the one case where a
+          // half-streamed block is the truth of what the user stopped — keep it.
+          const ghosts = deadStreams.flush()
+          if (!interrupted) for (const retracted of ghosts) emit(retracted)
           if (interrupted) {
             emit({ type: 'message_interrupted', messageId, metadata })
             activeBackgroundTasks.clear()

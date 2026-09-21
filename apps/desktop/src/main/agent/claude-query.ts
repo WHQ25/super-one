@@ -2,6 +2,7 @@ import { query, type CanUseTool, type HookCallback, type OnElicitation, type Opt
 import { randomUUID } from 'node:crypto'
 import { resolveMappedClaudeModelId } from '@superone/shared/agent-types'
 import type { AgentEvent, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
+import { createDeadStreamLedger } from '@superone/shared/dead-stream-ledger'
 import { createRetractionLedger, mapModelFallbackWire, MODEL_FALLBACK_SUBTYPES } from '@superone/shared/model-fallback-wire'
 import { readTerminalSlashCommands } from '@superone/shared/slash-commands'
 import { sessionGoalFromClaudeActive } from '@superone/shared/session-goal'
@@ -275,6 +276,9 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   // `retracted_message_uuids` / `supersedes` evict just the refused partial —
   // never the whole turn the frame belongs to.
   const retractions = createRetractionLedger()
+  // Blocks a `stream_event` announced that no `assistant` frame confirmed: the
+  // leftovers of an API attempt that died mid-stream and was silently retried.
+  const deadStreams = createDeadStreamLedger()
   // SDK user-message uuid -> our message id (turn anchor for error attribution).
   const wireUuidToMessageId = new Map<string, string>()
   /**
@@ -755,6 +759,9 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           const assistantRequestId = (msg as any).request_id ?? (msg as any).requestId
           if (assistantRequestId) lastAssistantRequestId = String(assistantRequestId)
           if (msg.message?.model) lastAssistantModel = msg.message.model
+          // The frame is the API attempt's authoritative block list; whatever it
+          // names is no longer a dead-stream candidate.
+          deadStreams.confirm(assistantParent, msg.message?.content)
 
           if (!assistantParent) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -897,6 +904,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             activeToolBlocks.set(event.index, event.content_block.id ?? '')
             toolIdToName.set(event.content_block.id ?? '', event.content_block.name ?? 'unknown')
             unresolvedToolUses.set(event.content_block.id ?? '', { messageId, parentToolUseId: streamParent })
+            deadStreams.announceToolUse(streamParent, messageId, event.content_block.id ?? '')
             emit({
               type: 'content_delta',
               messageId,
@@ -918,12 +926,14 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             })
           } else if (event.type === 'content_block_delta') {
             if (event.delta?.type === 'text_delta' && event.delta.text) {
+              deadStreams.announceText(streamParent, messageId, event.delta.text)
               emit({
                 type: 'content_delta',
                 messageId,
                 delta: { type: 'text', text: event.delta.text, parentToolUseId: streamParent },
               })
             } else if (event.delta?.type === 'thinking_delta' && typeof event.delta.thinking === 'string') {
+              deadStreams.announceThinking(streamParent, messageId, event.delta.thinking)
               emit({
                 type: 'content_delta',
                 messageId,
@@ -944,6 +954,10 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           } else if (event.type === 'content_block_stop') {
             activeToolBlocks.delete(event.index)
           } else if (event.type === 'message_start') {
+            // A new attempt in this scope: whatever the previous one streamed but
+            // never confirmed is a dead stream's leftovers — evict before the
+            // retry's deltas land behind it.
+            for (const retracted of deadStreams.begin(streamParent, messageId)) emit(retracted)
             emit({
               type: 'stream_message_start',
               messageId,
@@ -1085,6 +1099,12 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               },
             })
           }
+
+          // Ghosts of an attempt the SDK never retried (it gave up, or the dead
+          // stream was the last step). An interrupt is the one case where a
+          // half-streamed block is the truth of what the user stopped — keep it.
+          const ghosts = deadStreams.flush()
+          if (!getInterrupted()) for (const retracted of ghosts) emit(retracted)
 
           if (getInterrupted()) {
             emit({ type: 'message_interrupted', messageId, metadata })

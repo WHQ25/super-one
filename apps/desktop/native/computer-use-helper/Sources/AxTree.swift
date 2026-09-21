@@ -90,8 +90,16 @@ private final class AxWalkState {
     /// set reports every menu node enabled instead of reporting those flags
     /// as if they were the commands' own state.
     var unvalidatedMenuFlags = false
+    /// Menu bar walk: each top-level menu gets an equal share of what is left
+    /// of the budget, so a bulky early menu (Services, Open Recent, Open With)
+    /// cannot starve the later ones — Preview's Tools ▸ Crop was never read.
+    /// A menu cut short is counted through, so the indexes after it still
+    /// match the DFS `ax_action` resolves by.
+    var menuShare = false
+    var softCap = Int.max
     let limits: AxWalkLimits
     init(limits: AxWalkLimits) { self.limits = limits }
+    var cap: Int { min(limits.maxNodes, softCap) }
 }
 
 // Not private: `Mirror.swift` reads the same attributes off the mirroring window.
@@ -306,7 +314,7 @@ private func nodeDicts(
     coordinateTransform: AxCoordinateTransform,
     focusedElement: AXUIElement?
 ) -> [[String: Any]] {
-    if state.count >= state.limits.maxNodes {
+    if state.count >= state.cap {
         state.truncated = true
         return []
     }
@@ -356,10 +364,16 @@ private func nodeDicts(
     var kids: [[String: Any]] = []
     if depth < state.limits.maxDepth {
         let childrenInWebArea = insideWebArea || role == "AXWebArea"
-        for child in childElements {
-            if state.count >= state.limits.maxNodes {
+        let shared = state.menuShare && depth == 0
+        for (position, child) in childElements.enumerated() {
+            if state.count >= state.cap {
                 state.truncated = true
                 break
+            }
+            let indexBefore = state.index
+            let truncatedBefore = state.truncated
+            if shared {
+                state.softCap = state.count + max(12, (state.limits.maxNodes - state.count) / (childElements.count - position))
             }
             kids.append(contentsOf: nodeDicts(
                 el: child, state: state, depth: depth + 1,
@@ -367,6 +381,10 @@ private func nodeDicts(
                 coordinateTransform: coordinateTransform,
                 focusedElement: focusedElement
             ))
+            if shared {
+                state.softCap = Int.max
+                if state.truncated && !truncatedBefore { state.index = indexBefore + axSubtreeSize(child) }
+            }
         }
     } else {
         // Depth-pruned subtree: still advance the index past it, or every node
@@ -926,6 +944,7 @@ func axTreeSnapshot(
     )
     let focused = axAppFocusedElement(app)
     let menuState = AxWalkState(limits: AxWalkLimits(maxNodes: min(250, max(1, maxNodes / 3)), maxDepth: max(1, maxDepth)))
+    menuState.menuShare = true
     let menu: [String: Any]?
     if axRootId == nil, axRole(rootEl) == "AXWindow", let menuBar = axMenuBar(app) {
         // Cocoa exposes command subtrees while menus are closed, and `ax_action`

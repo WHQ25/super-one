@@ -1276,6 +1276,45 @@ helper 侧是一个事务：复位在 `defer`，drag 抛错也回前台；对 `F
 
 **判读。** 交接本身按设计工作：Jev 在三个用例里都把缺的东西指对了元素（0.88–0.99）和种类（path/text 0.93–0.98），`needs_input` 概率 0.45–0.79；主模型两次都从暂停截图里算出了正确坐标。`needs_input` 与已有的 append/type "no preset" value 暂停在 text 场景重叠——Jev 更愿意选 `append`（0.56 vs 0.10），两条路现在形状一致（都收 value、都有 accept），不必合并。过度交接：完成后的页面上 needs_input 仍有 0.39–0.55（Preview）/0.47（Finder），`goal_satisfied` 只到 0.2–0.28——和 §11.9 一样，goal 达成的证据（选区、位置）不在文本里；位置进签名后 `progress` 至少能说 worked。browser 的 `RunDeps.act` 留待其 act 层可复用时补。
 
+## 12. 完成判定的证据来自文本：状态句、终态措辞与 browser 交接（2026-09-21）
+
+§11.9–§11.10 留下的共同缺口：动作落地了，`goal_satisfied` 停在 0.2–0.4，run 靠主模型 accept 收尾。四个用例（TextEdit 追加、Save sheet Escape、Finder 拖入 Archive、Finder 图标移位）的 trace 说明原因不在阈值：Jev 判 `goal_satisfied` 看的是观察文本，而这四个效果（文本末尾、sheet 消失、行进了文件夹、图标换了位置）在 §11 的观察文本里**没有一句话能对上 goal**——sheet 关闭后 text 只是少了几行；图标移动后 label 一字不变（§11.10 第 4 条只修了 settle 签名）；追加后的文本被 `MAX_TEXT` 截断在开头。三个候选（(a) 观察层写状态句；(b) 工具描述要求终态措辞并优先 `done_when`；(c) `goal_satisfied` 的 criteria 提示）不是互斥的，三者各补一环，全部采用，阈值不动。
+
+### 12.1 实现（`194a7d51`）
+
+- **(a) 状态句进观察文本。** `computer-page` 的 text 以一句 `(observing: App window "T"; no sheet or dialog open)` / `(observing: App sheet "Save" in front of window "T")` 开头，正文之后、菜单之前追加 `state` 句：icon view 里可选/可打开的图标写 `(Note.txt: at 75%,70% of icon view, left to right and top to bottom)`（位置按元素 bounds 相对 icon view 区域取整；Finder 的图标是只有 `AXOpen` 没有 select 的 `AXImage`，门控是 `select || open`）；可追加的文本区写 `(text area "First line": ends with "last line")` 或 `empty`。§11.9 的 `(X: inside Y)` 和 §11.10 的 `(picture-only: X)` 保持原位。
+- **(b) 工具描述。** `goal` 的描述改为要求说出"完成时页面显示什么"，给了两个例子（"Report.txt is listed inside Archive" 而非 "drag Report.txt onto Archive"；"no sheet is open over the document window" 而非 "press Escape"），能用原生条件表达时同时传 `done_when`。三个 `*_run` 同一份文案；`computer_run` 的 description 多一句同样的话。
+- **(c) 判定提示。** `questions.ts` 的 `goal_satisfied` 说明里把括号状态句点名为证据：对不上 goal 的终态就不算满足。
+
+### 12.2 四个用例前后（Grok 4.6 / high，dev 版）
+
+"前"取 §11.9–§11.10 与本轮修前重跑的同措辞 run；"后"分两列：goal 措辞不变只加 (a)+(c)，以及按 (b) 改成终态措辞。数字是落地那一步之后连续两次观察的 `goal_satisfied`。
+
+| 用例 | 前 | 后（同措辞） | 后（终态措辞） | 收尾 |
+|---|---|---|---|---|
+| TextEdit 追加一行（append） | 0.46 / 0.50 | — | **0.93 / 0.93** `r8a7da7a4`（"the document text ends with …"） | done |
+| Save sheet 按 Escape | 0.59 / 0.55 | — | **0.66 / 0.68** `re9400c3e`（"no sheet is open and the document window showing …"） | done，走 idle 规则（"no action left"） |
+| Finder 拖 Report.txt 进 Archive | 0.37 / 0.31 | 0.35 / 0.43 `rcb424d51`（"no longer listed beside Archive"，accept） | **0.86 / 0.84** `r5483035a`（"listed inside Archive as a row under the expanded folder"） | done |
+| Finder 图标拖到右下 | 0.20 | 0.44 / 0.38 `r4eb3ec98`（"sits in the bottom-right quarter"，从已达成状态起判，accept） | **0.87 / 0.89** `re3a3d80e`（"past the midpoint both left to right and top to bottom"） | done |
+
+**判读。**
+- 三个用例过线，都同时靠 (a) 和 (b)：状态句给了可比对的事实，终态措辞让 goal 说的是同一件事。同一状态句、动作措辞的 goal（rcb424d51 / r4eb3ec98）只从 0.2–0.3 抬到 0.4，仍要 accept——(a) 单独不够，(b) 是必要的。
+- Escape 只到 0.68：goal 里"document window showing …"的后半句要求文本内容，观察句只说了"no sheet or dialog open"，Jev 对后半句保守；run 仍然 done，是因为 sheet 关掉后没有剩余有用动作、idle 规则接管。不再往上推——这个用例本来就有 `done_when` 的位置。
+- Finder icon view 上 `needs_input` 在达成状态下仍 0.3–0.5（§11.10 的过度交接），本轮未动：有了 0.87–0.89 的 `goal_satisfied`，done 先于 needs_input 生效。
+- **Preview 框选没有重跑。** 选区状态在 AX 树里不可见（§11.10：只有 Edit 菜单的 Cut/Copy 变可用），没有状态句可写；留给"菜单项可用性作为证据"或截图判定。
+
+### 12.3 browser 的 `RunDeps.act`：交接动作走 `browser_act` 自己的映射（`4ba5214b`）
+
+§11.10 里 browser 缺 `act` 的原因是 `browser_act` 的动作→primitive 映射内联在 MCP compact 层的 handler 里。现在抽成 `mcp/browser-act.ts` 的 `runBrowserActions(runPrimitive, actions, { tab, description })`：类型表、逐条执行、fail-fast、回复形状（`{ ok, stepsExecuted, last }` / `{ ok:false, failedAt, step, executed, error }`）都是原 handler 的，handler 改为调用它；`browser-page.ts` 的 `actOnPage(page, actions)` 在新鲜观察上跑同一个函数——`stateId` 过期抛 `StaleObservation`，某步失败 → `RunPaused('no-progress', 'Handed-over browser action failed: …')`，不假装 worked。观察脚本同时把 `canvas / img / svg / video / [role=img]`（≥48×48、不在交互元素里、最多 12 个）列为 `picture: true` 元素并写 `(picture-only: X)`，否则一个只有 canvas 的页面没有可指的 hand target。
+
+真跑 `r1cc98729`（本地 canvas 页，"Click inside the red target; done when the page shows Status: marked inside target"）：第 1 步 `needs_input` **0.89**、`hand_target` Canvas 0.99、`input_kind` position 1.0 → 暂停；主模型从截图算出坐标给 `{ actions: [{ type: 'click', x, y }] }` → 交接动作 worked，页面状态句出现，`goal_satisfied` 0.03 → **0.89** → done。三个平台的 `RunDeps.act` 至此齐了。
+
+顺带：`packages/shared/src/environment/host-action-*-descriptors.ts` 是给远程节点的工具描述副本，没有生成脚本，§11.4 的 `value` 交接形状和本节的 `goal` 文案都没同步进去，对齐测试一直在红；这次一并更新。
+
+### 12.4 聊天里的 run 卡片（`8f5290be` `6949d7e5` `6ef6e6e0` `8cfbeee9`）
+
+`*_run` 块改成一张 subagent 样式的卡：头部是动词 + 目标 chip + goal；展开后按暂停分段，段之间是问题（原因 chip + `why` 的第一个分句）和主模型的回答（choice 的标签 / 交接的动作数 / abort / accept），每行动作带 worked / didnt / unknown 记号，同一 `runId` 的 resume 调用折进同一块（`groupContent` 按 result 里的 `runId` 认领后续调用）。用户反馈后定下的信息层级：**头部只在跑的时候显示步数；结束后步数和用时只在展开的 footer；`goal_satisfied` 分数不显示**——它是 Jev 的内部量，对人没有意义。故事在 `apps/desktop/src/renderer/src/components/chat/{ComputerUseToolBlock,BrowserToolBlock,DeviceToolBlock}.stories.tsx`（running / paused / resumed / done / aborted / 30+ 步三段 / 窄屏）。手机端事件里工具 input 被裁掉，看不到 `runId`，resume 调用不折叠——按现有裁剪规则的已知限制。
+
 ## 参考
 
 - `~/Developer/Github/jev-ultrafast/jev_ultrafast/{agent.py, browser.py, snapshot.js, model.py, questions.py}`、`docs/performance.md`

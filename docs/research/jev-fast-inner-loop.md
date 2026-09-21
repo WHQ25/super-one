@@ -1245,6 +1245,27 @@ B 的范式就是 `presets`：把带参数的动作拆成几个选择题，每�
 
 **判读。** `goal_satisfied` 对这次移动是有区分的（0.06 → 0.3–0.4），但没过线：goal 写的是 "no longer listed beside Archive"，而文件仍列在窗口里（缩进在 Archive 下），Jev 有理由不确定；drag 残留 0.27 使 idle 规则（none_useful ≥ 0.8）不触发。第 5 步之外的两个可选项：goal 措辞在提示词里说清"listed inside Archive counts"；或 `dropTarget` 落地后把 `(X: inside Y)` 直接当 done 证据——目前不动，先看更多用例。前台在三次 run 里都没变过。
 
+### 11.10 第五步落地：`needs_input` 交接（2026-09-21，Grok 4.6 / high，dev 版）
+
+**实现（`10acef93`）。** `action` 加 `needs_input`（总在候选里），两个头 `hand_target`（候选 = 窗口上的元素含图片，不含菜单命令：`RawElement.menuCommand`，否则 146 个菜单项把 criteria 翻倍）和 `input_kind`（`position | path | text | value | other`，只作提示）。`decide` → `pause(reason: 'capability', mode: 'handed', type: 'value')`，`context = { target: {index, role, label, bounds}, hint, why, risk? }`，`why` 按 kind 走句子模板再接 `describeHeads()`；schema `{ actions?, presets? }`（anyOf），另给 `options: [accept, abort]`。图 relevance `required`。resume：`presets` 合并进 run（同 key 覆盖，`progress.note`），`actions` 经新的可选 `RunDeps.act(page, actions)` 执行——computer 走 `service.act`（解析、门控与 `computer_act` 相同），device 走 `session.act`，browser 暂缺（其 act 走 MCP compact 层的 primitive 映射，没有可直接调的函数）——没有 `act` 的平台 schema 只留 `presets` 并在 `why` 里说明。交接动作计一步，history `kind: 'handed'`，`approved: true`，settle 照常。观察层：`role === 'image'` / `pictureOnly` 且无动作的节点进 `elements`（`picture: true`）并写 `(picture-only: X)`；所有元素带 `bounds`；禁用控件的 text 写 `X (disabled)`。
+
+**真跑（三个用例，各 2 次）。**
+
+| 用例 | needs_input | hand_target | input_kind | 主模型给的 | 结果 |
+|---|---|---|---|---|---|
+| Preview 框选红点 `r5164fdbb` / `rb53dc841` | **0.79** / 0.50 | [1] Picture 0.99 | path 0.98 | 看图后 `drag` path 围住红点 | 选区落地（Edit ▸ Cut/Copy/Invert Selection 变可用，元素 39→89）；第二次暂停 needs_input 0.55/0.39 → 首跑 abort（无收尾出口），修后 **accept → done** |
+| TextEdit 追加俳句 `r9d5e2bc9` / `rb2951dae` | 0.10 / — | none 0.62 | text 0.97 | — | Jev 选的是 **append 0.56**，走原有的 `uncertain` value 暂停（"no preset matched"），主模型给 `{text}`，append worked；第二次同样暂停，首跑 abort；重跑主模型漏了行首换行，俳句接在第一行后面 → abort |
+| Finder 图标拖到右下 `r36bb39f3` / `r3cc85ddf` | 0.45 / 0.45 | [1] icon view 0.88 | path 0.96 | `drag` (60,92)→(720,380) | 首跑 drop 落进盖着的 dev 主窗（见下）；修后图标到 (719,316)，**accept → done** |
+
+**运行里暴露、已修的四处。**
+1. **交接来的 drag 绕过了自降窗**（`10acef93` 内）：`deps.act` 直达 `service.act`，`yieldDropPoint` 只在 loop 自己的 `drag` dep 里；用户看到文件掉进了最前的 SuperOne dev 窗口。现在 `act` dep 对每个 `drag` 的终点同样让路。
+2. **value 暂停没有收尾出口**：capability 与"no preset matched"两种 value 暂停都加 `options: [accept, abort]`——两个已达成目标的 run 只能 abort。
+3. **菜单遍历预算被前几个菜单吃光**（`5d891049`）：DFS 下 Services / Open Recent / Open With 把 250 节点用尽，Preview 的 Tools 菜单从未被读到；现在每个顶层菜单均分剩余预算，被截断的菜单用 `axSubtreeSize` 补齐 index，`ax_action` 的 DFS 定位不变。另发现 Preview 的 "Adjust Color…" 等菜单项 `AXTitle` 读取返回 -25200，成了无名元素被丢弃；Crop 不在 Tools 菜单的 AX 子树里（AppleScript 能按名找到）。用例的 verdict "Crop 变可用"因此不可观察，实际落地以 Edit 菜单的选区命令为证。
+4. **位置变化不算变化**（`84364444`）：settle 签名没有 bounds，图标移动后 `changed: false`，`progress` 报 didnt，主模型得靠 `computer_query` 才知道动了；现在 bounds 取整进签名。
+5. **append 的换行**（`fe060b6c`）：value 暂停说明文本按原样接在现有文本之后。
+
+**判读。** 交接本身按设计工作：Jev 在三个用例里都把缺的东西指对了元素（0.88–0.99）和种类（path/text 0.93–0.98），`needs_input` 概率 0.45–0.79；主模型两次都从暂停截图里算出了正确坐标。`needs_input` 与已有的 append/type "no preset" value 暂停在 text 场景重叠——Jev 更愿意选 `append`（0.56 vs 0.10），两条路现在形状一致（都收 value、都有 accept），不必合并。过度交接：完成后的页面上 needs_input 仍有 0.39–0.55（Preview）/0.47（Finder），`goal_satisfied` 只到 0.2–0.28——和 §11.9 一样，goal 达成的证据（选区、位置）不在文本里；位置进签名后 `progress` 至少能说 worked。browser 的 `RunDeps.act` 留待其 act 层可复用时补。
+
 ## 参考
 
 - `~/Developer/Github/jev-ultrafast/jev_ultrafast/{agent.py, browser.py, snapshot.js, model.py, questions.py}`、`docs/performance.md`

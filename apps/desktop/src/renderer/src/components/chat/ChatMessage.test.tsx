@@ -683,6 +683,16 @@ describe('findLastAssistantMessageId', () => {
     expect(findLastAssistantMessageId([live, wake])).toBe('sys-1')
   })
 
+  it('skips a model-fallback notice appended below the streaming reply', () => {
+    const notice: ChatMessageType = {
+      ...createClaudeMessage([{ type: 'text', text: 'Switched to claude-sonnet-5 (overloaded)' }]),
+      id: 'fallback-1',
+      providerId: 'system',
+      metadata: { modelFallback: { trigger: 'overloaded', toModel: 'claude-sonnet-5' } },
+    }
+    expect(findLastAssistantMessageId([live, notice])).toBe('a1')
+  })
+
   it('is undefined when nothing qualifies', () => {
     expect(findLastAssistantMessageId([marker('__compact__:auto:1::')])).toBeUndefined()
   })

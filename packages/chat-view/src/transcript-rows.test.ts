@@ -64,4 +64,14 @@ describe('marker rows in the mobile transcript', () => {
     // the marker and the real reply never renders as live.
     expect(findLastAssistantMessageId([reply, trailing])).toBe('reply')
   })
+
+  it('does not let a mid-turn model-fallback notice steal the live turn', () => {
+    const reply = assistant('reply', 'streaming…', { status: 'streaming' })
+    const notice = assistant('fallback', 'Switched to claude-sonnet-5 (overloaded)', {
+      providerId: 'system',
+      metadata: { modelFallback: { trigger: 'overloaded', toModel: 'claude-sonnet-5' } },
+    })
+
+    expect(findLastAssistantMessageId([reply, notice])).toBe('reply')
+  })
 })

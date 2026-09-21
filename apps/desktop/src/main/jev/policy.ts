@@ -525,7 +525,7 @@ export function decide(input: DecideInput): Decision {
         options: [ACCEPT, ABORT],
         schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
         context: {
-          why: `Jev wants to ${kind === 'append' ? 'append to' : 'type into'} [${el.index}] ${el.label} and no preset matched it${presets.length ? ` (${presets.map((pr) => { const a = validateChoice(answers[`field_for_${pr.key}`], [...space.typeCandidates, NONE]); return `field_for_${pr.key}: ${a ? `${a.choice} ${(a.probabilities[a.choice] ?? 0).toFixed(2)}` : 'not asked'}` }).join(', ')})` : ''} — ${heads}. Supply the text, choose accept if the goal is reached as the page stands, or take over.`,
+          why: `Jev wants to ${kind === 'append' ? 'append to' : 'type into'} [${el.index}] ${el.label} and no preset matched it${presets.length ? ` (${presets.map((pr) => { const a = validateChoice(answers[`field_for_${pr.key}`], [...space.typeCandidates, NONE]); return `field_for_${pr.key}: ${a ? `${a.choice} ${(a.probabilities[a.choice] ?? 0).toFixed(2)}` : 'not asked'}` }).join(', ')})` : ''} — ${heads}. Supply the text${kind === 'append' ? ' (typed as is after the existing text: begin with a newline for a new line)' : ''}, choose accept if the goal is reached as the page stands, or take over.`,
           target: { index: el.index, role: el.role, label: el.label, value: el.value },
           presets: presets.map((pr) => pr.key),
           page,

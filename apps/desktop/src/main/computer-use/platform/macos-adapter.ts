@@ -18,6 +18,7 @@ import type {
   PlatformAdapter,
   PlatformLook,
   PlatformRecordingResult,
+  WindowCover,
 } from './types'
 import {
   getSharedHelperClient,
@@ -659,6 +660,14 @@ export class MacosPlatformAdapter implements PlatformAdapter {
 
   async frontmost(): Promise<{ app: string; bundleId: string; pid: number } | null> {
     return this.client.call('frontmost')
+  }
+
+  async coveringWindows(root: UiRootIdentity, points: Array<{ x: number; y: number }>, coordinateSpace: CoordinateSpace): Promise<Array<WindowCover | null>> {
+    const result = await this.client.call<{ points: Array<WindowCover | null> }>('window_cover', {
+      points: points.map((p) => ({ x: p.x, y: p.y })),
+      ...this.targetPayload({ bundleId: root.bundleId, pid: root.pid, root, coordinateSpace }),
+    })
+    return result.points
   }
 
   /** Events are posted to the target app's pid: the helper routes them to the window. */

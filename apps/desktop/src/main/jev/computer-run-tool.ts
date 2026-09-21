@@ -3,6 +3,7 @@ import type { ComputerUseService } from '../computer-use/computer-use-service'
 import { conditionSchema, parseCondition } from '../computer-use/conditions'
 import { ComputerUseError } from '../computer-use/types'
 import { createComputerAdapter } from './computer-page'
+import { ownWindows } from './own-windows'
 import { FastRun } from './loop'
 import { finishRun, jevClient, resumeRun, runInputShape, runOptions, reportRun } from './run-tool-common'
 
@@ -70,7 +71,7 @@ export async function executeComputerRun(
   if (args.app && args.root) throw new Error('Use either app or root, not both.')
   const doneWhen = parseCondition(args.done_when)
   const adapter = createComputerAdapter({
-    service, root: args.root, doneWhen, sessionId, resolve: (signal) => resolve(args, signal),
+    service, root: args.root, doneWhen, sessionId, ownWindows: ownWindows(), resolve: (signal) => resolve(args, signal),
     ask: (request, signal) => jevClient().ask(request, signal),
   })
   const run = new FastRun(runOptions(args), adapter)

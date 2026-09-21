@@ -14,6 +14,7 @@ import type {
   PlatformActStepResult,
   PlatformAdapter,
   PlatformLook,
+  WindowCover,
 } from './types'
 
 const DISPLAY: CoordinateSpace = {
@@ -128,6 +129,8 @@ export class FakePlatformBackend implements PlatformAdapter {
   /** Titles of menus dismissed through `dismissRoot`, in order (tests). */
   readonly dismissals: string[] = []
   private readonly dismissedMenus = new Map<string, LiveWindow>()
+  /** Test-configured windows over parts of a window, as the window server would stack them. */
+  private covers: Array<{ pid: number; title: string; region?: Bounds; by: WindowCover }> = []
   private elementSeq = 0
   private lookSeq = 0
   private frontmostPid: number | null = null
@@ -146,6 +149,7 @@ export class FakePlatformBackend implements PlatformAdapter {
     this.silentDelivery = false
     this.nowMs = 0
     this.dismissedMenus.clear()
+    this.covers = []
     this.apps = specs.map((s) => this.buildApp(s))
     this.frontmostPid = this.apps[0]?.pid ?? null
     for (const app of this.apps) {
@@ -179,6 +183,24 @@ export class FakePlatformBackend implements PlatformAdapter {
 
   advanceTime(ms: number): void {
     this.nowMs += ms
+  }
+
+  /**
+   * Test helper: another window lies over `region` (window coordinates; the
+   * whole window when omitted) of the named window. `uncover` takes it away,
+   * as lowering the covering window would.
+   */
+  coverWindow(pid: number, title: string, by: WindowCover, region?: Bounds): void {
+    this.covers.push({ pid, title, by, region })
+  }
+
+  uncover(windowId: number): void {
+    this.covers = this.covers.filter((c) => c.by.windowId !== windowId)
+  }
+
+  async coveringWindows(root: UiRootIdentity, points: Array<{ x: number; y: number }>): Promise<Array<WindowCover | null>> {
+    const covers = this.covers.filter((c) => c.pid === root.pid && c.title === root.title)
+    return points.map((p) => covers.find((c) => !c.region || (p.x >= c.region.x && p.x <= c.region.x + c.region.width && p.y >= c.region.y && p.y <= c.region.y + c.region.height))?.by ?? null)
   }
 
   /** Test helper: remove a native window between observe and act. */

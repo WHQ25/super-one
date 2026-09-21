@@ -88,6 +88,7 @@ SOURCES=(
   "$ROOT/Sources/Permissions.swift"
   "$ROOT/Sources/Capture.swift"
   "$ROOT/Sources/CoordinateSpace.swift"
+  "$ROOT/Sources/WindowCover.swift"
   "$ROOT/Sources/Input.swift"
   "$ROOT/Sources/AxActions.swift"
   "$ROOT/Sources/SyntheticActivation.swift"
@@ -224,6 +225,7 @@ swiftc -O \
   "$ROOT/Sources/Permissions.swift" \
   "$ROOT/Sources/Capture.swift" \
   "$ROOT/Sources/CoordinateSpace.swift" \
+  "$ROOT/Sources/WindowCover.swift" \
   "$ROOT/Sources/Input.swift" \
   "$ROOT/Sources/AxActions.swift" \
   "$ROOT/Sources/SyntheticActivation.swift" \

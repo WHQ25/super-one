@@ -476,34 +476,23 @@ func handle(request: HelperRequest) async -> HelperResponse {
                 "dx": dx,
                 "dy": dy,
             ])
+        case "window_cover":
+            // Which window a drop at each point would reach: the drag's
+            // coordinates, the drag's target window. `null` per point when it
+            // is the target itself (or the space has no window to compare).
+            let raw = try pathPoints(params, key: "points", minimum: 1)
+            let geometry = try validateCoordinateGeometry(params)
+            let points = try raw.map { try resolveCoordinatePoint(params, x: $0.x, y: $0.y, validatedWindow: geometry) }
+            guard let windowId = AnyCodable.int(params, "coordinateWindowId") ?? AnyCodable.int(params, "windowId") else {
+                return .success(id: request.id, result: ["points": points.map { _ in NSNull() }])
+            }
+            let covers = coveringWindows(of: windowId, at: points)
+            return .success(id: request.id, result: ["points": covers.map { cover -> Any in
+                guard let cover else { return NSNull() }
+                return ["windowId": cover.windowId, "pid": cover.pid, "app": cover.app]
+            }])
         case "drag":
-            // path: [[x,y], ...] or [{x,y}, ...]
-            guard let pathRaw = params["path"] as? [Any], pathRaw.count >= 2 else {
-                throw HelperError(code: "INVALID", message: "path needs ≥2 points")
-            }
-            func pointFrom(_ item: Any) -> CGPoint? {
-                if let arr = item as? [NSNumber], arr.count >= 2 {
-                    return CGPoint(x: arr[0].doubleValue, y: arr[1].doubleValue)
-                }
-                if let arr = item as? [Any], arr.count >= 2 {
-                    let x = (arr[0] as? NSNumber)?.doubleValue ?? arr[0] as? Double
-                    let y = (arr[1] as? NSNumber)?.doubleValue ?? arr[1] as? Double
-                    if let x, let y { return CGPoint(x: x, y: y) }
-                }
-                if let dict = item as? [String: Any] {
-                    let x = (dict["x"] as? NSNumber)?.doubleValue ?? dict["x"] as? Double
-                    let y = (dict["y"] as? NSNumber)?.doubleValue ?? dict["y"] as? Double
-                    if let x, let y { return CGPoint(x: x, y: y) }
-                }
-                return nil
-            }
-            var points: [CGPoint] = []
-            for item in pathRaw {
-                guard let p = pointFrom(item) else {
-                    throw HelperError(code: "INVALID", message: "path point must be {x,y} or [x,y]")
-                }
-                points.append(p)
-            }
+            var points = try pathPoints(params, key: "path", minimum: 2)
             let windowGeometry = try validateCoordinateGeometry(params)
             points = try points.map {
                 try resolveCoordinatePoint(params, x: $0.x, y: $0.y, validatedWindow: windowGeometry)

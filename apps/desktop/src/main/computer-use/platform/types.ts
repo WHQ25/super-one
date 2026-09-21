@@ -54,6 +54,13 @@ export interface PlatformActResult {
   stoppedAt?: number
 }
 
+/** An on-screen window over a point of another window, as the window server stacks them. */
+export interface WindowCover {
+  windowId: number
+  pid: number
+  app: string
+}
+
 export interface PlatformRecordingResult {
   path: string
   mimeType: string
@@ -85,6 +92,14 @@ export interface PlatformAdapter {
    * a state taken from it stays usable, the service reopens the menu to act.
    */
   dismissRoot?(root: UiRootIdentity): Promise<void>
+  /**
+   * Optional: the window a drop at each point would reach when it is not the
+   * root's own — `null` where the root is uncovered there. Posted pointer
+   * events are routed to a window by number and reach it under anything; a
+   * drop is resolved by the drag manager against the real stacking order, so
+   * a covered drop point is delivered to whatever covers it.
+   */
+  coveringWindows?(root: UiRootIdentity, points: Array<{ x: number; y: number }>, coordinateSpace: CoordinateSpace): Promise<Array<WindowCover | null>>
   /**
    * Optional: bring app/window forward or launch. `activate` makes the app
    * frontmost — off by default, because Computer Use works in the background;

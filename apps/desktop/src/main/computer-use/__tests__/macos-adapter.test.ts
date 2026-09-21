@@ -1222,6 +1222,19 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     expect(call).toHaveBeenCalledWith('focus_app', { app: 'TextEdit', activate: false })
     expect(call).toHaveBeenCalledWith('launch_app', { app: 'TextEdit', activate: false })
   })
+
+  it('asks the helper which window a drop at each point would reach, in the state coordinates', async () => {
+    call.mockImplementation(async (method: string) => method === 'window_cover'
+      ? { points: [null, { windowId: 777, pid: 9, app: 'SuperOne' }] }
+      : {})
+    const space = { width: 800, height: 600, scale: 2, fullScreen: false, kind: 'window' as const, windowId: 12345, capturedBounds: { x: 100, y: 50, width: 800, height: 600 } }
+    const covers = await adapter.coveringWindows(root(), [{ x: 10, y: 20 }, { x: 400, y: 300 }], space)
+    expect(covers).toEqual([null, { windowId: 777, pid: 9, app: 'SuperOne' }])
+    expect(call).toHaveBeenCalledWith('window_cover', expect.objectContaining({
+      points: [{ x: 10, y: 20 }, { x: 400, y: 300 }], targetPid: 42, targetBundleId: 'com.apple.TextEdit',
+      coordinateKind: 'window', coordinateWindowId: 12345, capturedWidth: 800, capturedHeight: 600,
+    }))
+  })
 })
 
 describe('native walk truncation', () => {

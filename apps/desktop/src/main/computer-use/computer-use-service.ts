@@ -23,7 +23,7 @@ import {
 import { compactOutline, dropOccludedWebAreas } from './outline-compact'
 import { ComputerUsePolicy } from './policy'
 import { FakePlatformBackend } from './platform/fake-backend'
-import type { PlatformAdapter } from './platform/types'
+import type { PlatformAdapter, WindowCover } from './platform/types'
 import type { PlatformLook } from './platform/types'
 import { ResourceScheduler } from './resource-scheduler'
 import { boundText, clearContinuations } from './result-view'
@@ -221,6 +221,18 @@ export class ComputerUseService {
       const root = this.roots.get(rootId)
       return root ? [root] : []
     })
+  }
+
+  /**
+   * What lies over the state's window at each point (state coordinates):
+   * `null` where a drop there would reach the window itself. A platform that
+   * cannot tell reports every point uncovered. A menu state has no window of
+   * its own to be covered.
+   */
+  async coveringWindows(stateId: string, points: Array<{ x: number; y: number }>): Promise<Array<WindowCover | null>> {
+    const state = this.requireState(stateId)
+    if (!this.adapter.coveringWindows || state.root.kind === 'menu') return points.map(() => null)
+    return this.adapter.coveringWindows(state.root, points, state.coordinateSpace)
   }
 
   /**

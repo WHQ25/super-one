@@ -5,6 +5,7 @@ import { findNode } from '../computer-use/outline'
 import { ComputerUseError, type ActResult, type ComputerUseState, type Condition, type ObserveResult, type RootKind, type UiOutlineNode } from '../computer-use/types'
 import { planNodeAction, type NodeActionPlan } from '../computer-use/node-action-plan'
 import { persistComputerUseScreenshot } from '../computer-use/screenshot-store'
+import type { WindowCover } from '../computer-use/platform/types'
 import { type RunDeps, RunPaused, StaleObservation } from './loop'
 import { SETTLE_BUDGET_MS, settleByPolling, waitForChangeByPolling, waitReadyByPolling } from './settle'
 import type { RawElement, RunObservation } from './observation'
@@ -353,6 +354,13 @@ export interface ComputerAdapterOptions {
   ask: RunDeps['ask']
   /** Owner of the screenshots a pause persists; without one they are not written. */
   sessionId?: string
+  /**
+   * The host's own windows: the one occluder of a drop point whose order the
+   * host controls. `lower` puts the named windows under every ordinary
+   * window without activating anything and returns the way back. Without
+   * this, a drop point under the host is covered like any other.
+   */
+  ownWindows?: { pid: number; lower(windowIds: number[]): () => void }
   /** The existing identity/grant path, called only at a tool-call boundary. */
   resolve(signal?: AbortSignal): Promise<string>
 }
@@ -417,6 +425,46 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
     signal?.throwIfAborted()
     return pageFor(observed.stateId)
   }
+  const center = (b: { x: number; y: number; width: number; height: number }) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
+  /**
+   * A drop is delivered to whatever window is frontmost at the drop point,
+   * so a target under another app's window is not one: it is dropped from
+   * the offer and the page text says why, so Jev does not go looking for it.
+   * A target under the host's own window stays — the drag lowers the host
+   * out of the way (§11.8).
+   */
+  const withDropCovers = async (page: ComputerPage): Promise<ComputerPage> => {
+    const targets = page.elements.filter((e) => e.dropTarget)
+    if (!targets.length) return page
+    const covers = await service.coveringWindows(page.stateId, targets.map((e) => center(page.refs.get(e.node)!.bounds!)))
+    const covered = new Map<number, WindowCover>()
+    targets.forEach((e, i) => {
+      const cover = covers[i]
+      if (cover && cover.pid !== options.ownWindows?.pid) covered.set(e.node, cover)
+    })
+    if (!covered.size) return page
+    const notes = page.elements.filter((e) => covered.has(e.node)).map((e) => `(${e.label.replace(/^(Select|Open) /, '')}: drop point covered by ${covered.get(e.node)!.app})`)
+    return {
+      ...page,
+      elements: page.elements.map((e) => covered.has(e.node) ? { ...e, dropTarget: false } : e),
+      text: [page.text, ...notes].filter(Boolean).join('\n'),
+    }
+  }
+  /**
+   * Lower the host's windows over the drop point, one layer at a time — a
+   * second host window may lie under the first — and hand back the restore.
+   * Nothing else is touched: the host stays the active app and keeps its
+   * key window and keyboard focus.
+   */
+  const yieldDropPoint = async (page: ComputerPage, point: { x: number; y: number }) => {
+    const restores: Array<() => void> = []
+    for (let layer = 0; options.ownWindows && layer < 4; layer++) {
+      const [cover] = await service.coveringWindows(page.stateId, [point])
+      if (cover?.pid !== options.ownWindows.pid) break
+      restores.push(options.ownWindows.lower([cover.windowId]))
+    }
+    return () => { for (const restore of restores.reverse()) restore() }
+  }
   const act = async (plan: NodeActionPlan | undefined, signal?: AbortSignal) => {
     if (!plan) throw new RunPaused('no-progress', 'The observed target does not support this computer_act operation. Inspect a fresh snapshot before continuing.')
     const page = requirePage()
@@ -455,10 +503,10 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
     },
     observe: async (signal) => {
       signal?.throwIfAborted()
-      if (successor && fresh(successor)) { current = successor; successor = undefined; return current }
+      if (successor && fresh(successor)) { current = await withDropCovers(successor); successor = undefined; return current }
       const observed = await observeRoot(signal)
       signal?.throwIfAborted()
-      current = pageFor(observed.stateId)
+      current = await withDropCovers(pageFor(observed.stateId))
       conditionStateId ??= current.stateId
       return current
     },
@@ -505,8 +553,12 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
       const from = page.refs.get(id)?.bounds
       const to = page.refs.get(target)?.bounds
       if (!from || !to) throw new StaleObservation('The dragged item or its destination is gone.')
-      const center = (b: NonNullable<typeof from>) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
-      await act({ actions: [{ type: 'drag', path: [center(from), center(to)] }] }, signal)
+      const restore = await yieldDropPoint(page, center(to))
+      try {
+        await act({ actions: [{ type: 'drag', path: [center(from), center(to)] }] }, signal)
+      } finally {
+        restore()
+      }
     },
     contextMenu: async (id, signal) => {
       const node = requirePage().refs.get(id)

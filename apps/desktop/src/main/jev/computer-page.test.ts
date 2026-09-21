@@ -759,4 +759,55 @@ describe('computer fast-loop adapter', () => {
     expect(empty.dragSources).toEqual([])
     expect(Object.keys(buildRequest({ goal: 'g', page: none, space: empty, presets: [], last: undefined, history: [] }).questions).some((k) => k.startsWith('drag_target_for_'))).toBe(false)
   })
+
+  it('drops a covered drop target from the offer, and lowers the host out of the way of one it covers itself', async () => {
+    // A drop is delivered to the frontmost window at the drop point (§11.8).
+    // Projects' row sits under another app's window: not offered, and the page
+    // text says so. Desktop's sidebar row sits under the host's own window:
+    // still offered, and the drag lowers that window for its duration only.
+    const row = (name: string, itemKind: 'folder' | 'file', bounds: { x: number; y: number; width: number; height: number }, selected = false) => ({
+      role: 'row', selectable: true, selected, bounds, children: [{ role: 'cell', openable: true, bounds, children: [{ role: 'textField', name: '', value: name, openable: true, itemKind, bounds }] }],
+    })
+    const backend = new FakePlatformBackend([{ app: 'Finder', bundleId: 'com.test.finder', pid: 7, windows: [{ title: 'Documents', tree: { role: 'window', children: [
+      { role: 'scrollArea', bounds: { x: 0, y: 0, width: 200, height: 400 }, children: [{ role: 'outline', name: 'sidebar', children: [
+        { role: 'row', selectable: true, bounds: { x: 0, y: 10, width: 200, height: 20 }, children: [{ role: 'staticText', value: 'Desktop' }] },
+      ] }] },
+      { role: 'scrollArea', bounds: { x: 200, y: 0, width: 600, height: 400 }, children: [{ role: 'outline', name: 'list view', children: [
+        row('Report.pdf', 'file', { x: 200, y: 10, width: 600, height: 20 }, true),
+        row('Projects', 'folder', { x: 200, y: 50, width: 600, height: 20 }),
+      ] }] },
+    ] } }] }])
+    backend.coverWindow(7, 'Documents', { windowId: 901, pid: 55, app: 'TextEdit' }, { x: 200, y: 40, width: 600, height: 40 })
+    backend.coverWindow(7, 'Documents', { windowId: 301, pid: 4242, app: 'SuperOne' }, { x: 0, y: 0, width: 200, height: 400 })
+    const service = new ComputerUseService({ adapter: backend })
+    service.policy.setEnabled(true)
+    service.policy.grantSession({ app: 'Finder', bundleId: 'com.test.finder', tier: 'full' })
+    const lowered: number[][] = []
+    let restored = 0
+    const lower = vi.fn((ids: number[]) => { lowered.push(ids); for (const id of ids) backend.uncover(id); return () => { restored++ } })
+    const adapter = createComputerAdapter({ service, ask: vi.fn(), ownWindows: { pid: 4242, lower }, resolve: async () => (await service.resolveTargetRoot()).rootId })
+    await adapter.resolveTarget()
+    const page = await adapter.observe()
+    expect(page.elements.filter((e) => e.dropTarget).map((e) => e.label)).toEqual(['Select Desktop'])
+    expect(page.text).toContain('(Projects: drop point covered by TextEdit)')
+    expect(page.text).not.toContain('SuperOne')
+    const space = buildActionSpace({ page, history: [] })
+    const desktop = page.elements.find((e) => e.dropTarget)!
+    expect(space.dropTargets).toEqual([String(desktop.node)])
+    const source = page.elements.find((e) => e.dragSource)!
+    const act = vi.spyOn(service, 'act')
+    await adapter.drag!(source.node, desktop.node)
+    // Lowered before the drag, on the drop point's cover only; restored after.
+    expect(lowered).toEqual([[301]])
+    expect(act).toHaveBeenCalledWith(page.stateId, [{ type: 'drag', path: [{ x: 500, y: 20 }, { x: 100, y: 20 }] }], expect.any(Object))
+    expect(lower.mock.invocationCallOrder[0]!).toBeLessThan(act.mock.invocationCallOrder[0]!)
+    expect(restored).toBe(1)
+    // Without a host that can lower itself, its window covers like any other.
+    backend.coverWindow(7, 'Documents', { windowId: 301, pid: 4242, app: 'SuperOne' }, { x: 0, y: 0, width: 200, height: 400 })
+    const plain = createComputerAdapter({ service, ask: vi.fn(), resolve: async () => (await service.resolveTargetRoot()).rootId })
+    await plain.resolveTarget()
+    const unaided = await plain.observe()
+    expect(unaided.elements.some((e) => e.dropTarget)).toBe(false)
+    expect(unaided.text).toContain('(Desktop: drop point covered by SuperOne)')
+  })
 })

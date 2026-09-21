@@ -23,6 +23,7 @@ export type HelperMethod =
   | 'keypress'
   | 'scroll'
   | 'drag'
+  | 'window_cover'
   | 'move_mouse'
   | 'overlay_set_enabled'
   | 'overlay_show_target'

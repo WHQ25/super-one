@@ -403,3 +403,42 @@ func postDrag(
     }
     AgentOverlayController.shared.placeCursorImmediate(quartz: end, pulse: true)
 }
+
+/// The drag's third delivery layer: activate the target app for real, post
+/// the drag, hand the front back — one transaction, the shape of the menu
+/// press fallback in AxActions. The window server resolves a drop against
+/// the real stacking order, so a drop point under another app's window
+/// reaches that window unless the target's is raised, and only a real
+/// activation raises another process's windows. The previous app is put
+/// back in `defer`, so a drag that throws still returns the front; the
+/// activation is announced to FocusStealGuard first so it is not undone as
+/// a steal. Returns how long the target was in front, in milliseconds, or
+/// nil when it already was and nothing had to change.
+func postDragActivating(path: [CGPoint], targetPid: pid_t, window: PointerWindow?) throws -> Int? {
+    let previous = NSWorkspace.shared.frontmostApplication
+    guard previous?.processIdentifier != targetPid, let target = NSRunningApplication(processIdentifier: targetPid) else {
+        try postDrag(path: path, targetPid: targetPid, window: window)
+        return nil
+    }
+    FocusStealGuard.expectActivation(pid: targetPid)
+    let activated = Date()
+    target.activate()
+    // The activation is asynchronous; the drag must not start before the
+    // target's windows are up, or the drop lands where they were not yet.
+    let deadline = activated.addingTimeInterval(1.5)
+    while NSWorkspace.shared.frontmostApplication?.processIdentifier != targetPid, Date() < deadline {
+        usleep(20_000)
+    }
+    defer {
+        // The drop is delivered on the mouse-up; a moment for the app to take
+        // it before the front changes hands again.
+        usleep(150_000)
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPid,
+           let previous, !previous.isTerminated {
+            FocusStealGuard.expectActivation(pid: previous.processIdentifier)
+            previous.activate()
+        }
+    }
+    try postDrag(path: path, targetPid: targetPid, window: window)
+    return Int(Date().timeIntervalSince(activated) * 1000) + 150
+}

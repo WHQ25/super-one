@@ -898,16 +898,26 @@ export class MacosPlatformAdapter implements PlatformAdapter {
           pulse: true,
           coordinateSpace: target.coordinateSpace,
         })
-        await this.client.call('drag', {
-          path: action.path.map((p) => ({ x: p.x, y: p.y })),
-          ...targetFields,
-        })
         const a = action.path[0]!
         const b = action.path[action.path.length - 1]!
+        // A drop reaches the frontmost window at the drop point (§11.8). Under
+        // another app's window the helper activates the target around the
+        // drag and hands the front back — the third delivery layer, decided
+        // here so a computer_act drag gets it too. Under the host's own
+        // window nothing is done here: the fast loop lowers that window.
+        const cover = target.coordinateSpace
+          ? (await this.coveringWindows(target.root, [{ x: b.x, y: b.y }], target.coordinateSpace).catch(() => [null]))[0] ?? null
+          : null
+        const activateIfCovered = !!cover && cover.pid !== process.pid
+        const dragged = await this.client.call<{ activated?: boolean; frontMs?: number }>('drag', {
+          path: action.path.map((p) => ({ x: p.x, y: p.y })),
+          ...targetFields,
+          ...(activateIfCovered ? { activateIfCovered: true } : {}),
+        })
         return {
           applied: true,
           unknown: true,
-          description: `drag(${a.x},${a.y})→(${b.x},${b.y}) n=${action.path.length} posted to pid`,
+          description: `drag(${a.x},${a.y})→(${b.x},${b.y}) n=${action.path.length} posted to pid${dragged?.activated ? ` (drop point under ${cover!.app}: ${target.root.app} activated for ${dragged.frontMs ?? '?'} ms)` : ''}`,
         }
       }
       case 'press':

@@ -1223,6 +1223,28 @@ describe('MacosPlatformAdapter (mocked client)', () => {
     expect(call).toHaveBeenCalledWith('launch_app', { app: 'TextEdit', activate: false })
   })
 
+  it('activates the target around a drag only when its drop point is under another app\'s window', async () => {
+    // Three delivery layers (§11.9): uncovered → plain background drag;
+    // under the host's own window → the fast loop lowers it, nothing here;
+    // under another app's window → the helper activates the target around
+    // the drag and hands the front back, one transaction.
+    const space = { width: 800, height: 600, scale: 2, fullScreen: false, kind: 'window' as const, windowId: 12345, capturedBounds: { x: 0, y: 0, width: 800, height: 600 } }
+    const path = [{ x: 100, y: 100 }, { x: 400, y: 300 }]
+    const dragWith = async (cover: unknown) => {
+      call.mockReset()
+      call.mockImplementation(async (method: string) => method === 'window_cover' ? { points: [cover] } : method === 'drag' ? { ok: true, activated: !!cover, frontMs: 620 } : {})
+      const res = await adapter.act({ root: root(), actions: [{ type: 'drag', path }], coordinateSpace: space })
+      const drag = call.mock.calls.find(([method]) => method === 'drag')!
+      expect(call).toHaveBeenCalledWith('window_cover', expect.objectContaining({ points: [{ x: 400, y: 300 }], coordinateWindowId: 12345 }))
+      return { params: drag[1] as Record<string, unknown>, description: res.steps[0]!.description }
+    }
+    expect((await dragWith(null)).params).not.toHaveProperty('activateIfCovered')
+    expect((await dragWith({ windowId: 7, pid: process.pid, app: 'SuperOne' })).params).not.toHaveProperty('activateIfCovered')
+    const third = await dragWith({ windowId: 8, pid: 55, app: 'TextEdit' })
+    expect(third.params).toMatchObject({ activateIfCovered: true, targetPid: 42 })
+    expect(third.description).toContain('drop point under TextEdit: TextEdit activated for 620 ms')
+  })
+
   it('asks the helper which window a drop at each point would reach, in the state coordinates', async () => {
     call.mockImplementation(async (method: string) => method === 'window_cover'
       ? { points: [null, { windowId: 777, pid: 9, app: 'SuperOne' }] }

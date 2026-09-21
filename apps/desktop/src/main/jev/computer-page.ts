@@ -5,7 +5,6 @@ import { findNode } from '../computer-use/outline'
 import { ComputerUseError, type ActResult, type ComputerUseState, type Condition, type ObserveResult, type RootKind, type UiAction, type UiOutlineNode } from '../computer-use/types'
 import { planNodeAction, type NodeActionPlan } from '../computer-use/node-action-plan'
 import { persistComputerUseScreenshot } from '../computer-use/screenshot-store'
-import type { WindowCover } from '../computer-use/platform/types'
 import { type RunDeps, RunPaused, StaleObservation } from './loop'
 import { SETTLE_BUDGET_MS, settleByPolling, waitForChangeByPolling, waitReadyByPolling } from './settle'
 import type { RawElement, RunObservation } from './observation'
@@ -460,28 +459,23 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
   }
   const center = (b: { x: number; y: number; width: number; height: number }) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
   /**
-   * A drop is delivered to whatever window is frontmost at the drop point,
-   * so a target under another app's window is not one: it is dropped from
-   * the offer and the page text says why, so Jev does not go looking for it.
-   * A target under the host's own window stays — the drag lowers the host
-   * out of the way (§11.8).
+   * A drop is delivered to whatever window is frontmost at the drop point
+   * (§11.8), so a covered target is delivered another way: under the host's
+   * own window the drag lowers that window; under another app's the platform
+   * activates the target around the drag and hands the front back (§11.9,
+   * the user's decision). Every target stays offered; the text says which
+   * are covered and by what, so the run's account of the step can name the
+   * blink the caller may have seen.
    */
   const withDropCovers = async (page: ComputerPage): Promise<ComputerPage> => {
     const targets = page.elements.filter((e) => e.dropTarget)
     if (!targets.length) return page
     const covers = await service.coveringWindows(page.stateId, targets.map((e) => center(page.refs.get(e.node)!.bounds!)))
-    const covered = new Map<number, WindowCover>()
-    targets.forEach((e, i) => {
+    const notes = targets.flatMap((e, i) => {
       const cover = covers[i]
-      if (cover && cover.pid !== options.ownWindows?.pid) covered.set(e.node, cover)
+      return cover && cover.pid !== options.ownWindows?.pid ? [`(${e.label.replace(/^(Select|Open) /, '')}: drop point covered by ${cover.app})`] : []
     })
-    if (!covered.size) return page
-    const notes = page.elements.filter((e) => covered.has(e.node)).map((e) => `(${e.label.replace(/^(Select|Open) /, '')}: drop point covered by ${covered.get(e.node)!.app})`)
-    return {
-      ...page,
-      elements: page.elements.map((e) => covered.has(e.node) ? { ...e, dropTarget: false } : e),
-      text: [page.text, ...notes].filter(Boolean).join('\n'),
-    }
+    return notes.length ? { ...page, text: [page.text, ...notes].filter(Boolean).join('\n') } : page
   }
   /**
    * Lower the host's windows over the drop point, one layer at a time — a

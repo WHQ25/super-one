@@ -501,16 +501,24 @@ func handle(request: HelperRequest) async -> HelperResponse {
             maybeShowOverlayFromParams(params, cursor: points.first, pulseCursor: true, pulseRing: false)
             // postDrag densifies path and drives the virtual cursor step-by-step
             // (async animateCursor alone races and is easy to miss).
-            try postDrag(
-                path: points,
-                targetPid: pid,
-                window: pointerWindow(params)
-            )
-            return .success(id: request.id, result: [
+            // A drop point under another app's window is delivered to that
+            // window (§11.8). When the host says so, the drag runs as one
+            // transaction with a real activation around it — the third and
+            // last delivery layer, after a plain background drag and the
+            // host lowering its own window.
+            var frontMs: Int?
+            if (params["activateIfCovered"] as? Bool) == true {
+                frontMs = try postDragActivating(path: points, targetPid: pid, window: pointerWindow(params))
+            } else {
+                try postDrag(path: points, targetPid: pid, window: pointerWindow(params))
+            }
+            var dragResult: [String: Any] = [
                 "ok": true,
                 "unknown": true,
                 "points": points.count,
-            ])
+            ]
+            if let frontMs { dragResult["activated"] = true; dragResult["frontMs"] = frontMs }
+            return .success(id: request.id, result: dragResult)
         case "move_mouse":
             guard let x = AnyCodable.double(params, "x"),
                   let y = AnyCodable.double(params, "y") else {

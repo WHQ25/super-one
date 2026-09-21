@@ -829,11 +829,12 @@ describe('computer fast-loop adapter', () => {
     expect(act).toHaveBeenLastCalledWith(hostedPage.stateId, [{ type: 'drag', path: [{ x: 50, y: 60 }, { x: 350, y: 340 }] }], expect.any(Object))
   })
 
-  it('drops a covered drop target from the offer, and lowers the host out of the way of one it covers itself', async () => {
+  it('keeps a covered drop target on offer, notes the cover, and lowers the host out of the way of one it covers itself', async () => {
     // A drop is delivered to the frontmost window at the drop point (§11.8).
-    // Projects' row sits under another app's window: not offered, and the page
-    // text says so. Desktop's sidebar row sits under the host's own window:
-    // still offered, and the drag lowers that window for its duration only.
+    // Projects' row sits under another app's window: still offered — the
+    // platform activates Finder around that drag — and the text says so.
+    // Desktop's sidebar row sits under the host's own window: offered, and
+    // the drag lowers that window for its duration only.
     const row = (name: string, itemKind: 'folder' | 'file', bounds: { x: number; y: number; width: number; height: number }, selected = false) => ({
       role: 'row', selectable: true, selected, bounds, children: [{ role: 'cell', openable: true, bounds, children: [{ role: 'textField', name: '', value: name, openable: true, itemKind, bounds }] }],
     })
@@ -857,12 +858,13 @@ describe('computer fast-loop adapter', () => {
     const adapter = createComputerAdapter({ service, ask: vi.fn(), ownWindows: { pid: 4242, lower }, resolve: async () => (await service.resolveTargetRoot()).rootId })
     await adapter.resolveTarget()
     const page = await adapter.observe()
-    expect(page.elements.filter((e) => e.dropTarget).map((e) => e.label)).toEqual(['Select Desktop'])
+    expect(page.elements.filter((e) => e.dropTarget).map((e) => e.label)).toEqual(['Select Desktop', 'Projects'])
     expect(page.text).toContain('(Projects: drop point covered by TextEdit)')
     expect(page.text).not.toContain('SuperOne')
     const space = buildActionSpace({ page, history: [] })
-    const desktop = page.elements.find((e) => e.dropTarget)!
-    expect(space.dropTargets).toEqual([String(desktop.node)])
+    const desktop = page.elements.find((e) => e.label === 'Select Desktop')!
+    const projects = page.elements.find((e) => e.label === 'Projects')!
+    expect(space.dropTargets).toEqual([String(desktop.node), String(projects.node)])
     const source = page.elements.find((e) => e.dragSource)!
     const act = vi.spyOn(service, 'act')
     await adapter.drag!(source.node, desktop.node)
@@ -871,12 +873,16 @@ describe('computer fast-loop adapter', () => {
     expect(act).toHaveBeenCalledWith(page.stateId, [{ type: 'drag', path: [{ x: 500, y: 20 }, { x: 100, y: 20 }] }], expect.any(Object))
     expect(lower.mock.invocationCallOrder[0]!).toBeLessThan(act.mock.invocationCallOrder[0]!)
     expect(restored).toBe(1)
-    // Without a host that can lower itself, its window covers like any other.
+    // A third-party cover is the platform's to deal with: nothing is lowered.
+    const after = await adapter.observe()
+    await adapter.drag!(after.elements.find((e) => e.dragSource)!.node, after.elements.find((e) => e.label === 'Projects')!.node)
+    expect(lowered).toEqual([[301]])
+    // Without a host that can lower itself, its own window is noted like any other; the target stays offered.
     backend.coverWindow(7, 'Documents', { windowId: 301, pid: 4242, app: 'SuperOne' }, { x: 0, y: 0, width: 200, height: 400 })
     const plain = createComputerAdapter({ service, ask: vi.fn(), resolve: async () => (await service.resolveTargetRoot()).rootId })
     await plain.resolveTarget()
     const unaided = await plain.observe()
-    expect(unaided.elements.some((e) => e.dropTarget)).toBe(false)
+    expect(unaided.elements.filter((e) => e.dropTarget)).toHaveLength(2)
     expect(unaided.text).toContain('(Desktop: drop point covered by SuperOne)')
   })
 })

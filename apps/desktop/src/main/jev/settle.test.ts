@@ -46,6 +46,12 @@ describe('observationSignature', () => {
     expect(observationSignature(menu)).toBe(observationSignature(page([el({ node: 1, role: 'button', label: 'File' })])))
   })
 
+  it('sees an element that moved, but not sub-pixel jitter', () => {
+    const at = (x: number) => page([el({ node: 1, role: 'image', label: 'Note.txt', bounds: { x, y: 40, width: 64, height: 64 } })])
+    expect(observationSignature(at(60))).not.toBe(observationSignature(at(700)))
+    expect(observationSignature(at(60))).toBe(observationSignature(at(60.3)))
+  })
+
   it('ignores the scroll offset, which no decision is made from', () => {
     const scrolled = page([el({ node: 1, role: 'button', label: 'File' })], {
       scroll: { y: 120, height: 3000, viewport: 700 },

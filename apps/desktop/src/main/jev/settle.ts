@@ -63,7 +63,10 @@ export function observationSignature(page: RunObservation): string {
     page.title,
     page.text,
     page.elements.length,
-    page.elements.map((e: RawElement) => [e.node, e.role, e.label, e.value, e.checked, e.selected, e.expanded, e.disabled]),
+    // Where an element is counts too, rounded: a Finder icon dragged to a new
+    // spot changed nothing else about the page, and the move read as "didnt".
+    page.elements.map((e: RawElement) => [e.node, e.role, e.label, e.value, e.checked, e.selected, e.expanded, e.disabled,
+      e.bounds ? [Math.round(e.bounds.x), Math.round(e.bounds.y), Math.round(e.bounds.width), Math.round(e.bounds.height)] : undefined]),
   ])
 }
 

@@ -2503,7 +2503,6 @@ export const zh: Messages = {
         running: '运行中',
         failed: '失败',
         interrupted: '已中断',
-        goalSatisfied: '目标达成度 {{value}}',
         reason: {
           uncertain: '不确定',
           risky: '有风险',

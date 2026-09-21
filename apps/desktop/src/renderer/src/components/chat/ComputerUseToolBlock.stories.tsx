@@ -436,7 +436,7 @@ const SEG2 = [step("click", "Save"), step("click", "Notes list", "worked")];
 export const FastRunStates: Story = {
   render: () => (
     <StoryShell width={560}>
-      <Note>Collapsed, a run is one row: verb, app, what the caller asked for, steps, time and outcome.</Note>
+      <Note>Collapsed, a run is one row: verb, app, what the caller asked for, time and outcome; the step count shows only while it runs, and in the footer once expanded.</Note>
       {tool("run", { description: "Fill the scratch note title", input: RUN_INPUT, status: "streaming", elapsedSeconds: 7 })}
       {tool("run", { description: "Fill the scratch note title", input: RUN_INPUT, result: runEnvelope({ status: "paused", runId: "r1", completed: SEG1, question: QUESTIONS.risky("Save"), snapshot: { target: NOTES }, goalSatisfied: 0.31 }) })}
       {tool("run", { description: "Fill the scratch note title", input: RUN_INPUT, result: runEnvelope({ status: "done", runId: "r2", completed: [...SEG1, ...SEG2], why: "Jev rates the goal satisfied (0.86)", snapshot: { target: NOTES }, goalSatisfied: 0.86 }) })}

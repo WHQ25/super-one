@@ -2408,7 +2408,6 @@ export type Messages = {
         running: string
         failed: string
         interrupted: string
-        goalSatisfied: string
         reason: {
           uncertain: string
           risky: string
@@ -6347,7 +6346,6 @@ export const en: Messages = {
         running: 'Running',
         failed: 'Failed',
         interrupted: 'Interrupted',
-        goalSatisfied: 'goal {{value}}',
         reason: {
           uncertain: 'Unsure',
           risky: 'Risky step',

@@ -20,7 +20,8 @@ import {
   ToolSummary,
   type ToolRowTone,
 } from './ToolRow'
-import { RunActionCount, RunActionRows, type RunActionVocabulary } from './RunActions'
+import { RunBlockPresenter, type RunVocabulary } from './RunBlock'
+import { runCallOf, type RunCall, type RunContinuation, type RunView } from './run-display'
 import type { JevRunAction } from '@superone/shared/agent-types'
 
 export interface DeviceToolBlockPresenterProps {
@@ -38,14 +39,23 @@ export interface DeviceToolBlockPresenterProps {
   renderScreenshot?: (path: string, label: string, unavailableLabel: string) => ReactNode
   renderJson?: (text: string) => ReactNode
   recording?: ReactNode
-  /** device_run only: the actions the loop has taken so far, oldest first. */
+  /** device_run only: the rows the store holds for the call still in flight. */
   runActions?: JevRunAction[]
+  /** device_run only: the resume calls folded into this block. */
+  runContinuations?: RunContinuation[]
+  /** `*_run` only: open the run's segments on first render. */
+  runExpanded?: boolean
   onExpandedChange?: (expanded: boolean) => void
   pendingDetails?: ReactNode
 }
 
 /** A run on a phone speaks the device tools' own verbs. */
-const RUN_VOCAB: RunActionVocabulary = {
+const RUN_VOCAB: RunVocabulary = {
+  run: 'chat.toolBlock.device.run',
+  running: 'chat.toolBlock.device.runRunning',
+  paused: 'chat.toolBlock.device.runPaused',
+  done: 'chat.toolBlock.device.runDone',
+  aborted: 'chat.toolBlock.device.runAborted',
   click: 'chat.toolBlock.device.tap',
   type: 'chat.toolBlock.device.type',
   press: 'chat.toolBlock.device.pressKey',
@@ -112,7 +122,53 @@ export function DeviceToolBlockPresenter(props: DeviceToolBlockPresenterProps) {
   if (props.op === 'memory_read' || props.op === 'memory_write') {
     return <InteractionMemoryToolBlock {...props} family="device" op={props.op} />
   }
+  if (props.op === 'run') return <DeviceRunBlock {...props} />
   return <DeviceToolBlockOperation {...props} />
+}
+
+/** The device a run drives: named by the last snapshot, or by the caller. */
+function deviceRunTarget(params: Record<string, unknown>): (view: RunView) => string | undefined {
+  return (view) => {
+    const target = view.snapshot?.target as Record<string, unknown> | undefined
+    const device = typeof target?.device === 'string' ? target.device : typeof params.device === 'string' ? params.device : ''
+    return device.trim() || undefined
+  }
+}
+
+function DeviceRunBlock({
+  params,
+  result,
+  isStreaming,
+  isError,
+  isDenied,
+  elapsedSeconds,
+  elapsedClassName,
+  allowExpand,
+  runActions,
+  runContinuations,
+  runExpanded,
+  onExpandedChange,
+}: DeviceToolBlockPresenterProps) {
+  const info = useMemo(() => parseDeviceResult('run', result, !!isError), [result, isError])
+  const calls: RunCall[] = [
+    { params, result, isStreaming, isError, elapsedSeconds },
+    ...(runContinuations ?? []).map(runCallOf),
+  ]
+  return (
+    <RunBlockPresenter
+      calls={calls}
+      liveActions={runActions}
+      vocab={RUN_VOCAB}
+      icon={<DeviceIcon info={info} />}
+      target={deviceRunTarget(params)}
+      description={typeof params.description === 'string' ? params.description : undefined}
+      isDenied={isDenied}
+      elapsedClassName={elapsedClassName}
+      allowExpand={allowExpand}
+      defaultExpanded={runExpanded}
+      onExpandedChange={onExpandedChange}
+    />
+  )
 }
 
 function DeviceToolBlockOperation({
@@ -129,7 +185,6 @@ function DeviceToolBlockOperation({
   renderScreenshot,
   renderJson = defaultJson,
   recording,
-  runActions,
   onExpandedChange,
   pendingDetails,
 }: DeviceToolBlockPresenterProps) {
@@ -179,13 +234,9 @@ function DeviceToolBlockOperation({
   // showed the user what they were approving, and the result body is prose written
   // for the agent. A refusal is the exception: its reason has to be readable
   // somewhere, and the header truncates.
-  // A run opens whenever it has steps to show, in flight or finished.
-  const runRows = op === 'run' && runActions && runActions.length > 0 ? runActions : null
-  const expandable = runRows
-    ? true
-    : !isStreaming
-      && (pendingDetails != null
-        || (!!result && ((op !== 'request_control' && op !== 'boot' && op !== 'release') || failed)))
+  const expandable = !isStreaming
+    && (pendingDetails != null
+      || (!!result && ((op !== 'request_control' && op !== 'boot' && op !== 'release') || failed)))
 
   return (
     <ToolRow
@@ -197,11 +248,7 @@ function DeviceToolBlockOperation({
         setExpanded(next)
         onExpandedChange?.(next)
       }}
-      // A run's rows are the body, so they carry no separator above them.
-      detailsClassName={runRows ? 'px-2 pb-1.5' : 'border-t border-border/40 px-2 py-2 text-xs'}
-      details={runRows ? (
-        <RunActionRows actions={runRows} icon={<DeviceIcon info={info} />} vocab={RUN_VOCAB} />
-      ) : expandable ? (
+      details={expandable ? (
         <div className="flex flex-col gap-1.5">
           {explanation && (
             <span className={cn('text-xs', needsAttention ? 'text-warning' : 'text-muted-foreground')}>
@@ -243,7 +290,6 @@ function DeviceToolBlockOperation({
       ) : undefined}
       trailing={(
         <div className="flex shrink-0 items-center gap-1.5">
-          <RunActionCount count={runRows && isStreaming ? runRows.length : 0} vocab={RUN_VOCAB} />
           {hasScreenshot && (
             <ImageIcon
               className="size-3 text-muted-foreground/70"
@@ -356,10 +402,6 @@ function statusText(
   info: DeviceResultInfo,
   t: (key: string, options?: Record<string, unknown>) => string,
 ): string {
-  if (op === 'run') {
-    if (!info.runStatus) return ''
-    return t(`chat.toolBlock.device.run${info.runStatus === 'paused' ? 'Paused' : info.runStatus === 'aborted' ? 'Aborted' : 'Done'}`)
-  }
   if (op === 'list') {
     if (info.deviceCount == null) return ''
     return info.deviceCount === 0

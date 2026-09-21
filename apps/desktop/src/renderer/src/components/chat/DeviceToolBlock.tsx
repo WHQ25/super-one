@@ -4,7 +4,7 @@ import {
   type DeviceToolBlockPresenterProps,
 } from '@superone/chat-view/presenters/DeviceToolBlock'
 import { getStallColor, type StallLevel } from '@/lib/stall-utils'
-import { useJevRunActions } from '@/hooks/use-jev-run-actions'
+import { liveRunId, useJevRunActions } from '@/hooks/use-jev-run-actions'
 import { parseDeviceResult } from './device-tool-display'
 import { ActionRecordingView, parseActionRecording } from './ActionRecordingView'
 import { PrettyJSONCodeBlock } from './tool-result-views'
@@ -24,7 +24,7 @@ export function DeviceToolBlock({ stallLevel, result, ...props }: DeviceToolBloc
     () => parseDeviceResult(props.op, result, !!props.isError),
     [props.op, result, props.isError],
   )
-  const runActions = useJevRunActions(props.op === 'run', info.runId)
+  const runActions = useJevRunActions(props.op === 'run', liveRunId(props.runContinuations) ?? info.runId)
   return (
     <DeviceToolBlockPresenter
       {...props}

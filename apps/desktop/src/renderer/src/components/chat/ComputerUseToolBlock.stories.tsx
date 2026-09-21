@@ -4,8 +4,10 @@ import type { ReactNode } from "react";
 import { ComputerUseGrantPrompt } from "./ComputerUseGrantPrompt";
 import { ToolBlock } from "./ToolBlock";
 import type { ComputerOp } from "./computer-tool-display";
-import type { JevRunAction } from "@superone/shared/agent-types";
+import type { RunContinuation } from "@superone/chat-view/presenters/run-display";
 import { RunSeed, seedRun } from "./run-story-seed";
+import { NestedToolContext } from "./nested-tool-context";
+import { liveOf, longSegments, QUESTIONS, resume, runEnvelope, step } from "./run-story-fixtures";
 
 function StoryShell({
   children,
@@ -47,6 +49,9 @@ function tool(
     status?: "streaming" | "complete";
     elapsedSeconds?: number;
     isError?: boolean;
+    /** computer_run: the resume calls groupContent folds into this block. */
+    continuations?: RunContinuation[];
+    expanded?: boolean;
   },
 ) {
   return (
@@ -60,6 +65,8 @@ function tool(
       status={options.status ?? "complete"}
       elapsedSeconds={options.elapsedSeconds}
       isError={options.isError}
+      runContinuations={options.continuations}
+      autoExpand={options.expanded}
     />
   );
 }
@@ -416,75 +423,158 @@ export const ComputerObserve: Story = {
   ),
 };
 
-const RUN_ACTIONS: JevRunAction[] = [
-  { op: 'click', target: 'Notes' },
-  { op: 'click', target: 'New Note' },
-  { op: 'type', target: 'Title' },
-  { op: 'scroll', target: 'down' },
-  { op: 'press', target: 'Return' },
-];
+const NOTES = { app: "Notes", bundleId: "com.apple.Notes", title: "Notes" };
+const RUN_INPUT = {
+  app: "Notes",
+  goal: "Create a note titled Scratch and make sure it is saved in the Notes list",
+  presets: [{ key: "Title", value: "Scratch", field: "the note title" }],
+};
+const SEG1 = [step("click", "New Note"), step("type", "Title"), step("scroll", "down", "didnt"), step("press", "Return", "unknown")];
+const SEG2 = [step("click", "Save"), step("click", "Notes list", "worked")];
 
-function runResult(status: 'paused' | 'done' | 'aborted', runId: string): string {
-  return JSON.stringify({
-    status,
-    runId,
-    steps: 5,
-    snapshot: { target: { app: 'Notes', bundleId: 'com.apple.Notes' } },
-  });
-}
-
+/** Every outcome at a glance: the row alone says how the run ended. */
 export const FastRunStates: Story = {
   render: () => (
-    <StoryShell width={360}>
-      {tool('run', { description: 'Fill the scratch note title', status: 'streaming' })}
-      {(['paused', 'done', 'aborted'] as const).map((status) => (
-        <div key={status}>{tool('run', { description: 'Fill the scratch note title', result: JSON.stringify({ status, steps: 3, snapshot: { target: { app: 'Notes', bundleId: 'com.apple.Notes' } } }) })}</div>
-      ))}
-      {tool('run', { description: 'Fill the scratch note title', result: '[Error] Jev fast loop is disabled', isError: true })}
+    <StoryShell width={560}>
+      <Note>Collapsed, a run is one row: verb, app, what the caller asked for, steps, time and outcome.</Note>
+      {tool("run", { description: "Fill the scratch note title", input: RUN_INPUT, status: "streaming", elapsedSeconds: 7 })}
+      {tool("run", { description: "Fill the scratch note title", input: RUN_INPUT, result: runEnvelope({ status: "paused", runId: "r1", completed: SEG1, question: QUESTIONS.risky("Save"), snapshot: { target: NOTES }, goalSatisfied: 0.31 }) })}
+      {tool("run", { description: "Fill the scratch note title", input: RUN_INPUT, result: runEnvelope({ status: "done", runId: "r2", completed: [...SEG1, ...SEG2], why: "Jev rates the goal satisfied (0.86)", snapshot: { target: NOTES }, goalSatisfied: 0.86 }) })}
+      {tool("run", { description: "Fill the scratch note title", input: RUN_INPUT, result: runEnvelope({ status: "aborted", runId: "r3", completed: SEG1, why: "Aborted by the caller", snapshot: { target: NOTES }, goalSatisfied: 0.12 }) })}
+      {tool("run", { description: "Fill the scratch note title", input: RUN_INPUT, result: "[Error] The 'Jev fast inner loop' is disabled. Enable it in Settings → Browser → Experimental Tools.", isError: true })}
+      {tool("run", { description: "Fill the scratch note title", input: RUN_INPUT, result: "[denied] User declined" })}
     </StoryShell>
   ),
 };
 
-/** A run still going: the collapsed row counts the actions it has taken. */
+/** A run still going: the rows come from the live events, the header pulses and counts. */
 export const FastRunRunning: Story = {
   render: () => {
-    const seed = () => seedRun('computer', 'rcomputer1', RUN_ACTIONS.slice(0, 3));
+    const seed = () => seedRun("computer", "rcomputer1", [liveOf(SEG1.slice(0, 3))]);
     return (
-      <StoryShell width={420}>
+      <StoryShell width={560}>
         <RunSeed seed={seed} />
-        <Note>Each row reads the way the matching computer_act row would.</Note>
-        {tool('run', { description: 'Fill the scratch note title', status: 'streaming' })}
+        <Note>Each row reads the way the matching computer_act row would; the check mark is that call's outcome.</Note>
+        {tool("run", { description: "Fill the scratch note title", input: RUN_INPUT, status: "streaming", elapsedSeconds: 9, expanded: true })}
       </StoryShell>
     );
   },
 };
 
-/** Finished: the block finds its run through the runId in its own result. */
-export const FastRunDone: Story = {
+/** Paused on a risky step: the segment ends with the question the caller has to answer. */
+export const FastRunPaused: Story = {
+  render: () => (
+    <StoryShell width={560}>
+      <Note>The reason is a chip, the need is the loop's own first sentence; the head-by-head numbers stay in the tool result.</Note>
+      {tool("run", { description: "Fill the scratch note title", input: RUN_INPUT, expanded: true, result: runEnvelope({ status: "paused", runId: "r1", completed: SEG1, question: QUESTIONS.risky("Save"), snapshot: { target: NOTES }, goalSatisfied: 0.31 }) })}
+      {tool("run", { description: "Add a haiku to the draft", input: { app: "TextEdit", goal: "Append a haiku about autumn to the end of the document" }, expanded: true, result: runEnvelope({ status: "paused", runId: "r4", completed: [step("click", "Untitled")], question: QUESTIONS.value("Untitled"), snapshot: { target: { app: "TextEdit" } }, goalSatisfied: 0.08 }) })}
+    </StoryShell>
+  ),
+};
+
+/** Resumed: the answer opens the next segment inside the same block, and the run finishes there. */
+export const FastRunResumed: Story = {
+  render: () => (
+    <StoryShell width={560}>
+      <Note>The resume call is a second tool call in the transcript; groupContent folds it into the block that started the run.</Note>
+      {tool("run", {
+        description: "Fill the scratch note title",
+        input: RUN_INPUT,
+        expanded: true,
+        result: runEnvelope({ status: "paused", runId: "r1", completed: SEG1, question: QUESTIONS.risky("Save"), snapshot: { target: NOTES }, goalSatisfied: 0.31 }),
+        continuations: [
+          resume("r1", { choice: "2" }, { description: "Confirm Save", result: runEnvelope({ status: "done", runId: "r1", completed: SEG2, why: "Jev rates the goal satisfied (0.86)", snapshot: { target: NOTES }, goalSatisfied: 0.86, steps: 6, elapsedMs: 21400 }) }),
+        ],
+      })}
+    </StoryShell>
+  ),
+};
+
+/** Resumed and still running: the answered segment's rows come from the live events. */
+export const FastRunResumedLive: Story = {
   render: () => {
-    const seed = () => seedRun('computer', 'rcomputer1', RUN_ACTIONS, { active: false });
+    const seed = () => seedRun("computer", "r1", [liveOf(SEG1), liveOf(SEG2.slice(0, 1))]);
     return (
-      <StoryShell width={420}>
+      <StoryShell width={560}>
         <RunSeed seed={seed} />
-        {tool('run', { description: 'Fill the scratch note title', result: runResult('done', 'rcomputer1') })}
+        {tool("run", {
+          description: "Fill the scratch note title",
+          input: RUN_INPUT,
+          expanded: true,
+          result: runEnvelope({ status: "paused", runId: "r1", completed: SEG1, question: QUESTIONS.risky("Save"), snapshot: { target: NOTES }, goalSatisfied: 0.31 }),
+          continuations: [resume("r1", { choice: "2" }, { status: "streaming", elapsedSeconds: 4 })],
+        })}
       </StoryShell>
     );
   },
 };
 
-/** Paused, narrow, and long: the list is bounded and follows its tail. */
-export const FastRunPausedAndLong: Story = {
+/** A hand-over: Jev asked for input it cannot supply, the caller answered with actions and a preset. */
+export const FastRunCapability: Story = {
+  render: () => (
+    <StoryShell width={560}>
+      {tool("run", {
+        description: "Select the red dot in the picture",
+        input: { app: "Preview", goal: "Select the region around the red dot in the picture" },
+        expanded: true,
+        result: runEnvelope({ status: "paused", runId: "r5", completed: [], question: QUESTIONS.capability(), snapshot: { target: { app: "Preview" } }, goalSatisfied: 0.05 }),
+        continuations: [
+          resume("r5", { value: { actions: [{ type: "drag", path: [[300, 200], [420, 280]] }], presets: [{ key: "Caption", value: "Red dot" }] } }, {
+            result: runEnvelope({ status: "done", runId: "r5", completed: [step("press", "Handed 1 action (drag)", "worked", "Handed 1 action (drag) at [1] Picture"), step("type", "Caption")], note: "1 preset(s) taken over: Caption", why: "Accepted by the caller", snapshot: { target: { app: "Preview" } }, goalSatisfied: 0.28, steps: 2 }),
+          }),
+        ],
+      })}
+    </StoryShell>
+  ),
+};
+
+/** Handed back: the caller stopped the run at a no-progress pause. */
+export const FastRunAborted: Story = {
+  render: () => (
+    <StoryShell width={560}>
+      {tool("run", {
+        description: "Fill the scratch note title",
+        input: RUN_INPUT,
+        expanded: true,
+        result: runEnvelope({ status: "paused", runId: "r6", completed: SEG1, question: QUESTIONS.noProgress(), snapshot: { target: NOTES }, goalSatisfied: 0.45 }),
+        continuations: [resume("r6", { abort: true, goal: "Leave the note unsaved" }, { result: runEnvelope({ status: "aborted", runId: "r6", why: "Aborted by the caller", snapshot: { target: NOTES }, steps: 4 }) })],
+      })}
+    </StoryShell>
+  ),
+};
+
+/** Thirty-four steps over three segments in a narrow column: bounded, tail in view, header still one line. */
+export const FastRunLongNarrow: Story = {
   render: () => {
-    const long: JevRunAction[] = Array.from({ length: 30 }, (_, i) => (
-      i % 4 === 3 ? { op: 'scroll', target: 'down' } : { op: 'click', target: `Row ${i + 1}` }
-    ));
-    const seed = () => seedRun('computer', 'rlongcomputer', long, { active: false });
+    const [s1, s2, s3] = longSegments((i) => `Row ${i}`);
     return (
       <StoryShell width={340}>
-        <RunSeed seed={seed} />
-        <Note>Bounded height with the tail in view, like a subagent's nested calls.</Note>
-        {tool('run', { description: 'Work through the long settings list', result: runResult('paused', 'rlongcomputer') })}
+        <Note>Bounded height with the tail in view, like a subagent's nested calls; the status word hides below md.</Note>
+        {tool("run", {
+          description: "Work through the long settings list",
+          input: { app: "System Settings", goal: "Open every pane in the sidebar until the Sharing pane is visible" },
+          expanded: true,
+          result: runEnvelope({ status: "paused", runId: "r7", completed: s1, question: QUESTIONS.budget(), snapshot: { target: { app: "System Settings" } }, goalSatisfied: 0.2 }),
+          continuations: [
+            resume("r7", { choice: "continue" }, { result: runEnvelope({ status: "paused", runId: "r7", completed: s2, question: QUESTIONS.budget(), snapshot: { target: { app: "System Settings" } }, goalSatisfied: 0.35, steps: 24 }) }),
+            resume("r7", { choice: "continue" }, { result: runEnvelope({ status: "done", runId: "r7", completed: s3, why: "done_when satisfied", snapshot: { target: { app: "System Settings" } }, goalSatisfied: 0.9, steps: 34, elapsedMs: 118000 }) }),
+          ],
+        })}
+        {tool("run", { description: "Work through the long settings list", input: { app: "System Settings", goal: "Open every pane" }, result: runEnvelope({ status: "done", runId: "r8", completed: s1, why: "done_when satisfied", snapshot: { target: { app: "System Settings" } } }) })}
       </StoryShell>
     );
   },
+};
+
+/** Nested in a subagent card the block is header-only. */
+export const FastRunNested: Story = {
+  render: () => (
+    <StoryShell width={560}>
+      <NestedToolContext.Provider value={{ allowExpand: false }}>
+        <div className="subagent-container rounded border border-border/50 p-2">
+          {tool("run", { description: "Fill the scratch note title", input: RUN_INPUT, result: runEnvelope({ status: "done", runId: "r9", completed: SEG1, snapshot: { target: NOTES } }) })}
+        </div>
+      </NestedToolContext.Provider>
+    </StoryShell>
+  ),
 };

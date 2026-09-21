@@ -1,5 +1,5 @@
 import { useLayoutEffect } from 'react'
-import type { JevRunAction, JevRunPlatform } from '@superone/shared/agent-types'
+import type { JevRunAction, JevRunOutcome, JevRunPlatform } from '@superone/shared/agent-types'
 import {
   createDefaultPerSessionState,
   createDefaultProjectState,
@@ -10,15 +10,18 @@ import {
 export const SB_PROJECT = '__storybook__'
 export const SB_SESSION = 'sb'
 
-/** Seeds what a run has reported so far, the way the loop's host events would. */
+/**
+ * Seeds what a run has reported so far, the way the loop's host events would:
+ * one action list per segment, the last being the call still in flight.
+ */
 export function seedRun(
   platform: JevRunPlatform,
   runId: string,
-  actions: JevRunAction[],
-  opts: { active?: boolean } = {},
+  segments: JevRunAction[][],
+  opts: { active?: boolean; outcome?: JevRunOutcome } = {},
 ): void {
   const session = createDefaultPerSessionState()
-  session.jevRuns = { [runId]: { platform, actions } }
+  session.jevRuns = { [runId]: { platform, segments, ...(opts.outcome ? { outcome: opts.outcome } : {}) } }
   session._activeJevRunId = opts.active === false ? null : runId
   const project = createDefaultProjectState()
   project._activeSessionId = SB_SESSION

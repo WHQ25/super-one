@@ -2400,6 +2400,38 @@ export type Messages = {
       collapseOutput: string
       outputLines_one: string
       outputLines_other: string
+      /** The `*_run` block all three platforms share: a goal pursued across segments. */
+      run: {
+        goal: string
+        steps_one: string
+        steps_other: string
+        running: string
+        failed: string
+        interrupted: string
+        goalSatisfied: string
+        reason: {
+          uncertain: string
+          risky: string
+          'no-progress': string
+          budget: string
+          capability: string
+          unknown: string
+        }
+        answer: {
+          abort: string
+          accept: string
+          continue: string
+          choice: string
+          text: string
+          handed: string
+          goal: string
+        }
+        outcome: {
+          worked: string
+          didnt: string
+          unknown: string
+        }
+      }
       browser: {
         memory: typeof interactionMemoryEn
         navigate: string
@@ -6308,6 +6340,37 @@ export const en: Messages = {
       collapseOutput: 'Collapse output',
       outputLines_one: '{{count}} line of output',
       outputLines_other: '{{count}} lines of output',
+      run: {
+        goal: 'Goal',
+        steps_one: '{{count}} step',
+        steps_other: '{{count}} steps',
+        running: 'Running',
+        failed: 'Failed',
+        interrupted: 'Interrupted',
+        goalSatisfied: 'goal {{value}}',
+        reason: {
+          uncertain: 'Unsure',
+          risky: 'Risky step',
+          'no-progress': 'No progress',
+          budget: 'Budget used',
+          capability: 'Needs input',
+          unknown: 'Paused',
+        },
+        answer: {
+          abort: 'Stopped',
+          accept: 'Accepted as done',
+          continue: 'Continued',
+          choice: 'Chose {{label}}',
+          text: 'Typed “{{text}}”',
+          handed: 'Handed over {{actions}} action(s), {{presets}} preset(s)',
+          goal: 'goal revised: {{goal}}',
+        },
+        outcome: {
+          worked: 'Worked',
+          didnt: 'No change',
+          unknown: 'No evidence either way',
+        },
+      },
       browser: {
         memory: interactionMemoryEn,
         navigate: 'Navigate',

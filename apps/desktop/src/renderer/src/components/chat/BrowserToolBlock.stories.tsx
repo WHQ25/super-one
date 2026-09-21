@@ -7,8 +7,9 @@ import {
   createDefaultProjectState,
   useChatStore,
 } from '@/stores/chat'
-import { RunSeed, SB_PROJECT, SB_SESSION, seedRun as seedPlatformRun } from './run-story-seed'
-import type { JevRunAction } from '@superone/shared/agent-types'
+import { RunSeed, SB_PROJECT, SB_SESSION, seedRun } from './run-story-seed'
+import { liveOf, longSegments, QUESTIONS, resume, runEnvelope, step } from './run-story-fixtures'
+import type { RunContinuation } from '@superone/chat-view/presenters/run-display'
 import { BROWSER_LEGACY_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 
 function StoryShell({ children, width = 720 }: { children: ReactNode; width?: number }) {
@@ -46,6 +47,9 @@ function tool(
     status?: 'streaming' | 'complete'
     elapsedSeconds?: number
     isError?: boolean
+    /** browser_run: the resume calls groupContent folds into this block. */
+    continuations?: RunContinuation[]
+    expanded?: boolean
   } = {},
 ) {
   return (
@@ -56,6 +60,8 @@ function tool(
       result={opts.result}
       elapsedSeconds={opts.elapsedSeconds}
       isError={opts.isError}
+      runContinuations={opts.continuations}
+      autoExpand={opts.expanded}
     />
   )
 }
@@ -72,21 +78,10 @@ function toolByName(name: string, input: Record<string, unknown>, result?: strin
   )
 }
 
-const seedRun = (runId: string, actions: JevRunAction[], opts?: { active?: boolean }) =>
-  seedPlatformRun('browser', runId, actions, opts)
-
-const RUN_ACTIONS: JevRunAction[] = [
-  { op: 'click', target: 'Menu' },
-  { op: 'click', target: 'Mac menu' },
-  { op: 'click', target: 'MacBook Air' },
-  { op: 'scroll', target: 'down' },
-  { op: 'click', target: 'Local Nav Open Menu' },
-  { op: 'click', target: 'Tech Specs' },
-]
-
-function runResult(status: 'done' | 'paused' | 'aborted', steps: number, runId: string): string {
-  return JSON.stringify({ status, runId, steps, snapshot: { url: 'https://www.apple.com/macbook-air/specs/', title: 'MacBook Air Tech Specs' } })
-}
+const APPLE = { url: 'https://www.apple.com/macbook-air/specs/', title: 'MacBook Air Tech Specs' }
+const RUN_INPUT = { goal: 'Open the MacBook Air tech specs page and stop once the display section is visible' }
+const SPECS_SEG1 = [step('click', 'Menu'), step('click', 'Mac menu'), step('click', 'MacBook Air'), step('scroll', 'down', 'didnt')]
+const SPECS_SEG2 = [step('click', 'Local Nav Open Menu'), step('click', 'Tech Specs'), step('scroll', 'down')]
 
 function seedBrowserDownload(
   taskId: string,
@@ -575,64 +570,73 @@ export const BrowserPageTools: Story = {
   ),
 }
 
-/** A run still going: the block shows the actions it has taken so far. */
+/** A run still going: the rows come from the live events; the site is the last snapshot's host. */
 export const BrowserRunRunning: Story = {
   render: () => {
-    const seed = () => seedRun('r1b3edbf0', RUN_ACTIONS.slice(0, 3))
+    const seed = () => seedRun('browser', 'r1b3edbf0', [liveOf(SPECS_SEG1.slice(0, 3))])
     return (
       <StoryShell>
         <RunSeed seed={seed} />
         <Section title="browser_run · running">
           <Note>Each row reads the way the matching browser_act row would; the loop's step numbers stay in the trace.</Note>
-          <ToolBlock
-            toolName="mcp__superone__browser_run"
-            input={JSON.stringify({ goal: 'Open the MacBook Air tech specs page' })}
-            status="streaming"
-          />
+          {tool('run', { input: RUN_INPUT, status: 'streaming', elapsedSeconds: 6, expanded: true })}
         </Section>
       </StoryShell>
     )
   },
 }
 
-/** Finished: the block finds its run through the runId in its own result. */
+/** Finished in one call: the block rebuilds its rows from its own result. */
 export const BrowserRunDone: Story = {
-  render: () => {
-    const seed = () => seedRun('r1b3edbf0', RUN_ACTIONS, { active: false })
-    return (
-      <StoryShell>
-        <RunSeed seed={seed} />
-        <Section title="browser_run · done">
-          <ToolBlock
-            toolName="mcp__superone__browser_run"
-            input={JSON.stringify({ goal: 'Open the MacBook Air tech specs page' })}
-            status="complete"
-            result={runResult('done', 16, 'r1b3edbf0')}
-          />
-        </Section>
-      </StoryShell>
-    )
-  },
+  render: () => (
+    <StoryShell>
+      <Section title="browser_run · done">
+        {tool('run', { input: RUN_INPUT, expanded: true, result: runEnvelope({ status: 'done', runId: 'r1b3edbf0', completed: [...SPECS_SEG1, ...SPECS_SEG2], why: 'Jev rates the goal satisfied (0.82)', goalSatisfied: 0.82, snapshot: APPLE, elapsedMs: 16800 }) })}
+        {tool('run', { input: RUN_INPUT, result: runEnvelope({ status: 'done', runId: 'r1b3edbf1', completed: [...SPECS_SEG1, ...SPECS_SEG2], why: 'done_when satisfied', snapshot: APPLE }) })}
+      </Section>
+    </StoryShell>
+  ),
 }
 
-/** Paused for a question, and a long run: the list is bounded and follows its tail. */
-export const BrowserRunPausedAndLong: Story = {
+/** Paused on a risky click, then resumed with the caller's choice, inside one block. */
+export const BrowserRunPausedAndResumed: Story = {
+  render: () => (
+    <StoryShell>
+      <Section title="browser_run · paused">
+        {tool('run', { input: { goal: 'File the issue and stop on its page', presets: [{ key: 'Title', value: 'Marker mismatch across boundaries' }] }, expanded: true, result: runEnvelope({ status: 'paused', runId: 'rpause', completed: [step('click', 'Issues'), step('click', 'New issue'), step('type', 'Add a title')], question: QUESTIONS.risky('Create'), snapshot: { url: 'https://github.com/superone/superone/issues/new', title: 'New Issue' }, goalSatisfied: 0.2 }) })}
+      </Section>
+      <Section title="browser_run · resumed and done">
+        {tool('run', {
+          input: { goal: 'File the issue and stop on its page', presets: [{ key: 'Title', value: 'Marker mismatch across boundaries' }] },
+          expanded: true,
+          result: runEnvelope({ status: 'paused', runId: 'rresume', completed: [step('click', 'Issues'), step('click', 'New issue'), step('type', 'Add a title')], question: QUESTIONS.risky('Create'), snapshot: { url: 'https://github.com/superone/superone/issues/new', title: 'New Issue' }, goalSatisfied: 0.2 }),
+          continuations: [resume('rresume', { choice: '2' }, { result: runEnvelope({ status: 'done', runId: 'rresume', completed: [step('click', 'Create')], why: 'done_when satisfied', snapshot: { url: 'https://github.com/superone/superone/issues/482', title: 'Marker mismatch across boundaries · Issue #482' }, goalSatisfied: 0.9, steps: 4, elapsedMs: 14200 }) })],
+        })}
+      </Section>
+    </StoryShell>
+  ),
+}
+
+/** Handed back, and a long run in a narrow column: the list is bounded and follows its tail. */
+export const BrowserRunAbortedAndLong: Story = {
   render: () => {
-    const long: JevRunAction[] = Array.from({ length: 30 }, (_, i) => (
-      i % 4 === 3 ? { op: 'scroll', target: 'down' } : { op: 'click', target: `Result ${i + 1}` }
-    ))
-    const seed = () => seedRun('rlong', long, { active: false })
+    const [s1, s2, s3] = longSegments((i) => `Result ${i}`)
     return (
       <StoryShell width={380}>
-        <RunSeed seed={seed} />
-        <Section title="browser_run · paused, narrow, 30 actions">
+        <Section title="browser_run · aborted">
+          {tool('run', { input: RUN_INPUT, expanded: true, result: runEnvelope({ status: 'paused', runId: 'rstop', completed: SPECS_SEG1, question: QUESTIONS.noProgress(), snapshot: APPLE, goalSatisfied: 0.1 }), continuations: [resume('rstop', { abort: true }, { result: runEnvelope({ status: 'aborted', runId: 'rstop', why: 'Aborted by the caller', snapshot: APPLE, steps: 4 }) })] })}
+        </Section>
+        <Section title="browser_run · 34 steps, three segments, narrow">
           <Note>Bounded height with the tail in view, like a subagent's nested calls.</Note>
-          <ToolBlock
-            toolName="mcp__superone__browser_run"
-            input={JSON.stringify({ goal: 'Find the cheapest fare' })}
-            status="complete"
-            result={runResult('paused', 30, 'rlong')}
-          />
+          {tool('run', {
+            input: { goal: 'Find the cheapest fare' },
+            expanded: true,
+            result: runEnvelope({ status: 'paused', runId: 'rlong', completed: s1, question: QUESTIONS.budget(), snapshot: { url: 'https://www.example-air.com/search?from=SFO', title: 'Search results' }, goalSatisfied: 0.2 }),
+            continuations: [
+              resume('rlong', { choice: 'continue' }, { result: runEnvelope({ status: 'paused', runId: 'rlong', completed: s2, question: QUESTIONS.budget(), snapshot: { url: 'https://www.example-air.com/search?from=SFO&page=2', title: 'Search results' }, goalSatisfied: 0.3, steps: 24 }) }),
+              resume('rlong', { choice: 'continue' }, { status: 'streaming', elapsedSeconds: 12 }),
+            ],
+          })}
         </Section>
       </StoryShell>
     )
@@ -641,20 +645,11 @@ export const BrowserRunPausedAndLong: Story = {
 
 /** A run that took no action at all still renders as an ordinary row. */
 export const BrowserRunNoActions: Story = {
-  render: () => {
-    const seed = () => seedRun('rempty', [], { active: false })
-    return (
-      <StoryShell>
-        <RunSeed seed={seed} />
-        <Section title="browser_run · nothing done">
-          <ToolBlock
-            toolName="mcp__superone__browser_run"
-            input={JSON.stringify({ goal: 'Open the settings page' })}
-            status="complete"
-            result={runResult('aborted', 0, 'rempty')}
-          />
-        </Section>
-      </StoryShell>
-    )
-  },
+  render: () => (
+    <StoryShell>
+      <Section title="browser_run · nothing done">
+        {tool('run', { input: { goal: 'Open the settings page' }, result: runEnvelope({ status: 'aborted', runId: 'rempty', why: 'This platform cannot run handed-over actions; hand over presets instead.', snapshot: APPLE }) })}
+      </Section>
+    </StoryShell>
+  ),
 }

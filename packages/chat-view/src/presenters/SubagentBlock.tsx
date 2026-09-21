@@ -116,7 +116,7 @@ export function SubagentScrollArea({
   )
 }
 
-function formatElapsed(seconds: number): string {
+export function formatElapsed(seconds: number): string {
   if (seconds < 60) return `${Math.round(seconds)}s`
   const mins = Math.floor(seconds / 60)
   const secs = Math.round(seconds % 60)

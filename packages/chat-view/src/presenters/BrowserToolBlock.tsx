@@ -19,7 +19,8 @@ import {
   type BrowserPageToolsBlockPresenterProps,
 } from './BrowserPageTools'
 import type { JevRunAction } from '@superone/shared/agent-types'
-import { RunActionCount, RunActionRows, type RunActionVocabulary } from './RunActions'
+import { RunBlockPresenter, type RunVocabulary } from './RunBlock'
+import { runCallOf, type RunCall, type RunContinuation, type RunView } from './run-display'
 import { ToolName, ToolRow, ToolSummary, type ToolRowTone } from './ToolRow'
 
 export interface BrowserDownloadRuntime {
@@ -56,8 +57,12 @@ export interface BrowserToolBlockPresenterProps {
   onSaveFile?: (path: string, filename: string) => Promise<'saved' | 'cancelled' | 'error'>
   recording?: ReactNode
   downloadRuntime?: BrowserDownloadRuntime
-  /** browser_run only: the actions the loop has taken so far, oldest first. */
+  /** browser_run only: the rows the store holds for the call still in flight. */
   runActions?: JevRunAction[]
+  /** browser_run only: the resume calls folded into this block. */
+  runContinuations?: RunContinuation[]
+  /** browser_run only: open the run's segments on first render. */
+  runExpanded?: boolean
   pageTools?: Pick<BrowserPageToolsBlockPresenterProps, 'renderPageIcon' | 'renderJson'>
   onExpandedChange?: (expanded: boolean) => void
   /** Lets a remote surface expand before the full result has arrived. */
@@ -145,6 +150,28 @@ export function BrowserToolBlockPresenter(props: BrowserToolBlockPresenterProps)
     return <BrowserDownloadBlock {...props} />
   }
 
+  if (op === 'run') {
+    const calls: RunCall[] = [
+      { params, result, isStreaming, isError, elapsedSeconds },
+      ...(props.runContinuations ?? []).map(runCallOf),
+    ]
+    return (
+      <RunBlockPresenter
+        calls={calls}
+        liveActions={runActions}
+        vocab={RUN_VOCAB}
+        icon={renderIcon('globe')}
+        target={browserRunTarget}
+        description={typeof params.description === 'string' ? params.description : undefined}
+        isDenied={isDenied}
+        elapsedClassName={elapsedClassName}
+        allowExpand={allowExpand}
+        defaultExpanded={props.runExpanded}
+        onExpandedChange={onExpandedChange}
+      />
+    )
+  }
+
   return (
     <BrowserOperationBlock
       op={op}
@@ -164,15 +191,30 @@ export function BrowserToolBlockPresenter(props: BrowserToolBlockPresenterProps)
       onSaveFile={onSaveFile}
       recording={recording}
       downloadRuntime={downloadRuntime}
-      runActions={runActions}
       onExpandedChange={onExpandedChange}
       pendingDetails={pendingDetails}
     />
   )
 }
 
+/** The site a run works on: the last snapshot's host, or its title before the page had a URL. */
+function browserRunTarget(view: RunView): string | undefined {
+  const url = typeof view.snapshot?.url === 'string' ? view.snapshot.url : ''
+  try {
+    const host = url ? new URL(url).hostname.replace(/^www\./, '') : ''
+    if (host) return host
+  } catch { /* not a URL */ }
+  const title = typeof view.snapshot?.title === 'string' ? view.snapshot.title.trim() : ''
+  return title || undefined
+}
+
 /** A run on a page speaks the browser tools' own verbs. */
-const RUN_VOCAB: RunActionVocabulary = {
+const RUN_VOCAB: RunVocabulary = {
+  run: 'chat.toolBlock.browser.run',
+  running: 'chat.toolBlock.browser.running',
+  paused: 'chat.toolBlock.browser.runPaused',
+  done: 'chat.toolBlock.browser.runDone',
+  aborted: 'chat.toolBlock.browser.runAborted',
   click: 'chat.toolBlock.browser.click',
   type: 'chat.toolBlock.browser.type',
   press: 'chat.toolBlock.browser.press',
@@ -200,7 +242,6 @@ function BrowserOperationBlock({
   renderFile,
   onSaveFile,
   recording,
-  runActions,
   onExpandedChange,
   pendingDetails,
 }: BrowserToolBlockPresenterProps) {
@@ -217,9 +258,7 @@ function BrowserOperationBlock({
     ? t(`chat.toolBlock.browser.${info.count.kind === 'tabs' ? 'tabsCount' : info.count.kind === 'cookies' ? 'cookiesCount' : info.count.kind}`, { count: info.count.n })
     : info.notFound
       ? t('chat.toolBlock.browser.notFound')
-      : info.run
-        ? t(`chat.toolBlock.browser.run${info.run.status === 'paused' ? 'Paused' : info.run.status === 'done' ? 'Done' : 'Aborted'}`)
-        : ''
+      : ''
   const primary = failed
     ? (denied ? (description || inputSummary) : (info.errorText || description || inputSummary))
     : (description || inputSummary)
@@ -227,20 +266,11 @@ function BrowserOperationBlock({
   const rightCount = !failed && primary && countLabel ? countLabel : ''
   const screenshotLabel = hasScreenshot ? (primary || t('chat.toolBlock.browser.viewport')) : ''
   const isMockDetail = op === 'mock' && params.clear !== true && !failed
-  const runRows = op === 'run' && runActions && runActions.length > 0 ? runActions : null
-  // Collapsed and still working, the row reports how far the run has got. What
-  // it actually did needs the width the goal is already using, so it waits
-  // behind the chevron.
-  const runCount = runRows && isStreaming ? runRows.length : 0
   const expandable = allowExpand
-    && (runRows
-      ? true
-      : !isStreaming
-        && (isMockDetail || pendingDetails != null || (!!result && (isReadBrowserOp(op) || info.status === 'error' || denied || hasScreenshot || !!recording))))
+    && !isStreaming
+    && (isMockDetail || pendingDetails != null || (!!result && (isReadBrowserOp(op) || info.status === 'error' || denied || hasScreenshot || !!recording)))
   let details: ReactNode = null
-  if (runRows) {
-    details = <RunActionRows actions={runRows} icon={renderIcon('globe')} vocab={RUN_VOCAB} />
-  } else if (recording) {
+  if (recording) {
     details = recording
   } else if (hasScreenshot && renderScreenshot) {
     details = renderScreenshot(
@@ -283,7 +313,6 @@ function BrowserOperationBlock({
       onExpandedChange={onExpandedChange}
       trailing={(
         <div className="flex shrink-0 items-center gap-1.5">
-          <RunActionCount count={runCount} vocab={RUN_VOCAB} />
           {rightCount ? <span className="text-muted-foreground/70">{rightCount}</span> : null}
           {recording ? <Video className="size-3 text-muted-foreground/70" aria-label="Action recording" /> : null}
           {isStreaming ? elapsed(elapsedSeconds, elapsedClassName) : null}

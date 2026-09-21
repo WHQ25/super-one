@@ -7,7 +7,8 @@ import {
 import { parseBrowserResult, type BrowserOp } from './browser-tool-display'
 import { getStallColor, type StallLevel } from '@/lib/stall-utils'
 import { useChatStore } from '@/stores/chat-store'
-import { useJevRunActions } from '@/hooks/use-jev-run-actions'
+import { liveRunId, useJevRunActions } from '@/hooks/use-jev-run-actions'
+import type { RunContinuation } from '@superone/chat-view/presenters/run-display'
 import { ToolIcon } from './ToolIcon'
 import { FileChip } from './ToolBlock'
 import { PrettyJSONCodeBlock, BrowserEvaluateView, BrowserMockView } from './tool-result-views'
@@ -25,6 +26,8 @@ interface BrowserToolBlockProps {
   elapsedSeconds?: number
   stallLevel: StallLevel
   allowExpand?: boolean
+  runContinuations?: RunContinuation[]
+  runExpanded?: boolean
 }
 
 function renderDetail(detail: BrowserDetail) {
@@ -67,7 +70,7 @@ function DesktopBrowserToolBlock(props: BrowserToolBlockProps) {
     return project._sessions[sessionId]?.browserDownloads[taskId]
   })
   const recording = useMemo(() => parseActionRecording(props.result), [props.result])
-  const runActions = useJevRunActions(props.op === 'run', info.run?.runId)
+  const runActions = useJevRunActions(props.op === 'run', liveRunId(props.runContinuations) ?? info.run?.runId)
 
   return (
     <BrowserToolBlockPresenter

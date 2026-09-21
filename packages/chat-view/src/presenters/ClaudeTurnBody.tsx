@@ -9,6 +9,7 @@ import {
   type ClaudeSegmentVisibilityOpts,
 } from './compact-chat-mode'
 import type { GroupContentResult, RenderSegment } from './groupContent'
+import type { RunContinuation } from './run-display'
 import type {
   CodexTurnDetailPresenterProps,
   CodexTurnProcessStats,
@@ -43,6 +44,8 @@ export interface ClaudeToolPresenterProps {
   toolDiff?: string
   toolDiffTokens?: { added?: [string, string | null][][]; removed?: [string, string | null][][] }
   toolLineDelta?: { added: number; removed: number }
+  /** `*_run` only: the resume calls folded into this block (groupContent `runContinuations`). */
+  runContinuations?: RunContinuation[]
 }
 
 export interface ClaudeInsightPresenterProps {
@@ -126,6 +129,7 @@ interface RenderOptions {
   timedOutToolIds: Set<string>
   errorToolIds: Set<string>
   outputPathMap: Map<string, string>
+  runContinuations?: GroupContentResult['runContinuations']
   projectPath: string | null
   parts: ClaudeTurnBodyPresenterParts
   runtime: ClaudeTurnBodyPresenterRuntime
@@ -144,6 +148,7 @@ export function ClaudeBlockPresenter({
   timedOutToolIds,
   errorToolIds,
   outputPathMap,
+  runContinuations,
   nextBlockType,
   prevBlockType,
   projectPath,
@@ -157,6 +162,7 @@ export function ClaudeBlockPresenter({
   timedOutToolIds?: Set<string>
   errorToolIds?: Set<string>
   outputPathMap?: Map<string, string>
+  runContinuations?: GroupContentResult['runContinuations']
   nextBlockType?: string
   prevBlockType?: string
   projectPath?: string | null
@@ -209,6 +215,13 @@ export function ClaudeBlockPresenter({
           toolDiff={block.toolDiff}
           toolDiffTokens={block.toolDiffTokens}
           toolLineDelta={block.toolLineDelta}
+          runContinuations={runContinuations?.get(block.toolUseId)?.map((later) => ({
+            input: later.input,
+            status: !isStreaming && later.status === 'streaming' ? undefined : later.status,
+            elapsedSeconds: later.elapsedSeconds,
+            result: toolResultMap?.get(later.toolUseId),
+            isError: errorToolIds?.has(later.toolUseId),
+          }))}
         />
       )
     case 'thinking':
@@ -293,6 +306,7 @@ function renderSegments(
           timedOutToolIds={options.timedOutToolIds}
           errorToolIds={options.errorToolIds}
           outputPathMap={options.outputPathMap}
+          runContinuations={options.runContinuations}
           nextBlockType={segment.blocks[blockIndex + 1]?.type}
           prevBlockType={segment.blocks[blockIndex - 1]?.type}
           projectPath={options.projectPath}
@@ -347,6 +361,7 @@ function renderSegments(
           timedOutToolIds={options.timedOutToolIds}
           errorToolIds={options.errorToolIds}
           outputPathMap={options.outputPathMap}
+          runContinuations={options.runContinuations}
           nextBlockType={nextType}
           prevBlockType={previousType}
           projectPath={options.projectPath}
@@ -375,6 +390,7 @@ function renderSegments(
         timedOutToolIds={options.timedOutToolIds}
         errorToolIds={options.errorToolIds}
         outputPathMap={options.outputPathMap}
+        runContinuations={options.runContinuations}
         nextBlockType={segment.blocks[blockIndex + 1]?.type}
         prevBlockType={segment.blocks[blockIndex - 1]?.type}
         projectPath={options.projectPath}
@@ -401,6 +417,7 @@ export function ClaudeTurnBodyPresenter({
     timedOutToolIds: grouped.timedOutToolIds,
     errorToolIds: grouped.errorToolIds,
     outputPathMap: grouped.outputPathMap,
+    runContinuations: grouped.runContinuations,
     projectPath,
     parts,
     runtime,

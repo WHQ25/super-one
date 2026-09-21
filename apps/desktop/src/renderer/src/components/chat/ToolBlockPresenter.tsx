@@ -56,6 +56,7 @@ import { VideoGenToolBlock } from './VideoGenToolBlock'
 import { WidgetBlock } from './WidgetBlock'
 import { FilesPreviewer } from './files-previewer/FilesPreviewer'
 import { isWorkflowSmokeCheck } from './workflow-utils'
+import type { RunContinuation } from '@superone/chat-view/presenters/run-display'
 import { EnterPlanModeBlock } from './presenters/PlanModeBlocks'
 import {
   COLLAB_TOOLS,
@@ -105,6 +106,8 @@ export interface ToolBlockProps {
   backgroundActivity?: boolean
   grouped?: boolean
   trailingAction?: ReactNode
+  /** `*_run` only: the resume calls folded into this block (see groupContent). */
+  runContinuations?: RunContinuation[]
 }
 
 export interface BashToolPresenterProps {
@@ -177,6 +180,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
   backgroundActivity = false,
   grouped = false,
   trailingAction,
+  runContinuations,
   allowExpand,
   defaultAutoExpand,
   autoExpandFileDiffs,
@@ -285,6 +289,8 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
           elapsedSeconds={elapsedSeconds}
           stallLevel={stallLevel}
           allowExpand={allowExpand}
+          runContinuations={runContinuations}
+          runExpanded={autoExpand === true}
         />
       )
     }
@@ -301,6 +307,8 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
           elapsedSeconds={elapsedSeconds}
           stallLevel={stallLevel}
           allowExpand={allowExpand}
+          runContinuations={runContinuations}
+          runExpanded={autoExpand === true}
         />
       )
     }
@@ -317,6 +325,8 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
           elapsedSeconds={elapsedSeconds}
           stallLevel={stallLevel}
           allowExpand={allowExpand}
+          runContinuations={runContinuations}
+          runExpanded={autoExpand === true}
         />
       )
     }

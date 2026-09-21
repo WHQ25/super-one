@@ -17,7 +17,8 @@ import {
 } from './computer-tool-display'
 import { ToolScreenshotViewPresenter } from './ToolScreenshotView'
 import { ToolName, ToolRow, ToolSummary, type ToolRowTone } from './ToolRow'
-import { RunActionCount, RunActionRows, type RunActionVocabulary } from './RunActions'
+import { RunBlockPresenter, type RunVocabulary } from './RunBlock'
+import { runCallOf, type RunCall, type RunContinuation } from './run-display'
 import type { JevRunAction } from '@superone/shared/agent-types'
 
 export interface ComputerUseToolBlockPresenterProps {
@@ -36,14 +37,23 @@ export interface ComputerUseToolBlockPresenterProps {
   renderScreenshot?: (path: string, label: string, unavailableLabel: string) => ReactNode
   renderResult?: (text: string) => ReactNode
   recording?: ReactNode
-  /** computer_run only: the actions the loop has taken so far, oldest first. */
+  /** computer_run only: the rows the store holds for the call still in flight. */
   runActions?: JevRunAction[]
+  /** computer_run only: the resume calls folded into this block. */
+  runContinuations?: RunContinuation[]
+  /** `*_run` only: open the run's segments on first render. */
+  runExpanded?: boolean
   onExpandedChange?: (expanded: boolean) => void
   pendingDetails?: ReactNode
 }
 
 /** A run on the desktop speaks the computer tools' own verbs. */
-const RUN_VOCAB: RunActionVocabulary = {
+const RUN_VOCAB: RunVocabulary = {
+  run: 'chat.toolBlock.computer.run',
+  running: 'chat.toolBlock.computer.running',
+  paused: 'chat.toolBlock.computer.runPaused',
+  done: 'chat.toolBlock.computer.runDone',
+  aborted: 'chat.toolBlock.computer.runAborted',
   click: 'chat.toolBlock.computer.click',
   type: 'chat.toolBlock.computer.type',
   press: 'chat.toolBlock.computer.press',
@@ -96,12 +106,6 @@ function resultSummary(
       right: '',
     }
   }
-  if (op === 'run' && info.runStatus) {
-    return {
-      middle: '',
-      right: t(`chat.toolBlock.computer.run${info.runStatus === 'paused' ? 'Paused' : info.runStatus === 'aborted' ? 'Aborted' : 'Done'}`),
-    }
-  }
   if (op === 'act' && info.outcome) {
     return {
       middle: '',
@@ -128,7 +132,53 @@ export function ComputerUseToolBlockPresenter(props: ComputerUseToolBlockPresent
   if (props.op === 'memory_read' || props.op === 'memory_write') {
     return <InteractionMemoryToolBlock {...props} family="computer" op={props.op} />
   }
+  if (props.op === 'run') return <ComputerRunBlock {...props} />
   return <ComputerUseToolBlockOperation {...props} />
+}
+
+/** The app a run works in: named by the caller, or by the last snapshot's root. */
+function runTarget(params: Record<string, unknown>): (view: { snapshot?: Record<string, unknown> }) => string | undefined {
+  return (view) => {
+    const target = view.snapshot?.target as Record<string, unknown> | undefined
+    const app = typeof target?.app === 'string' ? target.app : typeof params.app === 'string' ? params.app : ''
+    return app.trim() || undefined
+  }
+}
+
+function ComputerRunBlock({
+  params,
+  result,
+  isStreaming,
+  isError,
+  isDenied,
+  elapsedSeconds,
+  elapsedClassName,
+  allowExpand,
+  identityIcon,
+  runActions,
+  runContinuations,
+  runExpanded,
+  onExpandedChange,
+}: ComputerUseToolBlockPresenterProps) {
+  const calls: RunCall[] = [
+    { params, result, isStreaming, isError, elapsedSeconds },
+    ...(runContinuations ?? []).map(runCallOf),
+  ]
+  return (
+    <RunBlockPresenter
+      calls={calls}
+      liveActions={runActions}
+      vocab={RUN_VOCAB}
+      icon={identityIcon ?? <MousePointer2 className="size-3 shrink-0 text-muted-foreground" />}
+      target={runTarget(params)}
+      description={typeof params.description === 'string' ? params.description : undefined}
+      isDenied={isDenied}
+      elapsedClassName={elapsedClassName}
+      allowExpand={allowExpand}
+      defaultExpanded={runExpanded}
+      onExpandedChange={onExpandedChange}
+    />
+  )
 }
 
 function ComputerUseToolBlockOperation({
@@ -146,7 +196,6 @@ function ComputerUseToolBlockOperation({
   renderScreenshot,
   renderResult = defaultResult,
   recording,
-  runActions,
   onExpandedChange,
   pendingDetails,
 }: ComputerUseToolBlockPresenterProps) {
@@ -183,16 +232,12 @@ function ComputerUseToolBlockOperation({
       : parsedSummary.right ||
         (description && op === 'query' ? parsedSummary.middle : '')
   const screenshotAsPrimary = hasScreenshot && !primary
-  const runRows = op === 'run' && runActions && runActions.length > 0 ? runActions : null
   // Header expand reveals the body. With a screenshot, body shows image + a
   // nested collapsed JSON row; without one, body is the full PrettyJSON.
-  // A run opens whenever it has steps to show, in flight or finished.
   const expandable =
     allowExpand
-    && (runRows
-      ? true
-      : !isStreaming
-        && (pendingDetails != null || (!!result && (failed || hasScreenshot || isReadComputerOp(op, params) || op === 'act'))))
+    && !isStreaming
+    && (pendingDetails != null || (!!result && (failed || hasScreenshot || isReadComputerOp(op, params) || op === 'act')))
 
   return (
     <ToolRow
@@ -202,13 +247,7 @@ function ComputerUseToolBlockOperation({
       mountDetails="expanded"
       detailsClassName="px-2 pb-1.5"
       onExpandedChange={onExpandedChange}
-      details={runRows ? (
-        <RunActionRows
-          actions={runRows}
-          icon={identityIcon ?? <MousePointer2 className="size-3 shrink-0 text-muted-foreground" />}
-          vocab={RUN_VOCAB}
-        />
-      ) : expandable ? (
+      details={expandable ? (
         <div className="flex flex-col gap-1.5">
           {hasScreenshot && info.imagePath && (
             renderScreenshot?.(
@@ -230,7 +269,6 @@ function ComputerUseToolBlockOperation({
       ) : undefined}
       trailing={(
         <div className="flex shrink-0 items-center gap-1.5">
-          <RunActionCount count={runRows && isStreaming ? runRows.length : 0} vocab={RUN_VOCAB} />
           {hasScreenshot && !screenshotAsPrimary && (
             <ImageIcon
               className="size-3 text-muted-foreground/70"

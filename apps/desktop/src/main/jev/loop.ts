@@ -6,7 +6,7 @@
 
 import { randomUUID } from 'crypto'
 import { type ActionSpace, buildActionSpace, clickKindOf, clickVerb, elementByIndex, type HistoryEntry, type SpaceElement } from './action-space'
-import type { JevRunAction } from '@superone/shared/agent-types'
+import type { JevRunAction, JevRunActionOutcome } from '@superone/shared/agent-types'
 import type { RawElement, RunObservation } from './observation'
 import { decide, type Decision, presetByHint, type Question, type QuestionOption } from './policy'
 import { buildRequest, type Preset } from './questions'
@@ -111,7 +111,18 @@ export interface PauseCapture {
 }
 
 /** The single-action tool's own vocabulary for what a step did: no new words for the caller to learn. */
-export type StepOutcome = 'worked' | 'didnt' | 'unknown'
+export type StepOutcome = JevRunActionOutcome
+
+/**
+ * One finished step as the caller and the chat both read it: `label` names
+ * the element by index for the caller, `op` / `target` are the same words the
+ * live `jev_run_update` row used, so a block rebuilt from the result after a
+ * reload shows exactly what it showed while the run was open.
+ */
+export interface CompletedStep extends Partial<Pick<JevRunAction, 'op' | 'target'>> {
+  label: string
+  outcome: StepOutcome
+}
 
 /**
  * The run's own account of its progress since the last pause — what the
@@ -121,7 +132,7 @@ export type StepOutcome = 'worked' | 'didnt' | 'unknown'
  */
 export interface RunProgress {
   /** Steps since the previous pause (or the start); reset on resume. */
-  completed: Array<{ label: string; outcome: StepOutcome }>
+  completed: CompletedStep[]
   /** Jev's last verdicts before the pause, when it was asked at all. */
   goal_satisfied?: number
   still_loading?: number
@@ -635,7 +646,8 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     const changed = decision.kind === 'switch' ? true : this.deps.changed(page, next)
     entry.changedPage = changed
     if (changed && decision.kind !== 'scroll') this.scrolledSinceChange = false
-    this.progress.completed.push({ label: entry.label, outcome: changed === null ? 'unknown' : changed ? 'worked' : 'didnt' })
+    const shown = reportableAction(describeDecision(decision))
+    this.progress.completed.push({ label: entry.label, outcome: outcomeOf(changed), ...(shown ? { op: shown.op, ...(shown.target ? { target: shown.target } : {}) } : {}) })
     if (answered) {
       // Answered actions never went through decide(); trace them so a run's
       // history is complete for calibration.
@@ -744,8 +756,13 @@ export class FastRun<Page extends RunObservation = RunObservation> {
   private emit(entry: TraceStep): void {
     ;(this.deps.trace ?? appendJevTrace)({ ...entry, platform: this.deps.platform ?? 'browser' })
     const action = reportableAction(entry.decision)
-    if (action) this.reporter?.(action)
+    // A step is emitted after its settle, so the verdict travels with the row.
+    if (action) this.reporter?.(entry.changedPage === undefined ? action : { ...action, outcome: outcomeOf(entry.changedPage) })
   }
+}
+
+function outcomeOf(changed: boolean | null): StepOutcome {
+  return changed === null ? 'unknown' : changed ? 'worked' : 'didnt'
 }
 
 /** What the chat shows for a step: the same op a single-action call would report. */

@@ -1,5 +1,6 @@
 import type { ContentBlock } from '@superone/shared/agent-types'
 import { isToolResultBlock } from '@superone/shared/content-delta'
+import { isJevRunToolName } from '@superone/shared/jev-run-result-shape'
 
 /** Host-specific classification needed by the otherwise pure grouping pass. */
 export interface GroupContentPorts {
@@ -42,6 +43,18 @@ export interface GroupContentResult {
   timedOutToolIds: Set<string>
   errorToolIds: Set<string>
   outputPathMap: Map<string, string>
+  /**
+   * `*_run` calls that resumed an earlier run in this turn, keyed by the
+   * toolUseId of the call that started it. They render inside the first
+   * call's block as its later segments rather than as blocks of their own.
+   */
+  runContinuations: Map<string, Array<ContentBlock & { type: 'tool_use' }>>
+}
+
+/** The runId a `*_run` call names in its input or result; a regex, so a large result is not parsed on every render. */
+function runIdIn(text: string | undefined): string | null {
+  const match = text ? /"runId"\s*:\s*"([^"]+)"/.exec(text) : null
+  return match?.[1] ?? null
 }
 
 /** Group renderable content without importing stores, Electron, or concrete UI components. */
@@ -78,6 +91,26 @@ export function groupContentPresenter(
     const resolved = ports.resolveAppTool(block.toolName, block.input)
     if (!resolved || resolved.standalone || !resolved.groupable) continue
     appToolIdToAppId.set(block.toolUseId, resolved.appId)
+  }
+
+  // A run is one tool call that pauses and is resumed by later calls naming
+  // its runId. The call that started the run owns the block; each resume in
+  // the same turn folds into it. A resume whose start is not in this turn
+  // stands on its own.
+  const runOwnerByRunId = new Map<string, string>()
+  const runContinuationOwner = new Map<string, string>()
+  const runContinuations: GroupContentResult['runContinuations'] = new Map()
+  for (const block of content) {
+    if (block.type !== 'tool_use' || !isJevRunToolName(block.toolName)) continue
+    const resumes = runIdIn(block.input)
+    const owner = resumes ? runOwnerByRunId.get(resumes) : undefined
+    if (owner) {
+      runContinuationOwner.set(block.toolUseId, owner)
+      runContinuations.set(owner, [...(runContinuations.get(owner) ?? []), block])
+      continue
+    }
+    const started = runIdIn(toolResultMap.get(block.toolUseId))
+    if (started && !runOwnerByRunId.has(started)) runOwnerByRunId.set(started, block.toolUseId)
   }
 
   const segments: RenderSegment[] = []
@@ -168,6 +201,9 @@ export function groupContentPresenter(
       continue
     }
 
+    // Folded into the run's first block; the result stays reachable through toolResultMap.
+    if ((block.type === 'tool_use' || isToolResultBlock(block)) && runContinuationOwner.has(block.toolUseId)) continue
+
     if (
       block.type === 'tool_use'
       && block.toolName === 'Workflow'
@@ -240,5 +276,6 @@ export function groupContentPresenter(
     timedOutToolIds,
     errorToolIds,
     outputPathMap,
+    runContinuations,
   }
 }

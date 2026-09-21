@@ -290,14 +290,28 @@ describe('reduceTool: task_notification identity share', () => {
 describe('reduceTool: jev_run_update', () => {
   it('collects a run\'s actions and clears the active run when it ends', () => {
     let session = createDefaultPerSessionState()
-    session = { ...session, ...reduceTool(session, { type: 'jev_run_update', runId: 'r1', platform: 'browser', action: { op: 'click', target: 'Menu' } }) }
+    session = { ...session, ...reduceTool(session, { type: 'jev_run_update', runId: 'r1', platform: 'browser', action: { op: 'click', target: 'Menu', outcome: 'worked' } }) }
     session = { ...session, ...reduceTool(session, { type: 'jev_run_update', runId: 'r1', platform: 'browser', action: { op: 'scroll', target: 'down' } }) }
-    expect(session.jevRuns.r1.actions).toEqual([{ op: 'click', target: 'Menu' }, { op: 'scroll', target: 'down' }])
+    expect(session.jevRuns.r1.segments).toEqual([[{ op: 'click', target: 'Menu', outcome: 'worked' }, { op: 'scroll', target: 'down' }]])
     // While it runs, a block with no result yet finds it through the active id.
     expect(session._activeJevRunId).toBe('r1')
     session = { ...session, ...reduceTool(session, { type: 'jev_run_update', runId: 'r1', platform: 'browser', outcome: 'done' }) }
-    expect(session.jevRuns.r1).toMatchObject({ outcome: 'done', actions: [{ op: 'click', target: 'Menu' }, { op: 'scroll', target: 'down' }] })
+    expect(session.jevRuns.r1).toMatchObject({ outcome: 'done', segments: [[{ op: 'click', target: 'Menu', outcome: 'worked' }, { op: 'scroll', target: 'down' }]] })
     expect(session._activeJevRunId).toBeNull()
+  })
+
+  it('opens a new segment with the first action after a pause', () => {
+    let session = createDefaultPerSessionState()
+    const step = (action: { op: 'click'; target: string }) => reduceTool(session, { type: 'jev_run_update', runId: 'r3', platform: 'computer', action })
+    session = { ...session, ...step({ op: 'click', target: 'Issues' }) }
+    session = { ...session, ...reduceTool(session, { type: 'jev_run_update', runId: 'r3', platform: 'computer', outcome: 'paused' }) }
+    expect(session._activeJevRunId).toBeNull()
+    // The resume call's own actions: a new group, and the run is live again.
+    session = { ...session, ...step({ op: 'click', target: 'Create' }) }
+    session = { ...session, ...step({ op: 'click', target: 'Close' }) }
+    expect(session.jevRuns.r3.segments).toEqual([[{ op: 'click', target: 'Issues' }], [{ op: 'click', target: 'Create' }, { op: 'click', target: 'Close' }]])
+    expect(session.jevRuns.r3.outcome).toBeUndefined()
+    expect(session._activeJevRunId).toBe('r3')
   })
 
   it('reaches the tool reducer through the event dispatcher', async () => {
@@ -306,16 +320,20 @@ describe('reduceTool: jev_run_update', () => {
     const { applyEventToSession } = await import('@superone/chat-core')
     const session = createDefaultPerSessionState()
     const next = applyEventToSession(session, { type: 'jev_run_update', runId: 'r9', platform: 'browser', action: { op: 'click', target: 'Menu' } })
-    expect({ ...session, ...next }.jevRuns.r9?.actions).toEqual([{ op: 'click', target: 'Menu' }])
+    expect({ ...session, ...next }.jevRuns.r9?.segments).toEqual([[{ op: 'click', target: 'Menu' }]])
   })
 
-  it('keeps the tail of a long run rather than growing without bound', () => {
+  it('keeps the tail of a long run rather than growing without bound, dropping whole segments first', () => {
     let session = createDefaultPerSessionState()
     for (let i = 0; i < 260; i++) {
+      if (i === 30) session = { ...session, ...reduceTool(session, { type: 'jev_run_update', runId: 'r2', platform: 'computer', outcome: 'paused' }) }
       session = { ...session, ...reduceTool(session, { type: 'jev_run_update', runId: 'r2', platform: 'computer', action: { op: 'click', target: `Row ${i}` } }) }
     }
-    expect(session.jevRuns.r2.actions).toHaveLength(200)
-    expect(session.jevRuns.r2.actions.at(-1)).toEqual({ op: 'click', target: 'Row 259' })
+    const { segments } = session.jevRuns.r2
+    expect(segments.reduce((n, s) => n + s.length, 0)).toBe(200)
+    // The 30-step first segment went entirely; the tail is the live one.
+    expect(segments).toHaveLength(1)
+    expect(segments[0].at(-1)).toEqual({ op: 'click', target: 'Row 259' })
   })
 })
 

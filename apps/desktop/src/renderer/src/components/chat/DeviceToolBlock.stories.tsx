@@ -3,8 +3,9 @@ import type { ReactNode } from 'react'
 import { DeviceToolBlock } from './DeviceToolBlock'
 import { ToolBlock } from './ToolBlock'
 import type { DeviceOp } from './device-tool-display'
-import type { JevRunAction } from '@superone/shared/agent-types'
+import type { RunContinuation } from '@superone/chat-view/presenters/run-display'
 import { RunSeed, seedRun } from './run-story-seed'
+import { liveOf, longSegments, QUESTIONS, resume, runEnvelope, step } from './run-story-fixtures'
 
 function StoryShell({ children, width = 720 }: { children: ReactNode; width?: number }) {
   return (
@@ -38,6 +39,9 @@ function tool(
     status?: 'streaming' | 'complete'
     elapsedSeconds?: number
     isError?: boolean
+    /** device_run: the resume calls groupContent folds into this block. */
+    continuations?: RunContinuation[]
+    expanded?: boolean
   },
 ) {
   return (
@@ -48,6 +52,8 @@ function tool(
       status={options.status ?? 'complete'}
       elapsedSeconds={options.elapsedSeconds}
       isError={options.isError}
+      runContinuations={options.continuations}
+      autoExpand={options.expanded}
     />
   )
 }
@@ -404,74 +410,71 @@ export const DeviceWaitFor: Story = {
   ),
 }
 
+const PHONE = { target: { device: 'iPhone 17 Pro Max' } }
+const ABOUT_INPUT = { device: '427A175E', goal: 'Open Settings › General › About and stop when the Name row is visible' }
+const ABOUT_SEG1 = [step('click', 'Settings'), step('scroll', 'down'), step('click', 'General'), step('click', 'About', 'unknown')]
+const ABOUT_SEG2 = [step('click', 'Name'), step('type', 'Name')]
+
+/** Every outcome at a glance: the row alone says how the run ended. */
 export const FastRunStates: Story = {
   render: () => (
-    <StoryShell width={360}>
-      {tool('run', { description: 'Open the device information page', status: 'streaming' })}
-      {(['paused', 'done', 'aborted'] as const).map((status) => (
-        <div key={status}>{tool('run', { description: 'Open the device information page', result: JSON.stringify({ status, steps: 3, snapshot: { target: { device: 'iPhone 17 Pro Max' } } }) })}</div>
-      ))}
-      {tool('run', { description: 'Open the device information page', result: '[Error] This session controls no device', isError: true })}
+    <StoryShell width={420}>
+      {tool('run', { description: 'Open the device information page', input: ABOUT_INPUT, status: 'streaming', elapsedSeconds: 5 })}
+      {tool('run', { description: 'Open the device information page', input: ABOUT_INPUT, result: runEnvelope({ status: 'paused', runId: 'rd1', completed: ABOUT_SEG1, question: QUESTIONS.risky('Reset'), snapshot: PHONE, goalSatisfied: 0.4 }) })}
+      {tool('run', { description: 'Open the device information page', input: ABOUT_INPUT, result: runEnvelope({ status: 'done', runId: 'rd2', completed: [...ABOUT_SEG1, ...ABOUT_SEG2], why: 'done_when satisfied', snapshot: PHONE, goalSatisfied: 0.88 }) })}
+      {tool('run', { description: 'Open the device information page', input: ABOUT_INPUT, result: runEnvelope({ status: 'aborted', runId: 'rd3', completed: ABOUT_SEG1, why: 'Aborted by the caller', snapshot: PHONE }) })}
+      {tool('run', { description: 'Open the device information page', input: ABOUT_INPUT, result: '[Error] This session controls no device', isError: true })}
     </StoryShell>
   ),
 }
 
-const RUN_ACTIONS: JevRunAction[] = [
-  { op: 'click', target: 'Settings' },
-  { op: 'scroll', target: 'down' },
-  { op: 'click', target: 'General' },
-  { op: 'click', target: 'About' },
-  { op: 'type', target: 'Name' },
-]
-
-function runResult(status: 'paused' | 'done' | 'aborted', runId: string): string {
-  return JSON.stringify({
-    status,
-    runId,
-    steps: 5,
-    snapshot: { target: { device: 'iPhone 17 Pro Max' } },
-  })
-}
-
-/** A run still going: the collapsed row counts the actions it has taken. */
+/** A run still going: the rows come from the live events; a phone taps and swipes. */
 export const FastRunRunning: Story = {
   render: () => {
-    const seed = () => seedRun('device', 'rdevice1', RUN_ACTIONS.slice(0, 3))
+    const seed = () => seedRun('device', 'rdevice1', [liveOf(ABOUT_SEG1.slice(0, 3))])
     return (
       <StoryShell width={420}>
         <RunSeed seed={seed} />
         <Note>Each row reads the way the matching device_act row would — a phone taps and swipes.</Note>
-        {tool('run', { description: 'Open the device information page', status: 'streaming' })}
+        {tool('run', { description: 'Open the device information page', input: ABOUT_INPUT, status: 'streaming', elapsedSeconds: 8, expanded: true })}
       </StoryShell>
     )
   },
 }
 
-/** Finished: the block finds its run through the runId in its own result. */
-export const FastRunDone: Story = {
-  render: () => {
-    const seed = () => seedRun('device', 'rdevice1', RUN_ACTIONS, { active: false })
-    return (
-      <StoryShell width={420}>
-        <RunSeed seed={seed} />
-        {tool('run', { description: 'Open the device information page', result: runResult('done', 'rdevice1') })}
-      </StoryShell>
-    )
-  },
+/** Paused, then resumed with the caller's choice, then done — one block. */
+export const FastRunResumed: Story = {
+  render: () => (
+    <StoryShell width={420}>
+      {tool('run', {
+        description: 'Open the device information page',
+        input: ABOUT_INPUT,
+        expanded: true,
+        result: runEnvelope({ status: 'paused', runId: 'rdevice2', completed: ABOUT_SEG1, question: QUESTIONS.noProgress(), snapshot: PHONE, goalSatisfied: 0.4 }),
+        continuations: [resume('rdevice2', { choice: '1' }, { result: runEnvelope({ status: 'done', runId: 'rdevice2', completed: ABOUT_SEG2, why: 'Jev rates the goal satisfied (0.88)', snapshot: PHONE, goalSatisfied: 0.88, steps: 6, elapsedMs: 19300 }) })],
+      })}
+    </StoryShell>
+  ),
 }
 
-/** Paused, narrow, and long: the list is bounded and follows its tail. */
-export const FastRunPausedAndLong: Story = {
+/** Handed back, and thirty-four steps over three segments in a narrow column. */
+export const FastRunAbortedAndLong: Story = {
   render: () => {
-    const long: JevRunAction[] = Array.from({ length: 30 }, (_, i) => (
-      i % 4 === 3 ? { op: 'scroll', target: 'up' } : { op: 'click', target: `Row ${i + 1}` }
-    ))
-    const seed = () => seedRun('device', 'rlongdevice', long, { active: false })
+    const [s1, s2, s3] = longSegments((i) => `Row ${i}`)
     return (
       <StoryShell width={340}>
-        <RunSeed seed={seed} />
+        {tool('run', { description: 'Open the device information page', input: ABOUT_INPUT, expanded: true, result: runEnvelope({ status: 'paused', runId: 'rdstop', completed: ABOUT_SEG1, question: QUESTIONS.budget(), snapshot: PHONE }), continuations: [resume('rdstop', { abort: true }, { result: runEnvelope({ status: 'aborted', runId: 'rdstop', why: 'Aborted by the caller', snapshot: PHONE, steps: 4 }) })] })}
         <Note>Bounded height with the tail in view, like a subagent's nested calls.</Note>
-        {tool('run', { description: 'Work through the long settings list', result: runResult('paused', 'rlongdevice') })}
+        {tool('run', {
+          description: 'Work through the long settings list',
+          input: { device: '427A175E', goal: 'Scroll the Settings list until the Developer row is visible' },
+          expanded: true,
+          result: runEnvelope({ status: 'paused', runId: 'rlongdevice', completed: s1, question: QUESTIONS.budget(), snapshot: PHONE, goalSatisfied: 0.2 }),
+          continuations: [
+            resume('rlongdevice', { choice: 'continue' }, { result: runEnvelope({ status: 'paused', runId: 'rlongdevice', completed: s2, question: QUESTIONS.budget(), snapshot: PHONE, goalSatisfied: 0.3, steps: 24 }) }),
+            resume('rlongdevice', { choice: 'continue' }, { result: runEnvelope({ status: 'done', runId: 'rlongdevice', completed: s3, why: 'done_when satisfied', snapshot: PHONE, goalSatisfied: 0.9, steps: 34, elapsedMs: 96000 }) }),
+          ],
+        })}
       </StoryShell>
     )
   },

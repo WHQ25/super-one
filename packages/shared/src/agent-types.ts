@@ -1971,7 +1971,15 @@ export interface JevRunAction {
   target?: string
   /** Typed text, already redacted by the emitter when it looks like a secret. */
   text?: string
+  /**
+   * Whether the page reacted, in the single-action tool's own words: `worked`
+   * / `didnt` / `unknown` (no evidence either way). Reported once the action's
+   * settle has concluded; absent while it is still being judged.
+   */
+  outcome?: JevRunActionOutcome
 }
+
+export type JevRunActionOutcome = 'worked' | 'didnt' | 'unknown'
 
 export type JevRunOutcome = 'paused' | 'done' | 'aborted'
 

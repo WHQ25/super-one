@@ -565,17 +565,31 @@ export function reduceTool(
     }
 
     // A run reports the actions it takes while the tool call is still open, so the
-    // block can show what it did rather than only that it was busy. Capped: a long
-    // run must not grow the session state without bound.
+    // block can show what it did rather than only that it was busy. A pause ends
+    // the segment; the first action after it opens the next one, the way the
+    // result's `progress.completed` restarts on resume. Capped: a long run must
+    // not grow the session state without bound.
     case 'jev_run_update': {
       const prev = session.jevRuns[event.runId]
-      const actions = event.action
-        ? [...(prev?.actions ?? []), event.action].slice(-MAX_RUN_ACTIONS)
-        : prev?.actions ?? []
+      let segments = prev?.segments ?? []
+      let outcome = event.outcome ?? prev?.outcome
+      if (event.action) {
+        const resumed = prev?.outcome === 'paused'
+        const last = resumed || segments.length === 0 ? [] : segments[segments.length - 1]
+        segments = [...(resumed || segments.length === 0 ? segments : segments.slice(0, -1)), [...last, event.action]]
+        if (resumed && !event.outcome) outcome = undefined
+        let total = segments.reduce((n, s) => n + s.length, 0)
+        while (total > MAX_RUN_ACTIONS && segments.length > 0) {
+          const drop = Math.min(segments[0].length, total - MAX_RUN_ACTIONS)
+          segments = [segments[0].slice(drop), ...segments.slice(1)]
+          if (segments[0].length === 0) segments = segments.slice(1)
+          total -= drop
+        }
+      }
       return {
         jevRuns: {
           ...session.jevRuns,
-          [event.runId]: { platform: event.platform, actions, ...(event.outcome ? { outcome: event.outcome } : prev?.outcome ? { outcome: prev.outcome } : {}) },
+          [event.runId]: { platform: event.platform, segments, ...(outcome ? { outcome } : {}) },
         },
         _activeJevRunId: event.outcome ? null : event.runId,
       }

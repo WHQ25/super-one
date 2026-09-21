@@ -3,8 +3,9 @@ import {
   ComputerUseToolBlockPresenter,
   type ComputerUseToolBlockPresenterProps,
 } from '@superone/chat-view/presenters/ComputerUseToolBlock'
+import type { RunContinuation } from '@superone/chat-view/presenters/run-display'
 import { useAppIcon } from '@/hooks/use-app-icon'
-import { useJevRunActions } from '@/hooks/use-jev-run-actions'
+import { liveRunId, useJevRunActions } from '@/hooks/use-jev-run-actions'
 import { getStallColor, type StallLevel } from '@/lib/stall-utils'
 import { ActionRecordingView, parseActionRecording } from './ActionRecordingView'
 import {
@@ -22,7 +23,9 @@ interface ComputerUseToolBlockProps extends Omit<
   | 'renderResult'
   | 'recording'
   | 'runActions'
+  | 'runContinuations'
 > {
+  runContinuations?: RunContinuation[]
   stallLevel: StallLevel
 }
 
@@ -52,7 +55,8 @@ function DesktopComputerUseToolBlock({
   )
   const appIcon = useAppIcon(bundleId)
   const recording = useMemo(() => parseActionRecording(result), [result])
-  const runActions = useJevRunActions(op === 'run', info.runId)
+  // The open call is the last one: a resume names its run, the start does not.
+  const runActions = useJevRunActions(op === 'run', liveRunId(props.runContinuations) ?? info.runId)
 
   return (
     <ComputerUseToolBlockPresenter

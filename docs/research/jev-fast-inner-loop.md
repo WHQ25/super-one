@@ -1245,6 +1245,16 @@ B 的范式就是 `presets`：把带参数的动作拆成几个选择题，每�
 
 **判读。** `goal_satisfied` 对这次移动是有区分的（0.06 → 0.3–0.4），但没过线：goal 写的是 "no longer listed beside Archive"，而文件仍列在窗口里（缩进在 Archive 下），Jev 有理由不确定；drag 残留 0.27 使 idle 规则（none_useful ≥ 0.8）不触发。第 5 步之外的两个可选项：goal 措辞在提示词里说清"listed inside Archive counts"；或 `dropTarget` 落地后把 `(X: inside Y)` 直接当 done 证据——目前不动，先看更多用例。前台在三次 run 里都没变过。
 
+**第三层：被第三方窗口盖住时事务性真实激活（用户决定，`7209e2fc`）。** 用户看了 Codex 自己的 computer-use 做同一个后台 Finder 拖拽——它也做不到。决定：drop 点被**别的 app** 的窗口盖住时，`activate` 目标 app → posted drag → `activate` 回原前台 app，形状同 §10.8 菜单命令最初的真实激活回退。前两层不变且优先。
+
+| drop 点 | 投递 | 前台 | 决定在哪 |
+|---|---|---|---|
+| 没被盖住 | 直接后台 posted drag | 不变 | — |
+| 被 SuperOne 自己的窗口盖住 | `setAlwaysOnTop(true,'normal',-1)` 压到普通窗之下 → drag → 复位 | 不变（key 窗、焦点都不动） | `computer-page` 的 drag / act dep（需 `ownWindows`） |
+| 被第三方窗口盖住 | helper `drag` 带 `activateIfCovered`：`FocusStealGuard.expectActivation` → `activate()` → 等到真前台（≤1.5 s）→ postDrag → `defer` 里等 150 ms 让 drop 落地 → `previous.activate()` | 目标 app 前台一小会儿 | `macos-adapter` 的 drag 分支按 `window_cover` 自决——`computer_act drag` 同路，schema 不加字段 |
+
+helper 侧是一个事务：复位在 `defer`，drag 抛错也回前台；对 `FocusStealGuard` 先登记，不会被当成 steal 还回去。`computer-page` 把 `d675a782` 里"第三方盖住就不提供"改回**全部提供**，text 里照旧写 `(Archive: drop point covered by TextEdit)`。真跑 `r11d43b9a`：bench 窗在 TextEdit 窗之下、SuperOne 前台；drag 0.88 → Archive 0.78；System Events 轮询看到 **Finder 在前 ≈1.56 s**（含 dense path ≈1 s、激活等待、150 ms 落地），随后回到 Electron，文件进了 Archive；主模型 accept → done。副作用：真实激活把 Finder 窗抬到 TextEdit 之上，第二步的观察里 cover 注记消失——预期内。第一次尝试（`r34e5dc7f`）bench 几何差了几像素，Archive 名字格中心恰好露在 TextEdit 左缘外，走的是第一层，文件也进了——drop 点的判定就是这么精确。
+
 ### 11.10 第五步落地：`needs_input` 交接（2026-09-21，Grok 4.6 / high，dev 版）
 
 **实现（`10acef93`）。** `action` 加 `needs_input`（总在候选里），两个头 `hand_target`（候选 = 窗口上的元素含图片，不含菜单命令：`RawElement.menuCommand`，否则 146 个菜单项把 criteria 翻倍）和 `input_kind`（`position | path | text | value | other`，只作提示）。`decide` → `pause(reason: 'capability', mode: 'handed', type: 'value')`，`context = { target: {index, role, label, bounds}, hint, why, risk? }`，`why` 按 kind 走句子模板再接 `describeHeads()`；schema `{ actions?, presets? }`（anyOf），另给 `options: [accept, abort]`。图 relevance `required`。resume：`presets` 合并进 run（同 key 覆盖，`progress.note`），`actions` 经新的可选 `RunDeps.act(page, actions)` 执行——computer 走 `service.act`（解析、门控与 `computer_act` 相同），device 走 `session.act`，browser 暂缺（其 act 走 MCP compact 层的 primitive 映射，没有可直接调的函数）——没有 `act` 的平台 schema 只留 `presets` 并在 `why` 里说明。交接动作计一步，history `kind: 'handed'`，`approved: true`，settle 照常。观察层：`role === 'image'` / `pictureOnly` 且无动作的节点进 `elements`（`picture: true`）并写 `(picture-only: X)`；所有元素带 `bounds`；禁用控件的 text 写 `X (disabled)`。

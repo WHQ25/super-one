@@ -282,6 +282,7 @@ export function GitRefRow({
             <span className="shrink-0 font-mono">
               <HighlightedText text={ref.label} indices={item.matchIndices} />
             </span>
+            {ref.author || when ? <span className="shrink-0 text-muted-foreground/60">·</span> : null}
             {ref.author ? <span className="truncate">{ref.author}</span> : null}
             {ref.author && when ? <span className="shrink-0 text-muted-foreground/60">·</span> : null}
             {when ? <span className="shrink-0">{when}</span> : null}

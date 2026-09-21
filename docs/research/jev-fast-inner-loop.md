@@ -1315,6 +1315,46 @@ helper 侧是一个事务：复位在 `defer`，drag 抛错也回前台；对 `F
 
 `*_run` 块改成一张 subagent 样式的卡：头部是动词 + 目标 chip + goal；展开后按暂停分段，段之间是问题（原因 chip + `why` 的第一个分句）和主模型的回答（choice 的标签 / 交接的动作数 / abort / accept），每行动作带 worked / didnt / unknown 记号，同一 `runId` 的 resume 调用折进同一块（`groupContent` 按 result 里的 `runId` 认领后续调用）。用户反馈后定下的信息层级：**头部只在跑的时候显示步数；结束后步数和用时只在展开的 footer；`goal_satisfied` 分数不显示**——它是 Jev 的内部量，对人没有意义。故事在 `apps/desktop/src/renderer/src/components/chat/{ComputerUseToolBlock,BrowserToolBlock,DeviceToolBlock}.stories.tsx`（running / paused / resumed / done / aborted / 30+ 步三段 / 窄屏）。手机端事件里工具 input 被裁掉，看不到 `runId`，resume 调用不折叠——按现有裁剪规则的已知限制。
 
+## 13. Device 对齐：真实树、状态句与手机的动作空间（2026-09-21，`9e264c52`）
+
+§10.5 之后 device 一直停在 MVP：label+value 拼成文本、一个 scroll ref、tap / setText / swipe。这次先在两台模拟器上采了真实的树（iPhone 17 Pro Max iOS 26.4、Medium Phone API 36.1 Android 16，Settings app），再按树的形状改适配器。
+
+### 13.1 两个平台的树长什么样
+
+| | iOS（AXPTranslator） | Android（uiautomator） |
+|---|---|---|
+| 行 | `button "General" #com.apple.settings.general` | **无名 `button`**，标题和摘要是子 `text` 节点（`#android:id/title` / `summary`） |
+| 开关 | `checkbox "Haptic Feedback" ="1"/"0"`，一个元素横跨整行 | 行是 `button`，里面是无名 `switch ="checked"/"unchecked"` |
+| 列表 | 普通 `group`，没有任何滚动角色 | `scrollview` 套 `scrollview` 套 `list #recycler_view`，树里只有可见行 |
+| 标题 | 顶部 `heading`，或 `group #Text Replacement`（只有 identifier）；返回键有时不在树里 | `group "Network & internet" #collapsing_toolbar`，`button "Navigate up"` |
+| 按压 | `press`（AX）可用 | `press` 被拒绝（"Use tap"） |
+
+第一条就是 device_run 在 Android 上从未真正可用的原因：Jev 看到的是一排 `button ""`。
+
+### 13.2 实现
+
+- **观察文本**（`device-page.ts` 重写）：首行 `(observing: Settings screen "Keyboards"; no alert or sheet open[; keyboard shown])`；`(text field "Search": focused, holds "om")`（≤6）；开关归一为 `Haptic Feedback: on` / `Airplane mode: off`，元素带 `checked`；禁用控件 `(disabled)`；`(picture-only: X)` + `picture: true`（≥10%×5% 屏、不在控件内、≤12）；所有元素带屏幕比例 `bounds`（与 `device_act` 的 x/y 同一坐标系，交接的 `context.target.bounds` 直接可用）。Android 行按子文本命名（"Internet — AndroidWifi"，子文本不再单独成行），行内无名开关取行的名字。标题：bar 的 label → 顶部只有 identifier 的 `group`（identifier 不含 `:/.` 时当标题） → 顶部 heading（长度 >1，避开表索引 "O"）。
+- **滚动区**：只提供**最内层**的 `list/scrollview/table/collectionview/grid/pager`；iOS 列表按"`group` 内 ≥3 个可点行且纵向占 ≥50% 屏"识别；上下方向从伸出容器的行推断（Android 最后一行 y=0.996 → down），没证据就两个方向都给；没有滚动区的屏幕不提供 scroll（表单上一次 swipe 是落在某个控件上的手势）。
+- **动作**：`dismiss` = Android `key back` / iOS 左缘滑动 `(0.005,0.5)→(0.7,0.5)` 400 ms（Text Replacement 页的返回键根本不在树里，只有这条路）；`contextMenu` = `longPress`（cell/link/image，以及滚动区里的 `button` 行）；`scrollArea` = 指定容器上的 swipe；iOS `click` 改走 AX `press`——开关行的中心是它的文字，tap 在那儿什么都不切（`rb524a586` 连点三次 Haptic Feedback 均 unknown），Android 仍 tap。
+- **措辞**：`RunWords`（`questions.ts`）承载 escape / context_menu 的动作说明、历史标签和上报的 `op/target`；device 是 "Go back" / "Long-press"，桌面默认不变。`device_run` 描述改为要求终态措辞、说明交接 bounds 是屏幕比例（669 字符）；远程 dump 同步。
+
+### 13.3 真跑（Grok 4.6 / high，dev 版，各用例一次）
+
+| 用例 | run | 步骤 | `goal_satisfied` | 收尾 |
+|---|---|---|---|---|
+| iOS：Settings 根 → General → Keyboard → 打开 Haptic Feedback（修 press 前） | `rb524a586` | 2 次导航 worked；tap 开关 ×3 unknown，每次 risky 暂停（risk 0.50–0.53） | 0.08 → 0.07 → 0.06 | maxSteps 6 用尽，abort |
+| 同上（press） | `r38add0b2` | General、Keyboard、risky 暂停一次确认、press Haptic Feedback worked | 0.07 → **0.94 / 0.94** | done，4 步 |
+| iOS：Keyboards → 打开 Text Replacement → 返回 | `r93ada56f` / `r491c02d1` | click Text Replacement → **escape 0.85**（左缘滑动）worked | 0.57 → 0.19 → **0.89 / 0.90** | done，4 步 6.1 s |
+| Android：Settings 根 → Network & internet → 打开 Airplane mode | `rfa7defc8` | click 行（按子文本命名的 button）→ click 开关 risk 0.47 不暂停 | 0.03 → 0.04 → **0.96 / 0.96** | done，2 步 |
+| Android：Network & internet → 返回首页 | `r8de54ff2` | click "Navigate up" 0.65（escape 0.35） | 0.03 → **0.94 / 0.94** | done |
+
+**判读。**
+- 状态句在手机上同样直接决定完成判定：`Haptic Feedback: on`、`Airplane mode: on`、`(observing: … "Keyboards")` 各对上一个 goal，四个用例都在动作落地后的下一次观察过线（0.89–0.96）。
+- iOS 的开关只能 AX press：这是 device 适配器与 `device_act` 默认建议（"prefer press"）本来就一致的地方，MVP 里用 tap 是错的。
+- Jev 选 escape 的条件是**没有可点的返回控件**：iOS Text Replacement 页 0.85 选了 Go back；Android 有 "Navigate up" 时 0.65 选点击、0.35 选 Back。Android 的 `key back` 路径只有单元测试和 `device_act` 自身覆盖，真跑里没被选中。
+- `Haptic Feedback` 这种可逆开关 next_step_risk 0.50–0.53 触发 risky 暂停（Android 的 Airplane mode 0.47 没触发），阈值边缘；本轮不动阈值。
+- 未做：long-press 的真跑（Settings 没有长按菜单，launcher 的 `Workspace` 不是滚动角色，图标不会成为候选）；`append`（`type` 插在光标处，tap 决定不了光标在末尾）；Android 冷启动无 tree 的等待；A/B 基线仍未跑。
+
 ## 参考
 
 - `~/Developer/Github/jev-ultrafast/jev_ultrafast/{agent.py, browser.py, snapshot.js, model.py, questions.py}`、`docs/performance.md`

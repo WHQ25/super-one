@@ -1218,6 +1218,20 @@ B 的范式就是 `presets`：把带参数的动作拆成几个选择题，每�
 
 **跑 case 的两个脚本坑（bench 基础设施，非产品）。** AppleScript `key code 126 using command down`（⌘↑）在 Finder 是 Enclosing Folder，把 /System/Library 的窗口带回了 /System；`make new Finder window to X` 后紧接 `set current view` / `set bounds` 有时目标不生效，创建和设置分两次 osascript 调用。
 
+### 11.8 后台拖放死在哪一层：窗口服务器按真实叠放顺序选 drop 目标（2026-09-21，直连探针，无 Jev）
+
+§11.7 的结论"Finder 的拖放会话只在真正前台的 app 里接受 drop"是错的归因。四组探针（一次性 AppKit lab app + 拖放剪贴板 changeCount 监视 + Finder pid 上的 listen-only CGEvent tap + CGWindowList 叠放顺序）定位到的是另一层：
+
+1. **源 app 里会话完整开始。** Finder 后台（SuperOne 前台）收到 posted 序列（tap 看到 down、70+ 个 `leftMouseDragged`、up，pressure 1.0，51/91/92 都在），拖放剪贴板 changeCount 49 → 50、类型 `public.file-url` / `NSFilenamesPboardType`——Finder 已经 `beginDraggingSession`。文件没动，是 drop 没到目标。
+2. **AppKit 的目标侧对后台也无要求。** lab app（左半 `NSDraggingSource` 视图、右半 `NSDraggingDestination` 视图，逐回调打日志）在 TextEdit 前台时收同一条 posted drag：`beginDraggingSession → willBeginAt → movedTo/draggingUpdated 跟着 posted 路径 → prepareForDragOperation → performDragOperation → endedAt operation=1`，全程 `NSApp.isActive` 是租约给的 1，前台一直是 TextEdit。`mouseDragged` 的 `deltaX/Y = 0`、`pressure 1.0`、3 点 spring 加密路径都不妨碍；把窗口挪到离真实光标很远的位置也一样。**事件形状不是原因。**
+3. **拒绝的是窗口服务器的 drop 目标解析。** 会话开始后，目标由 drag manager 用 drag 位置对**真实屏幕叠放顺序**做 hit-test，谁在那个点上最靠前谁就是目标；posted 事件绕过了这层（它们靠 51/91/92 直投到窗口号）。把 Electron 主窗叠到 lab 窗口上再拖：会话照样开始，但每次 `movedTo` 都问 `sourceOperationMask context=0`（`.outsideApplication`——drag manager 认为指针在别的 app 窗口上），目标视图从未 `draggingEntered`，`endedAt operation=0`。bench 里 Finder 窗口 {94,69,894,531} 整个压在 dev Electron 窗 (144,45,1440×900) 和 TextEdit 草稿窗下面，drop 被投给了 Electron；"Finder 前台就成功"只是因为激活把它的窗口抬到了上面。
+4. **反证。** 同一条 posted drag，Finder 仍在后台（TextEdit 前台）、bench 窗口挪到 {900,69,1700,531} 没被任何窗口盖住：**文件进了 Archive**。跨窗口同样成立（第二个 Finder 窗口开着 Archive，从 A 的行拖到 B 的内容区，display 坐标，后台，落地）。
+5. **只有 drop 点要露出来。** lab 窗口大半压在 Electron 主窗下、只有右缘露出 x>1584：源点和路径 127 次 `context=0`，drag 位置一越过 Electron 右缘就 `draggingEntered → performDragOperation → operation=1`。源元素和路径被盖住无所谓。
+6. **租约已经跨整段序列。** `SyntheticActivationLease` 是 2 s 空闲租约、每个事件续期；lab 日志整段拖放只有一对 `didBecomeActive / didResignActive`。§11.7 里"每个事件各持一次租约"描述的是调用形式，不是效果。
+7. **不激活就抬窗口做不到。** 后台 app 的窗口 `AXRaise`（等价 `orderFront:`）能越过前台 app 的次级窗口，越不过它的 key 窗口（Electron 13515 仍在 Finder 之上）；给别的进程排窗口没有公开 API。agent 光标 overlay 在 drop 点上不挡（`ignoresMouseEvents` 窗口不参与 hit-test）。
+
+所以"后台 drag"的真实边界是：**drop 点在屏幕上没被别的窗口盖住就落地，被盖住就投到盖住它的窗口。** 常见的遮挡者正是 SuperOne 自己的窗口。可判定：`CGWindowListCopyWindowInfo(.optionOnScreenOnly)` 前到后第一个包含 drop 点的 layer-0 窗口是不是目标窗口。§11.7 的三个选项要重排：(a) 遮挡时才事务性真实激活、露出时保持后台；(b) 只在露出时提供 `drag`（观察层按 drop 点可见性给 `dropTarget`，被盖住时说明原因）；(c) 拿掉 drag 走菜单命令。决定留给宿主侧。探针源码在 `/tmp/claude/dragprobe/{lab2/lab2.swift, pb.swift, tap.swift, wl0.swift, axraise.swift}` 与 `/tmp/claude/menu-probe/{labdrag,dragprobe,dragcross}.mjs`。
+
 ## 参考
 
 - `~/Developer/Github/jev-ultrafast/jev_ultrafast/{agent.py, browser.py, snapshot.js, model.py, questions.py}`、`docs/performance.md`

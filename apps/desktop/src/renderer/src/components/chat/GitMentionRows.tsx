@@ -12,7 +12,6 @@ import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
 import { gitRefIcon, staticMentionIcon } from '@superone/ui/components/ui/mention-icons'
 import { cloneElement, type ReactElement } from 'react'
 import { formatRelativeTime } from '@superone/shared/relative-time'
-import { githubAuthorAvatarUrl } from '@superone/shared/git-remote'
 import {
   GH_MENTION_KEYWORD,
   GIT_MENTION_KEYWORD,
@@ -123,24 +122,6 @@ function disabledHintKey(reason: NonNullable<Extract<GitFlatItem, { kind: 'git-p
   if (reason === 'not-repo') return 'chat.mentionPopup.gitNotRepoHint'
   if (reason === 'gh-unavailable') return 'chat.mentionPopup.ghUnavailableHint'
   return 'chat.mentionPopup.gitUnsupportedHint'
-}
-
-/**
- * GitHub avatar by login, at 2× for retina. A login GitHub cannot resolve
- * (deleted user, unusual bot) 404s; the image then hides itself so the row
- * falls back to the bare login rather than a broken-image glyph.
- */
-function AuthorAvatar({ login }: { login: string }) {
-  return (
-    <img
-      src={githubAuthorAvatarUrl(login, 28)}
-      alt=""
-      className="size-3.5 shrink-0 rounded-full object-cover"
-      loading="lazy"
-      referrerPolicy="no-referrer"
-      onError={(e) => { e.currentTarget.style.display = 'none' }}
-    />
-  )
 }
 
 function statePillClass(state: NonNullable<GitMentionRef['state']>): string {
@@ -301,12 +282,7 @@ export function GitRefRow({
             <span className="shrink-0 font-mono">
               <HighlightedText text={ref.label} indices={item.matchIndices} />
             </span>
-            {ref.author ? (
-              <span className="flex min-w-0 items-center gap-1">
-                <AuthorAvatar login={ref.author} />
-                <span className="truncate">{ref.author}</span>
-              </span>
-            ) : null}
+            {ref.author ? <span className="truncate">{ref.author}</span> : null}
             {ref.author && when ? <span className="shrink-0 text-muted-foreground/60">·</span> : null}
             {when ? <span className="shrink-0">{when}</span> : null}
             {ref.state ? (

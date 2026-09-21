@@ -9,7 +9,7 @@ import type {
   CodexMcpToolCallItem,
   ContentBlock,
 } from '@superone/shared/agent-types'
-import { isAlwaysHiddenToolName, isSubagentToolName, parseMcpToolName } from '@superone/shared/tool-ui'
+import { applyDescriptionPersonaLabel, isAlwaysHiddenToolName, isSubagentToolName, parseMcpToolName } from '@superone/shared/tool-ui'
 import { resolveMcpServerIconFromMap } from '@superone/shared/mcp-server-icon'
 import { isHiddenToolBlock } from './presenters/tool-display'
 import { resolveMarkdownFileLinks } from './presenters/markdown-file-links'
@@ -94,8 +94,8 @@ import {
 import {
   SubagentBlockPresenter,
   SubagentScrollArea,
-  type SubagentColorClasses,
 } from './presenters/SubagentBlock'
+import { getSubagentColorClasses, portableSubagentColorIndex } from './presenters/subagent-colors'
 import { summarizeClaudeProcess, summarizeCodexProcess } from './presenters/turn-process-stats'
 import { SetupMiniAppDevBlockPresenter } from './presenters/SetupMiniAppDevBlock'
 import { SuperoneCompactToolRowPresenter } from './presenters/SuperoneCompactToolRow'
@@ -105,12 +105,9 @@ import { WorkflowBlockPresenter } from './presenters/WorkflowBlock'
 import { parseWorkflowLaunch, stripWorkflowNamePrefix, workflowToolTargetLabel } from './presenters/workflow-utils'
 import { TurnDetailSection } from './TurnDetailSection'
 
-const PORTABLE_COLORS: SubagentColorClasses = {
-  text: 'text-primary',
-  tagBg: 'bg-primary/10',
-  tagText: 'text-primary',
-  activityBg: 'bg-primary/5',
-  borderL: 'border-primary/30',
+/** Same pool and draw as the desktop store, keyed the way each card keys it there. */
+function usePortableSubagentColors(key: string) {
+  return useMemo(() => getSubagentColorClasses(key ? portableSubagentColorIndex(key) : undefined), [key])
 }
 
 const EMPTY_MAP = new Map<string, string>()
@@ -589,14 +586,18 @@ function PortableAppToolGroup({ blocks, sealed }: ClaudeAppToolGroupPresenterPro
 
 function portableTaskInput(input: string, toolSummary?: string) {
   const params = parseRecord(input)
+  // A progressive projection keeps the header fields but drops `prompt` once the
+  // input passes the size cap; older shells blanked it all and left only the
+  // agent-written description as `toolSummary`, so keep that fallback.
+  const labeled = applyDescriptionPersonaLabel(
+    String(params.description ?? '') || toolSummary || '',
+    String(params.subagent_type ?? params.subagentType ?? ''),
+  )
   return {
     name: String(params.name ?? params.agent_name ?? ''),
     teamName: String(params.team_name ?? params.teamName ?? ''),
-    // A progressive projection drops the input once the prompt pushes it past the
-    // size cap, keeping only the agent-written description as `toolSummary`; without
-    // this fallback the card would show the spawning placeholder and never expand.
-    description: String(params.description ?? '') || toolSummary || '',
-    subagentType: String(params.subagent_type ?? params.subagentType ?? ''),
+    description: labeled.description,
+    subagentType: labeled.subagentType,
     prompt: String(params.prompt ?? ''),
     model: typeof params.model === 'string' ? params.model : undefined,
   }
@@ -615,6 +616,7 @@ function PortableSubagent({
   isStreaming,
 }: ClaudeSubagentPresenterProps) {
   const [expanded, setExpanded] = useState(false)
+  const colors = usePortableSubagentColors(taskBlock.toolUseId)
   const shellComplete = Boolean(shellResultBlock || taskBlock.taskResultText)
   const { detail, status: detailStatus, retry } = useDeferredToolDetail(taskBlock.remoteDetail, expanded, shellComplete || !isStreaming)
   const input = detail.input ?? taskBlock.input
@@ -660,7 +662,7 @@ function PortableSubagent({
     <SubagentBlockPresenter
       toolUseId={taskBlock.toolUseId}
       taskInput={portableTaskInput(input, taskBlock.toolSummary)}
-      colors={PORTABLE_COLORS}
+      colors={colors}
       isAsync={false}
       isRunning={!complete && isStreaming}
       isComplete={complete}
@@ -672,7 +674,11 @@ function PortableSubagent({
       onOpenFullView={() => undefined}
       initialElapsed={0}
       completionElapsed={completionElapsed}
-      stats={{ toolCalls: children.length }}
+      stats={{
+        // Collapsed, the shell has no children: the badge reads the task's own usage, like the desktop.
+        toolCalls: children.length > 0 ? children.length : taskBlock.taskUsage?.toolUses ?? 0,
+        totalTokens: taskBlock.taskUsage?.totalTokens,
+      }}
       activityContent={<DeferredDetailStatus status={detailStatus} onRetry={retry} />}
       childContent={children.length > 0 ? (
         <SubagentScrollArea maxHeightClass="max-h-60" className="space-y-0.5 px-2 py-1">
@@ -700,6 +706,7 @@ function PortableSubagent({
  */
 function PortableWorkflow({ toolBlock, resultBlock: shellResultBlock, isStreaming }: ClaudeWorkflowPresenterProps) {
   const [expanded, setExpanded] = useState(false)
+  const colors = usePortableSubagentColors(toolBlock.toolUseId)
   const finished = !!toolBlock.taskStatus
   const { detail } = useDeferredToolDetail(toolBlock.remoteDetail, expanded, finished)
   const input = detail.input ?? toolBlock.input
@@ -725,7 +732,7 @@ function PortableWorkflow({ toolBlock, resultBlock: shellResultBlock, isStreamin
   const summary = stripWorkflowNamePrefix(toolBlock.taskSummary, name)
   return (
     <WorkflowBlockPresenter
-      colors={PORTABLE_COLORS}
+      colors={colors}
       name={name}
       description={description}
       isSpawning={!launched && !isComplete && !name}
@@ -972,6 +979,7 @@ function PortableCodexSubagent({ item: shellItem }: CodexSubagentPresenterProps)
   const { detail, status: detailStatus, retry } = useDeferredToolDetail(shellItem.remoteDetail, expanded, shellItem.status !== 'in_progress')
   const item = detail.item?.type === 'collab_tool_call' ? detail.item : shellItem
   const view = codexCollabViewModel(item)
+  const colors = usePortableSubagentColors(view.colorKey)
   const activityContent = view.activityItems.length > 0 ? (
     <SubagentScrollArea maxHeightClass="max-h-60" className="space-y-0.5 border-t border-border/30 px-2 py-1">
       {view.activityItems.map((child, index) => {
@@ -1033,7 +1041,7 @@ function PortableCodexSubagent({ item: shellItem }: CodexSubagentPresenterProps)
   return (
     <CodexCollabBlockPresenter
       item={item}
-      colors={PORTABLE_COLORS}
+      colors={colors}
       expanded={expanded}
       onExpandedChange={setExpanded}
       canOpenFullView={false}

@@ -162,13 +162,14 @@ describe('summarizeClaudeProcess', () => {
     expect(stats).toEqual({ toolCalls: 2, filesChanged: 0, added: 0, removed: 0 })
   })
 
-  it('includes subagent child tools and Grok path aliases', () => {
+  it('counts a subagent as one call but folds its child edits (Grok path aliases too) into the turn', () => {
     const stats = summarizeClaudeProcess(
       [
         {
           kind: 'subagent',
           taskBlock: { type: 'tool_use', toolName: 'Agent', toolUseId: 'agent-1', input: '{}' },
           childBlocks: [
+            { type: 'tool_use', toolName: 'Read', toolUseId: 'r1', input: '{"file_path":"src/app.ts"}' },
             {
               type: 'tool_use',
               toolName: 'write_file',
@@ -180,10 +181,56 @@ describe('summarizeClaudeProcess', () => {
       ],
       opts,
     )
-    expect(stats.toolCalls).toBe(2)
-    expect(stats.filesChanged).toBe(1)
-    expect(stats.added).toBe(2)
-    expect(stats.removed).toBe(0)
+    expect(stats).toEqual({ toolCalls: 1, filesChanged: 1, added: 2, removed: 0 })
+  })
+
+  it('skips a subagent child edit that failed or was denied', () => {
+    const stats = summarizeClaudeProcess(
+      [
+        {
+          kind: 'subagent',
+          taskBlock: { type: 'tool_use', toolName: 'Agent', toolUseId: 'agent-1', input: '{}' },
+          childBlocks: [
+            { type: 'tool_use', toolName: 'Write', toolUseId: 'w-denied', input: '{"file_path":"a.ts","content":"x"}' },
+            { type: 'tool_use', toolName: 'Write', toolUseId: 'w-error', input: '{"file_path":"b.ts","content":"y"}' },
+          ],
+        },
+      ],
+      {
+        ...opts,
+        toolResultAt: (id) => (id === 'w-denied' ? '[denied] nope' : undefined),
+        isErrorTool: (id) => id === 'w-error',
+      },
+    )
+    expect(stats).toEqual({ toolCalls: 1, filesChanged: 0, added: 0, removed: 0 })
+  })
+
+  it('reads taskFileChanges when the shell carries no children (progressive remote) and dedupes paths with the turn', () => {
+    const stats = summarizeClaudeProcess(
+      [
+        {
+          kind: 'block',
+          block: { type: 'tool_use', toolName: 'Edit', toolUseId: 'e1', input: '{"file_path":"src/app.ts","old_string":"a","new_string":"b\\nc"}' },
+        },
+        {
+          kind: 'subagent',
+          taskBlock: {
+            type: 'tool_use',
+            toolName: 'Agent',
+            toolUseId: 'agent-1',
+            input: '{}',
+            taskFileChanges: [
+              { path: 'src/app.ts', added: 3, removed: 1 },
+              { path: 'src/other.ts', added: 0, removed: 0 },
+            ],
+          },
+          childBlocks: [],
+        },
+      ],
+      opts,
+    )
+    // Own Edit is +2 −1; the subagent adds +3 −1 on the same file (deduped) and touches one more.
+    expect(stats).toEqual({ toolCalls: 2, filesChanged: 2, added: 5, removed: 2 })
   })
 })
 

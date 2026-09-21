@@ -528,5 +528,4 @@ export interface ChatStore {
   startCodexReview: (target: CodexReviewTarget) => void
 }
 
-export const SUBAGENT_COLOR_POOL = ['purple', 'blue', 'cyan', 'teal', 'green', 'amber', 'orange', 'rose'] as const
-export type SubagentColor = (typeof SUBAGENT_COLOR_POOL)[number]
+export { SUBAGENT_COLOR_POOL, type SubagentColor } from '@superone/chat-view/presenters/subagent-colors'

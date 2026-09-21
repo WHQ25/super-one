@@ -59,16 +59,42 @@ function turn(content: ContentBlock[], status: 'streaming' | 'complete'): ChatMe
   } as ChatMessage
 }
 
-function SubagentTurn({ childCount, running }: { childCount: number; running: boolean }) {
+/**
+ * What the progressive projection hands the phone for a named agent whose prompt
+ * broke the shell cap: header fields kept, `prompt` dropped, children behind
+ * `remoteDetail`. The name tag must show without expanding, like the desktop.
+ */
+function namedShell(toolUseId: string, name: string, description: string): ContentBlock {
+  return {
+    type: 'tool_use',
+    toolName: 'Agent',
+    toolUseId,
+    status: 'complete',
+    input: JSON.stringify({ description, name, subagent_type: 'general-purpose', model: 'fable' }),
+    toolSummary: description,
+    remoteDetail: JSON.stringify(['subagent-turn', 'tool', toolUseId]),
+    taskUsage: { totalTokens: 153_511, toolUses: 39, durationMs: 369_226 },
+  } as ContentBlock
+}
+
+function SubagentTurn({ childCount, running, named = 0 }: { childCount: number; running: boolean; named?: number }) {
   const status = running ? 'streaming' : 'complete'
-  const content: ContentBlock[] = [
-    { type: 'text', text: 'Delegating the search to a subagent.' } as ContentBlock,
-    taskBlock(status),
-    ...childRows(childCount),
-    ...(running
-      ? []
-      : [{ type: 'tool_result', toolUseId: TASK_ID, summary: 'Found 12 presenters under `presenters/`.' } as ContentBlock]),
-  ]
+  const content: ContentBlock[] = named > 0
+    ? [
+        { type: 'text', text: 'Fanning the review out to named reviewers.' } as ContentBlock,
+        ...Array.from({ length: named }, (_, index): ContentBlock[] => [
+          namedShell(`reviewer-${index}`, `reviewer-${index + 1}`, `Review chapter ${index + 1}`),
+          { type: 'tool_result', toolUseId: `reviewer-${index}`, summary: `Chapter ${index + 1} looks fine.` } as ContentBlock,
+        ]).flat(),
+      ]
+    : [
+        { type: 'text', text: 'Delegating the search to a subagent.' } as ContentBlock,
+        taskBlock(status),
+        ...childRows(childCount),
+        ...(running
+          ? []
+          : [{ type: 'tool_result', toolUseId: TASK_ID, summary: 'Found 12 presenters under `presenters/`.' } as ContentBlock]),
+      ]
   return (
     <div className="w-[390px] p-4">
       <PortableMessage
@@ -103,4 +129,14 @@ export const ManyToolsRunning: Story = {
 export const ManyToolsComplete: Story = {
   name: 'Complete · forty tools, result below the capped list',
   args: { childCount: 40, running: false },
+}
+
+export const NamedCollapsedShell: Story = {
+  name: 'Collapsed · named agent from a progressive shell (name tag without expanding)',
+  args: { childCount: 0, running: false, named: 1 },
+}
+
+export const SeveralNamedAgents: Story = {
+  name: 'Collapsed · four named agents, each card drawn in its own pool colour',
+  args: { childCount: 0, running: false, named: 4 },
 }

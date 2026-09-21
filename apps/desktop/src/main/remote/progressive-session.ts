@@ -1,5 +1,5 @@
 import { compactMediaToolResult } from '../remote-content'
-import { codexToolDetail, nestedCodexItem, deferTool, projectCodexTool, projectTool, toolDetail } from './progressive-tools'
+import { codexToolDetail, nestedCodexItem, deferTool, isFileMutationChild, projectCodexTool, projectTool, taskFileChanges, toolDetail } from './progressive-tools'
 import type { AgentEvent, ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
 
@@ -25,12 +25,23 @@ function isChildContainer(block: ContentBlock): block is Extract<ContentBlock, {
   return 'toolName' in block && isSubagentToolName(block.toolName)
 }
 
+/**
+ * The container's shell plus the one fact its dropped children owe the turn:
+ * which files the subagent edited (`taskFileChanges`), so the phone's diff
+ * stat counts them like the desktop does.
+ */
+function projectContainer(message: ChatMessage, block: Extract<ContentBlock, { toolName: string }>, changes = taskFileChanges(message, block.toolUseId)): ContentBlock {
+  const projected = projectTool(block, reference(message.id, 'tool', block.toolUseId))
+  return changes.length > 0 ? { ...projected, taskFileChanges: changes } as ContentBlock : projected
+}
+
 export function projectProgressiveMessage(message: ChatMessage): ChatMessage {
   const deferredIds = new Set(message.content.flatMap(block => 'toolName' in block && deferTool(block.toolName) ? [block.toolUseId] : []))
   const containerIds = new Set(message.content.flatMap(block => isChildContainer(block) ? [block.toolUseId] : []))
   const content = message.content.map((block, index): ContentBlock => block.type === 'thinking'
     ? { ...block, thinking: '', remoteDetail: reference(message.id, 'thinking', index) }
-    : 'toolName' in block ? projectTool(block, reference(message.id, 'tool', block.toolUseId))
+    : 'toolName' in block
+      ? (isSubagentToolName(block.toolName) ? projectContainer(message, block) : projectTool(block, reference(message.id, 'tool', block.toolUseId)))
     : block.type === 'tool_result' && deferredIds.has(block.toolUseId)
       ? {
         type: 'tool_result',
@@ -109,10 +120,33 @@ export function detailUpdates(deviceId: string, sessionId: string, messages: rea
   return updates
 }
 
+/** The top-level subagent card a nested block belongs to, if it is under one. */
+function shellContainerOf(message: ChatMessage, parentId: string): Extract<ContentBlock, { toolName: string }> | undefined {
+  const byId = new Map(message.content.flatMap(block => 'toolName' in block ? [[block.toolUseId, block] as const] : []))
+  let block = byId.get(parentId)
+  while (block?.parentToolUseId) block = byId.get(block.parentToolUseId)
+  return block && isChildContainer(block) ? block : undefined
+}
+
 /** Strip all entry points, including completion metadata and reconnect snapshots. */
 export function projectProgressiveEvent(event: AgentEvent, messages: readonly ChatMessage[]): AgentEvent | null {
   if (event.type === 'content_delta' && 'parentToolUseId' in event.delta && event.delta.parentToolUseId) {
     const parentId = event.delta.parentToolUseId
+    const message = messages.find(message => message.id === event.messageId)
+    const container = message && shellContainerOf(message, parentId)
+    if (container) {
+      // The child itself stays behind the card's detail, but a file edit moves
+      // the card's `taskFileChanges` — resend the shell in its place. The
+      // snapshot is already reduced, so the aggregate includes this delta.
+      const toolUseId = 'toolUseId' in event.delta ? event.delta.toolUseId : ''
+      if (toolUseId && isFileMutationChild(message, toolUseId)) {
+        // Sent explicitly (even empty) so a denied edit clears the rows it added.
+        const changes = taskFileChanges(message, container.toolUseId)
+        const delta = { ...projectContainer(message, container, changes), taskFileChanges: changes } as ContentBlock
+        return { type: 'content_delta', messageId: event.messageId, delta, remoteView: 'summary' }
+      }
+      return null
+    }
     if (messages.some(message => message.content.some(block => isChildContainer(block) && block.toolUseId === parentId))) return null
   }
   return { ...projectEvent(event, messages), remoteView: 'summary' }

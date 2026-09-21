@@ -140,6 +140,34 @@ describe('progressive session projection', () => {
     expect(persisted.content.map(block => block.type === 'tool_use' ? block.toolUseId : block.type)).toEqual(['skill', 'r', 'task'])
     expect(persisted.content[1]).toMatchObject({ input: findings })
   })
+  it('carries a subagent\'s file edits on its shell and refreshes the shell when a child edit lands', () => {
+    const editInput = JSON.stringify({ file_path: '/p/a.ts', old_string: 'a', new_string: 'b\nc' })
+    const withEdit: ChatMessage = { ...message(), content: [
+      { type: 'tool_use', toolName: 'Agent', toolUseId: 'task', input: '{"description":"Fix it","name":"fixer","prompt":"go"}', status: 'streaming' },
+      { type: 'tool_use', toolName: 'Read', toolUseId: 'r', input: '{"file_path":"a.ts"}', status: 'complete', parentToolUseId: 'task' },
+      { type: 'tool_use', toolName: 'Edit', toolUseId: 'e', input: editInput, status: 'streaming', parentToolUseId: 'task' },
+    ] }
+    // Snapshot: children dropped, the card knows what they edited.
+    const shell = projectProgressiveMessage(withEdit).content
+    expect(shell).toHaveLength(1)
+    expect(shell[0]).toMatchObject({ toolUseId: 'task', taskFileChanges: [{ path: '/p/a.ts', added: 2, removed: 1 }] })
+    // Live: a Read under the card is dropped; an Edit resends the card's shell in its place.
+    const child = (toolUseId: string, toolName: string, input: string) => projectProgressiveEvent({
+      type: 'content_delta', sessionId: 's', messageId: 'm',
+      delta: { type: 'tool_use', toolName, toolUseId, input, status: 'streaming', parentToolUseId: 'task' },
+    }, [withEdit])
+    expect(child('r', 'Read', '{"file_path":"a.ts"}')).toBeNull()
+    expect(child('e', 'Edit', editInput)).toMatchObject({
+      type: 'content_delta', messageId: 'm',
+      delta: { toolUseId: 'task', toolName: 'Agent', remoteDetail: '["m","tool","task"]', taskFileChanges: [{ path: '/p/a.ts', added: 2, removed: 1 }] },
+    })
+    // The edit's denial clears the row it added.
+    const denied: ChatMessage = { ...withEdit, content: [...withEdit.content, { type: 'tool_result', toolUseId: 'e', summary: '[denied] no', parentToolUseId: 'task' }] }
+    expect(projectProgressiveEvent({
+      type: 'content_delta', sessionId: 's', messageId: 'm',
+      delta: { type: 'tool_result', toolUseId: 'e', summary: '[denied] no', parentToolUseId: 'task' },
+    }, [denied])).toMatchObject({ delta: { toolUseId: 'task', taskFileChanges: [] } })
+  })
   it('keeps a browser screenshot path in the summary so the phone can load the image', () => {
     const source: ChatMessage = {
       id: 'm',

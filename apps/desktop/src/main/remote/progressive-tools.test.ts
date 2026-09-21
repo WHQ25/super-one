@@ -13,7 +13,7 @@ vi.mock('../split-text-blocks', () => ({
 
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage, CodexThreadItem } from '@superone/shared/agent-types'
-import { projectCodexTool, projectTool, toolDetail } from './progressive-tools'
+import { projectCodexTool, projectTool, taskFileChanges, toolDetail } from './progressive-tools'
 
 function assistant(content: ChatMessage['content']): ChatMessage {
   return { id: 'm', role: 'assistant', status: 'complete', createdAt: '', providerId: 'claude', content }
@@ -198,5 +198,47 @@ describe('progressive file-edit projection', () => {
       include: ['screenshot'],
       description: 'Google home',
     })
+  })
+})
+
+describe('progressive subagent projection', () => {
+  const agentInput = (prompt: string) => JSON.stringify({
+    description: 'Review the doc', name: 'fable-doc-review', subagent_type: 'general-purpose', model: 'fable', prompt,
+  })
+
+  it('keeps the subagent header on the collapsed shell when only the prompt breaks the cap', () => {
+    const projected = projectTool({ type: 'tool_use', toolName: 'Agent', toolUseId: 'a', input: agentInput('x'.repeat(3000)), status: 'complete' }, '["m","tool","a"]')
+    expect(projected).toMatchObject({ toolSummary: 'Review the doc', remoteDetail: '["m","tool","a"]' })
+    expect(JSON.parse((projected as { input: string }).input)).toEqual({
+      description: 'Review the doc', name: 'fable-doc-review', subagent_type: 'general-purpose', model: 'fable',
+    })
+    // Under the cap the whole input (prompt included) still travels as before.
+    expect(JSON.parse((projectTool({ type: 'tool_use', toolName: 'Agent', toolUseId: 'a', input: agentInput('short'), status: 'complete' }, 'r') as { input: string }).input)).toMatchObject({ prompt: 'short', name: 'fable-doc-review' })
+    // Other oversized tools still blank out.
+    expect((projectTool({ type: 'tool_use', toolName: 'Bash', toolUseId: 'b', input: JSON.stringify({ command: 'x'.repeat(3000) }), status: 'complete' }, 'r') as { input: string }).input).toBe('{}')
+  })
+
+  it('folds successful child edits at any depth into taskFileChanges, skipping failed and denied ones', () => {
+    const message = assistant([
+      { type: 'tool_use', toolName: 'Agent', toolUseId: 'a', input: '{}', status: 'complete' },
+      { type: 'tool_use', toolName: 'Read', toolUseId: 'r', input: '{"file_path":"a.ts"}', status: 'complete', parentToolUseId: 'a' },
+      { type: 'tool_use', toolName: 'Edit', toolUseId: 'e', input: JSON.stringify({ file_path: '/p/a.ts', old_string: 'a', new_string: 'b\nc' }), status: 'complete', parentToolUseId: 'a' },
+      { type: 'tool_result', toolUseId: 'e', summary: 'ok', parentToolUseId: 'a' },
+      { type: 'tool_use', toolName: 'Write', toolUseId: 'denied', input: JSON.stringify({ file_path: '/p/b.ts', content: 'x' }), status: 'complete', parentToolUseId: 'a' },
+      { type: 'tool_result', toolUseId: 'denied', summary: '[denied] no', parentToolUseId: 'a' },
+      { type: 'tool_use', toolName: 'Write', toolUseId: 'errored', input: JSON.stringify({ file_path: '/p/c.ts', content: 'x' }), status: 'complete', parentToolUseId: 'a' },
+      { type: 'tool_result', toolUseId: 'errored', summary: 'EACCES', isError: true, parentToolUseId: 'a' },
+      // A nested subagent's edit belongs to the top-level card too.
+      { type: 'tool_use', toolName: 'Agent', toolUseId: 'nested', input: '{}', status: 'complete', parentToolUseId: 'a' },
+      { type: 'tool_use', toolName: 'write_file', toolUseId: 'g', input: JSON.stringify({ target_file: 'src/d.ts', contents: 'l1\nl2' }), status: 'complete', parentToolUseId: 'nested' },
+      // A sibling card's edit is not this card's.
+      { type: 'tool_use', toolName: 'Agent', toolUseId: 'other', input: '{}', status: 'complete' },
+      { type: 'tool_use', toolName: 'Write', toolUseId: 'o', input: JSON.stringify({ file_path: '/p/o.ts', content: 'x' }), status: 'complete', parentToolUseId: 'other' },
+    ])
+    expect(taskFileChanges(message, 'a')).toEqual([
+      { path: '/p/a.ts', added: 2, removed: 1 },
+      { path: 'src/d.ts', added: 2, removed: 0 },
+    ])
+    expect(taskFileChanges(message, 'other')).toEqual([{ path: '/p/o.ts', added: 1, removed: 0 }])
   })
 })

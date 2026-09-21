@@ -54,6 +54,12 @@ interface ToolMeta {
   toolTodos?: TodoToolItem[]
 }
 
+export interface TaskFileChange {
+  path: string
+  added: number
+  removed: number
+}
+
 interface AgentTaskData {
   runInBackground?: boolean
   taskUsage?: { totalTokens: number; toolUses: number; durationMs: number }
@@ -69,6 +75,13 @@ interface AgentTaskData {
    * phone cannot tell a running workflow from a finished one.
    */
   taskStatus?: 'completed' | 'failed' | 'stopped'
+  /**
+   * The subagent's own file edits, one row per successful child Edit/Write.
+   * A progressive remote shell drops the children, so the turn's diff stat on
+   * the phone has nothing else to read; desktop and legacy remotes still
+   * derive the same rows from the children themselves.
+   */
+  taskFileChanges?: TaskFileChange[]
   /**
    * Persisted path to child transcript (Grok chat_history.jsonl / Claude agent-*.jsonl).
    * Survives history reload when live taskProgress is empty.

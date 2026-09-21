@@ -1,6 +1,74 @@
-import type { ChatMessage, ContentBlock, CodexFileUpdateChange, CodexMcpToolCallItem, CodexThreadItem } from '@superone/shared/agent-types'
+import type { ChatMessage, ContentBlock, CodexFileUpdateChange, CodexMcpToolCallItem, CodexThreadItem, TaskFileChange } from '@superone/shared/agent-types'
+import { fileMutationPath, isFileMutationTool } from '@superone/shared/file-mutation'
 import { sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
+import { isSubagentToolName, normalizeTranscriptTool } from '@superone/shared/tool-ui'
 import { compactMediaToolResult, computeToolLineDelta, computeToolMeta, stripMessagesForRemote } from '../remote-content'
+
+const SHELL_INPUT_MAX = 1024
+
+/**
+ * The collapsed row's input. Past the cap the input is blanked, except that a
+ * subagent's header (name, type, team, model, description) must survive: the
+ * desktop draws the name tag without expanding, and only `prompt` is ever what
+ * pushes an Agent call past the cap.
+ */
+function shellInput(toolName: string, input: string): string {
+  if (input.length <= SHELL_INPUT_MAX) return input
+  if (!isSubagentToolName(toolName)) return '{}'
+  try {
+    const { prompt: _prompt, ...header } = JSON.parse(input) as Record<string, unknown>
+    const compact = JSON.stringify(header)
+    return compact.length <= SHELL_INPUT_MAX ? compact : '{}'
+  } catch {
+    return '{}'
+  }
+}
+
+function parseInput(input: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(input)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function fileMutationOf(block: Extract<ContentBlock, { toolName: string }>): TaskFileChange | undefined {
+  const params = parseInput(block.input)
+  if (!params) return undefined
+  const normalized = normalizeTranscriptTool(block.toolName, params)
+  if (!isFileMutationTool(normalized.toolName)) return undefined
+  const path = fileMutationPath(normalized.input) || block.toolFilePath || ''
+  if (!path) return undefined
+  const delta = block.toolLineDelta ?? computeToolLineDelta(block.toolName, block.input)
+  return { path, added: delta?.added ?? 0, removed: delta?.removed ?? 0 }
+}
+
+/**
+ * File edits made under a subagent (any depth), skipping calls that failed or
+ * were denied — the same rows the desktop derives from the children it keeps.
+ */
+export function taskFileChanges(message: ChatMessage, containerId: string): TaskFileChange[] {
+  const failed = new Set(message.content.flatMap(block =>
+    block.type === 'tool_result' && (block.isError || block.summary.startsWith('[denied] ')) ? [block.toolUseId] : []))
+  // Content is in stream order, so a parent always precedes its children.
+  const family = new Set([containerId])
+  const changes: TaskFileChange[] = []
+  for (const block of message.content) {
+    if (!('toolName' in block) || !block.parentToolUseId || !family.has(block.parentToolUseId)) continue
+    family.add(block.toolUseId)
+    if (failed.has(block.toolUseId)) continue
+    const change = fileMutationOf(block)
+    if (change) changes.push(change)
+  }
+  return changes
+}
+
+/** Whether a child block can move its container's `taskFileChanges`. */
+export function isFileMutationChild(message: ChatMessage, toolUseId: string): boolean {
+  const block = message.content.find(candidate => 'toolName' in candidate && candidate.toolUseId === toolUseId)
+  return !!block && 'toolName' in block && fileMutationOf(block) !== undefined
+}
 
 /**
  * Inline UI and decision prompts are visible content, not hidden tool detail.
@@ -54,11 +122,13 @@ export function projectTool(block: ContentBlock, ref: string): ContentBlock {
   const input = sanitizeRemoteToolInput(block.toolName, block.input)
   const toolLineDelta = block.toolLineDelta ?? computeToolLineDelta(block.toolName, block.input)
   return { type: block.type, toolName: block.toolName, toolUseId: block.toolUseId,
-    input: input.length <= 1024 ? input : '{}', status: block.status, elapsedSeconds: block.elapsedSeconds,
+    input: shellInput(block.toolName, input), status: block.status, elapsedSeconds: block.elapsedSeconds,
     parentToolUseId: block.parentToolUseId, startedAt: block.startedAt,
     toolSummary: projectedToolSummary(block), toolFilePath: block.toolFilePath,
     ...(toolLineDelta ? { toolLineDelta } : {}),
     ...(block.toolName === 'Workflow' ? workflowShell(block) : {}),
+    // The card's collapsed badge (calls · tokens); the children behind it are not sent.
+    ...(isSubagentToolName(block.toolName) ? { taskUsage: block.taskUsage, taskStatus: block.taskStatus } : {}),
     remoteDetail: ref } as ContentBlock
 }
 export function toolDetail(message: ChatMessage, id: string): string {

@@ -1,4 +1,5 @@
-import type { CodexThreadItem } from '@superone/shared/agent-types'
+import type { CodexThreadItem, TaskFileChange } from '@superone/shared/agent-types'
+import { fileMutationPath, isFileMutationTool } from '@superone/shared/file-mutation'
 import { normalizeTranscriptTool } from '@superone/shared/tool-ui'
 import { computeLineDelta } from './tool-block-utils'
 
@@ -16,8 +17,6 @@ export const EMPTY_TURN_PROCESS_STATS: TurnProcessStats = {
   removed: 0,
 }
 
-const FILE_MUTATION_TOOLS = new Set(['Edit', 'Write', 'FileChange', 'NotebookEdit'])
-
 type ClaudeProcessToolBlock = {
   type: string
   toolName?: string
@@ -25,6 +24,7 @@ type ClaudeProcessToolBlock = {
   input?: string
   toolFilePath?: string
   toolLineDelta?: { added: number; removed: number }
+  taskFileChanges?: TaskFileChange[]
 }
 
 export type ClaudeProcessStatsSeg = {
@@ -59,6 +59,11 @@ function parseToolInput(input: string): Record<string, unknown> {
   }
 }
 
+/**
+ * One entry per call the turn's own agent made. A subagent is one call here —
+ * its children count inside its card, not in the turn header; only their file
+ * edits fold back into the turn (see `eachSubagentEdit`).
+ */
 function* eachClaudeToolUse(seg: ClaudeProcessStatsSeg): Generator<ClaudeProcessToolBlock> {
   if (seg.kind === 'block' && seg.block?.type === 'tool_use') {
     yield seg.block
@@ -70,19 +75,26 @@ function* eachClaudeToolUse(seg: ClaudeProcessStatsSeg): Generator<ClaudeProcess
     }
     return
   }
-  if (seg.kind === 'subagent') {
-    if (seg.taskBlock) yield seg.taskBlock
-    for (const block of seg.childBlocks ?? []) {
-      if (block.type === 'tool_use') yield block
-    }
-    return
-  }
+  if (seg.kind === 'subagent' && seg.taskBlock) yield seg.taskBlock
   if (seg.kind === 'workflow' && seg.toolBlock) yield seg.toolBlock
 }
 
-function mutationFilePath(params: Record<string, unknown>): string {
-  const raw = params.file_path ?? params.notebook_path ?? params.target_file ?? params.path
-  return typeof raw === 'string' ? raw : ''
+/**
+ * A subagent's edits are the turn's edits. Read them off the children when the
+ * transcript carries them (desktop, legacy remote); a progressive remote shell
+ * has no children and reads the container's `taskFileChanges` instead.
+ */
+function* eachSubagentEdit(
+  seg: ClaudeProcessStatsSeg,
+): Generator<{ block: ClaudeProcessToolBlock } | { change: TaskFileChange }> {
+  if (seg.kind !== 'subagent') return
+  if (seg.childBlocks?.length) {
+    for (const block of seg.childBlocks) {
+      if (block.type === 'tool_use') yield { block }
+    }
+    return
+  }
+  for (const change of seg.taskBlock?.taskFileChanges ?? []) yield { change }
 }
 
 function lineDeltaForMutation(
@@ -106,8 +118,8 @@ function accumulateMutation(
   projected?: { path?: string; delta?: { added: number; removed: number } },
 ): void {
   const normalized = normalizeTranscriptTool(toolName, rawInput)
-  if (!FILE_MUTATION_TOOLS.has(normalized.toolName)) return
-  const path = mutationFilePath(normalized.input) || projected?.path || ''
+  if (!isFileMutationTool(normalized.toolName)) return
+  const path = fileMutationPath(normalized.input) || projected?.path || ''
   if (path) files.add(path)
   const delta = lineDeltaForMutation(normalized.toolName, normalized.input) ?? projected?.delta ?? null
   if (!delta) return
@@ -126,6 +138,14 @@ export function summarizeClaudeProcess(
 ): TurnProcessStats {
   const stats: TurnProcessStats = { ...EMPTY_TURN_PROCESS_STATS }
   const files = new Set<string>()
+  const failed = (toolUseId: string, result: string | undefined): boolean =>
+    opts.isErrorTool?.(toolUseId) === true || result?.startsWith('[denied] ') === true
+  const accumulateBlock = (block: ClaudeProcessToolBlock): void => {
+    accumulateMutation(stats, files, block.toolName ?? '', parseToolInput(block.input ?? ''), {
+      path: block.toolFilePath,
+      delta: block.toolLineDelta,
+    })
+  }
   for (const seg of segs) {
     for (const block of eachClaudeToolUse(seg)) {
       const toolName = block.toolName ?? ''
@@ -133,11 +153,17 @@ export function summarizeClaudeProcess(
       const result = opts.toolResultAt(toolUseId)
       if (opts.isHiddenTool(toolName, result)) continue
       stats.toolCalls += 1
-      if (opts.isErrorTool?.(toolUseId) || result?.startsWith('[denied] ')) continue
-      accumulateMutation(stats, files, toolName, parseToolInput(block.input ?? ''), {
-        path: block.toolFilePath,
-        delta: block.toolLineDelta,
-      })
+      if (!failed(toolUseId, result)) accumulateBlock(block)
+    }
+    for (const edit of eachSubagentEdit(seg)) {
+      if ('change' in edit) {
+        if (edit.change.path) files.add(edit.change.path)
+        stats.added += edit.change.added
+        stats.removed += edit.change.removed
+        continue
+      }
+      const toolUseId = edit.block.toolUseId ?? ''
+      if (!failed(toolUseId, opts.toolResultAt(toolUseId))) accumulateBlock(edit.block)
     }
   }
   return finishStats(stats, files)

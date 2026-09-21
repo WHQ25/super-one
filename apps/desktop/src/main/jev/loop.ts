@@ -47,6 +47,12 @@ export interface RunDeps<Page extends RunObservation = RunObservation> {
   /** Drag the selected element onto the target, center to center. */
   drag?(node: number, target: number, signal?: AbortSignal): Promise<void>
   /**
+   * Run actions the caller handed over at a `capability` pause, in this
+   * platform's own `*_act` vocabulary, on `page` (§11.4). Optional: without
+   * it a hand-over can still bring presets, and the pause says so.
+   */
+  act?(page: Page, actions: unknown[], signal?: AbortSignal): Promise<void>
+  /**
    * A fresh visual observation for a pause: the caller answers a question
    * about a page it has never seen, and a path to a picture of it costs one
    * capture, not context (research doc §11.4). Best effort — a failed capture
@@ -148,8 +154,8 @@ interface Pending<Page extends RunObservation> {
   question: Question
   page: Page | null
   space: ActionSpace | null
-  /** What answering with an element index means. */
-  mode: 'click' | 'type_text' | 'append' | 'switch' | 'context_menu' | 'drag' | 'escape' | 'accept'
+  /** What answering with an element index means; `handed` takes `{ actions?, presets? }`. */
+  mode: 'click' | 'type_text' | 'append' | 'switch' | 'context_menu' | 'drag' | 'escape' | 'accept' | 'handed'
   element?: SpaceElement
   presetKey?: string
   /** For a drag pause: the item that would move. */
@@ -244,6 +250,7 @@ export class FastRun<Page extends RunObservation = RunObservation> {
       return this.loop(signal)
     }
     if (!pending.page || !pending.space) return this.loop(signal)
+    if (pending.mode === 'handed') return this.resumeHanded(answer, pending, signal)
     if (pending.mode === 'escape') {
       // The key was the question; a fresh page is what it acts on.
       this.lastPage = await this.execute({ kind: 'escape', risk: 0 }, await this.deps.observe(signal), true, true, signal)
@@ -318,10 +325,40 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     return this.loop(signal)
   }
 
+  /**
+   * A `capability` answer: presets join the run's own, actions run on a fresh
+   * page through the platform's act (§11.4). Only actions count as a step —
+   * presets are typed later by steps of their own — and they run as approved:
+   * the caller wrote them. A page that changed while paused still takes the
+   * hand-over; the caller aimed the actions at the pause snapshot's state, and
+   * the adapter's own stale check is what refuses a state that has expired.
+   */
+  private async resumeHanded(answer: Answer, pending: Pending<Page>, signal?: AbortSignal): Promise<RunResult> {
+    const value = (answer.value ?? {}) as { actions?: unknown; presets?: unknown }
+    const actions = Array.isArray(value.actions) ? value.actions : undefined
+    const presets = Array.isArray(value.presets) ? value.presets.filter((p): p is Preset => !!p && typeof p === 'object' && typeof (p as Preset).key === 'string' && typeof (p as Preset).value === 'string') : undefined
+    if (!actions?.length && !presets?.length) return this.result('aborted', 'A capability answer needs { actions } and/or { presets }')
+    if (presets?.length) {
+      const keys = new Set(presets.map((p) => p.key))
+      this.opts.presets = [...this.opts.presets.filter((p) => !keys.has(p.key)), ...presets]
+      this.progress.note = `${presets.length} preset(s) taken over: ${presets.map((p) => p.key).join(', ')}`
+    }
+    if (actions?.length) {
+      if (!this.deps.act) return this.result('aborted', 'This platform cannot run handed-over actions; hand over presets instead.')
+      const page = pending.page && !this.deps.reobserveOnResume && (await this.deps.isFresh(pending.page, undefined, signal)) ? pending.page : await this.deps.observe(signal)
+      this.steps++
+      this.lastPage = await this.execute({ kind: 'handed', actions, target: pending.element }, page, true, true, signal)
+      return this.loop(signal)
+    }
+    this.lastPage = null
+    return this.loop(signal)
+  }
+
   private async pauseForValue(element: SpaceElement, page: Page, space: ActionSpace, _signal?: AbortSignal): Promise<RunResult> {
     return this.pause({
       type: 'value',
       reason: 'uncertain',
+      options: [{ key: 'accept', label: 'Finish: the goal is reached as the page stands' }, { key: 'abort', label: 'Stop; hand control back to you' }],
       schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
       context: { why: `No preset matches [${element.index}] ${element.label}`, target: { index: element.index, role: element.role, label: element.label } },
     }, page, space, 'type_text', element)
@@ -523,6 +560,8 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     const approvedFlag = approved ? { approved: true as const } : {}
     const entry: HistoryEntry = decision.kind === 'scroll'
       ? { node: decision.element?.node ?? -1, kind: 'scroll', label: `Scroll ${decision.direction}${decision.element ? ` in [${decision.element.index}] ${decision.element.label}` : ''}`, changedPage: null }
+      : decision.kind === 'handed'
+        ? { node: decision.target?.node ?? -1, kind: 'handed', label: `Handed ${describeHanded(decision.actions)}${decision.target ? ` at [${decision.target.index}] ${decision.target.label}` : ''}`, changedPage: null, approved: true }
       : decision.kind === 'escape'
         ? { node: -1, kind: 'escape', label: 'Press Escape', changedPage: null, ...approvedFlag }
         : decision.kind === 'switch'
@@ -543,7 +582,11 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     // Record before acting: a navigation that interrupts the post-action observe must not erase the action.
     this.history.push(entry)
     try {
-    if (decision.kind === 'scroll') {
+    if (decision.kind === 'handed') {
+      if (!this.deps.act) throw new RunPaused('no-progress', 'This platform cannot run handed-over actions.')
+      await this.deps.act(page, decision.actions, signal)
+      await this.settle(page, { node: decision.target?.node ?? -1 }, signal)
+    } else if (decision.kind === 'scroll') {
       const delta = decision.direction === 'down' ? SCROLL_DELTA : -SCROLL_DELTA
       if (decision.element && this.deps.scrollArea) await this.deps.scrollArea(decision.element.node, delta, signal)
       else await this.deps.scroll(page, delta, signal)
@@ -623,13 +666,18 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     const observed = page ?? (withoutObserve ? null : await this.deps.observe())
     const built = space ?? (observed ? buildActionSpace({ page: observed, history: this.history }) : null)
     const id = `q${++this.questionSeq}`
+    // A platform without `act` can still take presets; the schema says so.
+    if (question.reason === 'capability' && !this.deps.act && question.schema) {
+      const { actions: _actions, ...properties } = (question.schema.properties ?? {}) as Record<string, unknown>
+      question = { ...question, schema: { ...question.schema, properties, required: ['presets'], anyOf: undefined }, context: { ...question.context, why: `${String(question.context.why)} (This platform takes presets only.)` } }
+    }
     const full: Question = { id, ...question }
     this.pending = { question: full, page: observed, space: built, mode, element, presetKey, target }
     this.lastPage = observed
     this.status = 'paused'
     // Which pause reasons a picture helps with is a table, not a question for
     // Jev: it reads text and could not answer it better than the table does.
-    const relevance = question.reason === 'risky' ? 'useful' : 'optional'
+    const relevance = question.reason === 'capability' ? 'required' : question.reason === 'risky' ? 'useful' : 'optional'
     const capture = observed && this.deps.capture ? await this.deps.capture().catch(() => null) : null
     return {
       status: 'paused',
@@ -724,6 +772,8 @@ function reportableAction(decision: Record<string, unknown>): JevRunAction | nul
       return { op: 'click', target: `Right-click ${target ?? ''}`.trim() }
     case 'drag':
       return { op: 'press', target: `Drag ${target ?? ''} onto ${String(decision.onto ?? '')}`.trim() }
+    case 'handed':
+      return { op: 'press', target: `Handed ${String(decision.actions ?? '')}`.trim() }
     case 'wait':
       return { op: 'wait' }
     default:
@@ -753,9 +803,17 @@ function describeDecision(d: Decision): Record<string, unknown> {
       return { kind: 'context_menu', index: d.element.index, label: d.element.label, probability: d.probability, risk: d.risk }
     case 'drag':
       return { kind: 'drag', index: d.element.index, label: d.element.label, onto: d.target.label, targetIndex: d.target.index, probability: d.probability, risk: d.risk }
+    case 'handed':
+      return { kind: 'handed', actions: describeHanded(d.actions), ...(d.target ? { index: d.target.index, label: d.target.label } : {}) }
     case 'pause':
       return { kind: 'pause', reason: d.question.reason, type: d.question.type, why: d.question.context.why }
   }
+}
+
+/** "2 actions (click, drag)": the shape of a hand-over, for history and trace; the actions themselves stay in the answer. */
+function describeHanded(actions: unknown[]): string {
+  const types = [...new Set(actions.map((a) => (a && typeof a === 'object' && typeof (a as { type?: unknown }).type === 'string' ? (a as { type: string }).type : 'action')))]
+  return `${actions.length} action${actions.length === 1 ? '' : 's'} (${types.join(', ')})`
 }
 
 /** Adapter refusals that require the caller to resolve a capability or UI boundary. */

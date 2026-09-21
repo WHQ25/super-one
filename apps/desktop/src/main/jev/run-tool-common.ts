@@ -20,7 +20,7 @@ export const runInputShape = {
   answer: z.object({
     questionId: z.string(),
     choice: z.string().optional().describe('An option key from the question, or "abort".'),
-    value: z.record(z.string(), z.unknown()).optional().describe('For type=value questions: { text }.'),
+    value: z.record(z.string(), z.unknown()).optional().describe('For type=value questions: { text }; for reason=capability: { actions?: <this platform\'s *_act actions, run on snapshot.stateId>, presets?: [{ key, value, field? }] }.'),
     goal: z.string().optional().describe('Optionally revise the goal.'),
     abort: z.boolean().optional(),
   }).optional().describe('Reply to the pending question when resuming.'),
@@ -75,7 +75,7 @@ export function reportRun(sessionId: string, platform: RunPlatform, run: PausedR
  * already reached its goal.
  */
 export const PAUSE_NEXT_HINT = (platform: RunPlatform): string =>
-  `Read progress first: progress.completed lists the steps since the last pause with the ${platform}_act outcome of each (unknown means no evidence either way, not failure), and progress.goal_satisfied / still_loading are Jev's last verdicts on the current page. snapshot is the page at pause time; snapshot.image.path is a picture of it (image.relevance says how much the question depends on it) and snapshot.stateId can be acted on with ${platform}_act. Then call ${platform}_run with { runId, answer: { questionId, choice | value } }; answer.abort=true hands control back.`
+  `Read progress first: progress.completed lists the steps since the last pause with the ${platform}_act outcome of each (unknown means no evidence either way, not failure), and progress.goal_satisfied / still_loading are Jev's last verdicts on the current page. snapshot is the page at pause time; snapshot.image.path is a picture of it (image.relevance says how much the question depends on it) and snapshot.stateId can be acted on with ${platform}_act. A reason=capability pause means Jev judged the next step needs input the loop cannot supply (question.context.hint says what kind, context.target which element; look at the image): answer with value.actions in ${platform}_act's vocabulary against snapshot.stateId and/or value.presets for the loop to type. Then call ${platform}_run with { runId, answer: { questionId, choice | value } }; answer.abort=true hands control back.`
 
 export function finishRun(sessionId: string, platform: RunPlatform, run: PausedRun, result: RunResult): RunResult & { next?: string } {
   runReporter(sessionId, result.runId, platform).outcome(result.status)

@@ -16,7 +16,7 @@ export interface SpaceElement extends RawElement {
 
 export interface HistoryEntry {
   node: number
-  kind: 'click' | 'submit' | 'type_text' | 'append' | 'scroll' | 'escape' | 'switch' | 'context_menu' | 'drag' | 'wait'
+  kind: 'click' | 'submit' | 'type_text' | 'append' | 'scroll' | 'escape' | 'switch' | 'context_menu' | 'drag' | 'handed' | 'wait'
   label: string
   changedPage: boolean | null
   /** Set once the dispatch finished, so `completed_actions` lists real steps only. */
@@ -50,6 +50,8 @@ export interface ActionSpace {
   /** Selected items that can be dragged, and where they can be dropped; drag is offered only when both are non-empty. */
   dragSources: string[]
   dropTargets: string[]
+  /** Elements a hand-over can concern: what is on the window, pictures included, menu commands not. */
+  handCandidates: string[]
   canScrollDown: boolean
   canScrollUp: boolean
   canEscape: boolean
@@ -76,10 +78,12 @@ export function buildActionSpace(input: ActionSpaceInput): ActionSpace {
   const contextMenuCandidates: string[] = []
   const dragSources: string[] = []
   const dropTargets: string[] = []
+  const handCandidates: string[] = []
   for (const el of elements) {
     // A password field is never a candidate of either kind: the loop cannot
     // fill it (no preset may hold a password) and clicking it achieves nothing.
     if (el.password || el.disabled) continue
+    if (!el.menuCommand && !el.root) handCandidates.push(el.index)
     if (el.scroll) {
       if (el.scroll.up || el.scroll.down) scrollCandidates.push(el.index)
       continue
@@ -116,6 +120,7 @@ export function buildActionSpace(input: ActionSpaceInput): ActionSpace {
     contextMenuCandidates,
     dragSources,
     dropTargets,
+    handCandidates,
     canScrollDown: page.canScroll?.down ?? page.scroll.y + page.scroll.viewport < page.scroll.height - 2,
     canScrollUp: page.canScroll?.up ?? page.scroll.y > 0,
     canEscape: page.canEscape === true,

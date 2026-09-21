@@ -781,6 +781,54 @@ describe('computer fast-loop adapter', () => {
     expect(page.elements.find((e) => e.dragSource)?.label).toBe('Report.txt')
   })
 
+  it('lists a picture for the hand_target head, keeps menu commands out of it, and runs handed actions through the service', async () => {
+    // Preview: an image with no actions of its own, a caption field, and the
+    // menu bar. The picture is named in the text and offered to nothing but the
+    // hand-over; a menu command is not somewhere an input could land.
+    const backend = new FakePlatformBackend([{ app: 'Preview', bundleId: 'com.test.preview', pid: 9,
+      menuBar: { role: 'menuBar', children: [{ role: 'menuBarItem', name: 'File', children: [{ role: 'menuItem', name: 'Export…' }, { role: 'menuItem', name: 'Crop', enabled: false }] }] },
+      windows: [{ title: 'photo.jpg', tree: { role: 'window', children: [
+        { role: 'image', name: 'photo.jpg', bounds: { x: 0, y: 40, width: 400, height: 300 } },
+        { role: 'textField', name: 'Caption', value: '', bounds: { x: 0, y: 350, width: 400, height: 24 } },
+      ] } }] }])
+    const service = new ComputerUseService({ adapter: backend })
+    service.policy.setEnabled(true)
+    service.policy.grantSession({ app: 'Preview', bundleId: 'com.test.preview', tier: 'full' })
+    const adapter = createComputerAdapter({ service, ask: vi.fn(), resolve: async () => (await service.resolveTargetRoot()).rootId })
+    await adapter.resolveTarget()
+    const page = await adapter.observe()
+    const picture = page.elements.find((e) => e.picture)!
+    expect(picture).toMatchObject({ role: 'image', label: 'photo.jpg', clickable: false, bounds: { x: 0, y: 40, width: 400, height: 300 } })
+    expect(page.text).toContain('(picture-only: photo.jpg)')
+    const command = page.elements.find((e) => e.label === 'File ▸ Export…')!
+    expect(command.menuCommand).toBe(true)
+    // A disabled command is not offered, and the text says it is disabled.
+    expect(page.elements.some((e) => e.label === 'File ▸ Crop')).toBe(false)
+    expect(page.text).toContain('Crop (disabled)')
+    const space = buildActionSpace({ page, history: [] })
+    expect(space.handCandidates).toContain(String(picture.node))
+    expect(space.handCandidates).not.toContain(String(command.node))
+    expect(space.clickCandidates).not.toContain(String(picture.node))
+    const request = buildRequest({ goal: 'g', page, space, presets: [], last: undefined, history: [] })
+    expect(request.questions.action.criteria).toHaveProperty('needs_input')
+    expect(request.questions.hand_target!.criteria![String(picture.node)]).toMatchObject({ element: `[${picture.node}] Hand over input for photo.jpg` })
+    expect(request.questions.input_kind!.criteria).toHaveProperty('position')
+    // Handed actions go to the service as a computer_act batch on the current state.
+    const act = vi.spyOn(service, 'act')
+    await adapter.act!(page, [{ type: 'click', x: 120, y: 160 }])
+    expect(act).toHaveBeenCalledWith(page.stateId, [{ type: 'click', x: 120, y: 160 }], expect.any(Object))
+    // A handed drag's end point is a drop point: the host lowers its own window over it, as for the loop's drags.
+    backend.coverWindow(9, 'photo.jpg', { windowId: 301, pid: 4242, app: 'SuperOne' }, { x: 300, y: 300, width: 100, height: 100 })
+    const lowered: number[][] = []
+    const lower = vi.fn((ids: number[]) => { lowered.push(ids); for (const id of ids) backend.uncover(id); return () => {} })
+    const hosted = createComputerAdapter({ service, ask: vi.fn(), ownWindows: { pid: 4242, lower }, resolve: async () => (await service.resolveTargetRoot()).rootId })
+    await hosted.resolveTarget()
+    const hostedPage = await hosted.observe()
+    await hosted.act!(hostedPage, [{ type: 'drag', path: [{ x: 50, y: 60 }, { x: 350, y: 340 }] }])
+    expect(lowered).toEqual([[301]])
+    expect(act).toHaveBeenLastCalledWith(hostedPage.stateId, [{ type: 'drag', path: [{ x: 50, y: 60 }, { x: 350, y: 340 }] }], expect.any(Object))
+  })
+
   it('drops a covered drop target from the offer, and lowers the host out of the way of one it covers itself', async () => {
     // A drop is delivered to the frontmost window at the drop point (§11.8).
     // Projects' row sits under another app's window: not offered, and the page

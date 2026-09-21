@@ -10,7 +10,7 @@ const elements = [
   el({ node: 3, role: 'button', label: 'Create', submit: true }),
 ]
 const space = buildActionSpace({ page: page(elements), history: [] })
-const ACTIONS = ['click', 'type_text', 'scroll_down', 'none_useful']
+const ACTIONS = ['click', 'type_text', 'scroll_down', 'needs_input', 'none_useful']
 const CLICKS = [...space.clickCandidates, NONE]
 const TYPES = [...space.typeCandidates, NONE]
 const calm = { still_loading: noul(0.1), goal_satisfied: noul(0.1), next_step_risk: noul(0.05) }
@@ -60,7 +60,7 @@ describe('decide', () => {
     expect(filled.clickCandidates).toContain('submit:2')
     const answers = {
       ...calm,
-      action: pick('type_text', ['click', 'type_text', 'scroll_down', 'none_useful']),
+      action: pick('type_text', ACTIONS),
       type_text_target: pick(NONE, [...filled.typeCandidates, NONE]),
       click_target: { type: 'choice' as const, choice: 'submit:2', confidence: 0.66,
         probabilities: { 'submit:2': 0.66, '1': 0.14, 'open:2': 0.1, [NONE]: 0.1 } },
@@ -159,6 +159,8 @@ describe('decide', () => {
 
     const unmatched = decide(input({ answers: { ...base, field_for_Body: pick(NONE, TYPES, 0.8) }, presets: [{ key: 'Body', value: 'x' }] }))
     expect(unmatched).toMatchObject({ kind: 'pause', mode: 'type_text', question: { type: 'value' } })
+    // Besides the text, the caller can finish or take over.
+    if (unmatched.kind === 'pause') expect(unmatched.question.options?.map((o) => o.key)).toEqual(['accept', 'abort'])
   })
 
   it('translates the heads into the pause\'s why, never inferring beyond them', () => {
@@ -207,6 +209,44 @@ describe('decide', () => {
     expect(decide(input({ answers: { ...base, click_target: pick(NONE, CLICKS, 0.9) } })).kind).toBe('scroll')
   })
 
+  it('pauses for a hand-over when Jev says the step needs input, translating the heads into what is needed', () => {
+    // A picture is listed for the hand_target head though nothing can be done
+    // to it; a menu command is not a place an input could go.
+    const canvas = buildActionSpace({ page: page([
+      ...elements,
+      el({ node: 4, role: 'image', label: 'photo.jpg', clickable: false, picture: true, bounds: { x: 10, y: 20, width: 300, height: 200 } }),
+      el({ node: 5, role: 'button', label: 'File ▸ Save', menuCommand: true }),
+    ]), history: [] })
+    expect(canvas.handCandidates).toEqual(['1', '2', '3', '4'])
+    expect(canvas.clickCandidates).not.toContain('4')
+    const HANDS = [...canvas.handCandidates, NONE]
+    const KINDS = ['position', 'path', 'text', 'value', 'other']
+    const base = { ...calm, action: pick('needs_input', ACTIONS, 0.8), click_target: pick(NONE, CLICKS), type_text_target: pick(NONE, TYPES) }
+    const point = decide(input({ space: canvas, answers: { ...base, hand_target: pick('4', HANDS, 0.85), input_kind: pick('position', KINDS, 0.7) } }))
+    expect(point).toMatchObject({
+      kind: 'pause', mode: 'handed', element: { index: '4' },
+      question: { type: 'value', reason: 'capability', context: { hint: 'position', target: { index: '4', label: 'photo.jpg', bounds: [10, 20, 300, 200] } } },
+    })
+    if (point.kind !== 'pause') throw new Error('expected pause')
+    expect(point.question.context.why).toMatch(/^A point on \[4\] photo\.jpg is needed; no offered element is that place — action: needs_input 0\.80/)
+    expect(point.question.context.why).toContain('hand_target: [4] photo.jpg 0.85')
+    expect(point.question.context.why).toContain('input_kind: position 0.70')
+    expect(point.question.context).not.toHaveProperty('risk')
+    expect(point.question.schema).toMatchObject({ properties: { actions: expect.any(Object), presets: expect.any(Object) } })
+    // The caller can also say the page already shows the goal, or take over.
+    expect(point.question.options?.map((o) => o.key)).toEqual(['accept', 'abort'])
+    // Text for a field: the same shape, another sentence; a risky step says so.
+    const text = decide(input({ space: canvas, answers: { ...base, next_step_risk: noul(0.8), hand_target: pick('2', HANDS), input_kind: pick('text', KINDS) } }))
+    if (text.kind !== 'pause') throw new Error('expected pause')
+    expect(text.question.context.why).toMatch(/^Text for \[2\] Add a title is needed and no preset holds it — /)
+    expect(text.question.context.risk).toContain('next_step_risk 0.80')
+    // No element named: the sentence falls back to the numbers themselves.
+    const other = decide(input({ space: canvas, answers: { ...base, hand_target: pick(NONE, HANDS), input_kind: pick('other', KINDS, 0.6) } }))
+    if (other.kind !== 'pause') throw new Error('expected pause')
+    expect(other.question.context.why).toMatch(/^Input of kind other is needed \(needs_input 0\.80, other 0\.60\) — /)
+    expect(other.question.context).not.toHaveProperty('target')
+  })
+
   describe('desktop-only heads', () => {
     // A desktop page offers scroll areas and text areas as elements; a browser
     // page never sets these flags, so its space has neither list and the
@@ -227,7 +267,7 @@ describe('decide', () => {
     const ROOTS = [...desktop.switchCandidates, NONE]
     const MENUS = [...desktop.contextMenuCandidates, NONE]
     const DROPS = [...desktop.dropTargets, NONE]
-    const DESKTOP_ACTIONS = ['click', 'type_text', 'append', 'scroll_down', 'scroll_up', 'escape', 'switch', 'context_menu', 'drag', 'none_useful']
+    const DESKTOP_ACTIONS = ['click', 'type_text', 'append', 'scroll_down', 'scroll_up', 'escape', 'switch', 'context_menu', 'drag', 'needs_input', 'none_useful']
 
     it('offers scroll areas, appendable text areas, roots and Escape only when the page flags them', () => {
       expect(space.scrollCandidates).toEqual([])

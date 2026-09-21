@@ -131,6 +131,8 @@ export function createDeviceAdapter(options: DeviceAdapterOptions): RunDeps<Devi
     isFresh: async (page) => session.store.latest?.stateId === page.stateId,
     sameTarget: (before, after, element) => before.signature === after.signature
       && after.elements.some((e) => e.node === element.node && e.label === element.label && e.editable === element.editable),
+    /** Actions handed over at a capability pause, in `device_act`'s vocabulary; the same gate as a device_act call. */
+    act: (_page, actions, signal) => act(actions as Array<Record<string, unknown>>, signal),
     click: (id, signal) => act([{ type: 'tap', ref: requirePage().refs.get(id)!.ref }], signal),
     type: (id, text, signal) => act([
       { type: 'tap', ref: requirePage().refs.get(id)!.ref }, { type: 'setText', text },

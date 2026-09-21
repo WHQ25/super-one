@@ -545,4 +545,57 @@ describe('FastRun', () => {
     expect(third.snapshot?.stateId).toBeUndefined()
     expect(acts).toEqual(['click:1', 'click:11'])
   })
+  it('hands over at a capability pause: actions run through the platform act as a step, presets join the run, a platform without act takes presets only', async () => {
+    const CANVAS = page([
+      el({ node: 1, role: 'image', label: 'photo.jpg', clickable: false, picture: true, bounds: { x: 0, y: 0, width: 400, height: 300 } }),
+      el({ node: 2, role: 'textbox', label: 'Caption', editable: true }),
+    ], { text: 'Preview (picture-only: photo.jpg)' })
+    const MARKED = page(CANVAS.elements, { text: 'Preview marked' })
+    const CAPTIONED = page([CANVAS.elements[0]!, { ...CANVAS.elements[1]!, value: 'Rex' }], { text: 'Preview marked and captioned' })
+    let asked = 0
+    const { deps, acts, next } = harness([CANVAS, MARKED, CAPTIONED], (request) => {
+      asked++
+      const state = request.state as { presets?: Array<{ key: string }>; elements: Array<{ value?: string }> }
+      const presets = state.presets ?? []
+      // First: a point is needed. Once a caption preset exists, type it; then nothing more.
+      if (asked === 1) return { still_loading: noul(0), goal_satisfied: noul(0.05), next_step_risk: noul(0.1), action: pick('needs_input', actionsOf(request)), hand_target: pick('1', Object.keys((request.questions.hand_target as { criteria: Record<string, unknown> }).criteria)), input_kind: pick('position', ['position', 'path', 'text', 'value', 'other']) }
+      if (presets.some((p) => p.key === 'Caption') && !state.elements[1]?.value) return { still_loading: noul(0), goal_satisfied: noul(0.1), next_step_risk: noul(0), action: pick('type_text', actionsOf(request)), type_text_target: pick('2', typesOf(request)), field_for_Caption: pick('2', typesOf(request), 0.95) }
+      return { still_loading: noul(0), goal_satisfied: noul(0.9), next_step_risk: noul(0), action: pick('none_useful', actionsOf(request), 0.95) }
+    })
+    deps.checkDone = async () => false
+    deps.capture = async () => ({ image: { path: '/tmp/shot.png', width: 400, height: 300 } })
+    const handed: unknown[][] = []
+    deps.act = async (_page, actions) => { handed.push(actions); acts.push(`act:${actions.length}`); next() }
+    const run = new FastRun(opts({ goal: 'Mark the dog and caption it' }), deps)
+    const paused = await run.start()
+    expect(paused.question).toMatchObject({ type: 'value', reason: 'capability', context: { hint: 'position', target: { index: '1', label: 'photo.jpg', bounds: [0, 0, 400, 300] } } })
+    expect(paused.snapshot?.image?.relevance).toBe('required')
+    expect(paused.question?.schema).toMatchObject({ properties: { actions: expect.any(Object), presets: expect.any(Object) } })
+    // Actions and presets in one answer: the click runs now as an approved step, the caption is typed by a later step.
+    const resumed = await run.resume({ questionId: paused.question!.id, value: { actions: [{ type: 'click', x: 120, y: 80 }], presets: [{ key: 'Caption', value: 'Rex' }] } })
+    expect(handed).toEqual([[{ type: 'click', x: 120, y: 80 }]])
+    expect(acts).toEqual(['act:1', 'type:2:Rex'])
+    expect(resumed.status).toBe('done')
+    expect(resumed.progress.completed).toEqual([
+      { label: 'Handed 1 action (click) at [1] photo.jpg', outcome: 'worked' },
+      { label: 'Type presets.Caption → [2] Caption', outcome: 'worked' },
+    ])
+    expect(resumed.progress.note).toBe('1 preset(s) taken over: Caption')
+    // The hand-over counted as a step of its own: ask, handed, type, and the two asks that confirm completion.
+    expect(resumed.steps).toBe(5)
+
+    // An answer with neither is refused; a platform without act says so in the schema and takes presets only.
+    asked = 0
+    const plain = harness([CANVAS], (request) => ({ still_loading: noul(0), goal_satisfied: noul(0), next_step_risk: noul(0), action: pick('needs_input', actionsOf(request)), hand_target: pick(NONE, Object.keys((request.questions.hand_target as { criteria: Record<string, unknown> }).criteria)), input_kind: pick('text', ['position', 'path', 'text', 'value', 'other']) }))
+    plain.deps.checkDone = async () => false
+    const second = new FastRun(opts(), plain.deps)
+    const pausedPlain = await second.start()
+    expect(pausedPlain.question?.schema).toMatchObject({ required: ['presets'] })
+    expect((pausedPlain.question?.schema as { properties: Record<string, unknown> }).properties).not.toHaveProperty('actions')
+    expect(pausedPlain.question?.context.why).toContain('(This platform takes presets only.)')
+    expect((await second.resume({ questionId: pausedPlain.question!.id, value: {} })).why).toBe('A capability answer needs { actions } and/or { presets }')
+    const third = new FastRun(opts(), plain.deps)
+    const pausedAgain = await third.start()
+    expect((await third.resume({ questionId: pausedAgain.question!.id, value: { actions: [{ type: 'click', x: 1, y: 1 }] } })).why).toBe('This platform cannot run handed-over actions; hand over presets instead.')
+  })
 })

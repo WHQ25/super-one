@@ -7,7 +7,7 @@
 
 import { type ActionSpace, clickKindOf, elementByIndex, type SpaceElement } from './action-space'
 
-import { dragHeads, NONE, type ActionOption, ACTION_OPTIONS, type Preset } from './questions'
+import { dragHeads, INPUT_KINDS, type InputKind, NONE, type ActionOption, ACTION_OPTIONS, type Preset } from './questions'
 import { type JevAnswer, readNoul, validateChoice } from './typesafe-client'
 
 export const THRESHOLDS = {
@@ -45,7 +45,8 @@ export const THRESHOLDS = {
   risk: 0.5,
 } as const
 
-export type PauseReason = 'uncertain' | 'risky' | 'no-progress' | 'budget'
+/** `capability`: Jev judged the next step needs input the loop cannot supply; the caller hands it over (§11.4). */
+export type PauseReason = 'uncertain' | 'risky' | 'no-progress' | 'budget' | 'capability'
 
 export interface QuestionOption {
   key: string
@@ -78,11 +79,13 @@ export type Decision =
   | { kind: 'context_menu'; element: SpaceElement; probability: number; risk: number }
   /** Drag the selected `element` onto `target`, center to center. */
   | { kind: 'drag'; element: SpaceElement; target: SpaceElement; probability: number; risk: number }
+  /** Actions the caller handed over at a capability pause; never produced by `decide`, only by a resume. */
+  | { kind: 'handed'; actions: unknown[]; target?: SpaceElement }
   | {
     kind: 'pause'
     question: Omit<Question, 'id'>
-    /** What an answered element index means when the run resumes. */
-    mode: 'click' | 'type_text' | 'append' | 'switch' | 'context_menu' | 'drag' | 'escape' | 'accept'
+    /** What an answered element index means when the run resumes; `handed` takes `{ actions?, presets? }` instead. */
+    mode: 'click' | 'type_text' | 'append' | 'switch' | 'context_menu' | 'drag' | 'escape' | 'accept' | 'handed'
     /** For a drag pause: the item that would move; the answer names where. */
     target?: SpaceElement
     element?: SpaceElement
@@ -145,7 +148,7 @@ function decisionSummary(answers: Record<string, JevAnswer>): Record<string, unk
 }
 
 /** The target heads, in the order they are read out. */
-const TARGET_HEADS = ['click_target', 'type_text_target', 'append_target', 'scroll_area', 'switch_target', 'context_menu_target'] as const
+const TARGET_HEADS = ['click_target', 'type_text_target', 'append_target', 'scroll_area', 'switch_target', 'context_menu_target', 'hand_target', 'input_kind'] as const
 
 /**
  * The heads in one sentence, for a pause's `why`. Jev writes no prose, so the
@@ -237,6 +240,7 @@ export function decide(input: DecideInput): Decision {
     if (o === 'drag') return space.dragSources.length > 0 && space.dropTargets.length > 0
     if (o === 'scroll_down') return space.canScrollDown
     if (o === 'scroll_up') return space.canScrollUp
+    // needs_input and none_useful are always on offer.
     return true
   })
   const action = validateChoice(answers.action, offered)
@@ -332,6 +336,7 @@ export function decide(input: DecideInput): Decision {
     }
     return { kind: 'escape', risk }
   }
+  if (chosen === 'needs_input') return handOver()
   if (chosen === 'drag') {
     // Several items may be selected; the one whose head is surest of a
     // container is the one to move. Where every head answered none_of_these,
@@ -395,6 +400,57 @@ export function decide(input: DecideInput): Decision {
    * while a click has no gate beyond naming a target. `mayHandOff` is false on
    * the receiving side, so a handoff never bounces back.
    */
+  /**
+   * Jev judged that the next step needs input the loop has no candidate for.
+   * The pause carries only what the caller does not already know — which
+   * element it concerns, what kind of input, and why in Jev's own numbers —
+   * and takes `{ actions?, presets? }` back: the platform's own act actions
+   * and/or presets for Jev to type later (§11.4). No gate: over-handing shows
+   * up in the trace as a distribution, not as a stuck run.
+   */
+  function handOver(): Decision {
+    const target = validateChoice(answers.hand_target, [...space.handCandidates, NONE])
+    const el = target && target.choice !== NONE ? elementByIndex(space, target.choice) : undefined
+    const kindAnswer = validateChoice(answers.input_kind, INPUT_KINDS)
+    const kind: InputKind = kindAnswer ? (kindAnswer.choice as InputKind) : 'other'
+    const at = el ? `[${el.index}] ${el.label}` : undefined
+    // Each sentence traces to a head's answer; nothing here infers what Jev meant.
+    const need = kind === 'position' && at ? `A point on ${at} is needed; no offered element is that place`
+      : kind === 'path' && at ? `A path across ${at} is needed; no offered element is where it goes`
+        : kind === 'text' && at ? `Text for ${at} is needed and no preset holds it`
+          : kind === 'value' && at ? `${at} needs a value not among its options`
+            : `Input of kind ${kind}${at ? ` for ${at}` : ''} is needed (needs_input ${(action?.probabilities.needs_input ?? 0).toFixed(2)}${kindAnswer ? `, ${kind} ${(kindAnswer.probabilities[kind] ?? 0).toFixed(2)}` : ''})`
+    return {
+      kind: 'pause',
+      mode: 'handed',
+      element: el,
+      question: {
+        type: 'value',
+        reason: 'capability',
+        // The caller can see the page; when the goal is already met it says so
+        // instead of inventing an input — the Preview run had nothing to hand
+        // over after its selection and could only abort.
+        options: [ACCEPT, ABORT],
+        schema: {
+          type: 'object',
+          properties: {
+            actions: { type: 'array', description: 'Actions in this platform\'s *_act vocabulary, run by the loop on snapshot.stateId before it continues.' },
+            presets: { type: 'array', items: { type: 'object', properties: { key: { type: 'string' }, value: { type: 'string' }, field: { type: 'string' } }, required: ['key', 'value'] }, description: 'Values for the loop to type later; merged into the run\'s presets.' },
+          },
+          anyOf: [{ required: ['actions'] }, { required: ['presets'] }],
+        },
+        context: {
+          ...(el ? { target: { index: el.index, role: el.role, label: el.label, ...(el.bounds ? { bounds: [el.bounds.x, el.bounds.y, el.bounds.width, el.bounds.height] } : {}) } } : {}),
+          hint: kind,
+          why: `${need} — ${heads}. Supply actions and/or presets as value, choose accept if the goal is reached as the page stands, or take over.`,
+          ...(risk >= THRESHOLDS.risk ? { risk: `Jev rates the step irreversible (next_step_risk ${risk.toFixed(2)}); handed actions run as approved.` } : {}),
+          page,
+          decision: summary,
+        },
+      },
+    }
+  }
+
   function clickTargetActionable(): boolean {
     const t = validateChoice(answers.click_target, [...space.clickCandidates, NONE])
     return !!t && t.choice !== NONE && !!elementByIndex(space, t.choice)
@@ -464,9 +520,12 @@ export function decide(input: DecideInput): Decision {
       question: {
         type: 'value',
         reason: 'uncertain',
+        // A value question's `options` are the caller's other two exits: the
+        // TextEdit haiku run had its text in place and was asked for more.
+        options: [ACCEPT, ABORT],
         schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
         context: {
-          why: `Jev wants to ${kind === 'append' ? 'append to' : 'type into'} [${el.index}] ${el.label} and no preset matched it${presets.length ? ` (${presets.map((pr) => { const a = validateChoice(answers[`field_for_${pr.key}`], [...space.typeCandidates, NONE]); return `field_for_${pr.key}: ${a ? `${a.choice} ${(a.probabilities[a.choice] ?? 0).toFixed(2)}` : 'not asked'}` }).join(', ')})` : ''} — ${heads}. Supply the text or take over.`,
+          why: `Jev wants to ${kind === 'append' ? 'append to' : 'type into'} [${el.index}] ${el.label} and no preset matched it${presets.length ? ` (${presets.map((pr) => { const a = validateChoice(answers[`field_for_${pr.key}`], [...space.typeCandidates, NONE]); return `field_for_${pr.key}: ${a ? `${a.choice} ${(a.probabilities[a.choice] ?? 0).toFixed(2)}` : 'not asked'}` }).join(', ')})` : ''} — ${heads}. Supply the text, choose accept if the goal is reached as the page stands, or take over.`,
           target: { index: el.index, role: el.role, label: el.label, value: el.value },
           presets: presets.map((pr) => pr.key),
           page,

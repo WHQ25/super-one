@@ -42,6 +42,16 @@ export interface RawElement {
   dragSource?: boolean
   /** A folder, mailbox or group a dragged item can be dropped into. Desktop only. */
   dropTarget?: boolean
+  /**
+   * A picture or canvas with no controls of its own: nothing the loop can do
+   * to it, but the place a handed-over point or path would land (§11.4). It
+   * is listed so the `hand_target` head can name it.
+   */
+  picture?: boolean
+  /** A menu-bar command (Desktop only): pressed like a button, but not a place on the window an input could be handed to. */
+  menuCommand?: boolean
+  /** Where the element is, in the adapter's coordinate space, for a hand-over's `context.target`. */
+  bounds?: { x: number; y: number; width: number; height: number }
 }
 
 export interface RunObservation {

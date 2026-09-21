@@ -2,7 +2,7 @@
 import { type ComputerUseService } from '../computer-use/computer-use-service'
 import { compactOutline, dropOccludedWebAreas } from '../computer-use/outline-compact'
 import { findNode } from '../computer-use/outline'
-import { ComputerUseError, type ActResult, type ComputerUseState, type Condition, type ObserveResult, type RootKind, type UiOutlineNode } from '../computer-use/types'
+import { ComputerUseError, type ActResult, type ComputerUseState, type Condition, type ObserveResult, type RootKind, type UiAction, type UiOutlineNode } from '../computer-use/types'
 import { planNodeAction, type NodeActionPlan } from '../computer-use/node-action-plan'
 import { persistComputerUseScreenshot } from '../computer-use/screenshot-store'
 import type { WindowCover } from '../computer-use/platform/types'
@@ -209,7 +209,10 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
     if (secure || POSITION_ROLES.has(role)) { /* nothing of a secure field is read; a position is not text */ }
     else if (disclosure) text.push(row && node.expanded != null ? `(${row}: ${node.expanded ? 'expanded' : 'collapsed'})` : '')
     else if (select && !node.name && (node.selected || inside)) text.push(`(${rowName}: ${[node.selected ? 'selected' : '', inside].filter(Boolean).join(', ')})`)
-    else text.push([node.name, value, node.selected ? '(selected)' : '', inside].filter(Boolean).join(' '))
+    // A disabled command reads as its name alone, so "Crop" in the text said
+    // the same before and after a selection made it available; the goal that
+    // asks for a command to become available needs the state in words.
+    else text.push([node.name, value, node.selected ? '(selected)' : '', inside, node.enabled === false && (node.name || value) ? '(disabled)' : ''].filter(Boolean).join(' '))
     // The menu tree is read closed, complete with submenus, and the helper
     // presses a command in it directly — activating a background app for the
     // press, since AppKit only validates menu items in the active app. So a
@@ -238,7 +241,7 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
         seen.add(`scroll:${node.ref}`)
         const id = elements.length + 1
         refs.set(id, node)
-        elements.push({ node: id, ref: node.ref, role: 'scrollarea', label: scrollAreaLabel(node), value: '', scroll: position,
+        elements.push({ node: id, ref: node.ref, role: 'scrollarea', label: scrollAreaLabel(node), value: '', scroll: position, bounds: node.bounds,
           editable: false, clickable: false, canSubmit: false, password: false, submit: false, disabled: false })
         canScrollDown ||= position.down
         canScrollUp ||= position.up
@@ -252,8 +255,22 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
       seen.add(`drag:${node.ref}`)
       const id = elements.length + 1
       refs.set(id, node)
-      elements.push({ node: id, ref: node.ref, role: ROLE_MAP[role] ?? role, label: rowName, value: 'selected', selected: 'true', dragSource: true,
+      elements.push({ node: id, ref: node.ref, role: ROLE_MAP[role] ?? role, label: rowName, value: 'selected', selected: 'true', dragSource: true, bounds: node.bounds,
         editable: false, clickable: false, canSubmit: false, password: false, submit: false, disabled: false })
+    }
+    // A picture or canvas has no controls of its own — nothing the loop can do
+    // to it — but it is where a handed-over point or path would land (§11.4).
+    // It is listed, and said in the text, so the `needs_input` verdict and the
+    // `hand_target` head have something to name.
+    const picture = (role === 'image' || node.pictureOnly === true) && hasBounds && !press && !select && !open && !editable
+    if (picture && elements.length < MAX_ELEMENTS && !seen.has(`picture:${node.ref}`)) {
+      seen.add(`picture:${node.ref}`)
+      const id = elements.length + 1
+      refs.set(id, node)
+      const label = (node.name || value || '').trim() || 'Picture'
+      elements.push({ node: id, ref: node.ref, role: 'image', label, value: '', picture: true, bounds: node.bounds,
+        editable: false, clickable: false, canSubmit: false, password: false, submit: false, disabled: false })
+      text.push(`(picture-only: ${label})`)
     }
     const kinds: Array<'press' | 'select' | 'open' | undefined> = []
     if (select && !node.selected) kinds.push('select')
@@ -319,6 +336,8 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
         ...(node.expanded != null ? { expanded: String(node.expanded) } : {}),
         ...(rightClick ? { contextMenu: true } : {}),
         ...(drop ? { dropTarget: true } : {}),
+        ...(command ? { menuCommand: true } : {}),
+        ...(hasBounds ? { bounds: node.bounds } : {}),
         editable: isEditable, clickable: !!kind,
         // A multi-line text area (TextEdit's document, a mail body) takes a
         // preset after its text; a field is replaced whole.
@@ -577,6 +596,29 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
     contextMenu: async (id, signal) => {
       const node = requirePage().refs.get(id)
       await act(node && { actions: [{ type: 'click', ref: node.ref, button: 'right' }] }, signal)
+    },
+    /**
+     * Actions the caller handed over, in `computer_act`'s own vocabulary and
+     * aimed at the pause snapshot's coordinate space. The service parses and
+     * gates them exactly as it does a `computer_act` call; a state that has
+     * since expired is refused there. A handed drag ends where the caller
+     * pointed, so the host gets out of the way of that point like it does for
+     * the loop's own drags — a handed icon drag once landed in the SuperOne
+     * window covering the Finder window.
+     */
+    act: async (_page, actions, signal) => {
+      const page = requirePage()
+      const restores: Array<() => void> = []
+      for (const action of actions) {
+        const path = (action as { type?: unknown; path?: Array<{ x: number; y: number }> } | null)
+        const end = path?.type === 'drag' && Array.isArray(path.path) ? path.path[path.path.length - 1] : undefined
+        if (end && typeof end.x === 'number' && typeof end.y === 'number') restores.push(await yieldDropPoint(page, end))
+      }
+      try {
+        await act({ actions: actions as UiAction[] }, signal)
+      } finally {
+        for (const restore of restores.reverse()) restore()
+      }
     },
     /**
      * Continue in another root of the same app. Nothing is pressed: the

@@ -12,7 +12,10 @@ export interface Preset {
   field?: string
 }
 
-export const ACTION_OPTIONS = ['click', 'type_text', 'append', 'scroll_down', 'scroll_up', 'escape', 'switch', 'context_menu', 'drag', 'none_useful'] as const
+export const ACTION_OPTIONS = ['click', 'type_text', 'append', 'scroll_down', 'scroll_up', 'escape', 'switch', 'context_menu', 'drag', 'needs_input', 'none_useful'] as const
+/** What a hand-over is for; a hint to the caller, never a schema (§11.4). */
+export const INPUT_KINDS = ['position', 'path', 'text', 'value', 'other'] as const
+export type InputKind = (typeof INPUT_KINDS)[number]
 /** Selected items a request asks a drag head for; more would only pad the fan-out. */
 const MAX_DRAG_SOURCES = 3
 
@@ -73,7 +76,7 @@ export function stateElement(el: SpaceElement): StateElement {
  * for a scroll area, "Append to" for a text area — so the criterion reads as
  * the step Jev would be choosing, not as a bare element.
  */
-function candidateCriteria(space: ActionSpace, keys: readonly string[], verb?: 'Scroll' | 'Append to' | 'Switch to' | 'Right-click' | 'Drop onto'): Record<string, unknown> {
+function candidateCriteria(space: ActionSpace, keys: readonly string[], verb?: 'Scroll' | 'Append to' | 'Switch to' | 'Right-click' | 'Drop onto' | 'Hand over input for'): Record<string, unknown> {
   const criteria: Record<string, unknown> = {}
   for (const key of keys) {
     const kind = clickKindOf(key)
@@ -134,6 +137,7 @@ export function buildRequest(input: BuildQuestionsInput): JevRequest {
   if (space.switchCandidates.length) actions.switch = 'Switch to another window, sheet or panel of this app listed in `elements` and continue there; the current one stays open.'
   if (space.contextMenuCandidates.length) actions.context_menu = 'Right-click an offered element to open its context menu; the menu\'s commands are chosen in the next step.'
   if (space.dragSources.length && space.dropTargets.length) actions.drag = 'Drag a selected item onto an offered folder or group, moving it there.'
+  actions.needs_input = 'The next step needs something no offered element or preset supplies — a point or path on a picture or canvas, text no preset holds, a value a control does not list — which the caller will provide.'
   actions.none_useful = 'No offered action advances the goal from here.'
 
   const questions: Record<string, JevQuestion> = {
@@ -195,6 +199,28 @@ export function buildRequest(input: BuildQuestionsInput): JevRequest {
       type: 'choice',
       instructions: { goal, operation: 'drag', rules: `Choose where to drop the selected item [${source.index}] ${source.label} if the next action is drag: the folder or group \`goal\` wants it in. Choose only an offered index.` },
       criteria: candidateCriteria(space, space.dropTargets, 'Drop onto'),
+    }
+  }
+  // A hand-over concerns an element the loop cannot act on itself: the
+  // picture a point is needed on, the field text is needed for, the control
+  // whose value is missing. Everything on the window is a candidate, pictures
+  // included, menu commands not; the kind is a hint for the caller, not a schema.
+  if (space.handCandidates.length) {
+    questions.hand_target = {
+      type: 'choice',
+      instructions: { goal, operation: 'needs_input', rules: `Choose the element the missing input concerns if the next action is needs_input: the picture or canvas a point or path is needed on, the field text is needed for, the control whose value is not listed. Choose ${NONE} if it concerns no offered element.` },
+      criteria: candidateCriteria(space, space.handCandidates, 'Hand over input for'),
+    }
+    questions.input_kind = {
+      type: 'choice',
+      instructions: { goal, operation: 'needs_input', rules: 'If the next action is needs_input, what kind of input is missing.' },
+      criteria: {
+        position: 'A single point on a picture, canvas or map.',
+        path: 'A path or drag across a picture, canvas or layout: several points in order.',
+        text: 'Free text for a field that no preset holds.',
+        value: 'A value for a control (date, number, option) that is not among the offered choices.',
+        other: 'Something else the offered elements and presets cannot supply.',
+      },
     }
   }
   if (space.contextMenuCandidates.length) {

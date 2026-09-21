@@ -760,6 +760,27 @@ describe('computer fast-loop adapter', () => {
     expect(Object.keys(buildRequest({ goal: 'g', page: none, space: empty, presets: [], last: undefined, history: [] }).questions).some((k) => k.startsWith('drag_target_for_'))).toBe(false)
   })
 
+  it('says which expanded row a nested outline row is inside', async () => {
+    // Finder's list view after a move into an expanded folder: the file is the
+    // row under the folder, one level deeper. Read flat it was the page before
+    // the move; the depth names the folder.
+    const row = (name: string, extra: Record<string, unknown> = {}) => ({
+      role: 'row', selectable: true, bounds: { x: 0, y: 10, width: 600, height: 20 }, ...extra,
+      children: [{ role: 'cell', openable: true, bounds: { x: 0, y: 10, width: 600, height: 20 }, children: [{ role: 'textField', name: '', value: name, openable: true, bounds: { x: 0, y: 10, width: 600, height: 20 } }] }],
+    })
+    const backend = new FakePlatformBackend([{ app: 'Finder', bundleId: 'com.test.finder', pid: 7, windows: [{ title: 'bench', tree: { role: 'window', children: [{ role: 'outline', name: 'list view', children: [
+      row('Archive'), row('Report.txt', { level: 1, selected: true }), row('Notes.txt'),
+    ] }] } }] }])
+    const service = new ComputerUseService({ adapter: backend })
+    service.policy.setEnabled(true)
+    service.policy.grantSession({ app: 'Finder', bundleId: 'com.test.finder', tier: 'full' })
+    const page = computerPage(await service.observe(undefined, 'semantic'), service)
+    expect(page.text).toContain('(Report.txt: selected, inside Archive)')
+    expect(page.text).not.toContain('Notes.txt: ')
+    // Labels stay the item's own name: the drag head key is derived from it.
+    expect(page.elements.find((e) => e.dragSource)?.label).toBe('Report.txt')
+  })
+
   it('drops a covered drop target from the offer, and lowers the host out of the way of one it covers itself', async () => {
     // A drop is delivered to the frontmost window at the drop point (§11.8).
     // Projects' row sits under another app's window: not offered, and the page

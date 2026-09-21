@@ -155,6 +155,8 @@ export interface HelperAxNode {
   /** A menu item's check mark (AXMenuItemMarkChar), the state a chosen command shows. */
   checked?: boolean
   itemKind?: 'folder' | 'file'
+  /** AXDisclosureLevel of a nested outline row; absent at the top level. */
+  level?: number
   index: number
   role: string
   name?: string

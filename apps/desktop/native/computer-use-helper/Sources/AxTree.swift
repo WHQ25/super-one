@@ -117,6 +117,13 @@ func axBool(_ el: AXUIElement, _ attr: String) -> Bool? {
     return nil
 }
 
+func axInt(_ el: AXUIElement, _ attr: String) -> Int? {
+    var raw: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(el, attr as CFString, &raw) == .success,
+          let n = raw as? NSNumber else { return nil }
+    return n.intValue
+}
+
 func axMenuBar(_ app: AXUIElement) -> AXUIElement? {
     axAttributeElement(app, kAXMenuBarAttribute as String)
 }
@@ -412,6 +419,13 @@ private func nodeDicts(
         // An AppKit disclosure triangle (Finder's list view, outline rows)
         // answers no AXExpanded at all; its AXValue is the state, 0 or 1.
         dict["expanded"] = state != 0
+    }
+    // An outline lists nested rows flat, in order; the depth is the one thing
+    // that says which folder a row is inside. Finder's list view shows a file
+    // just moved into an expanded folder as the row under it, indented — read
+    // without the level it was the same row as before the move.
+    if role == "AXRow", let level = axInt(el, "AXDisclosureLevel"), level > 0 {
+        dict["level"] = level
     }
     if let name, !name.isEmpty { dict["name"] = name }
     if let value, !value.isEmpty {

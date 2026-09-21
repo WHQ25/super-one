@@ -168,6 +168,8 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
   let scrollRef: string | undefined
   let canScrollDown = false
   let canScrollUp = false
+  /** The last row read at each outline depth: a nested row's parent is the one above it at depth − 1. */
+  const rowAtLevel: string[] = []
   // `menu` is the menu a command sits in — "Sort By" for Date Modified,
   // "Decimal Places" for Calculator's 12. On its own a command's name says
   // too little: Jev read "12" as the digits the goal asked for, chose the
@@ -188,14 +190,26 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
     const disclosure = role === 'disclosuretriangle'
     const select = planNodeAction(node, { kind: 'select' }, tier)
     const rowName = select ? (node.name || labelSource(node)?.value || labelSource(node)?.name || '').trim() : row
+    // An outline lists nested rows flat; a row's depth names the folder it is
+    // in. Finder showed a file just moved into an expanded folder as the row
+    // under it, and read without the depth the page was the one before the
+    // move, so the run that had moved it judged the goal unmet.
+    let parent: string | undefined
+    if (select && rowName) {
+      const level = node.level ?? 0
+      parent = level > 0 ? rowAtLevel[level - 1] : undefined
+      rowAtLevel.length = level
+      rowAtLevel[level] = rowName
+    }
+    const inside = parent ? `inside ${parent}` : ''
     // The text is what Jev judges completion on, so a row's state goes in it
     // in words: "Users\n1" said nothing about an expanded folder, and a row
     // once selected vanished from the candidates without a trace — the run
     // that had just selected Shared read the page as unchanged and scrolled.
     if (secure || POSITION_ROLES.has(role)) { /* nothing of a secure field is read; a position is not text */ }
     else if (disclosure) text.push(row && node.expanded != null ? `(${row}: ${node.expanded ? 'expanded' : 'collapsed'})` : '')
-    else if (select && node.selected && !node.name) text.push(`(${rowName}: selected)`)
-    else text.push([node.name, value, node.selected ? '(selected)' : ''].filter(Boolean).join(' '))
+    else if (select && !node.name && (node.selected || inside)) text.push(`(${rowName}: ${[node.selected ? 'selected' : '', inside].filter(Boolean).join(', ')})`)
+    else text.push([node.name, value, node.selected ? '(selected)' : '', inside].filter(Boolean).join(' '))
     // The menu tree is read closed, complete with submenus, and the helper
     // presses a command in it directly — activating a background app for the
     // press, since AppKit only validates menu items in the active app. So a

@@ -102,6 +102,8 @@ export interface UiOutlineNode {
   checked?: boolean
   /** Only supplied when native file metadata identifies the item. Packages are files. */
   itemKind?: 'folder' | 'file'
+  /** Depth of a nested outline row (AXDisclosureLevel); the row above it at depth − 1 is its parent. */
+  level?: number
   /** App-level AX targets have their own DFS namespace, outside the window. */
   nativeTarget?: { scope: 'menuBar'; index: number }
   /** Secure AX controls must never expose their value to a fast loop. */

@@ -32,6 +32,7 @@ export interface FakeElementSpec {
   openable?: boolean
   selected?: boolean
   itemKind?: 'folder' | 'file'
+  level?: number
   selectView?: { title: string; tree: FakeElementSpec }
   openView?: { title: string; tree: FakeElementSpec }
   role: string
@@ -72,6 +73,7 @@ interface LiveElement {
   openable?: boolean
   selected?: boolean
   itemKind?: 'folder' | 'file'
+  level?: number
   selectView?: FakeElementSpec['selectView']
   openView?: FakeElementSpec['openView']
   id: string
@@ -429,6 +431,7 @@ export class FakePlatformBackend implements PlatformAdapter {
       openable: spec.openable,
       selected: spec.selected,
       itemKind: spec.itemKind,
+      level: spec.level,
       selectView: spec.selectView,
       openView: spec.openView,
       role: spec.role,
@@ -487,6 +490,7 @@ export class FakePlatformBackend implements PlatformAdapter {
       role: el.role,
       selected: el.selected,
       itemKind: el.itemKind,
+      level: el.level,
       name: el.name,
       value: el.value,
       bounds: { ...el.bounds },

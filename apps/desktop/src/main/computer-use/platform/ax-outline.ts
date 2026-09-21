@@ -64,6 +64,7 @@ export function axTreeToOutline(root: HelperAxNode, menuBar?: HelperAxNode): UiO
       expanded: n.expanded,
       checked: n.checked,
       itemKind: n.itemKind,
+      level: n.level,
       name: n.name,
       value: n.secure || /secure|password/i.test(n.role) ? undefined : n.value,
       secure: n.secure || /secure|password/i.test(n.role),

@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { parseGitMentionValue } from '@superone/shared/git-mention-query'
 import type { MentionToken } from '../mention-document'
 import { useMobileTheme } from '../theme/context'
 import { mentionFileArtwork } from './mention-file-artwork-data'
@@ -19,7 +20,8 @@ export function useMentionArtwork(tokens: readonly MentionToken[]) {
       const png = dynamicMentionArtwork(token.kind, token.value) ?? (token.kind === 'file'
         ? mentionFileArtwork(token.value, false, colors.foreground)
         : token.kind === 'agent-profile' ? mentionBrandArtwork(token.value, scheme, colors.foreground)
-        : mentionGlyphArtwork(token.kind === 'desktop-app' ? 'computer' : token.kind, scheme, colors.foreground))
+        : mentionGlyphArtwork(token.kind === 'desktop-app' ? 'computer'
+          : token.kind === 'git' ? `git:${parseGitMentionValue(token.value)?.kind ?? 'branch'}` : token.kind, scheme, colors.foreground))
       return png ? [{ key, png }] : []
     })
   }, [identities, colors.foreground, scheme])

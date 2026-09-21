@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildGitHubCloneUrl,
+  githubAuthorAvatarUrl,
   githubOwnerAvatarUrl,
   parseGitHubOwnerSearchQuery,
   parseGitHubRepoNameSearchQuery,
@@ -65,6 +66,9 @@ describe('GitHub repo shorthand parsing', () => {
 
   it('builds the same owner avatar URL marketplace uses', () => {
     expect(githubOwnerAvatarUrl('WHQ25', 80)).toBe('https://github.com/WHQ25.png?size=80')
+    expect(githubAuthorAvatarUrl('WHQ25', 28)).toBe('https://github.com/WHQ25.png?size=28')
+    // gh reports GitHub Apps as `app/<slug>`; their avatar lives under /apps/.
+    expect(githubAuthorAvatarUrl('app/dependabot', 28)).toBe('https://github.com/apps/dependabot.png?size=28')
   })
 
   it('starts owner search only after a trailing slash', () => {

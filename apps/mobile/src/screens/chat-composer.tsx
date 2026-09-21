@@ -24,6 +24,7 @@ import type { SlashCatalogStatus } from '../slash-catalog'
 import type { MentionItem } from '../mentions'
 import { mentionBreadcrumbs } from '../mention-browse-state'
 import { isSessionMentionQuery } from '../session-mention'
+import { isGitMentionQuery } from '../git-mention'
 import type { MentionRow } from '../mention-rows'
 import { useMobileTheme } from '../theme/context'
 import { AdditionalDirsChip, ContextRing, GoalChip, IconButton, PermissionModeSelector, SandboxSelector } from '../ui'
@@ -233,7 +234,7 @@ export function ChatComposer(props: ChatComposerProps) {
       <MentionSuggestions rows={props.mentionRows} onSelect={props.onMention} search={props.mentionSearch}
         onRetry={props.onMentionRetry} onLoadMore={props.onMentionLoadMore} groupLabels={props.mentionGroupLabels}
         // A session title may contain a slash; only a path query has a trail.
-        breadcrumbs={props.mentionQuery && !isSessionMentionQuery(props.mentionQuery)
+        breadcrumbs={props.mentionQuery && !isSessionMentionQuery(props.mentionQuery) && !isGitMentionQuery(props.mentionQuery)
           ? mentionBreadcrumbs(props.mentionQuery) : []} />
     </>}
     <ScrollView keyboardShouldPersistTaps="always" scrollEnabled={false} style={{ flexGrow: 0 }}>

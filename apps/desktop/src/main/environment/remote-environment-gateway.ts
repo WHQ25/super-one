@@ -53,6 +53,7 @@ import type {
 import type { ProjectExtraDirsPatch } from '@superone/shared/project-extra-dirs'
 import type { NodeRpcClient } from './node-rpc-client'
 import type { CodexMcpOauthLoginOptions } from '@superone/shared/agent-types'
+import type { GitMentionRefKind } from '@superone/shared/git-mention-query'
 
 export interface ArtifactGateway {
   stat(input: { sessionId: string; relativePath: string }): Promise<ArtifactStatResult>
@@ -466,6 +467,27 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
 
   async gitWorktrees(projectId: string): Promise<unknown> {
     return this.client.rpc('git.worktrees', { projectId })
+  }
+
+  async gitMentionRefs(
+    projectId: string,
+    kind: GitMentionRefKind,
+    query: string,
+    opts?: { cwd?: string },
+  ): Promise<unknown> {
+    return this.client.rpc('git.mentionRefs', {
+      projectId,
+      kind,
+      query,
+      ...(opts?.cwd ? { cwd: opts.cwd } : {}),
+    })
+  }
+
+  async gitMentionCapabilities(projectId: string, opts?: { cwd?: string }): Promise<unknown> {
+    return this.client.rpc('git.mentionCapabilities', {
+      projectId,
+      ...(opts?.cwd ? { cwd: opts.cwd } : {}),
+    })
   }
 
   async gitSwitchBranch(

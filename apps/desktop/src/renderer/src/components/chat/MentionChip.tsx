@@ -21,6 +21,7 @@ export function isBlendedMentionKind(kind: string): boolean {
     isStoredCapabilityId(kind)
     || kind === 'desktop-app'
     || kind === 'session'
+    || kind === 'git'
     || kind === 'agent-profile'
   )
 }
@@ -66,7 +67,7 @@ export function mentionChipIcon(
   displayName: string,
 ): ReactNode {
   if (kind === 'agent-profile') return <AgentProfileIcon refValue={value} />
-  const staticIcon = staticMentionIcon(kind)
+  const staticIcon = staticMentionIcon(kind, value)
   if (staticIcon) return staticIcon
   if (kind === 'miniapp') return <MiniAppIcon appId={value} />
   if (kind === 'desktop-app') return <DesktopAppIcon bundleId={value} />
@@ -79,7 +80,7 @@ export function MentionChip({ node }: NodeViewProps) {
   const isBlendedChip = isBlendedMentionKind(kind)
   const label = kind === 'agent' && displayName.includes(':') ? displayName.split(':').pop() : displayName
   // Only path-like resource names truncate; multi-word capability labels must show fully.
-  const truncateLabel = kind === 'file' || kind === 'directory' || kind === 'miniapp' || kind === 'session'
+  const truncateLabel = kind === 'file' || kind === 'directory' || kind === 'miniapp' || kind === 'session' || kind === 'git'
 
   return (
     <NodeViewWrapper

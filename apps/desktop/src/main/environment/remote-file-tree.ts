@@ -33,6 +33,13 @@ import { tmpdir } from 'node:os'
 import type { FileEntryKind, FileOpResult, FileTreeEntry } from '@superone/shared/agent-types'
 import type { WorkspaceEntry } from '@superone/shared/environment'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
+import {
+  GIT_MENTION_CAPABILITIES_UNKNOWN,
+  parseGitMentionCapabilities,
+  type GitMentionCapabilities,
+  type GitMentionRefKind,
+  type GitMentionRefsResult,
+} from '@superone/shared/git-mention-query'
 import { AUDIO_EXTENSIONS, BINARY_IMAGE_EXTENSIONS, PDF_EXTENSIONS, VIDEO_EXTENSIONS } from '@superone/shared/file-preview'
 import {
   EMPTY_PAIR,
@@ -761,6 +768,13 @@ type RemoteGitGateway = {
   gitStatus: (projectId: string, opts?: { cwd?: string }) => Promise<unknown>
   gitBranches?: (projectId: string) => Promise<unknown>
   gitWorktrees?: (projectId: string) => Promise<unknown>
+  gitMentionRefs?: (
+    projectId: string,
+    kind: GitMentionRefKind,
+    query: string,
+    opts?: { cwd?: string },
+  ) => Promise<unknown>
+  gitMentionCapabilities?: (projectId: string, opts?: { cwd?: string }) => Promise<unknown>
 }
 
 function asRemoteGitGateway(gw: unknown): RemoteGitGateway | null {
@@ -874,6 +888,51 @@ export async function getRemoteGitBranches(
     return Array.isArray(result?.branches) ? result.branches : []
   } catch {
     return []
+  }
+}
+
+function asGitMentionRefsResult(value: unknown): GitMentionRefsResult {
+  const v = value as GitMentionRefsResult | null | undefined
+  if (v && typeof v === 'object' && 'ok' in v) return v
+  return { ok: false, reason: 'error', error: 'malformed git.mentionRefs reply' }
+}
+
+/**
+ * `@git` popup rows from a remote node. A worktree host path under a
+ * registered project is answered with `cwd`, never by registering the path.
+ * A node too old to know `git.mentionRefs` reports `unsupported`.
+ */
+export async function getRemoteGitMentionRefs(
+  host: EnvironmentHost,
+  folderPath: string,
+  kind: GitMentionRefKind,
+  query: string,
+): Promise<GitMentionRefsResult> {
+  const remote = parseRemoteProjectKey(folderPath)
+  if (!remote) return { ok: false, reason: 'error', error: 'not a remote project key' }
+  try {
+    const known = host.connections.listKnown().find((k) => k.connectionId === remote.connectionId)
+    if (!known) return { ok: false, reason: 'error', error: `unknown remote connection ${remote.connectionId}` }
+    const gw = asRemoteGitGateway(host.getGateway(known.environmentId))
+    if (!gw?.gitMentionRefs) return { ok: false, reason: 'unsupported' }
+
+    const ctx = await resolveRemoteProjectContext(host, folderPath, { registerIfMissing: false })
+    if (ctx) return asGitMentionRefsResult(await gw.gitMentionRefs(ctx.projectId, kind, query))
+
+    const projects = await host.listProjects(remote.connectionId)
+    for (const p of projects) {
+      try {
+        return asGitMentionRefsResult(await gw.gitMentionRefs(p.projectId, kind, query, { cwd: remote.path }))
+      } catch {
+        /* not a worktree of this project */
+      }
+    }
+    return { ok: false, reason: 'not-repo' }
+  } catch (err) {
+    const message = (err as Error)?.message || 'git.mentionRefs failed'
+    // The node rejects unknown methods; treat that as an old node, not a repo error.
+    if (/unknown method|not found|unsupported/i.test(message)) return { ok: false, reason: 'unsupported' }
+    return { ok: false, reason: 'error', error: message }
   }
 }
 
@@ -1021,4 +1080,49 @@ export async function resolvePathsForNativeDrag(
     materialized.push(...files)
   }
   return [...local, ...materialized]
+}
+
+/**
+ * What the `@git` / `@gh` portals may offer on a remote node. A node that
+ * predates `git.mentionCapabilities` is asked for a branch page instead, so
+ * `@git` still works there; `gh` on such a node is unknown and stays off.
+ */
+export async function getRemoteGitMentionCapabilities(
+  host: EnvironmentHost,
+  folderPath: string,
+): Promise<GitMentionCapabilities> {
+  const remote = parseRemoteProjectKey(folderPath)
+  if (!remote) return GIT_MENTION_CAPABILITIES_UNKNOWN
+  try {
+    const known = host.connections.listKnown().find((k) => k.connectionId === remote.connectionId)
+    if (!known) return GIT_MENTION_CAPABILITIES_UNKNOWN
+    const gw = asRemoteGitGateway(host.getGateway(known.environmentId))
+    if (!gw?.gitMentionCapabilities) return await legacyCapabilities(host, folderPath)
+
+    const ctx = await resolveRemoteProjectContext(host, folderPath, { registerIfMissing: false })
+    if (ctx) {
+      const parsed = parseGitMentionCapabilities(await gw.gitMentionCapabilities(ctx.projectId))
+      return parsed ?? (await legacyCapabilities(host, folderPath))
+    }
+    const projects = await host.listProjects(remote.connectionId)
+    for (const p of projects) {
+      try {
+        const parsed = parseGitMentionCapabilities(await gw.gitMentionCapabilities(p.projectId, { cwd: remote.path }))
+        if (parsed) return parsed
+      } catch {
+        /* not a worktree of this project */
+      }
+    }
+    return { repo: 'not-repo', github: false }
+  } catch (err) {
+    const message = (err as Error)?.message || ''
+    if (/unknown method|not found|unsupported/i.test(message)) return legacyCapabilities(host, folderPath)
+    return GIT_MENTION_CAPABILITIES_UNKNOWN
+  }
+}
+
+async function legacyCapabilities(host: EnvironmentHost, folderPath: string): Promise<GitMentionCapabilities> {
+  const probe = await getRemoteGitMentionRefs(host, folderPath, 'branch', '')
+  const repo = probe.ok || probe.reason === 'error' ? 'ready' : probe.reason === 'gh-unavailable' ? 'ready' : probe.reason
+  return { repo, github: false }
 }

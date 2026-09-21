@@ -24,7 +24,10 @@ import { findMiniAppMentionMarkers } from '@superone/shared/miniapp-mention-mark
 import { useMiniAppStore } from '@/stores/miniapp'
 import { PasteChipNode, PASTE_CHIP_LINE_THRESHOLD, PASTE_CHIP_CHAR_THRESHOLD } from './paste-chip-node'
 import { SlashDecoration } from './slash-decoration'
-import { SessionMentionDecoration, syncSessionMentionDismissed } from './session-mention-decoration'
+import { SessionMentionDecoration, syncPortalMentionDismissed } from './session-mention-decoration'
+import { GitMentionDecoration } from './git-mention-decoration'
+import { useEnabledGitMentionPortals } from './use-git-mention-capabilities'
+import { wrapGitMention } from '@superone/shared/git-mention-tags'
 import { DebugMentionDecoration, syncDebugMentionHint } from './debug-mention-decoration'
 import { PromptSuggestion } from './prompt-suggestion'
 import { PromptSuggestionChips } from './PromptSuggestionChips'
@@ -95,6 +98,10 @@ export function ChatInput() {
       [recentFolders, activeProject],
     )
     const fileRoot = useEffectiveProjectRoot()
+    // Which of `@git` / `@gh` this root can serve; a portal that is off types as plain text.
+    const gitPortals = useEnabledGitMentionPortals(fileRoot)
+    // Read from the editor's update handler, which is created once.
+    const gitPortalsRef = useRef(gitPortals)
     const storeActions = useChatStore(useShallow((s) => ({
       setDraftText: s.setDraftText,
       setDraftJson: s.setDraftJson,
@@ -908,8 +915,8 @@ export function ChatInput() {
           kind = 'desktop-app'
           mentionValue = value
           displayName = displayNameHint || value
-        } else if (kindHint === 'session') {
-          kind = 'session'
+        } else if (kindHint === 'session' || kindHint === 'git') {
+          kind = kindHint
           mentionValue = value
           displayName = displayNameHint || value
         } else if (kindHint === 'agent-profile') {
@@ -945,7 +952,7 @@ export function ChatInput() {
         mentionInfoRef.current = null
         mentionEmptyByAtRef.current.clear()
         mentionDismissedAtRef.current.clear()
-        syncSessionMentionDismissed(editorRef.current, mentionDismissedAtRef.current)
+        syncPortalMentionDismissed(editorRef.current, mentionDismissedAtRef.current)
       },
       [agents, addMention, showAgentMentions]
     )
@@ -989,6 +996,8 @@ export function ChatInput() {
               current += ` <superone-desktop-app><name>${attrs.displayName}</name><bundleId>${attrs.value}</bundleId></superone-desktop-app> `
             } else if (attrs.kind === 'session') {
               current += ` <superone-session><title>${attrs.displayName}</title><sessionId>${attrs.value}</sessionId></superone-session> `
+            } else if (attrs.kind === 'git') {
+              current += ` ${wrapGitMention(attrs.value, attrs.displayName)} `
             } else if (attrs.kind === 'agent-profile') {
               current += ` ${wrapAgentMention(attrs.value, attrs.displayName)} `
             } else if (isBuiltinCapabilityId(attrs.kind)) {
@@ -1290,7 +1299,7 @@ export function ChatInput() {
             if (dismissedAt !== undefined) {
               mentionDismissedAtRef.current.add(dismissedAt)
             }
-            syncSessionMentionDismissed(editorRef.current, mentionDismissedAtRef.current)
+            syncPortalMentionDismissed(editorRef.current, mentionDismissedAtRef.current)
             setMentionActive(false)
             setMentionIndex(0)
             mentionInfoRef.current = null
@@ -1566,7 +1575,8 @@ export function ChatInput() {
         AttachmentNode,
         PasteChipNode,
         SlashDecoration.configure({ slashCommands: activeSlashCommands }),
-        SessionMentionDecoration.configure({ projects: sessionProjectOptions }),
+        SessionMentionDecoration.configure({ context: sessionProjectOptions }),
+        GitMentionDecoration.configure({ context: gitPortals }),
         DebugMentionDecoration.configure({ hint: t('chat.placeholder.debugBug') }),
         PromptSuggestion,
       ],
@@ -1701,7 +1711,7 @@ export function ChatInput() {
           const afterAt = textInParent.slice(lastAt + 1)
           // Default: single-token @mentions (file/agent) close on space.
           // Session grammar needs spaces: @session [project|all] [title…]
-          const spaceOk = mentionQueryAllowsSpaces(afterAt)
+          const spaceOk = mentionQueryAllowsSpaces(afterAt, { gitPortals: gitPortalsRef.current })
           if ((!afterAt.includes(' ') || spaceOk) && !afterAt.includes('\0')) {
             const atPos = $pos.start() + lastAt
             // Drop dismiss markers for @ tokens that no longer exist (deleted or replaced).
@@ -1715,13 +1725,13 @@ export function ChatInput() {
             // Escape dismissed this @ — keep treating it as plain text (popup + ghost).
             if (mentionDismissedAtRef.current.has(atPos)) {
               if (dismissChanged) {
-                syncSessionMentionDismissed(ed, mentionDismissedAtRef.current)
+                syncPortalMentionDismissed(ed, mentionDismissedAtRef.current)
               }
               setMentionActive(false)
               mentionInfoRef.current = null
             } else {
               if (dismissChanged) {
-                syncSessionMentionDismissed(ed, mentionDismissedAtRef.current)
+                syncPortalMentionDismissed(ed, mentionDismissedAtRef.current)
               }
               const isComposing = ed.view.composing
               // During IME composition keep the popup open and skip empty-query lockout.
@@ -1753,7 +1763,7 @@ export function ChatInput() {
             mentionEmptyByAtRef.current.clear()
             if (mentionDismissedAtRef.current.size > 0) {
               mentionDismissedAtRef.current.clear()
-              syncSessionMentionDismissed(ed, mentionDismissedAtRef.current)
+              syncPortalMentionDismissed(ed, mentionDismissedAtRef.current)
             }
           }
         } else {
@@ -1762,7 +1772,7 @@ export function ChatInput() {
           mentionEmptyByAtRef.current.clear()
           if (mentionDismissedAtRef.current.size > 0) {
             mentionDismissedAtRef.current.clear()
-            syncSessionMentionDismissed(ed, mentionDismissedAtRef.current)
+            syncPortalMentionDismissed(ed, mentionDismissedAtRef.current)
           }
         }
       },
@@ -1811,10 +1821,19 @@ export function ChatInput() {
     useEffect(() => {
       if (editor && !editor.isDestroyed) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ;(editor.storage as any).sessionMentionDecoration.projects = sessionProjectOptions
+        ;(editor.storage as any).sessionMentionDecoration.context = sessionProjectOptions
         editor.view.dispatch(editor.state.tr)
       }
     }, [sessionProjectOptions, editor])
+
+    useEffect(() => {
+      gitPortalsRef.current = gitPortals
+      if (editor && !editor.isDestroyed) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(editor.storage as any).gitMentionDecoration.context = gitPortals
+        editor.view.dispatch(editor.state.tr)
+      }
+    }, [gitPortals, editor])
 
     // The first suggestion always takes the ghost slot (Tab accepts it), matching the
     // single-suggestion harnesses. Only the *alternatives* a multi-option harness offers
@@ -2025,7 +2044,7 @@ export function ChatInput() {
             onClose={() => {
               const dismissedAt = mentionInfoRef.current?.atPos
               if (dismissedAt !== undefined) mentionDismissedAtRef.current.add(dismissedAt)
-              syncSessionMentionDismissed(editorRef.current, mentionDismissedAtRef.current)
+              syncPortalMentionDismissed(editorRef.current, mentionDismissedAtRef.current)
               setMentionActive(false)
               setMentionIndex(0)
               mentionInfoRef.current = null

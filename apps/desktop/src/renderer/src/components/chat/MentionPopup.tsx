@@ -8,6 +8,7 @@ import { useChatStore, useActiveSession, type MentionKind } from '@/stores/chat'
 import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { mentionCapabilityAvailability } from '@superone/shared/mention-capabilities'
+import { MENTION_SEARCH_DEBOUNCE_MS } from '@superone/shared/mention-search-debounce'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { DesktopAppIcon } from './DesktopAppIcon'
 import { useTranslation } from 'react-i18next'
@@ -38,6 +39,31 @@ import {
   matchBuiltinMention,
   type BuiltinMentionMatchRank,
 } from './mention-capability-match'
+import {
+  GIT_MENTION_KEYWORD,
+  GIT_MENTION_NAV_PREFIX,
+  encodeGitMentionValue,
+  gitMentionDisplayName,
+  gitRefMatchIndices,
+  listGitRefKindChoices,
+  GH_MENTION_KEYWORD,
+  GH_MENTION_NAV_PREFIX,
+} from './git-mention-query'
+import { useGitMention } from './use-git-mention'
+import {
+  GIT_MENTION_GROUP_ORDER,
+  GitKindRow,
+  GitMentionEmpty,
+  GitMentionFooter,
+  GitMentionHeader,
+  GitPortalRow,
+  GitRefRow,
+  gitMentionGroupKey,
+  gitMentionGroupLabelKey,
+  gitPortalLabelKey,
+  isGitFlatItem,
+  type GitFlatItem,
+} from './GitMentionRows'
 
 export { SESSION_MENTION_NAV_PREFIX }
 
@@ -118,6 +144,7 @@ type FlatItem =
       displayName: string
       matchIndices: number[]
     }
+  | GitFlatItem
 
 type InstalledDesktopApp = { app: string; bundleId: string; aliases: string[] }
 
@@ -173,9 +200,10 @@ function getSelectPath(item: FlatItem): string {
   return ''
 }
 
-export const MENTION_GROUP_ORDER = ['capability', 'agent-profile', 'session-project', 'session', 'desktop-app', 'agent', 'miniapp', 'file'] as const
+export const MENTION_GROUP_ORDER = ['capability', 'agent-profile', 'session-project', 'session', ...GIT_MENTION_GROUP_ORDER, 'desktop-app', 'agent', 'miniapp', 'file'] as const
 
 function mentionGroupKey(item: FlatItem): string {
+  if (isGitFlatItem(item)) return gitMentionGroupKey(item)
   if (item.kind === 'agent-profile') return 'agent-profile'
   if (item.kind === 'capability' || item.kind === 'session-portal') return 'capability'
   if (item.kind === 'session-project') return 'session-project'
@@ -288,6 +316,10 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       [query, activeProject, projectOptions],
     )
     const isSessionMode = parsedSessionQuery !== null
+    const git = useGitMention(query, fileRoot)
+    const isGitMode = git.isGitMode
+    // A portal grammar (`@session …`, `@git …`) owns the popup: no files, no capabilities.
+    const isPortalMode = isSessionMode || isGitMode
 
     const [sessionRows, setSessionRows] = useState<SessionMentionRow[]>([])
     const [sessionLoadState, setSessionLoadState] = useState<SessionMentionLoadState>(
@@ -295,10 +327,10 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     )
     const [sessionLoading, setSessionLoading] = useState(false)
 
-    const isBrowseMode = !isSessionMode && (!query || query.endsWith('/'))
+    const isBrowseMode = !isPortalMode && (!query || query.endsWith('/'))
     const browseDir = isBrowseMode ? query : ''
     const lastSlash = query.lastIndexOf('/')
-    const scopeDir = !isSessionMode && !isBrowseMode && lastSlash >= 0 ? query.slice(0, lastSlash + 1) : undefined
+    const scopeDir = !isPortalMode && !isBrowseMode && lastSlash >= 0 ? query.slice(0, lastSlash + 1) : undefined
 
     // Session list: need-title → recent (no filter); search → title fuzzy filter.
     // Debounce + keep previous rows while loading to avoid list flash.
@@ -322,8 +354,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       const gen = ++sessionLoadGenRef.current
       setSessionLoading(true)
       setSearchCompleted(false)
-      // Recent list can load immediately; title search keeps a short debounce.
-      const delay = phase === 'need-title' ? 0 : 180
+      // Recent list can load immediately; title search waits for typing to settle.
+      const delay = phase === 'need-title' ? 0 : MENTION_SEARCH_DEBOUNCE_MS
       const timer = setTimeout(() => {
         void loadSessionMentionPage({
           scope,
@@ -417,8 +449,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         setSearchCompleted(true)
       }
 
-      // Session mode loads via its own effect.
-      if (isSessionMode) {
+      // Portal modes (session / git) load via their own effects.
+      if (isPortalMode) {
         setDirEntries([])
         setSearchResults([])
         return
@@ -449,9 +481,9 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         window.agent.searchMentions(fileRoot, searchNeedle, agentEntries, additionalDirs, searchScope)
           .then((results) => { finish(searchForQuery, () => setSearchResults(results)) })
           .catch(() => { finish(searchForQuery, () => setSearchResults([])) })
-      }, 150)
+      }, MENTION_SEARCH_DEBOUNCE_MS)
       return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-    }, [query, fileRoot, additionalDirs, agentEntries, isBrowseMode, scopeDir, isSessionMode])
+    }, [query, fileRoot, additionalDirs, agentEntries, isBrowseMode, scopeDir, isPortalMode])
 
     useEffect(() => {
       if (selectedIndex >= 0) {
@@ -459,10 +491,10 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       }
     }, [selectedIndex])
 
-    // Reset selection when entering session mode or changing phase (project → title → search).
+    // Reset selection when entering a portal mode or changing phase (scope → query → search).
     useEffect(() => {
-      if (isSessionMode) onSetSelectedIndex(0)
-    }, [isSessionMode, parsedSessionQuery?.phase, onSetSelectedIndex])
+      if (isPortalMode) onSetSelectedIndex(0)
+    }, [isPortalMode, parsedSessionQuery?.phase, git.parsed?.phase, onSetSelectedIndex])
 
     /** Feature gates for built-in @-capability chips (settings toggles). Widget and debug are always on. */
     const [capabilityEnabled, setCapabilityEnabled] = useState<Record<BuiltinCapabilityId, boolean>>({
@@ -580,7 +612,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     }, [activeProject])
 
     const matchedAgentTargets = useMemo<FlatItem[]>(() => {
-      if (isSessionMode) return []
+      if (isPortalMode) return []
       if (isBrowseMode && query) return []
       const matches: Array<Extract<FlatItem, { kind: 'agent-profile' }>> = []
       for (const target of agentTargets) {
@@ -614,7 +646,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         )
       }
       return matches
-    }, [agentTargets, query, isBrowseMode, isSessionMode])
+    }, [agentTargets, query, isBrowseMode, isPortalMode])
 
     const capabilityLabel = useCallback((id: BuiltinCapabilityId): string => {
       if (id === 'computer') return t('chat.mentionPopup.capabilityComputer')
@@ -630,9 +662,9 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
 
     const matchedCapabilities = useMemo<FlatItem[]>(() => {
       // Hide when browsing into a subdirectory (`@src/`), but keep on empty `@`.
-      if (isSessionMode) return []
+      if (isPortalMode) return []
       if (isBrowseMode && query) return []
-      const matches: Array<Extract<FlatItem, { kind: 'capability' | 'session-portal' }>> = []
+      const matches: Array<Extract<FlatItem, { kind: 'capability' | 'session-portal' | 'git-portal' }>> = []
       for (const cap of BUILTIN_CAPABILITIES) {
         const label = capabilityLabel(cap.id)
         // Keyword (@id) outranks display name so `@se` hits session before "Computer Use".
@@ -668,6 +700,38 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           })
         }
       }
+      // Built-in Git / GitHub portals — disabled (still listed) outside a
+      // repository, on an old node, or without a usable `gh`.
+      const portals: Array<{ id: typeof GIT_MENTION_KEYWORD | typeof GH_MENTION_KEYWORD; aliases: string[]; disabledReason?: 'not-repo' | 'unsupported' | 'gh-unavailable' }> = [
+        {
+          id: GIT_MENTION_KEYWORD,
+          aliases: ['Git'],
+          ...(git.availability === 'not-repo' || git.availability === 'unsupported'
+            ? { disabledReason: git.availability }
+            : {}),
+        },
+        {
+          id: GH_MENTION_KEYWORD,
+          aliases: ['GitHub', 'issue', 'pr'],
+          ...(git.availability === 'not-repo' || git.availability === 'unsupported'
+            ? { disabledReason: git.availability }
+            : git.availability === 'ready' && !git.githubAvailable ? { disabledReason: 'gh-unavailable' as const } : {}),
+        },
+      ]
+      for (const portal of portals) {
+        const label = t(gitPortalLabelKey(portal.id))
+        const scored = matchBuiltinMention(portal.id, [label, ...portal.aliases], query)
+        if (!scored) continue
+        matches.push({
+          kind: 'git-portal',
+          id: portal.id,
+          displayName: label,
+          matchIndices: scored.labelIndices,
+          keywordMatchIndices: scored.keywordIndices,
+          matchRank: scored.rank,
+          ...(portal.disabledReason ? { disabledReason: portal.disabledReason } : {}),
+        })
+      }
       // Only re-rank when the user is filtering — empty `@` keeps catalog order.
       if (query.trim()) {
         matches.sort((a, b) =>
@@ -678,7 +742,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         )
       }
       return matches
-    }, [capabilityLabel, sessionPortalLabel, query, isBrowseMode, isSessionMode, capabilityEnabled])
+    }, [capabilityLabel, sessionPortalLabel, query, isBrowseMode, isPortalMode, capabilityEnabled, git.availability, git.githubAvailable, t])
 
     const matchedSessionProjects = useMemo<FlatItem[]>(() => {
       if (!isSessionMode || !parsedSessionQuery) return []
@@ -719,10 +783,39 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       })
     }, [isSessionMode, parsedSessionQuery, sessionRows])
 
+    // Why the portal the user typed into cannot be used here, if known. Typing
+    // `@gh` enters the grammar before the row could be greyed out, so the
+    // picker itself has to say why instead of offering kinds.
+    const gitPortalUnavailable = useMemo<'not-repo' | 'unsupported' | 'gh-unavailable' | null>(() => {
+      const parsed = git.parsed
+      if (!parsed) return null
+      if (git.availability === 'not-repo' || git.availability === 'unsupported') return git.availability
+      if (parsed.portal === 'gh' && git.availability === 'ready' && !git.githubAvailable) return 'gh-unavailable'
+      return null
+    }, [git.parsed, git.availability, git.githubAvailable])
+
+    const matchedGitItems = useMemo<FlatItem[]>(() => {
+      const parsed = git.parsed
+      if (!parsed) return []
+      if (gitPortalUnavailable) return []
+      if (parsed.phase === 'pick-kind') {
+        return listGitRefKindChoices(parsed.portal, parsed.kindToken).map((c) => ({
+          kind: 'git-kind' as const,
+          portal: parsed.portal,
+          refKind: c.kind,
+          matchIndices: c.matchIndices,
+        }))
+      }
+      return git.refs.map((ref) => {
+        const indices = gitRefMatchIndices(ref, parsed.refQuery)
+        return { kind: 'git-ref' as const, ref, matchIndices: indices.label, detailMatchIndices: indices.detail }
+      })
+    }, [git.parsed, git.refs, gitPortalUnavailable])
+
     const matchedDesktopApps = useMemo<FlatItem[]>(() => {
       // Only when Computer Use is enabled.
       if (!computerUseEnabled) return []
-      if (isSessionMode) return []
+      if (isPortalMode) return []
       // Hide when browsing into a subdirectory; require a query so empty `@`
       // is not flooded with every installed app (capabilities stay visible).
       if (isBrowseMode && query) return []
@@ -746,9 +839,10 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         if (matches.length >= DESKTOP_APP_MENTION_LIMIT) break
       }
       return matches
-    }, [computerUseEnabled, installedDesktopApps, query, isBrowseMode, isSessionMode])
+    }, [computerUseEnabled, installedDesktopApps, query, isBrowseMode, isPortalMode])
 
     const flatItems: FlatItem[] = useMemo(() => {
+      if (isGitMode) return matchedGitItems
       if (isSessionMode) {
         if (parsedSessionQuery?.phase === 'pick-project') return matchedSessionProjects
         // need-title → recent sessions; search → title matches
@@ -787,7 +881,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         }
       }
       return items
-    }, [isSessionMode, parsedSessionQuery?.phase, matchedSessionProjects, matchedSessions, isBrowseMode, browseDir, query, searchResults, dirEntries, agentEntries, scopeDir, matchedCapabilities, matchedDesktopApps, matchedMiniApps, matchedAgentTargets])
+    }, [isGitMode, matchedGitItems, isSessionMode, parsedSessionQuery?.phase, matchedSessionProjects, matchedSessions, isBrowseMode, browseDir, query, searchResults, dirEntries, agentEntries, scopeDir, matchedCapabilities, matchedDesktopApps, matchedMiniApps, matchedAgentTargets])
 
     const mentionGroups = useMemo(
       () => groupItems(flatItems, mentionGroupKey, MENTION_GROUP_ORDER),
@@ -795,12 +889,12 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     )
     const orderedItems = useMemo(() => mentionGroups.flatMap((g) => g.items), [mentionGroups])
 
-    // Clamp selected index when session list grows/shrinks
+    // Clamp selected index when a portal list grows/shrinks
     useEffect(() => {
-      if (!isSessionMode) return
+      if (!isPortalMode) return
       if (orderedItems.length === 0) return
       if (selectedIndex >= orderedItems.length) onSetSelectedIndex(orderedItems.length - 1)
-    }, [isSessionMode, orderedItems.length, selectedIndex, onSetSelectedIndex])
+    }, [isPortalMode, orderedItems.length, selectedIndex, onSetSelectedIndex])
 
     useEffect(() => {
       // Only report emptiness for the query we actually finished fetching.
@@ -808,8 +902,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       // still-true searchCompleted + empty/stale items and permanently suppress
       // the popup via ChatInput's mentionEmptyByAtRef prefix lock.
       if (!searchCompleted || completedQuery !== query) return
-      // Session mode stays open even when empty / still loading more.
-      if (isSessionMode) {
+      // Portal modes stay open even when empty / still loading more.
+      if (isPortalMode) {
         onResultState?.(query, false)
         return
       }
@@ -818,7 +912,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       // desktop apps that arrive a moment later never surface.
       if (!desktopAppsReady) return
       onResultState?.(query, orderedItems.length === 0)
-    }, [searchCompleted, completedQuery, orderedItems.length, query, onResultState, desktopAppsReady, isSessionMode])
+    }, [searchCompleted, completedQuery, orderedItems.length, query, onResultState, desktopAppsReady, isPortalMode])
 
     const handleItemClick = useCallback(
       (item: FlatItem, action: 'navigate' | 'select') => {
@@ -835,6 +929,20 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         }
         if (item.kind === 'session') {
           onSelect(item.sessionId, 'select', 'session', item.title)
+          return
+        }
+        if (item.kind === 'git-portal') {
+          if (item.disabledReason === undefined) {
+            onSelect(item.id === GH_MENTION_KEYWORD ? GH_MENTION_NAV_PREFIX : GIT_MENTION_NAV_PREFIX, 'navigate')
+          }
+          return
+        }
+        if (item.kind === 'git-kind') {
+          onSelect(`${item.portal} ${item.refKind} `, 'navigate')
+          return
+        }
+        if (item.kind === 'git-ref') {
+          onSelect(encodeGitMentionValue(item.ref.kind, item.ref.id, item.ref.host), 'select', 'git', gitMentionDisplayName(item.ref))
           return
         }
         if (item.kind === 'agent-profile') {
@@ -868,8 +976,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         confirmTab: () => {
           const item = getSelectedItem()
           if (!item) return
-          // Session portal / project scope: Tab navigates (autocomplete).
-          if (item.kind === 'session-portal' || item.kind === 'session-project') {
+          // Portal / scope rows: Tab navigates (autocomplete).
+          if (item.kind === 'session-portal' || item.kind === 'session-project' || item.kind === 'git-portal' || item.kind === 'git-kind') {
             handleItemClick(item, 'navigate')
             return
           }
@@ -878,8 +986,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         confirmEnter: () => {
           const item = getSelectedItem()
           if (!item) return
-          // Session portal / project: Enter also completes scope (not insert).
-          if (item.kind === 'session-portal' || item.kind === 'session-project') {
+          // Portal / scope rows: Enter also completes scope (not insert).
+          if (item.kind === 'session-portal' || item.kind === 'session-project' || item.kind === 'git-portal' || item.kind === 'git-kind') {
             handleItemClick(item, 'navigate')
             return
           }
@@ -895,6 +1003,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const projectName = activeProject?.split('/').pop() || ''
 
     const groupLabel = (key: string): string => {
+      const gitKey = gitMentionGroupLabelKey(key)
+      if (gitKey) return t(gitKey)
       if (key === 'agent-profile') return t('chat.mentionPopup.groupCollaborators')
       if (key === 'capability') return t('chat.mentionPopup.groupCapabilities')
       if (key === 'session-project') return t('chat.mentionPopup.groupSessionProjects')
@@ -919,6 +1029,45 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
         i === selectedIndex ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-accent/40'
       )
+      if (item.kind === 'git-portal') {
+        return (
+          <GitPortalRow
+            key={`c-${item.id}-portal`}
+            item={item}
+            index={i}
+            selected={i === selectedIndex}
+            setItemRef={setItemRef(i)}
+            onHover={() => onSetSelectedIndex(i)}
+            onNavigate={() => handleItemClick(item, 'navigate')}
+          />
+        )
+      }
+      if (item.kind === 'git-kind') {
+        return (
+          <GitKindRow
+            key={`gk-${item.refKind}`}
+            item={item}
+            index={i}
+            selected={i === selectedIndex}
+            setItemRef={setItemRef(i)}
+            onHover={() => onSetSelectedIndex(i)}
+            onNavigate={() => handleItemClick(item, 'navigate')}
+          />
+        )
+      }
+      if (item.kind === 'git-ref') {
+        return (
+          <GitRefRow
+            key={`gr-${item.ref.kind}-${item.ref.id}`}
+            item={item}
+            index={i}
+            selected={i === selectedIndex}
+            setItemRef={setItemRef(i)}
+            onHover={() => onSetSelectedIndex(i)}
+            onSelect={() => handleItemClick(item, 'select')}
+          />
+        )
+      }
       if (item.kind === 'session-portal') {
         return (
           <button
@@ -1181,7 +1330,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     }
 
     // Session mode always stays open (empty state). Other modes hide when truly empty.
-    if (!isSessionMode && searchCompleted && completedQuery === query && orderedItems.length === 0) {
+    if (!isPortalMode && searchCompleted && completedQuery === query && orderedItems.length === 0) {
       return null
     }
 
@@ -1198,7 +1347,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         className={cn(
           'absolute bottom-full left-0 right-0 z-10 mb-1 max-h-72 overflow-hidden rounded-xl border border-border bg-popover flex flex-col',
           // Keep a stable shell while session query updates (avoid flash remount).
-          isSessionMode && 'animate-in fade-in-0 duration-150',
+          isPortalMode && 'animate-in fade-in-0 duration-150',
         )}
       >
         <div
@@ -1206,7 +1355,9 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           className="overflow-y-auto p-1 flex-1 min-h-0"
           onScroll={onSessionListScroll}
         >
-          {isSessionMode ? (
+          {git.parsed ? (
+            <GitMentionHeader parsed={git.parsed} onNavigate={(prefix) => onSelect(prefix, 'navigate')} />
+          ) : isSessionMode ? (
             <div className="flex min-w-0 items-center gap-1.5 border-b border-border/50 px-2 py-1.5 text-xs">
               <MessageSquare className="size-3.5 shrink-0 text-foreground" />
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5 text-muted-foreground">
@@ -1287,7 +1438,14 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             </div>
           ) : null}
 
-          {isSessionMode && sessionPhase === 'pick-project' && orderedItems.length === 0 ? (
+          {git.parsed && orderedItems.length === 0 ? (
+            <GitMentionEmpty
+              parsed={git.parsed}
+              itemCount={orderedItems.length}
+              loading={git.loading && !gitPortalUnavailable}
+              unavailable={gitPortalUnavailable ?? git.unavailable}
+            />
+          ) : isSessionMode && sessionPhase === 'pick-project' && orderedItems.length === 0 ? (
             <div className="px-2 py-3 text-xs text-muted-foreground">
               {t('chat.mentionPopup.noProjects')}
             </div>
@@ -1320,6 +1478,11 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
               {t('chat.mentionPopup.loadingSessions')}
             </div>
           ) : null}
+          {isGitMode && git.loading && orderedItems.length === 0 ? (
+            <div className="px-2 py-1.5 text-2xs text-muted-foreground">
+              {t('chat.mentionPopup.loadingGitRefs')}
+            </div>
+          ) : null}
           {isSessionMode
             && (sessionPhase === 'search' || sessionPhase === 'need-title')
             && !sessionLoading
@@ -1332,7 +1495,9 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         </div>
 
         <div className="border-t border-border px-2 py-1 text-xs text-muted-foreground shrink-0">
-          {isSessionMode && sessionPhase === 'pick-project' ? (
+          {git.parsed ? (
+            <GitMentionFooter parsed={git.parsed} />
+          ) : isSessionMode && sessionPhase === 'pick-project' ? (
             <>
               <Kbd>tab</Kbd> {t('chat.mentionPopup.hintCompleteProject')}
               <span className="mx-1.5">&middot;</span>

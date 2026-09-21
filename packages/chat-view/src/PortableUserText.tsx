@@ -7,7 +7,7 @@ import { parseUserMentions, type UserMentionKind } from '@superone/shared/user-m
 import { isStoredCapabilityId } from '@superone/shared/capability-prompt-tags'
 
 function blended(kind: UserMentionKind) {
-  return isStoredCapabilityId(kind) || kind === 'agent-profile' || kind === 'session' || kind === 'desktop-app'
+  return isStoredCapabilityId(kind) || kind === 'agent-profile' || kind === 'session' || kind === 'git' || kind === 'desktop-app'
 }
 
 /** User text is literal, as on desktop. Only explicit structured mentions become
@@ -24,7 +24,7 @@ export function PortableUserText({ text, mentionArtwork = {} }: { text: string; 
     const dynamic = kind === 'miniapp' || kind === 'desktop-app' ? mentionArtwork[`${kind}:${value}`] : undefined
     const icon = dynamic
       ? <img src={`data:image/png;base64,${dynamic}`} alt="" className="block size-full rounded-[22%] object-contain" />
-      : (kind === 'agent-profile' ? <AgentProfileIcon refValue={value} /> : kind === 'directory' ? <Folder className="text-primary" /> : staticMentionIcon(kind)) ?? (kind === 'file' ? <FileIcon name={label} />
+      : (kind === 'agent-profile' ? <AgentProfileIcon refValue={value} /> : kind === 'directory' ? <Folder className="text-primary" /> : staticMentionIcon(kind, value)) ?? (kind === 'file' ? <FileIcon name={label} />
         : kind === 'miniapp' ? <DefaultMiniAppIcon /> : kind === 'desktop-app' ? staticMentionIcon('computer') : <Bot />)
     return <span key={index} data-mention-kind={kind} title={value}
       className={`mention-chip ${blended(kind) ? 'mention-chip--blended' : 'mention-chip--resource'}`}>

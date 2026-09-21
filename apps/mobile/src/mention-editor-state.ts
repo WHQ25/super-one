@@ -12,7 +12,7 @@ export type MentionEditorSnapshot = {
   eventCount: number; start: number; end: number; composing: boolean; rejection?: string; submissionId?: number; supportsPrepareSubmit?: boolean
 }
 
-const tokenKinds = new Set(['file', 'directory', 'agent', 'agent-profile', 'miniapp', 'desktop-app', 'session'])
+const tokenKinds = new Set(['file', 'directory', 'agent', 'agent-profile', 'miniapp', 'desktop-app', 'session', 'git'])
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('Invalid native editor snapshot')
   return value as Record<string, unknown>

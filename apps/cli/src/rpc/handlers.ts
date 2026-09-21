@@ -22,6 +22,7 @@ import {
 import { probeSandboxRpc } from '@superone/runtime/sandbox'
 import type { RpcHostHooks } from '@superone/runtime/server'
 import { cloneRepository } from '@superone/shared/git-clone'
+import { isGitMentionRefKind } from '@superone/shared/git-mention-query'
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { join as pathJoin, resolve as pathResolve } from 'node:path'
 import { arch, cpus, freemem, homedir, hostname, platform, totalmem, uptime } from 'node:os'
@@ -433,6 +434,10 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       return handleGitCreateBranch(payload, ctx)
     case 'git.worktrees':
       return handleGitWorktrees(payload, ctx)
+    case 'git.mentionRefs':
+      return handleGitMentionRefs(payload, ctx)
+    case 'git.mentionCapabilities':
+      return handleGitMentionCapabilities(payload, ctx)
     case 'git.worktreeActivate':
       return handleGitWorktreeActivate(payload, ctx)
     case 'git.worktreeCheckedOutBranches':
@@ -1588,6 +1593,43 @@ function handleGitCreateBranch(payload: unknown, ctx: RpcContext): RpcResult {
         create: true,
         absolutePath: typeof p.cwd === 'string' ? p.cwd : null,
       }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleGitMentionCapabilities(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: await ctx.workspaceGit.mentionCapabilities(
+        String(p.projectId ?? ''),
+        typeof p.cwd === 'string' ? p.cwd : null,
+      ),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleGitMentionRefs(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  if (!isGitMentionRefKind(p.kind)) {
+    return { error: { code: 'invalid_argument', message: 'kind must be branch | commit | worktree | tag | issue | pr' } }
+  }
+  try {
+    return {
+      result: await ctx.workspaceGit.mentionRefs(
+        String(p.projectId ?? ''),
+        p.kind,
+        typeof p.query === 'string' ? p.query : '',
+        typeof p.cwd === 'string' ? p.cwd : null,
+      ),
     }
   } catch (err) {
     return mapThrown(err)

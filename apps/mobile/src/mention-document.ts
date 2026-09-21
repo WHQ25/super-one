@@ -1,4 +1,5 @@
 import { wrapAgentMention } from '@superone/shared/agent-mention-tags'
+import { wrapGitMention } from '@superone/shared/git-mention-tags'
 import { isBuiltinCapabilityId, wrapCapabilityMention, type BuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { wrapPathRefMention } from '@superone/shared/miniapp-prompt-tags'
 import type { ComposerCursor } from './composer-cursor'
@@ -6,7 +7,7 @@ import type { ComposerCursor } from './composer-cursor'
 /** One UTF-16 position in UITextView/EditText, regardless of the visible label. */
 export const MENTION_OBJECT = '\uFFFC'
 export type MentionToken = {
-  kind: 'file' | 'directory' | 'agent' | 'agent-profile' | 'miniapp' | 'desktop-app' | 'session' | BuiltinCapabilityId
+  kind: 'file' | 'directory' | 'agent' | 'agent-profile' | 'miniapp' | 'desktop-app' | 'session' | 'git' | BuiltinCapabilityId
   value: string
   displayName: string
 }
@@ -106,6 +107,7 @@ export function serializeMentionDocument(document: MentionDocument): string {
     else if (kind === 'miniapp') tag = `<superone-miniapp><appname>${displayName}</appname><appid>${value}</appid></superone-miniapp>`
     else if (kind === 'desktop-app') tag = `<superone-desktop-app><name>${displayName}</name><bundleId>${value}</bundleId></superone-desktop-app>`
     else if (kind === 'session') tag = `<superone-session><title>${displayName}</title><sessionId>${value}</sessionId></superone-session>`
+    else if (kind === 'git') tag = wrapGitMention(value, displayName)
     else tag = wrapPathRefMention(kind, kind === 'directory' && !value.endsWith('/') ? `${value}/` : value, displayName || value)
     return ` ${tag} `
   }).join('').trim()

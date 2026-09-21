@@ -29,7 +29,7 @@ export function desktopMentionGlyphs() {
       result[right.text] = { icon: jsx.tagName.getText(source), light: tone(attr.initializer.text, false), dark: tone(attr.initializer.text, true) }
     }
   }
-  for (const kind of ['agent', 'directory', 'session', 'collab', 'computer', 'browser', 'widget', 'debug']) {
+  for (const kind of ['agent', 'directory', 'session', 'git:branch', 'git:commit', 'git:worktree', 'git:tag', 'git:issue', 'git:pr', 'github', 'collab', 'computer', 'browser', 'widget', 'debug']) {
     if (!result[kind]) throw new Error(`Desktop mention glyph ${kind} changed shape; adapt the generator`)
   }
   return result

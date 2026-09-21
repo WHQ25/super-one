@@ -8,6 +8,8 @@ import { buildMentionRows } from '../mention-rows'
 import { browseItems } from '../mention-browse'
 import { mentionBreadcrumbs } from '../mention-browse-state'
 import { sessionItems, sessionProjectItems, sessionProjectOptions } from '../session-mention'
+import { gitKindItems, gitRefItems } from '../git-mention'
+import type { GitMentionRef } from '@superone/shared/git-mention-query'
 import { mcpServerRows } from '../mcp-status'
 import { McpPanel } from '../ui/mcp-panel'
 import { WorkflowsPanel } from '../ui/workflows-panel'
@@ -39,6 +41,18 @@ function Section({ title, note, children }: { title: string; note?: string; chil
     {children}
   </View>
 }
+
+const previewGitRefs: GitMentionRef[] = [
+  { kind: 'commit', id: 'f14bf73fabcdef0123456789abcdef0123456789', label: 'f14bf73', detail: 'fix(computer-use): keep overlay hide and host-exit handlers alive', author: 'Hangqi', date: new Date(Date.now() - 3 * 3_600_000).toISOString() },
+  { kind: 'commit', id: 'd49201dcabcdef0123456789abcdef0123456789', label: 'd49201d', detail: 'chore(release): bump version to 0.68.0-alpha', author: 'Hangqi', date: new Date(Date.now() - 26 * 3_600_000).toISOString() },
+  { kind: 'branch', id: 'main', label: 'main', detail: 'fix(computer-use): keep overlay hide and host-exit handlers alive', current: true },
+  { kind: 'branch', id: 'feat/git-mention', label: 'feat/git-mention', detail: 'feat(chat): add @git mention', date: new Date(Date.now() - 2 * 86_400_000).toISOString() },
+]
+const previewGhRefs: GitMentionRef[] = [
+  { kind: 'issue', id: '28', label: '#28', detail: 'ACP/Grok: subagents can call session_rename / session_tag', author: 'WHQ25', date: new Date(Date.now() - 5 * 3_600_000).toISOString(), state: 'open', host: 'github' },
+  { kind: 'pr', id: '64', label: '#64', detail: 'feat(chat): add @git and @gh mentions', author: 'WHQ25', date: new Date(Date.now() - 3_600_000).toISOString(), state: 'draft', host: 'github' },
+  { kind: 'pr', id: '62', label: '#62', detail: 'feat(mobile): inline network attachments', author: 'WHQ25', date: new Date(Date.now() - 60 * 3_600_000).toISOString(), state: 'merged', host: 'github' },
+]
 
 export function ComposerSuggestionsGallery() {
   const { tokens: { colors } } = useMobileTheme()
@@ -187,6 +201,46 @@ export function ComposerSuggestionsGallery() {
         onSelect={() => {}}
         onLoadMore={() => {}}
         search={{ active: true, loading: false, hasMore: true }}
+      />
+    </Section>
+
+    <Section title="Mention · @git kinds" note="Phase one: branch, commit, worktree or tag. The keyword and its hint sit beside the name; the portal itself greys out outside a repository.">
+      <MentionSuggestions
+        rows={buildMentionRows('', { remote: gitKindItems('git', ''), agentProfiles: [], scoped: true })}
+        onSelect={() => {}}
+        search={{ active: true, loading: false }}
+      />
+    </Section>
+
+    <Section title="Mention · @git commit" note="Kind chosen, filter typed: short sha in the name, subject inline, author and age at the end. Branches carry a `current` pill instead.">
+      <MentionSuggestions
+        rows={buildMentionRows('', { remote: gitRefItems(previewGitRefs, 'over'), agentProfiles: [], scoped: true })}
+        onSelect={() => {}}
+        search={{ active: true, loading: false }}
+      />
+    </Section>
+
+    <Section title="Mention · @gh issues" note="The GitHub portal lists issues and pull requests through gh: title primary, #number beside it, state pill and author · age at the end.">
+      <MentionSuggestions
+        rows={buildMentionRows('', { remote: gitRefItems(previewGhRefs, ''), agentProfiles: [], scoped: true })}
+        onSelect={() => {}}
+        search={{ active: true, loading: false }}
+      />
+    </Section>
+
+    <Section title="Mention · @gh without gh" note="Inside a repository but without a signed-in gh CLI, only the GitHub portal greys out.">
+      <MentionSuggestions
+        rows={buildMentionRows('g', { remote: [], agentProfiles: [], capabilityIds: previewCapabilityIds, gitAvailability: { repo: 'ready', github: false } })}
+        onSelect={() => {}}
+        search={{ active: true, loading: false }}
+      />
+    </Section>
+
+    <Section title="Mention · @git outside a repository" note="The portal stays listed but disabled, with the reason where its handle would be.">
+      <MentionSuggestions
+        rows={buildMentionRows('gi', { remote: [], agentProfiles: [], capabilityIds: previewCapabilityIds, gitAvailability: { repo: 'not-repo', github: false } })}
+        onSelect={() => {}}
+        search={{ active: true, loading: false }}
       />
     </Section>
 

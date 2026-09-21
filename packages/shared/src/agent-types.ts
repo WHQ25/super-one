@@ -3,6 +3,7 @@
 import type { TokenOverrides } from './harness-brand'
 import type { SessionGoal } from './session-goal'
 import type { NotificationSettings } from './notifications'
+import type { GitMentionRefKind } from './git-mention-query'
 
 // --- Image attachments ---
 
@@ -3965,6 +3966,8 @@ export const AgentIpcChannels = {
   GIT_ASSIGN_BRANCH: 'app:git-assign-branch',
   GIT_STATUS_FILES: 'app:git-status-files',
   GIT_LOG: 'app:git-log',
+  GIT_MENTION_REFS: 'app:git-mention-refs',
+  GIT_MENTION_CAPABILITIES: 'app:git-mention-capabilities',
   GIT_FILE_TREE: 'app:git-file-tree',
   GIT_LIST_DIR: 'app:git-list-dir',
   FILE_MOVE: 'app:file-move',
@@ -4795,6 +4798,8 @@ export type RemoteCommand =
   /** Fuzzy file search under one root, mirroring the desktop file-tree search. */
   | { type: 'search_files'; requestId: string; root: string; query: string; limit?: number }
   | { type: 'get_git_branches'; requestId: string; projectPath: string }
+  /** `@git` mention rows for the session's checkout; answers `GitMentionRefsResult`. */
+  | { type: 'list_git_mention_refs'; requestId: string; projectPath: string; kind: GitMentionRefKind; query?: string }
   | { type: 'switch_git_branch'; requestId: string; projectPath: string; branch: string }
   | { type: 'create_git_branch'; requestId: string; projectPath: string; branch: string }
   | { type: 'get_worktree_info'; requestId: string; projectPath: string }

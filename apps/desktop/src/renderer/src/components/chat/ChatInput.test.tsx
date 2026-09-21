@@ -163,7 +163,8 @@ vi.mock('@tiptap/react', () => {
       storage: {
         slashDecoration: { slashCommands: [] as unknown[] },
         promptSuggestion: { suggestion: null as string | null },
-        sessionMentionDecoration: { projects: [] as unknown[] },
+        sessionMentionDecoration: { context: [] as unknown[] },
+        gitMentionDecoration: { context: null },
         debugMentionDecoration: { hint: '' },
       },
       getText: () => {

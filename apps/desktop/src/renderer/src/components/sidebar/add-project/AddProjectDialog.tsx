@@ -7,7 +7,7 @@ import {
   Link2,
   Loader2,
 } from 'lucide-react'
-import { GithubIcon } from '@/components/GithubIcon'
+import { GithubIcon } from '@superone/ui/components/ui/github-icon'
 import { githubOwnerAvatarUrl, parseGitHubRepoInput } from '@superone/shared/git-remote'
 import { Button } from '@superone/ui/components/ui/button'
 import { Checkbox } from '@superone/ui/components/ui/checkbox'

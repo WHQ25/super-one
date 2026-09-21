@@ -8,6 +8,7 @@ import { discoverApps, discoverProjectApps, validatePath } from '../miniapp/mini
 import { discoverAllAgents } from './discover-resources'
 import { searchMentions } from './fuzzy-file-search'
 import { registerMentionIcon } from './remote-mention-icons'
+import { resolveGitMentionCapabilities } from '../git/mention-refs'
 
 const APP_RESULT_LIMIT = 12
 const MAX_ICON_DATA_URI_LENGTH = 256_000
@@ -135,10 +136,12 @@ export async function searchRemoteMentions(
   const capabilityIds = availableMentionCapabilityIds(readAppSettings(), process.platform)
   const apps = await listRemoteMentionApps(projectPath, query, capabilityIds.includes('computer'), !!options.iconsById)
   const roots = [cwd, ...(options.additionalDirs ?? []).filter((dir) => dir && dir !== cwd)]
+  const gitMention = await resolveGitMentionCapabilities(cwd)
   return {
     items: [...apps, ...searchMentions(roots, query, agents, 20, options.scopeDir)],
     agentTargets: listAgentMentionTargets(),
     capabilityIds,
+    gitMention,
     cwd,
     appliedOptions: {
       scopeDir: options.scopeDir !== undefined,

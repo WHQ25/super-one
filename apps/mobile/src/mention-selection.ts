@@ -7,8 +7,9 @@ import { extractMentionQuery, type MentionItem } from './mentions'
  * discovery; a project agent named "codex" must never turn into codex-base. */
 export function mentionTokenFromItem(item: MentionItem): MentionToken | undefined {
   const kind = item.kind === 'builtin' ? item.path
-    : item.kind === 'dir-entry' ? (item.isDirectory ? 'directory' : 'file') : item.kind
-  if (!isBuiltinCapabilityId(kind) && !['file', 'directory', 'agent', 'agent-profile', 'session', 'miniapp', 'desktop-app'].includes(kind)) return
+    : item.kind === 'dir-entry' ? (item.isDirectory ? 'directory' : 'file')
+    : item.kind === 'git-ref' ? 'git' : item.kind
+  if (!isBuiltinCapabilityId(kind) && !['file', 'directory', 'agent', 'agent-profile', 'session', 'git', 'miniapp', 'desktop-app'].includes(kind)) return
   const pathLike = kind === 'file' || kind === 'directory' || kind === 'agent'
   const displayName = item.label?.replace(/^@/, '') || (pathLike
     ? item.path.replace(/[/\\]+$/, '').split(/[/\\]/).at(-1) : item.path) || item.path

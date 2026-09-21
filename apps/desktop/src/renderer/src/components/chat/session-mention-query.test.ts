@@ -40,6 +40,12 @@ describe('isSessionMentionQuery', () => {
     expect(isSessionMentionQuery('sessions')).toBe(false)
     expect(isSessionMentionQuery('chat')).toBe(false)
   })
+
+  it('requires the keyword to follow @ directly (`@ session` is prose)', () => {
+    expect(isSessionMentionQuery(' session')).toBe(false)
+    expect(mentionQueryAllowsSpaces(' session all')).toBe(false)
+    expect(parseSessionMentionQuery(' session', { currentProjectKey: null, projects: [] })).toBeNull()
+  })
 })
 
 describe('parseSessionMentionQuery phases', () => {

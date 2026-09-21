@@ -7,7 +7,7 @@ import { IME_SETTLE_MS } from '../composer-state'
 import { useMobileTheme } from '../theme/context'
 import { BUILTIN_CAPABILITIES, LEGACY_CAPABILITY_IDS } from '@superone/shared/capability-prompt-tags'
 
-const blendedKinds = [...BUILTIN_CAPABILITIES.map((item) => item.id), ...LEGACY_CAPABILITY_IDS, 'agent-profile', 'desktop-app', 'session']
+const blendedKinds = [...BUILTIN_CAPABILITIES.map((item) => item.id), ...LEGACY_CAPABILITY_IDS, 'agent-profile', 'desktop-app', 'session', 'git']
 
 type NativeProps = ViewProps & {
   command: MentionEditorCommand; foreground: string; chipBackground: string

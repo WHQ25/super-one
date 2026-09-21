@@ -7,7 +7,11 @@ import {
   gitErrorMessage,
   parseShortstat,
   parseWorktreePorcelain,
+  ghRun,
   gitRunSync,
+  listGitMentionRefs,
+  probeGitMentionCapabilities,
+  type GitMentionRunners,
   resolveMainDirFromCommonDir,
   planNewWorktreePaths,
   worktreeAddArgs,
@@ -15,6 +19,10 @@ import {
   parseNumstat,
 } from '@superone/runtime/git'
 import type { ProjectRegistry } from './project-registry'
+
+/** GitHub round-trips for `@gh`; a popup must never wait longer than this. */
+const GH_TIMEOUT_MS = 15_000
+import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
 
 export { parseShortstat } from '@superone/runtime/git'
 
@@ -244,6 +252,31 @@ export class WorkspaceGitService {
       return { ok: true }
     } catch (err) {
       return { ok: false, error: gitErrorMessage(err) }
+    }
+  }
+
+  /** `@git` / `@gh` popup rows; `absolutePath` narrows to a linked worktree of the project. */
+  mentionRefs(
+    projectId: string,
+    kind: GitMentionRefKind,
+    query: string,
+    absolutePath?: string | null,
+  ): Promise<GitMentionRefsResult> {
+    return listGitMentionRefs(kind, query, this.mentionRunners(projectId, absolutePath))
+  }
+
+  /** What the `@git` / `@gh` portals may offer for the project (or one of its worktrees). */
+  mentionCapabilities(projectId: string, absolutePath?: string | null): Promise<GitMentionCapabilities> {
+    return probeGitMentionCapabilities(this.mentionRunners(projectId, absolutePath))
+  }
+
+  private mentionRunners(projectId: string, absolutePath?: string | null): GitMentionRunners {
+    const cwd = absolutePath
+      ? this.assertRepoWorktreePath(projectId, absolutePath)
+      : this.root(projectId)
+    return {
+      git: async (args) => gitRunSync(cwd, args),
+      gh: (args) => ghRun(cwd, args, GH_TIMEOUT_MS),
     }
   }
 

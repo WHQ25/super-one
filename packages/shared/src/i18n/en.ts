@@ -2950,6 +2950,50 @@ export type Messages = {
       hintTypeTitle: string
       loadingSessions: string
       scrollForMore: string
+      capabilityGit: string
+      capabilityGh: string
+      groupGitKinds: string
+      groupGitBranches: string
+      groupGitCommits: string
+      groupGitWorktrees: string
+      groupGitTags: string
+      groupGitIssues: string
+      groupGitPrs: string
+      gitKindBranch: string
+      gitKindCommit: string
+      gitKindWorktree: string
+      gitKindTag: string
+      gitKindIssue: string
+      gitKindPr: string
+      gitKindBranchHint: string
+      gitKindCommitHint: string
+      gitKindWorktreeHint: string
+      gitKindTagHint: string
+      gitKindIssueHint: string
+      gitKindPrHint: string
+      gitPickKind: string
+      gitNeedQueryShort: string
+      ghNeedQueryShort: string
+      gitCurrent: string
+      gitStateOpen: string
+      gitStateClosed: string
+      gitStateMerged: string
+      gitStateDraft: string
+      gitNotRepoHint: string
+      gitUnsupportedHint: string
+      ghUnavailableHint: string
+      gitLoadError: string
+      noGitKinds: string
+      noGitBranches: string
+      noGitCommits: string
+      noGitWorktrees: string
+      noGitTags: string
+      noGitIssues: string
+      noGitPrs: string
+      hintCompleteGitKind: string
+      hintSelectGitRef: string
+      hintTypeGitQuery: string
+      loadingGitRefs: string
       disabled: string
       computerUseDisabledHint: string
       browserDisabledHint: string
@@ -6891,6 +6935,50 @@ export const en: Messages = {
       hintTypeTitle: 'type title to search',
       loadingSessions: 'Loading…',
       scrollForMore: 'Scroll for more',
+      capabilityGit: 'Git',
+      capabilityGh: 'GitHub',
+      groupGitKinds: 'Ref type',
+      groupGitBranches: 'Branches',
+      groupGitCommits: 'Commits',
+      groupGitWorktrees: 'Worktrees',
+      groupGitTags: 'Tags',
+      groupGitIssues: 'Issues',
+      groupGitPrs: 'Pull requests',
+      gitKindBranch: 'Branch',
+      gitKindCommit: 'Commit',
+      gitKindWorktree: 'Worktree',
+      gitKindTag: 'Tag',
+      gitKindIssue: 'Issue',
+      gitKindPr: 'Pull request',
+      gitKindBranchHint: 'local branches, current first',
+      gitKindCommitHint: 'recent history · search by message or sha',
+      gitKindWorktreeHint: 'linked checkouts of this repository',
+      gitKindTagHint: 'newest tags first',
+      gitKindIssueHint: 'by number or title',
+      gitKindPrHint: 'by number or title',
+      gitPickKind: 'choose ref type',
+      gitNeedQueryShort: 'type to filter…',
+      ghNeedQueryShort: 'number or search…',
+      gitCurrent: 'current',
+      gitStateOpen: 'open',
+      gitStateClosed: 'closed',
+      gitStateMerged: 'merged',
+      gitStateDraft: 'draft',
+      gitNotRepoHint: 'Not a git repository',
+      gitUnsupportedHint: 'Update the remote node to mention git refs',
+      ghUnavailableHint: 'Needs the gh CLI signed in and a GitHub remote',
+      gitLoadError: 'Could not read git refs',
+      noGitKinds: 'No matching ref type',
+      noGitBranches: 'No matching branches',
+      noGitCommits: 'No matching commits',
+      noGitWorktrees: 'No matching worktrees',
+      noGitTags: 'No matching tags',
+      noGitIssues: 'No matching issues',
+      noGitPrs: 'No matching pull requests',
+      hintCompleteGitKind: 'complete ref type',
+      hintSelectGitRef: 'select ref',
+      hintTypeGitQuery: 'type to filter',
+      loadingGitRefs: 'Loading…',
       disabled: 'Off',
       computerUseDisabledHint: 'Enable Computer Use in Settings first',
       browserDisabledHint: 'Enable Browser CDP in Settings first',

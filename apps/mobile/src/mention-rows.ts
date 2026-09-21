@@ -2,6 +2,8 @@ import { BUILTIN_CAPABILITIES, isBuiltinCapabilityId } from '@superone/shared/ca
 import { compareBuiltinMentionMatches, matchBuiltinMention } from '@superone/shared/mention-capability-match'
 import { groupItems, type PopupGroup } from '@superone/shared/popup-groups'
 import { SESSION_MENTION_KEYWORD, SESSION_MENTION_NAV_PREFIX } from '@superone/shared/session-mention-query'
+import { GH_MENTION_KEYWORD, GH_MENTION_NAV_PREFIX, GIT_MENTION_KEYWORD, GIT_MENTION_NAV_PREFIX, parseGitMentionValue, type GitMentionCapabilities } from '@superone/shared/git-mention-query'
+import { GH_UNAVAILABLE_HINT } from './git-mention'
 import type { MentionItem } from './mentions'
 
 /**
@@ -21,6 +23,13 @@ export const MENTION_GROUP_ORDER = [
   'agent-profile',
   'session-project',
   'session',
+  'git-kind',
+  'git-branch',
+  'git-commit',
+  'git-worktree',
+  'git-tag',
+  'git-issue',
+  'git-pr',
   'desktop-app',
   'agent',
   'miniapp',
@@ -34,6 +43,13 @@ export const MENTION_GROUP_LABELS: Record<MentionGroupKey, string> = {
   'agent-profile': 'Collaborators',
   'session-project': 'Project scope',
   session: 'Sessions',
+  'git-kind': 'Ref type',
+  'git-branch': 'Branches',
+  'git-commit': 'Commits',
+  'git-worktree': 'Worktrees',
+  'git-tag': 'Tags',
+  'git-issue': 'Issues',
+  'git-pr': 'Pull requests',
   'desktop-app': 'Desktop Apps',
   agent: 'Agents',
   miniapp: 'Mini apps',
@@ -79,10 +95,12 @@ export interface MentionRow {
 export function mentionGroupKey(item: MentionItem): MentionGroupKey {
   // The session portal is a built-in the user reaches the same way, so it
   // belongs in the same group and the same ranking.
-  if (item.kind === 'builtin' || item.kind === 'session-portal' || isBuiltinCapabilityId(item.kind)) return 'capability'
+  if (item.kind === 'builtin' || item.kind === 'session-portal' || item.kind === 'git-portal' || isBuiltinCapabilityId(item.kind)) return 'capability'
   if (item.kind === 'agent-profile') return 'agent-profile'
   if (item.kind === 'session-project') return 'session-project'
   if (item.kind === 'session') return 'session'
+  if (item.kind === 'git-kind') return 'git-kind'
+  if (item.kind === 'git-ref') return `git-${parseGitMentionValue(item.path)?.kind ?? 'branch'}`
   if (item.kind === 'desktop-app') return 'desktop-app'
   if (item.kind === 'agent') return 'agent'
   if (item.kind === 'miniapp') return 'miniapp'
@@ -132,6 +150,8 @@ export interface MentionRowInput {
   scoped?: boolean
   /** Directory prefix to drop from file paths, as the desktop does. */
   scopeDir?: string
+  /** What the `@git` / `@gh` portals can do here; an older host leaves it unset. */
+  gitAvailability?: GitMentionCapabilities
 }
 
 const DEFAULT_CAPABILITIES = ['widget', 'debug']
@@ -165,6 +185,18 @@ const SESSION_PORTAL = {
   id: SESSION_MENTION_KEYWORD,
   displayName: 'Session',
 }
+const GIT_PORTALS = [
+  { id: GIT_MENTION_KEYWORD, displayName: 'Git', aliases: [] as string[], nav: GIT_MENTION_NAV_PREFIX },
+  { id: GH_MENTION_KEYWORD, displayName: 'GitHub', aliases: ['issue', 'pr'], nav: GH_MENTION_NAV_PREFIX },
+] as const
+
+/** Why a git portal cannot be entered here, or null when it can. */
+function gitPortalDisabledHint(portal: (typeof GIT_PORTALS)[number]['id'], caps?: GitMentionCapabilities): string | null {
+  if (caps?.repo === 'not-repo') return 'Not a git repository'
+  if (caps?.repo === 'unsupported') return 'Update the remote node to mention git refs'
+  if (portal === GH_MENTION_KEYWORD && caps?.repo === 'ready' && !caps.github) return GH_UNAVAILABLE_HINT
+  return null
+}
 
 /** Where a switched-off capability is switched back on. */
 function capabilityHint(id: string): string {
@@ -173,7 +205,7 @@ function capabilityHint(id: string): string {
   return 'Enable it in the desktop settings'
 }
 
-function capabilityRows(query: string, capabilityIds: unknown): MentionRow[] {
+function capabilityRows(query: string, capabilityIds: unknown, gitAvailability?: GitMentionCapabilities): MentionRow[] {
   const available = new Set(
     Array.isArray(capabilityIds) ? capabilityIds.filter(isBuiltinCapabilityId) : DEFAULT_CAPABILITIES,
   )
@@ -223,6 +255,31 @@ function capabilityRows(query: string, capabilityIds: unknown): MentionRow[] {
       },
     })
   }
+  for (const portal of GIT_PORTALS) {
+    const scored = matchBuiltinMention(portal.id, [portal.displayName, ...portal.aliases], query)
+    if (!scored) continue
+    // Listed but not enterable outside a repository or without gh, as on the
+    // desktop — hiding it would make the feature look absent rather than
+    // inapplicable here.
+    const hint = gitPortalDisabledHint(portal.id, gitAvailability)
+    matches.push({
+      keyword: portal.id,
+      rank: scored.rank,
+      row: {
+        item: {
+          kind: 'git-portal',
+          path: portal.id,
+          label: portal.displayName,
+          ...(hint ? {} : { navigateTo: portal.nav }),
+        } as MentionItem,
+        label: portal.displayName,
+        labelIndices: scored.labelIndices,
+        ...(hint
+          ? { inlineIndices: [], disabled: true, hint, badge: { text: 'Off', tone: 'muted' as const } }
+          : { inline: `@${portal.id}`, inlineIndices: scored.keywordIndices }),
+      },
+    })
+  }
   return rankBuiltins(matches, query)
 }
 
@@ -269,7 +326,7 @@ export function buildMentionRows(query: string, input: MentionRowInput): Mention
   const hasQuery = !!query.trim()
   const rows = input.scoped
     ? []
-    : [...capabilityRows(query, input.capabilityIds), ...agentProfileRows(query, input.agentProfiles)]
+    : [...capabilityRows(query, input.capabilityIds, input.gitAvailability), ...agentProfileRows(query, input.agentProfiles)]
   const seen = new Set(rows.map((row) => mentionRowKey(row.item)))
   for (const item of input.remote) {
     const key = mentionRowKey(item)
@@ -296,10 +353,16 @@ function remoteRow(item: MentionItem, scopeDir: string): MentionRow {
     return { ...row, ...(item.description ? { trailing: item.description } : {}),
       ...(item.badge ? { badge: { text: item.badge, tone: 'muted' } } : {}) }
   }
-  if (item.kind === 'session-project') {
+  if (item.kind === 'session-project' || item.kind === 'git-kind') {
     // `all projects` / `current project` / the path: the desktop shows it
     // inline, not underneath.
     return { ...row, ...(item.description ? { inline: item.description } : {}) }
+  }
+  if (item.kind === 'git-ref') {
+    // Subject beside the ref; author · age (or a `current` pill) at the end.
+    return { ...row, ...(item.description ? { inline: item.description, inlineIndices: item.descriptionIndices ?? [] } : {}),
+      ...(item.rootPath ? { trailing: item.rootPath } : {}),
+      ...(item.badge ? { badge: { text: item.badge, tone: 'muted' } } : {}) }
   }
   if (item.kind === 'agent') {
     // `inherit` is what the desktop prints for an agent that names no model.

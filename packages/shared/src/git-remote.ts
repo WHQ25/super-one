@@ -54,6 +54,17 @@ export function githubOwnerAvatarUrl(owner: string, size = 80): string {
   return `https://github.com/${encodeURIComponent(owner)}.png?size=${size}`
 }
 
+/**
+ * Avatar for an issue / PR author as `gh` reports the login. GitHub Apps come
+ * back as `app/<slug>` and live under `/apps/<slug>`, not `/app/<slug>`.
+ */
+export function githubAuthorAvatarUrl(login: string, size = 40): string {
+  const app = /^app\/(.+)$/.exec(login)
+  return app
+    ? `https://github.com/apps/${encodeURIComponent(app[1]!)}.png?size=${size}`
+    : githubOwnerAvatarUrl(login, size)
+}
+
 function isGitHubUrlShaped(value: string): boolean {
   return (
     /^(?:https?:\/\/|ssh:\/\/|git@|git:\/\/)/i.test(value) ||

@@ -1,4 +1,5 @@
 import type { RelayClient } from '@superone/relay-client'
+import { MENTION_SEARCH_DEBOUNCE_MS } from '@superone/shared/mention-search-debounce'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { requestMentionIcons, requestMentionSearch, type MentionSearchResult } from '../mention-search'
 import { MentionIconCache, type MentionIconStore } from '../mention-icon-cache'
@@ -14,6 +15,11 @@ import {
   sessionEmptyLabel, sessionItems, sessionPageLoader, sessionProjectItems, sessionProjectOptions,
   type SessionMentionLoadState,
 } from '../session-mention'
+import {
+  gitEmptyLabel, gitKindItems, gitRefItems, isGitMentionQuery, parseGitAvailability, parseGitMentionQuery,
+  requestGitMentionRefs, type GitMentionCapabilities,
+} from '../git-mention'
+import { enabledGitMentionPortals } from '@superone/shared/git-mention-query'
 import { filterSlashCommands, type SlashCommandInfo } from '../slash'
 import { peekSlashCatalog, requestSlashCatalog, type SlashCatalogStatus } from '../slash-catalog'
 
@@ -29,13 +35,14 @@ export type MentionSearchState = {
 const CLOSED: MentionSearchState = { active: false, loading: false }
 
 /** Matches the desktop popup's file-search debounce. */
-export const MENTION_SEARCH_DEBOUNCE_MS = 150
+export { MENTION_SEARCH_DEBOUNCE_MS }
 
 /** One shape for every producer, so the caller never branches on which ran. */
 type MentionFetch = {
   remote: MentionItem[]
   agentProfiles: MentionItem[]
   capabilityIds?: unknown
+  gitAvailability?: GitMentionCapabilities
   /** Another page is available; only the session portal pages today. */
   hasMore?: boolean
   /** What this producer's "nothing found" means, when it is not just "no matches". */
@@ -81,7 +88,7 @@ export function useComposerSuggestions(
   const cursor = useRef<ComposerCursor>({ start: 0, end: 0 })
   const generation = useRef(0)
   const catalogGeneration = useRef(0)
-  const mentionCatalog = useRef<{ agentProfiles: MentionItem[]; capabilityIds?: unknown }>({ agentProfiles: [] })
+  const mentionCatalog = useRef<{ agentProfiles: MentionItem[]; capabilityIds?: unknown; gitAvailability?: GitMentionCapabilities }>({ agentProfiles: [] })
   const inFlightQuery = useRef<string | null>(null)
   const debounce = useRef<ReturnType<typeof setTimeout>>(undefined)
   /**
@@ -171,12 +178,14 @@ export function useComposerSuggestions(
   const carried = () => ({
     agentProfiles: mentionCatalog.current.agentProfiles,
     capabilityIds: mentionCatalog.current.capabilityIds,
+    gitAvailability: mentionCatalog.current.gitAvailability,
   })
   const absorb = (result: MentionSearchResult): MentionFetch => {
     if (typeof result.cwd === 'string' && result.cwd) cwd.current = result.cwd
     const agentProfiles = parseAgentMentionItems(result.agentTargets)
-    mentionCatalog.current = { agentProfiles, capabilityIds: result.capabilityIds }
-    return { remote: parseMentionItems(result.items), agentProfiles, capabilityIds: result.capabilityIds }
+    const gitAvailability = parseGitAvailability(result.gitMention)
+    mentionCatalog.current = { agentProfiles, capabilityIds: result.capabilityIds, gitAvailability }
+    return { remote: parseMentionItems(result.items), agentProfiles, capabilityIds: result.capabilityIds, gitAvailability }
   }
   const browseRoot = (runtime: ChatRuntime | null) => cwd.current || runtime?.mentionRoot || projectPath || ''
 
@@ -215,6 +224,25 @@ export function useComposerSuggestions(
     }
   }
 
+  /** The `@git` portal: pick a ref kind, then filter that kind's refs on the host. */
+  /** Portals the host said it can serve; a portal that is off does not own the grammar. */
+  const gitPortals = () => enabledGitMentionPortals(mentionCatalog.current.gitAvailability)
+
+  const gitLookup = (query: string, client: RelayClient | null): (() => Promise<MentionFetch>) | null => {
+    const parsed = parseGitMentionQuery(query, gitPortals())
+    if (!parsed) return null
+    if (parsed.phase === 'pick-kind') {
+      return async () => ({ remote: gitKindItems(parsed.portal, parsed.kindToken), ...carried(), emptyLabel: gitEmptyLabel(parsed) })
+    }
+    const kind = parsed.refKind
+    if (!kind || !client || !projectPath) return null
+    return async () => {
+      const result = await requestGitMentionRefs(client, projectPath, kind, parsed.refQuery)
+      if (!result.ok) return { remote: [], ...carried(), emptyLabel: gitEmptyLabel(parsed, result) }
+      return { remote: gitRefItems(result.refs, parsed.refQuery), ...carried(), emptyLabel: gitEmptyLabel(parsed) }
+    }
+  }
+
   /**
    * Pick the producer for what the user has typed.
    *
@@ -228,6 +256,7 @@ export function useComposerSuggestions(
     client: RelayClient | null,
   ): (() => Promise<MentionFetch>) | null => {
     if (isSessionMentionQuery(query)) return sessionLookup(query, client)
+    if (isGitMentionQuery(query, gitPortals())) return gitLookup(query, client)
     const mode = deriveMentionMode(query)
     const needle = mode.kind === 'search' ? mode.needle : ''
     const scoped = mode.kind === 'search' && mode.scopeDir ? { scopeDir: mode.scopeDir } : {}
@@ -298,7 +327,7 @@ export function useComposerSuggestions(
     const runtime = runtimeRef.current
     const client = host.client.current
     const collapsed = cursor.current.start === cursor.current.end
-    const query = collapsed ? extractMentionQuery(text.current, cursor.current.end) : null
+    const query = collapsed ? extractMentionQuery(text.current, cursor.current.end, gitPortals()) : null
     if (!query) {
       clear()
       return
@@ -346,7 +375,8 @@ export function useComposerSuggestions(
   const mentionRows = useMemo<MentionRow[]>(() => {
     if (mentionQuery === null) return []
     const mode = deriveMentionMode(mentionQuery)
-    const session = isSessionMentionQuery(mentionQuery)
+    // A portal grammar (session / git) owns the list: no needle, no file scope.
+    const session = isSessionMentionQuery(mentionQuery) || isGitMentionQuery(mentionQuery, enabledGitMentionPortals(mentionResults.gitAvailability))
     return buildMentionRows(session || mode.kind === 'browse' ? '' : mode.needle, {
       ...mentionResults,
       // Rows carry an icon id; the bytes come from the device's cache, which
@@ -407,7 +437,7 @@ export function useComposerSuggestions(
   }
   const insert = (item: MentionItem): string | undefined => {
     if (cursor.current.start !== cursor.current.end) return
-    const query = extractMentionQuery(text.current, cursor.current.end)
+    const query = extractMentionQuery(text.current, cursor.current.end, gitPortals())
     if (!query) return
     const value = insertMention(text.current, query, item)
     const end = cursor.current.end + value.length - text.current.length

@@ -5,6 +5,7 @@ import sharp from 'sharp'
 import { createElement, type ComponentType } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import * as lucide from 'lucide-react'
+import { GithubIcon } from '@superone/ui/components/ui/github-icon'
 import { DefaultMiniAppIcon } from '../../../packages/ui/src/components/ui/DefaultMiniAppIcon'
 import { desktopMentionGlyphs } from './mention-glyphs'
 import files from '../src/ui/file-icons.generated.json'
@@ -30,7 +31,9 @@ for (const color of colors) {
 }
 const glyphs: Record<string, { icon: string; light: string; dark: string; artwork: Record<string, string> }> = {}
 for (const [kind, glyph] of Object.entries(desktopMentionGlyphs())) {
-  const Icon = (lucide as unknown as Record<string, ComponentType<{ color: string }>>)[glyph.icon]
+  // lucide 1.0 dropped brand marks; the desktop carries GitHub's itself.
+  const local: Record<string, ComponentType<{ color: string }>> = { GithubIcon }
+  const Icon = local[glyph.icon] ?? (lucide as unknown as Record<string, ComponentType<{ color: string }>>)[glyph.icon]
   if (!Icon) throw new Error(`Unknown desktop Lucide icon: ${glyph.icon}`)
   const inks = [...new Set([glyph.light, glyph.dark].flatMap((tone) => tone === '$foreground' ? colors : [tone]))]
   const artwork: Record<string, string> = {}

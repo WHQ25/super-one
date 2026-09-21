@@ -79,6 +79,7 @@ import { addTerminalCommandRule, isTerminalCommandPreapproved, listAllTerminalCo
 import { addSessionTerminalCommandRule, isTerminalCommandAllowedForSession } from './mcp/terminal-session-rules'
 import { RemoteTerminalController } from './environment/remote-terminal-controller'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
+import { isGitMentionRefKind, type GitMentionRefKind } from '@superone/shared/git-mention-query'
 import { AUDIO_EXTENSIONS, BINARY_IMAGE_EXTENSIONS, PDF_EXTENSIONS, VIDEO_EXTENSIONS } from '@superone/shared/file-preview'
 import { newMessageId } from '@superone/shared/message-id'
 import { TerminalBroadcaster } from './remote/terminal-broadcaster'
@@ -3071,6 +3072,20 @@ function registerIpcHandlers(): void {
     } catch {
       return []
     }
+  })
+
+  ipcMain.handle(
+    AgentIpcChannels.GIT_MENTION_REFS,
+    async (_event, folderPath: string, kind: GitMentionRefKind, query?: string) => {
+      if (!isGitMentionRefKind(kind)) return { ok: false, reason: 'error', error: `unknown ref kind ${String(kind)}` }
+      const { resolveGitMentionRefs } = await import('./git/mention-refs')
+      return resolveGitMentionRefs(folderPath, kind, query ?? '')
+    },
+  )
+
+  ipcMain.handle(AgentIpcChannels.GIT_MENTION_CAPABILITIES, async (_event, folderPath: string) => {
+    const { resolveGitMentionCapabilities } = await import('./git/mention-refs')
+    return resolveGitMentionCapabilities(folderPath)
   })
 
   ipcMain.handle(AgentIpcChannels.GIT_SWITCH_BRANCH, async (_event, folderPath: string, branch: string) => {

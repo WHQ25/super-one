@@ -16,6 +16,8 @@ export type MentionSearchResult = {
    * have ranked every in-scope file out.
    */
   appliedOptions?: { scopeDir?: boolean; additionalDirs?: boolean; iconsById?: boolean }
+  /** Whether `@git` can be entered for the searched cwd; absent on older hosts. */
+  gitMention?: unknown
   error?: string
 }
 

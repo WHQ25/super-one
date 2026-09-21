@@ -1805,6 +1805,17 @@ export class AgentService {
         }
         break
       }
+      case 'list_git_mention_refs': {
+        try {
+          // Same checkout the session runs in — a worktree, not the project root.
+          const cwd = this.sessionManager?.getActiveSession(command.projectPath)?.cwd ?? command.projectPath
+          const { resolveGitMentionRefs } = await import('../git/mention-refs')
+          await respond?.(command.requestId, await resolveGitMentionRefs(cwd, command.kind, command.query ?? ''))
+        } catch (err) {
+          await respond?.(command.requestId, { ok: false, reason: 'error', error: (err as Error).message })
+        }
+        break
+      }
       case 'switch_git_branch': {
         try {
           await gitRun(command.projectPath, ['checkout', sanitizeGitRef(command.branch)])

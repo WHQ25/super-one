@@ -69,6 +69,8 @@ export type MentionKind =
   | 'desktop-app'
   /** SuperOne session archive — value is sessions.id (not provider session id). */
   | 'session'
+  /** Git ref of the project repository — value is `<kind>:<id>` (see `git-mention-query`). */
+  | 'git'
   /**
    * A launchable agent / run configuration — value is the encoded provider ref
    * (`codex-base`, `acp-base:grok-build`). Not `agent`: that kind is already

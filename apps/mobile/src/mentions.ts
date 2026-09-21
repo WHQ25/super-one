@@ -1,4 +1,5 @@
 import { mentionQueryAllowsSpaces } from '@superone/shared/session-mention-query'
+import type { GitMentionPortal } from '@superone/shared/git-mention-query'
 
 export type MentionQuery = { atPosition: number; query: string }
 
@@ -13,7 +14,8 @@ const PLACEHOLDER = '\uFFFC'
  * `session <project> <title words>`; the query it produces is what decides,
  * not a flag the caller has to remember to pass.
  */
-export function extractMentionQuery(text: string, cursorPosition: number): MentionQuery | null {
+/** `gitPortals` gates the space-tolerant `@git` / `@gh` grammars; a portal the host cannot serve types as plain text. */
+export function extractMentionQuery(text: string, cursorPosition: number, gitPortals?: readonly GitMentionPortal[]): MentionQuery | null {
   if (cursorPosition <= 0 || cursorPosition > text.length) return null
   const before = text.slice(0, cursorPosition)
   let sawSpace = false
@@ -25,7 +27,7 @@ export function extractMentionQuery(text: string, cursorPosition: number): Menti
     if (ch === '@') {
       if (i > 0 && !/\s/.test(before[i - 1]!)) return null
       const query = before.slice(i + 1)
-      if (sawSpace && !mentionQueryAllowsSpaces(query)) return null
+      if (sawSpace && !mentionQueryAllowsSpaces(query, { gitPortals })) return null
       return { atPosition: i, query }
     }
     if (/\s/.test(ch)) sawSpace = true
@@ -47,6 +49,8 @@ export type MentionItem = {
    * row carries, so remapping from the path would drop the highlight entirely.
    */
   labelIndices?: number[]
+  /** Match positions over `description`, for rows whose inline text can be what matched. */
+  descriptionIndices?: number[]
   /** Extra names a collaborator answers to; matched but never highlighted. */
   aliases?: string[]
   /** Validated PNG payload supplied by the paired desktop for dynamic app identities. */

@@ -8,6 +8,7 @@ import {
   AGENT_REMINDER_REGEX,
   AGENT_TAG_REGEX,
 } from './agent-mention-tags'
+import { GIT_HOST_TAG_REGEX, GIT_TAG_REGEX, gitTagDisplayName, gitTagValue } from './git-mention-tags'
 import {
   DESKTOP_APP_REMINDER_REGEX,
   DESKTOP_APP_TAG_REGEX,
@@ -26,6 +27,8 @@ export type UserMentionKind =
   | 'desktop-app'
   | 'session'
   | 'agent-profile'
+  /** Git ref — value is `<kind>:<id>` (see `git-mention-query`). */
+  | 'git'
   | StoredCapabilityId
 
 export type UserTextSegment =
@@ -112,6 +115,24 @@ function findSessionTags(text: string): TagMatch[] {
   return out
 }
 
+function findGitTags(text: string): TagMatch[] {
+  const out: TagMatch[] = []
+  let m: RegExpExecArray | null
+  const repo = new RegExp(GIT_TAG_REGEX)
+  while ((m = repo.exec(text)) !== null) {
+    const value = gitTagValue(m[1], m[3])
+    if (!value) continue
+    out.push({ start: m.index, end: m.index + m[0].length, kind: 'git', displayName: gitTagDisplayName(m[2]), value })
+  }
+  const hosted = new RegExp(GIT_HOST_TAG_REGEX)
+  while ((m = hosted.exec(text)) !== null) {
+    const value = gitTagValue(m[2], m[4], m[1])
+    if (!value) continue
+    out.push({ start: m.index, end: m.index + m[0].length, kind: 'git', displayName: gitTagDisplayName(m[3]), value })
+  }
+  return out
+}
+
 function findAgentTags(text: string): TagMatch[] {
   const out: TagMatch[] = []
   const re = new RegExp(AGENT_TAG_REGEX)
@@ -170,6 +191,7 @@ export function parseUserMentions(text: string): UserTextSegment[] {
     ...findCapabilityTags(withoutReminder),
     ...findDesktopAppTags(withoutReminder),
     ...findSessionTags(withoutReminder),
+    ...findGitTags(withoutReminder),
     ...findAgentTags(withoutReminder),
     ...findPathRefTags(withoutReminder),
   ].sort((a, b) => a.start - b.start)

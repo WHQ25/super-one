@@ -8,6 +8,7 @@ import type { MatchedSlashCommand } from '../slash'
 import type { SlashCatalogStatus } from '../slash-catalog'
 import { IconButton } from './icon-button'
 import { directoryMentionItem, directoryNavigationItem, isMentionDirectory, type MentionItem } from '../mentions'
+import { parseGitMentionValue } from '../git-mention'
 import { groupMentionRows, mentionGroupKey, mentionRowKey, MENTION_GROUP_LABELS, type MentionGroupKey, type MentionRow } from '../mention-rows'
 import { useMobileTheme } from '../theme/context'
 import { FileTypeIcon } from './file-icon'
@@ -137,6 +138,9 @@ export function MentionIdentity({ item, size = 16 }: { item: MentionItem; size?:
   const glyphKind = item.kind === 'builtin' ? item.path
     : item.kind === 'desktop-app' ? 'computer'
     : item.kind === 'session-portal' ? 'session'
+    : item.kind === 'git-portal' ? (item.path === 'gh' ? 'github' : 'git:branch')
+    : item.kind === 'git-kind' ? `git:${item.path}`
+    : item.kind === 'git-ref' ? `git:${parseGitMentionValue(item.path)?.kind ?? 'branch'}`
     : item.kind
   const glyph = mentionGlyphArtwork(glyphKind, scheme, colors.foreground)
   if (glyph) return <Image accessible={false} resizeMode="contain" source={{ uri: `data:image/png;base64,${glyph}` }} style={{ width: size, height: size, borderRadius: item.kind === 'miniapp' ? size * 0.22 : 0 }} />

@@ -6,6 +6,7 @@ import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { TerminalCommandRule } from '@superone/shared/terminal-command-rules'
 import type { DshPluginInstallSource, FileEntryKind, PinnedSessionEntry, ScheduledSend, ScheduledSendPatch, ScheduledSendSessionInit, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
+import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
 import type { DraftListEntry, DraftUpsertRequest, ProjectSnapshot } from '@superone/shared/environment'
 import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
@@ -2206,6 +2207,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_STATUS_FILES, folderPath),
   getGitLog: (folderPath: string, query?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_LOG, folderPath, query),
+  listGitMentionRefs: (folderPath: string, kind: GitMentionRefKind, query?: string): Promise<GitMentionRefsResult> =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_MENTION_REFS, folderPath, kind, query),
+  getGitMentionCapabilities: (folderPath: string): Promise<GitMentionCapabilities> =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_MENTION_CAPABILITIES, folderPath),
   getGitDiffFile: (folderPath: string, filePath: string, staged: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_DIFF_FILE, folderPath, filePath, staged),
   readProjectFile: (folderPath: string, filePath: string) =>

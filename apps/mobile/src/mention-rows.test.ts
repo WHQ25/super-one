@@ -70,7 +70,8 @@ describe('buildMentionRows', () => {
 
   it('keeps catalog order for a bare @, and lists the switched-off ones too', () => {
     const rows = buildMentionRows('', { remote: [], agentProfiles: [], capabilityIds: ['debug', 'widget'] })
-    expect(rows.map((row) => row.item.path)).toEqual(['computer', 'browser', 'widget', 'debug', 'session'])
+    expect(rows.map((row) => row.item.path)).toEqual(['computer', 'browser', 'widget', 'debug', 'session', 'git', 'gh'])
+    // Unknown git availability stays enterable until the host answers, matching the grammar gate.
     expect(rows.filter((row) => row.disabled).map((row) => row.item.path)).toEqual(['computer', 'browser'])
   })
 

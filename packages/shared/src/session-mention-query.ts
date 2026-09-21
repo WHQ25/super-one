@@ -20,6 +20,7 @@
 
 import type { SessionHistoryEntry } from './agent-types'
 import { fuzzyMatch } from './fuzzy-match'
+import { isGitMentionQuery, type GitMentionPortal } from './git-mention-query'
 
 /** Navigate prefix when the user opens the Session built-in (trailing space for typing). */
 export const SESSION_MENTION_NAV_PREFIX = 'session '
@@ -57,18 +58,24 @@ export interface ProjectOption {
   label: string
 }
 
-/** True when the @-query is in session mention mode (`session` or `session …`). */
+/**
+ * True when the @-query is in session mention mode (`session` or `session …`).
+ * The keyword must follow `@` directly: `@ session` is prose, not a mention.
+ */
 export function isSessionMentionQuery(query: string): boolean {
-  return new RegExp(`^${SESSION_MENTION_KEYWORD}(?:\\s|$)`, 'i').test(query.trimStart())
+  return new RegExp(`^${SESSION_MENTION_KEYWORD}(?:\\s|$)`, 'i').test(query)
 }
 
 /**
  * A composer closes the @ popup when the query contains a space, because file
- * and agent mentions are single tokens. Session grammar needs spaces, so this
- * is the exemption.
+ * and agent mentions are single tokens. The session and git grammars need
+ * spaces, so this is the exemption list.
  */
-export function mentionQueryAllowsSpaces(queryAfterAt: string): boolean {
-  return isSessionMentionQuery(queryAfterAt)
+export function mentionQueryAllowsSpaces(
+  queryAfterAt: string,
+  opts?: { gitPortals?: readonly GitMentionPortal[] },
+): boolean {
+  return isSessionMentionQuery(queryAfterAt) || isGitMentionQuery(queryAfterAt, opts?.gitPortals)
 }
 
 /** Argument grammar shown as ghost text (same style as a slash `argumentHint`). */
@@ -123,10 +130,9 @@ export function parseSessionMentionQuery(
     projects: ProjectOption[]
   },
 ): ParsedSessionMentionQuery | null {
-  const trimmed = query.trimStart()
-  if (!isSessionMentionQuery(trimmed)) return null
+  if (!isSessionMentionQuery(query)) return null
 
-  const afterTrimStart = trimmed
+  const afterTrimStart = query
     .replace(new RegExp(`^${SESSION_MENTION_KEYWORD}\\b`, 'i'), '')
     .trimStart()
 

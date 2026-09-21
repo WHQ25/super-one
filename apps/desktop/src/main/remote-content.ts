@@ -7,6 +7,7 @@ import { readOutputFile } from './agent/claude-session-runtime'
 import { listWorkflowAgentsSync } from './workflow-transcripts'
 import { highlightCodeSync, highlightCodeByLang, parseAnsiTokens, type DiffTokenLine } from './remote-highlighter'
 import { withAttachmentPreviews } from './remote/attachment-thumbnail'
+import { compactRunResult } from './jev/compact-run-result'
 
 const TOOL_RESULT_MAX_LEN = 200
 const MAX_BASH_OUTPUT = 5000
@@ -477,34 +478,15 @@ function mediaObject(value: unknown): Record<string, unknown> | null {
     : null
 }
 
+export function compactRunToolResult(summary: string): string | null {
+  return compactRunResult(unwrapMcpEnvelope(summary))
+}
+
 /**
  * Shrink a tool result that carries an image path down to the fields that
  * locate the image. Returns `null` when the summary is not such a result, in
  * which case the caller falls back to plain character truncation.
  */
-/**
- * A `*_run` result is JSON whose bulk is the final page snapshot, so truncating
- * it leaves the phone unable to parse the run at all. Keep the outcome — which
- * is what the block renders, and what ties it to its reported actions — and drop
- * the snapshot.
- */
-export function compactRunToolResult(summary: string): string | null {
-  const text = unwrapMcpEnvelope(summary)
-  if (text.charCodeAt(0) !== 123 /* { */) return null
-  let parsed: unknown
-  try { parsed = JSON.parse(text) } catch { return null }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
-  const obj = parsed as Record<string, unknown>
-  if (typeof obj.runId !== 'string') return null
-  if (obj.status !== 'paused' && obj.status !== 'done' && obj.status !== 'aborted') return null
-  return JSON.stringify({
-    status: obj.status,
-    runId: obj.runId,
-    ...(typeof obj.steps === 'number' ? { steps: obj.steps } : {}),
-    ...(typeof obj.why === 'string' ? { why: obj.why } : {}),
-  })
-}
-
 export function compactMediaToolResult(summary: string): string | null {
   const text = unwrapMcpEnvelope(summary)
   if (text.charCodeAt(0) !== 123 /* { */) return null
@@ -731,4 +713,3 @@ export function remoteRestoreMessages(messages: readonly ChatMessage[]): ChatMes
   if (streaming >= 0) start = Math.min(start, streaming)
   return messages.slice(start)
 }
-

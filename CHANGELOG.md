@@ -36,12 +36,18 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Mobile: usage on the composer ring; permission, question and
   plan sheets put away on an outside tap instead of dismissing.
   Fork a session from the header; dismiss prompt suggestions.
-- Agents can run interactive commands in SuperOne terminal tabs
-  (approve once or always in this project, with an agent-proposed
-  rule). Agent tabs appear in the dock and stay on the session
-  that opened them. Chat shows the screen the agent saw. Settings
-  lists and revokes always-allow rules. Commands that finish on
-  their own stay in the agent's shell tool, however slow.
+- Agents can run interactive commands in SuperOne terminal tabs.
+  The command goes through the harness's own permission layer
+  first (Claude's auto-mode classifier, Codex's approval policy),
+  so routine commands need no click; when the harness asks, the
+  prompt offers allow once, for this session, or always in this
+  project. Rules are regular expressions over the whole command
+  (an agent-proposed one, or `bun run( .*)?` derived from it), so
+  `PORT=9361 bun run dev` can be allowed without pinning the port.
+  Agent tabs appear in the dock and stay on the session that
+  opened them. Chat shows the screen the agent saw. Settings lists
+  and revokes project rules. Commands that finish on their own
+  stay in the agent's shell tool, however slow.
 - Built-in browser on macOS can use Touch ID passkeys.
 - Maximizing an activity tab folds the sidebar and collapses
   floating chat.
@@ -54,6 +60,12 @@ Every alpha release keeps its own notes on its GitHub Release.
   Kimi, custom…) no longer gets every turn rejected with 400 after
   an MCP server joins mid-session: the harness stops announcing
   late tools with wire blocks those hosts do not understand.
+- A Claude stream that dies mid-call (sleep/wake, dropped socket)
+  no longer leaves a ghost tool row next to the retried call.
+- Turn detail counts a subagent as one call; its file edits still
+  fold into the turn's diff stat, on the phone too. The phone's
+  subagent card shows the agent's name tag, call/token badge and
+  its own pool colour without expanding, like the desktop.
 - Worktree status updates to the attached branch at turn end;
   long branch names wrap and show the diff stat; a clean checkout
   reads `clean`; rows keep a uniform height. The phone keeps the
@@ -82,12 +94,6 @@ Every alpha release keeps its own notes on its GitHub Release.
   carry over.
 - Agent skills and product manuals load only what the current
   task needs.
-
-### Performance
-
-- Mobile reconnects reuse workspace caches; host payloads are
-  compressed. Upgrade desktop and phone together.
-
 - Built-in providers follow each vendor's current Claude Code
   guide: GLM defaults to GLM-5.3 (Flash for haiku), MiniMax to
   M3 at 1M on `api.minimax.cn`, Moonshot to K3 1M, Volcengine
@@ -98,6 +104,12 @@ Every alpha release keeps its own notes on its GitHub Release.
   Max plans (the retired Andante / Moderato / Allegretto stay for
   existing keys). KAT-Coder no longer needs an endpoint id and adds
   a pay-as-you-go plan.
+
+### Performance
+
+- Mobile reconnects reuse workspace caches; host payloads are
+  compressed. Upgrade desktop and phone together.
+
 ## [0.67.0-alpha.3] - 2026-09-17
 
 ### Added

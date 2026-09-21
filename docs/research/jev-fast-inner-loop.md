@@ -1232,6 +1232,19 @@ B 的范式就是 `presets`：把带参数的动作拆成几个选择题，每�
 
 所以"后台 drag"的真实边界是：**drop 点在屏幕上没被别的窗口盖住就落地，被盖住就投到盖住它的窗口。** 常见的遮挡者正是 SuperOne 自己的窗口。可判定：`CGWindowListCopyWindowInfo(.optionOnScreenOnly)` 前到后第一个包含 drop 点的 layer-0 窗口是不是目标窗口。§11.7 的三个选项要重排：(a) 遮挡时才事务性真实激活、露出时保持后台；(b) 只在露出时提供 `drag`（观察层按 drop 点可见性给 `dropTarget`，被盖住时说明原因）；(c) 拿掉 drag 走菜单命令。决定留给宿主侧。探针源码在 `/tmp/claude/dragprobe/{lab2/lab2.swift, pb.swift, tap.swift, wl0.swift, axraise.swift}` 与 `/tmp/claude/menu-probe/{labdrag,dragprobe,dragcross}.mjs`。
 
+### 11.9 drag 的 (b′)：只在 drop 点露出时提供，宿主自己挡着就自己让路（2026-09-21，Grok 4.6 / high，dev 版）
+
+**探针：宿主给自己让路（一次性 Electron lab 窗，同一 electron 二进制）。** `BrowserWindow.setAlwaysOnTop(true, 'normal', -1)` 把窗口放到 level −1——所有普通窗之下——posted drag 落地，`setAlwaysOnTop(false)` 复位回最前；全程 app 仍 active，`isFocused`、`document.hasFocus()`、`activeElement` 不变。`hide()`+`showInactive()` 不行：`showInactive` 是 `orderFrontRegardless`，窗口留在最上，且 `hide()` 丢 document focus。bench 里有两个盖住者（dev 主窗 + 被 reset 脚本抬起的另一窗），一层不够，要循环到 drop 点不再被自己盖住。
+
+**实现（`d675a782`）。** helper 新 RPC `window_cover`（drag 同一套坐标参数 + `points`）：`CGWindowListCopyWindowInfo(.optionOnScreenOnly)` 前到后第一个 layer-0、alpha>0、非 helper 自身的窗口含该点且不是目标窗 → `{windowId, pid, app}`，否则 `null`。`PlatformAdapter.coveringWindows?` → `service.coveringWindows(stateId, points)`（menu root 一律未盖；fake 用 `coverWindow()`/`uncover()` 配置）。`computer-page` 在 `observe` 后对全部 `dropTarget` 中心点查一次：第三方盖住 → 去掉 `dropTarget`，text 加 `(Archive: drop point covered by TextEdit)`；被宿主自己盖住 → 保留，`drag` 前 `yieldDropPoint` 循环 lower（≤4 层），`finally` 复位。`jev/own-windows.ts` 按 `getMediaSourceId()` 的 `window:<CGWindowID>:0` 找到 `BrowserWindow`，已 alwaysOnTop 的不动；没有 `ownWindows` 的宿主，自己的窗口视同第三方。不激活任何 app；第三方遮挡只报告。
+
+**真跑。** 三次，bench 窗压在 dev 主窗下两次、露出一次：
+- `r095b0682`（压窗，修 nested row 前）：drag **0.98** → Archive 0.83，risk 0.27，文件进了 Archive，前台始终 SuperOne——自降窗在真 run 成立。但 `goal_satisfied` 0.21 → 0.15，第 3 步 no-progress 暂停，主模型 abort：Finder 把移入的文件显示为**展开的 Archive 下的缩进子行**，观察层把 outline 摊平、没有层级，前后 text 逐字相同（只有 Archive 的修改时间变了）；Jev 唯一抓到的证据是 [139] "Edit ▸ Undo Move of Report.txt" 0.22。观察层缺口，修在 `cc9ca71b`：helper 读 `AXDisclosureLevel`，`UiOutlineNode.level`，text 写 `(Report.txt: selected, inside Archive)`；label 不变，drag head key 不变。
+- `rb5113659`（压窗，修后）：drag **0.99** → 0.80，worked；`goal_satisfied` 0.06 → **0.37** → 0.31；第 3 步 no-progress 暂停（none_useful 0.53、drag 残留 0.27，不到 idle 规则要的 0.8），主模型读到 "inside Archive" 选 **accept** → done。
+- `r53ab728f`（露出，TextEdit 前台，dev 窗在 Finder 之下）：drag **0.95** → 0.84，worked，没有 lower；`goal_satisfied` 0.06 → 0.32 → **0.42**；同样 accept → done。
+
+**判读。** `goal_satisfied` 对这次移动是有区分的（0.06 → 0.3–0.4），但没过线：goal 写的是 "no longer listed beside Archive"，而文件仍列在窗口里（缩进在 Archive 下），Jev 有理由不确定；drag 残留 0.27 使 idle 规则（none_useful ≥ 0.8）不触发。第 5 步之外的两个可选项：goal 措辞在提示词里说清"listed inside Archive counts"；或 `dropTarget` 落地后把 `(X: inside Y)` 直接当 done 证据——目前不动，先看更多用例。前台在三次 run 里都没变过。
+
 ## 参考
 
 - `~/Developer/Github/jev-ultrafast/jev_ultrafast/{agent.py, browser.py, snapshot.js, model.py, questions.py}`、`docs/performance.md`

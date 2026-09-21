@@ -119,6 +119,7 @@ import {
   clearBrowserToolHandlers,
   setBrowserWebMcpHostEventResolver,
 } from './browser-mcp-tools'
+import { setJevFastLoopEnabledForTests } from '../jev/run-tool-common'
 import {
   clearWebMcpTrustForTests,
   syncWebMcpTrustFromSettings,
@@ -194,7 +195,10 @@ describe('browser tool registration under experimental gates', () => {
     clearWebMcpTrustForTests()
     setBrowserWebMcpHostEventResolver(null)
     setBrowserToolSurfaceForTests('legacy')
+    // CDP gates fail closed at call time; the Jev setting alone decides whether browser_run is listed.
+    setJevFastLoopEnabledForTests(true)
   })
+  afterEach(() => setJevFastLoopEnabledForTests(null))
 
   it('registers every browser tool even when all CDP settings are off', () => {
     gates.webmcp = true
@@ -1046,11 +1050,14 @@ describe('compact browser surface', () => {
   beforeEach(() => {
     gates.cdp = false
     gates.webmcp = true
+    // browser_run is part of the compact surface; it only lists while Jev is on.
+    setJevFastLoopEnabledForTests(true)
     vi.clearAllMocks()
     clearBrowserToolHandlers('sess-1')
     clearBrowserToolHandlers('__descriptor__')
     setBrowserToolSurfaceForTests('compact')
   })
+  afterEach(() => setJevFastLoopEnabledForTests(null))
 
   function buildCompact(): Map<string, Handler> {
     const tools = new Map<string, Handler>()
@@ -1096,11 +1103,21 @@ describe('compact browser surface', () => {
     }
   })
 
-  it('advertises browser_run but fails closed until the Jev experimental setting is on', async () => {
+  it('hides browser_run while the Jev setting is off, and a stale caller still fails closed', async () => {
+    setJevFastLoopEnabledForTests(false)
+    expect(buildCompact().has('browser_run')).toBe(false)
+    expect(getBrowserToolDescriptors().map((d) => d.name)).not.toContain('browser_run')
+    // A thread that snapshotted the list while the loop was on reaches the union executor.
+    const reply = await executeBrowserTool('sess-1', 'browser_run', { goal: 'open the issues tab' })
+    expect(reply.isError).toBe(true)
+    expect(resultText(reply)).toContain("'Jev fast inner loop' experimental tool is disabled")
+  })
+
+  it('lists browser_run once Jev is on but still requires CDP to run', async () => {
     const tools = buildCompact()
     const reply = await tools.get('browser_run')!({ goal: 'open the issues tab' })
     expect(reply.isError).toBe(true)
-    expect(resultText(reply)).toContain("'Jev fast inner loop' experimental browser tool is disabled")
+    expect(resultText(reply)).toContain('browser_run requires the browser CDP setting')
   })
 
   it('still executes legacy primitive aliases', async () => {

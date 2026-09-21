@@ -10,7 +10,7 @@ import { ensureComputerUseAppGrant } from './grant-request'
 import { ComputerUseError } from './types'
 import { conditionSchema, parseCondition } from './conditions'
 import { COMPUTER_RUN_DESCRIPTION, computerRunInputShape, executeComputerRun, rootForApp } from '../jev/computer-run-tool'
-import { jevSettingError } from '../jev/run-tool-common'
+import { isJevFastLoopEnabled, jevSettingError } from '../jev/run-tool-common'
 import { COMPUTER_USE_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 import type { SuperoneMcpToolDescriptor } from '../mcp/superone-mcp-types'
 import { readAppSettings } from '../app-settings-service'
@@ -315,9 +315,14 @@ const toolDefs: Array<{
   },
 ]
 
+/** The defs to advertise: computer_run exists only while the Jev fast loop is on. */
+function advertisedToolDefs(): typeof toolDefs {
+  return toolDefs.filter((t) => t.name !== 'computer_run' || isJevFastLoopEnabled())
+}
+
 /** Build stable MCP tool descriptors (schema only). */
 export function getComputerUseToolDescriptors(): SuperoneMcpToolDescriptor[] {
-  return toolDefs.map((t) => ({
+  return advertisedToolDefs().map((t) => ({
     name: t.name,
     description: t.description,
     inputSchema: zodShapeToJsonSchema(t.shape),
@@ -334,7 +339,7 @@ export function registerComputerUseTools(
 ): void {
   if (!isComputerUseEnabled()) return
 
-  for (const def of toolDefs) {
+  for (const def of advertisedToolDefs()) {
     const schema = z.object(def.shape)
     server.registerTool(
       def.name,

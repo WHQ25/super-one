@@ -31,6 +31,7 @@ import {
   hideComputerUseVisuals,
   setComputerUseEnabledForTests,
 } from '../tools'
+import { setJevFastLoopEnabledForTests } from '../../jev/run-tool-common'
 
 function enableAll(service: ComputerUseService): void {
   service.policy.setEnabled(true)
@@ -50,6 +51,8 @@ describe('Computer Use P0 contract', () => {
     resetComputerUseIds()
     clearContinuations()
     setComputerUseEnabledForTests(null)
+    // The stable surface includes computer_run; it is only listed while Jev is on.
+    setJevFastLoopEnabledForTests(true)
     service = new ComputerUseService()
     enableAll(service)
   })
@@ -573,5 +576,17 @@ describe('Computer Use P0 contract', () => {
     registerComputerUseTools(server as never, 'sess-reg')
     // Stable surface + one-release deprecated alias computer_observe → computer_snapshot.
     expect(registered).toEqual([...COMPUTER_USE_TOOL_NAMES, 'computer_observe'])
+  })
+
+  it('drops computer_run from both surfaces while the Jev fast loop is off', () => {
+    // Codex snapshots tools/list once per thread, so a listed-but-refusing tool
+    // is what the model keeps trying; the setting hides it instead.
+    setJevFastLoopEnabledForTests(false)
+    setComputerUseEnabledForTests(true)
+    expect(getComputerUseToolDescriptors().map((d) => d.name)).not.toContain('computer_run')
+    const registered: string[] = []
+    registerComputerUseTools({ registerTool: (name: string) => { registered.push(name); return {} } } as never, 'sess-reg')
+    expect(registered).not.toContain('computer_run')
+    expect(registered).toContain('computer_act')
   })
 })

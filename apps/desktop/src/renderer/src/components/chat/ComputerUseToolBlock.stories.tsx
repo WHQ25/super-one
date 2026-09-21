@@ -441,7 +441,7 @@ export const FastRunStates: Story = {
       {tool("run", { description: "Fill the scratch note title", input: RUN_INPUT, result: runEnvelope({ status: "paused", runId: "r1", completed: SEG1, question: QUESTIONS.risky("Save"), snapshot: { target: NOTES }, goalSatisfied: 0.31 }) })}
       {tool("run", { description: "Fill the scratch note title", input: RUN_INPUT, result: runEnvelope({ status: "done", runId: "r2", completed: [...SEG1, ...SEG2], why: "Jev rates the goal satisfied (0.86)", snapshot: { target: NOTES }, goalSatisfied: 0.86 }) })}
       {tool("run", { description: "Fill the scratch note title", input: RUN_INPUT, result: runEnvelope({ status: "aborted", runId: "r3", completed: SEG1, why: "Aborted by the caller", snapshot: { target: NOTES }, goalSatisfied: 0.12 }) })}
-      {tool("run", { description: "Fill the scratch note title", input: RUN_INPUT, result: "[Error] The 'Jev fast inner loop' is disabled. Enable it in Settings → Browser → Experimental Tools.", isError: true })}
+      {tool("run", { description: "Fill the scratch note title", input: RUN_INPUT, result: "[Error] The 'Jev fast inner loop' is disabled. Enable it in Settings → General → Experimental.", isError: true })}
       {tool("run", { description: "Fill the scratch note title", input: RUN_INPUT, result: "[denied] User declined" })}
     </StoryShell>
   ),

@@ -26,9 +26,28 @@ export const runInputShape = {
   }).optional().describe('Reply to the pending question when resuming.'),
 }
 
+/** Feature gate — default off. Reads AppSettings.jevFastLoopEnabled unless overridden in tests. */
+let enabledOverride: boolean | null = null
+
+export function setJevFastLoopEnabledForTests(value: boolean | null): void {
+  enabledOverride = value
+}
+
+/**
+ * Whether the `*_run` tools exist at all. Every surface that lists tools —
+ * browser, computer, device — filters on this, so a switched-off loop is not
+ * advertised to the agent; the call-time gates below cover callers that hold a
+ * stale list (Codex snapshots tools once per thread) or a remote node's static
+ * Host Action catalog.
+ */
+export function isJevFastLoopEnabled(): boolean {
+  if (enabledOverride !== null) return enabledOverride
+  return readAppSettings().jevFastLoopEnabled === true
+}
+
 export function jevSettingError(): string | null {
-  if (!readAppSettings().jevFastLoopEnabled) return "The 'Jev fast inner loop' is disabled. Enable it in Settings → Browser → Experimental Tools."
-  if (!getJevApiKey()) return 'No Jev API key is stored. Enter one in Settings → Browser → Experimental Tools → Jev fast inner loop.'
+  if (!isJevFastLoopEnabled()) return "The 'Jev fast inner loop' is disabled. Enable it in Settings → General → Experimental."
+  if (!getJevApiKey()) return 'No Jev API key is stored. Enter one in Settings → General → Experimental → Jev fast inner loop.'
   return null
 }
 

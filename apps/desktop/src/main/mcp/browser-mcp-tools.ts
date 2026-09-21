@@ -30,6 +30,7 @@ import {
   BROWSER_TOOL_NAMES,
 } from './superone-mcp-builtin-defs'
 import { registerCompactBrowserTools } from './browser-mcp-compact'
+import { isJevFastLoopEnabled } from '../jev/run-tool-common'
 import { getWebMcpTools, invokeWebMcpTool, isWebMcpEnabled } from '../browser/browser-webmcp'
 import { awaitWebmcpTrustConfirm } from './browser-webmcp-confirm'
 import {
@@ -570,12 +571,12 @@ function makeCapturingServer(): {
   return { server, descriptors, handlers }
 }
 
-function captureLegacyTools(sessionId: string, webMcpEnabled: boolean): {
+function captureLegacyTools(sessionId: string, webMcpEnabled: boolean, jevEnabled: boolean): {
   descriptors: SuperoneMcpToolDescriptor[]
   handlers: Map<string, BrowserToolHandler>
 } {
   const capturing = makeCapturingServer()
-  registerLegacyBrowserTools(capturing.server as unknown as McpServer, sessionId, webMcpEnabled)
+  registerLegacyBrowserTools(capturing.server as unknown as McpServer, sessionId, webMcpEnabled, jevEnabled)
   return { descriptors: capturing.descriptors, handlers: capturing.handlers }
 }
 
@@ -586,7 +587,7 @@ async function runPrimitive(
 ): Promise<ToolReply> {
   let primitives = primitiveHandlerCache.get(sessionId)
   if (!primitives) {
-    primitives = captureLegacyTools(sessionId, true).handlers
+    primitives = captureLegacyTools(sessionId, true, true).handlers
     primitiveHandlerCache.set(sessionId, primitives)
   }
   const handler = primitives.get(name)
@@ -615,7 +616,7 @@ async function runMappedTool(
   return handler(mapped)
 }
 
-function captureCompactTools(sessionId: string, webMcpEnabled: boolean): {
+function captureCompactTools(sessionId: string, webMcpEnabled: boolean, jevEnabled: boolean): {
   descriptors: SuperoneMcpToolDescriptor[]
   handlers: Map<string, BrowserToolHandler>
 } {
@@ -625,6 +626,7 @@ function captureCompactTools(sessionId: string, webMcpEnabled: boolean): {
     sessionId,
     (name, args) => runPrimitive(sessionId, name, args),
     webMcpEnabled,
+    jevEnabled,
   )
   return { descriptors: capturing.descriptors, handlers: capturing.handlers }
 }
@@ -632,9 +634,11 @@ function captureCompactTools(sessionId: string, webMcpEnabled: boolean): {
 function ensureAllHandlers(sessionId: string): Map<string, BrowserToolHandler> {
   let handlers = browserHandlerCache.get(sessionId)
   if (handlers) return handlers
-  const primitives = captureLegacyTools(sessionId, true).handlers
+  // Handlers stay complete regardless of settings: listing is what a setting
+  // hides, and each tool fails closed on its own gate when called unlisted.
+  const primitives = captureLegacyTools(sessionId, true, true).handlers
   primitiveHandlerCache.set(sessionId, primitives)
-  const compact = captureCompactTools(sessionId, true).handlers
+  const compact = captureCompactTools(sessionId, true, true).handlers
   // Compact supersets overwrite snapshot/query/tabs; primitives remain as aliases.
   handlers = new Map([...primitives, ...compact])
   browserHandlerCache.set(sessionId, handlers)
@@ -644,12 +648,13 @@ function ensureAllHandlers(sessionId: string): Map<string, BrowserToolHandler> {
 export function getBrowserToolDescriptors(): SuperoneMcpToolDescriptor[] {
   const surface = resolveBrowserToolSurface()
   const webMcpEnabled = isWebMcpEnabled()
-  const cacheKey = `${surface}:${webMcpEnabled}`
+  const jevEnabled = isJevFastLoopEnabled()
+  const cacheKey = `${surface}:${webMcpEnabled}:${jevEnabled}`
   const cached = browserToolDescriptors.get(cacheKey)
   if (cached) return cached
   const captured = surface === 'compact'
-    ? captureCompactTools('__descriptor__', webMcpEnabled)
-    : captureLegacyTools('__descriptor__', webMcpEnabled)
+    ? captureCompactTools('__descriptor__', webMcpEnabled, jevEnabled)
+    : captureLegacyTools('__descriptor__', webMcpEnabled, jevEnabled)
   browserToolDescriptors.set(cacheKey, captured.descriptors)
   return captured.descriptors
 }
@@ -680,14 +685,15 @@ export function registerBrowserTools(
 ): void {
   const resolved = surface ?? resolveBrowserToolSurface()
   const webMcpEnabled = isWebMcpEnabled()
+  const jevEnabled = isJevFastLoopEnabled()
   if (resolved === 'compact') {
-    registerCompactBrowserTools(server, sessionId, (name, args) => runPrimitive(sessionId, name, args), webMcpEnabled)
+    registerCompactBrowserTools(server, sessionId, (name, args) => runPrimitive(sessionId, name, args), webMcpEnabled, jevEnabled)
     // List stays compact. Legacy names remain callable (stdio already uses
     // executeBrowserTool; this fallback covers the in-process Claude SDK server).
     installBrowserAliasCallFallback(server, sessionId)
     return
   }
-  registerLegacyBrowserTools(server, sessionId, webMcpEnabled)
+  registerLegacyBrowserTools(server, sessionId, webMcpEnabled, jevEnabled)
   if (!webMcpEnabled) installBrowserAliasCallFallback(server, sessionId)
 }
 
@@ -720,14 +726,16 @@ function installBrowserAliasCallFallback(server: McpServer, sessionId: string): 
   })
 }
 
-function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcpEnabled: boolean): void {
+function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcpEnabled: boolean, jevEnabled: boolean): void {
   registerBrowserActionTools(server, sessionId, executeBrowserTool)
 
-  server.registerTool(
-    'browser_run',
-    { description: BROWSER_RUN_DESCRIPTION, inputSchema: browserRunInputShape },
-    (args, extra) => executeBrowserRun(sessionId, args as Record<string, unknown>, (name, primitiveArgs) => runPrimitive(sessionId, name, primitiveArgs), extra?.signal),
-  )
+  if (jevEnabled) {
+    server.registerTool(
+      'browser_run',
+      { description: BROWSER_RUN_DESCRIPTION, inputSchema: browserRunInputShape },
+      (args, extra) => executeBrowserRun(sessionId, args as Record<string, unknown>, (name, primitiveArgs) => runPrimitive(sessionId, name, primitiveArgs), extra?.signal),
+    )
+  }
 
   if (webMcpEnabled) {
     server.registerTool(

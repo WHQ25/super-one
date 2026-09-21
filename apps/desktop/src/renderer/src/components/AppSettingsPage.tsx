@@ -25,6 +25,7 @@ import { useAppStore } from '@/stores/app'
 import { DefaultProviderRow } from '@/components/providers/DefaultProviderRow'
 import { NotificationSettingsSection } from '@/components/settings/NotificationSettingsSection'
 import { SessionStorageSection } from '@/components/settings/SessionStorageSection'
+import { JevFastLoopSetting } from '@/components/settings/JevFastLoopSetting'
 import type { Locale, PowerMode } from '@superone/shared/agent-types'
 
 export function AppSettingsPage() {
@@ -322,6 +323,7 @@ export function AppSettingsPage() {
               disabled={loading}
             />
           </div>
+          <JevFastLoopSetting />
         </div>
       </div>
       <Dialog

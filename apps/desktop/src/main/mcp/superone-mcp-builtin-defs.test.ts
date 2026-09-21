@@ -1,9 +1,10 @@
 import { INTERACTION_MEMORY_TOOL_DEFS } from '@superone/shared/interaction-memory'
 import { BROWSER_TOOL_NAMES, DEVICE_AGENT_TOOL_NAMES, isStaticHostOwnedSuperoneBareName } from '@superone/shared/superone-host-owned-tools'
 import { isNodeLocalSuperoneTool, listHostActionSuperoneTools } from '@superone/shared/environment/host-action-browser-catalog'
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { getDeviceAgentToolDescriptors } from '../device-agent/tools'
 import { getComputerUseToolDescriptors } from '../computer-use/tools'
+import { setJevFastLoopEnabledForTests } from '../jev/run-tool-common'
 import { HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS } from '@superone/shared/environment/host-action-superone-descriptors'
 import { classifyHostActionTool } from '@superone/shared/environment/host-action-browser-catalog'
 import {
@@ -48,6 +49,9 @@ import {
 const SEPARATELY_DESCRIBED = ['browser_', 'widget_', 'device_']
 
 describe('built-in superone tool registration surfaces', () => {
+  // The Host Action dump is the full surface; the *_run tools only list while Jev is on.
+  beforeAll(() => setJevFastLoopEnabledForTests(true))
+  afterAll(() => setJevFastLoopEnabledForTests(null))
   const describedNames = new Set(BUILT_IN_SUPERONE_TOOL_DEFS.map((def) => def.name))
   const browserTools = BROWSER_TOOL_NAMES
   const widgetTools = BUILT_IN_SUPERONE_TOOL_NAMES.filter((name) => name.startsWith('widget_'))

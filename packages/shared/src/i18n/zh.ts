@@ -1062,18 +1062,6 @@ export const zh: Messages = {
           label: '网络 Mock',
           description: '允许智能体拦截并修改请求与响应,包括登录凭证和 Cookie。仅在可信场景开启,使用不当可能导致页面卡死(重新加载该标签页即可恢复)。',
         },
-        jev: {
-          label: 'Jev 快速内循环',
-          description: '为浏览器、桌面和移动设备任务提供快速目标执行。TypeSafe Jev 选择点击、输入和滚动，减少主模型逐步往返。受控操作会暂停等待决策。可见界面文字会发送给 TypeSafe，按 token 计费。',
-          apiKey: {
-            label: 'Jev API Key',
-            description: '加密保存在本机，仅主进程使用。',
-            placeholder: 'ts-…',
-            save: '保存密钥',
-            cancel: '取消',
-            change: '更换密钥',
-          },
-        },
       },
     },
     terminal: {
@@ -1299,6 +1287,18 @@ export const zh: Messages = {
         description: '将 SuperOne 连接到远程执行环境（Linux 节点 / lab），在侧边栏切换节点并在该机器上运行 Agent 会话。实验功能——安装、配对与 harness 配置可能变化。',
         enabled: '已开启远程节点',
         disabled: '已关闭远程节点',
+      },
+      experimentalJev: {
+        label: 'Jev 快速内循环',
+        description: '由 TypeSafe Jev 执行浏览器、桌面和移动设备的多步任务。可见界面文字会发送给 TypeSafe。',
+        apiKey: {
+          label: 'Jev API Key',
+          description: '加密保存在本机，仅主进程使用。',
+          placeholder: 'ts-…',
+          save: '保存密钥',
+          cancel: '取消',
+          change: '更换密钥',
+        },
       },
       autoExpandFileDiffs: {
         label: '自动展开文件 diff',

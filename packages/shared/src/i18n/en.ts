@@ -981,11 +981,6 @@ export type Messages = {
         cookies: { label: string; description: string }
         emulate: { label: string; description: string }
         mock: { label: string; description: string }
-        jev: {
-          label: string
-          description: string
-          apiKey: { label: string; description: string; placeholder: string; save: string; cancel: string; change: string }
-        }
       }
     }
     terminal: {
@@ -1208,6 +1203,11 @@ export type Messages = {
         description: string
         enabled: string
         disabled: string
+      }
+      experimentalJev: {
+        label: string
+        description: string
+        apiKey: { label: string; description: string; placeholder: string; save: string; cancel: string; change: string }
       }
       autoExpandFileDiffs: {
         label: string
@@ -4903,18 +4903,6 @@ export const en: Messages = {
           label: 'Network Mocking',
           description: 'Let the agent intercept and modify requests and responses — including login credentials and cookies. Only enable in trusted scenarios; misuse can hang pages (reload the tab to recover).',
         },
-        jev: {
-          label: 'Jev Fast Inner Loop',
-          description: 'Adds fast goal runs for browser, desktop and device tasks. TypeSafe Jev picks clicks, fields and scrolling without a full agent turn per step. Risky controls pause for a decision. Visible UI text is sent to TypeSafe; pricing is per token.',
-          apiKey: {
-            label: 'Jev API Key',
-            description: 'Stored encrypted on this machine and used only from the main process.',
-            placeholder: 'ts-…',
-            save: 'Save Key',
-            cancel: 'Cancel',
-            change: 'Change Key',
-          },
-        },
       },
     },
     terminal: {
@@ -5140,6 +5128,18 @@ export const en: Messages = {
         description: 'Connect SuperOne to remote execution environments (Linux nodes / labs), pick them in the sidebar, and run agent sessions on that machine. Experimental — install, pairing, and harness setup may change.',
         enabled: 'Remote nodes enabled',
         disabled: 'Remote nodes disabled',
+      },
+      experimentalJev: {
+        label: 'Jev Fast Inner Loop',
+        description: 'Let TypeSafe Jev run multi-step browser, desktop and device tasks. Visible UI text is sent to TypeSafe.',
+        apiKey: {
+          label: 'Jev API Key',
+          description: 'Stored encrypted on this machine and used only from the main process.',
+          placeholder: 'ts-…',
+          save: 'Save Key',
+          cancel: 'Cancel',
+          change: 'Change Key',
+        },
       },
       autoExpandFileDiffs: {
         label: 'Auto-Expand File Diffs',

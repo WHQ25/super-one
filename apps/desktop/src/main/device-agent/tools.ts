@@ -3,6 +3,7 @@ import { z, toJSONSchema, type ZodTypeAny } from 'zod'
 import { DEVICE_AGENT_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 import { conditionSchema } from './conditions'
 import { DEVICE_RUN_DESCRIPTION, deviceRunInputShape } from '../jev/device-run-tool'
+import { isJevFastLoopEnabled } from '../jev/run-tool-common'
 import type { SuperoneMcpToolDescriptor } from '../mcp/superone-mcp-types'
 
 export { DEVICE_AGENT_TOOL_NAMES }
@@ -226,9 +227,14 @@ function zodShapeToJsonSchema(shape: Record<string, ZodTypeAny>): Record<string,
   return rest
 }
 
+/** The defs to advertise: device_run exists only while the Jev fast loop is on. */
+function advertisedToolDefs(): typeof toolDefs {
+  return toolDefs.filter((def) => def.name !== 'device_run' || isJevFastLoopEnabled())
+}
+
 /** Stable descriptors for the stdio surface (Codex / ACP / OpenCode). */
 export function getDeviceAgentToolDescriptors(): SuperoneMcpToolDescriptor[] {
-  return toolDefs.map((def) => ({
+  return advertisedToolDefs().map((def) => ({
     name: def.name,
     description: def.description,
     inputSchema: zodShapeToJsonSchema(def.shape),
@@ -256,7 +262,7 @@ export function registerDeviceAgentTools(
   }>,
 ): void {
   if (!isDeviceAgentEnabled()) return
-  for (const def of toolDefs) {
+  for (const def of advertisedToolDefs()) {
     const schema = z.object(def.shape)
     server.registerTool(
       def.name,

@@ -923,8 +923,9 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
       // helper offline or unsupported platform
     }
   }
-  if (patch?.computerUseEnabled !== undefined) {
-    // Computer Use must reach every harness that injects SuperOne MCP:
+  if (patch?.computerUseEnabled !== undefined || patch?.jevFastLoopEnabled !== undefined) {
+    // Both toggles change which tools are listed (computer_* / the *_run trio),
+    // so the change must reach every harness that injects SuperOne MCP:
     // - Claude / OpenCode: in-process createSuperoneMcpServer (+ registerComputerUseTools)
     // - Codex: HTTP initialize → createSuperoneMcpServer; also snapshots once per thread
     // - ACP: HTTP or stdio → listSuperoneMcpTools / createSuperoneMcpServer

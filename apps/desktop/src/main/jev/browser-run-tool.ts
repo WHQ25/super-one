@@ -6,7 +6,6 @@
  */
 
 import { z } from 'zod'
-import { readAppSettings } from '../app-settings-service'
 import { persistScreenshot } from '../agent/browser-screenshot-store'
 import { browserAutomationCall, browserFocusGuard } from '../browser/browser-automation-bridge'
 import { isCdpEnabled, resolveCdpTarget } from '../browser/browser-cdp'
@@ -17,7 +16,7 @@ import { getJevApiKey } from './jev-api-key'
 import { type Answer, FastRun, type RunDeps, type RunResult } from './loop'
 import { type PausedRun, storePausedRun, takePausedRun } from './run-store'
 import { runReporter } from './run-events'
-import { jevClient, PAUSE_NEXT_HINT, reportRun, runInputShape } from './run-tool-common'
+import { isJevFastLoopEnabled, jevClient, PAUSE_NEXT_HINT, reportRun, runInputShape } from './run-tool-common'
 
 export const BROWSER_RUN_DESCRIPTION =
   'Experimental (requires the Jev fast loop setting): delegate a multi-step page goal — clicks, typing, scrolling — to a fast model that chooses each step and judges completion itself, so you do not pay a turn per click. '
@@ -44,10 +43,9 @@ const DEFAULT_MAX_STEPS = 30
 const DEFAULT_MAX_WALL_MS = 45_000
 
 export function jevGateError(): string | null {
-  const settings = readAppSettings()
-  if (!settings.jevFastLoopEnabled) return "The 'Jev fast inner loop' experimental browser tool is disabled. Enable it in Settings → Browser → Experimental Tools."
+  if (!isJevFastLoopEnabled()) return "The 'Jev fast inner loop' experimental tool is disabled. Enable it in Settings → General → Experimental."
   if (!isCdpEnabled()) return 'browser_run requires the browser CDP setting. Enable it in Settings → Browser.'
-  if (!getJevApiKey()) return 'No Jev API key is stored. Enter one in Settings → Browser → Experimental Tools → Jev fast inner loop.'
+  if (!getJevApiKey()) return 'No Jev API key is stored. Enter one in Settings → General → Experimental → Jev fast inner loop.'
   return null
 }
 

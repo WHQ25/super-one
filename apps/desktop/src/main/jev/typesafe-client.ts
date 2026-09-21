@@ -147,7 +147,7 @@ export function createJevClient(options: JevClientOptions) {
         await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt))
         continue
       }
-      if (response.status === 401) throw new JevError('Jev rejected the API key (401). Re-enter it in Settings → Browser.', 401)
+      if (response.status === 401) throw new JevError('Jev rejected the API key (401). Re-enter it in Settings → General → Experimental.', 401)
       if (!response.ok) {
         const text = await response.text().catch(() => '')
         throw new JevError(`Jev returned HTTP ${response.status}${text ? `: ${text.slice(0, 200)}` : ''}`, response.status)

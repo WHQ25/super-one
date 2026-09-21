@@ -138,6 +138,7 @@ export function registerCompactBrowserTools(
   sessionId: string,
   primitiveRunner: PrimitiveRunner,
   webMcpEnabled: boolean,
+  jevEnabled: boolean,
 ): void {
   const runPrimitive: PrimitiveRunner = async (name, args) => {
     const result = await primitiveRunner(name, args)
@@ -552,11 +553,13 @@ export function registerCompactBrowserTools(
     },
   )
 
-  server.registerTool(
-    'browser_run',
-    { description: BROWSER_RUN_DESCRIPTION, inputSchema: browserRunInputShape },
-    (args, extra) => executeBrowserRun(sessionId, args as Record<string, unknown>, runPrimitive, extra?.signal),
-  )
+  if (jevEnabled) {
+    server.registerTool(
+      'browser_run',
+      { description: BROWSER_RUN_DESCRIPTION, inputSchema: browserRunInputShape },
+      (args, extra) => executeBrowserRun(sessionId, args as Record<string, unknown>, runPrimitive, extra?.signal),
+    )
+  }
 
   server.registerTool(
     'browser_action',

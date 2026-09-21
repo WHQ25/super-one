@@ -1,11 +1,28 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { getDeviceAgentToolDescriptors, registerDeviceAgentTools } from './tools'
+import { setJevFastLoopEnabledForTests } from '../jev/run-tool-common'
 import { usePlatform } from '../../test/platform'
 
 describe('registerDeviceAgentTools', () => {
   // Registration is gated on a platform where a touch device can exist.
   usePlatform('darwin')
+  afterEach(() => setJevFastLoopEnabledForTests(null))
+
+  it('lists device_run on both surfaces only while the Jev fast loop is on', () => {
+    const registeredNames = () => {
+      const names: string[] = []
+      registerDeviceAgentTools({ registerTool: (name: string) => { names.push(name) } } as unknown as McpServer, 'session-1', vi.fn())
+      return names
+    }
+    setJevFastLoopEnabledForTests(false)
+    expect(getDeviceAgentToolDescriptors().map((d) => d.name)).not.toContain('device_run')
+    expect(registeredNames()).not.toContain('device_run')
+
+    setJevFastLoopEnabledForTests(true)
+    expect(getDeviceAgentToolDescriptors().map((d) => d.name)).toContain('device_run')
+    expect(registeredNames()).toContain('device_run')
+  })
 
   it('forwards the MCP request signal to device execution', async () => {
     let waitForHandler: ((args: Record<string, unknown>, extra: { signal: AbortSignal }) => Promise<unknown>) | undefined

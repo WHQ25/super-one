@@ -82,7 +82,7 @@ export interface StateElement {
 
 export function stateElement(el: SpaceElement): StateElement {
   const out: StateElement = { index: el.index, role: el.role, label: el.label }
-  if (el.value) out.value = el.value.slice(0, 120)
+  if (!el.password && el.value) out.value = el.value.slice(0, 120)
   if (el.checked != null) out.checked = el.checked
   if (el.expanded != null) out.expanded = el.expanded
   return out

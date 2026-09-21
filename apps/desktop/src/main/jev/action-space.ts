@@ -69,7 +69,7 @@ export function buildActionSpace(input: ActionSpaceInput): ActionSpace {
     if (h.kind === 'wait' || h.kind === 'scroll') continue
     if (h.changedPage === false) stuck.add(`${h.node}:${h.kind}`)
   }
-  const elements: SpaceElement[] = page.elements.map((raw, i) => ({ ...raw, index: String(i + 1) }))
+  const elements: SpaceElement[] = page.elements.map((raw, i) => ({ ...raw, value: raw.password ? '' : raw.value, index: String(i + 1) }))
   const clickCandidates: string[] = []
   const typeCandidates: string[] = []
   const scrollCandidates: string[] = []

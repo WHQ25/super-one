@@ -72,7 +72,7 @@ const OBSERVE_SCRIPT = `(() => {
   cache.guard = (e) => {
     if (!e?.isConnected || !visible(e)) return null;
     const scope = e.closest('form,dialog,[role="dialog"],article,li,tr,[role="row"]') || e.parentElement;
-    return [identity(e), role(e), name(e), e.value ?? null, e.checked ?? null, e.readOnly ?? null,
+    return [identity(e), role(e), name(e), e.type === 'password' ? null : e.value ?? null, e.checked ?? null, e.readOnly ?? null,
       e.matches(':disabled'), e.getAttribute('aria-disabled'), e.getAttribute('aria-expanded'),
       e.getAttribute('aria-checked'), e.getAttribute('aria-selected'), e.getAttribute('href'),
       (scope?.innerText || '').slice(0, 4000)];
@@ -104,9 +104,10 @@ const OBSERVE_SCRIPT = `(() => {
     if (elements.length >= ${MAX_ELEMENTS}) { omitted++; continue; }
     const editable = !e.readOnly && e.getAttribute('aria-readonly') !== 'true' && e.type !== 'password'
       && (['textbox', 'searchbox', 'spinbutton'].includes(rname) || (rname === 'combobox' && ['INPUT', 'TEXTAREA'].includes(e.tagName)) || e.isContentEditable);
-    const value = 'value' in e && e.tagName !== 'BUTTON' ? String(e.value ?? '') : (e.isContentEditable || rname === 'combobox' ? (e.innerText || '').trim() : '');
+    const value = e.type === 'password' ? '' : 'value' in e && e.tagName !== 'BUTTON' ? String(e.value ?? '') : (e.isContentEditable || rname === 'combobox' ? (e.innerText || '').trim() : '');
     const item = {
       node: identity(hit), role: rname, label: (name(e) || rname).slice(0, 120), value: value.slice(0, 200),
+      bounds: (() => { const r = hit.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })(),
       editable, password: e.type === 'password',
       submit: e.type === 'submit' || (rname === 'button' && !!e.closest('form')),
       disabled: false,

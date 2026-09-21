@@ -1,165 +1,165 @@
-# 用 Jev 加速 browser / computer / device use 的研究
+# Research: accelerating browser / computer / device use with Jev
 
-> 状态：browser 线 MVP 已实现（见 10），computer / device 未实现
-> 日期：2026-09-18；2026-09-19 按两轮评审修订（见 8.13）并落地 browser 线
-> 参考实现：[browser-use/jev-ultrafast](https://github.com/browser-use/jev-ultrafast)（本地路径 `~/Developer/Github/jev-ultrafast`）
-> 官方资料：[typesafe-ai skill](https://github.com/typesafe-ai/skills/blob/main/skills/typesafe-ai/SKILL.md)、[docs.typesafe.ai](https://docs.typesafe.ai/llms.txt)（API、primitives、confidence、fan-out、confidence-routing、jev-1.13 jaggedness）
-> 适用范围：SuperOne Desktop 的 `browser_*`、`computer_*`、`device_*` agent 工具
+> Status: the browser line MVP is implemented (see 10); computer / device are not yet implemented
+> Date: 2026-09-18; revised 2026-09-19 after two review rounds (see 8.13) and the browser line landed
+> Reference implementation: [browser-use/jev-ultrafast](https://github.com/browser-use/jev-ultrafast) (local path `~/Developer/Github/jev-ultrafast`)
+> Official material: [typesafe-ai skill](https://github.com/typesafe-ai/skills/blob/main/skills/typesafe-ai/SKILL.md), [docs.typesafe.ai](https://docs.typesafe.ai/llms.txt) (API, primitives, confidence, fan-out, confidence-routing, jev-1.13 jaggedness)
+> Scope: the `browser_*`, `computer_*`, `device_*` agent tools of SuperOne Desktop
 
-## 结论
+## Conclusion
 
-SuperOne 三条 UI 自动化线的瓶颈不在 observe/act 基础设施，而在**每一个 UI 动作都要经过主模型一整轮**。Jev（TypeSafe 的 System One 模型）能以约 200 ms/步的代价在有限动作空间里做"下一步点哪个"的选择，且 SuperOne 现有的 snapshot 输出（带 ref 的元素表、`stateId` 过期保护、settle 等待、outcome 判断、条件词汇表）已经是 Jev 所需的输入形态。
+The bottleneck of SuperOne's three UI-automation lines is not the observe/act infrastructure but the fact that **every single UI action costs one full round trip through the main model**. Jev (TypeSafe's System One model) can make the "which element to click next" choice inside a bounded action space at roughly 200 ms/step, and SuperOne's existing snapshot output (element tables with refs, `stateId` staleness protection, settle waiting, outcome judgement, the condition vocabulary) is already the input shape Jev needs.
 
-推荐的接入方式是在现有 observe/act 之上加一个**快速内循环**，按"快思考 / 慢思考"分工：
+The recommended integration is a **fast inner loop** layered on top of the existing observe/act, split along "fast thinking / slow thinking" lines:
 
-- **主模型（慢）**：发起时定策略（目标、预设值、允许/禁止的动作、完成条件）；内循环拿不准或只剩受控动作时被问；不再为每一次点击付一轮
-- **代码**：持有控制流、历史、新鲜度、风险分类、预算、完成判定；**所有机器可查的判断（加载、完成、变化）都先于 Jev**
-- **Jev（快）**：只在代码划定的安全动作集合里做窄选择，永远没有机会自己决定一件不可逆的事
+- **Main model (slow)**: sets strategy at launch (goal, preset values, allowed/forbidden actions, completion condition); is asked when the inner loop is unsure or only guarded actions remain; no longer pays a round trip per click
+- **Code**: owns control flow, history, freshness, risk classification, budgets, completion checks; **every machine-checkable judgement (loading, completion, change) runs before Jev**
+- **Jev (fast)**: makes only narrow choices inside the safe action set delimited by code, and never gets the chance to decide anything irreversible on its own
 
-一个 7 步的 GitHub 建 issue 任务：逐步模式 12+ 轮主模型，内循环 **2 轮**（发起 + 1 次受控动作裁定）；主模型预先 `allow` 后可降到 1 轮。
+A 7-step "create a GitHub issue" task: step-by-step mode costs 12+ main-model rounds; the inner loop costs **2 rounds** (launch + 1 guarded-action ruling); with the main model `allow`-ing up front it drops to 1 round.
 
-**实施顺序：平台无关内核 → browser（要求 CDP 已开启）→ 阈值校准并钉版 → computer → device。** browser 优先不是因为 adapter 最薄（computer 最薄），而是阈值校准需要 10–20 个可复现任务，公开站点是唯一能低成本攒样本的线（见 7、8.14）。
+**Implementation order: platform-independent kernel → browser (requires CDP enabled) → threshold calibration and version pinning → computer → device.** Browser goes first not because its adapter is the thinnest (computer's is), but because threshold calibration needs 10–20 reproducible tasks, and public websites are the only line where samples can be accumulated cheaply (see 7, 8.14).
 
-## 1. Jev 是什么、jev-ultrafast 怎么用它
+## 1. What Jev is and how jev-ultrafast uses it
 
-### 1.1 TypeSafe System One（官方资料要点）
+### 1.1 TypeSafe System One (key points from official material)
 
-- 一次请求 = 一个 `state`（字符串 / JSON）+ 一组带 id 的 `questions`；所有问题**并行、独立**地评估同一个 state，加问题几乎不加延迟（投机式 fan-out）
-- 三种原语：**Choice**（从给定选项选一个，返回选项、全概率分布、confidence）、**Noul**（是/否概率，无 confidence）、**Score**（有序等级）
-- 模型只能返回你给的选项，不生成文本；question id 不发给模型，指令要写全；用反引号路径指向 state（`` `elements[3]` ``）
-- 限制（官方 models 页）：**64k token 总量；state + 最长一个 question ≤ 32k**；Choice 选项上限 255 在官方页面**未找到出处**，按 jev-ultrafast 的 250 元素截断保守对待；state 里无关内容会导致 context rot
-- jev-1.13 jaggedness：字面理解、不会算数/比日期、多跳推理弱、**不把 state 当敌对内容**、不能生成、**相关问题间的结构不变量不保证**（同一请求里几个 Noul 可以同时为高，代码要定优先序）
-- 置信度按风险分级（confidence-routing）：官方给的是 **universal floor 0.6**，低于 0.6 一律交人；高风险要 >0.85 或人工确认；阈值调好后钉死版本号（`jev-1.13.0`，jev-ultrafast 的 performance.md 用的就是这个版本）
-- 价格 $0.042/Mtok 输入，输出免费；1200 rpm。JS SDK `@typesafe-ai/sdk`（Node 20+，自带 retry/429 backoff、答案类型推导）
-- 官方定位："AI-powered software, not agents"——code owns control flow，模型只做窄判断
+- One request = one `state` (string / JSON) + a set of `questions` with ids; all questions are evaluated **in parallel and independently** against the same state, so adding questions adds almost no latency (speculative fan-out)
+- Three primitives: **Choice** (pick one of the given options; returns the option, the full probability distribution, and a confidence), **Noul** (yes/no probability, no confidence), **Score** (ordered levels)
+- The model can only return the options you provide; it does not generate text; question ids are not sent to the model, so instructions must be spelled out in full; use backtick paths to point into the state (`` `elements[3]` ``)
+- Limits (official models page): **64k tokens total; state + the longest single question ≤ 32k**; the 255-option cap for Choice was **not found on the official pages**, so treat jev-ultrafast's 250-element truncation as the conservative bound; irrelevant content in the state causes context rot
+- jev-1.13 jaggedness: literal reading, no arithmetic / date comparison, weak multi-hop reasoning, **does not treat the state as adversarial content**, cannot generate, **structural invariants across related questions are not guaranteed** (several Nouls in one request can all be high at once; code must define the priority order)
+- Confidence is tiered by risk (confidence-routing): the official **universal floor is 0.6**; anything below 0.6 goes to a human; high risk needs >0.85 or human confirmation; once thresholds are tuned, pin the version (`jev-1.13.0`, which is what jev-ultrafast's performance.md used)
+- Price $0.042/Mtok input, output free; 1200 rpm. JS SDK `@typesafe-ai/sdk` (Node 20+, built-in retry/429 backoff, answer type inference)
+- Official positioning: "AI-powered software, not agents" — code owns control flow, the model only makes narrow judgements
 
-### 1.2 jev-ultrafast 的循环
+### 1.2 The jev-ultrafast loop
 
 ```
-observe（一次 Runtime.evaluate 跑 snapshot.js）
-  → 只取视口内、可见、未禁用的控件，≤ 250 个；视口内文本 ≤ 6000 字符
-  → 每个可编辑字段额外生成一个 "Open <label>" 点击候选（打开 combobox / 弹出建议）
-  → 每个 <select> 的每个未选中 option 各一个 select 候选（"label → option"）
-  → 附带 marker（整页语义）、page_key（表单状态）、guards[node]（目标元素 + 所在 form/dialog/row 文本）
-predict（一次 POST /v1/systemone）
+observe (one Runtime.evaluate running snapshot.js)
+  → keep only in-viewport, visible, enabled controls, ≤ 250; in-viewport text ≤ 6000 chars
+  → generate an extra "Open <label>" click candidate for every editable field (opens a combobox / suggestion popup)
+  → one select candidate per unselected option of every <select> ("label → option")
+  → attach marker (whole-page semantics), page_key (form state), guards[node] (target element + text of its enclosing form/dialog/row)
+predict (one POST /v1/systemone)
   → operation ∈ {CLICK, TYPE_TEXT, SELECT, SCROLL_UP/DOWN, WAIT, DONE, BLOCKED}
-  → click_target / type_text_target / select_target（投机 fan-out，只消费被选中操作的头）
+  → click_target / type_text_target / select_target (speculative fan-out, only the head of the chosen operation is consumed)
 act
-  → 执行前 fresh() 复核：有目标元素时比 [page_key, guards[node]]，否则比 marker
-     —— 作用域化的新鲜度：目标所在 form/dialog/row 没变就算 fresh，允许页面无关区域变化
-  → 索引映射回 WeakMap 保存的真实 DOM 节点，重算几何、遮挡检测
-  → CDP 输入；先记 history 再 observe；连续 3 步 page_changed=false 且 kind≠wait 即 blocked
-TYPE_TEXT 的文本由一个小 LLM（Mercury）根据 goal + 字段 + 页面文本生成
+  → fresh() recheck before executing: with a target element compare [page_key, guards[node]], otherwise compare marker
+     —— scoped freshness: if the target's form/dialog/row is unchanged it counts as fresh, unrelated page regions may change
+  → map the index back to the real DOM node kept in a WeakMap, recompute geometry, occlusion check
+  → CDP input; record history first, then observe; 3 consecutive steps with page_changed=false and kind≠wait means blocked
+Text for TYPE_TEXT is generated by a small LLM (Mercury) from goal + field + page text
 ```
 
-测得（`docs/performance.md`，Google Flights）：**17 次 Jev 请求、10 个动作 + 1 次 WAIT**，中位 178 ms/请求，共 7.07 s（含两次文本生成 ≈ 0.9 s 和 Google 结果加载）。17 vs 11 意味着约 **35% 的决策因 stale 被丢弃重做**；90,558 输入 token / 17 ≈ **5.3k token/请求**。
+Measured (`docs/performance.md`, Google Flights): **17 Jev requests, 10 actions + 1 WAIT**, median 178 ms/request, 7.07 s total (including two text generations ≈ 0.9 s and Google results loading). 17 vs 11 means roughly **35% of decisions were discarded and redone because of staleness**; 90,558 input tokens / 17 ≈ **5.3k tokens/request**.
 
-### 1.3 jev-ultrafast 与官方指导的差距
+### 1.3 Where jev-ultrafast diverges from the official guidance
 
-| 官方指导 | jev-ultrafast | 本方案 |
+| Official guidance | jev-ultrafast | This proposal |
 | --- | --- | --- |
-| 三种原语 | 只用 Choice | Noul 做元判断（完成 / 加载中），但只在机器信号之后兜底 |
-| 拆原子问题 | `operation` 一个 Choice 混了动作与 DONE/WAIT/BLOCKED | 元判断拆出来 |
-| Select instead of generate | TYPE_TEXT 用生成模型 | 主模型预设候选值，代码/Jev 只做"哪个预设属于哪个字段" |
-| 历史由代码持有，state 只放观察事实 | `recent_actions` 10 条进 state | 只留 `last_action` 一条；去重、防双提交、WAIT 预算全在代码 |
-| 置信度按风险分级 | 无阈值 | 风险分类在代码，Jev 只在安全集合里选；floor 0.6 |
-| state 过滤 | 已是视口内 + 6k 文本，上限 250 元素 | 收紧到 ≤ 60 元素、≤ 4k 文本，按 32k 总预算校验 |
-| 钉版本、用 SDK | 钉 `jev-1.13.0`、手写 httpx | 同样钉版；`@typesafe-ai/sdk` |
+| Three primitives | Choice only | Noul for meta judgements (done / loading), but only as a fallback after machine signals |
+| Split into atomic questions | one `operation` Choice mixes actions with DONE/WAIT/BLOCKED | meta judgements split out |
+| Select instead of generate | TYPE_TEXT uses a generative model | main model presets candidate values; code/Jev only decide "which preset belongs to which field" |
+| Code holds history; state holds only observed facts | 10 `recent_actions` entries in the state | keep only one `last_action`; dedup, double-submit protection, WAIT budget all in code |
+| Confidence tiered by risk | no thresholds | risk classification in code, Jev picks only within the safe set; floor 0.6 |
+| State filtering | already in-viewport + 6k text, cap 250 elements | tightened to ≤ 60 elements, ≤ 4k text, validated against the 32k total budget |
+| Pin version, use the SDK | pins `jev-1.13.0`, hand-written httpx | pin likewise; `@typesafe-ai/sdk` |
 
-保留不改的部分：作用域化 `guard`、"Open <label>" 候选、"先记 history 再 observe"、blocked 计数排除 WAIT。
+Kept unchanged: scoped `guard`, "Open <label>" candidates, "record history first, then observe", blocked counting excludes WAIT.
 
-## 2. SuperOne 现状
+## 2. Current state of SuperOne
 
-三条线的执行模式一致：主模型 → `*_snapshot`（TOON 表）→ 主模型思考 → `*_act(ref)` → 再 snapshot。每步一次主模型往返（3–10 s），上下文随步数线性增长。
+All three lines share the same execution pattern: main model → `*_snapshot` (TOON table) → main model thinks → `*_act(ref)` → snapshot again. One main-model round trip per step (3–10 s), and context grows linearly with step count.
 
-| 线 | 执行路径 | Observe 输出 | Act 定位 | 新鲜度 | 变化判断 |
+| Line | Execution path | Observe output | Act targeting | Freshness | Change detection |
 | --- | --- | --- | --- | --- | --- |
-| browser | **默认 main → renderer IPC → webview `executeJavaScript`**，单次 30 s 超时（`browser-automation-bridge.ts`）；`AppSettings.cdpEnabled` 开启后 main 可直接 `webContents.debugger`（`browser-cdp.ts`） | `snapshot(elements)` → `{selector, role, name, enabled, inViewport}`，按视口中心距离排序，默认 40 个（`browser-automation-runtime.ts` `HELPERS.ref`） | CSS selector / text / x,y | 无 | 无；有 `waitForLoadStop` |
-| computer | main 内 helper 进程 | TOON `outline{ref,depth,role,name,value,x,y,w,h,can,state}`，`can` = `press\|setText\|typeText\|scroll\|focus`（`computer-use/outline-toon.ts`） | `@eN` ref；`delivery=semantic\|app-directed\|physical`；**1–20 个动作一个事务 + `expect` 后置条件**（`tools.ts`） | `stateId` 过期即拒绝 | outcome `worked\|didnt\|unknown`（`outcome.ts`） |
-| device | main 内 backend | `DeviceUiNode` 树 + ref + `stateId`，backend settle（`device/settle.ts`） | ref → uid / native handle；tap / setText / swipe | **`requireCurrent`：任何新 snapshot 都让旧 `stateId` 失效**（`state-store.ts`） | 树 diff + `frameHash` |
+| browser | **default main → renderer IPC → webview `executeJavaScript`**, 30 s timeout per call (`browser-automation-bridge.ts`); once `AppSettings.cdpEnabled` is on, main can drive `webContents.debugger` directly (`browser-cdp.ts`) | `snapshot(elements)` → `{selector, role, name, enabled, inViewport}`, sorted by distance from viewport centre, 40 by default (`browser-automation-runtime.ts` `HELPERS.ref`) | CSS selector / text / x,y | none | none; has `waitForLoadStop` |
+| computer | helper process inside main | TOON `outline{ref,depth,role,name,value,x,y,w,h,can,state}`, `can` = `press\|setText\|typeText\|scroll\|focus` (`computer-use/outline-toon.ts`) | `@eN` ref; `delivery=semantic\|app-directed\|physical`; **1–20 actions per transaction + `expect` postconditions** (`tools.ts`) | rejected once `stateId` is stale | outcome `worked\|didnt\|unknown` (`outcome.ts`) |
+| device | backend inside main | `DeviceUiNode` tree + ref + `stateId`, backend settle (`device/settle.ts`) | ref → uid / native handle; tap / setText / swipe | **`requireCurrent`: any new snapshot invalidates the old `stateId`** (`state-store.ts`) | tree diff + `frameHash` |
 
-已有、本方案直接复用的原语：
+Existing primitives this proposal reuses directly:
 
-- **条件词汇表**：computer `conditionSchema`（`exists / notExists / textEquals / textContains / valueEquals`）、device `DeviceCondition`（同名四种 + target），注释明说"一套词汇表，别让 agent 学两套"
-- **用户面向确认**：computer `ensureComputerUseAppGrant`（按 bundleId、session/always）、device `control-confirm.ts`，都走 `HostConfirmRegistry`，signal 联动已现成
-- **focus guard**：browser `focusGuardBegin / focusGuardEnd`
-- **`description` 字段**：computer/browser 工具强制 1–160 字，供 UI 展示
-- **错误码**：computer act 会抛 `MODAL_BLOCKED`、`STALE_STATE`、`TIER_BLOCKED`（tier=click 时 setText/typeText 被拒）
+- **Condition vocabulary**: computer `conditionSchema` (`exists / notExists / textEquals / textContains / valueEquals`), device `DeviceCondition` (the same four + target); a comment says outright "one vocabulary, don't make the agent learn two"
+- **User-facing confirmation**: computer `ensureComputerUseAppGrant` (by bundleId, session/always), device `control-confirm.ts`, both via `HostConfirmRegistry`; signal wiring already exists
+- **focus guard**: browser `focusGuardBegin / focusGuardEnd`
+- **`description` field**: computer/browser tools require 1–160 chars, shown in the UI
+- **Error codes**: computer act throws `MODAL_BLOCKED`, `STALE_STATE`, `TIER_BLOCKED` (setText/typeText rejected when tier=click)
 
-与本方案的缺口：
+Gaps relative to this proposal:
 
-| 线 | 缺口 |
+| Line | Gap |
 | --- | --- |
-| browser | 没有域级权限模型；`HELPERS.ref` 缺 `value / checked / expanded`；靠 CSS selector 定位；没有作用域化新鲜度；`typeScript` 的 value setter 对 `contenteditable` 无效；执行后无变化判断 |
-| computer | 几乎零缺口。`can` 列直接映射动作分组；`stateId` 即 stale；outcome / `expect` 即 `changed_page` |
-| device | tap / setText / swipe 映射即可；`treeUnavailable` 的屏幕不能交给 Jev；挂起期间不能依赖 `stateId` 短路 |
+| browser | no domain-level permission model; `HELPERS.ref` lacks `value / checked / expanded`; targets by CSS selector; no scoped freshness; `typeScript`'s value setter does nothing for `contenteditable`; no change detection after execution |
+| computer | almost no gap. The `can` column maps directly onto action groups; `stateId` is staleness; outcome / `expect` is `changed_page` |
+| device | tap / setText / swipe map directly; screens with `treeUnavailable` cannot be handed to Jev; `stateId` short-circuits cannot be relied on while suspended |
 
-## 3. 设计
+## 3. Design
 
-### 3.1 三方分工
+### 3.1 Division of labour
 
 ```
-主模型（System 2）   发起：goal、presets、done_when（可选）、description
-                     被问：Jev 拿不准 / 只剩受控动作 / 没进展 / 预算到
-代码                 控制流、动作空间构造与风险分类、历史与去重、新鲜度、预算、完成判定、执行、中止
-Jev（System 1）      每步一次请求：在安全动作集合里选下一步；预设值属于哪个字段（后置）；元判断兜底
-用户                 受控动作里的高危档、切换 app / 设备的 grant、密码字段
+Main model (System 2)   launches: goal, presets, done_when (optional), description
+                        is asked: Jev unsure / only guarded actions left / no progress / budget hit
+Code                    control flow, action-space construction and risk classification, history and dedup, freshness, budget, completion check, execution, abort
+Jev (System 1)          one request per step: picks the next step within the safe action set; which preset belongs to which field (deferred); meta judgement fallback
+User                    the high-risk tier of guarded actions, grants for switching app / device, password fields
 ```
 
-### 3.2 工具契约
+### 3.2 Tool contract
 
-每条线一个 goal 级工具（`browser_run` / `computer_run` / `device_run`），发起与恢复共用：
+One goal-level tool per line (`browser_run` / `computer_run` / `device_run`), shared by launch and resume:
 
 ```ts
 browser_run(
-  | {                                   // 发起
-      description: string,              // 1–160 字，给用户看的（与现有工具一致）
+  | {                                   // launch
+      description: string,              // 1–160 chars, shown to the user (same as existing tools)
       goal: string,
       tab?: string,
-      presets?: Array<{ key: string; value: string; field?: string }>,   // 预设的字段值；field 是字段提示
-      done_when?: Condition,            // 可选加速器：复用现有 conditionSchema；browser 额外支持 urlMatches（8.15）
-      maxSteps?: number,                // 默认 30
-      maxWallMs?: number,               // 默认取当前 harness 工具超时的 60%，到点 pause(budget)
+      presets?: Array<{ key: string; value: string; field?: string }>,   // preset field values; field is a field hint
+      done_when?: Condition,            // optional accelerator: reuses the existing conditionSchema; browser additionally supports urlMatches (8.15)
+      maxSteps?: number,                // default 30
+      maxWallMs?: number,               // default 60% of the current harness tool timeout; pause(budget) when reached
     }
-  | { runId: string, answer: Answer }   // 恢复
+  | { runId: string, answer: Answer }   // resume
 )
 → {
   status: 'paused' | 'done' | 'aborted',
   runId?: string,
-  question?: Question,                  // paused 时
-  since_last: string[],                 // 上次返回以来每步一行："Type presets.Title → [3] Title"
-  snapshot: <与 browser_snapshot 相同的元素表 + 可视文本 + url>,
+  question?: Question,                  // when paused
+  since_last: string[],                 // one line per step since the last return: "Type presets.Title → [3] Title"
+  snapshot: <the same element table as browser_snapshot + visible text + url>,
   elapsed_ms: number,
 }
 ```
 
-`computer_run` / `device_run` 除定位参数（`root` / `device`）外相同。
+`computer_run` / `device_run` are identical apart from the targeting parameters (`root` / `device`).
 
-- `Condition` 不新造类型：直接用 computer 的 `conditionSchema` / device 的 `DeviceCondition`，browser 加 `{ kind: 'urlMatches', pattern }`
-- `maxWallMs` 是硬约束：Claude SDK `MCP_TOOL_TIMEOUT`、Codex `tool_timeout_sec` 都是 per-call 墙钟，内循环必须在超时前主动 pause 返回 `runId`
-- 密码类字段永不参与 presets；遇到 password 输入框见 3.5
-- 没有 `allow` / `avoid`：主模型派活时看不到页面，让它预判哪些按钮可按等于让它代劳；风险和完成都在现场由 Jev 判断（8.15）
-- 工具 description 里要写清路由：**多步、目标明确、动作以点击/填表为主** → `*_run`；单步、需要像素判断、drag/hover/上传/组合键 → 现有 `*_snapshot` / `*_act`
+- `Condition` introduces no new type: use computer's `conditionSchema` / device's `DeviceCondition` directly; browser adds `{ kind: 'urlMatches', pattern }`
+- `maxWallMs` is a hard constraint: Claude SDK `MCP_TOOL_TIMEOUT` and Codex `tool_timeout_sec` are both per-call wall clocks, so the inner loop must pause proactively and return a `runId` before the timeout
+- Password-type fields never take part in presets; see 3.5 for password inputs
+- No `allow` / `avoid`: the main model cannot see the page when it delegates, so asking it to predict which buttons may be pressed amounts to doing the work for it; risk and completion are judged on the spot by Jev (8.15)
+- The tool description must spell out routing: **multi-step, clear goal, actions mostly click/fill** → `*_run`; single step, needs pixel judgement, drag/hover/upload/key combos → existing `*_snapshot` / `*_act`
 
-### 3.3 协作协议：pause / resume
+### 3.3 Cooperation protocol: pause / resume
 
-内循环是可挂起的协程。三个原语，与触发场景无关：
+The inner loop is a suspendable coroutine. Three primitives, independent of what triggered them:
 
 ```
-pause(question)   内循环交出一个自己无法裁定的决策
-resume(answer)    上层作答，可附带修正 goal 或中止
-trace             每次返回携带 since_last + snapshot
+pause(question)   the inner loop hands over a decision it cannot make itself
+resume(answer)    the upper layer answers, optionally correcting the goal or aborting
+trace             every return carries since_last + snapshot
 ```
 
-`Question` 只有两种形状，与 TypeSafe 的 question 一致，上层不需要知道内循环为什么问：
+`Question` has only two shapes, matching TypeSafe's questions; the upper layer need not know why the inner loop is asking:
 
 ```ts
 interface Question {
   id: string
   type: 'choice' | 'value'
-  options?: Array<{ key: string; label: string; probability?: number }>   // choice：永远是索引/枚举，不是 selector
-  schema?: JsonSchema                                                     // value：如 { text: string }
-  context: Record<string, unknown>   // 回答者需要的一切：目标元素、所在 form 的字段与值、Jev 的概率分布、why
+  options?: Array<{ key: string; label: string; probability?: number }>   // choice: always an index/enum, never a selector
+  schema?: JsonSchema                                                     // value: e.g. { text: string }
+  context: Record<string, unknown>   // everything the answerer needs: target element, fields and values of its form, Jev's distribution, why
   reason: 'uncertain' | 'guarded-only' | 'no-progress' | 'budget' | 'grant' | 'secret'
   audience: 'model' | 'user'
 }
@@ -168,189 +168,189 @@ interface Answer {
   questionId: string
   choice?: string
   value?: unknown
-  goal?: string      // 任意时刻可修正
-  abort?: true       // 任意时刻可中止，主模型接管
+  goal?: string      // may be corrected at any time
+  abort?: true       // may abort at any time; the main model takes over
 }
 ```
 
-**`audience: 'user'` 的产生路径**（不是预留字段，有明确触发）：
+**How `audience: 'user'` arises** (not a reserved field; it has explicit triggers):
 
-| 触发 | 走的现有 UI |
+| Trigger | Existing UI used |
 | --- | --- |
-| guarded 高危档（pay / delete / send 类关键词，或 `avoid` 命中） | 现有 permission_request（`HostConfirmRegistry`） |
-| computer 线 Jev 点击后切到未授权 app / 窗口 | `ensureComputerUseAppGrant` |
-| device 线需要重新拿控制权 | `control-confirm.ts` |
-| password 字段 | 现有 secret 输入 UI，值不回传给内循环也不进 trace |
+| guarded high-risk tier (pay / delete / send keywords, or an `avoid` hit) | existing permission_request (`HostConfirmRegistry`) |
+| computer line: a Jev click switches to an unauthorised app / window | `ensureComputerUseAppGrant` |
+| device line needs to re-acquire control | `control-confirm.ts` |
+| password field | existing secret-input UI; the value is neither passed back to the inner loop nor recorded in the trace |
 
-`audience: 'model'` 的 pause 走 tool result；`audience: 'user'` 的 pause 由内循环直接 raise 到 host confirm，用户答完内循环继续，不经过主模型。
+A pause with `audience: 'model'` goes through the tool result; a pause with `audience: 'user'` is raised by the inner loop directly to host confirm, and the inner loop continues once the user answers, without passing through the main model.
 
-**挂起时给主模型的上下文**按"它此刻若在逐步操作能看到的一切 + Jev 在想什么"的标准：完整 snapshot（元素带 value）、可视文本、url、目标元素及所在 form 的其他字段与值、Jev 本步的全部概率分布、`since_last`。挂起不锁定 tab / root / device：主模型可以直接用现有 `browser_query` / `computer_query` 等读工具往下挖；若它用写工具改了页面，恢复时新鲜度复核会发现并重新观察。
+**Context handed to the main model on pause** follows the standard "everything it could see if it were operating step by step right now + what Jev is thinking": the full snapshot (elements with values), visible text, url, the target element and the other fields/values of its form, Jev's full distribution for this step, `since_last`. Pausing does not lock the tab / root / device: the main model may dig further with the existing `browser_query` / `computer_query` read tools; if it changes the page with write tools, the freshness recheck on resume will notice and re-observe.
 
-**恢复时的一致性**：
+**Consistency on resume**:
 
-- browser / computer：先复核新鲜度；变了就重新 observe + predict；只有当 **新决策与挂起时的 (node, kind, label, 输入文本) 完全相同** 才复用答案（对齐 jev-ultrafast `pending_text` 的复用条件），否则丢弃
-- device：`requireCurrent` 让任何一次 `device_snapshot` 都使旧 `stateId` 失效，主模型在挂起期间读一次屏就会让短路失效，所以 **device 恢复时无条件 re-observe**（一次 settle ≈ 250 ms），不做新鲜度短路
-- **guarded 动作已执行的记录优先于复用规则**：主模型答 Create → 点击已发出 → 页面未跳 → 复核发现变化 → re-predict 又指向 Create，此时 history 里"Create 已点、页面未变"的记录直接剔除该候选，不复用答案（防双提交，见 3.5）
+- browser / computer: recheck freshness first; if changed, re-observe + re-predict; the answer is reused only when **the new decision is exactly the same (node, kind, label, input text) as at pause time** (aligned with jev-ultrafast's reuse condition for `pending_text`), otherwise it is discarded
+- device: `requireCurrent` makes any `device_snapshot` invalidate the old `stateId`; a single screen read by the main model while suspended defeats the short-circuit, so **device always re-observes on resume** (one settle ≈ 250 ms) without a freshness short-circuit
+- **A record that a guarded action was already executed takes precedence over the reuse rule**: main model answers Create → click dispatched → page does not navigate → recheck detects change → re-predict points at Create again; at this point the history entry "Create clicked, page unchanged" removes that candidate outright and the answer is not reused (double-submit protection, see 3.5)
 
-挂起的 run 有 TTL（5 min）；**绑定 `toolUseId`（发起它的那次工具调用）而不是 session**——同一 session 里 Task 子代理可能并行调用，按 session 唯一会互踢；过期释放归属。
+A suspended run has a TTL (5 min); it is **bound to the `toolUseId` (the tool call that launched it), not to the session** — Task subagents in the same session may call in parallel, and session-uniqueness would make them evict each other; on expiry ownership is released.
 
-为什么不用别的机制：主进程内小模型没有对话/文件/memory 上下文；MCP sampling SuperOne host 未实现且各 harness 支持不一；MCP elicitation 面向用户且 Codex 自动接受。tool result 挂起 + `runId` 恢复只依赖所有 harness 都有的"工具返回 → 再调工具"。
+Why not another mechanism: a small in-main-process model has no conversation/file/memory context; MCP sampling is unimplemented in the SuperOne host and unevenly supported across harnesses; MCP elicitation is user-facing and Codex auto-accepts it. Suspending via tool result + resuming via `runId` relies only on "tool returns → tool is called again", which every harness has.
 
-### 3.4 每步一次 Jev 请求
+### 3.4 One Jev request per step
 
-**state（代码构造，只放观察事实）**
+**state (built by code; observed facts only)**
 
 ```json
 {
   "goal": "…",
-  "page": { "url": "…", "title": "…", "text": "<视口内文本，≤ 4k 字符>" },
+  "page": { "url": "…", "title": "…", "text": "<in-viewport text, ≤ 4k chars>" },
   "elements": [ { "index": "3", "role": "textbox", "label": "Title", "value": "" }, … ],
-  "presets": [ { "key": "Title", "hint": "…前 80 字符" }, { "key": "Body", "field": "the issue description editor" } ],
+  "presets": [ { "key": "Title", "hint": "…first 80 chars" }, { "key": "Body", "field": "the issue description editor" } ],
   "last_action": { "label": "Click New issue", "changed_page": true }
 }
 ```
 
-- `elements` 只含视口内可交互元素，≤ 60 个，带 `value / checked / expanded`；受控元素（见 3.5）也在表里，Jev 能看到但不可选；每个可编辑字段附带一个 `open` 候选（打开 combobox）
-- `presets` 只给 key、提示、摘要；完整正文由代码在执行时填入
-- `last_action` 只一条，是 Jev 观察不到的事实（上一步有没有效果）；完整 history 由代码持有
-- 构造后按官方预算校验（state + 最长 question ≤ 32k，state + 全部 questions ≤ 64k），超了先砍文本再砍元素
+- `elements` contains only in-viewport interactive elements, ≤ 60, with `value / checked / expanded`; guarded elements (see 3.5) are also in the table so Jev can see them but cannot choose them; every editable field carries an `open` candidate (opens the combobox)
+- `presets` carries only key, hint and summary; the full body is filled in by code at execution time
+- `last_action` is a single entry: a fact Jev cannot observe (whether the previous step had an effect); the full history is held by code
+- After construction, validate against the official budget (state + longest question ≤ 32k, state + all questions ≤ 64k); if over, cut text first, then elements
 
-**questions（一次 fan-out）**
+**questions (one fan-out)**
 
 ```ts
 {
-  // 元判断（Noul，各自独立；只在机器信号缺席时兜底，见 3.6）
+  // meta judgements (Noul, independent of each other; fallback only when machine signals are absent, see 3.6)
   goal_satisfied: noul("Is every requirement in `goal` visibly satisfied by `page` and `elements`?"),
   still_loading:  noul("Should the next step wait for `page` to update instead of acting: is the control `goal` needs next absent or disabled, or are submitted results or suggestions still arriving?"),  // 8.16
 
-  // 动作（Choice）——候选只含安全元素
+  // actions (Choice) — candidates include safe elements only
   action:           choice("Which single action best advances `goal` from the current `page`?",
                            { click, type_text, scroll_down, scroll_up, none_useful }),
   click_target:     choice(…, { "1": {...}, "2": {...}, "open:3": {...}, …, none_of_these }),
   type_text_target: choice(…, { "3": {...}, "5": {...}, none_of_these }),
 
-  // 预设值匹配：每个 preset 一个问题（不是每个输入框一个）
+  // preset matching: one question per preset (not one per input box)
   field_for_Title: choice("Which element in `elements` is the field that `presets[0]` belongs in?", { "3", "5", none }),
   field_for_Body:  choice(…, { "3", "5", none }),
 }
 ```
 
-约 3–5k token（按 jev-ultrafast 实测 5.3k/请求估，不按 2–4k）；代码只消费被选中动作对应的 target 头和 field 头。
+Roughly 3–5k tokens (estimated from jev-ultrafast's measured 5.3k/request, not 2–4k); code consumes only the target head and field head of the chosen action.
 
-**MVP 不做的问题**：`select`（选项候选会撞上限，且现有 `selectScript` 已能按 label 选，交主模型）、`obstructed`（cookie banner / login wall 由 guarded 集合 + no-progress 兜住）、`field_for_*` 先用代码按 `presets[].field` 与元素 label 匹配，匹配不上 pause，Jev 匹配后置。
+**Questions the MVP does not ask**: `select` (option candidates would hit the cap, and the existing `selectScript` already selects by label, so hand it to the main model), `obstructed` (cookie banners / login walls are caught by the guarded set + no-progress), `field_for_*` is first done in code by matching `presets[].field` against element labels; pause when no match; Jev matching is deferred.
 
-### 3.5 动作空间构造（代码）
+### 3.5 Action-space construction (code)
 
-**页面上每个可操作元素都是候选**；代码不做风险分类，只做两件事：
-
-```
-剔除    ←  password / secure 字段（永不进任何候选：没有 preset 可填，点它也无意义）
-        ←  disabled；adapter 标记 clickable=false 的纯文本
-候选    ←  其余全部：链接（含跨域）、按钮（含 submit）、tab / menuitem / 行、可编辑字段本身及其 open 候选
-        ←  已填写字段的 `submit:N`（按 Enter 提交）——npm、GitHub 的搜索框靠这个
-历史    ←  上次页面变化以来，`(node, kind)` 执行后 changed_page=false → 本步剔除该候选；页面一变即重置
-```
-
-- 风险由 Jev 对**它选中的那一步**回答 `next_step_risk`（3.4），代码按阈值决定是否 pause；不再有 safe / guarded、`HIGH_RISK_LABEL`、`NAV_LABEL`、origin 集合这些标签规则（8.15）
-- 剩下的硬边界只有权限边界：切到未授权 app（computer）、设备控制权（device）——这不是风险判断，是 grant
-
-### 3.6 每步的代码决策
-
-机器信号先于 Jev：
+**Every operable element on the page is a candidate**; code does no risk classification and only does two things:
 
 ```
-observe 之后、问 Jev 之前：
-0a. 平台加载信号（browser waitForLoadStop / computer、device settle）未结束 → WAIT（不问 Jev）；连续 WAIT ≤ 3
-0b. done_when 成立                                → done（不问 Jev、不 pause）
-0c. 平台错误：MODAL_BLOCKED → 当作页面存在 guarded 弹窗，走 3；STALE_STATE → re-observe；treeUnavailable → pause(no-progress)
-
-answers 回来后，按顺序：
-1. still_loading ≥ 0.7 且平台无加载信号           → WAIT：等页面相对 Jev 看到的那份 marker 发生变化，事件驱动、提前返回；上限按连续次数递增 1 / 2 / 4 s；连续 WAIT ≤ 3，之后必须选动作（8.16）
-2. goal_satisfied ≥ 0.7 且 done_when 未给        → 候选完成：settle 后重新观察再问一次，仍 ≥ 0.7 → done（8.15；Wikipedia 完成页 0.82，之前各页 ≤ 0.09）
-   done_when 已给                                → 由 0b 决定，goal_satisfied 只记录
-3. action = none_useful（或 target = none_of_these）
-     且 click_target 对某候选 ≥ 0.8              → 按 click 处理（action 头在一屏相似项前会整体放弃，target 头仍能挑出那一行）
-     否则                                        → 可下滚且本页未滚过 → scroll；否则 pause(no-progress, choice = 候选 ≤ 24 + abort)
-4. target 置信度 < 阈值（读取类 0.6 / 写入类 0.7） → pause(reason: uncertain, choice = Jev 的 top-k)
-4b. next_step_risk ≥ 0.5                         → pause(reason: risky, choice = 该步 + top-k 替代 + abort)；主模型答该步的 key 即执行
-5. action = type_text：
-     代码按 presets[].field 匹配到 preset       → 用 preset 正文 replace 输入（不 append）
-     否则                                        → pause(reason: uncertain, value{text}，context 含 presets 和候选概率)
-6. 执行前新鲜度复核；执行；先记 history 再 observe；computer 线用 expect: valueEquals 校验 type_text
-7. 连续 3 步 changed_page=false 且 kind≠wait / maxSteps / maxWallMs 到 → pause(no-progress / budget)
+remove     ←  password / secure fields (never enter any candidate set: no preset can fill them, and clicking them is pointless)
+           ←  disabled; plain text the adapter marks clickable=false
+candidate  ←  everything else: links (including cross-origin), buttons (including submit), tab / menuitem / rows, editable fields themselves and their open candidates
+           ←  `submit:N` for already-filled fields (submit via Enter) — npm's and GitHub's search boxes rely on this
+history    ←  since the last page change, `(node, kind)` executed with changed_page=false → drop that candidate this step; reset as soon as the page changes
 ```
 
-同一请求内几个 Noul 同时为高时优先序：`still_loading > goal_satisfied`，且都排在机器信号之后。
+- Risk is answered by Jev via `next_step_risk` for **the step it picked** (3.4); code decides whether to pause by threshold; there are no more safe / guarded, `HIGH_RISK_LABEL`, `NAV_LABEL`, origin-set label rules (8.15)
+- The only remaining hard boundaries are permission boundaries: switching to an unauthorised app (computer), device control (device) — these are not risk judgements, they are grants
 
-阈值是起点（读取类不低于官方 floor 0.6），必须用真实任务的 `trace` 数据校准后钉死模型版本。
+### 3.6 Code decisions per step
 
-### 3.7 各平台 adapter
+Machine signals come before Jev:
 
-**browser**（改动最多；**前置条件：`cdpEnabled` 已开启**，否则不注册 `browser_run`）：
+```
+after observe, before asking Jev:
+0a. platform loading signal (browser waitForLoadStop / computer, device settle) not finished → WAIT (do not ask Jev); consecutive WAIT ≤ 3
+0b. done_when holds                              → done (no Jev, no pause)
+0c. platform error: MODAL_BLOCKED → treat as a guarded dialog on the page, go to 3; STALE_STATE → re-observe; treeUnavailable → pause(no-progress)
 
-- 循环在 main，通过 `webContents.debugger` 直接 `Runtime.evaluate` / `Input.*`，不走 renderer IPC 的 30 s 单次超时
-- 移植 `snapshot.js`：WeakMap 节点身份挂到 `window.__sone`，执行按 node id 取回真实节点；`page_key / guards[node] / marker` 作用域化新鲜度（目标所在 form/dialog/row 没变就算 fresh）；"Open <label>" 候选；视口内文本
-- `HELPERS.ref` 补 `value / checked / expanded / readOnly`；`contenteditable` 元素按 `innerText` 取 value，输入走 CDP `Input.insertText`（先 select-all），不用现有 `typeScript` 的 value setter 路径
-- `type_text` 语义固定为 **replace**
-- 观察 + 复核 + 执行 + 等待 + 再观察合并成一个 `step` 调用，一次往返
-- CDP 输入绕过 renderer 的 focus isolation：`focusGuardBegin` 在 run 开始，`focusGuardEnd` 在每次 pause 前、resume 时再 `Begin`（8.12 第一条已定）
-- 执行后 combobox 200 ms / 其他 50 ms 的 rAF 等待
+after the answers come back, in order:
+1. still_loading ≥ 0.7 and no platform loading signal   → WAIT: wait for the page to change relative to the marker Jev saw, event-driven, early return; cap grows with consecutive count 1 / 2 / 4 s; consecutive WAIT ≤ 3, then an action must be chosen (8.16)
+2. goal_satisfied ≥ 0.7 and no done_when given          → candidate completion: settle, re-observe and ask again; still ≥ 0.7 → done (8.15; Wikipedia completion page 0.82, earlier pages ≤ 0.09)
+   done_when given                                       → decided by 0b; goal_satisfied is only recorded
+3. action = none_useful (or target = none_of_these)
+     and click_target ≥ 0.8 for some candidate          → treat as click (the action head gives up wholesale in front of a screen of similar items, the target head can still pick the row)
+     otherwise                                           → can scroll down and this page not yet scrolled → scroll; else pause(no-progress, choice = candidates ≤ 24 + abort)
+4. target confidence < threshold (read 0.6 / write 0.7)  → pause(reason: uncertain, choice = Jev's top-k)
+4b. next_step_risk ≥ 0.5                                 → pause(reason: risky, choice = this step + top-k alternatives + abort); main model answering this step's key executes it
+5. action = type_text:
+     code matches a preset via presets[].field           → replace the input with the preset body (not append)
+     otherwise                                           → pause(reason: uncertain, value{text}, context includes presets and candidate probabilities)
+6. freshness recheck before executing; execute; record history first then observe; computer line validates type_text with expect: valueEquals
+7. 3 consecutive steps with changed_page=false and kind≠wait / maxSteps / maxWallMs reached → pause(no-progress / budget)
+```
 
-**computer**：`can` 含 `press` → click 候选；含 `setText`/`typeText` → type_text（tier=click 时构造期剔除）；含 `scroll` → scroll；`state` 含 `disabled` 剔除。执行 `delivery=semantic`。多个高置信 preset 填入可打包成一个 `computer_act` 事务，`expect: valueEquals` 做后置校验。`stateId` 即新鲜度；`outcome.worked` / `expect` 即 `changed_page`。app / 窗口切换触发 `ensureComputerUseAppGrant` → pause(grant, audience: user)。
+When several Nouls are high in the same request, the priority is `still_loading > goal_satisfied`, and both rank after machine signals.
 
-**device**：有 `bounds` 且可点 → click（tap 中心）；输入类 → type_text（`setText`）；scroll → swipe。`settle.ts` 覆盖等待。`treeUnavailable` → pause(no-progress)。恢复时无条件 re-observe。
+Thresholds are a starting point (read class no lower than the official floor 0.6); they must be calibrated with `trace` data from real tasks and then the model version pinned.
 
-### 3.8 中止与生命周期
+### 3.7 Per-platform adapters
 
-- 工具调用的 `extra.signal` 贯穿整个 loop：Jev 请求、执行、等待都 `race` 它（不能只在循环头检查）
-- abort 来源：用户 UI 停止、harness 中止工具、主模型 `answer.abort`、TTL 到期
-- abort 时：取消 in-flight Jev 请求；已发出的 act 不回滚，但记进 history 和 trace；释放 focus guard / grant；run 置 `aborted`
-- 用户可见性：每步通过 host event 推进度（复用 record-action / permission 事件形态），ToolBlock 与移动端事件裁剪豁免要两面登记（见 superone-tool skill）
+**browser** (most changes; **precondition: `cdpEnabled` is on**, otherwise `browser_run` is not registered):
+
+- The loop runs in main and drives `Runtime.evaluate` / `Input.*` directly through `webContents.debugger`, bypassing the renderer IPC's 30 s per-call timeout
+- Port `snapshot.js`: WeakMap node identity attached to `window.__sone`, execution fetches the real node by node id; `page_key / guards[node] / marker` scoped freshness (fresh if the target's form/dialog/row is unchanged); "Open <label>" candidates; in-viewport text
+- `HELPERS.ref` gains `value / checked / expanded / readOnly`; `contenteditable` elements take their value from `innerText`, input goes through CDP `Input.insertText` (select-all first), not the existing `typeScript` value-setter path
+- `type_text` semantics are fixed to **replace**
+- observe + recheck + execute + wait + re-observe are merged into one `step` call, one round trip
+- CDP input bypasses the renderer's focus isolation: `focusGuardBegin` at run start, `focusGuardEnd` before each pause, `Begin` again on resume (decided in 8.12 item 1)
+- After execution, a rAF wait of 200 ms for comboboxes / 50 ms otherwise
+
+**computer**: `can` includes `press` → click candidate; includes `setText`/`typeText` → type_text (removed at construction time when tier=click); includes `scroll` → scroll; `state` includes `disabled` → removed. Execute with `delivery=semantic`. Several high-confidence preset fills can be packed into one `computer_act` transaction with `expect: valueEquals` as the postcondition. `stateId` is freshness; `outcome.worked` / `expect` is `changed_page`. An app / window switch triggers `ensureComputerUseAppGrant` → pause(grant, audience: user).
+
+**device**: has `bounds` and is clickable → click (tap the centre); input class → type_text (`setText`); scroll → swipe. `settle.ts` covers waiting. `treeUnavailable` → pause(no-progress). Always re-observe on resume.
+
+### 3.8 Abort and lifecycle
+
+- The tool call's `extra.signal` runs through the whole loop: Jev requests, execution and waiting all `race` it (checking only at the loop head is not enough)
+- Abort sources: user stops from the UI, harness aborts the tool, main model `answer.abort`, TTL expiry
+- On abort: cancel the in-flight Jev request; already-dispatched acts are not rolled back but are recorded in history and trace; release focus guard / grant; mark the run `aborted`
+- User visibility: push progress per step via host events (reusing the record-action / permission event shape); the ToolBlock and the mobile event-stripping exemption must both be registered (see the superone-tool skill)
 
 ### 3.9 trace
 
-阈值校准、UI 进度、pause 原因分布都依赖 trace，先定 schema：
+Threshold calibration, UI progress and the pause-reason distribution all depend on the trace, so fix the schema first:
 
 ```ts
 interface TraceStep {
   runId: string; step: number; platform: 'browser' | 'computer' | 'device'
-  stateHash: string              // 便于 record/replay 对齐
+  stateHash: string              // for record/replay alignment
   elements: number; textChars: number; requestTokens: number
   answers: Record<string, { choice?: string; probabilities?: Record<string, number>; confidence?: number; probability?: number }>
-  model: string                  // 响应里的实际模型版本
+  model: string                  // actual model version in the response
   latencyMs: { jev: number; act: number; settle: number }
-  decision: { rule: number; action?: string; target?: string; reason?: string }   // 3.6 的哪一条
+  decision: { rule: number; action?: string; target?: string; reason?: string }   // which rule of 3.6
   changedPage: boolean | null
-  stale: boolean                 // 决策是否因新鲜度丢弃
+  stale: boolean                 // whether the decision was discarded for freshness
 }
 ```
 
-存主进程 `userData/jev-traces/<runId>.jsonl`；密码值、secret 答案永不入 trace。
+Stored in main under `userData/jev-traces/<runId>.jsonl`; password values and secret answers never enter the trace.
 
-### 3.10 代码位置
+### 3.10 Code layout
 
-`apps/desktop/src/main/jev/`：
+`apps/desktop/src/main/jev/`:
 
-| 文件 | 职责 |
+| File | Responsibility |
 | --- | --- |
-| `action-space.ts` | 三平台 adapter：snapshot → elements + safe/guarded 白名单分类 + origin 集合 + 历史规则 |
-| `questions.ts` | 3.4 的问题集合构造；预算校验在 client |
-| `typesafe-client.ts` | 直接 `fetch` `/v1/systemone`（不引 SDK：只需一种调用形状 + AbortSignal + 严格校验）、答案校验（choice ∈ 候选、概率合法）、模型钉版 |
-| `policy.ts` | 3.6 的决策表与阈值 |
-| `loop.ts` | observe → 机器判定 → ask → decide → act 循环，pause / resume，AbortSignal |
-| `run-store.ts` | 挂起的 run：`runId` → 状态、`toolUseId` 归属、TTL |
+| `action-space.ts` | adapters for the three platforms: snapshot → elements + safe/guarded whitelist classification + origin set + history rules |
+| `questions.ts` | question-set construction from 3.4; budget validation lives in the client |
+| `typesafe-client.ts` | direct `fetch` of `/v1/systemone` (no SDK: only one call shape + AbortSignal + strict validation are needed), answer validation (choice ∈ candidates, probabilities valid), model pinning |
+| `policy.ts` | the decision table and thresholds of 3.6 |
+| `loop.ts` | observe → machine checks → ask → decide → act loop, pause / resume, AbortSignal |
+| `run-store.ts` | suspended runs: `runId` → state, `toolUseId` ownership, TTL |
 | `trace.ts` | 3.9 |
-| `mcp/jev-run-tools.ts` | 注册 `*_run`；无 TypeSafe key 不注册；`browser_run` 额外要求 CDP 开启 |
+| `mcp/jev-run-tools.ts` | registers `*_run`; not registered without a TypeSafe key; `browser_run` additionally requires CDP enabled |
 
-TypeSafe key 存主进程 settings。
+The TypeSafe key is stored in main-process settings.
 
-## 4. 例子：GitHub 建 issue
+## 4. Example: creating a GitHub issue
 
-用户：「去 GitHub 给 browser-use/jev-ultrafast 提个 issue，标题 "Add Electron webview adapter"，正文用你刚才那段总结。」
+User: "Go to GitHub and open an issue on browser-use/jev-ultrafast, title "Add Electron webview adapter", body the summary you just wrote."
 
 ```
 browser_run({
-  description: "在 GitHub 上给 jev-ultrafast 创建 issue",
+  description: "Create an issue for jev-ultrafast on GitHub",
   goal: "Create a new issue in browser-use/jev-ultrafast. Stop when the created issue page is visible.",
   tab: "t3",
   presets: [ { key: "Title", value: "Add Electron webview adapter", field: "the title textbox" },
@@ -362,35 +362,35 @@ browser_run({
 
 ```mermaid
 flowchart TD
-    M0[主模型 发起 browser_run<br/>goal · presets · avoid · done_when] --> S1
+    M0[Main model launches browser_run<br/>goal · presets · avoid · done_when] --> S1
 
-    subgraph loop1 [内循环 · main · CDP]
-        S1[Step 1 仓库首页<br/>Jev: click → 2 Issues 0.88] -->|safe 同源 · 执行| S2
-        S2[Step 2 Issues 列表<br/>last_action changed=true<br/>Jev: click → 4 New issue 0.90] -->|safe 白名单 New · 执行| S3
-        S3[Step 3 表单<br/>代码: Create more 剔除 · 8 Create 标 guarded<br/>Jev: type_text → 3 Title 0.79<br/>代码: field 匹配 Title] -->|preset replace 填入| S4
-        S4[Step 4 Title 已填<br/>Jev: type_text → 5 Description 0.91<br/>代码: field 匹配 Body · contenteditable 走 insertText] -->|preset 填入| S5
-        S5[Step 5 表单填完<br/>safe 集合: Labels · Assignees 的 open<br/>Jev: action = none_useful 0.71<br/>页面有 guarded: 8 Create]
+    subgraph loop1 [inner loop · main · CDP]
+        S1[Step 1 repo home<br/>Jev: click → 2 Issues 0.88] -->|safe same-origin · execute| S2
+        S2[Step 2 Issues list<br/>last_action changed=true<br/>Jev: click → 4 New issue 0.90] -->|safe whitelist New · execute| S3
+        S3[Step 3 form<br/>code: Create more removed · 8 Create marked guarded<br/>Jev: type_text → 3 Title 0.79<br/>code: field matches Title] -->|preset replace fill| S4
+        S4[Step 4 Title filled<br/>Jev: type_text → 5 Description 0.91<br/>code: field matches Body · contenteditable via insertText] -->|preset fill| S5
+        S5[Step 5 form complete<br/>safe set: open for Labels · Assignees<br/>Jev: action = none_useful 0.71<br/>page has guarded: 8 Create]
     end
 
-    S5 -->|focusGuardEnd · pause guarded-only| M1[主模型 看 since_last + form 值<br/>Title/Body 正确 · Labels 未要求<br/>answer: choice 8]
+    S5 -->|focusGuardEnd · pause guarded-only| M1[Main model reads since_last + form values<br/>Title/Body correct · Labels not requested<br/>answer: choice 8]
     M1 -->|resume · focusGuardBegin| S6
 
-    subgraph loop2 [内循环 · 恢复]
-        S6[guard 复核 ✓ · 点击 8 Create<br/>history: Create 已点] --> S7
-        S7[Step 6 页面未跳<br/>changed=false · 8 从候选剔除 防双提交<br/>waitForLoadStop 未结束] -->|WAIT 1/3 不问 Jev| S8
-        S8[Step 7 /issues/42<br/>代码: done_when ✓ → done]
+    subgraph loop2 [inner loop · resumed]
+        S6[guard recheck ✓ · click 8 Create<br/>history: Create clicked] --> S7
+        S7[Step 6 page not navigated<br/>changed=false · 8 removed from candidates, double-submit guard<br/>waitForLoadStop not finished] -->|WAIT 1/3 without asking Jev| S8
+        S8[Step 7 /issues/42<br/>code: done_when ✓ → done]
     end
 
-    S8 -->|done · 不 pause| M2[主模型 回复用户<br/>已创建 issue 42]
+    S8 -->|done · no pause| M2[Main model replies to user<br/>issue 42 created]
 
     style M0 fill:#fde68a,stroke:#b45309
     style M1 fill:#fde68a,stroke:#b45309
     style M2 fill:#fde68a,stroke:#b45309
 ```
 
-主模型 2 轮：发起、裁定 Create。若发起时 `allow: ["Create"]`，Step 5 Jev 直接点，主模型 1 轮。注意 GitHub 新版 issue 正文是 `contenteditable` Markdown 编辑器，不是 textarea，这正是 3.7 要求 `insertText` 路径的原因。
+Main model: 2 rounds — launch, and ruling on Create. With `allow: ["Create"]` at launch, Jev clicks directly at Step 5 and the main model spends 1 round. Note that GitHub's new issue body is a `contenteditable` Markdown editor, not a textarea, which is exactly why 3.7 requires the `insertText` path.
 
-Step 5 返回给主模型的内容：
+What Step 5 returns to the main model:
 
 ```json
 {
@@ -408,344 +408,344 @@ Step 5 返回给主模型的内容：
   },
   "since_last": [ "Click [2] Issues", "Click [4] New issue",
                   "Type presets.Title → [3] Title", "Type presets.Body → [5] Add a description" ],
-  "snapshot": "<元素表 + 可视文本 + url>"
+  "snapshot": "<element table + visible text + url>"
 }
 ```
 
-## 5. 风险与边界
+## 5. Risks and boundaries
 
-| 风险 | 处理 |
+| Risk | Handling |
 | --- | --- |
-| Jev 只做选择，不能看像素：canvas、无 AX 的 app、无 tree 的手机屏幕 | pause(no-progress)，主模型接管 |
-| 页面文本注入（Jev 不把 state 当敌对内容） | safe 白名单 + origin 集合：Jev 选不到 guarded / 跨域；avoid；主模型在 pause 和最终结果上把关 |
-| 代码分类错：把危险动作放进 safe | 白名单默认拒绝；导航类 label 白名单是唯一放行口，集中维护并在 trace 里记每次 safe 点击的 label 供审计 |
-| 挂起期间页面变化 | 作用域化 guard 复核，完全同决策才复用答案；device 无条件 re-observe |
-| 双提交 | "guarded 已点、页面未变"记录优先于答案复用 |
-| harness 工具超时 | `maxWallMs` 到点主动 pause(budget) 返回 runId |
-| 挂起过多抵消收益 | 阈值集中可调；presets / allow 减少 pause；trace 里记录每次 pause 的 reason 分布 |
-| 动作集有限：click / type_text / scroll / wait | select、drag、组合键、上传、hover 仍走主模型现有工具（见 9） |
-| 外部依赖 TypeSafe；browser 依赖 CDP 开关 | 无 key / 离线 / CDP 关闭时不注册对应 `*_run` |
-| 阈值随模型版本漂移 | 钉 `jev-1.13.0`；trace 记录响应 `model` |
-| 循环失控 | `maxSteps`、`maxWallMs`、连续 WAIT ≤ 3、连续无变化 3 步即 pause |
-| 多 session / 子代理并发 | run 绑定 `toolUseId` + tab / root / device，复用现有 driver 归属 |
-| 中止 | AbortSignal 贯穿；已发出的 act 不回滚但入 trace |
-| 用户可见性 | 每步 host event；pause 原因可见；允许中止 |
+| Jev only chooses, it cannot see pixels: canvas, apps without AX, phone screens without a tree | pause(no-progress), main model takes over |
+| Page text injection (Jev does not treat the state as adversarial) | safe whitelist + origin set: Jev cannot pick guarded / cross-origin; avoid; the main model gatekeeps at pause and on the final result |
+| Code misclassifies: a dangerous action lands in safe | the whitelist denies by default; the navigation-label whitelist is the only pass-through, maintained centrally, and the label of every safe click is recorded in the trace for audit |
+| Page changes while suspended | scoped guard recheck, answer reused only for an identical decision; device always re-observes |
+| Double submit | the "guarded clicked, page unchanged" record takes precedence over answer reuse |
+| Harness tool timeout | pause(budget) proactively when `maxWallMs` is reached and return runId |
+| Too many pauses cancel out the gain | thresholds are centrally tunable; presets / allow reduce pauses; the trace records the reason distribution of every pause |
+| Limited action set: click / type_text / scroll / wait | select, drag, key combos, upload, hover still go through the main model's existing tools (see 9) |
+| External dependency on TypeSafe; browser depends on the CDP switch | without a key / offline / CDP off, the corresponding `*_run` is not registered |
+| Thresholds drift with model version | pin `jev-1.13.0`; the trace records the response `model` |
+| Runaway loop | `maxSteps`, `maxWallMs`, consecutive WAIT ≤ 3, pause after 3 consecutive no-change steps |
+| Multi-session / subagent concurrency | run bound to `toolUseId` + tab / root / device, reusing existing driver ownership |
+| Abort | AbortSignal throughout; dispatched acts are not rolled back but enter the trace |
+| User visibility | host event per step; pause reason visible; abort allowed |
 
-## 6. 预期收益
+## 6. Expected gains
 
-| | 逐步模式 | 内循环 |
+| | Step-by-step | Inner loop |
 | --- | --- | --- |
-| 主模型轮次（7 步 issue 任务） | 12+ | 2（allow 后 1） |
-| 每步耗时 | 3–10 s | ≈ 0.2 Jev + 0.1 执行 + 0.05–0.2 等待；stale 重做按 ~35% 估 |
-| 总耗时 | ~50 s | ~4–6 s + 每次 pause 一轮主模型 |
-| 主模型输入 | 每步一份 TOON 快照累积（7 × ~3k） | pause 时一份完整 snapshot + since_last（1–2 × ~4k）+ 发起 |
-| Jev 成本 | — | ~5k token/步 ≈ $0.0002；30 步 < 1 分钱 |
+| Main-model rounds (7-step issue task) | 12+ | 2 (1 with allow) |
+| Time per step | 3–10 s | ≈ 0.2 Jev + 0.1 execute + 0.05–0.2 wait; stale redo estimated at ~35% |
+| Total time | ~50 s | ~4–6 s + one main-model round per pause |
+| Main-model input | one TOON snapshot accumulated per step (7 × ~3k) | one full snapshot + since_last per pause (1–2 × ~4k) + launch |
+| Jev cost | — | ~5k tokens/step ≈ $0.0002; 30 steps < 1 cent |
 
-收益来源是"大部分步骤是安全的点击"。表单密集型任务靠 presets；提交密集型任务靠 allow。
+The gain comes from "most steps are safe clicks". Form-heavy tasks rely on presets; submit-heavy tasks rely on allow.
 
-## 7. 验证路径
+## 7. Verification path
 
-1. **平台无关内核**：`typesafe-client`（钉版、32k 预算、答案校验、**record/replay**——jev-ultrafast 的 `docs/*measurement.json` 不含 request/answers，不能直接当 fixture，要自建）+ `loop` / `policy` / `run-store` / `trace`。用录制的 snapshot fixture 离线跑通决策表和 pause/resume/abort
-2. **browser 线**（CDP 开启）：移植 `snapshot.js` 的节点身份、scoped guard、open 候选；补 `value/checked`；`contenteditable` 输入。用 GitHub issue / Google Flights / Wikipedia 对比逐步模式
-3. **阈值校准**：10–20 个公开站点真实任务的 trace，定读取/写入阈值和 field 匹配阈值，钉版本
-4. **computer 线**：复用 outline；接 grant / MODAL_BLOCKED / TIER 映射；事务 + `expect`
-5. device 线：无条件 re-observe
+1. **Platform-independent kernel**: `typesafe-client` (pinning, 32k budget, answer validation, **record/replay** — jev-ultrafast's `docs/*measurement.json` does not include request/answers, so it cannot serve as a fixture directly; build our own) + `loop` / `policy` / `run-store` / `trace`. Run the decision table and pause/resume/abort offline against recorded snapshot fixtures
+2. **browser line** (CDP on): port `snapshot.js`'s node identity, scoped guard, open candidates; add `value/checked`; `contenteditable` input. Compare against step-by-step mode on GitHub issue / Google Flights / Wikipedia
+3. **Threshold calibration**: traces from 10–20 real tasks on public sites; set read/write thresholds and the field-matching threshold; pin the version
+4. **computer line**: reuse the outline; wire the grant / MODAL_BLOCKED / TIER mappings; transactions + `expect`
+5. device line: always re-observe
 
-## 8. 讨论与决策记录
+## 8. Discussion and decision log
 
-以下是讨论中依次做出的决定及理由，按时间顺序。设计章节反映最终结果；这一节保留"为什么"，方便以后重新评估。
+The decisions made during the discussion and their rationale, in chronological order. The design chapters reflect the final result; this section preserves the "why" so the decisions can be re-evaluated later.
 
-### 8.1 Jev 不操作浏览器，只做选择题
+### 8.1 Jev does not operate the browser; it only answers multiple-choice questions
 
-jev-ultrafast 里 Jev 的输入是索引化的元素表，输出是索引；操作浏览器的是 Python 侧的 CDP 代码。`TYPE_TEXT` 被拆成两步：Jev 选"要不要输、往哪输"，另一个小 LLM 生成"输什么"。这决定了 Jev 在 SuperOne 里的定位：**不是替换现有工具，而是在现有 observe/act 之上加一个快速内循环**。
+In jev-ultrafast, Jev's input is an indexed element table and its output is an index; the browser is operated by CDP code on the Python side. `TYPE_TEXT` is split in two: Jev chooses "whether to type and where", and another small LLM generates "what to type". This fixes Jev's role in SuperOne: **not a replacement for the existing tools, but a fast inner loop on top of the existing observe/act**.
 
-### 8.2 主模型不能只做发起和验证
+### 8.2 The main model cannot only launch and verify
 
-最初的方案是主模型发起 → 内循环自主跑完 → 主模型验证。否决原因：`TYPE_TEXT` 要输什么只有主模型知道（来自对话历史、文件、memory），jev-ultrafast 的小模型方案在 SuperOne 里不成立。因此需要一个内循环与主模型的联动机制。
+The first proposal was main model launches → inner loop runs autonomously to completion → main model verifies. Rejected because: only the main model knows what `TYPE_TEXT` should type (from conversation history, files, memory); jev-ultrafast's small-model approach does not hold in SuperOne. A cooperation mechanism between the inner loop and the main model is therefore needed.
 
-评估过的联动机制：
+Mechanisms evaluated:
 
-| 机制 | 结论 |
+| Mechanism | Verdict |
 | --- | --- |
-| 主进程内小模型生成文本 | 没有对话上下文，只能做可选加速，不能做默认 |
-| MCP sampling | SuperOne host 未实现；各 harness 支持度不一 |
-| MCP elicitation | 面向用户；Codex 自动接受 |
-| **tool result 挂起 + `runId` 恢复** | 只依赖所有 harness 都有的"工具返回 → 再调工具"；采用 |
+| Small in-main-process model generates text | no conversation context; can only be an optional accelerator, not the default |
+| MCP sampling | not implemented in the SuperOne host; uneven harness support |
+| MCP elicitation | user-facing; Codex auto-accepts |
+| **Suspend via tool result + resume via `runId`** | relies only on "tool returns → tool is called again", which every harness has; adopted |
 
-### 8.3 协作协议要通用，不枚举场景
+### 8.3 The cooperation protocol must be generic, not enumerate scenarios
 
-第一版定义了 `text / choose / verify / stuck / budget` 五种 `ask.kind`。否决：太具体，每加一个场景就要改契约。改为：问题只有 `choice` / `value` 两种形状（与 TypeSafe 的 question 一致），`reason` 和 `context` 描述为什么问；**什么时候 pause 是策略，不是协议**，策略集中在 `policy.ts`。
+The first version defined five `ask.kind`s: `text / choose / verify / stuck / budget`. Rejected: too specific; every new scenario would change the contract. Changed to: questions have only two shapes, `choice` / `value` (matching TypeSafe's questions), with `reason` and `context` describing why; **when to pause is policy, not protocol**, and the policy is concentrated in `policy.ts`.
 
-### 8.4 挂起时给主模型的上下文要充分
+### 8.4 Context handed to the main model on pause must be generous
 
-第一版只给字段摘录。改为按"主模型若在逐步操作此刻能看到的一切 + Jev 在想什么"的标准：完整 snapshot（元素带 value）、可视文本、目标元素所在 form 的其他字段与值、Jev 的概率分布、执行增量。理由：pause 次数少，每次可以给得慷慨；总量仍远低于逐步模式的快照累积。同时明确**挂起不锁定资源**，主模型可以直接用现有读工具往下挖，不需要在协议里再造"请求更多信息"。
+The first version gave only field excerpts. Changed to the standard "everything the main model could see if it were operating step by step right now + what Jev is thinking": full snapshot (elements with values), visible text, the other fields/values in the target's form, Jev's distribution, the execution delta. Rationale: pauses are rare, so each one can be generous; the total is still far below the snapshot accumulation of step-by-step mode. It was also made explicit that **pausing does not lock resources**: the main model may dig further with the existing read tools, so no "request more information" primitive needs to be invented in the protocol.
 
-### 8.5 发起时预先提供信息以减少中断
+### 8.5 Provide information up front at launch to reduce interruptions
 
-主模型发起时可以给 `presets`（字段值）、`done_when`（机器可查的完成条件）、`avoid` / `allow`（动作白黑名单）。对内统一编译成"预先写好的答案"：内循环在 pause 前先查有没有匹配的预设。猜错的后果只是回到 pause，没有损失。
+At launch the main model can give `presets` (field values), `done_when` (a machine-checkable completion condition), `avoid` / `allow` (action deny/allow lists). Internally they compile into "pre-written answers": before pausing, the inner loop checks whether a matching preset exists. A wrong guess only falls back to a pause; nothing is lost.
 
-### 8.6 按官方指导重新设计 Jev 请求
+### 8.6 Redesign the Jev request along the official guidance
 
-读了 typesafe-ai skill 和官方文档后的调整（详见 1.3）：
+Adjustments after reading the typesafe-ai skill and the official docs (details in 1.3):
 
-- DONE / WAIT / BLOCKED 从 `operation` Choice 拆成独立 Noul
-- `presets` 的匹配从字符串比对改为语义匹配，投机式地和动作选择放在同一请求（MVP 先代码匹配，见 8.13）
-- 每个 target 头加 `none_of_these`
-- state 过滤：视口内、≤ 60 元素、≤ 4k 文本；反引号路径引用
-- 用 `@typesafe-ai/sdk`，钉 `jev-1.13.0`
+- DONE / WAIT / BLOCKED split out of the `operation` Choice into independent Nouls
+- `presets` matching changed from string comparison to semantic matching, placed speculatively in the same request as action selection (the MVP matches in code first, see 8.13)
+- `none_of_these` added to every target head
+- State filtering: in-viewport, ≤ 60 elements, ≤ 4k text; backtick path references
+- Use `@typesafe-ai/sdk`, pin `jev-1.13.0`
 
-### 8.7 从仅保留 `last_action` 到有界 `completed_actions`
+### 8.7 From keeping only `last_action` to a bounded `completed_actions`
 
-jev-ultrafast 把最近 10 步放进 state，用途是防重复、判断上一步有没有效果、WAIT 计数。按官方"历史由代码持有，state 只放观察事实"的指导，逐项检查后：防重复和 WAIT 预算都是确定性规则，移到代码；"上一步有没有效果"是 Jev 观察不到的事实，值得保留，但只需一条。jev-ultrafast 里那句 "Recent WAIT actions are not evidence of loading" 本身就是历史进 state 导致过度解读的症状。
+jev-ultrafast puts the last 10 steps into the state, for dedup, judging whether the last step had an effect, and WAIT counting. Following the official guidance "code holds history, the state holds only observed facts", item by item: dedup and the WAIT budget are deterministic rules and move to code; "did the last step have an effect" is a fact Jev cannot observe and is worth keeping, but one entry suffices. jev-ultrafast's own line "Recent WAIT actions are not evidence of loading" is a symptom of over-interpretation caused by history entering the state.
 
 2026-09-19 desktop diagnostic revision: a Calculator task reproducibly selected Equals at step 3 despite observing `12` and being given the exact sequence. One controlled diagnostic added only `completed_actions`, the last eight executed action labels with transient indices removed. With `["Click 1", "Click 2"]`, the same step chose digit 3 at 0.99; all seven observed actions followed the intended sequence (`rce269e87`, versus `r407e1325` without history). Retain this bounded field alongside `last_action`. Waiting, failed dispatches and future plans are excluded; the list survives budget pauses. Code still owns risk, retries, loading budgets and completion checks. This single diagnostic supports the state change, not a general performance claim or a reason to route known sequences away from batching.
 
-### 8.8 `steps` 改为 `since_last`
+### 8.8 `steps` becomes `since_last`
 
-pause 时主模型需要知道从上次返回以来内循环做了什么（尤其是预设值填进了哪个字段），但不需要每步概率和累积全量历史。改为每步一行的增量；概率、延迟、模型版本进 trace 日志给 UI 和调参用。
+On pause the main model needs to know what the inner loop did since the last return (especially which field each preset was filled into), but not per-step probabilities or the accumulated full history. Changed to a one-line-per-step delta; probabilities, latency and model version go into the trace log for the UI and tuning.
 
-### 8.9 风险判断不交给 Jev（已被 8.15 推翻）
+### 8.9 Risk judgement is not delegated to Jev (overturned by 8.15)
 
-第一版设计了 `risky_N` Noul 让 Jev 判断每个点击候选是否不可逆。否决：按快慢思考的逻辑，"这个动作要不要认真想"本身就是 System 2 的判断，不能让 System 1 决定 System 2 该不该介入。改为代码分类 `safe | guarded`，Jev 只在 safe 集合里选；Jev 答 `none_useful` 且页面有 guarded 元素 → pause 交主模型裁定；主模型可用 `allow` 预先放行。这样也顺带解决了"图标按钮 Jev 判不了"的问题——不认识的一律 guarded。
+The first version designed a `risky_N` Noul for Jev to judge whether each click candidate is irreversible. Rejected: by the fast/slow-thinking logic, "does this action need careful thought" is itself a System 2 judgement; System 1 must not decide whether System 2 should step in. Changed to code classifying `safe | guarded`, with Jev choosing only within the safe set; Jev answers `none_useful` and the page has guarded elements → pause for the main model to rule; the main model may pre-approve via `allow`. This also incidentally solved "Jev can't judge icon buttons" — anything unrecognised is guarded.
 
-实测推翻了这条（见 8.15）：白名单在桌面上等于"每个任务把要按的键抄进 allow"，主模型派活时根本没有这些信息。
+Real runs overturned this (see 8.15): on the desktop the whitelist amounts to "copy every key to be pressed into `allow` for each task", and the main model simply does not have that information when it delegates.
 
-### 8.10 预设匹配不确定时 pause，不降级
+### 8.10 Pause on uncertain preset matching; do not degrade
 
-场景：Jev 选了往某字段输入，但对哪个 preset 属于它只有 0.61。两个选项：pause 问主模型，或当作没匹配上让 Jev 换动作（赌下一步会更确定）。决定 pause：Jev 拿不准就是需要慢思考；填错字段虽可逆，但主模型多一轮成本很低。附带措施：`presets[].field` 让主模型给字段提示，降低这种情况的发生率。
+Scenario: Jev chooses to type into some field but is only 0.61 on which preset belongs to it. Two options: pause and ask the main model, or treat it as unmatched and let Jev pick another action (betting the next step will be more certain). Decision: pause. Jev being unsure is exactly when slow thinking is needed; filling the wrong field is reversible, but one extra main-model round is cheap. Accompanying measure: `presets[].field` lets the main model give a field hint, lowering the rate of this situation.
 
-### 8.11 完成判定：机器条件优先（已被 8.15 修订）
+### 8.11 Completion check: machine conditions first (revised by 8.15)
 
-`done_when` 成立即 done，`goal_satisfied` 只是佐证；Jev 说满足但机器条件不成立或未给 → pause。理由：AGENTS.md 原则 "DONE 不是证据"，机器条件比 Jev 的判断硬。
+`done_when` holding means done; `goal_satisfied` is only corroboration; Jev says satisfied but the machine condition does not hold or was not given → pause. Rationale: the AGENTS.md principle "DONE is not evidence"; a machine condition is harder than Jev's judgement.
 
-修订：`done_when` 仍然优先，但它是可选的；没给时 Jev 的判定（重观察确认后）直接结束 run，不再 pause 问主模型。
+Revision: `done_when` still takes precedence, but it is optional; when not given, Jev's verdict (confirmed after re-observation) ends the run directly, without pausing to ask the main model.
 
-### 8.12 原待定项（已定）
+### 8.12 Formerly open items (now decided)
 
-- 挂起期间 tab 的 focus guard：**必须释放**——CDP 输入绕过 renderer 的 focus isolation，guard 不释放用户在 pause 期间无法操作该 tab；pause 前 `End`，resume 时 `Begin`
-- `no-progress` 时：把当前动作空间（含 guarded）作为 choice 返回，主模型可直接点一步，也可 abort 自己逐步走。两者不冲突，主模型按 context 决定
-- 阈值：起点按官方 floor 0.6，校准后钉
+- Focus guard of the tab while suspended: **must be released** — CDP input bypasses the renderer's focus isolation, and if the guard is not released the user cannot operate that tab during the pause; `End` before pause, `Begin` on resume
+- On `no-progress`: return the current action space (including guarded) as a choice; the main model can click one step directly, or abort and proceed step by step itself. The two do not conflict; the main model decides from context
+- Thresholds: start at the official floor 0.6, pin after calibration
 
-### 8.13 2026-09-19 两轮评审的修订
+### 8.13 Revisions from the two review rounds on 2026-09-19
 
-第一轮（Opus）对照 SuperOne 代码，第二轮（Fable）对照 jev-ultrafast 源码与 TypeSafe 官方文档。逐条结论：
+Round one (Opus) checked against the SuperOne code; round two (Fable) checked against the jev-ultrafast source and the official TypeSafe docs. Item-by-item conclusions:
 
-| 修订 | 理由 |
+| Revision | Rationale |
 | --- | --- |
-| 事实：floor 0.6、255 未证实、Noul 间无结构不变量；token 预算 64k/32k 经 models 页复核**维持原文**（第二轮评审说"32k 共享"是错的） | 对照官方页面；原文 0.5 无出处 |
-| 事实：snapshot.js 本就视口内 + 6k 文本；`fresh()` 是作用域化 guard 不是指纹；17 请求 / 11 动作；5.3k tok/请求；open 候选；blocked 排除 WAIT | 对照 `snapshot.js:44-104`、`browser.py:90-98`、`agent.py:153-158`、`performance.md`。原 1.3 把"改进"建立在错误刻画上；scoped guard 是要移植的核心，原 3.7 一笔带过 |
-| browser 循环前置条件：CDP 开启 | 默认路径是 renderer IPC + 30 s 单次超时，"main 内循环 + 0.1 s 执行"只在 CDP 下成立 |
-| `maxWallMs` | harness 工具超时是 per-call 硬墙钟，pause 是唯一逃生口 |
-| `done_when` 复用 conditionSchema / DeviceCondition | 已有一套词汇表，不造第二套 |
-| safe 由黑名单改白名单 + origin 集合 | 原黑名单让 "Close issue"、checkbox、跨域链接落进 safe，与 8.9 "不认识一律 guarded" 矛盾；跨域是注入防线 |
-| `audience: 'user'` 接上 grant / control confirm / secret | 原先定义了但无产生路径；computer 一次点击切 app 就要 grant，这是天然触发 |
-| 机器信号先于 Jev（加载、完成、变化） | 原 3.6 先信 `still_loading` Noul，与 8.11 自己的原则矛盾 |
-| 答案复用条件收紧 + guarded 已执行优先 | 原"同 node+label 复用"与防双提交冲突，是唯一会造成不可逆后果的漏洞 |
-| device 恢复无条件 re-observe | `requireCurrent` 让挂起期间任何 snapshot 都使 run 失效 |
-| run 绑定 `toolUseId` | 同 session 子代理并行会互踢 |
-| `field_for_<preset>` 反向；MVP 先代码匹配 | 每输入框一问在大表单膨胀；参考实现没有此问题，属新增，后置 |
-| MVP 去掉 select / obstructed / allow 之外的复杂度 | 先拿到可校准的最小闭环 |
-| `type_text` = replace；contenteditable 走 insertText | 原文未定义；GitHub 例子正好踩到 |
-| 加 `description`、host event 进度、AbortSignal、trace schema | 与现有工具契约对齐；校准依赖 trace |
-| 顺序改为 browser 先 | 见 8.14 |
+| Facts: floor 0.6, 255 unverified, no structural invariants between Nouls; token budget 64k/32k **kept as written** after re-checking the models page (round two's "32k shared" was wrong) | checked against the official pages; the original 0.5 had no source |
+| Facts: snapshot.js was already in-viewport + 6k text; `fresh()` is a scoped guard, not a fingerprint; 17 requests / 11 actions; 5.3k tok/request; open candidates; blocked excludes WAIT | checked against `snapshot.js:44-104`, `browser.py:90-98`, `agent.py:153-158`, `performance.md`. The original 1.3 built "improvements" on a wrong characterisation; the scoped guard is the core thing to port, which the original 3.7 glossed over |
+| Browser loop precondition: CDP enabled | the default path is renderer IPC + 30 s per-call timeout; "inner loop in main + 0.1 s execution" only holds under CDP |
+| `maxWallMs` | harness tool timeouts are per-call hard wall clocks; pause is the only escape hatch |
+| `done_when` reuses conditionSchema / DeviceCondition | one vocabulary already exists; do not create a second |
+| safe changed from blacklist to whitelist + origin set | the original blacklist let "Close issue", checkboxes and cross-origin links fall into safe, contradicting 8.9's "unrecognised means guarded"; cross-origin is the injection defence line |
+| `audience: 'user'` wired to grant / control confirm / secret | it was defined but had no producing path; on computer a single click that switches apps needs a grant, a natural trigger |
+| Machine signals before Jev (loading, completion, change) | the original 3.6 trusted the `still_loading` Noul first, contradicting 8.11's own principle |
+| Answer-reuse condition tightened + executed guarded takes precedence | the original "reuse on same node+label" conflicted with double-submit protection; the only hole that could cause irreversible consequences |
+| device always re-observes on resume | `requireCurrent` makes any snapshot during suspension invalidate the run |
+| run bound to `toolUseId` | parallel subagents in the same session would evict each other |
+| `field_for_<preset>` inverted; MVP matches in code first | one question per input box balloons on large forms; the reference implementation does not have this problem, it is an addition, deferred |
+| MVP drops complexity beyond select / obstructed / allow | get the minimal calibratable closed loop first |
+| `type_text` = replace; contenteditable via insertText | undefined in the original; the GitHub example hit exactly this |
+| Add `description`, host event progress, AbortSignal, trace schema | aligned with the existing tool contract; calibration depends on the trace |
+| Order changed to browser first | see 8.14 |
 
-### 8.14 为什么 browser 先于 computer
+### 8.14 Why browser before computer
 
-原文按"落地难度"把 computer 排第一：adapter 最薄、`stateId` / outcome 现成。评审指出"落地容易"≠"能校准"：阈值必须用 10–20 个可复现任务的 trace 钉死，browser 用公开站点即可，computer 受 macOS + 功能开关 + 逐 app grant 限制，样本难攒且不可复现。内核做成平台无关后，adapter 顺序只影响谁先拿到校准数据，所以 browser 先。
+The original ranked computer first by "implementation difficulty": thinnest adapter, `stateId` / outcome ready-made. Review pointed out that "easy to implement" ≠ "can be calibrated": thresholds must be pinned with traces from 10–20 reproducible tasks; browser can use public sites, while computer is constrained by macOS + feature switch + per-app grants, making samples hard to accumulate and non-reproducible. With a platform-independent kernel, adapter order only affects who gets calibration data first, so browser goes first.
 
-### 8.15 2026-09-19 范式修订：派活与判断分开（browser 先行）
+### 8.15 2026-09-19 paradigm revision: separate delegation from judgement (browser first)
 
-Finder 与 Calculator 两组 desktop 实测（10.4）暴露的不是 Jev 决策问题，而是契约问题：主模型调用 `*_run` 时**看不到页面**，它只负责派活；`allow` 白名单要求它预判哪些按钮可按——网页上链接/tab 天然安全所以很少需要，桌面上一切都是 button，结果是每个任务把要按的键抄一遍进 `allow`（Grok 还抄漏了两个）。这不是委托，是代劳。是否完成同理：8.11 让 Jev 说"完成"时还要 pause 问主模型一轮，而"这一屏是不是目标状态"恰恰是 Jev 最擅长的 noul 题。
+The two desktop runs on Finder and Calculator (10.4) exposed not a Jev decision problem but a contract problem: when the main model calls `*_run` it **cannot see the page**; it only delegates. The `allow` whitelist asked it to predict which buttons may be pressed — on the web, links/tabs are inherently safe so this is rarely needed; on the desktop everything is a button, so the result is that every task copies the keys to be pressed into `allow` (Grok even missed two). That is not delegation, it is doing the work for it. Completion likewise: 8.11 made Jev's "done" pause for one more main-model round, yet "is this screen the target state" is exactly the kind of noul question Jev is best at.
 
-决定：
+Decisions:
 
-- **删掉 `allow` / `avoid`**。接口只剩 `goal`、`presets`（主模型独有的信息：要输入的值）、可选 `done_when`。
-- **风险由 Jev 判**：每步多一个 noul 头 `next_step_risk`，只问它选中的那一步是否不可逆（提交/发送/付款/删除/改设置/离开当前站点或 app）。≥ 0.5 → `pause(risky)`，选项第一条就是该步，主模型确认即执行。代码里的标签规则（`HIGH_RISK_LABEL`、`NAV_LABEL`、submit guarded、跨域 guarded、桌面菜单命令分类）全部删除；只保留权限边界（未授权 app、设备控制权）和 password 剔除。
-- **完成由 Jev 判**：`goal_satisfied ≥ 0.9` → settle 后重观察再问一次，仍成立 → `done`，返回最终快照（主模型本来就会核对）。`done_when` 给了就提前结束，是加速器不是前提。
-- 与 8.9 的原则冲突，明知故犯：8.9 的"System 1 不该决定 System 2 是否介入"在理论上成立，但代价是主模型必须在无信息的情况下替 System 1 预判，实践上更差。误放行的代价是"做了一个不该做的动作"，由阈值和 trace 校准兜；误 done 的代价是主模型看快照后再发起一次。
-- 顺序：browser 线先落地并重跑 10.1/10.2 的两个任务确认范式，再迁移 computer / device。
+- **Drop `allow` / `avoid`**. The interface keeps only `goal`, `presets` (information only the main model has: the values to type), and optional `done_when`.
+- **Jev judges risk**: one extra noul head per step, `next_step_risk`, asking only whether the step it picked is irreversible (submit/send/pay/delete/change settings/leave the current site or app). ≥ 0.5 → `pause(risky)`, with that step as the first option; the main model confirming executes it. All label rules in code (`HIGH_RISK_LABEL`, `NAV_LABEL`, submit guarded, cross-origin guarded, desktop menu-command classification) are deleted; only permission boundaries (unauthorised app, device control) and password removal remain.
+- **Jev judges completion**: `goal_satisfied ≥ 0.9` → settle, re-observe, ask again; still holds → `done`, returning the final snapshot (the main model would verify anyway). If `done_when` is given it ends early; it is an accelerator, not a prerequisite.
+- Knowingly conflicts with 8.9's principle: 8.9's "System 1 must not decide whether System 2 steps in" holds in theory, but its cost is that the main model must predict on behalf of System 1 without information, which is worse in practice. The cost of a wrong pass-through is "an action that should not have been taken", covered by threshold and trace calibration; the cost of a wrong done is the main model looking at the snapshot and launching again.
+- Order: land the browser line first and rerun the two tasks of 10.1/10.2 to confirm the paradigm, then migrate computer / device.
 
-### 8.16 2026-09-19 WAIT：Jev 判要不要等，代码判等什么
+### 8.16 2026-09-19 WAIT: Jev decides whether to wait, code decides what to wait for
 
-npm 搜索 → 点建议项 → SPA 客户端导航（fetch ≈ 0.8 s 后才 `pushState`）。按 3.7 的 2 帧 / 50 ms settle 与 `readyState` 信号，点击后立刻观察到的仍是一张**完整的首页**，Jev 对 "Is page still loading?" 答 0.16，选 scroll，两轮后 no-progress 暂停（trace `rd4198244`）。
+npm search → click a suggestion → SPA client-side navigation (`pushState` only after a fetch ≈ 0.8 s). With 3.7's 2-frame / 50 ms settle and the `readyState` signal, what is observed immediately after the click is still a **complete home page**; Jev answers 0.16 to "Is page still loading?", picks scroll, and pauses with no-progress two rounds later (trace `rd4198244`).
 
-对照 jev-ultrafast：它在适配器层没有更聪明的等待（同款 settle），而是把 WAIT 当动作候选交给 Jev，规则写的是 "**WAIT only when the needed control is absent/disabled**, or submitted results are still loading"（`questions.py:10`），然后固定 sleep 100 ms 再问一遍——Google Flights 记录里 17 请求 / 11 动作有一部分就是这么来的。
+Compare jev-ultrafast: it has no smarter waiting at the adapter layer (same settle), but hands WAIT to Jev as an action candidate with the rule "**WAIT only when the needed control is absent/disabled**, or submitted results are still loading" (`questions.py:10`), then sleeps a fixed 100 ms and asks again — part of the 17 requests / 11 actions in the Google Flights record comes from this.
 
-决定：
+Decisions:
 
-- **要不要等由 Jev 判**：`still_loading` 改成 jev-ultrafast 的问法（目标需要的控件不在 / 已提交的结果没出来），它问的是页面上可见的事实，不是网络状态。
-- **等什么、等多久由代码判**：Jev 说等，含义就是"我要的还没出现"，代码要等的就是页面变化。browser 在页内挂 MutationObserver（100 ms 安静后重算 marker，另有 250 ms 兜底 tick），marker 与 **Jev 看到的那份**比较（决策与等待之间已发生的变化立即命中），变了再等两帧返回；整页导航销毁 context 视为变化。computer / device 走 loop 里的 observe + changed 轮询兜底。
-- **不让 Jev 选时长**：时长不是页面上可观察的事实；事件驱动下短上限也省不了时间，只多一次 Jev 往返。
-- **上限递增 1 / 2 / 4 s，连续 ≤ 3**：上限只在页面不变时付代价；连续几轮 Jev 独立重看后仍说"没出现"，可信度递增，就给更长的耐心；三轮后必须选动作。最坏 7 s + 3 次 Jev；npm 那种 0.8 s 导航只多付 1 次。
-- 等待结束与 `changed_page` 用同一个 marker，由构造保证两者一致。
-- 未覆盖：页面完全静止但网络在等（DOM 不动）只能等到上限；需要时再加页内 in-flight 请求计数（Playwright networkidle 思路），是加法不是替代。
+- **Jev decides whether to wait**: `still_loading` is rephrased the jev-ultrafast way (the control the goal needs is absent / submitted results have not appeared); it asks about visible facts on the page, not network state.
+- **Code decides what to wait for and for how long**: when Jev says wait, it means "what I need has not appeared", so what code waits for is a page change. Browser installs an in-page MutationObserver (marker recomputed after 100 ms of quiet, with a 250 ms fallback tick), compares the marker against **the one Jev saw** (changes that already happened between decision and wait hit immediately), and returns two frames after a change; a full-page navigation destroying the context counts as a change. computer / device fall back to observe + changed polling in the loop.
+- **Jev does not pick the duration**: duration is not an observable fact on the page; under event-driven waiting a short cap saves no time and only adds a Jev round trip.
+- **Cap grows 1 / 2 / 4 s, consecutive ≤ 3**: the cap only costs when the page does not change; when Jev independently re-looks over several rounds and still says "not there", credibility grows, so grant more patience; after three rounds an action must be chosen. Worst case 7 s + 3 Jev calls; an npm-style 0.8 s navigation costs only one extra call.
+- Wait completion and `changed_page` use the same marker, guaranteed consistent by construction.
+- Not covered: a page that is completely still while the network is waiting (DOM unchanged) can only wait to the cap; when needed, add an in-page in-flight request counter (the Playwright networkidle idea) — an addition, not a replacement.
 
-### 8.17 2026-09-19 WebVoyager 抽样：点击不设门槛、动作后等变化、折叠导航标 Expand
+### 8.17 2026-09-19 WebVoyager sampling: no click threshold, wait for change after actions, label collapsed navigation as Expand
 
-用 5 个真实站点（Cambridge Dictionary、arXiv、Hugging Face、GitHub、Apple）加 Wikipedia / npm 回归抽样，全部 Grok 4.6 / high、无 `done_when`、dev 面板 748 px（含窄视口/汉堡布局，故意不放大）。首轮暴露三类机制缺口（不是站点特例）：
+Sampled 5 real sites (Cambridge Dictionary, arXiv, Hugging Face, GitHub, Apple) plus Wikipedia / npm regressions, all Grok 4.6 / high, no `done_when`, dev panel 748 px (including narrow-viewport/hamburger layouts, deliberately not enlarged). The first round exposed three mechanism gaps (not site specifics):
 
-1. **动作后快照太早**（第三次撞到）：点击触发的菜单/下拉/SPA 导航在 2 帧 / 50 ms 后还没出现，`changed=False`，Jev 下一步看到同一页。→ `settleAfter` 改成事件驱动：等页面相对**动作前** marker 变化（MutationObserver + tick），上限 500 ms，变了再等两帧；combobox 保留"等可见 option"。与 8.16 的 WAIT 共用一个 `changeWaitExpr`。直连探针：Apple Menu 点击后 15 ms 即测得 12→16 元素。
-2. **低风险点击被置信门槛拦**：arXiv 首页正确的 "Search" 链接 Jev 只给 0.36、HF 的 Tasks 0.49，都被 `read` 0.6 拦成 `uncertain` pause。风险已由 `next_step_risk` 单独判（两例 ≈0.1），点错安全元素只赔一步重观察，pause 却赔主模型一整轮。→ 删掉 click 的置信门槛（`THRESHOLDS.read`），只保留 `next_step_risk ≥ 0.5` 的 risky pause 和 type 的 0.7 门槛。jev-ultrafast 同样从不设门槛。
-3. **折叠导航 Jev 认不出**：GitHub / Apple 窄布局把搜索藏在 `aria-expanded=false` 的汉堡后。→ 候选标签按 8.15 "把动作写进标签"的规律，`expanded=false` 的按钮显示为 "Expand <label>"（`clickVerb`），并加一条 RULE：控件不在页面时先展开折叠导航再滚动或等待。
+1. **Post-action snapshot too early** (hit for the third time): the menu/dropdown/SPA navigation triggered by a click has not appeared after 2 frames / 50 ms, `changed=False`, Jev sees the same page next step. → `settleAfter` becomes event-driven: wait for the page to change relative to the **pre-action** marker (MutationObserver + tick), cap 500 ms, then two more frames; combobox keeps "wait for a visible option". Shares one `changeWaitExpr` with 8.16's WAIT. Direct probe: after clicking Apple's Menu, 12→16 elements measured within 15 ms.
+2. **Low-risk clicks blocked by the confidence threshold**: Jev gives the correct "Search" link on arXiv's home page only 0.36 and HF's Tasks 0.49; both were blocked by `read` 0.6 into an `uncertain` pause. Risk is already judged separately by `next_step_risk` (≈0.1 in both cases); clicking a wrong safe element costs one re-observation step, whereas a pause costs a full main-model round. → Remove the click confidence threshold (`THRESHOLDS.read`); keep only the `next_step_risk ≥ 0.5` risky pause and the 0.7 threshold for type. jev-ultrafast likewise never sets a threshold.
+3. **Jev does not recognise collapsed navigation**: GitHub / Apple narrow layouts hide search behind a hamburger with `aria-expanded=false`. → Following 8.15's "write the action into the label" pattern, buttons with `expanded=false` are shown as "Expand <label>" (`clickVerb`), plus a RULE: when the control is not on the page, expand collapsed navigation first, before scrolling or waiting.
 
-### 8.18 2026-09-19 根因：跨边界比较 marker，settle 与 WAIT 从未真正等待
+### 8.18 2026-09-19 root cause: comparing markers across a boundary — settle and WAIT never actually waited
 
-8.16 / 8.17 的等待全部是空转，直到 apple.com 的"点了 Menu 却报没变化"被追到底。诊断顺序：先把 settle 的结论写进 trace（`settled`），再让它报出差异的 marker 字段，最后把差异的元素**以原始字符串**记录——真相才出现：
+All the waiting in 8.16 / 8.17 was spinning idle, until apple.com's "clicked Menu but reported no change" was chased to the bottom. Diagnostic order: first write settle's conclusion into the trace (`settled`), then have it report which marker fields differ, and finally record the differing elements **as raw strings** — only then did the truth appear:
 
 ```
-was: {"disabled":…,"editable":…,"href":…,"label":"Apple","node":1,…}   ← 字母序
-now: {"node":1,"role":"link","label":"Apple","value":"",…}              ← 插入序
+was: {"disabled":…,"editable":…,"href":…,"label":"Apple","node":1,…}   ← alphabetical order
+now: {"node":1,"role":"link","label":"Apple","value":"",…}              ← insertion order
 ```
 
-同一份数据，键序不同。Electron 的 `webContents.debugger` 在 `returnByValue` 时按字母序重排对象键，而 settle 比较的是 **Node 侧序列化的字符串**与**页面内序列化的字符串**，于是 `JSON.stringify(s.marker) !== seen` 恒为真：每个动作后 settle 立刻返回"已变化"，Jev 的 WAIT 也立刻返回（arXiv trace 里的 `wait: 7` ms 即是）。
+Same data, different key order. Electron's `webContents.debugger` reorders object keys alphabetically under `returnByValue`, and settle compared the **string serialised on the Node side** with the **string serialised in the page**, so `JSON.stringify(s.marker) !== seen` was always true: after every action settle returned "changed" immediately, and Jev's WAIT likewise returned immediately (the `wait: 7` ms in the arXiv trace is exactly this).
 
-这个 bug 能长期隐藏，是因为 `deps.changed` 与 `isFresh` 比较的两侧都来自 CDP，排序一致因而正确；只有 settle / WAIT 跨了边界。**用裸 WebSocket 直连 CDP 的探针复现不出来**（那条路径保留键序），一度把排查引向"水合竞态"等错误假设。
+The bug could hide for so long because both sides of `deps.changed` and `isFresh` come from CDP, with consistent ordering and therefore correct results; only settle / WAIT crossed the boundary. **A probe using a bare WebSocket directly to CDP could not reproduce it** (that path preserves key order), which for a while steered the investigation toward wrong hypotheses like "hydration races".
 
-修法：不跨边界比字符串，在页面内对两侧做同一套递归键排序后再比。
+Fix: do not compare strings across the boundary; apply the same recursive key sort to both sides inside the page, then compare.
 
-同时修正的两处（都由 Apple 的真实时序逼出）：
+Two more fixes made at the same time (both forced by Apple's real timing):
 
-- **settle 等的是"可观察状态稳定"，不是 DOM 安静**。Apple 的菜单用 CSS 过渡把条目显现出来，**不产生 mutation**，以 DOM 安静为准会在展开到一半时返回（同一份代码两次跑出 16 与 39 个元素的差异）。改为：差异成立后持续采样 marker，直到它 200 ms 不变，或 `graceMs` 1000 ms 用尽；上限 2000 ms。
-- **滚动之后没有 settle**。`execute()` 里只有 click / type 调 settle，而滚轮是平滑动画，观察发生在滚动落地之前，于是每次滚动都报"无变化"，三次即触发 no-progress——但页面其实一直在滚（探针读到 `scrollY` 已达 6346）。
+- **Settle waits for "observable state stable", not for DOM quiet**. Apple's menu reveals its items with CSS transitions, which **produce no mutations**; using DOM quiet as the criterion returns halfway through the expansion (the same code produced 16 vs 39 elements on two runs). Changed to: once a difference is established, keep sampling the marker until it is unchanged for 200 ms, or `graceMs` 1000 ms is exhausted; cap 2000 ms.
+- **No settle after scrolling**. In `execute()` only click / type called settle, while the wheel is a smooth animation and the observation happened before the scroll landed, so every scroll reported "no change", and three of them triggered no-progress — yet the page had been scrolling all along (the probe read `scrollY` at 6346).
 
-### 8.19 候选标签要说明动作会揭示什么
+### 8.19 Candidate labels must say what the action will reveal
 
-GitHub 首页在 748 px 下把搜索框收进 "Toggle navigation"。标成 `Expand Toggle navigation` 后 Jev 仍只给 0.16，选择滚动；Apple 的同类控件因为 aria-label 字面写着 "Local Nav Open Menu" 而拿到 0.74。差别在标签文字，不在 `expanded` 属性——Jev 无法从"这个控件可展开"推出"我要的搜索框在里面"。
+GitHub's home page at 748 px tucks the search box into "Toggle navigation". Labelled `Expand Toggle navigation`, Jev still gives it only 0.16 and chooses to scroll; Apple's equivalent control gets 0.74 because its aria-label literally says "Local Nav Open Menu". The difference is in the label text, not the `expanded` attribute — Jev cannot infer "the search box I need is inside" from "this control is expandable".
 
-把结果写进标签（`Expand <label> to reveal controls that are not on the page right now`），同一控件升到 0.53–0.64，GitHub 全程走通。这是 8.15 "把动作写进标签"的延伸：**属性描述状态，标签描述后果，Jev 对后者反应好得多**。
+Writing the outcome into the label (`Expand <label> to reveal controls that are not on the page right now`) raises the same control to 0.53–0.64, and GitHub goes through end to end. This extends 8.15's "write the action into the label": **attributes describe state, labels describe consequences, and Jev responds far better to the latter**.
 
-### 8.20 2026-09-19 wait 范式移植到 computer / device：只继承了一半
+### 8.20 2026-09-19 porting the wait paradigm to computer / device: only half was inherited
 
-8.16–8.18 的 wait 工作分三层，只有第一层在共享 `loop.ts` 里。移植时发现 computer / device 只拿到了那一层：
+The wait work of 8.16–8.18 has three layers, and only the first lives in the shared `loop.ts`. Porting revealed that computer / device got only that layer:
 
-| 机制 | 归属 | browser | computer（移植前） | device（移植前） |
+| Mechanism | Owner | browser | computer (before port) | device (before port) |
 |---|---|---|---|---|
-| Jev 判要不要等、1/2/4 s 阶梯、≤3 连续、no-progress 兜底 | 共享 loop | ✓ | ✓ | ✓ |
-| `waitForChange`（等到界面真变） | 适配器 | ✓ 页内观察态对比 | ✗ | ✗ |
-| `settle`（动作后等稳定） | 适配器 | ✓ 2 s 稳定 + 1 s grace | ✗ no-op | ✗ no-op（**但下层已做**） |
-| `loading` 机器信号 | 适配器 | ✓ `readyState` | ✗ 硬编码 `false` | ✓ `!settled` |
-| `waitReady` | 适配器 | ✓ 轮询 readyState | ✗ 恒 `true` | ✗ 恒 `true` |
+| Jev decides whether to wait, 1/2/4 s ladder, ≤3 consecutive, no-progress fallback | shared loop | ✓ | ✓ | ✓ |
+| `waitForChange` (wait until the UI really changes) | adapter | ✓ in-page observed-state comparison | ✗ | ✗ |
+| `settle` (wait for stability after an action) | adapter | ✓ 2 s stable + 1 s grace | ✗ no-op | ✗ no-op (**but done at a lower layer**) |
+| `loading` machine signal | adapter | ✓ `readyState` | ✗ hard-coded `false` | ✓ `!settled` |
+| `waitReady` | adapter | ✓ polls readyState | ✗ always `true` | ✗ always `true` |
 
-**缺陷一：wait 的轮询兜底对这两个平台是死的。** 没有 `waitForChange` dep 时 loop 退化成每 150 ms 调一次 `changed(page, observe())`。但 computer / device 的 `changed` 只读 `after.outcome`，而 `outcome` 只在 `act()` 的 successor 上赋值，`observe()` 产生的页面没有它 —— 恒返回 `null`，于是**每次 wait 都等满 1/2/4 s**。参数写成 `_before` 就是信号：它根本没在做前后对比。与 8.18 同类：判据取错了对象。
+**Defect one: the wait polling fallback is dead on these two platforms.** Without a `waitForChange` dep, the loop degrades to calling `changed(page, observe())` every 150 ms. But computer / device `changed` only reads `after.outcome`, and `outcome` is only assigned on the successor of `act()`; a page produced by `observe()` does not have it — so it always returns `null`, and **every wait runs the full 1/2/4 s**. The parameter being named `_before` is the tell: it was never doing a before/after comparison. Same family as 8.18: the criterion was taken from the wrong object.
 
-**缺陷二：computer 点击后不等任何东西。** `settle` 是 no-op，理由写的是"`service.act` 已验证 successor"。但 `act` 只在传了 `expect` 时才轮询等待，而 `planNodeAction` 只给 `setText` 配了 expect —— click / scroll / enter 发完输入立刻 `look()` 一次就返回。桌面的菜单展开、sheet 下拉比网页的 CSS 过渡更普遍，正是 8.18 那个"16 vs 39 个元素"的同类。
+**Defect two: computer waits for nothing after a click.** `settle` is a no-op, justified as "`service.act` already verified the successor". But `act` only polls when `expect` is passed, and `planNodeAction` only attaches an expect to `setText` — click / scroll / enter dispatch the input, `look()` once, and return. Desktop menu expansion and sheet dropdowns are more common than web CSS transitions; this is exactly the "16 vs 39 elements" case of 8.18.
 
-**device 不需要补 settle。** `android-backend.observe()` 内部按截屏哈希 settle（2.5 s 上限，60 ms 采样），`runAct` 的 successor 也走同一条路 —— 交给它的每个观察都已经停稳了。原注释是准确的，盲目叠一层只会把每步的墙钟再翻一倍。
+**Device does not need an extra settle.** `android-backend.observe()` settles internally on screenshot hash (2.5 s cap, 60 ms sampling), and `runAct`'s successor takes the same path — every observation handed over has already come to rest. The original comment was accurate; blindly stacking another layer would only double the wall clock per step.
 
-移植结果（`jev/settle.ts`）：
+Port result (`jev/settle.ts`):
 
-- 观察签名取 **loop 真正读的字段**（elements 的 node/role/label/value/checked/selected/expanded/disabled + title），不是平台原始树。computer 现成的 `signature: JSON.stringify(outline)` 不能用 —— 代码里早有注释说它会在两次读之间因焦点标志churn，拿它判稳定永远判不出来。
-- 采样节奏按成本分档：browser 在页内 30 ms tick，一次 CDP 往返；computer 每次采样是一次跨进程 AX 读，用 150 ms / 总预算 1500 ms / grace 600 ms（browser 是 2000 / 1000）；device 的 observe 自带 settle，只用 25 ms 下限兜底。
-- **下限不能是 0**。让循环推进完全依赖 observe 耗时，一个立刻返回的读就会空转，deadline 永远到不了。
-- computer 的 settle 把稳定后的观察写回 successor，**并保留 act 的 outcome** —— 否则 `changed` 读不到动作的结论，每步都报 "change unknown"。
-- computer 的 `loading` 保持 `false`：AX 没有 `readyState` 的等价物，稳定性由 settle 负责，这是诚实的而不是漏接。
+- The observation signature takes **the fields the loop actually reads** (elements' node/role/label/value/checked/selected/expanded/disabled + title), not the platform's raw tree. Computer's ready-made `signature: JSON.stringify(outline)` cannot be used — a comment in the code already says it churns between two reads because of focus flags; it would never register as stable.
+- Sampling cadence tiered by cost: browser ticks in-page at 30 ms, one CDP round trip; each computer sample is a cross-process AX read, so 150 ms / total budget 1500 ms / grace 600 ms (browser is 2000 / 1000); device's observe settles on its own, so only a 25 ms floor as a fallback.
+- **The floor cannot be 0.** If loop progress depends entirely on observe duration, an instantly returning read spins idle and the deadline never arrives.
+- Computer's settle writes the stabilised observation back to the successor **and preserves the act's outcome** — otherwise `changed` cannot read the action's conclusion and every step reports "change unknown".
+- Computer's `loading` stays `false`: AX has no equivalent of `readyState`; stability is settle's job. This is honest rather than a missed hookup.
 
-**实测（Calculator，sin(pi/6)，Grok 4.6 / high）暴露了签名的第一版漏洞。** 7 步里有 3 步（Pi、Divide、6）报 `settled: unchanged`：按这些键**只动显示屏**，而显示屏是 static label——所有元素的 role/label/value 原封不动，变化只出现在 `page.text` 里（`sine (, π ÷ 6, implicit )`）。第一版签名把 text 排除在外，理由是"桌面 outline 的 text 会 churn"；trace 说这个理由不成立，而单元测试当时断言的是**我的假设**而不是平台的事实。把 text 纳入后重跑，7/7 步都是 `settled: changed ['observation']`，显示读到 `zero point five`。
+**A real run (Calculator, sin(pi/6), Grok 4.6 / high) exposed the first version's signature hole.** 3 of 7 steps (Pi, Divide, 6) reported `settled: unchanged`: pressing these keys **only changes the display**, and the display is a static label — every element's role/label/value stays identical, and the change appears only in `page.text` (`sine (, π ÷ 6, implicit )`). The first signature excluded text, on the grounds that "desktop outline text churns"; the trace says that reason does not hold, and the unit test at the time asserted **my assumption** rather than the platform's fact. With text included and rerun, 7/7 steps are `settled: changed ['observation']`, and the display reads `zero point five`.
 
-教训与 8.18 同源：**判据必须对着被判断的东西取**。8.18 是比错了序列化边界，这次是取了一个不包含目标信号的字段集，两次都不报错，只是安静地永远给同一个答案。
+The lesson has the same root as 8.18: **the criterion must be taken from the thing being judged**. 8.18 compared across the wrong serialisation boundary; this time a field set that did not contain the target signal was chosen. Neither errors out; both just quietly give the same answer forever.
 
-顺带暴露一个**不属于 wait 范围**的问题：`checkDone` 把 `done_when` 绑在第一次观察的 stateId 上（`conditionStateId ??= current.stateId`），而 Calculator 任务必须先 Basic → Scientific，位置性 ref 随之失效——结果算对了（`Edit field = zero point five`）但完成条件永不满足，run 多走一次 scroll 再 no-progress 暂停，由主模型 abort 收尾。这是 10.4 记的 Calculator 反例的另一个侧面，留待单独处理。
+It also incidentally exposed a problem **outside wait's scope**: `checkDone` binds `done_when` to the stateId of the first observation (`conditionStateId ??= current.stateId`), while the Calculator task must first go Basic → Scientific, invalidating positional refs — the result was correct (`Edit field = zero point five`) but the completion condition never held, so the run took one more scroll then paused with no-progress, and the main model aborted to wrap up. This is another facet of the Calculator counterexample recorded in 10.4, left for separate handling.
 
-### 8.21 2026-09-19 `done_when` 不该否决 Jev 的完成判定
+### 8.21 2026-09-19 `done_when` must not veto Jev's completion verdict
 
-8.15 把完成判定交给了 Jev，但 policy 里两条 done 规则都写着 `&& !doneWhenGiven`——**只要调用方传了 `done_when`，Jev 的判断就完全不采纳**。注释说的是"done_when 是调用方更严格的定义"，实现出来却是"给了条件就只认条件"。
+8.15 handed the completion judgement to Jev, but both done rules in the policy read `&& !doneWhenGiven` — **as soon as the caller passes `done_when`, Jev's judgement is entirely ignored**. The comment says "done_when is the caller's stricter definition", but the implementation says "if a condition is given, only the condition counts".
 
-Calculator 实测把这个矛盾逼了出来。第 8 步 Jev 给 `goal_satisfied 0.83` + `action: none_useful 0.97`（显示已是 `zero point five`，正是 done_when 要的值），两条 done 规则都因 `doneWhenGiven` 跳过，落到 `noneUseful()` → 滚动 → 第 9 步再 none_useful → no-progress 暂停，由主模型 abort 收尾。**任务早就做完了，run 却在原地打转。**
+The Calculator run forced this contradiction into the open. At step 8 Jev gave `goal_satisfied 0.83` + `action: none_useful 0.97` (the display was already `zero point five`, exactly the value done_when wanted); both done rules were skipped because of `doneWhenGiven`, falling through to `noneUseful()` → scroll → step 9 none_useful again → no-progress pause, wrapped up by the main model aborting. **The task had long been finished, yet the run spun in place.**
 
-而 `done_when` 本身永远不会命中：它的 ref 绑在**第一次观察**的 state 上（`conditionStateId ??= current.stateId`），这个任务必须先 Basic → Scientific，树重排后 `resolveConditionTarget` 按 role + bounds 距离重定位失败。两条完成路径同时失效，于是谁也收不了尾。
+And `done_when` itself could never hit: its ref is bound to the state of the **first observation** (`conditionStateId ??= current.stateId`); this task must first go Basic → Scientific, and after the tree reshuffles `resolveConditionTarget` fails to relocate by role + bounds distance. Both completion paths fail at once, so neither can wrap up.
 
-**这不是 computer 特有的。** 同一条门控对三个平台一视同仁；browser 没暴露，只因为 10.6 的抽样 prompt 一律写着"不要传 done_when，让循环自己判完成"。
+**This is not computer-specific.** The same gate treats all three platforms alike; browser did not expose it only because the sampling prompts in 10.6 all said "do not pass done_when, let the loop judge completion itself".
 
-修法：`doneWhenGiven` 原本承载了两个意思——"调用方给了条件"和"调用方在 goal_satisfied 暂停后答了继续"。拆成两个参数，只有后者（`satisfiedOverruled`）继续否决完成判定；前者只影响措辞。`done_when` 仍是快速路径（每次 ask 之前先查，命中就立刻结束，省一次 Jev 请求），但不再是唯一裁判。走到 policy 就说明它没命中，所以完成理由里如实写上 `(done_when never matched)`，调用方自己判断要不要接受。
+Fix: `doneWhenGiven` carried two meanings — "the caller gave a condition" and "the caller answered continue after a goal_satisfied pause". Split into two parameters; only the latter (`satisfiedOverruled`) continues to veto the completion verdict; the former only affects wording. `done_when` remains the fast path (checked before every ask; hit means immediate end, saving one Jev request) but is no longer the sole judge. Reaching the policy means it did not hit, so the completion reason honestly states `(done_when never matched)`, and the caller decides whether to accept.
 
-修复后同一任务：8 步、22.6 s、`status: done`、`why: goal_satisfied 0.80 (done_when never matched)`，最终快照 `Edit field = zero point five`。
+Same task after the fix: 8 steps, 22.6 s, `status: done`, `why: goal_satisfied 0.80 (done_when never matched)`, final snapshot `Edit field = zero point five`.
 
-一个参数同时表达两件事，是这类缺陷的温床——它让"给了条件"悄悄继承了"用户说还没完"的否决权。
+One parameter expressing two things is a breeding ground for this class of defect — it let "a condition was given" quietly inherit the veto power of "the user said it's not done yet".
 
-## 9. 非目标
+## 9. Non-goals
 
-- 不替换现有 `*_snapshot` / `*_act` / `*_query`；`*_run` 是并列的 goal 级工具，主模型按工具 description 里的路由指引选
-- 不支持 select（MVP）、drag、hover、组合键、上传、新标签页、嵌套滚动、canvas
-- 不做主进程内文本生成
-- 不在 pause 期间锁定 tab / root / device
-- 不把 Jev 的 DONE / 任何 Noul 当作完成证据
+- Does not replace the existing `*_snapshot` / `*_act` / `*_query`; `*_run` is a parallel goal-level tool, chosen by the main model according to the routing guidance in the tool description
+- No support for select (MVP), drag, hover, key combos, upload, new tabs, nested scrolling, canvas
+- No in-main-process text generation
+- Does not lock the tab / root / device during pause
+- Does not treat Jev's DONE / any Noul as evidence of completion
 
-## 10. 实现状态（2026-09-19）
+## 10. Implementation status (2026-09-19)
 
-browser、computer 和 device 线 MVP 已落地。三条线共用一个 `FastRun`，代码在 `apps/desktop/src/main/jev/`：
+The browser, computer and device line MVPs have landed. All three lines share one `FastRun`; the code lives in `apps/desktop/src/main/jev/`:
 
-| 文件 | 对应章节 |
+| File | Sections |
 | --- | --- |
-| `typesafe-client.ts` | 1.1 · 3.4（预算校验、答案校验、钉 `jev-1.13.0`、429/529 退避、AbortSignal） |
-| `browser-page.ts` | 3.7 browser adapter：移植 `snapshot.js`（`window.__soneJev` 节点身份、scoped `guard` / `pageKey` / `marker`、视口内文本 ≤ 4k、≤ 250 元素）、CDP click / replace-type（select-all + `Input.insertText`，contenteditable 可用）/ 滚动、执行前 hit-test、执行后 rAF settle、`readyState` 机器加载信号、`waitForPageChange`（MutationObserver + 250 ms 兜底 tick 重算 marker，与 Jev 看到的比较，变了再等两帧）、`done_when` 机器判定；stale 统一抛 loop 的 `StaleObservation` |
-| `action-space.ts` | 3.5：所有可操作元素为候选（password 剔除）、`open:` / `submit:` 候选、历史规则（未变页面前不重复）；风险由 Jev 的 `next_step_risk` 判（8.15） |
-| `questions.ts` | 3.4：`goal_satisfied` / `still_loading` Noul、`action` / `click_target` / `type_text_target` Choice、每个 preset 一个 `field_for_<key>` |
-| `policy.ts` | 3.6 决策表与阈值（target 头概率：读 0.6 / 写 0.7；preset 0.7；loading 0.7；satisfied 0.85。`action` 头只取 argmax，不设门槛，见 10.1） |
-| `loop.ts` | 3.3 / 3.6 / 3.8：`FastRun` 协程，pause / resume、答案复用只在目标 guard 未变时、guarded 已执行记录、连续 3 步无变化 → no-progress、`maxSteps` + `maxWallMs`（默认 45 s，低于 Codex 60 s 工具超时）→ budget、focus guard 在段首/段尾、AbortSignal 贯穿 |
-| `run-store.ts` | 挂起的 run：`runId` → run，绑定 session，TTL 5 min |
-| `trace.ts` | 3.9：`userData/jev-traces/<runId>.jsonl`，每步脱敏 request state、全部概率及前三选项、实际 usage、延迟、决策、stale |
-| `jev-api-key.ts` | TypeSafe key：`app_meta` 表 + `safeStorage` 加密，从不进 `AppSettings` |
-| `device-page.ts` / `device-run-tool.ts` | 3.7 device adapter：现有控制权校验、当前 snapshot / semantic tree、tap / setText / swipe、原生 device Condition；无 tree 暂停、resume 总是重新观察、独立 device_release 清理 |
-| `computer-page.ts` / `computer-run-tool.ts` | 3.7 computer adapter：semantic outline / capabilities / state epoch、原生 act 与 Condition、授权和 tier 门控、resume 重新观察；继承共享 pause / resume 协议 |
-| `browser-run-tool.ts` | `browser_run` 契约与门控（`jevFastLoopEnabled` + `cdpEnabled` + 有 key，执行时判定） |
+| `typesafe-client.ts` | 1.1 · 3.4 (budget validation, answer validation, pin `jev-1.13.0`, 429/529 backoff, AbortSignal) |
+| `browser-page.ts` | 3.7 browser adapter: ported `snapshot.js` (`window.__soneJev` node identity, scoped `guard` / `pageKey` / `marker`, in-viewport text ≤ 4k, ≤ 250 elements), CDP click / replace-type (select-all + `Input.insertText`, works for contenteditable) / scroll, pre-execution hit-test, post-execution rAF settle, `readyState` machine loading signal, `waitForPageChange` (MutationObserver + 250 ms fallback tick recomputing the marker, compared against what Jev saw, then two more frames after a change), `done_when` machine check; stale uniformly throws the loop's `StaleObservation` |
+| `action-space.ts` | 3.5: every operable element is a candidate (password removed), `open:` / `submit:` candidates, history rule (no repeat before the page changes); risk judged by Jev's `next_step_risk` (8.15) |
+| `questions.ts` | 3.4: `goal_satisfied` / `still_loading` Nouls, `action` / `click_target` / `type_text_target` Choices, one `field_for_<key>` per preset |
+| `policy.ts` | 3.6 decision table and thresholds (target-head probability: read 0.6 / write 0.7; preset 0.7; loading 0.7; satisfied 0.85. The `action` head takes only the argmax with no threshold, see 10.1) |
+| `loop.ts` | 3.3 / 3.6 / 3.8: `FastRun` coroutine, pause / resume, answer reuse only when the target guard is unchanged, executed-guarded record, 3 consecutive unchanged steps → no-progress, `maxSteps` + `maxWallMs` (default 45 s, below Codex's 60 s tool timeout) → budget, focus guard at segment start/end, AbortSignal throughout |
+| `run-store.ts` | suspended runs: `runId` → run, bound to session, TTL 5 min |
+| `trace.ts` | 3.9: `userData/jev-traces/<runId>.jsonl`, per step the redacted request state, all probabilities and top three options, actual usage, latency, decision, stale |
+| `jev-api-key.ts` | TypeSafe key: `app_meta` table + `safeStorage` encryption, never enters `AppSettings` |
+| `device-page.ts` / `device-run-tool.ts` | 3.7 device adapter: existing control check, current snapshot / semantic tree, tap / setText / swipe, native device Condition; pause when no tree, always re-observe on resume, separate device_release cleanup |
+| `computer-page.ts` / `computer-run-tool.ts` | 3.7 computer adapter: semantic outline / capabilities / state epoch, native act and Condition, grant and tier gating, re-observe on resume; inherits the shared pause / resume protocol |
+| `browser-run-tool.ts` | `browser_run` contract and gating (`jevFastLoopEnabled` + `cdpEnabled` + key present, checked at execution time) |
 
-接线：`browser_run` 同时登记在 compact 与 legacy 两个 surface、`BROWSER_TOOL_NAMES`（host-owned 放行）、远程节点 host-action 目录、chat ToolBlock（`run` op）。设置：Settings → Browser → Experimental Tools → "Jev Fast Inner Loop"，开启时若无 key 先弹 key 表单，key 存好才置位。
+Wiring: `browser_run` is registered on both the compact and legacy surfaces, in `BROWSER_TOOL_NAMES` (host-owned auto-allow), the remote-node host-action catalog, and the chat ToolBlock (`run` op). Setting: Settings → Browser → Experimental Tools → "Jev Fast Inner Loop"; when enabled without a key, the key form is shown first and the flag is only set after the key is saved.
 
-### 10.1 首次实测对比（2026-09-19，Claude harness，dev 版）
+### 10.1 First measured comparison (2026-09-19, Claude harness, dev build)
 
-任务：从 Wikipedia 首页搜索 "TypeScript"，打开条目，再打开 "View history"，回复最终 URL。两组同一 prompt，只换一句工具指引（"Prefer browser_run" vs "step by step, do not use browser_run"）。
+Task: from the Wikipedia home page search "TypeScript", open the article, then open "View history", and reply with the final URL. Two groups with the same prompt, differing only in one line of tool guidance ("Prefer browser_run" vs "step by step, do not use browser_run").
 
-| | 逐步（browser_snapshot / act） | browser_run（Jev） |
+| | Step by step (browser_snapshot / act) | browser_run (Jev) |
 | --- | --- | --- |
-| 主模型工具调用 | 14（1 ToolSearch + 13 浏览器） | 6（2 ToolSearch + 1 无 tab 报错 + 1 开 tab + 1 发起 + 1 回答）|
-| 墙钟 | 43.4 s | 27.8 s |
-| 主模型花费 / 上下文 | $0.134 / 51.6k | $0.056 / 35.6k |
-| Jev 请求 | — | 5 步 ≈ 9.6k token ≈ $0.0004，中位 ≈ 390 ms/步（首步 1.1 s 含冷启动） |
-| 内循环动作 | — | Click Search → Type preset → Click 建议项 → Click View history；1 次 pause（首页窄视口下 "Search" 链接概率 0.54 < 0.6） |
-| 结果 | 正确，但模型放弃了搜索框，直接 navigate 到 `index.php?search=TypeScript` | 正确，全程走页面 UI |
+| Main-model tool calls | 14 (1 ToolSearch + 13 browser) | 6 (2 ToolSearch + 1 no-tab error + 1 open tab + 1 launch + 1 answer) |
+| Wall time | 43.4 s | 27.8 s |
+| Main-model cost / context | $0.134 / 51.6k | $0.056 / 35.6k |
+| Jev requests | — | 5 steps ≈ 9.6k tokens ≈ $0.0004, median ≈ 390 ms/step (first step 1.1 s including cold start) |
+| Inner-loop actions | — | Click Search → Type preset → Click suggestion → Click View history; 1 pause (the "Search" link on the narrow-viewport home page at probability 0.54 < 0.6) |
+| Result | correct, but the model gave up on the search box and navigated directly to `index.php?search=TypeScript` | correct, through the page UI throughout |
 
-修正前的第一次 Jev 运行是反例：64.9 s、17 次调用、$0.183——四次 pause 后主模型 abort 改走 browser_act。三个根因都已修：(1) 用 `action` 头的 confidence 做写入门槛（4 选 1 的 confidence 天然只有 0.4 左右）→ 改为只按 target 头概率门控；(2) preset 的 `field` 提示按整句子串匹配 "the search box" 匹配不上 "Search Wikipedia" → 改按词元重叠，且 pause 时把已匹配的 preset 随 pending 带到 resume；(3) Wikipedia 搜索框在加载后从 `searchbox` 升级成 `combobox`，scoped guard 变化导致答案被丢弃 → resume 时 guard 不同则重新观察，同 node + 同 label 仍视为同一目标。
+The first Jev run before the fixes was a counterexample: 64.9 s, 17 calls, $0.183 — after four pauses the main model aborted and switched to browser_act. All three root causes are fixed: (1) using the `action` head's confidence as the write threshold (a 1-of-4 confidence is naturally only around 0.4) → gate only on the target head's probability; (2) the preset `field` hint matched as a whole substring, "the search box" not matching "Search Wikipedia" → match by token overlap, and carry the already-matched preset along with pending into resume; (3) the Wikipedia search box upgrades from `searchbox` to `combobox` after load, and the scoped guard change caused the answer to be discarded → on resume, re-observe if the guard differs, and treat same node + same label as the same target.
 
-### 10.2 两个任务 × Opus 汇总（2026-09-19，dev 版，Claude harness，主模型 opus）
+### 10.2 Two tasks × Opus summary (2026-09-19, dev build, Claude harness, main model opus)
 
-| 任务 | 模式 | 主模型工具调用 | 墙钟 | 主模型花费 | 上下文 | Jev |
+| Task | Mode | Main-model tool calls | Wall time | Main-model cost | Context | Jev |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
-| 1 Wikipedia：搜 TypeScript → 条目 → View history | 逐步 | 13 | 41.3 s | $0.464 | 37.6k | — |
-| | browser_run | **5**（rename + 2 ToolSearch + 开 tab + 1 次 run，**0 pause**） | **27.4 s** | **$0.266** | 35.5k | 6 req · 16.0k tok · $0.0007 · 内循环 3.3 s |
-| 2 npm：搜 zod → 包页 → Versions tab，读最新版本 | 逐步 | 17 | 69.4 s | $0.629 | 42.6k | — |
-| | browser_run | **8**（2 次 run + 1 次 abort + 1 次 browser_act 按 Enter） | **45.3 s** | **$0.542** | 38.0k | 5 req · 7.6k tok · $0.0003 · 内循环 1.0 s + 2.1 s |
-| **合计** | 逐步 | 30 | 110.7 s | $1.093 | | |
-| | browser_run | 13（−57%） | 72.7 s（−34%） | $0.808（−26%）+ $0.001 Jev | | |
+| 1 Wikipedia: search TypeScript → article → View history | step by step | 13 | 41.3 s | $0.464 | 37.6k | — |
+| | browser_run | **5** (rename + 2 ToolSearch + open tab + 1 run, **0 pauses**) | **27.4 s** | **$0.266** | 35.5k | 6 req · 16.0k tok · $0.0007 · inner loop 3.3 s |
+| 2 npm: search zod → package page → Versions tab, read latest version | step by step | 17 | 69.4 s | $0.629 | 42.6k | — |
+| | browser_run | **8** (2 runs + 1 abort + 1 browser_act pressing Enter) | **45.3 s** | **$0.542** | 38.0k | 5 req · 7.6k tok · $0.0003 · inner loop 1.0 s + 2.1 s |
+| **Total** | step by step | 30 | 110.7 s | $1.093 | | |
+| | browser_run | 13 (−57%) | 72.7 s (−34%) | $0.808 (−26%) + $0.001 Jev | | |
 
-两组都拿到了正确结果。任务 1 用 haiku 时的数字（10.1）比例相近：43.4 s / 14 次 / $0.134 vs 27.8 s / 6 次 / $0.056。
+Both groups got correct results. Task 1's numbers with haiku (10.1) have a similar ratio: 43.4 s / 14 calls / $0.134 vs 27.8 s / 6 calls / $0.056.
 
-观察：
+Observations:
 
-- 花费降幅小于调用次数降幅：Opus 每次调用都要重读 35–40k 上下文，`browser_run` 的 pause/done 返回里带完整 snapshot，单次调用比一次 `browser_act` 贵；省的是次数，不是每次的量。
-- Jev 单次延迟：每个 run 首个请求 1.1–1.7 s（冷启动），之后 330–530 ms，中位 ≈ 390 ms，比 jev-ultrafast 报告的 178 ms 慢一倍（网络位置差异）。内循环本身只占墙钟的 5–10%，其余是主模型。
-- 任务 2 的 abort 是新的真问题：npm 首页搜索框有自动补全下拉，点 "Search" 按钮时 mousedown 先触发 blur → React 重渲染 → click 没落到提交上；页面 marker 变了（下拉关闭）所以没触发"无变化"规则，Jev 再看时判 `none_of_these`，只剩 guarded → pause；Opus 选择 abort 自己按了 Enter。**已修**（见 10.3）：(1) 动作空间加 `submit:N`（在已填写的字段上按 Enter，风险等级同提交按钮，`allow: ["Enter"]` 或字段 label 放行）；(2) `guarded-only` 的 pause 选项在 guarded 之后列出 safe 候选（≤ 20），主模型能答"再点一次 12"而不是只能 abort。
-- 逐步模式下 Opus 每个任务都额外花 2–3 次调用写/读 `browser_memory`（npm 的"链接要用 cdp engine"经验），这是逐步模式的固有开销，也说明它在替代 Jev 做的"页面适配"工作。
+- Cost drops less than call count: Opus re-reads 35–40k of context on every call, and `browser_run`'s pause/done return carries a full snapshot, so a single call is more expensive than one `browser_act`; what is saved is the count, not the size per call.
+- Jev single-request latency: the first request of each run is 1.1–1.7 s (cold start), then 330–530 ms, median ≈ 390 ms, twice as slow as jev-ultrafast's reported 178 ms (network location difference). The inner loop itself accounts for only 5–10% of wall time; the rest is the main model.
+- Task 2's abort is a new real problem: npm's home-page search box has an autocomplete dropdown; clicking the "Search" button fires mousedown → blur → React re-render first, so the click does not land on submit; the page marker changed (dropdown closed) so the "no change" rule did not fire; Jev looked again and judged `none_of_these`, only guarded remained → pause; Opus chose to abort and pressed Enter itself. **Fixed** (see 10.3): (1) the action space gains `submit:N` (press Enter on an already-filled field; risk tier same as a submit button; passed through by `allow: ["Enter"]` or the field label); (2) the `guarded-only` pause options list safe candidates (≤ 20) after the guarded ones, so the main model can answer "click 12 again" instead of only aborting.
+- In step-by-step mode Opus spent an extra 2–3 calls per task writing/reading `browser_memory` (the npm experience "links need the cdp engine"); this is an inherent overhead of step-by-step mode, and also shows it doing the "page adaptation" work in place of Jev.
 
-### 10.3 修复 submit 路径后重跑任务 2（Opus，browser_run）
+### 10.3 Task 2 rerun after fixing the submit path (Opus, browser_run)
 
-| 主模型工具调用 | 墙钟 | 主模型花费 | 上下文 | Jev |
+| Main-model tool calls | Wall time | Main-model cost | Context | Jev |
 | ---: | ---: | ---: | ---: | --- |
-| **4**（rename + ToolSearch + 开 tab + **1 次 run，0 pause**） | **22.9 s** | **$0.234** | 33.9k | 5 req · 8.4k tok · $0.0004 · 内循环 3.5 s |
+| **4** (rename + ToolSearch + open tab + **1 run, 0 pauses**) | **22.9 s** | **$0.234** | 33.9k | 5 req · 8.4k tok · $0.0004 · inner loop 3.5 s |
 
-对比修复前的 45.3 s / 8 次 / $0.542，以及逐步的 69.4 s / 17 次 / $0.629。这次 Jev 点 "Search" 直接生效（step 2 因下拉弹出 guard 变化被判 stale、重观察后 step 3 点中），`submit:N` 未被用到，但它现在是 Jev 可选的候选（主模型这次传了 `allow: ["Search"]`，字段 label 不匹配所以 Enter 仍在 guarded 列表里；若再出现 blur 吞 click，pause 选项里会同时有 "press Enter in Search packages" 和 "再点 Search"）。
+Compared with 45.3 s / 8 calls / $0.542 before the fix, and 69.4 s / 17 calls / $0.629 step by step. This time Jev's click on "Search" took effect directly (step 2 was judged stale because the guard changed when the dropdown popped up; after re-observing, step 3 hit); `submit:N` was not used, but it is now a candidate Jev can pick (the main model passed `allow: ["Search"]` this time; the field label did not match, so Enter remained in the guarded list; if blur swallows the click again, the pause options will offer both "press Enter in Search packages" and "click Search again").
 
-逐步模式任务 2 再跑一次做方差参考：17 次 / 73.4 s / $0.610 / 43.6k（首跑 17 / 69.4 / $0.629 / 42.6k），两次都要靠 `browser_memory` 里记下的"npm 链接要 cdp engine 点内部 h3"才能通过——这条经验是首跑时它自己写的，第二跑先读再用，仍然 17 次。
+Step-by-step task 2 was run once more as a variance reference: 17 calls / 73.4 s / $0.610 / 43.6k (first run 17 / 69.4 / $0.629 / 42.6k); both runs needed the "npm links need the cdp engine to click the inner h3" note in `browser_memory` to pass — it wrote that note itself on the first run, read it first on the second, and still took 17 calls.
 
-**修复后两任务汇总（Opus，逐步取两次均值）**：
+**Two-task summary after the fix (Opus, step-by-step averaged over two runs)**:
 
-| | 逐步 | browser_run | 差 |
+| | Step by step | browser_run | Delta |
 | --- | ---: | ---: | ---: |
-| 主模型工具调用 | 30 | **9** | −70% |
-| 墙钟 | 112.7 s | **50.3 s** | −55% |
-| 主模型花费 | $1.084 | **$0.500** | −54% |
-| Jev 花费 | — | $0.0011 | |
+| Main-model tool calls | 30 | **9** | −70% |
+| Wall time | 112.7 s | **50.3 s** | −55% |
+| Main-model cost | $1.084 | **$0.500** | −54% |
+| Jev cost | — | $0.0011 | |
 
-阈值仍未系统校准；`jev-traces/*.jsonl` 已在记录。
+Thresholds are still not systematically calibrated; `jev-traces/*.jsonl` is being recorded.
 
 ### 10.4 Desktop: task selection and the Calculator counterexample (Grok)
 
@@ -810,337 +810,337 @@ The caller aborted the paused run, captured a settled About screenshot and calle
 
 Verification: Jev/browser surface, the built-in tool catalog and device presenter checks: 130 tests passed. Related checks: 5,924 passed / 39 skipped (426 files passed / 3 skipped). Node and web typechecks passed. Stories cover running, paused, done, aborted and error at a narrow width. The exact completion condition was deliberately not weakened to substring matching; the same native vocabulary remains shared with `device_wait_for`.
 
-与设计文档的偏差（MVP 有意收窄）：
+Deviations from the design document (deliberately narrowed for the MVP):
 
-- `audience: 'user'` 未实现：password 字段直接不进候选，登录类页面会以 `no-progress` 交回主模型
-- `done_when` 按平台复用：browser 用 selector / selectorGone / text / urlIncludes / urlMatches；computer 和 device 用各自已有 Condition。computer 将原始 ref 绑定到 native identity，并增加原生 newRoot 条件识别同应用新窗口；原始状态若被有界 state store 淘汰，需要开始新的 run。
-- run 绑定 session 而非 `toolUseId`（同 session 并行子代理各自 runId 不冲突，只是 TTL 清理按 session）
-- 无 select、无 `obstructed`、无 host event 逐步进度（UI 只见 tool row 的 paused / done / aborted）
-- 阈值未校准（含新增的 `overrideNone: 0.8`，只在 Finder 一种屏幕形态上校过）；Calculator 的已知按键序列是已复现的模型决策边界。desktop 的性能收益目前只有 Finder 三步导航一组配对数据（§10.4）；菜单 → 弹面板类任务因 `hidesOnDeactivate` 尚无有效配对。
-- computer 输入只使用原生能力：替换文本要求 setText；不支持的输入路径暂停交回 computer_act。
-- computer 保持后台控制（目标 app 不被激活）。`hidesOnDeactivate` 的系统面板（Fonts、Colors 等 NSPanel）只在目标 app 前台时存在：直连 helper 实测 TextEdit 前台时 `list_windows` 返回 `Fonts` AX root，切到后台即消失（CG 层面同样如此，面板在 layer 3 且离屏）。这类面板在 `computer_run` 下无法观察，`newRoot` 不会命中；不通过激活目标 app 来规避，选题时避开。
-- device 不提供键盘 Enter、OCR 坐标候选或无 tree 降级；已有 device_act 处理这些情况。device 的 live 数据仅为功能 smoke，未作 A/B 性能结论。
+- `audience: 'user'` not implemented: password fields simply never enter the candidates, and login-type pages are handed back to the main model as `no-progress`
+- `done_when` reused per platform: browser uses selector / selectorGone / text / urlIncludes / urlMatches; computer and device use their existing Conditions. Computer binds the original ref to native identity and adds the native newRoot condition to recognise a new window of the same app; if the original state has been evicted by the bounded state store, a new run must be started.
+- run bound to session rather than `toolUseId` (parallel subagents in the same session have distinct runIds and do not conflict; only TTL cleanup is per session)
+- no select, no `obstructed`, no per-step host event progress (the UI only sees the tool row's paused / done / aborted)
+- thresholds uncalibrated (including the new `overrideNone: 0.8`, calibrated only on the single Finder screen shape); the Calculator known-key sequence is a reproduced model decision boundary. Desktop performance gain currently has only the one Finder three-step navigation pair (§10.4); menu → popup-panel tasks have no valid pair yet because of `hidesOnDeactivate`.
+- computer input uses native capabilities only: text replacement requires setText; unsupported input paths pause and hand back to computer_act.
+- computer keeps background control (the target app is not activated). System panels with `hidesOnDeactivate` (Fonts, Colors and other NSPanels) exist only while the target app is frontmost: a direct helper probe showed `list_windows` returns the `Fonts` AX root when TextEdit is frontmost, and it vanishes when switched to the background (the same at the CG level: the panel is on layer 3 and offscreen). Such panels cannot be observed under `computer_run` and `newRoot` will not hit; do not work around this by activating the target app; avoid them when choosing tasks.
+- device provides no keyboard Enter, OCR coordinate candidates or no-tree degradation; the existing device_act handles those cases. Device live data is a functionality smoke only, with no A/B performance conclusion.
 
-### 10.6 browser 范式抽样（Grok 4.6 / high，dev 版，无 `done_when`，面板 748 px）
+### 10.6 Browser paradigm sampling (Grok 4.6 / high, dev build, no `done_when`, panel 748 px)
 
-> 8.18 之前的读数已作废：settle 与 WAIT 因跨边界比较 marker 而从未真正等待。下表是修复后逐个跑通的实测。
+> Readings before 8.18 are void: settle and WAIT never actually waited because markers were compared across a boundary. The table below is the post-fix measurement, each run passing.
 
-| 任务 | 结果 | `browser_run` | 主模型 | Jev 步数 / 完成判定 | 修复前 |
+| Task | Result | `browser_run` | Main model | Jev steps / completion verdict | Before fix |
 | --- | --- | --- | --- | --- | --- |
-| Wikipedia 三跳 | ✅ done | 1 | 7 calls / 105.1 s / $0.0533 | 6 步 / 0.95·0.96 | 通过（0.82） |
-| npm 搜 zod → Versions | ✅ done | 1 | 7 calls / 105.6 s / $0.0464 | 5 步 / 0.93·0.94 | 通过（0.83） |
-| Cambridge Dictionary 查词 | ✅ done | 1 | 6 calls / 79.5 s / $0.0603 | 4 步 / 0.96·0.97 | 通过（0.85） |
-| Apple → MacBook Air → Tech Specs | ✅ done | 1 | 7 calls / 131.1 s / $0.0387 | 16 步 / 0.83·0.82 | 首页第 1 步即卡住 |
-| arXiv 搜索 → 首条摘要 | ✅ done | 1 | 6 calls / 61.5 s / $0.0515 | 6 步 / 0.88·0.85 | 覆盖元素死循环 |
-| Hugging Face 筛选 + 排序 | ✅ done（`sort=downloads`） | 1 | 7 calls / 69.1 s / $0.0510 | 8 步 / 0.63→0.93 | 排序错成 trending |
-| GitHub 搜仓库 → Issues | ✅ done | 1 | 7 calls / 207.9 s / $0.0440 | 11 步 / 0.96 | 首页 no-progress |
+| Wikipedia three hops | ✅ done | 1 | 7 calls / 105.1 s / $0.0533 | 6 steps / 0.95·0.96 | passed (0.82) |
+| npm search zod → Versions | ✅ done | 1 | 7 calls / 105.6 s / $0.0464 | 5 steps / 0.93·0.94 | passed (0.83) |
+| Cambridge Dictionary lookup | ✅ done | 1 | 6 calls / 79.5 s / $0.0603 | 4 steps / 0.96·0.97 | passed (0.85) |
+| Apple → MacBook Air → Tech Specs | ✅ done | 1 | 7 calls / 131.1 s / $0.0387 | 16 steps / 0.83·0.82 | stuck at step 1 on the home page |
+| arXiv search → first abstract | ✅ done | 1 | 6 calls / 61.5 s / $0.0515 | 6 steps / 0.88·0.85 | occluded-element infinite loop |
+| Hugging Face filter + sort | ✅ done (`sort=downloads`) | 1 | 7 calls / 69.1 s / $0.0510 | 8 steps / 0.63→0.93 | sorted wrongly as trending |
+| GitHub search repo → Issues | ✅ done | 1 | 7 calls / 207.9 s / $0.0440 | 11 steps / 0.96 | no-progress on the home page |
 
-**7/7 通过，每个任务只用一次 `browser_run`、零暂停。** 三个原本已通过的任务同时回归确认，且完成判定普遍升高（npm 0.83→0.94、Dictionary 0.85→0.97），说明 8.18 的终点状态问法不只救了 arXiv，也让 0.7 阈值的余量变大。一次 Wikipedia 运行在 Jev 判完成（0.96）之后卡在主模型侧未收尾、被 runner 的 480 s 上限掐断，重跑正常——属 harness 偶发，与循环无关。
+**7/7 passed, each task with a single `browser_run` and zero pauses.** The three tasks that already passed were regression-confirmed at the same time, and completion verdicts rose across the board (npm 0.83→0.94, Dictionary 0.85→0.97), showing that 8.18's end-state phrasing not only rescued arXiv but also widened the margin over the 0.7 threshold. One Wikipedia run got stuck on the main-model side after Jev judged completion (0.96) and was cut off by the runner's 480 s cap; a rerun was normal — a sporadic harness issue unrelated to the loop.
 
-#### 更难的一批（多约束筛选、自动补全、日期选择器）
+#### The harder batch (multi-constraint filtering, autocomplete, date pickers)
 
-| 任务 | 结果 | `browser_run` | 主模型 | Jev 步数 / 完成判定 | 暴露的问题 |
+| Task | Result | `browser_run` | Main model | Jev steps / completion verdict | Problem exposed |
 | --- | --- | --- | --- | --- | --- |
-| Google Flights 单程 ZRH→LHR 2026-10-15 | ✅ done | 1 | 9 calls / 359.8 s / $0.0360 | 18 步 / 0.94·0.95 | — （4 步 stale 重试，22%） |
-| Coursera 搜索 + Beginner 级别筛选 | ✅ done | 2（一次 no-progress 暂停后恢复） | 8 calls / 71.5 s / $0.0723 | 8 步 / 0.76→0.85 | 隐藏 input + label 代理 |
-| Allrecipes 搜索 → 首条食谱 | ✅ done | 1 | 7 calls / 65.5 s / $0.0689 | 6 步 / 0.86·0.87 | `<noscript>` 标记污染可访问名 |
+| Google Flights one-way ZRH→LHR 2026-10-15 | ✅ done | 1 | 9 calls / 359.8 s / $0.0360 | 18 steps / 0.94·0.95 | — (4 stale retries, 22%) |
+| Coursera search + Beginner level filter | ✅ done | 2 (resumed after one no-progress pause) | 8 calls / 71.5 s / $0.0723 | 8 steps / 0.76→0.85 | hidden input + label proxy |
+| Allrecipes search → first recipe | ✅ done | 1 | 7 calls / 65.5 s / $0.0689 | 6 steps / 0.86·0.87 | `<noscript>` markup polluting the accessible name |
 
-Google Flights 是 jev-ultrafast 自己发布过数据的任务（17 次 Jev 请求 / 10 动作 + 1 次 WAIT / 7.07 s，约 35% 决策因 stale 作废）。我们这次 18 次请求、13 个动作 + 2 次 WAIT，**4 次 stale（22%）**；它完成了机票类型切换、两处自动补全城市选择、日期选择器选日，全程无暂停。总时长 359.8 s 绝大部分是主模型的轮次，循环自身约 16 s。
+Google Flights is the task jev-ultrafast itself published data for (17 Jev requests / 10 actions + 1 WAIT / 7.07 s, about 35% of decisions voided by staleness). Ours: 18 requests, 13 actions + 2 WAITs, **4 stale (22%)**; it completed the ticket-type switch, two autocomplete city selections and a date-picker day pick, with no pause throughout. Of the 359.8 s total, the vast majority is main-model rounds; the loop itself is about 16 s.
 
-Coursera 一例值得单独记：Level 展开后页面文字里明明写着 "Beginner ( 4,765 )"，动作空间里却什么可点的都没有——该站把真正的 `<input type=checkbox>` 设为 `opacity: 0`，可见的是样式化 label。这类"隐藏 input + 代理"在设计系统里极常见，观察层必须把**能接住点击的那个节点**（label）作为候选节点，同时保留 input 的语义（role / name / checked）。修好后该复选框得分 1.00。
+The Coursera case deserves its own note: after expanding Level, the page text plainly said "Beginner ( 4,765 )", yet the action space had nothing clickable — the site sets the real `<input type=checkbox>` to `opacity: 0` and the visible part is a styled label. This "hidden input + proxy" pattern is extremely common in design systems; the observation layer must use **the node that actually receives the click** (the label) as the candidate node while keeping the input's semantics (role / name / checked). After the fix that checkbox scored 1.00.
 
-Apple 一例在修复过程中的推进（同一 prompt、同一模型），可见每一层各自的贡献：
+The Apple case's progression during the fixes (same prompt, same model) shows each layer's contribution:
 
-| 构建 | 结果 |
+| Build | Result |
 | --- | --- |
-| 8.17 状态（settle 空转） | 第 1 步 click Menu 即报"无变化"，候选被 stuck 规则剔除 → no-progress |
-| + marker 规范化 | 导航三步全对，落到 `/macbook-air/`，但滚动全报"无变化" → 三次即暂停 |
-| + 滚动 settle + 状态稳定判定 | 全程走通并自判完成 |
+| 8.17 state (settle spinning idle) | step 1 click Menu reports "no change", candidate removed by the stuck rule → no-progress |
+| + marker normalisation | all three navigation steps correct, landing on `/macbook-air/`, but every scroll reports "no change" → pause after three |
+| + scroll settle + state-stability check | end to end, self-judged complete |
 
-**这批修复按影响排序**：跨边界 marker 比较（8.18，让等待全部失效）> 遮挡元素仍被提供（Jev 每轮选它、执行器每轮拒绝）> 完成判定问的是"每条要求"而非"终点状态"（同一页 0.49 → 0.88）> 折叠控件标签没说明展开会揭示什么（0.16 → 0.53）。四者都不是模型能力问题：每一例里 Jev 的选择在它看到的信息下都是合理的。
+**These fixes ranked by impact**: cross-boundary marker comparison (8.18, which disabled all waiting) > occluded elements still offered (Jev picks it every round, the executor rejects it every round) > the completion question asking about "every requirement" rather than "end state" (same page 0.49 → 0.88) > collapsed-control labels not saying what expanding reveals (0.16 → 0.53). None of the four is a model capability problem: in every case Jev's choice was reasonable given the information it saw.
 
-### 10.7 Jev 前后的配对基准（Grok 4.6 / high，dev 版，computer_use）
+### 10.7 Paired benchmark before and after Jev (Grok 4.6 / high, dev build, computer_use)
 
-前面几节比的是"循环能不能跑通"。这节比的是接入 Jev 到底省了什么：同一 prompt、同一模型、同一台机器，只把导航段从"主模型逐步 `computer_act`"换成"一次 `computer_run`"，两腿之间用脚本把应用状态复位。
+The previous sections compared "can the loop run through". This section compares what plugging in Jev actually saves: same prompt, same model, same machine, only the navigation segment swapped from "main model step-by-step `computer_act`" to "one `computer_run`", with a script resetting the app state between the two legs.
 
-`totalCostUsd` 只记主模型（Grok 4.6 / high）的账；Jev 自己的请求走另一条链路，单列在最后一栏，不并进成本列。
+`totalCostUsd` only bills the main model (Grok 4.6 / high); Jev's own requests go through a separate path and are listed in the last column, not merged into the cost column.
 
-| | 计算器 `sin(π/6)` | | | Finder 三级目录导航 | | |
+| | Calculator `sin(π/6)` | | | Finder three-level folder navigation | | |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| | 逐步 `_act` | `_run` | 差 | 逐步 `_act` | `_run` | 差 |
-| 墙钟 | 127.2 s | 113.2 s | **−11%** | 200.9 s | 124.5 s | **−38%** |
-| 工具调用（总） | 12 | 10 | −17% | 14 | 11 | −21% |
-| 工具调用（任务相关） | 6 | 4 | −33% | 11 | 4 | **−64%** |
-| 主模型成本 | $0.1059 | $0.0707 | **−33%** | $0.1951 | $0.0997 | **−49%** |
-| 上下文 | 73.9k | 56.4k | −24% | 99.1k | 61.7k | **−38%** |
-| Jev 自身 | — | 9 req / 37.9k tok / 7.45 s | | — | 3 req / 34.4k tok / 3.52 s | |
+| | step-by-step `_act` | `_run` | Δ | step-by-step `_act` | `_run` | Δ |
+| Wall time | 127.2 s | 113.2 s | **−11%** | 200.9 s | 124.5 s | **−38%** |
+| Tool calls (total) | 12 | 10 | −17% | 14 | 11 | −21% |
+| Tool calls (task-related) | 6 | 4 | −33% | 11 | 4 | **−64%** |
+| Main-model cost | $0.1059 | $0.0707 | **−33%** | $0.1951 | $0.0997 | **−49%** |
+| Context | 73.9k | 56.4k | −24% | 99.1k | 61.7k | **−38%** |
+| Jev itself | — | 9 req / 37.9k tok / 7.45 s | | — | 3 req / 34.4k tok / 3.52 s | |
 
-**收益随"每步之间观察的成本"放大，而不是随步数放大。** 计算器的按键全部在第一张快照里就可见且位置不变，主模型每次 `computer_act` 之间并不需要重新观察，所以省下的主要是工具往返；Finder 每打开一层目录整张 AX 表就换一遍（66 → 82 → 190 → 109 个元素），逐步模式必须把每一张都读进上下文，于是上下文 −38%、成本 −49%。**这条规律决定了 `computer_run` 该用在哪：状态在步与步之间大幅改变的导航型任务，而不是坐标稳定的定点操作。**
+**The gain scales with the cost of observing between steps, not with the step count.** All the Calculator keys are visible in the first snapshot and never move, so the main model does not need to re-observe between `computer_act` calls; what is saved is mostly tool round trips. In Finder, the whole AX table changes with every folder opened (66 → 82 → 190 → 109 elements), and step-by-step mode must read every one of them into context, hence context −38% and cost −49%. **This rule decides where `computer_run` belongs: navigation-type tasks whose state changes substantially between steps, not fixed-point operations with stable coordinates.**
 
-Finder 的 `computer_run` 三步全部一次命中（click_target 0.75 / 0.83 / 0.78），无暂停、无 stale 重试，循环自身 23.9 s，其余时间都在主模型的解析与汇报轮次上。
+Finder's `computer_run` hit all three steps on the first try (click_target 0.75 / 0.83 / 0.78), no pauses, no stale retries, loop itself 23.9 s; the rest of the time was the main model's parsing and reporting rounds.
 
-§10.4 已有一组更早的 Finder 配对（基线 20 calls / 236.4 s / $0.2605 / 97.5k，`computer_run` 9 calls / 102.0 s / $0.0986 / 58.7k）。两次独立配对方向一致，且**`computer_run` 那条腿高度可复现**（$0.0986 vs $0.0997，58.7k vs 61.7k），波动几乎全来自基线腿（20 calls vs 14 calls）——主模型自己决定要看几张快照、要不要 `computer_query`，而把导航交给 Jev 之后这个自由度就没了。这也是为什么单次配对的绝对百分比不该当结论用，但方向可以。
+§10.4 already has an earlier Finder pair (baseline 20 calls / 236.4 s / $0.2605 / 97.5k, `computer_run` 9 calls / 102.0 s / $0.0986 / 58.7k). The two independent pairs agree in direction, and **the `computer_run` leg is highly reproducible** ($0.0986 vs $0.0997, 58.7k vs 61.7k); almost all the variance comes from the baseline leg (20 calls vs 14 calls) — the main model decides for itself how many snapshots to take and whether to `computer_query`, and that degree of freedom disappears once navigation is handed to Jev. This is also why a single pair's absolute percentages should not be taken as conclusions, but the direction can.
 
-#### 两条一开始没跑通的腿
+#### The two legs that did not run through at first
 
-**计算器首跑结果是 `0.0091384`** —— 不是代码缺陷，是我的复位脚本没生效：`killall Calculator` + `open` **不会重置角度模式**，基线腿从弧度开始、Jev 腿从角度开始并多做了一次切换。也就是说计算器那列的对比是**对 Jev 不利**的（它多走了一步），真实差距只会更大。AppleScript 读不到计算器按钮（`window 1` 只返回红绿灯，`entire contents` 里 `class of e is button` 匹配不到任何东西），这条路要复位得另找办法。
+**The Calculator first run produced `0.0091384`** — not a code defect; my reset script did not take effect: `killall Calculator` + `open` **does not reset the angle mode**, so the baseline leg started in radians and the Jev leg started in degrees and did one extra switch. In other words the Calculator column is biased **against Jev** (it took one extra step), and the real gap can only be larger. AppleScript cannot read Calculator's buttons (`window 1` returns only the traffic lights, and `class of e is button` in `entire contents` matches nothing), so resetting that path needs another approach.
 
-**Finder 的 Jev 腿首跑在第 1 步就 `no-progress` 暂停**，报 `The observed target does not support this computer_act operation`。根因在 `action-space.ts`：
+**Finder's Jev leg paused with `no-progress` at step 1 on the first run**, reporting `The observed target does not support this computer_act operation`. Root cause in `action-space.ts`:
 
 ```ts
 if (el.editable) {
   ...
-  clickCandidates.push(`open:${el.index}`)   // 无条件
-  continue                                    // ← 从这里跳出
+  clickCandidates.push(`open:${el.index}`)   // unconditional
+  continue                                    // ← exits here
 }
-if (el.clickable === false) continue          // ← 永远轮不到 editable 元素
+if (el.clickable === false) continue          // ← never reached for editable elements
 ```
 
-`clickable === false` 这道闸写在 `continue` 之后，对 editable 元素完全失效。**在 DOM 里 `editable ⇒ clickable` 恒成立（`<input>` 一定能点），移植到 AX 树上这个蕴含关系就断了**：Finder 行的名称单元格是 `AXTextField`，可以改名（`setText` 有 plan），但**没有 `AXPress`**。`computer-page.ts` 正确地把它标成 `clickable: false` 且不登记 `clickKinds`，动作空间却照样把它当点击候选发给 Jev；Jev 选中它（一个执行不了的选项凭空占走概率质量），适配器查不到 plan，第 1 步即暂停。修掉后同一 prompt 一次跑通。browser-page 从不设置 `clickable` 字段（恒为 `undefined`），所以这个缺陷在浏览器侧不可能触发——**只有移植到第二个平台才会暴露"共享层里藏着的平台假设"。**
+The `clickable === false` gate is written after the `continue`, so it is completely ineffective for editable elements. **In the DOM `editable ⇒ clickable` always holds (an `<input>` can always be clicked); ported onto the AX tree that implication breaks**: a Finder row's name cell is an `AXTextField`, renameable (`setText` has a plan) but **without `AXPress`**. `computer-page.ts` correctly marks it `clickable: false` and registers no `clickKinds`, yet the action space still sent it to Jev as a click candidate; Jev picked it (an unexecutable option soaking up probability mass out of thin air), the adapter found no plan, and step 1 paused. After the fix the same prompt ran through in one go. browser-page never sets the `clickable` field (always `undefined`), so this defect could not fire on the browser side — **only porting to a second platform exposes "platform assumptions hidden in the shared layer"**.
 
-同一次排查还暴露了一个诊断缺陷：`loop.ts` 的 act catch 只对 `StaleObservation` 写 trace，`RunPaused` 直接 rethrow，于是**唯一会让人想读 trace 的那一步，恰好是 trace 文件里没有的那一步**（该 runId 根本没有生成 `.jsonl`）。已改为抛出前先 `emit(trace)`。
+The same investigation exposed a diagnostic defect: the act catch in `loop.ts` only wrote the trace for `StaleObservation` and rethrew `RunPaused` directly, so **the one step that makes you want to read the trace is exactly the step missing from the trace file** (no `.jsonl` was generated for that runId at all). Changed to `emit(trace)` before throwing.
 
-#### 方法与口径
+#### Method and definitions
 
-- 两腿都经 `scripts/cdp-eval.mjs` 驱动 dev 版渲染进程，跑在同一个基准工作区 `/private/tmp/jev-clean-bench/workspace`，每腿 `resetSession()` 开新会话。
-- 成本与上下文读自会话 store 的 `totalCostUsd` / `contextTokens`，在该腿结束后、下一腿开始前立即采样。
-- "任务相关调用"排除框架开销（`SearchTools`、`session_rename`）。计算器：`computer_apps` + 快照 + `computer_act` / `computer_run`；Finder 基线为 `computer_apps`×1 + `computer_snapshot`×4 + `computer_act`×3 + `computer_query`×2 + `computer_wait_for`×1，Jev 腿为 `computer_apps`×1 + `computer_snapshot`×2 + `computer_run`×1。
-- **单次配对，不是统计结论**：主模型的轮次长度波动很大（§10.6 里同一任务出现过 65 s 与 360 s 的差距），这两组只说明量级和方向。
-
-
-### 10.8 Finder 两个补充案例：菜单栏与长列表（2026-09-20，Grok 4.6 / high，dev 版）
-
-§10.7 之后又加了两个专挑未覆盖路径的案例：**B 菜单栏**（View ▸ Sort By ▸ Date Modified，验收用 `AXMenuItemMarkChar` 的 ✓）和 **A 长列表**（/System/Library 163 项，目标在倒数第 2 行，验收用窗口标题）。两个首跑都失败，各挖出一串缺陷；修完后 B 一次 press 完成（3 步 6.9 s，`goal_satisfied 0.81`），A 10 步 31.9 s 到达（5 次滚动每次视口都在推进，最后 `Open WorkflowResponsiveness` 置信度 1.0）。
-
-#### B：后台 app 的菜单命令是死的，而且没有后台路径
-
-昨晚的判断（"关闭时 `enabled` 不可信"）是错的，真因是**前台 vs 后台**：AppKit 的 `validateMenuItem:` 按 active app 的 key window 校验，后台 app 没有 key window，41 个 View 菜单项只剩 3 个 enabled；AXPress 报 `ok:true` 但排序列不变，Finder 切到前台后同一操作立刻生效。逐条实测的替代路径全部无效：`CGEventPostToPid` 快捷键（⌘1 在前台变 icon view、后台不变）、直接 AXPress 关闭菜单树里的叶子、先用 AX 把窗口设 AXMain/AXFocusedWindow 再按、System Events `click menu item`、SkyLight 私有 `_SLPSSetFrontProcessWithOptions(kCPSNoWindows)`（非前台进程调用被忽略）、以及"AX 读取刷新了 enabled 之后再按"。`AXEnabled` 不可写。
-
-落地的是**事务性激活**（helper `axPressMenuCommand`）：叶子命令 press 时若 app 不在前台 → `activate()` → 沿菜单栏往下枚举 children 直到该项 `AXEnabled` 变 true（AppKit 在激活后的下一轮 run loop 重新校验，实测 0.25–1.0 s；单独读那个元素**不会**刷新，必须枚举祖先菜单的 children）→ AXPress → `previous.activate()`。18/18 成功，整个事务 ≈ 1 s，用户看到目标 app 闪一下、焦点自动回来；这 1 s 内用户按键会落进目标 app，是已知代价。两个陷阱：激活后立刻按（不等 enabled）0/6 成功，即使 app 已 active；激活前就读到 true 的 flag 是上次校验的残留，只能等满 1.1 s 再信。菜单栏项和带子菜单的项**不**激活（按了只是把菜单打开，恢复前台又立刻关掉），观察层也不再把它们当候选——闭合菜单树是完整的，一条菜单路径就是对叶子的一次 press。`computer_apps focus` 新增 `activate` 参数，留给确实要连续前台操作的序列；service 侧不设闸门。后台读到的菜单 `enabled` 全部上报为 true（helper `unvalidatedMenuFlags`），不再把"没有 key window"当成命令自身的状态。
-
-同一案例顺带揪出四个 TS 侧缺陷：
-
-- **`continueDespiteSatisfied` 是死功能的残留**：goal_satisfied 的 accept 暂停早已删除，但对任何非 budget 的 accept 暂停回答 `continue` 仍会置位，此后 Jev 的完成判定被永久否决——run 在第 3 步已经排好序，`goal_satisfied 0.84` 照样继续滚到 maxSteps。已删。
-- **候选按 label 去重把菜单命令吞掉**：列标题 "Date Modified" 先出现，菜单里的 "Date Modified" 命令被当重复丢弃，run 只能点列标题（违反"只用菜单栏"）。改为按名称来源节点的 ref 去重（row / cell / textfield 三者共享同一个来源，仍合并）。
-- **`AXMenuItem` 一律回答 `AXExpanded=false`**：叶子命令被标成折叠，Jev 看到 "Expand Date Modified" 以为还有下一步，连按 7 次。helper 只在有 AXMenu 子节点时上报 `expanded`。
-- **菜单项的状态在 ✓ 里不在 value 里**：`AXMenuItemMarkChar` → `checked`，Jev 第一次能看见"已选 Date Modified"，完成判定从 0.5 跳到 0.8+。
-
-#### A：滚动从来没生效过，而观察也看不到滚动的结果
-
-- **app-directed 滚轮事件被后台 app 丢弃**。昨晚和今天前几轮的 `changedPage: True` 全来自 act diff 的噪声（光标/焦点标志），列表一动没动；用户肉眼看到的正是这个。给事件补上 `kCGMouseEventWindowUnderMousePointer` 字段、把窗口 AXRaise 到最前都没用，只有 Finder 在前台时滚轮才动（且带惯性、行为怪异）。**能后台滚动的是 AXScrollBar 的 `AXValue`**：可写、立即生效、精确分页（0.5 → InternetAccounts，1.0 → SetupAssistantBundles）。`delivery=semantic` 的 scroll 现在写 scroller 值，Δvalue = Δpx ÷ (内容高 − 视口高)；run 的 scroll 计划改走 semantic；`canScroll` 由 scroller 值决定。
-- **AX 树把整张表的所有行都暴露出来**：/System/Library 一次 `ax_tree` 12.6 s、1500 节点上限处截断在第 114 行，目标行永远读不到；就算滚动生效，候选也永远是树开头的 250 个。helper 的 `axChildren` 对超过 30 个子节点的表/大纲只保留 `AXVisibleRows`：12.6 s → 0.44 s，33 行可见行的 y 全在窗口内，滚动后候选集随视口变化——这才是浏览器那边一直享有的"观察即视口"语义。
-- **settle 在大树上纯亏**：单次 observe 9 s，预算 1.5 s，七步全报 `budget` 零收敛。规则：act（输入 + 后继读取）本身已超过 settle 预算时，后继就是 settled 观察，跳过采样（`act-outlasted-budget`）；按每次 act 度量，离开大列表后 settle 自动恢复。trace 的 `latencyMs` 新增 `settle`。
-
-#### 启动也是 host 的事，不是主模型的
-
-`computer_run app=X` 之前只解析已运行 app 的窗口，工具描述让主模型"先用 computer_apps launch"；基准 prompt 又硬性要求先 list、再 snapshot，于是每次 run 前固定多 2–3 个主模型工具轮次。app 是否在运行、启动它、等第一个窗口，全是确定性 host 事实，不该问任何模型（也不该问 Jev——Jev 是逐步判定器，不是编排器）。现在 `rootForApp` 在没窗口时走后台 `launch` 并等首窗（≤ 8 s），描述改为 "no computer_apps or computer_snapshot call is needed first"。Calculator 冷启动实测：主模型直接 `computer_run app="Calculator"`，**工具调用 4 次**（2 次 SearchTools + run + 验证快照），run 8 步 25.5 s 算出 19，前台始终是 SuperOne。
-
-同一轮揪出菜单命令平铺的一个副作用：闭合菜单树里 View ▸ Decimal Places ▸ "12" 作为候选只剩一个 "12"，目标里写 "enter 12"，Jev 就点了它（0.54）而不是数字键，算出 7.5。命令标签现在带最近一级菜单名（"Decimal Places ▸ 12"、"Sort By ▸ Date Modified"、"File ▸ New Folder"）。另外 Calculator 会恢复上次的显示值（重启后仍是 0.5），目标要显式先 All Clear——run 自己判断不出"显示的不是我的数"。
-
-#### 方法上的教训
-
-- 昨晚"关闭 vs 打开"的结论来自一次读数对照，但两次读数之间还有一个没控制的变量（AppleScript 先 `activate` 了）。今天所有结论都先用 helper 直连 socket 做 A/B（前台 / 后台各一遍），再改代码。
-- Finder 的 `list view options` 的 `sort column` 读写都不可靠（读到 name column 时菜单里 ✓ 在 Date Modified），reset 脚本一度用它自欺；改用真实菜单点击 + ✓ 验收。
-- `bun run dev` 运行期间重建 helper 会把 dev 实例带下去（helper 被替换 → app 干净退出），要先关再建。
+- Both legs drove the dev renderer via `scripts/cdp-eval.mjs`, running in the same benchmark workspace `/private/tmp/jev-clean-bench/workspace`, with `resetSession()` opening a new session per leg.
+- Cost and context are read from the session store's `totalCostUsd` / `contextTokens`, sampled immediately after the leg ends and before the next begins.
+- "Task-related calls" exclude framework overhead (`SearchTools`, `session_rename`). Calculator: `computer_apps` + snapshot + `computer_act` / `computer_run`; Finder baseline is `computer_apps`×1 + `computer_snapshot`×4 + `computer_act`×3 + `computer_query`×2 + `computer_wait_for`×1, Jev leg is `computer_apps`×1 + `computer_snapshot`×2 + `computer_run`×1.
+- **Single pairs, not statistical conclusions**: main-model round lengths vary widely (§10.6 saw a 65 s vs 360 s spread on the same task); these two groups indicate only magnitude and direction.
 
 
-### 10.9 动作覆盖第一批：展开/选中与 sheet，以及后台 ⌘ 快捷键的真相（2026-09-20，Grok 4.6 / high，dev 版）
+### 10.8 Two supplementary Finder cases: menu bar and long list (2026-09-20, Grok 4.6 / high, dev build)
 
-§10.8 之后按"每个 computer_act 动作至少一个用例"做了覆盖审计，缺的有：disclosure triangle 的 Expand、行的 select、sheet/dialog 根、逐键 typeText、`textContains` 等待、物理坐标点击与右键菜单、zoom / 视觉快照 / 录屏 / 拖拽。第一批跑了前三个：**Finder 展开 Users 并选中 Shared**（不打开、不用侧栏，标题保持 Macintosh HD）和 **TextEdit File ▸ Save… 填名保存**（sheet 根）。两个首跑都"看起来成功"，trace 说明不是。
+After §10.7 two more cases were added specifically targeting uncovered paths: **B menu bar** (View ▸ Sort By ▸ Date Modified, accepted via the ✓ of `AXMenuItemMarkChar`) and **A long list** (/System/Library, 163 items, target in the second-to-last row, accepted via the window title). Both first runs failed, each digging up a chain of defects; after the fixes B completed with a single press (3 steps 6.9 s, `goal_satisfied 0.81`), and A arrived in 10 steps 31.9 s (5 scrolls, each advancing the viewport, final `Open WorkflowResponsiveness` confidence 1.0).
 
-#### Finder：三角形没有名字，行的状态不在文本里
+#### B: menu commands of a background app are dead, and there is no background path
 
-首跑 `r72a995cc`：第 1 步点了一个 **label 为空** 的候选（0.99），第 2 步 Select Shared（0.97），然后 `goal_satisfied 0.53 with no action left`——步骤对了，Jev 却不确定自己做完了。Finder 列表里每行一个 `AXDisclosureTriangle`：没有名字，**不回答 AXExpanded**，状态在 AXValue 里是 "0"/"1"。页面把四个三角形当成四个无名候选、value 全是 "0"；Jev 靠列表顺序猜中了 Users 的那个，展开之后页面文本里仍只有 "Users\n1"，看不出有什么变了。第二次跑 `r8efb3b2f` 暴露另一半：Select Shared 之后这一行**从候选里消失**（已选中的行不再提供 select），文本却没有任何"已选中"的痕迹，Jev 读成页面没变，滚了一下，`no-progress` 暂停。
+Last night's judgement ("`enabled` is unreliable when closed") was wrong; the real cause is **foreground vs background**: AppKit's `validateMenuItem:` validates against the active app's key window; a background app has no key window, so only 3 of the 41 View menu items remain enabled; AXPress reports `ok:true` but the sort column does not change, and the same operation takes effect immediately once Finder is brought to the front. Every alternative path tested one by one failed: `CGEventPostToPid` shortcuts (⌘1 switches to icon view in the foreground, nothing in the background), AXPress directly on leaves of the closed menu tree, setting the window AXMain/AXFocusedWindow via AX before pressing, System Events `click menu item`, the SkyLight private `_SLPSSetFrontProcessWithOptions(kCPSNoWindows)` (ignored when called by a non-frontmost process), and "press after an AX read refreshed enabled". `AXEnabled` is not writable.
 
-修法都在"把状态放进 Jev 判定完成所依据的那段文本"：helper 把 AppKit 三角形的 AXValue 上报为 `expanded`；页面用所在行的名字给三角形命名并以 Expand 提供；文本里写 `(Users: expanded)`、`(Users: selected)`。修完 `rf4cabeb8`：Expand Users 1.0 → Select Shared 1.0 → `goal_satisfied 0.85`，9.4 s，前台始终是 SuperOne。快照的 TOON 大纲同样加了 expanded/collapsed/checked 状态列——主模型也不该从一个数字里解码状态。
+What landed is **transactional activation** (helper `axPressMenuCommand`): when pressing a leaf command while the app is not frontmost → `activate()` → enumerate children down the menu bar until that item's `AXEnabled` turns true (AppKit revalidates on the next run-loop pass after activation, measured 0.25–1.0 s; reading that one element alone **does not** refresh — the ancestor menu's children must be enumerated) → AXPress → `previous.activate()`. 18/18 succeeded, the whole transaction ≈ 1 s; the user sees the target app flash once and focus returns automatically; keystrokes during that 1 s land in the target app, a known cost. Two traps: pressing immediately after activation (without waiting for enabled) succeeded 0/6, even with the app already active; a flag read as true before activation is residue from the last validation and can only be trusted after waiting the full 1.1 s. Menu-bar items and items with submenus are **not** activated (pressing them only opens the menu, which closes immediately when the front is restored), and the observation layer no longer treats them as candidates — the closed menu tree is complete, and a menu path is a single press on a leaf. `computer_apps focus` gains an `activate` parameter for sequences that genuinely need sustained foreground operation; no gate on the service side. Menu `enabled` read in the background is reported as all true (helper `unvalidatedMenuFlags`), no longer treating "no key window" as the command's own state.
 
-#### TextEdit sheet：四个观察缺陷和一个 settle 假设
+The same case incidentally caught four TS-side defects:
 
-`rd0500e96` / `r18f45d6d` 都以 `goal_satisfied 0.60–0.69 with no action left` 结束，文件确实保存了，但过程里每一步都有毛病：
+- **`continueDespiteSatisfied` was a remnant of a dead feature**: the goal_satisfied accept pause had long been deleted, but answering `continue` to any non-budget accept pause still set it, after which Jev's completion verdict was permanently vetoed — the run had already sorted at step 3, and `goal_satisfied 0.84` still kept scrolling to maxSteps. Deleted.
+- **Candidate dedup by label swallowed menu commands**: the column header "Date Modified" appeared first, and the "Date Modified" command in the menu was discarded as a duplicate, so the run could only click the column header (violating "menu bar only"). Changed to dedup by the ref of the name's source node (row / cell / textfield share the same source and still merge).
+- **`AXMenuItem` always answered `AXExpanded=false`**: leaf commands were marked collapsed, Jev saw "Expand Date Modified" and assumed there was another step, pressing 7 times in a row. The helper now reports `expanded` only when there is an AXMenu child.
+- **A menu item's state lives in the ✓, not in value**: `AXMenuItemMarkChar` → `checked`, so Jev can see "Date Modified selected" for the first time, and the completion verdict jumps from 0.5 to 0.8+.
 
-- **标尺把二十个数字放在文档前面**。TextEdit 的 ruler 每个制表位一个 `AXRulerMarker`，value 是偏移量（"1.2698412698"…），页面文本以此开头。位置类角色（ruler / scroll bar / splitter / slider）不进文本。
-- **无名的 pop-up 是 "button "**。保存 sheet 的文件格式菜单没有标题，只有当前选项 "Rich Text Document"；现在无名控件以它显示的值为名，既无名又无值的不再提供。
-- **禁用的滚动条照样提供 scroll_down**（`rddf9f7d6` 第 4 步）。一行文档的 scroller `enabled=false` 是 AppKit 在说"内容装得下"，现在读成两个方向都不能滚。
-- **标题栏配件被当成 dialog 根**：macOS 27 的窗口共享按钮是一个 66×20、标题为 "Window" 的 AXDialog，瞬态根发现把它列在真正的 sheet 旁边，主模型进去找保存表单。根要有最小尺寸。
-- **File ▸ Save… 之后 settle 被跳过了**（`act-outlasted-budget`）。§10.8 的规则"act 超过预算就把后继当 settled"假设 act 慢是因为读窗口慢；菜单命令慢是因为激活 + 等菜单校验（1–2 s），TextEdit 窗口本身 300 ms 就读完，而 sheet 正是 settle 该等的东西。现在同时要求读取本身也超过预算的一半才跳过。
+#### A: scrolling never worked, and observation could not see the result of scrolling either
 
-修完 `rd6bca69f` / `rddf9f7d6` 的 Save… 之后都是真 settle（`observation`）。仍然软的一点：Save 之后 `goal_satisfied` 只有 0.57–0.62、`none_useful` 0.7，两个都在阈值之下，于是一次点了 File ▸ Save As…（0.46，risky 暂停）、一次滚动（禁用滚动条修掉了这条路）。阈值按设计保留，等下一批再看。
+- **App-directed scroll-wheel events are dropped by background apps**. All the `changedPage: True` from last night and the first rounds today came from act-diff noise (cursor/focus flags); the list did not move at all, which is exactly what the user saw with their own eyes. Adding the `kCGMouseEventWindowUnderMousePointer` field to the event and AXRaise-ing the window to the front did nothing; the wheel only moves when Finder is frontmost (and with inertia, behaving oddly). **What scrolls in the background is the AXScrollBar's `AXValue`**: writable, immediate, precise paging (0.5 → InternetAccounts, 1.0 → SetupAssistantBundles). `delivery=semantic` scroll now writes the scroller value, Δvalue = Δpx ÷ (content height − viewport height); the run's scroll plan goes semantic; `canScroll` is determined by the scroller value.
+- **The AX tree exposes every row of the whole table**: one `ax_tree` of /System/Library took 12.6 s and truncated at row 114 at the 1500-node cap; the target row could never be read; even if scrolling worked, the candidates would always be the first 250 of the tree. The helper's `axChildren` keeps only `AXVisibleRows` for tables/outlines with more than 30 children: 12.6 s → 0.44 s, all 33 visible rows have y within the window, and after scrolling the candidate set changes with the viewport — the "observation is the viewport" semantics the browser side always enjoyed.
+- **Settle is a pure loss on big trees**: a single observe takes 9 s, the budget is 1.5 s, all seven steps reported `budget` with zero convergence. Rule: when the act itself (input + successor read) already exceeds the settle budget, the successor is the settled observation and sampling is skipped (`act-outlasted-budget`); measured per act, so settle recovers automatically after leaving the big list. The trace's `latencyMs` gains `settle`.
 
-#### 插曲：`computer_act keypress cmd+s` 在后台为什么什么都不发生
+#### Launching is the host's job too, not the main model's
 
-同一个 helper、同一个 sheet：`computer_run` 通过菜单 press 能打开，`computer_act` 的 app-directed `cmd+s` 却毫无反应。先排除了两个误判：
+`computer_run app=X` previously resolved only the windows of running apps, and the tool description told the main model to "use computer_apps launch first"; the benchmark prompt also hard-required list, then snapshot, so every run was preceded by a fixed 2–3 extra main-model tool rounds. Whether the app is running, launching it and waiting for its first window are all deterministic host facts and should not be asked of any model (nor of Jev — Jev is a per-step judge, not an orchestrator). `rootForApp` now goes through a background `launch` when there is no window and waits for the first window (≤ 8 s); the description changed to "no computer_apps or computer_snapshot call is needed first". Calculator cold start measured: the main model calls `computer_run app="Calculator"` directly, **4 tool calls** (2 SearchTools + run + verification snapshot), the run computes 19 in 8 steps 25.5 s, and SuperOne stays frontmost throughout.
 
-1. **helper 根本没把 "s" 当键**。`keypress` 的 keycode 表只有数字和导航键，字母走 unicode 回退——keycode 0 的事件上挂一个字符。AppKit 按**虚拟 keycode** 匹配菜单快捷键，`cmd+s` 于是以 ⌘A 的 keycode 到达、字符是 "s"，谁也不认——**前台也一样失败**。表补齐了字母、符号、F 键（§10.8 的 `cmd+1..3` 修的是同一个 bug 的数字那一半）。
-2. 补上 keycode 后前台通了、后台还是不通。逐条实测所有按 pid 投递的通道（`CGEventPostToPid`、SkyLight `SLEventPostToPid`、带 window 字段、先 AXRaise）：**⌘ 组合键在后台 app 一律被丢弃、不留痕迹，普通按键则照常到达 first responder**。原因和 §10.8 的菜单校验是同一个：⌘ 快捷键就是菜单命令，AppKit 只在自认 active 的 app 里派发。
+The same round caught a side effect of flattening menu commands: in the closed menu tree View ▸ Decimal Places ▸ "12" appears as a candidate labelled just "12"; the goal said "enter 12", so Jev clicked it (0.54) instead of the digit keys, computing 7.5. Command labels now carry the nearest menu name ("Decimal Places ▸ 12", "Sort By ▸ Date Modified", "File ▸ New Folder"). Also, Calculator restores its last displayed value (still 0.5 after relaunch), so the goal must explicitly All Clear first — the run cannot judge on its own that "the displayed number is not mine".
 
-如果全走物理投递（HID），每个快捷键都要抢前台、抢键盘，用户在别的 app 打字会被截走——退回到 §10.8 那次"闪一下"的体验之下。于是调研了别家：Codex Computer Use 能"聚焦到 app 但不到前台"，靠的是 `SyntheticAppFocusEnforcer`。**app 的 active 信念和 window server 的前台进程是两件事**：前者由 window server 发给 app 的通知设置（`NSApp.isActive`、key window），后者决定谁的菜单栏在屏幕上、真实输入路由给谁。伪造前者、不动后者：给 app 发一条 AppKit-defined 的 `ApplicationActivated` 事件（subtype 1），再发一个路由到它窗口的左键（`CGEventField` 91/92 = windowID；当时打在 (−5000, −5000)，以为点不到任何控件就无害——§10.10 证明打不中 view 的 mouse-down 会被重放，现在打在标题文字上；mouse-down 是让窗口成为 key 的动作），app 就跑它的前台逻辑：菜单校验通过、AXPress 生效、发到它 pid 的 ⌘S 打开保存 sheet，而屏幕上什么都不变；事后发 subtype 2 `ApplicationDeactivated` 收回。**不收回 app 会卡死**：TextEdit 留在"自认 active"的状态后，后续真实激活再也建立不了 key window，连前台 ⌘S 都没反应，只能重启。
+#### Lessons on method
 
-落地在 helper 里（`SyntheticActivation.swift`），菜单 press 和 ⌘ 快捷键共用，每一步都用 AX 验证（`AXFrontmost` 变 true 且 `AXFocusedWindow` 出现），拿不到就退回真实激活。两个性能坑：
-
-- **发完事件立刻探 AX 会把 app 主线程占住**——它既要处理事件也要回答 AX，press 拖到 1.4 s。先歇 30 ms，再等 `AXFrontmost` 翻转（那是 app 自己的信念，处理完激活事件才会变）。
-- **AppKit 的菜单校验有约 0.85 s 的缓存**。观察时 `ax_tree` 走了一遍后台菜单树（全部 disabled），一秒内的 press 读到的还是那份缓存，只能等它过期。改成**按 app 租约**（`SyntheticActivationLease`）：菜单遍历、press、快捷键都在同一份信念下校验，观察到的 enabled 是真的，press 立即；最后一次请求 2 s 后收回，用户真实激活时（`didActivateApplicationNotification`）静默放弃。press 从 ≈1.4 s 降到 ≈430 ms。
-
-结果：Finder View ▸ Sort By ▸ Date Modified `rc5f65309` 一次 press 完成（4.6 s，`goal_satisfied 0.87`），**前台从头到尾没有变过**——§10.8 的"闪一下 + 1 s 内按键会落进目标 app"这条代价不存在了；TextEdit 后台 `computer_act keypress cmd+s` 现在直接打开 Save sheet。`computer_apps focus activate=true` 只剩给确实需要连续前台操作的序列。工具描述改为"菜单命令和 ⌘ 快捷键在后台可用；系统级热键（⌘Space、⌘Tab、截屏）才需要 physical"。
-
-#### 方法上的教训
-
-- "看起来成功"的 run 要读 trace 里的置信度：`with no action left` 的 done 和 0.5x 的 goal_satisfied 都在说观察层少给了什么。
-- 后台通道能不能用，先用独立 helper（`/tmp/claude/menu-probe`）直连 socket 做前台 / 后台 A/B，再改代码；这次 keycode 那个 bug 就是 A/B 时前台也失败才暴露的。
-- 重复给同一个 app 发合成激活事件而不收回会把它弄坏，探针脚本每轮先 `fresh.sh` 重启 TextEdit。
+- Last night's "closed vs open" conclusion came from one paired reading, but there was an uncontrolled variable between the two readings (AppleScript had `activate`d first). Today every conclusion was first A/B-tested via the helper's direct socket (foreground / background once each) before changing code.
+- Finder's `list view options` `sort column` is unreliable to both read and write (reading name column while the menu ✓ is on Date Modified); the reset script fooled itself with it for a while; switched to real menu clicks + ✓ acceptance.
+- Rebuilding the helper while `bun run dev` is running takes the dev instance down with it (helper replaced → app exits cleanly); close first, then build.
 
 
-### 10.10 动作覆盖第二到第四批：逐键输入、后台指针、视觉证据（2026-09-20，Grok 4.6 / high，dev 版）
+### 10.9 Action coverage batch one: expand/select and sheets, and the truth about background ⌘ shortcuts (2026-09-20, Grok 4.6 / high, dev build)
 
-§10.9 之后把剩下的动作跑完：**逐键 `typeText` + `textContains`/`textEquals` 等待**（TextEdit 正文与 Save sheet）、**坐标点击 / 右键菜单 / physical**（Finder 列表）、**zoom / 视觉快照 / 录屏 / 拖拽 / moveMouse**（TextEdit）。每批都是主模型通过 `computer_act` 做单步探测，不经 Jev；目标是"默认纯后台"——宿主预选投递路径、agent 只给操作，physical 最终去掉——所以每种后台投递都得可靠。三批共 15 个缺陷，全部在导出树上带测试提交；下面按发现顺序记，数字来自 `/tmp/claude/cu-cases/*.out` 与 `/tmp/claude/menu-probe` 的直连探针。
+After §10.8 a coverage audit was done on the principle "at least one case per computer_act action"; missing were: Expand on disclosure triangles, row select, sheet/dialog roots, key-by-key typeText, `textContains` wait, physical coordinate click and context menu, zoom / visual snapshot / recording / drag. The first batch ran the first three: **Finder expand Users and select Shared** (without opening, without the sidebar, title stays Macintosh HD) and **TextEdit File ▸ Save… fill a name and save** (sheet root). Both first runs "looked successful"; the trace said otherwise.
 
-#### 第二批：逐键输入（`e1d16907` … `da61e558`）
+#### Finder: the triangle has no name, and the row's state is not in the text
 
-- **act diff 按 ref 配对，一个新节点让整条菜单栏"改名"**。TextEdit 第一次击键后标题栏多出 "Edited"，其后每个 ref 移一位，diff 报出几百条 "@e49 name from Apple"，真正的改动埋在 4000 字符 cap 之外，而且按条数任何 act 都算 worked。改成在配对的父节点下按 role+name、再按 role 配对，剩余才是 added/removed。
-- **`typeText` 开头先发一个 Escape**。Escape 是 Cancel 的键等价物：physical 投递到 Save sheet 时 sheet 关了、文字进了后面的文档。
-- **沙盒 app 的 Save/Open sheet 由 ViewBridge XPC service 托管**。sheet 是 app 的窗口，里面的控件活在 service 进程里，window server 把 HID 键盘事件直接交给 service；投给 app pid 的键事件停在 app（前台也一样），AX 又报的是 app 的 pid。通过 responsibility API 找到 app 的 service，谁持有焦点窗口就投给谁——后台往 Save sheet 里打 "jev-typed 你好" 落地。
-- **`wait_for` 超时只说 `failed`**。"second line" 被 TextEdit 自动首字母大写成 "Second line"，主模型只能再拍一张快照找原因。失败结果现在带 `observed`（ref/name/value）；描述里说明 typeText 是击键、受 app 自动纠正影响，setText 才是精确赋值。
-- 66×20 的窗口共享指示器还留在 CG 窗口列表里当 dialog 根（§10.9 只滤了 AX 侧）。
+First run `r72a995cc`: step 1 clicked a candidate **with an empty label** (0.99), step 2 Select Shared (0.97), then `goal_satisfied 0.53 with no action left` — the steps were right, but Jev was not sure it had finished. Each row in the Finder list has one `AXDisclosureTriangle`: no name, **does not answer AXExpanded**, and its state is "0"/"1" in AXValue. The page treated the four triangles as four nameless candidates with value all "0"; Jev guessed the Users one by list order, and after expanding, the page text still only had "Users\n1", showing nothing had changed. The second run `r8efb3b2f` exposed the other half: after Select Shared that row **vanished from the candidates** (a selected row no longer offers select), yet the text carried no trace of "selected"; Jev read the page as unchanged, scrolled once, and paused with `no-progress`.
 
-#### 第三批：后台指针（`55c9b1bb` … `47f498dc`）
+The fixes are all about "put the state into the text Jev uses to judge completion": the helper reports the AppKit triangle's AXValue as `expanded`; the page names the triangle after its row and offers it as Expand; the text says `(Users: expanded)`, `(Users: selected)`. After the fix `rf4cabeb8`: Expand Users 1.0 → Select Shared 1.0 → `goal_satisfied 0.85`, 9.4 s, SuperOne frontmost throughout. The snapshot's TOON outline likewise gained an expanded/collapsed/checked state column — the main model should not have to decode state from a digit either.
 
-**投给 pid 的鼠标事件一直是无效的**，之前 `changedPage: True` 全是 diff 噪声。HID 指针事件到 app 时由 window server 填好窗口号和窗内位置；posted 事件两者皆无，`windowNumber` 为 0，NSApplication 直接丢。窗口号在 `CGEventField` 51（把 windowID 逐个写进每个字段试出来的），窗内位置是独立记录（私有 `CGEventSetWindowLocation`）；两者都填上之后，后台坐标点击选中 Finder 行、右键弹出 20+ 项的上下文菜单、滚轮翻页 /System/Library 全通，前台始终是 Electron。顺带修的：表格的 AXValue 是元素指针，每次读地址都变、diff 恒有噪声；`selected` 翻转本身就算 act 生效（一行被点中只改 4 处，低于"内容刷新"的 8 处阈值）；`newRoot` 等待的起点就是那个菜单根时回 `preexisting` 而不是 `failed`。
+#### TextEdit sheet: four observation defects and one settle assumption
 
-租约的两个时序坑：**释放事件打到刚被用户真实激活的 app 上**（Finder 被拉到前台做 physical 点击的两秒后收到 `ApplicationDeactivated`，自己退到后台，physical 点击因"不是 frontmost"被拒）——释放改到主队列、对已 active 的 app 什么都不发；**上下文菜单随租约一起关掉**——菜单是 app 自己的窗口，只在它自认 active 时存活，2 s 租约到期菜单就没了，agent 还没读；目标 pid 有 pop-up menu 层（level 101）的窗口就推迟释放。physical 那条腿最后一次复跑是 `TIER_BLOCKED`（前台是 Electron）——这正是要去掉的路径，不修。
+`rd0500e96` / `r18f45d6d` both ended with `goal_satisfied 0.60–0.69 with no action left`; the file was indeed saved, but every step along the way had a flaw:
 
-#### 第四批：拖拽、视觉快照、zoom、录屏、moveMouse（`ff3f212e` … `e15e2a95`）
+- **The ruler puts twenty numbers in front of the document**. TextEdit's ruler has one `AXRulerMarker` per tab stop, with the offset as value ("1.2698412698"…), and the page text started with them. Positional roles (ruler / scroll bar / splitter / slider) no longer enter the text.
+- **The nameless pop-up is "button "**. The save sheet's file-format menu has no title, only the current option "Rich Text Document"; nameless controls are now named by their displayed value, and those with neither name nor value are no longer offered.
+- **A disabled scroll bar still offered scroll_down** (`rddf9f7d6` step 4). A one-line document's scroller `enabled=false` is AppKit saying "the content fits"; now read as cannot scroll in either direction.
+- **A title-bar accessory was treated as a dialog root**: macOS 27's window-sharing button is a 66×20 AXDialog titled "Window"; transient-root discovery listed it next to the real sheet, and the main model went in looking for the save form. Roots need a minimum size.
+- **Settle was skipped after File ▸ Save…** (`act-outlasted-budget`). §10.8's rule "if the act exceeds the budget, treat the successor as settled" assumed the act was slow because reading the window was slow; a menu command is slow because of activation + waiting for menu validation (1–2 s), while the TextEdit window itself reads in 300 ms, and the sheet is exactly what settle should wait for. Now the read itself must also exceed half the budget before skipping.
 
-用例 `visual-jev-{1..4}`：语义快照 → 窗口视觉快照 → zoom 文本行 → 带录屏的 moveMouse → 拖选整行并 typeText 替换 → `textEquals` 等待 → 整屏视觉快照，全程 app-directed、TextEdit 在后台。首跑除 zoom 外全部 worked，但三个结果是假的：
+After the fixes, `rd6bca69f` / `rddf9f7d6` both had a real settle (`observation`) after Save…. Still soft: after Save, `goal_satisfied` is only 0.57–0.62 and `none_useful` 0.7, both below threshold, so once it clicked File ▸ Save As… (0.46, risky pause) and once it scrolled (the disabled-scrollbar fix removed that path). Thresholds kept as designed, to be reviewed in the next batch.
 
-- **后台拖拽根本不生效，单击也只成功过一次**。直连探针：click 把光标放到 "Jev sheet |benchmark"，drag 之后 typeText 落在第 0 位。自建了一个可插桩的 AppKit 实验 app（`/tmp/claude/dragprobe/lab`，在 `sendEvent`/`mouseDown` 上打日志），看到的是：§10.9 那个"位置 (−5000, −5000) 所以点不到任何控件"的 key-making click **确实让窗口变 key，但没打中任何 view 的 mouseDown 会被 AppKit 留下来，在下一次点击之后重放给 first responder**——日志里紧跟着 `textview mouseDown at {60,288}` 的是 `textview mouseDown at {-1,333}`，光标被拽到了文本开头；拖选同理坍缩。窗口圆角处的 (1,1) 一样被重放；打在标题文字上、标尺上、目标点上的都不重放。另外 NSTextView 不接受 first mouse：没有 key window 时它的第一次点击被吞掉只用来变 key，而 Calculator 的按钮是 click-through，第一次就生效——所以"点两次"对按钮会双击、对标题栏正中在统一工具栏（Finder）里会按到控件。落地：key-making click 打在 AXWindow 的 `AXTitleUIElement` 中心，没有标题元素就打在关闭按钮左侧 6 px 的窗框上，两者都没有就不点（它的第一次真实点击自会让窗口变 key）。修后 TextEdit 后台单击 2/2、拖选替换 2/2（"dragged"），Finder 点击/右键/滚动与 Calculator 按钮无回归。
-- **zoom 不放大**。它把窗口按同样的逻辑尺寸重拍一遍再裁剪，320×40 的区域回来还是 320×40 像素，看不到快照里没有的东西——`SCDisplay.width` 是点数，由它推出的 scale 恒为 1。现在从 display mode 取真实像素宽度，只对区域用 `sourceRect` 拍一张 2× 的图（640×80）。第二个坑：窗口过滤器上的 `sourceRect` 平时按窗口坐标解释，**一旦同一窗口上有 SCStream 在跑（取景器的 PiP 镜像），就变成显示器坐标**，zoom 拍到的是标题栏；直连探针复现了 PiP 开/关两种结果。区域裁剪改走"只包含这个窗口的显示器过滤器"，坐标语义只有一种。
-- **moveMouse 报 worked**。diff 里几十条菜单项 `enabled` true→false、"Browse All Versions…"→"No Document"，把 unknown 提成了 worked。菜单栏的 enabled 是校验状态——取决于 app 此刻是否自认 active、AppKit 上次何时校验——不是 act 改的。菜单栏整个不进 diff；"内容被替换"的比例也只按被比较的节点算（菜单栏占了小窗口大纲的大半，分母不扣它，一个没变的窗口会被判成整页重绘，hover 照样 worked）。修后 hover 是 `unknown`、diff 为空。
+#### Interlude: why `computer_act keypress cmd+s` does nothing in the background
 
-其余按预期：窗口视觉快照 586×488（逻辑尺寸）、整屏 1440×931（`maxCaptureWidth` 缩放）、录屏 mp4 1172×976 / 0.67–1.4 s / 9 帧（录屏是原生 2×，快照是 1×）、拖选 + typeText 的 diff 只有 `@e3 value "Jev sheet benchmark" → "dragged"` 加几条标尺刻度、`textEquals` 立即 `preexisting`。
+Same helper, same sheet: `computer_run` can open it via menu press, but `computer_act`'s app-directed `cmd+s` gets no reaction. Two misdiagnoses were ruled out first:
 
-#### 方法上的教训
+1. **The helper did not treat "s" as a key at all**. `keypress`'s keycode table had only digits and navigation keys; letters took the unicode fallback — a character attached to a keycode-0 event. AppKit matches menu shortcuts by **virtual keycode**, so `cmd+s` arrived with ⌘A's keycode and the character "s", recognised by nobody — **it failed in the foreground too**. The table now covers letters, symbols and F keys (§10.8's `cmd+1..3` fix was the digit half of the same bug).
+2. With keycodes fixed the foreground worked, the background still did not. Every pid-targeted delivery channel tested one by one (`CGEventPostToPid`, SkyLight `SLEventPostToPid`, with the window field, AXRaise first): **⌘ combinations are always dropped by a background app without a trace, while plain keys reach the first responder as usual**. The reason is the same as §10.8's menu validation: a ⌘ shortcut is a menu command, and AppKit dispatches it only in an app that believes it is active.
 
-- 真实 app 看不到 AppKit 内部状态时，写一个几十行的替身 app 打日志比猜源码快：这次 "重放的 mouseDown" 和 "NSTextView 不接受 first mouse" 都是日志直接给出的。
-- 同一个 helper、同样的参数，直连探针对、走宿主就错——差异必然在环境（这次是 PiP 的 SCStream）。把宿主在动作前后做的副作用（取景器、录屏）逐个加进探针，而不是在宿主里加日志。
-- 每一个 "worked" 都要看 diff 内容：hover 能 worked，说明效果判定被环境噪声喂饱了。
+If everything went through physical delivery (HID), every shortcut would have to grab the foreground and the keyboard, and the user typing in another app would be intercepted — worse than §10.8's "flash once" experience. So other implementations were surveyed: Codex Computer Use can "focus an app without bringing it to the front", relying on `SyntheticAppFocusEnforcer`. **An app's belief that it is active and the window server's frontmost process are two different things**: the former is set by notifications the window server sends to the app (`NSApp.isActive`, key window), the latter decides whose menu bar is on screen and where real input is routed. Fake the former, leave the latter alone: send the app an AppKit-defined `ApplicationActivated` event (subtype 1), then a left click routed to its window (`CGEventField` 91/92 = windowID; at the time at (−5000, −5000), assumed harmless since it hits no control — §10.10 proved a mouse-down that misses every view gets replayed, so it now lands on the title text; the mouse-down is what makes the window key), and the app runs its foreground logic: menu validation passes, AXPress works, ⌘S sent to its pid opens the save sheet, and nothing changes on screen; afterwards send subtype 2 `ApplicationDeactivated` to take it back. **Not taking it back wedges the app**: once TextEdit is left in the "believes it is active" state, subsequent real activations can never establish a key window, even foreground ⌘S stops responding, and only a restart helps.
+
+Landed in the helper (`SyntheticActivation.swift`), shared by menu press and ⌘ shortcuts, each step verified via AX (`AXFrontmost` turns true and `AXFocusedWindow` appears), falling back to real activation when that cannot be obtained. Two performance traps:
+
+- **Probing AX immediately after sending the event hogs the app's main thread** — it has to process the event and answer AX at the same time, dragging press out to 1.4 s. Rest 30 ms first, then wait for `AXFrontmost` to flip (that is the app's own belief and only changes after it has processed the activation event).
+- **AppKit's menu validation has a cache of about 0.85 s**. During observation `ax_tree` walked the background menu tree (all disabled), and a press within a second still read that cache; the only option was to wait for it to expire. Changed to a **per-app lease** (`SyntheticActivationLease`): menu traversal, press and shortcuts all validate under the same belief, the observed enabled is real, press is immediate; taken back 2 s after the last request, and silently abandoned when the user really activates (`didActivateApplicationNotification`). Press dropped from ≈1.4 s to ≈430 ms.
+
+Result: Finder View ▸ Sort By ▸ Date Modified `rc5f65309` completed with a single press (4.6 s, `goal_satisfied 0.87`), **the foreground never changed from start to finish** — §10.8's cost of "flash once + keystrokes within 1 s land in the target app" no longer exists; TextEdit background `computer_act keypress cmd+s` now opens the Save sheet directly. `computer_apps focus activate=true` remains only for sequences that genuinely need sustained foreground operation. The tool description changed to "menu commands and ⌘ shortcuts work in the background; only system-level hotkeys (⌘Space, ⌘Tab, screenshots) need physical".
+
+#### Lessons on method
+
+- A run that "looks successful" needs its trace confidences read: a done `with no action left` and a goal_satisfied of 0.5x are both saying the observation layer withheld something.
+- Whether a background channel works is A/B-tested first with a standalone helper (`/tmp/claude/menu-probe`) via the direct socket, foreground / background, before changing code; the keycode bug this time was exposed precisely because the A/B failed in the foreground too.
+- Repeatedly sending synthetic activation events to the same app without taking them back breaks it; the probe script restarts TextEdit with `fresh.sh` every round.
 
 
-### 10.11 后台输入兼容矩阵：Chromium 窗口吃掉第一次点击（2026-09-20，直连探针，无 Jev）
+### 10.10 Action coverage batches two to four: key-by-key input, background pointer, visual evidence (2026-09-20, Grok 4.6 / high, dev build)
 
-§10.10 之后"默认纯后台"还差一个证据：不同 UI 栈的 app 在后台各跑一遍点击 + 打字 + 右键 + ⌘ 快捷键。矩阵是 **Chrome**（Chromium 原生框架）、**Cursor**（Electron，隐藏标题栏，SuperOne 自己的形状）、**系统设置**（SwiftUI/AppKit）、**备忘录**（AppKit）、再加 TextEdit / Finder 回归；全程 SuperOne 在前台，每一步都用 AX 读回目标控件验证，不看 `ok`。Cursor 一开始就全灭：点进输入框不聚焦、打字落空、⌘N 无反应、右键什么都没有；Chrome 却全绿。
+After §10.9 the remaining actions were run: **key-by-key `typeText` + `textContains`/`textEquals` wait** (TextEdit body and Save sheet), **coordinate click / context menu / physical** (Finder list), **zoom / visual snapshot / recording / drag / moveMouse** (TextEdit). Each batch was single-step probing by the main model through `computer_act`, not via Jev; the goal is "pure background by default" — the host preselects the delivery path, the agent only gives operations, physical eventually goes away — so every background delivery must be reliable. 15 defects across the three batches, all committed with tests on the exported tree; recorded below in order of discovery, with numbers from `/tmp/claude/cu-cases/*.out` and the `/tmp/claude/menu-probe` direct probes.
 
-#### 根因：refuse-first-mouse 的窗口没有可点的框
+#### Batch two: key-by-key input (`e1d16907` … `da61e558`)
 
-用仓库里的 Electron 44 起一个几十行的探针 app（`/tmp/claude/matrix/eprobe`，可选 `titleBarStyle` / `trafficLightPosition`），每次测试前重启拿到干净状态，很快分出真假：**一个尚未成为 key 的 Chromium 窗口会吞掉第一次点击**——按钮在第二次点击才触发、输入框第二次才聚焦、点两下就全通（`TWO=1` 对照）。这是 Chromium 内容视图 `acceptsFirstMouse` 为 NO 的正常行为，§10.10 已经为 NSTextView 撞过一次，所以 helper 才有那个"让窗口变 key 的点击"。问题在它落在哪：
+- **The act diff paired by ref, and one new node "renamed" the whole menu bar**. After TextEdit's first keystroke the title bar gained "Edited", every subsequent ref shifted by one, the diff reported hundreds of "@e49 name from Apple", the real change was buried beyond the 4000-char cap, and by count any act counted as worked. Changed to pairing under the matched parent node by role+name, then by role; only the remainder is added/removed.
+- **`typeText` sent an Escape first**. Escape is the key equivalent of Cancel: with physical delivery to the Save sheet, the sheet closed and the text went into the document behind it.
+- **A sandboxed app's Save/Open sheet is hosted by a ViewBridge XPC service**. The sheet is the app's window, but the controls inside live in the service process; the window server hands HID keyboard events directly to the service; key events posted to the app pid stop at the app (in the foreground too), while AX reports the app's pid. Find the app's service via the responsibility API and post to whoever holds the focused window — typing "jev-typed 你好" into the Save sheet in the background lands.
+- **`wait_for` timeout only said `failed`**. "second line" was auto-capitalised by TextEdit to "Second line", and the main model could only take another snapshot to find out why. The failure result now carries `observed` (ref/name/value); the description states that typeText is keystrokes and subject to app autocorrection, while setText is exact assignment.
+- The 66×20 window-sharing indicator still remained in the CG window list as a dialog root (§10.9 filtered only the AX side).
 
-- 有标题文字（TextEdit / Finder / Calculator）→ 点标题文字，正确；
-- 没有标题文字时点关闭按钮左侧 6 pt 的"窗框"，条件是关闭按钮离左边 ≥ 12 pt。Chrome 是 12 → 点中 Chromium 的 views 区域（标签栏），碰巧能变 key；Electron 默认标题栏是 8/11 → 不点，第一次点击被吃；**Cursor 是 14 → 点中的是它 HTML 标题栏的拖拽区**，一次拖拽区按下什么都不变 key。用 `AXUIElementCopyElementAtPosition` 对候选点做命中测试：TextEdit 返回 AXWindow 本身，Chrome/Cursor 返回 AXGroup，Electron 返回 AXWebArea——**只有 app 说这一点就是窗口本体时它才是框**。
-- 让 Chromium 窗口变 key 的办法试了一圈：AXRaise 能通但会把窗口提到其它 app 的窗口之上（CG 窗口序 9 → 3）；设 `AXFocused` / `AXFocusedWindow` / `AXMain` 在干净实例上都无效（之前看到的"有效"是同一实例上一次两连击留下的粘性状态——**变过 key 的窗口在租约释放后仍是"上一个 key 窗口"，下次合成激活会恢复它**，所以实验必须重启目标）；§10.9 那个 (−5000, −5000) 的离屏点击对 Chromium 窗口有效，而且 Chromium **不重放**它：之后按钮只触发一次、拖选 + 输入替换正确。
+#### Batch three: background pointer (`55c9b1bb` … `47f498dc`)
 
-落地在 `SyntheticActivation.keyMakingPoint`：标题文字 → 命中测试通过的框点 → 窗口内容含 `AXWebArea`（广度优先、200 节点预算）则离屏点击 → 否则不点。AppKit 无标题窗口仍不点，避开 §10.10 的重放。
+**Mouse events posted to a pid were always ineffective**; the earlier `changedPage: True` was all diff noise. When HID pointer events reach an app, the window server has filled in the window number and in-window position; posted events have neither, `windowNumber` is 0, and NSApplication drops them outright. The window number is `CGEventField` 51 (found by writing the windowID into every field one at a time), the in-window position is a separate record (private `CGEventSetWindowLocation`); with both filled in, background coordinate clicks select Finder rows, right-click pops a 20+ item context menu, and wheel paging through /System/Library all pass, with Electron frontmost throughout. Fixed along the way: a table's AXValue is an element pointer whose address changes on every read, so the diff was always noisy; a `selected` flip counts as the act taking effect on its own (clicking a row changes only 4 places, below the 8-place "content refreshed" threshold); when the `newRoot` wait's starting point is that menu root, return `preexisting` instead of `failed`.
 
-#### 矩阵结果（修后）
+Two timing traps in the lease: **the release event hit an app the user had just really activated** (Finder, pulled to the front for a physical click, received `ApplicationDeactivated` two seconds later, retreated to the background itself, and the physical click was rejected as "not frontmost") — release moved to the main queue and sends nothing to an already-active app; **the context menu closed together with the lease** — the menu is the app's own window and survives only while the app believes it is active; when the 2 s lease expired the menu was gone before the agent had read it; release is deferred while the target pid has a window at the pop-up menu level (101). The final rerun of the physical leg was `TIER_BLOCKED` (Electron frontmost) — exactly the path being removed, not fixed.
 
-| app | 点击聚焦 | 打字 | 右键 | ⌘ 快捷键 | 备注 |
+#### Batch four: drag, visual snapshot, zoom, recording, moveMouse (`ff3f212e` … `e15e2a95`)
+
+Cases `visual-jev-{1..4}`: semantic snapshot → window visual snapshot → zoom on a text line → moveMouse with recording → drag-select the whole line and typeText to replace → `textEquals` wait → full-screen visual snapshot, all app-directed with TextEdit in the background. The first run reported worked for everything except zoom, but three of the results were false:
+
+- **Background drag does not work at all, and single click succeeded only once**. Direct probe: click puts the cursor at "Jev sheet |benchmark", and after drag the typeText lands at position 0. Built an instrumentable AppKit experiment app (`/tmp/claude/dragprobe/lab`, logging on `sendEvent`/`mouseDown`) and saw: §10.9's key-making click at "(−5000, −5000) so it hits no control" **does make the window key, but a mouseDown that hits no view is kept by AppKit and replayed to the first responder after the next click** — right after `textview mouseDown at {60,288}` in the log comes `textview mouseDown at {-1,333}`, dragging the cursor to the start of the text; drag-select collapses the same way. (1,1) at the window's rounded corner is replayed likewise; clicks on the title text, the ruler, or the target point are not. Also NSTextView does not accept first mouse: without a key window its first click is swallowed and used only to become key, whereas Calculator's buttons are click-through and take effect on the first click — so "click twice" double-clicks buttons, and in a unified toolbar (Finder) the centre of the title bar hits a control. Landed: the key-making click lands at the centre of the AXWindow's `AXTitleUIElement`; without a title element, on the window frame 6 px left of the close button; with neither, no click (its first real click will make the window key on its own). After the fix TextEdit background single click 2/2, drag-select replace 2/2 ("dragged"), no regressions for Finder click/right-click/scroll and Calculator buttons.
+- **Zoom does not magnify**. It re-captured the window at the same logical size and cropped, so a 320×40 region came back as 320×40 pixels, showing nothing not already in the snapshot — `SCDisplay.width` is in points, and the scale derived from it is always 1. Now the real pixel width is taken from the display mode, and only the region is captured with `sourceRect` at 2× (640×80). Second trap: `sourceRect` on a window filter is normally interpreted in window coordinates, **but once an SCStream is running on the same window (the viewfinder's PiP mirror), it becomes display coordinates**, and zoom captured the title bar; the direct probe reproduced both outcomes with PiP on/off. Region cropping now uses a "display filter containing only this window", with a single coordinate semantics.
+- **moveMouse reported worked**. The diff had dozens of menu items `enabled` true→false and "Browse All Versions…"→"No Document", promoting unknown to worked. The menu bar's enabled is validation state — depending on whether the app currently believes it is active and when AppKit last validated — not something the act changed. The whole menu bar is excluded from the diff; the "content replaced" ratio is also computed only over compared nodes (the menu bar takes up most of a small window's outline; without subtracting it from the denominator, an unchanged window gets judged as a full repaint, and hover still counts as worked). After the fix hover is `unknown` with an empty diff.
+
+The rest as expected: window visual snapshot 586×488 (logical size), full screen 1440×931 (`maxCaptureWidth` scaling), recording mp4 1172×976 / 0.67–1.4 s / 9 frames (recording is native 2×, snapshots are 1×), the drag-select + typeText diff is only `@e3 value "Jev sheet benchmark" → "dragged"` plus a few ruler ticks, `textEquals` immediately `preexisting`.
+
+#### Lessons on method
+
+- When a real app hides AppKit internals, a few-dozen-line stand-in app with logging beats guessing at the source: both "replayed mouseDown" and "NSTextView does not accept first mouse" came straight from the log this time.
+- Same helper, same parameters, direct probe right, via the host wrong — the difference must be in the environment (this time the PiP SCStream). Add the host's side effects before/after the action (viewfinder, recording) to the probe one by one, rather than adding logs in the host.
+- Every "worked" needs its diff content read: hover being able to report worked means the effect judgement was fed by environmental noise.
+
+
+### 10.11 Background input compatibility matrix: Chromium windows eat the first click (2026-09-20, direct probe, no Jev)
+
+After §10.10 "pure background by default" lacked one piece of evidence: running click + type + right-click + ⌘ shortcut in the background across apps with different UI stacks. The matrix is **Chrome** (Chromium native frame), **Cursor** (Electron, hidden title bar, SuperOne's own shape), **System Settings** (SwiftUI/AppKit), **Notes** (AppKit), plus TextEdit / Finder regressions; SuperOne frontmost throughout, every step verified by reading the target control back via AX, ignoring `ok`. Cursor failed everything from the start: clicking into the input did not focus, typing went nowhere, ⌘N no reaction, right-click nothing; Chrome was all green.
+
+#### Root cause: a refuse-first-mouse window with no clickable frame
+
+Using the repository's Electron 44 to build a few-dozen-line probe app (`/tmp/claude/matrix/eprobe`, with optional `titleBarStyle` / `trafficLightPosition`), restarted before every test for a clean state, quickly separated true from false: **a Chromium window that is not yet key swallows the first click** — buttons fire on the second click, inputs focus on the second, and clicking twice passes everything (`TWO=1` control). This is the normal behaviour of Chromium's content view with `acceptsFirstMouse` NO; §10.10 already hit it once with NSTextView, which is why the helper has that "click to make the window key". The problem is where it lands:
+
+- With title text (TextEdit / Finder / Calculator) → click the title text, correct;
+- Without title text, click the "frame" 6 pt left of the close button, on the condition that the close button is ≥ 12 pt from the left edge. Chrome is 12 → hits Chromium's views area (the tab strip), which happens to make it key; Electron's default title bar is 8/11 → no click, the first click gets eaten; **Cursor is 14 → hits the drag region of its HTML title bar**, and a press in the drag region does not make anything key. Hit-testing the candidate points with `AXUIElementCopyElementAtPosition`: TextEdit returns the AXWindow itself, Chrome/Cursor return AXGroup, Electron returns AXWebArea — **it is the frame only when the app says that point is the window body itself**.
+- Ways to make a Chromium window key were tried all round: AXRaise works but lifts the window above other apps' windows (CG window order 9 → 3); setting `AXFocused` / `AXFocusedWindow` / `AXMain` all do nothing on a clean instance (the earlier "works" was sticky state left by a previous double-click on the same instance — **a window that was once key remains "the last key window" after the lease is released, and the next synthetic activation restores it**, so experiments must restart the target); §10.9's (−5000, −5000) offscreen click works on Chromium windows, and Chromium **does not replay** it: buttons fire once afterwards, and drag-select + input replacement are correct.
+
+Landed in `SyntheticActivation.keyMakingPoint`: title text → hit-test-passing frame point → offscreen click if the window content contains `AXWebArea` (breadth-first, 200-node budget) → otherwise no click. AppKit windows without a title still get no click, avoiding §10.10's replay.
+
+#### Matrix results (after fix)
+
+| app | click to focus | typing | right-click | ⌘ shortcut | notes |
 |---|---|---|---|---|---|
-| Chrome | ✓ 页内输入框 | ✓ | ✓ 原生菜单 | ✓ ⌘L / ⌘T / ⌘W | 修前经 views 框点击也通；修后走离屏路径，尚未在 Chrome 上复跑（用户正在用） |
-| Electron 44 探针（default / hiddenInset / 交通灯内缩 20 pt） | ✓ 一次 | ✓ | — | ✓ ⌘N 菜单加速键 | 修前 hiddenInset 与内缩形状均需两次点击 |
-| Cursor | ✓ | ✓ | ✓ HTML 菜单（在窗口 AX 树里是 AXMenuItem，不是新根） | ✓ ⌘A / ⌘⇧P | 修前全灭 |
-| 系统设置 | ✓ 侧栏行选中、搜索框 | ✓ | 无菜单可测 | ✓ ⌘F | |
-| 备忘录 | — | 正文 AXTextArea 不回 value，无法读回 | ✓ 原生菜单 | ⌘N 返回 ok，效果读不到 | 窗口 AX 树里只有文件夹大纲，笔记列表不暴露 |
-| TextEdit | ✓ 光标不跳 | ✓ | | | 拖选替换 ✓（起点要在文字内，容器 inset 里按下不会开始选择） |
+| Chrome | ✓ in-page input | ✓ | ✓ native menu | ✓ ⌘L / ⌘T / ⌘W | passed before the fix via the views frame click too; after the fix takes the offscreen path, not yet rerun on Chrome (user is using it) |
+| Electron 44 probe (default / hiddenInset / traffic lights inset 20 pt) | ✓ once | ✓ | — | ✓ ⌘N menu accelerator | before the fix hiddenInset and the inset shape both needed two clicks |
+| Cursor | ✓ | ✓ | ✓ HTML menu (AXMenuItem in the window's AX tree, not a new root) | ✓ ⌘A / ⌘⇧P | failed everything before the fix |
+| System Settings | ✓ sidebar row selection, search box | ✓ | no menu to test | ✓ ⌘F | |
+| Notes | — | body AXTextArea returns no value, cannot read back | ✓ native menu | ⌘N returns ok, effect unreadable | the window's AX tree has only the folder outline; the notes list is not exposed |
+| TextEdit | ✓ cursor does not jump | ✓ | | | drag-select replace ✓ (start point must be inside the text; a press in the container inset does not start a selection) |
 
-#### 方法上的教训
+#### Lessons on method
 
-- **实验对象要能重置**。Chromium 的 key 状态是粘的，同一个 Cursor 实例上先后跑五种策略全"有效"，只有第一种真的有效；换成每次重启的 Electron 探针后半小时就定位了。
-- **命中测试胜过几何阈值**。"关闭按钮左侧 12 pt 是框"在 Chrome 上碰巧对、在 Cursor 上错；问 app 那一点是什么，三种 UI 栈一次分清。
-- 探针脚本点到用户真实窗口要三思：一次坐标点击落在 YouTube 的视频链接上，导航了用户的标签页（⌘← 撤回）。后续 Chrome 用例改为 ⌘T 开自己的标签、⌘W 关掉，全程 app-directed。
+- **The experimental subject must be resettable**. Chromium's key state is sticky; running five strategies in sequence on the same Cursor instance all "worked", and only the first really did; after switching to the restart-every-time Electron probe it was pinned down within half an hour.
+- **Hit-testing beats geometric thresholds**. "12 pt left of the close button is the frame" happened to be right on Chrome and wrong on Cursor; asking the app what that point is separated all three UI stacks at once.
+- Think twice before a probe script clicks the user's real window: one coordinate click landed on a YouTube video link and navigated the user's tab (undone with ⌘←). Subsequent Chrome cases open their own tab with ⌘T and close it with ⌘W, all app-directed.
 
-### 10.12 focus-steal 防护：被驱动的 app 自己抢前台时还回去（2026-09-20，直连探针）
+### 10.12 Focus-steal protection: give the front back when the driven app grabs it (2026-09-20, direct probe)
 
-"默认纯后台"的最后一块：被驱动的 app 在后台"自认 active"，有些操作会让它**真的**调 `NSApp.activate`。先量哪些会：TextEdit 的 ⌘N / ⌘O（Open 面板）/ ⌘P 都不会；**Electron 新开一个 `BrowserWindow`（⌘⇧N）一秒内就把自己切到前台**，用户在 SuperOne 里的输入焦点被截走；`dialog.showMessageBox` 是 sheet，不抢。Codex 为此有 `SystemFocusStealPreventer`，我们现在也有一个（`FocusStealGuard.swift`）。
+The last piece of "pure background by default": the driven app "believes it is active" in the background, and some operations make it **really** call `NSApp.activate`. First measure which do: TextEdit's ⌘N / ⌘O (Open panel) / ⌘P do not; **Electron opening a new `BrowserWindow` (⌘⇧N) switches itself to the front within a second**, intercepting the user's input focus in SuperOne; `dialog.showMessageBox` is a sheet and does not grab. Codex has `SystemFocusStealPreventer` for this; we now have one too (`FocusStealGuard.swift`).
 
-判定"抢"而不是"用户自己切过去"靠两个条件：这个 app 在最近 3 s 内被驱动过（投过事件、持有合成激活租约、做过 AX 动作），且最近 0.5 s 没有任何 HID 输入。后者读窗口服务器的 `CGEventSource.secondsSinceLastEventType(.hidSystemState, …)`——**投给 pid 的事件不计入 HID 也不计入 session 状态**（探针里投了三个 ⌘ 组合键，两个时钟都纹丝不动），所以它能把用户的手和 helper 的手分开。判定为抢就把之前在前台的 app `activate()` 回来（helper 作为后台进程调它是有效的，菜单 press 的 fallback 一直这么用）。helper 自己要求的激活——`focus_app`/`launch_app` 带 `activate`、`focus_window`、菜单 press 的真实激活兜底——先登记再做，不会被还回去。
+Judging "grabbed" rather than "the user switched over themselves" relies on two conditions: the app was driven within the last 3 s (events posted, a synthetic activation lease held, an AX action performed), and there has been no HID input in the last 0.5 s. The latter reads the window server's `CGEventSource.secondsSinceLastEventType(.hidSystemState, …)` — **events posted to a pid count neither as HID nor toward session state** (the probe posted three ⌘ combinations and neither clock moved), so it can tell the user's hand from the helper's. When judged as a grab, the previously frontmost app is `activate()`d back (valid for the helper to call as a background process; the menu press fallback has always used it). Activations the helper itself requested — `focus_app`/`launch_app` with `activate`, `focus_window`, the real-activation fallback of menu press — are registered first and are not given back.
 
-验证（Electron 44 探针，每次重启）：后台 ⌘⇧N 后 1.5 s 前台仍是 SuperOne，helper 日志 "Electron took the front while driven; returning it to SuperOne Alpha"；先过 HID tap 投一个零位移滚轮再切过去（模拟用户之手）→ 切换成立；纯脚本切换（无 HID）→ 被还回；`focus_app activate=true` 与 `focus_window` → 成立。
+Verification (Electron 44 probe, restarted each time): 1.5 s after background ⌘⇧N the front is still SuperOne, helper log "Electron took the front while driven; returning it to SuperOne Alpha"; posting a zero-displacement wheel via the HID tap first, then switching (simulating the user's hand) → the switch holds; pure scripted switch (no HID) → given back; `focus_app activate=true` and `focus_window` → hold.
 
-两个后续决定（2026-09-21）：
+Two follow-up decisions (2026-09-21):
 
-- **用户真的切到目标 app 之后 agent 照投不管**。app-directed 按 pid 投递、不看前台，用户的击键和 agent 的会在同一个输入框里交错；讨论过"目标 app 真实前台 + 最近 0.5 s 有 HID 输入就把 act 判成 `didnt`"，决定不做，保持现状。
-- **右键菜单读完即关、按项时重开**。矩阵测试时用户看到备忘录的右键菜单盖在 SuperOne 上——菜单是 app 自己的 pop-up 层窗口，不管谁在前台都画在最上面，agent 读它、决策的几秒到几十秒里一直可见。现在动作打开的菜单被读进后继状态后立刻取下（helper `dismiss_root`：对 AXMenu 做 `AXCancel`，等价于 Escape 但不投事件）；那个状态照常可用——在它上面 act / snapshot / zoom 时，服务重放打开它的动作（右键或 press）、把重开的菜单绑回原来的 rootId（ref 按遍历序号解析，同一菜单重开后序号一致：TextEdit 82 项同序）、用完再取下，除非动作本身已把它关掉（按了一项）。用户自己打开的菜单不碰（不在 rootsBefore 之外的不取）。`ContextMenuLedger`（`context-menu.ts`）承载全部逻辑，fake backend 把取下的菜单收起、opener 再按时原样放回，契约测试 5 条。租约另加一道兜底：菜单撑着租约超过 60 s 没有任何请求，就用 AX 关掉菜单并释放。
-- 代价：每次对菜单状态操作多一次重开（右键 + 等菜单出现，≈0.3–0.8 s）；对菜单状态做文本类 wait 会每 50 ms 重开一次（闪），菜单是静态的，实际不会这么等。
+- **Once the user has really switched to the target app, the agent keeps posting regardless**. App-directed posts by pid without looking at the front, so the user's keystrokes and the agent's interleave in the same input; "judge the act as `didnt` when the target app is really frontmost + HID input in the last 0.5 s" was discussed and rejected; status quo kept.
+- **Context menus are dismissed once read and reopened when an item is pressed**. During the matrix tests the user saw Notes' context menu covering SuperOne — the menu is the app's own pop-up-level window, drawn on top no matter who is frontmost, and stays visible for the seconds to tens of seconds while the agent reads it and decides. Now a menu opened by an action is taken down immediately after being read into the successor state (helper `dismiss_root`: `AXCancel` on the AXMenu, equivalent to Escape without posting an event); that state remains usable — when acting / snapshotting / zooming on it, the service replays the opening action (right-click or press), binds the reopened menu back to the original rootId (refs resolve by traversal order, consistent after reopening: TextEdit's 82 items in the same order), and takes it down again afterwards, unless the action itself already closed it (an item was pressed). Menus the user opened are untouched (those not outside rootsBefore are not taken down). `ContextMenuLedger` (`context-menu.ts`) carries all the logic; the fake backend puts dismissed menus away and restores them as-is when the opener is pressed again; 5 contract tests. The lease gets one more fallback: if a menu keeps the lease alive for over 60 s without any request, close the menu via AX and release.
+- Cost: one extra reopen per operation on a menu state (right-click + wait for the menu, ≈0.3–0.8 s); a text-type wait on a menu state would reopen every 50 ms (flicker); menus are static, so in practice nobody waits like that.
 
-### 10.13 `delivery` 从 `computer_act` 移除：路径由宿主按动作选（2026-09-21）
+### 10.13 `delivery` removed from `computer_act`: the host picks the path per action (2026-09-21)
 
-§10.9–10.12 把每种输入都做到了后台可靠之后，`delivery` 三个值里已经没有 agent 需要表达的信息：`semantic` 与 `app-directed` 的区别只取决于动作类型和 ref 有没有原生动作，`physical` 的用途（系统级热键）目标根本不是某个 app 进程。字段整个从 schema 去掉，选择下沉到 `MacosPlatformAdapter.applyOne`：
+After §10.9–10.12 made every kind of input reliable in the background, none of the three `delivery` values carries information the agent needs to express: the difference between `semantic` and `app-directed` depends only on the action type and whether the ref has a native action, and the use of `physical` (system-level hotkeys) does not target any app process at all. The field is removed from the schema entirely, and the choice sinks into `MacosPlatformAdapter.applyOne`:
 
-| 动作 | 路径 |
+| Action | Path |
 | --- | --- |
-| press / select / open / setText | AX 动作 |
-| click(ref) | ref 有 `press` 能力 → AXPress；否则 ref 中心的 posted 点击 |
-| click(x,y) / typeText / keypress / drag / moveMouse | posted 事件（typeText 带 ref 时先 AX focus） |
-| scroll(ref) | ref 下有 scroll bar → 写 AXValue；bar 已到头 → `didnt`（不改投滚轮）；没有 bar（web view）→ ref 中心的滚轮 |
-| scroll(x,y) | 滚轮 |
+| press / select / open / setText | AX action |
+| click(ref) | ref has `press` capability → AXPress; otherwise a posted click at the ref centre |
+| click(x,y) / typeText / keypress / drag / moveMouse | posted events (typeText with a ref does AX focus first) |
+| scroll(ref) | a scroll bar under the ref → write AXValue; bar already at the end → `didnt` (no fallback to wheel); no bar (web view) → wheel at the ref centre |
+| scroll(x,y) | wheel |
 
-保留的约束：AX 路径失败不悄悄换成 posted 事件——这条原来是 "semantic never silently upgrades" 的 agent 契约，现在是宿主内部规则。`ActResult.grounding` 一并删除，每步走的路径在 `evidence[].description` 里（`ax press @e3` / `click(…) via app_post`）。`service.assertFrontmost` 与 `adapter.frontmost` 门控随 physical 一起删除。
+Constraint kept: an AX path failure does not silently switch to posted events — this used to be the "semantic never silently upgrades" agent contract and is now an internal host rule. `ActResult.grounding` is deleted along with it; the path each step took is in `evidence[].description` (`ax press @e3` / `click(…) via app_post`). `service.assertFrontmost` and the `adapter.frontmost` gate are deleted together with physical.
 
-helper 同步清掉：`InputDelivery` / `parseDelivery` / `requireFrontmost` 与 `.cghidEventTap` 投递整个删除，六个输入 handler 统一走 `inputTargetPid`（没有可解析的 pid 直接拒绝，而不是退到 HID），`postEvent` 只剩 `postToPid`；wire 上 `delivery` / `requireFrontmostBundleId` 字段不再发也不再回。lab 的 `deliveries` 元数据随之删除，S13 改名 Zero AX（同一块无 AX 画板，验收改为"lab 在后台、全部坐标操作都改变 HUD"）。系统级热键（⌘Space / ⌘Tab / 截屏）此后在工具描述里明说不可用，等有确定性替代（`open -a`、独立工具）再补。
+The helper is cleaned up in step: `InputDelivery` / `parseDelivery` / `requireFrontmost` and `.cghidEventTap` delivery are deleted entirely, the six input handlers uniformly go through `inputTargetPid` (rejecting outright without a resolvable pid instead of falling back to HID), `postEvent` is only `postToPid`; the `delivery` / `requireFrontmostBundleId` fields are no longer sent or returned on the wire. The lab's `deliveries` metadata is deleted accordingly, and S13 is renamed Zero AX (the same AX-less canvas, acceptance changed to "lab in the background, every coordinate operation changes the HUD"). System-level hotkeys (⌘Space / ⌘Tab / screenshot) are henceforth stated as unavailable in the tool description, to be added back once there is a deterministic alternative (`open -a`, a dedicated tool).
 
-## 11. `computer_run` 动作空间扩展（2026-09-21 决定）
+## 11. `computer_run` action-space extension (decided 2026-09-21)
 
-### 11.1 哪些动作可以交给 Jev
+### 11.1 Which actions can be handed to Jev
 
-Jev 在这个集成里的能力是固定的：只读文本状态，从给定候选里选一个（choice），或对一句话判是/否（noul），每步无记忆，不产生自由文本、不产生坐标。由此四条判据，全满足才交给它：
+Jev's capability in this integration is fixed: it reads a text state only, picks one of the given candidates (choice) or judges a sentence yes/no (noul), has no memory across steps, and produces neither free text nor coordinates. Hence four criteria, all of which must hold before an action is handed to it:
 
-| 判据 | 含义 | 不满足时的症状 |
+| Criterion | Meaning | Symptom when unmet |
 | --- | --- | --- |
-| A. 目标可枚举 | 目标是观察里一个有名字的候选，不是坐标、不是"那个红的" | 无法出题 |
-| B. 参数可枚举或调用方给出 | 动作的每个参数，要么能从观察里枚举，要么由调用方预先给出（preset） | Jev 编不出参数 |
-| C. 效果进文本 | 动作做完后 `text` / `elements` 里能看到变化 | `changedPage=false` 被判 stuck，或 `goal_satisfied` 永远上不去 |
-| D. 错了便宜 | 错选一次只花一次重观察；不便宜的靠 `next_step_risk` 暂停兜底 | 不可逆误操作 |
+| A. Enumerable target | the target is a named candidate in the observation, not a coordinate, not "the red one" | no question can be formed |
+| B. Enumerable or caller-supplied parameters | every parameter of the action can either be enumerated from the observation or is given in advance by the caller (preset) | Jev cannot invent parameters |
+| C. Effect enters the text | after the action, the change is visible in `text` / `elements` | `changedPage=false` is judged stuck, or `goal_satisfied` never rises |
+| D. Cheap to be wrong | one wrong pick costs one re-observation; expensive ones are caught by the `next_step_risk` pause | irreversible mis-operation |
 
-B 的范式就是 `presets`：把带参数的动作拆成几个选择题，每题的选项集在提问前已知（`action` 选动词、`type_text_target` 选字段、`field_for_<preset>` 每个 preset 一题）。约束：同一请求里各头**互相独立**，后一个头不能以前一个头的答案为条件，所以展开依据只能是提问前已知的东西（preset、selected 项、root 列表），依赖上一步答案的要拆成两步（press 开菜单 → 下一步在菜单 root 里选项，pop-up 已经这么走）。
+B's paradigm is `presets`: split a parameterised action into several multiple-choice questions whose option sets are known before asking (`action` picks the verb, `type_text_target` picks the field, `field_for_<preset>` one question per preset). Constraint: heads in the same request are **mutually independent**; a later head cannot be conditioned on an earlier head's answer, so expansion can only be based on things known before asking (presets, selected items, root list); anything depending on the previous step's answer must be split into two steps (press to open a menu → next step choose an item in the menu root; pop-ups already work this way).
 
-永远不给 Jev：参数是坐标/几何（点像素、画路径、hover）、参数是自由文本（写正文）、目标没有 AX 名（canvas / pictureOnly）、启动/切换 app 与授权（host 事实，§10.8）、执行不可逆动作（Jev 可以选，但必须暂停给主模型，现状保持）。
+Never handed to Jev: parameters that are coordinates/geometry (clicking pixels, drawing paths, hover), parameters that are free text (writing a body), targets without an AX name (canvas / pictureOnly), launching/switching apps and grants (host facts, §10.8), executing irreversible actions (Jev may choose them, but must pause for the main model; status quo kept).
 
-### 11.2 `computer_act` 十个动作对照
+### 11.2 The ten `computer_act` actions compared
 
-| `computer_act` 动作 | Jev 现状 | 计划 | 拆法 |
+| `computer_act` action | Jev today | Plan | Decomposition |
 | --- | --- | --- | --- |
-| `press` / `select` / `open` ref | ✓ `click` 候选 | 保持 | |
-| `setText` ref + preset | ✓ `type_text_target` + `field_for_<preset>` | 保持 | 整篇替换 |
-| `keypress` Return（聚焦字段） | ✓ `submit:N` | 保持 | |
-| `scroll` ref | △ 只取第一个 scroll area | **扩：`scroll_area` 头** | 每个 area 一个候选，方向仍来自 `action` |
-| `click` ref, button=right | ✗ | **扩：`action=context_menu` + `context_menu_target` 头** | 两步：这步开菜单（ledger 读完即关），下一步在菜单 root 里 `click_target` |
-| `typeText` ref（追加） | ✗ | **扩：`action=append` + `append_target` 头** | 执行 = click 末尾 + typeText preset；文本仍来自 preset |
-| `keypress` Escape | ✗ | **扩：`action=escape`** | 闭集常量，只此一个；⌘ 快捷键 = 菜单命令，已覆盖 |
-| `drag` | ✗ | **扩：`action=drag` + `drag_target_for_<selected>` 头** | 只在有 selected 项时出题，目标 = 可见容器（文件夹/邮箱/组）；执行 `drag` 中心到中心 |
-| `click` x,y / `typeText` 自由文本 / 任意 `keypress` / `moveMouse` / 自由路径 `drag` | ✗ | 不给 | 几何、自由文本、开集、效果不进文本 |
-| （不在 `_act` 里）切换 root / 窗口 | ✗ | **扩：`action=switch` + `switch_target` 头** | 候选 = 同 app 的 root 列表 |
+| `press` / `select` / `open` ref | ✓ `click` candidate | keep | |
+| `setText` ref + preset | ✓ `type_text_target` + `field_for_<preset>` | keep | whole replacement |
+| `keypress` Return (focused field) | ✓ `submit:N` | keep | |
+| `scroll` ref | △ only the first scroll area | **extend: `scroll_area` head** | one candidate per area, direction still from `action` |
+| `click` ref, button=right | ✗ | **extend: `action=context_menu` + `context_menu_target` head** | two steps: this step opens the menu (ledger dismisses once read), next step `click_target` in the menu root |
+| `typeText` ref (append) | ✗ | **extend: `action=append` + `append_target` head** | execution = click at the end + typeText preset; text still from a preset |
+| `keypress` Escape | ✗ | **extend: `action=escape`** | closed-set constant, the only one; ⌘ shortcuts = menu commands, already covered |
+| `drag` | ✗ | **extend: `action=drag` + `drag_target_for_<selected>` head** | asked only when there is a selected item; target = visible containers (folder/mailbox/group); execute `drag` centre to centre |
+| `click` x,y / free-text `typeText` / arbitrary `keypress` / `moveMouse` / free-path `drag` | ✗ | not handed | geometry, free text, open set, effect not in text |
+| (not in `_act`) switch root / window | ✗ | **extend: `action=switch` + `switch_target` head** | candidates = the same app's root list |
 
-汇总：`action` 头从 5 项扩到 9 项（+ append / context_menu / escape / switch / drag，其中 drag 只在有 selected 项时出现），新增 4 个目标头（`scroll_area` / `append_target` / `context_menu_target` / `switch_target`）和 1 类按 selected 项展开的头（`drag_target_for_*`）。browser / device adapter 不提供这些候选时头就不出，不受影响。
+Summary: the `action` head grows from 5 to 9 items (+ append / context_menu / escape / switch / drag, where drag appears only when there is a selected item), with 4 new target heads (`scroll_area` / `append_target` / `context_menu_target` / `switch_target`) and 1 class of heads expanded per selected item (`drag_target_for_*`). When the browser / device adapter offers none of these candidates the heads do not appear, so they are unaffected.
 
-### 11.3 顺序与验证
+### 11.3 Order and verification
 
-按"改动面 × 收益"：
+By "change surface × gain":
 
-1. `scroll_area` + `append` —— 只动 `computer-page.ts` 和 `questions.ts` / `policy.ts`
-2. `escape` + `switch` —— `RunDeps` 加可选的 `dismiss` / `switchRoot`（browser 不实现）
-3. `context_menu` —— 两步协议，靠 `ContextMenuLedger` 已有的读完即关；run 的观察要能落在菜单 root 上
-4. `drag` —— 最后，候选对最需要看真实分布
+1. `scroll_area` + `append` — touches only `computer-page.ts` and `questions.ts` / `policy.ts`
+2. `escape` + `switch` — `RunDeps` gains optional `dismiss` / `switchRoot` (browser does not implement)
+3. `context_menu` — two-step protocol, relying on `ContextMenuLedger`'s existing dismiss-once-read; the run's observation must be able to land on a menu root
+4. `drag` — last; candidate pairs most need real distributions
 
-每步做完用 Finder / TextEdit / Mail 各一个用例跑 trace，看 `action` 头扩到 9 项后的置信度是否还撑得住 §10.1 的"argmax 不设门槛"；撑不住就在 `policy.ts` 给新动词加门槛，而不是回退动作。
+After each step, run traces with one case each on Finder / TextEdit / Mail, and check whether the confidence still holds up under §10.1's "argmax with no threshold" once the `action` head has 9 items; if it does not, add thresholds for the new verbs in `policy.ts` rather than rolling back the actions.
 
-### 11.4 第五步：能力交接——Jev 判定需要输入，主模型给数据，run 执行（2026-09-21 决定）
+### 11.4 Step five: capability hand-over — Jev decides input is needed, the main model supplies the data, the run executes (decided 2026-09-21)
 
-§11.1 把"参数是坐标/自由文本、目标无 AX 名"划为永远不给 Jev。这条边界改掉：按快慢思考的分工，Jev（快）负责判断**下一步需要外部输入**，主模型（慢）看暂停附带的观察和截图**给出数据**，执行仍归 run。现有 pause / resume 只有三种触发（`risky` 要批准、`uncertain` 要选、`no-progress` 没东西可做），这是第四种：`capability`。
+§11.1 classed "parameters are coordinates/free text, target has no AX name" as never handed to Jev. That boundary changes: by the fast/slow division, Jev (fast) is responsible for judging that **the next step needs external input**, the main model (slow) looks at the observation and screenshot attached to the pause and **supplies the data**, and execution stays with the run. The existing pause / resume has only three triggers (`risky` needs approval, `uncertain` needs a choice, `no-progress` has nothing to do); this is the fourth: `capability`.
 
-**Jev 侧。** `action` 头加一个选项 `needs_input`：目标需要候选里没有的东西——一个位置、一段路径、presets 里没有的文字、某个控件里没列出的值。配两个头：`hand_target`（它关乎哪个候选，可 `none_of_these`）和 `input_kind`（闭集 `position | path | text | value | other`，**只作提示，不选 schema**：Jev 判错一次不该把主模型锁进错的表单）。为此 `pictureOnly` 区域要以 `(picture-only: <名字>)` 进 `text`，否则 Jev 不知道有画布。和其他动词一样不设门槛，过度交接靠 trace 分布看。
+**Jev side.** The `action` head gains an option `needs_input`: the goal needs something not among the candidates — a position, a path, text not in presets, a value not listed in some control. Two accompanying heads: `hand_target` (which candidate it concerns, may be `none_of_these`) and `input_kind` (closed set `position | path | text | value | other`, **a hint only, not a schema selector**: one Jev misjudgement must not lock the main model into the wrong form). For this, `pictureOnly` regions must enter `text` as `(picture-only: <name>)`, otherwise Jev does not know there is a canvas. Like the other verbs, no threshold; over-handing is watched via the trace distribution.
 
-**为什么 answer 的 schema 是固定的、且就是平台的 `*_act` 动作。** Jev 只有 choice / noul 头，说不出自由文本的需求，也生不出 JSON schema，所以"需要什么"只能由代码从它的答案（target + kind + 落选候选）拼出提示，而 answer 必须是一个事先固定的形状。最通用又不新增词汇的形状：**`{ actions?: <本平台 act 动作数组>, presets?: Preset[] }`**——主模型早就会写 `computer_act` / `browser_act` / `device_act` 的 actions，三个平台各用自己的；文本走 `presets` 回填，Jev 之后自己打，并且 `field_for_<key>` 头随之出现，一次交接可覆盖后续字段；两者可同时给（先点开画布再打字）。
+**Why the answer schema is fixed, and is exactly the platform's `*_act` actions.** Jev has only choice / noul heads; it cannot express a free-text need or generate a JSON schema, so "what is needed" can only be assembled by code from its answers (target + kind + losing candidates) into a hint, and the answer must be a shape fixed in advance. The most general shape that adds no vocabulary: **`{ actions?: <this platform's act action array>, presets?: Preset[] }`** — the main model already knows how to write `computer_act` / `browser_act` / `device_act` actions, each platform using its own; text goes back via `presets`, Jev types it itself afterwards, and the `field_for_<key>` head appears accordingly, so one hand-over can cover subsequent fields; both may be given at once (open the canvas, then type).
 
-**暂停携带的东西**（§8.4 的具体化）。所有暂停——不只 `capability`——都返回一份**暂停时刻的新鲜 fused 观察**：`snapshot.stateId` 指向它，`snapshot.image = { path, width, height, relevance }`，`snapshot.coordinateSpace` 与 `computer_snapshot` 同义。图只回 **path**（和 `computer_snapshot` / `computer_act` 一样，`toAgentImage` 落盘、base64 不进工具结果），读不读由主模型决定，所以带图的成本只是一次窗口级抓取，不是上下文。`relevance` 由暂停原因查表得出，不问 Jev：`capability` → `required`，`risky` → `useful`，`uncertain` / `no-progress` / `budget` → `optional`。不给 Jev 一个"要不要截图"的头：它只看文本，判不出比这张表更多的东西，而它判错的代价正好是多一次 snapshot 调用。
+**What the pause carries** (the concretisation of §8.4). Every pause — not just `capability` — returns a **fresh fused observation at the moment of pausing**: `snapshot.stateId` points to it, `snapshot.image = { path, width, height, relevance }`, `snapshot.coordinateSpace` has the same meaning as in `computer_snapshot`. The image is returned as a **path** only (like `computer_snapshot` / `computer_act`, `toAgentImage` writes to disk, no base64 in the tool result); whether to read it is the main model's call, so the cost of attaching an image is one window-level capture, not context. `relevance` is looked up from the pause reason, not asked of Jev: `capability` → `required`, `risky` → `useful`, `uncertain` / `no-progress` / `budget` → `optional`. Jev gets no "should we screenshot" head: it only sees text and cannot judge more than this table, and the cost of it being wrong is exactly one extra snapshot call.
 
-`capability` 暂停另带的 `context` 只放主模型还不知道的东西——goal 是它自己写的、候选全在 `snapshot.elements` 里、presets 是它给的，都不回传；留下的三项都是 Jev 的判断：
+The extra `context` of a `capability` pause holds only what the main model does not already know — the goal it wrote itself, the candidates all in `snapshot.elements`, the presets it gave — none of that is echoed back; the three remaining items are all Jev's judgements:
 
 ```json
 {
@@ -1158,7 +1158,7 @@ B 的范式就是 `presets`：把带参数的动作拆成几个选择题，每�
 }
 ```
 
-**暂停 payload 的完整定义。** 每次暂停返回 `question`、`snapshot`、`progress`、`steps`、`elapsed_ms`，其中 `progress` 是 run 自己已经知道、不必再问 Jev 的进度报告，取代原来只有动作标签的 `since_last`：
+**Full definition of the pause payload.** Every pause returns `question`, `snapshot`, `progress`, `steps`, `elapsed_ms`, where `progress` is the progress report the run already knows without asking Jev again, replacing the former `since_last` that held only action labels:
 
 ```json
 "progress": {
@@ -1171,228 +1171,228 @@ B 的范式就是 `presets`：把带参数的动作拆成几个选择题，每�
 }
 ```
 
-- `completed` **只含上次暂停（或开始）以来的步骤**：resume 时清零，主模型每次只收到新的进度，跨暂停的全程只在 trace 里。`outcome` 沿用 `computer_act` 的 `worked | didnt | unknown`（browser 用 settle 的 `changed`），主模型不用学新词。
-- `goal_satisfied` / `still_loading` 是暂停前最后一次 Jev 的判定。没有它主模型分不清"快完了但 Jev 看不出"（去核对或宣布完成）和"根本没推进"（改 goal 或接管）——TextEdit append 那次主模型看到的只是"又停了"，于是 abort 了一个其实已经成功的 run。
+- `completed` **contains only the steps since the last pause (or start)**: cleared on resume; the main model receives only new progress each time, and the full cross-pause history is in the trace only. `outcome` reuses `computer_act`'s `worked | didnt | unknown` (browser uses settle's `changed`), so the main model learns no new words.
+- `goal_satisfied` / `still_loading` are Jev's last verdicts before the pause. Without them the main model cannot tell "almost done but Jev can't see it" (go verify or declare done) from "no progress at all" (change the goal or take over) — in the TextEdit append case the main model saw only "it stopped again" and aborted a run that had in fact succeeded.
 
-`question.context.why` 的生成规则：Jev 不生成文本，`why` 只能是**对头的翻译，不能是推断**。按 `input_kind` 分支用句子模板（`position` → "A point on [7] Canvas is needed; no offered element is that place"，`text` → "Text for [7] Body is needed and no preset holds it"，`value` → "[7] Date needs a value not among its options"，`other` → 退回概率表），再接一句落选头的翻译（"no click target stood out (best: [3] Open 0.31)"）。每个分句都能回溯到某个头的数值；"goal asks for a place on the picture" 这种超出任何头答案的话不许出现。
+Generation rule for `question.context.why`: Jev generates no text, so `why` can only be **a translation of the heads, not an inference**. Branch on `input_kind` with sentence templates (`position` → "A point on [7] Canvas is needed; no offered element is that place", `text` → "Text for [7] Body is needed and no preset holds it", `value` → "[7] Date needs a value not among its options", `other` → fall back to the probability table), followed by a translation of the losing heads ("no click target stood out (best: [3] Open 0.31)"). Every clause must be traceable to some head's value; sentences such as "goal asks for a place on the picture" that go beyond any head's answer are not allowed.
 
-**resume。** `presets` 合并进 run；`actions` 经新的可选 `RunDeps.act(stateId, actions)` 执行——computer 走 `service.act`（stale 检查照常），browser 走 CDP，device 走 device act——进 history / trace（`kind: 'handed'`，带 actions），settle 与 `changedPage` 照常；交接来的动作若被 `next_step_risk` 判不可逆，同一次 pause 合并批准。budget 内每次交接计一步。
+**resume.** `presets` merge into the run; `actions` execute via the new optional `RunDeps.act(stateId, actions)` — computer via `service.act` (stale check as usual), browser via CDP, device via device act — entering history / trace (`kind: 'handed'`, with actions), settle and `changedPage` as usual; if a handed action is judged irreversible by `next_step_risk`, approval is merged into the same pause. Each hand-over counts as one step within the budget.
 
-**为什么 run 执行而不是主模型自己 `computer_act`。** 主模型已经拿到截图和坐标空间，把 actions 塞回 answer 比再发一次 `computer_act` 少一个工具往返；这一步进 run 的记录，后续 Jev 判断有据可依；执行路径只有一条，不会出现主模型执行完 run 又重放的重复。
+**Why the run executes rather than the main model calling `computer_act` itself.** The main model already has the screenshot and coordinate space; stuffing actions back into the answer is one tool round trip fewer than issuing another `computer_act`; the step enters the run's record, giving Jev's later judgements something to stand on; there is only one execution path, so no duplication where the main model executes and the run replays.
 
-**顺序。** 排在 §11.3 四步之后作第 5 步；依赖第 1 步的 `RunDeps` 可选方法模式。验证用例：Finder 图标视图里把文件拖到窗口某处（position / path）、备忘录新建一条并写正文（text → presets）、Preview 在图片上点一个位置（`pictureOnly` 进文本）。
+**Order.** After the four steps of §11.3 as step 5; depends on step 1's optional-method pattern on `RunDeps`. Verification cases: drag a file to a spot in the window in Finder icon view (position / path), create a note in Notes and write the body (text → presets), click a position on an image in Preview (`pictureOnly` enters the text).
 
-### 11.5 第一步落地：`scroll_area` + `append`（2026-09-21，Grok 4.6 / high，dev 版）
+### 11.5 Step one landed: `scroll_area` + `append` (2026-09-21, Grok 4.6 / high, dev build)
 
-实现方式是 §11.2 说的"adapter 不提供候选头就不出"：`RawElement` 多两个可选能力标记——`scroll: {up, down}`（这个元素是一个滚动区，以及它还能往哪动）和 `appendable`（可在末尾续写的多行文本区）——`buildActionSpace` 据此产出 `scrollCandidates` / `appendCandidates`，`buildRequest` 只在非空时发 `scroll_area` / `append_target` 头和 `append` 选项。browser / device 页面不设标记，请求形状不变（`loop.test` 有断言）。`RunDeps` 加可选的 `scrollArea(node, dy)` 与 `append(node, text)`，computer 实现：滚动 = 对该区的 `planNodeAction(scroll)`（有 bar 写 AXValue）；追加 = `click ref` → `keypress cmd+down`（Cocoa 的 moveToEndOfDocument:，End 键不是）→ `typeText`，不带 `expect`（app 会自动纠正，猜出来的 valueEquals 会把成功等成超时）。方向仍由 `action` 头出，`scroll_area` 头不知道方向：Jev 选的区不能朝那边动时，取该头里能动的最高概率区；都不能则用 adapter 默认区。
+Implemented as §11.2 said — "no head unless the adapter offers candidates": `RawElement` gains two optional capability marks — `scroll: {up, down}` (this element is a scroll area, and which way it can still move) and `appendable` (a multi-line text area that can be continued at the end) — from which `buildActionSpace` produces `scrollCandidates` / `appendCandidates`, and `buildRequest` only sends the `scroll_area` / `append_target` heads and the `append` option when non-empty. Browser / device pages set no marks, and the request shape is unchanged (`loop.test` asserts it). `RunDeps` gains optional `scrollArea(node, dy)` and `append(node, text)`; computer implementation: scroll = `planNodeAction(scroll)` on that area (writes AXValue when there is a bar); append = `click ref` → `keypress cmd+down` (Cocoa's moveToEndOfDocument:; the End key is not) → `typeText`, without `expect` (the app autocorrects, and a guessed valueEquals would turn success into a timeout). Direction still comes from the `action` head; the `scroll_area` head does not know the direction: if the area Jev picked cannot move that way, take the highest-probability area in that head that can; if none can, use the adapter's default area.
 
-**TextEdit 追加（`rae236c55`）。** 第 1 步 `action`：append **0.88** / none_useful 0.08 / click 0.03 / type_text 0.01；`append_target` 文本区 0.80；`type_text_target` 反而答 none_of_these 0.52——两个写入头分得开。但 `field_for_Line` 只有 0.68（阈值 0.7），preset 的 `field` 提示 "the document text area" 里 text / area 都是停用词、"document" 不在标签里（文本区的标签是它的内容），于是走了 value 暂停；主模型填回文本后追加成功，文档变成两行。第 2 步 `goal_satisfied` 0.45、none_useful 0.64（append 掉到 0.35）——两条 done 规则都差一点没到（0.5 / 0.8），no-progress 暂停由主模型 abort 收尾。goal 写的是"文档以 … 结尾"，而 `text` 里文档之后还跟着格式工具栏的文字，措辞问题多于观察问题；先记录，不调阈值。
+**TextEdit append (`rae236c55`).** Step 1 `action`: append **0.88** / none_useful 0.08 / click 0.03 / type_text 0.01; `append_target` text area 0.80; `type_text_target` instead answered none_of_these 0.52 — the two write heads separate cleanly. But `field_for_Line` was only 0.68 (threshold 0.7); in the preset's `field` hint "the document text area", text / area are stop words and "document" is not in the label (a text area's label is its content), so it took the value pause; after the main model filled the text back, the append succeeded and the document became two lines. Step 2 `goal_satisfied` 0.45, none_useful 0.64 (append dropped to 0.35) — both done rules just missed (0.5 / 0.8), a no-progress pause was wrapped up by the main model aborting. The goal said "the document ends with …", while in `text` the document is followed by the format toolbar's text; more a wording problem than an observation problem; recorded, thresholds not adjusted.
 
-同一条 trace 揪出一个候选错误：`click_target` 把 **`submit:1`（在文档里按 Return）给到 0.78**。多行文本区里 Return 是换行不是提交，`canSubmit` 现在对 textarea 恒 false。
+The same trace caught a candidate error: `click_target` gave **`submit:1` (pressing Return in the document) 0.78**. In a multi-line text area Return is a newline, not submit; `canSubmit` is now always false for textareas.
 
-**Finder 长列表（`r1ec4b958`，/System/Library 163 项，目标倒数第 4 行）。** 8 步 28 s `done`，`goal_satisfied 0.90`：5 次滚动每次 `scroll_area` 都给 "list view starting at …" **0.98–1.0**，sidebar ≤ 0.01，`action` scroll_down 0.89–0.96；第 6 步 `click_target` Select WorkflowResponsiveness 0.99；之后两轮 none_useful 0.96–0.97 + goal_satisfied 0.90 收尾。首跑（`r7fd69d76`，reset 脚本里的 ⌘↑ 把窗口带回了 /System，9 项装得下）虽然环境错了，却暴露三个观察层问题，都已修：
+**Finder long list (`r1ec4b958`, /System/Library 163 items, target fourth from the bottom).** 8 steps 28 s `done`, `goal_satisfied 0.90`: on each of 5 scrolls `scroll_area` gave "list view starting at …" **0.98–1.0**, sidebar ≤ 0.01, `action` scroll_down 0.89–0.96; step 6 `click_target` Select WorkflowResponsiveness 0.99; then two rounds of none_useful 0.96–0.97 + goal_satisfied 0.90 wrapped up. The first run (`r7fd69d76`, where the reset script's ⌘↑ took the window back to /System, whose 9 items fit) had the wrong environment but exposed three observation-layer problems, all fixed:
 
-- **滚动区的名字读成了容器的描述**："List starting at list view"——Finder 给 AXOutline 起名 "list view" / "sidebar"，`labelSource` 把它当第一行。现在容器的名字是内容种类，第一行从容器的后代里取："list view starting at Applications"、"sidebar starting at AirDrop"。
-- **滚动条自己成了滚动区候选**：`scroll` 能力按角色名含 "scroll" 授予，AXScrollBar 也有，候选里多出 "area starting at 0.42"（它的 value indicator）。位置类角色不再当区。
-- **没有 bar 的列表滚八次全是 "change unknown"**：无 bar 时投滚轮，act 结论 unknown、diff 空，`changed` 恒 null，三步无变化的 no-progress 规则永远不触发，run 一直滚到 maxSteps。settle 明明看到没动（`unchanged`）：现在 act 结论说不上话时读 settle 的结论（`settledChange`），与 browser 的 marker 语义一致。
+- **The scroll area's name was read as the container's description**: "List starting at list view" — Finder names the AXOutline "list view" / "sidebar", and `labelSource` took that as the first row. Now the container's name is the content kind and the first row is taken from the container's descendants: "list view starting at Applications", "sidebar starting at AirDrop".
+- **The scroll bar itself became a scroll-area candidate**: the `scroll` capability was granted by role name containing "scroll", which AXScrollBar also has, adding "area starting at 0.42" (its value indicator) to the candidates. Positional roles are no longer treated as areas.
+- **Eight scrolls of a list with no bar were all "change unknown"**: with no bar the wheel is posted, the act conclusion is unknown, the diff empty, `changed` always null, the three-step no-change no-progress rule never fires, and the run scrolls to maxSteps. Settle plainly saw no movement (`unchanged`): now when the act conclusion has nothing to say, settle's conclusion is read (`settledChange`), consistent with browser's marker semantics.
 
-### 11.6 第二步落地：`escape` + `switch`（2026-09-21，Grok 4.6 / high，dev 版）
+### 11.6 Step two landed: `escape` + `switch` (2026-09-21, Grok 4.6 / high, dev build)
 
-`RunDeps` 加可选 `dismiss()`（computer：`service.act` 投 `keypress escape`，后台到达 first responder）和 `switchRoot(rootId)`（不按任何东西：adapter 的目标 root 换成它，下一次 observe 读那个 root；root 不在了抛 StaleObservation 而不是失败）。`switch` 的候选是同 app 其它 root——从 state 的 `observedRootIds` 经新的 `service.knownRoots()` 解析，排除 menu、最小化和当前 root——以 `RawElement.root` 标记进 `elements`（role = window/sheet/dialog，label = 标题），`switch_target` 头只在有候选时出；`escape` 由 `RunObservation.canEscape` 门控，computer 恒 true（闭集常量，§11.2）。browser / device 两者都不出，请求形状不变。switch 后的 `changedPage` 恒 true（换了页面，无需和 act 结论比）；风险判定沿用 `next_step_risk`，escape 的 risky 暂停选项是 `escape` 本身。
+`RunDeps` gains optional `dismiss()` (computer: `service.act` posts `keypress escape`, reaching the first responder in the background) and `switchRoot(rootId)` (presses nothing: the adapter's target root is swapped, and the next observe reads that root; if the root is gone it throws StaleObservation rather than failing). `switch` candidates are the same app's other roots — resolved from the state's `observedRootIds` via the new `service.knownRoots()`, excluding menus, minimised windows and the current root — marked into `elements` as `RawElement.root` (role = window/sheet/dialog, label = title); the `switch_target` head appears only when there are candidates; `escape` is gated by `RunObservation.canEscape`, always true for computer (closed-set constant, §11.2). Browser / device offer neither, request shape unchanged. `changedPage` after a switch is always true (the page changed, no need to compare with an act conclusion); risk judgement reuses `next_step_risk`; escape's risky pause option is `escape` itself.
 
-**TextEdit Save sheet → Escape（`rd938ec27`）。** run 从 sheet root 起步（模态 root 优先），第 1 步 `action` escape **1.0**，`click_target` none_of_these 0.97（Cancel 只有 0.03——goal 说了别按 Cancel），`switch_target` 给后面的文档窗口 0.52。Escape 投出后 act 的 successor 落到文档窗口（transient 关闭 → `waitForTransientSuccessor`），sheet root 消失。第 2 步 none_useful 0.93、`goal_satisfied` **0.49**——差 0.01 没到 idle 门槛 0.5，no-progress 暂停，主模型 abort 收尾；`computer_apps` 确认 sheet 已不在。
+**TextEdit Save sheet → Escape (`rd938ec27`).** The run started from the sheet root (modal roots first); step 1 `action` escape **1.0**, `click_target` none_of_these 0.97 (Cancel only 0.03 — the goal said not to press Cancel), `switch_target` gave the document window behind it 0.52. After Escape was posted the act's successor landed on the document window (transient closed → `waitForTransientSuccessor`), and the sheet root disappeared. Step 2 none_useful 0.93, `goal_satisfied` **0.49** — 0.01 short of the idle threshold 0.5, no-progress pause, main model aborted to wrap up; `computer_apps` confirmed the sheet was gone.
 
-**两个文档 → 切窗口再追加（`reac49eb7`）。** run 起在错的（更大的）窗口："Untitled 40 / Jev sheet benchmark"。第 1 步 `action` switch 0.74（none_useful 0.12、escape 0.11），`switch_target` "Untitled 39" 0.82，`append_target` 在这页答 none_of_these 0.99（没有 Second document 可写——头之间分得开）；第 2 步在新 root 上 append 0.82、`append_target` 0.99、`field_for_Line` 0.97（这次 preset 的 field 提示 "the Second document text area" 里 "second"/"document" 能命中标签，直接走 hint 匹配）；第 3–4 步 `goal_satisfied` 0.85 两次确认 → **4 步 done**。escape 作为常驻选项在每步拿 0.11–0.21 的底噪，没有一次赢过正确动词。
+**Two documents → switch window then append (`reac49eb7`).** The run started in the wrong (larger) window: "Untitled 40 / Jev sheet benchmark". Step 1 `action` switch 0.74 (none_useful 0.12, escape 0.11), `switch_target` "Untitled 39" 0.82, `append_target` on this page answered none_of_these 0.99 (no Second document to write to — the heads separate cleanly); step 2 on the new root append 0.82, `append_target` 0.99, `field_for_Line` 0.97 (this time the preset's field hint "the Second document text area" has "second"/"document" hitting the label, straight to hint matching); steps 3–4 `goal_satisfied` 0.85 confirmed twice → **4 steps done**. escape as a permanent option took 0.11–0.21 noise floor each step and never beat the correct verb.
 
-**门槛校准（`goalSatisfiedIdle` 0.5 → 0.4）。** 桌面上"已完成"页面的 `goal_satisfied` 系统性低于网页：§10.9 Save 后 0.57 / 0.62，本轮 append 后 0.45、Escape 后 0.49，四次都配着 none_useful ≥ 0.64；而所有 trace 里未完成的桌面页面最高 0.18（Finder 选中前一步）。0.5 把两次已完成的 run 判成 no-progress 暂停，0.4 在现有数据上仍把两类分开，browser 的校准（完成 0.63–0.86，未完成 ≤ 0.11）不受影响。这条路径仍要求 none_useful ≥ 0.8 且重新观察后再问一次同意。
+**Threshold calibration (`goalSatisfiedIdle` 0.5 → 0.4).** On the desktop, `goal_satisfied` on "completed" pages is systematically lower than on the web: §10.9 after Save 0.57 / 0.62, this round after append 0.45, after Escape 0.49, all four paired with none_useful ≥ 0.64; whereas the highest on an unfinished desktop page in all traces is 0.18 (Finder, one step before selection). 0.5 judged two completed runs as no-progress pauses; 0.4 still separates the two classes on existing data, and browser's calibration (done 0.63–0.86, not done ≤ 0.11) is unaffected. This path still requires none_useful ≥ 0.8 and a confirming re-ask after re-observation.
 
-### 11.7 暂停 payload 与第三、四步落地（2026-09-21，Grok 4.6 / high，dev 版）
+### 11.7 Pause payload and steps three and four landed (2026-09-21, Grok 4.6 / high, dev build)
 
-**暂停 payload（`febc6b1e`）。** 每次结果带 `progress = { completed: [{label, outcome: worked|didnt|unknown}], goal_satisfied, still_loading, note? }`（取代 `since_last`，resume 清零；outcome 来自 `changed` 三态）；每次暂停经可选 `RunDeps.capture()` 拿一份新鲜 fused 观察——computer 走 `service.observe(root,'fused')` + `persistComputerUseScreenshot` + `alignStateVisual`（`snapshot.stateId` 指向它，暂停页的 epoch 不变所以仍 fresh），browser 走渲染进程截图，device 走 fused `device_snapshot`——回 `snapshot.image = {path,width,height,relevance}`（risky → useful，其余 optional；capability → required 留给第 5 步）与 `coordinateSpace`；抓图失败只丢图不丢问题。`question.context.why` 改为 reason 短句 + `describeHeads()` 对头的逐条翻译（"action: none_useful 0.64, then append 0.35; click_target: none_of_these 0.98 (best element [1] … 0.02); goal_satisfied 0.45; …"），`decision` 表照旧并列。另加：**no-progress 暂停多一个 `accept` 选项**（"Finish: the goal is reached as the page stands"）→ run 以 `done: Accepted by the caller` 结束——之前三个已达成目标的 run 只能 abort 收尾，正是因为没有这个出口。
+**Pause payload (`febc6b1e`).** Every result carries `progress = { completed: [{label, outcome: worked|didnt|unknown}], goal_satisfied, still_loading, note? }` (replacing `since_last`, cleared on resume; outcome from the three-state `changed`); every pause obtains a fresh fused observation via the optional `RunDeps.capture()` — computer via `service.observe(root,'fused')` + `persistComputerUseScreenshot` + `alignStateVisual` (`snapshot.stateId` points to it; the paused page's epoch is unchanged so it stays fresh), browser via a renderer screenshot, device via a fused `device_snapshot` — returning `snapshot.image = {path,width,height,relevance}` (risky → useful, the rest optional; capability → required reserved for step 5) and `coordinateSpace`; a capture failure drops only the image, not the question. `question.context.why` becomes a short reason sentence + `describeHeads()`'s item-by-item translation of the heads ("action: none_useful 0.64, then append 0.35; click_target: none_of_these 0.98 (best element [1] … 0.02); goal_satisfied 0.45; …"), with the `decision` table alongside as before. Also: **the no-progress pause gains an `accept` option** ("Finish: the goal is reached as the page stands") → the run ends with `done: Accepted by the caller` — the three earlier runs that had reached their goal could only abort precisely because this exit did not exist.
 
-重跑两个 abort 用例：TextEdit 追加 `r6253e2db` **3 步 done**（append 0.92、`field_for_Line` 0.85 直接匹配，随后 `goal_satisfied 0.46 / 0.50 with no action left`）；Save sheet Escape `r16e9c662` **3 步 done**（Press Escape worked）。两条都没再暂停——是 §11.6 的 0.4 门槛在起作用，payload 本身这两条上没被触发；`progress` 在第四步的 budget 暂停里被主模型读到（见下）。
+Reran the two aborted cases: TextEdit append `r6253e2db` **3 steps done** (append 0.92, `field_for_Line` 0.85 direct match, then `goal_satisfied 0.46 / 0.50 with no action left`); Save sheet Escape `r16e9c662` **3 steps done** (Press Escape worked). Neither paused again — §11.6's 0.4 threshold at work; the payload itself was not triggered on these two; `progress` was read by the main model in step four's budget pause (see below).
 
-**第三步 `context_menu`（`e4d049d9` + `20c75f35`）。** 首跑 `r7f07d1ad`：第 1 步 `action` context_menu 0.97、`context_menu_target` "Select Report.txt" 0.99，右键后观察落在菜单 root（title "AXMenu"，96 元素，settle 走 `menu-root` 不采样），第 2 步 `click_target` Get Info **1.0**——但 press 报 `didnt`，Info 窗口没出现。helper 直连三种序列（直接按、dismiss → 重开 → 按旧 index、菜单 root 一出现就按）全部成功，问题在 service：`act` 重开菜单时换了 `root`，**`coordinateSpace.axRootId` 还是被 dismiss 掉的旧菜单 id**，helper 的 `validateCoordinateGeometry` 按旧 id 找不到 AX root，`ax_action` 抛错被 `axActionStep` 吞成 `applied:false` → `didnt`。fake backend 没有几何校验，五条契约测试因此全绿；现在 fake 给菜单每次（重）开分配新 `axRootId`、按缺失 id 校验拒绝，契约测试在修复前变红。修法 `ContextMenuLedger.rebase()`：重开后 root 与 `coordinateSpace.axRootId` 一起换（act / zoom 两处）。修后 `r8064a401` **4 步 done**：context_menu 0.96 → Get Info 1.0（`changed: observation`，act 3.5 s 含重开）→ `goal_satisfied 0.60 / 0.62`；前台始终是 SuperOne。同一批还修了宿主路由：`click button:'right'` 打在有 press 能力的 ref 上原来走 AXPress（左键语义），现在右键一律 posted。
+**Step three `context_menu` (`e4d049d9` + `20c75f35`).** First run `r7f07d1ad`: step 1 `action` context_menu 0.97, `context_menu_target` "Select Report.txt" 0.99, after the right-click the observation landed on the menu root (title "AXMenu", 96 elements, settle takes `menu-root` without sampling), step 2 `click_target` Get Info **1.0** — but the press reported `didnt`, and the Info window did not appear. Three sequences via the helper directly (press directly, dismiss → reopen → press old index, press as soon as the menu root appears) all succeeded; the problem was in the service: when `act` reopened the menu it swapped `root`, **but `coordinateSpace.axRootId` was still the dismissed old menu's id**; the helper's `validateCoordinateGeometry` could not find the AX root by the old id, `ax_action` threw, swallowed by `axActionStep` into `applied:false` → `didnt`. The fake backend had no geometry validation, so the five contract tests were green; now the fake assigns a new `axRootId` on every menu (re)open and rejects validation for a missing id, and the contract tests go red before the fix. Fix `ContextMenuLedger.rebase()`: after reopening, swap root and `coordinateSpace.axRootId` together (both act / zoom). After the fix `r8064a401` **4 steps done**: context_menu 0.96 → Get Info 1.0 (`changed: observation`, act 3.5 s including reopen) → `goal_satisfied 0.60 / 0.62`; SuperOne frontmost throughout. The same batch fixed host routing: `click button:'right'` on a ref with press capability used to go through AXPress (left-click semantics); right-click is now always posted.
 
-**第四步 `drag`（`b619ae70`）——决策对，投递不到。** `rfdf5bd30`：第 1 步 `action` drag **0.96**、`drag_target_for_Report_txt` → Archive 0.86，之后两次 0.95；`next_step_risk` 0.32（未到 0.5，没暂停确认——把文件移进文件夹 Jev 没算不可逆）。三次 drag 文件都没进 Archive（第一次 `changed: observation` 是拖过时 Archive 被 spring-load 展开），maxSteps 用尽 budget 暂停，主模型读了 `progress`（"3 次 drag 只 1 次 worked"）后 abort。直连探针：**同一条 posted drag 在 Finder 后台不落 drop，Finder 在前台时文件就进去了**；`postPointer` 对每个指针事件都已持有合成激活租约，所以"自认 active"对拖放不够——Finder 的拖放会话（drag manager）只在真正前台的 app 里接受 drop。这是 §10.10 之后没测过的路径（那里只验证了 TextEdit 拖选文字）。选项：(a) 拖拽走事务性真实激活（§10.8 菜单命令最初的做法：activate → drag → previous.activate，≈1 s 前台闪一下，期间用户按键会落进目标 app）；(b) 保留 drag，只在目标 app 恰在前台时有效，描述里写明；(c) 拿掉 drag，"移入文件夹"交给菜单命令（Edit ▸ Copy 与 ⌥ 变体 Move Item Here 都在 AX 菜单树里）。待定。
+**Step four `drag` (`b619ae70`) — decision right, delivery does not arrive.** `rfdf5bd30`: step 1 `action` drag **0.96**, `drag_target_for_Report_txt` → Archive 0.86, then twice 0.95; `next_step_risk` 0.32 (below 0.5, no confirmation pause — Jev did not count moving a file into a folder as irreversible). None of the three drags put the file into Archive (the first `changed: observation` was Archive spring-loading open while dragging over it), maxSteps exhausted the budget into a pause, and the main model read `progress` ("3 drags, only 1 worked") and aborted. Direct probe: **the same posted drag does not land the drop with Finder in the background, and the file goes in when Finder is frontmost**; `postPointer` already holds a synthetic activation lease for every pointer event, so "believes it is active" is not enough for drag and drop — Finder's drag session (drag manager) accepts drops only in a truly frontmost app. This is a path not tested after §10.10 (which only verified TextEdit text drag-select). Options: (a) drag via transactional real activation (§10.8's original approach for menu commands: activate → drag → previous.activate, ≈1 s foreground flash, keystrokes during it land in the target app); (b) keep drag, effective only when the target app happens to be frontmost, stated in the description; (c) remove drag and hand "move into folder" to menu commands (Edit ▸ Copy and the ⌥ variant Move Item Here are both in the AX menu tree). Pending.
 
-**跑 case 的两个脚本坑（bench 基础设施，非产品）。** AppleScript `key code 126 using command down`（⌘↑）在 Finder 是 Enclosing Folder，把 /System/Library 的窗口带回了 /System；`make new Finder window to X` 后紧接 `set current view` / `set bounds` 有时目标不生效，创建和设置分两次 osascript 调用。
+**Two script traps when running cases (bench infrastructure, not product).** AppleScript `key code 126 using command down` (⌘↑) in Finder is Enclosing Folder and took the /System/Library window back to /System; `set current view` / `set bounds` right after `make new Finder window to X` sometimes fails to target; create and configure in two separate osascript calls.
 
-### 11.8 后台拖放死在哪一层：窗口服务器按真实叠放顺序选 drop 目标（2026-09-21，直连探针，无 Jev）
+### 11.8 Which layer background drag and drop dies in: the window server picks the drop target by real stacking order (2026-09-21, direct probe, no Jev)
 
-§11.7 的结论"Finder 的拖放会话只在真正前台的 app 里接受 drop"是错的归因。四组探针（一次性 AppKit lab app + 拖放剪贴板 changeCount 监视 + Finder pid 上的 listen-only CGEvent tap + CGWindowList 叠放顺序）定位到的是另一层：
+§11.7's conclusion "Finder's drag session accepts drops only in a truly frontmost app" was a wrong attribution. Four probe sets (a throwaway AppKit lab app + drag pasteboard changeCount watcher + a listen-only CGEvent tap on Finder's pid + CGWindowList stacking order) located a different layer:
 
-1. **源 app 里会话完整开始。** Finder 后台（SuperOne 前台）收到 posted 序列（tap 看到 down、70+ 个 `leftMouseDragged`、up，pressure 1.0，51/91/92 都在），拖放剪贴板 changeCount 49 → 50、类型 `public.file-url` / `NSFilenamesPboardType`——Finder 已经 `beginDraggingSession`。文件没动，是 drop 没到目标。
-2. **AppKit 的目标侧对后台也无要求。** lab app（左半 `NSDraggingSource` 视图、右半 `NSDraggingDestination` 视图，逐回调打日志）在 TextEdit 前台时收同一条 posted drag：`beginDraggingSession → willBeginAt → movedTo/draggingUpdated 跟着 posted 路径 → prepareForDragOperation → performDragOperation → endedAt operation=1`，全程 `NSApp.isActive` 是租约给的 1，前台一直是 TextEdit。`mouseDragged` 的 `deltaX/Y = 0`、`pressure 1.0`、3 点 spring 加密路径都不妨碍；把窗口挪到离真实光标很远的位置也一样。**事件形状不是原因。**
-3. **拒绝的是窗口服务器的 drop 目标解析。** 会话开始后，目标由 drag manager 用 drag 位置对**真实屏幕叠放顺序**做 hit-test，谁在那个点上最靠前谁就是目标；posted 事件绕过了这层（它们靠 51/91/92 直投到窗口号）。把 Electron 主窗叠到 lab 窗口上再拖：会话照样开始，但每次 `movedTo` 都问 `sourceOperationMask context=0`（`.outsideApplication`——drag manager 认为指针在别的 app 窗口上），目标视图从未 `draggingEntered`，`endedAt operation=0`。bench 里 Finder 窗口 {94,69,894,531} 整个压在 dev Electron 窗 (144,45,1440×900) 和 TextEdit 草稿窗下面，drop 被投给了 Electron；"Finder 前台就成功"只是因为激活把它的窗口抬到了上面。
-4. **反证。** 同一条 posted drag，Finder 仍在后台（TextEdit 前台）、bench 窗口挪到 {900,69,1700,531} 没被任何窗口盖住：**文件进了 Archive**。跨窗口同样成立（第二个 Finder 窗口开着 Archive，从 A 的行拖到 B 的内容区，display 坐标，后台，落地）。
-5. **只有 drop 点要露出来。** lab 窗口大半压在 Electron 主窗下、只有右缘露出 x>1584：源点和路径 127 次 `context=0`，drag 位置一越过 Electron 右缘就 `draggingEntered → performDragOperation → operation=1`。源元素和路径被盖住无所谓。
-6. **租约已经跨整段序列。** `SyntheticActivationLease` 是 2 s 空闲租约、每个事件续期；lab 日志整段拖放只有一对 `didBecomeActive / didResignActive`。§11.7 里"每个事件各持一次租约"描述的是调用形式，不是效果。
-7. **不激活就抬窗口做不到。** 后台 app 的窗口 `AXRaise`（等价 `orderFront:`）能越过前台 app 的次级窗口，越不过它的 key 窗口（Electron 13515 仍在 Finder 之上）；给别的进程排窗口没有公开 API。agent 光标 overlay 在 drop 点上不挡（`ignoresMouseEvents` 窗口不参与 hit-test）。
+1. **The session starts fully in the source app.** Finder in the background (SuperOne frontmost) receives the posted sequence (the tap sees down, 70+ `leftMouseDragged`, up, pressure 1.0, 51/91/92 all present), the drag pasteboard changeCount goes 49 → 50, types `public.file-url` / `NSFilenamesPboardType` — Finder has already `beginDraggingSession`. The file does not move because the drop does not reach the target.
+2. **AppKit's destination side has no foreground requirement either.** The lab app (left half an `NSDraggingSource` view, right half an `NSDraggingDestination` view, logging every callback) receives the same posted drag with TextEdit frontmost: `beginDraggingSession → willBeginAt → movedTo/draggingUpdated following the posted path → prepareForDragOperation → performDragOperation → endedAt operation=1`, `NSApp.isActive` is the lease-given 1 throughout, and TextEdit stays frontmost. `mouseDragged`'s `deltaX/Y = 0`, `pressure 1.0`, the 3-point spring-dense path — none of it matters; moving the window far from the real cursor makes no difference either. **The event shape is not the cause.**
+3. **What rejects is the window server's drop-target resolution.** After the session starts, the target is hit-tested by the drag manager using the drag position against the **real on-screen stacking order**; whoever is frontmost at that point is the target; posted events bypass this layer (they are delivered straight to a window number via 51/91/92). Stack the Electron main window over the lab window and drag: the session still starts, but every `movedTo` asks `sourceOperationMask context=0` (`.outsideApplication` — the drag manager thinks the pointer is over another app's window), the destination view never gets `draggingEntered`, `endedAt operation=0`. In the bench the Finder window {94,69,894,531} lies entirely under the dev Electron window (144,45,1440×900) and the TextEdit draft window, and the drop was delivered to Electron; "succeeds when Finder is frontmost" only because activation lifted its window on top.
+4. **Counter-proof.** The same posted drag, Finder still in the background (TextEdit frontmost), bench window moved to {900,69,1700,531} covered by nothing: **the file went into Archive**. Cross-window holds too (a second Finder window open on Archive, dragging from A's row into B's content area, display coordinates, background, lands).
+5. **Only the drop point needs to be exposed.** Lab window mostly under the Electron main window with only its right edge exposed at x>1584: source point and path 127 times `context=0`, and as soon as the drag position crosses Electron's right edge, `draggingEntered → performDragOperation → operation=1`. The source element and path being covered does not matter.
+6. **The lease already spans the whole sequence.** `SyntheticActivationLease` is a 2 s idle lease renewed by every event; the lab log shows only one `didBecomeActive / didResignActive` pair for the whole drag. §11.7's "each event holds its own lease" described the call form, not the effect.
+7. **Raising the window without activating is impossible.** `AXRaise` on a background app's window (equivalent to `orderFront:`) can pass the frontmost app's secondary windows but not its key window (Electron 13515 stays above Finder); there is no public API to order another process's windows. The agent cursor overlay over the drop point does not block (`ignoresMouseEvents` windows do not take part in hit-testing).
 
-所以"后台 drag"的真实边界是：**drop 点在屏幕上没被别的窗口盖住就落地，被盖住就投到盖住它的窗口。** 常见的遮挡者正是 SuperOne 自己的窗口。可判定：`CGWindowListCopyWindowInfo(.optionOnScreenOnly)` 前到后第一个包含 drop 点的 layer-0 窗口是不是目标窗口。§11.7 的三个选项要重排：(a) 遮挡时才事务性真实激活、露出时保持后台；(b) 只在露出时提供 `drag`（观察层按 drop 点可见性给 `dropTarget`，被盖住时说明原因）；(c) 拿掉 drag 走菜单命令。决定留给宿主侧。探针源码在 `/tmp/claude/dragprobe/{lab2/lab2.swift, pb.swift, tap.swift, wl0.swift, axraise.swift}` 与 `/tmp/claude/menu-probe/{labdrag,dragprobe,dragcross}.mjs`。
+So the real boundary of "background drag" is: **if the drop point on screen is not covered by another window it lands; if covered, the drop goes to the covering window.** The usual coverer is SuperOne's own window. Decidable: is the first layer-0 window front-to-back in `CGWindowListCopyWindowInfo(.optionOnScreenOnly)` that contains the drop point the target window. §11.7's three options must be reordered: (a) transactional real activation only when covered, stay in the background when exposed; (b) offer `drag` only when exposed (the observation layer sets `dropTarget` by drop-point visibility and explains why when covered); (c) remove drag and use menu commands. The decision is left to the host side. Probe sources are in `/tmp/claude/dragprobe/{lab2/lab2.swift, pb.swift, tap.swift, wl0.swift, axraise.swift}` and `/tmp/claude/menu-probe/{labdrag,dragprobe,dragcross}.mjs`.
 
-### 11.9 drag 的 (b′)：只在 drop 点露出时提供，宿主自己挡着就自己让路（2026-09-21，Grok 4.6 / high，dev 版）
+### 11.9 Drag's (b′): offer only when the drop point is exposed; when the host is the coverer it moves itself aside (2026-09-21, Grok 4.6 / high, dev build)
 
-**探针：宿主给自己让路（一次性 Electron lab 窗，同一 electron 二进制）。** `BrowserWindow.setAlwaysOnTop(true, 'normal', -1)` 把窗口放到 level −1——所有普通窗之下——posted drag 落地，`setAlwaysOnTop(false)` 复位回最前；全程 app 仍 active，`isFocused`、`document.hasFocus()`、`activeElement` 不变。`hide()`+`showInactive()` 不行：`showInactive` 是 `orderFrontRegardless`，窗口留在最上，且 `hide()` 丢 document focus。bench 里有两个盖住者（dev 主窗 + 被 reset 脚本抬起的另一窗），一层不够，要循环到 drop 点不再被自己盖住。
+**Probe: the host moving itself aside (throwaway Electron lab window, same electron binary).** `BrowserWindow.setAlwaysOnTop(true, 'normal', -1)` puts the window at level −1 — under all ordinary windows — the posted drag lands, and `setAlwaysOnTop(false)` resets it to the front; the app stays active throughout, `isFocused`, `document.hasFocus()`, `activeElement` unchanged. `hide()`+`showInactive()` does not work: `showInactive` is `orderFrontRegardless`, the window stays on top, and `hide()` loses document focus. The bench has two coverers (the dev main window + another window raised by the reset script); one layer is not enough; loop until the drop point is no longer covered by ourselves.
 
-**实现（`d675a782`）。** helper 新 RPC `window_cover`（drag 同一套坐标参数 + `points`）：`CGWindowListCopyWindowInfo(.optionOnScreenOnly)` 前到后第一个 layer-0、alpha>0、非 helper 自身的窗口含该点且不是目标窗 → `{windowId, pid, app}`，否则 `null`。`PlatformAdapter.coveringWindows?` → `service.coveringWindows(stateId, points)`（menu root 一律未盖；fake 用 `coverWindow()`/`uncover()` 配置）。`computer-page` 在 `observe` 后对全部 `dropTarget` 中心点查一次：第三方盖住 → 去掉 `dropTarget`，text 加 `(Archive: drop point covered by TextEdit)`；被宿主自己盖住 → 保留，`drag` 前 `yieldDropPoint` 循环 lower（≤4 层），`finally` 复位。`jev/own-windows.ts` 按 `getMediaSourceId()` 的 `window:<CGWindowID>:0` 找到 `BrowserWindow`，已 alwaysOnTop 的不动；没有 `ownWindows` 的宿主，自己的窗口视同第三方。不激活任何 app；第三方遮挡只报告。
+**Implementation (`d675a782`).** New helper RPC `window_cover` (same coordinate parameters as drag + `points`): the first layer-0, alpha>0, non-helper window front-to-back in `CGWindowListCopyWindowInfo(.optionOnScreenOnly)` containing the point that is not the target window → `{windowId, pid, app}`, else `null`. `PlatformAdapter.coveringWindows?` → `service.coveringWindows(stateId, points)` (menu roots are never covered; the fake configures via `coverWindow()`/`uncover()`). `computer-page` checks all `dropTarget` centre points once after `observe`: covered by a third party → remove `dropTarget`, text gains `(Archive: drop point covered by TextEdit)`; covered by the host itself → keep, and before `drag` the `yieldDropPoint` loop lowers (≤4 layers), reset in `finally`. `jev/own-windows.ts` finds the `BrowserWindow` by `getMediaSourceId()`'s `window:<CGWindowID>:0`; already alwaysOnTop ones are left alone; a host without `ownWindows` treats its own windows as third parties. No app is activated; third-party covering is only reported.
 
-**真跑。** 三次，bench 窗压在 dev 主窗下两次、露出一次：
-- `r095b0682`（压窗，修 nested row 前）：drag **0.98** → Archive 0.83，risk 0.27，文件进了 Archive，前台始终 SuperOne——自降窗在真 run 成立。但 `goal_satisfied` 0.21 → 0.15，第 3 步 no-progress 暂停，主模型 abort：Finder 把移入的文件显示为**展开的 Archive 下的缩进子行**，观察层把 outline 摊平、没有层级，前后 text 逐字相同（只有 Archive 的修改时间变了）；Jev 唯一抓到的证据是 [139] "Edit ▸ Undo Move of Report.txt" 0.22。观察层缺口，修在 `cc9ca71b`：helper 读 `AXDisclosureLevel`，`UiOutlineNode.level`，text 写 `(Report.txt: selected, inside Archive)`；label 不变，drag head key 不变。
-- `rb5113659`（压窗，修后）：drag **0.99** → 0.80，worked；`goal_satisfied` 0.06 → **0.37** → 0.31；第 3 步 no-progress 暂停（none_useful 0.53、drag 残留 0.27，不到 idle 规则要的 0.8），主模型读到 "inside Archive" 选 **accept** → done。
-- `r53ab728f`（露出，TextEdit 前台，dev 窗在 Finder 之下）：drag **0.95** → 0.84，worked，没有 lower；`goal_satisfied` 0.06 → 0.32 → **0.42**；同样 accept → done。
+**Real runs.** Three, with the bench window under the dev main window twice and exposed once:
+- `r095b0682` (covered, before the nested-row fix): drag **0.98** → Archive 0.83, risk 0.27, the file went into Archive, SuperOne frontmost throughout — self-lowering holds in a real run. But `goal_satisfied` 0.21 → 0.15, step 3 no-progress pause, main model aborted: Finder shows the moved file as **an indented child row under the expanded Archive**, the observation layer flattens the outline with no hierarchy, and the before/after text is identical word for word (only Archive's modification time changed); the only evidence Jev caught was [139] "Edit ▸ Undo Move of Report.txt" 0.22. Observation-layer gap, fixed in `cc9ca71b`: the helper reads `AXDisclosureLevel`, `UiOutlineNode.level`, and the text says `(Report.txt: selected, inside Archive)`; label unchanged, drag head key unchanged.
+- `rb5113659` (covered, after the fix): drag **0.99** → 0.80, worked; `goal_satisfied` 0.06 → **0.37** → 0.31; step 3 no-progress pause (none_useful 0.53, drag residue 0.27, short of the 0.8 the idle rule wants); the main model read "inside Archive" and chose **accept** → done.
+- `r53ab728f` (exposed, TextEdit frontmost, dev window under Finder): drag **0.95** → 0.84, worked, no lowering; `goal_satisfied` 0.06 → 0.32 → **0.42**; likewise accept → done.
 
-**判读。** `goal_satisfied` 对这次移动是有区分的（0.06 → 0.3–0.4），但没过线：goal 写的是 "no longer listed beside Archive"，而文件仍列在窗口里（缩进在 Archive 下），Jev 有理由不确定；drag 残留 0.27 使 idle 规则（none_useful ≥ 0.8）不触发。第 5 步之外的两个可选项：goal 措辞在提示词里说清"listed inside Archive counts"；或 `dropTarget` 落地后把 `(X: inside Y)` 直接当 done 证据——目前不动，先看更多用例。前台在三次 run 里都没变过。
+**Reading.** `goal_satisfied` does discriminate for this move (0.06 → 0.3–0.4) but does not cross the line: the goal said "no longer listed beside Archive", and the file is still listed in the window (indented under Archive), so Jev has reason to be unsure; the drag residue 0.27 keeps the idle rule (none_useful ≥ 0.8) from firing. Two options beyond step 5: make the goal wording in the prompt say "listed inside Archive counts"; or treat `(X: inside Y)` after a `dropTarget` landing directly as done evidence — untouched for now, pending more cases. The foreground did not change in any of the three runs.
 
-**第三层：被第三方窗口盖住时事务性真实激活（用户决定，`7209e2fc`）。** 用户看了 Codex 自己的 computer-use 做同一个后台 Finder 拖拽——它也做不到。决定：drop 点被**别的 app** 的窗口盖住时，`activate` 目标 app → posted drag → `activate` 回原前台 app，形状同 §10.8 菜单命令最初的真实激活回退。前两层不变且优先。
+**Third layer: transactional real activation when covered by a third-party window (user decision, `7209e2fc`).** The user watched Codex's own computer use attempt the same background Finder drag — it cannot do it either. Decision: when the drop point is covered by **another app's** window, `activate` the target app → posted drag → `activate` the original frontmost app back, the same shape as §10.8's original real-activation fallback for menu commands. The first two layers are unchanged and take precedence.
 
-| drop 点 | 投递 | 前台 | 决定在哪 |
+| Drop point | Delivery | Foreground | Decided where |
 |---|---|---|---|
-| 没被盖住 | 直接后台 posted drag | 不变 | — |
-| 被 SuperOne 自己的窗口盖住 | `setAlwaysOnTop(true,'normal',-1)` 压到普通窗之下 → drag → 复位 | 不变（key 窗、焦点都不动） | `computer-page` 的 drag / act dep（需 `ownWindows`） |
-| 被第三方窗口盖住 | helper `drag` 带 `activateIfCovered`：`FocusStealGuard.expectActivation` → `activate()` → 等到真前台（≤1.5 s）→ postDrag → `defer` 里等 150 ms 让 drop 落地 → `previous.activate()` | 目标 app 前台一小会儿 | `macos-adapter` 的 drag 分支按 `window_cover` 自决——`computer_act drag` 同路，schema 不加字段 |
+| not covered | direct background posted drag | unchanged | — |
+| covered by SuperOne's own window | `setAlwaysOnTop(true,'normal',-1)` lowers below ordinary windows → drag → reset | unchanged (key window and focus untouched) | `computer-page`'s drag / act dep (needs `ownWindows`) |
+| covered by a third-party window | helper `drag` with `activateIfCovered`: `FocusStealGuard.expectActivation` → `activate()` → wait for true frontmost (≤1.5 s) → postDrag → wait 150 ms in `defer` for the drop to land → `previous.activate()` | target app frontmost briefly | `macos-adapter`'s drag branch decides itself via `window_cover` — `computer_act drag` takes the same path, no schema field added |
 
-helper 侧是一个事务：复位在 `defer`，drag 抛错也回前台；对 `FocusStealGuard` 先登记，不会被当成 steal 还回去。`computer-page` 把 `d675a782` 里"第三方盖住就不提供"改回**全部提供**，text 里照旧写 `(Archive: drop point covered by TextEdit)`。真跑 `r11d43b9a`：bench 窗在 TextEdit 窗之下、SuperOne 前台；drag 0.88 → Archive 0.78；System Events 轮询看到 **Finder 在前 ≈1.56 s**（含 dense path ≈1 s、激活等待、150 ms 落地），随后回到 Electron，文件进了 Archive；主模型 accept → done。副作用：真实激活把 Finder 窗抬到 TextEdit 之上，第二步的观察里 cover 注记消失——预期内。第一次尝试（`r34e5dc7f`）bench 几何差了几像素，Archive 名字格中心恰好露在 TextEdit 左缘外，走的是第一层，文件也进了——drop 点的判定就是这么精确。
+On the helper side it is a transaction: reset in `defer`, back to the front even if drag throws; registered with `FocusStealGuard` first so it is not given back as a steal. `computer-page` reverts `d675a782`'s "do not offer when covered by a third party" to **offer everything**, with the text still saying `(Archive: drop point covered by TextEdit)`. Real run `r11d43b9a`: bench window under the TextEdit window, SuperOne frontmost; drag 0.88 → Archive 0.78; System Events polling saw **Finder in front for ≈1.56 s** (including dense path ≈1 s, activation wait, 150 ms landing), then back to Electron, and the file went into Archive; main model accept → done. Side effect: the real activation lifted the Finder window above TextEdit, and the cover note vanished from step 2's observation — as expected. The first attempt (`r34e5dc7f`) had the bench geometry off by a few pixels, and the centre of Archive's name cell happened to be exposed just outside TextEdit's left edge, so it took the first layer and the file went in too — that is how precise the drop-point check is.
 
-### 11.10 第五步落地：`needs_input` 交接（2026-09-21，Grok 4.6 / high，dev 版）
+### 11.10 Step five landed: `needs_input` hand-over (2026-09-21, Grok 4.6 / high, dev build)
 
-**实现（`10acef93`）。** `action` 加 `needs_input`（总在候选里），两个头 `hand_target`（候选 = 窗口上的元素含图片，不含菜单命令：`RawElement.menuCommand`，否则 146 个菜单项把 criteria 翻倍）和 `input_kind`（`position | path | text | value | other`，只作提示）。`decide` → `pause(reason: 'capability', mode: 'handed', type: 'value')`，`context = { target: {index, role, label, bounds}, hint, why, risk? }`，`why` 按 kind 走句子模板再接 `describeHeads()`；schema `{ actions?, presets? }`（anyOf），另给 `options: [accept, abort]`。图 relevance `required`。resume：`presets` 合并进 run（同 key 覆盖，`progress.note`），`actions` 经新的可选 `RunDeps.act(page, actions)` 执行——computer 走 `service.act`（解析、门控与 `computer_act` 相同），device 走 `session.act`，browser 暂缺（其 act 走 MCP compact 层的 primitive 映射，没有可直接调的函数）——没有 `act` 的平台 schema 只留 `presets` 并在 `why` 里说明。交接动作计一步，history `kind: 'handed'`，`approved: true`，settle 照常。观察层：`role === 'image'` / `pictureOnly` 且无动作的节点进 `elements`（`picture: true`）并写 `(picture-only: X)`；所有元素带 `bounds`；禁用控件的 text 写 `X (disabled)`。
+**Implementation (`10acef93`).** `action` gains `needs_input` (always among the candidates), two heads `hand_target` (candidates = elements on the window including pictures, excluding menu commands: `RawElement.menuCommand`, otherwise 146 menu items double the criteria) and `input_kind` (`position | path | text | value | other`, hint only). `decide` → `pause(reason: 'capability', mode: 'handed', type: 'value')`, `context = { target: {index, role, label, bounds}, hint, why, risk? }`, `why` via sentence template by kind followed by `describeHeads()`; schema `{ actions?, presets? }` (anyOf), plus `options: [accept, abort]`. Image relevance `required`. resume: `presets` merge into the run (same key overrides, `progress.note`), `actions` execute via the new optional `RunDeps.act(page, actions)` — computer via `service.act` (resolution, gating identical to `computer_act`), device via `session.act`, browser missing for now (its act goes through the MCP compact layer's primitive mapping, with no directly callable function) — platforms without `act` keep only `presets` in the schema and say so in `why`. A handed action counts as one step, history `kind: 'handed'`, `approved: true`, settle as usual. Observation layer: nodes with `role === 'image'` / `pictureOnly` and no actions enter `elements` (`picture: true`) and the text says `(picture-only: X)`; all elements carry `bounds`; disabled controls' text says `X (disabled)`.
 
-**真跑（三个用例，各 2 次）。**
+**Real runs (three cases, 2 each).**
 
-| 用例 | needs_input | hand_target | input_kind | 主模型给的 | 结果 |
+| Case | needs_input | hand_target | input_kind | Main model supplied | Result |
 |---|---|---|---|---|---|
-| Preview 框选红点 `r5164fdbb` / `rb53dc841` | **0.79** / 0.50 | [1] Picture 0.99 | path 0.98 | 看图后 `drag` path 围住红点 | 选区落地（Edit ▸ Cut/Copy/Invert Selection 变可用，元素 39→89）；第二次暂停 needs_input 0.55/0.39 → 首跑 abort（无收尾出口），修后 **accept → done** |
-| TextEdit 追加俳句 `r9d5e2bc9` / `rb2951dae` | 0.10 / — | none 0.62 | text 0.97 | — | Jev 选的是 **append 0.56**，走原有的 `uncertain` value 暂停（"no preset matched"），主模型给 `{text}`，append worked；第二次同样暂停，首跑 abort；重跑主模型漏了行首换行，俳句接在第一行后面 → abort |
-| Finder 图标拖到右下 `r36bb39f3` / `r3cc85ddf` | 0.45 / 0.45 | [1] icon view 0.88 | path 0.96 | `drag` (60,92)→(720,380) | 首跑 drop 落进盖着的 dev 主窗（见下）；修后图标到 (719,316)，**accept → done** |
+| Preview marquee-select the red dot `r5164fdbb` / `rb53dc841` | **0.79** / 0.50 | [1] Picture 0.99 | path 0.98 | after viewing the image, a `drag` path around the red dot | selection landed (Edit ▸ Cut/Copy/Invert Selection became enabled, elements 39→89); second pause needs_input 0.55/0.39 → first run abort (no wrap-up exit), after the fix **accept → done** |
+| TextEdit append a haiku `r9d5e2bc9` / `rb2951dae` | 0.10 / — | none 0.62 | text 0.97 | — | Jev chose **append 0.56**, taking the existing `uncertain` value pause ("no preset matched"); the main model gave `{text}`, append worked; second pause likewise, first run abort; on rerun the main model omitted the leading newline and the haiku was joined to the first line → abort |
+| Finder drag icon to bottom right `r36bb39f3` / `r3cc85ddf` | 0.45 / 0.45 | [1] icon view 0.88 | path 0.96 | `drag` (60,92)→(720,380) | first run's drop fell into the covering dev main window (see below); after the fix the icon reached (719,316), **accept → done** |
 
-**运行里暴露、已修的四处。**
-1. **交接来的 drag 绕过了自降窗**（`10acef93` 内）：`deps.act` 直达 `service.act`，`yieldDropPoint` 只在 loop 自己的 `drag` dep 里；用户看到文件掉进了最前的 SuperOne dev 窗口。现在 `act` dep 对每个 `drag` 的终点同样让路。
-2. **value 暂停没有收尾出口**：capability 与"no preset matched"两种 value 暂停都加 `options: [accept, abort]`——两个已达成目标的 run 只能 abort。
-3. **菜单遍历预算被前几个菜单吃光**（`5d891049`）：DFS 下 Services / Open Recent / Open With 把 250 节点用尽，Preview 的 Tools 菜单从未被读到；现在每个顶层菜单均分剩余预算，被截断的菜单用 `axSubtreeSize` 补齐 index，`ax_action` 的 DFS 定位不变。另发现 Preview 的 "Adjust Color…" 等菜单项 `AXTitle` 读取返回 -25200，成了无名元素被丢弃；Crop 不在 Tools 菜单的 AX 子树里（AppleScript 能按名找到）。用例的 verdict "Crop 变可用"因此不可观察，实际落地以 Edit 菜单的选区命令为证。
-4. **位置变化不算变化**（`84364444`）：settle 签名没有 bounds，图标移动后 `changed: false`，`progress` 报 didnt，主模型得靠 `computer_query` 才知道动了；现在 bounds 取整进签名。
-5. **append 的换行**（`fe060b6c`）：value 暂停说明文本按原样接在现有文本之后。
+**Four issues exposed in the runs, fixed.**
+1. **Handed drags bypassed self-lowering** (within `10acef93`): `deps.act` went straight to `service.act`, and `yieldDropPoint` lived only in the loop's own `drag` dep; the user saw the file fall into the frontmost SuperOne dev window. Now the `act` dep yields for every `drag`'s end point as well.
+2. **Value pauses had no wrap-up exit**: both the capability and the "no preset matched" value pauses gain `options: [accept, abort]` — two runs that had reached their goal could only abort.
+3. **The menu traversal budget was eaten by the first few menus** (`5d891049`): under DFS, Services / Open Recent / Open With exhausted the 250 nodes, and Preview's Tools menu was never read; now each top-level menu gets an equal share of the remaining budget, truncated menus have their index padded via `axSubtreeSize`, and `ax_action`'s DFS lookup is unchanged. Also found: Preview's "Adjust Color…" and other menu items return -25200 on `AXTitle`, becoming nameless elements that were dropped; Crop is not in the Tools menu's AX subtree (AppleScript can find it by name). The case's verdict "Crop becomes enabled" is therefore unobservable; the actual landing is evidenced by the Edit menu's selection commands.
+4. **A position change did not count as a change** (`84364444`): the settle signature had no bounds, so after the icon moved `changed: false`, `progress` reported didnt, and the main model only learned it had moved via `computer_query`; now rounded bounds enter the signature.
+5. **Append's newline** (`fe060b6c`): the value pause states that the text is appended verbatim after the existing text.
 
-**判读。** 交接本身按设计工作：Jev 在三个用例里都把缺的东西指对了元素（0.88–0.99）和种类（path/text 0.93–0.98），`needs_input` 概率 0.45–0.79；主模型两次都从暂停截图里算出了正确坐标。`needs_input` 与已有的 append/type "no preset" value 暂停在 text 场景重叠——Jev 更愿意选 `append`（0.56 vs 0.10），两条路现在形状一致（都收 value、都有 accept），不必合并。过度交接：完成后的页面上 needs_input 仍有 0.39–0.55（Preview）/0.47（Finder），`goal_satisfied` 只到 0.2–0.28——和 §11.9 一样，goal 达成的证据（选区、位置）不在文本里；位置进签名后 `progress` 至少能说 worked。browser 的 `RunDeps.act` 留待其 act 层可复用时补。
+**Reading.** The hand-over itself works as designed: in all three cases Jev pointed the missing thing at the right element (0.88–0.99) and kind (path/text 0.93–0.98), with `needs_input` probability 0.45–0.79; the main model computed correct coordinates from the pause screenshot both times. `needs_input` overlaps with the existing append/type "no preset" value pause in the text scenario — Jev prefers `append` (0.56 vs 0.10); the two paths now have the same shape (both take value, both have accept), no need to merge. Over-handing: on completed pages needs_input remains 0.39–0.55 (Preview) / 0.47 (Finder), and `goal_satisfied` only reaches 0.2–0.28 — as in §11.9, the evidence of goal achievement (selection, position) is not in the text; with position in the signature, `progress` can at least say worked. Browser's `RunDeps.act` is left until its act layer becomes reusable.
 
-## 12. 完成判定的证据来自文本：状态句、终态措辞与 browser 交接（2026-09-21）
+## 12. Evidence for completion comes from text: state sentences, end-state wording and the browser hand-over (2026-09-21)
 
-§11.9–§11.10 留下的共同缺口：动作落地了，`goal_satisfied` 停在 0.2–0.4，run 靠主模型 accept 收尾。四个用例（TextEdit 追加、Save sheet Escape、Finder 拖入 Archive、Finder 图标移位）的 trace 说明原因不在阈值：Jev 判 `goal_satisfied` 看的是观察文本，而这四个效果（文本末尾、sheet 消失、行进了文件夹、图标换了位置）在 §11 的观察文本里**没有一句话能对上 goal**——sheet 关闭后 text 只是少了几行；图标移动后 label 一字不变（§11.10 第 4 条只修了 settle 签名）；追加后的文本被 `MAX_TEXT` 截断在开头。三个候选（(a) 观察层写状态句；(b) 工具描述要求终态措辞并优先 `done_when`；(c) `goal_satisfied` 的 criteria 提示）不是互斥的，三者各补一环，全部采用，阈值不动。
+The common gap left by §11.9–§11.10: the action landed, `goal_satisfied` stalled at 0.2–0.4, and the run was wrapped up by the main model's accept. The traces of the four cases (TextEdit append, Save sheet Escape, Finder drag into Archive, Finder icon move) show the cause is not the thresholds: Jev judges `goal_satisfied` from the observation text, and these four effects (end of text, sheet gone, row inside a folder, icon at a new position) **have not a single sentence in §11's observation text that matches the goal** — after the sheet closes the text merely has a few lines fewer; after the icon moves the label is unchanged to the letter (§11.10 item 4 fixed only the settle signature); the appended text is truncated at the start by `MAX_TEXT`. The three candidates ((a) the observation layer writes state sentences; (b) the tool description requires end-state wording and prefers `done_when`; (c) a criteria hint for `goal_satisfied`) are not mutually exclusive; each closes one link; all three adopted, thresholds untouched.
 
-### 12.1 实现（`194a7d51`）
+### 12.1 Implementation (`194a7d51`)
 
-- **(a) 状态句进观察文本。** `computer-page` 的 text 以一句 `(observing: App window "T"; no sheet or dialog open)` / `(observing: App sheet "Save" in front of window "T")` 开头，正文之后、菜单之前追加 `state` 句：icon view 里可选/可打开的图标写 `(Note.txt: at 75%,70% of icon view, left to right and top to bottom)`（位置按元素 bounds 相对 icon view 区域取整；Finder 的图标是只有 `AXOpen` 没有 select 的 `AXImage`，门控是 `select || open`）；可追加的文本区写 `(text area "First line": ends with "last line")` 或 `empty`。§11.9 的 `(X: inside Y)` 和 §11.10 的 `(picture-only: X)` 保持原位。
-- **(b) 工具描述。** `goal` 的描述改为要求说出"完成时页面显示什么"，给了两个例子（"Report.txt is listed inside Archive" 而非 "drag Report.txt onto Archive"；"no sheet is open over the document window" 而非 "press Escape"），能用原生条件表达时同时传 `done_when`。三个 `*_run` 同一份文案；`computer_run` 的 description 多一句同样的话。
-- **(c) 判定提示。** `questions.ts` 的 `goal_satisfied` 说明里把括号状态句点名为证据：对不上 goal 的终态就不算满足。
+- **(a) State sentences enter the observation text.** `computer-page`'s text opens with a sentence `(observing: App window "T"; no sheet or dialog open)` / `(observing: App sheet "Save" in front of window "T")`, and after the body, before the menus, appends `state` sentences: selectable/openable icons in icon view get `(Note.txt: at 75%,70% of icon view, left to right and top to bottom)` (position rounded from element bounds relative to the icon-view area; Finder's icons are `AXImage`s with only `AXOpen` and no select, so the gate is `select || open`); appendable text areas get `(text area "First line": ends with "last line")` or `empty`. §11.9's `(X: inside Y)` and §11.10's `(picture-only: X)` stay where they were.
+- **(b) Tool description.** The `goal` description now asks for "what the page shows when done", with two examples ("Report.txt is listed inside Archive" rather than "drag Report.txt onto Archive"; "no sheet is open over the document window" rather than "press Escape"), and to also pass `done_when` when a native condition can express it. All three `*_run` share the same text; `computer_run`'s description gets one more sentence saying the same.
+- **(c) Verdict hint.** The `goal_satisfied` instruction in `questions.ts` names the parenthesised state sentences as evidence: an end state that does not match the goal does not count as satisfied.
 
-### 12.2 四个用例前后（Grok 4.6 / high，dev 版）
+### 12.2 The four cases before and after (Grok 4.6 / high, dev build)
 
-"前"取 §11.9–§11.10 与本轮修前重跑的同措辞 run；"后"分两列：goal 措辞不变只加 (a)+(c)，以及按 (b) 改成终态措辞。数字是落地那一步之后连续两次观察的 `goal_satisfied`。
+"Before" takes §11.9–§11.10 and same-wording reruns before this round's fix; "after" has two columns: goal wording unchanged with only (a)+(c), and rewritten to end-state wording per (b). The numbers are `goal_satisfied` on the two consecutive observations after the landing step.
 
-| 用例 | 前 | 后（同措辞） | 后（终态措辞） | 收尾 |
+| Case | Before | After (same wording) | After (end-state wording) | Wrap-up |
 |---|---|---|---|---|
-| TextEdit 追加一行（append） | 0.46 / 0.50 | — | **0.93 / 0.93** `r8a7da7a4`（"the document text ends with …"） | done |
-| Save sheet 按 Escape | 0.59 / 0.55 | — | **0.66 / 0.68** `re9400c3e`（"no sheet is open and the document window showing …"） | done，走 idle 规则（"no action left"） |
-| Finder 拖 Report.txt 进 Archive | 0.37 / 0.31 | 0.35 / 0.43 `rcb424d51`（"no longer listed beside Archive"，accept） | **0.86 / 0.84** `r5483035a`（"listed inside Archive as a row under the expanded folder"） | done |
-| Finder 图标拖到右下 | 0.20 | 0.44 / 0.38 `r4eb3ec98`（"sits in the bottom-right quarter"，从已达成状态起判，accept） | **0.87 / 0.89** `re3a3d80e`（"past the midpoint both left to right and top to bottom"） | done |
+| TextEdit append a line (append) | 0.46 / 0.50 | — | **0.93 / 0.93** `r8a7da7a4` ("the document text ends with …") | done |
+| Save sheet press Escape | 0.59 / 0.55 | — | **0.66 / 0.68** `re9400c3e` ("no sheet is open and the document window showing …") | done, via the idle rule ("no action left") |
+| Finder drag Report.txt into Archive | 0.37 / 0.31 | 0.35 / 0.43 `rcb424d51` ("no longer listed beside Archive", accept) | **0.86 / 0.84** `r5483035a` ("listed inside Archive as a row under the expanded folder") | done |
+| Finder drag icon to bottom right | 0.20 | 0.44 / 0.38 `r4eb3ec98` ("sits in the bottom-right quarter", judged from the already-achieved state, accept) | **0.87 / 0.89** `re3a3d80e` ("past the midpoint both left to right and top to bottom") | done |
 
-**判读。**
-- 三个用例过线，都同时靠 (a) 和 (b)：状态句给了可比对的事实，终态措辞让 goal 说的是同一件事。同一状态句、动作措辞的 goal（rcb424d51 / r4eb3ec98）只从 0.2–0.3 抬到 0.4，仍要 accept——(a) 单独不够，(b) 是必要的。
-- Escape 只到 0.68：goal 里"document window showing …"的后半句要求文本内容，观察句只说了"no sheet or dialog open"，Jev 对后半句保守；run 仍然 done，是因为 sheet 关掉后没有剩余有用动作、idle 规则接管。不再往上推——这个用例本来就有 `done_when` 的位置。
-- Finder icon view 上 `needs_input` 在达成状态下仍 0.3–0.5（§11.10 的过度交接），本轮未动：有了 0.87–0.89 的 `goal_satisfied`，done 先于 needs_input 生效。
-- **Preview 框选没有重跑。** 选区状态在 AX 树里不可见（§11.10：只有 Edit 菜单的 Cut/Copy 变可用），没有状态句可写；留给"菜单项可用性作为证据"或截图判定。
+**Reading.**
+- Three cases cross the line, all relying on (a) and (b) together: the state sentence supplies a comparable fact, and end-state wording makes the goal talk about the same thing. With the same state sentence but action-wording goals (rcb424d51 / r4eb3ec98) the score only lifts from 0.2–0.3 to 0.4 and still needs accept — (a) alone is not enough; (b) is necessary.
+- Escape only reaches 0.68: the second half of the goal, "document window showing …", demands text content, while the observation sentence only says "no sheet or dialog open", and Jev is conservative on the second half; the run still ends done because no useful action remains after the sheet closes and the idle rule takes over. Not pushed further — this case has a natural `done_when` slot anyway.
+- On Finder icon view, `needs_input` is still 0.3–0.5 in the achieved state (§11.10's over-handing), untouched this round: with `goal_satisfied` at 0.87–0.89, done takes effect before needs_input.
+- **Preview marquee selection was not rerun.** The selection state is invisible in the AX tree (§11.10: only the Edit menu's Cut/Copy become enabled), so there is no state sentence to write; left for "menu-item enablement as evidence" or screenshot-based judgement.
 
-### 12.3 browser 的 `RunDeps.act`：交接动作走 `browser_act` 自己的映射（`4ba5214b`）
+### 12.3 Browser's `RunDeps.act`: handed actions go through `browser_act`'s own mapping (`4ba5214b`)
 
-§11.10 里 browser 缺 `act` 的原因是 `browser_act` 的动作→primitive 映射内联在 MCP compact 层的 handler 里。现在抽成 `mcp/browser-act.ts` 的 `runBrowserActions(runPrimitive, actions, { tab, description })`：类型表、逐条执行、fail-fast、回复形状（`{ ok, stepsExecuted, last }` / `{ ok:false, failedAt, step, executed, error }`）都是原 handler 的，handler 改为调用它；`browser-page.ts` 的 `actOnPage(page, actions)` 在新鲜观察上跑同一个函数——`stateId` 过期抛 `StaleObservation`，某步失败 → `RunPaused('no-progress', 'Handed-over browser action failed: …')`，不假装 worked。观察脚本同时把 `canvas / img / svg / video / [role=img]`（≥48×48、不在交互元素里、最多 12 个）列为 `picture: true` 元素并写 `(picture-only: X)`，否则一个只有 canvas 的页面没有可指的 hand target。
+The reason browser lacked `act` in §11.10 was that `browser_act`'s action→primitive mapping was inlined in the MCP compact layer's handler. It is now extracted into `mcp/browser-act.ts` as `runBrowserActions(runPrimitive, actions, { tab, description })`: the type table, per-item execution, fail-fast, and reply shape (`{ ok, stepsExecuted, last }` / `{ ok:false, failedAt, step, executed, error }`) are all the original handler's, and the handler now calls it; `browser-page.ts`'s `actOnPage(page, actions)` runs the same function on a fresh observation — an expired `stateId` throws `StaleObservation`, a failed step → `RunPaused('no-progress', 'Handed-over browser action failed: …')`, never pretending worked. The observation script also lists `canvas / img / svg / video / [role=img]` (≥48×48, not inside interactive elements, at most 12) as `picture: true` elements with `(picture-only: X)`, otherwise a canvas-only page has no hand target to point at.
 
-真跑 `r1cc98729`（本地 canvas 页，"Click inside the red target; done when the page shows Status: marked inside target"）：第 1 步 `needs_input` **0.89**、`hand_target` Canvas 0.99、`input_kind` position 1.0 → 暂停；主模型从截图算出坐标给 `{ actions: [{ type: 'click', x, y }] }` → 交接动作 worked，页面状态句出现，`goal_satisfied` 0.03 → **0.89** → done。三个平台的 `RunDeps.act` 至此齐了。
+Real run `r1cc98729` (local canvas page, "Click inside the red target; done when the page shows Status: marked inside target"): step 1 `needs_input` **0.89**, `hand_target` Canvas 0.99, `input_kind` position 1.0 → pause; the main model computed coordinates from the screenshot and gave `{ actions: [{ type: 'click', x, y }] }` → the handed action worked, the page's state sentence appeared, `goal_satisfied` 0.03 → **0.89** → done. `RunDeps.act` is now complete on all three platforms.
 
-顺带：`packages/shared/src/environment/host-action-*-descriptors.ts` 是给远程节点的工具描述副本，没有生成脚本，§11.4 的 `value` 交接形状和本节的 `goal` 文案都没同步进去，对齐测试一直在红；这次一并更新。
+Incidentally: `packages/shared/src/environment/host-action-*-descriptors.ts` are copies of the tool descriptions for remote nodes, with no generation script; §11.4's `value` hand-over shape and this section's `goal` text had not been synced into them, and the alignment test had been red all along; updated together this time.
 
-### 12.4 聊天里的 run 卡片（`8f5290be` `6949d7e5` `6ef6e6e0` `8cfbeee9`）
+### 12.4 The run card in chat (`8f5290be` `6949d7e5` `6ef6e6e0` `8cfbeee9`)
 
-`*_run` 块改成一张 subagent 样式的卡：头部是动词 + 目标 chip + goal；展开后按暂停分段，段之间是问题（原因 chip + `why` 的第一个分句）和主模型的回答（choice 的标签 / 交接的动作数 / abort / accept），每行动作带 worked / didnt / unknown 记号，同一 `runId` 的 resume 调用折进同一块（`groupContent` 按 result 里的 `runId` 认领后续调用）。用户反馈后定下的信息层级：**头部只在跑的时候显示步数；结束后步数和用时只在展开的 footer；`goal_satisfied` 分数不显示**——它是 Jev 的内部量，对人没有意义。故事在 `apps/desktop/src/renderer/src/components/chat/{ComputerUseToolBlock,BrowserToolBlock,DeviceToolBlock}.stories.tsx`（running / paused / resumed / done / aborted / 30+ 步三段 / 窄屏）。手机端事件里工具 input 被裁掉，看不到 `runId`，resume 调用不折叠——按现有裁剪规则的已知限制。
+The `*_run` block becomes a subagent-style card: the header is verb + target chip + goal; expanded, it is segmented by pause, with the question between segments (reason chip + the first clause of `why`) and the main model's answer (the choice's label / the number of handed actions / abort / accept), each action row carrying a worked / didnt / unknown mark, and resume calls of the same `runId` folded into the same block (`groupContent` claims subsequent calls by the `runId` in the result). Information hierarchy settled after user feedback: **the header shows the step count only while running; after finishing, step count and duration appear only in the expanded footer; the `goal_satisfied` score is not shown** — it is Jev's internal quantity and means nothing to a person. Stories in `apps/desktop/src/renderer/src/components/chat/{ComputerUseToolBlock,BrowserToolBlock,DeviceToolBlock}.stories.tsx` (running / paused / resumed / done / aborted / 30+ steps in three segments / narrow). In mobile events the tool input is stripped, so `runId` is not visible and resume calls are not folded — a known limitation of the existing stripping rules.
 
-## 13. Device 对齐：真实树、状态句与手机的动作空间（2026-09-21，`9e264c52`）
+## 13. Device alignment: real trees, state sentences and the phone's action space (2026-09-21, `9e264c52`)
 
-§10.5 之后 device 一直停在 MVP：label+value 拼成文本、一个 scroll ref、tap / setText / swipe。这次先在两台模拟器上采了真实的树（iPhone 17 Pro Max iOS 26.4、Medium Phone API 36.1 Android 16，Settings app），再按树的形状改适配器。
+After §10.5 device stayed at MVP: label+value concatenated into text, one scroll ref, tap / setText / swipe. This time real trees were first sampled on two simulators (iPhone 17 Pro Max iOS 26.4, Medium Phone API 36.1 Android 16, Settings app), then the adapter was reshaped to the trees.
 
-### 13.1 两个平台的树长什么样
+### 13.1 What the two platforms' trees look like
 
-| | iOS（AXPTranslator） | Android（uiautomator） |
+| | iOS (AXPTranslator) | Android (uiautomator) |
 |---|---|---|
-| 行 | `button "General" #com.apple.settings.general` | **无名 `button`**，标题和摘要是子 `text` 节点（`#android:id/title` / `summary`） |
-| 开关 | `checkbox "Haptic Feedback" ="1"/"0"`，一个元素横跨整行 | 行是 `button`，里面是无名 `switch ="checked"/"unchecked"` |
-| 列表 | 普通 `group`，没有任何滚动角色 | `scrollview` 套 `scrollview` 套 `list #recycler_view`，树里只有可见行 |
-| 标题 | 顶部 `heading`，或 `group #Text Replacement`（只有 identifier）；返回键有时不在树里 | `group "Network & internet" #collapsing_toolbar`，`button "Navigate up"` |
-| 按压 | `press`（AX）可用 | `press` 被拒绝（"Use tap"） |
+| Rows | `button "General" #com.apple.settings.general` | **nameless `button`**; title and summary are child `text` nodes (`#android:id/title` / `summary`) |
+| Switches | `checkbox "Haptic Feedback" ="1"/"0"`, one element spanning the whole row | the row is a `button`, containing a nameless `switch ="checked"/"unchecked"` |
+| Lists | plain `group`, no scrolling role at all | `scrollview` in `scrollview` in `list #recycler_view`; only visible rows in the tree |
+| Titles | `heading` at the top, or `group #Text Replacement` (identifier only); the back button is sometimes not in the tree | `group "Network & internet" #collapsing_toolbar`, `button "Navigate up"` |
+| Press | `press` (AX) available | `press` rejected ("Use tap") |
 
-第一条就是 device_run 在 Android 上从未真正可用的原因：Jev 看到的是一排 `button ""`。
+The first row is why device_run was never really usable on Android: Jev saw a column of `button ""`.
 
-### 13.2 实现
+### 13.2 Implementation
 
-- **观察文本**（`device-page.ts` 重写）：首行 `(observing: Settings screen "Keyboards"; no alert or sheet open[; keyboard shown])`；`(text field "Search": focused, holds "om")`（≤6）；开关归一为 `Haptic Feedback: on` / `Airplane mode: off`，元素带 `checked`；禁用控件 `(disabled)`；`(picture-only: X)` + `picture: true`（≥10%×5% 屏、不在控件内、≤12）；所有元素带屏幕比例 `bounds`（与 `device_act` 的 x/y 同一坐标系，交接的 `context.target.bounds` 直接可用）。Android 行按子文本命名（"Internet — AndroidWifi"，子文本不再单独成行），行内无名开关取行的名字。标题：bar 的 label → 顶部只有 identifier 的 `group`（identifier 不含 `:/.` 时当标题） → 顶部 heading（长度 >1，避开表索引 "O"）。
-- **滚动区**：只提供**最内层**的 `list/scrollview/table/collectionview/grid/pager`；iOS 列表按"`group` 内 ≥3 个可点行且纵向占 ≥50% 屏"识别；上下方向从伸出容器的行推断（Android 最后一行 y=0.996 → down），没证据就两个方向都给；没有滚动区的屏幕不提供 scroll（表单上一次 swipe 是落在某个控件上的手势）。
-- **动作**：`dismiss` = Android `key back` / iOS 左缘滑动 `(0.005,0.5)→(0.7,0.5)` 400 ms（Text Replacement 页的返回键根本不在树里，只有这条路）；`contextMenu` = `longPress`（cell/link/image，以及滚动区里的 `button` 行）；`scrollArea` = 指定容器上的 swipe；iOS `click` 改走 AX `press`——开关行的中心是它的文字，tap 在那儿什么都不切（`rb524a586` 连点三次 Haptic Feedback 均 unknown），Android 仍 tap。
-- **措辞**：`RunWords`（`questions.ts`）承载 escape / context_menu 的动作说明、历史标签和上报的 `op/target`；device 是 "Go back" / "Long-press"，桌面默认不变。`device_run` 描述改为要求终态措辞、说明交接 bounds 是屏幕比例（669 字符）；远程 dump 同步。
+- **Observation text** (`device-page.ts` rewritten): first line `(observing: Settings screen "Keyboards"; no alert or sheet open[; keyboard shown])`; `(text field "Search": focused, holds "om")` (≤6); switches normalised to `Haptic Feedback: on` / `Airplane mode: off`, elements carry `checked`; disabled controls `(disabled)`; `(picture-only: X)` + `picture: true` (≥10%×5% of the screen, not inside a control, ≤12); all elements carry screen-ratio `bounds` (the same coordinate system as `device_act`'s x/y, so a handed `context.target.bounds` is directly usable). Android rows are named by their child text ("Internet — AndroidWifi", child text no longer becomes separate rows), and a nameless switch inside a row takes the row's name. Titles: the bar's label → an identifier-only `group` at the top (an identifier counts as a title when it contains no `:/.`) → a heading at the top (length >1, avoiding the table index "O").
+- **Scroll areas**: only the **innermost** `list/scrollview/table/collectionview/grid/pager` is offered; iOS lists are recognised as "a `group` with ≥3 clickable rows occupying ≥50% of the screen vertically"; up/down direction inferred from rows sticking out of the container (Android's last row at y=0.996 → down); with no evidence both directions are offered; screens without a scroll area offer no scroll (on a form the last swipe was a gesture that landed on some control).
+- **Actions**: `dismiss` = Android `key back` / iOS left-edge swipe `(0.005,0.5)→(0.7,0.5)` 400 ms (the back button on the Text Replacement page is simply not in the tree; this is the only way); `contextMenu` = `longPress` (cell/link/image, and `button` rows inside scroll areas); `scrollArea` = swipe on the specified container; iOS `click` now goes through AX `press` — the centre of a switch row is its text, and tapping there toggles nothing (`rb524a586` tapped Haptic Feedback three times, all unknown); Android still taps.
+- **Wording**: `RunWords` (`questions.ts`) carries the action descriptions for escape / context_menu, history labels and the reported `op/target`; device is "Go back" / "Long-press", desktop defaults unchanged. The `device_run` description now requires end-state wording and states that handed bounds are screen ratios (669 chars); the remote dump is synced.
 
-### 13.3 真跑（Grok 4.6 / high，dev 版，各用例一次）
+### 13.3 Real runs (Grok 4.6 / high, dev build, one per case)
 
-| 用例 | run | 步骤 | `goal_satisfied` | 收尾 |
+| Case | run | Steps | `goal_satisfied` | Wrap-up |
 |---|---|---|---|---|
-| iOS：Settings 根 → General → Keyboard → 打开 Haptic Feedback（修 press 前） | `rb524a586` | 2 次导航 worked；tap 开关 ×3 unknown，每次 risky 暂停（risk 0.50–0.53） | 0.08 → 0.07 → 0.06 | maxSteps 6 用尽，abort |
-| 同上（press） | `r38add0b2` | General、Keyboard、risky 暂停一次确认、press Haptic Feedback worked | 0.07 → **0.94 / 0.94** | done，4 步 |
-| iOS：Keyboards → 打开 Text Replacement → 返回 | `r93ada56f` / `r491c02d1` | click Text Replacement → **escape 0.85**（左缘滑动）worked | 0.57 → 0.19 → **0.89 / 0.90** | done，4 步 6.1 s |
-| Android：Settings 根 → Network & internet → 打开 Airplane mode | `rfa7defc8` | click 行（按子文本命名的 button）→ click 开关 risk 0.47 不暂停 | 0.03 → 0.04 → **0.96 / 0.96** | done，2 步 |
-| Android：Network & internet → 返回首页 | `r8de54ff2` | click "Navigate up" 0.65（escape 0.35） | 0.03 → **0.94 / 0.94** | done |
+| iOS: Settings root → General → Keyboard → turn on Haptic Feedback (before the press fix) | `rb524a586` | 2 navigations worked; tap switch ×3 unknown, a risky pause each time (risk 0.50–0.53) | 0.08 → 0.07 → 0.06 | maxSteps 6 exhausted, abort |
+| Same (press) | `r38add0b2` | General, Keyboard, one risky pause confirmed, press Haptic Feedback worked | 0.07 → **0.94 / 0.94** | done, 4 steps |
+| iOS: Keyboards → open Text Replacement → go back | `r93ada56f` / `r491c02d1` | click Text Replacement → **escape 0.85** (left-edge swipe) worked | 0.57 → 0.19 → **0.89 / 0.90** | done, 4 steps 6.1 s |
+| Android: Settings root → Network & internet → turn on Airplane mode | `rfa7defc8` | click row (button named by child text) → click switch risk 0.47 no pause | 0.03 → 0.04 → **0.96 / 0.96** | done, 2 steps |
+| Android: Network & internet → back to home | `r8de54ff2` | click "Navigate up" 0.65 (escape 0.35) | 0.03 → **0.94 / 0.94** | done |
 
-**判读。**
-- 状态句在手机上同样直接决定完成判定：`Haptic Feedback: on`、`Airplane mode: on`、`(observing: … "Keyboards")` 各对上一个 goal，四个用例都在动作落地后的下一次观察过线（0.89–0.96）。
-- iOS 的开关只能 AX press：这是 device 适配器与 `device_act` 默认建议（"prefer press"）本来就一致的地方，MVP 里用 tap 是错的。
-- Jev 选 escape 的条件是**没有可点的返回控件**：iOS Text Replacement 页 0.85 选了 Go back；Android 有 "Navigate up" 时 0.65 选点击、0.35 选 Back。Android 的 `key back` 路径只有单元测试和 `device_act` 自身覆盖，真跑里没被选中。
-- `Haptic Feedback` 这种可逆开关 next_step_risk 0.50–0.53 触发 risky 暂停（Android 的 Airplane mode 0.47 没触发），阈值边缘；本轮不动阈值。
-- 未做：`append`（`type` 插在光标处，tap 决定不了光标在末尾）；Android 冷启动无 tree 的等待；A/B 基线仍未跑。
+**Reading.**
+- State sentences decide completion on the phone just as directly: `Haptic Feedback: on`, `Airplane mode: on`, `(observing: … "Keyboards")` each match a goal, and all four cases crossed the line on the observation right after the action landed (0.89–0.96).
+- iOS switches can only be AX-pressed: this is where the device adapter and `device_act`'s default advice ("prefer press") were already aligned; using tap in the MVP was wrong.
+- Jev picks escape when **there is no clickable back control**: on iOS's Text Replacement page it chose Go back at 0.85; on Android with "Navigate up" present it chose click at 0.65 and Back at 0.35. Android's `key back` path is covered only by unit tests and `device_act` itself; it was not chosen in a real run.
+- A reversible switch like `Haptic Feedback` triggers a risky pause at next_step_risk 0.50–0.53 (Android's Airplane mode 0.47 did not), right at the threshold edge; thresholds untouched this round.
+- Not done: `append` (`type` inserts at the cursor, and tap cannot ensure the cursor is at the end); waiting for a tree on Android cold start; the A/B baseline still not run.
 
-### 13.4 长按与 Android Back 的真跑（2026-09-21，`24e4fa6b`）
+### 13.4 Real runs of long-press and Android Back (2026-09-21, `24e4fa6b`)
 
-模拟器上能长按的东西比预想的少：iOS 的 Reminders 列表在 AXPTranslator 里是几个空 `group`，Safari 正文和 SpringBoard 主屏只有 OCR，Notes / Files / Contacts 不在这个 runtime 里；Photos 的网格是六个 `image "Photo" #PXGGridLayout-Info`，长按出 Share / Favorite / Delete / Copy / Duplicate / Hide / Add to Album 和 `button "Dismiss context menu"`。Android launcher 的图标是 `scrollview #workspace` 里的 `button "Photos"`，长按出 `popup_container`（App info / Pause app / Widgets / Remove），弹出后树里**只剩弹层**，没有 "Navigate up"——正是 Back 键的用例。
+Fewer things can be long-pressed on the simulators than expected: iOS's Reminders list is a few empty `group`s in AXPTranslator, Safari's body and the SpringBoard home screen are OCR only, Notes / Files / Contacts are not in this runtime; Photos' grid is six `image "Photo" #PXGGridLayout-Info`, and long-press brings up Share / Favorite / Delete / Copy / Duplicate / Hide / Add to Album and a `button "Dismiss context menu"`. The Android launcher's icons are `button "Photos"` inside `scrollview #workspace`; long-press brings up `popup_container` (App info / Pause app / Widgets / Remove), after which the tree has **only the popup**, with no "Navigate up" — exactly the Back key's use case.
 
-按树改了三处：独立的带名 `image`（≥10%×5% 屏、不在控件内）从"只能交接的图片"变成内容——可点（tap，AX 没有 press）、可长按、仍是 hand target；滚动容器对其内部的元素一律算"列表里的项"，不管它是不是最内层那个被提供的滚动区（workspace 里套着 smartspace 的 `list`，之前图标因此不算项）；Android 对话框按 `android:id/alertTitle` 写进 observing 句（ANR 弹窗 "Process system isn't responding" 就是这么出现的）。
+Three changes made from the trees: a standalone named `image` (≥10%×5% of the screen, not inside a control) changes from "a picture that can only be handed over" to content — clickable (tap; AX has no press), long-pressable, still a hand target; elements inside a scroll container always count as "items in a list", whether or not it is the innermost scroll area being offered (the workspace nests a smartspace `list`, which previously kept the icons from counting as items); Android dialogs are written into the observing sentence by `android:id/alertTitle` (that is how the ANR dialog "Process system isn't responding" showed up).
 
-| 用例 | run | Jev 的选择 | `goal_satisfied` | 收尾 |
+| Case | run | Jev's choice | `goal_satisfied` | Wrap-up |
 |---|---|---|---|---|
-| iOS Photos：打开第一张照片的上下文菜单 | `rd3e6540c` | context_menu 0.97 → 长按失败 `iOS helper request touch.update timed out`（dev 实例刚起、helper 的第一次触摸；照片被当作 tap 打开进了 One-Up） | 0.03 | no-progress 暂停，abort |
-| 同上，重跑 | `rec40a366` | context_menu **0.97** → 长按 worked | 0.03 → **0.91 / 0.92** | done |
-| Android launcher：打开 Photos 图标的快捷菜单 | `r8425fc8e` | context_menu **0.94** → 长按 worked | 0.02 → **0.75 / 0.83** | done |
-| Android：关掉那个快捷菜单 | `r8c356041` | **escape 0.87**（`key back`）worked | 0.08 → **0.85 / 0.85** | done |
+| iOS Photos: open the first photo's context menu | `rd3e6540c` | context_menu 0.97 → long-press failed `iOS helper request touch.update timed out` (dev instance just started, the helper's first touch; the photo was treated as a tap and opened in One-Up) | 0.03 | no-progress pause, abort |
+| Same, rerun | `rec40a366` | context_menu **0.97** → long-press worked | 0.03 → **0.91 / 0.92** | done |
+| Android launcher: open the Photos icon's shortcut menu | `r8425fc8e` | context_menu **0.94** → long-press worked | 0.02 → **0.75 / 0.83** | done |
+| Android: close that shortcut menu | `r8c356041` | **escape 0.87** (`key back`) worked | 0.08 → **0.85 / 0.85** | done |
 
-三个平台的 escape / context_menu 至此都有真跑：桌面 Escape / 右键（§11.6–§11.7），iOS 左缘滑动 / 长按，Android Back 键 / 长按。`touch.update` 超时只出现在 dev 实例启动后的第一次触摸，之后三次 run 没有复现；先记着，不在这轮追。
+escape / context_menu now have real runs on all three platforms: desktop Escape / right-click (§11.6–§11.7), iOS left-edge swipe / long-press, Android Back key / long-press. The `touch.update` timeout appeared only on the first touch after the dev instance started and did not recur in the next three runs; noted, not chased this round.
 
-### 13.5 Device 的配对基准：Display & touch 两项设置（2026-09-21，Grok 4.6 / high，dev 版，Android）
+### 13.5 Device paired benchmark: two Display & touch settings (2026-09-21, Grok 4.6 / high, dev build, Android)
 
-§10.5 只做了功能 smoke，这是 device 的第一组 A/B。任务跨四个屏幕、五个动作：Settings 首页 → Display & touch → Screen timeout → 选 "10 minutes" → 返回 → 打开 Dark theme；终态是 Display & touch 页显示 "After 10 minutes of inactivity" 和 Dark theme: on。两腿同一 prompt 正文、同一模型、同一台模拟器，只把交互段从"逐步 `device_snapshot` + `device_act`"换成"一次 `device_run`"；每腿之间用 `adb settings put` 复位超时与深色主题并重启 Settings。口径同 §10.7：成本与上下文读自会话 store 的 `totalCostUsd` / `contextTokens`；"任务相关调用"不含 `SearchTools`、`session_rename`、`read_manual`、`device_request_control`、`device_release`。各跑两次。
+§10.5 only did a functionality smoke; this is device's first A/B. The task spans four screens and five actions: Settings home → Display & touch → Screen timeout → choose "10 minutes" → back → turn on Dark theme; the end state is the Display & touch page showing "After 10 minutes of inactivity" and Dark theme: on. Both legs share the same prompt body, model and simulator, swapping only the interaction segment from "step-by-step `device_snapshot` + `device_act`" to "one `device_run`"; between legs `adb settings put` resets the timeout and dark theme and restarts Settings. Definitions as in §10.7: cost and context read from the session store's `totalCostUsd` / `contextTokens`; "task-related calls" exclude `SearchTools`, `session_rename`, `read_manual`, `device_request_control`, `device_release`. Two runs each.
 
-| | 逐步 `device_act` ①  | ② | `device_run` ① | ② | 均值差 |
+| | step-by-step `device_act` ① | ② | `device_run` ① | ② | Mean Δ |
 |---|---:|---:|---:|---:|---:|
-| 墙钟 | 245.0 s | 212.0 s | 149.0 s | 124.0 s | **−40%** |
-| 工具调用（总） | 16 | 13 | 8 | 9 | −41% |
-| 工具调用（任务相关） | 9 | 8 | 2 | 2 | **−76%** |
-| 主模型成本 | $0.1768 | $0.1483 | $0.0602 | $0.0622 | **−62%** |
-| 上下文 | 57.5k | 50.6k | 39.1k | 41.6k | −25% |
-| Jev 自身 | — | — | 7 req · 28.7k in / 3.7k out · 循环 25.2 s | 7 req · 同 · 27.0 s | |
+| Wall time | 245.0 s | 212.0 s | 149.0 s | 124.0 s | **−40%** |
+| Tool calls (total) | 16 | 13 | 8 | 9 | −41% |
+| Tool calls (task-related) | 9 | 8 | 2 | 2 | **−76%** |
+| Main-model cost | $0.1768 | $0.1483 | $0.0602 | $0.0622 | **−62%** |
+| Context | 57.5k | 50.6k | 39.1k | 41.6k | −25% |
+| Jev itself | — | — | 7 req · 28.7k in / 3.7k out · loop 25.2 s | 7 req · same · 27.0 s | |
 
-`device_run`（`re5bdfe73` / `rf486f3b1`）两次都是同一条路：click Display & touch → click Screen timeout → click 10 minutes（0.61）→ **escape**（Back 键，没去点 "Navigate up"）→ click Dark theme → `goal_satisfied` **0.93**，无暂停、无 stale 重试，循环自身 25–27 s，其余是主模型的三次 `SearchTools`、申请控制、汇报。基线两次都先对行发 `press` 被 Android 拒绝（"cannot be pressed through accessibility on Android. Use tap"）再改 tap，之后每个屏幕一次 `device_act`（带 `expect`），中途没有额外快照——这已经是基线比较省的走法，成本差仍然来自每次 `device_act` 都把整棵新树（60–80 个节点）读回主模型上下文。
+`device_run` (`re5bdfe73` / `rf486f3b1`) took the same path both times: click Display & touch → click Screen timeout → click 10 minutes (0.61) → **escape** (Back key, not clicking "Navigate up") → click Dark theme → `goal_satisfied` **0.93**, no pauses, no stale retries, loop itself 25–27 s, the rest being the main model's three `SearchTools`, control request and report. The baseline both times first sent `press` on a row and was rejected by Android ("cannot be pressed through accessibility on Android. Use tap") before switching to tap, then one `device_act` per screen (with `expect`) and no extra snapshots along the way — already a frugal path for the baseline, and the cost gap still comes from every `device_act` reading the entire new tree (60–80 nodes) back into the main model's context.
 
-方向与 §10.7 的桌面结论一致：**收益来自"每步之间屏幕整个换掉"**，手机的每次导航都是这种情形。两次配对，不是统计结论；`device_run` 那条腿再次高度可复现（$0.0602 vs $0.0622，Jev token 数逐字相同），波动都在基线腿。
+The direction agrees with §10.7's desktop conclusion: **the gain comes from "the whole screen is replaced between steps"**, which every navigation on a phone is. Two pairs, not a statistical conclusion; the `device_run` leg is again highly reproducible ($0.0602 vs $0.0622, Jev token counts identical to the digit), with all the variance in the baseline leg.
 
-## 参考
+## References
 
-- `~/Developer/Github/jev-ultrafast/jev_ultrafast/{agent.py, browser.py, snapshot.js, model.py, questions.py}`、`docs/performance.md`
+- `~/Developer/Github/jev-ultrafast/jev_ultrafast/{agent.py, browser.py, snapshot.js, model.py, questions.py}`, `docs/performance.md`
 - `apps/desktop/src/main/browser/{browser-automation-bridge.ts, browser-cdp.ts}`
 - `apps/desktop/src/renderer/src/components/browser/browser-automation-runtime.ts`
 - `apps/desktop/src/main/computer-use/{outline-toon.ts, tools.ts, outcome.ts, policy.ts, grant-request.ts}`
-- `apps/desktop/src/main/device-agent/{types.ts, execute.ts, conditions.ts, state-store.ts, control-confirm.ts}`、`apps/desktop/src/main/device/settle.ts`
+- `apps/desktop/src/main/device-agent/{types.ts, execute.ts, conditions.ts, state-store.ts, control-confirm.ts}`, `apps/desktop/src/main/device/settle.ts`
 - `apps/desktop/src/main/session/host-confirm-registry.ts`
 - https://docs.typesafe.ai/api · /primitives · /confidence · /patterns/fan-out · /patterns/confidence-routing · /model-jaggedness/jev-1.13 · /sdk/javascript

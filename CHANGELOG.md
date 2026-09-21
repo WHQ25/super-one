@@ -15,6 +15,9 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Git and GitHub mentions on desktop and mobile: `@git` browses branches,
+  commits, worktrees and tags; `@gh` finds issues and pull requests through
+  the connected host. Mention chips preserve the exact selected reference.
 - Fast inner loop (experimental): `browser_run`, `computer_run` and
   `device_run` hand a multi-step UI goal to Jev (TypeSafe's System One
   model), which picks the next click, type or scroll from the observed
@@ -56,6 +59,10 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Fixed
 
+- Claude keeps subsequent messages queued while a steered continuation
+  turn is still running, then releases them when the turn finishes.
+- Composer suggestions can extend beyond the input while it is idle;
+  clipping applies only during composer transitions.
 - Codex realtime voice settings sync; a call survives session
   switches and waits out transient ICE disconnects instead of ending.
 - Claude on a third-party Anthropic-compatible provider (Bailian,
@@ -87,6 +94,33 @@ Every alpha release keeps its own notes on its GitHub Release.
   picks the path per action and reports it in
   `evidence[].description`; `ActResult.grounding` is removed.
   System-wide hotkeys (⌘Space, ⌘Tab, screenshots) are not available.
+
+## [0.68.0-alpha.1] - 2026-09-22
+
+### Added
+
+- Desktop and mobile gain `@git` mentions for branches, commits, worktrees
+  and tags, and `@gh` mentions for GitHub issues and pull requests. Lookups
+  run on the connected host; mention chips carry the exact reference.
+
+### Fixed
+
+- Claude keeps queued messages from being injected into a running steered
+  continuation turn.
+- Composer suggestions are clipped only during composer transitions.
+- Mobile permission descriptions match the shared permission copy.
+
+### Changed
+
+- Async question cards use softer backgrounds; GitHub mention rows omit
+  author avatars and separate the issue or PR number from the author.
+- Computer Use records window discovery and placement diagnostics to help
+  investigate missing or incorrectly positioned windows.
+
+### Tests
+
+- Isolate Codex configuration tests from the runner's `CODEX_HOME` and
+  align mobile mention assertions with the Git and GitHub portals.
 
 ## [0.68.0-alpha] - 2026-09-21
 

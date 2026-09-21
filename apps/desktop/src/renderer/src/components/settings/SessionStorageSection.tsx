@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FolderOpen, Loader2, RefreshCw, Trash2 } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
@@ -9,6 +9,28 @@ type Usage =
   | { status: 'loading' }
   | { status: 'error' }
   | { status: 'ready'; usage: SyncZoneUsage }
+
+/**
+ * One settings row: label and figures on the left, at most one action on the
+ * right — the same shape as every other row in `AppSettingsPage`.
+ */
+function Row({ label, description, action, children }: {
+  label: string
+  description?: string
+  action?: ReactNode
+  children?: ReactNode
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-t border-border p-4 first:border-t-0">
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{label}</p>
+        {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
+        {children && <div className="mt-1.5 space-y-0.5 text-xs">{children}</div>}
+      </div>
+      {action && <div className="shrink-0">{action}</div>}
+    </div>
+  )
+}
 
 /**
  * What the session sync zone holds, and the one lever a person has over it.
@@ -63,7 +85,7 @@ export function SessionStorageSection() {
   /**
    * Files that are complete but never reached the job table have no worker
    * coming for them, so unlike everything else here they need a person. The
-   * button appears only when there is something to retry.
+   * row appears only when there is something to report.
    */
   async function retryHandoffs() {
     setRetrying(true)
@@ -88,70 +110,10 @@ export function SessionStorageSection() {
         <p className="text-xs font-medium text-muted-foreground">{t('settings.general.storage.section')}</p>
       </div>
 
-      <div className="flex items-center justify-between gap-4 p-4">
-        <div className="min-w-0">
-          <p className="text-sm font-medium">{t('settings.general.storage.label')}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{t('settings.general.storage.description')}</p>
-          <div className="mt-2 space-y-0.5 text-xs" data-testid="session-storage-figures">
-            {state.status === 'loading' && (
-              <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-label={t('common.loading')} />
-            )}
-            {state.status === 'error' && (
-              <p className="text-destructive">{t('settings.general.storage.unreadable')}</p>
-            )}
-            {usage && (
-              <>
-                <p>{t('settings.general.storage.summary', { total: formatBytes(usage.totalBytes), count: usage.sessionCount })}</p>
-                {usage.pendingBytes > 0 && (
-                  <p className="text-muted-foreground">{t('settings.general.storage.pending', { bytes: formatBytes(usage.pendingBytes) })}</p>
-                )}
-                {stuck && (
-                  <p className="text-warning" data-testid="session-storage-stuck">
-                    {t('settings.general.storage.stuck', {
-                      bytes: formatBytes(usage.failedHandoffs.bytes),
-                      count: usage.failedHandoffs.files,
-                      error: usage.failedHandoffs.lastError ?? '',
-                    })}
-                  </p>
-                )}
-                {needsRedelivery && (
-                  <p className="text-warning" data-testid="session-storage-needs-redelivery">
-                    {t('settings.general.storage.needsRedelivery', {
-                      bytes: formatBytes(usage.needsRedelivery.bytes),
-                      count: usage.needsRedelivery.files,
-                    })}
-                  </p>
-                )}
-                <p className="text-muted-foreground">
-                  {reclaimable
-                    ? t('settings.general.storage.reclaimable', { bytes: formatBytes(usage.reclaimable.bytes), count: usage.reclaimable.sessions })
-                    : t('settings.general.storage.nothingReclaimable')}
-                </p>
-                {freed != null && (
-                  <p className="text-foreground">
-                    {freed > 0 ? t('settings.general.storage.freed', { bytes: formatBytes(freed) }) : t('settings.general.storage.freedNothing')}
-                  </p>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {stuck && (
-            <Button variant="outline" size="sm" onClick={() => void retryHandoffs()} disabled={retrying}>
-              {retrying ? (
-                <>
-                  <Loader2 className="size-3.5 animate-spin" />
-                  {t('settings.general.storage.retrying')}
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="size-3.5" />
-                  {t('settings.general.storage.stuckRetry')}
-                </>
-              )}
-            </Button>
-          )}
+      <Row
+        label={t('settings.general.storage.label')}
+        description={t('settings.general.storage.description')}
+        action={(
           <Button
             variant="outline"
             size="sm"
@@ -161,17 +123,87 @@ export function SessionStorageSection() {
             <FolderOpen className="size-3.5" />
             {t('settings.general.storage.reveal')}
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!reclaimable || reclaiming}
-            onClick={() => void reclaim()}
-          >
-            {reclaiming ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
-            {t(reclaiming ? 'settings.general.storage.reclaiming' : 'settings.general.storage.reclaim')}
-          </Button>
+        )}
+      >
+        <div data-testid="session-storage-figures">
+          {state.status === 'loading' && (
+            <Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-label={t('common.loading')} />
+          )}
+          {state.status === 'error' && (
+            <p className="text-destructive">{t('settings.general.storage.unreadable')}</p>
+          )}
+          {usage && (
+            <p>
+              {t('settings.general.storage.summary', { total: formatBytes(usage.totalBytes), count: usage.sessionCount })}
+              {usage.pendingBytes > 0 && (
+                <span className="text-muted-foreground">
+                  {' · '}
+                  {t('settings.general.storage.pending', { bytes: formatBytes(usage.pendingBytes) })}
+                </span>
+              )}
+            </p>
+          )}
         </div>
-      </div>
+      </Row>
+
+      {usage && (stuck || needsRedelivery) && (
+        <Row
+          label={t('settings.general.storage.uploadLabel')}
+          action={stuck && (
+            <Button variant="outline" size="sm" onClick={() => void retryHandoffs()} disabled={retrying}>
+              {retrying ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+              {t(retrying ? 'settings.general.storage.retrying' : 'settings.general.storage.stuckRetry')}
+            </Button>
+          )}
+        >
+          {stuck && (
+            <p className="text-warning" data-testid="session-storage-stuck">
+              {t('settings.general.storage.stuck', {
+                bytes: formatBytes(usage.failedHandoffs.bytes),
+                count: usage.failedHandoffs.files,
+                error: usage.failedHandoffs.lastError ?? '',
+              })}
+            </p>
+          )}
+          {needsRedelivery && (
+            <p className="text-warning" data-testid="session-storage-needs-redelivery">
+              {t('settings.general.storage.needsRedelivery', {
+                bytes: formatBytes(usage.needsRedelivery.bytes),
+                count: usage.needsRedelivery.files,
+              })}
+            </p>
+          )}
+        </Row>
+      )}
+
+      {usage && (
+        <Row
+          label={t('settings.general.storage.cleanupLabel')}
+          description={t('settings.general.storage.cleanupDescription')}
+          action={(
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!reclaimable || reclaiming}
+              onClick={() => void reclaim()}
+            >
+              {reclaiming ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+              {t(reclaiming ? 'settings.general.storage.reclaiming' : 'settings.general.storage.reclaim')}
+            </Button>
+          )}
+        >
+          <p className="text-muted-foreground">
+            {reclaimable
+              ? t('settings.general.storage.reclaimable', { bytes: formatBytes(usage.reclaimable.bytes), count: usage.reclaimable.sessions })
+              : t('settings.general.storage.nothingReclaimable')}
+          </p>
+          {freed != null && (
+            <p className="text-foreground">
+              {freed > 0 ? t('settings.general.storage.freed', { bytes: formatBytes(freed) }) : t('settings.general.storage.freedNothing')}
+            </p>
+          )}
+        </Row>
+      )}
     </div>
   )
 }

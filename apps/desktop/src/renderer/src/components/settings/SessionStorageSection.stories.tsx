@@ -69,7 +69,7 @@ type Story = StoryObj<typeof SessionStorageSection>
 /** Steady state: sessions all still known, so the sweep has nothing to offer and the button says so by being disabled. */
 export const NothingToReclaim: Story = { decorators: [seed({})] }
 
-/** Three finished sessions the sweep would remove — press "Reclaim Now" to watch the numbers re-read. */
+/** Three deleted sessions left files behind — press "Clean Up" to watch the numbers re-read. */
 export const Reclaimable: Story = {
   decorators: [seed({ reclaimable: { sessions: 3, bytes: 700 * MB } })],
 }
@@ -90,7 +90,7 @@ export const Loading: Story = { decorators: [seed({}, { delay: 60_000 })] }
 /** The folder could not be read — say so rather than show a zero. */
 export const Unreadable: Story = { decorators: [seed({}, { fail: true })] }
 
-/** Narrow settings pane: buttons must not squash the figures. */
+/** Narrow settings pane: each row keeps its one action beside the figures. */
 export const Narrow: Story = {
   decorators: [
     seed({ reclaimable: { sessions: 12, bytes: 2.4 * GB }, pendingBytes: 1.1 * GB }),
@@ -135,7 +135,7 @@ export const StuckAndNeedsRedelivery: Story = {
   ],
 }
 
-/** A long driver message must not push the actions off the row. */
+/** A long driver message must not push the Retry action off its row. */
 export const HandoffsStuckLongError: Story = {
   decorators: [
     seed({

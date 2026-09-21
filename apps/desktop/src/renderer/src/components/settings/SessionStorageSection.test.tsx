@@ -97,9 +97,9 @@ describe('session storage settings', () => {
     const { reclaimSyncZone, getSyncZoneUsage } = stub({ freed: 700 * 1024 * 1024 })
     render(<SessionStorageSection />)
     await screen.findByText(/3\.0 GB/)
-    await userEvent.click(screen.getByRole('button', { name: /reclaim now/i }))
+    await userEvent.click(screen.getByRole('button', { name: /clean up/i }))
     await waitFor(() => expect(reclaimSyncZone).toHaveBeenCalledTimes(1))
-    expect(await screen.findByText(/freed 700\.0 MB/i)).toBeInTheDocument()
+    expect(await screen.findByText(/removed 700\.0 MB/i)).toBeInTheDocument()
     await waitFor(() => expect(getSyncZoneUsage).toHaveBeenCalledTimes(2))
   })
 
@@ -107,7 +107,7 @@ describe('session storage settings', () => {
     stub({ usage: { ...usage, reclaimable: { sessions: 0, bytes: 0 } } })
     render(<SessionStorageSection />)
     await screen.findByText(/3\.0 GB/)
-    expect(screen.getByRole('button', { name: /reclaim now/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /clean up/i })).toBeDisabled()
   })
 
   it('opens the directory in the file manager', async () => {

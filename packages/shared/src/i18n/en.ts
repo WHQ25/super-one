@@ -1144,10 +1144,13 @@ export type Messages = {
         description: string
         summary: string
         pending: string
+        uploadLabel: string
         stuck: string
         stuckRetry: string
         needsRedelivery: string
         retrying: string
+        cleanupLabel: string
+        cleanupDescription: string
         reclaimable: string
         nothingReclaimable: string
         reclaim: string
@@ -5070,20 +5073,23 @@ export const en: Messages = {
       storage: {
         section: 'Storage',
         label: 'Session Files',
-        description: 'Screenshots, recordings, downloads and generated media that agents produced, kept per session so the previewer and the tools can reach them.',
+        description: 'Screenshots, recordings, downloads and generated media, kept per session.',
         summary: '{{total}} across {{count}} sessions',
-        pending: '{{bytes}} waiting to upload',
-        stuck: '{{bytes}} in {{count}} files could not be queued for upload ({{error}}) — kept until they are',
+        pending: '{{bytes}} uploading',
+        uploadLabel: 'Upload',
+        stuck: '{{bytes}} in {{count}} files could not be queued ({{error}})',
         stuckRetry: 'Retry Upload',
-        needsRedelivery: '{{bytes}} in {{count}} files were sent but never confirmed — re-run the action that produced them to deliver again',
+        needsRedelivery: '{{bytes}} in {{count}} files sent but never confirmed — re-run the action that produced them',
         retrying: 'Retrying…',
-        reclaimable: '{{bytes}} from {{count}} finished sessions can be reclaimed',
-        nothingReclaimable: 'Nothing to reclaim — every session here is still known',
-        reclaim: 'Reclaim Now',
-        reclaiming: 'Reclaiming…',
+        cleanupLabel: 'Deleted Sessions',
+        cleanupDescription: 'Files a deleted session left behind.',
+        reclaimable: '{{bytes}} from {{count}} sessions',
+        nothingReclaimable: 'Nothing to clean up',
+        reclaim: 'Clean Up',
+        reclaiming: 'Cleaning up…',
         reveal: 'Show in Folder',
-        freed: 'Freed {{bytes}}',
-        freedNothing: 'Nothing to reclaim',
+        freed: 'Removed {{bytes}}',
+        freedNothing: 'Nothing to remove',
         unreadable: 'Could not read the session files folder',
       },
       imageProvider: {

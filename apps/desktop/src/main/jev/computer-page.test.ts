@@ -391,7 +391,7 @@ describe('computer fast-loop adapter', () => {
     service.policy.grantSession({ app: 'TextEdit', bundleId: 'com.test.textedit', tier: 'full' })
     const observed = await service.observe((await service.resolveTargetRoot()).rootId, 'semantic')
     const page = computerPage(computerObservation(service.getStateStore().get(observed.stateId)!), service)
-    expect(page.text).toBe('Jev sheet benchmark')
+    expect(page.text.split('\n')).toEqual(['(observing: TextEdit window "Untitled"; no sheet or dialog open)', 'Jev sheet benchmark', '(text area "Jev sheet benchmark": ends with "Jev sheet benchmark")'])
     // A disabled scroller means the content fits; nothing to scroll to.
     expect(page.scrollRef).toBeDefined()
     expect(page.canScroll).toEqual({ up: false, down: false })
@@ -758,6 +758,55 @@ describe('computer fast-loop adapter', () => {
     const empty = buildActionSpace({ page: none, history: [] })
     expect(empty.dragSources).toEqual([])
     expect(Object.keys(buildRequest({ goal: 'g', page: none, space: empty, presets: [], last: undefined, history: [] }).questions).some((k) => k.startsWith('drag_target_for_'))).toBe(false)
+  })
+
+  it('ends the content with state sentences a goal about the end state can match, ahead of the menus', async () => {
+    // Four runs reached their goal and read goal_satisfied 0.2–0.5: the
+    // achieved state — a sheet gone, a line appended, an icon moved — was
+    // not a sentence anywhere in the text. The window line says which root
+    // this is and whether a sheet is over it; a text area says what it ends
+    // with; an icon says where it sits. Menus come after, so a text budget
+    // cuts commands before it cuts state.
+    const backend = new FakePlatformBackend([{ app: 'TextEdit', bundleId: 'com.test.textedit', pid: 7,
+      menuBar: { role: 'menuBar', children: [{ role: 'menuBarItem', name: 'File', children: [{ role: 'menuItem', name: 'Save…' }] }] },
+      windows: [{ title: 'Untitled', focused: true, tree: { role: 'window', children: [
+        { role: 'scrollArea', bounds: { x: 0, y: 0, width: 586, height: 420 }, children: [
+          { role: 'textArea', value: 'Jev sheet benchmark\nAppended by Jev\n', bounds: { x: 0, y: 0, width: 560, height: 400 } },
+        ] },
+        { role: 'button', name: 'Save', opensModal: { title: 'Save', kind: 'sheet', buttonName: 'Cancel' } },
+      ] } }] }])
+    const service = new ComputerUseService({ adapter: backend })
+    service.policy.setEnabled(true)
+    service.policy.grantSession({ app: 'TextEdit', bundleId: 'com.test.textedit', tier: 'full' })
+    const adapter = createComputerAdapter({ service, ask: vi.fn(), resolve: async () => (await service.resolveTargetRoot()).rootId })
+    await adapter.resolveTarget()
+    const document = await adapter.observe()
+    const lines = document.text.split('\n')
+    expect(lines[0]).toBe('(observing: TextEdit window "Untitled"; no sheet or dialog open)')
+    expect(lines).toContain('(text area "Jev sheet benchmark": ends with "Appended by Jev")')
+    // Content, then state, then menus.
+    expect(lines.indexOf('(text area "Jev sheet benchmark": ends with "Appended by Jev")')).toBeGreaterThan(lines.indexOf('Save'))
+    expect(lines.indexOf('Save…')).toBeGreaterThan(lines.indexOf('(text area "Jev sheet benchmark": ends with "Appended by Jev")'))
+    // On the sheet, the line names the window it stands in front of.
+    await adapter.click(document.elements.find((e) => e.label === 'Save')!.node)
+    const sheet = await adapter.observe()
+    expect(sheet.text.split('\n')[0]).toBe('(observing: TextEdit sheet "Save" in front of window "Untitled")')
+  })
+
+  it('says where an icon sits in an icon view, as a share of the visible area', async () => {
+    // Finder's icon view: the icon is a named image with Open, inside a nameless cell list.
+    const icon = (name: string, x: number, y: number) => ({ role: 'list', bounds: { x: x - 24, y: y - 24, width: 112, height: 112 }, children: [{ role: 'image', name, openable: true, bounds: { x, y, width: 64, height: 64 } }] })
+    const backend = new FakePlatformBackend([{ app: 'Finder', bundleId: 'com.test.finder', pid: 7, windows: [{ title: 'bench', tree: { role: 'window', children: [
+      { role: 'scrollArea', bounds: { x: 100, y: 100, width: 800, height: 400 }, children: [
+        { role: 'list', name: 'icon view', bounds: { x: 100, y: 100, width: 800, height: 1200 }, children: [icon('Note.txt', 668, 348), icon('Draft.txt', 108, 108)] },
+      ] },
+    ] } }] }])
+    const service = new ComputerUseService({ adapter: backend })
+    service.policy.setEnabled(true)
+    service.policy.grantSession({ app: 'Finder', bundleId: 'com.test.finder', tier: 'full' })
+    const page = computerPage(await service.observe(undefined, 'semantic'), service)
+    expect(page.text).toContain('(Note.txt: at 75%,70% of icon view, left to right and top to bottom)')
+    expect(page.text).toContain('(Draft.txt: at 5%,10% of icon view, left to right and top to bottom)')
   })
 
   it('says which expanded row a nested outline row is inside', async () => {

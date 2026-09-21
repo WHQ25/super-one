@@ -2,7 +2,7 @@
 import { type ComputerUseService } from '../computer-use/computer-use-service'
 import { compactOutline, dropOccludedWebAreas } from '../computer-use/outline-compact'
 import { findNode } from '../computer-use/outline'
-import { ComputerUseError, type ActResult, type ComputerUseState, type Condition, type ObserveResult, type RootKind, type UiAction, type UiOutlineNode } from '../computer-use/types'
+import { ComputerUseError, type ActResult, type Bounds, type ComputerUseState, type Condition, type ObserveResult, type RootKind, type UiAction, type UiOutlineNode, type UiRootIdentity } from '../computer-use/types'
 import { planNodeAction, type NodeActionPlan } from '../computer-use/node-action-plan'
 import { persistComputerUseScreenshot } from '../computer-use/screenshot-store'
 import { type RunDeps, RunPaused, StaleObservation } from './loop'
@@ -48,6 +48,29 @@ const SCROLL_CONTENT_LABEL: Record<string, string> = { table: 'table', outline: 
  * that.
  */
 const POSITION_ROLES = new Set(['rulermarker', 'ruler', 'scrollbar', 'splitter', 'valueindicator', 'slider'])
+/** A container whose items are placed, not listed: Finder's icon view. */
+const ICON_VIEW = /^icon view$/i
+
+/** The icon view a walk is inside, or the scroll area that would frame one. */
+interface IconArea {
+  name?: string
+  bounds?: Bounds
+  pending?: Bounds
+}
+
+/**
+ * The first line of the text: which root this is and whether a sheet or
+ * dialog stands over it. A goal that says "no sheet is open" or "the Save
+ * sheet is showing" had nothing to match — the sheet's controls just appeared
+ * in, or vanished from, the list.
+ */
+function observingSentence(root: UiRootIdentity, others: readonly UiRootIdentity[]): string {
+  const name = (r: UiRootIdentity) => `${r.kind}${r.title ? ` "${r.title}"` : ''}`
+  const modal = others.find((other) => other.kind === 'sheet' || other.kind === 'dialog')
+  if (root.kind === 'window') return `(observing: ${root.app} ${name(root)}; ${modal ? `a ${name(modal)} is open over it` : 'no sheet or dialog open'})`
+  const window = others.find((other) => other.kind === 'window')
+  return `(observing: ${root.app} ${name(root)}${window ? ` in front of ${name(window)}` : ''})`
+}
 
 /**
  * Whether a toggle is on, in the shape the shared layer already speaks
@@ -163,6 +186,15 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
   const refs = new Map<number, UiOutlineNode>()
   const clickKinds = new Map<number, 'press' | 'select' | 'open'>()
   const text: string[] = []
+  /**
+   * State sentences: the facts a goal about the end state names and the
+   * content lines do not carry — which window this is and whether a sheet or
+   * dialog is over it, what a text area now ends with, where an icon sits.
+   * They follow the content and precede the menus, so a text budget cuts
+   * menu commands before it cuts them. Every one is `(subject: fact)`; the
+   * goal_satisfied question says so.
+   */
+  const state: string[] = []
   const seen = new Set<string>()
   let scrollRef: string | undefined
   let canScrollDown = false
@@ -176,9 +208,16 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
   // `row` is the name of the selectable row a node sits in, for the one
   // control that has no name of its own and is only meaningful as the row's:
   // its disclosure triangle.
-  const walk = (node: UiOutlineNode, menu?: string, row?: string, inContainerList = false) => {
+  const walk = (node: UiOutlineNode, menu?: string, row?: string, inContainerList = false, iconArea?: IconArea) => {
     const role = node.role.replace(/^AX/, '').toLowerCase()
     const containerList = inContainerList || (role === 'outline' && CONTAINER_OUTLINE.test(node.name ?? ''))
+    // An icon view is the one container where an item's position is its
+    // state: a goal can ask for an icon in a corner. The visible area is the
+    // enclosing scroll area when there is one; the grid itself can be larger.
+    const scrollable = !POSITION_ROLES.has(role) && !!planNodeAction(node, { kind: 'scroll', dy: 1 }, tier)
+    const area: IconArea | undefined = ICON_VIEW.test(node.name ?? '') && (iconArea?.pending ?? node.bounds)
+      ? { name: node.name!.trim(), bounds: iconArea?.pending ?? node.bounds! }
+      : scrollable && node.bounds ? { ...iconArea, pending: node.bounds } : iconArea
     const secure = node.secure === true || /secure|password/.test(role)
     const value = secure ? '' : node.value ?? ''
     // A disclosure triangle has no name and its value is its state, which the
@@ -224,10 +263,18 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
     const editable = !!planNodeAction(node, { kind: 'setText', text: '' }, tier)
     const press = planNodeAction(node, { kind: 'press' }, tier)
     const open = planNodeAction(node, { kind: 'open' }, tier)
+    // An icon in an icon view is a named image with Open, not a selectable row.
+    const iconName = (rowName || node.name || '').trim()
+    if ((select || open) && iconName && area?.name && area.bounds && node.bounds && area.bounds.width > 0 && area.bounds.height > 0 && !seen.has(`at:${iconName}`)) {
+      seen.add(`at:${iconName}`)
+      const px = Math.round(((node.bounds.x + node.bounds.width / 2 - area.bounds.x) / area.bounds.width) * 100)
+      const py = Math.round(((node.bounds.y + node.bounds.height / 2 - area.bounds.y) / area.bounds.height) * 100)
+      state.push(`(${iconName}: at ${px}%,${py}% of ${area.name}, left to right and top to bottom)`)
+    }
     // The scroll capability is granted by role name too, so a scroll bar
     // carries it: offered as an area it read "area starting at 0.42", its own
     // value indicator. Only the area itself is somewhere to scroll.
-    if (!POSITION_ROLES.has(role) && planNodeAction(node, { kind: 'scroll', dy: 1 }, tier)) {
+    if (scrollable) {
       // The vertical scroller's value says whether there is more above or below.
       const position = scrollPosition(node.children?.find((c) => c.role === 'scrollBar' && !!c.bounds && c.bounds.height > c.bounds.width))
       // Every scroll area with room to move is its own candidate, so the
@@ -323,6 +370,15 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
       refs.set(id, node)
       if (kind) clickKinds.set(id, kind)
       const isEditable = kind !== 'select' && kind !== 'open' && editable
+      const appendable = isEditable && role === 'textarea' && !!planNodeAction(node, { kind: 'append', text: '' }, tier)
+      // A goal about appended text says what the document ends with; in the
+      // content lines the document's last line is followed by the toolbar's,
+      // and "ends with" has nothing to match.
+      if (appendable && !seen.has(`ends:${node.ref}`)) {
+        seen.add(`ends:${node.ref}`)
+        const lines = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+        state.push(`(text area "${itemLabel.split(/\r?\n/)[0].slice(0, 40)}": ${lines.length ? `ends with "${lines[lines.length - 1].slice(0, 80)}"` : 'empty'})`)
+      }
       const contextIdentity = `context:${source?.ref ?? node.ref}`
       const rightClick = rightClickable && !seen.has(contextIdentity)
       if (rightClick) seen.add(contextIdentity)
@@ -340,12 +396,12 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
         editable: isEditable, clickable: !!kind,
         // A multi-line text area (TextEdit's document, a mail body) takes a
         // preset after its text; a field is replaced whole.
-        ...(isEditable && role === 'textarea' && planNodeAction(node, { kind: 'append', text: '' }, tier) ? { appendable: true } : {}),
+        ...(appendable ? { appendable: true } : {}),
         // Return in a multi-line text area is a newline, not a submit: the
         // focused TextEdit document was offered as "Press Enter in" at 0.78.
         canSubmit: role !== 'textarea' && !!planNodeAction(node, { kind: 'enter' }, tier), password: false, submit: false, disabled: false })
     }
-    if (!secure) for (const child of node.children ?? []) walk(child, command && node.name ? node.name : menu, rowName, containerList)
+    if (!secure) for (const child of node.children ?? []) walk(child, command && node.name ? node.name : menu, rowName, containerList, area)
   }
   // Window content first, app menus last, so the element budget and the pause
   // option list favour what is on screen. The Apple menu is never an in-app
@@ -358,15 +414,19 @@ export function computerPage(result: ComputerObservation, service: ComputerUseSe
   // `switch`: the run continues in whichever one the goal's next control is
   // in. Menus are not roots to switch to; a dismissed context menu is not
   // listed any more and drops out here.
-  for (const other of service.knownRoots(result.observedRootIds ?? [])) {
-    if (other.rootId === result.root.rootId || other.kind === 'menu' || other.minimized || elements.length >= MAX_ELEMENTS) continue
+  const others = service.knownRoots(result.observedRootIds ?? []).filter((other) => other.rootId !== result.root.rootId && other.kind !== 'menu' && !other.minimized)
+  for (const other of others) {
+    if (elements.length >= MAX_ELEMENTS) break
     const id = elements.length + 1
     elements.push({ node: id, ref: other.rootId, role: other.kind, label: other.title || other.kind, value: '', root: other.rootId,
       editable: false, clickable: false, canSubmit: false, password: false, submit: false, disabled: false })
   }
+  const contentText = text.filter(Boolean)
+  text.length = 0
   for (const menu of menuBar?.children ?? []) if (!isAppleMenu(menu)) walk(menu)
   return {
-    url: '', title: `${result.root.app} — ${result.root.title}`, text: text.filter(Boolean).join('\n').slice(0, MAX_TEXT),
+    url: '', title: `${result.root.app} — ${result.root.title}`,
+    text: [observingSentence(result.root, others), ...contentText, ...state, ...text.filter(Boolean)].join('\n').slice(0, MAX_TEXT),
     elements, omitted: result.nodesOmitted ?? 0, loading: false,
     scroll: { y: 0, height: 0, viewport: 0 },
     canScroll: { down: canScrollDown, up: canScrollUp },

@@ -8,7 +8,7 @@ import { type PausedRun, storePausedRun, takePausedRun, type RunPlatform } from 
 
 export const runInputShape = {
   description: z.string().optional().describe("Short, human-friendly summary of the goal for the user watching, in the conversation's language."),
-  goal: z.string().optional().describe('What to achieve on the current page, including when to stop. Required to start a run.'),
+  goal: z.string().optional().describe('What to achieve, said as what the page shows when it is done: the loop judges completion from the page text, so name the visible end state, not the steps. "Report.txt is listed inside Archive" rather than "drag Report.txt onto Archive"; "no sheet is open over the document window" rather than "press Escape". When a native condition can say it, pass done_when as well. Required to start a run.'),
   presets: z.array(z.object({
     key: z.string().min(1).describe('Short name, e.g. Title.'),
     value: z.string().describe('The full text to type.'),

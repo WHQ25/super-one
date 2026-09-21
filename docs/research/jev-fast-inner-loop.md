@@ -1370,6 +1370,23 @@ helper 侧是一个事务：复位在 `defer`，drag 抛错也回前台；对 `F
 
 三个平台的 escape / context_menu 至此都有真跑：桌面 Escape / 右键（§11.6–§11.7），iOS 左缘滑动 / 长按，Android Back 键 / 长按。`touch.update` 超时只出现在 dev 实例启动后的第一次触摸，之后三次 run 没有复现；先记着，不在这轮追。
 
+### 13.5 Device 的配对基准：Display & touch 两项设置（2026-09-21，Grok 4.6 / high，dev 版，Android）
+
+§10.5 只做了功能 smoke，这是 device 的第一组 A/B。任务跨四个屏幕、五个动作：Settings 首页 → Display & touch → Screen timeout → 选 "10 minutes" → 返回 → 打开 Dark theme；终态是 Display & touch 页显示 "After 10 minutes of inactivity" 和 Dark theme: on。两腿同一 prompt 正文、同一模型、同一台模拟器，只把交互段从"逐步 `device_snapshot` + `device_act`"换成"一次 `device_run`"；每腿之间用 `adb settings put` 复位超时与深色主题并重启 Settings。口径同 §10.7：成本与上下文读自会话 store 的 `totalCostUsd` / `contextTokens`；"任务相关调用"不含 `SearchTools`、`session_rename`、`read_manual`、`device_request_control`、`device_release`。各跑两次。
+
+| | 逐步 `device_act` ①  | ② | `device_run` ① | ② | 均值差 |
+|---|---:|---:|---:|---:|---:|
+| 墙钟 | 245.0 s | 212.0 s | 149.0 s | 124.0 s | **−40%** |
+| 工具调用（总） | 16 | 13 | 8 | 9 | −41% |
+| 工具调用（任务相关） | 9 | 8 | 2 | 2 | **−76%** |
+| 主模型成本 | $0.1768 | $0.1483 | $0.0602 | $0.0622 | **−62%** |
+| 上下文 | 57.5k | 50.6k | 39.1k | 41.6k | −25% |
+| Jev 自身 | — | — | 7 req · 28.7k in / 3.7k out · 循环 25.2 s | 7 req · 同 · 27.0 s | |
+
+`device_run`（`re5bdfe73` / `rf486f3b1`）两次都是同一条路：click Display & touch → click Screen timeout → click 10 minutes（0.61）→ **escape**（Back 键，没去点 "Navigate up"）→ click Dark theme → `goal_satisfied` **0.93**，无暂停、无 stale 重试，循环自身 25–27 s，其余是主模型的三次 `SearchTools`、申请控制、汇报。基线两次都先对行发 `press` 被 Android 拒绝（"cannot be pressed through accessibility on Android. Use tap"）再改 tap，之后每个屏幕一次 `device_act`（带 `expect`），中途没有额外快照——这已经是基线比较省的走法，成本差仍然来自每次 `device_act` 都把整棵新树（60–80 个节点）读回主模型上下文。
+
+方向与 §10.7 的桌面结论一致：**收益来自"每步之间屏幕整个换掉"**，手机的每次导航都是这种情形。两次配对，不是统计结论；`device_run` 那条腿再次高度可复现（$0.0602 vs $0.0622，Jev token 数逐字相同），波动都在基线腿。
+
 ## 参考
 
 - `~/Developer/Github/jev-ultrafast/jev_ultrafast/{agent.py, browser.py, snapshot.js, model.py, questions.py}`、`docs/performance.md`

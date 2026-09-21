@@ -15,6 +15,182 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Fast inner loop (experimental): `browser_run`, `computer_run` and
+  `device_run` hand a multi-step UI goal to Jev (TypeSafe's System One
+  model), which picks the next click, type or scroll from the observed
+  controls in about 0.4 s per step. The main model is asked only when
+  Jev is unsure, a step looks irreversible, the run stalls, or the
+  step needs input Jev cannot produce — it then answers with the
+  platform's own actions or presets and the run executes them. Toggle
+  in Settings → General → Experimental with a Jev API key; browser
+  runs also need CDP. Runs render in chat as one segmented card
+  listing each action with its outcome.
+- Computer Use drives apps entirely in the background: menu commands,
+  ⌘ shortcuts, context menus, scrolling, coordinate clicks and
+  right-clicks, keys into Save/Open sheets, and drag and drop all
+  work without bringing the app forward; SuperOne moves its own
+  window aside when it covers a drop point, and an app that grabs the
+  front while driven is sent back. Window outlines include the menu
+  bar and each row's disclosure, selection and checked state.
+  `computer_act` gains `select` and `open`; waits and expectations
+  can name a newly opened window (`newRoot`).
+- Codex realtime voice: a call gets its own view and composer beside
+  the thread; typed input goes to the backing thread during the call;
+  picker selections push into the running thread; the voice agent's
+  delegation prompt shows as a labeled user row.
+- Read state syncs between desktop and phone, and desktop banners are
+  suppressed while a phone is reachable.
+- Terminal command approvals route through the harness's own
+  permission layer first (Claude's auto-mode classifier, Codex's
+  approval policy), so routine commands need no click; rules are
+  regular expressions over the whole command (an agent-proposed one,
+  or one derived from it), so `PORT=9361 bun run dev` can be allowed
+  without pinning the port.
+- Built-in Claude Code provider presets follow each vendor's current
+  guide (GLM-5.3, MiniMax M3 at 1M, Moonshot K3 1M, Doubao Seed
+  Evolving, Qwen 3.8 Flash, `deepseek-flash`, LongCat-2.0, GLM-5.2 on
+  ModelScope, MiMo at 1M); Kimi Code gains the Plus / Pro / Max plans;
+  KAT-Coder drops the endpoint id and adds pay-as-you-go.
+- Settings: session storage is split into single-action rows.
+- Chat view translates the compaction indicators.
+
+### Fixed
+
+- Codex realtime voice settings sync; a call survives session
+  switches and waits out transient ICE disconnects instead of ending.
+- Claude on a third-party Anthropic-compatible provider (Bailian,
+  Kimi, custom…) no longer gets every turn rejected with 400 after
+  an MCP server joins mid-session; provider env wins over
+  settings-file env blocks; endpoint overrides preview the resolved
+  URL and stop doubling `/v1`; mapped session models fold onto their
+  slot id.
+- A Claude stream that dies mid-call (sleep/wake, dropped socket) no
+  longer leaves a ghost tool row next to the retried call; model
+  fallback notices no longer take the live turn.
+- Chat: async questions are told apart from submitted answers; the
+  files previewer no longer skips a file per arrow key; turn detail
+  counts a subagent as one call, and the phone's subagent card shows
+  its name tag, call/token badge and pool colour without expanding.
+- Mobile: the usage meter survives session and credential switches;
+  the chat header shows the active worktree path.
+- Terminal tabs receive commands by lifecycle (keeps running / waits
+  for input), not by how long they take.
+- Computer Use: auxiliary windows are skipped when resolving app
+  roots; floating panels are discovered as roots; letters and symbols
+  are sent on their own keycodes; zoom captures at the display's
+  pixel scale; the act diff pairs nodes by identity and ignores the
+  menu bar.
+
+### Changed
+
+- **BREAKING:** `computer_act` no longer accepts `delivery`. The host
+  picks the path per action and reports it in
+  `evidence[].description`; `ActResult.grounding` is removed.
+  System-wide hotkeys (⌘Space, ⌘Tab, screenshots) are not available.
+
+## [0.68.0-alpha] - 2026-09-21
+
+### Added
+
+- Fast inner loop (experimental): `browser_run`, `computer_run` and
+  `device_run` hand a multi-step UI goal to Jev (TypeSafe's System One
+  model), which picks the next click, type or scroll from the observed
+  controls in about 0.4 s per step. The main model is asked only when
+  Jev is unsure, a step looks irreversible, the run stalls, or the
+  step needs input Jev cannot produce (a position, a path, free text)
+  — it then answers with the platform's own `*_act` actions or
+  presets and the run executes them. Every pause returns progress
+  with per-action outcomes and a fresh screenshot path. Toggle in
+  Settings → General → Experimental with a Jev API key; browser runs
+  also need CDP. Runs render in chat as one segmented card, like a
+  subagent, listing each action with its outcome.
+- Computer Use drives apps entirely in the background: menu commands
+  and ⌘ shortcuts work without activating the app; context menus are
+  read, taken down, and reopened to act; scrolling writes the scroll
+  bar; coordinate clicks and right-clicks reach the window; keys reach
+  the XPC service that hosts a sandboxed Save/Open sheet; drag and
+  drop lands when the drop point is uncovered, SuperOne lowers its own
+  window when it is the coverer, and only another app's window makes
+  the target app come forward briefly. An app that grabs the front
+  while driven is sent back. Window outlines include the menu bar
+  (with check marks), disclosure, selection and checked state, and
+  the folder a nested row sits in. `computer_act` gains `select` and
+  `open`; `computer_wait_for` and `expect` gain `newRoot`;
+  `computer_apps focus` can activate on request; `computer_run`
+  launches the app when it has no window; a timed-out wait reports
+  what the element read as.
+- Codex realtime voice: a call gets its own view and composer beside
+  the thread; typed input goes to the backing thread during the call;
+  picker selections push into the running thread; the voice agent's
+  delegation prompt shows as a labeled user row.
+- Read state syncs between desktop and phone, and desktop banners are
+  suppressed while a phone is reachable.
+- Terminal command approvals route through the harness's own
+  permission layer first (Claude's auto-mode classifier, Codex's
+  approval policy); rules are regular expressions over the whole
+  command.
+- Built-in Claude Code provider presets follow each vendor's current
+  guide (GLM-5.3, MiniMax M3 at 1M, Moonshot K3 1M, Doubao Seed
+  Evolving, Qwen 3.8 Flash, `deepseek-flash`, LongCat-2.0, GLM-5.2 on
+  ModelScope, MiMo at 1M); Kimi Code gains the Plus / Pro / Max plans;
+  KAT-Coder drops the endpoint id and adds pay-as-you-go.
+- Settings: session storage is split into single-action rows.
+- Diagnostics: each HTTP MCP request logs with an allowlisted reject
+  reason; the Codex Responses-to-Chat proxy logs tool conversion
+  counts; production connection diagnostics for stalls and MCP.
+- Chat view translates the compaction indicators.
+
+### Fixed
+
+- Codex realtime voice settings sync; a call survives session
+  switches and waits out transient ICE disconnects instead of ending.
+- Claude on a third-party Anthropic-compatible provider no longer
+  gets every turn rejected with 400 after an MCP server joins
+  mid-session; provider env wins over settings-file env blocks;
+  endpoint overrides preview the resolved URL and stop doubling
+  `/v1`; mapped session models fold onto their slot id.
+- A Claude stream that dies mid-call no longer leaves a ghost tool
+  row on retry; model fallback notices no longer take the live turn.
+- Chat: async questions are told apart from submitted answers;
+  dismissed question rows keep default chrome; the files previewer no
+  longer skips a file per arrow key; startup echo suppression applies
+  only to restored unstamped turns; turn detail counts a subagent as
+  one call and keeps its label and statistics on the phone; remote
+  results keep run details.
+- Mobile: the usage meter survives session and credential switches;
+  the chat header shows the active worktree path; the redundant live
+  rate-limit detail and chip tint are gone.
+- Terminal tabs receive commands by lifecycle (keeps running / waits
+  for input), not by how long they take.
+- Computer Use: auxiliary windows are skipped when resolving app
+  roots; floating panels are discovered as roots; title-bar
+  accessories and the sharing indicator are not; letters and symbols
+  are sent on their own keycodes; Escape is no longer sent ahead of
+  typed text; zoom captures at the display's pixel scale; the menu
+  bar and element-typed values stay out of the act diff, which now
+  pairs nodes by identity; a selection change counts as an effect; an
+  app the user just activated is never deactivated; the overlay hide
+  and host-exit handlers always run.
+- Jev: passwords are redacted from browser observations; a handed
+  action is rejected once the paused state has changed.
+
+### Changed
+
+- **BREAKING:** `computer_act` no longer accepts `delivery`. The host
+  picks the path per action (AX action, event posted to the app, or
+  scroll-bar value) and reports it in `evidence[].description`;
+  `ActResult.grounding` is removed. System-wide hotkeys (⌘Space,
+  ⌘Tab, screenshots) are not available.
+- Codex keeps the turn id on completed assistant messages.
+
+### Tests
+
+- The settings registry test covers `jevFastLoopEnabled`.
+
+## [0.67.0] - 2026-09-17
+
+### Added
+
 - Remote node: host-action artifacts (captures, downloads,
   generated media) sync to the node as one delivery record. A
   stuck upload retries from Settings.
@@ -36,18 +212,11 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Mobile: usage on the composer ring; permission, question and
   plan sheets put away on an outside tap instead of dismissing.
   Fork a session from the header; dismiss prompt suggestions.
-- Agents can run interactive commands in SuperOne terminal tabs.
-  The command goes through the harness's own permission layer
-  first (Claude's auto-mode classifier, Codex's approval policy),
-  so routine commands need no click; when the harness asks, the
-  prompt offers allow once, for this session, or always in this
-  project. Rules are regular expressions over the whole command
-  (an agent-proposed one, or `bun run( .*)?` derived from it), so
-  `PORT=9361 bun run dev` can be allowed without pinning the port.
-  Agent tabs appear in the dock and stay on the session that
-  opened them. Chat shows the screen the agent saw. Settings lists
-  and revokes project rules. Commands that finish on their own
-  stay in the agent's shell tool, however slow.
+- Agents can run interactive commands in SuperOne terminal tabs
+  (approve once or always in this project, with an agent-proposed
+  rule). Agent tabs appear in the dock and stay on the session
+  that opened them. Chat shows the screen the agent saw. Settings
+  lists and revokes always-allow rules.
 - Built-in browser on macOS can use Touch ID passkeys.
 - Maximizing an activity tab folds the sidebar and collapses
   floating chat.
@@ -56,16 +225,6 @@ Every alpha release keeps its own notes on its GitHub Release.
 ### Fixed
 
 - A Claude refusal fallback no longer wipes the rest of the turn.
-- Claude on a third-party Anthropic-compatible provider (Bailian,
-  Kimi, custom…) no longer gets every turn rejected with 400 after
-  an MCP server joins mid-session: the harness stops announcing
-  late tools with wire blocks those hosts do not understand.
-- A Claude stream that dies mid-call (sleep/wake, dropped socket)
-  no longer leaves a ghost tool row next to the retried call.
-- Turn detail counts a subagent as one call; its file edits still
-  fold into the turn's diff stat, on the phone too. The phone's
-  subagent card shows the agent's name tag, call/token badge and
-  its own pool colour without expanding, like the desktop.
 - Worktree status updates to the attached branch at turn end;
   long branch names wrap and show the diff stat; a clean checkout
   reads `clean`; rows keep a uniform height. The phone keeps the
@@ -94,200 +253,11 @@ Every alpha release keeps its own notes on its GitHub Release.
   carry over.
 - Agent skills and product manuals load only what the current
   task needs.
-- Built-in providers follow each vendor's current Claude Code
-  guide: GLM defaults to GLM-5.3 (Flash for haiku), MiniMax to
-  M3 at 1M on `api.minimax.cn`, Moonshot to K3 1M, Volcengine
-  pay-as-you-go to Doubao Seed Evolving, Bailian Token Plan to
-  Qwen 3.8 Flash on its own host, DeepSeek's small model to
-  `deepseek-flash`, Longcat to LongCat-2.0, ModelScope to GLM-5.2,
-  and Xiaomi MiMo to 1M context. Kimi Code gains the Plus / Pro /
-  Max plans (the retired Andante / Moderato / Allegretto stay for
-  existing keys). KAT-Coder no longer needs an endpoint id and adds
-  a pay-as-you-go plan.
 
 ### Performance
 
 - Mobile reconnects reuse workspace caches; host payloads are
   compressed. Upgrade desktop and phone together.
-
-## [0.67.0-alpha.3] - 2026-09-17
-
-### Added
-
-- macOS: the app now runs under bundle id `com.superone.desktop.alpha`,
-  signed with a Developer ID provisioning profile, which is what the
-  built-in browser's Touch ID passkeys require. Existing installs
-  auto-update into a bridge build that shows a one-time reinstall
-  dialog, downloads the new package to Downloads (checksum verified)
-  and opens the installer; "Later" leaves a sidebar pill. The first
-  launch under the new id explains the keychain prompt before macOS
-  shows it — choose "Always Allow". Sessions, projects, settings and
-  saved keys carry over.
-
-### Fixed
-
-- macOS 0.67.0-alpha.2 was killed at launch: it carried the passkey
-  entitlements without the provisioning profile they require. Users
-  on alpha.2 must download this version manually; auto-update cannot
-  reach an app that does not start.
-- Saved API keys are never written unencrypted on macOS when the
-  keychain is denied, and a denied prompt no longer blanks a
-  credential.
-
-## [0.67.0-alpha.2] - 2026-09-17
-
-### Added
-
-- Grok: sign in from Settings (browser URL + optional code) when the
-  CLI only offers grok.com / OIDC. cached_token and api_key still
-  run first. SuperOne does not write `auth.json`.
-- Grok: session `_meta` carries rules, prompt override, and plugin
-  dirs when initialize advertises them.
-- Grok: permission cards offer Always when the agent sends
-  `allow_always`. Plan enter/exit follows `current_mode_update` and
-  prompt `_meta.mode`; approving a plan no longer wipes Auto/Always.
-- Grok: Node registers `ask_user_question` and `exit_plan_mode`.
-- `/goal` is a composer chip instead of a dialog. Pause/resume
-  follow `HarnessCapabilities.goal`.
-- A collab launch bubble names the parent session and opens it.
-- Built-in browser on macOS can use Touch ID passkeys (Developer
-  ID-signed builds only).
-- Mobile: fork a session from the header menu (same worktree or a
-  new one), matching desktop.
-- `terminal_tabs run` can propose the always-allow rule
-  (`bun run:*`, `git commit:*`) instead of storing the full command.
-- Mobile: dismiss the prompt-suggestions card; long branch names
-  wrap under the git chips.
-
-### Fixed
-
-- Grok Settings and launch follow a locally upgraded CLI.
-- Grok account copy matches the settings page width.
-- Grok MCP reload/toggle/reconnect keep HTTP/SSE caps. `/mcp`
-  LogIn is hidden for ACP (OpenCode-only).
-- Session defaults use Ask / Always Approve for ACP. Picking Auto
-  under Generic toasts that classifier blocks fail closed.
-- A compact boundary persists for late subscribers and reloads.
-- Grok `/goal` shows the plan-writer subagent and treats task
-  frames as liveness, so the bubble is not empty during planning.
-- Closing the goal chip interrupts the turn; the workflow picker
-  is scoped to the session cwd.
-- Agent terminal tabs belong to the session that opened them.
-- A known-clean worktree row reads `clean` instead of a blank line.
-- Phone: workflow cards get desktop task facts; forked skill
-  blocks stream; compact insight blocks stay visible; prompt-choice
-  icons sit on the first line of the label.
-- Phone: anchored menus close when the keyboard moves the
-  composer; the worktree pick survives a harness switch; the usage
-  ring stays on screen and can pull a meter; a Grok usage refresh
-  can spawn the runtime; leaving a session keeps the new-session
-  title.
-
-### Tests
-
-- ACP permission-cycle, AskUserQuestion, and Grok authenticate
-  heuristics. Oracle snapshot includes task block lifecycle
-  fields. `terminal_tabs` description stays under 700 characters.
-
-## [0.67.0-alpha.1] - 2026-09-16
-
-### Added
-
-- Agents can drive interactive commands in SuperOne terminal tabs
-  (`terminal_tabs` / `snapshot` / `act` / `wait_for`). Each command
-  is Allow Once or Always Allow in this project; control ends when
-  the command leaves the foreground. Agent-opened tabs appear in
-  the activity dock. Chat renders the screen the agent saw, and
-  Settings → Terminal lists and revokes the always-allow rules.
-- Maximizing an activity tab folds the sidebar and collapses
-  floating chat.
-- The always-on rendering rules name `@native/files-previewer`, so
-  agents use the files card instead of stacking embeds.
-
-### Fixed
-
-- OS banners are two lines: the session title and a fixed status
-  (waiting / finished). macOS no longer draws a duplicate app icon.
-- The empty-session landing no longer flashes when autosave stamps
-  a draft id.
-- Worktree rows in the workdir indicator keep a uniform two-line
-  height.
-- Claude is told the `mcp__superone__` names of deferred SuperOne
-  tools, so ToolSearch can load them.
-- The git status bar treats "git unavailable" (Xcode license,
-  missing binary) as a warning chip, not an Init Git button.
-- Terminal command-rule IPC registers at startup, not inside the
-  kill handler.
-
-### Tests
-
-- Deepseek: the cancel-interrupt test waits for the stream to
-  start instead of a fixed sleep.
-
-## [0.67.0-alpha] - 2026-09-15
-
-### Added
-
-- Remote sessions: a session sync zone delivers host-action artifacts
-  (captures, downloads, generated media) to the remote node as one
-  durable record. A stuck upload retries from Settings.
-- Chat: attachments are admitted inline with validated local paths.
-  PDFs stay on disk; a failed admission keeps the draft so the file
-  can be resized or removed.
-- Notifications: a finished run posts a banner with the agent's
-  closing text, not only when the run blocks.
-- Settings: ChatGPT accounts live on the provider cards, with
-  per-account usage meters. Account management stays in Providers.
-- Sessions: MCP ref tags (`issue-N` / `pr-N`) sit beside topic
-  labels so a later session can find the same tracker item.
-  `session_tag_list` defaults to reusable labels.
-- Session lists include the armed scheduled-send time. The desktop
-  sidebar and the mobile drawer show a clock for it.
-- Mobile: subscription usage is the outer arc of the composer ring
-  (Claude OAuth, third-party Claude, Codex ChatGPT, Grok).
-- Mobile: a scrim tap, drag-down or Android back on a permission,
-  question or plan sheet puts it away as a strip instead of
-  dismissing the request.
-
-### Fixed
-
-- Claude: a model-refusal fallback retracts only the refused
-  partial, not the rest of the turn.
-- Chat: a worktree that commits then switches branch at turn end
-  shows the new branch instead of a detached SHA.
-- Chat: the tool-row recording icon sits with the expand chevron;
-  mobile error details use the full message width.
-- Session: runtime shutdown finishes before a delete, so an
-  in-flight close cannot be bypassed.
-- Worktree rows wrap long branch names and show `N files +ins -del`.
-- Sidebar hover actions no longer shove scheduled-send clocks out
-  of alignment.
-- MCP: operation memories require a reusable value before save.
-- Mobile: permission sheets dismiss after the decision is sent;
-  unacknowledged transcript updates retry; missing put-away copy
-  no longer leaks English keys.
-
-### Changed
-
-- Agent skills and product manuals load by task instead of the
-  full entrypoint on every trigger.
-
-### Performance
-
-- Mobile: workspace caches persist across reconnects; host
-  payloads are framed and compressed before encryption. Upgrade
-  the desktop with the phone — there is no legacy decoder.
-
-### Tests
-
-- Environment zone-producers mock the host so lazy wake imports
-  settle; MCP browser-upload tests use a readable delivery record;
-  settings tests assert OfficialProviderPanel dispatch.
-
-### CI
-
-- Generated mobile icon sets fail CI when they drift; Playwright
-  Chromium is installed for the brand-icon checks.
 
 ## [0.66.0] - 2026-09-15
 

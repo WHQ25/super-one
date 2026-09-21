@@ -178,6 +178,31 @@ export const PhoneMenuBadge = {
   name: 'Phone · attention dot on the menu',
 }
 
+export const WorktreeSession = {
+  render: () => (
+    <MobileThemeProvider>
+      <View style={{ width: 390, backgroundColor: '#111' }}>
+        <MobileHeader
+          route="chat"
+          title="Fix the relay ACK"
+          subtitle="super-one"
+          worktreePath="/workspace/super-one/.worktrees/fix-relay"
+          provider="codex"
+          hasSession
+          sessionId="worktree-session"
+          deviceStatus="connectedLan"
+          git={{ kind: 'worktreeBranch', branch: 'fix/relay-ack' }}
+          onBack={noop}
+          onSwitchSession={noop}
+          onOpenTerminal={noop}
+          onOpenFiles={noop}
+        />
+      </View>
+    </MobileThemeProvider>
+  ),
+  name: 'Phone · worktree path under the session title',
+}
+
 function LandscapeFrame(props: WorkspaceSidebarProps) {
   return (
     <MobileThemeProvider>

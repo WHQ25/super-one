@@ -67,6 +67,21 @@ test('does not duplicate reconnecting in the header while the sidebar is visible
   expect(screen.queryByText('Reconnecting…')).toBeNull()
 })
 
+test('shows the running worktree path under the session title', async () => {
+  await renderWithTheme(header({
+    route: 'chat',
+    title: 'Session',
+    hasSession: true,
+    worktreePath: '/repo/.worktrees/fix-relay',
+    git: { kind: 'worktreeBranch', branch: 'fix-relay' },
+  }))
+
+  expect(screen.getByText('Session')).toBeTruthy()
+  expect(screen.getByText('/repo/.worktrees/fix-relay')).toBeTruthy()
+  expect(screen.getByText('fix-relay')).toBeTruthy()
+  expect(screen.queryByText('super-one')).toBeNull()
+})
+
 test('dots the workspace menu when sessions need attention', async () => {
   await renderWithTheme(header({
     route: 'chat',

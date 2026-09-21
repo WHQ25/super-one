@@ -57,7 +57,7 @@ export const HOST_ACTION_TERMINAL_DESCRIPTORS: HostActionSuperoneToolDescriptor[
         rule: {
           type: 'string',
           description:
-            'run only. The rule offered as "always allow in this project" next to the approval: the command cut down to its stable leading words plus ":*", e.g. "bun run:*" for "bun run dev", "git commit:*" for "git commit -m …". It must match `command`; keep it as narrow as the user would want (never a bare "sudo:*" / "ssh:*"). Default: derived from the command.',
+            'run only. The rule offered next to the approval as "allow for this session" / "always allow in this project": a JavaScript regular expression matched against the whole normalized command, e.g. "bun run( .*)?" for "bun run dev", "(\\w+=\\S+ )*bun run dev( .*)?" for "REMOTE_DEBUGGING_PORT=9361 bun run dev", "git commit( .*)?" for "git commit -m …". It must match `command`; keep it as narrow as the user would want (never "sudo.*" / "ssh.*"). Default: derived from the command.',
         },
         cwd: { type: 'string', description: 'run only. Absolute working directory for a new tab. Default: the session working directory.' },
         title: { type: 'string', description: 'run only. Tab title shown to the user. Default: the command name.' },

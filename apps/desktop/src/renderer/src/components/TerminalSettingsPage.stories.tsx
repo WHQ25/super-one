@@ -80,11 +80,11 @@ export const LoadError: Story = {
 const withRules = seed({
   kind: 'ready',
   rules: [
-    rule('/Users/dev/super-one', 'bun run storybook:*'),
-    rule('/Users/dev/super-one', 'bun run dev:*'),
+    rule('/Users/dev/super-one', 'bun run storybook( .*)?'),
+    rule('/Users/dev/super-one', 'bun run dev( .*)?'),
     rule('/Users/dev/super-one', 'python3'),
-    rule('remote:node-1:/srv/api', 'docker compose -f docker-compose.dev.yml up --build api worker scheduler:*'),
-    rule('/Users/dev/some/really/deep/directory/structure/that/goes/on/for/a/while/project-with-a-long-name', 'ssh staging:*'),
+    rule('remote:node-1:/srv/api', 'docker compose -f docker-compose.dev.yml up --build api worker scheduler( .*)?'),
+    rule('/Users/dev/some/really/deep/directory/structure/that/goes/on/for/a/while/project-with-a-long-name', 'ssh staging( .*)?'),
   ],
 })
 

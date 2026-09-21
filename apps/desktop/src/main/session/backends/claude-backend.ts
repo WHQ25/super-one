@@ -146,6 +146,7 @@ export class ClaudeBackend implements SessionBackend {
         (e) => this.emit(e),
         (mode) => this.emitPermissionModeApplied(mode),
         () => this.currentMessageId,
+        () => this._lastStartOpts?.sessionId ?? null,
       )
       this.canUseToolHandle = handles.canUseTool
       this.trackPlanFileHandle = handles.trackPlanFile

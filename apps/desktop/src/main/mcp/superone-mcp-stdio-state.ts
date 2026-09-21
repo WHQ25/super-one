@@ -42,16 +42,27 @@ export interface CodexSuperoneMcpConfig {
   url: string
   http_headers: Record<string, string>
   startup_timeout_sec: number
-  tools: Record<string, { approval_mode: 'approve' }>
+  tools: Record<string, { approval_mode: CodexToolApprovalMode }>
 }
 
-const CODEX_STATIC_HOST_OWNED_TOOL_APPROVALS: Record<string, { approval_mode: 'approve' }> =
-  Object.fromEntries(
+/** Codex `AppToolApproval`: `approve` never asks; `prompt` asks (or lets Guardian / the approval policy decide) on every call. */
+export type CodexToolApprovalMode = 'approve' | 'prompt'
+
+/**
+ * Host-owned tools run without a Codex prompt. `terminal_tabs` is deliberately
+ * `prompt`, not merely absent (Codex's default `auto` mode skips approval for a tool
+ * with no annotations): the command inside must reach Codex's approval policy and
+ * then the host's terminal gate (`terminal-command-gate.ts`).
+ */
+const CODEX_STATIC_HOST_OWNED_TOOL_APPROVALS: Record<string, { approval_mode: CodexToolApprovalMode }> = {
+  ...Object.fromEntries(
     STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES.map((qualifiedName) => [
       qualifiedName.slice(MCP_SUPERONE_TOOL_PREFIX.length),
       { approval_mode: 'approve' as const },
     ]),
-  )
+  ),
+  terminal_tabs: { approval_mode: 'prompt' },
+}
 
 let bridgeRuntime: SuperoneMcpBridgeRuntime | null = null
 

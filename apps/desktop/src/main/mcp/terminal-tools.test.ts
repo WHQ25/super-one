@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, PermissionRequest, TerminalListItem } from '@superone/shared/agent-types'
+import type { HarnessId } from '@superone/shared/session-types'
+import type { TerminalCommandRuleScope } from '@superone/shared/terminal-command-rules'
 import type { PtyLike, PtySpawner } from '../terminal/pty'
 import { TerminalOwnership } from '../terminal/terminal-ownership'
 import { TerminalSession } from '../terminal/terminal-session'
@@ -10,6 +12,7 @@ import {
   resolveTerminalCommandConfirm,
 } from './terminal-command-confirm'
 import {
+  resolveTerminalCommandSubject,
   terminalActHandler,
   terminalSnapshotHandler,
   terminalTabsHandler,
@@ -91,10 +94,10 @@ class StubManager implements TerminalToolHost {
   }
 }
 
-function makeDeps(opts: { preapproved?: string[]; signal?: AbortSignal; sessionId?: string; manager?: StubManager } = {}) {
+function makeDeps(opts: { preapproved?: string[]; signal?: AbortSignal; sessionId?: string; manager?: StubManager; harnessId?: HarnessId } = {}) {
   const manager = opts.manager ?? new StubManager()
   const events: AgentEvent[] = []
-  const rulesAdded: string[] = []
+  const rulesAdded: Array<{ scope: TerminalCommandRuleScope; pattern: string }> = []
   const deps: BuiltInSuperoneToolDeps = {
     notifyDevAppReady: () => {},
     sessionId: opts.sessionId ?? 'agent-1',
@@ -102,6 +105,7 @@ function makeDeps(opts: { preapproved?: string[]; signal?: AbortSignal; sessionI
       getSession: () => ({
         projectPath: '/proj',
         cwd: '/proj',
+        harnessId: opts.harnessId,
         setTitle: () => {},
         emitHostEvent: (event: AgentEvent) => events.push(event),
       }),
@@ -110,8 +114,8 @@ function makeDeps(opts: { preapproved?: string[]; signal?: AbortSignal; sessionI
     terminals: {
       manager,
       rules: {
-        isPreapproved: (_project, command) => (opts.preapproved ?? []).some((rule) => command.startsWith(rule)),
-        add: (_project, pattern) => rulesAdded.push(pattern),
+        isPreapproved: (_project, _session, command) => (opts.preapproved ?? []).some((rule) => command.startsWith(rule)),
+        remember: (scope, _project, _session, pattern) => rulesAdded.push({ scope, pattern }),
       },
     },
     signal: opts.signal,
@@ -127,12 +131,12 @@ function pendingRequest(events: AgentEvent[]): PermissionRequest | undefined {
 const parse = (result: { content: Array<{ text: string }> }) => JSON.parse(result.content[0].text) as Record<string, unknown>
 
 /** Answer the next confirm as soon as it is raised. */
-function answerNextConfirm(events: AgentEvent[], allow: boolean, alwaysAllow = false, reason?: string) {
+function answerNextConfirm(events: AgentEvent[], allow: boolean, remember: TerminalCommandRuleScope | false = false, reason?: string) {
   const timer = setInterval(() => {
     const req = pendingRequest(events)
     if (!req) return
     clearInterval(timer)
-    resolveTerminalCommandConfirm(req.requestId, allow ? 'accept' : 'decline', alwaysAllow, reason)
+    resolveTerminalCommandConfirm(req.requestId, allow ? 'accept' : 'decline', remember === 'project', reason, remember ? { scope: remember } : undefined)
   }, 5)
 }
 
@@ -151,35 +155,61 @@ describe('terminal_tabs run', () => {
     expect(manager.sessions.size).toBe(0)
     const req = pendingRequest(events)
     expect(req?.requestKind).toBe('terminal_command_confirm')
-    expect(req?.input).toMatchObject({ action: 'run', command: 'bun run dev', cwd: '/proj', rule: 'bun run:*' })
+    expect(req?.input).toMatchObject({ action: 'run', command: 'bun run dev', cwd: '/proj', rule: 'bun run( .*)?' })
     expect(req?.allowAlwaysAllow).toBe(true)
     expect(events.some((e) => e.type === 'interaction_resolved')).toBe(true)
   })
 
-  it('offers the agent-proposed rule and stores it when the user turns it on', async () => {
+  it('offers the agent-proposed rule and stores it for the project when the user turns it on', async () => {
     const { deps, events, rulesAdded } = makeDeps()
-    answerNextConfirm(events, true, true)
-    await terminalTabsHandler({ action: 'run', command: 'bun run storybook --ci', rule: 'bun run storybook:*' }, deps)
-    expect(pendingRequest(events)?.input).toMatchObject({ rule: 'bun run storybook:*' })
-    expect(rulesAdded).toEqual(['bun run storybook:*'])
+    answerNextConfirm(events, true, 'project')
+    await terminalTabsHandler({ action: 'run', command: 'bun run storybook --ci', rule: 'bun run storybook.*' }, deps)
+    expect(pendingRequest(events)?.input).toMatchObject({ rule: 'bun run storybook.*' })
+    expect(rulesAdded).toEqual([{ scope: 'project', pattern: 'bun run storybook.*' }])
   })
 
-  it('ignores a proposed rule that does not match the command', async () => {
+  it('stores the rule for the session only when the user picks that lifetime', async () => {
+    const { deps, events, rulesAdded } = makeDeps()
+    answerNextConfirm(events, true, 'session')
+    await terminalTabsHandler({ action: 'run', command: 'PORT=9361 bun run dev' }, deps)
+    expect(rulesAdded).toEqual([{ scope: 'session', pattern: '(\\w+=\\S+ )*bun run( .*)?' }])
+  })
+
+  it('ignores a proposed rule that does not match the command or is not a regex', async () => {
     const { deps, events } = makeDeps()
     answerNextConfirm(events, true, false)
-    await terminalTabsHandler({ action: 'run', command: 'bun run storybook --ci', rule: 'git push:*' }, deps)
-    expect(pendingRequest(events)?.input).toMatchObject({ rule: 'bun run:*' })
+    await terminalTabsHandler({ action: 'run', command: 'bun run storybook --ci', rule: 'git push.*' }, deps)
+    expect(pendingRequest(events)?.input).toMatchObject({ rule: 'bun run( .*)?' })
+    answerNextConfirm(events, true, false)
+    await terminalTabsHandler({ action: 'run', command: 'bun run storybook --ci', rule: 'bun run (' }, deps)
+    expect(pendingRequest(events)?.input).toMatchObject({ rule: 'bun run( .*)?' })
+  })
+
+  it('leaves authorization to the harness layer when the harness owns it', async () => {
+    const { deps, manager, events } = makeDeps({ harnessId: 'claude' })
+    const result = parse(await terminalTabsHandler({ action: 'run', command: 'bun run dev' }, deps))
+    expect(result.status).toBe('ok')
+    expect(manager.ptys.get('t1')!.writes).toEqual(['bun run dev\r'])
+    expect(events.some((e) => e.type === 'permission_request')).toBe(false)
+  })
+
+  it('still asks for a harness without a host permission hook', async () => {
+    const { deps, events } = makeDeps({ harnessId: 'cursor' })
+    answerNextConfirm(events, false)
+    const result = parse(await terminalTabsHandler({ action: 'run', command: 'bun run dev' }, deps))
+    expect(result.status).toBe('rejected')
+    expect(pendingRequest(events)?.requestKind).toBe('terminal_command_confirm')
   })
 
   it('opens an agent tab, types the approved command and holds control while it runs', async () => {
     const { deps, manager, events, rulesAdded } = makeDeps()
-    answerNextConfirm(events, true, true)
+    answerNextConfirm(events, true, 'project')
     const result = parse(await terminalTabsHandler({ action: 'run', command: 'bun run storybook --ci' }, deps))
     expect(result.status).toBe('ok')
     expect(result.tab).toBe('t1')
     expect(result.control).toBe('me')
     expect(result.foreground).toBe('bun')
-    expect(rulesAdded).toEqual(['bun run:*'])
+    expect(rulesAdded).toEqual([{ scope: 'project', pattern: 'bun run( .*)?' }])
     const session = manager.get('t1')!
     expect(session.agentSessionId).toBe('agent-1')
     expect(manager.ptys.get('t1')!.writes).toEqual(['bun run storybook --ci\r'])
@@ -311,6 +341,40 @@ describe('terminal_snapshot / wait_for / attach', () => {
     expect((result.screen as string[]).join('\n')).toContain('localhost:6006')
     const missing = await terminalWaitForHandler({ tab: 't1' }, deps)
     expect(missing.isError).toBe(true)
+  })
+})
+
+describe('resolveTerminalCommandSubject (harness-layer view of a call)', () => {
+  it('names the command a run approves, with the cwd the handler will use', () => {
+    const { deps, manager } = makeDeps()
+    const subject = resolveTerminalCommandSubject(deps.terminals!, { sessionId: 'agent-1', cwd: '/proj' }, {
+      action: 'run', command: '  bun   run dev ', rule: 'bun run.*', description: 'start dev',
+    })
+    expect(subject).toEqual({ action: 'run', command: 'bun run dev', cwd: '/proj', tabTitle: undefined, rule: 'bun run.*', description: 'start dev' })
+    const tab = manager.create({ cwd: '/proj/app', projectPath: '/proj', title: 'app', agentSessionId: 'agent-1' })
+    expect(resolveTerminalCommandSubject(deps.terminals!, { sessionId: 'agent-1', cwd: '/proj' }, { action: 'run', command: 'ls', tab: tab.terminalId }))
+      .toMatchObject({ cwd: '/proj/app', tabTitle: 'app' })
+    expect(resolveTerminalCommandSubject(deps.terminals!, { sessionId: 'agent-1', cwd: '/proj' }, { action: 'run', command: 'ls', cwd: '/elsewhere' }))
+      .toMatchObject({ cwd: '/elsewhere' })
+  })
+
+  it('names the foreground command an attach approves, and nothing for an idle or unknown tab', () => {
+    const { deps, manager } = makeDeps()
+    const userTab = manager.create({ cwd: '/proj', projectPath: '/proj', title: 'user' })
+    const view = { sessionId: 'agent-1', cwd: '/proj' }
+    expect(resolveTerminalCommandSubject(deps.terminals!, view, { action: 'attach', tab: userTab.terminalId })).toBeNull()
+    expect(resolveTerminalCommandSubject(deps.terminals!, view, { action: 'attach', tab: 'nope' })).toBeNull()
+    manager.ptys.get(userTab.terminalId)!.write('node server.js\r')
+    expect(resolveTerminalCommandSubject(deps.terminals!, view, { action: 'attach', tab: userTab.terminalId }))
+      .toEqual({ action: 'attach', command: 'node', cwd: '/proj', tabTitle: 'user', rule: undefined, description: undefined })
+  })
+
+  it('approves nothing for list, close, or a run without a command', () => {
+    const { deps } = makeDeps()
+    const view = { sessionId: 'agent-1', cwd: '/proj' }
+    expect(resolveTerminalCommandSubject(deps.terminals!, view, { action: 'list' })).toBeNull()
+    expect(resolveTerminalCommandSubject(deps.terminals!, view, { action: 'close', tab: 't1' })).toBeNull()
+    expect(resolveTerminalCommandSubject(deps.terminals!, view, { action: 'run', command: '   ' })).toBeNull()
   })
 })
 

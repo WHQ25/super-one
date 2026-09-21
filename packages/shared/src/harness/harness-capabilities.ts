@@ -98,6 +98,16 @@ export interface HarnessCapabilities {
    * so the per-agent check lives in one named place.
    */
   goal: GoalCapability | null
+  /**
+   * Who authorizes a `terminal_tabs run` / `attach` command.
+   *
+   * `harness`: the tool is withheld from the harness's auto-allow projection, so the
+   * harness's own permission layer (classifier, approval policy, yolo mode) sees the
+   * command first; when it asks the host, the backend routes the request through the
+   * terminal command gate. `executor`: the harness auto-approves MCP tools without a
+   * host hook (Cursor), so the executor raises the gate itself before typing anything.
+   */
+  terminalCommandApproval: 'harness' | 'executor'
   /** User-facing display name for this harness. */
   displayName: string
 }
@@ -120,6 +130,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     // each turn and keeps going until it is met, so there is no paused state —
     // the goal is either live or cleared.
     goal: { lifecycleArgs: ['clear'], canPause: false, transport: 'slash', semantics: 'condition' },
+    terminalCommandApproval: 'harness',
     displayName: 'Claude',
   },
   codex: {
@@ -139,6 +150,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     // `thread/goal/{get,set,clear}` over the app server; SuperOne drives the
     // follow-up turns itself, so every transition is an explicit RPC.
     goal: { lifecycleArgs: [], canPause: true, transport: 'rpc', semantics: 'objective' },
+    terminalCommandApproval: 'harness',
     displayName: 'Codex',
   },
   acp: {
@@ -171,6 +183,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
       transport: 'slash',
       semantics: 'objective',
     },
+    terminalCommandApproval: 'harness',
     displayName: 'Others',
   },
   opencode: {
@@ -187,6 +200,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     // Server-side `forkSession(id, anchor)` + `moveSession`.
     supportsFork: true,
     goal: null,
+    terminalCommandApproval: 'harness',
     displayName: 'OpenCode',
   },
   cursor: {
@@ -204,6 +218,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     // SDK has no transcript-fork API; the adapter creates a blank agent.
     supportsFork: false,
     goal: null,
+    // The @cursor/sdk local executor auto-approves custom tools with no host hook.
+    terminalCommandApproval: 'executor',
     displayName: 'Cursor',
   },
   dsh: {
@@ -230,6 +246,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     // `runtime.forkSession` copies the log prefix up to an event seq.
     supportsFork: true,
     goal: null,
+    terminalCommandApproval: 'harness',
     displayName: 'DeepSeek',
   },
 }

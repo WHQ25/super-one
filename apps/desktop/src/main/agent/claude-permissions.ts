@@ -3,6 +3,7 @@ import { join } from 'path'
 import { homedir } from 'os'
 import log from '../logger'
 import { isToolPreapproved, isBuiltInSuperoneTool } from '../mcp/superone-mcp-server'
+import { gateTerminalTabsCall, isTerminalTabsTool } from '../mcp/terminal-tabs-harness-gate'
 import { isMainThreadOnlySuperoneTool, superoneBareToolName } from '@superone/shared/superone-host-owned-tools'
 import { readAppSettings } from '../app-settings-service'
 import type { ElicitationRequest, ElicitationResult, PermissionUpdate } from '@anthropic-ai/claude-agent-sdk'
@@ -131,6 +132,7 @@ export function createCanUseTool(
   emit: (event: AgentEvent) => void,
   onPermissionModeApplied?: (mode: PermissionMode) => void,
   getMessageId?: () => string,
+  getSessionId?: () => string | null,
 ) {
   const plansDir = join(homedir(), '.claude', 'plans')
   let trackedPlanFilePath: string | null = null
@@ -179,6 +181,22 @@ export function createCanUseTool(
 
     if (isBuiltInSuperoneTool(toolName)) {
       return { behavior: 'allow' as const, updatedInput: input, toolUseID: context.toolUseID }
+    }
+
+    // `terminal_tabs` is withheld from allowedTools so the auto-mode classifier sees the
+    // command; when it did not clear it, the host asks with the terminal prompt and the
+    // command rules rather than the generic tool prompt (a name-level "always allow"
+    // would cover every future command).
+    const sessionId = getSessionId?.()
+    if (sessionId && isTerminalTabsTool(toolName)) {
+      const auth = await gateTerminalTabsCall(sessionId, input, {
+        signal: context.signal,
+        defaultToNo: context.defaultToNo,
+        decisionReason: context.decisionReason,
+      })
+      trace('permission.flow', 'terminal_gate', { toolUseId: context.toolUseID, status: auth.status })
+      if (auth.status === 'allowed') return { behavior: 'allow' as const, updatedInput: input, toolUseID: context.toolUseID }
+      return { behavior: 'deny' as const, message: `[denied] ${auth.reason}`, toolUseID: context.toolUseID }
     }
 
     // Args-aware: miniapp_call resolves appId+tool from input (see miniapp-call-policy).

@@ -76,6 +76,7 @@ import { createRendererAgentEventTransport } from './agent/renderer-agent-event-
 import { SessionManagerImpl } from './session/session-manager'
 import { TerminalManager } from './terminal/terminal-manager'
 import { addTerminalCommandRule, isTerminalCommandPreapproved, listAllTerminalCommandRules, removeTerminalCommandRule } from './db-terminal-command-rules'
+import { addSessionTerminalCommandRule, isTerminalCommandAllowedForSession } from './mcp/terminal-session-rules'
 import { RemoteTerminalController } from './environment/remote-terminal-controller'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { AUDIO_EXTENSIONS, BINARY_IMAGE_EXTENSIONS, PDF_EXTENSIONS, VIDEO_EXTENSIONS } from '@superone/shared/file-preview'
@@ -803,7 +804,12 @@ deviceRegistry.setTerminalManager(terminalManager)
 agentService.setTerminalManager(terminalManager)
 setTerminalToolDeps({
   manager: terminalManager,
-  rules: { isPreapproved: isTerminalCommandPreapproved, add: addTerminalCommandRule },
+  rules: {
+    isPreapproved: (projectKey, sessionId, command) =>
+      isTerminalCommandPreapproved(projectKey, command) || isTerminalCommandAllowedForSession(sessionId, command),
+    remember: (scope, projectKey, sessionId, pattern) =>
+      scope === 'project' ? addTerminalCommandRule(projectKey, pattern) : addSessionTerminalCommandRule(sessionId, pattern),
+  },
 })
 let terminalSweepTimer: ReturnType<typeof setInterval> | null = null
 

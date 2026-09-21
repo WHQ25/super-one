@@ -52,11 +52,12 @@ describe('permission sheet state', () => {
 
   it('puts the terminal command in the item list and names the rule an always-allow stores', () => {
     const run = request('terminal_command_confirm')
-    run.input = { action: 'run', command: 'bun run storybook --ci', cwd: '/Users/me/app', rule: 'bun run storybook --ci:*', description: 'Start Storybook to check the new story' }
+    run.input = { action: 'run', command: 'bun run storybook --ci', cwd: '/Users/me/app', rule: 'bun run storybook( .*)?', description: 'Start Storybook to check the new story' }
     expect(permissionSheetPresentation(run)).toMatchObject({
       title: 'Run in a terminal tab?',
-      description: 'Start Storybook to check the new story The agent controls the tab only while this command runs. Always allow stores the rule bun run storybook --ci:* for this project.',
+      description: 'Start Storybook to check the new story The agent controls the tab only while this command runs. Remembering keeps the rule bun run storybook( .*)? (a regular expression over the command) for this session or for this project.',
       alwaysLabel: 'Always allow',
+      sessionLabel: 'Allow for session',
       items: [{ title: 'bun run storybook --ci', subtitle: '/Users/me/app' }],
     })
 
@@ -72,6 +73,8 @@ describe('permission sheet state', () => {
       const presentation = permissionSheetPresentation(request(kind))
       expect(presentation.approveLabel, kind).toMatch(/^\w+$/)
       expect(presentation.alwaysLabel, kind).toMatch(/^Always \w+$/)
+      // A selected remember choice becomes the approve label, so it is just as short.
+      if (presentation.sessionLabel) expect(presentation.sessionLabel, kind).toMatch(/^\w+( \w+){0,2}$/)
     }
   })
 

@@ -19,6 +19,11 @@ export function readOpenCodeConfig(value: unknown): OpenCodeRuntimeConfig {
   }
 }
 
+/** The permission key OpenCode raises for the SuperOne `terminal_tabs` MCP tool. */
+export function isOpenCodeTerminalTabsPermission(permission: string): boolean {
+  return permission === 'superone_terminal_tabs'
+}
+
 export function mapOpenCodePermissionRequest(input: {
   id: string
   permission: string

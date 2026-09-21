@@ -56,6 +56,7 @@ import { resolveSessionCleanupConfirm, rejectSessionCleanupConfirm } from '../mc
 import { resolveAutomationConfirm, rejectAutomationConfirm } from '../mcp/automation-tools'
 import { resolveDeviceControlConfirm, rejectDeviceControlConfirm } from '../device-agent/control-confirm'
 import { rejectTerminalCommandConfirm, resolveTerminalCommandConfirm } from '../mcp/terminal-command-confirm'
+import { forgetSessionTerminalCommandRules } from '../mcp/terminal-session-rules'
 import { nextEventSeq } from './event-seq'
 import { notifySessionRecapForeground, notifySessionRecapSessionRemoved } from '../acp/acp-recap-focus'
 import { asEffortLevel } from '../acp/acp-config'
@@ -1122,6 +1123,7 @@ export class Session implements SessionContract {
       allow ? 'accept' : 'decline',
       alwaysAllow === true,
       reason,
+      formAnswers,
     )) {
       return true
     }
@@ -1532,6 +1534,7 @@ export class Session implements SessionContract {
     this._backendStreaming = false
     this._pendingQueuedRequests.clear()
     forgetWebMcpSessionTrust(this.id)
+    forgetSessionTerminalCommandRules(this.id)
     void this.clearComputerUseVisuals('dispose')
     // Cancel active work before awaiting shutdown: backend.close may wait for it.
     this.abortController?.abort()

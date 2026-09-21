@@ -34,7 +34,7 @@ import { encryptSecretIfAvailable } from './crypto/secret-store'
  * every launch); it decides when a pre-migration snapshot is taken and lets a
  * build recognise a database written by a newer build.
  */
-export const SCHEMA_VERSION = 7
+export const SCHEMA_VERSION = 8
 
 /**
  * The oldest schema revision that can still read this database.

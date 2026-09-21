@@ -45,6 +45,11 @@ vi.mock('../mcp/superone-mcp-server', () => ({
   isToolPreapproved: vi.fn(() => false),
   isBuiltInSuperoneTool: vi.fn(() => false),
 }))
+const mockGateTerminalTabsCall = vi.fn()
+vi.mock('../mcp/terminal-tabs-harness-gate', () => ({
+  isTerminalTabsTool: (name: string) => name === 'mcp__superone__terminal_tabs',
+  gateTerminalTabsCall: (...args: unknown[]) => mockGateTerminalTabsCall(...args),
+}))
 
 const appServerConnection = await import('./app-server-connection')
 const {
@@ -983,6 +988,27 @@ describe('mapApprovalRequest superone mini-app tool elicitation', () => {
     expect(parsed.request.message).toBeUndefined()
   })
 
+  it('reads the call arguments Codex ≥ 0.129 puts in _meta.tool_params', () => {
+    const parsed = mapApprovalRequest({
+      requestIdRaw: 23,
+      requestId: '23',
+      method: 'mcpServer/elicitation/request',
+      params: {
+        serverName: 'superone',
+        message: 'Allow the superone MCP server to run tool "terminal_tabs"?',
+        requestedSchema: { type: 'object', properties: {} },
+        _meta: {
+          codex_approval_kind: 'mcp_tool_call',
+          persist: ['session', 'always'],
+          tool_params: { action: 'run', command: 'bun run dev' },
+        },
+      },
+    })
+    if (parsed?.responseKind !== 'elicitation') throw new Error('expected elicitation')
+    expect(parsed.request.toolName).toBe('mcp__superone__terminal_tabs')
+    expect(parsed.request.input).toEqual({ action: 'run', command: 'bun run dev' })
+  })
+
   it('keeps original elicitation shape for non-superone servers', () => {
     const parsed = mapApprovalRequest({
       requestIdRaw: 12,
@@ -1041,6 +1067,35 @@ describe('processServerRequest', () => {
     )
     expect(respond).toHaveBeenCalledWith(41, { action: 'cancel', content: null, _meta: null })
     expect(respondError).not.toHaveBeenCalled()
+  })
+
+  it('answers a terminal_tabs approval from the host terminal gate, never Codex persist', async () => {
+    mockGateTerminalTabsCall.mockReset()
+    const respond = vi.fn(async () => {})
+    const connection = { request: vi.fn(), respond, respondError: vi.fn(), notify: vi.fn(), nextNotification: vi.fn() }
+    const notification = {
+      requestIdRaw: 42,
+      requestId: '42',
+      method: 'mcpServer/elicitation/request',
+      params: {
+        serverName: 'superone',
+        message: 'Allow the superone MCP server to run tool "terminal_tabs"?',
+        requestedSchema: { type: 'object', properties: {} },
+        _meta: { persist: ['session', 'always'], tool_params: { action: 'run', command: 'bun run dev' } },
+      },
+    }
+    const onPermissionRequest = vi.fn()
+
+    mockGateTerminalTabsCall.mockResolvedValueOnce({ status: 'allowed' })
+    await processServerRequest(notification, connection as never, makeSession() as never, { onPermissionRequest })
+    expect(mockGateTerminalTabsCall).toHaveBeenCalledWith('test-session', { action: 'run', command: 'bun run dev' }, { signal: undefined })
+    expect(respond).toHaveBeenLastCalledWith(42, { action: 'accept', content: null, _meta: null })
+
+    mockGateTerminalTabsCall.mockResolvedValueOnce({ status: 'rejected', reason: 'no' })
+    await processServerRequest(notification, connection as never, makeSession() as never, { onPermissionRequest })
+    expect(respond).toHaveBeenLastCalledWith(42, { action: 'decline', content: null, _meta: null })
+    // The generic prompt never opened: the gate owns the UI.
+    expect(onPermissionRequest).not.toHaveBeenCalled()
   })
 
   it('returns JSON-RPC method-not-found for unknown inbound methods', async () => {

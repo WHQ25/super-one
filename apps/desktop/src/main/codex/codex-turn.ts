@@ -58,6 +58,7 @@ import type {
 import { parseElicitationSchema } from '../agent/elicitation-schema'
 import { getCodexSuperoneMcpConfig } from '../mcp/superone-mcp-stdio-state'
 import { isToolPreapproved, isBuiltInSuperoneTool } from '../mcp/superone-mcp-server'
+import { gateTerminalTabsCall, isTerminalTabsTool } from '../mcp/terminal-tabs-harness-gate'
 import {
   isHostOwnedSuperoneBareName,
   MCP_SUPERONE_TOOL_PREFIX,
@@ -833,6 +834,8 @@ export function mapApprovalRequest(notification: AppServerNotification): ParsedA
       ? extractSuperoneMiniAppToolName(message)
       : null
     if (miniAppToolName) {
+      // Codex ≥ 0.129 carries the call's arguments in `_meta.tool_params`, which is
+      // what lets the host judge args-aware approvals (terminal commands, miniapp_call).
       return {
         responseKind: 'elicitation',
         formFields: [],
@@ -840,7 +843,7 @@ export function mapApprovalRequest(notification: AppServerNotification): ParsedA
           requestId,
           toolName: miniAppToolName,
           toolUseId: requestId,
-          input: {},
+          input: asRecord(meta?.tool_params) ?? {},
           allowAlwaysAllow: false,
           supportsAlwaysPersist: false,
         },
@@ -939,6 +942,23 @@ export async function processServerRequest(
       // tool run unreviewed. Keyed on payload type, not the tool allowlist, so any
       // future tool reusing this mechanism is covered without touching this branch.
       const isRichConfirm = parsedApprovalRequest.request.requestKind === 'video_gen_confirm'
+      // `terminal_tabs` has approval_mode `prompt`, so Codex's own policy / Guardian
+      // ran first; what it could not clear is answered by the host terminal gate
+      // (rules or the terminal prompt), never by Codex's name-level remember.
+      if (typeof requestToolName === 'string' && isTerminalTabsTool(requestToolName)) {
+        const auth = await gateTerminalTabsCall(
+          session.superoneSessionId,
+          (parsedApprovalRequest.request.input ?? {}) as Record<string, unknown>,
+          { signal: abortSignal },
+        )
+        await respondToServer(
+          notification.requestIdRaw,
+          auth.status === 'allowed'
+            ? { action: 'accept', content: null, _meta: null }
+            : { action: 'decline', content: null, _meta: null },
+        )
+        return true
+      }
       if (
         !isRichConfirm
         && typeof requestToolName === 'string'

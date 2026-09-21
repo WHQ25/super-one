@@ -22,6 +22,11 @@ vi.mock('../mcp/superone-mcp-server', () => ({
   isToolPreapproved: vi.fn(() => false),
   isBuiltInSuperoneTool: vi.fn((name: string) => BUILT_IN_QUALIFIED.has(name)),
 }))
+const mockGateTerminalTabsCall = vi.fn()
+vi.mock('../mcp/terminal-tabs-harness-gate', () => ({
+  isTerminalTabsTool: (name: string) => name === 'mcp__superone__terminal_tabs',
+  gateTerminalTabsCall: (...args: unknown[]) => mockGateTerminalTabsCall(...args),
+}))
 
 import {
   respondToPermission,
@@ -242,6 +247,28 @@ describe('createCanUseTool', () => {
       ...overrides,
     }
   }
+
+  it('routes terminal_tabs through the host terminal gate instead of the generic prompt', async () => {
+    mockGateTerminalTabsCall.mockReset()
+    mockGateTerminalTabsCall.mockResolvedValueOnce({ status: 'allowed' })
+    const { canUseTool } = createCanUseTool(perms, questions, plans, emit, undefined, undefined, () => 'sess-1')
+    const input = { action: 'run', command: 'bun run dev' }
+    const ctx = makeContext({ defaultToNo: true, decisionReason: 'classifier flagged it' })
+    const allowed = await canUseTool('mcp__superone__terminal_tabs', input, ctx)
+    expect(allowed).toMatchObject({ behavior: 'allow', updatedInput: input })
+    expect(mockGateTerminalTabsCall).toHaveBeenCalledWith('sess-1', input, {
+      signal: ctx.signal,
+      defaultToNo: true,
+      decisionReason: 'classifier flagged it',
+    })
+    // The gate raised its own host prompt; canUseTool must not add a generic one.
+    expect(events).toHaveLength(0)
+    expect(perms.size).toBe(0)
+
+    mockGateTerminalTabsCall.mockResolvedValueOnce({ status: 'rejected', reason: 'not now' })
+    const denied = await canUseTool('mcp__superone__terminal_tabs', input, makeContext())
+    expect(denied).toMatchObject({ behavior: 'deny', message: '[denied] not now' })
+  })
 
   it('should auto-approve mcp__superone__widget_show without permission prompt', async () => {
     const { canUseTool } = createCanUseTool(perms, questions, plans, emit)

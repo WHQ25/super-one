@@ -34,10 +34,12 @@ export function PermissionSheet(props: {
   const fields = useMemo(() => perm?.elicitationForm ?? [], [perm?.elicitationForm])
   const [values, setValues] = useState<Record<string, unknown>>({})
   const [feedback, setFeedback] = useState('')
-  const [remember, setRemember] = useState(false)
+  // Which remember choice is on: the prompt's "always" (project / persistent) or, for a
+  // terminal command, the session-only lifetime. One at a time, like the desktop rows.
+  const [remember, setRemember] = useState<'always' | 'session' | null>(null)
   const [suggestions, setSuggestions] = useState<Set<number>>(new Set())
   useEffect(() => {
-    setValues(initialElicitationAnswers(fields)); setFeedback(''); setRemember(false); setSuggestions(new Set())
+    setValues(initialElicitationAnswers(fields)); setFeedback(''); setRemember(null); setSuggestions(new Set())
   }, [fields, perm?.requestId])
   if (!perm) return null
   const presentation = permissionSheetPresentation(perm)
@@ -45,18 +47,25 @@ export function PermissionSheet(props: {
   const icon = permissionPromptIcon(perm)
   const title = permissionPromptTitle(perm)
   const deny = () => props.onDeny(perm.requestId, feedback.trim() || undefined)
+  const toggleRemember = (choice: 'always' | 'session') => setRemember((current) => (current === choice ? null : choice))
   const approve = () => {
-    const formAnswers = perm.requestKind === 'webmcp_trust_confirm' ? { scope: remember ? 'always' : 'session' }
-      : perm.requestKind === 'mcp_elicitation' ? Object.fromEntries(fields.map((field) => [field.name, field.type === 'number' && values[field.name] !== '' ? Number(values[field.name]) : values[field.name]]))
-        : editedPermissionAnswers(perm)
-    props.onAllow(perm.requestId, formAnswers, allowRemember && remember, suggestions.size ? [...suggestions].sort((a, b) => a - b) : undefined)
+    const formAnswers = perm.requestKind === 'webmcp_trust_confirm' ? { scope: remember === 'always' ? 'always' : 'session' }
+      // The desktop reads the lifetime from `scope`; a bare alwaysAllow means the project.
+      : perm.requestKind === 'terminal_command_confirm' ? (remember ? { scope: remember === 'always' ? 'project' : 'session' } : undefined)
+        : perm.requestKind === 'mcp_elicitation' ? Object.fromEntries(fields.map((field) => [field.name, field.type === 'number' && values[field.name] !== '' ? Number(values[field.name]) : values[field.name]]))
+          : editedPermissionAnswers(perm)
+    props.onAllow(perm.requestId, formAnswers, allowRemember && remember === 'always', suggestions.size ? [...suggestions].sort((a, b) => a - b) : undefined)
   }
+  const approveLabel = allowRemember && remember === 'always' ? presentation.alwaysLabel!
+    : allowRemember && remember === 'session' && presentation.sessionLabel ? presentation.sessionLabel
+      : `${presentation.approveLabel}${suggestions.size ? ` +${suggestions.size}` : ''}`
   return <PromptSheet title={title} icon={icon} onDismiss={deny} collapsed={props.collapsed} onCollapse={props.onCollapse && (() => props.onCollapse!(perm.requestId))} footer={<PromptActions
-    approveLabel={remember && allowRemember ? presentation.alwaysLabel! : `${presentation.approveLabel}${suggestions.size ? ` +${suggestions.size}` : ''}`}
+    approveLabel={approveLabel}
     rejectLabel={feedback.trim() ? `${presentation.denyLabel} with feedback` : presentation.denyLabel}
     onApprove={approve} onReject={deny} disabled={!elicitationAnswersAreValid(fields, values) || !permissionEditsValid(perm) || Object.values(invalidFields).some(Boolean)}
     feedback={{ value: feedback, onChange: setFeedback }}
-  >{allowRemember ? <PromptChoice multi label={t(presentation.alwaysLabel!)} selected={remember} onPress={() => setRemember(!remember)} /> : null}</PromptActions>}>
+  >{allowRemember && presentation.sessionLabel ? <PromptChoice multi label={t(presentation.sessionLabel)} selected={remember === 'session'} onPress={() => toggleRemember('session')} /> : null}
+    {allowRemember ? <PromptChoice multi label={t(presentation.alwaysLabel!)} selected={remember === 'always'} onPress={() => toggleRemember('always')} /> : null}</PromptActions>}>
     {perm.elicitationUrl ? (
       <PromptPill
         label={t('Open in browser')}

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { RequestPermissionRequest } from '@agentclientprotocol/sdk'
 import { BUILT_IN_SUPERONE_TOOL_NAMES } from '../mcp/superone-mcp-builtin-defs'
+import { isNeverAutoAllowSuperoneBareName } from '@superone/shared/superone-host-owned-tools'
 import {
   GROK_ACP_CLIENT_IDENTIFIER,
   decideAcpPermission,
@@ -13,7 +14,9 @@ import { isHiddenAcpPermissionSlashCommand } from './acp-slash-filter'
 
 // Avoid importing superone-mcp-server (pulls electron). Mirror real built-in names.
 vi.mock('../mcp/superone-mcp-server', () => {
-  const builtins = new Set(BUILT_IN_SUPERONE_TOOL_NAMES.map((n) => `mcp__superone__${n}`))
+  const builtins = new Set(
+    BUILT_IN_SUPERONE_TOOL_NAMES.filter((n) => !isNeverAutoAllowSuperoneBareName(n)).map((n) => `mcp__superone__${n}`),
+  )
   return {
     isBuiltInSuperoneTool: (name: string) => builtins.has(name) || name === 'mcp__superone__miniapp_list',
     isToolPreapproved: (name: string, input: Record<string, unknown> = {}) => {
@@ -143,6 +146,8 @@ describe('shouldAutoAllowAcpPermission', () => {
   it('auto-allows every real SuperOne built-in via Grok use_tool envelope', () => {
     expect(BUILT_IN_SUPERONE_TOOL_NAMES.length).toBeGreaterThan(5)
     for (const name of BUILT_IN_SUPERONE_TOOL_NAMES) {
+      // browser_tools_call / terminal_tabs are registered but never auto-allowed.
+      if (isNeverAutoAllowSuperoneBareName(name)) continue
       const result = shouldAutoAllowAcpPermission(perm({
         title: 'use_tool',
         kind: 'other',
@@ -214,6 +219,17 @@ describe('decideAcpPermission', () => {
       toolName: 'mcp__superone__session_list',
       alwaysAllow: true,
     })
+  })
+
+  it('hands terminal_tabs to the host terminal gate with the call arguments', () => {
+    const params = perm({
+      rawInput: { tool_name: 'superone__terminal_tabs', tool_input: { action: 'run', command: 'bun run dev' } },
+    })
+    expect(decideAcpPermission({ ...params, sessionId: 'acp-main' }, 'acp-main')).toEqual({
+      kind: 'terminal-gate',
+      input: { action: 'run', command: 'bun run dev' },
+    })
+    expect(decideAcpPermission(perm({ rawInput: { tool_name: 'other__thing' } }), 'acp-main')).toEqual({ kind: 'prompt' })
   })
 
   it('denies session_tag when x.ai meta carries a subagent_id', () => {

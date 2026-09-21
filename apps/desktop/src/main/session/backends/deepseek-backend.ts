@@ -19,6 +19,7 @@ import type {
 } from '@superone/shared/agent-types'
 import log from '../../logger'
 import { addToolsChangedListener } from '../../mcp/superone-mcp-server'
+import { gateTerminalTabsCall, isTerminalTabsTool } from '../../mcp/terminal-tabs-harness-gate'
 import { readDshMcpServerSpecs, trackDshMcpConfig } from '../../deepseek/deepseek-mcp-sync'
 import { executeSuperoneMcpTool, listSuperoneMcpTools } from '../../mcp/superone-mcp-tool-surface'
 import { runInLocalCallScope } from '../../mcp/artifact-registry'
@@ -291,6 +292,12 @@ export class DeepseekBackend implements SessionBackend {
     signal?: AbortSignal
   }): Promise<'allowed-once' | 'rejected' | 'cancelled'> {
     if (this.permissionMode === 'bypassPermissions') return Promise.resolve('allowed-once')
+    // The tool plane does not admit `terminal_tabs`, so the command lands here; the
+    // host terminal gate (rules or the terminal prompt) answers, not the generic popover.
+    if (isTerminalTabsTool(request.toolName) && this.opts) {
+      return gateTerminalTabsCall(this.opts.sessionId, request.input ?? {}, { signal: request.signal })
+        .then((auth) => auth.status === 'allowed' ? 'allowed-once' : auth.status)
+    }
 
     const requestId = randomUUID()
     return new Promise((resolve) => {

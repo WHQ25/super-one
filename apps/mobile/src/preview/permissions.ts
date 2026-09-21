@@ -75,7 +75,7 @@ export const permissionExamples = {
   },
   terminal_command_confirm: {
     toolName: 'mcp__superone__terminal_tabs', allowAlwaysAllow: true,
-    input: { action: 'run', command: 'bun run storybook --ci', cwd: '/Users/me/app', rule: 'bun run storybook --ci:*', description: 'Start Storybook to check the new story.' },
+    input: { action: 'run', command: 'bun run storybook --ci', cwd: '/Users/me/app', rule: 'bun run storybook( .*)?', description: 'Start Storybook to check the new story.' },
   },
 } satisfies Record<PermissionKind, PermissionExample>
 

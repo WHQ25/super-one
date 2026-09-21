@@ -1,18 +1,20 @@
 /**
- * Host permission_request gate for `terminal_tabs run` / `attach` / `close`.
+ * Host permission_request prompt for `terminal_tabs run` / `attach` / `close`.
  *
- * Pattern: device_request_control — raise a host permission_request from inside the
- * tool executor and block until the user answers via Session.respondToPermission,
- * which is what makes it work on ACP and OpenCode as well as Claude and Codex.
+ * Pattern: device_request_control — raise a host permission_request and block until
+ * the user answers via Session.respondToPermission, which is what makes it work on ACP
+ * and OpenCode as well as Claude and Codex. Raised by `terminal-command-gate.ts` from
+ * whichever layer authorizes the command for the session's harness.
  *
  * The subject is the *command*, not the terminal (docs/design/terminal-agent-tools.md
- * §5): "always allow" stores a per-project prefix rule for that command, so the user
- * approves `bun run storybook` the way they would in their shell tool, and control of
- * the tab ends when the command does.
+ * §5): the offered rule is a regex over the command, remembered for this chat session
+ * or for the project, so the user approves `bun run storybook` the way they would in
+ * their shell tool, and control of the tab ends when the command does.
  */
 
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { MCP_SUPERONE_TOOL_PREFIX } from '@superone/shared/superone-host-owned-tools'
+import type { TerminalCommandRuleScope } from '@superone/shared/terminal-command-rules'
 import { HostConfirmRegistry } from '../session/host-confirm-registry'
 
 const CONFIRM_TIMEOUT_MS = 120_000
@@ -20,9 +22,19 @@ const CONFIRM_TIMEOUT_MS = 120_000
 export const TERMINAL_TABS_QUALIFIED = `${MCP_SUPERONE_TOOL_PREFIX}terminal_tabs`
 
 export type TerminalCommandDecision =
-  /** `alwaysAllow` = "and stop asking for this command in this project". */
-  | { action: 'accept'; alwaysAllow: boolean }
+  /** `remember` = "and stop asking for commands matching the rule" for that lifetime. */
+  | { action: 'accept'; remember: TerminalCommandRuleScope | null }
   | { action: 'decline' | 'cancel'; reason?: string }
+
+/**
+ * The renderer answers with the generic `alwaysAllow` flag plus `formAnswers.scope`
+ * naming the lifetime; a bare `alwaysAllow` (mobile, older clients) means the project.
+ */
+export function terminalCommandRememberScope(alwaysAllow: boolean, formAnswers?: Record<string, unknown>): TerminalCommandRuleScope | null {
+  if (formAnswers?.scope === 'session') return 'session'
+  if (formAnswers?.scope === 'project' || alwaysAllow) return 'project'
+  return null
+}
 
 const confirms = new HostConfirmRegistry<TerminalCommandDecision>({
   idPrefix: 'terminalcmd',
@@ -36,9 +48,10 @@ export function resolveTerminalCommandConfirm(
   action: 'accept' | 'decline',
   alwaysAllow = false,
   reason?: string,
+  formAnswers?: Record<string, unknown>,
 ): boolean {
   if (action === 'decline') return confirms.settle(requestId, false, { action: 'decline', reason })
-  return confirms.settle(requestId, true, { action: 'accept', alwaysAllow })
+  return confirms.settle(requestId, true, { action: 'accept', remember: terminalCommandRememberScope(alwaysAllow, formAnswers) })
 }
 
 export function rejectTerminalCommandConfirm(requestId: string, reason: string): boolean {
@@ -50,13 +63,17 @@ export async function awaitTerminalCommandConfirm(opts: {
   action: 'run' | 'attach' | 'close'
   command: string
   cwd: string
-  /** The rule "always allow" would store; shown so the user knows what they are granting. */
+  /** The rule a remembered grant would store; shown so the user knows what they are granting. */
   rule?: string
   tabTitle?: string
   description?: string
   message: string
-  /** `close` of a user tab never offers "always". */
+  /** `close` of a user tab never offers a remembered grant. */
   allowAlwaysAllow: boolean
+  /** The harness flagged the call (Claude's classifier): open on Deny, no one-key approve. */
+  defaultToNo?: boolean
+  /** Why the harness did not clear the call itself, when it said. */
+  decisionReason?: string
   signal?: AbortSignal
 }): Promise<TerminalCommandDecision> {
   return confirms.open(
@@ -75,6 +92,8 @@ export async function awaitTerminalCommandConfirm(opts: {
       },
       allowAlwaysAllow: opts.allowAlwaysAllow,
       supportsAlwaysPersist: opts.allowAlwaysAllow,
+      ...(opts.defaultToNo ? { defaultToNo: true } : {}),
+      ...(opts.decisionReason ? { decisionReason: opts.decisionReason } : {}),
       requestKind: 'terminal_command_confirm',
       serverName: 'superone',
       message: opts.message,

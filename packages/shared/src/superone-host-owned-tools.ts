@@ -103,8 +103,10 @@ export const DEVICE_AGENT_TOOL_NAMES = [
 ] as const
 
 /**
- * Interactive terminal tabs (docs/design/terminal-agent-tools.md). Host-owned so every
- * harness reaches the executor; the per-command approval lives inside `terminal_tabs`.
+ * Interactive terminal tabs (docs/design/terminal-agent-tools.md). `terminal_tabs` is
+ * the one that starts or joins a command, so it is withheld from auto-allow (see
+ * {@link NEVER_AUTO_ALLOW_SUPERONE_BARE_NAMES}) and each harness's permission layer
+ * decides it; the other three only drive a command that was already approved.
  */
 export const TERMINAL_TOOL_NAMES = [
   'terminal_tabs',
@@ -189,12 +191,16 @@ export function isStaticHostOwnedSuperoneBareName(bare: string): boolean {
 }
 
 /**
- * Qualified-name variant (`mcp__superone__…`) for Claude / node canUseTool short-circuit.
+ * Qualified-name variant (`mcp__superone__…`) for the canUseTool-style short-circuit
+ * in node Claude and the DeepSeek tool plane. This is an *auto-allow* answer, so the
+ * never-auto-allow tools are excluded here just as they are from
+ * {@link STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES}; use
+ * {@link isStaticHostOwnedSuperoneBareName} for mere recognition.
  */
 export function isStaticHostOwnedSuperoneToolQualified(qualifiedName: string): boolean {
   if (!qualifiedName.startsWith(MCP_SUPERONE_TOOL_PREFIX)) return false
   const bare = qualifiedName.slice(MCP_SUPERONE_TOOL_PREFIX.length)
-  return isStaticHostOwnedSuperoneBareName(bare)
+  return isStaticHostOwnedSuperoneBareName(bare) && !isNeverAutoAllowSuperoneBareName(bare)
 }
 
 /**
@@ -225,7 +231,15 @@ export function isStaticHostOwnedSuperoneToolQualified(qualifiedName: string): b
  * than `canUseTool`. Excluding a name from only one of them silently changes nothing, so every
  * projection filters through this list.
  */
-export const NEVER_AUTO_ALLOW_SUPERONE_BARE_NAMES: readonly string[] = ['browser_tools_call']
+/**
+ * `terminal_tabs` starts a shell command. Leaving it to the harness layer lets Claude's
+ * auto-mode classifier, Codex's approval policy / Guardian reviewer, and the yolo modes of
+ * the others clear routine commands on their own; when a harness does ask, the host
+ * answers with the terminal prompt and the per-project / per-session command rules
+ * (`terminal-command-gate.ts`) instead of the generic tool-name prompt, because a
+ * name-level "always allow" would cover every future command.
+ */
+export const NEVER_AUTO_ALLOW_SUPERONE_BARE_NAMES: readonly string[] = ['browser_tools_call', 'terminal_tabs']
 
 export function isNeverAutoAllowSuperoneBareName(bare: string): boolean {
   return NEVER_AUTO_ALLOW_SUPERONE_BARE_NAMES.includes(bare)

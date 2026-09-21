@@ -172,28 +172,49 @@ Returns the screen plus which conditions were met.
 
 Two independent decisions, per `superone-tool` → contract.md.
 
-**Harness admission.** All four bare names go into the static host-owned set so every
-harness reaches the executor without its own prompt. Otherwise Claude auto-mode may
-deny `terminal_act` per keystroke and Codex would elicit on every call, which makes
-interactive use impossible.
+**Harness admission.** `terminal_snapshot`, `terminal_act`, and `terminal_wait_for` go
+into the static host-owned set so every harness reaches the executor without its own
+prompt — otherwise Claude auto-mode may deny `terminal_act` per keystroke and Codex
+would elicit on every call, which makes interactive use impossible. They only drive a
+command that was already approved.
 
-**Executor authorization — per command, like the shell tool.** Handing over "a
-terminal" (the way `device_request_control` hands over a device) is too broad: a
-terminal can do anything. The unit that is approved is the **command**, and control is
-bounded by that command's lifetime:
+`terminal_tabs` is the one that *starts* a command, so it is deliberately withheld
+from auto-allow (`NEVER_AUTO_ALLOW_SUPERONE_BARE_NAMES`) and each harness's own
+permission layer sees it first: Claude's auto-mode classifier, Codex's approval policy
+/ Guardian reviewer (`approval_mode: 'prompt'`), the yolo modes of ACP / OpenCode /
+DeepSeek. A routine `bun run dev` those layers clear runs without a prompt at all.
 
-- `terminal_tabs run` / `attach` raise a host `permission_request`
-  (`requestKind: 'terminal_command'`) showing the command, cwd, and tab. The dialog
-  offers *Allow once* and *Always allow in this project*; the latter stores a rule
-  keyed by project path with the same prefix grammar the harness shell rules use
-  (`bun run storybook:*`, `python3`, `ssh staging:*`). The offered rule is the
-  agent's own `rule` argument when it matches the command (like Claude Code's Bash
-  suggestions, the agent knows which leading words are the stable part); otherwise it
-  is derived — command + subcommand (`bun run dev` → `bun run:*`), with compound
-  lines, quoted arguments, and delegators such as `sudo` / `ssh` / `docker` keeping
-  the full command. Rules are SuperOne-owned
-  (SuperOne DB, harness-agnostic), not written into `.claude/settings.json`, and are
-  listed/removable in project settings next to mini-app preapprovals.
+**Authorization — per command, like the shell tool.** Handing over "a terminal" (the
+way `device_request_control` hands over a device) is too broad: a terminal can do
+anything. The unit that is approved is the **command**, and control is bounded by that
+command's lifetime. One gate (`terminal-command-gate.ts`) answers it; who calls the
+gate is `HARNESS_CAPABILITIES[harness].terminalCommandApproval`:
+
+- `harness` (Claude, Codex, ACP, OpenCode, DeepSeek): when the harness asks the host
+  about a `terminal_tabs run` / `attach`, the backend routes the request through the
+  gate instead of the generic tool prompt — a harness-level, name-keyed "always
+  allow" would cover every future command. The executor then runs the command
+  without asking again.
+- `executor` (Cursor, whose SDK auto-approves custom tools with no host hook): the
+  executor calls the gate itself before typing anything.
+
+- The gate first consults the remembered rules, then raises a host
+  `permission_request` (`requestKind: 'terminal_command_confirm'`) showing the
+  command, cwd, and tab. The dialog offers *Allow once*, *Allow `<rule>` for this
+  session*, and *Always allow `<rule>` in this project*. A rule is a JavaScript
+  regular expression matched against the whole normalized command
+  (`bun run storybook( .*)?`, `python3`, `(\w+=\S+ )*bun run dev( .*)?`), so a rule
+  can express a leading env assignment without pinning its value. The offered rule is
+  the agent's own `rule` argument when it is valid and matches the command (like
+  Claude Code's Bash suggestions, the agent knows which leading words are the stable
+  part); otherwise it is derived — command + subcommand (`bun run dev` →
+  `bun run( .*)?`, `PORT=1 bun run dev` → `(\w+=\S+ )*bun run( .*)?`), with
+  compound lines, quoted arguments, and delegators such as `sudo` / `ssh` / `docker`
+  keeping the full command. Session rules live in memory until the session is
+  disposed; project rules are SuperOne-owned (SuperOne DB, harness-agnostic, rows
+  from before the regex grammar are converted once and stamped `grammar = 'regex'`),
+  not written into `.claude/settings.json`, and are listed/removable in project
+  settings next to mini-app preapprovals.
 - **Control = "the approved command is the foreground process of that tab."** While it
   is, `terminal_act` writes go through: stdin to a REPL, keys in a TUI, answers to a
   wizard are all input *to the approved program*. When the command exits and the tab

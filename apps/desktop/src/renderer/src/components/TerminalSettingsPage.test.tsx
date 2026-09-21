@@ -47,20 +47,20 @@ describe('terminal settings — always-allowed command rules', () => {
 
   it('groups rules by project and names a registered project the way the sidebar does', async () => {
     await renderPage([
-      rule('/Users/dev/super-one', 'bun run storybook:*'),
+      rule('/Users/dev/super-one', 'bun run storybook( .*)?'),
       rule('/Users/dev/super-one', 'python3'),
-      rule('/Users/dev/other', 'ssh staging:*'),
+      rule('/Users/dev/other', 'ssh staging( .*)?'),
     ])
     expect(await screen.findByText('My Custom Name')).toBeTruthy()
     expect(screen.getByText('other')).toBeTruthy()
-    expect(screen.getByText('bun run storybook:*')).toBeTruthy()
+    expect(screen.getByText('bun run storybook( .*)?')).toBeTruthy()
     expect(screen.getByText('python3')).toBeTruthy()
-    expect(screen.getByText('ssh staging:*')).toBeTruthy()
+    expect(screen.getByText('ssh staging( .*)?')).toBeTruthy()
     expect(screen.queryByText('Remote')).toBeNull()
   })
 
   it('shows a remote project by its node path with a Remote badge', async () => {
-    await renderPage([rule('remote:node-1:/srv/api', 'docker compose up:*')])
+    await renderPage([rule('remote:node-1:/srv/api', 'docker compose up( .*)?')])
     expect(await screen.findByText('api')).toBeTruthy()
     expect(screen.getByText('/srv/api')).toBeTruthy()
     expect(screen.getByText('Remote')).toBeTruthy()
@@ -68,14 +68,14 @@ describe('terminal settings — always-allowed command rules', () => {
 
   it('removes one rule through IPC and re-reads the list', async () => {
     const kept = rule('/Users/dev/super-one', 'python3')
-    await renderPage([rule('/Users/dev/super-one', 'bun run storybook:*'), kept])
-    await screen.findByText('bun run storybook:*')
+    await renderPage([rule('/Users/dev/super-one', 'bun run storybook( .*)?'), kept])
+    await screen.findByText('bun run storybook( .*)?')
     listCommandRules.mockResolvedValue([kept])
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Remove this rule' })[0]!)
 
-    await waitFor(() => expect(screen.queryByText('bun run storybook:*')).toBeNull())
-    expect(removeCommandRule).toHaveBeenCalledWith('/Users/dev/super-one', 'bun run storybook:*')
+    await waitFor(() => expect(screen.queryByText('bun run storybook( .*)?')).toBeNull())
+    expect(removeCommandRule).toHaveBeenCalledWith('/Users/dev/super-one', 'bun run storybook( .*)?')
     expect(screen.getByText('python3')).toBeTruthy()
   })
 

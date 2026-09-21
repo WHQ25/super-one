@@ -1,8 +1,9 @@
 import { basename } from 'node:path'
 import { encode as toonEncode } from '@toon-format/toon'
 import type { AgentEvent, TerminalListItem } from '@superone/shared/agent-types'
+import type { HarnessId } from '@superone/shared/session-types'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
-import { normalizeTerminalCommand, resolveTerminalCommandRule } from '@superone/shared/terminal-command-rules'
+import { normalizeTerminalCommand } from '@superone/shared/terminal-command-rules'
 import { HOST_ACTION_TERMINAL_DESCRIPTORS, TERMINAL_ACTION_INPUT_SCHEMA } from '@superone/shared/environment/host-action-terminal-descriptors'
 import type { CreateTerminalOptions } from '../terminal/terminal-manager'
 import type { TerminalSession } from '../terminal/terminal-session'
@@ -10,6 +11,12 @@ import { terminalKeySequence } from '../terminal/terminal-keys'
 import { hasWaitCondition, waitForTerminal, type TerminalWaitConditions } from '../terminal/terminal-wait'
 import { spillLargeBrowserField } from './browser-mcp-artifacts'
 import { awaitTerminalCommandConfirm } from './terminal-command-confirm'
+import {
+  authorizeTerminalCommand,
+  terminalCommandApprovalLayer,
+  type TerminalCommandSubject,
+  type TerminalRuleStore,
+} from './terminal-command-gate'
 import type { BuiltInSuperoneToolDeps } from './superone-mcp-builtins'
 
 /** What the handlers need from `TerminalManager`; kept narrow so tests pass a stub. */
@@ -20,10 +27,7 @@ export interface TerminalToolHost {
   kill(terminalId: string): void
 }
 
-export interface TerminalRuleStore {
-  isPreapproved(projectKey: string, command: string): boolean
-  add(projectKey: string, pattern: string): void
-}
+export type { TerminalRuleStore }
 
 export interface TerminalToolDeps {
   manager: TerminalToolHost
@@ -135,6 +139,7 @@ interface ToolSession {
   sessionId: string
   projectPath: string
   cwd: string
+  harnessId?: HarnessId
   emitHostEvent: (event: AgentEvent) => void
 }
 
@@ -143,7 +148,7 @@ function resolveContext(deps: BuiltInSuperoneToolDeps):
   | { ok: false; error: ReturnType<typeof toolResult> } {
   const terminals = deps.terminals
   if (!terminals) return { ok: false, error: toolResult('[Error] Terminal tools are unavailable in this host.', true) }
-  const session = deps.sessionHost?.getSession(deps.sessionId)
+  const session = deps.sessionHost?.getSession(deps.sessionId) as (ReturnType<NonNullable<typeof deps.sessionHost>['getSession']> & { harnessId?: HarnessId }) | null
   if (!session?.projectPath || !session.emitHostEvent) {
     return { ok: false, error: toolResult('[Error] No project is open for this session.', true) }
   }
@@ -155,9 +160,60 @@ function resolveContext(deps: BuiltInSuperoneToolDeps):
       sessionId: deps.sessionId,
       projectPath: session.projectPath,
       cwd: session.cwd || session.projectPath,
+      harnessId: session.harnessId,
       emitHostEvent: session.emitHostEvent.bind(session),
     },
   }
+}
+
+/**
+ * What a `terminal_tabs` call asks the user to approve, resolved from the raw
+ * arguments the way the handler will: `run` names its command, `attach` means the
+ * command in the foreground of the target tab. `null` when the call approves
+ * nothing (`list`, `close`) or the handler is going to reject it anyway (unknown
+ * tab, tab at a shell prompt) — the harness layer lets those through so the
+ * executor can return its specific error.
+ */
+export function resolveTerminalCommandSubject(
+  terminals: TerminalToolDeps,
+  session: Pick<ToolSession, 'sessionId' | 'cwd'>,
+  args: TerminalTabsArgs,
+): TerminalCommandSubject | null {
+  const description = typeof args.description === 'string' ? args.description : undefined
+  if (args.action === 'run') {
+    const command = normalizeTerminalCommand(String(args.command ?? ''))
+    if (!command) return null
+    const id = tabIds(args.tab)[0]
+    const target = id ? findTab(terminals, session.sessionId, id) : undefined
+    const cwd = typeof args.cwd === 'string' && args.cwd ? args.cwd : (target?.cwd ?? session.cwd)
+    return { action: 'run', command, cwd, tabTitle: target?.title, rule: args.rule, description }
+  }
+  if (args.action === 'attach') {
+    const id = tabIds(args.tab)[0]
+    const target = id ? findTab(terminals, session.sessionId, id) : undefined
+    if (!target || target.status !== 'running' || target.isAtShell()) return null
+    const command = target.foregroundProcess()
+    if (!command) return null
+    return { action: 'attach', command, cwd: target.cwd, tabTitle: target.title, rule: args.rule, description }
+  }
+  return null
+}
+
+/**
+ * Ask before a `run` / `attach` when this session's harness leaves the decision to
+ * the executor; otherwise the harness permission layer already answered (see
+ * `terminal-command-gate.ts`).
+ */
+async function authorizeIfExecutorOwned(
+  terminals: TerminalToolDeps,
+  session: ToolSession,
+  subject: TerminalCommandSubject,
+  signal?: AbortSignal,
+): Promise<ReturnType<typeof toolResult> | null> {
+  if (terminalCommandApprovalLayer(session.harnessId) !== 'executor') return null
+  const auth = await authorizeTerminalCommand(terminals.rules, session, subject, { signal })
+  if (auth.status === 'allowed') return null
+  return toolResult({ status: auth.status, reason: auth.reason, hint: 'Do not retry on your own — wait for the user.' })
 }
 
 function clampInt(value: unknown, fallback: number, min: number, max: number): number {
@@ -267,31 +323,15 @@ export async function terminalTabsHandler(args: TerminalTabsArgs, deps: BuiltInS
       }
     }
     const cwd = typeof args.cwd === 'string' && args.cwd ? args.cwd : (target?.cwd ?? session.cwd)
-    const rule = resolveTerminalCommandRule(args.rule, command)
-
-    if (!terminals.rules.isPreapproved(session.projectPath, command)) {
-      let decision
-      try {
-        decision = await awaitTerminalCommandConfirm({
-          emitHostEvent: session.emitHostEvent,
-          action: 'run',
-          command,
-          cwd,
-          rule,
-          tabTitle: target?.title,
-          description: typeof args.description === 'string' ? args.description : undefined,
-          message: `Run \`${command}\` in a terminal tab (${cwd})?`,
-          allowAlwaysAllow: true,
-          signal: deps.signal,
-        })
-      } catch (error) {
-        return toolResult({ status: 'cancelled', reason: error instanceof Error ? error.message : String(error), hint: 'Do not retry on your own — wait for the user.' })
-      }
-      if (decision.action !== 'accept') {
-        return toolResult({ status: 'rejected', reason: decision.reason ?? 'User declined', hint: 'Do not retry on your own — wait for the user.' })
-      }
-      if (decision.alwaysAllow) terminals.rules.add(session.projectPath, rule)
-    }
+    const refused = await authorizeIfExecutorOwned(terminals, session, {
+      action: 'run',
+      command,
+      cwd,
+      tabTitle: target?.title,
+      rule: args.rule,
+      description: typeof args.description === 'string' ? args.description : undefined,
+    }, deps.signal)
+    if (refused) return refused
 
     if (!target) {
       target = terminals.manager.create({
@@ -332,30 +372,15 @@ export async function terminalTabsHandler(args: TerminalTabsArgs, deps: BuiltInS
     if (target.isAtShell() || !command) {
       return toolResult(`[Error] Tab ${id} is at a shell prompt with nothing running; use action=run with a command instead.`, true)
     }
-    const rule = resolveTerminalCommandRule(args.rule, command)
-    if (!terminals.rules.isPreapproved(session.projectPath, command)) {
-      let decision
-      try {
-        decision = await awaitTerminalCommandConfirm({
-          emitHostEvent: session.emitHostEvent,
-          action: 'attach',
-          command,
-          cwd: target.cwd,
-          rule,
-          tabTitle: target.title,
-          description: typeof args.description === 'string' ? args.description : undefined,
-          message: `Let the agent interact with \`${command}\` running in tab “${target.title}”?`,
-          allowAlwaysAllow: true,
-          signal: deps.signal,
-        })
-      } catch (error) {
-        return toolResult({ status: 'cancelled', reason: error instanceof Error ? error.message : String(error), hint: 'Do not retry on your own — wait for the user.' })
-      }
-      if (decision.action !== 'accept') {
-        return toolResult({ status: 'rejected', reason: decision.reason ?? 'User declined', hint: 'Do not retry on your own — wait for the user.' })
-      }
-      if (decision.alwaysAllow) terminals.rules.add(session.projectPath, rule)
-    }
+    const refused = await authorizeIfExecutorOwned(terminals, session, {
+      action: 'attach',
+      command,
+      cwd: target.cwd,
+      tabTitle: target.title,
+      rule: args.rule,
+      description: typeof args.description === 'string' ? args.description : undefined,
+    }, deps.signal)
+    if (refused) return refused
     target.control.grant({ sessionId: session.sessionId, command, startedAt: Date.now() })
     target.control.poll()
     return toolResult({ status: 'ok', ...(await describeTab(target, session.sessionId)) })

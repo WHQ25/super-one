@@ -15,7 +15,14 @@ describe('static host-owned SuperOne tool names', () => {
     for (const name of BROWSER_TOOL_NAMES) {
       expect(builtIn.has(name), `missing browser tool in BUILT_IN: ${name}`).toBe(true)
       expect(isStaticHostOwnedSuperoneBareName(name), name).toBe(true)
-      expect(isStaticHostOwnedSuperoneToolQualified(`mcp__superone__${name}`), name).toBe(true)
+      expect(isStaticHostOwnedSuperoneToolQualified(`mcp__superone__${name}`), name).toBe(!isNeverAutoAllowSuperoneBareName(name))
+    }
+  })
+
+  it('recognizes never-auto-allow tools as host-owned without short-circuiting them', () => {
+    for (const bare of NEVER_AUTO_ALLOW_SUPERONE_BARE_NAMES) {
+      expect(isStaticHostOwnedSuperoneBareName(bare), bare).toBe(true)
+      expect(isStaticHostOwnedSuperoneToolQualified(`mcp__superone__${bare}`), bare).toBe(false)
     }
   })
 })

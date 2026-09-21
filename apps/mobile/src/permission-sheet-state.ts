@@ -18,6 +18,8 @@ export type PermissionSheetPresentation = {
   approveLabel: string
   denyLabel: string
   alwaysLabel?: string
+  /** A second remember choice with a shorter lifetime (terminal command rules). */
+  sessionLabel?: string
   items: PermissionSheetItem[]
   destructive?: boolean
 }
@@ -223,7 +225,7 @@ export function permissionSheetPresentation(request: PermissionRequest): Permiss
       const reason = typeof request.input.description === 'string' ? request.input.description : undefined
       const rule = typeof request.input.rule === 'string' ? request.input.rule : undefined
       // Mirrors the desktop prompt: the command is the subject, so it lives in the
-      // item list, and "always" means the cmd:* rule for this project only.
+      // item list, and the regex rule can be kept for this session or for the project.
       return {
         title: action === 'attach' ? 'Attach to running command?' : action === 'close' ? 'Close terminal tab?' : 'Run in a terminal tab?',
         description: [
@@ -231,10 +233,11 @@ export function permissionSheetPresentation(request: PermissionRequest): Permiss
           action === 'close'
             ? 'The tab was opened by you; the agent wants to close it.'
             : 'The agent controls the tab only while this command runs.',
-          rule && request.allowAlwaysAllow ? `Always allow stores the rule ${rule} for this project.` : undefined,
+          rule && request.allowAlwaysAllow ? `Remembering keeps the rule ${rule} (a regular expression over the command) for this session or for this project.` : undefined,
         ].filter(Boolean).join(' '),
         approveLabel: 'Allow',
         alwaysLabel: request.allowAlwaysAllow ? 'Always allow' : undefined,
+        sessionLabel: request.allowAlwaysAllow ? 'Allow for session' : undefined,
         denyLabel: 'Deny',
         items: [{ title: command, subtitle: cwd || 'Terminal' }],
       }

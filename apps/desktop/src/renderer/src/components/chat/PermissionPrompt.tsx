@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
+import type { TerminalCommandRuleScope } from '@superone/shared/terminal-command-rules'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { useChatStore, useActiveSession, selectClaudeModels, selectClaudeAccount, useScopedSessionActions } from '@/stores/chat'
@@ -45,6 +46,12 @@ function MiniAppToolLabel({ info, textSize = 'text-xs' }: { info: MiniAppToolInf
 }
 
 /** Dev-only: comma-separated tool names to show debug data in permission prompt. */
+/** The two lifetimes a terminal command rule can be remembered for; keys 1 and 2. */
+const TERMINAL_RULE_SCOPES: ReadonlyArray<{ scope: TerminalCommandRuleScope; i18nKey: string; kbd: string }> = [
+  { scope: 'session', i18nKey: 'chat.permission.terminal.allowRuleForSession', kbd: '1' },
+  { scope: 'project', i18nKey: 'chat.permission.terminal.alwaysAllowRule', kbd: '2' },
+]
+
 const DEBUG_TOOL_NAMES: string[] = import.meta.env.DEV
   ? (import.meta.env.RENDERER_VITE_DEBUG_TOOL_NAMES ?? '').split(',').map((s: string) => s.trim().toLowerCase()).filter(Boolean)
   : []
@@ -153,12 +160,16 @@ export function PermissionPrompt() {
   // It only adds a third button.
   const isDeviceControlConfirm = pendingPermission?.requestKind === 'device_control_confirm'
   const isTerminalCommandConfirm = pendingPermission?.requestKind === 'terminal_command_confirm'
-  // Terminal keeps Allow / Deny and offers "always allow in this project" as a toggle
-  // row under them, shaped like Claude's rule suggestions so both read the same.
+  // Terminal keeps Allow / Deny and offers the command rule under them as two
+  // mutually exclusive toggle rows — remember for this session, or for the project —
+  // shaped like Claude's rule suggestions so both read the same.
   const terminalRule = isTerminalCommandConfirm && pendingPermission?.allowAlwaysAllow && typeof pendingPermission.input.rule === 'string'
     ? pendingPermission.input.rule
     : null
-  const [alwaysAllowRule, setAlwaysAllowRule] = useState(false)
+  const [rememberRule, setRememberRule] = useState<TerminalCommandRuleScope | null>(null)
+  const toggleRememberRule = useCallback((scope: TerminalCommandRuleScope) => {
+    setRememberRule((current) => (current === scope ? null : scope))
+  }, [])
   const isSelfManagedConfirm =
     isVideoGenConfirm
     || isConfigConfirm
@@ -217,7 +228,7 @@ export function PermissionPrompt() {
     setFeedback('')
     setFocusedIdx(0)
     setSelectedSuggestions(new Set())
-    setAlwaysAllowRule(false)
+    setRememberRule(null)
     setIsFeedbackFocused(false)
     setIsCollapsed(false)
     setFormValues({})
@@ -284,8 +295,9 @@ export function PermissionPrompt() {
       respondToPermission(requestId, true, false, undefined, undefined, undefined, formValues)
       return
     }
-    if (terminalRule && alwaysAllowRule) {
-      respondToPermission(requestId, true, true)
+    if (terminalRule && rememberRule) {
+      // `alwaysAllow` stays the generic "remember" flag; the lifetime rides in formAnswers.
+      respondToPermission(requestId, true, rememberRule === 'project', undefined, undefined, undefined, { scope: rememberRule })
       return
     }
     if (selectedSuggestions.size > 0) {
@@ -306,7 +318,7 @@ export function PermissionPrompt() {
     } else {
       respondToPermission(requestId, true)
     }
-  }, [requestId, respondToPermission, selectedSuggestions, isElicitation, formValues, autoEligible, pendingPermission, setPermissionMode, terminalRule, alwaysAllowRule])
+  }, [requestId, respondToPermission, selectedSuggestions, isElicitation, formValues, autoEligible, pendingPermission, setPermissionMode, terminalRule, rememberRule])
 
   const handleElicitationAlwaysAllow = useCallback(() => {
     if (!requestId) return
@@ -395,9 +407,9 @@ export function PermissionPrompt() {
         return
       }
 
-      if (terminalRule && e.key === '1') {
+      if (terminalRule && (e.key === '1' || e.key === '2')) {
         e.preventDefault()
-        setAlwaysAllowRule((v) => !v)
+        toggleRememberRule(e.key === '1' ? 'session' : 'project')
         return
       }
 
@@ -428,7 +440,7 @@ export function PermissionPrompt() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, handleAlwaysAllow, isCodexDecisionPrompt, hasHostAlwaysButton, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef, defaultToNo, terminalRule])
+  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, handleAlwaysAllow, isCodexDecisionPrompt, hasHostAlwaysButton, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef, defaultToNo, terminalRule, toggleRememberRule])
 
   if (!pendingPermission) return null
 
@@ -813,8 +825,8 @@ export function PermissionPrompt() {
                     // unless both say theirs. "Allow" next to "Always Allow" invites
                     // the user to assume the first one also sticks.
                     {...(isDeviceControlConfirm ? { approveLabel: t('chat.permission.allowForSession') } : {})}
-                    approveSuffix={(selectedSuggestions.size > 0 || alwaysAllowRule) && (
-                      <span className="ml-1 text-xs text-success-foreground/70">+{selectedSuggestions.size + (alwaysAllowRule ? 1 : 0)}</span>
+                    approveSuffix={(selectedSuggestions.size > 0 || rememberRule !== null) && (
+                      <span className="ml-1 text-xs text-success-foreground/70">+{selectedSuggestions.size + (rememberRule ? 1 : 0)}</span>
                     )}
                     extraActions={hasHostAlwaysButton && (
                       <PermissionActionButton
@@ -835,28 +847,36 @@ export function PermissionPrompt() {
                   />
                 )}
                 {terminalRule && (
-                  <button
-                    type="button"
-                    aria-pressed={alwaysAllowRule}
-                    className={`flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-xs transition-colors ${
-                      alwaysAllowRule
-                        ? 'border-success/50 bg-success/10 text-success hover:bg-success/20'
-                        : 'border-border text-muted-foreground hover:bg-success/10 hover:text-success'
-                    }`}
-                    onClick={() => setAlwaysAllowRule((v) => !v)}
-                  >
-                    {alwaysAllowRule
-                      ? <CheckCircle2 className="size-3.5 shrink-0 text-success" />
-                      : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />}
-                    <span className="min-w-0 truncate">
-                      <Trans
-                        i18nKey="chat.permission.terminal.alwaysAllowRule"
-                        values={{ rule: terminalRule }}
-                        components={{ rule: <span className="font-mono font-medium" /> }}
-                      />
-                    </span>
-                    <Kbd variant="square" className="ml-auto">1</Kbd>
-                  </button>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {TERMINAL_RULE_SCOPES.map(({ scope, i18nKey, kbd }) => {
+                      const isSelected = rememberRule === scope
+                      return (
+                        <button
+                          key={scope}
+                          type="button"
+                          aria-pressed={isSelected}
+                          className={`flex h-7 w-full cursor-pointer items-center gap-1.5 rounded border px-2.5 text-xs transition-colors ${
+                            isSelected
+                              ? 'border-success/50 bg-success/10 text-success hover:bg-success/20'
+                              : 'border-border text-muted-foreground hover:bg-success/10 hover:text-success'
+                          }`}
+                          onClick={() => toggleRememberRule(scope)}
+                        >
+                          {isSelected
+                            ? <CheckCircle2 className="size-3.5 shrink-0 text-success" />
+                            : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />}
+                          <span className="min-w-0 truncate">
+                            <Trans
+                              i18nKey={i18nKey}
+                              values={{ rule: terminalRule }}
+                              components={{ rule: <span className="font-mono font-medium" /> }}
+                            />
+                          </span>
+                          <Kbd variant="square" className="ml-auto">{kbd}</Kbd>
+                        </button>
+                      )
+                    })}
+                  </div>
                 )}
                 {hasSuggestionRow && (
                   <div className="grid grid-cols-1 gap-1.5">

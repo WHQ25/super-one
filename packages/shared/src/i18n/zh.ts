@@ -1069,7 +1069,7 @@ export const zh: Messages = {
       subtitle: '管理智能体在终端标签页中可以运行的命令',
       rules: {
         title: '始终允许的命令',
-        description: '你在审批时选择“在此项目中始终允许”的命令。匹配的命令会直接在终端标签页运行，不再询问；删除规则后下次会重新询问。',
+        description: '你在审批时选择“在此项目中始终允许”的命令。每条规则是对整条命令做匹配的正则表达式；匹配的命令会直接在终端标签页运行，不再询问。删除规则后下次会重新询问。',
         empty: '暂无始终允许的命令。',
         remove: '删除该规则',
         error: '规则加载失败。',
@@ -2014,6 +2014,7 @@ export const zh: Messages = {
         run: '在终端中运行',
         attach: '与运行中的命令交互',
         close: '关闭终端标签页',
+        allowRuleForSession: '本次会话允许 <rule>{{rule}}</rule>',
         alwaysAllowRule: '本项目始终允许 <rule>{{rule}}</rule>',
       },
       openUrl: '在浏览器中打开',

@@ -292,7 +292,7 @@ describe('PermissionPrompt', () => {
         requestId: 'req-term',
         toolName: 'mcp__superone__terminal_tabs',
         toolUseId: 'tu-term',
-        input: { action: 'run', command: 'npm run dev', cwd: '/repo', rule: 'npm run:*' },
+        input: { action: 'run', command: 'npm run dev', cwd: '/repo', rule: 'npm run( .*)?' },
         allowAlwaysAllow: true,
         supportsAlwaysPersist: true,
         requestKind: 'terminal_command_confirm',
@@ -301,32 +301,47 @@ describe('PermissionPrompt', () => {
       }]
     })
 
-    it('keeps Allow / Deny and offers the project rule as a toggle, off by default', () => {
+    const sessionRow = () => screen.getByRole('button', { name: /allow npm run\( \.\*\)\? for this session/i })
+    const projectRow = () => screen.getByRole('button', { name: /always allow npm run\( \.\*\)\? in this project/i })
+    // The approve button reads "Allow⏎", or "Allow+1⏎" once a rule row is on.
+    const allowButton = () => screen.getByRole('button', { name: /^allow(\+1)?⏎$/i })
+
+    it('keeps Allow / Deny and offers the rule for the session or the project, both off by default', () => {
       renderInChat(<PermissionPrompt />)
-      expect(screen.getByRole('button', { name: /^allow/i })).toBeTruthy()
+      expect(allowButton()).toBeTruthy()
       expect(screen.getByRole('button', { name: /deny/i })).toBeTruthy()
       expect(screen.queryByRole('button', { name: /always allow in project/i })).toBeNull()
-      const toggle = screen.getByRole('button', { pressed: false, name: /always allow npm run:\* in this project/i })
-      expect(toggle).toBeTruthy()
+      expect(sessionRow().getAttribute('aria-pressed')).toBe('false')
+      expect(projectRow().getAttribute('aria-pressed')).toBe('false')
 
-      fireEvent.click(screen.getByRole('button', { name: /^allow/i }))
+      fireEvent.click(allowButton())
       expect(chatState.respondToPermission).toHaveBeenCalledWith('req-term', true)
     })
 
-    it('stores the rule when the toggle is on and Allow is pressed', () => {
+    it('stores the rule for the project when that row is on and Allow is pressed', () => {
       renderInChat(<PermissionPrompt />)
-      fireEvent.click(screen.getByRole('button', { name: /always allow npm run:\* in this project/i }))
-      expect(screen.getByRole('button', { pressed: true })).toBeTruthy()
+      fireEvent.click(projectRow())
+      expect(projectRow().getAttribute('aria-pressed')).toBe('true')
 
       fireEvent.keyDown(window, { key: 'Enter' })
-      expect(chatState.respondToPermission).toHaveBeenCalledWith('req-term', true, true)
+      expect(chatState.respondToPermission).toHaveBeenCalledWith('req-term', true, true, undefined, undefined, undefined, { scope: 'project' })
     })
 
-    it('toggles the rule with the 1 key', () => {
+    it('keeps the rule for the session only when that row is on', () => {
+      renderInChat(<PermissionPrompt />)
+      fireEvent.click(sessionRow())
+      fireEvent.click(allowButton())
+      expect(chatState.respondToPermission).toHaveBeenCalledWith('req-term', true, false, undefined, undefined, undefined, { scope: 'session' })
+    })
+
+    it('toggles the rows with the 1 / 2 keys, one at a time', () => {
       renderInChat(<PermissionPrompt />)
       fireEvent.keyDown(window, { key: '1' })
-      expect(screen.getByRole('button', { pressed: true })).toBeTruthy()
-      fireEvent.keyDown(window, { key: '1' })
+      expect(sessionRow().getAttribute('aria-pressed')).toBe('true')
+      fireEvent.keyDown(window, { key: '2' })
+      expect(sessionRow().getAttribute('aria-pressed')).toBe('false')
+      expect(projectRow().getAttribute('aria-pressed')).toBe('true')
+      fireEvent.keyDown(window, { key: '2' })
       expect(screen.queryByRole('button', { pressed: true })).toBeNull()
     })
 
@@ -339,6 +354,7 @@ describe('PermissionPrompt', () => {
       renderInChat(<PermissionPrompt />)
       expect(screen.queryByRole('button', { pressed: false })).toBeNull()
       expect(screen.queryByText(/always allow/i)).toBeNull()
+      expect(screen.queryByText(/for this session/i)).toBeNull()
     })
   })
 })

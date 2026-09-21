@@ -1,6 +1,7 @@
 import type { RequestPermissionRequest } from '@agentclientprotocol/sdk'
 import { isMainThreadOnlySuperoneTool } from '@superone/shared/superone-host-owned-tools'
 import { isBuiltInSuperoneTool, isToolPreapproved } from '../mcp/superone-mcp-server'
+import { isTerminalTabsTool } from '../mcp/terminal-tabs-harness-gate'
 import { normalizeAcpTool } from './acp-event-map'
 
 /**
@@ -89,6 +90,8 @@ function looksLikeAcpSubagentCall(
 export type AcpPermissionDecision =
   | { kind: 'deny'; toolName: string; reason: 'main_thread_only' }
   | { kind: 'auto-allow'; toolName: string; reason: AcpPreapproveReason; alwaysAllow: boolean }
+  /** A `terminal_tabs` call: the host terminal gate answers, not the generic prompt. */
+  | { kind: 'terminal-gate'; input: Record<string, unknown> }
   | { kind: 'prompt' }
 
 /**
@@ -108,7 +111,11 @@ export function decideAcpPermission(
     return { kind: 'deny', toolName: mainThreadTool, reason: 'main_thread_only' }
   }
   const pre = shouldAutoAllowAcpPermission(params)
-  if (!pre.allow) return { kind: 'prompt' }
+  if (!pre.allow) {
+    return names.some(isTerminalTabsTool)
+      ? { kind: 'terminal-gate', input: collectToolInput(params) }
+      : { kind: 'prompt' }
+  }
   return {
     kind: 'auto-allow',
     toolName: pre.toolName,

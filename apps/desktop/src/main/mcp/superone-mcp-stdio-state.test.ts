@@ -19,12 +19,16 @@ const {
   STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES,
 } = await import('@superone/shared/superone-host-owned-tools')
 
-const expectedCodexToolApprovals = Object.fromEntries(
-  STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES.map((qualifiedName) => [
-    qualifiedName.slice(MCP_SUPERONE_TOOL_PREFIX.length),
-    { approval_mode: 'approve' },
-  ]),
-)
+const expectedCodexToolApprovals = {
+  ...Object.fromEntries(
+    STATIC_HOST_OWNED_SUPERONE_QUALIFIED_TOOL_NAMES.map((qualifiedName) => [
+      qualifiedName.slice(MCP_SUPERONE_TOOL_PREFIX.length),
+      { approval_mode: 'approve' },
+    ]),
+  ),
+  // The command inside must reach Codex's approval policy and then the host terminal gate.
+  terminal_tabs: { approval_mode: 'prompt' },
+}
 
 describe('getCodexSuperoneMcpConfig', () => {
   beforeEach(() => {
@@ -81,6 +85,8 @@ describe('getCodexSuperoneMcpConfig', () => {
       session_collab_request: { approval_mode: 'approve' },
       config_apply: { approval_mode: 'approve' },
       miniapp_call: { approval_mode: 'approve' },
+      terminal_tabs: { approval_mode: 'prompt' },
+      terminal_act: { approval_mode: 'approve' },
     })
     // Personal memory is static; live computer control stays feature-gated.
     expect(Object.keys(tools ?? {}).filter((name) => name.startsWith('computer_')).sort()).toEqual(['computer_memory_read', 'computer_memory_write'])

@@ -153,7 +153,7 @@ export const McpTool: Story = {
   )],
 }
 
-/** Host confirm for an agent terminal command: Allow / Deny, plus the "always allow in this project" toggle row. */
+/** Host confirm for an agent terminal command: Allow / Deny, plus the "for this session" / "always in this project" rule rows. */
 export const TerminalCommand: Story = {
   decorators: [(Story) => (
     <>
@@ -165,7 +165,7 @@ export const TerminalCommand: Story = {
           action: 'run',
           command: 'bun run storybook --ci',
           cwd: '/Users/me/Developer/super-one/apps/desktop',
-          rule: 'bun run:*',
+          rule: 'bun run storybook( .*)?',
           description: 'Start Storybook to check the new terminal stories',
         },
         allowAlwaysAllow: true,
@@ -173,6 +173,34 @@ export const TerminalCommand: Story = {
         requestKind: 'terminal_command_confirm',
         serverName: 'superone',
         message: 'Run `bun run storybook --ci` in a terminal tab?',
+      }} />
+      <Story />
+    </>
+  )],
+}
+
+/** A command with a leading env assignment; the derived rule generalizes the assignment. */
+export const TerminalCommandWithEnv: Story = {
+  decorators: [(Story) => (
+    <>
+      <SeedPermission request={{
+        requestId: 'p-terminal-env',
+        toolName: 'mcp__superone__terminal_tabs',
+        toolUseId: 'tu-terminal-env',
+        input: {
+          action: 'run',
+          command: 'REMOTE_DEBUGGING_PORT=9361 bun run dev',
+          cwd: '/Users/me/Developer/super-one',
+          rule: '(\\w+=\\S+ )*bun run dev( .*)?',
+          description: 'Start the desktop app with remote debugging so I can drive the renderer',
+        },
+        allowAlwaysAllow: true,
+        supportsAlwaysPersist: true,
+        defaultToNo: true,
+        decisionReason: 'Auto mode could not verify this command is safe to run without asking.',
+        requestKind: 'terminal_command_confirm',
+        serverName: 'superone',
+        message: 'Run `REMOTE_DEBUGGING_PORT=9361 bun run dev` in a terminal tab?',
       }} />
       <Story />
     </>

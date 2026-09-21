@@ -21,6 +21,12 @@ vi.mock('../../usage-stats-service', async (importOriginal) => {
   }
 })
 
+const mockTerminalGate = vi.fn()
+vi.mock('../../mcp/terminal-tabs-harness-gate', () => ({
+  isTerminalTabsTool: (name: string) => name === 'mcp__superone__terminal_tabs',
+  gateTerminalTabsCall: (...args: unknown[]) => mockTerminalGate(...args),
+}))
+
 import { AcpBackend, setAcpRuntimeFactory } from './acp-backend'
 import type { AcpRuntimeOptions } from '../../acp/acp-runtime'
 import { acpStartOpts as startOpts, mockAcpRuntime as mockRuntime } from '../../../test/fixtures/acp-backend-fixtures'
@@ -34,6 +40,28 @@ describe('AcpBackend', () => {
 
   afterEach(() => {
     setAcpRuntimeFactory(null)
+  })
+
+  it.each(['interrupt', 'close'] as const)('cancels terminal approvals on %s', async (action) => {
+    let captured: AcpRuntimeOptions | undefined
+    let signal: AbortSignal | undefined
+    mockTerminalGate.mockImplementationOnce((_session, _input, options) => {
+      signal = options.signal
+      return new Promise((resolve) => signal!.addEventListener('abort', () => resolve({ status: 'cancelled' }), { once: true }))
+    })
+    setAcpRuntimeFactory(async (opts) => { captured = opts; return mockRuntime() })
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    const approval = captured!.permission.request({
+      sessionId: 'acp-sess-1',
+      toolCall: { toolCallId: 'terminal-call', title: 'mcp__superone__terminal_tabs', rawInput: { action: 'run', command: 'bun run dev' } },
+      options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' }],
+    })
+    expect(signal?.aborted).toBe(false)
+    await backend[action]()
+    expect(signal?.aborted).toBe(true)
+    expect(await approval).toEqual({ outcome: { outcome: 'cancelled' } })
+    await backend.close()
   })
 
   it('starts and reports kind acp', async () => {

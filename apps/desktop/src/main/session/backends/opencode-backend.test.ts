@@ -5,6 +5,10 @@ import type { OpenCodeRuntime, OpenCodeRuntimeEvent, OpenCodeRuntimeOptions } fr
 vi.mock('../../logger', () => ({ default: { debug: vi.fn(), warn: vi.fn() } }))
 vi.mock('../../mcp-config-service', () => ({ listMcpConfigs: () => [] }))
 vi.mock('../../mcp/superone-mcp-stdio-state', () => ({ getSuperoneMcpStdioConfig: () => null }))
+const mockGateTerminalTabsCall = vi.fn()
+vi.mock('../../mcp/terminal-tabs-harness-gate', () => ({
+  gateTerminalTabsCall: (...args: unknown[]) => mockGateTerminalTabsCall(...args),
+}))
 
 import { OpenCodeBackend, setOpenCodeRuntimeFactory } from './opencode-backend'
 import type { BackendStartOptions } from '../types'
@@ -395,6 +399,106 @@ describe('OpenCodeBackend', () => {
     await send
     expect(prompt).not.toHaveBeenCalled()
     expect(command).not.toHaveBeenCalled()
+    await backend.close()
+  })
+
+  it('answers a terminal_tabs permission from the host gate using the tool part input', async () => {
+    mockGateTerminalTabsCall.mockReset()
+    const backend = new OpenCodeBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((event) => events.push(event))
+    await backend.start(startOptions())
+    const send = backend.send({ content: 'start dev', model: 'openai/gpt-5', assistantMessageId: 'assistant-local' })
+    await vi.waitFor(() => expect(prompt).toHaveBeenCalledOnce())
+    // OpenCode publishes the running tool part (with input) before it asks.
+    route({
+      id: 'event-terminal-tool',
+      type: 'message.part.updated',
+      properties: {
+        sessionID: 'oc-session',
+        part: {
+          id: 'terminal-part',
+          sessionID: 'oc-session',
+          messageID: 'assistant-message',
+          type: 'tool',
+          callID: 'terminal-call',
+          tool: 'superone_terminal_tabs',
+          state: { status: 'running', input: { action: 'run', command: 'bun run dev' }, time: { start: 5 } },
+        },
+        time: 5,
+      },
+    } as OpenCodeRuntimeEvent)
+
+    mockGateTerminalTabsCall.mockResolvedValueOnce({ status: 'allowed' })
+    route({
+      id: 'permission-terminal',
+      type: 'permission.asked',
+      properties: {
+        id: 'permission-t1',
+        sessionID: 'oc-session',
+        permission: 'superone_terminal_tabs',
+        patterns: ['*'],
+        metadata: {},
+        always: ['*'],
+        tool: { callID: 'terminal-call', messageID: 'assistant-message' },
+      },
+    } as OpenCodeRuntimeEvent)
+    expect(mockGateTerminalTabsCall).toHaveBeenCalledWith('superone-session', { action: 'run', command: 'bun run dev' }, { signal: expect.any(AbortSignal) })
+    await vi.waitFor(() => expect(permissionReply).toHaveBeenCalledWith('permission-t1', 'once'))
+    // Allow-once only, and no generic permission_request for the tool name.
+    expect(backend.getPendingInteractions()).toHaveLength(0)
+    expect(events.some((e) => e.type === 'permission_request')).toBe(false)
+
+    mockGateTerminalTabsCall.mockResolvedValueOnce({ status: 'rejected', reason: 'no' })
+    route({
+      id: 'permission-terminal-2',
+      type: 'permission.v2.asked',
+      properties: {
+        id: 'permission-t2',
+        sessionID: 'oc-session',
+        action: 'superone_terminal_tabs',
+        resources: ['*'],
+        metadata: {},
+        save: ['*'],
+        source: { callID: 'terminal-call', messageID: 'assistant-message' },
+      },
+    } as OpenCodeRuntimeEvent)
+    await vi.waitFor(() => expect(permissionReply).toHaveBeenCalledWith('permission-t2', 'reject'))
+    await backend.interrupt()
+    await send
+    await backend.close()
+  })
+
+  it.each(['interrupt', 'close'] as const)('aborts terminal approvals on %s and ignores a late answer', async (action) => {
+    let resolveGate!: (value: { status: string }) => void
+    let signal: AbortSignal | undefined
+    mockGateTerminalTabsCall.mockReset()
+    mockGateTerminalTabsCall.mockImplementation((_session, _input, opts) => {
+      signal = opts.signal
+      return new Promise((resolve) => { resolveGate = resolve })
+    })
+    const backend = new OpenCodeBackend()
+    await backend.start(startOptions())
+    const send = backend.send({ content: 'run', assistantMessageId: 'old-turn' })
+    await vi.waitFor(() => expect(prompt).toHaveBeenCalledOnce())
+    route({ type: 'message.part.updated', properties: { sessionID: 'oc-session', part: {
+      id: 'terminal-part', sessionID: 'oc-session', messageID: 'assistant-message', type: 'tool',
+      callID: 'terminal-call', tool: 'superone_terminal_tabs',
+      state: { status: 'running', input: { action: 'run', command: 'bun run dev' }, time: { start: 5 } },
+    } } } as OpenCodeRuntimeEvent)
+    route({ type: 'permission.asked', properties: {
+      id: 'old-approval', sessionID: 'oc-session', permission: 'superone_terminal_tabs',
+      patterns: ['*'], metadata: {}, always: ['*'],
+      tool: { callID: 'terminal-call', messageID: 'assistant-message' },
+    } } as OpenCodeRuntimeEvent)
+    expect(signal?.aborted).toBe(false)
+    await backend[action]()
+    await send
+    expect(signal?.aborted).toBe(true)
+    resolveGate({ status: 'allowed' })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(permissionReply).not.toHaveBeenCalled()
     await backend.close()
   })
 

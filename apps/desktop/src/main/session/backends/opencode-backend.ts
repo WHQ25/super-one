@@ -16,6 +16,7 @@ import { buildAgentErrorInfo } from '@superone/shared/agent-error'
 import log from '../../logger'
 import { DEADLINE_EXCEEDED, INTERRUPT_CANCEL_TIMEOUT_MS, withDeadline } from '../../promise-deadline'
 import { resolveComputerUseGrant, rejectComputerUseGrant } from '../../computer-use/grant-request'
+import { gateTerminalTabsCall } from '../../mcp/terminal-tabs-harness-gate'
 import { dispatchOpenCodeRequest } from '../../opencode/opencode-command'
 import {
   commonPrefixLength,
@@ -27,6 +28,7 @@ import {
   openCodeToolName,
   readOpenCodeConfig,
   routeOpenCodeTodoEvent,
+  isOpenCodeTerminalTabsPermission,
   textFromOpenCodePart,
 } from '../../opencode/opencode-event-map'
 import {
@@ -63,6 +65,7 @@ export class OpenCodeBackend implements SessionBackend {
   private permissionMode: PermissionMode = 'default'
   private started = false
   private disposed = false
+  private terminalPermissionAbort = new AbortController()
   private interrupted = false
   private currentMessageId: string | null = null
   private activeTurn: { messageId: string; resolve: () => void } | null = null
@@ -223,6 +226,8 @@ export class OpenCodeBackend implements SessionBackend {
     if (this.activeTurn) throw new Error('OpenCodeBackend already has an active turn')
     const messageId = request.assistantMessageId ?? `opencode_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     this.resetTurnState()
+    this.terminalPermissionAbort.abort()
+    this.terminalPermissionAbort = new AbortController()
     this.currentMessageId = messageId
     this.interrupted = false
     this.emit({
@@ -266,6 +271,7 @@ export class OpenCodeBackend implements SessionBackend {
     } finally {
       const activeTurn = this.activeTurn as { messageId: string; resolve: () => void } | null
       if (activeTurn?.messageId === messageId) this.activeTurn = null
+      this.terminalPermissionAbort.abort()
       this.currentMessageId = null
       this.resetTurnState()
       // User-typed messages outrank host task notifications.
@@ -275,6 +281,7 @@ export class OpenCodeBackend implements SessionBackend {
   }
 
   async interrupt(): Promise<void> {
+    this.terminalPermissionAbort.abort()
     this.interrupted = true
     this.pendingQueued.clear()
     for (const requestId of [...this.pendingPermissions.keys()]) this.respondToPermission(requestId, false)
@@ -294,6 +301,7 @@ export class OpenCodeBackend implements SessionBackend {
   }
 
   private async closeRuntime(): Promise<void> {
+    this.terminalPermissionAbort.abort()
     this.runtimeEpoch += 1
     const pending = this.runtimePromise
     const abortController = this.runtimeAbortController
@@ -309,6 +317,7 @@ export class OpenCodeBackend implements SessionBackend {
   }
 
   private invalidateRuntime(): void {
+    this.terminalPermissionAbort.abort()
     const runtime = this.runtime
     this.runtime = null
     this.runtimeEpoch += 1
@@ -448,6 +457,7 @@ export class OpenCodeBackend implements SessionBackend {
 
   private complete(messageId: string, interrupted = false): void {
     if (this.terminalMessageId === messageId) return
+    this.terminalPermissionAbort.abort()
     this.terminalMessageId = messageId
     this.emit({
       type: interrupted ? 'message_interrupted' : 'message_complete',
@@ -460,6 +470,7 @@ export class OpenCodeBackend implements SessionBackend {
 
   private fail(messageId: string, error: string): void {
     if (this.terminalMessageId === messageId) return
+    this.terminalPermissionAbort.abort()
     this.terminalMessageId = messageId
     this.emit({ type: 'message_error', messageId, error, errorInfo: buildAgentErrorInfo(error) })
     this.emit({ type: 'status_change', status: 'error' })
@@ -485,6 +496,35 @@ export class OpenCodeBackend implements SessionBackend {
         ? { type: 'thinking', thinking: delta, startedAt: part.time.start, endedAt: part.time.end }
         : { type: 'text', text: delta },
     })
+  }
+
+  /**
+   * `terminal_tabs` is left out of the SuperOne allow rules so OpenCode's own
+   * permission mode sees it. OpenCode's ask carries no arguments for MCP tools,
+   * but the tool part for the same callID was published — with `state.input` —
+   * before the tool started, so the command is read from there and answered by
+   * the host terminal gate. Allow-once only: OpenCode's `always` is name-level.
+   */
+  private gateTerminalPermission(requestId: string, permission: string, callID: string | undefined): boolean {
+    if (!isOpenCodeTerminalTabsPermission(permission) || !callID || !this.opts) return false
+    const part = [...this.partById.values()].find((p) => p.type === 'tool' && p.callID === callID)
+    const input = part?.type === 'tool' && 'input' in part.state && part.state.input && typeof part.state.input === 'object'
+      ? part.state.input as Record<string, unknown>
+      : null
+    if (!input) return false
+    const runtime = this.runtime
+    const messageId = this.currentMessageId
+    const signal = this.terminalPermissionAbort.signal
+    void gateTerminalTabsCall(this.opts.sessionId, input, { signal }).then((auth) => {
+      if (signal.aborted || this.runtime !== runtime) return
+      const reply = auth.status === 'allowed' ? 'once' : 'reject'
+      return runtime?.permissionReply(requestId, reply)
+    }).catch((error) => {
+      if (!signal.aborted && this.runtime === runtime && messageId && this.currentMessageId === messageId) {
+        this.fail(messageId, openCodeErrorMessage(error))
+      }
+    })
+    return true
   }
 
   private emitTool(part: Extract<Part, { type: 'tool' }>, messageId: string): void {
@@ -596,6 +636,7 @@ export class OpenCodeBackend implements SessionBackend {
     }
 
     if (event.type === 'permission.asked') {
+      if (this.gateTerminalPermission(event.properties.id, event.properties.permission, event.properties.tool?.callID)) return
       const request = mapOpenCodePermissionRequest({
         id: event.properties.id,
         permission: event.properties.permission,
@@ -612,6 +653,7 @@ export class OpenCodeBackend implements SessionBackend {
     }
 
     if (event.type === 'permission.v2.asked') {
+      if (this.gateTerminalPermission(event.properties.id, event.properties.action, event.properties.source?.callID)) return
       const request = mapOpenCodePermissionRequest({
         id: event.properties.id,
         permission: event.properties.action,

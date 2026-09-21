@@ -64,3 +64,42 @@ test('a put-away sheet keeps what was typed for when it comes back', async () =>
   await act(async () => { view.rerender(sheet(false)) })
   expect(screen.getByDisplayValue('not on main')).toBeTruthy()
 })
+
+const terminal: PermissionRequest = {
+  requestId: 'perm-term',
+  toolName: 'mcp__superone__terminal_tabs',
+  input: { action: 'run', command: 'bun run dev', cwd: '/repo', rule: 'bun run( .*)?' },
+  allowAlwaysAllow: true,
+  supportsAlwaysPersist: true,
+  requestKind: 'terminal_command_confirm',
+  serverName: 'superone',
+}
+
+test('a terminal command remembers its rule for the session or the project, one at a time', async () => {
+  const onAllow = jest.fn()
+  await renderSheet(<PermissionSheet perm={terminal} onAllow={onAllow} onDeny={() => {}} />)
+  const session = () => screen.getByTestId('prompt-option-Allow for Session')
+  const project = () => screen.getByTestId('prompt-option-Always Allow')
+
+  await act(async () => { fireEvent.press(session()) })
+  expect(session().props.accessibilityState.checked).toBe(true)
+  await act(async () => { fireEvent.press(project()) })
+  expect(session().props.accessibilityState.checked).toBe(false)
+  expect(project().props.accessibilityState.checked).toBe(true)
+
+  await act(async () => { fireEvent.press(screen.getByTestId('prompt-approve')) })
+  // The lifetime rides in formAnswers; alwaysAllow stays the desktop's "remember" flag.
+  expect(onAllow).toHaveBeenLastCalledWith('perm-term', { scope: 'project' }, true, undefined)
+
+  await act(async () => { fireEvent.press(project()) })
+  await act(async () => { fireEvent.press(session()) })
+  await act(async () => { fireEvent.press(screen.getByTestId('prompt-approve')) })
+  expect(onAllow).toHaveBeenLastCalledWith('perm-term', { scope: 'session' }, false, undefined)
+})
+
+test('a plain terminal approve carries no rule', async () => {
+  const onAllow = jest.fn()
+  await renderSheet(<PermissionSheet perm={terminal} onAllow={onAllow} onDeny={() => {}} />)
+  await act(async () => { fireEvent.press(screen.getByTestId('prompt-approve')) })
+  expect(onAllow).toHaveBeenLastCalledWith('perm-term', undefined, false, undefined)
+})

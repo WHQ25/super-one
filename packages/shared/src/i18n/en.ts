@@ -1913,7 +1913,9 @@ export type Messages = {
         run: string
         attach: string
         close: string
-        /** Toggle row under Allow / Deny: opting in stores the cmd:* rule for this project. */
+        /** Toggle row under Allow / Deny: opting in keeps the command rule for this chat session. */
+        allowRuleForSession: string
+        /** Toggle row under Allow / Deny: opting in stores the command rule for this project. */
         alwaysAllowRule: string
       }
       openUrl: string
@@ -4842,7 +4844,7 @@ export const en: Messages = {
       subtitle: 'Manage what the agent may run in terminal tabs',
       rules: {
         title: 'Always-Allowed Commands',
-        description: 'Commands you approved with "Always allow in this project". A matching command runs in a terminal tab without asking again; remove a rule to be asked next time.',
+        description: 'Commands you approved with "Always allow in this project". Each rule is a regular expression matched against the whole command; a matching command runs in a terminal tab without asking again. Remove a rule to be asked next time.',
         empty: 'No commands are always allowed yet.',
         remove: 'Remove this rule',
         error: 'Could not load the rules.',
@@ -5789,6 +5791,7 @@ export const en: Messages = {
         run: 'Run in Terminal',
         attach: 'Interact with Running Command',
         close: 'Close Terminal Tab',
+        allowRuleForSession: 'Allow <rule>{{rule}}</rule> for this session',
         alwaysAllowRule: 'Always allow <rule>{{rule}}</rule> in this project',
       },
       openUrl: 'Open in browser',

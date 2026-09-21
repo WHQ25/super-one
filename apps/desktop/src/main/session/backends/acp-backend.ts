@@ -37,6 +37,7 @@ import { describeAcpRequestFailure } from '../../acp/acp-request-error'
 import { notifySessionRecapReceived } from '../../acp/acp-recap-focus'
 import { mapPermissionDecision, mapPermissionRequest, type PendingPermissionOptions } from '../../acp/acp-permission-map'
 import { decideAcpPermission } from '../../acp/acp-permission-preapprove'
+import { gateTerminalTabsCall } from '../../mcp/terminal-tabs-harness-gate'
 import { grantParentMainThreadCall } from '../../mcp/main-thread-session-guard'
 import {
   buildAskUserQuestionRequest,
@@ -191,6 +192,7 @@ export class AcpBackend implements SessionBackend {
       warn: (message) => log.warn(message),
     },
   )
+  private terminalPermissionAbort = new AbortController()
   private interrupted = false
   private currentMessageId: string | null = null
   /** Assistant bubble the live `session/prompt` is currently streaming into. */
@@ -871,6 +873,14 @@ export class AcpBackend implements SessionBackend {
       )
       return Promise.resolve(mapPermissionDecision(options, true, decision.alwaysAllow))
     }
+    if (decision.kind === 'terminal-gate' && this.startOpts?.sessionId) {
+      // Allow-once only: the remembered grant is the host's command rule, never the
+      // agent's name-level allow_always, which would cover every future command.
+      const signal = this.terminalPermissionAbort.signal
+      return gateTerminalTabsCall(this.startOpts.sessionId, decision.input, { signal })
+        .then((auth) => mapPermissionDecision(options, auth.status === 'allowed', false,
+          signal.aborted || auth.status === 'cancelled' ? 'cancel' : undefined))
+    }
     const event: AgentEvent = { type: 'permission_request', request }
     return new Promise((resolve) => {
       this.pendingPermissions.set(request.requestId, { resolve, options, event })
@@ -1076,6 +1086,7 @@ export class AcpBackend implements SessionBackend {
    * the start of a new turn, and a concurrent prompt would otherwise park.
    */
   private async cancelLivePrompt(): Promise<void> {
+    this.terminalPermissionAbort.abort()
     const inFlight = this.activePrompt
     this.interrupted = true
     try {
@@ -1300,6 +1311,8 @@ export class AcpBackend implements SessionBackend {
     }
     const messageId = request.assistantMessageId
       ?? `acp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    this.terminalPermissionAbort.abort()
+    this.terminalPermissionAbort = new AbortController()
     this.interrupted = false
     this.currentMessageId = messageId
     this.liveAssistantId = messageId
@@ -1379,6 +1392,7 @@ export class AcpBackend implements SessionBackend {
       }
     } finally {
       this.activePrompt = null
+      this.terminalPermissionAbort.abort()
       this.currentMessageId = null
       this.liveAssistantId = null
       this.promptMessageIds.clear()
@@ -1391,6 +1405,7 @@ export class AcpBackend implements SessionBackend {
   }
 
   async interrupt(): Promise<void> {
+    this.terminalPermissionAbort.abort()
     this.interrupted = true
     this.pendingQueued.clear()
     for (const [id, pending] of this.pendingPermissions) {
@@ -1417,6 +1432,7 @@ export class AcpBackend implements SessionBackend {
   }
 
   private async teardownRuntime(): Promise<void> {
+    this.terminalPermissionAbort.abort()
     for (const [id, pending] of this.pendingPermissions) {
       pending.resolve({ outcome: { outcome: 'cancelled' } })
       this.pendingPermissions.delete(id)

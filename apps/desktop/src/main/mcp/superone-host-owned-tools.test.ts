@@ -6,6 +6,7 @@ vi.mock('../browser/browser-webmcp', () => ({
   isWebMcpEnabled: () => gates.webmcp,
 }))
 import { BUILT_IN_SUPERONE_TOOL_NAMES } from './superone-mcp-builtin-defs'
+import { isNeverAutoAllowSuperoneBareName } from '@superone/shared/superone-host-owned-tools'
 import { COMPUTER_USE_TOOL_NAMES, setComputerUseEnabledForTests } from '../computer-use/tools'
 import {
   isBuiltInSuperoneToolQualified,
@@ -53,7 +54,7 @@ describe('superone host-owned tool auto-approve matrix', () => {
   it('auto-allows every static builtin when qualified (Claude/ACP path)', () => {
     gates.webmcp = true
     for (const bare of BUILT_IN_SUPERONE_TOOL_NAMES) {
-      if (bare === 'browser_tools_call') continue // deliberately harness-gated, see below
+      if (isNeverAutoAllowSuperoneBareName(bare)) continue // deliberately harness-gated, see below
       expect(isBuiltInSuperoneToolQualified(toQualifiedSuperoneToolName(bare)), bare).toBe(true)
     }
   })
@@ -85,6 +86,17 @@ describe('superone host-owned tool auto-approve matrix', () => {
       .toContain('mcp__superone__browser_tools_list')
   })
 
+  it('never auto-allows terminal_tabs, so the command reaches the harness layer and then the host gate', () => {
+    expect(isHostOwnedSuperoneBareName('terminal_tabs')).toBe(true)
+    expect(isBuiltInSuperoneToolQualified('mcp__superone__terminal_tabs')).toBe(false)
+    expect(listOpenCodeAutoAllowSuperoneBareNames()).not.toContain('terminal_tabs')
+    // The three tools that only drive an already-approved command stay host-owned.
+    for (const bare of ['terminal_snapshot', 'terminal_act', 'terminal_wait_for']) {
+      expect(isBuiltInSuperoneToolQualified(`mcp__superone__${bare}`), bare).toBe(true)
+      expect(listOpenCodeAutoAllowSuperoneBareNames()).toContain(bare)
+    }
+  })
+
   it('never auto-allows browser_tools_call, so page tools flow through harness permissions', () => {
     // It executes code a third-party website wrote. Site trust bounds *which* sites reach it;
     // the harness permission layer bounds each call, using controls the user already knows.
@@ -114,7 +126,7 @@ describe('superone host-owned tool auto-approve matrix', () => {
       gates.webmcp = true
       const off = listOpenCodeAutoAllowSuperoneBareNames()
       for (const bare of BUILT_IN_SUPERONE_TOOL_NAMES) {
-        if (bare === 'browser_tools_call') continue // never auto-allowed, by design
+        if (isNeverAutoAllowSuperoneBareName(bare)) continue // never auto-allowed, by design
         expect(off).toContain(bare)
       }
       expect(off).not.toContain('computer_apps')

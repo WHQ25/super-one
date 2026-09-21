@@ -24,6 +24,12 @@ vi.mock('../../deepseek/deepseek-runtime-host', () => ({
   },
 }))
 
+const mockGateTerminalTabsCall = vi.fn()
+vi.mock('../../mcp/terminal-tabs-harness-gate', () => ({
+  isTerminalTabsTool: (name: string) => name === 'mcp__superone__terminal_tabs',
+  gateTerminalTabsCall: (...args: unknown[]) => mockGateTerminalTabsCall(...args),
+}))
+
 import { DeepseekBackend } from './deepseek-backend'
 
 function makeOpts(overrides: Partial<BackendStartOptions> = {}): BackendStartOptions {
@@ -122,6 +128,27 @@ describe('DeepseekBackend', () => {
 
     expect(settled).toBe('allowed-once')
     expect(backend.getPendingInteractions()).toHaveLength(0)
+  })
+
+  it('answers a terminal_tabs call from the host terminal gate instead of the popover', async () => {
+    mockGateTerminalTabsCall.mockReset()
+    installFakeAgent()
+    const backend = new DeepseekBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((event) => events.push(event))
+    await backend.start(makeOpts())
+    const router = [...approvalRouters.values()][0]!
+    const input = { action: 'run', command: 'bun run dev' }
+
+    mockGateTerminalTabsCall.mockResolvedValueOnce({ status: 'allowed' })
+    await expect(router({ toolName: 'mcp__superone__terminal_tabs', input, callId: 'call-t' })).resolves.toBe('allowed-once')
+    expect(mockGateTerminalTabsCall).toHaveBeenCalledWith('s1', input, { signal: undefined })
+    expect(events.some((event) => event.type === 'permission_request')).toBe(false)
+
+    mockGateTerminalTabsCall.mockResolvedValueOnce({ status: 'rejected', reason: 'no' })
+    await expect(router({ toolName: 'mcp__superone__terminal_tabs', input })).resolves.toBe('rejected')
+    mockGateTerminalTabsCall.mockResolvedValueOnce({ status: 'cancelled', reason: 'aborted' })
+    await expect(router({ toolName: 'mcp__superone__terminal_tabs', input })).resolves.toBe('cancelled')
   })
 
   it('denies the tool when the user rejects, and auto-allows under bypass mode', async () => {

@@ -84,6 +84,8 @@ export interface RunDeps<Page extends RunObservation = RunObservation> {
   /** Positional native refs must never reuse a paused snapshot. */
   reobserveOnResume?: boolean
   sameTarget?(before: Page, after: Page, element: RawElement): boolean
+  /** Native refs and coordinates may be reused only when the entire target still matches. */
+  sameActionState?(before: Page, after: Page): boolean
 }
 
 export interface RunOptions {
@@ -343,12 +345,11 @@ export class FastRun<Page extends RunObservation = RunObservation> {
   }
 
   /**
-   * A `capability` answer: presets join the run's own, actions run on a fresh
-   * page through the platform's act (§11.4). Only actions count as a step —
+   * A `capability` answer: presets join the run's own, actions retain their
+   * binding to the paused page. Only actions count as a step —
    * presets are typed later by steps of their own — and they run as approved:
-   * the caller wrote them. A page that changed while paused still takes the
-   * hand-over; the caller aimed the actions at the pause snapshot's state, and
-   * the adapter's own stale check is what refuses a state that has expired.
+   * the caller wrote them. Never rebind old refs or coordinates to a changed
+   * page: the executor cannot detect that after receiving a fresh stateId.
    */
   private async resumeHanded(answer: Answer, pending: Pending<Page>, signal?: AbortSignal): Promise<RunResult> {
     const value = (answer.value ?? {}) as { actions?: unknown; presets?: unknown }
@@ -362,7 +363,18 @@ export class FastRun<Page extends RunObservation = RunObservation> {
     }
     if (actions?.length) {
       if (!this.deps.act) return this.result('aborted', 'This platform cannot run handed-over actions; hand over presets instead.')
-      const page = pending.page && !this.deps.reobserveOnResume && (await this.deps.isFresh(pending.page, undefined, signal)) ? pending.page : await this.deps.observe(signal)
+      let page = pending.page
+      let fresh = !!page && !this.deps.reobserveOnResume && await this.deps.isFresh(page, undefined, signal)
+      if (page && this.deps.reobserveOnResume) {
+        const next = await this.deps.observe(signal)
+        fresh = !next.blocked && this.deps.sameActionState?.(page, next) === true
+        if (fresh) page = next
+      }
+      if (!page || !fresh) {
+        this.lastPage = null
+        this.progress.note = 'Page changed while paused; handed-over actions discarded'
+        return this.loop(signal)
+      }
       this.steps++
       this.lastPage = await this.execute({ kind: 'handed', actions, target: pending.element }, page, true, true, signal)
       return this.loop(signal)

@@ -600,6 +600,14 @@ export function createComputerAdapter(options: ComputerAdapterOptions): RunDeps<
     isFresh: async (page) => fresh(page),
     // Native refs are positional. A changed outline must be predicted again.
     reobserveOnResume: true,
+    sameActionState: (before, after) => {
+      const previous = service.getStateStore().get(before.stateId)
+      const next = service.getStateStore().get(after.stateId)
+      return !!previous && !!next && fresh(before)
+        && before.rootId === after.rootId && before.bundleId === after.bundleId
+        && before.signature === after.signature
+        && JSON.stringify(previous.coordinateSpace) === JSON.stringify(next.coordinateSpace)
+    },
     // Menus and focus flags churn between two reads of the same window, so a
     // whole-outline signature would discard nearly every paused answer. The
     // element is the same when its id, label and native ref all agree.

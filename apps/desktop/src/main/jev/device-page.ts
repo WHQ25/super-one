@@ -316,6 +316,9 @@ export function createDeviceAdapter(options: DeviceAdapterOptions): RunDeps<Devi
     isFresh: async (page) => session.store.latest?.stateId === page.stateId,
     sameTarget: (before, after, element) => before.signature === after.signature
       && after.elements.some((e) => e.node === element.node && e.label === element.label && e.editable === element.editable),
+    sameActionState: (before, after) => before.signature === after.signature
+      && before.state.observation.orientation === after.state.observation.orientation
+      && JSON.stringify(before.state.observation.screen) === JSON.stringify(after.state.observation.screen),
     /** Actions handed over at a capability pause, in `device_act`'s vocabulary; the same gate as a device_act call. */
     act: (_page, actions, signal) => act(actions as Array<Record<string, unknown>>, signal),
     /**

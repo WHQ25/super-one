@@ -35,6 +35,21 @@ function fixture(tier: CapabilityTier = 'full') {
 const options = { goal: 'Fill Title with Hello', presets: [{ key: 'Title', value: 'Hello' }], maxSteps: 3, maxWallMs: 45000 }
 
 describe('computer fast-loop adapter', () => {
+  it('requires the original native references, resource epoch and coordinates for a hand-over', async () => {
+    const { service, adapter } = fixture()
+    await adapter.resolveTarget()
+    const before = await adapter.observe()
+    const after = await adapter.observe()
+    expect(adapter.sameActionState!(before, after)).toBe(true)
+    expect(adapter.sameActionState!(before, { ...after, signature: 'changed refs' })).toBe(false)
+    expect(adapter.sameActionState!(before, { ...after, rootId: '@r999' })).toBe(false)
+    const state = service.getStateStore().get(after.stateId)!
+    state.coordinateSpace = { ...state.coordinateSpace, width: state.coordinateSpace.width + 10 }
+    expect(adapter.sameActionState!(before, after)).toBe(false)
+    service.getScheduler().claimWrite(state.resourceKey, state.epoch)
+    expect(adapter.sameActionState!(before, before)).toBe(false)
+  })
+
   it('returns the verified new panel and uses its nodes after crossing roots', async () => {
     const backend = new FakePlatformBackend([{ app: 'Editor', bundleId: 'com.test.editor', pid: 7, windows: [{ title: 'Document', tree: {
       role: 'window', children: [{ role: 'button', name: 'Show Fonts', opensModal: { title: 'Fonts', kind: 'window', buttonName: 'Close' } }],

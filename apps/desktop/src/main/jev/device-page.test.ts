@@ -27,6 +27,19 @@ function fixture(screens: DeviceUiNode[] = [initial, final]) {
 }
 
 describe('device fast-loop adapter', () => {
+  it.each([false, true])('binds handed actions to the paused screen (changed=%s)', async (changed) => {
+    const { adapter, backend, ask } = fixture([initial, initial, changed ? screen([node('@e1', 'Delete')]) : initial])
+    let round = 0
+    ask.mockImplementation(async (req) => ({ answers: ++round === 1
+      ? { goal_satisfied: noul(0), still_loading: noul(0), action: pick('needs_input', Object.keys(req.questions.action.criteria!)), click_target: pick('1', Object.keys(req.questions.click_target.criteria!)) }
+      : { goal_satisfied: noul(1), still_loading: noul(0), action: pick('none_useful', Object.keys(req.questions.action.criteria!)), click_target: pick('1', Object.keys(req.questions.click_target.criteria!)) }, model: 'test', usage: {}, latencyMs: 1 }))
+    const run = new FastRun(opts, adapter)
+    const paused = await run.start()
+    expect(paused.question?.reason).toBe('capability')
+    await run.resume({ questionId: paused.question!.id, value: { actions: [{ type: 'tap', ref: '@e1' }] } })
+    expect(backend.performed).toHaveLength(changed ? 0 : 1)
+  })
+
   it('runs a safe tap and checks the successor condition without an extra snapshot or model call', async () => {
     const { adapter, ask, backend } = fixture()
     const done = await new FastRun({ ...opts, hasDoneWhen: true }, adapter).start()

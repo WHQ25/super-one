@@ -63,6 +63,27 @@ function typesOf(request: JevRequest): string[] {
 }
 
 describe('FastRun', () => {
+  it.each([false, true])('discards handed actions when the paused page changed (native=%s)', async (native) => {
+    const before = page([el({ node: 1, role: 'button', label: 'Keep', ref: '@e1' })])
+    const after = page([el({ node: 1, role: 'button', label: 'Delete', ref: '@e1' })])
+    let round = 0
+    const { deps, next } = harness([before, after], (request) => ++round === 1
+      ? { goal_satisfied: noul(0), still_loading: noul(0), action: pick('needs_input', actionsOf(request)) }
+      : { goal_satisfied: noul(1) })
+    const act = vi.fn(async () => {})
+    deps.act = act
+    deps.reobserveOnResume = native
+    deps.isFresh = async () => false
+    deps.sameActionState = (a, b) => JSON.stringify(a.elements) === JSON.stringify(b.elements)
+    const run = new FastRun(opts(), deps)
+    const paused = await run.start()
+    expect(paused.question?.reason).toBe('capability')
+    next()
+    const result = await run.resume({ questionId: paused.question!.id, value: { actions: [{ type: 'click', ref: '@e1' }] } })
+    expect(act).not.toHaveBeenCalled()
+    expect(result.progress.note).toContain('actions discarded')
+  })
+
   it('sends only the last eight completed action labels across pauses, without waits or stale indices', async () => {
     const states: Array<{ completed_actions: string[] }> = []
     const pages = Array.from({ length: 12 }, (_, i) => page([

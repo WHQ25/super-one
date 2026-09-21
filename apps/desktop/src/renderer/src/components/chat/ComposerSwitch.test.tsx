@@ -55,6 +55,22 @@ describe('ComposerSwitch', () => {
     expect(screen.getByTestId('composer-slot').style.height).toBe('')
   })
 
+  it('clips the slot only while a composer is changing hands', () => {
+    stubMotion(false)
+    const { rerender } = render(render_('text'))
+    // At rest the text composer's popups (@ / todo) hang above the slot, so it must not clip.
+    expect(screen.getByTestId('composer-slot')).not.toHaveClass('overflow-hidden')
+
+    rerender(render_('voice'))
+    expect(screen.getByTestId('composer-slot')).toHaveClass('overflow-hidden')
+
+    const stage = screen.getByTestId('composer-switch')
+    endAnimation(stage)
+    endAnimation(stage)
+    expect(stage).toHaveAttribute('data-phase', 'steady')
+    expect(screen.getByTestId('composer-slot')).not.toHaveClass('overflow-hidden')
+  })
+
   it('cancels the hand-off when the target flips back mid-exit', () => {
     stubMotion(false)
     const { rerender } = render(render_('text'))

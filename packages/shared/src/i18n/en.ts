@@ -2394,6 +2394,13 @@ export type Messages = {
       runningInline: string
       timedOut: string
       outputFileExpired: string
+      output: string
+      noOutput: string
+      editedFiles_one: string
+      editedFiles_other: string
+      moreFilesChanged_one: string
+      moreFilesChanged_other: string
+      editDiffUnavailable: string
       collapse: string
       moreLines_one: string
       moreLines_other: string
@@ -6380,6 +6387,13 @@ export const en: Messages = {
       runningInline: 'Running…',
       timedOut: 'Timed out',
       outputFileExpired: 'Output file: {{path}} expired',
+      output: 'Output',
+      noOutput: '(no output)',
+      editedFiles_one: '{{count}} file',
+      editedFiles_other: '{{count}} files',
+      moreFilesChanged_one: '{{count}} more file changed',
+      moreFilesChanged_other: '{{count}} more files changed',
+      editDiffUnavailable: 'Part of the diff is unavailable',
       collapse: 'Collapse',
       moreLines_one: '{{count}} more line',
       moreLines_other: '{{count}} more lines',

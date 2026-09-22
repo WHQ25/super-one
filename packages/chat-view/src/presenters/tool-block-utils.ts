@@ -127,6 +127,8 @@ export function computeLineDelta(toolName: string, params: Record<string, unknow
     // result.diffString, so the header uses the same payload after the call ends.
     return countParamsDiffDelta(params)
   }
+  // A Bash edit row for a removed file carries the deleted lines as a diff.
+  if (toolName === 'Delete') return countParamsDiffDelta(params)
   if (toolName === 'FileChange') {
     const kind = String(params.kind ?? '')
     const diff = String(params.diff ?? '')

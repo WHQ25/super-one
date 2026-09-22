@@ -61,6 +61,42 @@ export interface TaskFileChange {
   removed: number
 }
 
+export interface BashEditDiffHunk {
+  oldStart: number
+  oldLines: number
+  newStart: number
+  newLines: number
+  /** `' '` / `+` / `-` prefixed rows; the CLI drops empty rows. */
+  lines: string[]
+}
+
+export interface BashEditDiffFile {
+  filePath: string
+  /** Empty when the file is binary, mode-only, or past the CLI's size cap. */
+  hunks: BashEditDiffHunk[]
+  created?: true
+  deleted?: true
+}
+
+/**
+ * Working-tree diff of one Bash call, as the Claude CLI reports it in the Bash
+ * tool's `tool_use_result.bashEditDiff` (git snapshot before/after the command;
+ * only inside a git repository, never for background or git state commands).
+ */
+export interface BashEditDiff {
+  /** Files with rendered hunks (at most a handful). */
+  files: BashEditDiffFile[]
+  /** Changed files beyond `files` — binary, too large, or over the file cap. */
+  moreFiles: number
+  /** Absolute paths of every changed file known, shown or not (capped). */
+  changedFiles?: string[]
+  /** Part of the diff could not be computed. */
+  unavailable?: true
+  /** A git state command (checkout, stash, …): the diff was skipped on purpose. */
+  skipped?: true
+  shared?: true
+}
+
 interface AgentTaskData {
   runInBackground?: boolean
   taskUsage?: { totalTokens: number; toolUses: number; durationMs: number }
@@ -151,8 +187,8 @@ type ContentBlockData =
   | { type: 'insight'; title: string; content: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: DiffTokenLine[] | null }> }
   | { type: 'tool_use' } & ToolUseBase & ToolMeta & AgentTaskData & WorkflowData
   | { type: RemoteToolType } & ToolUseBase & ToolMeta & AgentTaskData & WorkflowData
-  | { type: 'tool_result'; toolUseId: string; summary: string; outputPath?: string; isTimedOut?: boolean; isError?: boolean; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: TodoToolItem[] }
-  | { type: 'bash_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[] }
+  | { type: 'tool_result'; toolUseId: string; summary: string; outputPath?: string; isTimedOut?: boolean; isError?: boolean; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: TodoToolItem[]; bashEditDiff?: BashEditDiff }
+  | { type: 'bash_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; bashEditDiff?: BashEditDiff }
   | { type: 'todo_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; todoToolName?: string; toolTodos?: TodoToolItem[] }
   | { type: 'codex_plan'; text: string; itemId: string }
   | { type: 'codex_image_generation'; itemId: string; status: string; savedPath?: string; revisedPrompt?: string; startedAt?: number; completedAt?: number }

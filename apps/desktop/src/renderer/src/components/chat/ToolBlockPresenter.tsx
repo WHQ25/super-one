@@ -57,6 +57,7 @@ import { WidgetBlock } from './WidgetBlock'
 import { FilesPreviewer } from './files-previewer/FilesPreviewer'
 import { isWorkflowSmokeCheck } from './workflow-utils'
 import type { RunContinuation } from '@superone/chat-view/presenters/run-display'
+import type { BashEditDiff } from '@superone/shared/agent-types'
 import { EnterPlanModeBlock } from './presenters/PlanModeBlocks'
 import {
   COLLAB_TOOLS,
@@ -102,6 +103,8 @@ export interface ToolBlockProps {
   isTimedOut?: boolean
   isError?: boolean
   resultOutputPath?: string
+  /** Bash only: the working-tree diff the command produced (see BashTerminalPresenter). */
+  bashEditDiff?: BashEditDiff
   autoExpand?: boolean
   backgroundActivity?: boolean
   grouped?: boolean
@@ -121,6 +124,7 @@ export interface BashToolPresenterProps {
   timeoutMs?: number
   isTimedOut?: boolean
   resultOutputPath?: string
+  bashEditDiff?: BashEditDiff
   runInBackground?: boolean
   autoExpand?: boolean
   allowExpand?: boolean
@@ -176,6 +180,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
   isTimedOut,
   isError,
   resultOutputPath,
+  bashEditDiff,
   autoExpand,
   backgroundActivity = false,
   grouped = false,
@@ -232,8 +237,10 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
       timeoutMs: timeout,
       isTimedOut,
       resultOutputPath,
+      bashEditDiff,
       runInBackground,
-      autoExpand: effectiveAutoExpand,
+      // A command that edited files is a file diff: it opens on the same setting.
+      autoExpand: bashEditDiff ? shouldAutoExpandDiff : effectiveAutoExpand,
       allowExpand,
       backgroundActivity,
       trailingAction,

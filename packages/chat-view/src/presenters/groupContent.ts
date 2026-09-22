@@ -1,4 +1,4 @@
-import type { ContentBlock } from '@superone/shared/agent-types'
+import type { BashEditDiff, ContentBlock } from '@superone/shared/agent-types'
 import { isToolResultBlock } from '@superone/shared/content-delta'
 import { isJevRunToolName } from '@superone/shared/jev-run-result-shape'
 
@@ -43,6 +43,8 @@ export interface GroupContentResult {
   timedOutToolIds: Set<string>
   errorToolIds: Set<string>
   outputPathMap: Map<string, string>
+  /** Bash calls whose result carried a working-tree diff, keyed by toolUseId. */
+  bashEditDiffMap: Map<string, BashEditDiff>
   /**
    * `*_run` calls that resumed an earlier run in this turn, keyed by the
    * toolUseId of the call that started it. They render inside the first
@@ -67,6 +69,7 @@ export function groupContentPresenter(
   const timedOutToolIds = new Set<string>()
   const errorToolIds = new Set<string>()
   const outputPathMap = new Map<string, string>()
+  const bashEditDiffMap = new Map<string, BashEditDiff>()
   const taskToolUseIds = new Set<string>()
 
   for (const block of content) {
@@ -82,6 +85,7 @@ export function groupContentPresenter(
       if ('isTimedOut' in block && block.isTimedOut) timedOutToolIds.add(block.toolUseId)
       if ('isError' in block && block.isError) errorToolIds.add(block.toolUseId)
       if ('outputPath' in block && block.outputPath) outputPathMap.set(block.toolUseId, block.outputPath)
+      if ('bashEditDiff' in block && block.bashEditDiff) bashEditDiffMap.set(block.toolUseId, block.bashEditDiff)
     }
   }
 
@@ -276,6 +280,7 @@ export function groupContentPresenter(
     timedOutToolIds,
     errorToolIds,
     outputPathMap,
+    bashEditDiffMap,
     runContinuations,
   }
 }

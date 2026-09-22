@@ -198,7 +198,9 @@ function buildOptions(opts: RunClaudeSdkTurnOptions, timing: { pausedMs: number 
     ...(opts.resumeSessionAt ? { resumeSessionAt: opts.resumeSessionAt } : {}),
     ...(opts.resumeDropsTurn ? { resumeDropsTurn: opts.resumeDropsTurn } : {}),
     ...(env ? { env } : {}),
-    ...(settingsEnv ? { settings: { env: settingsEnv } } : {}),
+    // Constant: the CLI only defaults the Bash working-tree diff on in auto /
+    // bypassPermissions mode, and the chat renders those edits as file rows.
+    settings: { ...(settingsEnv ? { env: settingsEnv } : {}), bashEditDiffEnabled: true },
   }
 
   return {

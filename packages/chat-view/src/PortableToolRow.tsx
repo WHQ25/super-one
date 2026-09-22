@@ -1,4 +1,4 @@
-import { useContext, useMemo } from 'react'
+import { useContext, useMemo, type ReactNode } from 'react'
 import { cn } from '@superone/ui/lib/utils'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { requestNative } from './bridge'
@@ -22,9 +22,10 @@ import { FileChipShell } from './presenters/FileChipShell'
 import { AnsiText } from './presenters/ansi'
 import { ToolIcon } from './presenters/ToolIcon'
 import { BashTerminalPresenter } from './presenters/BashTerminalPresenter'
+import type { BashEditToolUse } from '@superone/shared/bash-edit-diff'
 import { parseNativeDiff, type NativeDiffLine } from './presenters/remote-diff'
 import { tryPrettifyJson } from './presenters/tool-block-utils'
-import type { QuestionPreviewFormat } from '@superone/shared/agent-types'
+import type { BashEditDiff, QuestionPreviewFormat } from '@superone/shared/agent-types'
 
 /**
  * File name chip that hands the path to the native host instead of opening a desktop tab.
@@ -128,6 +129,7 @@ function PortableBashTool({
   result,
   status,
   isError,
+  bashEditDiff,
   allowExpand,
   onExpandedChange,
   detailStatus,
@@ -139,6 +141,7 @@ function PortableBashTool({
   result?: string
   status?: 'streaming' | 'complete'
   isError?: boolean
+  bashEditDiff?: BashEditDiff
   allowExpand: boolean
   onExpandedChange?: (expanded: boolean) => void
   detailStatus?: string
@@ -186,8 +189,28 @@ function PortableBashTool({
       readOutputFile={noRemoteOutputFile}
       readOutputMore={noRemoteOutputFile}
       renderAnsiText={(text) => <AnsiText text={text} />}
+      bashEditDiff={bashEditDiff}
+      renderFileTool={renderPortableBashEditTool}
     />
   )
+}
+
+/**
+ * A file the Bash command changed, as the Edit / Write / Delete row a direct edit
+ * gets. The phone's diff body reads `toolDiff`, not the params, so it is derived
+ * here from the synthesized input (unified hunks, or `+` rows for a new file).
+ */
+function renderPortableBashEditTool(row: BashEditToolUse): ReactNode {
+  let toolDiff: string | undefined
+  try {
+    const params = JSON.parse(row.input) as Record<string, unknown>
+    toolDiff = row.toolName === 'Write'
+      ? String(params.content ?? '').replace(/\n$/, '').split('\n').map((line) => `+${line}`).join('\n') || undefined
+      : typeof params.diff === 'string' ? params.diff : undefined
+  } catch {
+    toolDiff = undefined
+  }
+  return <PortableToolRow toolName={row.toolName} toolUseId={row.toolUseId} input={row.input} status="complete" toolDiff={toolDiff} />
 }
 
 /**
@@ -331,6 +354,7 @@ export function PortableToolRow({ allowExpand = true, ...props }: PortableToolRo
         result={props.result}
         status={props.status}
         isError={props.isError}
+        bashEditDiff={props.bashEditDiff}
         allowExpand={allowExpand}
         onExpandedChange={props.onExpandedChange}
         detailStatus={props.detailStatus}

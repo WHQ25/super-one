@@ -1,4 +1,4 @@
-import type { ContentBlock } from '@superone/shared/agent-types'
+import type { BashEditDiff, ContentBlock } from '@superone/shared/agent-types'
 import {
   applyDescriptionPersonaLabel,
   formatTranscriptToolResult as formatSharedTranscriptToolResult,
@@ -431,18 +431,22 @@ export function buildToolResultMap(blocks: ContentBlock[]): Map<string, string> 
 export interface ToolErrorMaps {
   errorIds: Set<string>
   timedOutIds: Set<string>
+  /** Bash calls whose result carried a working-tree diff. */
+  bashEditDiffs: Map<string, BashEditDiff>
 }
 
-/** Collect toolUseIds whose tool_result reported an error or timeout. */
+/** Collect toolUseIds whose tool_result reported an error, timeout, or Bash edit diff. */
 export function buildToolErrorMaps(blocks: ContentBlock[]): ToolErrorMaps {
   const errorIds = new Set<string>()
   const timedOutIds = new Set<string>()
+  const bashEditDiffs = new Map<string, BashEditDiff>()
   for (const block of blocks) {
     if (block.type !== 'tool_result') continue
     if (block.isError) errorIds.add(block.toolUseId)
     if (block.isTimedOut) timedOutIds.add(block.toolUseId)
+    if (block.bashEditDiff) bashEditDiffs.set(block.toolUseId, block.bashEditDiff)
   }
-  return { errorIds, timedOutIds }
+  return { errorIds, timedOutIds, bashEditDiffs }
 }
 
 /**

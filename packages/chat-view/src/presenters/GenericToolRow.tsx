@@ -23,10 +23,10 @@ import {
 } from './tool-block-utils'
 import { isWorkflowSmokeCheck } from './workflow-utils'
 import type { RemoteDiffTokens } from './remote-diff'
-import type { QuestionPreviewFormat } from '@superone/shared/agent-types'
+import type { BashEditDiff, QuestionPreviewFormat } from '@superone/shared/agent-types'
 
 const DIFF_TOOLS = new Set(['Edit', 'Write', 'FileChange'])
-const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileChange'])
+const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileChange', 'Delete'])
 const RESULT_PREVIEW_LINES = 10
 const SCROLLABLE_RESULT_MAX_H = 'max-h-60'
 
@@ -102,6 +102,8 @@ export interface GenericToolRowProps {
   toolDiff?: string
   toolDiffTokens?: RemoteDiffTokens
   toolLineDelta?: { added: number; removed: number }
+  /** Bash only: the working-tree diff the command produced (see BashTerminalPresenter). */
+  bashEditDiff?: BashEditDiff
   autoExpand?: boolean
   allowExpand: boolean
   defaultAutoExpand?: boolean
@@ -234,7 +236,8 @@ export function GenericToolRowPresenter({
     Boolean(toolDiff)
       || (toolName === 'FileChange'
         ? String(params.diff ?? '').length > 0
-        : Object.keys(params).length > 0)
+        // A Bash edit row the CLI listed without hunks carries only the path.
+        : Object.keys(params).some((key) => key !== 'file_path'))
   )
   const hasDiff = hasCompleteDiff || hasStreamingDiffContent
   const [expanded, setExpanded] = useState(false)

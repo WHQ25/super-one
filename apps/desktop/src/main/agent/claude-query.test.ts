@@ -126,13 +126,17 @@ describe('buildClaudeOptions settingsEnv', () => {
       env: { ...process.env, ANTHROPIC_BASE_URL: 'https://proxy.example.com' },
       settingsEnv: { ANTHROPIC_BASE_URL: 'https://proxy.example.com' },
     })
-    expect(options.settings).toEqual({ env: { ANTHROPIC_BASE_URL: 'https://proxy.example.com' } })
+    expect(options.settings).toEqual({ env: { ANTHROPIC_BASE_URL: 'https://proxy.example.com' }, bashEditDiffEnabled: true })
     // Files still load: the override is a layer above them, not a replacement.
     expect(options.settingSources).toEqual(['user', 'project', 'local'])
   })
 
-  it('leaves settings absent when the provider forces no env, so user files apply untouched', () => {
-    expect('settings' in buildClaudeOptions(base)).toBe(false)
+  it('sends no env layer when the provider forces no env, so user files apply untouched', () => {
+    expect(buildClaudeOptions(base).settings).toEqual({ bashEditDiffEnabled: true })
+  })
+
+  it('always enables the Bash working-tree diff: the CLI only defaults it on in auto mode', () => {
+    expect(buildClaudeOptions({ ...base, permissionMode: 'acceptEdits' }).settings).toMatchObject({ bashEditDiffEnabled: true })
   })
 })
 

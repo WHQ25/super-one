@@ -6,6 +6,7 @@ import { createDeadStreamLedger } from '@superone/shared/dead-stream-ledger'
 import { createRetractionLedger, mapModelFallbackWire, MODEL_FALLBACK_SUBTYPES } from '@superone/shared/model-fallback-wire'
 import { readTerminalSlashCommands } from '@superone/shared/slash-commands'
 import { sessionGoalFromClaudeActive } from '@superone/shared/session-goal'
+import { parseBashEditDiff } from '@superone/shared/bash-edit-diff'
 import {
   buildClaudeResultFailure,
   buildClaudeResultMetadata,
@@ -136,7 +137,9 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     additionalDirectories: opts.additionalDirectories,
     env: opts.env,
     // Derived from the same keys as `env`, so WarmupManager.keyOf needs no extra field.
-    ...(opts.settingsEnv ? { settings: { env: opts.settingsEnv } } : {}),
+    // `bashEditDiffEnabled` is constant: the CLI only defaults it on in auto /
+    // bypassPermissions mode, and the chat renders Bash edits as file rows.
+    settings: { ...(opts.settingsEnv ? { env: opts.settingsEnv } : {}), bashEditDiffEnabled: true },
     spawnClaudeCodeProcess: makeClaudeSpawn({
       onStderr: (data) => {
         log.warn('[claude-cli]', data.trimEnd())
@@ -484,6 +487,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               const isBash = toolName === 'Bash'
               const outputPath = isBash ? extractBashOutputPath(text) : undefined
               const isTimedOut = isBash ? extractBashKilled(userMsg.tool_use_result) : undefined
+              const bashEditDiff = isBash ? extractBashEditDiff(userMsg.tool_use_result) : undefined
               const taskCreateTodo = extractTaskCreateTodo(toolName, userMsg.tool_use_result, text)
               // Bash: CLI sets is_error for non-zero exits too; only <tool_use_error>
               // marks a true tool-layer failure (validation, blocked, cancelled, …).
@@ -497,6 +501,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
                   summary: text || '',
                   ...(outputPath ? { outputPath } : {}),
                   ...(isTimedOut ? { isTimedOut } : {}),
+                  ...(bashEditDiff ? { bashEditDiff } : {}),
                   ...(isError ? { isError: true } : {}),
                   ...(taskCreateTodo ?? {}),
                   parentToolUseId,
@@ -1037,12 +1042,13 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             const isBash = toolName === 'Bash'
             const outputPath = isBash ? extractBashOutputPath(summaryText) : undefined
             const isTimedOut = isBash ? extractBashKilled(raw.tool_use_result) : undefined
+            const bashEditDiff = isBash ? extractBashEditDiff(raw.tool_use_result) : undefined
             const taskCreateTodo = extractTaskCreateTodo(toolName, raw.tool_use_result, summaryText)
             const isError = isToolLayerError(toolName, raw.is_error === true, summaryText)
             emit({
               type: 'content_delta',
               messageId,
-              delta: { type: 'tool_result', toolUseId, summary: summaryText, ...(outputPath ? { outputPath } : {}), ...(isTimedOut ? { isTimedOut } : {}), ...(isError ? { isError: true } : {}), ...(taskCreateTodo ?? {}), parentToolUseId: raw.parent_tool_use_id ?? null },
+              delta: { type: 'tool_result', toolUseId, summary: summaryText, ...(outputPath ? { outputPath } : {}), ...(isTimedOut ? { isTimedOut } : {}), ...(bashEditDiff ? { bashEditDiff } : {}), ...(isError ? { isError: true } : {}), ...(taskCreateTodo ?? {}), parentToolUseId: raw.parent_tool_use_id ?? null },
             })
           }
           break
@@ -1264,6 +1270,14 @@ function extractToolResultText(content: unknown): string {
 function extractBashKilled(toolUseResult?: unknown): boolean | undefined {
   const tur = toolUseResult as any
   return tur?.killed === true ? true : undefined
+}
+
+/**
+ * The CLI's per-command working-tree diff (`bashEditDiffEnabled`); `@internal`
+ * in the SDK types, so it is read off the untyped result and validated.
+ */
+function extractBashEditDiff(toolUseResult?: unknown) {
+  return parseBashEditDiff((toolUseResult as any)?.bashEditDiff)
 }
 
 /**

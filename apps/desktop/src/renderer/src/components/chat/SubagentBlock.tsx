@@ -91,6 +91,7 @@ function renderChildBlock(
           result={toolResultMap.get(block.toolUseId)}
           isError={errorMaps.errorIds.has(block.toolUseId)}
           isTimedOut={errorMaps.timedOutIds.has(block.toolUseId)}
+          bashEditDiff={errorMaps.bashEditDiffs.get(block.toolUseId)}
         />
       )
     case 'tool_result':

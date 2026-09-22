@@ -1,4 +1,5 @@
 import type { ChatMessage, ContentBlock, CodexFileUpdateChange, CodexMcpToolCallItem, CodexThreadItem, TaskFileChange } from '@superone/shared/agent-types'
+import { bashEditFileChanges } from '@superone/shared/bash-edit-diff'
 import { fileMutationPath, isFileMutationTool } from '@superone/shared/file-mutation'
 import { sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
 import { isSubagentToolName, normalizeTranscriptTool } from '@superone/shared/tool-ui'
@@ -58,14 +59,26 @@ export function taskFileChanges(message: ChatMessage, containerId: string): Task
     if (!('toolName' in block) || !block.parentToolUseId || !family.has(block.parentToolUseId)) continue
     family.add(block.toolUseId)
     if (failed.has(block.toolUseId)) continue
+    // A Bash call reports its edits on the result, not in its params.
+    const bashEditDiff = bashEditDiffOf(message, block.toolUseId)
+    if (bashEditDiff) {
+      changes.push(...bashEditFileChanges(bashEditDiff))
+      continue
+    }
     const change = fileMutationOf(block)
     if (change) changes.push(change)
   }
   return changes
 }
 
+function bashEditDiffOf(message: ChatMessage, toolUseId: string) {
+  const result = message.content.find(block => block.type === 'tool_result' && block.toolUseId === toolUseId)
+  return result?.type === 'tool_result' ? result.bashEditDiff : undefined
+}
+
 /** Whether a child block can move its container's `taskFileChanges`. */
 export function isFileMutationChild(message: ChatMessage, toolUseId: string): boolean {
+  if (bashEditDiffOf(message, toolUseId)) return true
   const block = message.content.find(candidate => 'toolName' in candidate && candidate.toolUseId === toolUseId)
   return !!block && 'toolName' in block && fileMutationOf(block) !== undefined
 }

@@ -2,12 +2,15 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Ban, ChevronRight, TriangleAlert } from 'lucide-react'
+import type { BashEditDiff } from '@superone/shared/agent-types'
+import { bashEditToolUses, summarizeBashEditDiff, type BashEditToolUse } from '@superone/shared/bash-edit-diff'
 import { cn } from '@superone/ui/lib/utils'
 import { TerminalCommandOutput } from './TerminalCommandOutput'
 import { extractToolError } from './tool-block-utils'
@@ -52,6 +55,26 @@ export interface BashTerminalPresenterProps {
   readOutputFile: (path: string, lines: number) => Promise<string>
   readOutputMore: (toolUseId: string, lines: number) => Promise<string>
   renderAnsiText: (text: string) => ReactNode
+  /**
+   * Working-tree diff the command produced. Collapsed, the header carries the
+   * file / line totals; expanded, the output folds behind its own toggle and each
+   * file draws as the Edit / Write / Delete row `renderFileTool` returns.
+   */
+  bashEditDiff?: BashEditDiff
+  renderFileTool?: (row: BashEditToolUse) => ReactNode
+}
+
+/** Footnote for what the diff could not show; null when every file is on screen. */
+function bashEditDiffNote(
+  diff: BashEditDiff,
+  rowCount: number,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string | null {
+  const hidden = Math.max(0, diff.files.length + diff.moreFiles - rowCount)
+  const parts: string[] = []
+  if (hidden > 0) parts.push(t('chat.toolBlock.moreFilesChanged', { count: hidden }))
+  if (diff.unavailable) parts.push(t('chat.toolBlock.editDiffUnavailable'))
+  return parts.length > 0 ? parts.join(' · ') : null
 }
 
 export function BashTerminalPresenter({
@@ -79,8 +102,18 @@ export function BashTerminalPresenter({
   readOutputFile,
   readOutputMore,
   renderAnsiText,
+  bashEditDiff,
+  renderFileTool,
 }: BashTerminalPresenterProps) {
   const { t } = useTranslation()
+  const editRows = useMemo(
+    () => (bashEditDiff ? bashEditToolUses(toolUseId, bashEditDiff) : []),
+    [bashEditDiff, toolUseId],
+  )
+  const editSummary = useMemo(() => (bashEditDiff ? summarizeBashEditDiff(bashEditDiff) : null), [bashEditDiff])
+  const editNote = bashEditDiff ? bashEditDiffNote(bashEditDiff, editRows.length, t) : null
+  // A git state command's deliberate skip has no files to list: plain Bash layout.
+  const hasEdits = !!bashEditDiff && !!renderFileTool && !!editSummary && editSummary.files > 0
   const outputExpired = !!resultOutputPath && !bashOutput && !isStreaming
   const scrollRef = useRef<HTMLDivElement>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
@@ -97,8 +130,16 @@ export function BashTerminalPresenter({
   const holdOpenForBackgroundTask = treatAsBackground
     ? (hasTaskState ? taskProgress.completed !== true : isRunning)
     : false
-  const autoExpanded = allowExpand && holdOpenForBackgroundTask
+  // An edit block opens on the file-diff setting (`autoExpand` carries it); a
+  // plain command only holds itself open while a background task runs.
+  const autoExpanded = allowExpand && (holdOpenForBackgroundTask || (autoExpand === true && hasEdits))
   const [expanded, setExpanded] = useState(allowExpand && autoExpand ? autoExpanded : false)
+  // Behind the file rows the output is a second toggle, shut unless the command
+  // itself went wrong — a half-applied sed is what the user needs to see first.
+  const outputWentWrong = isError || isDenied || isTimedOut === true
+  const [outputOpen, setOutputOpen] = useState(outputWentWrong)
+  useEffect(() => { if (outputWentWrong) setOutputOpen(true) }, [outputWentWrong])
+  const outputVisible = expanded && (!hasEdits || outputOpen)
   const [outputFull, setOutputFull] = useState(false)
   const [extraContent, setExtraContent] = useState('')
   const [loadedLines, setLoadedLines] = useState(BASH_LOAD_CHUNK)
@@ -120,8 +161,8 @@ export function BashTerminalPresenter({
   useEffect(() => { onExpandedChange?.(expanded) }, [expanded, onExpandedChange])
 
   useEffect(() => {
-    if (!expanded) setOutputFull(false)
-  }, [expanded])
+    if (!outputVisible) setOutputFull(false)
+  }, [outputVisible])
 
   useEffect(() => {
     if (!outputExpired || !resultOutputPath || restoredRef.current) return
@@ -192,7 +233,7 @@ export function BashTerminalPresenter({
   }, [hasMore, isLive, loadedLines, outputExpired, outputPath, readOutputFile, readOutputMore, toolUseId])
 
   useEffect(() => {
-    if (isLive || !expanded || !hasMore || !outputPath) return
+    if (isLive || !outputVisible || !hasMore || !outputPath) return
     const element = scrollRef.current
     const sentinel = sentinelRef.current
     if (!element || !sentinel) return
@@ -202,7 +243,55 @@ export function BashTerminalPresenter({
     )
     observer.observe(sentinel)
     return () => observer.disconnect()
-  }, [expanded, hasMore, isLive, loadMore, outputFull, outputPath])
+  }, [outputVisible, hasMore, isLive, loadMore, outputFull, outputPath])
+
+  const outputPanel = fileExpired ? (
+    <div className="px-3 py-1.5 text-xs text-muted-foreground/50 italic">
+      {t('chat.toolBlock.outputFileExpired', { path: resultOutputPath!.split('/').pop() })}
+    </div>
+  ) : (
+    <TerminalCommandOutput
+      command={command}
+      hasOutput={!!content}
+      outputRef={scrollRef}
+      outputVersion={content}
+      outputFull={outputFull}
+      onOutputFullChange={setOutputFull}
+      outputPrefix={!isLive && hasMore && outputPath ? <div ref={sentinelRef} className="h-px" /> : undefined}
+    >
+      {outputExpired && restoredContent === null ? (
+        <div className="animate-shimmer text-terminal-dim">{t('common.loading')}</div>
+      ) : detailStatus && !content ? (
+        <div className="text-terminal-dim" role="status">
+          {detailStatus}
+          {onDetailRetry && (
+            <button
+              type="button"
+              className="ml-2 underline"
+              onClick={(event) => { event.stopPropagation(); onDetailRetry() }}
+            >
+              {t('common.retry')}
+            </button>
+          )}
+        </div>
+      ) : content ? (
+        <div className={showError ? 'text-amber-300' : 'text-terminal-muted'}>
+          {renderAnsiText(showError ? extractToolError(content) : content)}
+        </div>
+      ) : isStreaming ? (
+        <div className="text-terminal-muted">
+          <span className="animate-shimmer">{t('chat.toolBlock.runningInline')}</span>
+          {localElapsed >= 1 && (
+            <span className="text-terminal-dim">
+              {' '}{localElapsed}s{timeoutMs && !isLive ? ` · timeout ${Math.round(timeoutMs / 1000)}s` : ''}
+            </span>
+          )}
+        </div>
+      ) : hasEdits ? (
+        <div className="text-terminal-dim">{t('chat.toolBlock.noOutput')}</div>
+      ) : null}
+    </TerminalCommandOutput>
+  )
 
   return (
     <div data-tool-use-id={toolUseId || undefined} className={cn(
@@ -234,7 +323,7 @@ export function BashTerminalPresenter({
         )}
         {description
           ? <span className="min-w-0 truncate text-muted-foreground">{description}</span>
-          : (!expanded || fileExpired) && <span className="min-w-0 truncate text-muted-foreground">{command}</span>}
+          : (!expanded || fileExpired || hasEdits) && <span className="min-w-0 truncate text-muted-foreground">{command}</span>}
         {timeoutMs && (
           <span className="rounded bg-muted px-1 py-px text-xs text-muted-foreground">
             {Math.round(timeoutMs / 1000)}s
@@ -257,6 +346,20 @@ export function BashTerminalPresenter({
           </span>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          {hasEdits && editSummary && !expanded && (
+            <span className="font-mono text-xs text-muted-foreground">
+              {t('chat.toolBlock.editedFiles', { count: editSummary.files })}
+              {(editSummary.added > 0 || editSummary.removed > 0) && (
+                <>
+                  {' · '}
+                  {editSummary.approximate && '≈'}
+                  {editSummary.added > 0 && <span className="text-success">+{editSummary.added}</span>}
+                  {editSummary.added > 0 && editSummary.removed > 0 && ' '}
+                  {editSummary.removed > 0 && <span className="text-error">-{editSummary.removed}</span>}
+                </>
+              )}
+            </span>
+          )}
           {trailingAction}
           {allowExpand && (
             <ChevronRight className={cn(
@@ -266,51 +369,20 @@ export function BashTerminalPresenter({
           )}
         </div>
       </div>
-      {allowExpand && expanded && (fileExpired ? (
-        <div className="px-3 py-1.5 text-xs text-muted-foreground/50 italic">
-          {t('chat.toolBlock.outputFileExpired', { path: resultOutputPath!.split('/').pop() })}
+      {allowExpand && expanded && (hasEdits ? (
+        <div className="cursor-default space-y-0.5 border-t border-border/30 px-1.5 py-1">
+          <div
+            className="flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted/40"
+            onClick={() => setOutputOpen((value) => !value)}
+          >
+            <ChevronRight className={cn('size-3 shrink-0 transition-transform duration-200', outputOpen && 'rotate-90')} />
+            <span>{t('chat.toolBlock.output')}</span>
+          </div>
+          {outputOpen && outputPanel}
+          {editRows.map((row) => <div key={row.toolUseId}>{renderFileTool!(row)}</div>)}
+          {editNote && <div className="px-2 py-0.5 text-xs text-muted-foreground/70">{editNote}</div>}
         </div>
-      ) : (
-        <TerminalCommandOutput
-          command={command}
-          hasOutput={!!content}
-          outputRef={scrollRef}
-          outputVersion={content}
-          outputFull={outputFull}
-          onOutputFullChange={setOutputFull}
-          outputPrefix={!isLive && hasMore && outputPath ? <div ref={sentinelRef} className="h-px" /> : undefined}
-        >
-          {outputExpired && restoredContent === null ? (
-            <div className="animate-shimmer text-terminal-dim">{t('common.loading')}</div>
-          ) : detailStatus && !content ? (
-            <div className="text-terminal-dim" role="status">
-              {detailStatus}
-              {onDetailRetry && (
-                <button
-                  type="button"
-                  className="ml-2 underline"
-                  onClick={(event) => { event.stopPropagation(); onDetailRetry() }}
-                >
-                  {t('common.retry')}
-                </button>
-              )}
-            </div>
-          ) : content ? (
-            <div className={showError ? 'text-amber-300' : 'text-terminal-muted'}>
-              {renderAnsiText(showError ? extractToolError(content) : content)}
-            </div>
-          ) : isStreaming ? (
-            <div className="text-terminal-muted">
-              <span className="animate-shimmer">{t('chat.toolBlock.runningInline')}</span>
-              {localElapsed >= 1 && (
-                <span className="text-terminal-dim">
-                  {' '}{localElapsed}s{timeoutMs && !isLive ? ` · timeout ${Math.round(timeoutMs / 1000)}s` : ''}
-                </span>
-              )}
-            </div>
-          ) : null}
-        </TerminalCommandOutput>
-      ))}
+      ) : outputPanel)}
     </div>
   )
 }

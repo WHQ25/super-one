@@ -41,6 +41,35 @@ describe('summarizeClaudeProcess', () => {
     expect(stats).toEqual({ toolCalls: 3, filesChanged: 2, added: 5, removed: 2 })
   })
 
+  it('folds a Bash call\'s working-tree diff into the file stat as one tool call', () => {
+    const stats = summarizeClaudeProcess(
+      [
+        {
+          kind: 'block',
+          block: { type: 'tool_use', toolName: 'Bash', toolUseId: 'b1', input: '{"command":"sed -i s/a/b/ a.ts && printf x > b.ts"}' },
+        },
+        {
+          kind: 'block',
+          block: { type: 'tool_use', toolName: 'Edit', toolUseId: 'e1', input: '{"file_path":"a.ts","old_string":"a","new_string":"b\\nc"}' },
+        },
+      ],
+      {
+        ...opts,
+        bashEditDiffAt: (id) => id === 'b1'
+          ? {
+              files: [
+                { filePath: 'a.ts', hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ['-a', '+b'] }] },
+                { filePath: 'b.ts', hunks: [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: 1, lines: ['+x'] }], created: true },
+              ],
+              moreFiles: 0,
+            }
+          : undefined,
+      },
+    )
+    // a.ts is one file whether Bash or Edit touched it; lines add up across both.
+    expect(stats).toEqual({ toolCalls: 2, filesChanged: 2, added: 4, removed: 2 })
+  })
+
   it('counts Cursor Edit mutations from result.diff when old/new strings are absent', () => {
     const stats = summarizeClaudeProcess(
       [

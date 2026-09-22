@@ -1,6 +1,6 @@
 import { Fragment, type ComponentType, type ReactNode } from 'react'
 import { ImageIcon } from 'lucide-react'
-import type { ContentBlock } from '@superone/shared/agent-types'
+import type { BashEditDiff, ContentBlock } from '@superone/shared/agent-types'
 import {
   collapsibleItems,
   countVisibleClaudeProcessSegments,
@@ -39,6 +39,8 @@ export interface ClaudeToolPresenterProps {
   isTimedOut?: boolean
   isError?: boolean
   resultOutputPath?: string
+  /** Bash only: the working-tree diff the command produced, drawn as file rows under it. */
+  bashEditDiff?: BashEditDiff
   autoExpand?: boolean
   /** Precomputed edit metadata; only remote surfaces receive these. */
   toolDiff?: string
@@ -109,7 +111,10 @@ export interface ClaudeTurnBodyPresenterRuntime {
   isHiddenTool: (toolName: string, result?: string) => boolean
   summarizeProcess: (
     segments: ReadonlyArray<RenderSegment>,
-    options: ClaudeSegmentVisibilityOpts & { isErrorTool?: (toolUseId: string) => boolean },
+    options: ClaudeSegmentVisibilityOpts & {
+      isErrorTool?: (toolUseId: string) => boolean
+      bashEditDiffAt?: (toolUseId: string) => BashEditDiff | undefined
+    },
   ) => CodexTurnProcessStats
 }
 
@@ -129,6 +134,7 @@ interface RenderOptions {
   timedOutToolIds: Set<string>
   errorToolIds: Set<string>
   outputPathMap: Map<string, string>
+  bashEditDiffMap?: Map<string, BashEditDiff>
   runContinuations?: GroupContentResult['runContinuations']
   projectPath: string | null
   parts: ClaudeTurnBodyPresenterParts
@@ -148,6 +154,7 @@ export function ClaudeBlockPresenter({
   timedOutToolIds,
   errorToolIds,
   outputPathMap,
+  bashEditDiffMap,
   runContinuations,
   nextBlockType,
   prevBlockType,
@@ -162,6 +169,7 @@ export function ClaudeBlockPresenter({
   timedOutToolIds?: Set<string>
   errorToolIds?: Set<string>
   outputPathMap?: Map<string, string>
+  bashEditDiffMap?: Map<string, BashEditDiff>
   runContinuations?: GroupContentResult['runContinuations']
   nextBlockType?: string
   prevBlockType?: string
@@ -211,6 +219,7 @@ export function ClaudeBlockPresenter({
           isTimedOut={timedOutToolIds?.has(block.toolUseId)}
           isError={errorToolIds?.has(block.toolUseId)}
           resultOutputPath={outputPathMap?.get(block.toolUseId)}
+          bashEditDiff={bashEditDiffMap?.get(block.toolUseId)}
           autoExpand={runtime.isBackgroundTool(block) ? false : undefined}
           toolDiff={block.toolDiff}
           toolDiffTokens={block.toolDiffTokens}
@@ -306,6 +315,7 @@ function renderSegments(
           timedOutToolIds={options.timedOutToolIds}
           errorToolIds={options.errorToolIds}
           outputPathMap={options.outputPathMap}
+          bashEditDiffMap={options.bashEditDiffMap}
           runContinuations={options.runContinuations}
           nextBlockType={segment.blocks[blockIndex + 1]?.type}
           prevBlockType={segment.blocks[blockIndex - 1]?.type}
@@ -361,6 +371,7 @@ function renderSegments(
           timedOutToolIds={options.timedOutToolIds}
           errorToolIds={options.errorToolIds}
           outputPathMap={options.outputPathMap}
+          bashEditDiffMap={options.bashEditDiffMap}
           runContinuations={options.runContinuations}
           nextBlockType={nextType}
           prevBlockType={previousType}
@@ -390,6 +401,7 @@ function renderSegments(
         timedOutToolIds={options.timedOutToolIds}
         errorToolIds={options.errorToolIds}
         outputPathMap={options.outputPathMap}
+        bashEditDiffMap={options.bashEditDiffMap}
         runContinuations={options.runContinuations}
         nextBlockType={segment.blocks[blockIndex + 1]?.type}
         prevBlockType={segment.blocks[blockIndex - 1]?.type}
@@ -417,6 +429,7 @@ export function ClaudeTurnBodyPresenter({
     timedOutToolIds: grouped.timedOutToolIds,
     errorToolIds: grouped.errorToolIds,
     outputPathMap: grouped.outputPathMap,
+    bashEditDiffMap: grouped.bashEditDiffMap,
     runContinuations: grouped.runContinuations,
     projectPath,
     parts,
@@ -428,6 +441,7 @@ export function ClaudeTurnBodyPresenter({
       toolResultAt: (id: string) => grouped.toolResultMap.get(id),
       isHiddenTool: runtime.isHiddenTool,
       isErrorTool: (id: string) => grouped.errorToolIds.has(id),
+      bashEditDiffAt: (id: string) => grouped.bashEditDiffMap?.get(id),
     }
     const process = collapsibleItems(runs)
     const visibleCount = countVisibleClaudeProcessSegments(process, processOptions)

@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ReactNode } from 'react'
+import type { BashEditDiff } from '@superone/shared/agent-types'
 import { ToolBlock } from './ToolBlock'
 
 function StoryShell({ children, width = 720 }: { children: ReactNode; width?: number }) {
@@ -141,6 +142,111 @@ export const AnsiColored: Story = {
     status: 'complete',
     result: ANSI_OUTPUT,
     isError: true,
+    autoExpand: true,
+  },
+}
+
+// A command that edited the working tree: the CLI's `bashEditDiff` (SDK 0.3.269,
+// `bashEditDiffEnabled`) draws each file as the Edit / Write / Delete row a direct
+// edit would get, with the output folded behind its own toggle.
+const EDIT_DIFF: BashEditDiff = {
+  files: [
+    {
+      filePath: '/Users/me/project/src/main/session/session.ts',
+      hunks: [
+        { oldStart: 12, oldLines: 3, newStart: 12, newLines: 4, lines: [' export function park(session: Session) {', '-  session.status = "parked"', '+  session.status = "parked"', '+  session.parkedAt = Date.now()', ' }'] },
+        { oldStart: 40, oldLines: 1, newStart: 41, newLines: 1, lines: ['-const RETRY = 3', '+const RETRY = 5'] },
+      ],
+    },
+    {
+      filePath: '/Users/me/project/src/main/session/park.test.ts',
+      hunks: [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: 3, lines: ['+import { park } from "./session"', '+', '+test("park stamps parkedAt", () => {})'] }],
+      created: true,
+    },
+  ],
+  moreFiles: 0,
+  changedFiles: ['/Users/me/project/src/main/session/session.ts', '/Users/me/project/src/main/session/park.test.ts'],
+}
+
+const EDIT_COMMAND = 'sed -i \'\' \'s/RETRY = 3/RETRY = 5/\' src/main/session/session.ts && cat > src/main/session/park.test.ts <<\'EOF\'\n…\nEOF'
+
+export const EditedFiles: Story = {
+  name: 'Edited files (collapsed)',
+  args: {
+    toolName: 'Bash',
+    input: JSON.stringify({ command: EDIT_COMMAND }),
+    status: 'complete',
+    result: '',
+    bashEditDiff: EDIT_DIFF,
+  },
+}
+
+export const EditedFilesExpanded: Story = {
+  name: 'Edited files (expanded)',
+  args: { ...EditedFiles.args, autoExpand: true },
+}
+
+export const EditedFilesWithOutput: Story = {
+  name: 'Edited files with output',
+  args: {
+    ...EditedFiles.args,
+    input: JSON.stringify({ command: 'bunx codemod rename-symbol park parkSession src/' }),
+    result: 'Processed 2 files\n  ✓ src/main/session/session.ts\n  ✓ src/main/session/park.test.ts',
+    autoExpand: true,
+  },
+}
+
+export const EditedFilesFailed: Story = {
+  name: 'Edited files, command failed',
+  args: {
+    ...EditedFiles.args,
+    result: 'sed: 1: "s/RETRY = 3/RETRY = 5/": unterminated substitute pattern\nExit code 1',
+    isError: true,
+    autoExpand: true,
+  },
+}
+
+export const EditedFilesDeleted: Story = {
+  name: 'Edited files incl. a deletion',
+  args: {
+    ...EditedFiles.args,
+    input: JSON.stringify({ command: 'git mv src/old.ts src/new.ts && rm src/legacy.ts' }),
+    bashEditDiff: {
+      files: [
+        { filePath: '/Users/me/project/src/new.ts', hunks: [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: 2, lines: ['+export const moved = true', '+'] }], created: true },
+        { filePath: '/Users/me/project/src/old.ts', hunks: [{ oldStart: 1, oldLines: 2, newStart: 0, newLines: 0, lines: ['-export const moved = true', '-'] }], deleted: true },
+        { filePath: '/Users/me/project/src/legacy.ts', hunks: [{ oldStart: 1, oldLines: 1, newStart: 0, newLines: 0, lines: ['-// legacy'] }], deleted: true },
+      ],
+      moreFiles: 0,
+    },
+    autoExpand: true,
+  },
+}
+
+export const EditedFilesPartial: Story = {
+  name: 'Edited files, diff partly unavailable',
+  args: {
+    ...EditedFiles.args,
+    input: JSON.stringify({ command: 'bun run codegen' }),
+    bashEditDiff: {
+      files: [EDIT_DIFF.files[0], { filePath: '/Users/me/project/assets/logo.png', hunks: [] }],
+      moreFiles: 4,
+      changedFiles: ['/Users/me/project/src/main/session/session.ts', '/Users/me/project/assets/logo.png', '/Users/me/project/src/generated/api.ts'],
+      unavailable: true,
+    },
+    autoExpand: true,
+  },
+}
+
+// The CLI skips the diff for git state commands; with no files to list the block
+// keeps the plain Bash layout.
+export const EditDiffSkipped: Story = {
+  name: 'Git state command, diff skipped',
+  args: {
+    ...EditedFiles.args,
+    input: JSON.stringify({ command: 'git stash pop' }),
+    result: 'Dropped refs/stash@{0}',
+    bashEditDiff: { files: [], moreFiles: 0, skipped: true },
     autoExpand: true,
   },
 }

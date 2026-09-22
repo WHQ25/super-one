@@ -427,7 +427,9 @@ function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, 
   if (block.type === 'tool_result') {
     if (bashCmds?.has(block.toolUseId)) {
       const output = truncateBashOutput(block.summary)
-      return { type: 'bash_result', toolUseId: block.toolUseId, summary: output, parentToolUseId: block.parentToolUseId, outputTokens: parseAnsiTokens(output) }
+      // The working-tree diff rides along: the phone draws the file rows and
+      // counts them in the turn stat from it, and the CLI already bounds its size.
+      return { type: 'bash_result', toolUseId: block.toolUseId, summary: output, parentToolUseId: block.parentToolUseId, outputTokens: parseAnsiTokens(output), ...(block.bashEditDiff ? { bashEditDiff: block.bashEditDiff } : {}) }
     }
     if (block.summary.startsWith('{"ok":true,"shareId":')) {
       return block

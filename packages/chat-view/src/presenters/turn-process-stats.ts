@@ -1,4 +1,5 @@
-import type { CodexThreadItem, TaskFileChange } from '@superone/shared/agent-types'
+import type { BashEditDiff, CodexThreadItem, TaskFileChange } from '@superone/shared/agent-types'
+import { bashEditFileChanges } from '@superone/shared/bash-edit-diff'
 import { fileMutationPath, isFileMutationTool } from '@superone/shared/file-mutation'
 import { normalizeTranscriptTool } from '@superone/shared/tool-ui'
 import { computeLineDelta } from './tool-block-utils'
@@ -40,6 +41,8 @@ export interface ClaudeProcessStatsOpts {
   toolResultAt: (toolUseId: string) => string | undefined
   isHiddenTool: (toolName: string, result?: string) => boolean
   isErrorTool?: (toolUseId: string) => boolean
+  /** A Bash call's working-tree diff; its files count like Edit / Write rows. */
+  bashEditDiffAt?: (toolUseId: string) => BashEditDiff | undefined
 }
 
 export type CodexProcessStatsSeg = {
@@ -140,7 +143,18 @@ export function summarizeClaudeProcess(
   const files = new Set<string>()
   const failed = (toolUseId: string, result: string | undefined): boolean =>
     opts.isErrorTool?.(toolUseId) === true || result?.startsWith('[denied] ') === true
+  const accumulateChange = (change: TaskFileChange): void => {
+    if (change.path) files.add(change.path)
+    stats.added += change.added
+    stats.removed += change.removed
+  }
   const accumulateBlock = (block: ClaudeProcessToolBlock): void => {
+    // A Bash call that edited files reports them as a diff, not as tool params.
+    const bashEditDiff = block.toolName === 'Bash' ? opts.bashEditDiffAt?.(block.toolUseId ?? '') : undefined
+    if (bashEditDiff) {
+      for (const change of bashEditFileChanges(bashEditDiff)) accumulateChange(change)
+      return
+    }
     accumulateMutation(stats, files, block.toolName ?? '', parseToolInput(block.input ?? ''), {
       path: block.toolFilePath,
       delta: block.toolLineDelta,
@@ -157,9 +171,7 @@ export function summarizeClaudeProcess(
     }
     for (const edit of eachSubagentEdit(seg)) {
       if ('change' in edit) {
-        if (edit.change.path) files.add(edit.change.path)
-        stats.added += edit.change.added
-        stats.removed += edit.change.removed
+        accumulateChange(edit.change)
         continue
       }
       const toolUseId = edit.block.toolUseId ?? ''

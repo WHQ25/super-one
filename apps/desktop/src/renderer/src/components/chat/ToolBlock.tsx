@@ -35,6 +35,7 @@ import {
   type ToolFamilyRenderResult,
 } from './ToolBlockPresenter'
 import { BashTerminalPresenter } from './tool-block-presenters/BashTerminalPresenter'
+import type { BashEditToolUse } from '@superone/shared/bash-edit-diff'
 import { PrettyJSONCodeBlock, QuestionPreviewContent } from './tool-result-views'
 import { AppToolBlockPresenter, AppToolHeader, type AppToolBlockPresenterProps } from '@superone/chat-view/presenters/AppToolBlock'
 import { ArtifactLinkChip } from './ArtifactLinkChip'
@@ -363,6 +364,11 @@ function renderBashAnsiText(text: string): ReactNode {
   return <AnsiText text={text} />
 }
 
+/** A file the Bash command changed, drawn as the same Edit / Write / Delete block a direct edit gets. */
+function renderBashEditTool(row: BashEditToolUse): ReactNode {
+  return <ToolBlock toolName={row.toolName} toolUseId={row.toolUseId} input={row.input} status="complete" />
+}
+
 function BashTerminalView(props: BashToolPresenterProps) {
   const bashOutput = useBashOutput(props.toolUseId)
   const taskProgress = useActiveSession((state) => state.taskProgress[props.toolUseId])
@@ -379,6 +385,7 @@ function BashTerminalView(props: BashToolPresenterProps) {
       readOutputFile={readBashOutputFile}
       readOutputMore={readBashOutputMore}
       renderAnsiText={renderBashAnsiText}
+      renderFileTool={renderBashEditTool}
     />
   )
 }

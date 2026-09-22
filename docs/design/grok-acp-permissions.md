@@ -621,11 +621,11 @@ function grokYoloNotification(mode: PermissionMode) {
 
 ## 12. Success criteria
 
-G1–G5 below match §2. **Unit tests exist** (`acp-permission-preapprove.test.ts`, runtime yolo/auto notify, `set_mode` plan). **Do not tick these boxes until a recorded live `grok agent stdio` run (parity TD-03).** Remaining host UX (Always button, Auto Generic toast, SessionDefaults labels) is tracked in `grok-build-parity.md`, not here.
+G1–G5 below match §2. **Unit tests exist** (`acp-permission-preapprove.test.ts`, runtime yolo/auto notify, `set_mode` plan). Boxes below record the 2026-09-16 live run where one exists; unchecked boxes still need that live check. Remaining host UX is tracked in `grok-build-parity.md`.
 
 - [x] G1 Grok session: consecutive built-in MCP calls produce **zero** `permission_request` UI events (unit + manual). *Live 2026-09-16 (grok 1.0.30, CDP): `widget_list_templates`, `session_tag_list`, `session_rename` in one session — zero cards; Grok issued no `session/request_permission` for them.*  
 - [ ] G2 Third-party MCP still prompts in ask mode. Preapproved mini-app tools silent; non-preapproved prompt. *Live 2026-09-16: `context7 resolve-library-id` ran in Ask mode with no prompt (grok `permission_resolved allow wait_ms=0`, agent-side); mini-app tools not exercised.*  
-- [ ] G3 Setting Bypass updates Grok behavior without restart; Default restores prompts. *Live 2026-09-16: mid-session Auto→Ask (`x.ai/yolo_mode_changed auto_mode=false`) restored bash prompts without restart. **Fails at session create:** Ask omits `_meta.autoMode`, so Grok inherits `~/.grok/config.toml` `permission_mode = "auto"` (`resolve_session_auto_mode` fallback) and runs the Auto classifier instead of asking. See parity §4.7.*  
+- [ ] G3 Setting Bypass updates Grok behavior without restart; Default restores prompts. *Live 2026-09-16: mid-session Auto→Ask restored bash prompts. Create-time Ask now sends `_meta.autoMode: false` and `_meta.yoloMode: false` (`grokSessionPermissionMeta`) so `resolve_session_auto_mode` cannot inherit `~/.grok/config.toml`. Live create against a config with `permission_mode = "auto"` is still unchecked.*  
 - [x] G4 `acpModes` effort selector still independent of permission mode. *Live 2026-09-16: effort lives in the model menu, permission in the status bar; Plan/Auto/Always toggles never touched `selectedEffort`. Separate defect: the effort catalog blanks after the first turn (parity §4.7 #1).*  
 - [x] G5 Auto maps correctly or fails with user-visible feedback if feature-disabled (parity PR5). *Live 2026-09-16: selecting Auto shows the fail-closed toast and sends `auto_mode=true`.*  
 - [ ] No regression on Claude/Codex/OpenCode permission paths.

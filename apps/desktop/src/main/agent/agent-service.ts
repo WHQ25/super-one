@@ -2264,7 +2264,7 @@ export class AgentService {
     priority: ClaudeSteerPriority,
   ): Extract<BackendCommand, { kind: 'claude.steer_queued' | 'acp.steer_queued' | 'codex.steer_queued' }> | null {
     if (harnessId === 'claude') return { kind: 'claude.steer_queued', clientMessageId, priority }
-    if (harnessId === 'acp') return { kind: 'acp.steer_queued', clientMessageId }
+    if (harnessId === 'acp') return { kind: 'acp.steer_queued', clientMessageId, priority }
     if (harnessId === 'codex' && priority !== 'next') return { kind: 'codex.steer_queued', clientMessageId }
     return null
   }
@@ -2650,7 +2650,7 @@ export class AgentService {
         harnessId === 'claude'
           ? { kind: 'claude.steer_queued', clientMessageId, priority: priority ?? 'now' }
           : harnessId === 'acp'
-            ? { kind: 'acp.steer_queued', clientMessageId }
+            ? { kind: 'acp.steer_queued', clientMessageId, priority: priority ?? 'now' }
             : { kind: 'codex.steer_queued', clientMessageId },
       )
       return true

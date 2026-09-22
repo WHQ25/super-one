@@ -4,6 +4,7 @@ import { markMessageEventApplied } from './transformers'
 import type { ChatCoreSession } from './types'
 import { extractPartialToolInput } from './partial-tool-input'
 import { defaultChatCorePorts, type ChatCorePorts } from './ports'
+import { synthesizeHostWorkflowCard } from './host-workflow-card'
 import {
   _patchTaskToolBlock,
   mapMessagesStructural,
@@ -343,6 +344,12 @@ export function reduceTool(
         taskProgress: commitTaskProgress(session.taskProgress, write, next),
         lastEventAt: ports.now(),
       }
+      // Slash-launched workflows emit workflow_updated only — no tool_use.
+      // A correlated toolUseId means a model launch already owns the card.
+      if (event.taskType === 'workflow' && !event.skipTranscript && !event.toolUseId && event.taskId) {
+        const messages = synthesizeHostWorkflowCard(session, event.taskId, event.description, ports.now())
+        return messages ? { ...patch, messages } : patch
+      }
       // Claude's slash-command subagents and Grok's goal-driven ones both run
       // without a launching tool_use; only those get a synthesized card.
       const ownsCard = event.taskType === 'local_agent' || event.hostSpawned === true
@@ -408,9 +415,17 @@ export function reduceTool(
         ...(workflowPhases ? { workflowPhases } : {}),
         ...(currentPhase ? { currentPhase } : {}),
       }
-      // Only patch tool blocks when we know the launch toolUseId (not provisional taskId key).
-      const messages = event.toolUseId
-        ? _patchTaskToolBlock(session.messages, event.toolUseId, {
+      // A renderer reload can miss task_started and only see later snapshots.
+      // Those still carry phases and no tool id for a slash launch.
+      let baseMessages = session.messages
+      if (!event.toolUseId && event.taskId && (event.workflowPhases?.length || event.currentPhase)) {
+        const synthesized = synthesizeHostWorkflowCard(session, event.taskId, event.description, ports.now())
+        if (synthesized) baseMessages = synthesized
+      }
+      // Patch the block taskProgress is keyed by. Host workflow cards and
+      // slash-command agents live under the task id, not a toolUseId.
+      const messages = write.key
+        ? _patchTaskToolBlock(baseMessages, write.key, {
             taskUsage: {
               totalTokens: event.usage.totalTokens,
               toolUses: event.usage.toolUses,

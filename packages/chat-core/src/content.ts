@@ -6,6 +6,7 @@ import { persistStreamingToolInput } from './transformers'
 import type { ChatCoreSession } from './types'
 import { isMediaGenerateVideoTool, isMediaVideoStatusTool } from './media-predicates'
 import { defaultChatCorePorts, type ChatCorePorts } from './ports'
+import { dropHostWorkflowShadow } from './host-workflow-card'
 import { dropStreamingToolInputPreview, isTerminalMessageStatus } from './shared'
 
 type ContentDeltaEvent = Extract<AgentEvent, { type: 'content_delta' }>
@@ -220,6 +221,8 @@ export function reduceContentDelta(
         } catch { /* ignore malformed JSON */ }
       }
     }
+    const stripped = dropHostWorkflowShadow(updatedMessages, resultDelta.toolUseId, resultDelta.summary)
+    if (stripped) updatedMessages = stripped
   }
 
   return { messages: updatedMessages, lastEventAt: ports.now(), ...extraUpdates }

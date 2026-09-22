@@ -1650,8 +1650,13 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
-  it('toggleMcpServer and reconnectMcp rebuild the live list via updateMcpServers', async () => {
+  it('toggleMcpServer rebuilds the live list and reconnectMcp drops then reattaches one server', async () => {
     const updateMcpServers = vi.fn(async () => {})
+    const servers = [
+      { type: 'stdio' as const, name: 'github', command: 'npx' },
+      { type: 'http' as const, name: 'superone', url: 'http://127.0.0.1/mcp', headers: [] },
+    ]
+    const spy = vi.spyOn(acpMcp, 'buildAcpSessionMcpServers').mockReturnValue(servers as never)
     setAcpRuntimeFactory(async () => mockRuntime({
       updateMcpServers,
       getAgentCapabilities: () => ({
@@ -1663,8 +1668,22 @@ describe('AcpBackend', () => {
     const backend = new AcpBackend()
     await backend.start(startOpts({ agentId: 'grok-build' }))
     await backend.toggleMcpServer('github', false)
+    expect(updateMcpServers).toHaveBeenCalledTimes(1)
+    expect(updateMcpServers).toHaveBeenLastCalledWith(servers)
     await backend.reconnectMcp('github')
-    expect(updateMcpServers).toHaveBeenCalledTimes(2)
+    expect(updateMcpServers).toHaveBeenNthCalledWith(2, [servers[1]])
+    expect(updateMcpServers).toHaveBeenNthCalledWith(3, servers)
+    spy.mockRestore()
+    await backend.close()
+  })
+
+  it('authenticateMcp forwards the server name to the runtime', async () => {
+    const authenticateMcp = vi.fn(async () => {})
+    setAcpRuntimeFactory(async () => mockRuntime({ authenticateMcp }))
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await backend.authenticateMcp('github')
+    expect(authenticateMcp).toHaveBeenCalledWith('github')
     await backend.close()
   })
 })

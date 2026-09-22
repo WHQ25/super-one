@@ -580,6 +580,7 @@ describe('createAcpRuntime (in-process agent)', () => {
     await runtime.close()
     expect(captured.newSession?._meta).toMatchObject({
       yoloMode: true,
+      autoMode: false,
       clientIdentifier: 'superone',
     })
   })
@@ -601,9 +602,9 @@ describe('createAcpRuntime (in-process agent)', () => {
     await runtime.close()
     expect(captured.newSession?._meta).toMatchObject({
       autoMode: true,
+      yoloMode: false,
       clientIdentifier: 'superone',
     })
-    expect((captured.newSession?._meta as { yoloMode?: boolean } | undefined)?.yoloMode).toBeUndefined()
   })
 
   it('stamps reasoningEffort on session/new so spawn sampling matches the picker', async () => {
@@ -650,7 +651,7 @@ describe('createAcpRuntime (in-process agent)', () => {
     await runtime.close()
   })
 
-  it('omits yolo/auto flags on session/new for default mode but still stamps clientIdentifier', async () => {
+  it('stamps yolo and auto false on session/new for Ask so Grok config cannot inherit auto', async () => {
     const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
     const runtime = await createAcpRuntime({
       launch: {
@@ -666,8 +667,8 @@ describe('createAcpRuntime (in-process agent)', () => {
     })
     await runtime.close()
     const meta = captured.newSession?._meta as Record<string, unknown> | null | undefined
-    expect(meta?.yoloMode).toBeUndefined()
-    expect(meta?.autoMode).toBeUndefined()
+    expect(meta?.yoloMode).toBe(false)
+    expect(meta?.autoMode).toBe(false)
     expect(meta?.clientIdentifier).toBe('superone')
   })
 
@@ -827,6 +828,90 @@ describe('createAcpRuntime (in-process agent)', () => {
     await runtime.setPermissionMode('plan')
     await runtime.prompt('plan this', 'msg-mode-plan', () => {})
     expect(captured.promptMetas?.[1]).toEqual({ mode: 'plan' })
+    await runtime.close()
+  })
+
+  it('keeps prompt mode agent when session/set_mode plan fails', async () => {
+    const promptMetas: Array<{ mode?: string } | undefined> = []
+    const agentApp = agent({ name: 'plan-fail-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'test-session-1' }))
+      .onRequest(methods.agent.session.setMode, async () => {
+        throw new Error('set_mode rejected')
+      })
+      .onRequest(methods.agent.session.prompt, async (ctx) => {
+        const params = ctx.params as { _meta?: { mode?: string } }
+        promptMetas.push(params._meta)
+        return { stopReason: 'end_turn' as const }
+      })
+      .onNotification(methods.agent.session.cancel, async () => {})
+
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      streamFactory: async () => ({
+        stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+        dispose: () => {},
+      }),
+    })
+    await expect(runtime.setPermissionMode('plan')).rejects.toThrow(/Internal error/)
+    await runtime.prompt('still asking', 'msg-after-failed-plan', () => {})
+    expect(promptMetas[0]?.mode).toBe('agent')
+    await runtime.close()
+  })
+
+  it('sendNow cancels the live turn without emitting idle over the replacement', async () => {
+    const metas: Array<Record<string, unknown> | null | undefined> = []
+    let releaseFirst: (() => void) | null = null
+    const firstHeld = new Promise<void>((resolve) => { releaseFirst = resolve })
+    let prompts = 0
+    const agentApp = agent({ name: 'send-now-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'test-session-1' }))
+      .onRequest(methods.agent.session.prompt, async (ctx) => {
+        prompts += 1
+        metas.push((ctx.params as { _meta?: Record<string, unknown> | null })._meta)
+        if (prompts === 1) {
+          await firstHeld
+          return { stopReason: 'cancelled' as const }
+        }
+        return { stopReason: 'end_turn' as const }
+      })
+      .onNotification(methods.agent.session.cancel, async () => {})
+
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      streamFactory: async () => ({
+        stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+        dispose: () => {},
+      }),
+    })
+    const firstEvents: AgentEvent[] = []
+    const secondEvents: AgentEvent[] = []
+    const first = runtime.prompt('running', 'm1', (event) => firstEvents.push(event))
+    await vi.waitFor(() => expect(prompts).toBe(1))
+    const second = runtime.prompt('cut in', 'm2', (event) => secondEvents.push(event), undefined, { sendNow: true })
+    await vi.waitFor(() => expect(metas).toHaveLength(2))
+    expect(metas[1]).toMatchObject({ sendNow: true, mode: 'agent' })
+    releaseFirst!()
+    await first
+    expect(firstEvents.some((event) => event.type === 'message_interrupted' && event.messageId === 'm1')).toBe(true)
+    expect(firstEvents.some((event) => event.type === 'status_change' && event.status === 'idle')).toBe(false)
+    await second
+    expect(secondEvents.some((event) => event.type === 'status_change' && event.status === 'idle')).toBe(true)
     await runtime.close()
   })
 

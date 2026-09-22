@@ -971,8 +971,8 @@ describe('ChatContent Codex queue has no non-interrupting steer', () => {
   })
 })
 
-describe('ChatContent ACP queue has no non-interrupting steer', () => {
-  it('hides the steer-soon action for a streaming Grok turn', () => {
+describe('ChatContent ACP queue', () => {
+  it('offers steer now and steer soon for a streaming Grok turn', () => {
     hoisted.steerQueuedMessage.mockClear()
     hoisted.sessionState.messages = [{ id: 'm1' }]
     hoisted.sessionState.queuedMessages = [{
@@ -985,8 +985,10 @@ describe('ChatContent ACP queue has no non-interrupting steer', () => {
 
     renderContent()
 
-    expect(screen.getByRole('button', { name: 'Steer Now' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Steer Soon (no interrupt)' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Steer Now' }))
+    expect(hoisted.steerQueuedMessage).toHaveBeenCalledWith('u2', undefined, 'now')
+    fireEvent.click(screen.getByRole('button', { name: 'Steer Soon (no interrupt)' }))
+    expect(hoisted.steerQueuedMessage).toHaveBeenCalledWith('u2', undefined, 'next')
   })
 })
 

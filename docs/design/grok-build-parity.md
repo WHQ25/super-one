@@ -4,43 +4,45 @@
 |-------|--------|
 | Status | Draft |
 | Date | 2026-07-25 |
-| Verified | 2026-09-16 against SuperOne working tree + Grok Build HEAD `48271133` (`SOURCE_REV` `be7ce6e8cffe46d20bef9834b211616082ee866b`) |
+| Verified | 2026-09-22 from the interrupted `grok-build-parity` scratch (Source, Catalog, Inventory). Gap phase written in-session. P0/P1 wire claims re-read in SuperOne. |
 | Scope | SuperOne as ACP **host client** for Grok Build (`grok agent stdio`) |
 | SuperOne path | `/Users/wuhangqi25/Developer/Projects/super-one` |
-| Grok Build source | `/Users/wuhangqi25/Developer/Projects/grok-build` (`origin` → `https://github.com/xai-org/grok-build.git`) |
-| Related design | [`grok-acp-permissions.md`](./grok-acp-permissions.md) (permission subsystem), [`grok-xai-ext-notifications.md`](./grok-xai-ext-notifications.md) (ExtNotification bus) |
-| Out of scope (summary) | Grok TUI chrome, leader/WS topology, OS sandbox kernel, agent-side deny/hook engine, spoofing `clientType: grok-desktop` |
+| Grok Build source | `/Users/wuhangqi25/Developer/Projects/grok-build` at `48271133` (`SOURCE_REV` `be7ce6e8cffe46d20bef9834b211616082ee866b`). `origin/main` is `4247f661` (2 commits ahead; not fast-forwarded). |
+| Related design | [`grok-acp-permissions.md`](./grok-acp-permissions.md), [`grok-xai-ext-notifications.md`](./grok-xai-ext-notifications.md) |
+| Scratch | Session workflow scratch `01-source.md`, `02-catalog.md` (207 capabilities), `03-inventory.md` (193 host rows) |
 
-This is the **living host-parity plan**. Prefer live code + tests over older matrix rows in this file’s 2026-07-25 draft; those rows are rewritten below.
+Integration started against this plan: create-time `autoMode`/`yoloMode` booleans, plan `set_mode` failure no longer sticks, `x.ai/mcp/auth_trigger` plus the Grok Log In button, and `reconnectMcp` drop-then-reattach. Queue steer now is `session/prompt` `_meta.sendNow`; steer soon stays `x.ai/interject`. Exit-plan still has no file path field.
+
+This revision **replaces** the 2026-09-16 capability matrix. That matrix is stale against the inventory: PATH splitting, prompt `_meta.mode`, node ask/exit ads, fork initialize caps, Always button, Auto toast, SessionDefaults labels, and `tools_changed` are shipped. Do not implement from old RT/PM/XAI rows without checking §3 below.
 
 ---
 
 ## 0. Relationship to existing designs
 
-### `grok-acp-permissions.md` — keep; partially superseded in narrative
+### `grok-acp-permissions.md`
 
-That doc owns **permission correctness**: built-in MCP preapprove, `session/new` `_meta.yoloMode`/`autoMode`, mid-session `x.ai/yolo_mode_changed`, Generic `clientIdentifier=superone`, and the rule that plan ≠ yolo.
+Owns permission correctness. Phase-1 preapprove, yolo/auto notify, and host plan via `session/set_mode` are shipped. **Keep that file.** Do not re-derive G1–G5 here.
 
-**Keep it.** Do not re-derive G1–G5 here. Remaining permission *product* polish (Always button, Auto honesty, settings labels) is tracked in this file.
+Still open there, and still open here:
 
-| Permissions-doc claim | Live code (2026-09-16) |
-|-----------------------|------------------------|
-| Status header “Implemented (phase 1)” | Accurate |
-| §1 historical “always UI-prompt / setPermissionMode no-op” | **Shipped.** Preapprove + `setPermissionMode` → yolo notify |
-| §3.1 ASCII still shows those gaps | **Stale diagram** — update in PR0 |
-| §4.2 “phase 1 only `allow_once`” | **Stale.** Built-ins now prefer `allow-always-mcp` / `allow_always` |
-| §4.3 “hide plan until phase 2” | **Stale.** Host enter-plan via `session/set_mode` is live |
-| §12 G1–G5 checkboxes | Code+units exist; boxes + live CLI still open (TD-03/TD-04) |
-| Non-goal: spoof `grok_desktop` | Still correct. SuperOne stays Generic |
-| Non-goal: re-enable Grok `terminal` | Still correct |
+| Item | State on 2026-09-22 |
+|------|---------------------|
+| G1 built-in preapprove | Shipped. Unit-tested. |
+| G2 third-party MCP still prompts | Code denies auto-allow. No fresh live confirmation in this pass. |
+| G3 create-time Ask must not inherit `~/.grok` `permission_mode=auto` | **Still broken.** See §4.1. |
+| G4 effort catalog survives the first turn | Not re-tested live. |
+| G5 Auto fail-closed toast | Shipped (`acp-auto-honesty.ts`). |
+| Spoof `clientType: grok-desktop` | Still a non-goal. |
 
-### `grok-xai-ext-notifications.md` — keep; bus is shipped
+The permissions doc intro still says not to tick G1–G5 until a recorded live run, while the 2026-09-16 history already ticks G1/G4/G5. That sentence is stale. This plan does not edit that file.
 
-That doc correctly identified the **agent→client ExtNotification rail** (`x.ai/session_notification` and standalones). **Live code now registers the bus** (`acp-xai-session-notify.ts`, `packages/acp/src/xai-event-map.ts`) with tests. The draft’s §4 gap matrix (BUS/WF/SA/BG/US/FU missing) is **stale**. Remaining bus items: `x.ai/session/prompt_complete`, applying `x.ai/mcp/tools_changed`, Node missing ask/exit reverse RPCs.
+### `grok-xai-ext-notifications.md`
+
+The ExtNotification bus is shipped (`acp-xai-session-notify.ts`, `packages/acp/src/xai-event-map.ts`). Its early “everything missing” matrix is stale. Leftovers are in §3 (`prompt_complete` alias, `hooks/run`, `queue/*`, `sdk_call`).
 
 ### This document
 
-Broader parity: ACP runtime, models/effort, plan chrome sync, MCP live ops, CLI/node host, tests/docs, and a deferred catalog of TUI-only / agent-owned surfaces.
+Host parity that is not owned by those two files: create-time permission meta, plan-mode failure handling, MCP login, CLI/node thinness, and doc hygiene.
 
 ---
 
@@ -48,20 +50,25 @@ Broader parity: ACP runtime, models/effort, plan chrome sync, MCP live ops, CLI/
 
 ### In scope
 
-- SuperOne **desktop** as ACP client (`grok agent stdio` JSON-RPC).
-- SuperOne **CLI/node** (`packages/acp` `run-turn.ts`) as a thinner ACP host.
-- Core ACP: initialize → authenticate → session/new\|load → prompt/cancel/update → request_permission.
-- High-value x.ai reverse requests and host→agent ops SuperOne already partially wires.
-- Host UX parity with Claude/Codex for: permissions, model/effort, MCP attach, plan enter/exit, slash, tool rows.
-- Test + design-doc hygiene so living docs match code.
+- Desktop ACP client (`grok agent stdio`).
+- CLI/node host (`packages/acp/src/run-turn.ts`) where it disagrees with desktop on a correctness or permission boundary.
+- Gaps the 2026-09-22 inventory marked `missing` or `partial` and that are not already explained as intentional Generic-client limits.
 
 ### Explicit non-goals
 
-See §6. SuperOne must **not** emulate the Grok pager. Tools, sandbox, deny rules, hooks files, and folder-trust stores stay agent-owned unless the host must proxy a reverse RPC.
+See §6. Do not emulate the Grok pager. Do not spoof `grok-desktop` to unlock `enable-always-approve` or `allow-edits-session`.
 
 ---
 
-## 2. Architecture snapshot (verified)
+## 2. Source and coverage
+
+| Item | Result |
+|------|--------|
+| Catalog | 207 Grok Build capabilities across ACP core, permissions, x.ai extensions, MCP, session/composer, TUI-only surfaces |
+| Inventory | 193 SuperOne rows: **100 done**, **68 partial**, **14 missing**, **11 na** |
+| Checkout | Existing clone. `git fetch` ran. Local `main` was **not** fast-forwarded. |
+| Upstream delta | `48271133..origin/main` touches `xai-grok-shell` (about 153 files), including `util/config/mcp.rs` and `session/workflow/host_service.rs`. Re-read those before any MCP-config or workflow-host PR. |
+| Working tree after inventory | Slash-launched workflows now synthesize a `Workflow` card (`packages/chat-core/src/host-workflow-card.ts`). The inventory predates that and still describes the card as absent. |
 
 ```text
 SuperOne renderer
@@ -72,606 +79,173 @@ SuperOne renderer
 Session → AcpBackend
         │
         ▼
-createAcpRuntime  ──spawn──►  `grok agent stdio`  (ACP JSON-RPC v1)
-        │
-        ├── initialize  (fs/terminal=false for grok-build; _meta askUserQuestion+exitPlanMode+clientIdentifier=superone)
-        ├── authenticate  (non-interactive cached_token / api_key only)
-        ├── session/new | session/load  (mcpServers=superone+user; _meta yolo/auto/reasoningEffort)
-        ├── session/prompt | cancel | set_mode | set_model | set_config_option
-        ├── notify  x.ai/yolo_mode_changed, x.ai/interject, x.ai/queue/* (not hosted)
-        ├── reverse request  session/request_permission, x.ai/ask_user_question,
-        │                    x.ai/exit_plan_mode, x.ai/mcp/elicit
-        └── ExtNotification  x.ai/session_notification | x.ai/session/update | standalones
+createAcpRuntime  ──spawn──►  grok agent stdio
+        ├── initialize   fs/terminal=false for grok-build; _meta ask + exit + clientIdentifier=superone
+        ├── authenticate cached_token / api_key (interactive auth is a separate settings process)
+        ├── session/new|load  mcpServers; _meta yolo/auto/reasoningEffort/clientIdentifier
+        ├── session/prompt|cancel|set_mode|set_model
+        ├── notify  x.ai/yolo_mode_changed, x.ai/interject
+        ├── reverse  request_permission, x.ai/ask_user_question, x.ai/exit_plan_mode, x.ai/mcp/elicit
+        └── ExtNotification  x.ai/session_notification and standalones
 ```
 
-**Key SuperOne files**
-
-| Area | Path |
-|------|------|
-| Runtime | `apps/desktop/src/main/acp/acp-runtime.ts` |
-| Spawn / detect | `acp-process.ts`, `acp-detect.ts`, `agent-catalog.ts` |
-| Config / models | `acp-config.ts` |
-| Permission preapprove | `acp-permission-preapprove.ts` |
-| Permission map | `acp-permission-map.ts` |
-| x.ai reverse + ops | `acp-xai-extensions.ts`, `acp-xai-session-ops.ts`, `acp-xai-session-notify.ts` |
-| MCP attach / status | `acp-mcp.ts`, `acp-xai-mcp-status.ts` |
-| Event map | `acp-event-map.ts` |
-| Backend | `apps/desktop/src/main/session/backends/acp-backend.ts` |
-| Fork | `acp-fork.ts` |
-| Node host | `packages/acp/src/run-turn.ts` |
-| Caps | `packages/shared/src/harness/harness-capabilities.ts` |
-| Permission UI | `AcpPermissionSelector.tsx`, `PermissionPrompt.tsx` |
-
-**Grok wire facts (from grok-build)**
-
-- Transport: `grok agent stdio` (optional `serve` WS — SuperOne non-goal).
-- Protocol: ACP v1 (`agent-client-protocol` 0.10.x). FS/terminal reverse RPCs fire **only** if advertised on initialize. SuperOne advertises **false** for `grok-build` (local FS/PTY; avoids UTF-8 image corruption).
-- Models: often `_meta.modelState` / `x.ai/sessionConfig` with **no** standard `configOptions` model id → `session/set_model` + `_meta.reasoningEffort`. `configOptions` category `mode` is **reasoning effort**, not plan/permission.
-- Permission runtime: Ask / Auto / AlwaysApprove (yolo). Mid-session: `x.ai/yolo_mode_changed` (`ask\|auto\|always-approve`). `acceptEdits`/`dontAsk` are settings-layer synthetics, not that notification.
-- Plan: ACP `session/set_mode` ids `default\|plan\|ask`. Prompt `_meta.mode=agent\|ask\|plan` is the **only prompt-carried** mode signal (`session_mode.rs`). Agent also emits `current_mode_update`. Reverse `x.ai/exit_plan_mode` for approval.
-- Client identity: `clientIdentifier=superone` → `ClientType::Generic`. Only TUI/Pager/Desktop get `enable-always-approve`, `allow-edits-session`, bash word-scope Always rows. Generic **auto-denies** Auto-classifier blocks instead of prompting.
-- MCP tool id: `server__tool`. SuperOne UI: `mcp__server__tool`. Model uses `search_tool` / `use_tool`.
-- Progressive work (workflow, subagent, bg tasks, follow-ups) rides **ExtNotification**, not standard `session/update` tool rows.
+Node `run-turn.ts` sends the same ask/exit `_meta` flags. It still sends `clientCapabilities: {}` and `clientInfo.version` `0.0.0`.
 
 ---
 
-## 3. Capability matrix
+## 3. Gap matrix
 
-Status: `done` | `partial` | `missing` | `na` (deferred by policy).
+Columns match the workflow contract. `done` rows are omitted; they are the 100 inventory lines in the scratch file. Priority: **P0** broken host correctness, **P1** Claude/Codex-visible host UX, **P2** useful extension, **P3** defer or TUI-only.
 
-Priority: **P0** broken host correctness · **P1** Claude/Codex host UX parity · **P2** valuable ACP extension · **P3** TUI-only / defer.
+| id | name | surface | status | evidence | gap | priority |
+|----|------|---------|--------|----------|-----|----------|
+| G3 | Create-time Ask omits `autoMode: false` | acp-host | partial | `grokSessionPermissionMeta` in `acp-permission-preapprove.ts` | Ask/default only set `clientIdentifier`. `autoMode` is set only when mode is `auto`. Grok then inherits `~/.grok/config.toml` `permission_mode=auto`. | **P0** |
+| PL-1 | Enter plan sticks locally if `session/set_mode` fails | acp-host | partial | `setPermissionMode` in `acp-runtime.ts` | Sets `acpSessionMode = 'plan'` before the request, then logs and returns on failure. UI stays in plan; the agent does not. | **P1** |
+| MCP-AUTH | `x.ai/mcp/auth_trigger` | acp-host | missing | `AcpBackend` has no `authenticateMcp`. OpenCode does. | `/mcp` Log In is hidden for grok-build. OAuth MCP servers cannot log in from SuperOne. | **P1** |
+| PL-2 | Plan file name and review text | acp-host | partial | `handleExitPlanMode`, `PlanApprovalPrompt.tsx` | `planFilePath` is always `''`. Line comments go out as a later user turn. The approve RPC is `outcome=approved` only. | **P1** |
+| MCP-RE | `reconnectMcp` ignores the server name | acp-host | partial | `acp-backend.ts` `reconnectMcp` → `pushMcpServers` | Resends the same descriptor list. A failed server with an unchanged config may not reconnect. | **P1** |
+| Q-1 | Queued steer has no send-now | acp-host | partial | `queued-user-message-queue.ts`, `buildGrokInterjectParams` | Desktop steers with `x.ai/interject` and does not send `_meta.sendNow`. Node has no interject client. `supportsQueuedSteerSoon` is false. | **P1** |
+| MOB-1 | Mobile plan sheet | acp-host | partial | `apps/mobile/src/prompts/PlanSheet.tsx` | Freeform approve/reject only. No line comments. Continue-after-approve is Claude-only. | **P1** |
+| AUTO-1 | Generic Auto auto-denies classifier blocks | acp-agent | missing | `acp-auto-honesty.ts`; permissions doc client type | Toast is shipped. Escalation stays an agent deny because `clientIdentifier=superone` is Generic. | **P1** (do not spoof) |
+| NODE-1 | Node self-echo on interjection | acp-host | partial | `packages/acp/src/xai-event-map.ts` | Desktop drops self-echo in `AcpBackend`. The shared mapper appends every interjection, including our own. | **P1** |
+| NODE-2 | Node initialize shape | acp-host | partial | `packages/acp/src/run-turn.ts` | Ask/exit flags are present. `clientCapabilities` is `{}`, version is `0.0.0`, no yolo notify, no `set_mode`, no user MCP list, headless `exit_plan_mode` cancels immediately. | **P2** |
+| WF-1 | Slash workflow card | acp-host | done in tree | `packages/chat-core/src/host-workflow-card.ts` | Inventory still says a host slash launch has no card. This tree synthesizes one from `workflow_updated` when no tool call exists. | — |
+| XAI-PC | `x.ai/session/prompt_complete` | acp-host | missing | not in `XAI_EXT_NOTIFICATION_METHODS` | Grok still emits this fire-and-forget twin of durable `turn_completed` (`turn_completion.rs`). Wake already ends on `turn_completed`. | **P2** |
+| XAI-HK | `x.ai/hooks/run` | acp-host | missing | no `_meta x.ai/hooks` handler | In-process hook reverse RPC is not implemented. `pluginDirs` on session/new is shipped. | **P2** |
+| XAI-Q | `x.ai/queue/*` | acp-host | missing | no queue handlers | Host queue is local plus `x.ai/interject`, not Grok’s queue RPC. | **P2** |
+| MCP-TOML | Read `~/.grok/config.toml` `[mcp_servers]` | acp-host | missing | `mcp-config-service.ts` is Claude JSON | Grok merges its own TOML beside SuperOne’s `session/new` list. SuperOne’s `/mcp` popup does not show those servers. Upstream `mcp.rs` changed after `48271133`. | **P2** |
+| MCP-SID | `{{session_id}}` in user MCP headers | acp-host | missing | `acp-mcp.ts` copies headers verbatim | SuperOne’s own HTTP attach sets `X-SuperOne-Session-Id` explicitly. User servers do not get substitution. | **P2** |
+| MCP-TO | Startup/tool timeouts on ACP MCP descriptors | acp-host | missing | `acp-mcp.ts` descriptor fields | Codex path sets `startup_timeout_sec`. ACP descriptors do not. | **P2** |
+| MCP-SDK | `x.ai/mcp/sdk_call` | acp-host | missing | no references | In-process MCP transport. Host uses HTTP/stdio. | **P3** |
+| RT-RESUME | `session/resume` | acp-agent | missing | resume is `session/load` or `session/new` | Unstable ACP resume. One process per session does not need it. | **P3** |
+| MODE-ASK | Grok session mode `ask` as chrome | tui-only | missing | `grokPromptMetaMode` returns `plan` or `agent` | Host Ask is the yolo baseline, not prompt mode `ask`. | **P3** |
+| MODE-EDIT | `acceptEdits` / `dontAsk` on Grok | acp-agent | missing | yolo notify maps other modes to `ask` | The notification cannot carry those modes. | **P3** |
+| TD-09 | Checked-in JSON-RPC trace | test | missing | parity doc TD-09 | Optional. Mock-agent Vitest stays the gate. | **P3** |
+| NA-* | Pager ops, leader/serve, host FS/terminal for grok-build, `enable-always-approve`, `allow-edits-session` | tui-only | na | inventory `na` rows (11) | Policy defer. | **P3** |
 
-Evidence paths are under SuperOne unless noted.
-
-### 3.1 ACP runtime & process (`acp-runtime`)
-
-| id | name | surface | SuperOne status | evidence | gap | priority |
-|----|------|---------|-----------------|----------|-----|----------|
-| RT-01 | Spawn `grok agent stdio` + ndjson | runtime | done | `acp-process.ts`, `agent-catalog.ts` (`grok-build`) | — | — |
-| RT-02 | Safe spawn env / Windows hide | runtime | done | `acp-process.ts`, `packages/runtime/src/spawn-env.ts` | — | — |
-| RT-03 | Detect grok CLI (`~/.grok/bin` + PATH) | runtime | partial | `acp-detect.ts` splits PATH on `:` always | Windows `;` PATH likely misses installs | P2 |
-| RT-04 | initialize PROTOCOL_VERSION + `clientInfo` superone | acp-host | done | `acp-runtime.ts`, `acp-client-info.ts` | no `_meta.clientType` (intentional Generic) | na |
-| RT-05 | Grok: fs/terminal=false | acp-host | done | `useHostDelegation = agentId !== 'grok-build'` | intentional | na |
-| RT-06 | Advertise askUserQuestion + exitPlanMode | acp-host | partial | desktop `initialize._meta`; `packages/acp` initialize `clientCapabilities: {}` | Node omits flags so Grok may not park reverse RPCs | **P0** (CLI) |
-| RT-07 | Non-interactive authenticate | acp-host | partial | cached_token / api_key heuristics | interactive `x.ai/auth/*` missing; no unit test | P2 |
-| RT-08 | session/new mcpServers (superone + user) | acp-host | done | `buildAcpSessionMcpServers`, runtime tests | load payload not asserted for mcpServers | P3 |
-| RT-09 | session/new `_meta` yolo/auto + clientIdentifier | acp-host | done | `grokSessionPermissionMeta` | — | — |
-| RT-10 | session/new\|load `_meta.reasoningEffort` | acp-host | done | `sessionRequestBase` | — | — |
-| RT-11 | session/load resume + drain replay + fallback new | acp-host | done | `drainLoadReplay`, `acp-runtime.test.ts` | — | — |
-| RT-12 | session/prompt + update pump | acp-host | done | `acp-runtime.ts` prompt/pump | no prompt `_meta.mode` (see SU-10) | P1 |
-| RT-13 | session/cancel + 2s stop fallback | acp-host | done | `CANCEL_STOP_FALLBACK_MS` | no `_meta.cancelTrigger` / rewindIfNoOutput | P3 |
-| RT-14 | Concurrent prompt isolation | acp-host | done | `AcpPromptTurn`, concurrent-turn tests | — | — |
-| RT-15 | Rejected prompt (quota -32003) ends turn | acp-host | done | `acp-runtime-turn-failure.test.ts` | — | — |
-| RT-16 | Agent auto-wake + x.ai turn_completed | acp-host | done | `isXaiTurnCompletedNotification` | `x.ai/session/prompt_complete` not registered | P3 |
-| RT-17 | session/set_config_option | acp-host | partial | `setConfigOption`; Grok often `configId=null` | host uses set_model instead; no runtime unit | P3 |
-| RT-18 | session/set_model + `_meta.reasoningEffort` | acp-host | done | `acp-config.ts` `buildSetModelParams` | — | — |
-| RT-19 | session/set_mode plan\|default | acp-host | done | `setAcpSessionMode`, create-time plan | Grok `ask` session mode not a UI item | P3 |
-| RT-20 | x.ai/yolo_mode_changed mid-session | acp-host | done | `setPermissionMode` | notify omits `clientIdentifier` by design | P3 |
-| RT-21 | Coalesce model/effort catalogs | acp-host | done | `coalesceModelConfig` | — | — |
-| RT-22 | FS/terminal reverse handlers | acp-host | na | implemented; not advertised for grok-build | — | na |
-| RT-23 | AbortSignal kills initialize child | runtime | partial | `abortInitialization` | no unit that abort kills the process | P3 |
-| RT-24 | Process kill SIGTERM→SIGKILL | runtime | done | `acp-process.ts` | — | — |
-| RT-25 | `formatProcessExit` / stderr | runtime | partial | `acp-runtime.ts` | no dedicated unit | P3 |
-| RT-26 | session/close on tab drop | acp-host | na | `close()` kills stdio process (no `session/close`) | OK for per-session stdio; needed if leader/serve | na |
-| RT-27 | session/resume (no replay) | acp-host | missing | host uses session/load | prefer load; resume is optional reconnect | P3 |
-| RT-28 | additionalDirectories gated | acp-host | partial | `supportsExtraRoots`; Grok usually `{}` | extra roots dropped; no mid-session set | P2 |
-| RT-29 | Cold `x.ai/session/fork` initialize | acp-host | partial | `acp-fork.ts` empty `clientCapabilities` | fork path untested vs real grok; caps empty | P2 |
-| RT-30 | Prompt images + @file resource blocks | acp-host | done | `acp-prompt.ts` | — | — |
-| RT-31 | Host-context append (not systemPromptOverride) | acp-host | partial | first non-slash prompt append | no `_meta.rules` / `systemPromptOverride` / `pluginDirs` | P2 |
-| RT-32 | GROK_CONFIG overlay on spawn | config | missing | no `GROK_CONFIG` / `GROK_CONFIG_PATH` | host mutates nothing; overlay is the safe inject | P2 |
-| RT-33 | grok agent serve / leader | runtime | na | stdio only | explicit non-goal | na |
-
-### 3.2 Permissions & mode UI (`permissions-ui`)
-
-| id | name | surface | SuperOne status | evidence | gap | priority |
-|----|------|---------|-----------------|----------|-----|----------|
-| PM-01 | request_permission → PermissionPrompt | acp-host | done | `acp-permission-map.ts`, `PermissionPrompt.tsx` | ACP card is Allow/Deny only (see PM-12) | P1 |
-| PM-02 | Built-in SuperOne MCP preapprove | acp-host | done | `shouldAutoAllowAcpPermission` | — | — |
-| PM-03 | Mini-app preapprove only (never `superone__*` prefix) | acp-host | done | preapprove tests | — | — |
-| PM-04 | Never auto-allow 3rd-party MCP / bash | acp-host | done | GitHub / `run_terminal_command` tests | — | — |
-| PM-05 | allow-always-mcp for builtins; allow-once for main-thread-only | acp-host | done | `decideAcpPermission` | user-facing Always still missing | P1 |
-| PM-06 | Deny main-thread-only tools on Grok subagents | acp-host | done | `looksLikeAcpSubagentCall` | — | — |
-| PM-07 | AcpPermissionSelector Ask/Plan/Auto/Always | session-ui | partial | `acpPermissionModes.ts` | selector tests are constants-only; no render test | P3 |
-| PM-08 | Status-bar permission vs effort split | session-ui | done | `StatusBarPermission.tsx`, `AcpModeSelector` null when configId null | — | — |
-| PM-09 | plan ≠ yolo: setPermissionMode(plan) → set_mode | acp-host | done | `acp-runtime.ts` | — | — |
-| PM-10 | cyclePermissionMode ACP subset | session-ui | partial | `cyclePermissionModeImpl` uses `ACP_PERMISSION_MODES` | chat-store tests still Claude-only | P3 |
-| PM-11 | Shift+Tab togglePlanModeShortcut plan↔default | session-ui | done | `togglePlanModeShortcutImpl` | — | — |
-| PM-12 | PermissionPrompt Always / `allow_always` for ACP | session-ui | missing | `getPermissionPromptConfig` 4-button **Codex only** | `allowAlwaysAllow` set from wire; UI never offers it | **P1** |
-| PM-13 | Auto under Generic: classifier blocks auto-deny | acp-host | missing | Grok `ClientType::Generic`; SuperOne offers Auto | no toast / eligibility; tools fail closed silently | **P1** |
-| PM-14 | Settings SessionDefaults ACP labels | session-ui | partial | `SessionDefaultsSection` uses Claude `PermissionModeList` (Normal/Bypass) | draft popover uses `AcpPermissionModeList` correctly | **P1** |
-| PM-15 | enable-always-approve option id | acp-host | missing | Generic never receives it | ignore unless spoofing Desktop (non-goal) | P3 |
-| PM-16 | acceptEdits / dontAsk mid-session | acp-host | missing | yolo notify cannot carry them | by wire; idle rebuild only | P3 |
-| PM-17 | Hide `/always-approve` slash | session-ui | done | `acp-slash-filter.ts` | — | — |
-| PM-18 | persist/resume permissionMode | session-ui | done | `session.ts` mergeUiSettings | — | — |
-| PM-19 | Mobile ACP permission chip labels | session-ui | done | `apps/mobile/.../permission-modes.generated.json` acp | no dedicated mobile UI test | P3 |
-| PM-20 | CLI `packages/acp` permission + yolo | acp-host | partial | Allow/Deny only; no setPermissionMode | CLI cannot change yolo mid-turn | P2 |
-| PM-21 | allow-edits-session option | acp-host | missing | Generic option set | Desktop-only option; do not spoof | P3 |
-| PM-22 | Design-doc accuracy (PM-11/TD-04) | tests-docs | partial | permissions §3.1/§12 lag | PR0 | **P1** |
-
-### 3.3 x.ai extension handlers (`xai-ext-host`)
-
-| id | name | surface | SuperOne status | evidence | gap | priority |
-|----|------|---------|-----------------|----------|-----|----------|
-| XAI-01 | ask_user_question reverse + UI | acp-host | done | `AskUserQuestionPrompt.tsx`, backend tests | Node does not register; no component unit test | P2 / **P0** CLI |
-| XAI-02 | ask plan outcomes `chat_about_this` / `skip_interview` | acp-host | missing | comments only in `formatGrokAskUserResponse` | host only `accepted\|cancelled` | P2 |
-| XAI-03 | exit_plan_mode reverse + PlanApproval + line review | acp-host | done | `PlanApprovalPrompt.tsx`, `plan-feedback.ts` | `planFilePath` always `''` | P3 |
-| XAI-04 | Dual `_x.ai/*` onRequest aliases | acp-host | partial | desktop ask/exit/elicit; Node elicit only | underscore path untested e2e | P3 |
-| XAI-05 | Approve plan: skip forced permissionMode default | session-ui | partial | `respondToPlanApprovalImpl` `postApprovalMode ?? 'default'` | ACP approve drops auto/always-approve | **P1** |
-| XAI-06 | Hide Claude post-approve acceptEdits toggle | session-ui | done | `showPostApprovalModeToggle = claude` | — | — |
-| XAI-07 | ExtNotification bus (session_notification / session/update) | acp-host | done | `acp-xai-session-notify.ts`, `xai-event-map.ts` | design doc still marks BUS missing | P1 docs |
-| XAI-08 | workflow_updated / subagent_* / goal_updated | acp-host | done | mapper + tests | `supportsSubagents: false` vs mapped events | P2 |
-| XAI-09 | task_backgrounded / task_completed | acp-host | done | standalone + nested | no `_x.ai/task_*` alias | P3 |
-| XAI-10 | monitor_event | acp-host | done | mapper | — | — |
-| XAI-11 | follow_ups chips (drop `x.ai/replayed`) | acp-host | done | `PromptSuggestionChips` | — | — |
-| XAI-12 | scheduled_task_* + inject_prompt | acp-host | done | `parseGrokScheduledTaskInject` | — | — |
-| XAI-13 | session/interjection + skip self echo | acp-host | done | `handleSessionInterjection` | — | — |
-| XAI-14 | x.ai/interject mid-turn steer | acp-host | done | `acp-backend.ts` `interjectRequest` | no send-now (`_meta.sendNow`) | P3 |
-| XAI-15 | x.ai/recap auto/manual | acp-host | done | `/recap` intercept | — | — |
-| XAI-16 | x.ai/compact_conversation | acp-host | done | `/compact` intercept | — | — |
-| XAI-17 | x.ai/rewind/{points,execute} | acp-host | done | `session.ts` maps checkpoint → prompt index | — | — |
-| XAI-18 | x.ai/session/fork + resume child | acp-host | done | `acp-fork.ts` | see RT-29 | P2 |
-| XAI-19 | x.ai/billing credits gauge | acp-host | done | `acp-billing.ts` | — | — |
-| XAI-20 | settings/update consent_gate | acp-host | partial | `handleConsentNotice` | non-consent remote settings ignored | P3 |
-| XAI-21 | x.ai/models/update | acp-host | done | `handleMcpExt` extract models | — | — |
-| XAI-22 | x.ai/mcp/elicit + elicit_complete | acp-host | done | parked as `mcp_elicitation` | — | — |
-| XAI-23 | x.ai/mcp/sdk_call | acp-host | missing | SuperOne uses HTTP/stdio attach | zero-IPC SDK transport unused | P3 |
-| XAI-24 | x.ai/session/prompt_complete | acp-host | missing | wake closed via nested turn_completed | legacy alias | P3 |
-| XAI-25 | TUI-only: sessions/changed, queue/changed, announcements, git_head_changed, leader/version_mismatch | acp-host | na | omitted from `XAI_EXT_NOTIFICATION_METHODS` | — | na |
-| XAI-26 | x.ai/fs\|git\|search\|terminal client ops | acp-host | na | pager chrome | — | na |
-| XAI-27 | Client hooks `x.ai/hooks/run` | acp-host | missing | no `_meta.x.ai/hooks` | product decision | P2 |
-| XAI-28 | Prompt queue `x.ai/queue/*` | acp-host | missing | host uses interject/queue locally | server-authoritative queue | P2 |
-
-### 3.4 MCP host attach & tools (`mcp-host`)
-
-| id | name | surface | SuperOne status | evidence | gap | priority |
-|----|------|---------|-----------------|----------|-----|----------|
-| MCP-01 | session/new SuperOne first (HTTP if caps.http else stdio) | mcp-host | done | `acp-mcp.ts` | HTTP path unit-covered, not e2e vs grok | P3 |
-| MCP-02 | session/load re-attaches same mcpServers | mcp-host | partial | spread `sessionRequestBase` | load test does not assert mcpServers | P3 |
-| MCP-03 | User MCP from Claude-shaped configs | mcp-host | done | `listMcpConfigs` → `toAcpMcpServer` | not `~/.grok/config.toml` | P2 |
-| MCP-04 | Filter HTTP/SSE by agent mcpCapabilities | mcp-host | done | `mcpTransportCapsFromAgent` | — | — |
-| MCP-05 | Mid-session `x.ai/session/update_mcp_servers` | mcp-host | partial | `AcpBackend.reloadMcpServers` **omits agentCapabilities** | live reload drops HTTP/SSE; SuperOne falls back to stdio | **P1** |
-| MCP-06 | reconnectMcp | mcp-host | missing | `async reconnectMcp() {}` | Claude/OpenCode implement | **P1** |
-| MCP-07 | toggleMcpServer | mcp-host | missing | no-op; settings still call it | writes Claude config then hits no-op | **P1** |
-| MCP-08 | authenticateMcp / OAuth login RPC | mcp-host | missing | no `authenticateMcp`; Grok is `x.ai/mcp/auth_trigger` + elicit URL | `/mcp` LogIn throws | **P1** |
-| MCP-09 | server_status / init_progress / servers_updated → mcp_status | mcp-host | done | `acp-xai-mcp-status.ts` | — | — |
-| MCP-10 | x.ai/mcp/tools_changed apply | mcp-host | partial | subscribed; `handleMcpExt` has no case | tool counts stale until servers_updated | P2 |
-| MCP-11 | Host-only `/mcp` popup | session-ui | done | `McpSlashPopup.tsx` | Grok settings still open Claude MCP tab | P2 |
-| MCP-12 | use_tool unwrap → `mcp__server__tool` | mcp-host | done | `unwrapMcpEnvelope` | — | — |
-| MCP-13 | Sparse use_tool skipped (no fallback chip) | mcp-host | done | event-map tests | — | — |
-| MCP-14 | search_tool → SearchTools chip | mcp-host | done | event-map | — | — |
-| MCP-15 | SuperOne HTTP Bearer + session HMAC | mcp-host | done | `superone-mcp-auth.ts` | — | — |
-| MCP-16 | Host context only when SuperOne MCP attached | mcp-host | done | `mcpAttached` | — | — |
-| MCP-17 | CLI Host Action SuperOne MCP | mcp-host | done | `apps/cli/.../host-action-mcp-auth.ts` | no user MCP list on node | P2 |
-| MCP-18 | Subagent inherits parent MCP | runtime | done | agent-side inherit; host child-guards main-thread tools | — | — |
-| MCP-19 | sdk_call in-process MCP | acp-host | missing | same as XAI-23 | — | P3 |
-| MCP-20 | `{{session_id}}` header interpolation | mcp-host | missing | headers copied verbatim | SuperOne uses explicit session header | P3 |
-| MCP-21 | startup/tool timeout fields on descriptors | mcp-host | missing | name/command/url/headers only | Grok TOML timeouts not forwarded | P3 |
-| MCP-22 | Manage `~/.grok/config.toml` [mcp_servers] | mcp-host | missing | SuperOne reads Claude-shaped configs | Grok still merges its own TOML | P2 |
-| MCP-23 | pluginDirs trusted plugin MCP roots | acp-host | missing | no `_meta.pluginDirs` | — | P2 |
-
-### 3.5 Session model, plan mode, composer (`session-ui`)
-
-| id | name | surface | SuperOne status | evidence | gap | priority |
-|----|------|---------|-----------------|----------|-----|----------|
-| SU-01 | AcpModelSelector from modelState/sessionConfig | session-ui | done | `coalesceModelConfig` | — | — |
-| SU-02 | set_model when configId null | acp-host | done | backend `applyModel` | — | — |
-| SU-03 | Reasoning effort via set_model `_meta.reasoningEffort` | session-ui | done | `GroupedModelEffortSelector` | — | — |
-| SU-04 | Host enter plan: setPermissionMode(plan) → set_mode | session-ui | done | runtime tests | prompt `_meta.mode` still missing | P1 |
-| SU-05 | HARNESS_CAPABILITIES.acp plan/todo/mcp/compact/fork/steer | session-ui | done | `harness-capabilities.ts` | `supportsSubagents: false` | P2 |
-| SU-06 | session/update plan → todos | session-ui | done | `mapPlanToTodoEvents` | — | — |
-| SU-07 | Context occupancy bar | session-ui | done | `getContextUsage` from turn_completed / `_meta.totalTokens` | old parity row stale | — |
-| SU-08 | x.ai/billing rate-limit gauge | session-ui | done | `getRateLimits` | — | — |
-| SU-09 | Rewind / compact / fork host ops | acp-host | done | session maps prompt index; `/compact`; ForkButton | fork initialize caps empty | P2 |
-| SU-10 | session/prompt `_meta.mode=agent\|ask\|plan` | acp-host | missing | `prompt()` sends ContentBlocks only | Grok reconciles plan tracker from this | **P1** |
-| SU-11 | `current_mode_update` → host chrome | acp-host | missing | `acp-event-map.ts` ignores unknown kinds | agent enter/exit plan does not flip selector | **P1** |
-| SU-12 | available_commands → slash palette | session-ui | done | `acp_commands` | — | — |
-| SU-13 | `/recap` `/compact` `/goal` intercepts | session-ui | done | ChatInput + backend | — | — |
-| SU-14 | follow_ups → PromptSuggestionChips | session-ui | done | chat-core grok-ux tests | — | — |
-| SU-15 | Mid-turn queue → interject | session-ui | done | `supportsQueuedSteer` | no send-now | P3 |
-| SU-16 | `/add-dir` when advertised | session-ui | done | gated on sessionCapabilities | Grok rarely advertises | P3 |
-| SU-17 | provider_session_id persist | session-ui | done | session-repo Grok cold-resume | — | — |
-| SU-18 | Mobile plan approval vs desktop line review | session-ui | partial | `PlanSheet` approve/reject+freeform | no line comments / review wrap | P2 |
-| SU-19 | executePlan on prompt after approve | acp-host | missing | Grok `_meta.executePlan` starts implement | SuperOne relies on agent after approved outcome | P2 |
-| SU-20 | Grok session mode `ask` (Q&A) | session-ui | missing | plan/default only | optional third chrome state | P3 |
-
-### 3.6 Built-in tools & rendering (`tools-runtime`)
-
-Host maps `_meta["x.ai/tool"]` and does not reimplement tools.
-
-| id | name | surface | SuperOne status | evidence | gap | priority |
-|----|------|---------|-----------------|----------|-----|----------|
-| TR-01 | Canonical `x.ai/tool` envelope | acp-host | done | `nameFromGrokMeta`, `normalizeAcpTool` | — | — |
-| TR-02 | Default GrokBuild tool rows (bash/read/edit/grep/…) | acp-host | done | `acp-event-map.test.ts` Grok fixtures | — | — |
-| TR-03 | image_gen / video_gen media open | acp-host | partial | MCP media tools exist; Grok session-relative `images/N.jpg` | no dedicated Grok media-path presenter test | P2 |
-| TR-04 | Background task / monitor UI | acp-host | done | task_* + monitor_event mappers | — | — |
-| TR-05 | Subagent spawn/finish in transcript | acp-host | done | session_notification subagent_* | cap flag false; no nested child chrome | P2 |
-| TR-06 | Reimplement Grok tools in SuperOne | runtime | na | agent-owned | — | na |
-
-### 3.7 Skills, plugins, hooks, marketplace (`mcp-skills-plugins`)
-
-| id | name | surface | SuperOne status | evidence | gap | priority |
-|----|------|---------|-----------------|----------|-----|----------|
-| SK-01 | ACP availableCommands / skills as slash | acp-host | done | `available_commands_update` | — | — |
-| SK-02 | x.ai/skills/* management UI | tui-only | na | agent + grok CLI | optional Extensions modal later | P3 |
-| SK-03 | x.ai/plugins/* + marketplace | tui-only | na | grok plugin CLI | — | P3 |
-| SK-04 | session `_meta.pluginDirs` | acp-host | missing | — | host cannot pin extra plugin roots | P2 |
-| SK-05 | Disk hooks (`.grok/hooks`) | config | na | agent-owned; folder-trust gated | — | na |
-| SK-06 | Client/SDK hooks reverse `x.ai/hooks/run` | acp-host | missing | — | only if SuperOne hosts in-process hooks | P2 |
-
-### 3.8 Sandbox, safety, config (`permissions-sandbox` / `session-memory-models`)
-
-| id | name | surface | SuperOne status | evidence | gap | priority |
-|----|------|---------|-----------------|----------|-----|----------|
-| SB-01 | Observe GROK_SANDBOX / config.toml profile | runtime | done | `grok-sandbox.ts` | ACP stdio does not take `--sandbox`; host does not set it | na |
-| SB-02 | Implement Landlock/Seatbelt in SuperOne | runtime | na | agent-owned | — | na |
-| SB-03 | Folder-trust interactive reverse RPC | acp-host | missing | SuperOne does not advertise `x.ai/folderTrust.interactive` | TUI gates client-side; OK | P3 |
-| SB-04 | Memory v1/v2 / flush/dream | acp-agent | na | agent-owned; host may call `x.ai/memory/flush` later | — | P3 |
-| SB-05 | Custom models via `~/.grok/config.toml` | config | na | agent catalog; host reads modelState | — | na |
-| SB-06 | AGENTS.md project rules | runtime | na | agent loads when folder-trusted | host does not inject | na |
-| SB-07 | x.ai/session/list rich picker | acp-host | missing | SuperOne uses own session DB | Grok disk sessions not browsed | P3 |
-
-### 3.9 Product surfaces beyond host (`product-surfaces`)
-
-All **tui-only** pager chrome is `na` / P3: theming, voice, vim, dashboard, status-line, mouse, `@` picker, command palette, OSC notifications, wrap/doctor, welcome/login screens, slash TUI menu, Ctrl+B background, prompt-queue send-now chords.
-
-Host-relevant rows:
-
-| id | name | surface | SuperOne status | evidence | gap | priority |
-|----|------|---------|-----------------|----------|-----|----------|
-| PS-01 | Launch `grok agent stdio` | acp-agent | done | catalog | — | — |
-| PS-02 | `grok -p` headless projector | cli-headless | na | not an ACP host path | — | na |
-| PS-03 | Image paste as ACP image blocks | acp-host | done | `acp-prompt.ts` | — | — |
-| PS-04 | File context as resource blocks (not TUI `@`) | acp-host | done | `buildAcpPromptContentAsync` | — | — |
-
-### 3.10 Tests & design docs (`tests-docs`)
-
-| id | name | surface | SuperOne status | evidence | gap | priority |
-|----|------|---------|-----------------|----------|-----|----------|
-| TD-01 | Unit: preapprove + yolo create/notify | tests-docs | done | `acp-permission-preapprove.test.ts`, runtime tests | — | — |
-| TD-02 | Unit: exit_plan / ask_user wire + PlanApproval UI | tests-docs | partial | backend + PlanApprovalPrompt tests | no `AskUserQuestionPrompt.test.tsx` | P2 |
-| TD-03 | Manual live grok CLI checklist | tests-docs | missing | permissions §12 / this doc §8 historically unchecked | no recorded macOS grok run | **P1** |
-| TD-04 | Permissions G1–G5 boxes | tests-docs | partial | code shipped; boxes empty | PR0 + TD-03 | **P1** |
-| TD-05 | This parity matrix vs code | tests-docs | partial | this rewrite | keep living | — |
-| TD-06 | ExtNotification design vs tests | tests-docs | partial | tests exist; doc claims bus missing | PR0 | **P1** |
-| TD-07 | authenticate unit | tests-docs | missing | no acp-runtime auth cases | — | P2 |
-| TD-08 | Live grok binary in CI | tests-docs | na | policy: mock-agent vitest | TD-03 is the substitute | na |
-| TD-09 | Event-trace of preapprove / yolo | tests-docs | missing | optional | P3 |
+The other partials (about 50) are test or doc drift: unasserted Windows PATH, untested `drainLoadReplay`, stale sentences in this file’s previous revision, live TD-03 boxes. They are P2 hygiene, not new product slices. Row text is in the inventory scratch.
 
 ---
 
-## 4. Gap deep-dives (P0 / P1)
+## 4. Gap deep-dives
 
-Shipped-and-done items (model `set_model`, session/load, user MCP on session/new, plan approval UI, host enter-plan `set_mode`, ExtNotification bus, compact/rewind/fork, `getContextUsage`, MCP status mapping, elicit, billing, recap) are **not** repeated here. Old §4.1–4.5 “P0 setModel / P1 user MCP / P1 session/load” are obsolete.
+### 4.1 P0 — Create-time Ask inherits Grok auto
 
-### 4.0 P0 — Node/CLI host cannot answer Grok reverse RPCs
+**Problem.** A new SuperOne session whose permission mode is Ask can still run as Grok Auto if `~/.grok/config.toml` says `permission_mode=auto`. Mid-session Auto→Ask is fine: `x.ai/yolo_mode_changed` sends `auto_mode: false`. Create does not.
 
-**Problem.** Desktop registers `x.ai/ask_user_question`, `x.ai/exit_plan_mode`, and `x.ai/mcp/elicit` (plus `_x.ai/` aliases) and advertises `initialize._meta.askUserQuestion/exitPlanMode`. `packages/acp/src/run-turn.ts` initializes with **empty** `clientCapabilities`, **no** `_meta` caps, and `onRequest` only for `mcp/elicit` + `request_permission`. If Grok parks ask/plan reverse requests on a CLI/node turn, the turn **hangs** until timeout (ask default 30 min).
+**Wire.** `session/new` and `session/load` `_meta.autoMode`. Grok treats omission as “use my config”. `grokSessionPermissionMeta` only writes `autoMode: true` when the host mode is `auto`, and `yoloMode: true` when it is `bypassPermissions`.
 
-**Grok wire facts.**
+**Touch.** `apps/desktop/src/main/acp/acp-permission-preapprove.ts`, `acp-permission-preapprove.test.ts`, `acp-runtime.test.ts` session/new meta assertions.
 
-- Reverse requests are first-answer-wins interactions; headless Grok `-p` auto-cancels ask.
-- SuperOne node is an interactive-capable host (permissions already flow) but does not implement the other two Grok reverse methods.
+**Approach.** For Ask (and any mode that is not auto), set `autoMode: false`. For any mode that is not bypass, set `yoloMode: false`. Keep `clientIdentifier: superone`. Do not send `clientIdentifier` on the mid-session notify (that filter drops updates for sessions whose origin does not match).
 
-**SuperOne touch files.**
+### 4.2 P1 — Plan mode lies when `set_mode` fails
 
-- `packages/acp/src/run-turn.ts`
-- `packages/acp/src/xai-elicit.ts` (pattern to copy)
-- `apps/desktop/src/main/acp/acp-xai-extensions.ts` (share parse/format)
-- `packages/acp/src/run-turn.test.ts`
+**Problem.** `setPermissionMode('plan')` assigns `acpSessionMode = 'plan'` and then swallows `session/set_mode` errors. The status bar shows Plan. The agent is still in `default`. Prompt `_meta.mode` follows the local flag, so the next prompt can say `plan` while the session mode did not change. Those two signals are specified separately in Grok; they should not diverge by accident.
 
-**Proposed approach.**
+**Wire.** `session/set_mode` with `modeId` `plan` or `default`. Prompt `_meta.mode` is `plan` or `agent` only (`grokPromptMetaMode`).
 
-1. Advertise the same `_meta.askUserQuestion` / `exitPlanMode` flags as desktop (or omit and accept cancel — **do not hang**).
-2. Register dual method ids; map onto existing `onPermission` / a small pending-interaction callback.
-3. Fail closed: if the runner has no UI, return `cancelled` immediately (headless policy), never leave the RPC unanswered.
+**Touch.** `acp-runtime.ts` `setPermissionMode`. The renderer should see a failed mode change, not a silent success.
 
-### 4.1 P1 — ACP PermissionPrompt has no Always / session-grant
+**Approach.** Set the local mode only after `set_mode` resolves. On failure, leave the previous mode and surface the error to `AcpBackend` so the selector rolls back.
 
-**Problem.** Grok `session/request_permission` often includes `allow_always` / `allow-always-mcp` / `allow-always-command`. SuperOne `mapPermissionRequest` sets `allowAlwaysAllow: true`. Desktop `getPermissionPromptConfig` only gives the 4-button Always row to **Codex**. ACP users can Allow (once) or Deny; they cannot persist a session grant from the card. Built-ins already short-circuit with always-mcp; **native bash/edit and third-party MCP re-prompt every call**.
+### 4.3 P1 — MCP login
 
-**Grok wire facts.**
+**Problem.** Claude/OpenCode can `authenticateMcp`. Grok’s login RPC is `x.ai/mcp/auth_trigger`. SuperOne hides Log In for grok-build, so an HTTP MCP server that needs OAuth cannot be signed in from the popup.
 
-- Option kinds: `allow_once`, `allow_always`, `reject_once`, `reject_always`.
-- Option ids include `allow-once`, `allow-always-command`, `allow-always-mcp`, `allow-edits-session`.
-- Generic clients still receive allow_always for MCP/command; they do **not** get `enable-always-approve` (Desktop/TUI only). SuperOne must not treat a missing Desktop option as a reason to hide ordinary Always.
+**Wire.** Confirm the method name and params against `origin/main` `xai-grok-shell` (MCP config moved after `48271133`) before coding.
 
-**SuperOne touch files.**
+**Touch.** `acp-xai-extensions.ts`, `acp-runtime.ts`, `acp-backend.ts` (`authenticateMcp`), `McpSlashPopup.tsx`.
 
-- `apps/desktop/src/renderer/src/components/chat/permission-prompt/permission-prompt-config.ts`
-- `PermissionPrompt.tsx` (`handleAlwaysAllow` already exists)
-- `packages/acp/src/permission-map.ts` / CLI (optional Always)
-- tests: `PermissionPrompt` + `acp-permission-map.test.ts`
+**Approach.** Implement the RPC on the desktop backend only. Show Log In when the server row is Grok and the status says auth is required. Do not invent a TOML writer in this slice.
 
-**Proposed approach.**
+### 4.4 P1 — Plan approval chrome
 
-1. Treat ACP like Codex when `allowAlwaysAllow && !elicitation`: offer Always.
-2. `mapPermissionDecision(..., alwaysAllow=true)` already prefers `allow-always-mcp`.
-3. Do **not** map Always → `enable-always-approve` / `setPermissionMode(bypassPermissions)` (that is YOLO, a different control).
-4. `allow-edits-session` can be a later P2 labeled “Allow edits this session”.
+**Problem.** Desktop line review works on `planContent`, but `planFilePath` is hard-coded to `''`, so the header has no filename. Comments are not part of the `x.ai/exit_plan_mode` result; they are a follow-up user message. Mobile has freeform feedback and no line comments.
 
-### 4.2 P1 — Plan chrome desync (`current_mode_update` + prompt `_meta.mode`)
+**Wire.** `formatGrokExitPlanResponse` / cancelled variant in `acp-xai-extensions.ts`. Read Grok’s exit-plan schema before adding fields. If the result has no comment slot, keep the follow-up turn and only fix the filename from the plan body or the tool metadata.
 
-**Problem.** SuperOne can **enter** plan via `session/set_mode` (status-bar / Shift+Tab). Two Grok signals are ignored:
+**Touch.** `acp-backend.ts` `handleExitPlanMode`, `PlanApprovalPrompt.tsx`, `apps/mobile/src/prompts/PlanSheet.tsx`.
 
-1. Agent-driven `enter_plan_mode` / `exit_plan_mode` emits ACP `current_mode_update`. SuperOne does not map it, so the selector stays on Ask/Auto/Always while the agent is in plan.
-2. `session/prompt` never stamps `_meta.mode`. Grok’s `reconcile_plan_mode_with_prompt` treats prompt meta as **the only prompt-carried mode signal**. A prompt without it will not enter/leave plan; it also will not **confirm** the host’s set_mode on the turn that lands in `updates.jsonl`.
+**Approach.** One desktop PR for the filename and for putting review text on the RPC if the schema allows it. Mobile line comments are a follow-up, not a blocker for desktop.
 
-**Grok wire facts.** (`session_mode.rs`)
+### 4.5 P1 — Reconnect one MCP server
 
-- `session/set_mode` ids: `default` (agent), `plan`, `ask`.
-- Prompt `_meta.mode`: `agent|ask|plan`.
-- `enqueue_current_mode_update` after set_mode and after prompt reconcile.
-- `_meta.executePlan` on a later prompt starts implementation after approve (optional).
+**Problem.** `reconnectMcp(serverName)` ignores `serverName` and pushes the full list. Grok may treat an identical `update_mcp_servers` payload as a no-op, so a crashed server stays dead.
 
-**SuperOne touch files.**
+**Touch.** `acp-backend.ts`, `acp-runtime.ts` `updateMcpServers`.
 
-- `acp-event-map.ts` (new `current_mode_update` case → `permission_mode_change` / agent_setting)
-- `acp-runtime.ts` `prompt()` — attach `_meta.mode` from last host/agent mode
-- `acp-backend.ts` — track ACP session mode separately from yolo baseline if needed
-- tests: event-map + runtime prompt meta + selector update
+**Approach.** Check whether Grok’s update method has a per-server restart. If it does not, drop and re-add that one server (rebuild the list without it, then with it) instead of sending an identical snapshot.
 
-**Proposed approach.**
+### 4.6 P1 — Send-now on an already queued steer
 
-1. Map `current_mode_update` `plan` → SuperOne `permissionMode: 'plan'`; `default` → restore last yolo baseline (ask/auto/always), not always `'default'`.
-2. Stamp prompt `_meta.mode` from that tracked mode (`plan` → `plan`, `default`+ask yolo → `agent`).
-3. Do not send `session/set_mode` for reasoning effort.
+**Problem.** Claude can steer the in-flight turn immediately. Grok desktop only enqueues and later calls `x.ai/interject` without `_meta.sendNow`. Node cannot interject at all.
 
-### 4.3 P1 — Plan approve forces permissionMode `default`
+**Wire.** `buildGrokInterjectParams` in `acp-xai-session-ops.ts`. Confirm `sendNow` still exists on the pinned Grok and on `origin/main` before adding it.
 
-**Problem.** `respondToPlanApprovalImpl` on approve always `setPermissionMode(postApprovalMode ?? 'default')`. Claude uses that to leave plan into acceptEdits/auto. ACP hides the post-approve toggle, so approve **always** notifies Grok `permission_mode: ask` even if the user had Auto or Always Approve.
+**Touch.** `acp-xai-session-ops.ts`, `queued-user-message-queue.ts`, `packages/acp/src/run-turn.ts` only if CLI queued send is in the same PR.
 
-**Grok wire facts.** Plan exit outcome is `approved|cancelled|abandoned`. Permission baseline is independent (`yolo_mode_changed`).
+**Approach.** Desktop first: pass send-now when the user steers the active turn, and keep the plain interject for a parked queue item. Set `supportsQueuedSteerSoon` only after that path is tested.
 
-**SuperOne touch files.**
+### 4.7 P1 — Auto under a Generic client
 
-- `apps/desktop/src/renderer/src/stores/chat-store/helpers/interaction.ts`
-- `PlanApprovalPrompt.tsx` (already `showPostApprovalModeToggle = claude`)
-- `interaction.test.ts` / `chat-store.test.ts`
+**Problem.** Auto in the status bar does not match Claude Auto. Grok auto-denies classifier blocks for `ClientType::Generic`. The host already shows a one-shot toast.
 
-**Proposed approach.** For `sessionProvider === 'acp'`, skip `setPermissionMode` on approve (plan already left via Grok after `outcome: approved` + host `set_mode default` if we send it). Keep Claude behavior.
+**Approach.** No code that pretends to be `grok-desktop`. Leave the toast. Document the limit next to the selector copy if a user can still read Auto as “edits go through”. This slice is copy and docs, not a new permission mode.
 
-### 4.4 P1 — MCP live reload/toggle/OAuth no-ops or wrong caps
+### 4.8 P1 — Node paints its own interjection
 
-**Problem.**
+**Problem.** `packages/acp/src/xai-event-map.ts` turns every `x.ai/session/interjection` into `user_message_appended`. Desktop avoids that by handling the notification in `AcpBackend` and skipping `selfInterjectionIds`. A CLI host that uses the shared mapper will echo its own steer.
 
-1. `reloadMcpServers` rebuilds descriptors **without** `agentCapabilities`, so HTTP/SSE user servers and SuperOne HTTP are dropped; Grok gets stdio SuperOne only.
-2. `reconnectMcp` / `toggleMcpServer` are empty. Settings UI writes Claude-shaped config then calls a no-op.
-3. `authenticateMcp` is absent. Session throws. Grok OAuth is `x.ai/mcp/auth_trigger` plus elicit URL — SuperOne already parks elicit, but `/mcp` LogIn does not start Grok OAuth.
-
-**Grok wire facts.**
-
-- Hot swap: `x.ai/session/update_mcp_servers { sessionId, mcpServers }`.
-- OAuth: `x.ai/mcp/auth_trigger`; status `x.ai/mcp/auth_status`; needsAuth via `server_status`.
-- Toggle/upsert/delete exist as agent RPCs (`x.ai/mcp/toggle|upsert|delete`) — TUI `/mcps`. SuperOne can either call those or rewrite client `mcpServers` via update_mcp_servers.
-
-**SuperOne touch files.**
-
-- `acp-backend.ts` `reloadMcpServers` / new toggle/reconnect/auth
-- `acp-runtime.ts` `updateMcpServers` (already)
-- `acp-mcp.ts` pass caps
-- `McpSlashPopup.tsx` LogIn
-- tests: reload keeps HTTP SuperOne; toggle calls update_mcp_servers
-
-**Proposed approach.**
-
-1. Cache `agentCapabilities` on the backend; always pass them into `buildAcpSessionMcpServers`.
-2. Implement toggle/reconnect as `updateMcpServers` with the filtered list (do not require Grok’s TUI CRUD RPCs for v1).
-3. LogIn for Grok: `x.ai/mcp/auth_trigger` if we add the RPC; else document that OAuth is elicit-URL only and hide the broken button.
-
-### 4.5 P1 — Auto mode is offered but Generic auto-denies classifier blocks
-
-**Problem.** SuperOne shows Auto and maps `_meta.autoMode` / `permission_mode: auto`. Grok Auto uses an LLM classifier; **Generic clients cannot present** those escalation prompts and **auto-deny**. Users see “Auto mode blocked this action …” with no SuperOne toast and no eligibility gate (Claude’s `auto-mode-eligibility.ts` is Claude-only).
-
-**Grok wire facts.** (`prompter.rs` / auto_mode)
-
-- ClientType from `clientIdentifier`. `superone` → Generic.
-- Generic option set is reduced; Auto blocks do not prompt.
-- Honest Generic is still the right identity (do not spoof `grok-desktop` without Desktop option UX: `enable-always-approve`, bash word-scope, `allow-edits-session`).
-
-**SuperOne touch files.**
-
-- `AcpPermissionSelector.tsx`
-- `apps/desktop/src/renderer/src/lib/auto-mode-eligibility.ts` (or ACP-specific helper)
-- i18n copy
-- optional: hide Auto until we implement Desktop option set **or** document Auto as “classifier, fail-closed”
-
-**Proposed approach (pick one in PR5).**
-
-- **A (safer):** Keep Generic; when Auto is selected, toast once: classifier denials will not prompt. Optionally hide Auto.
-- **B (parity):** Spoof `grok-pager`/`grok-desktop` **and** implement Desktop option ids (PM-12, PM-15, bash Always rows). That is a larger identity change — not this slice unless product explicitly wants it.
-
-Recommend **A** unless product signs off on B.
-
-### 4.6 P1 — Settings SessionDefaults uses Claude labels for ACP
-
-**Problem.** `HARNESS_LAUNCH_OPTIONS.acp.permissionModes` is the right subset (`default/plan/auto/bypassPermissions`), but `SessionDefaultsSection` renders Claude `PermissionModeList` (Normal / Bypass) instead of `AcpPermissionModeList` (Ask / Always Approve). Composer draft popover is already correct.
-
-**Touch files.** `SessionDefaultsSection.tsx`, preferences tests.
-
-**Proposed approach.** Branch `harnessId === 'acp'` → `AcpPermissionModeList`, same as `HarnessPermissionPopover`.
-
-### 4.7 P1 — Docs + live grok CLI checklist lag
-
-**Problem.** Permissions §3.1/§12, ext-notifications bus matrix, and the previous revision of **this** file listed shipped work as missing (setModel no-op, user MCP, getContextUsage, host enter-plan, rewind/compact/fork). Agents and humans over-trust stale rows. There is **no recorded** live `grok agent stdio` acceptance run.
-
-**Touch files.**
-
-- `docs/design/grok-acp-permissions.md` (PR0: strike stale ASCII; tick G1–G4 after TD-03; leave G5 Auto until 4.5)
-- `docs/design/grok-xai-ext-notifications.md` (reclassify bus as shipped)
-- this file (already rewritten)
-- `docs/design/agent-self-verify.md` (add later test suites)
-
-**Manual checklist (TD-03)** — macOS, installed grok CLI:
-
-1. Spawn grok-build session; model switch + effort apply (watch agent).
-2. Ask: bash prompts Allow/Deny; Always (after 4.1) sticks for the session.
-3. Built-in SuperOne MCP silent; third-party MCP prompts.
-4. Auto: either toast (4.5) or document deny-closed.
-5. Plan: host enter → agent plan.md → approve/reject + line comments; selector returns without wiping Always.
-6. Agent-driven enter_plan_mode flips chrome (after 4.2).
-7. User MCP on session/new; `/mcp` status; reload keeps HTTP SuperOne.
-8. Resume via session/load; recap; compact; rewind; fork.
-9. Workflow progress + follow-up chips.
-10. Node/CLI: ask or plan reverse does not hang (after 4.0).
+**Touch.** `xai-event-map.ts` and its test. Filter with the same self-id set the desktop backend uses, or stop emitting the user message from the shared mapper and let each host paint it.
 
 ---
 
 ## 5. PR plan
 
-Ordered slices. One logical change per PR. Titles are suggested commit subjects.
+Ordered. Each slice is one commit-sized change. Later slices do not start until their dependency is in.
 
-Shipped work (do **not** re-open as PRs): stdio lifecycle, yolo/auto meta + notify, builtin preapprove, `session/set_model`+effort, session/load, user MCP on session/new, plan approval UI, host `set_mode` plan, ExtNotification bus, compact/rewind/fork, occupancy, MCP status mapping, elicit, billing, recap, interject, follow-ups.
+| PR | Title | Goal | Files | Tests | Depends on | Out of scope |
+|----|-------|------|-------|-------|------------|----------------|
+| 1 | `fix(acp): stamp autoMode false when creating an Ask session` | G3. Create and load send explicit `autoMode`/`yoloMode` booleans. | `acp-permission-preapprove.ts`, runtime meta call sites | `acp-permission-preapprove.test.ts`, session/new meta in `acp-runtime.test.ts` | — | Mid-session notify shape; spoofing client type |
+| 2 | `fix(acp): roll back plan mode when set_mode fails` | Local plan flag follows a successful `session/set_mode` only. | `acp-runtime.ts`, `acp-backend.ts` if it assumes success | Runtime test: rejected `set_mode` leaves mode default | — | Prompt `_meta.mode` ask |
+| 3 | `feat(acp): log in a Grok MCP server` | `authenticateMcp` calls `x.ai/mcp/auth_trigger`. Log In shows for grok-build. | extensions, runtime, `acp-backend.ts`, `McpSlashPopup.tsx` | Backend test with a fake agent method; popup test that Log In is not hidden | Re-read `mcp.rs` at `origin/main` | Writing `config.toml`; `sdk_call` |
+| 4 | `fix(acp): show the plan filename on exit_plan_mode` | Stop forcing `planFilePath` to `''`. Put review text on the RPC only if Grok’s schema has a field. | `acp-backend.ts`, plan prompt, elicit formatter | `acp-backend.test.ts`, `PlanApprovalPrompt` test | — | Mobile line comments |
+| 5 | `fix(acp): reconnect one MCP server` | `reconnectMcp(name)` changes that server’s attachment instead of resending an identical list. | `acp-backend.ts`, runtime update helper | Backend test: payload differs when one server is revived | PR 3’s method names if they share the MCP helper | User-header `{{session_id}}` |
+| 6 | `feat(acp): send-now on Grok interject` | Active-turn steer sets `_meta.sendNow`. | `acp-xai-session-ops.ts`, queue | Ops test for the param; queued-send test | Confirm the field on current Grok | Node interject |
+| 7 | `fix(acp): drop self interjections in the shared mapper` | CLI does not duplicate the steer as a user message. | `packages/acp/src/xai-event-map.ts` | `xai-event-map.test.ts` | — | Desktop backend filter (keep it) |
+| 8 | `docs(acp): align permissions G-box intro with the 2026-09-16 CDP note` | Permissions doc stops saying every G box is empty. | `grok-acp-permissions.md` only | Doc link check | PR 1 if the G3 paragraph should say “fixed by PR 1” | Rewriting G1–G5 procedures |
 
-### PR0 — Docs: reconcile permissions + ExtNotification with shipped code
-
-| | |
-|--|--|
-| **Title** | `docs(acp): mark Grok permission phase-1 and ExtNotification bus as shipped` |
-| **Goal** | Stop false “setPermissionMode no-op / always UI-prompt / bus missing / setModel no-op” narrative. Point remaining work at this parity doc. |
-| **Files** | `docs/design/grok-acp-permissions.md`, `docs/design/grok-xai-ext-notifications.md`, `docs/design/agent-self-verify.md` (this file already rewritten) |
-| **Test plan** | Doc review only |
-| **Deps** | none |
-| **Out of scope** | Code; ticking G1–G5 without TD-03 |
-
-### PR1 — ACP PermissionPrompt Always / session grants
-
-| | |
-|--|--|
-| **Title** | `feat(acp): offer Always on Grok permission prompts when the agent provides allow_always` |
-| **Goal** | Users can persist bash/MCP/domain grants from the card; map to `allow-always-mcp` / `allow_always` option ids. |
-| **Files** | `permission-prompt-config.ts`, `PermissionPrompt.tsx`, optional `packages/acp` permission-map, tests |
-| **Test plan** | ACP + `allowAlwaysAllow` → Always button; Always selects `allow-always-mcp` when present; Codex/Claude layouts unchanged; elicitation unchanged |
-| **Deps** | none (parallel to PR0) |
-| **Out of scope** | `enable-always-approve`; spoof Desktop; `allow-edits-session` |
-
-### PR2 — Plan chrome sync: current_mode_update + prompt `_meta.mode` + skip post-approve default
-
-| | |
-|--|--|
-| **Title** | `feat(acp): sync Grok plan mode from current_mode_update and prompt _meta.mode` |
-| **Goal** | Agent- and host-driven plan stay aligned; approving a plan does not reset Always/Auto to ask. |
-| **Files** | `acp-event-map.ts`, `acp-runtime.ts` `prompt()`, `acp-backend.ts`, `interaction.ts` `respondToPlanApprovalImpl`, tests |
-| **Test plan** | `current_mode_update` plan/default updates store; prompt RPC includes `_meta.mode`; ACP approve does not call `setPermissionMode('default')`; Claude post-approve toggle unchanged |
-| **Deps** | none |
-| **Out of scope** | `executePlan` prompt meta; Grok session mode `ask` chrome; `planFilePath` |
-
-### PR3 — MCP live ops: reload caps, toggle/reconnect, OAuth entry
-
-| | |
-|--|--|
-| **Title** | `fix(acp): pass agent MCP caps on reload and implement ACP toggle/reconnect` |
-| **Goal** | Mid-session MCP reload keeps HTTP SuperOne + user HTTP/SSE; settings toggle/reconnect no longer no-ops; hide or wire Grok OAuth LogIn. |
-| **Files** | `acp-backend.ts`, `acp-mcp.ts`, `acp-runtime.ts`, `McpSlashPopup.tsx`, tests |
-| **Test plan** | `reloadMcpServers` includes SuperOne HTTP when initialize advertised http; toggle rebuilds list; reconnect = update_mcp_servers; no Claude regression |
-| **Deps** | none |
-| **Out of scope** | `x.ai/mcp/sdk_call`; managing `~/.grok/config.toml`; `tools_changed` apply (small follow in same PR if cheap) |
-
-### PR4 — Node/CLI reverse host (ask + exit_plan)
-
-| | |
-|--|--|
-| **Title** | `feat(acp): register Grok ask_user_question and exit_plan_mode on the node host` |
-| **Goal** | CLI/node turns never hang on Grok reverse RPCs; advertise the same initialize `_meta` flags or cancel immediately. |
-| **Files** | `packages/acp/src/run-turn.ts`, shared formatters, `run-turn.test.ts` |
-| **Test plan** | initialize `_meta` flags; onRequest dual ids; missing UI → cancelled; elicit still works |
-| **Deps** | none (can parallel PR1–PR3) |
-| **Out of scope** | Full PlanLineReview on CLI; yolo mode UI on CLI |
-
-### PR5 — Auto-mode honesty + SessionDefaults ACP labels
-
-| | |
-|--|--|
-| **Title** | `fix(acp): Ask/Always labels in settings and fail-closed Auto copy` |
-| **Goal** | Settings match composer Ask/Always Approve vocabulary; Auto does not silently look like Claude Auto. |
-| **Files** | `SessionDefaultsSection.tsx`, `AcpPermissionSelector.tsx`, i18n, optional eligibility helper, tests |
-| **Test plan** | ACP preferences list uses Ask/Always Approve; Auto shows fail-closed hint; Claude list unchanged |
-| **Deps** | none |
-| **Out of scope** | Spoofing `grok-desktop`; implementing `enable-always-approve` |
-
-### PR6 — Tests, missing units, live grok CLI checklist
-
-| | |
-|--|--|
-| **Title** | `test(acp): Grok host checklist plus AskUserQuestion and authenticate coverage` |
-| **Goal** | Record TD-03; add `AskUserQuestionPrompt.test.tsx`; authenticate heuristics unit; cyclePermissionMode ACP assertion. |
-| **Files** | renderer tests, `acp-runtime` auth tests, this doc §4.7 boxes, `agent-self-verify.md` |
-| **Test plan** | New units green; attach a short notes block after one macOS grok run (or explicitly defer with owner) |
-| **Deps** | ideally after PR1–PR5 so the checklist matches product |
-| **Out of scope** | Grok binary in CI |
-
-### PR7 — Interactive Grok auth (`x.ai/auth/*`)
-
-| | |
-|--|--|
-| **Title** | `feat(acp): host Grok login via x.ai/auth get_url / submit_code` |
-| **Goal** | Users who only have interactive grok.com / device-code methods can log in from SuperOne instead of a dead session. |
-| **Files** | `acp-runtime.ts` authenticate path, new auth UI/modal, `acp-xai-extensions.ts`, tests |
-| **Test plan** | Skip interactive when cached_token works; when only grok.com/oidc advertised, surface URL/code; cancel path |
-| **Deps** | none; after PR0 so docs do not still say “auth skipped” without a tracker |
-| **Out of scope** | Spoofing pager login screens; writing `auth.json` from SuperOne |
-
-### PR8 — Session spawn `_meta`: pluginDirs / rules / systemPromptOverride / GROK_CONFIG
-
-| | |
-|--|--|
-| **Title** | `feat(acp): stamp Grok session _meta for rules, prompt override, and plugin dirs` |
-| **Goal** | SuperOne personas and extra plugin roots use the wire Grok already implements, instead of only appending host-context on the first prompt. |
-| **Files** | `acp-runtime.ts` `sessionRequestBase`, spawn env `GROK_CONFIG`, tests |
-| **Test plan** | session/new `_meta` includes fields only when advertised (`x.ai/pluginDirs`); overlay JSON allowlist only; no secrets in overlay |
-| **Deps** | none |
-| **Out of scope** | Full plugins/marketplace UI; client hooks SDK |
-
-### PR9 — Polish: Windows PATH, fork initialize caps, ask plan outcomes, tools_changed, subagent cap
-
-| | |
-|--|--|
-| **Title** | `fix(acp): Windows grok detect, fork initialize caps, and leftover Grok host polish` |
-| **Goal** | Close remaining P2 host bugs that are small once PR1–PR5 land. |
-| **Files** | `acp-detect.ts`, `acp-fork.ts`, `formatGrokAskUserResponse` + AskUserQuestion UI, `handleMcpExt` tools_changed, `harness-capabilities.ts` `supportsSubagents` |
-| **Test plan** | PATH split uses `path.delimiter`; fork initialize matches runtime `_meta`; tools_changed refreshes popup counts; plan-mode ask outcomes optional |
-| **Deps** | PR1 (Always) and PR3 (MCP) preferred |
-| **Out of scope** | Marketplace; hunk tracker; memory dream; worktree UI |
+P2 backlog, not scheduled: `prompt_complete` alias, `hooks/run`, `x.ai/queue/*`, grok TOML MCP visibility, header `{{session_id}}`, ACP MCP timeouts, node `clientInfo.version` and explicit `fs`/`terminal: false`. Do those only after PR 1–3, and only after fast-forwarding the Grok checkout or re-reading the touched crates at `4247f661`.
 
 ---
 
-## 6. Explicit non-goals (expanded)
+## 6. Explicit non-goals
 
-1. **Grok TUI product surface** — themes, voice STT, dashboard, OSC clipboard wrap, mouse reporting, welcome/home, pager-only slash, vim/simple input, status-line scripts, Ctrl+B background chord.
-2. **Agent process topology** — `grok agent leader`, `grok agent serve` WebSocket, outbound headless relay. Stdio per SuperOne session is enough; `session/close` is implied by killing the child.
-3. **OS sandbox kernel** — Landlock/Seatbelt/bwrap, `sandbox.toml` deny[], child-network seccomp. SuperOne may *observe* the profile (`grok-sandbox.ts`) but must not reimplement it.
-4. **Agent-side policy** — deny/allow/ask rules, PreToolUse hooks files, folder-trust store, dangerous-command floor, WebFetch SSRF. Host only answers `request_permission` and optional client hooks.
-5. **Spoofing `clientType: grok-desktop` / `grok-pager`** — wrong option set and telemetry until SuperOne implements Desktop option UX (PM-15/PM-21). Stay Generic/`superone`.
-6. **Re-enable `clientCapabilities.terminal=true` or fs for grok-build** — local PTY/FS; ACP text FS would corrupt images.
-7. **Reimplement Grok tools in SuperOne** — map `_meta["x.ai/tool"]` only.
-8. **Writing project `.grok/config.toml` allowlists for SuperOne builtins** — client preapprove remains source of truth.
-9. **Full x.ai surface** — hunk tracker, marketplace UI, memory dream, worktree create UI, fuzzy search, billing auto-topup, cloud envs, recap-as-TUI, prompt queue pane, code-nav, fs_notify.
-10. **Changing the Grok agent source tree** — integration is host-side only.
-11. **Grok binary in CI** — mock-agent vitest; live CLI is TD-03.
+- Grok TUI: theming, voice, fullscreen `/workflow runs`, pager overlays.
+- `grok agent serve`, leader election, WebSocket transport.
+- Advertising host filesystem or terminal to `grok-build` (UTF-8 image corruption). Handlers stay for other ACP agents.
+- `session/close` / `session/resume` for a shared leader.
+- Spoofing `clientType` / `clientIdentifier` to `grok-desktop` for Always-approve or allow-edits.
+- Mapping host Ask onto Grok prompt mode `ask`.
+- `acceptEdits` / `dontAsk` inside `x.ai/yolo_mode_changed`.
+- `x.ai/mcp/sdk_call`.
+- OS sandbox policy. Host only reads the profile (`grok-sandbox.ts`).
+- A grok binary in CI. Mock-agent Vitest remains the gate. TD-09 traces stay optional.
+- Fast-forwarding `/Users/wuhangqi25/Developer/Projects/grok-build` as part of a SuperOne PR.
 
 ---
 
 ## 7. Open questions
 
-1. **Auto under Generic (Q5 from permissions doc).** Ship toast + keep Auto (PR5-A), hide Auto, or spoof pager/desktop (PR5-B)? Default recommendation: **A**.
-2. **Always vs YOLO.** PR1 Always is a *per-tool/server grant*. Status-bar Always Approve is yolo. Confirm copy so users do not confuse them.
-3. **`executePlan`.** After approve, does product want SuperOne to send the next prompt with `_meta.executePlan`, or is Grok’s approved outcome enough?
-4. **Node ask/plan UI.** PR4 cancel-if-no-UI vs a minimal CLI prompt. Headless should cancel; interactive CLI may want a tty form.
-5. **OAuth.** Is `x.ai/mcp/auth_trigger` in scope for PR3, or hide LogIn for Grok until a dedicated auth PR?
-6. **Subagent chrome.** Notifications already map; should `supportsSubagents` flip true and reuse Claude Task UI, or keep transcript-only?
-7. **Identity.** Any future need for `permission_<client>.toml` isolation beyond `clientIdentifier=superone`?
-8. **Who runs TD-03** (live grok CLI) and where are notes stored (this doc §4.7 vs `agent-self-verify.md`)?
+1. Does current Grok (`48271133` and `4247f661`) treat a missing `autoMode` as config inheritance, or only an explicit `autoMode: true`? PR 1 should lock this with a one-line fixture or a live Ask create against a config that sets `permission_mode=auto`.
+2. Does `x.ai/exit_plan_mode`’s result schema accept review comments, or is the follow-up user turn the supported channel?
+3. Does `x.ai/mcp/auth_trigger` still have that name after the `mcp.rs` rewrite on `origin/main`?
+4. Does `x.ai/interject` still honor `_meta.sendNow`, or did queue RPC replace it?
+5. Should `/mcp` show servers that exist only in `~/.grok/config.toml`, or is Grok’s own merge enough for behavior and the popup gap acceptable?
 
 ---
 
-## 8. Success criteria (this plan)
+## 8. What this pass did not do
 
-Desktop Ask-mode Grok session:
-
-- [ ] Built-in SuperOne MCP: zero permission cards.
-- [ ] Third-party MCP and bash still prompt; Always (PR1) persists the grant Grok offered.
-- [ ] Model + effort switch via `session/set_model`.
-- [ ] Plan enter (host or agent) updates chrome; approve/reject + line comments; Always/Auto baseline not wiped.
-- [ ] User MCP attached on session/new; reload keeps HTTP SuperOne.
-- [ ] Resume, recap, compact, rewind, fork work in one recorded grok CLI run (TD-03).
-- [ ] Node/CLI does not hang on ask/exit_plan.
-- [ ] Docs (permissions, ext-notifications, this file) no longer contradict tests.
+The workflow run was interrupted in the Gap phase (`workflow cleanup timed out`). Source, catalog, and inventory scratch files were complete. This document is the gap plan those notes were for. It does not implement PR 1–8. It does not fast-forward Grok Build. It does not close the permissions doc G2/G3 checkboxes.

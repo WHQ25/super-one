@@ -2205,7 +2205,7 @@ export function MobileApp() {
           onManageDirectories={openAdditionalDirs}
           queuedMessages={queuedMessages}
           canSteer={canSteerQueued(selectedProvider)}
-          canSteerSoon={canSteerQueuedSoon(selectedProvider)}
+          canSteerSoon={canSteerQueuedSoon(selectedProvider, selectedAcpAgentId)}
           onEditQueued={(messageId) => {
             const runtime = runtimeRef.current
             const message = runtime?.session.queuedMessages.find((item) => item.id === messageId)

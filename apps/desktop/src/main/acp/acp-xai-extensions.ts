@@ -32,6 +32,8 @@ export const XAI_AUTH_GET_URL = 'x.ai/auth/get_url'
 export const XAI_AUTH_SUBMIT_CODE = 'x.ai/auth/submit_code'
 /** Client → agent: cancel an in-flight interactive login. */
 export const XAI_AUTH_CANCEL = 'x.ai/auth/cancel'
+/** Client → agent: start OAuth / setup for one MCP server (`session_id`, `server_name`). */
+export const XAI_MCP_AUTH_TRIGGER = 'x.ai/mcp/auth_trigger'
 
 /** `consent_gate` on `x.ai/settings/update`. */
 export interface GrokConsentGate {

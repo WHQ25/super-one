@@ -147,14 +147,21 @@ export function shouldAutoAllowAcpPermission(
  */
 export const GROK_ACP_CLIENT_IDENTIFIER = 'superone'
 
-/** session/new + session/load `_meta` keys Grok understands for permission + effort. */
+/**
+ * session/new + session/load `_meta` keys Grok understands for permission + effort.
+ *
+ * Omitted `autoMode` / `yoloMode` fall through to `~/.grok/config.toml`. Ask must
+ * send both booleans or a config `permission_mode=auto` creates an Auto session.
+ */
 export function grokSessionPermissionMeta(
   mode: string | undefined | null,
   opts?: { reasoningEffort?: string | null },
 ): Record<string, unknown> {
-  const meta: Record<string, unknown> = { clientIdentifier: GROK_ACP_CLIENT_IDENTIFIER }
-  if (mode === 'bypassPermissions') meta.yoloMode = true
-  if (mode === 'auto') meta.autoMode = true
+  const meta: Record<string, unknown> = {
+    clientIdentifier: GROK_ACP_CLIENT_IDENTIFIER,
+    yoloMode: mode === 'bypassPermissions',
+    autoMode: mode === 'auto',
+  }
   const effort = opts?.reasoningEffort?.trim()
   if (effort) meta.reasoningEffort = effort
   return meta

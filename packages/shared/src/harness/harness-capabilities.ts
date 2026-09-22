@@ -166,11 +166,11 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     // Host intercepts `/compact` → `x.ai/compact_conversation`.
     supportsCompact: true,
     supportsStreamingToolInput: false,
-    // Mid-turn send queues; steer inserts via `x.ai/interject` (no abort).
-    // Interject has no now/next split — Claude's "soon" is a second SDK
-    // priority, which Grok does not have.
+    // Mid-turn send queues. Steer (`now`) is a new `session/prompt` with
+    // `_meta.sendNow`, which cancels the live turn and runs the message next.
+    // Steer soon is `x.ai/interject`: next safe point, the tool in flight stays.
     supportsQueuedSteer: true,
-    supportsQueuedSteerSoon: false,
+    supportsQueuedSteerSoon: true,
     // session/new additionalDirectories, gated per agent capability.
     supportsAdditionalDirs: true,
     // Cold `x.ai/session/fork` copies Grok session files; SuperOne then resumes the child.

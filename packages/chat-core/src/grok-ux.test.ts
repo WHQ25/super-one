@@ -63,6 +63,124 @@ describe('Grok UX reducer slices', () => {
     expect(session.taskProgress['tu-1']?.status).toBe('failed')
   })
 
+  it('renders a slash-launched workflow that never emits a tool call', () => {
+    const session = createDefaultChatCoreSession()
+    session.messages = [{
+      id: 'u1', role: 'user', status: 'complete', createdAt: '', providerId: 'acp',
+      content: [{ type: 'text', text: '/grok-build-parity' }],
+    }]
+    Object.assign(session, applyEventToSession(session, {
+      type: 'task_started',
+      taskId: 'wf_1',
+      description: 'grok-build-parity: Clone/update grok-build source',
+      taskType: 'workflow',
+    }))
+    const card = session.messages.find((message) => message.id === 'host-workflow-wf_1')
+    expect(card?.content[0]).toMatchObject({
+      type: 'tool_use', toolName: 'Workflow', toolUseId: 'wf_1', workflowName: 'grok-build-parity',
+    })
+    expect(JSON.parse((card!.content[0] as { input: string }).input).name).toBe('grok-build-parity')
+    expect(card?.content[1]).toMatchObject({
+      type: 'tool_result',
+      summary: JSON.stringify({ run_id: 'wf_1', task_id: 'wf_1', name: 'grok-build-parity' }),
+    })
+
+    Object.assign(session, applyEventToSession(session, {
+      type: 'task_progress',
+      taskId: 'wf_1',
+      description: 'grok-build-parity: Clone/update grok-build source',
+      summary: 'phase: Catalog',
+      currentPhase: 'Catalog',
+      workflowPhases: [
+        { title: 'Source', state: 'done' },
+        { title: 'Catalog', state: 'active' },
+      ],
+      usage: { totalTokens: 10, toolUses: 4, durationMs: 1000 },
+    }))
+    const live = session.messages.find((message) => message.id === 'host-workflow-wf_1')
+    expect(live?.content[0]).toMatchObject({
+      workflowCurrentPhase: 'Catalog',
+      workflowPhases: [
+        { title: 'Source', state: 'done' },
+        { title: 'Catalog', state: 'active' },
+      ],
+    })
+    expect(session.taskProgress.wf_1?.completed).toBe(false)
+  })
+
+  it('builds the host card from a later progress snapshot when task_started was missed', () => {
+    const session = createDefaultChatCoreSession()
+    session.messages = [{
+      id: 'u1', role: 'user', status: 'complete', createdAt: '', providerId: 'acp',
+      content: [{ type: 'text', text: '/grok-build-parity' }],
+    }]
+    Object.assign(session, applyEventToSession(session, {
+      type: 'task_progress',
+      taskId: 'wf_1',
+      description: 'grok-build-parity: Clone/update grok-build source',
+      currentPhase: 'Catalog',
+      workflowPhases: [{ title: 'Catalog', state: 'active' }],
+      usage: { totalTokens: 1, toolUses: 1, durationMs: 10 },
+    }))
+    const card = session.messages.find((message) => message.id === 'host-workflow-wf_1')
+    expect(card?.content[0]).toMatchObject({
+      type: 'tool_use', toolName: 'Workflow', workflowCurrentPhase: 'Catalog',
+    })
+  })
+
+  it('keeps a model-launched workflow on its own tool block', () => {
+    const session = createDefaultChatCoreSession()
+    session.messages = [{
+      id: 'u1', role: 'user', status: 'complete', createdAt: '', providerId: 'acp',
+      content: [{ type: 'text', text: 'run it' }],
+    }, {
+      id: 'a1', role: 'assistant', status: 'streaming', createdAt: '', providerId: 'acp',
+      content: [{ type: 'tool_use', toolName: 'Workflow', toolUseId: 'tu-1', input: '{"name":"review-changes"}' }],
+    }]
+    const patch = applyEventToSession(session, {
+      type: 'task_started',
+      taskId: 'wf_live',
+      description: 'review-changes: review',
+      taskType: 'workflow',
+    })
+    expect(patch.messages).toBeUndefined()
+  })
+
+  it('drops the host card once the real workflow tool result names the run', () => {
+    const session = createDefaultChatCoreSession()
+    session.messages = [{
+      id: 'u1', role: 'user', status: 'complete', createdAt: '', providerId: 'acp',
+      content: [{ type: 'text', text: 'run it' }],
+    }, {
+      id: 'a1', role: 'assistant', status: 'streaming', createdAt: '', providerId: 'acp',
+      content: [],
+    }]
+    Object.assign(session, applyEventToSession(session, {
+      type: 'task_started',
+      taskId: 'wf_live',
+      description: 'review-changes: review',
+      taskType: 'workflow',
+    }))
+    expect(session.messages.some((message) => message.id === 'host-workflow-wf_live')).toBe(true)
+    Object.assign(session, applyEventToSession(session, {
+      type: 'content_delta',
+      messageId: 'a1',
+      delta: { type: 'tool_use', toolName: 'Workflow', toolUseId: 'tu-1', input: '{"name":"review-changes"}' },
+    }))
+    Object.assign(session, applyEventToSession(session, {
+      type: 'content_delta',
+      messageId: 'a1',
+      delta: {
+        type: 'tool_result',
+        toolUseId: 'tu-1',
+        summary: JSON.stringify({ run_id: 'wf_live', name: 'review-changes' }),
+      },
+    }))
+    expect(session.messages.some((message) => message.id === 'host-workflow-wf_live')).toBe(false)
+    const launch = session.messages.find((message) => message.id === 'a1')
+    expect(launch?.content.some((block) => block.type === 'tool_use' && block.toolUseId === 'tu-1')).toBe(true)
+  })
+
   it('stamps the task lifecycle onto the Workflow block for surfaces without taskProgress', () => {
     const session = createDefaultChatCoreSession()
     session.messages = [{

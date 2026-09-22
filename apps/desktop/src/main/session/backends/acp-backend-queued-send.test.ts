@@ -24,6 +24,7 @@ interface PromptCall {
   text: string
   messageId: string
   onEvent: (event: AgentEvent) => void
+  sendNow: boolean
   finish: () => void
 }
 
@@ -32,7 +33,7 @@ function manualTurnRuntime(
   extras?: { interject?: (text: string, id?: string) => Promise<void> },
 ) {
   return mockAcpRuntime({
-    prompt: async (text, messageId, onEvent) => {
+    prompt: async (text, messageId, onEvent, _images, opts) => {
       await new Promise<void>((resolve) => {
         let settled = false
         const finish = () => {
@@ -46,6 +47,7 @@ function manualTurnRuntime(
           text: typeof text === 'string' ? text : String(text),
           messageId,
           onEvent,
+          sendNow: opts?.sendNow === true,
           finish,
         })
       })
@@ -151,6 +153,99 @@ describe('AcpBackend queued send / interject', () => {
     expect(deltas.filter((e) => e.messageId === 'a1')).toEqual([])
 
     calls[0].finish()
+    await backend.close()
+  })
+
+  it('steers now with session/prompt sendNow and keeps interject for soon', async () => {
+    const calls: PromptCall[] = []
+    const interjects: string[] = []
+    const { backend, events } = await startBackend(calls, {
+      interject: async (text) => { interjects.push(text) },
+    })
+
+    void backend.send({ content: 'first', assistantMessageId: 'a1' })
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    await backend.send({
+      content: 'cut in',
+      clientMessageId: 'u-now',
+      assistantMessageId: 'a-now',
+      priority: 'next',
+    })
+    await backend.send({
+      content: 'after this tool',
+      clientMessageId: 'u-soon',
+      assistantMessageId: 'a-soon',
+      priority: 'next',
+    })
+
+    await backend.handleCommand({ kind: 'acp.steer_queued', clientMessageId: 'u-now', priority: 'now' })
+    await backend.handleCommand({ kind: 'acp.steer_queued', clientMessageId: 'u-soon', priority: 'next' })
+
+    expect(interjects).toEqual(['after this tool'])
+    expect(calls.map((call) => call.sendNow)).toEqual([false, true])
+    expect(calls[1]?.text).toContain('cut in')
+    expect(calls[1]?.messageId).toBe('a-now')
+
+    calls[1]?.onEvent({
+      type: 'content_delta',
+      messageId: 'a-now',
+      delta: { type: 'text', text: 'cut' },
+    })
+    expect(events.some((event) => event.type === 'queued_message_consumed' && event.clientMessageId === 'u-now')).toBe(true)
+    expect(messageStarts(events)).toContain('a-now')
+
+    calls[0]?.finish()
+    await backend.send({ content: 'while replacement runs', assistantMessageId: 'a3' })
+    expect(calls).toHaveLength(2)
+
+    calls[1]?.finish()
+    await vi.waitFor(() => expect(calls).toHaveLength(3))
+    expect(calls[2]?.text).toContain('while replacement runs')
+    await backend.close()
+  })
+
+  it('puts a rejected sendNow message back on the queue', async () => {
+    const calls: PromptCall[] = []
+    setAcpRuntimeFactory(async () => mockAcpRuntime({
+      prompt: async (text, messageId, onEvent, _images, opts) => {
+        if (opts?.sendNow) {
+          onEvent({
+            type: 'message_error',
+            messageId,
+            error: 'sendNow rejected',
+          })
+          onEvent({ type: 'status_change', status: 'error' })
+          throw new Error('sendNow rejected')
+        }
+        await new Promise<void>((resolve) => {
+          calls.push({
+            text: typeof text === 'string' ? text : String(text),
+            messageId,
+            onEvent,
+            sendNow: false,
+            finish: () => {
+              onEvent({ type: 'message_complete', messageId })
+              onEvent({ type: 'status_change', status: 'idle' })
+              resolve()
+            },
+          })
+        })
+      },
+    }))
+    const backend = new AcpBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((event) => events.push(event))
+    await backend.start(acpStartOpts({ agentId: 'grok-build' }))
+
+    void backend.send({ content: 'first', assistantMessageId: 'a1' })
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    await backend.send({ content: 'cut in', clientMessageId: 'u-now', assistantMessageId: 'a-now', priority: 'next' })
+    await backend.handleCommand({ kind: 'acp.steer_queued', clientMessageId: 'u-now', priority: 'now' })
+
+    expect(events.some((event) => event.type === 'queued_message_consumed')).toBe(false)
+    calls[0]?.finish()
+    await vi.waitFor(() => expect(calls.some((call) => call.text.includes('cut in') && !call.sendNow)).toBe(true))
+    calls.find((call) => call.text.includes('cut in'))?.finish()
     await backend.close()
   })
 

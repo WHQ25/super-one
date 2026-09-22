@@ -55,6 +55,7 @@ import {
   XAI_BILLING,
   XAI_CONSENT_RECORD,
   XAI_EXIT_PLAN_MODE,
+  XAI_MCP_AUTH_TRIGGER,
   XAI_MCP_ELICIT,
   XAI_MCP_ELICIT_COMPLETE,
   XAI_RECAP,
@@ -84,6 +85,7 @@ import {
   XAI_REWIND_POINTS,
   XAI_SESSION_INTERJECTION,
   buildGrokInterjectParams,
+  grokMcpAuthFailure,
   parseGrokRewindExecute,
   parseGrokRewindPoints,
   parseGrokSessionInterjection,
@@ -230,6 +232,12 @@ export interface AcpRuntime {
     messageId: string,
     onEvent: (event: AgentEvent) => void,
     images?: ImageAttachment[],
+    /**
+     * `sendNow` stamps `_meta.sendNow` so Grok cancels the live turn and runs
+     * this prompt next. The previous turn is marked superseded and must not
+     * emit idle over the replacement.
+     */
+    opts?: { sendNow?: boolean },
   ): Promise<void>
   cancel(): Promise<void>
   close(): Promise<void>
@@ -243,6 +251,8 @@ export interface AcpRuntime {
     force?: boolean
   }): Promise<GrokRewindExecuteResult>
   updateMcpServers(servers: unknown[]): Promise<void>
+  /** `x.ai/mcp/auth_trigger` for one server. Throws when Grok does not authenticate it. */
+  authenticateMcp(serverName: string): Promise<void>
   getSessionUsage(): Promise<{ totalTokens: number; inputTokens: number; outputTokens: number } | null>
   /** Initialize-time MCP/session caps — required so mid-session reload keeps HTTP/SSE. */
   getAgentCapabilities(): AcpAgentCapabilities | null
@@ -918,6 +928,8 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     readonly gen: number
     readonly primaryMessageId: string
     readonly onEvent: (event: AgentEvent) => void
+    /** A sendNow replacement owns the session; this turn must not emit idle. */
+    superseded: boolean
   }
   const newTurnScope = (lastMessageId: string | null = null): AcpTurnScope => ({
     agentMsgToLocal: new Map<string, string>(),
@@ -1299,13 +1311,12 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     },
     async setPermissionMode(mode) {
       // Plan is ACP session mode, not Grok yolo/auto permission baseline.
+      // Leave the tracked mode alone until set_mode succeeds. A swallowed
+      // failure used to stamp prompt _meta.mode=plan while the agent stayed
+      // in default.
       if (mode === 'plan') {
+        await setAcpSessionMode('plan')
         acpSessionMode = 'plan'
-        try {
-          await setAcpSessionMode('plan')
-        } catch (err) {
-          log.warn('[acp-runtime] enter plan mode failed agent=%s:', launch.agentId, err)
-        }
         return
       }
       acpSessionMode = 'default'
@@ -1329,7 +1340,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         log.warn('[acp-runtime] yolo_mode_changed failed agent=%s mode=%s:', launch.agentId, mode, err)
       }
     },
-    async prompt(text, messageId, onEvent, images) {
+    async prompt(text, messageId, onEvent, images, promptOpts) {
       let settled = false
       const fail = (errorInfo: AgentErrorInfo) => {
         if (settled) return
@@ -1355,21 +1366,35 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       })
       // Own scope per turn: a replacement prompt swaps `currentTurn` without
       // touching this turn's ids, so a late cancel still settles on its own.
+      const previousTurn = promptOpts?.sendNow ? currentTurn : null
+      if (previousTurn) previousTurn.superseded = true
       const turn: AcpPromptTurn = {
         ...newTurnScope(messageId),
         gen,
         primaryMessageId: messageId,
         onEvent,
+        superseded: false,
       }
       currentTurn = turn
       wakeScope = newTurnScope()
       xaiCorrelation.lastMessageId = messageId
 
-      const promptBlocks = await buildAcpPromptContentAsync(text, {
-        images,
-        cwd: launch.cwd,
-        getUnsaved: (abs) => opts.getUnsaved?.(abs) ?? getUnsavedBuffer(abs),
-      })
+      let promptBlocks: Awaited<ReturnType<typeof buildAcpPromptContentAsync>>
+      try {
+        promptBlocks = await buildAcpPromptContentAsync(text, {
+          images,
+          cwd: launch.cwd,
+          getUnsaved: (abs) => opts.getUnsaved?.(abs) ?? getUnsavedBuffer(abs),
+        })
+      } catch (err) {
+        if (previousTurn) previousTurn.superseded = false
+        if (currentTurn === turn) currentTurn = previousTurn
+        if (stopWaiter) {
+          const idx = promptStopWaiters.indexOf(stopWaiter)
+          if (idx >= 0) promptStopWaiters.splice(idx, 1)
+        }
+        throw err
+      }
       // ACP has no system-prompt field. Append (never prepend) so Grok's
       // slash parser still sees `/goal` as the first text block. Defer on a
       // leading slash: GoalSet replaces the whole prompt and would drop it.
@@ -1386,18 +1411,36 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       const promptPromise = activeConnection.agent.request(methods.agent.session.prompt, {
         sessionId: activeSession.sessionId,
         prompt: promptBlocks as never,
-        _meta: { mode: grokPromptMetaMode(acpSessionMode) },
+        _meta: {
+          mode: grokPromptMetaMode(acpSessionMode),
+          ...(promptOpts?.sendNow ? { sendNow: true } : {}),
+        },
       })
       // A rejected session/prompt (Grok quota exhausted → JSON-RPC -32003) never
       // produces a stop message, so its failure must be raced explicitly or the
       // turn hangs in `streaming` forever. Success settles this turn's waiter
       // (we skipped ActiveSession.prompt, which would have enqueued a stop).
+      // Remove by identity so a sendNow successor's waiter is not shifted when
+      // this RPC and the stop update both arrive.
       const promptFailure = promptPromise.then<string>(
         (value) => {
-          stopWaiter?.(String(value.stopReason ?? 'end_turn'))
+          if (stopWaiter) {
+            const idx = promptStopWaiters.indexOf(stopWaiter)
+            if (idx >= 0) promptStopWaiters.splice(idx, 1)
+            const resolve = stopWaiter
+            stopWaiter = null
+            resolve(String(value.stopReason ?? 'end_turn'))
+          }
           return new Promise<string>(() => {})
         },
-        (err) => { throw err },
+        (err) => {
+          // The replacement never started. Put streaming back on the live turn.
+          if (previousTurn) {
+            previousTurn.superseded = false
+            if (currentTurn === turn) currentTurn = previousTurn
+          }
+          throw err
+        },
       )
       try {
         const stopReason = await Promise.race([
@@ -1408,8 +1451,17 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           }),
         ])
         settled = true
-        const { complete, interrupted } = mapStopReason(stopReason)
         const localIds = new Set<string>([turn.primaryMessageId, ...turn.agentMsgToLocal.values()])
+        if (turn.superseded) {
+          for (const ev of cancelOpenToolEvents(turn.lastMessageId ?? messageId, turn.openToolIds)) {
+            onEvent(ev)
+          }
+          for (const id of localIds) {
+            onEvent({ type: 'message_interrupted', messageId: id })
+          }
+          return
+        }
+        const { complete, interrupted } = mapStopReason(stopReason)
         if (interrupted) {
           for (const ev of cancelOpenToolEvents(turn.lastMessageId ?? messageId, turn.openToolIds)) {
             onEvent(ev)
@@ -1501,6 +1553,14 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         sessionId: activeSession.sessionId,
         mcpServers: servers,
       })
+    },
+    async authenticateMcp(serverName) {
+      const raw = await activeConnection.agent.request(xaiExtWireMethod(XAI_MCP_AUTH_TRIGGER), {
+        session_id: activeSession.sessionId,
+        server_name: serverName,
+      })
+      const failure = grokMcpAuthFailure(raw)
+      if (failure) throw new Error(failure)
     },
     getAgentCapabilities() {
       return agentCapabilities

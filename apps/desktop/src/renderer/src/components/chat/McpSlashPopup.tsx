@@ -314,8 +314,9 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
             const hasErrorDetail = !!server.toolsError || (isError && !!server.error)
             const canExpand = tools.length > 0 || hasErrorDetail
             const canAuthenticate = mode === 'live'
-              && harness === 'opencode'
               && server.status === 'needs-auth'
+              && server.name !== 'superone'
+              && (harness === 'opencode' || (harness === 'acp' && isGrokAcpAgent(acpAgentId)))
             const isAuthenticating = authenticatingServer === server.name
             return (
               <div key={`${server.scope ?? 'local'}:${server.name}`} className="px-1">

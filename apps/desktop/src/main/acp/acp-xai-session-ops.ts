@@ -88,6 +88,20 @@ function boolField(o: Record<string, unknown>, camel: string, snake: string): bo
   return undefined
 }
 
+/**
+ * `x.ai/mcp/auth_trigger` body. Returns null when the server is authenticated.
+ * Any other status is a user-visible failure (setup still required, or the shell error).
+ */
+export function grokMcpAuthFailure(raw: unknown): string | null {
+  const o = unwrapAcpExtResult(raw)
+  if (!o) return 'MCP authentication returned an empty response'
+  const status = typeof o.status === 'string' ? o.status : ''
+  if (status === 'authenticated') return null
+  const detail = typeof o.error === 'string' && o.error.trim() ? o.error.trim() : ''
+  if (status === 'setup_required') return detail || 'MCP server setup is required before login'
+  return detail || `MCP authentication failed${status ? ` (${status})` : ''}`
+}
+
 /** ACP SDK may return the result body or `{ result, error }`. */
 export function unwrapAcpExtResult(raw: unknown): Record<string, unknown> | null {
   const o = asRecord(raw)

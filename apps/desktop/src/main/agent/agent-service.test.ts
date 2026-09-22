@@ -1693,6 +1693,7 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(dispatchBackendCommand).toHaveBeenCalledWith({
       kind: 'acp.steer_queued',
       clientMessageId: 'user_1',
+      priority: 'now',
     })
     expect(order).toEqual(['send', 'steer'])
   })
@@ -1729,6 +1730,7 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(dispatchBackendCommand).toHaveBeenCalledWith({
       kind: 'acp.steer_queued',
       clientMessageId: 'user_1',
+      priority: 'now',
     })
     expect(respond).toHaveBeenCalledWith('r-steer', { ok: true })
   })

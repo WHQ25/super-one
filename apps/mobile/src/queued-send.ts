@@ -1,4 +1,5 @@
 import type { AgentStatus, ChatMessage, HarnessId } from '@superone/shared/agent-types'
+import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 
 /**
@@ -39,7 +40,8 @@ export function canSteerQueued(harness: HarnessId): boolean {
   return HARNESS_CAPABILITIES[harness]?.supportsQueuedSteer === true
 }
 
-export function canSteerQueuedSoon(harness: HarnessId): boolean {
+export function canSteerQueuedSoon(harness: HarnessId, acpAgentId?: string | null): boolean {
+  if (harness === 'acp' && !isGrokAcpAgent(acpAgentId)) return false
   return HARNESS_CAPABILITIES[harness]?.supportsQueuedSteerSoon === true
 }
 

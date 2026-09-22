@@ -7,6 +7,7 @@ import {
   grokPromptIndexForUserMessage,
   isGrokGoalClear,
   isGrokGoalSlash,
+  grokMcpAuthFailure,
   parseGrokCompactSlash,
   parseGrokForkResponse,
   parseGrokRewindExecute,
@@ -15,6 +16,18 @@ import {
   rewindPreviewFromPoints,
   rewindResultFromExecute,
 } from './acp-xai-session-ops'
+
+describe('grokMcpAuthFailure', () => {
+  it('returns null when the server authenticated', () => {
+    expect(grokMcpAuthFailure({ status: 'authenticated' })).toBeNull()
+    expect(grokMcpAuthFailure({ result: { status: 'authenticated' } })).toBeNull()
+  })
+
+  it('surfaces setup and shell failures', () => {
+    expect(grokMcpAuthFailure({ status: 'setup_required' })).toMatch(/setup is required/)
+    expect(grokMcpAuthFailure({ status: 'failed', error: 'oauth denied' })).toBe('oauth denied')
+  })
+})
 
 function user(id: string, checkpointId?: string): ChatMessage {
   return {

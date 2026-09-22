@@ -247,27 +247,36 @@ describe('grok permission meta helpers', () => {
     expect(grokSessionPermissionMeta('bypassPermissions')).toEqual({
       clientIdentifier: GROK_ACP_CLIENT_IDENTIFIER,
       yoloMode: true,
+      autoMode: false,
     })
     expect(grokSessionPermissionMeta('auto')).toEqual({
       clientIdentifier: GROK_ACP_CLIENT_IDENTIFIER,
+      yoloMode: false,
       autoMode: true,
     })
     expect(grokSessionPermissionMeta('default')).toEqual({
       clientIdentifier: GROK_ACP_CLIENT_IDENTIFIER,
+      yoloMode: false,
+      autoMode: false,
     })
   })
 
   it('stamps reasoningEffort when provided so session/new spawn sampling matches the picker', () => {
     expect(grokSessionPermissionMeta('auto', { reasoningEffort: 'xhigh' })).toEqual({
       clientIdentifier: GROK_ACP_CLIENT_IDENTIFIER,
+      yoloMode: false,
       autoMode: true,
       reasoningEffort: 'xhigh',
     })
     expect(grokSessionPermissionMeta('default', { reasoningEffort: '  ' })).toEqual({
       clientIdentifier: GROK_ACP_CLIENT_IDENTIFIER,
+      yoloMode: false,
+      autoMode: false,
     })
     expect(grokSessionPermissionMeta('default', { reasoningEffort: null })).toEqual({
       clientIdentifier: GROK_ACP_CLIENT_IDENTIFIER,
+      yoloMode: false,
+      autoMode: false,
     })
   })
 

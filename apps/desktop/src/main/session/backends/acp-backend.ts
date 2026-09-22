@@ -168,6 +168,8 @@ export class AcpBackend implements SessionBackend {
   private config: AcpBackendConfig = {}
   private runtime: AcpRuntime | null = null
   private activePrompt: Promise<void> | null = null
+  /** Replacement `session/prompt` (`_meta.sendNow`) started while a turn is live. */
+  private sendNowPrompt: Promise<void> | null = null
   /** Fallback when `x.ai/interject` is unavailable — extra turn after the live one. */
   private readonly pendingQueued = new QueuedUserMessageQueue({
     isBusy: () => this.isTurnBusy(),
@@ -1391,17 +1393,35 @@ export class AcpBackend implements SessionBackend {
         this.emit({ type: 'status_change', status: 'error' })
       }
     } finally {
-      this.activePrompt = null
-      this.terminalPermissionAbort.abort()
-      this.currentMessageId = null
-      this.liveAssistantId = null
-      this.promptMessageIds.clear()
-      this.interjectSplit = false
-      // User-typed messages outrank host task notifications; the notification
-      // flush re-queues itself while the queued turn holds the runtime.
-      this.pendingQueued.flush()
-      this.flushPendingTaskNotifications()
+      if (this.sendNowPrompt) {
+        const next = this.sendNowPrompt
+        this.sendNowPrompt = null
+        this.activePrompt = next
+        // Session.send stays in this call until the replacement turn ends.
+        // Returning here used to mark the session idle while sendNow was still running.
+        try {
+          await next
+        } catch (err) {
+          log.warn('[AcpBackend] sendNow prompt failed:', err)
+        } finally {
+          if (this.activePrompt === next) this.finishPrompt()
+        }
+        return
+      }
+      this.finishPrompt()
     }
+  }
+
+  /** Clear turn bookkeeping and release the host queue. */
+  private finishPrompt(): void {
+    this.activePrompt = null
+    this.terminalPermissionAbort.abort()
+    this.currentMessageId = null
+    this.liveAssistantId = null
+    this.promptMessageIds.clear()
+    this.interjectSplit = false
+    this.pendingQueued.flush()
+    this.flushPendingTaskNotifications()
   }
 
   async interrupt(): Promise<void> {
@@ -1598,19 +1618,14 @@ export class AcpBackend implements SessionBackend {
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
-    if (this.startOpts) {
-      this.startOpts = { ...this.startOpts, permissionMode: mode }
-    }
     if (!this.runtime) {
+      if (this.startOpts) this.startOpts = { ...this.startOpts, permissionMode: mode }
       log.info('[AcpBackend] setPermissionMode deferred until runtime ready mode=%s', mode)
       return
     }
-    try {
-      await this.runtime.setPermissionMode(mode)
-      log.info('[AcpBackend] setPermissionMode applied mode=%s agent=%s', mode, this.config.agentId ?? '')
-    } catch (err) {
-      log.warn('[AcpBackend] setPermissionMode failed mode=%s:', mode, err)
-    }
+    await this.runtime.setPermissionMode(mode)
+    if (this.startOpts) this.startOpts = { ...this.startOpts, permissionMode: mode }
+    log.info('[AcpBackend] setPermissionMode applied mode=%s agent=%s', mode, this.config.agentId ?? '')
   }
 
   /**
@@ -1774,6 +1789,10 @@ export class AcpBackend implements SessionBackend {
     const taken = this.pendingQueued.take(cmd.clientMessageId)
     if (!taken) throw new Error(`Queued ACP message not found: ${cmd.clientMessageId}`)
     try {
+      if (cmd.priority === 'now' && isGrokAcpAgent(this.config.agentId)) {
+        this.steerNow(taken)
+        return
+      }
       const ok = await this.interjectRequest(taken.request)
       if (!ok) throw new Error('Grok interject is unavailable')
     } catch (err) {
@@ -1782,8 +1801,88 @@ export class AcpBackend implements SessionBackend {
     }
   }
 
-  async reconnectMcp(_serverName: string): Promise<void> {
-    await this.pushMcpServers()
+  /**
+   * Steer now: a new `session/prompt` with `_meta.sendNow`. Grok cancels the
+   * live turn (the running command is backgrounded, not killed) and runs this
+   * message next. Steer soon stays on `x.ai/interject`.
+   */
+  private steerNow(taken: { request: SendMessageRequest; index: number }): void {
+    const runtime = this.runtime
+    if (!runtime) throw new Error('Grok sendNow is unavailable')
+    const request = taken.request
+    const messageId = request.assistantMessageId
+      ?? `acp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    let adopted = false
+    const adopt = () => {
+      if (adopted) return
+      adopted = true
+      this.promptMessageIds.clear()
+      this.promptMessageIds.add(messageId)
+      this.currentMessageId = messageId
+      this.liveAssistantId = messageId
+      this.interjectSplit = false
+      if (request.clientMessageId) {
+        this.emit({ type: 'queued_message_consumed', clientMessageId: request.clientMessageId })
+      }
+      this.emit({
+        type: 'message_start',
+        message: {
+          id: messageId,
+          role: 'assistant',
+          status: 'streaming',
+          content: [],
+          createdAt: new Date().toISOString(),
+          providerId: 'acp',
+        },
+      })
+      this.emit({ type: 'status_change', status: 'streaming' })
+    }
+    const next = runtime.prompt(
+      request.content,
+      messageId,
+      (event) => {
+        const failed = event.type === 'message_error'
+          || (event.type === 'status_change' && event.status === 'error')
+        if (!adopted && failed) return
+        adopt()
+        const routed = this.retargetPromptEvent(event)
+        if (!routed) return
+        this.routeSessionEvent(routed, this.config.agentId ?? null, this.runtimeEpoch)
+      },
+      request.images,
+      { sendNow: true },
+    )
+    this.sendNowPrompt = next
+    void next.catch(() => {
+      if (!adopted) this.pendingQueued.restore(taken)
+    })
+  }
+
+  async authenticateMcp(serverName: string): Promise<void> {
+    const runtime = this.runtime
+    if (!runtime?.authenticateMcp) {
+      throw new Error('MCP authentication is not supported by this ACP agent')
+    }
+    await runtime.authenticateMcp(serverName)
+  }
+
+  async reconnectMcp(serverName: string): Promise<void> {
+    const runtime = this.runtime
+    if (!runtime?.updateMcpServers || !this.startOpts) return
+    const servers = buildAcpSessionMcpServers({
+      cwd: this.effectiveCwd(this.startOpts),
+      superoneSessionId: this.startOpts.sessionId,
+      agentCapabilities: runtime.getAgentCapabilities(),
+    })
+    const named = servers.filter((server) => {
+      const name = server && typeof server === 'object' && 'name' in server ? server.name : undefined
+      return name === serverName
+    })
+    if (named.length > 0) {
+      const rest = servers.filter((server) => !named.includes(server))
+      await runtime.updateMcpServers(rest)
+    }
+    await runtime.updateMcpServers(servers)
   }
 
   async toggleMcpServer(_serverName: string, _enabled: boolean): Promise<void> {

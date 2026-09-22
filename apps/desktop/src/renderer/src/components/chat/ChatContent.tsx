@@ -35,6 +35,7 @@ import { extractTurnOutline } from './turn-outline'
 import { ChatRootContext } from './is-focus-in-chat'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import {
   EMPTY_CODEX_REALTIME_SESSION_VIEW,
@@ -103,7 +104,7 @@ function ChatTranscript({
     messages, isCompacting, compactingStartedAt, isRecapping, compactError, apiRetry,
     displayedSessionId, historyHydrated,
     sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply, acpModels,
-    sessionProvider, preferredProvider,
+    sessionProvider, preferredProvider, acpAgentId,
     draftId, sideChatParentId, providerSessionId,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
@@ -124,6 +125,7 @@ function ChatTranscript({
     providerSessionId: s._providerSessionId,
     sessionProvider: s.sessionProvider,
     preferredProvider: s.preferredProvider,
+    acpAgentId: s.acpAgentId,
   })))
 
   const { editQueuedMessage, deleteQueuedMessage, steerQueuedMessage, startQueuedMessages, dismissCompactError } = useChatStore(useShallow((s) => ({
@@ -153,7 +155,9 @@ function ChatTranscript({
   const canSteerQueue = isLocalQueue
     && HARNESS_CAPABILITIES[queueProvider].supportsQueuedSteer
     && sessionStatus === 'streaming'
-  const canSteerQueueSoon = canSteerQueue && HARNESS_CAPABILITIES[queueProvider].supportsQueuedSteerSoon
+  const canSteerQueueSoon = canSteerQueue
+    && HARNESS_CAPABILITIES[queueProvider].supportsQueuedSteerSoon
+    && (queueProvider !== 'acp' || isGrokAcpAgent(acpAgentId))
   const isLocalCodexQueue = isLocalQueue && queueProvider === 'codex'
   const canStartCodexQueue = isLocalCodexQueue && sessionStatus !== 'streaming'
   // ChatTranscript doubles as the backing-thread view (see `showRealtime`). That view

@@ -213,6 +213,12 @@ export type BackendCommand =
   | {
       kind: 'acp.steer_queued'
       clientMessageId: string
+      /**
+       * `now` sends `session/prompt` with `_meta.sendNow` (cancel the live turn,
+       * run this message next). `next` is `x.ai/interject` (no abort). Omitted
+       * means `next`, matching the original interject-only command.
+       */
+      priority?: ClaudeSteerPriority
     }
   | {
       kind: 'codex.plan_approval'

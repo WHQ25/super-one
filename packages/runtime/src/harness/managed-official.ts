@@ -32,7 +32,7 @@ import {
  * must equal the `@anthropic-ai/claude-agent-sdk` dependency in
  * packages/claude/package.json — managed-official-lockstep.test.ts enforces it.
  */
-export const OFFICIAL_CLAUDE_SDK_VERSION = '0.3.278'
+export const OFFICIAL_CLAUDE_SDK_VERSION = '0.3.280'
 
 /**
  * Pinned Codex CLI on npm. Bump deliberately with release notes — never bare `latest`

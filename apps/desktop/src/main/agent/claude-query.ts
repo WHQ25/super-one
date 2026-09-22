@@ -1,7 +1,7 @@
 import { query, type CanUseTool, type HookCallback, type OnElicitation, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { randomUUID } from 'node:crypto'
 import { resolveMappedClaudeModelId } from '@superone/shared/agent-types'
-import type { AgentEvent, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
+import type { AgentEvent, ModelUsageInfo, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
 import { createDeadStreamLedger } from '@superone/shared/dead-stream-ledger'
 import { createRetractionLedger, mapModelFallbackWire, MODEL_FALLBACK_SUBTYPES } from '@superone/shared/model-fallback-wire'
 import { readTerminalSlashCommands } from '@superone/shared/slash-commands'
@@ -53,6 +53,8 @@ export interface SessionQueryOptions {
   resumeDropsTurn?: string
   forkSession?: boolean
   sessionId?: string
+  /** See BackendStartOptions.modelUsageBaseline. */
+  modelUsageBaseline?: Record<string, ModelUsageInfo>
   abortController?: AbortController
   additionalDirectories?: string[]
   env?: Record<string, string | undefined>
@@ -235,6 +237,7 @@ export function createSessionQuery(
     bridge,
     timing,
     activeBackgroundTasks,
+    modelUsageBaseline: options.modelUsageBaseline,
   })
 
   return { query: q, iterationDone, spawnAbortController, activeBackgroundTasks }
@@ -253,6 +256,8 @@ export interface IterateMessagesOptions {
   bridge: MessageBridge
   timing: { pausedMs: number }
   activeBackgroundTasks?: Map<string, BackgroundTaskInfo>
+  /** Cumulative usage the resumed transcript already carries; not recorded again. */
+  modelUsageBaseline?: Record<string, ModelUsageInfo>
 }
 
 export async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<void> {
@@ -325,9 +330,14 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   // Subagent token accumulation per parent_tool_use_id
   const subagentTracking = new Map<string, { stepIds: Set<string>; input: number; output: number }>()
   // Per-model usage snapshot: SDK's result.modelUsage is cumulative across the
-  // streaming query's lifetime. Diff against the prior snapshot to get the
-  // step delta to record into usage_daily.
+  // streaming query's lifetime — and since 0.3.277 a resumed or forked session
+  // continues from the totals its transcript saved, so the first result is not
+  // this step's usage. Seed from the last persisted result and diff against
+  // the prior snapshot to get the step delta to record into usage_daily.
   const usageSnapshotByModel = new Map<string, UsageStepDelta>()
+  for (const [model, usage] of Object.entries(opts.modelUsageBaseline ?? {})) {
+    usageSnapshotByModel.set(model, modelUsageInfoToDelta(usage))
+  }
 
   let turnMessageId = getCurrentMessageId()
   let turnActive = false

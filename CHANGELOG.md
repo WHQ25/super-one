@@ -94,6 +94,12 @@ Every alpha release keeps its own notes on its GitHub Release.
   picks the path per action and reports it in
   `evidence[].description`; `ActResult.grounding` is removed.
   System-wide hotkeys (⌘Space, ⌘Tab, screenshots) are not available.
+- Claude Agent SDK 0.3.278: forking at a message no longer rejects the
+  message id or repeats the prompt, and a session's cost keeps counting
+  across resumes instead of restarting at zero. Daily usage statistics
+  diff a resumed session against its saved totals so earlier turns are
+  not counted again.
+- Codex: adopted app-server 0.155.1 (no protocol changes SuperOne uses).
 
 ## [0.68.0-alpha.1] - 2026-09-22
 

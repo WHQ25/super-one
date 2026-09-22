@@ -197,6 +197,7 @@ export class ClaudeBackend implements SessionBackend {
       onElicitation: this.ensureOnElicitation(),
       trackPlanFile,
       resume: opts.providerSessionId,
+      modelUsageBaseline: opts.modelUsageBaseline,
       abortController: opts.abortController,
       additionalDirectories: opts.additionalDirectories,
       env: settingsEnv ? buildSafeEnv(custom) : undefined,

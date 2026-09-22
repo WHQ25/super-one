@@ -9,6 +9,7 @@ import type {
   ContextUsageInfo,
   ProviderRateLimits,
   McpServerInfo,
+  ModelUsageInfo,
   PermissionMode,
   QuestionAnnotations,
   RewindFilesResult,
@@ -176,6 +177,13 @@ export interface BackendStartOptions {
   agentName?: string
   /** Persisted context occupancy from the last turn; seeds harnesses that solve occupancy across turns. */
   contextTokens?: number
+  /**
+   * Cumulative per-model usage the last persisted result carried. A resumed or
+   * forked Claude session's first result continues from these totals (SDK
+   * 0.3.277+), so the backend diffs against them instead of counting the
+   * whole history as one step.
+   */
+  modelUsageBaseline?: Record<string, ModelUsageInfo>
 }
 
 export interface PrewarmHint {

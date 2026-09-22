@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import type { AgentEvent, ChatMessage, ContentBlock, SendMessageRequest, SessionInfo } from '@superone/shared/agent-types'
+import type { AgentEvent, ChatMessage, ContentBlock, ModelUsageInfo, SendMessageRequest, SessionInfo } from '@superone/shared/agent-types'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
@@ -146,6 +146,21 @@ export function hydrateClaudeRuntime(
     gitBranch: saved?.gitBranch ?? null,
     worktreePath: saved?.worktreePath ?? (cwd && cwd !== projectPath ? cwd : null),
   })
+}
+
+/**
+ * Cumulative per-model usage from the newest assistant result. The SDK saves
+ * the same totals in its transcript and a resumed session's first result
+ * continues from them, so this is the baseline for the next step delta.
+ */
+export function lastModelUsageSnapshot(messages: ChatMessage[]): Record<string, ModelUsageInfo> | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    if (msg.role !== 'assistant') continue
+    const usage = msg.metadata?.modelUsage
+    if (usage && Object.keys(usage).length > 0) return usage
+  }
+  return undefined
 }
 
 export function mergeClaudeRuntimes(

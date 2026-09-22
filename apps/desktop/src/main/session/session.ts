@@ -35,6 +35,7 @@ import {
   applyClaudeEventToRuntime,
   buildClaudeUserMessage,
   extractClaudeTitle,
+  lastModelUsageSnapshot,
   type ClaudeSessionRuntime,
   type TaskProgressEntry,
 } from '../agent/claude-session-runtime'
@@ -1798,6 +1799,7 @@ export class Session implements SessionContract {
       ...(this.unattended ? { unattended: true } : {}),
       agentName: this.computeTitle()?.trim() || undefined,
       contextTokens: this._contextTokens,
+      modelUsageBaseline: this._providerSessionId ? lastModelUsageSnapshot(this._messages) : undefined,
     }
   }
 

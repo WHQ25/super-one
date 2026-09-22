@@ -538,7 +538,7 @@ export function materializeOwnedBrowserTabs(sessionId: string) {
 
 export async function openTerminalTab(projectPath: string, sessionId?: string) {
   ensureVisible()
-  const item = await window.terminal.create({ projectPath, sessionId })
+  const item = await window.terminal.create({ projectPath, sessionId, openedInActivity: true })
   revealTerminalTabInActivity(item)
 }
 

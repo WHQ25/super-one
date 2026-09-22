@@ -72,4 +72,13 @@ describe('useTerminalSync on terminal_exited', () => {
     expect(revealTerminalTabInActivity).not.toHaveBeenCalled()
     expect(storeState.upsertTab).toHaveBeenCalledWith('/proj', item)
   })
+
+  it('keeps a tab opened from the activity launcher out of the bottom panel', () => {
+    renderHook(() => useTerminalSync())
+    const item = { terminalId: 't4', cwd: '/proj', projectPath: '/proj', openedInActivity: true } as TerminalListItem
+    emit({ type: 'terminal_created', item } as TerminalEvent)
+    // The launcher docks the tab itself once create() resolves.
+    expect(revealTerminalTabInActivity).not.toHaveBeenCalled()
+    expect(storeState.upsertTab).not.toHaveBeenCalled()
+  })
 })

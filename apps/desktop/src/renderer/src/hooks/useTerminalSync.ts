@@ -16,9 +16,10 @@ export function tabBelongsToProject(item: Pick<TerminalListItem, 'cwd' | 'projec
  * Whether the bottom terminal panel lists this tab. The panel is per project,
  * so an agent-opened tab — owned by one session and docked in that session's
  * activity panel — stays out, or every session in the project would see it.
+ * A tab the user opened from the activity launcher already has its dock tab.
  */
-export function tabShowsInTerminalPanel(item: Pick<TerminalListItem, 'cwd' | 'projectPath' | 'agentSessionId'>, projectPath: string): boolean {
-  return !item.agentSessionId && tabBelongsToProject(item, projectPath)
+export function tabShowsInTerminalPanel(item: Pick<TerminalListItem, 'cwd' | 'projectPath' | 'agentSessionId' | 'openedInActivity'>, projectPath: string): boolean {
+  return !item.agentSessionId && !item.openedInActivity && tabBelongsToProject(item, projectPath)
 }
 
 /**
@@ -46,7 +47,7 @@ export function useTerminalSync(): void {
         // The reveal is owner-aware, so a tab for a session the user is not viewing
         // waits in main until that session is restored.
         if (event.item.agentSessionId) revealTerminalTabInActivity(event.item, { reveal: false })
-        else upsertTab(folder, event.item)
+        else if (tabShowsInTerminalPanel(event.item, folder)) upsertTab(folder, event.item)
         return
       }
       if (!event.terminalId) return

@@ -845,7 +845,7 @@ const environmentAPI = {
 }
 
 const terminalAPI = {
-  create: (opts: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number }) =>
+  create: (opts: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number; openedInActivity?: boolean }) =>
     ipcRenderer.invoke(AgentIpcChannels.TERMINAL_CREATE, opts) as Promise<TerminalListItem>,
 
   list: (cwd?: string) =>

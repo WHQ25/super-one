@@ -4583,6 +4583,8 @@ export interface TerminalListItem {
    * session's tools and terminal panel.
    */
   agentSessionId?: string
+  /** Opened from the activity panel's launcher; that dock shows it, not the bottom terminal panel. */
+  openedInActivity?: boolean
 }
 
 export type TerminalErrorCode = 'not_owner' | 'no_terminal' | 'spawn_failed' | 'cwd_invalid'

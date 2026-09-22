@@ -2241,7 +2241,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     AgentIpcChannels.TERMINAL_CREATE,
-    async (_e, opts: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number }) => {
+    async (_e, opts: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number; openedInActivity?: boolean }) => {
       if (parseRemoteProjectKey(opts.projectPath)) {
         return remoteTerminalController.create(opts)
       }
@@ -2252,6 +2252,7 @@ function registerIpcHandlers(): void {
         title: opts.title ?? (basename(cwd) || 'Terminal'),
         cols: opts.cols,
         rows: opts.rows,
+        openedInActivity: opts.openedInActivity,
       })
       return session.listItem()
     },

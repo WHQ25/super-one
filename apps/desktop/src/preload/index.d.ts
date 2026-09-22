@@ -826,7 +826,7 @@ interface MiniAppAPI {
 }
 
 interface TerminalAPI {
-  create(opts: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number }): Promise<TerminalListItem>
+  create(opts: { projectPath: string; sessionId?: string; title?: string; cols?: number; rows?: number; openedInActivity?: boolean }): Promise<TerminalListItem>
   list(cwd?: string): Promise<TerminalListItem[]>
   snapshot(terminalId: string): Promise<TerminalSnapshot | null>
   write(terminalId: string, data: string): Promise<void>

@@ -33,6 +33,7 @@ export interface TerminalSessionOptions {
   snapshotSoftLimit?: number
   /** Tab opened by an agent tool rather than the user. */
   agentSessionId?: string
+  openedInActivity?: boolean
   control?: TerminalControlOptions
 }
 
@@ -58,6 +59,7 @@ export class TerminalSession {
   readonly ownership: TerminalOwnership
   readonly control: TerminalControl
   readonly agentSessionId: string | undefined
+  readonly openedInActivity: boolean
   title: string
   lastAnsi = ''
   /** Last PTY output for idle detection; 0 until the process has printed anything. */
@@ -95,6 +97,7 @@ export class TerminalSession {
     this._cols = opts.cols
     this._rows = opts.rows
     this.agentSessionId = opts.agentSessionId
+    this.openedInActivity = opts.openedInActivity ?? false
     this.shellName = processBaseName(opts.shell || defaultShell())
 
     this.term = new Terminal({ cols: opts.cols, rows: opts.rows, allowProposedApi: true, scrollback: SCROLLBACK_LINES })
@@ -153,6 +156,7 @@ export class TerminalSession {
       ownerDeviceId: this.ownership.ownerDeviceId,
       agentControl: this.control.current,
       agentSessionId: this.agentSessionId,
+      ...(this.openedInActivity ? { openedInActivity: true } : {}),
     }
   }
 

@@ -28,6 +28,8 @@ export interface CreateTerminalOptions {
   shell?: string
   /** Session whose agent tool opened the tab — docked in that session's activity panel. */
   agentSessionId?: string
+  /** Opened from the activity panel's launcher — kept out of the bottom terminal panel. */
+  openedInActivity?: boolean
 }
 
 export class TerminalManager {
@@ -55,6 +57,7 @@ export class TerminalManager {
       env: opts.env,
       shell: opts.shell,
       agentSessionId: opts.agentSessionId,
+      openedInActivity: opts.openedInActivity,
       coalesceMs: this.opts.coalesceMs,
       snapshotSoftLimit: this.opts.snapshotSoftLimit,
     })

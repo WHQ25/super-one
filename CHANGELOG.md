@@ -18,6 +18,12 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Git and GitHub mentions on desktop and mobile: `@git` browses branches,
   commits, worktrees and tags; `@gh` finds issues and pull requests through
   the connected host. Mention chips preserve the exact selected reference.
+- Bash commands that change files show those files as Edit, Write, or
+  Delete rows, and the turn's file and line counts include them.
+- Grok ask sessions do not inherit auto mode from `~/.grok`. Slash
+  workflows show a host card. Steer now replaces the running turn and
+  waits until that turn finishes; steer soon stays an interject and only
+  applies to Grok.
 - Fast inner loop (experimental): `browser_run`, `computer_run` and
   `device_run` hand a multi-step UI goal to Jev (TypeSafe's System One
   model), which picks the next click, type or scroll from the observed
@@ -59,6 +65,8 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Fixed
 
+- A terminal opened from the activity launcher stays in the activity
+  panel and does not also appear in the bottom panel.
 - Claude keeps subsequent messages queued while a steered continuation
   turn is still running, then releases them when the turn finishes.
 - Composer suggestions can extend beyond the input while it is idle;
@@ -94,12 +102,40 @@ Every alpha release keeps its own notes on its GitHub Release.
   picks the path per action and reports it in
   `evidence[].description`; `ActResult.grounding` is removed.
   System-wide hotkeys (⌘Space, ⌘Tab, screenshots) are not available.
-- Claude Agent SDK 0.3.278: forking at a message no longer rejects the
+- Claude Agent SDK 0.3.280: forking at a message no longer rejects the
   message id or repeats the prompt, and a session's cost keeps counting
   across resumes instead of restarting at zero. Daily usage statistics
   diff a resumed session against its saved totals so earlier turns are
-  not counted again.
+  not counted again. 0.3.280 itself only adds opt-in APIs.
 - Codex: adopted app-server 0.155.1 (no protocol changes SuperOne uses).
+
+## [0.68.0-alpha.2] - 2026-09-23
+
+### Added
+
+- Bash commands that edit files render each change as an Edit, Write, or
+  Delete row, and the turn detail counts those files and lines. Collapsed,
+  the header shows the file and line totals; expanded, command output stays
+  behind its own toggle and opens on its own only when the command failed.
+  The phone carries the same diff.
+- Grok ask sessions stay on manual approval instead of inheriting `~/.grok`
+  auto mode. Slash workflows get a host card even though they emit no tool
+  call. Steer now sends a replacement prompt and keeps the session busy
+  until that turn ends; steer soon remains an interject and is Grok-only.
+
+### Fixed
+
+- A terminal opened from the activity launcher no longer also appears in
+  the bottom panel.
+- Resuming a Claude session no longer records the transcript's saved usage
+  as a new step, so daily usage does not replay history.
+
+### Changed
+
+- Claude Agent SDK 0.3.280 and Codex 0.155.1. SDK 0.3.278 fixes forking at
+  a message and keeps session cost across resumes; 0.3.280 adds opt-in
+  APIs only. Codex adds thread attachments and no other protocol changes
+  SuperOne uses.
 
 ## [0.68.0-alpha.1] - 2026-09-22
 

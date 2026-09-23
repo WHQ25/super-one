@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Ban, ChevronRight, TriangleAlert } from 'lucide-react'
+import { Ban, ChevronRight, FileDiff, TriangleAlert } from 'lucide-react'
 import type { BashEditDiff } from '@superone/shared/agent-types'
 import { bashEditToolUses, summarizeBashEditDiff, type BashEditToolUse } from '@superone/shared/bash-edit-diff'
 import { cn } from '@superone/ui/lib/utils'
@@ -347,16 +347,21 @@ export function BashTerminalPresenter({
         )}
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {hasEdits && editSummary && !expanded && (
-            <span className="font-mono text-xs text-muted-foreground">
-              {t('chat.toolBlock.editedFiles', { count: editSummary.files })}
+            <span className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground tabular-nums">
+              <span
+                className="inline-flex items-center gap-0.5"
+                title={t('chat.compactMode.filesChanged', { count: editSummary.files })}
+              >
+                <FileDiff className="size-3" />
+                {editSummary.files}
+              </span>
               {(editSummary.added > 0 || editSummary.removed > 0) && (
-                <>
-                  {' · '}
+                <span>
                   {editSummary.approximate && '≈'}
                   {editSummary.added > 0 && <span className="text-success">+{editSummary.added}</span>}
                   {editSummary.added > 0 && editSummary.removed > 0 && ' '}
                   {editSummary.removed > 0 && <span className="text-error">-{editSummary.removed}</span>}
-                </>
+                </span>
               )}
             </span>
           )}
@@ -376,7 +381,7 @@ export function BashTerminalPresenter({
             onClick={() => setOutputOpen((value) => !value)}
           >
             <ChevronRight className={cn('size-3 shrink-0 transition-transform duration-200', outputOpen && 'rotate-90')} />
-            <span>{t('chat.toolBlock.output')}</span>
+            <span>{t('chat.toolBlock.terminalPanel')}</span>
           </div>
           {outputOpen && outputPanel}
           {editRows.map((row) => <div key={row.toolUseId}>{renderFileTool!(row)}</div>)}

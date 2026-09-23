@@ -10,12 +10,7 @@ import { HarnessManager } from './harness-manager'
 import { ProviderStore } from '../provider/provider-store'
 import { ProjectRegistry } from '../workspace/project-registry'
 import { WorkspaceGitService } from '../workspace/git-service'
-import {
-  CollaborationService,
-  collaborationSystemPrompt,
-  deriveCollaborationName,
-  deriveCollaborationRole,
-} from './collaboration'
+import { CollaborationService } from './collaboration'
 import { createSessionProviderStore } from '@superone/runtime/session'
 import { createHash } from 'node:crypto'
 
@@ -67,26 +62,6 @@ function bootCollab(opts?: { simulateReady?: boolean }) {
   })
   return { db, sessions, collab, projects, providers, nodeHome, sessionProviders, harnesses }
 }
-
-describe('collaboration helpers', () => {
-  it('deriveCollaborationRole prefers explicit role then launchId', () => {
-    expect(deriveCollaborationRole({ role: 'Reviewer', task: 'x' })).toBe('Reviewer')
-    expect(deriveCollaborationRole({ launchId: 'diff-bot', task: 'x' })).toBe('diff-bot')
-    expect(deriveCollaborationRole({ task: 'You are a tester' })).toBe('a tester')
-  })
-
-  it('deriveCollaborationName prefers explicit name', () => {
-    expect(deriveCollaborationName({ name: 'Alice' })).toBe('Alice')
-    expect(deriveCollaborationName({ launchId: 'bot-1' })).toBe('bot-1')
-  })
-
-  it('collaborationSystemPrompt embeds credential and parent id', () => {
-    const prompt = collaborationSystemPrompt('s1sc_secret', 'parent-1')
-    expect(prompt).toContain('parent-1')
-    expect(prompt).toContain('s1sc_secret')
-    expect(prompt).toContain('session_collab_send')
-  })
-})
 
 describe('collaboration grants + mailbox', () => {
   it('listProfiles returns session_providers base profiles when catalog is empty', () => {

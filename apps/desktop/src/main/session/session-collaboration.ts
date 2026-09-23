@@ -1,5 +1,9 @@
-import { notifyCollaborationMailboxChanged, readCollaborationMailbox } from './collaboration-mailbox'
-import { createHash, randomBytes, randomUUID } from 'crypto'
+import {
+  collaborationStore as store,
+  notifyCollaborationMailboxChanged,
+  readCollaborationMailbox,
+} from './collaboration-mailbox'
+import { randomUUID } from 'crypto'
 import { existsSync, realpathSync, statSync } from 'fs'
 import { homedir } from 'os'
 import { resolve, sep } from 'path'
@@ -10,27 +14,44 @@ import type {
   SessionAgentLaunchConfig,
   SessionAgentLaunchProposal,
   SessionAgentProfile,
-  SessionCollabLaunchMode,
-} from '@superone/shared/agent-types'
-import {
-  resolveLaunchSummary,
-  SESSION_AGENT_LAUNCHES_FIELD,
-  SESSION_AGENT_TASK_MAX,
 } from '@superone/shared/agent-types'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
 import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
+import {
+  EDITABLE_PERMISSION_MODES,
+  EDITABLE_SANDBOX_MODES,
+  EMPTY_MAILBOX_HINT,
+  HANDOFF_NOTE,
+  NESTED_COLLABORATION_UNSUPPORTED,
+  assertLaunchCount,
+  assertMailboxEndpoint,
+  collaborationSessionTitle,
+  collaborationSystemPrompt,
+  deriveCollaborationName,
+  deriveCollaborationRole,
+  describeLaunchedPeer,
+  describePeerForCaller as describeGrantPeerForCaller,
+  handoffTaskContent,
+  linkActivationWakeText,
+  mailboxWakeText,
+  mergeConfirmedLaunches,
+  normalizeLaunchText,
+  normalizeMailboxContent,
+  parseGrantConfig as parseConfig,
+  readOnlyTargetMessage as collaborationTargetReadOnlyMessage,
+  resolveLaunchMode,
+  resolveMailboxRecipient,
+  type CollaborationGrantRow as GrantRow,
+  type CollaborationPeer,
+} from '@superone/runtime/collaboration'
 import { activateWorktree, resolveMainWorktreeDir } from '../git/worktree-ops'
-import { decryptSecret, encryptSecret } from '../crypto/secret-store'
 import { getDb } from '../database'
 import { createSession as createSessionRecord } from '../db-sessions'
 import { addRecentFolder, getRecentFolders } from '../recent-folders'
 import log from '../logger'
 import { listSessionAgentProfiles } from './agent-profiles'
 import type { Session, SessionManager } from './types'
-import {
-  openSessionAgentsConfirm,
-  type SessionAgentsConfirmOutcome,
-} from './session-collaboration-confirm'
+import { openSessionAgentsConfirm } from './session-collaboration-confirm'
 
 /**
  * Agent-profile listing moved to ./agent-profiles when this file passed 1600
@@ -39,16 +60,6 @@ import {
  */
 export { listSessionAgentProfiles } from './agent-profiles'
 
-/** Returned by the mailbox tools when either side tries to use a handoff credential. */
-const HANDOFF_NO_MAILBOX =
-  'This credential belongs to a handoff launch. Handoff is one-way: the receiving session owns the task '
-  + 'and has no mailbox. Use mode "spawn" (nested child) or "link" (existing session) when you need to exchange messages.'
-
-/** Told to the initiator, because a handoff credential is spent by session_collab_start. */
-const HANDOFF_NOTE =
-  'Handoff complete. The new session is a top-level sibling and owns the task now — '
-  + 'there is no mailbox, so this credential cannot be used with session_collab_send or session_collab_retrieve.'
-
 export interface RequestSessionAgentsArgs {
   launches: Array<{
     launchId?: string
@@ -56,7 +67,7 @@ export interface RequestSessionAgentsArgs {
      * `spawn` (default) creates a nested child; `link` connects an existing
      * sessionId; `handoff` creates a top-level sibling that only receives the task.
      */
-    mode?: SessionCollabLaunchMode
+    mode?: SessionAgentLaunchProposal['mode']
     /** Required for spawn/handoff; ignored for link. */
     agentId?: string
     /** Required for link: existing SuperOne session id. */
@@ -73,37 +84,11 @@ export interface RequestSessionAgentsArgs {
   }>
 }
 
-interface GrantRow {
-  credential_hash: string
-  credential_secret: string | null
-  parent_session_id: string
-  child_session_id: string | null
-  agent_id: string
-  task: string
-  config_json: string
-  task_sent: number
-  kind: SessionCollabLaunchMode
-  started_at: string | null
-}
-
-interface MessageRow {
-  id: string
-  credential_hash: string
-  sequence: number
-  sender_session_id: string
-  recipient_session_id: string
-  client_message_id: string | null
-  content: string
-  created_at: string
-}
-
 export interface SessionCollaborationRunConfig {
   permissionMode?: PermissionMode
   sandboxMode?: SandboxMode
   codexServiceTier?: string | null
 }
-
-type AuthorizedGrant = GrantRow & { credential: string }
 
 let notifySessionsChanged: (() => void) | null = null
 
@@ -115,66 +100,18 @@ function toolResult(value: unknown, isError = false) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(value) }], ...(isError ? { isError: true } : {}) }
 }
 
-function hashCredential(credential: string): string {
-  return createHash('sha256').update(credential).digest('hex')
+function errorResult(error: unknown) {
+  return toolResult({ status: 'error', message: error instanceof Error ? error.message : String(error) }, true)
 }
 
-function parseConfig(raw: string): SessionAgentLaunchConfig {
-  return JSON.parse(raw) as SessionAgentLaunchConfig
+function sessionTitle(sessionId: string): string | null {
+  const row = getDb().prepare('SELECT title FROM sessions WHERE id = ?')
+    .get(sessionId) as { title: string | null } | undefined
+  return row?.title ?? null
 }
 
-/** Prefer explicit role, then human launchId, then a short task-derived label. */
-export function deriveCollaborationRole(input: {
-  role?: string
-  launchId?: string
-  task: string
-}): string {
-  const explicit = input.role?.trim()
-  if (explicit) return explicit.slice(0, 64)
-  const launchId = input.launchId?.trim()
-  if (
-    launchId
-    && launchId.length <= 32
-    && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(launchId)
-  ) {
-    return launchId
-  }
-  const firstLine = input.task.split(/\n/, 1)[0]?.trim() ?? ''
-  const youAre = firstLine.match(/^(?:you are|role)\s*[:\-]?\s*(.+)$/i)
-  if (youAre?.[1]) {
-    return youAre[1].replace(/[.\s]+$/g, '').slice(0, 40)
-  }
-  return 'Agent'
-}
-
-/** Agent-chosen display name — never the harness brand. */
-export function deriveCollaborationName(input: {
-  name?: string
-  launchId?: string
-}): string {
-  const explicit = input.name?.trim()
-  if (explicit) return explicit.slice(0, 64)
-  const launchId = input.launchId?.trim()
-  if (
-    launchId
-    && launchId.length <= 32
-    && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(launchId)
-  ) {
-    return launchId
-  }
-  return 'Agent'
-}
-
-export function collaborationSessionTitle(name: string, role: string): string {
-  const n = name.trim() || 'Agent'
-  const r = role.trim() || 'Agent'
-  return `${n} - ${r}`
-}
-
-function resolveLaunchMode(raw: unknown): SessionCollabLaunchMode {
-  if (raw === 'link') return 'link'
-  if (raw === 'handoff') return 'handoff'
-  return 'spawn'
+function initiatorTitleOf(grant: GrantRow): string {
+  return sessionTitle(grant.parent_session_id)?.trim() || grant.parent_session_id.slice(0, 8)
 }
 
 /**
@@ -202,10 +139,8 @@ function assertKnownApiProviderId(
 }
 
 function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): SessionAgentLaunchProposal[] {
-  if (!Array.isArray(args.launches) || args.launches.length === 0) {
-    throw new Error('launches must contain at least one proposed session')
-  }
-  if (args.launches.length > 16) throw new Error('A single request may contain at most 16 launches')
+  if (!Array.isArray(args.launches)) throw new Error('launches must contain at least one proposed session')
+  assertLaunchCount(args.launches.length)
   const profiles = new Map(listSessionAgentProfiles().map((profile) => [profile.id, profile]))
   return args.launches.map((launch) => {
     const mode = resolveLaunchMode(launch.mode)
@@ -230,17 +165,8 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
         acp_agent_id: string | null
       } | undefined
       if (!peerRow) throw new Error(`Unknown sessionId for link: ${peerSessionId}`)
-      const summary = (launch.summary?.trim() || resolveLaunchSummary(launch.task ?? '', launch.summary))
-      if (!summary) throw new Error('Every launch must include a non-empty summary')
-      const task = (launch.task ?? '').trim()
-      if (task.length > SESSION_AGENT_TASK_MAX) {
-        throw new Error(`A launch task may contain at most ${SESSION_AGENT_TASK_MAX.toLocaleString()} characters`)
-      }
       const peerTitle = peerRow.title?.trim() || peerSessionId.slice(0, 8)
-      const name = launch.name?.trim() || peerTitle
-      if (name.length > 64) throw new Error('A launch name may contain at most 64 characters')
-      const role = launch.role?.trim() || 'Peer'
-      if (role.length > 64) throw new Error('A launch role may contain at most 64 characters')
+      const { summary, task, name, role } = normalizeLaunchText('link', launch, peerTitle)
       // Confirm tabs show harness (same as spawn) — resolve from peer session identity.
       const peerHarnessId = (peerRow.provider?.trim()
         || peerRow.provider_id?.replace(/-base$/, '')
@@ -281,19 +207,7 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
     const profile = profiles.get(agentId)
     if (!profile) throw new Error(`Unknown agent profile: ${agentId}`)
     assertKnownApiProviderId(launch.config, profile)
-    const task = launch.task?.trim()
-    if (!task) throw new Error(`Every ${mode} launch must include a non-empty task`)
-    if (task.length > SESSION_AGENT_TASK_MAX) {
-      throw new Error(`A launch task may contain at most ${SESSION_AGENT_TASK_MAX.toLocaleString()} characters`)
-    }
-    const summary = resolveLaunchSummary(task, launch.summary)
-    if (!summary) throw new Error('Every launch must include a non-empty summary')
-    const name = launch.name?.trim()
-    if (!name) throw new Error(`Every ${mode} launch must include a non-empty name`)
-    if (name.length > 64) throw new Error('A launch name may contain at most 64 characters')
-    const role = launch.role?.trim()
-    if (!role) throw new Error(`Every ${mode} launch must include a non-empty role`)
-    if (role.length > 64) throw new Error('A launch role may contain at most 64 characters')
+    const { summary, task, name, role } = normalizeLaunchText(mode, launch)
     return {
       launchId,
       mode,
@@ -315,268 +229,70 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
   })
 }
 
-const EDITABLE_PERMISSION_MODES = new Set<PermissionMode>([
-  'default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto', 'agent',
-])
-const EDITABLE_SANDBOX_MODES = new Set<SandboxMode>(['off', 'on', 'auto'])
-
-/**
- * Trust only the fields the confirm UI is allowed to edit. agentId / summary /
- * task / cwd / worktree / harnessConfig always come from the server-side proposal
- * the agent requested — never from renderer IPC formAnswers.
- */
-function mergeConfirmedLaunches(
-  proposed: SessionAgentLaunchProposal[],
-  outcome: SessionAgentsConfirmOutcome,
-): SessionAgentLaunchProposal[] {
-  const packed = outcome.content?.[SESSION_AGENT_LAUNCHES_FIELD]
-  if (typeof packed !== 'string') return proposed
-
-  let edited: unknown
-  try {
-    edited = JSON.parse(packed)
-  } catch {
-    throw new Error('The confirmed launch configuration is invalid')
-  }
-  if (!Array.isArray(edited)) throw new Error('The confirmed launch configuration is invalid')
-  if (edited.length !== proposed.length) {
-    throw new Error('The confirmed request must contain the same launches that were proposed')
-  }
-
-  const proposedById = new Map(proposed.map((launch) => [launch.launchId, launch]))
-  const seen = new Set<string>()
-  return edited.map((raw) => {
-    if (!raw || typeof raw !== 'object') throw new Error('The confirmed launch configuration is invalid')
-    const item = raw as Partial<SessionAgentLaunchProposal>
-    const launchId = typeof item.launchId === 'string' ? item.launchId : ''
-    const base = proposedById.get(launchId)
-    if (!base) throw new Error(`Unknown launchId in confirmed configuration: ${launchId || '(missing)'}`)
-    if (seen.has(launchId)) throw new Error('Confirmed launches must have unique launchIds')
-    seen.add(launchId)
-
-    const patch = (item.config && typeof item.config === 'object' ? item.config : {}) as SessionAgentLaunchConfig
-    const permissionMode = typeof patch.permissionMode === 'string' && EDITABLE_PERMISSION_MODES.has(patch.permissionMode as PermissionMode)
-      ? patch.permissionMode as PermissionMode
-      : base.config.permissionMode
-    const sandboxMode = typeof patch.sandboxMode === 'string' && EDITABLE_SANDBOX_MODES.has(patch.sandboxMode as SandboxMode)
-      ? patch.sandboxMode as SandboxMode
-      : base.config.sandboxMode
-    const model = typeof patch.model === 'string' && patch.model.trim()
-      ? patch.model.trim()
-      : base.config.model
-    const effort = typeof patch.effort === 'string' && patch.effort.trim()
-      ? patch.effort.trim()
-      : base.config.effort
-    const fastMode = typeof patch.fastMode === 'boolean'
-      ? patch.fastMode
-      : base.config.fastMode
-    const apiProviderId = patch.apiProviderId === null
-      ? null
-      : typeof patch.apiProviderId === 'string'
-        ? patch.apiProviderId
-        : base.config.apiProviderId
-
-    // Link launches have no user-editable config; keep the proposed row intact.
-    if (base.mode === 'link') {
-      return {
-        launchId: base.launchId,
-        mode: 'link',
-        agentId: base.agentId,
-        sessionId: base.sessionId,
-        peerTitle: base.peerTitle,
-        peerProjectPath: base.peerProjectPath,
-        peerHarnessId: base.peerHarnessId,
-        peerAcpAgentId: base.peerAcpAgentId,
-        peerHarnessName: base.peerHarnessName,
-        peerBrandKey: base.peerBrandKey,
-        summary: base.summary,
-        task: base.task,
-        name: base.name,
-        role: base.role,
-        config: { ...base.config },
-      }
-    }
-
-    return {
-      launchId: base.launchId,
-      // Mode comes from the server-side proposal, never from renderer formAnswers:
-      // a tampered mode could turn a supervised child into a one-way handoff.
-      mode: base.mode ?? 'spawn',
-      agentId: base.agentId,
-      summary: base.summary,
-      task: base.task,
-      name: base.name,
-      role: base.role,
-      config: {
-        ...base.config,
-        ...(model !== undefined ? { model } : {}),
-        ...(effort !== undefined ? { effort } : {}),
-        ...(fastMode !== undefined ? { fastMode } : {}),
-        ...(apiProviderId !== undefined ? { apiProviderId } : {}),
-        ...(permissionMode !== undefined ? { permissionMode } : {}),
-        ...(sandboxMode !== undefined ? { sandboxMode } : {}),
-        // Name/role are agent-decided, not user-editable in the confirm form.
-        ...(base.config.name ? { name: base.config.name } : {}),
-        ...(base.config.role ? { role: base.config.role } : {}),
-      },
-    }
-  })
-}
-
-/** Human-facing peer identity for tool results / chat UI (agent-chosen name, not harness). */
-function describeCollaborationPeer(grant: GrantRow): {
-  name: string
-  role: string
-  title: string
-  agentId: string
-  config: SessionAgentLaunchConfig
-} {
-  const config = parseConfig(grant.config_json)
-  const name = deriveCollaborationName({ name: config.name })
-  const role = deriveCollaborationRole({ role: config.role, task: grant.task })
-  return {
-    name,
-    role,
-    title: collaborationSessionTitle(name, role),
-    agentId: grant.agent_id,
-    config,
-  }
-}
-
-interface CollaborationPeer {
-  name: string
-  role: string
-  title: string
-  sessionId?: string
-}
-
-function describeParentPeer(grant: GrantRow): CollaborationPeer {
-  const row = getDb().prepare('SELECT title FROM sessions WHERE id = ?')
-    .get(grant.parent_session_id) as { title: string | null } | undefined
-  return {
-    name: 'Parent',
-    role: '',
-    title: row?.title || 'Parent',
-    sessionId: grant.parent_session_id,
-  }
-}
-
 function describePeerForCaller(grant: GrantRow, callerSessionId: string): CollaborationPeer {
-  if (callerSessionId === grant.child_session_id) return describeParentPeer(grant)
-  const child = describeCollaborationPeer(grant)
-  return {
-    name: child.name,
-    role: child.role,
-    title: child.title,
-    ...(grant.child_session_id ? { sessionId: grant.child_session_id } : {}),
-  }
+  return describeGrantPeerForCaller(grant, callerSessionId, sessionTitle)
 }
 
 function createGrants(parentSessionId: string, launches: SessionAgentLaunchProposal[]) {
-  if (launches.length === 0 || launches.length > 16) throw new Error('The confirmed request must contain 1 to 16 launches')
+  assertLaunchCount(launches.length)
   const launchIds = new Set(launches.map((launch) => launch.launchId))
   if (launchIds.size !== launches.length) throw new Error('Every confirmed launch must have a unique launchId')
   const profiles = new Map(listSessionAgentProfiles().map((profile) => [profile.id, profile]))
-  // spawn and handoff insert identically; only `kind` differs, and that single
-  // column is what keeps handoff sessions out of every parent→child query.
-  const insertChild = getDb().prepare(`
-    INSERT INTO session_collaboration_grants
-      (credential_hash, credential_secret, credential_hint, parent_session_id, agent_id, task, config_json, created_at, kind)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `)
-  const insertLink = getDb().prepare(`
-    INSERT INTO session_collaboration_grants
-      (credential_hash, credential_secret, credential_hint, parent_session_id, child_session_id, agent_id, task, config_json, created_at, kind)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'link')
-  `)
-  return getDb().transaction(() => launches.map((launch) => {
-    if (!launch.summary?.trim()) throw new Error('Every launch must include a non-empty summary')
-    const name = launch.name?.trim()
-    if (!name) throw new Error('Every launch must include a non-empty name')
-    const role = launch.role?.trim()
-    if (!role) throw new Error('Every launch must include a non-empty role')
+  const grants = store()
+  return grants.transaction(() => launches.map((launch) => {
     const mode = resolveLaunchMode(launch.mode)
+    const { summary, name, role } = launch
 
     if (mode === 'link') {
       const peerSessionId = launch.sessionId?.trim()
       if (!peerSessionId) throw new Error('Link launches require sessionId')
       // Reuse an existing initiator→peer link grant (idempotent re-approve).
-      const existing = getDb().prepare(`
-        SELECT credential_hash, credential_secret, child_session_id, agent_id, task, config_json
-        FROM session_collaboration_grants
-        WHERE parent_session_id = ? AND child_session_id = ? AND kind = 'link'
-      `).get(parentSessionId, peerSessionId) as {
-        credential_hash: string
-        credential_secret: string | null
-        child_session_id: string
-        agent_id: string
-        task: string
-        config_json: string
-      } | undefined
-      if (existing?.credential_secret) {
-        const credential = decryptSecret(existing.credential_secret)
-        if (credential) {
-          const config = parseConfig(existing.config_json)
-          return {
-            launchId: launch.launchId,
-            mode: 'link' as const,
-            agentId: existing.agent_id,
-            sessionId: peerSessionId,
-            peerSessionId,
-            summary: launch.summary.trim(),
-            task: existing.task,
-            name,
-            role,
-            title: collaborationSessionTitle(name, role),
-            config,
-            credential,
-            reused: true,
-          }
+      const existing = grants.findLinkGrant(parentSessionId, peerSessionId)
+      const existingCredential = existing ? grants.credentialOf(existing) : null
+      if (existing && existingCredential) {
+        return {
+          launchId: launch.launchId,
+          mode: 'link' as const,
+          agentId: existing.agent_id,
+          sessionId: peerSessionId,
+          peerSessionId,
+          summary,
+          task: existing.task,
+          name,
+          role,
+          title: collaborationSessionTitle(name, role),
+          config: parseConfig(existing.config_json),
+          credential: existingCredential,
+          reused: true,
         }
       }
       const peerExists = getDb().prepare('SELECT 1 FROM sessions WHERE id = ?').get(peerSessionId)
       if (!peerExists) throw new Error(`Unknown sessionId for link: ${peerSessionId}`)
-      const credential = `s1sc_${randomBytes(32).toString('base64url')}`
       // Opening is optional: empty task means wake-only (no mailbox opening body).
       const task = (launch.task ?? '').trim()
       const config = {
         name,
         role,
-        summary: launch.summary.trim(),
+        summary,
         peerSessionId,
         peerTitle: launch.peerTitle,
         peerProjectPath: launch.peerProjectPath,
       }
-      try {
-        insertLink.run(
-          hashCredential(credential),
-          encryptSecret(credential),
-          credential.slice(-8),
-          parentSessionId,
-          peerSessionId,
-          '',
-          task,
-          JSON.stringify(config),
-          new Date().toISOString(),
-        )
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        if (/UNIQUE|unique/i.test(message)) {
-          throw new Error(
-            `Session ${peerSessionId} is already bound as a collaboration endpoint `
-            + '(spawn child or link peer). child_session_id is globally unique — '
-            + 'a session cannot be the non-initiator endpoint of two grants.',
-          )
-        }
-        throw error
-      }
+      const { credential } = grants.createGrant({
+        kind: 'link',
+        parentSessionId,
+        childSessionId: peerSessionId,
+        agentId: '',
+        task,
+        config,
+      })
       return {
         launchId: launch.launchId,
         mode: 'link' as const,
         agentId: '',
         sessionId: peerSessionId,
         peerSessionId,
-        summary: launch.summary.trim(),
+        summary,
         task,
         name,
         role,
@@ -591,8 +307,6 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
     if (!profile) throw new Error(`Unknown agent profile: ${launch.agentId}`)
     // Also covers the confirm UI's provider edit, which reaches here as renderer input.
     assertKnownApiProviderId(launch.config, profile)
-    if (!launch.task?.trim()) throw new Error(`Every ${mode} launch must include a non-empty task`)
-    const credential = `s1sc_${randomBytes(32).toString('base64url')}`
     const config = {
       ...launch.config,
       ...(typeof launch.config.fastMode === 'boolean'
@@ -600,25 +314,21 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
         : {}),
       name,
       role,
-      summary: launch.summary.trim(),
+      summary,
     }
-    insertChild.run(
-      hashCredential(credential),
-      encryptSecret(credential),
-      credential.slice(-8),
+    const { credential } = grants.createGrant({
+      kind: mode,
       parentSessionId,
-      launch.agentId,
-      launch.task.trim(),
-      JSON.stringify(config),
-      new Date().toISOString(),
-      mode,
-    )
+      agentId: launch.agentId,
+      task: launch.task,
+      config,
+    })
     return {
       launchId: launch.launchId,
       mode,
       agentId: launch.agentId,
-      summary: launch.summary.trim(),
-      task: launch.task.trim(),
+      summary,
+      task: launch.task,
       name,
       role,
       title: collaborationSessionTitle(name, role),
@@ -626,7 +336,7 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
       credential,
       reused: false,
     }
-  }))()
+  }))
 }
 
 export async function requestSessionAgents(
@@ -638,21 +348,13 @@ export async function requestSessionAgents(
   // Nested spawn collab is not supported: sidebar only renders one parent→children level,
   // and grandchild grants would orphan intermediate sessions in the UI.
   // Link peers may still request (they are not spawn children).
-  const nested = getDb().prepare(`
-    SELECT 1 FROM session_collaboration_grants
-    WHERE child_session_id = ? AND COALESCE(kind, 'spawn') = 'spawn'
-    LIMIT 1
-  `).get(callerSessionId)
-  if (nested) {
-    return toolResult({
-      status: 'error',
-      message: 'Nested collaboration is not supported. Only top-level (non-collaboration-child) sessions may request agents.',
-    }, true)
+  if (store().isSpawnChild(callerSessionId)) {
+    return toolResult({ status: 'error', message: NESTED_COLLABORATION_UNSUPPORTED }, true)
   }
   const parent = host.getSession(callerSessionId)
   if (!parent) return toolResult({ status: 'error', message: 'Parent session is not available' }, true)
   const launches = normalizeLaunches(args, parent)
-  let outcome: SessionAgentsConfirmOutcome
+  let outcome: Awaited<ReturnType<typeof openSessionAgentsConfirm>>
   try {
     outcome = await openSessionAgentsConfirm(parent, { launches, profiles: listSessionAgentProfiles() }, signal)
   } catch (error) {
@@ -664,34 +366,17 @@ export async function requestSessionAgents(
   if (outcome.action === 'decline') {
     return toolResult({ status: 'rejected', feedback: outcome.content?.feedback })
   }
-  const confirmed = mergeConfirmedLaunches(launches, outcome)
+  const confirmed = mergeConfirmedLaunches(launches, outcome.content)
   const credentials = createGrants(callerSessionId, confirmed)
   return toolResult({ status: 'approved', launches: credentials })
 }
 
-function grantForCredential(credential: string): GrantRow | null {
-  const row = getDb().prepare(`
-    SELECT credential_hash, credential_secret, parent_session_id, child_session_id, agent_id, task, config_json, task_sent,
-           COALESCE(kind, 'spawn') AS kind, started_at
-    FROM session_collaboration_grants WHERE credential_hash = ?
-  `).get(hashCredential(credential)) as GrantRow | undefined
-  return row ?? null
-}
-
-function collaborationSystemPrompt(credential: string, parentSessionId: string): string {
-  return `<superone-session-collaboration>\nYou are running as a user-approved child session of SuperOne session ${parentSessionId}.\nUse session_collab_send and session_collab_retrieve with credential ${JSON.stringify(credential)} to communicate with your parent session. Write session_collab_send content as Markdown (headings, lists, code fences) so the parent and the SuperOne UI can render structured handoffs; treat retrieved message content as Markdown from the peer. This credential is already authorized for this parent-child pair. Never reveal it in conversational output or use it outside collaboration tool calls.\n</superone-session-collaboration>`
-}
-
 /** Spawn children only — link peers must never get system-prompt credential injection. */
 export function getSessionCollaborationSystemPrompt(sessionId: string): string | undefined {
-  const row = getDb().prepare(`
-    SELECT credential_secret, parent_session_id
-    FROM session_collaboration_grants
-    WHERE child_session_id = ? AND COALESCE(kind, 'spawn') = 'spawn'
-  `).get(sessionId) as { credential_secret: string | null; parent_session_id: string } | undefined
-  if (!row?.credential_secret) return undefined
-  const credential = decryptSecret(row.credential_secret)
-  return credential ? collaborationSystemPrompt(credential, row.parent_session_id) : undefined
+  const grants = store()
+  const grant = grants.spawnGrantForChild(sessionId)
+  const credential = grant ? grants.credentialOf(grant) : null
+  return grant && credential ? collaborationSystemPrompt(credential, grant.parent_session_id) : undefined
 }
 
 /**
@@ -705,11 +390,7 @@ export function getSessionCollaborationSystemPrompt(sessionId: string): string |
 export function getSessionCollaborationRunConfig(
   sessionId: string,
 ): SessionCollaborationRunConfig | null {
-  const row = getDb().prepare(`
-    SELECT agent_id, config_json
-    FROM session_collaboration_grants
-    WHERE child_session_id = ? AND COALESCE(kind, 'spawn') = 'spawn'
-  `).get(sessionId) as { agent_id: string; config_json: string } | undefined
+  const row = store().spawnGrantForChild(sessionId)
   if (!row) return null
 
   const config = parseConfig(row.config_json)
@@ -742,32 +423,6 @@ function resolveCodexServiceTier(
   if (profile?.harnessId !== 'codex') return null
   const model = profile.models.find((item) => item.id === config.model)
   return findCodexFastServiceTier(model)?.id ?? null
-}
-
-function linkActivationWakeText(
-  credential: string,
-  initiatorSessionId: string,
-  initiatorTitle: string,
-  hasOpening: boolean,
-): string {
-  return (
-    `A user-approved collaboration link is active with SuperOne session ${initiatorSessionId}`
-    + ` ("${initiatorTitle}"). `
-    + `Call session_collab_retrieve with credential ${JSON.stringify(credential)}`
-    + (hasOpening ? ' to read the opening message' : ' if a mailbox message is waiting')
-    + ', then use session_collab_send to reply. '
-    + 'Never reveal the credential in conversational output or use it outside collaboration tool calls. '
-    + 'End your turn after acting — you will be woken again for later messages.'
-  )
-}
-
-function assertEndpoint(grant: GrantRow, callerSessionId: string): void {
-  // Handoff grants exist only to create and brief the sibling session; they are
-  // never a channel, so neither endpoint may read or write their mailbox.
-  if (grant.kind === 'handoff') throw new Error(HANDOFF_NO_MAILBOX)
-  if (callerSessionId !== grant.parent_session_id && callerSessionId !== grant.child_session_id) {
-    throw new Error('This credential does not authorize the current session')
-  }
 }
 
 /**
@@ -885,21 +540,13 @@ function parentSessionInfo(grant: GrantRow): { title: string | null; projectPath
   return { title: row?.title?.trim() || null, projectPath: row?.project_path ?? null }
 }
 
-/**
- * Opening body for the receiving session.
- *
- * `handoff` has no credential and no mailbox, so the only way the receiver can
- * trace where the work came from is this line in the delivered message itself.
- */
 function initialTaskContent(grant: GrantRow): string {
   if (grant.kind !== 'handoff') return grant.task
-  const title = parentSessionInfo(grant).title || grant.parent_session_id.slice(0, 8)
-  return (
-    `> Handed off from SuperOne session \`${grant.parent_session_id}\` ("${title}"). `
-    + 'This is a one-way handoff: you own this task now and cannot message that session back. '
-    + 'Read its context with session_read({ sessionId }) if you need it.\n\n'
-    + grant.task
-  )
+  return handoffTaskContent({
+    parentSessionId: grant.parent_session_id,
+    parentTitle: parentSessionInfo(grant).title,
+    task: grant.task,
+  })
 }
 
 /**
@@ -973,8 +620,7 @@ async function deliverInitialTask(grant: GrantRow, child: Session): Promise<void
     )
   })
 
-  getDb().prepare('UPDATE session_collaboration_grants SET task_sent = 1 WHERE credential_hash = ?')
-    .run(grant.credential_hash)
+  store().markTaskSent(grant.credential_hash)
 }
 
 /** Resolve a live session, resuming a passive one when the process has released it. */
@@ -991,13 +637,6 @@ function resolveLiveSession(host: SessionManager, sessionId: string): Session | 
     )
     return null
   }
-}
-
-function collaborationTargetReadOnlyMessage(sessionId: string): string {
-  return (
-    `Cannot wake session ${sessionId}: its worktree directory has been removed and the session is now read-only. `
-    + 'Spawn a new child (or hand off) if the work still needs an agent.'
-  )
 }
 
 /**
@@ -1038,10 +677,7 @@ async function wakeCollaborationPeer(
   }
   // Always wake — injectTaskNotification already queues behind an in-flight turn.
   try {
-    await session.injectTaskNotification(
-      `A collaboration mailbox message is ready. Call session_collab_retrieve with credential ${JSON.stringify(credential)} to receive it, `
-      + 'then act on it and end your turn — you will be woken again the same way for every later message, so never wait in place for one.',
-    )
+    await session.injectTaskNotification(mailboxWakeText(credential))
   } catch (error) {
     log.warn(
       '[session-collaboration] mailbox wake failed sid=%s: %s',
@@ -1056,7 +692,7 @@ export async function startSessionAgent(
   credential: string,
   host: SessionManager,
 ) {
-  let grant = grantForCredential(credential)
+  let grant = store().grantByCredential(credential)
   if (!grant) return toolResult({ status: 'error', message: 'Invalid collaboration credential' }, true)
   if (grant.parent_session_id !== callerSessionId) {
     return toolResult({ status: 'error', message: 'Only the parent session may start this credential' }, true)
@@ -1073,9 +709,7 @@ export async function startSessionAgent(
     if (!peerRow) {
       return toolResult({ status: 'error', message: `Peer session no longer exists: ${peerSessionId}` }, true)
     }
-    const initiatorRow = getDb().prepare('SELECT title FROM sessions WHERE id = ?')
-      .get(grant.parent_session_id) as { title: string | null } | undefined
-    const initiatorTitle = initiatorRow?.title?.trim() || grant.parent_session_id.slice(0, 8)
+    const initiatorTitle = initiatorTitleOf(grant)
     const alreadyStarted = Boolean(grant.started_at)
     const livePeer = host.getSession(peerSessionId)
     if (isCollaborationTargetReadOnly(peerSessionId, livePeer)) {
@@ -1084,11 +718,7 @@ export async function startSessionAgent(
         message: collaborationTargetReadOnlyMessage(peerSessionId),
       }, true)
     }
-    if (!alreadyStarted) {
-      getDb().prepare(`
-        UPDATE session_collaboration_grants SET started_at = ? WHERE credential_hash = ? AND started_at IS NULL
-      `).run(new Date().toISOString(), grant.credential_hash)
-    }
+    if (!alreadyStarted) store().markStarted(grant.credential_hash)
     const opening = grant.task?.trim() ?? ''
     const hasOpening = opening.length > 0 && !alreadyStarted
     if (hasOpening) {
@@ -1097,13 +727,12 @@ export async function startSessionAgent(
     } else if (!alreadyStarted) {
       // No opening body — still wake the peer with credential instructions.
       void wakeLinkPeer(host, peerSessionId, credential, grant.parent_session_id, initiatorTitle, false)
-      getDb().prepare('UPDATE session_collaboration_grants SET task_sent = 1 WHERE credential_hash = ?')
-        .run(grant.credential_hash)
+      store().markTaskSent(grant.credential_hash)
     } else {
       // Idempotent retry: re-wake without duplicating mailbox.
       void wakeLinkPeer(host, peerSessionId, credential, grant.parent_session_id, initiatorTitle, false)
     }
-    const peer = describeCollaborationPeer(grant)
+    const peer = describeLaunchedPeer(grant)
     return toolResult({
       status: 'linked',
       mode: 'link',
@@ -1147,7 +776,7 @@ export async function startSessionAgent(
       }, true)
     }
     await deliverInitialTask(grant, existing)
-    const peer = describeCollaborationPeer(grant)
+    const peer = describeLaunchedPeer(grant)
     return toolResult({
       status: 'started',
       mode: 'handoff',
@@ -1171,7 +800,7 @@ export async function startSessionAgent(
     const existing = liveChild
       ?? host.resumeSession(grant.child_session_id, { passive: true })
     if (existing) await deliverInitialTask(grant, existing)
-    const peer = describeCollaborationPeer(grant)
+    const peer = describeLaunchedPeer(grant)
     return toolResult({
       status: 'started',
       mode: grant.kind,
@@ -1287,22 +916,7 @@ export async function startSessionAgent(
       config.effort ?? null,
       childSessionId,
     )
-    const updated = isHandoff
-      ? getDb().prepare(`
-        UPDATE session_collaboration_grants
-        SET config_json = ?, started_at = ?
-        WHERE credential_hash = ? AND started_at IS NULL
-      `).run(
-        JSON.stringify({ ...config, handoffSessionId: childSessionId }),
-        new Date().toISOString(),
-        grant.credential_hash,
-      )
-      : getDb().prepare(`
-        UPDATE session_collaboration_grants
-        SET child_session_id = ?, started_at = ?
-        WHERE credential_hash = ? AND child_session_id IS NULL
-      `).run(childSessionId, new Date().toISOString(), grant.credential_hash)
-    if (updated.changes !== 1) throw new Error('Credential was already consumed')
+    store().bindStartedSession(grant, childSessionId, config)
   } catch (error) {
     await host.disposeSession(childSessionId).catch(() => {})
     getDb().prepare('DELETE FROM sessions WHERE id = ?').run(childSessionId)
@@ -1348,43 +962,13 @@ async function deliverLinkOpening(
   if (!grant.child_session_id) return
   const content = grant.task.trim()
   if (!content) {
-    getDb().prepare('UPDATE session_collaboration_grants SET task_sent = 1 WHERE credential_hash = ?')
-      .run(grant.credential_hash)
+    store().markTaskSent(grant.credential_hash)
     return
   }
   const recipientSessionId = grant.child_session_id
-  const insert = getDb().transaction(() => {
-    const row: MessageRow = {
-      id: randomUUID(),
-      credential_hash: grant.credential_hash,
-      sequence: nextSequence(grant.credential_hash),
-      sender_session_id: grant.parent_session_id,
-      recipient_session_id: recipientSessionId,
-      client_message_id: `link-opening:${grant.credential_hash}`,
-      content,
-      created_at: new Date().toISOString(),
-    }
-    try {
-      getDb().prepare(`
-        INSERT INTO session_collaboration_messages
-          (id, credential_hash, sequence, sender_session_id, recipient_session_id, client_message_id, content, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        row.id, row.credential_hash, row.sequence, row.sender_session_id,
-        row.recipient_session_id, row.client_message_id, row.content, row.created_at,
-      )
-    } catch {
-      // Unique client_message_id on retry — already delivered.
-    }
-    getDb().prepare('UPDATE session_collaboration_grants SET task_sent = 1 WHERE credential_hash = ?')
-      .run(grant.credential_hash)
-  })
-  insert()
+  store().appendLinkOpening(grant, recipientSessionId, content)
   notifyCollaborationMailboxChanged(recipientSessionId)
-  const initiatorRow = getDb().prepare('SELECT title FROM sessions WHERE id = ?')
-    .get(grant.parent_session_id) as { title: string | null } | undefined
-  const initiatorTitle = initiatorRow?.title?.trim() || grant.parent_session_id.slice(0, 8)
-  void wakeLinkPeer(host, recipientSessionId, credential, grant.parent_session_id, initiatorTitle, true)
+  void wakeLinkPeer(host, recipientSessionId, credential, grant.parent_session_id, initiatorTitleOf(grant), true)
 }
 
 async function wakeLinkPeer(
@@ -1406,7 +990,7 @@ async function wakeLinkPeer(
   }
   try {
     await session.injectTaskNotification(
-      linkActivationWakeText(credential, initiatorSessionId, initiatorTitle, hasOpening),
+      linkActivationWakeText({ credential, initiatorSessionId, initiatorTitle, hasOpening }),
     )
   } catch (error) {
     log.warn(
@@ -1415,14 +999,6 @@ async function wakeLinkPeer(
       error instanceof Error ? error.message : String(error),
     )
   }
-}
-
-function nextSequence(credentialHash: string): number {
-  const row = getDb().prepare(`
-    SELECT COALESCE(MAX(sequence), 0) + 1 AS next_sequence
-    FROM session_collaboration_messages WHERE credential_hash = ?
-  `).get(credentialHash) as { next_sequence: number }
-  return row.next_sequence
 }
 
 export interface SessionSendArgs {
@@ -1436,34 +1012,17 @@ export async function sendSessionMessage(
   args: SessionSendArgs,
   host: SessionManager,
 ) {
-  const grant = grantForCredential(args.credential)
+  const grants = store()
+  const grant = grants.grantByCredential(args.credential)
   if (!grant) return toolResult({ status: 'error', message: 'Invalid collaboration credential' }, true)
+  let recipientSessionId: string
+  let content: string
   try {
-    assertEndpoint(grant, callerSessionId)
+    recipientSessionId = resolveMailboxRecipient(grant, callerSessionId)
+    content = normalizeMailboxContent(args.content)
   } catch (error) {
-    return toolResult({
-      status: 'error',
-      message: error instanceof Error ? error.message : String(error),
-    }, true)
+    return errorResult(error)
   }
-  if (!grant.child_session_id) {
-    return toolResult({
-      status: 'error',
-      message: grant.kind === 'link'
-        ? 'The linked peer session is missing'
-        : 'The child session has not been started',
-    }, true)
-  }
-  // Link grants set child_session_id at approve time; require start() first.
-  if (grant.kind === 'link' && !grant.started_at) {
-    return toolResult({ status: 'error', message: 'The collaboration link has not been started' }, true)
-  }
-  const recipientSessionId = callerSessionId === grant.parent_session_id
-    ? grant.child_session_id
-    : grant.parent_session_id
-  const content = args.content?.trim()
-  if (!content) return toolResult({ status: 'error', message: 'content must not be empty' }, true)
-  if (content.length > 100_000) return toolResult({ status: 'error', message: 'content may contain at most 100,000 characters' }, true)
 
   const liveRecipient = host.getSession(recipientSessionId)
   if (isCollaborationTargetReadOnly(recipientSessionId, liveRecipient)) {
@@ -1473,32 +1032,13 @@ export async function sendSessionMessage(
     }, true)
   }
 
-  const insert = getDb().transaction(() => {
-    if (args.clientMessageId) {
-      const existing = getDb().prepare(`
-        SELECT * FROM session_collaboration_messages
-        WHERE credential_hash = ? AND sender_session_id = ? AND client_message_id = ?
-      `).get(grant.credential_hash, callerSessionId, args.clientMessageId) as MessageRow | undefined
-      if (existing) return { row: existing, reused: true }
-    }
-    const row: MessageRow = {
-      id: randomUUID(),
-      credential_hash: grant.credential_hash,
-      sequence: nextSequence(grant.credential_hash),
-      sender_session_id: callerSessionId,
-      recipient_session_id: recipientSessionId,
-      client_message_id: args.clientMessageId ?? null,
-      content,
-      created_at: new Date().toISOString(),
-    }
-    getDb().prepare(`
-      INSERT INTO session_collaboration_messages
-        (id, credential_hash, sequence, sender_session_id, recipient_session_id, client_message_id, content, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(row.id, row.credential_hash, row.sequence, row.sender_session_id, row.recipient_session_id, row.client_message_id, row.content, row.created_at)
-    return { row, reused: false }
-  })()
-
+  const insert = grants.appendMessage({
+    credentialHash: grant.credential_hash,
+    senderSessionId: callerSessionId,
+    recipientSessionId,
+    clientMessageId: args.clientMessageId,
+    content,
+  })
   if (!insert.reused) {
     notifyCollaborationMailboxChanged(recipientSessionId)
     // Mailbox traffic is already visible via session_send / session_retrieve tool UI.
@@ -1520,10 +1060,6 @@ export interface SessionRetrieveArgs {
   credentials: string[]
 }
 
-const EMPTY_MAILBOX_HINT =
-  'No peer has replied yet. Do not retrieve again, do not sleep, do not wait in place — end your turn or do unrelated work. '
-  + 'A task notification will start a new turn for you as soon as a message arrives.'
-
 /**
  * Non-blocking mailbox read. Advances this endpoint's cursor for any messages
  * currently available. Peers are woken via task notification on send; the agent
@@ -1540,19 +1076,17 @@ export async function retrieveSessionMessages(
     return toolResult({ status: 'error', message: 'At most 32 credentials may be retrieved at once' }, true)
   }
 
-  let grants: AuthorizedGrant[]
+  const grantStore = store()
+  let grants: Array<GrantRow & { credential: string }>
   try {
     grants = [...new Set(args.credentials)].map((credential) => {
-      const grant = grantForCredential(credential)
+      const grant = grantStore.grantByCredential(credential)
       if (!grant) throw new Error('Invalid collaboration credential')
-      assertEndpoint(grant, callerSessionId)
+      assertMailboxEndpoint(grant, callerSessionId)
       return { ...grant, credential }
     })
   } catch (error) {
-    return toolResult({
-      status: 'error',
-      message: error instanceof Error ? error.message : String(error),
-    }, true)
+    return errorResult(error)
   }
 
   const peers = grants.map((grant) => ({
@@ -1569,7 +1103,5 @@ export async function retrieveSessionMessages(
     notifyCollaborationMailboxChanged(callerSessionId)
     return toolResult({ status: 'messages', messages, peers })
   }
-  // Static tool descriptions decay in long contexts; repeat the "stop waiting"
-  // rule in the payload the agent reads at the exact moment it wants to re-poll.
   return toolResult({ status: 'empty', messages: [], peers, hint: EMPTY_MAILBOX_HINT })
 }

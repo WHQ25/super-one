@@ -8,6 +8,8 @@
     ".": "./src/index.ts",
     "./session": "./src/session/index.ts",
     "./session/*": "./src/session/*.ts",
+    "./collaboration": "./src/collaboration/index.ts",
+    "./collaboration/*": "./src/collaboration/*.ts",
     "./fs": "./src/fs/index.ts",
     "./fs/*": "./src/fs/*.ts",
     "./git": "./src/git/index.ts",

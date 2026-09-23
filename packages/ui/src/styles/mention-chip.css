@@ -13,7 +13,9 @@
   max-width: 100%;
   font-size: inherit;
   line-height: inherit;
-  white-space: nowrap;
+  /* Full label, wrapping like the surrounding prose. */
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .mention-chip--blended {
   margin-left: 0.25em;
@@ -29,6 +31,9 @@
   border-radius: 0.25em;
   background: var(--muted);
   color: var(--foreground);
+  /* A wrapped chip keeps padding + radius on every line fragment. */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 .mention-chip__icon {
   display: inline-block;
@@ -58,8 +63,9 @@
   width: 100%;
   height: 100%;
 }
-.mention-chip__label {
-  /* Keep as inline text so it owns the chip baseline. */
+/* Icon + first label character never split, so a break can't strand the
+   icon at the end of a line (see MentionChipBody). */
+.mention-chip__lead {
   white-space: nowrap;
 }
 

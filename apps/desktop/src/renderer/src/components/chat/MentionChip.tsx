@@ -4,6 +4,7 @@ import type { NodeViewProps } from '@tiptap/react'
 import { staticMentionIcon } from '@superone/ui/components/ui/mention-icons'
 import { cn } from '@superone/ui/lib/utils'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
+import { MentionChipBody } from '@superone/ui/components/ui/MentionChipBody'
 import { isStoredCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { AgentProfileIcon } from '@superone/ui/components/harness/AgentProfileIcon'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
@@ -41,7 +42,7 @@ export function MentionChipContent({
   blended: boolean
   kind?: string
   icon: ReactNode
-  label: ReactNode
+  label: string
   className?: string
 }) {
   return (
@@ -53,10 +54,7 @@ export function MentionChipContent({
         className,
       )}
     >
-      <span className="mention-chip__icon" aria-hidden>
-        {icon}
-      </span>
-      <span className="mention-chip__label">{label}</span>
+      <MentionChipBody icon={icon} label={label} />
     </span>
   )
 }
@@ -78,9 +76,7 @@ export function mentionChipIcon(
 export function MentionChip({ node }: NodeViewProps) {
   const { kind, value, displayName } = node.attrs as MentionNodeAttrs
   const isBlendedChip = isBlendedMentionKind(kind)
-  const label = kind === 'agent' && displayName.includes(':') ? displayName.split(':').pop() : displayName
-  // Only path-like resource names truncate; multi-word capability labels must show fully.
-  const truncateLabel = kind === 'file' || kind === 'directory' || kind === 'miniapp' || kind === 'session' || kind === 'git'
+  const label = kind === 'agent' && displayName.includes(':') ? displayName.split(':').pop()! : displayName
 
   return (
     <NodeViewWrapper
@@ -93,12 +89,7 @@ export function MentionChip({ node }: NodeViewProps) {
         isBlendedChip ? 'mention-chip--blended' : 'mention-chip--resource',
       )}
     >
-      <span className="mention-chip__icon" aria-hidden>
-        {mentionChipIcon(kind, value, displayName)}
-      </span>
-      <span className={cn('mention-chip__label', truncateLabel && 'max-w-30 truncate')}>
-        {label}
-      </span>
+      <MentionChipBody icon={mentionChipIcon(kind, value, displayName)} label={label} />
     </NodeViewWrapper>
   )
 }

@@ -6,6 +6,9 @@ import { wrapCapabilityMention } from '@superone/shared/capability-prompt-tags'
 import { wrapAgentMention } from '@superone/shared/agent-mention-tags'
 import { PortableUserText } from './PortableUserText'
 
+/** Rendered text, ignoring markup — chip labels are split around their icon. */
+const textOf = (html: string) => html.replace(/<[^>]*>/g, '')
+
 describe('structured user mentions in the mobile transcript', () => {
   it.each([
     ['claude-work-review', 'claude-session'],
@@ -20,14 +23,14 @@ describe('structured user mentions in the mobile transcript', () => {
     const html = renderToStaticMarkup(createElement(PortableUserText, { text: wrapAgentMention(ref, 'Reviewer') }))
     expect(html).toContain(marker)
     expect(html).toContain('mention-chip--blended')
-    expect(html).toContain('Reviewer')
+    expect(textOf(html)).toContain('Reviewer')
     expect(html).not.toContain('lucide-bot')
     expect(html).not.toContain('superone-agent')
   })
   it('keeps an unknown provider visible with a neutral fallback', () => {
     const html = renderToStaticMarkup(createElement(PortableUserText, { text: wrapAgentMention('future-base', 'Future') }))
     expect(html).toContain('lucide-bot')
-    expect(html).toContain('Future')
+    expect(textOf(html)).toContain('Future')
     expect(html).not.toContain('codex-session')
   })
   it('renders selected file identity as a Symbols chip without leaking tag fields', () => {
@@ -36,7 +39,7 @@ describe('structured user mentions in the mobile transcript', () => {
     expect(html).toContain('mention-chip--resource')
     expect(html).toContain('<svg')
     expect(html).toContain('title="src/中文 file.ts"')
-    expect(html).toContain('中文 file.ts')
+    expect(textOf(html)).toContain('中文 file.ts')
     expect(html).not.toContain('superone-ref')
     expect(html).toContain('然后测试')
   })

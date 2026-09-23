@@ -174,14 +174,14 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
 
   if (resolvedKind === 'agent') {
     return (
-      <span className="inline-flex max-w-full items-center gap-1 whitespace-nowrap break-normal rounded-md border border-primary/40 bg-primary/15 px-1.5 py-0.5 text-xs leading-5 text-primary">
-        <span className="font-medium">@{display}</span>
+      <span className="box-decoration-clone break-normal rounded-md border border-primary/40 bg-primary/15 px-1.5 py-0.5 text-xs leading-5 font-medium text-primary">
+        @{display}
       </span>
     )
   }
 
   // Same .mention-chip* CSS as composer — em-only, scales with Cmd+= zoom.
-  // break-normal resists the bubble's break-all so multi-word labels stay one line.
+  // break-normal resists the bubble's break-all so labels wrap between words.
   return (
     <MentionChipContent
       blended={isBlendedChip}

@@ -168,6 +168,7 @@ import {
   retrieveSessionMessages,
 } from './session-collaboration'
 import { resolveSessionAgentsConfirm } from './session-collaboration-confirm'
+import { _resetMainThreadSessionGuardForTests, noteLiveAcpSubagent } from '../mcp/main-thread-session-guard'
 
 function resultJson(result: { content: Array<{ text: string }> }) {
   return JSON.parse(result.content[0].text) as Record<string, any>
@@ -775,8 +776,10 @@ describe('@agent mention targets', () => {
     expect(repeated).toMatchObject({ status: 'started', sessionId: first.sessionId, reused: true })
     expect(second.sessionId).not.toBe(first.sessionId)
     expect(createSession).toHaveBeenCalledTimes(2)
-    expect(createSession.mock.calls[0][0].systemPromptAppend).toContain(grants[0].credential)
-    expect(getSessionCollaborationSystemPrompt(first.sessionId)).toContain(grants[0].credential)
+    // The child learns who its parent is, never a secret.
+    expect(createSession.mock.calls[0][0].systemPromptAppend).toContain('SuperOne session parent')
+    expect(createSession.mock.calls[0][0].systemPromptAppend).not.toContain(grants[0].credential)
+    expect(getSessionCollaborationSystemPrompt(first.sessionId)).toBe(createSession.mock.calls[0][0].systemPromptAppend)
     expect(sessions.get(first.sessionId)?.send).toHaveBeenCalledWith(expect.objectContaining({ content: 'Task 0' }))
   })
 
@@ -871,44 +874,35 @@ describe('@agent mention targets', () => {
     const childId = started.sessionId as string
 
     const sent = resultJson(await sendSessionMessage('parent', {
-      credential: grant.credential,
+      to: childId,
       content: 'from parent',
       clientMessageId: 'parent-1',
     }, host))
+    // The only peer may be addressed implicitly.
     const retried = resultJson(await sendSessionMessage('parent', {
-      credential: grant.credential,
       content: 'from parent',
       clientMessageId: 'parent-1',
     }, host))
-    expect(retried).toMatchObject({ messageId: sent.messageId, reused: true })
-    expect(sessions.get(childId)?.injectTaskNotification).toHaveBeenCalledTimes(1)
+    expect(retried).toMatchObject({ messageId: sent.messageId, reused: true, to: { sessionId: childId, relation: 'child' } })
+    const wake = sessions.get(childId)?.injectTaskNotification as ReturnType<typeof vi.fn>
+    expect(wake).toHaveBeenCalledTimes(1)
+    expect(wake.mock.calls[0][0]).toMatch(/^A collaboration mailbox message is ready\. It is from SuperOne session parent/)
+    expect(wake.mock.calls[0][0]).not.toContain(grant.credential)
 
-    const childInbox = resultJson(await retrieveSessionMessages(childId, {
-      credentials: [grant.credential],
-    }))
-    expect(childInbox.messages).toMatchObject([{ credential: grant.credential, content: 'from parent' }])
-    expect(childInbox.peers).toMatchObject([{
-      credential: grant.credential,
-      name: 'Parent',
-      title: 'Parent',
-      sessionId: 'parent',
-    }])
-    const drained = resultJson(await retrieveSessionMessages(childId, {
-      credentials: [grant.credential],
-    }))
+    const childInbox = resultJson(await retrieveSessionMessages(childId, {}))
+    expect(childInbox.messages).toMatchObject([{ content: 'from parent', from: { sessionId: 'parent', relation: 'parent' } }])
+    expect(childInbox.peers).toMatchObject([{ name: 'Parent', sessionId: 'parent', relation: 'parent' }])
+    const drained = resultJson(await retrieveSessionMessages(childId, {}))
     expect(drained).toMatchObject({ status: 'empty', messages: [] })
     // An empty mailbox must talk the agent out of re-polling, not just report nothing.
     expect(drained.hint).toMatch(/do not sleep|end your turn/i)
+    // Peers stay discoverable after the inbox is drained (e.g. after compaction).
+    expect(drained.peers).toMatchObject([{ sessionId: 'parent' }])
 
-    await sendSessionMessage(childId, { credential: grant.credential, content: 'from child' }, host)
-    const parentInbox = resultJson(await retrieveSessionMessages('parent', {
-      credentials: [grant.credential],
-    }))
-    expect(parentInbox.messages).toMatchObject([{ credential: grant.credential, content: 'from child' }])
-    expect(parentInbox.peers).toMatchObject([{
-      credential: grant.credential,
-      sessionId: childId,
-    }])
+    await sendSessionMessage(childId, { content: 'from child' }, host)
+    const parentInbox = resultJson(await retrieveSessionMessages('parent', {}))
+    expect(parentInbox.messages).toMatchObject([{ content: 'from child', from: { sessionId: childId, relation: 'child' } }])
+    expect(parentInbox.peers).toMatchObject([{ sessionId: childId, relation: 'child' }])
   })
 
   it('retrieves messages from multiple child sessions in one call', async () => {
@@ -918,16 +912,20 @@ describe('@agent mention targets', () => {
     const first = resultJson(await startSessionAgent('parent', grants[0].credential, host))
     const second = resultJson(await startSessionAgent('parent', grants[1].credential, host))
 
-    await sendSessionMessage(first.sessionId, { credential: grants[0].credential, content: 'first' }, host)
-    await sendSessionMessage(second.sessionId, { credential: grants[1].credential, content: 'second' }, host)
-    const inbox = resultJson(await retrieveSessionMessages('parent', {
-      credentials: [grants[0].credential, grants[1].credential],
-    }))
+    await sendSessionMessage(first.sessionId, { content: 'first' }, host)
+    await sendSessionMessage(second.sessionId, { content: 'second' }, host)
 
+    // Two peers: an implicit recipient is ambiguous, and the error names both.
+    const ambiguous = resultJson(await sendSessionMessage('parent', { content: 'hi' }, host))
+    expect(ambiguous.status).toBe('error')
+    expect(ambiguous.message).toContain(first.sessionId)
+    expect(ambiguous.message).toContain(second.sessionId)
+
+    const inbox = resultJson(await retrieveSessionMessages('parent', {}))
     expect(inbox.messages).toHaveLength(2)
     expect(inbox.messages).toEqual(expect.arrayContaining([
-      expect.objectContaining({ credential: grants[0].credential, content: 'first' }),
-      expect.objectContaining({ credential: grants[1].credential, content: 'second' }),
+      expect.objectContaining({ fromSessionId: first.sessionId, content: 'first' }),
+      expect.objectContaining({ fromSessionId: second.sessionId, content: 'second' }),
     ]))
   })
 
@@ -1032,16 +1030,16 @@ describe('@agent mention targets', () => {
     const changed = vi.fn()
     const unsubscribe = onCollaborationMailboxChanged(changed)
     try {
-      await sendSessionMessage('parent', { credential: grant.credential, content: 'First', clientMessageId: 'first' }, host)
-      await sendSessionMessage('parent', { credential: grant.credential, content: 'Second' }, host)
-      await sendSessionMessage('parent', { credential: grant.credential, content: 'First', clientMessageId: 'first' }, host)
+      await sendSessionMessage('parent', { to: childId, content: 'First', clientMessageId: 'first' }, host)
+      await sendSessionMessage('parent', { to: childId, content: 'Second' }, host)
+      await sendSessionMessage('parent', { to: childId, content: 'First', clientMessageId: 'first' }, host)
       const unread = listUnreadCollaborationMessages(childId)
       expect(unread.map((message) => message.content)).toEqual(['First', 'Second'])
       expect(listUnreadCollaborationMessages(childId)).toEqual(unread)
       expect(listUnreadCollaborationMessages('parent')).toEqual([])
       expect(JSON.stringify(unread)).not.toContain(grant.credential)
       expect(changed).toHaveBeenCalledTimes(2)
-      await retrieveSessionMessages(childId, { credentials: [grant.credential] })
+      await retrieveSessionMessages(childId, {})
       expect(listUnreadCollaborationMessages(childId)).toEqual([])
       expect(changed).toHaveBeenLastCalledWith(childId)
       expect(changed).toHaveBeenCalledTimes(3)
@@ -1060,7 +1058,7 @@ describe('@agent mention targets', () => {
     ;(child.isStreaming as ReturnType<typeof vi.fn>).mockReturnValue(true)
 
     await sendSessionMessage('parent', {
-      credential: grant.credential,
+      to: childId,
       content: 'wake while busy',
       clientMessageId: 'wake-1',
     }, host)
@@ -1089,7 +1087,7 @@ describe('@agent mention targets', () => {
     ;(child.injectTaskNotification as ReturnType<typeof vi.fn>).mockClear()
 
     const sent = resultJson(await sendSessionMessage('parent', {
-      credential: grant.credential,
+      to: childId,
       content: 'please continue',
       clientMessageId: 'after-wt-gone',
     }, host))
@@ -1098,9 +1096,7 @@ describe('@agent mention targets', () => {
     expect(String(sent.message)).toMatch(/worktree directory has been removed/i)
     expect(child.injectTaskNotification).not.toHaveBeenCalled()
 
-    const retrieved = resultJson(await retrieveSessionMessages(childId, {
-      credentials: [grant.credential],
-    }))
+    const retrieved = resultJson(await retrieveSessionMessages(childId, {}))
     expect(retrieved.status).toBe('empty')
     expect(retrieved.messages).toEqual([])
   })
@@ -1217,13 +1213,33 @@ describe('@agent mention targets', () => {
     expect(child.setTitle).toHaveBeenCalledWith('Alice - Reviewer', 'agent')
   })
 
-  it('returns a tool error for invalid retrieve credentials instead of throwing', async () => {
+  it('returns a tool error for a non-peer retrieve filter instead of throwing', async () => {
     const parent = fakeSession('parent')
-    const result = resultJson(await retrieveSessionMessages(parent.id, {
-      credentials: ['not-a-real-credential'],
-    }))
+    const result = resultJson(await retrieveSessionMessages(parent.id, { from: ['stranger'] }))
     expect(result).toMatchObject({ status: 'error' })
-    expect(String(result.message)).toMatch(/invalid/i)
+    expect(String(result.message)).toMatch(/Not your collaboration peers: stranger/)
+  })
+
+  it('denies mailbox tools to an ACP subagent sharing the session connection', async () => {
+    const parent = fakeSession('parent')
+    const { host } = fakeHost(parent)
+    const [grant] = await approveLaunches(parent, host)
+    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    noteLiveAcpSubagent('parent', 'sub-1', true)
+    try {
+      const sent = resultJson(await sendSessionMessage('parent', { to: started.sessionId, content: 'x' }, host))
+      expect(String(sent.message ?? sent)).toMatch(/main thread/)
+      const read = resultJson(await retrieveSessionMessages('parent', {}))
+      expect(String(read.message ?? read)).toMatch(/main thread/)
+    } finally {
+      _resetMainThreadSessionGuardForTests()
+    }
+  })
+
+  it('tells a session with no peers how to get one', async () => {
+    const result = resultJson(await retrieveSessionMessages('loner', {}))
+    expect(result).toMatchObject({ status: 'empty', peers: [] })
+    expect(String(result.hint)).toMatch(/session_collab_request/)
   })
 
   it('approves a link launch, activates without system prompt, and exchanges mailbox messages', async () => {
@@ -1264,19 +1280,22 @@ describe('@agent mention targets', () => {
     const linked = resultJson(await startSessionAgent('parent', grant.credential, host))
     expect(linked).toMatchObject({ status: 'linked', mode: 'link', sessionId: 'peer-session' })
     expect(peer.injectTaskNotification).toHaveBeenCalled()
+    // The wake tells the peer whom to answer, without handing it a secret.
+    const linkWake = (peer.injectTaskNotification as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
+    expect(linkWake).toContain('session_collab_send({ to: "parent" })')
+    expect(linkWake).not.toContain(grant.credential)
     // Opening delivered as mailbox, not system prompt.
     expect(getSessionCollaborationSystemPrompt('peer-session')).toBeUndefined()
 
     const sent = resultJson(await sendSessionMessage('parent', {
-      credential: grant.credential,
+      to: 'peer-session',
       content: 'Here is the proposed type.',
     }, host))
-    expect(sent.status).toBe('sent')
+    expect(sent).toMatchObject({ status: 'sent', to: { sessionId: 'peer-session', relation: 'link' } })
 
-    const retrieved = resultJson(await retrieveSessionMessages('peer-session', {
-      credentials: [grant.credential],
-    }))
+    const retrieved = resultJson(await retrieveSessionMessages('peer-session', {}))
     expect(retrieved.status).toBe('messages')
+    expect(retrieved.peers).toMatchObject([{ sessionId: 'parent', relation: 'link' }])
     const messages = retrieved.messages as Array<{ content: string }>
     expect(messages.some((m) => m.content.includes('request body') || m.content.includes('proposed type'))).toBe(true)
   })
@@ -1308,13 +1327,13 @@ describe('@agent mention targets', () => {
     resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
       [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(event.request.sessionAgentsConfirm!.launches),
     })
-    const grant = (resultJson(await promise).launches as Array<{ credential: string }>)[0]
+    await promise
     const early = resultJson(await sendSessionMessage('parent', {
-      credential: grant.credential,
+      to: 'peer-2',
       content: 'too early',
     }, host))
     expect(early).toMatchObject({ status: 'error' })
-    expect(String(early.message)).toMatch(/not been started/i)
+    expect(String(early.message)).toMatch(/not one of your collaboration peers/i)
   })
 
   /**
@@ -1383,7 +1402,7 @@ describe('@agent mention targets', () => {
     expect(sent.content).toContain('Finish phase 2 of the migration')
   })
 
-  it('refuses mailbox traffic on a handoff credential from either side', async () => {
+  it('refuses mailbox traffic across a handoff from either side', async () => {
     const parent = fakeSession('parent')
     const { host } = fakeHost(parent)
     const grant = await approveHandoff(parent, host)
@@ -1391,15 +1410,18 @@ describe('@agent mention targets', () => {
     const sessionId = started.sessionId as string
 
     const send = resultJson(await sendSessionMessage('parent', {
-      credential: grant.credential,
+      to: sessionId,
       content: 'any follow-up?',
     }, host))
     expect(send).toMatchObject({ status: 'error' })
     expect(String(send.message)).toMatch(/one-way/i)
 
-    const retrieve = resultJson(await retrieveSessionMessages(sessionId, { credentials: [grant.credential] }))
-    expect(retrieve).toMatchObject({ status: 'error' })
-    expect(String(retrieve.message)).toMatch(/one-way/i)
+    const reply = resultJson(await sendSessionMessage(sessionId, { to: 'parent', content: 'question?' }, host))
+    expect(String(reply.message)).toMatch(/one-way/i)
+
+    // The sibling has no peers at all.
+    const retrieve = resultJson(await retrieveSessionMessages(sessionId, {}))
+    expect(retrieve).toMatchObject({ status: 'empty', peers: [] })
   })
 
   it('is idempotent on retry: same sibling session, task delivered once', async () => {

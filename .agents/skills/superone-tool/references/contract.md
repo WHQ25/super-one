@@ -25,9 +25,11 @@ mismatch live in [backend.md → Wire names](backend.md#wire-names-on-claude--co
 this skill owns the descriptor, handler, executor confirm, and ToolBlock, while injection of
 the `superone` server is `superone-harness` → **Host SuperOne tools**.
 
-`session_rename` and `session_tag` are **main-thread only**
-(`MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES`). A child / subagent must get a direct denial, even when
-it inherited the parent's MCP connection. Do not "fix" that by pre-allowing the child.
+`session_rename`, `session_tag`, and the collaboration mailbox (`session_collab_send`,
+`session_collab_retrieve`) are **main-thread only** (`MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES`). A
+child / subagent must get a direct denial, even when it inherited the parent's MCP connection. Do
+not "fix" that by pre-allowing the child. A tool whose executor authorizes by the calling session
+(rather than by a value the agent holds) belongs on this list.
 
 ## Step 1 — Design the contract before writing the handler
 
@@ -160,7 +162,7 @@ It feeds upstream rules such as Claude `allowedTools` and Codex per-tool `approv
 predicates remain the downstream fallback for Claude `canUseTool`, Codex elicitation, ACP, and other
 permission callbacks. Feature-gated `computer_*` stays outside the static set. Dynamic mini-app
 tools (`slug__tool`) are never made host-owned merely because they use the `superone` MCP server.
-`MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES` (`session_rename`, `session_tag`) stay in the static
+`MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES` stay in the static
 admission set so the *parent* can call them without a harness prompt, and are denied in each
 harness's child-session path before any auto-allow.
 

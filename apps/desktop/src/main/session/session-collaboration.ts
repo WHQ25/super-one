@@ -12,6 +12,7 @@ import {
   EDITABLE_SANDBOX_MODES,
   NESTED_COLLABORATION_UNSUPPORTED,
   assertLaunchCount,
+  assertNotPeeredElsewhere,
   collaborationSessionTitle,
   collaborationSystemPrompt,
   mergeConfirmedLaunches,
@@ -120,6 +121,7 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
         acp_agent_id: string | null
       } | undefined
       if (!peerRow) throw new Error(`Unknown sessionId for link: ${peerSessionId}`)
+      assertNotPeeredElsewhere(store(), parent.id, peerSessionId)
       const peerTitle = peerRow.title?.trim() || peerSessionId.slice(0, 8)
       const { summary, task, name, role } = normalizeLaunchText('link', launch, peerTitle)
       // Confirm tabs show harness (same as spawn) — resolve from peer session identity.
@@ -325,10 +327,8 @@ export async function requestSessionAgents(
 
 /** Spawn children only — link peers must never get system-prompt credential injection. */
 export function getSessionCollaborationSystemPrompt(sessionId: string): string | undefined {
-  const grants = store()
-  const grant = grants.spawnGrantForChild(sessionId)
-  const credential = grant ? grants.credentialOf(grant) : null
-  return grant && credential ? collaborationSystemPrompt(credential, grant.parent_session_id) : undefined
+  const grant = store().spawnGrantForChild(sessionId)
+  return grant ? collaborationSystemPrompt(grant.parent_session_id) : undefined
 }
 
 /**

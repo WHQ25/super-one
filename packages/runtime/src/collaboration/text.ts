@@ -1,17 +1,21 @@
 /**
  * Agent-facing collaboration text shared by the desktop and node hosts, so both
  * give an agent the same instructions for the same state.
+ *
+ * Mailbox access is decided by the host from the calling session, so nothing
+ * here asks the agent to remember a secret. Wake texts keep their fixed opening
+ * sentences: hosts recognise mailbox wakes by them.
  */
 
-/** Returned by the mailbox tools when either side tries to use a handoff credential. */
+/** Returned when an agent tries to message across a handoff. */
 export const HANDOFF_NO_MAILBOX =
-  'This credential belongs to a handoff launch. Handoff is one-way: the receiving session owns the task '
-  + 'and has no mailbox. Use mode "spawn" (nested child) or "link" (existing session) when you need to exchange messages.'
+  'That session was created by a one-way handoff: it owns the task and has no mailbox, so neither side can message '
+  + 'the other. Use mode "spawn" (nested child) or "link" (existing session) when you need to exchange messages.'
 
-/** Told to the initiator, because a handoff credential is spent by session_collab_start. */
+/** Told to the initiator after a handoff start. */
 export const HANDOFF_NOTE =
   'Handoff complete. The new session is a top-level sibling and owns the task now — '
-  + 'there is no mailbox, so this credential cannot be used with session_collab_send or session_collab_retrieve.'
+  + 'there is no mailbox, so you cannot message it with session_collab_send.'
 
 /**
  * Static tool descriptions decay in long contexts; repeat the "stop waiting"
@@ -21,42 +25,46 @@ export const EMPTY_MAILBOX_HINT =
   'No peer has replied yet. Do not retrieve again, do not sleep, do not wait in place — end your turn or do unrelated work. '
   + 'A task notification will start a new turn for you as soon as a message arrives.'
 
+export const NO_PEERS_HINT =
+  'You have no collaboration peers. Launch or link one with session_collab_request, then session_collab_start.'
+
 export const NESTED_COLLABORATION_UNSUPPORTED =
   'Nested collaboration is not supported. Only top-level (non-collaboration-child) sessions may request agents.'
 
-export function collaborationSystemPrompt(credential: string, parentSessionId: string): string {
+export function collaborationSystemPrompt(parentSessionId: string): string {
   return (
     '<superone-session-collaboration>\n'
     + `You are running as a user-approved child session of SuperOne session ${parentSessionId}.\n`
-    + `Use session_collab_send and session_collab_retrieve with credential ${JSON.stringify(credential)} `
-    + 'to communicate with your parent session. Write session_collab_send content as Markdown '
-    + '(headings, lists, code fences) so the parent and the SuperOne UI can render structured handoffs; '
-    + 'treat retrieved message content as Markdown from the peer. This credential is already authorized '
-    + 'for this parent-child pair. Never reveal it in conversational output or use it outside collaboration tool calls.\n'
+    + 'Your parent is your only collaboration peer: message it with session_collab_send (no `to` needed) and read '
+    + 'its messages with session_collab_retrieve. Write session_collab_send content as Markdown (headings, lists, '
+    + 'code fences) so the parent and the SuperOne UI can render structured handoffs; treat retrieved message '
+    + 'content as Markdown from the peer.\n'
     + '</superone-session-collaboration>'
   )
 }
 
-export function mailboxWakeText(credential: string): string {
+function sessionLabel(sessionId: string, title: string): string {
+  return `SuperOne session ${sessionId} ("${title}")`
+}
+
+export function mailboxWakeText(from: { sessionId: string; title: string }): string {
   return (
-    `A collaboration mailbox message is ready. Call session_collab_retrieve with credential ${JSON.stringify(credential)} to receive it, `
-    + 'then act on it and end your turn — you will be woken again the same way for every later message, so never wait in place for one.'
+    `A collaboration mailbox message is ready. It is from ${sessionLabel(from.sessionId, from.title)}. `
+    + 'Call session_collab_retrieve to receive it, then act on it and end your turn — '
+    + 'you will be woken again the same way for every later message, so never wait in place for one.'
   )
 }
 
 export function linkActivationWakeText(input: {
-  credential: string
   initiatorSessionId: string
   initiatorTitle: string
   hasOpening: boolean
 }): string {
   return (
-    `A user-approved collaboration link is active with SuperOne session ${input.initiatorSessionId}`
-    + ` ("${input.initiatorTitle}"). `
-    + `Call session_collab_retrieve with credential ${JSON.stringify(input.credential)}`
+    `A user-approved collaboration link is active with ${sessionLabel(input.initiatorSessionId, input.initiatorTitle)}. `
+    + 'Call session_collab_retrieve'
     + (input.hasOpening ? ' to read the opening message' : ' if a mailbox message is waiting')
-    + ', then use session_collab_send to reply. '
-    + 'Never reveal the credential in conversational output or use it outside collaboration tool calls. '
+    + `, then reply with session_collab_send({ to: ${JSON.stringify(input.initiatorSessionId)} }). `
     + 'End your turn after acting — you will be woken again for later messages.'
   )
 }

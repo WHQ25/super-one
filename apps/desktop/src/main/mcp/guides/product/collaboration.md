@@ -6,8 +6,8 @@ Read this before `session_collab_request`, especially when a child needs an isol
 
 | `mode` | Purpose | Required fields | Injection |
 |--------|---------|-----------------|-----------|
-| `spawn` (default) | Create a **new** child session you keep talking to | `agentId`, `name`, `role`, `summary`, `task` | Child gets collaboration **system prompt** with credential |
-| `handoff` | Create a **new top-level sibling** that takes the task over | `agentId`, `name`, `role`, `summary`, `task` | **None.** No credential, no mailbox. The task is delivered as the opening turn with a provenance line naming you. |
+| `spawn` (default) | Create a **new** child session you keep talking to | `agentId`, `name`, `role`, `summary`, `task` | Child gets a collaboration **system prompt** naming you as its parent |
+| `handoff` | Create a **new top-level sibling** that takes the task over | `agentId`, `name`, `role`, `summary`, `task` | **None.** No mailbox. The task is delivered as the opening turn with a provenance line naming you. |
 | `link` | Mailbox with an **existing** session | `sessionId`, `summary` (`task` = optional opening body; omit for wake-only) | Peer is woken via **turn injection** only — never system prompt. Link peers stay top-level in the sidebar (not nested under the initiator). |
 
 `sessionId` for `link` must be a real SuperOne session id (from `@session` mentions or `session_list` / `session_search`). Never invent ids. Do not use `spawn` or `handoff` when the target already exists.
@@ -24,7 +24,7 @@ Both take the same launch shape (`agentId`, `name`, `role`, `summary`, `task`, `
 Handoff consequences, all intentional:
 
 - The new session is **top-level**, listed beside you in the sidebar — not nested under this one.
-- It **cannot reply**, and you **cannot** call `session_collab_send` / `session_collab_retrieve` with a handoff credential (both return an error). `session_collab_start` spends the credential.
+- It **cannot reply**, and you **cannot** message it with `session_collab_send` (the host returns an error). `session_collab_start` spends the credential.
 - Nothing is inherited: the receiver sees only the `task` body plus a provenance line with your session id, so it can `session_read({ sessionId })` for context. **Write a self-contained brief** — it has no way to ask a follow-up question.
 - A handoff receiver may itself hand off / spawn again (nesting limits do not apply to siblings), so chains are fine.
 
@@ -38,7 +38,7 @@ Say what you did in your own reply: the user sees a new top-level session, not a
 | 2 | Call `session_collab_request` with one or more launches (`mode` optional, defaults to `spawn`). Spawn/handoff: invent `name`/`role`, pass `summary` + full Markdown `task`. Link: pass `sessionId` + `summary` (+ optional `task` opening). |
 | 3 | Wait for user approval. Each approved launch returns a private, one-shot credential. |
 | 4 | Call `session_collab_start` for every credential back-to-back. Spawn: host creates the child and delivers `task`. Handoff: host creates the sibling, delivers `task`, and the credential is spent. Link: host binds the peer and wakes it (opening via mailbox + turn wake). |
-| 5 | Spawn/link only: exchange durable Markdown handoffs with `session_collab_send` and `session_collab_retrieve`. Delivery is push-based; never poll while waiting. Handoff has no step 5. |
+| 5 | Spawn/link only: exchange durable Markdown handoffs with `session_collab_send({ to: sessionId })` and `session_collab_retrieve`. Delivery is push-based; never poll while waiting. Handoff has no step 5. |
 
 ### Link example
 
@@ -241,6 +241,10 @@ Nobody watches child or handoff sessions. Prefer the most autonomous mode that c
 
 ## Mailbox
 
-Spawn children and link peers only — handoff grants have no mailbox and reject both mailbox tools.
+Your peers are your spawn parent or children and your started link peers — never a handoff session. The host decides who may message whom from the calling session, so there is nothing to remember: address a peer by its session id in `session_collab_send({ to })`. `to` may be omitted only when you have exactly one peer (a spawn child always does: its parent).
+
+`session_collab_retrieve` always lists your peers (`sessionId`, `name`, `relation`: `parent` / `child` / `link`), even when no message is waiting. Call it to find out who you can message, for example after your context was compacted. Pass `from` to read only some peers.
+
+Only the main thread may call the mailbox tools; subagents are denied.
 
 Write `session_collab_send` content as structured Markdown. Use `clientMessageId` when a send may be retried. After sending, continue other work or end the turn. When a collaboration wake arrives, call `session_collab_retrieve`; an `empty` result is not a reason to sleep or poll.

@@ -497,11 +497,11 @@ export const Gallery: Story = {
 
       <Section title="session_collab_send (Send icon) — To + Markdown body">
         {collabBlock('session_collab_send', {
-          credential: CRED_A,
+          to: 'child-diffbot',
           content: 'ping-1 — please reply with status.',
         }, { status: 'streaming', elapsedSeconds: 1 })}
         {collabBlock('session_collab_send', {
-          credential: CRED_A,
+          to: 'child-diffbot',
           content: [
             '## Auth review brief',
             '',
@@ -527,35 +527,36 @@ export const Gallery: Story = {
               role: 'Reviewer',
               title: 'DiffBot - Reviewer',
               sessionId: 'child-diffbot',
+              relation: 'child',
             },
           }),
         })}
       </Section>
 
       <Section title="session_collab_retrieve (Inbox icon) — From + Markdown body">
-        {collabBlock('session_collab_retrieve', { credentials: [CRED_A] }, { status: 'streaming', elapsedSeconds: 1 })}
-        {collabBlock('session_collab_retrieve', { credentials: [CRED_A] }, {
+        {collabBlock('session_collab_retrieve', {}, { status: 'streaming', elapsedSeconds: 1 })}
+        {collabBlock('session_collab_retrieve', {}, {
           result: JSON.stringify({
             status: 'empty',
             peers: [{
-              credential: CRED_A,
               name: 'DiffBot',
               role: 'Reviewer',
               title: 'DiffBot - Reviewer',
               sessionId: 'child-diffbot',
+              relation: 'child',
             }],
             messages: [],
           }),
         })}
-        {collabBlock('session_collab_retrieve', { credentials: [CRED_A] }, {
+        {collabBlock('session_collab_retrieve', {}, {
           result: JSON.stringify({
             status: 'messages',
             peers: [{
-              credential: CRED_A,
               name: 'DiffBot',
               role: 'Reviewer',
               title: 'DiffBot - Reviewer',
               sessionId: 'child-diffbot',
+              relation: 'child',
             }],
             messages: [{
               content: [

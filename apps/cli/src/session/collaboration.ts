@@ -61,13 +61,8 @@ export class CollaborationService {
   /** Reconstruct system-prompt append for spawn children after restart (never link). */
   rehydrateSystemPrompts(): void {
     for (const grant of this.ctx.store.startedSpawnGrants()) {
-      const credential = this.ctx.store.credentialOf(grant)
-      if (!credential || !grant.child_session_id) continue
-      if (!this.deps.sessions.get(grant.child_session_id)) continue
-      this.deps.sessions.setSystemPromptAppend(
-        grant.child_session_id,
-        collaborationSystemPrompt(credential, grant.parent_session_id),
-      )
+      if (!grant.child_session_id || !this.deps.sessions.get(grant.child_session_id)) continue
+      this.deps.sessions.setSystemPromptAppend(grant.child_session_id, collaborationSystemPrompt(grant.parent_session_id))
     }
   }
 }

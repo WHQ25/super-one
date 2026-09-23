@@ -15,7 +15,6 @@ import {
   deriveCollaborationRole,
   describeLaunchedPeer,
   handoffTaskContent,
-  hashCollaborationCredential,
   linkActivationWakeText,
   parseGrantConfig,
   patchEditableLaunchConfig,
@@ -122,18 +121,20 @@ async function deliverInitialTask(ctx: CollaborationContext, grant: GrantRow, ch
 async function wakeLinkPeer(
   ctx: CollaborationContext,
   sessionId: string,
-  credential: string,
-  initiatorSessionId: string,
-  initiatorTitle: string,
+  grant: GrantRow,
   hasOpening: boolean,
 ): Promise<void> {
   if (!ctx.deps.sessions.get(sessionId)) return
   try {
     await ctx.deps.sessions.sendWithoutLease({
       sessionId,
-      text: linkActivationWakeText({ credential, initiatorSessionId, initiatorTitle, hasOpening }),
+      text: linkActivationWakeText({
+        initiatorSessionId: grant.parent_session_id,
+        initiatorTitle: initiatorTitleOf(ctx, grant),
+        hasOpening,
+      }),
       source: 'task-notification',
-      requestId: `collab-link-wake-${hashCollaborationCredential(credential).slice(0, 12)}-${Date.now()}`,
+      requestId: `collab-link-wake-${grant.credential_hash.slice(0, 12)}-${Date.now()}`,
     })
   } catch {
     /* best-effort */
@@ -155,15 +156,14 @@ async function startLink(
   const alreadyStarted = Boolean(grant.started_at)
   if (!alreadyStarted) ctx.store.markStarted(grant.credential_hash)
   const opening = grant.task?.trim() ?? ''
-  const initiatorTitle = initiatorTitleOf(ctx, grant)
   if (!alreadyStarted && opening) {
     // Deliver the opening as a mailbox message (never system prompt).
     if (grant.task_sent !== 1) {
       ctx.store.appendLinkOpening(grant, peerSessionId, opening)
-      void wakeLinkPeer(ctx, peerSessionId, credential, grant.parent_session_id, initiatorTitle, true)
+      void wakeLinkPeer(ctx, peerSessionId, grant, true)
     }
   } else {
-    void wakeLinkPeer(ctx, peerSessionId, credential, grant.parent_session_id, initiatorTitle, false)
+    void wakeLinkPeer(ctx, peerSessionId, grant, false)
     if (!alreadyStarted) ctx.store.markTaskSent(grant.credential_hash)
   }
   const peer = describeLaunchedPeer(grant)
@@ -225,7 +225,7 @@ export async function startCollaboration(
     if (existing && !isHandoff) {
       ctx.deps.sessions.setSystemPromptAppend(
         existing.sessionId,
-        collaborationSystemPrompt(credential, grant.parent_session_id),
+        collaborationSystemPrompt(grant.parent_session_id),
       )
     }
     if (existing) await deliverInitialTask(ctx, grant, existingSessionId)
@@ -285,7 +285,7 @@ export async function startCollaboration(
       // Handoff is one-way by construction: never hand the receiver a credential.
       ...(isHandoff
         ? {}
-        : { systemPromptAppend: collaborationSystemPrompt(credential, grant.parent_session_id) }),
+        : { systemPromptAppend: collaborationSystemPrompt(grant.parent_session_id) }),
     })
     ctx.store.bindStartedSession(grant, child.sessionId, config)
   } catch (err) {

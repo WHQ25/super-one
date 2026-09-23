@@ -182,7 +182,9 @@ describe('collaboration grants + mailbox', () => {
     const started = await collab.start({ credential })
     expect(started.reused).toBe(false)
     expect(started.sessionId).toBeTruthy()
-    expect(sessions.getSystemPromptAppend(started.sessionId)).toContain(credential)
+    const childPrompt = sessions.getSystemPromptAppend(started.sessionId)
+    expect(childPrompt).toContain(parent.sessionId)
+    expect(childPrompt).not.toContain(credential)
 
     // grantId-only start requires parent binding (no bearer credential).
     await expect(collab.start({ grantId })).rejects.toThrow(/callerSessionId|parent/i)
@@ -217,17 +219,18 @@ describe('collaboration grants + mailbox', () => {
     expect(escalatedStarted.config.sandboxMode).toBe('off')
 
     const sent = collab.send({
-      credential,
       sessionId: parent.sessionId,
+      to: started.sessionId,
       content: 'hello child',
       clientMessageId: 'c1',
     })
     expect(sent.reused).toBe(false)
+    expect(sent.to).toMatchObject({ sessionId: started.sessionId, relation: 'child' })
     expect(sent.sequence).toBe(1)
 
     const sentDup = collab.send({
-      credential,
       sessionId: parent.sessionId,
+      to: started.sessionId,
       content: 'hello child',
       clientMessageId: 'c1',
     })
@@ -235,16 +238,17 @@ describe('collaboration grants + mailbox', () => {
     expect(sentDup.messageId).toBe(sent.messageId)
 
     const retrieved = collab.retrieve({
-      credential,
       sessionId: started.sessionId,
       max: 5,
     })
     expect(retrieved.status).toBe('messages')
     expect(retrieved.messages).toHaveLength(1)
     expect(retrieved.messages[0].content).toBe('hello child')
+    expect(retrieved.messages[0].from).toMatchObject({ sessionId: parent.sessionId, relation: 'parent' })
 
-    const empty = collab.retrieve({ credential, sessionId: started.sessionId })
+    const empty = collab.retrieve({ sessionId: started.sessionId })
     expect(empty.status).toBe('empty')
+    expect(empty.peers).toEqual([expect.objectContaining({ sessionId: parent.sessionId, relation: 'parent' })])
 
     // Cursor row persisted.
     const cursor = db
@@ -256,7 +260,7 @@ describe('collaboration grants + mailbox', () => {
     expect(cursor.last_sequence).toBe(1)
   })
 
-  it('rejects send from a session that is not an endpoint of the grant', async () => {
+  it('rejects send to a session that is not a collaboration peer', async () => {
     const { collab, sessions, projects } = bootCollab()
     const projectDir = mkdtempSync(join(tmpdir(), 'collab-proj2-'))
     dirs.push(projectDir)
@@ -277,14 +281,16 @@ describe('collaboration grants + mailbox', () => {
       ],
     })
     if (req.status !== 'approved') throw new Error('expected approved')
-    await collab.start({ credential: req.launches[0].credential })
+    const child = await collab.start({ credential: req.launches[0].credential })
     expect(() =>
       collab.send({
-        credential: req.launches[0].credential,
         sessionId: stranger.sessionId,
+        to: child.sessionId,
         content: 'nope',
       }),
-    ).toThrow(/does not authorize/)
+    ).toThrow(/not one of your collaboration peers/)
+    expect(() => collab.retrieve({ sessionId: stranger.sessionId, from: [parent.sessionId] }))
+      .toThrow(/Not your collaboration peers/)
   })
 
   it('link mode binds an existing peer without system-prompt injection', async () => {
@@ -326,11 +332,11 @@ describe('collaboration grants + mailbox', () => {
 
     expect(() =>
       collab.send({
-        credential: grant.credential,
         sessionId: parent.sessionId,
+        to: peer.sessionId,
         content: 'too early',
       }),
-    ).toThrow(/not been started/i)
+    ).toThrow(/not one of your collaboration peers/i)
 
     const linked = await collab.start({ credential: grant.credential })
     expect(linked.status).toBe('linked')
@@ -348,16 +354,14 @@ describe('collaboration grants + mailbox', () => {
     expect(row.started_at).toBeTruthy()
 
     const sent = collab.send({
-      credential: grant.credential,
       sessionId: parent.sessionId,
+      to: peer.sessionId,
       content: 'hello peer',
     })
     expect(sent.status).toBe('sent')
 
-    const retrieved = collab.retrieve({
-      credential: grant.credential,
-      sessionId: peer.sessionId,
-    })
+    const retrieved = collab.retrieve({ sessionId: peer.sessionId })
+    expect(retrieved.peers).toEqual([expect.objectContaining({ sessionId: parent.sessionId, relation: 'link' })])
     expect(retrieved.status).toBe('messages')
     expect(retrieved.messages.some((m) => m.content.includes('hello peer') || m.content.includes('API shape'))).toBe(true)
   })
@@ -415,14 +419,14 @@ describe('collaboration grants + mailbox', () => {
 
     expect(() =>
       collab.send({
-        credential: grant.credential,
         sessionId: parent.sessionId,
+        to: started.sessionId,
         content: 'follow-up?',
       }),
     ).toThrow(/one-way/i)
-    expect(() =>
-      collab.retrieve({ credential: grant.credential, sessionId: started.sessionId }),
-    ).toThrow(/one-way/i)
+    expect(() => collab.send({ sessionId: started.sessionId, to: parent.sessionId, content: 'hi' }))
+      .toThrow(/one-way/i)
+    expect(collab.retrieve({ sessionId: started.sessionId }).peers).toEqual([])
 
     // The grant is not FK-linked to the sibling, so a retry after deletion is reachable.
     sessions.remove(started.sessionId)

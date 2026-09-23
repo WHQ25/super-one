@@ -1,32 +1,31 @@
 /**
  * session_collab_send / session_collab_retrieve: the durable mailbox between
- * a parent and its spawn child, or between link peers.
+ * a parent and its spawn child, or between link peers. The host authorizes by
+ * the calling session; peers are addressed by session id.
  */
 
 import {
   EMPTY_MAILBOX_HINT,
-  assertMailboxEndpoint,
+  NO_PEERS_HINT,
   normalizeMailboxContent,
+  readCallerMailbox,
   readOnlyTargetMessage as collaborationTargetReadOnlyMessage,
-  resolveMailboxRecipient,
-  type CollaborationGrantRow as GrantRow,
+  resolveSendChannel,
 } from '@superone/runtime/collaboration'
+import { denyMainThreadOnlyIfSubagent } from '../mcp/main-thread-session-guard'
+import { collaborationStore as store, notifyCollaborationMailboxChanged } from './collaboration-mailbox'
 import {
-  collaborationStore as store,
-  notifyCollaborationMailboxChanged,
-  readCollaborationMailbox,
-} from './collaboration-mailbox'
-import {
-  describePeerForCaller,
   errorResult,
   isCollaborationTargetReadOnly,
+  sessionTitle,
   toolResult,
   wakeCollaborationPeer,
 } from './collaboration-host'
 import type { SessionManager } from './types'
 
 export interface SessionSendArgs {
-  credential: string
+  /** Peer session id. Optional when the caller has exactly one peer. */
+  to?: string
   content: string
   clientMessageId?: string
 }
@@ -36,17 +35,18 @@ export async function sendSessionMessage(
   args: SessionSendArgs,
   host: SessionManager,
 ) {
+  const denied = denyMainThreadOnlyIfSubagent(callerSessionId, 'session_collab_send')
+  if (denied) return toolResult(denied, true)
   const grants = store()
-  const grant = grants.grantByCredential(args.credential)
-  if (!grant) return toolResult({ status: 'error', message: 'Invalid collaboration credential' }, true)
-  let recipientSessionId: string
+  let channel: ReturnType<typeof resolveSendChannel>
   let content: string
   try {
-    recipientSessionId = resolveMailboxRecipient(grant, callerSessionId)
+    channel = resolveSendChannel(grants, callerSessionId, args.to, sessionTitle)
     content = normalizeMailboxContent(args.content)
   } catch (error) {
     return errorResult(error)
   }
+  const recipientSessionId = channel.peer.sessionId
 
   const liveRecipient = host.getSession(recipientSessionId)
   if (isCollaborationTargetReadOnly(recipientSessionId, liveRecipient)) {
@@ -57,7 +57,7 @@ export async function sendSessionMessage(
   }
 
   const insert = grants.appendMessage({
-    credentialHash: grant.credential_hash,
+    credentialHash: channel.grant.credential_hash,
     senderSessionId: callerSessionId,
     recipientSessionId,
     clientMessageId: args.clientMessageId,
@@ -67,65 +67,50 @@ export async function sendSessionMessage(
     notifyCollaborationMailboxChanged(recipientSessionId)
     // Mailbox traffic is already visible via session_send / session_retrieve tool UI.
     // Do not also inject collab transcript bubbles (that doubled the UI).
-    void wakeCollaborationPeer(host, recipientSessionId, args.credential)
+    void wakeCollaborationPeer(host, recipientSessionId, callerSessionId)
   }
-  const peer = describePeerForCaller(grant, callerSessionId)
   return toolResult({
     status: 'sent',
     messageId: insert.row.id,
     sequence: insert.row.sequence,
     reused: insert.reused,
-    to: peer,
+    to: channel.peer,
     peerSessionId: recipientSessionId,
   })
 }
 
 export interface SessionRetrieveArgs {
-  credentials: string[]
+  /** Only drain messages from these peer session ids. Default: every peer. */
+  from?: string[]
 }
 
 /**
  * Non-blocking mailbox read. Advances this endpoint's cursor for any messages
- * currently available. Peers are woken via task notification on send; the agent
- * should call this after a wake (or when it otherwise wants to drain the inbox).
+ * currently available and lists the caller's peers. Peers are woken via task
+ * notification on send; the agent calls this after a wake, or to rediscover
+ * who it can message.
  */
 export async function retrieveSessionMessages(
   callerSessionId: string,
   args: SessionRetrieveArgs,
 ) {
-  if (!Array.isArray(args.credentials) || args.credentials.length === 0) {
-    return toolResult({ status: 'error', message: 'credentials must not be empty' }, true)
-  }
-  if (args.credentials.length > 32) {
-    return toolResult({ status: 'error', message: 'At most 32 credentials may be retrieved at once' }, true)
-  }
-
-  const grantStore = store()
-  let grants: Array<GrantRow & { credential: string }>
+  const denied = denyMainThreadOnlyIfSubagent(callerSessionId, 'session_collab_retrieve')
+  if (denied) return toolResult(denied, true)
+  let read: ReturnType<typeof readCallerMailbox>
   try {
-    grants = [...new Set(args.credentials)].map((credential) => {
-      const grant = grantStore.grantByCredential(credential)
-      if (!grant) throw new Error('Invalid collaboration credential')
-      assertMailboxEndpoint(grant, callerSessionId)
-      return { ...grant, credential }
-    })
+    read = readCallerMailbox(store(), callerSessionId, { from: args.from }, sessionTitle)
   } catch (error) {
     return errorResult(error)
   }
-
-  const peers = grants.map((grant) => ({
-    credential: grant.credential,
-    ...describePeerForCaller(grant, callerSessionId),
-  }))
-
-  const messages = readCollaborationMailbox(callerSessionId, grants.map((grant) => ({
-    credentialHash: grant.credential_hash,
-    credential: grant.credential,
-    peer: describePeerForCaller(grant, callerSessionId),
-  })))
+  const { messages, peers } = read
   if (messages.length > 0) {
     notifyCollaborationMailboxChanged(callerSessionId)
     return toolResult({ status: 'messages', messages, peers })
   }
-  return toolResult({ status: 'empty', messages: [], peers, hint: EMPTY_MAILBOX_HINT })
+  return toolResult({
+    status: 'empty',
+    messages: [],
+    peers,
+    hint: peers.length > 0 ? EMPTY_MAILBOX_HINT : NO_PEERS_HINT,
+  })
 }

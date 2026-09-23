@@ -9,6 +9,7 @@ import {
   CollaborationError,
   NESTED_COLLABORATION_UNSUPPORTED,
   assertLaunchCount,
+  assertNotPeeredElsewhere,
   collaborationSessionTitle,
   mergeConfirmedLaunches,
   normalizeLaunchText,
@@ -100,6 +101,7 @@ function normalizeLaunches(
       }
       const peer = ctx.deps.sessions.get(peerSessionId)
       if (!peer) throw new CollaborationError(`Unknown sessionId for link: ${peerSessionId}`, 'not_found')
+      assertNotPeeredElsewhere(ctx.store, input.parentSessionId, peerSessionId)
       const peerTitle = peer.title?.trim() || peerSessionId.slice(0, 8)
       const { summary, task, name, role } = normalizeLaunchText('link', launch, peerTitle)
       return {

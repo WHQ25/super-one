@@ -12,7 +12,10 @@ import {
   LAUNCH_BRANCH_NAME_DESCRIPTION,
   SESSION_START_DESCRIPTION,
   SESSION_SEND_DESCRIPTION,
-  SESSION_RETRIEVE_DESCRIPTION
+  SESSION_SEND_TO_DESCRIPTION,
+  SESSION_SEND_CONTENT_DESCRIPTION,
+  SESSION_RETRIEVE_DESCRIPTION,
+  SESSION_RETRIEVE_FROM_DESCRIPTION
 } from '../superone-tool-descriptions'
 
 export const HOST_ACTION_COLLABORATION_DESCRIPTORS: HostActionSuperoneToolDescriptor[] = [
@@ -201,20 +204,20 @@ export const HOST_ACTION_COLLABORATION_DESCRIPTORS: HostActionSuperoneToolDescri
     "inputSchema": {
       "type": "object",
       "properties": {
-        "credential": {
-          "type": "string"
+        "to": {
+          "type": "string",
+          "description": SESSION_SEND_TO_DESCRIPTION
         },
         "content": {
           "type": "string",
           "maxLength": 100000,
-          "description": "Mailbox message body in Markdown. Prefer structured Markdown (headings, lists, code fences) for agent-to-agent handoffs; the SuperOne UI renders it as a Markdown preview."
+          "description": SESSION_SEND_CONTENT_DESCRIPTION
         },
         "clientMessageId": {
           "type": "string"
         }
       },
       "required": [
-        "credential",
         "content"
       ],
       "additionalProperties": false
@@ -226,18 +229,15 @@ export const HOST_ACTION_COLLABORATION_DESCRIPTORS: HostActionSuperoneToolDescri
     "inputSchema": {
       "type": "object",
       "properties": {
-        "credentials": {
+        "from": {
           "type": "array",
-          "minItems": 1,
           "maxItems": 32,
           "items": {
             "type": "string"
-          }
+          },
+          "description": SESSION_RETRIEVE_FROM_DESCRIPTION
         }
       },
-      "required": [
-        "credentials"
-      ],
       "additionalProperties": false
     }
   }

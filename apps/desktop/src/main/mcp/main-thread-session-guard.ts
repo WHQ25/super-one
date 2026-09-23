@@ -2,7 +2,7 @@
  * Grok/ACP spawn_subagent inherits the parent's SuperOne MCP connection.
  * Those calls never carry agentID and often skip session/request_permission
  * (same stdio helper, same SuperOne session). Track live ACP subagents and
- * only allow session_tag / session_rename while a parent grant is in flight.
+ * only allow main-thread-only tools while a parent grant is in flight.
  */
 
 import { isMainThreadOnlySuperoneTool, superoneBareToolName } from '@superone/shared/superone-host-owned-tools'

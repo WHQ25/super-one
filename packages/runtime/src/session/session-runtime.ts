@@ -51,18 +51,6 @@ import {
 /** Default wall-clock wait for multi-launch agent confirm (ms). Desktop: 10 min. */
 export const DEFAULT_AGENTS_CONFIRM_TIMEOUT_MS = 10 * 60_000
 
-/**
- * Strip collaboration bearer credentials from a host wake prompt before the
- * user bubble is persisted. Full text still goes to the model via turn text.
- */
-export function redactTaskNotificationForDisplay(content: string): string {
-  return content
-    .replace(/\s+with credential\s+(?:"[^"]*"|'[^']*')/gi, '')
-    .replace(/\bs1sc_[A-Za-z0-9_-]+/g, '[redacted]')
-    .replace(/\s{2,}/g, ' ')
-    .trim()
-}
-
 // TurnImageAttachment used by TurnOpts / send queue.
 
 /** Match desktop extractClaudeTitle: first user text, stripped, capped at SESSION_TITLE_MAX_CHARS. */
@@ -1081,16 +1069,10 @@ export class SessionRuntime {
   }
 
   private appendUserMessage(session: NodeSessionRecord, opts: TurnOpts): void {
-    // Model still receives full opts.text (incl. collab credential); transcript
-    // stores a redacted copy for task-notification wakes.
-    const displayText =
-      opts.source === 'task-notification'
-        ? redactTaskNotificationForDisplay(opts.text)
-        : opts.text
     const userBlock: TranscriptBlock = {
       id: randomUUID(),
       role: 'user',
-      text: displayText,
+      text: opts.text,
       createdAt: Date.now(),
     }
     session.transcript.push(userBlock)
@@ -1098,7 +1080,7 @@ export class SessionRuntime {
 
     let autoTitle: string | null = null
     if (!session.title || !session.title.trim()) {
-      autoTitle = deriveSessionTitleFromUserText(displayText)
+      autoTitle = deriveSessionTitleFromUserText(opts.text)
       if (autoTitle) session.title = autoTitle
     }
 
@@ -1108,7 +1090,7 @@ export class SessionRuntime {
       eventType: SESSION_DURABLE_EVENT.userMessage,
       payload: {
         blockId: userBlock.id,
-        text: displayText,
+        text: opts.text,
         ...(opts.source ? { source: opts.source } : {}),
       },
       causationRequestId: opts.requestId,

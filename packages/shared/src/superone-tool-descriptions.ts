@@ -152,17 +152,30 @@ export const SESSION_START_DESCRIPTION =
   'Activate one approved collaboration credential. Spawn: create the child and deliver its task. ' +
   'Handoff: create the sibling session and deliver the task; the credential is spent, no mailbox follows. ' +
   'Link: bind the existing peer and wake it via turn injection (not system prompt). ' +
-  'Returns when the peer begins or is notified. Retries are idempotent. Start all credentials back-to-back.'
+  'Returns the peer sessionId once it begins or is notified; message it with session_collab_send. ' +
+  'Retries are idempotent. Start all credentials back-to-back.'
 
 export const SESSION_SEND_DESCRIPTION =
-  'Send a persistent Markdown message through one collaboration mailbox (spawn parent-child or link peers). ' +
-  'Use clientMessageId for retry-safe delivery. The host wakes the peer and later wakes you when it replies. ' +
+  'Send a persistent Markdown message to a collaboration peer: your spawn parent or child, or a linked session. ' +
+  'The host checks that you may message that session. Use clientMessageId for retry-safe delivery. ' +
+  'The host wakes the peer and later wakes you when it replies. ' +
   'After sending, continue other work or end your turn. Never sleep, resend, or poll session_collab_retrieve while waiting.'
 
+export const SESSION_SEND_TO_DESCRIPTION =
+  'Peer session id. Omit only when you have exactly one peer (a spawn child always does: its parent). ' +
+  'session_collab_retrieve lists your peers.'
+
+export const SESSION_SEND_CONTENT_DESCRIPTION =
+  'Mailbox message body in Markdown. Prefer structured Markdown (headings, lists, code fences) for agent-to-agent handoffs; ' +
+  'the SuperOne UI renders it as a Markdown preview.'
+
 export const SESSION_RETRIEVE_DESCRIPTION =
-  'Retrieve queued Markdown messages for this session from one or more collaboration mailboxes. ' +
-  'Call after a collaboration wake, or once before acting on peer input. This is a non-blocking read: status "empty" is not a retry signal. ' +
-  'Do not sleep or poll; end your turn and wait for the next wake.'
+  'Read queued Markdown messages from your collaboration peers and list those peers (session id, name, relation). ' +
+  'Call after a collaboration wake, before acting on peer input, or to find out who you can message. ' +
+  'This is a non-blocking read: status "empty" is not a retry signal. Do not sleep or poll; end your turn and wait for the next wake.'
+
+export const SESSION_RETRIEVE_FROM_DESCRIPTION =
+  'Only read messages from these peer session ids. Omit to read from every peer.'
 
 export const AUTOMATION_LIST_DESCRIPTION =
   "List project automations with schedule and last/next run. Pass id for full prompt, agentConfig, and schedule; filter by query or enabled. Find unknown ids here before automation_apply or automation_delete; check for duplicates before creation when needed."

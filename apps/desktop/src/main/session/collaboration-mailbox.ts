@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import type { CollaborationMailboxMessage } from '@superone/shared/collaboration-mailbox'
-import { CollaborationStore, MAX_MESSAGES_PER_RETRIEVE } from '@superone/runtime/collaboration'
+import { CollaborationStore } from '@superone/runtime/collaboration'
 import { decryptSecret, encryptSecret } from '../crypto/secret-store'
 import { getDb } from '../database'
 
@@ -33,28 +33,4 @@ export function listUnreadCollaborationMessages(sessionId: string): Collaboratio
     WHERE m.recipient_session_id = ? AND m.sequence > COALESCE(c.last_sequence, 0)
     ORDER BY m.created_at, m.rowid
   `).all(sessionId) as CollaborationMailboxMessage[]
-}
-
-interface AuthorizedMailbox {
-  credentialHash: string
-  credential: string
-  peer: { name: string; role: string; title: string; sessionId?: string }
-}
-
-export function readCollaborationMailbox(callerSessionId: string, grants: AuthorizedMailbox[]) {
-  const byHash = new Map(grants.map((grant) => [grant.credentialHash, grant]))
-  const perGrantLimit = Math.max(1, Math.floor(MAX_MESSAGES_PER_RETRIEVE / grants.length))
-  const batches = collaborationStore().readMailbox(callerSessionId, grants.map((grant) => grant.credentialHash), perGrantLimit)
-  return batches.flatMap(({ credentialHash, rows }) => {
-    const { credential, peer } = byHash.get(credentialHash)!
-    return rows.map((row) => ({
-      credential,
-      messageId: row.id,
-      sequence: row.sequence,
-      fromSessionId: row.sender_session_id,
-      content: row.content,
-      createdAt: row.created_at,
-      from: { ...peer, sessionId: peer.sessionId! },
-    }))
-  }).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(0, MAX_MESSAGES_PER_RETRIEVE)
 }

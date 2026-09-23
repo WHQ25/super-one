@@ -61,8 +61,11 @@ import {
   LAUNCH_CWD_DESCRIPTION,
   LAUNCH_WORKTREE_DESCRIPTION,
   SESSION_SEND_DESCRIPTION,
+  SESSION_SEND_TO_DESCRIPTION,
+  SESSION_SEND_CONTENT_DESCRIPTION,
   SESSION_START_DESCRIPTION,
   SESSION_RETRIEVE_DESCRIPTION,
+  SESSION_RETRIEVE_FROM_DESCRIPTION,
   type BuiltInSuperoneToolName,
 } from './superone-mcp-builtin-defs'
 import { configApplyHandler, configReadHandler, type ConfigApplyArgs } from './config-tools'
@@ -426,10 +429,8 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     {
       description: SESSION_SEND_DESCRIPTION,
       inputSchema: {
-        credential: z.string().min(1),
-        content: z.string().min(1).max(100_000).describe(
-          'Mailbox message body in Markdown. Prefer structured Markdown (headings, lists, code fences) for agent-to-agent handoffs; the SuperOne UI renders it as a Markdown preview.',
-        ),
+        to: z.string().min(1).optional().describe(SESSION_SEND_TO_DESCRIPTION),
+        content: z.string().min(1).max(100_000).describe(SESSION_SEND_CONTENT_DESCRIPTION),
         clientMessageId: z.string().optional(),
       },
     },
@@ -442,7 +443,9 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     'session_collab_retrieve',
     {
       description: SESSION_RETRIEVE_DESCRIPTION,
-      inputSchema: { credentials: z.array(z.string().min(1)).min(1).max(32) },
+      inputSchema: {
+        from: z.array(z.string().min(1)).max(32).optional().describe(SESSION_RETRIEVE_FROM_DESCRIPTION),
+      },
     },
     async (args) => {
       const { retrieveSessionMessages } = await import('../session/session-collaboration')

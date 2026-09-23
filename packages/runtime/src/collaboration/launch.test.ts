@@ -22,11 +22,11 @@ describe('collaboration labels', () => {
     expect(deriveCollaborationName({ launchId: 'bot-1' })).toBe('bot-1')
   })
 
-  it('collaborationSystemPrompt embeds credential and parent id', () => {
-    const prompt = collaborationSystemPrompt('s1sc_secret', 'parent-1')
+  it('collaborationSystemPrompt names the parent and carries no secret', () => {
+    const prompt = collaborationSystemPrompt('parent-1')
     expect(prompt).toContain('parent-1')
-    expect(prompt).toContain('s1sc_secret')
     expect(prompt).toContain('session_collab_send')
+    expect(prompt).not.toMatch(/credential|s1sc_/)
   })
 })
 

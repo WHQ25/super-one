@@ -2965,11 +2965,31 @@ async function handleCollaborationStart(payload: unknown, ctx: RpcContext): Prom
   }
 }
 
+/**
+ * Mailbox RPCs act as the calling session: the host authorizes by the session
+ * pair, so the caller must hold that session's control lease. Retrieve advances
+ * the session's read cursor, so it is gated like send.
+ */
+function assertMailboxLease(p: Record<string, unknown>, sessionId: string, ctx: RpcContext): RpcResult | null {
+  const leaseId = String(p.leaseId ?? '').trim()
+  if (!leaseId) return { error: { code: 'invalid_argument', message: 'leaseId required' } }
+  try {
+    ctx.leases.assertValid({
+      resource: { environmentId: ctx.identity.environmentId, sessionId },
+      leaseId,
+      generation: String(p.generation ?? ''),
+      holderClientId: ctx.client.clientSessionId,
+    })
+    return null
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
 function handleCollaborationSend(payload: unknown, ctx: RpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
   const p = asRecord(payload)
-  const credential = String(p.credential ?? '')
   const sessionId = String(p.sessionId ?? p.fromSessionId ?? '')
   const content =
     typeof p.content === 'string'
@@ -2979,31 +2999,18 @@ function handleCollaborationSend(payload: unknown, ctx: RpcContext): RpcResult {
           ? p.body
           : JSON.stringify(p.body)
         : ''
-  if (!credential) {
-    return { error: { code: 'invalid_argument', message: 'credential required' } }
-  }
   if (!sessionId) {
     return { error: { code: 'invalid_argument', message: 'sessionId required' } }
   }
-  // Credential already binds parent/child endpoints; still require control lease
-  // on the calling session so a passive subscriber cannot inject mailbox traffic.
-  const leaseId = String(p.leaseId ?? '').trim()
-  if (!leaseId) {
-    return { error: { code: 'invalid_argument', message: 'leaseId required' } }
-  }
+  const leaseDenied = assertMailboxLease(p, sessionId, ctx)
+  if (leaseDenied) return leaseDenied
   try {
-    ctx.leases.assertValid({
-      resource: { environmentId: ctx.identity.environmentId, sessionId },
-      leaseId,
-      generation: String(p.generation ?? ''),
-      holderClientId: ctx.client.clientSessionId,
-    })
     return {
       result: ctx.collaboration.send({
-        credential,
+        sessionId,
+        to: typeof p.to === 'string' ? p.to : undefined,
         content,
         clientMessageId: typeof p.clientMessageId === 'string' ? p.clientMessageId : undefined,
-        sessionId,
       }),
     }
   } catch (err) {
@@ -3012,22 +3019,20 @@ function handleCollaborationSend(payload: unknown, ctx: RpcContext): RpcResult {
 }
 
 function handleCollaborationRetrieve(payload: unknown, ctx: RpcContext): RpcResult {
-  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
   const p = asRecord(payload)
-  const credential = String(p.credential ?? '')
   const sessionId = String(p.sessionId ?? '')
-  if (!credential) {
-    return { error: { code: 'invalid_argument', message: 'credential required' } }
-  }
   if (!sessionId) {
     return { error: { code: 'invalid_argument', message: 'sessionId required' } }
   }
+  const leaseDenied = assertMailboxLease(p, sessionId, ctx)
+  if (leaseDenied) return leaseDenied
   try {
     return {
       result: ctx.collaboration.retrieve({
-        credential,
         sessionId,
+        from: Array.isArray(p.from) ? p.from.filter((id): id is string => typeof id === 'string') : undefined,
         max: typeof p.max === 'number' ? p.max : undefined,
       }),
     }

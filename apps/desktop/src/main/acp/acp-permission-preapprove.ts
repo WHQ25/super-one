@@ -96,7 +96,7 @@ export type AcpPermissionDecision =
 
 /**
  * Full ACP permission decision for a tool call.
- * Main-thread-only SuperOne tools (session_rename / session_tag) are denied
+ * Main-thread-only SuperOne tools (MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES) are denied
  * when the caller is a Grok/ACP child session. They are auto-allowed from the
  * parent session with allow-once so Grok cannot persist a server/tool grant
  * that child sessions would inherit.

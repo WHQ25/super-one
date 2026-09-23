@@ -85,9 +85,10 @@ Permission helpers must recognize **all three spellings** when deciding host-own
 (`isBuiltInSuperoneTool`, `isBuiltInFromGrokName` in the Grok permission design). Adding a tool
 means adding the **bare** name once; do not special-case a fourth spelling.
 
-`MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES` (`session_rename`, `session_tag`): parent sessions call
-them as ordinary host-owned tools; each harness's child path denies them without a permission
-card (`codex-turn.ts` `CHILD_THREAD_DISALLOWED_SUPERONE_TOOLS`, ACP backend child deny test).
+`MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES`: parent sessions call them as ordinary host-owned tools;
+each harness's child path denies them without a permission card (`codex-turn.ts`
+`CHILD_THREAD_DISALLOWED_SUPERONE_TOOLS`, ACP backend child deny test). Grok/ACP subagents can
+skip the permission request, so executors also call `denyMainThreadOnlyIfSubagent`.
 
 Attach recipes: `superone-harness` → Host SuperOne tools. This file is how the tool gets a
 descriptor and a handler.

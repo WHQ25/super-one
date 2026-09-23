@@ -267,7 +267,6 @@ const LAUNCHES_TWO = {
 };
 
 const CRED_A = "s1sc_demo_credential_aaaa";
-const CRED_B = "s1sc_demo_credential_bbbb";
 
 const START_RESULT = {
   status: "started",
@@ -672,19 +671,35 @@ export const CollabStart: Story = {
   ),
 };
 
+const CHILD_PEER = {
+  sessionId: START_RESULT.sessionId,
+  name: "DiffBot",
+  role: "Reviewer",
+  title: "DiffBot - Reviewer",
+  relation: "child",
+};
+
+const LINK_PEER = {
+  sessionId: "f0e1d2c3-b4a5-6789-0123-456789abcdef",
+  name: "API review",
+  role: "Peer",
+  title: "API review",
+  relation: "link",
+};
+
 export const CollabSend: Story = {
   name: "session_collab_send",
   render: () => (
     <StoryShell>
       {block(
         "session_collab_send",
-        { credential: CRED_A, content: "Please reply with status." },
+        { to: CHILD_PEER.sessionId, content: "Please reply with status." },
         { status: "streaming" },
       )}
       {block(
         "session_collab_send",
         {
-          credential: CRED_A,
+          to: CHILD_PEER.sessionId,
           content: "The review is complete; see the findings below.",
         },
         {
@@ -692,6 +707,20 @@ export const CollabSend: Story = {
             status: "sent",
             messageId: "msg-1",
             sequence: 1,
+            reused: false,
+            to: CHILD_PEER,
+            peerSessionId: CHILD_PEER.sessionId,
+          }),
+        },
+      )}
+      {block(
+        "session_collab_send",
+        { content: "Which one of you owns the migration?" },
+        {
+          isError: true,
+          result: JSON.stringify({
+            status: "error",
+            message: `You have several collaboration peers; pass \`to\` with one of their session ids: ${CHILD_PEER.sessionId} ("${CHILD_PEER.title}", child); ${LINK_PEER.sessionId} ("${LINK_PEER.title}", link)`,
           }),
         },
       )}
@@ -703,19 +732,44 @@ export const CollabRetrieve: Story = {
   name: "session_collab_retrieve",
   render: () => (
     <StoryShell>
+      {block("session_collab_retrieve", {}, { status: "streaming" })}
       {block(
         "session_collab_retrieve",
-        { credentials: [CRED_A] },
-        { status: "streaming" },
-      )}
-      {block(
-        "session_collab_retrieve",
-        { credentials: [CRED_A] },
+        {},
         {
           result: JSON.stringify({
             status: "messages",
-            peers: LAUNCHES_ONE.launches,
+            peers: [CHILD_PEER, LINK_PEER],
+            messages: [
+              {
+                messageId: "msg-2",
+                sequence: 2,
+                fromSessionId: CHILD_PEER.sessionId,
+                from: CHILD_PEER,
+                content: "## Review\n- `session.ts:42` drops the error\n- Tests pass",
+                createdAt: "2026-09-23T08:00:00.000Z",
+              },
+              {
+                messageId: "msg-3",
+                sequence: 1,
+                fromSessionId: LINK_PEER.sessionId,
+                from: LINK_PEER,
+                content: "The request body shape is confirmed.",
+                createdAt: "2026-09-23T08:01:00.000Z",
+              },
+            ],
+          }),
+        },
+      )}
+      {block(
+        "session_collab_retrieve",
+        { from: [LINK_PEER.sessionId] },
+        {
+          result: JSON.stringify({
+            status: "empty",
+            peers: [CHILD_PEER, LINK_PEER],
             messages: [],
+            hint: "No peer has replied yet.",
           }),
         },
       )}

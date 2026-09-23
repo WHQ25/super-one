@@ -108,6 +108,31 @@ export class CollaborationStore {
     `).all() as CollaborationGrantRow[]
   }
 
+  /**
+   * Open mailbox channels of `sessionId`: spawn grants with a bound child and
+   * started link grants, oldest first. Handoff grants are never channels.
+   */
+  channelsFor(sessionId: string): CollaborationGrantRow[] {
+    return this.db.prepare(`
+      SELECT ${GRANT_COLUMNS} FROM session_collaboration_grants
+      WHERE (parent_session_id = ? OR child_session_id = ?)
+        AND child_session_id IS NOT NULL
+        AND (COALESCE(kind, 'spawn') = 'spawn' OR (kind = 'link' AND started_at IS NOT NULL))
+      ORDER BY created_at, rowid
+    `).all(sessionId, sessionId) as CollaborationGrantRow[]
+  }
+
+  /** True when one of the two sessions was created by a handoff from the other. */
+  isHandoffPair(a: string, b: string): boolean {
+    return Boolean(this.db.prepare(`
+      SELECT 1 FROM session_collaboration_grants
+      WHERE kind = 'handoff' AND (
+        (parent_session_id = ? AND json_extract(config_json, '$.handoffSessionId') = ?)
+        OR (parent_session_id = ? AND json_extract(config_json, '$.handoffSessionId') = ?)
+      ) LIMIT 1
+    `).get(a, b, b, a))
+  }
+
   findLinkGrant(initiatorSessionId: string, peerSessionId: string): CollaborationGrantRow | null {
     return (this.db.prepare(`
       SELECT ${GRANT_COLUMNS} FROM session_collaboration_grants
@@ -283,7 +308,7 @@ export class CollaborationStore {
 
   /**
    * Drain unread messages addressed to `sessionId` across grants, advancing this
-   * endpoint's cursor. Batches keep the order of `credentialHashes`.
+   * endpoint's cursor. Batches keep the order of `credentialHashes` (grant keys).
    */
   readMailbox(sessionId: string, credentialHashes: string[], limitPerGrant: number): MailboxBatch[] {
     return this.transaction(() => credentialHashes.flatMap((credentialHash) => {

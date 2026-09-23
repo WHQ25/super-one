@@ -51,7 +51,6 @@ export function describePeerForCaller(grant: GrantRow, callerSessionId: string):
   return describeGrantPeerForCaller(grant, callerSessionId, sessionTitle)
 }
 
-
 export function resolveCodexServiceTier(
   agentId: string,
   config: SessionAgentLaunchConfig,
@@ -64,7 +63,6 @@ export function resolveCodexServiceTier(
   const model = profile.models.find((item) => item.id === config.model)
   return findCodexFastServiceTier(model)?.id ?? null
 }
-
 
 /** Resolve a live session, resuming a passive one when the process has released it. */
 export function resolveLiveSession(host: SessionManager, sessionId: string): Session | null {
@@ -104,11 +102,8 @@ export function isCollaborationTargetReadOnly(sessionId: string, live: Session |
   }
 }
 
-export async function wakeCollaborationPeer(
-  host: SessionManager,
-  sessionId: string,
-  credential: string,
-): Promise<void> {
+/** Start a host turn in `sessionId`; queues behind an in-flight turn. Best-effort. */
+async function wakeSession(host: SessionManager, sessionId: string, text: string): Promise<void> {
   const session = resolveLiveSession(host, sessionId)
   if (!session) {
     log.debug('[session-collaboration] peer not available for wake sid=%s', sessionId)
@@ -118,45 +113,31 @@ export async function wakeCollaborationPeer(
     log.debug('[session-collaboration] skip wake; worktree removed sid=%s', sessionId)
     return
   }
-  // Always wake — injectTaskNotification already queues behind an in-flight turn.
   try {
-    await session.injectTaskNotification(mailboxWakeText(credential))
+    await session.injectTaskNotification(text)
   } catch (error) {
     log.warn(
-      '[session-collaboration] mailbox wake failed sid=%s: %s',
+      '[session-collaboration] wake failed sid=%s: %s',
       sessionId,
       error instanceof Error ? error.message : String(error),
     )
   }
 }
 
+export function wakeCollaborationPeer(host: SessionManager, sessionId: string, fromSessionId: string): Promise<void> {
+  const fromTitle = sessionTitle(fromSessionId)?.trim() || fromSessionId.slice(0, 8)
+  return wakeSession(host, sessionId, mailboxWakeText({ sessionId: fromSessionId, title: fromTitle }))
+}
 
-export async function wakeLinkPeer(
+export function wakeLinkPeer(
   host: SessionManager,
   sessionId: string,
-  credential: string,
-  initiatorSessionId: string,
-  initiatorTitle: string,
+  grant: GrantRow,
   hasOpening: boolean,
 ): Promise<void> {
-  const session = resolveLiveSession(host, sessionId)
-  if (!session) {
-    log.debug('[session-collaboration] link peer not available for wake sid=%s', sessionId)
-    return
-  }
-  if (isCollaborationTargetReadOnly(sessionId, session)) {
-    log.debug('[session-collaboration] skip link wake; worktree removed sid=%s', sessionId)
-    return
-  }
-  try {
-    await session.injectTaskNotification(
-      linkActivationWakeText({ credential, initiatorSessionId, initiatorTitle, hasOpening }),
-    )
-  } catch (error) {
-    log.warn(
-      '[session-collaboration] link wake failed sid=%s: %s',
-      sessionId,
-      error instanceof Error ? error.message : String(error),
-    )
-  }
+  return wakeSession(host, sessionId, linkActivationWakeText({
+    initiatorSessionId: grant.parent_session_id,
+    initiatorTitle: initiatorTitleOf(grant),
+    hasOpening,
+  }))
 }

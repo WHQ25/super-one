@@ -14,7 +14,6 @@ import { ProviderStore } from '../provider/provider-store'
 import { ProjectRegistry } from '../workspace/project-registry'
 import { WorkspaceGitService } from '../workspace/git-service'
 import { CollaborationService } from './collaboration'
-import { redactTaskNotificationForDisplay } from '@superone/runtime/session'
 
 const dirs: string[] = []
 
@@ -67,16 +66,7 @@ function boot() {
 }
 
 describe('collab wake + agents confirm', () => {
-  it('redactTaskNotificationForDisplay strips s1sc credentials', () => {
-    const secret = 's1sc_abcdefghijklmnopqrstuvwxyz0123456789'
-    const full = `A collaboration mailbox message is ready. Call session_collab_retrieve with credential ${JSON.stringify(secret)} to receive it.`
-    const redacted = redactTaskNotificationForDisplay(full)
-    expect(redacted).not.toContain(secret)
-    expect(redacted).not.toContain('s1sc_')
-    expect(redacted).toMatch(/session_collab_retrieve/i)
-  })
-
-  it('mailbox send wakes peer with task-notification; transcript redacts credential', async () => {
+  it('mailbox send wakes the peer with a sender-named, secret-free task notification', async () => {
     const { collab, sessions, projects, turns } = boot()
     const projectDir = mkdtempSync(join(tmpdir(), 'collab-wake-proj-'))
     dirs.push(projectDir)
@@ -105,8 +95,8 @@ describe('collab wake + agents confirm', () => {
     turns.length = 0
 
     collab.send({
-      credential,
       sessionId: parent.sessionId,
+      to: started.sessionId,
       content: '## hello peer',
     })
 
@@ -117,19 +107,11 @@ describe('collab wake + agents confirm', () => {
     }
     const wake = turns.find((t) => t.sessionId === started.sessionId)
     expect(wake).toBeTruthy()
-    expect(wake!.text).toContain(credential)
+    expect(wake!.text).toMatch(/^A collaboration mailbox message is ready\./)
+    expect(wake!.text).toContain(parent.sessionId)
     expect(wake!.text).toMatch(/session_collab_retrieve/)
-
-    // Transcript must not leak the credential.
-    for (let i = 0; i < 50; i++) {
-      const child = sessions.get(started.sessionId)
-      if (child?.transcript.some((b) => b.role === 'user')) break
-      await new Promise((r) => setTimeout(r, 20))
-    }
-    const child = sessions.get(started.sessionId)!
-    const userText = child.transcript.filter((b) => b.role === 'user').map((b) => b.text).join('\n')
-    expect(userText).not.toContain(credential)
-    expect(userText).not.toMatch(/\bs1sc_/)
+    expect(wake!.text).not.toContain(credential)
+    expect(wake!.text).not.toMatch(/\bs1sc_/)
   })
 
   it('requireUserConfirm emits session_agents_confirm; accept creates grants', async () => {

@@ -3,7 +3,7 @@ import {
   TASK_NOTIFICATION_MAX_ITEMS,
   TaskNotificationFlush,
   TaskNotificationQueue,
-  redactTaskNotificationForDisplay,
+  taskNotificationDisplayText,
   taskNotificationRequest,
 } from './task-notification-queue'
 
@@ -70,17 +70,7 @@ describe('TaskNotificationQueue', () => {
     expect(req.clientMessageId).toMatch(/^task-notify-/)
   })
 
-  it('redactTaskNotificationForDisplay strips collaboration credentials', () => {
-    const secret = 's1sc_abcdefghijklmnopqrstuvwxyz0123456789'
-    const full = `A collaboration mailbox message is ready. Call session_collab_retrieve with credential ${JSON.stringify(secret)} to receive it.`
-    const redacted = redactTaskNotificationForDisplay(full)
-    expect(redacted).not.toContain(secret)
-    expect(redacted).not.toContain('s1sc_')
-    expect(redacted).toMatch(/collaboration mailbox message is ready/i)
-    expect(redacted).toMatch(/session_collab_retrieve/i)
-  })
-
-  it('redactTaskNotificationForDisplay strips Grok cron system-reminder framing', () => {
+  it('taskNotificationDisplayText strips Grok cron system-reminder framing', () => {
     const framed = [
       '<system-reminder>',
       'This is a scheduled task execution (task task-1, every 5m, recurring).',
@@ -89,7 +79,7 @@ describe('TaskNotificationQueue', () => {
       '',
       '/pr-babysit check',
     ].join('\n')
-    expect(redactTaskNotificationForDisplay(framed)).toBe('/pr-babysit check')
+    expect(taskNotificationDisplayText(framed)).toBe('/pr-babysit check')
   })
 })
 

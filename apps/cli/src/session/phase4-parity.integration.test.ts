@@ -195,8 +195,8 @@ describe('Phase 4 harness parity + collaboration', () => {
     expect(startedAgain.reused).toBe(true)
 
     const sent = (await client.rpc('collaboration.send', {
-      credential,
       sessionId: parent.sessionId,
+      to: started.sessionId,
       content: '## Handoff\nplease continue',
       clientMessageId: 'msg-1',
       leaseId: lease.leaseId,
@@ -206,8 +206,8 @@ describe('Phase 4 harness parity + collaboration', () => {
     expect(sent.reused).toBe(false)
 
     const sentAgain = (await client.rpc('collaboration.send', {
-      credential,
       sessionId: parent.sessionId,
+      to: started.sessionId,
       content: '## Handoff\nplease continue',
       clientMessageId: 'msg-1',
       leaseId: lease.leaseId,
@@ -216,10 +216,18 @@ describe('Phase 4 harness parity + collaboration', () => {
     expect(sentAgain.reused).toBe(true)
     expect(sentAgain.messageId).toBe(sent.messageId)
 
+    // Retrieve drains the child's inbox, so it needs the child's control lease.
+    await expect(client.rpc('collaboration.retrieve', { sessionId: started.sessionId }))
+      .rejects.toThrow(/leaseId required/)
+    const childLease = (await client.rpc('session.acquireControl', {
+      sessionId: started.sessionId,
+      ttlMs: 60_000,
+    })) as { leaseId: string; generation: string }
     const retrieved = (await client.rpc('collaboration.retrieve', {
-      credential,
       sessionId: started.sessionId,
       max: 10,
+      leaseId: childLease.leaseId,
+      generation: childLease.generation,
     })) as {
       status: string
       messages: Array<{ messageId: string; content: string; sequence: number }>
@@ -230,8 +238,9 @@ describe('Phase 4 harness parity + collaboration', () => {
 
     // Cursor advanced — second retrieve is empty.
     const empty = (await client.rpc('collaboration.retrieve', {
-      credential,
       sessionId: started.sessionId,
+      leaseId: childLease.leaseId,
+      generation: childLease.generation,
     })) as { status: string; messages: unknown[] }
     expect(empty.status).toBe('empty')
     expect(empty.messages).toHaveLength(0)

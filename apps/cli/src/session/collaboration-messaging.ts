@@ -1,54 +1,52 @@
 import {
-  CollaborationError,
   EMPTY_MAILBOX_HINT,
-  MAX_MESSAGES_PER_RETRIEVE,
-  assertMailboxEndpoint,
-  hashCollaborationCredential,
+  NO_PEERS_HINT,
   mailboxWakeText,
   normalizeMailboxContent,
-  resolveMailboxRecipient,
+  readCallerMailbox,
+  resolveSendChannel,
+  type CollaborationPeer,
+  type MailboxMessage,
 } from '@superone/runtime/collaboration'
 import type { CollaborationContext } from './collaboration-context'
 
 export interface CollaborationSendInput {
-  credential: string
+  /** Calling endpoint; the host authorizes by it. */
+  sessionId: string
+  /** Peer session id. Optional when the caller has exactly one peer. */
+  to?: string
   content: string
   clientMessageId?: string
-  /** Calling endpoint (parent or child). */
-  sessionId: string
 }
 
 export interface CollaborationRetrieveInput {
-  credential?: string
-  /** Desktop/MCP tool shape: drain several mailboxes in one call. */
-  credentials?: string[]
+  /** Calling endpoint; the host authorizes by it. */
   sessionId: string
+  /** Only drain messages from these peer session ids. Default: every peer. */
+  from?: string[]
   max?: number
 }
 
 export interface CollaborationRetrieveResult {
   status: 'messages' | 'empty'
-  messages: Array<{
-    messageId: string
-    sequence: number
-    fromSessionId: string
-    content: string
-    createdAt: string
-    credential?: string
-  }>
+  messages: MailboxMessage[]
+  peers: CollaborationPeer[]
   hint?: string
 }
 
-async function wakePeer(ctx: CollaborationContext, sessionId: string, credential: string): Promise<void> {
+function sessionTitle(ctx: CollaborationContext) {
+  return (sessionId: string) => ctx.deps.sessions.get(sessionId)?.title ?? null
+}
+
+async function wakePeer(ctx: CollaborationContext, sessionId: string, fromSessionId: string): Promise<void> {
   if (!ctx.deps.sessions.get(sessionId)) return
+  const fromTitle = ctx.deps.sessions.get(fromSessionId)?.title?.trim() || fromSessionId.slice(0, 8)
   try {
-    // Host-origin task_notification: full credential reaches the model;
-    // SessionRuntime redacts it in the durable transcript (desktop parity).
     await ctx.deps.sessions.sendWithoutLease({
       sessionId,
-      text: mailboxWakeText(credential),
+      text: mailboxWakeText({ sessionId: fromSessionId, title: fromTitle }),
       source: 'task-notification',
-      requestId: `collab-wake-${hashCollaborationCredential(credential).slice(0, 12)}-${Date.now()}`,
+      requestId: `collab-wake-${fromSessionId.slice(0, 8)}-${Date.now()}`,
     })
   } catch {
     /* best-effort */
@@ -60,14 +58,14 @@ export function sendCollaborationMessage(ctx: CollaborationContext, input: Colla
   messageId: string
   sequence: number
   reused: boolean
+  to: CollaborationPeer
   peerSessionId: string
 } {
-  const grant = ctx.store.grantByCredential(input.credential)
-  if (!grant) throw new CollaborationError('Invalid collaboration credential', 'not_found')
-  const recipientSessionId = resolveMailboxRecipient(grant, input.sessionId)
+  const channel = resolveSendChannel(ctx.store, input.sessionId, input.to, sessionTitle(ctx))
   const content = normalizeMailboxContent(input.content)
+  const recipientSessionId = channel.peer.sessionId
   const insert = ctx.store.appendMessage({
-    credentialHash: grant.credential_hash,
+    credentialHash: channel.grant.credential_hash,
     senderSessionId: input.sessionId,
     recipientSessionId,
     clientMessageId: input.clientMessageId,
@@ -81,13 +79,13 @@ export function sendCollaborationMessage(ctx: CollaborationContext, input: Colla
       eventType: 'collaboration.message',
       payload: {
         messageId: insert.row.id,
-        grantId: grant.credential_hash,
+        grantId: channel.grant.credential_hash,
         toSessionId: recipientSessionId,
         sequence: insert.row.sequence,
       },
     })
     // Best-effort peer wake via host-initiated turn (non-blocking).
-    void wakePeer(ctx, recipientSessionId, input.credential)
+    void wakePeer(ctx, recipientSessionId, input.sessionId)
   }
 
   return {
@@ -95,6 +93,7 @@ export function sendCollaborationMessage(ctx: CollaborationContext, input: Colla
     messageId: insert.row.id,
     sequence: insert.row.sequence,
     reused: insert.reused,
+    to: channel.peer,
     peerSessionId: recipientSessionId,
   }
 }
@@ -103,34 +102,12 @@ export function retrieveCollaborationMessages(
   ctx: CollaborationContext,
   input: CollaborationRetrieveInput,
 ): CollaborationRetrieveResult {
-  const credentials = [
-    ...(typeof input.credential === 'string' && input.credential.trim() ? [input.credential.trim()] : []),
-    ...(Array.isArray(input.credentials)
-      ? input.credentials.filter((c): c is string => typeof c === 'string' && c.trim().length > 0)
-      : []),
-  ]
-  if (credentials.length === 0) throw new CollaborationError('credentials required', 'invalid_argument')
-
-  const max = Math.min(
-    MAX_MESSAGES_PER_RETRIEVE,
-    Math.max(1, typeof input.max === 'number' && Number.isFinite(input.max) ? Math.floor(input.max) : MAX_MESSAGES_PER_RETRIEVE),
+  const { messages, peers } = readCallerMailbox(
+    ctx.store,
+    input.sessionId,
+    { from: input.from, limit: input.max },
+    sessionTitle(ctx),
   )
-  const credentialByHash = new Map(credentials.map((credential) => {
-    const grant = ctx.store.grantByCredential(credential)
-    if (!grant) throw new CollaborationError('Invalid collaboration credential', 'not_found')
-    assertMailboxEndpoint(grant, input.sessionId)
-    return [grant.credential_hash, credential] as const
-  }))
-  const messages = ctx.store.readMailbox(input.sessionId, [...credentialByHash.keys()], max)
-    .flatMap(({ credentialHash, rows }) => rows.map((row) => ({
-      messageId: row.id,
-      sequence: row.sequence,
-      fromSessionId: row.sender_session_id,
-      content: row.content,
-      createdAt: row.created_at,
-      ...(credentials.length > 1 ? { credential: credentialByHash.get(credentialHash)! } : {}),
-    })))
-
-  if (messages.length === 0) return { status: 'empty', messages: [], hint: EMPTY_MAILBOX_HINT }
-  return { status: 'messages', messages }
+  if (messages.length > 0) return { status: 'messages', messages, peers }
+  return { status: 'empty', messages: [], peers, hint: peers.length > 0 ? EMPTY_MAILBOX_HINT : NO_PEERS_HINT }
 }

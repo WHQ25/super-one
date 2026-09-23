@@ -26,7 +26,6 @@ import { listSessionAgentProfiles } from './agent-profiles'
 import { collaborationStore as store, notifyCollaborationMailboxChanged } from './collaboration-mailbox'
 import { ensureChildProject, isManagedWorktreePath, resolveCwd } from './collaboration-child-project'
 import {
-  initiatorTitleOf,
   isCollaborationTargetReadOnly,
   notifyCollaborationSessionsChanged,
   resolveCodexServiceTier,
@@ -153,7 +152,6 @@ export async function startSessionAgent(
     if (!peerRow) {
       return toolResult({ status: 'error', message: `Peer session no longer exists: ${peerSessionId}` }, true)
     }
-    const initiatorTitle = initiatorTitleOf(grant)
     const alreadyStarted = Boolean(grant.started_at)
     const livePeer = host.getSession(peerSessionId)
     if (isCollaborationTargetReadOnly(peerSessionId, livePeer)) {
@@ -167,14 +165,14 @@ export async function startSessionAgent(
     const hasOpening = opening.length > 0 && !alreadyStarted
     if (hasOpening) {
       // Deliver opening as a mailbox message (not system prompt).
-      await deliverLinkOpening(grant, credential, host)
+      await deliverLinkOpening(grant, host)
     } else if (!alreadyStarted) {
-      // No opening body — still wake the peer with credential instructions.
-      void wakeLinkPeer(host, peerSessionId, credential, grant.parent_session_id, initiatorTitle, false)
+      // No opening body — still wake the peer so it learns about the link.
+      void wakeLinkPeer(host, peerSessionId, grant, false)
       store().markTaskSent(grant.credential_hash)
     } else {
       // Idempotent retry: re-wake without duplicating mailbox.
-      void wakeLinkPeer(host, peerSessionId, credential, grant.parent_session_id, initiatorTitle, false)
+      void wakeLinkPeer(host, peerSessionId, grant, false)
     }
     const peer = describeLaunchedPeer(grant)
     return toolResult({
@@ -317,7 +315,7 @@ export async function startSessionAgent(
       // Handoff is one-way by construction: never hand the receiver a credential.
       ...(isHandoff
         ? {}
-        : { systemPromptAppend: collaborationSystemPrompt(credential, grant.parent_session_id) }),
+        : { systemPromptAppend: collaborationSystemPrompt(grant.parent_session_id) }),
     })
     if (previousActiveId && previousActiveId !== childSessionId) {
       try {
@@ -397,11 +395,7 @@ export async function startSessionAgent(
 /**
  * Deliver link opening via mailbox + turn wake. Never touches system prompt.
  */
-async function deliverLinkOpening(
-  grant: GrantRow,
-  credential: string,
-  host: SessionManager,
-): Promise<void> {
+async function deliverLinkOpening(grant: GrantRow, host: SessionManager): Promise<void> {
   if (grant.task_sent === 1) return
   if (!grant.child_session_id) return
   const content = grant.task.trim()
@@ -412,5 +406,5 @@ async function deliverLinkOpening(
   const recipientSessionId = grant.child_session_id
   store().appendLinkOpening(grant, recipientSessionId, content)
   notifyCollaborationMailboxChanged(recipientSessionId)
-  void wakeLinkPeer(host, recipientSessionId, credential, grant.parent_session_id, initiatorTitleOf(grant), true)
+  void wakeLinkPeer(host, recipientSessionId, grant, true)
 }

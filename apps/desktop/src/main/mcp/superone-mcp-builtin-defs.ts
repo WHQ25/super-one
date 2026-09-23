@@ -86,7 +86,10 @@ import {
   LAUNCH_BRANCH_NAME_DESCRIPTION,
   SESSION_START_DESCRIPTION,
   SESSION_SEND_DESCRIPTION,
+  SESSION_SEND_TO_DESCRIPTION,
+  SESSION_SEND_CONTENT_DESCRIPTION,
   SESSION_RETRIEVE_DESCRIPTION,
+  SESSION_RETRIEVE_FROM_DESCRIPTION,
   AUTOMATION_LIST_DESCRIPTION,
   AUTOMATION_APPLY_DESCRIPTION,
   AUTOMATION_DELETE_DESCRIPTION,
@@ -281,16 +284,11 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        credential: { type: 'string' },
-        content: {
-          type: 'string',
-          maxLength: 100000,
-          description:
-            'Mailbox message body in Markdown. Prefer structured Markdown (headings, lists, code fences) for agent-to-agent handoffs; the SuperOne UI renders it as a Markdown preview.',
-        },
+        to: { type: 'string', description: SESSION_SEND_TO_DESCRIPTION },
+        content: { type: 'string', maxLength: 100000, description: SESSION_SEND_CONTENT_DESCRIPTION },
         clientMessageId: { type: 'string' },
       },
-      required: ['credential', 'content'],
+      required: ['content'],
       additionalProperties: false,
     },
   },
@@ -300,9 +298,8 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        credentials: { type: 'array', minItems: 1, maxItems: 32, items: { type: 'string' } },
+        from: { type: 'array', maxItems: 32, items: { type: 'string' }, description: SESSION_RETRIEVE_FROM_DESCRIPTION },
       },
-      required: ['credentials'],
       additionalProperties: false,
     },
   },

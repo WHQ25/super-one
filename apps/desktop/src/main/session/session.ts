@@ -65,7 +65,7 @@ import { grokPromptIndexForUserMessage } from '../acp/acp-xai-session-ops'
 import { collectChangedMessageIds } from './message-dirty'
 import { messageDialectFor } from './message-dialect'
 import {
-  redactTaskNotificationForDisplay,
+  taskNotificationDisplayText,
   taskNotificationRequest,
   isCollaborationMailboxNotification,
 } from './task-notification-queue'
@@ -2262,12 +2262,11 @@ export class Session implements SessionContract {
     if (isCollaborationMailboxNotification(request)) return
     // Transcript providerId is local|remote only; host wakes are local-origin bubbles.
     const messageOrigin = providerOrigin === 'remote' ? 'remote' : 'local'
-    // Provider still receives request.content (may include collab credential);
-    // persist a redacted bubble so DB / remote snapshot / export never leak it.
+    // Provider still receives the full request.content; the bubble drops host framing.
     const displayRequest = request.source === 'task-notification' && !request.userMessageContent
       ? {
           ...request,
-          userMessageContent: [{ type: 'text' as const, text: redactTaskNotificationForDisplay(request.content) }],
+          userMessageContent: [{ type: 'text' as const, text: taskNotificationDisplayText(request.content) }],
         }
       : request
     const userMsg = buildClaudeUserMessage(displayRequest, messageOrigin)

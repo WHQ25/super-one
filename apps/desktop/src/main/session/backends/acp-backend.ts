@@ -861,7 +861,7 @@ export class AcpBackend implements SessionBackend {
     }
     if (decision.kind === 'auto-allow') {
       // Built-ins (except main-thread-only): prefer allow_always / allow-always-mcp
-      // so Grok stops re-prompting. session_rename / session_tag stay allow-once
+      // so Grok stops re-prompting. Main-thread-only tools stay allow-once
       // so a parent grant is not inherited by Grok child sessions.
       if (!decision.alwaysAllow && this.startOpts?.sessionId) {
         grantParentMainThreadCall(this.startOpts.sessionId)

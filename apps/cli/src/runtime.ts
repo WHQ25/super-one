@@ -170,27 +170,23 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
       send: async (sessionId, args) => {
         if (!collaborationRef) throw Object.assign(new Error('collab not ready'), { code: 'failed_precondition' })
         const a = (args && typeof args === 'object' ? args : {}) as {
-          credential?: string
+          to?: string
           content?: string
           clientMessageId?: string
         }
         return collaborationRef.send({
           sessionId,
-          credential: String(a.credential ?? ''),
+          to: typeof a.to === 'string' ? a.to : undefined,
           content: String(a.content ?? ''),
           clientMessageId: typeof a.clientMessageId === 'string' ? a.clientMessageId : undefined,
         })
       },
       retrieve: async (sessionId, args) => {
         if (!collaborationRef) throw Object.assign(new Error('collab not ready'), { code: 'failed_precondition' })
-        const a = (args && typeof args === 'object' ? args : {}) as {
-          credentials?: string[]
-          credential?: string
-        }
+        const a = (args && typeof args === 'object' ? args : {}) as { from?: unknown }
         return collaborationRef.retrieve({
           sessionId,
-          credentials: Array.isArray(a.credentials) ? a.credentials : undefined,
-          credential: typeof a.credential === 'string' ? a.credential : undefined,
+          from: Array.isArray(a.from) ? a.from.filter((id): id is string => typeof id === 'string') : undefined,
         })
       },
     },

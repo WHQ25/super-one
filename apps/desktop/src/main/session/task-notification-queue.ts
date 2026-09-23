@@ -207,19 +207,14 @@ export function taskNotificationRequest(content: string): SendMessageRequest {
 }
 
 /**
- * Strip collaboration bearer credentials from a host wake prompt before the
- * user bubble is persisted / broadcast. The full prompt still goes to the model
- * via SendMessageRequest.content.
+ * The user bubble for a host wake prompt. The full prompt still goes to the
+ * model via SendMessageRequest.content.
  */
-export function redactTaskNotificationForDisplay(content: string): string {
+export function taskNotificationDisplayText(content: string): string {
   return content
     // Grok cron inject wraps the user prompt in `<system-reminder>`; the bubble
     // should show only the scheduled prompt, matching Grok TUI's cron_prompt block.
     .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/gi, '')
-    // `with credential "s1sc_…"` or `'…'` (JSON.stringify / plain)
-    .replace(/\s+with credential\s+(?:"[^"]*"|'[^']*')/gi, '')
-    // Bare token if a harness rewrites the template
-    .replace(/\bs1sc_[A-Za-z0-9_-]+/g, '[redacted]')
     .replace(/\s{2,}/g, ' ')
     .trim()
 }

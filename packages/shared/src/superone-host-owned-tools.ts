@@ -171,8 +171,17 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
 
 export type BuiltInSuperoneToolName = (typeof BUILT_IN_SUPERONE_TOOL_NAMES)[number]
 
-/** Tools only the top-level (user-facing) agent may call — not Task/subagent workers. */
-export const MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES = ['session_rename', 'session_tag'] as const
+/**
+ * Tools only the top-level (user-facing) agent may call — not Task/subagent
+ * workers. The collaboration mailbox is authorized by session, so a subagent
+ * sharing the session's MCP connection must not send as it or drain its inbox.
+ */
+export const MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES = [
+  'session_rename',
+  'session_tag',
+  'session_collab_send',
+  'session_collab_retrieve',
+] as const
 
 export function superoneBareToolName(name: string): string {
   if (name.startsWith(MCP_SUPERONE_TOOL_PREFIX)) return name.slice(MCP_SUPERONE_TOOL_PREFIX.length)

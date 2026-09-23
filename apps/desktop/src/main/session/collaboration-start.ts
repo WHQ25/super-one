@@ -202,9 +202,8 @@ export async function startSessionAgent(
   // session id is recorded.
   //
   // A handoff session is deliberately *not* written to child_session_id: that column
-  // is UNIQUE and marks a session as a collaboration endpoint, which would both nest
-  // the sibling in parent→child queries and permanently block it from being linked or
-  // spawned against later. The created id lives in config_json instead. ---
+  // holds channel endpoints (spawn children, link peers), and a handoff sibling is
+  // neither. The created id lives in config_json instead. ---
   const isHandoff = grant.kind === 'handoff'
   const existingHandoffSessionId = isHandoff
     ? (parseConfig(grant.config_json) as { handoffSessionId?: string }).handoffSessionId

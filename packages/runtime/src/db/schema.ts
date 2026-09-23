@@ -187,7 +187,7 @@ CREATE TABLE IF NOT EXISTS session_collaboration_grants (
   credential_secret TEXT,
   credential_hint TEXT NOT NULL,
   parent_session_id TEXT NOT NULL,
-  child_session_id TEXT UNIQUE,
+  child_session_id TEXT,
   agent_id TEXT NOT NULL,
   task TEXT NOT NULL,
   config_json TEXT NOT NULL,

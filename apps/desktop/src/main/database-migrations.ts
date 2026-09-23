@@ -19,6 +19,7 @@ import {
   type ServiceEndpoint,
   type WireProtocol,
 } from '@superone/shared/platform-registry'
+import { ensureCollaborationGrantUniqueness } from '@superone/runtime/collaboration'
 import { DRAFTS_TABLE_DDL } from '@superone/runtime/drafts'
 import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
 import type Database from 'better-sqlite3'
@@ -34,7 +35,7 @@ import { encryptSecretIfAvailable } from './crypto/secret-store'
  * every launch); it decides when a pre-migration snapshot is taken and lets a
  * build recognise a database written by a newer build.
  */
-export const SCHEMA_VERSION = 8
+export const SCHEMA_VERSION = 9
 
 /**
  * The oldest schema revision that can still read this database.
@@ -620,7 +621,7 @@ function applyMigrations(db: Database.Database): void {
       credential_secret TEXT,
       credential_hint TEXT NOT NULL,
       parent_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-      child_session_id TEXT UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
+      child_session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE,
       agent_id TEXT NOT NULL,
       task TEXT NOT NULL,
       config_json TEXT NOT NULL,
@@ -682,6 +683,8 @@ function applyMigrations(db: Database.Database): void {
     // spawn = create child (default, back-compat); link = mailbox with existing session
     db.exec(`ALTER TABLE session_collaboration_grants ADD COLUMN kind TEXT NOT NULL DEFAULT 'spawn'`)
   }
+  // Several sessions may link the same peer; only spawn parentage stays unique.
+  ensureCollaborationGrantUniqueness(db)
 
   // Session sync zone delivery record (docs/design/session-sync-zone-delivery-record.md):
   // one durable row per zone file delivered to its node — created before the

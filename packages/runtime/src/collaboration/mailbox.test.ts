@@ -73,6 +73,23 @@ describe('resolveSendChannel', () => {
     expect(send('peer', undefined, 'yo').peer).toMatchObject({ sessionId: 'parent', relation: 'link', title: 'Parent task' })
   })
 
+  it('lets several sessions link the same peer, each over its own channel', () => {
+    link('lead-a', 'peer')
+    link('lead-b', 'peer')
+    expect(send('lead-a', 'peer', 'from a').peer.sessionId).toBe('peer')
+    expect(send('lead-b', 'peer', 'from b').peer.sessionId).toBe('peer')
+    expect(() => resolveSendChannel(store, 'peer', undefined, sessionTitle)).toThrow(/lead-a .*lead-b/)
+    expect(send('peer', 'lead-b', 'to b').grant.parent_session_id).toBe('lead-b')
+  })
+
+  it('keeps the parent as a linked spawn child\'s default recipient', () => {
+    spawn('parent', 'child')
+    link('lead', 'child')
+    expect(send('child', undefined, 'done').peer).toMatchObject({ sessionId: 'parent', relation: 'parent' })
+    expect(send('child', 'lead', 'answer').peer).toMatchObject({ sessionId: 'lead', relation: 'link' })
+    expect(send('lead', 'child', 'question').peer.relation).toBe('link')
+  })
+
   it('explains that a handoff has no mailbox', () => {
     const grantId = store.createGrant({
       kind: 'handoff', parentSessionId: 'parent', agentId: 'claude-base', config: { launchId: 'h' },

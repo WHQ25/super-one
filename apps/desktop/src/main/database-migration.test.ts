@@ -53,13 +53,29 @@ const dbMock = vi.hoisted(() => {
     }
     return { all: () => [], get: () => undefined, run: vi.fn() }
   })
-  // better-sqlite3's transaction wrapper: calling the returned function runs
-  // `fn` inside a transaction. `.immediate()` is the variant migrations use.
-  const transaction = vi.fn((fn: () => void) => {
-    const run = () => fn()
-    return Object.assign(run, { immediate: run, deferred: run, exclusive: run })
-  })
-  return { exec, pragma, prepare, transaction, sessionProviderSeedRun }
+  const transaction = vi.fn()
+  const mock = {
+    exec, pragma, prepare, transaction, sessionProviderSeedRun,
+    inTransaction: false,
+    // better-sqlite3's transaction wrapper: calling the returned function runs
+    // `fn` inside a transaction, with `inTransaction` set while it does.
+    // `.immediate()` is the variant migrations use.
+    wrapTransaction(fn: () => void, trace?: (event: 'begin' | 'commit') => void) {
+      const run = () => {
+        trace?.('begin')
+        mock.inTransaction = true
+        try {
+          fn()
+        } finally {
+          mock.inTransaction = false
+        }
+        trace?.('commit')
+      }
+      return Object.assign(run, { immediate: run, deferred: run, exclusive: run })
+    },
+  }
+  transaction.mockImplementation((fn: () => void) => mock.wrapTransaction(fn))
+  return mock
 })
 
 const DatabaseCtor = vi.hoisted(() => vi.fn(function MockDatabase() {
@@ -378,10 +394,7 @@ describe('migration atomicity and schema stamping', () => {
       if (source === 'user_version') return 0
       return undefined
     })
-    dbMock.transaction.mockImplementation((fn: () => void) => {
-      const run = () => fn()
-      return Object.assign(run, { immediate: run, deferred: run, exclusive: run })
-    })
+    dbMock.transaction.mockImplementation((fn: () => void) => dbMock.wrapTransaction(fn))
   })
 
   it('runs the whole migration in one transaction and stamps the schema version', async () => {
@@ -411,14 +424,8 @@ describe('migration atomicity and schema stamping', () => {
       if (source === 'user_version') return 0
       return undefined
     })
-    dbMock.transaction.mockImplementation((fn: () => void) => {
-      const run = () => {
-        order.push('transaction:begin')
-        fn()
-        order.push('transaction:commit')
-      }
-      return Object.assign(run, { immediate: run, deferred: run, exclusive: run })
-    })
+    dbMock.transaction.mockImplementation((fn: () => void) =>
+      dbMock.wrapTransaction(fn, (event) => order.push(`transaction:${event}`)))
 
     runDatabaseMigrations(dbMock as never)
 

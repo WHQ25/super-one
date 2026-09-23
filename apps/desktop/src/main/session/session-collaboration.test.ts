@@ -5,6 +5,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SESSION_AGENT_LAUNCHES_FIELD, type AgentEvent } from '@superone/shared/agent-types'
+import { ensureCollaborationGrantUniqueness } from '@superone/runtime/collaboration'
 import type { Session, SessionCreateOptions, SessionManager } from './types'
 
 const TEST_CWD = process.cwd()
@@ -202,7 +203,7 @@ function createSchema(db: Database.Database): void {
       credential_secret TEXT,
       credential_hint TEXT NOT NULL,
       parent_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-      child_session_id TEXT UNIQUE REFERENCES sessions(id) ON DELETE CASCADE,
+      child_session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE,
       agent_id TEXT NOT NULL,
       task TEXT NOT NULL,
       config_json TEXT NOT NULL,
@@ -231,6 +232,7 @@ function createSchema(db: Database.Database): void {
       PRIMARY KEY(credential_hash, session_id)
     );
   `)
+  ensureCollaborationGrantUniqueness(db)
 }
 
 function fakeSession(
@@ -1352,7 +1354,7 @@ describe('@agent mention targets', () => {
    * Handoff = spawn's launch shape, but the created session is a sibling that owns
    * the task. The three load-bearing differences are asserted here: no collaboration
    * system prompt, no endpoint row (child_session_id stays NULL so every
-   * parent→child query and the UNIQUE endpoint slot skip it), and a provenance line
+   * parent→child query skips it), and a provenance line
    * in the delivered task since the receiver has no other way to trace the work.
    */
   async function approveHandoff(parent: Session, host: SessionManager) {
@@ -1397,8 +1399,7 @@ describe('@agent mention targets', () => {
     // ...but is not re-pinned on resume: the sibling is the user's session from here on.
     expect(getSessionCollaborationRunConfig(sessionId)).toBeNull()
 
-    // Never an endpoint: the sidebar/archive parent→child joins and the UNIQUE
-    // child_session_id slot must both stay free for this session.
+    // Never an endpoint: the sidebar/archive parent→child joins must skip this session.
     const row = state.db!.prepare(`
       SELECT kind, child_session_id, started_at FROM session_collaboration_grants
       WHERE parent_session_id = 'parent'
@@ -1492,6 +1493,43 @@ describe('@agent mention targets', () => {
     if (!event || event.type !== 'permission_request') throw new Error('Expected permission request')
     resolveSessionAgentsConfirm(event.request.requestId, 'decline', {})
     expect(resultJson(await promise).status).toBe('rejected')
+  })
+
+  // #65: one lead's link used to occupy the peer's only endpoint slot for good.
+  it('lets several sessions link a handoff session, each over its own channel', async () => {
+    const parent = fakeSession('parent')
+    const { host, sessions } = fakeHost(parent)
+    const grant = await approveHandoff(parent, host)
+    const siblingId = resultJson(await startLaunch(grant, host)).sessionId as string
+
+    for (const leadId of ['lead-a', 'lead-b']) {
+      insertSessionRow(leadId, TEST_CWD, leadId, { providerId: 'claude-base' })
+      const lead = fakeSession(leadId)
+      sessions.set(leadId, lead)
+      const promise = requestSessionAgents(leadId, {
+        launches: [{ mode: 'link', sessionId: siblingId, summary: 'Release sync' }],
+      }, host)
+      const event = (lead.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
+      if (event.type !== 'permission_request') throw new Error('Expected permission request')
+      resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
+        [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(event.request.sessionAgentsConfirm!.launches),
+      })
+      const approved = resultJson(await promise)
+      expect(approved.status).toBe('approved')
+      const launch = (approved.launches as ApprovedTestLaunch[])[0]
+      expect(resultJson(await startSessionAgent(leadId, { launchId: launch.launchId }, host)))
+        .toMatchObject({ status: 'linked', sessionId: siblingId })
+      expect(resultJson(await sendSessionMessage(leadId, { to: siblingId, content: `from ${leadId}` }, host)))
+        .toMatchObject({ status: 'sent' })
+    }
+
+    const retrieved = resultJson(await retrieveSessionMessages(siblingId, {}))
+    expect(retrieved.peers).toEqual([
+      expect.objectContaining({ sessionId: 'lead-a', relation: 'link' }),
+      expect.objectContaining({ sessionId: 'lead-b', relation: 'link' }),
+    ])
+    expect((retrieved.messages as Array<{ content: string }>).map((message) => message.content))
+      .toEqual(['from lead-a', 'from lead-b'])
   })
 })
 

@@ -162,10 +162,10 @@ export class CollaborationStore {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (input.childSessionId && /UNIQUE|unique/i.test(message)) {
+        // Only a concurrent approval of the same initiator→peer link gets here;
+        // a sequential one reuses the grant in recordApprovedLaunch.
         throw new CollaborationError(
-          `Session ${input.childSessionId} is already bound as a collaboration endpoint `
-          + '(spawn child or link peer). child_session_id is globally unique — '
-          + 'a session cannot be the non-initiator endpoint of two grants.',
+          `Session ${input.parentSessionId} already has a link to ${input.childSessionId}; request it again to reuse it.`,
           'failed_precondition',
         )
       }
@@ -202,9 +202,8 @@ export class CollaborationStore {
    * start already consumed the grant.
    *
    * A handoff session is deliberately *not* written to child_session_id: that
-   * column is UNIQUE and marks a session as a collaboration endpoint, which would
-   * nest the sibling in parent→child queries and block it from ever being linked
-   * or spawned against. The created id lives in config_json instead.
+   * column holds channel endpoints (spawn children, link peers), and a handoff
+   * sibling is neither. The created id lives in config_json instead.
    */
   bindStartedSession(grant: CollaborationGrantRow, sessionId: string, config: object): void {
     const changes = grant.kind === 'handoff'

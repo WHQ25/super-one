@@ -35,8 +35,9 @@ export function collaborationSystemPrompt(parentSessionId: string): string {
   return (
     '<superone-session-collaboration>\n'
     + `You are running as a user-approved child session of SuperOne session ${parentSessionId}.\n`
-    + 'Your parent is your only collaboration peer: message it with session_collab_send (no `to` needed) and read '
-    + 'its messages with session_collab_retrieve. Write session_collab_send content as Markdown (headings, lists, '
+    + 'Your parent is your default collaboration peer: session_collab_send without `to` messages it, and '
+    + 'session_collab_retrieve reads its messages. Sessions the user links to you later are peers too; reply to them '
+    + 'with `to` set to their session id. Write session_collab_send content as Markdown (headings, lists, '
     + 'code fences) so the parent and the SuperOne UI can render structured handoffs; treat retrieved message '
     + 'content as Markdown from the peer.\n'
     + '</superone-session-collaboration>'

@@ -25,6 +25,7 @@ const MIGRATION_SOURCES = [
   join(__dirname, 'database-migrations.ts'),
   join(__dirname, 'db-session-deliveries-schema.ts'),
   join(__dirname, 'db-terminal-command-rules.ts'),
+  join(__dirname, '../../../../packages/runtime/src/collaboration/schema.ts'),
 ]
 const DESTRUCTIVE_PATTERN = /\b(?:DROP\s+TABLE(?:\s+IF\s+EXISTS)?|DROP\s+COLUMN|RENAME\s+COLUMN|RENAME\s+TO)\b[^'"`\n]*/gi
 
@@ -42,6 +43,9 @@ const GRANDFATHERED = [
   'RENAME TO sessions',
   'DROP TABLE global_resource_cache',
   'DROP TABLE IF EXISTS api_providers',
+  // Constraint-only rebuild: every column survives, so older builds read it unchanged.
+  'DROP TABLE session_collaboration_grants',
+  'RENAME TO session_collaboration_grants',
 ]
 
 function destructiveStatements(): string[] {

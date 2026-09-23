@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { SCHEMA_GENERATION, SCHEMA_SQL } from './schema'
+import { ensureCollaborationGrantUniqueness } from '../collaboration/schema'
 import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
 import {
   CONSUMER_TASK,
@@ -304,7 +305,7 @@ CREATE TABLE IF NOT EXISTS session_collaboration_grants (
   credential_secret TEXT,
   credential_hint TEXT NOT NULL,
   parent_session_id TEXT NOT NULL,
-  child_session_id TEXT UNIQUE,
+  child_session_id TEXT,
   agent_id TEXT NOT NULL,
   task TEXT NOT NULL,
   config_json TEXT NOT NULL,
@@ -346,6 +347,7 @@ CREATE TABLE IF NOT EXISTS session_collaboration_cursors (
   if (!grantCols.some((c) => c.name === 'kind')) {
     db.exec(`ALTER TABLE session_collaboration_grants ADD COLUMN kind TEXT NOT NULL DEFAULT 'spawn'`)
   }
+  ensureCollaborationGrantUniqueness(db)
 }
 
 /**

@@ -248,7 +248,7 @@ Nobody watches child or handoff sessions. Prefer the most autonomous mode that c
 
 ## Mailbox
 
-Your peers are your spawn parent or children and your started link peers — never a handoff session. The host decides who may message whom from the calling session, so there is nothing to remember: address a peer by its session id in `session_collab_send({ to })`. `to` may be omitted only when you have exactly one peer (a spawn child always does: its parent).
+Your peers are your spawn parent or children and your started link peers — never a handoff session. The host decides who may message whom from the calling session, so there is nothing to remember: address a peer by its session id in `session_collab_send({ to })`. Omitting `to` messages a spawn child's parent, or otherwise your only peer. Any number of sessions may link the same session, including a spawn child, so a session can have several link peers.
 
 `session_collab_retrieve` always lists your peers (`sessionId`, `name`, `relation`: `parent` / `child` / `link`), even when no message is waiting. Call it to find out who you can message, for example after your context was compacted. Pass `from` to read only some peers.
 

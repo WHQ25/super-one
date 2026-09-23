@@ -13,7 +13,7 @@ import type { CollaborationContext } from './collaboration-context'
 export interface CollaborationSendInput {
   /** Calling endpoint; the host authorizes by it. */
   sessionId: string
-  /** Peer session id. Optional when the caller has exactly one peer. */
+  /** Peer session id. Optional for a spawn child (its parent) or a caller with one peer. */
   to?: string
   content: string
   clientMessageId?: string

@@ -6,6 +6,7 @@
 export { CollaborationError, type CollaborationErrorCode } from './errors'
 export * from './launch'
 export * from './mailbox'
+export * from './schema'
 export * from './start'
 export * from './store'
 export * from './text'

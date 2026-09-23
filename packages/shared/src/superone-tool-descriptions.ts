@@ -165,7 +165,7 @@ export const SESSION_SEND_DESCRIPTION =
   'After sending, continue other work or end your turn. Never sleep, resend, or poll session_collab_retrieve while waiting.'
 
 export const SESSION_SEND_TO_DESCRIPTION =
-  'Peer session id. Omit only when you have exactly one peer (a spawn child always does: its parent). ' +
+  'Peer session id. Omit to message your spawn parent, or your only peer. ' +
   'session_collab_retrieve lists your peers.'
 
 export const SESSION_SEND_CONTENT_DESCRIPTION =

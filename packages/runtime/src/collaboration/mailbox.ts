@@ -132,8 +132,9 @@ function formatPeers(peers: CollaborationPeer[]): string {
 }
 
 /**
- * Pick the channel a send goes through. `to` may be omitted only when the
- * caller has exactly one peer (a spawn child always does: its parent).
+ * Pick the channel a send goes through. Without `to`, a spawn child reaches its
+ * parent (its system prompt promises that, even after other sessions link it);
+ * any other caller must have exactly one peer.
  */
 export function resolveSendChannel(
   store: CollaborationStore,
@@ -146,6 +147,8 @@ export function resolveSendChannel(
   const target = to?.trim()
   if (!target) {
     if (peers.length === 0) throw new CollaborationError(NO_PEERS_HINT, 'failed_precondition')
+    const parent = channels.find((channel) => channel.peer.relation === 'parent')
+    if (parent) return parent
     if (peers.length > 1) {
       throw new CollaborationError(
         `You have several collaboration peers; pass \`to\` with one of their session ids: ${formatPeers(peers)}`,

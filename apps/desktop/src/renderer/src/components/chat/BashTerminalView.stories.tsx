@@ -181,6 +181,16 @@ export const EditedFiles: Story = {
   },
 }
 
+// A single edited file needs no file count; only the line totals follow the summary.
+export const EditedSingleFile: Story = {
+  name: 'Edited single file (collapsed)',
+  args: {
+    ...EditedFiles.args,
+    input: JSON.stringify({ command: EDIT_COMMAND, description: 'Bump the session retry limit' }),
+    bashEditDiff: { files: [EDIT_DIFF.files[0]], moreFiles: 0 },
+  },
+}
+
 export const EditedFilesExpanded: Story = {
   name: 'Edited files (expanded)',
   args: { ...EditedFiles.args, autoExpand: true },

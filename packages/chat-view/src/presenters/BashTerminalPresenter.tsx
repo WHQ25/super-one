@@ -324,6 +324,27 @@ export function BashTerminalPresenter({
         {description
           ? <span className="min-w-0 truncate text-muted-foreground">{description}</span>
           : (!expanded || fileExpired || hasEdits) && <span className="min-w-0 truncate text-muted-foreground">{command}</span>}
+        {hasEdits && editSummary && !expanded && (
+          <span className="flex shrink-0 items-center gap-1.5 font-mono text-xs tabular-nums">
+            {editSummary.files > 1 && (
+              <span
+                className="inline-flex items-center gap-0.5 text-muted-foreground"
+                title={t('chat.compactMode.filesChanged', { count: editSummary.files })}
+              >
+                <FileDiff className="size-3" />
+                {editSummary.files}
+              </span>
+            )}
+            {(editSummary.added > 0 || editSummary.removed > 0) && (
+              <span>
+                {editSummary.approximate && <span className="text-muted-foreground">≈</span>}
+                {editSummary.added > 0 && <span className="text-success">+{editSummary.added}</span>}
+                {editSummary.added > 0 && editSummary.removed > 0 && ' '}
+                {editSummary.removed > 0 && <span className="text-error">-{editSummary.removed}</span>}
+              </span>
+            )}
+          </span>
+        )}
         {timeoutMs && (
           <span className="rounded bg-muted px-1 py-px text-xs text-muted-foreground">
             {Math.round(timeoutMs / 1000)}s
@@ -346,25 +367,6 @@ export function BashTerminalPresenter({
           </span>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
-          {hasEdits && editSummary && !expanded && (
-            <span className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground tabular-nums">
-              <span
-                className="inline-flex items-center gap-0.5"
-                title={t('chat.compactMode.filesChanged', { count: editSummary.files })}
-              >
-                <FileDiff className="size-3" />
-                {editSummary.files}
-              </span>
-              {(editSummary.added > 0 || editSummary.removed > 0) && (
-                <span>
-                  {editSummary.approximate && '≈'}
-                  {editSummary.added > 0 && <span className="text-success">+{editSummary.added}</span>}
-                  {editSummary.added > 0 && editSummary.removed > 0 && ' '}
-                  {editSummary.removed > 0 && <span className="text-error">-{editSummary.removed}</span>}
-                </span>
-              )}
-            </span>
-          )}
           {trailingAction}
           {allowExpand && (
             <ChevronRight className={cn(

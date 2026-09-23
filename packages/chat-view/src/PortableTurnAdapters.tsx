@@ -60,6 +60,7 @@ import { DeferredReasoning } from './DeferredReasoning'
 import { CodexPlanBlockPresenter } from './presenters/CodexPlanBlock'
 import {
   CodexCollabBlockPresenter,
+  CodexCollabMiniTool,
   codexCollabViewModel,
 } from './presenters/CodexCollabBlock'
 import { EnterPlanModeBlock, ExitPlanModeBlockPresenter } from './presenters/PlanModeBlocks'
@@ -648,7 +649,6 @@ function PortableSubagent({
           toolDiff={block.toolDiff}
           toolDiffTokens={block.toolDiffTokens}
           toolLineDelta={block.toolLineDelta}
-          allowExpand={false}
         />
       )]
     })
@@ -981,53 +981,7 @@ function PortableCodexSubagent({ item: shellItem }: CodexSubagentPresenterProps)
   const colors = usePortableSubagentColors(view.colorKey)
   const activityContent = view.activityItems.length > 0 ? (
     <SubagentScrollArea maxHeightClass="max-h-60" className="space-y-0.5 border-t border-border/30 px-2 py-1">
-      {view.activityItems.map((child, index) => {
-        if ('remoteDetail' in child && child.remoteDetail) return <DeferredCodexTool key={`${child.id}-${index}`} item={child} isStreaming={view.isRunning} />
-        if (child.type === 'command_execution') {
-          return <PortableCodexCommand key={`${child.id}-${index}`} item={child} isStreaming={view.isRunning} />
-        }
-        if (child.type === 'file_change') {
-          return (
-            <PortableToolRow
-              key={`${child.id}-${index}`}
-              toolName="FileChange"
-              toolUseId={child.id}
-              input={stringify({ changes: child.changes })}
-              toolSummary={child.changes[0]?.path}
-              status="complete"
-              isError={child.status === 'failed'}
-              allowExpand={false}
-            />
-          )
-        }
-        if (child.type === 'mcp_tool_call') {
-          return (
-            <PortableToolRow
-              key={`${child.id}-${index}`}
-              toolName={`mcp__${child.server}__${child.tool}`}
-              toolUseId={child.id}
-              input={stringify(child.arguments)}
-              result={codexMcpItemResultText(child)}
-              status={child.status === 'in_progress' ? 'streaming' : 'complete'}
-              isError={child.status === 'failed' || Boolean(child.error)}
-              allowExpand={false}
-            />
-          )
-        }
-        if (child.type !== 'web_search') return null
-        return (
-          <PortableToolRow
-            key={`${child.id}-${index}`}
-            toolName="WebSearch"
-            toolUseId={child.id}
-            input={stringify({ query: child.query })}
-            toolSummary={child.query}
-            status={child.status === 'in_progress' ? 'streaming' : 'complete'}
-            isError={child.status === 'failed'}
-            allowExpand={false}
-          />
-        )
-      })}
+      {view.activityItems.map((child, index) => <CodexCollabMiniTool key={`${child.id}-${index}`} item={child} />)}
     </SubagentScrollArea>
   ) : undefined
   // The collab presenter has a single body slot, so the deferred-load status shares it.

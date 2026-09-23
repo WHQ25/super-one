@@ -93,7 +93,7 @@ function DeferredCodexFileChangeRow({ item, change, index, toolLineDelta }: {
 export function DeferredCodexTool({ item, isStreaming }: { item: CodexThreadItem; isStreaming: boolean }) {
   if (!('remoteDetail' in item) || !item.remoteDetail) return null
   if (item.type === 'file_change') return <DeferredCodexFileChange item={{ ...item, remoteDetail: item.remoteDetail }} />
-  const toolName = item.type === 'command_execution' ? 'Bash' : item.type === 'mcp_tool_call' ? item.tool : item.type
+  const toolName = item.type === 'command_execution' ? 'Bash' : item.type
   const input = item.type === 'command_execution' ? JSON.stringify({ command: item.command }) : '{}'
   const active = 'status' in item ? item.status === 'in_progress' : isStreaming
   return <DeferredTool remoteDetail={item.remoteDetail} toolName={toolName} toolUseId={item.id}

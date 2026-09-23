@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Bot, ChevronRight, Check, Loader2, Wrench, Terminal, FileEdit, Search, ArrowUp, ArrowDown } from 'lucide-react'
+import { Bot, ChevronRight, Check, Loader2, Wrench, ArrowUp, ArrowDown } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { cn } from '@superone/ui/lib/utils'
 import { Streamdown } from 'streamdown'
@@ -10,10 +10,9 @@ import { NestedToolContext } from './nested-tool-context'
 import { useForkNavigation } from './fork-navigation-context'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { getSubagentColorClasses } from './subagent-colors'
-import { CompactLabeledToolRow } from './tool-row'
-import { isCodexCommandToolError } from './codex-command-status'
 import {
   CodexCollabBlockPresenter,
+  CodexCollabMiniTool,
   codexCollabViewModel,
 } from './presenters/CodexCollabBlock'
 
@@ -102,55 +101,6 @@ function aggregateAgentTokens(items: CodexCollabToolCallItem[]): { input: number
     }
   }
   return { input, output }
-}
-
-function MiniToolChip({ item }: { item: CodexThreadItem }) {
-  const { t } = useTranslation()
-  if (item.type === 'command_execution') {
-    return (
-      <CompactLabeledToolRow
-        icon={<Terminal className="size-3 shrink-0 text-muted-foreground" />}
-        label={t('chat.codexCollab.miniTool.bash')}
-        summary={item.command}
-        streaming={item.status === 'in_progress'}
-        tone={isCodexCommandToolError(item) ? 'error' : 'default'}
-      />
-    )
-  }
-  if (item.type === 'file_change') {
-    const first = item.changes[0]
-    return (
-      <CompactLabeledToolRow
-        icon={<FileEdit className="size-3 shrink-0 text-muted-foreground" />}
-        label={t('chat.codexCollab.miniTool.edit')}
-        summary={first?.path ?? t('chat.codexCollab.miniTool.filesFallback', { count: item.changes.length })}
-        tone={item.status === 'failed' ? 'error' : 'default'}
-      />
-    )
-  }
-  if (item.type === 'mcp_tool_call') {
-    return (
-      <CompactLabeledToolRow
-        icon={<Wrench className="size-3 shrink-0 text-muted-foreground" />}
-        label={item.server}
-        summary={item.tool.replace(/_/g, ' ')}
-        streaming={item.status === 'in_progress'}
-        tone={item.status === 'failed' || !!item.error ? 'error' : 'default'}
-      />
-    )
-  }
-  if (item.type === 'web_search') {
-    return (
-      <CompactLabeledToolRow
-        icon={<Search className="size-3 shrink-0 text-muted-foreground" />}
-        label={t('chat.codexCollab.miniTool.webSearch')}
-        summary={item.query}
-        streaming={item.status === 'in_progress'}
-        tone={item.status === 'failed' ? 'error' : 'default'}
-      />
-    )
-  }
-  return null
 }
 
 function PromptPreview({ prompt, label }: { prompt: string; label: string }) {
@@ -355,7 +305,7 @@ export function CodexCollabBlock({
                     </div>
                   )}
                   {turn.items.map((item, i) => (
-                    <MiniToolChip key={`${item.id}-${i}`} item={item} />
+                    <CodexCollabMiniTool key={`${item.id}-${i}`} item={item} />
                   ))}
                 </div>
               ))}
@@ -440,7 +390,7 @@ export function CodexSubagentMarker({ item }: { item: CodexCollabToolCallItem })
         childContent={view.activityItems.length > 0 ? (
           <CollabScrollArea borderClass={colors.borderL}>
             {view.activityItems.map((child, index) => (
-              <MiniToolChip key={`${child.id}-${index}`} item={child} />
+              <CodexCollabMiniTool key={`${child.id}-${index}`} item={child} />
             ))}
           </CollabScrollArea>
         ) : undefined}

@@ -164,6 +164,19 @@ describe('FileLink chip rendering', () => {
     expect(mentionPath).not.toContain('%E8')
   })
 
+  it('Add to Chat labels the mention with the basename, not a prose link label', () => {
+    useAppStore.setState({ currentFolder: PROJECT, _worktrees: {} })
+    render(<FileLink href={`${PROJECT}/src/session-manager.ts:203`}>补丁</FileLink>)
+    fireEvent.contextMenu(screen.getByRole('button'))
+    fireEvent.click(screen.getByText('Add to Chat'))
+    // The composer chip picks its icon from displayName — prose has no extension.
+    expect(chatInputAPI.insertMention).toHaveBeenCalledWith(
+      'file',
+      'src/session-manager.ts',
+      'session-manager.ts',
+    )
+  })
+
   it('shows Preview in Browser for HTML chips and opens a local-file URL', () => {
     useAppStore.setState({ currentFolder: PROJECT, _worktrees: {} })
     render(<FileLink href={`${PROJECT}/docs/index.html`}>index.html</FileLink>)

@@ -16,7 +16,7 @@ export { fileChipLabel }
 
 export function InlineFileChip({ name, filePath, lineNumber, endLine }: { name: string; filePath: string; lineNumber?: number; endLine?: number }) {
   const dragEndRef = useRef(0)
-  const menuItems = useFileChipContextMenu(filePath, name)
+  const menuItems = useFileChipContextMenu(filePath)
   const handleClick = (e: React.MouseEvent): void => {
     if (Date.now() - dragEndRef.current < 200) return
     if (clickReleasedOnSelection(e.currentTarget)) return

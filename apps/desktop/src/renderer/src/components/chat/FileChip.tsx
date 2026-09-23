@@ -21,7 +21,7 @@ export function FileChip({ name, title, filePath, lineNumber, endLine, className
   const targetLineNumber = lineNumber ?? parsed?.lineNumber
   const targetEndLine = lineNumber != null ? endLine : parsed?.endLine
   const dragEndRef = useRef(0)
-  const menuItems = useFileChipContextMenu(targetPath, name)
+  const menuItems = useFileChipContextMenu(targetPath)
 
   const handleClick = (e: React.MouseEvent): void => {
     if (Date.now() - dragEndRef.current < 200) return

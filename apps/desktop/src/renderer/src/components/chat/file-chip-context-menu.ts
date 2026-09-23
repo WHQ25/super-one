@@ -20,7 +20,7 @@ function absoluteFilePath(filePath: string, projectRoot: string | null | undefin
   return root ? `${root}/${filePath.replace(/^\.\//, '')}` : filePath
 }
 
-export function useFileChipContextMenu(filePath: string | undefined, name: string): AdaptiveMenuEntry[] {
+export function useFileChipContextMenu(filePath: string | undefined): AdaptiveMenuEntry[] {
   const { t } = useTranslation()
   if (!filePath) return []
 
@@ -37,7 +37,10 @@ export function useFileChipContextMenu(filePath: string | undefined, name: strin
 
   const handleAddToChat = (): void => {
     const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
-    chatInputAPI.insertMention?.('file', toMentionPath(filePath, projectRoot), name)
+    const mentionPath = toMentionPath(filePath, projectRoot)
+    // Not the chip's link text, which may be prose ("补丁"): file mentions label
+    // and pick their icon from the basename, as the sent bubble re-derives it.
+    chatInputAPI.insertMention?.('file', mentionPath, mentionPath.split('/').pop() || mentionPath)
   }
 
   const handleCopyPath = (): void => {

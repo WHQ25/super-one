@@ -50,6 +50,20 @@ describe('FileChip context menu', () => {
     expect(screen.queryByText('Preview in Browser')).toBeNull()
   })
 
+  it('yields to the selection menu while text is selected', () => {
+    const outer = vi.fn()
+    render(
+      <div onContextMenu={outer}>
+        before <FileChip name="app.ts" title="app.ts" filePath="src/app.ts" /> after
+      </div>,
+    )
+    window.getSelection()!.selectAllChildren(document.body)
+    fireEvent.contextMenu(screen.getByRole('button'))
+    expect(screen.queryByText('Add to Chat')).toBeNull()
+    expect(outer).toHaveBeenCalledTimes(1)
+    window.getSelection()!.removeAllRanges()
+  })
+
   it('has no context menu when filePath is missing', () => {
     render(<FileChip name="index.html" title="index.html" />)
     fireEvent.contextMenu(screen.getByRole('button'))

@@ -5,6 +5,7 @@ import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { openFileTab, openBrowserTab } from '@/components/activity/activity-panel-api'
 import { DraggableFileIcon } from '@/components/chat/DraggableFileIcon'
 import { useFileChipContextMenu } from '@/components/chat/file-chip-context-menu'
+import { hasTextSelection } from '@/components/chat/SelectionContextMenu'
 import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 import { useSourceControlStore } from '@/stores/source-control'
 import { clickReleasedOnSelection, formatLineRange, resolveProjectFileHref, toProjectRelativePath } from '@/lib/file-link'
@@ -31,7 +32,7 @@ export function InlineFileChip({ name, filePath, lineNumber, endLine }: { name: 
     openFileTab(openPath)
   }
   return (
-    <AdaptiveContextMenu items={menuItems}>
+    <AdaptiveContextMenu items={menuItems} yieldWhen={hasTextSelection}>
         <span
           role="button"
           onClick={handleClick}

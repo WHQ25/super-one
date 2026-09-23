@@ -114,6 +114,11 @@ export function SelectionMenu({ pos, onCopy, onAddToChat, onAskInSideChat, onClo
   )
 }
 
+/** Whether a right-click here opens the selection menu, which then owns the event over nested menus. */
+export function hasTextSelection(): boolean {
+  return (window.getSelection()?.toString().trim() ?? '').length > 0
+}
+
 interface MenuState {
   x: number
   y: number

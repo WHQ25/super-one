@@ -186,7 +186,6 @@ export const WorktreeSession = {
           route="chat"
           title="Fix the relay ACK"
           subtitle="super-one"
-          worktreePath="/workspace/super-one/.worktrees/fix-relay"
           provider="codex"
           hasSession
           sessionId="worktree-session"
@@ -200,7 +199,7 @@ export const WorktreeSession = {
       </View>
     </MobileThemeProvider>
   ),
-  name: 'Phone · worktree path under the session title',
+  name: 'Phone · worktree branch under the session title',
 }
 
 function LandscapeFrame(props: WorkspaceSidebarProps) {

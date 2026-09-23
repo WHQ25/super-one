@@ -36,20 +36,15 @@ export type SessionGitFacts = {
   worktree: WorktreeInfo | null
 }
 
-/** Short HEAD of a worktree, looked up by the path the session reported. */
-export function worktreeShortHead(path: string | null, worktree: WorktreeInfo | null): string {
-  if (!path) return ''
-  return (worktree?.entries.find((entry) => entry.path === path)?.head ?? '').slice(0, 7)
-}
-
 /**
  * Which checkout the session is on, for the line under the chat title.
  *
- * The two branches come from different places on purpose. A local session shows
- * the *live* project branch, because switching branches under a running session
- * is allowed and the snapshot would then be stale. A worktree session shows the
- * *snapshot* branch, because the worktree is pinned for the session's lifetime
- * and the project's branch says nothing about it.
+ * Both prefer live data, because the snapshot branch is only what the session
+ * started on. A local session shows the project branch, since switching branches
+ * under a running session is allowed. A worktree session shows its own entry in
+ * the worktree list — the project's branch says nothing about it, and a worktree
+ * created detached can gain a branch later — falling back to the snapshot until
+ * that list loads. Same order as the desktop's `WorkDirIndicator`.
  *
  * Dirty counts are local-only for the same reason: `projectDirtyFiles` counts the
  * project checkout, so showing it beside a worktree would be a confident lie.
@@ -57,9 +52,12 @@ export function worktreeShortHead(path: string | null, worktree: WorktreeInfo | 
 export function describeSessionGit(facts: SessionGitFacts): SessionGitView | null {
   if (facts.isWorktree && facts.worktreeRemoved) return { kind: 'worktreeMissing' }
   if (facts.isWorktree) {
-    const branch = facts.sessionBranch?.trim()
+    const entry = facts.worktreePath
+      ? facts.worktree?.entries.find((candidate) => candidate.path === facts.worktreePath)
+      : undefined
+    const branch = (entry ? entry.branch : facts.sessionBranch)?.trim()
     if (branch) return { kind: 'worktreeBranch', branch }
-    const head = worktreeShortHead(facts.worktreePath, facts.worktree)
+    const head = entry?.head.slice(0, 7)
     return head ? { kind: 'worktreeDetached', head } : null
   }
   const branch = facts.projectBranch?.trim()

@@ -49,8 +49,6 @@ export function MobileHeader(props: {
   pendingCount?: number
   title: string
   subtitle?: string
-  /** The actual checkout directory for a running worktree session. */
-  worktreePath?: string | null
   provider: HarnessId
   /** False on the new-session landing, which names the project and branch itself. */
   hasSession?: boolean
@@ -155,9 +153,7 @@ export function MobileHeader(props: {
           </View>
         )}
         {showMeta ? <SessionMetaRow deviceStatus={props.deviceStatus} reconnect={props.reconnect}
-          subtitle={terminal ? undefined
-            : chat && props.worktreePath ? props.worktreePath
-              : props.subtitle || harnessDisplayName(props.provider)}
+          subtitle={terminal ? undefined : props.subtitle || harnessDisplayName(props.provider)}
           git={terminal ? null : props.git} onOpenBranch={terminal ? undefined : props.onOpenBranch}
           showConnectionStatus={showConnectionStatus} /> : null}
       </View>

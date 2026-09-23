@@ -57,6 +57,25 @@ describe('session git status', () => {
     }))).toEqual({ kind: 'worktreeBranch', branch: 'review/pr-1' })
   })
 
+  it('follows a branch created in the worktree after the session started detached', () => {
+    // The snapshot records no branch for a detached start; the worktree list is
+    // the only place the later `git switch -c` shows up.
+    expect(describeSessionGit(facts({
+      isWorktree: true,
+      worktreePath: '/repo/.worktrees/review',
+      sessionBranch: null,
+    }))).toEqual({ kind: 'worktreeBranch', branch: 'review/pr-1' })
+  })
+
+  it('falls back to the snapshot branch until the worktree list loads', () => {
+    expect(describeSessionGit(facts({
+      isWorktree: true,
+      worktreePath: '/repo/.worktrees/review',
+      sessionBranch: 'review/pr-1',
+      worktree: null,
+    }))).toEqual({ kind: 'worktreeBranch', branch: 'review/pr-1' })
+  })
+
   it('resolves a detached worktree to its own short head, not the project one', () => {
     expect(describeSessionGit(facts({
       isWorktree: true,

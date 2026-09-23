@@ -1889,7 +1889,6 @@ export function MobileApp() {
       route={route}
       title={headerTitle(route)}
       subtitle={project?.name}
-      worktreePath={sessionId && sessionWorktree.isWorktree ? sessionWorktree.worktreePath : null}
       provider={selectedProvider}
       hasSession={!!sessionId}
       sessionId={sessionId}

@@ -405,6 +405,60 @@ describe('SessionManager', () => {
       expect(session.snapshot.providerSessionId).toBe('prior-grok-session')
     })
 
+    it.each([undefined, '/p'])(
+      'keeps a persisted worktree when a cold create receives cwd=%s',
+      (cwd) => {
+        const manager = new SessionManagerImpl({
+          loadSession: () => ({
+            projectPath: '/p', providerId: 'codex-base', providerSessionId: 'thread-1',
+            messages: [], totalCostUsd: 0, contextTokens: 0,
+            worktreePath: '/worktrees/feature', gitBranch: 'feature/x',
+          }),
+        })
+        const session = manager.createSession({ id: 'forked', projectPath: '/p', providerId: 'codex-base', cwd })
+
+        expect(session.cwd).toBe('/worktrees/feature')
+        expect(session.snapshot.worktreePath).toBe('/worktrees/feature')
+        expect(session.snapshot.gitBranch).toBe('feature/x')
+      },
+    )
+
+    it('allows an explicit different worktree on cold create', () => {
+      const manager = new SessionManagerImpl({
+        loadSession: () => ({
+          projectPath: '/p', providerId: 'codex-base', providerSessionId: 'thread-1',
+          messages: [], totalCostUsd: 0, contextTokens: 0,
+          worktreePath: '/worktrees/old', gitBranch: 'feature/old',
+        }),
+      })
+      const session = manager.createSession({
+        id: 'forked', projectPath: '/p', providerId: 'codex-base',
+        cwd: '/worktrees/new', gitBranch: 'feature/new',
+      })
+
+      expect(session.cwd).toBe('/worktrees/new')
+      expect(session.snapshot.gitBranch).toBe('feature/new')
+    })
+
+    it.each([
+      ['directory', '/worktrees/gone'],
+      ['.git file', '/worktrees/gone/.git'],
+    ])('marks a removed persisted worktree as missing when its %s is gone', (_part, missingPath) => {
+      hoisted.existsSyncMock.mockImplementation((path) => path !== missingPath)
+      const manager = new SessionManagerImpl({
+        loadSession: () => ({
+          projectPath: '/p', providerId: 'codex-base', providerSessionId: 'thread-1',
+          messages: [], totalCostUsd: 0, contextTokens: 0,
+          worktreePath: '/worktrees/gone', gitBranch: 'feature/gone',
+        }),
+      })
+      const session = manager.createSession({ id: 'forked', projectPath: '/p', providerId: 'codex-base', cwd: '/p' })
+
+      expect(session.cwd).toBe('/p')
+      expect(session.snapshot.worktreeMissing).toBe(true)
+      expect(hoisted.existsSyncMock).toHaveBeenCalledWith(missingPath)
+    })
+
     it('does not hydrate providerSessionId from a different provider row', () => {
       seedProvider('acp-base', 'acp')
       const loadSession = vi.fn(() => ({

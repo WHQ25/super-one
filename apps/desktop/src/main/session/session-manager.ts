@@ -179,7 +179,9 @@ export class SessionManagerImpl implements SessionManagerContract {
       throw new Error(`Session id already active: ${opts.id}`)
     }
     const sessionId = opts.id ?? randomUUID()
-    const cwd = opts.cwd ?? opts.projectPath
+    let cwd = opts.cwd ?? opts.projectPath
+    let missingWorktreePath: string | null = null
+    let gitBranch = opts.gitBranch ?? null
     const backend = harness.createBackend()
     let apiProviderId = opts.apiProviderId ?? null
     const resolveProviderConfig = this.persistence.resolveProviderConfig
@@ -197,6 +199,18 @@ export class SessionManagerImpl implements SessionManagerContract {
       try {
         const prior = this.persistence.loadSession(opts.id)
         if (prior?.providerId === opts.providerId) {
+          // A cold Codex send can arrive with the project root while the renderer
+          // is still hydrating a forked session. The persisted worktree belongs to
+          // the session; otherwise the first state save erases it permanently.
+          if (prior.worktreePath && (cwd === opts.projectPath || cwd === prior.worktreePath)) {
+            const resumed = resolveResumedCwd(prior)
+            if (cwd === opts.projectPath && !resumed.missingWorktreePath) {
+              log.warn('[SessionManager] cold create received project cwd for worktree session sid=%s; restoring persisted cwd', opts.id)
+            }
+            cwd = resumed.cwd
+            missingWorktreePath = resumed.missingWorktreePath
+            gitBranch = opts.gitBranch ?? prior.gitBranch ?? null
+          }
           if (provider.harnessId === 'codex') {
             restoredCodexSession = true
             apiProviderId = prior.apiProviderId ?? null
@@ -244,7 +258,8 @@ export class SessionManagerImpl implements SessionManagerContract {
       // and recomputes it every turn; pre-mixing them here would bake project
       // folders into the caller half, so a later removal could never propagate.
       additionalDirectories: opts.additionalDirectories,
-      gitBranch: opts.gitBranch ?? null,
+      gitBranch,
+      missingWorktreePath,
       apiProviderId,
       acpAgentId: opts.acpAgentId ?? null,
       systemPromptAppend: opts.systemPromptAppend,

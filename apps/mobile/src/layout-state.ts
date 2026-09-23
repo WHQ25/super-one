@@ -15,7 +15,7 @@ export function shouldUseTabletComposer(width: number, height: number): boolean 
 // On a tablet these all keep the project/session master pane, so the git
 // pickers read as a panel beside it rather than a full-screen takeover.
 // A landscape phone only keeps chat: every other route needs the width.
-const DETAIL_SCREENS = new Set(['chat', 'terminal', 'worktree', 'branch', 'add-dir', 'project-picker', 'add-project', 'settings', 'files', 'collab-request', 'collab-task'])
+const DETAIL_SCREENS = new Set(['chat', 'terminal', 'worktree', 'branch', 'add-dir', 'project-picker', 'add-project', 'settings', 'files', 'collab-request'])
 
 export function shouldUseTabletMultiPane(
   width: number,
@@ -33,7 +33,7 @@ export function shouldUseTabletMultiPane(
  * page padding. Transcripts, terminals and the git pickers all own full-width
  * rows or separators, so an outer gutter would stack on top of their own.
  */
-const FULL_BLEED_SCREENS = new Set(['chat', 'terminal', 'worktree', 'branch', 'add-dir', 'project-picker', 'add-project', 'files', 'session-search', 'collab-request', 'collab-task'])
+const FULL_BLEED_SCREENS = new Set(['chat', 'terminal', 'worktree', 'branch', 'add-dir', 'project-picker', 'add-project', 'files', 'session-search', 'collab-request'])
 
 export function isFullBleedScreen(screen: string): boolean {
   return FULL_BLEED_SCREENS.has(screen)

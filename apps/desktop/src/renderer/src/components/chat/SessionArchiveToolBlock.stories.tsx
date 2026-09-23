@@ -306,7 +306,6 @@ const LAUNCHES_ONE = {
       name: 'DiffBot',
       role: 'Reviewer',
       summary: 'Review the diff (read-only)',
-      task: 'Review the diff and report issues only.',
     },
   ],
 }
@@ -319,7 +318,6 @@ const LAUNCHES_TWO = {
       name: 'Alice',
       role: 'Reviewer',
       summary: 'Review focused test failures',
-      task: 'Review the focused test failures and report the root cause.',
     },
     {
       launchId: 'beta',
@@ -327,13 +325,11 @@ const LAUNCHES_TWO = {
       name: 'Bob',
       role: 'Implementer',
       summary: 'Implement the approved fix',
-      task: 'Implement the approved fix.',
     },
   ],
 }
 
-const CRED_A = 's1sc_demo_credential_aaaa'
-const CRED_B = 's1sc_demo_credential_bbbb'
+const START_INPUT = { launchId: 'reviewer', task: 'Review the diff and report issues only.' }
 
 const START_RESULT = {
   status: 'started',
@@ -474,7 +470,6 @@ export const Gallery: Story = {
               name: 'DiffBot',
               role: 'Reviewer',
               title: 'DiffBot - Reviewer',
-              credential: CRED_A,
             }],
           }),
         })}
@@ -483,16 +478,16 @@ export const Gallery: Story = {
           result: JSON.stringify({
             status: 'approved',
             launches: [
-              { launchId: 'alpha', name: 'Alice', role: 'Reviewer', title: 'Alice - Reviewer', credential: CRED_A },
-              { launchId: 'beta', name: 'Bob', role: 'Implementer', title: 'Bob - Implementer', credential: CRED_B },
+              { launchId: 'alpha', name: 'Alice', role: 'Reviewer', title: 'Alice - Reviewer' },
+              { launchId: 'beta', name: 'Bob', role: 'Implementer', title: 'Bob - Implementer' },
             ],
           }),
         })}
       </Section>
 
       <Section title="session_collab_start">
-        {collabBlock('session_collab_start', { credential: CRED_A }, { status: 'streaming', elapsedSeconds: 4 })}
-        {collabBlock('session_collab_start', { credential: CRED_A }, { result: JSON.stringify(START_RESULT) })}
+        {collabBlock('session_collab_start', START_INPUT, { status: 'streaming', elapsedSeconds: 4 })}
+        {collabBlock('session_collab_start', START_INPUT, { result: JSON.stringify(START_RESULT) })}
       </Section>
 
       <Section title="session_collab_send (Send icon) — To + Markdown body">

@@ -48,9 +48,3 @@ test('the page closes on its own once the host drops the request', async () => {
   await act(async () => { rerender({ pending: false }) })
   expect(result.current.screen).toBe('chat')
 })
-
-test('the brief page counts as being on the request, so it is not bounced back', async () => {
-  const { result } = await mount()
-  await act(async () => { result.current.setScreen('collab-task') })
-  expect(result.current.screen).toBe('collab-task')
-})

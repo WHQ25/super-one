@@ -152,24 +152,24 @@ describe('Phase 4 harness parity + collaboration', () => {
         {
           launchId: 'launch-1',
           agentId,
-          task: 'Please review the change',
           name: 'Reviewer',
           role: 'Diff Reviewer',
+          summary: 'Review the change.',
           config: { cwd: projectDir },
         },
       ],
     })) as {
       status: string
-      launches: Array<{ credential: string; grantId: string; launchId: string }>
+      launches: Array<{ launchId: string }>
     }
     expect(requested.status).toBe('approved')
     expect(requested.launches).toHaveLength(1)
-    const { credential, grantId } = requested.launches[0]
-    expect(credential.startsWith('s1sc_')).toBe(true)
-    expect(grantId).toBeTruthy()
+    const { launchId } = requested.launches[0]
+    expect(launchId).toBe('launch-1')
 
     const started = (await client.rpc('collaboration.start', {
-      credential,
+      launchId,
+      task: 'Please review the change',
       callerSessionId: parent.sessionId,
       leaseId: lease.leaseId,
       generation: lease.generation,
@@ -183,7 +183,7 @@ describe('Phase 4 harness parity + collaboration', () => {
     expect(started.sessionId).toBeTruthy()
 
     const startedAgain = (await client.rpc('collaboration.start', {
-      grantId,
+      launchId,
       callerSessionId: parent.sessionId,
       leaseId: lease.leaseId,
       generation: lease.generation,
@@ -264,16 +264,18 @@ describe('Phase 4 harness parity + collaboration', () => {
     // Durable mailbox rows survive restart under SUPERONE_NODE_HOME state.sqlite.
     const surviving = rt2.db
       .prepare(
-        `SELECT id, content FROM session_collaboration_messages WHERE credential_hash = ?`,
+        `SELECT id, content FROM session_collaboration_messages WHERE recipient_session_id = ?`,
       )
-      .all(grantId) as Array<{ id: string; content: string }>
+      .all(started.sessionId) as Array<{ id: string; content: string }>
     expect(surviving.some((m) => m.id === sent.messageId && m.content.includes('please continue'))).toBe(
       true,
     )
     const grantRow = rt2.db
-      .prepare(`SELECT child_session_id, task_sent FROM session_collaboration_grants WHERE credential_hash = ?`)
-      .get(grantId) as { child_session_id: string; task_sent: number }
+      .prepare(`SELECT child_session_id, task, task_sent FROM session_collaboration_grants
+        WHERE parent_session_id = ? AND json_extract(config_json, '$.launchId') = ?`)
+      .get(parent.sessionId, launchId) as { child_session_id: string; task: string; task_sent: number }
     expect(grantRow.child_session_id).toBe(started.sessionId)
+    expect(grantRow.task).toBe('Please review the change')
     expect(grantRow.task_sent).toBe(1)
   })
 })

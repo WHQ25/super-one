@@ -399,11 +399,11 @@ describe('ToolBlock error auto-collapse', () => {
   })
 
   it('uses the collaboration presenter for failed collaboration tools', () => {
-    const result = JSON.stringify({ status: 'error', message: 'Invalid collaboration credential' })
+    const result = JSON.stringify({ status: 'error', message: 'No approved launch "gone" in this session.' })
     render(
       <ToolBlock
         toolName="mcp__superone__session_collab_start"
-        input={JSON.stringify({ credential: 'invalid' })}
+        input={JSON.stringify({ launchId: 'gone', task: 'Review the diff.' })}
         status="complete"
         result={result}
         isError
@@ -415,6 +415,26 @@ describe('ToolBlock error auto-collapse', () => {
     expect(screen.getByText(/error/i)).not.toBeNull()
     expect(screen.queryByText(/collaboration session started/i)).toBeNull()
     expect(screen.queryByText(result)).toBeNull()
+  })
+
+  it('shows the brief passed to session_collab_start in the expanded row', () => {
+    render(
+      <ToolBlock
+        toolName="mcp__superone__session_collab_start"
+        input={JSON.stringify({ launchId: 'reviewer', task: 'Review the diff and report issues only.' })}
+        status="complete"
+        result={JSON.stringify({
+          status: 'started',
+          sessionId: 'child-1',
+          title: 'DiffBot - Reviewer',
+          config: { name: 'DiffBot', role: 'Reviewer', model: 'claude-sonnet' },
+        })}
+      />,
+    )
+
+    fireEvent.click(screen.getByText(/session started/i))
+    expect(screen.getByText('Review the diff and report issues only.')).not.toBeNull()
+    expect(screen.getByText('claude-sonnet')).not.toBeNull()
   })
 })
 

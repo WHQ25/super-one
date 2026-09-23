@@ -322,6 +322,12 @@ export function SessionCollabToolBlockPresenter({
     if (parsed?.reused === true) {
       summarySuffix = t('chat.toolBlock.collab.reused')
     }
+    // The brief is passed here (not at request time); show it above the launch details.
+    const task = typeof params.task === 'string' ? params.task.trim() : ''
+    if (task && !isStreaming) {
+      expandable = true
+      inboxMessages = [{ content: task }]
+    }
     const config = parsed?.config && typeof parsed.config === 'object' && !Array.isArray(parsed.config)
       ? parsed.config as Record<string, unknown>
       : null
@@ -476,7 +482,7 @@ export function SessionCollabToolBlockPresenter({
         style={{ gridTemplateRows: expanded ? '1fr' : '0fr' }}
       >
         <div className="overflow-hidden">
-          {inboxMessages.length > 0 ? (
+          {inboxMessages.length > 0 && (
             <div className="space-y-2 border-t border-border/40 px-2 py-2 text-xs">
               {inboxMessages.map((msg, index) => (
                 <div
@@ -520,7 +526,8 @@ export function SessionCollabToolBlockPresenter({
                 </div>
               ))}
             </div>
-          ) : (
+          )}
+          {detailRows.length > 0 && (
             <div className="space-y-1 border-t border-border/40 px-2 py-2 text-xs">
               {detailRows.map((row) => (
                 <div key={`${row.label}:${row.value.slice(0, 24)}`} className="flex items-baseline gap-2">

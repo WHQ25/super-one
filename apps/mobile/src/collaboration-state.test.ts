@@ -22,7 +22,6 @@ describe('collaboration confirmation', () => {
         name: 'Reviewer',
         role: 'Review',
         summary: 'Review the migration',
-        task: 'Review every migration gate.',
         config: { effort: 'high' },
       }],
     } as SessionAgentRequestPayload

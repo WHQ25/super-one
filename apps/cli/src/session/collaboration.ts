@@ -19,7 +19,6 @@ import { listCollaborationProfiles } from './collaboration-profiles'
 import { requestCollaboration, type CollaborationRequestInput } from './collaboration-request'
 import { startCollaboration, type CollaborationStartInput } from './collaboration-start'
 
-export type { CollaborationSecretCrypto } from '@superone/runtime/collaboration'
 export type { CollaborationDeps } from './collaboration-context'
 
 /**
@@ -32,7 +31,7 @@ export class CollaborationService {
   constructor(private readonly deps: CollaborationDeps) {
     this.ctx = {
       deps,
-      store: new CollaborationStore(deps.db, deps.secrets),
+      store: new CollaborationStore(deps.db),
       listProfiles: () => this.listProfiles(),
     }
   }

@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
-import { Bot, ChevronDown, ChevronRight, FileText, FolderClosed, GitBranch, MessageSquare, Monitor, type LucideIcon } from 'lucide-react-native'
+import { Bot, ChevronDown, ChevronRight, FolderClosed, GitBranch, MessageSquare, Monitor, type LucideIcon } from 'lucide-react-native'
 import type {
   HarnessId, ModelOption, RemoteProviderOption, SandboxMode, SessionAgentLaunchProposal, SessionAgentProfile, SessionAgentRequestPayload,
 } from '@superone/shared/agent-types'
@@ -38,8 +38,6 @@ export type CollabRequestScreenProps = {
   onApprove: (launches: SessionAgentLaunchProposal[]) => void
   /** The feedback is handed back to the agent as the tool result. */
   onReject: (feedback?: string) => void
-  /** The full brief opens on its own page; it is fetched there, not carried here. */
-  onOpenTask: (launch: SessionAgentLaunchProposal, label: string) => void
 }
 
 type EditableConfig = Parameters<typeof patchLaunch>[1]
@@ -67,7 +65,7 @@ function workDirLabel(state: LaunchWorkDir, t: (source: string) => string): { ic
  * launch is configured with exactly the vocabulary the composer already uses.
  * Feedback and the decision sit under the list, pinned, like the sheet's footer.
  */
-export function CollabRequestScreen({ payload, onApprove, onReject, onOpenTask }: CollabRequestScreenProps) {
+export function CollabRequestScreen({ payload, onApprove, onReject }: CollabRequestScreenProps) {
   const { tokens: { colors, spacing } } = useMobileTheme()
   const { t } = useMobileLocale()
   const { launches, profiles } = payload
@@ -105,7 +103,6 @@ export function CollabRequestScreen({ payload, onApprove, onReject, onOpenTask }
           profile={profiles.find((item) => item.id === launch.agentId)}
           expanded={expanded.has(launch.launchId)}
           onToggle={() => toggle(launch.launchId)}
-          onOpenTask={() => onOpenTask(launch, labels[index]!)}
           onChange={(patch) => setOverrides((current) => ({
             ...current,
             [launch.launchId]: { ...current[launch.launchId], ...patch },
@@ -125,13 +122,12 @@ export function CollabRequestScreen({ payload, onApprove, onReject, onOpenTask }
   </View>
 }
 
-function LaunchCard({ launch, label, profile, expanded, onToggle, onOpenTask, onChange }: {
+function LaunchCard({ launch, label, profile, expanded, onToggle, onChange }: {
   launch: SessionAgentLaunchProposal
   label: string
   profile: SessionAgentProfile | undefined
   expanded: boolean
   onToggle: () => void
-  onOpenTask: () => void
   onChange: (patch: EditableConfig) => void
 }) {
   const styles = usePromptStyles()
@@ -140,8 +136,6 @@ function LaunchCard({ launch, label, profile, expanded, onToggle, onOpenTask, on
   const link = isLinkLaunch(launch)
   const handoff = isHandoffLaunch(launch)
   const harnessId = profile?.harnessId ?? (isHarnessId(launch.peerHarnessId) ? launch.peerHarnessId : null)
-  const summary = launch.summary?.trim() || launch.task
-  const hasTask = Boolean(launch.taskDeferred || launch.task?.trim())
   const Chevron = expanded ? ChevronDown : ChevronRight
   const headline = link
     ? { prefix: t('Work with'), text: peerSessionTitle(launch) }
@@ -170,16 +164,7 @@ function LaunchCard({ launch, label, profile, expanded, onToggle, onOpenTask, on
     </Pressable>
 
     {expanded ? <View style={[styles.tight, { paddingHorizontal: spacing.md, paddingBottom: spacing.md }]}>
-      <Text selectable style={styles.body}>{summary}</Text>
-      {hasTask ? <Pressable
-        accessibilityRole="button"
-        onPress={onOpenTask}
-        style={({ pressed }) => [styles.row, { minHeight: 32 }, pressed && styles.pressed]}
-      >
-        <FileText size={14} color={colors.mutedForeground} />
-        <Text style={[styles.meta, styles.grow]}>{t('Show the full task')}</Text>
-        <ChevronRight size={14} color={colors.mutedForeground} />
-      </Pressable> : null}
+      <Text selectable style={styles.body}>{launch.summary}</Text>
       {handoff ? <Text style={styles.meta}>{t('Takes the task over in its own top-level session — no replies back to this one.')}</Text> : null}
       {link ? <LinkMeta launch={launch} /> : <SpawnMeta launch={launch} />}
       {!link && profile ? <LaunchConfigRow launch={launch} profile={profile} onChange={onChange} /> : null}

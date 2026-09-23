@@ -93,8 +93,8 @@ cancellation behavior; a prompt rewrite cannot relax those checks.
 - **`additionalProperties: false`** — catches model typos as errors instead of silently ignored args.
 - **`enum` over free string** whenever the value set is closed. It converts a class of runtime errors
   into "the model literally cannot express it".
-- **Keep hard caps server-side.** `session_collab_request.task` has `minLength: 1` and deliberately
-  *no* `maxLength` — the test asserts its absence. Advertising `maxLength: 100000` teaches the model a
+- **Keep hard caps server-side.** `session_collab_start.task` deliberately has *no* `maxLength` —
+  the test asserts its absence. Advertising `maxLength: 100000` teaches the model a
   number it will try to fill.
 - Descriptions and schemas must be **byte-identical** between the desktop def and the host-action
   descriptor. The tests in `superone-mcp-builtin-defs.test.ts` compare them with `toEqual`.
@@ -128,7 +128,7 @@ function toolResult(value: unknown, isError = false) {
 
 ### Pairs must ship together
 
-If a tool returns a handle (job id, credential), the tool that redeems it ships in the same change and
+If a tool returns a handle (job id, launch id), the tool that redeems it ships in the same change and
 is named in the first one's description. `media_generate_video` / `media_video_status` and
 `session_collab_request` / `session_collab_start` both have tests asserting the pair exists. This is
 progressive disclosure for async / multi-step work: submit cheap, poll or start when ready.

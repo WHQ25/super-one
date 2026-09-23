@@ -21,7 +21,6 @@ import {
   type HostActionReplayPolicy,
   type HostActionTerminalResult,
 } from '@superone/shared/environment'
-import { z } from 'zod'
 import { jsonSchemaToZodShape } from './json-schema-to-zod'
 
 /** Public MCP server name harnesses attach as. */
@@ -216,9 +215,7 @@ export function registerNodeCollabTools(
     'session_collab_start',
     {
       description: startDesc.description,
-      inputSchema: {
-        credential: z.string().min(1),
-      },
+      inputSchema: jsonSchemaToZodShape(startDesc.inputSchema),
     },
     async (args) => {
       try {

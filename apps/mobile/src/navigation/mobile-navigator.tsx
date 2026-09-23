@@ -88,7 +88,6 @@ export function MobileNavigator(props: {
           settings: 1,
           files: 1,
           'collab-request': 1,
-          'collab-task': 1,
         }) as MobileRoute[]).map((route) => (
           <Stack.Screen
             key={route}

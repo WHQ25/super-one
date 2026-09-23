@@ -18,13 +18,13 @@ describe('editable native confirmations', () => {
     request.configConfirm.fields![0].proposedValue = 11
     expect(permissionEditsValid(request)).toBe(false)
   })
-  it('preserves collaboration mode, task and workspace while changing run tuning', () => {
+  it('preserves collaboration mode, summary and workspace while changing run tuning', () => {
     const original = permissionRequest('session_agents_confirm')
     const request = editablePermission(original)
     const launch = request.sessionAgentsConfirm!.launches[1]
     request.sessionAgentsConfirm!.launches[1] = patchLaunch(launch, { model: 'review-model', permissionMode: 'auto' })
     const result = JSON.parse(editedPermissionAnswers(request)!.sessionAgentLaunchesJson as string)
-    expect(result[1]).toMatchObject({ mode: 'handoff', task: launch.task, config: { model: 'review-model', permissionMode: 'auto' } })
+    expect(result[1]).toMatchObject({ mode: 'handoff', summary: launch.summary, config: { model: 'review-model', permissionMode: 'auto' } })
     expect(original.sessionAgentsConfirm!.launches[1].config.model).toBeUndefined()
   })
   it('sends automation overrides with consistent Codex aliases and no edits for delete', () => {

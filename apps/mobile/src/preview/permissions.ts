@@ -36,9 +36,9 @@ export const permissionExamples = {
     sessionAgentsConfirm: {
       profiles: ['codex', 'claude'].map((harnessId) => ({ id: `preview-${harnessId}`, name: harnessId, harnessId: harnessId as 'codex' | 'claude', defaultConfig: {}, models: [{ id: 'Preview model', name: 'Preview model', serviceTiers: [{ id: 'priority', name: 'Fast', description: 'Fast service tier' }] }, { id: 'Review model', name: 'Review model' }], efforts: ['low', 'medium', 'high'], apiProviders: [{ id: 'preview-api', name: 'Preview API' }] })),
       launches: [
-        { launchId: 'preview-spawn', agentId: 'preview-codex', mode: 'spawn', name: 'Reviewer', role: 'Code review', summary: 'Review the mobile permission flow.', task: 'Review the mobile permission flow and report actionable findings.', config: { model: 'Preview model', cwd: '/workspace/super-one', permissionMode: 'default' } },
-        { launchId: 'preview-handoff', agentId: 'preview-claude', mode: 'handoff', name: 'Designer', role: 'Visual review', summary: 'Check layout and typography.', task: 'Compare mobile layouts and list visual inconsistencies.', config: {} },
-        { launchId: 'preview-link', agentId: '', mode: 'link', sessionId: 'preview-peer', peerTitle: 'Existing review session', name: 'Peer', role: 'Review', summary: 'Connect an existing review session.', task: 'Share review findings.', config: {} },
+        { launchId: 'preview-spawn', agentId: 'preview-codex', mode: 'spawn', name: 'Reviewer', role: 'Code review', summary: 'Review the mobile permission flow.', config: { model: 'Preview model', cwd: '/workspace/super-one', permissionMode: 'default' } },
+        { launchId: 'preview-handoff', agentId: 'preview-claude', mode: 'handoff', name: 'Designer', role: 'Visual review', summary: 'Check layout and typography.', config: {} },
+        { launchId: 'preview-link', agentId: '', mode: 'link', sessionId: 'preview-peer', peerTitle: 'Existing review session', name: 'Peer', role: 'Review', summary: 'Connect an existing review session.', config: {} },
       ],
     },
   },

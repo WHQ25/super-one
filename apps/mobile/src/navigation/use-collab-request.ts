@@ -33,8 +33,7 @@ export function useCollabRequest({ request, screen, setScreen, reject }: {
   const answeredRef = useRef<string | null>(null)
   const open = request && request.requestId !== answeredRef.current ? request : null
 
-  // The brief's page stacks on the request, so it counts as "on the request".
-  const onRequest = screen === 'collab-request' || screen === 'collab-task'
+  const onRequest = screen === 'collab-request'
   useEffect(() => {
     if (open && !onRequest) setScreen('collab-request')
     else if (!open && onRequest) setScreen('chat')

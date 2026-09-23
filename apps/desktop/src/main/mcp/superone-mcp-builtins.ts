@@ -64,6 +64,7 @@ import {
   SESSION_SEND_TO_DESCRIPTION,
   SESSION_SEND_CONTENT_DESCRIPTION,
   SESSION_START_DESCRIPTION,
+  START_LAUNCH_ID_DESCRIPTION,
   SESSION_RETRIEVE_DESCRIPTION,
   SESSION_RETRIEVE_FROM_DESCRIPTION,
   type BuiltInSuperoneToolName,
@@ -113,6 +114,7 @@ import type {
   RequestSessionAgentsArgs,
   SessionSendArgs,
   SessionRetrieveArgs,
+  SessionStartArgs,
 } from '../session/session-collaboration'
 
 export {
@@ -335,7 +337,7 @@ export async function executeBuiltInSuperoneTool(
         requestSessionAgents(deps.sessionId, args as unknown as RequestSessionAgentsArgs, collaborationHost(deps), deps.signal))
     case 'session_collab_start':
       return import('../session/session-collaboration').then(({ startSessionAgent }) =>
-        startSessionAgent(deps.sessionId, String(args.credential ?? ''), collaborationHost(deps)))
+        startSessionAgent(deps.sessionId, args as unknown as SessionStartArgs, collaborationHost(deps)))
     case 'session_collab_send':
       return import('../session/session-collaboration').then(({ sendSessionMessage }) =>
         sendSessionMessage(deps.sessionId, args as unknown as SessionSendArgs, collaborationHost(deps)))
@@ -385,7 +387,6 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
           sessionId: z.string().min(1).optional().describe(LAUNCH_SESSION_ID_DESCRIPTION),
           agentId: z.string().optional(),
           summary: z.string().trim().min(1).describe(LAUNCH_SUMMARY_DESCRIPTION),
-          task: z.string().max(100_000).optional().describe(LAUNCH_TASK_DESCRIPTION),
           name: z.string().trim().min(1).max(64).optional(),
           role: z.string().trim().min(1).max(64).optional(),
           config: z.object({
@@ -418,10 +419,16 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
   )
   server.registerTool(
     'session_collab_start',
-    { description: SESSION_START_DESCRIPTION, inputSchema: { credential: z.string().min(1) } },
-    async ({ credential }) => {
+    {
+      description: SESSION_START_DESCRIPTION,
+      inputSchema: {
+        launchId: z.string().min(1).describe(START_LAUNCH_ID_DESCRIPTION),
+        task: z.string().max(100_000).optional().describe(LAUNCH_TASK_DESCRIPTION),
+      },
+    },
+    async (args) => {
       const { startSessionAgent } = await import('../session/session-collaboration')
-      return startSessionAgent(deps.sessionId, credential, collaborationHost(deps))
+      return startSessionAgent(deps.sessionId, args, collaborationHost(deps))
     },
   )
   server.registerTool(

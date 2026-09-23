@@ -1351,24 +1351,6 @@ export class AgentService {
         }
         break
       }
-      case 'get_collab_launch_task': {
-        if (!this.canAccessSession(command.projectPath, command.sessionId)) {
-          await respond?.(command.requestId, { error: this.buildSessionAccessError(command.projectPath, command.sessionId) })
-          break
-        }
-        // The brief was withheld from the phone's copy of the request; the pending
-        // interaction the session still holds is the one the desktop rendered.
-        const pending = this.findSessionBySid(command.projectPath, command.sessionId)?.getPendingInteractions()
-          .find((event): event is AgentEvent & { type: 'permission_request' } =>
-            event.type === 'permission_request' && event.request.requestId === command.permissionRequestId)
-        const launch = pending?.request.sessionAgentsConfirm?.launches.find((item) => item.launchId === command.launchId)
-        if (!launch) {
-          await respond?.(command.requestId, { error: 'That collaboration request is no longer pending' })
-          break
-        }
-        await respond?.(command.requestId, { task: launch.task })
-        break
-      }
       case 'get_attachment': {
         if (!this.canAccessSession(command.projectPath, command.sessionId)) {
           await respond?.(command.requestId, { error: this.buildSessionAccessError(command.projectPath, command.sessionId) })

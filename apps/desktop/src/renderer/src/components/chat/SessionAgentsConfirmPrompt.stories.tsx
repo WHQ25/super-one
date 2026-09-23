@@ -42,6 +42,7 @@ const CLAUDE_PROFILE: SessionAgentProfile = {
 function codexPayload(overrides?: {
   fastMode?: boolean
   model?: string
+  summary?: string
   extraProfiles?: SessionAgentProfile[]
 }): SessionAgentRequestPayload {
   return {
@@ -50,8 +51,7 @@ function codexPayload(overrides?: {
       {
         launchId: 'classify-typecheck',
         agentId: 'codex-base',
-        summary: 'Classify typecheck errors',
-        task: 'Group the typecheck failures by root cause and report which ones share a fix.',
+        summary: overrides?.summary ?? 'Classify typecheck errors',
         name: 'TypeBot',
         role: 'Analyst',
         config: {
@@ -94,6 +94,14 @@ export const CodexModelWithoutFastTier: Story = {
   args: { payload: codexPayload({ model: 'gpt-5.4-codex-mini' }) },
 }
 
+/**
+ * The summary is all the user approves (the brief goes to session_collab_start).
+ * It clamps to two lines; click it to expand.
+ */
+export const LongSummary: Story = {
+  args: { payload: codexPayload({ summary: 'Group the typecheck failures by root cause and report which ones share a fix. Start with the renderer package, then the shared contracts; skip generated files. Flag anything that looks like a stale build artifact rather than a real type error, and list the files each group touches so the fixes can be split across reviewers.' }) },
+}
+
 /** Two launches: only Codex carries the Fast glyph; Claude's toolbar is unchanged. */
 export const MixedHarnesses: Story = {
   args: {
@@ -104,7 +112,6 @@ export const MixedHarnesses: Story = {
           launchId: 'review-tests',
           agentId: 'claude-base',
           summary: 'Review failing tests',
-          task: 'Review the failing tests and report the root cause.',
           name: 'DiffBot',
           role: 'Reviewer',
           config: {

@@ -84,7 +84,6 @@ import { answerTranscriptRequest, transcriptProjection, transcriptStates, type T
 import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import { AddDirScreen } from '../screens/add-dir-screen'
 import { CollabRequestScreen } from '../screens/collab-request-screen'
-import { CollabTaskScreen } from '../screens/collab-task-screen'
 import { permissionExamples } from './permissions'
 import type { AddDirScope, AddDirStep } from '../add-dir-state'
 import { appendBrowsePathSegment } from '@superone/shared/path-browse'
@@ -300,13 +299,6 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   const [previewSessionDirs, setPreviewSessionDirs] = useState<string[]>(['/Users/dev/scratch'])
   const [previewAddDirScope, setPreviewAddDirScope] = useState<AddDirScope>('project')
   const [previewAddDirQuery, setPreviewAddDirQuery] = useState('~/Developer/Projects/')
-  const [previewCollabTask, setPreviewCollabTaskState] = useState<SessionAgentLaunchProposal | null>(null)
-  const setPreviewCollabTask = (launch: SessionAgentLaunchProposal) => { setPreviewCollabTaskState(launch); setPage('Collaboration task') }
-  // A slow resolve, so the loading state is visible; the inline fixture task is the brief.
-  const previewCollabTaskLoad = useCallback(
-    () => new Promise<string>((resolve) => setTimeout(() => resolve(previewCollabTask?.task ?? ''), 600)),
-    [previewCollabTask],
-  )
   const addDirStep: AddDirStep = page === 'Browse folders'
     ? { kind: 'browse', scope: previewAddDirScope }
     : { kind: 'overview' }
@@ -407,7 +399,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   const chat = page === 'New session' || page === 'Chat' || page === 'Workspace'
   // Standalone galleries share the catch-all 'files' route but draw themselves.
   const gallery = page === 'Network ledger' || page === 'Drafts' || page === 'Icons' || page === 'Git indicators' || page === 'Session status' || page === 'Composer suggestions' || page === 'Chip editor' || page === 'LAN browser' || page === 'Loading states' || page === 'Usage'
-  const route = chat ? 'chat' : page === 'Project' ? 'project-picker' : page === 'Add project' ? 'add-project' : page === 'Worktree' ? 'worktree' : page === 'Branch' ? 'branch' : page === 'Additional folders' || page === 'Browse folders' ? 'add-dir' : page === 'Collaboration request' ? 'collab-request' : page === 'Collaboration task' ? 'collab-task' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Session search' ? 'session-search' : page === 'Settings' ? 'settings' : 'files'
+  const route = chat ? 'chat' : page === 'Project' ? 'project-picker' : page === 'Add project' ? 'add-project' : page === 'Worktree' ? 'worktree' : page === 'Branch' ? 'branch' : page === 'Additional folders' || page === 'Browse folders' ? 'add-dir' : page === 'Collaboration request' ? 'collab-request' : page === 'Devices' || page === 'Pairing' ? 'pair' : page === 'Terminal' ? 'terminal' : page === 'Session search' ? 'session-search' : page === 'Settings' ? 'settings' : 'files'
   /** One workspace, two mounts: the drawer below and the sidebar in the row. */
   const previewWorkspace = {
     client: previewClient, projects: previewProjects, activeProject: project,
@@ -447,7 +439,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
       <View style={styles.contentRow}>
         {tabletSidebar ? <WorkspaceSidebar {...previewWorkspace} deviceName="Preview desktop" deviceStatus="connectedLan" onDisconnect={() => setPage('Devices')} onOpenSettings={() => setPage('Settings')} /> : null}
         <View style={styles.mainPane}>
-      <MobileHeader route={route} title={page === 'Add project' ? addProject.title : page === 'Project' ? 'Projects' : page === 'Terminal' ? (previewTerminalTabs.find((tab) => tab.terminalId === terminalTab)?.title ?? 'Terminal') : route === 'files' ? previewBrowserMode.name : route === 'collab-request' || route === 'collab-task' ? mobileHeaderTitle(route, undefined, '', '', t) : page} subtitle="super-one" provider={provider} hasSession={page === 'Chat'} launchCount={page === 'Collaboration request' ? 3 : undefined} deviceStatus="connectedLan" sidebarVisible={tabletSidebar} git={page === 'Chat' ? previewSessionGit : null} terminal={page === 'Terminal' ? {
+      <MobileHeader route={route} title={page === 'Add project' ? addProject.title : page === 'Project' ? 'Projects' : page === 'Terminal' ? (previewTerminalTabs.find((tab) => tab.terminalId === terminalTab)?.title ?? 'Terminal') : route === 'files' ? previewBrowserMode.name : route === 'collab-request' ? mobileHeaderTitle(route, undefined, '', '', t) : page} subtitle="super-one" provider={provider} hasSession={page === 'Chat'} launchCount={page === 'Collaboration request' ? 3 : undefined} deviceStatus="connectedLan" sidebarVisible={tabletSidebar} git={page === 'Chat' ? previewSessionGit : null} terminal={page === 'Terminal' ? {
           tabs: previewTerminalTabs,
           activeId: terminalTab,
           onSelect: setTerminalTab,
@@ -459,7 +451,6 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
           // Browsing unwinds to the overview before the page itself leaves,
           // which is the step the shipping `back` walks too.
           else if (page === 'Browse folders') setPage('Additional folders')
-          else if (page === 'Collaboration task') setPage('Collaboration request')
           else setPage('New session')
         }} onSwitchSession={() => setDrawer(true)} onOpenTerminal={() => setPage('Terminal')} onOpenFiles={() => setPage('Files')}
           onFork={page === 'Chat' ? () => {} : undefined}
@@ -553,9 +544,7 @@ todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={p
               (current) => current.filter((entry) => entry !== dir))} /> : null}
           {page === 'Collaboration request' ? <CollabRequestScreen
             payload={permissionExamples.session_agents_confirm.sessionAgentsConfirm}
-            onApprove={() => setPage('Chat')} onReject={() => setPage('Chat')}
-            onOpenTask={(launch) => setPreviewCollabTask(launch)} /> : null}
-          {page === 'Collaboration task' ? <CollabTaskScreen load={previewCollabTaskLoad} /> : null}
+            onApprove={() => setPage('Chat')} onReject={() => setPage('Chat')} /> : null}
           {page === 'Worktree' ? <WorktreeScreen selection={worktreeDraft} onSelectionChange={setWorktreeDraft}
             gitInfo={{ ...PREVIEW_GIT_INFO, branch }} worktreeInfo={PREVIEW_WORKTREE_INFO}
             worktreeDirty={PREVIEW_WORKTREE_DIRTY} branches={PREVIEW_BRANCHES}

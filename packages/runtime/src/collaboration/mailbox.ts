@@ -205,14 +205,14 @@ export function readCallerMailbox(
   if (selected.length === 0) return { messages: [], peers }
 
   const limit = Math.min(MAX_MESSAGES_PER_RETRIEVE, Math.max(1, Math.floor(options.limit ?? MAX_MESSAGES_PER_RETRIEVE)))
-  const peerByGrant = new Map(selected.map((channel) => [channel.grant.credential_hash, channel.peer]))
+  const peerByGrant = new Map(selected.map((channel) => [channel.grant.grant_id, channel.peer]))
   const perGrantLimit = Math.max(1, Math.floor(limit / selected.length))
   const messages = store.readMailbox(callerSessionId, [...peerByGrant.keys()], perGrantLimit)
-    .flatMap(({ credentialHash, rows }) => rows.map((row): MailboxMessage => ({
+    .flatMap(({ grantId, rows }) => rows.map((row): MailboxMessage => ({
       messageId: row.id,
       sequence: row.sequence,
       fromSessionId: row.sender_session_id,
-      from: peerByGrant.get(credentialHash)!,
+      from: peerByGrant.get(grantId)!,
       content: row.content,
       createdAt: row.created_at,
     })))

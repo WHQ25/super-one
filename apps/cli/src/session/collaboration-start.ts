@@ -18,6 +18,7 @@ import {
   linkActivationWakeText,
   parseGrantConfig,
   patchEditableLaunchConfig,
+  prepareLaunchStart,
   type CollaborationGrantRow as GrantRow,
 } from '@superone/runtime/collaboration'
 import {
@@ -28,11 +29,12 @@ import {
 } from './collaboration-context'
 
 export interface CollaborationStartInput {
-  credential?: string
-  grantId?: string
+  /** The session that requested the launch; launchIds are scoped to it. */
+  callerSessionId: string
+  launchId: string
+  /** Full Markdown brief. Required for spawn/handoff; a link's optional opening message. */
+  task?: string
   formAnswers?: Record<string, unknown>
-  /** When set (MCP tool path), must match the grant parent. */
-  callerSessionId?: string
   /** Optional controller identity to bind on the child session. */
   controllerClientSessionId?: string | null
 }
@@ -47,14 +49,6 @@ export interface CollaborationStartResult {
   role: string
   title: string
   config: SessionAgentLaunchConfig
-  credential: string
-  grantId: string
-}
-
-function resolveGrant(ctx: CollaborationContext, credential?: string, grantId?: string): GrantRow | null {
-  if (credential && credential.trim()) return ctx.store.grantByCredential(credential.trim())
-  if (grantId && grantId.trim()) return ctx.store.grantByHash(grantId.trim())
-  return null
 }
 
 function resolveCwd(
@@ -86,7 +80,7 @@ function applyFormAnswers(ctx: CollaborationContext, grant: GrantRow, formAnswer
   const patch = (edited[0] as { config?: unknown } | null)?.config
   if (!patch || typeof patch !== 'object') return grant
   const next = patchEditableLaunchConfig(parseGrantConfig(grant.config_json), patch)
-  ctx.store.updateConfig(grant.credential_hash, next)
+  ctx.store.updateConfig(grant.grant_id, next)
   return { ...grant, config_json: JSON.stringify(next) }
 }
 
@@ -109,13 +103,13 @@ async function deliverInitialTask(ctx: CollaborationContext, grant: GrantRow, ch
       permissionMode: config.permissionMode,
       sandboxMode: config.sandboxMode,
       apiProviderId: config.apiProviderId,
-      requestId: `collaboration-task-${grant.credential_hash.slice(0, 16)}`,
+      requestId: `collaboration-task-${grant.grant_id.slice(0, 16)}`,
     })
   } catch {
     // Turn may fail without a real harness; still mark task enqueued so start
     // remains idempotent for the child session create path.
   }
-  ctx.store.markTaskSent(grant.credential_hash)
+  ctx.store.markTaskSent(grant.grant_id)
 }
 
 async function wakeLinkPeer(
@@ -134,18 +128,14 @@ async function wakeLinkPeer(
         hasOpening,
       }),
       source: 'task-notification',
-      requestId: `collab-link-wake-${grant.credential_hash.slice(0, 12)}-${Date.now()}`,
+      requestId: `collab-link-wake-${grant.grant_id.slice(0, 12)}-${Date.now()}`,
     })
   } catch {
     /* best-effort */
   }
 }
 
-async function startLink(
-  ctx: CollaborationContext,
-  grant: GrantRow,
-  credential: string,
-): Promise<CollaborationStartResult> {
+async function startLink(ctx: CollaborationContext, grant: GrantRow): Promise<CollaborationStartResult> {
   if (!grant.child_session_id) {
     throw new CollaborationError('Link grant is missing peer session id', 'failed_precondition')
   }
@@ -154,7 +144,7 @@ async function startLink(
     throw new CollaborationError(`Peer session no longer exists: ${peerSessionId}`, 'not_found')
   }
   const alreadyStarted = Boolean(grant.started_at)
-  if (!alreadyStarted) ctx.store.markStarted(grant.credential_hash)
+  if (!alreadyStarted) ctx.store.markStarted(grant.grant_id)
   const opening = grant.task?.trim() ?? ''
   if (!alreadyStarted && opening) {
     // Deliver the opening as a mailbox message (never system prompt).
@@ -164,7 +154,7 @@ async function startLink(
     }
   } else {
     void wakeLinkPeer(ctx, peerSessionId, grant, false)
-    if (!alreadyStarted) ctx.store.markTaskSent(grant.credential_hash)
+    if (!alreadyStarted) ctx.store.markTaskSent(grant.grant_id)
   }
   const peer = describeLaunchedPeer(grant)
   return {
@@ -177,8 +167,6 @@ async function startLink(
     role: peer.role,
     title: peer.title,
     config: peer.config,
-    credential,
-    grantId: grant.credential_hash,
   }
 }
 
@@ -186,27 +174,14 @@ export async function startCollaboration(
   ctx: CollaborationContext,
   input: CollaborationStartInput,
 ): Promise<CollaborationStartResult> {
-  let grant = resolveGrant(ctx, input.credential, input.grantId)
-  if (!grant) throw new CollaborationError('Invalid collaboration credential', 'not_found')
-  // grantId alone (without the bearer credential) is a hash lookup that can
-  // decrypt the stored secret. Require the caller to prove parent ownership.
-  const hasBearer = typeof input.credential === 'string' && input.credential.trim().length > 0
-  if (!hasBearer) {
-    if (!input.callerSessionId || input.callerSessionId !== grant.parent_session_id) {
-      throw new CollaborationError('grantId start requires callerSessionId matching the parent session', 'forbidden')
-    }
-  } else if (input.callerSessionId && grant.parent_session_id !== input.callerSessionId) {
-    throw new CollaborationError('Only the parent session may start this credential', 'forbidden')
-  }
-  const credential = input.credential ?? ctx.store.credentialOf(grant)
-  if (!credential) throw new CollaborationError('Invalid collaboration credential', 'not_found')
+  let grant = prepareLaunchStart(ctx.store, input.callerSessionId, input)
 
   // formAnswers may patch editable launch config (desktop confirm UI parity).
   // Link grants ignore form config patches.
   if (grant.kind !== 'link' && input.formAnswers && typeof input.formAnswers === 'object') {
     grant = applyFormAnswers(ctx, grant, input.formAnswers)
   }
-  if (grant.kind === 'link') return startLink(ctx, grant, credential)
+  if (grant.kind === 'link') return startLink(ctx, grant)
 
   // spawn + handoff both create a session and deliver the task; a handoff
   // session id lives in config_json, never in child_session_id.
@@ -239,8 +214,6 @@ export async function startCollaboration(
       role: peer.role,
       title: peer.title,
       config: peer.config,
-      credential,
-      grantId: grant.credential_hash,
     }
   }
 
@@ -282,7 +255,7 @@ export async function startCollaboration(
       sandboxMode: config.sandboxMode ?? null,
       apiProviderId: config.apiProviderId ?? null,
       controllerClientSessionId: input.controllerClientSessionId ?? parent.controllerClientSessionId,
-      // Handoff is one-way by construction: never hand the receiver a credential.
+      // Handoff is one-way by construction: the receiver gets no collaboration prompt.
       ...(isHandoff
         ? {}
         : { systemPromptAppend: collaborationSystemPrompt(grant.parent_session_id) }),
@@ -306,7 +279,7 @@ export async function startCollaboration(
     aggregateType: 'session',
     aggregateId: grant.parent_session_id,
     eventType: isHandoff ? 'collaboration.handoff_started' : 'collaboration.child_started',
-    payload: { grantId: grant.credential_hash, childSessionId: child.sessionId },
+    payload: { grantId: grant.grant_id, childSessionId: child.sessionId },
   })
 
   return {
@@ -330,7 +303,5 @@ export async function startCollaboration(
       ...(config.worktree ? { worktree: config.worktree } : {}),
       ...(config.worktreePath ? { worktreePath: config.worktreePath } as never : {}),
     },
-    credential,
-    grantId: grant.credential_hash,
   }
 }

@@ -39,7 +39,6 @@ import { SlashOutputPanel } from '../ui/slash-output-panel'
 import { McpPanel } from '../ui/mcp-panel'
 import { AddDirScreen } from '../screens/add-dir-screen'
 import { CollabRequestScreen } from '../screens/collab-request-screen'
-import { CollabTaskScreen } from '../screens/collab-task-screen'
 import { WorkflowsPanel } from '../ui/workflows-panel'
 import { workflowRunRows } from '../workflow-runs'
 import { requestMcpServers, type McpServerRow } from '../mcp-status'
@@ -333,9 +332,6 @@ export function MobileApp() {
   additionalDirsRef.current = additionalDirs
   const runtimeRef = useRef<ChatRuntime | null>(null)
   const termRuntimeRef = useRef<TerminalRuntime | null>(null)
-  // The launch whose brief is open on the `collab-task` page; the brief itself is
-  // fetched there, because the request only carries summaries over the wire.
-  const [collabTask, setCollabTask] = useState<SessionAgentLaunchProposal | null>(null)
   // A collaboration request is a page, not a sheet; walking away from it rejects.
   const collab = useCollabRequest({
     request: collabRequestOf(perm),
@@ -1717,10 +1713,6 @@ export function MobileApp() {
       collab.leave()
       return
     }
-    if (screen === 'collab-task') {
-      setScreen('collab-request')
-      return
-    }
     if (screen === 'files') {
       setScreen(filesOrigin === 'session' ? 'chat' : 'settings')
       return
@@ -1753,16 +1745,6 @@ export function MobileApp() {
     // way the desktop keeps its sidebar there — it must not end the session.
     if (screen === 'chat') setSessionSwitcherOpen(true)
   }
-
-  // Stable per launch so the task page's effect runs once per open, not per render.
-  const collabTaskLoader = useCallback(async (): Promise<string> => {
-    const request = collab.open
-    if (!request || !collabTask) throw new Error('That collaboration request is no longer pending')
-    if (!collabTask.taskDeferred) return collabTask.task
-    const runtime = runtimeRef.current
-    if (!runtime) throw new Error('No active connection')
-    return runtime.loadCollabLaunchTask(request.requestId, collabTask.launchId)
-  }, [collab.open, collabTask])
 
   const openTerminal = () => {
     const p = project
@@ -2373,14 +2355,6 @@ export function MobileApp() {
               'permission response failed',
             )
           }}
-          onOpenTask={(launch) => { setCollabTask(launch); setScreen('collab-task') }}
-        />
-      ) : null}
-
-      {route === 'collab-task' && collab.open && collabTask ? (
-        <CollabTaskScreen
-          key={`${collab.open.requestId}/${collabTask.launchId}`}
-          load={collabTaskLoader}
         />
       ) : null}
 

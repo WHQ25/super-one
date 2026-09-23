@@ -165,8 +165,7 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
       {visible && selected?.category === 'Permissions' && selected.request.sessionAgentsConfirm ? <View style={{ position: 'absolute', inset: 0, backgroundColor: tokens.colors.background }}>
         <CollabRequestScreen key={revision} payload={selected.request.sessionAgentsConfirm}
           onApprove={(launches) => { record('allow', { id: selected.request.requestId, launches }); setVisible(false) }}
-          onReject={(reason) => { record('deny', { id: selected.request.requestId, reason }); setVisible(false) }}
-          onOpenTask={(launch, label) => record('open-task', { launchId: launch.launchId, label })} />
+          onReject={(reason) => { record('deny', { id: selected.request.requestId, reason }); setVisible(false) }} />
       </View> : null}
       {collapsed && pendingPrompt ? <PendingPromptBar prompt={pendingPrompt} onExpand={() => setCollapsed(false)} /> : null}
       {visible && selected?.category === 'Permissions' && !selected.request.sessionAgentsConfirm ? <PermissionSheet

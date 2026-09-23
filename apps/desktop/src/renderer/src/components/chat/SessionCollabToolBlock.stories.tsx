@@ -70,7 +70,6 @@ function launch(
   launchId: string,
   agentId: string,
   summary: string,
-  task: string,
   config: SessionAgentLaunchProposal["config"],
   opts: { name: string; role: string },
 ): SessionAgentLaunchProposal {
@@ -80,7 +79,6 @@ function launch(
     mode: "spawn",
     agentId,
     summary,
-    task,
     name,
     role,
     config: {
@@ -99,7 +97,6 @@ function linkLaunch(
   opts: {
     sessionId: string;
     summary: string;
-    task?: string;
     peerTitle: string;
     peerProjectPath?: string;
     peerHarnessId: string;
@@ -124,7 +121,6 @@ function linkLaunch(
     ...(opts.peerBrandKey ? { peerBrandKey: opts.peerBrandKey } : {}),
     ...(opts.peerAcpAgentId ? { peerAcpAgentId: opts.peerAcpAgentId } : {}),
     summary: opts.summary,
-    task: opts.task ?? "",
     name,
     role,
     config: { name, role },
@@ -138,14 +134,6 @@ const permissionPayload: SessionAgentRequestPayload = {
       "review-tests",
       "claude-base",
       "Review focused test failures",
-      [
-        "## Task",
-        "Review the focused test failures and report the root cause.",
-        "",
-        "- Inspect the failing suite",
-        "- List root causes with `file:line`",
-        "- Do **not** edit files",
-      ].join("\n"),
       { model: "claude-sonnet", effort: "medium", sandboxMode: "on" },
       { name: "DiffBot", role: "Reviewer" },
     ),
@@ -153,7 +141,6 @@ const permissionPayload: SessionAgentRequestPayload = {
       "inspect-types",
       "codex-base",
       "Classify typecheck errors",
-      "Inspect the current typecheck errors and classify existing versus new failures.",
       {
         model: "gpt-5.4",
         effort: "high",
@@ -240,7 +227,6 @@ const LAUNCHES_ONE = {
       name: "DiffBot",
       role: "Reviewer",
       summary: "Review the diff (read-only)",
-      task: "Review the diff and report issues only.",
     },
   ],
 };
@@ -253,7 +239,6 @@ const LAUNCHES_TWO = {
       name: "Alice",
       role: "Reviewer",
       summary: "Review focused test failures",
-      task: "Review the focused test failures and report the root cause.",
     },
     {
       launchId: "beta",
@@ -261,12 +246,20 @@ const LAUNCHES_TWO = {
       name: "Bob",
       role: "Implementer",
       summary: "Implement the approved fix",
-      task: "Implement the approved fix.",
     },
   ],
 };
 
-const CRED_A = "s1sc_demo_credential_aaaa";
+const START_INPUT = {
+  launchId: "reviewer",
+  task: [
+    "## Task",
+    "Review the diff and report issues only.",
+    "",
+    "- List findings with `file:line`",
+    "- Do **not** edit files",
+  ].join("\n"),
+};
 
 const START_RESULT = {
   status: "started",
@@ -329,6 +322,7 @@ export const CollabRequest: Story = {
         result: JSON.stringify({
           status: "approved",
           launches: LAUNCHES_ONE.launches,
+          next: "Start each launch with session_collab_start({ launchId, task }).",
         }),
       })}
     </StoryShell>
@@ -356,7 +350,6 @@ export const NarrowManyAgents: Story = {
           `narrow-${index}`,
           index % 2 ? "codex-base" : "claude-base",
           `Task ${index + 1}`,
-          `Task number ${index + 1}.`,
           { model: index % 2 ? "gpt-5.4" : "claude-sonnet" },
           { name: `Agent ${index + 1}`, role: "Worker" },
         ),
@@ -385,7 +378,6 @@ export const EveryHarness: Story = {
           "h-claude",
           "claude-base",
           "Claude permission modes",
-          "Claude runs the full permission-mode list.",
           { model: "claude-sonnet", permissionMode: "plan" },
           { name: "PlannerBot", role: "Planner" },
         ),
@@ -393,7 +385,6 @@ export const EveryHarness: Story = {
           "h-codex",
           "codex-base",
           "Codex sandbox presets",
-          "Codex shows sandbox presets instead of permission modes.",
           { model: "gpt-5.4", permissionMode: "bypassPermissions" },
           { name: "CoderBot", role: "Coder" },
         ),
@@ -401,7 +392,6 @@ export const EveryHarness: Story = {
           "h-grok",
           "acp-base",
           "Grok ACP baselines",
-          "Grok shows the ACP ask/plan/auto/always baselines.",
           { model: "grok-4.5", permissionMode: "auto" },
           { name: "DiffBot", role: "Reviewer" },
         ),
@@ -409,7 +399,6 @@ export const EveryHarness: Story = {
           "h-opencode",
           "opencode-base",
           "OpenCode mode subset",
-          "OpenCode shows only the modes its backend implements.",
           { model: "kimi-k2", permissionMode: "dontAsk" },
           { name: "Scout", role: "Explorer" },
         ),
@@ -428,7 +417,6 @@ export const GrokRoles: Story = {
           "alpha",
           "acp-base",
           "Review the diff (read-only)",
-          "You are Reviewer. Review the diff and report issues only.",
           { model: "grok-4.5" },
           { name: "DiffBot", role: "Reviewer" },
         ),
@@ -436,7 +424,6 @@ export const GrokRoles: Story = {
           "beta",
           "acp-base",
           "Apply the approved fix",
-          "You are Implementer. Apply the approved fix.",
           { model: "grok-4.5" },
           { name: "FixBot", role: "Implementer" },
         ),
@@ -455,7 +442,6 @@ export const WorkingLocations: Story = {
           "loc-parent",
           "claude-base",
           "Parent working directory",
-          "Runs in the parent session's own working directory — no worktree.",
           { model: "claude-sonnet" },
           { name: "ParentBot", role: "Worker" },
         ),
@@ -463,7 +449,6 @@ export const WorkingLocations: Story = {
           "loc-branch",
           "claude-base",
           "Fresh branch worktree",
-          "Runs in a fresh worktree on a newly created branch.",
           {
             model: "claude-sonnet",
             worktree: {
@@ -480,7 +465,6 @@ export const WorkingLocations: Story = {
           "loc-detach",
           "claude-base",
           "Detached worktree",
-          "Runs in a detached worktree — no branch of its own.",
           {
             model: "claude-sonnet",
             worktree: { enabled: true, baseBranch: "main", mode: "detach" },
@@ -491,7 +475,6 @@ export const WorkingLocations: Story = {
           "loc-attach",
           "claude-base",
           "Attach existing branch",
-          "Runs in a worktree attached to an existing branch.",
           {
             model: "claude-sonnet",
             worktree: {
@@ -507,7 +490,6 @@ export const WorkingLocations: Story = {
           "loc-nested",
           "codex-base",
           "Nested sub-package cwd",
-          "Runs in a nested sub-package directory.",
           {
             model: "gpt-5.4",
             cwd: "/Users/me/projects/super-one/apps/desktop",
@@ -528,8 +510,7 @@ export const ManyAgents: Story = {
         launch(
           `launch-${index}`,
           index % 2 ? "codex-base" : "claude-base",
-          permissionPayload.launches[index % 2].summary,
-          `${permissionPayload.launches[index % 2].task} (#${index + 1})`,
+          `${permissionPayload.launches[index % 2].summary} (#${index + 1})`,
           { model: index % 2 ? "gpt-5.4" : "claude-sonnet" },
           { name: `Agent ${index + 1}`, role: "Worker" },
         ),
@@ -549,14 +530,6 @@ export const LinkExistingSession: Story = {
           peerTitle: "API review session",
           summary:
             "Align with the existing review session on request/response types",
-          task: [
-            "## Opening",
-            "Please confirm the request body shape for the new endpoint.",
-            "",
-            "- Field names",
-            "- Optional vs required",
-            "- Error envelope",
-          ].join("\n"),
           peerHarnessId: "claude",
           peerHarnessName: "Claude",
           peerBrandKey: "claude",
@@ -596,7 +569,6 @@ export const MixedSpawnAndLink: Story = {
           "spawn-impl",
           "claude-base",
           "Implement the API change",
-          "Implement the API change and run focused tests.",
           {
             model: "claude-sonnet",
             effort: "high",
@@ -614,7 +586,6 @@ export const MixedSpawnAndLink: Story = {
           sessionId: "cccccccc-cccc-cccc-cccc-cccccccccccc",
           peerTitle: "Earlier design thread",
           summary: "Sync design decisions with the existing Grok session",
-          task: "Please restate the agreed API contract before Alice lands the change.",
           peerHarnessId: "acp",
           peerHarnessName: "Grok",
           peerBrandKey: "acp-grok",
@@ -635,7 +606,6 @@ export const MultipleLinks: Story = {
           sessionId: "dddddddd-dddd-dddd-dddd-dddddddddddd",
           peerTitle: "Typecheck cleanup",
           summary: "Ask the typecheck session for remaining errors",
-          task: "List remaining `tsc` errors with file:line.",
           peerHarnessId: "codex",
           peerHarnessName: "Codex",
           peerBrandKey: "codex",
@@ -657,16 +627,14 @@ export const CollabStart: Story = {
   name: "session_collab_start",
   render: () => (
     <StoryShell>
-      {block(
-        "session_collab_start",
-        { credential: CRED_A },
-        { status: "streaming", elapsedSeconds: 1 },
-      )}
-      {block(
-        "session_collab_start",
-        { credential: CRED_A },
-        { result: JSON.stringify(START_RESULT) },
-      )}
+      {block("session_collab_start", START_INPUT, {
+        status: "streaming",
+        elapsedSeconds: 1,
+      })}
+      {/* Expand to see the brief above the launch details. */}
+      {block("session_collab_start", START_INPUT, {
+        result: JSON.stringify(START_RESULT),
+      })}
     </StoryShell>
   ),
 };

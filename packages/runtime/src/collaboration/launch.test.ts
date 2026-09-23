@@ -5,7 +5,8 @@ import {
   deriveCollaborationName,
   deriveCollaborationRole,
   mergeConfirmedLaunches,
-  normalizeLaunchText,
+  normalizeLaunchLabels,
+  normalizeStartTask,
   patchEditableLaunchConfig,
 } from './launch'
 import { collaborationSystemPrompt } from './text'
@@ -30,20 +31,29 @@ describe('collaboration labels', () => {
   })
 })
 
-describe('normalizeLaunchText', () => {
-  it('requires spawn and handoff launches to name the new session', () => {
-    expect(() => normalizeLaunchText('spawn', { task: 'Do it', role: 'Dev' })).toThrow(/non-empty name/)
-    expect(() => normalizeLaunchText('handoff', { task: 'Do it', name: 'Ada' })).toThrow(/non-empty role/)
-    expect(() => normalizeLaunchText('spawn', { name: 'Ada', role: 'Dev' })).toThrow(CollaborationError)
+describe('normalizeLaunchLabels', () => {
+  it('requires a summary and, for spawn and handoff, a name and role', () => {
+    expect(() => normalizeLaunchLabels('spawn', { summary: 'Do it', role: 'Dev' })).toThrow(/non-empty name/)
+    expect(() => normalizeLaunchLabels('handoff', { summary: 'Do it', name: 'Ada' })).toThrow(/non-empty role/)
+    expect(() => normalizeLaunchLabels('spawn', { name: 'Ada', role: 'Dev' })).toThrow(CollaborationError)
+    expect(() => normalizeLaunchLabels('link', {}, 'Peer title')).toThrow(/non-empty summary/)
   })
 
   it('defaults link labels from the existing peer', () => {
-    expect(normalizeLaunchText('link', { summary: 'Sync' }, 'Peer title')).toEqual({
-      task: '',
+    expect(normalizeLaunchLabels('link', { summary: 'Sync' }, 'Peer title')).toEqual({
       summary: 'Sync',
       name: 'Peer title',
       role: 'Peer',
     })
+  })
+})
+
+describe('normalizeStartTask', () => {
+  it('requires a brief for spawn and handoff but not for link', () => {
+    expect(() => normalizeStartTask('spawn', '  ')).toThrow(/requires a non-empty task/)
+    expect(() => normalizeStartTask('handoff', undefined)).toThrow(/requires a non-empty task/)
+    expect(normalizeStartTask('link', undefined)).toBe('')
+    expect(normalizeStartTask('spawn', ' Do it ')).toBe('Do it')
   })
 })
 
@@ -53,7 +63,6 @@ describe('confirmed launch merge', () => {
     mode: 'spawn',
     agentId: 'claude-base',
     summary: 's',
-    task: 't',
     name: 'Ada',
     role: 'Dev',
     config: { permissionMode: 'default', sandboxMode: 'off', cwd: '/repo', name: 'Ada', role: 'Dev' },

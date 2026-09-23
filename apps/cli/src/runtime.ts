@@ -20,7 +20,6 @@ import { createMultiHarnessRouter } from './session/harness-runners'
 import { createProductionTurnRunner } from './session/codex-turn-runner'
 import { HarnessManager } from './session/harness-manager'
 import { CollaborationService } from './session/collaboration'
-import { createNodeSecretCrypto } from './provider/secret-crypto'
 import { WorkspaceWatchService } from './workspace/watch-service'
 import { WorkspaceTailWatchService } from './workspace/tail-watch-service'
 import { IdempotencyService } from './auth/idempotency'
@@ -115,7 +114,6 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     partial.allowSimulatedTurnFallback ?? simulatedHarness
 
   const providers = new ProviderStore(db, paths.providerSecretsKey)
-  const collabSecrets = createNodeSecretCrypto(paths.providerSecretsKey)
 
   // Host Action MCP must call sessions.requestHostAction; collab tools call
   // CollaborationService in-process (late-bound — created after sessions).
@@ -146,7 +144,6 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
           launches?: Array<{
             launchId?: string
             agentId: string
-            task: string
             name: string
             role: string
             config?: Record<string, unknown>
@@ -161,10 +158,11 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
       },
       start: async (sessionId, args) => {
         if (!collaborationRef) throw Object.assign(new Error('collab not ready'), { code: 'failed_precondition' })
-        const a = (args && typeof args === 'object' ? args : {}) as { credential?: string }
+        const a = (args && typeof args === 'object' ? args : {}) as { launchId?: unknown; task?: unknown }
         return collaborationRef.start({
-          credential: typeof a.credential === 'string' ? a.credential : undefined,
           callerSessionId: sessionId,
+          launchId: typeof a.launchId === 'string' ? a.launchId : '',
+          task: typeof a.task === 'string' ? a.task : undefined,
         })
       },
       send: async (sessionId, args) => {
@@ -243,7 +241,6 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     providers,
     projects,
     workspaceGit,
-    secrets: collabSecrets,
     sessionProviders,
     experimentalClaudeOpenAiChatEnabled: () =>
       loadNodeAgentSettings(paths.configJson).experimentalClaudeOpenAiChatEnabled,

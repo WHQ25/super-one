@@ -15,6 +15,7 @@ import {
   describeLaunchedPeer,
   handoffTaskContent,
   parseGrantConfig as parseConfig,
+  prepareLaunchStart,
   readOnlyTargetMessage as collaborationTargetReadOnlyMessage,
   type CollaborationGrantRow as GrantRow,
 } from '@superone/runtime/collaboration'
@@ -26,6 +27,7 @@ import { listSessionAgentProfiles } from './agent-profiles'
 import { collaborationStore as store, notifyCollaborationMailboxChanged } from './collaboration-mailbox'
 import { ensureChildProject, isManagedWorktreePath, resolveCwd } from './collaboration-child-project'
 import {
+  errorResult,
   isCollaborationTargetReadOnly,
   notifyCollaborationSessionsChanged,
   resolveCodexServiceTier,
@@ -89,7 +91,7 @@ async function deliverInitialTask(grant: GrantRow, child: Session): Promise<void
     content: initialTaskContent(grant),
     model: config.model,
     effort: config.effort as EffortLevel | undefined,
-    clientMessageId: `collaboration-task-${grant.credential_hash.slice(0, 16)}`,
+    clientMessageId: `collaboration-task-${grant.grant_id.slice(0, 16)}`,
     source: 'collaboration',
     collaboration: {
       kind: 'initial_task',
@@ -126,19 +128,26 @@ async function deliverInitialTask(grant: GrantRow, child: Session): Promise<void
     )
   })
 
-  store().markTaskSent(grant.credential_hash)
+  store().markTaskSent(grant.grant_id)
 }
 
 
+export interface SessionStartArgs {
+  launchId: string
+  /** Full Markdown brief. Required for spawn/handoff; a link's optional opening message. */
+  task?: string
+}
+
 export async function startSessionAgent(
   callerSessionId: string,
-  credential: string,
+  args: SessionStartArgs,
   host: SessionManager,
 ) {
-  let grant = store().grantByCredential(credential)
-  if (!grant) return toolResult({ status: 'error', message: 'Invalid collaboration credential' }, true)
-  if (grant.parent_session_id !== callerSessionId) {
-    return toolResult({ status: 'error', message: 'Only the parent session may start this credential' }, true)
+  let grant: GrantRow
+  try {
+    grant = prepareLaunchStart(store(), callerSessionId, args)
+  } catch (error) {
+    return errorResult(error)
   }
 
   // --- link: bind existing peer, turn-inject only (never system prompt) ---
@@ -160,7 +169,7 @@ export async function startSessionAgent(
         message: collaborationTargetReadOnlyMessage(peerSessionId),
       }, true)
     }
-    if (!alreadyStarted) store().markStarted(grant.credential_hash)
+    if (!alreadyStarted) store().markStarted(grant.grant_id)
     const opening = grant.task?.trim() ?? ''
     const hasOpening = opening.length > 0 && !alreadyStarted
     if (hasOpening) {
@@ -169,7 +178,7 @@ export async function startSessionAgent(
     } else if (!alreadyStarted) {
       // No opening body — still wake the peer so it learns about the link.
       void wakeLinkPeer(host, peerSessionId, grant, false)
-      store().markTaskSent(grant.credential_hash)
+      store().markTaskSent(grant.grant_id)
     } else {
       // Idempotent retry: re-wake without duplicating mailbox.
       void wakeLinkPeer(host, peerSessionId, grant, false)
@@ -189,7 +198,7 @@ export async function startSessionAgent(
   }
 
   // --- spawn + handoff: both create a session and deliver the task. They differ
-  // in nesting, in whether a mailbox credential is injected, and in where the new
+  // in nesting, in whether the new session gets a mailbox, and in where the new
   // session id is recorded.
   //
   // A handoff session is deliberately *not* written to child_session_id: that column
@@ -312,7 +321,7 @@ export async function startSessionAgent(
       permissionMode: config.permissionMode as PermissionMode | undefined,
       sandboxMode: config.sandboxMode as SandboxMode | undefined,
       acpAgentId: profile?.acpAgentId ?? null,
-      // Handoff is one-way by construction: never hand the receiver a credential.
+      // Handoff is one-way by construction: the receiver gets no collaboration prompt.
       ...(isHandoff
         ? {}
         : { systemPromptAppend: collaborationSystemPrompt(grant.parent_session_id) }),
@@ -400,7 +409,7 @@ async function deliverLinkOpening(grant: GrantRow, host: SessionManager): Promis
   if (!grant.child_session_id) return
   const content = grant.task.trim()
   if (!content) {
-    store().markTaskSent(grant.credential_hash)
+    store().markTaskSent(grant.grant_id)
     return
   }
   const recipientSessionId = grant.child_session_id

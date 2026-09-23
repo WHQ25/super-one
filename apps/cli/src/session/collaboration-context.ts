@@ -3,7 +3,6 @@ import { normalizeSessionHarnessId } from '@superone/shared/environment'
 import type { SessionProviderStore } from '@superone/runtime/session'
 import type {
   CollaborationGrantRow,
-  CollaborationSecretCrypto,
   CollaborationStore,
 } from '@superone/runtime/collaboration'
 import type { NodeDatabase } from '../db/database'
@@ -23,7 +22,6 @@ export interface CollaborationDeps {
   providers: ProviderStore
   projects: ProjectRegistry
   workspaceGit: WorkspaceGitService
-  secrets: CollaborationSecretCrypto
   /** Session-layer provider profiles (feeds multi-profile listProfiles). */
   sessionProviders?: SessionProviderStore
   experimentalClaudeOpenAiChatEnabled?: () => boolean

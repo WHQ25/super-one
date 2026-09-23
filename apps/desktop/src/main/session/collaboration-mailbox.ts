@@ -1,14 +1,13 @@
 import { EventEmitter } from 'node:events'
 import type { CollaborationMailboxMessage } from '@superone/shared/collaboration-mailbox'
 import { CollaborationStore } from '@superone/runtime/collaboration'
-import { decryptSecret, encryptSecret } from '../crypto/secret-store'
 import { getDb } from '../database'
 
 const events = new EventEmitter()
 
 /** getDb() is resolved per call: tests and app startup swap the database handle. */
 export function collaborationStore(): CollaborationStore {
-  return new CollaborationStore(getDb(), { encrypt: encryptSecret, decrypt: decryptSecret })
+  return new CollaborationStore(getDb())
 }
 
 export function onCollaborationMailboxChanged(listener: (sessionId: string) => void): () => void {

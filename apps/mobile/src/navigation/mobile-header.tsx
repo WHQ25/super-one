@@ -38,7 +38,6 @@ export function mobileHeaderTitle(
   if (route === 'add-project') return translate('Add project')
   if (route === 'settings') return translate('Settings')
   if (route === 'collab-request') return translate('Collaboration request')
-  if (route === 'collab-task') return translate('Full task')
   // Files names whatever it is anchored to — a project folder or the machine —
   // and that name is the way back to the top of it.
   if (route === 'files') return projectName ?? translate('Files')

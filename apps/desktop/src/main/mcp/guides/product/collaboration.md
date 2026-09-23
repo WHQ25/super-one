@@ -4,17 +4,17 @@ Read this before `session_collab_request`, especially when a child needs an isol
 
 ## Three launch modes
 
-| `mode` | Purpose | Required fields | Injection |
-|--------|---------|-----------------|-----------|
-| `spawn` (default) | Create a **new** child session you keep talking to | `agentId`, `name`, `role`, `summary`, `task` | Child gets a collaboration **system prompt** naming you as its parent |
-| `handoff` | Create a **new top-level sibling** that takes the task over | `agentId`, `name`, `role`, `summary`, `task` | **None.** No mailbox. The task is delivered as the opening turn with a provenance line naming you. |
-| `link` | Mailbox with an **existing** session | `sessionId`, `summary` (`task` = optional opening body; omit for wake-only) | Peer is woken via **turn injection** only — never system prompt. Link peers stay top-level in the sidebar (not nested under the initiator). |
+| `mode` | Purpose | Request fields | Start `task` | Injection |
+|--------|---------|----------------|--------------|-----------|
+| `spawn` (default) | Create a **new** child session you keep talking to | `agentId`, `name`, `role`, `summary` | Required | Child gets a collaboration **system prompt** naming you as its parent |
+| `handoff` | Create a **new top-level sibling** that takes the task over | `agentId`, `name`, `role`, `summary` | Required | **None.** No mailbox. The task is delivered as the opening turn with a provenance line naming you. |
+| `link` | Mailbox with an **existing** session | `sessionId`, `summary` | Optional opening body; omit for wake-only | Peer is woken via **turn injection** only — never system prompt. Link peers stay top-level in the sidebar (not nested under the initiator). |
 
 `sessionId` for `link` must be a real SuperOne session id (from `@session` mentions or `session_list` / `session_search`). Never invent ids. Do not use `spawn` or `handoff` when the target already exists.
 
 ### `spawn` or `handoff`?
 
-Both take the same launch shape (`agentId`, `name`, `role`, `summary`, `task`, `config`). Pick by whether you stay responsible for the work.
+Both take the same launch shape (`agentId`, `name`, `role`, `summary`, `config`) and a `task` at start. Pick by whether you stay responsible for the work.
 
 | Ask | Use |
 |-----|-----|
@@ -24,7 +24,7 @@ Both take the same launch shape (`agentId`, `name`, `role`, `summary`, `task`, `
 Handoff consequences, all intentional:
 
 - The new session is **top-level**, listed beside you in the sidebar — not nested under this one.
-- It **cannot reply**, and you **cannot** message it with `session_collab_send` (the host returns an error). `session_collab_start` spends the credential.
+- It **cannot reply**, and you **cannot** message it with `session_collab_send` (the host returns an error).
 - Nothing is inherited: the receiver sees only the `task` body plus a provenance line with your session id, so it can `session_read({ sessionId })` for context. **Write a self-contained brief** — it has no way to ask a follow-up question.
 - A handoff receiver may itself hand off / spawn again (nesting limits do not apply to siblings), so chains are fine.
 
@@ -35,9 +35,9 @@ Say what you did in your own reply: the user sees a new top-level session, not a
 | Step | Action |
 |------|--------|
 | 1 | **Spawn / handoff:** call `session_collab_list_agents` and choose an `agentId`. **Link:** take `sessionId` from `@session` / session tools. |
-| 2 | Call `session_collab_request` with one or more launches (`mode` optional, defaults to `spawn`). Spawn/handoff: invent `name`/`role`, pass `summary` + full Markdown `task`. Link: pass `sessionId` + `summary` (+ optional `task` opening). |
-| 3 | Wait for user approval. Each approved launch returns a private, one-shot credential. |
-| 4 | Call `session_collab_start` for every credential back-to-back. Spawn: host creates the child and delivers `task`. Handoff: host creates the sibling, delivers `task`, and the credential is spent. Link: host binds the peer and wakes it (opening via mailbox + turn wake). |
+| 2 | Call `session_collab_request` with one or more launches (`mode` optional, defaults to `spawn`). Spawn/handoff: invent `name`/`role` and pass a short `summary` for the user to approve. Link: pass `sessionId` + `summary`. Do not write the brief yet — a rejected request never costs it. |
+| 3 | Wait for user approval. Each approved launch returns its `launchId`. |
+| 4 | Call `session_collab_start({ launchId, task })` for every approved launch back-to-back. `task` is the full Markdown brief. Spawn: host creates the child and delivers `task`. Handoff: host creates the sibling and delivers `task`. Link: host binds the peer and wakes it; a `task` becomes the opening mailbox message. A retry with the same `launchId` is idempotent and keeps the first `task`. |
 | 5 | Spawn/link only: exchange durable Markdown handoffs with `session_collab_send({ to: sessionId })` and `session_collab_retrieve`. Delivery is push-based; never poll while waiting. Handoff has no step 5. |
 
 ### Link example
@@ -48,11 +48,16 @@ Say what you did in your own reply: the user sees a new top-level session, not a
     {
       "mode": "link",
       "sessionId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-      "summary": "Align with the existing review session on API shape",
-      "task": "Please confirm the request/response types for the new endpoint."
+      "summary": "Align with the existing review session on API shape"
     }
   ]
 }
+```
+
+Then start it with the opening message:
+
+```json
+{ "launchId": "<from the request result>", "task": "Please confirm the request/response types for the new endpoint." }
 ```
 
 ### Handoff example
@@ -66,14 +71,19 @@ Say what you did in your own reply: the user sees a new top-level session, not a
       "name": "Dana",
       "role": "Implementer",
       "summary": "Continue the migration with phase 2",
-      "task": "## Context\nPhase 1 (schema + backfill) is merged on `main`.\n\n## Your task\nImplement phase 2 …\n\n## Done when\n`bun run test` passes.",
       "config": { "permissionMode": "bypassPermissions" }
     }
   ]
 }
 ```
 
-A single request may mix spawn, handoff and link launches (one confirm card, multiple tabs).
+Then start it with the self-contained brief:
+
+```json
+{ "launchId": "<from the request result>", "task": "## Context\nPhase 1 (schema + backfill) is merged on `main`.\n\n## Your task\nImplement phase 2 …\n\n## Done when\n`bun run test` passes." }
+```
+
+A single request may mix spawn, handoff and link launches (one confirm card, multiple tabs). The recipes below show request payloads; each launch still gets its `task` at start.
 
 ## Choose `cwd` or `worktree`
 
@@ -133,8 +143,7 @@ Default for “review my local changes” / “code review this session’s diff
       "agentId": "codex-base",
       "name": "Casey",
       "role": "Reviewer",
-      "summary": "Review uncommitted WIP (read-only)",
-      "task": "Review the uncommitted work with git status/diff. Report bugs and risks with file:line. Do not implement fixes.",
+      "summary": "Review uncommitted WIP (read-only); report bugs with file:line, no fixes",
       "config": {
         "permissionMode": "bypassPermissions",
         "sandboxMode": "on"
@@ -156,7 +165,6 @@ Omit `cwd`. Give each implementer a unique branch.
       "name": "Alice",
       "role": "Implementer",
       "summary": "Implement API change + tests",
-      "task": "Implement the API change and run focused tests.",
       "config": {
         "worktree": {
           "enabled": true,
@@ -171,7 +179,6 @@ Omit `cwd`. Give each implementer a unique branch.
       "name": "Blake",
       "role": "Implementer",
       "summary": "Implement UI change + tests",
-      "task": "Implement the UI change and run focused tests.",
       "config": {
         "worktree": {
           "enabled": true,
@@ -196,7 +203,7 @@ Only when an implementer already has `feat/api-change` checked out in another wo
       "agentId": "codex-base",
       "name": "Casey",
       "role": "Reviewer",
-      "task": "Review feat/api-change and report correctness risks with file references.",
+      "summary": "Review feat/api-change for correctness risks",
       "config": {
         "worktree": {
           "enabled": true,
@@ -220,7 +227,7 @@ Set `cwd` only because this launch targets a genuinely different project root. T
       "agentId": "claude-base",
       "name": "Dana",
       "role": "Implementer",
-      "task": "Implement the matching client change in OtherApp.",
+      "summary": "Implement the matching client change in OtherApp",
       "config": {
         "cwd": "/Users/you/Code/OtherApp",
         "worktree": {

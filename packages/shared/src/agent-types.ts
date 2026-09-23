@@ -994,23 +994,12 @@ export const SESSION_AGENT_TASK_MAX = 100_000
 
 /**
  * Collaboration launch mode:
- * - `spawn` — create a new child session (system-prompt credential injection)
+ * - `spawn` — create a new child session (system prompt names its parent)
  * - `link` — mailbox with an already-existing session (turn/wake injection only)
  * - `handoff` — create a new **sibling** session that only receives the task
- *   (no credential, no mailbox, not nested under the initiator in the sidebar)
+ *   (no mailbox, not nested under the initiator in the sidebar)
  */
 export type SessionCollabLaunchMode = 'spawn' | 'link' | 'handoff'
-
-/**
- * Resolve the user-facing summary for a collab launch.
- * Prefer an explicit summary; otherwise take the first line of the task.
- * Soft guidance (not enforced): keep to a short 2–3 sentence task summary.
- */
-export function resolveLaunchSummary(task: string, summary?: string | null): string {
-  const explicit = typeof summary === 'string' ? summary.trim() : ''
-  if (explicit) return explicit
-  return task.split(/\n/, 1)[0]?.trim() || task.trim()
-}
 
 export interface SessionAgentLaunchProposal {
   launchId: string
@@ -1038,25 +1027,11 @@ export interface SessionAgentLaunchProposal {
   /** Host-resolved peer brand key for confirm tab icon (`link` only). */
   peerBrandKey?: string
   /**
-   * Short task summary shown collapsed in the confirm UI (soft guidance: 2–3 sentences).
-   * Full brief belongs in `task`.
+   * What the launch is for, shown in the confirm UI (soft guidance: 2–3 sentences).
+   * The full brief is not part of the proposal: the agent passes it to
+   * session_collab_start after approval, so a rejected request is cheap to redo.
    */
   summary: string
-  /**
-   * Full task brief (Markdown).
-   * `spawn`: delivered to the child on session_collab_start.
-   * `handoff`: delivered to the new sibling session as its opening turn, with a
-   * provenance line naming the initiator. No credential is ever injected.
-   * `link`: optional opening for the peer (mailbox + turn wake — not system prompt).
-   * Shown when the user expands the summary in the confirm UI.
-   */
-  task: string
-  /**
-   * Remote Control only: the brief was withheld from the wire (a launch can carry
-   * pages of Markdown the phone may never open) and is fetched on demand with
-   * `get_collab_launch_task`. The host never reads `task` back from a confirm.
-   */
-  taskDeferred?: boolean
   /**
    * Agent-chosen human label (e.g. "Alice", "Diff Reviewer") — not the harness
    * name. Used for session title and tool summaries: `Name - Role`.
@@ -4881,8 +4856,6 @@ export type RemoteCommand =
    */
   | { type: 'resolve_favicon'; requestId: string; url: string; isDark: boolean }
   | { type: 'get_session_state'; requestId: string; projectPath: string; sessionId: string }
-  /** The full brief of one launch in a pending `session_agents_confirm` (see `taskDeferred`). */
-  | { type: 'get_collab_launch_task'; requestId: string; projectPath: string; sessionId: string; permissionRequestId: string; launchId: string }
   /**
    * The original bytes of an attachment a transcript carried as a `preview`
    * thumbnail. Matched by `attachmentId` when the attachment has one, by

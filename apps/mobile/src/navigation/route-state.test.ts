@@ -47,8 +47,6 @@ describe('routeHierarchy', () => {
   it('opens a collaboration request over the chat that received it', () => {
     // Leaving the page rejects the request, so nothing may sit between it and chat.
     expect(routeHierarchy('collab-request')).toEqual(['pair', 'chat', 'collab-request'])
-    // The brief stacks on the request: back returns to a still-undecided request.
-    expect(routeHierarchy('collab-task')).toEqual(['pair', 'chat', 'collab-request', 'collab-task'])
   })
 
   it('opens the git pickers over the chat they were started from', () => {

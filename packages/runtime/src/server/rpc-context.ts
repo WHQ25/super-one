@@ -134,23 +134,21 @@ export interface CollaborationPort {
     signal?: AbortSignal
   }): Promise<unknown>
   start(input: {
-    credential?: string
-    grantId?: string
+    callerSessionId: string
+    launchId: string
+    task?: string
     formAnswers?: Record<string, unknown>
-    callerSessionId?: string
     controllerClientSessionId?: string | null
   }): Promise<unknown>
   send(input: {
-    credential: string
+    sessionId: string
+    to?: string
     content: string
     clientMessageId?: string
-    sessionId: string
   }): unknown
   retrieve(input: {
-    credential?: string
-    credentials?: string[]
     sessionId: string
-    max?: number
+    from?: string[]
   }): unknown
 }
 

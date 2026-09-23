@@ -101,17 +101,20 @@ export const SESSION_LIST_AGENTS_DESCRIPTION =
 
 export const SESSION_REQUEST_AGENTS_DESCRIPTION =
   'Request user approval for collaboration launches. See the mode field for spawn vs handoff vs link. ' +
-  'Spawn/handoff: pick an agentId from session_collab_list_agents; require name, role, summary, task. Link: require sessionId + summary. ' +
+  'Spawn/handoff: pick an agentId from session_collab_list_agents; require name, role, summary. Link: require sessionId + summary. ' +
   'Read read_manual({ domain: "product", topic: "collaboration" }) before the first launch in a session. ' +
-  'User must approve; returns the credential for session_collab_start.'
+  'User must approve; returns a launchId per launch. Pass the task to session_collab_start, not here.'
 
 export const LAUNCH_SUMMARY_DESCRIPTION =
-  'Short 2–3 sentence task summary shown collapsed in the confirm dialog. Not the full brief — put detail in task.'
+  'Short 2–3 sentence summary the user approves in the confirm dialog. The full brief goes to session_collab_start.'
+
+export const START_LAUNCH_ID_DESCRIPTION =
+  'A launchId returned by session_collab_request in this session.'
 
 export const LAUNCH_TASK_DESCRIPTION =
-  'Full Markdown brief. Spawn/handoff: delivered to the new session on session_collab_start. ' +
+  'Full Markdown brief. Required for spawn/handoff, delivered to the new session. ' +
   'A handoff receiver cannot ask you anything back, so make the brief self-contained. ' +
-  'Link: optional opening for the peer (mailbox + turn wake, never system prompt). Expandable in the confirm UI.'
+  'Link: optional opening for the peer (mailbox + turn wake, never system prompt).'
 
 export const LAUNCH_MODE_DESCRIPTION =
   '"spawn" (default) = nested child with a two-way mailbox. ' +
@@ -149,11 +152,11 @@ export const LAUNCH_BRANCH_NAME_DESCRIPTION =
   'With mode "branch", create this unique branch. Git cannot check out one branch in two worktrees.'
 
 export const SESSION_START_DESCRIPTION =
-  'Activate one approved collaboration credential. Spawn: create the child and deliver its task. ' +
-  'Handoff: create the sibling session and deliver the task; the credential is spent, no mailbox follows. ' +
+  'Start one approved launch by launchId and give it its task. Spawn: create the child and deliver the task. ' +
+  'Handoff: create the sibling session and deliver the task; no mailbox follows. ' +
   'Link: bind the existing peer and wake it via turn injection (not system prompt). ' +
   'Returns the peer sessionId once it begins or is notified; message it with session_collab_send. ' +
-  'Retries are idempotent. Start all credentials back-to-back.'
+  'Retries are idempotent and keep the first task. Start all approved launches back-to-back.'
 
 export const SESSION_SEND_DESCRIPTION =
   'Send a persistent Markdown message to a collaboration peer: your spawn parent or child, or a linked session. ' +

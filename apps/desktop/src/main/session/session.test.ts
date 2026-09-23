@@ -3547,8 +3547,7 @@ describe('Session ownership', () => {
 
   it('queued mailbox wake reaches the agent without entering the transcript', async () => {
     const { session, backend } = makeSession()
-    const secret = 's1sc_abcdefghijklmnopqrstuvwxyz0123456789'
-    const prompt = `A collaboration mailbox message is ready. Call session_collab_retrieve with credential ${JSON.stringify(secret)} to receive it.`
+    const prompt = 'A collaboration mailbox message is ready. It is from SuperOne session parent. Call session_collab_retrieve to receive it.'
     const events: import('@superone/shared/agent-types').AgentEvent[] = []
     session.on((e) => events.push(e))
     const sendPromise = session.send(
@@ -3559,7 +3558,7 @@ describe('Session ownership', () => {
     backend.resolveSend?.()
     await sendPromise
     // Agent still receives full prompt
-    expect(backend.sendCalls[0].content).toContain(secret)
+    expect(backend.sendCalls[0].content).toContain(prompt)
     expect(events.some((event) => event.type === 'user_message_appended')).toBe(false)
     expect(session.snapshot.messages.filter((message) => message.role === 'user')).toEqual([])
   })

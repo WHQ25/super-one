@@ -3,7 +3,7 @@ import { isKnownEffortLevel } from '@superone/shared/effort-labels'
 import { HARNESS_DEFAULT_BRAND_HUE } from '@superone/shared/harness-brand'
 import { nativeScenarios } from './scenarios'
 
-export const shellPreviewPages = ['New session', 'Chat', 'Drafts', 'Project', 'Add project', 'Worktree', 'Branch', 'Additional folders', 'Browse folders', 'Collaboration request', 'Collaboration task', 'File preview', 'Icons', 'Git indicators', 'Session status', 'Network ledger', 'Composer suggestions', 'Chip editor', 'Loading states', 'Usage', 'Devices', 'Pairing', 'Workspace', 'Session search', 'Settings', 'Files', 'Computer files', 'File search', 'Go to folder', 'Empty folder', 'Folder error', 'Terminal', 'LAN browser', 'Tool catalog', 'Update'] as const
+export const shellPreviewPages = ['New session', 'Chat', 'Drafts', 'Project', 'Add project', 'Worktree', 'Branch', 'Additional folders', 'Browse folders', 'Collaboration request', 'File preview', 'Icons', 'Git indicators', 'Session status', 'Network ledger', 'Composer suggestions', 'Chip editor', 'Loading states', 'Usage', 'Devices', 'Pairing', 'Workspace', 'Session search', 'Settings', 'Files', 'Computer files', 'File search', 'Go to folder', 'Empty folder', 'Folder error', 'Terminal', 'LAN browser', 'Tool catalog', 'Update'] as const
 export type ShellPreviewPage = typeof shellPreviewPages[number]
 
 /**

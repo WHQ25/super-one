@@ -387,15 +387,6 @@ export class ChatRuntime {
     return id
   }
 
-  /** The brief of one launch in a pending collaboration request — withheld from the wire until opened. */
-  async loadCollabLaunchTask(permissionRequestId: string, launchId: string): Promise<string> {
-    const result = await this.client.request({ type: 'get_collab_launch_task', requestId: randomId(),
-      projectPath: this.projectPath, sessionId: this.sessionId, permissionRequestId, launchId,
-    }) as { task?: string; error?: string }
-    if (result.error) throw new Error(result.error)
-    return result.task ?? ''
-  }
-
   /**
    * The original bytes behind a `preview` thumbnail in the transcript, as a
    * data URI for the viewer. Memoised: opening the same picture twice must not

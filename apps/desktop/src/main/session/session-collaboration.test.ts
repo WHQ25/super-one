@@ -70,10 +70,6 @@ vi.mock('../database', () => ({
   getDb: () => state.db!,
   getCachedHarnessResources: (harnessId: string) => state.resourceCache[harnessId] ?? null,
 }))
-vi.mock('../crypto/secret-store', () => ({
-  encryptSecret: (value: string) => `encrypted:${value}`,
-  decryptSecret: (value: string) => value.replace(/^encrypted:/, ''),
-}))
 vi.mock('../providers/credential-store', () => ({
   listCredentials: () => state.credentials,
 }))
@@ -172,6 +168,13 @@ import { _resetMainThreadSessionGuardForTests, noteLiveAcpSubagent } from '../mc
 
 function resultJson(result: { content: Array<{ text: string }> }) {
   return JSON.parse(result.content[0].text) as Record<string, any>
+}
+
+type ApprovedTestLaunch = { launchId: string; summary: string }
+
+/** session_collab_start for an approved launch; the approved summary doubles as the brief. */
+function startLaunch(launch: ApprovedTestLaunch, host: SessionManager, task = launch.summary) {
+  return startSessionAgent('parent', { launchId: launch.launchId, task }, host)
 }
 
 function createSchema(db: Database.Database): void {
@@ -310,7 +313,7 @@ async function approveLaunches(
     launches: Array.from({ length: count }, (_, index) => ({
       launchId: `launch-${index}`,
       agentId: 'claude-base',
-      task: `Task ${index}`,
+      summary: `Task ${index}`,
       name: `Agent ${index}`,
       role: 'Worker',
       config: { cwd: TEST_CWD, model: 'test-model', effort: 'high', ...configPatch },
@@ -322,7 +325,7 @@ async function approveLaunches(
   resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
     [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches),
   })
-  return resultJson(await promise).launches as Array<{ launchId: string; agentId: string; credential: string }>
+  return resultJson(await promise).launches as Array<ApprovedTestLaunch & { agentId: string }>
 }
 
 beforeEach(() => {
@@ -595,7 +598,7 @@ describe('@agent mention targets', () => {
       launches: [{
         launchId: 'defaulted',
         agentId: 'claude-base',
-        task: 'Use profile defaults',
+        summary: 'Use profile defaults',
         name: 'Defaults',
         role: 'Worker',
       }],
@@ -608,8 +611,8 @@ describe('@agent mention targets', () => {
       [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches),
     })
 
-    const grants = resultJson(await promise).launches as Array<{ credential: string }>
-    await startSessionAgent('parent', grants[0].credential, host)
+    const grants = resultJson(await promise).launches as Array<ApprovedTestLaunch>
+    await startLaunch(grants[0], host)
 
     expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
       model: 'test-model',
@@ -648,7 +651,7 @@ describe('@agent mention targets', () => {
       launches: [{
         launchId: 'fast-codex',
         agentId: 'codex-base',
-        task: 'Run with Fast Mode',
+        summary: 'Run with Fast Mode',
         name: 'FastBot',
         role: 'Worker',
       }],
@@ -661,8 +664,8 @@ describe('@agent mention targets', () => {
       [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches),
     })
 
-    const grants = resultJson(await promise).launches as Array<{ credential: string }>
-    const started = resultJson(await startSessionAgent('parent', grants[0].credential, host))
+    const grants = resultJson(await promise).launches as Array<ApprovedTestLaunch>
+    const started = resultJson(await startLaunch(grants[0], host))
 
     expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
       providerId: 'codex-base',
@@ -683,7 +686,7 @@ describe('@agent mention targets', () => {
       launches: [{
         launchId: 'explicit',
         agentId: 'claude-base',
-        task: 'Use explicit settings',
+        summary: 'Use explicit settings',
         name: 'Explicit',
         role: 'Worker',
         config: { model: 'alternate-model', effort: 'low' },
@@ -704,7 +707,7 @@ describe('@agent mention targets', () => {
     const { host, createSession } = fakeHost(parent)
     const grants = await approveLaunches(parent, host, 1, { apiProviderId: 'api-1' })
 
-    const started = resultJson(await startSessionAgent('parent', grants[0].credential, host))
+    const started = resultJson(await startLaunch(grants[0], host))
 
     expect(createSession.mock.calls[0][0]).toMatchObject({ apiProviderId: 'api-1', model: 'test-model' })
     // The renderer restores the child's selector state from this row alone — an
@@ -726,7 +729,7 @@ describe('@agent mention targets', () => {
       launches: [{
         launchId: 'bad-provider',
         agentId: 'claude-base',
-        task: 'Run on a third-party provider',
+        summary: 'Run on a third-party provider',
         name: 'Agent',
         role: 'Worker',
         // A plausible agent mistake: the platform id rather than the credential id.
@@ -743,7 +746,7 @@ describe('@agent mention targets', () => {
       launches: [{
         launchId: 'tampered',
         agentId: 'claude-base',
-        task: 'Task',
+        summary: 'Task',
         name: 'Agent',
         role: 'Worker',
         config: { cwd: TEST_CWD },
@@ -760,17 +763,18 @@ describe('@agent mention targets', () => {
     await expect(promise).rejects.toThrow(/Unknown apiProviderId/)
   })
 
-  it('issues independent credentials for repeated profiles and starts each credential once', async () => {
+  it('approves repeated profiles as independent launches and starts each once', async () => {
     const parent = fakeSession('parent')
     const { host, sessions, createSession } = fakeHost(parent)
     const grants = await approveLaunches(parent, host, 2)
 
-    expect(grants).toHaveLength(2)
-    expect(grants[0].credential).not.toBe(grants[1].credential)
+    expect(grants.map((grant) => grant.launchId)).toEqual(['launch-0', 'launch-1'])
+    expect(grants[0]).not.toHaveProperty('credential')
 
-    const first = resultJson(await startSessionAgent('parent', grants[0].credential, host))
-    const repeated = resultJson(await startSessionAgent('parent', grants[0].credential, host))
-    const second = resultJson(await startSessionAgent('parent', grants[1].credential, host))
+    const first = resultJson(await startLaunch(grants[0], host))
+    // A retry may omit the brief and never replaces the one already delivered.
+    const repeated = resultJson(await startSessionAgent('parent', { launchId: 'launch-0' }, host))
+    const second = resultJson(await startLaunch(grants[1], host))
 
     expect(first).toMatchObject({ status: 'started', reused: false })
     expect(repeated).toMatchObject({ status: 'started', sessionId: first.sessionId, reused: true })
@@ -778,9 +782,22 @@ describe('@agent mention targets', () => {
     expect(createSession).toHaveBeenCalledTimes(2)
     // The child learns who its parent is, never a secret.
     expect(createSession.mock.calls[0][0].systemPromptAppend).toContain('SuperOne session parent')
-    expect(createSession.mock.calls[0][0].systemPromptAppend).not.toContain(grants[0].credential)
     expect(getSessionCollaborationSystemPrompt(first.sessionId)).toBe(createSession.mock.calls[0][0].systemPromptAppend)
     expect(sessions.get(first.sessionId)?.send).toHaveBeenCalledWith(expect.objectContaining({ content: 'Task 0' }))
+    expect(sessions.get(first.sessionId)?.send).toHaveBeenCalledTimes(1)
+  })
+
+  it('requires the brief at start for spawn and scopes launchIds to the requesting session', async () => {
+    const parent = fakeSession('parent')
+    const { host, createSession } = fakeHost(parent)
+    const [grant] = await approveLaunches(parent, host)
+
+    const missing = resultJson(await startSessionAgent('parent', { launchId: grant.launchId }, host))
+    expect(missing).toMatchObject({ status: 'error' })
+    expect(String(missing.message)).toMatch(/requires a non-empty task/)
+    const foreign = resultJson(await startSessionAgent('other', { launchId: grant.launchId, task: 'x' }, host))
+    expect(String(foreign.message)).toMatch(/No approved launch "launch-0"/)
+    expect(createSession).not.toHaveBeenCalled()
   })
 
   it('returns session_start when the child begins replying without waiting for the full turn', async () => {
@@ -839,7 +856,7 @@ describe('@agent mention targets', () => {
     } as unknown as SessionManager
 
     const [grant] = await approveLaunches(parent, host)
-    const startPromise = startSessionAgent('parent', grant.credential, host)
+    const startPromise = startLaunch(grant, host)
 
     await vi.waitFor(() => {
       const child = [...sessions.values()].find((s) => s.id !== 'parent') as ControllableChild | undefined
@@ -870,7 +887,7 @@ describe('@agent mention targets', () => {
     const parent = fakeSession('parent')
     const { host, sessions } = fakeHost(parent)
     const [grant] = await approveLaunches(parent, host)
-    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const started = resultJson(await startLaunch(grant, host))
     const childId = started.sessionId as string
 
     const sent = resultJson(await sendSessionMessage('parent', {
@@ -887,7 +904,6 @@ describe('@agent mention targets', () => {
     const wake = sessions.get(childId)?.injectTaskNotification as ReturnType<typeof vi.fn>
     expect(wake).toHaveBeenCalledTimes(1)
     expect(wake.mock.calls[0][0]).toMatch(/^A collaboration mailbox message is ready\. It is from SuperOne session parent/)
-    expect(wake.mock.calls[0][0]).not.toContain(grant.credential)
 
     const childInbox = resultJson(await retrieveSessionMessages(childId, {}))
     expect(childInbox.messages).toMatchObject([{ content: 'from parent', from: { sessionId: 'parent', relation: 'parent' } }])
@@ -909,8 +925,8 @@ describe('@agent mention targets', () => {
     const parent = fakeSession('parent')
     const { host } = fakeHost(parent)
     const grants = await approveLaunches(parent, host, 2)
-    const first = resultJson(await startSessionAgent('parent', grants[0].credential, host))
-    const second = resultJson(await startSessionAgent('parent', grants[1].credential, host))
+    const first = resultJson(await startLaunch(grants[0], host))
+    const second = resultJson(await startLaunch(grants[1], host))
 
     await sendSessionMessage(first.sessionId, { content: 'first' }, host)
     await sendSessionMessage(second.sessionId, { content: 'second' }, host)
@@ -932,7 +948,7 @@ describe('@agent mention targets', () => {
   it('requires non-empty names and roles before requesting approval', async () => {
     const parent = fakeSession('parent')
     const { host } = fakeHost(parent)
-    const base = { agentId: 'claude-base', task: 'Review the change' }
+    const base = { agentId: 'claude-base', summary: 'Review the change' }
 
     await expect(requestSessionAgents(parent.id, {
       launches: [{ ...base, name: '', role: 'Reviewer' }],
@@ -951,7 +967,7 @@ describe('@agent mention targets', () => {
       launches: [{
         launchId: 'cancelled-launch',
         agentId: 'claude-base',
-        task: 'This launch should never be approved',
+        summary: 'This launch should never be approved',
         name: 'Cancelled',
         role: 'Worker',
       }],
@@ -978,7 +994,7 @@ describe('@agent mention targets', () => {
       launches: [{
         launchId: 'launch-0',
         agentId: 'claude-base',
-        task: 'Original task',
+        summary: 'Original task',
         name: 'Original',
         role: 'Worker',
         config: { cwd: TEST_CWD, model: 'test-model', permissionMode: 'default', sandboxMode: 'off' },
@@ -990,7 +1006,7 @@ describe('@agent mention targets', () => {
       [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify([{
         launchId: 'launch-0',
         agentId: 'tampered-agent',
-        task: 'Hijacked task',
+        summary: 'Hijacked task',
         config: {
           cwd: '/tmp/evil',
           model: 'other-model',
@@ -1000,8 +1016,8 @@ describe('@agent mention targets', () => {
         },
       }]),
     })
-    const grants = resultJson(await promise).launches as Array<{ credential: string }>
-    const started = resultJson(await startSessionAgent('parent', grants[0].credential, host))
+    const grants = resultJson(await promise).launches as Array<ApprovedTestLaunch>
+    const started = resultJson(await startLaunch(grants[0], host))
     expect(createSession).toHaveBeenCalledWith(expect.objectContaining({
       model: 'other-model',
       permissionMode: 'bypassPermissions',
@@ -1025,7 +1041,7 @@ describe('@agent mention targets', () => {
     const parent = fakeSession('parent')
     const { host } = fakeHost(parent)
     const [grant] = await approveLaunches(parent, host)
-    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const started = resultJson(await startLaunch(grant, host))
     const childId = started.sessionId as string
     const changed = vi.fn()
     const unsubscribe = onCollaborationMailboxChanged(changed)
@@ -1037,7 +1053,6 @@ describe('@agent mention targets', () => {
       expect(unread.map((message) => message.content)).toEqual(['First', 'Second'])
       expect(listUnreadCollaborationMessages(childId)).toEqual(unread)
       expect(listUnreadCollaborationMessages('parent')).toEqual([])
-      expect(JSON.stringify(unread)).not.toContain(grant.credential)
       expect(changed).toHaveBeenCalledTimes(2)
       await retrieveSessionMessages(childId, {})
       expect(listUnreadCollaborationMessages(childId)).toEqual([])
@@ -1052,7 +1067,7 @@ describe('@agent mention targets', () => {
     const parent = fakeSession('parent')
     const { host, sessions } = fakeHost(parent)
     const [grant] = await approveLaunches(parent, host)
-    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const started = resultJson(await startLaunch(grant, host))
     const childId = started.sessionId as string
     const child = sessions.get(childId)!
     ;(child.isStreaming as ReturnType<typeof vi.fn>).mockReturnValue(true)
@@ -1080,7 +1095,7 @@ describe('@agent mention targets', () => {
     const parent = fakeSession('parent')
     const { host, sessions } = fakeHost(parent)
     const [grant] = await approveLaunches(parent, host)
-    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const started = resultJson(await startLaunch(grant, host))
     const childId = started.sessionId as string
     const child = sessions.get(childId)!
     markWorktreeRemoved(childId)
@@ -1105,13 +1120,13 @@ describe('@agent mention targets', () => {
     const parent = fakeSession('parent')
     const { host, sessions } = fakeHost(parent)
     const [grant] = await approveLaunches(parent, host)
-    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const started = resultJson(await startLaunch(grant, host))
     const childId = started.sessionId as string
     const child = sessions.get(childId)!
     markWorktreeRemoved(childId)
     ;(child.send as ReturnType<typeof vi.fn>).mockClear()
 
-    const retry = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const retry = resultJson(await startLaunch(grant, host))
     expect(retry).toMatchObject({ status: 'error' })
     expect(String(retry.message)).toMatch(/worktree directory has been removed/i)
     expect(child.send).not.toHaveBeenCalled()
@@ -1132,8 +1147,7 @@ describe('@agent mention targets', () => {
       launches: [{
         mode: 'link',
         sessionId: 'peer-wt-gone',
-        summary: 'Sync on the existing review',
-        task: 'Please confirm the types.',
+        summary: 'Please confirm the types.',
       }],
     }, host)
     const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
@@ -1143,9 +1157,9 @@ describe('@agent mention targets', () => {
       [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches),
     })
     const approved = resultJson(await promise)
-    const grant = (approved.launches as Array<{ credential: string }>)[0]
+    const grant = (approved.launches as Array<ApprovedTestLaunch>)[0]
 
-    const linked = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const linked = resultJson(await startLaunch(grant, host))
     expect(linked).toMatchObject({ status: 'error' })
     expect(String(linked.message)).toMatch(/worktree directory has been removed/i)
     expect(peer.injectTaskNotification).not.toHaveBeenCalled()
@@ -1156,7 +1170,7 @@ describe('@agent mention targets', () => {
     const { host } = fakeHost(parent)
     const [grant] = await approveLaunches(parent, host)
     expect(host.getActiveSession(TEST_CWD)?.id).toBe('parent')
-    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const started = resultJson(await startLaunch(grant, host))
     expect(started.status).toBe('started')
     // Child create temporarily becomes active, then parent is restored.
     expect(host.getActiveSession(TEST_CWD)?.id).toBe('parent')
@@ -1168,7 +1182,7 @@ describe('@agent mention targets', () => {
     const [grant] = await approveLaunches(parent, host)
     expect(host.getActiveSession(TEST_CWD)).toBeNull()
 
-    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const started = resultJson(await startLaunch(grant, host))
 
     expect(started.status).toBe('started')
     expect(host.getActiveSession(TEST_CWD)).toBeNull()
@@ -1178,10 +1192,10 @@ describe('@agent mention targets', () => {
     const parent = fakeSession('parent')
     const { host } = fakeHost(parent)
     const [grant] = await approveLaunches(parent, host)
-    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const started = resultJson(await startLaunch(grant, host))
     const childId = started.sessionId as string
     const nested = resultJson(await requestSessionAgents(childId, {
-      launches: [{ agentId: 'claude-base', task: 'Nested task', name: 'Nested', role: 'Worker' }],
+      launches: [{ agentId: 'claude-base', summary: 'Nested task', name: 'Nested', role: 'Worker' }],
     }, host))
     expect(nested).toMatchObject({ status: 'error' })
     expect(String(nested.message)).toMatch(/nested/i)
@@ -1194,7 +1208,7 @@ describe('@agent mention targets', () => {
       launches: [{
         launchId: 'reviewer',
         agentId: 'claude-base',
-        task: 'Review the diff carefully',
+        summary: 'Review the diff carefully',
         name: 'Alice',
         role: 'Reviewer',
         config: { cwd: TEST_CWD, model: 'test-model' },
@@ -1206,9 +1220,9 @@ describe('@agent mention targets', () => {
     resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
       [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(launches),
     })
-    const grants = resultJson(await promise).launches as Array<{ credential: string; name: string; role: string }>
+    const grants = resultJson(await promise).launches as Array<ApprovedTestLaunch & { name: string; role: string }>
     expect(grants[0]).toMatchObject({ name: 'Alice', role: 'Reviewer' })
-    await startSessionAgent('parent', grants[0].credential, host)
+    await startLaunch(grants[0], host)
     const child = createSession.mock.results[0]?.value as Session
     expect(child.setTitle).toHaveBeenCalledWith('Alice - Reviewer', 'agent')
   })
@@ -1224,7 +1238,7 @@ describe('@agent mention targets', () => {
     const parent = fakeSession('parent')
     const { host } = fakeHost(parent)
     const [grant] = await approveLaunches(parent, host)
-    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const started = resultJson(await startLaunch(grant, host))
     noteLiveAcpSubagent('parent', 'sub-1', true)
     try {
       const sent = resultJson(await sendSessionMessage('parent', { to: started.sessionId, content: 'x' }, host))
@@ -1253,8 +1267,7 @@ describe('@agent mention targets', () => {
       launches: [{
         mode: 'link',
         sessionId: 'peer-session',
-        summary: 'Sync on API types',
-        task: 'Please confirm the request body shape.',
+        summary: 'Please confirm the request body shape.',
       }],
     }, host)
     const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls[0][0] as AgentEvent
@@ -1270,20 +1283,19 @@ describe('@agent mention targets', () => {
     })
     const approved = resultJson(await promise)
     expect(approved.status).toBe('approved')
-    const grant = (approved.launches as Array<{ credential: string; mode: string; peerSessionId: string }>)[0]
+    const grant = (approved.launches as Array<ApprovedTestLaunch & { mode: string; sessionId: string }>)[0]
     expect(grant.mode).toBe('link')
-    expect(grant.peerSessionId).toBe('peer-session')
+    expect(grant.sessionId).toBe('peer-session')
 
     // Link peers must never receive system-prompt injection.
     expect(getSessionCollaborationSystemPrompt('peer-session')).toBeUndefined()
 
-    const linked = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const linked = resultJson(await startLaunch(grant, host))
     expect(linked).toMatchObject({ status: 'linked', mode: 'link', sessionId: 'peer-session' })
     expect(peer.injectTaskNotification).toHaveBeenCalled()
-    // The wake tells the peer whom to answer, without handing it a secret.
+    // The wake tells the peer whom to answer.
     const linkWake = (peer.injectTaskNotification as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
     expect(linkWake).toContain('session_collab_send({ to: "parent" })')
-    expect(linkWake).not.toContain(grant.credential)
     // Opening delivered as mailbox, not system prompt.
     expect(getSessionCollaborationSystemPrompt('peer-session')).toBeUndefined()
 
@@ -1338,8 +1350,8 @@ describe('@agent mention targets', () => {
 
   /**
    * Handoff = spawn's launch shape, but the created session is a sibling that owns
-   * the task. The three load-bearing differences are asserted here: no credential in
-   * the system prompt, no endpoint row (child_session_id stays NULL so every
+   * the task. The three load-bearing differences are asserted here: no collaboration
+   * system prompt, no endpoint row (child_session_id stays NULL so every
    * parent→child query and the UNIQUE endpoint slot skip it), and a provenance line
    * in the delivered task since the receiver has no other way to trace the work.
    */
@@ -1348,8 +1360,7 @@ describe('@agent mention targets', () => {
       launches: [{
         mode: 'handoff',
         agentId: 'claude-base',
-        summary: 'Continue the migration',
-        task: 'Finish phase 2 of the migration and run the focused tests.',
+        summary: 'Finish phase 2 of the migration and run the focused tests.',
         name: 'Dana',
         role: 'Implementer',
         config: { cwd: TEST_CWD, model: 'test-model', effort: 'high', permissionMode: 'bypassPermissions' },
@@ -1364,21 +1375,21 @@ describe('@agent mention targets', () => {
     })
     const approved = resultJson(await promise)
     expect(approved.status).toBe('approved')
-    return (approved.launches as Array<{ credential: string; mode: string }>)[0]
+    return (approved.launches as Array<ApprovedTestLaunch & { mode: string }>)[0]
   }
 
-  it('hands off to a sibling session with the task but no credential or mailbox', async () => {
+  it('hands off to a sibling session with the task but no collaboration prompt or mailbox', async () => {
     const parent = fakeSession('parent')
     const { host, sessions, createSession } = fakeHost(parent)
     const grant = await approveHandoff(parent, host)
     expect(grant.mode).toBe('handoff')
 
-    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const started = resultJson(await startLaunch(grant, host))
     expect(started).toMatchObject({ status: 'started', mode: 'handoff', reused: false })
     expect(String(started.note)).toMatch(/sibling/i)
 
     const sessionId = started.sessionId as string
-    // No system-prompt credential injection — the receiver cannot reply at all.
+    // No collaboration system prompt — the receiver cannot reply at all.
     expect(createSession.mock.calls[0][0].systemPromptAppend).toBeUndefined()
     expect(getSessionCollaborationSystemPrompt(sessionId)).toBeUndefined()
     // Approved permission mode applies at creation...
@@ -1406,7 +1417,7 @@ describe('@agent mention targets', () => {
     const parent = fakeSession('parent')
     const { host } = fakeHost(parent)
     const grant = await approveHandoff(parent, host)
-    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const started = resultJson(await startLaunch(grant, host))
     const sessionId = started.sessionId as string
 
     const send = resultJson(await sendSessionMessage('parent', {
@@ -1428,8 +1439,8 @@ describe('@agent mention targets', () => {
     const parent = fakeSession('parent')
     const { host, sessions, createSession } = fakeHost(parent)
     const grant = await approveHandoff(parent, host)
-    const first = resultJson(await startSessionAgent('parent', grant.credential, host))
-    const second = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const first = resultJson(await startLaunch(grant, host))
+    const second = resultJson(await startLaunch(grant, host))
 
     expect(second).toMatchObject({ status: 'started', mode: 'handoff', reused: true })
     expect(second.sessionId).toBe(first.sessionId)
@@ -1440,20 +1451,20 @@ describe('@agent mention targets', () => {
 
   /**
    * A spawn child is FK-linked to its grant (delete cascades the row away, so a retry
-   * cannot find the credential at all). A handoff session is not, so this retry path
+   * cannot find the launch at all). A handoff session is not, so this retry path
    * is reachable with a session that no longer exists.
    */
   it('reports a deleted handoff session instead of throwing on retry', async () => {
     const parent = fakeSession('parent')
     const { host, sessions } = fakeHost(parent)
     const grant = await approveHandoff(parent, host)
-    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const started = resultJson(await startLaunch(grant, host))
     const sessionId = started.sessionId as string
 
     sessions.delete(sessionId)
     state.db!.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId)
 
-    const retry = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const retry = resultJson(await startLaunch(grant, host))
     expect(retry).toMatchObject({ status: 'error' })
     expect(String(retry.message)).toMatch(/no longer exists/i)
   })
@@ -1462,15 +1473,14 @@ describe('@agent mention targets', () => {
     const parent = fakeSession('parent')
     const { host, sessions } = fakeHost(parent)
     const grant = await approveHandoff(parent, host)
-    const started = resultJson(await startSessionAgent('parent', grant.credential, host))
+    const started = resultJson(await startLaunch(grant, host))
     const sibling = sessions.get(started.sessionId as string)!
 
     const promise = requestSessionAgents(sibling.id, {
       launches: [{
         mode: 'handoff',
         agentId: 'claude-base',
-        summary: 'Pass phase 3 on',
-        task: 'Run phase 3.',
+        summary: 'Run phase 3.',
         name: 'Eli',
         role: 'Implementer',
         config: { cwd: TEST_CWD },
@@ -1508,7 +1518,7 @@ describe('child session project attribution', () => {
     configPatch: Record<string, unknown> = {},
   ) {
     const [launch] = await approveLaunches(parent, host, 1, { cwd, ...configPatch })
-    return resultJson(await startSessionAgent('parent', launch.credential, host))
+    return resultJson(await startLaunch(launch, host))
   }
 
   it('files the child under the project owning its cwd, not the parent project', async () => {
@@ -1643,7 +1653,7 @@ describe('child session project attribution', () => {
       launches: [{
         launchId: 'repro-default-cwd',
         agentId: 'claude-base',
-        task: 'Polish collab copy',
+        summary: 'Polish collab copy',
         name: 'CopySmith',
         role: 'Implementer',
         config: { model: 'test-model', effort: 'high' },
@@ -1659,8 +1669,8 @@ describe('child session project attribution', () => {
     resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
       [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(event.request.sessionAgentsConfirm!.launches),
     })
-    const grants = resultJson(await promise).launches as Array<{ credential: string }>
-    await startSessionAgent('parent', grants[0]!.credential, host)
+    const grants = resultJson(await promise).launches as Array<ApprovedTestLaunch>
+    await startLaunch(grants[0]!, host)
 
     expect(state.projects.map((p) => p.path)).toEqual([TEST_CWD])
     expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)

@@ -46,7 +46,6 @@ function payload(): SessionAgentRequestPayload {
         launchId: 'review-tests',
         agentId: 'claude-base',
         summary: 'Review failing tests',
-        task: 'Review the failing tests and report the root cause.',
         name: 'DiffBot',
         role: 'Reviewer',
         config: {
@@ -61,7 +60,6 @@ function payload(): SessionAgentRequestPayload {
         launchId: 'inspect-types',
         agentId: 'codex-base',
         summary: 'Classify typecheck errors',
-        task: 'Classify the current typecheck errors.',
         name: 'TypeBot',
         role: 'Analyst',
         config: {
@@ -84,8 +82,6 @@ describe('session agents confirm prompt', () => {
 
     expect(screen.getByText('Review failing tests')).toBeInTheDocument()
     expect(screen.queryByText('Classify typecheck errors')).toBeNull()
-    // Full task is hidden until the summary is expanded.
-    expect(screen.queryByText(/report the root cause/)).toBeNull()
 
     fireEvent.keyDown(window, { key: 'Tab' })
     expect(screen.getByText('Classify typecheck errors')).toBeInTheDocument()
@@ -95,17 +91,19 @@ describe('session agents confirm prompt', () => {
     expect(screen.getByText('Review failing tests')).toBeInTheDocument()
   })
 
-  it('expands the summary to show the full Markdown task', () => {
+  it('clamps the summary until the user expands it', () => {
     renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={vi.fn()} />)
 
+    const summary = screen.getByText('Review failing tests')
+    expect(summary).toHaveClass('line-clamp-2')
     fireEvent.click(screen.getByRole('button', { name: 'Review failing tests' }))
-    expect(screen.getByText(/report the root cause/)).toBeInTheDocument()
+    expect(summary).not.toHaveClass('line-clamp-2')
   })
 
   it('keeps agent-owned fields read-only while exposing the permission mode picker', () => {
     renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={vi.fn()} />)
 
-    // No editors for task / cwd / worktree / sandbox — those are the agent's decision.
+    // No editors for summary / cwd / worktree / sandbox — those are the agent's decision.
     // The only text field on the prompt is the feedback box.
     expect(screen.getAllByRole('textbox')).toHaveLength(1)
     expect(screen.getByRole('textbox')).toHaveAttribute('data-feedback')
@@ -219,7 +217,7 @@ describe('session agents confirm prompt', () => {
       branchName: 'agent/types',
     })
     expect(launches[0].summary).toBe('Review failing tests')
-    expect(launches[0].task).toBe('Review the failing tests and report the root cause.')
+    expect(launches[0]).not.toHaveProperty('task')
   })
 
   it('uses the human-selected permission instead of the agent draft', async () => {
@@ -307,7 +305,6 @@ describe('session agents confirm prompt', () => {
         peerHarnessName: 'Claude',
         peerBrandKey: 'claude',
         summary: 'Sync on API types',
-        task: 'Please confirm the request body.',
         name: 'API review session',
         role: 'Peer',
         config: { name: 'API review session', role: 'Peer' },

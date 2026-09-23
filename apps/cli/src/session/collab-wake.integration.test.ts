@@ -47,10 +47,6 @@ function boot() {
   const providers = new ProviderStore(db, join(nodeHome, 'secrets', 'provider.key'))
   const projects = new ProjectRegistry(db)
   const workspaceGit = new WorkspaceGitService(projects)
-  const secrets = {
-    encrypt: (v: string) => `enc:${v}`,
-    decrypt: (v: string) => (v.startsWith('enc:') ? v.slice(4) : v),
-  }
   const collab = new CollaborationService({
     db,
     events,
@@ -60,13 +56,12 @@ function boot() {
     providers,
     projects,
     workspaceGit,
-    secrets,
   })
   return { sessions, collab, projects, turns, leases, environmentId }
 }
 
 describe('collab wake + agents confirm', () => {
-  it('mailbox send wakes the peer with a sender-named, secret-free task notification', async () => {
+  it('mailbox send wakes the peer with a sender-named task notification', async () => {
     const { collab, sessions, projects, turns } = boot()
     const projectDir = mkdtempSync(join(tmpdir(), 'collab-wake-proj-'))
     dirs.push(projectDir)
@@ -82,16 +77,15 @@ describe('collab wake + agents confirm', () => {
       launches: [
         {
           agentId: 'claude',
-          task: 'work',
           name: 'W',
           role: 'R',
+          summary: 'Work.',
           config: { cwd: projectDir },
         },
       ],
     })
     if (req.status !== 'approved') throw new Error('expected approved')
-    const { credential } = req.launches[0]
-    const started = await collab.start({ credential })
+    const started = await collab.start({ callerSessionId: parent.sessionId, launchId: req.launches[0].launchId, task: 'work' })
     turns.length = 0
 
     collab.send({
@@ -110,8 +104,6 @@ describe('collab wake + agents confirm', () => {
     expect(wake!.text).toMatch(/^A collaboration mailbox message is ready\./)
     expect(wake!.text).toContain(parent.sessionId)
     expect(wake!.text).toMatch(/session_collab_retrieve/)
-    expect(wake!.text).not.toContain(credential)
-    expect(wake!.text).not.toMatch(/\bs1sc_/)
   })
 
   it('requireUserConfirm emits session_agents_confirm; accept creates grants', async () => {
@@ -137,9 +129,9 @@ describe('collab wake + agents confirm', () => {
       launches: [
         {
           agentId: 'claude',
-          task: 'review',
           name: 'Rev',
           role: 'Reviewer',
+          summary: 'Review.',
           config: { cwd: projectDir },
         },
       ],
@@ -171,7 +163,8 @@ describe('collab wake + agents confirm', () => {
     expect(result.status).toBe('approved')
     if (result.status !== 'approved') throw new Error('expected approved')
     expect(result.launches).toHaveLength(1)
-    expect(result.launches[0].credential.startsWith('s1sc_')).toBe(true)
+    expect(result.launches[0]).toMatchObject({ mode: 'spawn', name: 'Rev', summary: 'Review.' })
+    expect(result.launches[0]).not.toHaveProperty('credential')
     expect(sessions.get(parent.sessionId)?.pendingInteraction).toBeNull()
   })
 })

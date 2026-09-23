@@ -204,8 +204,8 @@ export function formatAgentMentionReminder(
   }
   lines.push(
     '',
-    'Launch each of them with session_collab_request({ launches: [{ mode: "spawn", agentId, name, role, summary, task }] }),',
-    'then session_collab_start, then session_collab_send / session_collab_retrieve to work with them.',
+    'Launch each of them with session_collab_request({ launches: [{ mode: "spawn", agentId, name, role, summary }] }),',
+    'then session_collab_start({ launchId, task }) with the full brief, then session_collab_send / session_collab_retrieve to work with them.',
     'Use mode "handoff" instead only when the user wants to hand the work over one-way and never hear back.',
     'The user still approves the launch, so request the most autonomous permission mode the task needs.',
   )

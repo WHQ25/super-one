@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useState } from 'react'
 import { LogBox, ScrollView, View } from 'react-native'
 import { RefreshCw } from 'lucide-react-native'
 import { Text } from '../ui/text'
@@ -6,7 +6,6 @@ import { useMobileTheme } from '../theme/context'
 import { LoadingOverlay } from '../ui/loading-overlay'
 import { FilesScreen } from '../screens/files-screen'
 import { SessionListBody } from '../ui/session-list-body'
-import { CollabTaskScreen } from '../screens/collab-task-screen'
 import { McpPanel } from '../ui/mcp-panel'
 import { ModelPicker } from '../ui/model-picker'
 import { BranchPicker } from '../ui/branch-picker'
@@ -48,7 +47,6 @@ function Section({ title, note, height, children }: { title: string; note?: stri
   </View>
 }
 
-const never = () => new Promise<never>(() => {})
 const slow = <T,>(value: T, ms = 2_000) => () => new Promise<T>((resolve) => setTimeout(() => resolve(value), ms))
 const failing = (message: string) => () => new Promise<never>((_, reject) => setTimeout(() => reject(new Error(message)), 600))
 
@@ -77,8 +75,6 @@ export function LoadingStateGallery() {
   const { tokens: { colors } } = useMobileTheme()
   const [mcp, setMcp] = useState<'loading' | 'error'>('loading')
   const [refreshes, setRefreshes] = useState(0)
-  const loadForever = useCallback(never, [])
-  const loadFails = useCallback(failing('The desktop did not answer in time.'), [])
   return <ScrollView testID="loading-state-gallery" contentContainerStyle={{ padding: 16, gap: 20, paddingBottom: 48 }}>
     <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>
       Real components held in their loading or failed state by a slow or rejecting port. Transcript states are on the Chat page under Transcript.
@@ -109,13 +105,6 @@ export function LoadingStateGallery() {
     </Section>
     <Section title="Session list · read failed" note="The error the hook reports for a page that never came.">
       <SessionListBody {...listActions} sessions={projectSessions({ items: [], hasMore: false, error: 'Could not reach the desktop' })} surface="page" />
-    </Section>
-
-    <Section title="Collaboration task · loading" note="Full-screen spinner while the brief is fetched." height={160}>
-      <CollabTaskScreen load={loadForever} />
-    </Section>
-    <Section title="Collaboration task · failed" note="Message in destructive tone plus Try again (which fails again here)." height={160}>
-      <CollabTaskScreen load={loadFails} />
     </Section>
 
     <Section title="MCP panel · reading status / failed" note="Tap the title to flip between the two.">

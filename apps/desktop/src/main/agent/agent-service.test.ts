@@ -2929,33 +2929,6 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(respond).toHaveBeenCalledWith('create-sandbox-fail', expect.objectContaining({ ok: true }))
   })
 
-  it('get_collab_launch_task answers the brief the phone was not sent', async () => {
-    // The wire copy carries `taskDeferred` in place of the brief; the session's own
-    // pending interaction still holds it, and that is the copy handed back.
-    const service = new AgentService()
-    const session = makeMockSession({
-      id: 'sid-1', projectPath: '/p',
-      getPendingInteractions: () => [{
-        type: 'permission_request',
-        request: {
-          requestId: 'sessionagents_1', requestKind: 'session_agents_confirm', toolName: 'session_collab_request', input: {},
-          sessionAgentsConfirm: { profiles: [], launches: [
-            { launchId: 'l1', agentId: 'a', summary: 'Short.', task: '# Long brief\n\nEverything.', config: {} },
-          ] },
-        },
-      }],
-    })
-    ;(service as { sessionManager: unknown }).sessionManager = { getSession: vi.fn(() => session) }
-    ;(service as unknown as { findSessionBySid: (p: string, s: string) => unknown }).findSessionBySid = () => session
-    const respond = vi.fn()
-
-    await service.handleRemoteCommand({ type: 'get_collab_launch_task', requestId: 'r1', projectPath: '/p', sessionId: 'sid-1', permissionRequestId: 'sessionagents_1', launchId: 'l1' }, respond)
-    expect(respond).toHaveBeenCalledWith('r1', { task: '# Long brief\n\nEverything.' })
-
-    await service.handleRemoteCommand({ type: 'get_collab_launch_task', requestId: 'r2', projectPath: '/p', sessionId: 'sid-1', permissionRequestId: 'sessionagents_1', launchId: 'gone' }, respond)
-    expect(respond).toHaveBeenCalledWith('r2', { error: 'That collaboration request is no longer pending' })
-  })
-
   it('restores cross-project pending summaries without subscribing to chats', async () => {
     const service = new AgentService()
     const session = {

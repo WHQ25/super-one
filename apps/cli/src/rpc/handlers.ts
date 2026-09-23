@@ -2895,7 +2895,6 @@ async function handleCollaborationRequest(payload: unknown, ctx: RpcContext): Pr
         launches: p.launches as Array<{
           launchId?: string
           agentId: string
-          task: string
           name: string
           role: string
           config?: Record<string, unknown>
@@ -2913,12 +2912,11 @@ async function handleCollaborationStart(payload: unknown, ctx: RpcContext): Prom
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
   const p = asRecord(payload)
-  const credential = typeof p.credential === 'string' ? p.credential : undefined
-  const grantId = typeof p.grantId === 'string' ? p.grantId : undefined
-  if (!credential && !grantId) {
-    return { error: { code: 'invalid_argument', message: 'credential or grantId required' } }
+  const launchId = typeof p.launchId === 'string' ? p.launchId.trim() : ''
+  if (!launchId) {
+    return { error: { code: 'invalid_argument', message: 'launchId required' } }
   }
-  // Parent session for lease fence + grantId ownership binding.
+  // The requesting session: lease fence + launchId scope.
   const callerSessionId =
     typeof p.callerSessionId === 'string' && p.callerSessionId.trim()
       ? p.callerSessionId.trim()
@@ -2950,8 +2948,8 @@ async function handleCollaborationStart(payload: unknown, ctx: RpcContext): Prom
   try {
     return {
       result: await ctx.collaboration.start({
-        credential,
-        grantId,
+        launchId,
+        task: typeof p.task === 'string' ? p.task : undefined,
         formAnswers:
           p.formAnswers && typeof p.formAnswers === 'object'
             ? (p.formAnswers as Record<string, unknown>)

@@ -65,7 +65,7 @@ export function sendCollaborationMessage(ctx: CollaborationContext, input: Colla
   const content = normalizeMailboxContent(input.content)
   const recipientSessionId = channel.peer.sessionId
   const insert = ctx.store.appendMessage({
-    credentialHash: channel.grant.credential_hash,
+    grantId: channel.grant.grant_id,
     senderSessionId: input.sessionId,
     recipientSessionId,
     clientMessageId: input.clientMessageId,
@@ -79,7 +79,7 @@ export function sendCollaborationMessage(ctx: CollaborationContext, input: Colla
       eventType: 'collaboration.message',
       payload: {
         messageId: insert.row.id,
-        grantId: channel.grant.credential_hash,
+        grantId: channel.grant.grant_id,
         toSessionId: recipientSessionId,
         sequence: insert.row.sequence,
       },

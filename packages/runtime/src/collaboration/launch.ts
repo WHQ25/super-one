@@ -1,5 +1,4 @@
 import {
-  resolveLaunchSummary,
   SESSION_AGENT_LAUNCHES_FIELD,
   SESSION_AGENT_TASK_MAX,
   type PermissionMode,
@@ -76,13 +75,6 @@ function assertLabel(kind: 'name' | 'role', value: string): string {
   return value
 }
 
-function assertTaskLength(task: string): string {
-  if (task.length > SESSION_AGENT_TASK_MAX) {
-    invalid(`A launch task may contain at most ${SESSION_AGENT_TASK_MAX.toLocaleString()} characters`)
-  }
-  return task
-}
-
 export function assertLaunchCount(count: number): void {
   if (count === 0) invalid('launches must contain at least one proposed session')
   if (count > MAX_LAUNCHES_PER_REQUEST) {
@@ -90,47 +82,53 @@ export function assertLaunchCount(count: number): void {
   }
 }
 
-export interface LaunchText {
-  task: string
+export interface LaunchLabels {
   summary: string
   name: string
   role: string
 }
 
 /**
- * Validate the agent-written text of one launch. Link launches default their
+ * Validate what the user approves for one launch. Link launches default their
  * labels from the existing peer; spawn and handoff must name the new session.
  */
-export function normalizeLaunchText(
+export function normalizeLaunchLabels(
   mode: SessionCollabLaunchMode,
-  launch: { task?: string; summary?: string; name?: string; role?: string },
+  launch: { summary?: string; name?: string; role?: string },
   linkPeerTitle?: string,
-): LaunchText {
+): LaunchLabels {
+  const summary = launch.summary?.trim()
+  if (!summary) invalid('Every launch must include a non-empty summary')
   if (mode === 'link') {
-    const summary = launch.summary?.trim() || resolveLaunchSummary(launch.task ?? '', launch.summary)
-    if (!summary) invalid('Every launch must include a non-empty summary')
     return {
-      task: assertTaskLength((launch.task ?? '').trim()),
       summary,
       name: assertLabel('name', launch.name?.trim() || linkPeerTitle || ''),
       role: assertLabel('role', launch.role?.trim() || 'Peer'),
     }
   }
-  const task = launch.task?.trim()
-  if (!task) invalid(`Every ${mode} launch must include a non-empty task`)
-  assertTaskLength(task)
-  const summary = resolveLaunchSummary(task, launch.summary)
-  if (!summary) invalid('Every launch must include a non-empty summary')
   const name = launch.name?.trim()
   if (!name) invalid(`Every ${mode} launch must include a non-empty name`)
   const role = launch.role?.trim()
   if (!role) invalid(`Every ${mode} launch must include a non-empty role`)
-  return { task, summary, name: assertLabel('name', name), role: assertLabel('role', role) }
+  return { summary, name: assertLabel('name', name), role: assertLabel('role', role) }
+}
+
+/**
+ * The brief passed to session_collab_start. Spawn and handoff sessions need
+ * one; a link's opening message is optional.
+ */
+export function normalizeStartTask(mode: SessionCollabLaunchMode, raw: unknown): string {
+  const task = typeof raw === 'string' ? raw.trim() : ''
+  if (!task && mode !== 'link') invalid(`Starting a ${mode} launch requires a non-empty task`)
+  if (task.length > SESSION_AGENT_TASK_MAX) {
+    invalid(`A launch task may contain at most ${SESSION_AGENT_TASK_MAX.toLocaleString()} characters`)
+  }
+  return task
 }
 
 /**
  * Apply the fields a user may edit in the confirm UI. Everything else (agent,
- * task, cwd, worktree, name/role) stays as the agent proposed it.
+ * cwd, worktree, name/role) stays as the agent proposed it.
  */
 export function patchEditableLaunchConfig<T extends SessionAgentLaunchConfig>(base: T, rawPatch: unknown): T {
   const patch = (rawPatch && typeof rawPatch === 'object' ? rawPatch : {}) as SessionAgentLaunchConfig

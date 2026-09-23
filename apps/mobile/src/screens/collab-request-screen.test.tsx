@@ -31,12 +31,10 @@ beforeAll(() => {
 function mount(overrides: Partial<Parameters<typeof CollabRequestScreen>[0]> = {}) {
   const onApprove = jest.fn<(launches: SessionAgentLaunchProposal[]) => void>()
   const onReject = jest.fn<(feedback?: string) => void>()
-  const onOpenTask = jest.fn<(launch: SessionAgentLaunchProposal, label: string) => void>()
   return {
     onApprove,
     onReject,
-    onOpenTask,
-    ui: <CollabRequestScreen payload={payload} onApprove={onApprove} onReject={onReject} onOpenTask={onOpenTask} {...overrides} />,
+    ui: <CollabRequestScreen payload={payload} onApprove={onApprove} onReject={onReject} {...overrides} />,
   }
 }
 
@@ -74,15 +72,6 @@ test('a link launch has peer metadata instead of chips', async () => {
   expect(screen.getByLabelText('Peer Session: preview-peer')).toBeTruthy()
   // Still one permission chip — the link card must not grow one.
   expect(screen.getAllByLabelText(/^Permission Mode:/)).toHaveLength(1)
-})
-
-test('the full task is a page, not an inline reveal — and is offered when deferred', async () => {
-  const deferred = { ...payload, launches: payload.launches.map((launch) => ({ ...launch, task: '', taskDeferred: true })) }
-  const { ui, onOpenTask } = mount({ payload: deferred })
-  await renderScreen(ui)
-  expect(screen.queryByText('Review the mobile permission flow and report actionable findings.')).toBeNull()
-  await act(async () => { fireEvent.press(screen.getByText('Show the full task')) })
-  expect(onOpenTask).toHaveBeenCalledWith(expect.objectContaining({ launchId: 'preview-spawn', taskDeferred: true }), 'codex')
 })
 
 test('approve is the success fill and reject the destructive one, like the desktop bar', async () => {

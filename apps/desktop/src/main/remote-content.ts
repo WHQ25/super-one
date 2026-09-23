@@ -598,31 +598,9 @@ export function stripEventForRemote(event: AgentEvent, projectPath?: string): Ag
     }
   }
   if (event.type === 'permission_request') {
-    return deferCollabTasks(enrichPermissionRequest(event))
+    return enrichPermissionRequest(event)
   }
   return event
-}
-
-/**
- * A collaboration request ships every launch's summary but not its brief: the
- * brief is Markdown the agent wrote for the child and can run to pages, and the
- * phone fetches it only when the user opens it (`get_collab_launch_task`). Safe
- * because the host merges only `config` back from the confirmed launches.
- */
-function deferCollabTasks(event: AgentEvent): AgentEvent {
-  if (event.type !== 'permission_request') return event
-  const payload = event.request.sessionAgentsConfirm
-  if (!payload) return event
-  return {
-    ...event,
-    request: {
-      ...event.request,
-      sessionAgentsConfirm: {
-        ...payload,
-        launches: payload.launches.map((launch) => launch.task ? { ...launch, task: '', taskDeferred: true } : launch),
-      },
-    },
-  }
 }
 
 function appendRemoteErrorText(msg: ChatMessage): ChatMessage {

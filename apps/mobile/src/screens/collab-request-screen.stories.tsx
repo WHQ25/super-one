@@ -5,23 +5,14 @@ import type { SessionAgentRequestPayload } from '@superone/shared/agent-types'
 import { permissionExamples } from '../preview/permissions'
 import { MobileThemeProvider } from '../theme/context'
 import { CollabRequestScreen } from './collab-request-screen'
-import { CollabTaskScreen } from './collab-task-screen'
 
 const noop = () => {}
 const base: SessionAgentRequestPayload = permissionExamples.session_agents_confirm.sessionAgentsConfirm
 const [spawn, handoff, link] = base.launches
 
-const LONG_TASK = [
-  '## Review request',
-  '',
-  'Please review the mobile permission flow and report back with a **verdict**.',
-  '',
-  ...Array.from({ length: 12 }, (_, i) => `${i + 1}. Verify step ${i + 1} still handles orientation changes on Android.`),
-  '',
-  '```ts',
-  "requestNative('previewFile', { path })",
-  '```',
-].join('\n')
+const LONG_SUMMARY = 'Review the mobile permission flow end to end and report a verdict: '
+  + 'check that every prompt survives orientation changes on Android, that the composer keeps its draft, '
+  + 'and that approving from the lock screen still resumes the right session.'
 
 const METRICS = { frame: { x: 0, y: 0, width: 390, height: 720 }, insets: { top: 0, left: 0, right: 0, bottom: 0 } }
 
@@ -34,7 +25,7 @@ function Preview({ width = 390, height = 720, colorScheme, locale, ...props }: C
 
 export default {
   title: 'Mobile/CollabRequest', component: CollabRequestScreen, render: Preview,
-  args: { payload: base, onApprove: noop, onReject: noop, onOpenTask: noop },
+  args: { payload: base, onApprove: noop, onReject: noop },
 }
 
 /** Spawn + handoff + link, the first card open — the shipping fixture. */
@@ -52,8 +43,8 @@ export const DuplicateHarness = { args: { payload: { ...base, launches: [
   { ...spawn, launchId: 'preview-spawn-2', name: 'Tester', role: 'Regression', summary: 'Run the mobile suite and report failures.' },
 ] } } }
 
-/** Over the wire the brief is withheld (`taskDeferred`); the row still offers it. */
-export const DeferredTask = { args: { payload: { ...base, launches: base.launches.map((launch) => ({ ...launch, task: '', taskDeferred: true })) } } }
+/** The summary is all the user approves; the agent passes the full brief at start. */
+export const LongSummary = { args: { payload: { ...base, launches: [{ ...spawn, summary: LONG_SUMMARY }] } } }
 
 export const Worktree = { args: { payload: { ...base, launches: [{ ...spawn, config: {
   ...spawn.config, worktree: { enabled: true, mode: 'detach', baseBranch: 'main' },
@@ -64,13 +55,3 @@ export const Narrow = { args: { width: 320 } }
 export const Light = { args: { colorScheme: 'light' } }
 
 export const Chinese = { args: { locale: 'zh' } }
-
-/** The brief's own page, driven by a loader: resolved, slow, failed, and empty. */
-function TaskPreview({ load }: ComponentProps<typeof CollabTaskScreen>) {
-  return <MobileThemeProvider><View style={{ width: 390, height: 720 }}><CollabTaskScreen load={load} /></View></MobileThemeProvider>
-}
-
-export const TaskLoaded = { render: () => <TaskPreview load={() => Promise.resolve(LONG_TASK)} /> }
-export const TaskLoading = { render: () => <TaskPreview load={() => new Promise<string>(() => {})} /> }
-export const TaskFailed = { render: () => <TaskPreview load={() => Promise.reject(new Error('That collaboration request is no longer pending'))} /> }
-export const TaskEmpty = { render: () => <TaskPreview load={() => Promise.resolve('')} /> }

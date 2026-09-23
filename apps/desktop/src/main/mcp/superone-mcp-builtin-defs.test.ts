@@ -340,6 +340,15 @@ describe('built-in superone tool registration surfaces', () => {
     expect(properties.role).toMatchObject({ minLength: 1, maxLength: 64 })
     expect(properties.summary).toMatchObject({ minLength: 1 })
     expect(properties.summary).not.toHaveProperty('maxLength')
+    // The brief is passed to session_collab_start, so a rejected request never costs it.
+    expect(properties).not.toHaveProperty('task')
+  })
+
+  it('starts an approved launch by launchId with its brief', () => {
+    const def = BUILT_IN_SUPERONE_TOOL_DEFS.find((d) => d.name === 'session_collab_start')!
+    expect(def.inputSchema.required).toEqual(['launchId'])
+    const properties = def.inputSchema.properties as Record<string, Record<string, unknown>>
+    expect(Object.keys(properties)).toEqual(['launchId', 'task'])
     // Hard caps stay server-side; do not advertise a huge maxLength in the tool schema.
     expect(properties.task).not.toHaveProperty('maxLength')
     expect(properties.task).not.toHaveProperty('minLength')

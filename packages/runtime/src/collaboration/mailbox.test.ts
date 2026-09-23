@@ -15,7 +15,7 @@ const sessionTitle = (id: string) => titles[id] ?? null
 
 beforeEach(() => {
   db = openNodeDatabase(':memory:')
-  store = new CollaborationStore(db, { encrypt: (v) => `enc:${v}`, decrypt: (v) => v.slice(4) })
+  store = new CollaborationStore(db)
 })
 
 afterEach(() => {
@@ -23,25 +23,26 @@ afterEach(() => {
 })
 
 function spawn(parent: string, child: string, name = 'Ada', role = 'Dev') {
-  const { credentialHash } = store.createGrant({
-    kind: 'spawn', parentSessionId: parent, agentId: 'claude-base', task: 't', config: { name, role },
+  const grantId = store.createGrant({
+    kind: 'spawn', parentSessionId: parent, agentId: 'claude-base', config: { launchId: `${parent}-${child}`, name, role },
   })
-  store.bindStartedSession(store.grantByHash(credentialHash)!, child, { name, role })
-  return credentialHash
+  store.bindStartedSession(store.grantById(grantId)!, child, { name, role })
+  return grantId
 }
 
 function link(initiator: string, peer: string, started = true) {
-  const { credentialHash } = store.createGrant({
-    kind: 'link', parentSessionId: initiator, childSessionId: peer, agentId: '', task: '', config: { name: 'Peer', role: 'Peer' },
+  const grantId = store.createGrant({
+    kind: 'link', parentSessionId: initiator, childSessionId: peer, agentId: '',
+    config: { launchId: `${initiator}-${peer}`, name: 'Peer', role: 'Peer' },
   })
-  if (started) store.markStarted(credentialHash)
-  return credentialHash
+  if (started) store.markStarted(grantId)
+  return grantId
 }
 
 function send(from: string, to: string | undefined, content: string) {
   const channel = resolveSendChannel(store, from, to, sessionTitle)
   store.appendMessage({
-    credentialHash: channel.grant.credential_hash,
+    grantId: channel.grant.grant_id,
     senderSessionId: from,
     recipientSessionId: channel.peer.sessionId,
     content,
@@ -65,18 +66,18 @@ describe('resolveSendChannel', () => {
   })
 
   it('opens a link channel only once the link is started, for both sides', () => {
-    const hash = link('parent', 'peer', false)
+    const grantId = link('parent', 'peer', false)
     expect(() => resolveSendChannel(store, 'parent', 'peer', sessionTitle)).toThrow(/not one of your collaboration peers/)
-    store.markStarted(hash)
+    store.markStarted(grantId)
     expect(send('parent', 'peer', 'hi').peer.relation).toBe('link')
     expect(send('peer', undefined, 'yo').peer).toMatchObject({ sessionId: 'parent', relation: 'link', title: 'Parent task' })
   })
 
   it('explains that a handoff has no mailbox', () => {
-    const { credentialHash } = store.createGrant({
-      kind: 'handoff', parentSessionId: 'parent', agentId: 'claude-base', task: 't', config: {},
+    const grantId = store.createGrant({
+      kind: 'handoff', parentSessionId: 'parent', agentId: 'claude-base', config: { launchId: 'h' },
     })
-    store.bindStartedSession(store.grantByHash(credentialHash)!, 'sibling', {})
+    store.bindStartedSession(store.grantById(grantId)!, 'sibling', {})
     expect(() => resolveSendChannel(store, 'parent', 'sibling', sessionTitle)).toThrow(HANDOFF_NO_MAILBOX)
     expect(() => resolveSendChannel(store, 'sibling', 'parent', sessionTitle)).toThrow(HANDOFF_NO_MAILBOX)
   })

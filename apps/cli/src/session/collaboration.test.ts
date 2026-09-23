@@ -12,10 +12,13 @@ import { ProjectRegistry } from '../workspace/project-registry'
 import { WorkspaceGitService } from '../workspace/git-service'
 import { CollaborationService } from './collaboration'
 import { createSessionProviderStore } from '@superone/runtime/session'
-import { createHash } from 'node:crypto'
+import type { NodeDatabase } from '../db/database'
 
-function hashCredential(credential: string): string {
-  return createHash('sha256').update(credential).digest('hex')
+function grantIdFor(db: NodeDatabase, launchId: string): string {
+  const row = db
+    .prepare(`SELECT credential_hash FROM session_collaboration_grants WHERE json_extract(config_json, '$.launchId') = ?`)
+    .get(launchId) as { credential_hash: string }
+  return row.credential_hash
 }
 
 const dirs: string[] = []
@@ -43,10 +46,6 @@ function bootCollab(opts?: { simulateReady?: boolean }) {
   const providers = new ProviderStore(db, join(nodeHome, 'secrets', 'provider.key'))
   const projects = new ProjectRegistry(db)
   const workspaceGit = new WorkspaceGitService(projects)
-  const secrets = {
-    encrypt: (v: string) => `enc:${v}`,
-    decrypt: (v: string) => (v.startsWith('enc:') ? v.slice(4) : v),
-  }
   const sessionProviders = createSessionProviderStore(db)
   const collab = new CollaborationService({
     db,
@@ -57,7 +56,6 @@ function bootCollab(opts?: { simulateReady?: boolean }) {
     providers,
     projects,
     workspaceGit,
-    secrets,
     sessionProviders,
   })
   return { db, sessions, collab, projects, providers, nodeHome, sessionProviders, harnesses }
@@ -160,37 +158,39 @@ describe('collaboration grants + mailbox', () => {
       launches: [
         {
           agentId: 'claude',
-          task: 'Do the work',
           name: 'Worker',
           role: 'Implementer',
+          summary: 'Do the work.',
           config: { cwd: projectDir },
         },
       ],
     })
     expect(req.status).toBe('approved')
     if (req.status !== 'approved') throw new Error('expected approved')
-    const { credential, grantId } = req.launches[0]
-    expect(hashCredential(credential)).toBe(grantId)
+    const { launchId } = req.launches[0]
+    expect(req.next).toMatch(/session_collab_start/)
+    const grantId = grantIdFor(db, launchId)
+    const taskOf = () => (db
+      .prepare(`SELECT task, child_session_id, credential_secret FROM session_collaboration_grants WHERE credential_hash = ?`)
+      .get(grantId) as { task: string; child_session_id: string | null; credential_secret: string | null })
+    // The brief arrives at start, not at request; no secret is stored.
+    expect(taskOf()).toEqual({ task: '', child_session_id: null, credential_secret: null })
 
-    const row = db
-      .prepare(`SELECT * FROM session_collaboration_grants WHERE credential_hash = ?`)
-      .get(grantId) as { task: string; child_session_id: string | null; credential_secret: string }
-    expect(row.task).toBe('Do the work')
-    expect(row.child_session_id).toBeNull()
-    expect(row.credential_secret).toContain(credential)
-
-    const started = await collab.start({ credential })
+    await expect(collab.start({ callerSessionId: parent.sessionId, launchId }))
+      .rejects.toThrow(/requires a non-empty task/)
+    const started = await collab.start({ callerSessionId: parent.sessionId, launchId, task: 'Do the work' })
     expect(started.reused).toBe(false)
     expect(started.sessionId).toBeTruthy()
-    const childPrompt = sessions.getSystemPromptAppend(started.sessionId)
-    expect(childPrompt).toContain(parent.sessionId)
-    expect(childPrompt).not.toContain(credential)
+    expect(taskOf().task).toBe('Do the work')
+    expect(sessions.getSystemPromptAppend(started.sessionId)).toContain(parent.sessionId)
 
-    // grantId-only start requires parent binding (no bearer credential).
-    await expect(collab.start({ grantId })).rejects.toThrow(/callerSessionId|parent/i)
-    const again = await collab.start({ grantId, callerSessionId: parent.sessionId })
+    // launchIds are scoped to the requesting session.
+    await expect(collab.start({ callerSessionId: started.sessionId, launchId, task: 'x' }))
+      .rejects.toThrow(/No approved launch/)
+    const again = await collab.start({ callerSessionId: parent.sessionId, launchId, task: 'Different brief' })
     expect(again.reused).toBe(true)
     expect(again.sessionId).toBe(started.sessionId)
+    expect(taskOf().task).toBe('Do the work')
 
     // launch.config must not elevate permissionMode via request spread
     const escalated = await collab.request({
@@ -198,9 +198,9 @@ describe('collaboration grants + mailbox', () => {
       launches: [
         {
           agentId: 'claude',
-          task: 'escalate',
           name: 'E',
           role: 'R',
+          summary: 'Summary.',
           config: {
             cwd: projectDir,
             permissionMode: 'bypassPermissions',
@@ -211,7 +211,9 @@ describe('collaboration grants + mailbox', () => {
     })
     if (escalated.status !== 'approved') throw new Error('expected approved')
     const escalatedStarted = await collab.start({
-      credential: escalated.launches[0].credential,
+      callerSessionId: parent.sessionId,
+      launchId: escalated.launches[0].launchId,
+      task: 'escalate',
     })
     const child = sessions.get(escalatedStarted.sessionId)
     expect(child?.permissionMode === 'bypassPermissions').toBe(false)
@@ -273,15 +275,15 @@ describe('collaboration grants + mailbox', () => {
       launches: [
         {
           agentId: 'claude',
-          task: 't',
           name: 'A',
           role: 'R',
+          summary: 'Summary.',
           config: { cwd: projectDir },
         },
       ],
     })
     if (req.status !== 'approved') throw new Error('expected approved')
-    const child = await collab.start({ credential: req.launches[0].credential })
+    const child = await collab.start({ callerSessionId: parent.sessionId, launchId: req.launches[0].launchId, task: 't' })
     expect(() =>
       collab.send({
         sessionId: stranger.sessionId,
@@ -317,7 +319,6 @@ describe('collaboration grants + mailbox', () => {
           mode: 'link',
           sessionId: peer.sessionId,
           summary: 'Sync with existing peer',
-          task: 'Please confirm the API shape.',
         },
       ],
     })
@@ -325,7 +326,7 @@ describe('collaboration grants + mailbox', () => {
     if (req.status !== 'approved') throw new Error('expected approved')
     const grant = req.launches[0]
     expect(grant.mode).toBe('link')
-    expect(grant.peerSessionId).toBe(peer.sessionId)
+    expect(grant.sessionId).toBe(peer.sessionId)
 
     // Peer is already bound at approve; no system prompt yet or after start.
     expect(sessions.getSystemPromptAppend(peer.sessionId)).toBeUndefined()
@@ -338,7 +339,11 @@ describe('collaboration grants + mailbox', () => {
       }),
     ).toThrow(/not one of your collaboration peers/i)
 
-    const linked = await collab.start({ credential: grant.credential })
+    const linked = await collab.start({
+      callerSessionId: parent.sessionId,
+      launchId: grant.launchId,
+      task: 'Please confirm the API shape.',
+    })
     expect(linked.status).toBe('linked')
     expect(linked.mode).toBe('link')
     expect(linked.sessionId).toBe(peer.sessionId)
@@ -349,7 +354,7 @@ describe('collaboration grants + mailbox', () => {
 
     const row = db
       .prepare(`SELECT kind, started_at FROM session_collaboration_grants WHERE credential_hash = ?`)
-      .get(grant.grantId) as { kind: string; started_at: string | null }
+      .get(grantIdFor(db, grant.launchId)) as { kind: string; started_at: string | null }
     expect(row.kind).toBe('link')
     expect(row.started_at).toBeTruthy()
 
@@ -363,14 +368,14 @@ describe('collaboration grants + mailbox', () => {
     const retrieved = collab.retrieve({ sessionId: peer.sessionId })
     expect(retrieved.peers).toEqual([expect.objectContaining({ sessionId: parent.sessionId, relation: 'link' })])
     expect(retrieved.status).toBe('messages')
-    expect(retrieved.messages.some((m) => m.content.includes('hello peer') || m.content.includes('API shape'))).toBe(true)
+    expect(retrieved.messages.map((m) => m.content)).toEqual(['Please confirm the API shape.', 'hello peer'])
   })
 
   /**
    * Remote-node parity for handoff. Without it a remote session's handoff would
-   * silently fall back to spawn — a nested, credential-bearing child.
+   * silently fall back to spawn — a nested child with a mailbox.
    */
-  it('handoff creates a sibling session with no credential, no endpoint row, no mailbox', async () => {
+  it('handoff creates a sibling session with no collaboration prompt, no endpoint row, no mailbox', async () => {
     const { collab, sessions, projects, db } = bootCollab()
     const projectDir = mkdtempSync(join(tmpdir(), 'collab-handoff-'))
     dirs.push(projectDir)
@@ -388,9 +393,9 @@ describe('collaboration grants + mailbox', () => {
         {
           mode: 'handoff',
           agentId: 'claude',
-          task: 'Finish phase 2.',
           name: 'Dana',
           role: 'Implementer',
+          summary: 'Summary.',
           config: { cwd: projectDir },
         },
       ],
@@ -399,7 +404,8 @@ describe('collaboration grants + mailbox', () => {
     const grant = req.launches[0]
     expect(grant.mode).toBe('handoff')
 
-    const started = await collab.start({ credential: grant.credential })
+    const start = () => collab.start({ callerSessionId: parent.sessionId, launchId: grant.launchId, task: 'Finish phase 2.' })
+    const started = await start()
     expect(started).toMatchObject({ status: 'started', mode: 'handoff', reused: false })
     expect(sessions.getSystemPromptAppend(started.sessionId)).toBeUndefined()
     collab.rehydrateSystemPrompts()
@@ -409,12 +415,12 @@ describe('collaboration grants + mailbox', () => {
     // skip it and it can still be linked/spawned against later.
     const row = db
       .prepare(`SELECT kind, child_session_id, config_json FROM session_collaboration_grants WHERE credential_hash = ?`)
-      .get(grant.grantId) as { kind: string; child_session_id: string | null; config_json: string }
+      .get(grantIdFor(db, grant.launchId)) as { kind: string; child_session_id: string | null; config_json: string }
     expect(row.kind).toBe('handoff')
     expect(row.child_session_id).toBeNull()
     expect(JSON.parse(row.config_json).handoffSessionId).toBe(started.sessionId)
 
-    const again = await collab.start({ credential: grant.credential })
+    const again = await start()
     expect(again).toMatchObject({ reused: true, sessionId: started.sessionId })
 
     expect(() =>
@@ -430,6 +436,6 @@ describe('collaboration grants + mailbox', () => {
 
     // The grant is not FK-linked to the sibling, so a retry after deletion is reachable.
     sessions.remove(started.sessionId)
-    await expect(collab.start({ credential: grant.credential })).rejects.toThrow(/no longer exists/i)
+    await expect(start()).rejects.toThrow(/no longer exists/i)
   })
 })

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
 import { Bot, FolderClosed, MessageSquare, Users, Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Streamdown } from 'streamdown'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { cn } from '@superone/ui/lib/utils'
@@ -27,12 +26,6 @@ import { resolveSessionIcon, resolveSessionIconFromBrandKey } from '@/components
 import { openPeerSession } from '@/lib/open-peer-session'
 import { hasOpenRadixOverlay } from '@/lib/radix-overlay'
 import { useAppStore } from '@/stores/app'
-import {
-  streamdownComponents,
-  streamdownControls,
-  streamdownLinkSafety,
-  streamdownPlugins,
-} from './chat-shared'
 import { HarnessPermissionPopover } from './HarnessPermissionPopover'
 import { harnessSupportsSandbox, harnessSandboxModes, harnessSandboxSupportLevel, coerceSandboxModeForHarness, SandboxModePopover } from './SandboxModeSelector'
 import { ApproveRejectBar } from './PermissionActionBar'
@@ -50,7 +43,7 @@ interface Props {
 
 /**
  * The user may only retune *how* a proposed session runs — model, effort, AI provider and
- * permission mode. Everything else (which agent, the task, cwd, worktree, sandbox) is the
+ * permission mode. Everything else (which agent, the summary, cwd, worktree, sandbox) is the
  * requesting agent's decision and is rendered read-only.
  */
 type EditableConfig = Pick<
@@ -101,32 +94,17 @@ function MetaChip({
   )
 }
 
-function TaskMarkdown({ text }: { text: string }) {
-  return (
-    <div className="github-md text-xs leading-snug text-foreground/90 [&_h1]:text-sm [&_h2]:text-sm [&_h3]:text-xs [&_p]:my-1.5 [&_ul]:my-1.5 [&_ol]:my-1.5 [&_pre]:my-1.5 [&_pre]:text-xs">
-      <Streamdown
-        plugins={streamdownPlugins}
-        components={streamdownComponents}
-        controls={streamdownControls}
-        linkSafety={streamdownLinkSafety}
-      >
-        {text}
-      </Streamdown>
-    </div>
-  )
-}
-
 function LaunchPanel({
   launch,
   profile,
-  taskExpanded,
-  onToggleTask,
+  summaryExpanded,
+  onToggleSummary,
   onChange,
 }: {
   launch: SessionAgentLaunchProposal
   profile: SessionAgentProfile | undefined
-  taskExpanded: boolean
-  onToggleTask: () => void
+  summaryExpanded: boolean
+  onToggleSummary: () => void
   onChange: (patch: EditableConfig) => void
 }) {
   const { t } = useTranslation()
@@ -148,13 +126,12 @@ function LaunchPanel({
   const supportsFastMode = harnessId === 'codex' && !!findCodexFastServiceTier(selectedProfileModel)
   const nameRole = launchNameRoleLine(launch)
   const peerTitle = peerSessionTitle(launch)
-  const summary = launch.summary?.trim() || launch.task
-  const taskBody = launch.task?.trim() || summary
+  const summary = launch.summary.trim()
   const peerProject = launch.peerProjectPath ? pathBasename(launch.peerProjectPath) : null
   const sessionShort = shortSessionId(launch.sessionId)
 
   return (
-    <div className={cn('flex min-h-0 flex-col px-2.5 py-2', taskExpanded && 'flex-1')}>
+    <div className="flex min-h-0 flex-col px-2.5 py-2">
       <div className="mb-1.5 flex min-w-0 shrink-0 items-center gap-1 text-xs font-medium text-foreground">
         {link ? (
           <>
@@ -192,43 +169,30 @@ function LaunchPanel({
       </div>
 
       {/*
-        Collapsed: short 2–3 sentence summary. Expanded: same slot becomes a Markdown
-        task preview. max-height animates so the whole confirm card grows; overflow scrolls.
+        The summary is what the user approves; the agent passes the full brief to
+        session_collab_start. Collapsed it clamps to two lines; expanded it scrolls.
       */}
       <div
         className={cn(
           'min-h-0 transition-[max-height] duration-300 ease-out',
-          taskExpanded
-            ? 'flex max-h-[min(50vh,calc(100dvh-14rem))] flex-1 flex-col overflow-hidden rounded-md border border-border/60 bg-muted/15'
-            : 'max-h-12',
+          summaryExpanded ? 'max-h-[min(50vh,calc(100dvh-14rem))] overflow-y-auto overscroll-contain' : 'max-h-12',
         )}
       >
-        {taskExpanded ? (
-          <>
-            <button
-              type="button"
-              onClick={onToggleTask}
-              title={t('chat.sessionAgentsConfirm.collapseTask')}
-              className="line-clamp-2 shrink-0 border-b border-border/50 px-2 py-1 text-left text-xs leading-snug text-muted-foreground hover:text-foreground"
-            >
-              {summary}
-            </button>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-1.5">
-              <TaskMarkdown text={taskBody} />
-            </div>
-          </>
-        ) : (
-          <button
-            type="button"
-            onClick={onToggleTask}
-            title={t('chat.sessionAgentsConfirm.expandTask')}
-            className="block w-full cursor-pointer text-left"
+        <button
+          type="button"
+          onClick={onToggleSummary}
+          title={t(summaryExpanded ? 'chat.collaboration.collapseTask' : 'chat.collaboration.expandTask')}
+          className="block w-full cursor-pointer text-left"
+        >
+          <span
+            className={cn(
+              'whitespace-pre-wrap break-words text-xs leading-snug text-foreground/90',
+              !summaryExpanded && 'line-clamp-2',
+            )}
           >
-            <span className="line-clamp-2 whitespace-pre-wrap break-words text-xs leading-snug text-foreground/90">
-              {summary}
-            </span>
-          </button>
-        )}
+            {summary}
+          </span>
+        </button>
       </div>
 
       {link ? (
@@ -340,7 +304,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
   const { t } = useTranslation()
   const [overrides, setOverrides] = useState<Record<string, EditableConfig>>({})
   const [activeTab, setActiveTab] = useState(0)
-  const [taskExpanded, setTaskExpanded] = useState(false)
+  const [summaryExpanded, setSummaryExpanded] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [feedbackFocused, setFeedbackFocused] = useState(false)
   const feedbackRef = useRef<HTMLInputElement>(null)
@@ -352,9 +316,9 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
   const activeIndex = Math.min(activeTab, launches.length - 1)
   const activeLaunch = launches[activeIndex]
 
-  // Switching agents collapses the task preview so a tall panel does not stick around.
+  // Switching agents collapses the summary so a tall panel does not stick around.
   useEffect(() => {
-    setTaskExpanded(false)
+    setSummaryExpanded(false)
   }, [activeIndex])
 
   const resolved = useMemo(
@@ -415,8 +379,8 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
       }
       if (event.key === 'Escape') {
         event.preventDefault()
-        if (taskExpanded) {
-          setTaskExpanded(false)
+        if (summaryExpanded) {
+          setSummaryExpanded(false)
           return
         }
         handleReject()
@@ -424,7 +388,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [activeIndex, launches.length, handleConfirm, handleReject, chatRootRef, taskExpanded])
+  }, [activeIndex, launches.length, handleConfirm, handleReject, chatRootRef, summaryExpanded])
 
   if (!activeLaunch) return null
 
@@ -432,7 +396,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
     <div
       className={cn(
         '@container mx-3 mb-2 flex flex-col overflow-hidden rounded-lg border border-primary/40 bg-card',
-        // Cap the whole confirm card so expanded task content never leaves the viewport.
+        // Cap the whole confirm card so an expanded summary never leaves the viewport.
         'max-h-[min(80vh,calc(100dvh-5rem))]',
       )}
     >
@@ -495,13 +459,13 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
         )}
       </div>
 
-      <div className={cn('flex min-h-0 flex-col', taskExpanded && 'min-h-0 flex-1')}>
+      <div className="flex min-h-0 flex-col">
         <LaunchPanel
           key={activeLaunch.launchId}
           launch={resolved[activeIndex]}
           profile={profiles.find((profile) => profile.id === activeLaunch.agentId)}
-          taskExpanded={taskExpanded}
-          onToggleTask={() => setTaskExpanded((value) => !value)}
+          summaryExpanded={summaryExpanded}
+          onToggleSummary={() => setSummaryExpanded((value) => !value)}
           onChange={(patch) => setOverrides((current) => ({
             ...current,
             [activeLaunch.launchId]: { ...current[activeLaunch.launchId], ...patch },

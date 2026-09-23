@@ -13,12 +13,14 @@ import {
   NESTED_COLLABORATION_UNSUPPORTED,
   assertLaunchCount,
   assertNotPeeredElsewhere,
-  collaborationSessionTitle,
   collaborationSystemPrompt,
   mergeConfirmedLaunches,
-  normalizeLaunchText,
+  normalizeLaunchLabels,
   parseGrantConfig as parseConfig,
+  recordApprovedLaunch,
   resolveLaunchMode,
+  START_APPROVED_LAUNCHES_HINT,
+  type ApprovedLaunch,
 } from '@superone/runtime/collaboration'
 import { getDb } from '../database'
 import { listSessionAgentProfiles } from './agent-profiles'
@@ -30,7 +32,7 @@ import { openSessionAgentsConfirm } from './session-collaboration-confirm'
 
 export { setSessionCollaborationCallbacks } from './collaboration-host'
 export { sendSessionMessage, retrieveSessionMessages, type SessionSendArgs, type SessionRetrieveArgs } from './collaboration-messaging'
-export { startSessionAgent } from './collaboration-start'
+export { startSessionAgent, type SessionStartArgs } from './collaboration-start'
 
 /**
  * Agent-profile listing moved to ./agent-profiles when this file passed 1600
@@ -51,10 +53,8 @@ export interface RequestSessionAgentsArgs {
     agentId?: string
     /** Required for link: existing SuperOne session id. */
     sessionId?: string
-    /** Short confirm-UI description. Optional for spawn/handoff when task is present. */
+    /** What the launch is for; the user approves this. The brief goes to session_collab_start. */
     summary?: string
-    /** Spawn/handoff: full task. Link: optional opening for the peer. */
-    task?: string
     /** Agent-chosen human label (not harness name). Used in `Name - Role`. */
     name?: string
     /** Temporary role for child title: `Name - Role`. */
@@ -123,7 +123,7 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
       if (!peerRow) throw new Error(`Unknown sessionId for link: ${peerSessionId}`)
       assertNotPeeredElsewhere(store(), parent.id, peerSessionId)
       const peerTitle = peerRow.title?.trim() || peerSessionId.slice(0, 8)
-      const { summary, task, name, role } = normalizeLaunchText('link', launch, peerTitle)
+      const { summary, name, role } = normalizeLaunchLabels('link', launch, peerTitle)
       // Confirm tabs show harness (same as spawn) — resolve from peer session identity.
       const peerHarnessId = (peerRow.provider?.trim()
         || peerRow.provider_id?.replace(/-base$/, '')
@@ -150,7 +150,6 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
         peerHarnessName,
         peerBrandKey,
         summary,
-        task,
         name,
         role,
         config: { name, role, summary },
@@ -158,19 +157,18 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
     }
 
     // spawn + handoff share the whole launch shape; they differ only in whether the
-    // new session is nested under the initiator and gets a mailbox credential.
+    // new session is nested under the initiator and gets a mailbox.
     const agentId = launch.agentId?.trim()
     if (!agentId) throw new Error(`${mode} launches require agentId from session_collab_list_agents`)
     const profile = profiles.get(agentId)
     if (!profile) throw new Error(`Unknown agent profile: ${agentId}`)
     assertKnownApiProviderId(launch.config, profile)
-    const { summary, task, name, role } = normalizeLaunchText(mode, launch)
+    const { summary, name, role } = normalizeLaunchLabels(mode, launch)
     return {
       launchId,
       mode,
       agentId,
       summary,
-      task,
       name,
       role,
       config: {
@@ -187,76 +185,20 @@ function normalizeLaunches(args: RequestSessionAgentsArgs, parent: Session): Ses
 }
 
 
-function createGrants(parentSessionId: string, launches: SessionAgentLaunchProposal[]) {
+function createGrants(parentSessionId: string, launches: SessionAgentLaunchProposal[]): ApprovedLaunch[] {
   assertLaunchCount(launches.length)
   const launchIds = new Set(launches.map((launch) => launch.launchId))
   if (launchIds.size !== launches.length) throw new Error('Every confirmed launch must have a unique launchId')
   const profiles = new Map(listSessionAgentProfiles().map((profile) => [profile.id, profile]))
   const grants = store()
   return grants.transaction(() => launches.map((launch) => {
-    const mode = resolveLaunchMode(launch.mode)
-    const { summary, name, role } = launch
-
-    if (mode === 'link') {
+    if (resolveLaunchMode(launch.mode) === 'link') {
       const peerSessionId = launch.sessionId?.trim()
-      if (!peerSessionId) throw new Error('Link launches require sessionId')
-      // Reuse an existing initiator→peer link grant (idempotent re-approve).
-      const existing = grants.findLinkGrant(parentSessionId, peerSessionId)
-      const existingCredential = existing ? grants.credentialOf(existing) : null
-      if (existing && existingCredential) {
-        return {
-          launchId: launch.launchId,
-          mode: 'link' as const,
-          agentId: existing.agent_id,
-          sessionId: peerSessionId,
-          peerSessionId,
-          summary,
-          task: existing.task,
-          name,
-          role,
-          title: collaborationSessionTitle(name, role),
-          config: parseConfig(existing.config_json),
-          credential: existingCredential,
-          reused: true,
-        }
+      if (peerSessionId && !getDb().prepare('SELECT 1 FROM sessions WHERE id = ?').get(peerSessionId)) {
+        throw new Error(`Unknown sessionId for link: ${peerSessionId}`)
       }
-      const peerExists = getDb().prepare('SELECT 1 FROM sessions WHERE id = ?').get(peerSessionId)
-      if (!peerExists) throw new Error(`Unknown sessionId for link: ${peerSessionId}`)
-      // Opening is optional: empty task means wake-only (no mailbox opening body).
-      const task = (launch.task ?? '').trim()
-      const config = {
-        name,
-        role,
-        summary,
-        peerSessionId,
-        peerTitle: launch.peerTitle,
-        peerProjectPath: launch.peerProjectPath,
-      }
-      const { credential } = grants.createGrant({
-        kind: 'link',
-        parentSessionId,
-        childSessionId: peerSessionId,
-        agentId: '',
-        task,
-        config,
-      })
-      return {
-        launchId: launch.launchId,
-        mode: 'link' as const,
-        agentId: '',
-        sessionId: peerSessionId,
-        peerSessionId,
-        summary,
-        task,
-        name,
-        role,
-        title: collaborationSessionTitle(name, role),
-        config,
-        credential,
-        reused: false,
-      }
+      return recordApprovedLaunch(grants, parentSessionId, launch, {}).approved
     }
-
     const profile = profiles.get(launch.agentId)
     if (!profile) throw new Error(`Unknown agent profile: ${launch.agentId}`)
     // Also covers the confirm UI's provider edit, which reaches here as renderer input.
@@ -266,30 +208,8 @@ function createGrants(parentSessionId: string, launches: SessionAgentLaunchPropo
       ...(typeof launch.config.fastMode === 'boolean'
         ? { codexServiceTier: resolveCodexServiceTier(launch.agentId, launch.config, profile) }
         : {}),
-      name,
-      role,
-      summary,
     }
-    const { credential } = grants.createGrant({
-      kind: mode,
-      parentSessionId,
-      agentId: launch.agentId,
-      task: launch.task,
-      config,
-    })
-    return {
-      launchId: launch.launchId,
-      mode,
-      agentId: launch.agentId,
-      summary,
-      task: launch.task,
-      name,
-      role,
-      title: collaborationSessionTitle(name, role),
-      config,
-      credential,
-      reused: false,
-    }
+    return recordApprovedLaunch(grants, parentSessionId, launch, config).approved
   }))
 }
 
@@ -321,11 +241,14 @@ export async function requestSessionAgents(
     return toolResult({ status: 'rejected', feedback: outcome.content?.feedback })
   }
   const confirmed = mergeConfirmedLaunches(launches, outcome.content)
-  const credentials = createGrants(callerSessionId, confirmed)
-  return toolResult({ status: 'approved', launches: credentials })
+  return toolResult({
+    status: 'approved',
+    launches: createGrants(callerSessionId, confirmed),
+    next: START_APPROVED_LAUNCHES_HINT,
+  })
 }
 
-/** Spawn children only — link peers must never get system-prompt credential injection. */
+/** Spawn children only — link peers must never get a collaboration system prompt. */
 export function getSessionCollaborationSystemPrompt(sessionId: string): string | undefined {
   const grant = store().spawnGrantForChild(sessionId)
   return grant ? collaborationSystemPrompt(grant.parent_session_id) : undefined

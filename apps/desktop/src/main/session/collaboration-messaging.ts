@@ -57,7 +57,7 @@ export async function sendSessionMessage(
   }
 
   const insert = grants.appendMessage({
-    credentialHash: channel.grant.credential_hash,
+    grantId: channel.grant.grant_id,
     senderSessionId: callerSessionId,
     recipientSessionId,
     clientMessageId: args.clientMessageId,

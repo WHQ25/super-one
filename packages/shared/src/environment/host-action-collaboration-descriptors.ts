@@ -11,6 +11,7 @@ import {
   LAUNCH_WORKTREE_DESCRIPTION,
   LAUNCH_BRANCH_NAME_DESCRIPTION,
   SESSION_START_DESCRIPTION,
+  START_LAUNCH_ID_DESCRIPTION,
   SESSION_SEND_DESCRIPTION,
   SESSION_SEND_TO_DESCRIPTION,
   SESSION_SEND_CONTENT_DESCRIPTION,
@@ -67,10 +68,6 @@ export const HOST_ACTION_COLLABORATION_DESCRIPTORS: HostActionSuperoneToolDescri
                 "type": "string",
                 "minLength": 1,
                 "description": LAUNCH_SUMMARY_DESCRIPTION
-              },
-              "task": {
-                "type": "string",
-                "description": LAUNCH_TASK_DESCRIPTION
               },
               "name": {
                 "type": "string",
@@ -188,12 +185,18 @@ export const HOST_ACTION_COLLABORATION_DESCRIPTORS: HostActionSuperoneToolDescri
     "inputSchema": {
       "type": "object",
       "properties": {
-        "credential": {
-          "type": "string"
+        "launchId": {
+          "type": "string",
+          "minLength": 1,
+          "description": START_LAUNCH_ID_DESCRIPTION
+        },
+        "task": {
+          "type": "string",
+          "description": LAUNCH_TASK_DESCRIPTION
         }
       },
       "required": [
-        "credential"
+        "launchId"
       ],
       "additionalProperties": false
     }

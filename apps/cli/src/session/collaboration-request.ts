@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import type {
-  SessionAgentLaunchConfig,
   SessionAgentLaunchProposal,
   SessionAgentProfile,
   SessionCollabLaunchMode,
@@ -10,11 +9,12 @@ import {
   NESTED_COLLABORATION_UNSUPPORTED,
   assertLaunchCount,
   assertNotPeeredElsewhere,
-  collaborationSessionTitle,
   mergeConfirmedLaunches,
-  normalizeLaunchText,
-  parseGrantConfig,
+  normalizeLaunchLabels,
+  recordApprovedLaunch,
   resolveLaunchMode,
+  START_APPROVED_LAUNCHES_HINT,
+  type ApprovedLaunch,
 } from '@superone/runtime/collaboration'
 import { resolveProfile, type CollaborationContext, type NodeLaunchConfig } from './collaboration-context'
 
@@ -25,9 +25,8 @@ export interface CollaborationRequestInput {
     mode?: SessionCollabLaunchMode
     agentId?: string
     sessionId?: string
-    /** Short confirm-UI description. Optional for spawn when task is present. */
+    /** Short confirm-UI description; the task itself is passed to start. */
     summary?: string
-    task?: string
     name?: string
     role?: string
     config?: NodeLaunchConfig
@@ -36,25 +35,8 @@ export interface CollaborationRequestInput {
   signal?: AbortSignal
 }
 
-export interface ApprovedCollaborationLaunch {
-  launchId: string
-  mode: SessionCollabLaunchMode
-  agentId: string
-  sessionId?: string
-  peerSessionId?: string
-  summary: string
-  task: string
-  name: string
-  role: string
-  title: string
-  config: SessionAgentLaunchConfig
-  credential: string
-  grantId: string
-  reused?: boolean
-}
-
 export type CollaborationRequestResult =
-  | { status: 'approved'; launches: ApprovedCollaborationLaunch[] }
+  | { status: 'approved'; launches: ApprovedLaunch[]; next: string }
   | { status: 'cancelled'; message?: string }
   | { status: 'rejected'; feedback?: unknown }
 
@@ -103,7 +85,7 @@ function normalizeLaunches(
       if (!peer) throw new CollaborationError(`Unknown sessionId for link: ${peerSessionId}`, 'not_found')
       assertNotPeeredElsewhere(ctx.store, input.parentSessionId, peerSessionId)
       const peerTitle = peer.title?.trim() || peerSessionId.slice(0, 8)
-      const { summary, task, name, role } = normalizeLaunchText('link', launch, peerTitle)
+      const { summary, name, role } = normalizeLaunchLabels('link', launch, peerTitle)
       return {
         launchId,
         mode: 'link',
@@ -112,7 +94,6 @@ function normalizeLaunches(
         peerTitle,
         peerProjectPath: ctx.deps.projects.get(peer.projectId)?.path,
         summary,
-        task,
         name,
         role,
         config: { name, role, summary },
@@ -120,21 +101,20 @@ function normalizeLaunches(
     }
 
     // spawn + handoff share this whole branch; they differ only in nesting and
-    // in whether the new session gets a mailbox credential.
+    // in whether the new session gets a mailbox.
     const agentId = launch.agentId?.trim()
     if (!agentId) {
       throw new CollaborationError(`${mode} launches require agentId from session_collab_list_agents`, 'invalid_argument')
     }
     const profile = resolveProfile(profiles, agentId)
     if (!profile) throw new CollaborationError(`Unknown agent profile: ${agentId}`, 'invalid_argument')
-    const { summary, task, name, role } = normalizeLaunchText(mode, launch)
+    const { summary, name, role } = normalizeLaunchLabels(mode, launch)
     const safe = safeLaunchConfig(launch.config)
     return {
       launchId,
       mode,
       agentId,
       summary,
-      task,
       name,
       role,
       config: {
@@ -154,101 +134,18 @@ function createGrant(
   ctx: CollaborationContext,
   parentSessionId: string,
   launch: SessionAgentLaunchProposal,
-): ApprovedCollaborationLaunch {
-  const mode = resolveLaunchMode(launch.mode)
-  const title = collaborationSessionTitle(launch.name, launch.role)
-  if (mode === 'link') {
-    const peerSessionId = launch.sessionId!
-    const existing = ctx.store.findLinkGrant(parentSessionId, peerSessionId)
-    const existingCredential = existing ? ctx.store.credentialOf(existing) : null
-    if (existing && existingCredential) {
-      return {
-        launchId: launch.launchId,
-        mode: 'link',
-        agentId: existing.agent_id,
-        sessionId: peerSessionId,
-        peerSessionId,
-        summary: launch.summary,
-        task: existing.task,
-        name: launch.name,
-        role: launch.role,
-        title,
-        config: parseGrantConfig(existing.config_json),
-        credential: existingCredential,
-        grantId: existing.credential_hash,
-        reused: true,
-      }
-    }
-    // Opening is optional: empty task means wake-only (no mailbox opening body).
-    const task = launch.task.trim()
-    const config = {
-      name: launch.name,
-      role: launch.role,
-      summary: launch.summary,
-      peerSessionId,
-      peerTitle: launch.peerTitle,
-      peerProjectPath: launch.peerProjectPath,
-    }
-    const { credential, credentialHash } = ctx.store.createGrant({
-      kind: 'link',
-      parentSessionId,
-      childSessionId: peerSessionId,
-      agentId: '',
-      task,
-      config,
-    })
-    ctx.deps.events.append({
-      aggregateType: 'session',
-      aggregateId: parentSessionId,
-      eventType: 'collaboration.grant_created',
-      payload: { grantId: credentialHash, mode: 'link', peerSessionId, launchId: launch.launchId },
-    })
-    return {
-      launchId: launch.launchId,
-      mode: 'link',
-      agentId: '',
-      sessionId: peerSessionId,
-      peerSessionId,
-      summary: launch.summary,
-      task,
-      name: launch.name,
-      role: launch.role,
-      title,
-      config,
-      credential,
-      grantId: credentialHash,
-      reused: false,
-    }
-  }
-
-  const config = { ...launch.config, name: launch.name, role: launch.role, summary: launch.summary }
-  const { credential, credentialHash } = ctx.store.createGrant({
-    kind: mode,
-    parentSessionId,
-    agentId: launch.agentId,
-    task: launch.task,
-    config,
-  })
+): ApprovedLaunch {
+  const { grantId, approved } = recordApprovedLaunch(ctx.store, parentSessionId, launch, launch.config)
+  if (approved.reused) return approved
   ctx.deps.events.append({
     aggregateType: 'session',
     aggregateId: parentSessionId,
     eventType: 'collaboration.grant_created',
-    payload: { grantId: credentialHash, mode, agentId: launch.agentId, launchId: launch.launchId },
+    payload: approved.mode === 'link'
+      ? { grantId, mode: 'link', peerSessionId: approved.sessionId, launchId: approved.launchId }
+      : { grantId, mode: approved.mode, agentId: approved.agentId, launchId: approved.launchId },
   })
-  return {
-    launchId: launch.launchId,
-    mode,
-    agentId: launch.agentId,
-    summary: launch.summary,
-    task: launch.task,
-    name: launch.name,
-    role: launch.role,
-    title,
-    config,
-    credential,
-    grantId: credentialHash,
-    reused: false,
-  }
+  return approved
 }
 
 /**
@@ -294,5 +191,5 @@ export async function requestCollaboration(
 
   const launches = ctx.store.transaction(() =>
     confirmed.map((launch) => createGrant(ctx, input.parentSessionId, launch)))
-  return { status: 'approved', launches }
+  return { status: 'approved', launches, next: START_APPROVED_LAUNCHES_HINT }
 }

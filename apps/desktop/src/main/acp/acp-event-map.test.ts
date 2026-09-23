@@ -889,7 +889,7 @@ describe('formatAcpRawOutput', () => {
       rawInput: {
         variant: 'UseTool',
         tool_name: 'superone__session_collab_retrieve',
-        tool_input: { credentials: ['s1sc_demo'] },
+        tool_input: {},
       },
       status: 'completed',
       rawOutput: {

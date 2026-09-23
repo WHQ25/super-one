@@ -167,11 +167,14 @@ export function toolDetail(message: ChatMessage, id: string): string {
     toolFilePath: projectedTool?.toolFilePath,
   })
 }
+function changeLineDelta(change: CodexFileUpdateChange): { added: number; removed: number } | undefined {
+  return computeToolLineDelta('FileChange', JSON.stringify({ kind: change.kind, diff: change.diff ?? '' }))
+}
 function fileChangeLineDelta(changes: CodexFileUpdateChange[]): { added: number; removed: number } | undefined {
   let added = 0
   let removed = 0
   for (const change of changes) {
-    const delta = computeToolLineDelta('FileChange', JSON.stringify({ kind: change.kind, diff: change.diff ?? '' }))
+    const delta = changeLineDelta(change)
     if (!delta) continue
     added += delta.added
     removed += delta.removed
@@ -183,7 +186,10 @@ export function projectCodexTool(item: CodexThreadItem, ref: string): CodexThrea
   if (item.type === 'command_execution') return { ...item, remoteDetail: ref, command: item.command.slice(0, 160), aggregatedOutput: '', commandActions: item.commandActions?.map(action => ({ ...action, command: action.command?.slice(0, 160) })) }
   if (item.type === 'file_change') {
     const toolLineDelta = item.toolLineDelta ?? fileChangeLineDelta(item.changes)
-    return { ...item, remoteDetail: ref, ...(toolLineDelta ? { toolLineDelta } : {}), changes: item.changes.map(({ path, kind }) => ({ path, kind })) }
+    return { ...item, remoteDetail: ref, ...(toolLineDelta ? { toolLineDelta } : {}), changes: item.changes.map((change) => {
+      const delta = changeLineDelta(change)
+      return { path: change.path, kind: change.kind, ...(delta ? { toolLineDelta: delta } : {}) }
+    }) }
   }
   if (item.type === 'mcp_tool_call' && deferTool(item.tool)) {
     return {

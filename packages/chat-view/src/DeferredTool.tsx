@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
-import { useMemo, useState, type ReactNode } from 'react'
-import type { CodexThreadItem, ContentBlock } from '@superone/shared/agent-types'
+import { useMemo, useState } from 'react'
+import type { CodexFileChangeItem, CodexFileUpdateChange, CodexThreadItem, ContentBlock } from '@superone/shared/agent-types'
 import { isCodexCommandToolError } from '@superone/shared/codex-command-status'
 import { PortableToolRow, type PortableToolRowProps } from './PortableToolRow'
 import { useDeferredText } from './use-deferred-text'
@@ -48,26 +48,55 @@ export function DeferredDetailStatus({ status, onRetry, className }: { status?: 
   )
 }
 
-export function DeferredTool({ remoteDetail, renderDetail, ...props }: PortableToolRowProps & { remoteDetail: string; renderDetail?: (detail: DeferredToolDetail) => ReactNode }) {
+export function DeferredTool({ remoteDetail, ...props }: PortableToolRowProps & { remoteDetail: string }) {
   const [expanded, setExpanded] = useState(false)
-  const { detail, text, error, status, retry } = useDeferredToolDetail(remoteDetail, expanded, props.status !== 'streaming')
+  const { detail, status, retry } = useDeferredToolDetail(remoteDetail, expanded, props.status !== 'streaming')
   return <PortableToolRow {...props} {...detail} autoExpand={false} hasDeferredDetails
-    deferredContent={renderDetail && text && !error ? renderDetail(detail) : undefined}
     detailStatus={status} onExpandedChange={setExpanded} onDetailRetry={retry} />
 }
 
-export function DeferredCodexTool({ item, isStreaming, renderItem }: { item: CodexThreadItem; isStreaming: boolean; renderItem?: (item: CodexThreadItem) => ReactNode }) {
+/**
+ * One row per changed file, as the desktop draws a Codex patch. The shell carries only
+ * paths and line deltas; expanding a row loads the item once and draws that file's diff
+ * in place — the loaded item is never re-rendered as rows inside the row.
+ */
+function DeferredCodexFileChange({ item }: { item: CodexFileChangeItem & { remoteDetail: string } }) {
+  const changes = item.changes.length ? item.changes : [{ path: '', kind: 'update' as const }]
+  return (
+    <div className="space-y-0.5">
+      {changes.map((change, index) => (
+        <DeferredCodexFileChangeRow key={`${item.id}-${index}`} item={item} change={change} index={index}
+          toolLineDelta={change.toolLineDelta ?? (changes.length === 1 ? item.toolLineDelta : undefined)} />
+      ))}
+    </div>
+  )
+}
+
+function DeferredCodexFileChangeRow({ item, change, index, toolLineDelta }: {
+  item: CodexFileChangeItem & { remoteDetail: string }
+  change: CodexFileUpdateChange
+  index: number
+  toolLineDelta?: { added: number; removed: number }
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const failed = item.status === 'failed'
+  const { detail, status, retry } = useDeferredToolDetail(item.remoteDetail, expanded, true)
+  const loaded = detail.item?.type === 'file_change' ? detail.item.changes[index] : undefined
+  return <PortableToolRow toolName="FileChange" toolUseId={`${item.id}-${index}`}
+    input={JSON.stringify({ file_path: change.path, kind: change.kind })} filePath={change.path || undefined}
+    toolLineDelta={toolLineDelta} toolDiff={loaded?.diff || undefined}
+    status="complete"
+    result={failed && index === 0 ? 'Failed to apply file changes.' : undefined} isError={failed}
+    autoExpand={false} hasDeferredDetails detailStatus={status} onExpandedChange={setExpanded} onDetailRetry={retry} />
+}
+
+export function DeferredCodexTool({ item, isStreaming }: { item: CodexThreadItem; isStreaming: boolean }) {
   if (!('remoteDetail' in item) || !item.remoteDetail) return null
-  const toolName = item.type === 'command_execution' ? 'Bash' : item.type === 'file_change' ? 'FileChange'
-    : item.type === 'mcp_tool_call' ? item.tool : item.type
-  const fileChange = item.type === 'file_change' ? item.changes[0] : undefined
-  const input = item.type === 'command_execution' ? JSON.stringify({ command: item.command })
-    : item.type === 'file_change' ? JSON.stringify({ file_path: fileChange?.path ?? '', kind: fileChange?.kind ?? '' })
-    : '{}'
+  if (item.type === 'file_change') return <DeferredCodexFileChange item={{ ...item, remoteDetail: item.remoteDetail }} />
+  const toolName = item.type === 'command_execution' ? 'Bash' : item.type === 'mcp_tool_call' ? item.tool : item.type
+  const input = item.type === 'command_execution' ? JSON.stringify({ command: item.command }) : '{}'
   const active = 'status' in item ? item.status === 'in_progress' : isStreaming
   return <DeferredTool remoteDetail={item.remoteDetail} toolName={toolName} toolUseId={item.id}
-    renderDetail={renderItem ? detail => detail.item ? renderItem(detail.item) : null : undefined}
-    input={input} filePath={fileChange?.path} toolLineDelta={item.type === 'file_change' ? item.toolLineDelta : undefined}
-    status={active ? 'streaming' : 'complete'}
+    input={input} status={active ? 'streaming' : 'complete'}
     isError={item.type === 'command_execution' ? isCodexCommandToolError(item) : 'status' in item && item.status === 'failed'} />
 }

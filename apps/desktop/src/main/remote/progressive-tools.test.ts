@@ -138,7 +138,7 @@ describe('progressive file-edit projection', () => {
     expect(projected).toMatchObject({
       type: 'file_change',
       toolLineDelta: { added: 1, removed: 1 },
-      changes: [{ path: 'src/app.ts', kind: 'update' }],
+      changes: [{ path: 'src/app.ts', kind: 'update', toolLineDelta: { added: 1, removed: 1 } }],
     })
     expect(JSON.stringify(projected)).not.toContain('const enabled')
   })

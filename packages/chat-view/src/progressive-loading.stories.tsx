@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { installHostBridge } from './bridge'
 import { deliverDetail } from './detail-stream'
 import { DeferredReasoning } from './DeferredReasoning'
-import { DeferredTool } from './DeferredTool'
+import { DeferredCodexTool, DeferredTool } from './DeferredTool'
 import { PortableMessage } from './PortableMessage'
 
 function ProgressiveLoading({ state = 'ready' }: { state?: 'ready' | 'loading' | 'error' | 'long' | 'edit' }) {
@@ -337,5 +337,60 @@ export const McpToolExpanded: StoryObj<typeof ProgressiveGenericTool> = {
 export const DedicatedPresenterExpanded: StoryObj<typeof ProgressiveGenericTool> = {
   name: 'ListAgents · expanded mounts its own presenter',
   render: () => <ProgressiveGenericTool tool="listAgents" />,
+  play: expandToolRow,
+}
+
+const CODEX_PATCH = {
+  id: 'codex-patch',
+  type: 'file_change',
+  status: 'completed',
+  changes: [
+    { path: '/workspace/packages/chat-view/src/BrowserChromeView.tsx', kind: 'update', diff: '@@ -1,3 +1,3 @@\n import { useState } from \'react\'\n-const compact = false\n+const compact = true' },
+    { path: '/workspace/packages/chat-view/src/browser-chrome.css', kind: 'update', diff: '@@ -4,2 +4,3 @@\n .chrome { display: flex; }\n+.chrome { gap: 4px; }' },
+  ],
+} as const
+
+function ProgressiveCodexFileChange({ files, state = 'ready' }: { files: 1 | 2; state?: 'ready' | 'error' }) {
+  const changes = CODEX_PATCH.changes.slice(0, files)
+  useEffect(() => {
+    const host = globalThis as typeof globalThis & { ReactNativeWebView?: { postMessage(raw: string): void }; __applyHost?: (value: unknown) => void }
+    const previous = host.ReactNativeWebView
+    const remove = installHostBridge(message => { if (message.type === 'detailUpdate') deliverDetail(message) })
+    host.ReactNativeWebView = { postMessage(raw) {
+      const request = JSON.parse(raw)
+      if (request.action !== 'subscribeDetail') return
+      host.__applyHost?.({ type: 'nativeActionResult', requestId: request.requestId,
+        ...(state === 'error' ? { error: 'Unable to load. Collapse and reopen to retry.' } : { result: {
+          subscriptionId: request.payload.subscriptionId, revision: 0, offset: 0,
+          text: JSON.stringify({ item: { ...CODEX_PATCH, changes } }),
+        } }),
+      })
+    } }
+    return () => { remove(); host.ReactNativeWebView = previous }
+  }, [changes, state])
+  return (
+    <div className="mx-auto max-w-[390px] p-4">
+      <DeferredCodexTool isStreaming={false} item={{
+        ...CODEX_PATCH,
+        remoteDetail: `story-codex-patch-${files}`,
+        toolLineDelta: files === 1 ? { added: 1, removed: 1 } : { added: 2, removed: 1 },
+        changes: changes.map(({ path, kind }, index) => ({ path, kind, toolLineDelta: index === 0 ? { added: 1, removed: 1 } : { added: 1, removed: 0 } })),
+      }} />
+    </div>
+  )
+}
+
+export const CodexFileChangeCollapsed: StoryObj<typeof ProgressiveCodexFileChange> = {
+  name: 'Codex patch · one row per file',
+  render: () => <ProgressiveCodexFileChange files={2} />,
+}
+export const CodexFileChangeExpanded: StoryObj<typeof ProgressiveCodexFileChange> = {
+  name: 'Codex patch · expanded diff stays in its row',
+  render: () => <ProgressiveCodexFileChange files={1} />,
+  play: expandToolRow,
+}
+export const CodexFileChangeFailure: StoryObj<typeof ProgressiveCodexFileChange> = {
+  name: 'Codex patch · detail failed, retry',
+  render: () => <ProgressiveCodexFileChange files={1} state="error" />,
   play: expandToolRow,
 }

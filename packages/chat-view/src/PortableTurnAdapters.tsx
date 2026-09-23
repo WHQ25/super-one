@@ -902,8 +902,7 @@ function PortableCodexItem(props: CodexItemPresenterProps) {
     if (item.remoteDetail) return <DeferredCodexMcp item={item} />
     return <PortableClaudeTool {...claudePropsFromCodexMcp(item)} />
   }
-  if ('remoteDetail' in item && item.remoteDetail) return <DeferredCodexTool item={item} isStreaming={isStreaming}
-    renderItem={item.type === 'command_execution' ? undefined : loaded => <PortableCodexItem {...props} item={loaded} />} />
+  if ('remoteDetail' in item && item.remoteDetail) return <DeferredCodexTool item={item} isStreaming={isStreaming} />
   switch (item.type) {
     case 'command_execution':
       return <PortableCodexCommand item={item} isStreaming={isStreaming} />

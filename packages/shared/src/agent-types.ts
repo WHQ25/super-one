@@ -355,6 +355,8 @@ export interface CodexFileUpdateChange {
   path: string
   kind: CodexPatchChangeKind
   diff?: string
+  /** This file's share of the remote header delta; the diff itself stays behind `remoteDetail`. */
+  toolLineDelta?: { added: number; removed: number }
 }
 
 export interface CodexFileChangeItem {

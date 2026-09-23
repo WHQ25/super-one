@@ -78,7 +78,6 @@ export interface GenericToolRowPorts {
 }
 
 export interface GenericToolRowProps {
-  deferredContent?: ReactNode
   hasDeferredDetails?: boolean
   onDetailRetry?: () => void
   detailStatus?: string
@@ -161,7 +160,6 @@ function ToolResult({ text }: { text: string }) {
  * same row the desktop does — the differences live entirely in `ports`.
  */
 export function GenericToolRowPresenter({
-  deferredContent,
   hasDeferredDetails,
   detailStatus,
   onDetailRetry,
@@ -396,7 +394,7 @@ export function GenericToolRowPresenter({
         >
           <div className="overflow-hidden">
             <div className="px-2 pb-1.5">
-              {expanded && (deferredContent ?? (
+              {expanded && (
                 <>
                   {detailStatus && <div role="status">{detailStatus}{onDetailRetry && <button type="button" className="ml-2 underline" onClick={onDetailRetry}>{t('common.retry')}</button>}</div>}
                   {/* Header already names the call; dumping the same args as JSON repeats it. */}
@@ -437,7 +435,7 @@ export function GenericToolRowPresenter({
                     </div>
                   )}
                 </>
-              ))}
+              )}
             </div>
           </div>
         </div>

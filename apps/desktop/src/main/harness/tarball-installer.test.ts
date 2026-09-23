@@ -24,6 +24,7 @@ import {
   harnessArtifactDownloadKey,
   harnessPartialPath,
   installPackageDir,
+  isDesktopManagedPinAligned,
   parseContentRange,
   readRuntimeVersion,
   resetDestPathLocksForTests,
@@ -126,6 +127,44 @@ describe('desktopPackagePins', () => {
     } finally {
       rmSync(prefix, { recursive: true, force: true })
     }
+  })
+})
+
+describe('isDesktopManagedPinAligned', () => {
+  let home: string
+  let pinnedBin: string
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'so-pin-aligned-'))
+    const pin = desktopPackagePins('claude').runtimeVersion
+    const prefix = join(home, 'claude')
+    const versionDir = managedVersionDir(prefix, pin)
+    const pkgDir = join(versionDir, 'lib/node_modules/@anthropic-ai/claude-agent-sdk-test')
+    mkdirSync(pkgDir, { recursive: true })
+    pinnedBin = join(pkgDir, process.platform === 'win32' ? 'claude.exe' : 'claude')
+    writeFileSync(pinnedBin, '')
+    writeFileSync(
+      join(versionDir, 'install-meta.json'),
+      JSON.stringify({ harnessId: 'claude', runtimeVersion: pin }),
+    )
+    writeCurrentPointer(prefix, pin, { installRoot: versionDir })
+  })
+
+  afterEach(() => {
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  it('is aligned when the catalog row points at the pinned binary', () => {
+    expect(isDesktopManagedPinAligned('claude', home, pinnedBin)).toBe(true)
+    expect(isDesktopManagedPinAligned('claude', home, null)).toBe(true)
+  })
+
+  it('is unaligned when the catalog row still launches another install', () => {
+    const legacy = join(home, 'legacy/claude/versions/0.3.257/claude')
+    mkdirSync(join(legacy, '..'), { recursive: true })
+    writeFileSync(legacy, '')
+
+    expect(isDesktopManagedPinAligned('claude', home, legacy)).toBe(false)
   })
 })
 

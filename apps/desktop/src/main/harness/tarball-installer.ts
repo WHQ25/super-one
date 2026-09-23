@@ -181,15 +181,23 @@ export function createDesktopTarballInstaller(
   })
 }
 
+/**
+ * `catalogCommand` is the binary recorded in the harness row. The resolver
+ * launches it ahead of the home's `current` pointer, so a row left on another
+ * install (a moved harness home, an older pin) is unaligned even when
+ * `current` already sits on the pin.
+ */
 export function isDesktopManagedPinAligned(
   id: ManagedHarnessId,
   homeRoot: string,
+  catalogCommand?: string | null,
 ): boolean {
   const prefix = managedHarnessPrefix(homeRoot, id)
   const pin = desktopPackagePins(id).runtimeVersion
   const bin = resolveDesktopManagedBinary(id, prefix)
   const ver = readRuntimeVersion(id, prefix)
-  return Boolean(bin && ver === pin)
+  if (!bin || ver !== pin) return false
+  return !catalogCommand || catalogCommand === bin
 }
 
 export function resolveDesktopManagedBinary(

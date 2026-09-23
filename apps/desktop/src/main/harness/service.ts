@@ -223,7 +223,7 @@ export function enabledManagedHarnessesNeedAlign(): boolean {
   for (const id of ['claude', 'codex'] as const) {
     const row = m.get(id)
     if (!row.enabled) continue
-    if (!isDesktopManagedPinAligned(id, homeRoot)) return true
+    if (!isDesktopManagedPinAligned(id, homeRoot, row.command)) return true
   }
   return false
 }

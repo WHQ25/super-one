@@ -4,6 +4,11 @@
  * break out of the document. Page zoom is off (`user-scalable=no`); pinch
  * and pan are CSS transforms on this page alone, so dismissing the preview
  * cannot leave the chat WebView scaled.
+ *
+ * The stage has a definite size because mermaid emits `width="100%"` with no
+ * intrinsic width: inside a shrink-to-fit box that percentage collapses to 0.
+ * The SVG fills the stage, its viewBox fits the drawing, and mermaid's inline
+ * `max-width` keeps a small diagram at its natural size.
  */
 
 export function mermaidPreviewDocument(svg: string, background: string): string {
@@ -14,8 +19,8 @@ export function mermaidPreviewDocument(svg: string, background: string): string 
 html,body{margin:0;width:100%;height:100%;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
 body{background:transparent}
 #viewport{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none}
-#stage{transform-origin:center center;will-change:transform}
-#stage svg{display:block;max-width:92vw;max-height:78vh;width:auto;height:auto}
+#stage{width:92vw;height:78vh;transform-origin:center center;will-change:transform}
+#stage svg{display:block;width:100%;height:100%;margin:0 auto}
 </style></head><body>
 <div id="viewport"><div id="stage"></div></div>
 <script>

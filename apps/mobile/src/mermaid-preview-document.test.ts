@@ -23,4 +23,10 @@ describe('mermaid preview document', () => {
     expect(html).toContain("mode='pinch'")
     expect(html).toContain('will-change:transform')
   })
+
+  it('sizes the stage so a width="100%" mermaid SVG cannot collapse to 0', () => {
+    const html = mermaidPreviewDocument(SVG, '#000')
+    expect(html).toMatch(/#stage\{width:92vw;height:78vh;/)
+    expect(html).toMatch(/#stage svg\{[^}]*width:100%;height:100%/)
+  })
 })

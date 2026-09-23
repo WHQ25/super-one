@@ -4,7 +4,7 @@ import type { Locale } from '@superone/shared/agent-types'
 import { MobileThemeProvider } from '../theme/context'
 import { ZoomableMermaid } from './zoomable-mermaid'
 
-const FLOW = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 120" width="280" height="120">
+const FLOW = `<svg xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width: 280px;" viewBox="0 0 280 120">
   <rect width="280" height="120" rx="12" fill="#1e1e2e"/>
   <rect x="16" y="36" width="88" height="48" rx="8" fill="#313244"/>
   <text x="60" y="66" text-anchor="middle" fill="#cdd6f4" font-size="14" font-family="system-ui">Start</text>
@@ -14,7 +14,7 @@ const FLOW = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 120" widt
   <text x="214" y="66" text-anchor="middle" fill="#cdd6f4" font-size="14" font-family="system-ui">End</text>
 </svg>`
 
-const WIDE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 160" width="720" height="160">
+const WIDE = `<svg xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width: 720px;" viewBox="0 0 720 160">
   <rect width="720" height="160" rx="12" fill="#1e1e2e"/>
   <text x="360" y="88" text-anchor="middle" fill="#cdd6f4" font-size="18" font-family="system-ui">A very wide sequence that needs a pinch to read</text>
 </svg>`

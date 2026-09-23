@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Folder, FolderPlus, Github, Link2, Search, Star, User } from 'lucide-react-native'
+import { Folder, FolderPlus, Link2, Search, Star, User } from 'lucide-react-native'
+import { GithubIcon } from './github-icon'
 import { Pressable, View } from 'react-native'
 import { Text } from './text'
 import type { AddProjectRow, AddProjectRowIcon, AddProjectSectionModel } from '../add-project-state'
@@ -8,7 +9,7 @@ import { RepoOwnerAvatar } from './repo-owner-avatar'
 
 const ROW_ICONS: Record<AddProjectRowIcon, typeof Folder> = {
   local: FolderPlus,
-  github: Github,
+  github: GithubIcon,
   url: Link2,
   directory: Folder,
   create: FolderPlus,

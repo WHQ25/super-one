@@ -27,5 +27,9 @@ module.exports = {
     // `marked` publishes ESM-only under `main`; jest-expo leaves node_modules
     // untransformed, so the UMD build stands in for the markdown renderer.
     '^marked$': '<rootDir>/../../node_modules/marked/lib/marked.umd.js',
+    // `lucide-react-native` 1.x points its `react-native` condition — the one
+    // jest-expo resolves first — at an `.mjs` build, which Jest always treats as
+    // ESM whatever the transform; its own CommonJS build stands in.
+    '^lucide-react-native$': '<rootDir>/../../node_modules/lucide-react-native/dist/cjs/lucide-react-native.js',
   },
 }

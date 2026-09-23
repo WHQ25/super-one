@@ -1,5 +1,6 @@
 import { Pressable, View } from 'react-native'
-import { Check, Github, Link2 } from 'lucide-react-native'
+import { Check, Link2 } from 'lucide-react-native'
+import { GithubIcon } from '../ui/github-icon'
 import { Text } from '../ui/text'
 import { githubOwnerAvatarUrl, parseGitHubRepoInput } from '@superone/shared/git-remote'
 import { ADD_PROJECT_TEXT } from '../add-project-state'
@@ -70,7 +71,7 @@ export function AddProjectScreen(props: { flow: AddProjectFlow }) {
               ? <RepoOwnerAvatar owner={repoRef.owner} uri={githubOwnerAvatarUrl(repoRef.owner, 80)} />
               : <View style={{ width: 32, alignItems: 'center' }}>
                 {flow.step.kind === 'destination' && flow.step.source === 'github'
-                  ? <Github size={18} color={colors.mutedForeground} />
+                  ? <GithubIcon size={18} color={colors.mutedForeground} />
                   : <Link2 size={18} color={colors.mutedForeground} />}
               </View>}
             <View style={{ flex: 1, minWidth: 0 }}>

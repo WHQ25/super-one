@@ -31,7 +31,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { runInLocalCallScope } from './artifact-registry'
 
-type AnyFn = (...args: unknown[]) => unknown
+export type AnyFn = (...args: unknown[]) => unknown
 
 /** The two registration APIs the register*Tools helpers use; both take the callback last. */
 const REGISTRARS = ['registerTool', 'tool'] as const
@@ -61,12 +61,23 @@ export function bindLocalCallScope(server: McpServer, sessionId: string): void {
     }
   }
 
+  wrapToolsCallHandler(server, (handler) =>
+    (...args: unknown[]) => runInLocalCallScope(sessionId, async () => handler(...args)))
+}
+
+/**
+ * Wrap every `tools/call` protocol handler this instance installs, now or
+ * later. Call before the first tool is registered: the SDK installs its
+ * handler on the first registration. Wrappers compose; the first applied runs
+ * outermost.
+ */
+export function wrapToolsCallHandler(server: McpServer, wrap: (handler: AnyFn) => AnyFn): void {
   const inner = (server as unknown as { server?: InnerServer }).server
   const setHandler = inner?.setRequestHandler
   if (!inner || typeof setHandler !== 'function') return
   const boundSet = setHandler.bind(inner)
   inner.setRequestHandler = (schema: unknown, handler: AnyFn) => {
     if (methodOf(schema) !== 'tools/call' || typeof handler !== 'function') return boundSet(schema, handler)
-    return boundSet(schema, (...args: unknown[]) => runInLocalCallScope(sessionId, async () => handler(...args)))
+    return boundSet(schema, wrap(handler))
   }
 }

@@ -1,3 +1,4 @@
+import { logToolFailure } from './tool-error-log'
 import {
   BUILT_IN_SUPERONE_TOOL_DEFS,
   BUILT_IN_SUPERONE_TOOL_NAMES,
@@ -156,7 +157,8 @@ export async function executeSuperoneMcpToolCollecting(
   }
 }
 
-export async function executeSuperoneMcpTool(
+/** Dispatch one tool call outside the McpServer instance (stdio bridge, DeepSeek, Host Actions). */
+export function executeSuperoneMcpTool(
   sessionId: string,
   toolName: string,
   args: Record<string, unknown>,
@@ -167,6 +169,16 @@ export async function executeSuperoneMcpTool(
    * stat its files where they live (inline-files-previewer.md §2.2).
    */
   connectionId?: string,
+) {
+  return logToolFailure(sessionId, toolName, () => runSuperoneMcpTool(sessionId, toolName, args, signal, connectionId))
+}
+
+async function runSuperoneMcpTool(
+  sessionId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+  signal: AbortSignal | undefined,
+  connectionId: string | undefined,
 ) {
   if (
     isCodexBrowserAndComputerUseDenied(sessionId)

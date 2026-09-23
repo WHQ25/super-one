@@ -72,6 +72,7 @@ import {
   clearSessionPendingCalls,
   executeAppTool,
 } from './superone-mcp-server'
+import log from '../logger'
 import { resolveMiniappCallConfirm } from './miniapp-call-confirm'
 import { executeSuperoneMcpTool, listSuperoneMcpTools } from './superone-mcp-tool-surface'
 import {
@@ -523,6 +524,17 @@ describe('stdio SuperOne MCP tool surface', () => {
     unregisterAppTools(PROJ_A, 'test-app')
 
     expect(toolsChanged).not.toHaveBeenCalled()
+  })
+
+  it('logs a failed call with the tool name and error, never its arguments', async () => {
+    vi.mocked(log.warn).mockClear()
+
+    await expect(executeSuperoneMcpTool(PROJ_A, 'no_such_tool', { note: 'user text' }))
+      .rejects.toThrow('Unknown SuperOne MCP tool: no_such_tool')
+
+    expect(vi.mocked(log.warn).mock.calls).toEqual([[
+      '[superone-mcp] tool %s threw sid=%s: %s', 'no_such_tool', PROJ_A, 'Unknown SuperOne MCP tool: no_such_tool',
+    ]])
   })
 
   it('executes miniapp_call through the shared dispatcher scoped to projectDir', async () => {

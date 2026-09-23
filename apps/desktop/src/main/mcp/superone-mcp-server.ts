@@ -1,5 +1,6 @@
 import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk'
 import { bindLocalCallScope } from './local-call-scope'
+import { bindToolErrorLog } from './tool-error-log'
 import { McpServer, type RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { randomUUID } from 'crypto'
 import { BrowserWindow } from 'electron'
@@ -268,6 +269,7 @@ export function createSuperoneMcpServer(sessionId: string, projectPath?: string)
   // HTTP, or a tool registered later — runs as a known local call unless a Host
   // Action has already opened a scope naming its node (§7).
   bindLocalCallScope(server, sessionId)
+  bindToolErrorLog(server, sessionId)
   registerSuperoneTools(server, {
     notifyDevAppReady,
     sessionId,

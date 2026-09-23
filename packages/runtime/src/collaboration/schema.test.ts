@@ -91,6 +91,26 @@ describe('ensureCollaborationGrantUniqueness', () => {
     expect(db.prepare('SELECT COUNT(*) AS n FROM session_collaboration_messages').get()).toEqual({ n: 1 })
   })
 
+  it('skips a DDL it cannot rewrite with a warning instead of failing the migration', () => {
+    const odd = new Database(':memory:')
+    odd.exec(`
+      CREATE TABLE session_collaboration_grants (
+        credential_hash TEXT PRIMARY KEY, parent_session_id TEXT NOT NULL,
+        child_session_id VARCHAR UNIQUE, kind TEXT NOT NULL DEFAULT 'spawn'
+      );
+      INSERT INTO session_collaboration_grants VALUES ('link-1', 'lead-a', 'peer', 'link');
+    `)
+    const warnings: string[] = []
+
+    expect(() => ensureCollaborationGrantUniqueness(odd, { warn: (message) => warnings.push(message) })).not.toThrow()
+
+    expect(warnings).toEqual([expect.stringMatching(/unrecognized child_session_id UNIQUE DDL/)])
+    expect(odd.prepare('SELECT COUNT(*) AS n FROM session_collaboration_grants').get()).toEqual({ n: 1 })
+    expect(() => odd.prepare(`INSERT INTO session_collaboration_grants VALUES ('link-2', 'lead-b', 'peer', 'link')`).run())
+      .toThrow(/UNIQUE/)
+    odd.close()
+  })
+
   it('is idempotent and keeps the rows and mailbox it found', () => {
     ensureCollaborationGrantUniqueness(db)
     ensureCollaborationGrantUniqueness(db)

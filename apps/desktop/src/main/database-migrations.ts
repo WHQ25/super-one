@@ -26,6 +26,7 @@ import type Database from 'better-sqlite3'
 import { ensureSessionFileDeliveriesSchema } from './db-session-deliveries'
 import { ensureTerminalCommandRulesSchema } from './db-terminal-command-rules'
 import { encryptSecretIfAvailable } from './crypto/secret-store'
+import log from './logger'
 
 /**
  * Schema revision of `superone.db`, mirrored into `PRAGMA user_version` and
@@ -684,7 +685,7 @@ function applyMigrations(db: Database.Database): void {
     db.exec(`ALTER TABLE session_collaboration_grants ADD COLUMN kind TEXT NOT NULL DEFAULT 'spawn'`)
   }
   // Several sessions may link the same peer; only spawn parentage stays unique.
-  ensureCollaborationGrantUniqueness(db)
+  ensureCollaborationGrantUniqueness(db, { warn: (message) => log.warn(message) })
 
   // Session sync zone delivery record (docs/design/session-sync-zone-delivery-record.md):
   // one durable row per zone file delivered to its node — created before the

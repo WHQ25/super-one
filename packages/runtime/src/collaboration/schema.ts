@@ -13,11 +13,21 @@ const GRANTS_TABLE = 'session_collaboration_grants'
  * cascade-delete every mailbox row referencing a grant. Outside a transaction
  * this turns them off for the rebuild; inside one (where the pragma is a no-op)
  * the caller must already have them off.
+ *
+ * A stored DDL this cannot rewrite is skipped with a warning rather than
+ * failing the caller's migration: that database keeps the one-link limit, but
+ * the app still opens it.
  */
-export function ensureCollaborationGrantUniqueness(db: Database.Database): void {
-  const needsRebuild = hasColumnUniqueChild(db)
+export function ensureCollaborationGrantUniqueness(
+  db: Database.Database,
+  { warn = console.warn }: { warn?: (message: string) => void } = {},
+): void {
+  const rebuiltDdl = hasColumnUniqueChild(db) ? ddlWithoutColumnUnique(db) : null
+  if (rebuiltDdl === undefined) {
+    warn(`[collaboration] ${GRANTS_TABLE}: unrecognized child_session_id UNIQUE DDL; keeping one link per peer`)
+  }
   const apply = () => {
-    if (needsRebuild) rebuildWithoutColumnUnique(db)
+    if (rebuiltDdl) rebuildTable(db, rebuiltDdl)
     db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_session_collaboration_spawn_child
         ON ${GRANTS_TABLE}(child_session_id) WHERE kind = 'spawn';
@@ -25,7 +35,7 @@ export function ensureCollaborationGrantUniqueness(db: Database.Database): void 
         ON ${GRANTS_TABLE}(parent_session_id, child_session_id) WHERE kind = 'link';
     `)
   }
-  const foreignKeysOn = needsRebuild && db.pragma('foreign_keys', { simple: true }) === 1
+  const foreignKeysOn = Boolean(rebuiltDdl) && db.pragma('foreign_keys', { simple: true }) === 1
   if (db.inTransaction) {
     if (foreignKeysOn) {
       throw new Error(`Rebuilding ${GRANTS_TABLE} inside a transaction requires foreign keys off`)
@@ -50,20 +60,29 @@ function hasColumnUniqueChild(db: Database.Database): boolean {
   })
 }
 
-function rebuildWithoutColumnUnique(db: Database.Database): void {
+const REBUILT_TABLE = `${GRANTS_TABLE}_rebuild`
+
+/** The stored DDL, renamed and without the column UNIQUE; undefined when it does not match. */
+function ddlWithoutColumnUnique(db: Database.Database): string | undefined {
   const { sql } = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?`)
     .get(GRANTS_TABLE) as { sql: string }
+  const withoutUnique = sql.replace(/(\bchild_session_id\s+TEXT)\s+UNIQUE\b/i, '$1')
+  const renamed = withoutUnique.replace(
+    /^CREATE TABLE\s+(?:IF NOT EXISTS\s+)?["`]?session_collaboration_grants["`]?/i,
+    `CREATE TABLE ${REBUILT_TABLE}`,
+  )
+  return withoutUnique !== sql && renamed !== withoutUnique ? renamed : undefined
+}
+
+function rebuildTable(db: Database.Database, ddl: string): void {
   const indexes = db.prepare(`
     SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL
   `).all(GRANTS_TABLE) as Array<{ sql: string }>
-  const withoutUnique = sql.replace(/(\bchild_session_id\s+TEXT)\s+UNIQUE\b/i, '$1')
-  if (withoutUnique === sql) throw new Error(`Cannot find child_session_id UNIQUE in ${GRANTS_TABLE} DDL`)
-  const rebuilt = `${GRANTS_TABLE}_rebuild`
-  db.exec(withoutUnique.replace(/^CREATE TABLE\s+(?:IF NOT EXISTS\s+)?["`]?session_collaboration_grants["`]?/i, `CREATE TABLE ${rebuilt}`))
-  db.exec(`INSERT INTO ${rebuilt} SELECT * FROM ${GRANTS_TABLE}`)
+  db.exec(ddl)
+  db.exec(`INSERT INTO ${REBUILT_TABLE} SELECT * FROM ${GRANTS_TABLE}`)
   // Same columns, looser constraint: a build that predates this reads the
   // rebuilt table exactly as before (see database-migrations-policy.test.ts).
   db.exec('DROP TABLE session_collaboration_grants')
-  db.exec(`ALTER TABLE ${rebuilt} RENAME TO session_collaboration_grants`)
+  db.exec(`ALTER TABLE ${REBUILT_TABLE} RENAME TO session_collaboration_grants`)
   for (const index of indexes) db.exec(index.sql)
 }

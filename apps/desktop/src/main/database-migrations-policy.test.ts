@@ -43,10 +43,22 @@ const GRANDFATHERED = [
   'RENAME TO sessions',
   'DROP TABLE global_resource_cache',
   'DROP TABLE IF EXISTS api_providers',
-  // Constraint-only rebuild: every column survives, so older builds read it unchanged.
+]
+
+/**
+ * Rebuilds that only loosen a constraint SQLite cannot alter in place. They keep
+ * the table name and every column, so an older build reads and writes the
+ * rebuilt table exactly as before — the property this file protects. Adding one
+ * needs that shown, and a rebuild that can skip itself rather than fail the
+ * migration (architecture.md, "Schema changes").
+ */
+const CONSTRAINT_ONLY_REBUILDS = [
+  // #65: child_session_id UNIQUE → per-relation partial unique indexes.
   'DROP TABLE session_collaboration_grants',
   'RENAME TO session_collaboration_grants',
 ]
+
+const ALLOWED = [...GRANDFATHERED, ...CONSTRAINT_ONLY_REBUILDS]
 
 function destructiveStatements(): string[] {
   return MIGRATION_SOURCES.flatMap((file) => {
@@ -58,16 +70,16 @@ function destructiveStatements(): string[] {
 describe('additive-only migration policy', () => {
   it('introduces no destructive statement beyond the grandfathered set', () => {
     const found = destructiveStatements()
-    const unexpected = found.filter((statement) => !GRANDFATHERED.includes(statement))
+    const unexpected = found.filter((statement) => !ALLOWED.includes(statement))
 
     expect(unexpected, unexpectedMessage(unexpected)).toEqual([])
   })
 
-  it('still contains every grandfathered statement it claims to (keeps the list honest)', () => {
+  it('still contains every allowed statement it claims to (keeps the lists honest)', () => {
     const found = new Set(destructiveStatements())
-    const stale = GRANDFATHERED.filter((statement) => !found.has(statement))
+    const stale = ALLOWED.filter((statement) => !found.has(statement))
 
-    expect(stale, `Remove these from GRANDFATHERED — they are no longer in the migrations: ${stale.join(', ')}`).toEqual([])
+    expect(stale, `Remove these from the allowed lists — they are no longer in the migrations: ${stale.join(', ')}`).toEqual([])
   })
 
   it('keeps the compatibility floor at or below the current schema version', () => {
@@ -87,5 +99,7 @@ function unexpectedMessage(unexpected: string[]): string {
     '  2. Two releases later: drop the old column and raise MIN_COMPATIBLE_SCHEMA_VERSION.',
     '',
     'If you are genuinely doing step 2, add the statement to GRANDFATHERED in this file.',
+    'A rebuild that keeps the table name and every column and only loosens a constraint',
+    'belongs in CONSTRAINT_ONLY_REBUILDS instead.',
   ].join('\n')
 }

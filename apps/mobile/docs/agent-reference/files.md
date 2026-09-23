@@ -45,8 +45,11 @@ Tapping any picture the transcript *displays* — a loaded host image, a user at
 markdown image — sends `previewImage` with the `src` already painted, and the shell opens
 the same modal in its `image` state: a pinch/double-tap viewer over the same bytes, whose
 menu saves to Photos or shares from the cache. It never re-downloads (remote `http(s)`
-sources have both rows disabled). `previewFile` remains the path for a chip *without* a
-picture yet, and for non-image files.
+sources have both rows disabled). The picture fills the screen under the title row; a tap
+hides the row and the status bar. On Android the modal is its own dialog window,
+which RN's `StatusBar` never reaches after it opens, so `ui/window-status-bar.tsx` goes
+through the Android-only `modules/window-status-bar` view instead. `previewFile` remains
+the path for a chip *without* a picture yet, and for non-image files.
 A *generated* image's tap also carries `generation` (`ImageGenerationInfo`: prompt, params,
 timing, reference paths, warnings — the same shape for Codex-native ImageGen and
 `media_generate_image`), which puts an Info button beside the rotate pair. Its panel

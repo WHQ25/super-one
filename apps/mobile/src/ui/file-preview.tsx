@@ -27,6 +27,7 @@ import { SCROLL_INDICATOR_GUTTER } from './scroll-gutter'
 import { Text } from './text'
 import { useFade } from './use-fade'
 import { VideoPlayerView } from './video-player'
+import { WindowStatusBar } from './window-status-bar'
 import { ZoomableImage } from './zoomable-image'
 import { ZoomableMermaid } from './zoomable-mermaid'
 
@@ -86,6 +87,8 @@ export function FilePreviewModal({ state, ports, onDismiss, onStartTransfer, onR
       {state ? (
         // A native Modal is its own window, so menus need a host of their own inside it.
         <MenuHost>
+          {/* Tapping the picture clears the status bar along with the chrome. */}
+          <WindowStatusBar hidden={state.kind === 'image' && !chromeVisible} />
           <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.background }]} accessibilityViewIsModal onAccessibilityEscape={onDismiss}>
             <PreviewBody state={state} chromeVisible={chromeVisible} onToggleChrome={toggleChrome} onStartTransfer={onStartTransfer} onRetry={onRetry} generationPorts={generationPorts} />
             <EdgeSwipeArea onSwipe={onDismiss} />

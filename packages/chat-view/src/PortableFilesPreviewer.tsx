@@ -14,11 +14,13 @@ import { resolveLanguage } from './portable-code-plugin'
 import { beginSwipe, endSwipe, trackSwipe, type SwipeTracking } from './previewer-swipe'
 
 /**
- * Card height on the phone. Shorter than the desktop's: a phone shows one
- * column, and 400px still leaves the message above and the dots below on
- * screen together at the common viewport heights.
+ * Stage height on the phone. The stage, not the card, is fixed: a note that
+ * wraps to a second line grows the card below the stage instead of shrinking
+ * the preview, so paging between files never resizes the image under the
+ * finger. Shorter than the desktop's so the message above and the dots below
+ * stay on screen together at the common viewport heights.
  */
-export const PORTABLE_PREVIEWER_HEIGHT = 400
+export const PORTABLE_PREVIEWER_STAGE_HEIGHT = 320
 
 /** What the host answers a `loadTextFile` request with. */
 export type LoadTextFileResult =
@@ -214,7 +216,7 @@ function Stage({ file, root, scheme }: { file: PreviewerFile; root: string; sche
 }
 
 /**
- * The phone's files previewer: a fixed-height carousel the finger pages
+ * The phone's files previewer: a fixed-height-stage carousel the finger pages
  * through, one file in the DOM at a time. The stage is a real preview for
  * images and small text, a poster for video, and a chip for the rest; a tap
  * anywhere on it opens the file in the shell's own fullscreen preview
@@ -291,8 +293,7 @@ export function PortableFilesPreviewer({ payload, toolUseId }: { payload: Native
 
   return (
     <div
-      className="my-2 flex flex-col overflow-hidden"
-      style={{ height: PORTABLE_PREVIEWER_HEIGHT }}
+      className="my-2 flex flex-col"
       data-native-widget="files-previewer"
       data-tool-use-id={toolUseId}
       data-index={index}
@@ -308,8 +309,8 @@ export function PortableFilesPreviewer({ payload, toolUseId }: { payload: Native
       </div>
 
       <div
-        className="relative min-h-0 flex-1 overflow-hidden rounded-lg bg-muted/30"
-        style={{ touchAction: 'pan-y' }}
+        className="relative shrink-0 overflow-hidden rounded-lg bg-muted/30"
+        style={{ height: PORTABLE_PREVIEWER_STAGE_HEIGHT, touchAction: 'pan-y' }}
         data-previewer-stage
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

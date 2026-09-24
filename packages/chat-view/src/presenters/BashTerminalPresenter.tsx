@@ -325,7 +325,7 @@ export function BashTerminalPresenter({
           ? <span className="min-w-0 truncate text-muted-foreground">{description}</span>
           : (!expanded || fileExpired || hasEdits) && <span className="min-w-0 truncate text-muted-foreground">{command}</span>}
         {hasEdits && editSummary && !expanded && (
-          <span className="flex shrink-0 items-center gap-1.5 font-mono text-xs tabular-nums">
+          <span className="flex shrink-0 items-center gap-1.5 text-xs tabular-nums">
             {editSummary.files > 1 && (
               <span
                 className="inline-flex items-center gap-0.5 text-muted-foreground"

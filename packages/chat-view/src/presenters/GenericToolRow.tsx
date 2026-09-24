@@ -358,7 +358,7 @@ export function GenericToolRowPresenter({
         ) : null}
         {!isDenied && !isError && artifactLink && ports.renderArtifactChip(artifactLink)}
         {lineDelta && (lineDelta.added > 0 || lineDelta.removed > 0) && (
-          <span className="shrink-0 font-mono text-xs">
+          <span className="shrink-0 text-xs tabular-nums">
             {lineDelta.added > 0 && (
               <span className="inline-flex items-baseline text-success">
                 +{ports.renderCount(lineDelta.added)}

@@ -13,6 +13,7 @@ import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice,
 import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions, DeviceViewfinderClaim } from '@superone/shared/device'
 import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
 import { forEachAgentEventPayload } from './agent-event-payload'
+import { createAutomationCallInbox, type BrowserAutomationCall } from './browser-automation-inbox'
 import { isGlassPlatformSupported } from '../main/window-glass'
 
 // Do not try to name this renderer via `process.title` here — it cannot work.
@@ -2549,15 +2550,12 @@ const miniappAPI = {
   },
 }
 
+// Listens from preload load, before the renderer's automation host exists.
+const automationCalls = createAutomationCallInbox()
+ipcRenderer.on(AgentIpcChannels.BROWSER_AUTOMATION_CALL, (_e, call: BrowserAutomationCall) => automationCalls.deliver(call))
+
 const browserHostAPI = {
-  onAutomationCall: (
-    callback: (req: { callId: string; sessionId: string; op: string; input: unknown }) => void,
-  ) => {
-    const handler = (_e: Electron.IpcRendererEvent, req: { callId: string; sessionId: string; op: string; input: unknown }) =>
-      callback(req)
-    ipcRenderer.on(AgentIpcChannels.BROWSER_AUTOMATION_CALL, handler)
-    return () => ipcRenderer.removeListener(AgentIpcChannels.BROWSER_AUTOMATION_CALL, handler)
-  },
+  onAutomationCall: (callback: (req: BrowserAutomationCall) => void) => automationCalls.subscribe(callback),
   sendAutomationResult: (callId: string, ok: boolean, result?: unknown, error?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.BROWSER_AUTOMATION_RESULT, callId, ok, result, error),
 }

@@ -197,12 +197,17 @@ describe('a session holding no device', () => {
 })
 
 describe('performing actions', () => {
-  it('sends a tap as a down and an up, since Android has no atomic tap', async () => {
+  it('sends a tap as a held press: a down, resting moves, then an up', async () => {
+    // Android has no atomic tap, and a down and up in the same instant is not what a
+    // finger produces — see `human-touch`.
     const { backend, sent } = await harness()
     await backend.perform({ kind: 'tap', x: 0.5, y: 0.5 }, { observation: observationOf() })
 
-    expect(sent).toHaveLength(2)
-    expect(sent.map((message) => message.readUInt8(1))).toEqual([MOTION.DOWN, MOTION.UP])
+    const actions = sent.map((message) => message.readUInt8(1))
+    expect(actions[0]).toBe(MOTION.DOWN)
+    expect(actions.at(-1)).toBe(MOTION.UP)
+    expect(actions.slice(1, -1).length).toBeGreaterThan(0)
+    expect(actions.slice(1, -1).every((action) => action === MOTION.MOVE)).toBe(true)
   })
 
   it('uses the scrcpy video size when the observation came from a full-size screenshot', async () => {
@@ -217,7 +222,10 @@ describe('performing actions', () => {
       { kind: 'tap', x: 0.5, y: 0.5 },
       { observation: observationOf({ width: 1080, height: 2400 }) },
     )
-    expect([sent[0]!.readInt32BE(10), sent[0]!.readInt32BE(14)]).toEqual([288, 640])
+    // Near the centre rather than on it: the press is humanised, within ~1% of the
+    // short side.
+    expect(Math.abs(sent[0]!.readInt32BE(10) - 288)).toBeLessThanOrEqual(7)
+    expect(Math.abs(sent[0]!.readInt32BE(14) - 640)).toBeLessThanOrEqual(7)
     expect([sent[0]!.readUInt16BE(18), sent[0]!.readUInt16BE(20)]).toEqual([576, 1280])
   })
 

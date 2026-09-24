@@ -24,14 +24,13 @@ import { dirname, join } from 'node:path'
 import type { DeviceOrientation, DeviceUiNode } from '@superone/shared/device-agent'
 import { splitDeviceText } from '@superone/shared/device'
 import { captureFileName } from '../device/capture-path'
+import { gestureDurationMs, synthesizePinch, type TouchStep } from '../device/gesture-synth'
 import {
-  gestureDurationMs,
-  synthesizeDoubleTap,
-  synthesizeLongPress,
-  synthesizePinch,
-  synthesizeSwipe,
-  type TouchStep,
-} from '../device/gesture-synth'
+  humanDoubleTap,
+  humanLongPress,
+  humanSwipe,
+  humanTap,
+} from '../device/android/human-touch'
 import { settle } from '../device/settle'
 import type { AndroidDeviceManager } from '../device/android/android-device-manager'
 import {
@@ -209,26 +208,28 @@ export class AndroidBackend implements TouchDeviceBackend {
           `${action.ref} cannot be pressed through accessibility on Android. `
           + 'Use tap, which aims at its centre.',
         )
+      // Shaped like a finger's rather than exact — see `human-touch`. Built against the
+      // connection's wire size, which is what the jitter is measured in.
       case 'tap':
-        return this.runGesture(
-          [{ kind: 'tap', xRatio: action.x, yRatio: action.y, delayMs: 0 }],
-          signal,
-        )
+        return this.runGesture((screen) => humanTap(action.x, action.y, { screen }), signal)
       case 'doubleTap':
-        return this.runGesture(synthesizeDoubleTap(action.x, action.y), signal)
+        return this.runGesture((screen) => humanDoubleTap(action.x, action.y, { screen }), signal)
       case 'longPress':
         return this.runGesture(
-          synthesizeLongPress(action.x, action.y, action.durationMs),
+          (screen) => humanLongPress(action.x, action.y, { screen, holdMs: action.durationMs }),
           signal,
         )
       case 'swipe':
         return this.runGesture(
-          synthesizeSwipe(action.fromX, action.fromY, action.toX, action.toY, action.durationMs),
+          (screen) => humanSwipe(action.fromX, action.fromY, action.toX, action.toY, {
+            screen,
+            durationMs: action.durationMs,
+          }),
           signal,
         )
       case 'pinch':
         return this.runGesture(
-          synthesizePinch(action.x, action.y, action.scale, {
+          () => synthesizePinch(action.x, action.y, action.scale, {
             ...(action.durationMs ? { durationMs: action.durationMs } : {}),
           }),
           signal,
@@ -385,7 +386,7 @@ export class AndroidBackend implements TouchDeviceBackend {
    * back to back turns every swipe into a teleport.
    */
   private async runGesture(
-    steps: readonly TouchStep[],
+    build: (screen: { width: number; height: number }) => readonly TouchStep[],
     signal?: AbortSignal,
   ): Promise<void> {
     const connection = await this.connection()
@@ -393,6 +394,7 @@ export class AndroidBackend implements TouchDeviceBackend {
     // video stream. The observation comes from a full-size adb screencap, while the
     // connection is capped for preview, so only the connection owns this wire size.
     const screen = { ...connection.screen }
+    const steps = build(screen)
     try {
       for (const step of steps) {
         throwIfDeviceOperationAborted(signal)

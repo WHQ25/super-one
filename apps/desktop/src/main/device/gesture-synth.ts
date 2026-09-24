@@ -32,6 +32,11 @@ export interface TouchContact {
   xRatio: number
   yRatio: number
   phase: TouchPhase
+  /**
+   * How hard the finger is pressing, 0-1. Absent means the transport's default; only
+   * transports that carry pressure read it, and a lifting finger always reports 0.
+   */
+  pressure?: number
 }
 
 /**
@@ -55,9 +60,9 @@ export type TouchStep =
 const MAX_TOUCH_CONTACTS = 2
 
 /** Roughly a frame at 60Hz. Finer than this and the transport's queue coalesces it away. */
-const STEP_MS = 16
+export const STEP_MS = 16
 
-const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1)
+export const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1)
 
 /** iOS starts treating a press as "long" at ~0.5s; overshoot so it always registers. */
 export const LONG_PRESS_MS = 700

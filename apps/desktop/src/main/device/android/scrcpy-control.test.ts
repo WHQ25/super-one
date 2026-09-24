@@ -287,6 +287,16 @@ describe('encodeTouchStep', () => {
     }, SCREEN)
     expect(messages.map((message) => message.readBigInt64BE(2))).toEqual([1n, 2n])
   })
+
+  it('carries a contact pressure through, and full pressure when none is given', () => {
+    const [pressed, unspecified] = [0.5, undefined].map((pressure) => encodeTouchStep({
+      kind: 'contacts',
+      delayMs: 0,
+      contacts: [{ id: 1, xRatio: 0.5, yRatio: 0.5, phase: 'moved', pressure }],
+    }, SCREEN)[0]!)
+    expect(pressed!.readUInt16BE(22)).toBe(encodePressure(0.5))
+    expect(unspecified!.readUInt16BE(22)).toBe(0xffff)
+  })
 })
 
 describe('encodeCancelTouches', () => {

@@ -327,6 +327,7 @@ export function encodeTouchStep(step: TouchStep, screen: { width: number; height
       : contact.phase === 'ended' ? MOTION.UP : MOTION.MOVE,
     pointerId: contact.id,
     target: { xRatio: contact.xRatio, yRatio: contact.yRatio, ...screen },
+    pressure: contact.pressure,
   }))
 }
 

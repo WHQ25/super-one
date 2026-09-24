@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { EventEmitter } from 'events'
 
 vi.mock('../logger', () => ({ default: { warn: vi.fn() } }))
 vi.mock('../mcp/artifact-registry', () => ({ currentHostActionConnection: () => null }))
@@ -17,14 +18,14 @@ interface SentCall { callId: string; sessionId: string; op: string; input: unkno
 
 function fakeWindow() {
   const sent: SentCall[] = []
-  const webContents = {
+  const webContents = Object.assign(new EventEmitter(), {
     send: vi.fn((channel: string, payload: SentCall) => {
       expect(channel).toBe(AgentIpcChannels.BROWSER_AUTOMATION_CALL)
       sent.push(payload)
     }),
     setBackgroundThrottling: vi.fn(),
     capturePage: vi.fn(async () => ({})),
-  }
+  })
   const win = { webContents, isDestroyed: () => false, isFocused: () => true } as unknown as BrowserWindow
   initBrowserAutomation(() => win)
   return { sent, webContents }
@@ -101,5 +102,28 @@ describe('browserAutomationCall', () => {
     await vi.advanceTimersByTimeAsync(70_000)
 
     expect(webContents.setBackgroundThrottling).toHaveBeenLastCalledWith(true)
+  })
+
+  it('fails a call at once when the renderer reloads under it, naming the reason', async () => {
+    const { webContents } = fakeWindow()
+
+    const call = browserAutomationCall('session-a', 'snapshot', {})
+    webContents.emit('did-navigate')
+
+    await expect(call).rejects.toThrow(
+      "Browser automation 'snapshot' was interrupted: the SuperOne window reloaded while it ran. It may have partly run",
+    )
+  })
+
+  it('fails a call at once when the renderer process exits, and keeps serving the next one', async () => {
+    const { sent, webContents } = fakeWindow()
+
+    const call = browserAutomationCall('session-a', 'click', {})
+    webContents.emit('render-process-gone', {}, { reason: 'crashed' })
+    await expect(call).rejects.toThrow("the SuperOne window's renderer exited (crashed)")
+
+    const next = browserAutomationCall('session-a', 'snapshot', {})
+    resolveBrowserAutomation(sent[1]!.callId, { ok: true })
+    await expect(next).resolves.toEqual({ ok: true })
   })
 })

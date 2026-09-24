@@ -1,4 +1,4 @@
-import type { BrowserWindow } from 'electron'
+import type { BrowserWindow, WebContents } from 'electron'
 import { randomUUID } from 'crypto'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
 import log from '../logger'
@@ -38,11 +38,41 @@ interface PendingCall {
   resolve: (result: unknown) => void
   reject: (error: Error) => void
   timer: ReturnType<typeof setTimeout>
+  op: BrowserAutomationOp
+  contents: WebContents
 }
 
 const BROWSER_CALL_TIMEOUT_MS = 30_000
 
 const pendingCalls = new Map<string, PendingCall>()
+
+/**
+ * A call the renderer was running when its document went away can never be
+ * answered: a reload or crash takes the automation host and its in-flight work
+ * with it. Fail those calls at once with the reason instead of leaving the agent
+ * waiting out the timeout. No retry here: an action may have partly run.
+ */
+const watchedRenderers = new WeakSet<WebContents>()
+
+function failCallsOnRendererLoss(contents: WebContents): void {
+  if (watchedRenderers.has(contents)) return
+  watchedRenderers.add(contents)
+  const failInFlight = (reason: string) => {
+    for (const [callId, pending] of pendingCalls) {
+      if (pending.contents !== contents) continue
+      clearTimeout(pending.timer)
+      pendingCalls.delete(callId)
+      pending.reject(new Error(
+        `Browser automation '${pending.op}' was interrupted: ${reason}. It may have partly run; check the page before retrying.`,
+      ))
+    }
+  }
+  // did-navigate, not did-start-navigation: only a committed navigation has
+  // replaced the document that was running the call.
+  contents.on('did-navigate', () => failInFlight('the SuperOne window reloaded while it ran'))
+  contents.on('render-process-gone', (_event, details) => failInFlight(`the SuperOne window's renderer exited (${details.reason})`))
+  contents.once('destroyed', () => failInFlight('the SuperOne window closed'))
+}
 
 let getMainWindow: (() => BrowserWindow | null) | null = null
 
@@ -111,6 +141,7 @@ function dispatchBrowserAutomation(
   op: BrowserAutomationOp,
   input: unknown,
 ): Promise<unknown> {
+  failCallsOnRendererLoss(win.webContents)
   return new Promise((resolve, reject) => {
     const callId = randomUUID()
     const timer = setTimeout(() => {
@@ -127,7 +158,7 @@ function dispatchBrowserAutomation(
       }
       reject(new Error(`Browser automation '${op}' timed out after ${BROWSER_CALL_TIMEOUT_MS}ms; the renderer-side work was cancelled`))
     }, BROWSER_CALL_TIMEOUT_MS)
-    pendingCalls.set(callId, { resolve, reject, timer })
+    pendingCalls.set(callId, { resolve, reject, timer, op, contents: win.webContents })
     win.webContents.send(AgentIpcChannels.BROWSER_AUTOMATION_CALL, { callId, sessionId, op, input })
   })
 }

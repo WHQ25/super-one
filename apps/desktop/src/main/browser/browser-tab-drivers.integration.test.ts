@@ -7,6 +7,7 @@
  * first (`docs/design/session-sync-zone.md` §6).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { EventEmitter } from 'events'
 
 vi.mock('../logger', () => ({ default: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } }))
 
@@ -27,12 +28,12 @@ let sent: { callId: string; op: string; sessionId: string }[] = []
 function fakeWindow(answer: (op: string) => unknown) {
   const win = {
     isDestroyed: () => false,
-    webContents: {
+    webContents: Object.assign(new EventEmitter(), {
       send: (_channel: string, payload: { callId: string; op: string; sessionId: string }) => {
         sent.push(payload)
         queueMicrotask(() => resolveBrowserAutomation(payload.callId, answer(payload.op)))
       },
-    },
+    }),
   }
   initBrowserAutomation(() => win as never)
 }

@@ -18,9 +18,10 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import type { CapabilityTask, DiscoveredOpenAiModel } from '@superone/shared/agent-types'
 import {
   buildCatalogModelIndex,
-  catalogProviderIdFor,
+  catalogProviderFor,
   effectiveEndpoints,
   endpointServes,
+  endpointTasks,
   isCustomPlatform,
   mergeModelMapping,
   normalizeModelId,
@@ -32,8 +33,8 @@ import {
   type Platform,
   type ServiceEndpoint,
 } from '@superone/shared/platform-registry'
-import type { CatalogModel, CatalogProvider } from '@superone/shared/model-catalog-types'
-import { MODEL_TASK_ORDER, modelTasks } from '@superone/shared/model-tasks'
+import type { CatalogModel } from '@superone/shared/model-catalog-types'
+import { MODEL_TASK_ORDER } from '@superone/shared/model-tasks'
 import { useModelCatalog } from '@/hooks/useModelCatalog'
 import { useSettingsStore } from '@/stores/settings'
 import { stripOneM } from '@/lib/model-id'
@@ -66,35 +67,6 @@ const TASK_ICON: Record<CapabilityTask, LucideIcon> = {
   asr: Mic,
 }
 
-const CATALOG_ID_ALIAS: Record<string, string> = {
-  claude: 'anthropic',
-  chatgpt: 'openai',
-  zhipu: 'zhipuai',
-  zai: 'zhipuai',
-  kimi: 'moonshotai',
-  moonshot: 'moonshotai',
-  bailian: 'alibaba',
-  bedrock: 'amazon-bedrock',
-  siliconcloud: 'siliconflow',
-  xiaomimimo: 'xiaomi',
-  gemini: 'google',
-  vertexai: 'google',
-}
-
-function matchCatalogProvider(providers: CatalogProvider[], platform: Platform, plan: Plan): CatalogProvider | null {
-  const catalogId = catalogProviderIdFor(platform, plan)
-  if (catalogId) {
-    const direct = providers.find((p) => p.id === catalogId)
-    if (direct) return direct
-  }
-  const target = CATALOG_ID_ALIAS[platform.brand] ?? platform.brand
-  return (
-    providers.find((p) => p.id === target) ??
-    providers.find((p) => p.id.includes(target) || p.name.toLowerCase().includes(target)) ??
-    null
-  )
-}
-
 function TabButton({ active, onClick, icon: Icon, label, count }: { active: boolean; onClick: () => void; icon: LucideIcon; label: string; count: number }) {
   return (
     <button
@@ -109,7 +81,15 @@ function TabButton({ active, onClick, icon: Icon, label, count }: { active: bool
   )
 }
 
-type ModelRow = { m: CatalogModel; endpoints: ServiceEndpoint[]; enabled: boolean; locked: boolean }
+/** One model an endpoint's pool offers, with the catalog entry that describes it when there is one. */
+type PoolModel = {
+  id: string
+  name: string
+  tasks: CapabilityTask[]
+  catalog?: CatalogModel
+  endpoints: ServiceEndpoint[]
+}
+type ModelRow = PoolModel & { enabled: boolean; locked: boolean }
 
 /** Every plan endpoint that serves any of a model's tasks — its enable state is stored on each. */
 function endpointsForTasks(plan: Plan, tasks: CapabilityTask[]): ServiceEndpoint[] {
@@ -145,10 +125,7 @@ export function PlatformModelsPanel({
   )
   const livePlan = useMemo(() => ({ ...plan, endpoints: liveEndpoints }), [plan, liveEndpoints])
 
-  const catProvider = useMemo(
-    () => (catalog ? matchCatalogProvider(catalog.providers, platform, plan) : null),
-    [catalog, platform, plan],
-  )
+  const catProvider = useMemo(() => catalogProviderFor(platform, plan, catalog ?? undefined), [catalog, platform, plan])
 
   // Bare-id lookup so custom/auto-discovered models can show the same catalog info (pricing,
   // context window, modalities, reasoning/tool support) as catalog-matched models — even though
@@ -181,23 +158,42 @@ export function PlatformModelsPanel({
     void refresh()
   }, [isCustom, canFetch, discover, refresh])
 
-  // Only models this plan's endpoints actually serve are shown — a model no endpoint serves
-  // (e.g. a chat model on the image-only Gemini plan) isn't configurable here.
-  const annotated = useMemo(
-    () =>
-      (catProvider?.models ?? [])
-        .map((m) => ({ m, endpoints: endpointsForTasks(livePlan, modelTasks(m)) }))
-        .filter((x) => x.endpoints.length > 0)
-        .sort((a, b) => (b.m.releaseDate ?? '').localeCompare(a.m.releaseDate ?? '')),
-    [catProvider, livePlan],
-  )
-
-  // Resolved model pool per endpoint — the "all on" baseline the enabled subset is measured against.
+  // Resolved model pool per endpoint — the set `toggle` can write. A builtin endpoint's `models` is a
+  // curated pool; a custom endpoint's is the enabled subset, so its pool is the catalog alone.
   const endpointPools = useMemo(() => {
     const map = new Map<string, EndpointModel[]>()
-    for (const e of liveEndpoints) map.set(e.id, resolveEndpointModels(platform, livePlan, e, catalog ?? undefined))
+    for (const e of liveEndpoints) {
+      const source = isCustom ? { ...e, models: undefined } : e
+      map.set(e.id, resolveEndpointModels(platform, livePlan, source, catalog ?? undefined))
+    }
     return map
-  }, [platform, livePlan, liveEndpoints, catalog])
+  }, [platform, livePlan, liveEndpoints, catalog, isCustom])
+
+  // Rows come from the pools themselves, so every listed model is one an endpoint can enable; the
+  // catalog only describes them (pricing, context, modalities).
+  const annotated = useMemo<PoolModel[]>(() => {
+    const byId = new Map<string, PoolModel>()
+    for (const e of liveEndpoints) {
+      for (const m of endpointPools.get(e.id) ?? []) {
+        const tasks = m.tasks ?? endpointTasks(e)
+        const row = byId.get(m.id)
+        if (row) {
+          row.endpoints.push(e)
+          row.tasks = MODEL_TASK_ORDER.filter((t) => row.tasks.includes(t) || tasks.includes(t))
+          continue
+        }
+        const entry = catProvider?.models.find((c) => c.id === m.id) ?? catalogModelIndex?.get(normalizeModelId(m.id))
+        byId.set(m.id, {
+          id: m.id,
+          name: m.name ?? entry?.name ?? m.id,
+          tasks: MODEL_TASK_ORDER.filter((t) => tasks.includes(t)),
+          catalog: entry,
+          endpoints: [e],
+        })
+      }
+    }
+    return [...byId.values()].sort((a, b) => (b.catalog?.releaseDate ?? '').localeCompare(a.catalog?.releaseDate ?? ''))
+  }, [liveEndpoints, endpointPools, catProvider, catalogModelIndex])
 
   // Model ids referenced by each endpoint's effective model mapping (defaults ← credential override).
   // These are always-on and cannot be disabled — the harness routes to them.
@@ -273,16 +269,11 @@ export function PlatformModelsPanel({
     [selectedCred, endpointPools, updateCredential, isCustom, liveEndpoints],
   )
 
-  // A model id belongs to the catalog if the endpoint's resolved pool contains it; anything else in
-  // the credential's overrides is a user-added custom model.
+  // A model id belongs to the pool (and so renders as a pool row) if the endpoint's resolved pool
+  // contains it; anything else in the credential's overrides is a user-added custom model.
   const isCatalogModel = useCallback(
-    (endpointId: string, modelId: string) => {
-      // Custom platforms have no models.dev catalog; endpoint.models is the enabled set,
-      // not a catalog pool. Treating it as catalog hid every saved model after create.
-      if (isCustom) return false
-      return (endpointPools.get(endpointId) ?? []).some((m) => m.id === modelId)
-    },
-    [endpointPools, isCustom],
+    (endpointId: string, modelId: string) => (endpointPools.get(endpointId) ?? []).some((m) => m.id === modelId),
+    [endpointPools],
   )
   const customModels = useMemo(() => {
     if (isCustom) {
@@ -379,7 +370,7 @@ export function PlatformModelsPanel({
 
   const taskCounts = useMemo(() => {
     const counts = new Map<CapabilityTask, number>()
-    for (const { m } of annotated) for (const tk of modelTasks(m)) counts.set(tk, (counts.get(tk) ?? 0) + 1)
+    for (const { tasks } of annotated) for (const tk of tasks) counts.set(tk, (counts.get(tk) ?? 0) + 1)
     for (const cm of customModels) for (const tk of cm.tasks) counts.set(tk, (counts.get(tk) ?? 0) + 1)
     for (const d of discovered) for (const tk of d.tasks) counts.set(tk, (counts.get(tk) ?? 0) + 1)
     return counts
@@ -394,13 +385,12 @@ export function PlatformModelsPanel({
   const rows = useMemo<ModelRow[]>(() => {
     const q = query.trim().toLowerCase()
     return annotated
-      .filter(({ m }) => {
-        const tasks = modelTasks(m)
-        if (activeTab !== 'all' && !tasks.includes(activeTab)) return false
+      .filter((m) => {
+        if (activeTab !== 'all' && !m.tasks.includes(activeTab)) return false
         if (q && !m.id.toLowerCase().includes(q) && !m.name.toLowerCase().includes(q)) return false
         return true
       })
-      .map(({ m, endpoints }) => ({ m, endpoints, ...modelState(endpoints, m.id) }))
+      .map((m) => ({ ...m, ...modelState(m.endpoints, m.id) }))
   }, [annotated, activeTab, query, modelState])
 
   const enabledRows = useMemo(() => rows.filter((r) => r.enabled), [rows])
@@ -428,24 +418,23 @@ export function PlatformModelsPanel({
     return { unlocked, allOn }
   }, [discoveredRows, livePlan, modelState])
   const existingIds = useMemo(
-    () => [...annotated.map((a) => a.m.id), ...customModels.map((c) => c.id), ...discovered.map((d) => d.id)],
+    () => [...annotated.map((a) => a.id), ...customModels.map((c) => c.id), ...discovered.map((d) => d.id)],
     [annotated, customModels, discovered],
   )
 
-  const renderRow = ({ m, endpoints, enabled, locked }: ModelRow) => (
+  const renderRow = ({ id, name, catalog: entry, endpoints, enabled, locked }: ModelRow) => (
     <ProviderModelRow
-      key={m.id}
-      id={m.id}
-      name={m.name}
+      key={id}
+      id={id}
+      name={name}
       enabled={enabled}
       mutedWhenDisabled={!!selectedCred}
       locked={locked}
       lockedHint={t('resources.providerDialog.models.lockedHint')}
-      catalog={m}
-      status={m.status}
+      catalog={entry}
+      status={entry?.status}
       providerBrand={platform.brand}
-      switchDisabled={endpoints.length === 0}
-      onToggle={selectedCred ? (v) => toggle(endpoints, { id: m.id, name: m.name }, v) : undefined}
+      onToggle={selectedCred ? (v) => toggle(endpoints, { id, name }, v) : undefined}
     />
   )
 
@@ -557,7 +546,7 @@ export function PlatformModelsPanel({
     )
   }
 
-  const showList = !!catProvider || totalCount > 0
+  const showList = totalCount > 0
 
   return (
     <div className="flex flex-col gap-3">
@@ -573,7 +562,7 @@ export function PlatformModelsPanel({
         <p className="text-xs text-muted-foreground">{t('resources.providerDialog.models.discoverTruncated')}</p>
       )}
 
-      {!catProvider && customModels.length === 0 && discovered.length === 0 && (
+      {!showList && (
         <p className="text-xs text-muted-foreground">{t('resources.providerDialog.models.noEntry')}</p>
       )}
 

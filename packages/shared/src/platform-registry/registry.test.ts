@@ -4,6 +4,7 @@ import type { CatalogModel, ModelCatalog } from '../model-catalog-types'
 import {
   assembleRegistry,
   BUILTIN_PLATFORMS,
+  catalogProviderIdFor,
   endpointTasks,
   everyHarnessReachable,
   findEndpoint,
@@ -34,6 +35,26 @@ describe('builtin registry', () => {
         }
       }
     }
+  })
+
+  it('links every chat plan to a catalog provider, the only source its model list can draw from', () => {
+    // No models.dev provider exists for these; their users add models by hand.
+    const uncatalogued = new Set(['kat-coder'])
+    const missing: string[] = []
+    for (const platform of BUILTIN_PLATFORMS) {
+      if (uncatalogued.has(platform.id)) continue
+      for (const plan of platform.plans) {
+        const servesChat = plan.endpoints.some((e) => endpointTasks(e).includes('chat'))
+        if (servesChat && !catalogProviderIdFor(platform, plan)) missing.push(`${platform.id}/${plan.id}`)
+      }
+    }
+    expect(missing).toEqual([])
+  })
+
+  it('points each Xiaomi plan at its own catalog provider', () => {
+    const xiaomi = findPlatform(BUILTIN_PLATFORMS, 'xiaomi')!
+    expect(catalogProviderIdFor(xiaomi, findPlan(xiaomi, 'api'))).toBe('xiaomi')
+    expect(catalogProviderIdFor(xiaomi, findPlan(xiaomi, 'token-plan'))).toBe('xiaomi-token-plan-cn')
   })
 
   it('is reachable by both claude and codex chat consumers', () => {

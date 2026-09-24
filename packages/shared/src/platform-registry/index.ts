@@ -176,6 +176,16 @@ export function catalogProviderIdFor(platform: Platform, plan?: Plan): string | 
   return plan?.catalogProviderId ?? platform.catalogProviderId
 }
 
+/**
+ * The models.dev provider backing a plan — the only link from a plan to the catalog. Matching on
+ * brand or name instead lets a list show models that `resolveEndpointModels` never offers, so they
+ * render but cannot be enabled.
+ */
+export function catalogProviderFor(platform: Platform, plan: Plan, catalog?: ModelCatalog): CatalogProvider | undefined {
+  const catalogId = catalogProviderIdFor(platform, plan)
+  return catalogId ? catalog?.providers.find((p) => p.id === catalogId) : undefined
+}
+
 /** Resolved model list for an endpoint: curated list, else catalog models linked via `catalogProviderId`. */
 export function resolveEndpointModels(
   platform: Platform,
@@ -184,9 +194,7 @@ export function resolveEndpointModels(
   catalog?: ModelCatalog,
 ): EndpointModel[] {
   if (endpoint.models) return endpoint.models
-  const catalogId = catalogProviderIdFor(platform, plan)
-  if (!catalogId || !catalog) return []
-  const provider = catalog.providers.find((p) => p.id === catalogId)
+  const provider = catalogProviderFor(platform, plan, catalog)
   if (!provider) return []
   const task = endpointTasks(endpoint)
   return provider.models

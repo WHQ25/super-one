@@ -615,6 +615,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         auth: 'api-key',
         baseUrl: 'https://api.minimax.cn',
         apiKeyUrl: 'https://platform.minimax.cn/user-center/basic-information/interface-key',
+        catalogProviderId: 'minimax-cn',
         endpoints: [
           anthropic('/anthropic', {
             extraEnv: MINIMAX_EXTRA_ENV,
@@ -632,6 +633,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         auth: 'api-key',
         baseUrl: 'https://api.minimax.io',
         apiKeyUrl: 'https://platform.minimax.io/user-center/basic-information/interface-key',
+        catalogProviderId: 'minimax',
         endpoints: [
           anthropic('/anthropic', {
             extraEnv: MINIMAX_EXTRA_ENV,
@@ -728,6 +730,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         auth: 'api-key',
         baseUrl: 'https://token-plan-cn.xiaomimimo.com',
         apiKeyUrl: 'https://platform.xiaomimimo.com/#/console/api-keys',
+        catalogProviderId: 'xiaomi-token-plan-cn',
         endpoints: [
           anthropic('/anthropic', {
             extraEnv: { ...EMPTY_AUTH_TOKEN },
@@ -741,6 +744,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
         auth: 'api-key',
         baseUrl: 'https://api.xiaomimimo.com',
         apiKeyUrl: 'https://platform.xiaomimimo.com/#/console/api-keys',
+        catalogProviderId: 'xiaomi',
         endpoints: [
           anthropic('/anthropic', {
             extraEnv: { ...EMPTY_AUTH_TOKEN },
@@ -859,6 +863,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
     brand: 'longcat',
     name: 'Longcat',
     description: 'Longcat — 长猫 AI 编程助手',
+    catalogProviderId: 'longcat',
     plans: [
       {
         id: 'coding',
@@ -964,6 +969,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
     brand: 'modelscope',
     name: 'ModelScope',
     description: 'ModelScope 魔搭 — 阿里巴巴模型聚合平台',
+    catalogProviderId: 'modelscope',
     plans: [
       {
         id: 'api',
@@ -990,6 +996,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
     brand: 'siliconcloud',
     name: 'SiliconFlow',
     description: 'SiliconFlow 硅基流动 — AI 模型聚合推理平台',
+    catalogProviderId: 'siliconflow-cn',
     plans: [
       {
         id: 'api',
@@ -1040,6 +1047,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
     brand: 'bedrock',
     name: 'AWS Bedrock',
     description: 'Amazon Bedrock — run Claude on AWS infrastructure with IAM authentication',
+    catalogProviderId: 'amazon-bedrock',
     plans: [
       {
         id: 'aws',
@@ -1061,6 +1069,7 @@ export const BUILTIN_PLATFORMS: Platform[] = [
     brand: 'vertexai',
     name: 'Google Vertex',
     description: 'Google Vertex AI — run Claude on GCP infrastructure with service account authentication',
+    catalogProviderId: 'google-vertex-anthropic',
     plans: [
       {
         id: 'gcp',

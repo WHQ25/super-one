@@ -17,7 +17,7 @@ import {
   type ProviderModelSlot,
 } from '@superone/shared/agent-types'
 import {
-  catalogProviderIdFor,
+  catalogProviderFor,
   defaultOverridesForPlan,
   isCustomPlatform,
   mergeEndpoint,
@@ -370,9 +370,8 @@ export function EndpointOverrideFields({
   // Catalog ids with contextWindow >=1M, plus coding-plan preset base ids that ship with `[1m]`
   // (e.g. k3 from k3[1m] — catalog only knows kimi-k3).
   const oneMillionIds = useMemo(() => {
-    const provider = catalog?.providers.find((p) => p.id === catalogProviderIdFor(platform, plan))
     return collectOneMillionIds(
-      provider?.models ?? [],
+      catalogProviderFor(platform, plan, catalog ?? undefined)?.models ?? [],
       plan.endpoints.map((e) => e.defaults?.modelMapping),
     )
   }, [catalog, platform, plan])

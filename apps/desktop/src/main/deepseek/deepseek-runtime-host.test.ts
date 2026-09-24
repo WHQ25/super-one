@@ -9,16 +9,12 @@ describe('DeepSeek runtime model catalog', () => {
   it('defines human-readable names for every model exposed to the picker', () => {
     expect(DEEPSEEK_MODEL_CATALOG).toEqual([
       expect.objectContaining({ id: DEEPSEEK_DEFAULT_MODEL, name: 'DeepSeek V4 Pro' }),
-      expect.objectContaining({ id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' }),
-      expect.objectContaining({
-        id: 'deepseek-v4-flash-vision-exp',
-        name: 'DeepSeek V4 Flash Vision (Exp)',
-      }),
+      expect.objectContaining({ id: 'deepseek-flash', name: 'DeepSeek V4.1 Flash' }),
     ])
     expect(DEEPSEEK_MODEL_CATALOG.every((model) => model.name !== model.id)).toBe(true)
   })
 
-  it('offers image input on the vision route only', () => {
+  it('offers image input on the flash route only', () => {
     // `modelAcceptsImages` reads this field to decide whether a composer
     // attachment may be committed to the durable store at all, so declaring it
     // on a text-only route would admit an image the adapter then refuses.
@@ -28,7 +24,7 @@ describe('DeepSeek runtime model catalog', () => {
       ))
       .map((model) => model.id)
 
-    expect(accepting).toEqual(['deepseek-v4-flash-vision-exp'])
+    expect(accepting).toEqual(['deepseek-flash'])
   })
 
   it('leaves context capacity to the adapter on every route', () => {

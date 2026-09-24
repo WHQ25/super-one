@@ -14,7 +14,7 @@ class ToolCallAdapter extends LlmAdapter {
     // agent lives across several turns, so "a tool result exists" is not the
     // same as "this call already ran".
     const calls = [...transcript.matchAll(/CALL ([\w-]+) (\{.*?\})(?=["\\])/g)]
-    const answered = transcript.split('"tool-result"').length - 1
+    const answered = transcript.split('"role":"tool"').length - 1
     const call = calls.length > answered ? calls[calls.length - 1] : undefined
     if (!call) {
       yield { type: 'block-start', index: 0, blockType: 'text' }

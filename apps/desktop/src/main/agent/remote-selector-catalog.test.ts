@@ -80,8 +80,8 @@ describe('DeepSeek preset catalog', () => {
   it('marks a broken preset disabled and reports a session that can no longer switch', () => {
     const projection = deepseekModeCatalog({
       presets: [
-        { id: 'default', name: 'Default', description: 'Shipped', trust: 'system', order: 0, broken: null },
-        { id: 'custom', name: 'Custom', description: null, trust: 'user', order: 1, broken: 'missing prompt' },
+        { id: 'default', name: 'Default', description: 'Shipped', order: 0, broken: null },
+        { id: 'custom', name: 'Custom', description: null, order: 1, broken: 'missing prompt' },
       ],
       current: 'custom',
       switchable: false,

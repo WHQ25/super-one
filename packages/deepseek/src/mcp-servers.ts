@@ -2,7 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 // Side-effect type import: merges `loader` onto `Context` so the store read in
 // `loader()` is typed by upstream instead of by a local structural shape.
 import type {} from '@deepseek-ai/cordis-plugin-loader'
-import type { LoaderEntries } from './cordis-loader'
+import { entryFailure, type LoaderEntries } from './cordis-loader'
 
 /** The official dsh MCP client. One entry per configured server. */
 export const DSH_MCP_CLIENT_SPECIFIER = '@deepseek-ai/dsh-mcp-client'
@@ -83,16 +83,21 @@ export class DeepseekMcpServers {
     for (const [serverName, mount] of [...this.mounts]) {
       if (wanted.has(serverName)) continue
       this.mounts.delete(serverName)
-      await this.guard(serverName, () => loader.remove(mount.entryId))
+      this.guardSync(serverName, () => loader.remove(mount.entryId))
     }
 
+    /** Rows handed to the loader this pass, checked once it has settled. */
+    const started: Array<{ serverName: string; entryId: string }> = []
     for (const [serverName, config] of wanted) {
       const fingerprint = JSON.stringify(config)
       const mount = this.mounts.get(serverName)
       if (mount?.fingerprint === fingerprint) continue
       if (mount) {
         const ok = await this.guard(serverName, () => loader.update(mount.entryId, { config }))
-        if (ok) mount.fingerprint = fingerprint
+        if (ok) {
+          mount.fingerprint = fingerprint
+          started.push({ serverName, entryId: mount.entryId })
+        }
         continue
       }
       await this.guard(serverName, async () => {
@@ -101,19 +106,30 @@ export class DeepseekMcpServers {
         // stable id survives. The returned id stays authoritative either way.
         const entryId = await loader.create({ id: `mcp-${serverName}`, name: this.specifier, config })
         this.mounts.set(serverName, { entryId, fingerprint })
+        started.push({ serverName, entryId })
       })
     }
 
     // Entries import and start asynchronously; settle them so a caller that
-    // creates an agent next sees the full tool surface.
+    // creates an agent next sees the full tool surface. The loader no longer
+    // rejects for a row that failed to start, so each one is asked.
     await this.guard('*', () => loader.await())
+    for (const { serverName, entryId } of started) {
+      const reason = await entryFailure(loader, entryId)
+      if (reason === undefined) continue
+      // Forgotten, so the next sync retries it rather than trusting a
+      // fingerprint that never started.
+      this.mounts.delete(serverName)
+      this.guardSync(serverName, () => loader.remove(entryId))
+      this.warn(`server "${serverName}" failed: ${reason}`)
+    }
   }
 
   async dispose(): Promise<void> {
     const loader = this.loader()
     for (const [serverName, mount] of [...this.mounts]) {
       this.mounts.delete(serverName)
-      if (loader) await this.guard(serverName, () => loader.remove(mount.entryId))
+      if (loader) this.guardSync(serverName, () => loader.remove(mount.entryId))
     }
   }
 
@@ -131,6 +147,15 @@ export class DeepseekMcpServers {
     } catch (error) {
       this.warn(`server "${serverName}" failed: ${String(error)}`)
       return false
+    }
+  }
+
+  /** `guard` for the loader's synchronous calls (`remove`). */
+  private guardSync(serverName: string, run: () => void): void {
+    try {
+      run()
+    } catch (error) {
+      this.warn(`server "${serverName}" failed: ${String(error)}`)
     }
   }
 

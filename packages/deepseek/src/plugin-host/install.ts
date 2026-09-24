@@ -141,8 +141,8 @@ export function checkPeerLockstep(manifest: PluginManifest): LockstepReport {
     // reading a fast-moving preview family needs.
     //
     // It does NOT rescue a range written against this build's own release:
-    // `^0.1.1` means `>=0.1.1`, and `0.1.1-rc.2` sorts BELOW `0.1.1`, so a
-    // plugin asking for `^0.1.1` is genuinely asking for a version this build
+    // `^0.1.7` means `>=0.1.7`, and `0.1.7-rc.1` sorts BELOW `0.1.7`, so a
+    // plugin asking for `^0.1.7` is genuinely asking for a version this build
     // does not have. That reads as a mismatch on purpose — see the test that
     // pins it.
     if (!satisfies(actual, range, { includePrerelease: true })) {

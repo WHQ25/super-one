@@ -15,15 +15,14 @@ import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 /**
  * A mark per shipped preset, keyed by id rather than by name or order.
  *
- * The roster is discovered from directories, so ids are the only stable handle:
- * `preset.yml` names are translated prose and `order` is authoring metadata a
- * locally added preset can shift. Anything not shipped here — a preset the user
- * authored — keeps the generic mark instead of borrowing a meaning it does not
- * have.
+ * Ids are the only stable handle: shipped declarations carry no display
+ * metadata, and `order` is authoring metadata a plugin-declared preset can
+ * shift. Anything not shipped here keeps the generic mark instead of borrowing
+ * a meaning it does not have.
  */
 const PRESET_ICONS: Record<string, LucideIcon> = {
   standard: Layers,
-  code: Braces,
+  ptc: Braces,
   minimal: Feather,
   cordis: Puzzle,
 }
@@ -33,9 +32,9 @@ const SHIPPED_PRESET_COPY = {
     name: 'chatDshPreset.presets.standard.name',
     description: 'chatDshPreset.presets.standard.description',
   },
-  code: {
-    name: 'chatDshPreset.presets.code.name',
-    description: 'chatDshPreset.presets.code.description',
+  ptc: {
+    name: 'chatDshPreset.presets.ptc.name',
+    description: 'chatDshPreset.presets.ptc.description',
   },
   minimal: {
     name: 'chatDshPreset.presets.minimal.name',
@@ -51,7 +50,7 @@ export function deepseekPresetCopy(
   preset: DeepseekPresetInfo,
   t: ReturnType<typeof useTranslation>['t'],
 ): { name: string; description: string | null } {
-  const keys = preset.trust === 'system'
+  const keys = Object.hasOwn(SHIPPED_PRESET_COPY, preset.id)
     ? SHIPPED_PRESET_COPY[preset.id as keyof typeof SHIPPED_PRESET_COPY]
     : undefined
   return keys

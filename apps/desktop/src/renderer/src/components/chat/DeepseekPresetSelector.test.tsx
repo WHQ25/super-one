@@ -20,9 +20,9 @@ vi.mock('@/stores/chat', () => ({
 
 const ROSTER: DeepseekPresetRoster = {
   presets: [
-    { id: 'standard', name: '标准模式', description: '功能完整的编码 Agent', trust: 'system', order: 1, broken: null },
-    { id: 'minimal', name: '极简模式', description: '双工具编码 Agent', trust: 'system', order: 3, broken: null },
-    { id: 'broken-one', name: 'broken-one', description: null, trust: 'user', order: null, broken: 'composition is unparsable' },
+    { id: 'standard', name: '标准模式', description: '功能完整的编码 Agent', order: 1, broken: null },
+    { id: 'minimal', name: '极简模式', description: '双工具编码 Agent', order: 3, broken: null },
+    { id: 'broken-one', name: 'broken-one', description: null, order: null, broken: 'composition is unparsable' },
   ],
   current: null,
   switchable: true,
@@ -53,7 +53,7 @@ describe('DeepseekPresetSelector', () => {
     // Scoped to the menu: the selected preset's name also labels the trigger.
     const menu = within(screen.getByRole('menu'))
     expect(menu.getByText('Standard')).toBeInTheDocument()
-    expect(menu.getByText('Minimal coding agent with only persistent Bash and str_replace_editor tools.')).toBeInTheDocument()
+    expect(menu.getByText('Minimal coding agent with a single persistent shell tool.')).toBeInTheDocument()
     // A broken preset stays listed: hiding it would leave its directory
     // occupying the id with nothing on screen to delete.
     expect(menu.getByText('composition is unparsable')).toBeInTheDocument()

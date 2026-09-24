@@ -42,13 +42,8 @@ afterEach(async () => {
  * `tool-cordis`, so the old bare host-plane mount produced a different set.
  */
 const CORDIS_TOOLS = [
-  'cordis_define',
   'cordis_inspect_list',
   'cordis_inspect_query',
-  'cordis_inspect_self',
-  'cordis_run',
-  'cordis_stop',
-  'cordis_undefine',
 ]
 
 /** The tool catalog one preset actually sends the model. */
@@ -92,7 +87,7 @@ describe('dsh self-referential toolset', () => {
   it('is absent from every other preset', async () => {
     const standard = await catalogFor('standard')
 
-    expect(standard).not.toContain('cordis_define')
+    expect(standard).not.toContain('cordis_inspect_list')
     // The rest of the standard catalog is untouched — this is one row, not a
     // different agent.
     expect(standard).toEqual(expect.arrayContaining(['bash', 'read', 'write']))

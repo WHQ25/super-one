@@ -46,8 +46,6 @@ function blockText(block: ContentBlock): string {
       return '[image]'
     case 'tool-call':
       return `${block.name}(${block.arguments})`
-    case 'tool-result':
-      return block.content.map(blockText).join('\n')
     default:
       // Merge-extensible union: a plugin block type is opaque but not lost.
       return JSON.stringify(block)
@@ -91,7 +89,6 @@ export function projectBlocks(blocks: readonly ContentBlock[]): TrajectoryBlock[
       projected.callId = block.id
       projected.toolName = block.name
     }
-    if (block.type === 'tool-result') projected.callId = block.toolCallId
     if (block.type === 'image') {
       const { attachmentId, mediaType, width, height, bytes, name } = block.attachment
       projected.image = { attachmentId: String(attachmentId), mediaType, width, height, bytes, name }

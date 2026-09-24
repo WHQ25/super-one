@@ -47,7 +47,7 @@ async function rosterRuntime() {
   const runtime = await DeepseekRuntime.create({
     persona: 'test agent',
     persistenceRoot,
-    presetRoots: [PRESET_ROOT],
+    presetRoot: PRESET_ROOT,
   })
   disposers.push(() => runtime.dispose())
   ;(runtime.context as unknown as {
@@ -112,7 +112,7 @@ describe('agent preset session identity', () => {
     const sessionId = randomUUID()
 
     const first = await DeepseekRuntime.create({
-      persona: 'test agent', persistenceRoot, presetRoots: [PRESET_ROOT],
+      persona: 'test agent', persistenceRoot, presetRoot: PRESET_ROOT,
     })
     ;(first.context as unknown as {
       llm: { registerAdapter(p: string[], a: LlmAdapter): void }
@@ -125,7 +125,7 @@ describe('agent preset session identity', () => {
     // resume that did not consult the log would silently hand this session a
     // catalog its history was never produced under.
     const second = await DeepseekRuntime.create({
-      persona: 'test agent', persistenceRoot, presetRoots: [PRESET_ROOT],
+      persona: 'test agent', persistenceRoot, presetRoot: PRESET_ROOT,
     })
     disposers.push(() => second.dispose())
     ;(second.context as unknown as {
@@ -137,7 +137,7 @@ describe('agent preset session identity', () => {
     expect(second.sessionPreset(sessionId)).toBe('minimal')
     const trajectory = await second.trajectorySnapshot(sessionId)
     const catalog = (trajectory?.headers.at(-1)?.tools ?? []).map((tool) => tool.name).sort()
-    expect(catalog).toEqual(['bash', 'str_replace_editor'])
+    expect(catalog).toEqual(['bash'])
   })
 
   it('switches a blank session and refuses one that has already run', async () => {
@@ -167,18 +167,18 @@ describe('agent preset session identity', () => {
 })
 
 describe('agent preset roster', () => {
-  it('lists the four shipped presets with their display metadata, in declared order', async () => {
+  it('lists the four shipped presets in declared order', async () => {
     const runtime = await rosterRuntime()
 
     const presets = await listDeepseekPresets(runtime.context)
 
-    expect(presets.map((preset) => preset.id)).toEqual(['standard', 'code', 'minimal', 'cordis'])
-    expect(presets.every((preset) => preset.trust === 'system')).toBe(true)
+    expect(presets.map((preset) => preset.id)).toEqual(['standard', 'ptc', 'minimal', 'cordis'])
     // A broken preset stays on the roster with its reason; all four shipped
     // ones must compose, or every session on them fails at creation.
     expect(presets.filter((preset) => preset.broken !== null)).toEqual([])
-    expect(presets[0]).toMatchObject({ id: 'standard', name: '标准模式' })
-    expect(presets[2]?.description).toContain('str_replace_editor')
+    // The shipped declarations carry no display metadata; the renderer
+    // translates shipped ids, so the projection falls back to the id.
+    expect(presets[0]).toMatchObject({ id: 'standard', name: 'standard', description: null })
   })
 
   it('mounts every shipped preset', async () => {
@@ -190,7 +190,7 @@ describe('agent preset roster', () => {
     // named rows, not that every row's host service exists. Only a real mount
     // answers that, and it is per preset: `cordis` shipped broken for a while
     // because its `tool-cordis` row waited on services no other preset needs.
-    for (const preset of ['standard', 'code', 'minimal', 'cordis']) {
+    for (const preset of ['standard', 'ptc', 'minimal', 'cordis']) {
       const agent = await runtime.createAgent({
         sessionId: randomUUID(), cwd, provider: 'mock', model: 'mock-1',
         agentPreset: preset, onEvent: () => undefined,
@@ -213,14 +213,14 @@ describe('agent preset roster', () => {
     ]))
   })
 
-  it('sends the minimal preset exactly its two tools', async () => {
+  it('sends the minimal preset exactly its one tool', async () => {
     const runtime = await rosterRuntime()
 
     const catalog = await catalogFor(runtime, 'minimal')
 
     // This is the whole point of the preset mechanism: the same harness reaches
-    // the model as a two-tool agent, with none of the standard catalog.
-    expect(catalog).toEqual(['bash', 'str_replace_editor'])
+    // the model as a one-tool agent, with none of the standard catalog.
+    expect(catalog).toEqual(['bash'])
   })
 
   it('keeps two sessions on different presets apart', async () => {
@@ -231,7 +231,7 @@ describe('agent preset roster', () => {
     // Both mounts are standing and live at once; a preset's registrations
     // reaching the other's agent would mean the scope parentage is wrong.
     expect(standard.length).toBeGreaterThan(minimal.length)
-    expect(standard).not.toContain('str_replace_editor')
     expect(minimal).not.toContain('todo_write')
+    expect(minimal).not.toContain('read')
   })
 })

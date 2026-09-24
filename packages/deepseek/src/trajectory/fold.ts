@@ -3,9 +3,11 @@
  * live session can be folded event by event instead of from the start.
  *
  * dsh's log is seq-contiguous and its happy order is already causal
- * (`turn/start` -> `request/header` -> `step/start` -> chunks ->
- * `assistant/message` -> `tool/call` -> `tool/result` -> `step/end` ->
- * `turn/end`), so the pass stays linear with a little open-bracket state.
+ * (`turn/start` -> `step/start` -> `system/message` -> `user/message`s ->
+ * `request/header` -> `assistant/message` -> `tool/call` -> `tool/result` ->
+ * `step/end` -> `turn/end`), so the pass stays linear with a little
+ * open-bracket state. Streamed chunks are not separate events: each
+ * `assistant/message` embeds its own timed stream.
  * Nothing is inferred from wall-clock ordering; every association comes from an
  * explicit id (`callId`, approval `id`) or an open bracket.
  *
@@ -25,9 +27,16 @@ import type { EpochHeader } from '@deepseek-ai/dsh-session'
 // import to carry the augmentation is how `compaction/*` silently vanished from
 // the union when the engine moved to the preset plane.
 import type {} from '@deepseek-ai/dsh-compaction'
-import type {} from '@deepseek-ai/dsh-agent-presets'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type {} from '@deepseek-ai/dsh-user-approval'
-import type { ContentBlock, StreamChunk, TokenUsage } from '@deepseek-ai/dsh-llm'
+import {
+  expandAssistantStream,
+  isTokenDelta,
+  type AssistantStreamRecord,
+  type ContentBlock,
+  type ContextFormed,
+  type TokenUsage,
+} from '@deepseek-ai/dsh-llm'
 import { diffHeaders, projectHeader } from './header'
 import { blocksText, blocksTextOfType, boundPayload, projectBlocks, summarize } from './payload'
 import type {
@@ -92,11 +101,18 @@ function projectUsage(usage: TokenUsage | undefined): TrajectoryUsage | null {
  * @param chunk - the raw stream chunk.
  * @returns whether it delivered a non-empty delta.
  */
-function chunkHasToken(chunk: StreamChunk): boolean {
-  if (chunk.type === 'text-delta' || chunk.type === 'reasoning-delta') return chunk.text.length > 0
-  if (chunk.type === 'tool-call-delta') return chunk.argumentsDelta.length > 0
-  return false
+/**
+ * When the model produced its first output token, from the stream a committed
+ * message embeds.
+ * @param stream - the message's compact timed stream.
+ * @returns the first token's time, or `null` when the stream carried none.
+ */
+function firstTokenTime(stream: readonly AssistantStreamRecord[]): number | null {
+  return expandAssistantStream(stream).find(({ chunk }) => isTokenDelta(chunk))?.time ?? null
 }
+
+/** Any producer's context source: its kind plus the form it declared, if any. */
+type ContextSource = { kind: string } & ContextFormed
 
 /**
  * `Omit` over a discriminated union, applied per member.
@@ -113,7 +129,6 @@ interface OpenStep {
   turn: number
   step: number
   startedAt: number
-  firstTokenTime: number | null
   request: number
 }
 
@@ -151,7 +166,13 @@ export class TrajectoryFold {
 
   // Open brackets, carried across `consume` calls so a streaming turn folds
   // incrementally rather than restarting from the log's first event.
-  private rawHeader: EpochHeader | null = null
+  private rawHeader: { header: EpochHeader; system: string | null } | null = null
+  /**
+   * The system prompt currently on the model-visible surface. Logged as its
+   * own `system/message` ahead of the step's `request/header`, so the header
+   * that follows adopts it.
+   */
+  private systemText: string | null = null
   private header: TrajectoryHeader | null = null
   private openTurn: TrajectoryTurn | null = null
   private openStep: OpenStep | null = null
@@ -287,6 +308,39 @@ export class TrajectoryFold {
   }
 
   /** Append a record, assigning its ledger position. */
+  /**
+   * Record one piece of producer-injected, model-visible context.
+   *
+   * Every producer declares its own source `kind` (there is no shared
+   * `plugin` kind any more) and optionally a `form` carrying the fields that
+   * form needs — a notice's one-line account, a snapshot's sections.
+   */
+  private pushContext(seq: number, time: number, source: ContextSource, blocks: readonly ContentBlock[]): void {
+    const text = blocksText(blocks)
+    const notice = source.form === 'notice' ? source.summary : null
+    const sections = source.form === 'snapshot'
+      ? source.sections.map((section) => ({ name: section.name, text: section.text }))
+      : null
+    const id = `context:${seq}`
+    this.push({
+      id,
+      kind: 'context',
+      seq,
+      turn: this.openTurn?.turn ?? null,
+      step: null,
+      request: null,
+      startedAt: time,
+      durationMs: null,
+      summary: summarize(notice ?? text),
+      content: this.bind(id, 'content', text),
+      blocks: projectBlocks(blocks),
+      producer: source.kind,
+      form: source.form ?? null,
+      notice,
+      sections,
+    })
+  }
+
   private push(record: RecordDraft): number {
     const index = this.records.length
     this.records.push({ ...record, index: index + 1 } as TrajectoryRecord)
@@ -371,8 +425,10 @@ export class TrajectoryFold {
           event.seq,
           event.time,
           event.data.reason,
+          this.systemText,
         )
-        const change = diffHeaders(this.rawHeader, event.data.header)
+        const raw = { header: event.data.header, system: this.systemText }
+        const change = diffHeaders(this.rawHeader, raw)
         if (next.system !== null) next.system = this.bind(`header:${next.index}`, 'system', next.system.text)
         this.headerTouched[this.headers.length] = this.consumed
         this.headers.push(next)
@@ -397,7 +453,15 @@ export class TrajectoryFold {
           change,
         })
         this.header = next
-        this.rawHeader = event.data.header
+        this.rawHeader = raw
+        break
+      }
+
+      case 'system/message': {
+        // An empty rendering clears every active system node, so it means "no
+        // system prompt", not "unchanged".
+        const text = blocksText(event.data.message.content)
+        this.systemText = text.length > 0 ? text : null
         break
       }
 
@@ -426,7 +490,6 @@ export class TrajectoryFold {
           turn: event.data.turn,
           step: event.data.step,
           startedAt: event.time,
-          firstTokenTime: null,
           request: this.openRequest.ordinal,
         }
         if (this.openTurn) {
@@ -436,18 +499,10 @@ export class TrajectoryFold {
         break
       }
 
-      case 'assistant/chunk': {
-        const step = this.openStep
-        if (step && step.firstTokenTime === null && chunkHasToken(event.data.chunk)) {
-          step.firstTokenTime = event.time
-        }
-        break
-      }
-
       case 'assistant/message': {
         const blocks = event.data.message.content
         const startedAt = this.openStep?.startedAt ?? event.time
-        const firstToken = this.openStep?.firstTokenTime ?? null
+        const firstToken = firstTokenTime(event.data.stream)
         const ttftMs = firstToken === null ? null : firstToken - startedAt
         const usage = projectUsage(event.data.usage)
         if (usage) {
@@ -504,7 +559,7 @@ export class TrajectoryFold {
         if (typeof event.surfaceOp === 'object') break
         const blocks = event.data.content
         const text = blocksText(blocks)
-        const source = event.data.source
+        const source: ContextSource = event.data.source
         if (source.kind === 'user') {
           const id = `user:${event.seq}`
           this.push({
@@ -522,30 +577,15 @@ export class TrajectoryFold {
           })
           break
         }
-        const plugin = source.kind === 'plugin' ? source.plugin : source.kind
-        const form = source.kind === 'plugin' && 'form' in source ? source.form ?? null : null
-        const notice = source.kind === 'plugin' && 'summary' in source ? source.summary : null
-        const sections = source.kind === 'plugin' && 'sections' in source
-          ? source.sections.map((section) => ({ name: section.name, text: section.text }))
-          : null
-        const id = `context:${event.seq}`
-        this.push({
-          id,
-          kind: 'context',
-          seq: event.seq,
-          turn: this.openTurn?.turn ?? null,
-          step: null,
-          request: null,
-          startedAt: event.time,
-          durationMs: null,
-          summary: summarize(notice ?? text),
-          content: this.bind(id, 'content', text),
-          blocks: projectBlocks(blocks),
-          producer: plugin,
-          form,
-          notice: notice ?? null,
-          sections,
-        })
+        this.pushContext(event.seq, event.time, source, blocks)
+        break
+      }
+
+      case 'developer/message': {
+        // Host-authored model-visible context (tool-catalog changes and the
+        // like): the same record as any injected user-role context.
+        const message = event.data.message
+        this.pushContext(event.seq, event.time, message.source, message.content)
         break
       }
 
@@ -578,17 +618,15 @@ export class TrajectoryFold {
       }
 
       case 'tool/result': {
-        const callId = event.data.message.source.callId
-        const index = this.openTools.get(callId)
+        const message = event.data.message
+        const index = this.openTools.get(message.toolCallId)
         if (index === undefined) break
-        this.openTools.delete(callId)
+        this.openTools.delete(message.toolCallId)
         const record = this.records[index]
         if (record?.kind !== 'tool') break
-        const block: ContentBlock = event.data.message.content[0]
-        const text = blocksText(block.type === 'tool-result' ? block.content : [block])
-        record.result = this.bind(record.id, 'result', text)
+        record.result = this.bind(record.id, 'result', blocksText(message.content))
         record.durationMs = event.time - record.startedAt
-        record.isError = block.type === 'tool-result' && block.isError === true
+        record.isError = message.isError === true
         record.error = event.data.error ?? null
         this.touchRecord(index)
         break

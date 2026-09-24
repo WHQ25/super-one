@@ -1,6 +1,7 @@
 import type { AgentEvent, ChatMessage, ContentBlock, TodoItem } from '@superone/shared/agent-types'
 import { buildAgentErrorInfo } from '@superone/shared/agent-error'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 // Side-effect type imports: dsh merges each plugin's event vocabulary into
 // `SessionEventMap` from the plugin's own package, so a consumer that reads an
 // event has to name that package itself. Relying on some other file's runtime
@@ -8,6 +9,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 // the union when the engine moved to the preset plane.
 import type {} from '@deepseek-ai/dsh-compaction'
 import type {} from '@deepseek-ai/dsh-user-approval'
+import type {} from '@deepseek-ai/dsh-tool-todo'
 
 /**
  * One assistant message per turn, keyed on the turn alone.
@@ -61,9 +63,12 @@ export interface DeepseekChildStats {
  * (interrupt/error attribution), that turn's running spend, and the latest route
  * context window.
  *
- * P1 scope: text/thinking streaming, whole tool calls (`tool/call` →
- * `tool/result`; streaming tool-input deltas come with the
- * supportsStreamingToolInput flag later), usage, todos, interrupt/error.
+ * Text and reasoning are NOT in the log while they stream: since session
+ * format v2 the loop publishes them as process-local `agent/assistant-stream`
+ * frames and embeds the whole stream in the committed `assistant/message`.
+ * The live half arrives through {@link handleStreamFrame}; the log half carries
+ * everything else — whole tool calls (`tool/call` → `tool/result`), usage,
+ * todos, interrupt/error.
  */
 export class DeepseekEventMapper {
   private openMessageId: string | null = null
@@ -118,6 +123,26 @@ export class DeepseekEventMapper {
     })
   }
 
+  /**
+   * One live assistant-stream frame for this session's agent.
+   *
+   * Only chunk frames carry anything to render. A retried or failed attempt
+   * streams too and then settles as `assistant/attempt` instead of a message;
+   * what it already showed stays, exactly as the log keeps that attempt.
+   * Tool-call argument deltas are not rendered: the call is mapped whole from
+   * the durable `tool/call` event.
+   * @param frame - the frame dsh published.
+   */
+  handleStreamFrame(frame: AssistantStreamFrame): void {
+    if (frame.type !== 'chunk') return
+    const chunk = frame.chunk
+    if (chunk.type === 'text-delta') {
+      this.emitDelta({ type: 'text', text: chunk.text })
+    } else if (chunk.type === 'reasoning-delta') {
+      this.emitDelta({ type: 'thinking', thinking: chunk.text })
+    }
+  }
+
   handle(event: SessionEvent): void {
     switch (event.type) {
       case 'step/start': {
@@ -144,17 +169,6 @@ export class DeepseekEventMapper {
         this.emit({ type: 'message_start', message })
         break
       }
-      case 'assistant/chunk': {
-        const chunk = event.data.chunk
-        if (chunk.type === 'text-delta') {
-          this.emitDelta({ type: 'text', text: chunk.text })
-        } else if (chunk.type === 'reasoning-delta') {
-          this.emitDelta({ type: 'thinking', thinking: chunk.text })
-        }
-        // tool-call chunks are mapped from the durable tool/call event instead;
-        // block-start/block-end/usage/finish carry no additional UI information here.
-        break
-      }
       case 'tool/call': {
         this.toolUses += 1
         this.emitDelta({
@@ -167,24 +181,16 @@ export class DeepseekEventMapper {
         break
       }
       case 'tool/result': {
-        const content = event.data.message.content ?? []
-        const summary = content
-          .map((block) => {
-            if (block.type === 'tool-result') {
-              return block.content
-                .map((inner) => (inner.type === 'text' ? inner.text : ''))
-                .join('')
-            }
-            return ''
-          })
+        // A first-class `role: 'tool'` message since format v4: its content is
+        // the model-facing result itself, not a wrapper block around it.
+        const message = event.data.message
+        const summary = message.content
+          .map((block) => (block.type === 'text' ? block.text : ''))
           .join('')
-        const isError = event.data.error !== undefined
-          || content.some((block) => block.type === 'tool-result' && block.isError)
+        const isError = event.data.error !== undefined || message.isError === true
         this.emitDelta({
           type: 'tool_result',
-          toolUseId: String(event.data.message.source && 'callId' in event.data.message.source
-            ? event.data.message.source.callId
-            : ''),
+          toolUseId: String(message.toolCallId),
           summary,
           ...(isError ? { isError: true } : {}),
         })

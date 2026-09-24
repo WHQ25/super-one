@@ -54,29 +54,29 @@ describe('checkPeerLockstep', () => {
   })
 
   it('accepts the prerelease range npm generates against this build', () => {
-    // `npm install @deepseek-ai/dsh-tools` writes `^0.1.1-rc.2`, which is the
+    // `npm install @deepseek-ai/dsh-tools` writes `^0.1.7-rc.1`, which is the
     // range a real plugin carries.
     const report = checkPeerLockstep({
       name: 'p', version: '1.0.0',
-      peerDependencies: { '@deepseek-ai/dsh-tools': '^0.1.1-rc.2' },
+      peerDependencies: { '@deepseek-ai/dsh-tools': '^0.1.7-rc.1' },
     })
     expect(lockstepBlocks(report)).toBe(false)
   })
 
   it('flags a release-anchored range, because a prerelease sorts below its release', () => {
-    // `^0.1.1` means `>=0.1.1`, and `0.1.1-rc.2 < 0.1.1`. A plugin written
-    // against the eventual 0.1.1 release genuinely does not run on this build,
+    // `^0.1.7` means `>=0.1.7`, and `0.1.7-rc.1 < 0.1.7`. A plugin written
+    // against the eventual 0.1.7 release genuinely does not run on this build,
     // and saying so at install time beats a mid-turn crash. Expected to bite
     // plugin authors, so it is pinned rather than left to be rediscovered.
     // The range must name THIS build's `<major>.<minor>.<patch>`: an older
     // anchor such as `^0.1.0` is admitted, because `includePrerelease` puts
-    // `0.1.1-rc.2` inside `>=0.1.0 <0.2.0`.
+    // `0.1.7-rc.1` inside `>=0.1.0 <0.2.0`.
     const report = checkPeerLockstep({
       name: 'p', version: '1.0.0',
-      peerDependencies: { '@deepseek-ai/dsh-tools': '^0.1.1' },
+      peerDependencies: { '@deepseek-ai/dsh-tools': '^0.1.7' },
     })
     expect(report.mismatched).toEqual([
-      { name: '@deepseek-ai/dsh-tools', wanted: '^0.1.1', actual: '0.1.1-rc.2' },
+      { name: '@deepseek-ai/dsh-tools', wanted: '^0.1.7', actual: '0.1.7-rc.1' },
     ])
   })
 
@@ -86,7 +86,7 @@ describe('checkPeerLockstep', () => {
       peerDependencies: { '@deepseek-ai/cordis': '^99.0.0' },
     })
     expect(report.mismatched).toEqual([
-      { name: '@deepseek-ai/cordis', wanted: '^99.0.0', actual: '4.0.2' },
+      { name: '@deepseek-ai/cordis', wanted: '^99.0.0', actual: '4.0.4' },
     ])
     expect(lockstepBlocks(report)).toBe(true)
   })

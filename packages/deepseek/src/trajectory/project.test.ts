@@ -30,12 +30,17 @@ describe('projectTrajectory', () => {
   it('measures TTFT from step start to the first non-empty delta', () => {
     const projection = projectTrajectory('s1', log([
       ['step/start', { turn: 0, step: 0 }, 1_000],
-      // Structural frames and an empty delta must not start the clock.
-      ['assistant/chunk', { turn: 0, step: 0, chunk: { type: 'block-start', index: 0, blockType: 'text' } }, 1_100],
-      ['assistant/chunk', { turn: 0, step: 0, chunk: { type: 'text-delta', index: 0, text: '' } }, 1_200],
-      ['assistant/chunk', { turn: 0, step: 0, chunk: { type: 'text-delta', index: 0, text: 'a' } }, 1_400],
-      ['assistant/chunk', { turn: 0, step: 0, chunk: { type: 'text-delta', index: 0, text: 'b' } }, 1_500],
-      ['assistant/message', { turn: 0, step: 0, message: assistantMessage('ab') }, 1_900],
+      ['assistant/message', {
+        turn: 0,
+        step: 0,
+        message: assistantMessage('ab'),
+        // The message's embedded stream. Structural frames and an empty delta
+        // must not start the clock.
+        stream: [
+          { type: 'chunk', time: 1_100, chunk: { type: 'block-start', index: 0, blockType: 'text' } },
+          { type: 'text-chunks', time0: 1_200, index: 0, dt: [200, 100], texts: ['', 'a', 'b'] },
+        ],
+      }, 1_900],
       ['step/end', { turn: 0, step: 0 }, 1_950],
     ]), false)
 
@@ -54,9 +59,11 @@ describe('projectTrajectory', () => {
         step: 0,
         message: {
           id: 'm',
-          role: 'user',
+          role: 'tool',
           source: { kind: 'tool', callId: 'call-1' },
-          content: [{ type: 'tool-result', toolCallId: 'call-1', isError: true, content: [{ type: 'text', text: 'ENOENT' }] }],
+          toolCallId: 'call-1',
+          isError: true,
+          content: [{ type: 'text', text: 'ENOENT' }],
         },
         error: { name: 'NotFound', code: 'ENOENT' },
       }, 1_700],
@@ -86,14 +93,14 @@ describe('projectTrajectory', () => {
       ['user/message', {
         id: 'u2',
         role: 'user',
-        source: { kind: 'plugin', plugin: 'dsh-agents-md', form: 'instructions' },
+        source: { kind: 'agent-instructions', form: 'instructions' },
         content: [{ type: 'text', text: '# AGENTS.md\nalways run tests' }],
       }],
     ]), false)
 
     expect(projection.records.map((record) => record.kind)).toEqual(['user', 'context'])
     const context = projection.records[1]
-    expect(context).toMatchObject({ kind: 'context', producer: 'dsh-agents-md', form: 'instructions' })
+    expect(context).toMatchObject({ kind: 'context', producer: 'agent-instructions', form: 'instructions' })
   })
 
   it("uses a notice's one-line account as its ledger summary", () => {
@@ -101,7 +108,7 @@ describe('projectTrajectory', () => {
       ['user/message', {
         id: 'u1',
         role: 'user',
-        source: { kind: 'plugin', plugin: 'dsh-fs-watch', form: 'notice', summary: 'src/a.ts changed on disk' },
+        source: { kind: 'fs-watch', form: 'notice', summary: 'src/a.ts changed on disk' },
         content: [{ type: 'text', text: 'The file src/a.ts was modified outside the session. Full contents follow…' }],
       }],
     ]), false)
@@ -134,7 +141,7 @@ describe('projectTrajectory', () => {
       seq: 1,
       time: 1_010,
       surfaceOp: { op: 'replace', start: 0, end: 4 },
-      data: { id: 'r', role: 'user', source: { kind: 'plugin', plugin: 'compaction' }, content: [{ type: 'text', text: 'summary' }] },
+      data: { id: 'r', role: 'user', source: { kind: 'compact-checkpoint' }, content: [{ type: 'text', text: 'summary' }] },
     }] as SessionEvent[]
 
     expect(projection.records).toHaveLength(1)

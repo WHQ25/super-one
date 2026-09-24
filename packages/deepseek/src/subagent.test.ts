@@ -25,7 +25,7 @@ const RECALL_MARKER = 'RECALL-THE-SECRET'
 class DelegatingAdapter extends LlmAdapter {
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     const transcript = JSON.stringify(options.messages)
-    const closing = transcript.includes('"tool-result"')
+    const closing = transcript.includes('"role":"tool"')
 
     if (!closing && transcript.includes(CHILD_MARKER)) {
       yield* toolCall('write', { file_path: CHILD_FILE, content: CHILD_TEXT })

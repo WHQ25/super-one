@@ -9,18 +9,24 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import * as LlmRetry from '@deepseek-ai/dsh-llm-retry'
+import * as ImageOffload from '@deepseek-ai/dsh-compaction-image-offload'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import * as LlmDeepseek from '@deepseek-ai/dsh-llm-deepseek'
 import type { DeepSeekCatalogModel } from '@deepseek-ai/dsh-llm-deepseek'
+import type { SubagentModelSelectionSettings } from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as CheckpointPolicy from '@deepseek-ai/dsh-session-checkpoint-policy'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawnInProcess from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as SubagentForkInProcess from '@deepseek-ai/dsh-subagent-fork-in-process'
+import SubagentModelSelection from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 import DynamicCordisRunner from '@deepseek-ai/dsh-cordis-host-runner'
+import * as ToolCordisHost from '@deepseek-ai/dsh-tool-cordis/host'
 import PermissionPresets from '@deepseek-ai/dsh-permission-presets'
-import AgentPresets from '@deepseek-ai/dsh-agent-presets'
+import AgentPresetRegistry from '@deepseek-ai/dsh-agent-preset-registry'
+import SessionProjections from '@deepseek-ai/dsh-session-projection'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import GoalService from '@deepseek-ai/dsh-goal'
 import * as GoalRoundDriver from '@deepseek-ai/dsh-goal-round-driver'
@@ -28,17 +34,19 @@ import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import WebRuntime from '@deepseek-ai/dsh-web'
 import * as DeepSeekWebSearch from '@deepseek-ai/dsh-web-search-deepseek'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
-import * as ToolSubagentReport from '@deepseek-ai/dsh-tool-subagent-report'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import { createCredentialPlugin, type CredentialLookup } from './credentials'
 import { DEFAULT_DSH_PERMISSION_PRESET, DSH_PERMISSION_PRESETS } from './permission-presets'
 import { mountHostToolPlane } from './tool-plane'
+import { readPresetDeclarations } from './presets'
 
 export interface DeepseekTreeOptions {
   /**
-   * Extra persona text appended to the dsh system prompt. The harness identity
-   * opener stays on (decision: docs/draft/deepseek-harness-integration.md §12.1).
+   * Deployment persona, rendered after the harness identity opener
+   * (`personaPrefix`; decision: docs/draft/deepseek-harness-integration.md
+   * §12.1). A preset's own persona row shadows it. `{{variable}}` references
+   * are strict — an unknown one fails assembly.
    */
   persona?: string
   /** JSONL session-log root; omit to run without durable persistence (tests). */
@@ -58,16 +66,16 @@ export interface DeepseekTreeOptions {
    */
   attachmentHome?: string
   /**
-   * Read-only preset roots, in precedence order — the compositions shipped with
-   * the app. `dsh-agent-presets` appends `<dshHome>/.agent-presets` as the
-   * writable one on top, so a person's own presets are found without the
-   * deployment naming that path.
+   * Directory holding the vendored preset declarations (`*.patch.yml`) — the
+   * compositions shipped with the app. Upstream retired preset directories and
+   * the writable user root; a preset is now a declaration row, so this is the
+   * whole roster.
    *
    * Omit to run without a roster: every agent then reaches the model with the
    * host plane's tools alone, which is the shape every test that does not care
    * about compositions wants.
    */
-  presetRoots?: readonly string[]
+  presetRoot?: string
   /** Preset mounted when a session names none. */
   defaultPreset?: string
   /**
@@ -81,6 +89,13 @@ export interface DeepseekTreeOptions {
    * the user's credential or model selection changes.
    */
   deepseekAdapter?: DeepseekAdapterOptions
+  /** See `HostToolPlaneOptions.ptcNodeExecutable`. */
+  ptcNodeExecutable?: string
+  /**
+   * Whether new sessions may pick a model per delegated child, and from which
+   * exact routes. Omitted means off.
+   */
+  subagentModelSelection?: SubagentModelSelectionSettings
   /**
    * Let the model rewrite this process's own plugin tree (`dsh-tool-cordis`).
    * Off unless the user opted in; see `toolCordisPlugin`.
@@ -130,6 +145,11 @@ export function deepseekAdapterPlugin(options: DeepseekAdapterOptions): {
 export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<Context> {
   const ctx = new Context()
   ctx.plugin(Timer)
+  // The session projection registry, first: since 0.1.2 it is a mandatory seam
+  // — agent-loop, permission presets, sandbox policy, goals, token meter and
+  // the preset registry all `inject` it, and a missing one does not fail
+  // loudly, it leaves every dependant waiting forever.
+  ctx.plugin(SessionProjections)
   // The runtime entry tree. dsh's own CLI drives composition through this
   // service; we mount it without `cordis-plugin-include` (no YAML) and without
   // `cordis-plugin-hmr` (that one needs Node ESM internals through a native
@@ -163,24 +183,42 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
   ctx.plugin(SystemPrompt, {
     includeHarnessIdentity: true,
     includeRuntimeContext: true,
-    persona: options.persona ?? '',
+    personaPrefix: options.persona ?? '',
   })
   // A separate section survives agent presets shadowing deployment:persona.
   ctx.plugin({
     name: 'superone-host-context',
     inject: ['systemPrompt'],
     apply(ctx: Context) {
-      ctx.systemPrompt.section({ name: 'superone:host', order: -50, text: SUPERONE_SYSTEM_PROMPT_APPEND })
+      // Literal: host prose, not a template — strict interpolation would
+      // reject any `{{` it happens to contain.
+      ctx.systemPrompt.section({
+        name: 'superone:host',
+        order: -50,
+        text: SUPERONE_SYSTEM_PROMPT_APPEND,
+        interpolate: false,
+      })
     },
   })
   ctx.plugin(ToolRuntime, {})
   ctx.plugin(AgentRegistry)
   ctx.plugin(ApprovalService, { policy: 'ask' })
   ctx.plugin(AgentLoop, { agents: [] })
+  // Request recovery, both from upstream's base layer. `llm-retry` turns a
+  // transient model failure (rate limit, 5xx, timeout) into a logged
+  // `llm/retry` and another attempt instead of a failed turn; the policy lives
+  // on the adapter's own config. `compaction-image-offload` answers the
+  // DeepSeek adapter's `IMAGE_OFFLOAD_REQUIRED` by marking the oldest images
+  // offloaded, so an image-heavy session keeps going rather than ending every
+  // turn in the same error.
+  ctx.plugin(LlmRetry, {})
+  ctx.plugin(ImageOffload)
 
   // dsh's executors and its model-facing file/search/shell/todo rows, on the
   // host plane so delegated children inherit them (see `mountHostToolPlane`).
-  await mountHostToolPlane(ctx)
+  await mountHostToolPlane(ctx, {
+    ...(options.ptcNodeExecutable !== undefined ? { ptcNodeExecutable: options.ptcNodeExecutable } : {}),
+  })
 
   // Delegation. `subagents` is the provider registry; `spawn` creates a fresh
   // child Agent in this process and `fork` seeds one with the parent's
@@ -196,12 +234,14 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
   ctx.plugin(SubagentRuntime)
   ctx.plugin(SubagentSpawnInProcess, { providerName: 'spawn' })
   ctx.plugin(SubagentForkInProcess, { providerName: 'fork' })
-  // `report` is host-plane for a mechanical reason, not a product one: it
-  // registers a continuable SETUP on the subagent registry rather than a tool
-  // this agent calls, and that setup list is not scope-aware — one copy per
-  // mounted preset would register `report` once per live session and throw on
-  // the second.
-  ctx.plugin(ToolSubagentReport)
+  // The host-owned opt-in the shipped delegation rows sample when a session is
+  // composed (`modelSelectionSettings: true`): off unless the user allowed
+  // per-call child models. A later change reaches the next new session, never
+  // a running one — the policy is snapshotted into each session's log.
+  ctx.plugin(SubagentModelSelection, {
+    enabled: options.subagentModelSelection?.enabled ?? false,
+    allowedModels: options.subagentModelSelection?.allowedModels ?? [],
+  })
 
   // The registries the preset rows resolve. Each is a process singleton with
   // cross-session queries, which is dsh's own criterion for host-plane
@@ -221,12 +261,13 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
   // the registry keeps the shipped composition a verbatim copy; the alternative
   // was editing a vendored file, which forks it forever.
   ctx.plugin(CommandRuntime)
-  // The dynamic-Cordis RUNNER and its inspect registry, mounted for the whole
-  // tree because they are services, not tools: nothing here reaches the model.
-  // The row that does — `tool-cordis` — belongs to the `cordis` preset, and two
-  // instances cannot coexist (the second collides on the inspect provider), so
-  // the preset is the one and only way an agent gets those tools.
+  // The dynamic-Cordis RUNNER and the host inspect providers, mounted once for
+  // the whole tree because they are services, not tools: nothing here reaches
+  // the model. The providers are process-global — a second registration of the
+  // same id is rejected — so they live here and every preset's `tool-cordis`
+  // row reads them; the `cordis` preset is the one that composes that row.
   ctx.plugin(DynamicCordisRunner, {})
+  ctx.plugin(ToolCordisHost)
 
   // The user-facing permission vocabulary. Each preset bundles the two knobs
   // dsh actually enforces — the sandbox mode and whether approvals are asked —
@@ -234,10 +275,8 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
   // change never rewrites a running conversation. It hard-requires a CONFINING
   // `ctx.shell`, which is why it lands with the sandbox tier and not before.
   //
-  // Its two optional children stay out: the `/permissionPresets` command
-  // (SuperOne owns slash) and the `permissions` projection unit (nothing reads
-  // it yet). Both activate only when their registry is composed, so not
-  // mounting `commands` / `sessionProjections` is the whole exclusion.
+  // Its `/permissionPresets` command child stays inert: SuperOne owns slash
+  // and never routes that line to the command registry.
   ctx.plugin(PermissionPresets, {
     presets: DSH_PERMISSION_PRESETS,
     defaultPreset: DEFAULT_DSH_PERMISSION_PRESET,
@@ -258,16 +297,16 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
   // section covers every session that named it. This is why the model-facing
   // rows left the host plane above: they are a preset's choice, not the
   // deployment's.
-  if (options.presetRoots?.length) {
-    ctx.plugin(AgentPresets, {
-      default: options.defaultPreset ?? 'standard',
-      roots: options.presetRoots.map((path) => ({ path, trust: 'system' as const })),
-      // `<dshHome>/.agent-presets` is where a person's own presets live, the
-      // way `<dshHome>/skills` holds their own skills. It is appended AFTER the
-      // shipped roots, so a shipped id still shadows a home directory that
-      // claimed the same name.
-      includeUserRoot: true,
-    })
+  //
+  // The declarations go through the loader rather than `ctx.plugin`: the
+  // preset plugin is an entry GROUP, and only the loader keeps its children's
+  // `!!js` expressions unevaluated until each child's own activation — the
+  // same path upstream's profile patches take.
+  if (options.presetRoot !== undefined) {
+    ctx.plugin(AgentPresetRegistry, { default: options.defaultPreset ?? 'standard' })
+    for (const declaration of await readPresetDeclarations(options.presetRoot)) {
+      await ctx.loader.create(declaration)
+    }
   }
 
   if (options.credentialLookup) {

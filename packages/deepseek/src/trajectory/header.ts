@@ -40,7 +40,8 @@ export function projectHeader(
   index: number,
   seq: number,
   time: number,
-  reason: 'initial' | 'resume' | 'change',
+  reason: TrajectoryHeader['reason'],
+  system: string | null,
 ): TrajectoryHeader {
   const defaults = header.adapterDefaults
   return {
@@ -50,7 +51,7 @@ export function projectHeader(
     reason,
     config: { ...header.config } as TrajectoryCallConfig,
     adapterDefaults: defaults?.reasoningEffort === true || defaults?.maxTokens === true ? { ...defaults } : null,
-    system: header.system === undefined ? null : boundPayload(header.system),
+    system: system === null ? null : boundPayload(system),
     tools: (header.tools ?? []).map((tool): TrajectorySchema => ({
       name: tool.name,
       description: tool.description,
@@ -148,14 +149,24 @@ function diffTools(before: TrajectorySchema[], after: TrajectorySchema[]): Pick<
  * @param after - the dsh header now in force.
  * @returns the change set, or `null` when there is no predecessor to compare.
  */
-export function diffHeaders(before: EpochHeader | null, after: EpochHeader): TrajectoryHeaderDiff | null {
+/**
+ * What changed between two consecutive request headers.
+ *
+ * The system prompt is passed alongside rather than read off the header: since
+ * format v4 it is logged as its own `system/message` event, and the header only
+ * carries the call config and tool catalog.
+ */
+export function diffHeaders(
+  before: { header: EpochHeader; system: string | null } | null,
+  after: { header: EpochHeader; system: string | null },
+): TrajectoryHeaderDiff | null {
   if (before === null) return null
-  const beforeSystem = before.system ?? null
-  const afterSystem = after.system ?? null
+  const beforeSystem = before.system
+  const afterSystem = after.system
   return {
-    config: diffConfig(before.config, after.config),
+    config: diffConfig(before.header.config, after.header.config),
     systemChanged: beforeSystem !== afterSystem,
     systemHunks: diffSystem(beforeSystem, afterSystem),
-    ...diffTools(before.tools ?? [], after.tools ?? []),
+    ...diffTools(before.header.tools ?? [], after.header.tools ?? []),
   }
 }

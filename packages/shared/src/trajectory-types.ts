@@ -94,7 +94,8 @@ export interface TrajectoryHeader {
   index: number
   seq: number
   time: number
-  reason: 'initial' | 'resume' | 'change'
+  /** `series` opens a new request series (e.g. after a route change). */
+  reason: 'initial' | 'resume' | 'change' | 'series'
   config: TrajectoryCallConfig
   /** Fields the adapter materialized rather than the caller proposing them. */
   adapterDefaults: { reasoningEffort?: true; maxTokens?: true } | null

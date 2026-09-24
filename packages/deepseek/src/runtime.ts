@@ -4,7 +4,8 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, type ImageBlock } from '@deepseek-ai/dsh-llm'
-import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { SessionId, SessionLogOffset, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { buildForkSeed } from '@deepseek-ai/dsh-session/fork'
 // Side-effect type imports: each declaration-merges one service onto `Context`,
 // which is what makes `ctx.get('name')` return that service's REAL upstream type
 // instead of `any`. Without them the reads below would need a hand-written
@@ -42,8 +43,8 @@ import {
   presetRoster,
   sessionIsBlank,
   storedSessionPreset,
-  type DeepseekPresetRoster,
 } from './presets'
+import { readStoredSession } from './stored-session'
 import {
   createDeepseekTree,
   deepseekAdapterPlugin,
@@ -162,6 +163,12 @@ interface RouteOverride {
 interface AgentRecord {
   agent: Agent
   mapper: DeepseekEventMapper
+  /**
+   * Whether a turn has opened on this session. Kept from delivered events
+   * rather than re-scanned: dsh deprecated synchronous history reads, and the
+   * only history this ever needs is "has anything happened".
+   */
+  started: boolean
   onEvent: (event: AgentEvent) => void
   route: RouteOverride
   /** This session's permission answerer, also used by its delegated children. */
@@ -294,6 +301,7 @@ export class DeepseekRuntime {
       for (const listener of runtime.logListeners) listener(id)
       const record = runtime.records.get(id)
       if (record) {
+        if (event.type === 'turn/start') record.started = true
         record.mapper.handle(event)
         return
       }
@@ -305,6 +313,16 @@ export class DeepseekRuntime {
       // The chip shows tool count, tokens and elapsed time; refreshing it on
       // every chunk would be one store write per streamed token.
       if (TASK_PROGRESS_EVENTS.has(event.type)) runtime.emitTaskProgress(run)
+    })
+
+    // Streamed text and reasoning never enter the log until the step commits
+    // (session format v2), so the live half of the transcript rides these
+    // process-local frames. Routed exactly like log events: a top-level agent
+    // by its record, a delegated child through its parent's nested mapper.
+    bridge.on('agent/assistant-stream', ({ agent, frame }) => {
+      const id = String(agent.session.header.id)
+      const mapper = runtime.records.get(id)?.mapper ?? runtime.subagentRuns.get(id)?.mapper
+      mapper?.handleStreamFrame(frame)
     })
 
     // Carry the delegating call and agent into everything the tool awaits, so
@@ -654,8 +672,9 @@ export class DeepseekRuntime {
     // roster default. Restoring a different composition would replay tool calls
     // the new catalog cannot make, which is the hazard the blank-only switch
     // lock exists to prevent in the first place.
-    const preset = options.resume && presets
-      ? await storedSessionPreset(this.bridge, options.sessionId) ?? options.agentPreset
+    const stored = options.resume ? await readStoredSession(this.bridge, SessionId(options.sessionId)) : undefined
+    const preset = stored && presets
+      ? storedSessionPreset(stored) ?? options.agentPreset
       : options.agentPreset
     // Resolved to its canonical id BEFORE creation, because the header is a
     // creation fact: `mount()` runs inside `setup`, by which point the header
@@ -688,6 +707,8 @@ export class DeepseekRuntime {
     const record: AgentRecord = {
       agent: handle.agent,
       mapper: new DeepseekEventMapper({ sessionId: options.sessionId, emit: options.onEvent }),
+      // The one explicit history read this needs, done once at resume.
+      started: stored !== undefined && !sessionIsBlank(stored.events),
       onEvent: options.onEvent,
       route: {},
       ...(toolPlane ? { requestPermission: toolPlane.requestPermission } : {}),
@@ -791,6 +812,11 @@ export class DeepseekRuntime {
    * nothing live and lets the child start through the ordinary resume path,
    * the same shape as Claude's fork.
    *
+   * The seed is dsh's own `buildForkSeed`, not a bare slice: a cut inside an
+   * open step or turn gets synthetic "forked" tool results and closers after
+   * the inherited prefix, so the child's log is well-formed wherever the user
+   * cut it.
+   *
    * @param sourceSessionId - dsh session id of the source.
    * @param childSessionId - id to mint for the fork.
    * @param boundary - inclusive source event seq; omitted forks the whole log.
@@ -805,23 +831,36 @@ export class DeepseekRuntime {
       throw new Error('deepseek fork: session persistence is not configured')
     }
 
-    const source = await persistence.load(SessionId(sourceSessionId))
+    const source = await readStoredSession(this.bridge, SessionId(sourceSessionId))
+    if (!source) throw new Error(`deepseek fork: session ${sourceSessionId} has no stored log`)
+    // `buildForkSeed` cuts at an existing seq; an anchor between events
+    // resolves to the last event at or before it, as the old slice did.
     const prefix = boundary === undefined
       ? source.events
       : source.events.filter((event) => event.seq <= boundary)
-    if (prefix.length === 0) {
+    const cut = prefix.at(-1)
+    if (cut === undefined) {
       throw new Error(`deepseek fork: nothing to fork before seq ${String(boundary)}`)
     }
 
-    await persistence.create({
-      ...source.meta,
-      id: SessionId(childSessionId),
-      // Lineage dsh reads back: where this branched and how much of it is seed.
-      parentSession: SessionId(sourceSessionId),
-      seedLength: prefix.length,
-      createdAt: Date.now(),
-    })
-    await persistence.append(SessionId(childSessionId), prefix)
+    const handle = await persistence.create(
+      {
+        ...source.header,
+        id: SessionId(childSessionId),
+        // Lineage dsh reads back: where this branched, and that it carries seed.
+        parentSession: SessionId(sourceSessionId),
+        isSeeded: true,
+        createdAt: Date.now(),
+      },
+      { inheritedEventCount: SessionLogOffset(prefix.length) },
+    )
+    // The write handle is exclusive: it must be closed before the child's own
+    // resume can open one, or that resume fails as already owned.
+    try {
+      await handle.append(buildForkSeed(source.events, cut.seq))
+    } finally {
+      await handle.close()
+    }
     return childSessionId
   }
 
@@ -966,27 +1005,31 @@ export class DeepseekRuntime {
     // A log shorter than what the fold has consumed is not the log the fold was
     // built from — a rollback rewrote it. Folding the remainder onto that state
     // would splice two histories together.
-    if (entry !== undefined && liveSession !== undefined && liveSession.events.length < entry.fold.cursor) {
+    // `snapshotEvents` is one of the synchronous history readers dsh deprecated
+    // for NEW callers (upstream note 2026-09-09); this is the pre-existing
+    // trajectory read. The full snapshot is cached by dsh until the next
+    // append, so taking it whole costs no copy.
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- deferred migration
+    let events = liveSession?.snapshotEvents()
+    if (entry !== undefined && events !== undefined && events.length < entry.fold.cursor) {
       entry = undefined
     }
-
-    let events = liveSession?.events
-    if (events === undefined) {
-      const persistence = this.bridge.get('sessionPersistence')
-      if (!persistence) throw new Error('deepseek trajectory: session persistence is not configured')
+    if (liveSession === undefined) {
+      if (!this.bridge.get('sessionPersistence')) {
+        throw new Error('deepseek trajectory: session persistence is not configured')
+      }
 
       // A SuperOne session exists from the moment the user opens it, but its
-      // dsh session only exists once a turn has run. `list` omits a
-      // created-but-never-appended session, so this separates "nothing has
-      // happened yet" from "the log is there and unreadable" without matching
-      // on a backend error string.
+      // dsh session only exists once a turn has run. `stat` separates "nothing
+      // has happened yet" from "the log is there and unreadable" without
+      // matching on a backend error string.
       if (entry === undefined) {
-        const known = await persistence.list()
-        if (!known.some((header) => String(header.id) === sessionId)) {
+        const stored = await readStoredSession(this.bridge, SessionId(sessionId))
+        if (!stored || stored.events.length === 0) {
           this.folds.delete(sessionId)
           return null
         }
-        events = (await persistence.load(SessionId(sessionId))).events
+        events = stored.events
       } else {
         // A closed session's transcript does not grow under us, so the fold
         // built from it is already complete.
@@ -1031,18 +1074,16 @@ export class DeepseekRuntime {
    * @returns whether no turn has opened; `true` for a session with no agent.
    */
   sessionIsBlank(sessionId: string): boolean {
-    const sessions = this.bridge.get('sessions')
-    const session = sessions?.get(SessionId(sessionId))
-    return session === undefined || sessionIsBlank(session.events)
+    return this.records.get(sessionId)?.started !== true
   }
 
   /**
    * Re-link a blank session to a different preset's standing composition.
    *
-   * Refused once the session has produced anything. That is a product rule, not
-   * a mechanical one — swapping the tool catalog mid-conversation would leave
-   * logged tool calls the new composition cannot make — and dsh leaves the
-   * check to the caller, so it lives here.
+   * Refused once the session has produced anything — swapping the tool catalog
+   * mid-conversation would leave logged tool calls the new composition cannot
+   * make. `select()` owns that check and the durable `agent-preset/selected`
+   * record; the early refusal here only gives the user a clearer message.
    * @param sessionId - the session to switch.
    * @param presetId - the preset to compose it from.
    */
@@ -1051,14 +1092,9 @@ export class DeepseekRuntime {
     if (!record) throw new Error(`deepseek preset: no live agent for session ${sessionId}`)
     const roster = presetRoster(this.bridge)
     if (!roster) throw new Error('deepseek preset: no roster is composed')
+    if (record.started) throw new Error('deepseek preset: this session has already run a turn')
 
-    const sessions = this.bridge.get('sessions')
-    const session = sessions?.get(SessionId(sessionId))
-    if (session && !sessionIsBlank(session.events)) {
-      throw new Error('deepseek preset: this session has already run a turn')
-    }
-
-    await roster.recompose(record.agent.ctx, presetId)
+    await roster.select(record.agent, presetId)
   }
 
   /**

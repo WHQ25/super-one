@@ -108,6 +108,17 @@ Every alpha release keeps its own notes on its GitHub Release.
   diff a resumed session against its saved totals so earlier turns are
   not counted again. 0.3.280 itself only adds opt-in APIs.
 - Codex: adopted app-server 0.155.1 (no protocol changes SuperOne uses).
+- DeepSeek: upgraded `dsh` to `0.1.7-rc.1`. Stored DeepSeek conversations
+  are migrated to the new session format the first time they are opened;
+  an older SuperOne cannot read what was written after that.
+- DeepSeek: the model picker offers DeepSeek V4.1 Flash (text and images)
+  beside V4 Pro. V4 Flash and V4 Flash Vision (Exp) are retired upstream;
+  conversations already on them keep working as text-only.
+- DeepSeek: a transient model failure (rate limit, server error, timeout)
+  is retried instead of ending the turn, and an image-heavy conversation
+  offloads its oldest images instead of failing every turn.
+- DeepSeek: the Code mode is now PTC, and Minimal is a single persistent
+  shell. `run_code` and workflows run in a sandboxed Node process.
 
 ## [0.68.0-alpha.2] - 2026-09-23
 

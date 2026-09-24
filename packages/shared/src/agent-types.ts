@@ -2841,17 +2841,14 @@ export interface AcpResources {
  * One dsh agent preset — a "mode" the user picks before a session starts.
  *
  * A preset is a whole agent composition, so switching one changes the tool
- * catalog and the system prompt. `broken` carries a discovery-reported reason
- * verbatim: such a preset stays on the roster (hiding it would leave its
- * directory blocking the id with nothing to see or delete) but refuses to mount.
+ * catalog and the system prompt. `broken` carries the registry's activation
+ * diagnostic verbatim: such a preset stays on the roster but refuses to mount.
  */
 export interface DeepseekPresetInfo {
   id: string
-  /** Display name from `preset.yml`, falling back to the id. */
+  /** Declared display name, falling back to the id. */
   name: string
   description: string | null
-  /** `user` trust carries the same privilege as shell access — a preset IS a composition. */
-  trust: 'system' | 'user'
   order: number | null
   broken: string | null
 }

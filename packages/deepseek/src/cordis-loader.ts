@@ -27,8 +27,43 @@ import type { EntryOptions, Loader } from '@deepseek-ai/cordis-plugin-loader'
  * derived from `Loader['create']` rather than restated, so a change to the rest
  * of that signature still breaks here.
  */
-export type LoaderEntries = Pick<Loader, 'update' | 'remove' | 'await'> & {
+export type LoaderEntries = Pick<Loader, 'update' | 'remove' | 'await' | 'resolve' | 'import'> & {
   create(
     options: Parameters<Loader['create']>[0] & Pick<EntryOptions, 'id'>,
   ): Promise<string>
+}
+
+/**
+ * Why one loader entry is not running, or `undefined` when it is.
+ *
+ * Since cordis 4.0.3 the loader no longer rejects `create`/`update`/`await`
+ * when a plugin fails to start — it logs and moves on — so a registrar that
+ * reports per-row outcomes has to ask each entry. Call after `loader.await()`.
+ *
+ * Two failure shapes reach here. A plugin whose `apply` threw leaves a FAILED
+ * fiber, and `fiber.await()` rethrows that startup error. A module that threw
+ * while importing leaves no fiber at all; the loader only logged it, and
+ * re-importing resurfaces the same error because ESM caches a failed
+ * evaluation.
+ * @param loader - the loader holding the entry.
+ * @param entryId - the entry to inspect.
+ * @returns the failure text, or `undefined` for a running or disabled entry.
+ */
+export async function entryFailure(loader: LoaderEntries, entryId: string): Promise<string | undefined> {
+  const entry = loader.resolve(entryId)
+  if (entry.disabled) return undefined
+  if (!entry.fiber) {
+    try {
+      await loader.import(entry.options.name)
+      return `${entry.options.name} never started`
+    } catch (error) {
+      return String(error)
+    }
+  }
+  try {
+    await entry.fiber.await()
+    return undefined
+  } catch (error) {
+    return String(error)
+  }
 }

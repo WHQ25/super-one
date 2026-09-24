@@ -20,7 +20,7 @@ class ToolCallAdapter extends LlmAdapter {
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     const transcript = JSON.stringify(options.messages)
     const calls = [...transcript.matchAll(/CALL ([\w-]+) (\{.*?\})(?=["\\])/g)]
-    const answered = transcript.split('"tool-result"').length - 1
+    const answered = transcript.split('"role":"tool"').length - 1
     const call = calls.length > answered ? calls[calls.length - 1] : undefined
     if (!call) {
       yield { type: 'block-start', index: 0, blockType: 'text' }

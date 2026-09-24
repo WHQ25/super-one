@@ -11,6 +11,7 @@ import log from '../logger'
 import { readAppSettings } from '../app-settings-service'
 import { DEEPSEEK_CREDENTIAL_REF, resolveDeepseekApiKey } from './deepseek-credentials'
 import { stopTrackingDshMcpConfig } from './deepseek-mcp-sync'
+import { ensurePtcNodeLauncher } from './deepseek-ptc-launcher'
 
 /** The preset a session composes with when the user has not picked one. */
 export const DEFAULT_DSH_AGENT_PRESET = 'standard'
@@ -38,23 +39,19 @@ export const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-pro'
 /**
  * The routes SuperOne offers, and what they accept.
  *
- * `inputModalities` is the one field with teeth: `llm-deepseek` reads it both
- * when serializing a request and when SuperOne decides whether a composer
- * attachment may be admitted at all (`DeepseekRuntime.imageBlocksFor`). The two
- * text-only entries stay text-only because DeepSeek's chat-completions
- * reference still describes their user content as text; upstream treats an
- * uncatalogued endpoint the same way, so the omission is the accurate answer
- * rather than a TODO.
+ * Mirrors `llm-deepseek`'s own default catalog, because SuperOne passes an
+ * explicit `models` list (for display names) and therefore never inherits the
+ * adapter's defaults. Since 0.1.5 that catalog is V4.1 `deepseek-flash` —
+ * text and image input, with the system prompt kept in history so a prompt
+ * change does not invalidate the provider cache — beside `deepseek-v4-pro`.
+ * The retired `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` ids still
+ * pass through for existing sessions, as text-only routes.
  *
- * The vision route is upstream's own catalog entry, mirrored here because
- * SuperOne passes an explicit `models` list and therefore never inherits the
- * adapter's defaults. Its per-request pixel and byte budgets are deliberately
- * left off: omitted, `llm-deepseek` fills in exactly the values its own default
- * entry carries, so restating them here would only be a second copy to drift.
- *
- * `-exp` is the provider's own suffix, not ours. It is an experimental route
- * DeepSeek may withdraw, which is why it is offered beside the stable pair
- * instead of replacing either.
+ * `inputModalities` is the field with teeth: `llm-deepseek` reads it both when
+ * serializing a request and when SuperOne decides whether a composer
+ * attachment may be admitted at all (`DeepseekRuntime.imageBlocksFor`). Image
+ * pixel and byte budgets are deliberately left off: omitted, the adapter fills
+ * in exactly the values its own default entry carries.
  *
  * No entry declares `contextWindow`, on purpose. Nothing in the DeepSeek API
  * reports capacity, so whatever is written here IS the number — and it is not
@@ -68,11 +65,11 @@ export const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-pro'
  */
 export const DEEPSEEK_MODEL_CATALOG = [
   { id: DEEPSEEK_DEFAULT_MODEL, name: 'DeepSeek V4 Pro' },
-  { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' },
   {
-    id: 'deepseek-v4-flash-vision-exp',
-    name: 'DeepSeek V4 Flash Vision (Exp)',
+    id: 'deepseek-flash',
+    name: 'DeepSeek V4.1 Flash',
     inputModalities: ['text', 'image'],
+    systemPromptUpdate: 'in-history',
   },
 ] as const satisfies DeepseekAdapterOptions['models']
 
@@ -118,12 +115,12 @@ export async function reconcileDshPlugins(): Promise<void> {
 }
 
 /**
- * The shipped agent-preset root — the `system`-trust half of the roster.
+ * The directory holding the shipped agent-preset declarations — the whole
+ * roster.
  *
  * Not optional in production: since the model-facing tool rows live in the
- * preset compositions, a tree booted without this root reaches the model with
- * no dsh tools at all. `dsh-agent-presets` appends `<dshHome>/.agent-presets`
- * as the writable root on top of it.
+ * preset compositions, a tree booted without it reaches the model with no dsh
+ * tools at all.
  */
 export function shippedPresetRoot(): string {
   return is.dev
@@ -133,7 +130,13 @@ export function shippedPresetRoot(): string {
 
 export function getDeepseekRuntime(): Promise<DeepseekRuntime> {
   if (!runtimePromise) {
-    runtimePromise = DeepseekRuntime.create({
+    runtimePromise = (async () => DeepseekRuntime.create({
+      // `run_code` and workflows start a fresh Node; inside Electron that has
+      // to be the app binary in Node mode (see `ensurePtcNodeLauncher`).
+      ptcNodeExecutable: await ensurePtcNodeLauncher(
+        join(app.getPath('userData'), 'dsh-runtime'),
+        process.execPath,
+      ),
       // Harness identity stays on; SuperOne additions ride the persona field
       // (docs/draft/deepseek-harness-integration.md §12.1).
       persona: '',
@@ -145,7 +148,7 @@ export function getDeepseekRuntime(): Promise<DeepseekRuntime> {
       // model route would be sent. It sits under `userData` for the same reason
       // the session logs do — the app directory is read-only once packaged.
       attachmentHome: join(app.getPath('userData'), 'deepseek-attachments'),
-      presetRoots: [shippedPresetRoot()],
+      presetRoot: shippedPresetRoot(),
       defaultPreset: DEFAULT_DSH_AGENT_PRESET,
       pluginRoot: dshPluginRoot(),
       onPluginMount: (report) => {
@@ -175,7 +178,7 @@ export function getDeepseekRuntime(): Promise<DeepseekRuntime> {
         // No owner (session closed mid-question) fails closed.
         return decision ? await decision : 'rejected'
       },
-    }).catch((error: unknown) => {
+    }))().catch((error: unknown) => {
       runtimePromise = null
       log.error('[deepseek] runtime boot failed', error)
       throw error

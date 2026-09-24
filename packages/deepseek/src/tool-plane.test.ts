@@ -19,7 +19,7 @@ class ToolCallAdapter extends LlmAdapter {
     const transcript = JSON.stringify(options.messages)
     const call = /CALL (\w+) (\{.*?\})(?=["\\])/.exec(transcript)
     // A tool result already in the transcript means this step closes the turn.
-    if (!call || transcript.includes('"tool-result"')) {
+    if (!call || transcript.includes('"role":"tool"')) {
       yield { type: 'block-start', index: 0, blockType: 'text' }
       yield { type: 'text-delta', index: 0, text: 'done' }
       yield { type: 'block-end', index: 0, block: { type: 'text', text: 'done' } }

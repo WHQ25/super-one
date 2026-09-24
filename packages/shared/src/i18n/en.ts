@@ -138,7 +138,7 @@ export type Messages = {
     locked: string
     presets: {
       standard: { name: string; description: string }
-      code: { name: string; description: string }
+      ptc: { name: string; description: string }
       minimal: { name: string; description: string }
       cordis: { name: string; description: string }
     }
@@ -4024,15 +4024,15 @@ export const en: Messages = {
         description:
           'Full-featured coding agent with file editing, shell, file and web search, skills, planning, goals, subagents, and workflows.',
       },
-      code: {
+      ptc: {
         name: 'PTC',
         description:
-          'All Standard capabilities, with tools exposed through Code Mode SDK so the model can compose multi-step operations in one TypeScript program.',
+          'All Standard capabilities, with tools exposed as a TypeScript API so the model can compose multi-step operations in one sandboxed program.',
       },
       minimal: {
         name: 'Minimal',
         description:
-          'Minimal coding agent with only persistent Bash and str_replace_editor tools.',
+          'Minimal coding agent with a single persistent shell tool.',
       },
       cordis: {
         name: 'Creator',

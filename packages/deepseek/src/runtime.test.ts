@@ -15,7 +15,7 @@ class MockAdapter extends LlmAdapter {
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     expect(JSON.stringify(options)).toContain(JSON.stringify(SUPERONE_SYSTEM_PROMPT_APPEND).slice(1, -1))
     const allText = JSON.stringify(options.messages)
-    if (allText.includes('tool-result')) {
+    if (allText.includes('"role":"tool"')) {
       yield { type: 'block-start', index: 0, blockType: 'text' }
       yield { type: 'text-delta', index: 0, text: 'tool done' }
       yield { type: 'block-end', index: 0, block: { type: 'text', text: 'tool done' } }

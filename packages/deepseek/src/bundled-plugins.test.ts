@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -14,28 +14,22 @@ afterEach(async () => {
 describe('bundled dsh plugin catalog', () => {
   it('combines core plugins with the shipped presets that reference each plugin', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-bundled-plugins-'))
-    for (const preset of ['standard', 'code']) {
-      await mkdir(join(root, preset))
+    const declaration = (id: string) =>
+      `- insert:\n    - id: preset-${id}\n      name: '@deepseek-ai/dsh-agent-preset'\n      config:\n        id: ${id}\n        plugins:\n          - id: todo\n            name: '@deepseek-ai/dsh-tool-todo'\n`
+    for (const preset of ['standard', 'ptc']) {
+      await writeFile(join(root, `${preset}.patch.yml`), declaration(preset))
     }
-    await writeFile(
-      join(root, 'standard', 'agent.cordis.yml'),
-      "- id: todo\n  name: '@deepseek-ai/dsh-tool-todo'\n",
-    )
-    await writeFile(
-      join(root, 'code', 'agent.cordis.yml'),
-      "- id: todo\n  name: '@deepseek-ai/dsh-tool-todo'\n",
-    )
 
     const plugins = await listBundledDshPlugins(root)
 
     expect(plugins).toContainEqual({
       name: '@deepseek-ai/dsh-tool-todo',
-      version: '0.1.1-rc.2',
-      scopes: ['code', 'standard'],
+      version: '0.1.7-rc.1',
+      scopes: ['ptc', 'standard'],
     })
     expect(plugins).toContainEqual({
       name: '@deepseek-ai/dsh-agent-loop',
-      version: '0.1.1-rc.2',
+      version: '0.1.7-rc.1',
       scopes: ['core'],
     })
   })
@@ -56,9 +50,9 @@ describe('bundled dsh plugin catalog', () => {
 
     expect(plugins.length).toBeGreaterThan(40)
     expect(plugins).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: '@deepseek-ai/dsh-tool-todo', scopes: ['code', 'cordis', 'standard'] }),
+      expect.objectContaining({ name: '@deepseek-ai/dsh-tool-todo', scopes: ['cordis', 'ptc', 'standard'] }),
       expect.objectContaining({ name: '@deepseek-ai/dsh-tool-cordis', scopes: ['cordis'] }),
-      expect.objectContaining({ name: '@deepseek-ai/dsh-tool-str-replace-editor', scopes: ['minimal'] }),
+      expect.objectContaining({ name: '@deepseek-ai/dsh-tool-bash-persistent', scopes: ['minimal'] }),
     ]))
     for (const plugin of plugins) {
       const packageName = plugin.name.match(/^@deepseek-ai\/[^/]+/)?.[0]

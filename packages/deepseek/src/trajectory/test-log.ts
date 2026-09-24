@@ -18,7 +18,9 @@ export function log(entries: Array<[SessionEvent['type'], unknown, number?]>): S
     type,
     seq: index,
     time: time ?? 1_000 + index * 10,
-    data,
+    // Every committed assistant message embeds its timed stream; a case that
+    // does not care about timing gets an empty one.
+    data: type === 'assistant/message' ? { stream: [], ...(data as object) } : data,
   })) as SessionEvent[]
 }
 
@@ -48,9 +50,11 @@ export function toolResult(callId: string, text: string) {
     step: 0,
     message: {
       id: 'm',
-      role: 'user',
+      role: 'tool',
       source: { kind: 'tool', callId },
-      content: [{ type: 'tool-result', toolCallId: callId, isError: false, content: [{ type: 'text', text }] }],
+      toolCallId: callId,
+      isError: false,
+      content: [{ type: 'text', text }],
     },
   }
 }
@@ -58,6 +62,18 @@ export function toolResult(callId: string, text: string) {
 /** A header with one tool, so schema lookup has something to resolve. */
 export const HEADER = {
   config: { provider: 'deepseek', model: 'deepseek-chat', temperature: 0.2 },
-  system: 'you are helpful',
   tools: [{ name: 'read', description: 'read a file', parameters: { type: 'object' } }],
+}
+
+/**
+ * The system prompt as dsh logs it: its own event ahead of the header.
+ * @param text - the rendered prompt.
+ * @returns the event data.
+ */
+export function systemMessage(text: string) {
+  return {
+    turn: 0,
+    step: 0,
+    message: { id: 'sys', role: 'system', source: { kind: 'system-prompt' }, content: [{ type: 'text', text }] },
+  }
 }

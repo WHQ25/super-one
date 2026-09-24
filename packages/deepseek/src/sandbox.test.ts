@@ -14,7 +14,7 @@ class ToolCallAdapter extends LlmAdapter {
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     const transcript = JSON.stringify(options.messages)
     const call = /CALL (\w+) (\{.*?\})(?=["\\])/.exec(transcript)
-    if (!call || transcript.includes('"tool-result"')) {
+    if (!call || transcript.includes('"role":"tool"')) {
       yield { type: 'block-start', index: 0, blockType: 'text' }
       yield { type: 'text-delta', index: 0, text: 'done' }
       yield { type: 'block-end', index: 0, block: { type: 'text', text: 'done' } }

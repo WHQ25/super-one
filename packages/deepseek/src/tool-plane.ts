@@ -4,6 +4,7 @@ import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
 import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
 import SandboxedFileSystem from '@deepseek-ai/dsh-fs-sandbox'
 import SandboxBashExecutor from '@deepseek-ai/dsh-bash-sandbox'
+import NodePtcRuntime from '@deepseek-ai/dsh-ptc-runtime-node'
 import * as ShellEnv from '@deepseek-ai/dsh-shell-env'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
 import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
@@ -87,7 +88,17 @@ const DENIAL_REASONS: Record<Exclude<ToolApprovalDecision, 'allowed-once'>, (too
  * `tool-fs` passes the calling agent's `session.header.cwd` into
  * `ctx.fs.resolve()`, and `tool-bash` defaults `workdir` the same way.
  */
-export async function mountHostToolPlane(ctx: Context): Promise<void> {
+export interface HostToolPlaneOptions {
+  /**
+   * The Node executable `run_code` programs and workflows start in. Omitted
+   * means the current process's own executable — right under plain Node, wrong
+   * inside Electron, where the host supplies a launcher (see the desktop's
+   * `ptcNodeExecutable`).
+   */
+  ptcNodeExecutable?: string
+}
+
+export async function mountHostToolPlane(ctx: Context, options: HostToolPlaneOptions = {}): Promise<void> {
   await ctx.plugin(LocalSubprocessRuntime)
   // The confinement tier, mounted before its consumers. `sandbox-local` picks
   // the platform runner (Seatbelt on macOS, bwrap/Landlock on Linux, a
@@ -104,6 +115,12 @@ export async function mountHostToolPlane(ctx: Context): Promise<void> {
   await ctx.plugin(SandboxedFileSystem, {})
   await ctx.plugin(SandboxBashExecutor, {})
   await ctx.plugin(ShellEnv, {})
+  // Programmatic tool calling: `run_code` and workflows run in a fresh Node
+  // process confined by the same sandbox as bash. Host-plane because the
+  // presets' `workflow-ptc` rows resolve it from outside their own realm.
+  await ctx.plugin(NodePtcRuntime, {
+    ...(options.ptcNodeExecutable !== undefined ? { nodeExecutable: options.ptcNodeExecutable } : {}),
+  })
 }
 
 /**

@@ -65,8 +65,8 @@ const MODELS: ModelOption[] = [
 
 const PRESETS: DeepseekPresetRoster = {
   presets: [
-    { id: 'standard', name: '标准模式', description: '标准模式说明', trust: 'system', order: 1, broken: null },
-    { id: 'minimal', name: '极简模式', description: '极简模式说明', trust: 'system', order: 2, broken: null },
+    { id: 'standard', name: '标准模式', description: '标准模式说明', order: 1, broken: null },
+    { id: 'minimal', name: '极简模式', description: '极简模式说明', order: 2, broken: null },
   ],
   current: null,
   switchable: true,

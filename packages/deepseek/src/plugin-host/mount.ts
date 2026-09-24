@@ -25,7 +25,7 @@ import type { Context } from '@deepseek-ai/cordis'
 // Side-effect type import: merges `loader` onto `Context` so the store read in
 // `loader()` is typed by upstream instead of by a local structural shape.
 import type {} from '@deepseek-ai/cordis-plugin-loader'
-import type { LoaderEntries } from '../cordis-loader'
+import { entryFailure, type LoaderEntries } from '../cordis-loader'
 import { enabledPlugins, readPluginRegistry, resolvePluginEntryUrl, type DshPluginRow } from './registry'
 import { registerDshPluginRoot } from './resolver'
 
@@ -99,7 +99,7 @@ export class DeepseekPlugins {
       if (wantedIds.has(id)) continue
       this.mounts.delete(id)
       try {
-        await loader.remove(mount.entryId)
+        loader.remove(mount.entryId)
       } catch {
         // A row that will not unmount is worse left half-tracked than forgotten;
         // the next sync re-derives from the registry either way.
@@ -107,6 +107,8 @@ export class DeepseekPlugins {
     }
 
     const outcomes: PluginMountOutcome[] = []
+    /** Rows handed to the loader this pass, checked once it has settled. */
+    const started: Array<{ outcome: PluginMountOutcome; entryId: string }> = []
     for (const row of wanted) {
       const url = this.root === undefined ? null : resolvePluginEntryUrl(this.root, row.name)
       if (url === null) {
@@ -119,29 +121,40 @@ export class DeepseekPlugins {
         outcomes.push({ row, status: 'mounted' })
         continue
       }
+      const outcome: PluginMountOutcome = { row, status: 'mounted' }
+      outcomes.push(outcome)
       try {
         if (mount) {
           // Config-only change: an in-place restart of that row, the same reason
           // `DeepseekMcpServers` prefers update over dispose-then-remount.
           await loader.update(mount.entryId, { config: row.config })
           mount.fingerprint = fingerprint
+          started.push({ outcome, entryId: mount.entryId })
         } else {
           const entryId = await loader.create({ id: entryIdFor(row), name: url, config: row.config })
           this.mounts.set(row.id, { entryId, fingerprint })
+          started.push({ outcome, entryId })
         }
-        outcomes.push({ row, status: 'mounted' })
       } catch (error) {
         this.mounts.delete(row.id)
-        outcomes.push({ row, status: 'failed', reason: String(error) })
+        outcome.status = 'failed'
+        outcome.reason = String(error)
       }
     }
 
     // Entries import and start asynchronously; settle them so a caller that
-    // creates an agent next sees the full tool surface.
-    try {
-      await loader.await()
-    } catch {
-      // Individual failures are already reported per row above.
+    // creates an agent next sees the full tool surface. The loader no longer
+    // rejects for a row that failed, so each row is asked for its own fate.
+    await loader.await()
+    for (const { outcome, entryId } of started) {
+      const reason = await entryFailure(loader, entryId)
+      if (reason === undefined) continue
+      // Forgotten rather than tracked, so the next sync retries it instead of
+      // treating an unchanged fingerprint as already mounted.
+      this.mounts.delete(outcome.row.id)
+      loader.remove(entryId)
+      outcome.status = 'failed'
+      outcome.reason = reason
     }
 
     return registry.problem === undefined
@@ -156,7 +169,7 @@ export class DeepseekPlugins {
       this.mounts.delete(id)
       if (!loader) continue
       try {
-        await loader.remove(mount.entryId)
+        loader.remove(mount.entryId)
       } catch {
         // Disposal is best-effort; the tree is going away regardless.
       }

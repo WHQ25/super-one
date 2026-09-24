@@ -1217,7 +1217,6 @@ export interface EnvironmentAPI {
       sessionId: string
       projectPath?: string
       providerId?: string
-      settleAfterInteractionId?: string
       timeoutMs?: number
     },
   ): Promise<unknown>

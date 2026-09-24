@@ -237,8 +237,8 @@ export async function respondToPermissionImpl(
     if (remote && targetSid) {
       const decisionValue: 'allow' | 'deny' | 'allow_always' =
         decision === 'cancel' ? 'deny' : alwaysAllow ? 'allow_always' : allow ? 'allow' : 'deny'
-      // continueDrain keeps mapping session.events → agentEventSink so tool_use
-      // blocks after allow are not lost (sendSessionMessage already returned).
+      // continueDrain joins (or, after a reload, re-owns) the session's event drain
+      // so tool_use blocks after allow keep streaming.
       // formAnswers carries multi-launch edits (session_agents_confirm).
       void window.environment
         .respondSessionPermission(remote.connectionId, {
@@ -445,7 +445,7 @@ export function answerQuestionImpl(
     const remote = parseRemoteProjectKey(activeProject)
     if (remote) {
       // Do not clear pendingQuestion until the node ACK succeeds (issue #21).
-      // continueDrain restarts event polling only after both lease + respond win.
+      // continueDrain joins the session's event drain only after both lease + respond win.
       const flightKey = remoteQuestionFlightKey(activeProject, targetSid, requestId)
       if (remoteQuestionInFlight.has(flightKey)) return
       remoteQuestionInFlight.add(flightKey)

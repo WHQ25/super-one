@@ -1690,10 +1690,13 @@ export class EnvironmentHost {
   }
 
   /**
-   * Drain durable session events into agentEventSink until the turn settles
-   * or a pending interaction appears (unless settleAfterInteractionId continues).
+   * Drain durable session events into agentEventSink until the turn settles.
    *
    * Ownership model (local parity): one continuous stream owner per session.
+   * A pending interaction does not end the drain: the node can resolve it
+   * without this client (timeout, another client answering), and stopping
+   * there strands the rest of the turn — its output and message_complete —
+   * with no one mapping it.
    * No hard wall-clock timeout while status is `streaming` — long turns keep
    * mapping like a local Session push. Optional timeoutMs only bounds stalled
    * polls when the caller explicitly requests it (e.g. short interrupt settle).
@@ -1706,12 +1709,6 @@ export class EnvironmentHost {
       providerId?: string
       /** Skip user_message mapping (send path already added the bubble). */
       skipUserMessage?: boolean
-      /**
-       * When set, treat a *different* pending interactionId as settled stop
-       * (post-permission: wait until this request clears or is replaced).
-       * When `'none'`, never stop early for pending — keep streaming through.
-       */
-      settleAfterInteractionId?: string | 'none'
       /**
        * Optional absolute deadline. Default: no deadline while streaming
        * (local Session turns can run for hours).
@@ -1755,7 +1752,6 @@ export class EnvironmentHost {
       projectPath?: string
       providerId?: string
       skipUserMessage?: boolean
-      settleAfterInteractionId?: string | 'none'
       timeoutMs?: number
       establishCursor?: boolean
     },
@@ -1840,29 +1836,10 @@ export class EnvironmentHost {
         continue
       }
 
-      const snap = last as {
-        status?: string
-        pendingInteraction?: { interactionId?: string } | null
-      } | null
-      const status = snap?.status
-      const pendingId = snap?.pendingInteraction?.interactionId
-
+      const status = (last as { status?: string } | null)?.status
       if (status && status !== 'streaming') {
         await drainEvents()
         return last
-      }
-
-      if (pendingId && input.settleAfterInteractionId !== 'none') {
-        // During send: any pending interaction is a stop for the caller to respond.
-        // After permission respond: stop only when the answered id is gone or replaced.
-        if (!input.settleAfterInteractionId) {
-          await drainEvents()
-          return last
-        }
-        if (pendingId !== input.settleAfterInteractionId) {
-          await drainEvents()
-          return last
-        }
       }
 
       await new Promise((r) => setTimeout(r, 80))
@@ -2018,6 +1995,8 @@ export class EnvironmentHost {
   /**
    * Resume live event mapping for a remote session that is still streaming
    * (reconnect / open while turn runs / post-permission). Does not send.
+   * Joins the session's active drain instead of replacing it: an aborted drain
+   * would resolve its caller (the send) with a mid-turn snapshot.
    */
   async resumeRemoteSessionEvents(
     connectionId: string,
@@ -2025,13 +2004,7 @@ export class EnvironmentHost {
       sessionId: string
       projectPath?: string
       providerId?: string
-      settleAfterInteractionId?: string
       timeoutMs?: number
-      /**
-       * When true (post-permission/question/plan), replace any idle-at-pending
-       * drain so settleAfterInteractionId is honored.
-       */
-      forceRestart?: boolean
     },
   ): Promise<unknown> {
     return this.drainRemoteSessionEvents(connectionId, {
@@ -2039,11 +2012,8 @@ export class EnvironmentHost {
       projectPath: input.projectPath,
       providerId: input.providerId,
       skipUserMessage: true,
-      settleAfterInteractionId: input.settleAfterInteractionId,
       timeoutMs: input.timeoutMs,
       establishCursor: true,
-      // After interaction respond, always start a fresh follow with the new settle rule.
-      forceRestart: input.forceRestart ?? Boolean(input.settleAfterInteractionId),
     })
   }
 
@@ -2189,7 +2159,6 @@ export class EnvironmentHost {
       sessionId: input.sessionId,
       projectPath: input.continueDrain.projectPath,
       providerId: input.continueDrain.providerId,
-      settleAfterInteractionId: input.interactionId,
       timeoutMs: input.continueDrain.timeoutMs,
     })
   }
@@ -2221,7 +2190,6 @@ export class EnvironmentHost {
       sessionId: input.sessionId,
       projectPath: input.continueDrain.projectPath,
       providerId: input.continueDrain.providerId,
-      settleAfterInteractionId: input.interactionId,
       timeoutMs: input.continueDrain.timeoutMs,
     })
   }
@@ -2255,7 +2223,6 @@ export class EnvironmentHost {
       sessionId: input.sessionId,
       projectPath: input.continueDrain.projectPath,
       providerId: input.continueDrain.providerId,
-      settleAfterInteractionId: input.interactionId,
       timeoutMs: input.continueDrain.timeoutMs,
     })
   }

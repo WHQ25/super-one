@@ -723,7 +723,6 @@ const environmentAPI = {
       sessionId: string
       projectPath?: string
       providerId?: string
-      settleAfterInteractionId?: string
       timeoutMs?: number
     },
   ) =>

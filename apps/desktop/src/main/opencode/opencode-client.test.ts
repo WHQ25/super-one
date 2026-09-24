@@ -150,9 +150,9 @@ describe('opencode-client', () => {
     expect(OPENCODE_SERVE_ARGS).toEqual(['serve', '--hostname=127.0.0.1', '--port=0'])
   })
 
-  it('orphan reaper is a no-op when no matching PPID=1 serve exists', () => {
+  it('orphan reaper is a no-op when no matching PPID=1 serve exists', async () => {
     // Should not throw; typically 0 unless a prior SuperOne leak is present.
-    const killed = reapOrphanOpenCodeServers()
+    const killed = await reapOrphanOpenCodeServers()
     expect(typeof killed).toBe('number')
     expect(killed).toBeGreaterThanOrEqual(0)
   })

@@ -1,7 +1,8 @@
 import { ensureShellPath } from '../shell-path'
 import { attachmentPrompt, buildAttachmentTurn } from '@superone/shared/attachment-turn'
 import { validateTurnAttachments } from '@superone/shared/attachment-validation'
-import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'child_process'
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'child_process'
+import { promisify } from 'util'
 import { existsSync } from 'fs'
 import { homedir } from 'os'
 import { delimiter, join } from 'path'
@@ -526,12 +527,13 @@ export async function closeAllOpenCodeServers(): Promise<void> {
  * by older builds that used detached:true. Matches only our exact argv so a
  * user-started OpenCode TUI is never touched.
  */
-export function reapOrphanOpenCodeServers(): number {
+/** Async: `ps` costs ~50ms, and nothing this launch spawns can match (their parent is us). */
+export async function reapOrphanOpenCodeServers(): Promise<number> {
   if (process.platform === 'win32') return 0
   const marker = OPENCODE_SERVE_ARGS.join(' ')
   let killed = 0
   try {
-    const out = execFileSync('ps', ['-axo', 'pid=,ppid=,command='], {
+    const { stdout: out } = await promisify(execFile)('ps', ['-axo', 'pid=,ppid=,command='], {
       encoding: 'utf8',
       maxBuffer: 4 * 1024 * 1024,
     })

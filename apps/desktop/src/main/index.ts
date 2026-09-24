@@ -5755,8 +5755,9 @@ app.whenReady().then(async () => {
   }
 
   // Older builds spawned detached `opencode serve` processes that survived force-quit.
-  const reaped = reapOrphanOpenCodeServers()
-  if (reaped > 0) log.info('[startup] reaped %d orphan opencode serve process(es)', reaped)
+  void reapOrphanOpenCodeServers().then((reaped) => {
+    if (reaped > 0) log.info('[startup] reaped %d orphan opencode serve process(es)', reaped)
+  })
 
   currentThemeMode = readAppSettings().themeMode
   syncNativeAppearance()

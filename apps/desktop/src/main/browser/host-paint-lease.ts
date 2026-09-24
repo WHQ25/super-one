@@ -19,20 +19,31 @@ const RESTORE_CAPTURE_TIMEOUT_MS = 2_000
 
 const holders = new WeakMap<WebContents, number>()
 
-export async function withHostPainting<T>(win: BrowserWindow, run: () => Promise<T>): Promise<T> {
+/** Take a lease; the returned release is idempotent. */
+export function holdHostPainting(win: BrowserWindow): () => void {
   const contents = win.webContents
   const held = holders.get(contents) ?? 0
   holders.set(contents, held + 1)
   if (held === 0) contents.setBackgroundThrottling(false)
-  try {
-    return await run()
-  } finally {
+  let released = false
+  return () => {
+    if (released) return
+    released = true
     const remaining = (holders.get(contents) ?? 1) - 1
     if (remaining > 0) holders.set(contents, remaining)
     else {
       holders.delete(contents)
       if (!win.isDestroyed()) restoreThrottling(win)
     }
+  }
+}
+
+export async function withHostPainting<T>(win: BrowserWindow, run: () => Promise<T>): Promise<T> {
+  const release = holdHostPainting(win)
+  try {
+    return await run()
+  } finally {
+    release()
   }
 }
 

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('../logger', () => ({ default: { warn: vi.fn() } }))
 
 import type { BrowserWindow } from 'electron'
-import { withHostPainting } from './host-paint-lease'
+import { holdHostPainting, withHostPainting } from './host-paint-lease'
 
 function fakeWindow({ focused = false } = {}) {
   const throttling: boolean[] = []
@@ -51,6 +51,19 @@ describe('withHostPainting', () => {
 
     await expect(withHostPainting(win, async () => { throw new Error('capture failed') })).rejects.toThrow('capture failed')
 
+    expect(throttling).toEqual([false, true])
+  })
+
+  it('counts a held lease once however often it is released', () => {
+    const { win, throttling } = fakeWindow()
+    const first = holdHostPainting(win)
+    const second = holdHostPainting(win)
+
+    first()
+    first()
+    expect(throttling).toEqual([false])
+
+    second()
     expect(throttling).toEqual([false, true])
   })
 

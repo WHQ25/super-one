@@ -4,7 +4,7 @@ import { AgentIpcChannels } from '@superone/shared/agent-types'
 import log from '../logger'
 import { currentHostActionConnection } from '../mcp/artifact-registry'
 import { rememberTabDriver } from './browser-tab-drivers'
-import { withHostPainting } from './host-paint-lease'
+import { holdHostPainting, withHostPainting } from './host-paint-lease'
 
 export type BrowserAutomationOp =
   | 'snapshot'
@@ -50,8 +50,41 @@ export function initBrowserAutomation(windowGetter: () => BrowserWindow | null):
   getMainWindow = windowGetter
 }
 
-/** Ops that read the guest's pixels, which only exist while the app window composites. */
-const HOST_PAINTING_OPS: ReadonlySet<BrowserAutomationOp> = new Set(['screenshot'])
+/**
+ * A recording reads the guest's pixels from recordStart until recordStop, so the
+ * app window keeps compositing for that whole span (see host-paint-lease). The
+ * renderer caps a recording at 60s; the timer releases a lease whose recordStop
+ * never arrives.
+ */
+const RECORDING_LEASE_MAX_MS = 70_000
+const recordingLeases = new Map<string, { release: () => void; timer: ReturnType<typeof setTimeout> }>()
+
+function releaseRecordingLease(recordingId: unknown): void {
+  if (typeof recordingId !== 'string') return
+  const lease = recordingLeases.get(recordingId)
+  if (!lease) return
+  recordingLeases.delete(recordingId)
+  clearTimeout(lease.timer)
+  lease.release()
+}
+
+async function startRecording(win: BrowserWindow, call: () => Promise<unknown>): Promise<unknown> {
+  const release = holdHostPainting(win)
+  try {
+    const started = await call()
+    const recordingId = (started as { recordingId?: unknown } | null)?.recordingId
+    if (typeof recordingId !== 'string') {
+      release()
+      return started
+    }
+    const timer = setTimeout(() => releaseRecordingLease(recordingId), RECORDING_LEASE_MAX_MS)
+    recordingLeases.set(recordingId, { release, timer })
+    return started
+  } catch (error) {
+    release()
+    throw error
+  }
+}
 
 export function browserAutomationCall(sessionId: string, op: BrowserAutomationOp, input: unknown): Promise<unknown> {
   const win = getMainWindow?.()
@@ -59,7 +92,17 @@ export function browserAutomationCall(sessionId: string, op: BrowserAutomationOp
     return Promise.reject(new Error('No renderer window available for browser automation'))
   }
   const call = () => dispatchBrowserAutomation(win, sessionId, op, input)
-  return HOST_PAINTING_OPS.has(op) ? withHostPainting(win, call) : call()
+  // Ops that read the guest's pixels, which only exist while the app window composites.
+  switch (op) {
+    case 'screenshot':
+      return withHostPainting(win, call)
+    case 'recordStart':
+      return startRecording(win, call)
+    case 'recordStop':
+      return call().finally(() => releaseRecordingLease((input as { recordingId?: unknown } | null)?.recordingId))
+    default:
+      return call()
+  }
 }
 
 function dispatchBrowserAutomation(

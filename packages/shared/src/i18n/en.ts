@@ -1272,6 +1272,17 @@ export type Messages = {
         error: string
       }
       sections: { project: string; user: string }
+      /** DeepSeek: which models the agent may pick when it starts a subagent. */
+      dshSubagentModels: {
+        section: string
+        label: string
+        description: string
+        modelsLabel: string
+        modelsDescription: string
+        loading: string
+        empty: string
+        noneSelected: string
+      }
       /** Empty state when Codex preferences has no project-scoped fields. */
       projectEmptyCodex: string
       defaultProvider: { label: string; description: string }
@@ -5256,6 +5267,16 @@ export const en: Messages = {
         error: 'Import failed',
       },
       sections: { project: 'Project Settings', user: 'User Settings' },
+      dshSubagentModels: {
+        section: 'Subagents',
+        label: 'Choose Subagent Models',
+        description: 'Let the agent pick a model for each subagent it starts. Applies to new sessions.',
+        modelsLabel: 'Allowed Models',
+        modelsDescription: 'The models the agent may choose from.',
+        loading: 'Loading models…',
+        empty: 'No DeepSeek models are available. Check the DeepSeek API key.',
+        noneSelected: 'Select at least one model, or the agent cannot choose one.',
+      },
       projectEmptyCodex: 'Codex has no project-level preferences. Migration and defaults live under User.',
       defaultProvider: {
         label: 'Default Provider',

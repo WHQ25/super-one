@@ -149,6 +149,7 @@ export function getDeepseekRuntime(): Promise<DeepseekRuntime> {
       // the session logs do — the app directory is read-only once packaged.
       attachmentHome: join(app.getPath('userData'), 'deepseek-attachments'),
       presetRoot: shippedPresetRoot(),
+      subagentModelSelection: readAppSettings().dshSubagentModelSelection,
       defaultPreset: DEFAULT_DSH_AGENT_PRESET,
       pluginRoot: dshPluginRoot(),
       onPluginMount: (report) => {
@@ -185,6 +186,16 @@ export function getDeepseekRuntime(): Promise<DeepseekRuntime> {
     })
   }
   return runtimePromise
+}
+
+/**
+ * Push the stored subagent model-selection preference into the running tree.
+ * Built on `peek`: a settings change must not boot dsh; a tree booted later
+ * reads the stored value itself.
+ */
+export async function syncDshSubagentModelSelection(): Promise<void> {
+  const runtime = await peekDeepseekRuntime()
+  await runtime?.setSubagentModelSelection(readAppSettings().dshSubagentModelSelection)
 }
 
 export async function disposeDeepseekRuntime(): Promise<void> {

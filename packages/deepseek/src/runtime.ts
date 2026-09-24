@@ -50,10 +50,12 @@ import { presentQuestions, type DeepseekQuestion } from './user-questions'
 import { fileToolPath, workspaceChangeRows, workspacePath } from './workspace-changes'
 import { DeepseekBackgroundJobs, toolCallSpan, type ToolCallSpan } from './background-work'
 import type {} from '@deepseek-ai/dsh-subagent'
+import type { SubagentModelSelectionSettings } from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 import type {} from '@deepseek-ai/dsh-workspace-changes'
 import {
   createDeepseekTree,
   deepseekAdapterPlugin,
+  updateSubagentModelSelection,
   type DeepseekAdapterOptions,
   type DeepseekTreeOptions,
   type DisposableFiber,
@@ -1274,6 +1276,14 @@ export class DeepseekRuntime {
     if (record.started) throw new Error('deepseek preset: this session has already run a turn')
 
     await roster.select(record.agent, presetId)
+  }
+
+  /**
+   * Change which models the agent may pick per subagent; applies to sessions
+   * composed from now on.
+   */
+  async setSubagentModelSelection(settings: SubagentModelSelectionSettings): Promise<void> {
+    await updateSubagentModelSelection(this.root, settings)
   }
 
   /**

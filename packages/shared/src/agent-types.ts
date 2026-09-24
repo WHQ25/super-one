@@ -2183,6 +2183,8 @@ export interface ModelOption {
   id: string
   name: string
   description: string
+  /** Provider the id routes through, for harnesses that address a model as provider + id (dsh). */
+  provider?: string
   /** Provider-reported maximum context tokens when the harness exposes it. */
   contextWindow?: number
   resolvedModel?: string
@@ -2747,6 +2749,17 @@ export interface DeepseekResources {
   permissionPresets?: Array<{ id: string; name: string; description?: string | null }>
   /** True while a background re-probe is in flight. */
   probing?: boolean
+}
+
+/**
+ * DeepSeek harness: whether the agent may pick a model for each subagent it
+ * starts, and from which routes. Read when a session is composed, so a change
+ * reaches new sessions only.
+ */
+export interface DshSubagentModelSelection {
+  enabled: boolean
+  /** Exact provider/model routes offered; empty means none, even when enabled. */
+  allowedModels: Array<{ provider: string; model: string }>
 }
 
 export interface AcpAgentDescriptor {
@@ -5214,6 +5227,7 @@ export interface AppSettings {
   webmcpEnabled: boolean
   /** WebMCP origin + tool-name grants persisted across app sessions. */
   webmcpTrustedOrigins: WebmcpTrustedOrigin[]
+  dshSubagentModelSelection: DshSubagentModelSelection
   cdpCookiesEnabled: boolean
   cdpMockEnabled: boolean
   cdpEmulateEnabled: boolean
@@ -5376,6 +5390,7 @@ export interface AppSettingsPatch {
   cdpEnabled?: boolean
   webmcpEnabled?: boolean
   webmcpTrustedOrigins?: WebmcpTrustedOrigin[]
+  dshSubagentModelSelection?: DshSubagentModelSelection
   cdpCookiesEnabled?: boolean
   cdpMockEnabled?: boolean
   cdpEmulateEnabled?: boolean

@@ -99,6 +99,7 @@ describe('app-settings-service', () => {
     cdpEnabled: false,
     webmcpEnabled: false,
     webmcpTrustedOrigins: [],
+    dshSubagentModelSelection: { enabled: false, allowedModels: [] },
     computerUseEnabled: false,
     computerUsePictureInPicture: true,
     computerUseDedicatedDisplayId: null,
@@ -139,6 +140,29 @@ describe('app-settings-service', () => {
         { origin: 'https://a.test', tools: { search: 'abc123' } },
         { origin: 'https://b.test', tools: {} },
       ])
+    })
+
+    it('reads the dsh subagent model preference, dropping malformed and repeated routes', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({
+        dshSubagentModelSelection: {
+          enabled: true,
+          allowedModels: [
+            { provider: 'deepseek-official', model: 'deepseek-flash' },
+            { provider: 'deepseek-official', model: 'deepseek-flash' },
+            { provider: '', model: 'x' },
+            { model: 'no-provider' },
+          ],
+        },
+      }))
+      expect(readAppSettings().dshSubagentModelSelection).toEqual({
+        enabled: true,
+        allowedModels: [{ provider: 'deepseek-official', model: 'deepseek-flash' }],
+      })
+    })
+
+    it('reads a malformed dsh subagent model preference as off', () => {
+      mocks.readFileSync.mockReturnValue(JSON.stringify({ dshSubagentModelSelection: 'yes' }))
+      expect(readAppSettings().dshSubagentModelSelection).toEqual({ enabled: false, allowedModels: [] })
     })
 
     it('drops device grants that cannot say which device they cover', () => {
@@ -215,6 +239,7 @@ describe('app-settings-service', () => {
         cdpEnabled: false,
         webmcpEnabled: false,
         webmcpTrustedOrigins: [],
+        dshSubagentModelSelection: { enabled: false, allowedModels: [] },
         computerUseEnabled: false,
         computerUsePictureInPicture: true,
         computerUseDedicatedDisplayId: null,
@@ -370,6 +395,7 @@ describe('app-settings-service', () => {
         cdpEnabled: false,
         webmcpEnabled: false,
         webmcpTrustedOrigins: [],
+        dshSubagentModelSelection: { enabled: false, allowedModels: [] },
         computerUseEnabled: false,
         computerUsePictureInPicture: true,
         computerUseDedicatedDisplayId: null,

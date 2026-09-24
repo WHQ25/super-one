@@ -1363,6 +1363,16 @@ export const zh: Messages = {
         error: '导入失败',
       },
       sections: { project: '项目设置', user: '用户设置' },
+      dshSubagentModels: {
+        section: '子代理',
+        label: '选择子代理模型',
+        description: '允许 Agent 为它启动的每个子代理选择模型。对新会话生效。',
+        modelsLabel: '可选模型',
+        modelsDescription: 'Agent 可以从这些模型中选择。',
+        loading: '正在加载模型…',
+        empty: '没有可用的 DeepSeek 模型，请检查 DeepSeek API 密钥。',
+        noneSelected: '至少选择一个模型，否则 Agent 无法选择。',
+      },
       projectEmptyCodex: 'Codex 没有项目级偏好设置。迁移与默认项都在「用户」下。',
       defaultProvider: {
         label: '默认服务商',

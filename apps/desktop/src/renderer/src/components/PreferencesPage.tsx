@@ -25,6 +25,7 @@ import {
 import { checkAutoModePlanEligibility } from '@/lib/auto-mode-eligibility'
 import type { EffortLevel, PermissionMode, QuestionPreviewFormat, SandboxMode, SettingsProvider } from '@superone/shared/agent-types'
 import { HarnessPreferencesPage, SessionDefaultsSection } from '@/components/preferences/SessionDefaultsSection'
+import { DshSubagentModelsSettings } from '@/components/preferences/DshSubagentModelsSection'
 
 function ClaudePreferencesPage() {
   const { t } = useTranslation()
@@ -330,6 +331,13 @@ export function PreferencesPage({ provider }: { provider?: SettingsProvider } = 
 
   if (settingsProvider === 'codex') return <CodexPreferencesPage />
   if (settingsProvider === 'claude') return <ClaudePreferencesPage />
+  if (settingsProvider === 'dsh') {
+    return (
+      <HarnessPreferencesPage harnessId="dsh">
+        <DshSubagentModelsSettings />
+      </HarnessPreferencesPage>
+    )
+  }
   // Everything else has exactly one app-level setting group — its session
   // defaults — so it renders the shared page rather than a bespoke one.
   return <HarnessPreferencesPage harnessId={settingsProvider} />

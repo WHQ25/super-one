@@ -76,6 +76,9 @@ Every alpha release keeps its own notes on its GitHub Release.
   and shell commands appear in the status bar's background list with a
   Stop button. Stopping the session or archiving it stops its
   background work.
+- Settings → Harnesses → DeepSeek → Preferences can let the agent pick
+  a model for each subagent it starts, limited to the models you allow.
+  Applies to new sessions.
 - Settings: session storage is split into single-action rows.
 - Chat view translates the compaction indicators.
 

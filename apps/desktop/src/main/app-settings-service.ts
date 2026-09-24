@@ -19,6 +19,7 @@ import type {
   SuggestionHarnessPreference,
   ThemeMode,
   WebmcpTrustedOrigin,
+  DshSubagentModelSelection,
 } from '@superone/shared/agent-types'
 import { DEFAULT_NOTIFICATION_SETTINGS, NOTIFICATION_KINDS, normalizeNotificationSettings } from '@superone/shared/notifications'
 import { sanitizeOverrides } from '@superone/shared/harness-brand'
@@ -114,6 +115,7 @@ const defaults: AppSettings = {
   cdpEnabled: false,
   webmcpEnabled: false,
   webmcpTrustedOrigins: [],
+  dshSubagentModelSelection: { enabled: false, allowedModels: [] },
   cdpCookiesEnabled: false,
   cdpMockEnabled: false,
   cdpEmulateEnabled: false,
@@ -414,6 +416,24 @@ function readWebmcpTrustedOrigins(value: unknown): WebmcpTrustedOrigin[] {
   return out
 }
 
+/** Validated, de-duplicated preference; anything malformed reads as off. */
+function readDshSubagentModelSelection(value: unknown): DshSubagentModelSelection {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { enabled: false, allowedModels: [] }
+  const record = value as Record<string, unknown>
+  const allowedModels: DshSubagentModelSelection['allowedModels'] = []
+  const seen = new Set<string>()
+  for (const item of Array.isArray(record.allowedModels) ? record.allowedModels : []) {
+    if (!item || typeof item !== 'object') continue
+    const { provider, model } = item as Record<string, unknown>
+    if (typeof provider !== 'string' || !provider || typeof model !== 'string' || !model) continue
+    const key = `${provider}\u0000${model}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    allowedModels.push({ provider, model })
+  }
+  return { enabled: record.enabled === true, allowedModels }
+}
+
 function readBookmarks(value: unknown): BrowserBookmark[] {
   if (!Array.isArray(value)) return []
   const out: BrowserBookmark[] = []
@@ -628,6 +648,7 @@ export function readAppSettings(): AppSettings {
       cdpEnabled: typeof data.cdpEnabled === 'boolean' ? data.cdpEnabled : defaults.cdpEnabled,
       webmcpEnabled: typeof data.webmcpEnabled === 'boolean' ? data.webmcpEnabled : defaults.webmcpEnabled,
       webmcpTrustedOrigins: readWebmcpTrustedOrigins(data.webmcpTrustedOrigins),
+      dshSubagentModelSelection: readDshSubagentModelSelection(data.dshSubagentModelSelection),
       cdpCookiesEnabled: typeof data.cdpCookiesEnabled === 'boolean' ? data.cdpCookiesEnabled : defaults.cdpCookiesEnabled,
       cdpMockEnabled: typeof data.cdpMockEnabled === 'boolean' ? data.cdpMockEnabled : defaults.cdpMockEnabled,
       cdpEmulateEnabled: typeof data.cdpEmulateEnabled === 'boolean' ? data.cdpEmulateEnabled : defaults.cdpEmulateEnabled,
@@ -709,6 +730,7 @@ export function readAppSettings(): AppSettings {
       cdpEnabled: defaults.cdpEnabled,
       webmcpEnabled: defaults.webmcpEnabled,
       webmcpTrustedOrigins: [],
+      dshSubagentModelSelection: defaults.dshSubagentModelSelection,
       cdpCookiesEnabled: defaults.cdpCookiesEnabled,
       cdpMockEnabled: defaults.cdpMockEnabled,
       cdpEmulateEnabled: defaults.cdpEmulateEnabled,
@@ -837,6 +859,9 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     webmcpTrustedOrigins: patch.webmcpTrustedOrigins === undefined
       ? current.webmcpTrustedOrigins
       : readWebmcpTrustedOrigins(patch.webmcpTrustedOrigins),
+    dshSubagentModelSelection: patch.dshSubagentModelSelection === undefined
+      ? current.dshSubagentModelSelection
+      : readDshSubagentModelSelection(patch.dshSubagentModelSelection),
     cdpCookiesEnabled: patch.cdpCookiesEnabled === undefined ? current.cdpCookiesEnabled : patch.cdpCookiesEnabled,
     cdpMockEnabled: patch.cdpMockEnabled === undefined ? current.cdpMockEnabled : patch.cdpMockEnabled,
     cdpEmulateEnabled: patch.cdpEmulateEnabled === undefined ? current.cdpEmulateEnabled : patch.cdpEmulateEnabled,

@@ -966,6 +966,12 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
       // ignore if computer-use module not loaded
     }
   }
+  if (patch?.dshSubagentModelSelection !== undefined) {
+    const { syncDshSubagentModelSelection } = await import('./deepseek/deepseek-runtime-host')
+    await syncDshSubagentModelSelection().catch((error: unknown) => {
+      log.warn('[deepseek] subagent model selection sync failed', error)
+    })
+  }
   if (patch?.webmcpTrustedOrigins !== undefined) {
     try {
       const { syncWebMcpTrustFromSettings } = await import('./mcp/webmcp-trust')
@@ -4989,6 +4995,7 @@ function registerIpcHandlers(): void {
             id: model.id,
             name: model.name,
             description: model.provider,
+            provider: model.provider,
             isDefault: model.id === DEEPSEEK_DEFAULT_MODEL,
             ...(supportedEffortLevels.length > 0
               ? { supportsEffort: true, supportedEffortLevels }

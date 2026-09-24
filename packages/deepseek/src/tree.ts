@@ -22,7 +22,6 @@ import * as CheckpointPolicy from '@deepseek-ai/dsh-session-checkpoint-policy'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawnInProcess from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as SubagentForkInProcess from '@deepseek-ai/dsh-subagent-fork-in-process'
-import SubagentModelSelection from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 import DynamicCordisRunner from '@deepseek-ai/dsh-cordis-host-runner'
 import * as ToolCordisHost from '@deepseek-ai/dsh-tool-cordis/host'
 import PermissionPresets from '@deepseek-ai/dsh-permission-presets'
@@ -40,6 +39,7 @@ import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import { createCredentialPlugin, type CredentialLookup } from './credentials'
 import { DEFAULT_DSH_PERMISSION_PRESET, DSH_PERMISSION_PRESETS } from './permission-presets'
 import { mountHostToolPlane } from './tool-plane'
+import type { LoaderEntries } from './cordis-loader'
 import { readPresetDeclarations } from './presets'
 
 export interface DeepseekTreeOptions {
@@ -143,6 +143,23 @@ export function deepseekAdapterPlugin(options: DeepseekAdapterOptions): {
  * out. The returned context is the root the bridge plugin mounts on; callers
  * dispose it via `root.stop()` semantics owned by DeepseekRuntime.
  */
+/** Loader identity of the subagent model-selection preference row. */
+const MODEL_SELECTION_ENTRY = 'subagent-model-selection'
+
+/**
+ * Change the subagent model-selection preference of a running tree.
+ *
+ * Through the loader, because only its update path commits a volatile-only
+ * change in place. A plain `fiber.update()` restarts the service instead, and
+ * the delegation rows that already hold the old instance would keep reading
+ * the old preference.
+ * @param root - the tree `createDeepseekTree` returned.
+ * @param settings - the new preference; the next session composed reads it.
+ */
+export async function updateSubagentModelSelection(root: Context, settings: SubagentModelSelectionSettings): Promise<void> {
+  await (root.get('loader') as LoaderEntries | undefined)?.update(MODEL_SELECTION_ENTRY, { config: settings })
+}
+
 export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<Context> {
   const ctx = new Context()
   ctx.plugin(Timer)
@@ -243,9 +260,13 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
   // composed (`modelSelectionSettings: true`): off unless the user allowed
   // per-call child models. A later change reaches the next new session, never
   // a running one — the policy is snapshotted into each session's log.
-  ctx.plugin(SubagentModelSelection, {
-    enabled: options.subagentModelSelection?.enabled ?? false,
-    allowedModels: options.subagentModelSelection?.allowedModels ?? [],
+  await (ctx.loader as LoaderEntries).create({
+    id: MODEL_SELECTION_ENTRY,
+    name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings',
+    config: {
+      enabled: options.subagentModelSelection?.enabled ?? false,
+      allowedModels: options.subagentModelSelection?.allowedModels ?? [],
+    },
   })
 
   // The registries the preset rows resolve. Each is a process singleton with

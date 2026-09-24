@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
@@ -251,7 +251,11 @@ export function SessionDefaultsSection({ harnessId, autoEligibility }: {
  * Claude and Codex have richer pages of their own and compose the section above
  * directly instead.
  */
-export function HarnessPreferencesPage({ harnessId }: { harnessId: HarnessId }) {
+export function HarnessPreferencesPage({ harnessId, children }: {
+  harnessId: HarnessId
+  /** Harness-specific rows, below the session defaults in the same card. */
+  children?: ReactNode
+}) {
   const { t } = useTranslation()
   return (
     <div className="w-full">
@@ -260,6 +264,7 @@ export function HarnessPreferencesPage({ harnessId }: { harnessId: HarnessId }) 
           <p className="text-xs font-medium text-muted-foreground">{t('settings.preferences.sections.user')}</p>
         </div>
         <SessionDefaultsSection harnessId={harnessId} />
+        {children}
       </div>
     </div>
   )

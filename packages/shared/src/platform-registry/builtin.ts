@@ -56,12 +56,12 @@ function openaiChat(
 
 // --- shared model mappings ----------------------------------------------------
 
-// mimo-v2.5-pro serves 1M context once the id carries the `[1m]` suffix (mimo.mi.com Claude Code guide).
+// mimo-v2.6-pro serves 1M context once the id carries the `[1m]` suffix (mimo.mi.com Claude Code guide).
 const XIAOMI_MODELS: ProviderModelEnv = {
-  default: { id: 'mimo-v2.5-pro[1m]', name: 'MiMo V2.5 Pro' },
-  opus: { id: 'mimo-v2.5-pro[1m]', name: 'MiMo V2.5 Pro' },
-  sonnet: { id: 'mimo-v2.5-pro[1m]', name: 'MiMo V2.5 Pro' },
-  haiku: { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro' },
+  default: { id: 'mimo-v2.6-pro[1m]', name: 'MiMo V2.6 Pro' },
+  opus: { id: 'mimo-v2.6-pro[1m]', name: 'MiMo V2.6 Pro' },
+  sonnet: { id: 'mimo-v2.6-pro[1m]', name: 'MiMo V2.6 Pro' },
+  haiku: { id: 'mimo-v2.6-pro', name: 'MiMo V2.6 Pro' },
 }
 
 const BAILIAN_CODING_PLAN_MODELS: ProviderModelEnv = {

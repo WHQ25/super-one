@@ -1,0 +1,16 @@
+diff --git a/lib/runner-launch-B2zsQ1Dz.js b/lib/runner-launch-B2zsQ1Dz.js
+index 538e41477639a4bebaf1137eed7b3cdd97201fd0..d14e6db93ca4ad35e940796bd7a920abadd9c01d 100644
+--- a/lib/runner-launch-B2zsQ1Dz.js
++++ b/lib/runner-launch-B2zsQ1Dz.js
+@@ -1350,6 +1350,11 @@ function runnerEnvironment(selection, invocation) {
+ 	return {
+ 		...env,
+ 		[SUBPROCESS_RUNNER_ENV]: selection,
++		// SuperOne patch: embedded in Electron, `process.execPath` is the app
++		// itself; without this the runner relaunches the app instead of running
++		// runner.js. The final target's environment is built separately
++		// (`targetEnvironment`) and never inherits it.
++		...process.versions.electron !== void 0 ? { ELECTRON_RUN_AS_NODE: "1" } : {},
+ 		SYSTEMD_LOG_TARGET: "null",
+ 		...entry?.endsWith(".ts") === true ? { TSX_TSCONFIG_PATH: SOURCE_TSCONFIG_PATH } : {}
+ 	};

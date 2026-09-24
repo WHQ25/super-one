@@ -209,6 +209,15 @@ describe('mergeActivityIntoRows', () => {
     expect(merged[1]?.pendingCount).toBe(1)
   })
 
+  it('keeps a session in a voice call live, listed or not', () => {
+    const merged = mergeActivityIntoRows([row('listed')], {
+      listed: { sessionId: 'listed', projectPath: '/repo', status: 'idle', pendingCount: 0, realtimeActive: true },
+      voice: { sessionId: 'voice', projectPath: '/repo', status: 'idle', pendingCount: 0, realtimeActive: true, title: 'Call' },
+    }, '/repo')
+    expect(merged.map((session) => [session.sessionId, session.realtimeActive])).toEqual([['voice', true], ['listed', true]])
+    expect(partitionSessionGroups(groupSessionRows(merged)).attention).toHaveLength(2)
+  })
+
   it('inserts a running session the host has not paged in yet', () => {
     const merged = mergeActivityIntoRows([row('listed')], {
       listed: {

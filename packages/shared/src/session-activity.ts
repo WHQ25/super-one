@@ -19,12 +19,14 @@ export interface SessionActivity {
    * the phone's dot and vice versa. Absent on hosts that predate seen tracking.
    */
   seenCompletedMessageId?: string | null
+  /** A realtime voice call is open; keeps the row live like a running turn. Absent on older hosts. */
+  realtimeActive?: boolean
   pendingCount: number
   pendingReason: Record<Locale, string | null>
 }
 
 export function summarizeSessionActivity(
-  snapshot: { id: string; projectPath: string; status: string; harnessId: HarnessId; acpAgentId?: string | null; title?: string | null; messages?: readonly ChatMessage[]; seenCompletedMessageId?: string | null },
+  snapshot: { id: string; projectPath: string; status: string; harnessId: HarnessId; acpAgentId?: string | null; title?: string | null; messages?: readonly ChatMessage[]; seenCompletedMessageId?: string | null; realtimeActive?: boolean },
   interactions: AgentEvent[],
 ): SessionActivity {
   const permissions = interactions.flatMap(event => event.type === 'permission_request' ? [event.request] : [])
@@ -41,6 +43,7 @@ export function summarizeSessionActivity(
     ...(snapshot.title ? { title: snapshot.title } : {}),
     ...(snapshot.messages ? { completedMessageId: lastCompletedMessageId(snapshot.messages) } : {}),
     ...(snapshot.seenCompletedMessageId !== undefined ? { seenCompletedMessageId: snapshot.seenCompletedMessageId } : {}),
+    ...(snapshot.realtimeActive ? { realtimeActive: true } : {}),
     pendingCount: new Set([...permissions.map(request => `permission:${request.requestId}`), ...questions.map(request => `question:${request.requestId}`), ...plans.map(request => `plan:${request.requestId}`)]).size,
     pendingReason: { en: reason('en'), zh: reason('zh') },
   }
@@ -49,6 +52,7 @@ export function summarizeSessionActivity(
 export const SESSION_ACTIVITY_EVENTS: ReadonlySet<string> = new Set([
   'permission_request', 'ask_user_question', 'plan_approval', 'interaction_resolved',
   'status_change', 'message_interrupted', 'session_ended', 'session_seen',
+  'realtime_started', 'realtime_closed', 'realtime_error',
 ])
 
 function lastCompletedMessage(messages: readonly ChatMessage[]): ChatMessage | null {

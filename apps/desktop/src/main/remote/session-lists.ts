@@ -51,7 +51,7 @@ export function readRemoteSessionList(command: SessionListCommand, manager?: Ses
         provider: session.provider ?? 'claude',
         acpAgentId: session.acpAgentId ?? null,
         selectedModel: live?.snapshot.selectedModel || session.selectedModel || null,
-        status: live?.snapshot.status ?? 'idle',
+        status: live?.activityStatus() ?? 'idle',
         tags: session.tags ?? [],
         gitBranch: session.gitBranch ?? null,
         isWorktree: session.isWorktree ?? false,

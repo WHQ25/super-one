@@ -2932,8 +2932,10 @@ describe('AgentService.handleRemoteCommand', () => {
   it('restores cross-project pending summaries without subscribing to chats', async () => {
     const service = new AgentService()
     const session = {
-      snapshot: { id: 'background', projectPath: '/other', harnessId: 'codex', status: 'idle' },
-      isStreaming: () => false,
+      snapshot: { id: 'background', projectPath: '/other', harnessId: 'codex', status: 'ended' },
+      activityStatus: () => 'background',
+      realtimeActive: false,
+      seenCompletedMessageId: null,
       getPendingInteractions: () => [{ type: 'ask_user_question', request: { requestId: 'q1', questions: [{ question: 'Which file?' }] } }],
     }
     ;(service as { sessionManager: unknown }).sessionManager = {
@@ -2945,7 +2947,7 @@ describe('AgentService.handleRemoteCommand', () => {
     const respond = vi.fn()
     await service.handleRemoteCommand({ type: 'list_session_activity', requestId: 'activity' }, respond)
     expect(respond).toHaveBeenCalledWith('activity', { sessions: [expect.objectContaining({
-      sessionId: 'background', projectPath: '/other', pendingCount: 1,
+      sessionId: 'background', projectPath: '/other', status: 'background', pendingCount: 1,
       pendingReason: { en: 'Which file?', zh: 'Which file?' },
     })] })
   })
@@ -2969,7 +2971,8 @@ describe('AgentService.handleRemoteCommand', () => {
     vi.mocked(dbSessions.countMessagesForSessions).mockReturnValue(new Map([['session-acp', 7]]))
     const service = new AgentService()
     ;(service as { sessionManager: unknown }).sessionManager = {
-      getSession: vi.fn(() => ({ snapshot: { selectedModel: 'live-model', status: 'streaming' } })),
+      // A continuation turn: the send snapshot already reads `ended`.
+      getSession: vi.fn(() => ({ snapshot: { selectedModel: 'live-model', status: 'ended' }, activityStatus: () => 'streaming' })),
     }
     const respond = vi.fn()
 

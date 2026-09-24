@@ -45,6 +45,7 @@ describe('projectHasAttention', () => {
     expect(projectHasAttention({ ask: pending }, '/other')).toBe(false)
     expect(projectHasAttention({ other: { ...idle, isUnseen: true } }, '/project')).toBe(true)
     expect(projectHasAttention({ other: { ...idle, status: 'streaming' } }, '/project')).toBe(true)
+    expect(projectHasAttention({ other: { ...idle, realtimeActive: true } }, '/project')).toBe(true)
     expect(projectHasAttention({ other: idle }, '/project')).toBe(false)
   })
 })

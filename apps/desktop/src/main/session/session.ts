@@ -4,11 +4,13 @@ import { insertCodexTimelineRow, stampCodexTimelineOrder } from '@superone/share
 import { buildCompactBoundaryMessage, compactBoundaryInsertIndex, isCompactSlashSend } from '@superone/shared/compact-boundary'
 import { newMessageId } from '@superone/shared/message-id'
 import { SessionShutdown } from './session-shutdown'
+import { SessionLiveness } from './session-liveness'
 import { hostPendingInteractions, trackHostInteraction } from './host-pending-interactions'
 import { dispatchBackendSteer } from './dispatch-backend-steer'
 import { broadcastSessionSettings } from './session-settings-broadcast'
 import type {
   AgentEvent,
+  AgentStatus,
   ChatMessage,
   CodexGoal,
   CodexGoalStatus,
@@ -213,26 +215,8 @@ export class Session implements SessionContract {
   private providerConfig: unknown
 
   private _status: SessionStatus = 'idle'
-  /**
-   * Backend-reported stream liveness, maintained from the event stream rather
-   * than from the `send()` call.
-   *
-   * `_status` only spans an awaited `Session.send`, and a *continuation* turn
-   * never comes back through it: Claude's `priority:'next'` send returns as
-   * soon as the message is pushed and the real turn is flushed at the next step
-   * boundary, `QueuedUserMessageQueue.flush()` re-enters `backend.send`
-   * directly, and Codex drains its durable queue inside the live stream. During
-   * those turns `_status` is already `'ended'`, which used to make
-   * `interrupt()` return false without ever reaching `backend.interrupt()` —
-   * Stop looked acknowledged while the agent kept writing.
-   */
-  private _backendStreaming = false
-  /**
-   * Bumped every time a run opens. `interrupt()` clears `_backendStreaming` in a
-   * `finally` that awaits the backend, so a turn started during that await would
-   * otherwise be cleared by a decision made before it existed.
-   */
-  private _streamGeneration = 0
+  /** Stream, settled status and voice call, from backend events — see `SessionLiveness`. */
+  private readonly liveness = new SessionLiveness()
   private _sendChain: Promise<void> = Promise.resolve()
   private _currentMessageId: string | null = null
   private _computerUseTurnGeneration = 0
@@ -396,6 +380,8 @@ export class Session implements SessionContract {
     if (!this.hasActiveRuntime()) return false
     if (this._foregroundRefCount > 0) return false
     if (this.isStreaming()) return false
+    // A quiet voice call is still a call; releasing the runtime would hang it up.
+    if (this.liveness.realtimeActive) return false
     if (this._pendingQueuedRequests.size > 0) return false
     if (this.backend.hasActiveBackgroundTasks?.()) return false
     if (this.backend.getPendingInteractions().length > 0) return false
@@ -417,7 +403,7 @@ export class Session implements SessionContract {
       // events the teardown flushed on the way out, and no terminal event will
       // ever arrive to correct a flag left set here.
       if (this.backend.hasActiveRuntime()) return false
-      this._backendStreaming = false
+      this.endRuntimeLiveness()
       await afterRelease?.()
       return true
     })()
@@ -434,22 +420,6 @@ export class Session implements SessionContract {
   }
 
   /**
-   * The backend announced a run. Always a new generation, including when one was
-   * already in flight — the interrupt this must outrank was issued against the
-   * *previous* run, and that is exactly the case where the backend admits a
-   * queued turn before it acks the stop.
-   *
-   * Only monotonicity is contractual, not the count: a normal turn bumps twice
-   * (`message_start` then `status_change: 'streaming'`), and OpenCode re-announces
-   * on busy/retry. Every consumer asks "did this change while I was awaiting?",
-   * never "how many runs have there been".
-   */
-  private openBackendStream(): void {
-    this._streamGeneration += 1
-    this._backendStreaming = true
-  }
-
-  /**
    * The only place a backend runtime is replaced.
    *
    * Replacing the runtime destroys whatever stream was running on it, and no
@@ -459,8 +429,22 @@ export class Session implements SessionContract {
    * live and never release its runtime again.
    */
   private async rebuildBackend(): Promise<void> {
-    this._backendStreaming = false
+    this.endRuntimeLiveness()
     await this.backend.rebuild(this.buildBackendStartOpts())
+  }
+
+  /** Tells every client what the dead runtime can no longer be doing. */
+  private endRuntimeLiveness(): void {
+    for (const event of this.liveness.endRuntime()) this.forwardEvent(event)
+  }
+
+  /** Sidebar liveness on every client; see `SessionLiveness`. */
+  activityStatus(): AgentStatus {
+    return this.liveness.status()
+  }
+
+  get realtimeActive(): boolean {
+    return this.liveness.realtimeActive
   }
 
   private touchRuntimeActivity(): void {
@@ -791,6 +775,7 @@ export class Session implements SessionContract {
       if (request.model !== undefined) this.model = request.model
       this.additionalDirectories = nextDirs
       this.appendUserMessage(request, providerOrigin)
+      this.liveness.beginSend()
       this.snapEffectiveApiProviderId()
       const needsRebuild = this._needsRebuild
       let dirsNeedRebuild = dirsChanged
@@ -823,6 +808,7 @@ export class Session implements SessionContract {
         if ((this._status as SessionStatus) !== 'disposed') this._status = 'ended'
       }
     } finally {
+      this.liveness.endSend()
       release()
     }
   }
@@ -835,7 +821,7 @@ export class Session implements SessionContract {
     if (!this.isStreaming()) return false
     this.touchRuntimeActivity()
     const prev = this._status
-    const generation = this._streamGeneration
+    const generation = this.liveness.streamGeneration
     this._status = 'interrupting'
     // Codex 149 persists queued submissions and pauses them after interruption.
     // Keep the host-side transcript entries so the user can resume or delete them.
@@ -857,7 +843,7 @@ export class Session implements SessionContract {
       // one must not leave the session permanently "busy". Only clear the run we
       // set out to stop: `backend.interrupt()` is awaited, and a queued turn that
       // opened meanwhile is live work this decision predates.
-      if (this._streamGeneration === generation) this._backendStreaming = false
+      this.liveness.endRunIfCurrent(generation)
       // Agent no longer controlling — drop software cursor + menu-bar chip.
       void this.clearComputerUseVisuals('interrupt')
     }
@@ -1503,7 +1489,7 @@ export class Session implements SessionContract {
     return this._status === 'streaming'
       || this._status === 'starting'
       || this._status === 'interrupting'
-      || this._backendStreaming
+      || this.liveness.backendStreaming
   }
 
   truncateMessagesAt(checkpointId: string): void {
@@ -1532,7 +1518,7 @@ export class Session implements SessionContract {
     }
     trace('session.lifecycle', 'dispose', { sid: this.id, owner: this._owner.kind === 'remote' ? this._owner.deviceId : 'local', subscribers: [...this._subscribers] })
     this._status = 'disposed'
-    this._backendStreaming = false
+    this.liveness.reset()
     this._pendingQueuedRequests.clear()
     forgetWebMcpSessionTrust(this.id)
     forgetSessionTerminalCommandRules(this.id)
@@ -1847,21 +1833,8 @@ export class Session implements SessionContract {
         this.setTitle(title, 'agent')
       }
     }
-    // Stream liveness follows the backend, not the send call — see `_backendStreaming`.
-    if (event.type === 'status_change') {
-      if (event.status === 'streaming') this.openBackendStream()
-      else this._backendStreaming = false
-    } else if (event.type === 'message_start' && event.message.role === 'assistant') {
-      this.openBackendStream()
-    } else if (
-      event.type === 'message_interrupted'
-      || event.type === 'message_error'
-    ) {
-      // A terminal event for the whole run. `message_complete` is deliberately
-      // absent: Codex fires one at every queued-turn boundary while the stream
-      // continues, and only `status_change: 'idle'` closes that run.
-      this._backendStreaming = false
-    }
+    // Liveness follows the backend, not the send call — see `SessionLiveness`.
+    this.liveness.apply(event)
     if (event.type === 'permission_request') {
       log.info('[Session.forwardEvent] permission_request sessionId=%s listeners=%d requestId=%s', this.id, this.eventListeners.size, event.request.requestId)
     }

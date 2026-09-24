@@ -29,11 +29,12 @@ export function sessionIsLive(session: {
   status?: string
   pendingCount?: number
   isUnseen?: boolean
+  realtimeActive?: boolean
 }): boolean {
   return sessionNeedsAttention({
     pendingCount: session.pendingCount ?? 0,
     isUnseen: session.isUnseen,
-  }) || LIVE_SESSION_STATUSES.has(session.status ?? '')
+  }) || !!session.realtimeActive || LIVE_SESSION_STATUSES.has(session.status ?? '')
 }
 
 /** Count sessions, even when one session has several requests and an unread reply. */

@@ -14,6 +14,8 @@ export type SessionListRow = {
   isUnseen?: boolean
   pendingCount?: number
   status?: string
+  /** From live activity, never from `list_sessions`: a voice call keeps the row live. */
+  realtimeActive?: boolean
   tags?: string[]
   /** Collaboration parent (`session_collab_start` spawn); groups the row on desktop. */
   parentSessionId?: string | null
@@ -165,6 +167,7 @@ export function mergeActivityIntoRows(
     title?: string | null
     pendingCount: number
     isUnseen?: boolean
+    realtimeActive?: boolean
   }>>,
   projectPath?: string | null,
 ): SessionListRow[] {
@@ -176,6 +179,7 @@ export function mergeActivityIntoRows(
       pendingCount: extra.pendingCount,
       isUnseen: extra.isUnseen,
       status: extra.status,
+      realtimeActive: extra.realtimeActive,
       ...(extra.title ? { title: extra.title } : {}),
       ...(extra.provider ? { provider: extra.provider } : {}),
       ...(extra.acpAgentId !== undefined ? { acpAgentId: extra.acpAgentId } : {}),
@@ -195,6 +199,7 @@ export function mergeActivityIntoRows(
       pendingCount: session.pendingCount,
       isUnseen: session.isUnseen,
       status: session.status,
+      realtimeActive: session.realtimeActive,
       projectPath: session.projectPath,
     })
   }

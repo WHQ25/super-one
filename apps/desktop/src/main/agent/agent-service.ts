@@ -9,7 +9,8 @@ import { findAttachment } from '../remote/attachment-thumbnail'
 import { videoPosterService } from '../remote/video-poster'
 import { handleDetailCommand } from '../remote/detail-command'
 import { readRemoteSessionList } from '../remote/session-lists'
-import { summarizeSessionActivity, type SessionActivity } from '@superone/shared/session-activity'
+import type { SessionActivity } from '@superone/shared/session-activity'
+import { liveSessionActivity } from '../remote/live-session-activity'
 import { answerRemoteAsyncQuestion } from './remote-async-question'
 import { randomUUID } from 'crypto'
 import { newMessageId } from '@superone/shared/message-id'
@@ -1529,7 +1530,7 @@ export class AgentService {
       case 'list_session_activity': {
         const sessions: SessionActivity[] = []
         this.sessionManager?.forEachSession((session) => {
-          if (!session.ephemeral) sessions.push(summarizeSessionActivity({ ...session.snapshot, seenCompletedMessageId: session.seenCompletedMessageId, status: session.isStreaming() ? 'streaming' : session.snapshot.status }, session.getPendingInteractions()))
+          if (!session.ephemeral) sessions.push(liveSessionActivity(session))
         })
         await respond?.(command.requestId, { sessions })
         break

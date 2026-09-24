@@ -1,9 +1,10 @@
 import { detailUpdates, isProgressiveSession, projectProgressiveEvent } from './progressive-session'
 import { takeAttachmentOrigin, withoutAttachmentBytes } from './attachment-echo'
-import { SESSION_ACTIVITY_EVENTS, summarizeSessionActivity } from '@superone/shared/session-activity'
+import { SESSION_ACTIVITY_EVENTS } from '@superone/shared/session-activity'
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
 import type { Session, SessionManager } from '../session/types'
 import { trace } from '../agent/event-trace'
+import { liveSessionActivity } from './live-session-activity'
 
 export interface MobileTransport {
   sendAgentEvent(event: AgentEvent, targetDeviceIds?: string[]): Promise<void>
@@ -29,12 +30,7 @@ export class MobileBroadcaster {
     if (!session.ephemeral && SESSION_ACTIVITY_EVENTS.has(event.type)) {
       await this.transport.sendAgentEvent({
         type: 'session_activity',
-        activity: summarizeSessionActivity({
-          ...session.snapshot,
-          seenCompletedMessageId: session.seenCompletedMessageId,
-          // Backend liveness can change before the awaited send updates the snapshot.
-          ...(event.type === 'status_change' ? { status: event.status } : {}),
-        }, session.getPendingInteractions()),
+        activity: liveSessionActivity(session),
         ...(event.type === 'status_change' && event.status === 'idle' ? { completed: true } : {}),
       })
     }

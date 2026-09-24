@@ -1,5 +1,6 @@
 import type {
   AgentEvent,
+  AgentStatus,
   AgentInfo,
   ChatMessage,
   ClaudeSteerPriority,
@@ -542,6 +543,10 @@ export interface Session {
   getCallerScopedDirsSnapshot(): string[]
   switchCwd(nextCwd: string, gitBranch?: string | null): Promise<void>
   isStreaming(): boolean
+  /** Sidebar liveness from backend events; see `Session.activityStatus`. */
+  activityStatus(): AgentStatus
+  /** A realtime voice call is open on this session. */
+  readonly realtimeActive: boolean
   truncateMessagesAt(checkpointId: string): void
   dispose(): Promise<void>
   on(handler: (event: AgentEvent) => void): () => void

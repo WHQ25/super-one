@@ -62,6 +62,8 @@ describe('mobile attention from Claude prompts', () => {
     const session = {
       id: 'background', owner: { kind: 'local' }, subscribers: new Set(),
       snapshot: { id: 'background', projectPath: '/project', harnessId: 'claude', status: 'streaming', messages: [] },
+      activityStatus: () => 'streaming',
+      realtimeActive: false,
       getPendingInteractions: () => [
         ...permissions.values(), ...questions.values(), ...plans.values(), ...elicitations.values(),
       ].map(entry => entry.event),

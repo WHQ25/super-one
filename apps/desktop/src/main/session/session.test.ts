@@ -1872,6 +1872,98 @@ describe('Session read receipt', () => {
   })
 })
 
+describe('Session activity status', () => {
+  it('follows backend events, not the send call: a continuation turn stays streaming', () => {
+    const { session, backend } = makeSession()
+    expect(session.activityStatus()).toBe('idle')
+    backend.emit({ type: 'message_start', message: { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' } })
+    expect(session.snapshot.status).toBe('idle')
+    expect(session.activityStatus()).toBe('streaming')
+    backend.emit({ type: 'status_change', status: 'background' })
+    expect(session.activityStatus()).toBe('background')
+    backend.emit({ type: 'status_change', status: 'error' })
+    expect(session.activityStatus()).toBe('error')
+    backend.emit({ type: 'status_change', status: 'idle' })
+    expect(session.activityStatus()).toBe('idle')
+  })
+
+  it('reads live from an accepted send until the backend answers, and a new run drops the old settled status', async () => {
+    const { session, backend } = makeSession()
+    backend.emit({ type: 'status_change', status: 'error' })
+    const sending = session.send({ content: 'hi' })
+    await vi.waitFor(() => expect(backend.sendCalls).toHaveLength(1))
+    // Spawned and sent, but no run event yet.
+    expect(session.activityStatus()).toBe('streaming')
+    backend.emit({ type: 'message_start', message: { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'claude' } })
+    backend.emit({ type: 'message_interrupted', messageId: 'a1' })
+    expect(session.activityStatus()).toBe('idle')
+    backend.resolveSend?.()
+    await sending
+    expect(session.activityStatus()).toBe('idle')
+  })
+
+  it('tracks a realtime call from start to close or error', () => {
+    const { session, backend } = makeSession()
+    backend.emit({ type: 'realtime_started', version: 'v1' })
+    expect(session.realtimeActive).toBe(true)
+    backend.emit({ type: 'realtime_error', error: 'lost' })
+    expect(session.realtimeActive).toBe(false)
+    backend.emit({ type: 'realtime_started', version: 'v1' })
+    backend.emit({ type: 'realtime_closed' })
+    expect(session.realtimeActive).toBe(false)
+  })
+
+  it('tells every client what a released runtime can no longer be doing, since no backend reports its teardown', async () => {
+    const { session, backend } = makeSession()
+    backend.activeRuntime = true
+    backend.emit({ type: 'status_change', status: 'error' })
+    backend.emit({ type: 'realtime_started', version: 'v1' })
+    const received: AgentEvent[] = []
+    session.on((event) => received.push(event))
+    await session.releaseRuntime('idle')
+    expect(session.activityStatus()).toBe('idle')
+    expect(session.realtimeActive).toBe(false)
+    expect(received.map((event) => event.type === 'status_change' ? `status_change:${event.status}` : event.type))
+      .toEqual(['realtime_closed', 'status_change:idle'])
+  })
+
+  it('announces nothing when the released runtime was already idle', async () => {
+    const { session, backend } = makeSession()
+    backend.activeRuntime = true
+    const received: AgentEvent[] = []
+    session.on((event) => received.push(event))
+    await session.releaseRuntime('idle')
+    expect(received).toEqual([])
+  })
+
+  it('does not end the wait of a send that rebuilds the runtime for its own turn', async () => {
+    const { session, backend } = makeSession()
+    const first = session.send({ content: 'one' })
+    await vi.waitFor(() => expect(backend.sendCalls).toHaveLength(1))
+    backend.resolveSend?.()
+    await first
+    backend.emit({ type: 'status_change', status: 'error' })
+    const received: AgentEvent[] = []
+    session.on((event) => received.push(event))
+    const second = session.send({ content: 'two', effort: 'high' })
+    await vi.waitFor(() => expect(backend.sendCalls).toHaveLength(2))
+    expect(backend.rebuildCalls).toHaveLength(1)
+    expect(received.some((event) => event.type === 'status_change')).toBe(false)
+    expect(session.activityStatus()).toBe('streaming')
+    backend.resolveSend?.()
+    await second
+  })
+
+  it('keeps an open voice call from being released as idle', () => {
+    const { session, backend } = makeSession()
+    backend.activeRuntime = true
+    backend.emit({ type: 'realtime_started', version: 'v1' })
+    expect(session.isRuntimeIdle(Number.MAX_SAFE_INTEGER, 0)).toBe(false)
+    backend.emit({ type: 'realtime_closed' })
+    expect(session.isRuntimeIdle(Number.MAX_SAFE_INTEGER, 0)).toBe(true)
+  })
+})
+
 describe('Session event forwarding', () => {
   it('forwards backend events with sessionId tagged', async () => {
     const { session, backend } = makeSession()

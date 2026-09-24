@@ -11,6 +11,8 @@ function makeFakeSession(props: { id: string; owner?: Session['owner']; subscrib
   return {
     id: props.id,
     snapshot: { messages: [] },
+    activityStatus: () => 'idle',
+    realtimeActive: false,
     get owner() { return owner },
     get subscribers() { return subscribers },
   } as unknown as Session
@@ -176,7 +178,7 @@ it('carries the host read receipt on the summary and re-summarizes on session_se
   expect(transport.sent[1]).toEqual({ targets: ['phone'], event: expect.objectContaining({ type: 'session_seen' }) })
 })
 
-it('broadcasts idle completion even while the send snapshot still reports streaming', async () => {
+it('reports backend liveness, not the send snapshot, which reads streaming until send() returns', async () => {
   const transport = makeFakeTransport()
   const session = {
     ...makeFakeSession({ id: 'background' }),
@@ -190,4 +192,27 @@ it('broadcasts idle completion even while the send snapshot still reports stream
     type: 'session_activity', completed: true,
     activity: expect.objectContaining({ status: 'idle', completedMessageId: 'reply-1' }),
   }) }])
+})
+
+it('keeps a continuation turn live on a pending request, and says so for background work and voice', async () => {
+  const transport = makeFakeTransport()
+  let status: ReturnType<Session['activityStatus']> = 'streaming'
+  let realtimeActive = false
+  const session = {
+    ...makeFakeSession({ id: 'queued' }),
+    // A continuation turn: the awaited send already returned.
+    snapshot: { id: 'queued', projectPath: '/p', harnessId: 'claude', status: 'ended', messages: [] },
+    activityStatus: () => status,
+    get realtimeActive() { return realtimeActive },
+    getPendingInteractions: () => [],
+  } as unknown as Session
+  const broadcaster = new MobileBroadcaster(makeFakeManager(new Map([['queued', session]])), transport)
+  await broadcaster.broadcast({ type: 'permission_request', request: { requestId: 'p1', toolName: 'Bash' }, sessionId: 'queued' } as AgentEvent)
+  status = 'background'
+  await broadcaster.broadcast({ type: 'status_change', status: 'background', sessionId: 'queued' })
+  status = 'idle'
+  realtimeActive = true
+  await broadcaster.broadcast({ type: 'realtime_started', version: 'v1', sessionId: 'queued' })
+  expect(transport.sent.map(({ event }) => event.type === 'session_activity' && [event.activity.status, !!event.activity.realtimeActive]))
+    .toEqual([['streaming', false], ['background', false], ['idle', true]])
 })

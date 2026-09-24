@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { restoreAttachmentDraft } from './restore-attachment-draft'
+import { restoreAttachmentDraft } from './restore-sent-draft'
 import { PNG_ATTACHMENT } from '@superone/shared/test-fixtures/attachments'
 
 it('restores the original document while preserving text typed after a refused send', () => {

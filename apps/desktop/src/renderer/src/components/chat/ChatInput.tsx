@@ -1,5 +1,5 @@
 import { commitPerSession } from '@/stores/chat-store/helpers/store-helpers'
-import { restoreAttachmentDraft } from './chat-input/restore-attachment-draft'
+import { restoreAttachmentDraft } from './chat-input/restore-sent-draft'
 import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import { useRef, useState, useCallback, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'

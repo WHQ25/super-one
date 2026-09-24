@@ -4,10 +4,9 @@ import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { openFileTab } from '@/components/activity/activity-panel-api'
 import { DraggableFileIcon } from './DraggableFileIcon'
 import { useFileChipContextMenu } from './file-chip-context-menu'
-import { hasTextSelection } from './SelectionContextMenu'
 import { useChatStore } from '@/stores/chat'
 import { useSourceControlStore } from '@/stores/source-control'
-import { clickReleasedOnSelection, formatLineRange, parseFileLinkTarget, toProjectRelativePath } from '@/lib/file-link'
+import { clickReleasedOnSelection, formatLineRange, hasTextSelection, parseFileLinkTarget, toProjectRelativePath } from '@/lib/file-link'
 
 export function FileChip({ name, title, filePath, lineNumber, endLine, className }: {
   name: string

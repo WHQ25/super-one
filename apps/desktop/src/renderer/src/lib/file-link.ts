@@ -12,3 +12,8 @@ export function clickReleasedOnSelection(target: EventTarget | null): boolean {
   if (sel.toString().trim().length === 0) return false
   return sel.getRangeAt(0).intersectsNode(target)
 }
+
+/** Whether a right-click here opens the selection menu, which then owns the event over nested menus. */
+export function hasTextSelection(): boolean {
+  return (window.getSelection()?.toString().trim() ?? '').length > 0
+}

@@ -8,6 +8,7 @@ const idle = {
   session: { sessionId: 'one', title: 'Review the composer loading state', isPinned: true, provider: 'codex' as const },
   child: false, hasChildren: false, collapsed: false,
 }
+const ended = { ...idle, session: { ...idle.session, sessionId: 'two', title: 'Ended Claude session', provider: 'claude' as const, status: 'ended' } }
 
 function Preview() {
   return <MobileThemeProvider>
@@ -19,6 +20,10 @@ function Preview() {
       <View style={{ gap: 4 }}>
         <Text style={{ fontSize: 12, opacity: 0.6 }}>Project list · same session</Text>
         <SessionRowContent item={idle} />
+      </View>
+      <View style={{ gap: 4 }}>
+        <Text style={{ fontSize: 12, opacity: 0.6 }}>Pinned · ended (dimmed icon, uniform color)</Text>
+        <SessionRowContent branded item={ended} subtitle="super-one" />
       </View>
     </View>
   </MobileThemeProvider>

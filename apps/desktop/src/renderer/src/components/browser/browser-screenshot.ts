@@ -22,13 +22,18 @@ export type ScreenshotStage = 'host-paint' | 'readiness' | 'selector' | 'capture
 const STAGE_TIMEOUT_MS: Record<ScreenshotStage, number> = {
   'host-paint': 2_000,
   // Per guest round trip (probe install/removal, one probe capture), not per loop.
-  readiness: 3_000,
+  readiness: 2_000,
   selector: 3_000,
-  capture: 4_000,
-  encode: 4_000,
+  capture: 3_000,
+  encode: 3_000,
 }
-/** Kept under the main process's 30s bridge timeout, so a stage error always wins the race. */
-export const SCREENSHOT_BUDGET_MS = 25_000
+/**
+ * A healthy screenshot takes 0.2–0.3s; the slowest legitimate path (both probe
+ * loops running to their 1.5s deadlines, a capture retry, a large encode) stays
+ * under 4s. Past that the tab is stuck and waiting longer does not help, so the
+ * agent gets the stage error early enough to retry or reload.
+ */
+export const SCREENSHOT_BUDGET_MS = 8_000
 const PROBE_READY_TIMEOUT_MS = 1_500
 const PROBE_CLEANUP_TIMEOUT_MS = 1_000
 

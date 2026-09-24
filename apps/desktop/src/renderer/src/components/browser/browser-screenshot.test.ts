@@ -129,9 +129,9 @@ describe('browser screenshot', () => {
 
     const stalled = runBrowserOp('session-a', 'screenshot', { tab: TAB })
     const failure = expect(stalled).rejects.toThrow(
-      /Screenshot timed out at stage 'readiness' after 3000ms: .*reload the tab/,
+      /Screenshot timed out at stage 'readiness' after 2000ms: .*reload the tab/,
     )
-    await vi.advanceTimersByTimeAsync(3_100)
+    await vi.advanceTimersByTimeAsync(2_100)
     await failure
 
     expect(setup.guest.order).toEqual(['install', 'remove'])

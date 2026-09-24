@@ -88,6 +88,7 @@ import type {
 } from '@superone/shared/environment'
 import type { PinnedSessionEntry, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { remoteProjectKey } from '@superone/shared/remote-resource-key'
+import type { RemoteSendDetached } from '@superone/shared/send-failure'
 import { parseTagsJson } from '@superone/shared/session-tags'
 import {
   deletePendingDraft,
@@ -1979,17 +1980,26 @@ export class EnvironmentHost {
       ...(Object.keys(options).length > 0 ? { options } : {}),
     })
 
-    return this.drainRemoteSessionEvents(connectionId, {
-      sessionId: input.sessionId,
-      projectPath: input.projectPath,
-      providerId: input.providerId,
-      skipUserMessage: true,
-      establishCursor: false,
-      // A Claude live session may accept a second send while the first drain is
-      // active. Share that drain and cursor so events are neither duplicated nor
-      // dropped when the second turn is queued with priority=next.
-      forceRestart: !existingDrain || existingDrain.abort.signal.aborted,
-    })
+    try {
+      return await this.drainRemoteSessionEvents(connectionId, {
+        sessionId: input.sessionId,
+        projectPath: input.projectPath,
+        providerId: input.providerId,
+        skipUserMessage: true,
+        establishCursor: false,
+        // A Claude live session may accept a second send while the first drain is
+        // active. Share that drain and cursor so events are neither duplicated nor
+        // dropped when the second turn is queued with priority=next.
+        forceRestart: !existingDrain || existingDrain.abort.signal.aborted,
+      })
+    } catch (err) {
+      // The node already holds the message; only following its turn broke off.
+      const detached: RemoteSendDetached = {
+        streamDetached: true,
+        error: err instanceof Error ? err.message : String(err),
+      }
+      return detached
+    }
   }
 
   /**

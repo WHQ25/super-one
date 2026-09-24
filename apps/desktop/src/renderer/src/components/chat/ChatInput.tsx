@@ -1,5 +1,4 @@
 import { commitPerSession } from '@/stores/chat-store/helpers/store-helpers'
-import { restoreAttachmentDraft } from './chat-input/restore-sent-draft'
 import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import { useRef, useState, useCallback, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -1159,8 +1158,6 @@ export function ChatInput() {
           return
         }
       }
-      const savedDoc = editorRef.current?.getJSON() ?? draftJson
-      const retryTarget = sessionScope ?? (activeProject && displayedSessionId ? { projectPath: activeProject, sessionId: displayedSessionId } : undefined)
       const { segments, mentions: editorMentions, attachments: sentAttachments } = serializeAndClear()
       const fullText = segments.flatMap((s) => ('attachmentId' in s ? [] : [s.text])).join('\n')
       // A typed turn never enters the voice timeline, so a composer shown under the
@@ -1171,8 +1168,8 @@ export function ChatInput() {
       }
       // Pass the mosaic tile (or mini-window) scope so the turn lands on this pane's
       // session even when project-active still points at a sibling tile mid-switch.
-      // Catch so transport/IPC failures are not silent unhandled rejections.
-      // Toast is raised inside sendMessageImpl; here we only prevent process noise.
+      // A send the host never took is kept on its bubble (Resend / Edit); this
+      // catch only covers failures before the bubble exists.
       void sendMessage(
         fullText,
         segments,
@@ -1180,12 +1177,9 @@ export function ChatInput() {
         sentAttachments,
         sessionScope ?? undefined,
       ).catch((err) => {
-        if (sentAttachments.length && String(err).includes('Attachment: ') && retryTarget) {
-          useChatStore.setState(state => commitPerSession(state, retryTarget, current => restoreAttachmentDraft(current, { text, doc: savedDoc, attachments: sentAttachments })))
-        }
         console.error('[ChatInput] sendMessage failed:', err)
       })
-    }, [goalCapability, goalComposing, goalActions, enterGoalCompose, t, canSend, sendMessage, serializeAndClear, sessionScope, text, draftJson, activeProject, displayedSessionId, activeProviderForResources, realtimeVoiceEngaged])
+    }, [goalCapability, goalComposing, goalActions, enterGoalCompose, t, canSend, sendMessage, serializeAndClear, sessionScope, text, displayedSessionId, activeProviderForResources, realtimeVoiceEngaged])
 
     const handleKeyDownCore = useCallback(
       (e: KeyboardEvent | React.KeyboardEvent): boolean => {

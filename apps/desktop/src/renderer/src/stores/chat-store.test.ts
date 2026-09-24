@@ -3223,10 +3223,11 @@ describe('awaitingAssistantReply state machine', () => {
     })
     mockWindowAgent.sendMessage.mockRejectedValueOnce(new Error('send failed'))
 
-    await expect(useChatStore.getState().sendMessage('hello')).rejects.toThrow('send failed')
+    await useChatStore.getState().sendMessage('hello')
 
     const session = getActiveDraftSession('/test')!
     expect(session.awaitingAssistantReply).toBe(false)
+    expect(session.messages.at(-1)?.metadata?.sendFailure).toEqual({ error: 'send failed' })
   })
 
   it('keeps awaitingAssistantReply on status_change idle', () => {

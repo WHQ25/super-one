@@ -339,7 +339,7 @@ describe('sendMessageImpl: remote node', () => {
     )
   })
 
-  it('toasts and marks error when remote send fails (no silent swallow)', async () => {
+  it('keeps a remote send the node never took on its bubble, without a toast', async () => {
     seedProject(remotePath, 'node-sid-fail', {
       preferredProvider: 'claude',
       sessionProvider: 'claude',
@@ -351,12 +351,34 @@ describe('sendMessageImpl: remote node', () => {
     })
     mockEnvSendSessionMessage.mockRejectedValueOnce(new Error('rpc timeout: session.send'))
 
-    await expect(useChatStore.getState().sendMessage('hello')).rejects.toThrow(/rpc timeout/)
+    await useChatStore.getState().sendMessage('hello')
 
     const sess = getActiveSession(remotePath)
     expect(sess.awaitingAssistantReply).toBe(false)
-    expect(sess.status).toBe('error')
-    expect(mockToastError).toHaveBeenCalledWith('remote-unavailable')
+    expect(sess.status).toBe('idle')
+    expect(sess.messages.at(-1)?.metadata?.sendFailure).toEqual({ error: 'rpc timeout: session.send' })
+    expect(mockToastError).not.toHaveBeenCalled()
+  })
+
+  it('does not fail a send the node took when only its stream dropped', async () => {
+    seedProject(remotePath, 'node-sid-detached', {
+      preferredProvider: 'claude',
+      sessionProvider: 'claude',
+    })
+    mockEnvGetSession.mockResolvedValueOnce({
+      sessionId: 'node-sid-detached',
+      status: 'idle',
+      transcript: [],
+    })
+    mockEnvSendSessionMessage.mockResolvedValueOnce({ streamDetached: true, error: 'network offline' })
+
+    await useChatStore.getState().sendMessage('hello')
+
+    const sess = getActiveSession(remotePath)
+    expect(sess.messages.at(-1)?.metadata?.sendFailure).toBeUndefined()
+    // Reconnect recovery owns the turn from here.
+    expect(sess.status).toBe('streaming')
+    expect(sess.awaitingAssistantReply).toBe(true)
   })
 })
 
@@ -738,14 +760,50 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
     }))
   })
 
-  it('rolls back awaitingAssistantReply and rethrows when sendMessage rejects', async () => {
+  it('marks the bubble failed and stops waiting when sendMessage rejects', async () => {
     seedProject('/proj', 'sid-1')
-    mockSendMessage.mockRejectedValueOnce(new Error('network down'))
+    mockSendMessage.mockRejectedValueOnce(new Error("Error invoking remote method 'agent:send-message': Error: network down"))
 
-    await expect(useChatStore.getState().sendMessage('hello')).rejects.toThrow('network down')
+    await useChatStore.getState().sendMessage('hello')
 
     const sess = getActiveSession('/proj')
     expect(sess.awaitingAssistantReply).toBe(false)
+    expect(sess.messages).toHaveLength(1)
+    expect(sess.messages[0].metadata?.sendFailure).toEqual({ error: 'network down' })
+    expect(mockToastError).not.toHaveBeenCalled()
+  })
+
+  it('resends a failed message as it originally went out, under the same id', async () => {
+    seedProject('/proj', 'sid-1')
+    mockSendMessage.mockRejectedValueOnce(new Error('network down'))
+    await useChatStore.getState().sendMessage('hello')
+    const failedId = getActiveSession('/proj').messages[0].id
+    const firstRequest = mockSendMessage.mock.calls[0][1]
+
+    await useChatStore.getState().resendFailedMessage(failedId)
+
+    expect(mockSendMessage).toHaveBeenCalledTimes(2)
+    expect(mockSendMessage.mock.calls[1][1]).toEqual(firstRequest)
+    const sess = getActiveSession('/proj')
+    expect(sess.messages).toHaveLength(1)
+    expect(sess.messages[0].metadata?.sendFailure).toBeUndefined()
+    expect(sess.awaitingAssistantReply).toBe(true)
+  })
+
+  it('edit pulls a failed message back into the composer and forgets its replay', async () => {
+    seedProject('/proj', 'sid-1', { draftText: 'typed since' })
+    mockSendMessage.mockRejectedValueOnce(new Error('network down'))
+    await useChatStore.getState().sendMessage('hello')
+    const failedId = getActiveSession('/proj').messages[0].id
+    useChatStore.getState().setDraftText('typed since')
+
+    useChatStore.getState().editFailedMessage(failedId)
+    await useChatStore.getState().resendFailedMessage(failedId)
+
+    const sess = getActiveSession('/proj')
+    expect(sess.messages).toHaveLength(0)
+    expect(sess.draftText).toBe('hello\ntyped since')
+    expect(mockSendMessage).toHaveBeenCalledTimes(1)
   })
 
   it('appends user message and sets awaitingAssistantReply on normal send', async () => {
@@ -776,7 +834,7 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
 })
 
 describe('sendMessageImpl: queued send (streaming)', () => {
-  it('removes the optimistic queued bubble when queue insertion fails', async () => {
+  it('moves a queued send that failed into the transcript with its failure', async () => {
     seedProject('/proj', 'sid-1', {
       status: 'streaming',
       awaitingAssistantReply: true,
@@ -785,13 +843,15 @@ describe('sendMessageImpl: queued send (streaming)', () => {
     })
     mockSendMessage.mockRejectedValueOnce(new Error('boom'))
 
-    await expect(useChatStore.getState().sendMessage('queued one')).rejects.toThrow('boom')
+    await useChatStore.getState().sendMessage('queued one')
 
     expect(mockSendMessage).toHaveBeenCalledWith('/proj', expect.objectContaining({ priority: 'next' }))
     const sess = getActiveSession('/proj')
+    // The running turn still owns the reply indicator.
     expect(sess.awaitingAssistantReply).toBe(true)
     expect(sess.queuedMessages).toHaveLength(0)
-    expect(sess.messages).toHaveLength(0)
+    expect(sess.messages).toHaveLength(1)
+    expect(sess.messages[0].metadata?.sendFailure).toEqual({ error: 'boom' })
   })
 
   it('routes a normal Codex mid-stream send through the durable queue', async () => {

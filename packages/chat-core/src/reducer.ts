@@ -10,6 +10,7 @@ import { reduceLifecycle } from './lifecycle'
 import { reduceMessageComplete } from './message-complete'
 import { reducePermission } from './permission'
 import { reduceQuestionPlan } from './question-plan'
+import { reduceUserMessageSendFailed } from './send-failure'
 import { reduceSlash } from './slash'
 import { reduceTool } from './tool'
 import { reduceTodosUpdated } from './todos'
@@ -51,6 +52,9 @@ export function applyEventToSession(
 
     case 'message_complete':
       return reduceMessageComplete(session, event, ports)
+
+    case 'user_message_send_failed':
+      return reduceUserMessageSendFailed(session, event)
 
     case 'tool_input_delta':
     case 'tool_progress':

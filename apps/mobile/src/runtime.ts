@@ -20,7 +20,7 @@ import type {
   SavedWidgetTemplate,
   SandboxMode,
 } from '@superone/shared/agent-types'
-import { applyEventToSession, createDefaultChatCoreSession, pendingSlashCommandFrom } from '@superone/chat-core'
+import { applyEventToSession, createDefaultChatCoreSession, pendingSlashCommandFrom, withoutSendFailure } from '@superone/chat-core'
 import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
 import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
 import type { CachedTranscript, RelayClient } from '@superone/relay-client'
@@ -106,6 +106,8 @@ function localUserMessage(id: string, text: string, images?: ImageAttachment[]):
   }
 }
 
+type SendMessageCommand = Extract<RemoteCommand, { type: 'send_message' }>
+
 export class ChatRuntime {
   session: SessionState = createDefaultChatCoreSession()
   /**
@@ -137,6 +139,12 @@ export class ChatRuntime {
   private historyRequest: Promise<ChatMessage[]> | null = null
   private eventEpoch = 0
   private restoreGeneration = 0
+  /**
+   * Sends the host never took, kept to replay exactly as they went out. In
+   * memory like the desktop's: a failed bubble is not cached, so it and its
+   * replay disappear together.
+   */
+  private readonly failedSends = new Map<string, SendMessageCommand>()
   /** `create_session` is in flight: a staged turn reads "creating" rather than "sending". */
   private creating = false
   private restoreQueue: Promise<void> = Promise.resolve()
@@ -454,7 +462,8 @@ export class ChatRuntime {
     if (!pairingId || !this.hooks.transcripts || !this.projectPath || !this.sessionId) return
     if (this.session.messages.length === 0) return
     this.hooks.transcripts.put(pairingId, this.projectPath, this.sessionId, {
-      messages: this.session.messages.filter((message) => !message.status || message.status === 'complete'),
+      messages: this.session.messages.filter((message) =>
+        (!message.status || message.status === 'complete') && !message.metadata?.sendFailure),
       provider: String(this.provider),
       hasMore: this.hasMoreHistory,
       cursor: this.historyCursor,
@@ -475,9 +484,9 @@ export class ChatRuntime {
     priority?: 'now' | 'next' | 'later'
     /** Park then steer in one host command — composer Stair. */
     steer?: 'now' | 'next'
-  } = {}): Promise<void> | void {
+  } = {}): void {
     const clientMessageId = extra.clientMessageId ?? newMessageId('user')
-    const cmd: RemoteCommand = {
+    const cmd: SendMessageCommand = {
       type: 'send_message',
       sessionId: this.sessionId,
       projectPath: this.projectPath,
@@ -514,24 +523,55 @@ export class ChatRuntime {
     if (!queued) this.appendLocalTurn(localUserMessage(clientMessageId, content, extra.images))
     this.dirty = true
     this.flush()
-    if (extra.images?.length) {
-      const generation = this.restoreGeneration
-      return this.client.request({ ...cmd, requestId: randomId() }).then((result) => {
-        const error = (result as { error?: string } | null)?.error
-        if (error) throw new Error(error)
-      }).catch(error => {
-        if (generation !== this.restoreGeneration) throw error
-        this.session = { ...this.session,
-          messages: this.session.messages.filter(message => message.id !== clientMessageId),
-          queuedMessages: this.session.queuedMessages.filter(message => message.id !== clientMessageId),
-        }
-        this.session.awaitingAssistantReply = false
-        this.dirty = true
-        this.flush()
-        throw error
-      })
+    void this.deliver(cmd)
+  }
+
+  /**
+   * Wait for the host's receipt. Without one a text send that the host refused,
+   * or never saw, leaves "Sending…" spinning with nothing to act on.
+   */
+  private async deliver(cmd: SendMessageCommand): Promise<void> {
+    const generation = this.restoreGeneration
+    try {
+      const result = await this.client.request({ ...cmd, requestId: randomId() })
+      const error = (result as { error?: string } | null)?.error
+      if (error) throw new Error(error)
+    } catch (error) {
+      if (generation !== this.restoreGeneration || !cmd.clientMessageId) return
+      this.failedSends.set(cmd.clientMessageId, cmd)
+      this.ingest([{
+        type: 'user_message_send_failed',
+        clientMessageId: cmd.clientMessageId,
+        error: error instanceof Error ? error.message : String(error),
+      }])
     }
-    this.client.send(cmd)
+  }
+
+  /** Resend a failed message exactly as it originally went out. */
+  resendFailedMessage(clientMessageId: string): void {
+    const cmd = this.failedSends.get(clientMessageId)
+    if (!cmd) return
+    this.failedSends.delete(clientMessageId)
+    this.session = {
+      ...this.session,
+      messages: this.session.messages.map((message) =>
+        message.id === clientMessageId ? withoutSendFailure(message) : message),
+      ...(cmd.priority === 'next' ? {} : { awaitingAssistantReply: true }),
+    }
+    this.dirty = true
+    this.flush()
+    void this.deliver(cmd)
+  }
+
+  /** Drop a failed message from the transcript; the caller puts it back into the composer. */
+  takeFailedMessage(clientMessageId: string): ChatMessage | null {
+    const message = this.session.messages.find((item) => item.id === clientMessageId)
+    if (!message?.metadata?.sendFailure) return null
+    this.failedSends.delete(clientMessageId)
+    this.session = { ...this.session, messages: this.session.messages.filter((item) => item !== message) }
+    this.dirty = true
+    this.flush()
+    return message
   }
 
   /**

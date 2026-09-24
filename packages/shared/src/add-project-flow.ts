@@ -5,6 +5,7 @@
  * current text mean" is worth keeping out of the component and under test.
  */
 
+import { unwrapIpcInvokeError } from './ipc-error'
 import {
   buildGitHubCloneUrl,
   parseGitHubRepoInput,
@@ -215,18 +216,6 @@ export function stepTitleKey(step: AddProjectStep): string {
     case 'destination':
       return 'sidebar.addProject.stepTitle.destination'
   }
-}
-
-/**
- * Electron wraps `ipcRenderer.invoke` failures as
- * `Error invoking remote method 'channel': Error: <actual>`. Strip that so the
- * dialog can show the underlying message (and match known clone failures).
- */
-export function unwrapIpcInvokeError(message: string): string {
-  const unwrapped = message
-    .replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/i, '')
-    .trim()
-  return unwrapped || message
 }
 
 /**

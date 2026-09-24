@@ -30,6 +30,7 @@
     "./presenters/BrowserToolBlock": "./src/presenters/BrowserToolBlock.tsx",
     "./presenters/ChatMessage": "./src/presenters/ChatMessage.tsx",
     "./presenters/ChatMessageIndicators": "./src/presenters/ChatMessageIndicators.tsx",
+    "./presenters/SendFailureResendButton": "./src/presenters/SendFailureResendButton.tsx",
     "./presenters/ClaudeTurnBody": "./src/presenters/ClaudeTurnBody.tsx",
     "./presenters/CodeBlock": "./src/presenters/CodeBlock.tsx",
     "./presenters/CodexAsyncQuestionForm": "./src/presenters/CodexAsyncQuestionForm.tsx",

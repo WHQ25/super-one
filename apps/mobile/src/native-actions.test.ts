@@ -20,10 +20,24 @@ function ports(): NativeActionPorts {
     codexPlanApproval: vi.fn(),
     codexAsyncQuestionAnswer: vi.fn(),
     openSession: vi.fn(),
+    resendFailedMessage: vi.fn(),
+    editFailedMessage: vi.fn(),
   }
 }
 
 describe('native chat actions', () => {
+  it('routes Resend and Edit on a failed bubble to the shell', async () => {
+    const target = ports()
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'r', action: 'resendFailedMessage', payload: { messageId: 'u1' },
+    }, target)).resolves.toMatchObject({ result: { ok: true } })
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'e', action: 'editFailedMessage', payload: { messageId: 'u1' },
+    }, target)).resolves.toMatchObject({ result: { ok: true } })
+    expect(target.resendFailedMessage).toHaveBeenCalledWith('u1')
+    expect(target.editFailedMessage).toHaveBeenCalledWith('u1')
+  })
+
   it('opens the session a transcript link names', async () => {
     const target = ports()
     await expect(resolveNativeRequest({

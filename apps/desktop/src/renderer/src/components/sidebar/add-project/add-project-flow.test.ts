@@ -15,8 +15,8 @@ import {
   resolveRepoInput,
   stepTitleKey,
   submitLabelKey,
-  unwrapIpcInvokeError,
 } from '@superone/shared/add-project-flow'
+import { unwrapIpcInvokeError } from '@superone/shared/ipc-error'
 
 describe('source detection while typing', () => {
   it('reads an absolute, home or relative path as a local folder', () => {

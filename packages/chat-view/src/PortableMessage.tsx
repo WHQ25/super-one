@@ -31,6 +31,8 @@ import {
 import { collectGeneratedImages, collectGeneratedVideos } from './presenters/tool-display'
 import type { ReductionProjection } from './protocol'
 import { useUserMessageMenu } from './use-user-message-menu'
+import { SendFailureResendButton } from './presenters/SendFailureResendButton'
+import { requestNative } from './bridge'
 
 type PendingPermission = NonNullable<ReductionProjection['pendingPermission']>
 
@@ -266,6 +268,14 @@ export const PortableMessage = memo(function PortableMessage({
               <div className="space-y-1 text-xs text-muted-foreground">
                 {message.contexts.map((context) => <div key={`${context.appId}-${context.summary}`}>{context.appName}: {context.summary}</div>)}
               </div>
+            )
+            : undefined}
+          sendFailure={isUser && message.metadata?.sendFailure
+            ? (
+              <SendFailureResendButton
+                error={message.metadata.sendFailure.error}
+                onResend={() => requestNative('resendFailedMessage', { messageId: message.id })}
+              />
             )
             : undefined}
           userActions={message.status === 'interrupted'

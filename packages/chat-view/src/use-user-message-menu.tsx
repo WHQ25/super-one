@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type HTMLAttributes, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy, Pencil } from 'lucide-react'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { requestNative } from './bridge'
 import { useLongPress } from './long-press'
@@ -62,7 +62,19 @@ export function useUserMessageMenu(
             icon: copied ? <Check className="text-success" /> : <Copy />,
             label: copied ? t('chat.messageMenu.copied') : t('chat.messageMenu.copy'),
             onSelect: copied ? close : copy,
-          }]}
+          },
+          // The phone has no hover row; editing a send the host never took lives here.
+          ...(message.metadata?.sendFailure
+            ? [{
+                id: 'edit',
+                icon: <Pencil />,
+                label: t('chat.sendFailure.edit'),
+                onSelect: () => {
+                  requestNative('editFailedMessage', { messageId: message.id })
+                  close()
+                },
+              }]
+            : [])]}
         />
       )
       : undefined,

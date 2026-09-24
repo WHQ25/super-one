@@ -1589,6 +1589,69 @@ describe('AgentService.handleRemoteCommand', () => {
     }, { providerOrigin: 'remote' })
   })
 
+  it('send_message tells the phone when its send fails after the receipt', async () => {
+    const service = new AgentService()
+    const send = vi.fn(async (_req: unknown, opts?: { onAccepted?: () => void }) => {
+      opts?.onAccepted?.()
+      throw new Error('backend failed to start')
+    })
+    const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p', send })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => activeSession),
+      getSession: vi.fn(() => activeSession),
+      forEachSession: vi.fn(),
+    }
+    const sendEventToMobile = vi.fn().mockResolvedValue(undefined)
+    service.setRemoteControlService({ sendEventToMobile, sendAgentEvent: vi.fn() } as never)
+    const respond = vi.fn().mockResolvedValue(undefined)
+
+    await service.handleRemoteCommand({
+      type: 'send_message',
+      requestId: 'req-1',
+      content: 'hello',
+      projectPath: '/p',
+      sessionId: 'sid-1',
+      clientMessageId: 'user-1',
+    } as never, respond, { deviceId: 'mobile-A', transport: 'lan' })
+
+    expect(respond).toHaveBeenCalledWith('req-1', { ok: true })
+    expect(sendEventToMobile).toHaveBeenCalledWith({
+      type: 'user_message_send_failed',
+      sessionId: 'sid-1',
+      clientMessageId: 'user-1',
+      error: 'backend failed to start',
+    }, ['mobile-A'])
+  })
+
+  it('send_message answers a failure before the receipt on the request, not as an event', async () => {
+    const service = new AgentService()
+    const send = vi.fn().mockRejectedValue(new Error('refused'))
+    const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p', send })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => activeSession),
+      getSession: vi.fn(() => activeSession),
+      forEachSession: vi.fn(),
+    }
+    const sendEventToMobile = vi.fn().mockResolvedValue(undefined)
+    service.setRemoteControlService({ sendEventToMobile, sendAgentEvent: vi.fn() } as never)
+    const respond = vi.fn().mockResolvedValue(undefined)
+
+    await service.handleRemoteCommand({
+      type: 'send_message',
+      requestId: 'req-1',
+      content: 'hello',
+      projectPath: '/p',
+      sessionId: 'sid-1',
+      clientMessageId: 'user-1',
+    } as never, respond, { deviceId: 'mobile-A', transport: 'lan' })
+
+    expect(respond).toHaveBeenCalledWith('req-1', { error: 'refused' })
+    expect(sendEventToMobile).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'user_message_send_failed' }),
+      expect.anything(),
+    )
+  })
+
   it('codex remote turn claims ownership and holds it past the turn', async () => {
     const service = new AgentService()
     const send = vi.fn().mockResolvedValue(undefined)

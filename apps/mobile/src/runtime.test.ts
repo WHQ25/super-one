@@ -599,16 +599,3 @@ it('paints the saved transcript before the subscribe response arrives', async ()
   runtime.dispose()
 })
 
-
-it('retains no optimistic bubble when the host refuses attachment admission', async () => {
-  const client = fakeClient()
-  client.request.mockResolvedValue({ error: 'Attachment: Could not save file. Retry.' })
-  const runtime = new ChatRuntime(client as never, vi.fn())
-  runtime.projectPath = '/p'; runtime.sessionId = 's'
-  await expect(runtime.send('look', { clientMessageId: 'u', images: [{ id: 'i', name: 'a.png', mimeType: 'image/png', base64: 'a' }] })).rejects.toThrow('Could not save')
-  expect(runtime.session.messages).toEqual([])
-  expect(runtime.pendingTurn).toBeNull()
-  expect(client.send).not.toHaveBeenCalled()
-  expect(client.request).toHaveBeenCalledWith(expect.objectContaining({ type: 'send_message', requestId: expect.any(String) }))
-  runtime.dispose()
-})

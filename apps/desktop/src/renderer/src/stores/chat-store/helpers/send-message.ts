@@ -41,7 +41,8 @@ import {
 import { providerSessionIdFromResume } from '@superone/shared/environment'
 import { expandPathRefTagsForAgent, stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
-import { toastSendFailure } from './send-error-toast'
+import { deliverUserSend } from './send-replay'
+import { isRemoteSendDetached } from '@superone/shared/send-failure'
 import { resolveEffectiveProviderId } from '@/lib/provider-resolve'
 
 async function isOfficialCodexProvider(apiProviderId: string | null): Promise<boolean> {
@@ -619,36 +620,33 @@ export async function sendMessageImpl(
       }
     }
 
-    try {
-      // Node accepts send while streaming (FIFO queue / codex steer). Drain stays
-      // open across queued turns until the session is fully idle.
-      // turnKind / collaborationMode / reviewTarget are forwarded to node session.send
-      // (preload types lag; cast keeps remote codex on the session path, not desktop IPC).
-      const sendInput = {
-        sessionId: sid,
-        text: remoteText,
-        clientMessageId: userMessageId,
-        projectPath,
-        providerId: preferredHarness,
-        cwdHostPath,
-        ...(modelForTurn ? { model: modelForTurn } : {}),
-        ...(effortForTurn ? { effort: effortForTurn } : {}),
-        ...(permissionModeForTurn ? { permissionMode: permissionModeForTurn } : {}),
-        ...(additionalDirs.length > 0 ? { additionalDirectories: additionalDirs } : {}),
-        ...(enabledSkillsForTurn && enabledSkillsForTurn.length > 0
-          ? { enabledSkills: enabledSkillsForTurn }
-          : {}),
-        ...(disabledSkillsForTurn ? { disabledSkills: disabledSkillsForTurn } : {}),
-        ...(imagesForTurn.length > 0 ? { images: imagesForTurn } : {}),
-        ...(apiProviderIdForTurn ? { apiProviderId: apiProviderIdForTurn } : {}),
-        ...(remoteTurnKind ? { turnKind: remoteTurnKind } : {}),
-        ...(remoteCollaborationMode ? { collaborationMode: remoteCollaborationMode } : {}),
-        ...(remoteReviewTarget !== undefined ? { reviewTarget: remoteReviewTarget } : {}),
-      }
-      const finalSnap = (await window.environment.sendSessionMessage(
-        remoteKey.connectionId,
-        sendInput as Parameters<typeof window.environment.sendSessionMessage>[1],
-      )) as NodeSessionSnapshot | null
+    // Node accepts send while streaming (FIFO queue / codex steer). Drain stays
+    // open across queued turns until the session is fully idle.
+    // turnKind / collaborationMode / reviewTarget are forwarded to node session.send
+    // (preload types lag; cast keeps remote codex on the session path, not desktop IPC).
+    const sendInput = {
+      sessionId: sid,
+      text: remoteText,
+      clientMessageId: userMessageId,
+      projectPath,
+      providerId: preferredHarness,
+      cwdHostPath,
+      ...(modelForTurn ? { model: modelForTurn } : {}),
+      ...(effortForTurn ? { effort: effortForTurn } : {}),
+      ...(permissionModeForTurn ? { permissionMode: permissionModeForTurn } : {}),
+      ...(additionalDirs.length > 0 ? { additionalDirectories: additionalDirs } : {}),
+      ...(enabledSkillsForTurn && enabledSkillsForTurn.length > 0
+        ? { enabledSkills: enabledSkillsForTurn }
+        : {}),
+      ...(disabledSkillsForTurn ? { disabledSkills: disabledSkillsForTurn } : {}),
+      ...(imagesForTurn.length > 0 ? { images: imagesForTurn } : {}),
+      ...(apiProviderIdForTurn ? { apiProviderId: apiProviderIdForTurn } : {}),
+      ...(remoteTurnKind ? { turnKind: remoteTurnKind } : {}),
+      ...(remoteCollaborationMode ? { collaborationMode: remoteCollaborationMode } : {}),
+      ...(remoteReviewTarget !== undefined ? { reviewTarget: remoteReviewTarget } : {}),
+    }
+    const statusBeforeSend = writeSess.status
+    const applyFinalSnapshot = async (finalSnap: NodeSessionSnapshot | null) => {
       const providerId = nodeHarnessToProviderId(
         finalSnap?.harnessId || finalSnap?.providerId || preferredHarness,
       )
@@ -727,13 +725,24 @@ export async function sendMessageImpl(
           }
         })
       }
-    } catch (err) {
-      patchSession(() => ({ awaitingAssistantReply: false, status: 'error' }))
-      // ChatInput fire-and-forgets sendMessage; without a toast the bubble appears
-      // and nothing else happens (silent unhandled rejection).
-      toastSendFailure(err)
-      throw err
     }
+    await deliverUserSend({
+      messageId: userMessageId,
+      patchSession,
+      deliver: () => window.environment.sendSessionMessage(
+        remoteKey.connectionId,
+        sendInput as Parameters<typeof window.environment.sendSessionMessage>[1],
+      ),
+      onDelivered: async (result) => {
+        // The node holds the message and only the stream dropped: reconnect
+        // recovery picks the turn back up, so this is not a send failure.
+        if (isRemoteSendDetached(result)) return
+        await applyFinalSnapshot(result as NodeSessionSnapshot | null)
+      },
+      retryState: () => ({ awaitingAssistantReply: true, status: 'streaming' }),
+      // A concurrent turn this send was queued behind is still running.
+      failureState: () => ({ status: statusBeforeSend === 'streaming' ? 'streaming' : 'idle' }),
+    })
     return
   }
 
@@ -1202,6 +1211,8 @@ export async function sendMessageImpl(
     userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
   }
   const isCompactSlash = isCompactSlashSend(effectiveProvider, finalContent)
+  const awaitsReply = (effectiveProvider === 'claude' || effectiveProvider === 'acp'
+    || effectiveProvider === 'cursor' || effectiveProvider === 'opencode') && !isQueuedSend
   set((s) => ({
     ...commitPerSession(s, writeTarget, (sess) => ({
       ...(!isQueuedSend ? { messages: [...sess.messages, userMessage] } : {}),
@@ -1215,10 +1226,7 @@ export async function sendMessageImpl(
       additionalDirsDirty: false,
       draftId: null,
       ...(isCompactSlash ? { _pendingCompactUserId: userMessageId } : {}),
-      ...((effectiveProvider === 'claude' || effectiveProvider === 'acp'
-        || effectiveProvider === 'cursor' || effectiveProvider === 'opencode') && !isQueuedSend
-        ? { awaitingAssistantReply: true }
-        : {}),
+      ...(awaitsReply ? { awaitingAssistantReply: true } : {}),
       ...(effectiveProvider === 'cursor' && !isQueuedSend
         ? { status: 'streaming' as const }
         : {}),
@@ -1314,58 +1322,55 @@ export async function sendMessageImpl(
   const liveSession = getScopedPerSession(get(), writeTarget)
   const mergedDirs = mergeCallerScopedDirs(project, liveSession)
 
-  try {
-    await window.agent.sendMessage(projectPath, {
-      content: finalContent,
-      model: effectiveProvider === 'codex' ? resolvedCodexModel : selectedModel || undefined,
-      effort: effectiveProvider === 'codex' ? undefined : selectedEffort,
-      ...(effectiveProvider === 'opencode' && liveSession.openCodeAgentId
-        ? { agent: liveSession.openCodeAgentId }
-        : {}),
-      images: attachments.length > 0 ? attachments : undefined,
-      // Always an array, never undefined: `Session.send` reads undefined as
-      // "leave unchanged", so collapsing an empty set meant removing the last
-      // workspace folder silently never reached a live session.
-      additionalDirs: mergedDirs,
-      clientMessageId: userMessageId,
-      sessionId: resolvedSessionId,
-      gitBranch: liveSession._gitBranch ?? undefined,
-      worktreePath: liveSession._worktreePath ?? undefined,
-      userMessageContent: userContent,
-      contexts: messageContexts,
-      userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
-      provider: effectiveProvider,
-      ...(effectiveProvider === 'codex'
-        ? {
-            codex: {
-              mode: 'run' as const,
-              prompt: finalContent,
-              reasoningEffort: resolvedCodexReasoningEffort,
-              permissionPreset: selectedCodexPermissionPreset,
-              collaborationMode: selectedCodexCollaborationMode,
-              ...(liveSession._providerSessionId ? { threadId: liveSession._providerSessionId } : {}),
-              ...(liveSession.cwd ? { cwd: liveSession.cwd } : {}),
-            },
-          }
-        : {}),
-      ...(liveSession.apiProviderId ? { apiProviderId: liveSession.apiProviderId } : {}),
-      ...(effectiveProvider === 'acp' && liveSession.acpAgentId
-        ? { acpAgentId: liveSession.acpAgentId }
-        : {}),
-      ...(effectiveProvider === 'cursor'
-        ? { cursor: { params: liveSession.cursorModelParams ?? {} } }
-        : {}),
-      ...(isQueuedSend ? { priority: 'next' as const } : {}),
-    })
-  } catch (err) {
-    if (!isQueuedSend) {
-      patchSession(() => ({ awaitingAssistantReply: false }))
-    } else {
-      patchSession((sess) => ({
-        queuedMessages: sess.queuedMessages.filter((message) => message.id !== userMessageId),
-      }))
-    }
-    toastSendFailure(err)
-    throw err
+  const request: Parameters<typeof window.agent.sendMessage>[1] = {
+    content: finalContent,
+    model: effectiveProvider === 'codex' ? resolvedCodexModel : selectedModel || undefined,
+    effort: effectiveProvider === 'codex' ? undefined : selectedEffort,
+    ...(effectiveProvider === 'opencode' && liveSession.openCodeAgentId
+      ? { agent: liveSession.openCodeAgentId }
+      : {}),
+    images: attachments.length > 0 ? attachments : undefined,
+    // Always an array, never undefined: `Session.send` reads undefined as
+    // "leave unchanged", so collapsing an empty set meant removing the last
+    // workspace folder silently never reached a live session.
+    additionalDirs: mergedDirs,
+    clientMessageId: userMessageId,
+    sessionId: resolvedSessionId,
+    gitBranch: liveSession._gitBranch ?? undefined,
+    worktreePath: liveSession._worktreePath ?? undefined,
+    userMessageContent: userContent,
+    contexts: messageContexts,
+    userSelections: userSelections.length > 0 ? [...userSelections] : undefined,
+    provider: effectiveProvider,
+    ...(effectiveProvider === 'codex'
+      ? {
+          codex: {
+            mode: 'run' as const,
+            prompt: finalContent,
+            reasoningEffort: resolvedCodexReasoningEffort,
+            permissionPreset: selectedCodexPermissionPreset,
+            collaborationMode: selectedCodexCollaborationMode,
+            ...(liveSession._providerSessionId ? { threadId: liveSession._providerSessionId } : {}),
+            ...(liveSession.cwd ? { cwd: liveSession.cwd } : {}),
+          },
+        }
+      : {}),
+    ...(liveSession.apiProviderId ? { apiProviderId: liveSession.apiProviderId } : {}),
+    ...(effectiveProvider === 'acp' && liveSession.acpAgentId
+      ? { acpAgentId: liveSession.acpAgentId }
+      : {}),
+    ...(effectiveProvider === 'cursor'
+      ? { cursor: { params: liveSession.cursorModelParams ?? {} } }
+      : {}),
+    ...(isQueuedSend ? { priority: 'next' as const } : {}),
   }
+  await deliverUserSend({
+    messageId: userMessageId,
+    patchSession,
+    deliver: async () => { await window.agent.sendMessage(projectPath, request) },
+    retryState: () => ({
+      ...(awaitsReply ? { awaitingAssistantReply: true } : {}),
+      ...(effectiveProvider === 'cursor' && !isQueuedSend ? { status: 'streaming' as const } : {}),
+    }),
+  })
 }

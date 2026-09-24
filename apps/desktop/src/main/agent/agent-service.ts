@@ -704,6 +704,18 @@ export class AgentService {
           break
         }
 
+        const reportLateFailure = async (error: unknown) => {
+          // withTurnReceipt already answered the request (or there was none), so
+          // this event is the only way the phone learns its bubble never ran.
+          log.warn('[AgentService] remote send_message failed after admission:', error)
+          if (!command.clientMessageId) return
+          await this.remoteControlService?.sendEventToMobile({
+            type: 'user_message_send_failed',
+            sessionId,
+            clientMessageId: command.clientMessageId,
+            error: error instanceof Error ? error.message : String(error),
+          }, [deviceId])
+        }
         await withTurnReceipt(command.requestId, respond, async (onAccepted) => {
           admitTurnAttachments(command.content, command.images)
           const saved = loadSessionState(sessionId)
@@ -760,7 +772,7 @@ export class AgentService {
           }
           if (queueOp) await this.enqueueSessionQueueOp(sessionId, deliver)
           else await deliver()
-        })
+        }).catch(reportLateFailure)
         break
       }
       case 'dequeue_message': {

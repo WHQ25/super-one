@@ -27,6 +27,8 @@ export interface ChatMessagePresenterProps {
   assistantFooter?: ReactNode
   footerInsideBody?: boolean
   contexts?: ReactNode
+  /** Resend control beside a user bubble the host never took. */
+  sendFailure?: ReactNode
   userActions?: ReactNode
 }
 
@@ -51,6 +53,7 @@ export function ChatMessagePresenter({
   assistantFooter,
   footerInsideBody = false,
   contexts,
+  sendFailure,
   userActions,
 }: ChatMessagePresenterProps) {
   if (mailboxLabel) {
@@ -65,6 +68,35 @@ export function ChatMessagePresenter({
   }
 
   if (initialTask) return initialTask
+
+  const bubble = (
+    <div
+      {...(isUser ? userBubbleProps : undefined)}
+      className={cn(
+        'portable-message-body min-w-0 text-sm',
+        isUser
+          ? cn(
+              'portable-user-message max-w-full overflow-hidden rounded-xl px-3 py-2 text-foreground break-all',
+              isCollaboration
+                ? 'border border-primary/25 bg-primary/5'
+                : 'bg-muted/80',
+            )
+          : 'assistant-reply w-full text-foreground',
+      )}
+    >
+      {body}
+      {!isUser && imageGallery}
+      {!isUser && videoGallery}
+      {interrupted && (
+        <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+          <OctagonX className="size-3" />
+          <span>{interruptedLabel}</span>
+        </div>
+      )}
+      {!isUser && turnSummary}
+      {!footerInsideBody && assistantFooter}
+    </div>
+  )
 
   return (
     <div className={cn(
@@ -109,32 +141,14 @@ export function ChatMessagePresenter({
             </div>
           )
         )}
-        <div
-          {...(isUser ? userBubbleProps : undefined)}
-          className={cn(
-            'portable-message-body min-w-0 text-sm',
-            isUser
-              ? cn(
-                  'portable-user-message max-w-full overflow-hidden rounded-xl px-3 py-2 text-foreground break-all',
-                  isCollaboration
-                    ? 'border border-primary/25 bg-primary/5'
-                    : 'bg-muted/80',
-                )
-              : 'assistant-reply w-full text-foreground',
-          )}
-        >
-          {body}
-          {!isUser && imageGallery}
-          {!isUser && videoGallery}
-          {interrupted && (
-            <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-              <OctagonX className="size-3" />
-              <span>{interruptedLabel}</span>
+        {isUser && sendFailure
+          ? (
+            <div className="flex min-w-0 max-w-full items-center gap-1">
+              {sendFailure}
+              {bubble}
             </div>
-          )}
-          {!isUser && turnSummary}
-          {!footerInsideBody && assistantFooter}
-        </div>
+          )
+          : bubble}
         {isUser && contexts && <div className="mt-1.5">{contexts}</div>}
         {isUser && userActions}
         {isUser && userMenu}

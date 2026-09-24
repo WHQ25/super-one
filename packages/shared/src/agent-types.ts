@@ -714,6 +714,17 @@ export interface MessageMetadata {
    * for it (see `buildModelFallbackMessage`).
    */
   modelFallback?: ModelFallbackMeta
+  /**
+   * A user message the host never took: the bubble stays in the transcript with
+   * a failure row until it is resent or pulled back into the composer. Local to
+   * the sender — the host has no copy of a message it rejected.
+   */
+  sendFailure?: SendFailure
+}
+
+export interface SendFailure {
+  /** Raw failure text; the row renders a friendlier line for transport errors. */
+  error: string
 }
 
 /**
@@ -1737,6 +1748,8 @@ export type AgentEventBase =
   /** `heartbeat` marks a liveness-only tick (no progress happened); it must never retract a `subagentRetry` badge. */
   | { type: 'tool_progress'; messageId: string; toolUseId: string; toolName: string; elapsedSeconds: number; parentToolUseId?: string | null; taskId?: string; subagentType?: string; subagentRetry?: SubagentRetryInfo; heartbeat?: boolean }
   | { type: 'message_timestamp'; messageId: string; timestamp: string }
+  /** The host could not deliver a user send it had already acknowledged (or never acknowledges). */
+  | { type: 'user_message_send_failed'; clientMessageId: string; error: string }
   | { type: 'message_complete'; messageId: string; metadata?: MessageMetadata }
   | { type: 'message_interrupted'; messageId: string; metadata?: MessageMetadata }
   | { type: 'message_error'; messageId: string; error: string; errorInfo?: AgentErrorInfo }
@@ -4711,7 +4724,7 @@ export type RemoteCommand =
   | import('./environment/draft-rpc').DraftRemoteCommand
   | import('./codex-async-question').CodexAsyncQuestionAnswerCommand
   | { type: 'create_session'; draftId?: string; draftLeaseId?: string; requestId: string; sessionId: string; projectPath: string; provider?: HarnessId; acpAgentId?: string; permissionMode?: string; effort?: string; model?: string; mode?: string; agentPreset?: string; apiProviderId?: string | null; gitBranch?: string; worktreePath?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean; additionalDirectories?: string[]; /** Sandbox the picker chose before the session existed (Claude / Cursor). */ sandboxMode?: SandboxMode }
-  | { type: 'send_message'; /** Optional receipt for attachment admission, before turn execution. */ requestId?: string; sessionId: string; projectPath: string; content: string; provider?: HarnessId; model?: string; effort?: string; images?: ImageAttachment[]; permissionPreset?: string; collaborationMode?: string; threadId?: string; clientMessageId?: string; priority?: 'now' | 'next' | 'later'; /** Park then steer in this command so Stair cannot race a follow-up RPC. */ steer?: 'now' | 'next'; /** OpenCode primary agent for this turn. */ agent?: string; /** Codex service tier (`fast`). */ serviceTier?: string | null; /** Cursor catalog params (param id → value). */ modelParams?: Record<string, string> }
+  | { type: 'send_message'; /** Receipt for admission (before turn execution); without it a failed send is only reported as a `user_message_send_failed` event. */ requestId?: string; sessionId: string; projectPath: string; content: string; provider?: HarnessId; model?: string; effort?: string; images?: ImageAttachment[]; permissionPreset?: string; collaborationMode?: string; threadId?: string; clientMessageId?: string; priority?: 'now' | 'next' | 'later'; /** Park then steer in this command so Stair cannot race a follow-up RPC. */ steer?: 'now' | 'next'; /** OpenCode primary agent for this turn. */ agent?: string; /** Codex service tier (`fast`). */ serviceTier?: string | null; /** Cursor catalog params (param id → value). */ modelParams?: Record<string, string> }
   /**
    * Grok ACP session recap → `x.ai/recap`.
    * `auto` defaults false (manual `/recap`). Mobile/desktop auto recap pass true.

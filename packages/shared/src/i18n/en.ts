@@ -1549,6 +1549,11 @@ export type Messages = {
       failed: string
       remoteUnavailable: string
     }
+    /** Actions on a user message the host never took. */
+    sendFailure: {
+      resend: string
+      edit: string
+    }
     cursor: {
       apiKeyPrompt: {
         title: string
@@ -5536,6 +5541,10 @@ export const en: Messages = {
       failed: 'Failed to send message: {{message}}',
       remoteUnavailable:
         'Remote host is offline or reconnecting. Try again in a moment.',
+    },
+    sendFailure: {
+      resend: 'Resend',
+      edit: 'Edit',
     },
     cursor: {
       apiKeyPrompt: {

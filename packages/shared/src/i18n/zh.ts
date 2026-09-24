@@ -1632,6 +1632,10 @@ export const zh: Messages = {
       failed: '发送失败：{{message}}',
       remoteUnavailable: '远程主机已断开或正在重连，请稍后再试。',
     },
+    sendFailure: {
+      resend: '重新发送',
+      edit: '编辑',
+    },
     cursor: {
       apiKeyPrompt: {
         title: '需要 Cursor API Key',

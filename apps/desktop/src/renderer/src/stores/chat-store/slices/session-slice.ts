@@ -1,7 +1,7 @@
 import type { StateCreator } from 'zustand'
-import type { ClaudeSteerPriority, ContextUsageInfo, RewindFilesResult } from '@superone/shared/agent-types'
+import type { ChatMessage, ClaudeSteerPriority, ContextUsageInfo, RewindFilesResult } from '@superone/shared/agent-types'
 import { useActivityViewStateStore } from '../../activity-view-state'
-import type { ChatStore, SessionWriteTarget, SetDraftTextOptions } from '../types'
+import type { ChatStore, PerSessionState, SessionWriteTarget, SetDraftTextOptions } from '../types'
 import { freshSubagentColorPool } from '../defaults'
 import {
   _truncateAtCheckpoint,
@@ -13,6 +13,17 @@ import {
   updatePerSession,
 } from '../index'
 import { toastSendFailure } from '../helpers/send-error-toast'
+import { dropSendReplay, replayFailedSend } from '../helpers/send-replay'
+import { userMessageText } from '@superone/chat-core'
+import { restoreSentDraft } from '@/components/chat/chat-input/restore-sent-draft'
+
+/** Put a user message the host never ran back into the composer, after anything typed since. */
+function composerDraftFrom(current: PerSessionState, msg: ChatMessage): Partial<PerSessionState> {
+  return {
+    ...restoreSentDraft(current, { text: userMessageText(msg), doc: null, attachments: msg.attachments ?? [] }),
+    codexPlanRejectHintActive: false,
+  }
+}
 
 /**
  * Per-session actions that touch a specific session's local state but
@@ -26,6 +37,10 @@ export interface SessionSlice {
   rewindConversation: (userMessageId: string) => Promise<RewindFilesResult>
   previewRewind: (checkpointId: string) => Promise<RewindFilesResult>
   editQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
+  /** Resend a failed user message exactly as it originally went out. */
+  resendFailedMessage: (messageId: string) => Promise<void>
+  /** Drop a failed user message from the transcript and put it back into the composer. */
+  editFailedMessage: (messageId: string, target?: SessionWriteTarget) => void
   deleteQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
   steerQueuedMessage: (messageId: string, target?: SessionWriteTarget, priority?: ClaudeSteerPriority) => Promise<boolean>
   startQueuedMessages: (target?: SessionWriteTarget) => Promise<boolean>
@@ -85,18 +100,21 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
     if (!msg) return
     const removed = await window.agent.dequeueMessage(projectPath, messageId)
     if (!removed) return
-    const text = msg.content.find((b) => b.type === 'text')
-    const attachments = msg.attachments ?? []
     set((s) => commitPerSession(s, target, (sess) => ({
       queuedMessages: sess.queuedMessages.filter((m) => m.id !== messageId),
-      draftText: text && 'text' in text ? text.text : '',
-      // The composer restores from `draftJson` when it is set, so leaving the
-      // stale snapshot (an empty doc, written when the send cleared the editor)
-      // would blank the text we just put back. Plain text is the only source
-      // this message carries — drop the snapshot and let the editor rebuild.
-      draftJson: null,
-      attachments,
-      codexPlanRejectHintActive: false,
+      ...composerDraftFrom(sess, msg),
+    })))
+  },
+
+  resendFailedMessage: (messageId) => replayFailedSend(messageId),
+
+  editFailedMessage: (messageId, target) => {
+    const msg = getScopedPerSession(get(), target).messages.find((m) => m.id === messageId)
+    if (!msg?.metadata?.sendFailure) return
+    dropSendReplay(messageId)
+    set((s) => commitPerSession(s, target, (sess) => ({
+      messages: sess.messages.filter((m) => m.id !== messageId),
+      ...composerDraftFrom(sess, msg),
     })))
   },
 

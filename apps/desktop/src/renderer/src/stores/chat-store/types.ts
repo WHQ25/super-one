@@ -435,6 +435,10 @@ export interface ChatStore {
   previewRewind: (checkpointId: string) => Promise<RewindFilesResult>
 
   editQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
+  /** Resend a failed user message exactly as it originally went out. */
+  resendFailedMessage: (messageId: string) => Promise<void>
+  /** Drop a failed user message from the transcript and put it back into the composer. */
+  editFailedMessage: (messageId: string, target?: SessionWriteTarget) => void
   deleteQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
   steerQueuedMessage: (messageId: string, target?: SessionWriteTarget, priority?: ClaudeSteerPriority) => Promise<boolean>
   startQueuedMessages: (target?: SessionWriteTarget) => Promise<boolean>

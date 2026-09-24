@@ -95,6 +95,10 @@ export interface NativeActionPorts {
    * parent). Only the id is known here; the shell resolves its project.
    */
   openSession(sessionId: string): Promise<void>
+  /** Resend a user message the host never took, exactly as it went out. */
+  resendFailedMessage(messageId: string): Promise<void>
+  /** Pull a user message the host never took back into the composer. */
+  editFailedMessage(messageId: string): Promise<void>
 }
 
 function payloadString(message: NativeRequest, key: string): string {
@@ -214,6 +218,10 @@ export async function resolveNativeRequest(
       await ports.copyText(payloadString(message, 'text'))
     } else if (message.action === 'openSession') {
       await ports.openSession(payloadString(message, 'sessionId'))
+    } else if (message.action === 'resendFailedMessage') {
+      await ports.resendFailedMessage(payloadString(message, 'messageId'))
+    } else if (message.action === 'editFailedMessage') {
+      await ports.editFailedMessage(payloadString(message, 'messageId'))
     } else if (message.action === 'haptic') {
       const style = (message.payload as Record<string, unknown> | undefined)?.style
       // An unknown strength still ticks: feedback is better than a silent gesture.

@@ -1,4 +1,5 @@
 import { PersistedWorkspace } from '../persisted-workspace'
+import { mergeRestoredDraftText, userMessageText } from '@superone/chat-core'
 import { networkLedger } from '../network-ledger'
 import type { RemoteSystemInfo } from '@superone/shared/agent-types'
 import { invalidateGitResources, requestGitResource } from '../git-resource-cache'
@@ -572,6 +573,20 @@ export function MobileApp() {
       setDraft: async (text) => {
         if (composerDraft.editorRef.current) composerDraft.editorRef.current.replaceText(text)
         else composerDraft.changeText(text)
+      },
+      resendFailedMessage: async (messageId) => {
+        runtimeRef.current?.resendFailedMessage(messageId)
+      },
+      editFailedMessage: async (messageId) => {
+        const message = runtimeRef.current?.takeFailedMessage(messageId)
+        if (!message) return
+        const text = mergeRestoredDraftText(userMessageText(message), composerDraft.exportSnapshot().text)
+        if (composerDraft.editorRef.current) composerDraft.editorRef.current.replaceText(text)
+        else composerDraft.changeText(text)
+        const restored = message.attachments ?? []
+        if (restored.length) {
+          setAttachments((current) => [...restored.filter((a) => !current.some((c) => c.id === a.id)), ...current])
+        }
       },
       codexAsyncQuestionAnswer: async (messageId, itemId, answers) => {
         const runtime = runtimeRef.current
@@ -1536,30 +1551,27 @@ export function MobileApp() {
     const runtime = runtimeRef.current
     if (!runtime) return
     const { needsClientMessageId: queued } = composerQueuedSendFields(runtime.session.status, selectedProvider, kind)
-    try {
-      await runtime.send(text, {
-        images: attachments,
-        ...(selectedProvider === 'codex' && remoteDrafts.settings?.codexCollaborationMode
-          ? { collaborationMode: remoteDrafts.settings.codexCollaborationMode } : {}),
-        ...(selectedModel ? { model: selectedModel } : {}),
-        ...(selectedEffort ? { effort: selectedEffort } : {}),
-        ...(selectedProvider === 'opencode' && harnessSelection.selectedAgentId
-          ? { agent: harnessSelection.selectedAgentId }
-          : {}),
-        ...(selectedProvider === 'codex' ? { serviceTier: harnessSelection.serviceTier } : {}),
-        ...(Object.keys(harnessSelection.modelParams).length
-          ? { modelParams: harnessSelection.modelParams }
-          : {}),
-        clientMessageId,
-        ...(queued ? { priority: 'next' as const } : {}),
-        // Fold Stair into this send so it cannot race a follow-up steer RPC.
-        ...(queued && kind === 'steer' ? { steer: 'now' as const } : {}),
-        ...(queued && kind === 'soon' ? { steer: 'next' as const } : {}),
-      })
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'message failed')
-      return
-    }
+    runtime.send(text, {
+      images: attachments,
+      ...(selectedProvider === 'codex' && remoteDrafts.settings?.codexCollaborationMode
+        ? { collaborationMode: remoteDrafts.settings.codexCollaborationMode } : {}),
+      ...(selectedModel ? { model: selectedModel } : {}),
+      ...(selectedEffort ? { effort: selectedEffort } : {}),
+      ...(selectedProvider === 'opencode' && harnessSelection.selectedAgentId
+        ? { agent: harnessSelection.selectedAgentId }
+        : {}),
+      ...(selectedProvider === 'codex' ? { serviceTier: harnessSelection.serviceTier } : {}),
+      ...(Object.keys(harnessSelection.modelParams).length
+        ? { modelParams: harnessSelection.modelParams }
+        : {}),
+      clientMessageId,
+      ...(queued ? { priority: 'next' as const } : {}),
+      // Fold Stair into this send so it cannot race a follow-up steer RPC.
+      ...(queued && kind === 'steer' ? { steer: 'now' as const } : {}),
+      ...(queued && kind === 'soon' ? { steer: 'next' as const } : {}),
+    })
+    // A send the host refuses keeps its bubble with Resend / Edit, so the draft
+    // can always be cleared here.
     await remoteDrafts.consume()
     if (composerDraft.clearSent(sentDraft.revision) && !composerDraft.editorRef.current) suggestions.update('')
     setAttachments((current) => current.filter((item) => !attachments.includes(item)))

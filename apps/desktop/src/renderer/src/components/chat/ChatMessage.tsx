@@ -2,7 +2,7 @@ import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus, ImageGe
 import { useState, useEffect, useMemo, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
-import { FileText, Folder } from 'lucide-react'
+import { FileText, Folder, Pencil } from 'lucide-react'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
@@ -31,6 +31,7 @@ import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 import { getAssistantCopyText } from './chat-message/getAssistantCopyText'
 import { resolveMarkdownFileLinks } from './chat-shared'
 import { RewindButton } from './RewindButton'
+import { SendFailureResendButton } from '@superone/chat-view/presenters/SendFailureResendButton'
 import { CopyableMarkdown, InsightBlock } from './CopyableMarkdown'
 import { CollabTaskBubble } from './CollabTaskBubble'
 import { CopyButton, useCopyText } from './chat-message/copy-button'
@@ -408,6 +409,7 @@ export const ChatMessage = memo(function ChatMessage({
       runtime={CLAUDE_TURN_RUNTIME}
     />
   )
+  const sendFailure = isUser ? message.metadata?.sendFailure : undefined
   const userActions = isUser && !hideCopyActions && (
     (!isCollab && !hideUserActions) || (isCollab && userText.length > 0)
   ) ? (
@@ -425,6 +427,17 @@ export const ChatMessage = memo(function ChatMessage({
           onClick={() => copyUserText(userText)}
           className="opacity-100"
         />
+      )}
+      {sendFailure && (
+        <button
+          type="button"
+          title={t('chat.sendFailure.edit')}
+          aria-label={t('chat.sendFailure.edit')}
+          onClick={() => useChatStore.getState().editFailedMessage(message.id, scope ?? undefined)}
+          className="cursor-pointer rounded p-0.5 text-muted-foreground hover:text-foreground"
+        >
+          <Pencil className="size-3" />
+        </button>
       )}
     </div>
   ) : undefined
@@ -457,6 +470,14 @@ export const ChatMessage = memo(function ChatMessage({
       footerInsideBody={!!collapseEntireCodexTurn}
       contexts={message.contexts && message.contexts.length > 0
         ? <MessageContextChips contexts={message.contexts} />
+        : undefined}
+      sendFailure={sendFailure
+        ? (
+          <SendFailureResendButton
+            error={sendFailure.error}
+            onResend={() => { void useChatStore.getState().resendFailedMessage(message.id) }}
+          />
+        )
         : undefined}
       userActions={userActions}
     />

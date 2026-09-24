@@ -18,7 +18,7 @@ const FLIP_MARGIN_PX = 8
  * backdrop dismisses it, as does any scroll, because a menu that rides along
  * with a scrolling transcript reads as stuck to the finger.
  *
- * Copy is the only item today; the list shape is what future items plug into.
+ * Copy is always there; Edit joins it on a send the host never took.
  */
 export function PortableMessageMenu({
   items,

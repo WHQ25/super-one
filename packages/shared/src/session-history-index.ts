@@ -9,12 +9,42 @@ export interface SessionHistoryIndex {
 }
 export const HISTORY_PREVIEW_LENGTH = 160
 
-export function extendHistoryIndex(base: SessionHistoryIndex, messages: ChatMessage[]): SessionHistoryIndex {
-  const messageIds = [...base.messageIds]
-  const positions = new Map(messageIds.map((id, index) => [id, index]))
-  for (const message of messages) {
-    if (!positions.has(message.id)) { positions.set(message.id, messageIds.length); messageIds.push(message.id) }
+const indexPositions = new WeakMap<SessionHistoryIndex, ReadonlyMap<string, number>>()
+
+/** An index is never mutated, so its id → position map is built once per index. */
+function positionsOf(index: SessionHistoryIndex): ReadonlyMap<string, number> {
+  let positions = indexPositions.get(index)
+  if (!positions) {
+    positions = new Map(index.messageIds.map((id, position) => [id, position]))
+    indexPositions.set(index, positions)
   }
+  return positions
+}
+
+export interface HistoryPositions {
+  /** Global position of a loaded or indexed row; undefined for anything else. */
+  get(id: string): number | undefined
+  /** Loaded rows the index does not know yet, in their appended order. */
+  appended: string[]
+}
+
+/**
+ * Where loaded rows sit on the session timeline: indexed rows keep their index
+ * position, and rows newer than the index follow it in load order.
+ */
+export function historyPositions(index: SessionHistoryIndex | null, messages: readonly ChatMessage[]): HistoryPositions {
+  const indexed = index ? positionsOf(index) : new Map<string, number>()
+  const base = index?.messageIds.length ?? 0
+  const added = new Map<string, number>()
+  for (const message of messages) {
+    if (!indexed.has(message.id) && !added.has(message.id)) added.set(message.id, base + added.size)
+  }
+  return { get: id => indexed.get(id) ?? added.get(id), appended: [...added.keys()] }
+}
+
+export function extendHistoryIndex(base: SessionHistoryIndex, messages: ChatMessage[]): SessionHistoryIndex {
+  const positions = historyPositions(base, messages)
+  const messageIds = [...base.messageIds, ...positions.appended]
   const entries = new Map(base.entries.map(entry => [entry.id, entry]))
   const runs: ChatMessage[][] = []
   for (const message of messages) {

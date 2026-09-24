@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { extractTurnOutline } from '@superone/shared/turn-outline'
 import { findActiveTurnId, tickWidth } from '@superone/shared/chat-scroll-indicator'
-import { compactMessageIndices, compactVisibleStart, jumpChatWindow, visibleChatWindow } from './chat-navigation'
+import { compactBoundary, compactMessageIndices, compactsAfter, compactTimeline, compactVisibleStart, jumpChatWindow, visibleChatWindow } from './chat-navigation'
 import { loadNextChatWindow, loadPreviousChatWindow } from './chat-window'
 
 const message = (id: string, role: ChatMessage['role'], text: string, providerId = 'claude'): ChatMessage => ({
@@ -29,8 +29,28 @@ describe('desktop outline in a bounded mobile transcript', () => {
     expect([null, 0, 1, 2, 3, 4].map(tickWidth)).toEqual([6, 22, 20, 14, 8, 6])
   })
   it('expands each compact boundary and all history with the same levels as desktop', () => {
-    expect([0, 1, 2, 3].map((level) => compactVisibleStart([10, 50, 90], level))).toEqual([90, 50, 10, 0])
+    const messages = Array.from({ length: 100 }, (_, i) => [10, 50, 90].includes(i)
+      ? message(`m${i}`, 'assistant', '__compact__:auto:200', 'system') : message(`m${i}`, 'user', `Q${i}`))
+    const timeline = compactTimeline(messages, null)
+    expect([0, 1, 2, 3].map((level) => compactVisibleStart(messages, timeline, level))).toEqual([90, 50, 10, 0])
+    expect([0, 1, 2, 3].map((level) => compactBoundary(timeline, level))).toEqual(['m90', 'm50', 'm10', undefined])
+    expect(['m95', 'm60', 'm0'].map((id) => compactsAfter(timeline, id))).toEqual([0, 1, 3])
     expect(visibleChatWindow({ start: 76, end: 100 }, 100, 90)).toEqual({ start: 90, end: 100 })
+  })
+  it('collapses on unloaded compacts from the history index, and on ones newer than it', () => {
+    const ids = Array.from({ length: 100 }, (_, i) => `m${i}`)
+    const index = { messageIds: ids, entries: [], compacts: [{ id: 'm15', index: 15 }, { id: 'm55', index: 55 }] }
+    const tail = ids.slice(92).map((id) => message(id, 'user', id))
+    const timeline = compactTimeline(tail, index)
+    expect(timeline.ids).toEqual(['m15', 'm55'])
+    // The latest compact is not loaded: every loaded row lies below it.
+    expect(compactVisibleStart(tail, timeline, 0)).toBe(0)
+    expect(compactsAfter(timeline, 'm20')).toBe(1)
+    const live = [...tail, message('live-compact', 'assistant', '__compact__:manual:10', 'system'), message('next', 'user', 'Next')]
+    const extended = compactTimeline(live, index)
+    expect(extended.ids).toEqual(['m15', 'm55', 'live-compact'])
+    expect(extended.position('live-compact')).toBe(100)
+    expect(compactVisibleStart(live, extended, 0)).toBe(8)
   })
   it('mounts a bounded neighborhood containing any jump target', () => {
     for (let index = 0; index < 200; index++) {

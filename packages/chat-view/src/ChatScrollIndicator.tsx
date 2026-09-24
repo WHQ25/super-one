@@ -5,7 +5,7 @@ import type { TurnOutlineEntry } from '@superone/shared/turn-outline'
 import type { ChatWindowRange } from './chat-window'
 import './chat-scroll-indicator.css'
 
-type Tick = { entry: TurnOutlineEntry } | { compact: true; id?: string }
+type Tick = { entry: TurnOutlineEntry } | { compact: true }
 type Preview = { index: number; top: number }
 
 interface Props {
@@ -14,14 +14,13 @@ interface Props {
   hasCompact: boolean
   compactExpanded: boolean
   compactSplit: number
-  compactMarkers?: { id: string; index: number }[]
   onJump: (id: string) => void
   onToggleCompact: () => void
 }
 
 /** Desktop's outline, with touch scrubbing and a bounded transcript DOM window. */
 export const ChatScrollIndicator = memo(function ChatScrollIndicator({
-  entries, range, hasCompact, compactExpanded, compactSplit, compactMarkers, onJump, onToggleCompact,
+  entries, range, hasCompact, compactExpanded, compactSplit, onJump, onToggleCompact,
 }: Props) {
   const { t } = useTranslation()
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -36,14 +35,9 @@ export const ChatScrollIndicator = memo(function ChatScrollIndicator({
   const dragFrame = useRef(0)
   const ticks = useMemo<Tick[]>(() => {
     const result: Tick[] = entries.map((entry) => ({ entry }))
-    if (compactMarkers) {
-      for (const marker of [...compactMarkers].reverse()) {
-        const position = entries.findIndex(entry => entry.index > marker.index)
-        result.splice(position < 0 ? entries.length : position, 0, { compact: true, id: marker.id })
-      }
-    } else if (hasCompact) result.splice(Math.min(compactSplit, result.length), 0, { compact: true })
+    if (hasCompact) result.splice(Math.min(compactSplit, result.length), 0, { compact: true })
     return result
-  }, [entries, hasCompact, compactSplit, compactMarkers])
+  }, [entries, hasCompact, compactSplit])
 
   useEffect(() => {
     let frame = 0
@@ -146,11 +140,11 @@ export const ChatScrollIndicator = memo(function ChatScrollIndicator({
     const tick = ticks[index]
     if (!tick) return
     suppressedUntil.current = performance.now() + 1000
-    if ('compact' in tick) { if (tick.id) onJump(tick.id); else onToggleCompact() }
+    if ('compact' in tick) onToggleCompact()
     else onJump(tick.entry.id)
   }
 
-  if (entries.length <= 1 && !hasCompact && !compactMarkers?.length) return null
+  if (entries.length <= 1 && !hasCompact) return null
   const selected = preview ? ticks[preview.index] : null
   const previewEntry = selected && 'entry' in selected ? selected.entry : null
   const newline = previewEntry?.text.indexOf('\n') ?? -1
@@ -225,10 +219,10 @@ export const ChatScrollIndicator = memo(function ChatScrollIndicator({
         const outlineIndex = index - (hasCompact && index > compactSplit ? 1 : 0)
         const previewIndex = preview ? preview.index - (hasCompact && preview.index > compactSplit ? 1 : 0) : 0
         const distance = previewEntry ? Math.abs(outlineIndex - previewIndex) : null
-        return <button type="button" key={entry?.id ?? (compact ? tick.id : undefined) ?? 'compact'} data-outline-index={index}
+        return <button type="button" key={entry?.id ?? 'compact'} data-outline-index={index}
           data-tick={entry?.id} data-compact-tick={compact || undefined}
-          aria-label={entry?.text || (compactMarkers ? t('chat.scrollIndicator.compactTitle') : compactLabel)} aria-current={active ? 'step' : undefined}
-          aria-expanded={compact && !compactMarkers ? compactExpanded : undefined}
+          aria-label={entry?.text || compactLabel} aria-current={active ? 'step' : undefined}
+          aria-expanded={compact ? compactExpanded : undefined}
           className="chat-scroll-tick"
           onPointerEnter={(event) => { if (event.pointerType === 'mouse') showPreview(index, event.currentTarget) }}
           onPointerLeave={(event) => { if (event.pointerType === 'mouse') setPreview(null) }}
@@ -252,7 +246,7 @@ export const ChatScrollIndicator = memo(function ChatScrollIndicator({
         {previewEntry.reply && <p className="chat-scroll-preview-reply">{previewEntry.reply}</p>}
       </> : <>
         <p className="chat-scroll-preview-title">{t('chat.scrollIndicator.compactTitle')}</p>
-        {!compactMarkers && <p className="chat-scroll-preview-summary">{t(compactExpanded ? 'chat.scrollIndicator.compactExpandedDesc' : 'chat.scrollIndicator.compactCollapsedDesc')}</p>}
+        <p className="chat-scroll-preview-summary">{t(compactExpanded ? 'chat.scrollIndicator.compactExpandedDesc' : 'chat.scrollIndicator.compactCollapsedDesc')}</p>
       </>}
     </div>}
   </nav>

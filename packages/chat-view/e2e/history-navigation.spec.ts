@@ -134,12 +134,26 @@ test('the first paint does not wait for the navigation index', async ({ page }) 
   expect(await calls(page)).toEqual([])
 })
 
-test('all compact separators remain navigable without expanding their bodies', async ({ page }) => {
+test('compacted history collapses like desktop across unloaded pages', async ({ page }) => {
   await open(page, { compacts: true })
-  await expect(page.locator('[data-compact-tick]')).toHaveCount(2)
-  await page.locator('[data-compact-tick]').first().evaluate((element: HTMLElement) => element.click())
-  await expect(page.locator('[data-turn-id="m15"]')).toBeInViewport()
-  expect(await calls(page)).toContainEqual({ anchorId: 'm15', direction: 'around' })
+  const compact = page.locator('[data-compact-tick]')
+  await expect(compact).toHaveCount(1)
+  await expect(compact).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.locator('[data-tick]')).toHaveCount(22)
+  const loader = page.getByRole('button', { name: 'Load earlier' })
+  await expect.poll(async () => {
+    if (await loader.count()) await loader.first().evaluate((element: HTMLElement) => element.click())
+    return page.locator('[data-turn-id="m55"]').count()
+  }).toBe(1)
+  await expect(loader).toHaveCount(0)
+  const before = (await calls(page)).filter((call: any) => call.direction === 'before')
+  expect(before.every((call: any) => Number(call.anchorId.slice(1)) > 55)).toBe(true)
+  await compact.evaluate((element: HTMLElement) => element.click())
+  await expect(compact).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.locator('[data-tick]')).toHaveCount(50)
+  await jump(page, 'm20')
+  await expect(page.locator('[data-turn-id="m20"]')).toBeInViewport()
+  expect(await calls(page)).toContainEqual({ anchorId: 'm20', direction: 'around' })
 })
 
 

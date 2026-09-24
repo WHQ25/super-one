@@ -36,7 +36,7 @@ import { PortableMessage } from './PortableMessage'
 import { isRealtimeVoiceMessage } from '@superone/shared/realtime-transcript'
 import { extractTurnOutline } from '@superone/shared/turn-outline'
 import { ChatScrollIndicator } from './ChatScrollIndicator'
-import { captureScrollAnchor, compactMessageIndices, compactVisibleStart, jumpChatWindow, visibleChatWindow, type ScrollAnchor } from './chat-navigation'
+import { captureScrollAnchor, compactBoundary, compactsAfter, compactTimeline, compactVisibleStart, jumpChatWindow, visibleChatWindow, type ScrollAnchor } from './chat-navigation'
 import type { HostInbound, ReductionProjection, SessionProjection } from './protocol'
 
 type PendingPermission = ReductionProjection['pendingPermission']
@@ -139,7 +139,7 @@ function mergeHistory(older: ChatMessage[], current: ChatMessage[]): { messages:
 }
 
 function rangeAfterPatch(previous: ViewState, messages: ChatMessage[], atBottom: boolean): ChatWindowRange {
-  const minimum = compactVisibleStart(compactMessageIndices(messages), previous.expandLevel)
+  const minimum = compactVisibleStart(messages, compactTimeline(messages, previous.navigation), previous.expandLevel)
   if (atBottom) return visibleChatWindow(initialChatWindow(messages.length), messages.length, minimum)
   const mounted = previous.range.end - previous.range.start
   const anchorId = previous.messages[previous.range.start]?.id
@@ -181,6 +181,12 @@ function jumpEdge(view: ViewState, anchorId: string): 'top' | 'bottom' {
   const first = view.messages[view.range.start]?.id
   const anchor = ids.indexOf(anchorId)
   return first === undefined || anchor < 0 || anchor < ids.indexOf(first) ? 'top' : 'bottom'
+}
+
+/** Index pages stop at the collapsed compact separator, like desktop's transcript. */
+function needsEarlierPage(view: ViewState): boolean {
+  return !!view.navigation && needsHistoryPage(view.messages, view.navigation, view.range, 'before')
+    && view.messages[view.range.start]?.id !== compactBoundary(compactTimeline(view.messages, view.navigation), view.expandLevel)
 }
 
 export function ChatView() {
@@ -269,14 +275,17 @@ export function ChatView() {
         if (anchor < 0) return previous
         const oldStart = messages.findIndex(message => message.id === previous.messages[previous.range.start]?.id)
         const oldEnd = messages.findIndex(message => message.id === previous.messages[previous.range.end - 1]?.id) + 1
-        const range = direction === 'around' ? jumpChatWindow(anchor, messages.length)
-          : normalizeChatWindow(direction === 'before'
+        // Paging keeps the collapse level; only a jump expands to reveal its target.
+        const timeline = compactTimeline(messages, previous.navigation)
+        const expandLevel = direction === 'around' ? Math.max(previous.expandLevel, compactsAfter(timeline, anchorId)) : previous.expandLevel
+        const minimum = compactVisibleStart(messages, timeline, expandLevel)
+        const range = direction === 'around' ? jumpChatWindow(anchor, messages.length, minimum)
+          : visibleChatWindow(normalizeChatWindow(direction === 'before'
             ? { start: Math.max(0, anchor - CHAT_WINDOW.loadMoreTurns),
                 end: Math.min(oldEnd, Math.max(0, anchor - CHAT_WINDOW.loadMoreTurns) + CHAT_WINDOW.maxMountedTurns) }
-            : { start: Math.max(0, oldStart), end: Math.min(messages.length, anchor + 1 + CHAT_WINDOW.loadMoreTurns) }, messages.length)
-        return { ...previous, messages,
+            : { start: Math.max(0, oldStart), end: Math.min(messages.length, anchor + 1 + CHAT_WINDOW.loadMoreTurns) }, messages.length), messages.length, minimum)
+        return { ...previous, messages, expandLevel,
           range: contiguousHistoryRange(messages, previous.navigation, range, anchor),
-          expandLevel: compactMessageIndices(messages).length,
           scrollTarget: direction === 'around' ? { id: anchorId, behavior: 'auto' } : undefined }
       })
     } catch {
@@ -290,7 +299,7 @@ export function ChatView() {
   const changeWindow = useCallback((direction: 'previous' | 'next') => {
     if (loadingPreviousRef.current || performance.now() < navigatingUntilRef.current) return
     const current = stateRef.current
-    const minimum = compactVisibleStart(compactMessageIndices(current.messages), current.expandLevel)
+    const minimum = compactVisibleStart(current.messages, compactTimeline(current.messages, current.navigation), current.expandLevel)
     if (direction === 'previous' ? current.range.start <= minimum : current.range.end >= current.messages.length) return
     loadingPreviousRef.current = true
     atBottomRef.current = false
@@ -307,7 +316,7 @@ export function ChatView() {
   const loadPrevious = useCallback(async () => {
     retryIndex()
     const current = stateRef.current
-    if (current.navigation && needsHistoryPage(current.messages, current.navigation, current.range, 'before')) {
+    if (needsEarlierPage(current)) {
       if (!navigationLoading) await requestHistoryWindow(current.messages[current.range.start]!.id, 'before')
       return
     }
@@ -375,13 +384,13 @@ export function ChatView() {
     setState((previous) => {
       const index = previous.messages.findIndex((message) => message.id === id)
       if (index < 0) return previous
-      const compact = compactMessageIndices(previous.messages)
-      const expandLevel = Math.max(previous.expandLevel, compact.filter((position) => position > index).length)
+      const timeline = compactTimeline(previous.messages, previous.navigation)
+      const expandLevel = Math.max(previous.expandLevel, compactsAfter(timeline, id))
       const mounted = index >= previous.range.start && index < previous.range.end
       return {
         ...previous, expandLevel,
         range: mounted ? previous.range
-          : contiguousHistoryRange(previous.messages, previous.navigation, jumpChatWindow(index, previous.messages.length, compactVisibleStart(compact, expandLevel)), index),
+          : contiguousHistoryRange(previous.messages, previous.navigation, jumpChatWindow(index, previous.messages.length, compactVisibleStart(previous.messages, timeline, expandLevel)), index),
         // Replacing the DOM window invalidates the old scroll coordinates.
         // Animate only when both positions belong to the same mounted window.
         scrollTarget: { id, behavior: mounted ? behavior : 'auto' },
@@ -393,8 +402,7 @@ export function ChatView() {
     const anchor = captureScrollAnchor()
     prepareNavigation()
     setState((previous) => {
-      const compact = compactMessageIndices(previous.messages)
-      const minimum = compactVisibleStart(compact, level)
+      const minimum = compactVisibleStart(previous.messages, compactTimeline(previous.messages, previous.navigation), level)
       const anchorIndex = anchor ? previous.messages.findIndex((message) => message.id === anchor.id) : -1
       const keepAnchor = anchorIndex >= minimum && anchorIndex >= previous.range.start && anchorIndex < previous.range.end
       if (keepAnchor) prependSnapshotRef.current = anchor
@@ -431,7 +439,7 @@ export function ChatView() {
             ...next, navigation: null, historyNavigation: message.historyNavigation ?? false,
             hasMoreHistory: message.hasMoreHistory ?? false, expandLevel: 0, transcriptEpoch: previous.transcriptEpoch + 1, scrollTarget: undefined,
             range: visibleChatWindow(initialChatWindow(next.messages.length), next.messages.length,
-              compactVisibleStart(compactMessageIndices(next.messages), 0)),
+              compactVisibleStart(next.messages, compactTimeline(next.messages, null), 0)),
           }
         })
         return
@@ -507,10 +515,10 @@ export function ChatView() {
         prepareNavigation()
         setState((previous) => {
           const range = normalizeChatWindow(message.range, previous.messages.length)
-          const compact = compactMessageIndices(previous.messages)
+          const first = previous.messages[range.start]
           return {
             ...previous, range,
-            expandLevel: Math.max(previous.expandLevel, compact.filter((index) => index > range.start).length),
+            expandLevel: first ? Math.max(previous.expandLevel, compactsAfter(compactTimeline(previous.messages, previous.navigation), first.id)) : previous.expandLevel,
             scrollTarget: message.anchorId ? { id: message.anchorId, behavior: 'auto' } : undefined,
           }
         })
@@ -594,17 +602,21 @@ export function ChatView() {
 
   // Outline identity stays stable during text deltas, matching desktop's memo.
   const tailId = state.messages.at(-1)?.id
-  const compactIndices = useMemo(() => compactMessageIndices(state.messages),
-    [state.messages.length, tailId, state.transcriptEpoch])
-  const visibleStart = compactVisibleStart(compactIndices, state.expandLevel)
-  const localOutline = useMemo(() => extractTurnOutline(state.messages).filter((entry) => entry.index >= visibleStart),
-    [state.messages.length, tailId, state.session.sessionStatus, state.transcriptEpoch, visibleStart])
   const navigation = useMemo(() => state.navigation ? extendHistoryIndex(state.navigation, state.messages) : null,
     [state.navigation, state.messages.length, tailId, state.session.sessionStatus, state.transcriptEpoch])
-  const outline = navigation?.entries ?? localOutline
-  const hasCompact = compactIndices.length > 0
-  const compactExpanded = state.expandLevel >= compactIndices.length
-  const compactSplit = outline.filter((entry) => entry.index < (compactIndices.at(-1) ?? 0)).length
+  const timeline = useMemo(() => compactTimeline(state.messages, navigation),
+    [navigation, state.messages.length, tailId, state.transcriptEpoch])
+  const visibleStart = compactVisibleStart(state.messages, timeline, state.expandLevel)
+  // Like desktop, the rail lists only expanded turns plus a single compact tick.
+  const boundary = compactBoundary(timeline, state.expandLevel)
+  const outline = useMemo(() => {
+    const from = boundary === undefined ? 0 : timeline.position(boundary)
+    return (navigation?.entries ?? extractTurnOutline(state.messages)).filter((entry) => entry.index >= from)
+  }, [navigation, timeline, boundary, state.messages.length, tailId, state.session.sessionStatus, state.transcriptEpoch])
+  const hasCompact = timeline.ids.length > 0
+  const compactExpanded = state.expandLevel >= timeline.ids.length
+  const lastCompact = timeline.ids.at(-1)
+  const compactSplit = lastCompact === undefined ? 0 : outline.filter((entry) => entry.index < timeline.position(lastCompact)).length
   const visible = state.messages.slice(Math.max(visibleStart, state.range.start), state.range.end)
   // Compact / turn-meta markers persist as assistant rows but render as
   // indicators, so the live turn is the last assistant message that is neither.
@@ -629,11 +641,10 @@ export function ChatView() {
       <div className="chat-view-edge-fade" data-edge="top" aria-hidden="true" />
       <div className="chat-view-edge-fade" data-edge="bottom" aria-hidden="true" />
       <ChatScrollIndicator entries={outline} range={navigation ? globalHistoryRange(state.messages, navigation, state.range) : state.range} hasCompact={hasCompact}
-        compactMarkers={navigation?.compacts}
         compactExpanded={compactExpanded} compactSplit={compactSplit} onJump={jumpToMessage}
-        onToggleCompact={() => setCompactExpansion(compactExpanded ? 0 : compactIndices.length)} />
+        onToggleCompact={() => setCompactExpansion(compactExpanded ? 0 : timeline.ids.length)} />
       <div className="chat-view-top-sentinel" data-testid="top-sentinel">
-        {visible.length > 0 && (topBusy || state.range.start > visibleStart || (state.navigation ? needsHistoryPage(state.messages, state.navigation, state.range, 'before') : visibleStart === 0 && state.hasMoreHistory)) && (
+        {visible.length > 0 && (topBusy || state.range.start > visibleStart || (state.navigation ? needsEarlierPage(state) : visibleStart === 0 && state.hasMoreHistory)) && (
           <EdgeLoader edge="top" loading={historyLoading || (navigationLoading && navigationEdge === 'top')}
             error={historyError || (!!navigationRetry && navigationEdge === 'top')} onLoad={topRetry ?? loadPrevious} />
         )}
@@ -647,7 +658,7 @@ export function ChatView() {
           const row = transcriptRow(message, state.messages)
           if (row.kind === 'hidden') return null
           if (row.kind === 'compact') {
-            const rank = compactIndices.length - 1 - compactIndices.indexOf(state.messages.findIndex((item) => item.id === message.id))
+            const rank = timeline.ids.length - 1 - timeline.ids.indexOf(message.id)
             const expanded = rank < state.expandLevel
             return <div key={message.id} data-turn-id={message.id}>
               <CompactIndicator {...row.marker} expanded={expanded}

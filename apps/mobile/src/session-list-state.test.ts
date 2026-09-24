@@ -189,6 +189,29 @@ describe('attention partition', () => {
   })
 })
 
+describe('scheduled partition', () => {
+  const scheduled = (id: string, sendAt: number): SessionListRow => ({ ...row(id), scheduledSendAt: sendAt })
+
+  it('lists armed sends after attention, soonest first, ahead of the reveal limit', () => {
+    const groups = groupSessionRows([
+      ...Array.from({ length: 6 }, (_, index) => row(`idle-${index}`)),
+      scheduled('later', 2_000),
+      { ...row('running'), status: 'streaming' },
+      scheduled('sooner', 1_000),
+    ])
+    const sections = partitionSessionGroups(groups)
+    expect(sections.scheduled.map((group) => group.parent.sessionId)).toEqual(['sooner', 'later'])
+    expect(visibleSessionGroups(groups, 6).map((group) => group.parent.sessionId))
+      .toEqual(['running', 'sooner', 'later', 'idle-0', 'idle-1', 'idle-2'])
+  })
+
+  it('keeps a live scheduled session in attention, and leaves scheduled out of a collapsed project', () => {
+    const groups = groupSessionRows([{ ...scheduled('both', 1_000), isUnseen: true }, scheduled('queued', 2_000), row('idle')])
+    expect(partitionSessionGroups(groups).attention.map((group) => group.parent.sessionId)).toEqual(['both'])
+    expect(visibleSessionGroups(groups, 0).map((group) => group.parent.sessionId)).toEqual(['both'])
+  })
+})
+
 describe('mergeActivityIntoRows', () => {
   it('overlays pending counts onto listed rows and inserts missing attention sessions', () => {
     const rows: SessionListRow[] = [row('listed'), row('other-project')]

@@ -35,7 +35,13 @@ export function readRemoteSessionList(command: SessionListCommand, manager?: Ses
     return { sessions: rows.map(crossProject) }
   }
 
-  const visibleSessions = listSessionsForFolder(command.projectPath).filter(session => !session.isHidden)
+  const listed = listSessionsForFolder(command.projectPath).filter(session => !session.isHidden)
+  // Armed sends lead the first page: the phone lists them above older rows, as
+  // desktop does, and a row it never pages in cannot be promoted there.
+  const visibleSessions = [
+    ...listed.filter(session => scheduled.has(session.sessionId)),
+    ...listed.filter(session => !scheduled.has(session.sessionId)),
+  ]
   const offset = command.offset ?? 0
   const visible = visibleSessions.slice(offset, offset + (command.limit ?? 10))
   const messageCounts = countMessagesForSessions(visible.map(session => session.sessionId))

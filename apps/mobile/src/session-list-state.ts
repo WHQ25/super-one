@@ -106,38 +106,46 @@ const groupIsLive = (group: SessionListGroup) =>
 
 /**
  * Desktop partitions first: live, unseen, and pending work stays at the top of
- * the project, and a collapsed project still shows those groups. The session
- * the user is in is appended, not promoted, so switching never reshuffles the
- * list.
+ * the project, and a collapsed project still shows those groups. Next come
+ * parents with an armed scheduled send, soonest first, so a queued message is
+ * never paged out behind "Show more". The session the user is in is appended,
+ * not promoted, so switching never reshuffles the list.
  */
 export function partitionSessionGroups(groups: SessionListGroup[]): {
   attention: SessionListGroup[]
+  scheduled: SessionListGroup[]
   normal: SessionListGroup[]
 } {
   const attention: SessionListGroup[] = []
+  const scheduled: SessionListGroup[] = []
   const normal: SessionListGroup[] = []
   for (const group of groups) {
     if (groupIsLive(group)) attention.push(group)
+    else if (group.parent.scheduledSendAt != null) scheduled.push(group)
     else normal.push(group)
   }
-  return { attention, normal }
+  // Stable: equal send times keep the host's recency order.
+  scheduled.sort((a, b) => a.parent.scheduledSendAt! - b.parent.scheduledSendAt!)
+  return { attention, scheduled, normal }
 }
 
 /**
- * The first `limit` groups after attention, plus the group holding the session
- * the user is in. `limit === 0` is a collapsed project.
+ * Attention and scheduled groups, then normal ones up to `limit`, plus the
+ * group holding the session the user is in. `limit === 0` is a collapsed
+ * project, which keeps only attention — scheduled work is not live yet.
  */
 export function visibleSessionGroups(
   groups: SessionListGroup[],
   limit?: number,
   activeSessionId?: string | null,
 ): SessionListGroup[] {
-  const { attention, normal } = partitionSessionGroups(groups)
+  const { attention, scheduled, normal } = partitionSessionGroups(groups)
+  const required = [...attention, ...scheduled]
   const visible = limit === 0
     ? [...attention]
     : limit == null
-      ? [...attention, ...normal]
-      : [...attention, ...normal.slice(0, Math.max(0, limit - attention.length))]
+      ? [...required, ...normal]
+      : [...required, ...normal.slice(0, Math.max(0, limit - required.length))]
   return appendActiveGroup(visible, groups, activeSessionId)
 }
 

@@ -83,6 +83,14 @@ describe('mobile session list scheduled sends', () => {
       .toMatchObject({ totalCount: 2, sessions: [{ sessionId: 'two', scheduledSendAt: null }] })
   })
 
+  it('pages an armed send in first, ahead of more recent sessions', () => {
+    upsertScheduledSend('two', { sendAt, armed: true })
+    expect(readRemoteSessionList({ type: 'list_sessions', requestId: 'r', projectPath: '/repo', limit: 1 }))
+      .toMatchObject({ totalCount: 2, sessions: [{ sessionId: 'two', scheduledSendAt: sendAt }] })
+    expect(readRemoteSessionList({ type: 'list_sessions', requestId: 'r', projectPath: '/repo', limit: 1, offset: 1 }).sessions)
+      .toEqual([expect.objectContaining({ sessionId: 'one' })])
+  })
+
   it('finds one session by id with its project, and nothing for a hidden or unknown id', () => {
     expect(readRemoteSessionList({ type: 'find_session', requestId: 'f', sessionId: 'two' })).toEqual({
       session: expect.objectContaining({ sessionId: 'two', title: 'Other session', provider: 'claude', projectPath: '/repo', projectName: 'repo' }),

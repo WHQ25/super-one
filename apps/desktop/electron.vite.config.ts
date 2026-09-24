@@ -92,6 +92,10 @@ export default defineConfig(({ mode }) => {
           bench: resolve('src/renderer/bench.html'),
         },
         output: {
+          // Only eager vendors belong here. Lazy libraries (mermaid, recharts, xterm…)
+          // are split by their dynamic imports; a manual chunk for one also absorbs
+          // shared helpers such as `__vitePreload`, so the entry statically imports
+          // the whole library and pays for it at startup.
           manualChunks(id) {
             if (
               id.includes('/node_modules/react/') ||
@@ -100,20 +104,6 @@ export default defineConfig(({ mode }) => {
               id.includes('/node_modules/scheduler/')
             ) {
               return 'react-vendor'
-            }
-            if (id.includes('/node_modules/@xterm/')) return 'xterm'
-            if (id.includes('/node_modules/mermaid/')) return 'mermaid'
-            if (id.includes('/node_modules/d3-') || id.includes('/node_modules/victory-vendor/')) {
-              return 'd3'
-            }
-            if (id.includes('/node_modules/recharts/')) return 'recharts'
-            if (
-              id.includes('/node_modules/@tiptap/') ||
-              id.includes('/node_modules/prosemirror') ||
-              id.includes('/node_modules/lowlight/') ||
-              id.includes('/node_modules/highlight.js/')
-            ) {
-              return 'editor'
             }
           }
         }

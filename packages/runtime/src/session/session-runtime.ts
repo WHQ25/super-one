@@ -29,7 +29,6 @@ import {
 } from './host-action-store'
 import {
   type ActiveHarnessRuntime,
-  DEFAULT_PERMISSION_TIMEOUT_MS,
   type AgentsConfirmOutcome,
   type NodeSessionRecord,
   type NodeSessionSettings,
@@ -80,7 +79,6 @@ export type {
   TranscriptBlock,
   TurnRunner,
 } from './types'
-export { DEFAULT_PERMISSION_TIMEOUT_MS } from './types'
 export type { LeaseGuard, SessionEventLog, SessionStore } from './ports'
 
 interface PermissionWaiter {
@@ -91,20 +89,18 @@ interface PermissionWaiter {
    */
   settle: (result: {
     decision: PermissionDecision
-    reason: 'responded' | 'timeout' | 'aborted'
+    reason: 'responded' | 'aborted'
     /** Wire decision when reason is responded (may be allow_always). */
     clientDecision?: 'allow' | 'deny' | 'allow_always'
   }) => void
-  timer: ReturnType<typeof setTimeout>
 }
 
 interface QuestionWaiter {
   sessionId: string
   settle: (result: {
     answers: QuestionAnswers
-    reason: 'responded' | 'timeout' | 'aborted'
+    reason: 'responded' | 'aborted'
   }) => void
-  timer: ReturnType<typeof setTimeout>
 }
 
 interface PlanWaiter {
@@ -112,9 +108,8 @@ interface PlanWaiter {
   settle: (result: {
     decision: 'approve' | 'reject'
     options?: Record<string, unknown>
-    reason: 'responded' | 'timeout' | 'aborted'
+    reason: 'responded' | 'aborted'
   }) => void
-  timer: ReturnType<typeof setTimeout>
 }
 
 interface AgentsConfirmWaiter {
@@ -186,14 +181,13 @@ export class SessionRuntime {
   private disposing = false
   /**
    * Active permission waiters keyed by interactionId.
-   * respondPermission resolves these; timeout/abort/close deny them.
+   * respondPermission resolves these; abort/close deny them.
    */
   private readonly permissionWaiters = new Map<string, PermissionWaiter>()
   private readonly questionWaiters = new Map<string, QuestionWaiter>()
   private readonly planWaiters = new Map<string, PlanWaiter>()
   private readonly agentsConfirmWaiters = new Map<string, AgentsConfirmWaiter>()
   private readonly defaultApiProviderId?: (harnessId: string) => string | null
-  private readonly permissionTimeoutMs: number
   private readonly agentsConfirmTimeoutMs: number
   private readonly hostActions: HostActionStore | null
   /** Live waiters for requestHostAction terminal settlement. */
@@ -234,7 +228,6 @@ export class SessionRuntime {
     private readonly turnRunner: TurnRunner,
     opts?: {
       defaultApiProviderId?: (harnessId: string) => string | null
-      permissionTimeoutMs?: number
       agentsConfirmTimeoutMs?: number
       hostActions?: HostActionStore | null
       /** Tests may disable or shorten the runtime sweep; production uses 30s. */
@@ -242,7 +235,6 @@ export class SessionRuntime {
     },
   ) {
     this.defaultApiProviderId = opts?.defaultApiProviderId
-    this.permissionTimeoutMs = opts?.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS
     this.agentsConfirmTimeoutMs =
       opts?.agentsConfirmTimeoutMs ?? DEFAULT_AGENTS_CONFIRM_TIMEOUT_MS
     this.hostActions = opts?.hostActions ?? null
@@ -1348,7 +1340,7 @@ export class SessionRuntime {
     this.aborts.delete(sessionId)
     session.closed = true
     session.status = 'ended'
-    this.rejectPendingPermission(session, 'aborted')
+    this.rejectPendingPermission(session)
     this.cancelHostActionsForSession(sessionId, 'session_closed')
     session.updatedAt = Date.now()
     this.persist(session)
@@ -1961,7 +1953,7 @@ export class SessionRuntime {
       )
     }
     if (session.pendingInteraction) {
-      this.rejectPendingPermission(session, 'aborted')
+      this.rejectPendingPermission(session)
     }
 
     const interaction: PendingInteraction = {
@@ -2132,7 +2124,7 @@ export class SessionRuntime {
 
   /**
    * Block the turn until the control-lease holder responds, or until
-   * timeout / abort / session close. Always emits a durable permission event.
+   * abort / session close. Always emits a durable permission event.
    */
   private waitForPermissionDecision(
     session: NodeSessionRecord,
@@ -2142,7 +2134,7 @@ export class SessionRuntime {
   ): Promise<PermissionDecision> {
     // Only one pending interaction per session (wire contract).
     if (session.pendingInteraction) {
-      this.rejectPendingPermission(session, 'aborted')
+      this.rejectPendingPermission(session)
     }
 
     return new Promise<PermissionDecision>((resolve) => {
@@ -2159,16 +2151,12 @@ export class SessionRuntime {
 
       const settle = (result: {
         decision: PermissionDecision
-        reason: 'responded' | 'timeout' | 'aborted'
+        reason: 'responded' | 'aborted'
         clientDecision?: 'allow' | 'deny' | 'allow_always'
       }): void => {
         if (settled) return
         settled = true
-        const waiter = this.permissionWaiters.get(interaction.interactionId)
-        if (waiter) {
-          clearTimeout(waiter.timer)
-          this.permissionWaiters.delete(interaction.interactionId)
-        }
+        this.permissionWaiters.delete(interaction.interactionId)
         if (session.pendingInteraction?.interactionId === interaction.interactionId) {
           session.pendingInteraction = null
           session.updatedAt = Date.now()
@@ -2183,12 +2171,6 @@ export class SessionRuntime {
               decision: result.clientDecision ?? result.decision,
             },
           })
-        } else if (result.reason === 'timeout') {
-          this.events.appendSession({
-            sessionId: session.sessionId,
-            eventType: SESSION_DURABLE_EVENT.permissionTimeout,
-            payload: { interactionId: interaction.interactionId, decision: 'deny' },
-          })
         } else {
           this.events.appendSession({
             sessionId: session.sessionId,
@@ -2199,14 +2181,10 @@ export class SessionRuntime {
         resolve(result.decision)
       }
 
-      const timer = setTimeout(() => {
-        settle({ decision: 'deny', reason: 'timeout' })
-      }, this.permissionTimeoutMs)
-
+      // No deadline: like the desktop, a prompt waits until answered or the turn is aborted.
       this.permissionWaiters.set(interaction.interactionId, {
         sessionId: session.sessionId,
         settle,
-        timer,
       })
 
       if (signal.aborted) {
@@ -2224,33 +2202,30 @@ export class SessionRuntime {
   }
 
   /** Deny and clear any active permission waiter for this session. */
-  private rejectPendingPermission(
-    session: NodeSessionRecord,
-    reason: 'timeout' | 'aborted',
-  ): void {
+  private rejectPendingPermission(session: NodeSessionRecord): void {
     const pending = session.pendingInteraction
     if (!pending) return
     if (pending.kind === 'question') {
       const qw = this.questionWaiters.get(pending.interactionId)
-      if (qw) qw.settle({ answers: {}, reason })
+      if (qw) qw.settle({ answers: {}, reason: 'aborted' })
       else session.pendingInteraction = null
       return
     }
     if (pending.kind === 'plan') {
       const pw = this.planWaiters.get(pending.interactionId)
-      if (pw) pw.settle({ decision: 'reject', reason })
+      if (pw) pw.settle({ decision: 'reject', reason: 'aborted' })
       else session.pendingInteraction = null
       return
     }
     if (pending.kind === 'session_agents_confirm') {
       const aw = this.agentsConfirmWaiters.get(pending.interactionId)
-      if (aw) aw.settle({ action: 'cancel', reason })
+      if (aw) aw.settle({ action: 'cancel', reason: 'aborted' })
       else session.pendingInteraction = null
       return
     }
     const waiter = this.permissionWaiters.get(pending.interactionId)
     if (waiter) {
-      waiter.settle({ decision: 'deny', reason })
+      waiter.settle({ decision: 'deny', reason: 'aborted' })
     } else {
       session.pendingInteraction = null
     }
@@ -2263,7 +2238,7 @@ export class SessionRuntime {
     requestId?: string,
   ): Promise<QuestionAnswers> {
     if (session.pendingInteraction) {
-      this.rejectPendingPermission(session, 'aborted')
+      this.rejectPendingPermission(session)
     }
     const pending: PendingInteraction = { ...interaction, kind: 'question' }
     return new Promise<QuestionAnswers>((resolve) => {
@@ -2280,15 +2255,11 @@ export class SessionRuntime {
 
       const settle = (result: {
         answers: QuestionAnswers
-        reason: 'responded' | 'timeout' | 'aborted'
+        reason: 'responded' | 'aborted'
       }): void => {
         if (settled) return
         settled = true
-        const waiter = this.questionWaiters.get(pending.interactionId)
-        if (waiter) {
-          clearTimeout(waiter.timer)
-          this.questionWaiters.delete(pending.interactionId)
-        }
+        this.questionWaiters.delete(pending.interactionId)
         if (session.pendingInteraction?.interactionId === pending.interactionId) {
           session.pendingInteraction = null
           session.updatedAt = Date.now()
@@ -2300,12 +2271,6 @@ export class SessionRuntime {
             eventType: SESSION_DURABLE_EVENT.questionResponded,
             payload: { interactionId: pending.interactionId, answers: result.answers },
           })
-        } else if (result.reason === 'timeout') {
-          this.events.appendSession({
-            sessionId: session.sessionId,
-            eventType: SESSION_DURABLE_EVENT.questionTimeout,
-            payload: { interactionId: pending.interactionId },
-          })
         } else {
           this.events.appendSession({
             sessionId: session.sessionId,
@@ -2316,14 +2281,9 @@ export class SessionRuntime {
         resolve(result.answers)
       }
 
-      const timer = setTimeout(() => {
-        settle({ answers: {}, reason: 'timeout' })
-      }, this.permissionTimeoutMs)
-
       this.questionWaiters.set(pending.interactionId, {
         sessionId: session.sessionId,
         settle,
-        timer,
       })
 
       if (signal.aborted) {
@@ -2347,7 +2307,7 @@ export class SessionRuntime {
     requestId?: string,
   ): Promise<PlanDecisionResult> {
     if (session.pendingInteraction) {
-      this.rejectPendingPermission(session, 'aborted')
+      this.rejectPendingPermission(session)
     }
     const pending: PendingInteraction = { ...interaction, kind: 'plan' }
     return new Promise<PlanDecisionResult>((resolve) => {
@@ -2365,15 +2325,11 @@ export class SessionRuntime {
       const settle = (result: {
         decision: 'approve' | 'reject'
         options?: Record<string, unknown>
-        reason: 'responded' | 'timeout' | 'aborted'
+        reason: 'responded' | 'aborted'
       }): void => {
         if (settled) return
         settled = true
-        const waiter = this.planWaiters.get(pending.interactionId)
-        if (waiter) {
-          clearTimeout(waiter.timer)
-          this.planWaiters.delete(pending.interactionId)
-        }
+        this.planWaiters.delete(pending.interactionId)
         if (session.pendingInteraction?.interactionId === pending.interactionId) {
           session.pendingInteraction = null
           session.updatedAt = Date.now()
@@ -2389,12 +2345,6 @@ export class SessionRuntime {
               options: result.options,
             },
           })
-        } else if (result.reason === 'timeout') {
-          this.events.appendSession({
-            sessionId: session.sessionId,
-            eventType: SESSION_DURABLE_EVENT.planTimeout,
-            payload: { interactionId: pending.interactionId, decision: 'reject' },
-          })
         } else {
           this.events.appendSession({
             sessionId: session.sessionId,
@@ -2405,14 +2355,9 @@ export class SessionRuntime {
         resolve({ decision: result.decision, options: result.options })
       }
 
-      const timer = setTimeout(() => {
-        settle({ decision: 'reject', reason: 'timeout' })
-      }, this.permissionTimeoutMs)
-
       this.planWaiters.set(pending.interactionId, {
         sessionId: session.sessionId,
         settle,
-        timer,
       })
 
       if (signal.aborted) {

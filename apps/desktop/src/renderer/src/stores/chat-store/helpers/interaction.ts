@@ -505,7 +505,7 @@ export function dismissQuestionImpl(
   if (targetSid) {
     const remote = parseRemoteProjectKey(activeProject)
     if (remote) {
-      // Node has no dedicated dismiss — empty answers unblock the waiter (timeout-like).
+      // Node has no dedicated dismiss — empty answers unblock the waiter.
       // Same ACK-before-clear contract as answerQuestion (issue #21).
       const flightKey = remoteQuestionFlightKey(activeProject, targetSid, requestId)
       if (remoteQuestionInFlight.has(flightKey)) return

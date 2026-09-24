@@ -80,7 +80,6 @@ describe('SessionRuntime question / plan', () => {
       leases,
       'env-q',
       createSimulatedTurnRunner({ delayMs: 5, chunks: ['ok'], requestQuestion: true }),
-      { permissionTimeoutMs: 10_000 },
     )
     const session = runtime.create({ projectId: 'p1', harnessId: 'codex' })
     runtime.send({
@@ -116,7 +115,6 @@ describe('SessionRuntime question / plan', () => {
       leases,
       'env-p',
       createSimulatedTurnRunner({ delayMs: 5, chunks: ['done'], requestPlan: true }),
-      { permissionTimeoutMs: 10_000 },
     )
     const session = runtime.create({ projectId: 'p1', harnessId: 'codex' })
     runtime.send({
@@ -150,7 +148,6 @@ describe('SessionRuntime question / plan', () => {
       leases,
       'env-m',
       createSimulatedTurnRunner({ delayMs: 5, chunks: ['ok'], requestQuestion: true }),
-      { permissionTimeoutMs: 30_000 },
     )
     const session = runtime.create({ projectId: 'p1', harnessId: 'codex' })
     runtime.send({
@@ -200,7 +197,6 @@ describe('SessionRuntime question / plan', () => {
       leases,
       'env-f',
       createSimulatedTurnRunner({ delayMs: 5, chunks: ['ok'], requestQuestion: true }),
-      { permissionTimeoutMs: 30_000 },
     )
     const session = runtime.create({ projectId: 'p1', harnessId: 'codex' })
     runtime.send({

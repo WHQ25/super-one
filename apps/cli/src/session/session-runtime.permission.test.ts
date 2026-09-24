@@ -1,10 +1,10 @@
 /**
- * Stage 5-D: permission request → respond / timeout / abort lifecycle.
+ * Stage 5-D: permission request → respond / abort lifecycle.
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { openNodeDatabase } from '../db/database'
 import { ControlLeaseService } from './control-lease'
 import { EventLog } from './event-log'
@@ -20,16 +20,14 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
 })
 
-function boot(runner: TurnRunner, permissionTimeoutMs = 5_000) {
+function boot(runner: TurnRunner) {
   const dir = mkdtempSync(join(tmpdir(), 'srp-'))
   dirs.push(dir)
   const db = openNodeDatabase(join(dir, 'state.sqlite'))
   const envId = 'env-perm'
   const events = new EventLog(db, envId)
   const leases = new ControlLeaseService(db)
-  const runtime = new SessionRuntime(db, events, leases, envId, runner, {
-    permissionTimeoutMs,
-  })
+  const runtime = new SessionRuntime(db, events, leases, envId, runner)
   return { db, events, leases, runtime, envId }
 }
 
@@ -178,7 +176,7 @@ describe('SessionRuntime permission respond lifecycle', () => {
       onDelta('ok')
       return { finalText: 'ok', providerResume: null }
     }
-    const { runtime, leases, envId } = boot(runner, 10_000)
+    const { runtime, leases, envId } = boot(runner)
     const session = runtime.create({ projectId: 'proj-1', harnessId: 'codex' })
     const lease = leases.acquire({
       resource: { environmentId: envId, sessionId: session.sessionId },
@@ -313,10 +311,9 @@ describe('SessionRuntime permission respond lifecycle', () => {
     db.close()
   })
 
-  it('times out pending permission as deny', async () => {
+  it('keeps a pending permission open with no deadline, like the desktop', async () => {
     const { runtime, events, leases, envId, db } = boot(
       createSimulatedCodexRunner({ delayMs: 5, chunks: ['later'], requestPermission: true }),
-      40,
     )
     const { session, lease, client } = acquire(runtime, leases, envId)
 
@@ -327,21 +324,37 @@ describe('SessionRuntime permission respond lifecycle', () => {
       leaseId: lease.leaseId,
       generation: lease.generation,
     })
-    await waitForPending(runtime, session.sessionId)
-    const final = await waitIdle(runtime, session.sessionId)
-    expect(final.status).toBe('idle')
-    expect(final.transcript.at(-1)?.text).toBe('Permission denied.')
+    const interactionId = await waitForPending(runtime, session.sessionId)
+
+    vi.useFakeTimers()
+    try {
+      vi.advanceTimersByTime(60 * 60_000)
+    } finally {
+      vi.useRealTimers()
+    }
+    const waiting = runtime.get(session.sessionId)
+    expect(waiting?.status).toBe('streaming')
+    expect(waiting?.pendingInteraction?.interactionId).toBe(interactionId)
     expect(
       events.listAfter('0').some((e) => e.eventType === 'session.permission_timeout'),
-    ).toBe(true)
-    expect(final.pendingInteraction).toBeNull()
+    ).toBe(false)
+
+    runtime.respondPermission({
+      sessionId: session.sessionId,
+      interactionId,
+      decision: 'allow',
+      client,
+      leaseId: lease.leaseId,
+      generation: lease.generation,
+    })
+    const final = await waitIdle(runtime, session.sessionId)
+    expect(final.status).toBe('idle')
     db.close()
   })
 
   it('interrupt while waiting denies via permission_aborted', async () => {
     const { runtime, events, leases, envId, db } = boot(
       createSimulatedCodexRunner({ delayMs: 5, chunks: ['x'], requestPermission: true }),
-      30_000,
     )
     const { session, lease, client } = acquire(runtime, leases, envId)
 

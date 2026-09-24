@@ -18,7 +18,6 @@ import type { EventLog } from '@superone/runtime/session'
 export {
   createSimulatedCodexRunner,
   createSimulatedTurnRunner,
-  DEFAULT_PERMISSION_TIMEOUT_MS,
   type NodeSessionRecord,
   type PendingInteraction,
   type PermissionDecision,
@@ -42,7 +41,7 @@ export class SessionRuntime extends CoreSessionRuntime {
     leases: ControlLeaseService & LeaseGuard,
     environmentId: string,
     turnRunner: TurnRunner,
-    opts?: { permissionTimeoutMs?: number; defaultApiProviderId?: (harnessId: string) => string | null },
+    opts?: { defaultApiProviderId?: (harnessId: string) => string | null },
   ) {
     super(createSqliteSessionStore(db), events, leases, environmentId, turnRunner, {
       ...opts,

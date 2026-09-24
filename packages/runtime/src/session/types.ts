@@ -135,8 +135,6 @@ export type PlanDecisionResult = {
   options?: Record<string, unknown>
 }
 
-/** Default wall-clock wait for a human permission/question/plan response (ms). */
-export const DEFAULT_PERMISSION_TIMEOUT_MS = 60_000
 
 /**
  * Injectable turn runner for harness adapters (Claude, Codex, ACP, OpenCode).

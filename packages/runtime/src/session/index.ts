@@ -10,7 +10,6 @@ export {
   createSimulatedCodexRunner,
   deriveSessionTitleFromUserText,
   forkSessionTitle,
-  DEFAULT_PERMISSION_TIMEOUT_MS,
   DEFAULT_AGENTS_CONFIRM_TIMEOUT_MS,
   type NodeSessionRecord,
   type NodeSessionSettings,

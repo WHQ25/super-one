@@ -203,9 +203,7 @@ describe('SessionRuntime send queue', () => {
       return { finalText: 'ok', providerResume: null }
     }
     const { store, events, leases } = memoryPorts()
-    const runtime = new SessionRuntime(store, events, leases, 'env-p', runner, {
-      permissionTimeoutMs: 5_000,
-    })
+    const runtime = new SessionRuntime(store, events, leases, 'env-p', runner)
     const session = runtime.create({ projectId: 'p', harnessId: 'claude' })
     await runtime.send({
       sessionId: session.sessionId,

@@ -16,8 +16,9 @@ control leases, sessions, and harness execution. Root repository rules apply.
 - `@superone/runtime/session` owns lifecycle, leases, event persistence, and
   permission waiters. CLI supplies SQLite and environment ports. Structured
   events and legacy deltas must not emit the same text twice.
-- Permission responses settle once. Interrupt/close/timeout deny pending work and
-  emit terminal events; do not introduce busy polling or a second permission path.
+- Permission responses settle once. Permission, question, and plan prompts have no
+  deadline (desktop parity); interrupt/close deny pending work and emit terminal
+  events. Do not introduce busy polling or a second permission path.
 - Remote capabilities go through CLI RPC → environment gateway → renderer by
   `connectionId`. Remote project keys must not reach a local SessionManager path.
 

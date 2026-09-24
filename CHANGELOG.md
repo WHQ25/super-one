@@ -15,6 +15,139 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- DeepSeek sessions answer the agent's questions in the question
+  prompt and review plans in the plan card: plan mode adds dsh's
+  planning guidance, and an approved plan returns the session to
+  default mode. Messages typed mid-turn queue in the composer, where
+  they can be removed or steered into the running turn without
+  cancelling its tool.
+- DeepSeek sessions can list and read resources from configured MCP
+  servers, and stream a tool's input into its row as it is written.
+- DeepSeek turns show files that shell commands created, changed, or
+  deleted as Write, Edit, or Delete rows with their diffs, and include
+  them in the turn's file and line counts.
+- DeepSeek agents can run subagents, shell commands, and workflows in
+  the background, as upstream dsh does by default. Background subagents
+  and shell commands appear in the status bar's background list with a
+  Stop button.
+- Settings → Harnesses → DeepSeek → Preferences can let the agent pick
+  a model for each subagent it starts, limited to the models you allow.
+  Applies to new sessions.
+- Archiving a session stops its background work, and the background
+  list's Stop button works for every harness that supports it.
+- Widgets accept `layout: "fixed"`, which keeps a mockup's 680px layout
+  and scales it down on narrow screens; pinch to zoom on the phone.
+- Provider model mapping switches between the endpoint list and a typed
+  id; the Xiaomi MiMo preset defaults to MiMo V2.6 Pro.
+- File chips offer Copy Path and Copy Relative Path.
+- Mobile shows the automation icon on idle automation session rows.
+- Failed SuperOne tool calls are logged to the main log.
+
+### Fixed
+
+- DeepSeek on Linux and Windows no longer starts a second SuperOne
+  instead of running a shell command.
+- Browser automation no longer hangs on screenshots or recordings when
+  the window is minimized or covered.
+- The models panel lists only models a plan can enable (#66).
+- Several sessions can link the same collaboration peer.
+- A fork's worktree survives a cold start; harness settings no longer
+  show an old version while a stale binary is launched.
+- Mobile: reconnecting no longer marks old replies unread; session rows
+  reflect live turns and voice calls; scheduled sends list first; chat
+  rows and previews match desktop.
+- Chat: long mention chips wrap cleanly; file-chip mentions use the
+  file's basename.
+
+### Changed
+
+- **BREAKING:** collaboration launches pass the brief at
+  `session_collab_start({ launchId, task })`, and send / retrieve address
+  peers by session id instead of a credential; node RPC `collaboration.*`
+  changes accordingly. Launches approved but not started before upgrading
+  must be requested again.
+- DeepSeek: upgraded `dsh` to `0.1.7-rc.1`. Stored DeepSeek conversations
+  are migrated to the new session format the first time they are opened;
+  an older SuperOne cannot read what was written after that.
+- DeepSeek: the model picker offers DeepSeek V4.1 Flash (text and images)
+  beside V4 Pro. V4 Flash and V4 Flash Vision (Exp) are retired upstream;
+  conversations already on them keep working as text-only.
+- DeepSeek: a transient model failure (rate limit, server error, timeout)
+  is retried instead of ending the turn, and an image-heavy conversation
+  offloads its oldest images instead of failing every turn.
+- DeepSeek: the Code mode is now PTC, and Minimal is a single persistent
+  shell. `run_code` and workflows run in a sandboxed Node process.
+- The Bash row shows edit stats with the file-diff icon; its expandable
+  section is now named Terminal.
+
+## [0.69.0-alpha] - 2026-09-24
+
+### Added
+
+- DeepSeek sessions answer the agent's questions in the question prompt and
+  review plans in the plan card; an approved plan returns the session to
+  default mode. Messages typed mid-turn queue in the composer, where they can
+  be removed or steered into the running turn.
+- DeepSeek agents can run subagents, shell commands and workflows in the
+  background; they appear in the status bar's background list with a Stop
+  button. Settings → Harnesses → DeepSeek → Preferences can let the agent pick
+  a model per subagent, limited to the models you allow.
+- DeepSeek sessions can list and read resources from configured MCP servers,
+  stream a tool's input into its row as it is written, and report model
+  retries as a retry notice. Shell commands that change files show Write,
+  Edit or Delete rows and count toward the turn's totals.
+- Archiving a session stops its background tasks, and the background list's
+  Stop button works for every harness that supports stopping tasks.
+- Widgets accept `layout: "fixed"`: mockups lay out at 680px and scale down
+  as a whole on narrow screens, where two fingers pinch to zoom.
+- Providers: model mapping switches between picking from the list and typing
+  an id; the Xiaomi MiMo preset defaults to MiMo V2.6 Pro.
+- File chips offer Copy Path and Copy Relative Path.
+- Mobile shows the automation icon on idle automation session rows.
+- Failed SuperOne tool calls are logged to the main log with the tool name,
+  session id and error (no arguments).
+
+### Fixed
+
+- DeepSeek on Linux and Windows: shell commands no longer launch a second
+  SuperOne instance.
+- Browser automation: screenshots and recordings no longer hang when the
+  window is minimized or covered; each stage is bounded and a stuck
+  screenshot fails within 8 s. Calls wait for the renderer to subscribe and
+  fail if it goes away.
+- Providers: the models panel lists only models the plan can enable, so
+  switches on Xiaomi MiMo and Kimi Code no longer snap back (#66).
+- Collaboration: several sessions can link the same peer; a database whose
+  grants schema is unrecognized keeps working instead of failing to open.
+- A fork's worktree survives a cold start.
+- Mobile: a reconnecting phone no longer marks old replies unread; session
+  rows follow backend liveness and open voice calls; sessions with a
+  scheduled send list above older rows; compacted history, subagent tool
+  rows and Codex patch rows match desktop; the files and mermaid previews
+  size correctly; the header names the project and worktree branch.
+- Chat: long mention chips wrap cleanly; file-chip mentions use the file's
+  basename; a text selection keeps its own context menu over file chips.
+- Harness settings no longer report an old version when a catalog row still
+  launches a stale binary.
+
+### Changed
+
+- **BREAKING:** `session_collab_request` launches no longer take `task`;
+  `session_collab_start` takes `{ launchId, task }`. Collaboration send and
+  retrieve address peers by session id instead of a credential. Node RPC
+  `collaboration.start` / `send` / `retrieve` change accordingly, and
+  `retrieve` now requires the session's control lease. Launches approved but
+  not started before upgrading must be requested again.
+- DeepSeek: upgraded `dsh` to `0.1.7-rc.1`. Stored conversations migrate to
+  the new format on first open; an older SuperOne cannot read them after.
+- The Bash row shows edit stats with the file-diff icon after its summary;
+  its expandable section is now named Terminal.
+- Mobile uses lucide 1 icons, matching desktop glyphs.
+
+## [0.68.0] - 2026-09-23
+
+### Added
+
 - Git and GitHub mentions on desktop and mobile: `@git` browses branches,
   commits, worktrees and tags; `@gh` finds issues and pull requests through
   the connected host. Mention chips preserve the exact selected reference.
@@ -60,25 +193,6 @@ Every alpha release keeps its own notes on its GitHub Release.
   Evolving, Qwen 3.8 Flash, `deepseek-flash`, LongCat-2.0, GLM-5.2 on
   ModelScope, MiMo at 1M); Kimi Code gains the Plus / Pro / Max plans;
   KAT-Coder drops the endpoint id and adds pay-as-you-go.
-- DeepSeek sessions answer the agent's questions in the question
-  prompt and review plans in the plan card: plan mode adds dsh's
-  planning guidance, and an approved plan returns the session to
-  default mode. Messages typed mid-turn queue in the composer, where
-  they can be removed or steered into the running turn without
-  cancelling its tool.
-- DeepSeek sessions can list and read resources from configured MCP
-  servers.
-- DeepSeek turns show files that shell commands created, changed, or
-  deleted as Write, Edit, or Delete rows with their diffs, and include
-  them in the turn's file and line counts.
-- DeepSeek agents can run subagents, shell commands, and workflows in
-  the background, as upstream dsh does by default. Background subagents
-  and shell commands appear in the status bar's background list with a
-  Stop button. Stopping the session or archiving it stops its
-  background work.
-- Settings → Harnesses → DeepSeek → Preferences can let the agent pick
-  a model for each subagent it starts, limited to the models you allow.
-  Applies to new sessions.
 - Settings: session storage is split into single-action rows.
 - Chat view translates the compaction indicators.
 
@@ -127,171 +241,6 @@ Every alpha release keeps its own notes on its GitHub Release.
   diff a resumed session against its saved totals so earlier turns are
   not counted again. 0.3.280 itself only adds opt-in APIs.
 - Codex: adopted app-server 0.155.1 (no protocol changes SuperOne uses).
-- DeepSeek: upgraded `dsh` to `0.1.7-rc.1`. Stored DeepSeek conversations
-  are migrated to the new session format the first time they are opened;
-  an older SuperOne cannot read what was written after that.
-- DeepSeek: the model picker offers DeepSeek V4.1 Flash (text and images)
-  beside V4 Pro. V4 Flash and V4 Flash Vision (Exp) are retired upstream;
-  conversations already on them keep working as text-only.
-- DeepSeek: a transient model failure (rate limit, server error, timeout)
-  is retried instead of ending the turn, and an image-heavy conversation
-  offloads its oldest images instead of failing every turn.
-- DeepSeek: the Code mode is now PTC, and Minimal is a single persistent
-  shell. `run_code` and workflows run in a sandboxed Node process.
-
-## [0.68.0-alpha.2] - 2026-09-23
-
-### Added
-
-- Bash commands that edit files render each change as an Edit, Write, or
-  Delete row, and the turn detail counts those files and lines. Collapsed,
-  the header shows the file and line totals; expanded, command output stays
-  behind its own toggle and opens on its own only when the command failed.
-  The phone carries the same diff.
-- Grok ask sessions stay on manual approval instead of inheriting `~/.grok`
-  auto mode. Slash workflows get a host card even though they emit no tool
-  call. Steer now sends a replacement prompt and keeps the session busy
-  until that turn ends; steer soon remains an interject and is Grok-only.
-
-### Fixed
-
-- A terminal opened from the activity launcher no longer also appears in
-  the bottom panel.
-- Resuming a Claude session no longer records the transcript's saved usage
-  as a new step, so daily usage does not replay history.
-
-### Changed
-
-- Claude Agent SDK 0.3.280 and Codex 0.155.1. SDK 0.3.278 fixes forking at
-  a message and keeps session cost across resumes; 0.3.280 adds opt-in
-  APIs only. Codex adds thread attachments and no other protocol changes
-  SuperOne uses.
-
-## [0.68.0-alpha.1] - 2026-09-22
-
-### Added
-
-- Desktop and mobile gain `@git` mentions for branches, commits, worktrees
-  and tags, and `@gh` mentions for GitHub issues and pull requests. Lookups
-  run on the connected host; mention chips carry the exact reference.
-
-### Fixed
-
-- Claude keeps queued messages from being injected into a running steered
-  continuation turn.
-- Composer suggestions are clipped only during composer transitions.
-- Mobile permission descriptions match the shared permission copy.
-
-### Changed
-
-- Async question cards use softer backgrounds; GitHub mention rows omit
-  author avatars and separate the issue or PR number from the author.
-- Computer Use records window discovery and placement diagnostics to help
-  investigate missing or incorrectly positioned windows.
-
-### Tests
-
-- Isolate Codex configuration tests from the runner's `CODEX_HOME` and
-  align mobile mention assertions with the Git and GitHub portals.
-
-## [0.68.0-alpha] - 2026-09-21
-
-### Added
-
-- Fast inner loop (experimental): `browser_run`, `computer_run` and
-  `device_run` hand a multi-step UI goal to Jev (TypeSafe's System One
-  model), which picks the next click, type or scroll from the observed
-  controls in about 0.4 s per step. The main model is asked only when
-  Jev is unsure, a step looks irreversible, the run stalls, or the
-  step needs input Jev cannot produce (a position, a path, free text)
-  — it then answers with the platform's own `*_act` actions or
-  presets and the run executes them. Every pause returns progress
-  with per-action outcomes and a fresh screenshot path. Toggle in
-  Settings → General → Experimental with a Jev API key; browser runs
-  also need CDP. Runs render in chat as one segmented card, like a
-  subagent, listing each action with its outcome.
-- Computer Use drives apps entirely in the background: menu commands
-  and ⌘ shortcuts work without activating the app; context menus are
-  read, taken down, and reopened to act; scrolling writes the scroll
-  bar; coordinate clicks and right-clicks reach the window; keys reach
-  the XPC service that hosts a sandboxed Save/Open sheet; drag and
-  drop lands when the drop point is uncovered, SuperOne lowers its own
-  window when it is the coverer, and only another app's window makes
-  the target app come forward briefly. An app that grabs the front
-  while driven is sent back. Window outlines include the menu bar
-  (with check marks), disclosure, selection and checked state, and
-  the folder a nested row sits in. `computer_act` gains `select` and
-  `open`; `computer_wait_for` and `expect` gain `newRoot`;
-  `computer_apps focus` can activate on request; `computer_run`
-  launches the app when it has no window; a timed-out wait reports
-  what the element read as.
-- Codex realtime voice: a call gets its own view and composer beside
-  the thread; typed input goes to the backing thread during the call;
-  picker selections push into the running thread; the voice agent's
-  delegation prompt shows as a labeled user row.
-- Read state syncs between desktop and phone, and desktop banners are
-  suppressed while a phone is reachable.
-- Terminal command approvals route through the harness's own
-  permission layer first (Claude's auto-mode classifier, Codex's
-  approval policy); rules are regular expressions over the whole
-  command.
-- Built-in Claude Code provider presets follow each vendor's current
-  guide (GLM-5.3, MiniMax M3 at 1M, Moonshot K3 1M, Doubao Seed
-  Evolving, Qwen 3.8 Flash, `deepseek-flash`, LongCat-2.0, GLM-5.2 on
-  ModelScope, MiMo at 1M); Kimi Code gains the Plus / Pro / Max plans;
-  KAT-Coder drops the endpoint id and adds pay-as-you-go.
-- Settings: session storage is split into single-action rows.
-- Diagnostics: each HTTP MCP request logs with an allowlisted reject
-  reason; the Codex Responses-to-Chat proxy logs tool conversion
-  counts; production connection diagnostics for stalls and MCP.
-- Chat view translates the compaction indicators.
-
-### Fixed
-
-- Codex realtime voice settings sync; a call survives session
-  switches and waits out transient ICE disconnects instead of ending.
-- Claude on a third-party Anthropic-compatible provider no longer
-  gets every turn rejected with 400 after an MCP server joins
-  mid-session; provider env wins over settings-file env blocks;
-  endpoint overrides preview the resolved URL and stop doubling
-  `/v1`; mapped session models fold onto their slot id.
-- A Claude stream that dies mid-call no longer leaves a ghost tool
-  row on retry; model fallback notices no longer take the live turn.
-- Chat: async questions are told apart from submitted answers;
-  dismissed question rows keep default chrome; the files previewer no
-  longer skips a file per arrow key; startup echo suppression applies
-  only to restored unstamped turns; turn detail counts a subagent as
-  one call and keeps its label and statistics on the phone; remote
-  results keep run details.
-- Mobile: the usage meter survives session and credential switches;
-  the chat header shows the active worktree path; the redundant live
-  rate-limit detail and chip tint are gone.
-- Terminal tabs receive commands by lifecycle (keeps running / waits
-  for input), not by how long they take.
-- Computer Use: auxiliary windows are skipped when resolving app
-  roots; floating panels are discovered as roots; title-bar
-  accessories and the sharing indicator are not; letters and symbols
-  are sent on their own keycodes; Escape is no longer sent ahead of
-  typed text; zoom captures at the display's pixel scale; the menu
-  bar and element-typed values stay out of the act diff, which now
-  pairs nodes by identity; a selection change counts as an effect; an
-  app the user just activated is never deactivated; the overlay hide
-  and host-exit handlers always run.
-- Jev: passwords are redacted from browser observations; a handed
-  action is rejected once the paused state has changed.
-
-### Changed
-
-- **BREAKING:** `computer_act` no longer accepts `delivery`. The host
-  picks the path per action (AX action, event posted to the app, or
-  scroll-bar value) and reports it in `evidence[].description`;
-  `ActResult.grounding` is removed. System-wide hotkeys (⌘Space,
-  ⌘Tab, screenshots) are not available.
-- Codex keeps the turn id on completed assistant messages.
-
-### Tests
-
-- The settings registry test covers `jevFastLoopEnabled`.
 
 ## [0.67.0] - 2026-09-17
 

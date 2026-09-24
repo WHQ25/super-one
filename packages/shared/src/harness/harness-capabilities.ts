@@ -234,13 +234,17 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     // `supportsSubagents`: foreground delegation (`dsh-tool-subagent` over the
     // in-process spawn provider), rendered as a Task block with the child's
     // steps nested under it. Background and continuable children are not wired.
+    // `supportsPlanMode`: `plan` also turns on dsh plan mode; `exit_plan_mode`
+    // reaches the plan-approval card through the user-questions seam.
+    // `supportsQueuedSteer`: `agent.steer()` lands at the next step boundary
+    // and never cancels a tool, so there is one steer and no separate "soon".
     supportsMcp: true,
-    supportsPlanMode: false,
+    supportsPlanMode: true,
     supportsTodos: true,
     supportsSubagents: true,
     supportsCompact: true,
     supportsStreamingToolInput: true,
-    supportsQueuedSteer: false,
+    supportsQueuedSteer: true,
     supportsQueuedSteerSoon: false,
     // Single cwd.
     supportsAdditionalDirs: false,

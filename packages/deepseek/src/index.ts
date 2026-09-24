@@ -34,6 +34,7 @@ export {
   type SuperoneToolSurface,
 } from './tool-surface'
 export { DeepseekMcpServers, type DeepseekMcpServerSpec } from './mcp-servers'
+export { presentQuestions, type DeepseekQuestion } from './user-questions'
 export { dshEffortFromSuperone, superoneEffortsFromDsh } from './reasoning-effort'
 export {
   DEFAULT_DSH_PERMISSION_PRESET,

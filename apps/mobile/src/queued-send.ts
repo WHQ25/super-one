@@ -12,7 +12,7 @@ import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilit
  */
 export function shouldQueueComposerSend(status: AgentStatus, harness: HarnessId): boolean {
   if (status !== 'streaming') return false
-  return harness === 'claude' || harness === 'acp' || harness === 'opencode' || harness === 'codex'
+  return harness === 'claude' || harness === 'acp' || harness === 'opencode' || harness === 'codex' || harness === 'dsh'
 }
 
 export type ComposerSendKind = 'send' | 'steer' | 'soon'

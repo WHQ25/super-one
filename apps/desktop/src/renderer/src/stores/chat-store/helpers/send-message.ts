@@ -988,6 +988,7 @@ export async function sendMessageImpl(
     effectiveProvider === 'claude'
     || effectiveProvider === 'acp'
     || effectiveProvider === 'opencode'
+    || effectiveProvider === 'dsh'
     || isCodexDurableQueueSend
   ) && session.status === 'streaming'
 

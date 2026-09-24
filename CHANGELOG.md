@@ -60,6 +60,12 @@ Every alpha release keeps its own notes on its GitHub Release.
   Evolving, Qwen 3.8 Flash, `deepseek-flash`, LongCat-2.0, GLM-5.2 on
   ModelScope, MiMo at 1M); Kimi Code gains the Plus / Pro / Max plans;
   KAT-Coder drops the endpoint id and adds pay-as-you-go.
+- DeepSeek sessions answer the agent's questions in the question
+  prompt and review plans in the plan card: plan mode adds dsh's
+  planning guidance, and an approved plan returns the session to
+  default mode. Messages typed mid-turn queue in the composer, where
+  they can be removed or steered into the running turn without
+  cancelling its tool.
 - Settings: session storage is split into single-action rows.
 - Chat view translates the compaction indicators.
 

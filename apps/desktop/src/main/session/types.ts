@@ -230,6 +230,11 @@ export type BackendCommand =
       priority?: ClaudeSteerPriority
     }
   | {
+      /** dsh consumes a steer at the next step boundary; nothing is cancelled. */
+      kind: 'dsh.steer_queued'
+      clientMessageId: string
+    }
+  | {
       kind: 'codex.plan_approval'
       messageId: string
       status: 'approved' | 'rejected'

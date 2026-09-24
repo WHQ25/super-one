@@ -80,7 +80,7 @@ export async function readPresetDeclarations(root: string): Promise<PresetDeclar
  */
 export type DeepseekPresetRoster = Pick<
   AgentPresetRegistry,
-  'defaultId' | 'list' | 'resolve' | 'mount' | 'select' | 'composedPreset'
+  'defaultId' | 'list' | 'resolve' | 'mount' | 'select' | 'composedPreset' | 'serviceFor'
 >
 
 /** Read the roster off a context, or `undefined` when none is mounted. */

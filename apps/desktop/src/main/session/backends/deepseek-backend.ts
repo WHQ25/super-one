@@ -29,7 +29,9 @@ import {
   getDeepseekRuntime,
   registerApprovalRouter,
 } from '../../deepseek/deepseek-runtime-host'
-import type { BackendEvent, BackendStartOptions, HarnessId, SessionBackend } from '../types'
+import type { BackendCommand, BackendEvent, BackendStartOptions, HarnessId, SessionBackend } from '../types'
+import { QueuedUserMessageQueue } from '../queued-user-message-queue'
+import { DeepseekQuestions } from './deepseek-questions'
 
 interface DeepseekConfig {
   provider?: string
@@ -69,6 +71,19 @@ export class DeepseekBackend implements SessionBackend {
   private permissionMode: PermissionMode = 'default'
   private unregisterApproval: (() => void) | null = null
   private pendingApprovals = new Map<string, PendingApproval>()
+  private readonly questions = new DeepseekQuestions((event) => this.emit(event))
+  /**
+   * Messages typed while a turn runs. Handed to dsh one turn at a time once the
+   * agent is idle — or into the live turn by a steer — so the composer's queue
+   * chips, dequeue and steer all act on something SuperOne still holds.
+   */
+  private readonly queuedMessages = new QueuedUserMessageQueue({
+    isBusy: () => this.agent?.status() === 'running',
+    isAlive: () => this.opts !== null,
+    emit: (event) => this.emit(event),
+    send: (request) => this.send(request),
+    warn: (message, err) => log.warn(`[deepseek] ${message}:`, err),
+  })
 
   private listeners = new Set<(event: BackendEvent) => void>()
   private providerSessionListeners = new Set<(id: string) => void>()
@@ -157,8 +172,15 @@ export class DeepseekBackend implements SessionBackend {
         ...(config.maxTokens !== undefined ? { maxTokens: config.maxTokens } : {}),
         resume: Boolean(opts.providerSessionId),
         mcpServers: readDshMcpServerSpecs(opts.cwd),
-        onEvent: (event) => this.emit(event),
+        askUser: (question, signal) => this.questions.ask(question, signal),
+        onEvent: (event) => {
+          this.emit(event)
+          if (event.type === 'status_change' && event.status === 'idle') this.queuedMessages.flush()
+        },
       })
+      // SuperOne's mode is the source of truth: a resumed log may still hold
+      // the plan mode an earlier mode switch left behind.
+      runtime.setPlanMode(providerSessionId, this.permissionMode === 'plan')
       // Creation synced from a fresh read; the watch covers the other case —
       // a config edit that lands while this session is already running.
       trackDshMcpConfig(opts.cwd)
@@ -185,6 +207,7 @@ export class DeepseekBackend implements SessionBackend {
     for (const requestId of [...this.pendingApprovals.keys()]) {
       this.respondToPermission(requestId, false)
     }
+    this.questions.dismissAll()
     this.unregisterApproval?.()
     this.unregisterApproval = null
     const agent = this.agent
@@ -194,6 +217,7 @@ export class DeepseekBackend implements SessionBackend {
 
   async send(request: SendMessageRequest): Promise<void> {
     const agent = await this.ensureAgent()
+    if (this.queuedMessages.intercept(request)) return
     // `/compact` is not a prompt: it drives `ctx.compaction.compactNow()` and
     // opens no turn. Intercepted here rather than mounting dsh's own
     // `command-compact` row, because SuperOne owns the slash surface.
@@ -246,6 +270,8 @@ export class DeepseekBackend implements SessionBackend {
   }
 
   async close(): Promise<void> {
+    this.queuedMessages.clear()
+    this.opts = null
     await this.teardownAgent()
     this.listeners.clear()
     this.providerSessionListeners.clear()
@@ -268,10 +294,13 @@ export class DeepseekBackend implements SessionBackend {
     // writes a durable `sandbox/mode` + `approval/policy` pair onto the
     // session's own log, which is what makes the sandbox fence follow the mode
     // rather than only the popover doing so.
+    // `plan` also turns on dsh's plan mode — the planning guidance and the
+    // `exit_plan_mode` review — which the read-only preset alone does not.
     const agent = this.agent
     if (agent) {
       const runtime = await getDeepseekRuntime()
       runtime.setPermissionPreset(agent.sessionId, dshPresetForMode(mode))
+      runtime.setPlanMode(agent.sessionId, mode === 'plan')
     }
     for (const callback of this.permissionModeListeners) callback(mode)
   }
@@ -338,11 +367,43 @@ export class DeepseekBackend implements SessionBackend {
     return true
   }
 
-  respondToQuestion(_requestId: string, _answers: Record<string, string>, _annotations?: QuestionAnnotations): void {}
+  respondToQuestion(requestId: string, answers: Record<string, string>, _annotations?: QuestionAnnotations): void {
+    this.questions.answer(requestId, answers)
+  }
 
-  dismissQuestion(_requestId: string): void {}
+  dismissQuestion(requestId: string): void {
+    this.questions.dismiss(requestId)
+  }
 
-  respondToPlanApproval(_requestId: string, _approved: boolean, _feedback?: string): void {}
+  respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void {
+    // dsh leaves plan mode itself on approval; the session follows it out of
+    // `plan`, so the next step runs with write access instead of read-only.
+    if (this.questions.review(requestId, approved, feedback) && approved && this.permissionMode === 'plan') {
+      void this.setPermissionMode('default').catch((error: unknown) => {
+        log.warn('[deepseek] leaving plan mode after approval failed', error)
+      })
+    }
+  }
+
+  /**
+   * Steer a queued message into the running turn. dsh consumes it at the next
+   * step boundary and never cancels the tool in flight, so there is one steer,
+   * whatever the requested priority.
+   */
+  async handleCommand(cmd: BackendCommand): Promise<void> {
+    if (cmd.kind !== 'dsh.steer_queued') return
+    const agent = this.agent
+    if (!agent || agent.status() !== 'running') throw new Error('Queued message can only steer an active DeepSeek turn')
+    const taken = this.queuedMessages.take(cmd.clientMessageId)
+    if (!taken) throw new Error(`Queued DeepSeek message not found: ${cmd.clientMessageId}`)
+    try {
+      await agent.steerText(taken.request.content, taken.request.images)
+    } catch (error) {
+      this.queuedMessages.restore(taken)
+      throw error
+    }
+    this.emit({ type: 'queued_message_consumed', clientMessageId: cmd.clientMessageId })
+  }
 
   async getContextUsage(): Promise<ContextUsageInfo | null> {
     return null
@@ -366,12 +427,12 @@ export class DeepseekBackend implements SessionBackend {
     return false
   }
 
-  dequeueMessage(_clientMessageId: string): boolean {
-    return false
+  dequeueMessage(clientMessageId: string): boolean {
+    return this.queuedMessages.dequeue(clientMessageId)
   }
 
   getPendingInteractions(): AgentEvent[] {
-    return [...this.pendingApprovals.values()].map((pending) => pending.event)
+    return [...[...this.pendingApprovals.values()].map((pending) => pending.event), ...this.questions.events()]
   }
 
   onEvent(handler: (event: BackendEvent) => void): () => void {

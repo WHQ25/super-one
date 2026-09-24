@@ -12,9 +12,13 @@ import { TEST_PRESET_OPTIONS } from './test-presets'
  * never the caller's text.
  */
 class MockAdapter extends LlmAdapter {
+  /** Every request's message list, serialized, oldest first. */
+  readonly requests: string[] = []
+
   async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     expect(JSON.stringify(options)).toContain(JSON.stringify(SUPERONE_SYSTEM_PROMPT_APPEND).slice(1, -1))
     const allText = JSON.stringify(options.messages)
+    this.requests.push(allText)
     if (allText.includes('"role":"tool"')) {
       yield { type: 'block-start', index: 0, blockType: 'text' }
       yield { type: 'text-delta', index: 0, text: 'tool done' }
@@ -65,8 +69,9 @@ async function bootRuntime(opts?: { onApproval?: () => Promise<'allowed-once' | 
     tools: { register(definition: unknown): () => void }
     on(event: string, handler: (...args: never[]) => unknown): () => void
   }
-  ctx.llm.registerAdapter(['mock'], new MockAdapter())
-  return { runtime, ctx }
+  const model = new MockAdapter()
+  ctx.llm.registerAdapter(['mock'], model)
+  return { runtime, ctx, model }
 }
 
 async function runTurn(
@@ -230,6 +235,51 @@ describe('deepseek runtime end-to-end (mock adapter)', () => {
     expect(events.filter((event) => event.type === 'message_complete')).toHaveLength(1)
     expect(toolUse?.type === 'content_delta' ? toolUse.messageId : undefined)
       .toBe(toolResult?.type === 'content_delta' ? toolResult.messageId : 'unmatched')
+
+    await agent.dispose()
+    await runtime.dispose()
+  })
+
+  it('steers a running turn into its next step without a second turn', async () => {
+    const { runtime, ctx, model } = await bootRuntime()
+    let release!: () => void
+    const toolStarted = new Promise<void>((started) => {
+      ctx.tools.register({
+        name: 'ping',
+        description: 'Reply pong.',
+        parameters: { type: 'object', properties: {}, additionalProperties: false },
+        output: {
+          schema: { type: 'string' },
+          render: (_args: unknown, value: unknown) => [{ type: 'text', text: String(value) }],
+        },
+        async execute() {
+          started()
+          await new Promise<void>((resolve) => { release = resolve })
+          return 'pong'
+        },
+      })
+    })
+    const events: AgentEvent[] = []
+    const agent = await runtime.createAgent({
+      sessionId: randomUUID(),
+      cwd: process.cwd(),
+      provider: 'mock',
+      model: 'mock-1',
+      onEvent: (event) => events.push(event),
+    })
+
+    await agent.sendText('please TOOL now')
+    await toolStarted
+    await agent.steerText('STEERED aside')
+    release()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    await agent.whenIdle()
+
+    // The tool was not cancelled, and the step after it carried the steer.
+    expect(model.requests).toHaveLength(2)
+    expect(model.requests[1]).toContain('STEERED aside')
+    expect(model.requests[1]).toContain('pong')
+    expect(events.filter((event) => event.type === 'message_start')).toHaveLength(1)
 
     await agent.dispose()
     await runtime.dispose()

@@ -1411,6 +1411,7 @@ export class Session implements SessionContract {
       case 'codex.steer_queued':
       case 'claude.steer_queued':
       case 'acp.steer_queued':
+      case 'dsh.steer_queued':
         return dispatchBackendSteer(cmd, {
           session: this,
           id: this.id,

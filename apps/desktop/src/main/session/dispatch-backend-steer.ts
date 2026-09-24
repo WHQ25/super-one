@@ -4,7 +4,7 @@ import { isCodexAsyncAnswer } from '@superone/shared/codex-async-question'
 import log from '../logger'
 
 type SteerCommand = Extract<BackendCommand, {
-  kind: 'codex.steer' | 'codex.steer_queued' | 'claude.steer_queued' | 'acp.steer_queued'
+  kind: 'codex.steer' | 'codex.steer_queued' | 'claude.steer_queued' | 'acp.steer_queued' | 'dsh.steer_queued'
 }>
 
 type AnswerSession = Pick<Session, 'send' | 'on' | 'snapshot' | 'getSelectedModel' | 'getSelectedEffort'>
@@ -29,6 +29,7 @@ export async function dispatchBackendSteer(cmd: SteerCommand, host: {
       'codex.steer_queued': ['codex', 'Codex'],
       'claude.steer_queued': ['claude', 'Claude'],
       'acp.steer_queued': ['acp', 'ACP'],
+      'dsh.steer_queued': ['dsh', 'DeepSeek'],
     }[cmd.kind]
     if (host.harnessId !== harness || !host.streaming) {
       throw new Error(`Queued message can only steer an active ${label} turn`)

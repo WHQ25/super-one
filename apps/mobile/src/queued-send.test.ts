@@ -14,6 +14,7 @@ describe('queued composer send', () => {
     expect(shouldQueueComposerSend('streaming', 'codex')).toBe(true)
     expect(shouldQueueComposerSend('streaming', 'acp')).toBe(true)
     expect(shouldQueueComposerSend('streaming', 'opencode')).toBe(true)
+    expect(shouldQueueComposerSend('streaming', 'dsh')).toBe(true)
     expect(shouldQueueComposerSend('streaming', 'cursor')).toBe(false)
     expect(shouldQueueComposerSend('idle', 'claude')).toBe(false)
   })

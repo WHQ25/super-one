@@ -785,17 +785,12 @@ export class AgentService {
             break
           }
           const harnessId = session.snapshot.harnessId
-          if (harnessId !== 'claude' && harnessId !== 'codex' && harnessId !== 'acp') {
-            await respond?.(command.requestId, { ok: false, error: 'steer is not supported on this harness' })
-            break
-          }
-          if (harnessId === 'codex' && command.priority === 'next') {
-            await respond?.(command.requestId, { ok: false, error: 'Codex cannot steer without interrupting' })
-            break
-          }
           const steer = this.queuedSteerCommand(harnessId, command.clientMessageId, command.priority ?? 'now')
           if (!steer) {
-            await respond?.(command.requestId, { ok: false, error: 'steer is not supported on this harness' })
+            await respond?.(command.requestId, {
+              ok: false,
+              error: harnessId === 'codex' ? 'Codex cannot steer without interrupting' : 'steer is not supported on this harness',
+            })
             break
           }
           await this.enqueueSessionQueueOp(command.sessionId, async () => {
@@ -2245,10 +2240,14 @@ export class AgentService {
     harnessId: string,
     clientMessageId: string,
     priority: ClaudeSteerPriority,
-  ): Extract<BackendCommand, { kind: 'claude.steer_queued' | 'acp.steer_queued' | 'codex.steer_queued' }> | null {
+  ): Extract<BackendCommand, { kind: 'claude.steer_queued' | 'acp.steer_queued' | 'codex.steer_queued' | 'dsh.steer_queued' }> | null {
     if (harnessId === 'claude') return { kind: 'claude.steer_queued', clientMessageId, priority }
     if (harnessId === 'acp') return { kind: 'acp.steer_queued', clientMessageId, priority }
+    // Codex's Core queue item has no non-aborting variant, so `next` would
+    // silently behave like `now`.
     if (harnessId === 'codex' && priority !== 'next') return { kind: 'codex.steer_queued', clientMessageId }
+    // dsh has exactly one steer — the next step boundary, nothing cancelled.
+    if (harnessId === 'dsh') return { kind: 'dsh.steer_queued', clientMessageId }
     return null
   }
 
@@ -2624,18 +2623,9 @@ export class AgentService {
         ? this.sessionManager?.getSession(sessionId)
         : this.sessionManager?.getActiveSession(projectPath)
       if (!session || session.snapshot.projectPath !== projectPath) return false
-      const harnessId = session.snapshot.harnessId
-      if (harnessId !== 'claude' && harnessId !== 'codex' && harnessId !== 'acp') return false
-      // `priority` is Claude-only: Codex's Core queue item has no non-aborting
-      // variant, so a `next` request there would silently behave like `now`.
-      if (harnessId === 'codex' && priority === 'next') return false
-      await session.dispatchBackendCommand(
-        harnessId === 'claude'
-          ? { kind: 'claude.steer_queued', clientMessageId, priority: priority ?? 'now' }
-          : harnessId === 'acp'
-            ? { kind: 'acp.steer_queued', clientMessageId, priority: priority ?? 'now' }
-            : { kind: 'codex.steer_queued', clientMessageId },
-      )
+      const steer = this.queuedSteerCommand(session.snapshot.harnessId, clientMessageId, priority ?? 'now')
+      if (!steer) return false
+      await session.dispatchBackendCommand(steer)
       return true
     })
 

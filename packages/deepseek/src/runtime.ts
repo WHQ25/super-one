@@ -18,6 +18,8 @@ import type {} from '@deepseek-ai/dsh-commands'
 import { AttachmentId, type EncodedImageAttachment, type ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-permission-presets'
+import type {} from '@deepseek-ai/dsh-plan-mode'
+import { UserQuestionError, type AskUserQuestionAnswer, type AskUserQuestionRequest } from '@deepseek-ai/dsh-user-questions'
 import type { AgentEvent, ImageAttachment } from '@superone/shared/agent-types'
 import { admitImageBlocks, encodeComposerImages, modelAcceptsImages } from './images'
 import { extractSubagentDiagnostic } from './subagent-diagnostic'
@@ -45,6 +47,7 @@ import {
   storedSessionPreset,
 } from './presets'
 import { readStoredSession } from './stored-session'
+import { presentQuestions, type DeepseekQuestion } from './user-questions'
 import {
   createDeepseekTree,
   deepseekAdapterPlugin,
@@ -115,6 +118,13 @@ export interface CreateDeepseekAgentOptions {
    * level, like dsh itself treats them: mounted once for the whole tree.
    */
   mcpServers?: readonly DeepseekMcpServerSpec[]
+  /**
+   * Answer this session's `ask_user_question` calls and plan reviews.
+   * Resolves with the encoded answer, or `'dismissed'` when the user set the
+   * question aside to type instead. Absent, dsh finds no answerer and the tool
+   * fails with `NO_PROVIDER` — the model hears it cannot ask.
+   */
+  askUser?: (question: DeepseekQuestion, signal?: AbortSignal) => Promise<AskUserQuestionAnswer | 'dismissed'>
 }
 
 export interface DeepseekAgentHandle {
@@ -127,6 +137,12 @@ export interface DeepseekAgentHandle {
    * stored, so the caller may surface the error and let the user retry.
    */
   sendText(text: string, images?: readonly ImageAttachment[]): Promise<void>
+  /**
+   * Hand one message to the running turn at its next step boundary, without
+   * cancelling the tool in flight. An idle agent starts a turn with it. Same
+   * attachment contract as `sendText`.
+   */
+  steerText(text: string, images?: readonly ImageAttachment[]): Promise<void>
   cancel(): void
   /**
    * Change the route for subsequent requests without rebuilding the agent.
@@ -173,6 +189,7 @@ interface AgentRecord {
   route: RouteOverride
   /** This session's permission answerer, also used by its delegated children. */
   requestPermission?: (request: DeepseekToolPermissionRequest) => Promise<ToolApprovalDecision>
+  askUser?: CreateDeepseekAgentOptions['askUser']
   dispose: () => Promise<void>
 }
 
@@ -420,6 +437,23 @@ export class DeepseekRuntime {
         })
       })
     }
+
+    // Questions and plan reviews. Only a runtime ROOT may ask — dsh refuses a
+    // delegated child with `DELEGATED_CALLER` before this waterfall runs — so
+    // the owner is always a top-level record, never found through `ownerOf`.
+    bridge.on('user-questions/request', ((request: AskUserQuestionRequest, next: () => Promise<AskUserQuestionAnswer>) => {
+      const askUser = request.agent ? runtime.records.get(String(request.agent.id))?.askUser : undefined
+      if (!askUser) return next()
+      return askUser(presentQuestions(request.questions), request.signal).then((answer) => {
+        if (answer !== 'dismissed') return answer
+        // The code dsh reads as "the user set this aside to speak": the plan
+        // review stays in plan mode and tells the model to stop and wait.
+        throw new UserQuestionError(
+          'The user dismissed the question to reply in their own words; stop here and wait for their message.',
+          'ASK_CANCELLED',
+        )
+      })
+    }) as never)
 
     // One gate for every agent in the tree, including delegated children — the
     // per-session answerer is looked up per call, not captured per mount.
@@ -712,6 +746,7 @@ export class DeepseekRuntime {
       onEvent: options.onEvent,
       route: {},
       ...(toolPlane ? { requestPermission: toolPlane.requestPermission } : {}),
+      ...(options.askUser ? { askUser: options.askUser } : {}),
       dispose: () => handle.dispose(),
     }
     this.records.set(options.sessionId, record)
@@ -720,25 +755,13 @@ export class DeepseekRuntime {
     return {
       sessionId: options.sessionId,
       async sendText(text, images) {
-        // Images are committed BEFORE the message is queued, and a refusal
-        // throws out of here without queueing anything. That ordering is the
-        // whole point: an admitted image lives in the durable log and rides
-        // every later request of the session, so a message that dsh could
-        // store but not serialize would not fail once — it would fail on every
-        // subsequent turn too, with no way back. See `imageBlocksFor`.
-        validateTurnAttachments(images, text)
-        const prepared = buildAttachmentTurn(images, { inlineImages: true, requirePaths: true })
-        const encoded = encodeComposerImages(prepared.attachments.filter(a => a.inline).map(a => ({ ...a, id: String(a.index) })))
-        const imageBlocks = encoded.length > 0
-          ? await runtime.imageBlocksFor(record, options, encoded)
-          : []
-        // followup() queues and wakes; input landing between turn/end and idle
-        // can park until the next wake (integration plan §3 footgun 2) — the
-        // queued-message chip covers that surface until steering lands.
-        record.agent.followup(createUserMessage({
-          content: [{ type: 'text', text: attachmentPrompt(text, prepared.note) }, ...imageBlocks],
-          source: { kind: 'user' },
-        }))
+        // followup() queues a turn of its own and wakes the driver. The backend
+        // holds messages typed mid-turn in SuperOne's queue until the agent is
+        // idle, so this is only reached between turns.
+        record.agent.followup(await runtime.userMessage(record, options, text, images))
+      },
+      async steerText(text, images) {
+        record.agent.steer(await runtime.userMessage(record, options, text, images))
       },
       cancel() {
         record.agent.cancel({ kind: 'user' })
@@ -754,6 +777,32 @@ export class DeepseekRuntime {
         await record.dispose()
       },
     }
+  }
+
+  /**
+   * Build one user message, committing its images first.
+   *
+   * Images are committed BEFORE the message is handed to dsh, and a refusal
+   * throws out of here without handing over anything. That ordering is the
+   * whole point: an admitted image lives in the durable log and rides every
+   * later request of the session, so a message that dsh could store but not
+   * serialize would not fail once — it would fail on every subsequent turn
+   * too, with no way back. See `imageBlocksFor`.
+   */
+  private async userMessage(
+    record: AgentRecord,
+    created: CreateDeepseekAgentOptions,
+    text: string,
+    images: readonly ImageAttachment[] | undefined,
+  ) {
+    validateTurnAttachments(images, text)
+    const prepared = buildAttachmentTurn(images, { inlineImages: true, requirePaths: true })
+    const encoded = encodeComposerImages(prepared.attachments.filter(a => a.inline).map(a => ({ ...a, id: String(a.index) })))
+    const imageBlocks = encoded.length > 0 ? await this.imageBlocksFor(record, created, encoded) : []
+    return createUserMessage({
+      content: [{ type: 'text', text: attachmentPrompt(text, prepared.note) }, ...imageBlocks],
+      source: { kind: 'user' },
+    })
   }
 
   /**
@@ -1112,6 +1161,28 @@ export class DeepseekRuntime {
     const presets = this.bridge.get('permissionPresets')
     if (!presets) return
     presets.set(record.agent.session, preset)
+  }
+
+  /**
+   * Turn one session's plan mode on or off.
+   *
+   * Plan mode is dsh's collaboration state, not a permission: it adds the
+   * planning guidance to each request and arms `exit_plan_mode`, while the
+   * read-only fence comes from the permission preset beside it. The switch is
+   * logged (`plan/mode`), so it survives resume; mid-turn it lands at the next
+   * step. The controller lives inside the preset's isolated group, so it is
+   * reached through the roster rather than the bridge's own scope.
+   * @param sessionId - the session to switch.
+   * @param active - whether plan mode should be in force.
+   * @returns whether this session's preset composes plan mode at all.
+   */
+  setPlanMode(sessionId: string, active: boolean): boolean {
+    const record = this.records.get(sessionId)
+    if (!record) return false
+    const planMode = presetRoster(this.bridge)?.serviceFor(record.agent, 'planMode')
+    if (!planMode) return false
+    planMode.set(record.agent, active)
+    return true
   }
 
 

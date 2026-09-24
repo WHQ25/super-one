@@ -3255,6 +3255,8 @@ export type Messages = {
       applyPaste: string
       environmentVariables: string
       modelMapping: string
+      modelMappingPick: string
+      modelMappingManual: string
       imageCapability: string
       mediaModels: string
       addModel: string
@@ -7245,6 +7247,8 @@ export const en: Messages = {
       applyPaste: 'Apply',
       environmentVariables: 'Environment Variables',
       modelMapping: 'Model Mapping',
+      modelMappingPick: 'Select',
+      modelMappingManual: 'Manual',
       imageCapability: 'Image Generation',
       mediaModels: 'Models',
       addModel: 'Add Model',

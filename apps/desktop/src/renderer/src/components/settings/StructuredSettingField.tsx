@@ -14,7 +14,8 @@ import {
 } from '@superone/shared/platform-registry'
 import { useSettingsStore } from '@/stores/settings'
 import { CapabilityField, TASK_LABEL_KEY } from '../providers/CapabilityPicker'
-import { EnvEditor, ModelEnvEditor } from '../providers/CredentialConfig'
+import { EnvEditor } from '../providers/CredentialConfig'
+import { ModelEnvEditor } from '../providers/ModelMappingField'
 import { AddCustomModelPopover, endpointsSupportedTasks } from '../providers/custom-models'
 
 export interface StructuredSettingFieldProps {

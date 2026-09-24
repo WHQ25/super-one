@@ -3350,6 +3350,8 @@ export const zh: Messages = {
       applyPaste: '应用',
       environmentVariables: '环境变量',
       modelMapping: '模型映射',
+      modelMappingPick: '选择',
+      modelMappingManual: '手动输入',
       imageCapability: '图像生成',
       mediaModels: '模型',
       addModel: '添加模型',

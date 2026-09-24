@@ -65,11 +65,11 @@ function launch(): Promise<ElectronApplication> {
   })
 }
 
-/** The full-app window: not DevTools and not a `?mode=` auxiliary window. */
+/** The full-app window: the renderer page without a `?mode=` (auxiliary windows, storage migration). */
 async function mainWindow(app: ElectronApplication): Promise<Page> {
   const deadline = Date.now() + RUN_TIMEOUT_MS
   while (Date.now() < deadline) {
-    const win = app.windows().find((w) => !w.url().startsWith('devtools://') && !w.url().includes('mode='))
+    const win = app.windows().find((w) => w.url().includes('/index.html') && !w.url().includes('mode='))
     if (win) return win
     await new Promise((r) => setTimeout(r, 20))
   }

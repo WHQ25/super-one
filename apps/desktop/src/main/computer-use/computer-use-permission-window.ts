@@ -13,9 +13,9 @@ import { BrowserWindow, screen, shell } from 'electron'
 import { execFile } from 'node:child_process'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { is } from '@electron-toolkit/utils'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
 import { WindowRole, roleArg } from '../process-titles'
+import { loadRendererPage } from '../renderer-protocol'
 import type { ComputerUsePermissionStatus } from './computer-use-helper-lifecycle'
 
 const execFileAsync = promisify(execFile)
@@ -200,11 +200,7 @@ function loadFloat(
     flow,
     pane,
   })
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    void win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/?${qs.toString()}`)
-  } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'), { search: qs.toString() })
-  }
+  void loadRendererPage(win, 'index.html', `?${qs.toString()}`)
 }
 
 function broadcastPermissionStatus(status: Partial<ComputerUsePermissionStatus> & {

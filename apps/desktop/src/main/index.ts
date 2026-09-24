@@ -250,6 +250,8 @@ import { planStartDrag } from './start-drag'
 import type { RemoteCommand, PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest, ChatMessageContext, ContentBlock, WorktreeActivateRequest } from '@superone/shared/agent-types'
 import type { RemoteControlCallbacks } from './remote-control-service'
 import { markStartup } from '@superone/shared/startup-marks'
+import { loadRendererPage, registerRendererProtocol, RENDERER_SCHEME, RENDERER_SCHEME_PRIVILEGES, usesRendererDevServer } from './renderer-protocol'
+import { migrateRendererLocalStorage } from './renderer-storage-migration'
 
 // ESM hoists every import above, so this lands once the main bundle has evaluated.
 markStartup('main-evaluated')
@@ -285,6 +287,7 @@ process.on('unhandledRejection', (reason) => {
 protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true } },
   { scheme: 'superone-app', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, standard: true } },
+  RENDERER_SCHEME_PRIVILEGES,
 ])
 
 // Drives app.getPath('logs') and, on macOS, the safeStorage keychain item.
@@ -1215,11 +1218,7 @@ function createWindow(): void {
 
 /** `''` loads the full app; a mini query loads MiniWindowApp. Dev serves from the vite URL. */
 function loadWindowRoute(win: BrowserWindow, query: string): void {
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/${query}`)
-  } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'), query ? { search: query.slice(1) } : {})
-  }
+  void loadRendererPage(win, 'index.html', query)
 }
 
 /** Boot route for a *spawned* mini window. A converted window keeps its URL and App tree. */
@@ -1400,12 +1399,7 @@ function ensureDragPreviewWindow(): BrowserWindow {
     },
   })
   win.setIgnoreMouseEvents(true)
-  const query = '?mode=dragpreview'
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/${query}`)
-  } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'), { search: query.slice(1) })
-  }
+  loadWindowRoute(win, '?mode=dragpreview')
   dragPreviewWindow = win
   return win
 }
@@ -1493,11 +1487,7 @@ function createBenchWindow(): void {
     rendererAgentEventTransport.resetCodexBaselines()
     benchWindow = null
   })
-  if (process.env['ELECTRON_RENDERER_URL']) {
-    benchWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/bench.html`)
-  } else {
-    benchWindow.loadFile(join(__dirname, '../renderer/bench.html'))
-  }
+  void loadRendererPage(benchWindow, 'bench.html')
   benchWindow.webContents.openDevTools({ mode: 'detach' })
 }
 
@@ -4447,7 +4437,7 @@ function registerIpcHandlers(): void {
       const senderUrl = event.sender.getURL?.() ?? ''
       if (
         senderUrl
-        && !senderUrl.startsWith('file:')
+        && !senderUrl.startsWith(`${RENDERER_SCHEME}:`)
         && !senderUrl.includes('localhost')
         && !senderUrl.startsWith('app:')
       ) {
@@ -5821,6 +5811,7 @@ app.whenReady().then(async () => {
     })
   }
   registerMiniAppProtocolHandlers(protocol)
+  registerRendererProtocol(join(__dirname, '../renderer'))
   // Built-in browser webviews use partition "persist:browser"; register the same
   // local-file handler so HTML/CSS/asset previews work there (not only in the
   // main renderer session used by in-app iframes).
@@ -5970,6 +5961,9 @@ app.whenReady().then(async () => {
     void reportProcessGone(details.type, details)
   })
 
+  if (!usesRendererDevServer()) {
+    await migrateRendererLocalStorage(app.getPath('userData'), app.getPath('temp'))
+  }
   createWindow()
   applyAppIcon(readAppSettings().customAppIconPath, allWindows)
   initUpdater(mainWindow!)

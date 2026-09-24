@@ -9,7 +9,8 @@ const USER_DATA_DIR = path.join(PROJECT_ROOT, '.dev-data', `instance-${INSTANCE_
 async function getRendererWindow(app: ElectronApplication, timeoutMs = 15_000): Promise<Page> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    const win = app.windows().find((w) => !w.url().startsWith('devtools://'))
+    // By page: a fresh profile also briefly hosts a windowless storage-migration page.
+    const win = app.windows().find((w) => w.url().includes('/index.html'))
     if (win) {
       await win.waitForLoadState('domcontentloaded')
       return win

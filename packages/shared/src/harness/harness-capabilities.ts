@@ -224,8 +224,9 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
   },
   dsh: {
     // In-process dsh Cordis tree (docs/draft/deepseek-harness-integration.md).
-    // Flags flip only when the corresponding event path is wired: streaming
-    // tool input → tool-call-delta mapping.
+    // Flags flip only when the corresponding event path is wired.
+    // `supportsStreamingToolInput`: live `tool-call-delta` frames open the row
+    // and stream its arguments before the durable `tool/call` completes it.
     // `supportsCompact`: `compaction-basic` compacts automatically at context
     // pressure and on provider overflow; `/compact` drives `compactNow()`.
     // `supportsMcp` covers both SuperOne's own tools (native dsh rows) and
@@ -238,7 +239,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsTodos: true,
     supportsSubagents: true,
     supportsCompact: true,
-    supportsStreamingToolInput: false,
+    supportsStreamingToolInput: true,
     supportsQueuedSteer: false,
     supportsQueuedSteerSoon: false,
     // Single cwd.

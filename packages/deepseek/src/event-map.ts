@@ -1,4 +1,4 @@
-import type { AgentEvent, ChatMessage, ContentBlock, TodoItem } from '@superone/shared/agent-types'
+import type { AgentEvent, ChatMessage, ContentBlock, RetractedBlockRef, TodoItem } from '@superone/shared/agent-types'
 import { buildAgentErrorInfo } from '@superone/shared/agent-error'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
@@ -10,6 +10,7 @@ import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-compaction'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-tool-todo'
+import type {} from '@deepseek-ai/dsh-llm-retry'
 
 /**
  * One assistant message per turn, keyed on the turn alone.
@@ -79,6 +80,15 @@ export class DeepseekEventMapper {
   private model: string | undefined
   private toolUses = 0
   private totalTokens = 0
+  /**
+   * What the current model attempt has streamed so far. An attempt that does
+   * not commit a message — retried after a transient failure, or abandoned —
+   * is retracted from the bubble, so a retry does not show its text twice or
+   * leave a tool row that never completes.
+   */
+  private attempt: { text: string; thinking: string; toolCalls: Set<string> } = emptyAttempt()
+  /** Tool calls opened from argument deltas and not yet logged as `tool/call`. */
+  private readonly streamingToolCalls = new Set<string>()
   /** Open compaction bracket, from `compaction/start` to `compaction/end`. */
   private compaction: {
     trigger: 'manual' | 'auto'
@@ -126,21 +136,74 @@ export class DeepseekEventMapper {
   /**
    * One live assistant-stream frame for this session's agent.
    *
-   * Only chunk frames carry anything to render. A retried or failed attempt
-   * streams too and then settles as `assistant/attempt` instead of a message;
-   * what it already showed stays, exactly as the log keeps that attempt.
-   * Tool-call argument deltas are not rendered: the call is mapped whole from
-   * the durable `tool/call` event.
+   * Chunks render as they arrive. A tool call opens its row on its first
+   * argument delta (the one carrying the name) and fills the input as it
+   * streams — long file writes are otherwise a silent wait — and the durable
+   * `tool/call` later completes the same row by id.
+   *
+   * An attempt that settles without a message (`assistant/attempt`, or an
+   * abandoned stream) is retracted: its retry streams again from scratch.
    * @param frame - the frame dsh published.
    */
   handleStreamFrame(frame: AssistantStreamFrame): void {
-    if (frame.type !== 'chunk') return
+    if (frame.type === 'start') {
+      this.attempt = emptyAttempt()
+      return
+    }
+    if (frame.type === 'end') {
+      const committed = frame.outcome.kind === 'committed' && frame.outcome.eventType === 'assistant/message'
+      if (!committed) this.retractAttempt()
+      this.attempt = emptyAttempt()
+      return
+    }
     const chunk = frame.chunk
     if (chunk.type === 'text-delta') {
+      this.attempt.text += chunk.text
       this.emitDelta({ type: 'text', text: chunk.text })
     } else if (chunk.type === 'reasoning-delta') {
+      this.attempt.thinking += chunk.text
       this.emitDelta({ type: 'thinking', thinking: chunk.text })
+    } else if (chunk.type === 'tool-call-delta') {
+      this.streamToolCall(String(chunk.id), chunk.name, chunk.argumentsDelta)
     }
+  }
+
+  private streamToolCall(toolUseId: string, name: string | undefined, argumentsDelta: string): void {
+    if (!this.streamingToolCalls.has(toolUseId)) {
+      if (name === undefined) return
+      this.streamingToolCalls.add(toolUseId)
+      this.attempt.toolCalls.add(toolUseId)
+      this.emitDelta({
+        type: 'tool_use',
+        toolName: displayToolName(name),
+        toolUseId,
+        input: '',
+        status: 'streaming',
+      })
+    }
+    if (argumentsDelta.length === 0) return
+    const nested = this.opts.nested
+    const messageId = nested ? nested.resolveMessageId() : this.openMessageId
+    if (!messageId) return
+    this.emit({
+      type: 'tool_input_delta',
+      messageId,
+      toolUseId,
+      partialJson: argumentsDelta,
+      ...(nested ? { parentToolUseId: nested.parentToolUseId } : {}),
+    })
+  }
+
+  /** Take back what an attempt that committed nothing already showed. */
+  private retractAttempt(): void {
+    const blocks: RetractedBlockRef[] = [...this.attempt.toolCalls].map((toolUseId) => ({ type: 'tool_use', toolUseId }))
+    for (const toolUseId of this.attempt.toolCalls) this.streamingToolCalls.delete(toolUseId)
+    if (this.attempt.text.length > 0) blocks.push({ type: 'text', text: this.attempt.text, fromEnd: true })
+    if (this.attempt.thinking.length > 0) blocks.push({ type: 'thinking', thinking: this.attempt.thinking, fromEnd: true })
+    const nested = this.opts.nested
+    const messageId = nested ? nested.resolveMessageId() : this.openMessageId
+    if (blocks.length === 0 || !messageId) return
+    this.emit({ type: 'content_retracted', messageId, blocks })
   }
 
   handle(event: SessionEvent): void {
@@ -171,6 +234,7 @@ export class DeepseekEventMapper {
       }
       case 'tool/call': {
         this.toolUses += 1
+        this.streamingToolCalls.delete(String(event.data.callId))
         this.emitDelta({
           type: 'tool_use',
           toolName: displayToolName(event.data.name),
@@ -336,6 +400,20 @@ export class DeepseekEventMapper {
         this.emit({ type: 'status_indicator', indicator: null, compactResult: 'success' })
         break
       }
+      // `llm-retry` logs one of these before each backoff wait; the retry itself
+      // re-runs the step inside the same turn, so the bubble stays open.
+      case 'llm/retry': {
+        if (this.opts.nested) break
+        this.emit({
+          type: 'api_retry',
+          attempt: event.data.retry,
+          ...(event.data.mode === 'normal' ? { maxRetries: event.data.maxRetries } : {}),
+          delayMs: event.data.delayMs,
+          message: event.data.failure.message,
+          phase: 'retrying',
+        })
+        break
+      }
       case 'request/context': {
         this.contextWindow = event.data.contextWindow
         this.model = event.data.model
@@ -372,6 +450,10 @@ const CANONICAL_TOOL_NAMES: Record<string, string> = {
   // the call's own arguments.
   subagent: 'Task',
   subagent_fork: 'Task',
+}
+
+function emptyAttempt(): { text: string; thinking: string; toolCalls: Set<string> } {
+  return { text: '', thinking: '', toolCalls: new Set() }
 }
 
 export function displayToolName(name: string): string {

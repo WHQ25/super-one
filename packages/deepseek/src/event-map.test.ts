@@ -28,13 +28,11 @@ function drain(entries: Array<[string, unknown]>): AgentEvent[] {
 const TWO_STEP_TURN: Array<[string, unknown]> = [
   ['turn/start', { turn: 0 }],
   ['step/start', { turn: 0, step: 0 }],
-  ['assistant/chunk', { chunk: { type: 'text-delta', text: 'looking' } }],
   ['tool/call', { name: 'bash', callId: 'c1', arguments: { command: 'ls' } }],
   ['assistant/message', { usage: { inputTokens: 1_000, outputTokens: 40, cacheReadTokens: 30_000 } }],
   ['step/end', { turn: 0, step: 0 }],
-  ['tool/result', { message: { source: { callId: 'c1' }, content: [] } }],
+  ['tool/result', { message: { role: 'tool', source: { kind: 'tool', callId: 'c1' }, toolCallId: 'c1', content: [] } }],
   ['step/start', { turn: 0, step: 1 }],
-  ['assistant/chunk', { chunk: { type: 'text-delta', text: 'done' } }],
   ['assistant/message', { usage: { inputTokens: 200, outputTokens: 60, cacheReadTokens: 31_000 } }],
   ['step/end', { turn: 0, step: 1 }],
   ['turn/end', { turn: 0, reason: { kind: 'completed' } }],
@@ -90,7 +88,6 @@ describe('the turn is the message', () => {
       ...TWO_STEP_TURN,
       ['turn/start', { turn: 1 }],
       ['step/start', { turn: 1, step: 0 }],
-      ['assistant/chunk', { chunk: { type: 'text-delta', text: 'again' } }],
       ['assistant/message', { usage: { inputTokens: 500, outputTokens: 10 } }],
       ['step/end', { turn: 1, step: 0 }],
       ['turn/end', { turn: 1, reason: { kind: 'completed' } }],
@@ -118,7 +115,6 @@ describe('the turn is the message', () => {
     const events = drain([
       ['turn/start', { turn: 0 }],
       ['step/start', { turn: 0, step: 0 }],
-      ['assistant/chunk', { chunk: { type: 'text-delta', text: 'partial' } }],
       ['turn/end', { turn: 0, reason: { kind: 'blocked' } }],
     ])
 
@@ -131,12 +127,85 @@ describe('the turn is the message', () => {
     const events = drain([
       ['turn/start', { turn: 0 }],
       ['step/start', { turn: 0, step: 0 }],
-      ['assistant/chunk', { chunk: { type: 'text-delta', text: 'half' } }],
       ['turn/end', { turn: 0, reason: { kind: 'aborted', reason: 'user' } }],
     ])
 
     const interrupted = events.find((event) => event.type === 'message_interrupted')
     expect(interrupted?.type === 'message_interrupted' ? interrupted.messageId : undefined).toBe('dsh:s1:0')
     expect(events.some((event) => event.type === 'message_complete')).toBe(false)
+  })
+})
+
+describe('live assistant stream frames', () => {
+  function streamed(frames: unknown[]): AgentEvent[] {
+    const events: AgentEvent[] = []
+    const mapper = new DeepseekEventMapper({ sessionId: 's1', emit: (event) => events.push(event) })
+    for (const event of log([['turn/start', { turn: 0 }], ['step/start', { turn: 0, step: 0 }]])) mapper.handle(event)
+    for (const frame of frames) mapper.handleStreamFrame(frame as never)
+    return events
+  }
+  const start = { type: 'start', attemptId: 'a1', revision: 1, turn: 0, step: 0 }
+  const chunk = (index: number, value: unknown) => ({ type: 'chunk', attemptId: 'a1', revision: 1, index, time: 0, chunk: value })
+
+  it('opens a tool row on the first argument delta and streams its input', () => {
+    const events = streamed([
+      start,
+      chunk(0, { type: 'tool-call-delta', index: 0, id: 'c9', name: 'write', argumentsDelta: '{"file_' }),
+      chunk(1, { type: 'tool-call-delta', index: 0, id: 'c9', argumentsDelta: 'path":"a.ts"}' }),
+    ])
+
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'content_delta',
+      delta: expect.objectContaining({ type: 'tool_use', toolName: 'Write', toolUseId: 'c9', status: 'streaming' }),
+    }))
+    const partial = events.flatMap((event) => (event.type === 'tool_input_delta' ? [event.partialJson] : []))
+    expect(partial.join('')).toBe('{"file_path":"a.ts"}')
+  })
+
+  it('retracts what an attempt showed when it commits no message', () => {
+    const events = streamed([
+      start,
+      chunk(0, { type: 'text-delta', index: 0, text: 'half an ans' }),
+      chunk(1, { type: 'tool-call-delta', index: 1, id: 'c2', name: 'bash', argumentsDelta: '{' }),
+      { type: 'end', attemptId: 'a1', revision: 1, index: 2, outcome: { kind: 'committed', eventType: 'assistant/attempt', seq: 5 } },
+    ])
+
+    // `llm-retry` re-runs the step; without the retraction the retry's text
+    // would follow this prefix and the bash row would shimmer forever.
+    expect(events.at(-1)).toEqual({
+      type: 'content_retracted',
+      messageId: 'dsh:s1:0',
+      blocks: [
+        { type: 'tool_use', toolUseId: 'c2' },
+        { type: 'text', text: 'half an ans', fromEnd: true },
+      ],
+    })
+  })
+
+  it('keeps what a committed message streamed', () => {
+    const events = streamed([
+      start,
+      chunk(0, { type: 'text-delta', index: 0, text: 'kept' }),
+      { type: 'end', attemptId: 'a1', revision: 1, index: 1, outcome: { kind: 'committed', eventType: 'assistant/message', seq: 5 } },
+    ])
+
+    expect(events.some((event) => event.type === 'content_retracted')).toBe(false)
+  })
+})
+
+describe('request recovery', () => {
+  it('reports a scheduled retry', () => {
+    const events = drain([
+      ['turn/start', { turn: 0 }],
+      ['step/start', { turn: 0, step: 0 }],
+      ['llm/retry', {
+        retryId: 'r1', turn: 0, step: 0, provider: 'deepseek', mode: 'normal', policyKey: 'k',
+        retry: 2, maxRetries: 5, delayMs: 1_000, failure: { message: 'rate limited', code: 'RATE_LIMIT' },
+      }],
+    ])
+
+    expect(events.at(-1)).toEqual({
+      type: 'api_retry', attempt: 2, maxRetries: 5, delayMs: 1_000, message: 'rate limited', phase: 'retrying',
+    })
   })
 })

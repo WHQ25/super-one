@@ -17,14 +17,8 @@ import { beginBrowserFocusIsolation, endBrowserFocusIsolation, withBrowserFocusI
 import { isBlankUrl } from './browser-url'
 import { closeBrowserTab, openBrowserTab } from '@/components/activity/activity-panel-api'
 import { useAgentViewfinderStore } from '@/stores/agent-viewfinder'
-import { fitScreenshotWidth } from './screenshot-fit'
-import { decodeCaptureImage, flattenBrowserCapture } from './browser-canvas'
-import {
-  analyzeBrowserCaptureProbe,
-  BROWSER_CAPTURE_PROBE_RECT,
-  INSTALL_BROWSER_CAPTURE_PROBE_SCRIPT,
-  REMOVE_BROWSER_CAPTURE_PROBE_SCRIPT,
-} from './browser-capture-readiness'
+import { decodeCaptureImage } from './browser-canvas'
+import { captureBrowserScreenshot, nextPaint } from './browser-screenshot'
 
 // Video, not stills: this bounds the canvas the MediaRecorder encodes at 2 Mbps,
 // so it answers to bitrate rather than to the agent's context budget. Screenshots
@@ -763,77 +757,6 @@ function waitForLoadStop(id: string, timeoutMs = 15_000): Promise<void> {
   })
 }
 
-function nextPaint(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-}
-
-async function readBrowserCapturePixels(image: Electron.NativeImage): Promise<{
-  data: Uint8ClampedArray
-  width: number
-  height: number
-}> {
-  const size = image.getSize()
-  // Raw decode, deliberately unflattened: the readiness probe analyses the guest's
-  // own pixels, and a canvas colour composited under them would skew the match.
-  const element = await decodeCaptureImage(image.toDataURL())
-  const canvas = document.createElement('canvas')
-  canvas.width = size.width
-  canvas.height = size.height
-  const context = canvas.getContext('2d', { willReadFrequently: true })
-  if (!context) throw new Error('Browser capture readiness canvas is unavailable')
-  context.drawImage(element, 0, 0, size.width, size.height)
-  return {
-    data: context.getImageData(0, 0, size.width, size.height).data,
-    width: size.width,
-    height: size.height,
-  }
-}
-
-async function waitForFullResolutionBrowserCapture(id: string, timeoutMs = 1_500): Promise<void> {
-  const deadline = Date.now() + timeoutMs
-  let consecutiveSharpFrames = 0
-  let lastAnalysis = { ready: false, matchedPixels: 0, sampledPixels: 0, centerPixels: [] as number[][] }
-
-  await browserExecJs(id, INSTALL_BROWSER_CAPTURE_PROBE_SCRIPT)
-  try {
-    while (Date.now() <= deadline) {
-      const image = await browserCapture(id, BROWSER_CAPTURE_PROBE_RECT)
-      if (image && !image.isEmpty()) {
-        const pixels = await readBrowserCapturePixels(image)
-        lastAnalysis = analyzeBrowserCaptureProbe(pixels.data, pixels.width, pixels.height)
-        consecutiveSharpFrames = lastAnalysis.ready ? consecutiveSharpFrames + 1 : 0
-        if (consecutiveSharpFrames >= 2) break
-      }
-      await new Promise((resolve) => setTimeout(resolve, 25))
-    }
-    if (consecutiveSharpFrames < 2) {
-      throw new Error(
-        `Browser capture did not reach full resolution after ${timeoutMs}ms `
-        + `(${lastAnalysis.matchedPixels}/${lastAnalysis.sampledPixels} probe pixels matched; `
-        + `centers=${lastAnalysis.centerPixels.map((pixel) => pixel.join(',')).join('/')})`,
-      )
-    }
-  } finally {
-    await browserExecJs(id, REMOVE_BROWSER_CAPTURE_PROBE_SCRIPT)
-  }
-
-  // Do not let the transient ruler leak into the returned screenshot. Seeing its
-  // signature disappear is a guest-renderer acknowledgement, unlike a host rAF.
-  const removalDeadline = Date.now() + timeoutMs
-  let consecutiveCleanFrames = 0
-  while (Date.now() <= removalDeadline) {
-    const image = await browserCapture(id, BROWSER_CAPTURE_PROBE_RECT)
-    if (image && !image.isEmpty()) {
-      const pixels = await readBrowserCapturePixels(image)
-      const probeStillVisible = analyzeBrowserCaptureProbe(pixels.data, pixels.width, pixels.height).ready
-      consecutiveCleanFrames = probeStillVisible ? 0 : consecutiveCleanFrames + 1
-      if (consecutiveCleanFrames >= 2) return
-    }
-    await new Promise((resolve) => setTimeout(resolve, 25))
-  }
-  throw new Error(`Browser capture probe removal timed out after ${timeoutMs}ms`)
-}
-
 async function waitForTabRegistered(id: string, timeoutMs = 8_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() <= deadline) {
@@ -859,7 +782,7 @@ async function waitForCondition(
   throw new Error(`wait_for timed out after ${timeoutMs}ms`)
 }
 
-export async function runBrowserOp(sessionId: string, op: string, rawInput: unknown): Promise<unknown> {
+export async function runBrowserOp(sessionId: string, op: string, rawInput: unknown, signal?: AbortSignal): Promise<unknown> {
   const input = (rawInput ?? {}) as BaseInput
   if (op === 'open') {
     const url = input.url ?? 'about:blank'
@@ -982,50 +905,8 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
       return browserExecJs(id, hoverScript(input as Parameters<typeof hoverScript>[0]))
     case 'type':
       return browserExecJs(id, typeScript(input as { text: string }))
-    case 'screenshot': {
-      // Force the tab into the viewport for the duration of the capture: a hidden
-      // or background tab rests off-screen / display:none, where capturePage would
-      // hang (Chromium never rasterizes an off-viewport layer). beginCapture flips
-      // BrowserHostLayer to render it in-viewport (opacity-masked); endCapture in
-      // finally restores the cheap resting state so idle tabs cost nothing.
-      const store = useBrowserStore.getState()
-      store.beginFullResolutionCapture(id)
-      try {
-        await nextPaint()
-        await waitForFullResolutionBrowserCapture(id)
-        // Resolve the selector box only after the tab is in-viewport — a
-        // display:none tab reports an all-zero getBoundingClientRect.
-        let rect: Electron.Rectangle | undefined
-        if (input.selector) {
-          const box = (await browserExecJs(
-            id,
-            `(() => { const el = document.querySelector(${JSON.stringify(input.selector)}); if (!el) return null; const b = el.getBoundingClientRect(); return { x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.width), height: Math.round(b.height) }; })()`,
-          )) as Electron.Rectangle | null
-          if (!box || box.width <= 0 || box.height <= 0) throw new Error('Screenshot selector did not resolve to a visible element')
-          rect = box
-        }
-        let image = await browserCapture(id, rect)
-        if (!image || image.isEmpty()) {
-          // A tab woken from display:none may need an extra beat for its first frame.
-          await new Promise((resolve) => setTimeout(resolve, 200))
-          image = await browserCapture(id, rect)
-        }
-        if (!image || image.isEmpty()) throw new Error('Screenshot capture failed')
-        // getSize() reports PHYSICAL pixels, so on a 2x display this is twice the CSS
-        // width. Capping it directly meant every retina capture wider than 640 CSS px
-        // got resampled by a fractional factor, smearing the text the screenshot was
-        // taken to show. fitScreenshotWidth reduces by whole factors only, and returns
-        // null when the capture is already small enough to hand over as-is.
-        const sized = image.getSize()
-        const target = fitScreenshotWidth(sized.width)
-        const final = target === null ? image : image.resize({ width: target })
-        const size = final.getSize()
-        const data = (await flattenBrowserCapture(final, browserTabCanvas(id))).split(',')[1] ?? ''
-        return { mimeType: 'image/png' as const, data, width: size.width, height: size.height }
-      } finally {
-        store.endFullResolutionCapture(id)
-      }
-    }
+    case 'screenshot':
+      return captureBrowserScreenshot(id, input.selector, signal)
     case 'navigate': {
       if (input.action) {
         if (input.action === 'back') browserGoBack(id)
@@ -1083,10 +964,25 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
   }
 }
 
+/**
+ * In-flight calls by id, so the main process can cancel one it stopped waiting
+ * for. It sends `cancel` on the same channel when its own timeout fires, so the
+ * aborted op unwinds through its cleanup instead of holding state for a caller
+ * that is gone.
+ */
+const inFlightCalls = new Map<string, AbortController>()
+
 export function useBrowserAutomationHost(): void {
   useEffect(() => {
     if (!window.browserHost) return
     return window.browserHost.onAutomationCall(async ({ callId, sessionId, op, input }) => {
+      if (op === 'cancel') {
+        const target = (input as { callId?: string } | null)?.callId
+        if (target) inFlightCalls.get(target)?.abort(new Error('Cancelled after the main process timed out'))
+        return
+      }
+      const controller = new AbortController()
+      inFlightCalls.set(callId, controller)
       try {
         // The main process holds the guard open across ops it dispatches itself
         // (CDP input never reaches this runtime), so begin/end arrive as their
@@ -1100,10 +996,12 @@ export function useBrowserAutomationHost(): void {
         // Every automation op (including focusView no-op / guest el.focus side
         // effects) runs under host focus isolation so background browser work
         // cannot steal the user's composer caret.
-        const result = await withBrowserFocusIsolation(() => runBrowserOp(sessionId, op, input))
+        const result = await withBrowserFocusIsolation(() => runBrowserOp(sessionId, op, input, controller.signal))
         window.browserHost!.sendAutomationResult(callId, true, result)
       } catch (err) {
         window.browserHost!.sendAutomationResult(callId, false, undefined, err instanceof Error ? err.message : String(err))
+      } finally {
+        inFlightCalls.delete(callId)
       }
     })
   }, [])

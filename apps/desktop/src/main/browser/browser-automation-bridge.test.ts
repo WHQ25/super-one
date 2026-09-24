@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../logger', () => ({ default: { warn: vi.fn() } }))
 vi.mock('../mcp/artifact-registry', () => ({ currentHostActionConnection: () => null }))
@@ -26,6 +26,24 @@ function fakeWindow() {
 }
 
 describe('browserAutomationCall', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('cancels the renderer-side call when the main process stops waiting', async () => {
+    vi.useFakeTimers()
+    const { sent } = fakeWindow()
+
+    const call = browserAutomationCall('session-a', 'screenshot', { tab: 'browser-a' })
+    const failure = expect(call).rejects.toThrow(/'screenshot' timed out after 30000ms; the renderer-side work was cancelled/)
+    await vi.advanceTimersByTimeAsync(30_000)
+    await failure
+
+    expect(sent).toHaveLength(2)
+    expect(sent[1]).toMatchObject({ sessionId: 'session-a', op: 'cancel', input: { callId: sent[0]!.callId } })
+    expect(sent[1]!.callId).not.toBe(sent[0]!.callId)
+  })
+
   it('keeps the window compositing for a screenshot and not for other ops', async () => {
     const { sent, webContents } = fakeWindow()
 

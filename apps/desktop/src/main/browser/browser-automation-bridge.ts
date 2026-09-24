@@ -72,7 +72,17 @@ function dispatchBrowserAutomation(
     const callId = randomUUID()
     const timer = setTimeout(() => {
       pendingCalls.delete(callId)
-      reject(new Error(`Browser automation '${op}' timed out after ${BROWSER_CALL_TIMEOUT_MS}ms`))
+      // Stop the renderer too: a call nobody waits for must not keep holding
+      // capture state on the tab and poison the next call.
+      if (!win.isDestroyed()) {
+        win.webContents.send(AgentIpcChannels.BROWSER_AUTOMATION_CALL, {
+          callId: randomUUID(),
+          sessionId,
+          op: 'cancel',
+          input: { callId },
+        })
+      }
+      reject(new Error(`Browser automation '${op}' timed out after ${BROWSER_CALL_TIMEOUT_MS}ms; the renderer-side work was cancelled`))
     }, BROWSER_CALL_TIMEOUT_MS)
     pendingCalls.set(callId, { resolve, reject, timer })
     win.webContents.send(AgentIpcChannels.BROWSER_AUTOMATION_CALL, { callId, sessionId, op, input })

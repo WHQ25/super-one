@@ -19,6 +19,7 @@ import { GROK_ACP_CLIENT_IDENTIFIER } from '../../acp/acp-permission-preapprove'
 import { resolveAcpLaunch } from '../../acp/agent-catalog'
 import { spawnAcpProcess } from '../../acp/acp-process'
 import log from '../../logger'
+import { ensureShellPath } from '../../shell-path'
 import type { ForkContext, ForkSource } from '../types'
 
 export interface GrokForkRequest {
@@ -54,6 +55,7 @@ export function grokForkInitializeParams(version: string): Record<string, unknow
 }
 
 async function spawnGrokFork(request: GrokForkRequest): Promise<string> {
+  await ensureShellPath()
   const launch = resolveAcpLaunch({
     agentId: request.agentId,
     command: request.command,

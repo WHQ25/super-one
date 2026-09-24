@@ -2,6 +2,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { ensureShellPath } from './shell-path'
 
 import { join } from 'node:path'
 import {
@@ -83,6 +84,7 @@ export async function discoverGrokWorkflows(
   if (projectPath && projectPath.trim()) {
     let root = projectPath.trim()
     try {
+      await ensureShellPath()
       const { stdout } = await execFileAsync('git', ['-C', root, 'rev-parse', '--show-toplevel'], { timeout: 5_000 })
       root = stdout.trim() || root
     } catch { /* Non-Git projects discover directly under cwd. */ }

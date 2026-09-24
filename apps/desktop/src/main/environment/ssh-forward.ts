@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { createConnection, createServer } from 'node:net'
+import { ensureShellPath } from '../shell-path'
 
 export interface SshForwardOptions {
   /** OpenSSH destination: user@host or Host alias from ~/.ssh/config */
@@ -74,7 +75,10 @@ export function buildSshLocalForwardArgs(input: {
  * Establish `ssh -N -L localPort:127.0.0.1:remotePort destination`.
  * Closing the tunnel disconnects the client but must never stop the remote node.
  */
+// ssh inherits process.env: ProxyCommand / Match exec helpers (cloudflared,
+// tailscale, gcloud) resolve from it, so each entry point awaits the login-shell PATH.
 export async function startSshLocalForward(opts: SshForwardOptions): Promise<SshForwardHandle> {
+  await ensureShellPath()
   const remotePort = opts.remotePort ?? 7788
   const localPort = opts.localPort && opts.localPort > 0 ? opts.localPort : await findFreePort()
   const sshPath = opts.sshPath || 'ssh'
@@ -205,6 +209,7 @@ export async function sshUpload(input: {
   timeoutMs?: number
   onProgress?: (sentBytes: number, totalBytes: number) => void
 }): Promise<{ bytes: number }> {
+  await ensureShellPath()
   const sshPath = input.sshPath || 'ssh'
   const total = (await stat(input.localPath)).size
   const args = [
@@ -271,6 +276,7 @@ export async function sshCapture(input: {
   sshPath?: string
   timeoutMs?: number
 }): Promise<{ stdout: string; stderr: string; code: number | null }> {
+  await ensureShellPath()
   const sshPath = input.sshPath || 'ssh'
   const args = ['-o', 'BatchMode=yes', ...(input.extraArgs ?? []), input.destination, input.command]
   return new Promise((resolve, reject) => {

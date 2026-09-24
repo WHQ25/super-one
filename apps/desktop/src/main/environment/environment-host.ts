@@ -1,6 +1,7 @@
 import { remoteSuperoneHome, remoteNodePort } from './remote-data-path'
 import { app } from 'electron'
 import { join } from 'node:path'
+import { ensureShellPath } from '../shell-path'
 import type {
   ArtifactGetRequest,
   ArtifactGetResult,
@@ -2493,6 +2494,7 @@ export class EnvironmentHost {
       return project
     }
 
+    await ensureShellPath()
     const { cloneRepository } = await import('@superone/shared/git-clone')
     const cloned = await cloneRepository({
       ...input,

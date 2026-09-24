@@ -133,7 +133,6 @@ vi.mock('../../providers/llm-proxy-manager', () => ({
 vi.mock('../../agent/resolve-cli', () => ({
   getNodeRuntime: vi.fn(() => ({})),
   dedupePath: vi.fn((p: string) => p),
-  fixPath: vi.fn(),
 }))
 
 const permissionHoisted = vi.hoisted(() => ({

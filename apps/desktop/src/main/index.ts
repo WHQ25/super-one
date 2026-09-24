@@ -69,7 +69,7 @@ import {
 import { tryResolveHarnessRuntime } from './harness/resolve-runtime'
 import { disposeGlobalWarmupManager } from './agent/warmup-manager'
 import { resolveProbeCwd } from './agent/probe-cwd'
-import { fixPath } from './agent/resolve-cli'
+import { ensureShellPath, refreshShellPath } from './shell-path'
 import { buildSafeEnv } from './spawn-env'
 import { AgentService } from './agent/agent-service'
 import { createRendererAgentEventTransport } from './agent/renderer-agent-event-transport'
@@ -2257,6 +2257,8 @@ function registerIpcHandlers(): void {
         return remoteTerminalController.create(opts)
       }
       const cwd = resolveTerminalCwd(opts.projectPath, opts.sessionId)
+      // The pty inherits process.env and its shell is not a login shell.
+      await ensureShellPath()
       const session = terminalManager.create({
         cwd,
         projectPath: opts.projectPath,
@@ -4105,8 +4107,8 @@ function registerIpcHandlers(): void {
       })
     })
 
-    child.on('close', (code) => {
-      fixPath()
+    child.on('close', async (code) => {
+      await refreshShellPath()
       !win.isDestroyed() && win.webContents.send(AgentIpcChannels.SETUP_EVENT, {
         type: 'install_complete',
         code: code ?? 1,
@@ -4821,6 +4823,7 @@ function registerIpcHandlers(): void {
       return { models: [], account: {}, slashCommands: [], skills, commands: userCommands, agents, outputStyles: [] }
     }
 
+    await ensureShellPath()
     const probeCwd = resolveProbeCwd()
     log.info('[CONNECT_CLAUDE] cwd:', probeCwd)
     log.info('[CONNECT_CLAUDE] platform=%s arch=%s', process.platform, process.arch)
@@ -5471,6 +5474,8 @@ function registerIpcHandlers(): void {
     const pluginEntry = validatePath(basePath, manifest.main)
     if (!pluginEntry) throw new Error(`Invalid plugin entry: ${manifest.main}`)
     const storagePaths = await resolveMiniAppStoragePaths(projectDir, appId)
+    // The host is long-lived and copies process.env when it forks.
+    await ensureShellPath()
     startMiniAppHost({ appId, projectDir, name: manifest.name, appPath: basePath, entryPath: pluginEntry, background: manifest.background === true, ...storagePaths })
     const projectAppKey = `${projectDir}::${appId}`
     let sessions = miniAppSessionRefs.get(projectAppKey)
@@ -5509,6 +5514,7 @@ function registerIpcHandlers(): void {
         continue
       }
       const storagePaths = await resolveMiniAppStoragePaths(projectDir, appId)
+      await ensureShellPath()
       startMiniAppHost({ appId, projectDir, name: manifest.name, appPath: basePath, entryPath: pluginEntry, background: manifest.background === true, ...storagePaths })
       registerAppTemplates(projectDir, appId, manifest.templates)
       registerAppTools(sessionId, projectDir, appId, manifest.tools ?? [])
@@ -5818,7 +5824,8 @@ app.whenReady().then(async () => {
   // main renderer session used by in-app iframes).
   registerMiniAppProtocolHandlers(session.fromPartition('persist:browser').protocol)
 
-  fixPath()
+  // Not awaited: the window must not wait on the login shell. Spawners await it.
+  void ensureShellPath()
   startMediaServer().catch((err) => log.error('[media-server] failed to start:', err))
   ipcMain.handle(AgentIpcChannels.MEDIA_SERVER_PORT, () => getMediaServerPort())
 

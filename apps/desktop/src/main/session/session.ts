@@ -71,6 +71,7 @@ import {
   taskNotificationRequest,
   isCollaborationMailboxNotification,
 } from './task-notification-queue'
+import { ensureShellPath, isShellPathReady } from '../shell-path'
 import { buildModelFallbackMessage, modelFallbackSignature } from './model-fallback-notification'
 import {
   LOCAL_OWNER,
@@ -432,6 +433,7 @@ export class Session implements SessionContract {
    */
   private async rebuildBackend(): Promise<void> {
     this.endRuntimeLiveness()
+    await ensureShellPath()
     await this.backend.rebuild(this.buildBackendStartOpts())
   }
 
@@ -1303,15 +1305,20 @@ export class Session implements SessionContract {
       ...(this.unattended ? { unattended: true } : {}),
       agentName: this.computeTitle()?.trim() || undefined,
     }
+    const run = (): void => {
+      if (this._status !== 'disposed') this.backend.prewarm(opts)
+    }
+    // A warm runtime keeps the env it spawned with, so it must not start
+    // before the login-shell PATH is in place.
     if (this._runtimeRelease) {
-      void this.waitForRuntimeRelease()
-        .then(() => {
-          if (this._status !== 'disposed') this.backend.prewarm(opts)
-        })
+      void Promise.all([ensureShellPath(), this.waitForRuntimeRelease()])
+        .then(run)
         .catch((err) => log.debug('[Session] prewarm after runtime release failed:', err))
       return
     }
-    this.backend.prewarm(opts)
+    if (isShellPathReady()) return run()
+    // Queued on the same promise ensureStarted awaits, so a following send still starts after it.
+    void ensureShellPath().then(run)
   }
 
   setAcpAgentId(agentId: string | null): void {
@@ -1812,6 +1819,7 @@ export class Session implements SessionContract {
     const startOpts = this.buildBackendStartOpts()
     this._startPromise = (async () => {
       try {
+        await ensureShellPath()
         await this.backend.start(startOpts)
         this.backendStarted = true
         if ((this._status as SessionStatus) === 'starting') this._status = 'ended'

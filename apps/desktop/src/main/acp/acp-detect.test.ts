@@ -4,7 +4,6 @@ import { delimiter, join } from 'path'
 import { homedir, tmpdir } from 'os'
 
 vi.mock('../agent/resolve-cli', () => ({
-  fixPath: vi.fn(),
 }))
 
 import { detectBuiltinAgents, detectAgent } from './acp-detect'

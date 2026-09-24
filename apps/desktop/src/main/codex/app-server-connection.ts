@@ -1,3 +1,4 @@
+import { ensureShellPath } from '../shell-path'
 import { codexAccountProviderId, isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import { codexAccountStore } from './codex-account-store'
 import { execFileSync, spawn, type ChildProcess } from 'child_process'
@@ -541,6 +542,8 @@ export async function createAppServerConnection(
   cliOverrides?: string[],
   apiProviderId?: string | null,
 ): Promise<AppServerConnectionHandle> {
+  // Pooled connections keep their env, and runtime resolution may `which codex`.
+  await ensureShellPath()
   if (signal?.aborted) {
     throw new Error('Codex run interrupted')
   }

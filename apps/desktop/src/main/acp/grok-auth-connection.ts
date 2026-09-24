@@ -2,6 +2,7 @@ import { client, methods, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
 import { homedir } from 'node:os'
 import { resolveDesktopGrokLaunch } from '../harness/grok-launch'
 import { spawnAcpProcess } from './acp-process'
+import { ensureShellPath } from '../shell-path'
 import { xaiExtWireMethod } from './acp-xai-extensions'
 import { resolveAcpClientVersion } from './acp-client-info'
 
@@ -13,6 +14,7 @@ export interface GrokAuthConnection {
 
 /** An auth-only process: never creates a chat session or attaches tools. */
 export async function openGrokAuthConnection(): Promise<GrokAuthConnection | null> {
+  await ensureShellPath()
   const launch = resolveDesktopGrokLaunch()
   if (!launch) return null
   const process = spawnAcpProcess({

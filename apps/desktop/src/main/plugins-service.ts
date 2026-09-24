@@ -7,16 +7,25 @@ export {
   readPluginFile,
   deletePlugin,
   listMarketplacePlugins,
-  installPlugin,
   updatePlugin,
-  updateMarketplace,
-  addMarketplace,
-  removeMarketplace,
   readMarketplacePluginContent,
   readMarketplacePluginFile,
 } from '@superone/runtime/fs'
 
+import {
+  addMarketplace as runtimeAddMarketplace,
+  installPlugin as runtimeInstallPlugin,
+  removeMarketplace as runtimeRemoveMarketplace,
+  updateMarketplace as runtimeUpdateMarketplace,
+} from '@superone/runtime/fs'
 import { execFile } from 'child_process'
+import { ensureShellPath, withShellPath } from './shell-path'
+
+// These shell out to a bare `claude`.
+export const installPlugin = withShellPath(runtimeInstallPlugin)
+export const updateMarketplace = withShellPath(runtimeUpdateMarketplace)
+export const addMarketplace = withShellPath(runtimeAddMarketplace)
+export const removeMarketplace = withShellPath(runtimeRemoveMarketplace)
 
 export interface GithubRepoSearchHit {
   owner: string
@@ -76,6 +85,7 @@ export async function getGithubStars(repoSlug: string): Promise<number | null> {
   const slug = repoSlug.split('/').slice(0, 2).join('/')
   if (slug.split('/').length !== 2 || !slug.split('/').every(Boolean)) return null
 
+  await ensureShellPath()
   const viaGh = await new Promise<number | null>((resolve) => {
     execFile(
       'gh',
@@ -114,6 +124,7 @@ export async function listGithubReposForOwner(owner: string): Promise<GithubRepo
   const login = owner.trim()
   if (!login || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(login)) return []
 
+  await ensureShellPath()
   const viaGh = await new Promise<GithubRepoSearchHit[] | null>((resolve) => {
     execFile(
       'gh',
@@ -227,6 +238,8 @@ export async function searchGithubRepositories(query: string): Promise<GithubRep
   const q = query.trim().slice(0, 200)
   if (q.length < 2 || /[\u0000-\u001f]/.test(q)) return []
 
+  // The token is cached for the process lifetime, so `gh` must be on PATH first.
+  await ensureShellPath()
   // Warm the token in the background so the next query can be authenticated.
   primeGithubAuthToken()
   const viaRest = await searchGithubRepositoriesViaRest(q)
@@ -252,6 +265,7 @@ export async function listMyGithubRepos(
   const pageNum = Math.max(1, Math.floor(page))
   const limit = Math.min(50, Math.max(1, Math.floor(perPage)))
 
+  await ensureShellPath()
   const viaGh = await new Promise<MyGithubReposPage | null>((resolve) => {
     execFile(
       'gh',

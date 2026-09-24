@@ -23,6 +23,7 @@ import {
   visibleOnboardingHarnesses,
 } from './scan-cli'
 import log from '../logger'
+import { ensureShellPath } from '../shell-path'
 
 function broadcastProgress(event: {
   harnessId: string
@@ -43,7 +44,9 @@ export function registerHarnessIpcHandlers(): void {
     broadcastProgress(event)
   })
 
+  // Runtime resolution reads PATH, and a miss is persisted as `missing`/`error`.
   ipcMain.handle(AgentIpcChannels.HARNESS_LIST, async () => {
+    await ensureShellPath()
     return listHarnessInstallations()
   })
 
@@ -64,6 +67,7 @@ export function registerHarnessIpcHandlers(): void {
         throw new Error(`unknown harnessId: ${input?.harnessId}`)
       }
       log.info('[harness-ipc] enable %s forcePin=%s', input.harnessId, input.forcePin === true)
+      await ensureShellPath()
       return enableDesktopHarness({
         harnessId: input.harnessId,
         artifactPath: input.artifactPath,
@@ -83,6 +87,7 @@ export function registerHarnessIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.HARNESS_PROBE, async (_e, harnessId: string) => {
     if (!isNodeHarnessId(harnessId)) throw new Error(`unknown harnessId: ${harnessId}`)
+    await ensureShellPath()
     return probeDesktopHarness(harnessId)
   })
 
@@ -91,10 +96,12 @@ export function registerHarnessIpcHandlers(): void {
       throw new Error(`ensure is only for managed harnesses (got ${harnessId})`)
     }
     log.info('[harness-ipc] ensure %s', harnessId)
+    await ensureShellPath()
     return ensureManagedHarnessReady(harnessId)
   })
 
   ipcMain.handle(AgentIpcChannels.HARNESS_SCAN_CLI, async () => {
+    await ensureShellPath()
     const hits = scanAllHarnessClis()
     return {
       hits,

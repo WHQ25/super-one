@@ -1,3 +1,4 @@
+import { ensureShellPath } from '../shell-path'
 import { attachmentPrompt, buildAttachmentTurn } from '@superone/shared/attachment-turn'
 import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'child_process'
@@ -571,6 +572,7 @@ export async function startOpenCodeServer(opts: {
   if (opts.serverUrl?.trim()) {
     return { url: opts.serverUrl.trim().replace(/\/$/, ''), exited: null, close: async () => undefined }
   }
+  await ensureShellPath()
   // Not detached: serve must die with SuperOne. Older builds used detached:true
   // and leaked multi-hour ~1GB orphans under PPID 1 after force-quit.
   const child = spawn(opts.binaryPath?.trim() || defaultBinaryPath(), [...OPENCODE_SERVE_ARGS], {

@@ -17,6 +17,7 @@ import { newMessageId } from '@superone/shared/message-id'
 import { execFileSync } from 'child_process'
 import { statSync } from 'fs'
 import log from '../logger'
+import { ensureShellPath } from '../shell-path'
 import { gitRun } from '../git-run'
 import { resolve, join, basename, dirname, sep } from 'path'
 import { ipcMain, type BrowserWindow } from 'electron'
@@ -1128,6 +1129,7 @@ export class AgentService {
         const mgr = this.terminalManager
         if (!mgr) { await this.sendTerminalResult(deviceId, command.requestId, false, undefined, 'no_terminal'); break }
         const cwd = (command.sessionId ? this.sessionManager?.getSession(command.sessionId)?.cwd : undefined) ?? command.projectPath
+        await ensureShellPath()
         const term = mgr.create({ cwd, projectPath: command.projectPath, title: basename(cwd) || 'Terminal' })
         term.ownership.subscribe(deviceId)
         term.ownership.claim(deviceId)
@@ -1499,6 +1501,7 @@ export class AgentService {
       }
       case 'clone_repository': {
         try {
+          await ensureShellPath()
           const { cloneRepository } = await import('@superone/shared/git-clone')
           const cloned = await cloneRepository({
             remoteUrl: command.remoteUrl,

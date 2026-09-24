@@ -23,6 +23,13 @@ vi.mock('electron', () => ({
   },
 }))
 vi.mock('@electron-toolkit/utils', () => ({ is: { dev: false } }))
+// Spawners await the login-shell PATH; tests must never run the user's shell.
+vi.mock('./src/main/shell-path', () => ({
+  ensureShellPath: () => Promise.resolve(),
+  refreshShellPath: () => Promise.resolve(),
+  isShellPathReady: () => true,
+  withShellPath: <F>(fn: F) => fn,
+}))
 
 // This setup file re-runs in every test file (the forks pool shares no module
 // cache), so anything imported here is paid 600+ times. jest-dom's matchers and

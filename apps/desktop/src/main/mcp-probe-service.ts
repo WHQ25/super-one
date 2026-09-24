@@ -7,6 +7,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import type { McpCheckResult, McpServerConfig, McpServerInfo, McpServerMeta, McpToolInfo } from '@superone/shared/agent-types'
 import { buildSafeEnv } from './spawn-env'
+import { ensureShellPath } from './shell-path'
 
 const CACHE_FILE = 'mcp-server-meta-cache.json'
 
@@ -145,6 +146,8 @@ async function checkOne(config: McpServerConfig): Promise<{ status: McpServerInf
 }
 
 export async function checkMcpServers(configs: McpServerConfig[]): Promise<McpCheckResult> {
+  // stdio servers are launched by bare name (npx, uvx, docker…).
+  await ensureShellPath()
   const cache = readCache()
   const checks = await Promise.all(configs.map(async (config) => checkOne(config)))
 

@@ -251,7 +251,6 @@ vi.mock('../mcp/superone-mcp-server', () => ({
 }))
 
 vi.mock('./resolve-cli', () => ({
-  fixPath: vi.fn(),
   dedupePath: vi.fn((p: string) => p),
   getNodeRuntime: vi.fn(() => ({})),
 }))

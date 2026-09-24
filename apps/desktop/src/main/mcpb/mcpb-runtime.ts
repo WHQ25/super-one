@@ -2,6 +2,7 @@ import { sep } from 'path'
 import { homedir } from 'os'
 import { spawn } from 'child_process'
 import { sanitizeEnv } from '../spawn-env'
+import { ensureShellPath } from '../shell-path'
 import type { McpbManifest, McpbMcpConfig, McpbServerType, McpbUserConfigValues, McpbRuntimeAvailability } from '@superone/shared/mcpb-types'
 
 export type { McpbUserConfigValues } from '@superone/shared/mcpb-types'
@@ -143,6 +144,7 @@ export async function checkRuntimeAvailable(
   type: McpbServerType,
   options: { electronExecPath?: string } = {},
 ): Promise<RuntimeAvailability> {
+  await ensureShellPath()
   if (type === 'node') {
     return { ok: true, type, detectedPath: options.electronExecPath ?? process.execPath }
   }

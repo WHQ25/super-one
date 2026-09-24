@@ -1,3 +1,4 @@
+import { ensureShellPath } from '../shell-path'
 import { authenticateGrokCached } from './grok-cached-auth'
 import {
   client,
@@ -405,6 +406,7 @@ function formatProcessExit(
 }
 
 export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRuntime> {
+  await ensureShellPath()
   if (opts.signal?.aborted) throw new Error('ACP runtime initialization aborted')
   const launch = resolveAcpLaunch(opts.launch)
   const grokConfigJson = opts.grokConfigOverlay

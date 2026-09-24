@@ -3,7 +3,7 @@ import { homedir } from 'os'
 import { delimiter, join } from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { fixPath } from '../agent/resolve-cli'
+import { ensureShellPath } from '../shell-path'
 import { buildSafeEnv } from '../spawn-env'
 import { BUILTIN_ACP_AGENTS, type AcpAgentDefinition } from './agent-catalog'
 
@@ -17,8 +17,6 @@ export interface DetectedAcpAgent {
   installHint?: string
   resolvedPath?: string
 }
-
-let pathReady = false
 
 function isExecutable(path: string): boolean {
   try {
@@ -47,11 +45,8 @@ function knownBinDirs(): string[] {
   return dirs
 }
 
-function ensureSearchPath(): string {
-  if (!pathReady) {
-    fixPath()
-    pathReady = true
-  }
+async function ensureSearchPath(): Promise<string> {
+  await ensureShellPath()
   const current = process.env.PATH ?? ''
   const parts = current.split(delimiter).filter(Boolean)
   const seen = new Set(parts)
@@ -111,7 +106,7 @@ async function whichCommand(command: string, pathEnv: string): Promise<string | 
 }
 
 export async function detectAgent(def: AcpAgentDefinition): Promise<DetectedAcpAgent> {
-  const pathEnv = ensureSearchPath()
+  const pathEnv = await ensureSearchPath()
   const resolvedPath = await whichCommand(def.command, pathEnv)
   return {
     id: def.id,
@@ -124,6 +119,6 @@ export async function detectAgent(def: AcpAgentDefinition): Promise<DetectedAcpA
 }
 
 export async function detectBuiltinAgents(): Promise<DetectedAcpAgent[]> {
-  ensureSearchPath()
+  await ensureSearchPath()
   return Promise.all(BUILTIN_ACP_AGENTS.map((def) => detectAgent(def)))
 }

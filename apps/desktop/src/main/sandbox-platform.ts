@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import type { SandboxCapability, SandboxMode, SandboxProbeResult, SandboxSupportLevel } from '@superone/shared/agent-types'
 import log from './logger'
+import { ensureShellPath } from './shell-path'
 
 function detectWslVersion(): string | undefined {
   if (process.platform !== 'linux') return undefined
@@ -63,6 +64,8 @@ let inflightProbe: Promise<SandboxProbeResult> | null = null
 const LINUX_INSTALL_HINT = 'Debian/Ubuntu: sudo apt install bubblewrap socat\nFedora: sudo dnf install bubblewrap socat\nArch: sudo pacman -S bubblewrap socat'
 
 async function runProbe(): Promise<SandboxProbeResult> {
+  // The result is cached, so bwrap / socat must be looked up on the full PATH.
+  await ensureShellPath()
   const capability = getSandboxCapability()
   if (capability.supportLevel === 'always') return { ok: true }
   if (capability.supportLevel === 'unsupported') {

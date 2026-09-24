@@ -5,13 +5,12 @@
  * through this so the two surfaces cannot drift.
  */
 import {
-  ghRun,
-  gitRun,
   listGitMentionRefs,
   probeGitMentionCapabilities,
   type GitMentionRunners,
   type GitRunOptions,
 } from '@superone/runtime/git'
+import { ghRun, gitRun } from '../git-run'
 import {
   GIT_MENTION_CAPABILITIES_UNKNOWN,
   type GitMentionCapabilities,

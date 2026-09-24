@@ -134,9 +134,7 @@ export class RemoteControlService {
   constructor(
     private readonly defaultRelayUrl: string,
     private readonly callbacks: RemoteControlCallbacks,
-  ) {
-    initHighlighter()
-  }
+  ) {}
 
   resume(): void {
     if (this.currentConfig) this.start(this.currentConfig)
@@ -234,6 +232,8 @@ export class RemoteControlService {
   private markDeviceOnline(deviceName: string, deviceId: string, via: DeviceTransport): void {
     const current = this.connectedDevices.get(deviceId)
     if (!current) {
+      // Only phones read highlighted content; warm it once one is actually here.
+      initHighlighter()
       this.connectedDevices.set(deviceId, { name: deviceName, transports: new Set([via]) })
       this.callbacks.onClientRegistered?.({ deviceName, deviceId, transport: via, firstConnect: true })
       return

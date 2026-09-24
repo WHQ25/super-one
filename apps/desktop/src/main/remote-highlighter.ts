@@ -1,4 +1,4 @@
-import { createHighlighter, type Highlighter } from 'shiki'
+import type { Highlighter } from 'shiki'
 
 let highlighter: Highlighter | null = null
 let initPromise: Promise<void> | null = null
@@ -30,6 +30,8 @@ async function ensureInit(): Promise<void> {
   if (highlighter) return
   if (initPromise) return initPromise
   initPromise = (async () => {
+    // Loaded on demand: shiki's grammars cost ~150ms of main-process startup.
+    const { createHighlighter } = await import('shiki')
     highlighter = await createHighlighter({
       themes: ['github-dark', 'github-light'],
       langs: [...LANGS],

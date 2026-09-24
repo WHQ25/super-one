@@ -4,6 +4,7 @@ import { AgentIpcChannels } from '@superone/shared/agent-types'
 import log from '../logger'
 import { currentHostActionConnection } from '../mcp/artifact-registry'
 import { rememberTabDriver } from './browser-tab-drivers'
+import { withHostPainting } from './host-paint-lease'
 
 export type BrowserAutomationOp =
   | 'snapshot'
@@ -49,13 +50,25 @@ export function initBrowserAutomation(windowGetter: () => BrowserWindow | null):
   getMainWindow = windowGetter
 }
 
+/** Ops that read the guest's pixels, which only exist while the app window composites. */
+const HOST_PAINTING_OPS: ReadonlySet<BrowserAutomationOp> = new Set(['screenshot'])
+
 export function browserAutomationCall(sessionId: string, op: BrowserAutomationOp, input: unknown): Promise<unknown> {
+  const win = getMainWindow?.()
+  if (!win || win.isDestroyed()) {
+    return Promise.reject(new Error('No renderer window available for browser automation'))
+  }
+  const call = () => dispatchBrowserAutomation(win, sessionId, op, input)
+  return HOST_PAINTING_OPS.has(op) ? withHostPainting(win, call) : call()
+}
+
+function dispatchBrowserAutomation(
+  win: BrowserWindow,
+  sessionId: string,
+  op: BrowserAutomationOp,
+  input: unknown,
+): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const win = getMainWindow?.()
-    if (!win || win.isDestroyed()) {
-      reject(new Error('No renderer window available for browser automation'))
-      return
-    }
     const callId = randomUUID()
     const timer = setTimeout(() => {
       pendingCalls.delete(callId)

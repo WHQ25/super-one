@@ -8,12 +8,13 @@
  */
 import { net, protocol, type BrowserWindow, type CustomScheme } from 'electron'
 import { is } from '@electron-toolkit/utils'
-import { existsSync } from 'node:fs'
 import { resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 export const RENDERER_SCHEME = 'superone-renderer'
 export const RENDERER_ORIGIN = `${RENDERER_SCHEME}://app`
+/** A blank 200 document at the renderer origin, for main-process work on its storage. */
+export const RENDERER_BLANK_URL = `${RENDERER_ORIGIN}/__blank`
 
 /** Passed to `protocol.registerSchemesAsPrivileged` before app ready. */
 export const RENDERER_SCHEME_PRIVILEGES: CustomScheme = {
@@ -30,16 +31,25 @@ export function resolveRendererAsset(root: string, url: string): string | null {
     return null
   }
   if (`${parsed.protocol}//${parsed.host}` !== RENDERER_ORIGIN) return null
-  const file = resolve(root, `.${decodeURIComponent(parsed.pathname)}`)
+  let pathname: string
+  try {
+    pathname = decodeURIComponent(parsed.pathname)
+  } catch {
+    return null
+  }
+  const file = resolve(root, `.${pathname}`)
   return file.startsWith(root + sep) ? file : null
 }
 
 export function registerRendererProtocol(root: string): void {
   const base = resolve(root)
   protocol.handle(RENDERER_SCHEME, (request) => {
+    if (request.url === RENDERER_BLANK_URL) {
+      return new Response('<!doctype html>', { headers: { 'content-type': 'text/html' } })
+    }
     const file = resolveRendererAsset(base, request.url)
-    if (!file || !existsSync(file)) return new Response(null, { status: 404 })
-    return net.fetch(pathToFileURL(file).toString())
+    if (!file) return new Response(null, { status: 404 })
+    return net.fetch(pathToFileURL(file).toString()).catch(() => new Response(null, { status: 404 }))
   })
 }
 

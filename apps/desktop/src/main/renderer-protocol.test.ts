@@ -19,6 +19,10 @@ describe('resolveRendererAsset', () => {
     expect(resolveRendererAsset(root, 'superone-renderer://app/..%2f..%2fsecret')).toBeNull()
   })
 
+  it('refuses malformed escapes instead of throwing', () => {
+    expect(resolveRendererAsset(root, 'superone-renderer://app/assets/%E0%A4%A.js')).toBeNull()
+  })
+
   it('refuses other hosts and schemes', () => {
     expect(resolveRendererAsset(root, 'superone-renderer://evil/index.html')).toBeNull()
     expect(resolveRendererAsset(root, 'file:///app/out/renderer/index.html')).toBeNull()

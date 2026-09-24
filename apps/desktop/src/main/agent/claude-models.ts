@@ -1,5 +1,5 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import { mapClaudeModelInfo } from '@superone/claude'
+import { CLAUDE_METADATA_PROBE_PROMPT, mapClaudeModelInfo } from '@superone/claude'
 import type { ModelOption } from '@superone/shared/agent-types'
 import log from '../logger'
 import { ensureShellPath } from '../shell-path'
@@ -11,7 +11,7 @@ export async function fetchModels(cwd: string, env?: Record<string, string | und
     await ensureShellPath()
     log.info('[claude] fetchModels start cwd=%s platform=%s arch=%s', cwd, process.platform, process.arch)
     const q = query({
-      prompt: 'hi',
+      prompt: CLAUDE_METADATA_PROBE_PROMPT,
       options: {
         cwd,
         pathToClaudeCodeExecutable: resolveSdkClaudeBinary(),

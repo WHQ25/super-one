@@ -186,6 +186,7 @@ import {
   type ParsedGitStatus,
 } from './git-status-utils'
 import { mapModelInfo } from './agent/claude-models'
+import { CLAUDE_METADATA_PROBE_PROMPT } from '@superone/claude'
 import { getClaudeRateLimits } from './agent/claude-usage-service'
 import {
   createAccountDir as createClaudeAccountDir,
@@ -4828,7 +4829,7 @@ function registerIpcHandlers(): void {
     log.info('[CONNECT_CLAUDE] cwd:', probeCwd)
     log.info('[CONNECT_CLAUDE] platform=%s arch=%s', process.platform, process.arch)
     const q = query({
-      prompt: 'hi',
+      prompt: CLAUDE_METADATA_PROBE_PROMPT,
       options: { cwd: probeCwd, pathToClaudeCodeExecutable: claudeBinary, maxTurns: 0, permissionMode: 'default', persistSession: false },
     })
     try {

@@ -13,6 +13,13 @@ import { resolveSdkClaudeBinary } from './resolve-sdk-binary'
 import { applyRootPermissionGuard } from './root-permission-guard'
 import type { ClaudeQueryFn } from './types'
 
+/**
+ * Prompt for metadata-only queries. A local slash command still yields
+ * `system/init` and every control response, but never reaches the model —
+ * a plain prompt such as 'hi' costs a full billed turn (~35k cache-write tokens).
+ */
+export const CLAUDE_METADATA_PROBE_PROMPT = '/help'
+
 export interface ClaudeModelInfo {
   value: string
   resolvedModel?: string
@@ -92,7 +99,7 @@ export async function fetchClaudeModels(opts: FetchClaudeModelsOptions): Promise
 
   let q: Query | undefined
   try {
-    q = (opts.queryFn ?? sdkQuery)({ prompt: 'hi', options }) as Query
+    q = (opts.queryFn ?? sdkQuery)({ prompt: CLAUDE_METADATA_PROBE_PROMPT, options }) as Query
     const models = await withTimeout(
       (async () => {
         await q!.initializationResult()

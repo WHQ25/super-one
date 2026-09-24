@@ -4,7 +4,8 @@
  * ignore map) that Agent.create later acquires from the process-wide cache.
  */
 
-import { createAgentPlatform, type CursorAgentPlatform } from '@cursor/sdk'
+import type { CursorAgentPlatform } from '@cursor/sdk'
+import { loadCursorSdk } from './cursor-sdk'
 import type { CursorRuntimeLog, CursorRuntimeOptions } from './cursor-runtime'
 import { createCursorSdkTracer } from './cursor-sdk-trace'
 import {
@@ -26,7 +27,7 @@ let held: { key: string; release: () => Promise<void> } | null = null
 let generation = 0
 
 function getDefaultPlatform(): Promise<CursorAgentPlatform> {
-  platformPromise ??= createAgentPlatform()
+  platformPromise ??= loadCursorSdk().then((sdk) => sdk.createAgentPlatform())
   return platformPromise
 }
 

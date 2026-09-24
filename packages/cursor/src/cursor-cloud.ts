@@ -1,13 +1,12 @@
-import {
-  Agent,
-  Cursor,
-  type AgentMessage,
-  type AgentUsage,
-  type ListResult,
-  type Run,
-  type SDKAgentInfo,
-  type SDKArtifact,
+import type {
+  AgentMessage,
+  AgentUsage,
+  ListResult,
+  Run,
+  SDKAgentInfo,
+  SDKArtifact,
 } from '@cursor/sdk'
+import { loadCursorSdk } from './cursor-sdk'
 import { resolveCursorApiKeyPlain } from './cursor-config'
 import { getCursorAgentStore } from './cursor-store'
 
@@ -42,6 +41,7 @@ export interface CursorCloudListAgentsOptions {
 export async function listCursorCloudAgents(
   options: CursorCloudListAgentsOptions,
 ): Promise<ListResult<SDKAgentInfo>> {
+  const { Agent } = await loadCursorSdk()
   const apiKey = resolveKey(options)
   if (!apiKey) throw new Error('Cursor API key required for cloud agent list')
   return Agent.list({
@@ -62,6 +62,7 @@ export async function listCursorLocalAgents(options: {
   cursor?: string
   store?: import('@cursor/sdk').LocalAgentStore
 }): Promise<ListResult<SDKAgentInfo>> {
+  const { Agent } = await loadCursorSdk()
   const store = options.store
     ?? getCursorAgentStore(requireUserDataRoot(options.userDataRoot, options.cwd), options.cwd)
   return Agent.list({
@@ -84,6 +85,7 @@ export async function getCursorAgent(
     userDataRoot?: string
   },
 ): Promise<SDKAgentInfo> {
+  const { Agent } = await loadCursorSdk()
   const apiKey = resolveKey(options)
   const isCloud = agentId.startsWith('bc-')
   if (isCloud && !apiKey) throw new Error('Cursor API key required')
@@ -114,6 +116,7 @@ export async function listCursorAgentMessages(
     offset?: number
   },
 ): Promise<AgentMessage[]> {
+  const { Agent } = await loadCursorSdk()
   // SDK messages.list is local-store oriented in 1.0.24
   if (agentId.startsWith('bc-')) {
     throw new Error('Agent.messages.list is local-only in Cursor SDK 1.0.24')
@@ -141,6 +144,7 @@ export async function getCursorRun(
     runtime?: 'local' | 'cloud'
   },
 ): Promise<Run> {
+  const { Agent } = await loadCursorSdk()
   const runtime = options.runtime
     ?? (options.agentId?.startsWith('bc-') || runId.startsWith('bc-') ? 'cloud' : 'local')
   if (runtime === 'cloud') {
@@ -170,6 +174,7 @@ export async function cancelCursorRun(
     runtime?: 'local' | 'cloud'
   },
 ): Promise<void> {
+  const { Agent } = await loadCursorSdk()
   const runtime = options.runtime
     ?? (options.agentId?.startsWith('bc-') || runId.startsWith('bc-') ? 'cloud' : 'local')
   if (runtime === 'cloud') {
@@ -201,6 +206,7 @@ export async function listCursorRuns(
     cursor?: string
   },
 ): Promise<ListResult<Run>> {
+  const { Agent } = await loadCursorSdk()
   const runtime = options.runtime ?? (agentId.startsWith('bc-') ? 'cloud' : 'local')
   if (runtime === 'cloud') {
     const apiKey = resolveKey(options)
@@ -222,6 +228,7 @@ export async function archiveCursorAgent(
   agentId: string,
   options: { apiKey?: string; config?: unknown; resolveApiKey?: ResolveApiKey },
 ): Promise<void> {
+  const { Agent } = await loadCursorSdk()
   const apiKey = resolveKey(options)
   if (!apiKey) throw new Error('Cursor API key required')
   if (!agentId.startsWith('bc-')) {
@@ -235,6 +242,7 @@ export async function unarchiveCursorAgent(
   agentId: string,
   options: { apiKey?: string; config?: unknown; resolveApiKey?: ResolveApiKey },
 ): Promise<void> {
+  const { Agent } = await loadCursorSdk()
   const apiKey = resolveKey(options)
   if (!apiKey) throw new Error('Cursor API key required')
   await Agent.unarchive(agentId, { apiKey })
@@ -245,6 +253,7 @@ export async function deleteCursorAgent(
   agentId: string,
   options: { apiKey?: string; config?: unknown; resolveApiKey?: ResolveApiKey },
 ): Promise<void> {
+  const { Agent } = await loadCursorSdk()
   const apiKey = resolveKey(options)
   if (!apiKey) throw new Error('Cursor API key required')
   if (!agentId.startsWith('bc-')) {
@@ -259,6 +268,7 @@ export async function listCursorRepositories(options: {
   config?: unknown
   resolveApiKey?: ResolveApiKey
 }): Promise<Array<{ url: string }>> {
+  const { Cursor } = await loadCursorSdk()
   const apiKey = resolveKey(options)
   if (!apiKey) throw new Error('Cursor API key required')
   const repos = await Cursor.repositories.list({ apiKey })
@@ -280,6 +290,7 @@ export async function withResumedAgentArtifacts(
     downloadArtifact: (path: string) => Promise<Buffer>
   }) => Promise<unknown>,
 ): Promise<unknown> {
+  const { Agent } = await loadCursorSdk()
   const apiKey = resolveKey(options)
   if (!apiKey) throw new Error('Cursor API key required')
   const isCloud = agentId.startsWith('bc-')
@@ -339,6 +350,7 @@ export async function getCursorAgentUsage(
     runId?: string
   } = {},
 ): Promise<AgentUsage> {
+  const { Agent } = await loadCursorSdk()
   const apiKey = resolveKey(options)
   if (!apiKey) throw new Error('Cursor API key required for Agent.getUsage')
   return Agent.getUsage(agentId, {

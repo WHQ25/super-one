@@ -1,4 +1,5 @@
-import { Agent, Cursor, type ModelListItem, type SDKModel } from '@cursor/sdk'
+import type { ModelListItem, SDKModel } from '@cursor/sdk'
+import { loadCursorSdk } from './cursor-sdk'
 import type { CursorResources } from '@superone/shared/agent-types'
 import { resolveCursorApiKeyPlain } from './cursor-config'
 import { mapCursorModel } from './cursor-model-selection'
@@ -19,6 +20,7 @@ export async function probeCursorResources(options: {
     )
   }
 
+  const { Cursor } = await loadCursorSdk()
   const [user, models, repositories] = await Promise.all([
     Cursor.me({ apiKey }).catch(() => null),
     Cursor.models.list({ apiKey }),
@@ -41,8 +43,6 @@ export async function probeCursorResources(options: {
 
 /** Validate a Cursor User API Key by calling `Cursor.me`. */
 export async function validateCursorApiKey(apiKey: string): Promise<void> {
+  const { Cursor } = await loadCursorSdk()
   await Cursor.me({ apiKey })
 }
-
-/** Re-export for tests / backend. */
-export { Agent, Cursor }

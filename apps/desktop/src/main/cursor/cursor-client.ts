@@ -2,6 +2,4 @@
 export {
   probeCursorResources,
   validateCursorApiKey,
-  Agent,
-  Cursor,
 } from '@superone/cursor'

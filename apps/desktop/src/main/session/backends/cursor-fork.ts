@@ -1,7 +1,7 @@
 import { app } from 'electron'
-import { Agent } from '@cursor/sdk'
 import {
   isCursorSandboxUnsupportedError,
+  loadCursorSdk,
   resolveCursorSandboxEnabled,
   withCursorNetworkRetries,
   withCursorPlatformLookup,
@@ -34,6 +34,7 @@ export async function forkCursorTranscript(
     throw new Error('Cursor API key required to fork (new agent create).')
   }
 
+  const { Agent } = await loadCursorSdk()
   const isCloud = config.runtime === 'cloud' || source.providerSessionId.startsWith('bc-')
   const modelId = config.model
   const perm = mapPermissionToCursorLocal('agent')

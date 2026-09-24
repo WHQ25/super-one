@@ -1,17 +1,14 @@
 import { superoneHostContext } from '@superone/shared/superone-system-prompt'
-import {
-  Agent,
-  AgentBusyError,
-  Cursor,
-  IntegrationNotConnectedError,
-  type McpServerConfig,
-  type ModelSelection,
-  type Run,
-  type SDKAgent,
-  type SDKArtifact,
-  type SDKUserMessage,
-  type SendOptions,
+import type {
+  McpServerConfig,
+  ModelSelection,
+  Run,
+  SDKAgent,
+  SDKArtifact,
+  SDKUserMessage,
+  SendOptions,
 } from '@cursor/sdk'
+import { isCursorSdkError, loadCursorSdk } from './cursor-sdk'
 import type {
   AgentEvent,
   AskUserQuestionRequest,
@@ -82,7 +79,7 @@ export class CursorIntegrationError extends Error {
 }
 
 function formatCursorError(error: unknown): Error {
-  if (error instanceof IntegrationNotConnectedError) {
+  if (isCursorSdkError(error, 'IntegrationNotConnectedError')) {
     return new CursorIntegrationError(
       `${error.message} Connect ${error.provider} at ${error.helpUrl} then retry.`,
       { provider: error.provider, helpUrl: error.helpUrl },
@@ -226,6 +223,8 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
       'Cursor User API Key missing. Create one at https://cursor.com/dashboard/api, set it on the Cursor provider, or export CURSOR_API_KEY.',
     )
   }
+
+  const { Agent, Cursor } = await loadCursorSdk()
 
   // Process-wide network default only (not store). Safe to set once per process.
   if (plan.config.useHttp1ForAgent != null) {
@@ -547,7 +546,7 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
       try {
         run = await agent.send(userMessage, sendOptions)
       } catch (error) {
-        if (error instanceof AgentBusyError && !sendOpts?.force && !isCloud) {
+        if (isCursorSdkError(error, 'AgentBusyError') && !sendOpts?.force && !isCloud) {
           log.warn('[CursorRuntime] AgentBusyError — retrying with local.force')
           tracer.runtime('agent_busy_retry', {
             message: error instanceof Error ? error.message : String(error),

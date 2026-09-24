@@ -86,9 +86,8 @@ export {
 export {
   probeCursorResources,
   validateCursorApiKey,
-  Agent,
-  Cursor,
 } from './cursor-client'
+export { isCursorSdkError, loadCursorSdk } from './cursor-sdk'
 
 export {
   mapCursorModel,

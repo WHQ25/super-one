@@ -3,7 +3,8 @@
  * Browser login mints a User API Key; SuperOne should store it in its vault.
  */
 
-import { Cursor, type SdkAuthStatus, type SdkLoginOptions, type SdkLoginResult } from '@cursor/sdk'
+import type { SdkAuthStatus, SdkLoginOptions, SdkLoginResult } from '@cursor/sdk'
+import { loadCursorSdk } from './cursor-sdk'
 
 export type CursorSdkLoginResult = {
   apiKey: string
@@ -35,6 +36,7 @@ export async function cursorSdkLogin(options?: {
     apiKeyName: options?.apiKeyName ?? 'SuperOne',
     ...(options?.skipSdkStore ? { store: null } : {}),
   }
+  const { Cursor } = await loadCursorSdk()
   const result: SdkLoginResult = await Cursor.auth.login(loginOpts)
   return {
     apiKey: result.apiKey,
@@ -45,6 +47,7 @@ export async function cursorSdkLogin(options?: {
 
 /** Report whether a stored, unexpired SDK login exists (never returns the key). */
 export async function cursorSdkAuthStatus(): Promise<CursorSdkAuthStatus> {
+  const { Cursor } = await loadCursorSdk()
   const status: SdkAuthStatus = await Cursor.auth.status()
   if (status.status === 'logged-out') return { status: 'logged-out' }
   return {
@@ -57,5 +60,6 @@ export async function cursorSdkAuthStatus(): Promise<CursorSdkAuthStatus> {
 
 /** Drop the SDK on-disk login store (key remains valid until expiry on Cursor side). */
 export async function cursorSdkLogout(): Promise<void> {
+  const { Cursor } = await loadCursorSdk()
   await Cursor.auth.logout()
 }

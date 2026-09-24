@@ -1,5 +1,3 @@
-import { NetworkError } from '@cursor/sdk'
-
 /** Retries after the first failure (total attempts = retries + 1). */
 export const CURSOR_NETWORK_RETRY_ATTEMPTS = 5
 /** 2s / 4s / 8s / 8s / 8s — cap so later retries stay at 8s. */
@@ -7,7 +5,7 @@ export const CURSOR_NETWORK_RETRY_BASE_DELAY_MS = 2000
 export const CURSOR_NETWORK_RETRY_MAX_DELAY_MS = 8000
 
 export function isCursorRetryableNetworkError(error: unknown): boolean {
-  if (error instanceof NetworkError) return error.isRetryable
+  // Matched by name so the SDK need not be loaded to classify its errors.
   if (!error || typeof error !== 'object') return false
   const name = 'name' in error ? String(error.name) : ''
   if (name !== 'NetworkError') return false

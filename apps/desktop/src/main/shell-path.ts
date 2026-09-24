@@ -49,14 +49,18 @@ export function isShellPathReady(): boolean {
 
 function startRead(): Promise<void> {
   shellPathReady = false
-  const read = readLoginShellPath().then(() => {
-    if (shellPath === read) shellPathReady = true
+  const read: Promise<void> = readLoginShellPath().then((loginPath) => {
+    // A refresh started meanwhile owns the result; an older read must not overwrite it.
+    if (shellPath !== read) return
+    if (loginPath) process.env.PATH = loginPath
+    shellPathReady = true
   })
   return read
 }
 
-function readLoginShellPath(): Promise<void> {
-  if (process.platform === 'win32') return Promise.resolve()
+/** The sanitized login-shell PATH, or null when it could not be read. */
+function readLoginShellPath(): Promise<string | null> {
+  if (process.platform === 'win32') return Promise.resolve(null)
   const shell = process.env.SHELL || '/bin/sh'
   return new Promise((resolve) => {
     const child = execFile(
@@ -67,18 +71,17 @@ function readLoginShellPath(): Promise<void> {
         try {
           if (error) throw error
           const loginPath = extractPath(stdout)
-          if (loginPath) {
-            const { value: cleanPath, dropped, deduped } = sanitizePathEnv(loginPath)
-            process.env.PATH = cleanPath
-            log.info('[fixPath] PATH updated via %s bytes=%d (deduped %d, dropped %d over-long)', shell, cleanPath.length, deduped, dropped)
-            if (cleanPath.length > 32768) {
-              log.warn('[fixPath] PATH still %dB after sanitize — very long, command resolution may be slow', cleanPath.length)
-            }
+          if (!loginPath) return resolve(null)
+          const { value: cleanPath, dropped, deduped } = sanitizePathEnv(loginPath)
+          log.info('[fixPath] PATH updated via %s bytes=%d (deduped %d, dropped %d over-long)', shell, cleanPath.length, deduped, dropped)
+          if (cleanPath.length > 32768) {
+            log.warn('[fixPath] PATH still %dB after sanitize — very long, command resolution may be slow', cleanPath.length)
           }
+          resolve(cleanPath)
         } catch {
           log.warn('[fixPath] Failed to get PATH from login shell')
+          resolve(null)
         }
-        resolve()
       },
     )
     // rc scripts that read stdin would otherwise wait out the timeout.

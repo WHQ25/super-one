@@ -63,6 +63,23 @@ describe('ensureShellPath', () => {
     expect(mocks.warn).toHaveBeenCalledWith('[fixPath] Failed to get PATH from login shell')
   })
 
+  it('keeps the newest read when an older one finishes last', async () => {
+    const callbacks: Array<(error: Error | null, stdout: string) => void> = []
+    mocks.execFile.mockImplementation((_file, _args, _opts, callback) => {
+      callbacks.push(callback)
+      return { stdin: { end: mocks.stdinEnd } }
+    })
+    const marked = (path: string) => `__SUPERONE_PATH_OUTPUT_START__${path}__SUPERONE_PATH_OUTPUT_END__`
+
+    const older = refreshShellPath()
+    const newer = refreshShellPath()
+    callbacks[1](null, marked('/new/bin'))
+    callbacks[0](null, marked('/old/bin'))
+    await Promise.all([older, newer])
+
+    expect(process.env.PATH).toBe('/new/bin')
+  })
+
   it('runs the login shell once for concurrent and later callers', async () => {
     shellPrints('__SUPERONE_PATH_OUTPUT_START__/opt/homebrew/bin__SUPERONE_PATH_OUTPUT_END__')
 

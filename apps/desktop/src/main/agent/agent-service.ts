@@ -1421,6 +1421,7 @@ export class AgentService {
               import('@superone/shared/acp-brand'),
             ])
           const settings = readAppSettings()
+          await ensureShellPath()
           const catalog = listHarnessInstallations()
           const catalogOn = (id: string) => catalog.some((row) => row.id === id && row.enabled)
           // Same visibility rules as the desktop `ChatSuggestions`: OpenCode has

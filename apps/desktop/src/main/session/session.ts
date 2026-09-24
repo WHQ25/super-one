@@ -1318,7 +1318,9 @@ export class Session implements SessionContract {
     }
     if (isShellPathReady()) return run()
     // Queued on the same promise ensureStarted awaits, so a following send still starts after it.
-    void ensureShellPath().then(run)
+    void ensureShellPath()
+      .then(run)
+      .catch((err) => log.debug('[Session] prewarm after shell PATH failed:', err))
   }
 
   setAcpAgentId(agentId: string | null): void {

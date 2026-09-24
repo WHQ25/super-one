@@ -107,4 +107,18 @@ describe('widget payload construction', () => {
 
     expect(built.payload?.reusable).toMatchObject({ id: 'panel-a1b2c3d4', description: 'A panel' })
   })
+
+  it('renders a reused template with the layout it was saved with', () => {
+    saveTemplate(roots, { id: 'mockup-a1b2c3d4', scope: 'project', code: '<div/>', title: 'Mockup', layout: 'fixed' })
+
+    expect(buildWidgetPayload(roots, { title: 'm', template: 'mockup-a1b2c3d4' }).payload?.layout).toBe('fixed')
+  })
+
+  it('lets the call override the layout a template was saved with', () => {
+    saveTemplate(roots, { id: 'mockup-a1b2c3d4', scope: 'project', code: '<div/>', title: 'Mockup', layout: 'fixed' })
+
+    const built = buildWidgetPayload(roots, { title: 'm', template: 'mockup-a1b2c3d4', layout: 'fluid' })
+
+    expect(built.payload?.layout).toBe('fluid')
+  })
 })

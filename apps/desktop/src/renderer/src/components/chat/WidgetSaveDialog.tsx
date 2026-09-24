@@ -40,6 +40,7 @@ export function WidgetSaveDialog({ data, open, onOpenChange }: WidgetSaveDialogP
         code: data.widget_code,
         description: description || undefined,
         inputSchema: data.reusable?.inputSchema,
+        layout: data.layout,
         scope,
       })
       toast.success(t('widget.save.saved', { id: saved.id }))

@@ -3,6 +3,7 @@ import type { WebView } from 'react-native-webview'
 import type { HostInbound, HostOutbound } from '@superone/chat-view'
 import { isPreviewableMermaid } from '@superone/chat-view/mermaid-preview'
 import type { SaveWidgetTemplateRequest } from '@superone/shared/agent-types'
+import { parseWidgetLayout } from '@superone/shared/generative-ui/types'
 import { isPreviewableImageSource, parseImageGenerationInfo, type ImagePreviewTarget } from './image-preview-state'
 import type { TextFileResult } from './text-files'
 import type { VideoPosterResult } from './video-posters'
@@ -121,6 +122,7 @@ function parseSaveWidgetTemplate(message: NativeRequest): SaveWidgetTemplateRequ
   const payload = (message.payload ?? {}) as Record<string, unknown>
   const scope = payload.scope
   if (scope !== 'project' && scope !== 'user') throw new Error('invalid saveWidgetTemplate scope')
+  const layout = parseWidgetLayout(payload.layout)
   return {
     id: payloadString(message, 'id'),
     title: payloadString(message, 'title'),
@@ -130,6 +132,7 @@ function parseSaveWidgetTemplate(message: NativeRequest): SaveWidgetTemplateRequ
     ...(payload.inputSchema && typeof payload.inputSchema === 'object' && !Array.isArray(payload.inputSchema)
       ? { inputSchema: payload.inputSchema as Record<string, unknown> }
       : {}),
+    ...(layout ? { layout } : {}),
   }
 }
 

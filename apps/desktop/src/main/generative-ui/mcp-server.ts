@@ -4,7 +4,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { checkCdnViolations } from '@superone/shared/generative-ui/cdn-allowlist'
 import { isNativeTemplateId, nativeTypeFromTemplateId, NATIVE_WIDGET_TYPES } from '@superone/shared/generative-ui/native-widgets'
-import { WIDGET_SHOW_DESCRIPTION } from '@superone/shared/generative-ui/widget-tool-descriptions'
+import { WIDGET_LAYOUT_DESCRIPTION, WIDGET_SHOW_DESCRIPTION } from '@superone/shared/generative-ui/widget-tool-descriptions'
+import { parseWidgetLayout } from '@superone/shared/generative-ui/types'
 import { buildWidgetPayload } from './widget-payload'
 import type { TemplateRoots } from './template-store'
 
@@ -111,6 +112,7 @@ export async function executeWidgetShowTool(
           inputSchema?: Record<string, unknown>
         })
       : undefined
+  const layout = parseWidgetLayout(args.layout)
   const width = typeof args.width === 'number' ? args.width : undefined
   const height = typeof args.height === 'number' ? args.height : undefined
 
@@ -126,6 +128,7 @@ export async function executeWidgetShowTool(
     template,
     data,
     reusable,
+    layout,
     width,
     height,
   })
@@ -161,6 +164,8 @@ export function registerWidgetTools(server: McpServer, opts?: WidgetToolsOptions
     WIDGET_SHOW_DESCRIPTION,
     {
       title: z.string().describe('Short snake_case identifier for this widget.'),
+      // Ahead of widget_code so it streams first: the preview starts at the right scale.
+      layout: z.enum(['fluid', 'fixed']).optional().describe(WIDGET_LAYOUT_DESCRIPTION),
       widget_code: z.string().optional().describe(
         'HTML or SVG code to render. For SVG: raw SVG starting with <svg>. ' +
         'For HTML: raw content fragment, no DOCTYPE/<html>/<head>/<body>. ' +
@@ -206,11 +211,12 @@ export function registerWidgetTools(server: McpServer, opts?: WidgetToolsOptions
       inputSchema: z.record(z.string(), z.unknown()).optional().describe(
         'JSON Schema for the data this template expects. Omit for a template that renders without data.'
       ),
+      layout: z.enum(['fluid', 'fixed']).optional().describe(WIDGET_LAYOUT_DESCRIPTION),
       scope: z.enum(['project', 'user']).optional().describe(
         'project (default) stores it under the project so it can be shared through git; user makes it available everywhere.'
       ),
     },
-    async ({ id, title, code, description, inputSchema, scope }) => {
+    async ({ id, title, code, description, inputSchema, layout, scope }) => {
       const roots = templateRoots(opts)
       const target = scope ?? 'project'
       if (target === 'project' && !roots.project) {
@@ -220,7 +226,7 @@ export function registerWidgetTools(server: McpServer, opts?: WidgetToolsOptions
         const { allocateTemplateId, saveTemplate } = await import('./template-store')
         const resolvedId = allocateTemplateId(roots, id, target)
         const existed = resolvedId === id
-        const saved = saveTemplate(roots, { id: resolvedId, scope: target, code, title, description, inputSchema })
+        const saved = saveTemplate(roots, { id: resolvedId, scope: target, code, title, description, inputSchema, layout })
         return {
           content: [{
             type: 'text' as const,

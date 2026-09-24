@@ -71,6 +71,17 @@ describe('native chat actions', () => {
     })
   })
 
+  it('forwards the layout a widget was rendered with, so the template reopens the same way', async () => {
+    const target = ports()
+    await resolveNativeRequest({
+      type: 'requestNative',
+      requestId: 'tpl',
+      action: 'saveWidgetTemplate',
+      payload: { id: 'x', title: 'x', code: '<div/>', scope: 'user', layout: 'fixed' },
+    }, target)
+    expect(target.saveWidgetTemplate).toHaveBeenCalledWith(expect.objectContaining({ layout: 'fixed' }))
+  })
+
   it('rejects a widget template save with a scope the store would not accept', async () => {
     await expect(resolveNativeRequest({
       type: 'requestNative',

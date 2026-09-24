@@ -30,6 +30,13 @@ export type WidgetMessageType = (typeof WIDGET_MESSAGE_TYPES)[number]
  */
 export const WIDGET_FRAME_WIDTH = 'round(down, 100%, 1px)'
 
+/**
+ * The width a `fixed` widget is laid out at. It matches the width the widget manual
+ * tells agents to design for, so a container at least this wide renders the widget
+ * as written and only a narrower one scales it down.
+ */
+export const WIDGET_FIXED_LAYOUT_WIDTH = 680
+
 export function widgetBodyStyle(isSVG: boolean): string {
   return isSVG
     ? 'margin:0;display:flex;align-items:center;justify-content:center;min-height:100%;background:transparent;color:var(--color-text-primary);'
@@ -41,6 +48,9 @@ export function widgetBodyStyle(isSVG: boolean): string {
  * trying to scroll the transcript underneath it. Without this split a widget that
  * fills the screen becomes a scroll trap on a phone — and forwarding every touch
  * instead would break every slider and button a widget ships.
+ *
+ * A second finger ends forwarding for the rest of the gesture: it is a pinch zooming the
+ * page, and the first finger's travel during it is not a scroll.
  */
 const TOUCH_SCROLL_SCRIPT = `
   var interactive='input,select,textarea,button,a,canvas,[role=button],[role=slider],[onclick],[data-interactive]';
@@ -48,9 +58,10 @@ const TOUCH_SCROLL_SCRIPT = `
   document.addEventListener('touchstart',function(e){
     var t=e.touches[0];
     startY=t?t.clientY:0;
-    forwarding=!(e.target&&e.target.closest&&e.target.closest(interactive));
+    forwarding=e.touches.length===1&&!(e.target&&e.target.closest&&e.target.closest(interactive));
   },{passive:true});
   document.addEventListener('touchmove',function(e){
+    if(e.touches.length>1)forwarding=false;
     if(!forwarding)return;
     var t=e.touches[0];
     if(!t)return;

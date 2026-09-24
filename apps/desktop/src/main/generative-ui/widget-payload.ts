@@ -1,4 +1,4 @@
-import type { WidgetData, WidgetReusableHint } from '@superone/shared/generative-ui/types'
+import type { WidgetData, WidgetLayout, WidgetReusableHint } from '@superone/shared/generative-ui/types'
 import { readTemplate, type TemplateRoots } from './template-store'
 
 export interface BuildWidgetPayloadInput {
@@ -7,6 +7,8 @@ export interface BuildWidgetPayloadInput {
   template?: string
   data?: Record<string, unknown>
   reusable?: WidgetReusableHint
+  /** Overrides the layout a reused template was saved with. */
+  layout?: WidgetLayout
   width?: number
   height?: number
 }
@@ -24,6 +26,7 @@ export function injectWidgetData(code: string, data?: Record<string, unknown>): 
 
 export function buildWidgetPayload(roots: TemplateRoots, input: BuildWidgetPayloadInput): BuiltWidgetPayload {
   const { title, widget_code, template, data, reusable, width, height } = input
+  let layout = input.layout
 
   if (widget_code && template) {
     return { error: 'widget_show accepts either widget_code or template, not both.' }
@@ -44,6 +47,7 @@ export function buildWidgetPayload(roots: TemplateRoots, input: BuildWidgetPaylo
     source = found.code
     templateId = found.id
     templateVersion = found.version
+    layout ??= found.layout
   }
 
   return {
@@ -53,6 +57,7 @@ export function buildWidgetPayload(roots: TemplateRoots, input: BuildWidgetPaylo
       width: width ?? 800,
       height: height ?? 600,
       isSVG: source.trimStart().startsWith('<svg'),
+      ...(layout ? { layout } : {}),
       ...(templateId ? { templateId, templateVersion } : {}),
       ...(reusable ? { reusable } : {}),
     },

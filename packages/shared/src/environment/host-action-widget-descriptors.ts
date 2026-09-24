@@ -1,5 +1,5 @@
 import type { HostActionSuperoneToolDescriptor } from './host-action-superone-descriptors'
-import { WIDGET_SHOW_DESCRIPTION } from '../generative-ui/widget-tool-descriptions'
+import { WIDGET_LAYOUT_DESCRIPTION, WIDGET_SHOW_DESCRIPTION } from '../generative-ui/widget-tool-descriptions'
 
 export const HOST_ACTION_WIDGET_DESCRIPTORS: HostActionSuperoneToolDescriptor[] = [
   {
@@ -20,6 +20,11 @@ export const HOST_ACTION_WIDGET_DESCRIPTORS: HostActionSuperoneToolDescriptor[] 
         "title": {
           "type": "string",
           "description": "Short snake_case identifier for this widget."
+        },
+        "layout": {
+          "type": "string",
+          "enum": ["fluid", "fixed"],
+          "description": WIDGET_LAYOUT_DESCRIPTION
         },
         "widget_code": {
           "type": "string"

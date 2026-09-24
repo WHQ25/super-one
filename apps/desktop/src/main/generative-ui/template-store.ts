@@ -2,6 +2,7 @@ import { projectSuperoneHome } from '../superone-home'
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
+import { parseWidgetLayout, type WidgetLayout } from '@superone/shared/generative-ui/types'
 
 export type TemplateScope = 'project' | 'user'
 
@@ -16,6 +17,7 @@ export interface WidgetTemplate {
   title: string
   description?: string
   inputSchema?: Record<string, unknown>
+  layout?: WidgetLayout
   version: number
   code: string
   createdAt: string
@@ -29,6 +31,7 @@ export interface SaveTemplateInput {
   title: string
   description?: string
   inputSchema?: Record<string, unknown>
+  layout?: WidgetLayout
 }
 
 const TEMPLATE_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/
@@ -65,6 +68,7 @@ function loadFrom(root: string, scope: TemplateScope, id: string): WidgetTemplat
       title: typeof meta.title === 'string' ? meta.title : id,
       description: typeof meta.description === 'string' ? meta.description : undefined,
       inputSchema: meta.inputSchema,
+      layout: parseWidgetLayout(meta.layout),
       version: typeof meta.version === 'number' ? meta.version : 1,
       code,
       createdAt: typeof meta.createdAt === 'string' ? meta.createdAt : '',
@@ -154,6 +158,7 @@ export function saveTemplate(roots: TemplateRoots, input: SaveTemplateInput): Wi
     title: input.title,
     description: input.description,
     inputSchema: input.inputSchema,
+    layout: parseWidgetLayout(input.layout),
     version: (previous?.version ?? 0) + 1,
     createdAt: previous?.createdAt || now,
     updatedAt: now,

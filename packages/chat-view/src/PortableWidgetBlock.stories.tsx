@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { PortableWidgetBlock } from './PortableWidgetBlock'
 import { PortableTurnContext } from './portable-turn-context'
 import type { WidgetData } from '@superone/shared/generative-ui/types'
+import { SETTINGS_MOCKUP_WIDGET } from './fixtures/widget-mockup'
 
 /**
  * The phone's widget frame. Stories render the real component with real agent-shaped
@@ -106,6 +107,16 @@ export const Svg: Story = {
       widget_code: '<svg viewBox="0 0 120 60" width="120" height="60"><rect class="c-teal" x="4" y="4" width="112" height="52" rx="4"/><text class="t" x="60" y="34" text-anchor="middle">chart</text></svg>',
     }),
   },
+}
+
+export const MockupFluid: Story = {
+  name: 'Desktop mockup · fluid reflows into a tall column',
+  args: { data: widget({ title: 'settings_mockup', height: 300, widget_code: SETTINGS_MOCKUP_WIDGET }) },
+}
+
+export const MockupFixed: Story = {
+  name: 'Desktop mockup · fixed keeps desktop proportions',
+  args: { data: widget({ title: 'settings_mockup', height: 300, widget_code: SETTINGS_MOCKUP_WIDGET, layout: 'fixed' }) },
 }
 
 export const Empty: Story = {

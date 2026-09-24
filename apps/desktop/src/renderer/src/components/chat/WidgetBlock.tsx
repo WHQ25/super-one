@@ -5,6 +5,7 @@ import { SVG_STYLES } from '@superone/shared/generative-ui/svg-styles'
 import { buildWidgetSrcdoc, widgetBodyStyle, WIDGET_FRAME_WIDTH } from '@superone/shared/generative-ui/widget-srcdoc'
 import type { WidgetData } from '@superone/shared/generative-ui/types'
 import { Download, Bookmark } from 'lucide-react'
+import { WidgetLayoutFrame } from '@superone/chat-view/WidgetLayoutFrame'
 import { useChatStore } from '@/stores/chat'
 import { WidgetSaveDialog } from './WidgetSaveDialog'
 
@@ -255,20 +256,22 @@ export function WidgetBlock({ data, streaming }: WidgetBlockProps) {
           </>
         )}
       </div>
-      <div className="relative">
-        {showShadow && (
-          <ShadowWidget html={displayCode} isSVG={data.isSVG} />
-        )}
-        {mountIframe && (
-          <AutoIframe
-            srcdoc={finalSrcdoc}
-            title={displayTitle}
-            fallbackHeight={data.height}
-            hidden={!iframeReady}
-            onReady={handleIframeReady}
-          />
-        )}
-      </div>
+      <WidgetLayoutFrame layout={data.layout}>
+        <div className="relative">
+          {showShadow && (
+            <ShadowWidget html={displayCode} isSVG={data.isSVG} />
+          )}
+          {mountIframe && (
+            <AutoIframe
+              srcdoc={finalSrcdoc}
+              title={displayTitle}
+              fallbackHeight={data.height}
+              hidden={!iframeReady}
+              onReady={handleIframeReady}
+            />
+          )}
+        </div>
+      </WidgetLayoutFrame>
       {saveOpen && <WidgetSaveDialog data={data} open={saveOpen} onOpenChange={setSaveOpen} />}
     </div>
   )

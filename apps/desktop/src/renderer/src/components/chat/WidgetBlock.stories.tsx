@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ReactNode } from 'react'
 import { WidgetBlock } from './WidgetBlock'
 import { ToolBlock } from './ToolBlock'
+import { SETTINGS_MOCKUP_WIDGET } from '@superone/chat-view/fixtures/widget-mockup'
 
 function StoryShell({ children, width = 720 }: { children: ReactNode; width?: number }) {
   return (
@@ -128,6 +129,31 @@ export const FractionalWidth: Story = {
     <div style={{ width: 600.25 }}>
       <Note>The right hairline border and button edge stay visible after the iframe replaces the streaming preview.</Note>
       {block({ title: 'hairline_edge', widget_code: HAIRLINE_EDGE, width: 600, height: 100, isSVG: false })}
+    </div>
+  ),
+}
+
+function mockup(layout: 'fluid' | 'fixed', streaming = false) {
+  return <WidgetBlock data={{ title: `settings_mockup_${layout}`, widget_code: SETTINGS_MOCKUP_WIDGET, width: 680, height: 300, isSVG: false, layout }} streaming={streaming} />
+}
+
+export const FixedLayout: Story = {
+  name: 'Fixed layout',
+  render: () => (
+    <div className="space-y-6">
+      <Note>A fixed widget keeps its 680px composition: rendered as written in a wide transcript, scaled down as a whole in a narrow pane. Fluid reflows instead.</Note>
+      <Section title="Wide pane · fixed">
+        <div style={{ width: 760 }}>{mockup('fixed')}</div>
+      </Section>
+      <Section title="Narrow pane · fixed">
+        <div style={{ width: 420 }}>{mockup('fixed')}</div>
+      </Section>
+      <Section title="Narrow pane · fixed, streaming preview">
+        <div style={{ width: 420 }}>{mockup('fixed', true)}</div>
+      </Section>
+      <Section title="Narrow pane · fluid">
+        <div style={{ width: 420 }}>{mockup('fluid')}</div>
+      </Section>
     </div>
   ),
 }

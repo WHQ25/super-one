@@ -12,3 +12,10 @@ export const WIDGET_SHOW_DESCRIPTION =
   + 'To hand the user several files to look at one after another (screenshots, reports, changed sources), '
   + 'pass @native/files-previewer with data.files. '
   + 'Before the first new widget in a session, load the relevant design modules with read_manual({ domain: "widget", modules: [...] }).'
+
+/** The `widget_show.layout` / `widget_save.layout` parameter, shared by every registration. */
+export const WIDGET_LAYOUT_DESCRIPTION =
+  'How an HTML widget adapts to a narrow screen such as a phone. '
+  + '"fluid" (default) reflows to the available width. '
+  + '"fixed" lays the widget out at 680px and scales it down as a whole, keeping its proportions — '
+  + 'use it for UI mockups, where the layout itself is what the user is reviewing.'

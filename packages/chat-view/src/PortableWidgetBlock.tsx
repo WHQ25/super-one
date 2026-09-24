@@ -5,6 +5,7 @@ import type { WidgetData } from '@superone/shared/generative-ui/types'
 import { buildWidgetSrcdoc, widgetThemeVars, WIDGET_FRAME_WIDTH } from '@superone/shared/generative-ui/widget-srcdoc'
 import { requestNative, requestNativeAsync } from './bridge'
 import { PortableTurnContext } from './portable-turn-context'
+import { WidgetLayoutFrame } from './WidgetLayoutFrame'
 
 /**
  * A code widget on the phone.
@@ -75,6 +76,7 @@ function SaveForm({ data, onDone }: { data: WidgetData; onDone: (state: SaveStat
         code: data.widget_code,
         description: description || undefined,
         inputSchema: data.reusable?.inputSchema,
+        layout: data.layout,
         scope,
       })
       onDone({ kind: 'saved' })
@@ -189,7 +191,13 @@ export function PortableWidgetBlock({ data }: { data: WidgetData }) {
           if (typeof message.url === 'string') requestNative('openLink', { url: message.url })
           break
         case 'widget-touch-scroll':
-          if (typeof message.deltaY === 'number') globalThis.scrollBy(0, message.deltaY)
+          if (typeof message.deltaY === 'number') {
+            // The delta is in the widget's own pixels; a `fixed` widget drawn scaled down
+            // moved the finger only a fraction of that across the transcript.
+            const frame = iframeRef.current
+            const scale = frame && frame.offsetWidth ? frame.getBoundingClientRect().width / frame.offsetWidth : 1
+            globalThis.scrollBy(0, message.deltaY * scale)
+          }
           break
       }
     }
@@ -225,15 +233,17 @@ export function PortableWidgetBlock({ data }: { data: WidgetData }) {
           </button>
         )}
       </div>
-      <iframe
-        ref={iframeRef}
-        title={displayTitle}
-        srcDoc={srcdoc}
-        onLoad={postTheme}
-        sandbox="allow-scripts"
-        className="rounded-md border-0"
-        style={{ width: WIDGET_FRAME_WIDTH, height }}
-      />
+      <WidgetLayoutFrame layout={data.layout}>
+        <iframe
+          ref={iframeRef}
+          title={displayTitle}
+          srcDoc={srcdoc}
+          onLoad={postTheme}
+          sandbox="allow-scripts"
+          className="rounded-md border-0"
+          style={{ width: WIDGET_FRAME_WIDTH, height }}
+        />
+      </WidgetLayoutFrame>
       {save.kind === 'editing' ? <SaveForm data={data} onDone={setSave} /> : null}
       {save.kind === 'failed' ? (
         <p className="mt-1 px-0.5 text-xs text-error">{t('widget.save.failed', { error: save.message })}</p>

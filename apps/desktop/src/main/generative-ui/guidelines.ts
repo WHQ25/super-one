@@ -6,6 +6,7 @@ import colorPalette from './guidelines/sections/color_palette.md?raw'
 import svgSetup from './guidelines/sections/svg_setup.md?raw'
 import diagramTypes from './guidelines/sections/diagram_types.md?raw'
 import uiComponents from './guidelines/sections/ui_components.md?raw'
+import layout from './guidelines/sections/layout.md?raw'
 import chartsChartJs from './guidelines/sections/charts_chart_js.md?raw'
 import artAndIllustration from './guidelines/sections/art_and_illustration.md?raw'
 import nativeUi from './guidelines/sections/native_ui.md?raw'
@@ -20,6 +21,7 @@ const SECTION_MAP: Record<string, string> = {
   'Color palette': colorPalette,
   'SVG setup': svgSetup,
   'Diagram types': diagramTypes,
+  'Layout': layout,
   'UI components': uiComponents,
   'Charts (Chart.js)': chartsChartJs,
   'Art and illustration': artAndIllustration,

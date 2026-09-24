@@ -4,6 +4,7 @@ import type { TokenOverrides } from './harness-brand'
 import type { SessionGoal } from './session-goal'
 import type { NotificationSettings } from './notifications'
 import type { GitMentionRefKind } from './git-mention-query'
+import type { WidgetLayout } from './generative-ui/types'
 
 // --- Image attachments ---
 
@@ -3675,6 +3676,7 @@ export interface SaveWidgetTemplateRequest {
   code: string
   description?: string
   inputSchema?: Record<string, unknown>
+  layout?: WidgetLayout
   scope: 'project' | 'user'
 }
 

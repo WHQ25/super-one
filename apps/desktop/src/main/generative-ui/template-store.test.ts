@@ -128,6 +128,18 @@ describe('widget template store', () => {
     expect(readTemplate(userOnly, 'personal-aaaaaaaa')?.scope).toBe('user')
     expect(listTemplates(userOnly)).toHaveLength(1)
   })
+
+  it('keeps the layout a template was saved with', () => {
+    saveTemplate(roots, { id: 'mockup-a1b2c3d4', scope: 'project', code: '<div/>', title: 'Mockup', layout: 'fixed' })
+
+    expect(readTemplate(roots, 'mockup-a1b2c3d4')?.layout).toBe('fixed')
+  })
+
+  it('ignores a layout value the renderer does not know', () => {
+    seed(roots.project!, 'odd-aaaaaaaa', '<div/>', { layout: 'stretch' })
+
+    expect(readTemplate(roots, 'odd-aaaaaaaa')?.layout).toBeUndefined()
+  })
 })
 
 describe('template list rendered into the guide', () => {

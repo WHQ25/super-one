@@ -35,3 +35,17 @@ describe('the native UI widget module', () => {
     }
   })
 })
+
+describe('the layout section', () => {
+  it('reaches every HTML module, where the agent chooses between fluid and fixed', () => {
+    for (const module of ['mockup', 'interactive', 'chart']) {
+      expect(getGuidelines([module]), module).toContain('## Layout')
+    }
+  })
+
+  it('stays out of the SVG modules, which scale by viewBox already', () => {
+    for (const module of ['diagram', 'art']) {
+      expect(getGuidelines([module]), module).not.toContain('## Layout')
+    }
+  })
+})

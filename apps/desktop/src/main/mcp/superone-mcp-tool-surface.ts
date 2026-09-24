@@ -30,7 +30,7 @@ import {
   notifyDevAppReady,
 } from './superone-mcp-server'
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
-import { WIDGET_SHOW_DESCRIPTION } from '@superone/shared/generative-ui/widget-tool-descriptions'
+import { HOST_ACTION_WIDGET_DESCRIPTORS } from '@superone/shared/environment/host-action-widget-descriptors'
 import {
   executeMiniappCall,
   executeMiniappList,
@@ -55,40 +55,14 @@ import { randomUUID } from 'node:crypto'
 const WIDGET_LIST_TEMPLATES_NAME = 'widget_list_templates'
 const WIDGET_SHOW_NAME = 'widget_show'
 
-const WIDGET_LIST_TEMPLATES_DESCRIPTOR: SuperoneMcpToolDescriptor = {
-  name: WIDGET_LIST_TEMPLATES_NAME,
-  description:
-    'List reusable widget templates saved in the current project or user scope. Call this when considering template reuse; pass a returned id to widget_show.template.',
-  inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-}
-
-const WIDGET_SHOW_DESCRIPTOR: SuperoneMcpToolDescriptor = {
-  name: WIDGET_SHOW_NAME,
-  description: WIDGET_SHOW_DESCRIPTION,
-  inputSchema: {
-    type: 'object',
-    properties: {
-      title: { type: 'string', description: 'Short snake_case identifier for this widget.' },
-      widget_code: { type: 'string' },
-      template: { type: 'string' },
-      data: { type: 'object', additionalProperties: true },
-      reusable: { type: 'object', additionalProperties: true },
-      width: { type: 'number' },
-      height: { type: 'number' },
-    },
-    required: ['title'],
-    additionalProperties: false,
-  },
-}
-
 export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescriptor[] {
   const browserAndComputerUseDenied = isCodexBrowserAndComputerUseDenied(sessionId)
   const tools = [
     ...BUILT_IN_SUPERONE_TOOL_DEFS,
     ...(browserAndComputerUseDenied ? [] : getBrowserToolDescriptors()),
     ...getMiniappFixedToolDescriptors() as SuperoneMcpToolDescriptor[],
-    WIDGET_LIST_TEMPLATES_DESCRIPTOR,
-    WIDGET_SHOW_DESCRIPTOR,
+    // The same descriptors a remote node advertises, so the two cannot drift apart.
+    ...HOST_ACTION_WIDGET_DESCRIPTORS,
   ]
   // Computer Use is opt-in (default off). P0 exposes the 6-tool contract only when enabled.
   if (!browserAndComputerUseDenied && isComputerUseEnabled()) {

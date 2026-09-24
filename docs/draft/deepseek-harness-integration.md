@@ -28,7 +28,7 @@ This is different from every existing harness (Claude = black-box SDK, Codex = s
 | C. Web Client protocol (Connection `/api` + Typert RPC) | ✅ | ✅ | ✅ | full fidelity but generated-artifact coupling; fallback option |
 | **D. In-process embedding (this plan)** | ✅ verified | ✅ verified | ✅ verified | **chosen** |
 
-dsh is in **developer preview** (`0.1.1-rc.2` at time of writing) with breaking changes promised. §11 owns the version strategy; the short version is: exact-pin the whole family, keep the spike as a smoke test, absorb breakage on explicit upgrades only.
+dsh is in **developer preview** (`0.1.7-rc.1` at time of writing) with breaking changes promised. §11 owns the version strategy; the short version is: exact-pin the whole family, keep the spike as a smoke test, absorb breakage on explicit upgrades only.
 
 ---
 
@@ -332,7 +332,7 @@ Estimated shape: backend + bridge ≈ Claude-backend-sized (~500–800 lines); t
 ```sh
 mkdir /tmp/dsh-spike && cd /tmp/dsh-spike
 echo '{"name":"dsh-spike","type":"module","private":true}' > package.json
-bun add @deepseek-ai/dsh@0.1.1-rc.2        # or the current pinned version
+bun add @deepseek-ai/dsh@0.1.7-rc.1        # or the current pinned version
 cp <repo>/docs/draft/deepseek-harness-spike.mjs .
 node deepseek-harness-spike.mjs             # or: bun deepseek-harness-spike.mjs
 ```
@@ -370,12 +370,12 @@ concern in the official design too, which is exactly where we put it.
 | dist-tag | version | published |
 |---|---|---|
 | `latest` | varies per package (`0.0.1-rc.1`, `0.0.1-rc.3`, `0.1.0-rc.6` …) | never moved in lockstep |
-| `next` | `0.1.1-rc.2` | 2026-08-23 (our pinned line) |
+| `next` | `0.1.7-rc.1` | 2026-09 (our pinned line) |
 
 `npm add @deepseek-ai/dsh-<x>` with no version resolves to the **oldest** release,
 and that release uses **different package names** for the same capability:
 
-| 0.0.1-rc.1 | 0.1.1-rc.2 (ours) |
+| 0.0.1-rc.1 | 0.1.7-rc.1 (ours) |
 |---|---|
 | `dsh-permission` | `dsh-permission-presets` |
 | `dsh-compact-basic` | `dsh-compaction-basic` |
@@ -390,7 +390,7 @@ and that release uses **different package names** for the same capability:
 | `dsh-workflow-workerthread` | `dsh-workflow-worker-thread` |
 | `dsh-compact-tool-result-prune` | `dsh-compaction-tool-result-pruner` |
 
-Always pin `0.1.1-rc.2` explicitly. A bare install silently gives a different
+Always pin `0.1.7-rc.1` explicitly. A bare install silently gives a different
 harness whose rows do not match anything written here.
 
 ### 13.3 The gap: 21 of 79 rows mounted
@@ -876,10 +876,10 @@ one thing that cost a red test — **the mounts must be awaited**. An unawaited
 `ctx.plugin()` pair leaves the tools dormant with an unchanged registry, which
 looks exactly like the switch not working.
 
-**Registry over README.** `0.1.1-rc.2` registers `cordis_inspect_list` /
-`cordis_inspect_query` / `cordis_inspect_self`, not the single `cordis_inspect`
-the README documents. The test reads the names off `ctx.tools.schemas()` for
-that reason.
+**Registry over README.** Under `0.1.7-rc.1` the `cordis` preset registers
+`cordis_inspect_list` / `cordis_inspect_query` (`0.1.1-rc.2` also had
+`cordis_inspect_self`), not the single `cordis_inspect` the README documents.
+The test reads the names off the preset's actual tool catalog for that reason.
 
 Surfaces: `AppSettings` + the four `app-settings-service.ts` sites, a
 `DeepSeek → Preferences` tab in `HarnessesSettingsPage` rendering
@@ -1314,9 +1314,9 @@ against the app's copies before copying anything.
 
 Two semver facts worth pinning, both covered by tests:
 
-- **`^0.1.1` does NOT admit `0.1.1-rc.2`.** A prerelease sorts below its release,
-  so `>=0.1.1` excludes it. `includePrerelease` does not rescue this. A plugin
-  written against the eventual 0.1.1 release genuinely does not run here, and
+- **`^0.1.7` does NOT admit `0.1.7-rc.1`.** A prerelease sorts below its release,
+  so `>=0.1.7` excludes it. `includePrerelease` does not rescue this. A plugin
+  written against the eventual 0.1.7 release genuinely does not run here, and
   saying so at install time beats a mid-turn crash — but it *will* surprise
   plugin authors.
 - **`workspace:^` is reported as unchecked, not as a mismatch.** It is valid in
@@ -1386,7 +1386,7 @@ Known limits, all deliberate:
 
 - **No dependency resolution.** A plugin with its own runtime dependencies must
   bundle them; the install reports what it could not satisfy.
-- **`^0.1.1` reads as incompatible** against this `0.1.1-rc.2` build, because a
+- **`^0.1.7` reads as incompatible** against this `0.1.7-rc.1` build, because a
   prerelease sorts below its release. Correct semver, and it will surprise plugin
   authors.
 - **`workspace:^` is unchecked**, not refused — it is what a locally-developed

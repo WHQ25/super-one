@@ -71,6 +71,11 @@ Every alpha release keeps its own notes on its GitHub Release.
 - DeepSeek turns show files that shell commands created, changed, or
   deleted as Write, Edit, or Delete rows with their diffs, and include
   them in the turn's file and line counts.
+- DeepSeek agents can run subagents, shell commands, and workflows in
+  the background, as upstream dsh does by default. Background subagents
+  and shell commands appear in the status bar's background list with a
+  Stop button. Stopping the session or archiving it stops its
+  background work.
 - Settings: session storage is split into single-action rows.
 - Chat view translates the compaction indicators.
 

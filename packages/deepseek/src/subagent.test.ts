@@ -13,6 +13,16 @@ const CHILD_MARKER = 'WRITE-THE-FILE'
 const CHILD_FILE = 'from-the-child.txt'
 const CHILD_TEXT = 'the child wrote this'
 
+/**
+ * An approval nobody answers — the child parks on it — that still settles when
+ * dsh withdraws the question, as SuperOne's popover does.
+ */
+function parked(request: DeepseekToolPermissionRequest): Promise<ToolApprovalDecision> {
+  return new Promise((resolve) => {
+    request.signal?.addEventListener('abort', () => resolve('cancelled'), { once: true })
+  })
+}
+
 /** Said in the parent's first, completed turn — only a fork child can see it. */
 const SECRET = 'xyzzy'
 const RECALL_MARKER = 'RECALL-THE-SECRET'
@@ -39,11 +49,16 @@ class DelegatingAdapter extends LlmAdapter {
       return
     }
     if (!closing && transcript.includes('FORK-DELEGATE')) {
-      yield* toolCall('subagent_fork', { description: 'recall the secret', prompt: RECALL_MARKER })
+      yield* toolCall('subagent_fork', { description: 'recall the secret', prompt: RECALL_MARKER, run_in_background: false })
+      return
+    }
+    // The shipped rows delegate in the background unless told otherwise.
+    if (!closing && transcript.includes('BACKGROUND-DELEGATE')) {
+      yield* toolCall('subagent', { description: 'write one file', prompt: CHILD_MARKER })
       return
     }
     if (!closing && transcript.includes('DELEGATE')) {
-      yield* toolCall('subagent', { description: 'write one file', prompt: CHILD_MARKER })
+      yield* toolCall('subagent', { description: 'write one file', prompt: CHILD_MARKER, run_in_background: false })
       return
     }
     yield* finalText(transcript.includes(CHILD_MARKER) ? 'child done' : 'parent done')
@@ -87,13 +102,17 @@ afterEach(async () => {
 })
 
 async function delegateOnce(
-  decide: () => ToolApprovalDecision,
+  decide: (request: DeepseekToolPermissionRequest) => ToolApprovalDecision | Promise<ToolApprovalDecision>,
   prompts: readonly string[] = ['DELEGATE the work'],
 ) {
   const cwd = mkdtempSync(join(tmpdir(), 'dsh-subagent-'))
   dirs.push(cwd)
 
-  const runtime = await DeepseekRuntime.create({ ...TEST_PRESET_OPTIONS, persona: 'test agent' })
+  // Persistence, as in production: a continuable (background) child is a
+  // durable session and refuses to start without it.
+  const persistenceRoot = mkdtempSync(join(tmpdir(), 'dsh-subagent-sessions-'))
+  dirs.push(persistenceRoot)
+  const runtime = await DeepseekRuntime.create({ ...TEST_PRESET_OPTIONS, persona: 'test agent', persistenceRoot })
   disposers.push(() => runtime.dispose())
   ;(runtime.context as unknown as {
     llm: { registerAdapter(providers: string[], adapter: LlmAdapter): void }
@@ -102,7 +121,7 @@ async function delegateOnce(
   const asked: DeepseekToolPermissionRequest[] = []
   const ask = vi.fn(async (request: DeepseekToolPermissionRequest) => {
     asked.push(request)
-    return decide()
+    return decide(request)
   })
 
   const sessionId = randomUUID()
@@ -123,7 +142,7 @@ async function delegateOnce(
     await agent.whenIdle()
   }
 
-  return { cwd, sessionId, events, asked, ask }
+  return { cwd, runtime, sessionId, events, asked, ask }
 }
 
 function blocks(events: AgentEvent[]): Array<{ messageId: string; delta: Record<string, unknown> }> {
@@ -264,5 +283,54 @@ describe('deepseek subagent Task block', () => {
       new Set(blocks(events).map((b) => b.messageId)).size,
     )
     expect(events.some((event) => event.type === 'todos_updated')).toBe(false)
+  })
+})
+
+describe('deepseek background subagents', () => {
+  function notification(events: AgentEvent[], taskStatus: string) {
+    return events.find((event) => event.type === 'task_notification' && event.taskStatus === taskStatus)
+  }
+
+  it('runs a background child as a task that outlives the delegation call', async () => {
+    const { cwd, events } = await delegateOnce(() => 'allowed-once', ['BACKGROUND-DELEGATE the work'])
+
+    const task = toolUse(events, 'Task')
+    const started = events.find((event) => event.type === 'task_started')
+    expect(started?.type === 'task_started' ? started.toolUseId : null).toBe(task?.delta.toolUseId)
+    // The call returns at once; the child's own steps stay out of the parent's
+    // message, which may complete long before the child does.
+    expect(toolResults(events)).toMatch(/started subagent/)
+    await vi.waitFor(() => expect(notification(events, 'completed')).toBeDefined())
+    expect(readFileSync(join(cwd, CHILD_FILE), 'utf8')).toBe(CHILD_TEXT)
+    expect(blocks(events).some((b) => b.delta.parentToolUseId === task?.delta.toolUseId)).toBe(false)
+  })
+
+  it('stops a background child from its task, and counts it as background work until then', async () => {
+    // The child parks on its write approval, so it is still running when the
+    // parent's turn is over.
+    const { runtime, sessionId, events } = await delegateOnce(
+      parked,
+      ['BACKGROUND-DELEGATE the work'],
+    )
+    await vi.waitFor(() => expect(runtime.hasBackgroundWork(sessionId)).toBe(true))
+    const started = events.find((event) => event.type === 'task_started')
+    const taskId = started?.type === 'task_started' ? started.taskId : ''
+
+    expect(runtime.stopTask(sessionId, taskId)).toBe(true)
+
+    expect(notification(events, 'stopped')).toBeDefined()
+    expect(runtime.hasBackgroundWork(sessionId)).toBe(false)
+  })
+
+  it('closes a still-running background task when its session is disposed', async () => {
+    const { runtime, sessionId, events } = await delegateOnce(
+      parked,
+      ['BACKGROUND-DELEGATE the work'],
+    )
+    await vi.waitFor(() => expect(runtime.hasBackgroundWork(sessionId)).toBe(true))
+
+    await disposers.pop()?.()
+
+    expect(notification(events, 'stopped')).toBeDefined()
   })
 })

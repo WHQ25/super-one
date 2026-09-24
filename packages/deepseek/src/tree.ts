@@ -233,10 +233,9 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
   // description is derived from `provider.inheritsParentContext`, so the model
   // is told which of the two it is choosing.
   //
-  // Foreground only: the background route registers a parent-owned Task whose
-  // status/collection/kill tools are a separate surface SuperOne does not
-  // render, so exposing `run_in_background` would let the model start work the
-  // user can neither see nor stop.
+  // The shipped rows delegate in the background by default (`continuable`);
+  // the runtime reports such children, and background jobs, as tasks the
+  // background list shows and the user can stop (`background-work.ts`).
   ctx.plugin(SubagentRuntime)
   ctx.plugin(SubagentSpawnInProcess, { providerName: 'spawn' })
   ctx.plugin(SubagentForkInProcess, { providerName: 'fork' })

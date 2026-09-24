@@ -1,6 +1,5 @@
 import { attachmentPrompt, buildAttachmentTurn } from '@superone/shared/attachment-turn'
 import { validateTurnAttachments } from '@superone/shared/attachment-validation'
-import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, type ImageBlock } from '@deepseek-ai/dsh-llm'
@@ -49,6 +48,8 @@ import {
 import { readStoredSession } from './stored-session'
 import { presentQuestions, type DeepseekQuestion } from './user-questions'
 import { fileToolPath, workspaceChangeRows, workspacePath } from './workspace-changes'
+import { DeepseekBackgroundJobs, toolCallSpan, type ToolCallSpan } from './background-work'
+import type {} from '@deepseek-ai/dsh-subagent'
 import type {} from '@deepseek-ai/dsh-workspace-changes'
 import {
   createDeepseekTree,
@@ -215,27 +216,14 @@ interface SubagentRun {
   description: string
   startedAt: number
   mapper: DeepseekEventMapper
+  /**
+   * The delegation call returned while the child kept running — a continuable
+   * child, dsh's default. Its steps are no longer rendered inside the parent's
+   * message (that message may have completed long before the child does); the
+   * Task block's chip and the background list follow it through task events.
+   */
+  background: boolean
 }
-
-/**
- * The delegation call a child is being started from.
- *
- * `subagent/start` carries the child's id and a run id — and nothing else that
- * a host can use. Its declared `parent: Agent` argument never reaches a
- * listener: dsh's contained emitter dispatches with the parent as the scope
- * *carrier* and then invokes each callback as `callback(info)`. So both halves
- * of the link have to come from our side.
- *
- * A "last delegation wins" variable would not do it either — a parent may run
- * several delegations in one assistant message. This rides the async context of
- * the `tools/execute` span, which is exactly the span `provider.start()` is
- * awaited inside, so sibling delegations each see their own.
- */
-const delegationSpan = new AsyncLocalStorage<{
-  toolUseId: string
-  description: string
-  agentSessionId: string
-}>()
 
 /** Child-session events worth a Task-chip refresh; the rest are stream noise. */
 const TASK_PROGRESS_EVENTS = new Set(['tool/call', 'tool/result', 'assistant/message', 'step/end'])
@@ -274,6 +262,9 @@ export class DeepseekRuntime {
   private readonly mcpServers: DeepseekMcpServers
   private readonly plugins: DeepseekPlugins
   private onPluginMount: ((report: MountReport) => void) | undefined
+  /** Background jobs (shell, workflow) as the tasks of the session that started them. */
+  private readonly jobs: DeepseekBackgroundJobs
+  private unsubscribeJobs: (() => void) | undefined
 
   private constructor(
     private readonly root: Context,
@@ -284,6 +275,10 @@ export class DeepseekRuntime {
     this.mcpServers = new DeepseekMcpServers(bridge)
     this.plugins = new DeepseekPlugins(bridge, pluginRoot)
     this.onPluginMount = onPluginMount
+    this.jobs = new DeepseekBackgroundJobs(bridge, (agentSessionId) => {
+      const owner = this.ownerOf(agentSessionId)
+      return owner ? { key: owner, onEvent: owner.onEvent } : undefined
+    })
   }
 
   /**
@@ -358,8 +353,16 @@ export class DeepseekRuntime {
       mapper?.handleStreamFrame(frame)
     })
 
-    // Carry the delegating call and agent into everything the tool awaits, so
-    // `subagent/start` can name both — it carries neither.
+    // Carry the calling tool and agent into everything the tool awaits.
+    //
+    // `subagent/start` carries the child's id and a run id — and nothing else a
+    // host can use: its declared `parent: Agent` argument never reaches a
+    // listener, because dsh's contained emitter dispatches with the parent as the
+    // scope *carrier* and invokes each callback as `callback(info)`. A job's
+    // registration names no tool call either. A "last call wins" variable would
+    // not do — a parent may run several calls in one assistant message — so both
+    // ride the async context of this span, which is exactly the one
+    // `provider.start()` and `jobs.start()` run inside.
     bridge.on('tools/execute', ((
       exec: {
         name: string
@@ -370,17 +373,17 @@ export class DeepseekRuntime {
       next: () => Promise<unknown>,
     ) => {
       const agentSessionId = exec.agent?.session.header.id
-      if (!DELEGATION_TOOLS.has(exec.name) || exec.callId === undefined || agentSessionId === undefined) {
-        return next()
+      if (exec.callId === undefined || agentSessionId === undefined) return next()
+      const toolUseId = String(exec.callId)
+      const span: ToolCallSpan = { toolUseId, agentSessionId: String(agentSessionId), jobs: [] }
+      const settle = () => runtime.settleToolCall(span)
+      if (!DELEGATION_TOOLS.has(exec.name)) {
+        return toolCallSpan.run(span, () => next().finally(settle))
       }
       const args = exec.arguments as { description?: unknown } | undefined
-      const toolUseId = String(exec.callId)
-      return delegationSpan.run(
-        {
-          toolUseId,
-          description: typeof args?.description === 'string' ? args.description : 'subagent',
-          agentSessionId: String(agentSessionId),
-        },
+      span.delegation = { description: typeof args?.description === 'string' ? args.description : 'subagent' }
+      return toolCallSpan.run(
+        span,
         // A delegation that ends badly rejects here, and that rejection is the
         // ONLY place a provider's `SubagentResult.diagnostic` is observable:
         // `subagent/end`, which is what closes the Task block, does not carry
@@ -395,9 +398,10 @@ export class DeepseekRuntime {
             error instanceof Error ? error.message : String(error),
           )
           throw error
-        }),
+        }).finally(settle),
       )
     }) as never)
+    runtime.unsubscribeJobs = runtime.jobs.subscribe()
 
     bridge.on('subagent/start', ((info: { runId: string; id: unknown }) => {
       runtime.beginSubagentRun(info)
@@ -540,8 +544,8 @@ export class DeepseekRuntime {
    * rather than attached to a guess.
    */
   private beginSubagentRun(info: { runId: string; id: unknown }): void {
-    const span = delegationSpan.getStore()
-    if (!span) return
+    const span = toolCallSpan.getStore()
+    if (!span?.delegation) return
     const owner = this.ownerOf(span.agentSessionId)
     if (!owner) return
 
@@ -550,11 +554,14 @@ export class DeepseekRuntime {
       owner,
       toolUseId: span.toolUseId,
       runId: String(info.runId),
-      description: span.description,
+      description: span.delegation.description,
       startedAt: Date.now(),
+      background: false,
       mapper: new DeepseekEventMapper({
         sessionId: childSessionId,
-        emit: owner.onEvent,
+        emit: (event) => {
+          if (!run.background) owner.onEvent(event)
+        },
         nested: {
           parentToolUseId: span.toolUseId,
           resolveMessageId: () => owner.mapper.currentMessageId(),
@@ -568,6 +575,104 @@ export class DeepseekRuntime {
       toolUseId: run.toolUseId,
       description: run.description,
       taskType: 'subagent',
+    })
+  }
+
+  /**
+   * One tool call returned. Work it started and left running is background
+   * work from here on: jobs become tasks, and a delegated child that is still
+   * live stops rendering into the parent's message.
+   */
+  private settleToolCall(span: ToolCallSpan): void {
+    this.jobs.settleCall(span)
+    if (!span.delegation) return
+    for (const run of this.subagentRuns.values()) {
+      if (run.toolUseId === span.toolUseId) run.background = true
+    }
+  }
+
+  /**
+   * Whether one session has background work still running.
+   * @param sessionId - the top-level session.
+   */
+  hasBackgroundWork(sessionId: string): boolean {
+    const record = this.records.get(sessionId)
+    if (!record) return false
+    return this.jobs.has(record) || this.backgroundRunsOf(record).length > 0
+  }
+
+  /**
+   * Stop one background task: a job, or a background child's current turn.
+   * @param sessionId - the top-level session.
+   * @param taskId - the task id the background list shows.
+   * @returns whether the id named live work of this session.
+   */
+  stopTask(sessionId: string, taskId: string): boolean {
+    const record = this.records.get(sessionId)
+    if (!record) return false
+    if (this.jobs.kill(record, taskId)) return true
+    const run = this.backgroundRunsOf(record).find((candidate) => candidate.runId === taskId)
+    if (!run) return false
+    this.interruptChild(record, run)
+    return true
+  }
+
+  /**
+   * Stop all of one session's background work, and keep the session.
+   * @param sessionId - the top-level session.
+   */
+  stopBackgroundWork(sessionId: string): void {
+    const record = this.records.get(sessionId)
+    if (!record) return
+    this.jobs.killAll(record)
+    for (const run of this.backgroundRunsOf(record)) this.interruptChild(record, run)
+  }
+
+  private backgroundRunsOf(record: AgentRecord): SubagentRun[] {
+    return [...this.subagentRuns.values()].filter((run) => run.owner === record && run.background)
+  }
+
+  /**
+   * Interrupt a background child's current turn and close its task.
+   *
+   * dsh keeps an interrupted continuable child's Activation — it is idle and can
+   * be messaged again — so no `subagent/end` is guaranteed to follow. The task
+   * the user stopped is closed here instead.
+   */
+  private interruptChild(record: AgentRecord, run: SubagentRun): void {
+    const childSessionId = [...this.subagentRuns].find(([, candidate]) => candidate === run)?.[0]
+    if (childSessionId === undefined) return
+    this.bridge.get('subagents')?.interrupt(SessionId(childSessionId), { kind: 'ancestor', agent: record.agent })
+    this.subagentRuns.delete(childSessionId)
+    this.closeRun(run, 'stopped')
+  }
+
+  /**
+   * A session is going away: close its tasks, and tear down everything it
+   * left running — continuable children below it and its background jobs.
+   */
+  private async releaseBackgroundWork(record: AgentRecord): Promise<void> {
+    for (const run of this.backgroundRunsOf(record)) this.closeRun(run, 'stopped')
+    this.jobs.forget(record)
+    await this.bridge.get('subagents')?.drainContinuableDescendants([record.agent]).catch(() => undefined)
+  }
+
+  private closeRun(run: SubagentRun, taskStatus: 'completed' | 'failed' | 'stopped'): void {
+    const stats = run.mapper.stats()
+    run.owner.onEvent({
+      type: 'task_notification',
+      taskId: run.runId,
+      toolUseId: run.toolUseId,
+      taskStatus,
+      // dsh keeps the child's transcript in its own JSONL session log, which is
+      // not a path SuperOne's "open full view" can read yet. The reducer treats
+      // an empty path as absent and keeps whatever it already had.
+      outputFile: '',
+      usage: {
+        totalTokens: stats.totalTokens,
+        toolUses: stats.toolUses,
+        durationMs: Date.now() - run.startedAt,
+      },
     })
   }
 
@@ -603,22 +708,7 @@ export class DeepseekRuntime {
     // an entry for the tool rejection to find.
     if (kind === 'completed') this.endedSubagentTasks.delete(run.toolUseId)
     else this.endedSubagentTasks.set(run.toolUseId, run.runId)
-    const stats = run.mapper.stats()
-    run.owner.onEvent({
-      type: 'task_notification',
-      taskId: run.runId,
-      toolUseId: run.toolUseId,
-      taskStatus: kind === 'completed' ? 'completed' : kind === 'aborted' ? 'stopped' : 'failed',
-      // dsh keeps the child's transcript in its own JSONL session log, which is
-      // not a path SuperOne's "open full view" can read yet. The reducer treats
-      // an empty path as absent and keeps whatever it already had.
-      outputFile: '',
-      usage: {
-        totalTokens: stats.totalTokens,
-        toolUses: stats.toolUses,
-        durationMs: Date.now() - run.startedAt,
-      },
-    })
+    this.closeRun(run, kind === 'completed' ? 'completed' : kind === 'aborted' ? 'stopped' : 'failed')
   }
 
   /**
@@ -811,6 +901,7 @@ export class DeepseekRuntime {
       whenIdle: () => record.agent.whenIdle(),
       status: () => record.agent.status,
       async dispose() {
+        await runtime.releaseBackgroundWork(record)
         runtime.records.delete(options.sessionId)
         runtime.dropSubagentRunsOf(record)
         await record.dispose()
@@ -1305,6 +1396,7 @@ export class DeepseekRuntime {
 
   async dispose(): Promise<void> {
     this.folds.clear()
+    this.unsubscribeJobs?.()
     for (const [sessionId, record] of [...this.records]) {
       this.records.delete(sessionId)
       await record.dispose()

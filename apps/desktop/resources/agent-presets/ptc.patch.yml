@@ -1,15 +1,10 @@
 # ── SuperOne deviation ──────────────────────────────────────────────────────
-# 1. Every delegation row and `tool-workflow` carry `enableRunInBackground:
-#    false`. Background work needs host-side Task controls (status, collect,
-#    kill) wired to SuperOne's background-activity surface; until the dsh bridge
-#    maps them, a background child would be work the user can neither see nor
-#    stop.
-# 2. The `tool-plugin-manager` row is dropped. It only activates under a dsh
-#    profile (`profileContext`), which SuperOne never mounts — plugins are
-#    managed from SuperOne's own settings — and its package is not shipped.
+# The `tool-plugin-manager` row is dropped. It only activates under a dsh
+# profile (`profileContext`), which SuperOne never mounts — plugins are managed
+# from SuperOne's own settings — and its package is not shipped.
 #
-# These are the ONLY edits to this file. Re-apply them when re-copying from
-# upstream (see README.md).
+# This is the ONLY edit to this file. Re-apply it when re-copying from upstream
+# (see README.md).
 # ────────────────────────────────────────────────────────────────────────────
 # Agent preset ptc: one `@deepseek-ai/dsh-agent-preset` declaration inserted
 # after the web patch. Edits saved from the Web editor override this row's
@@ -107,14 +102,12 @@
                   toolName: subagent
                   modelSelectionSettings: true
                   backgroundMode: continuable
-                  enableRunInBackground: false
               - id: tool-subagent-fork
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:
                   provider: fork
                   toolName: subagent_fork
                   backgroundMode: continuable
-                  enableRunInBackground: false
               - id: tool-subagent-codex
                 name: '@deepseek-ai/dsh-tool-subagent'
                 disabled: true
@@ -122,7 +115,6 @@
                   provider: codex
                   toolName: subagent_codex
                   backgroundMode: one-shot
-                  enableRunInBackground: false
                   maxDepth: provider-managed
               - id: tool-subagent-claude-code
                 name: '@deepseek-ai/dsh-tool-subagent'
@@ -131,7 +123,6 @@
                   provider: claude-code
                   toolName: subagent_claude_code
                   backgroundMode: one-shot
-                  enableRunInBackground: false
                   maxDepth: provider-managed
               - id: workflow-ptc
                 name: '@deepseek-ai/dsh-workflow-ptc'
@@ -140,8 +131,6 @@
                   provider: spawn
               - id: tool-workflow
                 name: '@deepseek-ai/dsh-tool-workflow'
-                config:
-                  enableRunInBackground: false
                 disabled: true
               - id: tool-ralph
                 name: '@deepseek-ai/dsh-tool-ralph'

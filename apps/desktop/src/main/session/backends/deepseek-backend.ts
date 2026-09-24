@@ -5,6 +5,7 @@ import {
   dshPresetForMode,
   type DeepseekAgentHandle,
   type DeepseekMcpServerSpec,
+  type DeepseekRuntime,
 } from '@superone/deepseek'
 import type {
   AgentEvent,
@@ -66,6 +67,8 @@ export class DeepseekBackend implements SessionBackend {
   readonly kind: HarnessId = 'dsh'
 
   private agent: DeepseekAgentHandle | null = null
+  /** The shared tree, held once an agent exists so sync queries can reach it. */
+  private runtime: DeepseekRuntime | null = null
   private startPromise: Promise<DeepseekAgentHandle> | null = null
   private opts: BackendStartOptions | null = null
   private permissionMode: PermissionMode = 'default'
@@ -186,6 +189,7 @@ export class DeepseekBackend implements SessionBackend {
       trackDshMcpConfig(opts.cwd)
 
       this.agent = agent
+      this.runtime = runtime
       this.emit({ type: 'provider_session_id', providerSessionId })
       for (const callback of this.providerSessionListeners) callback(providerSessionId)
       return agent
@@ -265,8 +269,27 @@ export class DeepseekBackend implements SessionBackend {
     }
   }
 
+  /** Stop cancels the turn and the background work it started, as Stop means everywhere else. */
   async interrupt(): Promise<void> {
-    this.agent?.cancel()
+    const agent = this.agent
+    if (!agent) return
+    agent.cancel()
+    this.runtime?.stopBackgroundWork(agent.sessionId)
+  }
+
+  hasActiveBackgroundTasks(): boolean {
+    const agent = this.agent
+    return agent ? this.runtime?.hasBackgroundWork(agent.sessionId) === true : false
+  }
+
+  async stopTask(taskId: string): Promise<void> {
+    const agent = this.agent
+    if (agent) this.runtime?.stopTask(agent.sessionId, taskId)
+  }
+
+  async stopBackgroundTasks(): Promise<void> {
+    const agent = this.agent
+    if (agent) this.runtime?.stopBackgroundWork(agent.sessionId)
   }
 
   async close(): Promise<void> {

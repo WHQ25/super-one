@@ -7,15 +7,11 @@ declares a preset through `@deepseek-ai/dsh-agent-preset`; `packages/deepseek`
 applies the patches with `cordis-plugin-include`'s own patch semantics and
 mounts the resulting rows next to `dsh-agent-preset-registry`.
 
-They are verbatim **except for two deviations**, marked with a
-`SuperOne deviation` banner at the top of each file they touch (`standard`,
-`ptc`, `cordis`):
-
-1. `enableRunInBackground: false` on every delegation row and on
-   `tool-workflow`, because SuperOne does not yet render the Task controls a
-   background child would need.
-2. The `tool-plugin-manager` row is dropped: it only activates under a dsh
-   profile, which SuperOne never mounts, and its package is not shipped.
+They are verbatim **except for one deviation**, marked with a
+`SuperOne deviation` banner at the top of each file it touches (`standard`,
+`ptc`, `cordis`): the `tool-plugin-manager` row is dropped. It only activates
+under a dsh profile, which SuperOne never mounts, and its package is not
+shipped.
 
 They are vendored rather than read out of `node_modules` for two reasons. The
 `@deepseek-ai/dsh-web-app` bundle that carries them pulls the whole
@@ -29,8 +25,8 @@ Re-copy all four files whenever the pinned dsh version moves:
     cp <deepseek-harness>/packages/bundle/web-app/presets/{standard,minimal,ptc,cordis}.patch.yml \
        apps/desktop/resources/agent-presets/
 
-then re-apply the deviation banner and both edits —
-`packages/deepseek/src/subagent.test.ts` fails loudly if it is forgotten. Every
+then re-apply the deviation banner and the edit —
+`packages/deepseek/src/bundled-plugins.test.ts` fails loudly if it is forgotten. Every
 package a row names must also be pinned in both `packages/deepseek/package.json`
 and `apps/desktop/package.json`; `bundled-plugins.test.ts` checks that.
 

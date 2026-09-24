@@ -76,6 +76,16 @@ const fakeServerPlugin = {
       },
       execute: async () => ({ text: `pong:${config.serverName}:${config.url ?? ''}` }),
     })
+    // What the real client does with its connection's resource methods.
+    ctx.inject(['mcpResources'], (inner) => {
+      ;(inner as Context & {
+        mcpResources: { register(server: string, provider: { request(request: { method: string; uri?: string }): Promise<unknown> }): () => void }
+      }).mcpResources.register(config.serverName, {
+        request: async (request) => request.method === 'resources/read'
+          ? { contents: [{ uri: request.uri, mimeType: 'text/plain', text: `memo from ${config.serverName}` }] }
+          : { resources: [{ uri: 'memo://a', name: 'a' }] },
+      })
+    })
   },
 }
 
@@ -239,6 +249,15 @@ describe('third-party MCP servers', () => {
     await servers.sync([])
 
     expect(Object.keys(loader.store)).not.toContain('mcp-repo')
+  })
+
+  it('lets the model read a configured server\'s resources', async () => {
+    const runtime = await bootRuntime()
+    const { agent, events } = await startAgent(runtime, '/projects/a', [httpServer('docs', 'http://a')])
+
+    await runTurn(agent, 'CALL read_mcp_resource {"server":"docs","uri":"memo://a"}')
+
+    expect(toolResults(events)).toContain('memo from docs')
   })
 
   it('leaves a session with no configured servers alone', async () => {

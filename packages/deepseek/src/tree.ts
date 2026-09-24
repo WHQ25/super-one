@@ -7,6 +7,7 @@ import LlmRuntime from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import McpResources from '@deepseek-ai/dsh-mcp-resources'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import * as LlmRetry from '@deepseek-ai/dsh-llm-retry'
@@ -201,6 +202,11 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
     },
   })
   ctx.plugin(ToolRuntime, {})
+  // Upstream's base layer mounts this once beside the tool runtime. Each MCP
+  // server row registers into it, which is what gives a configured server
+  // `list_mcp_resources` / `list_mcp_resource_templates` / `read_mcp_resource`
+  // (tools stay absent while no server is configured).
+  ctx.plugin(McpResources)
   ctx.plugin(AgentRegistry)
   ctx.plugin(ApprovalService, { policy: 'ask' })
   ctx.plugin(AgentLoop, { agents: [] })

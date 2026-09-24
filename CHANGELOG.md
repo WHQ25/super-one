@@ -66,6 +66,8 @@ Every alpha release keeps its own notes on its GitHub Release.
   default mode. Messages typed mid-turn queue in the composer, where
   they can be removed or steered into the running turn without
   cancelling its tool.
+- DeepSeek sessions can list and read resources from configured MCP
+  servers.
 - Settings: session storage is split into single-action rows.
 - Chat view translates the compaction indicators.
 

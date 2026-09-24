@@ -40,6 +40,7 @@ const CORE_PLUGINS: readonly { name: string; version: string }[] = [
   { name: '@deepseek-ai/dsh-llm', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-llm-deepseek', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-llm-retry', version: DSH_VERSION },
+  { name: '@deepseek-ai/dsh-mcp-resources', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-permission-presets', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-ptc-runtime-node', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-sandbox-local', version: DSH_VERSION },

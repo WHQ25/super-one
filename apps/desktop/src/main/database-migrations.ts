@@ -36,7 +36,7 @@ import log from './logger'
  * every launch); it decides when a pre-migration snapshot is taken and lets a
  * build recognise a database written by a newer build.
  */
-export const SCHEMA_VERSION = 9
+export const SCHEMA_VERSION = 10
 
 /**
  * The oldest schema revision that can still read this database.
@@ -315,6 +315,12 @@ function applyMigrations(db: Database.Database): void {
       updated_at TEXT NOT NULL
     );
   `)
+  const resourceCacheCols = db.prepare('PRAGMA table_info(harness_resource_cache)').all() as Array<{ name: string }>
+  if (!resourceCacheCols.some((c) => c.name === 'cache_key')) {
+    // Identity of the harness runtime the catalog was probed from; a different
+    // binary (upgrade, reinstall, PATH swap) invalidates the row before its TTL.
+    db.exec('ALTER TABLE harness_resource_cache ADD COLUMN cache_key TEXT')
+  }
 
   // Harness installation catalog (shared kernel: @superone/runtime/harness).
   // Same shape as apps/cli — intent + readiness; secrets by ref only.

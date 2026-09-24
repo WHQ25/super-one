@@ -88,25 +88,47 @@ export function getCachedHarnessResources<H extends HarnessId>(
   }
 }
 
-export function getHarnessResourceCacheAgeMs(harnessId: HarnessId): number | null {
-  const row = getDb()
-    .prepare('SELECT updated_at FROM harness_resource_cache WHERE harness_id = ?')
-    .get(harnessId) as { updated_at: string } | undefined
-  if (!row) return null
-  return Date.now() - new Date(row.updated_at).getTime()
+export interface HarnessResourceCacheMeta {
+  ageMs: number
+  /** Runtime identity the row was probed against; null for unkeyed writes. */
+  cacheKey: string | null
 }
 
+export function getHarnessResourceCacheMeta(harnessId: HarnessId): HarnessResourceCacheMeta | null {
+  const row = getDb()
+    .prepare('SELECT updated_at, cache_key FROM harness_resource_cache WHERE harness_id = ?')
+    .get(harnessId) as { updated_at: string; cache_key: string | null } | undefined
+  if (!row) return null
+  return { ageMs: Date.now() - new Date(row.updated_at).getTime(), cacheKey: row.cache_key }
+}
+
+/** Store a fresh probe result: restarts the TTL and records the runtime it came from. */
 export function setCachedHarnessResources<H extends HarnessId>(
   harnessId: H,
   resources: HarnessResourcesMap[H],
+  cacheKey: string | null = null,
 ): void {
   getDb().prepare(`
-    INSERT INTO harness_resource_cache (harness_id, resources_json, updated_at)
-    VALUES (?, ?, ?)
+    INSERT INTO harness_resource_cache (harness_id, resources_json, updated_at, cache_key)
+    VALUES (?, ?, ?, ?)
     ON CONFLICT(harness_id) DO UPDATE SET
       resources_json = excluded.resources_json,
-      updated_at = excluded.updated_at
-  `).run(harnessId, JSON.stringify(resources), new Date().toISOString())
+      updated_at = excluded.updated_at,
+      cache_key = excluded.cache_key
+  `).run(harnessId, JSON.stringify(resources), new Date().toISOString(), cacheKey)
+}
+
+/**
+ * Rewrite the payload of an existing row without touching its age or key —
+ * for merging locally discovered resources into a cached probe result.
+ */
+export function updateCachedHarnessResources<H extends HarnessId>(
+  harnessId: H,
+  resources: HarnessResourcesMap[H],
+): void {
+  getDb()
+    .prepare('UPDATE harness_resource_cache SET resources_json = ? WHERE harness_id = ?')
+    .run(JSON.stringify(resources), harnessId)
 }
 
 export function maskApiKey(key: string): string {

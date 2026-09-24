@@ -206,8 +206,8 @@ import { disposeIosSimulatorManager } from './ios-simulator'
 import { disposeAndroidDeviceManager } from './device/android'
 import { disposeMirrorDeviceManager } from './device/ios-mirror'
 import { attachDeviceGestureEvents } from './device/gesture-events'
-import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, upsertPairedDevice, recordPairedDeviceSeen, listPairedDevices, deletePairedDevice, isPairedDevice } from './database'
-import { connectWithHarnessResourceCache, getFreshHarnessResources } from './harness/resource-cache'
+import { getDb, closeDb, getCachedHarnessResources, setCachedHarnessResources, updateCachedHarnessResources, upsertPairedDevice, recordPairedDeviceSeen, listPairedDevices, deletePairedDevice, isPairedDevice } from './database'
+import { connectWithHarnessResourceCache, getFreshHarnessResources, harnessRuntimeCacheKey } from './harness/resource-cache'
 import { backfillFromHistory, getBackfillStatus, queryCounts, queryHarnessSessionRanks, queryUsage } from './usage-stats-service'
 import { discoverUserSkills, discoverUserCommands, discoverUserAgents, discoverCodexUserPrompts } from './agent/discover-resources'
 import { CodexExperimentService } from './codex/codex-experiment-service'
@@ -350,6 +350,14 @@ const codexPluginsService = new CodexPluginsService(codexService)
 const codexHooksService = new CodexHooksService(codexService)
 const codexMarketplaceService = new CodexMarketplaceService(codexService)
 setCodexServiceFactory(() => codexService)
+
+/** Codex catalog cache key: the runtime binary plus the provider/auth it serves. */
+function codexCatalogCacheKey(projectPath: string): string | undefined {
+  const binary = tryResolveHarnessRuntime('codex')
+  const runtime = binary && harnessRuntimeCacheKey(binary)
+  return runtime ? `${runtime}::${codexService.modelCatalogSignature(projectPath)}` : undefined
+}
+
 const automationService = new AutomationService()
 bindAutomationService(automationService)
 // `apiProviderId` carries the session's chosen credential id (dynamic-follow: null follows the global binding).
@@ -2516,7 +2524,7 @@ function registerIpcHandlers(): void {
     }
     if (apiProviderId == null) {
       const current = getCachedHarnessResources('codex')
-      setCachedHarnessResources('codex', { models, prompts: current?.prompts ?? [] })
+      setCachedHarnessResources('codex', { models, prompts: current?.prompts ?? [] }, codexCatalogCacheKey(projectPath) ?? null)
     }
     log.info('[CODEX_LIST_MODELS] response project=%s apiProvider=%s models=%s', projectPath, apiProviderId ?? 'default', JSON.stringify(models))
     return models
@@ -4790,11 +4798,14 @@ function registerIpcHandlers(): void {
     const skills = discoverUserSkills()
     const userCommands = discoverUserCommands()
     const agents = discoverUserAgents()
-    const cacheHit = getFreshHarnessResources('claude', { force })
+    const claudeBinary = tryResolveHarnessRuntime('claude')
+    const cacheKey = (claudeBinary && harnessRuntimeCacheKey(claudeBinary)) || undefined
+    const cacheHit = getFreshHarnessResources('claude', { force, cacheKey })
     if (cacheHit) {
       log.info('[CONNECT_CLAUDE] cache fresh (ageMs=%d), skipping CLI query', cacheHit.ageMs)
       const resources: ClaudeResources = { ...cacheHit.resources, skills, commands: userCommands, agents }
-      setCachedHarnessResources('claude', resources)
+      // Payload-only: rewriting the whole row here would restart the TTL on every hit.
+      updateCachedHarnessResources('claude', resources)
       return resources
     }
 
@@ -4806,7 +4817,6 @@ function registerIpcHandlers(): void {
     // that by retrying forever. An empty catalog is the honest answer:
     // disk-discovered skills / commands / agents are still valid, there is just
     // no model list without a runtime.
-    const claudeBinary = tryResolveHarnessRuntime('claude')
     if (!claudeBinary) {
       log.info('[CONNECT_CLAUDE] no runtime available — skipping CLI probe (harness not installed or disabled)')
       // Deliberately not cached: the harness may be installed or re-enabled at any moment.
@@ -4889,7 +4899,7 @@ function registerIpcHandlers(): void {
         agents,
         outputStyles,
       }
-      setCachedHarnessResources('claude', resources)
+      setCachedHarnessResources('claude', resources, cacheKey ?? null)
 
       return resources
     } catch (error) {
@@ -4904,18 +4914,27 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.CONNECT_CODEX, async (): Promise<CodexResources> => {
-    log.info('[CONNECT_CODEX] Fetching codex resources...')
-    try {
-      const models = await codexService.listModels(app.getPath('userData'))
-      const prompts = discoverCodexUserPrompts()
-      const resources: CodexResources = { models, prompts }
-      setCachedHarnessResources('codex', resources)
-      log.info('[CONNECT_CODEX] Fetch complete: %d models, %d prompts', models.length, prompts.length)
-      return resources
-    } catch (error) {
-      log.error('[CONNECT_CODEX] failed: %s', error instanceof Error ? error.message : String(error))
-      throw error
-    }
+    const projectPath = app.getPath('userData')
+    // Prompts are user files: always rescanned, never served from the cache.
+    const prompts = discoverCodexUserPrompts()
+    const resources = await connectWithHarnessResourceCache('codex', {
+      cacheKey: codexCatalogCacheKey(projectPath),
+      isUsable: (r) => (r.models?.length ?? 0) > 0,
+      probe: async () => {
+        log.info('[CONNECT_CODEX] Fetching codex resources...')
+        const models = await codexService.listModels(projectPath)
+        log.info('[CONNECT_CODEX] Fetch complete: %d models, %d prompts', models.length, prompts.length)
+        return { models, prompts }
+      },
+      onCacheHit: (hit) => {
+        log.info('[CONNECT_CODEX] cache fresh (ageMs=%d), skipping model probe', hit.ageMs)
+        updateCachedHarnessResources('codex', { ...hit.resources, prompts })
+      },
+      onProbeError: (error) => {
+        log.error('[CONNECT_CODEX] failed: %s', error instanceof Error ? error.message : String(error))
+      },
+    })
+    return { ...resources, prompts }
   })
 
   ipcMain.handle(AgentIpcChannels.CONNECT_OPENCODE, async (_e, force?: boolean) => {

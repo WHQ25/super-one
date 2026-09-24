@@ -671,10 +671,19 @@ export class CodexExperimentService {
     }
   }
 
-  async listModels(projectPath: string, apiProviderId: string | null = null, force = false): Promise<ModelOption[]> {
+  private resolveModelCatalogTarget(projectPath: string, apiProviderId: string | null) {
     if (apiProviderId == null && !resolveChatService('codex')) apiProviderId = codexAccountStore().defaultProviderId()
     const auth = this.getProjectAuth(projectPath, apiProviderId)
-    const sig = modelCacheSignature(auth, apiProviderId)
+    return { apiProviderId, auth, sig: modelCacheSignature(auth, apiProviderId) }
+  }
+
+  /** Provider + auth identity the model catalog is served under (no secrets). */
+  modelCatalogSignature(projectPath: string, apiProviderId: string | null = null): string {
+    return this.resolveModelCatalogTarget(projectPath, apiProviderId).sig
+  }
+
+  async listModels(projectPath: string, requestedProviderId: string | null = null, force = false): Promise<ModelOption[]> {
+    const { apiProviderId, auth, sig } = this.resolveModelCatalogTarget(projectPath, requestedProviderId)
     if (!force) {
       const cached = this.modelCacheByProvider.get(sig)
       if (cached && cached.expiresAt > Date.now()) {

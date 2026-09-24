@@ -1,8 +1,7 @@
 import { useEffect } from 'react'
-import { browserTabCanvas, useBrowserStore } from '@/stores/browser'
+import { useBrowserStore } from '@/stores/browser'
 import {
   browserExecJs,
-  browserCapture,
   browserNavigate,
   browserGoBack,
   browserGoForward,
@@ -17,15 +16,9 @@ import { beginBrowserFocusIsolation, endBrowserFocusIsolation, withBrowserFocusI
 import { isBlankUrl } from './browser-url'
 import { closeBrowserTab, openBrowserTab } from '@/components/activity/activity-panel-api'
 import { useAgentViewfinderStore } from '@/stores/agent-viewfinder'
-import { decodeCaptureImage } from './browser-canvas'
-import { captureBrowserScreenshot, nextPaint } from './browser-screenshot'
+import { captureBrowserScreenshot } from './browser-screenshot'
+import { startBrowserRecording, stopBrowserRecording } from './browser-recording'
 
-// Video, not stills: this bounds the canvas the MediaRecorder encodes at 2 Mbps,
-// so it answers to bitrate rather than to the agent's context budget. Screenshots
-// go through fitScreenshotWidth instead.
-const MAX_RECORDING_WIDTH = 1280
-const RECORDING_FRAME_INTERVAL_MS = 100
-const RECORDING_MAX_MS = 60_000
 const BLANK_PAGE_HAS_CUSTOM_CONTENT_SCRIPT = `(() => {
   if (location.href !== 'about:blank') return false;
   const body = document.body;
@@ -33,161 +26,6 @@ const BLANK_PAGE_HAS_CUSTOM_CONTENT_SCRIPT = `(() => {
     || !!body?.childElementCount
     || !!body?.textContent?.trim();
 })()`
-
-interface ActiveBrowserRecording {
-  id: string
-  tabId: string
-  startedAt: number
-  canvas: HTMLCanvasElement
-  context: CanvasRenderingContext2D
-  recorder: MediaRecorder
-  chunks: Blob[]
-  stopped: Promise<void>
-  timer: ReturnType<typeof setInterval>
-  maxTimer: ReturnType<typeof setTimeout>
-  frameInFlight: boolean
-  captureReleased: boolean
-}
-
-const activeRecordings = new Map<string, ActiveBrowserRecording>()
-
-function recordingMimeType(): string {
-  for (const mimeType of ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']) {
-    if (MediaRecorder.isTypeSupported(mimeType)) return mimeType
-  }
-  throw new Error('This Chromium build cannot encode WebM action recordings')
-}
-
-async function paintRecordingFrame(recording: ActiveBrowserRecording): Promise<void> {
-  if (recording.frameInFlight || recording.recorder.state === 'inactive') return
-  recording.frameInFlight = true
-  try {
-    let frame = await browserCapture(recording.tabId)
-    if (!frame || frame.isEmpty()) return
-    if (frame.getSize().width > MAX_RECORDING_WIDTH) frame = frame.resize({ width: MAX_RECORDING_WIDTH })
-    const size = frame.getSize()
-    if (recording.canvas.width !== size.width || recording.canvas.height !== size.height) {
-      recording.canvas.width = size.width
-      recording.canvas.height = size.height
-    }
-    const image = await decodeCaptureImage(frame.toDataURL())
-    recording.context.fillStyle = browserTabCanvas(recording.tabId)
-    recording.context.fillRect(0, 0, recording.canvas.width, recording.canvas.height)
-    recording.context.drawImage(image, 0, 0, recording.canvas.width, recording.canvas.height)
-  } finally {
-    recording.frameInFlight = false
-  }
-}
-
-async function startBrowserRecording(tabId: string): Promise<{ recordingId: string; tab: string }> {
-  if (typeof MediaRecorder === 'undefined') throw new Error('MediaRecorder is unavailable')
-  if ([...activeRecordings.values()].some((recording) => recording.tabId === tabId)) {
-    throw new Error('This browser tab is already recording')
-  }
-
-  const store = useBrowserStore.getState()
-  store.beginCapture(tabId)
-  try {
-    await nextPaint()
-    const first = await browserCapture(tabId)
-    if (!first || first.isEmpty()) throw new Error('Browser recording could not capture its first frame')
-    const sized = first.getSize().width > MAX_RECORDING_WIDTH
-      ? first.resize({ width: MAX_RECORDING_WIDTH })
-      : first
-    const size = sized.getSize()
-    const canvas = document.createElement('canvas')
-    canvas.width = size.width
-    canvas.height = size.height
-    const context = canvas.getContext('2d')
-    if (!context) throw new Error('Browser recording canvas is unavailable')
-    const image = await decodeCaptureImage(sized.toDataURL())
-    context.fillStyle = browserTabCanvas(tabId)
-    context.fillRect(0, 0, size.width, size.height)
-    context.drawImage(image, 0, 0, size.width, size.height)
-
-    const recordingId = crypto.randomUUID()
-    const chunks: Blob[] = []
-    const recorder = new MediaRecorder(canvas.captureStream(10), {
-      mimeType: recordingMimeType(),
-      videoBitsPerSecond: 2_000_000,
-    })
-    recorder.ondataavailable = (event) => {
-      if (event.data.size > 0) chunks.push(event.data)
-    }
-    const stopped = new Promise<void>((resolve, reject) => {
-      recorder.addEventListener('stop', () => resolve(), { once: true })
-      recorder.addEventListener(
-        'error',
-        () => reject(new Error('Browser recording encoder failed')),
-        { once: true },
-      )
-    })
-    recorder.start(250)
-    let recording!: ActiveBrowserRecording
-    recording = {
-      id: recordingId,
-      tabId,
-      startedAt: Date.now(),
-      canvas,
-      context,
-      recorder,
-      chunks,
-      stopped,
-      timer: setInterval(() => void paintRecordingFrame(recording), RECORDING_FRAME_INTERVAL_MS),
-      maxTimer: setTimeout(() => {
-        if (recorder.state !== 'inactive') recorder.stop()
-        clearInterval(recording.timer)
-        if (!recording.captureReleased) {
-          recording.captureReleased = true
-          useBrowserStore.getState().endCapture(tabId)
-        }
-      }, RECORDING_MAX_MS),
-      frameInFlight: false,
-      captureReleased: false,
-    }
-    activeRecordings.set(recordingId, recording)
-    return { recordingId, tab: tabId }
-  } catch (error) {
-    store.endCapture(tabId)
-    throw error
-  }
-}
-
-async function stopBrowserRecording(
-  recordingId: string,
-  tabId: string,
-): Promise<{ data: string; mimeType: string; durationMs: number; width: number; height: number }> {
-  const recording = activeRecordings.get(recordingId)
-  if (!recording || recording.tabId !== tabId) throw new Error('Browser recording is not active')
-  activeRecordings.delete(recordingId)
-  clearInterval(recording.timer)
-  clearTimeout(recording.maxTimer)
-  try {
-    await paintRecordingFrame(recording)
-    if (recording.recorder.state !== 'inactive') recording.recorder.stop()
-    await recording.stopped
-    const blob = new Blob(recording.chunks, { type: recording.recorder.mimeType || 'video/webm' })
-    if (blob.size === 0) throw new Error('Browser recording produced an empty video')
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = () => resolve(String(reader.result))
-      reader.onerror = () => reject(reader.error ?? new Error('Failed to serialize browser recording'))
-      reader.readAsDataURL(blob)
-    })
-    return {
-      data: dataUrl.slice(dataUrl.indexOf(',') + 1),
-      mimeType: 'video/webm',
-      durationMs: Math.max(0, Date.now() - recording.startedAt),
-      width: recording.canvas.width,
-      height: recording.canvas.height,
-    }
-  } finally {
-    if (!recording.captureReleased) {
-      recording.captureReleased = true
-      useBrowserStore.getState().endCapture(tabId)
-    }
-  }
-}
 
 interface BaseInput {
   tab?: string
@@ -863,10 +701,10 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
   try {
     switch (op) {
     case 'recordStart':
-      return startBrowserRecording(id)
+      return startBrowserRecording(id, signal)
     case 'recordStop': {
       if (typeof input.recordingId !== 'string') throw new Error('recordStop requires recordingId')
-      return stopBrowserRecording(input.recordingId, id)
+      return stopBrowserRecording(input.recordingId, id, signal)
     }
     case 'resolveWebContentsId': {
       const webContentsId = webContentsIdForBrowser(id)

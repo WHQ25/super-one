@@ -9,24 +9,8 @@ import {
   REMOVE_BROWSER_CAPTURE_PROBE_SCRIPT,
 } from './browser-capture-readiness'
 import { fitScreenshotWidth } from './screenshot-fit'
+import { CaptureBudget, nextPaint, settleWithin } from './browser-capture-budget'
 
-export type ScreenshotStage = 'host-paint' | 'readiness' | 'selector' | 'capture' | 'encode'
-
-/**
- * Every await in a screenshot is bounded. The waits here depend on frames that
- * Chromium may simply never produce (a host window that is not compositing, a
- * guest renderer that is stuck), and an unbounded one used to hold the capture
- * refs and the readiness probe until the main-process timeout gave up on a call
- * the renderer was still running.
- */
-const STAGE_TIMEOUT_MS: Record<ScreenshotStage, number> = {
-  'host-paint': 2_000,
-  // Per guest round trip (probe install/removal, one probe capture), not per loop.
-  readiness: 2_000,
-  selector: 3_000,
-  capture: 3_000,
-  encode: 3_000,
-}
 /**
  * A healthy screenshot takes 0.2–0.3s; the slowest legitimate path (both probe
  * loops running to their 1.5s deadlines, a capture retry, a large encode) stays
@@ -36,62 +20,6 @@ const STAGE_TIMEOUT_MS: Record<ScreenshotStage, number> = {
 export const SCREENSHOT_BUDGET_MS = 8_000
 const PROBE_READY_TIMEOUT_MS = 1_500
 const PROBE_CLEANUP_TIMEOUT_MS = 1_000
-
-const STAGE_FAILURE: Record<ScreenshotStage, string> = {
-  'host-paint': 'the SuperOne window did not paint a frame. Retry the screenshot; if it fails again, bring the SuperOne window on screen',
-  readiness: 'the page did not respond or produced no frame. Retry once; if it fails again the page renderer is stuck: reload the tab (browser_tabs action=reload), and reopen it if reloading does not help',
-  selector: 'the page did not answer the selector lookup, so its main thread is busy. Retry, or reload the tab',
-  capture: 'the page produced no frame. Retry once; if it fails again the page renderer is stuck: reload the tab (browser_tabs action=reload), and reopen it if reloading does not help',
-  encode: 'encoding the captured image stalled. Retry, or pass a selector to capture a smaller region',
-}
-
-export class ScreenshotStageError extends Error {
-  constructor(readonly stage: ScreenshotStage, timeoutMs: number) {
-    super(`Screenshot timed out at stage '${stage}' after ${timeoutMs}ms: ${STAGE_FAILURE[stage]}.`)
-    this.name = 'ScreenshotStageError'
-  }
-}
-
-function abortError(signal: AbortSignal): Error {
-  return signal.reason instanceof Error ? signal.reason : new Error('Screenshot was cancelled')
-}
-
-/**
- * Race `work` against the stage's own limit, the screenshot's remaining budget
- * and cancellation. The abandoned work keeps running; callers only rely on this
- * returning so their cleanup runs.
- */
-export class ScreenshotBudget {
-  private readonly deadline: number
-
-  constructor(totalMs: number, private readonly signal?: AbortSignal) {
-    this.deadline = Date.now() + totalMs
-  }
-
-  stage<T>(stage: ScreenshotStage, work: Promise<T>): Promise<T> {
-    const timeoutMs = Math.max(0, Math.min(STAGE_TIMEOUT_MS[stage], this.deadline - Date.now()))
-    return boundedWait(work, timeoutMs, () => new ScreenshotStageError(stage, timeoutMs), this.signal)
-  }
-}
-
-function boundedWait<T>(work: Promise<T>, timeoutMs: number, onTimeout: () => Error, signal?: AbortSignal): Promise<T> {
-  if (signal?.aborted) return Promise.reject(abortError(signal))
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => settle(() => reject(abortError(signal!)))
-    const timer = setTimeout(() => settle(() => reject(onTimeout())), timeoutMs)
-    signal?.addEventListener('abort', onAbort, { once: true })
-    function settle(finish: () => void) {
-      clearTimeout(timer)
-      signal?.removeEventListener('abort', onAbort)
-      finish()
-    }
-    work.then((value) => settle(() => resolve(value)), (error: unknown) => settle(() => reject(error)))
-  })
-}
-
-export function nextPaint(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-}
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -117,14 +45,14 @@ async function readBrowserCapturePixels(image: Electron.NativeImage): Promise<{
   }
 }
 
-async function analyzeProbeFrame(id: string, budget: ScreenshotBudget): Promise<CaptureProbeAnalysis | null> {
+async function analyzeProbeFrame(id: string, budget: CaptureBudget): Promise<CaptureProbeAnalysis | null> {
   const image = await budget.stage('readiness', browserCapture(id, BROWSER_CAPTURE_PROBE_RECT))
   if (!image || image.isEmpty()) return null
   const pixels = await budget.stage('readiness', readBrowserCapturePixels(image))
   return analyzeBrowserCaptureProbe(pixels.data, pixels.width, pixels.height)
 }
 
-async function waitForFullResolutionBrowserCapture(id: string, budget: ScreenshotBudget): Promise<void> {
+async function waitForFullResolutionBrowserCapture(id: string, budget: CaptureBudget): Promise<void> {
   const deadline = Date.now() + PROBE_READY_TIMEOUT_MS
   let consecutiveSharpFrames = 0
   let lastAnalysis: CaptureProbeAnalysis = { ready: false, matchedPixels: 0, sampledPixels: 0, centerPixels: [] }
@@ -152,11 +80,7 @@ async function waitForFullResolutionBrowserCapture(id: string, budget: Screensho
   } finally {
     // Runs on every exit, with its own short bound: a failed or cancelled capture
     // must not leave the ruler painted over the page.
-    await boundedWait(
-      browserExecJs(id, REMOVE_BROWSER_CAPTURE_PROBE_SCRIPT),
-      PROBE_CLEANUP_TIMEOUT_MS,
-      () => new Error('Browser capture probe removal timed out'),
-    ).catch(() => {})
+    await settleWithin(browserExecJs(id, REMOVE_BROWSER_CAPTURE_PROBE_SCRIPT), PROBE_CLEANUP_TIMEOUT_MS)
   }
 
   // Do not let the transient ruler leak into the returned screenshot. Seeing its
@@ -184,7 +108,7 @@ export async function captureBrowserScreenshot(
   selector: string | undefined,
   signal?: AbortSignal,
 ): Promise<BrowserScreenshot> {
-  const budget = new ScreenshotBudget(SCREENSHOT_BUDGET_MS, signal)
+  const budget = new CaptureBudget('Screenshot', SCREENSHOT_BUDGET_MS, signal)
   // Force the tab into the viewport for the duration of the capture: a hidden
   // or background tab rests off-screen / display:none, where capturePage would
   // hang (Chromium never rasterizes an off-viewport layer). beginCapture flips

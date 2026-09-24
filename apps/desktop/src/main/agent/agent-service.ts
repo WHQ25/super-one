@@ -18,6 +18,7 @@ import { execFileSync } from 'child_process'
 import { statSync } from 'fs'
 import log from '../logger'
 import { ensureShellPath } from '../shell-path'
+import { whenHighlighterReady } from '../remote-highlighter'
 import { gitRun } from '../git-run'
 import { resolve, join, basename, dirname, sep } from 'path'
 import { ipcMain, type BrowserWindow } from 'electron'
@@ -1243,6 +1244,7 @@ export class AgentService {
           const result = command.anchorId
             ? loadSessionMessageWindow(command.sessionId, command.anchorId, command.direction ?? 'around', command.limit)
             : loadSessionMessagesPaginated(command.sessionId, command.limit ?? 10, command.cursor)
+          await whenHighlighterReady()
           const stripped = stripMessagesForRemote(isProgressiveSession(deviceId, command.sessionId) ? result.messages.map(projectProgressiveMessage) : result.messages, command.projectPath)
           const sessionProvider = readSessionHarnessId(command.sessionId) ?? 'claude'
           trace('remote.cmd', 'load_session_messages_result', { projectPath: command.projectPath, sessionId: command.sessionId, messageCount: stripped.length, hasMore: result.hasMore, cursor: result.cursor, provider: sessionProvider })

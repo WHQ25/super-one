@@ -44,7 +44,12 @@ export type DiffToken = [string, string | null]
 export type DiffTokenLine = DiffToken[]
 
 export function initHighlighter(): void {
-  ensureInit()
+  void whenHighlighterReady()
+}
+
+/** Phone content paths await this so a first snapshot is not sent unhighlighted. Never rejects. */
+export function whenHighlighterReady(): Promise<void> {
+  return ensureInit().catch(() => undefined)
 }
 
 const SGR_COLORS: Record<number, string> = {

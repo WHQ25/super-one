@@ -1,9 +1,11 @@
 import { projectProgressiveMessage } from '../remote/progressive-session'
 import type { Session } from '../session/types'
 import { remoteRestoreMessages, stripEventForRemote, stripMessagesForRemote } from '../remote-content'
+import { whenHighlighterReady } from '../remote-highlighter'
 import { loadRealtimeTimeline } from '../session/realtime-timeline-repo'
 
 export async function buildRemoteSessionSnapshot(session: Session | undefined | null, projectPath: string, sessionId: string, progressive = false) {
+  await whenHighlighterReady()
   const snapshot = session?.snapshot
   const inProgressMessages = stripMessagesForRemote(remoteRestoreMessages(snapshot?.messages ?? []).map(message => progressive ? projectProgressiveMessage(message) : message), projectPath)
   const pendingInteractions = session?.getPendingInteractions().map((event) => stripEventForRemote(event, projectPath)) ?? []

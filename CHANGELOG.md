@@ -68,6 +68,9 @@ Every alpha release keeps its own notes on its GitHub Release.
   cancelling its tool.
 - DeepSeek sessions can list and read resources from configured MCP
   servers.
+- DeepSeek turns show files that shell commands created, changed, or
+  deleted as Write, Edit, or Delete rows with their diffs, and include
+  them in the turn's file and line counts.
 - Settings: session storage is split into single-action rows.
 - Chat view translates the compaction indicators.
 

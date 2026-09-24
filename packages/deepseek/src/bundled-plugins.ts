@@ -62,6 +62,7 @@ const CORE_PLUGINS: readonly { name: string; version: string }[] = [
   { name: '@deepseek-ai/dsh-tools', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-user-approval', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-user-questions', version: DSH_VERSION },
+  { name: '@deepseek-ai/dsh-workspace-changes', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-web', version: DSH_VERSION },
   { name: '@deepseek-ai/dsh-web-search-deepseek', version: DSH_VERSION },
 ]

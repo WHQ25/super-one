@@ -1,5 +1,6 @@
 import type { AgentEvent, ChatMessage, ContentBlock, RetractedBlockRef, TodoItem } from '@superone/shared/agent-types'
 import { buildAgentErrorInfo } from '@superone/shared/agent-error'
+import type { BashEditToolUse } from '@superone/shared/bash-edit-diff'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 // Side-effect type imports: dsh merges each plugin's event vocabulary into
@@ -204,6 +205,25 @@ export class DeepseekEventMapper {
     const messageId = nested ? nested.resolveMessageId() : this.openMessageId
     if (blocks.length === 0 || !messageId) return
     this.emit({ type: 'content_retracted', messageId, blocks })
+  }
+
+  /**
+   * File-edit rows for changes no tool call showed, completed in place.
+   * @param rows - one per changed file, from the turn's workspace snapshot.
+   */
+  emitEditRows(rows: readonly BashEditToolUse[]): void {
+    for (const row of rows) {
+      this.emitDelta({
+        type: 'tool_use',
+        toolName: row.toolName,
+        toolUseId: row.toolUseId,
+        input: row.input,
+        status: 'complete',
+        toolFilePath: row.filePath,
+        ...(!row.pathOnly ? { toolLineDelta: { added: row.added, removed: row.removed } } : {}),
+      })
+      this.emitDelta({ type: 'tool_result', toolUseId: row.toolUseId, summary: '' })
+    }
   }
 
   handle(event: SessionEvent): void {

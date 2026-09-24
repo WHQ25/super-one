@@ -48,6 +48,8 @@ import {
 } from './presets'
 import { readStoredSession } from './stored-session'
 import { presentQuestions, type DeepseekQuestion } from './user-questions'
+import { fileToolPath, workspaceChangeRows, workspacePath } from './workspace-changes'
+import type {} from '@deepseek-ai/dsh-workspace-changes'
 import {
   createDeepseekTree,
   deepseekAdapterPlugin,
@@ -190,6 +192,11 @@ interface AgentRecord {
   /** This session's permission answerer, also used by its delegated children. */
   requestPermission?: (request: DeepseekToolPermissionRequest) => Promise<ToolApprovalDecision>
   askUser?: CreateDeepseekAgentOptions['askUser']
+  cwd: string
+  /** Absolute paths the open turn's file-tool calls named; their rows already show the diff. */
+  fileToolPaths: Set<string>
+  /** The open turn's latest `workspace/changes` announcement, not yet rendered. */
+  workspaceChanges?: { turn: number; seq: number }
   dispose: () => Promise<void>
 }
 
@@ -318,7 +325,16 @@ export class DeepseekRuntime {
       for (const listener of runtime.logListeners) listener(id)
       const record = runtime.records.get(id)
       if (record) {
-        if (event.type === 'turn/start') record.started = true
+        if (event.type === 'turn/start') {
+          record.started = true
+          record.fileToolPaths.clear()
+          record.workspaceChanges = undefined
+        } else if (event.type === 'tool/call') {
+          const path = fileToolPath(event.data.name, event.data.arguments)
+          if (path !== undefined) record.fileToolPaths.add(workspacePath(record.cwd, path))
+        } else if (event.type === 'workspace/changes') {
+          record.workspaceChanges = { turn: event.data.turn, seq: event.seq }
+        }
         record.mapper.handle(event)
         return
       }
@@ -437,6 +453,27 @@ export class DeepseekRuntime {
         })
       })
     }
+
+    // The recorder announces a turn's changed files from its own
+    // `turn-stopping` listener, mounted with the host plane before this one;
+    // the hook is serial and awaited, so rows rendered here still land inside
+    // the turn, before its message completes.
+    bridge.on('agent/turn-stopping', async ({ agent, turn, signal }) => {
+      const record = runtime.records.get(String(agent.id))
+      const announced = record?.workspaceChanges
+      const service = bridge.get('workspaceChanges')
+      if (!record || !announced || announced.turn !== turn || !service) return
+      record.workspaceChanges = undefined
+      const rows = await workspaceChangeRows(
+        service,
+        String(agent.id),
+        announced.seq,
+        `dsh:${String(agent.id)}:${turn}#workspace`,
+        record.fileToolPaths,
+        signal,
+      ).catch(() => [])
+      record.mapper.emitEditRows(rows)
+    })
 
     // Questions and plan reviews. Only a runtime ROOT may ask — dsh refuses a
     // delegated child with `DELEGATED_CALLER` before this waterfall runs — so
@@ -747,6 +784,8 @@ export class DeepseekRuntime {
       route: {},
       ...(toolPlane ? { requestPermission: toolPlane.requestPermission } : {}),
       ...(options.askUser ? { askUser: options.askUser } : {}),
+      cwd: options.cwd,
+      fileToolPaths: new Set(),
       dispose: () => handle.dispose(),
     }
     this.records.set(options.sessionId, record)

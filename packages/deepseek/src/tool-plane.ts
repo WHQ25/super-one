@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
+import * as WorkspaceChangeRecorder from '@deepseek-ai/dsh-workspace-changes'
 import LocalSandboxProvider from '@deepseek-ai/dsh-sandbox-local'
 import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
 import SandboxedFileSystem from '@deepseek-ai/dsh-fs-sandbox'
@@ -100,6 +101,11 @@ export interface HostToolPlaneOptions {
 
 export async function mountHostToolPlane(ctx: Context, options: HostToolPlaneOptions = {}): Promise<void> {
   await ctx.plugin(LocalSubprocessRuntime)
+  // Snapshots each top-level turn's working tree with git (through a private
+  // index and object directory; the repository is only read) and announces
+  // the files that changed, shell edits included. Upstream's defaults: the
+  // schema fills every bound, which its declared type does not reflect.
+  await ctx.plugin(WorkspaceChangeRecorder, {} as WorkspaceChangeRecorder.Config)
   // The confinement tier, mounted before its consumers. `sandbox-local` picks
   // the platform runner (Seatbelt on macOS, bwrap/Landlock on Linux, a
   // restricted token on Windows) and fails closed with `SANDBOX_UNAVAILABLE`

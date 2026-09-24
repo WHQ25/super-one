@@ -27,7 +27,7 @@
  * 1.0.0, and App Store Connect will not accept a `CFBundleVersion` it has seen.
  * Android only requires that the code increase, so it absorbs the jump.
  */
-const BUILD_CODE = 27
+const BUILD_CODE = 28
 
 /**
  * Write the shared build code into both platform blocks.

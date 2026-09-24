@@ -3,7 +3,6 @@ import path from 'node:path'
 import { rm } from 'node:fs/promises'
 
 const PROJECT_ROOT = process.cwd()
-const MAIN_ENTRY = path.join(PROJECT_ROOT, 'out/main/index.js')
 const INSTANCE_NAME = 'playwright'
 const USER_DATA_DIR = path.join(PROJECT_ROOT, '.dev-data', `instance-${INSTANCE_NAME}`)
 
@@ -26,7 +25,8 @@ test.describe('app launch', () => {
   test.beforeAll(async () => {
     await rm(USER_DATA_DIR, { recursive: true, force: true })
     app = await electron.launch({
-      args: [MAIN_ENTRY],
+      // `.` boots through package.json `main`, the same entry the packaged app uses.
+      args: ['.'],
       cwd: PROJECT_ROOT,
       env: {
         ...process.env,

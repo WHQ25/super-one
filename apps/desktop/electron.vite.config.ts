@@ -35,6 +35,7 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         external: mainExternal,
         input: {
+          bootstrap: resolve('src/main/bootstrap.ts'),
           index: resolve('src/main/index.ts'),
           'superone-mcp-stdio-bridge': resolve('src/main/mcp/superone-mcp-stdio-bridge.ts'),
           'llm-proxy-entry': resolve('src/main/providers/llm-proxy-entry.ts'),

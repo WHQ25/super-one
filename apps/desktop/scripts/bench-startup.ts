@@ -58,7 +58,7 @@ interface ProcessTiming {
 
 function launch(): Promise<ElectronApplication> {
   return electron.launch({
-    ...(args.app ? { executablePath: args.app, args: [] } : { args: [join(process.cwd(), 'out/main/index.js')] }),
+    ...(args.app ? { executablePath: args.app, args: [] } : { args: ['.'] }),
     cwd: process.cwd(),
     env: { ...process.env, SUPERONE_INSTANCE: INSTANCE, SUPERONE_E2E: '1' },
     timeout: RUN_TIMEOUT_MS,

@@ -1,7 +1,7 @@
 {
   "name": "@superone/desktop",
   "version": "0.69.0",
-  "main": "./out/main/index.js",
+  "main": "./out/main/bootstrap.js",
   "type": "module",
   "license": "BUSL-1.1",
   "private": true,

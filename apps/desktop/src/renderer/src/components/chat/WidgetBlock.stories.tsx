@@ -119,6 +119,19 @@ export const Gallery: Story = {
   ),
 }
 
+const HAIRLINE_EDGE = `<div style="border:0.5px solid var(--color-border-primary);border-radius:8px;padding:12px">Full-width panel</div>
+<div style="display:flex;justify-content:flex-end;margin-top:12px"><button>Right-aligned action ↗</button></div>`
+
+export const FractionalWidth: Story = {
+  name: 'Fractional container width',
+  render: () => (
+    <div style={{ width: 600.25 }}>
+      <Note>The right hairline border and button edge stay visible after the iframe replaces the streaming preview.</Note>
+      {block({ title: 'hairline_edge', widget_code: HAIRLINE_EDGE, width: 600, height: 100, isSVG: false })}
+    </div>
+  ),
+}
+
 export const WidgetListTemplates: Story = {
   name: 'widget_list_templates',
   render: () => (

@@ -2,7 +2,7 @@ import { useRef, useState, useMemo, useLayoutEffect, useEffect, useCallback } fr
 import { useTranslation } from 'react-i18next'
 import morphdom from 'morphdom'
 import { SVG_STYLES } from '@superone/shared/generative-ui/svg-styles'
-import { buildWidgetSrcdoc, widgetBodyStyle } from '@superone/shared/generative-ui/widget-srcdoc'
+import { buildWidgetSrcdoc, widgetBodyStyle, WIDGET_FRAME_WIDTH } from '@superone/shared/generative-ui/widget-srcdoc'
 import type { WidgetData } from '@superone/shared/generative-ui/types'
 import { Download, Bookmark } from 'lucide-react'
 import { useChatStore } from '@/stores/chat'
@@ -177,10 +177,10 @@ function AutoIframe({ srcdoc, title, fallbackHeight, hidden, onReady }: {
       srcDoc={srcdoc}
       onLoad={handleLoad}
       sandbox="allow-scripts"
-      className="w-full border-0 rounded-md"
+      className="border-0 rounded-md"
       style={hidden
-        ? { height, visibility: 'hidden' as const, position: 'absolute' as const, inset: 0 }
-        : { height }}
+        ? { width: WIDGET_FRAME_WIDTH, height, visibility: 'hidden' as const, position: 'absolute' as const, inset: 0 }
+        : { width: WIDGET_FRAME_WIDTH, height }}
       title={title}
     />
   )

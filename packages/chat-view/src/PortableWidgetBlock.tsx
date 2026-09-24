@@ -2,7 +2,7 @@ import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, u
 import { useTranslation } from 'react-i18next'
 import { Bookmark, Check, Loader2 } from 'lucide-react'
 import type { WidgetData } from '@superone/shared/generative-ui/types'
-import { buildWidgetSrcdoc, widgetThemeVars } from '@superone/shared/generative-ui/widget-srcdoc'
+import { buildWidgetSrcdoc, widgetThemeVars, WIDGET_FRAME_WIDTH } from '@superone/shared/generative-ui/widget-srcdoc'
 import { requestNative, requestNativeAsync } from './bridge'
 import { PortableTurnContext } from './portable-turn-context'
 
@@ -231,8 +231,8 @@ export function PortableWidgetBlock({ data }: { data: WidgetData }) {
         srcDoc={srcdoc}
         onLoad={postTheme}
         sandbox="allow-scripts"
-        className="w-full rounded-md border-0"
-        style={{ height }}
+        className="rounded-md border-0"
+        style={{ width: WIDGET_FRAME_WIDTH, height }}
       />
       {save.kind === 'editing' ? <SaveForm data={data} onDone={setSave} /> : null}
       {save.kind === 'failed' ? (

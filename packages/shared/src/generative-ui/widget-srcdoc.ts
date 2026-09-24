@@ -21,6 +21,15 @@ export const WIDGET_MESSAGE_TYPES = [
 
 export type WidgetMessageType = (typeof WIDGET_MESSAGE_TYPES)[number]
 
+/**
+ * The width a host gives the widget iframe: its container's width, floored to a whole pixel.
+ *
+ * A frame's viewport is snapped to the pixel grid on its own, so a fractional box (say
+ * 600.25px) lays its document out at 600.5px and clips the overflow at the frame edge.
+ * A widget that fills the frame loses its right edge — typically a hairline border.
+ */
+export const WIDGET_FRAME_WIDTH = 'round(down, 100%, 1px)'
+
 export function widgetBodyStyle(isSVG: boolean): string {
   return isSVG
     ? 'margin:0;display:flex;align-items:center;justify-content:center;min-height:100%;background:transparent;color:var(--color-text-primary);'

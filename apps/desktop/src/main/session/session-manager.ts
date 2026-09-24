@@ -83,6 +83,8 @@ function resolveResumedCwd(data: LoadedSessionData): { cwd: string; missingWorkt
 
 export class SessionManagerImpl implements SessionManagerContract {
   private sessions = new Map<string, Session>()
+  /** Read receipts of sessions disposed in this process, handed back once if one is resumed. */
+  private disposedReceipts = new Map<string, string | null>()
   private sessionProjects = new Map<string, string>()
   private activeByProject = new Map<string, string>()
   private projectResources: ProjectResourceCache
@@ -367,6 +369,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       sandboxInfo,
       resumedProviderSessionId: data.providerSessionId ?? undefined,
       initialMessages: data.messages,
+      seenCompletedMessageId: this.takeDisposedReceipt(sessionId),
       initialTotalCostUsd: data.totalCostUsd,
       initialContextTokens: data.contextTokens,
       title: data.title ?? null,
@@ -457,6 +460,12 @@ export class SessionManagerImpl implements SessionManagerContract {
     }
   }
 
+  private takeDisposedReceipt(sessionId: string): string | null | undefined {
+    const receipt = this.disposedReceipts.get(sessionId)
+    this.disposedReceipts.delete(sessionId)
+    return receipt
+  }
+
   async disposeSession(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId)
     if (!session) return
@@ -466,6 +475,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       this.perSessionUnsub.delete(sessionId)
     }
     await session.dispose()
+    this.disposedReceipts.set(sessionId, session.seenCompletedMessageId)
     await closeSuperoneMcpHttpSessions(sessionId)
     try {
       const { disposeDeviceAgentSession } = await import('../device-agent')

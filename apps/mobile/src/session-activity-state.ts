@@ -57,6 +57,10 @@ export function mergeSessionActivity(
   const newCompletion = idle && (
     (incoming.completedMessageId != null && previous !== undefined && incoming.completedMessageId !== previous.completedMessageId)
     || (completed && (!previous || LIVE_SESSION_STATUSES.has(previous.status)))
+    // First sighting — a cold start after the phone was away. Without the
+    // host's receipt there is no telling an unread completion from history;
+    // with it, the receipt check below decides.
+    || (previous === undefined && incoming.completedMessageId != null && incoming.seenCompletedMessageId !== undefined)
   )
   const isUnseen = incoming.sessionId !== viewedSessionId
     && (!!previous?.isUnseen || newCompletion)

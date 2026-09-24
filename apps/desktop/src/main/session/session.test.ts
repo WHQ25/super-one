@@ -1818,8 +1818,24 @@ describe('Session read receipt', () => {
     createdAt: '', providerId: 'claude',
   }
 
-  it('records the latest completion as read when the session comes on screen, once per completion', () => {
+  const finishRun = (backend: FakeBackend) => {
+    backend.emit({ type: 'message_start', message: { ...reply, status: 'streaming' } })
+    backend.emit({ type: 'message_complete', messageId: 'reply-1', metadata: {} })
+    backend.emit({ type: 'status_change', status: 'idle' })
+  }
+
+  it('counts restored history as read, so a cold client does not see old completions as new', () => {
     const { session } = makeSession({ initialMessages: [reply] })
+    expect(session.seenCompletedMessageId).toBe('reply-1')
+  })
+
+  it('keeps a receipt carried over from an earlier dispose, unread included', () => {
+    expect(makeSession({ initialMessages: [reply], seenCompletedMessageId: null }).session.seenCompletedMessageId).toBeNull()
+  })
+
+  it('records the latest completion as read when the session comes on screen, once per completion', () => {
+    const { session, backend } = makeSession()
+    finishRun(backend)
     const received: AgentEvent[] = []
     session.on((e) => received.push(e))
     expect(session.seenCompletedMessageId).toBeNull()
@@ -1849,7 +1865,8 @@ describe('Session read receipt', () => {
   })
 
   it('does not count a receipt as agent activity: recency and idle release are untouched', () => {
-    const { session, backend } = makeSession({ initialMessages: [reply] })
+    const { session, backend } = makeSession()
+    finishRun(backend)
     backend.activeRuntime = true
     const lastEventAt = session.snapshot.lastEventAt
     const idleAt = Date.now() + 60_000
@@ -1862,9 +1879,7 @@ describe('Session read receipt', () => {
 
   it('leaves a run that finishes off screen unread until a client reports it', () => {
     const { session, backend } = makeSession()
-    backend.emit({ type: 'message_start', message: { ...reply, status: 'streaming' } })
-    backend.emit({ type: 'message_complete', messageId: 'reply-1', metadata: {} })
-    backend.emit({ type: 'status_change', status: 'idle' })
+    finishRun(backend)
     expect(session.seenCompletedMessageId).toBeNull()
 
     session.markSeen()

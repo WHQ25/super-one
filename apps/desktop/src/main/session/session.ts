@@ -113,6 +113,8 @@ export interface SessionConstructorOptions {
   missingWorktreePath?: string | null
   resumedProviderSessionId?: string
   initialMessages?: ChatMessage[]
+  /** Receipt this process recorded before the session was disposed; restored history counts as read without one. */
+  seenCompletedMessageId?: string | null
   initialTotalCostUsd?: number
   initialContextTokens?: number
   apiProviderId?: string | null
@@ -569,6 +571,14 @@ export class Session implements SessionContract {
     this.createdAt = opts.createdAt ?? Date.now()
     this._providerSessionId = opts.resumedProviderSessionId ?? null
     if (opts.initialMessages?.length) this._messages = [...opts.initialMessages]
+    // Restored history counts as read, as it does in a freshly started desktop
+    // sidebar: only a completion that lands in this process can be unread.
+    // Without this, a phone that reconnects cold reads every restored session
+    // as an unseen completion. A session disposed earlier in this process
+    // brings its own receipt back, so an unread completion stays unread.
+    this._seenCompletedMessageId = opts.seenCompletedMessageId !== undefined
+      ? opts.seenCompletedMessageId
+      : lastCompletedMessageId(this._messages)
     if (opts.title) this._title = opts.title
     this._totalCostUsd = opts.initialTotalCostUsd ?? 0
     this._contextTokens = opts.initialContextTokens ?? 0

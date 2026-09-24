@@ -19,6 +19,17 @@ describe('unseen session completion', () => {
     expect(mergeSessionActivity(undefined, idle, null).isUnseen).toBe(false)
     expect(mergeSessionActivity(idle, { ...idle, completedMessageId: 'reply-2' }, null).isUnseen).toBe(true)
   })
+  it('on a cold start, trusts the host receipt to tell an unread completion from history', () => {
+    // Nothing read anywhere yet: a run finished while the phone was away.
+    expect(mergeSessionActivity(undefined, { ...idle, seenCompletedMessageId: null }, null).isUnseen).toBe(true)
+    expect(mergeSessionActivity(undefined, { ...idle, seenCompletedMessageId: 'reply-0' }, null).isUnseen).toBe(true)
+    // Read on desktop, or restored history the host counts as read.
+    expect(mergeSessionActivity(undefined, { ...idle, seenCompletedMessageId: 'reply-1' }, null).isUnseen).toBe(false)
+    // Still running, never finished, or on screen here.
+    expect(mergeSessionActivity(undefined, { ...idle, status: 'streaming', seenCompletedMessageId: null }, null).isUnseen).toBe(false)
+    expect(mergeSessionActivity(undefined, { ...idle, completedMessageId: null, seenCompletedMessageId: null }, null).isUnseen).toBe(false)
+    expect(mergeSessionActivity(undefined, { ...idle, seenCompletedMessageId: null }, 'other').isUnseen).toBe(false)
+  })
   it('does not re-mark a read completion on duplicate terminal delivery', () => {
     expect(mergeSessionActivity(idle, idle, null, true).isUnseen).toBe(false)
     expect(mergeSessionActivity({ ...idle, status: 'ended' }, idle, null, true).isUnseen).toBe(false)

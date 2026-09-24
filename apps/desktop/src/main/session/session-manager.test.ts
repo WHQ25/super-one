@@ -480,6 +480,20 @@ describe('SessionManager', () => {
   })
 
   describe('getSession / listProjectSessions / disposeSession', () => {
+    it('keeps an unread completion unread across dispose and resume', async () => {
+      seedProvider('codex-base', 'codex')
+      let messages: ChatMessage[] = []
+      const manager = new SessionManagerImpl({ loadSession: () => ({ projectPath: '/project', providerId: 'codex-base', providerSessionId: 'thread-a', apiProviderId: null, messages, totalCostUsd: 0, contextTokens: 0 }) })
+      expect(manager.resumeSession('restored').seenCompletedMessageId).toBeNull()
+      // A reply lands and is persisted while nobody looks, then the session is disposed.
+      messages = [{ id: 'reply-1', role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: 'codex' } as unknown as ChatMessage]
+      await manager.disposeSession('restored')
+      expect(manager.resumeSession('restored').seenCompletedMessageId).toBeNull()
+      // Never disposed here: restored history counts as read.
+      expect(manager.resumeSession('cold').seenCompletedMessageId).toBe('reply-1')
+      await manager.disposeAllSessions()
+    })
+
     it('getSession returns null for unknown id', () => {
       expect(mgr.getSession('unknown')).toBeNull()
     })

@@ -378,6 +378,12 @@ export interface SessionBackend {
   clearCodexGoal?(threadId: string | null): Promise<boolean>
   stopTask?(taskId: string): Promise<void>
   /**
+   * Stop every background task the session started, keeping the session. Used
+   * when a session is archived: it leaves the list but not the process, so its
+   * background work would otherwise run on unseen.
+   */
+  stopBackgroundTasks?(): Promise<void>
+  /**
    * Stage an out-of-band instruction to ride the NEXT turn, using whatever the
    * harness offers natively for conversation-level context.
    *
@@ -541,6 +547,8 @@ export interface Session {
   setCodexGoal(threadId: string | null, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>
   clearCodexGoal(threadId: string | null): Promise<boolean>
   dispatchBackendCommand(cmd: BackendCommand): Promise<void>
+  /** Stop the backend's background tasks, if it runs any (see `SessionBackend.stopBackgroundTasks`). */
+  stopBackgroundTasks(): Promise<void>
   updateProviderConfig(nextConfig: unknown): void
   markNeedsRebuild(): void
   getAdditionalDirectoriesSnapshot(): string[]

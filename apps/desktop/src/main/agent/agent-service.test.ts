@@ -3018,6 +3018,25 @@ describe('AgentService.handleRemoteCommand', () => {
     expect(respond).toHaveBeenCalledWith('archive-1', { ok: true })
   })
 
+  it('stops an archived session\'s background tasks and keeps the session', async () => {
+    const stopBackgroundTasks = vi.fn(async () => {})
+    const disposeSession = vi.fn(async () => {})
+    const respond = vi.fn()
+    const service = new AgentService()
+    ;(service as { sessionManager: unknown }).sessionManager = { getSession: vi.fn(() => null), stopBackgroundTasks, disposeSession }
+
+    await service.handleRemoteCommand({
+      type: 'archive_session',
+      requestId: 'archive-2',
+      projectPath: '/project',
+      sessionId: 'session-1',
+    }, respond)
+
+    expect(stopBackgroundTasks).toHaveBeenCalledWith('session-1')
+    expect(disposeSession).not.toHaveBeenCalled()
+    expect(respond).toHaveBeenCalledWith('archive-2', { ok: true })
+  })
+
   it('disposes a live remote session before deleting its transcript', async () => {
     const disposeSession = vi.fn(async () => {})
     const respond = vi.fn()

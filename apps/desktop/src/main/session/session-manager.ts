@@ -466,6 +466,11 @@ export class SessionManagerImpl implements SessionManagerContract {
     return receipt
   }
 
+  /** Stop a live session's background tasks; a session with no runtime has none. */
+  async stopBackgroundTasks(sessionId: string): Promise<void> {
+    await this.sessions.get(sessionId)?.stopBackgroundTasks()
+  }
+
   async disposeSession(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId)
     if (!session) return

@@ -1238,6 +1238,10 @@ export class Session implements SessionContract {
     return this.backend.reloadPlugins()
   }
 
+  async stopBackgroundTasks(): Promise<void> {
+    await this.backend.stopBackgroundTasks?.()
+  }
+
   async startQueuedMessages(): Promise<boolean> {
     this.assertNotDisposed()
     if (this.harnessId !== 'codex' || this.isStreaming()) return false
@@ -1468,7 +1472,8 @@ export class Session implements SessionContract {
         return
       }
       case 'claude.stop_task': {
-        if (this.harnessId !== 'claude') return
+        // Named for the harness it was introduced for; any backend that
+        // implements `stopTask` answers the background list's Stop button.
         if (!this.backend.stopTask) return
         await this.backend.stopTask(cmd.taskId)
         return

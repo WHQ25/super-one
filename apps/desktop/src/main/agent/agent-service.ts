@@ -1562,8 +1562,7 @@ export class AgentService {
           })
           break
         }
-        dbHideSession(command.sessionId, true)
-        this.emitSessionsChanged()
+        await this.setSessionHidden(command.sessionId, true)
         await respond?.(command.requestId, { ok: true })
         break
       }
@@ -3994,14 +3993,22 @@ export class AgentService {
       this.emitSessionsChanged()
     })
 
-    ipcMain.handle(AgentIpcChannels.SESSIONS_HIDE, (_event, sessionId: string, hidden: boolean) => {
-      dbHideSession(sessionId, hidden)
-      this.emitSessionsChanged()
-    })
+    ipcMain.handle(AgentIpcChannels.SESSIONS_HIDE, (_event, sessionId: string, hidden: boolean) =>
+      this.setSessionHidden(sessionId, hidden))
 
     ipcMain.handle(AgentIpcChannels.SESSIONS_LIST_PINNED, () => {
       return listPinnedSessions()
     })
+  }
+
+  /**
+   * Archive or unarchive a session. Archiving keeps the session's runtime, so
+   * its background tasks are stopped here rather than left running unseen.
+   */
+  private async setSessionHidden(sessionId: string, hidden: boolean): Promise<void> {
+    dbHideSession(sessionId, hidden)
+    this.emitSessionsChanged()
+    if (hidden) await this.sessionManager?.stopBackgroundTasks(sessionId)
   }
 
   private emitSessionsChanged(): void {

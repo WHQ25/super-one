@@ -1179,8 +1179,9 @@ describe('Session state machine', () => {
       await pending
     })
 
-    it('is a no-op for non-claude sessions', async () => {
+    it('is a no-op for a backend that cannot stop tasks', async () => {
       ;({ session, backend } = makeSession({ harnessId: 'codex' }))
+      ;(backend as { stopTask?: unknown }).stopTask = undefined
       const pending = session.send({ content: 'hi', clientMessageId: 'u0' })
       await new Promise((r) => setTimeout(r, 0))
 

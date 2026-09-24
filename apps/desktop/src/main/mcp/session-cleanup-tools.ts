@@ -163,7 +163,10 @@ export async function sessionCleanupHandler(args: SessionCleanupArgs, deps: Buil
 
   if (action === 'hide' || action === 'unhide') {
     const hidden = action === 'hide'
-    for (const id of ids) hideSession(id, hidden)
+    for (const id of ids) {
+      hideSession(id, hidden)
+      if (hidden) await deps.sessionHost?.stopBackgroundTasks?.(id)
+    }
     return toolResult({
       status: 'ok',
       action,

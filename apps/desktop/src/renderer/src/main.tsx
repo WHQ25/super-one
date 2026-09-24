@@ -10,6 +10,9 @@ import { ComputerUsePermissionFloat } from './components/ComputerUsePermissionFl
 import { initI18n } from './i18n'
 import './styles/index.css'
 import './utils/scroll-overlay'
+import { markStartup } from '@superone/shared/startup-marks'
+
+markStartup('renderer-evaluated')
 
 const params = new URLSearchParams(window.location.search)
 const mode = params.get('mode')
@@ -45,6 +48,7 @@ void Promise.race([
     setTimeout(resolve, I18N_BOOT_TIMEOUT_MS)
   }),
 ]).finally(() => {
+  markStartup('react-render')
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <ErrorBoundary>

@@ -53,6 +53,7 @@ import { ModelSelector } from './ModelSelector'
 import { AddDirPopup, type AddDirPopupHandle } from './AddDirPopup'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { MAX_PROJECT_EXTRA_DIRS } from '@superone/shared/project-extra-dirs'
+import { markStartup } from '@superone/shared/startup-marks'
 import { WorkflowSlashPopup, type WorkflowSlashPopupHandle, type WorkflowApplyPayload } from './WorkflowSlashPopup'
 import { parseWorkflowSlashLine } from './workflow-slash-suggest'
 // import { ProviderSlashPopup } from './ProviderSlashPopup' // /provider popup retired — kept for reference
@@ -1778,6 +1779,11 @@ export function ChatInput() {
       },
     })
     editorRef.current = editor && !editor.isDestroyed ? editor : null
+
+    // Parent effects run after EditorContent's, so the editor view is in the DOM here.
+    useEffect(() => {
+      if (editor) markStartup('composer-ready')
+    }, [editor])
 
     const { editorEchoTextRef, isProgrammaticSetRef } = useComposerDraftSync({
       editor, text, draftJson, attachments, sessionId: displayedSessionId, readOnly: isRemoteLocked,

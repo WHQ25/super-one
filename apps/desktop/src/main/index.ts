@@ -248,6 +248,10 @@ import { applyAppIcon, clearStoredCustomIcons, getAppIcon, storeCustomIcon } fro
 import { planStartDrag } from './start-drag'
 import type { RemoteCommand, PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateAutomationRequest, ChatMessageContext, ContentBlock, WorktreeActivateRequest } from '@superone/shared/agent-types'
 import type { RemoteControlCallbacks } from './remote-control-service'
+import { markStartup } from '@superone/shared/startup-marks'
+
+// ESM hoists every import above, so this lands once the main bundle has evaluated.
+markStartup('main-evaluated')
 
 
 process.on('uncaughtException', (err: Error & { code?: string }) => {
@@ -1204,6 +1208,7 @@ function createWindow(): void {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
   }
 
+  markStartup('window-created')
   loadWindowRoute(mainWindow, '')
 }
 
@@ -5714,6 +5719,7 @@ function registerIpcHandlers(): void {
 }
 
 app.whenReady().then(async () => {
+  markStartup('app-ready')
   // Windows ties toast notifications to the Start Menu shortcut's
   // AppUserModelID, which electron-builder's NSIS target sets to `appId`. The
   // running process must declare the same id or Windows drops the toast (or

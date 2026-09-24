@@ -58,6 +58,7 @@ export function readRemoteSessionList(command: SessionListCommand, manager?: Ses
         worktreePath: session.worktreePath ?? null,
         isPinned: session.isPinned ?? false,
         parentSessionId: session.parentSessionId ?? null,
+        ...(session.isAutomation ? { isAutomation: true } : {}),
         scheduledSendAt: scheduled.get(session.sessionId) ?? null,
       }
     }),

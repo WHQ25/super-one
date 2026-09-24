@@ -39,3 +39,17 @@ export const ScheduledSends = {
 export const ScheduledSendsNarrow = {
   render: () => <MobileThemeProvider><SessionScheduledSendGallery width={240} /></MobileThemeProvider>,
 }
+
+const automation = { ...idle, session: { ...idle.session, sessionId: 'auto', title: 'Nightly dependency audit', isPinned: false, isAutomation: true } }
+
+/** Desktop precedence: running and unseen outrank the automation mark, which outranks the idle glyph. */
+export const AutomationIcon = {
+  render: () => <MobileThemeProvider>
+    <View style={{ width: 300, padding: 12, gap: 4 }}>
+      <SessionRowContent item={automation} />
+      <SessionRowContent item={{ ...automation, session: { ...automation.session, isUnseen: true } }} />
+      <SessionRowContent item={{ ...automation, session: { ...automation.session, status: 'streaming' } }} />
+      <SessionRowContent item={{ ...automation, session: { ...automation.session, isAutomation: false } }} />
+    </View>
+  </MobileThemeProvider>,
+}

@@ -49,6 +49,15 @@ describe('unseen session completion', () => {
   })
 })
 
+describe('sessionActivityIconStatus', () => {
+  it('shows automation only below running, background, and unseen, as desktop does', () => {
+    expect(sessionActivityIconStatus({ status: 'idle', isAutomation: true })).toBe('automation')
+    expect(sessionActivityIconStatus({ status: 'idle', isAutomation: true, isUnseen: true })).toBe('unseen')
+    expect(sessionActivityIconStatus({ status: 'streaming', isAutomation: true })).toBe('streaming')
+    expect(sessionActivityIconStatus({ status: 'idle' })).toBe('idle')
+  })
+})
+
 describe('projectHasAttention', () => {
   it('is true when a session in that project is live, pending or unseen', () => {
     const pending = { ...idle, sessionId: 'ask', projectPath: '/repo', pendingCount: 1 }

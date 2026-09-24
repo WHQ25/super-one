@@ -2966,6 +2966,7 @@ describe('AgentService.handleRemoteCommand', () => {
       acpAgentId: 'grok-build',
       selectedModel: 'stored-model',
       tags: ['review'],
+      isAutomation: true,
     }])
     // One query for the whole page, not one per row.
     vi.mocked(dbSessions.countMessagesForSessions).mockReturnValue(new Map([['session-acp', 7]]))
@@ -2990,6 +2991,7 @@ describe('AgentService.handleRemoteCommand', () => {
         selectedModel: 'live-model',
         status: 'streaming',
         tags: ['review'],
+        isAutomation: true,
         messageCount: 7,
         scheduledSendAt: sendAt,
       })],

@@ -68,10 +68,11 @@ export function mergeSessionActivity(
   return { ...incoming, isUnseen }
 }
 
-/** Running and background states take precedence, as in the desktop sidebar. */
-export function sessionActivityIconStatus(session: { status?: string; isUnseen?: boolean }): string | undefined {
+/** Desktop sidebar precedence: running, background, unseen, then automation. */
+export function sessionActivityIconStatus(session: { status?: string; isUnseen?: boolean; isAutomation?: boolean }): string | undefined {
   if (LIVE_SESSION_STATUSES.has(session.status ?? '')) return session.status
-  return session.isUnseen ? 'unseen' : session.status
+  if (session.isUnseen) return 'unseen'
+  return session.isAutomation ? 'automation' : session.status
 }
 
 /** A project row stays open enough to show live, unseen, and pending work. */

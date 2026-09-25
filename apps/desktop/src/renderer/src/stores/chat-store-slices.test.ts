@@ -2,6 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { AccountInfo, ChatMessage, ClaudeResources, ModelOption } from '@superone/shared/agent-types'
+import { plainTextToTiptapDoc } from '@/components/chat/chat-input/plainTextToTiptapDoc'
 
 const localStorageState = new Map<string, string>()
 const mockLocalStorage = {
@@ -536,7 +537,7 @@ describe('session-slice: queued-message edit/delete', () => {
     await useChatStore.getState().editQueuedMessage('q1')
 
     expect(activeSession().draftText).toBe('first')
-    expect(activeSession().draftJson).toBeNull()
+    expect(activeSession().draftJson).toEqual(plainTextToTiptapDoc('first'))
   })
 
   it('editQueuedMessage is a no-op when the backend rejects dequeue', async () => {

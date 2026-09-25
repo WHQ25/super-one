@@ -85,8 +85,8 @@ function shouldInterceptHostSlash(provider: ChatProvider, name: string): boolean
  * Optional `target` pins the send to a mosaic-tile (or other scoped) session so a
  * project-active pointer that has not yet flipped cannot steal the turn.
  *
- * Returns void; failures inside the IPC call are re-thrown after rolling back
- * the awaitingAssistantReply flag (when not in queued mode).
+ * Returns void; a send the host refuses is marked on its bubble with a replay
+ * kept for Resend (see `deliverUserSend`), not re-thrown.
  */
 export async function sendMessageImpl(
   set: ChatStoreSet,

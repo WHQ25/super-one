@@ -154,8 +154,12 @@ describe('mobile sending /compact', () => {
     const runtime = await openOnMobile(session)
     session.on((event) => runtime.apply(event))
     let sending: Promise<void> | undefined
-    ;(runtime as unknown as { client: { send(cmd: { content: string; clientMessageId: string }): void } }).client.send = (cmd) => {
-      sending = session.send({ content: cmd.content, clientMessageId: cmd.clientMessageId, assistantMessageId: 'a-compact' })
+    const client = (runtime as unknown as { client: { request(cmd: { type: string; content?: string; clientMessageId?: string }): Promise<unknown> } }).client
+    const request = client.request.bind(client)
+    client.request = async (cmd) => {
+      if (cmd.type !== 'send_message') return request(cmd)
+      sending = session.send({ content: cmd.content!, clientMessageId: cmd.clientMessageId, assistantMessageId: 'a-compact' })
+      return { ok: true }
     }
 
     runtime.send('/compact')

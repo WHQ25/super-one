@@ -692,11 +692,12 @@ describe('sendMessage: Claude IPC path', () => {
     expect(mockWindowAgent.sendMessage.mock.calls[0][1].priority).toBe('next')
   })
 
-  it('rolls back awaitingAssistantReply when the IPC throws (non-queued)', async () => {
+  it('marks the bubble failed and rolls back awaitingAssistantReply when the IPC throws (non-queued)', async () => {
     setupProject()
     mockWindowAgent.sendMessage.mockRejectedValueOnce(new Error('disk full'))
-    await expect(useChatStore.getState().sendMessage('boom')).rejects.toThrow('disk full')
+    await useChatStore.getState().sendMessage('boom')
     expect(activeSession().awaitingAssistantReply).toBe(false)
+    expect(activeSession().messages.at(-1)?.metadata?.sendFailure).toEqual({ error: 'disk full' })
   })
 })
 

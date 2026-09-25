@@ -42,6 +42,8 @@ describe('mobile Codex model restoration', () => {
       releaseBuffer() { return { epoch: 1, batches: buffered } },
       send(command: Record<string, unknown>) { sent.push(command) },
       async request(command: { type: string }) {
+        // Sends go out as requests so the phone gets the host's receipt.
+        if (command.type === 'send_message') { sent.push(command); return { ok: true } }
         if (command.type === 'subscribe_session') { buffered.push(host.getReplayEvents()); return { ok: true } }
         if (command.type === 'load_session_messages') return { messages: [], provider: 'codex', hasMore: false }
         if (command.type === 'get_session_state') return { status: 'idle', pendingInteractions: [], inProgressMessages: [] }

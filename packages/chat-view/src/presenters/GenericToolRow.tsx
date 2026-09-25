@@ -262,9 +262,11 @@ export function GenericToolRowPresenter({
   const isQuestionDismissed = toolName === 'AskUserQuestion' && !!result && (isDenied || result.includes('dismissed'))
   const showDenied = isDenied && !isQuestionDismissed
   const showError = !!isError && !isQuestionDismissed
-  const hasResult = !!cleanResult && (hasDeferredDetails || (!isStreaming && !isDenied && toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'))
+  // These rows never draw their result, so a deferred detail has nothing to open either.
+  const drawsResult = toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'
+  const hasResult = !!cleanResult && drawsResult && (hasDeferredDetails || (!isStreaming && !isDenied))
   const hasQA = toolName === 'AskUserQuestion' && !!cleanResult && !isStreaming && !isQuestionDismissed
-  const expandable = allowExpand && (hasDeferredDetails || hasDiff || hasResult || hasQA)
+  const expandable = allowExpand && ((hasDeferredDetails && drawsResult) || hasDiff || hasResult || hasQA)
 
   // Prefer parsed input summary; fall back to ACP/main toolSummary (Grok title / raw_output).
   // Remote surfaces invert that — see `preferSentSummary`.

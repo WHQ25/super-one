@@ -41,6 +41,22 @@ describe('portable tool row', () => {
     expect(screen.getByText('L20–59')).toBeInTheDocument()
   })
 
+  it.each(['Read', 'Skill'])('keeps a deferred %s collapsed like the desktop, which never shows its body', (toolName) => {
+    const { container } = render(
+      <PortableToolRow
+        toolName={toolName}
+        toolUseId={`${toolName}-deferred`}
+        input={JSON.stringify({ file_path: '/repo/src/session.ts', skill: 'release' })}
+        status="complete"
+        result="file contents"
+        hasDeferredDetails
+      />,
+    )
+
+    expect(container.querySelector('.tool-node')).not.toHaveClass('cursor-pointer')
+    expect(container.querySelector('.lucide-chevron-right')).toBeNull()
+  })
+
   it('dresses the file chip exactly like the desktop one, icon included', () => {
     const portable = render(
       <PortableToolRow

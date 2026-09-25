@@ -42,6 +42,21 @@ Every alpha release keeps its own notes on its GitHub Release.
 - File chips offer Copy Path and Copy Relative Path.
 - Mobile shows the automation icon on idle automation session rows.
 - Failed SuperOne tool calls are logged to the main log.
+- 3D model preview for glTF/GLB, USD/USDZ, OBJ, FBX, STL, PLY and 3MF
+  files on desktop and mobile, with orbit controls; on macOS, USDZ
+  variant sets (such as color or pose) can be switched from the preview.
+- Settings has a grouped sidebar (App, Agent, Capabilities, Connections)
+  and consistent card sections; usage charts use each harness's brand
+  color and include Cursor and OpenCode.
+- A message the host refused can be resent or edited from its bubble; a
+  failed queued message moves into the transcript instead of vanishing.
+- Agent taps and swipes on Android devices move like a finger's.
+
+### Performance
+
+- Cold start to a usable composer drops from about 5.1 s to 1.3 s: the
+  login-shell PATH is read in the background, the main and renderer
+  bundles use V8's code cache, and rarely used modules load on demand.
 
 ### Fixed
 
@@ -58,6 +73,17 @@ Every alpha release keeps its own notes on its GitHub Release.
   rows and previews match desktop.
 - Chat: long mention chips wrap cleanly; file-chip mentions use the
   file's basename.
+- Claude model and slash-command probes no longer run a paid model turn,
+  and Claude / Codex catalogs refresh after a harness upgrade.
+- Background download receipts, artifact syncs and collaboration wakes
+  no longer appear in the chat or become a remote session's title.
+- Remote nodes wait for permission, question and plan answers instead
+  of deciding them after 60 s.
+- Codex: image attachments on queued messages survive a queue refresh.
+- Chat: tool rows are evenly spaced with line stats level with the
+  header; mention rows stack details in a narrow composer and no longer
+  overlap on mobile; Read and Skill rows stay collapsed on the phone.
+- File previews blend into the panel instead of painting a box.
 
 ### Changed
 
@@ -79,6 +105,63 @@ Every alpha release keeps its own notes on its GitHub Release.
   shell. `run_code` and workflows run in a sandboxed Node process.
 - The Bash row shows edit stats with the file-diff icon; its expandable
   section is now named Terminal.
+- Subagent headers show a single label: the agent's name, or its type
+  when unnamed.
+
+## [0.69.0-alpha.1] - 2026-09-26
+
+### Added
+
+- 3D model preview: glTF/GLB, USD/USDA/USDC/USDZ, OBJ, FBX, STL, PLY and
+  3MF files open in the file tree and files previewer with orbit controls,
+  on desktop and mobile. USDZ files use Quick Look-style studio lighting,
+  and on macOS their variant sets (such as color or pose) can be switched
+  from the preview.
+- Settings: the sidebar groups pages into App, Agent, Capabilities and
+  Connections, and every page uses the same card sections. Usage charts
+  draw each harness in its brand color, and the harness chart now includes
+  Cursor and OpenCode.
+- Chat: a message the host refused is marked on its bubble with a Resend
+  button, and Edit puts it back in the composer. A failed queued message
+  moves into the transcript instead of disappearing, and phone text sends
+  no longer spin on "Sending…" forever.
+- Android device control: agent taps, long presses and swipes move like a
+  finger — a held press with small aim and pressure variation, and swipes
+  that curve and change speed.
+
+### Performance
+
+- Cold start to a usable composer drops from about 5.1 s to 1.3 s (p50,
+  packaged build): the login-shell PATH is read off the startup path, the
+  main bundle uses V8's compile cache, the renderer loads over a
+  code-cached scheme, and the Cursor SDK, the phone code highlighter and
+  OpenCode orphan cleanup no longer run at launch.
+
+### Fixed
+
+- Claude: model and slash-command probes no longer run a paid model turn.
+- Claude and Codex model / slash-command lists refresh after a harness
+  upgrade instead of staying on the old catalog.
+- Background download receipts, artifact syncs and collaboration wakes no
+  longer appear in the chat as "System wake" XML or user bubbles, or
+  become a remote session's title.
+- Remote nodes wait for permission, question and plan answers instead of
+  deciding them after 60 s, and a remote turn keeps streaming after its
+  prompt is answered elsewhere.
+- Codex: image attachments on queued messages no longer turn into their
+  text note when the queue refreshes.
+- Chat: consecutive tool rows are evenly spaced; line stats sit level with
+  the row header; in a narrow composer, mention rows move details under
+  the name.
+- Mobile: mention rows no longer draw text over each other; Read and Skill
+  rows stay collapsed; dimmed harness icons fade evenly on Android.
+- File previews (PDF, gallery, fullscreen, mobile video) blend into the
+  panel instead of painting a box.
+
+### Changed
+
+- Subagent headers show one label: the agent's name, or its type when it
+  has none. Codex agents no longer show a worker or forked badge.
 
 ## [0.69.0-alpha] - 2026-09-24
 

@@ -282,7 +282,7 @@ export function SubagentBlockPresenter({
   )
 
   return (
-    <div className="subagent-container my-1 overflow-hidden rounded border border-border/50 bg-muted/20">
+    <div className="subagent-container my-0.5 overflow-hidden rounded border border-border/50 bg-muted/20">
       <button
         type="button"
         aria-disabled={!isExpandable}

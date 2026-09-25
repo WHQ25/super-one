@@ -288,7 +288,7 @@ export function renderCodexItem(
         )
       }
       return (
-        <div key={`${item.id}-${index}`} className="space-y-0.5">
+        <div key={`${item.id}-${index}`} className="my-0.5 space-y-0.5">
           {item.changes.map((change, i) => (
             <ToolBlock
               key={`${item.id}-${index}-${i}`}
@@ -314,7 +314,7 @@ export function renderCodexItem(
         const result = chunks.join('\n\n').trim()
         const authChallenge = hasCodexMcpAuthChallenge(item)
         return (
-          <div key={`${item.id}-${index}`} className="space-y-0.5">
+          <div key={`${item.id}-${index}`} className="my-0.5 space-y-0.5">
             <ToolBlock
               toolName={`mcp__${item.server}__${item.tool}`}
               input={safeStringify(item.arguments)}

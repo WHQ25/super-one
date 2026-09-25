@@ -441,7 +441,7 @@ const CodexCommandGroup = memo(function CodexCommandGroup({
   }, [hasRunning, sealed])
 
   return (
-    <div className="tool-group my-1 min-w-0">
+    <div className="tool-group my-0.5 min-w-0">
       <button
         onClick={() => setExpanded((value) => !value)}
         className="flex w-full items-center gap-1.5 rounded bg-muted/50 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/70"

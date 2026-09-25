@@ -250,7 +250,7 @@ export function SubagentBlockMock({
   return (
     <div
       className={cn(
-        "subagent-container my-1 overflow-hidden rounded border border-border/50 bg-muted/20",
+        "subagent-container my-0.5 overflow-hidden rounded border border-border/50 bg-muted/20",
         className,
       )}
     >

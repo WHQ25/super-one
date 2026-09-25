@@ -243,3 +243,45 @@ export const WithAndWithoutSummary: Story = {
     </div>
   ),
 }
+
+function toolPair(id: string, toolName: string, input: Record<string, unknown>, summary = 'ok'): ContentBlock[] {
+  return [
+    { type: 'tool_use', toolName, toolUseId: id, input: JSON.stringify(input), status: 'complete' } as ContentBlock,
+    { type: 'tool_result', toolUseId: id, summary },
+  ]
+}
+
+/** Every common Claude tool back to back: consecutive rows must keep one uniform gap. */
+export const ConsecutiveToolSpacing: Story = {
+  name: 'Consecutive tool spacing',
+  render: () => (
+    <Thread>
+      <ChatMessage
+        message={makeAssistant({
+          id: 'a-tools',
+          providerId: 'claude',
+          content: [
+            { type: 'thinking', thinking: 'Inspect the geometry first.', startedAt: 0, endedAt: 8000 },
+            ...toolPair('edit', 'Edit', { file_path: '/tmp/inspect.ts', old_string: 'a', new_string: 'b' }),
+            ...toolPair('bash', 'Bash', { command: 'bun /tmp/inspect.ts', description: 'Run the inspector' }),
+            ...toolPair('grep', 'Grep', { pattern: 'def Mesh', path: 'model.usda' }),
+            ...toolPair('read-a', 'Read', { file_path: '/repo/src/a.ts' }),
+            ...toolPair('read-b', 'Read', { file_path: '/repo/src/b.ts' }),
+            ...toolPair('glob', 'Glob', { pattern: '**/*.usda' }),
+            ...toolPair('write', 'Write', { file_path: '/repo/src/c.ts', content: 'export {}\n' }),
+            ...toolPair('search', 'WebSearch', { query: 'usd mesh uv' }),
+            ...toolPair('nav', 'mcp__superone__browser_tabs', { action: 'navigate', url: 'http://localhost:5173', description: '查看修正后的预览' }),
+            ...toolPair('shot', 'mcp__superone__browser_action', { action: 'screenshot', description: '截取修正后的预览' }),
+            ...toolPair('todo', 'TodoWrite', { todos: [{ content: 'Fix UV', status: 'completed', activeForm: 'Fixing UV' }] }),
+            ...toolPair('mcp', 'mcp__github__get_pull_request', { number: 42 }),
+            ...toolPair('task', 'Task', { subagent_type: 'general-purpose', description: 'Review spacing', prompt: 'Review.' }),
+            ...toolPair('fetch', 'WebFetch', { url: 'https://example.com', prompt: 'Summarize' }),
+            { type: 'text', text: 'Every row above should sit the same distance apart.' },
+          ],
+        })}
+        sessionStatus="idle"
+        isLastAssistant
+      />
+    </Thread>
+  ),
+}

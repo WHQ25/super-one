@@ -919,7 +919,7 @@ function PortableCodexItem(props: CodexItemPresenterProps) {
       )
     case 'file_change':
       return (
-        <div className="space-y-0.5">
+        <div className="my-0.5 space-y-0.5">
           {(item.changes.length ? item.changes : [{ path: '', kind: 'update' as const }]).map((change, changeIndex) => (
             <PortableToolRow
               key={`${item.id}-${changeIndex}`}

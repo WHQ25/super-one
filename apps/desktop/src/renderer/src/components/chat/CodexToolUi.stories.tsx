@@ -375,3 +375,120 @@ export const FailedAdapterRows: Story = {
     </>
   ),
 }
+
+const CONSECUTIVE_ITEMS: CodexThreadItem[] = [
+  { id: 'think-1', type: 'reasoning', text: 'Inspect the geometry first.', startedAt: 0, endedAt: 8000 },
+  {
+    id: 'edit-script',
+    type: 'file_change',
+    changes: [{ path: '/tmp/inspect-geometry.ts', kind: 'update', diff: '-a\n+b\n' }],
+    status: 'completed',
+  },
+  {
+    id: 'run-script',
+    type: 'command_execution',
+    command: "/bin/zsh -lc 'bun /tmp/inspect-geometry.ts'",
+    aggregatedOutput: 'ok\n',
+    exitCode: 0,
+    status: 'completed',
+  },
+  {
+    id: 'grep-mesh',
+    type: 'command_execution',
+    command: 'rg "def Mesh" model.usda',
+    aggregatedOutput: '',
+    exitCode: 0,
+    status: 'completed',
+    commandActions: [{ type: 'search', query: 'def Mesh', path: 'model.usda' }],
+  },
+  {
+    id: 'browser-navigate',
+    type: 'mcp_tool_call',
+    server: 'superone',
+    tool: 'browser_tabs',
+    arguments: { action: 'navigate', url: 'http://localhost:5173', description: 'Open the preview' },
+    result: { content: [{ type: 'text', text: 'ok' }], structuredContent: {} },
+    status: 'completed',
+  },
+  {
+    id: 'browser-screenshot',
+    type: 'mcp_tool_call',
+    server: 'superone',
+    tool: 'browser_action',
+    arguments: { action: 'screenshot', description: 'Capture the preview' },
+    result: { content: [{ type: 'text', text: 'ok' }], structuredContent: {} },
+    status: 'completed',
+  },
+  { id: 'search', type: 'web_search', query: 'usd mesh uv', status: 'completed' },
+  {
+    id: 'edit-two',
+    type: 'file_change',
+    changes: [
+      { path: 'src/a.ts', kind: 'update', diff: '-a\n+b\n' },
+      { path: 'src/b.ts', kind: 'add', diff: '+c\n' },
+    ],
+    status: 'completed',
+  },
+  {
+    id: 'read-a',
+    type: 'command_execution',
+    command: "sed -n '1,80p' src/a.ts",
+    aggregatedOutput: '',
+    exitCode: 0,
+    status: 'completed',
+    commandActions: [{ type: 'read', path: 'src/a.ts' }],
+  },
+  {
+    id: 'read-b',
+    type: 'command_execution',
+    command: "sed -n '1,80p' src/b.ts",
+    aggregatedOutput: '',
+    exitCode: 0,
+    status: 'completed',
+    commandActions: [{ type: 'read', path: 'src/b.ts' }],
+  },
+  {
+    id: 'app-find',
+    type: 'mcp_tool_call',
+    server: 'superone',
+    tool: 'miniapp_call',
+    arguments: { appId: 'project-tools', tool: 'find_files', arguments: { query: 'tool ui' } },
+    status: 'completed',
+  },
+  {
+    id: 'app-inspect',
+    type: 'mcp_tool_call',
+    server: 'superone',
+    tool: 'miniapp_call',
+    arguments: { appId: 'project-tools', tool: 'inspect_file', arguments: { path: 'tool-row.tsx' } },
+    status: 'completed',
+  },
+  {
+    id: 'github-pr',
+    type: 'mcp_tool_call',
+    server: 'github',
+    tool: 'get_pull_request',
+    arguments: { number: 42 },
+    status: 'completed',
+  },
+  {
+    id: 'follow-up',
+    type: 'collab_tool_call',
+    tool: 'sendInput',
+    status: 'completed',
+    receiverThreadIds: ['reviewer-thread'],
+    agentsStates: { 'reviewer-thread': { status: 'running', nickname: 'Reviewer' } },
+    prompt: 'Check the spacing too.',
+  },
+  { id: 'image', type: 'image_generation', status: 'failed', revisedPrompt: 'A quiet workspace' },
+  { id: 'compacted', type: 'compaction' },
+  { id: 'failed', type: 'error', message: 'Stream disconnected' },
+  { id: 'done', type: 'agent_message', text: 'Every row above should sit the same distance apart.' },
+]
+
+/** Every Codex item kind back to back: consecutive rows must keep one uniform gap. */
+export const ConsecutiveToolSpacing: Story = {
+  render: () => (
+    <CodexTurnView message={turnMessage('consecutive', CONSECUTIVE_ITEMS)} isStreaming={false} isLastAssistant />
+  ),
+}

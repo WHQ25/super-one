@@ -122,6 +122,20 @@ describe('browser picture in picture', () => {
     await waitFor(() => expect(screen.queryByLabelText('Browser picture in picture')).not.toBeInTheDocument())
   })
 
+  it('leaves the tab an opener revealed the panel for, such as a clicked file chip', async () => {
+    const setActive = vi.fn()
+    setDockApi({ panels: [{ id: 'browser-a', api: { setActive } }] } as never)
+    act(() => {
+      startReadyAutomation()
+    })
+    render(<BrowserPictureInPicture />)
+    await screen.findByLabelText('Browser picture in picture')
+
+    act(() => useActivityPanelStore.getState().setShowPanel(true, { forTab: true }))
+    expect(setActive).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.queryByLabelText('Browser picture in picture')).not.toBeInTheDocument())
+  })
+
   it('can hide the read-only picture-in-picture preview', async () => {
     act(() => {
       startReadyAutomation()

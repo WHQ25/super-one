@@ -26,8 +26,14 @@ interface ActivityPanelState {
    * has to work out for itself whether it sits on the card's rounded corner.
    */
   bounds: ActivityPanelBounds | null
+  /**
+   * The panel was opened to show a particular tab (a file chip, a launcher),
+   * not by the bare toggle. Reveal-time handoffs — the browser PiP returning to
+   * its tab — must yield then: the opener has already chosen what to show.
+   */
+  revealedForTab: boolean
 
-  setShowPanel: (show: boolean) => void
+  setShowPanel: (show: boolean, opts?: { forTab?: boolean }) => void
   setSide: (side: ActivityPanelSide) => void
   setPanelWidth: (w: number) => void
   setPanelWidthByUser: (w: number) => void
@@ -49,9 +55,11 @@ export const useActivityPanelStore = create<ActivityPanelState>()(
       maximized: false,
       maximizedGroupId: null,
       bounds: null,
+      revealedForTab: false,
 
-      setShowPanel: (show) => set((state) => ({
+      setShowPanel: (show, opts) => set((state) => ({
         showPanel: show,
+        revealedForTab: show && opts?.forTab === true,
         maximized: show ? state.maximized : false,
         maximizedGroupId: show ? state.maximizedGroupId : null,
       })),

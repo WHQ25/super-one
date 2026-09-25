@@ -167,7 +167,7 @@ export function closeGhostSideChatPanel(isAlive: (sessionId: string) => boolean)
 
 function ensureVisible() {
   const store = useActivityPanelStore.getState()
-  if (!store.showPanel) store.setShowPanel(true)
+  if (!store.showPanel) store.setShowPanel(true, { forTab: true })
 }
 
 function execOrDefer(fn: () => void) {

@@ -98,7 +98,12 @@ export function BrowserPictureInPicture() {
 
   useEffect(() => {
     if (!activityShown || !browserId) return
-    getDockApi()?.panels.find((panel) => panel.id === browserId)?.api.setActive()
+    // A tab opener that revealed the panel has already activated its own tab; the
+    // handoff runs after it commits, so activating here would bury, say, the file
+    // a chip was clicked for under the browser the agent is driving.
+    if (!useActivityPanelStore.getState().revealedForTab) {
+      getDockApi()?.panels.find((panel) => panel.id === browserId)?.api.setActive()
+    }
     useBrowserStore.getState().clearManualPreview()
   }, [activityShown, browserId])
 

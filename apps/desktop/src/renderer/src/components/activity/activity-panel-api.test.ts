@@ -55,6 +55,7 @@ describe('openFileTab', () => {
     openFileTab('src/app.ts:12')
 
     expect(useActivityPanelStore.getState().showPanel).toBe(true)
+    expect(useActivityPanelStore.getState().revealedForTab).toBe(true)
     expect(addPanel).toHaveBeenCalledWith(expect.objectContaining({
       id: 'file:src/app.ts',
       title: 'app.ts',

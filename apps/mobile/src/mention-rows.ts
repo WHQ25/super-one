@@ -2,7 +2,7 @@ import { BUILTIN_CAPABILITIES, isBuiltinCapabilityId } from '@superone/shared/ca
 import { compareBuiltinMentionMatches, matchBuiltinMention } from '@superone/shared/mention-capability-match'
 import { groupItems, type PopupGroup } from '@superone/shared/popup-groups'
 import { SESSION_MENTION_KEYWORD, SESSION_MENTION_NAV_PREFIX } from '@superone/shared/session-mention-query'
-import { GH_MENTION_KEYWORD, GH_MENTION_NAV_PREFIX, GIT_MENTION_KEYWORD, GIT_MENTION_NAV_PREFIX, parseGitMentionValue, type GitMentionCapabilities } from '@superone/shared/git-mention-query'
+import { GH_MENTION_KEYWORD, GH_MENTION_NAV_PREFIX, GIT_MENTION_KEYWORD, GIT_MENTION_NAV_PREFIX, isGitHubRefKind, parseGitMentionValue, type GitMentionCapabilities } from '@superone/shared/git-mention-query'
 import { GH_UNAVAILABLE_HINT } from './git-mention'
 import type { MentionItem } from './mentions'
 
@@ -61,8 +61,11 @@ export const MENTION_GROUP_LABELS: Record<MentionGroupKey, string> = {
  *
  * Every row there is a **single line** (`MentionPopup.tsx:919` —
  * `flex items-center`): an icon, the name, a quiet inline note beside it, and
- * at most a small badge at the end. The one exception is a switched-off
- * capability, which gets a second line saying where to switch it on.
+ * at most a small badge at the end. The exceptions get a second line: a
+ * switched-off capability says where to switch it on, and rows whose name
+ * shares its line with a description — a session's project, a git ref's subject,
+ * sha or author — put that description underneath, as the desktop does once its
+ * popup is narrow (`mention-row-layout.ts`). A phone is always that narrow.
  *
  * Mobile used to give every row a second line — the path under a filename, the
  * project under a session title, prose under a capability. That is a different
@@ -86,8 +89,9 @@ export interface MentionRow {
   trailing?: string
   /** A small pill at the end: a model, a harness, or `Off`. */
   badge?: { text: string; tone: 'muted' | 'accent' }
-  /** The only second line there is: where to switch a capability back on. */
+  /** The quiet second line: where to switch a capability back on, or what describes the name. */
   hint?: string
+  hintIndices?: number[]
   /** Visible but not selectable. */
   disabled?: boolean
 }
@@ -348,9 +352,8 @@ function remoteRow(item: MentionItem, scopeDir: string): MentionRow {
   const labelIndices = item.labelIndices ?? shiftIndices(item.matchIndices ?? [], offset, label.length)
   const row: MentionRow = { item, label, labelIndices, inlineIndices: [] }
   if (item.kind === 'session') {
-    // Project on the left of the badge, harness on the right — both quiet, both
-    // on the same line as the title.
-    return { ...row, ...(item.description ? { trailing: item.description } : {}),
+    // The title keeps the line with the harness pill; the project goes under it.
+    return { ...row, ...(item.description ? { hint: item.description } : {}),
       ...(item.badge ? { badge: { text: item.badge, tone: 'muted' } } : {}) }
   }
   if (item.kind === 'session-project' || item.kind === 'git-kind') {
@@ -359,10 +362,18 @@ function remoteRow(item: MentionItem, scopeDir: string): MentionRow {
     return { ...row, ...(item.description ? { inline: item.description } : {}) }
   }
   if (item.kind === 'git-ref') {
-    // Subject beside the ref; author · age (or a `current` pill) at the end.
-    return { ...row, ...(item.description ? { inline: item.description, inlineIndices: item.descriptionIndices ?? [] } : {}),
-      ...(item.rootPath ? { trailing: item.rootPath } : {}),
-      ...(item.badge ? { badge: { text: item.badge, tone: 'muted' } } : {}) }
+    const kind = parseGitMentionValue(item.path)?.kind
+    const badge = item.badge ? { badge: { text: item.badge, tone: 'muted' as const } } : {}
+    // A commit (subject as its label) and an issue / PR (`#n title`) carry
+    // author · age under the name — after the sha, where a sha query highlights.
+    if ((kind === 'commit' && item.description) || (kind && isGitHubRefKind(kind))) {
+      const hint = [item.description, item.rootPath].filter(Boolean).join(' · ')
+      return { ...row, ...(hint ? { hint, hintIndices: item.descriptionIndices ?? [] } : {}), ...badge }
+    }
+    // Branch / worktree / tag: the subject, path or message under the name; a
+    // branch's age (or `current` pill) stays at the end of the first line.
+    return { ...row, ...(item.description ? { hint: item.description, hintIndices: item.descriptionIndices ?? [] } : {}),
+      ...(item.rootPath ? { trailing: item.rootPath } : {}), ...badge }
   }
   if (item.kind === 'agent') {
     // `inherit` is what the desktop prints for an agent that names no model.

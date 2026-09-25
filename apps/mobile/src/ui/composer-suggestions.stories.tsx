@@ -1,6 +1,7 @@
 import { useState, type ComponentProps } from 'react'
 import { View } from 'react-native'
 import { buildMentionRows } from '../mention-rows'
+import { gitRefItems } from '../git-mention'
 import { browseItems } from '../mention-browse'
 import {
   previewAgentProfiles, previewCapabilityIds, previewNestedEntries, previewRootMentionItems,
@@ -60,4 +61,21 @@ export const NarrowLongNames = { args: {
 export const InsideDirectory = { args: {
   rows: buildMentionRows('', { remote: browseItems(previewNestedEntries, 'src/ui/'), agentProfiles: [], scoped: true }),
   breadcrumbs: [{ label: 'src', query: 'src/' }, { label: 'ui', query: 'src/ui/' }],
+} }
+
+const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+const commitRefs = [
+  { kind: 'commit' as const, id: '02d641be0abcdef0123456789', label: '02d641b', detail: 'fix(chat-view): keep deferred read and skill rows collapsed', author: 'Hangqi Wu', date: hoursAgo(1) },
+  { kind: 'commit' as const, id: '081f24ca7abcdef0123456789', label: '081f24c', detail: 'feat(device): shape android agent gestures like a finger\'s', author: 'Hangqi Wu', date: hoursAgo(8) },
+  { kind: 'commit' as const, id: '0ef70ae85abcdef0123456789', label: '0ef70ae', detail: 'fix(harness): re-probe resource catalogs when the runtime changes', author: 'Hangqi Wu', date: hoursAgo(26) },
+]
+/** `@git commit`: long subjects keep the first line; sha · author · age sit underneath. */
+export const GitCommits = { args: {
+  width: 360,
+  rows: buildMentionRows('', { remote: gitRefItems(commitRefs, ''), agentProfiles: [], scoped: true }),
+} }
+/** `@git commit 081`: a sha prefix highlights on the second line. */
+export const GitCommitShaMatch = { args: {
+  width: 360,
+  rows: buildMentionRows('', { remote: gitRefItems(commitRefs, '081'), agentProfiles: [], scoped: true }),
 } }

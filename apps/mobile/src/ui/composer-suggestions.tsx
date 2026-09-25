@@ -29,9 +29,11 @@ function MatchText({ text, indices = [], muted }: { text: string; indices?: numb
     else runs.push({ value: char, matched })
     offset += char.length
   }
+  // `flexShrink` because RN's default is 0: in a row, a long name would
+  // otherwise overflow its line and paint over whatever sits beside it.
   return <Text numberOfLines={1} style={muted
-    ? { color: colors.mutedForeground, fontSize: 12 }
-    : { color: colors.foreground, fontSize: 13, fontWeight: '500' }}>
+    ? { flexShrink: 1, color: colors.mutedForeground, fontSize: 12 }
+    : { flexShrink: 1, color: colors.foreground, fontSize: 13, fontWeight: '500' }}>
     {runs.map((run, index) => <Text key={index} style={run.matched ? { color: colors.primary, fontWeight: '700' } : undefined}>{run.value}</Text>)}
   </Text>
 }
@@ -215,7 +217,7 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
       {groupMentionRows(rows).map((group) => <View key={group.key}>
         <SectionTitle title={groupLabels?.[group.key] ?? MENTION_GROUP_LABELS[group.key as MentionGroupKey]} count={group.items.length} />
         {group.items.map((row) => {
-          const { item, label, labelIndices, inline, inlineIndices, trailing, badge, hint, disabled } = row
+          const { item, label, labelIndices, inline, inlineIndices, trailing, badge, hint, hintIndices, disabled } = row
           // Match desktop handles: include the typed @ only when the keyword
           // matched, leaving display-name-only and alias matches unhighlighted.
           const inlineMatchIndices = inline?.startsWith('@') && inlineIndices.length > 0
@@ -236,13 +238,13 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
               <MentionIdentity item={item} />
               {/* One line, as on the desktop: name, a quiet note beside it, and
                   what distinguishes it pushed to the end. Only a switched-off
-                  capability adds a second line. */}
+                  capability or a commit adds a second line. */}
               <View style={{ flex: 1, gap: 2 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
                   <MatchText text={label} indices={labelIndices} />
                   {inline ? <MatchText text={inline} indices={inlineMatchIndices} muted /> : null}
                 </View>
-                {hint ? <Text numberOfLines={1} style={{ color: colors.mutedForeground, fontSize: 12 }}>{hint}</Text> : null}
+                {hint ? <MatchText text={hint} indices={hintIndices} muted /> : null}
               </View>
               {trailing ? <Text numberOfLines={1} style={{ maxWidth: 96, color: colors.mutedForeground, fontSize: 11 }}>{trailing}</Text> : null}
               {badge ? <Text numberOfLines={1} style={{ fontSize: 11, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4,

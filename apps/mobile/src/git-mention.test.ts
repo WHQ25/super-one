@@ -54,12 +54,17 @@ describe('ref rows', () => {
     expect(bySha?.descriptionIndices).toEqual([0, 1, 2, 3])
   })
 
-  it('groups by ref kind in the desktop order and shapes one-line rows', () => {
+  it('groups by ref kind in the desktop order, with commit details on a second line', () => {
     const rows = buildMentionRows('', { remote: gitRefItems(refs, ''), agentProfiles: [], scoped: true })
     expect(rows.map((row) => mentionGroupKey(row.item))).toEqual(['git-branch', 'git-commit'])
     expect(groupMentionRows(rows).map((group) => group.key)).toEqual(['git-branch', 'git-commit'])
-    expect(rows[0]).toMatchObject({ inline: 'fix: popup', badge: { text: 'current', tone: 'muted' } })
-    expect(rows[1]).toMatchObject({ label: 'fix(computer-use): overlay', inline: 'f14bf73', trailing: 'Hangqi · 3h ago' })
+    expect(rows[0]).toMatchObject({ hint: 'fix: popup', badge: { text: 'current', tone: 'muted' } })
+    expect(rows[1]).toMatchObject({ label: 'fix(computer-use): overlay', hint: 'f14bf73 · Hangqi · 3h ago', hintIndices: [] })
+    expect(rows[1]).not.toHaveProperty('inline')
+    expect(rows[1]).not.toHaveProperty('trailing')
+    // A sha query still highlights inside the sha on the second line.
+    const [, bySha] = buildMentionRows('', { remote: gitRefItems(refs, 'f14b'), agentProfiles: [], scoped: true })
+    expect(bySha?.hintIndices).toEqual([0, 1, 2, 3])
   })
 
   it('becomes a git chip that serializes to the desktop tag', () => {

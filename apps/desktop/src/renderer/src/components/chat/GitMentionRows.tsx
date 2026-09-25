@@ -22,6 +22,7 @@ import {
   type ParsedGitMentionQuery,
 } from './git-mention-query'
 import type { GitMentionAvailability } from './use-git-mention'
+import { STACKED_BODY_CLASS, STACKED_DETAIL_CLASS, STACKED_ICON_CLASS, STACKED_ROW_CLASS } from './mention-row-layout'
 import type { BuiltinMentionMatchRank } from './mention-capability-match'
 
 export type GitFlatItem =
@@ -296,6 +297,8 @@ export function GitRefRow({
       </button>
     )
   }
+  const commit = ref.kind === 'commit' && !!ref.detail
+  const meta = [ref.author, when].filter(Boolean).join(' · ')
   return (
     <button
       ref={setItemRef}
@@ -303,28 +306,33 @@ export function GitRefRow({
       onMouseDown={(e) => e.preventDefault()}
       onClick={onSelect}
       onMouseEnter={onHover}
-      className={rowClass(selected)}
+      className={cn(rowClass(selected), STACKED_ROW_CLASS)}
       title={ref.kind === 'commit' ? ref.id : ref.detail}
     >
-      {gitRefIcon(ref.kind, 'size-3.5 shrink-0 text-foreground')}
-      {ref.kind === 'commit' && ref.detail ? (
+      {gitRefIcon(ref.kind, cn('size-3.5 shrink-0 text-foreground', STACKED_ICON_CLASS))}
+      {commit ? (
         // Subject is what a commit is picked by; the sha is the quiet handle
-        // beside it and must survive a long subject's truncation.
-        <>
-          <span className="min-w-0 flex-1 truncate font-medium">
+        // that must survive a long subject's truncation.
+        <span className={STACKED_BODY_CLASS}>
+          <span className="min-w-0 truncate font-medium @md:flex-1">
             <HighlightedText text={ref.detail} indices={item.detailMatchIndices} className="truncate" />
           </span>
-          <span className="shrink-0 font-mono text-2xs text-muted-foreground">
-            <HighlightedText text={ref.label} indices={item.matchIndices} />
+          <span className="flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground @md:shrink-0 @md:gap-2">
+            <span className="shrink-0 font-mono">
+              <HighlightedText text={ref.label} indices={item.matchIndices} />
+            </span>
+            {meta ? <span className="shrink-0 text-muted-foreground/60 @md:hidden">·</span> : null}
+            {meta ? <span className="truncate @md:max-w-28">{meta}</span> : null}
           </span>
-        </>
+        </span>
       ) : (
-        <span className="min-w-0 flex-1 truncate">
-          <span className={cn('font-medium', ref.kind === 'commit' && 'font-mono')}>
+        // The name keeps the room; a subject, path or tag message follows it.
+        <span className={STACKED_BODY_CLASS}>
+          <span className={cn('min-w-0 truncate font-medium @md:max-w-full @md:shrink-0', ref.kind === 'commit' && 'font-mono')}>
             <HighlightedText text={ref.label} indices={item.matchIndices} className="truncate" />
           </span>
           {ref.detail ? (
-            <span className="ml-1.5 text-2xs font-normal text-muted-foreground">
+            <span className={cn(STACKED_DETAIL_CLASS, '@md:flex-1')}>
               <HighlightedText text={ref.detail} indices={item.detailMatchIndices} className="truncate" />
             </span>
           ) : null}
@@ -335,10 +343,8 @@ export function GitRefRow({
           {t('chat.mentionPopup.gitCurrent')}
         </span>
       ) : null}
-      {ref.kind === 'commit' && (ref.author || when) ? (
-        <span className="max-w-28 shrink-0 truncate text-2xs text-muted-foreground">
-          {[ref.author, when].filter(Boolean).join(' · ')}
-        </span>
+      {ref.kind === 'commit' && !commit && meta ? (
+        <span className="max-w-28 shrink-0 truncate text-2xs text-muted-foreground">{meta}</span>
       ) : ref.kind === 'branch' && when && !ref.current ? (
         <span className="shrink-0 text-2xs text-muted-foreground">{when}</span>
       ) : null}

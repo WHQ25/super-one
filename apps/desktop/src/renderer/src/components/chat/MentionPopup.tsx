@@ -64,6 +64,7 @@ import {
   isGitFlatItem,
   type GitFlatItem,
 } from './GitMentionRows'
+import { STACKED_BODY_CLASS, STACKED_DETAIL_CLASS, STACKED_ICON_CLASS, STACKED_ROW_CLASS } from './mention-row-layout'
 
 export { SESSION_MENTION_NAV_PREFIX }
 
@@ -1136,17 +1137,19 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => handleItemClick(item, 'select')}
             onMouseEnter={() => onSetSelectedIndex(i)}
-            className={rowClass}
+            className={cn(rowClass, STACKED_ROW_CLASS)}
           >
-            <MessageSquare className="size-3.5 shrink-0 text-foreground" />
-            <span className="min-w-0 flex-1 truncate font-medium">
-              <HighlightedPath path={item.title} indices={item.matchIndices} />
-            </span>
-            {item.projectLabel ? (
-              <span className="max-w-20 shrink-0 truncate text-2xs text-muted-foreground">
-                {item.projectLabel}
+            <MessageSquare className={cn('size-3.5 shrink-0 text-foreground', STACKED_ICON_CLASS)} />
+            <span className={STACKED_BODY_CLASS}>
+              <span className="min-w-0 truncate font-medium @md:flex-1">
+                <HighlightedPath path={item.title} indices={item.matchIndices} />
               </span>
-            ) : null}
+              {item.projectLabel ? (
+                <span className={cn(STACKED_DETAIL_CLASS, '@md:max-w-20 @md:shrink-0')}>
+                  {item.projectLabel}
+                </span>
+              ) : null}
+            </span>
             <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-2xs text-muted-foreground">
               {item.harness}
             </span>
@@ -1264,7 +1267,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             className={rowClass}
           >
             <MiniAppIcon appId={item.appId} className="size-3.5 shrink-0" />
-            <span className="shrink-0 font-medium">
+            <span className="min-w-0 truncate font-medium">
               <HighlightedPath path={item.displayName} indices={item.matchIndices} />
             </span>
           </button>
@@ -1281,7 +1284,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             className={cn(rowClass, 'gap-1.5')}
           >
             <Bot className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="shrink-0">
+            <span className="min-w-0 truncate">
               <HighlightedPath path={item.name} indices={item.matchIndices} />
             </span>
             <span className="shrink-0 rounded bg-muted/60 px-1 py-px text-xs text-muted-foreground">
@@ -1352,7 +1355,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       >
         <div
           ref={listScrollRef}
-          className="overflow-y-auto p-1 flex-1 min-h-0"
+          // The container the stacked rows (`mention-row-layout`) measure.
+          className="@container overflow-y-auto p-1 flex-1 min-h-0"
           onScroll={onSessionListScroll}
         >
           {git.parsed ? (

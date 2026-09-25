@@ -60,7 +60,7 @@ mockIpc('agent', 'listDirectory', async () => [])
 mockIpc('agent', 'searchMentions', async () => [])
 mockIpc('app', 'listComputerUseInstalledApps', async () => [])
 
-function Preview({ query, repo = true, github = true, refs }: { query: string; repo?: boolean; github?: boolean; refs?: typeof refsResult }) {
+function Preview({ query, repo = true, github = true, refs, width = 560 }: { query: string; repo?: boolean; github?: boolean; refs?: typeof refsResult; width?: number }) {
   const [ready, setReady] = useState(false)
   const [selected, setSelected] = useState(0)
   const [current, setCurrent] = useState(query)
@@ -83,7 +83,7 @@ function Preview({ query, repo = true, github = true, refs }: { query: string; r
   }, [query, repo, github, refs])
   if (!ready) return null
   return (
-    <div className="flex flex-col gap-2" style={{ width: 560, maxWidth: '100%' }}>
+    <div className="flex flex-col gap-2" style={{ width, maxWidth: '100%' }}>
       {/* The popup renders `bottom-full` above the composer; the spacer stands in for it. */}
       <div className="relative mt-80 h-0">
         <MentionPopup
@@ -164,6 +164,12 @@ export const GitCommitSearch: Story = { args: { query: 'git commit over' } }
 
 /** `@git commit d49`: a sha prefix highlights inside the hash instead of the subject. */
 export const GitCommitShaSearch: Story = { args: { query: 'git commit d49' } }
+
+/** A narrow popup drops sha and author · age under the subject instead of squeezing it away. */
+export const GitCommitNarrow: Story = { args: { query: 'git commit ', width: 340 } }
+
+/** Narrow branches: the subject moves under the name; age and the `current` pill stay on the first line. */
+export const GitBranchesNarrow: Story = { args: { query: 'git branch ', width: 340 } }
 
 /** `@git worktree `: branch as the name, checkout path beside it. */
 export const GitWorktrees: Story = { args: { query: 'git worktree ' } }

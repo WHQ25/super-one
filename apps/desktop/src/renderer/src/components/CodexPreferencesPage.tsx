@@ -16,6 +16,9 @@ import { formatCodexModelName, formatReasoningEffortLabel } from '@/components/c
 import { CodexPermissionPresetList, codexPermissionPresetOptions } from '@/components/chat/CodexPermissionPresetList'
 import { PERMISSION_POPOVER_CLASS } from '@/components/chat/permissionPopoverStyles'
 import { CodexModelList, CodexReasoningEffortList } from '@/components/chat/ModelSelectorLists'
+import { SettingsRow, SettingsSection } from '@/components/settings/SettingsSection'
+import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState'
+import { settingsSelectTriggerClassName } from '@/components/settings/select-trigger-class'
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { invalidateDefaultCodexPreferencesCache, resolveCodexReasoningEffort, useChatStore } from '@/stores/chat'
@@ -86,7 +89,6 @@ export function CodexPreferencesPage() {
     ? (resolveCodexReasoningEffort(selectedModel, defaultReasoningEffort || undefined) ?? '')
     : defaultReasoningEffort
   const disabled = loading || saving
-  const pillTriggerClass = 'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60'
   const activePermissionPreset = defaultPermissionPreset || DEFAULT_CODEX_PERMISSION_PRESET
   const currentPermissionPreset = codexPermissionPresetOptions.find((option) => option.id === activePermissionPreset) ?? codexPermissionPresetOptions[1]
 
@@ -175,128 +177,117 @@ export function CodexPreferencesPage() {
     <div className="w-full">
       <ResourceScopeToolbar scope={scope} onScopeChange={setScope} />
 
-      <div className="flex flex-col gap-4">
-        {scope === 'user' ? (
-          <>
-            <div className="rounded-lg border border-border">
-              <div className="border-b border-border px-4 py-2">
-                <p className="text-xs font-medium text-muted-foreground">{t('settings.preferences.sections.user')}</p>
-              </div>
-              <DefaultProviderRow
-                consumer="chat:codex"
-                title={t('settings.preferences.defaultProvider.label')}
-                description={t('settings.preferences.defaultProvider.description')}
-                fallback={<ProviderOptionLabel brandKey="openai" />}
-              />
+      {scope === 'user' ? (
+        <div className="space-y-5">
+          <SettingsSection title={t('settings.preferences.sections.user')}>
+            <DefaultProviderRow
+              consumer="chat:codex"
+              title={t('settings.preferences.defaultProvider.label')}
+              description={t('settings.preferences.defaultProvider.description')}
+              fallback={<ProviderOptionLabel brandKey="openai" />}
+            />
 
-              <CodexRealtimeVoicePreference
-                projectPath={currentFolder}
-                value={realtimeVoice}
+            <CodexRealtimeVoicePreference
+              projectPath={currentFolder}
+              value={realtimeVoice}
+              disabled={disabled}
+              onChange={handleRealtimeVoiceSelect}
+            />
+
+            <SettingsRow
+              label={t('settings.preferences.permissionMode.label')}
+              description={t('settings.preferences.permissionMode.description')}
+            >
+              <Popover open={permissionOpen} onOpenChange={setPermissionOpen}>
+                <PopoverTrigger asChild>
+                  <button disabled={disabled} className={cn(settingsSelectTriggerClassName, currentPermissionPreset.triggerToneClass)}>
+                    {currentPermissionPreset.triggerIcon}
+                    <span className="truncate">{t(currentPermissionPreset.labelKey)}</span>
+                    <ChevronDown className={cn('size-3.5 shrink-0 transition-transform duration-200', permissionOpen && 'rotate-180')} />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" side="bottom" className={PERMISSION_POPOVER_CLASS}>
+                  <CodexPermissionPresetList activePreset={activePermissionPreset} onSelect={handlePermissionPresetSelect} />
+                </PopoverContent>
+              </Popover>
+            </SettingsRow>
+
+            <SettingsRow
+              label={t('settings.preferences.fastMode.label')}
+              description={t('settings.preferences.fastMode.description')}
+            >
+              <Switch
+                checked={defaultFastMode}
+                onCheckedChange={(checked) => void handleFastModeChange(checked)}
                 disabled={disabled}
-                onChange={handleRealtimeVoiceSelect}
               />
+            </SettingsRow>
 
-              <div className="flex items-center justify-between gap-4 border-b border-border p-4">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">{t('settings.preferences.permissionMode.label')}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{t('settings.preferences.permissionMode.description')}</p>
-                </div>
-                <Popover open={permissionOpen} onOpenChange={setPermissionOpen}>
-                  <PopoverTrigger asChild>
-                    <button disabled={disabled} className={cn(pillTriggerClass, currentPermissionPreset.triggerToneClass)}>
-                      {currentPermissionPreset.triggerIcon}
-                      <span>{t(currentPermissionPreset.labelKey)}</span>
-                      <ChevronDown className={cn('size-3 transition-transform duration-200', permissionOpen && 'rotate-180')} />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" side="bottom" className={PERMISSION_POPOVER_CLASS}>
-                    <CodexPermissionPresetList activePreset={activePermissionPreset} onSelect={handlePermissionPresetSelect} />
-                  </PopoverContent>
-                </Popover>
-              </div>
+            <SettingsRow
+              label={t('settings.preferences.defaultModel.label')}
+              description={t('settings.preferences.defaultModel.codexDescription')}
+            >
+              <Popover open={modelOpen} onOpenChange={setModelOpen}>
+                <PopoverTrigger asChild>
+                  <button disabled={disabled || (modelsLoading && codexModels.length === 0)} className={settingsSelectTriggerClassName}>
+                    <span className="max-w-[160px] truncate">
+                      {defaultModel ? formatCodexModelName(selectedModel?.name, defaultModel) : t('common.systemDefault')}
+                    </span>
+                    <ChevronDown className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform duration-200', modelOpen && 'rotate-180')} />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" side="bottom" className="max-h-60 w-64 overflow-y-auto border-border bg-card p-1">
+                  <CodexModelList
+                    title={t('settings.preferences.defaultModel.label')}
+                    models={codexModels}
+                    activeId={defaultModel}
+                    onSelect={handleModelSelect}
+                    clearOption={{ label: t('common.systemDefault'), isActive: !defaultModel, onSelect: () => void handleModelSelect('') }}
+                    loading={modelsLoading}
+                    loadingMessage={t('settings.preferences.defaultModel.loading')}
+                    emptyMessage={emptyModelsMessage}
+                  />
+                </PopoverContent>
+              </Popover>
+            </SettingsRow>
 
-              <div className="flex items-center justify-between gap-4 border-b border-border p-4">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">{t('settings.preferences.fastMode.label')}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{t('settings.preferences.fastMode.description')}</p>
-                </div>
-                <Switch
-                  checked={defaultFastMode}
-                  onCheckedChange={(checked) => void handleFastModeChange(checked)}
-                  disabled={disabled}
-                />
-              </div>
-
-              <div className="flex items-center justify-between gap-4 border-b border-border p-4">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">{t('settings.preferences.defaultModel.label')}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{t('settings.preferences.defaultModel.codexDescription')}</p>
-                </div>
-                <Popover open={modelOpen} onOpenChange={setModelOpen}>
-                  <PopoverTrigger asChild>
-                    <button disabled={disabled || (modelsLoading && codexModels.length === 0)} className={pillTriggerClass}>
-                      <span className="max-w-[160px] truncate">
-                        {defaultModel ? formatCodexModelName(selectedModel?.name, defaultModel) : t('common.systemDefault')}
-                      </span>
-                      <ChevronDown className={cn('size-3 transition-transform duration-200', modelOpen && 'rotate-180')} />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" side="bottom" className="max-h-60 w-64 overflow-y-auto border-border bg-card p-1">
-                    <CodexModelList
-                      title={t('settings.preferences.defaultModel.label')}
-                      models={codexModels}
-                      activeId={defaultModel}
-                      onSelect={handleModelSelect}
-                      clearOption={{ label: t('common.systemDefault'), isActive: !defaultModel, onSelect: () => void handleModelSelect('') }}
-                      loading={modelsLoading}
-                      loadingMessage={t('settings.preferences.defaultModel.loading')}
-                      emptyMessage={emptyModelsMessage}
+            <SettingsRow
+              label={t('settings.preferences.reasoningEffort.label')}
+              description={t('settings.preferences.reasoningEffort.description')}
+            >
+              <Popover open={effortOpen} onOpenChange={setEffortOpen}>
+                <PopoverTrigger asChild>
+                  <button disabled={disabled || (!selectedModel && !displayedReasoningEffort)} className={settingsSelectTriggerClassName}>
+                    <span className="truncate">
+                      {displayedReasoningEffort ? formatReasoningEffortLabel(displayedReasoningEffort) : t('common.systemDefault')}
+                    </span>
+                    <ChevronDown className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform duration-200', effortOpen && 'rotate-180')} />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" side="bottom" className="w-48 border-border bg-card p-1">
+                  {!selectedModel ? (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">{t('settings.preferences.effort.chooseModel')}</div>
+                  ) : (
+                    <CodexReasoningEffortList
+                      title={t('settings.preferences.reasoningEffort.label')}
+                      options={supportedReasoningEfforts}
+                      activeValue={displayedReasoningEffort}
+                      onSelect={handleReasoningEffortSelect}
+                      clearOption={{ label: t('common.systemDefault'), isActive: !displayedReasoningEffort, onSelect: () => void handleReasoningEffortSelect('') }}
+                      emptyMessage={t('settings.preferences.effort.unsupported')}
                     />
-                  </PopoverContent>
-                </Popover>
-              </div>
+                  )}
+                </PopoverContent>
+              </Popover>
+            </SettingsRow>
+          </SettingsSection>
 
-              <div className="flex items-center justify-between gap-4 p-4">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">{t('settings.preferences.reasoningEffort.label')}</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{t('settings.preferences.reasoningEffort.description')}</p>
-                </div>
-                <Popover open={effortOpen} onOpenChange={setEffortOpen}>
-                  <PopoverTrigger asChild>
-                    <button disabled={disabled || (!selectedModel && !displayedReasoningEffort)} className={pillTriggerClass}>
-                      <span className="truncate">
-                        {displayedReasoningEffort ? formatReasoningEffortLabel(displayedReasoningEffort) : t('common.systemDefault')}
-                      </span>
-                      <ChevronDown className={cn('size-3 transition-transform duration-200', effortOpen && 'rotate-180')} />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" side="bottom" className="w-48 border-border bg-card p-1">
-                    {!selectedModel ? (
-                      <div className="px-2 py-1.5 text-xs text-muted-foreground">{t('settings.preferences.effort.chooseModel')}</div>
-                    ) : (
-                      <CodexReasoningEffortList
-                        title={t('settings.preferences.reasoningEffort.label')}
-                        options={supportedReasoningEfforts}
-                        activeValue={displayedReasoningEffort}
-                        onSelect={handleReasoningEffortSelect}
-                        clearOption={{ label: t('common.systemDefault'), isActive: !displayedReasoningEffort, onSelect: () => void handleReasoningEffortSelect('') }}
-                        emptyMessage={t('settings.preferences.effort.unsupported')}
-                      />
-                    )}
-                  </PopoverContent>
-                </Popover>
-              </div>
-            </div>
-
-            {/* Migration / external-agent import is user-level, not project-scoped. */}
-            <CodexImportConfigSection projectPath={currentFolder} />
-          </>
-        ) : (
-          <div className="rounded-lg border border-dashed border-border p-8 text-center">
-            <p className="text-sm text-muted-foreground">{t('settings.preferences.sections.projectEmptyCodex')}</p>
-          </div>
-        )}
-      </div>
+          {/* Migration / external-agent import is user-level, not project-scoped. */}
+          <CodexImportConfigSection projectPath={currentFolder} />
+        </div>
+      ) : (
+        <SettingsEmptyState title={t('settings.preferences.sections.projectEmptyCodex')} />
+      )}
     </div>
   )
 }

@@ -7,6 +7,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
+import { cn } from '@superone/ui/lib/utils'
+import { settingsSelectTriggerClassName } from './select-trigger-class'
 import {
   type TerminalScheme,
   DEFAULT_DARK_PALETTE_ID,
@@ -64,7 +66,7 @@ export function TerminalPalettePicker({
           className={
             isCompact
               ? 'flex min-w-36 items-center justify-between gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-xs transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60'
-              : 'flex min-w-40 items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60'
+              : cn(settingsSelectTriggerClassName, 'min-w-40 justify-between')
           }
         >
           <span className="truncate">{displayName}</span>

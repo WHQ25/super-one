@@ -1,5 +1,8 @@
 import { useTranslation } from 'react-i18next'
 import type { SandboxProbeResult, SandboxSupportLevel } from '@superone/shared/agent-types'
+import { Button } from '@superone/ui/components/ui/button'
+import { cn } from '@superone/ui/lib/utils'
+import { settingsRowClassName } from '@/components/settings/SettingsSection'
 
 interface SandboxStatusBlockProps {
   supportLevel: SandboxSupportLevel
@@ -8,12 +11,13 @@ interface SandboxStatusBlockProps {
   onProbe: () => void
 }
 
+/** Sandbox readiness, as a row on the preferences card under the sandbox picker. */
 export function SandboxStatusBlock({ supportLevel, probe, capabilityReason, onProbe }: SandboxStatusBlockProps) {
   const { t } = useTranslation()
 
   if (supportLevel === 'unsupported') {
     return (
-      <div className="m-4 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
+      <div className={cn(settingsRowClassName, 'text-xs text-error')}>
         {capabilityReason ?? t('settings.preferences.sandbox.statusUnsupported')}
       </div>
     )
@@ -21,37 +25,39 @@ export function SandboxStatusBlock({ supportLevel, probe, capabilityReason, onPr
 
   if (probe === null) {
     return (
-      <div className="m-4 flex items-center justify-between gap-3 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+      <div className={cn(settingsRowClassName, 'flex items-center justify-between gap-3 text-xs text-muted-foreground')}>
         <span>{t('settings.preferences.sandbox.statusNotProbed')}</span>
-        <button onClick={onProbe} className="rounded border border-border bg-card px-2 py-1 text-foreground hover:bg-muted">
+        <Button variant="outline" size="sm" className="h-7" onClick={onProbe}>
           {t('settings.preferences.sandbox.probeNow')}
-        </button>
+        </Button>
       </div>
     )
   }
 
   if (probe.ok) {
     return (
-      <div className="m-4 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 text-xs text-emerald-600 dark:text-emerald-400">
+      <div className={cn(settingsRowClassName, 'text-xs text-success')}>
         {t('settings.preferences.sandbox.statusReady')}
       </div>
     )
   }
 
   return (
-    <div className="m-4 flex flex-col gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-400">
-      <div className="font-medium">
-        {t('settings.preferences.sandbox.statusMissing', { missing: probe.missing.join(', ') })}
+    <div className={cn(settingsRowClassName, 'flex flex-col gap-2 text-xs')}>
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-medium text-warning">
+          {t('settings.preferences.sandbox.statusMissing', { missing: probe.missing.join(', ') })}
+        </span>
+        <Button variant="outline" size="sm" className="h-7" onClick={onProbe}>
+          {t('settings.preferences.sandbox.reProbe')}
+        </Button>
       </div>
       <div>
-        <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        <div className="text-[11px] text-muted-foreground">
           {t('settings.preferences.sandbox.installHintTitle')}
         </div>
-        <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-card p-2 text-[11px] text-foreground">{probe.installHint}</pre>
+        <pre className="mt-1 max-h-32 overflow-auto rounded-md bg-background p-2 text-[11px] whitespace-pre-wrap text-foreground">{probe.installHint}</pre>
       </div>
-      <button onClick={onProbe} className="rounded border border-border bg-card px-2 py-1 text-foreground hover:bg-muted">
-        {t('settings.preferences.sandbox.reProbe')}
-      </button>
     </div>
   )
 }

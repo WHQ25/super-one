@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Plus, ChevronRight, ArrowLeft, Check, Library, RefreshCw, Trash2, Package } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -8,33 +8,95 @@ import { Badge } from '@superone/ui/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
-import { McpDetailPage } from './McpDetailPage'
+import { McpDetailHeader, McpDetailPage, McpToolsSection } from './McpDetailPage'
 import { AddServerPanel } from './AddServerPanel'
 import {
   ResourceScopeToolbar,
   type ResourceScopeView,
 } from '@/components/settings/ResourceScopeToolbar'
+import { SettingsSection, settingsRowClassName } from '@/components/settings/SettingsSection'
+import { SettingsSegmentedControl } from '@/components/settings/SettingsSegmentedControl'
+import { SettingsEmptyState, SettingsLoadingState } from '@/components/settings/SettingsEmptyState'
 import type { McpLibraryEntry, McpServerConfig, McpServerInfo, McpServerMeta } from '@superone/shared/agent-types'
 import type { McpbInstalledEntry } from '@superone/shared/mcpb-types'
 import { cn } from '@superone/ui/lib/utils'
 
-export function McpIcon({ name, meta, bundle, size = 'sm' }: { name: string; meta?: McpServerMeta; bundle?: McpbInstalledEntry; size?: 'sm' | 'md' }) {
+export function McpIcon({ name, meta, bundle, size = 'sm', className }: { name: string; meta?: McpServerMeta; bundle?: McpbInstalledEntry; size?: 'xs' | 'sm' | 'md'; className?: string }) {
   const src = meta?.icons?.[0]?.src ?? bundle?.iconDataUrl
-  const sizeClass = size === 'md' ? 'size-10 text-base' : 'size-9 text-sm'
+  const boxClass = size === 'md' ? 'size-10' : size === 'xs' ? 'size-7' : 'size-9'
+  const textClass = size === 'md' ? 'text-base' : size === 'xs' ? 'text-xs' : 'text-sm'
 
   if (src) {
     return (
       <img
         src={src}
         alt={name}
-        className={cn('shrink-0 rounded-full object-cover', size === 'md' ? 'size-10' : 'size-9')}
+        className={cn('shrink-0 rounded-full object-cover', boxClass, className)}
       />
     )
   }
 
   return (
-    <div className={cn('flex shrink-0 items-center justify-center rounded-full bg-muted font-medium uppercase text-muted-foreground', sizeClass)}>
+    <div className={cn('flex shrink-0 items-center justify-center rounded-full bg-muted font-medium uppercase text-muted-foreground', boxClass, textClass, className)}>
       {name[0]}
+    </div>
+  )
+}
+
+/** One server on the MCP list card: identity + live status, with the enable switch trailing. */
+function McpServerRow({
+  icon,
+  name,
+  badge,
+  statusDotClass,
+  statusText,
+  dimmed,
+  onSelect,
+  extra,
+  trailing,
+}: {
+  icon: ReactNode
+  name: string
+  badge?: ReactNode
+  statusDotClass: string
+  statusText: string
+  dimmed?: boolean
+  onSelect?: () => void
+  /** Inline control after the name, e.g. a reconnect button. */
+  extra?: ReactNode
+  trailing?: ReactNode
+}) {
+  return (
+    <div
+      onClick={onSelect}
+      className={cn(
+        settingsRowClassName,
+        'flex items-center gap-3 text-left',
+        onSelect && 'cursor-pointer transition-colors hover:bg-muted/60',
+      )}
+    >
+      <div className={cn('flex min-w-0 flex-1 items-center gap-3', dimmed && 'opacity-50')}>
+        {icon}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <p className="truncate text-sm">{name}</p>
+            {badge}
+            {extra}
+          </div>
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+            <span className={cn('size-1.5 shrink-0 rounded-full', statusDotClass)} />
+            <span className="truncate text-xs text-muted-foreground" title={statusText}>{statusText}</span>
+          </div>
+        </div>
+      </div>
+      {trailing && (
+        <>
+          <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+            {trailing}
+          </div>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        </>
+      )}
     </div>
   )
 }
@@ -91,50 +153,34 @@ function ServerCard({
   }
 
   return (
-    <div
-      onClick={() => interactive && selectMcp(config.name)}
-      className={cn(
-        'flex items-center gap-3 rounded-lg border border-border bg-card p-3 text-left transition-colors',
-        interactive && 'cursor-pointer hover:bg-accent/50',
-        config.disabled && 'opacity-50'
+    <McpServerRow
+      icon={<McpIcon name={config.name} meta={meta} bundle={bundle} size="xs" className="bg-background" />}
+      name={config.name}
+      badge={bundle && (
+        <Badge variant="outline" className="shrink-0 gap-1 px-1.5 py-0 text-[10px] font-normal">
+          <Package className="size-2.5" />
+          v{bundle.meta.version}
+        </Badge>
       )}
-    >
-      <McpIcon name={config.name} meta={meta} bundle={bundle} />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <p className="text-sm font-medium truncate">{config.name}</p>
-          {bundle && (
-            <Badge variant="outline" className="shrink-0 gap-1 px-1.5 py-0 text-[10px] font-normal">
-              <Package className="size-2.5" />
-              v{bundle.meta.version}
-            </Badge>
-          )}
-          {!isManaged && isFailed && (
-            <button
-              onClick={handleReconnect}
-              className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <RefreshCw className={cn('size-3', reconnecting && 'animate-spin')} />
-            </button>
-          )}
-        </div>
-        <div className="mt-0.5 flex items-center gap-1.5">
-          <span className={cn('size-2 shrink-0 rounded-full', dotColor)} />
-          <span className="text-xs text-muted-foreground">{statusText}</span>
-        </div>
-      </div>
-      {interactive && (
-        <>
-          <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-            <Switch
-              checked={isEnabled}
-              onCheckedChange={(checked) => toggleMcpConfig(config.name, !checked, config.scope)}
-            />
-          </div>
-          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-        </>
+      extra={!isManaged && isFailed && (
+        <button
+          onClick={handleReconnect}
+          className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <RefreshCw className={cn('size-3', reconnecting && 'animate-spin')} />
+        </button>
       )}
-    </div>
+      statusDotClass={dotColor}
+      statusText={statusText}
+      dimmed={config.disabled}
+      onSelect={interactive ? () => selectMcp(config.name) : undefined}
+      trailing={interactive && (
+        <Switch
+          checked={isEnabled}
+          onCheckedChange={(checked) => toggleMcpConfig(config.name, !checked, config.scope)}
+        />
+      )}
+    />
   )
 }
 
@@ -199,16 +245,25 @@ function LibraryView({ onClose }: { onClose: () => void }) {
     }
   }
 
+  const header = (
+    <div className={cn(settingsRowClassName, 'flex items-center gap-2')}>
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label={t('common.back')}
+        className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="size-4" />
+      </button>
+      <h3 className="text-sm font-medium">{t('resources.mcp.libraryView.title')}</h3>
+    </div>
+  )
+
   if (mcpLibrary.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-card p-4">
-        <div className="mb-3 flex items-center gap-2">
-          <button onClick={onClose} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="size-4" />
-          </button>
-          <h3 className="text-sm font-medium">{t('resources.mcp.libraryView.title')}</h3>
-        </div>
-        <p className="text-sm text-muted-foreground text-center py-6">
+      <div>
+        {header}
+        <p className="px-3 py-6 text-center text-sm text-muted-foreground">
           {t('resources.mcp.libraryView.empty')}
         </p>
       </div>
@@ -216,16 +271,11 @@ function LibraryView({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <div className="mb-3 flex items-center gap-2">
-        <button onClick={onClose} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="size-4" />
-        </button>
-        <h3 className="text-sm font-medium">{t('resources.mcp.libraryView.title')}</h3>
-      </div>
+    <div>
+      {header}
 
       {/* Grid */}
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-2 p-3">
         {mcpLibrary.map((entry) => {
           const isAdded = existingNames.has(entry.name)
           const isSelected = selected.has(entry.name)
@@ -234,6 +284,7 @@ function LibraryView({ onClose }: { onClose: () => void }) {
               key={entry.name}
               role="button"
               tabIndex={0}
+              aria-pressed={isSelected}
               onClick={() => toggle(entry.name)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
@@ -242,58 +293,50 @@ function LibraryView({ onClose }: { onClose: () => void }) {
                 }
               }}
               className={cn(
-                'relative flex flex-col items-center gap-2 rounded-lg border-2 p-3 transition-colors text-center',
-                'cursor-pointer',
+                'relative flex cursor-pointer flex-col items-center gap-2 rounded-md p-3 text-center transition-colors',
                 isSelected
-                  ? 'border-primary bg-primary/5'
-                  : isAdded
-                    ? 'border-border bg-muted/40 hover:border-muted-foreground/30'
-                    : 'border-border hover:border-muted-foreground/30',
+                  ? 'bg-primary/10 ring-1 ring-primary'
+                  : 'bg-background/60 hover:bg-background',
               )}
             >
               {isSelected && (
-                <div className="absolute left-1.5 top-1.5 flex size-4 items-center justify-center rounded-full bg-primary">
+                <div className="absolute top-1.5 left-1.5 flex size-4 items-center justify-center rounded-full bg-primary">
                   <Check className="size-2.5 text-primary-foreground" />
                 </div>
               )}
               {isAdded && (
-                <span className="absolute right-1.5 top-1.5 text-[10px] text-muted-foreground">{t('resources.mcp.libraryView.added')}</span>
+                <span className="absolute top-1.5 right-1.5 text-[10px] text-muted-foreground">{t('resources.mcp.libraryView.added')}</span>
               )}
               <McpIcon name={entry.name} meta={{ name: entry.name, icons: entry.icons }} />
-              <span className="text-xs font-medium truncate w-full">{entry.name}</span>
+              <span className="w-full truncate text-xs">{entry.name}</span>
             </div>
           )
         })}
       </div>
 
       {/* Bottom action bar */}
-      <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
-        <div className="flex gap-2">
-          {(['user', 'project'] as const).map((s) => (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setScope(s)}
-              className={cn(
-                'rounded-md px-3 py-1 text-xs transition-colors',
-                scope === s ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
+      <div className={cn(settingsRowClassName, 'flex flex-wrap items-center justify-between gap-2')}>
+        <SettingsSegmentedControl
+          value={scope}
+          onChange={setScope}
+          label={t('resources.mcp.form.scope')}
+          options={[
+            { value: 'user', label: 'user' },
+            { value: 'project', label: 'project' },
+          ]}
+        />
         <div className="flex items-center gap-2">
           <Button
             size="sm"
             variant="destructive"
+            className="h-7"
             disabled={selectedEntries.length === 0 || adding || deleting}
             onClick={() => setDeleteConfirmOpen(true)}
           >
-            <Trash2 className="size-4" />
+            <Trash2 className="size-3.5" />
             {t('resources.mcp.libraryView.deleteButton')} {selectedEntries.length > 0 ? selectedEntries.length : ''}
           </Button>
-          <Button size="sm" disabled={addableEntries.length === 0 || adding || deleting} onClick={handleAdd}>
+          <Button size="sm" className="h-7" disabled={addableEntries.length === 0 || adding || deleting} onClick={handleAdd}>
             {adding ? t('resources.mcp.libraryView.adding') : t('resources.mcp.libraryView.addCount', { count: addableEntries.length })}
           </Button>
         </div>
@@ -321,60 +364,24 @@ function LibraryView({ onClose }: { onClose: () => void }) {
 
 function ClaudeAiDetailPage({ server, onToggle }: { server: McpServerInfo; onToggle: (name: string, disabled: boolean) => void }) {
   const { t } = useTranslation()
-  const { selectMcp } = useSettingsStore()
   const isDisabled = server.status === 'disabled'
   const isConnected = server.status === 'connected'
   const tools = server.tools ?? []
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <div className="mb-6">
-        <button
-          onClick={() => selectMcp(null)}
-          className="mb-3 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="size-3" />
-          {t('common.back')}
-        </button>
-        <div className="flex items-center gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-base font-medium uppercase text-muted-foreground">
-            {server.name[0]}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold">{server.name}</h2>
-              <span className={cn('size-2 rounded-full', isConnected ? 'bg-success' : 'bg-error')} />
-            </div>
-            <span className="text-xs text-muted-foreground">claude.ai</span>
-          </div>
-          <Switch checked={!isDisabled} onCheckedChange={(checked) => onToggle(server.name, !checked)} />
-        </div>
-      </div>
-
-      <div className="rounded-lg border border-border bg-card p-4">
-        <h3 className="mb-3 text-sm font-medium">
-          {t('resources.mcp.tools')}
-          {server.toolCount != null && (
-            <span className="ml-2 text-xs text-muted-foreground">({server.toolCount})</span>
-          )}
-        </h3>
-        {tools.length > 0 ? (
-          <div className="space-y-2">
-            {tools.map((tool) => (
-              <div key={tool.name} className="rounded-md border border-border px-3 py-2">
-                <p className="text-sm font-medium font-mono">{tool.name}</p>
-                {tool.description && (
-                  <p className="mt-0.5 text-xs text-muted-foreground">{tool.description}</p>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            {isConnected ? t('resources.mcp.noToolsConnected') : isDisabled ? t('resources.mcp.noToolsDisabled') : t('resources.mcp.noToolsDisconnected')}
-          </p>
-        )}
-      </div>
+    <div className="space-y-5">
+      <McpDetailHeader
+        icon={<McpIcon name={server.name} size="md" />}
+        name={server.name}
+        statusDotClass={isConnected ? 'bg-success' : 'bg-error'}
+        subtitle={<span className="text-xs text-muted-foreground">claude.ai</span>}
+        trailing={<Switch checked={!isDisabled} onCheckedChange={(checked) => onToggle(server.name, !checked)} />}
+      />
+      <McpToolsSection
+        tools={tools}
+        toolCount={server.toolCount}
+        emptyText={isConnected ? t('resources.mcp.noToolsConnected') : isDisabled ? t('resources.mcp.noToolsDisabled') : t('resources.mcp.noToolsDisconnected')}
+      />
     </div>
   )
 }
@@ -383,91 +390,33 @@ function ClaudeAiSection({ servers, loading, onToggle }: { servers: McpServerInf
   const { t } = useTranslation()
   const { selectMcp } = useSettingsStore()
   return (
-    <div>
-      <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('resources.mcp.claudeAiTitle')}</h3>
+    <SettingsSection title={t('resources.mcp.claudeAiTitle')}>
       {loading && servers.length === 0 && (
-        <div className="flex items-center gap-2 rounded-lg border border-dashed border-border p-4">
-          <RefreshCw className="size-3.5 animate-spin text-muted-foreground" />
-          <span className="text-xs text-muted-foreground">{t('resources.mcp.claudeAiFetching')}</span>
-        </div>
+        <SettingsLoadingState label={t('resources.mcp.claudeAiFetching')} className="py-4" />
       )}
       {!loading && servers.length === 0 && (
-        <div className="rounded-lg border border-dashed border-border p-4 text-center">
-          <p className="text-xs text-muted-foreground">{t('resources.mcp.claudeAiEmpty')}</p>
-        </div>
+        <p className="px-3 py-4 text-center text-xs text-muted-foreground">{t('resources.mcp.claudeAiEmpty')}</p>
       )}
-      <div className="grid grid-cols-2 gap-3">
-        {servers.map((server) => {
-          const isDisabled = server.status === 'disabled'
-          const isConnected = server.status === 'connected'
-          const isPending = server.status === 'pending'
-          const dotColor = isConnected ? 'bg-success' : isPending ? 'bg-warning' : isDisabled ? 'bg-error' : 'bg-error'
-          const statusText = isDisabled ? t('resources.mcp.statusDisabled') : isPending ? t('resources.mcp.statusConnecting') : isConnected ? t('resources.mcp.toolsCount', { count: server.toolCount ?? 0 }) : server.error ?? t('resources.mcp.statusFailed')
-          return (
-            <div
-              key={server.name}
-              onClick={() => selectMcp(server.name)}
-              className={cn('flex items-center gap-3 rounded-lg border border-border bg-card p-3 cursor-pointer transition-colors hover:bg-accent/50', isDisabled && 'opacity-50')}
-            >
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium uppercase text-muted-foreground">
-                {server.name[0]}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{server.name}</p>
-                <div className="mt-0.5 flex items-center gap-1.5">
-                  <span className={cn('size-2 shrink-0 rounded-full', dotColor)} />
-                  <span className="text-xs text-muted-foreground">{statusText}</span>
-                </div>
-              </div>
-              <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-                <Switch checked={!isDisabled} onCheckedChange={(checked) => onToggle(server.name, !checked)} />
-              </div>
-              <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-function ServerSection({
-  title,
-  configs,
-  mcpStatus,
-  mcpMeta,
-  bundlesByName,
-  interactive = true,
-  statusMode = 'live',
-}: {
-  title?: string
-  configs: McpServerConfig[]
-  mcpStatus: McpServerInfo[]
-  mcpMeta: Record<string, McpServerMeta>
-  bundlesByName?: Record<string, McpbInstalledEntry>
-  interactive?: boolean
-  statusMode?: 'live' | 'managed'
-}) {
-  if (configs.length === 0) return null
-  return (
-    <div>
-      {title ? (
-        <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>
-      ) : null}
-      <div className="grid grid-cols-2 gap-3">
-        {configs.map((config) => (
-          <ServerCard
-            key={config.name}
-            config={config}
-            status={mcpStatus.find((s) => s.name === config.name)}
-            meta={mcpMeta[config.name]}
-            bundle={bundlesByName?.[config.name]}
-            interactive={interactive}
-            statusMode={statusMode}
+      {servers.map((server) => {
+        const isDisabled = server.status === 'disabled'
+        const isConnected = server.status === 'connected'
+        const isPending = server.status === 'pending'
+        const dotColor = isConnected ? 'bg-success' : isPending ? 'bg-warning' : 'bg-error'
+        const statusText = isDisabled ? t('resources.mcp.statusDisabled') : isPending ? t('resources.mcp.statusConnecting') : isConnected ? t('resources.mcp.toolsCount', { count: server.toolCount ?? 0 }) : server.error ?? t('resources.mcp.statusFailed')
+        return (
+          <McpServerRow
+            key={server.name}
+            icon={<McpIcon name={server.name} size="xs" className="bg-background" />}
+            name={server.name}
+            statusDotClass={dotColor}
+            statusText={statusText}
+            dimmed={isDisabled}
+            onSelect={() => selectMcp(server.name)}
+            trailing={<Switch checked={!isDisabled} onCheckedChange={(checked) => onToggle(server.name, !checked)} />}
           />
-        ))}
-      </div>
-    </div>
+        )
+      })}
+    </SettingsSection>
   )
 }
 
@@ -558,42 +507,60 @@ export function McpPage() {
     if (bundleProvider && entry.meta.provider === bundleProvider) bundlesByName[entry.meta.name] = entry
   }
 
-  return (
-    <div className="w-full">
-      <ResourceScopeToolbar
-        scope={scope}
-        onScopeChange={setScope}
-        availableScopes={isDsh ? ['user'] : undefined}
-        actions={
-          <>
-            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
-              <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
-              {t('resources.mcp.refresh')}
-            </Button>
-            {!isDsh && mcpLibrary.length > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setAddView(addView === 'library' ? 'none' : 'library')}
-              >
-                <Library className="size-4" />
-                {t('resources.mcp.library')}
-              </Button>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setAddView(addView === 'form' ? 'none' : 'form')}
-            >
-              <Plus className="size-4" />
-              {t('resources.mcp.add')}
-            </Button>
-          </>
-        }
-      />
+  const addPanelOpen = addView === 'form' || addView === 'library'
 
-      {addView === 'form' && (
-        <div className="mb-4">
+  return (
+    // Container queries let the title-line toolbar drop button labels when the detail column is narrow.
+    <div className="@container space-y-5">
+      <SettingsSection
+        title={t('resources.mcp.title')}
+        actions={
+          <ResourceScopeToolbar
+            className="mb-0"
+            scope={scope}
+            onScopeChange={setScope}
+            availableScopes={isDsh ? ['user'] : undefined}
+            actions={
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="size-7 p-0"
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                  aria-label={t('resources.mcp.refresh')}
+                  title={t('resources.mcp.refresh')}
+                >
+                  <RefreshCw className={cn('size-3.5', refreshing && 'animate-spin')} />
+                </Button>
+                {!isDsh && mcpLibrary.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7"
+                    title={t('resources.mcp.library')}
+                    onClick={() => setAddView(addView === 'library' ? 'none' : 'library')}
+                  >
+                    <Library className="size-3.5" />
+                    <span className="@max-xl:sr-only">{t('resources.mcp.library')}</span>
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7"
+                  title={t('resources.mcp.add')}
+                  onClick={() => setAddView(addView === 'form' ? 'none' : 'form')}
+                >
+                  <Plus className="size-3.5" />
+                  <span className="@max-xl:sr-only">{t('resources.mcp.add')}</span>
+                </Button>
+              </>
+            }
+          />
+        }
+      >
+        {addView === 'form' && (
           <AddServerPanel
             provider={isDsh ? 'dsh' : isCodex ? 'codex' : 'claude'}
             cwd={currentFolder}
@@ -601,41 +568,43 @@ export function McpPage() {
             onInstalled={(name) => toast.success(t('resources.mcp.bundle.installed', { name }))}
             onError={(message) => toast.error(message)}
           />
-        </div>
-      )}
+        )}
 
-      {addView === 'library' && (
-        <div className="mb-4">
+        {addView === 'library' && (
           <LibraryView onClose={() => setAddView('none')} />
-        </div>
-      )}
+        )}
 
-      {!hasScopedContent ? (
-        <div className="rounded-lg border border-dashed border-border p-8 text-center">
-          <p className="text-sm text-muted-foreground">{t('resources.mcp.empty')}</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {isDsh ? t('resources.mcp.emptyHintDsh') : isCodex ? t('resources.mcp.emptyHintCodex') : t('resources.mcp.emptyHintClaude')}
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {showClaudeAi && (
-            <ClaudeAiSection
-              servers={claudeaiServers}
-              loading={checking}
-              onToggle={(name, disabled) => toggleMcpConfig(name, disabled, 'claudeai')}
-            />
-          )}
-          {scopedConfigs.length > 0 && (
-            <ServerSection
-              configs={scopedConfigs}
-              mcpStatus={isManaged ? managedCardStatus : mcpStatus}
-              mcpMeta={isManaged ? {} : mcpMeta}
-              bundlesByName={bundlesByName}
+        {scopedConfigs.length > 0 ? (
+          scopedConfigs.map((config) => (
+            <ServerCard
+              key={config.name}
+              config={config}
+              status={(isManaged ? managedCardStatus : mcpStatus).find((s) => s.name === config.name)}
+              meta={isManaged ? undefined : mcpMeta[config.name]}
+              bundle={bundlesByName[config.name]}
               statusMode={isManaged ? 'managed' : 'live'}
             />
-          )}
-        </div>
+          ))
+        ) : !addPanelOpen ? (
+          <SettingsEmptyState
+            title={t('resources.mcp.empty')}
+            hint={isDsh ? t('resources.mcp.emptyHintDsh') : isCodex ? t('resources.mcp.emptyHintCodex') : t('resources.mcp.emptyHintClaude')}
+            action={
+              <Button size="sm" className="h-7" onClick={() => setAddView('form')}>
+                <Plus className="size-3.5" />
+                {t('resources.mcp.add')}
+              </Button>
+            }
+          />
+        ) : null}
+      </SettingsSection>
+
+      {showClaudeAi && hasScopedContent && (
+        <ClaudeAiSection
+          servers={claudeaiServers}
+          loading={checking}
+          onToggle={(name, disabled) => toggleMcpConfig(name, disabled, 'claudeai')}
+        />
       )}
     </div>
   )

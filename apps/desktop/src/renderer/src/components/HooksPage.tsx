@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, ChevronRight, Plus, Pencil, Trash2, Webhook, Terminal, MessageSquare, Bot, Globe, Server } from 'lucide-react'
-import { motion, AnimatePresence } from 'motion/react'
+import { Plus, Pencil, Trash2, Terminal, MessageSquare, Bot, Globe, Server } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { useAppStore } from '@/stores/app'
@@ -10,6 +9,10 @@ import {
   ResourceScopeToolbar,
   type ResourceScopeView,
 } from '@/components/settings/ResourceScopeToolbar'
+import { SettingsSection, settingsRowClassName } from '@/components/settings/SettingsSection'
+import { SettingsCollapsibleGroup } from '@/components/settings/SettingsDisclosureRow'
+import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState'
+import { SettingsFootnote } from '@/components/settings/SettingsFootnote'
 import { HookEditorDialog } from './HookEditorDialog'
 import { CodexHooksPanel } from './CodexHooksPanel'
 import { cn } from '@superone/ui/lib/utils'
@@ -120,73 +123,56 @@ function ClaudeHooksPage() {
   }
 
   return (
-    <div className="w-full">
-      <ResourceScopeToolbar
-        scope={scope}
-        onScopeChange={setScope}
+    <div>
+      <SettingsSection
+        title={t('resources.hooks.title')}
         actions={
-          <Button size="sm" onClick={handleAdd}>
-            <Plus className="size-4" />
-            {t('resources.hooks.add')}
-          </Button>
+          <ResourceScopeToolbar
+            className="mb-0"
+            scope={scope}
+            onScopeChange={setScope}
+            actions={
+              <Button size="sm" variant="outline" className="h-7" onClick={handleAdd}>
+                <Plus className="size-3.5" />
+                {t('resources.hooks.add')}
+              </Button>
+            }
+          />
         }
-      />
-
-      <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-muted-foreground">
-        {t('resources.hooks.applyNote')}
-      </div>
-
-      {scopedHooks.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border p-8 text-center">
-          <Webhook className="mx-auto size-8 text-muted-foreground/50" />
-          <p className="mt-3 text-sm text-muted-foreground">{t('resources.hooks.empty')}</p>
-          <p className="mt-1 text-xs text-muted-foreground/70">{t('resources.hooks.emptyHint')}</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {grouped.map(([event, entries]) => {
-            const isCollapsed = collapsed.has(event)
-            return (
-              <div key={event} className="overflow-hidden rounded-lg border border-border bg-card">
-                <button
-                  onClick={() => toggleCollapse(event)}
-                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/50"
-                >
-                  <div className="flex items-center gap-1.5">
-                    {isCollapsed ? <ChevronRight className="size-4 text-muted-foreground" /> : <ChevronDown className="size-4 text-muted-foreground" />}
-                    <span className="text-sm font-medium">{event}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {t('resources.hooks.entryCount', { count: entries.length })}
-                    </span>
-                  </div>
-                </button>
-                <AnimatePresence initial={false}>
-                  {!isCollapsed && (
-                    <motion.div
-                      initial={{ height: 0 }}
-                      animate={{ height: 'auto' }}
-                      exit={{ height: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="overflow-hidden border-t border-border"
-                    >
-                      <div className="divide-y divide-border">
-                        {entries.map((cfg) => (
-                          <HookRow
-                            key={cfg.id}
-                            cfg={cfg}
-                            onEdit={() => handleEdit(cfg)}
-                            onDelete={() => setConfirmDelete(cfg)}
-                          />
-                        ))}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            )
-          })}
-        </div>
-      )}
+      >
+        {scopedHooks.length === 0 ? (
+          <SettingsEmptyState
+            title={t('resources.hooks.empty')}
+            hint={t('resources.hooks.emptyHint')}
+            action={
+              <Button size="sm" className="h-7" onClick={handleAdd}>
+                <Plus className="size-3.5" />
+                {t('resources.hooks.add')}
+              </Button>
+            }
+          />
+        ) : (
+          grouped.map(([event, entries]) => (
+            <SettingsCollapsibleGroup
+              key={event}
+              title={event}
+              meta={t('resources.hooks.entryCount', { count: entries.length })}
+              collapsed={collapsed.has(event)}
+              onToggle={() => toggleCollapse(event)}
+            >
+              {entries.map((cfg) => (
+                <HookRow
+                  key={cfg.id}
+                  cfg={cfg}
+                  onEdit={() => handleEdit(cfg)}
+                  onDelete={() => setConfirmDelete(cfg)}
+                />
+              ))}
+            </SettingsCollapsibleGroup>
+          ))
+        )}
+      </SettingsSection>
+      <SettingsFootnote>{t('resources.hooks.applyNote')}</SettingsFootnote>
 
       <HookEditorDialog
         open={editorOpen}
@@ -215,9 +201,9 @@ function HookRow({ cfg, onEdit, onDelete }: { cfg: HookConfig; onEdit: () => voi
   const { t } = useTranslation()
   const TypeIcon = TYPE_ICON[cfg.entry.type]
   return (
-    <div className="group flex items-center gap-3 px-3 py-2.5">
+    <div className={cn(settingsRowClassName, 'group flex items-center gap-3')}>
       <span className={cn(
-        'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase',
+        'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium',
         cfg.scope === 'user' && scopeBadgeClass('user'),
         cfg.scope === 'project' && scopeBadgeClass('project'),
         cfg.scope === 'local' && scopeBadgeClass('minor'),
@@ -225,7 +211,7 @@ function HookRow({ cfg, onEdit, onDelete }: { cfg: HookConfig; onEdit: () => voi
         {t(SCOPE_LABEL[cfg.scope])}
       </span>
       {cfg.matcher && (
-        <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+        <span className="shrink-0 rounded bg-background px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
           {cfg.matcher}
         </span>
       )}
@@ -233,10 +219,10 @@ function HookRow({ cfg, onEdit, onDelete }: { cfg: HookConfig; onEdit: () => voi
       <span className="flex-1 truncate font-mono text-xs text-foreground/80">
         {summaryFor(cfg.entry)}
       </span>
-      <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+      <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
         <button
           onClick={onEdit}
-          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="rounded p-1 text-muted-foreground hover:bg-background hover:text-foreground"
           aria-label="edit"
         >
           <Pencil className="size-3.5" />

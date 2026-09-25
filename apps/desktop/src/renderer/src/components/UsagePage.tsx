@@ -12,7 +12,12 @@ import {
 import type { CatalogModel } from '@superone/shared/model-catalog-types'
 import { useModelCatalog } from '@/hooks/useModelCatalog'
 import { useChatStore } from '@/stores/chat'
+import { useAppStore } from '@/stores/app'
+import { brandHueToOklch, HARNESS_DEFAULT_BRAND_HUE } from '@superone/shared/harness-brand'
+import type { HarnessId } from '@superone/shared/session-types'
 import { ModelGlyph } from './providers/ModelGlyph'
+import { SettingsCard, SettingsPage, SettingsSection } from './settings/SettingsSection'
+import { SettingsSegmentedControl } from './settings/SettingsSegmentedControl'
 import {
   buildUsageModelNameIndex,
   resolveUsageModelPresentation,
@@ -91,11 +96,36 @@ const HARNESS_FILTERS: HarnessFilter[] = ['all', 'claude', 'codex', 'grok', 'cur
 const TOKEN_TYPE_KEYS = ['input', 'output', 'cacheRead', 'cacheCreation'] as const
 type TokenTypeKey = typeof TOKEN_TYPE_KEYS[number]
 
-const TOKEN_TYPE_COLORS: Record<TokenTypeKey, { fill: string; opacity: number }> = {
-  input: { fill: 'var(--primary)', opacity: 1 },
-  output: { fill: 'var(--primary)', opacity: 0.65 },
-  cacheRead: { fill: 'var(--foreground)', opacity: 0.3 },
-  cacheCreation: { fill: 'var(--foreground)', opacity: 0.5 },
+type TokenTypeColors = Record<TokenTypeKey, string>
+
+/**
+ * Token types are shades of one brand color. They fade toward transparent
+ * rather than toward the page color, so the hue survives in both themes (an
+ * oklch mix toward near-black drifts the hue). Cache reads dominate most
+ * totals, so the biggest band gets the quietest shade.
+ */
+function tokenTypeColors(base: string): TokenTypeColors {
+  const shade = (percent: number) => `color-mix(in oklch, ${base} ${percent}%, transparent)`
+  return { input: base, output: shade(65), cacheCreation: shade(42), cacheRead: shade(24) }
+}
+
+const HARNESS_SERIES: ReadonlyArray<{ key: Harness; label: string; brand: HarnessId }> = [
+  { key: 'claude', label: 'Claude', brand: 'claude' },
+  { key: 'codex', label: 'Codex', brand: 'codex' },
+  { key: 'grok', label: 'Grok', brand: 'acp' },
+  { key: 'cursor', label: 'Cursor', brand: 'cursor' },
+  { key: 'opencode', label: 'OpenCode', brand: 'opencode' },
+]
+
+type HarnessColors = Record<Harness, string>
+type HarnessSeries = (typeof HARNESS_SERIES)[number]
+
+/** Each harness in its brand color, following the hue the user picked for it. */
+function useHarnessColors(): HarnessColors {
+  const brandHues = useAppStore((s) => s.brandHues)
+  return useMemo(() => Object.fromEntries(
+    HARNESS_SERIES.map(({ key, brand }) => [key, brandHueToOklch(brandHues[brand] ?? HARNESS_DEFAULT_BRAND_HUE[brand])]),
+  ) as HarnessColors, [brandHues])
 }
 
 function formatNumber(n: number): string {
@@ -146,6 +176,7 @@ export function UsagePage() {
   const [backfilling, setBackfilling] = useState(false)
   const [preset, setPreset] = useState<RangePreset>('today')
   const [harnessFilter, setHarnessFilter] = useState<HarnessFilter>('all')
+  const harnessColors = useHarnessColors()
   const catalogModels = useMemo(
     () => catalog ? buildCatalogModelIndex(catalog) : new Map(),
     [catalog],
@@ -333,6 +364,11 @@ export function UsagePage() {
   }, [filteredRows, catalogModels, knownModelNames])
 
   const isAll = harnessFilter === 'all'
+  // Token-type bands tint the brand of the harness being viewed; the combined view uses the app brand.
+  const brandColor = isAll ? 'var(--primary)' : harnessColors[harnessFilter]
+  // Only harnesses with usage in range get a series, so grouped bars don't leave empty slots.
+  const activeSeries = HARNESS_SERIES.filter(({ key }) => dailyByHarness.some((d) => d[key] > 0))
+  const typeColors = tokenTypeColors(brandColor)
   const isToday = preset === 'today'
   const isHeatmap = preset === 'all'
   const isAreaRange = preset === '90d'
@@ -357,164 +393,136 @@ export function UsagePage() {
         : 'settings.usage.daily.titleByTokenType'
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-      <div className="flex items-baseline justify-between">
-        <h2 className="text-xl font-semibold">{t('settings.usage.title')}</h2>
-        {backfilling && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" />
-            <span>{t('settings.usage.backfilling')}</span>
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-4">
-        <div className="flex gap-1">
-          {PRESETS.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setPreset(p.id)}
-              className={cn(
-                'rounded-md px-3 py-1.5 text-sm transition-colors',
-                preset === p.id
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-              )}
-            >
-              {t(`settings.usage.presets.${p.id}`)}
-            </button>
-          ))}
+    <SettingsPage
+      title={t('settings.usage.title')}
+      className="max-w-5xl"
+      actions={backfilling && (
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" />
+          <span>{t('settings.usage.backfilling')}</span>
         </div>
-        <div className="flex gap-1 rounded-lg border border-border p-0.5">
-          {HARNESS_FILTERS.map((h) => (
-            <button
-              key={h}
-              onClick={() => setHarnessFilter(h)}
-              className={cn(
-                'rounded-md px-3 py-1 text-xs font-medium transition-colors',
-                harnessFilter === h
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {t(`settings.usage.harness.${h}`)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <SummaryCard label={t('settings.usage.summary.totalTokens')} value={formatNumber(filteredTokenTotal)} />
-        <SummaryCard
-          label={t('settings.usage.summary.estimatedCost')}
-          value={formatUsd(costSummary.total)}
-          hint={
-            costSummary.unpricedModels > 0
-              ? t('settings.usage.summary.unpricedHint', { count: costSummary.unpricedModels })
-              : t('settings.usage.summary.estimatedCostHint')
-          }
+      )}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SettingsSegmentedControl
+          label={t('settings.usage.byModel.harness')}
+          value={harnessFilter}
+          onChange={setHarnessFilter}
+          options={HARNESS_FILTERS.map((h) => ({ value: h, label: t(`settings.usage.harness.${h}`) }))}
         />
-        <SummaryCard label={t('settings.usage.summary.sessions')} value={counts.sessions.toLocaleString()} />
-        <SummaryCard label={t('settings.usage.summary.messages')} value={counts.messages.toLocaleString()} />
+        <SettingsSegmentedControl
+          label={t('settings.usage.title')}
+          value={preset}
+          onChange={setPreset}
+          options={PRESETS.map((p) => ({ value: p.id, label: t(`settings.usage.presets.${p.id}`) }))}
+        />
       </div>
 
-      <div className="rounded-lg border border-border bg-card p-4">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="text-sm font-medium">{t(chartTitleKey)}</h3>
-          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+      {/* Tiles follow the pane width, not the window: the settings sidebar eats into the viewport. */}
+      <div className="@container">
+        <div className="grid grid-cols-2 gap-3 @2xl:grid-cols-4">
+          <SummaryCard label={t('settings.usage.summary.totalTokens')} value={formatNumber(filteredTokenTotal)} />
+          <SummaryCard
+            label={t('settings.usage.summary.estimatedCost')}
+            value={formatUsd(costSummary.total)}
+            hint={
+              costSummary.unpricedModels > 0
+                ? t('settings.usage.summary.unpricedHint', { count: costSummary.unpricedModels })
+                : t('settings.usage.summary.estimatedCostHint')
+            }
+          />
+          <SummaryCard label={t('settings.usage.summary.sessions')} value={counts.sessions.toLocaleString()} />
+          <SummaryCard label={t('settings.usage.summary.messages')} value={counts.messages.toLocaleString()} />
+        </div>
+      </div>
+
+      <SettingsSection title={t(chartTitleKey)}>
+        <div className="p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs text-muted-foreground">
             {isHeatmap ? (
-              <HeatmapLegend t={t} />
+              <HeatmapLegend color={brandColor} t={t} />
             ) : isToday || !isAll ? (
               TOKEN_TYPE_KEYS.map((key) => (
-                <LegendDot
-                  key={key}
-                  fill={TOKEN_TYPE_COLORS[key].fill}
-                  opacity={TOKEN_TYPE_COLORS[key].opacity}
-                  label={t(`settings.usage.tokenTypes.${key}`)}
-                />
+                <LegendDot key={key} fill={typeColors[key]} label={t(`settings.usage.tokenTypes.${key}`)} />
               ))
             ) : (
-              <>
-                <LegendDot fill="var(--primary)" label="Claude" />
-                <LegendDot fill="var(--foreground)" opacity={0.4} label="Codex" />
-                <LegendDot fill="var(--warning)" opacity={0.75} label="Grok" />
-              </>
+              activeSeries.map(({ key, label }) => <LegendDot key={key} fill={harnessColors[key]} label={label} />)
             )}
           </div>
+          {loading && rows.length === 0 ? (
+            <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+            </div>
+          ) : chartEmpty ? (
+            <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
+              {t('settings.usage.daily.empty')}
+            </div>
+          ) : isHeatmap ? (
+            <ContributionHeatmap dayTotals={dayTotalsMap} color={brandColor} t={t} />
+          ) : isToday ? (
+            <TodayByModelChart data={byModel} colors={typeColors} t={t} />
+          ) : isAll ? (
+            isAreaRange
+              ? <DailyHarnessAreaChart data={dailyByHarness} colors={harnessColors} t={t} />
+              : <DailyHarnessChart data={dailyByHarness} series={activeSeries} colors={harnessColors} t={t} showTopLabels={preset === '7d'} />
+          ) : (
+            isAreaRange
+              ? <DailyTokenTypeAreaChart data={dailyByTokenType} colors={typeColors} t={t} />
+              : <DailyTokenTypeChart data={dailyByTokenType} colors={typeColors} t={t} showTopLabels={preset === '7d'} />
+          )}
         </div>
-        {loading && rows.length === 0 ? (
-          <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
-          </div>
-        ) : chartEmpty ? (
-          <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-            {t('settings.usage.daily.empty')}
-          </div>
-        ) : isHeatmap ? (
-          <ContributionHeatmap dayTotals={dayTotalsMap} t={t} />
-        ) : isToday ? (
-          <TodayByModelChart data={byModel} t={t} />
-        ) : isAll ? (
-          isAreaRange
-            ? <DailyHarnessAreaChart data={dailyByHarness} t={t} />
-            : <DailyHarnessChart data={dailyByHarness} t={t} showTopLabels={preset === '7d'} />
-        ) : (
-          isAreaRange
-            ? <DailyTokenTypeAreaChart data={dailyByTokenType} t={t} />
-            : <DailyTokenTypeChart data={dailyByTokenType} t={t} showTopLabels={preset === '7d'} />
-        )}
-      </div>
+      </SettingsSection>
 
-      <div className="rounded-lg border border-border bg-card">
-        <div className="border-b border-border px-4 py-3">
-          <h3 className="text-sm font-medium">{t('settings.usage.byModel.title')}</h3>
-        </div>
+      <SettingsSection title={t('settings.usage.byModel.title')}>
         {byModel.length === 0 ? (
           <div className="flex h-24 items-center justify-center text-sm text-muted-foreground">
             {t('settings.usage.byModel.empty')}
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="text-xs text-muted-foreground">
-              <tr className="border-b border-border">
-                <th className="px-4 py-2 text-left font-normal">{t('settings.usage.byModel.model')}</th>
-                <th className="px-4 py-2 text-right font-normal">{t('settings.usage.byModel.input')}</th>
-                <th className="px-4 py-2 text-right font-normal">{t('settings.usage.byModel.output')}</th>
-                <th className="px-4 py-2 text-right font-normal">{t('settings.usage.byModel.cacheRead')}</th>
-                <th className="px-4 py-2 text-right font-normal">{t('settings.usage.byModel.cacheCreation')}</th>
-                <th className="px-4 py-2 text-right font-normal">{t('settings.usage.byModel.total')}</th>
-                <th className="px-4 py-2 text-right font-normal">{t('settings.usage.byModel.cost')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {byModel.map((m) => {
-                const total = m.input + m.output + m.cacheRead + m.cacheCreation
-                return (
-                  <tr key={`${m.harness}::${m.model}`} className="border-b border-border/50 last:border-b-0">
-                    <td className="px-4 py-2">
-                      <div className="flex min-w-0 items-center gap-2" title={m.model}>
-                        <span className="flex size-5 shrink-0 items-center justify-center">
-                          <ModelGlyph modelId={m.model} providerBrand={m.providerBrand} size={18} />
-                        </span>
-                        <span className="truncate font-medium">{m.displayName}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{formatNumber(m.input)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{formatNumber(m.output)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{formatNumber(m.cacheRead)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{formatNumber(m.cacheCreation)}</td>
-                    <td className="px-4 py-2 text-right font-semibold tabular-nums">{formatNumber(total)}</td>
-                    <td className="px-4 py-2 text-right font-semibold tabular-nums">
-                      {m.costUsd == null ? t('settings.usage.byModel.unpriced') : formatUsd(m.costUsd)}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          // Seven numeric columns do not fit a narrow pane; scroll the table, not the page.
+          <div className="overflow-x-auto rounded-[inherit]">
+            <table className="w-full text-sm">
+              <thead className="text-xs text-muted-foreground">
+                <tr>
+                  <th className="px-3 pt-2.5 pb-1.5 text-left font-normal">{t('settings.usage.byModel.model')}</th>
+                  <th className="px-3 pt-2.5 pb-1.5 text-right font-normal whitespace-nowrap">{t('settings.usage.byModel.input')}</th>
+                  <th className="px-3 pt-2.5 pb-1.5 text-right font-normal whitespace-nowrap">{t('settings.usage.byModel.output')}</th>
+                  <th className="px-3 pt-2.5 pb-1.5 text-right font-normal whitespace-nowrap">{t('settings.usage.byModel.cacheRead')}</th>
+                  <th className="px-3 pt-2.5 pb-1.5 text-right font-normal whitespace-nowrap">{t('settings.usage.byModel.cacheCreation')}</th>
+                  <th className="px-3 pt-2.5 pb-1.5 text-right font-normal whitespace-nowrap">{t('settings.usage.byModel.total')}</th>
+                  <th className="px-3 pt-2.5 pb-1.5 text-right font-normal whitespace-nowrap">{t('settings.usage.byModel.cost')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byModel.map((m) => {
+                  const total = m.input + m.output + m.cacheRead + m.cacheCreation
+                  return (
+                    <tr key={`${m.harness}::${m.model}`} className="border-t border-border/60">
+                      <td className="px-3 py-2">
+                        <div className="flex min-w-0 items-center gap-2" title={m.model}>
+                          <span className="flex size-5 shrink-0 items-center justify-center">
+                            <ModelGlyph modelId={m.model} providerBrand={m.providerBrand} size={18} />
+                          </span>
+                          <span className="truncate">{m.displayName}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{formatNumber(m.input)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{formatNumber(m.output)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{formatNumber(m.cacheRead)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{formatNumber(m.cacheCreation)}</td>
+                      <td className="px-3 py-2 text-right font-medium tabular-nums">{formatNumber(total)}</td>
+                      <td className="px-3 py-2 text-right font-medium tabular-nums whitespace-nowrap">
+                        {m.costUsd == null ? t('settings.usage.byModel.unpriced') : formatUsd(m.costUsd)}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
-      </div>
-    </div>
+      </SettingsSection>
+    </SettingsPage>
   )
 }
 
@@ -547,9 +555,11 @@ type HeatmapCell = { x: number; y: number; level: number; date: string; tokens: 
 
 function ContributionHeatmap({
   dayTotals,
+  color,
   t,
 }: {
   dayTotals: Map<string, { tokens: number; cost: number }>
+  color: string
   t: (key: string) => string
 }) {
   const [hover, setHover] = useState<HeatmapCell | null>(null)
@@ -639,7 +649,7 @@ function ContributionHeatmap({
             height={cellSize}
             rx={2}
             ry={2}
-            fill={cell.level === 0 ? 'var(--muted)' : 'var(--primary)'}
+            fill={cell.level === 0 ? 'var(--muted)' : color}
             fillOpacity={cell.level === 0 ? 1 : HEATMAP_LEVEL_OPACITY[cell.level]}
             stroke={hover?.date === cell.date ? 'var(--ring)' : 'transparent'}
             strokeWidth={1}
@@ -666,7 +676,7 @@ function ContributionHeatmap({
   )
 }
 
-function HeatmapLegend({ t }: { t: (key: string) => string }) {
+function HeatmapLegend({ color, t }: { color: string; t: (key: string) => string }) {
   return (
     <div className="flex items-center gap-1.5">
       <span>{t('settings.usage.heatmap.less')}</span>
@@ -675,7 +685,7 @@ function HeatmapLegend({ t }: { t: (key: string) => string }) {
           key={idx}
           className="size-2.5 rounded-sm"
           style={{
-            backgroundColor: idx === 0 ? 'var(--muted)' : 'var(--primary)',
+            backgroundColor: idx === 0 ? 'var(--muted)' : color,
             opacity: idx === 0 ? 1 : opacity,
           }}
         />
@@ -717,32 +727,38 @@ const TOKEN_TYPE_COST_KEYS: Record<TokenTypeKey, keyof DailyTokenTypeRow> = {
   cacheCreation: 'costCacheCreation',
 }
 
-function DailyHarnessAreaChart({ data, t }: { data: DailyHarnessRow[]; t: (key: string) => string }) {
+function HarnessTooltip({ row, label, colors, t }: { row: DailyHarnessRow | undefined; label: ReactNode; colors: HarnessColors; t: (key: string) => string }) {
+  const tokens = (key: Harness) => row?.[key] ?? 0
+  const cost = (key: Harness) => row?.[`${key}Cost`] ?? 0
+  return (
+    <div className="rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
+      <div className="mb-1 font-medium">{label}</div>
+      {HARNESS_SERIES.map(({ key, label: name }) => (
+        <TooltipRow key={key} color={colors[key]} label={name} tokens={tokens(key)} cost={cost(key)} />
+      ))}
+      <TooltipRow
+        color="transparent"
+        label={t('settings.usage.tooltip.total')}
+        tokens={HARNESS_SERIES.reduce((sum, { key }) => sum + tokens(key), 0)}
+        cost={HARNESS_SERIES.reduce((sum, { key }) => sum + cost(key), 0)}
+        bold
+      />
+    </div>
+  )
+}
+
+function DailyHarnessAreaChart({ data, colors, t }: { data: DailyHarnessRow[]; colors: HarnessColors; t: (key: string) => string }) {
   return (
     <SizedChart height={224}>
       {({ width: cw, height: ch }) => (
         <AreaChart width={cw} height={ch} data={data} margin={{ top: 4, right: 4, left: 4, bottom: 4 }}>
           <defs>
-            <linearGradient id="claudeFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.6} />
-              <stop offset="100%" stopColor="var(--primary)" stopOpacity={0.1} />
-            </linearGradient>
-            <linearGradient id="codexFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--foreground)" stopOpacity={0.4} />
-              <stop offset="100%" stopColor="var(--foreground)" stopOpacity={0.05} />
-            </linearGradient>
-            <linearGradient id="grokFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--warning)" stopOpacity={0.55} />
-              <stop offset="100%" stopColor="var(--warning)" stopOpacity={0.08} />
-            </linearGradient>
-            <linearGradient id="cursorFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--chart-4)" stopOpacity={0.55} />
-              <stop offset="100%" stopColor="var(--chart-4)" stopOpacity={0.08} />
-            </linearGradient>
-            <linearGradient id="opencodeFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--chart-5)" stopOpacity={0.55} />
-              <stop offset="100%" stopColor="var(--chart-5)" stopOpacity={0.08} />
-            </linearGradient>
+            {HARNESS_SERIES.map(({ key }) => (
+              <linearGradient key={key} id={`${key}Fill`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={colors[key]} stopOpacity={0.55} />
+                <stop offset="100%" stopColor={colors[key]} stopOpacity={0.08} />
+              </linearGradient>
+            ))}
           </defs>
           <XAxis
             dataKey="day"
@@ -755,45 +771,20 @@ function DailyHarnessAreaChart({ data, t }: { data: DailyHarnessRow[]; t: (key: 
           <YAxis hide domain={[0, 'dataMax']} />
           <Tooltip
             cursor={{ stroke: 'var(--muted-foreground)', strokeWidth: 1, strokeDasharray: '3 3' }}
-            content={({ active, payload, label }) => {
-              if (!active || !payload || payload.length === 0) return null
-              const row = payload[0]?.payload as DailyHarnessRow | undefined
-              const claude = row?.claude ?? 0
-              const codex = row?.codex ?? 0
-              const grok = row?.grok ?? 0
-              const cursor = row?.cursor ?? 0
-              const opencode = row?.opencode ?? 0
-              return (
-                <div className="rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
-                  <div className="mb-1 font-medium">{label}</div>
-                  <TooltipRow color="var(--primary)" label="Claude" tokens={claude} cost={row?.claudeCost ?? 0} />
-                  <TooltipRow color="var(--foreground)" opacity={0.4} label="Codex" tokens={codex} cost={row?.codexCost ?? 0} />
-                  <TooltipRow color="var(--warning)" opacity={0.75} label="Grok" tokens={grok} cost={row?.grokCost ?? 0} />
-                  <TooltipRow color="var(--chart-4)" opacity={0.75} label="Cursor" tokens={cursor} cost={row?.cursorCost ?? 0} />
-                  <TooltipRow color="var(--chart-5)" opacity={0.75} label="OpenCode" tokens={opencode} cost={row?.opencodeCost ?? 0} />
-                  <TooltipRow
-                    color="transparent"
-                    label={t('settings.usage.tooltip.total')}
-                    tokens={claude + codex + grok + cursor + opencode}
-                    cost={(row?.claudeCost ?? 0) + (row?.codexCost ?? 0) + (row?.grokCost ?? 0) + (row?.cursorCost ?? 0) + (row?.opencodeCost ?? 0)}
-                    bold
-                  />
-                </div>
-              )
-            }}
+            content={({ active, payload, label }) => active && payload && payload.length > 0
+              ? <HarnessTooltip row={payload[0]?.payload as DailyHarnessRow | undefined} label={label} colors={colors} t={t} />
+              : null}
           />
-          <Area type="monotone" dataKey="codex" stackId="usage" stroke="var(--foreground)" strokeOpacity={0.4} strokeWidth={1.5} fill="url(#codexFill)" />
-          <Area type="monotone" dataKey="grok" stackId="usage" stroke="var(--warning)" strokeOpacity={0.75} strokeWidth={1.5} fill="url(#grokFill)" />
-          <Area type="monotone" dataKey="cursor" stackId="usage" stroke="var(--chart-4)" strokeOpacity={0.75} strokeWidth={1.5} fill="url(#cursorFill)" />
-          <Area type="monotone" dataKey="opencode" stackId="usage" stroke="var(--chart-5)" strokeOpacity={0.75} strokeWidth={1.5} fill="url(#opencodeFill)" />
-          <Area type="monotone" dataKey="claude" stackId="usage" stroke="var(--primary)" strokeWidth={1.5} fill="url(#claudeFill)" />
+          {HARNESS_SERIES.map(({ key }) => (
+            <Area key={key} type="monotone" dataKey={key} stackId="usage" stroke={colors[key]} strokeWidth={1.5} fill={`url(#${key}Fill)`} />
+          ))}
         </AreaChart>
       )}
     </SizedChart>
   )
 }
 
-function DailyTokenTypeAreaChart({ data, t }: { data: DailyTokenTypeRow[]; t: (key: string) => string }) {
+function DailyTokenTypeAreaChart({ data, colors, t }: { data: DailyTokenTypeRow[]; colors: TokenTypeColors; t: (key: string) => string }) {
   return (
     <SizedChart height={224}>
       {({ width: cw, height: ch }) => (
@@ -826,8 +817,7 @@ function DailyTokenTypeAreaChart({ data, t }: { data: DailyTokenTypeRow[]; t: (k
                   {TOKEN_TYPE_KEYS.map((k) => (
                     <TooltipRow
                       key={k}
-                      color={TOKEN_TYPE_COLORS[k].fill}
-                      opacity={TOKEN_TYPE_COLORS[k].opacity}
+                      color={colors[k]}
                       label={t(`settings.usage.tokenTypes.${k}`)}
                       tokens={values[k]}
                       cost={costs[k]}
@@ -844,11 +834,10 @@ function DailyTokenTypeAreaChart({ data, t }: { data: DailyTokenTypeRow[]; t: (k
               type="monotone"
               dataKey={key}
               stackId="tokens"
-              stroke={TOKEN_TYPE_COLORS[key].fill}
-              strokeOpacity={TOKEN_TYPE_COLORS[key].opacity}
+              stroke={colors[key]}
               strokeWidth={1.5}
-              fill={TOKEN_TYPE_COLORS[key].fill}
-              fillOpacity={TOKEN_TYPE_COLORS[key].opacity * 0.5}
+              fill={colors[key]}
+              fillOpacity={0.5}
             />
           ))}
         </AreaChart>
@@ -857,7 +846,7 @@ function DailyTokenTypeAreaChart({ data, t }: { data: DailyTokenTypeRow[]; t: (k
   )
 }
 
-function TodayByModelChart({ data, t }: { data: ByModelRow[]; t: (key: string) => string }) {
+function TodayByModelChart({ data, colors, t }: { data: ByModelRow[]; colors: TokenTypeColors; t: (key: string) => string }) {
   const chartData = data.map((m) => ({
     key: `${m.harness}::${m.model}`,
     model: m.model,
@@ -913,8 +902,7 @@ function TodayByModelChart({ data, t }: { data: ByModelRow[]; t: (key: string) =
                   {TOKEN_TYPE_KEYS.map((k) => (
                     <TooltipRow
                       key={k}
-                      color={TOKEN_TYPE_COLORS[k].fill}
-                      opacity={TOKEN_TYPE_COLORS[k].opacity}
+                      color={colors[k]}
                       label={t(`settings.usage.tokenTypes.${k}`)}
                       tokens={values[k]}
                       cost={priced ? costs[k] : undefined}
@@ -937,8 +925,7 @@ function TodayByModelChart({ data, t }: { data: ByModelRow[]; t: (key: string) =
               dataKey={key}
               name={key}
               stackId="tokens"
-              fill={TOKEN_TYPE_COLORS[key].fill}
-              fillOpacity={TOKEN_TYPE_COLORS[key].opacity}
+              fill={colors[key]}
               radius={idx === 0 ? [4, 0, 0, 4] : idx === TOKEN_TYPE_KEYS.length - 1 ? [0, 4, 4, 0] : [0, 0, 0, 0]}
             />
           ))}
@@ -973,8 +960,9 @@ function ModelAxisTick({
   )
 }
 
-function DailyHarnessChart({ data, t, showTopLabels }: { data: DailyHarnessRow[]; t: (key: string) => string; showTopLabels?: boolean }) {
-  const totals = data.map((d) => d.claude + d.codex + d.grok)
+function DailyHarnessChart({ data, series, colors, t, showTopLabels }: { data: DailyHarnessRow[]; series: readonly HarnessSeries[]; colors: HarnessColors; t: (key: string) => string; showTopLabels?: boolean }) {
+  const rowTotal = (d: DailyHarnessRow) => HARNESS_SERIES.reduce((sum, { key }) => sum + d[key], 0)
+  const totals = data.map(rowTotal)
   const positives = totals.filter((v) => v > 0)
   const avg = positives.length > 0 ? positives.reduce((a, b) => a + b, 0) / positives.length : 0
   return (
@@ -982,18 +970,12 @@ function DailyHarnessChart({ data, t, showTopLabels }: { data: DailyHarnessRow[]
       {({ width: cw, height: ch }) => (
         <BarChart width={cw} height={ch} data={data} margin={{ top: showTopLabels ? 24 : 8, right: 8, left: 8, bottom: 4 }} barCategoryGap={showTopLabels ? 12 : 4}>
           <defs>
-            <linearGradient id="barClaude" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--primary)" stopOpacity={1} />
-              <stop offset="100%" stopColor="var(--primary)" stopOpacity={0.7} />
-            </linearGradient>
-            <linearGradient id="barCodex" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--foreground)" stopOpacity={0.5} />
-              <stop offset="100%" stopColor="var(--foreground)" stopOpacity={0.25} />
-            </linearGradient>
-            <linearGradient id="barGrok" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--warning)" stopOpacity={0.85} />
-              <stop offset="100%" stopColor="var(--warning)" stopOpacity={0.45} />
-            </linearGradient>
+            {HARNESS_SERIES.map(({ key }) => (
+              <linearGradient key={key} id={`bar-${key}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={colors[key]} stopOpacity={1} />
+                <stop offset="100%" stopColor={colors[key]} stopOpacity={0.7} />
+              </linearGradient>
+            ))}
           </defs>
           <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" />
           <XAxis
@@ -1021,48 +1003,29 @@ function DailyHarnessChart({ data, t, showTopLabels }: { data: DailyHarnessRow[]
           )}
           <Tooltip
             cursor={{ fill: 'var(--accent)', opacity: 0.3 }}
-            content={({ active, payload, label }) => {
-              if (!active || !payload || payload.length === 0) return null
-              const row = payload[0]?.payload as DailyHarnessRow | undefined
-              const claude = row?.claude ?? 0
-              const codex = row?.codex ?? 0
-              const grok = row?.grok ?? 0
-              return (
-                <div className="rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
-                  <div className="mb-1 font-medium">{label}</div>
-                  <TooltipRow color="var(--primary)" label="Claude" tokens={claude} cost={row?.claudeCost ?? 0} />
-                  <TooltipRow color="var(--foreground)" opacity={0.4} label="Codex" tokens={codex} cost={row?.codexCost ?? 0} />
-                  <TooltipRow color="var(--warning)" opacity={0.75} label="Grok" tokens={grok} cost={row?.grokCost ?? 0} />
-                  <TooltipRow
-                    color="transparent"
-                    label={t('settings.usage.tooltip.total')}
-                    tokens={claude + codex + grok}
-                    cost={(row?.claudeCost ?? 0) + (row?.codexCost ?? 0) + (row?.grokCost ?? 0)}
-                    bold
-                  />
-                </div>
-              )
-            }}
+            content={({ active, payload, label }) => active && payload && payload.length > 0
+              ? <HarnessTooltip row={payload[0]?.payload as DailyHarnessRow | undefined} label={label} colors={colors} t={t} />
+              : null}
           />
-          <Bar dataKey="claude" name="Claude" fill="url(#barClaude)" radius={[3, 3, 0, 0]} />
-          <Bar dataKey="codex" name="Codex" fill="url(#barCodex)" radius={[3, 3, 0, 0]} />
-          <Bar dataKey="grok" name="Grok" fill="url(#barGrok)" radius={[3, 3, 0, 0]}>
-            {showTopLabels && (
-              <LabelList
-                dataKey={(entry: DailyHarnessRow) => entry.claude + entry.codex + entry.grok}
-                position="top"
-                formatter={(v) => typeof v === 'number' && v > 0 ? formatNumber(v) : ''}
-                style={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-              />
-            )}
-          </Bar>
+          {series.map(({ key, label }, idx) => (
+            <Bar key={key} dataKey={key} name={label} fill={`url(#bar-${key})`} radius={[3, 3, 0, 0]}>
+              {idx === series.length - 1 && showTopLabels && (
+                <LabelList
+                  dataKey={rowTotal}
+                  position="top"
+                  formatter={(v) => typeof v === 'number' && v > 0 ? formatNumber(v) : ''}
+                  style={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
+                />
+              )}
+            </Bar>
+          ))}
         </BarChart>
       )}
     </SizedChart>
   )
 }
 
-function DailyTokenTypeChart({ data, t, showTopLabels }: { data: DailyTokenTypeRow[]; t: (key: string) => string; showTopLabels?: boolean }) {
+function DailyTokenTypeChart({ data, colors, t, showTopLabels }: { data: DailyTokenTypeRow[]; colors: TokenTypeColors; t: (key: string) => string; showTopLabels?: boolean }) {
   const totals = data.map((d) => d.input + d.output + d.cacheRead + d.cacheCreation)
   const positives = totals.filter((v) => v > 0)
   const avg = positives.length > 0 ? positives.reduce((a, b) => a + b, 0) / positives.length : 0
@@ -1113,8 +1076,7 @@ function DailyTokenTypeChart({ data, t, showTopLabels }: { data: DailyTokenTypeR
                   {TOKEN_TYPE_KEYS.map((k) => (
                     <TooltipRow
                       key={k}
-                      color={TOKEN_TYPE_COLORS[k].fill}
-                      opacity={TOKEN_TYPE_COLORS[k].opacity}
+                      color={colors[k]}
                       label={t(`settings.usage.tokenTypes.${k}`)}
                       tokens={values[k]}
                       cost={costs[k]}
@@ -1133,8 +1095,7 @@ function DailyTokenTypeChart({ data, t, showTopLabels }: { data: DailyTokenTypeR
                 dataKey={key}
                 name={key}
                 stackId="tokens"
-                fill={TOKEN_TYPE_COLORS[key].fill}
-                fillOpacity={TOKEN_TYPE_COLORS[key].opacity}
+                fill={colors[key]}
                 radius={isTop ? [3, 3, 0, 0] : [0, 0, 0, 0]}
               >
                 {isTop && showTopLabels && (
@@ -1188,11 +1149,14 @@ function TooltipRow({
 
 function SummaryCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
-      {hint ? <div className="mt-1 text-[11px] leading-snug text-muted-foreground/80">{hint}</div> : null}
-    </div>
+    <SettingsCard className="px-4 py-3.5">
+      {/* One child: the card's inset dividers must not run between label and value. */}
+      <div>
+        <div className="text-xs text-muted-foreground">{label}</div>
+        <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
+        {hint ? <div className="mt-1 text-[11px] leading-snug text-muted-foreground">{hint}</div> : null}
+      </div>
+    </SettingsCard>
   )
 }
 

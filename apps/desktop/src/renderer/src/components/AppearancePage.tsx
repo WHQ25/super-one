@@ -3,6 +3,8 @@ import { Check, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Switch } from '@superone/ui/components/ui/switch'
+import { Button } from '@superone/ui/components/ui/button'
+import { cn } from '@superone/ui/lib/utils'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,6 +24,10 @@ import { type MermaidScheme } from '@/components/chat/mermaid-themes'
 import { TerminalPalettePicker } from '@/components/settings/TerminalPalettePicker'
 import { MermaidThemePicker } from '@/components/settings/MermaidThemePicker'
 import { ThemeModeCards } from '@/components/settings/ThemeModeCards'
+import { SettingsPage, SettingsRow, SettingsSection, settingsRowClassName } from '@/components/settings/SettingsSection'
+import { settingsSelectTriggerClassName } from '@/components/settings/select-trigger-class'
+
+const dropdownTriggerClassName = cn(settingsSelectTriggerClassName, 'min-w-32 justify-between')
 
 function FontDropdown({
   value,
@@ -41,7 +47,7 @@ function FontDropdown({
   return (
     <DropdownMenu onOpenChange={(open) => { if (open) onOpen() }}>
       <DropdownMenuTrigger asChild>
-        <button className="flex min-w-44 items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted">
+        <button className={cn(dropdownTriggerClassName, 'min-w-44')}>
           <span className="truncate" style={value ? { fontFamily: `"${value}"` } : undefined}>{value ?? systemLabel}</span>
           <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
         </button>
@@ -183,224 +189,180 @@ export function AppearancePage() {
   const systemFontLabel = t('settings.general.font.systemDefault')
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="mb-6">
-        <h2 className="text-lg font-semibold">{t('settings.appearance.title')}</h2>
-        <p className="text-sm text-muted-foreground">{t('settings.appearance.subtitle')}</p>
-      </div>
-
-      <div className="space-y-4">
-        <div className="rounded-lg border border-border">
-          <div className="border-b border-border px-4 py-2">
-            <p className="text-xs font-medium text-muted-foreground">{t('settings.appearance.theme.label')}</p>
-          </div>
-          <div className="p-4">
-            <ThemeModeCards
-              value={themeMode}
-              onChange={setThemeMode}
-              labelFor={(mode) => t(`settings.appearance.theme.${mode}`)}
-            />
-          </div>
+    <SettingsPage title={t('settings.appearance.title')}>
+      <SettingsSection title={t('settings.appearance.theme.label')}>
+        <div className="p-2">
+          <ThemeModeCards
+            value={themeMode}
+            onChange={setThemeMode}
+            labelFor={(mode) => t(`settings.appearance.theme.${mode}`)}
+          />
         </div>
+      </SettingsSection>
 
-        <div className="rounded-lg border border-border">
-          <div className="border-b border-border px-4 py-2">
-            <p className="text-xs font-medium text-muted-foreground">{t('settings.appearance.interface')}</p>
-          </div>
-          <div className="flex items-center justify-between gap-4 p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.general.uiFont.label')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.general.uiFont.description')}
-              </p>
-            </div>
-            <FontDropdown
-              value={uiFontFamily}
-              fonts={fonts.all}
-              loading={fontsLoading}
-              systemLabel={systemFontLabel}
-              onOpen={loadFonts}
-              onSelect={setUiFontFamily}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-4 border-t border-border p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.general.autoExpandFileDiffs.label')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.general.autoExpandFileDiffs.description')}
-              </p>
-            </div>
+      <SettingsSection title={t('settings.appearance.interface')}>
+        <SettingsRow
+          label={t('settings.general.uiFont.label')}
+          description={t('settings.general.uiFont.description')}
+        >
+          <FontDropdown
+            value={uiFontFamily}
+            fonts={fonts.all}
+            loading={fontsLoading}
+            systemLabel={systemFontLabel}
+            onOpen={loadFonts}
+            onSelect={setUiFontFamily}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.autoExpandFileDiffs.label')}
+          description={t('settings.general.autoExpandFileDiffs.description')}
+        >
+          <Switch
+            checked={autoExpandFileDiffs}
+            onCheckedChange={setAutoExpandFileDiffs}
+            disabled={loading}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.detailChatMode.label')}
+          description={t('settings.general.detailChatMode.description')}
+        >
+          <Switch
+            checked={detailChatMode}
+            onCheckedChange={setDetailChatMode}
+            disabled={loading}
+          />
+        </SettingsRow>
+        {isMac && (
+          <SettingsRow
+            label={t('settings.general.crispText.label')}
+            description={t('settings.general.crispText.description')}
+          >
             <Switch
-              checked={autoExpandFileDiffs}
-              onCheckedChange={setAutoExpandFileDiffs}
+              checked={crispText}
+              onCheckedChange={handleCrispTextToggle}
               disabled={loading}
             />
-          </div>
-          <div className="flex items-center justify-between gap-4 border-t border-border p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.general.detailChatMode.label')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.general.detailChatMode.description')}
-              </p>
-            </div>
+          </SettingsRow>
+        )}
+        {supportsLiquidGlass && (
+          <SettingsRow
+            label={t('settings.general.liquidGlass.label')}
+            description={t('settings.general.liquidGlass.description')}
+          >
             <Switch
-              checked={detailChatMode}
-              onCheckedChange={setDetailChatMode}
+              checked={liquidGlass}
+              onCheckedChange={setLiquidGlass}
               disabled={loading}
             />
-          </div>
-          {isMac && (
-            <div className="flex items-center justify-between gap-4 border-t border-border p-4">
-              <div className="min-w-0">
-                <p className="text-sm font-medium">{t('settings.general.crispText.label')}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {t('settings.general.crispText.description')}
-                </p>
-              </div>
-              <Switch
-                checked={crispText}
-                onCheckedChange={handleCrispTextToggle}
-                disabled={loading}
-              />
-            </div>
-          )}
-          {supportsLiquidGlass && (
-            <div className="flex items-center justify-between gap-4 border-t border-border p-4">
-              <div className="min-w-0">
-                <p className="text-sm font-medium">{t('settings.general.liquidGlass.label')}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {t('settings.general.liquidGlass.description')}
-                </p>
-              </div>
-              <Switch
-                checked={liquidGlass}
-                onCheckedChange={setLiquidGlass}
-                disabled={loading}
-              />
-            </div>
-          )}
-          {import.meta.env.DEV && (
-          <div className="flex items-center justify-between gap-4 border-t border-border p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.general.appIcon.label')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.general.appIcon.description')}
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-3">
-              {iconDataUri && (
-                <img src={iconDataUri} alt="" className="size-10 object-contain" />
-              )}
-              {customAppIconPath && (
-                <button
-                  onClick={handleResetIcon}
-                  disabled={loading || iconBusy}
-                  className="text-xs text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {t('settings.general.appIcon.reset')}
-                </button>
-              )}
-              <button
-                onClick={handlePickIcon}
+          </SettingsRow>
+        )}
+        {import.meta.env.DEV && (
+          <SettingsRow
+            label={t('settings.general.appIcon.label')}
+            description={t('settings.general.appIcon.description')}
+          >
+            {iconDataUri && (
+              <img src={iconDataUri} alt="" className="size-8 object-contain" />
+            )}
+            {customAppIconPath && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-muted-foreground"
+                onClick={handleResetIcon}
                 disabled={loading || iconBusy}
-                className="rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {t('settings.general.appIcon.choose')}
-              </button>
-            </div>
-          </div>
-          )}
-        </div>
+                {t('settings.general.appIcon.reset')}
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7"
+              onClick={handlePickIcon}
+              disabled={loading || iconBusy}
+            >
+              {t('settings.general.appIcon.choose')}
+            </Button>
+          </SettingsRow>
+        )}
+      </SettingsSection>
 
-        <div className="rounded-lg border border-border">
-          <div className="border-b border-border px-4 py-2">
-            <p className="text-xs font-medium text-muted-foreground">{t('settings.general.terminal')}</p>
-          </div>
-          {(['light', 'dark'] as TerminalScheme[]).map((scheme) => (
-            <div key={scheme} className="border-b border-border p-4">
-              <TerminalPalettePicker
-                scheme={scheme}
-                value={scheme === 'light' ? terminalLightPalette : terminalDarkPalette}
-                onChange={(id) => setTerminalPalette(scheme, id)}
-                fontSize={terminalFontSize}
-                fontFamily={terminalFontFamily}
-                label={(
-                  <p className="text-sm font-medium">
-                    {t(scheme === 'light' ? 'settings.general.terminalTheme.light' : 'settings.general.terminalTheme.dark')}
-                  </p>
-                )}
-              />
-            </div>
-          ))}
-          <div className="flex items-center justify-between gap-4 border-b border-border p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.general.terminalFont.label')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.general.terminalFont.description')}
-              </p>
-            </div>
-            <FontDropdown
-              value={terminalFontFamily}
-              fonts={fonts.monospace}
-              loading={fontsLoading}
-              systemLabel={systemFontLabel}
-              onOpen={loadFonts}
-              onSelect={setTerminalFontFamily}
+      <SettingsSection title={t('settings.general.terminal')}>
+        {(['light', 'dark'] as TerminalScheme[]).map((scheme) => (
+          <div key={scheme} className={settingsRowClassName}>
+            <TerminalPalettePicker
+              scheme={scheme}
+              value={scheme === 'light' ? terminalLightPalette : terminalDarkPalette}
+              onChange={(id) => setTerminalPalette(scheme, id)}
+              fontSize={terminalFontSize}
+              fontFamily={terminalFontFamily}
+              label={(
+                <p className="text-sm">
+                  {t(scheme === 'light' ? 'settings.general.terminalTheme.light' : 'settings.general.terminalTheme.dark')}
+                </p>
+              )}
             />
           </div>
-          <div className="flex items-center justify-between gap-4 p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.general.terminalFontSize.label')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.general.terminalFontSize.description')}
-              </p>
-            </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="flex min-w-32 items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted">
-                  <span className="truncate">{terminalFontSize}px</span>
-                  <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-32">
-                {TERMINAL_FONT_SIZES.map((size) => (
-                  <DropdownMenuItem
-                    key={size}
-                    onClick={() => setTerminalFontSize(size)}
-                    className="flex items-center justify-between"
-                  >
-                    <span>{size}px</span>
-                    {terminalFontSize === size && <Check className="size-4 text-muted-foreground" />}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
+        ))}
+        <SettingsRow
+          label={t('settings.general.terminalFont.label')}
+          description={t('settings.general.terminalFont.description')}
+        >
+          <FontDropdown
+            value={terminalFontFamily}
+            fonts={fonts.monospace}
+            loading={fontsLoading}
+            systemLabel={systemFontLabel}
+            onOpen={loadFonts}
+            onSelect={setTerminalFontFamily}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.terminalFontSize.label')}
+          description={t('settings.general.terminalFontSize.description')}
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className={dropdownTriggerClassName}>
+                <span className="truncate">{terminalFontSize}px</span>
+                <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-32">
+              {TERMINAL_FONT_SIZES.map((size) => (
+                <DropdownMenuItem
+                  key={size}
+                  onClick={() => setTerminalFontSize(size)}
+                  className="flex items-center justify-between"
+                >
+                  <span>{size}px</span>
+                  {terminalFontSize === size && <Check className="size-4 text-muted-foreground" />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </SettingsRow>
+      </SettingsSection>
 
-        <div className="rounded-lg border border-border">
-          <div className="border-b border-border px-4 py-2">
-            <p className="text-xs font-medium text-muted-foreground">{t('settings.general.mermaid')}</p>
+      <SettingsSection title={t('settings.general.mermaid')}>
+        {(['light', 'dark'] as MermaidScheme[]).map((scheme) => (
+          <div key={scheme} className={settingsRowClassName}>
+            <MermaidThemePicker
+              scheme={scheme}
+              value={scheme === 'light' ? mermaidLightTheme : mermaidDarkTheme}
+              onChange={(id) => setMermaidTheme(scheme, id)}
+              label={(
+                <p className="text-sm">
+                  {t(scheme === 'light' ? 'settings.general.mermaidTheme.light' : 'settings.general.mermaidTheme.dark')}
+                </p>
+              )}
+            />
           </div>
-          {(['light', 'dark'] as MermaidScheme[]).map((scheme) => (
-            <div
-              key={scheme}
-              className={scheme === 'dark' ? 'p-4' : 'border-b border-border p-4'}
-            >
-              <MermaidThemePicker
-                scheme={scheme}
-                value={scheme === 'light' ? mermaidLightTheme : mermaidDarkTheme}
-                onChange={(id) => setMermaidTheme(scheme, id)}
-                label={(
-                  <p className="text-sm font-medium">
-                    {t(scheme === 'light' ? 'settings.general.mermaidTheme.light' : 'settings.general.mermaidTheme.dark')}
-                  </p>
-                )}
-              />
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
+        ))}
+      </SettingsSection>
+    </SettingsPage>
   )
 }

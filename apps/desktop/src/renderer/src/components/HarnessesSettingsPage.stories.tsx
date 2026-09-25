@@ -35,6 +35,7 @@ const DEFAULT_SETTINGS = {
   experimentalAgentsEnabled: false,
   enabledExperimentalAgents: [] as string[],
   harnessOrder: [] as string[],
+  dshSubagentModelSelection: { enabled: true, allowedModels: [{ provider: 'deepseek-official', model: 'deepseek-v4-pro' }] },
   agentPreference: {
     claude: {
       defaultModel: '',
@@ -127,6 +128,10 @@ type Scenario = {
    * store and `acp-grok` in the list.
    */
   select?: 'claude' | 'codex' | 'cursor' | 'dsh' | 'opencode' | 'acp'
+  /** Never resolve listHarnesses, pinning the catalog loading state. */
+  catalogPending?: boolean
+  /** Frame width in px (narrow window layouts). */
+  width?: number
 }
 
 const listeners = new Set<ProgressListener>()
@@ -162,7 +167,11 @@ function installHarnessMocks(scenario: Scenario): void {
     return { ...appSettings }
   })
   mockIpc('app', 'getProjectPreferences', async () => null)
-  mockIpc('app', 'listHarnesses', async () => catalogState.map((r) => ({ ...r })))
+  mockIpc('app', 'listHarnesses', async () => (
+    scenario.catalogPending
+      ? new Promise<never>(() => {})
+      : catalogState.map((r) => ({ ...r }))
+  ))
 
   mockIpc('app', 'onHarnessInstallProgress', (callback: unknown) => {
     const cb = callback as ProgressListener
@@ -294,6 +303,13 @@ function installHarnessMocks(scenario: Scenario): void {
   mockIpc('app', 'listPlugins', async () => [])
   mockIpc('app', 'listHooks', async () => [])
 
+  mockIpc('app', 'connectDeepseek', async () => ({
+    models: [
+      { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', description: '', provider: 'deepseek-official' },
+      { id: 'deepseek-flash', name: 'DeepSeek V4.1 Flash', description: '', provider: 'deepseek-official' },
+    ],
+  }))
+
   mockIpc('app', 'grokAuth', async () => ({ status: 'signed_out' }))
 
   mockIpc('app', 'getCursorAuthStatus', async () => ({
@@ -370,7 +386,11 @@ function StoryFrame({
   }, [])
 
   return (
-    <div className="bg-background text-foreground h-[720px] w-full max-w-[1100px] p-4">
+    // Edge to edge, like the settings content pane: the page owns its padding.
+    <div
+      className="h-[720px] w-full max-w-[1100px] border border-border bg-background text-foreground"
+      style={scenario.width ? { width: scenario.width } : undefined}
+    >
       {scenario.seedProgress?.length ? (
         <SeedProgress
           events={scenario.seedProgress}
@@ -690,4 +710,19 @@ export const CodexPreferences: Story = {
 export const GrokAccount: Story = {
   name: 'Grok Account',
   decorators: [(Story) => <StoryFrame scenario={{ select: 'acp', section: 'account', catalog: baseCatalog({ 'acp-grok': { enabled: true, state: 'ready', runtimeSource: 'external', command: '/Users/demo/.grok/bin/grok agent stdio' } }) }}><Story /></StoryFrame>],
+}
+
+export const CatalogLoading: Story = {
+  name: 'Catalog loading',
+  decorators: [(Story) => <StoryFrame scenario={{ catalog: baseCatalog(), catalogPending: true }}><Story /></StoryFrame>],
+}
+
+export const Narrow: Story = {
+  name: 'Narrow window',
+  decorators: [(Story) => <StoryFrame scenario={{ ...interactiveScenario, width: 720 }}><Story /></StoryFrame>],
+}
+
+export const DeepSeekPreferences: Story = {
+  name: 'DeepSeek (preferences + subagent models)',
+  decorators: [(Story) => <StoryFrame scenario={{ select: 'dsh', catalog: baseCatalog({ dsh: { enabled: true, state: 'ready', runtimeSource: 'managed', runtimeVersion: '0.3.0' } }) }}><Story /></StoryFrame>],
 }

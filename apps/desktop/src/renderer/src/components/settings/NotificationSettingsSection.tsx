@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { Switch } from '@superone/ui/components/ui/switch'
+import { SettingsRow, SettingsSection, settingsRowClassName } from './SettingsSection'
 import { NOTIFICATION_KINDS, type NotificationSettings } from '@superone/shared/notifications'
 
 /**
@@ -45,35 +46,31 @@ export function NotificationSettingsSection() {
   const selected = NOTIFICATION_KINDS.filter((kind) => settings?.kinds[kind] !== false).length
 
   return (
-    <div className="rounded-lg border border-border">
-      <div className="border-b border-border px-4 py-2">
-        <p className="text-xs font-medium text-muted-foreground">{t('settings.general.notifications.section')}</p>
-      </div>
-
-      <div className="flex items-center justify-between gap-4 p-4">
-        <div className="min-w-0">
-          <p className="text-sm font-medium">{t('settings.general.notifications.enabled.label')}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {t('settings.general.notifications.enabled.description')}
-          </p>
-        </div>
+    <SettingsSection title={t('settings.general.notifications.section')}>
+      <SettingsRow
+        label={t('settings.general.notifications.enabled.label')}
+        description={t('settings.general.notifications.enabled.description')}
+      >
         <Switch
           checked={enabled}
           onCheckedChange={(next) => void save({ enabled: next })}
           disabled={loading}
         />
-      </div>
+      </SettingsRow>
 
       {enabled && (
-        <div className="border-t border-border">
+        <div className="rounded-b-[inherit]">
           <button
             type="button"
             aria-expanded={expanded}
             onClick={() => setExpanded((prev) => !prev)}
-            className="flex w-full items-center justify-between gap-4 p-4 text-left transition-colors hover:bg-muted/50"
+            className={cn(
+              settingsRowClassName,
+              'flex w-full items-center justify-between gap-4 text-left transition-colors hover:bg-muted/60',
+            )}
           >
             <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.general.notifications.kinds.label')}</p>
+              <p className="text-sm">{t('settings.general.notifications.kinds.label')}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {selected === NOTIFICATION_KINDS.length
                   ? t('settings.general.notifications.kinds.summaryAll')
@@ -100,7 +97,7 @@ export function NotificationSettingsSection() {
                 transition={{ duration: 0.18, ease: 'easeOut' }}
                 className="overflow-hidden"
               >
-                <div className="space-y-3 px-4 pb-4">
+                <div className="space-y-2.5 px-3 pb-3">
                   {NOTIFICATION_KINDS.map((kind) => (
                     <div key={kind} className="flex items-center justify-between gap-4">
                       <p className="min-w-0 text-sm">{t(`settings.general.notifications.kinds.${kind}`)}</p>
@@ -116,6 +113,6 @@ export function NotificationSettingsSection() {
           </AnimatePresence>
         </div>
       )}
-    </div>
+    </SettingsSection>
   )
 }

@@ -47,13 +47,6 @@ const meta: Meta<typeof TerminalSettingsPage> = {
   title: 'Settings/Terminal',
   component: TerminalSettingsPage,
   parameters: { layout: 'fullscreen' },
-  decorators: [
-    (Story) => (
-      <div className="mx-auto max-w-5xl p-8">
-        <Story />
-      </div>
-    ),
-  ],
 }
 
 export default meta
@@ -92,11 +85,16 @@ export const WithRules: Story = {
   decorators: [withRules],
 }
 
+export const Dark: Story = {
+  decorators: [withRules],
+  globals: { theme: 'dark' },
+}
+
 export const Narrow: Story = {
   decorators: [
     withRules,
     (Story) => (
-      <div className="w-80">
+      <div className="w-[420px]">
         <Story />
       </div>
     ),

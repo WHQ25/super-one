@@ -4,10 +4,13 @@ import { toast } from 'sonner'
 import { Input } from '@superone/ui/components/ui/input'
 import { Button } from '@superone/ui/components/ui/button'
 import { Switch } from '@superone/ui/components/ui/switch'
+import { cn } from '@superone/ui/lib/utils'
 import { buildCatalogModelIndex, normalizeModelId } from '@superone/shared/platform-registry'
 import { useModelCatalog } from '@/hooks/useModelCatalog'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { ProviderModelsList } from './providers/ProviderModelsList'
+import { SettingsRow, SettingsSection, settingsRowClassName } from './settings/SettingsSection'
+import { SettingsSegmentedControl } from './settings/SettingsSegmentedControl'
 
 type CursorAuthStatus = {
   configured: boolean
@@ -399,334 +402,306 @@ export function CursorAuthSettings({
   const showModels = section === 'models'
   const showCloud = section === 'cloud'
 
-  return (
-    <div className="space-y-3 rounded-lg border border-border p-4">
-      {showAccount ? <>
-      <div>
-        <p className="text-sm font-medium">{t('settings.harnesses.cursor.apiKeyTitle')}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {t('settings.harnesses.cursor.apiKeyDescription')}{' '}
-          <a
-            className="underline underline-offset-2"
-            href="https://cursor.com/dashboard/api"
-            target="_blank"
-            rel="noreferrer"
-          >
-            cursor.com/dashboard/api
-          </a>
-        </p>
-        {authStatus.configured ? (
-          <p className="mt-1.5 text-xs text-emerald-600 dark:text-emerald-400">
-            {t('settings.harnesses.cursor.apiKeyConfigured', { name: configuredLabel })}
-          </p>
-        ) : (
-          <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">
-            {t('settings.harnesses.cursor.apiKeyMissing')}
-          </p>
-        )}
-      </div>
-      <div className="flex gap-2">
-        <Input
-          type="password"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          placeholder={authStatus.configured ? t('settings.harnesses.cursor.apiKeyReplacePlaceholder') : 'cursor_…'}
-          className="font-mono text-xs"
-          autoComplete="off"
-        />
-        <Button type="button" size="sm" disabled={!apiKey.trim() || saving} onClick={() => void saveKey()}>
-          {authStatus.configured
-            ? t('settings.harnesses.cursor.replaceKey')
-            : t('settings.harnesses.cursor.saveKey')}
-        </Button>
-      </div>
+  const saveRuntimeButton = (
+    <div className="flex justify-end">
+      <Button type="button" size="sm" variant="outline" className="h-7" disabled={saving} onClick={() => void saveRuntime()}>
+        {t('settings.harnesses.cursor.saveRuntime')}
+      </Button>
+    </div>
+  )
 
-      <div className="space-y-1.5 rounded-md border border-border/60 p-2">
-        <p className="text-xs text-muted-foreground">
-          {t('settings.harnesses.cursor.browserLoginDescription')}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            disabled={browserLoggingIn || saving}
-            onClick={() => void browserLogin()}
-          >
-            {t('settings.harnesses.cursor.browserLogin')}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={browserLoggingIn || saving}
-            onClick={() => void browserLogout()}
-          >
-            {t('settings.harnesses.cursor.browserLogout')}
-          </Button>
+  return (
+    <div className="space-y-5">
+      {showAccount ? <>
+      <SettingsSection title={t('settings.harnesses.cursor.apiKeyTitle')}>
+        <SettingsRow
+          label={authStatus.configured ? (
+            <span className="text-success">
+              {t('settings.harnesses.cursor.apiKeyConfigured', { name: configuredLabel })}
+            </span>
+          ) : (
+            <span className="text-warning">{t('settings.harnesses.cursor.apiKeyMissing')}</span>
+          )}
+          description={<>
+            {t('settings.harnesses.cursor.apiKeyDescription')}{' '}
+            <a
+              className="underline underline-offset-2"
+              href="https://cursor.com/dashboard/api"
+              target="_blank"
+              rel="noreferrer"
+            >
+              cursor.com/dashboard/api
+            </a>
+          </>}
+          footer={(
+            <div className="flex gap-2">
+              <Input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={authStatus.configured ? t('settings.harnesses.cursor.apiKeyReplacePlaceholder') : 'cursor_…'}
+                className="h-7 bg-background font-mono text-xs"
+                autoComplete="off"
+              />
+              <Button type="button" size="sm" className="h-7" disabled={!apiKey.trim() || saving} onClick={() => void saveKey()}>
+                {authStatus.configured
+                  ? t('settings.harnesses.cursor.replaceKey')
+                  : t('settings.harnesses.cursor.saveKey')}
+              </Button>
+            </div>
+          )}
+        />
+        <div className={cn(settingsRowClassName, 'flex flex-wrap items-center justify-between gap-x-4 gap-y-2')}>
+          <p className="min-w-0 flex-1 basis-56 text-xs text-muted-foreground">
+            {t('settings.harnesses.cursor.browserLoginDescription')}
+          </p>
+          <div className="flex shrink-0 gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7"
+              disabled={browserLoggingIn || saving}
+              onClick={() => void browserLogout()}
+            >
+              {t('settings.harnesses.cursor.browserLogout')}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7"
+              disabled={browserLoggingIn || saving}
+              onClick={() => void browserLogin()}
+            >
+              {t('settings.harnesses.cursor.browserLogin')}
+            </Button>
+          </div>
         </div>
-      </div>
+      </SettingsSection>
+
+      <SettingsSection title={t('settings.harnesses.cursor.usageTitle')}>
+        <div className={settingsRowClassName}>
+          <p className="text-xs text-muted-foreground">{t('settings.harnesses.cursor.usageEmpty')}</p>
+          <div className="mt-2 flex gap-2">
+            <Input
+              value={usageAgentId}
+              onChange={(e) => setUsageAgentId(e.target.value)}
+              placeholder={providerSessionId || 'agent-… / bc-…'}
+              className="h-7 bg-background font-mono text-xs"
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7"
+              disabled={usageLoading}
+              onClick={() => void loadUsage()}
+            >
+              {t('settings.harnesses.cursor.usageRefresh')}
+            </Button>
+          </div>
+          {usage ? (
+            <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">
+              <p>
+                {t('settings.harnesses.cursor.usageTokens', {
+                  input: usage.usage.inputTokens,
+                  output: usage.usage.outputTokens,
+                  total: usage.usage.totalTokens,
+                })}
+              </p>
+              {usage.cost ? (
+                <p>
+                  {t('settings.harnesses.cursor.usageCost', {
+                    charged: usage.cost.chargedCents.toFixed(2),
+                    raw: usage.cost.rawCostCents.toFixed(2),
+                  })}
+                </p>
+              ) : null}
+              <p className="font-mono text-[10px]">{usage.runs.length} run(s)</p>
+            </div>
+          ) : null}
+        </div>
+      </SettingsSection>
       </> : null}
 
       {showPreferences ? <>
-      <div className="space-y-2">
-        <div>
-          <p className="text-sm font-medium">{t('settings.harnesses.cursor.toolPresetTitle')}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {t('settings.harnesses.cursor.toolPresetDescription')}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-1">
-          {([
-            ['default', t('settings.harnesses.cursor.toolPresetDefault')],
-            ['readonly', t('settings.harnesses.cursor.toolPresetReadonly')],
-            ['no-shell', t('settings.harnesses.cursor.toolPresetNoShell')],
-          ] as const).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              disabled={saving}
-              onClick={() => setToolPreset(id)}
-              className={
-                toolPreset === id
-                  ? 'rounded-md bg-accent px-2 py-1 text-xs font-medium text-accent-foreground'
-                  : 'rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted'
-              }
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="space-y-2 border-t border-border pt-3">
-        <div>
-          <p className="text-sm font-medium">{t('settings.harnesses.cursor.settingSourcesTitle')}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {t('settings.harnesses.cursor.settingSourcesDescription')}
-          </p>
-        </div>
-        {([
-          ['project', t('settings.harnesses.cursor.settingSourceProject')],
-          ['user', t('settings.harnesses.cursor.settingSourceUser')],
-          ['plugins', t('settings.harnesses.cursor.settingSourcePlugins')],
-        ] as const).map(([id, label]) => (
-          <div key={id} className="flex items-center justify-between gap-4">
-            <p className="text-xs text-muted-foreground">{label}</p>
-            <Switch
-              checked={settingSources.includes(id)}
-              onCheckedChange={(next) => toggleSettingSource(id, next)}
-              disabled={saving}
-            />
-          </div>
-        ))}
-      </div>
+      <SettingsSection>
+        <SettingsRow
+          label={t('settings.harnesses.cursor.toolPresetTitle')}
+          description={t('settings.harnesses.cursor.toolPresetDescription')}
+        >
+          <SettingsSegmentedControl
+            value={toolPreset}
+            onChange={setToolPreset}
+            disabled={saving}
+            label={t('settings.harnesses.cursor.toolPresetTitle')}
+            options={[
+              { value: 'default', label: t('settings.harnesses.cursor.toolPresetDefault') },
+              { value: 'readonly', label: t('settings.harnesses.cursor.toolPresetReadonly') },
+              { value: 'no-shell', label: t('settings.harnesses.cursor.toolPresetNoShell') },
+            ]}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.harnesses.cursor.settingSourcesTitle')}
+          description={t('settings.harnesses.cursor.settingSourcesDescription')}
+          footer={(
+            <div className="space-y-2">
+              {([
+                ['project', t('settings.harnesses.cursor.settingSourceProject')],
+                ['user', t('settings.harnesses.cursor.settingSourceUser')],
+                ['plugins', t('settings.harnesses.cursor.settingSourcePlugins')],
+              ] as const).map(([id, label]) => (
+                <div key={id} className="flex items-center justify-between gap-4">
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <Switch
+                    checked={settingSources.includes(id)}
+                    onCheckedChange={(next) => toggleSettingSource(id, next)}
+                    disabled={saving}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        />
+        <SettingsRow
+          label={t('settings.harnesses.cursor.forceRecoverTitle')}
+          description={t('settings.harnesses.cursor.forceRecoverDescription')}
+        >
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7"
+            disabled={forceRecovering || !canForceRecover}
+            onClick={() => void forceRecover()}
+          >
+            {t('settings.harnesses.cursor.forceRecoverAction')}
+          </Button>
+        </SettingsRow>
+      </SettingsSection>
+      {saveRuntimeButton}
       </> : null}
 
       {showCloud ? <>
-      <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-sm font-medium">{t('settings.harnesses.cursor.cloudTitle')}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {t('settings.harnesses.cursor.cloudDescription')}
-          </p>
-        </div>
-        <Switch checked={cloud} onCheckedChange={setCloud} disabled={saving} />
-      </div>
-
-      {cloud ? (
-        <div className="space-y-2">
-          <div className="flex flex-wrap gap-1">
-            {(['cloud', 'pool', 'machine'] as const).map((env) => (
-              <button
-                key={env}
-                type="button"
-                disabled={saving}
-                onClick={() => setCloudEnvType(env)}
-                className={
-                  cloudEnvType === env
-                    ? 'rounded-md bg-accent px-2 py-1 text-xs font-medium text-accent-foreground'
-                    : 'rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted'
-                }
-              >
-                {env}
-              </button>
-            ))}
+      <SettingsSection>
+        <SettingsRow
+          label={t('settings.harnesses.cursor.cloudTitle')}
+          description={t('settings.harnesses.cursor.cloudDescription')}
+        >
+          <Switch checked={cloud} onCheckedChange={setCloud} disabled={saving} />
+        </SettingsRow>
+        {cloud ? <>
+          <div className={cn(settingsRowClassName, 'space-y-2')}>
+            <SettingsSegmentedControl
+              value={cloudEnvType}
+              onChange={setCloudEnvType}
+              disabled={saving}
+              label={t('settings.harnesses.cursor.cloudTitle')}
+              options={(['cloud', 'pool', 'machine'] as const).map((env) => ({ value: env, label: env }))}
+            />
+            <Input
+              value={repoUrl}
+              onChange={(e) => setRepoUrl(e.target.value)}
+              placeholder="https://github.com/org/repo"
+              className="h-7 bg-background font-mono text-xs"
+              list="cursor-repo-suggestions"
+            />
+            {repos.length > 0 ? (
+              <datalist id="cursor-repo-suggestions">
+                {repos.map((r) => (
+                  <option key={r.url} value={r.url} />
+                ))}
+              </datalist>
+            ) : null}
           </div>
-          <Input
-            value={repoUrl}
-            onChange={(e) => setRepoUrl(e.target.value)}
-            placeholder="https://github.com/org/repo"
-            className="font-mono text-xs"
-            list="cursor-repo-suggestions"
-          />
-          {repos.length > 0 ? (
-            <datalist id="cursor-repo-suggestions">
-              {repos.map((r) => (
-                <option key={r.url} value={r.url} />
-              ))}
-            </datalist>
-          ) : null}
-          <div className="flex items-center justify-between gap-4">
-            <p className="text-xs text-muted-foreground">{t('settings.harnesses.cursor.autoCreatePr')}</p>
+          <SettingsRow label={t('settings.harnesses.cursor.autoCreatePr')}>
             <Switch checked={autoCreatePR} onCheckedChange={setAutoCreatePR} disabled={saving} />
-          </div>
-          <div className="flex items-center justify-between gap-4">
-            <p className="text-xs text-muted-foreground">{t('settings.harnesses.cursor.workOnCurrentBranch')}</p>
+          </SettingsRow>
+          <SettingsRow label={t('settings.harnesses.cursor.workOnCurrentBranch')}>
             <Switch
               checked={workOnCurrentBranch}
               onCheckedChange={setWorkOnCurrentBranch}
               disabled={saving}
             />
-          </div>
-          <div className="space-y-1">
-            <p className="text-xs font-medium">{t('settings.harnesses.cursor.envVarsTitle')}</p>
-            <p className="text-[11px] text-muted-foreground">
-              {t('settings.harnesses.cursor.envVarsDescription')}
-            </p>
-            <textarea
-              value={envVarsText}
-              onChange={(e) => setEnvVarsText(e.target.value)}
-              placeholder={t('settings.harnesses.cursor.envVarsPlaceholder')}
-              rows={3}
-              className="w-full resize-y rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs"
-              disabled={saving}
-            />
-          </div>
-
-          <div className="space-y-1.5 rounded-md border border-border/60 p-2">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-medium">{t('settings.harnesses.cursor.cloudAgentsTitle')}</p>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                disabled={cloudAgentsLoading || saving}
-                onClick={() => void refreshCloudAgents()}
-              >
-                {t('settings.harnesses.cursor.cloudAgentsRefresh')}
-              </Button>
-            </div>
-            {cloudAgents.length === 0 ? (
-              <p className="text-[11px] text-muted-foreground">
-                {cloudAgentsLoading ? '…' : t('settings.harnesses.cursor.cloudAgentsEmpty')}
-              </p>
-            ) : (
-              <div className="max-h-40 space-y-1 overflow-y-auto">
-                {cloudAgents.map((agent) => (
-                  <div
-                    key={agent.agentId}
-                    className="flex items-start justify-between gap-2 rounded px-1.5 py-1 hover:bg-muted/50"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-xs font-medium">{agent.name || agent.agentId}</p>
-                      <p className="truncate font-mono text-[10px] text-muted-foreground">{agent.agentId}</p>
-                      {agent.summary ? (
-                        <p className="line-clamp-2 text-[11px] text-muted-foreground">{agent.summary}</p>
-                      ) : null}
-                    </div>
-                    <div className="flex shrink-0 flex-col gap-0.5">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 px-1.5 text-[10px]"
-                        onClick={() => void archiveAgent(agent.agentId)}
-                      >
-                        {t('settings.harnesses.cursor.cloudAgentsArchive')}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 px-1.5 text-[10px] text-destructive"
-                        onClick={() => void deleteAgent(agent.agentId)}
-                      >
-                        {t('settings.harnesses.cursor.cloudAgentsDelete')}
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+          </SettingsRow>
+          <SettingsRow
+            label={t('settings.harnesses.cursor.envVarsTitle')}
+            description={t('settings.harnesses.cursor.envVarsDescription')}
+            footer={(
+              <textarea
+                value={envVarsText}
+                onChange={(e) => setEnvVarsText(e.target.value)}
+                placeholder={t('settings.harnesses.cursor.envVarsPlaceholder')}
+                rows={3}
+                className="w-full resize-y rounded-md border border-border bg-background px-2 py-1.5 font-mono text-xs"
+                disabled={saving}
+              />
             )}
-          </div>
-        </div>
-      ) : null}
-
-      <Button type="button" size="sm" variant="outline" disabled={saving} onClick={() => void saveRuntime()}>
-        {t('settings.harnesses.cursor.saveRuntime')}
-      </Button>
-      </> : null}
-
-      {showPreferences ? <>
-      <div className="space-y-2 border-t border-border pt-3">
-        <div>
-          <p className="text-sm font-medium">{t('settings.harnesses.cursor.forceRecoverTitle')}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {t('settings.harnesses.cursor.forceRecoverDescription')}
-          </p>
-        </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          disabled={forceRecovering || !canForceRecover}
-          onClick={() => void forceRecover()}
-        >
-          {t('settings.harnesses.cursor.forceRecoverAction')}
-        </Button>
-      </div>
-      <Button type="button" size="sm" variant="outline" disabled={saving} onClick={() => void saveRuntime()}>
-        {t('settings.harnesses.cursor.saveRuntime')}
-      </Button>
-      </> : null}
-
-      {showAccount ? <>
-      <div className="space-y-2 border-t border-border pt-3">
-        <div>
-          <p className="text-sm font-medium">{t('settings.harnesses.cursor.usageTitle')}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {t('settings.harnesses.cursor.usageEmpty')}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Input
-            value={usageAgentId}
-            onChange={(e) => setUsageAgentId(e.target.value)}
-            placeholder={providerSessionId || 'agent-… / bc-…'}
-            className="font-mono text-xs"
           />
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={usageLoading}
-            onClick={() => void loadUsage()}
-          >
-            {t('settings.harnesses.cursor.usageRefresh')}
-          </Button>
-        </div>
-        {usage ? (
-          <div className="space-y-0.5 text-xs text-muted-foreground">
-            <p>
-              {t('settings.harnesses.cursor.usageTokens', {
-                input: usage.usage.inputTokens,
-                output: usage.usage.outputTokens,
-                total: usage.usage.totalTokens,
-              })}
+        </> : null}
+      </SettingsSection>
+
+      {cloud ? (
+        <SettingsSection
+          title={t('settings.harnesses.cursor.cloudAgentsTitle')}
+          actions={(
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7"
+              disabled={cloudAgentsLoading || saving}
+              onClick={() => void refreshCloudAgents()}
+            >
+              {t('settings.harnesses.cursor.cloudAgentsRefresh')}
+            </Button>
+          )}
+        >
+          {cloudAgents.length === 0 ? (
+            <p className={cn(settingsRowClassName, 'text-xs text-muted-foreground')}>
+              {cloudAgentsLoading ? '…' : t('settings.harnesses.cursor.cloudAgentsEmpty')}
             </p>
-            {usage.cost ? (
-              <p>
-                {t('settings.harnesses.cursor.usageCost', {
-                  charged: usage.cost.chargedCents.toFixed(2),
-                  raw: usage.cost.rawCostCents.toFixed(2),
-                })}
-              </p>
-            ) : null}
-            <p className="font-mono text-[10px]">{usage.runs.length} run(s)</p>
-          </div>
-        ) : null}
-      </div>
+          ) : (
+            cloudAgents.map((agent) => (
+              <div
+                key={agent.agentId}
+                className={cn(settingsRowClassName, 'flex items-start justify-between gap-3')}
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm">{agent.name || agent.agentId}</p>
+                  <p className="truncate font-mono text-[11px] text-muted-foreground">{agent.agentId}</p>
+                  {agent.summary ? (
+                    <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{agent.summary}</p>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 gap-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => void archiveAgent(agent.agentId)}
+                  >
+                    {t('settings.harnesses.cursor.cloudAgentsArchive')}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs text-destructive"
+                    onClick={() => void deleteAgent(agent.agentId)}
+                  >
+                    {t('settings.harnesses.cursor.cloudAgentsDelete')}
+                  </Button>
+                </div>
+              </div>
+            ))
+          )}
+        </SettingsSection>
+      ) : null}
+      {saveRuntimeButton}
       </> : null}
 
       {showModels ? (

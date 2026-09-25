@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useState } from 'react'
 import { ChevronDown, ChevronRight, Folder, FolderOpen, PanelLeftClose, PanelLeftOpen, Code, BookOpen, Puzzle, Trash2 } from 'lucide-react'
-import { motion, LayoutGroup } from 'motion/react'
+import { motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { Button } from '@superone/ui/components/ui/button'
@@ -13,10 +13,11 @@ import {
   ResourceScopeToolbar,
   type ResourceScopeView,
 } from '@/components/settings/ResourceScopeToolbar'
+import { SettingsSection } from '@/components/settings/SettingsSection'
+import { SettingsDisclosureRow } from '@/components/settings/SettingsDisclosureRow'
+import { SettingsEmptyState } from '@/components/settings/SettingsEmptyState'
 import { FileContentView, MarkdownView, inferLanguage } from './MarkdownPreview'
 import type { SkillFileEntry, SkillInfo } from '@superone/shared/agent-types'
-
-const layoutTransition = { duration: 0.35, ease: [0.25, 0.1, 0.25, 1] as const }
 
 function buildPath(prefix: string, name: string): string {
   return prefix ? `${prefix}/${name}` : name
@@ -144,7 +145,7 @@ function getSkillKind(skill: SkillInfo, readOnly?: boolean): 'builtin' | 'plugin
   return null
 }
 
-function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: string; readOnly?: boolean }) {
+function SkillRow({ skill, readOnly }: { skill: SkillInfo; readOnly?: boolean }) {
   const { t } = useTranslation()
   const { skillDetail, skillFileContent, skillFilePath, readSkill, readSkillFile, readCodexSkill, readCodexSkillFile, clearSkillDetail, deleteSkill, disabledSkills, toggleSkill, fetchCodexSkills } = useSettingsStore()
   const settingsProvider = useAppStore((s) => s.settingsProvider)
@@ -165,7 +166,7 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
 
   useEffect(() => {
     if (isExpanded) {
-      const timer = setTimeout(() => setContentReady(true), 350)
+      const timer = setTimeout(() => setContentReady(true), 200)
       return () => clearTimeout(timer)
     }
     setContentReady(false)
@@ -206,22 +207,18 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
     }
   }
 
+  const sourceDir = sourceDirOf(skill.sourcePath)
+
   return (
-    <motion.div
-      layout
-      layoutId={layoutId}
-      transition={{ layout: layoutTransition }}
-      style={{ borderRadius: 8 }}
-      className={`flex flex-col border border-border bg-card transition-opacity ${isHidden ? 'opacity-50' : ''}`}
-    >
-      <div
-        role="button"
-        onClick={handleToggle}
-        className={`flex cursor-pointer flex-col gap-1.5 p-4 text-left transition-colors hover:bg-muted/50 ${isExpanded ? '' : 'flex-1'}`}
-      >
-        <div className="flex items-center gap-2">
-          <Puzzle className="size-4 shrink-0 text-muted-foreground" />
-          <span className="truncate text-sm font-medium">{skill.displayName}</span>
+    <>
+    <SettingsDisclosureRow
+      expanded={isExpanded}
+      onToggle={handleToggle}
+      dimmed={isHidden}
+      icon={<Puzzle className="size-4" />}
+      title={
+        <>
+          <span className="truncate">{skill.displayName}</span>
           {isHidden && !isExpanded && (
             <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[10px] font-normal">
               {t('resources.skills.disabled')}
@@ -232,101 +229,94 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
               {t(`resources.skills.${skillKind}`)}
             </Badge>
           )}
-          {isExpanded && (
-            <div className="ml-auto flex items-center gap-2">
-              {canToggle && (
-                <Switch
-                  checked={!isHidden}
-                  onClick={(e) => e.stopPropagation()}
-                  onCheckedChange={(checked) => {
-                    if (isCodex) {
-                      void window.app.codexToggleSkill(useAppStore.getState().currentFolder ?? '', { name: skill.name, path: skill.sourcePath }, checked).then(() => fetchCodexSkills())
-                    } else {
-                      void toggleSkill(skill.name, !checked)
-                    }
-                  }}
-                  title={isHidden ? t('resources.skills.showToAgent') : t('resources.skills.hideFromAgent')}
-                />
-              )}
-              {canDelete && (
-                <button
-                  type="button"
-                  onClick={handleDeleteClick}
-                  disabled={deleting}
-                  className="rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
-                  title={deleting ? t('resources.skills.deleting') : t('resources.skills.deleteTooltip')}
-                >
-                  <Trash2 className="size-3.5" />
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-        {skill.description && (
-          <p className="line-clamp-3 text-xs leading-relaxed text-muted-foreground">{skill.description}</p>
-        )}
-        {sourceDirOf(skill.sourcePath) && (
-          <p className="truncate text-[10px] text-muted-foreground/70" title={skill.sourcePath}>
-            {sourceDirOf(skill.sourcePath)}
-          </p>
-        )}
-      </div>
-
-      {isExpanded && (
-        <div className="border-t border-border" style={{ height: 320 }}>
-          {contentReady && skillDetail ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.2 }}
-              className="flex h-full"
+        </>
+      }
+      description={skill.description}
+      meta={sourceDir && <span title={skill.sourcePath}>{sourceDir}</span>}
+      trailing={(canToggle || (isExpanded && canDelete)) && (
+        <>
+          {isExpanded && canDelete && (
+            <button
+              type="button"
+              onClick={handleDeleteClick}
+              disabled={deleting}
+              className="rounded p-1 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
+              title={deleting ? t('resources.skills.deleting') : t('resources.skills.deleteTooltip')}
             >
-              {/* Left: File tree */}
-              <div
-                className="shrink-0 overflow-hidden border-r border-border transition-[width] duration-300 ease-in-out"
-                style={{ width: sidebarOpen ? 200 : 0 }}
-              >
-                <div className="w-[200px] overflow-y-auto p-2 h-full">
-                  <FileTree
-                    entries={skillDetail.files}
-                    skillName={skill.name}
-                    selectedPath={skillFilePath}
-                    onSelect={handleFileSelect}
-                  />
-                </div>
+              <Trash2 className="size-3.5" />
+            </button>
+          )}
+          {canToggle && (
+            <Switch
+              checked={!isHidden}
+              onClick={(e) => e.stopPropagation()}
+              onCheckedChange={(checked) => {
+                if (isCodex) {
+                  void window.app.codexToggleSkill(useAppStore.getState().currentFolder ?? '', { name: skill.name, path: skill.sourcePath }, checked).then(() => fetchCodexSkills())
+                } else {
+                  void toggleSkill(skill.name, !checked)
+                }
+              }}
+              title={isHidden ? t('resources.skills.showToAgent') : t('resources.skills.hideFromAgent')}
+            />
+          )}
+        </>
+      )}
+    >
+      <div className="h-80 overflow-hidden rounded-md bg-background">
+        {contentReady && skillDetail ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.2 }}
+            className="flex h-full"
+          >
+            {/* Left: File tree */}
+            <div
+              className="shrink-0 overflow-hidden border-r border-border transition-[width] duration-300 ease-in-out"
+              style={{ width: sidebarOpen ? 200 : 0 }}
+            >
+              <div className="h-full w-[200px] overflow-y-auto p-2">
+                <FileTree
+                  entries={skillDetail.files}
+                  skillName={skill.name}
+                  selectedPath={skillFilePath}
+                  onSelect={handleFileSelect}
+                />
               </div>
-              {/* Right: Code preview */}
-              <div className="flex-1 flex flex-col overflow-hidden">
-                <div className="flex items-center gap-1.5 shrink-0 border-b border-border px-2 py-1">
+            </div>
+            {/* Right: Code preview */}
+            <div className="flex flex-1 flex-col overflow-hidden">
+              <div className="flex shrink-0 items-center gap-1.5 border-b border-border px-2 py-1">
+                <button
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                  className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                >
+                  {sidebarOpen ? <PanelLeftClose className="size-3.5" /> : <PanelLeftOpen className="size-3.5" />}
+                </button>
+                {skillFilePath && (
+                  <span className="flex-1 truncate text-[11px] text-muted-foreground">{skillFilePath}</span>
+                )}
+                {skillFilePath && isMarkdown(skillFilePath) && (
                   <button
-                    onClick={() => setSidebarOpen(!sidebarOpen)}
-                    className="rounded p-0.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+                    onClick={() => setMdRawView(!mdRawView)}
+                    className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                    title={mdRawView ? t('resources.skills.previewToggle') : t('resources.skills.sourceToggle')}
                   >
-                    {sidebarOpen ? <PanelLeftClose className="size-3.5" /> : <PanelLeftOpen className="size-3.5" />}
+                    {mdRawView ? <BookOpen className="size-3.5" /> : <Code className="size-3.5" />}
                   </button>
-                  {skillFilePath && (
-                    <span className="flex-1 text-[11px] text-muted-foreground truncate">{skillFilePath}</span>
-                  )}
-                  {skillFilePath && isMarkdown(skillFilePath) && (
-                    <button
-                      onClick={() => setMdRawView(!mdRawView)}
-                      className="rounded p-0.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
-                      title={mdRawView ? t('resources.skills.previewToggle') : t('resources.skills.sourceToggle')}
-                    >
-                      {mdRawView ? <BookOpen className="size-3.5" /> : <Code className="size-3.5" />}
-                    </button>
-                  )}
-                </div>
-                <div className="flex-1 overflow-auto p-2">
-                  {skillFileContent != null && skillFilePath ? (
-                    isMarkdown(skillFilePath) && !mdRawView ? (
-                      <MarkdownView content={skillFileContent} />
-                    ) : (
-                      <FileContentView
-                        code={skillFileContent}
-                        language={inferLanguage(skillFilePath)}
-                      />
-                    )
+                )}
+              </div>
+              <div className="flex-1 overflow-auto p-2">
+                {skillFileContent != null && skillFilePath ? (
+                  isMarkdown(skillFilePath) && !mdRawView ? (
+                    <MarkdownView content={skillFileContent} />
+                  ) : (
+                    <FileContentView
+                      code={skillFileContent}
+                      language={inferLanguage(skillFilePath)}
+                    />
+                  )
                 ) : (
                   <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
                     {t('resources.skills.selectFile')}
@@ -335,10 +325,11 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
               </div>
             </div>
           </motion.div>
-          ) : null}
-        </div>
-      )}
+        ) : null}
+      </div>
+    </SettingsDisclosureRow>
 
+      {/* Radix renders the dialog in a portal, so it adds no row to the card. */}
       <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <DialogContent showCloseButton={false} className="max-w-sm">
           <DialogHeader>
@@ -355,56 +346,7 @@ function SkillCard({ skill, layoutId, readOnly }: { skill: SkillInfo; layoutId: 
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </motion.div>
-  )
-}
-
-function SkillSection({ title, skills, readOnly }: { title?: string; skills: SkillInfo[]; readOnly?: boolean }) {
-  const skillDetail = useSettingsStore((s) => s.skillDetail)
-  if (skills.length === 0) return null
-
-  const expandedIdx = skillDetail
-    ? skills.findIndex(
-        (s) =>
-          (s.sourcePath && skillDetail.sourcePath && s.sourcePath === skillDetail.sourcePath) ||
-          (s.name === skillDetail.name && s.scope === skillDetail.scope),
-      )
-    : -1
-  // sourcePath is unique for local skills; remote maps include name. Append name as belt-and-suspenders.
-  const cardKey = (s: SkillInfo) => `skill-${s.scope}:${s.sourcePath || s.name || 'unnamed'}`
-
-  const hasExpanded = expandedIdx !== -1
-  const hasOrphan = hasExpanded && expandedIdx % 2 !== 0
-  const before = hasExpanded
-    ? skills.slice(0, hasOrphan ? expandedIdx - 1 : expandedIdx)
-    : skills
-  const orphan = hasOrphan ? [skills[expandedIdx - 1]] : []
-  const after = hasExpanded ? [...orphan, ...skills.slice(expandedIdx + 1)] : []
-  const expanded = hasExpanded ? skills[expandedIdx] : null
-
-  return (
-    <div>
-      {title ? (
-        <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>
-      ) : null}
-      <LayoutGroup id={`skills-${title ?? 'scoped'}`}>
-        <div className="space-y-3">
-          {before.length > 0 && (
-            <div className="grid grid-cols-2 gap-3">
-              {before.map((s) => <SkillCard key={cardKey(s)} layoutId={cardKey(s)} skill={s} readOnly={readOnly} />)}
-            </div>
-          )}
-          {expanded && (
-            <SkillCard key={cardKey(expanded)} layoutId={cardKey(expanded)} skill={expanded} readOnly={readOnly} />
-          )}
-          {after.length > 0 && (
-            <div className="grid grid-cols-2 gap-3">
-              {after.map((s) => <SkillCard key={cardKey(s)} layoutId={cardKey(s)} skill={s} readOnly={readOnly} />)}
-            </div>
-          )}
-        </div>
-      </LayoutGroup>
-    </div>
+    </>
   )
 }
 
@@ -440,29 +382,42 @@ export function SkillsPage() {
     ? t('resources.skills.emptyHintCodex')
     : t('resources.skills.emptyHintClaude')
 
+  // sourcePath is unique for local skills; remote maps include name. Append name as belt-and-suspenders.
+  const rowKey = (s: SkillInfo) => `skill-${s.scope}:${s.sourcePath || s.name || 'unnamed'}`
+
   return (
-    <div className="w-full">
-      <ResourceScopeToolbar
-        scope={scope}
-        onScopeChange={setScope}
-        actions={
-          !isCodex ? (
-            <Button size="sm" onClick={handleInstall}>
-              <FolderOpen className="size-4" />
+    <SettingsSection
+      title={t('resources.skills.title')}
+      actions={
+        <ResourceScopeToolbar
+          className="mb-0"
+          scope={scope}
+          onScopeChange={setScope}
+          actions={
+            !isCodex ? (
+              <Button size="sm" variant="outline" className="h-7" onClick={handleInstall}>
+                <FolderOpen className="size-3.5" />
+                {t('resources.skills.install')}
+              </Button>
+            ) : undefined
+          }
+        />
+      }
+    >
+      {scopedSkills.length === 0 ? (
+        <SettingsEmptyState
+          title={t('resources.skills.empty')}
+          hint={pathHints}
+          action={!isCodex && (
+            <Button size="sm" className="h-7" onClick={handleInstall}>
+              <FolderOpen className="size-3.5" />
               {t('resources.skills.install')}
             </Button>
-          ) : undefined
-        }
-      />
-
-      {scopedSkills.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border p-8 text-center">
-          <p className="text-sm text-muted-foreground">{t('resources.skills.empty')}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{pathHints}</p>
-        </div>
+          )}
+        />
       ) : (
-        <SkillSection skills={scopedSkills} />
+        scopedSkills.map((s) => <SkillRow key={rowKey(s)} skill={s} />)
       )}
-    </div>
+    </SettingsSection>
   )
 }

@@ -9,16 +9,24 @@ import { toast } from 'sonner'
 import type { ClaudeAccount, ClaudeRateLimits } from '@superone/shared/agent-types'
 import { InfoRow, WindowBar } from './provider-usage'
 import { ProviderLabel } from './ProviderLabel'
+import { ProviderDetailHeader, ProviderDetailTitle } from './providers/ProviderDetailParts'
 
-function PanelShell({ brandKey, children, onRefresh, refreshing }: { brandKey: string; children: ReactNode; onRefresh: () => void; refreshing: boolean }) {
+function PanelShell({ brandKey, title, children, onRefresh, refreshing }: { brandKey: string; title: string; children: ReactNode; onRefresh: () => void; refreshing: boolean }) {
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <ProviderLabel brandKey={brandKey} combine size={30} />
-        <IconButton size="sm" variant="ghost" disabled={refreshing} onClick={onRefresh}>
-          <RefreshCw className={cn(refreshing && 'animate-spin')} />
-        </IconButton>
-      </div>
+      <ProviderDetailHeader
+        leading={
+          <>
+            <ProviderLabel brandKey={brandKey} iconOnly size={32} />
+            <ProviderDetailTitle>{title}</ProviderDetailTitle>
+          </>
+        }
+        actions={
+          <IconButton size="md" variant="ghost" disabled={refreshing} onClick={onRefresh}>
+            <RefreshCw className={cn(refreshing && 'animate-spin')} />
+          </IconButton>
+        }
+      />
       {children}
     </div>
   )
@@ -93,7 +101,7 @@ function ClaudeAccountsPanel() {
   }, [fetchAll])
 
   return (
-    <PanelShell brandKey="claude" onRefresh={() => fetchAll(true)} refreshing={loading}>
+    <PanelShell brandKey="claude" title="Claude" onRefresh={() => fetchAll(true)} refreshing={loading}>
       {rows.map(({ account, limits }) => (
         <ClaudeAccountRow
           key={account.credentialDir ?? '__default__'}

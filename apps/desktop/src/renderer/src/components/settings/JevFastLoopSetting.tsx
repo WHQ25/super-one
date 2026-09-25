@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { Input } from '@superone/ui/components/ui/input'
 import { Switch } from '@superone/ui/components/ui/switch'
+import { SettingsRow } from './SettingsSection'
 
 type KeyStatus = { configured: boolean; masked: string }
 
@@ -75,53 +76,54 @@ export function JevFastLoopSetting() {
 
   return (
     <>
-      <div className="flex items-center justify-between gap-4 border-t border-border p-4">
-        <div className="min-w-0">
-          <p className="text-sm font-medium">{t('settings.general.experimentalJev.label')}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {t('settings.general.experimentalJev.description')}
-          </p>
-        </div>
+      <SettingsRow
+        label={t('settings.general.experimentalJev.label')}
+        description={t('settings.general.experimentalJev.description')}
+      >
         <Switch checked={enabled} onCheckedChange={(v) => void handleToggle(v)} disabled={loading} />
-      </div>
+      </SettingsRow>
       {(enabled || keyEditing) && (
-        <div className="border-t border-border p-4">
-          <p className="text-sm font-medium">{t('settings.general.experimentalJev.apiKey.label')}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{t('settings.general.experimentalJev.apiKey.description')}</p>
-          {keyEditing ? (
-            <form
-              className="mt-2 flex items-center gap-2"
-              onSubmit={(e) => {
-                e.preventDefault()
-                void saveKey()
-              }}
-            >
-              <Input
-                type="password"
-                autoFocus
-                aria-label={t('settings.general.experimentalJev.apiKey.label')}
-                placeholder={t('settings.general.experimentalJev.apiKey.placeholder')}
-                value={keyDraft}
-                onChange={(e) => setKeyDraft(e.target.value)}
-                className="max-w-sm font-mono text-xs"
-              />
-              <Button type="submit" size="sm" disabled={!keyDraft.trim()}>
-                {t('settings.general.experimentalJev.apiKey.save')}
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={cancelKeyEdit}>
-                {t('settings.general.experimentalJev.apiKey.cancel')}
-              </Button>
-            </form>
-          ) : (
-            <div className="mt-2 flex items-center gap-2">
-              <p className="font-mono text-xs">{key.masked}</p>
-              <Button variant="outline" size="sm" onClick={() => setKeyEditing(true)}>
-                {t('settings.general.experimentalJev.apiKey.change')}
-              </Button>
-            </div>
+        <SettingsRow
+          label={t('settings.general.experimentalJev.apiKey.label')}
+          description={t('settings.general.experimentalJev.apiKey.description')}
+          footer={(
+            <>
+              {keyEditing ? (
+                <form
+                  className="flex items-center gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    void saveKey()
+                  }}
+                >
+                  <Input
+                    type="password"
+                    autoFocus
+                    aria-label={t('settings.general.experimentalJev.apiKey.label')}
+                    placeholder={t('settings.general.experimentalJev.apiKey.placeholder')}
+                    value={keyDraft}
+                    onChange={(e) => setKeyDraft(e.target.value)}
+                    className="h-7 max-w-sm bg-background font-mono text-xs"
+                  />
+                  <Button type="submit" size="sm" className="h-7" disabled={!keyDraft.trim()}>
+                    {t('settings.general.experimentalJev.apiKey.save')}
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" className="h-7" onClick={cancelKeyEdit}>
+                    {t('settings.general.experimentalJev.apiKey.cancel')}
+                  </Button>
+                </form>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <p className="font-mono text-xs">{key.masked}</p>
+                  <Button variant="outline" size="sm" className="h-7" onClick={() => setKeyEditing(true)}>
+                    {t('settings.general.experimentalJev.apiKey.change')}
+                  </Button>
+                </div>
+              )}
+              {keyError && <p className="mt-1 text-xs text-destructive">{keyError}</p>}
+            </>
           )}
-          {keyError && <p className="mt-1 text-xs text-destructive">{keyError}</p>}
-        </div>
+        />
       )}
     </>
   )

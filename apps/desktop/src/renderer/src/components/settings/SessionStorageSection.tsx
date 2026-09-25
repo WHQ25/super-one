@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FolderOpen, Loader2, RefreshCw, Trash2 } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
+import { cn } from '@superone/ui/lib/utils'
 import { formatBytes } from '@superone/shared/format-bytes'
 import type { SyncZoneUsage } from '@superone/shared/environment'
+import { SettingsRow, SettingsSection } from './SettingsSection'
 
 type Usage =
   | { status: 'loading' }
@@ -21,14 +23,17 @@ function Row({ label, description, action, children }: {
   children?: ReactNode
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-t border-border p-4 first:border-t-0">
-      <div className="min-w-0">
-        <p className="text-sm font-medium">{label}</p>
-        {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
-        {children && <div className="mt-1.5 space-y-0.5 text-xs">{children}</div>}
-      </div>
-      {action && <div className="shrink-0">{action}</div>}
-    </div>
+    <SettingsRow
+      label={label}
+      description={(description || children) && (
+        <>
+          {description}
+          {children && <div className={cn('space-y-0.5 text-foreground', description && 'mt-1.5')}>{children}</div>}
+        </>
+      )}
+    >
+      {action}
+    </SettingsRow>
   )
 }
 
@@ -105,10 +110,7 @@ export function SessionStorageSection() {
   const needsRedelivery = usage != null && usage.needsRedelivery.files > 0
 
   return (
-    <div className="rounded-lg border border-border">
-      <div className="border-b border-border px-4 py-2">
-        <p className="text-xs font-medium text-muted-foreground">{t('settings.general.storage.section')}</p>
-      </div>
+    <SettingsSection title={t('settings.general.storage.section')}>
 
       <Row
         label={t('settings.general.storage.label')}
@@ -117,6 +119,7 @@ export function SessionStorageSection() {
           <Button
             variant="outline"
             size="sm"
+            className="h-7"
             disabled={usage == null}
             onClick={() => usage && void window.app.revealFile(usage.root)}
           >
@@ -150,7 +153,7 @@ export function SessionStorageSection() {
         <Row
           label={t('settings.general.storage.uploadLabel')}
           action={stuck && (
-            <Button variant="outline" size="sm" onClick={() => void retryHandoffs()} disabled={retrying}>
+            <Button variant="outline" size="sm" className="h-7" onClick={() => void retryHandoffs()} disabled={retrying}>
               {retrying ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
               {t(retrying ? 'settings.general.storage.retrying' : 'settings.general.storage.stuckRetry')}
             </Button>
@@ -204,6 +207,6 @@ export function SessionStorageSection() {
           )}
         </Row>
       )}
-    </div>
+    </SettingsSection>
   )
 }

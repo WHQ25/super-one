@@ -7,7 +7,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useAppStore } from '@/stores/app'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
+import { SettingsSegmentedControl } from './settings/SettingsSegmentedControl'
 import { cn } from '@superone/ui/lib/utils'
+import { SettingsSection, settingsRowClassName } from '@/components/settings/SettingsSection'
 import type { DevRegistryView } from '@superone/shared/miniapp-types'
 
 interface DevAppLibraryViewProps {
@@ -131,30 +133,36 @@ export function DevAppLibraryView({ onClose }: DevAppLibraryViewProps) {
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <button onClick={onClose} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="size-4" />
+    <SettingsSection
+      title={(
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-3.5" />
           </button>
-          <h3 className="text-sm font-medium truncate">{t('resources.devAppLibrary.title')}</h3>
-        </div>
-        <Button size="sm" variant="outline" onClick={handleAddNew}>
-          <Plus className="size-4" />
+          <span className="truncate">{t('resources.devAppLibrary.title')}</span>
+        </span>
+      )}
+      actions={(
+        <Button size="sm" variant="ghost" className="h-7" onClick={handleAddNew}>
+          <Plus className="size-3.5" />
           {t('resources.devAppLibrary.addNew')}
         </Button>
-      </div>
-
+      )}
+    >
       {loading ? (
-        <p className="text-sm text-muted-foreground text-center py-6">{t('resources.devAppLibrary.loading')}</p>
+        <p className="py-6 text-center text-xs text-muted-foreground">{t('resources.devAppLibrary.loading')}</p>
       ) : entries.length === 0 ? (
-        <div className="py-8 text-center">
+        <div className="px-6 py-8 text-center">
           <p className="text-sm text-muted-foreground">{t('resources.devAppLibrary.empty')}</p>
           <p className="mt-1 text-xs text-muted-foreground">{t('resources.devAppLibrary.emptyHint')}</p>
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2 p-2 lg:grid-cols-3">
             {entries.map((entry) => {
               const isSelected = selected.has(entry.appId)
               const installedHere = isInstalledInScope(entry)
@@ -172,12 +180,12 @@ export function DevAppLibraryView({ onClose }: DevAppLibraryViewProps) {
                     }
                   }}
                   className={cn(
-                    'relative flex items-center gap-3 rounded-lg border-2 p-3 transition-colors text-left cursor-pointer',
+                    'relative flex min-w-0 cursor-pointer items-center gap-3 rounded-md p-3 text-left transition-colors',
                     isSelected
-                      ? 'border-primary bg-primary/5'
+                      ? 'bg-primary/5 ring-2 ring-primary'
                       : installedHere
-                        ? 'border-border bg-muted/40 hover:border-muted-foreground/30'
-                        : 'border-border hover:border-muted-foreground/30',
+                        ? 'bg-background/50 hover:bg-background'
+                        : 'bg-background hover:ring-1 hover:ring-border',
                   )}
                 >
                   {isSelected && (
@@ -191,15 +199,15 @@ export function DevAppLibraryView({ onClose }: DevAppLibraryViewProps) {
                     </span>
                   )}
                   {isMissing && (
-                    <span className="absolute right-1.5 top-1.5 inline-flex items-center gap-0.5 rounded bg-amber-500/10 px-1 py-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+                    <span className="absolute right-1.5 top-1.5 inline-flex items-center gap-0.5 rounded bg-warning/10 px-1 py-0.5 text-[10px] text-warning">
                       <AlertTriangle className="size-2.5" />
                       {t('resources.devAppLibrary.missingBadge')}
                     </span>
                   )}
-                  <MiniAppIcon appId={entry.appId} className="size-9 shrink-0" />
+                  <MiniAppIcon appId={entry.appId} className="size-8 shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{entry.name}</p>
-                    <p className="text-[11px] text-muted-foreground truncate" title={entry.sourceDir}>
+                    <p className="truncate text-sm">{entry.name}</p>
+                    <p className="truncate text-[11px] text-muted-foreground" title={entry.sourceDir}>
                       {entry.sourceDir}
                     </p>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
@@ -231,44 +239,43 @@ export function DevAppLibraryView({ onClose }: DevAppLibraryViewProps) {
             })}
           </div>
 
-          <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">{t('resources.devAppLibrary.installTo')}</span>
-              {(['user', 'project'] as const).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setScope(s)}
-                  disabled={s === 'project' && !currentFolder}
-                  className={cn(
-                    'rounded-md px-3 py-1 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
-                    scope === s ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {s === 'user'
-                    ? t('resources.devAppLibrary.scopeUser')
-                    : currentFolder
+          <div className={cn(settingsRowClassName, 'flex flex-wrap items-center justify-between gap-3')}>
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0 text-xs text-muted-foreground">{t('resources.devAppLibrary.installTo')}</span>
+              <SettingsSegmentedControl
+                value={scope}
+                onChange={setScope}
+                label={t('resources.devAppLibrary.installTo')}
+                options={[
+                  { value: 'user', label: t('resources.devAppLibrary.scopeUser') },
+                  {
+                    value: 'project',
+                    disabled: !currentFolder,
+                    label: currentFolder
                       ? t('resources.devAppLibrary.scopeProject', { name: currentFolder.split('/').pop() })
-                      : t('resources.devAppLibrary.scopeProjectNone')}
-                </button>
-              ))}
+                      : t('resources.devAppLibrary.scopeProjectNone'),
+                  },
+                ]}
+              />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               <Button
                 size="sm"
                 variant="destructive"
+                className="h-7"
                 disabled={selectedEntries.length === 0 || installing || removing}
                 onClick={() => setDeleteConfirmOpen(true)}
               >
-                <Trash2 className="size-4" />
+                <Trash2 className="size-3.5" />
                 {t('resources.devAppLibrary.removeButton', { count: selectedEntries.length })}
               </Button>
               <Button
                 size="sm"
+                className="h-7"
                 disabled={installableEntries.length === 0 || installing || removing}
                 onClick={handleInstall}
               >
-                <FolderInput className="size-4" />
+                <FolderInput className="size-3.5" />
                 {installing
                   ? t('resources.devAppLibrary.installing')
                   : t('resources.devAppLibrary.installCount', { count: installableEntries.length })}
@@ -305,6 +312,6 @@ export function DevAppLibraryView({ onClose }: DevAppLibraryViewProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </SettingsSection>
   )
 }

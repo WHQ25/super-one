@@ -60,6 +60,8 @@ import { PreferencesPage } from './PreferencesPage'
 import { CursorAuthSettings, type CursorSettingsSection } from './CursorAuthSettings'
 import { GrokAuthSettings } from './GrokAuthSettings'
 import { HarnessPreferencesPage } from './preferences/SessionDefaultsSection'
+import { SettingsNavGroup, SettingsNavItem } from './settings/SettingsNav'
+import { SettingsCard, SettingsRow, settingsRowClassName } from './settings/SettingsSection'
 
 interface CatalogRow {
   id: string
@@ -546,15 +548,16 @@ export function HarnessesSettingsPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 gap-4">
-      <div className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto pr-1">
-        <div className="flex items-center justify-between">
+    <div className="flex h-full min-h-0">
+      <div className="flex w-72 shrink-0 flex-col overflow-y-auto border-r border-border px-2.5 py-3">
+        <div className="flex min-h-7 items-center justify-between gap-2 pl-2">
           <h2 className="text-lg font-semibold">{t('settings.harnesses.title')}</h2>
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            className="h-8 w-8 p-0 text-muted-foreground"
+            className="size-7 p-0 text-muted-foreground"
+            aria-label={t('common.refresh')}
             onClick={() => void refreshCatalog()}
             disabled={loading || busyKey !== null}
           >
@@ -563,17 +566,14 @@ export function HarnessesSettingsPage() {
         </div>
 
         {loading && !catalog ? (
-          <div className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 px-2 pt-3 text-xs text-muted-foreground">
             <Loader2 className="size-3.5 animate-spin" />
             {t('settings.harnesses.loading')}
           </div>
         ) : null}
 
         {enabledItems.length > 0 && (
-          <div className="flex flex-col gap-1">
-            <div className="px-1 pb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              {t('settings.harnesses.groupEnabled')}
-            </div>
+          <SettingsNavGroup label={t('settings.harnesses.groupEnabled')}>
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
@@ -591,14 +591,11 @@ export function HarnessesSettingsPage() {
                 ))}
               </SortableContext>
             </DndContext>
-          </div>
+          </SettingsNavGroup>
         )}
 
         {disabledItems.length > 0 && (
-          <div className="flex flex-col gap-1">
-            <div className="px-1 pb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              {t('settings.harnesses.groupDisabled')}
-            </div>
+          <SettingsNavGroup label={t('settings.harnesses.groupDisabled')}>
             {disabledItems.map((item) => (
               <HarnessListRow
                 key={item.key}
@@ -607,41 +604,43 @@ export function HarnessesSettingsPage() {
                 onSelect={() => selectItem(item)}
               />
             ))}
-          </div>
+          </SettingsNavGroup>
         )}
       </div>
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden px-1 py-1">
-        {error && selected?.kind !== 'catalog' ? (
-          <p className="mb-3 shrink-0 text-sm text-destructive break-words">{error}</p>
-        ) : null}
-        {selected ? (
-          // Stable gutter: User↔Project height changes must not toggle the scrollbar and jank width.
-          <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
-            <HarnessDetail
-              key={selected.key}
-              item={selected}
-              catalog={selected.kind === 'catalog' ? catalogById.get(selected.catalogId) : undefined}
-              enabled={isItemEnabled(selected)}
-              busy={busyKey === selected.key}
-              progress={
-                selected.kind === 'catalog' ? progress[selected.catalogId] : undefined
-              }
-              configSection={harnessConfigSection}
-              onEnabledChange={(v) => void setEnabled(selected, v)}
-              onConfigSectionChange={(section) => {
-                if (selected.configProvider) setSettingsProvider(selected.configProvider)
-                setHarnessConfigSection(section)
-              }}
-              onRefresh={() => void refreshCatalog()}
-            />
+      {selected ? (
+        // Stable gutter: User↔Project height changes must not toggle the scrollbar and jank width.
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+          <div className="px-7 pt-5 pb-8">
+            <div className="mx-auto max-w-3xl">
+              {error && selected.kind !== 'catalog' ? (
+                <p className="mb-4 text-sm break-words text-error">{error}</p>
+              ) : null}
+              <HarnessDetail
+                key={selected.key}
+                item={selected}
+                catalog={selected.kind === 'catalog' ? catalogById.get(selected.catalogId) : undefined}
+                enabled={isItemEnabled(selected)}
+                busy={busyKey === selected.key}
+                progress={
+                  selected.kind === 'catalog' ? progress[selected.catalogId] : undefined
+                }
+                configSection={harnessConfigSection}
+                onEnabledChange={(v) => void setEnabled(selected, v)}
+                onConfigSectionChange={(section) => {
+                  if (selected.configProvider) setSettingsProvider(selected.configProvider)
+                  setHarnessConfigSection(section)
+                }}
+                onRefresh={() => void refreshCatalog()}
+              />
+            </div>
           </div>
-        ) : (
-          <div className="flex h-full items-center justify-center">
-            <p className="text-sm text-muted-foreground">{t('settings.harnesses.selectHint')}</p>
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="flex min-w-0 flex-1 items-center justify-center">
+          <p className="text-sm text-muted-foreground">{t('settings.harnesses.selectHint')}</p>
+        </div>
+      )}
     </div>
   )
 }
@@ -671,45 +670,38 @@ function HarnessListRow({
   const acpAgentId = item.kind === 'catalog' ? item.acpAgentId : item.acpAgentId
   const Icon = resolveSessionIcon(item.provider, acpAgentId)
   return (
+    // The drag handle is a sibling of the nav item (buttons cannot nest), laid
+    // over its trailing edge; the item reserves that space with right padding.
     <div
       ref={setNodeRef}
       style={style}
-      className={cn(
-        'flex w-full items-center gap-1 rounded-lg transition-colors',
-        selected ? 'bg-primary/10' : 'hover:bg-muted/50',
-        isDragging && 'z-10 opacity-80 shadow-sm',
-      )}
+      className={cn('group relative rounded-md', isDragging && 'z-10 bg-background opacity-80 shadow-sm')}
     >
-      <button
-        type="button"
+      <SettingsNavItem
+        size="lg"
+        selected={selected}
         onClick={onSelect}
-        className="flex min-w-0 flex-1 items-center gap-2.5 py-3 pl-3 text-left"
-      >
-        {Icon ? (
+        className={cn(dragHandle && 'pr-7')}
+        icon={Icon ? (
           <Icon status="default" size={30} renderLevel="compact" />
         ) : (
-          <span className="shrink-0 rounded bg-muted" style={{ width: 30, height: 30 }} />
+          <span className="size-[30px] shrink-0 rounded bg-muted" />
         )}
-        <span className="truncate text-base font-medium">{item.label}</span>
-        {item.experimental ? (
-          <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[10px] font-normal">
-            {t('settings.harnesses.experimentalBadge')}
-          </Badge>
-        ) : null}
-      </button>
+        trailing={item.experimental ? t('settings.harnesses.experimentalBadge') : undefined}
+      >
+        {item.label}
+      </SettingsNavItem>
       {dragHandle ? (
         <button
           type="button"
-          className="flex shrink-0 cursor-grab items-center px-1.5 py-3 text-muted-foreground active:cursor-grabbing"
+          className="absolute inset-y-0 right-0 flex w-7 cursor-grab items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 active:cursor-grabbing"
           aria-label={t('settings.harnesses.dragHandle')}
           {...attributes}
           {...listeners}
         >
           <GripVertical className="size-3.5" />
         </button>
-      ) : (
-        <span className="w-2 shrink-0" />
-      )}
+      ) : null}
     </div>
   )
 }
@@ -794,30 +786,95 @@ function HarnessDetail({
     catalog?.diagnostic?.message ||
     null
 
-  const hasMeta =
-    item.kind === 'catalog' &&
-    !!(catalog?.runtimeVersion || showCommand || (catalog?.requiresAuth && catalog.state === 'needs_auth'))
+  const needsAuth = !!catalog?.requiresAuth && catalog.state === 'needs_auth'
+  const showProgress = installing || progress?.phase === 'download'
+  const Icon = resolveSessionIcon(item.provider, acpAgentId)
+
+  const statusRows: ReactNode[] = []
+  if (item.kind === 'catalog' && catalog?.runtimeVersion) {
+    statusRows.push(
+      <SettingsRow key="version" label={t('settings.harnesses.fields.version')}>
+        <span className="text-sm text-muted-foreground tabular-nums">{catalog.runtimeVersion}</span>
+      </SettingsRow>,
+    )
+  }
+  if (item.kind === 'catalog' && showCommand && catalog?.command) {
+    statusRows.push(
+      <SettingsRow
+        key="command"
+        label={t('settings.harnesses.fields.command')}
+        footer={(
+          <code className="block font-mono text-xs break-all text-muted-foreground" title={catalog.command}>
+            {catalog.command}
+          </code>
+        )}
+      />,
+    )
+  }
+  if (item.kind === 'catalog' && needsAuth) {
+    statusRows.push(
+      <div key="auth" className={cn(settingsRowClassName, 'text-xs text-warning')}>
+        {t('settings.harnesses.needsAuth')}
+      </div>,
+    )
+  }
+  if (showProgress) {
+    statusRows.push(
+      <div key="progress" className={cn(settingsRowClassName, 'space-y-1.5')}>
+        <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-[width] duration-200"
+            style={{ width: pct != null ? `${pct}%` : '30%' }}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {progress && progress.total > 0
+            ? t('settings.harnesses.progress', {
+                received: formatBytes(progress.received),
+                total: formatBytes(progress.total),
+                pct: pct ?? 0,
+              })
+            : t('settings.harnesses.installing')}
+        </p>
+      </div>,
+    )
+  }
+  if (errorMessage) {
+    statusRows.push(
+      <p key="error" className={cn(settingsRowClassName, 'text-xs break-words text-error')}>
+        {errorMessage}
+      </p>,
+    )
+  }
+  if (item.kind === 'experimental-acp') {
+    statusRows.push(
+      <p key="experimental" className={cn(settingsRowClassName, 'text-xs text-muted-foreground')}>
+        {t('settings.harnesses.experimentalAcpHint')}
+      </p>,
+    )
+  }
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
+    <div className="flex flex-col gap-5">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-h-8 flex-wrap items-center gap-2">
+            {Icon ? <Icon status="default" size={24} renderLevel="compact" /> : null}
             <HarnessBrandTitle
               provider={item.provider}
               acpAgentId={acpAgentId}
               label={item.label}
-              size={32}
+              size={22}
             />
             {item.experimental ? (
-              <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+              <Badge variant="secondary" className="px-1.5 py-0 text-[10px] font-normal">
                 {t('settings.harnesses.experimentalBadge')}
               </Badge>
             ) : null}
           </div>
-          <p className="mt-1.5 text-sm text-muted-foreground">{item.description}</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">{item.description}</p>
         </div>
-        <div className="flex shrink-0 items-center gap-2 pt-1">
+        <div className="flex min-h-8 shrink-0 items-center gap-2">
           {(busy || installing) && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
           <Switch
             checked={enabled}
@@ -827,53 +884,13 @@ function HarnessDetail({
         </div>
       </div>
 
-      {hasMeta ? (
-        <div className="flex flex-col gap-2 rounded-lg border border-border p-3 text-sm">
-          {catalog?.runtimeVersion ? (
-            <DetailRow label={t('settings.harnesses.fields.version')} value={catalog.runtimeVersion} />
-          ) : null}
-          {showCommand && catalog?.command ? (
-            <DetailRow label={t('settings.harnesses.fields.command')} value={catalog.command} mono />
-          ) : null}
-          {catalog?.requiresAuth && catalog.state === 'needs_auth' ? (
-            <p className="text-xs text-muted-foreground">{t('settings.harnesses.needsAuth')}</p>
-          ) : null}
-        </div>
-      ) : null}
-
-      {errorMessage ? (
-        <p className="text-xs text-destructive break-words">{errorMessage}</p>
-      ) : null}
-
-      {item.kind === 'experimental-acp' ? (
-        <p className="text-xs text-muted-foreground">{t('settings.harnesses.experimentalAcpHint')}</p>
-      ) : null}
-
-      {installing || progress?.phase === 'download' ? (
-        <div className="space-y-1.5">
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-primary transition-[width] duration-200"
-              style={{ width: pct != null ? `${pct}%` : '30%' }}
-            />
-          </div>
-          <p className="text-[11px] text-muted-foreground">
-            {progress && progress.total > 0
-              ? t('settings.harnesses.progress', {
-                  received: formatBytes(progress.received),
-                  total: formatBytes(progress.total),
-                  pct: pct ?? 0,
-                })
-              : t('settings.harnesses.installing')}
-          </p>
-        </div>
-      ) : null}
+      {statusRows.length > 0 ? <SettingsCard>{statusRows}</SettingsCard> : null}
 
       {configTabs ? (
         <Tabs
           value={activeTab}
           onValueChange={(v) => onConfigSectionChange(v as HarnessConfigSection)}
-          className="flex min-h-0 flex-col gap-3"
+          className="flex min-h-0 flex-col gap-5"
         >
           <TabsList className="h-auto min-h-10 w-full flex-wrap justify-start gap-1 p-1">
             {configTabs.map((section) => {
@@ -894,7 +911,7 @@ function HarnessDetail({
           {item.provider === 'cursor' ? (
             // Cursor keeps its own settings component; its session defaults are
             // composed above it rather than duplicated inside it.
-            <div className="space-y-3">
+            <div className="space-y-5">
               {activeTab === 'preferences' && <HarnessPreferencesPage harnessId="cursor" />}
               <CursorAuthSettings
                 section={isCursorSettingsSection(activeTab) ? activeTab : 'account'}
@@ -921,31 +938,6 @@ function HarnessDetail({
           )}
         </Tabs>
       ) : null}
-    </div>
-  )
-}
-
-function DetailRow({
-  label,
-  value,
-  mono,
-}: {
-  label: string
-  value: string
-  mono?: boolean
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
-      <span
-        className={cn(
-          'min-w-0 text-right text-xs text-foreground',
-          mono && 'font-mono break-all text-left',
-        )}
-        title={value}
-      >
-        {value}
-      </span>
     </div>
   )
 }

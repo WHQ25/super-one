@@ -36,6 +36,7 @@ import { createStreamdownCodeComponent } from '@/components/chat/CodeBlock'
 import { Button } from '@superone/ui/components/ui/button'
 import { Input } from '@superone/ui/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@superone/ui/components/ui/dialog'
+import { settingsSelectTriggerClassName } from '@/components/settings/select-trigger-class'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { formatStarCount } from '@/lib/format-star-count'
 import { useAppStore } from '@/stores/app'
@@ -44,6 +45,9 @@ import {
   ResourceScopeToolbar,
   type ResourceScopeView,
 } from '@/components/settings/ResourceScopeToolbar'
+import { SettingsCard, SettingsRow } from '@/components/settings/SettingsSection'
+import { SettingsEmptyState, SettingsLoadingState } from '@/components/settings/SettingsEmptyState'
+import { SettingsSegmentedControl } from '@/components/settings/SettingsSegmentedControl'
 import { resolveAssetUrls } from '@/lib/path-utils'
 import { scopeBadgeClass } from '@/lib/scope-badge'
 import type {
@@ -290,7 +294,7 @@ function getPluginTitle(plugin: { name: string; displayName?: string }): string 
 
 function MetaPill({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex items-center rounded-full bg-muted px-2 py-1 text-[10px] font-medium text-muted-foreground">
+    <span className="inline-flex items-center rounded-full bg-background px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
       {children}
     </span>
   )
@@ -299,7 +303,7 @@ function MetaPill({ children }: { children: ReactNode }) {
 function DetailGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div>
-      <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{title}</div>
+      <div className="mb-1.5 text-[11px] font-medium text-muted-foreground">{title}</div>
       {children}
     </div>
   )
@@ -310,7 +314,7 @@ function DetailLink({ label, href }: { label: string; href?: string }) {
   return (
     <button
       onClick={() => window.open(href)}
-      className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+      className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
     >
       {label}
       <ExternalLink className="size-3" />
@@ -325,7 +329,7 @@ function PluginAppsList({ apps }: { apps: PluginAppSummary[] }) {
     <DetailGroup title={t('resources.plugins.detail.apps')}>
       <div className="flex flex-col gap-2">
         {apps.map((app) => (
-          <div key={app.id} className="rounded-md border border-border bg-card p-2">
+          <div key={app.id} className="rounded-md bg-background/60 px-2.5 py-2">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">{app.name}</span>
               {app.needsAuth && <MetaPill>{t('resources.plugins.detail.needsAuth')}</MetaPill>}
@@ -350,7 +354,7 @@ function PluginSkillsList({ skills }: { skills: PluginSkillSummary[] }) {
     <DetailGroup title={t('resources.plugins.detail.skills')}>
       <div className="flex flex-col gap-2">
         {skills.map((skill) => (
-          <div key={skill.path} className="rounded-md border border-border bg-card p-2">
+          <div key={skill.path} className="rounded-md bg-background/60 px-2.5 py-2">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium">{skill.displayName || skill.name}</span>
               {!skill.enabled && <MetaPill>{t('resources.plugins.detail.disabled')}</MetaPill>}
@@ -375,7 +379,7 @@ function PluginScreenshots({ screenshots }: { screenshots: string[] }) {
             key={src}
             src={src}
             alt="plugin screenshot"
-            className="h-24 w-40 shrink-0 rounded-md border border-border bg-card object-cover"
+            className="h-24 w-40 shrink-0 rounded-md bg-background object-cover"
           />
         ))}
       </div>
@@ -425,7 +429,7 @@ function PluginDetailsPanel({
   if (!hasAnyDetail) return null
 
   return (
-    <div className="space-y-4 border-t border-border p-3">
+    <div className="space-y-4">
       {(longDescription || metadata.length > 0) && (
         <DetailGroup title={t('resources.plugins.detail.overview')}>
           {longDescription && (
@@ -465,7 +469,7 @@ function PluginDetailsPanel({
         <DetailGroup title={t('resources.plugins.detail.starterPrompts')}>
           <div className="flex flex-wrap gap-2">
             {prompts.map((prompt) => (
-              <span key={prompt} className="rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground">
+              <span key={prompt} className="rounded-md bg-background/60 px-2 py-1 text-xs text-muted-foreground">
                 {prompt}
               </span>
             ))}
@@ -726,7 +730,7 @@ function PluginResourceCategoryGroup({
     <div className="mb-1">
       <button
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-[11px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+        className="flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
       >
         {open ? <ChevronDown className="size-3 shrink-0" /> : <ChevronRight className="size-3 shrink-0" />}
         <Icon className="size-3 shrink-0" />
@@ -971,7 +975,7 @@ function PluginResourceExplorer({
           )}
           {isHooksPath && hookScripts.length > 0 && (
             <div className="mt-3 border-t border-border pt-2">
-              <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              <div className="mb-1.5 text-[11px] font-medium text-muted-foreground">
                 {t('resources.plugins.detail.referencedScripts')}
               </div>
               <div className="flex flex-col gap-0.5">
@@ -1013,7 +1017,7 @@ function ContentBadges({ plugin }: { plugin: PluginInfo }) {
         plugin[key] ? (
           <span
             key={key}
-            className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground"
+            className="inline-flex items-center gap-1 rounded-full bg-background px-2 py-0.5 text-[10px] text-muted-foreground"
           >
             <Icon className="size-2.5" />
             {t(labelKey)}
@@ -1024,7 +1028,16 @@ function ContentBadges({ plugin }: { plugin: PluginInfo }) {
   )
 }
 
-// --- Installed plugin card ---
+// --- Plugin rows (installed + marketplace) ---
+
+// An expandable row: the card's divider sits on this wrapper, so the header and
+// its expanded body read as one row. Corner rounding follows the card.
+const pluginRowClassName = 'overflow-hidden first:rounded-t-[inherit] last:rounded-b-[inherit]'
+const pluginRowHeaderClassName = 'flex w-full cursor-pointer items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/60'
+const pluginRowBodyClassName = 'space-y-3 px-3 pb-3'
+const pluginExplorerPanelClassName = 'overflow-hidden rounded-md bg-background'
+
+// --- Installed plugin row ---
 
 function PluginCard({ plugin }: { plugin: PluginInfo }) {
   const { t } = useTranslation()
@@ -1044,16 +1057,16 @@ function PluginCard({ plugin }: { plugin: PluginInfo }) {
   }, [plugin.key, readPluginFile])
 
   return (
-    <div className="rounded-lg border border-border bg-card">
+    <div className={pluginRowClassName}>
       <div
         role="button"
         onClick={handleToggle}
-        className="flex w-full cursor-pointer items-center gap-3 p-3 text-left transition-colors hover:bg-muted/50"
+        className={pluginRowHeaderClassName}
       >
-        <PluginAvatar name={plugin.name} iconPath={plugin.iconPath} logoPath={plugin.logoPath} className="size-9 text-sm" />
+        <PluginAvatar name={plugin.name} iconPath={plugin.iconPath} logoPath={plugin.logoPath} className="size-8 text-sm" />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">{getPluginTitle(plugin)}</span>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span className="text-sm">{getPluginTitle(plugin)}</span>
             {plugin.author && (
               <span className="text-xs text-muted-foreground">by {plugin.author}</span>
             )}
@@ -1061,7 +1074,7 @@ function PluginCard({ plugin }: { plugin: PluginInfo }) {
               <span className="text-xs text-muted-foreground">v{plugin.version}</span>
             )}
             {plugin.hasUpdate && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-500">
+              <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-medium text-warning">
                 <ArrowUpCircle className="size-2.5" />
                 Update available
               </span>
@@ -1093,21 +1106,23 @@ function PluginCard({ plugin }: { plugin: PluginInfo }) {
             transition={{ duration: 0.22, ease: [0.25, 0.1, 0.25, 1] }}
             className="overflow-hidden"
           >
-            <PluginDetailsPanel
-              plugin={pluginDetail}
-              apps={pluginDetail.apps}
-              skills={pluginDetail.skills}
-            />
-            <div className="border-t border-border">
-              <PluginResourceExplorer
-                files={pluginDetail.files}
-                mcpServerConfigs={pluginDetail.mcpServerConfigs}
-                hookEvents={pluginDetail.hookEvents}
-                selectedPath={pluginFilePath}
-                fileContent={pluginFileContent}
-                onSelect={handleFileSelect}
-                emptyHint={t('resources.plugins.detail.noFiles')}
+            <div className={pluginRowBodyClassName}>
+              <PluginDetailsPanel
+                plugin={pluginDetail}
+                apps={pluginDetail.apps}
+                skills={pluginDetail.skills}
               />
+              <div className={pluginExplorerPanelClassName}>
+                <PluginResourceExplorer
+                  files={pluginDetail.files}
+                  mcpServerConfigs={pluginDetail.mcpServerConfigs}
+                  hookEvents={pluginDetail.hookEvents}
+                  selectedPath={pluginFilePath}
+                  fileContent={pluginFileContent}
+                  onSelect={handleFileSelect}
+                  emptyHint={t('resources.plugins.detail.noFiles')}
+                />
+              </div>
             </div>
           </motion.div>
         )}
@@ -1116,20 +1131,10 @@ function PluginCard({ plugin }: { plugin: PluginInfo }) {
   )
 }
 
-function PluginSection({ title, plugins }: { title?: string; plugins: PluginInfo[] }) {
-  if (plugins.length === 0) return null
-  return (
-    <div>
-      {title ? (
-        <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>
-      ) : null}
-      <div className="flex flex-col gap-2">
-        {plugins.map((plugin) => (
-          <PluginCard key={`${plugin.scope}:${plugin.key}`} plugin={plugin} />
-        ))}
-      </div>
-    </div>
-  )
+function PluginRows({ plugins }: { plugins: PluginInfo[] }) {
+  return plugins.map((plugin) => (
+    <PluginCard key={`${plugin.scope}:${plugin.key}`} plugin={plugin} />
+  ))
 }
 
 // --- Marketplace plugin card ---
@@ -1190,16 +1195,16 @@ function PluginInstallCard({
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card">
+    <div className={pluginRowClassName}>
       <div
         role="button"
         onClick={handleToggle}
-        className="flex cursor-pointer items-start gap-3 p-3 transition-colors hover:bg-muted/50"
+        className={pluginRowHeaderClassName}
       >
-        <PluginAvatar name={plugin.name} iconPath={plugin.iconPath} logoPath={plugin.logoPath} className="size-9 text-sm" />
+        <PluginAvatar name={plugin.name} iconPath={plugin.iconPath} logoPath={plugin.logoPath} className="size-8 text-sm" />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">{getPluginTitle(plugin)}</span>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span className="text-sm">{getPluginTitle(plugin)}</span>
             {plugin.author && (
               <span className="text-xs text-muted-foreground">by {plugin.author}</span>
             )}
@@ -1211,39 +1216,43 @@ function PluginInstallCard({
             <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{plugin.description}</p>
           )}
           {plugin.installCount != null && (
-            <p className="mt-1 text-[10px] text-muted-foreground">
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
               {plugin.installCount.toLocaleString()} installs
             </p>
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0" onClick={(event) => event.stopPropagation()}>
           {plugin.installed ? (
-            <span className="inline-flex items-center rounded-md bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+            <span className="inline-flex h-7 items-center rounded-md bg-background px-2.5 text-xs text-muted-foreground">
               Installed
             </span>
           ) : scopeChoice ? (
             <div className="flex gap-1">
               {installScopes.map((s) => (
-                <button
+                <Button
                   key={s}
+                  size="sm"
+                  className="h-7"
                   onClick={() => handleInstall(s)}
                   disabled={installing}
-                  className="rounded-md bg-primary px-2 py-1 text-xs text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
                   {s}
-                </button>
+                </Button>
               ))}
-              <button
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7"
                 onClick={() => setScopeChoice(false)}
-                className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           ) : (
             <Button
               size="sm"
               variant="outline"
+              className="h-7"
               onClick={() => allowProjectInstall ? setScopeChoice(true) : handleInstall('user')}
               disabled={installing}
             >
@@ -1276,26 +1285,28 @@ function PluginInstallCard({
             transition={{ duration: 0.22, ease: [0.25, 0.1, 0.25, 1] }}
             className="overflow-hidden"
           >
-            <PluginDetailsPanel plugin={detail ?? plugin} />
-            {canExplore && (
-              <div className="border-t border-border">
-                {detail ? (
-                  <PluginResourceExplorer
-                    files={detail.files}
-                    mcpServerConfigs={detail.mcpServerConfigs}
-                    hookEvents={detail.hookEvents}
-                    selectedPath={marketplacePluginFilePath}
-                    fileContent={marketplacePluginFileContent}
-                    onSelect={handleFileSelect}
-                    emptyHint={t('resources.plugins.detail.noFiles')}
-                  />
-                ) : (
-                  <div className="flex h-40 items-center justify-center text-xs text-muted-foreground">
-                    {t('common.loading')}
-                  </div>
-                )}
-              </div>
-            )}
+            <div className={pluginRowBodyClassName}>
+              <PluginDetailsPanel plugin={detail ?? plugin} />
+              {canExplore && (
+                <div className={pluginExplorerPanelClassName}>
+                  {detail ? (
+                    <PluginResourceExplorer
+                      files={detail.files}
+                      mcpServerConfigs={detail.mcpServerConfigs}
+                      hookEvents={detail.hookEvents}
+                      selectedPath={marketplacePluginFilePath}
+                      fileContent={marketplacePluginFileContent}
+                      onSelect={handleFileSelect}
+                      emptyHint={t('resources.plugins.detail.noFiles')}
+                    />
+                  ) : (
+                    <div className="flex h-40 items-center justify-center text-xs text-muted-foreground">
+                      {t('common.loading')}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1332,17 +1343,17 @@ function ScopeBadge({ scope }: { scope?: MarketplaceScope }) {
   )
 }
 
-function MarketplaceListCard({ mp, onClick }: { mp: MarketplaceSummary; onClick: () => void }) {
+function MarketplaceListRow({ mp, onClick }: { mp: MarketplaceSummary; onClick: () => void }) {
   return (
     <div
       role="button"
       onClick={onClick}
-      className="flex w-full cursor-pointer items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-accent/50"
+      className={cn(pluginRowClassName, pluginRowHeaderClassName)}
     >
-      <PluginAvatar name={mp.name} iconPath={mp.iconPath} logoPath={mp.logoPath} className="size-10 text-base" />
+      <PluginAvatar name={mp.name} iconPath={mp.iconPath} logoPath={mp.logoPath} className="size-8 text-sm" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <p className="text-sm font-medium truncate">{mp.name}</p>
+          <p className="text-sm truncate">{mp.name}</p>
           <ScopeBadge scope={mp.scope} />
         </div>
         {mp.source && (
@@ -1512,25 +1523,26 @@ function MarketplaceDetailView({
     <div>
       <button
         onClick={onBack}
-        className="mb-3 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        className="mb-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
       >
         <ArrowLeft className="size-3.5" />
         Marketplaces
       </button>
 
       {/* Header */}
-      <div className="mb-5">
+      <div className="mb-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
-            <h2 className="text-lg font-semibold truncate">{summary.name}</h2>
+            <h2 className="text-base font-semibold truncate">{summary.name}</h2>
             <ScopeBadge scope={summary.scope} />
           </div>
           <div className="flex items-center gap-2">
-            <ProjectSelector />
+            <ProjectSelector triggerClassName={cn(settingsSelectTriggerClassName, 'gap-2 py-0')} />
             {canUpdateMarketplace && (
               <Button
                 size="sm"
                 variant="outline"
+                className="h-7"
                 onClick={handleUpdate}
                 disabled={updating}
               >
@@ -1543,7 +1555,7 @@ function MarketplaceDetailView({
                 size="sm"
                 variant="outline"
                 onClick={() => setRemoveConfirmOpen(true)}
-                className="text-destructive hover:bg-destructive/10"
+                className="h-7 text-destructive hover:bg-destructive/10"
               >
                 <Trash2 className="size-3.5" />
                 {t('resources.plugins.removeMarketplace')}
@@ -1551,17 +1563,17 @@ function MarketplaceDetailView({
             )}
           </div>
         </div>
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-          {summary.source && <SourceLink source={summary.source} size="md" />}
+        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
+          {summary.source && <SourceLink source={summary.source} />}
           {summary.source && isGithubSource(summary.source) && (
-            <GithubStars source={summary.source} className="text-sm" />
+            <GithubStars source={summary.source} className="text-xs" />
           )}
-          <span className="text-sm text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             {summary.pluginCount} plugin{summary.pluginCount !== 1 ? 's' : ''}
             {summary.installedCount > 0 && ` · ${summary.installedCount} installed`}
           </span>
           {summary.lastUpdated && (
-            <span className="text-sm text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               updated {formatRelativeTime(summary.lastUpdated)}
             </span>
           )}
@@ -1569,29 +1581,29 @@ function MarketplaceDetailView({
       </div>
 
       {/* Search */}
-      <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <div className="relative mb-3">
+        <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={t('resources.plugins.searchPlaceholder')}
-          className="w-full rounded-md border border-border bg-background py-2 pl-9 pr-3 text-sm outline-none focus:border-ring"
+          className="h-8 w-full rounded-md border border-border bg-background pl-8 pr-3 text-sm outline-none focus:border-ring"
         />
       </div>
 
       {filtered.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border p-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            {search ? t('resources.plugins.searchNoMatch') : t('resources.plugins.marketplaceEmpty')}
-          </p>
-        </div>
+        <SettingsCard>
+          <SettingsEmptyState
+            title={search ? t('resources.plugins.searchNoMatch') : t('resources.plugins.marketplaceEmpty')}
+          />
+        </SettingsCard>
       ) : (
-        <div className="flex flex-col gap-2">
+        <SettingsCard>
           {filtered.map((plugin) => (
             <PluginInstallCard key={plugin.key} plugin={plugin} onInstall={onInstall} allowProjectInstall={allowProjectInstall} canExplore={canExplore} />
           ))}
-        </div>
+        </SettingsCard>
       )}
 
       <Dialog open={removeConfirmOpen} onOpenChange={setRemoveConfirmOpen}>
@@ -1743,16 +1755,6 @@ function AddMarketplaceBody({
 
 type PluginsTab = 'marketplace' | 'installed'
 
-function PluginsLoadingState() {
-  const { t } = useTranslation()
-  return (
-    <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border p-8">
-      <RefreshCw className="size-4 animate-spin text-muted-foreground" />
-      <span className="text-sm text-muted-foreground">{t('resources.plugins.loading')}</span>
-    </div>
-  )
-}
-
 export function PluginsPage() {
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
@@ -1900,7 +1902,7 @@ export function PluginsPage() {
         onScopeChange={setScope}
         actions={
           tab === 'marketplace' && canManageMarketplaces ? (
-            <Button size="sm" variant="outline" onClick={() => setAddDialogOpen(true)}>
+            <Button size="sm" variant="outline" className="h-7" onClick={() => setAddDialogOpen(true)}>
               <Plus className="size-3.5" />
               {t('resources.plugins.addMarketplace')}
             </Button>
@@ -1908,55 +1910,45 @@ export function PluginsPage() {
         }
       />
 
-      {/* Tabs */}
-      <div className="mb-4 flex gap-1 rounded-lg bg-muted p-1">
-        {([
-          { id: 'marketplace' as const, label: t('resources.plugins.tabMarketplace') },
-          { id: 'installed' as const, label: t('resources.plugins.tabInstalled', { count: plugins.length }) },
-        ]).map((tabEntry) => (
-          <button
-            key={tabEntry.id}
-            onClick={() => setTab(tabEntry.id)}
-            className={cn(
-              'flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-              tab === tabEntry.id
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-          >
-            {tabEntry.label}
-          </button>
-        ))}
-      </div>
+      <SettingsSegmentedControl
+        value={tab}
+        onChange={setTab}
+        label={t('resources.plugins.title')}
+        className="mb-3"
+        options={[
+          { value: 'marketplace', label: t('resources.plugins.tabMarketplace') },
+          { value: 'installed', label: t('resources.plugins.tabInstalled', { count: plugins.length }) },
+        ]}
+      />
 
       {/* Marketplace tab */}
       {tab === 'marketplace' && (
         <div>
           {pluginsLoading ? (
-            <PluginsLoadingState />
+            <SettingsCard><SettingsLoadingState label={t('resources.plugins.loading')} /></SettingsCard>
           ) : scopedMarketplaceSummaries.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border p-8 text-center">
-              <p className="text-sm text-muted-foreground">{t('resources.plugins.emptyMarketplace')}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {isCodex ? t('resources.plugins.emptyMarketplaceHintCodex') : t('resources.plugins.emptyMarketplaceHintClaude')}
-              </p>
-              {canManageMarketplaces && (
-                <Button size="sm" variant="outline" className="mt-4" onClick={() => setAddDialogOpen(true)}>
-                  <Plus className="size-3.5" />
-                  {t('resources.plugins.addMarketplace')}
-                </Button>
-              )}
-            </div>
+            <SettingsCard>
+              <SettingsEmptyState
+                title={t('resources.plugins.emptyMarketplace')}
+                hint={isCodex ? t('resources.plugins.emptyMarketplaceHintCodex') : t('resources.plugins.emptyMarketplaceHintClaude')}
+                action={canManageMarketplaces && (
+                  <Button size="sm" variant="outline" className="h-7" onClick={() => setAddDialogOpen(true)}>
+                    <Plus className="size-3.5" />
+                    {t('resources.plugins.addMarketplace')}
+                  </Button>
+                )}
+              />
+            </SettingsCard>
           ) : (
-            <div className="flex flex-col gap-2">
+            <SettingsCard>
               {scopedMarketplaceSummaries.map((mp) => (
-                <MarketplaceListCard
+                <MarketplaceListRow
                   key={mp.name}
                   mp={mp}
                   onClick={() => setSelectedMarketplace(mp.name)}
                 />
               ))}
-            </div>
+            </SettingsCard>
           )}
         </div>
       )}
@@ -1972,35 +1964,32 @@ export function PluginsPage() {
       {tab === 'installed' && (
         <div>
           {pluginsLoading ? (
-            <PluginsLoadingState />
+            <SettingsCard><SettingsLoadingState label={t('resources.plugins.loading')} /></SettingsCard>
           ) : scopedPlugins.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border p-8 text-center">
-              <p className="text-sm text-muted-foreground">{t('resources.plugins.emptyInstalled')}</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {isCodex ? t('resources.plugins.emptyInstalledHintCodex') : t('resources.plugins.emptyInstalledHintClaude')}
-              </p>
-            </div>
+            <SettingsCard>
+              <SettingsEmptyState
+                title={t('resources.plugins.emptyInstalled')}
+                hint={isCodex ? t('resources.plugins.emptyInstalledHintCodex') : t('resources.plugins.emptyInstalledHintClaude')}
+              />
+            </SettingsCard>
           ) : (
-            <div className="space-y-6">
+            <SettingsCard>
               {!isCodex && updatablePlugins.length > 0 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    {t('resources.plugins.updateAvailable', { count: updatablePlugins.length })}
-                  </span>
+                <SettingsRow label={t('resources.plugins.updateAvailable', { count: updatablePlugins.length })}>
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={handleUpdateAll}
                     disabled={updatingAll}
-                    className="text-amber-500 border-amber-500/30 hover:bg-amber-500/10"
+                    className="h-7 border-warning/30 text-warning hover:bg-warning/10 hover:text-warning"
                   >
                     <ArrowUpCircle className="size-3.5" />
                     {updatingAll ? t('resources.plugins.updating') : t('resources.plugins.updateAll')}
                   </Button>
-                </div>
+                </SettingsRow>
               )}
-              <PluginSection plugins={scopedPlugins} />
-            </div>
+              <PluginRows plugins={scopedPlugins} />
+            </SettingsCard>
           )}
         </div>
       )}

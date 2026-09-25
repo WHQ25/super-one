@@ -29,6 +29,10 @@ import {
   type RemoteDeviceChannel,
 } from '@/lib/remote-channel-flags'
 import { AddEnvironmentDialog } from './AddEnvironmentDialog'
+import { SettingsSection, settingsRowClassName } from '../SettingsSection'
+
+/** Device rows are `li`s inside a card; the list carries the card's inset dividers. */
+const deviceListClassName = 'rounded-[inherit]'
 
 /** Supervisor states that mean "a socket is live right now". */
 const LIVE_STATES: SupervisorState[] = ['connected', 'synchronizing']
@@ -97,7 +101,7 @@ const CHANNEL_META: Record<
 /**
  * "Control other devices" panel: one card per connection channel (Desktop / SSH /
  * Tailscale). Only channels with REMOTE_CHANNEL_ENABLED are shown.
- * Card chrome matches Control This Mac (Mobile / Desktop) cards.
+ * Section chrome matches Control This Mac (Mobile / Desktop) sections.
  */
 export function EnvironmentsPage() {
   const { t } = useTranslation()
@@ -287,13 +291,13 @@ export function EnvironmentsPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {loading ? (
         <div className="flex justify-center py-12">
           <Loader2 className="size-5 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        <div className="grid gap-4">
+        <>
           {showLocalLab && (
             <LocalLabSection
               devices={labItems}
@@ -318,31 +322,33 @@ export function EnvironmentsPage() {
             const Icon = meta.icon
             const devices = byChannel[channel]
             return (
-              <section key={channel} className="space-y-3 rounded-lg border border-border p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <Icon className="size-4 shrink-0 text-muted-foreground" />
-                    <p className="text-sm font-medium">{t(meta.titleKey)}</p>
-                  </div>
-                  {channel === 'ssh' && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setAddOpen(true)}
-                      disabled={anyBusy}
-                    >
-                      <Plus className="size-4" />
-                      {t('settings.remote.channels.addDevice')}
-                    </Button>
-                  )}
-                </div>
-
+              <SettingsSection
+                key={channel}
+                title={(
+                  <span className="inline-flex items-center gap-1.5">
+                    <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                    {t(meta.titleKey)}
+                  </span>
+                )}
+                actions={channel === 'ssh' ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    onClick={() => setAddOpen(true)}
+                    disabled={anyBusy}
+                  >
+                    <Plus className="size-3.5" />
+                    {t('settings.remote.channels.addDevice')}
+                  </Button>
+                ) : null}
+              >
                 {devices.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
+                  <p className={cn(settingsRowClassName, 'text-xs text-muted-foreground')}>
                     {t('settings.remote.channels.empty')}
                   </p>
                 ) : (
-                  <ul className="space-y-2">
+                  <ul className={deviceListClassName}>
                     {devices.map((item) => (
                       <li key={item.connectionId}>
                         <EnvironmentDeviceRow
@@ -382,10 +388,10 @@ export function EnvironmentsPage() {
                     ))}
                   </ul>
                 )}
-              </section>
+              </SettingsSection>
             )
           })}
-        </div>
+        </>
       )}
 
       <AddEnvironmentDialog open={addOpen} onOpenChange={setAddOpen} onAdded={handleAdded} />
@@ -490,47 +496,33 @@ function LocalLabSection({
   const busy = pairing || busyId === '__local_lab__'
 
   return (
-    <section className="space-y-3 rounded-lg border border-dashed border-border p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <div className="flex items-center gap-2">
-            <FlaskConical className="size-4 shrink-0 text-muted-foreground" />
-            <p className="text-sm font-medium">{t('settings.remote.channels.localLab.title')}</p>
-            {!statusLoading && status && (
-              <span
-                className={cn(
-                  'rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide',
-                  reachable
-                    ? 'bg-success/15 text-success'
-                    : 'bg-muted text-muted-foreground',
-                )}
-              >
-                {reachable
-                  ? t('settings.remote.channels.localLab.online')
-                  : t('settings.remote.channels.localLab.offline')}
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {t('settings.remote.channels.localLab.description')}
-          </p>
-          {status && (
-            <p className="truncate font-mono text-[11px] text-muted-foreground">
-              {status.baseUrl}
-              {status.environmentId ? ` · ${status.environmentId.slice(0, 8)}…` : ''}
-            </p>
+    <SettingsSection
+      title={(
+        <span className="inline-flex items-center gap-1.5">
+          <FlaskConical className="size-3.5 shrink-0 text-muted-foreground" />
+          {t('settings.remote.channels.localLab.title')}
+          {!statusLoading && status && (
+            <span
+              className={cn(
+                'rounded px-1.5 py-0.5 text-[10px] font-medium',
+                reachable
+                  ? 'bg-success/15 text-success'
+                  : 'bg-muted text-muted-foreground',
+              )}
+            >
+              {reachable
+                ? t('settings.remote.channels.localLab.online')
+                : t('settings.remote.channels.localLab.offline')}
+            </span>
           )}
-          {!reachable && status && (
-            <p className="text-xs text-muted-foreground">
-              {t('settings.remote.channels.localLab.startHint', { cmd: status.startHint })}
-            </p>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        </span>
+      )}
+      actions={(
+        <>
           <Button
             size="sm"
             variant="ghost"
-            className="h-8"
+            className="h-7"
             disabled={statusLoading || busy}
             onClick={() => void refreshStatus()}
             title={t('settings.remote.channels.localLab.refreshStatus')}
@@ -544,19 +536,37 @@ function LocalLabSection({
           <Button
             size="sm"
             variant="outline"
+            className="h-7"
             disabled={busy || statusLoading || (anyBusy && !busy)}
             onClick={() => void handlePair()}
           >
-            {busy ? <Loader2 className="size-4 animate-spin" /> : <Plug className="size-4" />}
+            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Plug className="size-3.5" />}
             {devices.length > 0
               ? t('settings.remote.channels.localLab.reconnect')
               : t('settings.remote.channels.localLab.connect')}
           </Button>
-        </div>
+        </>
+      )}
+    >
+      <div className={cn(settingsRowClassName, 'space-y-1')}>
+        <p className="text-xs text-muted-foreground">
+          {t('settings.remote.channels.localLab.description')}
+        </p>
+        {status && (
+          <p className="truncate font-mono text-[11px] text-muted-foreground">
+            {status.baseUrl}
+            {status.environmentId ? ` · ${status.environmentId.slice(0, 8)}…` : ''}
+          </p>
+        )}
+        {!reachable && status && (
+          <p className="text-xs text-muted-foreground">
+            {t('settings.remote.channels.localLab.startHint', { cmd: status.startHint })}
+          </p>
+        )}
       </div>
 
       {devices.length > 0 && (
-        <ul className="space-y-2">
+        <ul className={deviceListClassName}>
           {devices.map((item) => (
             <li key={item.connectionId}>
               <EnvironmentDeviceRow
@@ -572,7 +582,7 @@ function LocalLabSection({
           ))}
         </ul>
       )}
-    </section>
+    </SettingsSection>
   )
 }
 
@@ -590,7 +600,7 @@ interface EnvironmentDeviceRowProps {
   onRepair?: () => void
 }
 
-/** Compact row aligned with paired phone/desktop rows on Control This Mac. */
+/** Card row aligned with paired phone/desktop rows on Control This Mac. */
 function EnvironmentDeviceRow({
   item,
   busy,
@@ -623,7 +633,7 @@ function EnvironmentDeviceRow({
   const controlsDisabled = busy || actionsLocked
 
   return (
-    <div className="rounded-md border border-border/80 bg-background/50 px-3 py-2">
+    <div className={settingsRowClassName}>
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <Server
@@ -632,7 +642,7 @@ function EnvironmentDeviceRow({
               live ? 'text-success' : blocked ? 'text-destructive' : 'text-muted-foreground',
             )}
           />
-          <span className="truncate text-sm font-medium">{item.label}</span>
+          <span className="truncate text-sm">{item.label}</span>
           {subtitle ? (
             <span className="min-w-0 truncate text-xs text-muted-foreground">{subtitle}</span>
           ) : null}
@@ -822,7 +832,7 @@ function RemoteHarnessPanel({ connectionId }: { connectionId: string }) {
   }
 
   return (
-    <div className="mt-2 space-y-1.5 border-t border-border/60 pt-2">
+    <div className="mt-2.5 space-y-1.5 pl-5.5">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-medium text-muted-foreground">
           {t('settings.environments.harness.title')}

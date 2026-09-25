@@ -1,7 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { ArrowLeft, BarChart3, Brain, Cpu, Globe, LayoutGrid, Loader2, MousePointer2, Paintbrush, Settings, Smartphone, SquareTerminal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@superone/ui/components/ui/button'
 import { useAppStore } from '@/stores/app'
 import { ProvidersPage } from './ProvidersPage'
 import { RemotePage } from './RemotePage'
@@ -12,22 +11,42 @@ import { BrowserSettingsPage } from './BrowserSettingsPage'
 import { ComputerUseSettingsPage } from './ComputerUseSettingsPage'
 import { HarnessesSettingsPage } from './HarnessesSettingsPage'
 import { TerminalSettingsPage } from './TerminalSettingsPage'
-import { cn } from '@superone/ui/lib/utils'
+import { SettingsNavGroup, SettingsNavItem } from './settings/SettingsNav'
 import { isComputerUseSupportedPlatform } from '@/lib/computer-use-platform'
 
 const UsagePage = lazy(() => import('./UsagePage').then((m) => ({ default: m.UsagePage })))
 
-const globalTabs = [
-  { id: 'app-settings' as const, labelKey: 'settings.layout.tabs.general', icon: Settings },
-  { id: 'appearance' as const, labelKey: 'settings.layout.tabs.appearance', icon: Paintbrush },
-  { id: 'providers' as const, labelKey: 'settings.layout.tabs.providers', icon: Brain },
-  { id: 'harnesses' as const, labelKey: 'settings.layout.tabs.harnesses', icon: Cpu },
-  { id: 'browser' as const, labelKey: 'settings.layout.tabs.browser', icon: Globe },
-  { id: 'computer-use' as const, labelKey: 'settings.layout.tabs.computerUse', icon: MousePointer2 },
-  { id: 'terminal' as const, labelKey: 'settings.layout.tabs.terminal', icon: SquareTerminal },
-  { id: 'apps' as const, labelKey: 'settings.layout.tabs.apps', icon: LayoutGrid },
-  { id: 'remote' as const, labelKey: 'settings.layout.tabs.remote', icon: Smartphone },
-  { id: 'usage' as const, labelKey: 'settings.layout.tabs.usage', icon: BarChart3 },
+const tabGroups = [
+  {
+    labelKey: 'settings.layout.groups.app',
+    tabs: [
+      { id: 'app-settings' as const, labelKey: 'settings.layout.tabs.general', icon: Settings },
+      { id: 'appearance' as const, labelKey: 'settings.layout.tabs.appearance', icon: Paintbrush },
+      { id: 'usage' as const, labelKey: 'settings.layout.tabs.usage', icon: BarChart3 },
+    ],
+  },
+  {
+    labelKey: 'settings.layout.groups.agent',
+    tabs: [
+      { id: 'providers' as const, labelKey: 'settings.layout.tabs.providers', icon: Brain },
+      { id: 'harnesses' as const, labelKey: 'settings.layout.tabs.harnesses', icon: Cpu },
+    ],
+  },
+  {
+    labelKey: 'settings.layout.groups.capabilities',
+    tabs: [
+      { id: 'browser' as const, labelKey: 'settings.layout.tabs.browser', icon: Globe },
+      { id: 'computer-use' as const, labelKey: 'settings.layout.tabs.computerUse', icon: MousePointer2 },
+      { id: 'terminal' as const, labelKey: 'settings.layout.tabs.terminal', icon: SquareTerminal },
+      { id: 'apps' as const, labelKey: 'settings.layout.tabs.apps', icon: LayoutGrid },
+    ],
+  },
+  {
+    labelKey: 'settings.layout.groups.connections',
+    tabs: [
+      { id: 'remote' as const, labelKey: 'settings.layout.tabs.remote', icon: Smartphone },
+    ],
+  },
 ]
 
 export function SettingsLayout() {
@@ -36,9 +55,6 @@ export function SettingsLayout() {
   const setSettingsTab = useAppStore((s) => s.setSettingsTab)
   const navigateTo = useAppStore((s) => s.navigateTo)
   const computerUseSupported = isComputerUseSupportedPlatform(window.app.platform)
-  const visibleGlobalTabs = computerUseSupported
-    ? globalTabs
-    : globalTabs.filter((tab) => tab.id !== 'computer-use')
   // Map removed tabs (e.g. former Environments) onto their new homes.
   const resolvedSettingsTab =
     (settingsTab as string) === 'environments' ? 'remote' : settingsTab
@@ -50,38 +66,36 @@ export function SettingsLayout() {
   return (
     <div className="flex flex-1 overflow-hidden">
       {/* Sidebar */}
-      <div className="flex w-64 shrink-0 flex-col border-r border-border bg-background p-3">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="mb-4 justify-start"
+      <div className="flex w-64 shrink-0 flex-col overflow-y-auto border-r border-border px-2.5 pt-1 pb-3">
+        <SettingsNavItem
+          icon={<ArrowLeft className="size-4 shrink-0" />}
           onClick={() => navigateTo('main')}
         >
-          <ArrowLeft className="size-4" />
           {t('common.back')}
-        </Button>
+        </SettingsNavItem>
 
-        <nav className="flex flex-col gap-1">
-          {visibleGlobalTabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setSettingsTab(tab.id)}
-              className={cn(
-                'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
-                activeSettingsTab === tab.id
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-              )}
-            >
-              <tab.icon className="size-4" />
-              {t(tab.labelKey)}
-            </button>
+        <nav className="flex flex-col">
+          {tabGroups.map((group) => (
+            <SettingsNavGroup key={group.labelKey} label={t(group.labelKey)}>
+              {group.tabs
+                .filter((tab) => computerUseSupported || tab.id !== 'computer-use')
+                .map((tab) => (
+                  <SettingsNavItem
+                    key={tab.id}
+                    selected={activeSettingsTab === tab.id}
+                    icon={<tab.icon className="size-4 shrink-0" />}
+                    onClick={() => setSettingsTab(tab.id)}
+                  >
+                    {t(tab.labelKey)}
+                  </SettingsNavItem>
+                ))}
+            </SettingsNavGroup>
           ))}
         </nav>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-3 [scrollbar-gutter:stable]">
+      <div className="min-w-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
         {activeSettingsTab === 'providers' && <ProvidersPage />}
         {activeSettingsTab === 'app-settings' && <AppSettingsPage />}
         {activeSettingsTab === 'appearance' && <AppearancePage />}

@@ -14,6 +14,8 @@ import {
 } from '@superone/ui/components/ui/select'
 import { Switch } from '@superone/ui/components/ui/switch'
 import { cn } from '@superone/ui/lib/utils'
+import { SettingsPage, SettingsRow, SettingsSection, settingsRowClassName } from '@/components/settings/SettingsSection'
+import { SettingsFootnote } from '@/components/settings/SettingsFootnote'
 import type {
   ComputerUseAlwaysAllowApp,
   ComputerUseDisplayInfo,
@@ -289,129 +291,109 @@ export function ComputerUseSettingsPage() {
   const hasSecondaryDisplay = displays.length > 1
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="mb-6">
-        <h2 className="text-lg font-semibold">{t('settings.computerUse.title')}</h2>
-        <p className="text-sm text-muted-foreground">{t('settings.computerUse.subtitle')}</p>
-      </div>
+    <SettingsPage title={t('settings.computerUse.title')}>
+      <SettingsSection>
+        <SettingsRow
+          label={t('settings.computerUse.enable.label')}
+          description={t('settings.computerUse.enable.description')}
+        >
+          <Switch
+            checked={enabled}
+            onCheckedChange={handleEnableToggle}
+            disabled={loading || permBusy}
+          />
+        </SettingsRow>
 
-      <div className="space-y-4">
-        <div className="rounded-lg border border-border">
-          <div className="flex items-start justify-between gap-4 p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.computerUse.enable.label')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.computerUse.enable.description')}
-              </p>
-            </div>
-            <Switch
-              checked={enabled}
-              onCheckedChange={handleEnableToggle}
-              disabled={loading || permBusy}
-            />
-          </div>
+        <SettingsRow
+          label={t('settings.computerUse.pictureInPicture.label')}
+          description={t('settings.computerUse.pictureInPicture.description')}
+        >
+          <Switch
+            aria-label={t('settings.computerUse.pictureInPicture.label')}
+            checked={enabled && pictureInPicture}
+            onCheckedChange={handlePictureInPictureToggle}
+            disabled={loading || !enabled}
+          />
+        </SettingsRow>
 
-          <div className="flex items-start justify-between gap-4 border-t border-border p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.computerUse.pictureInPicture.label')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.computerUse.pictureInPicture.description')}
-              </p>
-            </div>
-            <Switch
-              aria-label={t('settings.computerUse.pictureInPicture.label')}
-              checked={enabled && pictureInPicture}
-              onCheckedChange={handlePictureInPictureToggle}
-              disabled={loading || !enabled}
-            />
-          </div>
-
-          <div className="flex items-start justify-between gap-4 border-t border-border p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.computerUse.dedicatedDisplay.label')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {hasSecondaryDisplay
-                  ? t('settings.computerUse.dedicatedDisplay.description')
-                  : t('settings.computerUse.dedicatedDisplay.singleDisplayDescription')}
-              </p>
-            </div>
-            <Select
-              value={dedicatedDisplayId ?? '__current__'}
-              onValueChange={handleDedicatedDisplayChange}
-              disabled={loading || !enabled || (!hasSecondaryDisplay && dedicatedDisplayId == null)}
+        <SettingsRow
+          label={t('settings.computerUse.dedicatedDisplay.label')}
+          description={hasSecondaryDisplay
+            ? t('settings.computerUse.dedicatedDisplay.description')
+            : t('settings.computerUse.dedicatedDisplay.singleDisplayDescription')}
+        >
+          <Select
+            value={dedicatedDisplayId ?? '__current__'}
+            onValueChange={handleDedicatedDisplayChange}
+            disabled={loading || !enabled || (!hasSecondaryDisplay && dedicatedDisplayId == null)}
+          >
+            <SelectTrigger
+              size="sm"
+              className="w-52 shrink-0 border-border bg-background px-2.5 data-[size=sm]:h-7 dark:bg-background"
+              aria-label={t('settings.computerUse.dedicatedDisplay.label')}
             >
-              <SelectTrigger
-                size="sm"
-                className="w-52 shrink-0"
-                aria-label={t('settings.computerUse.dedicatedDisplay.label')}
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="__current__">
-                    {t('settings.computerUse.dedicatedDisplay.current')}
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="__current__">
+                  {t('settings.computerUse.dedicatedDisplay.current')}
+                </SelectItem>
+                {!selectedDisplayAvailable && dedicatedDisplayId && (
+                  <SelectItem value={dedicatedDisplayId} disabled>
+                    {t('settings.computerUse.dedicatedDisplay.unavailable')}
                   </SelectItem>
-                  {!selectedDisplayAvailable && dedicatedDisplayId && (
-                    <SelectItem value={dedicatedDisplayId} disabled>
-                      {t('settings.computerUse.dedicatedDisplay.unavailable')}
-                    </SelectItem>
-                  )}
-                  {dedicatedDisplayOptions.map((display) => (
-                    <SelectItem key={display.id} value={display.id}>
-                      {display.name}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
+                )}
+                {dedicatedDisplayOptions.map((display) => (
+                  <SelectItem key={display.id} value={display.id}>
+                    {display.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </SettingsRow>
 
-          <div className="flex items-start justify-between gap-4 border-t border-border p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.computerUse.allowAll.label')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.computerUse.allowAll.description')}
-              </p>
-            </div>
-            <Switch
-              checked={enabled && allowAll}
-              onCheckedChange={handleAllowAllToggle}
-              disabled={loading || !enabled}
-            />
-          </div>
-        </div>
+        <SettingsRow
+          label={t('settings.computerUse.allowAll.label')}
+          description={t('settings.computerUse.allowAll.description')}
+        >
+          <Switch
+            checked={enabled && allowAll}
+            onCheckedChange={handleAllowAllToggle}
+            disabled={loading || !enabled}
+          />
+        </SettingsRow>
+      </SettingsSection>
 
-        {!(enabled && allowAll) && (
-          <div className="rounded-lg border border-border">
-            <div className="flex items-start justify-between gap-3 p-4">
-              <div className="min-w-0">
-                <p className="text-sm font-medium">{t('settings.computerUse.alwaysAllow.title')}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {t('settings.computerUse.alwaysAllow.description')}
-                </p>
-              </div>
+      {!(enabled && allowAll) && (
+        <div>
+          <SettingsSection
+            title={t('settings.computerUse.alwaysAllow.title')}
+            actions={(
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
+                className="h-7"
                 disabled={loading || !enabled}
                 onClick={() => setAddOpen((v) => !v)}
               >
                 <Plus data-icon="inline-start" />
                 {t('settings.computerUse.alwaysAllow.add')}
               </Button>
-            </div>
-
+            )}
+          >
             {addOpen && (
-              <div className="border-t border-border px-4 py-3">
+              <div className={settingsRowClassName}>
                 <Input
                   type="search"
                   value={addQuery}
                   onChange={(e) => setAddQuery(e.target.value)}
                   placeholder={t('settings.computerUse.alwaysAllow.searchPlaceholder')}
+                  className="h-7 bg-background"
                 />
-                <div className="mt-2 flex max-h-48 flex-col gap-0.5 overflow-y-auto">
+                <div className="-mx-1 mt-2 flex max-h-48 flex-col gap-0.5 overflow-y-auto">
                   {runningBusy && (
                     <p className="px-1 py-2 text-xs text-muted-foreground">
                       {t('settings.computerUse.alwaysAllow.loadingApps')}
@@ -437,70 +419,44 @@ export function ComputerUseSettingsPage() {
               </div>
             )}
 
-            <ul className="divide-y divide-border border-t border-border">
-              {alwaysAllow.length === 0 ? (
-                <li className="px-4 py-3 text-xs text-muted-foreground">
-                  {t('settings.computerUse.alwaysAllow.empty')}
-                </li>
-              ) : (
-                alwaysAllow.map((app) => (
-                  <li key={app.bundleId} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm text-foreground">{app.app}</p>
-                      <p className="truncate font-mono text-[11px] text-muted-foreground">{app.bundleId}</p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      className="shrink-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => void handleRemoveAlways(app.bundleId)}
-                      aria-label={t('settings.computerUse.alwaysAllow.remove', { app: app.app })}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </li>
-                ))
-              )}
-            </ul>
-          </div>
-        )}
-
-        <div className="rounded-lg border border-border">
-          <div className="flex items-start justify-between gap-3 p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.computerUse.permissions.title')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.computerUse.permissions.description')}
+            {alwaysAllow.length === 0 ? (
+              <p className={cn(settingsRowClassName, 'text-xs text-muted-foreground')}>
+                {t('settings.computerUse.alwaysAllow.empty')}
               </p>
-              {(permissionStatus.helperName || permissionStatus.helperPath) && (
-                <div className="mt-2 min-w-0 text-xs text-muted-foreground">
-                  <p className="truncate font-medium text-foreground">
-                    {permissionStatus.helperName ?? t('settings.computerUse.permissions.helperName')}
-                  </p>
-                  {permissionStatus.helperBundleId && (
-                    <p className="truncate font-mono text-[11px]" title={permissionStatus.helperBundleId}>
-                      {permissionStatus.helperBundleId}
-                    </p>
-                  )}
-                  {permissionStatus.helperPath && (
-                    <p className="truncate font-mono text-[11px]" title={permissionStatus.helperPath}>
-                      {permissionStatus.helperPath}
-                    </p>
-                  )}
-                </div>
-              )}
-              {!permissionStatus.helperName && !permissionStatus.helperPath && !permChecking && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {t('settings.computerUse.permissions.helperName')}
-                </p>
-              )}
-            </div>
+            ) : (
+              alwaysAllow.map((app) => (
+                <SettingsRow
+                  key={app.bundleId}
+                  label={<span className="block truncate">{app.app}</span>}
+                  description={<span className="block truncate font-mono text-[11px]">{app.bundleId}</span>}
+                >
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="shrink-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => void handleRemoveAlways(app.bundleId)}
+                    aria-label={t('settings.computerUse.alwaysAllow.remove', { app: app.app })}
+                  >
+                    <Trash2 />
+                  </Button>
+                </SettingsRow>
+              ))
+            )}
+          </SettingsSection>
+          <SettingsFootnote>{t('settings.computerUse.alwaysAllow.description')}</SettingsFootnote>
+        </div>
+      )}
+
+      <div>
+        <SettingsSection
+          title={t('settings.computerUse.permissions.title')}
+          actions={(
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="shrink-0"
+              className="h-7 shrink-0"
               disabled={permBusy || permChecking || recheckBusy}
               onClick={() => void handleRecheckPermissions()}
             >
@@ -508,17 +464,37 @@ export function ComputerUseSettingsPage() {
                 ? t('settings.computerUse.permissions.rechecking')
                 : t('settings.computerUse.permissions.recheck')}
             </Button>
-          </div>
+          )}
+        >
+          {(permissionStatus.helperName || permissionStatus.helperPath || !permChecking) && (
+            <SettingsRow
+              label={<span className="block truncate">{permissionStatus.helperName ?? t('settings.computerUse.permissions.helperName')}</span>}
+              description={(permissionStatus.helperBundleId || permissionStatus.helperPath) && (
+                <span className="block font-mono text-[11px]">
+                  {permissionStatus.helperBundleId && (
+                    <span className="block truncate" title={permissionStatus.helperBundleId}>
+                      {permissionStatus.helperBundleId}
+                    </span>
+                  )}
+                  {permissionStatus.helperPath && (
+                    <span className="block truncate" title={permissionStatus.helperPath}>
+                      {permissionStatus.helperPath}
+                    </span>
+                  )}
+                </span>
+              )}
+            />
+          )}
 
           {permChecking ? (
-            <div className="border-t border-border px-4 py-3">
+            <div className={settingsRowClassName}>
               <Badge variant="outline" className="gap-1 text-muted-foreground">
                 <Loader2 className="size-3 animate-spin" aria-hidden="true" />
                 {t('settings.computerUse.permissions.checking')}
               </Badge>
             </div>
           ) : (
-            <div className="divide-y divide-border border-t border-border">
+            <>
               <PermissionRow
                 label={t('settings.computerUse.permissions.accessibility')}
                 granted={accessibilityGranted}
@@ -539,15 +515,16 @@ export function ComputerUseSettingsPage() {
                 grantedLabel={t('settings.computerUse.permissions.buttonGranted')}
                 openingLabel={t('settings.computerUse.permissions.opening')}
               />
-            </div>
+            </>
           )}
 
           {permMessage && (
-            <p className="border-t border-border px-4 py-3 text-xs text-muted-foreground">{permMessage}</p>
+            <p className={cn(settingsRowClassName, 'text-xs text-muted-foreground')}>{permMessage}</p>
           )}
-        </div>
+        </SettingsSection>
+        <SettingsFootnote>{t('settings.computerUse.permissions.description')}</SettingsFootnote>
       </div>
-    </div>
+    </SettingsPage>
   )
 }
 
@@ -572,18 +549,21 @@ function PermissionRow({
 }) {
   const Icon = granted ? CheckCircle2 : CircleAlert
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-      <div className="flex min-w-0 items-center gap-2">
-        <Icon
-          className={cn('size-4 shrink-0', granted ? 'text-emerald-500' : 'text-muted-foreground')}
-          aria-hidden="true"
-        />
-        <span className="text-sm text-foreground">{label}</span>
-      </div>
+    <SettingsRow
+      label={(
+        <span className="flex min-w-0 items-center gap-2">
+          <Icon
+            className={cn('size-4 shrink-0', granted ? 'text-success' : 'text-muted-foreground')}
+            aria-hidden="true"
+          />
+          {label}
+        </span>
+      )}
+    >
       {granted ? (
         <Badge
           variant="outline"
-          className="border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+          className="border-success/25 bg-success/10 text-success"
         >
           {grantedLabel}
         </Badge>
@@ -592,12 +572,13 @@ function PermissionRow({
           type="button"
           variant="outline"
           size="sm"
+          className="h-7"
           disabled={busy || checking}
           onClick={onRequest}
         >
           {busy ? openingLabel : requestLabel}
         </Button>
       )}
-    </div>
+    </SettingsRow>
   )
 }

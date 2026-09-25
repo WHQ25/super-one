@@ -6,6 +6,8 @@ import { cn } from '@superone/ui/lib/utils'
 import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Switch } from '@superone/ui/components/ui/switch'
+import { SettingsPage, SettingsRow, SettingsSection, SettingsSubheader, settingsRowClassName } from '@/components/settings/SettingsSection'
+import { SettingsFootnote } from '@/components/settings/SettingsFootnote'
 
 function ExperimentalRow({
   label,
@@ -23,13 +25,12 @@ function ExperimentalRow({
   onCheckedChange: (value: boolean) => void
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-t border-border p-4">
-      <div className="min-w-0">
-        <p className="text-sm font-medium">{label}</p>
-        <p className={cn('mt-0.5 text-xs', destructive ? 'text-destructive' : 'text-muted-foreground')}>{description}</p>
-      </div>
+    <SettingsRow
+      label={label}
+      description={destructive ? <span className="text-destructive">{description}</span> : description}
+    >
       <Switch checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} />
-    </div>
+    </SettingsRow>
   )
 }
 
@@ -94,74 +95,62 @@ export function BrowserSettingsPage() {
   const expDisabled = loading || !cdpEnabled
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="mb-6">
-        <h2 className="text-lg font-semibold">{t('settings.browser.title')}</h2>
-        <p className="text-sm text-muted-foreground">{t('settings.browser.subtitle')}</p>
-      </div>
-
-      <div className="mb-6 rounded-lg border border-border">
-        <div className="flex items-start justify-between gap-4 p-4">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">{t('settings.browser.downloadDir.label')}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+    <SettingsPage title={t('settings.browser.title')}>
+      <SettingsSection>
+        <SettingsRow
+          label={t('settings.browser.downloadDir.label')}
+          description={(
+            <>
               {t('settings.browser.downloadDir.description')}
-            </p>
-            <p className="mt-1.5 truncate font-mono text-xs" title={downloadDir ?? systemDownloadDir}>
-              {downloadDir ?? systemDownloadDir}
-            </p>
-            {!downloadDir && (
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.browser.downloadDir.usingSystemDefault')}
-              </p>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {downloadDir && (
-              <IconButton
-                size="sm"
-                variant="ghost"
-                tooltip={t('settings.browser.downloadDir.reset')}
-                onClick={() => void resetDownloadDir()}
-                disabled={loading}
-              >
-                <RotateCcw className="size-3.5" />
-              </IconButton>
-            )}
-            <Button variant="outline" size="sm" onClick={() => void pickDownloadDir()} disabled={loading}>
-              {t('settings.browser.downloadDir.change')}
-            </Button>
-          </div>
-        </div>
-      </div>
+              <span className="mt-1.5 block truncate font-mono text-foreground" title={downloadDir ?? systemDownloadDir}>
+                {downloadDir ?? systemDownloadDir}
+              </span>
+              {!downloadDir && (
+                <span className="mt-0.5 block">{t('settings.browser.downloadDir.usingSystemDefault')}</span>
+              )}
+            </>
+          )}
+        >
+          {downloadDir && (
+            <IconButton
+              size="sm"
+              variant="ghost"
+              tooltip={t('settings.browser.downloadDir.reset')}
+              onClick={() => void resetDownloadDir()}
+              disabled={loading}
+            >
+              <RotateCcw className="size-3.5" />
+            </IconButton>
+          )}
+          <Button variant="outline" size="sm" className="h-7" onClick={() => void pickDownloadDir()} disabled={loading}>
+            {t('settings.browser.downloadDir.change')}
+          </Button>
+        </SettingsRow>
+      </SettingsSection>
 
-      <div className="rounded-lg border border-border">
-        <div className="flex items-start justify-between gap-4 p-4">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">{t('settings.browser.cdp.label')}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {t('settings.browser.cdp.description')}
-            </p>
-          </div>
+      <SettingsSection>
+        <SettingsRow
+          label={t('settings.browser.cdp.label')}
+          description={t('settings.browser.cdp.description')}
+        >
           <Switch
             checked={cdpEnabled}
             onCheckedChange={handleCdpToggle}
             disabled={loading}
           />
-        </div>
-      </div>
+        </SettingsRow>
+      </SettingsSection>
 
-      <div className="mt-6 rounded-lg border border-border">
-        <div className="flex items-start justify-between gap-4 p-4">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">{t('settings.browser.webmcp.title')}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
+      <SettingsSection>
+        <SettingsRow
+          label={t('settings.browser.webmcp.title')}
+          description={(
+            <>
               {t('settings.browser.webmcp.description')}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {t('settings.browser.webmcp.restartNote')}
-            </p>
-          </div>
+              <span className="mt-1 block">{t('settings.browser.webmcp.restartNote')}</span>
+            </>
+          )}
+        >
           <Switch
             checked={webmcpEnabled}
             onCheckedChange={async (enabled) => {
@@ -170,82 +159,74 @@ export function BrowserSettingsPage() {
             }}
             disabled={loading}
           />
-        </div>
+        </SettingsRow>
         {webmcpEnabled && (
-          <div className="border-t border-border p-4">
-            <p className="text-sm font-medium">{t('settings.browser.webmcp.grants.title')}</p>
-            {webmcpTrustedOrigins.length === 0 ? (
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t('settings.browser.webmcp.grants.empty')}
-              </p>
-            ) : (
-              <div className="mt-2 divide-y divide-border">
-                {webmcpTrustedOrigins.map((entry) => (
-                  <div key={entry.origin} className="flex items-center justify-between gap-3 py-2">
-                    <div className="min-w-0">
-                      <p className="truncate font-mono text-xs font-medium">{entry.origin}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {t('settings.browser.webmcp.grants.toolCount', {
-                          count: Object.keys(entry.tools).length,
-                        })}
-                      </p>
-                    </div>
-                    <IconButton
-                      size="xs"
-                      variant="ghost"
-                      tooltip={t('settings.browser.webmcp.grants.remove')}
-                      onClick={() => void revokeWebMcpOrigin(entry.origin)}
-                    >
-                      <Trash2 className="size-3.5" />
-                    </IconButton>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <SettingsSubheader>{t('settings.browser.webmcp.grants.title')}</SettingsSubheader>
         )}
-      </div>
+        {webmcpEnabled && webmcpTrustedOrigins.length === 0 && (
+          <p className={cn(settingsRowClassName, 'text-xs text-muted-foreground')}>
+            {t('settings.browser.webmcp.grants.empty')}
+          </p>
+        )}
+        {webmcpEnabled && webmcpTrustedOrigins.map((entry) => (
+          <SettingsRow
+            key={entry.origin}
+            label={<span className="block truncate font-mono text-xs">{entry.origin}</span>}
+            description={<span className="block truncate">{t('settings.browser.webmcp.grants.toolCount', {
+              count: Object.keys(entry.tools).length,
+            })}</span>}
+          >
+            <IconButton
+              size="xs"
+              variant="ghost"
+              tooltip={t('settings.browser.webmcp.grants.remove')}
+              onClick={() => void revokeWebMcpOrigin(entry.origin)}
+            >
+              <Trash2 className="size-3.5" />
+            </IconButton>
+          </SettingsRow>
+        ))}
+      </SettingsSection>
 
-      <div className="mt-6 rounded-lg border border-border">
-        <div className="p-4">
-          <p className="text-sm font-medium">{t('settings.browser.experimental.title')}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{t('settings.browser.experimental.description')}</p>
-          {!cdpEnabled && (
-            <p className="mt-1 text-xs text-muted-foreground">{t('settings.browser.experimental.requiresCdp')}</p>
-          )}
-        </div>
-        <ExperimentalRow
-          label={t('settings.browser.experimental.cookies.label')}
-          description={t('settings.browser.experimental.cookies.description')}
-          checked={cdpEnabled && cookiesEnabled}
-          disabled={expDisabled}
-          onCheckedChange={async (v) => {
-            const r = await window.app.saveAppSettings({ cdpCookiesEnabled: v })
-            setCookiesEnabled(r.cdpCookiesEnabled)
-          }}
-        />
-        <ExperimentalRow
-          label={t('settings.browser.experimental.emulate.label')}
-          description={t('settings.browser.experimental.emulate.description')}
-          checked={cdpEnabled && emulateEnabled}
-          disabled={expDisabled}
-          onCheckedChange={async (v) => {
-            const r = await window.app.saveAppSettings({ cdpEmulateEnabled: v })
-            setEmulateEnabled(r.cdpEmulateEnabled)
-          }}
-        />
-        <ExperimentalRow
-          label={t('settings.browser.experimental.mock.label')}
-          description={t('settings.browser.experimental.mock.description')}
-          destructive
-          checked={cdpEnabled && mockEnabled}
-          disabled={expDisabled}
-          onCheckedChange={async (v) => {
-            const r = await window.app.saveAppSettings({ cdpMockEnabled: v })
-            setMockEnabled(r.cdpMockEnabled)
-          }}
-        />
+      <div>
+        <SettingsSection
+          title={t('settings.browser.experimental.title')}
+          description={!cdpEnabled ? t('settings.browser.experimental.requiresCdp') : undefined}
+        >
+          <ExperimentalRow
+            label={t('settings.browser.experimental.cookies.label')}
+            description={t('settings.browser.experimental.cookies.description')}
+            checked={cdpEnabled && cookiesEnabled}
+            disabled={expDisabled}
+            onCheckedChange={async (v) => {
+              const r = await window.app.saveAppSettings({ cdpCookiesEnabled: v })
+              setCookiesEnabled(r.cdpCookiesEnabled)
+            }}
+          />
+          <ExperimentalRow
+            label={t('settings.browser.experimental.emulate.label')}
+            description={t('settings.browser.experimental.emulate.description')}
+            checked={cdpEnabled && emulateEnabled}
+            disabled={expDisabled}
+            onCheckedChange={async (v) => {
+              const r = await window.app.saveAppSettings({ cdpEmulateEnabled: v })
+              setEmulateEnabled(r.cdpEmulateEnabled)
+            }}
+          />
+          <ExperimentalRow
+            label={t('settings.browser.experimental.mock.label')}
+            description={t('settings.browser.experimental.mock.description')}
+            destructive
+            checked={cdpEnabled && mockEnabled}
+            disabled={expDisabled}
+            onCheckedChange={async (v) => {
+              const r = await window.app.saveAppSettings({ cdpMockEnabled: v })
+              setMockEnabled(r.cdpMockEnabled)
+            }}
+          />
+        </SettingsSection>
+        <SettingsFootnote>{t('settings.browser.experimental.description')}</SettingsFootnote>
       </div>
-    </div>
+    </SettingsPage>
   )
 }

@@ -23,6 +23,8 @@ import {
   cursorPermissionModeOption,
 } from '@/components/chat/CursorPermissionModeList'
 import { SandboxStatusBlock } from '@/components/preferences/SandboxStatusBlock'
+import { SettingsRow, SettingsSection } from '@/components/settings/SettingsSection'
+import { settingsSelectTriggerClassName } from '@/components/settings/select-trigger-class'
 
 /**
  * Permission mode (and sandbox, where the harness owns one) a new session on
@@ -123,22 +125,19 @@ export function SessionDefaultsSection({ harnessId, autoEligibility }: {
 
   return (
     <>
-      <div className="flex items-center justify-between gap-4 border-b border-border p-4">
-        <div className="min-w-0">
-          <p className="text-sm font-medium">{t('settings.preferences.permissionMode.label')}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {t('settings.preferences.permissionMode.description')}
-          </p>
-        </div>
+      <SettingsRow
+        label={t('settings.preferences.permissionMode.label')}
+        description={t('settings.preferences.permissionMode.description')}
+      >
         <Popover open={permOpen} onOpenChange={setPermOpen}>
           <PopoverTrigger asChild>
             <button
               disabled={disabled}
-              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${currentPerm.color} ${currentPerm.hoverBg}`}
+              className={cn(settingsSelectTriggerClassName, currentPerm.color, currentPerm.hoverBg)}
             >
               {currentPerm.icon}
-              <span>{currentPermLabel}</span>
-              <ChevronDown className={`size-3 transition-transform duration-200 ${permOpen ? 'rotate-180' : ''}`} />
+              <span className="truncate">{currentPermLabel}</span>
+              <ChevronDown className={cn('size-3.5 shrink-0 transition-transform duration-200', permOpen && 'rotate-180')} />
             </button>
           </PopoverTrigger>
           <PopoverContent align="end" side="bottom" className={cn(PERMISSION_POPOVER_CLASS, 'bg-card')}>
@@ -175,27 +174,24 @@ export function SessionDefaultsSection({ harnessId, autoEligibility }: {
             )}
           </PopoverContent>
         </Popover>
-      </div>
+      </SettingsRow>
 
       {offeredSandboxModes.length > 0 && (
         <>
-          <div className="flex items-center justify-between gap-4 border-b border-border p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.preferences.sandbox.label')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.preferences.sandbox.description')}
-              </p>
-            </div>
+          <SettingsRow
+            label={t('settings.preferences.sandbox.label')}
+            description={t('settings.preferences.sandbox.description')}
+          >
             <Popover open={sandboxOpen} onOpenChange={setSandboxOpen}>
               <PopoverTrigger asChild>
                 <button
                   disabled={sandboxTriggerDisabled}
                   title={sandboxSupportLevel === 'unsupported' ? t('settings.preferences.sandbox.statusUnsupported') : undefined}
-                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${currentSandbox.color} ${currentSandbox.hoverBg}`}
+                  className={cn(settingsSelectTriggerClassName, currentSandbox.color, currentSandbox.hoverBg)}
                 >
                   {currentSandbox.icon}
-                  <span>{t(`chat.sandboxModes.${currentSandbox.id}.label`)}</span>
-                  <ChevronDown className={`size-3 transition-transform duration-200 ${sandboxOpen ? 'rotate-180' : ''}`} />
+                  <span className="truncate">{t(`chat.sandboxModes.${currentSandbox.id}.label`)}</span>
+                  <ChevronDown className={cn('size-3.5 shrink-0 transition-transform duration-200', sandboxOpen && 'rotate-180')} />
                 </button>
               </PopoverTrigger>
               <PopoverContent align="end" side="bottom" className="w-56 border-border bg-card p-1">
@@ -231,7 +227,7 @@ export function SessionDefaultsSection({ harnessId, autoEligibility }: {
                   })}
               </PopoverContent>
             </Popover>
-          </div>
+          </SettingsRow>
           {sandboxSupportLevel !== 'always' && (
             <SandboxStatusBlock
               supportLevel={sandboxSupportLevel}
@@ -253,19 +249,14 @@ export function SessionDefaultsSection({ harnessId, autoEligibility }: {
  */
 export function HarnessPreferencesPage({ harnessId, children }: {
   harnessId: HarnessId
-  /** Harness-specific rows, below the session defaults in the same card. */
+  /** Harness-specific rows, below the session defaults on the same card. */
   children?: ReactNode
 }) {
   const { t } = useTranslation()
   return (
-    <div className="w-full">
-      <div className="rounded-lg border border-border">
-        <div className="border-b border-border px-4 py-2">
-          <p className="text-xs font-medium text-muted-foreground">{t('settings.preferences.sections.user')}</p>
-        </div>
-        <SessionDefaultsSection harnessId={harnessId} />
-        {children}
-      </div>
-    </div>
+    <SettingsSection title={t('settings.preferences.sections.user')}>
+      <SessionDefaultsSection harnessId={harnessId} />
+      {children}
+    </SettingsSection>
   )
 }

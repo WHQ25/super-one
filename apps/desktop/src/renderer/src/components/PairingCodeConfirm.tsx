@@ -18,7 +18,7 @@ export function PairingCodeConfirm(props: {
 }) {
   const { t } = useTranslation()
   return (
-    <div className="flex flex-col items-stretch gap-3 border-t border-border pt-4">
+    <div className="flex flex-col items-stretch gap-3">
       <div className="space-y-1.5">
         <Label htmlFor="pairing-device-name" className="text-xs text-muted-foreground">
           {t('resources.remote.deviceNameLabel')}
@@ -29,6 +29,7 @@ export function PairingCodeConfirm(props: {
           maxLength={PAIRED_DEVICE_NAME_MAX}
           onChange={(event) => props.onDeviceNameChange(event.target.value)}
           placeholder={t('resources.remote.deviceNameLabel')}
+          className="h-8 bg-background"
         />
         <p className="text-xs text-muted-foreground">{t('resources.remote.deviceNameHint')}</p>
       </div>
@@ -52,6 +53,7 @@ export function PairingCodeConfirm(props: {
             }
           />
           <Button
+            size="sm"
             onClick={props.onConfirm}
             disabled={props.confirming || props.code.length !== 6}
           >

@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from '@superone/ui/components/ui/dialog'
 import type { CodexExternalAgentItem } from '@superone/shared/agent-types'
+import { SettingsRow, SettingsSection } from '@/components/settings/SettingsSection'
 
 export function CodexImportConfigSection({ projectPath }: { projectPath: string | null }) {
   const { t } = useTranslation()
@@ -47,19 +48,15 @@ export function CodexImportConfigSection({ projectPath }: { projectPath: string 
   }, [projectPath, items, t])
 
   return (
-    <div className="rounded-lg border border-border">
-      <div className="border-b border-border px-4 py-2">
-        <p className="text-xs font-medium text-muted-foreground">{t('settings.preferences.import.section')}</p>
-      </div>
-      <div className="flex items-center justify-between gap-4 p-4">
-        <div className="min-w-0">
-          <p className="text-sm font-medium">{t('settings.preferences.import.label')}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{t('settings.preferences.import.description')}</p>
-        </div>
-        <Button size="sm" variant="outline" disabled={!projectPath || detecting} onClick={handleDetect}>
+    <SettingsSection title={t('settings.preferences.import.section')}>
+      <SettingsRow
+        label={t('settings.preferences.import.label')}
+        description={t('settings.preferences.import.description')}
+      >
+        <Button size="sm" variant="outline" className="h-7" disabled={!projectPath || detecting} onClick={handleDetect}>
           {detecting ? t('settings.preferences.import.detecting') : t('settings.preferences.import.detect')}
         </Button>
-      </div>
+      </SettingsRow>
 
       <Dialog open={items !== null} onOpenChange={(open) => { if (!open) setItems(null) }}>
         <DialogContent className="sm:max-w-md">
@@ -83,6 +80,6 @@ export function CodexImportConfigSection({ projectPath }: { projectPath: string 
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </SettingsSection>
   )
 }

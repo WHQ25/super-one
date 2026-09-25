@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react'
 import { expect, userEvent, within } from 'storybook/test'
 import type { DshSubagentModelSelection } from '@superone/shared/agent-types'
 import { mockIpc } from '../../../../../.storybook/mock-ipc'
+import { SettingsCard } from '../settings/SettingsSection'
 import { DshSubagentModelsSection, DshSubagentModelsSettings, type DshModelRoute } from './DshSubagentModelsSection'
 
 const CATALOG: DshModelRoute[] = [
@@ -22,8 +23,8 @@ const LONG_CATALOG: DshModelRoute[] = [
 /** The card the section renders inside on the preferences page. */
 function Card({ children, width }: { children: ReactNode; width?: number }) {
   return (
-    <div className="rounded-lg border border-border" style={width ? { width } : undefined}>
-      {children}
+    <div style={width ? { width } : undefined}>
+      <SettingsCard>{children}</SettingsCard>
     </div>
   )
 }

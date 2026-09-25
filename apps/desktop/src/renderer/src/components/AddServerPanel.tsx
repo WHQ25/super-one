@@ -7,10 +7,13 @@ import { Input } from '@superone/ui/components/ui/input'
 import { Switch } from '@superone/ui/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { useSettingsStore } from '@/stores/settings'
+import { settingsRowClassName } from '@/components/settings/SettingsSection'
+import { SettingsSegmentedControl } from '@/components/settings/SettingsSegmentedControl'
 import { cn } from '@superone/ui/lib/utils'
 import type { McpbPreview, McpbProvider, McpbUserConfigField, McpbUserConfigValues } from '@superone/shared/mcpb-types'
 
 const MCPB_EXT = '.mcpb'
+const FORM_INPUT_CLASS = 'h-7 w-full rounded-md border border-border bg-background px-2.5 text-sm outline-none focus:border-ring'
 const DSH_MCP_NAME_PATTERN = /^[A-Za-z0-9_-]+$/
 
 interface KvRow {
@@ -24,7 +27,7 @@ function KvRows({ rows, onChange, keyPlaceholder = 'Key', valuePlaceholder = 'Va
   keyPlaceholder?: string
   valuePlaceholder?: string
 }) {
-  const inputClass = 'w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-ring'
+  const inputClass = FORM_INPUT_CLASS
   if (rows.length === 0) return null
   return (
     <div className="space-y-2">
@@ -165,9 +168,9 @@ function FieldRow({ name, field, value, onChange }: {
       <div className="mb-1 flex items-baseline justify-between gap-2">
         <label className="text-xs font-medium">
           {field.title}
-          {field.required && <span className="ml-1 text-destructive">*</span>}
+          {field.required && <span className="ml-1 text-error">*</span>}
           {field.sensitive && (
-            <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-[9px] uppercase tracking-wide">
+            <Badge variant="secondary" className="ml-2 px-1.5 py-0 text-[10px]">
               {t('resources.mcp.bundle.sensitiveBadge')}
             </Badge>
           )}
@@ -184,6 +187,7 @@ function FieldRow({ name, field, value, onChange }: {
         />
       ) : field.type === 'number' ? (
         <Input
+          className="h-7 bg-background"
           aria-label={field.title}
           type="number"
           value={String(value ?? '')}
@@ -194,7 +198,7 @@ function FieldRow({ name, field, value, onChange }: {
       ) : field.multiple ? (
         <textarea
           aria-label={field.title}
-          className="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-ring"
+          className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm outline-none focus:border-ring"
           rows={3}
           value={Array.isArray(value) ? value.join('\n') : String(value ?? '')}
           placeholder={field.type === 'directory' ? '/path/one\n/path/two' : 'one per line'}
@@ -202,6 +206,7 @@ function FieldRow({ name, field, value, onChange }: {
         />
       ) : (
         <Input
+          className="h-7 bg-background"
           aria-label={field.title}
           type={field.sensitive ? 'password' : 'text'}
           value={typeof value === 'string' ? value : String(value ?? '')}
@@ -210,7 +215,7 @@ function FieldRow({ name, field, value, onChange }: {
         />
       )}
       {required && (
-        <p className="mt-1 text-[11px] text-destructive">{t('resources.mcp.bundle.requiredField')}</p>
+        <p className="mt-1 text-[11px] text-error">{t('resources.mcp.bundle.requiredField')}</p>
       )}
     </div>
   )
@@ -225,18 +230,19 @@ function CollapsibleSection({ title, count, icon, children }: {
   const [open, setOpen] = useState(false)
   if (count === 0) return null
   return (
-    <div className="rounded-md border border-border">
+    <div className="rounded-md bg-background">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-accent/50"
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs transition-colors hover:bg-muted/60"
       >
         {icon}
         <span className="flex-1 font-medium">{title}</span>
         <span className="text-muted-foreground">{count}</span>
         <ChevronDown className={cn('size-3.5 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </button>
-      {open && <div className="border-t border-border px-3 py-2">{children}</div>}
+      {open && <div className="px-3 pb-2.5">{children}</div>}
     </div>
   )
 }
@@ -481,171 +487,158 @@ export function AddServerPanel({ provider, cwd, onClose, onInstalled, onError }:
     }
   }
 
-  const inputClass = 'w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-ring'
+  const inputClass = FORM_INPUT_CLASS
 
   const submitLabel = tab === 'manual'
     ? (authorizing ? t('resources.mcp.form.verifying') : adding ? t('resources.mcp.form.adding') : t('resources.mcp.form.add'))
     : (installing ? t('resources.mcp.bundle.installing') : t('resources.mcp.bundle.install'))
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-border bg-card p-4">
-      <div className="mb-4 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-medium">{t('resources.mcp.form.title')}</h3>
-        <div className="flex items-center gap-2">
-          {tab === 'manual' && (
-            <TooltipProvider delayDuration={300}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={handlePaste}
-                    aria-label={t('resources.mcp.form.paste')}
-                    className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  >
-                    <Clipboard className="size-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top">
-                  {t('resources.mcp.form.pasteTooltip')}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-          {supportsBundles && (
-            <div className="flex gap-0.5 rounded-md bg-muted/50 p-0.5">
-              {(['manual', 'bundle'] as const).map((key) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => { setTab(key); setError('') }}
-                className={cn(
-                  'rounded px-2.5 py-1 text-xs font-medium transition-colors',
-                  tab === key
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {key === 'manual' ? t('resources.mcp.form.tabManual') : t('resources.mcp.form.tabBundle')}
-              </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {tab === 'manual' ? (
-        <div className="space-y-3">
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.name')}</label>
-            <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder={t('resources.mcp.form.namePlaceholder')} />
-            {dshNameError && (
-              <p className="mt-1 text-xs text-destructive">{t('resources.mcp.form.dshNameInvalid')}</p>
+    // Renders as rows of the MCP list card it opens in: a header + fields block and an action bar.
+    <form onSubmit={handleSubmit} className="first:rounded-t-[inherit] last:rounded-b-[inherit]">
+      <div className="px-3 pt-2.5 pb-3">
+        <div className="mb-3 flex min-h-7 items-center justify-between gap-2">
+          <h3 className="text-sm font-medium">{t('resources.mcp.form.title')}</h3>
+          <div className="flex items-center gap-2">
+            {tab === 'manual' && (
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={handlePaste}
+                      aria-label={t('resources.mcp.form.paste')}
+                      className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                    >
+                      <Clipboard className="size-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    {t('resources.mcp.form.pasteTooltip')}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+            {supportsBundles && (
+              <SettingsSegmentedControl
+                value={tab}
+                onChange={(key) => { setTab(key); setError('') }}
+                label={t('resources.mcp.form.title')}
+                className="bg-background/60"
+                options={[
+                  { value: 'manual', label: t('resources.mcp.form.tabManual') },
+                  { value: 'bundle', label: t('resources.mcp.form.tabBundle') },
+                ]}
+              />
             )}
           </div>
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.type')}</label>
-            <div className="flex gap-2">
-              {(provider === 'dsh' ? ['stdio', 'http'] as const : ['stdio', 'http', 'sse'] as const).map((tt) => (
-                <button key={tt} type="button" onClick={() => setType(tt)} className={cn('rounded-md px-3 py-1 text-xs transition-colors', type === tt ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground')}>
-                  {tt}
-                </button>
-              ))}
-            </div>
-          </div>
-          {type === 'stdio' ? (
-            <>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.command')}</label>
-                <input className={inputClass} value={command} onChange={(e) => setCommand(e.target.value)} placeholder={t('resources.mcp.form.commandPlaceholder')} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.args')}</label>
-                <input className={inputClass} value={args} onChange={(e) => setArgs(e.target.value)} placeholder={t('resources.mcp.form.argsPlaceholder')} />
-              </div>
-              <div>
-                <div className="mb-1 flex items-center gap-1">
-                  <label className="text-xs text-muted-foreground">{t('resources.mcp.form.env')}</label>
-                  <button type="button" onClick={() => setEnv([...env, { key: '', value: '' }])} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
-                    <Plus className="size-3.5" />
-                  </button>
-                </div>
-                <KvRows rows={env} onChange={setEnv} keyPlaceholder="KEY" valuePlaceholder="Value" />
-              </div>
-            </>
-          ) : (
-            <>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.url')}</label>
-                <input className={inputClass} value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t('resources.mcp.form.urlPlaceholder')} />
-              </div>
-              <div>
-                <div className="mb-1 flex items-center gap-1">
-                  <label className="text-xs text-muted-foreground">{t('resources.mcp.form.headers')}</label>
-                  <button type="button" onClick={() => setHeaders([...headers, { key: '', value: '' }])} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
-                    <Plus className="size-3.5" />
-                  </button>
-                </div>
-                <KvRows rows={headers} onChange={setHeaders} />
-              </div>
-            </>
-          )}
         </div>
-      ) : (
-        <BundleTabBody
-          bundlePath={bundlePath}
-          previewLoading={previewLoading}
-          preview={preview}
-          previewError={previewError}
-          bundleDragOver={bundleDragOver}
-          bundleInputRef={bundleInputRef}
-          userConfigEntries={userConfigEntries}
-          values={bundleValues}
-          onValuesChange={setBundleValues}
-          onClear={handleClearBundle}
-          onDragOver={handleBundleDragOver}
-          onDragLeave={handleBundleDragLeave}
-          onDrop={handleBundleDrop}
-          onFileInput={handleBundleFileInput}
-        />
-      )}
+
+        {tab === 'manual' ? (
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.name')}</label>
+              <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} placeholder={t('resources.mcp.form.namePlaceholder')} />
+              {dshNameError && (
+                <p className="mt-1 text-xs text-error">{t('resources.mcp.form.dshNameInvalid')}</p>
+              )}
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.type')}</label>
+              <SettingsSegmentedControl
+                value={type}
+                onChange={setType}
+                label={t('resources.mcp.form.type')}
+                className="bg-background/60"
+                options={(provider === 'dsh' ? ['stdio', 'http'] as const : ['stdio', 'http', 'sse'] as const).map((tt) => ({ value: tt, label: tt }))}
+              />
+            </div>
+            {type === 'stdio' ? (
+              <>
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.command')}</label>
+                  <input className={inputClass} value={command} onChange={(e) => setCommand(e.target.value)} placeholder={t('resources.mcp.form.commandPlaceholder')} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.args')}</label>
+                  <input className={inputClass} value={args} onChange={(e) => setArgs(e.target.value)} placeholder={t('resources.mcp.form.argsPlaceholder')} />
+                </div>
+                <div>
+                  <div className="mb-1 flex items-center gap-1">
+                    <label className="text-xs text-muted-foreground">{t('resources.mcp.form.env')}</label>
+                    <button type="button" onClick={() => setEnv([...env, { key: '', value: '' }])} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
+                      <Plus className="size-3.5" />
+                    </button>
+                  </div>
+                  <KvRows rows={env} onChange={setEnv} keyPlaceholder="KEY" valuePlaceholder="Value" />
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.form.url')}</label>
+                  <input className={inputClass} value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t('resources.mcp.form.urlPlaceholder')} />
+                </div>
+                <div>
+                  <div className="mb-1 flex items-center gap-1">
+                    <label className="text-xs text-muted-foreground">{t('resources.mcp.form.headers')}</label>
+                    <button type="button" onClick={() => setHeaders([...headers, { key: '', value: '' }])} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
+                      <Plus className="size-3.5" />
+                    </button>
+                  </div>
+                  <KvRows rows={headers} onChange={setHeaders} />
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <BundleTabBody
+            bundlePath={bundlePath}
+            previewLoading={previewLoading}
+            preview={preview}
+            previewError={previewError}
+            bundleDragOver={bundleDragOver}
+            bundleInputRef={bundleInputRef}
+            userConfigEntries={userConfigEntries}
+            values={bundleValues}
+            onValuesChange={setBundleValues}
+            onClear={handleClearBundle}
+            onDragOver={handleBundleDragOver}
+            onDragLeave={handleBundleDragLeave}
+            onDrop={handleBundleDrop}
+            onFileInput={handleBundleFileInput}
+          />
+        )}
+
+      </div>
 
       {/* Shared bottom: scope + error + actions */}
-      <div className="mt-4 space-y-3 border-t border-border pt-3">
-        {error && <p className="text-xs text-destructive">{error}</p>}
+      <div className={cn(settingsRowClassName, 'space-y-2')}>
+        {error && <p className="text-xs text-error">{error}</p>}
 
         <div className="flex items-center justify-between gap-2">
-          <div className="flex gap-2">
-            {(provider === 'dsh' ? ['user'] as const : ['user', 'project'] as const).map((s) => {
-              const disabled = s === 'project' && !cwd
-              return (
-                <button
-                  key={s}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => setScope(s)}
-                  className={cn(
-                    'rounded-md px-3 py-1 text-xs transition-colors',
-                    scope === s ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground',
-                    disabled && 'cursor-not-allowed opacity-50 hover:bg-muted hover:text-muted-foreground',
-                  )}
-                >
-                  {s}
-                </button>
-              )
-            })}
-          </div>
+          <SettingsSegmentedControl
+            value={scope}
+            onChange={setScope}
+            label={t('resources.mcp.form.scope')}
+            options={(provider === 'dsh' ? ['user'] as const : ['user', 'project'] as const).map((s) => ({
+              value: s,
+              label: s,
+              disabled: s === 'project' && !cwd,
+            }))}
+          />
 
           <div className="flex items-center gap-2">
             {!verified && !busy && (
-              <Button type="button" variant="ghost" size="sm" onClick={onClose}>{t('common.cancel')}</Button>
+              <Button type="button" variant="ghost" size="sm" className="h-7" onClick={onClose}>{t('common.cancel')}</Button>
             )}
             {verified && (
-              <span className="flex items-center gap-1 text-xs text-green-500">
+              <span className="flex items-center gap-1 text-xs text-success">
                 <Check className="size-3.5" />
                 {t('resources.mcp.form.verified')}
               </span>
             )}
-            <Button type="submit" size="sm" disabled={!isValid || busy}>
+            <Button type="submit" size="sm" className="h-7" disabled={!isValid || busy}>
               {submitLabel}
             </Button>
           </div>
@@ -705,7 +698,7 @@ function BundleTabBody({
           onDragLeave={onDragLeave}
           onDrop={onDrop}
           className={cn(
-            'flex w-full flex-col items-center gap-1.5 rounded-lg border-2 border-dashed px-4 py-8 text-center transition-colors',
+            'flex w-full flex-col items-center gap-1.5 rounded-md border border-dashed bg-background/60 px-4 py-8 text-center transition-colors',
             bundleDragOver
               ? 'border-primary bg-primary/5 text-primary'
               : 'border-border text-muted-foreground hover:border-muted-foreground/40 hover:text-foreground',
@@ -719,7 +712,7 @@ function BundleTabBody({
 
       {bundlePath && previewLoading && (
         <div
-          className="flex flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border px-4 py-8 text-center"
+          className="flex flex-col items-center gap-2 rounded-md border border-dashed border-border bg-background/60 px-4 py-8 text-center"
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           onDrop={onDrop}
@@ -731,14 +724,14 @@ function BundleTabBody({
 
       {bundlePath && previewError && !previewLoading && (
         <div
-          className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"
+          className="rounded-md bg-error/10 p-3 text-sm text-error"
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           onDrop={onDrop}
         >
           <div className="flex items-center justify-between gap-2">
             <div className="font-medium">{t('resources.mcp.bundle.cannotRead')}</div>
-            <button type="button" onClick={onClear} className="shrink-0 rounded p-0.5 hover:bg-destructive/10">
+            <button type="button" onClick={onClear} className="shrink-0 rounded p-0.5 hover:bg-error/10">
               <X className="size-3.5" />
             </button>
           </div>
@@ -757,7 +750,7 @@ function BundleTabBody({
             {preview.iconDataUrl ? (
               <img src={preview.iconDataUrl} alt="" className="size-12 shrink-0 rounded-md object-cover" />
             ) : (
-              <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-muted">
+              <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-background">
                 <Package className="size-6 text-muted-foreground" />
               </div>
             )}
@@ -783,19 +776,19 @@ function BundleTabBody({
           </div>
 
           {preview.warnings.length > 0 && (
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
-              <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+            <div className="rounded-md bg-warning/10 p-3">
+              <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-warning">
                 <ShieldAlert className="size-3.5" />
                 {t('resources.mcp.bundle.warningHeader')}
               </div>
-              <ul className="space-y-0.5 text-xs text-amber-700 dark:text-amber-400">
+              <ul className="space-y-0.5 text-xs text-warning">
                 {preview.warnings.map((w, i) => <li key={i}>• {w}</li>)}
               </ul>
             </div>
           )}
 
           {preview.conflictsWith && (
-            <div className="rounded-md border border-border bg-muted/30 p-2.5 text-xs">
+            <div className="rounded-md bg-background p-2.5 text-xs">
               {preview.conflictsWith.sameVersion
                 ? t('resources.mcp.bundle.replaceExistingSameVersion')
                 : t('resources.mcp.bundle.replaceExistingDifferentVersion', { version: preview.conflictsWith.existingVersion })}
@@ -837,7 +830,7 @@ function BundleTabBody({
 
           {userConfigEntries.length > 0 && (
             <div className="space-y-3">
-              <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{t('resources.mcp.bundle.configurationSection')}</div>
+              <div className="text-xs font-medium text-muted-foreground">{t('resources.mcp.bundle.configurationSection')}</div>
               {userConfigEntries.map(([key, field]) => (
                 <FieldRow
                   key={key}

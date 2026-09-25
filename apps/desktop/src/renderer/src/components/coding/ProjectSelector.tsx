@@ -18,6 +18,8 @@ import {
 interface ProjectSelectorProps {
   /** Compact mode for status bar usage */
   compact?: boolean
+  /** Extra classes for the non-compact trigger, e.g. to match a host surface's control height. */
+  triggerClassName?: string
   /** Dropdown menu alignment */
   align?: 'start' | 'center' | 'end'
   /** Fires after a project is opened; lets the caller start a fresh session */
@@ -37,6 +39,7 @@ interface ProjectSelectorProps {
 
 export function ProjectSelector({
   compact,
+  triggerClassName,
   align = 'start',
   onOpened,
   onAddProject,
@@ -81,7 +84,7 @@ export function ProjectSelector({
     return compact ? (
       <span className="px-1 py-0.5 text-[11px] text-muted-foreground">…</span>
     ) : (
-      <span className="rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground">…</span>
+      <span className={cn('rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground', triggerClassName)}>…</span>
     )
   }
 
@@ -97,7 +100,7 @@ export function ProjectSelector({
     ) : (
       <button
         onClick={addProject}
-        className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent"
+        className={cn('flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent', triggerClassName)}
       >
         <Plus className="size-4 shrink-0 text-muted-foreground" />
         <span>Add Project...</span>
@@ -115,7 +118,7 @@ export function ProjectSelector({
             <ChevronDown className="size-3 shrink-0 opacity-50" />
           </button>
         ) : (
-          <button className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent">
+          <button className={cn('flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent', triggerClassName)}>
             <FolderOpen className="size-4 shrink-0 text-muted-foreground" />
             <span className="truncate">{projectName}</span>
             <ChevronDown className="size-4 shrink-0 text-muted-foreground" />

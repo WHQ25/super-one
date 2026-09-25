@@ -48,10 +48,10 @@ async function renderPage(overrides: Record<string, unknown> = {}) {
   return view
 }
 
-/** The WebMCP switch is the one in the same bordered card as the WebMCP heading. */
+/** The WebMCP switch is the one in the same settings group as the WebMCP label. */
 function webmcpSwitch(): HTMLElement {
-  const card = screen.getByText('WebMCP page tools').closest('.rounded-lg')
-  return card!.querySelector('[role="switch"]') as HTMLElement
+  const group = screen.getByText('WebMCP page tools').closest('section')
+  return group!.querySelector('[role="switch"]') as HTMLElement
 }
 
 beforeEach(() => {

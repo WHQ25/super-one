@@ -1,58 +1,76 @@
-import { useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { ArrowLeft, ChevronRight, Link, Trash2, Mic, Video, Globe, Library, AlertTriangle, Terminal } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { Switch } from '@superone/ui/components/ui/switch'
 import { Button } from '@superone/ui/components/ui/button'
+import { cn } from '@superone/ui/lib/utils'
+import { settingsSelectTriggerClassName } from '@/components/settings/select-trigger-class'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { DevAppLibraryView } from '@/components/DevAppLibraryView'
+import { SettingsCard, SettingsPage, SettingsRow, SettingsSection, settingsRowClassName } from '@/components/settings/SettingsSection'
+import { SettingsFootnote } from '@/components/settings/SettingsFootnote'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useAppStore } from '@/stores/app'
 import { hasAnyPermission } from '@/lib/miniapp-permissions'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 
-function AppCard({ app, onClick }: { app: MiniAppEntry; onClick: () => void }) {
+function AppRow({ app, onClick }: { app: MiniAppEntry; onClick: () => void }) {
   const { t } = useTranslation()
   const tools = app.manifest.tools ?? []
   const toolCount = tools.length
 
   return (
-    <div
+    <button
+      type="button"
       onClick={onClick}
-      className="flex items-center gap-3 rounded-lg border border-border bg-card p-3 text-left transition-colors cursor-pointer hover:bg-accent/50"
+      className={cn(
+        settingsRowClassName,
+        'flex w-full items-center gap-3 text-left transition-colors hover:bg-muted/60',
+      )}
     >
-      <MiniAppIcon appId={app.id} className="size-9 shrink-0" />
+      <MiniAppIcon appId={app.id} className="size-8 shrink-0" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <p className="text-sm font-medium truncate">{app.manifest.name}</p>
+          <p className="truncate text-sm">{app.manifest.name}</p>
           {app.orphan && (
-            <span className="inline-flex items-center gap-0.5 text-[10px] px-1 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">
+            <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-warning/10 px-1 text-[10px] text-warning">
               <AlertTriangle className="size-2.5" />
               {t('resources.devAppLibrary.orphanBadge')}
             </span>
           )}
-          {app.manifest.isDev && <span className="text-[10px] px-1 rounded bg-muted text-muted-foreground">dev</span>}
+          {app.manifest.isDev && <span className="shrink-0 rounded bg-muted px-1 text-[10px] text-muted-foreground">dev</span>}
         </div>
-        <p className="text-xs text-muted-foreground truncate">
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">
           {toolCount > 0 ? t('resources.apps.toolCount', { count: toolCount }) : t('resources.apps.noTools')}
           {app.manifest.version && ` · v${app.manifest.version}`}
         </p>
       </div>
       <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-    </div>
+    </button>
   )
 }
 
 function AppSection({ title, apps, onSelect }: { title: string; apps: MiniAppEntry[]; onSelect: (app: MiniAppEntry) => void }) {
   if (apps.length === 0) return null
   return (
-    <div>
-      <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</h3>
-      <div className="grid grid-cols-2 gap-3">
-        {apps.map((app) => (
-          <AppCard key={app.id} app={app} onClick={() => onSelect(app)} />
-        ))}
+    <SettingsSection title={title}>
+      {apps.map((app) => (
+        <AppRow key={app.id} app={app} onClick={() => onSelect(app)} />
+      ))}
+    </SettingsSection>
+  )
+}
+
+/** One declared capability: icon, name and the app's stated reason. */
+function PermissionRow({ icon, label, reason }: { icon: ReactNode; label: ReactNode; reason?: string }) {
+  return (
+    <div className={cn(settingsRowClassName, 'flex items-center gap-3')}>
+      {icon}
+      <div className="min-w-0 flex-1">
+        <div className="text-sm">{label}</div>
+        {reason && <div className="mt-0.5 text-xs text-muted-foreground">{reason}</div>}
       </div>
     </div>
   )
@@ -96,139 +114,129 @@ function AppDetailPage({ app, onBack }: { app: MiniAppEntry; onBack: () => void 
   const hasPermissions = hasAnyPermission(manifest)
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <button
-        onClick={onBack}
-        className="mb-4 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ArrowLeft className="size-3" />
-        {t('common.back')}
-      </button>
+    <div className="px-7 pt-5 pb-8">
+      <div className="mx-auto max-w-3xl">
+        <Button variant="ghost" size="sm" className="-ml-2 mb-3 h-7 text-muted-foreground" onClick={onBack}>
+          <ArrowLeft className="size-3.5" />
+          {t('common.back')}
+        </Button>
 
-      {/* App header */}
-      <div className="mb-6 flex items-center gap-4">
-        <MiniAppIcon appId={app.id} className="size-16 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h2 className="text-xl font-semibold">{manifest.name}</h2>
-            {manifest.isDev && <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">dev</span>}
+        {/* App header */}
+        <div className="mb-6 flex items-center gap-4">
+          <MiniAppIcon appId={app.id} className="size-14 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h2 className="truncate text-xl font-semibold">{manifest.name}</h2>
+              {manifest.isDev && <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">dev</span>}
+            </div>
+            {manifest.description && (
+              <p className="mt-0.5 text-sm text-muted-foreground">{manifest.description}</p>
+            )}
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+              {manifest.version && <span>v{manifest.version}</span>}
+              {manifest.author && <span>{t('resources.apps.authorBy', { name: manifest.author.name })}</span>}
+            </div>
+            {manifest.author?.url && (
+              <a href={manifest.author.url} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex max-w-full items-center gap-1 text-xs text-primary hover:underline">
+                <Link className="size-3 shrink-0" />
+                <span className="truncate">{manifest.author.url}</span>
+              </a>
+            )}
           </div>
-          {manifest.description && (
-            <p className="mt-0.5 text-sm text-muted-foreground">{manifest.description}</p>
-          )}
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-            {manifest.version && <span>v{manifest.version}</span>}
-            {manifest.author && <span>{t('resources.apps.authorBy', { name: manifest.author.name })}</span>}
-          </div>
-          {manifest.author?.url && (
-            <a href={manifest.author.url} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline">
-              <Link className="size-3 shrink-0" />
-              <span className="truncate">{manifest.author.url}</span>
-            </a>
-          )}
-        </div>
-      </div>
-
-      <div className="space-y-6">
-        {/* Tools section */}
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h3 className="mb-1 text-sm font-medium">
-            {t('resources.apps.preapprovalTitle')}
-          </h3>
-          <p className="mb-3 text-xs text-muted-foreground">
-            {t('resources.apps.preapprovalDescription')}
-          </p>
-          {tools.length > 0 ? (
-            loading ? (
-              <div className="text-xs text-muted-foreground">{t('resources.apps.loading')}</div>
-            ) : (
-              <div className="space-y-2">
-                {tools.map((tool) => {
-                  const isPreapproved = preapproved.includes(tool.name)
-                  return (
-                    <div key={tool.name} className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium font-mono">{tool.name}</p>
-                        {tool.description && <p className="mt-0.5 text-xs text-muted-foreground">{tool.description}</p>}
-                      </div>
-                      <Switch
-                        checked={isPreapproved}
-                        onCheckedChange={(checked) => toggleTool(tool.name, checked)}
-                      />
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          ) : (
-            <p className="text-sm text-muted-foreground">{t('resources.apps.noAppTools')}</p>
-          )}
         </div>
 
-        {/* Permissions section */}
-        {hasPermissions && (
-          <div className="rounded-lg border border-border bg-card p-4">
-            <h3 className="mb-3 text-sm font-medium">{t('resources.apps.permissions')}</h3>
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2 rounded-md border px-3 py-2">
-                <Terminal className="size-5 shrink-0 text-amber-600 dark:text-amber-400" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium">Trusted MiniApp Host</div>
-                  <div className="text-xs text-muted-foreground">Full local Node.js access to files, network, and processes.</div>
-                </div>
-              </div>
+        <div className="space-y-5">
+          {/* Tools section */}
+          <div>
+            <SettingsSection title={t('resources.apps.preapprovalTitle')}>
+              {tools.length > 0 ? (
+                loading ? (
+                  <p className={cn(settingsRowClassName, 'text-xs text-muted-foreground')}>{t('resources.apps.loading')}</p>
+                ) : (
+                  tools.map((tool) => {
+                    const isPreapproved = preapproved.includes(tool.name)
+                    return (
+                      <SettingsRow
+                        key={tool.name}
+                        label={<span className="font-mono">{tool.name}</span>}
+                        description={tool.description}
+                      >
+                        <Switch
+                          checked={isPreapproved}
+                          onCheckedChange={(checked) => toggleTool(tool.name, checked)}
+                        />
+                      </SettingsRow>
+                    )
+                  })
+                )
+              ) : (
+                <p className={cn(settingsRowClassName, 'text-xs text-muted-foreground')}>{t('resources.apps.noAppTools')}</p>
+              )}
+            </SettingsSection>
+            <SettingsFootnote>{t('resources.apps.preapprovalDescription')}</SettingsFootnote>
+          </div>
+
+          {/* Permissions section */}
+          {hasPermissions && (
+            <SettingsSection title={t('resources.apps.permissions')}>
+              <PermissionRow
+                icon={<Terminal className="size-5 shrink-0 text-warning" />}
+                label="Trusted MiniApp Host"
+                reason="Full local Node.js access to files, network, and processes."
+              />
               {manifest.permissions?.network?.map((entry) => (
-                <div key={`net-${entry.domain}`} className="flex items-center gap-2 rounded-md border px-3 py-2">
-                  <Globe className="size-5 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-mono">{entry.domain}</div>
-                    <div className="text-xs text-muted-foreground">{entry.reason}</div>
-                  </div>
-                </div>
+                <PermissionRow
+                  key={`net-${entry.domain}`}
+                  icon={<Globe className="size-5 shrink-0 text-muted-foreground" />}
+                  label={<span className="font-mono">{entry.domain}</span>}
+                  reason={entry.reason}
+                />
               ))}
               {manifest.permissions?.media?.map((entry) => {
                 const Icon = entry.kind === 'microphone' ? Mic : Video
                 const label = entry.kind === 'microphone' ? 'Microphone' : 'Camera'
                 return (
-                  <div key={`media-${entry.kind}`} className="flex items-center gap-2 rounded-md border px-3 py-2">
-                    <Icon className="size-5 shrink-0 text-red-500" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 text-sm">
-                        <span className="font-medium">{label}</span>
-                        <span className="inline-flex h-4 shrink-0 items-center rounded bg-red-500/10 px-1 text-[10px] leading-none text-red-600 dark:text-red-400">Live</span>
-                      </div>
-                      <div className="text-xs text-muted-foreground">{entry.reason}</div>
-                    </div>
-                  </div>
+                  <PermissionRow
+                    key={`media-${entry.kind}`}
+                    icon={<Icon className="size-5 shrink-0 text-destructive" />}
+                    label={(
+                      <span className="flex items-center gap-1.5">
+                        {label}
+                        <span className="inline-flex h-4 shrink-0 items-center rounded bg-destructive/10 px-1 text-[10px] leading-none text-destructive">Live</span>
+                      </span>
+                    )}
+                    reason={entry.reason}
+                  />
                 )
               })}
-            </div>
-          </div>
-        )}
-
-        {/* Uninstall */}
-        <div className="rounded-lg border border-destructive/30 bg-card p-4">
-          <h3 className="mb-1 text-sm font-medium text-destructive">{t('resources.apps.uninstallTitle')}</h3>
-          <p className="mb-3 text-xs text-muted-foreground">
-            {manifest.isDev
-              ? t('resources.apps.uninstallDevDescription')
-              : t('resources.apps.uninstallDescription')}
-          </p>
-          {confirmDelete ? (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">{t('resources.apps.confirmQuestion')}</span>
-              <Button size="sm" variant="destructive" onClick={handleUninstall}>
-                <Trash2 className="mr-1 size-3" />
-                {t('resources.apps.confirm')}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>{t('common.cancel')}</Button>
-            </div>
-          ) : (
-            <Button size="sm" variant="destructive" onClick={() => setConfirmDelete(true)}>
-              <Trash2 className="mr-1 size-3" />
-              {t('resources.apps.uninstall')}
-            </Button>
+            </SettingsSection>
           )}
+
+          {/* Uninstall */}
+          <SettingsSection title={t('resources.apps.uninstallTitle')}>
+            <SettingsRow
+              label={t('resources.apps.uninstall')}
+              description={manifest.isDev
+                ? t('resources.apps.uninstallDevDescription')
+                : t('resources.apps.uninstallDescription')}
+            >
+              {confirmDelete ? (
+                <>
+                  <span className="text-xs text-muted-foreground">{t('resources.apps.confirmQuestion')}</span>
+                  <Button size="sm" variant="ghost" className="h-7" onClick={() => setConfirmDelete(false)}>{t('common.cancel')}</Button>
+                  <Button size="sm" variant="destructive" className="h-7" onClick={handleUninstall}>
+                    <Trash2 className="size-3.5" />
+                    {t('resources.apps.confirm')}
+                  </Button>
+                </>
+              ) : (
+                <Button size="sm" variant="outline" className="h-7 text-destructive hover:text-destructive" onClick={() => setConfirmDelete(true)}>
+                  <Trash2 className="size-3.5" />
+                  {t('resources.apps.uninstall')}
+                </Button>
+              )}
+            </SettingsRow>
+          </SettingsSection>
         </div>
       </div>
     </div>
@@ -260,44 +268,40 @@ export function AppsSettingsPage() {
   const projectApps = apps.filter((a) => currentFolder && a.installDir.startsWith(currentFolder))
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">{t('resources.apps.title')}</h2>
-          <p className="text-sm text-muted-foreground">{t('resources.apps.subtitle')}</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <SettingsPage
+      title={t('resources.apps.title')}
+      actions={(
+        <>
           <Button
             variant={libraryOpen ? 'default' : 'outline'}
             size="sm"
+            className="h-7"
             onClick={() => setLibraryOpen((v) => !v)}
           >
-            <Library className="size-4" />
+            <Library className="size-3.5" />
             {t('resources.devAppLibrary.toggleButton')}
           </Button>
-          <ProjectSelector />
-        </div>
-      </div>
-
-      {libraryOpen && (
-        <div className="mb-6">
-          <DevAppLibraryView onClose={() => setLibraryOpen(false)} />
-        </div>
+          <ProjectSelector triggerClassName={cn(settingsSelectTriggerClassName, 'gap-2 py-0')} />
+        </>
       )}
+    >
+      {libraryOpen && <DevAppLibraryView onClose={() => setLibraryOpen(false)} />}
 
       {!loaded ? (
-        <div className="text-sm text-muted-foreground">{t('resources.apps.loading')}</div>
+        <SettingsCard>
+          <p className={cn(settingsRowClassName, 'text-xs text-muted-foreground')}>{t('resources.apps.loading')}</p>
+        </SettingsCard>
       ) : apps.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-border p-8 text-center">
+        <SettingsCard className="px-6 py-8 text-center">
           <p className="text-sm text-muted-foreground">{t('resources.apps.empty')}</p>
           <p className="mt-1 text-xs text-muted-foreground">{t('resources.apps.emptyHint')}</p>
-        </div>
+        </SettingsCard>
       ) : (
-        <div className="space-y-6">
+        <>
           <AppSection title={t('resources.apps.sections.personal')} apps={personalApps} onSelect={setSelectedApp} />
           <AppSection title={t('resources.apps.sections.project')} apps={projectApps} onSelect={setSelectedApp} />
-        </div>
+        </>
       )}
-    </div>
+    </SettingsPage>
   )
 }

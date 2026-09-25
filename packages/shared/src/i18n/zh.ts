@@ -680,6 +680,12 @@ export const zh: Messages = {
         cloud: '云端',
         models: '模型',
       },
+      groups: {
+        app: '应用',
+        agent: 'Agent',
+        capabilities: '能力',
+        connections: '连接',
+      },
       providers: {
         claude: 'Claude Code',
         codex: 'Codex',
@@ -859,7 +865,6 @@ export const zh: Messages = {
     },
     remote: {
       pageTitle: '远程控制',
-      pageSubtitle: '用手机控制这台电脑，或将其他机器添加为执行环境。',
       tabs: {
         thisComputer: '控制这台电脑',
         thisMac: '控制这台 Mac',
@@ -1012,7 +1017,6 @@ export const zh: Messages = {
     },
     appearance: {
       title: '外观',
-      subtitle: '自定义 SuperOne 的外观与样式',
       interface: '界面',
       theme: {
         label: '主题',
@@ -1023,7 +1027,6 @@ export const zh: Messages = {
     },
     browser: {
       title: '浏览器',
-      subtitle: '配置内置浏览器及其自动化工具',
       downloadDir: {
         label: '下载目录',
         description: '内置浏览器下载的文件保存位置。智能体可在单次下载中指定其他目录。',
@@ -1066,7 +1069,6 @@ export const zh: Messages = {
     },
     terminal: {
       title: '终端',
-      subtitle: '管理智能体在终端标签页中可以运行的命令',
       rules: {
         title: '始终允许的命令',
         description: '你在审批时选择“在此项目中始终允许”的命令。每条规则是对整条命令做匹配的正则表达式；匹配的命令会直接在终端标签页运行，不再询问。删除规则后下次会重新询问。',
@@ -1079,7 +1081,6 @@ export const zh: Messages = {
     },
     computerUse: {
       title: '使用电脑',
-      subtitle: '让智能体观察并操控原生桌面应用（浏览器 / Bash 等工具覆盖不到时的兜底层）',
       enable: {
         label: '启用「使用电脑」',
         description: '向智能体暴露 computer_* 工具。默认关闭。需要 SuperOne Computer Use 辅助 App，以及 macOS 的辅助功能与屏幕录制权限。',
@@ -1145,7 +1146,6 @@ export const zh: Messages = {
     },
     general: {
       title: '通用',
-      subtitle: '配置 SuperOne 应用行为',
       privacy: '隐私',
       appearance: '外观',
       updates: '更新',
@@ -3812,7 +3812,6 @@ export const zh: Messages = {
     },
     apps: {
       title: '小程序',
-      subtitle: '管理已安装的小程序和工具预授权',
       loading: '加载中...',
       empty: '未安装任何小程序',
       emptyHint: '将 .s1app 文件拖到侧边栏以安装',

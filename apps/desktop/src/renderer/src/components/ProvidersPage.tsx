@@ -1,16 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@superone/ui/components/ui/button'
 import { Input } from '@superone/ui/components/ui/input'
 import { Badge } from '@superone/ui/components/ui/badge'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import {
-  applyCapabilitiesToPlan,
   defaultOverridesForPlan,
   isCustomPlatform,
-  planCapabilities,
   type Credential,
   type EndpointOverride,
   type Plan,
@@ -24,11 +21,14 @@ import { siteRootOf } from './providers/site-url'
 import { platformsByBrand } from '@/lib/provider-resolve'
 import { OfficialProviderPanel } from './OfficialProviderPanel'
 import { ProviderLabel } from './ProviderLabel'
+import { SettingsNavGroup, SettingsNavItem } from './settings/SettingsNav'
+import { SettingsSegmentedControl } from './settings/SettingsSegmentedControl'
 import { EndpointConfigSection } from './providers/EndpointConfigSection'
-import { CredentialConfig, OverridesEditor } from './providers/CredentialConfig'
+import { OverridesEditor } from './providers/CredentialConfig'
 import { CredentialTabs } from './providers/CredentialTabs'
 import { CustomPlatformForm } from './providers/CustomPlatformForm'
 import { PlatformModelsPanel } from './providers/PlatformModelsPanel'
+import { ProviderDetailHeader, ProviderDetailTitle } from './providers/ProviderDetailParts'
 import { plansByKeyCount } from './providers/plan-order'
 
 const BRAND_POPULARITY = [
@@ -208,13 +208,11 @@ function AdvancedConfigSection({
 
 function PlatformDetail({ platform }: { platform: Platform }) {
   const { t } = useTranslation()
-  const platforms = useSettingsStore((s) => s.platforms)
   const credentials = useSettingsStore((s) => s.credentials)
   const deleteCustomPlatform = useSettingsStore((s) => s.deleteCustomPlatform)
   const updateCustomPlatform = useSettingsStore((s) => s.updateCustomPlatform)
   const isDark = useIsDark()
   const isCustom = isCustomPlatform(platform)
-  const variantLabel = platformVariantLabel(platform, platforms)
   // Most-used plan first, so a user whose keys all live on one endpoint lands there instead of on
   // whichever plan the registry happens to list first.
   const orderedPlans = useMemo(() => plansByKeyCount(platform, credentials), [platform, credentials])
@@ -284,79 +282,75 @@ function PlatformDetail({ platform }: { platform: Platform }) {
       aria-label={t('resources.providers.refreshIcon')}
     >
       {iconBusy ? (
-        <Loader2 className="size-7 animate-spin text-muted-foreground" />
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
       ) : (
-        <ProviderLabel brandKey={platform.brand} fallback={platform.name} icon={platform.icon} iconOnly size={28} />
+        <ProviderLabel brandKey={platform.brand} fallback={platform.name} icon={platform.icon} iconOnly size={32} />
       )}
     </button>
   )
 
+  const planSwitcher = orderedPlans.length > 1 && selectedPlan && (
+    <SettingsSegmentedControl
+      label={t('resources.providers.accountPlan')}
+      value={selectedPlan.id}
+      options={orderedPlans.map((plan) => ({ value: plan.id, label: plan.name }))}
+      onChange={(id) => {
+        setPlanId(id)
+        setSelectedKeyId('')
+      }}
+    />
+  )
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <span className="flex min-w-0 items-center gap-3">
-          <span className="flex min-w-0 items-center gap-2">
-            {isCustom ? (
-              <>
-                {iconButton}
-                {editingName ? (
-                  <Input
-                    className="h-8 min-w-0 flex-1"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') cancelEditName()
-                    }}
-                    placeholder={t('resources.providers.platformName')}
-                    aria-label={t('resources.providers.platformName')}
-                    autoFocus
-                  />
-                ) : (
-                  <span className="truncate text-sm font-medium">{platform.name}</span>
-                )}
-                {!editingName && (
-                  <IconButton size="sm" tooltip={t('common.edit')} onClick={startEditName}>
-                    <Pencil />
-                  </IconButton>
-                )}
-              </>
-            ) : (
-              <ProviderLabel brandKey={platform.brand} fallback={platform.name} icon={platform.icon} combine size={28} />
-            )}
-            {variantLabel && <Badge variant="secondary">{variantLabel}</Badge>}
-          </span>
-          {orderedPlans.length > 1 && (
-            <span className="flex items-center gap-0.5 rounded-lg border border-border p-0.5">
-              {orderedPlans.map((plan) => (
-                <button
-                  key={plan.id}
-                  type="button"
-                  onClick={() => {
-                    setPlanId(plan.id)
-                    setSelectedKeyId('')
+      <ProviderDetailHeader
+        leading={
+          isCustom ? (
+            <>
+              {iconButton}
+              {editingName ? (
+                <Input
+                  className="h-8 min-w-0 flex-1"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') cancelEditName()
                   }}
-                  className={cn(
-                    'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-                    plan.id === selectedPlan?.id
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {plan.name}
-                </button>
-              ))}
-            </span>
-          )}
-        </span>
-        {isCustom && (
-          <IconButton size="sm" variant="destructive" onClick={() => void deleteCustomPlatform(platform.id)}>
-            <Trash2 />
-          </IconButton>
-        )}
-      </div>
-      {(selectedPlan?.description ?? platform.description) && (
-        <p className="text-sm text-muted-foreground">{selectedPlan?.description ?? platform.description}</p>
-      )}
+                  placeholder={t('resources.providers.platformName')}
+                  aria-label={t('resources.providers.platformName')}
+                  autoFocus
+                />
+              ) : (
+                <ProviderDetailTitle>{platform.name}</ProviderDetailTitle>
+              )}
+              {!editingName && (
+                <IconButton size="sm" tooltip={t('common.edit')} onClick={startEditName}>
+                  <Pencil />
+                </IconButton>
+              )}
+            </>
+          ) : (
+            <>
+              <ProviderLabel brandKey={platform.brand} fallback={platform.name} icon={platform.icon} iconOnly size={32} />
+              {/* The name already tells brand variants apart, so the list's variant badge is not repeated. */}
+              <ProviderDetailTitle>{platform.name}</ProviderDetailTitle>
+            </>
+          )
+        }
+        actions={
+          (planSwitcher || isCustom) && (
+            <>
+              {planSwitcher}
+              {isCustom && (
+                <IconButton size="md" variant="destructive" tooltip={t('common.delete')} onClick={() => void deleteCustomPlatform(platform.id)}>
+                  <Trash2 />
+                </IconButton>
+              )}
+            </>
+          )
+        }
+        description={selectedPlan?.description ?? platform.description}
+      />
 
       {selectedPlan && (
         <PlanSection
@@ -439,107 +433,80 @@ export function ProvidersPage() {
 
   const selected = platforms.find((p) => p.id === selectedId) ?? null
 
-  const renderRow = (p: Platform) => (
-    <PlatformRow
-      key={p.id}
-      platform={p}
-      selected={selectedId === p.id}
-      onClick={() => selectPlatform(p.id)}
-      count={isOfficial(p) ? 0 : credCount(p.id)}
-      variantLabel={platformVariantLabel(p, platforms)}
-    />
-  )
+  const renderRow = (p: Platform, dimmed: boolean) => {
+    const count = isOfficial(p) ? 0 : credCount(p.id)
+    const variantLabel = platformVariantLabel(p, platforms)
+    return (
+      <SettingsNavItem
+        key={p.id}
+        size="lg"
+        selected={selectedId === p.id}
+        dimmed={dimmed}
+        // Brand wordmarks carry no text, so the name is the item's tooltip and accessible hint.
+        title={p.name}
+        onClick={() => selectPlatform(p.id)}
+        trailing={count > 0 ? t('resources.providers.keyCount', { count }) : undefined}
+      >
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="flex min-w-0 items-center overflow-hidden">
+            <ProviderLabel brandKey={p.brand} fallback={p.name} icon={p.icon} combine size={24} />
+          </span>
+          {variantLabel && (
+            <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[9px] font-normal">
+              {variantLabel}
+            </Badge>
+          )}
+        </span>
+      </SettingsNavItem>
+    )
+  }
 
   return (
-    <div className="flex h-full min-h-0 gap-4">
-      <div className="flex w-72 shrink-0 flex-col gap-3 overflow-y-auto pr-1">
-        <div className="flex items-center justify-between">
+    <div className="flex h-full min-h-0">
+      <div className="flex w-72 shrink-0 flex-col overflow-y-auto border-r border-border px-2.5 py-3">
+        <div className="flex min-h-7 items-center justify-between gap-2 pr-0.5 pl-2">
           <h2 className="text-lg font-semibold">{t('resources.providers.title')}</h2>
           <IconButton
-            size="md"
+            size="sm"
             tooltip={t('resources.providers.addCustom')}
             onClick={() => { setAdding(true); setSelectedId(null) }}
           >
-            <Plus className="size-4" />
+            <Plus />
           </IconButton>
         </div>
 
         {enabledPlatforms.length > 0 && (
-          <div className="flex flex-col gap-1">
-            <div className="px-1 pb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              {t('resources.providers.enabled')}
-            </div>
-            {enabledPlatforms.map(renderRow)}
-          </div>
+          <SettingsNavGroup label={t('resources.providers.enabled')}>
+            {enabledPlatforms.map((p) => renderRow(p, false))}
+          </SettingsNavGroup>
         )}
 
         {disabledPlatforms.length > 0 && (
-          <div className="flex flex-col gap-1">
-            <div className="px-1 pb-0.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              {t('resources.providers.disabled')}
-            </div>
-            {disabledPlatforms.map(renderRow)}
-          </div>
+          <SettingsNavGroup label={t('resources.providers.disabled')}>
+            {disabledPlatforms.map((p) => renderRow(p, true))}
+          </SettingsNavGroup>
         )}
       </div>
 
-      <div className="min-w-0 flex-1 overflow-y-auto px-1 py-1">
-        {adding ? (
-          <CustomPlatformForm onDone={(id) => { setAdding(false); if (id) setSelectedId(id) }} />
-        ) : selected ? (
-          isOfficial(selected) ? (
-            <OfficialProviderPanel harness={officialHarness(selected)} />
-          ) : (
-            <PlatformDetail key={selected.id} platform={selected} />
-          )
+      <div className="min-w-0 flex-1 overflow-y-auto">
+        {adding || selected ? (
+          <div className="px-7 pt-5 pb-8">
+            <div className="mx-auto max-w-3xl">
+              {adding ? (
+                <CustomPlatformForm onDone={(id) => { setAdding(false); if (id) setSelectedId(id) }} />
+              ) : selected && isOfficial(selected) ? (
+                <OfficialProviderPanel harness={officialHarness(selected)} />
+              ) : selected ? (
+                <PlatformDetail key={selected.id} platform={selected} />
+              ) : null}
+            </div>
+          </div>
         ) : (
-          <div className="flex h-full items-center justify-center">
+          <div className="flex h-full items-center justify-center px-7">
             <p className="text-sm text-muted-foreground">{t('resources.providers.selectHint')}</p>
           </div>
         )}
       </div>
     </div>
-  )
-}
-
-function PlatformRow({
-  platform,
-  selected,
-  onClick,
-  count,
-  variantLabel,
-}: {
-  platform: Platform
-  selected: boolean
-  onClick: () => void
-  count: number
-  variantLabel?: string | null
-}) {
-  const { t } = useTranslation()
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition-colors',
-        selected ? 'bg-primary/10' : 'hover:bg-muted/50',
-      )}
-    >
-      <span className="flex min-w-0 items-center gap-1.5">
-        <ProviderLabel brandKey={platform.brand} fallback={platform.name} icon={platform.icon} combine size={24} />
-        {variantLabel && (
-          <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[9px] font-normal">
-            {variantLabel}
-          </Badge>
-        )}
-      </span>
-      <span className="flex shrink-0 items-center gap-1.5">
-        {count > 0 && (
-          <span className="text-[10px] tabular-nums text-muted-foreground">
-            {t('resources.providers.keyCount', { count })}
-          </span>
-        )}
-      </span>
-    </button>
   )
 }

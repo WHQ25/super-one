@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { QRCodeSVG } from 'qrcode.react'
 import { useTranslation } from 'react-i18next'
-import { Cloud, Monitor, Smartphone, Wifi } from 'lucide-react'
+import { Cloud, Monitor, Wifi } from 'lucide-react'
 import { Switch } from '@superone/ui/components/ui/switch'
 import { Button } from '@superone/ui/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
@@ -12,6 +12,13 @@ import { useRemoteStatus } from '@/hooks/useRemoteStatus'
 import type { PairedDevice } from '@superone/shared/agent-types'
 import { EnvironmentsPage } from './settings/environments/EnvironmentsPage'
 import { PairingCodeConfirm } from './PairingCodeConfirm'
+import {
+  SettingsPage,
+  SettingsRow,
+  SettingsSection,
+  settingsRowClassName,
+} from './settings/SettingsSection'
+import { SettingsSegmentedControl } from './settings/SettingsSegmentedControl'
 
 function deviceClientKind(device: PairedDevice): 'mobile' | 'desktop' {
   return device.clientKind === 'desktop' ? 'desktop' : 'mobile'
@@ -48,43 +55,22 @@ export function RemotePage() {
   }, [experimentalRemoteNodesEnabled, tab])
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold">{t('settings.remote.pageTitle')}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{t('settings.remote.pageSubtitle')}</p>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <button
-          type="button"
-          onClick={() => setTab('this-device')}
-          className={cn(
-            'text-sm transition-colors',
-            activeTab === 'this-device'
-              ? 'font-medium text-foreground'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          {thisDeviceLabel}
-        </button>
-        {experimentalRemoteNodesEnabled ? (
-          <button
-            type="button"
-            onClick={() => setTab('other-devices')}
-            className={cn(
-              'text-sm transition-colors',
-              activeTab === 'other-devices'
-                ? 'font-medium text-foreground'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {t('settings.remote.tabs.otherDevices')}
-          </button>
-        ) : null}
-      </div>
-
+    <SettingsPage
+      title={t('settings.remote.pageTitle')}
+      actions={experimentalRemoteNodesEnabled ? (
+        <SettingsSegmentedControl
+          label={t('settings.remote.pageTitle')}
+          value={activeTab}
+          onChange={setTab}
+          options={[
+            { value: 'this-device', label: thisDeviceLabel },
+            { value: 'other-devices', label: t('settings.remote.tabs.otherDevices') },
+          ]}
+        />
+      ) : null}
+    >
       {activeTab === 'this-device' ? <ThisDevicePanel /> : <EnvironmentsPage />}
-    </div>
+    </SettingsPage>
   )
 }
 
@@ -212,119 +198,117 @@ function ThisDevicePanel() {
   const mobileDevices = pairedDevices.filter((d) => deviceClientKind(d) === 'mobile')
   const desktopDevices = pairedDevices.filter((d) => deviceClientKind(d) === 'desktop')
 
+  const emptyRowClassName = cn(settingsRowClassName, 'text-xs text-muted-foreground')
+
   return (
-    <div className="space-y-6">
-      <TooltipProvider delayDuration={200}>
-        <div className="flex w-full items-center justify-between rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+    <>
+      <SettingsSection>
+        <div className={cn(settingsRowClassName, 'flex items-center justify-between gap-4')}>
           <div className="flex min-w-0 items-center gap-2">
             <Monitor className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="truncate font-mono text-foreground">{remoteStatus.hostname || '—'}</span>
+            <span className="truncate font-mono text-xs text-foreground">{remoteStatus.hostname || '—'}</span>
           </div>
-          <div className="flex shrink-0 items-center gap-3">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex items-center">
-                  <Cloud
-                    className={cn(
-                      'size-3.5',
-                      remoteStatus.relayConnected ? 'text-success' : 'text-muted-foreground/40',
-                    )}
-                  />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                {t('resources.remote.statusRelay')}:{' '}
-                {remoteStatus.relayConnected
-                  ? t('resources.remote.statusRelayConnected')
-                  : t('resources.remote.statusRelayDisconnected')}
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex items-center">
-                  <Wifi
-                    className={cn(
-                      'size-3.5',
-                      remoteStatus.lanActive ? 'text-success' : 'text-muted-foreground/40',
-                    )}
-                  />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                {t('resources.remote.statusLan')}:{' '}
-                {remoteStatus.lanActive
-                  ? t('resources.remote.statusLanActive')
-                  : t('resources.remote.statusLanInactive')}
-              </TooltipContent>
-            </Tooltip>
-          </div>
+          <TooltipProvider delayDuration={200}>
+            <div className="flex shrink-0 items-center gap-3">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center">
+                    <Cloud
+                      className={cn(
+                        'size-3.5',
+                        remoteStatus.relayConnected ? 'text-success' : 'text-muted-foreground/40',
+                      )}
+                    />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {t('resources.remote.statusRelay')}:{' '}
+                  {remoteStatus.relayConnected
+                    ? t('resources.remote.statusRelayConnected')
+                    : t('resources.remote.statusRelayDisconnected')}
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center">
+                    <Wifi
+                      className={cn(
+                        'size-3.5',
+                        remoteStatus.lanActive ? 'text-success' : 'text-muted-foreground/40',
+                      )}
+                    />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {t('resources.remote.statusLan')}:{' '}
+                  {remoteStatus.lanActive
+                    ? t('resources.remote.statusLanActive')
+                    : t('resources.remote.statusLanInactive')}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </TooltipProvider>
         </div>
-      </TooltipProvider>
-
-      <div className="space-y-4 rounded-lg border border-border p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium">{t('resources.remote.enableLabel')}</p>
-            <p className="text-xs text-muted-foreground">{t('resources.remote.enableDescription')}</p>
-          </div>
+        <SettingsRow
+          label={t('resources.remote.enableLabel')}
+          description={t('resources.remote.enableDescription')}
+        >
           <Switch
             checked={config?.enabled ?? false}
             onCheckedChange={(checked) => updateConfig({ enabled: checked })}
           />
-        </div>
-      </div>
+        </SettingsRow>
+      </SettingsSection>
 
-      <div className="grid gap-4">
-        {/* Mobile controllers */}
-        <section className="space-y-3 rounded-lg border border-border p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <Smartphone className="size-4 shrink-0 text-muted-foreground" />
-              <p className="text-sm font-medium">{t('settings.remote.thisDevice.mobile.title')}</p>
+      {/* Mobile controllers */}
+      <SettingsSection
+        title={t('settings.remote.thisDevice.mobile.title')}
+        actions={pairingStep === 'idle' ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7"
+            disabled={!config?.enabled}
+            onClick={handleStartPairing}
+          >
+            {t('resources.remote.pairNewPhone')}
+          </Button>
+        ) : null}
+      >
+        {config?.enabled && pairingStep === 'waiting_scan' && (
+          <div className={cn(settingsRowClassName, 'flex flex-col items-center gap-3 py-5 text-center')}>
+            <p className="text-sm font-medium">{t('resources.remote.pairTitle')}</p>
+            <ol className="list-inside list-decimal space-y-1 text-xs text-muted-foreground">
+              <li>{t('resources.remote.stepScan')}</li>
+              <li>{t('resources.remote.stepCode')}</li>
+            </ol>
+            {/* The QR code needs a light quiet zone to scan in dark mode too. */}
+            <div className="rounded-lg bg-white p-3">
+              <QRCodeSVG value={qrValue} size={200} />
             </div>
-            {pairingStep === 'idle' && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!config?.enabled}
-                onClick={handleStartPairing}
-              >
-                {t('resources.remote.pairNewPhone')}
-              </Button>
-            )}
-          </div>
-
-          {config?.enabled && pairingStep === 'waiting_scan' && (
-            <div className="flex flex-col items-center space-y-3 border-t border-border pt-4 text-center">
-              <p className="text-sm font-semibold">{t('resources.remote.pairTitle')}</p>
-              <ol className="list-inside list-decimal space-y-1 text-xs text-muted-foreground">
-                <li>{t('resources.remote.stepScan')}</li>
-                <li>{t('resources.remote.stepCode')}</li>
-              </ol>
-              <div className="rounded-lg border border-border bg-white p-3">
-                <QRCodeSVG value={qrValue} size={200} />
-              </div>
-              <div className="flex items-center gap-2">
-                {import.meta.env.DEV && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      navigator.clipboard.writeText(qrValue)
-                      toast.success(t('resources.remote.linkCopied'))
-                    }}
-                  >
-                    {t('resources.remote.copyLink')}
-                  </Button>
-                )}
-                <Button variant="ghost" size="sm" onClick={handleCancelPairing}>
-                  {t('common.cancel')}
+            <div className="flex items-center gap-2">
+              {import.meta.env.DEV && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7"
+                  onClick={() => {
+                    navigator.clipboard.writeText(qrValue)
+                    toast.success(t('resources.remote.linkCopied'))
+                  }}
+                >
+                  {t('resources.remote.copyLink')}
                 </Button>
-              </div>
+              )}
+              <Button variant="ghost" size="sm" className="h-7" onClick={handleCancelPairing}>
+                {t('common.cancel')}
+              </Button>
             </div>
-          )}
+          </div>
+        )}
 
-          {config?.enabled && pairingStep === 'waiting_code' && (
+        {config?.enabled && pairingStep === 'waiting_code' && (
+          <div className={settingsRowClassName}>
             <PairingCodeConfirm
               deviceName={pendingDeviceName}
               onDeviceNameChange={setPendingDeviceName}
@@ -335,72 +319,50 @@ function ThisDevicePanel() {
               onConfirm={() => { void handleConfirmPairing() }}
               onCancel={() => { void handleCancelPairing() }}
             />
-          )}
-
-          {codeError && pairingStep === 'idle' && (
-            <p className="text-xs text-destructive">{codeError}</p>
-          )}
-
-          {mobileDevices.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              {t('settings.remote.thisDevice.mobile.empty')}
-            </p>
-          ) : (
-            <ul className="space-y-2">
-              {mobileDevices.map((device) => (
-                <PairedDeviceRow
-                  key={device.id}
-                  device={device}
-                  onRemove={() => handleRemoveDevice(device.id)}
-                />
-              ))}
-            </ul>
-          )}
-        </section>
-
-        {/* Desktop controllers of this host */}
-        <section className="space-y-3 rounded-lg border border-border p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <Monitor className="size-4 shrink-0 text-muted-foreground" />
-              <p className="text-sm font-medium">{t('settings.remote.thisDevice.desktop.title')}</p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled
-              title={t('resources.remote.pairNewDesktop')}
-            >
-              {t('resources.remote.pairNewDesktop')}
-            </Button>
           </div>
+        )}
 
-          {desktopDevices.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              {t('settings.remote.thisDevice.desktop.empty')}
-            </p>
-          ) : (
-            <ul className="space-y-2">
-              {desktopDevices.map((device) => (
-                <PairedDeviceRow
-                  key={device.id}
-                  device={device}
-                  onRemove={() => handleRemoveDevice(device.id)}
-                />
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
+        {codeError && pairingStep === 'idle' && (
+          <p className={cn(settingsRowClassName, 'text-xs text-destructive')}>{codeError}</p>
+        )}
+
+        {mobileDevices.length === 0 ? (
+          <p className={emptyRowClassName}>{t('settings.remote.thisDevice.mobile.empty')}</p>
+        ) : (
+          <PairedDeviceList devices={mobileDevices} onRemove={handleRemoveDevice} />
+        )}
+      </SettingsSection>
+
+      {/* Desktop controllers of this host */}
+      <SettingsSection
+        title={t('settings.remote.thisDevice.desktop.title')}
+        actions={(
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7"
+            disabled
+            title={t('resources.remote.pairNewDesktop')}
+          >
+            {t('resources.remote.pairNewDesktop')}
+          </Button>
+        )}
+      >
+        {desktopDevices.length === 0 ? (
+          <p className={emptyRowClassName}>{t('settings.remote.thisDevice.desktop.empty')}</p>
+        ) : (
+          <PairedDeviceList devices={desktopDevices} onRemove={handleRemoveDevice} />
+        )}
+      </SettingsSection>
 
       {import.meta.env.DEV && (
-        <div className="space-y-3 rounded-lg border border-border p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium">{t('resources.remote.customRelay')}</p>
+        <SettingsSection
+          title={t('resources.remote.customRelay')}
+          actions={(
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-xs"
+              className="h-7"
               onClick={() =>
                 window.open(
                   'https://deploy.workers.cloudflare.com/?url=https://github.com/WHQ25/super-one-relay',
@@ -410,41 +372,64 @@ function ThisDevicePanel() {
             >
               {t('resources.remote.deployCloudflare')}
             </Button>
+          )}
+        >
+          <div className={settingsRowClassName}>
+            <div className="flex items-center gap-2">
+              <input
+                className="h-7 min-w-0 flex-1 rounded-md border border-border bg-background px-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                placeholder="wss://your-relay.workers.dev"
+                value={config?.relayUrl ?? ''}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  updateConfig({ relayUrl: e.target.value.trim() })
+                  setRelayStatus('idle')
+                }}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7"
+                onClick={checkRelay}
+                disabled={!config?.relayUrl || relayStatus === 'checking'}
+              >
+                {relayStatus === 'checking'
+                  ? t('resources.remote.checking')
+                  : t('resources.remote.test')}
+              </Button>
+              {relayStatus === 'ok' && (
+                <span className="text-xs text-success">{t('resources.remote.relayConnected')}</span>
+              )}
+              {relayStatus === 'error' && (
+                <span className="text-xs text-destructive">
+                  {t('resources.remote.relayUnreachable')}
+                </span>
+              )}
+            </div>
+            <p className="mt-1.5 text-xs text-muted-foreground">{t('resources.remote.relayHint')}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              className="flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              placeholder="wss://your-relay.workers.dev"
-              value={config?.relayUrl ?? ''}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                updateConfig({ relayUrl: e.target.value.trim() })
-                setRelayStatus('idle')
-              }}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={checkRelay}
-              disabled={!config?.relayUrl || relayStatus === 'checking'}
-            >
-              {relayStatus === 'checking'
-                ? t('resources.remote.checking')
-                : t('resources.remote.test')}
-            </Button>
-            {relayStatus === 'ok' && (
-              <span className="text-xs text-success">{t('resources.remote.relayConnected')}</span>
-            )}
-            {relayStatus === 'error' && (
-              <span className="text-xs text-destructive">
-                {t('resources.remote.relayUnreachable')}
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-muted-foreground">{t('resources.remote.relayHint')}</p>
-        </div>
+        </SettingsSection>
       )}
-    </div>
+    </>
+  )
+}
+
+function PairedDeviceList({
+  devices,
+  onRemove,
+}: {
+  devices: PairedDevice[]
+  onRemove: (id: string) => void
+}) {
+  return (
+    <ul className="rounded-[inherit]">
+      {devices.map((device) => (
+        <PairedDeviceRow
+          key={device.id}
+          device={device}
+          onRemove={() => onRemove(device.id)}
+        />
+      ))}
+    </ul>
   )
 }
 
@@ -457,7 +442,7 @@ function PairedDeviceRow({
 }) {
   const { t } = useTranslation()
   return (
-    <li className="flex items-center justify-between rounded-md border border-border/80 bg-background/50 px-3 py-2 text-sm">
+    <li className={cn(settingsRowClassName, 'flex items-center justify-between gap-3 py-2 text-sm')}>
       <div className="flex min-w-0 items-center gap-2">
         <span
           className={cn(
@@ -479,7 +464,7 @@ function PairedDeviceRow({
       <Button
         variant="ghost"
         size="sm"
-        className="h-7 shrink-0 text-xs text-muted-foreground hover:text-destructive"
+        className="h-7 shrink-0 text-muted-foreground hover:text-destructive"
         onClick={onRemove}
       >
         {t('resources.remote.remove')}

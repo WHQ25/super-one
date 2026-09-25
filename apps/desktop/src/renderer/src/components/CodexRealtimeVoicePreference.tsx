@@ -13,6 +13,8 @@ import {
 } from '@superone/ui/components/ui/popover'
 import { cn } from '@superone/ui/lib/utils'
 import type { CodexRealtimeVoiceCatalog } from '@superone/shared/agent-types'
+import { SettingsRow } from '@/components/settings/SettingsSection'
+import { settingsSelectTriggerClassName } from '@/components/settings/select-trigger-class'
 
 interface CodexRealtimeVoicePreferenceProps {
   projectPath: string | null
@@ -77,16 +79,15 @@ export function CodexRealtimeVoicePreference({
   }, [onChange, selectedVoice])
 
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-border p-4">
-      <div className="min-w-0">
-        <p className="text-sm font-medium">{t('settings.preferences.realtimeVoice.label')}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{t('settings.preferences.realtimeVoice.description')}</p>
-      </div>
+    <SettingsRow
+      label={t('settings.preferences.realtimeVoice.label')}
+      description={t('settings.preferences.realtimeVoice.description')}
+    >
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button
             disabled={disabled || loading || loadError}
-            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+            className={settingsSelectTriggerClassName}
           >
             <span className="max-w-[180px] truncate">
               {loading
@@ -95,7 +96,7 @@ export function CodexRealtimeVoicePreference({
                   ? t('settings.preferences.realtimeVoice.loadFailed')
                   : formatVoiceName(selectedVoice)}
             </span>
-            <ChevronDown className={cn('size-3 transition-transform duration-200', open && 'rotate-180')} />
+            <ChevronDown className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform duration-200', open && 'rotate-180')} />
           </button>
         </PopoverTrigger>
         <PopoverContent align="end" side="bottom" className="w-72 p-2">
@@ -124,6 +125,6 @@ export function CodexRealtimeVoicePreference({
           </div>
         </PopoverContent>
       </Popover>
-    </div>
+    </SettingsRow>
   )
 }

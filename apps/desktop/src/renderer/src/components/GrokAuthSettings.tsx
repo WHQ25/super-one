@@ -6,7 +6,9 @@ import { Input } from '@superone/ui/components/ui/input'
 import { Label } from '@superone/ui/components/ui/label'
 import { Alert, AlertDescription, AlertTitle } from '@superone/ui/components/ui/alert'
 import type { GrokAuthRequest, GrokAuthState } from '@superone/shared/grok-auth'
+import { cn } from '@superone/ui/lib/utils'
 import { requestOpenExternalLink } from '@/lib/external-link'
+import { SettingsCard, SettingsRow, settingsRowClassName } from '@/components/settings/SettingsSection'
 
 export type GrokAuthApi = (request: GrokAuthRequest) => Promise<GrokAuthState>
 const defaultApi: GrokAuthApi = (request) => window.app.grokAuth(request)
@@ -94,52 +96,57 @@ export function GrokAuthSettings({ api = defaultApi, onAuthChanged }: {
     : connected ? t('grokAuth.signedIn')
     : state.status === 'unavailable' ? t('grokAuth.unavailable') : t('grokAuth.signedOut')
 
+  const hint = connected
+    ? (state.email || (state.method?.includes('api_key') ? t('grokAuth.apiKey') : undefined))
+    : state?.status === 'signed_out' ? t('grokAuth.signedOutHint')
+    : state?.status === 'unavailable' ? t('grokAuth.installHint')
+    : undefined
+
   return (
-    <section className="flex w-full flex-col gap-4 py-2" aria-label={t('grokAuth.title')}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0 flex-1" role="status">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            {active && <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />}
-            {connected && <Check className="size-4 shrink-0" />}
-            <span>{statusText}</span>
-          </div>
-          {connected && (state.email || state.method?.includes('api_key')) && (
-            <p className="mt-1 truncate text-sm text-muted-foreground">{state.email || t('grokAuth.apiKey')}</p>
+    <section className="flex w-full flex-col gap-3" aria-label={t('grokAuth.title')}>
+      <SettingsCard>
+        <SettingsRow
+          label={(
+            <span role="status" className="flex items-center gap-2">
+              {active && <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />}
+              {connected && <Check className="size-3.5 shrink-0 text-success" />}
+              <span>{statusText}</span>
+            </span>
           )}
-        </div>
-        {!active && <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" disabled={busy} onClick={() => void request({ action: 'refresh' })}>
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}{t('grokAuth.refresh')}
-          </Button>
-          {!connected && state?.status !== 'unavailable' && (
-            <Button size="sm" disabled={busy || !state} onClick={() => { setCode(''); setShowCode(false); void request({ action: 'start' }) }}>
-              {state?.status === 'error' ? t('grokAuth.retry') : t('grokAuth.signIn')}
+          description={hint ? <span className={cn(connected && 'block truncate')}>{hint}</span> : undefined}
+        >
+          {!active && <>
+            <Button variant="ghost" size="sm" className="h-7" disabled={busy} onClick={() => void request({ action: 'refresh' })}>
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}{t('grokAuth.refresh')}
             </Button>
-          )}
-        </div>}
-      </div>
-      {state?.status === 'signed_out' && <p className="text-sm text-muted-foreground">{t('grokAuth.signedOutHint')}</p>}
-      {state?.status === 'unavailable' && <p className="text-sm text-muted-foreground">{t('grokAuth.installHint')}</p>}
-      {active && (
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap gap-2">
-            {state?.authUrl && <Button size="sm" onClick={() => void openBrowser()}><ExternalLink className="size-3.5" />{t('grokAuth.openBrowser')}</Button>}
-            <Button size="sm" variant="ghost" disabled={busy} onClick={() => state?.loginId && void request({ action: 'cancel', loginId: state.loginId })}>{t('grokAuth.cancel')}</Button>
+            {!connected && state?.status !== 'unavailable' && (
+              <Button size="sm" className="h-7" disabled={busy || !state} onClick={() => { setCode(''); setShowCode(false); void request({ action: 'start' }) }}>
+                {state?.status === 'error' ? t('grokAuth.retry') : t('grokAuth.signIn')}
+              </Button>
+            )}
+          </>}
+        </SettingsRow>
+        {active && (
+          <div className={cn(settingsRowClassName, 'flex flex-col gap-3')}>
+            <div className="flex flex-wrap gap-2">
+              {state?.authUrl && <Button size="sm" className="h-7" onClick={() => void openBrowser()}><ExternalLink className="size-3.5" />{t('grokAuth.openBrowser')}</Button>}
+              <Button size="sm" variant="ghost" className="h-7" disabled={busy} onClick={() => state?.loginId && void request({ action: 'cancel', loginId: state.loginId })}>{t('grokAuth.cancel')}</Button>
+            </div>
+            {state?.status === 'waiting' && (
+              <>
+                <Button size="sm" variant="ghost" className="group h-7 self-start" aria-controls={`${codeId}-form`} aria-expanded={showCode} onClick={() => setShowCode(!showCode)}><ChevronDown className="size-3.5 transition-transform group-aria-expanded:rotate-180" />{t('grokAuth.haveCode')}</Button>
+                {showCode && <form id={`${codeId}-form`} className="flex flex-col gap-2" onSubmit={(event) => { event.preventDefault(); if (state.loginId) void request({ action: 'submit', loginId: state.loginId, code }) }}>
+                  <Label htmlFor={codeId} className="text-xs">{t('grokAuth.codeLabel')}</Label>
+                  <div className="flex flex-wrap gap-2">
+                    <Input id={codeId} className="h-7 min-w-0 flex-1 basis-40 bg-background" value={code} onChange={(event) => setCode(event.target.value)} autoComplete="one-time-code" maxLength={4096} spellCheck={false} disabled={busy} />
+                    <Button type="submit" variant="outline" size="sm" className="h-7" disabled={!code.trim() || busy}>{t('grokAuth.submit')}</Button>
+                  </div>
+                </form>}
+              </>
+            )}
           </div>
-          {state?.status === 'waiting' && (
-            <>
-              <Button size="sm" variant="ghost" className="group self-start" aria-controls={`${codeId}-form`} aria-expanded={showCode} onClick={() => setShowCode(!showCode)}><ChevronDown className="size-3.5 transition-transform group-aria-expanded:rotate-180" />{t('grokAuth.haveCode')}</Button>
-              {showCode && <form id={`${codeId}-form`} className="flex flex-col gap-2" onSubmit={(event) => { event.preventDefault(); if (state.loginId) void request({ action: 'submit', loginId: state.loginId, code }) }}>
-                <Label htmlFor={codeId}>{t('grokAuth.codeLabel')}</Label>
-                <div className="flex flex-wrap gap-2">
-                  <Input id={codeId} className="min-w-0 flex-1 basis-40" value={code} onChange={(event) => setCode(event.target.value)} autoComplete="one-time-code" maxLength={4096} spellCheck={false} disabled={busy} />
-                  <Button type="submit" variant="outline" disabled={!code.trim() || busy}>{t('grokAuth.submit')}</Button>
-                </div>
-              </form>}
-            </>
-          )}
-        </div>
-      )}
+        )}
+      </SettingsCard>
       {(error || state?.status === 'error') && <Alert variant="destructive"><AlertTitle>{t('grokAuth.failed')}</AlertTitle><AlertDescription className="break-words">{error || state?.error}</AlertDescription></Alert>}
     </section>
   )

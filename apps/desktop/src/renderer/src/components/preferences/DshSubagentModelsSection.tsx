@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { DshSubagentModelSelection, ModelOption } from '@superone/shared/agent-types'
 import { Checkbox } from '@superone/ui/components/ui/checkbox'
 import { Switch } from '@superone/ui/components/ui/switch'
+import { SettingsRow, SettingsSubheader } from '@/components/settings/SettingsSection'
 
 /** A route the agent may pick, as the picker lists it. */
 export interface DshModelRoute {
@@ -15,7 +16,8 @@ const sameRoute = (a: { provider: string; model: string }, b: { provider: string
   a.provider === b.provider && a.model === b.model
 
 /**
- * The DeepSeek subagent model preference, as rows of the preferences card.
+ * The DeepSeek subagent model preference, as rows of the preferences card
+ * (a subheader opens the run, so it must render inside a `SettingsCard`).
  *
  * `value` and `models` are `null` while loading. The model list stays visible
  * but disabled while the preference is off, so turning it on never reveals a
@@ -39,53 +41,54 @@ export function DshSubagentModelsSection({ value, models, onChange }: {
 
   return (
     <>
-      <div className="border-b border-border px-4 py-2">
-        <p className="text-xs font-medium text-muted-foreground">{t('settings.preferences.dshSubagentModels.section')}</p>
-      </div>
-      <div className="flex items-start justify-between gap-4 border-b border-border p-4">
-        <div className="min-w-0">
-          <p className="text-sm font-medium">{t('settings.preferences.dshSubagentModels.label')}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{t('settings.preferences.dshSubagentModels.description')}</p>
-        </div>
+      <SettingsSubheader>{t('settings.preferences.dshSubagentModels.section')}</SettingsSubheader>
+      <SettingsRow
+        label={t('settings.preferences.dshSubagentModels.label')}
+        description={t('settings.preferences.dshSubagentModels.description')}
+      >
         <Switch
           checked={enabled}
           disabled={loading}
           onCheckedChange={(checked) => value && onChange({ ...value, enabled: checked })}
           aria-label={t('settings.preferences.dshSubagentModels.label')}
         />
-      </div>
-      <div className="p-4">
-        <p className="text-sm font-medium">{t('settings.preferences.dshSubagentModels.modelsLabel')}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{t('settings.preferences.dshSubagentModels.modelsDescription')}</p>
-        {models === null ? (
-          <p className="mt-3 text-xs text-muted-foreground">{t('settings.preferences.dshSubagentModels.loading')}</p>
-        ) : models.length === 0 ? (
-          <p className="mt-3 text-xs text-muted-foreground">{t('settings.preferences.dshSubagentModels.empty')}</p>
-        ) : (
-          <ul className="mt-3 space-y-2">
-            {models.map((route) => {
-              const id = `dsh-subagent-model-${route.provider}-${route.model}`
-              return (
-                <li key={id} className="flex min-w-0 items-center gap-2">
-                  <Checkbox
-                    id={id}
-                    checked={allowed.some((entry) => sameRoute(entry, route))}
-                    disabled={loading || !enabled}
-                    onCheckedChange={(checked) => toggleModel(route, checked === true)}
-                  />
-                  <label htmlFor={id} className="flex min-w-0 items-baseline gap-2 text-sm">
-                    <span className="truncate">{route.name}</span>
-                    <span className="truncate font-mono text-xs text-muted-foreground">{route.model}</span>
-                  </label>
-                </li>
-              )
-            })}
-          </ul>
+      </SettingsRow>
+      <SettingsRow
+        label={t('settings.preferences.dshSubagentModels.modelsLabel')}
+        description={t('settings.preferences.dshSubagentModels.modelsDescription')}
+        footer={(
+          <>
+            {models === null ? (
+              <p className="text-xs text-muted-foreground">{t('settings.preferences.dshSubagentModels.loading')}</p>
+            ) : models.length === 0 ? (
+              <p className="text-xs text-muted-foreground">{t('settings.preferences.dshSubagentModels.empty')}</p>
+            ) : (
+              <ul className="space-y-2">
+                {models.map((route) => {
+                  const id = `dsh-subagent-model-${route.provider}-${route.model}`
+                  return (
+                    <li key={id} className="flex min-w-0 items-center gap-2">
+                      <Checkbox
+                        id={id}
+                        checked={allowed.some((entry) => sameRoute(entry, route))}
+                        disabled={loading || !enabled}
+                        onCheckedChange={(checked) => toggleModel(route, checked === true)}
+                      />
+                      <label htmlFor={id} className="flex min-w-0 items-baseline gap-2 text-sm">
+                        <span className="truncate">{route.name}</span>
+                        <span className="truncate font-mono text-xs text-muted-foreground">{route.model}</span>
+                      </label>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+            {enabled && allowed.length === 0 && (
+              <p className="mt-2 text-xs text-warning">{t('settings.preferences.dshSubagentModels.noneSelected')}</p>
+            )}
+          </>
         )}
-        {enabled && allowed.length === 0 && (
-          <p className="mt-3 text-xs text-warning">{t('settings.preferences.dshSubagentModels.noneSelected')}</p>
-        )}
-      </div>
+      />
     </>
   )
 }

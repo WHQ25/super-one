@@ -26,6 +26,7 @@ import { EnvEditor } from './CredentialConfig'
 import { ModelEnvEditor } from './ModelMappingField'
 import { upsertCustomModel } from './custom-models'
 import { DraftDiscoveredModels } from './DraftDiscoveredModels'
+import { ProviderDetailHeader, ProviderDetailTitle } from './ProviderDetailParts'
 import { baseUrlHasHost, ensureHttpsPrefix, identityKey } from './site-url'
 import { useEndpointTest } from './test-endpoints'
 import { TestConnectionButton, TestConnectionStatus } from './TestConnection'
@@ -190,7 +191,7 @@ export function CustomPlatformForm({ onDone }: { onDone: (createdId?: string) =>
 
   return (
     <div className="flex flex-col gap-4">
-      <span className="text-base font-semibold">{t('resources.providers.addCustom')}</span>
+      <ProviderDetailHeader leading={<ProviderDetailTitle>{t('resources.providers.addCustom')}</ProviderDetailTitle>} />
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           {identityBusy ? (

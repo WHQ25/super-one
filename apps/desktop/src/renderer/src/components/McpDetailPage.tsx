@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { ArrowLeft, Trash2, ShieldAlert, Package, FolderOpen } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
@@ -6,8 +6,83 @@ import { Badge } from '@superone/ui/components/ui/badge'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { McpIcon } from './McpPage'
-import type { McpServerConfig, McpServerInfo, McpServerMeta } from '@superone/shared/agent-types'
+import { SettingsCard, SettingsRow, SettingsSection, settingsRowClassName } from '@/components/settings/SettingsSection'
+import type { McpServerConfig, McpServerInfo, McpServerMeta, McpToolInfo } from '@superone/shared/agent-types'
 import { cn } from '@superone/ui/lib/utils'
+
+/** Back link plus server identity; shared by configured and claude.ai server detail views. */
+export function McpDetailHeader({ icon, name, statusDotClass, badges, subtitle, trailing }: {
+  icon: ReactNode
+  name: string
+  statusDotClass: string
+  badges?: ReactNode
+  subtitle?: ReactNode
+  trailing?: ReactNode
+}) {
+  const { t } = useTranslation()
+  const { selectMcp } = useSettingsStore()
+  return (
+    <div>
+      <button
+        onClick={() => selectMcp(null)}
+        className="mb-3 flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="size-3" />
+        {t('common.back')}
+      </button>
+      <div className="flex items-center gap-3">
+        {icon}
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className="truncate text-base font-semibold">{name}</h2>
+            <span className={cn('size-2 shrink-0 rounded-full', statusDotClass)} />
+            {badges}
+          </div>
+          {subtitle && <div className="mt-0.5 flex min-w-0 items-center gap-2">{subtitle}</div>}
+        </div>
+        {trailing && <div className="flex shrink-0 items-center gap-2">{trailing}</div>}
+      </div>
+    </div>
+  )
+}
+
+/** The server's tool list, one row per tool, or a muted line explaining why there are none. */
+export function McpToolsSection({ tools, toolCount, emptyText, describe }: {
+  tools: McpToolInfo[]
+  toolCount?: number
+  emptyText: string
+  /** Fallback description lookup (probe meta is more reliable than SDK status). */
+  describe?: (tool: McpToolInfo) => string | undefined
+}) {
+  const { t } = useTranslation()
+  return (
+    <SettingsSection title={t('resources.mcp.tools')} description={toolCount != null ? `(${toolCount})` : undefined}>
+      {tools.length > 0 ? (
+        tools.map((tool) => {
+          const desc = tool.description || describe?.(tool)
+          return (
+            <SettingsRow
+              key={tool.name}
+              label={<span className="font-mono break-all">{tool.name}</span>}
+              description={desc}
+            />
+          )
+        })
+      ) : (
+        <p className={cn(settingsRowClassName, 'text-sm text-muted-foreground')}>{emptyText}</p>
+      )}
+    </SettingsSection>
+  )
+}
+
+function ConfigField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className={settingsRowClassName}>
+      <label className="mb-1 block text-xs text-muted-foreground">{label}</label>
+      {children}
+    </div>
+  )
+}
 
 export function McpDetailPage({ config, status, meta }: { config: McpServerConfig; status?: McpServerInfo; meta?: McpServerMeta }) {
   const { t } = useTranslation()
@@ -89,7 +164,8 @@ export function McpDetailPage({ config, status, meta }: { config: McpServerConfi
     setAuthorizing(false)
   }
 
-  const inputClass = 'w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-ring font-mono'
+  const inputClass = 'w-full rounded-md border border-border bg-background px-2.5 py-1 text-sm outline-none focus:border-ring font-mono'
+  const valueClass = 'text-sm font-mono text-foreground break-all'
   const tools = status?.tools ?? []
   const isConnected = status?.status === 'connected'
   const needsAuth = status?.status === 'needs-auth'
@@ -98,197 +174,158 @@ export function McpDetailPage({ config, status, meta }: { config: McpServerConfi
   const metaToolMap = new Map(meta?.tools?.map((t) => [t.name, t.description]) ?? [])
 
   return (
-    <div className="mx-auto max-w-2xl">
-      {/* Header */}
-      <div className="mb-6">
-        <button
-          onClick={() => selectMcp(null)}
-          className="mb-3 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="size-3" />
-          {t('common.back')}
-        </button>
-        <div className="flex items-center gap-3">
-          <McpIcon name={config.name} meta={meta} bundle={bundle} size="md" />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold">{config.name}</h2>
-              <span className={cn('size-2 rounded-full', isConnected ? 'bg-success' : needsAuth ? 'bg-warning' : 'bg-error')} />
-              {bundle && (
-                <Badge variant="outline" className="gap-1 text-[10px]">
-                  <Package className="size-2.5" />
-                  {t('resources.mcp.detail.bundleBadge', { version: bundle.meta.version })}
-                </Badge>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              {meta?.description && (
-                <span className="text-xs text-muted-foreground">{meta.description}</span>
-              )}
-              {!meta?.description && (
-                <>
-                  <Badge variant="secondary" className="text-[10px]">{config.scope}</Badge>
-                  <Badge variant="secondary" className="text-[10px]">{config.type}</Badge>
-                </>
-              )}
-            </div>
-          </div>
-          {bundle && (
-            <Button size="sm" variant="ghost" onClick={handleReveal} className="shrink-0">
-              <FolderOpen className="size-3.5" />
-              {t('resources.mcp.detail.bundleReveal')}
-            </Button>
-          )}
-        </div>
-      </div>
+    <div className="space-y-5">
+      <McpDetailHeader
+        icon={<McpIcon name={config.name} meta={meta} bundle={bundle} size="md" />}
+        name={config.name}
+        statusDotClass={isConnected ? 'bg-success' : needsAuth ? 'bg-warning' : 'bg-error'}
+        badges={bundle && (
+          <Badge variant="outline" className="shrink-0 gap-1 text-[10px]">
+            <Package className="size-2.5" />
+            {t('resources.mcp.detail.bundleBadge', { version: bundle.meta.version })}
+          </Badge>
+        )}
+        subtitle={meta?.description ? (
+          <span className="text-xs text-muted-foreground">{meta.description}</span>
+        ) : (
+          <>
+            <Badge variant="secondary" className="text-[10px]">{config.scope}</Badge>
+            <Badge variant="secondary" className="text-[10px]">{config.type}</Badge>
+          </>
+        )}
+        trailing={bundle && (
+          <Button size="sm" variant="ghost" onClick={handleReveal} className="h-7">
+            <FolderOpen className="size-3.5" />
+            {t('resources.mcp.detail.bundleReveal')}
+          </Button>
+        )}
+      />
 
-      <div className="space-y-6">
-        {/* Auth banner */}
-        {needsAuth && (
-          <div className="flex items-center gap-3 rounded-lg border border-yellow-500/30 bg-warning/5 p-4">
-            <ShieldAlert className="size-5 shrink-0 text-warning" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium">{t('resources.mcp.detail.authTitle')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
+      {/* Auth banner */}
+      {needsAuth && (
+        <SettingsCard className="bg-warning/10">
+          <SettingsRow
+            label={
+              <span className="flex items-center gap-2">
+                <ShieldAlert className="size-4 shrink-0 text-warning" />
+                {t('resources.mcp.detail.authTitle')}
+              </span>
+            }
+            description={
+              <>
                 {t('resources.mcp.detail.authDescription')}
                 {status?.error && <span className="ml-1">({status.error})</span>}
-              </p>
-            </div>
-            <Button size="sm" onClick={handleAuthorize} disabled={authorizing}>
+              </>
+            }
+          >
+            <Button size="sm" className="h-7" onClick={handleAuthorize} disabled={authorizing}>
               {authorizing ? t('resources.mcp.detail.authorizing') : t('resources.mcp.detail.authorize')}
             </Button>
-          </div>
+          </SettingsRow>
+        </SettingsCard>
+      )}
+
+      {/* Config section */}
+      <SettingsSection
+        title={t('resources.mcp.detail.configuration')}
+        actions={!editing ? (
+          <Button size="sm" variant="ghost" className="h-7" onClick={() => setEditing(true)}>{t('resources.mcp.detail.edit')}</Button>
+        ) : (
+          <>
+            <Button size="sm" variant="ghost" className="h-7" onClick={() => setEditing(false)}>{t('common.cancel')}</Button>
+            <Button size="sm" className="h-7" onClick={handleSave}>{t('common.save')}</Button>
+          </>
         )}
+      >
+        {config.type === 'stdio' ? (
+          <>
+            <ConfigField label={t('resources.mcp.detail.commandLabel')}>
+              {editing ? (
+                <input className={inputClass} value={command} onChange={(e) => setCommand(e.target.value)} />
+              ) : (
+                <p className={valueClass}>{config.command}</p>
+              )}
+            </ConfigField>
+            <ConfigField label={t('resources.mcp.detail.argsLabel')}>
+              {editing ? (
+                <input className={inputClass} value={args} onChange={(e) => setArgs(e.target.value)} />
+              ) : (
+                <p className={valueClass}>{(config.args ?? []).join(' ') || '—'}</p>
+              )}
+            </ConfigField>
+            <ConfigField label={t('resources.mcp.detail.environmentLabel')}>
+              {editing ? (
+                <textarea className={cn(inputClass, 'h-20 resize-none')} value={env} onChange={(e) => setEnv(e.target.value)} placeholder="KEY=VALUE" />
+              ) : (
+                <div className={valueClass}>
+                  {Object.keys(config.env ?? {}).length > 0
+                    ? Object.entries(config.env!).map(([k, v]) => (
+                        <p key={k}>{k}={v}</p>
+                      ))
+                    : <p className="text-muted-foreground">—</p>
+                  }
+                </div>
+              )}
+            </ConfigField>
+          </>
+        ) : (
+          <>
+            <ConfigField label={t('resources.mcp.detail.urlLabel')}>
+              {editing ? (
+                <input className={inputClass} value={url} onChange={(e) => setUrl(e.target.value)} />
+              ) : (
+                <p className={valueClass}>{config.url}</p>
+              )}
+            </ConfigField>
+            <ConfigField label={t('resources.mcp.detail.headersLabel')}>
+              {editing ? (
+                <textarea className={cn(inputClass, 'h-20 resize-none')} value={headers} onChange={(e) => setHeaders(e.target.value)} placeholder="Key: Value" />
+              ) : (
+                <div className="text-sm font-mono text-foreground">
+                  {Object.keys(config.headers ?? {}).length > 0
+                    ? Object.entries(config.headers!).map(([k, v]) => (
+                        <p key={k} className="truncate">{k}: {v}</p>
+                      ))
+                    : <p className="text-muted-foreground">—</p>
+                  }
+                </div>
+              )}
+            </ConfigField>
+          </>
+        )}
+      </SettingsSection>
 
-        {/* Config section */}
-        <div className="rounded-lg border border-border bg-card p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-medium">{t('resources.mcp.detail.configuration')}</h3>
-            {!editing ? (
-              <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>{t('resources.mcp.detail.edit')}</Button>
-            ) : (
-              <div className="flex gap-2">
-                <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>{t('common.cancel')}</Button>
-                <Button size="sm" onClick={handleSave}>{t('common.save')}</Button>
-              </div>
-            )}
-          </div>
+      {/* Tools section */}
+      <McpToolsSection
+        tools={tools}
+        toolCount={status?.toolCount}
+        emptyText={isConnected ? t('resources.mcp.noToolsConnected') : t('resources.mcp.noToolsDisconnected')}
+        describe={(tool) => metaToolMap.get(tool.name)}
+      />
 
-          {config.type === 'stdio' ? (
-            <div className="space-y-3">
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.detail.commandLabel')}</label>
-                {editing ? (
-                  <input className={inputClass} value={command} onChange={(e) => setCommand(e.target.value)} />
-                ) : (
-                  <p className="text-sm font-mono text-foreground">{config.command}</p>
-                )}
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.detail.argsLabel')}</label>
-                {editing ? (
-                  <input className={inputClass} value={args} onChange={(e) => setArgs(e.target.value)} />
-                ) : (
-                  <p className="text-sm font-mono text-foreground">{(config.args ?? []).join(' ') || '—'}</p>
-                )}
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.detail.environmentLabel')}</label>
-                {editing ? (
-                  <textarea className={cn(inputClass, 'h-20 resize-none')} value={env} onChange={(e) => setEnv(e.target.value)} placeholder="KEY=VALUE" />
-                ) : (
-                  <div className="text-sm font-mono text-foreground">
-                    {Object.keys(config.env ?? {}).length > 0
-                      ? Object.entries(config.env!).map(([k, v]) => (
-                          <p key={k}>{k}={v}</p>
-                        ))
-                      : <p className="text-muted-foreground">—</p>
-                    }
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.detail.urlLabel')}</label>
-                {editing ? (
-                  <input className={inputClass} value={url} onChange={(e) => setUrl(e.target.value)} />
-                ) : (
-                  <p className="text-sm font-mono text-foreground">{config.url}</p>
-                )}
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">{t('resources.mcp.detail.headersLabel')}</label>
-                {editing ? (
-                  <textarea className={cn(inputClass, 'h-20 resize-none')} value={headers} onChange={(e) => setHeaders(e.target.value)} placeholder="Key: Value" />
-                ) : (
-                  <div className="text-sm font-mono text-foreground">
-                    {Object.keys(config.headers ?? {}).length > 0
-                      ? Object.entries(config.headers!).map(([k, v]) => (
-                          <p key={k} className="truncate">{k}: {v}</p>
-                        ))
-                      : <p className="text-muted-foreground">—</p>
-                    }
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Tools section */}
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h3 className="mb-3 text-sm font-medium">
-            {t('resources.mcp.tools')}
-            {status?.toolCount != null && (
-              <span className="ml-2 text-xs text-muted-foreground">({status.toolCount})</span>
-            )}
-          </h3>
-          {tools.length > 0 ? (
-            <div className="space-y-2">
-              {tools.map((tool) => {
-                const desc = tool.description || metaToolMap.get(tool.name)
-                return (
-                  <div key={tool.name} className="rounded-md border border-border px-3 py-2">
-                    <p className="text-sm font-medium font-mono">{tool.name}</p>
-                    {desc && (
-                      <p className="mt-0.5 text-xs text-muted-foreground">{desc}</p>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              {isConnected ? t('resources.mcp.noToolsConnected') : t('resources.mcp.noToolsDisconnected')}
-            </p>
-          )}
-        </div>
-
-        {/* Uninstall */}
-        <div className="rounded-lg border border-destructive/30 bg-card p-4">
-          <h3 className="mb-1 text-sm font-medium text-destructive">{t('resources.mcp.detail.uninstallTitle')}</h3>
-          <p className="mb-3 text-xs text-muted-foreground">
-            {t('resources.mcp.detail.uninstallDescription')}
-          </p>
+      {/* Uninstall */}
+      <SettingsCard>
+        <SettingsRow
+          label={<span className="text-destructive">{t('resources.mcp.detail.uninstallTitle')}</span>}
+          description={t('resources.mcp.detail.uninstallDescription')}
+        >
           {confirmDelete ? (
-            <div className="flex items-center gap-2">
+            <>
               <span className="text-xs text-muted-foreground">{t('resources.mcp.detail.confirmQuestion')}</span>
-              <Button size="sm" variant="destructive" onClick={handleDelete}>
-                <Trash2 className="mr-1 size-3" />
+              <Button size="sm" variant="destructive" className="h-7" onClick={handleDelete}>
+                <Trash2 className="size-3.5" />
                 {t('resources.mcp.detail.confirm')}
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>{t('common.cancel')}</Button>
-            </div>
+              <Button size="sm" variant="ghost" className="h-7" onClick={() => setConfirmDelete(false)}>{t('common.cancel')}</Button>
+            </>
           ) : (
-            <Button size="sm" variant="destructive" onClick={() => setConfirmDelete(true)}>
-              <Trash2 className="mr-1 size-3" />
+            <Button size="sm" variant="destructive" className="h-7" onClick={() => setConfirmDelete(true)}>
+              <Trash2 className="size-3.5" />
               {t('resources.mcp.detail.uninstall')}
             </Button>
           )}
-        </div>
-      </div>
+        </SettingsRow>
+      </SettingsCard>
     </div>
   )
 }

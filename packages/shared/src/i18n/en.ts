@@ -636,6 +636,12 @@ export type Messages = {
         cloud: string
         models: string
       }
+      groups: {
+        app: string
+        agent: string
+        capabilities: string
+        connections: string
+      }
       providers: {
         claude: string
         codex: string
@@ -811,7 +817,6 @@ export type Messages = {
     }
     remote: {
       pageTitle: string
-      pageSubtitle: string
       tabs: {
         thisComputer: string
         thisMac: string
@@ -940,7 +945,6 @@ export type Messages = {
     }
     appearance: {
       title: string
-      subtitle: string
       interface: string
       theme: {
         label: string
@@ -951,7 +955,6 @@ export type Messages = {
     }
     browser: {
       title: string
-      subtitle: string
       downloadDir: {
         label: string
         description: string
@@ -985,7 +988,6 @@ export type Messages = {
     }
     terminal: {
       title: string
-      subtitle: string
       rules: {
         title: string
         description: string
@@ -998,7 +1000,6 @@ export type Messages = {
     }
     computerUse: {
       title: string
-      subtitle: string
       enable: {
         label: string
         description: string
@@ -1064,7 +1065,6 @@ export type Messages = {
     }
     general: {
       title: string
-      subtitle: string
       privacy: string
       appearance: string
       updates: string
@@ -3719,7 +3719,6 @@ export type Messages = {
     }
     apps: {
       title: string
-      subtitle: string
       loading: string
       empty: string
       emptyHint: string
@@ -4576,6 +4575,12 @@ export const en: Messages = {
         cloud: 'Cloud',
         models: 'Models',
       },
+      groups: {
+        app: 'App',
+        agent: 'Agent',
+        capabilities: 'Capabilities',
+        connections: 'Connections',
+      },
       providers: {
         claude: 'Claude Code',
         codex: 'Codex',
@@ -4756,8 +4761,6 @@ export const en: Messages = {
     },
     remote: {
       pageTitle: 'Remote Control',
-      pageSubtitle:
-        'Let phones control this computer, or connect SuperOne to other machines as execution environments.',
       tabs: {
         thisComputer: 'Control This Computer',
         thisMac: 'Control This Mac',
@@ -4920,7 +4923,6 @@ export const en: Messages = {
     },
     appearance: {
       title: 'Appearance',
-      subtitle: 'Customize the look and feel of SuperOne',
       interface: 'Interface',
       theme: {
         label: 'Theme',
@@ -4931,7 +4933,6 @@ export const en: Messages = {
     },
     browser: {
       title: 'Browser',
-      subtitle: 'Configure the built-in browser and its automation tools',
       downloadDir: {
         label: 'Download Directory',
         description: 'Where files downloaded in the built-in browser are saved. The agent may override it per download.',
@@ -4974,7 +4975,6 @@ export const en: Messages = {
     },
     terminal: {
       title: 'Terminal',
-      subtitle: 'Manage what the agent may run in terminal tabs',
       rules: {
         title: 'Always-Allowed Commands',
         description: 'Commands you approved with "Always allow in this project". Each rule is a regular expression matched against the whole command; a matching command runs in a terminal tab without asking again. Remove a rule to be asked next time.',
@@ -4987,7 +4987,6 @@ export const en: Messages = {
     },
     computerUse: {
       title: 'Computer Use',
-      subtitle: 'Let the agent observe and control native desktop apps (fallback when browser/Bash tools are not enough)',
       enable: {
         label: 'Enable Computer Use',
         description: 'Expose computer_* tools to the agent. Off by default. Requires the SuperOne Computer Use helper app and macOS Accessibility + Screen Recording permissions.',
@@ -5053,7 +5052,6 @@ export const en: Messages = {
     },
     general: {
       title: 'General',
-      subtitle: 'Configure SuperOne application behavior',
       privacy: 'Privacy',
       appearance: 'Appearance',
       updates: 'Updates',
@@ -7725,7 +7723,6 @@ export const en: Messages = {
     },
     apps: {
       title: 'Mini Apps',
-      subtitle: 'Manage installed apps and tool preapproval settings',
       loading: 'Loading...',
       empty: 'No mini apps installed',
       emptyHint: 'Drop .s1app files in the sidebar to install',

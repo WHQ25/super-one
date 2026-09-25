@@ -26,6 +26,8 @@ import { DefaultProviderRow } from '@/components/providers/DefaultProviderRow'
 import { NotificationSettingsSection } from '@/components/settings/NotificationSettingsSection'
 import { SessionStorageSection } from '@/components/settings/SessionStorageSection'
 import { JevFastLoopSetting } from '@/components/settings/JevFastLoopSetting'
+import { settingsSelectTriggerClassName } from '@/components/settings/select-trigger-class'
+import { SettingsPage, SettingsRow, SettingsSection, settingsRowClassName } from '@/components/settings/SettingsSection'
 import type { Locale, PowerMode } from '@superone/shared/agent-types'
 
 export function AppSettingsPage() {
@@ -142,190 +144,151 @@ export function AppSettingsPage() {
 
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <div className="mb-6">
-        <h2 className="text-lg font-semibold">{t('settings.general.title')}</h2>
-        <p className="text-sm text-muted-foreground">{t('settings.general.subtitle')}</p>
-      </div>
-
-      <div className="space-y-4">
-        <div className="rounded-lg border border-border">
-          <div className="border-b border-border px-4 py-2">
-            <p className="text-xs font-medium text-muted-foreground">{t('settings.general.languageRegion')}</p>
-          </div>
-          <div className="flex items-center justify-between gap-4 p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.general.language.label')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.general.language.description')}
-              </p>
-            </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  disabled={savingLocale}
-                  className="flex min-w-32 items-center justify-between gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <span className="truncate">{languageLabel}</span>
-                  <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuItem onClick={() => handleLocaleSelect('en')} className="flex items-center justify-between">
-                  <span>{t('settings.general.language.english')}</span>
-                  {currentLocale === 'en' && <Check className="size-4 text-muted-foreground" />}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleLocaleSelect('zh')} className="flex items-center justify-between">
-                  <span>{t('settings.general.language.chinese')}</span>
-                  {currentLocale === 'zh' && <Check className="size-4 text-muted-foreground" />}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-border">
-          <div className="border-b border-border px-4 py-2">
-            <p className="text-xs font-medium text-muted-foreground">{t('settings.general.updates')}</p>
-          </div>
-          <UpdateCheckRow version={appVersion} />
-          {appVariant === 'stable' && alphaDownloadUrl !== '' && (
-            <div className="flex items-center justify-between gap-4 border-t border-border p-4">
-              <div className="min-w-0">
-                <p className="text-sm font-medium">{t('settings.general.alphaBuild.label')}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {t('settings.general.alphaBuild.description')}
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                onClick={() => void window.app.openExternalLink(alphaDownloadUrl)}
+    <SettingsPage title={t('settings.general.title')}>
+      <SettingsSection title={t('settings.general.languageRegion')}>
+        <SettingsRow
+          label={t('settings.general.language.label')}
+          description={t('settings.general.language.description')}
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                disabled={savingLocale}
+                className={cn(settingsSelectTriggerClassName, 'min-w-32 justify-between')}
               >
-                {t('settings.general.alphaBuild.action')}
-              </Button>
-            </div>
-          )}
-        </div>
+                <span className="truncate">{languageLabel}</span>
+                <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuItem onClick={() => handleLocaleSelect('en')} className="flex items-center justify-between">
+                <span>{t('settings.general.language.english')}</span>
+                {currentLocale === 'en' && <Check className="size-4 text-muted-foreground" />}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleLocaleSelect('zh')} className="flex items-center justify-between">
+                <span>{t('settings.general.language.chinese')}</span>
+                {currentLocale === 'zh' && <Check className="size-4 text-muted-foreground" />}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </SettingsRow>
+      </SettingsSection>
 
-        <div className="rounded-lg border border-border">
-          <div className="border-b border-border px-4 py-2">
-            <p className="text-xs font-medium text-muted-foreground">{t('settings.general.media')}</p>
-          </div>
-          <DefaultProviderRow
-            consumer="media:image"
-            title={t('settings.general.imageProvider.label')}
-            description={t('settings.general.imageProvider.description')}
-            fallback={<span className="truncate text-sm text-muted-foreground">{t('settings.general.imageProvider.auto')}</span>}
+      <SettingsSection title={t('settings.general.updates')}>
+        <UpdateCheckRow version={appVersion} />
+        {appVariant === 'stable' && alphaDownloadUrl !== '' && (
+          <SettingsRow
+            label={t('settings.general.alphaBuild.label')}
+            description={t('settings.general.alphaBuild.description')}
+          >
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7"
+              onClick={() => void window.app.openExternalLink(alphaDownloadUrl)}
+            >
+              {t('settings.general.alphaBuild.action')}
+            </Button>
+          </SettingsRow>
+        )}
+      </SettingsSection>
+
+      <SettingsSection title={t('settings.general.media')}>
+        <DefaultProviderRow
+          consumer="media:image"
+          title={t('settings.general.imageProvider.label')}
+          description={t('settings.general.imageProvider.description')}
+          fallback={<span className="truncate text-sm text-muted-foreground">{t('settings.general.imageProvider.auto')}</span>}
+        />
+        <DefaultProviderRow
+          consumer="media:video"
+          title={t('settings.general.videoProvider.label')}
+          description={t('settings.general.videoProvider.description')}
+          fallback={<span className="truncate text-sm text-muted-foreground">{t('settings.general.videoProvider.auto')}</span>}
+        />
+      </SettingsSection>
+
+      <NotificationSettingsSection />
+
+      <SessionStorageSection />
+
+      <SettingsSection title={t('settings.general.privacy')}>
+        <SettingsRow
+          label={t('settings.general.analytics.label')}
+          description={t('settings.general.analytics.description')}
+        >
+          <Switch
+            checked={analyticsEnabled}
+            onCheckedChange={handleAnalyticsToggle}
+            disabled={loading}
           />
-          <DefaultProviderRow
-            consumer="media:video"
-            title={t('settings.general.videoProvider.label')}
-            description={t('settings.general.videoProvider.description')}
-            fallback={<span className="truncate text-sm text-muted-foreground">{t('settings.general.videoProvider.auto')}</span>}
-          />
-        </div>
+        </SettingsRow>
+      </SettingsSection>
 
-        <NotificationSettingsSection />
-
-        <SessionStorageSection />
-
-        <div className="rounded-lg border border-border">
-          <div className="border-b border-border px-4 py-2">
-            <p className="text-xs font-medium text-muted-foreground">{t('settings.general.privacy')}</p>
-          </div>
-          <div className="flex items-center justify-between gap-4 p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.general.analytics.label')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.general.analytics.description')}
-              </p>
-            </div>
-            <Switch
-              checked={analyticsEnabled}
-              onCheckedChange={handleAnalyticsToggle}
-              disabled={loading}
-            />
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-border">
-          <div className="border-b border-border px-4 py-2">
-            <p className="text-xs font-medium text-muted-foreground">{t('settings.general.power')}</p>
-          </div>
-          <div role="radiogroup" aria-label={t('settings.general.powerMode.label')}>
-            {powerModeOptions.map((option, index) => {
-              const selected = powerMode === option.value
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  disabled={loading || savingPowerMode}
-                  onClick={() => {
-                    if (selected) return
-                    if (option.value === 'lid-closed-on-ac') setConfirmPowerMode(true)
-                    else void savePowerMode(option.value)
-                  }}
+      <SettingsSection title={t('settings.general.power')}>
+        <div
+          role="radiogroup"
+          aria-label={t('settings.general.powerMode.label')}
+          className="rounded-[inherit]"
+        >
+          {powerModeOptions.map((option) => {
+            const selected = powerMode === option.value
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                disabled={loading || savingPowerMode}
+                onClick={() => {
+                  if (selected) return
+                  if (option.value === 'lid-closed-on-ac') setConfirmPowerMode(true)
+                  else void savePowerMode(option.value)
+                }}
+                className={cn(
+                  settingsRowClassName,
+                  'flex w-full items-center justify-between gap-4 text-left transition-colors hover:bg-muted/60 disabled:cursor-not-allowed disabled:opacity-60',
+                )}
+              >
+                <div className="min-w-0">
+                  <p className="text-sm">{option.label}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{option.description}</p>
+                </div>
+                <span
                   className={cn(
-                    'flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-60',
-                    index > 0 && 'border-t border-border',
-                    selected && 'bg-muted/40',
+                    'flex size-4 shrink-0 items-center justify-center rounded-full border',
+                    selected ? 'border-[5px] border-primary' : 'border-muted-foreground/50',
                   )}
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">{option.label}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{option.description}</p>
-                  </div>
-                  <span
-                    className={cn(
-                      'flex size-4 shrink-0 items-center justify-center rounded-full border',
-                      selected ? 'border-primary' : 'border-muted-foreground/50',
-                    )}
-                  >
-                    {selected && <span className="size-2 rounded-full bg-primary" />}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
+                />
+              </button>
+            )
+          })}
         </div>
+      </SettingsSection>
 
-        <div className="rounded-lg border border-border">
-          <div className="border-b border-border px-4 py-2">
-            <p className="text-xs font-medium text-muted-foreground">{t('settings.general.experimental')}</p>
-          </div>
-          <div className="flex items-center justify-between gap-4 p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.general.experimentalClaudeOpenAiChat.label')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.general.experimentalClaudeOpenAiChat.description')}
-              </p>
-            </div>
-            <Switch
-              checked={experimentalClaudeOpenAiChatEnabled}
-              onCheckedChange={(v) => void handleClaudeOpenAiChatToggle(v)}
-              disabled={loading}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-4 border-t border-border p-4">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{t('settings.general.experimentalRemoteNodes.label')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {t('settings.general.experimentalRemoteNodes.description')}
-              </p>
-            </div>
-            <Switch
-              checked={experimentalRemoteNodesEnabled}
-              onCheckedChange={(v) => void handleRemoteNodesToggle(v)}
-              disabled={loading}
-            />
-          </div>
-          <JevFastLoopSetting />
-        </div>
-      </div>
+      <SettingsSection title={t('settings.general.experimental')}>
+        <SettingsRow
+          label={t('settings.general.experimentalClaudeOpenAiChat.label')}
+          description={t('settings.general.experimentalClaudeOpenAiChat.description')}
+        >
+          <Switch
+            checked={experimentalClaudeOpenAiChatEnabled}
+            onCheckedChange={(v) => void handleClaudeOpenAiChatToggle(v)}
+            disabled={loading}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.general.experimentalRemoteNodes.label')}
+          description={t('settings.general.experimentalRemoteNodes.description')}
+        >
+          <Switch
+            checked={experimentalRemoteNodesEnabled}
+            onCheckedChange={(v) => void handleRemoteNodesToggle(v)}
+            disabled={loading}
+          />
+        </SettingsRow>
+        <JevFastLoopSetting />
+      </SettingsSection>
       <Dialog
         open={confirmPowerMode}
         onOpenChange={(open) => {
@@ -367,7 +330,7 @@ export function AppSettingsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </SettingsPage>
   )
 }
 
@@ -409,39 +372,13 @@ function UpdateCheckRow({ version }: { version: string }) {
                 : t('settings.general.checkUpdates.description', { version })
 
   return (
-    <div className="border-t border-border p-4">
-      <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-sm font-medium">{t('settings.general.checkUpdates.label')}</p>
-          <p className={cn('mt-0.5 text-xs', updateStatus === 'error' ? 'text-error' : 'text-muted-foreground')}>
-            {description}
-          </p>
-        </div>
-        {ready ? (
-          <Button
-            size="sm"
-            className="shrink-0"
-            onClick={import.meta.env.DEV ? dismissUpdate : installUpdate}
-          >
-            {t('shell.update.restart')}
-          </Button>
-        ) : available ? (
-          <Button size="sm" className="shrink-0" onClick={downloadUpdate}>
-            {t('shell.update.available')}
-          </Button>
-        ) : (
-          <button
-            disabled={checking || downloading}
-            onClick={() => void window.app.checkForUpdates()}
-            className="flex shrink-0 items-center gap-2 rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <RefreshCw className={cn('size-3.5 shrink-0 text-muted-foreground', checking && 'animate-spin')} />
-            <span>{t('settings.general.checkUpdates.action')}</span>
-          </button>
-        )}
-      </div>
-      {downloading && (
-        <div className="mt-3 h-1 overflow-hidden rounded-full bg-muted">
+    <SettingsRow
+      label={t('settings.general.checkUpdates.label')}
+      description={(
+        <span className={cn(updateStatus === 'error' && 'text-error')}>{description}</span>
+      )}
+      footer={downloading && (
+        <div className="h-1 overflow-hidden rounded-full bg-muted">
           {/* No progress events arrive while electron-updater fetches blockmaps, so an
               0%-wide bar would read as a stalled download — pulse the full bar instead. */}
           <div
@@ -453,6 +390,31 @@ function UpdateCheckRow({ version }: { version: string }) {
           />
         </div>
       )}
-    </div>
+    >
+      {ready ? (
+        <Button
+          size="sm"
+          className="h-7"
+          onClick={import.meta.env.DEV ? dismissUpdate : installUpdate}
+        >
+          {t('shell.update.restart')}
+        </Button>
+      ) : available ? (
+        <Button size="sm" className="h-7" onClick={downloadUpdate}>
+          {t('shell.update.available')}
+        </Button>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7"
+          disabled={checking || downloading}
+          onClick={() => void window.app.checkForUpdates()}
+        >
+          <RefreshCw className={cn('size-3.5 text-muted-foreground', checking && 'animate-spin')} />
+          {t('settings.general.checkUpdates.action')}
+        </Button>
+      )}
+    </SettingsRow>
   )
 }

@@ -1,14 +1,15 @@
 /**
  * Shared User / Project scope switch for harness resource settings pages.
- * Uses the same Tabs sliding-pill switcher as Harness config tabs above
- * (min-h-10 / py-2). Project picker stays mounted to avoid toolbar height jump.
+ * A segmented control rather than Tabs: it switches the page's data source, not
+ * between tab panels. Project picker stays mounted to avoid toolbar height jump.
  */
 
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { cn } from '@superone/ui/lib/utils'
 import { ProjectSelector } from '@/components/coding/ProjectSelector'
+import { SettingsSegmentedControl } from './SettingsSegmentedControl'
+import { settingsSelectTriggerClassName } from './select-trigger-class'
 
 export type ResourceScopeView = 'user' | 'project'
 
@@ -31,25 +32,20 @@ export function ResourceScopeToolbar({
   const { t } = useTranslation()
 
   return (
-    <div className={cn('mb-6 flex items-center justify-between gap-3', className)}>
-      <Tabs
+    <div className={cn('mb-4 flex items-center justify-between gap-3', className)}>
+      <SettingsSegmentedControl
         value={scope}
-        onValueChange={(v) => onScopeChange(v as ResourceScopeView)}
-      >
-        <TabsList className="h-auto min-h-10 w-auto p-1">
-          {availableScopes.map((availableScope) => (
-            <TabsTrigger key={availableScope} value={availableScope} className="px-3 py-2 text-xs">
-              {t(availableScope === 'user' ? 'resources.sectionUser' : 'resources.sectionProject')}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+        onChange={onScopeChange}
+        label={`${t('resources.sectionUser')} / ${t('resources.sectionProject')}`}
+        options={availableScopes.map((availableScope) => ({
+          value: availableScope,
+          label: t(availableScope === 'user' ? 'resources.sectionUser' : 'resources.sectionProject'),
+        }))}
+      />
 
       <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
         {actions}
-        <div className="shrink-0">
-          <ProjectSelector />
-        </div>
+        <ProjectSelector triggerClassName={cn(settingsSelectTriggerClassName, 'gap-2 py-0')} />
       </div>
     </div>
   )

@@ -15,6 +15,9 @@ import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { credentialsForConsumer, providerDisplayForCredential } from '@/lib/provider-resolve'
 import { ProviderLabel } from '@/components/ProviderLabel'
+import { SettingsRow } from '@/components/settings/SettingsSection'
+import { settingsSelectTriggerClassName } from '@/components/settings/select-trigger-class'
+import { cn } from '@superone/ui/lib/utils'
 
 export function ProviderOptionLabel({ brandKey, name, keyName, icon }: { brandKey?: string | null; name?: string; keyName?: string; icon?: string | null }) {
   return (
@@ -77,14 +80,10 @@ export function DefaultProviderRow({
   }
 
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-border p-4 last:border-b-0">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium break-words">{title}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground break-words">{description}</p>
-      </div>
+    <SettingsRow label={title} description={description} className="break-words">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="flex min-w-0 max-w-64 shrink-0 items-center gap-2 overflow-hidden rounded-md border border-border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-muted">
+          <button className={cn(settingsSelectTriggerClassName, 'max-w-64 shrink-0 gap-2 overflow-hidden')}>
             <span className="min-w-0 flex-1 overflow-hidden">
               {current ? <ProviderOptionLabel {...optionProps(current)} keyName={current.name} /> : fallback}
             </span>
@@ -134,6 +133,6 @@ export function DefaultProviderRow({
           })}
         </DropdownMenuContent>
       </DropdownMenu>
-    </div>
+    </SettingsRow>
   )
 }

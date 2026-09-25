@@ -106,7 +106,7 @@ describe('AddServerPanel — bundle tab', () => {
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Bundle (.mcpb)' }))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Bundle (.mcpb)' }))
     const dropZone = screen.getByText('Install from .mcpb Bundle').closest('button')!
     dropMcpbFile(dropZone, '/tmp/demo.mcpb')
 
@@ -131,7 +131,7 @@ describe('AddServerPanel — bundle tab', () => {
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Bundle (.mcpb)' }))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Bundle (.mcpb)' }))
     const dropZone = screen.getByText('Install from .mcpb Bundle').closest('button')!
     dropMcpbFile(dropZone, '/tmp/demo.mcpb')
 
@@ -169,7 +169,7 @@ describe('AddServerPanel — bundle tab', () => {
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Bundle (.mcpb)' }))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Bundle (.mcpb)' }))
     const dropZone = screen.getByText('Install from .mcpb Bundle').closest('button')!
     dropMcpbFile(dropZone, '/tmp/bad.mcpb')
 
@@ -190,13 +190,13 @@ describe('AddServerPanel — bundle tab', () => {
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Bundle (.mcpb)' }))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Bundle (.mcpb)' }))
     const dropZone = screen.getByText('Install from .mcpb Bundle').closest('button')!
     dropMcpbFile(dropZone, '/tmp/demo.mcpb')
     await screen.findByText('Demo Server')
 
-    expect(screen.getByRole('button', { name: 'project' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'user' })).not.toBeDisabled()
+    expect(screen.getByRole('tab', { name: 'project' })).toBeDisabled()
+    expect(screen.getByRole('tab', { name: 'user' })).not.toBeDisabled()
   })
 })
 
@@ -215,7 +215,7 @@ describe('AddServerPanel — manual tab', () => {
     expect(screen.queryByRole('button', { name: 'Bundle (.mcpb)' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'project' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'sse' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'http' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'http' })).toBeInTheDocument()
 
     fireEvent.change(screen.getByPlaceholderText('my-server'), { target: { value: 'bad.name' } })
     fireEvent.change(screen.getByPlaceholderText('npx'), { target: { value: 'node' } })
@@ -237,7 +237,7 @@ describe('AddServerPanel — manual tab', () => {
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Manual' }))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Manual' }))
     fireEvent.change(screen.getByPlaceholderText('my-server'), { target: { value: 'fs' } })
     fireEvent.change(screen.getByPlaceholderText('npx'), { target: { value: 'npx' } })
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
@@ -262,10 +262,10 @@ describe('AddServerPanel — manual tab', () => {
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Manual' }))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Manual' }))
     fireEvent.change(screen.getByPlaceholderText('my-server'), { target: { value: 'kept' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Bundle (.mcpb)' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Manual' }))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Bundle (.mcpb)' }))
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Manual' }))
     expect((screen.getByPlaceholderText('my-server') as HTMLInputElement).value).toBe('kept')
   })
 })

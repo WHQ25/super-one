@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState } from 'react'
 import { PairingCodeConfirm } from './PairingCodeConfirm'
+import { SettingsCard, settingsRowClassName } from './settings/SettingsSection'
 
 const meta: Meta<typeof PairingCodeConfirm> = {
   title: 'Settings/PairingCodeConfirm',
@@ -20,18 +21,20 @@ function Playground(props: {
   const [deviceName, setDeviceName] = useState(props.deviceName)
   const [code, setCode] = useState(props.code)
   return (
-    <div className="max-w-md rounded-lg border border-border p-4">
-      <PairingCodeConfirm
-        deviceName={deviceName}
-        onDeviceNameChange={setDeviceName}
-        code={code}
-        onCodeChange={setCode}
-        error={props.error ?? ''}
-        confirming={props.confirming ?? false}
-        onConfirm={() => {}}
-        onCancel={() => {}}
-      />
-    </div>
+    <SettingsCard className="max-w-md">
+      <div className={settingsRowClassName}>
+        <PairingCodeConfirm
+          deviceName={deviceName}
+          onDeviceNameChange={setDeviceName}
+          code={code}
+          onCodeChange={setCode}
+          error={props.error ?? ''}
+          confirming={props.confirming ?? false}
+          onConfirm={() => {}}
+          onCancel={() => {}}
+        />
+      </div>
+    </SettingsCard>
   )
 }
 

@@ -44,13 +44,6 @@ const meta: Meta<typeof BrowserSettingsPage> = {
   title: 'Settings/Browser',
   component: BrowserSettingsPage,
   parameters: { layout: 'fullscreen' },
-  decorators: [
-    (Story) => (
-      <div className="mx-auto max-w-5xl p-8">
-        <Story />
-      </div>
-    ),
-  ],
 }
 
 export default meta
@@ -66,24 +59,46 @@ export const WebMcpNoGrants: Story = {
   decorators: [seed({ webmcpEnabled: true })],
 }
 
+const withGrants = seed({
+  webmcpEnabled: true,
+  webmcpTrustedOrigins: [
+    grant('https://shop.example.com', ['add_to_cart', 'search_catalog', 'checkout']),
+    grant('https://docs.example.com', ['get_page_outline']),
+    grant('https://a-very-long-subdomain-name.internal.corp.example.com:8443', ['run_report', 'export_csv']),
+  ],
+})
+
 /**
  * The revoke surface. Each row is one origin with the number of tool fingerprints pinned at
  * trust time; the trash button drops the origin, which forces a fresh trust prompt next visit.
  */
 export const WebMcpWithGrants: Story = {
-  decorators: [
-    seed({
-      webmcpEnabled: true,
-      webmcpTrustedOrigins: [
-        grant('https://shop.example.com', ['add_to_cart', 'search_catalog', 'checkout']),
-        grant('https://docs.example.com', ['get_page_outline']),
-        grant('https://a-very-long-subdomain-name.internal.corp.example.com:8443', ['run_report', 'export_csv']),
-      ],
-    }),
-  ],
+  decorators: [withGrants],
 }
 
 /** CDP off — the experimental rows below WebMCP go disabled, but the WebMCP panel does not. */
 export const CdpDisabled: Story = {
   decorators: [seed({ cdpEnabled: false, webmcpEnabled: true })],
+}
+
+/** A configured folder shows its path and a reset button back to the OS Downloads folder. */
+export const CustomDownloadDir: Story = {
+  decorators: [seed({ browserDownloadDir: '/Users/dev/Library/Mobile Documents/com~apple~CloudDocs/Downloads/SuperOne Browser' })],
+}
+
+export const Dark: Story = {
+  decorators: [withGrants],
+  globals: { theme: 'dark' },
+}
+
+/** Long origins and paths truncate; controls keep their width. */
+export const Narrow: Story = {
+  decorators: [
+    withGrants,
+    (Story) => (
+      <div className="w-[420px]">
+        <Story />
+      </div>
+    ),
+  ],
 }

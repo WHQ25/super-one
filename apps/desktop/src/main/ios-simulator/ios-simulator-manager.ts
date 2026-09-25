@@ -82,7 +82,7 @@ export interface IosSimulatorNativePort {
 
 /** Loads Apple's own device artwork from the local Xcode install. */
 export interface IosSimulatorChromePort {
-  load(deviceTypeIdentifier: string, bundlePath: string): Promise<IosSimulatorChrome | null>
+  load(deviceTypeIdentifier: string, bundlePath: string, xcodeVersion: string | null): Promise<IosSimulatorChrome | null>
 }
 
 interface ManagerOptions {
@@ -300,7 +300,8 @@ export class IosSimulatorManager {
     if (!device?.deviceTypeIdentifier) return null
     const bundlePath = (await this.simctl.listDeviceTypeBundles()).get(device.deviceTypeIdentifier)
     if (!bundlePath) return null
-    return this.chromeLoader.load(device.deviceTypeIdentifier, bundlePath)
+    const { xcodeVersion } = await this.status()
+    return this.chromeLoader.load(device.deviceTypeIdentifier, bundlePath, xcodeVersion)
   }
 
   async createDevice(request: IosSimulatorCreateRequest): Promise<IosSimulatorDevice> {

@@ -221,6 +221,37 @@ describe('IosSimulatorChromeLoader', () => {
     expect(chrome?.slices.topLeft.startsWith('data:image/png;base64,')).toBe(true)
   })
 
+  it('reads Xcode 27 screen dimensions from the integrated display capabilities', async () => {
+    const shared = deps({
+      readPlist: vi.fn(async (path: string) => path.endsWith('capabilities.plist')
+        ? { capabilities: { displays: [
+          { displayType: 'tvOut', width: 720, height: 480, scale: 1 },
+          {
+            displayType: 'integrated',
+            chromeIdentifier: 'com.apple.dt.devicekit.chrome.phone11',
+            framebufferMaskIdentifier: 'NEW-MASK',
+            width: 1206, height: 2622, scale: 3,
+          },
+        ] } }
+        : { chromeIdentifier: 'com.apple.dt.devicekit.chrome.phone11', framebufferMask: 'OLD-MASK' }),
+    })
+    const loader = new IosSimulatorChromeLoader('/tmp/scratch', shared)
+
+    const chrome = await loader.load('type-xcode-27', '/bundle', 'Xcode 27.0')
+
+    expect(chrome?.screen).toEqual({ x: 18, y: 18, width: 402, height: 874 })
+    expect(shared.rasterize).toHaveBeenCalledWith('/bundle/Contents/Resources/NEW-MASK.pdf', 804, expect.any(String))
+    expect(shared.readPlist).toHaveBeenCalledWith('/bundle/Contents/Resources/capabilities.plist')
+  })
+
+  it('uses profile dimensions on older Xcode without reading capabilities', async () => {
+    const shared = deps()
+    const loader = new IosSimulatorChromeLoader('/tmp/scratch', shared)
+
+    await expect(loader.load('type-xcode-26', '/bundle', 'Xcode 26.4')).resolves.not.toBeNull()
+    expect(shared.readPlist).toHaveBeenCalledTimes(1)
+  })
+
   it('carries the margin the buttons protrude into', async () => {
     const loader = new IosSimulatorChromeLoader('/tmp/scratch', deps())
 

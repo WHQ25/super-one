@@ -144,6 +144,24 @@ function setup(initial = device()) {
 }
 
 describe('IosSimulatorManager', () => {
+  it('passes the selected Xcode version to the device chrome loader', async () => {
+    const { simctl, nativeFactory } = setup(device({
+      deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro-Max',
+    }))
+    simctl.status.mockResolvedValue({ ...status, xcodeVersion: 'Xcode 27.0' })
+    simctl.listDeviceTypeBundles.mockResolvedValue(new Map([
+      ['com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro-Max', '/device-type'],
+    ]))
+    const chrome = { load: vi.fn(async () => null) }
+    const manager = new IosSimulatorManager({ simctl, chrome, nativeFactory, helperProbe: async () => null })
+
+    await manager.chrome('device-a')
+
+    expect(chrome.load).toHaveBeenCalledWith(
+      'com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro-Max', '/device-type', 'Xcode 27.0',
+    )
+  })
+
   it('boots, attaches the native helper, and marks only its own device', async () => {
     const { simctl, native, nativeFactory } = setup()
     const manager = new IosSimulatorManager({

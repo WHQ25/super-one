@@ -50,6 +50,19 @@ interface DeviceProfile {
   mainScreenScale?: unknown
 }
 
+interface DeviceCapabilities {
+  capabilities?: {
+    displays?: Array<{
+      displayType?: unknown
+      chromeIdentifier?: unknown
+      framebufferMaskIdentifier?: unknown
+      width?: unknown
+      height?: unknown
+      scale?: unknown
+    }>
+  }
+}
+
 interface Size {
   width: number
   height: number
@@ -95,6 +108,57 @@ export function parseMediaBox(pdf: Buffer): Size | null {
 
 function positiveNumber(value: unknown, fallback = 0): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback
+}
+
+function xcodeMajorVersion(version: string | null): number | null {
+  const match = /^Xcode\s+(\d+)(?:\.|$)/.exec(version ?? '')
+  return match ? Number(match[1]) : null
+}
+
+async function deviceDisplay(
+  resources: string,
+  profile: DeviceProfile,
+  xcodeVersion: string | null,
+  read: ChromeLoaderDeps['readPlist'],
+): Promise<{ chromeIdentifier: string; framebufferMask: string; screen: Size }> {
+  const legacyScale = profile.mainScreenScale === undefined ? 1 : profile.mainScreenScale
+  const legacy = typeof profile.chromeIdentifier === 'string'
+    && typeof profile.framebufferMask === 'string'
+    && typeof profile.mainScreenWidth === 'number' && Number.isFinite(profile.mainScreenWidth) && profile.mainScreenWidth > 0
+    && typeof profile.mainScreenHeight === 'number' && Number.isFinite(profile.mainScreenHeight) && profile.mainScreenHeight > 0
+    && typeof legacyScale === 'number' && Number.isFinite(legacyScale) && legacyScale > 0
+    ? {
+        chromeIdentifier: profile.chromeIdentifier,
+        framebufferMask: profile.framebufferMask,
+        screen: {
+          width: profile.mainScreenWidth / legacyScale,
+          height: profile.mainScreenHeight / legacyScale,
+        },
+      }
+    : null
+  if ((xcodeMajorVersion(xcodeVersion) ?? 0) < 27 && legacy) return legacy
+
+  // Xcode 27 moved display dimensions from profile.plist into capabilities.plist.
+  // Keep the legacy path for older Xcode and for device types with old metadata.
+  const capabilities = await read<DeviceCapabilities>(join(resources, 'capabilities.plist'))
+    .catch(() => null)
+  const displays = capabilities?.capabilities?.displays
+  const display = displays?.find((entry) => entry.displayType === 'integrated'
+    && entry.chromeIdentifier === profile.chromeIdentifier)
+    ?? displays?.find((entry) => entry.displayType === 'integrated')
+  const width = display?.width
+  const height = display?.height
+  const scale = display?.scale
+  const chromeIdentifier = display?.chromeIdentifier ?? profile.chromeIdentifier
+  const framebufferMask = display?.framebufferMaskIdentifier ?? profile.framebufferMask
+  if (typeof chromeIdentifier === 'string' && typeof framebufferMask === 'string'
+    && typeof width === 'number' && Number.isFinite(width) && width > 0
+    && typeof height === 'number' && Number.isFinite(height) && height > 0
+    && typeof scale === 'number' && Number.isFinite(scale) && scale > 0) {
+    return { chromeIdentifier, framebufferMask, screen: { width: width / scale, height: height / scale } }
+  }
+  if (legacy) return legacy
+  throw new Error(`No usable integrated display metadata for ${resources}`)
 }
 
 /**
@@ -266,11 +330,11 @@ export class IosSimulatorChromeLoader {
   }
 
   /** Resolves to null whenever the artwork is unavailable; the panel falls back to CSS. */
-  load(deviceTypeIdentifier: string, deviceTypeBundlePath: string): Promise<IosSimulatorChrome | null> {
+  load(deviceTypeIdentifier: string, deviceTypeBundlePath: string, xcodeVersion: string | null = null): Promise<IosSimulatorChrome | null> {
     // The catch lives inside the compute so an unreadable bundle caches its null the
     // same way a model with no artwork does — one failed `sips` run per Xcode, not
     // one per panel remount.
-    return this.artwork.get(deviceTypeIdentifier, () => this.read(deviceTypeBundlePath)
+    return this.artwork.get(deviceTypeIdentifier, () => this.read(deviceTypeBundlePath, xcodeVersion)
       .catch((error: unknown) => {
         this.onError?.(deviceTypeIdentifier, error)
         return null
@@ -302,19 +366,13 @@ export class IosSimulatorChromeLoader {
     return { size, image: dataUrl(png) }
   }
 
-  private async read(bundlePath: string): Promise<IosSimulatorChrome | null> {
+  private async read(bundlePath: string, xcodeVersion: string | null): Promise<IosSimulatorChrome | null> {
     const resources = join(bundlePath, 'Contents', 'Resources')
     const profile = await this.deps.readPlist<DeviceProfile>(join(resources, 'profile.plist'))
-    if (
-      typeof profile.chromeIdentifier !== 'string'
-      || typeof profile.framebufferMask !== 'string'
-      || typeof profile.mainScreenWidth !== 'number'
-      || typeof profile.mainScreenHeight !== 'number'
-    ) throw new Error(`profile.plist is missing chrome fields for ${bundlePath}`)
-    const scale = typeof profile.mainScreenScale === 'number' ? profile.mainScreenScale : 1
+    const display = await deviceDisplay(resources, profile, xcodeVersion, this.deps.readPlist)
 
-    const bundleName = chromeBundleName(profile.chromeIdentifier)
-    if (!bundleName) throw new Error(`Unusable chrome identifier ${profile.chromeIdentifier}`)
+    const bundleName = chromeBundleName(display.chromeIdentifier)
+    if (!bundleName) throw new Error(`Unusable chrome identifier ${display.chromeIdentifier}`)
     const chromeResources = join(DEVICE_KIT_CHROME, `${bundleName}.devicechrome`, 'Contents', 'Resources')
     const chrome = JSON.parse(
       (await this.deps.readFile(join(chromeResources, 'chrome.json'))).toString('utf8'),
@@ -350,14 +408,14 @@ export class IosSimulatorChromeLoader {
     // Corners are square by construction, and all four are the same size.
     const corner = sliceArt.find((entry) => entry![0] === 'topLeft')![1].size.width
 
-    const screen = { width: profile.mainScreenWidth / scale, height: profile.mainScreenHeight / scale }
+    const screen = display.screen
     const body = deviceRect(screen, sizing)
 
-    if (!isSafeChromeAssetName(profile.framebufferMask)) {
-      throw new Error(`Unusable framebuffer mask ${profile.framebufferMask}`)
+    if (!isSafeChromeAssetName(display.framebufferMask)) {
+      throw new Error(`Unusable framebuffer mask ${display.framebufferMask}`)
     }
-    const maskPath = join(resources, `${profile.framebufferMask}.pdf`)
-    const maskOutPath = join(this.scratchDir, `${profile.framebufferMask}-mask.png`)
+    const maskPath = join(resources, `${display.framebufferMask}.pdf`)
+    const maskOutPath = join(this.scratchDir, `${display.framebufferMask}-mask.png`)
     const maskPng = await this.deps
       .rasterize(maskPath, screen.width * RASTER_SCALE, maskOutPath)
       .finally(() => this.deps.removeFile(maskOutPath))
@@ -383,7 +441,7 @@ export class IosSimulatorChromeLoader {
     const rawPadding = images.devicePadding as Record<string, unknown> | undefined
     const buttons = parseChromeButtons(chrome, buttonArt)
     return {
-      identifier: typeof chrome.identifier === 'string' ? chrome.identifier : profile.chromeIdentifier,
+      identifier: typeof chrome.identifier === 'string' ? chrome.identifier : display.chromeIdentifier,
       slices,
       corner,
       screenMask: dataUrl(maskPng),

@@ -1,4 +1,4 @@
-import type { ChatMessage as ChatMessageType, ContentBlock, AgentStatus, ImageGenerationItem, VideoGenerationItem, ImageAttachment } from '@superone/shared/agent-types'
+import type { ChatMessage as ChatMessageType, AgentStatus, ImageGenerationItem, VideoGenerationItem, ImageAttachment } from '@superone/shared/agent-types'
 import { useState, useEffect, useMemo, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
@@ -46,7 +46,7 @@ import { useIsDark } from '@/hooks/use-is-dark'
 import type { ChatMessageContext } from '@superone/shared/agent-types'
 import { TurnSummaryAboveFooter } from './presenters/ChatMessageIndicators'
 import { DurationFooter } from './ChatMessageFooter'
-import { collaborationLabelKey } from '@superone/chat-view/presenters/collaboration-label'
+import { collaborationLabelKey, isModelOnlyWakeMessage } from '@superone/chat-view/presenters/collaboration-label'
 import { goalMessageObjective } from '@superone/shared/session-goal'
 import { parseRealtimeDelegation } from '@superone/shared/realtime-timeline'
 import { RealtimeDelegationBody } from '@superone/chat-view/presenters/RealtimeDelegationBody'
@@ -261,12 +261,6 @@ function MessageContextChips({ contexts }: { contexts: ChatMessageContext[] }) {
 }
 
 
-/** Host wake for session_collab mailbox — agent sees full prompt; UI shows a compact inbox row. */
-function isCollabMailboxWakeText(text: string): boolean {
-  // Prefer the host template phrase; tool names alone must not hide normal user questions.
-  return /collaboration mailbox message is ready/i.test(text)
-}
-
 export const ChatMessage = memo(function ChatMessage({
   message,
   sessionStatus,
@@ -289,16 +283,6 @@ export const ChatMessage = memo(function ChatMessage({
   // Parent-handed launch task: right-aligned markdown bubble (see CollabTaskBubble).
   // Mailbox traffic keeps the compact left-aligned label + plain-text bubble below.
   const isInitialTask = isCollab && message.metadata?.collaboration?.kind === 'initial_task'
-  // Require task-notification provenance so asking about session_collab_* tools
-  // in a normal user bubble is never rewritten as a mailbox row.
-  const isMailboxWake = isUser
-    && message.metadata?.source === 'task-notification'
-    && isCollabMailboxWakeText(
-      message.content
-        .filter((b): b is Extract<ContentBlock, { type: 'text' }> => b.type === 'text')
-        .map((b) => b.text)
-        .join('\n'),
-    )
   // Copy text is only needed once the turn settles (the copy button is hidden while streaming),
   // so skip deriving the full concatenated text on every delta of the live message.
   const assistantCopyText = isStreaming || hideCopyActions ? undefined : getAssistantCopyText(message)
@@ -442,6 +426,8 @@ export const ChatMessage = memo(function ChatMessage({
     </div>
   ) : undefined
 
+  if (isModelOnlyWakeMessage(message)) return null
+
   return (
     <ChatMessagePresenter
       isUser={isUser}
@@ -450,7 +436,6 @@ export const ChatMessage = memo(function ChatMessage({
       goalLabel={goalObjective ? t('chat.goal.label') : undefined}
       voiceLabel={delegation ? t('chat.realtimeVoice.delegation.label') : undefined}
       onVoiceLabelClick={delegation ? jumpToVoiceTurn : undefined}
-      mailboxLabel={isMailboxWake ? t('chat.collaboration.mailboxReady') : undefined}
       initialTask={isInitialTask
         ? <CollabTaskBubble text={userText} from={message.metadata?.collaboration} />
         : undefined}

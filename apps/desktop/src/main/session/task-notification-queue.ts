@@ -1,4 +1,5 @@
 import type { SendMessageRequest } from '@superone/shared/agent-types'
+import { isModelOnlyHostWake } from '@superone/shared/host-wake'
 
 /** Drop oldest when the queue grows past this (mailbox wakes + download settles). */
 export const TASK_NOTIFICATION_MAX_ITEMS = 32
@@ -219,8 +220,7 @@ export function taskNotificationDisplayText(content: string): string {
     .trim()
 }
 
-/** Mailbox wakes are model instructions; the status-bar inbox owns their human UI. */
-export function isCollaborationMailboxNotification(request: SendMessageRequest): boolean {
-  return request.source === 'task-notification'
-    && /^(?:A collaboration mailbox message is ready\.|A user-approved collaboration link is active with SuperOne session )/i.test(request.content.trim())
+/** Receipts and mailbox wakes reach the model only; the tool row or inbox owns their human UI. */
+export function isModelOnlyTaskNotification(request: SendMessageRequest): boolean {
+  return request.source === 'task-notification' && isModelOnlyHostWake(request.content)
 }

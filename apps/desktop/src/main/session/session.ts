@@ -69,7 +69,7 @@ import { messageDialectFor } from './message-dialect'
 import {
   taskNotificationDisplayText,
   taskNotificationRequest,
-  isCollaborationMailboxNotification,
+  isModelOnlyTaskNotification,
 } from './task-notification-queue'
 import { ensureShellPath, isShellPathReady } from '../shell-path'
 import { buildModelFallbackMessage, modelFallbackSignature } from './model-fallback-notification'
@@ -2258,7 +2258,7 @@ export class Session implements SessionContract {
   }
 
   private appendUserMessage(request: SendMessageRequest, providerOrigin: SendProviderOrigin): void {
-    if (isCollaborationMailboxNotification(request)) return
+    if (isModelOnlyTaskNotification(request)) return
     // Transcript providerId is local|remote only; host wakes are local-origin bubbles.
     const messageOrigin = providerOrigin === 'remote' ? 'remote' : 'local'
     // Provider still receives the full request.content; the bubble drops host framing.
@@ -2375,8 +2375,8 @@ export class Session implements SessionContract {
    * Idle: always Session.send so synthetic turns take `_sendChain` / status machine.
    *
    * A backend that delivers the wake itself (`sent-inline`) bypasses Session.send,
-   * so its transcript entry is appended here on its behalf. Collaboration mailbox
-   * wakes are omitted: their unread messages live in the status-bar inbox.
+   * so its transcript entry is appended here on its behalf. Model-only wakes
+   * (receipts, mailbox) are omitted: the tool row or status-bar inbox shows them.
    */
   async injectTaskNotification(content: string): Promise<void> {
     if (this._status === 'disposed') return

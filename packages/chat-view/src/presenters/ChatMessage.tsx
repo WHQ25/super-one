@@ -1,5 +1,5 @@
 import type { HTMLAttributes, ReactNode } from 'react'
-import { AudioLines, Bot, Goal, Inbox, OctagonX } from 'lucide-react'
+import { AudioLines, Bot, Goal, OctagonX } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 
 export interface ChatMessagePresenterProps {
@@ -12,7 +12,6 @@ export interface ChatMessagePresenterProps {
   voiceLabel?: string
   /** Makes the voice label a link back to the spoken turn that delegated it. */
   onVoiceLabelClick?: () => void
-  mailboxLabel?: string
   initialTask?: ReactNode
   body: ReactNode
   /** Gesture handlers spread onto the user bubble itself (long-press menu). */
@@ -40,7 +39,6 @@ export function ChatMessagePresenter({
   goalLabel,
   voiceLabel,
   onVoiceLabelClick,
-  mailboxLabel,
   initialTask,
   body,
   userBubbleProps,
@@ -56,17 +54,6 @@ export function ChatMessagePresenter({
   sendFailure,
   userActions,
 }: ChatMessagePresenterProps) {
-  if (mailboxLabel) {
-    return (
-      <div className="mb-0.5 flex w-0 min-w-full justify-end">
-        <div className="flex max-w-[90%] items-center gap-1.5 px-0.5 text-xs text-muted-foreground">
-          <Inbox className="size-3 shrink-0 opacity-80" />
-          <span className="shrink-0">{mailboxLabel}</span>
-        </div>
-      </div>
-    )
-  }
-
   if (initialTask) return initialTask
 
   const bubble = (

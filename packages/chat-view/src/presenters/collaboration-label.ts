@@ -1,4 +1,5 @@
 import type { ChatMessage } from '@superone/shared/agent-types'
+import { isModelOnlyHostWake } from '@superone/shared/host-wake'
 
 /**
  * i18n key for the label above a collaboration bubble, or null when the message
@@ -14,4 +15,14 @@ export function collaborationLabelKey(message: ChatMessage): string | null {
   if (collab?.kind === 'initial_task') return 'chat.collaboration.initialTask'
   if (collab?.direction === 'outbound') return 'chat.collaboration.toAgent'
   return 'chat.collaboration.fromAgent'
+}
+
+/**
+ * A host wake that only resumes the model (download / artifact receipt, mailbox
+ * wake). Hosts no longer record one; this hides those already in history.
+ */
+export function isModelOnlyWakeMessage(message: ChatMessage): boolean {
+  return message.role === 'user'
+    && message.metadata?.source === 'task-notification'
+    && isModelOnlyHostWake(message.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('\n'))
 }

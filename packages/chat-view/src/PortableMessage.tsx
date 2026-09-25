@@ -4,7 +4,7 @@ import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import { CircleStop, RefreshCw } from 'lucide-react'
 import { ChatMessagePresenter } from './presenters/ChatMessage'
 import { TurnSummaryAboveFooter } from './presenters/ChatMessageIndicators'
-import { collaborationLabelKey } from './presenters/collaboration-label'
+import { collaborationLabelKey, isModelOnlyWakeMessage } from './presenters/collaboration-label'
 import { goalMessageObjective } from '@superone/shared/session-goal'
 import { parseRealtimeDelegation } from '@superone/shared/realtime-timeline'
 import { RealtimeDelegationBody } from './presenters/RealtimeDelegationBody'
@@ -217,6 +217,8 @@ export const PortableMessage = memo(function PortableMessage({
     enabled: isUser && !hideCopyActions && !fallback,
     align: isCollaboration && !isInitialTask ? 'start' : 'end',
   })
+
+  if (isModelOnlyWakeMessage(message)) return null
 
   return (
     <PortableTurnProvider scheme={scheme} pendingPermission={pendingPermission} projectPath={projectPath} mcpIcons={mcpIcons}>

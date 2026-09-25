@@ -3618,7 +3618,9 @@ describe('Session ownership', () => {
   it.each([
     'A collaboration mailbox message is ready. Call session_collab_retrieve.',
     'A user-approved collaboration link is active with SuperOne session peer.',
-  ])('backend-inlined mailbox wake stays out of the transcript: %s', async (prompt) => {
+    '<task_notification source="browser_download" task_id="bdl_1" status="completed">\npath: /tmp/a.usdz\n</task_notification>',
+    '<task_notification source="artifact_sync" status="completed">\n- "/tmp/run.mp4"\n</task_notification>',
+  ])('backend-inlined model-only wake stays out of the transcript: %s', async (prompt) => {
     const { session, backend } = makeSession()
     backend.injectTaskNotification = vi.fn(async () => 'sent-inline' as const)
     const events: import('@superone/shared/agent-types').AgentEvent[] = []

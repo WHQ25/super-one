@@ -117,13 +117,23 @@ describe('the settled turn footer', () => {
 })
 
 describe('collaboration bubbles', () => {
-  it('labels a host task notification, which is collaboration traffic too', () => {
+  it('labels a user-authored host wake such as a scheduled prompt', () => {
     const html = render(turn({
       role: 'user',
       status: 'complete',
-      content: [{ type: 'text', text: 'A collaboration mailbox message is ready' }],
+      content: [{ type: 'text', text: '/pr-babysit check' }],
       metadata: { source: 'task-notification' },
     }))
     expect(html).toContain('System wake')
+  })
+
+  it.each([
+    'A collaboration mailbox message is ready. It is from SuperOne session p.',
+    '<task_notification source="browser_download" task_id="bdl_1" status="completed">\npath: /tmp/a.usdz\n</task_notification>',
+  ])('renders nothing for a model-only wake left in history: %s', (text) => {
+    const wake = turn({ role: 'user', status: 'complete', content: [{ type: 'text', text }] })
+    expect(render({ ...wake, metadata: { source: 'task-notification' } })).toBe('')
+    // The same words typed by the user stay visible.
+    expect(render(wake)).not.toBe('')
   })
 })

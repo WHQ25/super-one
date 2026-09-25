@@ -21,6 +21,7 @@ import {
 } from './message-catalog'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
+import { isModelOnlyHostWake } from '@superone/shared/host-wake'
 import type { LeaseGuard, SessionEventLog, SessionStore } from './ports'
 import {
   DEFAULT_HOST_ACTION_CLAIM_TTL_MS,
@@ -1061,6 +1062,8 @@ export class SessionRuntime {
   }
 
   private appendUserMessage(session: NodeSessionRecord, opts: TurnOpts): void {
+    // The turn still runs; the transcript just keeps no bubble for a model-only wake.
+    if (opts.source === 'task-notification' && isModelOnlyHostWake(opts.text)) return
     const userBlock: TranscriptBlock = {
       id: randomUUID(),
       role: 'user',

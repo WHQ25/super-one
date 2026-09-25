@@ -104,6 +104,8 @@ describe('collab wake + agents confirm', () => {
     expect(wake!.text).toMatch(/^A collaboration mailbox message is ready\./)
     expect(wake!.text).toContain(parent.sessionId)
     expect(wake!.text).toMatch(/session_collab_retrieve/)
+    // The inbox shows the message; the transcript keeps no bubble for the wake.
+    expect(sessions.get(started.sessionId)!.transcript.some((b) => b.text.startsWith('A collaboration mailbox'))).toBe(false)
   })
 
   it('requireUserConfirm emits session_agents_confirm; accept creates grants', async () => {

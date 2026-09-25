@@ -67,7 +67,7 @@ const SCRIPT: Keyframe[] = [
   { at: 4.6, sidebar: 1, panel: 1, side: 0, caption: "Hover a tab to reveal its close button" },
   { at: 5.6, sidebar: 1, panel: 1, side: 0, caption: "Toggle the chat side — chat slides to the right" },
   { at: 6.6, sidebar: 1, panel: 1, side: 1, caption: "Activity panel now leftmost, chat on the right" },
-  { at: 8.0, sidebar: 1, panel: 1, side: 1, caption: "Collapse the sidebar with ⌘B" },
+  { at: 8.0, sidebar: 1, panel: 1, side: 1, caption: "Collapse the sidebar with ⌘⌥B" },
   { at: 9.0, sidebar: 0, panel: 1, side: 1, caption: "Layout toggles relocate to the activity panel header" },
   { at: 10.4, sidebar: 0, panel: 1, side: 1, caption: "Bring the sidebar back" },
   { at: 11.4, sidebar: 1, panel: 1, side: 1, caption: "Close the activity panel" },

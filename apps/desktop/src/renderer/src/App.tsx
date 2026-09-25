@@ -227,10 +227,7 @@ function App(): React.JSX.Element {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!e.metaKey) return
-      if (e.key === 'b' && !e.altKey) {
-        e.preventDefault()
-        toggleSidebar()
-      } else if (e.key === ',') {
+      if (e.key === ',') {
         e.preventDefault()
         const { view, navigateTo } = useAppStore.getState()
         navigateTo(view === 'settings' ? 'main' : 'settings')
@@ -272,12 +269,17 @@ function App(): React.JSX.Element {
     }
   }, [isMac])
 
-  // ⌘⌥B (Cmd/Ctrl+Alt+B) collapses/expands the activity panel. Uses e.code since
-  // Option remaps e.key to a symbol on macOS.
+  // ⌘B (Cmd/Ctrl+B) collapses/expands the activity panel; ⌘⌥B toggles the sidebar.
+  // Uses e.code since Option remaps e.key to a symbol on macOS.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const mod = isMac ? e.metaKey : e.ctrlKey
-      if (!mod || !e.altKey || e.code !== 'KeyB') return
+      if (!mod || e.shiftKey || e.code !== 'KeyB') return
+      if (e.altKey) {
+        e.preventDefault()
+        toggleSidebar()
+        return
+      }
       if (useAppStore.getState().view !== 'main') return
       e.preventDefault()
       toggleActivityPanel()
@@ -723,7 +725,7 @@ function App(): React.JSX.Element {
                         <ActivityIcon className={cn('size-3.5', !showActivityPanel && hasActivityPanels && 'animate-pulse')} />
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent side="top"><span>{t('tooltips.toggleActivityPanel')}</span> <CommandShortcut>{isMac ? '⌘⌥B' : 'Ctrl+Alt+B'}</CommandShortcut></TooltipContent>
+                    <TooltipContent side="top"><span>{t('tooltips.toggleActivityPanel')}</span> <CommandShortcut>{isMac ? '⌘B' : 'Ctrl+B'}</CommandShortcut></TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               )

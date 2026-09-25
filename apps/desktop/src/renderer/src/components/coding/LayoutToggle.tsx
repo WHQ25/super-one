@@ -30,7 +30,7 @@ export function LayoutToggle() {
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom" sideOffset={4}>
-            <span>{t('tooltips.toggleSidebar')}</span> <CommandShortcut>{isMac ? '⌘B' : 'Ctrl+B'}</CommandShortcut>
+            <span>{t('tooltips.toggleSidebar')}</span> <CommandShortcut>{isMac ? '⌘⌥B' : 'Ctrl+Alt+B'}</CommandShortcut>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>

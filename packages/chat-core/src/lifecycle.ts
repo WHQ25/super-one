@@ -28,9 +28,12 @@ export function reduceLifecycle(
   ports: ChatCorePorts = defaultChatCorePorts,
 ): Partial<ChatCoreSession> {
   switch (event.type) {
-    case 'queued_messages_restored':
+    case 'queued_messages_restored': {
+      // The snapshot owns queue membership and order but carries text only, so a
+      // bubble this client already holds keeps its own content and attachments.
+      const local = new Map(session.queuedMessages.map((m) => [m.id, m]))
       return {
-        queuedMessages: event.messages.map((message) => ({
+        queuedMessages: event.messages.map((message) => local.get(message.clientMessageId) ?? ({
           id: message.clientMessageId,
           role: 'user' as const,
           status: 'complete' as const,
@@ -39,6 +42,7 @@ export function reduceLifecycle(
           providerId: 'local',
         })),
       }
+    }
     case 'queued_message_consumed': {
       const idx = session.queuedMessages.findIndex((m) => m.id === event.clientMessageId)
       if (idx === -1) return {}

@@ -1689,7 +1689,9 @@ export class CodexBackend implements SessionBackend {
             priority: 'next',
           }
           nextQueue.set(clientMessageId, { submissionId, request, input })
-          restored.push({ clientMessageId, content })
+          // `content` is Codex's input with the attachment note appended; a
+          // request this backend queued keeps the user's own text.
+          restored.push({ clientMessageId, content: request.content })
         }
         cursor = typeof result.nextCursor === 'string' ? result.nextCursor : null
       } while (cursor)

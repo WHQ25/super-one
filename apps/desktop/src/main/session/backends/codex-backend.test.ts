@@ -1207,6 +1207,30 @@ describe('CodexBackend send()', () => {
     await pending
   })
 
+  it('restores a queued request with the user text rather than the attachment-noted input', async () => {
+    const request = vi.fn(async (method: string) => method === 'thread/queue/list'
+      ? { data: [{ id: 'submission-2', clientUserMessageId: 'u2', input: [
+          { type: 'text', text: 'look\n\n[Attached 1 file(s). Use the local path…]' },
+          { type: 'localImage', path: '/tmp/shot.png' },
+        ] }], nextCursor: null }
+      : {})
+    const internals = backend as unknown as {
+      durableQueue: Map<string, { submissionId: string; request: { content: string; assistantMessageId: string } }>
+      restoreDurableQueue(): Promise<void>
+      session: { connectionHandle: unknown; threadId: string | null }
+    }
+    internals.session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+    internals.session.threadId = 'thread-1'
+    internals.durableQueue.set('u2', { submissionId: 'submission-2', request: { content: 'look', assistantMessageId: 'a2' } })
+
+    await internals.restoreDurableQueue()
+
+    expect(events).toContainEqual({
+      type: 'queued_messages_restored',
+      messages: [{ clientMessageId: 'u2', content: 'look' }],
+    })
+  })
+
   it('keeps a promoted queue entry until its userMessage item is observed', async () => {
     const request = vi.fn(async (method: string) => method === 'thread/queue/list'
       ? { data: [], nextCursor: null }

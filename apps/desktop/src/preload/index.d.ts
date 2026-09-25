@@ -719,6 +719,10 @@ interface AppAPI {
   readProjectFile(folderPath: string, filePath: string): Promise<GitFileContent>
   /** Re-run the files-previewer verdict for one file — retry after `missing` without reading bytes. */
   statPreviewFile(root: string, filePath: string): Promise<PreviewerFile>
+  composeUsdzPreview(bytes: Uint8Array, selections: Record<string, string>): Promise<{
+    archive: Uint8Array
+    variants: Array<{ name: string; options: string[]; selected: string }>
+  }>
   setUnsavedEditorBuffer(filePath: string, content: string | null): Promise<void>
   getFileTree(folderPath: string): Promise<FileTreeEntry[]>
   listDir(folderPath: string, dirRelPath: string): Promise<FileTreeEntry[]>

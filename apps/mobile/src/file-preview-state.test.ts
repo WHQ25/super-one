@@ -133,6 +133,13 @@ describe('transfer completion', () => {
     })
   })
 
+  it('turns a downloaded 3D file into the model body even with a generic MIME type', () => {
+    const model = { ...image, path: '/proj/models/phone.usdz', name: 'phone.usdz', mimeType: 'application/octet-stream', size: 4096 }
+    expect(completeTransfer(model, 'file:///cache/phone.usdz')).toEqual({
+      kind: 'model', path: model.path, name: model.name, localUri: 'file:///cache/phone.usdz', mimeType: model.mimeType, size: model.size,
+    })
+  })
+
   it('keeps any other file on the transfer card with its bytes attached', () => {
     const pdf = { ...image, name: 'spec.pdf', mimeType: 'application/pdf' }
     expect(completeTransfer(pdf, 'file:///cache/spec.pdf')).toMatchObject({ kind: 'transfer', phase: 'ready', localUri: 'file:///cache/spec.pdf' })
@@ -184,6 +191,12 @@ describe('the more menu', () => {
     const video: FilePreviewState = { kind: 'video', path: '/p/clip.mp4', name: 'clip.mp4', localUri: 'file:///c/clip.mp4', mimeType: 'video/mp4', size: 9 }
     expect(filePreviewMenu(video)).toEqual({ save: { enabled: true, toPhotos: true }, share: { enabled: true } })
     expect(previewLocalSource(video)).toEqual({ kind: 'file', uri: 'file:///c/clip.mp4', name: 'clip.mp4', mimeType: 'video/mp4' })
+  })
+
+  it('saves and shares a downloaded model as a file', () => {
+    const model: FilePreviewState = { kind: 'model', path: '/p/phone.usdz', name: 'phone.usdz', localUri: 'file:///c/phone.usdz', mimeType: 'model/vnd.usdz+zip', size: 9 }
+    expect(filePreviewMenu(model)).toEqual({ save: { enabled: true, toPhotos: false }, share: { enabled: true } })
+    expect(previewLocalSource(model)).toEqual({ kind: 'file', uri: model.localUri, name: model.name, mimeType: model.mimeType })
   })
 
   it('saves text and finished transfers to a folder', () => {

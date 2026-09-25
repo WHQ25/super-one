@@ -1,5 +1,5 @@
 import type { ImageGenerationInfo, ReadDesktopFileError, ReadDesktopFileResponse } from '@superone/shared/agent-types'
-import { isMarkdownFileName } from '@superone/shared/file-preview'
+import { fileKindFromName, isMarkdownFileName } from '@superone/shared/file-preview'
 import type { TransportKind } from '@superone/relay-client'
 import { imagePreviewFileName, parseImageDataUri, type ImagePreviewTarget } from './image-preview-state'
 
@@ -56,6 +56,15 @@ export type FilePreviewState =
       path: string
       name: string
       /** The cache file the bytes were written to; what the player and the menu use. */
+      localUri: string
+      mimeType: string
+      size: number
+    }
+  | {
+      kind: 'model'
+      path: string
+      name: string
+      /** Downloaded model in the phone's file preview cache. */
       localUri: string
       mimeType: string
       size: number
@@ -313,6 +322,9 @@ export function completeTransfer(
   if (current.mimeType.startsWith('video/')) {
     return { kind: 'video', path: current.path, name: current.name, localUri, mimeType: current.mimeType, size: current.size }
   }
+  if (fileKindFromName(current.name) === 'model') {
+    return { kind: 'model', path: current.path, name: current.name, localUri, mimeType: current.mimeType, size: current.size }
+  }
   return { ...current, phase: 'ready', localUri }
 }
 
@@ -335,7 +347,7 @@ export function previewLocalSource(state: FilePreviewState): LocalSource | null 
     const inline = parseImageDataUri(state.src)
     return inline ? { kind: 'dataUri', dataUri: state.src, name: state.name, mimeType: inline.mimeType } : null
   }
-  if (state.kind === 'video') {
+  if (state.kind === 'video' || state.kind === 'model') {
     return { kind: 'file', uri: state.localUri, name: state.name, mimeType: state.mimeType }
   }
   if (state.kind === 'transfer' && state.phase === 'ready' && state.localUri) {

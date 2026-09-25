@@ -45,9 +45,8 @@ export function registerMiniAppProtocolHandlers(proto: Protocol): void {
       const contentType = MEDIA_MIME[`.${ext}`] ?? LOCAL_FILE_MIME[ext] ?? 'application/octet-stream'
       const range = request.headers.get('Range')
 
-      // Videos/audio must stream. readFile() loads the whole clip on every Range
-      // request and can freeze the main process when a restored session mounts
-      // a <video preload="metadata"> against a tens-of-MB media-gen file.
+      // Video, audio and 3D models stream. readFile() loads the whole asset on
+      // every request and can freeze the main process for large previews.
       if (STREAMED_MEDIA_EXTS.has(ext)) {
         let fileSize: number
         try { fileSize = statSync(resolved).size } catch {

@@ -4,7 +4,7 @@
   "private": true,
   "main": "index.js",
   "scripts": {
-    "build:chat-view": "bun --cwd ../../packages/chat-view build",
+    "build:chat-view": "bun --cwd ../../packages/chat-view build && bun scripts/build-model-viewer.ts",
     "eas-build-pre-install": "bun scripts/prepare-eas-install.ts",
     "eas-build-post-install": "bun run build:chat-view",
     "generate:theme": "bun scripts/generate-theme-tokens.ts",

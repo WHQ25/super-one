@@ -26,7 +26,7 @@ function mediaUrl(file: PreviewerFile): string {
   if (file.absolutePath.startsWith('data:')) return file.absolutePath
   // Video and audio stream from the media server (range requests); everything
   // else is a whole-file fetch the local-file protocol serves fine.
-  return file.kind === 'video' || file.kind === 'audio' ? toMediaUrl(file.absolutePath) : toLocalFileUrl(file.absolutePath)
+  return file.kind === 'video' || file.kind === 'audio' || file.kind === 'model' ? toMediaUrl(file.absolutePath) : toLocalFileUrl(file.absolutePath)
 }
 
 function languageToError(language: string): PreviewerLoadError | null {

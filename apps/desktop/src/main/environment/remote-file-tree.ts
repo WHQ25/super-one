@@ -40,7 +40,7 @@ import {
   type GitMentionRefKind,
   type GitMentionRefsResult,
 } from '@superone/shared/git-mention-query'
-import { AUDIO_EXTENSIONS, BINARY_IMAGE_EXTENSIONS, PDF_EXTENSIONS, VIDEO_EXTENSIONS } from '@superone/shared/file-preview'
+import { AUDIO_EXTENSIONS, BINARY_IMAGE_EXTENSIONS, MODEL_EXTENSIONS, MODEL_MIME, PDF_EXTENSIONS, VIDEO_EXTENSIONS } from '@superone/shared/file-preview'
 import {
   EMPTY_PAIR,
   parseGitStatusOutput,
@@ -78,7 +78,9 @@ const REMOTE_IMAGE_EXTS = BINARY_IMAGE_EXTENSIONS
 const REMOTE_PDF_EXTS = PDF_EXTENSIONS
 const REMOTE_VIDEO_EXTS = VIDEO_EXTENSIONS
 const REMOTE_AUDIO_EXTS = AUDIO_EXTENSIONS
+const REMOTE_MODEL_EXTS = MODEL_EXTENSIONS
 const REMOTE_MIME: Record<string, string> = {
+  ...MODEL_MIME,
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -630,7 +632,7 @@ export async function materializeRemotePathsForDrag(
  * only paths under a single remote folderPath that we can resolve are exported
  * when `folderPath` is provided; otherwise each path is parsed independently.
  */
-type MediaLanguage = 'image' | 'pdf' | 'video' | 'audio'
+type MediaLanguage = 'image' | 'pdf' | 'video' | 'audio' | 'model'
 
 /** The preview language of a media file by extension, or null for anything else. */
 function mediaLanguage(filePath: string): MediaLanguage | null {
@@ -639,6 +641,7 @@ function mediaLanguage(filePath: string): MediaLanguage | null {
   if (REMOTE_PDF_EXTS.has(ext)) return 'pdf'
   if (REMOTE_VIDEO_EXTS.has(ext)) return 'video'
   if (REMOTE_AUDIO_EXTS.has(ext)) return 'audio'
+  if (REMOTE_MODEL_EXTS.has(ext)) return 'model'
   return null
 }
 
@@ -647,6 +650,7 @@ const MEDIA_FALLBACK_MIME: Record<MediaLanguage, string> = {
   pdf: 'application/pdf',
   video: 'video/mp4',
   audio: 'audio/mpeg',
+  model: 'application/octet-stream',
 }
 
 /** `GitFileContent` for bytes already in hand — the shape the panel and the previewer read. */

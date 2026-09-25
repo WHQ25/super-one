@@ -1,4 +1,5 @@
 import data from './file-icons.generated.json'
+import { modelFileIconSvg } from '@superone/shared/model-file-icon'
 
 const files: Record<string, string> = data.files
 const extensions: Record<string, string> = data.extensions
@@ -23,5 +24,5 @@ export function fileIconId(path: string, directory = false): string {
 }
 
 export function fileIconSvg(path: string, directory = false): string {
-  return artwork[fileIconId(path, directory)]!
+  return (directory ? undefined : modelFileIconSvg(path)) ?? artwork[fileIconId(path, directory)]!
 }

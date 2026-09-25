@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   INLINE_PREVIEW_MAX_BYTES,
   INLINE_RPC_MAX_BYTES,
+  MODEL_EXTENSIONS,
+  fileKindFromName,
   isInlinePreviewCandidate,
   isInlinePreviewTextName,
   isInlineRpcCandidate,
@@ -25,9 +27,14 @@ describe('inline preview policy', () => {
   })
 
   it('rejects binaries, media and unknown extensions', () => {
-    for (const name of ['photo.png', 'movie.mp4', 'archive.zip', 'lib.so', 'data.bin', 'noext', 'doc.pdf']) {
+    for (const name of ['photo.png', 'movie.mp4', 'archive.zip', 'lib.so', 'data.bin', 'noext', 'doc.pdf', 'device.usdz']) {
       expect(isInlinePreviewTextName(name), name).toBe(false)
     }
+  })
+
+  it('classifies every supported 3D extension as a model', () => {
+    expect(MODEL_EXTENSIONS.size).toBe(11)
+    for (const ext of MODEL_EXTENSIONS) expect(fileKindFromName(`assets/Device${ext.toUpperCase()}`)).toBe('model')
   })
 
   it('caps a candidate at the inline byte limit', () => {

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useEffect } from 'react'
+import { lazy, Suspense, useCallback, useRef, useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FileX2, ChevronRight, RefreshCw } from 'lucide-react'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
@@ -29,6 +29,7 @@ import {
   AUDIO_EXTENSIONS,
   BINARY_IMAGE_EXTENSIONS,
   MARKDOWN_EXTENSIONS,
+  MODEL_EXTENSIONS,
   NOTEBOOK_EXTENSIONS,
   PDF_EXTENSIONS,
   VIDEO_EXTENSIONS,
@@ -47,6 +48,8 @@ const BINARY_IMAGE_EXTS = BINARY_IMAGE_EXTENSIONS
 const PDF_EXTS = PDF_EXTENSIONS
 const VIDEO_EXTS = VIDEO_EXTENSIONS
 const AUDIO_EXTS = AUDIO_EXTENSIONS
+const MODEL_EXTS = MODEL_EXTENSIONS
+const ModelPreview = lazy(() => import('./ModelPreview').then((module) => ({ default: module.ModelPreview })))
 
 /** Dotted, lower-case, matching the shared extension tables. */
 function getFileExt(fileName: string): string {
@@ -78,7 +81,7 @@ function useOwnFileData(filePath: string | undefined, refreshKey: number) {
       if (c.error) return
       if (pickedTabForPathRef.current === filePath) return
       pickedTabForPathRef.current = filePath
-      const isBin = c.language === 'image' || c.language === 'pdf' || c.language === 'video' || c.language === 'audio'
+      const isBin = c.language === 'image' || c.language === 'pdf' || c.language === 'video' || c.language === 'audio' || c.language === 'model'
       const isSvg = c.language === 'svg'
       const ext = getFileExt(filePath)
       const isMd = MARKDOWN_EXTS.has(ext)
@@ -131,8 +134,9 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const isSvgFile = ext === '.svg'
   const isVideoFile = VIDEO_EXTS.has(ext)
   const isAudioFile = AUDIO_EXTS.has(ext)
+  const isModelFile = MODEL_EXTS.has(ext)
   const hasDiff = !!fileDiff?.diff
-  const isBinaryPreview = isBinImg || isPdfFile || isVideoFile || isAudioFile
+  const isBinaryPreview = isBinImg || isPdfFile || isVideoFile || isAudioFile || isModelFile
   const isUnpreviewable = fileContent?.language === 'binary' || fileContent?.language === 'too-large'
   // Non-md text files still use Editor + File; markdown and notebooks use
   // Preview + File only (a notebook's raw JSON is not hand-editable safely).
@@ -358,6 +362,13 @@ export function FilePreview({ filePath }: FilePreviewProps) {
                   preload="auto"
                 />
               </div>
+            ) : effectiveTab === 'preview' && isModelFile ? (
+              <Suspense fallback={<div className="size-full" />}>
+                <ModelPreview
+                  src={previewSrc(fileContent?.content, () => toMediaUrl(fullFilePath), toMediaUrl)}
+                  name={fileName}
+                />
+              </Suspense>
             ) : effectiveTab === 'preview' && isSvgFile ? (
               <ImagePreview
                 src={

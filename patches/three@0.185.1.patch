@@ -1,0 +1,161 @@
+diff --git a/examples/jsm/loaders/usd/USDComposer.js b/examples/jsm/loaders/usd/USDComposer.js
+index 5de046b2ab54aa594094bc020b170177c36a36dc..49e31ca2df8d6c39b46914134dbf6acad272e197 100644
+--- a/examples/jsm/loaders/usd/USDComposer.js
++++ b/examples/jsm/loaders/usd/USDComposer.js
+@@ -179,10 +179,12 @@ class USDComposer {
+ 				const op = xformOpOrder[ i ];
+ 				const isInverse = op.startsWith( '!invert!' );
+ 				const opName = isInverse ? op.slice( 8 ) : op;
++				// Op names are xformOp:<type>[:<suffix>], e.g. xformOp:translate:rotatePivot.
++				const opType = opName.split( ':' )[ 1 ];
+ 
+-				if ( opName === 'xformOp:transform' ) {
++				if ( opType === 'transform' ) {
+ 
+-					const m = data[ 'xformOp:transform' ];
++					const m = data[ opName ];
+ 					if ( m && m.length === 16 ) {
+ 
+ 						tempMatrix.set(
+@@ -196,9 +198,9 @@ class USDComposer {
+ 
+ 					}
+ 
+-				} else if ( opName === 'xformOp:translate' ) {
++				} else if ( opType === 'translate' ) {
+ 
+-					const t = data[ 'xformOp:translate' ];
++					const t = data[ opName ];
+ 					if ( t ) {
+ 
+ 						tempMatrix.makeTranslation( t[ 0 ], t[ 1 ], t[ 2 ] );
+@@ -207,20 +209,9 @@ class USDComposer {
+ 
+ 					}
+ 
+-				} else if ( opName === 'xformOp:translate:pivot' ) {
++				} else if ( opType === 'scale' ) {
+ 
+-					const t = data[ 'xformOp:translate:pivot' ];
+-					if ( t ) {
+-
+-						tempMatrix.makeTranslation( t[ 0 ], t[ 1 ], t[ 2 ] );
+-						if ( isInverse ) tempMatrix.invert();
+-						matrix.multiply( tempMatrix );
+-
+-					}
+-
+-				} else if ( opName === 'xformOp:scale' ) {
+-
+-					const s = data[ 'xformOp:scale' ];
++					const s = data[ opName ];
+ 					if ( s ) {
+ 
+ 						if ( Array.isArray( s ) ) {
+@@ -240,9 +231,9 @@ class USDComposer {
+ 
+ 					}
+ 
+-				} else if ( opName === 'xformOp:rotateXYZ' ) {
++				} else if ( opType === 'rotateXYZ' ) {
+ 
+-					const r = data[ 'xformOp:rotateXYZ' ];
++					const r = data[ opName ];
+ 					if ( r ) {
+ 
+ 						// USD rotateXYZ: matrix = Rx * Ry * Rz
+@@ -259,9 +250,9 @@ class USDComposer {
+ 
+ 					}
+ 
+-				} else if ( opName === 'xformOp:rotateX' ) {
++				} else if ( opType === 'rotateX' ) {
+ 
+-					const r = data[ 'xformOp:rotateX' ];
++					const r = data[ opName ];
+ 					if ( r !== undefined ) {
+ 
+ 						tempMatrix.makeRotationX( r * Math.PI / 180 );
+@@ -270,9 +261,9 @@ class USDComposer {
+ 
+ 					}
+ 
+-				} else if ( opName === 'xformOp:rotateY' ) {
++				} else if ( opType === 'rotateY' ) {
+ 
+-					const r = data[ 'xformOp:rotateY' ];
++					const r = data[ opName ];
+ 					if ( r !== undefined ) {
+ 
+ 						tempMatrix.makeRotationY( r * Math.PI / 180 );
+@@ -281,9 +272,9 @@ class USDComposer {
+ 
+ 					}
+ 
+-				} else if ( opName === 'xformOp:rotateZ' ) {
++				} else if ( opType === 'rotateZ' ) {
+ 
+-					const r = data[ 'xformOp:rotateZ' ];
++					const r = data[ opName ];
+ 					if ( r !== undefined ) {
+ 
+ 						tempMatrix.makeRotationZ( r * Math.PI / 180 );
+@@ -292,9 +283,9 @@ class USDComposer {
+ 
+ 					}
+ 
+-				} else if ( opName === 'xformOp:orient' ) {
++				} else if ( opType === 'orient' ) {
+ 
+-					const q = data[ 'xformOp:orient' ];
++					const q = data[ opName ];
+ 					if ( q && q.length === 4 ) {
+ 
+ 						const quat = new Quaternion( q[ 0 ], q[ 1 ], q[ 2 ], q[ 3 ] );
+@@ -3130,8 +3121,8 @@ class USDComposer {
+ 		if ( material.normalMap && material.normalMap.userData.scale ) {
+ 
+ 			const scale = material.normalMap.userData.scale;
+-			// UsdUVTexture scale is float4 (r,g,b,a), use first two components for normalScale
+-			material.normalScale = new Vector2( scale[ 0 ], scale[ 1 ] );
++			// UsdUVTexture encodes normals as texel * scale + bias; Three already applies * 2 - 1.
++			material.normalScale = new Vector2( scale[ 0 ] / 2, scale[ 1 ] / 2 );
+ 
+ 		}
+ 
+@@ -3181,8 +3172,9 @@ class USDComposer {
+ 
+ 		}
+ 
+-		// Specular color
+-		applyTexture(
++		// Specular color only applies to the specular workflow; the default metallic
++		// workflow derives F0 from ior, so a (0, 0, 0) value must not remove reflections.
++		if ( fields[ 'inputs:useSpecularWorkflow' ] === 1 ) applyTexture(
+ 			'inputs:specularColor',
+ 			'specularColorMap',
+ 			SRGBColorSpace,
+@@ -3251,7 +3243,13 @@ class USDComposer {
+ 			// Direct opacity value
+ 			const opacity = fields[ 'inputs:opacity' ] !== undefined ? fields[ 'inputs:opacity' ] : 1.0;
+ 
+-			if ( opacity < 1.0 ) {
++			if ( opacityThreshold > 0 ) {
++
++				// A threshold masks the surface; it never renders partial opacity.
++				material.alphaTest = opacityThreshold;
++				material.opacity = opacity;
++
++			} else if ( opacity < 1.0 ) {
+ 
+ 				material.transparent = true;
+ 				material.opacity = opacity;
+@@ -3733,7 +3731,7 @@ class USDComposer {
+ 		const bias = attrs[ 'inputs:bias' ];
+ 
+ 		// Create cache key that includes scale/bias if present
+-		let cacheKey = filePath;
++		let cacheKey = filePath + ':uv' + uvChannel;
+ 		if ( scale ) cacheKey += ':s' + scale.join( ',' );
+ 		if ( bias ) cacheKey += ':b' + bias.join( ',' );
+ 

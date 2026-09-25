@@ -1,5 +1,5 @@
 import { formatBytes } from '@superone/shared/format-bytes'
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FileX2, FileWarning, Loader2, RefreshCw } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
@@ -12,6 +12,8 @@ import { ImagePreview } from '@/components/coding/ImagePreview'
 import { NotebookPreview } from '@/components/coding/NotebookPreview'
 import { FileWithDiffView } from '@/components/coding/source-control/FileWithDiffView'
 import type { PreviewerLoadError, PreviewerLoadState } from './use-previewer-file'
+
+const ModelPreview = lazy(() => import('@/components/coding/ModelPreview').then((module) => ({ default: module.ModelPreview })))
 
 export type PreviewerStageMode = 'card' | 'fullscreen'
 
@@ -140,6 +142,8 @@ export function PreviewerStage({ file, state, mode, projectPath, onUndecodable, 
           className="w-full max-w-md"
         />
       )
+    case 'model':
+      return <Suspense fallback={<div className="size-full" />}><ModelPreview src={state.url!} name={file.name} interactive={!card} onError={onUndecodable} /></Suspense>
     case 'markdown':
       return (
         <div className={cn('h-full w-full overflow-auto py-4', card ? 'px-6 text-sm' : 'px-8')}>

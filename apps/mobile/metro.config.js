@@ -14,6 +14,7 @@ config.resolver.nodeModulesPaths = [
 config.resolver.unstable_enableSymlinks = true
 config.resolver.unstable_enablePackageExports = true
 config.resolver.disableHierarchicalLookup = true
+config.resolver.assetExts.push('glb', 'usdz')
 
 // Node-only @superone/shared leaves. Importing these in RN is a bug.
 const block = config.resolver.blockList

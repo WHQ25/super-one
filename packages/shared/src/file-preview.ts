@@ -57,11 +57,21 @@ export const BINARY_IMAGE_EXTENSIONS: ReadonlySet<string> = new Set(['.png', '.j
 export const IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([...BINARY_IMAGE_EXTENSIONS, '.svg'])
 export const PDF_EXTENSIONS: ReadonlySet<string> = new Set(['.pdf'])
 export const AUDIO_EXTENSIONS: ReadonlySet<string> = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a'])
+/** 3D scenes and meshes supported by the desktop model viewer. */
+export const MODEL_MIME: Readonly<Record<string, string>> = {
+  '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json',
+  '.usdz': 'model/vnd.usdz+zip', '.usd': 'model/vnd.usd',
+  '.usda': 'model/vnd.usd', '.usdc': 'model/vnd.usd',
+  '.obj': 'model/obj', '.fbx': 'application/octet-stream',
+  '.stl': 'model/stl', '.ply': 'application/octet-stream', '.3mf': 'model/3mf',
+}
+export const MODEL_EXTENSIONS: ReadonlySet<string> = new Set(Object.keys(MODEL_MIME))
+export const MODEL_PREVIEW_MAX_BYTES = 100 * 1024 * 1024
 export const NOTEBOOK_EXTENSIONS: ReadonlySet<string> = new Set(['.ipynb'])
 export const MARKDOWN_EXTENSIONS: ReadonlySet<string> = new Set(['.md', '.mdx', '.markdown'])
 
 /** Lower-cased extension including the dot, or `''` when the name has none. */
-function extensionOf(name: string): string {
+export function extensionOf(name: string): string {
   const base = name.split(/[/\\]/).pop() ?? name
   const dot = base.lastIndexOf('.')
   if (dot < 0) return ''
@@ -119,7 +129,7 @@ export function isVideoFileName(name: string): boolean {
 }
 
 /** What a file's NAME says about how it previews; the host corrects `text` by sniffing bytes. */
-export type FilePreviewKind = 'image' | 'pdf' | 'video' | 'audio' | 'markdown' | 'notebook' | 'text'
+export type FilePreviewKind = 'image' | 'pdf' | 'video' | 'audio' | 'model' | 'markdown' | 'notebook' | 'text'
 
 /**
  * Name-only classification. `.ogg` is a video container here because the
@@ -132,6 +142,7 @@ export function fileKindFromName(name: string): FilePreviewKind {
   if (PDF_EXTENSIONS.has(ext)) return 'pdf'
   if (VIDEO_EXTENSIONS.has(ext)) return 'video'
   if (AUDIO_EXTENSIONS.has(ext)) return 'audio'
+  if (MODEL_EXTENSIONS.has(ext)) return 'model'
   if (MARKDOWN_EXTENSIONS.has(ext)) return 'markdown'
   if (NOTEBOOK_EXTENSIONS.has(ext)) return 'notebook'
   return 'text'

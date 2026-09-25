@@ -1,8 +1,9 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { NativeWidgetPayload, PreviewerFile } from '@superone/shared/generative-ui/native-widgets'
 import { mockIpc } from '../../../../../../.storybook/mock-ipc'
 import { FilesPreviewer } from './FilesPreviewer'
+import boxUrl from '../../coding/__fixtures__/Box.glb?url'
 
 /**
  * Every state the card can show, with `window.app` answered from fixtures.
@@ -79,6 +80,7 @@ const files = {
   notebook: { path: 'notebooks/analysis.ipynb', absolutePath: `${ROOT}/notebooks/analysis.ipynb`, name: 'analysis.ipynb', kind: 'notebook', size: 4096, note: 'The last cell plots sessions per harness.' },
   video: { path: 'demo/onboarding.mp4', absolutePath: 'data:video/mp4;base64,AAAA', name: 'onboarding.mp4', kind: 'video', size: 5_242_880, note: 'Screen recording; the first ten seconds show the swipe on the phone.' },
   audio: { path: 'assets/voice-memo.m4a', absolutePath: 'data:audio/mp4;base64,AAAA', name: 'voice-memo.m4a', kind: 'audio', size: 1_048_576, note: 'Product meeting memo, about two minutes.' },
+  model: { path: 'assets/Box.glb', absolutePath: boxUrl, name: 'Box.glb', kind: 'model', size: 1664, note: 'Khronos Box sample; click for orbit controls.' },
   missing: { path: 'reports/q3-summary.pdf', absolutePath: `${ROOT}/reports/q3-summary.pdf`, name: 'q3-summary.pdf', kind: 'missing', note: 'Not generated yet — retry once the report job finishes.' },
   binary: { path: 'build/app.bin', absolutePath: `${ROOT}/build/app.bin`, name: 'app.bin', kind: 'unpreviewable', reason: 'binary', size: 12_582_912, note: 'Release binary.' },
   tooLarge: { path: 'logs/session.log', absolutePath: `${ROOT}/logs/session.log`, name: 'session.log', kind: 'unpreviewable', reason: 'too_large', size: 104_857_600 },
@@ -130,6 +132,20 @@ export const Notebook: Story = { args: { payload: payload([files.notebook]) } }
 /** The fixture is not a real clip, so this is also the decode-error state for media. */
 export const VideoUndecodable: Story = { args: { payload: payload([files.video]) } }
 export const Audio: Story = { args: { payload: payload([files.audio]) } }
+function ModelStory() {
+  const [dataUrl, setDataUrl] = useState('')
+  useEffect(() => {
+    let cancelled = false
+    void fetch(boxUrl).then((response) => response.arrayBuffer()).then((bytes) => {
+      if (cancelled) return
+      const binary = Array.from(new Uint8Array(bytes), (byte) => String.fromCharCode(byte)).join('')
+      setDataUrl(`data:model/gltf-binary;base64,${btoa(binary)}`)
+    })
+    return () => { cancelled = true }
+  }, [])
+  return dataUrl ? <FilesPreviewer payload={payload([{ ...files.model, absolutePath: dataUrl }])} /> : null
+}
+export const Model: Story = { render: () => <ModelStory /> }
 
 export const Missing: Story = { args: { payload: payload([files.missing]) } }
 export const UnpreviewableBinary: Story = { args: { payload: payload([files.binary]) } }

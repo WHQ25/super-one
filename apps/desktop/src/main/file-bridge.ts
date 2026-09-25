@@ -2,6 +2,7 @@ import { promises as fs, statSync, existsSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, join, normalize, resolve } from 'node:path'
 import {
+  MODEL_MIME,
   INLINE_RPC_MAX_BYTES,
   isInlinePreviewCandidate,
   isInlineRpcCandidate,
@@ -11,6 +12,7 @@ import {
 import { isPathAtOrWithinAllowed, isPathWithinAllowed, resolveRealPath } from './path-security'
 
 const FILE_BRIDGE_MIME: Record<string, string> = {
+  ...MODEL_MIME,
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
   '.webp': 'image/webp', '.svg': 'image/svg+xml', '.bmp': 'image/bmp', '.ico': 'image/x-icon',
   '.avif': 'image/avif', '.heic': 'image/heic', '.tiff': 'image/tiff', '.tif': 'image/tiff',

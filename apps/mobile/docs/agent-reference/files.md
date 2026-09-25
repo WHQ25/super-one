@@ -4,9 +4,9 @@ Chat WebView native requests route HTTPS links, clipboard copies, and stripped r
 file-tool metadata through RN. Every preview — file chip or picture — lands in the one
 fullscreen `ui/file-preview.tsx` modal (`FilePreviewModal`, its own `MenuHost`) whose only
 chrome is Close, the title, and a **More** menu with *Save to Photos* / *Save to Files* and
-*Share*. `file-preview-state.ts` owns the state machine (`loading | image | video | text |
+*Share*. `file-preview-state.ts` owns the state machine (`loading | image | video | model | text |
 transfer | error`) and decides which menu rows are enabled; `media-ports.ts` (`MediaPorts`)
-is the only place that touches `expo-file-system` / `expo-sharing` / `expo-media-library`,
+is the only place that performs save/share through `expo-file-system` / `expo-sharing` / `expo-media-library`,
 so tests, stories, and the gallery inject `preview/fake-media-ports.ts` instead. Saving to
 Photos asks for add-only library permission and surfaces a denied state with an Open
 Settings button; saving to Files goes through `Directory.pickDirectoryAsync`.
@@ -17,8 +17,15 @@ transport and small binaries (≤512 KiB) inline over the relay (policy in
 `@superone/shared/file-preview`), and otherwise enters the `transfer` state — downloading
 on its own over LAN, after a Download confirmation over the relay when R2 staging is
 required. Downloaded images swap into the image body, downloaded clips into the `video`
-body (`ui/video-player.tsx`, `expo-video` with native controls, autoplay, Save to Photos);
-other files stay on a "Downloaded" card so the menu can save or share them. `expo-video`
+body (`ui/video-player.tsx`, `expo-video` with native controls, autoplay, Save to Photos),
+and 3D files into the `model` body (`ui/zoomable-model.tsx`). Other files stay on a
+"Downloaded" card so the menu can save or share them. The 3D body writes an offline
+viewer HTML beside the cached model and gives its WebView read access to that folder.
+Its bundled Three.js parser is shared with desktop; orbit, pinch zoom, pan, reset and
+model animations work offline. Models save to Files or share. A glTF file with external
+buffers or textures needs a self-contained GLB for phone preview, because only the
+selected file transfers. `build:chat-view` regenerates the gitignored viewer HTML.
+`expo-video`
 is native — pulling it in needs a dev-client rebuild — and jest stands it in from
 `jest.setup.ts` (a source containing `missing` reports `status: 'error'`). `openFile` is the secondary action: resolve the path against the active project and
 open the containing directory. The native file browser uses `previewFile` for file rows;

@@ -28,7 +28,7 @@ export type NativeWidgetType = (typeof NATIVE_WIDGET_TYPES)[number]
  * every root the media server serves, or nothing at the path at all.
  */
 export type PreviewerFileKind =
-  | 'image' | 'pdf' | 'video' | 'audio' | 'markdown' | 'notebook' | 'text'
+  | 'image' | 'pdf' | 'video' | 'audio' | 'model' | 'markdown' | 'notebook' | 'text'
   | 'unpreviewable'
   | 'missing'
 
@@ -130,7 +130,7 @@ export function parseNativeWidgetResult(resultText: string | undefined): NativeW
 }
 
 const PREVIEWER_KINDS: ReadonlySet<string> = new Set([
-  'image', 'pdf', 'video', 'audio', 'markdown', 'notebook', 'text', 'unpreviewable', 'missing',
+  'image', 'pdf', 'video', 'audio', 'model', 'markdown', 'notebook', 'text', 'unpreviewable', 'missing',
 ])
 
 function previewerFiles(value: unknown): PreviewerFile[] {

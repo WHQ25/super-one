@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { View } from 'react-native'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { MobileThemeProvider } from '../theme/context'
@@ -6,7 +6,7 @@ import type { Locale } from '@superone/shared/agent-types'
 import type { FilePreviewState } from '../file-preview-state'
 import { createFakeGenerationPorts } from '../preview/fake-generation-ports'
 import { createFakeMediaPorts, type FakeSaveBehaviour } from '../preview/fake-media-ports'
-import { FILE_PREVIEW_FIXTURES, TINY_PNG, TOOL_GENERATION } from '../preview/file-preview-fixtures'
+import { FILE_PREVIEW_FIXTURES, TINY_PNG, TOOL_GENERATION, sampleModelLocalUri } from '../preview/file-preview-fixtures'
 import { Button } from './primitives'
 import { FilePreviewModal } from './file-preview'
 
@@ -27,6 +27,13 @@ const fixture = (label: string): FilePreviewState =>
 
 function Preview(props: Args) {
   const [state, setState] = useState<FilePreviewState | null>(props.state)
+  useEffect(() => {
+    const model = props.state
+    if (model?.kind !== 'model' || (model.name !== 'Box.glb' && model.name !== 'triangle.usdz')) return
+    let active = true
+    void sampleModelLocalUri(model.name).then((uri) => { if (active) setState({ ...model, localUri: uri }) })
+    return () => { active = false }
+  }, [props.state])
   const ports = useMemo(
     () => createFakeMediaPorts({ save: props.saveOutcome, share: props.shareOutcome, delayMs: 600 }),
     [props.saveOutcome, props.shareOutcome],
@@ -87,6 +94,11 @@ export const Video = { args: { state: fixture('Video · downloaded') } }
 export const VideoUndecodable = { args: { state: fixture('Video · undecodable') } }
 
 export const VideoLandscape = { args: { state: fixture('Video · downloaded'), landscape: true } }
+
+export const Model = { args: { state: fixture('Model · GLB') } }
+export const ModelLight = { args: { state: fixture('Model · GLB'), scheme: 'light' } }
+export const ModelUsdz = { args: { state: fixture('Model · USDZ') } }
+export const ModelUnavailable = { args: { state: fixture('Model · unavailable') } }
 
 export const Mermaid = { args: { state: fixture('Mermaid') } }
 /** Same diagram in the light shell. */

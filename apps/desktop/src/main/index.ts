@@ -80,7 +80,7 @@ import { addSessionTerminalCommandRule, isTerminalCommandAllowedForSession } fro
 import { RemoteTerminalController } from './environment/remote-terminal-controller'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { isGitMentionRefKind, type GitMentionRefKind } from '@superone/shared/git-mention-query'
-import { AUDIO_EXTENSIONS, BINARY_IMAGE_EXTENSIONS, PDF_EXTENSIONS, VIDEO_EXTENSIONS } from '@superone/shared/file-preview'
+import { AUDIO_EXTENSIONS, BINARY_IMAGE_EXTENSIONS, MODEL_EXTENSIONS, PDF_EXTENSIONS, VIDEO_EXTENSIONS } from '@superone/shared/file-preview'
 import { newMessageId } from '@superone/shared/message-id'
 import { TerminalBroadcaster } from './remote/terminal-broadcaster'
 import { nodePtySpawner } from './terminal/pty'
@@ -3297,6 +3297,7 @@ function registerIpcHandlers(): void {
   const PDF_EXTS = PDF_EXTENSIONS
   const VIDEO_EXTS = VIDEO_EXTENSIONS
   const AUDIO_EXTS = AUDIO_EXTENSIONS
+  const MODEL_EXTS = MODEL_EXTENSIONS
   ipcMain.handle(AgentIpcChannels.STAT_PREVIEW_FILE, async (_event, root: string, filePath: string) => {
     // A remote root re-stats on the node (inline-files-previewer.md §2.2);
     // the local resolver would only ever answer `missing` for a node path.
@@ -3305,6 +3306,11 @@ function registerIpcHandlers(): void {
     if (remote) return remote
     const { resolvePreviewerFile } = await import('./generative-ui/files-previewer-payload')
     return resolvePreviewerFile({ path: filePath }, { root })
+  })
+
+  ipcMain.handle(AgentIpcChannels.COMPOSE_USDZ_PREVIEW, async (_event, bytes: Uint8Array, selections: Record<string, string>) => {
+    const { composeUsdzPreview } = await import('./usdz-preview')
+    return composeUsdzPreview(bytes, selections)
   })
 
   ipcMain.handle(AgentIpcChannels.READ_PROJECT_FILE, async (_event, folderPath: string, filePath: string) => {
@@ -3325,6 +3331,7 @@ function registerIpcHandlers(): void {
       if (PDF_EXTS.has(ext)) return { path: filePath, content: '', language: 'pdf' }
       if (VIDEO_EXTS.has(ext)) return { path: filePath, content: '', language: 'video' }
       if (AUDIO_EXTS.has(ext)) return { path: filePath, content: '', language: 'audio' }
+      if (MODEL_EXTS.has(ext)) return { path: filePath, content: '', language: 'model' }
       const fullPath = resolveRealPath(isAbsolute(filePath) ? filePath : join(folderPath, filePath))
       if (!isAbsolute(filePath) && !isPathWithinAllowed(fullPath, [folderPath])) {
         return { path: filePath, content: '', language: 'text' }

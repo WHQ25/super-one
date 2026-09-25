@@ -89,6 +89,7 @@
   },
   "patchedDependencies": {
     "@xterm/addon-webgl@0.19.0": "patches/@xterm%2Faddon-webgl@0.19.0.patch",
-    "@deepseek-ai/dsh-subprocess-local@0.1.7-rc.1": "patches/@deepseek-ai%2Fdsh-subprocess-local@0.1.7-rc.1.patch"
+    "@deepseek-ai/dsh-subprocess-local@0.1.7-rc.1": "patches/@deepseek-ai%2Fdsh-subprocess-local@0.1.7-rc.1.patch",
+    "three@0.185.1": "patches/three@0.185.1.patch"
   }
 }

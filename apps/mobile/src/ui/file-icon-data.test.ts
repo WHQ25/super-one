@@ -3,8 +3,19 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { getIconForFile, getIconForFolder } from '@react-symbols/icons/utils'
 import data from './file-icons.generated.json'
 import { fileIconSvg } from './file-icon-data'
+import { MODEL_MIME } from '@superone/shared/file-preview'
+import { modelFileIconSvg } from '@superone/shared/model-file-icon'
 
 describe('native Symbols parity with the installed desktop source', () => {
+  it('uses a model icon for every supported 3D extension', () => {
+    for (const extension of Object.keys(MODEL_MIME)) {
+      expect(fileIconSvg(`/models/phone${extension}`), extension).toBe(modelFileIconSvg(extension))
+    }
+    expect(fileIconSvg('scene.GLB')).toBe(fileIconSvg('scene.gltf'))
+    expect(fileIconSvg('rig.fbx')).not.toBe(fileIconSvg('scene.glb'))
+    expect(fileIconSvg('phone.usdz')).not.toBe(fileIconSvg('rig.fbx'))
+    expect(modelFileIconSvg('phone.pdf')).toBeUndefined()
+  })
   it('matches filenames, compound suffixes and case handling', () => {
     const names = new Set([
       ...Object.keys(data.files),

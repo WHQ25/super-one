@@ -26,6 +26,7 @@ beforeEach(() => {
   writeFileSync(join(root, 'notes.txt'), 'plain text\n')
   writeFileSync(join(root, 'blob.txt'), Buffer.from([0x41, 0x00, 0x42]))
   writeFileSync(join(root, 'clip.mp4'), 'not really a video')
+  writeFileSync(join(root, 'device.usdz'), Buffer.from([0x50, 0x4b, 0x00, 0x00]))
 })
 
 afterEach(() => {
@@ -59,6 +60,11 @@ describe('files-previewer payload — the host decides, the renderer draws', () 
     const { payload } = await buildFilesPreviewerPayload('t', { files: [{ path: 'gone.png' }, { path: 'notes.txt' }] }, deps())
     expect(payload?.files?.map((f) => f.kind)).toEqual(['missing', 'text'])
     expect(payload?.files?.[0].size).toBeUndefined()
+  })
+
+  it('keeps a binary USDZ as a model slide', async () => {
+    const { payload } = await buildFilesPreviewerPayload('t', { files: [{ path: 'device.usdz' }] }, deps())
+    expect(payload?.files?.[0]).toMatchObject({ kind: 'model', size: 4 })
   })
 
   it('reports a NUL-sniffed .txt as unpreviewable/binary instead of trusting the extension', async () => {

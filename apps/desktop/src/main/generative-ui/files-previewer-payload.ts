@@ -17,7 +17,7 @@ import {
   type PreviewerFileKind,
   type PreviewerUnpreviewableReason,
 } from '@superone/shared/generative-ui/native-widgets'
-import { BINARY_SNIFF_BYTES, fileKindFromName, looksBinary } from '@superone/shared/file-preview'
+import { BINARY_SNIFF_BYTES, MODEL_PREVIEW_MAX_BYTES, fileKindFromName, looksBinary } from '@superone/shared/file-preview'
 import { maxReadableBytes } from '../file-read-limits'
 import { isMediaPathReadable } from '../media-readable-roots'
 import { isPathWithinAllowed, resolveRealPath } from '../path-security'
@@ -107,6 +107,7 @@ export function classifyPreviewerFile(
 ): PreviewerFile {
   const withSize = { ...base, size }
   const kind: PreviewerFileKind = fileKindFromName(base.name)
+  if (kind === 'model') return size <= MODEL_PREVIEW_MAX_BYTES ? { ...withSize, kind } : unpreviewable(withSize, 'too_large')
   if (kind === 'image' || kind === 'pdf' || kind === 'video' || kind === 'audio') return { ...withSize, kind }
   const ext = base.name.includes('.') ? base.name.slice(base.name.lastIndexOf('.')) : ''
   if (size > maxReadableBytes(ext)) return unpreviewable(withSize, 'too_large')

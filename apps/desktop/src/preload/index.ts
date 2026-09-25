@@ -2217,6 +2217,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.READ_PROJECT_FILE, folderPath, filePath),
   statPreviewFile: (root: string, filePath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.STAT_PREVIEW_FILE, root, filePath),
+  composeUsdzPreview: (bytes: Uint8Array, selections: Record<string, string>) =>
+    ipcRenderer.invoke(AgentIpcChannels.COMPOSE_USDZ_PREVIEW, bytes, selections),
   setUnsavedEditorBuffer: (filePath: string, content: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.ACP_SET_UNSAVED_BUFFER, filePath, content),
   getFileTree: (folderPath: string) =>

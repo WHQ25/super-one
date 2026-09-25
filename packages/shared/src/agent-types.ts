@@ -4053,6 +4053,7 @@ export const AgentIpcChannels = {
   GIT_DIFF_FILE: 'app:git-diff-file',
   READ_PROJECT_FILE: 'app:read-project-file',
   STAT_PREVIEW_FILE: 'app:stat-preview-file',
+  COMPOSE_USDZ_PREVIEW: 'app:compose-usdz-preview',
   SAVE_FILE: 'app:save-file',
   READ_FILE_AS_DATA_URI: 'app:read-file-as-data-uri',
   SAVE_FILE_AS: 'app:save-file-as',

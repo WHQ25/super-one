@@ -69,6 +69,13 @@ export const CODEX_GENERATION: ImageGenerationInfo = {
  * release build; the player takes either.
  */
 const SAMPLE_CLIP_URI = Asset.fromModule(require('../../assets/preview/sample-clip.mp4')).uri
+const SAMPLE_MODEL = Asset.fromModule(require('../../assets/preview/box.glb'))
+const SAMPLE_USDZ = Asset.fromModule(require('../../assets/preview/triangle.usdz'))
+export async function sampleModelLocalUri(name: 'Box.glb' | 'triangle.usdz'): Promise<string> {
+  const asset = await (name === 'Box.glb' ? SAMPLE_MODEL : SAMPLE_USDZ).downloadAsync()
+  if (!asset.localUri) throw new Error('Sample model is unavailable')
+  return asset.localUri
+}
 
 const PATH = '/workspace/super-one/packages/chat-view/src/PortableToolRow.tsx'
 const HERO = { path: '/workspace/super-one/art/hero.png', name: 'hero.png', size: 4_820_113, mimeType: 'image/png' }
@@ -88,6 +95,9 @@ export const FILE_PREVIEW_FIXTURES: ReadonlyArray<{ label: string; state: FilePr
   { label: 'Image · broken', state: { kind: 'image', name: 'broken.png', src: 'data:image/png;base64,AAAA', mimeType: 'image/png' } },
   { label: 'Video · downloaded', state: { kind: 'video', path: '/workspace/super-one/out/clip.mp4', name: 'clip.mp4', localUri: SAMPLE_CLIP_URI, mimeType: 'video/mp4', size: 31_813 } },
   { label: 'Video · undecodable', state: { kind: 'video', path: '/workspace/super-one/out/odd.mov', name: 'odd.mov', localUri: 'file:///cache/file-preview/missing.mov', mimeType: 'video/quicktime', size: 12 } },
+  { label: 'Model · GLB', state: { kind: 'model', path: '/workspace/super-one/models/Box.glb', name: 'Box.glb', localUri: 'file:///sample-model-pending.glb', mimeType: 'model/gltf-binary', size: 1664 } },
+  { label: 'Model · USDZ', state: { kind: 'model', path: '/workspace/super-one/models/triangle.usdz', name: 'triangle.usdz', localUri: 'file:///sample-model-pending.usdz', mimeType: 'model/vnd.usdz+zip', size: 557 } },
+  { label: 'Model · unavailable', state: { kind: 'model', path: '/workspace/super-one/models/missing.glb', name: 'missing.glb', localUri: 'file:///cache/file-preview/missing.glb', mimeType: 'model/gltf-binary', size: 12 } },
   { label: 'Mermaid', state: { kind: 'mermaid', name: 'Mermaid', svg: '<svg xmlns="http://www.w3.org/2000/svg" width="100%" style="max-width: 240px;" viewBox="0 0 240 80"><rect width="240" height="80" rx="10" fill="#1e1e2e"/><text x="120" y="48" text-anchor="middle" fill="#cdd6f4" font-size="16" font-family="system-ui">Start → End</text></svg>' } },
   { label: 'Code · cited line 16', state: { kind: 'text', path: PATH, name: 'PortableToolRow.tsx', text: CODE, size: CODE.length, markdown: false, line: 16 } },
   { label: 'Code · no anchor', state: { kind: 'text', path: PATH, name: 'PortableToolRow.tsx', text: CODE, size: CODE.length, markdown: false } },

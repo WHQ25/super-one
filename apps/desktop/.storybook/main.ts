@@ -41,6 +41,8 @@ const config: StorybookConfig = {
       ...(cfg.resolve.alias ?? {}),
       '@': resolve(here, '../src/renderer/src'),
     }
+    // Build-time constants the renderer's electron-vite config defines; empty keeps analytics off.
+    cfg.define = { ...(cfg.define ?? {}), __POSTHOG_PROJECT_TOKEN__: '""', __POSTHOG_HOST__: '""' }
     cfg.esbuild = { ...(cfg.esbuild || {}), jsx: 'automatic', jsxImportSource: 'react' }
     cfg.plugins = [...(cfg.plugins ?? []), tailwindcss()]
     return cfg

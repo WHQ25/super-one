@@ -1081,7 +1081,7 @@ describe('CodexTurnView', () => {
     )
 
     expect(screen.getByText('Euler')).toBeTruthy()
-    expect(screen.getByText('worker')).toBeTruthy()
+    expect(screen.queryByText('worker')).toBeNull()
     expect(screen.queryByText('forked')).toBeNull()
   })
 
@@ -1131,12 +1131,12 @@ describe('CodexTurnView', () => {
     )
 
     expect(screen.getByText('Euler')).toBeTruthy()
-    expect(screen.getByText('worker')).toBeTruthy()
+    expect(screen.queryByText('worker')).toBeNull()
     expect(screen.queryByText('forked')).toBeNull()
     expect(screen.queryByText('Follow-up → Euler')).toBeNull()
   })
 
-  it('renders a forked sendInput with only the forked badge', () => {
+  it('renders a forked sendInput with only the agent name', () => {
     setupActiveSession()
     render(
       <CodexTurnView
@@ -1174,7 +1174,7 @@ describe('CodexTurnView', () => {
     )
 
     expect(screen.getByText('Euler')).toBeTruthy()
-    expect(screen.getByText('forked')).toBeTruthy()
+    expect(screen.queryByText('forked')).toBeNull()
     expect(screen.queryByText('worker')).toBeNull()
     expect(screen.queryByText('Follow-up → Euler')).toBeNull()
   })

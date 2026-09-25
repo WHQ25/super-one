@@ -30,6 +30,25 @@ export interface SubagentDisplayInput {
   model?: string
 }
 
+/** Agent name when given (addressable via SendMessage), otherwise its type. */
+export function SubagentIdentityTag({
+  input,
+  colors,
+}: {
+  input: Pick<SubagentDisplayInput, 'name' | 'teamName' | 'subagentType'>
+  colors: Pick<SubagentColorClasses, 'tagBg' | 'tagText'>
+}) {
+  const label = input.name
+    ? input.teamName ? `${input.name}@${input.teamName}` : input.name
+    : input.subagentType
+  if (!label) return null
+  return (
+    <span className={cn('shrink-0 rounded px-1 py-px text-xs', input.name && 'font-medium', colors.tagBg, colors.tagText)}>
+      {label}
+    </span>
+  )
+}
+
 export interface SubagentStats {
   toolCalls: number
   totalTokens?: number
@@ -303,24 +322,7 @@ export function SubagentBlockPresenter({
               : colors.text,
           isRunning && !isExpanded && 'animate-pulse',
         )} />
-        {taskInput.name && taskInput.teamName ? (
-          <span className={cn('shrink-0 rounded px-1 py-px text-xs font-medium', colors.tagBg, colors.tagText)}>
-            {taskInput.name}@{taskInput.teamName}
-          </span>
-        ) : taskInput.name ? (
-          <>
-            <span className={cn('shrink-0 rounded px-1 py-px text-xs font-medium', colors.tagBg, colors.tagText)}>
-              {taskInput.name}
-            </span>
-            {taskInput.subagentType && taskInput.subagentType !== taskInput.name && (
-              <span className="shrink-0 text-xs text-muted-foreground">{taskInput.subagentType}</span>
-            )}
-          </>
-        ) : taskInput.subagentType ? (
-          <span className={cn('shrink-0 rounded px-1 py-px text-xs', colors.tagBg, colors.tagText)}>
-            {taskInput.subagentType}
-          </span>
-        ) : null}
+        <SubagentIdentityTag input={taskInput} colors={colors} />
         {taskInput.description && (
           <span className="min-w-0 truncate text-left text-muted-foreground">{taskInput.description}</span>
         )}

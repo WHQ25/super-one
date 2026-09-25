@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Bot, ArrowUp, ArrowDown, Wrench, Check, Loader2, TriangleAlert, CircleSlash } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { Streamdown } from 'streamdown'
+import { SubagentIdentityTag } from '@superone/chat-view/presenters/SubagentBlock'
 import type { ContentBlock, ChatMessage } from '@superone/shared/agent-types'
 import { useActiveSession } from '@/stores/chat'
 import { useSubagentNavigation, type SubagentViewState } from './subagent-navigation-context'
@@ -163,24 +164,7 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
           <ArrowLeft className="size-3.5" />
         </button>
         <Bot className={cn('size-3.5 shrink-0', colors.text)} />
-        {taskInput.name && taskInput.teamName ? (
-          <span className={cn('shrink-0 rounded px-1 py-px text-xs font-medium', colors.tagBg, colors.tagText)}>
-            {taskInput.name}@{taskInput.teamName}
-          </span>
-        ) : taskInput.name ? (
-          <>
-            <span className={cn('shrink-0 rounded px-1 py-px text-xs font-medium', colors.tagBg, colors.tagText)}>
-              {taskInput.name}
-            </span>
-            {taskInput.subagentType && taskInput.subagentType !== taskInput.name && (
-              <span className="shrink-0 text-xs text-muted-foreground">{taskInput.subagentType}</span>
-            )}
-          </>
-        ) : taskInput.subagentType ? (
-          <span className={cn('shrink-0 rounded px-1 py-px text-xs', colors.tagBg, colors.tagText)}>
-            {taskInput.subagentType}
-          </span>
-        ) : null}
+        <SubagentIdentityTag input={taskInput} colors={colors} />
         <span className="min-w-0 truncate font-medium text-foreground">{headerTitle}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
           {isRunning ? (

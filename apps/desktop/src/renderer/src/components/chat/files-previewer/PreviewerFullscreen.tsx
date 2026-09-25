@@ -86,7 +86,7 @@ export function PreviewerFullscreen({ open, onClose, files, index, onIndexChange
 
         <div className="flex min-h-0 flex-1">
           {count > 1 && <Gutter side="left" disabled={!hasPrev} onClick={() => onIndexChange(index - 1)} label={t('chat.filesPreviewer.previous')} />}
-          <div ref={stageRef} tabIndex={-1} className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden rounded-lg bg-muted/30 outline-none" data-testid="previewer-fullscreen-stage">
+          <div ref={stageRef} tabIndex={-1} className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden rounded-lg bg-transparent outline-none" data-testid="previewer-fullscreen-stage">
             <PreviewerStage
               file={file}
               state={state}

@@ -27,7 +27,7 @@ export function VideoPlayerView({ uri, label }: { uri: string; label: string }) 
   const { status } = useEvent(player, 'statusChange', { status: player.status })
 
   return (
-    <View style={styles.body} testID="file-preview-video">
+    <View style={[styles.body, { backgroundColor: colors.background }]} testID="file-preview-video">
       {status === 'error' ? (
         <View style={styles.error}>
           <CircleAlert color={colors.error} size={28} />
@@ -49,7 +49,7 @@ export function VideoPlayerView({ uri, label }: { uri: string; label: string }) 
 }
 
 const styles = StyleSheet.create({
-  body: { flex: 1, backgroundColor: '#000' },
+  body: { flex: 1 },
   video: { flex: 1 },
   error: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 16 },
 })

@@ -121,7 +121,7 @@ export function FilesPreviewer({ payload, projectPath }: FilesPreviewerProps) {
 
       <div
         ref={stageRef}
-        className="relative flex min-h-0 flex-1 cursor-zoom-in items-center justify-center overflow-hidden rounded-lg bg-muted/30"
+        className="relative flex min-h-0 flex-1 cursor-zoom-in items-center justify-center overflow-hidden rounded-lg bg-transparent"
         onClickCapture={onStageClickCapture}
         onContextMenu={(e) => { if (!isStageControlTarget(e.target)) e.preventDefault() }}
         data-testid="previewer-stage"

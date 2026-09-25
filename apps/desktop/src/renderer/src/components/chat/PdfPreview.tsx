@@ -132,7 +132,7 @@ export function PdfPreview(props: PdfSource & { className?: string; variant?: Pd
   }, [])
 
   return (
-    <div className={cn('relative flex flex-col overflow-hidden bg-muted/30', props.className ?? 'max-h-[80vh]')}>
+    <div className={cn('relative flex flex-col overflow-hidden bg-transparent', props.className ?? 'max-h-[80vh]')}>
       {!loading && pageCount > 0 && !stage && (
         <div className="flex shrink-0 items-center justify-center gap-1 border-b px-3 py-1.5">
           <IconButton size="sm" onClick={zoomOut}>

@@ -133,7 +133,7 @@ function PreviewBody({ state, chromeVisible, onToggleChrome, onStartTransfer, on
 
   if (state.kind === 'video') {
     return (
-      <View style={[styles.flex, offset, { backgroundColor: '#000' }]}>
+      <View style={[styles.flex, offset, { backgroundColor: colors.background }]}>
         <VideoPlayerView key={state.localUri} uri={state.localUri} label={state.name} />
       </View>
     )

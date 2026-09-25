@@ -52,7 +52,8 @@ describe('pack-npm', () => {
     expect(bundle.includes('from "@superone/runtime"')).toBe(false)
     expect(bundle.includes('from "@superone/shared"')).toBe(false)
     // Cursor SDK must stay external (native/platform package, not rebundled).
-    expect(bundle.includes('from "@cursor/sdk"') || bundle.includes("from '@cursor/sdk'")).toBe(true)
+    // It is loaded on first use, so the bundle references it by dynamic import.
+    expect(bundle).toMatch(/(?:from |import\()["']@cursor\/sdk["']/)
     // Version inject for harness release coupling.
     expect(bundle.includes(version)).toBe(true)
 

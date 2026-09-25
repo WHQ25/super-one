@@ -3,7 +3,7 @@ import {
   Scene, SRGBColorSpace, Vector3, WebGLRenderer, type Material, type Object3D, type Texture,
 } from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { parseModel, placeModelCamera } from '../../desktop/src/renderer/src/components/coding/model-loader'
+import { parseModel, placeModelCamera, updateModelCameraClipPlanes } from '../../desktop/src/renderer/src/components/coding/model-loader'
 import { addModelFillLights, lightModel } from '../../desktop/src/renderer/src/components/coding/model-environment'
 
 declare global {
@@ -58,7 +58,7 @@ async function main(): Promise<void> {
   controls.enableDamping = true
   controls.enablePan = true
   const reset = () => {
-    placeModelCamera(camera, center, radius)
+    placeModelCamera(camera, bounds, radius)
     controls.target.copy(center)
     controls.update()
   }
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
     const { width, height } = host.getBoundingClientRect()
     if (width <= 0 || height <= 0) return
     camera.aspect = width / height
-    placeModelCamera(camera, center, radius)
+    placeModelCamera(camera, bounds, radius)
     camera.updateProjectionMatrix()
     renderer.setSize(width, height)
   }
@@ -83,6 +83,7 @@ async function main(): Promise<void> {
     mixer?.update(Math.min((now - previous) / 1000, 0.1))
     previous = now
     controls.update()
+    updateModelCameraClipPlanes(camera, bounds, radius)
     renderer.render(scene, camera)
     frame = requestAnimationFrame(draw)
   }

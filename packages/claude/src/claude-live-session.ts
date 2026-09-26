@@ -50,6 +50,8 @@ export interface ClaudeLiveTurnInput {
 
 export interface ClaudeLiveSessionOptions {
   cwd: string
+  /** Receives SDK turns started by background notifications between user turns. */
+  onAmbientEvent?: (event: AgentEvent) => void
   binaryPath?: string | null
   /** Initial resume id (prior claude-session). */
   sessionId?: string | null
@@ -98,6 +100,7 @@ interface PendingTurn {
 
 interface ActiveTurn {
   tag: string
+  userUuid: string
   messageId: string
   input: ClaudeLiveTurnInput
   resolve: (r: ClaudeSdkTurnResult) => void
@@ -107,6 +110,11 @@ interface ActiveTurn {
   sawResult: boolean
   resultError: string | null
   cancelled?: boolean
+}
+
+interface AmbientTurn {
+  messageId: string
+  mapper: ReturnType<typeof createClaudeAgentEventMapper>
 }
 
 /**
@@ -298,6 +306,9 @@ export class ClaudeLiveSession {
   private readonly bridge = new MessageBridge()
   private readonly pending: PendingTurn[] = []
   private active: ActiveTurn | null = null
+  private ambient: AmbientTurn | null = null
+  private readonly backgroundTaskIds = new Set<string>()
+  private idleSystemMapper: ReturnType<typeof createClaudeAgentEventMapper> | null = null
   private sdkSessionId: string | null
   private closed = false
   private readonly iterationDone: Promise<void>
@@ -362,7 +373,36 @@ export class ClaudeLiveSession {
   }
 
   get isBusy(): boolean {
-    return this.active != null
+    return this.active != null || this.ambient != null
+  }
+
+  get hasActiveBackgroundTasks(): boolean {
+    return this.backgroundTaskIds.size > 0
+  }
+
+  private trackBackgroundTasks(msg: SDKMessage): void {
+    if (msg.type !== 'system') return
+    const system = msg as SDKMessage & {
+      subtype: string
+      task_id?: string
+      ambient?: boolean
+      patch?: { status?: string }
+      tasks?: Array<{ task_id?: string; ambient?: boolean }>
+    }
+    if (system.subtype === 'task_started' && system.task_id && system.ambient !== true) {
+      this.backgroundTaskIds.add(system.task_id)
+    } else if (system.subtype === 'task_notification' && system.task_id) {
+      this.backgroundTaskIds.delete(system.task_id)
+    } else if (system.subtype === 'task_updated' && system.task_id && (
+      system.patch?.status === 'completed' || system.patch?.status === 'failed' || system.patch?.status === 'killed'
+    )) {
+      this.backgroundTaskIds.delete(system.task_id)
+    } else if (system.subtype === 'background_tasks_changed') {
+      this.backgroundTaskIds.clear()
+      for (const task of system.tasks ?? []) {
+        if (task.task_id && task.ambient !== true) this.backgroundTaskIds.add(task.task_id)
+      }
+    }
   }
 
   /**
@@ -376,7 +416,7 @@ export class ClaudeLiveSession {
     }
     const tag = input.clientMessageId || randomUUID()
     const sessionId = this.sdkSessionId || ''
-    const priorityNext = input.priorityNext !== false && this.active != null
+    const priorityNext = input.priorityNext !== false && this.isBusy
     const msg = toUserMessage(input.content, sessionId, priorityNext)
 
     return new Promise<ClaudeSdkTurnResult>((resolve, reject) => {
@@ -404,7 +444,7 @@ export class ClaudeLiveSession {
       }
       input.signal?.addEventListener('abort', onAbort, { once: true })
 
-      if (this.active) {
+      if (this.isBusy) {
         this.pending.push({ tag, msg, input, resolve, reject })
         return
       }
@@ -422,6 +462,8 @@ export class ClaudeLiveSession {
       this.active.reject(new Error('Claude live session disposed'))
       this.active = null
     }
+    this.ambient = null
+    this.backgroundTaskIds.clear()
     this.bridge.close()
     this.processAbort.abort()
     await this.iterationDone.catch(() => undefined)
@@ -434,6 +476,7 @@ export class ClaudeLiveSession {
     this.planHandler = item.input.onPlan
     this.active = {
       tag: item.tag,
+      userUuid: item.msg.uuid ?? item.tag,
       messageId,
       input: item.input,
       resolve: item.resolve,
@@ -451,7 +494,7 @@ export class ClaudeLiveSession {
   }
 
   private flushPending(): void {
-    if (this.active || this.closed) return
+    if (this.isBusy || this.closed) return
     const next = this.pending.shift()
     if (!next) return
     this.startTurn(next)
@@ -476,12 +519,72 @@ export class ClaudeLiveSession {
     this.flushPending()
   }
 
+  private applyAmbientMessage(msg: SDKMessage): void {
+    if (!this.ambient && (
+      (msg.type === 'assistant' || msg.type === 'stream_event')
+      && !(msg as { parent_tool_use_id?: string | null }).parent_tool_use_id
+    )) {
+      const messageId = `ambient-${randomUUID()}`
+      this.opts.onAmbientEvent?.({
+        type: 'message_start',
+        message: { id: messageId, role: 'assistant', status: 'streaming', content: [], createdAt: new Date().toISOString(), providerId: 'claude' },
+      })
+      this.opts.onAmbientEvent?.({ type: 'status_change', status: 'streaming' })
+      this.ambient = {
+        messageId,
+        mapper: createClaudeAgentEventMapper({ messageId, emit: (event) => this.opts.onAmbientEvent?.(event) }),
+      }
+    }
+    if (!this.ambient) return
+    const applied = this.ambient.mapper.apply(msg)
+    if (applied.sessionId) this.sdkSessionId = applied.sessionId
+    if (applied.isResult) {
+      this.ambient = null
+      this.flushPending()
+    }
+  }
+
+  private failAmbient(error: string): void {
+    const ambient = this.ambient
+    if (!ambient) return
+    this.ambient = null
+    this.opts.onAmbientEvent?.({ type: 'message_error', messageId: ambient.messageId, error })
+  }
+
   private async iterate(q: AsyncIterable<SDKMessage>): Promise<void> {
     try {
       for await (const msg of q) {
         if (this.closed) break
+        this.trackBackgroundTasks(msg)
         const cur = this.active
-        if (!cur) continue
+        if (!cur) {
+          // Claude may wake itself when a background task completes. Such a
+          // turn has no composer send, but still needs its own durable bubble.
+          if (!this.ambient && msg.type === 'system') {
+            this.idleSystemMapper ??= createClaudeAgentEventMapper({
+              messageId: '',
+              emit: (event) => this.opts.onAmbientEvent?.(event),
+            })
+            this.idleSystemMapper.apply(msg)
+          } else {
+            this.applyAmbientMessage(msg)
+          }
+          continue
+        }
+
+        // A resumed SDK process can complete its own recovery/meta turn before
+        // consuming the user message we just pushed. Only a result belonging to
+        // that message may settle its SuperOne turn.
+        const tagged = msg as SDKMessage & { user_message_uuid?: string; user_message_uuids?: string[] }
+        const uuids = tagged.user_message_uuids ?? (tagged.user_message_uuid ? [tagged.user_message_uuid] : null)
+        if ((uuids && !uuids.includes(cur.userUuid)) || (this.ambient && !uuids)) {
+          this.applyAmbientMessage(msg)
+          continue
+        }
+        if (msg.type === 'result') {
+          const result = msg as SDKMessage & { num_turns?: number; is_error?: boolean }
+          if (!uuids && this.opts.sessionId && result.num_turns === 0 && result.is_error === false && !cur.sawResult && !cur.streamedText) continue
+        }
 
         if (cur.cancelled) {
           // Drain the SDK's current turn before allowing the next bridge
@@ -558,6 +661,7 @@ export class ClaudeLiveSession {
         }
       }
     } catch (err) {
+      this.failAmbient(err instanceof Error ? err.message : String(err))
       if (this.active) {
         if (!this.active.cancelled) {
           this.active.reject(err instanceof Error ? err : new Error(String(err)))
@@ -568,6 +672,12 @@ export class ClaudeLiveSession {
         p.reject(err instanceof Error ? err : new Error(String(err)))
       }
     } finally {
+      if (!this.closed) {
+        this.failAmbient('Claude SDK stream ended before the background turn completed')
+        this.active?.reject(new Error('Claude SDK stream ended before the user turn completed'))
+        this.active = null
+        for (const pending of this.pending.splice(0)) pending.reject(new Error('Claude SDK stream ended before the queued turn started'))
+      }
       this.closed = true
       this.bridge.close()
     }

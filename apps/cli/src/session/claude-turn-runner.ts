@@ -327,6 +327,11 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
           : undefined
       const live = ClaudeLiveSession.open({
         cwd,
+        onAmbientEvent: (event) => {
+          const current = lives.get(sessionKey)
+          if (current) current.lastActivityAt = Date.now()
+          input.onAmbientEvent?.(event)
+        },
         binaryPath: binary,
         sessionId: priorSession,
         model: input.model && input.model.trim() ? input.model.trim() : undefined,
@@ -437,7 +442,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
   runner.listActiveRuntimes = () => [...lives.entries()].map(([sessionId, entry]) => ({
     sessionId,
     lastActivityAt: entry.lastActivityAt,
-    busy: entry.busyCount > 0,
+    busy: entry.busyCount > 0 || entry.live.isBusy || entry.live.hasActiveBackgroundTasks,
   }))
 
   return runner

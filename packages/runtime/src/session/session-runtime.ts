@@ -1,5 +1,6 @@
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { randomUUID } from 'node:crypto'
+import type { AgentEvent } from '@superone/shared/agent-types'
 import {
   DEFAULT_HOST_ACTION_TOOL_GROUPS,
   HOST_ACTION_CAPABILITY_VERSION,
@@ -215,6 +216,7 @@ export class SessionRuntime {
   private readonly deliveringArtifactNotifications = new Map<string, Promise<void>>()
   /** In-flight runTurn count per session (for multi-turn live inject). */
   private readonly activeTurnCounts = new Map<string, number>()
+  private readonly ambientTurns = new Map<string, { messageId: string; text: string }>()
   /**
    * Ephemeral system-prompt append (e.g. collaboration credential instructions).
    * Not durable in sessions table — reconstructed from grants on restart when needed.
@@ -1132,6 +1134,52 @@ export class SessionRuntime {
     })
   }
 
+  private handleAmbientEvent(sessionId: string, event: AgentEvent): void {
+    const session = this.live.get(sessionId)
+    if (!session || session.closed || this.disposing) return
+    const activeUsers = this.activeTurnCounts.get(sessionId) ?? 0
+    if (event.type === 'status_change' && event.status === 'idle' && activeUsers > 0) return
+
+    if (event.type === 'message_start') {
+      this.ambientTurns.set(sessionId, { messageId: event.message.id, text: '' })
+      session.status = 'streaming'
+      if (activeUsers === 0) {
+        this.events.appendSession({ sessionId, eventType: SESSION_DURABLE_EVENT.turnStarted, payload: { status: 'streaming' } })
+      }
+    }
+
+    const ambient = this.ambientTurns.get(sessionId)
+    if (ambient && event.type === 'content_delta' && event.messageId === ambient.messageId && event.delta.type === 'text' && !event.delta.parentToolUseId) {
+      ambient.text += event.delta.text
+    }
+    this.events.appendSession({ sessionId, eventType: SESSION_DURABLE_EVENT.agentEvent, payload: { event } })
+
+    if (ambient && event.type === 'message_complete' && event.messageId === ambient.messageId) {
+      const text = ambient.text || event.metadata?.resultText || ''
+      session.transcript.push({ id: ambient.messageId, role: 'assistant', text, createdAt: Date.now() })
+      this.events.appendSession({ sessionId, eventType: SESSION_DURABLE_EVENT.assistantMessage, payload: { blockId: ambient.messageId, text } })
+      this.ambientTurns.delete(sessionId)
+      if (activeUsers === 0) {
+        session.status = 'idle'
+        this.events.appendSession({ sessionId, eventType: SESSION_DURABLE_EVENT.turnCompleted, payload: { status: 'idle' } })
+        this.cancelHostActionsForSession(sessionId, 'turn_ended')
+      }
+    } else if (ambient && (event.type === 'message_error' || event.type === 'message_interrupted') && event.messageId === ambient.messageId) {
+      this.ambientTurns.delete(sessionId)
+      if (activeUsers === 0) {
+        session.status = event.type === 'message_error' ? 'error' : 'interrupted'
+        this.events.appendSession({
+          sessionId,
+          eventType: event.type === 'message_error' ? SESSION_DURABLE_EVENT.turnError : SESSION_DURABLE_EVENT.turnInterrupted,
+          payload: event.type === 'message_error' ? { message: event.error } : { reason: 'ambient_interrupted' },
+        })
+        this.cancelHostActionsForSession(sessionId, 'turn_ended')
+      }
+    }
+    session.updatedAt = Date.now()
+    this.persist(session)
+  }
+
   private async runTurn(
     session: NodeSessionRecord,
     opts: TurnOpts,
@@ -1191,6 +1239,7 @@ export class SessionRuntime {
             causationRequestId: requestId,
           })
         },
+        onAmbientEvent: (event) => this.handleAmbientEvent(session.sessionId, event),
         onPermission: (interaction) => {
           // Modes that skip interactive permission prompts (desktop parity).
           if (
@@ -1243,7 +1292,7 @@ export class SessionRuntime {
         // Count is decremented in finally; peek peers as (count - 1).
         const remainingPeers = Math.max(0, (this.activeTurnCounts.get(session.sessionId) ?? 1) - 1)
         const fifo = this.turnQueues.get(session.sessionId)?.length ?? 0
-        if (remainingPeers > 0 || fifo > 0) {
+        if (remainingPeers > 0 || fifo > 0 || this.ambientTurns.has(session.sessionId)) {
           session.status = 'streaming'
         } else {
           session.status = 'idle'
@@ -1289,7 +1338,7 @@ export class SessionRuntime {
       // the remaining turn. Keep the historical eager cancellation for a
       // single-turn/FIFO session, but defer shared cleanup until the final
       // concurrent turn has finished.
-      if (!session.closed && remainingAfter <= 0) {
+      if (!session.closed && remainingAfter <= 0 && !this.ambientTurns.has(sid)) {
         this.cancelHostActionsForSession(sid, 'turn_ended')
       }
       if (!session.closed) {
@@ -1338,6 +1387,7 @@ export class SessionRuntime {
     const session = this.live.get(sessionId)
     if (!session) throw Object.assign(new Error('session not found'), { code: 'not_found' })
     if (session.closed) return
+    this.ambientTurns.delete(sessionId)
     const aborts = this.aborts.get(sessionId)
     for (const abort of aborts ?? []) abort.abort()
     this.aborts.delete(sessionId)

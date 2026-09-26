@@ -52,6 +52,92 @@ function successTurn(sessionId: string, text: string): Array<Record<string, unkn
 }
 
 describe('ClaudeLiveSession', () => {
+  it('does not finish a resumed user turn on an earlier synthetic result', async () => {
+    const events: AgentEvent[] = []
+    const queryFn = bridgeAwareQuery((user) => [
+      { type: 'result', subtype: 'success', is_error: false, result: 'No response requested.', num_turns: 0, user_message_uuid: 'prior-turn' },
+      ...successTurn('resumed', 'actual answer').map((message) => ({ ...message, user_message_uuid: user.uuid })),
+    ])
+    const live = ClaudeLiveSession.open({ cwd: tmpdir(), sessionId: 'resumed', queryFn })
+
+    const result = await live.sendTurn({ content: 'Please continue', messageId: 'user-turn', onAgentEvent: (event) => events.push(event) })
+
+    expect(result.finalText).toBe('actual answer')
+    expect(events.filter((event) => event.type === 'message_complete')).toHaveLength(1)
+    expect(events).toContainEqual(expect.objectContaining({ type: 'content_delta', messageId: 'user-turn', delta: expect.objectContaining({ text: 'actual answer' }) }))
+    await live.dispose()
+  })
+
+  it('ignores an untagged zero-turn resume result but accepts a tagged empty user result', async () => {
+    const queryFn = bridgeAwareQuery((user) => [
+      { type: 'result', subtype: 'success', is_error: false, result: 'No response requested.', num_turns: 0 },
+      { type: 'result', subtype: 'success', is_error: false, result: '', num_turns: 0, user_message_uuid: user.uuid },
+    ])
+    const live = ClaudeLiveSession.open({ cwd: tmpdir(), sessionId: 'resumed', queryFn })
+    await expect(live.sendTurn({ content: 'Continue' })).resolves.toMatchObject({ finalText: '' })
+    await live.dispose()
+  })
+
+  it('keeps a tagged background reply out of the active user message', async () => {
+    const userEvents: AgentEvent[] = []
+    const ambientEvents: AgentEvent[] = []
+    const queryFn = bridgeAwareQuery((user) => [
+      { type: 'stream_event', session_id: 's', user_message_uuid: 'background', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'background report' } } },
+      { type: 'assistant', session_id: 's', user_message_uuid: 'background', message: { content: [{ type: 'text', text: 'background report' }] } },
+      { type: 'result', subtype: 'success', is_error: false, session_id: 's', user_message_uuid: 'background', result: 'background report' },
+      ...successTurn('s', 'user answer').map((message) => ({ ...message, user_message_uuid: user.uuid })),
+    ])
+    const live = ClaudeLiveSession.open({ cwd: tmpdir(), queryFn, onAmbientEvent: (event) => ambientEvents.push(event) })
+    const result = await live.sendTurn({ content: 'Question', messageId: 'user-turn', onAgentEvent: (event) => userEvents.push(event) })
+
+    expect(result.finalText).toBe('user answer')
+    expect(userEvents.some((event) => event.type === 'content_delta' && event.delta.type === 'text' && event.delta.text === 'background report')).toBe(false)
+    expect(ambientEvents).toContainEqual(expect.objectContaining({ type: 'content_delta', delta: expect.objectContaining({ text: 'background report' }) }))
+    await live.dispose()
+  })
+
+  it('surfaces an assistant turn started by a background notification while no user turn is active', async () => {
+    const ambientEvents: AgentEvent[] = []
+    const queryFn: ClaudeQueryFn = ({ prompt }) => (async function* () {
+      for await (const _user of prompt as AsyncIterable<SDKUserMessage>) {
+        yield* successTurn('session', 'started') as SDKMessage[]
+        yield { type: 'stream_event', session_id: 'session', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'background work finished' } } } as SDKMessage
+        yield { type: 'result', subtype: 'success', is_error: false, session_id: 'session', result: 'background work finished' } as SDKMessage
+      }
+    })() as ReturnType<ClaudeQueryFn>
+    const live = ClaudeLiveSession.open({ cwd: tmpdir(), queryFn, onAmbientEvent: (event) => ambientEvents.push(event) })
+
+    await live.sendTurn({ content: 'Start background work' })
+    await vi.waitFor(() => expect(ambientEvents.some((event) => event.type === 'message_complete')).toBe(true))
+    expect(ambientEvents).toContainEqual(expect.objectContaining({ type: 'content_delta', delta: expect.objectContaining({ text: 'background work finished' }) }))
+    await live.dispose()
+  })
+
+  it('queues a user send until an ambient turn finishes', async () => {
+    let releaseAmbient: (() => void) | undefined
+    const ambientGate = new Promise<void>((resolve) => { releaseAmbient = resolve })
+    const queryFn: ClaudeQueryFn = ({ prompt }) => (async function* () {
+      let index = 0
+      for await (const _user of prompt as AsyncIterable<SDKUserMessage>) {
+        if (index++ === 0) {
+          yield* successTurn('s', 'started') as SDKMessage[]
+          yield { type: 'stream_event', session_id: 's', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'ambient' } } } as SDKMessage
+          await ambientGate
+          yield { type: 'result', subtype: 'success', is_error: false, session_id: 's', result: 'ambient' } as SDKMessage
+        } else {
+          yield* successTurn('s', 'second answer') as SDKMessage[]
+        }
+      }
+    })() as ReturnType<ClaudeQueryFn>
+    const live = ClaudeLiveSession.open({ cwd: tmpdir(), queryFn })
+    await live.sendTurn({ content: 'first' })
+    await vi.waitFor(() => expect(live.isBusy).toBe(true))
+    const second = live.sendTurn({ content: 'second' })
+    releaseAmbient?.()
+    await expect(second).resolves.toMatchObject({ finalText: 'second answer' })
+    await live.dispose()
+  })
+
   it('runs a single turn on the long-lived bridge query', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cls-1-'))
     const bin = join(dir, 'claude')

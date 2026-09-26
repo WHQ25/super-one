@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import type { AgentEvent } from '@superone/shared/agent-types'
 import {
   createSimulatedTurnRunner,
   deriveSessionTitleFromUserText,
@@ -85,6 +86,32 @@ describe('forkSessionTitle', () => {
     expect(forkSessionTitle('Chat')).toBe('Chat (fork)')
     expect(forkSessionTitle('Chat (fork)')).toBe('Chat (fork)')
     expect(forkSessionTitle(null)).toBe('Session (fork)')
+  })
+})
+
+describe('SessionRuntime ambient Claude output', () => {
+  it('persists a background notification reply after the user turn has ended', async () => {
+    const { store, events, leases, rows } = memoryPorts()
+    const emitted: string[] = []
+    events.appendSession = (event) => { emitted.push(event.eventType); return '1' }
+    let onAmbientEvent: ((event: AgentEvent) => void) | undefined
+    const runner: import('./types').TurnRunner = async (input) => {
+      onAmbientEvent = input.onAmbientEvent
+      return { finalText: 'started', providerResume: 'claude-session:session' }
+    }
+    const rt = new SessionRuntime(store, events, leases, 'env-1', runner)
+    const created = rt.create({ projectId: 'p1', harnessId: 'claude' })
+    await rt.send({ sessionId: created.sessionId, text: 'Start background work', client: { clientSessionId: 'c1' }, leaseId: 'l1', generation: '1' })
+    await vi.waitFor(() => expect(rt.get(created.sessionId)?.status).toBe('idle'))
+
+    const messageId = 'ambient-1'
+    onAmbientEvent?.({ type: 'message_start', message: { id: messageId, role: 'assistant', status: 'streaming', content: [], createdAt: new Date().toISOString(), providerId: 'claude' } })
+    onAmbientEvent?.({ type: 'content_delta', messageId, delta: { type: 'text', text: 'background work finished', parentToolUseId: null } })
+    onAmbientEvent?.({ type: 'message_complete', messageId, metadata: {} })
+
+    expect(rows.get(created.sessionId)?.transcript.at(-1)).toMatchObject({ role: 'assistant', text: 'background work finished' })
+    expect(rt.get(created.sessionId)?.status).toBe('idle')
+    expect(emitted.filter((type) => type === 'session.assistant_message')).toHaveLength(2)
   })
 })
 

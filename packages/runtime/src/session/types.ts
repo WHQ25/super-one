@@ -204,6 +204,8 @@ export type TurnRunner = ((input: {
   onEvent?: (event: SessionTurnEvent) => void
   /** Lossless harness-native AgentEvent stream. */
   onAgentEvent?: (event: AgentEvent) => void
+  /** Harness output produced after this user turn has settled. */
+  onAmbientEvent?: (event: AgentEvent) => void
   onPermission?: (interaction: PendingInteraction) => Promise<PermissionDecision>
   /** Optional user-question waiter (lease-gated via SessionRuntime.respondQuestion). */
   onQuestion?: (interaction: PendingInteraction) => Promise<QuestionAnswers>

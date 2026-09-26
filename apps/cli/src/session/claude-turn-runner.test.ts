@@ -183,6 +183,55 @@ describe('createNodeClaudeTurnRunner', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
+  it('forwards background notification output after the user turn settles', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-ambient-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+    const queryFn: ClaudeQueryFn = ({ prompt }) => (async function* () {
+      for await (const _user of prompt as AsyncIterable<SDKUserMessage>) {
+        yield* success('s', 'started') as SDKMessage[]
+        yield { type: 'stream_event', session_id: 's', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'background report' } } } as SDKMessage
+        yield { type: 'result', subtype: 'success', is_error: false, session_id: 's', result: 'background report' } as SDKMessage
+      }
+    })() as ReturnType<ClaudeQueryFn>
+    const runner = createNodeClaudeTurnRunner({ binaryPath: bin, resolveProjectPath: () => dir, queryFn, allowSimulatedFallback: false })
+    const ambientEvents: AgentEvent[] = []
+    await runner({
+      session: session(), text: 'Start work', onDelta: () => {}, onAmbientEvent: (event) => ambientEvents.push(event), signal: new AbortController().signal,
+    })
+    await vi.waitFor(() => expect(ambientEvents.some((event) => event.type === 'message_complete')).toBe(true))
+    expect(ambientEvents).toContainEqual(expect.objectContaining({ type: 'content_delta', delta: expect.objectContaining({ text: 'background report' }) }))
+    await runner.disposeAll?.()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('keeps the SDK runtime busy while a background task is still running', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-background-busy-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+    let finish: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => { finish = resolve })
+    const queryFn: ClaudeQueryFn = ({ prompt }) => (async function* () {
+      for await (const _user of prompt as AsyncIterable<SDKUserMessage>) {
+        yield { type: 'system', subtype: 'task_started', task_id: 'task-1', session_id: 's' } as SDKMessage
+        yield* success('s', 'started') as SDKMessage[]
+        await gate
+        yield { type: 'system', subtype: 'task_notification', task_id: 'task-1', status: 'completed', session_id: 's' } as SDKMessage
+      }
+    })() as ReturnType<ClaudeQueryFn>
+    const runner = createNodeClaudeTurnRunner({ binaryPath: bin, resolveProjectPath: () => dir, queryFn, allowSimulatedFallback: false })
+    const ambientEvents: AgentEvent[] = []
+    await runner({ session: session(), text: 'Start work', onDelta: () => {}, onAmbientEvent: (event) => ambientEvents.push(event), signal: new AbortController().signal })
+    expect(runner.listActiveRuntimes?.()[0]?.busy).toBe(true)
+    finish?.()
+    await vi.waitFor(() => expect(runner.listActiveRuntimes?.()[0]?.busy).toBe(false))
+    expect(ambientEvents).toContainEqual(expect.objectContaining({ type: 'task_notification', taskId: 'task-1' }))
+    await runner.disposeAll?.()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   it('prefers the lossless AgentEvent core when the runtime provides it', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-agent-events-'))
     const bin = join(dir, 'claude')

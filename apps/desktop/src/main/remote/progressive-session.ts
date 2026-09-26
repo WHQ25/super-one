@@ -1,6 +1,7 @@
 import { compactMediaToolResult } from '../remote-content'
 import { codexToolDetail, nestedCodexItem, deferTool, isFileMutationChild, projectCodexTool, projectTool, taskFileChanges, toolDetail } from './progressive-tools'
-import type { AgentEvent, ChatMessage, ContentBlock } from '@superone/shared/agent-types'
+import type { AgentEvent, BashEditDiff, ChatMessage, ContentBlock } from '@superone/shared/agent-types'
+import { bashEditFileChanges, summarizeBashEditDiff } from '@superone/shared/bash-edit-diff'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
 
 /** View preferences are device-scoped; persisted transcripts remain complete. */
@@ -35,8 +36,17 @@ function projectContainer(message: ChatMessage, block: Extract<ContentBlock, { t
   return changes.length > 0 ? { ...projected, taskFileChanges: changes } as ContentBlock : projected
 }
 
+function projectBashEditDiff(diff: BashEditDiff): BashEditDiff {
+  const summary = summarizeBashEditDiff(diff)
+  const changedFiles = [...new Set([...diff.files.map(file => file.filePath), ...(diff.changedFiles ?? [])])]
+  // File names and totals belong in the collapsed row; hunks arrive through
+  // toolDetail only when the row is opened.
+  return { ...diff, files: [], moreFiles: summary.files, changedFiles, summary, fileChanges: bashEditFileChanges(diff) }
+}
+
 export function projectProgressiveMessage(message: ChatMessage): ChatMessage {
   const deferredIds = new Set(message.content.flatMap(block => 'toolName' in block && deferTool(block.toolName) ? [block.toolUseId] : []))
+  const bashIds = new Set(message.content.flatMap(block => 'toolName' in block && block.toolName === 'Bash' ? [block.toolUseId] : []))
   const containerIds = new Set(message.content.flatMap(block => isChildContainer(block) ? [block.toolUseId] : []))
   const content = message.content.map((block, index): ContentBlock => block.type === 'thinking'
     ? { ...block, thinking: '', remoteDetail: reference(message.id, 'thinking', index) }
@@ -51,6 +61,7 @@ export function projectProgressiveMessage(message: ChatMessage): ChatMessage {
         summary: compactMediaToolResult(block.summary) ?? '',
         isError: block.isError,
         parentToolUseId: block.parentToolUseId,
+        ...(bashIds.has(block.toolUseId) && block.bashEditDiff ? { bashEditDiff: projectBashEditDiff(block.bashEditDiff) } : {}),
       } : block).filter(block => !('parentToolUseId' in block) || !block.parentToolUseId || !containerIds.has(block.parentToolUseId))
   const codex = message.metadata?.codex
   return {

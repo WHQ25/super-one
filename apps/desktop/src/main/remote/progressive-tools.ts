@@ -165,6 +165,7 @@ export function toolDetail(message: ChatMessage, id: string): string {
     toolDiffTokens: projectedTool?.toolDiffTokens,
     toolLineDelta: projectedTool?.toolLineDelta,
     toolFilePath: projectedTool?.toolFilePath,
+    bashEditDiff: result?.type === 'tool_result' ? result.bashEditDiff : undefined,
   })
 }
 function changeLineDelta(change: CodexFileUpdateChange): { added: number; removed: number } | undefined {

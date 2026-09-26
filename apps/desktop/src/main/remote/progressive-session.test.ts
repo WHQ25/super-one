@@ -3,7 +3,8 @@ vi.mock('../remote-content', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../remote-content')>()
   return { ...actual, stripMessagesForRemote: (messages: unknown) => messages }
 })
-import type { ChatMessage } from '@superone/shared/agent-types'
+import type { BashEditDiff, ChatMessage } from '@superone/shared/agent-types'
+import { bashEditFileChanges, bashEditToolUses, summarizeBashEditDiff } from '@superone/shared/bash-edit-diff'
 import { detailUpdates, projectProgressiveEvent, projectProgressiveMessage, setProgressiveSession, subscribeDetail, unsubscribeDetail } from './progressive-session'
 const message = (): ChatMessage => ({ id: 'm', role: 'assistant', status: 'streaming', createdAt: '', providerId: 'claude', content: [
   { type: 'thinking', thinking: 'private reasoning', startedAt: 100 },
@@ -12,6 +13,33 @@ const message = (): ChatMessage => ({ id: 'm', role: 'assistant', status: 'strea
 ] })
 afterEach(() => { setProgressiveSession('a'); setProgressiveSession('b') })
 describe('progressive session projection', () => {
+  it('sends Bash file names and line totals, then loads full hunks on expand', () => {
+    const bashEditDiff: BashEditDiff = {
+      files: [{ filePath: '/p/a.ts', hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ['-before', '+after'] }] }],
+      moreFiles: 1,
+      changedFiles: ['/p/a.ts', '/p/logo.png'],
+    }
+    const source: ChatMessage = { ...message(), content: [
+      { type: 'tool_use', toolName: 'Bash', toolUseId: 'bash', input: '{"command":"sed -i ..."}', status: 'complete' },
+      { type: 'tool_result', toolUseId: 'bash', summary: 'done', bashEditDiff },
+    ] }
+    const projected = projectProgressiveMessage(source)
+    const result = projected.content[1]
+    const shellDiff = result.type === 'tool_result' ? result.bashEditDiff : undefined
+    expect(shellDiff).toBeDefined()
+    expect(JSON.stringify(projected)).not.toContain('before')
+    expect(bashEditToolUses('bash', shellDiff!).map(row => row.filePath)).toEqual(['/p/a.ts', '/p/logo.png'])
+    expect(summarizeBashEditDiff(shellDiff!)).toEqual({ files: 2, added: 1, removed: 1, approximate: true })
+    expect(bashEditFileChanges(shellDiff!)).toEqual([
+      { path: '/p/a.ts', added: 1, removed: 1 },
+      { path: '/p/logo.png', added: 0, removed: 0 },
+    ])
+    expect(projectProgressiveEvent({ type: 'content_delta', sessionId: 's', messageId: 'm', delta: source.content[1] }, [source]))
+      .toMatchObject({ delta: { toolUseId: 'bash', bashEditDiff: shellDiff } })
+    setProgressiveSession('a', 's')
+    const detail = subscribeDetail('a', 's', 'bash-detail', '["m","tool","bash"]', source)
+    expect(JSON.parse(detail.text).bashEditDiff).toEqual(bashEditDiff)
+  })
   it('retains shell state without hidden text, input, output, or mutation', () => {
     const original = message()
     const projected = projectProgressiveMessage(original)

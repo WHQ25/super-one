@@ -176,6 +176,7 @@ export function bashEditToolUses(bashToolUseId: string, diff: BashEditDiff): Bas
 
 /** Header totals: file count includes the hidden `moreFiles`, line counts only what came through. */
 export function summarizeBashEditDiff(diff: BashEditDiff): BashEditDiffSummary {
+  if (diff.summary) return diff.summary
   const rows = bashEditToolUses('', diff)
   let added = 0
   let removed = 0
@@ -198,5 +199,6 @@ export function summarizeBashEditDiff(diff: BashEditDiff): BashEditDiffSummary {
 
 /** The per-file rows as the turn stat consumes them (path + line delta). */
 export function bashEditFileChanges(diff: BashEditDiff): TaskFileChange[] {
+  if (diff.fileChanges) return diff.fileChanges
   return bashEditToolUses('', diff).map((row) => ({ path: row.filePath, added: row.added, removed: row.removed }))
 }

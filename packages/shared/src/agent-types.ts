@@ -93,6 +93,10 @@ export interface BashEditDiff {
   changedFiles?: string[]
   /** Part of the diff could not be computed. */
   unavailable?: true
+  /** Collapsed remote view: totals computed before file hunks are deferred. */
+  summary?: { files: number; added: number; removed: number; approximate: boolean }
+  /** Per-file totals for the remote turn footer while hunks are deferred. */
+  fileChanges?: TaskFileChange[]
   /** A git state command (checkout, stash, …): the diff was skipped on purpose. */
   skipped?: true
   shared?: true

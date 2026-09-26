@@ -34,6 +34,19 @@ const ports: GroupContentPorts = {
 }
 
 describe('groupContentPresenter', () => {
+  it('passes a projected Bash diff to the mobile row and turn statistics', () => {
+    const bashEditDiff = {
+      files: [], moreFiles: 1, changedFiles: ['/p/a.ts'],
+      summary: { files: 1, added: 2, removed: 1, approximate: false },
+      fileChanges: [{ path: '/p/a.ts', added: 2, removed: 1 }],
+    }
+    const result = groupContentPresenter([
+      toolUse('bash', 'Bash'),
+      { type: 'bash_result', toolUseId: 'bash', summary: '', bashEditDiff },
+    ], ports)
+    expect(result.bashEditDiffMap.get('bash')).toEqual(bashEditDiff)
+  })
+
   it('groups read-only and app tools while dropping hidden tool shells', () => {
     const result = groupContentPresenter([
       toolUse('read', 'Read'),

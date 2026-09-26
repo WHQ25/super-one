@@ -56,8 +56,10 @@ Run for `android` (channel `internal`) and `ios` (channel `production`):
 2. **What goes out**: commits since the baseline touching the mobile closure —
    ```bash
    git log --oneline --no-decorate <baseline>..HEAD -- \
-     apps/mobile packages/chat-view packages/chat-core packages/relay-client packages/shared
+     ':/apps/mobile' ':/packages/chat-view' ':/packages/chat-core' ':/packages/relay-client' ':/packages/shared'
    ```
+   The `:/` prefix anchors the paths at the repo root; item 1 and 3 run inside
+   `apps/mobile`, where bare paths silently match nothing and read as `nothing`.
    Empty → `nothing` for this platform.
 3. **Runtime check** — the same guard `update-mobile.yml` runs:
    ```bash

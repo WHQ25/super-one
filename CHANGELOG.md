@@ -51,6 +51,9 @@ Every alpha release keeps its own notes on its GitHub Release.
 - A message the host refused can be resent or edited from its bubble; a
   failed queued message moves into the transcript instead of vanishing.
 - Agent taps and swipes on Android devices move like a finger's.
+- Device environment controls: light/dark appearance, system text size,
+  simulated location and fold posture for iOS Simulators and Android
+  emulators, from the device panel or through `device_configure`.
 
 ### Performance
 
@@ -84,6 +87,17 @@ Every alpha release keeps its own notes on its GitHub Release.
   header; mention rows stack details in a narrow composer and no longer
   overlap on mobile; Read and Skill rows stay collapsed on the phone.
 - File previews blend into the panel instead of painting a box.
+- Sessions stay in the worktree they ran in, including sessions started
+  from the phone.
+- Scheduled sends survive an app restart and a retry.
+- A Claude session rebuilt with new settings no longer keeps its old
+  directory or fails with "already started".
+- Clicking a file chip while an agent drives the browser opens the file.
+- iOS Simulator device frames use the real device artwork on Xcode 27.
+- Mobile: background subagents keep running until they finish; nested
+  subagents no longer show as extra top-level cards; full-screen Mermaid
+  diagrams stay sharp while zooming; Claude Bash commands that change
+  files show their edit stats and count toward the turn's totals.
 
 ### Changed
 
@@ -107,6 +121,43 @@ Every alpha release keeps its own notes on its GitHub Release.
   section is now named Terminal.
 - Subagent headers show a single label: the agent's name, or its type
   when unnamed.
+- Cmd/Ctrl+B toggles the activity panel and Cmd/Ctrl+Alt+B the sidebar;
+  the sidebar shortcut also works on Windows.
+
+## [0.69.0-alpha.2] - 2026-09-26
+
+### Added
+
+- Device environment controls: switch an iOS Simulator or Android
+  emulator between light and dark appearance, set its system text size,
+  simulate a location (clearable on iOS), or change an emulator's fold
+  posture from the device panel. Agents can do the same with
+  `device_configure`.
+
+### Changed
+
+- Cmd/Ctrl+B toggles the activity panel and Cmd/Ctrl+Alt+B the sidebar.
+  The sidebar shortcut now also works on Windows.
+
+### Fixed
+
+- A session started from the phone stays in its worktree: resuming it on
+  the desktop no longer moves it to the main checkout without its
+  history, and both the desktop and the phone show its worktree as soon
+  as it is created.
+- Scheduled sends survive an app restart and a retry.
+- A Claude session rebuilt with new settings no longer keeps running in
+  its old directory or fails to start with "already started".
+- Clicking a file chip while an agent drives the browser opens the file
+  instead of the browser tab.
+- iOS Simulator device frames use the real device artwork again on
+  Xcode 27.
+- Mobile: a Claude Bash command that changes files shows its edit
+  stats, and those files count toward the turn's file and line totals.
+- Mobile: background subagents keep their running indicator until they
+  finish, and nested subagents no longer appear as extra cards at the top
+  of a turn.
+- Mobile: full-screen Mermaid diagrams stay sharp while zooming.
 
 ## [0.69.0-alpha.1] - 2026-09-26
 

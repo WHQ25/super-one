@@ -579,13 +579,13 @@ describe('AgentService SESSIONS_RESUME (cwd sync)', () => {
 
   it('switches the existing session cwd to the worktree cwd when the renderer resumes with a worktreePath that differs from the live session cwd', async () => {
     const service = new AgentService()
-    const switchCwd = vi.fn().mockResolvedValue(undefined)
+    const applyWorktreeSelection = vi.fn().mockResolvedValue(undefined)
     const existing = makeMockSession({
       id: 'sid-existing',
       cwd: '/repo/main',
       snapshot: { harnessId: 'claude', messages: [] },
       isStreaming: vi.fn(() => false),
-      switchCwd,
+      applyWorktreeSelection,
       setPermissionMode: vi.fn().mockResolvedValue(undefined),
       getCurrentPermissionMode: vi.fn(() => 'default' as const),
       getCurrentSandboxInfo: vi.fn(() => ({ enabled: true, autoAllowBash: false })),
@@ -600,18 +600,18 @@ describe('AgentService SESSIONS_RESUME (cwd sync)', () => {
 
     await handler(null, '/repo/main', 'sid-existing', '/repo/main/.worktrees/feat-x')
 
-    expect(switchCwd).toHaveBeenCalledWith('/repo/main/.worktrees/feat-x')
+    expect(applyWorktreeSelection).toHaveBeenCalledWith('/repo/main/.worktrees/feat-x')
   })
 
   it('does NOT switch cwd to a worktree path that no longer exists — keeps the resolved fallback so the read-only signal survives', async () => {
     const service = new AgentService()
-    const switchCwd = vi.fn().mockResolvedValue(undefined)
+    const applyWorktreeSelection = vi.fn().mockResolvedValue(undefined)
     const resumed = makeMockSession({
       id: 'sid-cold',
       cwd: '/repo/main',
       snapshot: { harnessId: 'claude', messages: [] },
       isStreaming: vi.fn(() => false),
-      switchCwd,
+      applyWorktreeSelection,
       getCurrentPermissionMode: vi.fn(() => 'default' as const),
       getCurrentSandboxInfo: vi.fn(() => ({ enabled: true, autoAllowBash: false })),
     })
@@ -626,6 +626,73 @@ describe('AgentService SESSIONS_RESUME (cwd sync)', () => {
 
     await handler(null, '/repo/main', 'sid-cold', '/repo/main/.worktrees/vanished')
 
+    expect(applyWorktreeSelection).not.toHaveBeenCalled()
+  })
+})
+
+describe('AgentService routes every worktree pick through the session', () => {
+  // `Session.applyWorktreeSelection` owns the rule that a conversation keeps its
+  // directory; a raw `switchCwd` from an entry point would bypass it.
+  const WT = '/repo/main/.worktrees/feat'
+  let realExistsSync: ((...args: unknown[]) => unknown) | undefined
+  beforeEach(() => { realExistsSync = mockExistsSync.getMockImplementation() })
+  afterEach(() => { if (realExistsSync) mockExistsSync.mockImplementation(realExistsSync) })
+
+  function conversationIn(cwd: string) {
+    const switchCwd = vi.fn().mockResolvedValue(undefined)
+    const applyWorktreeSelection = vi.fn().mockResolvedValue(undefined)
+    const send = vi.fn().mockResolvedValue(undefined)
+    const session = makeMockSession({
+      id: 'sid-conv',
+      cwd,
+      snapshot: { harnessId: 'claude', messages: [{ id: 'u1', role: 'user', content: [] }], gitBranch: 'feat/x' },
+      isStreaming: vi.fn(() => false),
+      switchCwd,
+      applyWorktreeSelection,
+      send,
+      getCurrentPermissionMode: vi.fn(() => 'default' as const),
+      getCurrentSandboxInfo: vi.fn(() => ({ enabled: true, autoAllowBash: false })),
+    })
+    const service = new AgentService()
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => session),
+      getActiveSession: vi.fn(() => session),
+      setActiveSession: vi.fn(),
+    }
+    mockExistsSync.mockReturnValue(true)
+    return { service, switchCwd, applyWorktreeSelection }
+  }
+
+  it('resume hands the renderer view to the session instead of moving it', async () => {
+    // A phone-created session reached the renderer before its row existed, so the
+    // renderer falls back to the project root when it opens the conversation.
+    const { service, switchCwd, applyWorktreeSelection } = conversationIn(WT)
+    service.setup()
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.SESSIONS_RESUME)!
+
+    await handler(null, '/repo/main', 'sid-conv', '/repo/main')
+
+    expect(applyWorktreeSelection).toHaveBeenCalledWith('/repo/main')
+    expect(switchCwd).not.toHaveBeenCalled()
+  })
+
+  it('a project-level pick goes to the session main has active as a selection', async () => {
+    const { service, switchCwd, applyWorktreeSelection } = conversationIn(WT)
+
+    await service.applyWorktreeSelection('/repo/main', '/repo/main', null)
+
+    expect(applyWorktreeSelection).toHaveBeenCalledWith('/repo/main', null)
+    expect(switchCwd).not.toHaveBeenCalled()
+  })
+
+  it('a send hint goes to the session as a selection', async () => {
+    const { service, switchCwd, applyWorktreeSelection } = conversationIn(WT)
+    service.setup()
+    const handler = getRegisteredIpcHandler(AgentIpcChannels.SEND_MESSAGE)!
+
+    await handler(null, '/repo/main', { content: 'hi', sessionId: 'sid-conv', worktreePath: '/repo/main/.worktrees/other' })
+
+    expect(applyWorktreeSelection).toHaveBeenCalledWith('/repo/main/.worktrees/other', undefined)
     expect(switchCwd).not.toHaveBeenCalled()
   })
 })
@@ -783,7 +850,7 @@ describe('AgentService SEND_MESSAGE', () => {
 
   it('switches a prewarmed ACP session to the worktree cwd before send', async () => {
     const service = new AgentService()
-    const switchCwd = vi.fn().mockResolvedValue(undefined)
+    const applyWorktreeSelection = vi.fn().mockResolvedValue(undefined)
     const send = vi.fn().mockResolvedValue(undefined)
     const existing = makeMockSession({
       id: 'sid-acp',
@@ -796,11 +863,11 @@ describe('AgentService SEND_MESSAGE', () => {
         status: 'idle',
       },
       isStreaming: vi.fn(() => false),
-      switchCwd,
+      applyWorktreeSelection,
       send,
     })
     Object.defineProperty(existing, 'cwd', {
-      get: () => switchCwd.mock.calls.length > 0 ? '/repo/main/.worktrees/feat' : '/repo/main',
+      get: () => applyWorktreeSelection.mock.calls.length > 0 ? '/repo/main/.worktrees/feat' : '/repo/main',
       configurable: true,
     })
     ;(service as { sessionManager: unknown }).sessionManager = {
@@ -820,7 +887,7 @@ describe('AgentService SEND_MESSAGE', () => {
       gitBranch: 'feat',
     })
 
-    expect(switchCwd).toHaveBeenCalledWith('/repo/main/.worktrees/feat', 'feat')
+    expect(applyWorktreeSelection).toHaveBeenCalledWith('/repo/main/.worktrees/feat', 'feat')
     expect(send).toHaveBeenCalled()
   })
 
@@ -1100,14 +1167,14 @@ describe('AgentService SEND_MESSAGE', () => {
 
   it('prewarm switches existing session cwd when worktreePath differs', async () => {
     const service = new AgentService()
-    const switchCwd = vi.fn().mockResolvedValue(undefined)
+    const applyWorktreeSelection = vi.fn().mockResolvedValue(undefined)
     const prewarm = vi.fn()
     const existing = makeMockSession({
       id: 'sid-acp',
       cwd: '/repo/main',
       snapshot: { harnessId: 'acp', messages: [] },
       isStreaming: vi.fn(() => false),
-      switchCwd,
+      applyWorktreeSelection,
       prewarm,
     })
     ;(service as { sessionManager: unknown }).sessionManager = {
@@ -1128,7 +1195,7 @@ describe('AgentService SEND_MESSAGE', () => {
       acpAgentId: 'grok-build',
     })
 
-    expect(switchCwd).toHaveBeenCalledWith('/repo/main/.worktrees/feat', undefined)
+    expect(applyWorktreeSelection).toHaveBeenCalledWith('/repo/main/.worktrees/feat', undefined)
     expect(prewarm).toHaveBeenCalled()
   })
 })

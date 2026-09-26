@@ -1765,6 +1765,24 @@ export class Session implements SessionContract {
     return [...this.additionalDirectories]
   }
 
+  /**
+   * Apply a worktree the user picked (desktop picker, phone, send / prewarm /
+   * resume hints). A picked worktree is a setting of a session that has not run
+   * yet; once there is a transcript the directory belongs to the conversation —
+   * every client forks a new session to work elsewhere. A request to move one
+   * comes from a view that does not know where it runs (a fallback to the
+   * project root, a picker aimed at whichever session main has active) and
+   * would strand its history, so only the branch label of its own directory may
+   * still change (assigning a branch to a detached worktree).
+   */
+  async applyWorktreeSelection(nextCwd: string, gitBranch?: string | null): Promise<void> {
+    if (nextCwd !== this._cwd && this._messages.length > 0) {
+      log.warn('[Session] kept sid=%s in %s; ignored worktree selection %s', this.id, this._cwd, nextCwd)
+      return
+    }
+    await this.switchCwd(nextCwd, gitBranch)
+  }
+
   async switchCwd(nextCwd: string, gitBranch?: string | null): Promise<void> {
     this.assertNotDisposed()
     this.touchRuntimeActivity()

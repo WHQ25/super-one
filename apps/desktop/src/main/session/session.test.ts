@@ -2882,6 +2882,45 @@ describe('Session persist hook', () => {
     }))
   })
 
+  describe('applyWorktreeSelection', () => {
+    const conversation: ChatMessage[] = [
+      { id: 'u0', role: 'user', status: 'complete', content: [{ type: 'text', text: 'hi' }], createdAt: '', providerId: 'claude-base' },
+    ]
+
+    it('a view that falls back to the project root cannot pull a worktree conversation out of its worktree', async () => {
+      const onStateChange = vi.fn<(snapshot: SessionStateChange) => void>()
+      const { session, backend } = makeSession({
+        cwd: '/tmp/proj/.worktrees/abc', gitBranch: 'feature/x', initialMessages: conversation, onStateChange,
+      })
+
+      await session.applyWorktreeSelection('/tmp/proj')
+
+      expect(session.snapshot).toEqual(expect.objectContaining({
+        cwd: '/tmp/proj/.worktrees/abc', isWorktree: true, worktreePath: '/tmp/proj/.worktrees/abc', gitBranch: 'feature/x',
+      }))
+      expect(onStateChange).not.toHaveBeenCalled()
+      expect(backend.rebuildCalls).toHaveLength(0)
+    })
+
+    it('a conversation can still have a branch attached to the worktree it runs in', async () => {
+      const { session } = makeSession({ cwd: '/tmp/proj/.worktrees/abc', gitBranch: null, initialMessages: conversation })
+
+      await session.applyWorktreeSelection('/tmp/proj/.worktrees/abc', 'feature/y')
+
+      expect(session.snapshot.gitBranch).toBe('feature/y')
+    })
+
+    it('a session that has not run yet takes the picked worktree', async () => {
+      const { session } = makeSession()
+
+      await session.applyWorktreeSelection('/tmp/proj/.worktrees/abc', 'feature/x')
+
+      expect(session.snapshot).toEqual(expect.objectContaining({
+        cwd: '/tmp/proj/.worktrees/abc', isWorktree: true, gitBranch: 'feature/x',
+      }))
+    })
+  })
+
   describe('worktree snapshot fields', () => {
     it('snapshot.isWorktree is false when cwd === projectPath', () => {
       const { session } = makeSession()

@@ -1850,7 +1850,7 @@ export class AgentService {
       case 'activate_worktree': {
         try {
           if (command.baseBranch === null) {
-            await this.switchCwd(command.projectPath, command.projectPath, null)
+            await this.applyWorktreeSelection(command.projectPath, command.projectPath, null)
             await respond?.(command.requestId, { ok: true, path: command.projectPath })
             break
           }
@@ -1862,7 +1862,7 @@ export class AgentService {
             branchName,
             carryLocalChanges: command.carryLocalChanges,
           })
-          await this.switchCwd(command.projectPath, result.path, result.recordedBranch)
+          await this.applyWorktreeSelection(command.projectPath, result.path, result.recordedBranch)
           await respond?.(command.requestId, { ok: true, path: result.path })
         } catch (err) {
           await respond?.(command.requestId, { ok: false, error: gitErrorMessage(err) })
@@ -2375,11 +2375,11 @@ export class AgentService {
     const branch = hint?.gitBranch
     if (session.cwd === wt) {
       if (branch !== undefined && branch !== session.snapshot.gitBranch) {
-        await session.switchCwd(wt, branch)
+        await session.applyWorktreeSelection(wt, branch)
       }
       return
     }
-    await session.switchCwd(wt, branch ?? undefined)
+    await session.applyWorktreeSelection(wt, branch ?? undefined)
   }
 
   private async getOrCreateActiveSession(
@@ -3904,7 +3904,7 @@ export class AgentService {
         await session.setPermissionMode(permissionMode)
       }
       if (worktreeCwd && session.cwd !== worktreeCwd && existsSync(worktreeCwd)) {
-        await session.switchCwd(worktreeCwd)
+        await session.applyWorktreeSelection(worktreeCwd)
       }
       try { mgr.setActiveSession(projectPath, sessionId) } catch { /* session from another project, skip */ }
       return {
@@ -4035,12 +4035,12 @@ export class AgentService {
     }
   }
 
-  async switchCwd(projectPath: string, newCwd: string, gitBranch?: string | null): Promise<void> {
+  async applyWorktreeSelection(projectPath: string, newCwd: string, gitBranch?: string | null): Promise<void> {
     const mgr = this.sessionManager
     if (!mgr) return
     const session = mgr.getActiveSession(projectPath)
     if (!session) return
-    await session.switchCwd(newCwd, gitBranch)
+    await session.applyWorktreeSelection(newCwd, gitBranch)
   }
 
   async openFolder(cwd: string): Promise<void> {

@@ -555,6 +555,8 @@ export interface Session {
   /** Caller-owned half only — see `Session.getCallerScopedDirsSnapshot`. */
   getCallerScopedDirsSnapshot(): string[]
   switchCwd(nextCwd: string, gitBranch?: string | null): Promise<void>
+  /** A user's worktree pick; never relocates a session that has a transcript. See `Session.applyWorktreeSelection`. */
+  applyWorktreeSelection(nextCwd: string, gitBranch?: string | null): Promise<void>
   isStreaming(): boolean
   /** Sidebar liveness from backend events; see `Session.activityStatus`. */
   activityStatus(): AgentStatus

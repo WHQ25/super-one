@@ -3157,7 +3157,7 @@ function registerIpcHandlers(): void {
         return { ok: true as const }
       }
       if (!existsSync(wtPath)) return { ok: false as const, error: 'Worktree path not found' }
-      await agentService.switchCwd(folderPath, wtPath, gitBranch)
+      await agentService.applyWorktreeSelection(folderPath, wtPath, gitBranch)
       return { ok: true as const }
     } catch (err) {
       return { ok: false as const, error: gitErrorMessage(err) }
@@ -3181,11 +3181,11 @@ function registerIpcHandlers(): void {
         return remoteActivateWorktree(getEnvironmentHost(), folderPath, request)
       }
       if (request === null) {
-        await agentService.switchCwd(folderPath, folderPath, null)
+        await agentService.applyWorktreeSelection(folderPath, folderPath, null)
         return { ok: true as const, path: folderPath }
       }
       const result = await activateWorktree(folderPath, request)
-      await agentService.switchCwd(folderPath, result.path, result.recordedBranch)
+      await agentService.applyWorktreeSelection(folderPath, result.path, result.recordedBranch)
       return { ok: true as const, path: result.path }
     } catch (err) {
       return { ok: false as const, error: gitErrorMessage(err) }
@@ -3248,7 +3248,7 @@ function registerIpcHandlers(): void {
       return remoteAssignBranch(getEnvironmentHost(), folderPath, worktreePath, name)
     }
     const result = await assignBranch(worktreePath, name)
-    if (result.ok) await agentService.switchCwd(folderPath, worktreePath, result.branch)
+    if (result.ok) await agentService.applyWorktreeSelection(folderPath, worktreePath, result.branch)
     return result
   })
 

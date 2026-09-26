@@ -1,18 +1,24 @@
 # Mobile release
 
-The mobile app (`apps/mobile`, Expo) ships two ways, and the first argument after
-`mobile` picks which:
+The mobile app (`apps/mobile`, Expo) ships two ways, and **Decide** picks
+between them per platform — nobody names it:
 
-| Command | What ships | Workflow |
+| Ships | When | Workflow |
 |---|---|---|
-| `/release mobile ota` | The JS bundle only, to apps already installed | `update-mobile.yml` |
-| `/release mobile major\|feature\|patch\|build` | A native binary: Android APK to R2, iOS to TestFlight | `release-mobile.yml` |
+| **OTA** — the JS bundle, to apps already installed | a shipped build has this platform's runtime fingerprint | `update-mobile.yml` |
+| **Native** — Android APK to R2, iOS to TestFlight | the fingerprint moved (native module, config plugin, `eas.json`) | `release-mobile.yml` |
+
+Two entry points run the same decision: an alpha desktop release (`desktop.md`
+Step 1, everything rides along in that release) and `/release mobile` for a
+mobile-only update between desktop releases (the flow below).
 
 **There is no alpha/stable here.** One app (`com.superone.superone_remote`),
 version `1.0.0`-style in `apps/mobile/app.json`, one shared build code in
 `apps/mobile/build-code.js`. What differs per platform is fixed, not chosen:
 Android's installable APK is built with the `internal` profile and updated on the
 `internal` channel; iOS is built with `production` and updated on `production`.
+The two platforms are decided and shipped independently: one can take an OTA
+while the other takes a binary.
 
 Two facts decide which of the two you can use:
 
@@ -33,64 +39,73 @@ does not add up; it is the design record.
 
 ---
 
-## OTA (`/release mobile ota`)
+## Decide (per platform)
 
-No version bump, no commit. Fingerprint check → one dispatch → verify.
+Run for `android` (channel `internal`) and `ios` (channel `production`):
 
-### Step 1: Confirm (single turn)
-
-1. **Baseline**: the commit of the last published update on each channel —
+1. **Baseline**: whichever is newer of the last OTA on the platform's channel and
+   the last native build tag `mobile/<platform>/v*` —
    ```bash
    cd apps/mobile
-   GROUP=$(bunx eas-cli@24.0.0 update:list --branch internal --limit 1 --json --non-interactive | jq -r '.currentPage[0].group')
+   GROUP=$(bunx eas-cli@24.0.0 update:list --branch <channel> --limit 1 --json --non-interactive | jq -r '.currentPage[0].group')
    bunx eas-cli@24.0.0 update:view "$GROUP" --json | jq -r '.[0].gitCommitHash'
+   git tag -l 'mobile/<platform>/v*' --sort=-creatordate | head -1
    ```
-   (`update:list` does not carry the commit; `update:view` does.) If there has
-   never been an update on the channel, use the shipped build's commit from the
-   `mobile/<platform>/v<version>-build<N>` tag instead.
-2. **What goes out**: commits since that baseline touching the mobile closure —
+   (`update:list` does not carry the commit; `update:view` does.) Compare the two
+   with `git merge-base --is-ancestor`; the descendant is the baseline.
+2. **What goes out**: commits since the baseline touching the mobile closure —
    ```bash
    git log --oneline --no-decorate <baseline>..HEAD -- \
      apps/mobile packages/chat-view packages/chat-core packages/relay-client packages/shared
    ```
-   Empty → there is nothing to publish; say so and stop.
-3. **Runtime check, per platform** — the same guard the workflow runs, done here
-   so the answer is on the table before anyone confirms:
+   Empty → `nothing` for this platform.
+3. **Runtime check** — the same guard `update-mobile.yml` runs:
    ```bash
    cd apps/mobile
-   for P in android ios; do
-     case $P in android) CH=internal ;; ios) CH=production ;; esac
-     HASH=$(bunx @expo/fingerprint fingerprint:generate --platform $P | jq -r .hash)
-     bunx eas-cli@24.0.0 build:list --platform $P --channel $CH --status finished \
-       --fingerprint-hash "$HASH" --limit 1 --json --non-interactive \
-       | jq -r --arg p $P --arg h "$HASH" '.[0] | "\($p): \($h[0:8]) → " + (if . then "build \(.appBuildVersion)" else "NOT SHIPPED" end)'
-   done
+   HASH=$(bunx @expo/fingerprint fingerprint:generate --platform <platform> | jq -r .hash)
+   bunx eas-cli@24.0.0 build:list --platform <platform> --channel <channel> --status finished \
+     --fingerprint-hash "$HASH" --limit 1 --json --non-interactive \
+     | jq -r '.[0].appBuildVersion // "NOT SHIPPED"'
    ```
-   Both shipped → OTA for `both`. One shipped → OTA for that platform only, and
-   the other needs a binary. Neither → stop: **this change needs
-   `/release mobile <bump>`**, an OTA would publish to a runtime nobody runs.
-4. **Message**: the subject of the most recent commit from item 2 (or a one-line
-   summary when several matter). It is recorded on the EAS update group and is
-   what `eas update:list` shows later; the commit hash is recorded automatically.
-5. Show, in one plain message: the platform(s), the runtime line per platform
-   (`android: 8171a5f1 → build 22`), the commit list, and the message. Ask
-   "Publish this?" — the only prompt in the flow.
+   A build number → **OTA** onto that build. `NOT SHIPPED` → **native**: an OTA
+   would publish to a runtime nobody runs.
 
-### Step 2: Dispatch
+Report one line per platform: `android: OTA (runtime = build 29, 6 commits since
+a7729d22)`, `ios: native → build 30 (fingerprint 8171a5f1 not shipped)`, or
+`android: nothing (no mobile commits since <baseline>)`.
+
+## `/release mobile`
+
+1. Run **Decide**. Both platforms `nothing` → say so and stop. Otherwise start
+   the local CI gate (`SKILL.md` → **Shared rules**) and let it finish before
+   the confirmation.
+2. For a native platform, work out the numbers in **Native → Step 1**. For OTA,
+   the message is the subject of the most recent commit from Decide item 2 (or a
+   one-line summary when several matter); it is recorded on the EAS update group
+   and the commit hash is recorded automatically.
+3. Show the CI results, the per-platform lines, the commit list, and the
+   numbers / message in one plain message and ask "Publish this?" — the only prompt in the flow.
+4. Native platforms: **Native → Step 2** (commit + push), then both dispatches
+   (**OTA → Dispatch**, **Native → Step 3**) and their monitoring, verification
+   and report.
+
+## OTA
+
+### Dispatch
 
 ```bash
 SHA=$(git rev-parse HEAD)   # what was reviewed, not "main" — main may move before the runner checks out
 gh workflow run update-mobile.yml --ref main \
-  -f platform=<both|android|ios> \
+  -f platform=<the OTA platforms: android, ios or both> \
   -f android_channel=internal -f ios_channel=production \
   -f message="<message>" -f ref="$SHA" -f dry_run=false
 sleep 8; gh run list --workflow=update-mobile.yml --limit 1 --json databaseId,url -q '.[0]'
 ```
 
-`dry_run=false` straight away: Step 1 already did the runtime check, and the
+`dry_run=false` straight away: **Decide** already did the runtime check, and the
 workflow repeats it before publishing. `HEAD` must be pushed first.
 
-### Step 3: Monitor + verify
+### Monitor + verify
 
 ```bash
 gh run watch <run-id> --exit-status      # ~4 min; the guard is the step before "Publish update"
@@ -105,7 +120,7 @@ bunx eas-cli@24.0.0 update:view "$GROUP" --json | jq -r '.[0] | "\(.platform) \(
 # same for --branch production
 ```
 
-### Step 4: Report
+### Report
 
 Per platform: channel, update group id, runtime (= which build it lands on). State
 the delivery rule: the app downloads on its next launch and applies on the launch
@@ -115,58 +130,48 @@ after — there is no in-app "update now".
 
 | Failure | Action |
 |---|---|
-| `Verify a shipped build runs this runtime` fails | The fingerprint moved since the last binary. Nothing to fix in the workflow — ship `/release mobile <bump>`; the new binary carries this JS, no OTA needed afterwards |
+| `Verify a shipped build runs this runtime` fails | The fingerprint moved since the last binary. Nothing to fix in the workflow — **Decide** ran before the fingerprint moved; re-run it — that platform now needs a native build, and the binary carries this JS |
 | `Publish update` fails | Inspect `gh run view <id> --log-failed`. `EXPO_TOKEN` and the EAS project are the usual suspects. Re-dispatch is safe — a failed publish creates no group |
 | Published, then found broken | Publish the fix the same way (a new group supersedes), or `eas update:republish --group <last-good>` from `apps/mobile` to put the previous group back at the channel head |
 | Need to see what a runner would do without publishing | Dispatch with `dry_run=true`: runs the guard and `expo export` per platform |
 
 ---
 
-## Native (`/release mobile major|feature|patch|build`)
+## Native
 
-A version bump commit, then **one dispatch** of `release-mobile.yml` with
-`platform=both`. The workflow carries a profile per platform (`android_profile`
-defaults to `internal`, `ios_profile` to `production`), builds the two in
-parallel from the same `ref`, and tags both `mobile/<platform>/…` at that commit.
+For the platforms **Decide** marked native: a build-code commit, then **one
+dispatch** of `release-mobile.yml` with `platform=` those platforms (`both` when
+both moved). The workflow carries a profile per platform (`android_profile`
+defaults to `internal`, `ios_profile` to `production`), builds from one `ref`, and
+tags `mobile/<platform>/…` at that commit.
 
-### Step 1: Confirm (single turn)
+### Step 1: Numbers
 
 1. Read `version` from `apps/mobile/app.json` and `BUILD_CODE` from
-   `apps/mobile/build-code.js`. Read the published state:
+   `apps/mobile/build-code.js`, and the published state:
    ```bash
    curl -s https://dl.super-one.dev/mobile/android/latest.json | jq '{version, buildCode, minSupportedBuildCode}'
    curl -s https://dl.super-one.dev/mobile/ios/latest.json     | jq '{version, buildCode, minSupportedBuildCode}'
    ```
-2. Commits since the last native build, mobile closure only:
-   ```bash
-   git log --oneline --no-decorate mobile/android/v<version>-build<N>..HEAD -- \
-     apps/mobile packages/chat-view packages/chat-core packages/relay-client packages/shared
-   ```
-   Derive the recommended position from their types (table in `SKILL.md`) and
-   show it beside the argument; the argument ships.
-3. New numbers:
-   - `major` / `feature` / `patch`: bump `app.json` `version` at that position;
-     `BUILD_CODE + 1`.
-   - `build`: `version` unchanged; `BUILD_CODE + 1`. This is the usual native
-     re-ship — a fingerprint moved (new native module, config plugin) and the
-     user-facing version has no reason to change.
-   The new build code must be greater than **both** published `buildCode`s.
-4. `min_supported_build_code` stays **blank** unless the user asked to lock old
-   builds out; blank inherits the published floor. Raising it has no client-side
-   way back — it is a decision, never a default.
-5. Show: `1.0.0 (22) → 1.0.1 (23)` with the position used, the recommendation
-   if it differs, the commit list, the floor (`inherit <N>`), and the profiles
-   (android/internal, ios/production). Ask "Proceed?".
+2. **Build code**: one above the highest of `BUILD_CODE` and both published
+   `buildCode`s. The platforms' published codes may differ after a
+   single-platform build; the next build of the other one simply skips ahead.
+3. **Version**: unchanged. The app is pre-launch and ships `1.0.0` until the
+   launch; decide the post-launch rule then.
+4. `min_supported_build_code` stays **blank**: blank inherits the published
+   floor. Raising it locks older builds out with no client-side way back, so it
+   is set only when the user asks.
+5. Confirmation line: `ios: 1.0.0 (29) → 1.0.0 (30)`, the floor (`inherit <N>`)
+   and the profile (android/internal, ios/production).
 
 ### Step 2: Bump, commit, push
 
-1. `apps/mobile/app.json` → `version` (not for `build`).
-2. `apps/mobile/build-code.js` → `const BUILD_CODE = <N+1>`.
-3. Nothing else: no CHANGELOG (the mobile app has none; the desktop CHANGELOG is
+1. `apps/mobile/build-code.js` → `const BUILD_CODE = <N+1>`. `app.json` stays.
+2. Nothing else: no CHANGELOG (the mobile app has none; the desktop CHANGELOG is
    the desktop line), no `bun.lock`, no tag — the workflow tags the build's
    commit after it publishes.
-4. ```bash
-   git add apps/mobile/app.json apps/mobile/build-code.js
+3. ```bash
+   git add apps/mobile/build-code.js
    git commit -m "chore(mobile): bump to <version> (build <N+1>)"
    git push origin main
    SHA=$(git rev-parse HEAD)
@@ -175,12 +180,12 @@ parallel from the same `ref`, and tags both `mobile/<platform>/…` at that comm
 ### Step 3: Dispatch
 
 ```bash
-gh workflow run release-mobile.yml --ref main -f platform=both -f ref="$SHA" -f dry_run=false
+gh workflow run release-mobile.yml --ref main -f platform=<the native platforms: android, ios or both> -f ref="$SHA" -f dry_run=false
 sleep 8; gh run list --workflow=release-mobile.yml --limit 1 --json databaseId,url -q '.[0]'
 ```
 
 Leave `android_profile` / `ios_profile`, `min_supported_build_code` and
-`testflight_url` at their defaults unless Step 1 said otherwise. The two platform
+`testflight_url` at their defaults unless Step 1 said otherwise. With `both`, the two platform
 jobs run in parallel inside the one run; each holds its own concurrency group,
 so a later single-platform re-dispatch still queues behind it.
 
@@ -231,13 +236,14 @@ fingerprint move, say that OTA is unblocked again from this build onward.
 ## Invariants
 
 - **OTA never ships a native change.** The fingerprint guard in
-  `update-mobile.yml` is the enforcement; Step 1 runs the same check locally so
+  `update-mobile.yml` is the enforcement; **Decide** runs the same check locally so
   the answer precedes the confirmation, not the CI failure.
-- **One build code, both platforms, bumped by hand** in `build-code.js`. Never
-  turn `autoIncrement` back on and never bump only one platform's number.
-- **One dispatch builds both platforms from one `ref`**, so
-  `mobile/android/v…` and `mobile/ios/v…` for one build code name one commit.
-  A single-platform dispatch is for recovery and rollback, not for releasing.
+- **One build code counter, bumped by hand** in `build-code.js`, always past
+  the highest published code on either platform. Never turn `autoIncrement` back
+  on. A platform only gets a binary when its fingerprint moved; the other takes
+  an OTA, so the two published codes may differ.
+- **One dispatch per release builds every platform that needs a binary from one
+  `ref`**, so the tags for one build code name one commit.
 - **Android `internal`, iOS `production`** — for builds and for update channels
   alike. A one-off elsewhere is a typed workflow input, never a default.
 - **`min_supported_build_code` is inherited unless typed.** Raising it locks

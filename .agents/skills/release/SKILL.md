@@ -1,76 +1,68 @@
 ---
 name: release
 description: Release SuperOne desktop builds or mobile native/OTA updates using the repository release workflows.
-arguments: "[desktop|mobile] [alpha|stable|ota] [major|feature|patch|build]"
-argument-hint: "desktop [alpha|stable] [major|feature|patch|build] | mobile ota | mobile [major|feature|patch|build]"
+arguments: "[alpha|stable|mobile] [major]"
+argument-hint: "alpha | stable | mobile"
 compatibility: "Requires git, gh, bun, npm, curl, jq, GitHub Actions access, an EAS login for mobile, and network approval for GitHub, npm, expo.dev and dl.super-one.dev."
 ---
 
 # Release Skill
 
-Two products, one entry point. Route on the first argument, then read **one**
-reference file and follow it end to end:
+The user names **what** ships; everything else is derived. Route on the first
+argument, then read **one** reference file and follow it end to end:
 
 | Command | Reads | What it does |
 |---|---|---|
-| `/release desktop alpha build` | `references/desktop.md` | Desktop app: bump → CHANGELOG → `release.yml` (builds + promote + CLI / harness / relay legs) → publish → set-latest |
-| `/release alpha build` (no product word) | `references/desktop.md` | Same — `alpha` / `stable` in first position means desktop |
-| `/release mobile ota` | `references/mobile.md` → **OTA** | Mobile JS bundle to installed apps via `update-mobile.yml`; no version bump, no commit |
-| `/release mobile patch` | `references/mobile.md` → **Native** | Mobile binary: bump `app.json` + build code, `release-mobile.yml` twice (android/internal, ios/production) |
+| `/release alpha` (or bare `/release`) | `references/desktop.md` | Next alpha: version from the stable line, CHANGELOG, `release.yml` (builds + promote + CLI / harness / relay legs), plus every mobile update that is due → publish → set-latest |
+| `/release stable` | `references/desktop.md` → **Cutting a stable release** | Cuts the latest alpha as the stable `X.Y.0`; writes no file |
+| `/release mobile` | `references/mobile.md` | Mobile only, between desktop releases: per platform, OTA or native build, whichever is due |
 
-Do not read both references; nothing in one flow depends on the other. The one
-crossing point is written into `desktop.md` Step 1: a desktop release checks
-whether a mobile OTA should ride along, and `mobile.md` is where that check is
-defined.
+The one crossing point: an alpha release's Step 1 runs `mobile.md` → **Decide**,
+and the mobile updates it finds ride along in the same release.
 
 ## Arguments
 
-**Product** — `desktop` (default when omitted, or when the first word is
-`alpha` / `stable`) or `mobile`.
+- **`alpha`** (default) / **`stable`** — which of the two side-by-side desktop
+  apps is being released, not a channel of one app. **`mobile`** — the mobile
+  app alone; it has no variant.
+- **`major`** — the only override, alpha only: open the next major instead of
+  what the rule below derives. Use it for a breaking change after 1.0 (Step 1
+  proposes it when the range carries `!` / `BREAKING CHANGE:`) or when asked.
+- Position words from the old syntax (`build`, `feature`, `patch`, `ota`) are
+  not arguments. If the user passes one and it disagrees with the plan, show the
+  difference in Step 1 and ship the plan unless they say otherwise.
 
-**Desktop**: `[alpha|stable] [major|feature|patch|build]`
+### How the version is decided
 
-- **variant**: `alpha` (default) or `stable`. Which of the two side-by-side apps
-  is being released — not a channel of one app.
-- **bump**: `patch` (default). `major` `0.14.3-alpha → 1.0.0-alpha`; `feature`
-  `→ 0.15.0-alpha`; `patch` `→ 0.14.4-alpha`; `build` bumps the latest shipped
-  alpha's sequence without moving X.Y.Z (`0.63.0-alpha → 0.63.0-alpha.1`), and
-  is invalid for `stable`. A stable is a **cut** of a proven alpha commit, not a
-  bump — see `references/desktop.md` → Cutting a stable release.
+**By where the stable line stands, not by commit types.** Features and fixes
+decide what the CHANGELOG says, never the number.
 
-**Mobile**: `ota` **or** `[major|feature|patch|build]`
+| Release | Latest stable vs. latest alpha base `X.Y.Z` | Ships |
+|---|---|---|
+| alpha | stable below the base | `X.Y.Z-alpha.<N+1>` — iterate the base (**build**) |
+| alpha | stable equals the base, or a hotfix moved past it | `X.(Y+1).0-alpha` above both — open the next **feature** |
+| alpha + `major` | any | `(X+1).0.0-alpha` |
+| stable | alpha base above stable | `X.Y.0` cut from the latest alpha tag's commit |
+| stable | stable already at the alpha base | nothing to cut — say so and stop |
 
-- `ota`: publish the current JS to the installed apps. Only possible when no
-  native input changed since the last binary — the reference checks this before
-  asking for confirmation, and the workflow refuses it otherwise.
-- `major` / `feature` / `patch`: bump `apps/mobile/app.json` `version` at that
-  position and the shared build code, then build both platforms.
-- `build`: same version, next build code. The normal reason is that the runtime
-  fingerprint moved (a native module or config plugin), which is exactly the
-  case `ota` cannot cover.
-- No variant. The mobile app is one identity; Android ships an `internal` APK
-  and iOS a `production` TestFlight build, always both, never chosen.
-
-### Which position to bump
-
-Every commit carries a conventional-commit type, so the position is derivable
-and Step 1 of either flow shows the recommendation beside the argument. **The
-argument ships**; the recommendation exists so a mismatch is a decision, not an
-accident.
-
-| Commits since the previous release contain | Position |
-|---|---|
-| any `feat` | **feature** (minor) |
-| only `fix` / `perf` / `refactor` / `style` / `docs` / `test` / `ci` / `build` / `chore` | **patch** |
-| `feat!`, `fix!`, or a `BREAKING CHANGE:` footer | **feature** while pre-1.0; **major** after |
-
-`build` is not in the table — it does not move X.Y.Z. Still show the
-recommendation when `build` is passed, so choosing sequence over a new minor
-is recorded. The reasoning behind this rule (with the release history that
-motivated it) is in `references/desktop.md`.
+The patch position belongs to the stable line: `X.Y.1+` exists only to hotfix
+a shipped `X.Y.0`. Alpha never spends it. (There is no hotfix flow yet; design
+it with the first real case.) `nextAlphaRelease` in
+`apps/desktop/packaged-version.cjs` is the alpha half of this table;
+`references/desktop.md` has the history behind it.
 
 ## Shared rules
 
+- **Local CI gate before every alpha or mobile release.** Run what
+  `.github/workflows/ci.yml` runs on the commit being released. Its `run:` steps
+  are the source of truth: today `check-deps-lock`, `typecheck`, `lint`,
+  `test:quiet`, `test:runtime`, `test:cli`, `test:relay`, `test:mobile`, and
+  `check:icons` inside `apps/mobile`. Start them as parallel shell calls,
+  outside the sandbox (several suites bind localhost), at the beginning of
+  Step 1 so they run while the plan and notes are drafted. Any red check stops
+  the release: find the root cause, fix and commit it, then start Step 1 again.
+  The confirmation lists each check's result. A stable cut skips the gate; it
+  rebuilds an alpha commit that passed the gate when it shipped.
 - **One human checkpoint per flow**: Step 1 lays out everything — numbers,
   decisions, drafted notes — in a single plain-markdown message and asks once.
   After that confirmation nothing prompts again unless something fails. Do not

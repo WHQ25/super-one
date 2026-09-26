@@ -5,10 +5,16 @@ import { describe, expect, it } from 'vitest'
 const require_ = createRequire(import.meta.url)
 const {
   nextAlphaBuild,
+  nextAlphaRelease,
   parsePrereleaseN,
   resolvePackagedVersion,
 } = require_(fileURLToPath(new URL('../../packaged-version.cjs', import.meta.url))) as {
   nextAlphaBuild: (version: string) => { base: string; prereleaseN: number; version: string }
+  nextAlphaRelease: (
+    latestAlpha: string,
+    latestStable: string | null,
+    options?: { major?: boolean },
+  ) => { bump: string; base: string; prereleaseN: number | null; version: string }
   parsePrereleaseN: (raw: unknown) => number | null
   resolvePackagedVersion: (
     packageVersion: string,
@@ -120,5 +126,44 @@ describe('nextAlphaBuild', () => {
   it('refuses a non-alpha version', () => {
     expect(() => nextAlphaBuild('0.63.0')).toThrow(/expects an -alpha version/)
     expect(() => nextAlphaBuild('0.63.0-dev.1')).toThrow(/expects an -alpha version/)
+  })
+})
+
+describe('nextAlphaRelease', () => {
+  it('iterates the base while stable is behind it', () => {
+    expect(nextAlphaRelease('v0.69.0-alpha.1', 'v0.68.0')).toEqual({
+      bump: 'build',
+      base: '0.69.0',
+      prereleaseN: 2,
+      version: '0.69.0-alpha.2',
+    })
+    expect(nextAlphaRelease('0.69.0-alpha', null).version).toBe('0.69.0-alpha.1')
+  })
+
+  it('opens the next minor once stable has shipped the base', () => {
+    expect(nextAlphaRelease('0.69.0-alpha.2', '0.69.0')).toEqual({
+      bump: 'feature',
+      base: '0.70.0',
+      prereleaseN: null,
+      version: '0.70.0-alpha',
+    })
+  })
+
+  it('opens the next minor above a stable hotfix that moved past the base', () => {
+    expect(nextAlphaRelease('0.69.0-alpha.3', '0.69.1').version).toBe('0.70.0-alpha')
+  })
+
+  it('opens the next major when asked, whatever stable did', () => {
+    expect(nextAlphaRelease('1.2.0-alpha.4', '1.1.0', { major: true })).toEqual({
+      bump: 'major',
+      base: '2.0.0',
+      prereleaseN: null,
+      version: '2.0.0-alpha',
+    })
+    expect(nextAlphaRelease('1.2.0-alpha.4', '1.2.0', { major: true }).version).toBe('2.0.0-alpha')
+  })
+
+  it('refuses a stable carrying a prerelease tag', () => {
+    expect(() => nextAlphaRelease('0.69.0-alpha', '0.69.0-alpha.1')).toThrow(/plain release version/)
   })
 })

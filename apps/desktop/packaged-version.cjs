@@ -71,7 +71,7 @@ function resolvePackagedVersion(packageVersion, variantId, options = {}) {
 }
 
 /**
- * `/release alpha build`: bump the latest shipped alpha's sequence, keeping
+ * An alpha `build`: bump the latest shipped alpha's sequence, keeping
  * the X.Y.Z base. `0.63.0-alpha` → `.1`; `0.63.0-alpha.1` → `.2`.
  */
 function nextAlphaBuild(packagedVersion) {
@@ -92,4 +92,29 @@ function nextAlphaBuild(packagedVersion) {
   return { base, prereleaseN: n, version: `${base}-alpha.${n}` }
 }
 
-module.exports = { parsePrereleaseN, resolvePackagedVersion, nextAlphaBuild }
+/**
+ * `/release alpha`: the next alpha, decided by where stable stands rather than
+ * by commit types. While the latest stable is below the alpha's base, alpha
+ * keeps iterating on that base (`build`), leaving X.Y.1 free to hotfix a
+ * stable X.Y.0. Once stable has shipped the base, or a hotfix has moved past
+ * it, alpha opens the next minor above both. `major` (a breaking change after
+ * 1.0, or an explicit ask) opens the next major instead, whatever stable did.
+ */
+function nextAlphaRelease(latestAlpha, latestStable, options = {}) {
+  const current = nextAlphaBuild(latestAlpha)
+  const alphaBase = current.base.split('.').map(Number)
+  let stable = null
+  if (latestStable != null) {
+    const m = PLAIN_VERSION.exec(String(latestStable).replace(/^v/i, ''))
+    if (!m) throw new Error(`Latest stable "${latestStable}" must be a plain release version`)
+    stable = m.slice(1).map(Number)
+  }
+  const compare = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]
+  const caughtUp = stable != null && compare(stable, alphaBase) >= 0
+  if (!caughtUp && !options.major) return { bump: 'build', ...current }
+  const [major, minor] = stable != null && compare(stable, alphaBase) > 0 ? stable : alphaBase
+  const base = options.major ? `${major + 1}.0.0` : `${major}.${minor + 1}.0`
+  return { bump: options.major ? 'major' : 'feature', base, prereleaseN: null, version: `${base}-alpha` }
+}
+
+module.exports = { parsePrereleaseN, resolvePackagedVersion, nextAlphaBuild, nextAlphaRelease }

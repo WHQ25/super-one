@@ -29,12 +29,29 @@ function status(message: string): void {
   document.getElementById('status')!.textContent = message
 }
 
+function readCachedModel(uri: string): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    // WebView's file access grants apply to XMLHttpRequest; fetch(file://)
+    // rejects before the model parser sees any bytes on mobile WebViews.
+    const request = new XMLHttpRequest()
+    request.open('GET', uri)
+    request.responseType = 'arraybuffer'
+    request.onload = () => {
+      if ((request.status !== 0 && (request.status < 200 || request.status >= 300)) || !(request.response instanceof ArrayBuffer)) {
+        reject(new Error(`Could not read cached model (${request.status})`))
+        return
+      }
+      resolve(request.response)
+    }
+    request.onerror = () => reject(new Error('Could not read cached model'))
+    request.send()
+  })
+}
+
 async function main(): Promise<void> {
   const { name, uri } = window.modelPreviewTarget
   const host = document.getElementById('stage')!
-  const response = await fetch(uri)
-  if (!response.ok && response.status !== 0) throw new Error(`Could not read model (${response.status})`)
-  const bytes = await response.arrayBuffer()
+  const bytes = await readCachedModel(uri)
   // Only the transferred file is available on the phone. Reject glTF sibling
   // requests instead of allowing a model to read other cached previews.
   const loaded = await parseModel(name, bytes)

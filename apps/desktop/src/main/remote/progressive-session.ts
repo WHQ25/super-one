@@ -155,6 +155,12 @@ function projectEvent(event: AgentEvent, messages: readonly ChatMessage[]): Agen
   if (event.type === 'message_start' || event.type === 'user_message_appended') {
     return { ...event, message: projectProgressiveMessage(event.message) }
   }
+  // A nested agent's launch block stays behind its parent card's detail, so the
+  // phone never holds it; left alone, its reducer would take the blockless task
+  // for a slash-command subagent and synthesize a card at the top of the turn.
+  if (event.type === 'task_started' && event.toolUseId && messages.some(message => message.content.some(block => 'toolName' in block && block.toolUseId === event.toolUseId))) {
+    return { ...event, skipTranscript: true }
+  }
   // Workflow agent rows stay: they are the card's Agents list (label, tool count,
   // tokens, state), not transcript text, and the phone has no other source for them.
   if (event.type === 'task_progress') return { ...event, activityText: undefined, toolEntries: undefined }

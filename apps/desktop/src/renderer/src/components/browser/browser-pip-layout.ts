@@ -27,8 +27,13 @@ export const BROWSER_PIP_MAX_WIDTH_RATIO = 0.8
 /** Default preview stays compact; user resize can still grow to the chat bounds. */
 export const BROWSER_PIP_MAX_HEIGHT_RATIO = 0.45
 export const BROWSER_PIP_DEFAULT_MAX_HEIGHT = 360
-/** Used when a tab has no panel slot or device emulation yet. Matches the capture fallback. */
+/** Used when display dimensions are unavailable. Matches the capture fallback. */
 export const BROWSER_FALLBACK_VIEWPORT = { width: 1280, height: 800 } as const
+
+const MAXIMIZED_CARD_INSET = 5
+const MAXIMIZED_CARD_BORDER = 1
+const ACTIVITY_TAB_HEADER_HEIGHT = 34
+const WINDOWS_TITLE_BAR_HEIGHT = 40
 
 export const BROWSER_PIP_DIMENSIONS: PipDimensions = {
   margin: BROWSER_PIP_MARGIN,
@@ -43,11 +48,18 @@ export const BROWSER_PIP_DIMENSIONS: PipDimensions = {
 
 export function resolveBrowserPipViewport(
   emulation?: { width: number; height: number } | null,
-  panelSlot?: { width: number; height: number } | null,
+  display?: { availWidth: number; availHeight: number } | null,
+  platform?: string,
 ): { width: number; height: number } {
   if (emulation && emulation.width > 0 && emulation.height > 0) return emulation
-  if (panelSlot && panelSlot.width > 0 && panelSlot.height > 0) {
-    return { width: panelSlot.width, height: panelSlot.height }
+  if (display && display.availWidth > 0 && display.availHeight > 0) {
+    // A maximized browser tab folds the sidebar and chat. Use that content area
+    // for both the PiP frame and its webview, independently of the panel's width.
+    const width = display.availWidth - 2 * (MAXIMIZED_CARD_INSET + MAXIMIZED_CARD_BORDER)
+    const height = display.availHeight
+      - (platform === 'win32' ? WINDOWS_TITLE_BAR_HEIGHT : MAXIMIZED_CARD_INSET)
+      - MAXIMIZED_CARD_INSET - 2 * MAXIMIZED_CARD_BORDER - ACTIVITY_TAB_HEADER_HEIGHT
+    if (width > 0 && height > 0) return { width, height }
   }
   return BROWSER_FALLBACK_VIEWPORT
 }

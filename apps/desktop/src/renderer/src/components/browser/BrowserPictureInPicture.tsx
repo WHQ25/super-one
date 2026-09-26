@@ -67,9 +67,8 @@ export function BrowserPictureInPicture() {
   const browserId = visibleAutomaticPreviewId ?? expandedBrowserId ?? pinnedPipBrowserId
   const expanded = browserId != null && expandedBrowserId === browserId
   const owner = useBrowserStore((state) => browserId ? state.tabs[browserId]?.owner ?? null : null)
-  const panelSlot = useBrowserStore((state) => browserId ? state.slots[browserId] : undefined)
   const emulation = useBrowserStore((state) => browserId ? state.emulations[browserId] : undefined)
-  const pipAspect = browserPipAspect(resolveBrowserPipViewport(emulation, panelSlot))
+  const pipAspect = browserPipAspect(resolveBrowserPipViewport(emulation, window.screen, window.app.platform))
   const activityShown = useActivityPanelStore((state) => state.showPanel)
   const mosaicMode = useMosaicStore((state) => state.mode)
   const wanted = browserId != null

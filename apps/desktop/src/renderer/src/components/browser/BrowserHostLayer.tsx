@@ -282,7 +282,7 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
       : 'inset(0 0 0 100%)'
   const width = hasSlot ? restingSlot!.width : BROWSER_FALLBACK_VIEWPORT.width
   const height = hasSlot ? restingSlot!.height : BROWSER_FALLBACK_VIEWPORT.height
-  const pipViewport = resolveBrowserPipViewport(emulation, panelSlot)
+  const pipViewport = resolveBrowserPipViewport(emulation, window.screen, window.app.platform)
   const capturingPip = fullResolutionCapturing && slot?.mode === 'pip'
   const hostWidth = capturingPip ? pipViewport.width : width
   const hostHeight = capturingPip ? pipViewport.height : height

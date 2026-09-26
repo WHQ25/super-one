@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useAgentViewfinderStore } from '@/stores/agent-viewfinder'
 import { useBrowserStore } from '@/stores/browser'
@@ -94,6 +94,8 @@ beforeEach(() => {
   setDockApi(null)
   turnCompletion.callback = null
 })
+
+afterEach(() => vi.unstubAllGlobals())
 
 function startReadyAutomation(): void {
   useBrowserStore.getState().ensure('browser-a', 'https://example.com', 'session-a')
@@ -217,7 +219,8 @@ describe('browser picture in picture', () => {
     expect(pip).toHaveStyle({ width: '800px', height: '500px' })
   })
 
-  it('matches the open tab viewport instead of a fixed 3:2 frame', async () => {
+  it('keeps the maximized browser aspect when the panel tab changes size', async () => {
+    vi.stubGlobal('screen', { availWidth: 1512, availHeight: 956 })
     act(() => {
       startReadyAutomation()
       useBrowserStore.getState().updateSlot('browser-a', 'panel', {
@@ -230,7 +233,8 @@ describe('browser picture in picture', () => {
     render(<BrowserPictureInPicture />)
 
     const pip = await screen.findByLabelText('Browser picture in picture')
-    expect(pip).toHaveStyle({ width: '200px', height: '112.5px' })
+    expect(pip).toHaveStyle({ width: '200px' })
+    expect(parseFloat(pip.style.height)).toBeCloseTo(200 / (1500 / 910), 2)
 
     act(() => {
       useBrowserStore.getState().updateSlot('browser-a', 'panel', {
@@ -241,7 +245,10 @@ describe('browser picture in picture', () => {
       } as DOMRectReadOnly)
     })
     expect(pip).toHaveStyle({ width: '200px' })
-    expect(parseFloat(pip.style.height)).toBeCloseTo(200 / (560 / 800), 2)
+    expect(parseFloat(pip.style.height)).toBeCloseTo(200 / (1500 / 910), 2)
+
+    act(() => useBrowserStore.getState().setEmulation('browser-a', { width: 390, height: 844 }))
+    expect(parseFloat(pip.style.height)).toBeCloseTo(200 / (390 / 844), 2)
   })
 
   it('waits for page readiness, stays between tool calls, and closes when the turn ends', async () => {

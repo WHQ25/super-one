@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, act } from '@testing-library/react'
 
 vi.mock('@/hooks/useSashResizing', () => ({ useSashResizing: () => false }))
@@ -51,6 +51,8 @@ beforeEach(async () => {
   useAgentViewfinderStore.setState({ activeBySession: {} })
   act(() => useActivityPanelStore.getState().setShowPanel(true))
 })
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('BrowserHostLayer mosaic visibility', () => {
   it('parks the browser while collapsed and reveals it from the activity edge without fading', () => {
@@ -165,6 +167,7 @@ describe('BrowserHostLayer mosaic visibility', () => {
   })
 
   it('moves an automated browser between picture-in-picture and the activity panel', () => {
+    vi.stubGlobal('screen', { availWidth: 1512, availHeight: 956 })
     const { container } = render(<BrowserHostLayer />)
     act(() => {
       useBrowserStore.getState().ensure('browser-a', 'https://example.com', 'session-a')
@@ -192,9 +195,9 @@ describe('BrowserHostLayer mosaic visibility', () => {
     expect(host.style.borderTopRightRadius).toBe('var(--radius-xl)')
     expect(host.style.borderBottomLeftRadius).toBe('var(--radius-xl)')
     expect(host.style.borderBottomRightRadius).toBe('var(--radius-xl)')
-    expect(webview.style.width).toBe('560px')
-    expect(webview.style.height).toBe('800px')
-    expect(webview.style.transform).toBe('scale(0.6428571428571429)')
+    expect(webview.style.width).toBe('1500px')
+    expect(webview.style.height).toBe('910px')
+    expect(webview.style.transform).toBe('scale(0.24)')
     expect(webview.style.transformOrigin).toBe('left top')
 
     act(() => {
@@ -205,24 +208,24 @@ describe('BrowserHostLayer mosaic visibility', () => {
         height: 240,
       } as DOMRectReadOnly)
     })
-    expect(webview.style.width).toBe('560px')
-    expect(webview.style.height).toBe('800px')
-    expect(webview.style.transform).toBe('scale(0.5)')
+    expect(webview.style.width).toBe('1500px')
+    expect(webview.style.height).toBe('910px')
+    expect(webview.style.transform).toBe(`scale(${280 / 1500})`)
 
     // Recording keeps the normal PiP presentation for its whole lifetime.
     act(() => useBrowserStore.getState().beginCapture('browser-a'))
     expect(host.style.left).toBe('700px')
     expect(host.style.width).toBe('280px')
     expect(host.style.opacity).toBe('1')
-    expect(webview.style.transform).toBe('scale(0.5)')
+    expect(webview.style.transform).toBe(`scale(${280 / 1500})`)
     act(() => useBrowserStore.getState().endCapture('browser-a'))
 
     // A still screenshot is short-lived and needs the guest raster at 1:1.
     act(() => useBrowserStore.getState().beginFullResolutionCapture('browser-a'))
     expect(host.style.left).toBe('0px')
     expect(host.style.top).toBe('0px')
-    expect(host.style.width).toBe('560px')
-    expect(host.style.height).toBe('800px')
+    expect(host.style.width).toBe('1500px')
+    expect(host.style.height).toBe('910px')
     expect(host.style.opacity).toBe('0')
     expect(webview.style.width).toBe('100%')
     expect(webview.style.height).toBe('100%')
@@ -233,7 +236,7 @@ describe('BrowserHostLayer mosaic visibility', () => {
     expect(host.style.top).toBe('80px')
     expect(host.style.width).toBe('280px')
     expect(host.style.opacity).toBe('1')
-    expect(webview.style.transform).toBe('scale(0.5)')
+    expect(webview.style.transform).toBe(`scale(${280 / 1500})`)
 
     act(() => useActivityPanelStore.getState().setShowPanel(true))
     expect(host.dataset.browserPresentation).toBe('panel')

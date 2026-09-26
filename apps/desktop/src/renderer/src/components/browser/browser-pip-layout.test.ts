@@ -90,12 +90,17 @@ describe('browser picture-in-picture layout', () => {
     expect(layout.height).toBe(112.5)
   })
 
-  it('prefers emulation, then the panel slot, then the capture fallback', () => {
-    expect(resolveBrowserPipViewport({ width: 390, height: 844 }, { width: 560, height: 800 }))
+  it('uses the maximized browser area unless a tab has explicit emulation', () => {
+    const display = { availWidth: 1512, availHeight: 956 }
+    expect(resolveBrowserPipViewport({ width: 390, height: 844 }, display, 'darwin'))
       .toEqual({ width: 390, height: 844 })
-    expect(resolveBrowserPipViewport(null, { width: 560, height: 800 }))
-      .toEqual({ width: 560, height: 800 })
+    expect(resolveBrowserPipViewport(null, display, 'darwin'))
+      .toEqual({ width: 1500, height: 910 })
+    expect(resolveBrowserPipViewport(null, display, 'win32'))
+      .toEqual({ width: 1500, height: 875 })
     expect(resolveBrowserPipViewport(null, null)).toEqual(BROWSER_FALLBACK_VIEWPORT)
+    expect(resolveBrowserPipViewport(null, { availWidth: 0, availHeight: 0 }))
+      .toEqual(BROWSER_FALLBACK_VIEWPORT)
     expect(browserPipAspect(BROWSER_FALLBACK_VIEWPORT)).toBeCloseTo(1280 / 800)
   })
 })

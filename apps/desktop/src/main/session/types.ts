@@ -564,7 +564,7 @@ export interface Session {
   readonly realtimeActive: boolean
   truncateMessagesAt(checkpointId: string): void
   dispose(): Promise<void>
-  on(handler: (event: AgentEvent) => void): () => void
+  on(handler: (event: AgentEvent, replay: boolean) => void): () => void
   getReplayEvents(): AgentEvent[]
 }
 

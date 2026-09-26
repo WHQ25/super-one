@@ -287,7 +287,7 @@ export class Session implements SessionContract {
   private readonly shutdown = new SessionShutdown()
   private abortController: AbortController | null = null
   private backendStarted = false
-  private eventListeners = new Set<(e: AgentEvent) => void>()
+  private eventListeners = new Set<(e: AgentEvent, replay: boolean) => void>()
   private unsubs: Array<() => void> = []
   private _cachedInitReady: AgentEvent | null = null
   private _cachedWorktreeMissing: AgentEvent | null = null
@@ -1573,10 +1573,10 @@ export class Session implements SessionContract {
     this.eventListeners.clear()
   }
 
-  on(handler: (event: AgentEvent) => void): () => void {
+  on(handler: (event: AgentEvent, replay: boolean) => void): () => void {
     this.eventListeners.add(handler)
     for (const e of this.getReplayEvents()) {
-      try { handler(e) } catch (err) { log.warn('[Session] replay error:', err) }
+      try { handler(e, true) } catch (err) { log.warn('[Session] replay error:', err) }
     }
     return () => { this.eventListeners.delete(handler) }
   }
@@ -1960,7 +1960,7 @@ export class Session implements SessionContract {
       trace('permission.flow', 'forward', { sessionId: this.id, projectPath: this.projectPath, toolName: event.request.toolName }, event.request.requestId)
     }
     for (const cb of this.eventListeners) {
-      try { cb(tagged) } catch (err) { log.warn('[Session] event listener error:', err) }
+      try { cb(tagged, false) } catch (err) { log.warn('[Session] event listener error:', err) }
     }
     if (seenOnIdle) this.forwardEvent({ type: 'session_seen', messageId: this._seenCompletedMessageId })
     // Append after the notification itself is out, so the row lands before the

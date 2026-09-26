@@ -89,7 +89,7 @@ export class SessionManagerImpl implements SessionManagerContract {
   private activeByProject = new Map<string, string>()
   private projectResources: ProjectResourceCache
   private scopedListeners = new Map<string, Set<(e: AgentEvent) => void>>()
-  private anyListeners = new Set<(sessionId: string, e: AgentEvent) => void>()
+  private anyListeners = new Set<(sessionId: string, e: AgentEvent, replay: boolean) => void>()
   private sessionListeners = new Set<(session: SessionContract) => void>()
   private perSessionUnsub = new Map<string, () => void>()
   private persistence: SessionManagerPersistence
@@ -544,11 +544,11 @@ export class SessionManagerImpl implements SessionManagerContract {
     return () => { set!.delete(handler) }
   }
 
-  onAny(handler: (sessionId: string, e: AgentEvent) => void): () => void {
+  onAny(handler: (sessionId: string, e: AgentEvent, replay: boolean) => void): () => void {
     this.anyListeners.add(handler)
     for (const [sid, session] of this.sessions) {
       for (const e of session.getReplayEvents()) {
-        try { handler(sid, e) } catch (err) { log.warn('[SessionManager] any-replay error:', err) }
+        try { handler(sid, e, true) } catch (err) { log.warn('[SessionManager] any-replay error:', err) }
       }
     }
     return () => { this.anyListeners.delete(handler) }
@@ -565,7 +565,7 @@ export class SessionManagerImpl implements SessionManagerContract {
   private registerSession(session: Session, projectPath: string): void {
     this.sessions.set(session.id, session)
     this.sessionProjects.set(session.id, projectPath)
-    const unsub = session.on((event) => this.dispatch(session.id, event))
+    const unsub = session.on((event, replay) => this.dispatch(session.id, event, replay))
     this.perSessionUnsub.set(session.id, unsub)
     this.startRuntimeReaper()
     for (const cb of this.sessionListeners) {
@@ -623,7 +623,7 @@ export class SessionManagerImpl implements SessionManagerContract {
     this.runtimeReaperTimer = null
   }
 
-  private dispatch(sessionId: string, event: AgentEvent): void {
+  private dispatch(sessionId: string, event: AgentEvent, replay = false): void {
     const projectPath = this.sessionProjects.get(sessionId)
     const enriched = projectPath && !(event as { projectPath?: string }).projectPath
       ? { ...event, projectPath }
@@ -635,7 +635,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       }
     }
     for (const cb of this.anyListeners) {
-      try { cb(sessionId, enriched) } catch (err) { log.warn('[SessionManager] anyListener error:', err) }
+      try { cb(sessionId, enriched, replay) } catch (err) { log.warn('[SessionManager] anyListener error:', err) }
     }
   }
 }

@@ -13,7 +13,6 @@ import {
   draftProjectKey,
   getDraftIdForSession,
   getParkedDraft,
-  isUnsentSession,
   projectSandboxFromSettings,
   promoteDraftIfUnsent,
   releaseParkedDraft,
@@ -24,7 +23,7 @@ import { createDefaultPerSessionState, createSessionId } from '@/stores/chat-sto
 import { applyCachedCodexPermissionPreset } from '@/stores/chat-store/helpers/prefs-cache'
 import type { PerSessionState } from '@/stores/chat-store/types'
 import { useDraftsStore } from '@/stores/drafts'
-import { armedSendFor, useScheduledSendsStore } from '@/stores/scheduled-sends'
+import { shouldReuseDraftOriginSessionId } from './draft-session-origin'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import type { DraftListEntry, DraftSessionSettings } from '@superone/shared/environment'
 import type { ImageAttachment } from '@superone/shared/agent-types'
@@ -222,15 +221,15 @@ export async function resumeDraft(
       // A queued send is bound to the origin session id and outlives the app
       // run, so a resume that minted a fresh one would leave the promise behind
       // in a session the user can no longer see — and it would still fire.
-      // That makes the schedule as good a reason to reuse the id as the store
-      // still holding the unsent session is.
-      const owesScheduledSend = !!armedSendFor(
-        useScheduledSendsStore.getState().bySession,
+      // Main's persisted row is authoritative; the sidebar's separate list
+      // may not have loaded yet when the user opens the draft after restart.
+      const reuseOrigin = await shouldReuseDraftOriginSessionId(
         draft.originSessionId,
+        draft.originSessionId
+          ? useChatStore.getState().projectSessions[projectKey]?._sessions[draft.originSessionId]
+          : undefined,
       )
-      const newSid = draft.originSessionId && (owesScheduledSend || isUnsentSession(
-        useChatStore.getState().projectSessions[projectKey]?._sessions[draft.originSessionId],
-      ))
+      const newSid = draft.originSessionId && reuseOrigin
         ? draft.originSessionId
         : createSessionId()
       const existing = useChatStore.getState().projectSessions[projectKey]?._sessions[newSid]

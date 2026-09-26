@@ -1285,5 +1285,31 @@ describe('SessionManager', () => {
       const ev = captured[0] as Extract<AgentEvent, { type: 'init_ready' }>
       expect(ev.cwd).toBe('/resumed')
     })
+
+    it('marks restored provider settings as replay, distinct from a real provider switch', () => {
+      const mgr2 = new SessionManagerImpl({
+        loadSession: () => ({
+          projectPath: '/resumed',
+          providerId: 'claude-base',
+          providerSessionId: null,
+          apiProviderId: 'saved-credential',
+          messages: [] as ChatMessage[],
+          totalCostUsd: 0,
+          contextTokens: 0,
+        }),
+      })
+      const changes: Array<{ apiProviderId: string | null | undefined; replay: boolean }> = []
+      mgr2.onAny((_sid, event, replay) => {
+        if (event.type === 'agent_setting_change') {
+          changes.push({ apiProviderId: event.patch?.apiProviderId, replay })
+        }
+      })
+
+      const session = mgr2.resumeSession('sid-resumed')
+      expect(changes).toEqual([{ apiProviderId: 'saved-credential', replay: true }])
+
+      session.setApiProviderId('another-credential')
+      expect(changes.at(-1)).toEqual({ apiProviderId: 'another-credential', replay: false })
+    })
   })
 })

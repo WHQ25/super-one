@@ -561,7 +561,7 @@ function migrateLegacyRemotePowerMode(): AppSettings {
   }
   return current
 }
-sessionManager.onAny((_sid, event) => {
+sessionManager.onAny((_sid, event, replay) => {
   if (
     event.type === 'realtime_started'
     || event.type === 'realtime_transcript_item'
@@ -579,7 +579,7 @@ sessionManager.onAny((_sid, event) => {
       _sid, event.sessionId ?? '(none)', event.projectPath ?? '(none)', alive, event.request.requestId)
   }
   agentService.notifyEventSubscribers(event)
-  scheduledSendService.observe(_sid, event)
+  scheduledSendService.observe(_sid, event, replay)
   publishAgentEvent(event)
 })
 const deviceRegistry = new DeviceRegistry(sessionManager)

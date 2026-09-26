@@ -217,6 +217,43 @@ describe('scheduled send — rate-limit offer', () => {
     expect(store.get(SID)).toBeUndefined()
   })
 
+  it('keeps an armed rate-limit send across provider changes, turn completion and other errors', () => {
+    const { service } = setup()
+    service.observe(SID, rateLimitFailure(IN_ONE_HOUR / 1000))
+    service.set(SID, { armed: true, message: 'continue later' })
+
+    service.observe(SID, {
+      type: 'agent_setting_change',
+      patch: { apiProviderId: 'another-credential' },
+    } as AgentEvent)
+    service.observe(SID, { type: 'message_complete', messageId: 'm2' } as AgentEvent)
+    service.observe(SID, {
+      type: 'message_error', messageId: 'm3', error: 'other failure',
+      errorInfo: { raw: 'other failure', code: 'server_error' },
+    } as AgentEvent)
+    service.observe(SID, rateLimitFailure((IN_ONE_HOUR + 3_600_000) / 1000))
+
+    expect(store.get(SID)).toMatchObject({
+      armed: true,
+      source: 'rate_limit',
+      sendAt: IN_ONE_HOUR + RESET_BUFFER_MS,
+      message: 'continue later',
+    })
+  })
+
+  it('keeps an armed offer when reopening the session replays its saved provider', () => {
+    const { service } = setup()
+    service.observe(SID, rateLimitFailure(IN_ONE_HOUR / 1000))
+    service.set(SID, { armed: true })
+
+    service.observe(SID, {
+      type: 'agent_setting_change',
+      patch: { apiProviderId: 'saved-credential' },
+    } as AgentEvent, true)
+
+    expect(store.get(SID)).toMatchObject({ armed: true, source: 'rate_limit' })
+  })
+
   it('keeps the offer when only the model changed inside the same provider', () => {
     const { service } = setup()
     service.observe(SID, rateLimitFailure(IN_ONE_HOUR / 1000))
@@ -401,6 +438,21 @@ describe('scheduled send — delivery', () => {
     expect(store.get(SID)).toMatchObject({ armed: true, message: 'run the tests' })
   })
 
+  it('waits for a busy session without cancelling its rate-limit send', async () => {
+    const { service, send, sessionManager } = setup()
+    service.observe(SID, rateLimitFailure(IN_ONE_HOUR / 1000))
+    service.set(SID, { armed: true })
+    sessionManager.getSession.mockReturnValue({ isStreaming: () => true, send } as never)
+
+    vi.setSystemTime(IN_ONE_HOUR + 2 * RESET_BUFFER_MS)
+    service.start()
+    await vi.advanceTimersByTimeAsync(30_000)
+    service.stop()
+
+    expect(send).not.toHaveBeenCalled()
+    expect(store.get(SID)).toMatchObject({ armed: true, source: 'rate_limit' })
+  })
+
   it('re-reads the row before sending, so a cancel in the window still counts', async () => {
     const { service, send } = setup()
     service.set(SID, { sendAt: IN_ONE_HOUR, armed: true, message: 'run the tests', source: 'manual' })
@@ -440,11 +492,15 @@ describe('scheduled send — delivery', () => {
     expect(store.get(SID)).toMatchObject({ sendAt: laterSlot, armed: true })
   })
 
-  it('reports delivery on the append that carries the text, not on any other change', async () => {
+  it('reports delivery on provider output, not the local append or optimistic start', async () => {
     const { service, send, broadcast } = setup()
     service.set(SID, { sendAt: IN_ONE_HOUR, armed: true, message: 'run the tests', source: 'manual' })
     send.mockImplementation(async () => {
       service.observe(SID, { type: 'user_message_appended', message: { id: 'm1' } } as unknown as AgentEvent)
+      service.observe(SID, { type: 'message_start', message: { id: 'm1' } } as AgentEvent)
+      expect(store.get(SID)).toMatchObject({ armed: true })
+      expect(broadcast.mock.calls.every((call) => call[2] === false)).toBe(true)
+      service.observe(SID, { type: 'stream_message_start', messageId: 'm1' } as AgentEvent)
     })
 
     vi.setSystemTime(IN_ONE_HOUR + 2 * RESET_BUFFER_MS)
@@ -467,7 +523,44 @@ describe('scheduled send — delivery', () => {
     expect(broadcast.mock.calls.every((c) => c[2] === false)).toBe(true)
   })
 
-  it('disarms instead of retrying forever when a session can never be resolved', async () => {
+  it('retries the same send after startup fails following the local append', async () => {
+    const { service, send, broadcast } = setup()
+    service.set(SID, { sendAt: IN_ONE_HOUR, armed: true, message: 'run the tests', source: 'manual' })
+    send.mockImplementationOnce(async () => {
+      service.observe(SID, { type: 'user_message_appended', message: { id: 'm1' } } as unknown as AgentEvent)
+      throw new Error('backend start failed')
+    })
+    send.mockImplementationOnce(async () => {
+      service.observe(SID, { type: 'content_delta', messageId: 'm2' } as AgentEvent)
+    })
+
+    vi.setSystemTime(IN_ONE_HOUR + 2 * RESET_BUFFER_MS)
+    service.start()
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+    expect(store.get(SID)).toMatchObject({ armed: true, message: 'run the tests' })
+    expect(broadcast.mock.calls.every((call) => call[2] === false)).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(30_000)
+    service.stop()
+    expect(send).toHaveBeenCalledTimes(2)
+    expect((send.mock.calls[1][0] as { clientMessageId: string }).clientMessageId)
+      .toBe((send.mock.calls[0][0] as { clientMessageId: string }).clientMessageId)
+    expect(store.get(SID)).toBeUndefined()
+  })
+
+  it('does not retire a send that returns without provider output or completion', async () => {
+    const { service, send } = setup()
+    service.set(SID, { sendAt: IN_ONE_HOUR, armed: true, message: 'run the tests', source: 'manual' })
+
+    vi.setSystemTime(IN_ONE_HOUR + 2 * RESET_BUFFER_MS)
+    service.start()
+    await vi.waitFor(() => expect(send).toHaveBeenCalled())
+    service.stop()
+
+    expect(store.get(SID)).toMatchObject({ armed: true, message: 'run the tests' })
+  })
+
+  it('keeps retrying when a session cannot be resolved', async () => {
     const { service, send, sessionManager } = setup()
     service.set(SID, { sendAt: IN_ONE_HOUR, armed: true, message: 'run the tests', source: 'manual' })
     sessionManager.getSession.mockReturnValue(undefined as never)
@@ -479,14 +572,16 @@ describe('scheduled send — delivery', () => {
     service.stop()
 
     expect(send).not.toHaveBeenCalled()
-    // Disarmed, not deleted — the promise stays visible so the user can see it
-    // did not fire.
-    expect(store.get(SID)).toMatchObject({ armed: false, message: 'run the tests' })
+    expect(store.get(SID)).toMatchObject({ armed: true, message: 'run the tests' })
   })
 
   it('spends a hand-made schedule on delivery instead of leaving it queued', async () => {
     const { service, send } = setup()
     service.set(SID, { sendAt: IN_ONE_HOUR, armed: true, message: 'run the tests', source: 'manual' })
+    send.mockImplementation(async () => {
+      service.observe(SID, { type: 'user_message_appended', message: { id: 'm1' } } as unknown as AgentEvent)
+      service.observe(SID, { type: 'message_complete', messageId: 'm1' } as AgentEvent)
+    })
 
     vi.setSystemTime(IN_ONE_HOUR + 2 * RESET_BUFFER_MS)
     service.start()
@@ -495,20 +590,16 @@ describe('scheduled send — delivery', () => {
     service.stop()
   })
 
-  it('retires a rate-limit row the moment its text lands, not when the turn ends', async () => {
+  it('keeps a rate-limit row after the local append until the provider responds', async () => {
     const { service, send } = setup()
     service.observe(SID, rateLimitFailure(IN_ONE_HOUR / 1000))
     service.set(SID, { armed: true, message: 'finish the migration' })
 
-    // The append is at the head of the turn; `Session.send` then runs for as
-    // long as the turn does, which is routinely many minutes. A row that
-    // survives that gap keeps the composer showing a promise it already kept —
-    // an armed chip reading "Send at 13:31" at 13:45, a clock in the sidebar,
-    // and no way to send into the session the schedule itself just woke.
-    let rowMidTurn: unknown = 'unread'
+    let rowAfterAppend: ScheduledSend | undefined
     send.mockImplementation(async () => {
       service.observe(SID, { type: 'user_message_appended', message: { id: 'm1' } } as unknown as AgentEvent)
-      rowMidTurn = store.get(SID)
+      rowAfterAppend = store.get(SID)
+      service.observe(SID, { type: 'content_delta', messageId: 'm1' } as AgentEvent)
     })
 
     vi.setSystemTime(IN_ONE_HOUR + 2 * RESET_BUFFER_MS)
@@ -516,18 +607,16 @@ describe('scheduled send — delivery', () => {
     await vi.waitFor(() => expect(send).toHaveBeenCalled())
     service.stop()
 
-    expect(rowMidTurn).toBeUndefined()
+    expect(rowAfterAppend).toMatchObject({ armed: true })
+    expect(store.get(SID)).toBeUndefined()
   })
 
-  it('still re-arms the chain after the delivered row is retired mid-turn', async () => {
+  it('re-arms after a rate limit even when the local message was appended', async () => {
     const { service, send } = setup()
     service.observe(SID, rateLimitFailure(IN_ONE_HOUR / 1000))
     service.set(SID, { armed: true, message: 'finish the migration' })
 
     const later = IN_ONE_HOUR + 3_600_000
-    // Retiring on the append must not cost the consent to keep going: that
-    // lives in `autoRearm`, not in the row, so the next stall inside the same
-    // turn still writes an offer that is already armed with the same message.
     send.mockImplementation(async () => {
       service.observe(SID, { type: 'user_message_appended', message: { id: 'm1' } } as unknown as AgentEvent)
       service.observe(SID, rateLimitFailure(later / 1000))
@@ -572,6 +661,28 @@ describe('scheduled send — delivery', () => {
     service.stop()
   })
 
+  it('keeps a rate-limit send armed if its account changes during delivery', async () => {
+    const { service, send } = setup()
+    service.observe(SID, rateLimitFailure(IN_ONE_HOUR / 1000))
+    service.set(SID, { armed: true, message: 'continue later' })
+    const later = IN_ONE_HOUR + 3_600_000
+    send.mockImplementation(async () => {
+      service.observe(SID, {
+        type: 'agent_setting_change', patch: { apiProviderId: 'another-credential' },
+      } as AgentEvent)
+      service.observe(SID, rateLimitFailure(later / 1000))
+    })
+
+    vi.setSystemTime(IN_ONE_HOUR + 2 * RESET_BUFFER_MS)
+    service.start()
+    await vi.waitFor(() => expect(send).toHaveBeenCalled())
+    service.stop()
+
+    expect(store.get(SID)).toMatchObject({
+      armed: true, message: 'continue later', sendAt: later + RESET_BUFFER_MS,
+    })
+  })
+
   it('does not append a second transcript bubble when a send is retried', async () => {
     const { service, send } = setup()
     service.set(SID, { sendAt: IN_ONE_HOUR, armed: true, message: 'run the tests', source: 'manual' })
@@ -589,7 +700,7 @@ describe('scheduled send — delivery', () => {
     expect(store.get(SID)).toMatchObject({ armed: true })
   })
 
-  it('stays armed when the auto-resumed turn rate-limits again', async () => {
+  it('does not re-time an armed send for a later rate-limit event outside its delivery', async () => {
     const { service, send } = setup()
     service.observe(SID, rateLimitFailure(IN_ONE_HOUR / 1000))
     service.set(SID, { armed: true, message: 'finish the migration' })
@@ -603,7 +714,7 @@ describe('scheduled send — delivery', () => {
     expect(store.get(SID)).toMatchObject({
       armed: true,
       message: 'finish the migration',
-      sendAt: later + RESET_BUFFER_MS,
+      sendAt: IN_ONE_HOUR + RESET_BUFFER_MS,
     })
     service.stop()
   })

@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { CodexSkillsRpcService } from './codex-skills-rpc-service'
 import type { CodexExperimentService } from './codex-experiment-service'
 
@@ -15,6 +18,29 @@ function makeService(
 }
 
 describe('CodexSkillsRpcService.list', () => {
+  it('reads skill arguments from SKILL.md for the slash command catalog', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'codex-skill-hint-'))
+    try {
+      const argsDir = join(dir, 'args')
+      const hintDir = join(dir, 'hint')
+      mkdirSync(argsDir)
+      mkdirSync(hintDir)
+      writeFileSync(join(argsDir, 'SKILL.md'), '---\narguments: "<target> [--dry-run]"\n---\n')
+      writeFileSync(join(hintDir, 'SKILL.md'), '---\nargument-hint: "<query>"\n---\n')
+      const service = makeService(async () => ({
+        data: [{ cwd: dir, skills: [
+          { name: 'args', path: argsDir, scope: 'repo' },
+          { name: 'hint', path: join(hintDir, 'SKILL.md'), scope: 'repo' },
+        ] }],
+      }))
+
+      const skills = await service.list(dir)
+      expect(skills.map((s) => s.argumentHint)).toEqual(['<target> [--dry-run]', '<query>'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('maps SkillMetadata into SkillInfo and merges across cwd entries with scope→ResourceScope translation', async () => {
     const service = makeService(async (method, params) => {
       expect(method).toBe('skills/list')

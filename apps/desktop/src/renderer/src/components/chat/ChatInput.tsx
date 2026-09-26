@@ -371,14 +371,14 @@ export function ChatInput() {
             { name: 'logout', description: t('chat.codexCommands.logoutDesc'), argumentHint: '', isSkill: false },
           ]
         : []),
-      { name: 'review', description: t('chat.codexCommands.reviewDesc'), argumentHint: '', isSkill: false },
+      { name: 'review', description: t('chat.codexCommands.reviewDesc'), argumentHint: 'branch <name> | commit <sha>', isSkill: false },
       { name: 'compact', description: t('chat.codexCommands.compactDesc'), argumentHint: '', isSkill: false },
       { name: 'plan', description: t('chat.codexCommands.planDesc'), argumentHint: '', isSkill: false },
       // /provider command retired — provider selection moved into the model selector (kept for reference)
       // { name: 'provider', description: t('chat.codexCommands.providerDesc'), argumentHint: '', isSkill: false },
       { name: 'mcp', description: t('chat.codexCommands.mcpDesc'), argumentHint: '', isSkill: false },
       ...codexPrompts,
-      ...codexSkills.map((s): SlashCommandInfo => ({ name: s.name, description: s.description, argumentHint: '', isSkill: true })),
+      ...codexSkills.map((s): SlashCommandInfo => ({ name: s.name, description: s.description, argumentHint: s.argumentHint ?? '', isSkill: true })),
     ]), [t, resolvedCodexProviderId, codexPrompts, codexSkills])
 
     const acpSlashCommandsFromAgent = useActiveSession((s) => s.acpSlashCommands)

@@ -1,6 +1,7 @@
 import { existsSync } from 'fs'
 import { dirname, join, resolve } from 'path'
 import type { ResourceScope, SkillInfo } from '@superone/shared/agent-types'
+import { readArgumentHintFromMarkdownFile } from '@superone/runtime/fs'
 import type { CodexExperimentService } from './codex-experiment-service'
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -45,7 +46,7 @@ function mapSkill(raw: unknown, fileExists: (path: string) => boolean): SkillInf
     displayName: readString(intf?.displayName) ?? name,
     scope,
     description: readString(rec.description) ?? readString(rec.shortDescription) ?? readString(intf?.shortDescription) ?? '',
-    argumentHint: '',
+    argumentHint: readArgumentHintFromMarkdownFile(join(skillDir, 'SKILL.md')),
     hasConfig,
     sourcePath: skillDir,
     ...(readBoolean(rec.enabled) !== null ? { enabled: readBoolean(rec.enabled)! } : {}),

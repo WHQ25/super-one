@@ -99,6 +99,8 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     },
     ensureAcpSlashCommands: vi.fn(),
     _cursorSlashItems: [] as Array<{ name: string; description: string; argumentHint: string; isSkill: boolean; promptBody?: string }>,
+    codexPrompts: [] as Array<{ name: string; description: string; argumentHint: string; isSkill: boolean }>,
+    codexSkills: [] as Array<{ name: string; description: string; argumentHint?: string }>,
   }
 
   const useChatStore = Object.assign(
@@ -320,8 +322,8 @@ vi.mock('@/stores/chat', () => ({
   useActiveSession: (selector: (state: typeof activeSessionState) => unknown) => selector(activeSessionState),
   useIsRemoteLocked: () => !!activeSessionState.draftRemoteDeviceId,
   useSessionScope: () => sessionScope.value,
-  selectCodexPrompts: () => [],
-  selectActiveCodexSkills: () => [],
+  selectCodexPrompts: (state: typeof chatActions) => state.codexPrompts,
+  selectActiveCodexSkills: (state: typeof chatActions) => state.codexSkills,
   selectActiveCursorSlashItems: (state: typeof chatActions) => state._cursorSlashItems,
   selectOpenCodeCommands: (state: typeof chatActions) => state.harnessResources.opencode.commands,
   getLatestCodexThreadId: () => goalState.threadId,
@@ -449,6 +451,8 @@ beforeEach(() => {
   activeSessionState.promptSuggestion = null
   activeSessionState.promptSuggestions = []
   chatActions._cursorSlashItems = []
+  chatActions.codexPrompts = []
+  chatActions.codexSkills = []
   activeSessionState.showDirManager = false
   activeSessionState.showReviewPanel = false
   activeSessionState._activeSessionId = 'session-1'
@@ -1242,6 +1246,21 @@ describe('ChatInput slash command grouping', () => {
     expect(commandName).toBeTruthy()
     const argumentHint = screen.getByText(/<design-doc-path>/)
     expect(argumentHint).toHaveClass('truncate', 'min-w-0', 'flex-1')
+  })
+
+  it('shows Codex skill, custom command, and review argument hints', () => {
+    activeSessionState.preferredProvider = 'codex'
+    activeSessionState.sessionProvider = 'codex'
+    chatActions.codexSkills = [{ name: 'release', description: 'Release app', argumentHint: '[alpha|stable]' }]
+    chatActions.codexPrompts = [{ name: 'deploy', description: 'Deploy app', argumentHint: '<env>', isSkill: false }]
+
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('/')
+    rerender(<ChatInput />)
+
+    expect(screen.getByText('[alpha|stable]')).toBeInTheDocument()
+    expect(screen.getByText('<env>')).toBeInTheDocument()
+    expect(screen.getByText('branch <name> | commit <sha>')).toBeInTheDocument()
   })
 
   it('drops the per-row skill badge now that skills have their own section', () => {

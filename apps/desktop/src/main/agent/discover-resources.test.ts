@@ -371,6 +371,16 @@ describe('discoverUserCommands', () => {
 })
 
 describe('discoverCodexUserPrompts', () => {
+  it('keeps arguments for Codex custom slash commands', () => {
+    existsSyncMock.mockReturnValue(true)
+    readdirSyncMock.mockReturnValue([dirent('deploy.md')])
+    readFileSyncMock.mockReturnValue('---\ndescription: Deploy\narguments: "<env> [--dry-run]"\n---\n')
+
+    expect(discoverCodexUserPrompts()).toEqual([
+      { name: 'deploy', description: 'Deploy', argumentHint: '<env> [--dry-run]', isSkill: false },
+    ])
+  })
+
   it('reads top-level .md files from ~/.codex/prompts', () => {
     existsSyncMock.mockImplementation((p: string) => p === '/home/user/.codex/prompts')
     readdirSyncMock.mockReturnValue([dirent('align.md'), dirent('tdd.md')])

@@ -14,6 +14,7 @@ test scope, commit rules, and UI story coverage.
 | Test runner, integration fixtures, component tests | [testing.md](docs/agent-reference/testing.md) |
 | Simulator/Android platform integration | [devices.md](docs/agent-reference/devices.md) |
 | Mini-app Host, WebView, bridge APIs, packaging | [miniapps.md](docs/agent-reference/miniapps.md) |
+| New dependencies, feature entry points, startup work, bundle size | [performance.md](docs/agent-reference/performance.md) |
 
 ## Boundaries
 
@@ -31,6 +32,10 @@ test scope, commit rules, and UI story coverage.
 - Build identity comes from `variants.json`, not version-string inference.
 - UI uses shared primitives, semantic tokens, and the `z-layers.ts` ladder.
   Follow scoped styling guidance when changing those surfaces.
+- Keep the startup path lean. Heavy or optional libraries and SDKs load at the
+  use site behind a lazy boundary, and nothing new blocks `createWindow`. When
+  adding a dependency or a feature entry point, verify that the entry chunk and
+  main bundle do not pick it up statically.
 
 For a harness integration or an agent-tool change, use the matching repository
 skill. Ordinary work inside a backend does not require an all-harness audit.

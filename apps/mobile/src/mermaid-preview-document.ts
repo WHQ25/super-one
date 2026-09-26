@@ -1,96 +1,87 @@
 /**
  * Offline HTML the mermaid preview WebView loads. The SVG is data, never
  * markup: JSON-encoded and written through innerHTML so a diagram cannot
- * break out of the document. Page zoom is off (`user-scalable=no`); pinch
- * and pan are CSS transforms on this page alone, so dismissing the preview
- * cannot leave the chat WebView scaled.
+ * break out of the document.
+ *
+ * Pinch and pan are the WebView's native page zoom, the same mechanism as the
+ * transcript, so the vector is re-tiled at the current scale while the
+ * fingers are still down. CSS-transform zoom cannot do that: the transformed
+ * layer keeps the raster it was painted at and blurs until layout. The zoom
+ * belongs to this preview WebView alone, so dismissing it cannot leave the
+ * chat WebView scaled.
+ *
+ * Double-tap is ours: WebKit's smart zoom fits the tapped block, which here
+ * is the whole stage, so it lands off-centre. `touch-action:manipulation`
+ * turns it off and a tap pair pins min/max/initial scale to force the native
+ * zoom. Chromium ignores a viewport change unless `initial-scale` changes, so
+ * the pin sits a hair above the exact value every release writes. The pin is
+ * released once the visual viewport reaches it (releasing mid-animation
+ * freezes WebKit's zoom partway), and the engines need different releases:
+ * WebKit must get the page's own `initial-scale` back or it re-animates to a
+ * wrong scale, and moves to the tapped point with `scrollTo`; Chromium needs
+ * a changed `initial-scale` to lift min/max, so it releases at the target,
+ * which resets its scroll and leaves only `scrollIntoView` able to move the
+ * visual viewport.
  *
  * The stage has a definite size because mermaid emits `width="100%"` with no
  * intrinsic width: inside a shrink-to-fit box that percentage collapses to 0.
  * The SVG fills the stage, its viewBox fits the drawing, and mermaid's inline
- * `max-width` keeps a small diagram at its natural size.
+ * `max-width` keeps a small diagram at its natural size. The page is exactly
+ * one screen, so at 1× there is nothing to scroll.
  */
 
-export function mermaidPreviewDocument(svg: string, background: string): string {
+const MIN_SCALE = 1
+const MAX_SCALE = 10
+
+export function mermaidPreviewDocument(svg: string, background: string, chromium: boolean): string {
   const data = JSON.stringify({ svg, background }).replace(/</g, '\\u003c')
   return `<!doctype html><html><head><meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"/>
+<meta name="viewport" content="width=device-width, initial-scale=${MIN_SCALE}, minimum-scale=${MIN_SCALE}, maximum-scale=${MAX_SCALE}, viewport-fit=cover"/>
 <style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
-body{background:transparent}
-#viewport{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none}
-#stage{width:92vw;height:78vh;transform-origin:center center;will-change:transform}
+html,body{margin:0;width:100%;height:100%;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+body{display:flex;align-items:center;justify-content:center;background:transparent}
+#stage{width:92vw;height:78vh}
 #stage svg{display:block;width:100%;height:100%;margin:0 auto}
+#focus{position:absolute;width:1px;height:1px;pointer-events:none}
 </style></head><body>
-<div id="viewport"><div id="stage"></div></div>
+<div id="stage"></div><div id="focus" aria-hidden="true"></div>
 <script>
 const config=${data};
 document.body.style.background=config.background;
-const stage=document.getElementById('stage');
-stage.innerHTML=config.svg;
-const MIN=1,MAX=8,DOUBLE=2.5,TAP_MS=300,TAP_SLOP=24;
-let scale=1,tx=0,ty=0,mode=null,start=null,lastTap=0,lastX=0,lastY=0;
-const dist=(a,b)=>Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
-const mid=(a,b)=>({x:(a.clientX+b.clientX)/2,y:(a.clientY+b.clientY)/2});
-function apply(){stage.style.transform='translate('+tx+'px,'+ty+'px) scale('+scale+')'}
-function settle(){scale=Math.min(MAX,Math.max(MIN,scale));if(scale<=MIN){scale=MIN;tx=0;ty=0}apply()}
+document.getElementById('stage').innerHTML=config.svg;
+const meta=document.querySelector('meta[name=viewport]'),focus=document.getElementById('focus');
+const MIN=${MIN_SCALE},MAX=${MAX_SCALE},CHROMIUM=${chromium},PIN_OFFSET=0.001,DOUBLE=2.5,TAP_MS=300,TAP_SLOP=24,MOVE_SLOP=10,SETTLE_MS=1000;
+let lastTap=0,lastX=0,lastY=0,startX=0,startY=0,moved=false;
+function setViewport(initial,min,max){meta.content='width=device-width, initial-scale='+initial+', minimum-scale='+min+', maximum-scale='+max+', viewport-fit=cover'}
+function zoomTo(scale,pageX,pageY){
+  const root=document.documentElement,pin=scale+PIN_OFFSET,width=root.clientWidth/pin,height=root.clientHeight/pin,started=Date.now();
+  setViewport(pin,pin,pin);
+  const settle=()=>{
+    if(Math.abs(visualViewport.width-width)>1&&Date.now()-started<SETTLE_MS){requestAnimationFrame(settle);return}
+    setViewport(CHROMIUM?scale:MIN,MIN,MAX);
+    if(scale<=1)return;
+    if(!CHROMIUM){window.scrollTo(pageX-width/2,pageY-height/2);return}
+    focus.style.left=pageX+'px';focus.style.top=pageY+'px';
+    focus.scrollIntoView({block:'center',inline:'center'});
+  };
+  requestAnimationFrame(settle);
+}
 document.addEventListener('touchstart',event=>{
-  if(event.touches.length===2){
-    event.preventDefault();
-    mode='pinch';
-    start={scale,tx,ty,dist:dist(event.touches[0],event.touches[1]),mid:mid(event.touches[0],event.touches[1])};
-    return;
-  }
-  if(event.touches.length===1){
-    mode='pan';
-    start={scale,tx,ty,x:event.touches[0].clientX,y:event.touches[0].clientY};
-  }
-},{passive:false});
+  moved=event.touches.length>1;
+  startX=event.touches[0].clientX;startY=event.touches[0].clientY;
+},{passive:true});
 document.addEventListener('touchmove',event=>{
-  if(!start)return;
-  if(mode==='pinch'&&event.touches.length===2){
-    event.preventDefault();
-    const next=Math.min(MAX*1.4,Math.max(MIN*0.7,start.scale*(dist(event.touches[0],event.touches[1])/Math.max(1,start.dist))));
-    const ratio=next/start.scale;
-    const point=mid(event.touches[0],event.touches[1]);
-    scale=next;
-    tx=point.x-(start.mid.x-start.tx)*ratio;
-    ty=point.y-(start.mid.y-start.ty)*ratio;
-    apply();
-    return;
-  }
-  if(mode==='pan'&&event.touches.length===1&&scale>MIN){
-    event.preventDefault();
-    tx=start.tx+(event.touches[0].clientX-start.x);
-    ty=start.ty+(event.touches[0].clientY-start.y);
-    apply();
-  }
-},{passive:false});
+  if(event.touches.length>1||Math.hypot(event.touches[0].clientX-startX,event.touches[0].clientY-startY)>MOVE_SLOP)moved=true;
+},{passive:true});
 document.addEventListener('touchend',event=>{
-  if(event.touches.length>0){
-    if(event.touches.length===1){
-      mode='pan';
-      start={scale,tx,ty,x:event.touches[0].clientX,y:event.touches[0].clientY};
-    }
-    return;
-  }
-  const tap=event.changedTouches[0];
-  const now=Date.now();
-  const wasTap=mode==='pan'&&start&&Math.hypot(tap.clientX-start.x,tap.clientY-start.y)<TAP_SLOP;
-  mode=null;start=null;
-  if(wasTap&&now-lastTap<TAP_MS&&Math.hypot(tap.clientX-lastX,tap.clientY-lastY)<TAP_SLOP){
+  if(event.touches.length||moved)return;
+  const tap=event.changedTouches[0],now=Date.now();
+  if(now-lastTap<TAP_MS&&Math.hypot(tap.clientX-lastX,tap.clientY-lastY)<TAP_SLOP){
     lastTap=0;
-    if(scale>MIN){scale=MIN;tx=0;ty=0}
-    else{
-      scale=DOUBLE;
-      tx=window.innerWidth/2-tap.clientX;
-      ty=window.innerHeight/2-tap.clientY;
-    }
-    apply();
+    zoomTo(visualViewport.scale>1.01?1:DOUBLE,tap.pageX,tap.pageY);
     return;
   }
-  if(wasTap){lastTap=now;lastX=tap.clientX;lastY=tap.clientY}
-  settle();
-},{passive:false});
+  lastTap=now;lastX=tap.clientX;lastY=tap.clientY;
+},{passive:true});
 </script></body></html>`
 }

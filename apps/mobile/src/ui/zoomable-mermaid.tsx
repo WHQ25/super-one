@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { StyleSheet, View } from 'react-native'
+import { Platform, StyleSheet, View } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { mermaidPreviewDocument } from '../mermaid-preview-document'
 import { FILE_PREVIEW_TEXT } from '../file-preview-state'
@@ -7,15 +7,15 @@ import { useMobileTheme } from '../theme/context'
 import { useMobileLocale } from '../i18n/context'
 
 /**
- * A mermaid diagram on its own page. Pinch, pan and double-tap live in this
- * WebView's document as CSS transforms — never as the chat WebView's page zoom —
- * so back leaves the transcript at 1×.
+ * A mermaid diagram on its own page. Pinch, pan and double-tap drive this
+ * WebView's native page zoom, which re-tiles the vector mid-gesture; the chat
+ * WebView is never zoomed, so back leaves the transcript at 1×.
  */
 export function ZoomableMermaid({ svg }: { svg: string }) {
   const { tokens: { colors } } = useMobileTheme()
   const { t } = useMobileLocale()
   const html = useMemo(
-    () => mermaidPreviewDocument(svg, colors.background),
+    () => mermaidPreviewDocument(svg, colors.background, Platform.OS === 'android'),
     [svg, colors.background],
   )
   return (
@@ -26,13 +26,10 @@ export function ZoomableMermaid({ svg }: { svg: string }) {
         source={{ html }}
         style={[styles.flex, { backgroundColor: colors.background }]}
         containerStyle={{ backgroundColor: colors.background }}
-        scrollEnabled={false}
         bounces={false}
         overScrollMode="never"
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
-        setBuiltInZoomControls={false}
-        scalesPageToFit={false}
         javaScriptEnabled
       />
     </View>

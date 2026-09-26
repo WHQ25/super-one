@@ -37,11 +37,11 @@ function isScreenMaterial(material: Material): material is MeshStandardMaterial 
     && material.color.r + material.color.g + material.color.b < 1e-3
 }
 
-function screenCandidates(object: Object3D): Mesh[] {
+function screenCandidates(object: Object3D, screenMeshName?: string): Mesh[] {
   const meshes: Mesh[] = []
   object.traverse((part) => {
     if (!(part instanceof Mesh) || Array.isArray(part.material)) return
-    if (isScreenMaterial(part.material)) meshes.push(part)
+    if (screenMeshName ? part.name === screenMeshName : isScreenMaterial(part.material)) meshes.push(part)
   })
   return meshes
 }
@@ -182,9 +182,22 @@ export function transformFrame(frame: DeviceScreenFrame, matrix: Matrix4): Devic
  * The scene is modified in place: the other device in a two-size scene is detached,
  * and the caller disposes it along with everything else it loaded.
  */
-export function prepareDeviceModel(object: Object3D, pick: DeviceModelScreenPick): PreparedDeviceModel {
+export function prepareDeviceModel(
+  object: Object3D,
+  pick: DeviceModelScreenPick,
+  screenMeshName?: string,
+  flipScreenV = false,
+): PreparedDeviceModel {
   object.updateMatrixWorld(true)
-  const screens = screenCandidates(object)
+  if (flipScreenV) {
+    for (const mesh of screenCandidates(object, screenMeshName)) {
+      const uv = mesh.geometry.getAttribute('uv')
+      if (!uv) continue
+      for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i))
+      uv.needsUpdate = true
+    }
+  }
+  const screens = screenCandidates(object, screenMeshName)
     .map((mesh) => ({ mesh, frame: fitScreenFrame(mesh) }))
     .filter((entry): entry is { mesh: Mesh; frame: DeviceScreenFrame } => entry.frame !== null)
     .map((entry) => ({ ...entry, area: new Vector3().crossVectors(entry.frame.u, entry.frame.v).length() }))

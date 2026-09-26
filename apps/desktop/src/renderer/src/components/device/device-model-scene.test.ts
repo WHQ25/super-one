@@ -1,4 +1,4 @@
-import { Box3, Mesh, Ray, Vector3 } from 'three'
+import { Box3, Mesh, MeshStandardMaterial, Ray, Vector3 } from 'three'
 import { describe, expect, it } from 'vitest'
 import { syntheticPhoneScene, syntheticProScene, syntheticTabletScene } from './__fixtures__/synthetic-device-model'
 import { prepareDeviceModel, projectRayToScreen, transformFrame, type DeviceScreenFrame } from './device-model-scene'
@@ -52,6 +52,23 @@ describe('prepareDeviceModel', () => {
     const scene = syntheticPhoneScene()
     scene.traverse((part) => { if (part instanceof Mesh && part.name === 'HkNSnYzBPABcqwM') part.removeFromParent() })
     expect(() => prepareDeviceModel(scene, 'only')).toThrow('No device screen')
+  })
+
+  it('uses an explicitly named GLB glass with ordinary material', () => {
+    const scene = syntheticPhoneScene()
+    let display: Mesh | null = null
+    scene.traverse((part) => {
+      if (part instanceof Mesh && part.name === 'HkNSnYzBPABcqwM') {
+        part.name = 'Display'
+        part.material = new MeshStandardMaterial({ color: 0xffffff })
+        display = part
+      }
+    })
+    expect(() => prepareDeviceModel(scene.clone(), 'only')).toThrow('No device screen')
+    const originalV = display!.geometry.getAttribute('uv').getY(0)
+    const prepared = prepareDeviceModel(scene, 'only', 'Display', true)
+    expect(prepared.screen.name).toBe('Display')
+    expect(prepared.screen.geometry.getAttribute('uv').getY(0)).toBeCloseTo(1 - originalV)
   })
 })
 

@@ -1,5 +1,5 @@
 import type { Decorator, Meta, StoryObj } from '@storybook/react-vite'
-import type { DeviceDescriptor } from '@superone/shared/device'
+import { ANDROID_PHONE_REFERENCE_MODEL, type DeviceDescriptor } from '@superone/shared/device'
 import { mockIpc } from '../../../../../.storybook/mock-ipc'
 import { writeDeviceView3d } from './device-3d'
 import { DeviceStage } from './DeviceStage'
@@ -22,11 +22,17 @@ function simulator(model: string): DeviceDescriptor {
 }
 
 const WITH_BODY = simulator('iPhone 17 Pro')
+const ANDROID_PHONE: DeviceDescriptor = {
+  ...WITH_BODY,
+  id: 'android:avd:Medium_Phone', provider: 'android', platform: 'android',
+  name: 'Medium Phone', model: 'Medium Phone', kind: 'phone', kindName: 'Android Phone',
+  platformVersion: 'Android 16',
+}
 
 /** A panel with nothing bound yet: the header and its view switch, over a device not yet started. */
 const devicePanel = (view3d: boolean): Decorator => (Story) => {
   writeDeviceView3d(view3d)
-  mockIpc('app', 'listDeviceModels', async () => [WITH_BODY.model])
+  mockIpc('app', 'listDeviceModels', async () => [WITH_BODY.model, ANDROID_PHONE_REFERENCE_MODEL])
   ;(window as unknown as { environment: unknown }).environment = {
     iosSimulatorChrome: async () => null,
     onDeviceState: () => () => {},
@@ -64,6 +70,11 @@ type Story = StoryObj<typeof meta>
 /** The 2D | 3D switch sits beside the device name when this machine has the model's body. */
 export const FlatSelected: Story = { decorators: [devicePanel(false)] }
 export const ThreeDSelected: Story = { decorators: [devicePanel(true)] }
+/** Ordinary Android AVDs share the local Pixel 10 Pro reference shell. */
+export const AndroidPhone: Story = {
+  args: { devices: [ANDROID_PHONE], device: ANDROID_PHONE },
+  decorators: [devicePanel(false)],
+}
 /** No 3D body for this model on this machine: no switch at all, not a disabled one. */
 export const NoModel: Story = {
   args: { devices: [simulator('iPhone SE 3rd generation')], device: simulator('iPhone SE 3rd generation') },

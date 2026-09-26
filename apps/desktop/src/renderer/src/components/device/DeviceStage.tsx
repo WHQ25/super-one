@@ -30,7 +30,7 @@ import { DevicePreviewMenu } from './DevicePreviewMenu'
 import { IosSimulatorDeviceChrome } from './ios/IosSimulatorDeviceChrome'
 import { DeviceMenu } from './DeviceMenu'
 import { DeviceModelView } from './DeviceModelView'
-import { readDeviceView3d, useDeviceModelAvailable, writeDeviceView3d } from './device-3d'
+import { deviceModelKey, readDeviceView3d, useDeviceModelAvailable, writeDeviceView3d } from './device-3d'
 import type { DeviceFrameProjector } from './device-input'
 import { DeviceTouchPointer, useDeviceTouchPointer } from './DeviceTouchPointer'
 import { readPreviewQuality, writePreviewQuality } from './device-preview-quality'
@@ -310,6 +310,7 @@ export function DeviceStage({
   const deviceId = device?.id ?? ''
   const [view3d, setView3d] = useState(readDeviceView3d)
   const modelAvailable = useDeviceModelAvailable(device)
+  const modelViewAvailable = modelAvailable && (platform !== 'android' || orientation === 'portrait')
   // Where the 3D view maps pointers onto the glass; null while its model loads.
   const [projector, setProjector] = useState<DeviceFrameProjector | null>(null)
   const subscribeFrames = useCallback((listener: () => void) => onDeviceSurfaceFrame(deviceId, listener), [deviceId])
@@ -338,7 +339,9 @@ export function DeviceStage({
   // canvas costs a stream restart for a purely cosmetic upgrade.
   const live = ready && chrome !== undefined
   // The glance-only preview stays flat: it is a thumbnail, not a place to turn a device.
-  const show3d = view3d && modelAvailable && live && !preview
+  // Android's framebuffer changes shape in landscape; this portrait shell has
+  // no rotated-glass mapping for that stream, so use the flat view until upright.
+  const show3d = view3d && modelViewAvailable && live && !preview
   // The dot is drawn in the flat glass's own layout, which the 3D view does not have.
   const touchPointer = useDeviceTouchPointer({
     enabled: interactive && !show3d,
@@ -565,7 +568,7 @@ export function DeviceStage({
         {/* Offered only where this machine has the model's body; the choice itself is
             remembered either way. Header-only like preview quality: the overlay is for
             working the device, and the glance-only preview is always flat. */}
-        {modelAvailable && (
+        {modelViewAvailable && (
           <Tabs value={view3d ? '3d' : '2d'} onValueChange={changeViewMode}>
             <TabsList aria-label={t('activity.device.viewMode')}>
               <TabsTrigger value="2d">2D</TabsTrigger>
@@ -644,7 +647,7 @@ export function DeviceStage({
           // texture; the input pipeline reads the glass through `projector`.
           <div ref={shellRef} className="size-full">
             <DeviceModelView
-              model={device.model}
+              model={deviceModelKey(device)!}
               canvas={canvas}
               subscribeFrames={subscribeFrames}
               rotationDegrees={layoutRotation}

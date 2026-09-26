@@ -14,7 +14,7 @@ const loadRenderer = () => import('./device-model-renderer')
 const loadDesktopDeviceModel = (model: string) => loadRenderer().then((renderer) => renderer.loadDesktopDeviceModel(model))
 
 interface DeviceModelViewProps {
-  /** `DeviceDescriptor.model`, e.g. "iPhone 17 Pro". */
+  /** A model catalog key, e.g. "iPhone 17 Pro" or the Android reference body. */
   model: string
   /** The live picture; null until the device surface hands it over. */
   canvas: HTMLCanvasElement | null

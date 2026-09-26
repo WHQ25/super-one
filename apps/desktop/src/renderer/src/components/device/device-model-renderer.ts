@@ -24,6 +24,8 @@ import { prepareDeviceModel, projectRayToScreen, transformFrame } from './device
 export interface DeviceModelSource {
   object: Object3D
   screen: DeviceModelScreenPick
+  screenMeshName?: string
+  flipScreenV?: boolean
 }
 
 /** What the scene reads on every use rather than rebuilding for. */
@@ -41,14 +43,14 @@ export interface MountedDeviceModel {
   teardown: () => void
 }
 
-/** Apple's composed model for a simulator model, through main. */
+/** A local model for a simulator, through main. */
 export async function loadDesktopDeviceModel(model: string): Promise<DeviceModelSource | null> {
   const loaded = await window.app.loadDeviceModel(model)
   if (!loaded) return null
   const { archive } = loaded
   const bytes = archive.buffer.slice(archive.byteOffset, archive.byteOffset + archive.byteLength) as ArrayBuffer
-  const { object } = await parseModel('device.usdz', bytes)
-  return { object, screen: loaded.screen }
+  const { object } = await parseModel(`device.${loaded.format}`, bytes)
+  return { object, screen: loaded.screen, screenMeshName: loaded.screenMeshName, flipScreenV: loaded.flipScreenV }
 }
 
 /** The same turn the flat view animates with CSS. */
@@ -74,7 +76,7 @@ export async function mountDeviceModel(
   isCancelled: () => boolean,
 ): Promise<MountedDeviceModel | null> {
   if (isCancelled()) { disposeModel(source.object); return null }
-  const prepared = prepareDeviceModel(source.object, source.screen)
+  const prepared = prepareDeviceModel(source.object, source.screen, source.screenMeshName, source.flipScreenV)
 
   const screenMaterial = new MeshBasicMaterial({ color: 0x000000, toneMapped: false })
   prepared.screen.material = screenMaterial

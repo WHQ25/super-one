@@ -1,4 +1,6 @@
 import { BufferGeometry, DoubleSide, Group, LoadingManager, Mesh, MeshStandardMaterial, Vector3, type AnimationClip, type Box3, type Material, type Object3D, type PerspectiveCamera, type Texture } from 'three'
+import dracoDecoderUrl from 'three/examples/jsm/libs/draco/gltf/draco_wasm_wrapper.js?url'
+import dracoWasmUrl from 'three/examples/jsm/libs/draco/gltf/draco_decoder.wasm?url'
 
 export interface LoadedModel {
   object: Object3D
@@ -61,9 +63,18 @@ export async function parseModel(name: string, bytes: ArrayBuffer, baseUrl = '')
   switch (ext) {
     case '.glb':
     case '.gltf': {
-      const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js')
-      const gltf = await new GLTFLoader(manager).parseAsync(bytes, baseUrl)
-      return { object: gltf.scene, animations: gltf.animations }
+      const [{ GLTFLoader }, { DRACOLoader }] = await Promise.all([
+        import('three/addons/loaders/GLTFLoader.js'),
+        import('three/addons/loaders/DRACOLoader.js'),
+      ])
+      // Keep decoder requests separate from the model's folder-only URL policy.
+      const draco = new DRACOLoader().setDecoderPath({ js: dracoDecoderUrl, wasm: dracoWasmUrl })
+      try {
+        const gltf = await new GLTFLoader(manager).setDRACOLoader(draco).parseAsync(bytes, baseUrl)
+        return { object: gltf.scene, animations: gltf.animations }
+      } finally {
+        draco.dispose()
+      }
     }
     case '.usd':
     case '.usda':

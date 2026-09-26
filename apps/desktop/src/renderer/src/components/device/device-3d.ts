@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { DeviceDescriptor } from '@superone/shared/device'
+import { ANDROID_PHONE_REFERENCE_MODEL, type DeviceDescriptor } from '@superone/shared/device'
 
 // A machine-level preference like preview quality: how the user likes to look at
 // devices, not anything about one device or session.
@@ -31,14 +31,18 @@ function availableModels(): Promise<ReadonlySet<string>> {
   return available
 }
 
-/**
- * Whether this device has a 3D body on this machine.
- *
- * Simulators only: their `model` is the simulator device type, which is what the
- * catalog is keyed by. A mirrored iPhone or an Android device has no such name.
- */
+/** The exact body for iOS, or the local reference body for an ordinary Android AVD. */
+export function deviceModelKey(device: DeviceDescriptor | null): string | null {
+  if (device?.provider === 'ios-sim') return device.model
+  if (device?.provider === 'android' && device.id.startsWith('android:avd:') && device.kind === 'phone') {
+    return ANDROID_PHONE_REFERENCE_MODEL
+  }
+  return null
+}
+
+/** Whether this device has a 3D body on this machine. */
 export function useDeviceModelAvailable(device: DeviceDescriptor | null): boolean {
-  const model = device?.provider === 'ios-sim' ? device.model : null
+  const model = deviceModelKey(device)
   const [answer, setAnswer] = useState<{ model: string; available: boolean } | null>(null)
   useEffect(() => {
     if (!model) return

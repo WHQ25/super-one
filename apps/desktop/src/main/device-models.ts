@@ -2,7 +2,7 @@ import { access, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app } from 'electron'
 import { is } from '@electron-toolkit/utils'
-import type { DeviceModelScreenPick, LoadedDeviceModel } from '@superone/shared/device'
+import { ANDROID_PHONE_REFERENCE_MODEL, type DeviceModelScreenPick, type LoadedDeviceModel } from '@superone/shared/device'
 import { composeUsdzPreview } from './usdz-preview'
 
 interface DeviceModelEntry {
@@ -37,10 +37,12 @@ const CATALOG: Record<string, DeviceModelEntry> = {
   'iPad Pro 13 inch M5 12GB': { file: 'ipad-pro-m5-space-black.usdz', screen: 'only' },
 }
 
+const ANDROID_PHONE_REFERENCE_FILE = 'android-reference/pixel-10-pro-D008-esim.glb'
+
 /**
- * Apple's models carry no redistribution licence, so none ship with the app.
+ * Apple and Google reference models have no redistribution licence, so none ship with the app.
  * Development reads the gitignored `apps/desktop/.device-models`; a packaged build
- * looks in userData, where nothing puts them yet.
+ * looks in userData, where nothing puts them automatically.
  */
 function modelsDir(): string {
   return is.dev ? join(app.getAppPath(), '.device-models') : join(app.getPath('userData'), 'device-models')
@@ -61,15 +63,22 @@ export async function listDeviceModels(): Promise<string[]> {
   const present = await Promise.all(
     Object.entries(CATALOG).map(async ([model, entry]) => (await exists(join(dir, entry.file)) ? model : null)),
   )
-  return present.filter((model): model is string => model !== null)
+  const models = present.filter((model): model is string => model !== null)
+  if (await exists(join(dir, ANDROID_PHONE_REFERENCE_FILE))) models.push(ANDROID_PHONE_REFERENCE_MODEL)
+  return models
 }
 
 /** The composed stage for one simulator model, or null when it has none on disk. */
 export async function loadDeviceModel(model: string): Promise<LoadedDeviceModel | null> {
+  if (model === ANDROID_PHONE_REFERENCE_MODEL) {
+    const path = join(modelsDir(), ANDROID_PHONE_REFERENCE_FILE)
+    if (!(await exists(path))) return null
+    return { archive: new Uint8Array(await readFile(path)), format: 'glb', screen: 'only', screenMeshName: 'Display', flipScreenV: true }
+  }
   const entry = Object.hasOwn(CATALOG, model) ? CATALOG[model] : undefined
   if (!entry) return null
   const path = join(modelsDir(), entry.file)
   if (!(await exists(path))) return null
   const { archive } = await composeUsdzPreview(new Uint8Array(await readFile(path)))
-  return { archive, screen: entry.screen }
+  return { archive, format: 'usdz', screen: entry.screen }
 }

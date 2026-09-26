@@ -411,10 +411,18 @@ export interface DeviceInputResult {
 /** Which screen in a device model's scene is this device's; Apple ships Pro and Pro Max together. */
 export type DeviceModelScreenPick = 'only' | 'smallest' | 'largest'
 
-/** A device's 3D body: a composed USDZ archive Three's USDLoader can read. */
+/** Local reference body for ordinary Android phone AVDs. */
+export const ANDROID_PHONE_REFERENCE_MODEL = 'Android Phone (reference)'
+
+/** A device's 3D body, loaded from the local model directory. */
 export interface LoadedDeviceModel {
   archive: Uint8Array
+  format: 'usdz' | 'glb'
   screen: DeviceModelScreenPick
+  /** GLB meshes may identify their glass by name rather than Apple screen material. */
+  screenMeshName?: string
+  /** Corrects a screen whose UV winding points at the back of the phone. */
+  flipScreenV?: boolean
 }
 
 /** The concrete device an agent tool resolved, used to select the session PiP. */

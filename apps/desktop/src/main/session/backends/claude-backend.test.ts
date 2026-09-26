@@ -1117,6 +1117,22 @@ describe('ClaudeBackend', () => {
       expect((opts as { resume?: string; effort?: string }).effort).toBe('xhigh')
     })
 
+    it('a runtime revived while a rebuild is releasing starts in the rebuilt cwd, not the replaced one', async () => {
+      const backend = new ClaudeBackend()
+      await backend.start(makeStartOpts())
+      const oldIteration = hoisted.captured.iterationDone!
+      hoisted.captured.createSessionQueryMock.mockClear()
+
+      // The old iteration is still draining when the renderer asks for context usage.
+      const rebuild = backend.rebuild({ ...makeStartOpts(), cwd: '/tmp/proj/.worktrees/wt' })
+      const usage = backend.getContextUsage()
+      oldIteration.resolve()
+      await Promise.all([rebuild, usage])
+
+      const cwds = hoisted.captured.createSessionQueryMock.mock.calls.map(([, opts]) => (opts as { cwd?: string }).cwd)
+      expect(cwds).toEqual(['/tmp/proj/.worktrees/wt'])
+    })
+
     it('does NOT dispose the warmupManager (slot survives rebuild)', async () => {
       const backend = new ClaudeBackend()
       await backend.start(makeStartOpts())

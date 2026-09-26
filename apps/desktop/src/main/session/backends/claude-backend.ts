@@ -128,6 +128,8 @@ export class ClaudeBackend implements SessionBackend {
   private get warmupManager() { return getGlobalWarmupManager() }
 
   private _lastStartOpts: BackendStartOptions | null = null
+  /** In-flight `rebuild()`; a revive waits for it instead of restarting the runtime it replaces. */
+  private runtimeRebuild: Promise<void> | null = null
   private _spawnedAdditionalDirs: string[] = []
   private activeBackgroundTasks: Map<string, BackgroundTaskInfo> | null = null
   private _proxyBaseUrl: string | null = null
@@ -624,6 +626,10 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private async ensureRuntime(): Promise<void> {
+    // The release half of a rebuild leaves no runtime while the old iteration
+    // drains. Reviving then would start from `_lastStartOpts` — the options being
+    // replaced (a moved cwd) — and make the rebuild's own start fail.
+    if (this.runtimeRebuild) await this.runtimeRebuild.catch(() => {})
     if (this.bridge && this.query) return
     if (!this._lastStartOpts) throw new Error('ClaudeBackend not started')
     const resumeId = this.providerSessionId ?? undefined
@@ -663,8 +669,16 @@ export class ClaudeBackend implements SessionBackend {
       return
     }
     const resumeId = this.providerSessionId ?? undefined
-    await this.releaseRuntime('rebuild')
-    await this.start({ ...opts, providerSessionId: resumeId })
+    const rebuild = (async () => {
+      await this.releaseRuntime('rebuild')
+      await this.start({ ...opts, providerSessionId: resumeId })
+    })()
+    this.runtimeRebuild = rebuild
+    try {
+      await rebuild
+    } finally {
+      if (this.runtimeRebuild === rebuild) this.runtimeRebuild = null
+    }
   }
 
   async setSessionMode(_modeId: string): Promise<void> {}

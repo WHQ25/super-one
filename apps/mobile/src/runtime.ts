@@ -373,10 +373,15 @@ export class ChatRuntime {
       ...(opts.apiProviderId !== undefined ? { apiProviderId: opts.apiProviderId } : {}),
       ...(opts.sandboxMode ? { sandboxMode: opts.sandboxMode } : {}),
       ...(opts.draftId ? { draftId: opts.draftId, draftLeaseId: opts.draftLeaseId } : {}),
-    } as RemoteCommand) as { ok?: boolean; sessionId?: string; error?: string }
+    } as RemoteCommand) as { ok?: boolean; sessionId?: string; error?: string; cwd?: string; gitBranch?: string | null }
     if (res.error || res.ok === false) throw new Error(res.error ?? 'create_session failed')
     const id = res.sessionId ?? sessionId
     this.sessionId = id
+    // Where the session runs is the host's answer: a `create` pick names only a
+    // base branch, and the landing picker resets once the session exists.
+    this.worktree = res.cwd && res.cwd !== projectPath
+      ? { isWorktree: true, worktreePath: res.cwd, gitBranch: res.gitBranch ?? null }
+      : NO_WORKTREE
     // A brand-new session has no history. Subscribe for live events without the
     // restore round-trip `open()` uses when switching to an existing transcript.
     this.client.startBuffering()

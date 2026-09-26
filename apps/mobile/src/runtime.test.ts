@@ -188,6 +188,30 @@ describe('ChatRuntime', () => {
     expect(client.sent).toContainEqual(expect.objectContaining({ type: 'interrupt', sessionId: 's' }))
   })
 
+  it('takes a new session\'s worktree from the host, not from the landing picker', async () => {
+    const client = fakeClient()
+    client.request.mockImplementation(async (cmd: { type: string; sessionId?: string }) => {
+      if (cmd.type === 'create_session') {
+        // `create` mode: only the host knows the path it minted.
+        return { ok: true, sessionId: cmd.sessionId, cwd: '/p/.worktrees/feat', gitBranch: 'feat/mobile' }
+      }
+      return { ok: true }
+    })
+    const runtime = new ChatRuntime(client as never, vi.fn())
+    await runtime.create('/p', { sessionId: 's1', worktreeBranch: 'main', worktreeMode: 'branch', worktreeBranchName: 'feat/mobile' })
+    expect(runtime.worktree).toEqual({ isWorktree: true, worktreePath: '/p/.worktrees/feat', gitBranch: 'feat/mobile' })
+  })
+
+  it('reads a local new session as local when the host runs it in the project folder', async () => {
+    const client = fakeClient()
+    client.request.mockImplementation(async (cmd: { type: string; sessionId?: string }) => (
+      cmd.type === 'create_session' ? { ok: true, sessionId: cmd.sessionId, cwd: '/p', gitBranch: null } : { ok: true }
+    ))
+    const runtime = new ChatRuntime(client as never, vi.fn())
+    await runtime.create('/p', { sessionId: 's1', gitBranch: 'main' })
+    expect(runtime.worktree).toEqual({ isWorktree: false, worktreePath: null, gitBranch: null })
+  })
+
   it('forgets a staged session the host refused so it cannot be cached as a transcript', async () => {
     const client = fakeClient()
     client.request.mockImplementation(async (cmd: { type: string }) => {

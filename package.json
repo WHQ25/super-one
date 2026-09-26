@@ -21,7 +21,7 @@
     "bench": "bun --filter @superone/desktop bench",
     "bench:agent-events": "bun --filter @superone/desktop bench:agent-events",
     "dev:web": "bun --filter @superone/web dev",
-    "build:chat-view": "bun --filter @superone/chat-view build",
+    "build:chat-view": "bun --filter @superone/mobile build:chat-view",
     "dev:mobile": "bun --filter @superone/mobile dev",
     "rebuild:mobile:ios": "bun --cwd apps/mobile scripts/rebuild-dev-client.ts --platform ios",
     "rebuild:mobile:android": "bun --cwd apps/mobile scripts/rebuild-dev-client.ts --platform android",

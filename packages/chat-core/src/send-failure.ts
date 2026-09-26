@@ -33,7 +33,13 @@ export function reduceUserMessageSendFailed(
   event: SendFailedEvent,
 ): Partial<ChatCoreSession> {
   const id = event.clientMessageId
-  if (session.messages.some((m) => m.id === id)) {
+  const messageIndex = session.messages.findIndex((m) => m.id === id)
+  if (messageIndex !== -1) {
+    // A reply (including an interrupted or errored one) proves the send reached
+    // the agent. A late host error belongs to that reply, not this user bubble.
+    const nextUserIndex = session.messages.findIndex((m, index) => index > messageIndex && m.role === 'user')
+    if (session.messages.some((m, index) => index > messageIndex
+      && (nextUserIndex === -1 || index < nextUserIndex) && m.role === 'assistant')) return {}
     return {
       messages: session.messages.map((m) => (m.id === id ? withSendFailure(m, event.error) : m)),
       // Nothing will answer this send; the pending-reply line must not keep spinning.

@@ -46,6 +46,22 @@ describe('send failure', () => {
     runtime.dispose()
   })
 
+  it('keeps a delivered bubble successful when its assistant reply is interrupted', async () => {
+    const { runtime } = runtimeWith(async () => ({ ok: true }))
+    runtime.send('hello', { clientMessageId: 'u' })
+    await settle()
+    runtime.ingest([
+      { type: 'message_start', sessionId: 's', message: {
+        id: 'a', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'codex',
+      } },
+      { type: 'message_interrupted', sessionId: 's', messageId: 'a' },
+      { type: 'user_message_send_failed', sessionId: 's', clientMessageId: 'u', error: 'Turn interrupted' },
+    ])
+    expect(runtime.session.messages[0]?.metadata?.sendFailure).toBeUndefined()
+    expect(runtime.session.messages[1]?.status).toBe('interrupted')
+    runtime.dispose()
+  })
+
   it('resends exactly the original command under the same id', async () => {
     let fail = true
     const { client, runtime } = runtimeWith(async () => (fail ? Promise.reject(new Error('not connected')) : { ok: true }))

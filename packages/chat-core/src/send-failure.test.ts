@@ -16,6 +16,27 @@ describe('user_message_send_failed', () => {
     expect(patch.awaitingAssistantReply).toBe(false)
   })
 
+  it('ignores a late send failure after an assistant reply has started', () => {
+    const session = {
+      ...createDefaultChatCoreSession(),
+      messages: [user('u1'), { ...user('a1'), role: 'assistant' as const, status: 'interrupted' as const }],
+    }
+    expect(applyEventToSession(session, {
+      type: 'user_message_send_failed', clientMessageId: 'u1', error: 'Turn interrupted',
+    })).toEqual({})
+  })
+
+  it('still marks a failed send when only a later user turn has a reply', () => {
+    const session = {
+      ...createDefaultChatCoreSession(),
+      messages: [user('u1'), user('u2'), { ...user('a2'), role: 'assistant' as const }],
+    }
+    const patch = applyEventToSession(session, {
+      type: 'user_message_send_failed', clientMessageId: 'u1', error: 'not delivered',
+    })
+    expect(patch.messages?.[0]?.metadata?.sendFailure).toEqual({ error: 'not delivered' })
+  })
+
   it('moves a failed queued send into the transcript instead of dropping it', () => {
     const session = {
       ...createDefaultChatCoreSession(),

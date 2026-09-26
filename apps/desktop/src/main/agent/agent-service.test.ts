@@ -1690,6 +1690,34 @@ describe('AgentService.handleRemoteCommand', () => {
     }, ['mobile-A'])
   })
 
+  it('does not report an interrupted reply as a failed mobile send', async () => {
+    const service = new AgentService()
+    const snapshot = { harnessId: 'codex', messages: [] as Array<{ id: string; role: string }> }
+    const send = vi.fn(async (_req: unknown, opts?: { onAccepted?: () => void }) => {
+      opts?.onAccepted?.()
+      snapshot.messages.push({ id: 'user-1', role: 'user' }, { id: 'assistant-1', role: 'assistant' })
+      throw new Error('Turn interrupted')
+    })
+    const session = makeMockSession({ id: 'sid-1', projectPath: '/p', snapshot, send })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: vi.fn(() => session),
+      forEachSession: vi.fn(),
+    }
+    const sendEventToMobile = vi.fn().mockResolvedValue(undefined)
+    service.setRemoteControlService({ sendEventToMobile, sendAgentEvent: vi.fn() } as never)
+    const respond = vi.fn().mockResolvedValue(undefined)
+
+    await service.handleRemoteCommand({
+      type: 'send_message', provider: 'codex', requestId: 'req-1', content: 'hello',
+      projectPath: '/p', sessionId: 'sid-1', clientMessageId: 'user-1',
+    } as never, respond, { deviceId: 'mobile-A', transport: 'lan' })
+
+    expect(respond).toHaveBeenCalledWith('req-1', { ok: true })
+    expect(sendEventToMobile).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'user_message_send_failed' }), expect.anything(),
+    )
+  })
+
   it('send_message answers a failure before the receipt on the request, not as an event', async () => {
     const service = new AgentService()
     const send = vi.fn().mockRejectedValue(new Error('refused'))

@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { DeviceTouchContact } from '@superone/shared/device'
 import {
   DeviceSyntheticGesture,
   classifyDeviceWheelGesture,
 } from './device-gestures'
-import { normalizeFramePoint, rotateFrameDelta, unrotateFrameSize } from './device-input'
+import { flatFrameProjector, type DeviceFrameProjector, type NormalizedFramePoint } from './device-input'
 import { reportDeviceError } from './device-report'
 import { DeviceTouchTracker } from './device-touches'
 
@@ -86,14 +86,19 @@ export interface DeviceInputApi {
  * `rotationDegrees` is how far the device shell is turned on screen. Every pointer
  * and wheel sample is measured against the rotated shell, so it has to be undone
  * before the sample means anything to the guest.
+ *
+ * `projector` replaces that flat measurement when the picture is not a flat canvas —
+ * the 3D view maps pointers through its camera instead. A pointer it places off the
+ * glass starts no touch and takes no wheel, which leaves both to the view itself.
  */
 export function useDeviceInput(
-  { deviceId, enabled, rotationDegrees = 0, canvas }: {
+  { deviceId, enabled, rotationDegrees = 0, canvas, projector = null }: {
     deviceId: string
     enabled: boolean
     /** Owned by `device-surface`; null until a view has attached it. */
     canvas: HTMLCanvasElement | null
     rotationDegrees?: number
+    projector?: DeviceFrameProjector | null
   },
 ): DeviceInputApi {
   const shellRef = useRef<HTMLDivElement | null>(null)
@@ -120,10 +125,15 @@ export function useDeviceInput(
     if (!result.ok) reportDeviceError(result.error ?? 'Device input failed.')
   }, [deviceId])
 
-  const pointerRatio = useCallback((event: React.PointerEvent<HTMLElement>) => {
-    const bounds = (canvas ?? event.currentTarget).getBoundingClientRect()
-    return normalizeFramePoint(bounds, event.clientX, event.clientY, rotationDegrees)
-  }, [canvas, rotationDegrees])
+  const frame = useMemo(
+    () => projector ?? (canvas ? flatFrameProjector(canvas, rotationDegrees) : null),
+    [projector, canvas, rotationDegrees],
+  )
+
+  const pointerRatio = useCallback((event: React.PointerEvent<HTMLElement>, clamp: boolean) => {
+    const target = frame ?? flatFrameProjector(event.currentTarget, rotationDegrees)
+    return target.point(event.clientX, event.clientY, clamp)
+  }, [frame, rotationDegrees])
 
   const cancelScheduledTouchMove = useCallback(() => {
     if (touchMoveTimer.current !== null) clearTimeout(touchMoveTimer.current)
@@ -192,12 +202,15 @@ export function useDeviceInput(
 
   const onPointerDown = useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (!enabled || (event.pointerType === 'mouse' && event.button !== 0)) return
+    const point = pointerRatio(event, false)
+    if (!point) return
     finishSyntheticGesture(true)
+    lastGestureCenter.current = point
     const contacts = touchTracker.current.begin({
       pointerId: event.pointerId,
       pointerType: event.pointerType,
       altKey: event.altKey,
-      ...pointerRatio(event),
+      ...point,
     })
     if (!contacts) return
     event.preventDefault()
@@ -213,8 +226,8 @@ export function useDeviceInput(
     // synthetic PointerEvents per move, ~1000/s at 120Hz) only to read its tail was
     // allocation for nothing. Intermediate samples are deliberately not replayed:
     // the helper's 16ms motion gate would drop them anyway.
-    const bounds = (canvas ?? event.currentTarget).getBoundingClientRect()
-    const point = normalizeFramePoint(bounds, event.clientX, event.clientY, rotationDegrees)
+    const point = pointerRatio(event, true)
+    if (!point) return
     lastGestureCenter.current = point
     const contacts = touchTracker.current.move({
       pointerId: event.pointerId,
@@ -224,7 +237,7 @@ export function useDeviceInput(
     })
     if (!contacts) return
     scheduleTouchMove(contacts)
-  }, [enabled, rotationDegrees, scheduleTouchMove])
+  }, [enabled, pointerRatio, scheduleTouchMove])
 
   // Not gated on `enabled`: a release has to reach the guest even if the panel went
   // non-interactive mid-gesture, or the device is left holding a stuck contact.
@@ -232,7 +245,9 @@ export function useDeviceInput(
     event: React.PointerEvent<HTMLElement>,
     phase: 'ended' | 'cancelled',
   ) => {
-    const contacts = touchTracker.current.end(event.pointerId, pointerRatio(event), phase)
+    // Seen edge-on or from behind the glass has no point; the last one stands in.
+    const point: NormalizedFramePoint = pointerRatio(event, true) ?? lastGestureCenter.current
+    const contacts = touchTracker.current.end(event.pointerId, point, phase)
     if (!contacts) return
     cancelScheduledTouchMove()
     void sendInput({ type: 'touch.update', contacts })
@@ -247,28 +262,30 @@ export function useDeviceInput(
   }, [endPointer])
 
   const onPointerEnter = useCallback((event: React.PointerEvent<HTMLElement>) => {
-    lastGestureCenter.current = pointerRatio(event)
+    const point = pointerRatio(event, true)
+    if (point) lastGestureCenter.current = point
   }, [pointerRatio])
 
   useEffect(() => {
-    if (!enabled || !canvas) return
+    if (!enabled || !frame) return
 
     const onWheel = (event: WheelEvent): void => {
       if (touchTracker.current.pointerCount > 0) return
-      const bounds = canvas.getBoundingClientRect()
-      if (bounds.width <= 0 || bounds.height <= 0) return
+      const size = frame.size()
+      if (size.width <= 0 || size.height <= 0) return
+      const center = frame.point(event.clientX, event.clientY, false)
+      // Off the glass the wheel is the view's own — the 3D camera zooms on it.
+      if (!center) return
 
       event.preventDefault()
       event.stopPropagation()
-      const center = normalizeFramePoint(bounds, event.clientX, event.clientY, rotationDegrees)
       lastGestureCenter.current = center
       keyboardRef.current?.focus()
 
-      const size = unrotateFrameSize(bounds, rotationDegrees)
       const screenDelta = wheelPixels(event, size.height)
       // The wheel reports screen axes; the guest only knows its own. A rotated device
       // that skipped this would scroll sideways when the user scrolled down.
-      const delta = rotateFrameDelta(screenDelta.deltaX, screenDelta.deltaY, rotationDegrees)
+      const delta = frame.delta(screenDelta.deltaX, screenDelta.deltaY)
       const kind = classifyDeviceWheelGesture(event)
       // A physical two-finger twist can produce ordinary wheel deltas alongside
       // BrowserWindow's native rotate-gesture events. Letting those deltas through
@@ -301,9 +318,12 @@ export function useDeviceInput(
       scheduleSyntheticGestureEnd()
     }
 
-    canvas.addEventListener('wheel', onWheel, { passive: false })
-    return () => canvas.removeEventListener('wheel', onWheel)
-  }, [canvas, dispatchSyntheticFrames, enabled, rotationDegrees, scheduleSyntheticGestureEnd])
+    // Capture, so a 3D view's own camera controls underneath never see a wheel the
+    // glass has taken.
+    const { element } = frame
+    element.addEventListener('wheel', onWheel, { passive: false, capture: true })
+    return () => element.removeEventListener('wheel', onWheel, { capture: true })
+  }, [dispatchSyntheticFrames, enabled, frame, scheduleSyntheticGestureEnd])
 
   useEffect(() => {
     if (!enabled) return
@@ -320,14 +340,13 @@ export function useDeviceInput(
       }
       if (touchTracker.current.pointerCount > 0) return
       const shell = shellRef.current
-      const isTargeted = canvas?.matches(':hover') === true
+      const isTargeted = frame?.element.matches(':hover') === true
         || (shell !== null && shell.contains(document.activeElement))
-      if (!isTargeted || !canvas) return
+      if (!isTargeted || !frame) return
 
       nativeRotationWheelGuardUntil.current = now + NATIVE_ROTATION_WHEEL_GUARD_MS
-      const bounds = canvas.getBoundingClientRect()
-      if (bounds.width <= 0 || bounds.height <= 0) return
-      const size = unrotateFrameSize(bounds, rotationDegrees)
+      const size = frame.size()
+      if (size.width <= 0 || size.height <= 0) return
       dispatchSyntheticFrames(syntheticGesture.current.transform({
         scaleDelta: 0,
         rotationDeltaDegrees: rotation,
@@ -336,7 +355,7 @@ export function useDeviceInput(
       }))
       scheduleSyntheticGestureEnd()
     })
-  }, [canvas, dispatchSyntheticFrames, enabled, rotationDegrees, scheduleSyntheticGestureEnd])
+  }, [dispatchSyntheticFrames, enabled, frame, scheduleSyntheticGestureEnd])
 
   useEffect(() => () => {
     clearSyntheticGestureEndTimer()

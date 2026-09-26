@@ -35,7 +35,8 @@ export class DeviceFrameRenderer {
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
-    private readonly onFirstFrame: () => void,
+    /** Every painted frame; the surface registry derives "has drawn yet" from it. */
+    private readonly onFrame: () => void,
     private readonly onError: (error: Error) => void,
   ) {}
 
@@ -108,7 +109,7 @@ export class DeviceFrameRenderer {
     const context = this.canvas.getContext('2d', { alpha: false })
     if (context) context.drawImage(frame, 0, 0, width, height)
     frame.close()
-    if (context) this.onFirstFrame()
+    if (context) this.onFrame()
   }
 
   private async drawPng(frame: DeviceFrame): Promise<void> {
@@ -126,7 +127,7 @@ export class DeviceFrameRenderer {
       const context = this.canvas.getContext('2d', { alpha: false })
       if (context) context.drawImage(bitmap, 0, 0)
       bitmap.close()
-      if (context) this.onFirstFrame()
+      if (context) this.onFrame()
     } catch (cause) {
       this.reportError(cause)
     }

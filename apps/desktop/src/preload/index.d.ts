@@ -23,7 +23,7 @@ import type {
   SupervisorSnapshot,
 } from '@superone/shared/environment'
 import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
-import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions, DeviceViewfinderClaim } from '@superone/shared/device'
+import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions, DeviceViewfinderClaim, LoadedDeviceModel } from '@superone/shared/device'
 import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
 import type { DeviceEnvironmentAction, DeviceEnvironmentResult, DeviceEnvironmentState } from '@superone/shared/device-environment'
 import type { SyncZoneReclaimResult, SyncZoneUsage } from '@superone/shared/environment'
@@ -724,6 +724,10 @@ interface AppAPI {
     archive: Uint8Array
     variants: Array<{ name: string; options: string[]; selected: string }>
   }>
+  /** Simulator models (`DeviceDescriptor.model`) with a 3D body on this machine. */
+  listDeviceModels(): Promise<string[]>
+  /** The composed 3D body for one simulator model; null when it has none. */
+  loadDeviceModel(model: string): Promise<LoadedDeviceModel | null>
   setUnsavedEditorBuffer(filePath: string, content: string | null): Promise<void>
   getFileTree(folderPath: string): Promise<FileTreeEntry[]>
   listDir(folderPath: string, dirRelPath: string): Promise<FileTreeEntry[]>

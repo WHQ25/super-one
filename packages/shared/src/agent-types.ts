@@ -4054,6 +4054,8 @@ export const AgentIpcChannels = {
   READ_PROJECT_FILE: 'app:read-project-file',
   STAT_PREVIEW_FILE: 'app:stat-preview-file',
   COMPOSE_USDZ_PREVIEW: 'app:compose-usdz-preview',
+  LIST_DEVICE_MODELS: 'app:list-device-models',
+  LOAD_DEVICE_MODEL: 'app:load-device-model',
   SAVE_FILE: 'app:save-file',
   READ_FILE_AS_DATA_URI: 'app:read-file-as-data-uri',
   SAVE_FILE_AS: 'app:save-file-as',

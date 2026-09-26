@@ -21,6 +21,7 @@ import {
 } from '@superone/shared/device'
 import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
+import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { cn } from '@superone/ui/lib/utils'
 import { DeviceBareScreen, deviceScreenAspect } from './DeviceBareScreen'
 import { DeviceCaptureControls } from './DeviceCaptureControls'
@@ -28,9 +29,12 @@ import { DeviceEnvironmentControls } from './DeviceEnvironmentControls'
 import { DevicePreviewMenu } from './DevicePreviewMenu'
 import { IosSimulatorDeviceChrome } from './ios/IosSimulatorDeviceChrome'
 import { DeviceMenu } from './DeviceMenu'
+import { DeviceModelView } from './DeviceModelView'
+import { readDeviceView3d, useDeviceModelAvailable, writeDeviceView3d } from './device-3d'
+import type { DeviceFrameProjector } from './device-input'
 import { DeviceTouchPointer, useDeviceTouchPointer } from './DeviceTouchPointer'
 import { readPreviewQuality, writePreviewQuality } from './device-preview-quality'
-import { attachDeviceSurface } from './device-surface'
+import { attachDeviceSurface, onDeviceSurfaceFrame } from './device-surface'
 import { useDeviceInput } from './use-device-input'
 
 /** Every hardware key either platform's toolbar can offer. */
@@ -303,19 +307,19 @@ export function DeviceStage({
   // picture outlives this component, so the element is borrowed, not owned.
   const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null)
   const canvasHostRef = useRef<HTMLDivElement | null>(null)
+  const deviceId = device?.id ?? ''
+  const [view3d, setView3d] = useState(readDeviceView3d)
+  const modelAvailable = useDeviceModelAvailable(device)
+  // Where the 3D view maps pointers onto the glass; null while its model loads.
+  const [projector, setProjector] = useState<DeviceFrameProjector | null>(null)
+  const subscribeFrames = useCallback((listener: () => void) => onDeviceSurfaceFrame(deviceId, listener), [deviceId])
   const { shellRef, sendInput, canvasHandlers, keyboard } = useDeviceInput({
     deviceId: sessionState?.deviceId ?? '',
     enabled: interactive,
     rotationDegrees: layoutRotation,
     canvas,
+    projector,
   })
-  const touchPointer = useDeviceTouchPointer({
-    enabled: interactive,
-    rotationDegrees: layoutRotation,
-    handlers: canvasHandlers,
-    canvas,
-  })
-  const deviceId = device?.id ?? ''
   /**
    * Derived, not stored, so it can never describe the PREVIOUS device.
    *
@@ -333,6 +337,15 @@ export function DeviceStage({
   // body first and Apple's artwork second, it would be replaced — and a replaced
   // canvas costs a stream restart for a purely cosmetic upgrade.
   const live = ready && chrome !== undefined
+  // The glance-only preview stays flat: it is a thumbnail, not a place to turn a device.
+  const show3d = view3d && modelAvailable && live && !preview
+  // The dot is drawn in the flat glass's own layout, which the 3D view does not have.
+  const touchPointer = useDeviceTouchPointer({
+    enabled: interactive && !show3d,
+    rotationDegrees: layoutRotation,
+    handlers: canvasHandlers,
+    canvas,
+  })
   // Whether this session actually holds a device. A restored-but-shut-down simulator
   // is drawn and named without ever being bound, so `device` is the wrong test for
   // the two controls that give a binding back — and a stopped-but-still-bound device
@@ -398,7 +411,8 @@ export function DeviceStage({
       setHasFrame,
       setCanvas,
     )
-  }, [chrome, live, quality, deviceId])
+    // `show3d` swaps the host element: the 3D view parks the canvas out of sight.
+  }, [chrome, live, quality, deviceId, show3d])
 
   // `chrome` is `undefined` while the artwork lookup is still out and `null` when
   // the model has none; both mean nothing is covered yet, so the toolbar stays whole.
@@ -457,6 +471,12 @@ export function DeviceStage({
     void sendInput({ type: 'keyboard', connected: next })
   }, [keyboardConnected, sendInput])
 
+  const changeViewMode = useCallback((mode: string) => {
+    const next = mode === '3d'
+    setView3d(next)
+    writeDeviceView3d(next)
+  }, [])
+
   const changeQuality = useCallback((next: IosSimulatorPreviewQuality) => {
     setQuality(next)
     writePreviewQuality(next)
@@ -476,6 +496,26 @@ export function DeviceStage({
       .catch(() => { if (!cancelled) setArtwork({ deviceId, chrome: null }) })
     return () => { cancelled = true }
   }, [device, deviceId])
+
+  // Where the host keyboard actually lands. It has to be a real editable element for
+  // macOS to run an input method against it, and it has to be invisible without being
+  // `display: none` or `hidden`, because either one makes it unfocusable. Kept at the
+  // device's own centre so the macOS IME candidate window opens over the device
+  // rather than in a corner of the panel.
+  const keyboardSink = (
+    <textarea
+      ref={keyboard.ref}
+      aria-label={t('activity.device.keyboardInput')}
+      tabIndex={interactive ? 0 : -1}
+      readOnly={!interactive}
+      autoComplete="off"
+      autoCorrect="off"
+      autoCapitalize="off"
+      spellCheck={false}
+      className="pointer-events-none absolute left-1/2 top-1/2 size-px resize-none border-0 bg-transparent p-0 text-transparent caret-transparent opacity-0 outline-none"
+      {...keyboard.handlers}
+    />
+  )
 
   return (
     // Inherit the dockview group surface, do not repaint it.
@@ -521,6 +561,17 @@ export function DeviceStage({
             disabled={busy || !ready}
             onChange={changeQuality}
           />
+        )}
+        {/* Offered only where this machine has the model's body; the choice itself is
+            remembered either way. Header-only like preview quality: the overlay is for
+            working the device, and the glance-only preview is always flat. */}
+        {modelAvailable && (
+          <Tabs value={view3d ? '3d' : '2d'} onValueChange={changeViewMode}>
+            <TabsList aria-label={t('activity.device.viewMode')}>
+              <TabsTrigger value="2d">2D</TabsTrigger>
+              <TabsTrigger value="3d">3D</TabsTrigger>
+            </TabsList>
+          </Tabs>
         )}
         {/* Both act on the binding, so neither has anything to do until there is one. */}
         <IconButton
@@ -586,6 +637,25 @@ export function DeviceStage({
               </Button>
             </DeviceMenu>
           </div>
+        ) : show3d && device ? (
+          // The body is the model, and the camera does the fitting the size container
+          // does for the flat shell. The canvas still has to live somewhere — the
+          // surface registry owns it — so it is parked in a hidden host and read as a
+          // texture; the input pipeline reads the glass through `projector`.
+          <div ref={shellRef} className="size-full">
+            <DeviceModelView
+              model={device.model}
+              canvas={canvas}
+              subscribeFrames={subscribeFrames}
+              rotationDegrees={layoutRotation}
+              interactive={interactive}
+              onProjector={setProjector}
+              pointerHandlers={canvasHandlers}
+            >
+              {keyboardSink}
+              <div ref={canvasHostRef} className="hidden" />
+            </DeviceModelView>
+          </div>
         ) : (
           // On a rigid-rotation platform the shell turns as one piece, artwork and
           // framebuffer together, so the device reads as a physical object being
@@ -622,24 +692,7 @@ export function DeviceStage({
             >
               {live ? (
                 <>
-                  {/* Where the host keyboard actually lands. It has to be a real editable
-                      element for macOS to run an input method against it, and it has to be
-                      invisible without being `display: none` or `hidden`, because either
-                      one makes it unfocusable. Kept at the device's own centre so the
-                      macOS IME candidate window opens over the device rather than in a
-                      corner of the panel. */}
-                  <textarea
-                    ref={keyboard.ref}
-                    aria-label={t('activity.device.keyboardInput')}
-                    tabIndex={interactive ? 0 : -1}
-                    readOnly={!interactive}
-                    autoComplete="off"
-                    autoCorrect="off"
-                    autoCapitalize="off"
-                    spellCheck={false}
-                    className="pointer-events-none absolute left-1/2 top-1/2 size-px resize-none border-0 bg-transparent p-0 text-transparent caret-transparent opacity-0 outline-none"
-                    {...keyboard.handlers}
-                  />
+                  {keyboardSink}
                   {/* Where the session's canvas is parked while this view is the one
                       showing it. The element inside is created and owned by
                       `device-surface`, so everything React still controls —

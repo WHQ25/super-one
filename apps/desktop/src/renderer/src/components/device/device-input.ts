@@ -91,3 +91,28 @@ export function unrotateFrameSize(
     ? { width: bounds.width, height: bounds.height }
     : { width: bounds.height, height: bounds.width }
 }
+
+/**
+ * Where a host pointer lands on the framebuffer, for whichever view is drawing it —
+ * the flat canvas, or the glass of a 3D model seen from any angle.
+ */
+export interface DeviceFrameProjector {
+  /** Takes wheel input and answers hover checks. */
+  element: HTMLElement
+  /** Null when the pointer is off the glass; `clamp` pins it to the nearest edge instead. */
+  point(clientX: number, clientY: number, clamp: boolean): NormalizedFramePoint | null
+  /** A wheel or pan delta in host pixels, in the device's own axes. */
+  delta(deltaX: number, deltaY: number): { deltaX: number; deltaY: number }
+  /** The glass's size on screen, along the device's own axes. */
+  size(): { width: number; height: number }
+}
+
+/** The flat view: the picture itself, turned by the shell's CSS rotation. */
+export function flatFrameProjector(element: HTMLElement, rotationDegrees = 0): DeviceFrameProjector {
+  return {
+    element,
+    point: (clientX, clientY) => normalizeFramePoint(element.getBoundingClientRect(), clientX, clientY, rotationDegrees),
+    delta: (deltaX, deltaY) => rotateFrameDelta(deltaX, deltaY, rotationDegrees),
+    size: () => unrotateFrameSize(element.getBoundingClientRect(), rotationDegrees),
+  }
+}

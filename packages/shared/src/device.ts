@@ -408,6 +408,15 @@ export interface DeviceInputResult {
   error?: string
 }
 
+/** Which screen in a device model's scene is this device's; Apple ships Pro and Pro Max together. */
+export type DeviceModelScreenPick = 'only' | 'smallest' | 'largest'
+
+/** A device's 3D body: a composed USDZ archive Three's USDLoader can read. */
+export interface LoadedDeviceModel {
+  archive: Uint8Array
+  screen: DeviceModelScreenPick
+}
+
 /** The concrete device an agent tool resolved, used to select the session PiP. */
 export interface DeviceViewfinderClaim {
   sessionId: string

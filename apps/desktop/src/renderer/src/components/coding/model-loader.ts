@@ -1,4 +1,4 @@
-import { BufferGeometry, DoubleSide, Group, LoadingManager, Mesh, MeshStandardMaterial, Vector3, type AnimationClip, type Box3, type Object3D, type PerspectiveCamera } from 'three'
+import { BufferGeometry, DoubleSide, Group, LoadingManager, Mesh, MeshStandardMaterial, Vector3, type AnimationClip, type Box3, type Material, type Object3D, type PerspectiveCamera, type Texture } from 'three'
 
 export interface LoadedModel {
   object: Object3D
@@ -26,6 +26,22 @@ export function updateModelCameraClipPlanes(camera: PerspectiveCamera, bounds: B
   camera.near = near
   camera.far = far
   camera.updateProjectionMatrix()
+}
+
+/** Free every geometry, material and texture under `object`. */
+export function disposeModel(object: Object3D): void {
+  object.traverse((part) => {
+    if (!('geometry' in part)) return
+    const mesh = part as Object3D & { geometry?: { dispose(): void }; material?: Material | Material[] }
+    mesh.geometry?.dispose()
+    const materials = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : []
+    for (const material of materials) {
+      for (const value of Object.values(material)) {
+        if (value && typeof value === 'object' && 'isTexture' in value && value.isTexture) (value as Texture).dispose()
+      }
+      material.dispose()
+    }
+  })
 }
 
 /** Keep optional parsers out of the main renderer bundle. */

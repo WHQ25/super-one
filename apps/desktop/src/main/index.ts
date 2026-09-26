@@ -3313,6 +3313,17 @@ function registerIpcHandlers(): void {
     return composeUsdzPreview(bytes, selections)
   })
 
+  ipcMain.handle(AgentIpcChannels.LIST_DEVICE_MODELS, async () => {
+    const { listDeviceModels } = await import('./device-models')
+    return listDeviceModels()
+  })
+
+  ipcMain.handle(AgentIpcChannels.LOAD_DEVICE_MODEL, async (_event, model: string) => {
+    if (typeof model !== 'string') throw new Error('Device model must be a string')
+    const { loadDeviceModel } = await import('./device-models')
+    return loadDeviceModel(model)
+  })
+
   ipcMain.handle(AgentIpcChannels.READ_PROJECT_FILE, async (_event, folderPath: string, filePath: string) => {
     try {
       if (parseRemoteProjectKey(folderPath)) {

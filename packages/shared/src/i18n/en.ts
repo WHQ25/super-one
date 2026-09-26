@@ -59,6 +59,9 @@ export type Messages = {
       volumeUp: string
       rotateLeft: string
       rotateRight: string
+      viewMode: string
+      resetView: string
+      modelFailed: string
       showSoftwareKeyboard: string
       hideSoftwareKeyboard: string
       keyboardInput: string
@@ -3967,6 +3970,9 @@ export const en: Messages = {
       hideSoftwareKeyboard: 'Hide Software Keyboard',
       rotateLeft: 'Rotate Left',
       rotateRight: 'Rotate Right',
+      viewMode: 'View Mode',
+      resetView: 'Reset View',
+      modelFailed: 'The 3D model could not be loaded.',
       keyboardInput: 'Device keyboard input',
       detach: 'Disconnect Preview',
       terminate: 'Shut Down Device',

@@ -68,6 +68,8 @@ interface Surface {
    */
   hosts: { el: HTMLElement; framed: boolean }[]
   watchers: Set<(hasFrame: boolean) => void>
+  /** Told of every painted frame — the 3D view re-uploads its screen texture on these. */
+  frameListeners: Set<() => void>
   graceTimer: ReturnType<typeof setTimeout> | null
 }
 
@@ -102,6 +104,7 @@ function openStream(deviceId: string, surface: Surface): void {
   surface.renderer = new DeviceFrameRenderer(
     surface.canvas,
     () => {
+      for (const listener of surface.frameListeners) listener()
       if (surface.hasFrame) return
       surface.hasFrame = true
       for (const watcher of surface.watchers) watcher(true)
@@ -180,6 +183,7 @@ export function attachDeviceSurface(
       quality: options.quality,
       hosts: [],
       watchers: new Set(),
+      frameListeners: new Set(),
       graceTimer: null,
     }
     surfaces.set(deviceId, surface)
@@ -216,6 +220,19 @@ export function attachDeviceSurface(
       dispose(deviceId)
     }, HANDOVER_GRACE_MS)
   }
+}
+
+/**
+ * Hear about every frame painted on a device's canvas while its surface lives.
+ *
+ * Only a view that has attached the surface should listen; a listener added before
+ * the surface exists, or kept past its disposal, hears nothing.
+ */
+export function onDeviceSurfaceFrame(deviceId: string, listener: () => void): () => void {
+  const surface = surfaces.get(deviceId)
+  if (!surface) return () => {}
+  surface.frameListeners.add(listener)
+  return () => { surface.frameListeners.delete(listener) }
 }
 
 /** Move the canvas into a host, sized the way that host frames it. */

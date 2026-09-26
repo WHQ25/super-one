@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Box3, PerspectiveCamera, Scene, SRGBColorSpace, Vector3, WebGLRenderer, AnimationMixer, type Material, type Object3D, type Texture } from 'three'
+import { Box3, PerspectiveCamera, Scene, SRGBColorSpace, Vector3, WebGLRenderer, AnimationMixer, type Object3D } from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { Loader2, RotateCcw } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
 import { MODEL_PREVIEW_MAX_BYTES } from '@superone/shared/file-preview'
-import { parseModel, placeModelCamera, updateModelCameraClipPlanes } from './model-loader'
+import { disposeModel, parseModel, placeModelCamera, updateModelCameraClipPlanes } from './model-loader'
 import { addModelFillLights, lightModel } from './model-environment'
 
 interface ModelPreviewProps {
@@ -17,21 +17,6 @@ interface ModelPreviewProps {
     archive: Uint8Array
     variants: Array<{ name: string; options: string[]; selected: string }>
   }>
-}
-
-function disposeModel(object: Object3D): void {
-  object.traverse((part) => {
-    if (!('geometry' in part)) return
-    const mesh = part as Object3D & { geometry?: { dispose(): void }; material?: Material | Material[] }
-    mesh.geometry?.dispose()
-    const materials = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : []
-    for (const material of materials) {
-      for (const value of Object.values(material)) {
-        if (value && typeof value === 'object' && 'isTexture' in value && value.isTexture) (value as Texture).dispose()
-      }
-      material.dispose()
-    }
-  })
 }
 
 function baseOf(src: string): string {

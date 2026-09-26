@@ -12,6 +12,7 @@ import type { DraftListEntry, DraftUpsertRequest, ProjectSnapshot } from '@super
 import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
 import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions, DeviceViewfinderClaim } from '@superone/shared/device'
 import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
+import type { DeviceEnvironmentAction, DeviceEnvironmentResult, DeviceEnvironmentState } from '@superone/shared/device-environment'
 import { forEachAgentEventPayload } from './agent-event-payload'
 import { createAutomationCallInbox, type BrowserAutomationCall } from './browser-automation-inbox'
 import { isGlassPlatformSupported } from '../main/window-glass'
@@ -247,6 +248,17 @@ const environmentAPI = {
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_RECORD_STOP, deviceId) as Promise<DeviceCapture | null>,
   deviceInput: (deviceId: string, input: DeviceInput) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_INPUT, deviceId, input) as Promise<DeviceInputResult>,
+  deviceEnvironment: (deviceId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_ENVIRONMENT, deviceId) as Promise<DeviceEnvironmentState>,
+  deviceConfigure: (deviceId: string, action: DeviceEnvironmentAction) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_CONFIGURE, deviceId, action) as Promise<DeviceEnvironmentResult>,
+  onDeviceEnvironmentChanged: (deviceId: string, callback: () => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, changedId: string): void => {
+      if (changedId === deviceId) callback()
+    }
+    ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_DEVICE_ENVIRONMENT_CHANGED, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_DEVICE_ENVIRONMENT_CHANGED, handler)
+  },
   openDeviceStream: (deviceId: string, options?: DeviceStreamOptions) =>
     ipcRenderer.send(AgentIpcChannels.ENVIRONMENT_DEVICE_STREAM_OPEN, deviceId, options),
   closeDeviceStream: (deviceId: string) => {

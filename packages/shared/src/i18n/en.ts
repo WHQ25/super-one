@@ -64,6 +64,36 @@ export type Messages = {
       keyboardInput: string
       detach: string
       terminate: string
+      environment: {
+        title: string
+        refresh: string
+        appearance: string
+        light: string
+        dark: string
+        textSize: string
+        textSizeExtraSmall: string
+        textSizeSmall: string
+        textSizeMedium: string
+        textSizeDefault: string
+        textSizeLarge: string
+        textSizeExtraLarge: string
+        textSizeExtraExtraLarge: string
+        textSizeAccessibilityMedium: string
+        textSizeAccessibilityLarge: string
+        textSizeAccessibilityExtraLarge: string
+        textSizeAccessibilityExtraExtraLarge: string
+        textSizeAccessibilityExtraExtraExtraLarge: string
+        unknown: string
+        location: string
+        latitude: string
+        longitude: string
+        setLocation: string
+        clearLocation: string
+        locationUnreadable: string
+        posture: string
+        postureUnreadable: string
+        applied: string
+      }
       /** Standing "agents may drive this device" answer, toggled from the picker menu. */
       allowControl: string
       detached: string
@@ -2707,6 +2737,8 @@ export type Messages = {
         requestingControl: string
         release: string
         releasing: string
+        configure: string
+        configuring: string
         releaseOutcome: {
           shutdown: string
           detached: string
@@ -3938,6 +3970,36 @@ export const en: Messages = {
       keyboardInput: 'Device keyboard input',
       detach: 'Disconnect Preview',
       terminate: 'Shut Down Device',
+      environment: {
+        title: 'Device Environment',
+        refresh: 'Refresh Settings',
+        appearance: 'Appearance',
+        light: 'Light',
+        dark: 'Dark',
+        textSize: 'System Text Size',
+        textSizeExtraSmall: 'Extra Small',
+        textSizeSmall: 'Small',
+        textSizeMedium: 'Medium',
+        textSizeDefault: 'Default',
+        textSizeLarge: 'Large',
+        textSizeExtraLarge: 'Extra Large',
+        textSizeExtraExtraLarge: 'Very Large',
+        textSizeAccessibilityMedium: 'Accessibility Medium',
+        textSizeAccessibilityLarge: 'Accessibility Large',
+        textSizeAccessibilityExtraLarge: 'Accessibility XL',
+        textSizeAccessibilityExtraExtraLarge: 'Accessibility XXL',
+        textSizeAccessibilityExtraExtraExtraLarge: 'Accessibility XXXL',
+        unknown: 'Current value unavailable',
+        location: 'Simulated Location',
+        latitude: 'Latitude',
+        longitude: 'Longitude',
+        setLocation: 'Set Location',
+        clearLocation: 'Clear Location',
+        locationUnreadable: 'Current location cannot be read from this simulator.',
+        posture: 'Fold Posture',
+        postureUnreadable: 'Current posture cannot be read from the emulator console.',
+        applied: 'Command applied. Refresh to read available settings.',
+      },
       allowControl: 'Allow Control',
       detached: 'Preview disconnected. The device is still running.',
       terminated: 'The device has been shut down.',
@@ -6711,6 +6773,8 @@ export const en: Messages = {
         requestingControl: 'Requesting device',
         release: 'Release Device',
         releasing: 'Releasing device',
+        configure: 'Set Device Environment',
+        configuring: 'Setting device environment',
         releaseOutcome: {
           shutdown: 'Shut Down',
           detached: 'Left Running',

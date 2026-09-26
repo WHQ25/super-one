@@ -24,6 +24,7 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { DeviceBareScreen, deviceScreenAspect } from './DeviceBareScreen'
 import { DeviceCaptureControls } from './DeviceCaptureControls'
+import { DeviceEnvironmentControls } from './DeviceEnvironmentControls'
 import { DevicePreviewMenu } from './DevicePreviewMenu'
 import { IosSimulatorDeviceChrome } from './ios/IosSimulatorDeviceChrome'
 import { DeviceMenu } from './DeviceMenu'
@@ -775,6 +776,8 @@ export function DeviceStage({
           canRecord={capabilities.recording}
           maxDurationMs={device ? deviceRecordingMaxDurationMs(device) ?? undefined : undefined}
         />
+        {device && (provider !== 'ios-sim' || device.kind === 'iphone' || device.kind === 'ipad')
+          && <DeviceEnvironmentControls deviceId={deviceId} provider={provider} disabled={busy || !ready} />}
       </div>}
     </div>
   )

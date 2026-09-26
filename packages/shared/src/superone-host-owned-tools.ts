@@ -106,6 +106,7 @@ export const DEVICE_AGENT_TOOL_NAMES = [
   'device_snapshot',
   'device_query',
   'device_act',
+  'device_configure',
   'device_run',
   'device_wait_for',
   'device_release',

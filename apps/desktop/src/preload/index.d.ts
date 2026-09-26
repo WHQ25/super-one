@@ -25,6 +25,7 @@ import type {
 import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
 import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions, DeviceViewfinderClaim } from '@superone/shared/device'
 import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
+import type { DeviceEnvironmentAction, DeviceEnvironmentResult, DeviceEnvironmentState } from '@superone/shared/device-environment'
 import type { SyncZoneReclaimResult, SyncZoneUsage } from '@superone/shared/environment'
 // Re-export so renderer consumers of the preload types see the correlated shape.
 export type { EnvironmentInstallProgress } from '@superone/shared/environment'
@@ -880,6 +881,9 @@ export interface EnvironmentAPI {
   /** Resolves to null when this device was not recording. */
   deviceRecordStop(deviceId: string): Promise<DeviceCapture | null>
   deviceInput(deviceId: string, input: DeviceInput): Promise<DeviceInputResult>
+  deviceEnvironment(deviceId: string): Promise<DeviceEnvironmentState>
+  deviceConfigure(deviceId: string, action: DeviceEnvironmentAction): Promise<DeviceEnvironmentResult>
+  onDeviceEnvironmentChanged(deviceId: string, callback: () => void): () => void
   openDeviceStream(deviceId: string, options?: DeviceStreamOptions): void
   closeDeviceStream(deviceId: string): void
   onDeviceFrame(deviceId: string, callback: (frame: DeviceFrame) => void): () => void

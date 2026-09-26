@@ -101,6 +101,22 @@ describe('parseSimctlDevices', () => {
 })
 
 describe('SimctlClient', () => {
+  it('uses simctl argv for appearance, text size, and location without a shell', async () => {
+    const runText = vi.fn(async (args: string[]) =>
+      args.join(' ') === 'simctl ui SIM-1 appearance' ? 'dark\n'
+        : args.join(' ') === 'simctl ui SIM-1 content_size' ? 'large\n' : '')
+    const client = new SimctlClient({ runText })
+    expect(await client.appearance('SIM-1')).toBe('dark')
+    await client.setAppearance('SIM-1', 'light')
+    expect(await client.contentSize('SIM-1')).toBe('large')
+    await client.setContentSize('SIM-1', 'accessibility-large')
+    await client.setLocation('SIM-1', 31.2, 121.5)
+    await client.clearLocation('SIM-1')
+    expect(runText).toHaveBeenCalledWith(['simctl', 'ui', 'SIM-1', 'appearance', 'light'])
+    expect(runText).toHaveBeenCalledWith(['simctl', 'ui', 'SIM-1', 'content_size', 'accessibility-large'])
+    expect(runText).toHaveBeenCalledWith(['simctl', 'location', 'SIM-1', 'set', '31.2,121.5'])
+    expect(runText).toHaveBeenCalledWith(['simctl', 'location', 'SIM-1', 'clear'])
+  })
   it('boots only shutdown devices and waits for bootstatus', async () => {
     const runText = vi.fn(async (args: string[]) => {
       if (args.join(' ') === 'simctl list devices --json') return DEVICE_JSON

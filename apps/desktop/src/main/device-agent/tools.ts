@@ -202,6 +202,25 @@ const toolDefs: Array<{ name: DeviceAgentToolName; description: string; shape: R
     },
   },
   {
+    name: 'device_configure',
+    description:
+      'Read or set a controlled simulator\'s environment: light/dark appearance, system text size, simulated GPS location, '
+      + 'iOS location clear, or an Android fold posture. Requires device_request_control before changing anything. '
+      + 'Use kind=get to read current appearance, text size, available text-size values, and the emulator\'s posture ids; location and current '
+      + 'posture cannot be read reliably. Android does not support clear_location. ' + MANUAL,
+    shape: {
+      ...descriptionField,
+      ...deviceField,
+      kind: z.enum(['get', 'appearance', 'text_size', 'location', 'clear_location', 'posture']),
+      appearance: z.enum(['light', 'dark']).optional().describe('Required for kind=appearance.'),
+      textSize: z.string().trim().min(1).max(40).optional()
+        .describe('Required for kind=text_size. Use one of textSizeOptions returned by kind=get; iOS category or Android scale string.'),
+      latitude: z.number().min(-90).max(90).optional().describe('Required for kind=location. Decimal degrees.'),
+      longitude: z.number().min(-180).max(180).optional().describe('Required for kind=location. Decimal degrees.'),
+      postureId: z.number().int().min(1).optional().describe('Required for kind=posture; first get this device\'s available ids.'),
+    },
+  },
+  {
     name: 'device_release',
     description:
       'Let go of a device this session controls, once you are done with it — the close-tab of '

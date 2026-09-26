@@ -8,11 +8,11 @@
 
 export type DeviceOp =
   | 'memory_read' | 'memory_write'
-  | 'list' | 'boot' | 'request_control' | 'snapshot' | 'query' | 'act' | 'run' | 'wait_for' | 'release'
+  | 'list' | 'boot' | 'request_control' | 'snapshot' | 'query' | 'act' | 'run' | 'wait_for' | 'configure' | 'release'
 
 const DEVICE_OPS = new Set<DeviceOp>([
   'memory_read', 'memory_write',
-  'list', 'boot', 'request_control', 'snapshot', 'query', 'act', 'run', 'wait_for', 'release',
+  'list', 'boot', 'request_control', 'snapshot', 'query', 'act', 'run', 'wait_for', 'configure', 'release',
 ])
 
 export type DeviceActOutcome = 'worked' | 'didnt' | 'unknown'
@@ -157,6 +157,7 @@ export function deviceVerbKey(
   if (op === 'run') return streaming ? 'runRunning' : 'run'
   if (op === 'boot') return streaming ? 'booting' : 'boot'
   if (op === 'request_control') return streaming ? 'requestingControl' : 'requestControl'
+  if (op === 'configure') return streaming ? 'configuring' : 'configure'
   if (op === 'release') return streaming ? 'releasing' : 'release'
 
   if (op === 'query') {
@@ -280,6 +281,8 @@ export function deviceInputSummary(op: DeviceOp, params: Record<string, unknown>
     case 'request_control':
     case 'release':
       return stringValue(params.device)
+    case 'configure':
+      return [params.kind, params.appearance, params.postureId].filter((value) => value != null).join(' · ')
     case 'snapshot':
       return params.mode != null && params.mode !== 'semantic' ? stringValue(params.mode) : ''
     case 'query': {

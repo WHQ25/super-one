@@ -28,6 +28,8 @@ import { recordingNote } from '../mcp/show-your-work-notes'
 import { executeDeviceRun } from '../jev/device-run-tool'
 import { jevSettingError } from '../jev/run-tool-common'
 import { DeviceAgentError } from './types'
+import { deviceEnvironment } from '../device/environment'
+import type { DeviceEnvironmentAction } from '@superone/shared/device-environment'
 
 
 export {
@@ -294,6 +296,32 @@ export async function executeDeviceAgentTool(
     const { device } = args as { device?: string }
     const deviceId = resolveHeldDevice(heldDevicesFor(sessionId), device)
     viewfinderClaimSink?.({ sessionId, deviceId })
+    if (name === 'device_configure') {
+      const { kind, appearance, textSize, latitude, longitude, postureId } = args
+      try {
+        if (kind === 'get') return reply(await deviceEnvironment.read(deviceId))
+        let action: DeviceEnvironmentAction
+        if (kind === 'appearance' && (appearance === 'light' || appearance === 'dark')) {
+          action = { kind, value: appearance }
+        } else if (kind === 'text_size' && typeof textSize === 'string' && textSize.length > 0) {
+          action = { kind, value: textSize }
+        } else if (kind === 'location' && typeof latitude === 'number' && typeof longitude === 'number') {
+          action = { kind, latitude, longitude }
+        } else if (kind === 'clear_location') {
+          action = { kind }
+        } else if (kind === 'posture' && typeof postureId === 'number') {
+          action = { kind, id: postureId }
+        } else {
+          throw new DeviceAgentError('INVALID_ACTION', `Missing or invalid arguments for device_configure ${String(kind)}.`)
+        }
+        return reply(await deviceEnvironment.configure(deviceId, action))
+      } catch (error) {
+        if (error instanceof Error && error.message.startsWith('UNSUPPORTED:')) {
+          throw new DeviceAgentError('UNSUPPORTED', error.message.slice('UNSUPPORTED:'.length).trim())
+        }
+        throw error
+      }
+    }
     const session = sessionFor(sessionId, deviceId)
     switch (name) {
       case 'device_snapshot':

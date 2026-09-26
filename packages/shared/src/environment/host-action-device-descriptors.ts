@@ -543,6 +543,60 @@ export const HOST_ACTION_DEVICE_DESCRIPTORS: HostActionSuperoneToolDescriptor[] 
     }
   },
   {
+    "name": "device_configure",
+    "description": "Read or set a controlled simulator's environment: light/dark appearance, system text size, simulated GPS location, iOS location clear, or an Android fold posture. Requires device_request_control before changing anything. Use kind=get to read current appearance, text size, available text-size values, and the emulator's posture ids; location and current posture cannot be read reliably. Android does not support clear_location. See read_manual({ domain: \"product\", topic: \"devices\" }).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "description": "Short explanation of this step for the user watching, in the conversation's language (e.g. 'Open the profile tab'). Shown in place of refs and coordinates."
+        },
+        "device": {
+          "description": "Device id or name from device_list. Optional while this session controls exactly one; required once it holds more. Use device_request_control to be granted another.",
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["get", "appearance", "text_size", "location", "clear_location", "posture"]
+        },
+        "appearance": {
+          "description": "Required for kind=appearance.",
+          "type": "string",
+          "enum": ["light", "dark"]
+        },
+        "textSize": {
+          "description": "Required for kind=text_size. Use one of textSizeOptions returned by kind=get; iOS category or Android scale string.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "latitude": {
+          "description": "Required for kind=location. Decimal degrees.",
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "longitude": {
+          "description": "Required for kind=location. Decimal degrees.",
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "postureId": {
+          "description": "Required for kind=posture; first get this device's available ids.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": ["description", "kind"],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "device_release",
     "description": "Let go of a device this session controls, once you are done with it — the close-tab of device_request_control. Call it at the end of every device task rather than leaving a simulator running. Default puts the device back the way it was found: a simulator or emulator SuperOne started is shut down, one the user already had running is left running and only unbound, a real phone is only ever disconnected. shutdown=true stops any device that can stop. Afterwards the other device_* tools fail with NO_DEVICE for it until device_request_control grants it again.",
     "inputSchema": {

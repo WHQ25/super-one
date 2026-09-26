@@ -24,6 +24,7 @@ import type {
 import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
 import log from '../logger'
 import type { DeviceSurface } from './surface'
+import { deviceEnvironment } from './environment'
 
 const openPorts = new Map<string, { port: MessagePortMain; unsubscribe: () => void }>()
 
@@ -86,6 +87,17 @@ export function registerDeviceIpc(options: DeviceIpcOptions): void {
       }
     })
   }
+  deviceEnvironment.onChange((deviceId) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(AgentIpcChannels.ENVIRONMENT_DEVICE_ENVIRONMENT_CHANGED, deviceId)
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_DEVICE_ENVIRONMENT,
+    (_event, deviceId: string) => deviceEnvironment.read(deviceId))
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_DEVICE_CONFIGURE,
+    (_event, deviceId: string, action: import('@superone/shared/device-environment').DeviceEnvironmentAction) =>
+      deviceEnvironment.configure(deviceId, action))
 
   // The catalog, not the surfaces: discovering devices is the ports' job and they
   // already merge every platform into one ordered list for the agent. The picker shows

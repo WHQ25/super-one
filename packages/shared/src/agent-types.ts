@@ -4477,6 +4477,9 @@ export const AgentIpcChannels = {
   ENVIRONMENT_DEVICE_STREAM_CLOSE: 'environment:deviceStreamClose',
   ENVIRONMENT_DEVICE_STREAM_PORT: 'environment:deviceStreamPort',
   ENVIRONMENT_DEVICE_STATE: 'environment:deviceState',
+  ENVIRONMENT_DEVICE_ENVIRONMENT: 'environment:deviceEnvironment',
+  ENVIRONMENT_DEVICE_CONFIGURE: 'environment:deviceConfigure',
+  ENVIRONMENT_DEVICE_ENVIRONMENT_CHANGED: 'environment:deviceEnvironmentChanged',
   /** Main -> renderer: the concrete device currently operated by an agent tool. */
   ENVIRONMENT_DEVICE_VIEWFINDER_CLAIM: 'environment:deviceViewfinderClaim',
   ENVIRONMENT_DEVICE_ROTATE_GESTURE: 'environment:deviceRotateGesture',

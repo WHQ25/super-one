@@ -14,8 +14,23 @@ device_snapshot        → a stateId + a tree of @eN refs
 device_act             → act against that stateId, then re-observe
 device_wait_for        → block on a condition instead of snapshotting in a loop
 device_query           → re-read the snapshot you already have, with no device round trip
+device_configure       → read/set appearance, system text size, simulated location, or fold posture
 device_release         → let go when you are done — the close-tab of this loop
 ```
+
+`device_configure` operates on device settings, so it needs no `stateId` or screen
+postcondition. It still requires `device_request_control` before changing settings.
+Use `kind: "get"` to read appearance, system text size, and the Android
+emulator's available posture ids. Set `kind: "appearance"` with `appearance:
+"light" | "dark"`, `kind: "text_size"` with a `textSize` string from
+`textSizeOptions` (all 12 iOS categories or the Android runtime's font scales), `kind: "location"` with decimal `latitude` and
+`longitude`, or `kind: "posture"`
+with one of that emulator's `postureId` values. `kind: "clear_location"` works
+only on iOS Simulator. Neither simulator interface reliably reads its current
+GPS fix, and the emulator's posture listing does not report its current posture;
+the result distinguishes accepted commands from observed settings. Mirrored
+iPhones, watchOS/tvOS/visionOS simulators, and physical Android devices do not
+support these controls.
 
 ## Letting go
 

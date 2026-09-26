@@ -34,6 +34,10 @@ describe('device tool op routing', () => {
     // generic MCP row, which says "superone · device list" and nothing else.
     expect(getDeviceOp('device_list')).toBe('list')
     expect(getDeviceOp('device_request_control')).toBe('request_control')
+    expect(getDeviceOp('device_configure')).toBe('configure')
+    expect(deviceToolVerbKey('mcp__superone__device_configure', { kind: 'appearance' })).toBe('configure')
+    expect(deviceInputSummary('configure', { kind: 'location', latitude: 31.2, longitude: 121.5 }))
+      .toBe('location')
     // A future `device_*` tool must not silently inherit this family's row.
     expect(getDeviceOp('device_install_app')).toBeNull()
     expect(getDeviceOp('computer_snapshot')).toBeNull()

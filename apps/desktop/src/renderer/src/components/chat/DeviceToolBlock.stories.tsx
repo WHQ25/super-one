@@ -351,6 +351,17 @@ export const DeviceRelease: Story = {
   ),
 }
 
+export const DeviceConfigure: Story = {
+  name: 'device_configure',
+  render: () => (
+    <StoryShell>
+      {tool('configure', { description: 'Set the simulator to dark appearance', input: { kind: 'appearance', appearance: 'dark' }, result: JSON.stringify({ status: 'verified', deviceId: 'ios-sim:sim-1', action: { kind: 'appearance', value: 'dark' }, state: { appearance: 'dark', locationReadable: false } }) })}
+      {tool('configure', { description: 'Set a GPS location', input: { kind: 'location' }, status: 'streaming' })}
+      {tool('configure', { description: 'Clear the emulator location', input: { kind: 'clear_location' }, result: '[Error] UNSUPPORTED: Android Emulator has no equivalent clear-location command.', isError: true })}
+    </StoryShell>
+  ),
+}
+
 export const DeviceSnapshot: Story = {
   name: 'device_snapshot',
   render: () => (

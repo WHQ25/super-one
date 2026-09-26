@@ -97,6 +97,7 @@ describe('built-in superone tool registration surfaces', () => {
     expect(classifyHostActionTool('device_query').replayPolicy).toBe('safe')
     expect(classifyHostActionTool('device_wait_for').replayPolicy).toBe('safe')
     expect(classifyHostActionTool('device_act').replayPolicy).toBe('unsafe')
+    expect(classifyHostActionTool('device_configure').replayPolicy).toBe('unsafe')
     expect(classifyHostActionTool('device_release').replayPolicy).toBe('unsafe')
   })
 

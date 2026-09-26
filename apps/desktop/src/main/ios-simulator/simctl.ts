@@ -181,6 +181,31 @@ async function readDeveloperStatus(): Promise<Omit<IosSimulatorStatus, 'helper' 
 export class SimctlClient {
   constructor(private readonly runner: SimctlCommandRunner = defaultRunner) {}
 
+  async appearance(udid: string): Promise<'light' | 'dark' | null> {
+    const output = (await this.runner.runText(['simctl', 'ui', udid, 'appearance'])).trim().toLowerCase()
+    return output === 'light' || output === 'dark' ? output : null
+  }
+
+  async setAppearance(udid: string, value: 'light' | 'dark'): Promise<void> {
+    await this.runner.runText(['simctl', 'ui', udid, 'appearance', value])
+  }
+
+  async contentSize(udid: string): Promise<string> {
+    return (await this.runner.runText(['simctl', 'ui', udid, 'content_size'])).trim().toLowerCase()
+  }
+
+  async setContentSize(udid: string, value: string): Promise<void> {
+    await this.runner.runText(['simctl', 'ui', udid, 'content_size', value])
+  }
+
+  async setLocation(udid: string, latitude: number, longitude: number): Promise<void> {
+    await this.runner.runText(['simctl', 'location', udid, 'set', `${latitude},${longitude}`])
+  }
+
+  async clearLocation(udid: string): Promise<void> {
+    await this.runner.runText(['simctl', 'location', udid, 'clear'])
+  }
+
   async status(): Promise<Omit<IosSimulatorStatus, 'helper' | 'previewMode'>> {
     return readDeveloperStatus()
   }
@@ -246,4 +271,3 @@ export class SimctlClient {
     await this.runner.runText(['simctl', 'shutdown', udid])
   }
 }
-

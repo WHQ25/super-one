@@ -11,7 +11,7 @@ import type { Session, SessionLifecycleEvent } from '../session/types'
 class FakeSession {
   readonly id: string
   readonly projectPath: string
-  readonly snapshot: { harnessId: HarnessId; acpAgentId?: string | null }
+  readonly snapshot: { harnessId: HarnessId; acpAgentId?: string | null; worktreePath: string | null; gitBranch: string | null }
   owner: { kind: 'local' } | { kind: 'remote'; deviceId: string } = { kind: 'local' }
   subscribers = new Set<string>()
   private listeners = new Set<(e: SessionLifecycleEvent) => void>()
@@ -19,7 +19,7 @@ class FakeSession {
   constructor(id: string, projectPath: string, harnessId: HarnessId = 'claude', acpAgentId?: string | null) {
     this.id = id
     this.projectPath = projectPath
-    this.snapshot = { harnessId, ...(acpAgentId ? { acpAgentId } : {}) }
+    this.snapshot = { harnessId, worktreePath: null, gitBranch: null, ...(acpAgentId ? { acpAgentId } : {}) }
   }
 
   onLifecycle(handler: (e: SessionLifecycleEvent) => void): () => void {
@@ -77,7 +77,7 @@ describe('PresenceCoordinator', () => {
       current: { kind: 'remote', deviceId: 'dev-A' },
     })
     expect(transport.sent).toEqual([
-      { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's1', harnessId: 'claude' },
+      { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's1', harnessId: 'claude', worktreePath: null, gitBranch: null },
     ])
   })
 
@@ -99,6 +99,8 @@ describe('PresenceCoordinator', () => {
         remoteSessionId: 's-grok',
         harnessId: 'acp',
         acpAgentId: 'grok-build',
+        worktreePath: null,
+        gitBranch: null,
       },
     ])
   })
@@ -115,7 +117,7 @@ describe('PresenceCoordinator', () => {
       current: { kind: 'remote', deviceId: 'dev-A' },
     })
     expect(transport.sent).toEqual([
-      { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's-codex', harnessId: 'codex' },
+      { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's-codex', harnessId: 'codex', worktreePath: null, gitBranch: null },
     ])
   })
 
@@ -201,6 +203,23 @@ describe('PresenceCoordinator', () => {
     expect(transport.mobile).toEqual([])
   })
 
+  it('tells the renderer where a phone-created session runs before its first message is persisted', () => {
+    const source = makeSource()
+    const transport = makeTransport()
+    new PresenceCoordinator(source, transport)
+    const s = new FakeSession('s1', '/proj/A')
+    s.snapshot.worktreePath = '/proj/A/.worktrees/feat'
+    s.snapshot.gitBranch = 'feat/x'
+    source.add(s)
+    s.emit({ type: 'subscriber_added', sessionId: 's1', deviceId: 'dev-B' })
+    expect(transport.sent).toEqual([expect.objectContaining({
+      type: 'remote_session_start',
+      remoteSessionId: 's1',
+      worktreePath: '/proj/A/.worktrees/feat',
+      gitBranch: 'feat/x',
+    })])
+  })
+
   it('emits remote_session_start with isSubscribe on subscriber_added', () => {
     const source = makeSource()
     const transport = makeTransport()
@@ -209,7 +228,7 @@ describe('PresenceCoordinator', () => {
     source.add(s)
     s.emit({ type: 'subscriber_added', sessionId: 's1', deviceId: 'dev-B' })
     expect(transport.sent).toEqual([
-      { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's1', isSubscribe: true, harnessId: 'claude' },
+      { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's1', isSubscribe: true, harnessId: 'claude', worktreePath: null, gitBranch: null },
     ])
   })
 
@@ -258,7 +277,7 @@ describe('PresenceCoordinator', () => {
     source.add(s2)
     s2.emit({ type: 'subscriber_added', sessionId: 's2', deviceId: 'dev-C' })
     expect(transport.sent).toEqual([
-      { type: 'remote_session_start', remoteProjectPath: '/proj/B', remoteSessionId: 's2', isSubscribe: true, harnessId: 'claude' },
+      { type: 'remote_session_start', remoteProjectPath: '/proj/B', remoteSessionId: 's2', isSubscribe: true, harnessId: 'claude', worktreePath: null, gitBranch: null },
     ])
   })
 
@@ -297,7 +316,7 @@ describe('PresenceCoordinator', () => {
       reason: 'desktop_kick',
     })
     expect(transport.sent).toEqual([
-      { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's1', harnessId: 'claude' },
+      { type: 'remote_session_start', remoteProjectPath: '/proj/A', remoteSessionId: 's1', harnessId: 'claude', worktreePath: null, gitBranch: null },
     ])
     expect(transport.mobile).toEqual([
       { event: { type: 'session_kicked', sessionId: 's1' }, targets: ['dev-A'] },

@@ -110,6 +110,27 @@ describe('remote_session_start', () => {
     expect(session.preferredProvider).toBe('codex')
   })
 
+  it('keeps the worktree a phone-created session runs in even though its row is not persisted yet', async () => {
+    // The phone subscribes before its first message; main has no row to read yet.
+    mockWindowApp.loadSessionState.mockResolvedValueOnce(null)
+    useChatStore.getState().handleAgentEvent({
+      type: 'remote_session_start',
+      remoteProjectPath: '/p',
+      remoteSessionId: 'sess-wt',
+      isSubscribe: true,
+      harnessId: 'claude',
+      worktreePath: '/p/.worktrees/feat',
+      gitBranch: 'feat/x',
+    } as AgentEvent)
+    await vi.waitFor(() => {
+      expect(useChatStore.getState().projectSessions['/p']._sessions['sess-wt']._historyHydrated).toBe(true)
+    })
+
+    const session = useChatStore.getState().projectSessions['/p']._sessions['sess-wt']
+    expect(session._worktreePath).toBe('/p/.worktrees/feat')
+    expect(session._gitBranch).toBe('feat/x')
+  })
+
   it('subscribe=false does NOT add to remoteSessions but still creates the session entry', () => {
     useChatStore.getState().handleAgentEvent({
       type: 'remote_session_start',

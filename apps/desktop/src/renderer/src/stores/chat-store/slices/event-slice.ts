@@ -126,6 +126,11 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
           // Mobile Grok sessions arrive as harnessId=acp; without the agent id
           // the sidebar brands them as the generic ACP fallback.
           acpAgentId: baseSession.acpAgentId ?? event.acpAgentId ?? null,
+          // Main's answer, not a hint: the hydrate below reads a row the first
+          // message has not written yet, and a missing worktree reads as local.
+          ...(event.worktreePath !== undefined
+            ? { _worktreePath: event.worktreePath, _gitBranch: event.gitBranch ?? null }
+            : {}),
         }
         return {
           remoteSessions: event.isSubscribe

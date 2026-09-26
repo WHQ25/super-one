@@ -48,6 +48,8 @@ export class PresenceCoordinator {
       remoteSessionId: session.id,
       harnessId: session.snapshot.harnessId,
       ...(session.snapshot.acpAgentId ? { acpAgentId: session.snapshot.acpAgentId } : {}),
+      worktreePath: session.snapshot.worktreePath,
+      gitBranch: session.snapshot.gitBranch,
       ...extra,
     }
   }

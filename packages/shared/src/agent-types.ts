@@ -1875,7 +1875,7 @@ export type AgentEventBase =
   | { type: 'elicitation_complete'; mcpServerName: string; elicitationId: string }
   | { type: 'stream_message_start'; messageId: string; apiMessageId: string; model: string; parentToolUseId?: string | null }
   | { type: 'stream_message_stop'; messageId: string; parentToolUseId?: string | null }
-  | { type: 'remote_session_start'; remoteProjectPath: string; remoteSessionId: string; isSubscribe?: boolean; harnessId?: HarnessId; /** ACP agent (e.g. grok-build) so desktop can brand a mobile-owned session. */ acpAgentId?: string | null }
+  | { type: 'remote_session_start'; remoteProjectPath: string; remoteSessionId: string; isSubscribe?: boolean; harnessId?: HarnessId; /** ACP agent (e.g. grok-build) so desktop can brand a mobile-owned session. */ acpAgentId?: string | null; /** Where the session runs. A phone subscribes before its first message is persisted, so the desktop cannot read this from the session row yet. */ worktreePath?: string | null; gitBranch?: string | null }
   | { type: 'remote_session_end'; remoteProjectPath: string; remoteSessionId: string; isSubscribe?: boolean }
   | { type: 'interaction_resolved'; interactionType: 'permission' | 'question' | 'plan_approval'; requestId: string; approved?: boolean; feedback?: string }
   /** Host-recorded read receipt: some client looked at this completion. `messageId` null when nothing has completed yet. */

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ContentBlock } from './agent-types'
-import { findToolUseMessageId, resolveDeltaHomeMessageId, resolveTaskToolUseId } from './subagent-routing'
+import { findToolUseMessageId, applySubagentTaskStarted, resolveDeltaHomeMessageId, resolveTaskToolUseId } from './subagent-routing'
 
 const agent = (toolUseId: string): ContentBlock => ({ type: 'tool_use', toolName: 'Agent', toolUseId, input: '' } as ContentBlock)
 const text = (t: string, parent: string | null): ContentBlock => ({ type: 'text', text: t, parentToolUseId: parent } as ContentBlock)
@@ -41,5 +41,33 @@ describe('resolveTaskToolUseId', () => {
   })
   it('returns the direct toolUseId when nothing matches', () => {
     expect(resolveTaskToolUseId(taskProgress, 'tu-new', 'T9')).toBe('tu-new')
+  })
+})
+
+describe('applySubagentTaskStarted', () => {
+  const finished = (): ContentBlock => ({ ...agent('A'), taskStatus: 'completed', taskResultText: 'done' } as ContentBlock)
+
+  it('marks a backgrounded launch once', () => {
+    const messages = [{ id: 'm', content: [agent('A'), text('x', 'A')] }]
+    const marked = applySubagentTaskStarted(messages, 'A', true)
+    expect(marked[0]!.content[0]).toMatchObject({ runInBackground: true })
+    expect(applySubagentTaskStarted(marked, 'A', true)).toBe(marked)
+  })
+
+  it('reopens a finished block on a backgrounded start (a resume)', () => {
+    const [message] = applySubagentTaskStarted([{ id: 'm', content: [finished()] }], 'A', true)
+    expect(message!.content[0]).not.toHaveProperty('taskStatus')
+    expect(message!.content[0]).not.toHaveProperty('taskResultText')
+  })
+
+  it('leaves a finished block alone on a foreground start', () => {
+    const messages = [{ id: 'm', content: [finished()] }]
+    expect(applySubagentTaskStarted(messages, 'A', false)).toBe(messages)
+    expect(applySubagentTaskStarted(messages, 'A', undefined)).toBe(messages)
+  })
+
+  it('returns the same messages when no subagent block carries the id', () => {
+    const messages = [{ id: 'm', content: [agent('A')] }]
+    expect(applySubagentTaskStarted(messages, 'missing', true)).toBe(messages)
   })
 })

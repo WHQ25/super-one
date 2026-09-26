@@ -15,6 +15,7 @@ import {
   RESUME_DROPS_TURN_REFUSAL_PREFIX,
 } from '@superone/claude'
 import type { MessageBridge } from './message-bridge'
+import { withSubagentResumeSignal } from './subagent-resume-signal'
 import log from '../logger'
 import { trace } from './event-trace'
 import { createSuperoneMcpServer } from '../mcp/superone-mcp-server'
@@ -262,7 +263,7 @@ export interface IterateMessagesOptions {
 
 export async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<void> {
   const { emit: rawEmit, getCurrentMessageId, getCurrentStartTime, getInterrupted, onSessionId, trackPlanFile, onQueuedTurnStart, onStepBoundary, bridge, timing } = opts
-  const emit = rawEmit
+  const emit = withSubagentResumeSignal(rawEmit)
   // Track content_block index → tool_use_id for input_json_delta correlation
   const activeToolBlocks = new Map<number, string>()
   // Track tool_use_id → tool_name so we can tag tool_result events
@@ -650,6 +651,12 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               ...(typeof sys.spawn_depth === 'number' ? { spawnDepth: sys.spawn_depth } : {}),
             })
           } else if (sys.subtype === 'task_updated') {
+            // A foreground task moved to the background (Ctrl+B, or the model's own
+            // backgrounding) is registered anew: its tool_result is now only a receipt.
+            const moved = sys.patch?.is_backgrounded === true && sys.task_id ? activeBackgroundTasks.get(sys.task_id) : undefined
+            if (moved?.toolUseId) {
+              emit({ type: 'task_started', taskId: sys.task_id, toolUseId: moved.toolUseId, description: moved.description, isBackgrounded: true })
+            }
             const patchStatus = sys.patch?.status as string | undefined
             if (sys.task_id && (patchStatus === 'completed' || patchStatus === 'failed' || patchStatus === 'killed')) {
               activeBackgroundTasks.delete(sys.task_id)

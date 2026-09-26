@@ -5,7 +5,7 @@ import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import { applyContentDelta, retractContentBlocks, sealStreamingTools } from '@superone/shared/content-delta'
 import { newMessageId } from '@superone/shared/message-id'
-import { resolveDeltaHomeMessageId, resolveTaskToolUseId } from '@superone/shared/subagent-routing'
+import { applySubagentTaskStarted, resolveDeltaHomeMessageId, resolveTaskToolUseId } from '@superone/shared/subagent-routing'
 
 export interface PersistedClaudeSessionState {
   messages: ChatMessage[]
@@ -507,6 +507,12 @@ export function applyClaudeEventToRuntime(
       const prev = runtime.taskProgress[tid]
       return {
         ...runtime,
+        // A resume can name the waker's tool call; the task id leads back to the Agent block.
+        messages: applySubagentTaskStarted(
+          runtime.messages,
+          resolveTaskToolUseId(runtime.taskProgress, tid, event.taskId) ?? tid,
+          event.isBackgrounded,
+        ),
         taskProgress: {
           ...runtime.taskProgress,
           [tid]: {

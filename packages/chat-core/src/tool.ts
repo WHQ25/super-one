@@ -5,6 +5,7 @@ import type { ChatCoreSession } from './types'
 import { extractPartialToolInput } from './partial-tool-input'
 import { defaultChatCorePorts, type ChatCorePorts } from './ports'
 import { synthesizeHostWorkflowCard } from './host-workflow-card'
+import { applySubagentTaskStarted } from '@superone/shared/subagent-routing'
 import {
   _patchTaskToolBlock,
   mapMessagesStructural,
@@ -330,19 +331,26 @@ export function reduceTool(
       const write = resolveTaskProgressWrite(session.taskProgress, event.toolUseId, event.taskId)
       if (!write) return {}
       const prev = write.prev
+      // A resumed subagent registers again, always in the background; a duplicated
+      // foreground launch frame must not revive a finished task.
+      const resumed = prev?.completed === true && event.isBackgrounded === true
       const next: TaskProgressEntry = {
         ...(prev ?? emptyTaskProgress()),
         description: event.description,
         taskId: event.taskId ?? prev?.taskId,
-        completed: prev?.completed === true ? true : false,
+        completed: prev?.completed === true && !resumed,
+        ...(resumed ? { status: undefined } : {}),
         ...(event.outputFile ? { outputFile: event.outputFile } : {}),
       }
       // Task lifecycle is liveness like tool_progress: a Grok goal subagent
       // reports only through task_* frames, and without the bump the stall
       // heuristic paints the turn amber while the agent is busy.
+      const launchId = write.key ?? event.toolUseId
+      const marked = launchId ? applySubagentTaskStarted(session.messages, launchId, event.isBackgrounded) : session.messages
       const patch = {
         taskProgress: commitTaskProgress(session.taskProgress, write, next),
         lastEventAt: ports.now(),
+        ...(marked !== session.messages ? { messages: marked } : {}),
       }
       // Slash-launched workflows emit workflow_updated only — no tool_use.
       // A correlated toolUseId means a model launch already owns the card.

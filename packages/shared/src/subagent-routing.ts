@@ -1,4 +1,5 @@
 import type { ContentBlock } from './agent-types'
+import { isSubagentToolName } from './tool-ui'
 
 /**
  * Helpers for re-attributing a resumed sub-agent's stream back to its original
@@ -59,4 +60,42 @@ export function resolveTaskToolUseId(
     }
   }
   return toolUseId
+}
+
+/**
+ * Apply a subagent's `task_started` to its launch block — the facts a surface
+ * without a `taskProgress` store (the phone) reads the run state from.
+ *
+ * - `isBackgrounded` marks `runInBackground`, including agents launched without
+ *   `run_in_background` (spawned inside a background agent, or moved there
+ *   later). Their `tool_result` is only the launch receipt.
+ * - A backgrounded start on a block that already finished is a resume (the
+ *   SDK always registers a resumed subagent in the background): the previous
+ *   run's `taskStatus` / `taskResultText` are cleared so it reads as running
+ *   again; the closing notification writes them anew. A foreground start never
+ *   reopens a finished block, so a duplicated launch frame cannot revive one.
+ *
+ * Returns `messages` when nothing changed.
+ */
+export function applySubagentTaskStarted<M extends { content: ContentBlock[] }>(
+  messages: M[],
+  toolUseId: string,
+  isBackgrounded: boolean | undefined,
+): M[] {
+  let changed = false
+  const next = messages.map((message) => {
+    const index = message.content.findIndex(block =>
+      block.type === 'tool_use' && block.toolUseId === toolUseId && isSubagentToolName(block.toolName))
+    const block = message.content[index]
+    if (!block || block.type !== 'tool_use') return message
+    const background = isBackgrounded === true && !block.runInBackground
+    const resumed = isBackgrounded === true && (!!block.taskStatus || !!block.taskResultText)
+    if (!background && !resumed) return message
+    changed = true
+    const { taskStatus: _status, taskResultText: _result, ...rest } = block
+    const content = [...message.content]
+    content[index] = { ...(resumed ? rest : block), ...(background ? { runInBackground: true } : {}) }
+    return { ...message, content }
+  })
+  return changed ? next : messages
 }

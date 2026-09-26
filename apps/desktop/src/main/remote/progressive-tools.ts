@@ -140,8 +140,8 @@ export function projectTool(block: ContentBlock, ref: string): ContentBlock {
     toolSummary: projectedToolSummary(block), toolFilePath: block.toolFilePath,
     ...(toolLineDelta ? { toolLineDelta } : {}),
     ...(block.toolName === 'Workflow' ? workflowShell(block) : {}),
-    // The card's collapsed badge (calls · tokens); the children behind it are not sent.
-    ...(isSubagentToolName(block.toolName) ? { taskUsage: block.taskUsage, taskStatus: block.taskStatus } : {}),
+    // The card's collapsed badge (calls · tokens) and its run state; the children behind it are not sent.
+    ...(isSubagentToolName(block.toolName) ? { taskUsage: block.taskUsage, taskStatus: block.taskStatus, runInBackground: block.runInBackground } : {}),
     remoteDetail: ref } as ContentBlock
 }
 export function toolDetail(message: ChatMessage, id: string): string {

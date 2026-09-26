@@ -38,6 +38,33 @@ describe('progressive projection of a nested subagent', () => {
     expect(content.flatMap(block => 'toolUseId' in block && block.type === 'tool_use' ? [block.toolUseId] : [])).toEqual(['parent'])
   })
 
+  it('marks a backgrounded agent so its launch receipt does not read as the run finishing', () => {
+    const content = phoneAfter({ type: 'task_started', taskId: 'a0', toolUseId: 'parent', description: 'parent', taskType: 'local_agent', isBackgrounded: true })
+    expect(content[0]).toMatchObject({ toolUseId: 'parent', runInBackground: true })
+  })
+
+  it('carries the background mark in the shell a reconnecting phone receives', () => {
+    const source = desktopMessage()
+    source.content[0] = { ...source.content[0]!, runInBackground: true } as ChatMessage['content'][number]
+    expect(projectProgressiveMessage(source).content[0]).toMatchObject({ toolUseId: 'parent', runInBackground: true })
+  })
+
+  it('reopens a finished agent on the phone when a resume registers it again', () => {
+    const source = desktopMessage()
+    source.content[0] = { ...source.content[0]!, taskStatus: 'completed', taskResultText: 'first run' } as ChatMessage['content'][number]
+    source.content.push({ type: 'tool_use', toolName: 'SendMessage', toolUseId: 'send-message', input: '{}', status: 'complete' })
+    const session = createDefaultChatCoreSession()
+    session.messages = [projectProgressiveMessage(source)]
+    Object.assign(session, applyEventToSession(session, { type: 'task_started', taskId: 'a0', toolUseId: 'parent', description: 'parent', taskType: 'local_agent' }))
+    Object.assign(session, applyEventToSession(session, { type: 'task_notification', taskId: 'a0', toolUseId: 'parent', taskStatus: 'completed', outputFile: '' }))
+    // The resume names the waker's tool call; the task id leads back to the card.
+    const resume = projectProgressiveEvent({ type: 'task_started', taskId: 'a0', toolUseId: 'send-message', description: 'parent', taskType: 'local_agent', isBackgrounded: true }, [source])
+    Object.assign(session, applyEventToSession(session, resume!))
+    expect(session.messages[0]!.content[0]).not.toHaveProperty('taskStatus')
+    expect(session.taskProgress.parent?.completed).toBe(false)
+    expect(session.messages[0]!.content.filter(block => block.type === 'tool_use').map(block => 'toolUseId' in block && block.toolUseId)).toEqual(['parent', 'send-message'])
+  })
+
   it('still synthesizes a card for a task whose launch block the desktop never had', () => {
     const content = phoneAfter({ type: 'task_started', taskId: 'slash', toolUseId: 'slash-tool', description: 'review', taskType: 'local_agent' })
     expect(content.some(block => block.type === 'tool_use' && block.toolUseId === 'slash-tool')).toBe(true)

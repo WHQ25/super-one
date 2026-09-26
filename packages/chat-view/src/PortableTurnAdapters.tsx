@@ -97,6 +97,7 @@ import {
   SubagentScrollArea,
 } from './presenters/SubagentBlock'
 import { getSubagentColorClasses, portableSubagentColorIndex } from './presenters/subagent-colors'
+import { subagentRunState } from './presenters/subagent-run-state'
 import { summarizeClaudeProcess, summarizeCodexProcess } from './presenters/turn-process-stats'
 import { SetupMiniAppDevBlockPresenter } from './presenters/SetupMiniAppDevBlock'
 import { SuperoneCompactToolRowPresenter } from './presenters/SuperoneCompactToolRow'
@@ -618,16 +619,25 @@ function PortableSubagent({
 }: ClaudeSubagentPresenterProps) {
   const [expanded, setExpanded] = useState(false)
   const colors = usePortableSubagentColors(taskBlock.toolUseId)
-  const shellComplete = Boolean(shellResultBlock || taskBlock.taskResultText)
-  const { detail, status: detailStatus, retry } = useDeferredToolDetail(taskBlock.remoteDetail, expanded, shellComplete || !isStreaming)
+  const isAsync = taskBlock.runInBackground === true || parseRecord(taskBlock.input).run_in_background === true
+  // The phone has no `taskProgress`; the task facts patched onto the block stand
+  // in for it. A background run's `tool_result` is only its launch receipt.
+  const runFacts = {
+    tracked: isAsync || !!taskBlock.taskStatus,
+    finished: !!taskBlock.taskStatus || !!taskBlock.taskResultText,
+    isStreaming,
+  }
+  const shellRun = subagentRunState({ ...runFacts, hasResult: !!shellResultBlock })
+  const { detail, status: detailStatus, retry } = useDeferredToolDetail(taskBlock.remoteDetail, expanded, !shellRun.isRunning)
   const input = detail.input ?? taskBlock.input
   const childBlocks = detail.childBlocks ?? shellChildBlocks
   const resultBlock: ContentBlock | undefined = detail.result
     ? { type: 'tool_result', toolUseId: taskBlock.toolUseId, summary: detail.result }
     : shellResultBlock
   const result = resultBlock?.type === 'tool_result' ? resultBlock : undefined
-  const complete = Boolean(resultBlock || taskBlock.taskResultText)
-  const failed = Boolean(result?.isError)
+  const { isRunning, isComplete } = subagentRunState({ ...runFacts, hasResult: !!resultBlock })
+  const failed = isComplete && (taskBlock.taskStatus === 'failed' || Boolean(result?.isError))
+  const stopped = isComplete && taskBlock.taskStatus === 'stopped'
   const children = useMemo(() => {
     const results = toolResultMap(childBlocks)
     return childBlocks.flatMap((block, index): ReactNode[] => {
@@ -663,11 +673,11 @@ function PortableSubagent({
       toolUseId={taskBlock.toolUseId}
       taskInput={portableTaskInput(input, taskBlock.toolSummary)}
       colors={colors}
-      isAsync={false}
-      isRunning={!complete && isStreaming}
-      isComplete={complete}
+      isAsync={isAsync}
+      isRunning={isRunning}
+      isComplete={isComplete}
       isFailed={failed}
-      isStopped={false}
+      isStopped={stopped}
       expanded={expanded}
       onExpandedChange={setExpanded}
       canOpenFullView={false}
@@ -685,8 +695,11 @@ function PortableSubagent({
           {children}
         </SubagentScrollArea>
       ) : undefined}
-      diagnostic={failed ? result?.summary : undefined}
-      resultText={!failed ? (result?.summary ?? taskBlock.taskResultText) : undefined}
+      diagnostic={result?.isError ? result.summary : undefined}
+      // A background launch's result is its receipt; the run's output lands on the block.
+      resultText={failed ? undefined : isAsync
+        ? taskBlock.taskResultText ?? detail.taskResultText
+        : result?.summary ?? taskBlock.taskResultText}
       formatTokens={formatTokens}
       Markdown={({ text }) => <PortableText text={text} isStreaming={false} />}
     />

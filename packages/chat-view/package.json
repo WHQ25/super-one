@@ -60,6 +60,7 @@
     "./presenters/SetupMiniAppDevBlock": "./src/presenters/SetupMiniAppDevBlock.tsx",
     "./presenters/SubagentBlock": "./src/presenters/SubagentBlock.tsx",
     "./presenters/subagent-colors": "./src/presenters/subagent-colors.ts",
+    "./presenters/subagent-run-state": "./src/presenters/subagent-run-state.ts",
     "./presenters/SuperoneCompactToolRow": "./src/presenters/SuperoneCompactToolRow.tsx",
     "./presenters/TerminalToolBlock": "./src/presenters/TerminalToolBlock.tsx",
     "./presenters/TerminalCommandOutput": "./src/presenters/TerminalCommandOutput.tsx",

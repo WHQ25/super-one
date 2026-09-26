@@ -77,9 +77,38 @@ function namedShell(toolUseId: string, name: string, description: string): Conte
   } as ContentBlock
 }
 
-function SubagentTurn({ childCount, running, named = 0 }: { childCount: number; running: boolean; named?: number }) {
+/**
+ * A background agent after the turn that launched it went idle: its only
+ * `tool_result` is the launch receipt. It keeps breathing until the task's
+ * notification patches `taskStatus` / `taskResultText` onto the block.
+ */
+function backgroundShell(finished: boolean): ContentBlock[] {
+  return [
+    {
+      type: 'tool_use',
+      toolName: 'Agent',
+      toolUseId: 'background-1',
+      status: 'complete',
+      input: JSON.stringify({ description: 'Review group aa regressions', subagent_type: 'general-purpose' }),
+      remoteDetail: JSON.stringify(['subagent-turn', 'tool', 'background-1']),
+      runInBackground: true,
+      taskUsage: { totalTokens: 215_118, toolUses: 62, durationMs: 426_954 },
+      ...(finished ? { taskStatus: 'completed', taskResultText: 'No regressions in group aa.' } : {}),
+    } as ContentBlock,
+    { type: 'tool_result', toolUseId: 'background-1', summary: '' } as ContentBlock,
+  ]
+}
+
+function SubagentTurn({ childCount, running, named = 0, background }: {
+  childCount: number
+  running: boolean
+  named?: number
+  background?: 'running' | 'finished'
+}) {
   const status = running ? 'streaming' : 'complete'
-  const content: ContentBlock[] = named > 0
+  const content: ContentBlock[] = background
+    ? [{ type: 'text', text: 'Reviewing in the background.' } as ContentBlock, ...backgroundShell(background === 'finished')]
+    : named > 0
     ? [
         { type: 'text', text: 'Fanning the review out to named reviewers.' } as ContentBlock,
         ...Array.from({ length: named }, (_, index): ContentBlock[] => [
@@ -139,4 +168,14 @@ export const NamedCollapsedShell: Story = {
 export const SeveralNamedAgents: Story = {
   name: 'Collapsed · four named agents, each card drawn in its own pool colour',
   args: { childCount: 0, running: false, named: 4 },
+}
+
+export const BackgroundRunningAfterTurn: Story = {
+  name: 'Background · still running after the turn went idle (receipt is not the result)',
+  args: { childCount: 0, running: false, background: 'running' },
+}
+
+export const BackgroundFinished: Story = {
+  name: 'Background · finished once the task notification lands',
+  args: { childCount: 0, running: false, background: 'finished' },
 }

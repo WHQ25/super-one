@@ -32,6 +32,7 @@ import {
   SubagentBlockPresenter,
   type SubagentMarkdownProps,
 } from './presenters/SubagentBlock'
+import { subagentRunState } from '@superone/chat-view/presenters/subagent-run-state'
 
 const ZERO_TOKENS = { input: 0, output: 0 }
 
@@ -134,17 +135,14 @@ export function SubagentBlock({
   const colorIndex = useActiveSession((state) => state.subagentColors[taskBlock.toolUseId])
   const colors = useMemo(() => getSubagentColorClasses(colorIndex), [colorIndex])
   const taskInput = useMemo(() => parseTaskInput(taskBlock.input), [taskBlock.input])
-  const isAsync = taskInput.runInBackground || looksLikeBackgroundSubagentAck(rawResultText)
-  const isComplete = progress
-    ? !!progress.completed
-    : isAsync
-      ? !!taskBlock.taskResultText
-      : !!resultBlock
-  const isRunning = progress
-    ? !progress.completed
-    : isAsync
-      ? !taskBlock.taskResultText
-      : !resultBlock && isStreaming
+  const isAsync = taskInput.runInBackground || !!taskBlock.runInBackground || looksLikeBackgroundSubagentAck(rawResultText)
+  const { isRunning, isComplete } = subagentRunState({
+    tracked: !!progress || isAsync,
+    // Without live progress (a reload), the block's task facts decide, as on the phone.
+    finished: progress ? !!progress.completed : !!taskBlock.taskStatus || !!taskBlock.taskResultText,
+    hasResult: !!resultBlock,
+    isStreaming,
+  })
   const taskStatus = progress?.status
     ?? (resultBlock?.type === 'tool_result' && resultBlock.isError ? 'failed' : undefined)
   const isFailed = isComplete && taskStatus === 'failed'

@@ -5,9 +5,20 @@ import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
 import type { Session, SessionManager } from '../session/types'
 import { trace } from '../agent/event-trace'
 import { liveSessionActivity } from './live-session-activity'
+import log from '../logger'
 
 export interface MobileTransport {
   sendAgentEvent(event: AgentEvent, targetDeviceIds?: string[]): Promise<void>
+}
+
+/**
+ * Prompts are rare and block the agent until answered, so their routing goes to
+ * main.log too: `trace` is dev-only, and "the phone never showed the prompt"
+ * reports come from release builds.
+ */
+function logInteractionRoute(event: AgentEvent, outcome: string, detail: Record<string, unknown>): void {
+  if (event.type !== 'permission_request' && event.type !== 'ask_user_question' && event.type !== 'plan_approval') return
+  log.info('[MobileBroadcaster] %s %s requestId=%s sessionId=%s %o', event.type, outcome, event.request.requestId, event.sessionId, detail)
 }
 
 export class MobileBroadcaster {
@@ -24,6 +35,7 @@ export class MobileBroadcaster {
     const session = this.sessionManager.getSession(event.sessionId)
     if (!session) {
       trace('remote.broadcast', 'drop:no-session', { type: event.type, sessionId: event.sessionId })
+      logInteractionRoute(event, 'drop:no-session', {})
       return
     }
     const messages = session.snapshot.messages
@@ -43,9 +55,11 @@ export class MobileBroadcaster {
         owner: session.owner.kind,
         subscribers: [...session.subscribers],
       })
+      logInteractionRoute(event, 'drop:no-target', { owner: session.owner.kind })
       return
     }
     trace('remote.broadcast', 'route', { type: event.type, sessionId: event.sessionId, targets: [...targets] })
+    logInteractionRoute(event, 'route', { targets: [...targets] })
     // The sender of a message with attachments gets the echo without the bytes.
     const origin = event.type === 'user_message_appended' && event.message.attachments?.length
       ? takeAttachmentOrigin(event.message.id)

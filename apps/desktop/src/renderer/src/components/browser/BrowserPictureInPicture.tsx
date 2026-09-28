@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { EyeOff, Minimize2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -14,27 +14,15 @@ import { useChatStore } from '@/stores/chat'
 import { selectActiveChatSessionId } from '@/stores/chat-store/selectors'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
-import { createDragCapture } from '@/lib/drag-capture'
 import { getDockApi } from '@/components/activity/activity-panel-api'
 import { BrowserView } from './BrowserView'
 import { usePipPlacement } from '@/hooks/use-pip-placement'
+import { PIP_RESIZE_CORNERS, usePipInteraction } from '@/hooks/use-pip-interaction'
 import {
   BROWSER_PIP_DIMENSIONS,
   browserPipAspect,
-  clampBrowserPipLayout,
   resolveBrowserPipViewport,
 } from './browser-pip-layout'
-
-type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se'
-
-const RESIZE_CORNERS: Array<{ corner: ResizeCorner; className: string }> = [
-  { corner: 'nw', className: '-left-1 -top-1 cursor-nwse-resize' },
-  { corner: 'ne', className: '-right-1 -top-1 cursor-nesw-resize' },
-  { corner: 'sw', className: '-bottom-1 -left-1 cursor-nesw-resize' },
-  { corner: 'se', className: '-bottom-1 -right-1 cursor-nwse-resize' },
-]
-
-const CLICK_SLOP = 4
 
 const OVERLAY_BACKDROP_PANES: Array<{ key: string; style: React.CSSProperties }> = [
   { key: 'top', style: { left: 0, top: 0, width: '100vw', height: '5vh' } },
@@ -90,9 +78,6 @@ export function BrowserPictureInPicture() {
     aspect: pipAspect,
     dims: BROWSER_PIP_DIMENSIONS,
   })
-  const [interacting, setInteracting] = useState(false)
-  const interactionCleanupRef = useRef<(() => void) | null>(null)
-
   useOnTurnCompleted(() => useBrowserStore.getState().clearAutomationPreview(currentSessionId ?? undefined))
 
   useEffect(() => {
@@ -114,35 +99,6 @@ export function BrowserPictureInPicture() {
     }
   }, [currentSessionId, expandedBrowserId, mosaicMode, owner, pinnedPipBrowserId])
 
-  useLayoutEffect(() => {
-    if (!showPip) interactionCleanupRef.current?.()
-  }, [showPip])
-  useLayoutEffect(() => () => interactionCleanupRef.current?.(), [])
-
-  const startInteraction = useCallback((
-    cursor: string,
-    onMove: (event: PointerEvent) => void,
-    onEnd?: () => void,
-  ) => {
-    interactionCleanupRef.current?.()
-    setInteracting(true)
-    const capture = createDragCapture(cursor)
-    capture.acquire()
-    const cleanup = () => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', cleanup)
-      window.removeEventListener('pointercancel', cleanup)
-      capture.release()
-      interactionCleanupRef.current = null
-      setInteracting(false)
-      onEnd?.()
-    }
-    interactionCleanupRef.current = cleanup
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', cleanup)
-    window.addEventListener('pointercancel', cleanup)
-  }, [])
-
   const hidePreview = useCallback(() => {
     if (browserId) useBrowserStore.getState().hidePreview(browserId)
   }, [browserId])
@@ -155,59 +111,15 @@ export function BrowserPictureInPicture() {
     if (browserId) useBrowserStore.getState().shrinkPreview(browserId)
   }, [browserId])
 
-  const onPreviewPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!bounds || !layout || event.button !== 0) return
-    event.preventDefault()
-    const startX = event.clientX
-    const startY = event.clientY
-    const start = layout
-    let dragging = false
-    startInteraction('grabbing', (move) => {
-      const dx = move.clientX - startX
-      const dy = move.clientY - startY
-      if (!dragging && Math.abs(dx) <= CLICK_SLOP && Math.abs(dy) <= CLICK_SLOP) return
-      dragging = true
-      setLayout(clampBrowserPipLayout({
-        ...start,
-        left: start.left + dx,
-        top: start.top + dy,
-      }, bounds, pipAspect))
-    }, () => {
-      if (!dragging) expandPreview()
-    })
-  }, [bounds, expandPreview, layout, pipAspect, startInteraction])
-
-  const startResize = useCallback((corner: ResizeCorner, event: React.PointerEvent<HTMLDivElement>) => {
-    if (!bounds || !layout || event.button !== 0) return
-    event.preventDefault()
-    event.stopPropagation()
-    const startX = event.clientX
-    const startY = event.clientY
-    const start = layout
-    const west = corner.includes('w')
-    const north = corner.includes('n')
-    const cursor = corner === 'nw' || corner === 'se' ? 'nwse-resize' : 'nesw-resize'
-    startInteraction(cursor, (move) => {
-      const dx = move.clientX - startX
-      const dy = move.clientY - startY
-      const fromWidth = start.width + (west ? -dx : dx)
-      const fromHeight = (start.height + (north ? -dy : dy)) * pipAspect
-      const width = Math.abs(fromWidth - start.width) >= Math.abs(fromHeight - start.width)
-        ? fromWidth
-        : fromHeight
-      const fitted = clampBrowserPipLayout({
-        left: start.left,
-        top: start.top,
-        width,
-        height: width / pipAspect,
-      }, bounds, pipAspect)
-      setLayout(clampBrowserPipLayout({
-        ...fitted,
-        left: west ? start.left + start.width - fitted.width : start.left,
-        top: north ? start.top + start.height - fitted.height : start.top,
-      }, bounds, pipAspect))
-    })
-  }, [bounds, layout, pipAspect, startInteraction])
+  const { interacting, onPointerDown: onPreviewPointerDown, startResize } = usePipInteraction({
+    bounds,
+    layout,
+    setLayout,
+    aspect: pipAspect,
+    dims: BROWSER_PIP_DIMENSIONS,
+    active: showPip,
+    onClick: expandPreview,
+  })
 
   return (
     <AnimatePresence>
@@ -266,7 +178,7 @@ export function BrowserPictureInPicture() {
               <EyeOff />
             </IconButton>
           </div>
-          {RESIZE_CORNERS.map(({ corner, className }) => (
+          {PIP_RESIZE_CORNERS.map(({ corner, className }) => (
             <div
               key={corner}
               data-browser-pip-resize={corner}

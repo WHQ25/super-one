@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { EyeOff } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -9,25 +9,14 @@ import { selectActiveChatSessionId } from '@/stores/chat-store/selectors'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { useComputerViewfinderStore } from '@/stores/computer-viewfinder'
 import { useOwnsViewfinder } from '@/stores/agent-viewfinder'
-import { createDragCapture } from '@/lib/drag-capture'
 import { usePipPlacement } from '@/hooks/use-pip-placement'
+import { PIP_RESIZE_CORNERS, usePipInteraction } from '@/hooks/use-pip-interaction'
 import {
   COMPUTER_PIP_DIMENSIONS,
-  clampComputerPipLayout,
   computerPipAspect,
   computerPipCaptureSize,
 } from './computer-pip-layout'
 
-type ResizeCorner = 'nw' | 'ne' | 'sw' | 'se'
-
-const RESIZE_CORNERS: Array<{ corner: ResizeCorner; className: string }> = [
-  { corner: 'nw', className: '-left-1 -top-1 cursor-nwse-resize' },
-  { corner: 'ne', className: '-right-1 -top-1 cursor-nesw-resize' },
-  { corner: 'sw', className: '-bottom-1 -left-1 cursor-nesw-resize' },
-  { corner: 'se', className: '-bottom-1 -right-1 cursor-nwse-resize' },
-]
-
-const CLICK_SLOP = 4
 const CAPTURE_RESIZE_DEBOUNCE_MS = 120
 
 export function ComputerUsePictureInPicture() {
@@ -69,13 +58,7 @@ export function ComputerUsePictureInPicture() {
     aspect,
     dims: COMPUTER_PIP_DIMENSIONS,
   })
-  const interactionCleanupRef = useRef<(() => void) | null>(null)
   const lastCaptureSizeRef = useRef('')
-
-  useLayoutEffect(() => {
-    if (!showPip) interactionCleanupRef.current?.()
-  }, [showPip])
-  useLayoutEffect(() => () => interactionCleanupRef.current?.(), [])
 
   useEffect(() => {
     if (!showPip || !target?.sessionId || target.windowId == null || !layout) {
@@ -104,85 +87,19 @@ export function ComputerUsePictureInPicture() {
     return () => window.clearTimeout(timer)
   }, [frame?.height, frame?.width, layout, showPip, target?.sessionId, target?.windowId])
 
-  const startInteraction = useCallback((
-    cursor: string,
-    onMove: (event: PointerEvent) => void,
-    onEnd?: () => void,
-  ) => {
-    interactionCleanupRef.current?.()
-    const capture = createDragCapture(cursor)
-    capture.acquire()
-    const cleanup = () => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', cleanup)
-      window.removeEventListener('pointercancel', cleanup)
-      capture.release()
-      interactionCleanupRef.current = null
-      onEnd?.()
-    }
-    interactionCleanupRef.current = cleanup
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', cleanup)
-    window.addEventListener('pointercancel', cleanup)
-  }, [])
-
   const focusPreview = useCallback(() => {
     if (target?.sessionId) void window.app.focusComputerUseViewfinder(target.sessionId)
   }, [target?.sessionId])
 
-  const onPreviewPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!bounds || !layout || event.button !== 0) return
-    event.preventDefault()
-    const startX = event.clientX
-    const startY = event.clientY
-    const start = layout
-    let dragging = false
-    startInteraction('grabbing', (move) => {
-      const dx = move.clientX - startX
-      const dy = move.clientY - startY
-      if (!dragging && Math.abs(dx) <= CLICK_SLOP && Math.abs(dy) <= CLICK_SLOP) return
-      dragging = true
-      setLayout(clampComputerPipLayout({
-        ...start,
-        left: start.left + dx,
-        top: start.top + dy,
-      }, bounds, aspect))
-    }, () => {
-      if (!dragging) focusPreview()
-    })
-  }, [aspect, bounds, focusPreview, layout, startInteraction])
-
-  const startResize = useCallback((corner: ResizeCorner, event: React.PointerEvent<HTMLDivElement>) => {
-    if (!bounds || !layout || event.button !== 0) return
-    event.preventDefault()
-    event.stopPropagation()
-    const startX = event.clientX
-    const startY = event.clientY
-    const start = layout
-    const west = corner.includes('w')
-    const north = corner.includes('n')
-    const cursor = corner === 'nw' || corner === 'se' ? 'nwse-resize' : 'nesw-resize'
-    startInteraction(cursor, (move) => {
-      const dx = move.clientX - startX
-      const dy = move.clientY - startY
-      const fromWidth = start.width + (west ? -dx : dx)
-      const fromHeight = (start.height + (north ? -dy : dy)) * aspect
-      const width = Math.abs(fromWidth - start.width) >= Math.abs(fromHeight - start.width)
-        ? fromWidth
-        : fromHeight
-      const fitted = clampComputerPipLayout({
-        left: start.left,
-        top: start.top,
-        width,
-        height: width / aspect,
-      }, bounds, aspect)
-      setLayout(clampComputerPipLayout({
-        ...fitted,
-        left: west ? start.left + start.width - fitted.width : start.left,
-        top: north ? start.top + start.height - fitted.height : start.top,
-      }, bounds, aspect))
-    })
-  }, [aspect, bounds, layout, startInteraction])
+  const { onPointerDown: onPreviewPointerDown, startResize } = usePipInteraction({
+    bounds,
+    layout,
+    setLayout,
+    aspect,
+    dims: COMPUTER_PIP_DIMENSIONS,
+    active: showPip,
+    onClick: focusPreview,
+  })
 
   const cursorVisible = target?.cursorX != null
     && target.cursorY != null
@@ -252,7 +169,7 @@ export function ComputerUsePictureInPicture() {
               <EyeOff />
             </IconButton>
           </div>
-          {RESIZE_CORNERS.map(({ corner, className }) => (
+          {PIP_RESIZE_CORNERS.map(({ corner, className }) => (
             <div
               key={corner}
               data-computer-use-pip-resize={corner}

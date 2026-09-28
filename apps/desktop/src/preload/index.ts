@@ -2447,7 +2447,7 @@ const appAPI = {
   },
 }
 
-import type { MiniAppEntry, MiniAppInstallMeta, MiniAppToolInterceptOpenRequest, DevRegistryEntry, DevRegistryView } from '@superone/shared/miniapp-types'
+import type { MiniAppEntry, MiniAppHostLogEvent, MiniAppInstallMeta, MiniAppToolInterceptOpenRequest, DevRegistryEntry, DevRegistryView } from '@superone/shared/miniapp-types'
 
 const miniappAPI = {
   list: (projectDir?: string) =>
@@ -2485,6 +2485,12 @@ const miniappAPI = {
     const handler = (_e: Electron.IpcRendererEvent, event: { appId: string; projectDir: string; payload: unknown }) => callback(event)
     ipcRenderer.on(AgentIpcChannels.MINIAPP_HOST_MESSAGE, handler)
     return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_HOST_MESSAGE, handler)
+  },
+
+  onHostLog: (callback: (event: MiniAppHostLogEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, event: MiniAppHostLogEvent) => callback(event)
+    ipcRenderer.on(AgentIpcChannels.MINIAPP_HOST_LOG, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.MINIAPP_HOST_LOG, handler)
   },
 
   onHostAction: (

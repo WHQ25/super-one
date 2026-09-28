@@ -58,6 +58,10 @@ import {
   REGISTER_DEV_MINIAPP_DESCRIPTION,
   PACK_MINI_APP_DESCRIPTION,
   UPDATE_SUPERONE_TYPES_DESCRIPTION,
+  MINIAPP_DEV_PREVIEW_DESCRIPTION,
+  MINIAPP_DEV_PREVIEW_INPUT_SCHEMA,
+  MINIAPP_DEV_RELOAD_DESCRIPTION,
+  MINIAPP_DEV_RELOAD_INPUT_SCHEMA,
   RENAME_SESSION_DESCRIPTION,
   SESSION_TAG_DESCRIPTION,
   SESSION_TAG_LIST_DESCRIPTION,
@@ -427,6 +431,16 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
       required: ['appDir'],
       additionalProperties: false,
     },
+  },
+  {
+    name: 'miniapp_dev_preview',
+    description: MINIAPP_DEV_PREVIEW_DESCRIPTION,
+    inputSchema: MINIAPP_DEV_PREVIEW_INPUT_SCHEMA,
+  },
+  {
+    name: 'miniapp_dev_reload',
+    description: MINIAPP_DEV_RELOAD_DESCRIPTION,
+    inputSchema: MINIAPP_DEV_RELOAD_INPUT_SCHEMA,
   },
   {
     name: 'session_rename',

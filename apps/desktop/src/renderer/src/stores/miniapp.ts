@@ -53,6 +53,11 @@ export interface MiniAppSlot {
   mode: 'panel'
 }
 
+export interface MiniAppPanelOptions {
+  /** False while the Activity panel is closed: lay the tab out without showing the panel. */
+  reveal?: boolean
+}
+
 interface MiniAppStoreState {
   apps: MiniAppEntry[]
   loaded: boolean
@@ -76,7 +81,7 @@ interface MiniAppStoreState {
   cancelInstall: () => Promise<void>
   uninstallApp: (appId: string, installDir?: string) => Promise<void>
 
-  openAppInPanel: (entry: MiniAppEntry, projectDir: string) => Promise<void>
+  openAppInPanel: (entry: MiniAppEntry, projectDir: string, opts?: MiniAppPanelOptions) => Promise<void>
   closeApp: (instanceKey: string) => Promise<void>
 
   updateSlot: (instanceKey: string, mode: 'panel', rect: DOMRectReadOnly) => void
@@ -179,7 +184,7 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
       await window.miniapp.uninstall(appId, installDir)
       await get().refreshApps(get()._lastProjectDir)
     },
-    openAppInPanel: async (entry: MiniAppEntry, projectDir: string) => {
+    openAppInPanel: async (entry: MiniAppEntry, projectDir: string, opts?: MiniAppPanelOptions) => {
       const projectId = useAppStore.getState().currentProjectId
       const instanceKey = makeInstanceKey(entry.id, projectId)
       const sid = activeSessionId(projectDir)
@@ -197,7 +202,7 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
             },
           }))
         }
-        openMiniAppTab(instanceKey, entry.id, entry.manifest.name)
+        openMiniAppTab(instanceKey, entry.id, entry.manifest.name, opts)
         return
       }
       set((s) => ({
@@ -215,7 +220,7 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
       if (entry.manifest.preferWidth) {
         applyPreferWidth(entry.manifest.preferWidth)
       }
-      openMiniAppTab(instanceKey, entry.id, entry.manifest.name)
+      openMiniAppTab(instanceKey, entry.id, entry.manifest.name, opts)
     },
 
     closeApp: async (instanceKey: string) => {

@@ -509,7 +509,7 @@ const tabField = {
   tab: z
     .string()
     .optional()
-    .describe('Browser view id. Omit to target the focused browser view (errors if multiple are open).'),
+    .describe('Browser view id, or a development mini-app view id: miniapp:<appId> for its panel, or one returned by miniapp_dev_preview or browser_tabs. Omit to target the focused browser view (errors if multiple are open).'),
 }
 
 const descriptionField = {

@@ -33,6 +33,8 @@ export type BrowserAutomationOp =
   | 'focusGuardEnd'
   | 'recordStart'
   | 'recordStop'
+  | 'miniappPreview'
+  | 'miniappReload'
 
 interface PendingCall {
   resolve: (result: unknown) => void

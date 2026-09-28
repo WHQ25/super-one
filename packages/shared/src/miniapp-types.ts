@@ -103,6 +103,14 @@ export interface MiniAppEntry {
   orphan?: boolean
 }
 
+/**
+ * A development app resolves to a dev-registry build through an enabled dev
+ * pointer; that pointer (not the app's own manifest) is what makes it one.
+ */
+export function isDevAppEntry(entry: MiniAppEntry): boolean {
+  return entry.distDir !== undefined && entry.orphan !== true
+}
+
 export interface MiniAppHostInfo {
   appId: string
   projectDir: string
@@ -249,6 +257,32 @@ export const MiniAppToolBridgeMsg = {
   CANCEL: 'miniapp-tool-cancel',
   RESULT_CLOSE: 'miniapp-tool-result-close',
 } as const
+
+/** One line of a development MiniApp Host's output, surfaced to its views' consoles. */
+export interface MiniAppHostLogEvent {
+  appId: string
+  projectDir: string
+  level: 'info' | 'error'
+  text: string
+  /** Set on the first line of a restarted Host: earlier output belongs to the old code. */
+  reset?: true
+}
+
+export type MiniAppToolPreviewPhase = 'intercept' | 'result' | 'standalone'
+
+/** Main → renderer: render one development tool UI from fixture data. */
+export interface MiniAppToolPreviewRequest {
+  appId: string
+  appName: string
+  tool: string
+  toolLabel: string
+  phase: MiniAppToolPreviewPhase
+  templatePath: string
+  input: Record<string, unknown>
+  result?: unknown
+  running: boolean
+  width?: number
+}
 
 export function buildToolRendererUrl(
   phase: 'intercept' | 'result',

@@ -11,6 +11,12 @@ import { z } from 'zod'
 import { createMiniApp, cacheAppEntry, registerDevMiniApp, installDevPointer } from '../miniapp/miniapp-service'
 import { packApp } from '../miniapp/miniapp-packager'
 import { generateSuperoneDts } from '../miniapp/miniapp-templates'
+import {
+  miniappDevPreviewHandler,
+  miniappDevReloadHandler,
+  type MiniAppDevPreviewArgs,
+  type MiniAppDevReloadArgs,
+} from './miniapp-dev-debug-tools'
 
 import {
   registerMediaTools,
@@ -35,6 +41,10 @@ import {
   REGISTER_DEV_MINIAPP_DESCRIPTION,
   PACK_MINI_APP_DESCRIPTION,
   UPDATE_SUPERONE_TYPES_DESCRIPTION,
+  MINIAPP_DEV_PREVIEW_DESCRIPTION,
+  MINIAPP_DEV_PREVIEW_INPUT_SCHEMA,
+  MINIAPP_DEV_RELOAD_DESCRIPTION,
+  MINIAPP_DEV_RELOAD_INPUT_SCHEMA,
   RENAME_SESSION_DESCRIPTION,
   SESSION_TAG_DESCRIPTION,
   SESSION_TAG_LIST_DESCRIPTION,
@@ -307,6 +317,10 @@ export async function executeBuiltInSuperoneTool(
       return packMiniApp(args as { appDir: string; outputDir: string })
     case 'miniapp_dev_update_types':
       return updateSuperoneTypes(args as { appDir: string })
+    case 'miniapp_dev_preview':
+      return miniappDevPreviewHandler(args as unknown as MiniAppDevPreviewArgs, deps)
+    case 'miniapp_dev_reload':
+      return miniappDevReloadHandler(args as unknown as MiniAppDevReloadArgs, deps)
     case 'session_rename':
       return sessionRenameHandler(args as { title: string; tags?: string[] }, deps)
     case 'session_tag':
@@ -526,6 +540,18 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       appDir: z.string().describe('Absolute path to the mini-app directory'),
     },
     updateSuperoneTypes,
+  )
+
+  server.registerTool(
+    'miniapp_dev_preview',
+    { description: MINIAPP_DEV_PREVIEW_DESCRIPTION, inputSchema: jsonSchemaToZodShape(MINIAPP_DEV_PREVIEW_INPUT_SCHEMA) },
+    (args) => miniappDevPreviewHandler(args as unknown as MiniAppDevPreviewArgs, deps),
+  )
+
+  server.registerTool(
+    'miniapp_dev_reload',
+    { description: MINIAPP_DEV_RELOAD_DESCRIPTION, inputSchema: jsonSchemaToZodShape(MINIAPP_DEV_RELOAD_INPUT_SCHEMA) },
+    (args) => miniappDevReloadHandler(args as unknown as MiniAppDevReloadArgs, deps),
   )
 
   server.registerTool(

@@ -333,4 +333,69 @@ describe('mini-app MiniApp Host', () => {
     expect(host.listMiniAppHosts()).toEqual([])
     process.exit(0)
   })
+
+  describe('development hosts', () => {
+    function captureWindow() {
+      const send = vi.fn()
+      host.initMiniAppHost(() => ({ isDestroyed: () => false, webContents: { send } }) as never, () => 'en')
+      return send
+    }
+
+    it('replaces a running host with a fresh process so edited code loads', () => {
+      host.startMiniAppHost(START)
+      const previous = child()
+      previous.spawn()
+
+      expect(host.restartMiniAppHost('/project', 'demo', { ...START, entryPath: '/apps/demo/node-v2.js' })).toBe(true)
+
+      expect(previous.postMessage).toHaveBeenCalledWith({ type: 'deactivate' })
+      expect(fork).toHaveBeenCalledTimes(2)
+      expect(fork.mock.calls[1][2].env.SUPERONE_MINIAPP_ENTRY_PATH).toBe('/apps/demo/node-v2.js')
+      expect(host.listMiniAppHosts()).toHaveLength(1)
+      previous.exit(0)
+    })
+
+    it('leaves a host that was stopped on purpose down', () => {
+      host.startMiniAppHost(START)
+      child().spawn()
+      host.stopMiniAppHost('/project', 'demo')
+
+      expect(host.restartMiniAppHost('/project', 'demo', START)).toBe(false)
+      expect(fork).toHaveBeenCalledTimes(1)
+    })
+
+    it('leaves a released host down but respawns it from the new code on its next tool call', () => {
+      host.startMiniAppHost(START)
+      child().spawn()
+      host.releaseMiniAppHost('/project', 'demo')
+
+      expect(host.restartMiniAppHost('/project', 'demo', { ...START, entryPath: '/apps/demo/node-v2.js' })).toBe(false)
+      expect(fork).toHaveBeenCalledTimes(1)
+
+      host.executeMiniAppTool('/project', 'demo', 'calculate', {}).catch(() => {})
+      expect(fork).toHaveBeenCalledTimes(2)
+      expect(fork.mock.calls[1][2].env.SUPERONE_MINIAPP_ENTRY_PATH).toBe('/apps/demo/node-v2.js')
+    })
+
+    it('forwards output and failures to the views of a development app only', async () => {
+      const send = captureWindow()
+      host.startMiniAppHost({ ...START, devLogs: true })
+      child().stdout.emit('data', Buffer.from('booted\n'))
+      child().stderr.emit('data', Buffer.from('TypeError: x is undefined'))
+      child().emit('message', { type: 'activation-error', error: 'boom' })
+
+      const logs = send.mock.calls.filter(([channel]) => channel === 'miniapp:host-log').map(([, event]) => event)
+      expect(logs).toEqual([
+        { appId: 'demo', projectDir: '/project', level: 'info', text: 'booted' },
+        { appId: 'demo', projectDir: '/project', level: 'error', text: 'TypeError: x is undefined' },
+        { appId: 'demo', projectDir: '/project', level: 'error', text: 'activation failed: boom' },
+      ])
+
+      host.stopAllMiniAppHosts()
+      send.mockClear()
+      host.startMiniAppHost(START)
+      child().stderr.emit('data', Buffer.from('installed app noise'))
+      expect(send.mock.calls.filter(([channel]) => channel === 'miniapp:host-log')).toEqual([])
+    })
+  })
 })

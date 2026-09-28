@@ -13,6 +13,7 @@ import packagingMd from './guides/packaging.md?raw'
 import iconMd from './guides/icon.md?raw'
 import recipesMd from './guides/recipes.md?raw'
 import toolsMd from './guides/tools.md?raw'
+import debuggingMd from './guides/debugging.md?raw'
 import mediaOverviewMd from './guides/media/overview.md?raw'
 import mediaArkImageMd from './guides/media/ark-image.md?raw'
 import mediaArkVideoMd from './guides/media/ark-video.md?raw'
@@ -62,6 +63,7 @@ const MINIAPP_GUIDES = {
   icon: iconMd,
   recipes: recipesMd,
   tools: toolsMd,
+  debugging: debuggingMd,
 } satisfies Record<MiniappGuideTopic, string>
 
 const MEDIA_GUIDES = {
@@ -102,6 +104,7 @@ const MINIAPP_TOPIC_SUMMARIES: Record<MiniappGuideTopic, string> = {
   icon: 'mini-app logo requirements',
   recipes: 'cross-API implementation patterns',
   tools: 'MiniApp Host tools and WebView renderers',
+  debugging: 'browser_* on development views, console, reload, and tool UI previews',
 }
 
 const MEDIA_TOPIC_SUMMARIES: Record<MediaGuideTopic, string> = {

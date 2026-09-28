@@ -156,14 +156,14 @@ describe('miniapp store onDevAppReady routing', () => {
     expect(mockMiniapp.open).toHaveBeenCalledTimes(1)
     expect(mockMiniapp.open).toHaveBeenCalledWith('panel-app', '/proj', expect.any(String))
     expect(mockOpenMiniAppTab).toHaveBeenCalledTimes(1)
-    expect(mockOpenMiniAppTab).toHaveBeenCalledWith(makeInstanceKey('panel-app', 'proj-id-1'), 'panel-app', 'App panel-app')
+    expect(mockOpenMiniAppTab).toHaveBeenCalledWith(makeInstanceKey('panel-app', 'proj-id-1'), 'panel-app', 'App panel-app', undefined)
   })
 
   it('opens any signaled app in the activity panel', async () => {
     await capturedHandler!('/proj', 'second-app')
 
     expect(mockMiniapp.open).toHaveBeenCalledWith('second-app', '/proj', expect.any(String))
-    expect(mockOpenMiniAppTab).toHaveBeenCalledWith(makeInstanceKey('second-app', 'proj-id-1'), 'second-app', 'App second-app')
+    expect(mockOpenMiniAppTab).toHaveBeenCalledWith(makeInstanceKey('second-app', 'proj-id-1'), 'second-app', 'App second-app', undefined)
   })
 
   it('does nothing when the signaled appId is not in the refreshed list', async () => {
@@ -181,7 +181,7 @@ describe('miniapp store onDevAppReady routing', () => {
 
     expect(mockMiniapp.list).toHaveBeenLastCalledWith('/proj')
     expect(mockMiniapp.open).toHaveBeenCalledWith('fresh-app', '/proj', expect.any(String))
-    expect(mockOpenMiniAppTab).toHaveBeenCalledWith(makeInstanceKey('fresh-app', 'proj-id-1'), 'fresh-app', 'App fresh-app')
+    expect(mockOpenMiniAppTab).toHaveBeenCalledWith(makeInstanceKey('fresh-app', 'proj-id-1'), 'fresh-app', 'App fresh-app', undefined)
   })
 
   it('signaling one app among many opens exactly one (regression: old code opened all dev apps)', async () => {
@@ -225,7 +225,7 @@ describe('miniapp store lifecycle (persistent WebView)', () => {
     const key = makeInstanceKey('second-app', 'proj-id-1')
     expect(mockMiniapp.open).toHaveBeenCalledTimes(1)
     expect(mockMiniapp.open).toHaveBeenCalledWith('second-app', '/proj', expect.any(String))
-    expect(mockOpenMiniAppTab).toHaveBeenCalledWith(key, 'second-app', 'App second-app')
+    expect(mockOpenMiniAppTab).toHaveBeenCalledWith(key, 'second-app', 'App second-app', undefined)
 
     const open = useMiniAppStore.getState().openApps[key]
     expect(open).toBeDefined()

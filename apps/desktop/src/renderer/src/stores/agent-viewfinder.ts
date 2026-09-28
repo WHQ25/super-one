@@ -8,11 +8,11 @@
 
 import { create } from 'zustand'
 
-export type ViewfinderKind = 'device' | 'browser' | 'computer'
+export type ViewfinderKind = 'device' | 'browser' | 'computer' | 'miniapp'
 
 export interface ViewfinderTarget {
   kind: ViewfinderKind
-  /** Browser id, device id, or native window id. Null until a tool resolves it. */
+  /** Browser id, device id, native window id, or mini-app view id. Null until a tool resolves it. */
   targetId: string | null
 }
 

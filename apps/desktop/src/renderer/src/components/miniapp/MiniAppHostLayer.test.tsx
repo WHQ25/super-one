@@ -84,6 +84,40 @@ beforeEach(async () => {
 })
 
 describe('MiniAppHostLayer persistence', () => {
+  it('draws the view over its picture-in-picture slot at panel size, scaled, without remounting it', async () => {
+    const { useMiniAppPipStore } = await import('@/stores/miniapp-pip')
+    const { container } = render(<MiniAppHostLayer />)
+    const key = makeInstanceKey('app-a', 'proj-1')
+    await act(async () => {
+      await useMiniAppStore.getState().openAppInPanel(makeEntry('app-a'), '/proj')
+    })
+    act(() => {
+      useMiniAppStore.getState().updateSlot(key, 'panel', { left: 120, top: 44, width: 400, height: 800 } as DOMRectReadOnly)
+      useActivityPanelStore.getState().setShowPanel(false)
+    })
+    const host = container.querySelector(`[data-instance-key="${key}"]`) as HTMLElement
+    expect(host.style.left).toBe('-99999px')
+
+    act(() => useMiniAppPipStore.getState().updatePipSlot(key, { left: 900, top: 60, width: 200, height: 400 } as DOMRectReadOnly))
+    const content = host.firstElementChild as HTMLElement
+    expect(host.dataset.miniappPresentation).toBe('pip')
+    expect(host.style.left).toBe('900px')
+    expect(host.style.width).toBe('200px')
+    expect(host.style.pointerEvents).toBe('none')
+    expect(content.style.width).toBe('400px')
+    expect(content.style.transform).toBe('scale(0.5)')
+
+    const { useBrowserStore } = await import('@/stores/browser')
+    act(() => useBrowserStore.getState().setEmulation('miniapp:app-a@/proj', { width: 800, height: 1600 }))
+    expect(content.style.width).toBe('800px')
+    expect(content.style.transform).toBe('scale(0.25)')
+
+    act(() => useMiniAppPipStore.getState().unregisterPipSlot(key))
+    expect(host.dataset.miniappPresentation).toBe('panel')
+    expect(host.style.left).toBe('-99999px')
+    expect(viewMountCount[key]).toBe(1)
+  })
+
   it('renders a single MiniAppView per open instance', async () => {
     const { getByTestId, queryByTestId } = render(<MiniAppHostLayer />)
     const key = makeInstanceKey('app-a', 'proj-1')

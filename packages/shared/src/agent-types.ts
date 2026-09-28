@@ -4302,6 +4302,8 @@ export const AgentIpcChannels = {
   MINIAPP_GET_PRELOAD_PATH: 'miniapp:get-preload-path',
   MINIAPP_HOST_POST_MESSAGE: 'miniapp:host-post-message',
   MINIAPP_HOST_MESSAGE: 'miniapp:host-message',
+  /** main → renderer: stdout/stderr and failures of a development MiniApp Host. */
+  MINIAPP_HOST_LOG: 'miniapp:host-log',
   MINIAPP_HOST_LIST: 'miniapp:host-list',
   MINIAPP_HOST_STOP: 'miniapp:host-stop',
   MINIAPP_HOST_STATE: 'miniapp:host-state',

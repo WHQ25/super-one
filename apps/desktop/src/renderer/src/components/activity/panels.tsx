@@ -1,6 +1,7 @@
 import type { IDockviewPanelProps } from 'dockview-core'
 import { FilePreview } from '@/components/coding/FilePreview'
 import { MiniAppSlot } from '@/components/miniapp/MiniAppSlot'
+import { toolUiPreviewSlotKey } from '@/stores/miniapp-tool-preview'
 import { BrowserView } from '@/components/browser/BrowserView'
 import { TrajectoryPanel } from '@/components/trajectory/TrajectoryPanel'
 import { DeviceDockPanel } from '@/components/device/DeviceDockPanel'
@@ -12,7 +13,12 @@ function FilePreviewPanel(props: IDockviewPanelProps<{ filePath: string }>) {
 }
 
 function MiniAppPanel(props: IDockviewPanelProps<{ instanceKey: string; appId: string }>) {
-  return <MiniAppSlot instanceKey={props.params.instanceKey} mode="panel" className="h-full w-full" />
+  return <MiniAppSlot slotKey={props.params.instanceKey} mode="panel" className="h-full w-full" />
+}
+
+function ToolUiPreviewPanel(props: IDockviewPanelProps<{ previewKey: string }>) {
+  // Drawn by the mini-app host layer so it can also move into picture-in-picture.
+  return <MiniAppSlot slotKey={toolUiPreviewSlotKey(props.params.previewKey)} mode="panel" className="h-full w-full" />
 }
 
 function BrowserPanel(props: IDockviewPanelProps<{ browserId: string; url: string }>) {
@@ -34,6 +40,7 @@ function SideChatDockPanel(props: IDockviewPanelProps<{ projectPath: string; ses
 export const activityPanelComponents: Record<string, React.FunctionComponent<IDockviewPanelProps>> = {
   'file-preview': FilePreviewPanel,
   'miniapp': MiniAppPanel as React.FunctionComponent<IDockviewPanelProps>,
+  'miniapp-tool-preview': ToolUiPreviewPanel as React.FunctionComponent<IDockviewPanelProps>,
   'browser': BrowserPanel as React.FunctionComponent<IDockviewPanelProps>,
   'terminal': TerminalHostPanel as React.FunctionComponent<IDockviewPanelProps>,
   'trajectory': TrajectoryDockPanel as React.FunctionComponent<IDockviewPanelProps>,

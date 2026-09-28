@@ -18,6 +18,40 @@ export const PACK_MINI_APP_DESCRIPTION =
 export const UPDATE_SUPERONE_TYPES_DESCRIPTION =
   'Update the superone.d.ts type definitions in an existing mini-app project to the latest version. Use this when the mini-app needs access to newly added SuperOne APIs.'
 
+export const MINIAPP_DEV_PREVIEW_DESCRIPTION =
+  "Render a development mini-app tool's chat UI (intercept, result, or standalone template) from fixture input/result without running the tool. " +
+  'Returns a view id to pass as tab to browser_* tools for snapshots, clicks, screenshots, and console. ' +
+  'Intercept submit/cancel and result close are logged as info console entries instead of executing. ' +
+  'A new call replaces the app\'s previous preview. Workflow: read_manual miniapp/debugging.'
+
+export const MINIAPP_DEV_RELOAD_DESCRIPTION =
+  'Reload a development mini-app after editing it (build first if it has a build step): restarts its MiniApp Host so changed main code loads, refreshes manifest tools and templates, and reloads its open WebViews. ' +
+  'Then inspect them with browser_* tools via miniapp: view ids.'
+
+export const MINIAPP_DEV_PREVIEW_INPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    appId: { type: 'string', description: 'Development mini-app id.' },
+    tool: { type: 'string', description: 'Tool name from the manifest; it must declare a renderer.' },
+    phase: { type: 'string', enum: ['intercept', 'result', 'standalone'], description: 'UI to render. Defaults to the result UI (standalone for standalone tools).' },
+    input: { type: 'object', description: 'Fixture tool input (intercept data and standalone args).' },
+    result: { description: 'Fixture tool result for result and standalone UIs.' },
+    running: { type: 'boolean', description: 'Standalone only: render the in-progress state (no result yet).' },
+    width: { type: 'integer', minimum: 240, maximum: 1600, description: 'Max width in px, to check narrow chat columns.' },
+  },
+  required: ['appId', 'tool'],
+  additionalProperties: false,
+}
+
+export const MINIAPP_DEV_RELOAD_INPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    appId: { type: 'string', description: 'Development mini-app id.' },
+  },
+  required: ['appId'],
+  additionalProperties: false,
+}
+
 export const RENAME_SESSION_DESCRIPTION =
   'Rename the current chat session to a concise topic label shown in the sidebar. ' +
   'Always pass tags (set): 1–4 short kebab-case labels you choose so session_list/session_search can find this chat. ' +

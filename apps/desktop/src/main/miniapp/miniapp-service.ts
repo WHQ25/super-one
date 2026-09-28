@@ -454,6 +454,12 @@ export function cacheAppEntry(entry: MiniAppEntry): void {
   appPathCache.set(entry.id, { installDir: entry.installDir, assetDir: entry.distDir ?? entry.installDir })
 }
 
+/** The app resolves to a dev-registry build, i.e. it is a development mini-app. */
+export async function isActiveDevApp(appId: string): Promise<boolean> {
+  const reg = await devRegistry.lookupByAppId(appId)
+  return reg !== undefined && getAppBasePath(appId) === reg.distDir
+}
+
 export function getAppBasePath(appId: string): string {
   const cached = appPathCache.get(appId)
   if (cached) return cached.assetDir

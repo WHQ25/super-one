@@ -44,6 +44,16 @@ export type Messages = {
       terminal: string
       device: string
     }
+    toolPreview: {
+      title: string
+      empty: string
+      phase: { intercept: string; result: string; standalone: string }
+      running: string
+      width: string
+      eventsTitle: string
+      eventsHint: string
+      event: { submit: string; cancel: string; close: string }
+    }
     device: {
       title: string
       refresh: string
@@ -2012,6 +2022,11 @@ export type Messages = {
       hide: string
       focus: string
     }
+    miniAppPreview: {
+      label: string
+      hide: string
+      open: string
+    }
     pictureInPicture: {
       restore: string
       restoreFailed: string
@@ -2231,6 +2246,12 @@ export type Messages = {
       updatingMiniAppTypes: string
       updatedMiniAppTypes: string
       updateMiniAppTypes: string
+      previewingToolUi: string
+      previewedToolUi: string
+      previewToolUi: string
+      reloadingMiniApp: string
+      reloadedMiniApp: string
+      reloadMiniApp: string
       listingWidgetTemplates: string
       listedWidgetTemplates: string
       listWidgetTemplates: string
@@ -3952,6 +3973,16 @@ export const en: Messages = {
       browser: 'Browser',
       terminal: 'Terminal',
       device: 'Device',
+    },
+    toolPreview: {
+      title: 'Tool UI Preview',
+      empty: 'No tool UI preview is open. The agent renders one with miniapp_dev_preview.',
+      phase: { intercept: 'Intercept', result: 'Result', standalone: 'Standalone' },
+      running: 'Running',
+      width: '{{width}} px wide',
+      eventsTitle: 'Recorded Events',
+      eventsHint: 'Submit, cancel, and close are recorded here; the tool does not run.',
+      event: { submit: 'Submit', cancel: 'Cancel', close: 'Close' },
     },
     device: {
       title: 'Device',
@@ -6057,6 +6088,11 @@ export const en: Messages = {
       hide: 'Hide Computer Use preview',
       focus: 'Focus controlled window',
     },
+    miniAppPreview: {
+      label: 'Mini app picture in picture',
+      hide: 'Hide mini app preview',
+      open: 'Open in Activity panel',
+    },
     pictureInPicture: {
       restore: 'Restore picture in picture',
       restoreFailed: 'Failed to restore picture in picture',
@@ -6277,6 +6313,12 @@ export const en: Messages = {
       updatingMiniAppTypes: 'Updating types',
       updatedMiniAppTypes: 'Types Updated',
       updateMiniAppTypes: 'Update Types',
+      previewingToolUi: 'Rendering tool UI preview',
+      previewedToolUi: 'Tool UI Previewed',
+      previewToolUi: 'Preview Tool UI',
+      reloadingMiniApp: 'Reloading mini-app',
+      reloadedMiniApp: 'Mini-app Reloaded',
+      reloadMiniApp: 'Reload Mini-app',
       listingWidgetTemplates: 'Listing widget templates',
       listedWidgetTemplates: 'Widget Templates Listed',
       listWidgetTemplates: 'List Widget Templates',

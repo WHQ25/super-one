@@ -506,6 +506,20 @@ export function registerAppTemplates(projectDir: string, appId: string, template
   }
 }
 
+/**
+ * A development app was reloaded: sessions that already hold it see its current
+ * tools and templates without reopening it.
+ */
+export function refreshAppDefinitions(projectDir: string, appId: string, manifest: { tools?: MiniAppToolDefinition[]; templates?: Record<string, string> }): void {
+  let held = false
+  for (const entry of appToolDefs.values()) {
+    if (entry.projectDir !== projectDir || entry.appId !== appId) continue
+    entry.tools = manifest.tools ?? []
+    held = true
+  }
+  if (held) registerAppTemplates(projectDir, appId, manifest.templates)
+}
+
 export function unregisterAppTemplates(projectDir: string, appId: string): void {
   appTemplates.delete(makeProjectAppKey(projectDir, appId))
 }

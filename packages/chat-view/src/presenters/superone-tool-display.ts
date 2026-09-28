@@ -105,6 +105,20 @@ export const SUPERONE_TOOL_DESCRIPTORS: Record<string, SuperoneToolDescriptor> =
     doneKey: 'chat.toolBlock.updatedMiniAppTypes',
     summary: (params) => basename(str(params.appDir)),
   },
+  miniapp_dev_preview: {
+    icon: 'canvas',
+    streamingKey: 'chat.toolBlock.previewingToolUi',
+    actionKey: 'chat.toolBlock.previewToolUi',
+    doneKey: 'chat.toolBlock.previewedToolUi',
+    summary: (params) => [str(params.tool), str(params.phase)].filter(Boolean).join(' · '),
+  },
+  miniapp_dev_reload: {
+    icon: 'package',
+    streamingKey: 'chat.toolBlock.reloadingMiniApp',
+    actionKey: 'chat.toolBlock.reloadMiniApp',
+    doneKey: 'chat.toolBlock.reloadedMiniApp',
+    summary: (params) => str(params.appId),
+  },
   widget_list_templates: {
     icon: 'canvas',
     streamingKey: 'chat.toolBlock.listingWidgetTemplates',

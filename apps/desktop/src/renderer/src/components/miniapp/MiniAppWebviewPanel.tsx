@@ -6,6 +6,7 @@ import { handleMiniAppMessage, type MiniAppOverlayCallbacks } from '@/hooks/mini
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useMiniAppMediaStore } from '@/stores/miniapp-media'
 import { buildMiniAppUrlHost } from '@superone/shared/miniapp-url'
+import { miniAppPanelTargetId } from '@superone/shared/miniapp-automation-target'
 import { MiniAppWebview, type MiniAppWebviewHandle } from './MiniAppWebview'
 
 export interface MiniAppWebviewPanelHandle {
@@ -32,6 +33,11 @@ export const MiniAppWebviewPanel = forwardRef<MiniAppWebviewPanelHandle, MiniApp
     const initialLocaleRef = useRef(locale)
     const readyRef = useRef(false)
     const projectId = useMiniAppStore((s) => s.openApps[instanceKey]?.projectId ?? null)
+    const appName = useMiniAppStore((s) => s.openApps[instanceKey]?.entry.manifest.name ?? appId)
+    const automation = useMemo(
+      () => (projectDir ? { targetId: miniAppPanelTargetId(appId), projectDir, kind: 'panel' as const, title: appName } : undefined),
+      [appId, appName, projectDir],
+    )
     const src = useMemo(
       () => `superone-app://${buildMiniAppUrlHost(appId, projectId)}/index.html?_locale=${encodeURIComponent(initialLocaleRef.current)}`,
       [appId, projectId],
@@ -97,6 +103,7 @@ export const MiniAppWebviewPanel = forwardRef<MiniAppWebviewPanelHandle, MiniApp
           appId={appId}
           src={src}
           onMessage={handleIpcMessage}
+          automation={automation}
           style={{ position: 'absolute', inset: 0, border: 'none', width: '100%', height: '100%' }}
         />
       </div>

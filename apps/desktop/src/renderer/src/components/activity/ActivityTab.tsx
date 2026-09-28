@@ -7,12 +7,13 @@ import { cn } from '@superone/ui/lib/utils'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { useMiniAppStore } from '@/stores/miniapp'
+import { useToolUiPreviewStore } from '@/stores/miniapp-tool-preview'
 import { useBrowserStore } from '@/stores/browser'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { BrowserFavicon } from '@/components/browser/BrowserFavicon'
 import { useDeviceTabActions } from '@/components/device/device-tab-actions'
 import { deviceFamilyIcon } from '@/components/device/device-icons'
-import { closeActivityTerminalTab, closeBrowserTab, closeDeviceTab, closeTrajectoryTab, toggleMaximizedActivityGroup } from './activity-panel-api'
+import { closeActivityTerminalTab, closeBrowserTab, closeDeviceTab, closeToolUiPreviewTab, closeTrajectoryTab, toggleMaximizedActivityGroup } from './activity-panel-api'
 import { useTerminalAgentControl } from './activity-terminal'
 import { requestCloseSideChat } from '@/lib/side-chat-actions'
 
@@ -215,6 +216,27 @@ export function MiniAppTab(props: IDockviewPanelHeaderProps<{ instanceKey: strin
   )
 }
 
+export function ToolUiPreviewTab(props: IDockviewPanelHeaderProps<{ previewKey: string }>) {
+  const { t } = useTranslation()
+  const { previewKey } = props.params
+  const active = useIsActive(props.api)
+  const title = usePanelTitle(props.api)
+  const appId = useToolUiPreviewStore((s) => s.previews[previewKey]?.appId)
+  const close = () => {
+    closeToolUiPreviewTab(previewKey)
+    useToolUiPreviewStore.getState().remove(previewKey)
+  }
+  return (
+    <div className={tabChipClass(active)}>
+      <HoverCloseSlot onClose={close}>
+        {appId ? <MiniAppIcon appId={appId} className="size-3.5 shrink-0" /> : <Bug className="size-3.5 shrink-0" />}
+      </HoverCloseSlot>
+      <TabTitle>{title || t('activity.toolPreview.title')}</TabTitle>
+      <MaximizeTabAction api={props.api} active={active} />
+    </div>
+  )
+}
+
 export function BrowserTab(props: IDockviewPanelHeaderProps<{ browserId: string }>) {
   const { browserId } = props.params
   const active = useIsActive(props.api)
@@ -323,6 +345,7 @@ export function SideChatTab(props: IDockviewPanelHeaderProps) {
 export const activityTabComponents: Record<string, React.FunctionComponent<IDockviewPanelHeaderProps>> = {
   'file-preview-tab': FilePreviewTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'miniapp-tab': MiniAppTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
+  'miniapp-tool-preview-tab': ToolUiPreviewTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'browser-tab': BrowserTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'terminal-tab': TerminalTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'trajectory-tab': TrajectoryTab as React.FunctionComponent<IDockviewPanelHeaderProps>,

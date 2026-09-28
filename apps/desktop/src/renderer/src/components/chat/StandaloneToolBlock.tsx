@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useAppStore } from '@/stores/app'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { buildStandaloneToolUrl } from '@superone/shared/miniapp-types'
 import { buildMiniAppUrlHost } from '@superone/shared/miniapp-url'
+import { useMiniAppProjectScope, useMiniAppToolTarget } from '@/components/miniapp/use-miniapp-project-scope'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { MiniAppWebview, type MiniAppWebviewHandle } from '@/components/miniapp/MiniAppWebview'
+import type { MiniAppTargetRegistration } from '@/components/miniapp/miniapp-automation-targets'
 import { readThemeVars } from '@/components/miniapp/miniapp-theme'
 import { cn } from '@superone/ui/lib/utils'
 import { handleMiniAppMessage } from '@/hooks/miniapp-message-handler'
@@ -23,19 +24,22 @@ interface Props {
   result?: string
   isStreaming: boolean
   templatePath: string
+  /** Overrides the chat-instance target, e.g. for the tool UI preview. */
+  automation?: Omit<MiniAppTargetRegistration, 'appId'>
 }
 
 /** A result-only WebView; all tool computation runs in the Node MiniApp Host. */
 export function StandaloneToolBlock(props: Props) {
-  const { appId, toolUseId, toolName, appName, toolReadableName, args, result, isStreaming, templatePath } = props
-  const projectId = useAppStore((s) => s.currentProjectId)
-  const projectDir = useAppStore((s) => s.currentFolder) ?? ''
+  const { appId, toolUseId, toolName, appName, toolReadableName, args, result, isStreaming, templatePath, automation: automationOverride } = props
+  const { projectDir, projectId } = useMiniAppProjectScope()
   const isDark = useIsDark()
   const containerRef = useRef<HTMLDivElement>(null)
   const webviewRef = useRef<MiniAppWebviewHandle>(null)
   const readyRef = useRef(false)
   const [inViewport, setInViewport] = useState(true)
   const [height, setHeight] = useState(DEFAULT_HEIGHT)
+
+  const automation = useMiniAppToolTarget(appId, toolUseId, `${toolName} (standalone)`, projectDir, automationOverride)
 
   const host = buildMiniAppUrlHost(appId, projectId)
   const src = useMemo(
@@ -105,6 +109,7 @@ export function StandaloneToolBlock(props: Props) {
             appId={appId}
             src={src}
             onMessage={handleMessage}
+            automation={automation}
             className="block size-full"
             style={{ border: 'none' }}
           />

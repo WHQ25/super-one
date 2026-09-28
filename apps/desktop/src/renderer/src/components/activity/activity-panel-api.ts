@@ -2,6 +2,7 @@ import type { DockviewApi, AddPanelPositionOptions, IDockviewPanel, IDockviewGro
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useBrowserStore } from '@/stores/browser'
 import { useDeviceInstanceStore } from '@/stores/device-instances'
+import { toolUiPreviewSlotKey } from '@/stores/miniapp-tool-preview'
 import { isBlankUrl, normalizeUrl } from '@/components/browser/browser-url'
 import { normalizeFileLinkTarget } from '@/lib/file-link'
 import { LAYOUT } from '@/lib/layout-constants'
@@ -84,6 +85,11 @@ export function replayMosaicOpenedPanels() {
 
 export function setCurrentSessionIdGetter(getter: (() => string | null) | null) {
   currentSessionIdGetter = getter
+}
+
+/** The session whose layout the dock shows; null before any session claimed it. */
+export function dockSessionId(): string | null {
+  return currentSessionIdGetter?.() ?? null
 }
 
 export function setDockApi(api: DockviewApi | null) {
@@ -308,9 +314,13 @@ export function openNewFileTab(filePath: string, options?: { direction?: 'within
   })
 }
 
-export function openMiniAppTab(instanceKey: string, appId: string, label: string) {
-  ensureVisible()
-  recordMosaicOpen(`miniapp-${instanceKey}`, () => openMiniAppTab(instanceKey, appId, label))
+/**
+ * `reveal: false` is the agent's path while the Activity panel is closed: the tab is
+ * laid out in the hidden dock and presented in picture-in-picture instead.
+ */
+export function openMiniAppTab(instanceKey: string, appId: string, label: string, opts?: { reveal?: boolean }) {
+  if (opts?.reveal !== false) ensureVisible()
+  recordMosaicOpen(`miniapp-${instanceKey}`, () => openMiniAppTab(instanceKey, appId, label, opts))
   execOrDefer(() => {
     if (!dockApi) return
     const panelId = `miniapp-${instanceKey}`
@@ -329,6 +339,37 @@ export function openMiniAppTab(instanceKey: string, appId: string, label: string
       ...(position ? { position } : {}),
     })
   })
+}
+
+/** Open (or reveal) the fixture-driven tool UI preview of one development mini-app. */
+export function openToolUiPreviewTab(previewKey: string, label: string, opts?: { reveal?: boolean }) {
+  if (opts?.reveal !== false) ensureVisible()
+  const panelId = toolUiPreviewSlotKey(previewKey)
+  recordMosaicOpen(panelId, () => openToolUiPreviewTab(previewKey, label, opts))
+  execOrDefer(() => {
+    if (!dockApi) return
+    const existing = dockApi.panels.find((p) => p.id === panelId)
+    if (existing) {
+      existing.api.setTitle(label)
+      activateInMaximizedGroup(existing)
+      return
+    }
+    const position = positionInMaximizedGroup()
+    dockApi.addPanel({
+      id: panelId,
+      component: 'miniapp-tool-preview',
+      tabComponent: 'miniapp-tool-preview-tab',
+      title: label,
+      params: { previewKey },
+      ...(position ? { position } : {}),
+    })
+  })
+}
+
+export function closeToolUiPreviewTab(previewKey: string) {
+  const panelId = toolUiPreviewSlotKey(previewKey)
+  removeMosaicOpen(panelId)
+  dockApi?.panels.find((p) => p.id === panelId)?.api.close()
 }
 
 /**

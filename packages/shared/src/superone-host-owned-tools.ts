@@ -141,6 +141,8 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'miniapp_dev_register',
   'miniapp_dev_pack',
   'miniapp_dev_update_types',
+  'miniapp_dev_preview',
+  'miniapp_dev_reload',
   'session_rename',
   'session_tag',
   'session_tag_list',

@@ -5,6 +5,10 @@ import {
   REGISTER_DEV_MINIAPP_DESCRIPTION,
   PACK_MINI_APP_DESCRIPTION,
   UPDATE_SUPERONE_TYPES_DESCRIPTION,
+  MINIAPP_DEV_PREVIEW_DESCRIPTION,
+  MINIAPP_DEV_PREVIEW_INPUT_SCHEMA,
+  MINIAPP_DEV_RELOAD_DESCRIPTION,
+  MINIAPP_DEV_RELOAD_INPUT_SCHEMA,
   CONFIG_READ_DESCRIPTION,
   CONFIG_APPLY_DESCRIPTION
 } from '../superone-tool-descriptions'
@@ -276,5 +280,15 @@ export const HOST_ACTION_SETUP_DESCRIPTORS: HostActionSuperoneToolDescriptor[] =
       ],
       "additionalProperties": false
     }
+  },
+  {
+    "name": "miniapp_dev_preview",
+    "description": MINIAPP_DEV_PREVIEW_DESCRIPTION,
+    "inputSchema": MINIAPP_DEV_PREVIEW_INPUT_SCHEMA
+  },
+  {
+    "name": "miniapp_dev_reload",
+    "description": MINIAPP_DEV_RELOAD_DESCRIPTION,
+    "inputSchema": MINIAPP_DEV_RELOAD_INPUT_SCHEMA
   }
 ]

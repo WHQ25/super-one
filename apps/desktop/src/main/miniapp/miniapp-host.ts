@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto'
 import { join } from 'path'
 import { app, utilityProcess, type BrowserWindow, type UtilityProcess } from 'electron'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
-import type { MiniAppHostInfo } from '@superone/shared/miniapp-types'
+import type { MiniAppHostInfo, MiniAppHostLogEvent } from '@superone/shared/miniapp-types'
 import log from '../logger'
 import { closeMiniAppStatePaths, handleMiniAppStateRequest, type MiniAppStateOp, type MiniAppStateScope, type MiniAppStoragePaths } from './miniapp-state'
 
@@ -22,6 +22,8 @@ export interface MiniAppHostStartArgs extends MiniAppStoragePaths {
    * host the platform reports — no self-reported status involved.
    */
   background: boolean
+  /** `manifest.isDev`: forward output and failures to the app's views for debugging. */
+  devLogs?: boolean
 }
 
 /** Runs a host action in the renderer, which owns the UI and its consent prompts. */
@@ -94,6 +96,21 @@ function emitState(): void {
   win.webContents.send(AgentIpcChannels.MINIAPP_HOST_STATE, { hosts: listMiniAppHosts() })
 }
 
+/** A development Host's output joins its views' consoles, where browser tools read it. */
+function emitDevLog(instance: MiniAppHostStartArgs, level: MiniAppHostLogEvent['level'], text: string, reset?: true): void {
+  if (!instance.devLogs || !text) return
+  const win = getMainWindow?.()
+  if (!win || win.isDestroyed()) return
+  const event: MiniAppHostLogEvent = {
+    appId: instance.appId,
+    projectDir: instance.projectDir,
+    level,
+    text: text.slice(0, 4000),
+    ...(reset ? { reset } : {}),
+  }
+  win.webContents.send(AgentIpcChannels.MINIAPP_HOST_LOG, event)
+}
+
 function handleMessage(instance: MiniAppHostInstance, raw: unknown): void {
   const message = raw as Record<string, unknown>
   switch (message?.type) {
@@ -108,6 +125,7 @@ function handleMessage(instance: MiniAppHostInstance, raw: unknown): void {
       instance.rejectReady(new Error(`Mini-app activation failed: ${String(message.error ?? 'unknown error')}`))
       rejectPending(instance, `Mini-app activation failed: ${String(message.error ?? 'unknown error')}`)
       log.error('[miniapp-host] activation failed %s: %s', key(instance.projectDir, instance.appId), message.error)
+      emitDevLog(instance, 'error', `activation failed: ${String(message.error ?? 'unknown error')}`)
       return
     case 'tool-result': {
       const callId = String(message.callId ?? '')
@@ -115,8 +133,12 @@ function handleMessage(instance: MiniAppHostInstance, raw: unknown): void {
       if (!pending) return
       clearTimeout(pending.timer)
       instance.pending.delete(callId)
-      if (message.error) pending.reject(new Error(String(message.error)))
-      else pending.resolve(message.result)
+      if (message.error) {
+        emitDevLog(instance, 'error', `tool failed: ${String(message.error)}`)
+        pending.reject(new Error(String(message.error)))
+      } else {
+        pending.resolve(message.result)
+      }
       return
     }
     case 'webview-message': {
@@ -222,14 +244,23 @@ export function startMiniAppHost(args: MiniAppHostStartArgs): MiniAppHostInfo {
     instance.alive = false
     if (instances.get(instanceKey) !== instance) return
     const error = new Error(`Mini-app '${args.appId}' exited with code ${code}`)
+    emitDevLog(instance, 'error', error.message)
     if (!instance.ready) instance.rejectReady(error)
     rejectPending(instance, error.message)
     instances.delete(instanceKey)
     closeMiniAppStatePaths(instance)
     emitState()
   })
-  child.stdout?.on('data', (chunk) => log.info('[miniapp:%s] %s', args.appId, String(chunk).trimEnd()))
-  child.stderr?.on('data', (chunk) => log.error('[miniapp:%s] %s', args.appId, String(chunk).trimEnd()))
+  child.stdout?.on('data', (chunk) => {
+    const text = String(chunk).trimEnd()
+    log.info('[miniapp:%s] %s', args.appId, text)
+    emitDevLog(args, 'info', text)
+  })
+  child.stderr?.on('data', (chunk) => {
+    const text = String(chunk).trimEnd()
+    log.error('[miniapp:%s] %s', args.appId, text)
+    emitDevLog(args, 'error', text)
+  })
   emitState()
   return snapshot(instance)
 }
@@ -375,6 +406,24 @@ export function releaseMiniAppHost(projectDir: string, appId: string): void {
   const instance = instances.get(key(projectDir, appId))
   if (!instance || instance.background) return
   stopMiniAppHost(projectDir, appId, { respawnable: true })
+}
+
+/**
+ * Replace a running development Host with a fresh process so edited `main` code
+ * loads. A Host that is down stays down — a released UI-bound Host has no view
+ * to serve — but a respawnable one will come back from the new code.
+ */
+export function restartMiniAppHost(projectDir: string, appId: string, args: MiniAppHostStartArgs): boolean {
+  const instanceKey = key(projectDir, appId)
+  if (!instances.get(instanceKey)?.alive) {
+    if (restartArgs.has(instanceKey)) restartArgs.set(instanceKey, args)
+    return false
+  }
+  stopMiniAppHost(projectDir, appId, { respawnable: true })
+  // Output of the replaced process would read as the new code's failures.
+  emitDevLog(args, 'info', 'restarted', true)
+  startMiniAppHost(args)
+  return true
 }
 
 export function stopMiniAppHostsByAppId(appId: string): void {

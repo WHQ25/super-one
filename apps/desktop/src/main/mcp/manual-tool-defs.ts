@@ -25,6 +25,7 @@ export const MINIAPP_GUIDE_TOPICS = [
   'icon',
   'recipes',
   'tools',
+  'debugging',
 ] as const
 
 export const MANUAL_DOMAINS = ['product', 'miniapp', 'media', 'widget'] as const

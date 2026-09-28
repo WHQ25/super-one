@@ -8,7 +8,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
       "type": "object",
       "properties": {
         "tab": {
-          "description": "Browser view id. Omit to target the focused browser view (errors if multiple are open).",
+          "description": "Browser view id, or a development mini-app view id: miniapp:<appId> for its panel, or one returned by miniapp_dev_preview or browser_tabs. Omit to target the focused browser view (errors if multiple are open).",
           "type": "string"
         }
       },
@@ -22,7 +22,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
       "type": "object",
       "properties": {
         "tab": {
-          "description": "Browser view id. Omit to target the focused browser view (errors if multiple are open).",
+          "description": "Browser view id, or a development mini-app view id: miniapp:<appId> for its panel, or one returned by miniapp_dev_preview or browser_tabs. Omit to target the focused browser view (errors if multiple are open).",
           "type": "string"
         },
         "description": {
@@ -56,7 +56,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
       "type": "object",
       "properties": {
         "tab": {
-          "description": "Browser view id. Omit to target the focused browser view (errors if multiple are open).",
+          "description": "Browser view id, or a development mini-app view id: miniapp:<appId> for its panel, or one returned by miniapp_dev_preview or browser_tabs. Omit to target the focused browser view (errors if multiple are open).",
           "type": "string"
         },
         "description": {
@@ -151,7 +151,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
       "type": "object",
       "properties": {
         "tab": {
-          "description": "Browser view id. Omit to target the focused browser view (errors if multiple are open).",
+          "description": "Browser view id, or a development mini-app view id: miniapp:<appId> for its panel, or one returned by miniapp_dev_preview or browser_tabs. Omit to target the focused browser view (errors if multiple are open).",
           "type": "string"
         },
         "description": {
@@ -224,7 +224,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
       "type": "object",
       "properties": {
         "tab": {
-          "description": "Browser view id. Omit to target the focused browser view (errors if multiple are open).",
+          "description": "Browser view id, or a development mini-app view id: miniapp:<appId> for its panel, or one returned by miniapp_dev_preview or browser_tabs. Omit to target the focused browser view (errors if multiple are open).",
           "type": "string"
         },
         "description": {
@@ -264,7 +264,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
       "type": "object",
       "properties": {
         "tab": {
-          "description": "Browser view id. Omit to target the focused browser view (errors if multiple are open).",
+          "description": "Browser view id, or a development mini-app view id: miniapp:<appId> for its panel, or one returned by miniapp_dev_preview or browser_tabs. Omit to target the focused browser view (errors if multiple are open).",
           "type": "string"
         },
         "description": {
@@ -355,7 +355,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
       "type": "object",
       "properties": {
         "tab": {
-          "description": "Browser view id. Omit to target the focused browser view (errors if multiple are open).",
+          "description": "Browser view id, or a development mini-app view id: miniapp:<appId> for its panel, or one returned by miniapp_dev_preview or browser_tabs. Omit to target the focused browser view (errors if multiple are open).",
           "type": "string"
         },
         "description": {
@@ -546,7 +546,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
       "type": "object",
       "properties": {
         "tab": {
-          "description": "Browser view id. Omit to target the focused browser view (errors if multiple are open).",
+          "description": "Browser view id, or a development mini-app view id: miniapp:<appId> for its panel, or one returned by miniapp_dev_preview or browser_tabs. Omit to target the focused browser view (errors if multiple are open).",
           "type": "string"
         },
         "description": {

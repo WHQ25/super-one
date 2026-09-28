@@ -18,6 +18,18 @@ import { closeBrowserTab, openBrowserTab } from '@/components/activity/activity-
 import { useAgentViewfinderStore } from '@/stores/agent-viewfinder'
 import { captureBrowserScreenshot } from './browser-screenshot'
 import { startBrowserRecording, stopBrowserRecording } from './browser-recording'
+import { isMiniAppTargetId } from '@superone/shared/miniapp-automation-target'
+import type { MiniAppToolPreviewRequest } from '@superone/shared/miniapp-types'
+import {
+  listMiniAppTargets,
+  miniAppTargetWebContentsId,
+  miniAppConsoleKeys,
+  reloadMiniAppTargets,
+  reloadMiniAppView,
+  resolveMiniAppTarget,
+  subscribeMiniAppHostLogs,
+} from '@/components/miniapp/miniapp-automation-targets'
+import { showToolUiPreview } from '@/components/miniapp/miniapp-tool-preview-actions'
 
 const BLANK_PAGE_HAS_CUSTOM_CONTENT_SCRIPT = `(() => {
   if (location.href !== 'about:blank') return false;
@@ -70,8 +82,12 @@ function closeOwnedTab(sessionId: string, id: string): void {
   useAgentViewfinderStore.getState().clear(sessionId, { kind: 'browser', targetId: id })
 }
 
+function assertNotMiniAppTarget(tab: string | undefined): void {
+  if (isMiniAppTargetId(tab)) throw new Error(`${tab} is a mini-app view; it cannot be opened or closed with browser tools.`)
+}
+
 function resolveBrowserId(tab: string | undefined, sessionId: string): string {
-  const state = useBrowserStore.getState()
+  assertNotMiniAppTarget(tab)
   const owned = ownedTabIds(sessionId)
   if (tab) {
     if (!owned.includes(tab)) throw new Error(`Browser tab not found in this session: ${tab}`)
@@ -622,8 +638,16 @@ async function waitForCondition(
 
 export async function runBrowserOp(sessionId: string, op: string, rawInput: unknown, signal?: AbortSignal): Promise<unknown> {
   const input = (rawInput ?? {}) as BaseInput
+  if (op === 'miniappPreview') {
+    return showToolUiPreview(sessionId, rawInput as MiniAppToolPreviewRequest, signal)
+  }
+  if (op === 'miniappReload') {
+    const appId = String((rawInput as { appId?: unknown } | null)?.appId ?? '')
+    return reloadMiniAppTargets(appId, sessionId, signal)
+  }
   if (op === 'open') {
     const url = input.url ?? 'about:blank'
+    assertNotMiniAppTarget(input.tab)
     const targetId = input.tab ?? `browser-${crypto.randomUUID()}`
     openBrowserTab(url, targetId, sessionId, { reveal: false })
     useAgentViewfinderStore.getState().activate(sessionId, 'browser', targetId)
@@ -685,13 +709,22 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
   }
   if (op === 'tabs') {
     const state = useBrowserStore.getState()
-    const tabs = ownedTabIds(sessionId).map((id) => ({
-      tab: id,
-      url: state.tabs[id].url,
-      title: state.tabs[id].title,
-      loading: state.tabs[id].loading,
-    }))
+    const tabs = [
+      ...ownedTabIds(sessionId).map((id) => ({
+        tab: id,
+        url: state.tabs[id].url,
+        title: state.tabs[id].title,
+        loading: state.tabs[id].loading,
+      })),
+      ...listMiniAppTargets(sessionId),
+    ]
     return { tabs, count: tabs.length }
+  }
+  if (isMiniAppTargetId(input.tab)) {
+    // Driver bookkeeping before a CDP action: the action's own op reveals the view.
+    if (op === 'resolveWebContentsId') return { webContentsId: await miniAppTargetWebContentsId(input.tab, sessionId, signal) }
+    const id = await resolveMiniAppTarget(input.tab, sessionId, signal)
+    return runViewOp(id, op, input, signal, { targetId: input.tab, sessionId })
   }
   const id = resolveBrowserId(input.tab, sessionId)
   useAgentViewfinderStore.getState().activate(sessionId, 'browser', id)
@@ -699,9 +732,30 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
   store.beginAutomation(id)
   if (op !== 'navigate') store.markAutomationPreviewReady(id)
   try {
-    switch (op) {
-    case 'recordStart':
-      return startBrowserRecording(id, signal)
+    return await runViewOp(id, op, input, signal, null)
+  } finally {
+    store.endAutomation(id)
+  }
+}
+
+/** A development mini-app WebView: no browser tab state, and its Host logs join its console. */
+interface MiniAppView {
+  targetId: string
+  sessionId: string
+}
+
+function unsupportedForMiniApp(op: string): never {
+  throw new Error(`browser ${op} is not available for mini-app views`)
+}
+
+/** One op against a resolved, registered WebView — a browser tab or a mini-app view. */
+async function runViewOp(id: string, op: string, input: BaseInput, signal: AbortSignal | undefined, miniApp: MiniAppView | null): Promise<unknown> {
+  switch (op) {
+    case 'recordStart': {
+      const started = await startBrowserRecording(id, signal)
+      // The follow-up actions address the view by the id the agent used, not the registry key.
+      return miniApp ? { ...started, tab: miniApp.targetId } : started
+    }
     case 'recordStop': {
       if (typeof input.recordingId !== 'string') throw new Error('recordStop requires recordingId')
       return stopBrowserRecording(input.recordingId, id, signal)
@@ -730,7 +784,7 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
       const page = needsPage
         ? ((await browserExecJs(id, snapshotScript({ include, filter: input.filter, max: input.max, depth: input.depth, treeMax: input.treeMax, textMaxChars: input.textMaxChars }))) as Record<string, unknown>)
         : {}
-      if (include.includes('console')) page.console = readBrowserConsole(id, input.console ?? {})
+      if (include.includes('console')) page.console = readBrowserConsole(miniApp ? miniAppConsoleKeys(id) : id, input.console ?? {})
       return page
     }
     case 'query':
@@ -746,6 +800,11 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
     case 'screenshot':
       return captureBrowserScreenshot(id, input.selector, signal)
     case 'navigate': {
+      if (miniApp) {
+        if (input.action !== 'reload') unsupportedForMiniApp('navigate (only action "reload")')
+        await reloadMiniAppView(id, signal)
+        return { ok: true, action: 'reload', tab: miniApp.targetId }
+      }
       if (input.action) {
         if (input.action === 'back') browserGoBack(id)
         else if (input.action === 'forward') browserGoForward(id)
@@ -754,7 +813,7 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
         browserNavigate(id, resolveNavigateUrl(input as Parameters<typeof resolveNavigateUrl>[0]))
       }
       if ((input.readiness ?? 'load') !== 'none') await waitForLoadStop(id)
-      store.markAutomationPreviewReady(id)
+      useBrowserStore.getState().markAutomationPreviewReady(id)
       const tab = useBrowserStore.getState().tabs[id]
       return { ok: true, action: input.action ?? 'navigate', url: tab?.url ?? '', title: tab?.title ?? '', loading: tab?.loading ?? false }
     }
@@ -781,7 +840,7 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
     case 'evaluate': {
       const expr = String(input.expression ?? '')
       const value = await browserExecJs(id, `(async () => { return (${expr}); })()`)
-      if (isBlankUrl(useBrowserStore.getState().tabs[id]?.url ?? '')) {
+      if (!miniApp && isBlankUrl(useBrowserStore.getState().tabs[id]?.url ?? '')) {
         try {
           const hasCustomBlankContent = await browserExecJs(id, BLANK_PAGE_HAS_CUSTOM_CONTENT_SCRIPT) === true
           useBrowserStore.getState().patch(id, { hasCustomBlankContent })
@@ -794,11 +853,8 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
       if (json.length > 5_000_000) throw new Error('Evaluate result exceeds 5MB; narrow the expression')
       return { value: value ?? null }
     }
-      default:
-        throw new Error(`Unknown browser automation op: ${op}`)
-    }
-  } finally {
-    store.endAutomation(id)
+    default:
+      throw new Error(`Unknown browser automation op: ${op}`)
   }
 }
 
@@ -811,6 +867,10 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
 const inFlightCalls = new Map<string, AbortController>()
 
 export function useBrowserAutomationHost(): void {
+  useEffect(() => {
+    if (!window.miniapp) return
+    return subscribeMiniAppHostLogs()
+  }, [])
   useEffect(() => {
     if (!window.browserHost) return
     return window.browserHost.onAutomationCall(async ({ callId, sessionId, op, input }) => {

@@ -23,14 +23,16 @@ import { packagedUserDataPath, resolveAndMigrateUserData } from './user-data-pat
 import { variant, variantId, variantDownloadUrl } from './variant'
 import { startMediaServer, getMediaServerPort } from './media-server'
 import { getMediaProviderStatuses } from './media-gen/settings-service'
-import { getProjectAppsDir, getAppBasePath, cacheAppEntry, generateCSP, readManifest, validatePath, discoverApps, discoverProjectApps, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl, listDevRegistryView, registerDevMiniApp, unregisterDevMiniApp, installDevPointer, removeDevPointer, setDevPointerEnabled } from './miniapp/miniapp-service'
+import { getProjectAppsDir, getAppBasePath, cacheAppEntry, generateCSP, discoverApps, discoverProjectApps, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl, listDevRegistryView, registerDevMiniApp, unregisterDevMiniApp, installDevPointer, removeDevPointer, setDevPointerEnabled } from './miniapp/miniapp-service'
 import * as devRegistry from './miniapp/dev-registry'
 import { registerMiniAppProtocolHandlers } from './miniapp/miniapp-protocol'
 import { attachMiniAppWebviewGuards } from './miniapp/miniapp-webview-guard'
 import { initMiniAppHostActionBridge, runMiniAppHostAction, settleMiniAppHostAction } from './miniapp/miniapp-host-action-bridge'
 import { isPathExposableByApp } from './miniapp/miniapp-path-exposure'
-import { executeMiniAppTool, hasActiveMiniAppHosts, initMiniAppHost, listMiniAppHosts, notifyMiniAppContextConsumed, postMiniAppWebviewMessage, releaseMiniAppHost, setMiniAppHostActionRunner, startMiniAppHost, stopAllMiniAppHosts, stopMiniAppHost, stopMiniAppHostsByAppId } from './miniapp/miniapp-host'
-import { closeAllMiniAppState, resolveMiniAppStoragePaths } from './miniapp/miniapp-state'
+import { executeMiniAppTool, hasActiveMiniAppHosts, initMiniAppHost, listMiniAppHosts, notifyMiniAppContextConsumed, postMiniAppWebviewMessage, releaseMiniAppHost, restartMiniAppHost, setMiniAppHostActionRunner, startMiniAppHost, stopAllMiniAppHosts, stopMiniAppHost, stopMiniAppHostsByAppId } from './miniapp/miniapp-host'
+import { setMiniAppHostReloader } from './mcp/miniapp-dev-debug-tools'
+import { closeAllMiniAppState } from './miniapp/miniapp-state'
+import { prepareMiniAppHostLaunch, type MiniAppHostLaunch } from './miniapp/miniapp-host-launch'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
 import { initBrowserAutomation, resolveBrowserAutomation, rejectBrowserAutomation } from './browser/browser-automation-bridge'
@@ -39,7 +41,7 @@ import { registerBrowserPopupRedirect } from './browser-popup-redirect'
 import { fetchBrowserBytes, registerBrowserDownloadCapture } from './browser/browser-downloads'
 import { registerBrowserWebAuthn } from './browser/browser-webauthn'
 import { setBrowserDownloadTaskHost } from './browser/browser-download-tasks'
-import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, loadPreapprovedTools, updatePreapprovedTools, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, setAppSettingsApplier, setTerminalToolDeps, isAppStillAuthorizedInProject, addToolsChangedListener, setAppToolExecutor } from './mcp/superone-mcp-server'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, loadPreapprovedTools, updatePreapprovedTools, refreshAppDefinitions, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, setAppSettingsApplier, setTerminalToolDeps, isAppStillAuthorizedInProject, addToolsChangedListener, setAppToolExecutor } from './mcp/superone-mcp-server'
 import { MobileReceiveService, type MobileReceiveTarget } from './remote/mobile-receive-service'
 import { startSuperoneMcpStdioBridge, stopSuperoneMcpStdioBridge } from './mcp/superone-mcp-stdio-ipc'
 import {
@@ -1185,6 +1187,11 @@ function createWindow(): void {
   initMiniAppHostActionBridge(() => mainWindow)
   setMiniAppHostActionRunner(runMiniAppHostAction)
   setAppToolExecutor(executeMiniAppTool)
+  setMiniAppHostReloader(async (projectDir, appId) => {
+    const { manifest, args } = await prepareMiniAppHostLaunch(appId, projectDir)
+    refreshAppDefinitions(projectDir, appId, manifest)
+    return restartMiniAppHost(projectDir, appId, args)
+  })
   agentService.setBroadcastFn((event) => publishAgentEvent(event))
   agentService.setSessionManager(sessionManager)
   automationService.setMainWindow(mainWindow)
@@ -5495,15 +5502,8 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_OPEN, async (_e, appId: string, projectDir: string, sessionId: string) => {
-    const basePath = getAppBasePath(appId)
-    const manifest = await readManifest(basePath)
-    if (!manifest) throw new Error(`App not found: ${appId}`)
-    const pluginEntry = validatePath(basePath, manifest.main)
-    if (!pluginEntry) throw new Error(`Invalid plugin entry: ${manifest.main}`)
-    const storagePaths = await resolveMiniAppStoragePaths(projectDir, appId)
-    // The host is long-lived and copies process.env when it forks.
-    await ensureShellPath()
-    startMiniAppHost({ appId, projectDir, name: manifest.name, appPath: basePath, entryPath: pluginEntry, background: manifest.background === true, ...storagePaths })
+    const { manifest, basePath, args } = await prepareMiniAppHostLaunch(appId, projectDir)
+    startMiniAppHost(args)
     const projectAppKey = `${projectDir}::${appId}`
     let sessions = miniAppSessionRefs.get(projectAppKey)
     if (!sessions) {
@@ -5529,20 +5529,15 @@ function registerIpcHandlers(): void {
     }
     let registeredAny = false
     for (const appId of appIds) {
-      const basePath = getAppBasePath(appId)
-      const manifest = await readManifest(basePath)
-      if (!manifest) {
-        log.warn('[MINIAPP_AUTHORIZE] no manifest for appId=%s basePath=%s', appId, basePath)
+      let launch: MiniAppHostLaunch
+      try {
+        launch = await prepareMiniAppHostLaunch(appId, projectDir)
+      } catch (error) {
+        log.warn('[MINIAPP_AUTHORIZE] cannot start appId=%s: %s', appId, error instanceof Error ? error.message : String(error))
         continue
       }
-      const pluginEntry = validatePath(basePath, manifest.main)
-      if (!pluginEntry) {
-        log.warn('[MINIAPP_AUTHORIZE] invalid plugin entry for appId=%s main=%s', appId, manifest.main)
-        continue
-      }
-      const storagePaths = await resolveMiniAppStoragePaths(projectDir, appId)
-      await ensureShellPath()
-      startMiniAppHost({ appId, projectDir, name: manifest.name, appPath: basePath, entryPath: pluginEntry, background: manifest.background === true, ...storagePaths })
+      const { manifest, basePath, args } = launch
+      startMiniAppHost(args)
       registerAppTemplates(projectDir, appId, manifest.templates)
       registerAppTools(sessionId, projectDir, appId, manifest.tools ?? [])
       loadPreapprovedTools(appId, basePath)

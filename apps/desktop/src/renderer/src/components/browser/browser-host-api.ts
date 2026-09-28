@@ -53,8 +53,11 @@ function buildGrepMatcher(pattern: string, regex: boolean, ignoreCase: boolean):
   return (text) => (ignoreCase ? text.toLowerCase() : text).includes(needle)
 }
 
-export function readBrowserConsole(id: string, query: ConsoleQuery = {}): BrowserConsoleEntry[] {
-  const buf = consoleBuffers.get(id) ?? []
+/** Several ids merge their buffers in time order (a mini-app view plus its Host). */
+export function readBrowserConsole(id: string | readonly string[], query: ConsoleQuery = {}): BrowserConsoleEntry[] {
+  const buf = typeof id === 'string'
+    ? consoleBuffers.get(id) ?? []
+    : id.flatMap((each) => consoleBuffers.get(each) ?? []).sort((a, b) => a.timestamp.localeCompare(b.timestamp))
   const levels = new Set(query.level?.length ? query.level : DEFAULT_CONSOLE_LEVELS)
   let list = buf.filter((e) => levels.has(e.level))
   if (query.grep) {

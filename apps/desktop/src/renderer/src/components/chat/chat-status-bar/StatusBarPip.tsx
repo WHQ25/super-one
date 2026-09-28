@@ -8,11 +8,13 @@ import { useBrowserStore } from '@/stores/browser'
 import { useComputerViewfinderStore } from '@/stores/computer-viewfinder'
 import { useDeviceInstanceStore } from '@/stores/device-instances'
 import { useDevicePipStore } from '@/stores/device-pip'
+import { useMiniAppPipStore } from '@/stores/miniapp-pip'
 
 export type HiddenPipTarget =
   | { kind: 'browser'; sessionId: string; browserId: string }
   | { kind: 'computer'; sessionId: string; windowId: number }
   | { kind: 'device'; sessionId: string; instanceId: string; deviceId: string }
+  | { kind: 'miniapp'; sessionId: string; targetId: string }
 
 export function useHiddenPipTarget(sessionId: string | null): HiddenPipTarget | null {
   const activeTarget = useAgentViewfinderStore((state) => selectViewfinderTarget(state, sessionId))
@@ -32,6 +34,7 @@ export function useHiddenPipTarget(sessionId: string | null): HiddenPipTarget | 
   const hiddenDeviceOwner = useDeviceInstanceStore((state) => (
     hiddenDeviceInstanceId ? state.byId[hiddenDeviceInstanceId]?.sessionId ?? null : null
   ))
+  const hiddenMiniApp = useMiniAppPipStore((state) => state.hidden)
 
   if (!sessionId || !activeTarget) return null
   if (activeTarget.kind === 'computer'
@@ -44,6 +47,11 @@ export function useHiddenPipTarget(sessionId: string | null): HiddenPipTarget | 
     && hiddenBrowserOwner === sessionId
     && (activeTarget.targetId == null || activeTarget.targetId === hiddenBrowserId)) {
     return { kind: 'browser', sessionId, browserId: hiddenBrowserId }
+  }
+  if (activeTarget.kind === 'miniapp'
+    && hiddenMiniApp?.sessionId === sessionId
+    && activeTarget.targetId === hiddenMiniApp.targetId) {
+    return { kind: 'miniapp', sessionId, targetId: hiddenMiniApp.targetId }
   }
   if (activeTarget.kind === 'device'
     && hiddenDeviceInstanceId
@@ -77,6 +85,9 @@ export function StatusBarPip({ target }: { target: HiddenPipTarget }) {
           'computer',
           String(target.windowId),
         )
+      } else if (target.kind === 'miniapp') {
+        useMiniAppPipStore.getState().restore()
+        useAgentViewfinderStore.getState().activate(target.sessionId, 'miniapp', target.targetId)
       } else if (target.kind === 'browser') {
         useBrowserStore.getState().restorePreview(target.browserId)
         useAgentViewfinderStore.getState().activate(target.sessionId, 'browser', target.browserId)

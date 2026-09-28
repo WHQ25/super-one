@@ -7,6 +7,28 @@ function isBrowserWebview(wc: Electron.WebContents): boolean {
   return wc.getType() === 'webview' && wc.session === session.fromPartition(BROWSER_PARTITION)
 }
 
+// Chromium's classic (space-taking) page scrollbar ignores the app theme — a light
+// track on a dark page. Match the app's thin neutral thumb instead. User origin so
+// any page that styles or hides its own scrollbars (author origin) still wins.
+const BROWSER_SCROLLBAR_CSS = `
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: oklch(0.5 0 0 / 0.35) padding-box; border: 2px solid transparent; border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background-color: oklch(0.5 0 0 / 0.55); }
+`
+
+// Styled scrollbars always reserve a gutter, so leave native overlay scrollbars
+// (macOS trackpad mode: no gutter, no track, auto-hide) alone. A non-auto
+// `scrollbar-width` measures the native bar even when the page styles ::-webkit-scrollbar.
+const CLASSIC_SCROLLBAR_PROBE = `(() => {
+  const el = document.createElement('div')
+  el.style.cssText = 'position:fixed;top:-100px;width:50px;height:50px;overflow:scroll;scrollbar-width:thin;visibility:hidden'
+  document.documentElement.appendChild(el)
+  const classic = el.offsetWidth > el.clientWidth
+  el.remove()
+  return classic
+})()`
+
 const allowedCertHosts = new Set<string>()
 
 function certHost(url: string): string | null {
@@ -31,6 +53,13 @@ export function registerBrowserPopupRedirect(): void {
 
   app.on('web-contents-created', (_event, contents) => {
     if (!isBrowserWebview(contents)) return
+
+    // Inserted sheets die with their document, so re-check and re-apply per navigation.
+    contents.on('dom-ready', () => {
+      void contents.executeJavaScript(CLASSIC_SCROLLBAR_PROBE)
+        .then((classic) => classic && contents.insertCSS(BROWSER_SCROLLBAR_CSS, { cssOrigin: 'user' }))
+        .catch(() => {})
+    })
 
     contents.on('certificate-error', (event, url, error, _certificate, callback) => {
       const host = certHost(url)

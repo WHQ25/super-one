@@ -2510,6 +2510,9 @@ const miniappAPI = {
   hostList: () =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_HOST_LIST),
 
+  devServer: (appId: string): Promise<string | null> =>
+    ipcRenderer.invoke(AgentIpcChannels.MINIAPP_DEV_SERVER, appId),
+
   hostStop: (projectDir: string, appId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MINIAPP_HOST_STOP, projectDir, appId),
 

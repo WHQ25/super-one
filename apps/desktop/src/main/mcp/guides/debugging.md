@@ -22,6 +22,10 @@ Snapshots, queries, actions (including `recording: true`), `wait_for`, `evaluate
 
 ## Edit loop
 
+For UI work on a React template app, start `bun run dev` in a terminal tab and leave it running; add `--port <n>` if the default port is taken. While it runs, SuperOne serves the app panel and every tool UI of the app from the dev server, so saved front-end edits appear in open views without a reload, and the view's tab shows a lightning badge. When the server stops, the views load the last build again. Any dev server works the same way if it writes `.superone-dev-server.json` containing `{ "url": "http://localhost:<port>" }` to the registered source directory while it listens and connects its HMR client to `ws://localhost:<port>`.
+
+`main` code and `manifest.json` changes always need a build and a reload:
+
 1. Edit the source. Build it if the app has a build step (the React template needs `bun run build`).
 2. Call `miniapp_dev_reload({ appId })`. It restarts the MiniApp Host so changed `main` code loads, refreshes manifest tools and templates, and reloads open views. `hostRestarted: false` means no Host was running; it starts from the new code on next use. `notReloaded` lists views that are not on screen; they load the new code when shown.
 3. Check the result with `browser_snapshot`, `browser_act`, or a screenshot, and read the console.

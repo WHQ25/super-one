@@ -1,3 +1,5 @@
+import { readFileSync } from 'fs'
+import { fileURLToPath } from 'url'
 import { describe, it, expect } from 'vitest'
 import { generateVanillaFiles, generateReactFiles, generateSuperoneDts, generateHostDts, slugify } from './miniapp-templates'
 import type { TemplateOptions } from './miniapp-templates'
@@ -87,7 +89,33 @@ describe('generateReactFiles', () => {
     const viteConfig = files.find((f) => f.path === 'vite.config.ts')!
     expect(viteConfig.content).toContain("import react from '@vitejs/plugin-react'")
     expect(viteConfig.content).toContain("import tailwindcss from '@tailwindcss/vite'")
-    expect(viteConfig.content).toContain('plugins: [react(), tailwindcss()]')
+    expect(viteConfig.content).toContain('plugins: [react(), tailwindcss(), superoneDevServer()]')
+  })
+
+  it('vite.config builds every manifest template page', () => {
+    const viteConfig = generateReactFiles(makeOpts()).find((f) => f.path === 'vite.config.ts')!
+    expect(viteConfig.content).toContain("readFileSync(here('public/manifest.json')")
+    expect(viteConfig.content).toContain("const pages = ['index.html', ...Object.values(manifest.templates ?? {})]")
+  })
+
+  it('vite.config reports the dev server so SuperOne can hot-reload from it', () => {
+    const viteConfig = generateReactFiles(makeOpts()).find((f) => f.path === 'vite.config.ts')!
+    expect(viteConfig.content).toContain("here('.superone-dev-server.json')")
+    expect(viteConfig.content).toContain("hmr: { protocol: 'ws', host: 'localhost', clientPort: port }")
+    expect(viteConfig.content).toContain('strictPort: true')
+  })
+
+  it('keeps generated import lines from starting a source line', () => {
+    // electron-vite's ESM shim inserts `__dirname` after the bundle's last
+    // line-leading import, even one inside a template string.
+    const lines = readFileSync(fileURLToPath(new URL('./miniapp-templates.ts', import.meta.url)), 'utf-8').split('\n')
+    const firstStatement = lines.findIndex((line) => line.trim() && !line.startsWith('import '))
+    expect(lines.slice(firstStatement).filter((line) => /^import\s/.test(line))).toEqual([])
+  })
+
+  it('.gitignore ignores the dev server report', () => {
+    const gitignore = generateReactFiles(makeOpts()).find((f) => f.path === '.gitignore')!
+    expect(gitignore.content.split('\n')).toContain('.superone-dev-server.json')
   })
 
   it('package.json has correct dependencies', () => {

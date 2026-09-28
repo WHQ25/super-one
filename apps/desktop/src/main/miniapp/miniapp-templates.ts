@@ -1,4 +1,4 @@
-import type { MiniAppManifest } from '@superone/shared/miniapp-types'
+import { MINIAPP_DEV_SERVER_FILE, type MiniAppManifest } from '@superone/shared/miniapp-types'
 import authorDts from '@superone/shared/miniapp-author-api.d.ts?raw'
 import hostDts from '@superone/shared/miniapp-host-api.d.ts?raw'
 
@@ -34,7 +34,7 @@ export function generateReactFiles(opts: TemplateOptions): GeneratedFile[] {
     { path: 'src/superone.d.ts', content: generateSuperoneDts() },
     { path: 'src/superone-host.d.ts', content: generateHostDts() },
     { path: 'src/index.css', content: '@import "tailwindcss";\n' },
-    { path: '.gitignore', content: 'node_modules\ndist\n' },
+    { path: '.gitignore', content: `node_modules\ndist\n${MINIAPP_DEV_SERVER_FILE}\n` },
     { path: 'dist/manifest.json', content: JSON.stringify(opts.manifest, null, 2) },
     { path: 'dist/index.html', content: placeholderHtml },
     { path: 'dist/node.js', content: generateVanillaHostEntry() },
@@ -138,19 +138,55 @@ function generatePackageJson(name: string): string {
 }
 
 function generateViteConfig(): string {
-  const lines = [
-    "import { defineConfig } from 'vite'",
+  // Import lines stay quoted: electron-vite's ESM shim inserts `__dirname` after
+  // the last line-leading `import … from` in the bundle, template text included.
+  const imports = [
+    "import { readFileSync, rmSync, writeFileSync } from 'node:fs'",
+    "import { fileURLToPath } from 'node:url'",
+    "import { defineConfig, type Plugin } from 'vite'",
     "import react from '@vitejs/plugin-react'",
     "import tailwindcss from '@tailwindcss/vite'",
-    '',
-    'export default defineConfig({',
-    "  plugins: [react(), tailwindcss()],",
-    "  base: './',",
-    "  build: { outDir: 'dist' },",
-    '})',
-    '',
   ]
-  return lines.join('\n')
+  return `${imports.join('\n')}
+
+const here = (path: string) => fileURLToPath(new URL(path, import.meta.url))
+
+// Every page the manifest names (tool UIs, popovers) is built next to index.html.
+const manifest = JSON.parse(readFileSync(here('public/manifest.json'), 'utf-8')) as { templates?: Record<string, string> }
+const pages = ['index.html', ...Object.values(manifest.templates ?? {})]
+
+// Lets SuperOne serve this app from \`bun run dev\`, so edits hot-reload inside SuperOne.
+function superoneDevServer(): Plugin {
+  const file = here('${MINIAPP_DEV_SERVER_FILE}')
+  return {
+    name: 'superone-dev-server',
+    apply: 'serve',
+    // Pages are served as superone-app://, so the HMR client cannot find the
+    // socket from their URL; a fixed port keeps the reported address exact.
+    config(config) {
+      const port = config.server?.port ?? 5173
+      return { server: { port, strictPort: true, hmr: { protocol: 'ws', host: 'localhost', clientPort: port } } }
+    },
+    configureServer(server) {
+      const remove = () => rmSync(file, { force: true })
+      server.httpServer?.once('listening', () => {
+        writeFileSync(file, JSON.stringify({ url: \`http://localhost:\${server.config.server.port}\` }))
+      })
+      server.httpServer?.once('close', remove)
+      process.once('exit', remove)
+    },
+  }
+}
+
+export default defineConfig({
+  plugins: [react(), tailwindcss(), superoneDevServer()],
+  base: './',
+  build: {
+    outDir: 'dist',
+    rollupOptions: { input: Object.fromEntries(pages.map((page) => [page.replace(/\\.html$/, ''), here(page)])) },
+  },
+})
+`
 }
 
 function generateTsconfig(): string {

@@ -44,6 +44,7 @@ export type Messages = {
       terminal: string
       device: string
     }
+    miniAppDevServer: string
     toolPreview: {
       title: string
       empty: string
@@ -3974,6 +3975,7 @@ export const en: Messages = {
       terminal: 'Terminal',
       device: 'Device',
     },
+    miniAppDevServer: 'Hot reloading from {{url}}',
     toolPreview: {
       title: 'Tool UI Preview',
       empty: 'No tool UI preview is open. The agent renders one with miniapp_dev_preview.',

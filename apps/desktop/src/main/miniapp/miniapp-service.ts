@@ -481,10 +481,14 @@ export function cacheAppBasePath(appId: string, basePath: string): void {
   appPathCache.set(appId, { installDir: basePath, assetDir: basePath })
 }
 
-export function generateCSP(manifest: MiniAppManifest): string {
+/**
+ * `hmrSocket` is a development app's dev-server WebSocket: its HMR client is the
+ * only thing a served dev build adds to what the manifest grants.
+ */
+export function generateCSP(manifest: MiniAppManifest, hmrSocket?: string): string {
   const networkEntries = manifest.permissions?.network ?? []
   const domains = networkEntries.map((e) => e.domain.includes('://') ? e.domain : `https://${e.domain}`)
-  const connectSrc = ["'self'", 'superone-app:', ...domains].join(' ')
+  const connectSrc = ["'self'", 'superone-app:', ...domains, ...(hmrSocket ? [hmrSocket] : [])].join(' ')
   const scriptSrc = ["'self'", "'unsafe-inline'", ...domains].join(' ')
   const styleSrc = ["'self'", "'unsafe-inline'", ...domains].join(' ')
   return [

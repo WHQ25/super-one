@@ -808,6 +808,8 @@ interface MiniAppAPI {
   hostPostMessage(projectDir: string, appId: string, payload: unknown): void
   onHostMessage(callback: (event: { appId: string; projectDir: string; payload: unknown }) => void): () => void
   onHostLog(callback: (event: MiniAppHostLogEvent) => void): () => void
+  /** The dev server a development app is hot-reloading from, or null when it serves its build. */
+  devServer(appId: string): Promise<string | null>
   onHostAction(handler: (request: { requestId: string; appId: string; projectDir: string; action: string; args: Record<string, unknown> }) => void): () => void
   hostActionResult(requestId: string, result?: unknown, error?: string): void
   notifyContextConsumed(appIds: string[]): void

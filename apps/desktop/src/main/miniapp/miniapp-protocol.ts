@@ -8,6 +8,7 @@ import { isMediaPathReadable } from '../media-readable-roots'
 import { trace } from '../agent/event-trace'
 import log from '../logger'
 import { getAppBasePath, generateCSP, readManifest, validatePath } from './miniapp-service'
+import { devServerOrigin, devServerSocketOrigin, fetchFromDevServer } from './miniapp-dev-server'
 
 const LOCAL_FILE_MIME: Record<string, string> = {
   pdf: 'application/pdf',
@@ -17,6 +18,29 @@ const LOCAL_FILE_MIME: Record<string, string> = {
   json: 'application/json',
   wasm: 'application/wasm',
   woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf',
+}
+
+/** Headers a dev-server response keeps; the body arrives decoded, so its encoding and length do not apply. */
+const DEV_SERVER_PASSTHROUGH_HEADERS = ['content-type', 'cache-control', 'etag', 'last-modified']
+
+async function htmlCsp(basePath: string, hmrSocket?: string): Promise<string> {
+  const manifest = await readManifest(basePath)
+  return manifest ? generateCSP(manifest, hmrSocket) : "default-src 'none'"
+}
+
+async function serveFromDevServer(origin: string, url: URL, basePath: string): Promise<Response | null> {
+  const upstream = await fetchFromDevServer(origin, url)
+  if (!upstream) return null
+  const headers = new Headers()
+  for (const name of DEV_SERVER_PASSTHROUGH_HEADERS) {
+    const value = upstream.headers.get(name)
+    if (value) headers.set(name, value)
+  }
+  // The manifest CSP still governs the page; only the HMR socket is added.
+  if (headers.get('content-type')?.startsWith('text/html')) {
+    headers.set('Content-Security-Policy', await htmlCsp(basePath, devServerSocketOrigin(origin)))
+  }
+  return new Response(upstream.body, { status: upstream.status, headers })
 }
 
 const MINIAPP_MIME: Record<string, string> = {
@@ -124,6 +148,12 @@ export function registerMiniAppProtocolHandlers(proto: Protocol): void {
 
       const basePath = getAppBasePath(appId)
 
+      const devOrigin = await devServerOrigin(appId)
+      if (devOrigin) {
+        const served = await serveFromDevServer(devOrigin, url, basePath)
+        if (served) return served
+      }
+
       const resolved = validatePath(basePath, filePath === '/' ? '/index.html' : filePath)
       if (!resolved) {
         log.warn('[superone-app] path traversal blocked: %s %s', appId, filePath)
@@ -146,10 +176,8 @@ export function registerMiniAppProtocolHandlers(proto: Protocol): void {
             htmlBytes: data.byteLength,
           })
         }
-        const manifest = await readManifest(basePath)
-        const csp = manifest ? generateCSP(manifest) : "default-src 'none'"
         return new Response(html, {
-          headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': csp, 'Cache-Control': 'no-store' },
+          headers: { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': await htmlCsp(basePath), 'Cache-Control': 'no-store' },
         })
       }
 

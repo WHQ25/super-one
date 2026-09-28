@@ -72,7 +72,7 @@ Vite builds the UI; Bun builds the Node entry:
 }
 ```
 
-Add every template HTML as a Vite Rollup input so it is emitted into `dist`:
+Every template HTML must be a Vite Rollup input so it is emitted into `dist`. The React template's `vite.config.ts` adds each page named in `manifest.templates` automatically; other setups list them:
 
 ```ts
 import { resolve } from 'path'

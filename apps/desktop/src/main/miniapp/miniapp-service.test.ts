@@ -562,3 +562,18 @@ describe('createMiniApp', () => {
     expect(result.entry.id).toBe(`d-${MOCK_TS_B36}`)
   })
 })
+
+describe('generateCSP', () => {
+  const manifest = { appId: 'demo', name: 'Demo', main: 'node.js', permissions: { network: [{ domain: 'api.example.com' }] } } as MiniAppManifest
+  const connectSrc = (csp: string) => csp.split('; ').find((d) => d.startsWith('connect-src'))
+
+  it('limits connections to the app and its declared domains', () => {
+    expect(connectSrc(generateCSP(manifest))).toBe("connect-src 'self' superone-app: https://api.example.com")
+  })
+
+  it('adds only the connect source for a dev server HMR socket', () => {
+    const csp = generateCSP(manifest, 'ws://localhost:5310')
+    expect(connectSrc(csp)).toBe("connect-src 'self' superone-app: https://api.example.com ws://localhost:5310")
+    expect(csp.replace(' ws://localhost:5310', '')).toBe(generateCSP(manifest))
+  })
+})

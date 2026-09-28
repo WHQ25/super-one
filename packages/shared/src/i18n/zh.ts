@@ -32,6 +32,7 @@ export const zh: Messages = {
       terminal: '终端',
       device: '设备',
     },
+    miniAppDevServer: '正在从 {{url}} 热更新',
     toolPreview: {
       title: '工具 UI 预览',
       empty: '当前没有工具 UI 预览。agent 可以用 miniapp_dev_preview 渲染。',

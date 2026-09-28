@@ -23,6 +23,7 @@ import { packagedUserDataPath, resolveAndMigrateUserData } from './user-data-pat
 import { variant, variantId, variantDownloadUrl } from './variant'
 import { startMediaServer, getMediaServerPort } from './media-server'
 import { getMediaProviderStatuses } from './media-gen/settings-service'
+import { reachableDevServer } from './miniapp/miniapp-dev-server'
 import { getProjectAppsDir, getAppBasePath, cacheAppEntry, generateCSP, discoverApps, discoverProjectApps, setAllowedMedia, clearAllowedMedia, isMediaAllowed, appIdFromUrl, listDevRegistryView, registerDevMiniApp, unregisterDevMiniApp, installDevPointer, removeDevPointer, setDevPointerEnabled } from './miniapp/miniapp-service'
 import * as devRegistry from './miniapp/dev-registry'
 import { registerMiniAppProtocolHandlers } from './miniapp/miniapp-protocol'
@@ -5612,6 +5613,7 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.MINIAPP_HOST_LIST, () => listMiniAppHosts())
+  ipcMain.handle(AgentIpcChannels.MINIAPP_DEV_SERVER, (_e, appId: string) => reachableDevServer(appId))
   ipcMain.handle(AgentIpcChannels.MINIAPP_HOST_STOP, (_e, projectDir: string, appId: string) => {
     stopMiniAppHost(projectDir, appId)
   })

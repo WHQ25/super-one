@@ -107,6 +107,13 @@ export interface MiniAppEntry {
  * A development app resolves to a dev-registry build through an enabled dev
  * pointer; that pointer (not the app's own manifest) is what makes it one.
  */
+/**
+ * Written in a development app's source directory by its Vite dev server while it
+ * listens (`{ "url": "http://localhost:<port>" }`); SuperOne then serves the app
+ * from that server so front-end edits hot-reload.
+ */
+export const MINIAPP_DEV_SERVER_FILE = '.superone-dev-server.json'
+
 export function isDevAppEntry(entry: MiniAppEntry): boolean {
   return entry.distDir !== undefined && entry.orphan !== true
 }

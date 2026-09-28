@@ -4,8 +4,10 @@ import type { IDockviewPanelHeaderProps } from 'dockview-core'
 import { Bot, Bug, Globe, Maximize, MessageCirclePlus, RotateCw, Route, Shrink, Smartphone, Terminal as TerminalIcon, X } from 'lucide-react'
 import { motion } from 'motion/react'
 import { cn } from '@superone/ui/lib/utils'
+import { isDevAppEntry } from '@superone/shared/miniapp-types'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
+import { MiniAppDevServerBadge } from '@/components/miniapp/MiniAppDevServerBadge'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useToolUiPreviewStore } from '@/stores/miniapp-tool-preview'
 import { useBrowserStore } from '@/stores/browser'
@@ -193,6 +195,7 @@ export function MiniAppTab(props: IDockviewPanelHeaderProps<{ instanceKey: strin
         <MiniAppIcon appId={appId} className="size-3.5 shrink-0" />
       </HoverCloseSlot>
       <TabTitle>{props.api.title}</TabTitle>
+      {app && isDevAppEntry(app) && <MiniAppDevServerBadge appId={appId} />}
       {isDev && devControls && (
         <>
           <TabActionButton
@@ -232,6 +235,7 @@ export function ToolUiPreviewTab(props: IDockviewPanelHeaderProps<{ previewKey: 
         {appId ? <MiniAppIcon appId={appId} className="size-3.5 shrink-0" /> : <Bug className="size-3.5 shrink-0" />}
       </HoverCloseSlot>
       <TabTitle>{title || t('activity.toolPreview.title')}</TabTitle>
+      {appId && <MiniAppDevServerBadge appId={appId} />}
       <MaximizeTabAction api={props.api} active={active} />
     </div>
   )

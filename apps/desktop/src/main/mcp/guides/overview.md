@@ -37,7 +37,7 @@ use Host messaging directly.
 
 Completion means the app builds, is registered for preview, and its requested
 behavior has been checked; `debugging` covers driving its views with `browser_*`
-tools, reloading after edits, and previewing tool UIs. Fix failures caused by the implementation before
+tools, hot reload from a dev server, reloading after edits, and previewing tool UIs. Fix failures caused by the implementation before
 handing it back. Package with `miniapp_dev_pack` when distribution is requested.
 Installation trust and API permissions remain enforced by SuperOne.
 

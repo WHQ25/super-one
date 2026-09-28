@@ -1212,6 +1212,22 @@ describe('ClaudeBackend', () => {
       expect((opts as { resume?: string }).resume).toBe('sdk-sid-resume')
     })
 
+    it('revives with the newest result usage as the baseline, not the original start options', async () => {
+      const usage = (cacheReadInputTokens: number) => ({ 'claude-x': { inputTokens: 1, outputTokens: 1, cacheReadInputTokens, cacheCreationInputTokens: 0, costUSD: 0 } })
+      const backend = new ClaudeBackend()
+      await backend.start({ ...makeStartOpts(), modelUsageBaseline: usage(10) })
+      hoisted.captured.onSessionId?.('sdk-sid-usage')
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: 'm1', metadata: { modelUsage: usage(500) } })
+
+      hoisted.captured.iterationDone?.resolve()
+      await backend.releaseRuntime('idle')
+      void backend.send({ content: 'after release' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      const [, opts] = hoisted.captured.createSessionQueryMock.mock.calls[1]!
+      expect((opts as { modelUsageBaseline?: unknown }).modelUsageBaseline).toEqual(usage(500))
+    })
+
     it('does not release while background tasks are active', async () => {
       const backend = new ClaudeBackend()
       await backend.start(makeStartOpts())

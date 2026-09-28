@@ -68,6 +68,9 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Browser automation no longer hangs on screenshots or recordings when
   the window is minimized or covered.
 - The models panel lists only models a plan can enable (#66).
+- Daily Claude usage statistics no longer count a session's earlier
+  turns again after the session idles out or is stopped and then
+  continues.
 - Several sessions can link the same collaboration peer.
 - A fork's worktree survives a cold start; harness settings no longer
   show an old version while a stale binary is launched.

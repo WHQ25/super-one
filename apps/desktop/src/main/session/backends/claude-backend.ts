@@ -128,6 +128,11 @@ export class ClaudeBackend implements SessionBackend {
   private get warmupManager() { return getGlobalWarmupManager() }
 
   private _lastStartOpts: BackendStartOptions | null = null
+  /**
+   * Cumulative usage of the newest result. A revive resumes from it, not from
+   * `_lastStartOpts`, whose baseline predates every turn this runtime ran.
+   */
+  private modelUsageBaseline: BackendStartOptions['modelUsageBaseline']
   /** In-flight `rebuild()`; a revive waits for it instead of restarting the runtime it replaces. */
   private runtimeRebuild: Promise<void> | null = null
   private _spawnedAdditionalDirs: string[] = []
@@ -284,6 +289,7 @@ export class ClaudeBackend implements SessionBackend {
     this.currentMessageId = ''
     this.currentStartTime = 0
     this._lastStartOpts = opts
+    this.modelUsageBaseline = opts.modelUsageBaseline
     this._spawnedAdditionalDirs = [...(opts.additionalDirectories ?? [])]
     const config = (opts.config ?? {}) as ClaudeConfig
     // Must be reassigned on every start, not only when a proxy exists: the same
@@ -633,7 +639,12 @@ export class ClaudeBackend implements SessionBackend {
     if (this.bridge && this.query) return
     if (!this._lastStartOpts) throw new Error('ClaudeBackend not started')
     const resumeId = this.providerSessionId ?? undefined
-    await this.start({ ...this._lastStartOpts, abortController: new AbortController(), providerSessionId: resumeId })
+    await this.start({
+      ...this._lastStartOpts,
+      abortController: new AbortController(),
+      providerSessionId: resumeId,
+      modelUsageBaseline: resumeId ? this.modelUsageBaseline : undefined,
+    })
   }
 
   private async ensureQuery(): Promise<Query | null> {
@@ -937,6 +948,9 @@ export class ClaudeBackend implements SessionBackend {
       && (event.type === 'content_delta' || event.type === 'message_complete' || event.type === 'message_interrupted')
     ) {
       this.commitProviderSessionId(this.stagedProviderSessionId)
+    }
+    if ((event.type === 'message_complete' || event.type === 'message_interrupted') && event.metadata?.modelUsage && Object.keys(event.metadata.modelUsage).length > 0) {
+      this.modelUsageBaseline = event.metadata.modelUsage
     }
     if (event.type === 'permission_request') {
       log.info('[ClaudeBackend.emit] permission_request listeners=%d requestId=%s', this.eventListeners.size, event.request.requestId)

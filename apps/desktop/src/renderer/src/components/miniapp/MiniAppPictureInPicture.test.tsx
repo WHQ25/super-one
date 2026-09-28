@@ -21,6 +21,7 @@ vi.mock('react-i18next', () => ({
 
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useAgentViewfinderStore } from '@/stores/agent-viewfinder'
+import { useBrowserStore } from '@/stores/browser'
 import { useChatStore } from '@/stores/chat'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useMiniAppPipStore } from '@/stores/miniapp-pip'
@@ -49,7 +50,7 @@ beforeEach(() => {
   })
   useToolUiPreviewStore.setState({ previews: {} })
   useMiniAppPipStore.setState({ pipSlots: {}, hidden: null })
-  useActivityPanelStore.setState({ showPanel: false })
+  useActivityPanelStore.setState({ showPanel: false, panelWidth: 560, bounds: { left: 0, top: 0, width: 560, height: 834 } })
   useAgentViewfinderStore.setState({ activeBySession: {} })
 })
 
@@ -58,24 +59,33 @@ function drive(targetId: string, sessionId = 'session-a') {
 }
 
 describe('mini-app picture in picture', () => {
-  it('frames the driven panel at its panel aspect in the chat’s top-right corner', async () => {
+  it('uses the full panel viewport even when the dock slot is narrow', async () => {
     drive('miniapp:tasks')
     render(<MiniAppPictureInPicture />)
 
     const pip = await screen.findByLabelText('Mini app picture in picture')
     expect(pip).toHaveStyle({ width: '180px' })
-    expect(parseFloat(pip.style.height)).toBeCloseTo(360, 0)
+    expect(parseFloat(pip.style.height)).toBeCloseTo(180 / (560 / 800), 2)
     expect(parseFloat(pip.style.left) + 180).toBeCloseTo(1100 - 12, 0)
+
+    act(() => useMiniAppStore.getState().updateSlot('tasks:alpha', 'panel', {
+      left: 700, top: 40, width: 720, height: 400,
+    } as DOMRectReadOnly))
+    expect(parseFloat(pip.style.height)).toBeCloseTo(180 / (560 / 800), 2)
   })
 
   it('frames a view whose dock tab never laid out, at the panel width', async () => {
     useMiniAppStore.setState({ slots: {} })
-    useActivityPanelStore.setState({ panelWidth: 560 })
+    useActivityPanelStore.setState({ panelWidth: 560, bounds: null })
     drive('miniapp:tasks')
     render(<MiniAppPictureInPicture />)
 
     const pip = await screen.findByLabelText('Mini app picture in picture')
     expect(pip).toHaveStyle({ width: '180px' })
+    expect(parseFloat(pip.style.height)).toBeCloseTo(180 / (560 / 720), 2)
+
+    act(() => useBrowserStore.getState().setEmulation('miniapp:tasks@/alpha', { width: 390, height: 844 }))
+    expect(parseFloat(pip.style.height)).toBeCloseTo(180 / (390 / 844), 2)
   })
 
   it('stays away while the Activity panel shows the view', () => {

@@ -84,7 +84,7 @@ beforeEach(async () => {
 })
 
 describe('MiniAppHostLayer persistence', () => {
-  it('draws the view over its picture-in-picture slot at panel size, scaled, without remounting it', async () => {
+  it('draws the view over its picture-in-picture slot at the full panel viewport, scaled, without remounting it', async () => {
     const { useMiniAppPipStore } = await import('@/stores/miniapp-pip')
     const { container } = render(<MiniAppHostLayer />)
     const key = makeInstanceKey('app-a', 'proj-1')
@@ -92,6 +92,8 @@ describe('MiniAppHostLayer persistence', () => {
       await useMiniAppStore.getState().openAppInPanel(makeEntry('app-a'), '/proj')
     })
     act(() => {
+      useActivityPanelStore.getState().setPanelWidth(560)
+      useActivityPanelStore.getState().setBounds({ left: 0, top: 0, width: 560, height: 834 })
       useMiniAppStore.getState().updateSlot(key, 'panel', { left: 120, top: 44, width: 400, height: 800 } as DOMRectReadOnly)
       useActivityPanelStore.getState().setShowPanel(false)
     })
@@ -104,8 +106,9 @@ describe('MiniAppHostLayer persistence', () => {
     expect(host.style.left).toBe('900px')
     expect(host.style.width).toBe('200px')
     expect(host.style.pointerEvents).toBe('none')
-    expect(content.style.width).toBe('400px')
-    expect(content.style.transform).toBe('scale(0.5)')
+    expect(content.style.width).toBe('560px')
+    expect(content.style.height).toBe('800px')
+    expect(content.style.transform).toBe(`scale(${200 / 560})`)
 
     const { useBrowserStore } = await import('@/stores/browser')
     act(() => useBrowserStore.getState().setEmulation('miniapp:app-a@/proj', { width: 800, height: 1600 }))

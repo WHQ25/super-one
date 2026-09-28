@@ -146,6 +146,7 @@ function HostedMiniAppView({ slotKey, captureKey, emulated = false, dragging, at
   const panelSlot = useMiniAppStore((s) => s.slots[slotKey])
   const pipSlot = useMiniAppPipStore((s) => s.pipSlots[slotKey])
   const panelWidth = useActivityPanelStore((s) => s.panelWidth)
+  const panelHeight = useActivityPanelStore((s) => s.bounds?.height)
   const activitySide = useActivityPanelStore((s) => s.side)
   const activityShown = useActivityPanelOnScreen()
   const inPip = pipSlot != null && pipSlot.width > 0 && pipSlot.height > 0
@@ -154,7 +155,7 @@ function HostedMiniAppView({ slotKey, captureKey, emulated = false, dragging, at
   const visible = inPip || (panelMounted && activityShown)
   // The view keeps its panel layout inside the preview and is scaled to fit.
   const emulation = useBrowserStore((s) => (emulated ? s.emulations[captureKey] : undefined))
-  const viewport = miniAppPipViewport(panelSlot, panelWidth, emulation)
+  const viewport = miniAppPipViewport(panelWidth, panelHeight, emulation)
   // A scaled guest rasterizes at the scaled size, so a screenshot briefly lays it
   // out unscaled, invisibly, as the browser preview does.
   const capturing = useBrowserStore((s) => (s.fullResolutionCaptureRefs[captureKey] ?? 0) > 0)

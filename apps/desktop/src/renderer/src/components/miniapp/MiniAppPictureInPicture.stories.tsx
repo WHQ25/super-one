@@ -45,7 +45,7 @@ function PreviewScene() {
     }
   }, [sessionId])
 
-  // The dock slot the view keeps while the panel is closed sets the preview's shape.
+  // Changing the dock slot must not change the preview's shape while the panel is closed.
   useEffect(() => {
     useMiniAppStore.getState().updateSlot(INSTANCE_KEY, 'panel', {
       left: 0,
@@ -62,7 +62,7 @@ function PreviewScene() {
           <div>
             <h2 className="font-medium">Mini app picture in picture</h2>
             <p className="text-sm text-muted-foreground">
-              An agent drives a development mini-app while the Activity panel is closed. Click the preview to open it in the panel.
+              An agent drives a development mini-app while the Activity panel is closed. Changing the dock slot leaves the preview at the full panel aspect. Click it to open the panel.
             </p>
           </div>
           <div className="flex shrink-0 gap-2">
@@ -71,7 +71,7 @@ function PreviewScene() {
               className="rounded-md border border-border bg-card px-3 py-1.5 text-sm"
               onClick={() => setNarrow((value) => !value)}
             >
-              Panel: {narrow ? 'narrow' : 'wide'}
+              Dock slot: {narrow ? 'narrow' : 'wide'}
             </button>
             {hidden && (
               <button

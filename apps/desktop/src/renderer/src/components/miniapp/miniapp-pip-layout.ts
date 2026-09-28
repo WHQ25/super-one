@@ -16,20 +16,23 @@ export const MINIAPP_PIP_DIMENSIONS: PipDimensions = {
 }
 
 const FALLBACK_VIEWPORT_HEIGHT = 720
+const ACTIVITY_TAB_HEADER_HEIGHT = 34
 
 /**
- * The size the view keeps inside the preview: an emulated viewport, its dock slot,
- * which stays laid out while the Activity panel is closed, or the panel's width
- * until it has one.
+ * The size the view keeps inside the preview: explicit emulation, or the
+ * activity panel's full content area. A split dock slot must not change the
+ * preview's aspect or the mini-app viewport while the panel is closed.
  */
 export function miniAppPipViewport(
-  panelSlot: { width: number; height: number } | undefined,
   panelWidth: number,
+  panelHeight: number | undefined,
   emulation?: { width: number; height: number },
 ): { width: number; height: number } {
   if (emulation && emulation.width > 0 && emulation.height > 0) return { width: emulation.width, height: emulation.height }
-  if (panelSlot && panelSlot.width > 0 && panelSlot.height > 0) return { width: panelSlot.width, height: panelSlot.height }
-  return { width: panelWidth, height: FALLBACK_VIEWPORT_HEIGHT }
+  const height = panelHeight && panelHeight > ACTIVITY_TAB_HEADER_HEIGHT
+    ? panelHeight - ACTIVITY_TAB_HEADER_HEIGHT
+    : FALLBACK_VIEWPORT_HEIGHT
+  return { width: panelWidth, height }
 }
 
 export function miniAppPipAspect(viewport: { width: number; height: number }): number {

@@ -41,8 +41,8 @@ export function MiniAppPictureInPicture() {
   const openApps = useMiniAppStore((state) => state.openApps)
   const previews = useToolUiPreviewStore((state) => state.previews)
   const slotKey = targetId && projectDir ? miniAppHostSlotKey(targetId, projectDir, openApps, previews) : null
-  const panelSlot = useMiniAppStore((state) => (slotKey ? state.slots[slotKey] : undefined))
   const panelWidth = useActivityPanelStore((state) => state.panelWidth)
+  const panelHeight = useActivityPanelStore((state) => state.bounds?.height)
   const activityShown = useActivityPanelStore((state) => state.showPanel)
   const mosaicMode = useMosaicStore((state) => state.mode)
   const hidden = useMiniAppPipStore((state) => isMiniAppPipHidden(state, sessionId, targetId))
@@ -52,7 +52,7 @@ export function MiniAppPictureInPicture() {
       ? state.emulations[miniAppTargetKey(targetId, projectDir)]
       : undefined
   ))
-  const aspect = miniAppPipAspect(miniAppPipViewport(panelSlot, panelWidth, emulation))
+  const aspect = miniAppPipAspect(miniAppPipViewport(panelWidth, panelHeight, emulation))
 
   const { bounds, layout, setLayout } = usePipPlacement({
     key: targetId,

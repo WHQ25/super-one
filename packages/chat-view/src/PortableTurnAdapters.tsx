@@ -305,6 +305,7 @@ function renderDedicatedTool(props: ClaudeToolPresenterProps, brandIconSrc?: str
         isError={props.isError}
         isDenied={isDenied}
         renderMarkdown={(content) => <PortableText text={content} isStreaming={false} />}
+        onOpenSession={(sessionId) => { requestNative('openSession', { sessionId }) }}
       />
     )
   }

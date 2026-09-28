@@ -3869,6 +3869,8 @@ export type Messages = {
     toggleActivityPanel: string
     maximizeActivityPanel: string
     restoreActivityPanel: string
+    muteTab: string
+    unmuteTab: string
     toggleTerminal: string
     closeBrowser: string
     closeMiniApp: string
@@ -7930,6 +7932,8 @@ export const en: Messages = {
     toggleActivityPanel: 'Toggle Activity Panel',
     maximizeActivityPanel: 'Maximize Activity Panel',
     restoreActivityPanel: 'Restore Activity Panel',
+    muteTab: 'Mute Tab',
+    unmuteTab: 'Unmute Tab',
     toggleTerminal: 'Toggle Terminal',
     closeBrowser: 'Close browser',
     closeMiniApp: 'Close mini-app',

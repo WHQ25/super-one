@@ -4169,6 +4169,8 @@ export const AgentIpcChannels = {
   BROWSER_HISTORY_DELETE: 'app:browser-history-delete',
   BROWSER_CERT_ERROR: 'app:browser-cert-error',
   BROWSER_CERT_PROCEED: 'app:browser-cert-proceed',
+  /** Main -> renderer: a browser tab started or stopped producing sound. */
+  BROWSER_AUDIO_STATE: 'app:browser-audio-state',
   APP_SYSTEM_LOCALE: 'app:system-locale',
   APP_LOCALE_CHANGED: 'app:locale-changed',
   APP_ICON_PICK_FILE: 'app:icon-pick-file',
@@ -5150,6 +5152,11 @@ export interface BrowserCertError {
   webContentsId: number
   url: string
   error: string
+}
+
+export interface BrowserAudioState {
+  webContentsId: number
+  audible: boolean
 }
 
 export interface BrowserOpenTabRequest {

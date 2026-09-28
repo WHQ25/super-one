@@ -3962,6 +3962,8 @@ export const zh: Messages = {
     toggleActivityPanel: '活动面板开关',
     maximizeActivityPanel: '最大化活动面板',
     restoreActivityPanel: '恢复活动面板',
+    muteTab: '静音标签页',
+    unmuteTab: '取消静音',
     toggleTerminal: '终端面板开关',
     closeBrowser: '关闭浏览器',
     closeMiniApp: '关闭小程序',

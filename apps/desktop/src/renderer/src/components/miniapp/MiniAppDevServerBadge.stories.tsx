@@ -3,6 +3,7 @@ import type { IDockviewPanelHeaderProps } from 'dockview-core'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 import { mockIpc } from '../../../../../.storybook/mock-ipc'
 import { MiniAppTab, ToolUiPreviewTab } from '@/components/activity/ActivityTab'
+import { fakeTabApi } from '@/components/activity/activity-tab-story-api'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useToolUiPreviewStore, type ToolUiPreview } from '@/stores/miniapp-tool-preview'
 
@@ -44,22 +45,11 @@ const PREVIEW: ToolUiPreview = {
 const SERVED = new Set(['tasks', 'long', 'installed'])
 mockIpc('miniapp', 'devServer', async (appId) => (SERVED.has(appId as string) ? DEV_URL : null))
 
-function fakeApi(title: string, isActive: boolean): IDockviewPanelHeaderProps['api'] {
-  return {
-    id: `panel-${title}`,
-    title,
-    isActive,
-    group: { id: 'storybook-group' },
-    onDidActiveChange: () => ({ dispose: () => {} }),
-    onDidTitleChange: () => ({ dispose: () => {} }),
-  } as unknown as IDockviewPanelHeaderProps['api']
-}
-
 function Tab({ appId, active = true }: { appId: string; active?: boolean }) {
   const app = APPS.find((a) => a.id === appId)!
   return (
     <MiniAppTab
-      {...({ api: fakeApi(app.manifest.name, active), params: { instanceKey: `storybook-${appId}`, appId } } as unknown as IDockviewPanelHeaderProps<{ instanceKey: string; appId: string }>)}
+      {...({ api: fakeTabApi(app.manifest.name, active), params: { instanceKey: `storybook-${appId}`, appId } } as unknown as IDockviewPanelHeaderProps<{ instanceKey: string; appId: string }>)}
     />
   )
 }
@@ -103,7 +93,7 @@ export const LongTitleNarrow: Story = {
 export const ToolUiPreviewTabBadge: Story = {
   render: () => (
     <ToolUiPreviewTab
-      {...({ api: fakeApi('Tasks · show_card', true), params: { previewKey: PREVIEW_KEY } } as unknown as IDockviewPanelHeaderProps<{ previewKey: string }>)}
+      {...({ api: fakeTabApi('Tasks · show_card', true), params: { previewKey: PREVIEW_KEY } } as unknown as IDockviewPanelHeaderProps<{ previewKey: string }>)}
     />
   ),
 }

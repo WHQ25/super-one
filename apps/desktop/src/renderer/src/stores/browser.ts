@@ -18,6 +18,9 @@ export interface BrowserTabState {
    * it backs both the on-screen webview and the flattening of its captures.
    */
   canvas: string
+  /** The guest is producing sound right now (Chromium's audibility, not just "media playing"). */
+  audible: boolean
+  muted: boolean
 }
 
 /**
@@ -102,6 +105,8 @@ const DEFAULT_TAB: BrowserTabState = {
   owner: null,
   certError: null,
   canvas: BROWSER_LIGHT_CANVAS,
+  audible: false,
+  muted: false,
 }
 
 function incrementRef(refs: Record<string, number>, id: string): Record<string, number> {

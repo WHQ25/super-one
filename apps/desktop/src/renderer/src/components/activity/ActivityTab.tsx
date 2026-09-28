@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { IDockviewPanelHeaderProps } from 'dockview-core'
-import { Bot, Bug, Globe, Maximize, MessageCirclePlus, RotateCw, Route, Shrink, Smartphone, Terminal as TerminalIcon, X } from 'lucide-react'
+import { Bot, Bug, Globe, Maximize, MessageCirclePlus, RotateCw, Route, Shrink, Smartphone, Terminal as TerminalIcon, Volume2, VolumeOff, X } from 'lucide-react'
 import { motion } from 'motion/react'
 import { cn } from '@superone/ui/lib/utils'
 import { isDevAppEntry } from '@superone/shared/miniapp-types'
@@ -13,6 +13,7 @@ import { useToolUiPreviewStore } from '@/stores/miniapp-tool-preview'
 import { useBrowserStore } from '@/stores/browser'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { BrowserFavicon } from '@/components/browser/BrowserFavicon'
+import { browserSetMuted } from '@/components/browser/browser-host-api'
 import { useDeviceTabActions } from '@/components/device/device-tab-actions'
 import { deviceFamilyIcon } from '@/components/device/device-icons'
 import { closeActivityTerminalTab, closeBrowserTab, closeDeviceTab, closeToolUiPreviewTab, closeTrajectoryTab, toggleMaximizedActivityGroup } from './activity-panel-api'
@@ -259,8 +260,38 @@ export function BrowserTab(props: IDockviewPanelHeaderProps<{ browserId: string 
         />
       </HoverCloseSlot>
       <TabTitle>{title}</TabTitle>
+      <BrowserAudioToggle browserId={browserId} />
       <MaximizeTabAction api={props.api} active={active} />
     </div>
+  )
+}
+
+/**
+ * Chrome's tab speaker: shown on every tab that is making sound, not just the
+ * active one, since finding the noisy tab is the whole point. A muted tab keeps
+ * its icon so it stays one click from unmuting.
+ */
+function BrowserAudioToggle({ browserId }: { browserId: string }) {
+  const { t } = useTranslation()
+  const audible = useBrowserStore((s) => s.tabs[browserId]?.audible ?? false)
+  const muted = useBrowserStore((s) => s.tabs[browserId]?.muted ?? false)
+  if (!audible && !muted) return null
+  const Icon = muted ? VolumeOff : Volume2
+  const label = t(muted ? 'tooltips.unmuteTab' : 'tooltips.muteTab')
+  const toggle = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (browserSetMuted(browserId, !muted)) useBrowserStore.getState().patch(browserId, { muted: !muted })
+  }
+  return (
+    <button
+      onClick={toggle}
+      className="flex size-4 shrink-0 items-center justify-center rounded text-foreground/60 hover:text-foreground"
+      title={label}
+      aria-label={label}
+      aria-pressed={muted}
+    >
+      <Icon className="size-3 shrink-0" />
+    </button>
   )
 }
 

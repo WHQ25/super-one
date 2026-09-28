@@ -59,6 +59,14 @@ export function BrowserHostLayer() {
     })
   }, [])
 
+  useEffect(() => {
+    return window.app.onBrowserAudioState(({ webContentsId, audible }) => {
+      const id = browserIdByWebContentsId(webContentsId)
+      if (!id) return
+      useBrowserStore.getState().patch(id, { audible })
+    })
+  }, [])
+
   return (
     // Expanded still ranks below the modal tier — see `Z` for why that is not optional.
     <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: overlayOpen ? Z.HOST_BROWSER_EXPANDED : Z.HOST_BROWSER }}>

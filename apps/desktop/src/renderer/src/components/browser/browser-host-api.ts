@@ -139,6 +139,18 @@ export function browserStop(id: string): void {
   registry.get(id)?.stop()
 }
 
+export function browserSetMuted(id: string, muted: boolean): boolean {
+  const wv = registry.get(id)
+  if (!wv) return false
+  try {
+    wv.setAudioMuted(muted)
+    return true
+  } catch {
+    // webview not yet attached or mid-teardown
+    return false
+  }
+}
+
 export function browserOpenDevTools(id: string): void {
   const wv = registry.get(id)
   if (!wv) return

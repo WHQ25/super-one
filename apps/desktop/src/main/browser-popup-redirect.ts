@@ -42,6 +42,12 @@ export function registerBrowserPopupRedirect(): void {
       contents.hostWebContents?.send(AgentIpcChannels.BROWSER_CERT_ERROR, { webContentsId: contents.id, url, error })
     })
 
+    // The <webview> tag only surfaces media-started-playing, which fires for silent
+    // media too. Audibility (Chrome's tab speaker signal) is a guest WebContents event.
+    contents.on('audio-state-changed', ({ audible }) => {
+      contents.hostWebContents?.send(AgentIpcChannels.BROWSER_AUDIO_STATE, { webContentsId: contents.id, audible })
+    })
+
     contents.setWindowOpenHandler(({ url, disposition }) => {
       if (!url || url === 'about:blank') return { action: 'deny' }
       // Chrome maps Cmd/Ctrl+click → 'background-tab', Cmd/Ctrl+Shift+click and

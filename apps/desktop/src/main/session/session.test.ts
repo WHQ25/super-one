@@ -44,6 +44,13 @@ vi.mock('../mcp/browser-webmcp-confirm', () => ({
   rejectWebmcpTrustConfirm: (...args: unknown[]) => rejectWebmcpTrustConfirmMock(...args),
 }))
 
+const resolveComputerUseGrantMock = vi.fn(() => false)
+const rejectComputerUseGrantMock = vi.fn(() => false)
+vi.mock('../computer-use/grant-request', () => ({
+  resolveComputerUseGrant: (...args: unknown[]) => resolveComputerUseGrantMock(...args),
+  rejectComputerUseGrant: (...args: unknown[]) => rejectComputerUseGrantMock(...args),
+}))
+
 vi.mock('./session-collaboration-confirm', () => ({
   resolveSessionAgentsConfirm: () => false,
   rejectSessionAgentsConfirm: () => false,
@@ -291,6 +298,30 @@ describe('Session.respondToPermission host confirms', () => {
     rejectVideoConfirmMock.mockReset().mockReturnValue(false)
     resolveWebmcpTrustConfirmMock.mockReset().mockReturnValue(false)
     rejectWebmcpTrustConfirmMock.mockReset().mockReturnValue(false)
+    resolveComputerUseGrantMock.mockReset().mockReturnValue(false)
+    rejectComputerUseGrantMock.mockReset().mockReturnValue(false)
+  })
+
+  it('resolves computer_use_grant before backends so Cursor/DeepSeek unblock computer_* tools', () => {
+    const { session, backend } = makeSession({ harnessId: 'cursor' as never })
+    resolveComputerUseGrantMock.mockReturnValue(true)
+
+    const handled = session.respondToPermission('cugrant_1', true, true)
+
+    expect(handled).toBe(true)
+    expect(resolveComputerUseGrantMock).toHaveBeenCalledWith('cugrant_1', true, true)
+    expect(backend.respondToPermissionCalls).toHaveLength(0)
+  })
+
+  it('rejects computer_use_grant on cancel without reaching the backend', () => {
+    const { session, backend } = makeSession({ harnessId: 'cursor' as never })
+    rejectComputerUseGrantMock.mockReturnValue(true)
+
+    const handled = session.respondToPermission('cugrant_2', false, undefined, undefined, undefined, 'cancel')
+
+    expect(handled).toBe(true)
+    expect(rejectComputerUseGrantMock).toHaveBeenCalledWith('cugrant_2', 'User cancelled')
+    expect(backend.respondToPermissionCalls).toHaveLength(0)
   })
 
   it('resolves config_confirm before backends so OpenCode/ACP unblocks config_apply', () => {

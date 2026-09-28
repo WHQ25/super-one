@@ -58,6 +58,7 @@ import { resolveVideoConfirm, rejectVideoConfirm } from '../mcp/media-tools'
 import { resolveSessionCleanupConfirm, rejectSessionCleanupConfirm } from '../mcp/session-archive-tools'
 import { resolveAutomationConfirm, rejectAutomationConfirm } from '../mcp/automation-tools'
 import { resolveDeviceControlConfirm, rejectDeviceControlConfirm } from '../device-agent/control-confirm'
+import { resolveComputerUseGrant, rejectComputerUseGrant } from '../computer-use/grant-request'
 import { rejectTerminalCommandConfirm, resolveTerminalCommandConfirm } from '../mcp/terminal-command-confirm'
 import { forgetSessionTerminalCommandRules } from '../mcp/terminal-session-rules'
 import { nextEventSeq } from './event-seq'
@@ -1085,6 +1086,9 @@ export class Session implements SessionContract {
       if (rejectAutomationConfirm(requestId, reason ?? 'User cancelled')) return true
       if (rejectDeviceControlConfirm(requestId, reason ?? 'User cancelled')) return true
       if (rejectTerminalCommandConfirm(requestId, reason ?? 'User cancelled')) return true
+      if (rejectComputerUseGrant(requestId, reason ?? 'User cancelled')) return true
+    } else if (resolveComputerUseGrant(requestId, allow, alwaysAllow)) {
+      return true
     } else if (resolveSessionAgentsConfirm(requestId, allow ? 'accept' : 'decline', formAnswers)) {
       return true
     } else if (resolveMiniappCallConfirm(

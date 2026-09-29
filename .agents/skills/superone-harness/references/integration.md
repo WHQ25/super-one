@@ -231,7 +231,7 @@ Claude / Codex / Grok path is chosen. Do not copy them as the completeness spec.
 | | Shape | Typical gaps vs the bar |
 |---|---|---|
 | **OpenCode** | Own SDK + local server (`opencode-backend.ts`, `packages/opencode/`). First "experimental agent" after Claude/Codex. | Chat input originally impersonated Claude; host MCP landed later. |
-| **Cursor** | Native SDK + local store (`cursor-backend.ts`, `packages/cursor/`). Custom tools, not MCP, for SuperOne. `docs/harness/cursor/cursor-sdk-harness.md` (D1–D8) is a design-pack example. 152 files / 7 commits is a file-count warning, not a spec. | Host-tool UI incomplete; token accounting; write/edit without line-diff; subagent output leaking into the parent; duplicate bash rows. |
-| **DeepSeek (`dsh`)** | In-process Cordis plugin tree (`deepseek-runtime-host.ts`, `packages/deepseek/`). Reuse the official package; the loader is the point. When official UI plugins conflict, SuperOne UI wins. | Not a "write another backend". Plan mode / several chrome rows still off the bar. |
+| **Cursor** | Native SDK + local store (`cursor-backend.ts`, `packages/cursor/`). SuperOne tools use HTTP MCP; local custom tools bridge questions and session metadata. `docs/harness/cursor/cursor-sdk-harness.md` records the decisions. | Check the current capability flags and `docs/harness/cursor/backlog.md`; do not reuse the initial integration's gap list. |
+| **DeepSeek (`dsh`)** | In-process Cordis plugin tree (`deepseek-runtime-host.ts`, `packages/deepseek/`). Reuse the official package and Loader/preset boundaries. SuperOne owns the UI. | Plan review and background children are integrated; remaining gaps are in `docs/harness/dsh/backlog.md`. |
 
 Pi and Hermes were researched and not shipped. Do not add them.

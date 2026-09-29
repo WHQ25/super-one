@@ -206,4 +206,4 @@ npx shadcn@latest add button --dry-run        # see all affected files
 npx shadcn@latest add button --diff button.tsx # see the diff for a specific file
 ```
 
-See [Updating Components in SKILL.md](./SKILL.md#updating-components) for the full smart merge workflow.
+See [Smart Merge from Upstream](./cli.md#smart-merge-from-upstream) for the merge workflow.

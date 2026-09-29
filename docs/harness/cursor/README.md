@@ -10,7 +10,8 @@ Pin: `@cursor/sdk` `1.0.30` · Ledger version: not started · Last updated: 2026
 
 ## Integration shape
 
-Native SDK with its local session store; SuperOne tools are custom SDK tools, not MCP.
+Native SDK with its local session store. SuperOne tools use HTTP MCP; local
+custom SDK tools provide session metadata and the question bridge.
 
 | Runtime | Entry | Notes |
 |---|---|---|
@@ -26,9 +27,8 @@ Native SDK with its local session store; SuperOne tools are custom SDK tools, no
 
 ## Documents
 
-- [cursor-sdk-harness.md](cursor-sdk-harness.md) — design, source of truth for decisions D1–D11
-- [cursor-auth-local-login.md](cursor-auth-local-login.md) — auth: user API key only
-- [cursor-all-in-one-competitors.md](cursor-all-in-one-competitors.md) — market context
+- [cursor-sdk-harness.md](cursor-sdk-harness.md) — runtime integration and decisions D1–D11
+- [cursor-auth-local-login.md](cursor-auth-local-login.md) — API key, SDK browser login and vault ownership
 - [api-surface.md](api-surface.md) · [contracts.md](contracts.md) · [backlog.md](backlog.md)
 - Upgrade docs: none yet; add `upgrades/<version>.md` with the next bump
 

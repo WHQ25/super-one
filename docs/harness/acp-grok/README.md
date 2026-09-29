@@ -28,7 +28,7 @@ Last updated: 2026-09-29
 
 ## Documents
 
-- Design notes: [grok-acp-permissions.md](grok-acp-permissions.md),
+- Runtime contracts: [grok-acp-permissions.md](grok-acp-permissions.md),
   [grok-build-parity.md](grok-build-parity.md),
   [grok-xai-ext-notifications.md](grok-xai-ext-notifications.md)
 - [api-surface.md](api-surface.md) · [contracts.md](contracts.md) · [backlog.md](backlog.md)

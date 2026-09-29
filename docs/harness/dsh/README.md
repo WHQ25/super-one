@@ -29,9 +29,9 @@ dsh runs in-process as a Cordis tree inside Electron main, not as a child CLI.
 
 ## Documents
 
-- [deepseek-harness-integration.md](deepseek-harness-integration.md) — design and decisions
-  (Route D, in-process Cordis embedding), with the reproducible
-  [spike](deepseek-harness-spike.mjs)
+- [deepseek-harness-integration.md](deepseek-harness-integration.md) — runtime composition,
+  ownership and decisions; the historical embedding [spike](deepseek-harness-spike.mjs)
+  is retained separately from the maintained runtime tests
 - [api-surface.md](api-surface.md) · [contracts.md](contracts.md) · [backlog.md](backlog.md)
 - [upgrades/](upgrades/)
 

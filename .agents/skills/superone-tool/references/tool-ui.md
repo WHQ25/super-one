@@ -5,7 +5,7 @@
 - [Philosophy](#philosophy)
 - [Decide first: what must the user see?](#decide-first)
 - [The base template](#the-base-template)
-- [Label copy and casing](#label-copy-and-casing-collab-grammar)
+- [Label copy and casing](#label-copy-and-casing)
 - [Error and denied chrome](#error-and-denied-chrome)
 - [Result-as-UI (no header)](#result-as-ui-no-header)
 - [Summary is the product](#summary-is-the-product)
@@ -85,7 +85,7 @@ Almost every tool row in this app follows the same chrome. Copy it; do not inven
 | Slot | Role | Rules |
 |---|---|---|
 | **Icon** | Glanceable category | `ToolIcon` closed union, or app/MCP icon when branded. Denied/error swap via `ToolStatusIcon`. |
-| **Label** | What kind of action | Follow [label grammar](#label-copy-and-casing-collab-grammar). Three i18n keys (streaming / action / done). Render with `ToolName` so running text shimmers. |
+| **Label** | What kind of action | Follow [label grammar](#label-copy-and-casing). Three i18n keys (streaming / action / done). Render with `ToolName` so running text shimmers. |
 | **Summary** | What *this* call did | Separate muted span (`ToolSummary`). Space-separated — **never a colon** after the label. Entity, count, query quote — not Title Case chrome. |
 | **Status badge** | Outcome when interrupted | `ToolStatusBadge`: Denied (red) or Error (warning). Only when denied/error. |
 | **Expand indicator** | Affordance that more exists | `ChevronRight`, `ml-auto`, rotates when open. Only if there is expand body *and* `allowExpand`. |
@@ -441,7 +441,7 @@ key silently falls back to English in the Chinese UI — ships unnoticed.
 Rules:
 
 1. **No hardcoded user-facing English** in the block (Storybook fixtures may still use English data).
-2. **Streaming / action / done trio** for every primary label — see [label grammar](#label-copy-and-casing-collab-grammar).
+2. **Streaming / action / done trio** for every primary label — see [label grammar](#label-copy-and-casing).
 3. **Family namespace** when the tool set is multi-tool: `chat.toolBlock.collab.*`,
    `chat.toolBlock.archive.*`, `chat.toolBlock.browser.*`.
 4. **Summary / count fragments** are separate keys (`agentCount`, `sessionCount`, `hitsFound`) so

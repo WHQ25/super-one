@@ -35,8 +35,9 @@ folder `upgrades/<version>/` with its own `README.md`. Other harness-specific fi
 (design packs, spikes) sit next to these under their own names and are listed in the
 harness README.
 
-A ledger starts with the first upgrade planned after the harness gets an exact pin;
-until then `api-surface.md`, `contracts.md` and `backlog.md` are stubs.
+A ledger starts with the first upgrade planned after the harness gets an exact pin.
+`api-surface.md` stays explicitly unstarted until inventoried; existing integration
+knowledge can populate `contracts.md` and `backlog.md` independently.
 
 | Document | Changes by | Answers |
 |---|---|---|

@@ -1,6 +1,6 @@
 /**
  * What the session sync zone holds, as Settings shows it
- * (`docs/architecture/session-sync-zone.md` §9). There is no cap: a session's
+ * (`docs/architecture/session-sync-zone.md` §7). There is no cap: a session's
  * artifacts are named by its transcript, and deleting them under pressure
  * is a decision for the person, so the numbers are shown and the sweep can
  * be run by hand.
@@ -26,7 +26,7 @@ export interface SyncZoneUsage {
   failedHandoffs: { files: number; bytes: number; lastError: string | null }
   /**
    * Complete files whose final upload chunk was sent but never confirmed
-   * (`committing`, §6): from this desktop the node's copy cannot be told apart
+   * (`committing`, §8.5): from this desktop the node's copy cannot be told apart
    * from committed-or-not, so retrying would risk overwriting a file the agent
    * changed. Retry does nothing for these; they need re-delivery under a new
    * path (re-running the action that produced them). Shown separately so the

@@ -1,15 +1,15 @@
 # Session sync zone
 
-Status: **implemented (phases 1–4)** — designed 2026-09-13, revised the same
-day after a Codex design review, built 2026-09-14. Deviations from the design
-as written are listed in §8.
-Scope: a per-session artifact directory that exists on **both** the controlling
+A per-session artifact directory that exists on **both** the controlling
 desktop and a remote node, with a fixed layout and a prefix-mapping rule, so
 that files a Host Action produces on the desktop are readable by the node's
 agent, and files the node's agent produces are readable by the desktop and the
-phone. Sibling docs: `inline-files-previewer.md` (first consumer),
-`remote-node-service.md`, memory `project_remote_node_mcp_delegation`
-(Host Action channel; this document is its "step 7 — artifact contract").
+phone. Every desktop-produced file owed to a node is tracked by one durable
+**delivery record** (§8).
+
+Sibling docs: [inline-files-previewer.md](../features/inline-files-previewer.md)
+(first consumer), [remote-node-service.md](remote-node-service.md) (the node and
+its Host Action channel).
 
 ---
 
@@ -17,39 +17,28 @@ phone. Sibling docs: `inline-files-previewer.md` (first consumer),
 
 A remote-node session runs its GUI tools on the desktop through the Host
 Action channel (`apps/desktop/src/main/environment/host-action-executor.ts`).
-The artifacts those tools write stay on the desktop, and the agent gets a
-desktop path:
+Without the zone, the artifacts those tools write stay on the desktop and the
+agent is handed a desktop path:
 
-- `browser_screenshot` persists the capture under
-  `BROWSER_SCREENSHOT_DIR` = `tmpdir()/super-one-captures/browser` and returns
-  `textReply({ path, width, height, imageNote })`
-  (`apps/desktop/src/main/mcp/browser-mcp-tools.ts:848`; the compact
-  `browser_snapshot` in `browser-mcp-compact.ts:331` returns
-  `screenshot.path` when asked for one). `computer_snapshot` returns
-  `image.path`; iOS / Android captures write their own files
-  (`apps/desktop/src/main/ios-simulator/capture.ts:51`,
-  `device-agent/android-backend.ts:182`, `mirror-backend.ts:132`);
-  recordings use `RECORDING_ROOT`; `media_generate_*` and
-  `@native/image-gallery` write under `mediaGenOutputRoot()/<sessionId>`.
+- `browser_screenshot` / `browser_snapshot` return a capture path,
+  `computer_snapshot` returns `image.path`, the iOS / Android / mirror device
+  backends write their own captures, recordings and `media_generate_*` /
+  `@native/image-gallery` write files too.
 - The node forwards the desktop reply verbatim
-  (`terminalToMcpContent`, `apps/cli/src/session/host-action-mcp-core.ts:76`).
-- The `computer_snapshot` description tells the agent to "call Read on
-  image.path if you need to look at pixels"
-  (`packages/shared/src/environment/host-action-superone-descriptors.ts:1987`).
-  On the node, `Read` is the harness's own file tool over the node's
-  filesystem. The path does not exist there. No Host Action reads a desktop
-  file, and no reply carries an `image` content block (`imageReply` has zero
-  callers in `apps/desktop/src/main`).
+  (`apps/cli/src/session/host-action-mcp-core.ts#terminalToMcpContent`).
+- Tool descriptions tell the agent to `Read` `image.path`
+  (`packages/shared/src/environment/host-action-superone-descriptors.ts`). On
+  the node, `Read` is the harness's own file tool over the node's filesystem,
+  where that path does not exist.
 
-So a remote agent is blind to its own screenshots — fatal for any
-observe → act loop — and every downstream consumer (Markdown images, the
-files previewer, the phone) has to guess which machine a path belongs to.
+A remote agent is then blind to its own screenshots — fatal for any
+observe → act loop — and every downstream consumer (Markdown images, the files
+previewer, the phone) has to guess which machine a path belongs to.
 
-The reverse direction is just as broken: a node path the agent hands back to
-a desktop tool (`@native/image-gallery` `path`, a media reference image, a
-browser upload) is opened with `existsSync` / `readFileSync` on the desktop
-(`generative-ui/native-widget-payload.ts:111-115`, `mcp/media-tools.ts:86-87`,
-`mcp/browser-mcp-tools.ts:1369-1371`) and fails.
+The reverse direction is the same: a node path the agent hands to a desktop
+tool (`@native/image-gallery` `path`, a media reference image, a browser
+upload) would be opened with `existsSync` / `readFileSync` on the desktop and
+fail.
 
 ## 2. Decision
 
@@ -60,1147 +49,835 @@ desktop:  <userData>/sync/<sessionId>/<producer>/<file>
 node:     <nodeHome>/sync/<sessionId>/<producer>/<file>
 ```
 
-- `<nodeHome>` is whatever the CLI already resolves as its home
-  (`resolveNodeHome` / `superone-home.ts:15-24`, honouring `SUPERONE_HOME`,
-  `SUPERONE_NODE_HOME` and alpha/dev suffixes, `apps/cli/src/config.ts:6-20`).
-  Never a hard-coded `~/.superone`.
+- `<nodeHome>` is whatever the CLI resolves as its home (`resolveNodeHome`,
+  honouring `SUPERONE_HOME`, `SUPERONE_NODE_HOME` and the alpha/dev suffixes;
+  `apps/cli/src/config.ts`). Never a hard-coded `~/.superone`.
 - `producer` ∈ `browser | computer-use | ios-simulator | android | ios-mirror`
-  (`CaptureProducer` today) plus `recording`, `media-gen`, `download`, and
-  `agent` (files the agent writes there on purpose). Captures taken with no
-  session (manual UI) go under a reserved `adhoc` session id.
+  (`CaptureProducer`) plus `recording`, `media-gen`, `download`, and `agent`
+  (files the agent writes there on purpose); `ArtifactProducer` in
+  `apps/desktop/src/main/media-output-paths.ts`. Captures taken with no
+  session (manual UI) go under the reserved `adhoc` session id.
+- A zone session id is exactly one path component (`assertZoneSessionId`);
+  anything that could climb is refused, not sanitised.
 - **Local sessions use the same layout.** Without a node there is nothing to
-  sync; the zone is just where session artifacts live, and session deletion
-  has a directory to remove.
+  sync; the zone is where session artifacts live, and session deletion has a
+  directory to remove. A local session's files have no delivery record (§8.5).
 - Each side learns the other's root once, at connection time (§5.1). Paths
   are translated by **prefix replacement on path components** — no lookup
   table, no round trip. Each side canonicalises only its *own* root
   (`realpath`; macOS `/var` → `/private/var`); a foreign path is compared
   textually against the foreign root as reported, using the foreign OS's
-  separator (`descriptor.platform.os`), never `path.resolve`d locally.
+  separator (`descriptor.platform.os`, case-insensitive root compare for
+  Windows), never `path.resolve`d locally
+  (`apps/desktop/src/main/environment/sync-zone-paths.ts`).
 - Files inside the zone are **owned by the session**: the desktop, the node's
-  agent, the desktop renderer and the phone all treat them as their own
-  files. Ownership of a project file does not change; the zone is for
-  artifacts, not for the checkout.
+  agent, the desktop renderer and the phone all treat them as their own. The
+  zone is for artifacts, not for the checkout; project files never enter it.
 
 Why a zone and not "push everything to the node": the desktop already holds
 the bytes it produced. Keeping its copy means the renderer and the phone never
 fetch a screenshot back from the node, and the phone never needs a
 desktop-proxies-node path at all.
 
+`media-output-paths.ts` is the single owner of the layout: `syncZoneRoot`,
+`sessionZoneDir`, `producerDir`, `zoneRelativePath`, `zoneArtifactRef`,
+`isUnderSyncZone`.
+
 ## 3. Artifact references are registered, not discovered
 
-The first draft rewrote every string in the tool result that looked like a
-zone path. That cannot work: the executor sees
-`{ content: [{ type: 'text', text: '<serialised JSON or TOON>' }] }`
-(`browser-mcp-replies.ts:9-14`), not the object; TOON outlines and prose
-notifications are not JSON; and a global prefix replace would touch page text
-and code samples.
-
-Instead, every artifact-producing tool **registers** what it wrote:
+The executor sees `{ content: [{ type: 'text', text: '<JSON or TOON>' }] }`,
+not an object; TOON outlines and prose are not JSON, and a global prefix
+replace would touch page text and code samples. So nothing parses a reply
+looking for paths. Every artifact-producing tool **registers** what it wrote
+(`apps/desktop/src/main/mcp/artifact-registry.ts`):
 
 ```ts
-// apps/desktop/src/main/mcp/artifact-registry.ts
-export interface ArtifactRef { path: string; producer: Producer; final: boolean }
+export interface ArtifactRef { path: string; producer: ArtifactProducer; final: boolean; deliveryId?: string }
 export function registerArtifact(sessionId: string, ref: ArtifactRef): void
 export function takeArtifacts(sessionId: string, callId: string): ArtifactRef[]
 ```
 
-`persistBase64Screenshot`, the recording finaliser, the media-gen writers,
-the download store and the device capture writers call `registerArtifact` at
-the moment the file is complete (`final: true`). A path handed out before
-the file is complete — iOS recording returns its path at `start` and seals it
-at `stop` (`ios-simulator-manager.ts:804-830`) — is registered `final:
-false` and re-registered when sealed.
+- Producers do not call `registerArtifact` directly. They call
+  `publishArtifact` (`environment/zone-delivery.ts`), which seals or publishes
+  the file in the delivery record (§8.4) and then registers the ref carrying
+  its `deliveryId`. A refusal from the record is the producer's failure and is
+  never registered as a final ref.
+- A path handed out before the file is complete (a recording returned at
+  `start`) is registered `final: false` and re-registered when sealed.
+  Non-final refs are neither pushed nor rewritten.
+- Refs are scoped to a **call**, not a session: two Host Actions of one
+  session run concurrently, and one's screenshot must not be pushed for the
+  other. The scope rides on `AsyncLocalStorage` (`collectArtifacts`). A
+  callback that lost its async context is not guessed onto another call's
+  scope; such a call site binds its listener with `bindArtifactScope`.
+  Outside any scope registration is a no-op.
 
-`executeSuperoneMcpTool` collects the refs registered during the call and
-returns them next to the reply. The executor then:
+`executeSuperoneMcpToolCollecting` (`mcp/superone-mcp-tool-surface.ts`)
+returns the refs and the delivery handles the call still holds (E090-4). The
+executor hands both to `syncHostActionOutputs`
+(`environment/host-action-sync.ts`), which:
 
-1. Uploads each `final` ref to the node zone at the same relative path (§5).
-2. Replaces **exact occurrences** of each registered desktop path inside
-   every `content[].text` with its node twin. Exact string match only; a
-   capture path is a long timestamped string that never appears in page text
-   by accident. No parsing, no prefix scan, works for JSON and TOON alike.
-3. The `.agent.jpg` sibling (`screenshot-artifact.ts:163-179`) is a separate
-   registered ref, not inferred from a suffix.
-
-Non-final refs are neither uploaded nor rewritten; the agent gets the
-desktop path and the tool's own "not finished" wording, same as today.
+1. Pushes only refs the reply **names**. A registered file whose path appears
+   in no `content[].text` block is not pushed: the agent has no path to
+   `Read`, and the desktop, renderer and phone read the desktop copy. (This is
+   what keeps `computer_snapshot` from shipping both the full PNG and the
+   `.agent.jpg` when the reply cites only the latter.) The mention check is
+   asked per block, on the same text and through the same traversal the
+   rewrite uses, so the two cannot disagree.
+2. Rewrites each pushed (or deferred) desktop path to its node twin
+   (`sync-zone-paths.ts#rewriteArtifactPaths`). JSON text is rewritten value
+   by value and re-serialised; a decoded string value that *is* a path is
+   compared whole and never searched (a space or colon is a legal file-name
+   character); prose is scanned for whole tokens bounded by delimiters on both
+   sides, including CJK punctuation and corner brackets. Longest path first,
+   so `shot.png` cannot eat `shot.png.agent.jpg`.
+3. The `.agent.jpg` sibling is a separate registered ref, not inferred from a
+   suffix.
 
 ### 3.1 Inputs get the reverse mapping
 
-Args arrive as structured JSON (`ClaimHostActionResult.args`), so a walk is
-sound there. Before executing, the executor maps every string arg under the
-node zone root to the desktop mirror path, fetching it first if the mirror
-does not have it yet (§4.2). This is what makes an `@native/image-gallery`
-call with a node path, a media reference image or a browser upload work; it
-is not a per-tool special case.
+Args arrive as structured JSON, so a walk is sound there. Before executing,
+`mapHostActionInputs` maps every string arg under the node zone to its desktop
+mirror path and mirrors it first (§4.2). This is what makes an
+`@native/image-gallery` call with a node path, a media reference image or a
+browser upload work; it is not a per-tool special case.
+
+- **Session-scoped.** A path under another session's node zone is refused
+  with `forbidden`.
+- **Argument roles** (`host-action-sync.ts#argRoles`, keyed by the name the
+  node publishes and, for `browser_network`, its `action`):
+  - *outputs* (`browser_download.dir`, mini-app `projectDir` / `outputDir` /
+    `directory` for setup) may name a path that does not exist yet;
+  - *directory sources* (`miniapp_dev_register.directory`,
+    `miniapp_dev_pack.appDir`, `miniapp_dev_update_types.appDir`) are mirrored
+    whole with `mirrorNodeDirectory` (§4.2);
+  - *deferred* containers (`browser_perf.action`, `browser_action`'s `input` /
+    `steps` / `parameters`, and the internal names the compact dispatcher
+    re-issues them under) are left as written and mapped where the inner tool
+    runs (`mapNestedToolInputs`, found through `withInputMapping`'s
+    `AsyncLocalStorage`) by the inner tool's own roles. A saved flow's
+    definition is resolved on each run, never frozen at save.
+  - Everything else is a *source* and must exist on the node.
+- A path named under several arguments carries every role and must satisfy
+  all of them.
+- Outcomes: a node refusal or a failed fetch is `unavailable` and fails the
+  call; `missing` fails the call unless every role is an output. Running a
+  tool on whatever copy happens to be at the desktop path would be running it
+  on the wrong bytes.
+- Mapping twice is mapping once: a desktop path does not parse as a node zone
+  path.
 
 ## 4. Direction of sync — by who needs the file first
 
 | Direction | When | Why |
 |---|---|---|
-| desktop → node | **eagerly**, before the Host Action result is returned, within the claim budget (§4.1) | the agent will `Read` the path in its next step |
-| node → desktop | **lazily**, on first desktop read of a node-zone path that is not mirrored yet | the user looks at it later; the agent on the node must not wait for the desktop |
+| desktop → node | **eagerly**, before the Host Action result is returned, inside the claim budget (§4.1); what does not fit is carried by the transfer worker (§8.6) | the agent will `Read` the path in its next step |
+| node → desktop | **lazily**, on first desktop read of a node-zone path | the user looks at it later; the agent on the node must not wait for the desktop |
 
-There is no daemon, no watcher, no bidirectional reconciliation. Each
-direction has exactly one trigger.
+There is no daemon, no watcher and no bidirectional reconciliation.
 
-### 4.1 desktop → node, and the claim budget
+### 4.1 desktop → node: the eager push and the claim budget
 
-The node holds a claim for **60 s** and the action deadline is **120 s**
-(`packages/runtime/src/session/host-action-store.ts:24-25`); past the TTL a
-`safe` action is re-queued and an `unsafe` one cancelled (`:795-833`). The
-desktop executor races its own 120 s cap (`host-action-executor.ts:49`), and
-the consumer aborts without responding when it sees a terminal state
-(`remote-host-action-consumer.ts:181-191, 269`). A tool that ran 45 s
-followed by a 20 s upload would lose the claim with the file half sent.
+The node holds a Host Action claim for 60 s inside a 120 s action deadline
+(`packages/runtime/src/session/host-action-store.ts`,
+`DEFAULT_HOST_ACTION_CLAIM_TTL_MS` / `DEFAULT_HOST_ACTION_DEADLINE_MS`); past
+the TTL a `safe` action is re-queued and an `unsafe` one cancelled. The desktop
+executor caps a tool at 120 s of its own.
 
-Rule: the upload gets `claimExpiresAt - now - 10 s` of budget. Refs that fit
-(by size against measured throughput of the connection; captures and
-generated images always do) are uploaded synchronously and the path is
-rewritten. Refs that do not fit are handed to a **transfer job** (§5.3), the
-path is still rewritten, and the reply gains a sibling field
-`sync: { deferred: [<nodePath>…] }`. The agent's `Read` in the deferred
-window fails with ENOENT — honest, and it tells the agent exactly one thing:
-wait or ask the user to view it. There is **no completion notification to
-the agent in v1**: the desktop has no channel to notify a node session
-(download completion looks up the local `SessionManager`,
-`apps/desktop/src/main/index.ts:5300-5307`, which has no node entry). A
-notification is a follow-up once such a channel exists; until then, recordings
-are evidence for the user (rendered from the desktop copy) rather than input
-for the agent, which matches how they are used.
+`syncHostActionOutputs` reads each named ref's delivery row and lets the
+record say what there is to do:
 
-Every `await` in the executor path checks the abort signal afterwards; a
-transfer job survives the action (it is keyed by `connectionId`, like the
-consumer itself), but a cancelled action does not start one.
+| Row | Action | Reply |
+|---|---|---|
+| `abandoned` | nothing; the tool's own reply says what happened | path not rewritten |
+| `done`, `uploaded`, `notifying` | nothing; the node has the bytes | rewritten |
+| `committing`, holder alive | its executor is finishing the final put | rewritten, *deferred* |
+| `committing`, holder dead | final put sent and lost (§8.5) | rewritten, *stopped* |
+| `gave_up_at` set, earlier phase | automatic retry stopped before the final put | rewritten, *retry required* |
+| any other phase, or `sealed` under another live holder | another holder or the worker is delivering it | rewritten, *deferred* |
+| `sealed`, held by this call or by no live holder | **push it** | rewritten |
 
-A claim-renewal RPC (`session.renewHostActionClaim`) would let large refs
-finish synchronously. Not in v1 — the deferred path covers it and renewal
-changes the store's cancel semantics.
+Refs are pushed smallest first, so a screenshot never waits behind a
+recording. The push, for each file:
 
-### 4.2 node → desktop
+- Takes the row under the handle the call kept (E090-4), or claims an unheld
+  one **before any await**.
+- Budget = `claimExpiresAt − now − CLAIM_BUDGET_MARGIN_MS` (10 s). If the
+  size estimate (per-connection measured throughput) does not fit and the node
+  supports it, asks `session.renewHostActionClaim` (§5.3) for more — capped by
+  the node at the action's deadline, so renewal buys time inside the window the
+  agent already agreed to wait. If it still does not fit, the row goes
+  `sealed → queued`, is released, and is reported deferred.
+- Otherwise `sealed → uploading`, uploads through the `committing` gate
+  (§8.2) to `uploaded`, then `notifying → done`: for an eager push the reply
+  itself is the wake.
+- Every wait is raced against the time actually left (`within`), never a plain
+  await — a node RPC does not return because we stopped wanting it, and
+  aborting a signal it never observes is not a deadline. A work that already
+  settled is honoured even if the deadline fires in the same tick, so a
+  confirmed commit is never reported as lost. `within` rejects an
+  already-aborted signal immediately.
+- A failed push does not fail the action: the tool already did its work. The
+  row records the failure at the phase it reached (§8.2) and the worker
+  resumes it; a failure inside `committing` is *stopped* instead (§8.5).
+
+A cancelled action is deliberately **not** short-circuited before the sync:
+the sync throws on the aborted signal, and its `finally` releases what the call
+still holds to the worker. Returning early would strand those rows.
+
+The node's MCP server forwards `content` and nothing else of the envelope, so
+each list is also appended as a text block, worded so the agent can tell
+*on its way — you will be notified* (deferred), *stopped — re-run the action*
+(stopped), and *retries exhausted — Settings → Retry Upload* (retry required)
+apart. `sync: { deferred, stopped?, retryRequired? }` rides on the envelope
+too. The agent's `Read` of a deferred path fails with `ENOENT` until the
+worker's completion wake (§5.3) arrives.
+
+The hard ceiling is the action deadline: a minutes-long video is deferred.
+
+### 4.2 node → desktop: the lazy mirror
 
 All desktop readers of a session file go through one resolver in the main
-process:
+process (`environment/session-file-resolver.ts#resolveSessionFile`):
 
 ```
-resolveSessionFile(root, path):
-  if root is a remote key and path under nodeZoneRoot(connectionId):
-      local = desktopZoneRoot + suffix
-      if exists(local) and stat matches artifact.stat(size, mtimeMs) → local
-      else artifact.get → write local (.part, rename) → local
-  else if path under desktopZoneRoot → path
-  else → project file: existing local / readRemoteProjectFile path
+remote root + path under the node zone    → desktop mirror (fetched / refreshed via artifact.*)
+remote root + path under the desktop zone → that path (a desktop-produced file)
+remote root + anything else               → node project file (workspace.readFile)
+local root                                → the path itself
 ```
 
-The desktop copy is a **cache-through mirror** validated by size + mtime from
-`artifact.stat`, not by an immutability promise — the built-in writers
-already break that promise (per-second capture filenames collide on
-consecutive shots, `device/capture-path.ts:11-17`; `.agent.jpg` /
-`.preview.jpg` are rewritten deterministically,
-`screenshot-artifact.ts:105-106`, `media-gen/image-preview.ts:87-88`; a
-video job can re-persist the same `generationId`,
-`media-gen/video/history.ts:98-122`). Phase 1 also makes capture filenames
-unique (millisecond + short random suffix) so the mirror check is a
-safety net, not the primary mechanism.
+An out-of-project absolute node path resolves to `missing`, never spliced into
+the project. A phone that needs real bytes of a node *project* file gets a
+transient copy under the OS temp directory (`materializeRemoteProjectFile`),
+not a zone file.
 
-The resolver needs `root`, not a bare path. Today `readProjectFile` has a
-root (`index.ts:3235`) but the media server, the miniapp protocol and the
-renderer's URL helpers only carry a path (`media-server.ts:25-27`,
-`miniapp-protocol.ts:37-39`, `lib/path-utils.ts:3,29`), and
-`lib/remote-media-url.ts:80-84` downgrades an out-of-project node path to a
-local URL, losing the connection. The phone's file commands land in
-`authorizeRemoteFile` (`agent/agent-service.ts:1995`) which also drops
-context, and the poster path at `:2017` passes only a path. Phase 4 threads
-`root` through all of them: media URLs become opaque
-`remote-media://<connectionId>/<path>` for node-zone files (the scheme
-exists; it just needs to accept the zone), and `read_desktop_file` /
-`read_video_poster` carry `root` alongside `path`. Bare-path callers keep
-working for local files.
+The mirror (`environment/session-file-mirror.ts#mirrorNodeArtifact`) is
+**cache-through, validated by size + mtime** from `artifact.stat`, not by an
+immutability promise — the built-in writers rewrite `.agent.jpg` /
+`.preview.jpg` in place. Both transfer directions stamp the local copy with
+the node's `mtimeMs`, so the two sides agree on one stamp; the stamp is
+skipped if the local file changed during the upload. Capture filenames are
+unique (millisecond + short random suffix, `device/capture-path.ts`), so the
+check is a safety net. A fetch goes to a `.part.*` file and is renamed; a
+download that sees the node file's size or mtime change mid-stream starts
+over. Concurrent readers of one path share one fetch.
+
+Rules, in order:
+
+- **The node is authoritative for existence**, except over a desktop copy the
+  delivery record protects (R4, §8.3): a protected-readable original is served
+  as is; a protected-unreadable one (being written, mid-commit, or the record
+  unreadable) is never served and never overwritten.
+- A node **refusal** (`forbidden`, `invalid_argument`, `failed_precondition`)
+  or a failed fetch is `unavailable`, not `missing` — `missing` reads as
+  "deleted" and lets a caller fall through to a stale copy. Only an
+  unreachable node falls back to the local copy, through the same
+  `serveLocal` gate.
+- `.owner` and `.parts` are reserved metadata on both sides; a path naming
+  either is never fetched, listed or overwritten.
+
+Every destructive step (a file/directory type reconciliation, a prune) runs
+behind three guards: the target resolves inside this session's zone (checked
+per member, and again after every await; a link is removed as a link and
+never followed), it is not protected by the record, and the action has not
+been cancelled. The last word before a fetch's `rename` is a synchronous
+`beforeCommit` that re-checks all three. The record is read synchronously
+(`better-sqlite3`), so nothing is awaited between deciding and acting.
+
+**Directory mirror** (`mirrorNodeDirectory`), for tool arguments that read a
+whole tree: `artifact.list`, then every member through the per-file mirror
+(four at a time), then the mirror is pruned of anything the node did not list
+and that actually failed to mirror — never a protected file or an in-flight
+`.part.*`. One directory mirror per session at a time, fully drained before the
+next. A truncated listing, an unreadable subtree, a member that cannot be
+placed, a cancel, or a node without `artifact.list` fails the whole mirror;
+so does a tree that still holds a protected-unreadable member.
+
+**Readers carry `root`.** Media URLs for node-zone files are
+`remote-media://<connectionId>/<path>`; `read_desktop_file` and
+`read_video_poster` carry `root`; the phone's `previewFile` always carries
+`root`, local sessions included. `readProjectFile` answers a zone media file
+with the `local-file://` URL of its desktop mirror (range requests, no size
+cap; `?` and `#` are encoded) instead of a data URI; node *project* media
+still arrives as a data URI under the 10 MiB cap
+(`environment/remote-file-tree.ts`).
 
 ## 5. Node side
 
 ### 5.1 Root exchange
 
-`ExecutionEnvironmentDescriptor` (`packages/shared/src/environment/descriptor.ts`)
-gains `syncRoot?: string` (absolute path on the node, in the node's own
-separator) and `EnvironmentCapabilities` gains `syncZone: boolean`. The
-desktop reads both from `environment.descriptor` at connect. `syncZone` is
-added to the capability intersect and normalise steps
-(`capabilities.ts:79`, `:107`) — an interface field alone is not negotiated.
-An older node reports neither; the desktop then keeps today's behaviour (no
-rewrite, no mirror), and consumers report desktop artifacts as `missing` in
-that session.
+`ExecutionEnvironmentDescriptor.syncRoot` (absolute, in the node's own
+separator) and `EnvironmentCapabilities.syncZone`
+(`packages/shared/src/environment/descriptor.ts`, `capabilities.ts`).
+`syncZone` goes through both the capability intersect and normalise steps — an
+interface field alone is not negotiated. An older node reports neither; the
+desktop then does no rewrite and no mirror, and consumers report desktop
+artifacts as `missing` in that session. No shim.
 
-### 5.2 RPCs
+### 5.2 Artifact RPCs
 
-`workspace.writeFile` / `readFile` are project-scoped by construction
-(`apps/cli/src/workspace/fs-service.ts:167-173`, `resolveProjectPath`) and
-must stay that way — the zone is outside every project. No existing
-desktop↔node transfer is reusable: `exportRemoteEntryToLocal` is one whole
-read (`remote-file-tree.ts:572`), `workspace.watch*` carries change events
-and bounded tails only, `fileTransfer` is `false` on nodes
-(`capabilities.ts:66`), and the mobile relay download path decrypts a whole
-envelope keyed to a pairing (`packages/relay-client/src/downloads.ts:130-165`).
-Four new RPCs under `artifact.*`, scoped by the node to
-`<syncRoot>/<sessionId>` with the existing `path-security.ts` helpers
-(`sessionId` itself validated as a single component; traversal, cross-session
-and symlink escape rejected; the nearest existing ancestor checked for a
-not-yet-created target):
+`workspace.*` is project-scoped by construction and stays that way; the zone
+is outside every project. Five RPCs under `artifact.*`
+(`packages/shared/src/environment/artifact-rpc.ts`,
+`apps/cli/src/rpc/artifact-handlers.ts`,
+`apps/cli/src/workspace/artifact-zone.ts`), scoped to
+`<syncRoot>/<sessionId>` with the workspace `path-security` helpers:
 
 | RPC | Direction | Shape |
 |---|---|---|
 | `artifact.stat` | either | `{ sessionId, relativePath }` → `{ exists, size, mtimeMs }` |
-| `artifact.put` | desktop → node | `{ sessionId, relativePath, transferId, offset, total, sha256, chunk: base64, final }` → `{ ok, bytesWritten }` |
+| `artifact.put` | desktop → node | `{ sessionId, relativePath, transferId, offset, total, sha256, chunk: base64, final }` → `{ ok, bytesWritten, mtimeMs? }` |
 | `artifact.get` | node → desktop | `{ sessionId, relativePath, offset, maxBytes }` → `{ chunk: base64, total, mtimeMs, eof }` |
+| `artifact.list` | node → desktop | `{ sessionId, relativePath }` → `{ exists, entries[{ relativePath, size, mtimeMs }], truncated }` |
 | `artifact.delete` | desktop → node | `{ sessionId, relativePath? }` → `{ ok }` — whole session dir when `relativePath` is absent |
 
-Transfer contract for `put`:
+Boundary:
 
-- `transferId` names one upload; chunks for one id must arrive in order
-  (`offset` equals bytes written so far, else `conflict`); a repeated chunk
-  at an already-written offset is acknowledged and ignored (idempotent
-  retry); two concurrent ids for the same `relativePath` → the second gets
-  `busy`.
-- Data goes to `<file>.part.<transferId>`; on `final`, `sha256` is verified
-  over the whole file and the part is renamed into place. A reader never
-  sees a half file, and a crashed upload leaves a part file the next `put`
-  for that path removes.
-- Chunk size 4 MiB (existing `MAX_READ_BYTES` = 10 MiB, `fs-service.ts:62`,
-  is a per-call cap, not a file-size cap; `fs-service.ts:137-155` already
-  supports `offset/limit` bounded reads, whose helpers `get` reuses). Empty
-  files are a single `final` chunk of zero bytes.
-- `delete` writes a tombstone for the session dir until the RPC returns, so
-  a transfer job completing after a delete does not recreate it.
-- Authorisation: the same controller binding as Host Actions
-  (`clientSessionId`), no lease required for `stat`/`get`, lease required
-  for `put`/`delete`.
+- Every path is keyed on one canonicalised absolute path, from the first chunk
+  to the rename. The session directory must be a real directory (a link there
+  would reach another session's files); traversal, cross-session and symlink
+  escapes fail closed; the nearest existing ancestor is checked for a
+  not-yet-created target.
+- `.parts` (staging) and `.owner` (reclaim marker) are refused through
+  `resolve` on the resolved path, so no RPC can reach them; the staging
+  directory is refused when it is a link.
+- `artifact.list` walks with `lstat`, neither follows nor names links, skips
+  reserved names, caps at `ARTIFACT_LIST_MAX_ENTRIES` (2000) and reports
+  `truncated`. A subtree it cannot read fails as `unavailable` rather than
+  returning an empty, complete-looking listing.
+- Authorisation is the Host Action controller binding (`clientSessionId`
+  equals the session's controller). `stat` / `get` / `list` need no lease;
+  `put` / `delete` present the session lease.
 
-### 5.3 Transfer jobs
+`put` contract:
 
-A desktop-side table keyed by `connectionId`, persisted in the desktop DB:
-`{ jobId, connectionId, sessionId, localPath, relativePath, transferId,
-offset, total, state }`. A job resumes from `offset` after disconnect or
-desktop restart, retries with backoff, and is dropped when its session is
-deleted. Throughput measured per connection feeds the §4.1 budget.
+- `transferId` names one upload. Chunks arrive in order (`offset` equals bytes
+  written, else `conflict` with `expectedOffset`); a repeated chunk at an
+  already-written offset is acknowledged and dropped; a second transfer for a
+  path already being written gets `busy`. A `transferId` reopened for a
+  different path, `total` or `sha256` is `conflict`.
+- Bytes land in `<session>/.parts/<transferId>`; on `final` the sha256 of the
+  whole file is verified and the part renamed into place (an unconditional
+  `renameSync`), so a reader never sees a half file. The final reply carries
+  the committed `mtimeMs`.
+- The node keeps a bounded map of completion receipts
+  (`COMPLETED_RECEIPTS` = 512), so a final chunk re-sent after its reply was
+  lost is acknowledged rather than taken for a new upload. The map is
+  in-memory and bounded, and `stat` carries no hash — which is why a lost
+  final reply cannot be verified from the desktop (§8.2).
+- A transfer idle for 10 minutes is presumed lost and its path freed; a resume
+  then meets `unknown transfer` and restarts from 0 under the same id.
+- Chunks are at most `ARTIFACT_CHUNK_BYTES` (4 MiB); an empty file is one
+  `final` chunk of zero bytes.
+- `delete` tombstones the session directory until it returns, so a transfer
+  landing after a delete does not recreate it. `session.remove` on the node
+  deletes the session's zone directory itself
+  (`apps/cli/src/rpc/handlers.ts`), since the controller binding is gone
+  afterwards.
+
+### 5.3 Session RPCs: claim renewal and the completion wake
+
+- **`session.renewHostActionClaim({ actionId, claimToken, ttlMs })`** extends
+  a live claim. The claim token proves the holder; an expired claim is never
+  revived, even before it is swept; the new expiry is capped at the action's
+  own deadline. A node that refuses or does not know the method leaves the
+  desktop deferring as before (§4.1).
+- **`session.notifyArtifactCompleted({ sessionId, notificationId,
+  relativePaths })`** tells a node session that a deferred file landed. The
+  worker sends it after the upload, with `notificationId` = the delivery id
+  (§8.6). Controller-bound and lease-free, checked **before** any filesystem
+  access (otherwise the answer probes another zone). The node stats each path
+  itself, names only files it holds, JSON-quoted as the node resolved them,
+  at most 32 per wake — the desktop cannot inject arbitrary text. The wake is
+  delivered with `source: 'task-notification'`, the path a collaboration
+  mailbox wake uses (Claude live-injects, Codex steers, other harnesses queue
+  it). Injection is once per `(session, notificationId)`, recorded in the
+  host-action store's `artifact_notifications` table (pruned after 30 days),
+  so a node restart between injecting and the desktop's retry does not inject
+  twice. This is a retry guarantee, not end-to-end delivery: a wake the node
+  acknowledged and then lost before the harness consumed it is not re-sent.
 
 ### 5.4 Agent-facing
 
-- `imageNote` / `recordingNote` reminders stay as they are: "call Read on
-  image.path" becomes true for eagerly-synced refs.
-- `read_manual product/show-your-work` gains one paragraph: deliverables the
-  user should be able to open from any device go under the session's
-  `agent/` directory; the node exposes it to the agent as
-  `SUPERONE_SESSION_DIR`, injected on session start, cold resume and into
-  child sessions.
-- **Write permission is not implied by the variable.** Each harness's
-  sandbox / writable-roots policy (Codex: `packages/codex/src/sandbox-policy.ts:10-24`
-  = cwd + `additionalDirectories`) gains the session's `agent/` directory —
-  that subdirectory only, never the whole zone.
+- `imageNote` / `recordingNote` stay as they are: "call Read on image.path"
+  is true for pushed refs.
+- `read_manual product/show-your-work` tells the agent that deliverables the
+  user should open from any device go under the session's `agent/` directory,
+  exposed as `SUPERONE_SESSION_DIR`.
+- One wrapper, `withSessionZone` (`apps/cli/src/session/session-zone-runner.ts`),
+  in front of the production turn runner injects `SUPERONE_SESSION_DIR` and
+  the write grant. Session start, cold resume and forked children all reach
+  the runner through `SessionRuntime.runTurn`, so it is the single place.
+- **Write permission is not implied by the variable.** The grant is the
+  `agent/` subdirectory only, never the whole zone, carried on
+  `additionalDirectories` (Claude honours it directly; Codex maps it to
+  `writableRoots`). The directory is created first, because some sandboxes
+  drop a grant on a directory that does not exist yet.
 
 ## 6. What lives in the zone
 
-| Producer | Written by | Today |
+| Producer | Written by |
+|---|---|
+| `browser`, `computer-use` | `persistBase64Screenshot` (original and `.agent.jpg`), `persistTextArtifact` (spilled browser text results) |
+| `ios-simulator`, `android`, `ios-mirror` | device captures, in the driving session's zone: the simulator from its bound owner, Android and iOS mirror from `buildBackend(deviceId, sessionId)`; registered once by `DeviceAgentSession` |
+| `recording` | action and device recordings (`createActionRecordingPath`, the `computer_act` recorder, simulator `captureFor`); registered on persist and on adopt |
+| `media-gen` | `media_generate_image/video`, `@native/*-gallery` base64 input, their previews |
+| `download` | `browser_download` and page-started downloads **of a remote session** |
+| `agent` | the agent, per §5.4 |
+
+Downloads (`agent/browser-download-store.ts`, `browser/browser-downloads.ts`):
+
+- A remote session's download with no `dir` lands in its zone's `download/`.
+  A `dir` outside the session zone is refused with a message naming
+  `$SUPERONE_SESSION_DIR` — a node path the agent asked for has already been
+  mapped to its desktop mirror (§3.1), so it arrives inside the zone. The
+  default and an explicit `dir` go through the same containment check; a
+  session directory that is itself a link disqualifies itself.
+- Local sessions are unchanged: explicit dir → user setting → OS Downloads →
+  temp fallback.
+- A download the **page** starts is filed at `will-download`, which cannot
+  ask who owns a tab (renderer state behind an async call) but can ask who
+  last **drove** it (`browser/browser-tab-drivers.ts`). Every browser action
+  records its driver at target resolution, before it runs (`select`,
+  `evaluate` and `open` included); `browser_open` creates the tab blank,
+  requires the driver (`requireTabDriver`, waiting out the attach gap), then
+  navigates, so an initial-load download is attributed. Consequence: a person
+  who downloads from a tab a remote agent drove finds the file in the session
+  directory, not in Downloads.
+- A tab nothing drove yet: `browser_list_downloads` adopts the captured file
+  into the zone under an exclusive path (`adoptCapturedDownload`), remembered
+  so a second listing reuses and re-registers the same copy.
+
+Not in the zone: project files; a local session's downloads.
+
+The pre-zone temp roots (`CAPTURE_ROOT`, `RECORDING_ROOT`,
+`BROWSER_DOWNLOAD_FALLBACK_DIR`) and the old `<userData>/media-gen/outputs`
+root stay readable, so older transcripts render.
+
+## 7. Durability, ownership and reclaim
+
+The zone is under `userData`, not `tmpdir()`: an artifact the user saw in a
+transcript should still open a week later.
+
+- `media-readable-roots.ts` includes `syncZoneRoot()` and keeps the legacy
+  roots, or every absolute link in an existing transcript 403s.
+- Drag-out needs only a real local file; mobile download signing signs the
+  resolved real path, so mirroring completes before signing.
+
+**Session deletion.** Both delete paths — local deletion in the session store,
+remote deletion in `EnvironmentHost.removeSession` — reclaim through
+`environment/session-zone-reclaim.ts#removeSessionZone`, which drops the
+session's deliveries (tombstone + abandon, §8.5) and cancels uploads in flight
+before removing the directory. The `session_cleanup` MCP tool is one caller of
+that path. A forked session reading its parent's files keeps reading them
+until the parent is deleted; then they are `missing`.
+
+**Owner marker.** `.owner` in each session directory
+(`environment/zone-owner.ts`) records who owns it: a connection id, or
+`local`. It is written at every entry that creates a zone directory —
+producers (`ensureArtifactDir`, owner from the call scope), downloads and the
+simulator (`ensureZoneDir`, owner named explicitly), the mirror
+(`MirrorDeps.connectionId`, before the first `.part`), and the first tool call
+of a session. It only moves towards certainty: a node id is written as given,
+`local` only over an unmarked directory, and no call scope (`undefined`)
+writes nothing. The local MCP dispatchers open an explicit local call scope
+(`runInLocalCallScope`, bound once per `McpServer` by `bindLocalCallScope`,
+which wraps `registerTool` / `tool` / `setRequestHandler`; a pass-through
+inside an existing Host Action scope), so a local session's zone is marked
+`local`. The marker also names the destination for producers running outside
+any call (§8.4).
+
+**Reclaim sweep** (`reclaimSyncZone`), evidence-based, not quota-based. It runs
+30 s after launch, on every node connection (debounced; a request during a run
+gets one more run), and from Settings. It removes only what it can prove dead:
+
+- a session directory whose owner says the session is gone — `local` checked
+  against this database (unreadable counts as present), a connection id
+  against that node, an unreachable node meaning **keep**;
+- `adhoc` files older than 7 days (the directory itself stays).
+
+It keeps a directory touched in the last hour, one with a live delivery not
+given up, and an **unmarked** directory however old — it may belong to a live
+remote session with no row here, and age would only be a TTL. Walks use
+`lstat`; a link is removed as a link and never descended into; a top-level
+entry that is not a real directory is skipped. After the await on the node,
+mtime, marker and pending deliveries are re-read before deleting, which also
+makes a manual sweep overlapping the scheduled one safe without a lock.
+
+**No size cap, by decision.** A cap would have to delete artifacts a live
+transcript names; the sweep already removes everything provably dead.
+Settings → General → Storage (`SessionStorageSection`,
+`packages/shared/src/environment/sync-zone-usage.ts`) shows the zone total,
+session count, bytes still owed to a node (live content-owning rows not given
+up), what a dry-run sweep would free, the retryable give-ups (**Retry Upload**)
+and the `committing` give-ups (*needs re-delivery*, no button; E090-3), with
+**Reclaim Now** and **Show in Folder**.
+
+## 8. The delivery record
+
+One fact — *"this file is the newest copy anywhere, and somebody owes it to
+the node"* — has one durable representation with one identity: a row per
+delivery of one version of one zone file. The eager push (§4.1), the mirror
+(§4.2), the worker (§8.6), reclaim and Settings all read and write only this.
+
+### 8.1 The record
+
+`apps/desktop/src/main/db-session-deliveries-schema.ts` (DDL, shared by the
+migration and the test fixture `src/test/fixtures/delivery-db.ts`),
+`apps/desktop/src/main/db-session-deliveries.ts` (primitives):
+
+```sql
+CREATE TABLE session_file_deliveries (
+  delivery_id     TEXT PRIMARY KEY,   -- the only identity anything names
+  session_id      TEXT NOT NULL,
+  connection_id   TEXT NOT NULL,      -- the node this session belongs to
+  local_path      TEXT NOT NULL,      -- canonicalClaimPath spelling
+  relative_path   TEXT NOT NULL,
+  transfer_id     TEXT NOT NULL,      -- artifact.put resume identity; = delivery_id
+  origin          TEXT NOT NULL,      -- 'download' | 'page-download' | 'produced'
+  phase           TEXT NOT NULL,      -- §8.2
+  outcome         TEXT,               -- NULL while live; 'done' | 'abandoned'
+  holder          TEXT,               -- '<incarnation>:<token>' or NULL (§8.5)
+  epoch           INTEGER NOT NULL DEFAULT 0,
+  offset, total, sha256,              -- sha256 and total fixed at seal
+  attempts, next_attempt_at, last_error,
+  gave_up_at      TEXT,               -- automatic retry stopped; a person may act
+  created_at, updated_at
+);
+-- idx_deliveries_path     (session_id, local_path)
+-- idx_deliveries_runnable (connection_id, phase, next_attempt_at) WHERE outcome IS NULL
+-- idx_deliveries_content_slot UNIQUE (session_id, local_path)
+--   WHERE outcome IS NULL AND phase IN ('writing','sealed','queued','uploading','committing')
+CREATE TABLE session_zone_tombstones (session_id TEXT PRIMARY KEY, dropped_at TEXT NOT NULL);
+```
+
+Rows are created before the first byte we control is written (§8.4) and kept,
+with their outcome, until the session's zone is reclaimed — so "was this path
+ever delivered, and as what?" is answered by lookup, never inference. No FK to
+`sessions`: a remote session's row is the node's. A developer database may
+still carry an older `artifact_transfer_jobs` table; nothing reads it.
+
+### 8.2 The phase machine
+
+```
+writing → sealed → queued → uploading → committing → uploaded → notifying → [outcome = done]
+   any phase ─────────────────────────────────────────────────────────────→ [outcome = abandoned]
+```
+
+- `writing`: reserved, being filled. `sealed`: complete; size and hash fixed.
+  `queued`: the eager push left it for the worker. `uploading`: bytes going
+  out, final chunk not yet sent. `committing`: final chunk sent or about to
+  be. `uploaded`: node confirmed the rename. `notifying`: only the wake is
+  owed.
+- **Phase is monotonic.** `advanceDelivery` refuses a backwards step as a
+  programming error. **A failure never moves `phase`**: it sets `last_error`,
+  `next_attempt_at`, `attempts`, or `gave_up_at`, and releases the holder
+  (`recordDeliveryFailure`). The next attempt resumes from the phase actually
+  reached; a delivered file can never be rewritten back to "upload again".
+- **`committing` is written before the final `artifact.put` is sent** (the
+  `beforeFinal` hook, idempotent across an offset resync), and left only when
+  the reply confirms the rename. A gate that cannot be written sends nothing.
+  It is the one phase whose truth on the node is unknowable from the desktop
+  if the reply is lost: the node's receipts are a bounded in-memory map,
+  `artifact.stat` carries no hash, and the commit is an unconditional rename
+  (§5.2). Before `committing` the node has at most a `.parts` fragment; after
+  it the node has the file. **A lost reply in `committing` cannot be verified,
+  so there is no automatic retry** — even for a clean rejection of a
+  single-chunk file, since the desktop cannot tell the two apart. Such a row
+  gives up (`last_error = 'commit unverified'`) and `retryGivenUpDeliveries`
+  excludes it.
+
+### 8.3 Identity rules
+
+#### R1 — one content owner per path
+
+Enforced by `idx_deliveries_content_slot`, a partial unique index over the
+phases that still own the bytes locally. A second writer for a path is a
+constraint violation. Rows at `uploaded` and later leave the slot.
+
+#### R2 — write once per session; a new version gets a new path
+
+A reservation of a path that has **any** row — live, done or abandoned — is
+refused `path-taken`, and the producer picks another name (downloads uniquify
+on the `wx` collision; captures and generations use unique names). In-place
+replacement would need a generation or conditional-commit protocol on the
+node, which commits with a bare rename and reports `busy` by path; an
+`AbortSignal` cannot retract a put already sent. No `superseded` state exists.
+
+#### R3 — every event names a `delivery_id`
+
+`advanceDelivery(handle, step)`, `abandonDelivery(handle)`, and the rest take a
+handle `{ deliveryId, holder, epoch }`. A worker finishing delivery *T* has no
+way to touch delivery *U*: it does not have *U*'s id, and nothing looks a live
+row up by path except the producer's reservation (R2) and the mirror (R4).
+One delivery's completion releasing another's protection is unrepresentable.
+
+**R3a — producers carry the handle; observation reuses it.** Reservation
+returns the id, the `ArtifactRef` carries it, the reply-selection receives it.
+A later observation of the same file (a re-listing, a status boundary naming
+it again, a mirror read) finds the row by `(session_id, local_path)` and
+reuses it — never a second row, never a reset.
+
+#### R4 — the mirror asks one table and reads the whole answer
+
+`classifyDeliveryAt` / `classifyDeliveriesUnder`, one query, `outcome` read
+before `phase`, strongest answer wins:
+
+| Row at or under the path | `DeliveryProtection` | Mirror |
 |---|---|---|
-| `browser`, `computer-use`, `ios-simulator`, `android`, `ios-mirror` | capture tools; `persistBase64Screenshot` for browser / computer-use, direct writes for the device backends | `super-one-captures/<producer>` (root fixed at backend construction) |
-| `recording` | screen / device recordings | `RECORDING_ROOT` |
-| `media-gen` | `media_generate_image/video`, `@native/*-gallery` base64 input | `mediaGenOutputRoot()/<sessionId>` (already per-session) |
-| `download` | `browser_download` without `dir` **in a remote session** | today: explicit dir → user setting → OS Downloads → tmp fallback (`browser-download-store.ts:56-77`); local sessions keep that order |
-| `agent` | the agent, per §5.4 | — |
-
-Not in the zone: project files; `browser_download` with an explicit `dir`
-(the agent asked for a specific place; a remote agent passing a node path
-there gets a desktop write to that path today — a separate Host Action wart,
-out of scope); local-session downloads that the user configured to land in
-their Downloads folder.
-
-`media-output-paths.ts` becomes the single place that knows the layout:
-`syncZoneRoot()`, `sessionZoneDir(sessionId)`, `producerDir(sessionId,
-producer)`, `isUnderSyncZone(path)`. The device backends receive the session
-id at capture time instead of a root at construction.
-
-## 7. Durability and readers
-
-The zone is under `userData`, not `tmpdir()`: today's captures are explicitly
-non-durable (`media-output-paths.ts:10`). That changes — an artifact the user
-saw in a transcript should still open a week later. Consequences that must
-land together:
-
-- `media-readable-roots.ts:18-29` adds `syncZoneRoot()` and **keeps** the
-  legacy capture / media-gen roots readable, or every absolute link in an
-  existing transcript 403s.
-- Drag-out needs only a real local file (`start-drag.ts:20`); mobile
-  download signing signs the resolved real path
-  (`remote-control-service.ts:152-157`), so mirroring must complete before
-  signing.
-- Reclaim is by session deletion only for v1, and the hook is the session
-  delete path itself — local deletion in the session store, remote deletion
-  in `EnvironmentHost.removeSession` (`:2004-2016`) — not the
-  `session_cleanup` MCP tool, which is one caller of that path with its own
-  confirm dialog. Deleting a session with an in-flight transfer job cancels
-  the job first. A forked session that references its parent's files keeps
-  reading them until the parent is deleted; then they are `missing`.
-  `adhoc` is never auto-deleted.
-
-## 8. Phases
-
-All four landed on 2026-09-14, one commit each.
-
-1. **Registry + zone for Host Action outputs** — implemented.
-   `mcp/artifact-registry.ts` (AsyncLocalStorage-scoped per tool call, so two
-   concurrent Host Actions of one session never take each other's refs),
-   `media-output-paths.ts` owning `syncZoneRoot` / `sessionZoneDir` /
-   `producerDir` / `zoneRelativePath` / `isUnderSyncZone`, `registerArtifact`
-   in `persistBase64Screenshot` (browser + computer-use, the `.agent.jpg`
-   sibling as its own ref), the media-gen writers and previews, unique capture
-   filenames, readable roots updated. Local-only, no protocol change.
-2. **Descriptor + RPCs** — implemented. `syncRoot` / `syncZone` negotiated
-   through intersect *and* normalise; `apps/cli/src/workspace/artifact-zone.ts`
-   + `rpc/artifact-handlers.ts` serve the §5.2 contract; tests cover traversal,
-   cross-session, symlink escape, part atomicity, resume-from-offset,
-   concurrent put, delete tombstone and the empty file.
-3. **Eager push, rewrite, input mapping** — implemented.
-   `environment/host-action-sync.ts` (§3, §3.1, §4.1),
-   `artifact-transfer.ts` + `artifact-transfer-service.ts` + the
-   `artifact_transfer_jobs` table (`SCHEMA_VERSION` 6),
-   `session/session-zone-runner.ts` for `SUPERONE_SESSION_DIR` and the write
-   grant, and the §5.4 paragraph in `product/show-your-work`.
-4. **Lazy mirror + resource identity** — implemented.
-   `session-file-mirror.ts` + `session-file-resolver.ts`, `readProjectFile`
-   routed through it, media URLs keeping the connection for out-of-project
-   node paths, `root` on `read_desktop_file` / `read_video_poster`, and
-   `session-zone-reclaim.ts` on both delete paths.
-
-### Deviations from the design as written
-
-- **A code review by Codex on 2026-09-14 found and fixed twelve defects in
-  the phases above** before they shipped: the node keyed its write-lock and
-  authorisation on the relative path spelling and the realpath'd session
-  directory (so `agent/./a` aliased `agent/a`, and a symlinked session dir
-  escaped the zone) — both now key on one canonicalised absolute path and the
-  session dir must be a real directory; `.part` files shared the artifact
-  namespace and a re-sent final chunk could roll a file back — staging moved to
-  a reserved `<session>/.parts/` and completed transfers keep a bounded receipt;
-  a dropped eager push left the node holding a half-written transfer that a new
-  job's fresh id met with `busy` — the job now inherits the eager `transferId`
-  and idle transfers expire; the deferred list lived only on the reply
-  envelope the node's MCP server drops — it is now a `content` block too; the
-  worker's backoff query fed `Date` a value it cannot represent and silently
-  fell back to the 10-minute cap; `dropSession` could not stop a job already
-  taken into a pass — the job re-checks its row before uploading; a download
-  stitched two versions of a file that changed mid-stream — it now restarts on
-  a size/mtime change; the mirror served a node-deleted file from a stale local
-  copy and swallowed a `forbidden` as offline — the node is authoritative for
-  existence unless an upload is pending; the reply rewrite matched path
-  substrings (so `shot.png` hit `shot.png.bak`) and could break JSON on a
-  Windows twin — it now matches whole tokens, longest-first, and rewrites JSON
-  values structurally; the artifact registry guessed a context-less
-  registration onto "the latest open scope" and misfiled it under a concurrent
-  call — it no longer guesses (a call site that needs it binds with
-  `bindArtifactScope`); an out-of-project absolute node path was spliced into
-  the project (`/etc/hosts` → `<project>/etc/hosts`) — it now resolves to
-  `missing`; the previewer's Retry re-stat'd a remote file locally and the
-  card's fallback chip and the phone's error state dropped `root` — all three
-  now carry it; and `media_video_status` returning an already-generated file
-  from the record did not re-register it — it does now, so a second poll's
-  paths are pushed and rewritten. Each has a scenario-named regression test.
-
-
-- **A second review of those five follow-up commits found sixteen more, all
-  fixed before this branch was handed back.** Four could lose or expose data.
-  Reclaim walked the zone with `stat`, so a symlink dropped into it was
-  followed and *its target's* old files were deleted — every walk is `lstat`
-  now, a link is removed as the link it is and never descended into, and a
-  top-level entry that is not a real directory is skipped. The node's reserved
-  `.parts` check compared the requested *spelling*, so `agent/../.parts/x`
-  walked around it and `mkdir -p` through a linked `.parts` wrote outside the
-  zone — the check now runs on the resolved absolute path and the staging
-  directory itself is refused when it is a link. A tool call for one session
-  could name another session's node zone path and be handed that session's
-  mirror — input mapping is session-scoped and refuses a foreign zone with
-  `forbidden`. And the sweep read "no ownership marker" as proof of death,
-  deleting directories of sessions this database still names, then deleted
-  after an `await` without looking again — the local database now gets the
-  first word, and mtime, marker and pending transfers are all re-read after
-  the await.
-
-  The rest, in the same commit: the completion notification stat'd one
-  spelling and reported another (and could carry newlines into the wake text)
-  — it names the path the resolver returned, JSON-quoted, capped at 32; it
-  checked the controller *after* the stat, which made it an existence probe
-  across the binding — the check comes first; and it recorded delivery before
-  the send, so a failed wake was never retried, while keying only on the
-  notification id let one session's success answer another's — it records
-  after the send, keyed on session and id. `renewClaim` could revive a claim
-  that had expired but not yet been swept. The upload budget aborted a signal
-  the RPC never observed, so the sync step waited for the node anyway — the
-  upload is now *raced* against the budget and the hash stream is cancellable,
-  because a signal is a notification and only a race is a deadline. The path
-  rewrite still missed a path nested two JSON levels deep, and the separate
-  mention check that decides whether to push at all disagreed with it — both
-  questions now go through the one traversal, so they cannot drift again.
-  `uploadArtifact` stamped the node's mtime onto a local file that had changed
-  under it, which would make the mirror agree about two different files
-  forever. The node appended to an in-flight `transferId` whose `total` /
-  `sha256` had changed. A mirror fetch that failed reported `missing`, which
-  reads as "deleted" — there is an `unavailable` outcome now, and mapped
-  inputs refuse it instead of handing the tool a stale copy.
-  `browser_download`'s `dir` accepted another session's zone and a directory
-  linked out of it, and fell back to this machine's Downloads folder when the
-  zone could not be created — a path the node's agent can never open.
-  `read_desktop_file` read a whole remote file into memory before checking the
-  10 MiB cap. Computer-use recordings were never registered, a page-triggered
-  download never entered the zone, and a foreground download was queued twice
-  — once eagerly and once by the background finalizer.
-
-- **A third review found seven more.** Two were blockers. Reclaim still
-  deleted an *unmarked* directory once this database did not name the session
-  — but a live remote session has no row here and no marker either if it never
-  ran a Host Action, so the sweep was deleting on a timer while claiming to
-  delete on proof. An unmarked directory is now simply kept; age is a TTL, and
-  this sweep does not have one. And `adoptCapturedDownload` joined the
-  captured file's basename onto the zone directory, so a page download of
-  `report.csv` overwrote a `download/report.csv` an earlier turn had already
-  named — it reserves an exclusive path now and remembers the adoption, so a
-  second `browser_list_downloads` returns the first copy instead of making
-  another.
-
-  The rest: a node *refusal* (`forbidden`, `invalid_argument`) was still
-  reported as `missing`, and `missing` was allowed for every mapped argument —
-  so a source file the node would not hand over still reached the tool as a
-  stale desktop copy. `missing` is now refused for every argument except the
-  ones a tool declares as destinations (`HOST_ACTION_OUTPUT_ARGS`), and a
-  refusal is `unavailable`. `browser_download`'s *default* directory skipped
-  the containment check the explicit one got, and a session directory that was
-  itself a link moved the boundary to wherever it pointed — both paths now go
-  through one check, and a linked session directory disqualifies itself. The
-  mention check ran on every content block joined together while the rewrite
-  ran per block, so a reply of one JSON block plus one prose block parsed as
-  neither and its ref was never pushed — mention is asked per block, on the
-  same text the rewrite will see. The path token still had no *left* boundary,
-  so `/tmp/a.png` "occurred" inside `/other/tmp/a.png`. And the claim renewal
-  — the RPC that exists to protect the claim — was itself awaited without a
-  deadline; every wait in `host-action-sync.ts` now goes through one `within`
-  helper that races the work against the time actually left.
-
-- **A fourth review found five more, none blocking.** One path named twice in
-  a call — as a destination and as a source — kept only the first role, so
-  argument order decided whether a stale desktop copy reached the tool; a ref
-  now carries every argument it appeared under and has to satisfy all of them.
-  The path-token boundary was still a list of "path characters", which is
-  always one script short: `a.png副本` and `a.png\child` both matched (the
-  backslash had not even survived the string→regex escaping) — the boundary
-  is now the set of delimiters that *can* surround a path, and a decoded
-  value that is exactly the path is compared, not searched. The destination
-  allowlist was keyed on `browser_download`, but the node publishes
-  `browser_network` and the split happens after mapping — roles are keyed on
-  the public name and its `action` now, and the mini-app tools' `projectDir`
-  (where the dev pointer is written) counts as a destination. An adoption
-  cache hit returned the copy without registering it, so the *second*
-  `browser_list_downloads` handed the agent the desktop path again. And a
-  directory argument under the zone (`miniapp_dev_register.directory`,
-  `pack.appDir`, `update_types.appDir`) was reported `not_found` whether or
-  not it existed, because `artifact.stat` only knows files — it is refused
-  as `unsupported` with a message that says so, and §9 records the limit.
-  Also from that review's notes: a transfer job that had failed for good was
-  read as "still queued" and pinned its dead directory forever; the startup
-  sweep now ignores terminal rows and drops them with the directory.
-
-- **A fifth review found three more, none blocking, and settled the path
-  rewrite's contract.** A decoded JSON string value that *is* a path is now
-  compared whole and never searched — `/tmp/a.png copy.png` and
-  `/other:/tmp/a.png` are other files, and a space or a colon is a legal
-  file-name character — while a value that is prose is scanned for a token
-  bounded by delimiters, which now include Chinese punctuation and corner
-  brackets (`已保存到 <path>。` used to be judged unmentioned and the file
-  was never pushed). Top-level text blocks are prose. And the argument roles
-  were only applied at the outer boundary, so a download wrapped in
-  `browser_perf` or expanded from a saved `browser_action` had its `dir`
-  refused as a missing source: the wrapper's container argument is now
-  `deferred` — left exactly as written — and every route to a browser tool
-  (`runPrimitive`, `executeBrowserTool`) maps the inner call by the inner
-  tool's own roles, finding the Host Action's mapping through
-  `AsyncLocalStorage`. Mapping twice is mapping once, because a desktop path
-  does not parse as a node zone path. A sixth review found that this was not
-  yet true end to end: the compact dispatcher re-issues each wrapper under an
-  internal name (`browser_perf_measure`, `browser_action_save` / `_do`) and
-  the second mapping pass judged there what the first had deferred; and a
-  saved flow's `parameters[].default` was mirrored at save time and stored as
-  a desktop path, freezing a source file at the version the save happened to
-  see. The internal names now defer the same arguments as their public
-  wrappers, and `parameters` is definition data like `steps` — resolved on
-  each run, never at save. The wiring test that had passed on a stale mock
-  reading now clears the mock per entry and covers a real saved flow's save
-  and run.
-
-- **An eighth review, of the §9 follow-up work below, found fourteen more and
-  all are fixed.** The directory mirror (`mirrorNodeDirectory`) carried most of
-  them: its prune walked only the mirror root's children, so a root symlink out
-  of the zone had the *target's* files deleted — the zone-boundary check is now
-  shared with the download store (`sync-zone-paths.ts` `withinSessionZone`) and
-  refuses a root or ancestor that resolves outside; prune deleted any desktop
-  file the node had not listed, including a fresh capture still queued for
-  upload, and now keeps a pending original; the keep-set was built from the
-  listing rather than from members that actually mirrored, so a file the node
-  dropped between list and fetch survived; two overlapping mirrors could
-  interleave and let a stale listing prune a newer generation, so directory
-  mirrors now serialise per session; a file/directory type swap on the node
-  (`foo` file ↔ `foo/bar`) threw `EEXIST`/`EISDIR` forever and is now
-  reconciled before the fetch; a cancel during listing still ran the prune, so
-  the signal is checked after the list and before the prune; and the owner
-  marker was written only *after* a download finished, so a crash mid-first-
-  mirror left an unmarked directory the sweep keeps forever — it is written
-  before any `.part` is opened. The node's `artifact.list` swallowed a
-  `readdir`/`lstat` failure and returned an empty *complete* listing, which the
-  desktop would prune its mirror to; it now fails such a subtree as
-  `unavailable`, and lists the requested path as spelled (every component
-  `lstat`-checked) so an in-zone directory symlink is refused rather than
-  listed as its target. Ownership marking read "no call scope" as `local`,
-  which is a deletion warrant against a remote session's zone: the panel's
-  screenshot of a simulator a remote session holds rewrote `node-1` to `local`.
-  A missing scope now marks nothing, a node marker is never taken back to
-  `local`, and the simulator manager records the binding session's owner at
-  `bind` and marks the capture directory itself. The tab-driver was recorded
-  only on the plain resolve, so a CDP click (via `resolvePoint`) or a synthetic
-  action on a tab handed from session A to B filed B's page-started download
-  under A; the driver is now recorded at every action's target resolution and
-  before the action runs. The dedupe stat that skips re-uploading a file the
-  node already holds awaited with no deadline; it is now bounded by the same
-  claim budget as every other wait. The Settings "waiting to upload" figure
-  counted `uploaded`/`notifying` rows (bytes already on the node) and double-
-  counted retries; it now sums only `pending`/`running` jobs, deduplicated by
-  resolved path. And a `local-file://` URL left `?` unencoded, so a zone file
-  named `report?draft.png` resolved to `report` — `?` now joins `#` as an
-  encoded path terminator.
-
-- **A ninth review, of those fixes, found nine more — combination scenarios
-  the single-case fixes left open. All nine were fixed as filed; a tenth
-  review then reopened four of them at narrower windows (below), so read
-  this paragraph as "the case as reported", not "the guard is now total".**
-  The pattern: a
-  guard that held at the mirror root, or only in the prune, did not hold at
-  every file operation. The boundary check is now enforced per member (an
-  in-zone ancestor symlink pointing *out* of the zone had the root check pass
-  and the fetch then overwrite the link's target); the pending-original and
-  cancel checks now cover the destructive *type reconciliation* too, not just
-  the prune — reconciling a `foo` file over a desktop `foo/` directory used to
-  delete an original still queued for upload, and a cancel arriving during the
-  member stat let the reconcile delete before the fetch threw. The prune is now
-  fully synchronous over a pending set snapshotted before the walk, so nothing
-  is `await`ed between deciding to delete and deleting, and it takes the signal
-  so a cancel between the last fetch and the prune stops it. A failed batch no
-  longer releases its per-session generation early: workers record their
-  failure and return rather than throwing, the batch is cancelled as one, and
-  every worker is awaited — a fetch a failed mirror abandoned used to outlive
-  it and write into the tree a later mirror produced. `.owner` is now reserved
-  metadata on *both* sides: the node refuses it through `resolve` (so
-  `stat`/`get`/`put` cannot reach it, not only `list`), and the mirror refuses
-  any path naming it — with the marker written before the first `.part`, a
-  mirror of `.owner` itself would have moved a live directory's ownership to
-  `local` and handed it to the sweep. The tab driver is recorded by `select`,
-  `evaluate` and `open` as well (a select's change handler and an evaluate can
-  both start a download; a new tab is attributed as soon as it exists). And the
-  local MCP dispatchers — the stdio bridge and the in-process DeepSeek backend —
-  now open an explicit local call scope (`runInLocalCallScope`): after "no scope
-  means unknown owner", a local producer marked nothing at all, which left a
-  local session's zone unmarked and therefore kept by the sweep forever. A UI
-  call with no identity is still unknown and still marks nothing. Finally the
-  Host Action dedupe stat checks cancellation unconditionally before acting on
-  its answer, and `within` rejects an already-aborted signal instead of waiting
-  out a budget for an abort event that has already fired.
-
-- **A tenth review closed four of the nine and found five more, each the
-  same guard failing inside a window narrower than the one it was fixed
-  for.** Three were time-of-check/time-of-use: the prune walked a pending set
-  captured *before* the fetches, so a file whose upload was queued while the
-  batch ran was deleted as unknown — `PendingSource.snapshot()` is now taken
-  synchronously at the moment of each destructive step rather than once per
-  mirror; the boundary check ran after the local `stat`, and the post-`await`
-  `local` returns (cache hit, offline fallback) did not re-check it at all, so
-  a symlink swapped mid-mirror was served from outside the zone; and a cancel
-  arriving after the pending source resolved was not seen until the first
-  fetch, so the batch started work the caller had already abandoned. The
-  fourth: a fetch that decided to overwrite could still `renameSync` over an
-  original queued for upload in the milliseconds between the last check and
-  the commit — `downloadArtifact` now takes a `beforeCommit` hook and the
-  mirror re-checks pending, cancellation and the boundary *synchronously*
-  between `close` and `rename`, which is the only point with no await left.
-  The fifth was scope coverage, not timing: `runInLocalCallScope` had been
-  wired into two dispatchers by hand, which misses the Claude SDK's in-process
-  server, the HTTP transport and anything registered dynamically (a mini-app's
-  tools). It is now bound once per `McpServer` instance
-  (`bindLocalCallScope`), wrapping `registerTool`/`tool` so every handler runs
-  inside the scope; inside an existing Host Action scope it is a pass-through,
-  so a remote session's call is never refiled as local.
-
-- **An eleventh review found the guards placed correctly and guarding the
-  wrong set.** Round ten proved no `await` sits between a check and the act it
-  guards. It did not prove the check asks about the right files, and three of
-  the four findings here are that second question.
-
-  The job table is the durable record of "the node is owed these bytes", but a
-  job exists only once a file is finished *and* enqueued. `browser_download`
-  reserves its path and streams into it; for the whole transfer, plus the gap
-  between sealing and enqueueing, the file is real, is the only copy, and is
-  invisible to the table — so a directory mirror pruned a download while it was
-  being written. `active-writes.ts` covers exactly that gap: an in-process,
-  synchronous registry (the gap is in-process, and the guards cannot `await`),
-  claimed at the reservation and released only once the eager push has landed
-  or a job row exists. It has two stages, because a file being *written* is
-  incomplete — protected, but refused as a tool input rather than handed over
-  half-finished — while a file that is *sealed and not yet enqueued* is
-  complete and is served exactly like a pending upload.
-
-  The mirrored mistake: `state !== 'done'` counted `uploaded` and `notifying`
-  as "the node still owes us". Those states mean the bytes are already there
-  and the row is waiting on the completion wake, so the desktop copy is *not*
-  authoritative — the agent may have changed the file on the node since, and
-  round ten's "serve the pending local copy" branch then handed back the
-  version it replaced. The predicate now names the states it means
-  (`pending`, `running`, `failed`) instead of excluding the one it does not.
-
-  `bindLocalCallScope` was also still incomplete. Wrapping the registrars
-  misses a call that never reaches a registered callback: the compact browser
-  surface installs its own `tools/call` handler so an unlisted legacy
-  `browser_*` alias from an old transcript still runs, and that branch calls
-  the union executor directly. The binder now also wraps `setRequestHandler` —
-  not the handler it finds there, which the fallback would simply replace.
-
-  And the new-tab fix below was best-effort where it had to be a precondition:
-  a cold-started view is registered before its `webContents` exists, so the
-  first resolve can fail with "not attached yet" and the next succeed.
-  `noteTabDriver` swallowed that and `open` navigated anyway, leaving the tab
-  unattributed for its initial load. `requireTabDriver` waits out the attach
-  gap and *reports*; `browser_open` refuses to navigate without it and names
-  the blank tab it left behind so the caller can retry or close it.
-
-- **A twelfth review found the registry right and its handoffs wrong: a
-  claim now names its holder.** The first version let anyone release anything,
-  and every caller that could plausibly be "the end" released in a `finally`.
-  That is wrong in both directions at once, and both were real:
-
-  - A Host Action that returned while a download it started was still
-    streaming — the tool went background on its deadline — released a claim
-    whose writer was still running, reopening the exact window the registry
-    exists to close.
-  - A `defer` that failed released anyway, so the only complete copy of a file
-    became prunable with no job row naming it anywhere. The optional-chained
-    "no transfer service at all" branch counted as a successful handoff too.
-
-  So a claim records its `holder`, and only that holder can end it. Taking
-  responsibility is an explicit `adoptWriteClaim`, which refuses a file still
-  being written (there is nothing to take yet) and refuses one another holder
-  already took (two handoffs cannot race to free one file). "This path
-  appeared in the reply" is not ownership. The writer's own give-up path is
-  `abandonWriteClaim`, refused once someone has adopted.
-
-  Two smaller consequences of the same shape. The executor adopts *before* its
-  cancellation check, because that check returns early and a sealed claim
-  abandoned by an early return has no holder left to hand it on — it would pin
-  its path for the life of the process. And `queueDownloadUpload` retries a
-  transient `defer` failure and, when it finally gives up, keeps the claim and
-  logs an error: pinning a path is the lesser failure, losing the only
-  complete copy is the greater one.
-
-  The fourth finding was a read, not a release. `writing` gated the online
-  branches but not the offline fallback, and not the whole-directory answer —
-  so an unreachable node served half a file, and a tree with a half-written
-  member was handed to `miniapp_dev_pack` as a complete input. Every `local`
-  answer now goes through one `serveLocal` that refuses both out-of-zone and
-  incomplete, and a directory answer is `unavailable` while
-  `activeWriteUnder` reports `writing`. Keeping a file through the prune and
-  calling the tree complete are different questions; only the first had been
-  answered.
-
-  `download-claim-lifecycle.integration.test.ts` is where "a claim is released
-  exactly once, by whoever took responsibility" stops being an argument: real
-  `downloadUrl`, real reservation, real collecting tool surface, real
-  executor, over the four endings — finishes inside the call, still streaming
-  when the tool replies, cancelled as the tool completes, and the queue
-  refusing it.
-
-- **A thirteenth review found the foreground handoff still releasing on
-  failure, and the fix is a table both paths share.** The background give-up
-  had been taught to keep its claim; the *foreground* one had not.
-  `syncHostActionOutputs` either pushes a file inside the claim budget or files
-  a job for it, and when that `defer` threw, the executor's `finally` released
-  the claim anyway — the file then had no node copy, no job row and no
-  protection at once, and the next directory mirror pruned it.
-
-  `pending-handoffs.ts` is where both paths now land. Two properties are
-  load-bearing, and each came from getting it wrong first:
-
-  - **The entry carries the claim's holder.** Recovery does not re-adopt:
-    `adoptWriteClaim` only accepts a claim still held by `writer`, so a second
-    adopt of a file the queue already took returns false and the release
-    silently does nothing. Whoever recorded the failure stays responsible.
-  - **The original `transferId` is kept.** A retry that invents a new id makes
-    the node meet a second transfer for one file instead of resuming the
-    partial it already holds.
-
-  Recovery runs when a connection's transfer worker starts, and from a
-  **Retry Upload** button in Settings → Storage. `dropSession` clears a deleted
-  session's entries and the claims they were protecting.
-
-  Worth being precise about what fails here, because the first guess was
-  wrong: `defer` is purely local — `statSync`, a SQLite insert, a worker wake —
-  so it fails for local reasons. A node that is merely unreachable never
-  reaches this table; that is what the worker's backoff over persisted jobs is
-  for.
-
-  One unrelated leak surfaced on the way: the executor's deadline timer was
-  cleared only when the *outer* signal aborted, so a Host Action that simply
-  succeeded left a live timer for the rest of the timeout — holding the event
-  loop open and eventually firing an abort on a controller nobody was
-  listening to. It is cleared in the `finally` now.
-
-- **A fourteenth review found that recording a failure is not the same as
-  protecting a file, and the three defects it produced share one cause: the
-  handoff was a note, not a task.** `pending-handoffs.ts` now owns one task per
-  `(connection, session, canonical path)`, from the first attempt until a job
-  row exists.
-
-  The blocker was the gap between the two. The table recorded a `holder` and
-  assumed the claim already existed — but only downloads reserve a path, so
-  only downloads had one. A screenshot is simply written and registered, so a
-  screenshot whose enqueue failed got a tidy record and no protection at all,
-  and the next directory mirror deleted it. A task now *takes* its claim:
-  `takeSealedClaim` creates one when the producer never did, so "there is a
-  task" and "the file is protected" cannot come apart.
-
-  The second followed from re-entry. A later listing that re-registered the
-  same download overwrote the entry — minting a new `transferId`, which
-  abandons whatever partial bytes the node holds, and asserting a holder the
-  caller had only guessed at. A claim recorded under a holder that never took
-  it is a claim nobody can release, and a sealed claim that outlives its
-  handoff beats the node for ever: the mirror keeps serving the desktop's old
-  copy of a file the agent has since changed. Re-entering now returns the task
-  in flight, id, claim and schedule intact.
-
-  The third was deletion racing the retry ladder, and it took two attempts to
-  test honestly. Cancelling the timers in `dropSession` is enough for a task
-  the table already holds — the first test passed without the fix, which is
-  the failure mode this review keeps catching. The window that is real is a
-  handoff *arriving* after the delete, from a caller that awaited something
-  first. That is why `EnqueueJob` is synchronous by contract and both call
-  sites resolve their dependencies **before** building the task: an enqueue
-  that awaits internally has already been entered by the time anything could
-  refuse it. A deleted session is tombstoned, and `handoffArtifact` returns
-  null rather than filing a row and taking a claim on a file that was removed
-  with its session.
-
-- **A fifteenth review found both remaining holes at the seam between the
-  eager push and the handoff task — one on each side of it.**
-
-  Protection still began too late. The executor only *adopted* a claim, which
-  a screenshot never has, and the handoff task only created one after the
-  enqueue had already failed. In between sits the whole eager push: a `stat`
-  asking whether the node already has the file, a hash, an upload — every one
-  an await. A directory mirror landing in any of them found a file nothing was
-  holding. The executor now takes protection for every `final` ref *before*
-  the first node RPC, creating the claim when the producer never made one, and
-  leaves alone anything a handoff task already owns.
-
-  And the eager push ran *beside* an existing task rather than deferring to
-  it. A file with a stuck handoff would be delivered by a route the task could
-  not see, so the task never settled: it kept its claim — which makes the
-  mirror serve this desktop's copy of a file the agent has since changed on
-  the node — and its retry ladder eventually filed a redundant job that
-  uploaded the old bytes back over the new ones. A path with a live task is
-  now reported `deferred` and not pushed at all. One owner, one delivery.
-
-  That is the shape of every finding from the twelfth review onward: a file's
-  protection and its delivery are one responsibility, and every defect came
-  from a second party acting on either without holding it.
-
-- **A sixteenth review found both remaining holes in concurrent Host Actions,
-  and replaced the rule they were violating with a stricter one.** The
-  invariant is now stated at the top of `pending-handoffs.ts`:
-
-  > At any moment a given file version corresponds to **one identifiable
-  > transfer instance**. Protection begins before the first node RPC and lasts
-  > until that instance's delivery ends. Release, retry and cancellation all
-  > verify the instance and the session are still the ones they were for.
-
-  Asking "does anyone own this file?" *before* an await and acting on the
-  answer after it is not a check. A second Host Action slipped in during the
-  first one's `stat`, and both delivered — under two different transfer ids,
-  so the node's receipt dedup could not catch it either. The later upload put
-  stale bytes back over the file the agent had since changed. Instances are
-  now acquired synchronously, before anything is awaited, and a second caller
-  for a path is told it already has an owner and reports it deferred.
-
-  And a role label is not an identity. Two concurrent actions both called
-  themselves `push`, so cancelling either satisfied the check on the other's
-  claim and freed a file that was still being delivered. `ClaimHolder` is now
-  an opaque token minted per holder; `takeSealedClaim` refuses a path another
-  token holds, and a release names an instance rather than a kind of caller.
-
-  The executor consequently holds no claims at all. Protection and delivery
-  are one responsibility, `syncHostActionOutputs` owns it end to end, and a
-  cancelled action is deliberately *not* short-circuited before it — the sync
-  acquires synchronously and then throws on the aborted signal, so its
-  `finally` frees what the tool produced. Returning early instead would leave
-  a sealed file held by its writer with nothing downstream to deliver it.
-
-- **A seventeenth review found the instance rule held only for instances this
-  process still remembers, and that "protected" and "owed" had come apart
-  again.**
-
-  A successful enqueue deleted the instance — correctly, since the job row is
-  what protects the file from then on — but the row still *owes the upload*.
-  A listing arriving before the worker picked it up found no owner, minted a
-  second transfer id and pushed. Two uploads of one file under two ids, which
-  no receipt dedup can catch, and the queued job's later upload put its stale
-  bytes back over whatever the agent had done in between. `acquireHandoff` now
-  asks the transfer service, synchronously, whether a job still owes this
-  path's bytes and joins it instead — same id, no second delivery.
-  `uploaded` and `notifying` are deliberately not joinable: those rows owe only
-  a completion wake and no longer own the file's content.
-
-  A joiner was also not a consumer. Told "deferred, you will be notified", it
-  had nothing registered anywhere, so cancelling the *owner* dropped the
-  delivery entirely — the promise was never kept and the zone file it named was
-  pruned. Joining now registers a waiter, and an owner giving up with waiters
-  outstanding hands the file to a job under the same id rather than releasing
-  it. A joiner stops waiting only when its own call dies; one that returned
-  normally is still owed the file.
-
-  And removing the executor's fallback cleanup (sixteenth review) left a file
-  nothing would ever deliver holding its writer's claim for ever.
-  `browser_perf_measure` can run a download and report only timings, so the
-  path appears nowhere in the reply, the sync skips it at the mention filter —
-  and a sealed claim reads as a desktop original the node still owes, so the
-  mirror serves it over the node's copy indefinitely. Any `final` ref this call
-  will not deliver now has its writer's claim adopted under a token of its own
-  and released, which cannot touch a file still being written or one a transfer
-  instance owns.
-
-- **An eighteenth review separated three things the job table had been
-  conflating: a terminal failure, a retryable upload, and a file that owes
-  only a notification.**
-
-  Joining a persisted job (seventeenth review) reached for `failed` rows too —
-  and `failed` is terminal. Every worker query excludes it, and the Settings
-  retry only ever looked at in-memory instances, so joining one answered "on
-  its way" about a delivery nothing would ever perform. **The set of files
-  being protected is not the set of tasks that will still run**, and the join
-  is exactly where they have to agree: a `failed` row asked for again is
-  revived to `pending` in place, keeping its job id, its transfer id and the
-  offset the node already has.
-
-  And a joiner's promise was only half kept. Waiters made an *abandoning*
-  owner hand the file to a job, but an owner that *succeeded* settled
-  silently — so a caller told "deferred, you will be notified" never was. An
-  eager delivery with waiters outstanding now records a row that starts in
-  `uploaded`: only the wake is owed. Enqueueing it normally would re-upload
-  bytes the node already has and let this copy overwrite whatever the agent
-  did to the file in between.
-
-  Two more came out of the background-finalizer test below, which is the entry
-  every other case here had been standing in for. A session deleted while a
-  download was still streaming left the *writer's* claim held for ever: the
-  handoff that would have adopted the file is refused by the tombstone, so
-  nothing was left to release it — `dropSessionHandoffs` now clears the
-  session's claims wholesale, since its zone directory goes with it. And a
-  lookup that threw (the database being precisely what tends to be
-  unavailable) escaped `acquireHandoff` as an unhandled rejection and left the
-  file with no instance at all; unable to say "someone else owns this" now
-  means no, which starts a delivery of our own.
-
-- **`background-download-finalizer.integration.test.ts` covers the entry the
-  claim tests could not.** Every other case drives `downloadUrl` or
-  `queueDownloadUpload` directly; this one goes through
-  `browser-download-tasks`' own settle — a real `browser_download` racing its
-  timeout into `background`, the call scope closed, and the rest of the
-  transfer arriving with nobody left to register it — over a real job table,
-  the real transfer worker and the real mirror. It found the two defects
-  above on its first run.
-
-- **A nineteenth review found both of the eighteenth's database-failure
-  handlers were themselves data-loss bugs.** Neither needed a restart.
-
-  "I could not read the job table" had been collapsed into "there is no job".
-  That is the same mistake as answering a question you did not ask: it handed
-  out a second upload identity for a file a persisted job was already
-  carrying, and whichever of the two ran last won — usually the older one,
-  putting stale bytes back over the node's newer copy. The lookup is now three
-  answers, `found | absent | unavailable`, and `unavailable` gets its own
-  instance state: the file is held immediately, no transfer id is minted, no
-  push and no row. It re-asks on the retry ladder, joins the job if one turns
-  up, and only becomes a delivery of its own once the table says `absent`.
-
-  And `noteDelivered` — "the bytes are on the node, only the wake is owed" —
-  was an INSERT of a `pending` row followed by an UPDATE to `uploaded`. A
-  failure between them left a row that re-uploads a file the node already has,
-  and the error surfaced inside the eager push's `catch`, which filed *a
-  second* one beside it. The row is now written `uploaded` in a single
-  statement, and delivery is a state rather than a moment: the claim ends the
-  instant the bytes are confirmed on the node — before anything that can fail
-  — and what remains is a notice whose retries are notices. A failed
-  completion record never becomes an upload again.
-
-- **A twentieth review asked the job table one question and read the answer
-  as another.** `OWES_UPLOAD` — pending, running, failed — is the right test
-  for "may a new delivery join an existing one?": a row in `uploaded` has had
-  *its* bytes accepted, and a file that changed since then must not be filed
-  behind a wake that knows nothing about the new version. But the instance
-  that could not read the table (`unavailable`, above) is not a new version.
-  It never received an upload identity, so the file it is holding is exactly
-  the one that row already delivered — and being told `absent` made it mint a
-  second transfer id and push the desktop's older copy back over the node's
-  newer file. No restart, no crash: an eager push and a listing of the same
-  directory are enough.
-
-  The lookup now has a fourth answer, `delivered`, and the two callers read it
-  differently on purpose: `acquireHandoff` ignores it and starts its own
-  delivery, `resolveBlocked` treats it exactly like `found` and lets go. The
-  same review closed the narrower form — the row deleted outright once the
-  wake lands — by having the worker call `noteHandoffDelivered` after the
-  upload is confirmed and *before* the row is removed, so no instance ever has
-  to infer completion from a missing row.
-
-  A first attempt added a second seam for this (`bindJobToHandoff`, called by
-  the worker before its first await). It was removed: every window it covered
-  was already covered by `running` being in `OWES_UPLOAD`, and a second way to
-  advance the same state is the fragmentation this whole file exists to
-  prevent. Completion for a file is advanced in one place.
-
-  And `runJob`'s outer `catch` resumed from `pending` unconditionally. Once
-  the bytes are confirmed on the node, a later failure — including failing to
-  write down *which phase the row is in* — cannot mean "upload it again"; it
-  meant exactly that, and the retry put stale bytes over the node's copy. The
-  handler now resumes from the phase actually reached, and a delivered file is
-  never failed for want of a local copy.
-
-- **`browser_open` creates the tab blank, records the driver, then
-  navigates.** Opening with the URL in one call meant the page could start a
-  direct download before the tab had an owner, and `will-download` had nobody
-  to attribute it to. The two-step is why `open` now issues `open` with
-  `readiness: 'none'` and a separate `navigate`; the reply is merged so the
-  caller still sees one result with the final URL and title.
-
-- **Only refs the reply names are pushed** (§3). A registered artifact whose
-  path never appears in `content[].text` is not uploaded: the agent has no
-  path to `Read`, and the desktop, the renderer and the phone all read the
-  desktop copy. This is what keeps `computer_snapshot` from shipping both the
-  full PNG and the `.agent.jpg` when the reply cites only the latter.
-- **Smallest ref first** (§4.1), so a screenshot never waits behind a
-  recording for the claim budget.
-- **A failed eager push becomes a transfer job** rather than failing the
-  action (§4.1). The tool already did its work; the reply still carries
-  `sync.deferred`, so the agent's `ENOENT` stays honest.
-- **`artifact.put` returns `mtimeMs` on the final chunk**, and both transfer
-  directions stamp the local copy with it. The design had the mirror compare
-  size + mtime (§4.2) without saying how the two sides come to agree on one.
-- **`session.remove` on the node deletes the session's zone directory**, so a
-  session removed from the node side does not leave artifacts behind even if
-  the desktop never calls `artifact.delete`.
-- **`SUPERONE_SESSION_DIR` is injected by one wrapper**
-  (`withSessionZone`) in front of the production turn runner rather than per
-  harness. Session start, cold resume and forked children all reach the runner
-  through `SessionRuntime.runTurn`, so that is the single place; the `agent/`
-  grant rides on `additionalDirectories`, which Claude honours directly and
-  Codex maps to `writableRoots` (§5.4's requirement, one seam instead of two).
-- **Spilled browser text results moved into the zone too** (not in §6's
-  table). `persistTextArtifact` hands the agent a path the same way a
-  screenshot does, so a remote agent could not read it either.
-- **Device captures, recordings and downloads did not migrate** — as phase 1
-  reserved. They still write under the temp roots, which stay readable; each
-  is "pass sessionId, call `registerArtifact`" when its batch comes.
-- **`media-gen` output moved** from `<userData>/media-gen/outputs/<sessionId>`
-  to the zone. The legacy root stays readable so existing transcripts render.
-- **The phone's `previewFile` always carries `root`**, local sessions
-  included, rather than only remote ones — one shape for the command instead
-  of two.
-- **`authorizeRemoteFile`'s new resolution glue has no test at the
-  agent-service layer.** It is thin delegation over `resolveSessionFile`,
-  `mirrorNodeArtifact` and `materializeRemoteProjectFile`, which are each
-  unit-tested; the agent-service suite's mock graph does not cover the
-  dynamic imports it uses, and building that scaffolding was judged more
-  fragile than the forwarding it would guard.
-
-## 9. Out of scope / open
-
-Still open after phases 1–4 (2026-09-14: five of the seven items below were
-closed on the same day, in the commits following the Codex review; each is
-marked and the residue is stated):
-
-- ~~**Completion notification to the agent** for deferred transfers~~ —
-  **implemented 2026-09-14.** `session.notifyArtifactCompleted` is a
-  controller-bound, lease-free node RPC: the desktop names the session and the
-  zone-relative paths, the node stats each one itself, builds the wording, and
-  delivers it through `sendWithoutLease({ source: 'task-notification' })` —
-  the same path a collaboration mailbox wake uses, so Claude live-injects,
-  Codex steers and every other harness FIFO-queues it. The desktop cannot send
-  arbitrary text through it, and a path the node does not hold is never named.
-  A transfer job now survives its own upload in state `uploaded`/`notifying`
-  and is only deleted once the node confirms the wake, so a lost reply retries
-  the notification without re-uploading; `notificationId` is the job id, and
-  the node injects once per id. A node that answers `not_found` / `forbidden`
-  (session gone) or does not know the method ends the job.
-  Since 2026-09-14 the node's "already injected this one" record is a row in
-  the host-action store (`artifact_notifications`, pruned after 30 days),
-  so a restart between the injection and the desktop's next retry no longer
-  injects the wake twice; the integration test restarts the node runtime on
-  the same home and retries. The desktop's transfer job is what makes the
-  desktop *retry* an unacknowledged wake; what happens after the node
-  acknowledges one and then dies before the harness consumes it has not been
-  tested, so this remains a retry guarantee and not an end-to-end delivery
-  guarantee.
-- ~~**Claim renewal** as an alternative to deferral~~ — **implemented
-  2026-09-14.** `session.renewHostActionClaim({ actionId, claimToken, ttlMs })`
-  extends a live claim; the holder proves itself with the claim token, and the
-  node caps the new expiry at the action's own deadline, so renewal buys time
-  inside the window the agent already agreed to wait — it does not extend that
-  window. `syncHostActionOutputs` asks before deferring a file that does not
-  fit, and each upload runs under its own abort bound to the remaining budget
-  — raced against it, not merely signalled, because aborting does not make a
-  node RPC return. An estimate that turns out optimistic becomes a deferral
-  rather than a claim the desktop has already lost, and the abandoned upload
-  keeps its `transferId`, so the job resumes the partial transfer instead of
-  starting over. A node that refuses (deadline
-  reached, claim swept) or does not know the method defers as before.
-  **Still open:** the action's 120 s deadline is the hard ceiling; a minutes-long
-  video still defers.
-- ~~**`browser_download` with `dir`** on a remote session~~ — **implemented
-  2026-09-14.** On a remote session a download with no `dir` lands in the
-  session zone's `download/` instead of this machine's Downloads folder, and a
-  `dir` outside the zone is refused with a message naming
-  `$SUPERONE_SESSION_DIR` — a node path the agent asks for arrives here already
-  rewritten to its desktop mirror by the input mapping (§3.1), so it is inside
-  the zone. A *background* download settles after its tool call has returned,
-  with no scope left to register into, so its finalizer queues the transfer
-  itself and the transfer's completion wake tells the agent the path works.
-  Local sessions are unchanged: downloads stay user-visible in Downloads.
-  A download the *page* starts (an export button the agent clicks) is filed
-  at capture time too, since 2026-09-14: `will-download` cannot ask who
-  *owns* the tab — that is renderer state behind an async call — but it can
-  ask who last *drove* it, which every browser tool call records
-  (`browser-tab-drivers.ts`) as it resolves its view. A tab a remote agent
-  drove files its downloads into that session's zone and queues the transfer
-  when the bytes land, so the agent finds the file without listing first;
-  listing still works and registers the ref so the reply is rewritten. The
-  consequence to know about: a person who downloads from a tab a remote
-  agent has driven finds the file in the session directory, not in Downloads.
-  The adoption path stays for a tab nothing drove yet. And an upload is now
-  skipped when the node already holds the file at the same size and mtime —
-  the stamp a finished transfer leaves — so a download that landed before
-  the listing, or a recording named twice, is not sent twice.
-- ~~**Device captures, recordings and downloads** are not in the zone yet~~ —
-  **implemented 2026-09-14.** Recordings write to `producerDir(sessionId,
-  'recording')/<target>` and register on persist and on adopt; device captures
-  land in the driving session's zone for all three platforms (the simulator
-  reads its own `owners` map, Android and iOS-mirror take the root from
-  `buildBackend(deviceId, sessionId)`) and `DeviceAgentSession` registers each
-  one in a single place, reading the producer back off the layout with
-  `zoneArtifactRef`; downloads as above. The legacy temp roots stay readable so
-  transcripts from before this change still render. Computer-use recordings
-  register their sealed file when `service.act` returns, not when the path is
-  reserved — a path is not an artifact until something is written to it.
-  Page-triggered downloads: filed at capture, as above.
-- **Reclaim** — **implemented 2026-09-14**, deliberately evidence-based rather
-  than quota-based. `reclaimSyncZone` runs 30 s after launch and removes only
-  what it can *prove* is dead: a session directory whose owner says it is gone,
-  plus `adhoc` captures older than 7 days (the directory itself is never
-  removed). Ownership is a `.owner` file written into the directory on the
-  first tool call of a session — `local` is checked against this database,
-  a connection id against that node, and an unreachable node means "keep",
-  because offline is not deleted. A directory touched in the last hour is in
-  use; a directory with a transfer still queued or retrying is not ours to
-  drop (a job that has failed for good is not "queued", and is dropped with
-  the directory); an unmarked directory is kept, however old — it may be a
-  live remote session with no row here and no marker yet, and nothing in
-  this sweep can prove otherwise.
-  Since 2026-09-14 the marker is written at **every** entry that creates a
-  zone directory, not only on a Host Action: producers go through
-  `ensureArtifactDir` (owner from the tool call scope — a remote call carries
-  its connection, a local call opens no scope), downloads and the lazy
-  mirror name their connection explicitly (`ensureZoneDir`, `MirrorDeps.
-  connectionId`), because they run outside any call and "no scope" there
-  would misfile a remote directory as local. Directories from before this
-  change stay unmarked and kept until something writes into them again. The
-  sweep also runs on every node connection, debounced, not only 30 s after
-  launch — a node offline at launch was one the launch sweep could only say
-  "keep" about.
-  **No size cap, by decision (2026-09-14).** A cap would have to delete
-  artifacts a live transcript names, and the sweep above already removes
-  everything that can be proved dead — so a cap could only ever delete on a
-  guess. What a person can want instead is to *see* the number and to run
-  that sweep now rather than at the next launch: Settings → General →
-  Storage (`SessionStorageSection`) shows the zone total, the session count,
-  what is still queued for upload (it is not going anywhere), and what a
-  sweep would free — the same sweep run as a dry run — with **Reclaim Now**
-  and **Show in Folder**. Nothing there deletes what the sweep would keep.
-  A manual sweep landing during the scheduled one is safe without a lock:
-  the post-await re-check (`readOwner`, `newestMtime`, pending transfer)
-  makes the second walk skip a directory the first already removed, so the
-  bytes are reported once.
-- ~~**Directories under the zone cannot be tool inputs on a remote session.**~~
-  — **implemented 2026-09-14.** `artifact.list` (controller-bound, `lstat`
-  walk, links neither followed nor named, `.parts` and `.owner` skipped,
-  capped at 2000 entries and reported `truncated` past that) returns every
-  file under a zone directory with the size and mtime the mirror compares.
-  A tool argument that names a directory it will *read* —
-  `miniapp_dev_register.directory`, `miniapp_dev_pack.appDir`,
-  `miniapp_dev_update_types.appDir` — is answered by `mirrorNodeDirectory`:
-  list, then every member through the same per-file mirror (four at a time),
-  then anything under the desktop mirror the node no longer has is removed,
-  because the tool reads all of the directory and a stale file is part of
-  "all of it". A truncated listing is refused as `unavailable` rather than
-  handed over as a whole tree that is not; a node that predates `artifact.list`
-  gets the same answer.
-- ~~**Zone media larger than 10 MiB has no desktop preview path.**~~ —
-  **implemented 2026-09-14.** `readProjectFile` answers a zone media file
-  with the `local-file://` URL of its desktop mirror instead of a data URI;
-  the local-file protocol already serves the zone with range requests, so a
-  recording of any size plays in chat markdown, the file preview and the
-  files previewer. Node *project* media (not in the zone) still arrives as a
-  data URI under the 10 MiB cap — it has no desktop file to point at.
-- **Older nodes** without `syncZone`: no rewrite, no mirror, consumers say
-  `missing`. No shim.
-- **Multiple controllers.** The zone is keyed by session, the node root is
-  per node; a second desktop controlling the same node mirrors lazily like
-  any other reader, and its own Host Action outputs land on the node and
-  become visible to both. Untested.
-- **Windows nodes** — separator handling is implemented and unit-tested in
-  `sync-zone-paths.test.ts` (including the case-insensitive root compare), but
-  no Windows node exists to test against end to end.
-- **Live end-to-end run.** Every layer is covered by tests against a real node
-  runtime (`artifact.integration.test.ts`, `remote-gateway-artifacts.test.ts`),
-  but the full desktop↔lab loop — take a screenshot in a remote session, have
-  the agent `Read` it, open the previewer on the phone — has not been driven
-  by hand.
-- **The mirror's timing guards are proven by construction, not by racing.**
-  The pending / cancel / boundary checks are placed so that nothing is
-  `await`ed between the decision and the act — the prune walk is synchronous,
-  and the last word before `rename` is a synchronous `beforeCommit`. The tests
-  drive each interleaving deterministically (a pending row inserted between
-  two steps, a signal aborted at a named point) and each was verified red
-  against the unfixed code. What is *not* tested is a real concurrent run
-  where the interleaving is chosen by the scheduler; the argument that no
-  other window exists rests on reading the await points, so a future edit that
-  introduces an `await` inside one of those stretches reopens the hole without
-  failing a test. If you add one, add the check after it.
-
-  Note what that argument does *not* cover, which the eleventh review found the
-  hard way: placement says a guard runs at the right moment, never that it asks
-  about the right files. Both of that round's mirror defects were in the
-  predicate — one set was missing producers that had no job row yet, the other
-  included jobs whose bytes were already delivered. A correct check in a
-  correct place is still wrong if its subject is wrong, so a change to what the
-  zone protects needs its own reasoning, not this paragraph. And a guard whose subject is
-  right is still wrong if it is read across an await: the sixteenth review's
-  defects were both a correct question asked at a moment when the answer could
-  not survive to the act.
-- **Protection for un-enqueued files does not survive a restart.** A file that
-  is complete but could not be written onto the transfer job table is held by
-  the in-memory `pending-handoffs` table, and that is all that keeps the mirror
-  off it. Quit the desktop with entries in it and the file becomes an ordinary
-  unreferenced zone file — the next directory mirror of its folder prunes it,
-  and the node never gets it. Closing this properly means a small
-  sealed-handoff journal in the zone's reserved metadata (session, connection,
-  relative path, transfer id), scanned at startup to restore the protection and
-  re-file the row, excluded from `list`/mirror/prune like `.owner` and
-  `.parts`, and cleared on session delete. Not implemented; do not read the
-  Settings figure as a durability guarantee.
+| table unreadable | `unavailable` | prune nothing, overwrite nothing, serve nothing (R5) |
+| `outcome = abandoned` | `none` | not protected, whatever its phase |
+| `outcome = done` | `node-authoritative` | node authoritative |
+| `writing` | `protected-unreadable` | kept, never served |
+| `sealed` / `queued` / `uploading` | `protected-readable` | kept and served — the newest copy anywhere |
+| `committing` | `protected-unreadable` | kept, never served — neither copy is authoritative |
+| `uploaded` / `notifying` | `node-authoritative` | fetch and overwrite |
+| no row | `none` | ordinary mirror behaviour |
+
+For a directory, `node-authoritative` is reported as `none`: a subtree of
+delivered files has nothing to keep.
+
+#### R5 — unreadable table means protected
+
+A failed *read* of the record is `unavailable` and protects everything; it is
+never collapsed into "nothing pending". Unwritable does not mean unreadable: a
+failed *write* is handled by the phase it interrupted (§8.2). A desktop that
+cannot write its database does not start a transfer — the reservation throws
+and the producer fails — so nothing is promised to the agent on the strength
+of a record that does not exist.
+
+#### R6 — a sealed source is immutable
+
+From `sealed` on, the producer never touches the file; the mirror may
+overwrite it only where R4 says so. `total` and `sha256` are accepted on the
+step into `sealed` and on no other, and every upload presents them as the
+file's identity, so a source that changed under a retry is refused by the node
+rather than stitched. With R2 there is no second writer.
+
+#### R7 — every advance is a CAS on (id, phase, epoch)
+
+Every owned write matches `delivery_id = ? AND holder = ? AND epoch = ? AND
+outcome IS NULL` (plus `phase = ?` for an advance); every takeover
+(`claimDelivery`) matches `(delivery_id, holder, epoch)` and is refused while
+the old holder is alive. Both bump `epoch`, so a holder that lost the row
+cannot act with the epoch it remembers. An advance keeps its holder; ownership
+changes only in `claimDelivery`. Offset progress does not bump the epoch but
+still requires the handle.
+
+### 8.4 Producers, by how they write
+
+The rule follows the write mode, because what matters is whether there is an
+`await` between a file's first byte and its row
+(`apps/desktop/src/main/environment/zone-delivery.ts`):
+
+| Mode | Entries | Rule |
+|---|---|---|
+| **Reserved before the first byte** | `reserveDownloadPath` (both `browser_download` and a page download's `will-download`, before `item.setSavePath`), `createActionRecordingPath` (the `computer_act` recorder and the buffer persists that share it), the simulator's `captureFor` | `reserveZoneFile` inside the path factory, in the same synchronous sequence as the `wx` create, so the path never leaves without a `writing` row. `sealZoneFile` when the writer says the bytes are in; `abandonZoneFile` on every writer failure exit. |
+| **Published complete in one synchronous sequence** | `persistBase64Screenshot`, `persistTextArtifact`, media-gen `persistFiles` and previews, the Android and mirror backends (`publishZoneFileAt`, `writeFileSync`) | `sealZoneFile` with `bytes` in the same tick as the write: a row created directly at `sealed`, hashed from the buffer the producer still holds. |
+| **Observation at a later boundary** | `registerCapture` in the device executor, `media_video_status` re-registering a generated file, the recorder's registration when `service.act` returns, a re-listing | `publishArtifact` finds the row by path and reuses its id (R3a). |
+
+- **A name is free only when both the filesystem and the record say so.** The
+  `wx` create picks the name atomically on disk; the record must then accept
+  it as never written in this session (R2). A vacancy on disk is not a free
+  name — a delivered file the node since deleted leaves exactly that — so on
+  `path-taken` the factory removes its empty stub and tries the next name.
+- **Seal, publish and observe are told apart, not guessed.** A seal whose
+  CAS fails is refused `reservation-lost`; a publish (`bytes` given) onto a
+  path with any row is `path-taken`; an observation returns a row only if it
+  is a delivery happening or done — never a `writing` row, never an abandoned
+  one.
+- **Destination comes from explicit context** (`zoneDestination`): an
+  explicit connection (a page download's tab driver, the simulator's owner
+  recorded at bind), else the call scope, else the zone's `.owner` marker. A
+  zone file with no known destination is refused `unknown-destination` — a
+  guessed `local` would be unprotected and undelivered. `session-dropped`,
+  `path-taken`, `reservation-lost` and `unknown-destination` are all strict
+  refusals: the producer fails.
+- **Every writer exit closes its reservation.** A page download is sealed by
+  the `DownloadItem`'s own `done` and then wakes the worker; a completion that
+  cannot be sealed is reported `interrupted`. A backgrounded
+  `browser_download` seals in its body writer and wakes the worker from the
+  task's settle (`wakeDownloadDelivery`). A recording reservation is abandoned
+  by every consumer failure (`abandonActionRecording`). A recording already
+  in the session's zone is adopted in place (`adoptActionRecording`), not
+  copied, so it keeps its one delivery. Nothing times out on its own: an open
+  reservation with a live holder is a writer still working.
+- **Local and adhoc sessions take no row.** `zoneDestination` returns `local`
+  first for an empty or `adhoc` session id and for a local call, so
+  `reserveZoneFile` / `sealZoneFile` return null before the database is
+  touched. Nothing mirrors a local session. `connection_id` stays `NOT NULL`.
+
+### 8.5 Holders and recovery
+
+**Liveness is not `epoch`** (`environment/delivery-holders.ts`). `epoch` is a
+concurrency version; a long download sits in `writing` with an unchanged
+epoch. A holder is `'<incarnation>:<token>'`, where the incarnation is minted
+once per process start. A holder is **alive** iff it is in the process-local
+set of holders currently being worked: added by `mintHolder`, removed by
+`retireHolder` at the attempt's real end (success, failure, handover or
+abandon, in a `finally`) — **not** by a phase advance, since
+`uploading → committing` is followed by an awaited final put the holder is
+still working through. The set is liveness, like the worker's abort map; state
+lives only in the row. No heartbeat, no idle timeout: within one process
+liveness is exact, and after a restart every holder of another incarnation is
+dead by definition.
+
+**Any live row with a dead or absent holder can be taken over**, in every
+phase, by `claimDelivery` (CAS on holder and epoch, R7). Takeover, abandon,
+failure and session drop all invalidate the previous holder the same way.
+
+What a worker pass does with a row it takes over:
+
+| Found | Means | Action |
+|---|---|---|
+| `writing`, dead holder | producer crashed or reserved and never wrote | `abandoned`. **Never sent**: nothing records how far it got, and a half file is worse than none. The file stays, unprotected (R4). |
+| `sealed` / `queued` | complete source waiting | → `uploading`, upload |
+| `uploading`, dead holder | final put **not yet sent** | resume from `offset`. The node answers `expectedOffset`, or `unknown transfer` after its idle expiry and the upload restarts from 0 under the same `transfer_id` — safe because the source is immutable (R6) and never committed. |
+| `committing`, dead holder | final put sent, reply lost | **cannot be verified** (§8.2): `gave_up_at = now`, `last_error = 'commit unverified'`, no automatic put ever. Settings shows *needs re-delivery*; the reply says *stopped* (E090-3). |
+| `uploaded` / `notifying` | only the wake is owed | → `notifying` → wake → `done`. There is no path back to `uploading`. |
+| `gave_up_at` set | automatic retry stopped | not listed; Settings' Retry Upload clears it (never for `committing`) and the row re-enters this table |
+
+**Re-delivery of a `committing` row is manual and unlinked.** Re-running the
+action that produced the file writes a new file under a new path and a new
+`delivery_id`; it does not close or associate the old row, which stays until
+reclaim, and it cannot restore an output that no longer exists (an ended
+recording). Automatic recovery would need the node to expose a hash on `stat`
+or accept a conditional final chunk — a node contract change.
+
+**Session close.** `dropSessionDeliveries` is one transaction: insert the
+tombstone, set `outcome = 'abandoned'` on every live row, return their ids so
+the worker aborts uploads in flight. Callers: `removeSessionZone` (both delete
+paths, §7) and the reclaim sweep for every directory it removed.
+`reserveDelivery` checks the tombstone and `path-taken` in the same
+transaction as its insert, so a late producer is refused `session-dropped`.
+
+### 8.6 The transfer worker
+
+`environment/artifact-transfer-service.ts#ArtifactTransferService`: one worker
+per live remote connection, started next to the Host Action consumer and
+stopped with it (`environment/environment-host.ts`).
+
+- Each pass lists the connection's live, due, not-given-up rows
+  (`listLiveDeliveries`), skips rows whose holder is alive, claims the rest
+  under a fresh holder, and continues each from its phase (§8.5). Uploads go
+  through the same `committing` gate as the eager push and feed the
+  per-connection throughput meter the push budgets with.
+- After the bytes land, `session.notifyArtifactCompleted` (§5.3) wakes the
+  agent with `notificationId` = `delivery_id`, then `completeDelivery`. A node
+  answering `not_found`, `forbidden`, `failed_precondition`,
+  `unimplemented` or `method_not_found` ends the delivery (`abandoned`);
+  anything else retries, because the agent was told the path would work.
+- Failures back off exponentially (5 s base, 10 min cap). Upload attempts stop
+  after 8, or at once when the local file is missing; a row whose bytes are on
+  the node never gives up and never fails for want of a local copy.
+- `wake(connectionId)` rescans now; `retryGivenUp` re-queues give-ups (not
+  `committing`) and wakes every worker; `dropSession` is §8.5's session close.
+
+### 8.7 Invariants
+
+Each is covered by a regression test on the real SQLite fixture or the
+Electron event boundary, and code comments cite them by label.
+
+#### E090-1 — a DB fault on one row does not end the pass or the worker
+
+`runDelivery` retires its holder and leaves the row untouched when the claim
+write throws; `runOnce` wraps each row, so a fault deeper in the pass is the
+same; a failure to even record a failure is logged, never rethrown; and
+`start()` drops a registration whose loop ended for any reason, so no
+registration outlives a dead worker.
+
+#### E090-2 — a confirmed upload whose wake write fails stays retryable
+
+Once the final put answered, the bytes are on the node. A later failure
+(`notifying` or `done` cannot be written, the wake fails) leaves the row at
+`uploaded`/`notifying`, retryable — never `committing`, never "commit
+unverified". Both paths clear their `committing` flag at `uploaded`; the eager
+push reports such a file *deferred*, not *stopped*. Likewise the upload does
+not re-check the abort signal after a final put that answered.
+
+#### E090-3 — a stopped file stays stopped, in Settings and in the reply
+
+Three reply categories, classified by phase and holder liveness (§4.1):
+
+- `committing` with a **live** holder: its executor is finishing the final put
+  and will complete and wake the agent — *deferred*.
+- `committing` with a **dead** holder: sent and lost, nothing will retry it —
+  *stopped* (re-run the action), and still *stopped* when observed again.
+- given up in an **earlier** phase: never a sent-but-unconfirmed put, and the
+  worker skips given-up rows — *retry required* (Settings → Retry Upload),
+  without waking a worker that would skip it.
+
+Settings separates *needs re-delivery* (`committing`, no button) from
+retryable give-ups (`failedHandoffs`, Retry Upload).
+
+#### E090-4 — owner lifecycle: held handles survive scope end
+
+A file a producer seals **inside** a call stays held by that call's live
+holder (`holdSealedDelivery` into the scope's `heldDeliveries`) all the way to
+the reply-selection, so a worker woken mid-call — or in the gap between the
+scope's `finally` and `syncHostActionOutputs` — cannot deliver a file the agent
+may never be told about. Scope end only sets `scope.ended`; held handles are
+**not** released there. The executor drains them (`takeHeldDeliveries`) and
+threads them into `syncHostActionOutputs(held)`, which pushes a mentioned file
+under the same handle, abandons an unmentioned one by that handle, and
+releases the rest to the worker in its `finally` (an abort part way leaves the
+unreached files sealed and unheld). A thrown tool abandons its held rows
+(`abandonHeldDeliveries`); a call with no selection releases them. After
+`scope.ended`, `holdSealedDelivery` returns false, so a detached background
+download that seals later is released for the worker at once.
+
+Two properties the lifecycle depends on:
+
+- the `finally` covers the **whole** function, from before the first DB read,
+  and every retirement is itself in a `finally` — a throw in `getDelivery` or
+  in an `abandon` still retires every handle the call took;
+- **a call may abandon only a delivery it holds a handle for.** A ref with no
+  held handle is an observation of someone else's delivery (a page or
+  background download the worker has not carried yet is sealed and unheld
+  too) and is skipped, never abandoned. There is no id-only abandon.
+
+#### E090-5 — a wake that lands mid-pass triggers an immediate re-scan
+
+A row sealed after a pass took its snapshot has `next_attempt_at NULL`, which
+the next-due sleep ignores. The `woken` flag makes the loop `continue` instead
+of sleeping, so the row is delivered now rather than after the 10-minute cap.
+
+#### E090-6 — a refused `will-download` reservation cancels the item
+
+Returning without a save path would hand the item to Electron's default flow
+(a save dialog, or an untracked file a remote agent can never reach). A
+refused reservation instead `item.cancel()`s, sets no save path, and records
+an `interrupted` capture so `waitForDownloads` resolves rather than hanging.
+
+#### FE99-1 — a seal that throws frees its holder
+
+Both seal paths in `sealZoneFile` wrap "acquire or create holder → seal → hand
+off" in `try/finally`: unless the row was handed to the call scope, the holder
+is retired even if hashing, `advanceDelivery` or `reserveDelivery` threw.
+Otherwise a live holder would be stranded on a `writing`/`sealed` row the
+worker skips forever, and the mirror would refuse the file until restart. The
+row keeps the phase it reached; a dead holder is what lets the worker take it
+over.
+
+## 9. Limits
+
+- **No in-place replacement** of a delivered path (R2), and **no automatic
+  recovery** of a `committing` row (§8.5); both need node contract changes.
+- **Action deadline.** Renewal cannot extend past the 120 s action deadline; a
+  file that does not fit is deferred to the worker.
+- **Directories as tool inputs** are limited to what `artifact.list` returns in
+  one listing (2000 entries).
+- **Guards are proven by construction, not by racing.** The mirror's
+  protection, cancel and boundary checks are placed so nothing is awaited
+  between the decision and the act (synchronous prune, synchronous
+  `beforeCommit`); tests drive each interleaving deterministically. A future
+  `await` inside one of those stretches reopens the hole without failing a
+  test — add the check after it. Placement also does not prove the check asks
+  about the right files: a change to what the zone protects needs its own
+  reasoning against R4.
+- **Multiple controllers.** The zone is keyed by session and the node root is
+  per node; a second desktop mirrors lazily like any reader. Untested.
+- **Windows nodes.** Separator handling and the case-insensitive root compare
+  are unit-tested (`sync-zone-paths.test.ts`); no Windows node has been tested
+  end to end.

@@ -1,7 +1,7 @@
 /**
  * The delivery record's DDL, on its own so a test fixture can open an empty
  * record without importing the desktop database
- * (`docs/design/session-sync-zone-delivery-record.md` §3).
+ * (`docs/architecture/session-sync-zone.md` §8.1).
  */
 import type Database from 'better-sqlite3'
 

@@ -3,7 +3,7 @@
  * outputs pushed and rewritten inside the claim budget (session-sync-zone.md §3, §4.1),
  * inputs mapped back to the desktop mirror (§3.1).
  *
- * Every output is a delivery record (session-sync-zone-delivery-record.md):
+ * Every output is a delivery record (session-sync-zone.md §8):
  * the row says whether there is anything to push, and what the push leaves
  * behind for the worker is read back from the row, not from a queue.
  */
@@ -239,7 +239,7 @@ describe('host action outputs', () => {
 
   it('stops on a final put whose reply was lost, rather than sending the file again', async () => {
     // The final chunk went out and the answer did not come back. The node
-    // may have committed it; the desktop cannot tell (§2), and resending would
+    // may have committed it; the desktop cannot tell (§8.2), and resending would
     // replace a file the agent may already have changed. The row records the
     // doubt and no worker will act on it automatically.
     const node = fakeNode()
@@ -418,7 +418,7 @@ describe('host action outputs', () => {
 
   it('keeps reporting a stopped committing file as stopped when it is observed again, never as deferred (E090-3)', async () => {
     // The first eager push sends the file's only (final) chunk; its reply is
-    // lost, so the row lands in `committing` and gives up (§6) — reported
+    // lost, so the row lands in `committing` and gives up (§8.5) — reported
     // `stopped`. A later download listing observes the same path (same delivery
     // id, no new row). Re-syncing it must keep saying stopped: no worker will
     // carry a committing row, so a deferred "you will be notified" is a promise

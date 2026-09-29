@@ -32,7 +32,7 @@ export interface ArtifactRef {
   /** False while the file is still being written (a recording that has started); re-registered when sealed. */
   final: boolean
   /**
-   * The delivery record this file is (`docs/design/session-sync-zone-delivery-record.md`),
+   * The delivery record this file is (`docs/architecture/session-sync-zone.md` §8),
    * for a remote session's zone file. Absent for a local session or a path
    * outside the zone. Set by `publishArtifact`, never by a producer directly.
    */
@@ -94,7 +94,7 @@ export function registerArtifact(sessionId: string, ref: ArtifactRef): void {
 /**
  * Keep a just-sealed delivery held by `holder` for the rest of this call, so
  * the transfer worker skips it until the reply-selection has run
- * (`docs/design/session-sync-zone-delivery-record.md`, E090-4). Returns false
+ * (`docs/architecture/session-sync-zone.md` §8.7, E090-4). Returns false
  * when no call is open — a page download's own completion, a background
  * finalizer — where the producer releases the row for the worker itself.
  */

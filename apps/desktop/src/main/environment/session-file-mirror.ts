@@ -17,7 +17,7 @@
  * cancelled. A directory mirror holds one generation at a time per session.
  *
  * What is "owed to the node" is asked of the delivery record, one row per file
- * (`docs/design/session-sync-zone-delivery-record.md` R4), at the moment each
+ * (`docs/architecture/session-sync-zone.md` §8.3 R4), at the moment each
  * destructive step acts: the table is synchronous, so there is no `await`
  * between deciding to delete or overwrite and doing it. A record that cannot
  * be read protects everything (R5).

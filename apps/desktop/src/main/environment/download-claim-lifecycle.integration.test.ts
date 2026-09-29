@@ -1,6 +1,6 @@
 /**
  * A download's whole lifecycle, end to end over the delivery record
- * (`docs/design/session-sync-zone-delivery-record.md`): from the reservation a
+ * (`docs/architecture/session-sync-zone.md` §8): from the reservation a
  * `browser_download` takes, through the seal when its bytes land, to delivery —
  * eagerly by the executor inside the claim budget, or by the worker afterwards.
  *
@@ -213,9 +213,9 @@ describe('a download delivered inside its own call', () => {
     expect(classifyDeliveryAt(SESSION, DOWNLOAD())).toBe('node-authoritative')
   })
 
-  it('leaves an eager push whose final put failed needing re-delivery, still protected, never auto-retried (§6)', async () => {
+  it('leaves an eager push whose final put failed needing re-delivery, still protected, never auto-retried (§8.5)', async () => {
     // This file is a single chunk, so its only put is the final one: once that
-    // is sent its outcome is unknowable from here (§2), whether it was rejected
+    // is sent its outcome is unknowable from here (§8.2), whether it was rejected
     // or its reply was lost. The delivery is left `committing`, given up so no
     // worker resends it, and still protecting the desktop copy.
     node.putFails = true

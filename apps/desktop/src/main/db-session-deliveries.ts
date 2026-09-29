@@ -8,7 +8,7 @@ import log from './logger'
 
 /**
  * One row per delivery of one zone file to its node
- * (`docs/design/session-sync-zone-delivery-record.md`).
+ * (`docs/architecture/session-sync-zone.md` §8).
  *
  * This is the only record of "this file is the newest copy anywhere and
  * somebody owes it to the node". It replaces three: the in-memory write claim,
@@ -380,7 +380,7 @@ export function retryGivenUpDeliveries(sessionId?: string): string[] {
 // Session close
 
 /**
- * The session's zone is gone (§7 of the parent design). One transaction:
+ * The session's zone is gone (§7). One transaction:
  * tombstone the session so a late producer cannot reserve into it, and abandon
  * every live row so no holder — alive or dead — can advance one. Returns the
  * ids abandoned, so an upload in flight can be cancelled.

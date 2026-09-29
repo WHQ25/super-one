@@ -1,6 +1,6 @@
 /**
  * Acceptance of the delivery-record architecture
- * (`docs/design/session-sync-zone-delivery-record.md` §9).
+ * (`docs/architecture/session-sync-zone.md` §8).
  *
  * These are not regression tests for fixes; they are the properties the single
  * record was adopted to hold, asserted on one fixture with real SQLite, the
@@ -88,10 +88,10 @@ function nodeServing(files: Record<string, Buffer | undefined>) {
   }
 }
 
-describe('§9 — an uncertain final commit', () => {
+describe('§8.5 — an uncertain final commit', () => {
   it('keeps it unavailable without replaying old bytes, and shows needs re-delivery', async () => {
     // The node has committed the file; the desktop's advance to `uploaded`
-    // never landed, so the row is stuck at `committing`, given up (§6).
+    // never landed, so the row is stuck at `committing`, given up (§8.5).
     const id = seed('download/report.csv', 'OLD', 'committing', { gaveUp: true })
     const service = new ArtifactTransferService({ put: async () => ({ ok: true, bytesWritten: 0 }) })
 
@@ -110,7 +110,7 @@ describe('§9 — an uncertain final commit', () => {
   })
 })
 
-describe('§9 — a recorder before its asynchronous writer starts', () => {
+describe('§8.4 — a recorder before its asynchronous writer starts', () => {
   it('protects the reserved path and, for a local session, takes no row at all', async () => {
     // The producer reserved the path; the writer has not run. The row is
     // `writing`. A directory mirror — the node lists the directory but not this
@@ -130,7 +130,7 @@ describe('§9 — a recorder before its asynchronous writer starts', () => {
   })
 })
 
-describe('§9 — a live writer and dead holders in every phase', () => {
+describe('§8.5 — a live writer and dead holders in every phase', () => {
   it('never reclaims a live holder, reclaims a dead one in any phase, and never moves a phase backwards', () => {
     // A long-running writer's holder is alive; a worker pass leaves it be.
     const writer = seed('download/live.bin', 'STREAMING', 'writing', { held: true })
@@ -158,7 +158,7 @@ describe('§9 — a live writer and dead holders in every phase', () => {
   })
 })
 
-describe('§9 — the unreleased job table', () => {
+describe('§8.1 — the unreleased job table', () => {
   it('opens beside a developer artifact_transfer_jobs table and imports nothing', () => {
     // A dev database built before the record carries the orphan job table. The
     // record's schema is created beside it; nothing is read from it.
@@ -183,7 +183,7 @@ describe('§9 — the unreleased job table', () => {
   })
 })
 
-describe('§9 — bugs the model cannot express (AJ2, AK1)', () => {
+describe('§8.3 — bugs the model cannot express (AJ2, AK1)', () => {
   it('AK1: an event names a record, so no actor can advance a delivery it does not hold', () => {
     // AK1 was a worker finishing delivery T and touching delivery U. Here an
     // advance is a compare-and-set on (delivery_id, holder, epoch): a handle
@@ -218,7 +218,7 @@ describe('§9 — bugs the model cannot express (AJ2, AK1)', () => {
   })
 })
 
-describe('§9 — R4 classification on one fixture', () => {
+describe('§8.3 — R4 classification on one fixture', () => {
   it('reads outcome before phase and protects a directory by its strongest member', () => {
     seed('d/writing.bin', 'W', 'writing', { held: true })
     seed('d/sealed.bin', 'S', 'sealed')
@@ -240,7 +240,7 @@ describe('§9 — R4 classification on one fixture', () => {
   })
 })
 
-describe('§9 — the phase-advance × concurrent-actor matrix', () => {
+describe('§8.3 — the phase-advance × concurrent-actor matrix', () => {
   // Each cell: an actor holds a row at `from` and advances it; a concurrent
   // actor acts at the same point. The outcome is parameterised by whether the
   // advance took effect and whether its holder learned so.

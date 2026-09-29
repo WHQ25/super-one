@@ -185,7 +185,7 @@ export class EnvironmentHost {
   /** One Host Action consumer per live connectionId. */
   private readonly hostActionConsumers = new Map<string, RemoteHostActionConsumer>()
   /**
-   * Deferred artifact uploads (session-sync-zone.md §5.3); one worker per live
+   * Deferred artifact uploads (session-sync-zone.md §8.6); one worker per live
    * connection, started and stopped with its Host Action consumer. Null until
    * `enableArtifactTransfers` — the production singleton turns it on, unit
    * tests that never open the desktop database leave it off.
@@ -924,7 +924,7 @@ export class EnvironmentHost {
     return result.claimExpiresAt
   }
 
-  /** Wake the node session after a deferred transfer landed (§4.1). No lease needed. */
+  /** Wake the node session after a deferred transfer landed (§5.3). No lease needed. */
   async artifactNotifyCompleted(
     connectionId: string,
     input: { sessionId: string; notificationId: string; relativePaths: string[] },

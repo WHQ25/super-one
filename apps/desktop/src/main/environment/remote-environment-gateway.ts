@@ -62,7 +62,7 @@ export interface ArtifactGateway {
   put(input: ArtifactPutRequest, control: MutatingControlContext): Promise<ArtifactPutResult>
   delete(input: { sessionId: string; relativePath?: string }, control: MutatingControlContext): Promise<ArtifactDeleteResult>
   /**
-   * Tell the session's agent that deferred transfers landed (§4.1). No lease —
+   * Tell the session's agent that deferred transfers landed (§5.3). No lease —
    * it reports work the controller already did — and idempotent by
    * `notificationId`, so a retry after a dropped reply wakes the agent once.
    */

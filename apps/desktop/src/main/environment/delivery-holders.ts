@@ -1,6 +1,6 @@
 /**
  * Who is working on a delivery right now
- * (`docs/design/session-sync-zone-delivery-record.md` §6).
+ * (`docs/architecture/session-sync-zone.md` §8.5).
  *
  * A holder is `'<incarnation>:<token>'`. The incarnation is minted once per
  * process start, so after a restart every holder written by the previous

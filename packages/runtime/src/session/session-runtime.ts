@@ -1011,7 +1011,7 @@ export class SessionRuntime {
 
   /**
    * Deliver a host-built completion notification for finished artifact
-   * transfers (`docs/architecture/session-sync-zone.md` §4.1). Controller-bound like
+   * transfers (`docs/architecture/session-sync-zone.md` §5.3). Controller-bound like
    * the Host Action channel, and idempotent by `notificationId` so a desktop
    * retry after a dropped ACK injects the turn once. The text is built on the
    * node from files it has confirmed — the desktop cannot inject arbitrary

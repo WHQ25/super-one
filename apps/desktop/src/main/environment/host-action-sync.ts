@@ -100,7 +100,7 @@ async function within<T>(ms: number, signal: AbortSignal, work: (budget: AbortSi
   signal.addEventListener('abort', abortWithAction, { once: true })
   // A work that has ALREADY finished is honoured even if the deadline fires in
   // the same tick — an abort landing on a final put's reply must not discard a
-  // commit the node confirmed and report it as needing re-delivery (§6). The
+  // commit the node confirmed and report it as needing re-delivery (§8.5). The
   // deadline still wins over a work that is merely slow or hung: on expiry we
   // give the settled result one macrotask to surface, no longer.
   let done: { value: T } | { error: unknown } | null = null
@@ -286,7 +286,7 @@ class LostDelivery extends Error {
  * not fit. Returns the rewritten reply; `sync.deferred` lists node paths that
  * are not there yet.
  *
- * Every ref is a delivery record (`docs/design/session-sync-zone-delivery-record.md`),
+ * Every ref is a delivery record (`docs/architecture/session-sync-zone.md` §8),
  * and the record says what there is to do: a row already at `uploaded` or
  * later needs nothing sent — the node has it — and a row someone else holds
  * is being delivered by them. Only a `sealed` row nobody holds is this call's
@@ -358,7 +358,7 @@ export async function syncHostActionOutputs(
 
     const mapping = new Map<string, string>()
     const deferred: string[] = []
-    // Files whose final chunk was sent but not confirmed (§6): no worker will
+    // Files whose final chunk was sent but not confirmed (§8.5): no worker will
     // retry them, so the agent is told they stopped, not that they are on the way.
     const stopped: string[] = []
     // Files whose automatic upload gave up before the final put (retries
@@ -387,7 +387,7 @@ export async function syncHostActionOutputs(
       mapping.set(item.ref.path, item.nodePath)
       // The node has it (done, or only the wake is owed — the worker's).
       if (row.outcome === 'done' || row.phase === 'uploaded' || row.phase === 'notifying') continue
-      // A `committing` row's final put was sent (§6). Under a LIVE holder it is
+      // A `committing` row's final put was sent (§8.5). Under a LIVE holder it is
       // its executor finishing that put right now — it will complete and wake the
       // agent, so report it on its way (deferred), not stopped. Only a committing
       // row whose holder is gone had its put sent and lost, with no worker to
@@ -402,7 +402,7 @@ export async function syncHostActionOutputs(
       }
       // Gave up before the final put (retries exhausted, or the local file went
       // missing and came back): its bytes were never sent, so it is not stopped
-      // (§6) — but the worker will not carry a gave-up row either, so it is not
+      // (§8.5) — but the worker will not carry a gave-up row either, so it is not
       // deferred. It needs a person: Settings → Retry Upload. Do not wake a
       // worker that will skip it (E090-3).
       if (row.gaveUpAt != null) {
@@ -492,7 +492,7 @@ export async function syncHostActionOutputs(
         // `uploading` with its offset is resumed; a wake that failed after the
         // commit was confirmed retries the wake (cursor.committing was cleared at
         // `uploaded`); only a final put still in flight — `committing` — is
-        // unknowable from here and stops (§6). The agent is told it is not there yet.
+        // unknowable from here and stops (§8.5). The agent is told it is not there yet.
         const message = err instanceof Error ? err.message : String(err)
         recordDeliveryFailure(cursor.handle, { error: cursor.committing ? `commit unverified: ${message}` : message, nextAttemptAt: cursor.committing ? null : now() })
         if (cursor.committing) {
@@ -505,7 +505,7 @@ export async function syncHostActionOutputs(
           leftForWorker = true
         }
         // The action was cancelled, not the push: the row already records where
-        // it got to (§6), and the failure surfaced as the action's abort.
+        // it got to (§8.5), and the failure surfaced as the action's abort.
         throwIfAborted(deps.signal)
         deps.log?.warn('[host-action] eager artifact push failed', item.relativePath, message)
       } finally {

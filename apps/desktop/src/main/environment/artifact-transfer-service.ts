@@ -1,6 +1,6 @@
 /**
  * The transfer worker over the delivery record
- * (`docs/design/session-sync-zone-delivery-record.md` §6).
+ * (`docs/architecture/session-sync-zone.md` §8.5, §8.6).
  *
  * One worker per live remote connection, started next to the Host Action
  * consumer and stopped with it. Each pass lists the connection's live rows
@@ -14,7 +14,7 @@
  * - `uploading`: the final put was never sent (or the row would be
  *   `committing`), so the node has at most a `.parts` fragment. Resumed.
  * - `committing` with a dead holder: the final put was sent and its reply
- *   lost. Unknowable from here (§2), so automatic retry stops and a person
+ *   lost. Unknowable from here (§8.2), so automatic retry stops and a person
  *   re-delivers under a new path.
  * - `uploaded` / `notifying`: the bytes are on the node; only the wake is
  *   owed. Notified, never uploaded — there is no path back to `uploading`.
@@ -53,7 +53,7 @@ const BACKOFF_MAX_MS = 10 * 60_000
 export interface ArtifactTransferDeps {
   put: (connectionId: string, input: ArtifactPutRequest) => Promise<ArtifactPutResult>
   /**
-   * Tell the session's agent the file landed (§4.1 of the parent design).
+   * Tell the session's agent the file landed (§5.3).
    * Optional so a host without the notification RPC (an older node, a unit
    * test) still transfers.
    */
@@ -114,7 +114,7 @@ export class ArtifactTransferService {
   }
 
   /**
-   * Session deletion (§6): tombstone the session, abandon its live rows, and
+   * Session deletion (§8.5): tombstone the session, abandon its live rows, and
    * cancel any upload of theirs in flight. The upload's own failure handling
    * sees an abort, not an error, and records nothing.
    */
@@ -263,7 +263,7 @@ export class ArtifactTransferService {
           return
         case 'committing':
           // The final put went out and nothing says whether it landed. Nothing
-          // here can find out (§2), so nothing here retries it.
+          // here can find out (§8.2), so nothing here retries it.
           recordDeliveryFailure(cursor.handle, { error: 'commit unverified', nextAttemptAt: null })
           this.deps.log?.warn('[artifact-transfer] final put unverified; needs re-delivery under a new path', row.relativePath)
           return
@@ -299,7 +299,7 @@ export class ArtifactTransferService {
       const attempts = row.attempts + 1
       const missingLocal = (err as { code?: string }).code === 'ENOENT'
       // The final put went out and its reply did not come back: unknowable
-      // from here (§2), so automatic retry stops right now rather than after
+      // from here (§8.2), so automatic retry stops right now rather than after
       // a backoff that would resend the final chunk.
       const unverified = cursor.committing && !delivered
       // A delivered file cannot fail for want of a local copy, and never gives

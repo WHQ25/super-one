@@ -3,8 +3,8 @@
  *
  * Every consumer of a zone file — the mirror, the Host Action push, the
  * transfer worker — reads `session_file_deliveries`, and a table that cannot
- * be read protects everything (`docs/design/session-sync-zone-delivery-record.md`
- * R5). A test that mirrors or produces a zone file therefore needs a table
+ * be read protects everything (`docs/architecture/session-sync-zone.md`
+ * §8.3 R5). A test that mirrors or produces a zone file therefore needs a table
  * that answers, even when the delivery itself is not what it is about:
  *
  *   vi.mock('../database', async () => (await import('../../test/fixtures/delivery-db')).deliveryDatabase())

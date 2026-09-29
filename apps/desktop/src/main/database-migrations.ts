@@ -693,7 +693,7 @@ function applyMigrations(db: Database.Database): void {
   // Several sessions may link the same peer; only spawn parentage stays unique.
   ensureCollaborationGrantUniqueness(db, { warn: (message) => log.warn(message) })
 
-  // Session sync zone delivery record (docs/design/session-sync-zone-delivery-record.md):
+  // Session sync zone delivery record (docs/architecture/session-sync-zone.md §8):
   // one durable row per zone file delivered to its node — created before the
   // first controlled byte, advanced through a monotonic phase, and read by the
   // mirror, the eager push and the transfer worker alike. It is the whole of

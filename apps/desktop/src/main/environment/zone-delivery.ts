@@ -1,6 +1,6 @@
 /**
  * The producers' side of the delivery record
- * (`docs/design/session-sync-zone-delivery-record.md` §4).
+ * (`docs/architecture/session-sync-zone.md` §8.4).
  *
  * A zone file enters the record in one of two ways, and the difference is
  * whether there is an `await` between its first byte and its registration:
@@ -258,7 +258,7 @@ export function publishArtifact(sessionId: string, ref: ArtifactRef & { bytes?: 
   const origin: DeliveryOrigin = ref.producer === 'download' ? 'download' : 'produced'
   // A refusal is the record's answer and the producer's failure: a lost
   // reservation, a taken name, a session gone or a destination unknown is
-  // never registered as a final ref (§4).
+  // never registered as a final ref (§8.4).
   const deliveryId = ref.final ? sealZoneFile({ sessionId, path: ref.path, origin, connectionId, bytes }) : openZoneReservation(sessionId, ref.path)
   registerArtifact(sessionId, deliveryId ? { ...plain, deliveryId } : plain)
 }

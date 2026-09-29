@@ -1,6 +1,6 @@
 /**
  * The transfer worker over the delivery record
- * (`docs/design/session-sync-zone-delivery-record.md` §6): it takes any live
+ * (`docs/architecture/session-sync-zone.md` §8.5): it takes any live
  * row with a dead-or-no holder, uploads from the recorded offset under the
  * row's fixed identity, wakes the agent, and marks the row done. Failure is
  * scheduling — `attempts`, `next_attempt_at`, `gave_up_at` — never a phase.
@@ -156,7 +156,7 @@ describe('the transfer worker', () => {
 
   it('never retries a delivery whose final put was already sent (committing)', async () => {
     // The final chunk went out and the reply was lost; the node may have
-    // committed it. Nothing here can tell (§2), so the worker leaves it alone.
+    // committed it. Nothing here can tell (§8.2), so the worker leaves it alone.
     const node = fakeNode()
     const service = new ArtifactTransferService({ put: node.put })
     const local = join(root, 'shot.png')
@@ -333,7 +333,7 @@ describe('the transfer worker', () => {
     })
     const local = join(root, 'report.csv')
     // Two chunks so the failing put is a non-final one: give-up at `uploading`,
-    // which Retry can act on — unlike a `committing` give-up (§6).
+    // which Retry can act on — unlike a `committing` give-up (§8.5).
     const data = Buffer.alloc(2 * ARTIFACT_CHUNK_BYTES, 4)
     writeFileSync(local, data)
     const id = sealDelivery('s1', 'c1', local, 'download/report.csv', data)

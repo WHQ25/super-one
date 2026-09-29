@@ -16,7 +16,7 @@ import { mirrorNodeArtifact, mirrorNodeDirectory } from './session-file-mirror'
 
 /**
  * A row of the delivery record for `s1`'s `rel`, in the state the scenario
- * names (`docs/design/session-sync-zone-delivery-record.md` R4). `held` gives
+ * names (`docs/architecture/session-sync-zone.md` §8.3 R4). `held` gives
  * it a live holder — a producer still filling it, a push still sending it.
  */
 function delivery(rel: string, phase: DeliveryPhase, opts: { outcome?: DeliveryOutcome; held?: boolean; gaveUp?: boolean } = {}): void {

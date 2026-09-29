@@ -1,6 +1,6 @@
 /**
  * Every producer that writes into a session zone, and the delivery row each
- * one leaves (`docs/design/session-sync-zone-delivery-record.md` §4).
+ * one leaves (`docs/architecture/session-sync-zone.md` §8.4).
  *
  * The rule follows the write mode, and so do the tests: a path factory has a
  * `writing` row before the path leaves it; a synchronous publish has a

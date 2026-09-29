@@ -1,6 +1,6 @@
 /**
  * The delivery record's primitives against real SQLite
- * (`docs/design/session-sync-zone-delivery-record.md` §2, §3, §6).
+ * (`docs/architecture/session-sync-zone.md` §8.1, §8.2, §8.3, §8.5).
  *
  * Every rule here is one the reviewer checked against the schema: the content
  * slot (P1), phase never moving on failure (P2), one handle for every write
@@ -135,7 +135,7 @@ describe('advancing a delivery', () => {
   })
 
   it('cannot advance another live holder’s committing delivery', () => {
-    // Second review of §10.1: `advance` used to SET the holder without
+    // Second review of the record primitives (§8.3): `advance` used to SET the holder without
     // checking the current one, so a worker that had merely read the epoch
     // could walk a row out from under the attempt awaiting its final put.
     const a = advanced(sealed(), { from: 'sealed', to: 'uploading' }, { from: 'uploading', to: 'committing' })
@@ -201,7 +201,7 @@ describe('failure is scheduling, never phase (P2)', () => {
   })
 
   it.each(['uploading', 'notifying'] as const)('reclaims an unheld %s retry without changing its phase', (phase) => {
-    // Second review of §10.1: a failed attempt releases the holder, and the
+    // Second review of the record primitives (§8.2): a failed attempt releases the holder, and the
     // next attempt has to pick the row up from NULL at that same phase.
     const steps = {
       uploading: [{ from: 'sealed', to: 'uploading' }],

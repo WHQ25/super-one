@@ -1,6 +1,6 @@
 /**
  * The producers' side of the delivery record
- * (`docs/design/session-sync-zone-delivery-record.md` §4).
+ * (`docs/architecture/session-sync-zone.md` §8.4).
  *
  * Two ways a file enters the zone — reserved before its first byte, or
  * published complete in one synchronous sequence — and one way it is

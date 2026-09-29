@@ -604,7 +604,7 @@ Each phase is a separate PR.
   scrolling `FileWithDiffView` to it in a 400px card is cheap. Not in v1.
 - **Remote-node artifact ownership** is the sync zone's problem, not the
   previewer's. All three gaps this section used to list closed on
-  2026-09-14 (`session-sync-zone.md` §9): `browser_download` honours a `dir`
+  2026-09-14 (`session-sync-zone.md` §6): `browser_download` honours a `dir`
   inside the session zone, a deferred transfer now wakes the agent when it
   lands, and recordings, device captures and downloads write into the zone.
   What the previewer still inherits: a file is `missing` between the block

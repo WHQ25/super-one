@@ -15,6 +15,130 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Claude and Codex subscription meters estimate when each quota window
+  runs out at the recent pace, on desktop and mobile; desktop shows a
+  bubble when a window is likely to run out before it resets.
+- Browser tabs playing sound show a speaker after the title, background
+  tabs included; clicking it mutes or unmutes the tab.
+- Development mini-apps hot-reload from their Vite dev server while
+  `bun run dev` runs, and agents can inspect and operate their panels
+  and tool UIs with the regular `browser_*` tools, including a
+  fixture-driven tool UI preview (`miniapp_dev_preview`).
+- A 3D model keeps its camera view between the files previewer's
+  fullscreen, its card and the file panel, and across USDZ variant
+  changes and panel resizes.
+- Refreshing Codex models from the model selector confirms the result,
+  or reports a failure and keeps the current list.
+
+### Fixed
+
+- Claude replies that arrive before the prompt is consumed, or after a
+  turn has settled, are kept as their own turns instead of being lost
+  (#64).
+- Computer Use app grants answered in Cursor and DeepSeek sessions take
+  effect instead of timing out after 120 s.
+- Interrupting a reply no longer marks an already delivered message as
+  failed or offers to resend it.
+- Codex skills and slash commands show their argument hints.
+- Daily Claude usage statistics no longer count a session's earlier
+  turns again after the session idles out or is stopped and then
+  continues.
+- Mobile: collaboration cards open the collaborator's session; cached
+  3D models load in the chat WebView; turn error detail labels no longer
+  overlap.
+- Browser tabs theme classic page scrollbars, and model selector
+  scrollbars overlay the list.
+- The agent's background browser PiP keeps the maximized browser
+  viewport, and mini-app picture-in-picture keeps its aspect ratio
+  regardless of the dock slot.
+
+### Changed
+
+- Codex: upgraded the app-server runtime to `0.159.0`, enabling GPT-6.1
+  Sol discovery for eligible accounts. Forking older conversations from
+  a selected message remains supported after upstream removed
+  `thread/rollback`.
+- Claude Agent SDK 0.3.285 (Claude Code 2.1.285): a turn woken by a
+  finished background agent no longer fails its tools with "Stream
+  closed", forks after a rewind or compaction copy the right history,
+  a session no longer stays "needs action" after overlapping permission
+  prompts are answered, disabling an MCP server in settings closes its
+  connection, and Claude sessions start faster. Background shell
+  commands Claude starts now stop at their timeout (30 minutes unless
+  the agent sets one, up to 2 hours).
+
+## [0.70.0-alpha] - 2026-09-30
+
+### Added
+
+- Claude and Codex subscription meters estimate when each quota window
+  runs out at the recent pace, on desktop and mobile; desktop shows a
+  bubble when a window is likely to run out before it resets.
+- Browser tabs playing sound show a speaker after the title, background
+  tabs included; clicking it mutes or unmutes the tab.
+- Development mini-apps hot-reload from their Vite dev server while
+  `bun run dev` runs, and their tab shows a lightning badge. The template
+  builds every page named in `manifest.templates`.
+- Agents can inspect and operate development mini-app panels and tool
+  UIs with the regular `browser_*` tools, including a fixture-driven tool
+  UI preview (`miniapp_dev_preview`); MiniApp Host output and failures
+  appear in the view console.
+- A 3D model keeps its camera view between the files previewer's
+  fullscreen, its card and the file panel, and across USDZ variant
+  changes and panel resizes.
+- Refreshing Codex models from the model selector confirms the result,
+  or reports a failure and keeps the current list.
+- Android phone emulators can use a 3D Pixel reference shell when its
+  model file is installed locally.
+
+### Fixed
+
+- Claude replies that arrive before the prompt is consumed, or after a
+  turn has settled, are kept as their own turns instead of being lost
+  (#64).
+- Computer Use app grants answered in Cursor and DeepSeek sessions take
+  effect instead of timing out after 120 s.
+- Interrupting a reply no longer marks an already delivered message as
+  failed or offers to resend it.
+- Codex skills and slash commands show their argument hints.
+- Daily Claude usage statistics no longer count a session's earlier
+  turns again after the session idles out or is stopped and then
+  continues.
+- Mobile: collaboration cards open the collaborator's session; cached
+  3D models load in the chat WebView, with Draco assets bundled for
+  offline use; turn error detail labels no longer overlap.
+- Model selector scrollbars overlay the list.
+- Browser tabs theme classic page scrollbars, so dark pages no longer
+  show a light track.
+- The agent's background browser PiP keeps the maximized browser
+  viewport instead of turning tall beside a narrow activity panel.
+- Mini-app picture-in-picture keeps its aspect ratio regardless of the
+  dock slot.
+
+### Changed
+
+- Codex: upgraded the app-server runtime to `0.159.0`, enabling GPT-6.1
+  Sol discovery for eligible accounts. Forking older conversations from
+  a selected message remains supported after upstream removed
+  `thread/rollback`.
+- Claude Agent SDK 0.3.285 (Claude Code 2.1.285): a turn woken by a
+  finished background agent no longer fails its tools with "Stream
+  closed", forks after a rewind or compaction copy the right history,
+  a session no longer stays "needs action" after overlapping permission
+  prompts are answered, disabling an MCP server in settings closes its
+  connection, and Claude sessions start faster. Background shell
+  commands Claude starts now stop at their timeout (30 minutes unless
+  the agent sets one, up to 2 hours).
+
+### Tests
+
+- Mobile legacy session restore is covered, and the chat-core boundary
+  check flags only module-scope maps.
+
+## [0.69.0] - 2026-09-26
+
+### Added
+
 - DeepSeek sessions answer the agent's questions in the question
   prompt and review plans in the plan card: plan mode adds dsh's
   planning guidance, and an approved plan returns the session to
@@ -68,9 +192,6 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Browser automation no longer hangs on screenshots or recordings when
   the window is minimized or covered.
 - The models panel lists only models a plan can enable (#66).
-- Daily Claude usage statistics no longer count a session's earlier
-  turns again after the session idles out or is stopped and then
-  continues.
 - Several sessions can link the same collaboration peer.
 - A fork's worktree survives a cold start; harness settings no longer
   show an old version while a stale binary is launched.
@@ -104,9 +225,6 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Changed
 
-- Codex: upgraded the app-server runtime to `0.159.0`, enabling GPT-6.1 Sol
-  discovery for eligible accounts. Forking older conversations from a selected
-  message remains supported after upstream removed `thread/rollback`.
 - **BREAKING:** collaboration launches pass the brief at
   `session_collab_start({ launchId, task })`, and send / retrieve address
   peers by session id instead of a credential; node RPC `collaboration.*`
@@ -129,168 +247,6 @@ Every alpha release keeps its own notes on its GitHub Release.
   when unnamed.
 - Cmd/Ctrl+B toggles the activity panel and Cmd/Ctrl+Alt+B the sidebar;
   the sidebar shortcut also works on Windows.
-- Claude Agent SDK 0.3.285 (Claude Code 2.1.285): a turn woken by a
-  finished background agent no longer fails its tools with "Stream
-  closed", forks after a rewind or compaction copy the right history,
-  a session no longer stays "needs action" after overlapping permission
-  prompts are answered, disabling an MCP server in settings closes its
-  connection, and Claude sessions start faster. Background shell
-  commands Claude starts now stop at their timeout (30 minutes unless
-  the agent sets one, up to 2 hours).
-
-## [0.69.0-alpha.2] - 2026-09-26
-
-### Added
-
-- Device environment controls: switch an iOS Simulator or Android
-  emulator between light and dark appearance, set its system text size,
-  simulate a location (clearable on iOS), or change an emulator's fold
-  posture from the device panel. Agents can do the same with
-  `device_configure`.
-
-### Changed
-
-- Cmd/Ctrl+B toggles the activity panel and Cmd/Ctrl+Alt+B the sidebar.
-  The sidebar shortcut now also works on Windows.
-
-### Fixed
-
-- A session started from the phone stays in its worktree: resuming it on
-  the desktop no longer moves it to the main checkout without its
-  history, and both the desktop and the phone show its worktree as soon
-  as it is created.
-- Scheduled sends survive an app restart and a retry.
-- A Claude session rebuilt with new settings no longer keeps running in
-  its old directory or fails to start with "already started".
-- Clicking a file chip while an agent drives the browser opens the file
-  instead of the browser tab.
-- iOS Simulator device frames use the real device artwork again on
-  Xcode 27.
-- Mobile: a Claude Bash command that changes files shows its edit
-  stats, and those files count toward the turn's file and line totals.
-- Mobile: background subagents keep their running indicator until they
-  finish, and nested subagents no longer appear as extra cards at the top
-  of a turn.
-- Mobile: full-screen Mermaid diagrams stay sharp while zooming.
-
-## [0.69.0-alpha.1] - 2026-09-26
-
-### Added
-
-- 3D model preview: glTF/GLB, USD/USDA/USDC/USDZ, OBJ, FBX, STL, PLY and
-  3MF files open in the file tree and files previewer with orbit controls,
-  on desktop and mobile. USDZ files use Quick Look-style studio lighting,
-  and on macOS their variant sets (such as color or pose) can be switched
-  from the preview.
-- Settings: the sidebar groups pages into App, Agent, Capabilities and
-  Connections, and every page uses the same card sections. Usage charts
-  draw each harness in its brand color, and the harness chart now includes
-  Cursor and OpenCode.
-- Chat: a message the host refused is marked on its bubble with a Resend
-  button, and Edit puts it back in the composer. A failed queued message
-  moves into the transcript instead of disappearing, and phone text sends
-  no longer spin on "Sending…" forever.
-- Android device control: agent taps, long presses and swipes move like a
-  finger — a held press with small aim and pressure variation, and swipes
-  that curve and change speed.
-
-### Performance
-
-- Cold start to a usable composer drops from about 5.1 s to 1.3 s (p50,
-  packaged build): the login-shell PATH is read off the startup path, the
-  main bundle uses V8's compile cache, the renderer loads over a
-  code-cached scheme, and the Cursor SDK, the phone code highlighter and
-  OpenCode orphan cleanup no longer run at launch.
-
-### Fixed
-
-- Claude: model and slash-command probes no longer run a paid model turn.
-- Claude and Codex model / slash-command lists refresh after a harness
-  upgrade instead of staying on the old catalog.
-- Background download receipts, artifact syncs and collaboration wakes no
-  longer appear in the chat as "System wake" XML or user bubbles, or
-  become a remote session's title.
-- Remote nodes wait for permission, question and plan answers instead of
-  deciding them after 60 s, and a remote turn keeps streaming after its
-  prompt is answered elsewhere.
-- Codex: image attachments on queued messages no longer turn into their
-  text note when the queue refreshes.
-- Chat: consecutive tool rows are evenly spaced; line stats sit level with
-  the row header; in a narrow composer, mention rows move details under
-  the name.
-- Mobile: mention rows no longer draw text over each other; Read and Skill
-  rows stay collapsed; dimmed harness icons fade evenly on Android.
-- File previews (PDF, gallery, fullscreen, mobile video) blend into the
-  panel instead of painting a box.
-
-### Changed
-
-- Subagent headers show one label: the agent's name, or its type when it
-  has none. Codex agents no longer show a worker or forked badge.
-
-## [0.69.0-alpha] - 2026-09-24
-
-### Added
-
-- DeepSeek sessions answer the agent's questions in the question prompt and
-  review plans in the plan card; an approved plan returns the session to
-  default mode. Messages typed mid-turn queue in the composer, where they can
-  be removed or steered into the running turn.
-- DeepSeek agents can run subagents, shell commands and workflows in the
-  background; they appear in the status bar's background list with a Stop
-  button. Settings → Harnesses → DeepSeek → Preferences can let the agent pick
-  a model per subagent, limited to the models you allow.
-- DeepSeek sessions can list and read resources from configured MCP servers,
-  stream a tool's input into its row as it is written, and report model
-  retries as a retry notice. Shell commands that change files show Write,
-  Edit or Delete rows and count toward the turn's totals.
-- Archiving a session stops its background tasks, and the background list's
-  Stop button works for every harness that supports stopping tasks.
-- Widgets accept `layout: "fixed"`: mockups lay out at 680px and scale down
-  as a whole on narrow screens, where two fingers pinch to zoom.
-- Providers: model mapping switches between picking from the list and typing
-  an id; the Xiaomi MiMo preset defaults to MiMo V2.6 Pro.
-- File chips offer Copy Path and Copy Relative Path.
-- Mobile shows the automation icon on idle automation session rows.
-- Failed SuperOne tool calls are logged to the main log with the tool name,
-  session id and error (no arguments).
-
-### Fixed
-
-- DeepSeek on Linux and Windows: shell commands no longer launch a second
-  SuperOne instance.
-- Browser automation: screenshots and recordings no longer hang when the
-  window is minimized or covered; each stage is bounded and a stuck
-  screenshot fails within 8 s. Calls wait for the renderer to subscribe and
-  fail if it goes away.
-- Providers: the models panel lists only models the plan can enable, so
-  switches on Xiaomi MiMo and Kimi Code no longer snap back (#66).
-- Collaboration: several sessions can link the same peer; a database whose
-  grants schema is unrecognized keeps working instead of failing to open.
-- A fork's worktree survives a cold start.
-- Mobile: a reconnecting phone no longer marks old replies unread; session
-  rows follow backend liveness and open voice calls; sessions with a
-  scheduled send list above older rows; compacted history, subagent tool
-  rows and Codex patch rows match desktop; the files and mermaid previews
-  size correctly; the header names the project and worktree branch.
-- Chat: long mention chips wrap cleanly; file-chip mentions use the file's
-  basename; a text selection keeps its own context menu over file chips.
-- Harness settings no longer report an old version when a catalog row still
-  launches a stale binary.
-
-### Changed
-
-- **BREAKING:** `session_collab_request` launches no longer take `task`;
-  `session_collab_start` takes `{ launchId, task }`. Collaboration send and
-  retrieve address peers by session id instead of a credential. Node RPC
-  `collaboration.start` / `send` / `retrieve` change accordingly, and
-  `retrieve` now requires the session's control lease. Launches approved but
-  not started before upgrading must be requested again.
-- DeepSeek: upgraded `dsh` to `0.1.7-rc.1`. Stored conversations migrate to
-  the new format on first open; an older SuperOne cannot read them after.
-- The Bash row shows edit stats with the file-diff icon after its summary;
-  its expandable section is now named Terminal.
-- Mobile uses lucide 1 icons, matching desktop glyphs.
 
 ## [0.68.0] - 2026-09-23
 

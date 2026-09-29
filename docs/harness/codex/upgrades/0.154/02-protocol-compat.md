@@ -39,13 +39,13 @@ Rust `app-server-protocol/src/protocol/common.rs` 新增四个 experimental **Cl
 
 `thread/fork`：稳定字段是 `{ threadId, lastTurnId? }` — **inclusive**。`experimentalApi` 下 fork **同时**接受 `beforeTurnId`（exclusive）。两者 0.153.2 已有。
 
-[`CodexBackend.rewindConversation`](../../../../apps/desktop/src/main/session/backends/codex-backend.ts) 先 `thread/revert { beforeTurnId }`，paginated 失败再 `thread/fork { beforeTurnId }`。SuperOne 已开 `experimentalApi`，fork 的 exclusive 截断与 revert 对齐。**这不是 bug。**
+[`CodexBackend.rewindConversation`](../../../../../apps/desktop/src/main/session/backends/codex-backend.ts) 先 `thread/revert { beforeTurnId }`，paginated 失败再 `thread/fork { beforeTurnId }`。SuperOne 已开 `experimentalApi`，fork 的 exclusive 截断与 revert 对齐。**这不是 bug。**
 
 禁止把同一个 turn id 从 `beforeTurnId` 改成 `lastTurnId`：inclusive 会把边界 turn 留在历史里。
 
 本轮补 **语义 fixture**：给定 turns `[t1, t2, t3]`，rewind before `t2` 后历史不得包含 `t2`/`t3`。只断言 JSON 键名不够。
 
-共享 [`fork-thread.ts`](../../../../packages/codex/src/fork-thread.ts) 的 `lastTurnId` 路径用于 session fork（inclusive 锚点），与 rewind 分开，不要合成一套参数。
+共享 [`fork-thread.ts`](../../../../../packages/codex/src/fork-thread.ts) 的 `lastTurnId` 路径用于 session fork（inclusive 锚点），与 rewind 分开，不要合成一套参数。
 
 `thread/rollback` 在 0.154.0 仍注册。`origin/main` `#44915` 才删，不承诺尚未发布的 0.155。legacy fallback 先留着。
 
@@ -59,8 +59,8 @@ Rust `app-server-protocol/src/protocol/common.rs` 新增四个 experimental **Cl
 
 现状不合格，不能称为「通用兼容」：
 
-- desktop [`codex-turn.ts`](../../../../apps/desktop/src/main/codex/codex-turn.ts) 对未解析的 server request `respond(..., {})`（空对象，像成功）。
-- shared [`app-server-client.ts`](../../../../packages/codex/src/app-server-client.ts) 对所有 inbound request 回泛化 deny。
+- desktop [`codex-turn.ts`](../../../../../apps/desktop/src/main/codex/codex-turn.ts) 对未解析的 server request `respond(..., {})`（空对象，像成功）。
+- shared [`app-server-client.ts`](../../../../../packages/codex/src/app-server-client.ts) 对所有 inbound request 回泛化 deny。
 
 本轮把这两处改掉。未 opt-in 的 `openai/userVerification` elicitation：按 elicitation schema **cancel**。不要为空成功，不要给 `userVerification/*` 写出站以外的 inbound handler。
 

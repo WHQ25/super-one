@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "DeepSeek Harness core \u2014 in-process dsh Cordis tree (docs/draft/deepseek-harness-integration.md).",
+  "description": "DeepSeek Harness core \u2014 in-process dsh Cordis tree (docs/harness/dsh/deepseek-harness-integration.md).",
   "exports": {
     ".": "./src/index.ts",
     "./*": "./src/*.ts"

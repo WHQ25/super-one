@@ -138,7 +138,7 @@ export function getDeepseekRuntime(): Promise<DeepseekRuntime> {
         process.execPath,
       ),
       // Harness identity stays on; SuperOne additions ride the persona field
-      // (docs/draft/deepseek-harness-integration.md §12.1).
+      // (docs/harness/dsh/deepseek-harness-integration.md §12.1).
       persona: '',
       persistenceRoot: join(app.getPath('userData'), 'deepseek-sessions'),
       // Passed explicitly because `dsh-attachment-local` otherwise follows

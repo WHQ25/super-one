@@ -21,10 +21,10 @@
 ## 当前基线
 
 - 桌面 bundled 与 managed runtime 钉在 `@openai/codex` `0.153.2`：
-  - [`apps/desktop/package.json`](../../../../apps/desktop/package.json)
-  - [`packages/runtime/src/harness/managed-official.ts`](../../../../packages/runtime/src/harness/managed-official.ts) `OFFICIAL_CODEX_NPM_VERSION`
+  - [`apps/desktop/package.json`](../../../../../apps/desktop/package.json)
+  - [`packages/runtime/src/harness/managed-official.ts`](../../../../../packages/runtime/src/harness/managed-official.ts) `OFFICIAL_CODEX_NPM_VERSION`
 - CHANGELOG `[0.62.0]` 已接入 0.153：structured async questions、live reviewer、remote plugin reconciliation。
-- Electron Main 通过 App Server JSON-RPC 连接，`initialize` 启用 `experimentalApi`（[`app-server-connection.ts`](../../../../apps/desktop/src/main/codex/app-server-connection.ts)）。`experimentalApi: true` **不会**自动打开 elicitation `openai/userVerification`；那条要专门的 extensions opt-in。
+- Electron Main 通过 App Server JSON-RPC 连接，`initialize` 启用 `experimentalApi`（[`app-server-connection.ts`](../../../../../apps/desktop/src/main/codex/app-server-connection.ts)）。`experimentalApi: true` **不会**自动打开 elicitation `openai/userVerification`；那条要专门的 extensions opt-in。
 - SuperOne 已有 `thread/{start,resume,fork,revert}`、`turn/{start,steer,interrupt}`、`review/start`、`thread/compact/start`、Goals、`model/list`、Skills、Hooks、`plugin/{list,reconcile,installed}`、MCP 状态、账户用量、realtime、async questions。
 - SuperOne 自己的 session fork 已经能切 git worktree；不要用 Codex 原生 `--worktree` 再做一套。
 - renderer 不持有 Codex 连接或凭据。新会话能力优先走 `EnvironmentGateway`。

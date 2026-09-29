@@ -8,7 +8,7 @@
 
 ### 当前能力
 
-- [`CodexBackend.reloadPlugins`](../../../../apps/desktop/src/main/session/backends/codex-backend.ts) 调 `plugin/reconcile`，按 `hasApps` / `hasMcps` / `hasSkills` 分别刷新。
+- [`CodexBackend.reloadPlugins`](../../../../../apps/desktop/src/main/session/backends/codex-backend.ts) 调 `plugin/reconcile`，按 `hasApps` / `hasMcps` / `hasSkills` 分别刷新。
 - `app/installed` + `forceRefresh: true` 针对 live thread Apps（Codex `apps_processor/installed.rs`）。
 - Skills watcher 与 `notifyCodexSkillsChanged` 已存在。
 
@@ -28,7 +28,7 @@
 
 0.154 `McpServerStatus.toolsError`（`v2/mcp.rs`）：discovery 失败且没有 catalog 时有值；成功返回 catalog（包括空 catalog）时为 null。
 
-[`mapCodexMcpStatusForIpc`](../../../../apps/desktop/src/main/codex/codex-mcp-status.ts) 只按 `serverInfo` 判断 `connected`，完全忽略 `toolsError`。结果：工具发现失败仍显示成正常空目录。
+[`mapCodexMcpStatusForIpc`](../../../../../apps/desktop/src/main/codex/codex-mcp-status.ts) 只按 `serverInfo` 判断 `connected`，完全忽略 `toolsError`。结果：工具发现失败仍显示成正常空目录。
 
 `runtimeStatus` / 连接状态与 `toolsError` 在 0.154 是 **独立字段**（`v2/mcp.rs`）。目录发现失败 ≠ 断开连接。有 `runtimeStatus: connected` + `toolsError` 时必须保留 connected，另外暴露目录不可用。
 
@@ -44,7 +44,7 @@
 
 默认 **legacy** 路径；**coordinated** 是显式 feature（Codex `features` 里 coordination 默认 false）。两种都要测。
 
-现状：desktop [`codex-turn.ts`](../../../../apps/desktop/src/main/codex/codex-turn.ts) 与 [`packages/codex/src/agent-event-mapper.ts`](../../../../packages/codex/src/agent-event-mapper.ts) **丢弃 `_meta`**。调用已有 `mcpServer/oauth/login` **不会**自动把失败 tool result 变成可点登录入口。
+现状：desktop [`codex-turn.ts`](../../../../../apps/desktop/src/main/codex/codex-turn.ts) 与 [`packages/codex/src/agent-event-mapper.ts`](../../../../../packages/codex/src/agent-event-mapper.ts) **丢弃 `_meta`**。调用已有 `mcpServer/oauth/login` **不会**自动把失败 tool result 变成可点登录入口。
 
 本轮：
 
@@ -57,7 +57,7 @@
 
 - 不重做 marketplace UI。
 - 不把 `plugin/share/*` 产品化。
-- 不把 Apps/Connectors 从 [12-apps](../147/12-apps.md) 拉进本轮。
+- 不把 Apps/Connectors 从 [12-apps](../0.147/12-apps.md) 拉进本轮。
 - 不把 user-verification elicitation ceremony 塞进 OAuth 项（见 [08](./08-deferred.md)）。
 
 ## 验收

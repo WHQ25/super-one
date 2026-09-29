@@ -10,10 +10,10 @@
 
 ## 集成范围
 
-- [`apps/desktop/package.json`](../../../../apps/desktop/package.json) 的 `"@openai/codex": "0.153.2"`。
-- [`packages/runtime/src/harness/managed-official.ts`](../../../../packages/runtime/src/harness/managed-official.ts) `OFFICIAL_CODEX_NPM_VERSION`。
+- [`apps/desktop/package.json`](../../../../../apps/desktop/package.json) 的 `"@openai/codex": "0.153.2"`。
+- [`packages/runtime/src/harness/managed-official.ts`](../../../../../packages/runtime/src/harness/managed-official.ts) `OFFICIAL_CODEX_NPM_VERSION`。
 - `bun.lock`（`bun install`，不要手改）。
-- [`scripts/publish-harness-artifacts.ts`](../../../../scripts/publish-harness-artifacts.ts) 读取 official pin；发布时 desktop / managed / app pin 必须同值。
+- [`scripts/publish-harness-artifacts.ts`](../../../../../scripts/publish-harness-artifacts.ts) 读取 official pin；发布时 desktop / managed / app pin 必须同值。
 - `SUPERONE_CODEX_NPM_VERSION` 仍可覆盖，但默认路径必须是 0.154.0。
 - CHANGELOG：一次 `chore(codex)` 或随功能提交的 runtime 行。
 
@@ -38,7 +38,7 @@
 
 ## 风险与兼容
 
-- 0.154.0 删除了 `codex mcp-server` 入口（#42993）。SuperOne 走的是 `codex app-server`（[`app-server-connection.ts`](../../../../apps/desktop/src/main/codex/app-server-connection.ts) spawn），升级本身不受影响；文档/脚本里如有残留一并删掉。
+- 0.154.0 删除了 `codex mcp-server` 入口（#42993）。SuperOne 走的是 `codex app-server`（[`app-server-connection.ts`](../../../../../apps/desktop/src/main/codex/app-server-connection.ts) spawn），升级本身不受影响；文档/脚本里如有残留一并删掉。
 - 平台包仍是 `@openai/codex@0.154.0-<platform>-<arch>`。
 - 升级必须与 remote node 同步，否则功能矩阵按较低版本裁剪。
 

@@ -45,7 +45,7 @@ import { readPresetDeclarations } from './presets'
 export interface DeepseekTreeOptions {
   /**
    * Deployment persona, rendered after the harness identity opener
-   * (`personaPrefix`; decision: docs/draft/deepseek-harness-integration.md
+   * (`personaPrefix`; decision: docs/harness/dsh/deepseek-harness-integration.md
    * §12.1). A preset's own persona row shadows it. `{{variable}}` references
    * are strict — an unknown one fails assembly.
    */

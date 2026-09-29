@@ -9,9 +9,14 @@ per capability lives in the `superone-harness` skill
 ([experiences.md](../../.agents/skills/superone-harness/references/experiences.md));
 link a ledger row there instead of repeating it.
 
-| Harness | Pin | Ledger checked by script |
+| Harness | Pin | Ledger |
 |---|---|---|
-| [claude](claude/README.md) | `@anthropic-ai/claude-agent-sdk` 0.3.284 | yes |
+| [claude](claude/README.md) | `@anthropic-ai/claude-agent-sdk` 0.3.284 | 0.3.284, script-checked |
+| [codex](codex/README.md) | `@openai/codex` 0.155.1 | not started |
+| [dsh](dsh/README.md) | `@deepseek-ai/dsh-*` 0.1.7-rc.1 | not started |
+| [cursor](cursor/README.md) | `@cursor/sdk` 1.0.30 | not started |
+| [opencode](opencode/README.md) | `@opencode-ai/sdk` ^1.18.26 | not started |
+| [acp-grok](acp-grok/README.md) | `@agentclientprotocol/sdk` ^1.4.0 | not started |
 
 ## Folder layout
 
@@ -25,7 +30,12 @@ docs/harness/<harness-id>/
 ```
 
 Copy [`_template/`](_template/) to start a harness. A multi-part upgrade may be a
-folder `upgrades/<version>/` with its own `README.md`.
+folder `upgrades/<version>/` with its own `README.md`. Other harness-specific files
+(design packs, spikes) sit next to these under their own names and are listed in the
+harness README.
+
+A ledger starts with the first upgrade planned after the harness gets an exact pin;
+until then `api-surface.md`, `contracts.md` and `backlog.md` are stubs.
 
 | Document | Changes by | Answers |
 |---|---|---|

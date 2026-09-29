@@ -14,8 +14,8 @@
 
 App-server 在 0.153.2 已经会恢复 saved `approvalPolicy` / reviewer / profile（`thread_processor.rs`）。SuperOne 若在 resume 后第一次 `turn/start` 仍带当前 UI 的 `approvalPolicy`、`approvalsReviewer`、sandbox + roots，**立刻覆盖**刚恢复的值。相关发送点：
 
-- desktop [`codex-turn.ts`](../../../../apps/desktop/src/main/codex/codex-turn.ts) sandbox / approval / turn start / settings update
-- shared [`app-server-client.ts`](../../../../packages/codex/src/app-server-client.ts) thread/turn 参数
+- desktop [`codex-turn.ts`](../../../../../apps/desktop/src/main/codex/codex-turn.ts) sandbox / approval / turn start / settings update
+- shared [`app-server-client.ts`](../../../../../packages/codex/src/app-server-client.ts) thread/turn 参数
 
 因此：
 

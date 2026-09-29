@@ -6,7 +6,7 @@
 
 0.154 的 experimental worktree（feature `Worktrees`，默认 false）与 SuperOne 已有隔离重叠：
 
-- Session fork 可 `activateWorktree`，detached checkout，失败回滚（[`session-fork.ts`](../../../../apps/desktop/src/main/session/session-fork.ts)）。
+- Session fork 可 `activateWorktree`，detached checkout，失败回滚（[`session-fork.ts`](../../../../../apps/desktop/src/main/session/session-fork.ts)）。
 - `session_collab_*` 的 spawn/handoff 可选 worktree isolation。
 - cwd 通过 `thread/start` / `thread/resume` 的 `cwd` 传给 Codex。
 

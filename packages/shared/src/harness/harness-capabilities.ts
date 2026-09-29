@@ -223,7 +223,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     displayName: 'Cursor',
   },
   dsh: {
-    // In-process dsh Cordis tree (docs/draft/deepseek-harness-integration.md).
+    // In-process dsh Cordis tree (docs/harness/dsh/deepseek-harness-integration.md).
     // Flags flip only when the corresponding event path is wired.
     // `supportsStreamingToolInput`: live `tool-call-delta` frames open the row
     // and stream its arguments before the durable `tool/call` completes it.

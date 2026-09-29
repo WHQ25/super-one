@@ -188,7 +188,7 @@ Optional for a first ship — state that explicitly rather than silently deferri
 
 Before P0 on a non-trivial harness, write `docs/design/<harness>-sdk-harness.md` recording the
 **locked decisions** — which SDK/protocol, which auth mode, which session store, what's explicitly
-out of scope — plus a `README-<harness>-harness.md` index. `docs/design/cursor-sdk-harness.md` is
+out of scope — plus a `README-<harness>-harness.md` index. `docs/harness/cursor/cursor-sdk-harness.md` is
 the model (decisions labelled D1–D8, referenced from commit messages).
 
 This matters more than usual here because harness integrations span many sessions and many files;

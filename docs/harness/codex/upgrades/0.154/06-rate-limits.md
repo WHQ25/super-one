@@ -15,7 +15,7 @@ type GetAccountRateLimitsParams = {
 }
 ```
 
-无参调用在 0.154 仍合法。现有 desktop 与 [`packages/codex/src/codex-admin.ts`](../../../../packages/codex/src/codex-admin.ts) 都是无参。
+无参调用在 0.154 仍合法。现有 desktop 与 [`packages/codex/src/codex-admin.ts`](../../../../../packages/codex/src/codex-admin.ts) 都是无参。
 
 0.154 响应语义：
 

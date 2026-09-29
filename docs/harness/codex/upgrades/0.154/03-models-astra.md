@@ -6,15 +6,15 @@
 
 用 0.154 的 `model/list` 作为唯一有效目录。GPT-6-Astra 是否出现取决于 **账户 / provider entitlement**，不能保证每个 ChatGPT 账号或自定义 provider 都有。SuperOne **不要硬编码** Astra。
 
-完整的 `modelProvider/capabilities/read` 动态能力仍归 [03-model-capabilities](../147/03-model-capabilities.md)，本轮不重做。但本轮必须把 **model + effort + service tier** 一起验证：当前 response adoption 只读 `model`。
+完整的 `modelProvider/capabilities/read` 动态能力仍归 [03-model-capabilities](../0.147/03-model-capabilities.md)，本轮不重做。但本轮必须把 **model + effort + service tier** 一起验证：当前 response adoption 只读 `model`。
 
 Release note 里「fresh session / fork 用 server 模型默认值」（#43177、#43355）是 **TUI 客户端** 改动，不是新的 app-server 默认规则。不要据此让 SuperOne 无条件省略 `model`。
 
 ## 当前能力
 
-- Desktop：[`codex-experiment-service.ts`](../../../../apps/desktop/src/main/codex/codex-experiment-service.ts) 调 `model/list`，按 provider/credential 缓存。
+- Desktop：[`codex-experiment-service.ts`](../../../../../apps/desktop/src/main/codex/codex-experiment-service.ts) 调 `model/list`，按 provider/credential 缓存。
 - Renderer 已有 Astra retention 测试（`gpt-6-astra` fixture），说明 UI 能接这个 id，不证明所有账号都有。
-- CLI 静态回退 [`DEFAULT_CODEX_MODELS`](../../../../apps/cli/src/provider/resolve-service.ts) 仍是 `gpt-5.2` / `gpt-5.1` / `o3`。只在无法向 harness 问目录时使用，**不能当有效默认模型来源**。
+- CLI 静态回退 [`DEFAULT_CODEX_MODELS`](../../../../../apps/cli/src/provider/resolve-service.ts) 仍是 `gpt-5.2` / `gpt-5.1` / `o3`。只在无法向 harness 问目录时使用，**不能当有效默认模型来源**。
 
 ## 实现设计
 

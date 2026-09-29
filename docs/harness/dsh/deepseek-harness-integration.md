@@ -4,8 +4,8 @@ Status: **in progress** — Route D executing. P0 (contract) + P1 (runtime/backe
 Last updated: 2026-08-19
 
 > Execution note (P2, resolved in P4h): `dsh-permission-presets` hard-requires a mounted *confining* bash executor (`ctx.shell.sandboxMode`) and `ctx.approval` — its constructor throws otherwise. That is why the D5 preset vocabulary had to wait for the sandbox tier; both landed together in §20.
-Spike: [`docs/draft/deepseek-harness-spike.mjs`](./deepseek-harness-spike.mjs) (reproducible; see Appendix)
-Related: `.agents/skills/superone-harness/` (new-harness roadmap, event contract, experiences matrix), `docs/design/cursor-sdk-harness.md` (breadth reference: 152 files / 7 commits)
+Spike: [`docs/harness/dsh/deepseek-harness-spike.mjs`](./deepseek-harness-spike.mjs) (reproducible; see Appendix)
+Related: `.agents/skills/superone-harness/` (new-harness roadmap, event contract, experiences matrix), `docs/harness/cursor/cursor-sdk-harness.md` (breadth reference: 152 files / 7 commits)
 
 ---
 
@@ -333,7 +333,7 @@ Estimated shape: backend + bridge ≈ Claude-backend-sized (~500–800 lines); t
 mkdir /tmp/dsh-spike && cd /tmp/dsh-spike
 echo '{"name":"dsh-spike","type":"module","private":true}' > package.json
 bun add @deepseek-ai/dsh@0.1.7-rc.1        # or the current pinned version
-cp <repo>/docs/draft/deepseek-harness-spike.mjs .
+cp <repo>/docs/harness/dsh/deepseek-harness-spike.mjs .
 node deepseek-harness-spike.mjs             # or: bun deepseek-harness-spike.mjs
 ```
 

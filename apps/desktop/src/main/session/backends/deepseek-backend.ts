@@ -59,7 +59,7 @@ interface PendingApproval {
 
 /**
  * DeepSeek Harness backend — a thin state machine over the shared in-process
- * dsh Cordis tree (docs/draft/deepseek-harness-integration.md, D1/D4). All dsh
+ * dsh Cordis tree (docs/harness/dsh/deepseek-harness-integration.md, D1/D4). All dsh
  * vocabulary lives in `@superone/deepseek`; this class only owns SuperOne's
  * session contract.
  */

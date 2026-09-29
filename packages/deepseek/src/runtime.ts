@@ -234,7 +234,7 @@ const TASK_PROGRESS_EVENTS = new Set(['tool/call', 'tool/result', 'assistant/mes
  * The embedded dsh runtime: one Cordis tree per app lifetime hosting N agents,
  * driven exclusively through documented seams (`ctx.agents`, `session/event`,
  * `approval/request`) — the production descendant of the validated spike
- * (docs/draft/deepseek-harness-spike.mjs).
+ * (docs/harness/dsh/deepseek-harness-spike.mjs).
  */
 /**
  * How many session folds stay resident.

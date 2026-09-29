@@ -167,7 +167,7 @@ describe('forkSession harness dispatch', () => {
     )
   })
 
-  it('falls back to deprecated fork+rollback when the anchor message has no persisted turnId', async () => {
+  it('resolves the fork boundary when the anchor message has no persisted turnId', async () => {
     setupSource(makeRecord({ harnessId: 'codex', providerId: 'codex-base', providerSessionId: 'thread-src' }), [
       msg('u1', 'user'), msg('a1', 'assistant'),
       msg('u2', 'user'), msg('a2', 'assistant'),
@@ -177,6 +177,7 @@ describe('forkSession harness dispatch', () => {
     withEphemeralAppServerRequestMock.mockImplementation(async (_p: string, fn: (r: unknown) => Promise<unknown>) => {
       const request = vi.fn(async (method: string, params: unknown) => {
         calls.push([method, params])
+        if (method === 'thread/turns/list') return { data: [{ id: 'turn-a3' }, { id: 'turn-a2' }], nextCursor: null }
         return method === 'thread/fork' ? { thread: { id: 'thread-forked' } } : {}
       })
       return fn(request)
@@ -186,8 +187,8 @@ describe('forkSession harness dispatch', () => {
 
     expect(result.ok).toBe(true)
     expect(calls).toEqual([
-      ['thread/fork', { threadId: 'thread-src' }],
-      ['thread/rollback', { threadId: 'thread-forked', numTurns: 2 }],
+      ['thread/turns/list', { threadId: 'thread-src', sortDirection: 'desc', itemsView: 'notLoaded', limit: 2 }],
+      ['thread/fork', { threadId: 'thread-src', beforeTurnId: 'turn-a2' }],
     ])
     expect(forkSessionRecordMock).toHaveBeenCalledWith(
       expect.objectContaining({ providerSessionId: 'thread-forked', forkFromMessageId: 'a1' }),

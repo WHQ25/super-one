@@ -1,6 +1,6 @@
 /**
  * Desktop adapter over shared `@superone/codex` thread fork.
- * Uses one disposable app-server so fork + optional rollback share a connection,
+ * Uses one disposable app-server for boundary resolution and the fork,
  * then releases Codex's writer for the new thread before the session can resume it.
  */
 import { forkCodexThread as coreForkCodexThread } from '@superone/codex'

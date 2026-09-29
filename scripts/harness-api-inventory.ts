@@ -8,10 +8,14 @@
  *
  *   bun scripts/harness-api-inventory.ts claude          # report drift, exit 1 if any
  *   bun scripts/harness-api-inventory.ts claude --list   # print the inventory
+ *   bun scripts/harness-api-inventory.ts codex          # pinned app-server schema
  */
 
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 type Inventory = Map<string, string[]>
@@ -81,7 +85,45 @@ function claudeInventory(): Inventory {
   ].map(([k, v]) => [k as string, [...new Set(v as string[])].sort()]))
 }
 
-const extractors: Record<string, () => Inventory> = { claude: claudeInventory }
+function codexInventory(): Inventory {
+  const require = createRequire(import.meta.url)
+  const cli = require.resolve('@openai/codex/bin/codex.js', { paths: [join(repoRoot, 'apps/desktop')] })
+  const temp = mkdtempSync(join(tmpdir(), 'superone-codex-schema-'))
+  const inventory: Inventory = new Map()
+  try {
+    const stable = new Map<string, Set<string>>()
+    for (const experimental of [false, true]) {
+      const output = join(temp, experimental ? 'experimental' : 'stable')
+      const generated = spawnSync(process.execPath, [
+        cli, 'app-server', 'generate-json-schema', '--out', output,
+        ...(experimental ? ['--experimental'] : []),
+      ], { encoding: 'utf8', env: { ...process.env, CODEX_HOME: temp } })
+      if (generated.error) throw generated.error
+      if (generated.status !== 0) throw new Error(`Codex schema generation failed: ${generated.stderr}`)
+      for (const [schema, category] of [
+        ['ClientRequest', 'Client requests'],
+        ['ServerRequest', 'Server requests'],
+        ['ServerNotification', 'Server notifications'],
+      ]) {
+        const parsed = JSON.parse(readFileSync(join(output, `${schema}.json`), 'utf8')) as {
+          oneOf: Array<{ properties: { method: { enum: string[] } } }>
+        }
+        const names = parsed.oneOf.flatMap((entry) => entry.properties.method.enum).sort()
+        if (!experimental) {
+          stable.set(schema, new Set(names))
+          inventory.set(`Stable ${category.toLowerCase()}`, names)
+        } else {
+          inventory.set(`Experimental ${category.toLowerCase()}`, names.filter((name) => !stable.get(schema)?.has(name)))
+        }
+      }
+    }
+    return inventory
+  } finally {
+    rmSync(temp, { recursive: true, force: true })
+  }
+}
+
+const extractors: Record<string, () => Inventory> = { claude: claudeInventory, codex: codexInventory }
 
 function ledgerOf(harness: string): Inventory {
   const text = readFileSync(join(repoRoot, 'docs/harness', harness, 'api-surface.md'), 'utf8')

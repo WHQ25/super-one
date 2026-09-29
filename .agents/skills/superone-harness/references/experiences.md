@@ -280,7 +280,8 @@ Traps:
 
 Fork semantics differ sharply: Claude resume is cwd-scoped so forking into a worktree needs
 `forkSession()` plus relocating the `.jsonl`; Codex uses `thread/fork` + `lastTurnId` from
-`metadata.codex` with a `rollback` fallback for older sessions. Grok is a cold
+`metadata.codex`; older sessions resolve the boundary via `thread/turns/list` and
+`beforeTurnId` (0.159 removes `thread/rollback`). Grok is a cold
 `x.ai/session/fork` (spawn + initialize, no `session/new`) that copies session files and
 returns `newSessionId`. Read the existing `*-fork.ts` before designing yours —
 "copy the transcript" is almost never right.

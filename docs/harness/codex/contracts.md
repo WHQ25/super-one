@@ -5,6 +5,35 @@ Upstream behavior SuperOne depends on that the app-server schema does not state.
 its area. Realtime is experimental upstream (`features.realtime_conversation`,
 enabled by `apps/desktop/src/main/codex/app-server-connection.ts`).
 
+## Models and thread forks
+
+### Model discovery depends on the app-server client version
+
+- **Behavior:** The same CLI account and `clientInfo.name: "super-one"` returned
+  no `gpt-6.1-sol` from 0.155.1, but returned a visible `gpt-6.1-sol` from 0.159.0.
+  A newer official desktop app or global CLI does not change SuperOne's managed
+  runtime. Catalog access also depends on account/workspace entitlements.
+- **Observed:** 2026-09-30, isolated live `model/list` calls on both versions;
+  0.159.0 selected the model and completed two real turns.
+- **Depends on it:** `apps/desktop/src/main/codex/codex-experiment-service.ts#fetchModelsFromAppServer`
+  and `packages/runtime/src/harness/managed-official.ts#OFFICIAL_CODEX_NPM_VERSION`.
+- **Guard:** `packages/runtime/src/harness/managed-official-lockstep.test.ts`
+  guards pin equality; entitlement and live catalog visibility require a live check.
+
+### Legacy fork boundaries resolve against provider turns before creating a fork
+
+- **Behavior:** 0.159.0 removes `thread/rollback`. For old SuperOne messages without
+  `metadata.codex.turnId`, read descending `thread/turns/list` pages with
+  `itemsView: "notLoaded"`, identify the oldest excluded turn, and call
+  `thread/fork { beforeTurnId }`. The boundary and later turns are excluded;
+  the source history is unchanged. Explicit `lastTurnId` remains inclusive.
+- **Observed:** 0.155.1→0.159.0 stable/experimental schema comparison; 0.159.0 live
+  two-turn source fork retained its first turn and left both source turns intact.
+- **Depends on it:** `packages/codex/src/fork-thread.ts`, shared by desktop and CLI.
+- **Guard:** `packages/codex/src/fork-thread.test.ts` and
+  `apps/desktop/src/main/session/session-fork.test.ts`; invalid/missing boundaries
+  fail before an unbounded fork is created.
+
 ## Realtime voice
 
 ### A realtime session is a voice connection on the existing thread

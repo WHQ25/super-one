@@ -1,6 +1,6 @@
 # Codex integration
 
-Pin: `@openai/codex` `0.155.1` · Ledger version: not started · Last updated: 2026-09-29
+Pin: `@openai/codex` `0.159.0` · Ledger version: `0.159.0` · Last updated: 2026-09-30
 
 ## Upstream
 
@@ -9,8 +9,8 @@ Pin: `@openai/codex` `0.155.1` · Ledger version: not started · Last updated: 2
 - Changelog: [openai/codex releases](https://github.com/openai/codex/releases) (`rust-v<version>` tags).
 - Surface source: the app-server JSON-RPC protocol. `codex app-server generate-json-schema`
   (and `--experimental`) from the pinned binary; read the tag, not a local `main` checkout.
-  A future ledger splits stable and experimental `ClientRequest`, `ServerRequest` and
-  `ServerNotification`.
+  The ledger splits stable and experimental `ClientRequest`, `ServerRequest` and
+  `ServerNotification`; check it with `bun scripts/harness-api-inventory.ts codex`.
 
 ## Integration shape
 
@@ -43,6 +43,7 @@ Desktop spawns `codex app-server` and speaks JSON-RPC over stdio with
 
 | Version | Date | Status | Upgrade doc | Commit |
 |---|---|---|---|---|
+| 0.159.0 | 2026-09-30 | executed | [0.159.0](upgrades/0.159.0.md) | — |
 | 0.155.1 | 2026-09-22 | executed | — | `a9291b513` |
 | 0.154.0 | 2026-09-12 | executed | [0.154](upgrades/0.154/README.md) | `18654457f` |
 | 0.153 | 2026-09-04 | executed | — | `92622b658` |

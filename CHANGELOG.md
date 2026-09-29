@@ -104,6 +104,9 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Changed
 
+- Codex: upgraded the app-server runtime to `0.159.0`, enabling GPT-6.1 Sol
+  discovery for eligible accounts. Forking older conversations from a selected
+  message remains supported after upstream removed `thread/rollback`.
 - **BREAKING:** collaboration launches pass the brief at
   `session_collab_start({ launchId, task })`, and send / retrieve address
   peers by session id instead of a credential; node RPC `collaboration.*`

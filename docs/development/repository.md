@@ -17,7 +17,7 @@ super-one/
   packages/
     shared/          — Neutral types, harness-brand, i18n, miniapp runtime (no Electron deps)
     relay-client/    — Pure-TS relay/LAN crypto, ACK, buffer-first, RPC
-    chat-core/       — applyEventToSession re-export for Expo
+    chat-core/       — shared chat reducer (applyEventToSession); desktop re-exports it
     chat-view/       — WebView DOM chat renderer (pre-reduced patches)
     ui/              — shadcn primitives + OKLch theme CSS, shared by desktop + web
     runtime/         — @superone/runtime — session/fs/git/lease/spawn-env/crypto (always needed)

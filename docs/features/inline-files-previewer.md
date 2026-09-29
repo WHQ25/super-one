@@ -11,10 +11,10 @@ Deviations from the design as written are listed in §8.
 Scope: a chat block that shows N files as a fixed-height carousel with a note
 per file, on desktop (`apps/desktop`) and on the phone (`packages/chat-view`
 + `apps/mobile`). Sibling docs: `session-sync-zone.md` (remote-node artifact
-contract this depends on for remote sessions), `mobile-markdown-media.md`
-(why the phone never streams media inline — note its "no inline media" claim
-predates `NativeImage` / `PortableHostVideo` and is stale),
-`mobile-progressive-session-loading.md`.
+contract this depends on for remote sessions), mobile
+[files.md](../../apps/mobile/docs/agent-reference/files.md) (how the phone renders
+media), [mobile-remote-control.md](../architecture/mobile-remote-control.md)
+(progressive session loading).
 
 Decisions already taken with the user (2026-09-13):
 
@@ -422,8 +422,9 @@ So the phone card is a real preview for image / small text, a poster for video,
 and a handoff for the rest. The asymmetry with desktop is accepted: it matches
 how every other file already behaves on the phone, and closing it would mean
 streaming PDF bytes into a WebView with no origin. Video does not play inline
-on the phone because the bytes are not there — `mobile-markdown-media.md`
-explains why relay media are download-then-play; the poster's tap opens the
+on the phone because the bytes are not there — mobile
+[files.md](../../apps/mobile/docs/agent-reference/files.md) explains why relay media
+are download-then-play; the poster's tap opens the
 normal preview, which downloads and plays with `expo-video`.
 
 Identity and caches. `PortableHostImage` / `PortableHostVideo` keep

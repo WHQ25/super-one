@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 const DIR = dirname(fileURLToPath(import.meta.url))
 
-describe('chat presenter boundary (WP-15)', () => {
+describe('chat presenter boundary', () => {
   it('does not import Desktop hosts, stores, or concrete ToolBlock UI', () => {
     const hits: string[] = []
     const files = readdirSync(DIR)

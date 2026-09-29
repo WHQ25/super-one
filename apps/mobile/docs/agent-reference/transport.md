@@ -62,3 +62,27 @@ and reports input and bounded resize messages to RN.
   frames never produce relay ACKs.
 - Development builds log only decrypted `AgentEvent.type` values, never event payloads
   or pairing secrets.
+- Host replies are bound to the relay socket and send generation the request arrived
+  on (`apps/desktop/src/main/remote-control-service.ts`); a reply that finishes
+  encoding after a reconnect is dropped, never sent on the new socket.
+- Never carry audio frames on the relay chat-event path: each inbound message re-arms
+  a Durable Object alarm, each event persists its seq and rides ACK/replay, and the
+  500-entry replay buffer force-drops on overflow (`apps/relay/src/relay-session.ts`).
+  Audio needs its own channel.
+
+Envelope framing, compression and host event coalescing are described in
+[mobile-remote-control.md](../../../../docs/architecture/mobile-remote-control.md).
+Measure payload changes with `bun apps/desktop/scripts/benchmark-mobile-payload.ts`
+(synthetic fixtures, no network).
+
+## Phone-side caches
+
+- Derived caches are keyed by pairing and wiped on Forget: `workspace-cache.v1.<pairing>`
+  in MMKV (`persisted-workspace.ts`) and the per-pairing disk pool behind
+  `file-preview-cache-store.ts`, which also holds transcripts. Formats are versioned;
+  a missing, corrupt or obsolete entry is a cache miss, never an error. Pairings and
+  draft outboxes live under other keys.
+- A persisted transcript drops the unfinished tail (`dropIncompleteTail`), keeps a
+  contiguous newest suffix (≤200 messages / 8 MiB) and recomputes `cursor` /
+  `hasMore` for the oldest retained message (`transcript-cache-policy.ts`). Reusing
+  the pre-trim cursor would skip the trimmed messages.

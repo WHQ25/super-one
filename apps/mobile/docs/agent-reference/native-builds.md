@@ -1,16 +1,22 @@
 # Mobile native builds and updates
 
 Read for native dependencies, build variants, EAS updates, or release validation.
-The release smoke below applies to shipping, not routine edits.
+The device smoke below is a shipping recommendation, not a gate for routine edits.
 
 EAS files live in this app directory. Run EAS commands from `apps/mobile`, not the
 monorepo root. `eas.json` pins the root Bun version, builds the `internal` profile as
 an installable Android APK, and reserves `production` for TestFlight/store builds.
-Both release profiles use remote build-number increments. Keep `credentials.json`
-local and ignored. `assert-release-config.ts` (static, cheap) stays in the test command.
+Build numbers are local (`appVersionSource: "local"`): `build-code.js` holds one
+build code that `app.config.js` writes into both `ios.buildNumber` and
+`android.versionCode`, bumped by hand in the release commit. Never re-enable
+`autoIncrement` — with a local source EAS rewrites `app.json` on the builder and the
+bump is discarded. `submit.production` pins the numeric `ascAppId`; EAS holds the
+App Store Connect API key — never download, commit or paste it. Keep
+`credentials.json` local and ignored. `assert-release-config.ts` (static, cheap)
+stays in the test command.
 
 **`runtimeVersion` is `fingerprint`, not `appVersion`.** Under `appVersion` the runtime
-version was pinned to the hand-written `version` field, which `autoIncrement` never
+version was pinned to the hand-written `version` field, which a build-code bump never
 touches — so a build carrying new native modules kept the runtime version of the build
 before it, and `eas update` would happily serve JS calling native methods that binary
 does not have. `fingerprint` derives it from everything shaping the native runtime
@@ -156,11 +162,13 @@ number needs a static translatable sentence plus its own `<Text>` (`update-forma
 holds those fragments). And `en` applies the desktop's Title Case — `t('Try again')`
 renders `Try Again`, so component tests must assert the *rendered* string.
 
-**Release acceptance.** Shipping requires one release-mode smoke on one
-physical iPhone and one physical Android (pair by camera QR, stream + stop, Pinyin IME,
+**Recommended device smoke.** The release workflow does not run it, but a native
+release is worth one release-mode smoke on a physical iPhone and a physical Android
+(pair by camera QR, stream + stop, Pinyin IME,
 one sheet of each kind, 10 s airplane-mode flap, terminal `pwd`, one image attach, one
 received file, iPad rotation with a sheet open) plus a single RSS sanity run of the
-200-turn corpus under 250 MB — tighten the 24/40 DOM window if it is over. Record the
+200-turn corpus under 250 MB — tighten `CHAT_WINDOW` (8 initial / 40 mounted turns,
+`packages/chat-view/src/chat-window.ts`) if it is over. Record the
 result as a short Markdown note under gitignored `docs/temp/`. Screenshots and videos
 never enter git.
 

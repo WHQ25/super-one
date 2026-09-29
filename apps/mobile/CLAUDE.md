@@ -22,9 +22,8 @@ It requires native modules and does not run in Expo Go. Root rules apply.
   do not participate in relay ACKs. Do not nest chat in an RN `ScrollView`.
 - Projects and sessions share `WorkspaceList`; back from chat opens the drawer
   without ending the session. Drawer and tablet sidebar reuse the same list.
-- Use `HARNESS_CAPABILITIES` and shared request types rather than reproducing the
-  former Flutter app's Claude/Codex-only gates. Historical migration plans are
-  background material, not a current implementation schedule.
+- Use `HARNESS_CAPABILITIES` and shared request types; do not gate features on
+  specific harness ids.
 - Import Metro-safe leaf `@superone/shared/*` modules. Node-only `attachment-store`
   and `git-clone` are blocked. Use native ports for file/crypto work.
 - Theme comes from `src/theme`; preserve neutral mobile chrome and safe-area insets.

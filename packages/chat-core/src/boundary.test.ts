@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 const DIR = dirname(fileURLToPath(import.meta.url))
 
-describe('chat-core package boundary (WP-13)', () => {
+describe('chat-core package boundary', () => {
   it('package sources stay independent from desktop and browser globals', () => {
     const hits: string[] = []
     for (const name of readdirSync(DIR).filter((n) => n.endsWith('.ts') && !n.endsWith('.test.ts'))) {

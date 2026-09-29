@@ -175,7 +175,7 @@ function renderDesktopMiniAppTool(
     }
   }
 
-  // Mini-app iframe/renderers deliberately stay in the Desktop adapter during WP-16.
+  // Mini-app iframe/renderers deliberately stay in the Desktop adapter: the phone does not run mini-app iframes.
   const resolvedAppTool = resolveMiniAppToolIdentity(mcpToolName, params, deps.apps)
   if (!resolvedAppTool) return { handled: false, node: null }
 

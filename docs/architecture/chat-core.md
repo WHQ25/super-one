@@ -1,347 +1,256 @@
-# chat-core contracts (WP-02 freeze)
+# Chat core and the chat-view host
 
-Status: **frozen** — 2026-08-21
-Baseline: desktop **v0.55.2-alpha** (`feat/migrate-to-expo` merged that tag)
-Plan: `docs/design/flutter-to-expo-migration-plan.md`
-Scope: Remote Control client (Expo). Not a desktop IDE clone.
+`@superone/chat-core` is the one reducer that turns `AgentEvent`s into chat
+session state, on the desktop and on the phone. `@superone/chat-view` is the
+React DOM renderer that paints that state, inside the desktop renderer and inside
+the phone's chat WebView. This doc covers ownership, the reducer contract, the
+boundary rules, and the RN ↔ WebView host protocol. The phone ↔ host wire beyond
+the reducer (framing, coalescing, progressive loading, attachments) is in
+[mobile-remote-control.md](mobile-remote-control.md).
 
-This freeze is the type + protocol contract for `@superone/chat-core` and the RN ↔ WebView host. Since WP-12 (2026-09-04), the package owns the implementation and Desktop calls it through `apps/desktop/.../event-reducer/index.ts`.
+## Why one shared reducer
 
----
+- **No double implementation.** The phone reduces the same events with the same
+  code as the desktop. A new `AgentEvent` type or reducer fix reaches both clients
+  in one change; a separately written mobile schema drifts silently at runtime.
+- **Protocol fixes ship over the air.** The reducer, the renderer and the
+  transport are JS, so they ship as Expo updates (`apps/mobile/src/updates`)
+  instead of waiting for a native store release.
+- **Web-shaped content renders in a DOM.** Markdown, LaTeX, mermaid, code
+  highlighting and agent-authored widgets are HTML problems. The phone paints them
+  in a WebView with the desktop's own presenters instead of re-implementing them
+  natively. Native React Native owns input, navigation, sheets and transport.
 
-## 1. Product scope (Remote Control parity)
+## Ownership
 
-Expo must match Flutter 1.0.0+19 **plus** every **remote-visible** desktop surface as of v0.55.2.
+| Package | Owns |
+|---|---|
+| `packages/chat-core` | `applyEventToSession` (`src/reducer.ts`) and every reducer family (`lifecycle`, `content`, `tool`, `permission`, `question-plan`, `slash`, `codex`, `usage`, `message-complete`, `todos`, `send-failure`); `ChatCoreSession` / `ChatCorePatch` (`src/types.ts`); `createDefaultChatCoreSession` (`src/defaults.ts`); ports (`src/ports.ts`) |
+| `packages/chat-view` | Shared presenters (`src/presenters/*`), the phone document (`ChatView.tsx`, `main.tsx`), the host protocol (`src/protocol.ts`, `src/bridge.ts`), the separate terminal document (`terminal-main.ts`) |
+| `apps/desktop/src/renderer/src/stores/chat-store/event-reducer/*` | Re-export shims plus the desktop ports adapter in `index.ts` |
+| `apps/desktop/src/renderer/src/components/chat/*` | Desktop containers that import presenters from `@superone/chat-view` |
+| `apps/mobile/src/runtime.ts` (`ChatRuntime`) | The phone's session state, reduced through chat-core |
 
-**In scope** (chat transcript, composer, pairing, terminal, permission/plan/question sheets):
+Reducer and presenter fixes go in `packages/chat-core` and `packages/chat-view`,
+with their tests there. Never patch a desktop shim: `event-reducer/*.ts` files only
+re-export `@superone/chat-core`, and a fix applied there is lost or forks the
+reducer.
 
-| Area | v0.53.3 → v0.55.2 delta Expo must paint / drive |
-|------|--------------------------------------------------|
-| Transcript | sandbox chip; model-fallback notice row; structured `errorInfo` badge; grouped `task_notification`; background-task wake row; unified tool status; native `@native/*` widget galleries; DeepSeek Task block + `diagnostic`; Cursor nested subagents; Codex Fast / Approve for Me presets |
-| Composer | `@widget`, `@debug`; `@codex` / `@claude` / `@grok` instead of `@collab`; collab `handoff`; additional dirs persist (`provider` on add/remove RPC); IME from desktop ChatInput |
-| Lifecycle | `content_retracted`; drafts if the remote snapshot exposes them |
-| Theme | `setTheme` from desktop light-mode inverted chrome tokens (no independent WebView palette) |
-
-**Out of scope** (desktop-only; do not port):
-
-- DeepSeek in-process runtime, trajectory panel, plugin host, MCP settings
-- Computer Use workspace / helper PiP
-- Agent browser PiP, CDP performance
-- Liquid Glass, `.ipynb` file preview, custom-provider settings UI
-- Sidebar add-project GitHub search, harness onboarding, auto-update
-
-`dsh` sessions still stream over remote as ordinary `AgentEvent`s. Expo renders Task blocks; it does not run dsh.
-
----
-
-## 2. Signature
+## Reducer contract
 
 ```ts
-applyEventToSession(
-  session: ChatCoreSession,
-  event: AgentEvent,
-  ports?: ChatCorePorts,
-): ChatCorePatch
+applyEventToSession(session: ChatCoreSession, event: AgentEvent, ports?: ChatCorePorts): ChatCorePatch
 ```
 
-- One function. No forked reducer. No half-package mobile cutover.
-- Desktop `event-slice` continues to merge patches structurally (`{ ...session, ...patch }`).
-- `ChatCorePatch` is the exhaustive write-set below, not `Partial<PerSessionState>` with composer junk.
+- Pure: returns a patch, never mutates. `ChatCorePatch` is
+  `Partial<ChatCoreSession>`; callers merge it structurally
+  (`{ ...session, ...patch }`). Events the chat does not model fall through to `{}`.
+- `ChatCoreSession` is the set of fields the reducer reads or writes. Composer,
+  navigation and other desktop-only fields (drafts, attachments, mentions, title,
+  git/worktree UI) are deliberately outside it. Desktop's `PerSessionState` is a
+  superset; the desktop adapter casts the patch back to `Partial<PerSessionState>`.
+- Adding state the reducer writes means adding it to `ChatCoreSession` and a
+  default in `createDefaultChatCoreSession`. There is no separate key table to
+  maintain; the type is the contract.
+- `model_fallback` has no patch key: the host appends a transcript row, and the
+  renderer paints that row.
+
+### Ports
 
 ```ts
-export interface ChatCorePorts {
+interface ChatCorePorts {
   now(): number
   id(prefix: string): string
   trace?(channel: string, name: string, payload: unknown): void
+  streaming: StreamingToolInputStore
 }
 ```
 
-Package defaults provide `now` / `id` plus an isolated streaming-input store. The Desktop adapter injects `trace: window.app?.trace`; the package never reads browser globals.
+Clock, ids, tracing and the streaming tool-input buffer are injected, so the
+package reads no browser or Electron globals. `StreamingToolInputStore` holds the
+raw partial JSON of streaming tool inputs, keyed by tool use and owner session;
+`createStreamingToolInputStore()` gives a host an isolated instance. The only
+mutable module-level state in the package is the default store behind
+`defaultChatCorePorts`, confined to `ports.ts`. Desktop passes
+`defaultChatCorePorts` plus `trace: window.app?.trace`; the phone uses the
+defaults. On the phone the streaming store stays empty because the host never
+forwards `tool_input_delta` (see [Remote-omitted events](#remote-omitted-events)).
 
----
+`packages/chat-core/src/oracle.test.ts` replays recorded desktop sessions
+(`src/fixtures/recorded.generated.ts`, regenerated by `bun run fixtures:export` in
+the package) and snapshots the reduced state.
 
-## 3. `ChatCoreSession` (read union)
+## Boundary rules
 
-Union of every `session.*` field family reducers **read** on `PerSessionState`, plus every field they **write** (merge needs the current value).
+Enforced by source-scanning tests; a violation fails the suite.
 
-**In the reducer graph (must ship in chat-core):**
+| Test | Bans |
+|---|---|
+| `packages/chat-core/src/boundary.test.ts` | Imports of `zustand`, `electron`, the desktop `@/` alias, any `apps/desktop` path, parent (`../`) imports; `window.` access; `new Map` outside `ports.ts` (no hidden module state) |
+| `packages/chat-view/src/boundary.test.ts` | Across the package: `@/` alias, `zustand`, `electron`, desktop preload bridges (`window.agent`, `window.app`, `window.browserHost`, `window.electron`, `window.environment`, `window.miniapp`, `window.terminal`), and any composer (`ChatInput`, `<textarea>`). Also asserts phone assistant turns render through the shared `ClaudeTurnBodyPresenter`, `CodexTurnViewPresenter` and `ToolGroupPresenter` rather than local copies |
+| `packages/chat-view/src/presenters/boundary.test.ts` | In presenters: `@/` alias, `zustand`, `electron`, parent imports, desktop `ToolBlock` imports, desktop preload bridges |
+| `apps/desktop/src/renderer/src/stores/chat-store/event-reducer/boundary.spike.test.ts` | In the desktop shims: `../index`, `zustand`, `../slices/`, `@/stores/`, `@/components/`; `window.` anywhere but `index.ts`; any family file that does not re-export from `@superone/chat-core` |
 
-```
-messages queuedMessages status awaitingAssistantReply lastEventAt
-streamingTokens lastAssistantMessageId promptSuggestion
-pendingPermissions pendingQuestion pendingPlanApproval planApprovalOutcome
-permissionMode apiRetry
-session _providerSessionId sessionProvider preferredProvider
-todos showTodos _todosUserDismissed _nextTodoId
-taskProgress subagentTokens _streamingToolInputPreviews
-browserDownloads videoGenStatuses
-totalCostUsd contextTokens contextWindow
-codexUsageSnapshot codexTurnLastUsage
-isCompacting isRecapping compactError
-_pendingCompactUserId _pendingSlashCommand slashCommandOutput
-rateLimitInfo
-selectedModel modelUserChosen selectedEffort effortUserChosen
-selectedCodexModel selectedCodexReasoningEffort selectedCodexServiceTier
-selectedCodexPermissionPreset selectedCodexCollaborationMode
-codexModelUserChosen codexReasoningEffortUserChosen codexPlanRejectHintActive
-openCodeAgentId apiProviderId
-acpAgentId acpModels acpModelConfigId acpModelsStatus acpModelsError
-acpModes acpModeConfigId acpModesStatus selectedAcpModeId
-acpSlashCommands acpSlashCommandsStatus
-_latestCodexTodoList cwd _worktreeRemoved
-```
+DOM `window` (scroll, resize) is allowed in chat-view: it is that renderer's own
+document.
 
-**Composer / shell only — not in ChatCoreSession, never patched by `applyEventToSession`:**
+## State split on the phone
 
-```
-draftText draftJson draftId attachments mentions browserAnnotations
-miniAppContexts userSelections chatInputFocusNonce chatInputRestoreFocusNonce
-cursorModelParams dshPreset _title additionalDirs additionalDirsDirty
-_gitBranch _worktreePath _remoteTurnQueue _historyHydrated
-```
+RN holds the complete `ChatCoreSession` in `ChatRuntime.session` and applies every
+patch to it. The WebView receives a projection, never the session:
 
-`detailedUsage` is not written by the reducer (desktop IPC). Snapshot may still carry it; treat as SessionUi, not a patch key.
+- **WebView** gets `ReductionProjection` (`packages/chat-view/src/protocol.ts`):
+  transcript rows, and the `SessionProjection` facts a turn cannot derive itself
+  (session status, streaming token counts, compact/recap state, API retry, the
+  pending-turn line, project root for link resolution), plus display-only extras
+  (labels, mention artwork, MCP icons, history flags) and a `pendingPermission`
+  summary (`requestId`, `toolName`, `toolUseId`) that marks the waiting tool row.
+- **RN** keeps everything else and renders it natively: pending permissions,
+  questions and plan approvals (native sheets), permission mode, model / effort /
+  harness settings, todos, queued messages, prompt suggestions. The WebView never
+  owns a picker or a sheet.
 
----
+The principle: the WebView gets what the transcript paints and nothing that drives
+input. When a presenter needs a new session fact, add it to `SessionProjection`
+rather than sending the session.
 
-## 4. `ChatCorePatch` (exhaustive write-set)
+## Remote-omitted events
 
-Generated from family write-points on v0.55.2. Adding a key requires updating this table **and** the key→owner map.
+The host drops some events before they reach any phone: `SKIPPED_EVENTS` in
+`apps/desktop/src/main/remote-control-service.ts`. They feed desktop-only state
+or bookkeeping the phone does not render (hooks, persisted-file notices,
+elicitation completion, checkpoints, stream start/stop markers, streaming tool
+input, subagent token usage, queued-message restore). Consequences for the phone's
+reduced state:
 
-| Key | Families | Notes |
-|-----|----------|--------|
-| `messages` | lifecycle, content, tool, slash, codex, usage, message-complete | Transcript SOT |
-| `queuedMessages` | lifecycle | consume only; idle must not splice |
-| `status` | lifecycle, message-complete | complete may settle `streaming` → `idle` |
-| `awaitingAssistantReply` | lifecycle, message-complete | |
-| `lastEventAt` | lifecycle, content, tool, codex, usage, message-complete | clock via `ports.now` (WP-11) |
-| `streamingTokens` | lifecycle, usage, message-complete | |
-| `lastAssistantMessageId` | lifecycle | `message_start` assistant |
-| `promptSuggestion` | lifecycle, slash | cleared on `message_start` |
-| `pendingPermissions` | lifecycle, permission | cleared on interrupt |
-| `pendingQuestion` | lifecycle, permission, question-plan | |
-| `pendingPlanApproval` | lifecycle, permission, question-plan | |
-| `planApprovalOutcome` | permission | |
-| `permissionMode` | lifecycle, content, permission | `init_ready`; ExitPlanMode → `'plan'` |
-| `apiRetry` | lifecycle, content, usage | cleared on idle / new content |
-| `session` | lifecycle | `session_init` |
-| `_providerSessionId` | lifecycle | |
-| `sessionProvider` | lifecycle | default `DEFAULT_PROVIDER` |
-| `cwd` | lifecycle | `worktree_missing` only |
-| `_worktreeRemoved` | lifecycle | |
-| `todos` / `_nextTodoId` / `showTodos` | content, todos | |
-| `taskProgress` | content, tool, message-complete | DeepSeek `diagnostic` lives on the entry |
-| `subagentTokens` | tool | **remote-omitted event** `subagent_usage` — still written locally |
-| `_streamingToolInputPreviews` | content, tool, message-complete | empty on remote (`tool_input_delta` skipped) |
-| `browserDownloads` | tool | |
-| `videoGenStatuses` | content | media tools |
-| `totalCostUsd` | usage, message-complete | |
-| `contextTokens` / `contextWindow` | usage, message-complete | |
-| `codexUsageSnapshot` / `codexTurnLastUsage` | usage, message-complete | |
-| `isCompacting` / `compactError` | slash, usage | |
-| `isRecapping` | slash | |
-| `_pendingCompactUserId` / `_pendingSlashCommand` | slash, usage | |
-| `slashCommandOutput` | slash | **remote-omitted event** |
-| `rateLimitInfo` | usage | |
-| `selectedModel` / `modelUserChosen` | permission, ACP | |
-| `selectedEffort` / `effortUserChosen` | permission | |
-| `selectedCodexModel` / `codexModelUserChosen` | permission | |
-| `selectedCodexReasoningEffort` / `codexReasoningEffortUserChosen` | permission | |
-| `selectedCodexServiceTier` | permission | |
-| `selectedCodexPermissionPreset` | permission | includes Fast / Approve for Me |
-| `selectedCodexCollaborationMode` / `codexPlanRejectHintActive` | permission | |
-| `openCodeAgentId` | permission | |
-| `apiProviderId` | permission | |
-| `selectedAcpModeId` | permission, ACP | |
-| `acpModels` / `acpModelConfigId` / `acpModelsStatus` / `acpModelsError` | ACP | |
-| `acpModes` / `acpModeConfigId` / `acpModesStatus` | ACP | |
-| `acpSlashCommands` / `acpSlashCommandsStatus` | ACP | |
-| `_latestCodexTodoList` | codex | |
+- `_streamingToolInputPreviews` stays empty (no `tool_input_delta`).
+- `subagentTokens` does not advance from `subagent_usage`; subagent cards update
+  from `task_progress` / `task_notification`.
+- There is no rewind UI (no `checkpoint_captured`).
 
-**Reducer returns `{}` (no patch) on v0.55.2:**
+Also on that path: `tool_progress` is throttled to one per 2 s, and
+`slash_command_output` is forwarded but truncated at 200,000 characters. A test or
+oracle scoring the phone must not expect state that only omitted events produce.
+Adding a new event type means deciding whether the phone needs it; the default is
+to forward.
 
-`model_fallback`, `hook_*`, `auth_status`, `files_persisted`, `elicitation_complete`, `stream_message_start`, `stream_message_stop`.
+## Host protocol (RN ↔ chat-view)
 
-`model_fallback` is painted from a **transcript row** the main process appends, not from a session field. WebView must render that row; there is no patch key.
+Types: `HostInbound` / `HostOutbound` in `packages/chat-view/src/protocol.ts`.
+The WebView never reduces `AgentEvent`s. RN reduces through chat-core and sends
+pre-reduced projections.
 
-New in v0.55.2: `messages_retracted` → `{ messages, lastEventAt }`. Replaced in v0.66 by block-level `content_retracted` `{ messageId, blocks }` → same patch keys: an SDK frame is one API step, and a turn's steps share one assistant message, so evicting by message id deleted the whole turn.
+### Transcript delivery
 
----
+1. `ChatRuntime.ingest` reduces each event, then schedules one paint per
+   `AGENT_EVENT_BATCH_MS` (33 ms, `setTimeout`, not rAF). Restore and explicit
+   actions flush immediately.
+2. `TranscriptDelivery` (`apps/mobile/src/transcript-delivery.ts`) keeps one
+   unacknowledged projection in flight and coalesces later snapshots into one
+   pending one.
+3. `TranscriptProjection` sends only rows whose object identity changed
+   (`messagePatches`) and sends `messageOrder` only when rows were inserted,
+   removed or reordered. A `hydrate` sends the full `messages` array and supersedes
+   pending work.
+4. Every delivery carries `{ channelId, sequence }`. The document
+   (`packages/chat-view/src/bridge.ts`) answers `transcriptApplied`; duplicates
+   are acknowledged without reapplying and retired channels are ignored. A missing
+   receipt retransmits the same projection after 1 s. Only an acknowledged paint
+   can be followed by a diff.
 
-## 5. key → owner
+Realtime voice segments are merged into the message list before projection
+(`apps/mobile/src/navigation/use-transcript-sync.ts`).
 
-RN always applies the **full** patch to its `ChatCoreSession`. WebView receives only the Reduction projection + derived labels.
-
-| Owner | Keys |
-|-------|------|
-| **WebView · ChatReductionState** | `messages` `queuedMessages` `status` `awaitingAssistantReply` `lastEventAt` `streamingTokens` `lastAssistantMessageId` `promptSuggestion` `todos` `showTodos` `_nextTodoId` `taskProgress` `subagentTokens` `_streamingToolInputPreviews` `browserDownloads` `videoGenStatuses` `totalCostUsd` `contextTokens` `contextWindow` `codexUsageSnapshot` `codexTurnLastUsage` `isCompacting` `isRecapping` `compactError` `slashCommandOutput` `_pendingCompactUserId` `_pendingSlashCommand` `rateLimitInfo` `apiRetry` `_latestCodexTodoList` `session` (labels) |
-| **RN · ChatInteractionState** | `pendingPermissions` `pendingQuestion` `pendingPlanApproval` `planApprovalOutcome` `permissionMode` |
-| **RN · SessionUiState** | `sessionProvider` `_providerSessionId` `cwd` `_worktreeRemoved` `selectedModel` `modelUserChosen` `selectedEffort` `effortUserChosen` `selectedCodex*` `codex*UserChosen` `codexPlanRejectHintActive` `openCodeAgentId` `apiProviderId` `acp*` `selectedAcpModeId` |
-
-WebView gets SessionUi as **derived labels only** (model name, harness icon, sandbox chip copy). It must not own model pickers.
-
-`permissionMode` is Interaction (composer cycle + sheets). A derived label may be forwarded to WebView; the cycle itself is RN.
-
----
-
-## 6. Remote-omitted events
-
-Copied from `SKIPPED_EVENTS` in `remote-control-service.ts` (v0.55.2, unchanged vs 0.53.3):
-
-```
-files_persisted
-elicitation_complete
-tool_input_delta
-subagent_usage
-checkpoint_captured
-hook_started
-hook_complete
-hook_progress
-slash_command_output
-stream_message_start
-stream_message_stop
-```
-
-Also throttled: `tool_progress`. Drain-before: `message_complete`, `status_change`, `task_notification`.
-
-Consequences for mobile:
-
-- `_streamingToolInputPreviews` stays empty on the remote path. Desktop oracle must not require previews when scoring mobile.
-- `subagentTokens` will not increment from `subagent_usage`; Task chips still update via `task_progress` / `task_notification`.
-- `slash_command_output` never arrives; compact/recap use `compact_boundary` / `session_recap`.
-- `checkpoint_captured` never arrives — rewind UI is desktop.
-
----
-
-## 7. Host protocol (RN ↔ chat-view)
-
-WebView **never** re-reduces. Payload is pre-reduced patches.
-
-**Inbound (RN → WebView)**
+### Inbound (RN → WebView)
 
 | Message | Role |
-|---------|------|
-| `initialize` / `hydrate` / `reset` / `prependHistory` | Lifecycle |
-| `applyReductionPatch(batch)` | ≤1 envelope / ~33 ms; `ChatReductionState` patches only |
-| `setConnection({ state, epoch })` | Degrade stream; **epoch bumps at buffer release** |
-| `setTheme` / `setViewport({ safeArea, fontScale, locale })` | No independent derivation |
-| `setWindow(range)` | Mandatory DOM windowing |
-| `scrollToTurn` | Jump |
-| `nativeActionResult` / `nativeActionProgress` | Async host replies |
+|---|---|
+| `initialize` / `hydrate` / `reset` | Full baseline; `reset` clears the document (sent when the new-session landing shows, so an old transcript cannot leak into the next first send) |
+| `applyReductionPatch` | Changed rows, order and facts (above) |
+| `prependHistory` | Older page from `loadEarlier` |
+| `detailUpdate` | Streamed hidden detail for an expanded row |
+| `setConnection { state, epoch }` | Connection state; epoch changes when a restore releases its buffer |
+| `setTheme` / `setViewport` | Theme hue and scheme from the shell; safe area, font scale, locale |
+| `setWindow` / `scrollToTurn` | DOM window range and jumps |
+| `nativeActionResult` / `nativeActionProgress` | Replies to `requestNative` |
 
-**Outbound (WebView → RN)**
+### Outbound (WebView → RN)
 
 | Message | Role |
-|---------|------|
-| `requestNative` | openFile, showInFolder, openLink, sheets, share, progressive bash read, `@native/*` gallery |
-| `viewState(patch)` | Scroll anchor + expand keys — persisted on RN |
-| `ready` / `error(fatal)` | White-screen recovery: reload + hydrate |
+|---|---|
+| `ready` | Document (re)loaded: RN re-sends theme, viewport and connection, then hydrates |
+| `transcriptApplied` | Delivery receipt |
+| `viewState` | Window range, bottom pin, anchor and expanded keys, persisted by RN (`apps/mobile/src/chat-view-state.ts`) |
+| `requestNative` | Host actions: files, links, image and video loading, previews, detail subscriptions, history paging and navigation, failed-send resend/edit, widget saving. Handlers: `apps/mobile/src/native-actions.ts` |
+| `error { fatal }` | Triggers bounded reload + hydrate (`apps/mobile/src/chat-view-recovery.ts`) |
 
-Chrome: WebView owns full-screen scroll; header + native `TextInput` are RN overlays. Never nest WebView in RN ScrollView.
+### Document rules
 
-Terminal: **separate WebView + separate channel**. Terminal frames never enter event ACK/dedup.
+- The WebView owns full-screen scroll; header and native `TextInput` are RN
+  overlays. Never nest the chat WebView in an RN `ScrollView`. There is no
+  composer in chat-view.
+- DOM windowing is mandatory: `CHAT_WINDOW` in
+  `packages/chat-view/src/chat-window.ts` (8 initial turns, 40 mounted at most).
+- Code widgets (`widget_show`) render in a sandboxed iframe inside the document
+  (`PortableWidgetBlock.tsx`), sharing `buildWidgetSrcdoc` with the desktop.
+  Mini-app renderers are not supported on the phone: they need the desktop's
+  mini-app host, so `miniapp_call` rows show a header card only
+  (`PortableToolRow.tsx`).
+- The terminal is a separate WebView document with its own channel
+  (`type: 'terminal'` frames). Terminal frames never touch event buffering,
+  sequence tracking or ACKs.
+- `generated-host-html.ts` and `generated-terminal-html.ts` are build output
+  (`bun run build:chat-view`), gitignored.
 
----
+## Open, reconnect and buffering
 
-## 8. Buffer-first + dual-transport
-
-### Open and reconnect (client-owned)
+Every restore is buffer-first, owned by the client (`restoreSession` in
+`packages/relay-client/src/restore.ts`, `EventBuffer` in `buffer.ts`):
 
 ```
 startBuffering
-  → (on transport reconnect / type=reset: clear local seq as required)
-  → subscribe_session
-  → load_session_messages (history)
-  → get_session_state (snapshot)
-  → ordered release of buffered type=event frames
-  → bump setConnection.epoch at release boundary
+  → subscribe_session { progressive: true }   (newest page + snapshot in one reply)
+  → merge with the phone's cached transcript, if any
+  → release buffered event batches in order, epoch += 1
 ```
 
-All `type=event` frames (including relay replay) enqueue until history+snapshot complete.
+- Every `type: 'event'` frame, including relay replay, queues while buffering. A
+  server `reset` frame discards the queued batches and restarts buffering, and
+  the app runs the same restore.
+- `ChatRuntime` seeds the snapshot (live turn, pending interactions, usage,
+  sandbox, worktree, voice segments), replays the released batches through the
+  reducer, then hydrates the document. Batches carrying an older epoch are
+  dropped; overlapping restores commit only their newest generation.
+- Creating a session subscribes and releases without a history fetch.
+- Hosts that do not return a bootstrap page get the fallback sequence
+  (`load_session_messages` then `get_session_state`); see
+  [mobile-remote-control.md](mobile-remote-control.md#progressive-session-loading).
+- Cache merge, reconnect backoff, liveness probing and discovery are phone-side:
+  [transport.md](../../apps/mobile/docs/agent-reference/transport.md).
 
-### Dual transport (hard)
+## Transports and ACK
 
-1. Exactly one active event transport (race-winner or prefer-LAN).
-2. Isolate `_processedSeqs` / `lastAckedSeq` **per transport**.
-3. Never send a relay ACK with a LAN seq (or vice versa).
-4. LAN has no DO replay — LAN reconnect = full rehydrate, not `fromSeq`.
-5. Dual-socket delivery of the same ciphertext must not double-apply.
+`RelayClient` (`packages/relay-client/src/client.ts`) has exactly one active
+socket; connecting over LAN replaces relay and vice versa. The desktop broadcasts
+each event to both: the relay frame gets its sequence number from the relay, and
+the LAN frame gets the desktop's own `lanFrameSeq`
+(`remote-control-service.ts#sendEventFrame`). The two number spaces never mix.
 
-### ACK (port from Flutter `relay_client.dart`)
+Frame handling is `handleInboundFrame` in `packages/relay-client/src/frames.ts`;
+ACK state is `SeqAckTracker` in `ack.ts`:
 
-- `_processedSeqs.add(seq)` **before** decrypt; ACK even on decrypt fail.
-- Bound the set (~2048). Cumulative ACK of max contiguous seq.
-- Envelope `seq` is ACK/replay only — **never** write onto `AgentEvent.seq`.
-- Server `forcedDropSeq`: client reacts to frame `type: 'reset'` only.
-- `desktop_shutdown` clears local seq; does not invent forcedDropSeq.
-- Terminal frames: no seq ACK path.
-
-### RemoteCommand delta @ v0.55.2
-
-RPC union is otherwise identical to 0.53.3. Additive fields Expo must send when talking to a 0.55.2 desktop:
-
-- `add_project_additional_dir.provider?: HarnessId`
-- `remove_project_additional_dir.provider?: HarnessId`
-
----
-
-## 9. Types sketch (not compiled)
-
-```ts
-import type { AgentEvent } from '@superone/shared/agent-types'
-import type { PerSessionState } from '../../apps/desktop/src/renderer/src/stores/chat-store/types'
-
-/** Read union — see §3. */
-export type ChatCoreSession = Pick<PerSessionState,
-  | 'messages' | 'queuedMessages' | 'status' | 'awaitingAssistantReply' | 'lastEventAt'
-  | 'streamingTokens' | 'lastAssistantMessageId' | 'promptSuggestion'
-  | 'pendingPermissions' | 'pendingQuestion' | 'pendingPlanApproval' | 'planApprovalOutcome'
-  | 'permissionMode' | 'apiRetry'
-  | 'session' | '_providerSessionId' | 'sessionProvider' | 'preferredProvider'
-  | 'todos' | 'showTodos' | '_todosUserDismissed' | '_nextTodoId'
-  | 'taskProgress' | 'subagentTokens' | '_streamingToolInputPreviews'
-  | 'browserDownloads' | 'videoGenStatuses'
-  | 'totalCostUsd' | 'contextTokens' | 'contextWindow'
-  | 'codexUsageSnapshot' | 'codexTurnLastUsage'
-  | 'isCompacting' | 'isRecapping' | 'compactError'
-  | '_pendingCompactUserId' | '_pendingSlashCommand' | 'slashCommandOutput'
-  | 'rateLimitInfo'
-  | 'selectedModel' | 'modelUserChosen' | 'selectedEffort' | 'effortUserChosen'
-  | 'selectedCodexModel' | 'selectedCodexReasoningEffort' | 'selectedCodexServiceTier'
-  | 'selectedCodexPermissionPreset' | 'selectedCodexCollaborationMode'
-  | 'codexModelUserChosen' | 'codexReasoningEffortUserChosen' | 'codexPlanRejectHintActive'
-  | 'openCodeAgentId' | 'apiProviderId'
-  | 'acpAgentId' | 'acpModels' | 'acpModelConfigId' | 'acpModelsStatus' | 'acpModelsError'
-  | 'acpModes' | 'acpModeConfigId' | 'acpModesStatus' | 'selectedAcpModeId'
-  | 'acpSlashCommands' | 'acpSlashCommandsStatus'
-  | '_latestCodexTodoList' | 'cwd' | '_worktreeRemoved'
->
-
-/** Exhaustive write-set — see §4. */
-export type ChatCorePatch = Partial<ChatCoreSession>
-
-export interface ChatCorePorts {
-  now(): number
-  id(prefix: string): string
-  trace?(channel: string, name: string, payload: unknown): void
-}
-
-export type ApplyEventToSession = (
-  session: ChatCoreSession,
-  event: AgentEvent,
-  ports?: ChatCorePorts,
-) => ChatCorePatch
-```
-
-WP-12 copies this into `packages/chat-core` and typechecks `applyEventToSession` against it. Do not introduce a second reducer.
-
----
-
-## 10. Open questions closed by this freeze
-
-| # | Resolution |
-|---|------------|
-| Plan §11.5 remote-relevant families | **All families in `applyEventToSession` except skipped-event no-ops.** Includes ACP inline cases and `content_retracted`. |
-| `model_fallback` | Transcript row, not a patch key. |
-| DeepSeek trajectory | Out of scope (desktop). Task `diagnostic` is in `taskProgress`. |
-| Mini-app iframe-in-WebView | Still deferred (plan R6). `@native/*` galleries go through `requestNative`. |
+- The sequence is recorded before decrypt (`see`), and the watermark advances
+  even when decrypt fails, so a bad frame cannot stall ACKs.
+- The processed set is bounded (`PROCESSED_SEQ_CAP` = 2048).
+- ACKs are cumulative: the highest contiguous sequence. Sent immediately after 10
+  newly contiguous frames, otherwise after 2 s.
+- Only relay `event` frames produce ACKs. LAN frames are deduplicated by their
+  sequence but never ACKed, and terminal, response and control frames have no
+  sequence path.
+- The tracker is cleared when the transport target changes (always for LAN,
+  for relay when the URL, secret or device changes), on `reset`, on
+  `desktop_shutdown` and on disconnect. A relay reconnect to the same target
+  sends `replay { fromSeq: lastAckedSeq + 1 }`; LAN has no replay, so a LAN
+  reconnect is a full restore.
+- The envelope sequence is transport state only. It is never written onto
+  `AgentEvent.seq`, which the session assigns for replay deduplication.

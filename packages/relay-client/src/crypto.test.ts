@@ -26,7 +26,7 @@ const vectors = JSON.parse(
   file: { plaintextUtf8: string; envelopeB64: string }
 }
 
-describe('relay-client crypto golden (WP-08)', () => {
+describe('relay-client crypto golden', () => {
   it('derives the frozen channel key, HMAC, and room id', () => {
     const { channelKeyHex } = deriveKeys(vectors.masterSecretHex)
     expect(channelKeyHex).toBe(vectors.derived.channelKeyHex)

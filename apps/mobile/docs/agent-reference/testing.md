@@ -65,6 +65,10 @@ and request only the access it needs. Neither runner requires blanket escalation
 above. Mobile `dev` / `test` / `typecheck` must run that build first (the root script and mobile `pre*` hooks handle this); a missing artifact must fail with a
 readable error, not deep inside Metro.
 
+A local Wrangler relay has no R2 and answers `503 R2 not configured` to file-transfer
+URL requests (`apps/relay/src/index.ts`). Relay-staged downloads and uploads (past the
+512 KiB inline RPC) therefore need an R2-enabled relay to succeed; LAN transfers do not.
+
 
 ## Maestro
 

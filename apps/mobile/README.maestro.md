@@ -116,7 +116,7 @@ named screenshots. The runner returns a nonzero exit code if a test fails.
 Screenshots and downloaded binaries are ignored by Git.
 
 Screenshots are **review artifacts**, not an approved visual regression baseline.
-This suite does not claim pixel parity with Flutter or exercise the paired
+This suite does not claim pixel parity or exercise the paired
 desktop/relay/WebView integration. CI wiring and visual baseline approval are
 separate from this local suite. Existing Vitest and chat-view Playwright tests
 remain in place.
@@ -186,8 +186,8 @@ release checks remain separate coverage gaps.
 - Maestro spends most of this run waiting for native text-control hierarchy
   settlement. The flow is reliable but should not be treated as a fast smoke test.
 
-See `../../docs/design/mobile-ui-redesign.md` for the page inventory,
-implementation map, paired checks and remaining verification limits.
+See [workspace.md](docs/agent-reference/workspace.md) for the page inventory and
+shell structure.
 
 
 2026-09-06 · Device list · iPhone 17 Pro Max simulator · iOS 26.0:

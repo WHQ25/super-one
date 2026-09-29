@@ -11,8 +11,50 @@ panels a command opened — slash output, `/mcp`, `/workflows` — which also cl
 each other, so the chain only settles ties. Stacking them is how a command list
 came to be painted under the panel that command had just opened.
 
+**Menus are a same-window portal, never RN `Modal`** (`ui/menu-host.tsx`): a native
+Modal dismissed the editor keyboard on Android. Non-primary overlay controls share a
+row instead of taking a 44 pt row of their own: dismiss is drawn at 28 pt with
+`hitSlop` (still a 44 pt target), retry sits beside the error message; mention paging auto-loads within 48 px of
+the end rather than offering a Load more row (`ui/composer-suggestions.tsx`).
+Phone layout: status row above a bordered input, Return inserts a newline. Tablet
+(`shouldUseTabletComposer`): the desktop editor card with its toolbar inside, Return
+submits (`submitBehavior` in `screens/chat-composer.tsx`).
+
+**Deliberately not built.** Hardware-keyboard navigation of the suggestion lists:
+the native editor emits only `onDocumentChange` / `onContentHeightChange` /
+`onSubmit`, so it would need a Swift/Kotlin key bridge first. A `/workflow`
+launcher: `/workflow` writes itself into the draft as on desktop; `/workflows` is a
+runs list derived from the transcript (`workflow-runs.ts`), offered to ACP only
+(`slash-catalog.ts`).
+
+**Native editor contract** (`modules/mention-editor`, `ui/native-composer-input.tsx`).
+Native owns typing, IME composition and the caret; JS never mirrors a controlled
+value. JS edits are commands carrying the last seen `eventCount`, and native rejects
+a stale count or an active composition (the snapshot reports the `rejection`). A
+chip is one UTF-16 object position (U+FFFC) holding kind, value and display name.
+Copy/cut expand chips to plain text; paste inserts literal text and never creates a
+token. The document serialises to desktop tags only when the draft is captured for
+send (`composer-draft-state.ts`). The plain `TextInput` fallback flattens to text,
+so the two editors send different payloads — tests assert the sent payload on both.
+
+**Explicit Send prepares the editor first** (`navigation/use-composer-send.ts`): it
+awaits native `prepareSubmit` (iOS ends marked text, Android clears composition and
+restarts input), which answers with the authoritative draft under a submission id;
+only then is the draft captured. A 3 s timeout or native error keeps the draft and
+surfaces the error; a session change or unmount cancels. The capability is
+`supportsPrepareSubmit` in the snapshot — an older native client sends its settled
+visible draft unless the last edit was rejected. Optional session metadata
+(`refreshRuntimeCatalog`) runs after restore and must never hold the
+`SessionTransition` lock, which makes `send()` bail; Send is disabled only while
+the conversation actually loads (`loadingConversation`).
+
+**Icon and harness artwork is generated from desktop sources, never hand-maintained**:
+`bun --filter @superone/mobile generate:icons` writes `src/ui/*.generated.json`
+(file icons, harness scenes, permission modes, mention artwork, provider brands);
+`check:icons` fails on drift.
+
 **The session's todos have exactly one surface**: `ui/todo-panel.tsx`, a strip
-between the transcript and the composer, matching Flutter and the desktop's
+between the transcript and the composer, matching the desktop's
 `TodoPopup`. The chat WebView used to paint a second copy at the top of the
 transcript; it was removed along with the `todos` field on `ReductionProjection`,
 because the same `runtime.session.todos` fed both and a six-item plan was drawn
@@ -81,8 +123,7 @@ same treatment desktop gives `ChatInput` and `TodoPopup`, both of which are
 `border border-border` with no `bg-` class. Filling any one of them (a `surface`
 input pill, a `surface` todo strip) turns the column into stacked planes and the
 filled element reads as a panel dropped on top of the chat rather than part of
-it. A Flutter token name like `surfaceContainerHighest` is not a licence to fill:
-it says "raised surface", not "raised above *this* neighbour".
+it.
 
 The transcript is the other half of that background and it is **not** brand
 tinted, which is a mobile-only divergence from desktop. `--background` resolves

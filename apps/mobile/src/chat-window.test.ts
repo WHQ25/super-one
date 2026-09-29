@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CHAT_WINDOW } from './chat-window'
 
-describe('CHAT_WINDOW fail-closed budgets (WP-06)', () => {
+describe('CHAT_WINDOW fail-closed budgets', () => {
   it('caps the mounted DOM below the 200-turn stress corpus', () => {
     expect(CHAT_WINDOW.maxMountedTurns).toBeLessThan(200)
     expect(CHAT_WINDOW.initialTurns).toBeLessThanOrEqual(CHAT_WINDOW.maxMountedTurns)
@@ -13,7 +13,7 @@ describe('CHAT_WINDOW fail-closed budgets (WP-06)', () => {
     expect(CHAT_WINDOW.streamingThrottleMs).toBe(33)
   })
 
-  it('keeps the RSS and frame gates from the migration plan', () => {
+  it('keeps the RSS and frame gates', () => {
     expect(CHAT_WINDOW.rssBudgetMb).toBe(250)
     expect(CHAT_WINDOW.frameP95Ms).toBe(20)
   })

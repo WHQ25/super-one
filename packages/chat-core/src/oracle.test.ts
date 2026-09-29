@@ -52,7 +52,7 @@ function projection(state: ChatCoreSession) {
   }
 }
 
-describe('recorded remote.out reducer oracle (WP-14)', () => {
+describe('recorded remote.out reducer oracle', () => {
   for (const scenario of recordedScenarios) {
     it(`${scenario.recording}:${scenario.messageId}`, () => {
       expect(projection(reduce(scenario.events))).toMatchSnapshot()

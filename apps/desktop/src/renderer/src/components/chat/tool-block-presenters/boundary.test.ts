@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 const DIR = dirname(fileURLToPath(import.meta.url))
 const CHAT_DIR = join(DIR, '..')
 
-describe('ToolBlock presenter boundary (WP-16)', () => {
+describe('ToolBlock presenter boundary', () => {
   it('keeps stores, IPC, and Desktop-only renderers in the adapter shell', () => {
     const files = [
       join(CHAT_DIR, 'ToolBlockPresenter.tsx'),

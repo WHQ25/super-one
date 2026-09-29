@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * WP-04: bun workspace + shared exports resolve without Node-only leaves.
+ * Checks that the bun workspace and shared exports resolve without Node-only leaves.
  * Metro uses the same export map (`unstable_enablePackageExports`).
  */
 import { readFileSync } from 'node:fs'

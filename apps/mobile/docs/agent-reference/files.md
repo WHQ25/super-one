@@ -47,7 +47,16 @@ which the desktop cuts in a hidden offscreen window streaming from its media ser
 (`apps/desktop/src/main/remote/video-poster.ts`, disk-cached under userData) and always
 answers in-band, so there is no relay confirmation for a poster. `video-posters.ts` caches
 the answer per project/path, `null` included. Tapping the tile is `previewFile`: the clip
-itself only moves then.
+itself only moves then. Markdown audio embeds are not handled.
+Media constraints behind that shape: the chat WebView has no origin
+(`source={{ html }}`, no `baseUrl`), and markdown sanitize keeps only `http`/`https`
+plus the phone's `host-file:` scheme on `src` (`packages/chat-view/src/host-image-src.ts`)
+— a component override such as `NativeImage` returning a video tile is not re-sanitized.
+Relay media is download-then-play: the `chunked-v1` AES-GCM envelope must land whole
+before RN decrypts it, and presigned R2 URLs last 60 s. LAN serves plain HTTP with
+Range support (`apps/desktop/src/main/lan-server.ts`), so it could stream. Rejected:
+`file://` + `baseUrl` (needs universal file access, which breaks the WebView sandbox)
+and an in-app HTTP server (native dependency, port lifecycle, decrypted plaintext on disk).
 Tapping any picture the transcript *displays* — a loaded host image, a user attachment, a
 markdown image — sends `previewImage` with the `src` already painted, and the shell opens
 the same modal in its `image` state: a pinch/double-tap viewer over the same bytes, whose

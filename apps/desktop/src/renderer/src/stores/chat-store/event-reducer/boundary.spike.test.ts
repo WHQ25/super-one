@@ -15,7 +15,7 @@ function sourceOf(name: string): string {
   return readFileSync(join(DIR, name), 'utf8')
 }
 
-describe('event-reducer package boundary (WP-12)', () => {
+describe('event-reducer package boundary', () => {
   it('does not import the Zustand barrel via ../index', () => {
     const hits: string[] = []
     for (const name of implementationFiles()) {

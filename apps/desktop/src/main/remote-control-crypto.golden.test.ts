@@ -27,7 +27,7 @@ const vectors = JSON.parse(
   file: { plaintextUtf8: string; envelopeB64: string }
 }
 
-describe('remote-control crypto golden vectors (WP-03)', () => {
+describe('remote-control crypto golden vectors', () => {
   it('derives the frozen channel key, HMAC token, and room id', async () => {
     const { channelKeyHex } = await deriveKeys(vectors.masterSecretHex)
     expect(channelKeyHex).toBe(vectors.derived.channelKeyHex)

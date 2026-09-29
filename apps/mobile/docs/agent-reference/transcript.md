@@ -58,3 +58,24 @@ Its turn outline and tick curve are shared with desktop. Touch scrubbing preview
 questions and replies, then jumps on release; compact ticks expand/collapse history.
 Navigation mounts a bounded neighborhood around the target, and paging moves in
 both directions while retaining a visible anchor and the 40-message DOM ceiling.
+
+## Progressive loading
+
+Opening a session paints the newest turns first: `subscribe_session` with
+`progressive: true` returns the newest eight messages, the history cursor and the
+snapshot in one reply, and `loadEarlier` fetches one page at a time. Thinking,
+tool inputs/results, commands and diffs arrive as opaque detail references and are
+fetched through `subscribe_detail` only when opened; collapsing unsubscribes.
+Streaming reasoning starts collapsed (`DeferredReasoning` in `@superone/chat-view`)
+and a manual expansion stays open when it finishes. The tick rail covers the full
+timeline from `get_session_history_index`; a tick outside the loaded rows jumps via
+`load_session_messages` with an `anchorId` (`ChatRuntime.loadHistoryWindow`).
+`ChatRuntime.restoreMetrics` (logged as `[SessionRestore]`) times request phases and
+bytes; it does not measure WebView startup or first paint.
+
+Live paints cross the bridge as changed rows — `messagePatches`, plus `messageOrder`
+only when rows are inserted, removed or reordered (`src/transcript-projection.ts`) —
+through the acknowledged `TranscriptDelivery` (see transport.md). Never inject the
+full transcript per tick: WKWebView can silently drop a large, unacknowledged
+`injectJavaScript`, which left live turns stuck on Reasoning with the following
+text never painted.

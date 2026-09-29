@@ -15,7 +15,7 @@ describe('parseUsage (Claude /api/oauth/usage → ClaudeRateLimits)', () => {
 
     expect(result.planType).toBe('Max 20x')
     expect(result.windows.map((w) => w.label)).toEqual(['5h', 'Weekly', 'Opus weekly', 'Sonnet weekly', 'Claude Design'])
-    expect(result.windows[0]).toEqual({ label: '5h', usedPercent: 25, resetsAt: Math.floor(Date.parse('2026-01-28T15:00:00Z') / 1000) })
+    expect(result.windows[0]).toEqual({ id: 'five_hour', label: '5h', usedPercent: 25, resetsAt: Math.floor(Date.parse('2026-01-28T15:00:00Z') / 1000) })
     expect(result.windows[4].usedPercent).toBe(0)
   })
 
@@ -28,7 +28,7 @@ describe('parseUsage (Claude /api/oauth/usage → ClaudeRateLimits)', () => {
     const result = parseUsage(data, null)
 
     expect(result.windows).toHaveLength(1)
-    expect(result.windows[0]).toEqual({ label: '5h', usedPercent: 12, resetsAt: null })
+    expect(result.windows[0]).toEqual({ id: 'five_hour', label: '5h', usedPercent: 12, resetsAt: null })
     expect(result.planType).toBeNull()
   })
 
@@ -79,7 +79,7 @@ describe('parseUsage — model-scoped weekly windows from limits[]', () => {
 
     expect(result.windows.map((w) => w.label)).toEqual(['5h', 'Weekly', 'Fable weekly'])
     expect(result.windows[2]).toEqual({
-      label: 'Fable weekly',
+      model: 'fable', id: 'weekly_scoped:Fable', label: 'Fable weekly',
       usedPercent: 7,
       resetsAt: Math.floor(Date.parse('2026-02-01T00:00:00Z') / 1000),
     })
@@ -95,7 +95,7 @@ describe('parseUsage — model-scoped weekly windows from limits[]', () => {
 
     const result = parseUsage(data, null)
 
-    expect(result.windows).toEqual([{ label: 'Sonnet weekly', usedPercent: 33, resetsAt: null }])
+    expect(result.windows).toEqual([{ model: 'sonnet', id: 'seven_day_sonnet', label: 'Sonnet weekly', usedPercent: 33, resetsAt: null }])
   })
 
   it('ignores limits entries that are not weekly_scoped, lack a model name, or lack a numeric percent', () => {
@@ -119,6 +119,6 @@ describe('parseUsage — model-scoped weekly windows from limits[]', () => {
       ],
     }
 
-    expect(parseUsage(data, null).windows).toEqual([{ label: 'Fable weekly', usedPercent: 7, resetsAt: null }])
+    expect(parseUsage(data, null).windows).toEqual([{ model: 'fable', id: 'weekly_scoped:Fable', label: 'Fable weekly', usedPercent: 7, resetsAt: null }])
   })
 })

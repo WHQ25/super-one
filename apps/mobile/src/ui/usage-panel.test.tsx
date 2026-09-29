@@ -71,3 +71,23 @@ test('an expired live warning is not shown', async () => {
   await renderWithTheme(<UsagePanel usage={claude} rateLimit={{ status: 'allowed_warning', resetsAt: Math.round(now / 1000) - 5 }} />)
   expect(screen.queryByText(/Approaching limit/)).toBeNull()
 })
+
+
+test('a safe weekly forecast suppresses the live warning and shows why', async () => {
+  const sampledAt = Date.now()
+  const reset = sampledAt / 1000 + 1800
+  const usage: RemoteUsage = { ...claude, windows: [{ id: 'seven_day', label: 'Weekly', usedPercent: 80, resetsAt: reset,
+    forecast: { sampledAt, status: 'ready', ratePerHour: 5, exhaustsAt: sampledAt + 4 * 3600_000, confirmed: true } }] }
+  await renderWithTheme(<UsagePanel usage={usage} rateLimit={{ status: 'allowed_warning', rateLimitType: 'seven_day', utilization: 0.8, resetsAt: reset }} />)
+  expect(screen.queryByText('Approaching limit')).toBeNull()
+  expect(screen.getByText('At the recent pace, usage should last until reset')).toBeTruthy()
+})
+
+test('the mobile panel shows the same runway and preserves actual rejection', async () => {
+  const sampledAt = Date.now()
+  const usage: RemoteUsage = { ...claude, windows: [{ id: 'seven_day', label: 'Weekly', usedPercent: 80, resetsAt: sampledAt / 1000 + 86400,
+    forecast: { sampledAt, status: 'ready', ratePerHour: 10, exhaustsAt: sampledAt + 2 * 3600_000, confirmed: true } }] }
+  await renderWithTheme(<UsagePanel usage={usage} rateLimit={{ status: 'rejected', resetsAt: sampledAt / 1000 + 86400 }} />)
+  expect(screen.getByText('At the recent pace, runs out in about 2h')).toBeTruthy()
+  expect(screen.getByText('Rate limited')).toBeTruthy()
+})

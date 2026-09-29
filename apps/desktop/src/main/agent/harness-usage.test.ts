@@ -43,6 +43,15 @@ function deps(overrides: Partial<HarnessUsageDeps> = {}): HarnessUsageDeps {
 }
 
 describe('readHarnessUsage', () => {
+  it('preserves the source forecast and age when shaping a reading for the phone', async () => {
+    const forecast = { sampledAt: 1234, status: 'ready' as const, ratePerHour: 10, exhaustsAt: 9876, confirmed: true }
+    const d = deps({ codexRateLimits: async () => ({ ...codexLimits, quotaKey: 'codex-a', fetchedAt: 1234,
+      primary: { ...codexLimits.primary!, id: 'primary:300', forecast } }) })
+    const usage = await readHarnessUsage({ provider: 'codex', projectPath: '/p' }, d)
+    expect(usage?.fetchedAt).toBe(1234)
+    expect(usage?.quotaKey).toBe('codex-a')
+    expect(usage?.windows[0]).toMatchObject({ id: 'primary:300', forecast })
+  })
   it('reads the default Claude OAuth meter and names its account', async () => {
     const usage = await readHarnessUsage({ provider: 'claude', projectPath: '/p' }, deps())
     expect(usage).toMatchObject({ kind: 'claude', title: 'Claude', account: 'a@x.io', planType: 'Max 5x' })

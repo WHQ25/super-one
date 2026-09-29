@@ -1,6 +1,8 @@
 import type { RelayClient } from '@superone/relay-client'
 import type { ClaudeRateLimitWindow, CodexRateLimitResetOutcome, HarnessId, RemoteCommand, RemoteUsage } from '@superone/shared/agent-types'
 import { randomId } from './ids'
+import { relevantUsageLimit } from '@superone/shared/subscription-alerts'
+import { usageWindowTone, type UsageWindow } from '@superone/shared/subscription-usage'
 
 /** The credential a session bills, named the way the composer selection does. */
 export type UsageTarget = {
@@ -64,10 +66,11 @@ export async function consumeRateLimitReset(
   return result.outcome ?? null
 }
 
-export type MeterTone = 'success' | 'warning' | 'error'
+export type MeterTone = 'success' | 'warning' | 'error' | 'muted'
 
-/** Desktop gauge thresholds on the remaining share: green above 30%, amber to 10%, red below. */
-export function usageTone(usedPercent: number): MeterTone {
+/** Forecast-enabled windows share desktop risk colors; older/raw meters keep percentage thresholds. */
+export function usageTone(usedPercent: number, window?: UsageWindow, now = Date.now()): MeterTone {
+  if (window) return usageWindowTone(window, now)
   const remaining = remainingPercent(usedPercent)
   return remaining <= 10 ? 'error' : remaining <= 30 ? 'warning' : 'success'
 }
@@ -96,11 +99,10 @@ export type LiveRateLimit = {
   status: 'allowed_warning' | 'rejected'
   resetsAt?: number
   utilization?: number
+  rateLimitType?: string
 }
 
 /** The live `rate_limit` event still applies until the reset it names has passed. */
-export function activeRateLimit<T extends LiveRateLimit>(info: T | null | undefined, now = Date.now()): T | null {
-  if (!info) return null
-  if (info.resetsAt != null && info.resetsAt * 1000 <= now) return null
-  return info
+export function activeRateLimit<T extends LiveRateLimit>(info: T | null | undefined, now = Date.now(), windows: readonly UsageWindow[] = []): T | null {
+  return relevantUsageLimit(info, windows, now)
 }

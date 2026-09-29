@@ -10,7 +10,7 @@ import {
   sanitizeDiscoveredByFamily,
   type ProtocolFamily,
 } from '@superone/shared/platform-registry'
-import { parseAccountUsage, readCodexConfigRequirements, readCodexServerDiagnostics } from '@superone/codex'
+import { parseAccountUsage, readRateLimits, readCodexConfigRequirements, readCodexServerDiagnostics } from '@superone/codex'
 import {
   buildCodexAccountEnv,
   buildCodexProviderCliOverridesFor,
@@ -42,9 +42,7 @@ import type {
   CodexMcpOauthLoginResult,
   CodexMcpOauthLoginOptions,
   CodexRateLimits,
-  CodexRateLimitResetCredit,
   CodexRateLimitResetOutcome,
-  CodexRateLimitWindow,
   CodexRealtimeVoiceCatalog,
   CodexReasoningEffort,
   CodexSetAuthRequest,
@@ -165,60 +163,6 @@ function readFiniteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
-function parseRateLimitWindow(raw: unknown): CodexRateLimitWindow | null {
-  if (!raw || typeof raw !== 'object') return null
-  const rec = raw as Record<string, unknown>
-  const usedPercent = readFiniteNumber(rec.usedPercent)
-  if (usedPercent === null) return null
-  return {
-    usedPercent,
-    windowDurationMins: readFiniteNumber(rec.windowDurationMins),
-    resetsAt: readFiniteNumber(rec.resetsAt),
-  }
-}
-
-function parseRateLimits(raw: Record<string, unknown>): CodexRateLimits | null {
-  const snapshot = raw.rateLimits && typeof raw.rateLimits === 'object'
-    ? (raw.rateLimits as Record<string, unknown>)
-    : raw
-  const primary = parseRateLimitWindow(snapshot.primary)
-  const secondary = parseRateLimitWindow(snapshot.secondary)
-  if (!primary && !secondary) return null
-  const resetCreditsRaw = raw.rateLimitResetCredits
-  const resetSummary = resetCreditsRaw && typeof resetCreditsRaw === 'object'
-    ? (resetCreditsRaw as Record<string, unknown>)
-    : null
-  const resetCredits = resetSummary ? readNumericLike(resetSummary.availableCount) : null
-  const creditsRaw = resetSummary?.credits
-  const resetCreditList = Array.isArray(creditsRaw)
-    ? creditsRaw.map(parseResetCredit).filter((c): c is CodexRateLimitResetCredit => c !== null)
-    : undefined
-  return {
-    primary,
-    secondary,
-    planType: readString(snapshot.planType),
-    resetCredits,
-    ...(resetCreditList && resetCreditList.length > 0 ? { resetCreditList } : {}),
-  }
-}
-
-function parseResetCredit(raw: unknown): CodexRateLimitResetCredit | null {
-  if (!raw || typeof raw !== 'object') return null
-  const rec = raw as Record<string, unknown>
-  const id = readString(rec.id)
-  if (!id) return null
-  const rawStatus = readString(rec.status)
-  const status: CodexRateLimitResetCredit['status'] =
-    rawStatus === 'available' || rawStatus === 'redeeming' || rawStatus === 'redeemed' ? rawStatus : 'unknown'
-  return {
-    id,
-    status,
-    title: readString(rec.title) ?? null,
-    description: readString(rec.description) ?? null,
-    expiresAt: readNumericLike(rec.expiresAt),
-  }
-}
-
 function parseExternalAgentItem(raw: unknown): CodexExternalAgentItem | null {
   if (!raw || typeof raw !== 'object') return null
   const rec = raw as Record<string, unknown>
@@ -253,16 +197,6 @@ function parseResetOutcome(raw: Record<string, unknown>): CodexRateLimitResetOut
     case 'alreadyRedeemed': return 'alreadyRedeemed'
     default: return 'unknown'
   }
-}
-
-function readNumericLike(value: unknown): number | null {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null
-  if (typeof value === 'bigint') return Number(value)
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value)
-    return Number.isFinite(parsed) ? parsed : null
-  }
-  return null
 }
 
 function authsEqual(a: CodexProjectAuth, b: CodexProjectAuth): boolean {
@@ -773,8 +707,7 @@ export class CodexExperimentService {
     if (getCodexProviderOverrideFor(apiProviderId)) return null
     try {
       return await this.withAppServerConnection(projectPath, auth, undefined, async (connection) => {
-        const result = await connection.request('account/rateLimits/read')
-        return parseRateLimits(result)
+        return readRateLimits(connection, auth.accountId ?? 'cli')
       }, apiProviderId)
     } catch (error) {
       log.info('[codex] getRateLimits failed project=%s: %s', projectPath, error instanceof Error ? error.message : String(error))

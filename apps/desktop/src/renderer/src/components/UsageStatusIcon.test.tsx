@@ -38,6 +38,9 @@ vi.mock('@/stores/chat', () => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, opts?: Record<string, unknown>) => {
+      if (key === 'usageGauge.forecast.safe') return 'Expected to last until reset'
+      if (key === 'usageGauge.forecast.eta') return `Runs out in about ${opts?.time}`
+      if (key === 'usageGauge.forecast.warning') return 'Quota may run out before reset'
       if (key === 'usageGauge.rateLimit.approaching') return 'Approaching rate limit'
       if (key === 'usageGauge.rateLimit.limited') return 'Rate limited'
       if (key === 'usageGauge.rateLimit.percentUsed') return `${opts?.percent}% used`
@@ -102,9 +105,11 @@ vi.mock('@superone/ui/components/ui/button', () => ({
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), info: vi.fn(), error: vi.fn() } }))
 
 import { UsageStatusIcon } from './UsageStatusIcon'
+import { subscriptionAlertLedger } from './use-subscription-alert'
 
 describe('UsageStatusIcon rate-limit tip', () => {
   beforeEach(() => {
+    subscriptionAlertLedger.clear()
     vi.useFakeTimers()
     hoisted.sessionState.rateLimitInfo = null
     hoisted.sessionState.status = 'idle'
@@ -136,6 +141,55 @@ describe('UsageStatusIcon rate-limit tip', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
+  })
+
+  it('does not flash a weekly warning before a safe forecast arrives', async () => {
+    const now = Date.now()
+    const reset = now / 1000 + 1800
+    hoisted.sessionState.rateLimitInfo = { status: 'allowed_warning', rateLimitType: 'seven_day', utilization: 0.8, resetsAt: reset }
+    ;(window.app.claudeGetRateLimits as ReturnType<typeof vi.fn>).mockResolvedValue({
+      quotaKey: 'account-safe', planType: 'Max', fetchedAt: now, extraUsage: null,
+      windows: [{ id: 'seven_day', label: 'Weekly', usedPercent: 80, resetsAt: reset,
+        forecast: { sampledAt: now, status: 'ready', ratePerHour: 5, exhaustsAt: now + 4 * 3600_000, confirmed: true } }],
+    })
+    render(<UsageStatusIcon />)
+    expect(screen.queryByRole('status')).toBeNull()
+    await act(async () => { await Promise.resolve() })
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.getByText('Expected to last until reset')).toBeInTheDocument()
+  })
+
+  it('forecasts a weekly shortfall without a provider warning and does not repeat it across sessions', async () => {
+    const now = Date.now()
+    ;(window.app.claudeGetRateLimits as ReturnType<typeof vi.fn>).mockResolvedValue({
+      quotaKey: 'account-risk', planType: 'Max', fetchedAt: now, extraUsage: null,
+      windows: [{ id: 'seven_day', label: 'Weekly', usedPercent: 80, resetsAt: now / 1000 + 86400,
+        forecast: { sampledAt: now, status: 'ready', ratePerHour: 10, exhaustsAt: now + 2 * 3600_000, confirmed: true } }],
+    })
+    const { rerender } = render(<UsageStatusIcon />)
+    await act(async () => { await Promise.resolve() })
+    expect(screen.getByRole('status')).toHaveTextContent('Quota may run out before reset')
+    expect(screen.getByRole('status')).toHaveTextContent('Weekly')
+    expect(screen.getByRole('status')).toHaveTextContent('2h')
+    await act(async () => { vi.advanceTimersByTime(6000) })
+    hoisted.sessionState._activeSessionId = 'session-b'
+    rerender(<UsageStatusIcon />)
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('polls while a long turn streams and stops polling after it finishes', async () => {
+    hoisted.sessionState.status = 'streaming'
+    const { rerender } = render(<UsageStatusIcon />)
+    await act(async () => { await Promise.resolve() })
+    expect(window.app.claudeGetRateLimits).toHaveBeenCalledTimes(1)
+    await act(async () => { vi.advanceTimersByTime(5 * 60_000) })
+    expect(window.app.claudeGetRateLimits).toHaveBeenCalledTimes(2)
+    hoisted.sessionState.status = 'idle'
+    rerender(<UsageStatusIcon />)
+    await act(async () => { await Promise.resolve() })
+    expect(window.app.claudeGetRateLimits).toHaveBeenCalledTimes(3)
+    await act(async () => { vi.advanceTimersByTime(5 * 60_000) })
+    expect(window.app.claudeGetRateLimits).toHaveBeenCalledTimes(3)
   })
 
   it('names the ChatGPT account in the Codex gauge, but not when a third-party key is in use', async () => {

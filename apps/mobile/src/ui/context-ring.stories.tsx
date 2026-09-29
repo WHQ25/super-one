@@ -82,3 +82,21 @@ export const PanelZh = {
     </View>
   </MobileThemeProvider>,
 }
+
+function ForecastPanel({ safe, rejected = false }: { safe: boolean; rejected?: boolean }) {
+  const now = Date.now()
+  const resetsAt = now / 1000 + (safe ? 1800 : 86400)
+  const usage: RemoteUsage = { ...claude, fetchedAt: now, windows: [{
+    id: 'seven_day', label: 'Weekly', usedPercent: 80, resetsAt,
+    forecast: { sampledAt: now, status: 'ready', ratePerHour: 10, exhaustsAt: now + 7200_000, confirmed: true },
+  }] }
+  return <MobileThemeProvider locale="zh">
+    <View style={{ width: 280, padding: 8 }}>
+      <UsagePanel usage={usage} rateLimit={{ status: rejected ? 'rejected' : 'allowed_warning', rateLimitType: 'seven_day', utilization: 0.8, resetsAt }} />
+    </View>
+  </MobileThemeProvider>
+}
+
+export const PanelForecastSafe = { name: 'Panel · lasts until reset, warning suppressed', render: () => <ForecastPanel safe /> }
+export const PanelForecastRisk = { name: 'Panel · runs out before reset', render: () => <ForecastPanel safe={false} /> }
+export const PanelForecastRejected = { name: 'Panel · rejection overrides a safe estimate', render: () => <ForecastPanel safe rejected /> }

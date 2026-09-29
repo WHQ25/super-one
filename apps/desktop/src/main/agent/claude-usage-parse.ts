@@ -51,7 +51,8 @@ function isoToEpochSeconds(iso: string | undefined): number | null {
 function toWindow(data: UsageResponse, key: keyof UsageResponse, label: string): ClaudeRateLimitWindow | null {
   const win = data[key] as UsageWindow | null | undefined
   if (!win || typeof win.utilization !== 'number') return null
-  return { label, usedPercent: win.utilization, resetsAt: isoToEpochSeconds(win.resets_at) }
+  const model = key === 'seven_day_opus' ? 'opus' : key === 'seven_day_sonnet' ? 'sonnet' : key === 'seven_day_omelette' ? 'design' : null
+  return { id: key, ...(model ? { model } : {}), label, usedPercent: win.utilization, resetsAt: isoToEpochSeconds(win.resets_at) }
 }
 
 /** Model-scoped weekly windows, labelled `<Model> weekly` to match the legacy per-model labels. */
@@ -64,7 +65,8 @@ function scopedWeeklyWindows(limits: UsageLimitEntry[] | null | undefined): Clau
     if (!modelName) continue
     const label = `${modelName} weekly`
     if (windows.some((w) => w.label === label)) continue
-    windows.push({ label, usedPercent: entry.percent, resetsAt: isoToEpochSeconds(entry.resets_at) })
+    const legacy = LEGACY_MODEL_WINDOW_LABELS.find(([, legacyLabel]) => legacyLabel === label)
+    windows.push({ model: modelName.toLowerCase(), id: legacy?.[0] ?? `weekly_scoped:${entry.scope?.model?.id ?? modelName}`, label, usedPercent: entry.percent, resetsAt: isoToEpochSeconds(entry.resets_at) })
   }
   return windows
 }

@@ -4025,6 +4025,15 @@ export const zh: Messages = {
     updatedMinutesAgo: '{{n}} 分钟前更新',
     updatedHoursAgo: '{{n}} 小时前更新',
     updatedDaysAgo: '{{n}} 天前更新',
+    forecast: {
+      safe: '按近期速度，预计可撑到重置',
+      eta: '按近期速度持续使用，约 {{time}} 后用尽',
+      learning: '近期样本不足，暂无法估算',
+      idle: '近期没有明显消耗，预估已暂停',
+      stale: '用量数据已过期，刷新后再估算',
+      exhausted: '套餐内额度已用尽',
+      warning: '额度可能在重置前用尽',
+    },
     rateLimit: {
       approaching: '即将达到速率限制',
       limited: '已达速率限制',

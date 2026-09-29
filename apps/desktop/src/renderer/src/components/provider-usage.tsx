@@ -1,4 +1,6 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { usageWindowTone, type UsageWindow } from '@superone/shared/subscription-usage'
+import { usageForecastCopy } from '@superone/shared/subscription-usage-presentation'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
@@ -29,12 +31,6 @@ export function formatResetIn(resetsAtSeconds: number | null, t: TFunction): str
   return t('usageGauge.resetsIn', { time })
 }
 
-export function remainingColor(percent: number): string {
-  if (percent <= 10) return 'bg-red-500'
-  if (percent <= 30) return 'bg-amber-500'
-  return 'bg-green-500'
-}
-
 export function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
@@ -44,10 +40,19 @@ export function InfoRow({ label, value }: { label: string; value: ReactNode }) {
   )
 }
 
-export function WindowBar({ label, usedPercent, resetsAt }: { label: string; usedPercent: number; resetsAt: number | null }) {
+export function WindowBar(window: UsageWindow) {
+  const { label, usedPercent, resetsAt } = window
   const { t } = useTranslation()
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [])
   const remaining = Math.max(0, Math.min(100, 100 - usedPercent))
   const resetIn = formatResetIn(resetsAt, t)
+  const tone = usageWindowTone(window, now)
+  const copy = usageForecastCopy(window, now)
+  const color = { success: 'bg-green-500', warning: 'bg-amber-500', error: 'bg-red-500', muted: 'bg-muted-foreground/50' }[tone]
   return (
     <div className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
@@ -58,8 +63,9 @@ export function WindowBar({ label, usedPercent, resetsAt }: { label: string; use
         </span>
       </div>
       <div className="h-1 w-full overflow-hidden rounded-full bg-border/60">
-        <div className={cn('h-full rounded-full transition-all', remainingColor(remaining))} style={{ width: `${remaining}%` }} />
+        <div className={cn('h-full rounded-full transition-all', color)} style={{ width: `${remaining}%` }} />
       </div>
+      {copy && <span className="text-[11px] text-muted-foreground">{t(`usageGauge.forecast.${copy.key}`, { time: copy.time })}</span>}
     </div>
   )
 }

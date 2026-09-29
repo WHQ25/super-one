@@ -21,6 +21,7 @@ import type {
 } from '@superone/shared/agent-types'
 import type { CodexAppServerHandle } from './app-server-client'
 import { safePublicError } from './app-server-client'
+import { trackCodexSubscription } from './subscription-usage'
 
 export type CodexAuthMode = 'auto' | 'chatgpt' | 'apiKey'
 
@@ -278,11 +279,16 @@ export function summarizeImportResults(raw: unknown): CodexExternalAgentImportRe
 }
 
 export async function readRateLimits(
-  client: CodexAppServerHandle,
+  client: Pick<CodexAppServerHandle, 'request'>,
+  scope = 'cli',
 ): Promise<CodexRateLimits | null> {
   try {
-    const result = await client.request('account/rateLimits/read')
-    return parseRateLimits(result)
+    const [result, identity] = await Promise.all([
+      client.request('account/rateLimits/read'),
+      client.request('account/read', { refreshToken: false }).catch(() => null),
+    ])
+    const limits = parseRateLimits(result)
+    return limits ? trackCodexSubscription(limits, asRecord(identity?.account), scope) : null
   } catch (err) {
     throw safePublicError('account/rateLimits/read failed', err)
   }

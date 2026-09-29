@@ -498,6 +498,7 @@ describe('CodexExperimentService auth state', () => {
 
     expect(handle.connection.request).toHaveBeenCalledWith('account/rateLimits/read')
     expect(limits).toEqual({
+      fetchedAt: expect.any(Number),
       primary: { usedPercent: 23, windowDurationMins: 300, resetsAt: 1_700_000_000 },
       secondary: { usedPercent: 47, windowDurationMins: 10080, resetsAt: 1_700_500_000 },
       planType: 'plus',

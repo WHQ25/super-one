@@ -6,6 +6,9 @@ import log from '../logger'
 import type { ClaudeRateLimits } from '@superone/shared/agent-types'
 import { parseUsage, type UsageResponse } from './claude-usage-parse'
 import { keychainServiceNames } from './claude-account-parse'
+import { createHash, randomUUID } from 'node:crypto'
+import { SubscriptionUsageTracker } from '@superone/shared/subscription-usage'
+import { AsyncCoalescer } from '../async-cache'
 
 const BASE_API_URL = 'https://api.anthropic.com'
 const USAGE_URL = `${BASE_API_URL}/api/oauth/usage`
@@ -53,9 +56,13 @@ interface DomainUsageState {
   rateLimitedUntilMs: number
   lastUsageFetchMs: number
   cached: ClaudeRateLimits | null
+  credentialFingerprint?: string
+  quotaKey?: string
 }
 
 const domainUsage = new Map<string, DomainUsageState>()
+const usageHistory = new SubscriptionUsageTracker()
+const usageRequests = new AsyncCoalescer<ClaudeRateLimits | null>()
 
 function usageStateFor(credentialDir: string | null): DomainUsageState {
   const key = credentialDir ?? ''
@@ -278,11 +285,28 @@ function buildPlanType(oauth: OAuthCreds): string | null {
   return tierMatch ? `${base} ${tierMatch[1]}x` : base
 }
 
-export async function getClaudeRateLimits(force = false, credentialDir: string | null = null): Promise<ClaudeRateLimits | null> {
+export function getClaudeRateLimits(force = false, credentialDir: string | null = null): Promise<ClaudeRateLimits | null> {
+  return usageRequests.get(credentialDir ?? '', () => fetchClaudeRateLimits(force, credentialDir))
+}
+
+async function fetchClaudeRateLimits(force: boolean, credentialDir: string | null): Promise<ClaudeRateLimits | null> {
   const state = usageStateFor(credentialDir)
   try {
     const creds = loadCredentials(credentialDir)
     if (!creds?.oauth.accessToken?.trim() || !hasProfileScope(creds)) return null
+
+    const fingerprint = createHash('sha256').update(creds.oauth.accessToken).digest('hex')
+    if (state.credentialFingerprint !== fingerprint) {
+      // A CLI login may replace the default domain underneath us. Never serve the previous account's cache.
+      state.cached = null
+      state.rateLimitedUntilMs = 0
+      const { readAccount } = await import('./claude-account-service')
+      const account = await readAccount(credentialDir)
+      state.quotaKey = `claude:${account?.identityKey
+        ? createHash('sha256').update(JSON.stringify([account.identityKey, buildPlanType(creds.oauth)])).digest('hex')
+        : randomUUID()}`
+      state.credentialFingerprint = fingerprint
+    }
 
     const nowMs = Date.now()
     if (nowMs < state.rateLimitedUntilMs) return state.cached
@@ -298,6 +322,7 @@ export async function getClaudeRateLimits(force = false, credentialDir: string |
       const refreshed = await refreshToken(creds)
       if (refreshed) accessToken = refreshed
     }
+    state.credentialFingerprint = createHash('sha256').update(accessToken).digest('hex')
 
     state.lastUsageFetchMs = nowMs
     let resp = await fetchUsage(accessToken)
@@ -305,6 +330,7 @@ export async function getClaudeRateLimits(force = false, credentialDir: string |
       const refreshed = await refreshToken(creds)
       if (refreshed) {
         accessToken = refreshed
+        state.credentialFingerprint = createHash('sha256').update(accessToken).digest('hex')
         resp = await fetchUsage(accessToken)
       }
     }
@@ -322,7 +348,10 @@ export async function getClaudeRateLimits(force = false, credentialDir: string |
 
     const data = tryParseJson<UsageResponse>(await resp.text())
     if (!data) return state.cached
-    state.cached = { ...parseUsage(data, buildPlanType(creds.oauth)), fetchedAt: nowMs }
+    const fetchedAt = Date.now()
+    const limits = parseUsage(data, buildPlanType(creds.oauth))
+    state.cached = { ...limits, quotaKey: state.quotaKey, fetchedAt,
+      windows: limits.windows.map((window) => usageHistory.observe(state.quotaKey!, window, fetchedAt)) }
     return state.cached
   } catch (e) {
     log.info('[claude-usage] getClaudeRateLimits failed: %s', String(e))

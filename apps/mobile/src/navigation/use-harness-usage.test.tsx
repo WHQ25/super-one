@@ -39,6 +39,24 @@ test('reads the meter for the credential on mount and again when a turn starts a
   await waitFor(() => expect(request).toHaveBeenCalledTimes(3))
 })
 
+test('keeps sampling a long-running turn and stops polling when it ends', async () => {
+  jest.useFakeTimers()
+  try {
+    const request = jest.fn(async () => ({ usage: meter(Date.now()) }))
+    const { rerender, unmount } = await renderUsage({ request } as unknown as RelayClient, { target: claude, streaming: true })
+    expect(request).toHaveBeenCalledTimes(1)
+    await act(async () => { jest.advanceTimersByTime(5 * 60_000) })
+    expect(request).toHaveBeenCalledTimes(2)
+    await rerender({ target: claude, streaming: false })
+    expect(request).toHaveBeenCalledTimes(3)
+    await act(async () => { jest.advanceTimersByTime(5 * 60_000) })
+    expect(request).toHaveBeenCalledTimes(3)
+    await unmount()
+  } finally {
+    jest.useRealTimers()
+  }
+})
+
 test('switching sessions on the same credential keeps the reading; a new credential clears it', async () => {
   const request = jest.fn(async () => ({ usage: meter(Date.now()) }))
   const client = { request } as unknown as RelayClient

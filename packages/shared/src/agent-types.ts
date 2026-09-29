@@ -1,5 +1,6 @@
 // Unified message format used across IPC. Zero SDK imports.
 
+import type { UsageForecast } from './subscription-usage'
 import type { TokenOverrides } from './harness-brand'
 import type { SessionGoal } from './session-goal'
 import type { NotificationSettings } from './notifications'
@@ -3010,6 +3011,8 @@ export interface CodexAccountLoginStartResult {
 }
 
 export interface CodexRateLimitWindow {
+  id?: string
+  forecast?: UsageForecast
   usedPercent: number
   windowDurationMins: number | null
   resetsAt: number | null
@@ -3059,6 +3062,8 @@ export interface CodexRateLimitResetCredit {
 }
 
 export interface CodexRateLimits {
+  quotaKey?: string
+  fetchedAt?: number | null
   primary: CodexRateLimitWindow | null
   secondary: CodexRateLimitWindow | null
   planType: string | null
@@ -3172,6 +3177,9 @@ export interface CodexConfigRequirements {
 }
 
 export interface ClaudeRateLimitWindow {
+  model?: string
+  id?: string
+  forecast?: UsageForecast
   label: string
   usedPercent: number
   resetsAt: number | null
@@ -3183,6 +3191,7 @@ export interface ClaudeExtraUsage {
 }
 
 export interface ClaudeRateLimits {
+  quotaKey?: string
   windows: ClaudeRateLimitWindow[]
   extraUsage: ClaudeExtraUsage | null
   planType: string | null

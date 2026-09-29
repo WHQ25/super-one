@@ -158,7 +158,7 @@ function ClaudeAccountRow({ account, limits, busy, onSignOut }: {
       {limits && limits.windows.length > 0 && (
         <div className="flex flex-col gap-2 pt-1">
           {limits.windows.map((w) => (
-            <WindowBar key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
+            <WindowBar key={w.id ?? w.label} {...w} />
           ))}
           {limits.extraUsage && (
             <InfoRow

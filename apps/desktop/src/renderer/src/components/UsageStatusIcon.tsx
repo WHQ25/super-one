@@ -14,12 +14,17 @@ import { claudeAccountCredentialDir } from '@superone/shared/agent-types'
 import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimits, CodexRateLimitResetCredit, CodexRateLimitResetOutcome, ProviderRateLimits } from '@superone/shared/agent-types'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { ProviderLabel } from './ProviderLabel'
+import { formatTokens, formatWindowLabel, WindowBar as WindowRow } from './provider-usage'
+import { USAGE_POLL_MS, type UsageWindow } from '@superone/shared/subscription-usage'
+import { formatUsageDuration } from '@superone/shared/subscription-usage-presentation'
+import { useSubscriptionAlert } from './use-subscription-alert'
+import type { SubscriptionAlert } from '@superone/shared/subscription-alerts'
 
 const FORCE_REFRESH_ON_OPEN_STALE_MS = 5 * 60 * 1000
 const RATE_LIMIT_TIP_MS = 6_000
 const ACP_BILLING_RETRY_MS = [2_000, 6_000] as const
 
-type RateLimitTipInfo = {
+type RateLimitTipInfo = Partial<Pick<SubscriptionAlert, 'source' | 'windowId' | 'label' | 'exhaustsAt' | 'severity'>> & {
   status: 'allowed_warning' | 'rejected'
   resetsAt?: number
   rateLimitType?: string
@@ -34,35 +39,6 @@ const RESET_OUTCOME_TOAST: Record<CodexRateLimitResetOutcome, { kind: 'success' 
   noCredit: { kind: 'info', key: 'usageGauge.toast.noCredit' },
   alreadyRedeemed: { kind: 'info', key: 'usageGauge.toast.alreadyRedeemed' },
   unknown: { kind: 'error', key: 'usageGauge.toast.unknown' },
-}
-
-function formatTokens(value: number): string {
-  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
-  return String(Math.round(value))
-}
-
-function formatWindowLabel(minutes: number | null, t: TFunction): string {
-  if (!minutes || minutes <= 0) return t('usageGauge.windowFallback')
-  if (minutes < 60) return `${minutes}m`
-  if (minutes < 1440) return `${Math.round(minutes / 60)}h`
-  return `${Math.round(minutes / 1440)}d`
-}
-
-function formatResetIn(resetsAtSeconds: number | null, t: TFunction): string | null {
-  if (!resetsAtSeconds) return null
-  const diffMs = resetsAtSeconds * 1000 - Date.now()
-  if (diffMs <= 0) return t('usageGauge.resetsSoon')
-  const totalMin = Math.round(diffMs / 60_000)
-  const days = Math.floor(totalMin / 1440)
-  const hours = Math.floor((totalMin % 1440) / 60)
-  const mins = totalMin % 60
-  let time: string
-  if (days > 0) time = `${days}d ${hours}h`
-  else if (hours > 0) time = `${hours}h ${mins}m`
-  else time = `${mins}m`
-  return t('usageGauge.resetsIn', { time })
 }
 
 function formatUpdatedAgo(fetchedAt: number, now: number, t: TFunction): string {
@@ -92,13 +68,8 @@ function remainingPercent(usedPercent: number): number {
   return Math.round(Math.max(0, Math.min(100, 100 - usedPercent)))
 }
 
-function remainingColor(percent: number): string {
-  if (percent <= 10) return 'bg-red-500'
-  if (percent <= 30) return 'bg-amber-500'
-  return 'bg-green-500'
-}
-
 function rateLimitTipKey(info: RateLimitTipInfo): string {
+  if (info.source === 'forecast') return `forecast:${info.windowId}:${info.resetsAt}:${info.severity}`
   return `${info.status}:${info.resetsAt ?? ''}:${info.rateLimitType ?? ''}:${info.utilization != null ? Math.floor(info.utilization * 20) : ''}`
 }
 
@@ -148,26 +119,6 @@ function useRateLimitTip(sessionId: string | null, info: RateLimitTipInfo | null
   }, [sessionId, activeInfo])
 
   return visible ? activeInfo : null
-}
-
-function WindowRow({ label, usedPercent, resetsAt }: { label: string; usedPercent: number; resetsAt: number | null }) {
-  const { t } = useTranslation()
-  const remaining = Math.max(0, Math.min(100, 100 - usedPercent))
-  const resetIn = formatResetIn(resetsAt, t)
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center justify-between gap-3">
-        <span className="opacity-70">{label}</span>
-        <span className="flex items-center gap-1.5">
-          {resetIn && <span className="opacity-50">{resetIn} ·</span>}
-          <span className="font-medium tabular-nums">{t('usageGauge.percentLeft', { percent: Math.round(remaining) })}</span>
-        </span>
-      </div>
-      <div className="h-1 w-full overflow-hidden rounded-full bg-border/60">
-        <div className={cn('h-full rounded-full transition-all', remainingColor(remaining))} style={{ width: `${remaining}%` }} />
-      </div>
-    </div>
-  )
 }
 
 function ExtraUsageRow({ extra }: { extra: ClaudeExtraUsage }) {
@@ -282,11 +233,14 @@ function AccountUsageSection({ usage }: { usage: CodexAccountUsage }) {
 function RateLimitTipBubble({ tip }: { tip: RateLimitTipInfo }) {
   const { t } = useTranslation()
   const isRejected = tip.status === 'rejected'
+  const isUrgent = isRejected || (tip.severity ?? 0) >= 2
   const resetLabel = formatResetTime(tip.resetsAt)
   const pct = tip.utilization != null ? Math.round(tip.utilization * 100) : null
-  const title = isRejected ? t('usageGauge.rateLimit.limited') : t('usageGauge.rateLimit.approaching')
+  const title = isRejected ? t('usageGauge.rateLimit.limited') : tip.source === 'forecast' ? t('usageGauge.forecast.warning') : t('usageGauge.rateLimit.approaching')
   const details = [
-    !isRejected && pct != null ? t('usageGauge.rateLimit.percentUsed', { percent: pct }) : null,
+    tip.label,
+    tip.source === 'forecast' && tip.exhaustsAt != null ? t('usageGauge.forecast.eta', { time: formatUsageDuration(tip.exhaustsAt - Date.now()) }) : null,
+    !isRejected && tip.source !== 'forecast' && pct != null ? t('usageGauge.rateLimit.percentUsed', { percent: pct }) : null,
     resetLabel ? t('usageGauge.rateLimit.resetsAt', { time: resetLabel }) : null,
   ].filter(Boolean).join(' · ')
 
@@ -302,17 +256,17 @@ function RateLimitTipBubble({ tip }: { tip: RateLimitTipInfo }) {
       <div className="flex items-start gap-1.5">
         {isRejected
           ? <OctagonX className="mt-0.5 size-3.5 shrink-0 text-error" />
-          : <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" />
+          : <AlertTriangle className={cn('mt-0.5 size-3.5 shrink-0', isUrgent ? 'text-error' : 'text-warning')} />
         }
         <div className="min-w-0">
-          <div className={cn('font-medium', isRejected ? 'text-error' : 'text-warning')}>{title}</div>
+          <div className={cn('font-medium', isUrgent ? 'text-error' : 'text-warning')}>{title}</div>
           {details && <div className="mt-0.5 text-[11px] text-muted-foreground">{details}</div>}
         </div>
       </div>
       <div className="mt-2 h-0.5 overflow-hidden rounded-full bg-border/60">
         <motion.div
           key={rateLimitTipKey(tip)}
-          className={cn('h-full origin-left', isRejected ? 'bg-error' : 'bg-warning')}
+          className={cn('h-full origin-left', isUrgent ? 'bg-error' : 'bg-warning')}
           initial={{ scaleX: 1 }}
           animate={{ scaleX: 0 }}
           transition={{ duration: RATE_LIMIT_TIP_MS / 1000, ease: 'linear' }}
@@ -360,6 +314,12 @@ function RateLimitGauge({ title, label, subtitle, planType, badgeRemaining, onOp
     const id = setInterval(() => setNow(Date.now()), 30_000)
     return () => clearInterval(id)
   }, [open, fetchedAt])
+
+  useEffect(() => {
+    if (!open || !onOpen) return
+    const timer = window.setInterval(onOpen, USAGE_POLL_MS)
+    return () => window.clearInterval(timer)
+  }, [open, onOpen])
 
   const handleOpenChange = useCallback((next: boolean) => {
     setOpen(next)
@@ -429,21 +389,31 @@ function useRefetchOnTurnEnd(status: string, fetchLimits: () => void) {
     // where the first mount fetch ran before the agent answered billing.
     if (prev !== 'streaming' && status === 'streaming') fetchLimits()
   }, [status, fetchLimits])
+  useEffect(() => {
+    if (status !== 'streaming') return
+    const timer = window.setInterval(fetchLimits, USAGE_POLL_MS)
+    return () => window.clearInterval(timer)
+  }, [status, fetchLimits])
 }
 
-function CodexRateLimitIcon({ projectPath, apiProviderId, threadId, status, tip, highlight }: { projectPath: string; apiProviderId: string | null; threadId: string | null; status: string; tip: RateLimitTipInfo | null; highlight: GaugeHighlight }) {
+function CodexRateLimitIcon({ projectPath, apiProviderId, threadId, status, tip: liveTip }: { projectPath: string; apiProviderId: string | null; threadId: string | null; status: string; tip: RateLimitTipInfo | null }) {
   const { t } = useTranslation()
   const [limits, setLimits] = useState<CodexRateLimits | null>(null)
   const [usage, setUsage] = useState<CodexAccountUsage | null>(null)
   const [accountEmail, setAccountEmail] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState(false)
+  const windows: UsageWindow[] = [limits?.primary, limits?.secondary].flatMap((w) => w ? [{ ...w, label: formatWindowLabel(w.windowDurationMins, t) }] : [])
+  const tip = useSubscriptionAlert(limits?.quotaKey ?? `codex:${projectPath}:${apiProviderId ?? 'default'}`, windows, liveTip, loaded)
+  const highlight: GaugeHighlight = tip ? (tip.severity >= 2 ? 'error' : 'warning') : null
 
   const fetchLimits = useCallback(() => {
-    window.app.codexGetRateLimits(projectPath, apiProviderId).then(setLimits).catch(() => {})
+    window.app.codexGetRateLimits(projectPath, apiProviderId).then(setLimits).catch(() => {}).finally(() => setLoaded(true))
     window.app.codexGetAccountUsage(projectPath, apiProviderId, threadId).then(setUsage).catch(() => {})
   }, [projectPath, apiProviderId, threadId])
 
   useEffect(() => {
     setLimits(null)
+    setLoaded(false)
     setUsage(null)
   }, [projectPath, apiProviderId, threadId])
 
@@ -476,10 +446,10 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, threadId, status, tip,
     <RateLimitTipHost tip={tip}>
       <RateLimitGauge title={<ProviderLabel brandKey="openai" size={14} />} label={t('usageGauge.codexTitle')} subtitle={accountEmail} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={fetchLimits} highlight={highlight}>
         {limits.primary && (
-          <WindowRow label={formatWindowLabel(limits.primary.windowDurationMins, t)} usedPercent={limits.primary.usedPercent} resetsAt={limits.primary.resetsAt} />
+          <WindowRow {...limits.primary} label={formatWindowLabel(limits.primary.windowDurationMins, t)} />
         )}
         {limits.secondary && (
-          <WindowRow label={formatWindowLabel(limits.secondary.windowDurationMins, t)} usedPercent={limits.secondary.usedPercent} resetsAt={limits.secondary.resetsAt} />
+          <WindowRow {...limits.secondary} label={formatWindowLabel(limits.secondary.windowDurationMins, t)} />
         )}
         {limits.resetCredits != null && limits.resetCredits > 0 && (
           <ResetCreditsRow count={limits.resetCredits} credits={limits.resetCreditList} projectPath={projectPath} apiProviderId={apiProviderId} onConsumed={fetchLimits} />
@@ -490,16 +460,19 @@ function CodexRateLimitIcon({ projectPath, apiProviderId, threadId, status, tip,
   )
 }
 
-function ClaudeRateLimitIcon({ credentialDir, status, tip, highlight }: { credentialDir: string | null; status: string; tip: RateLimitTipInfo | null; highlight: GaugeHighlight }) {
+function ClaudeRateLimitIcon({ credentialDir, status, tip: liveTip }: { credentialDir: string | null; status: string; tip: RateLimitTipInfo | null }) {
   const { t } = useTranslation()
   const [limits, setLimits] = useState<ClaudeRateLimits | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+  const tip = useSubscriptionAlert(limits?.quotaKey ?? `claude:${credentialDir ?? 'default'}`, limits?.windows ?? [], liveTip, loaded)
+  const highlight: GaugeHighlight = tip ? (tip.severity >= 2 ? 'error' : 'warning') : null
   // Only this session's own account. Reading every account here would cost one throttled usage
   // request each per popover open; the Providers settings panel is where the full picture lives.
   const [accountEmail, setAccountEmail] = useState<string | null>(null)
 
   const fetchLimits = useCallback(() => {
-    window.app.claudeGetRateLimits(false, credentialDir).then(setLimits).catch(() => {})
+    window.app.claudeGetRateLimits(false, credentialDir).then(setLimits).catch(() => {}).finally(() => setLoaded(true))
   }, [credentialDir])
 
   const refresh = useCallback(() => {
@@ -513,6 +486,7 @@ function ClaudeRateLimitIcon({ credentialDir, status, tip, highlight }: { creden
 
   useEffect(() => {
     setLimits(null)
+    setLoaded(false)
     let cancelled = false
     window.app.claudeListAccounts()
       .then((accounts) => {
@@ -549,7 +523,7 @@ function ClaudeRateLimitIcon({ credentialDir, status, tip, highlight }: { creden
     <RateLimitTipHost tip={tip}>
       <RateLimitGauge title={<ProviderLabel brandKey="claude" size={14} />} label={t('usageGauge.claudeTitle')} subtitle={accountEmail} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
         {limits.windows.map((w) => (
-          <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
+          <WindowRow key={w.id ?? w.label} {...w} />
         ))}
         {limits.extraUsage && <ExtraUsageRow extra={limits.extraUsage} />}
       </RateLimitGauge>
@@ -600,7 +574,7 @@ function ProviderRateLimitIcon({ apiProviderId, status, tip, highlight }: { apiP
     <RateLimitTipHost tip={tip}>
       <RateLimitGauge title={limits.title} label={limits.title} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
         {limits.windows.map((w) => (
-          <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
+          <WindowRow key={w.id ?? w.label} {...w} />
         ))}
       </RateLimitGauge>
     </RateLimitTipHost>
@@ -663,7 +637,7 @@ function AcpRateLimitIcon({ projectPath, agentId, status, tip, highlight }: { pr
     <RateLimitTipHost tip={tip}>
       <RateLimitGauge title={isGrokAcpAgent(agentId) ? <ProviderLabel brandKey="grok" size={14} /> : limits.title} label={limits.title} planType={limits.planType} badgeRemaining={badgeRemaining} onOpen={refreshIfStale} onRefresh={refresh} refreshing={refreshing} fetchedAt={limits.fetchedAt} highlight={highlight}>
         {limits.windows.map((w) => (
-          <WindowRow key={w.label} label={w.label} usedPercent={w.usedPercent} resetsAt={w.resetsAt} />
+          <WindowRow key={w.id ?? w.label} {...w} />
         ))}
         {limits.extraUsage && <ExtraUsageRow extra={limits.extraUsage} />}
         {limits.creditBalanceDollars != null && (
@@ -710,7 +684,7 @@ export function UsageStatusIcon() {
   if (!activeProject) return null
 
   if (activeProvider === 'codex') {
-    return <CodexRateLimitIcon projectPath={activeProject} apiProviderId={apiProviderId ?? null} threadId={codexThreadId} status={status} tip={tip} highlight={highlight} />
+    return <CodexRateLimitIcon key={`${activeProject}:${apiProviderId ?? 'default'}`} projectPath={activeProject} apiProviderId={apiProviderId ?? null} threadId={codexThreadId} status={status} tip={rateLimitInfo} />
   }
 
   // A non-default Claude account carries an apiProviderId too, so "has an id" no longer means
@@ -719,7 +693,7 @@ export function UsageStatusIcon() {
   // does not exist for them and silently drop the gauge.
   const claudeAccountDir = claudeAccountCredentialDir(apiProviderId)
   if (activeProvider === 'claude' && claudeApiProvider === 'firstParty' && (!apiProviderId || claudeAccountDir)) {
-    return <ClaudeRateLimitIcon credentialDir={claudeAccountDir} status={status} tip={tip} highlight={highlight} />
+    return <ClaudeRateLimitIcon key={claudeAccountDir ?? 'default'} credentialDir={claudeAccountDir} status={status} tip={rateLimitInfo} />
   }
 
   if (activeProvider === 'claude' && apiProviderId && !claudeAccountDir) {

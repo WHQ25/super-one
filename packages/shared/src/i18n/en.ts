@@ -3932,6 +3932,7 @@ export type Messages = {
     updatedMinutesAgo: string
     updatedHoursAgo: string
     updatedDaysAgo: string
+    forecast: { safe: string; eta: string; learning: string; idle: string; stale: string; exhausted: string; warning: string }
     rateLimit: {
       approaching: string
       limited: string
@@ -7997,6 +7998,15 @@ export const en: Messages = {
     updatedMinutesAgo: 'Updated {{n}}m ago',
     updatedHoursAgo: 'Updated {{n}}h ago',
     updatedDaysAgo: 'Updated {{n}}d ago',
+    forecast: {
+      safe: 'At the recent pace, usage should last until reset',
+      eta: 'At the recent pace, runs out in about {{time}}',
+      learning: 'Not enough recent usage to estimate yet',
+      idle: 'No recent consumption; estimate paused',
+      stale: 'Usage is out of date; refresh to estimate',
+      exhausted: 'Included quota used up',
+      warning: 'Quota may run out before reset',
+    },
     rateLimit: {
       approaching: 'Approaching rate limit',
       limited: 'Rate limited',

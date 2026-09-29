@@ -44,13 +44,19 @@ function Arc({ radius, fraction, color, trackOpacity = 0.35 }: { radius: number;
 function useRingModel({ tokens, contextWindow, costUsd, usage: meter }: ContextRingProps) {
   const { tokens: { colors } } = useMobileTheme()
   const usage = meter?.usage ?? null
-  const live = activeRateLimit(meter?.rateLimit)
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    if (!meter) return
+    const timer = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [!!meter])
+  const live = activeRateLimit(meter?.rateLimit, now, usage?.windows)
   const hasContext = tokens > 0 || costUsd > 0
   const hasWindow = contextWindow != null && contextWindow > 0
   const occupancy = hasWindow ? Math.min(tokens / contextWindow, 1) : 0
   const exceeded = hasWindow ? tokens > contextWindow : false
   return {
-    usage, live, hasContext, hasWindow, occupancy, exceeded,
+    usage, live, now, hasContext, hasWindow, occupancy, exceeded,
     hasReading: !!usage || !!live,
     percent: hasWindow ? Math.round((tokens / contextWindow) * 100) : 0,
     contextFill: exceeded || occupancy > 0.7 ? colors.error : occupancy > 0.4 ? colors.warning : colors.success,
@@ -80,9 +86,9 @@ export function ContextRing(props: ContextRingProps) {
   const { tokens: { colors } } = useMobileTheme()
   const { t } = useMobileLocale()
   const toneColor = useToneColor()
-  const { usage, live, hasContext, hasReading, hasWindow, occupancy, percent, contextFill, usedLabel, badge } = useRingModel(props)
+  const { usage, live, now, hasContext, hasReading, hasWindow, occupancy, percent, contextFill, usedLabel, badge } = useRingModel(props)
 
-  const usageFill = badge ? toneColor(usageTone(badge.usedPercent)) : colors.mutedForeground
+  const usageFill = badge ? toneColor(usageTone(badge.usedPercent, badge, now)) : colors.mutedForeground
 
   const open = () => { meter?.onOpen?.(); menu.open() }
   const contextLabel = hasWindow ? `${t('Context used:')} ${percent}%` : `${t('Context used:')} ${usedLabel} ${t('tokens')}`
@@ -154,3 +160,4 @@ export function ContextRingPanel(props: ContextRingProps) {
     </View> : null}
   </View>
 }
+import { useEffect, useState } from 'react'

@@ -166,7 +166,7 @@ export class CodexAdminService {
     const auth = this.getProjectAuth(projectId)
     if (resolveMode(auth.mode, auth.apiKey) !== 'chatgpt') return null
     try {
-      return await this.withClient(projectId, apiProviderId, (client) => readRateLimits(client))
+      return await this.withClient(projectId, apiProviderId, (client) => readRateLimits(client, apiProviderId ?? 'cli'))
     } catch {
       return null
     }

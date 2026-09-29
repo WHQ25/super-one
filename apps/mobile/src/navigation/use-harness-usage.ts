@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { USAGE_POLL_MS } from '@superone/shared/subscription-usage'
 import type { RelayClient } from '@superone/relay-client'
 import type { HarnessId, RemoteUsage } from '@superone/shared/agent-types'
 import { consumeRateLimitReset, fetchHarnessUsage, usageIsStale, usageTargetKey, type LiveRateLimit, type UsageTarget } from '../harness-usage'
@@ -70,6 +71,12 @@ export function useHarnessUsage(opts: {
     const was = streamingRef.current
     streamingRef.current = streaming
     if (was !== streaming && key) void read(false)
+  }, [streaming, key, read])
+
+  useEffect(() => {
+    if (!streaming || !key) return
+    const timer = setInterval(() => { void read(false) }, USAGE_POLL_MS)
+    return () => clearInterval(timer)
   }, [streaming, key, read])
 
   return { usage, refreshing, refresh, reload }

@@ -54,7 +54,8 @@ export function codexWindowLabel(minutes: number | null): string {
 
 function fromCodex(limits: CodexRateLimits, account: CodexAccountStatus | null, codexAccount: CodexAccountUsage | null): RemoteUsage | null {
   const windows = [limits.primary, limits.secondary].flatMap((window) => window
-    ? [{ label: codexWindowLabel(window.windowDurationMins), usedPercent: window.usedPercent, resetsAt: window.resetsAt }]
+    ? [{ label: codexWindowLabel(window.windowDurationMins), usedPercent: window.usedPercent, resetsAt: window.resetsAt,
+      ...(window.id ? { id: window.id } : {}), ...(window.forecast ? { forecast: window.forecast } : {}) }]
     : [])
   if (windows.length === 0) return null
   return {
@@ -67,7 +68,8 @@ function fromCodex(limits: CodexRateLimits, account: CodexAccountStatus | null, 
     resetCredits: limits.resetCredits,
     ...(limits.resetCreditList ? { resetCreditList: limits.resetCreditList } : {}),
     codexAccount,
-    fetchedAt: Date.now(),
+    quotaKey: limits.quotaKey,
+    fetchedAt: limits.fetchedAt ?? null,
   }
 }
 

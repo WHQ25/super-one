@@ -1,4 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { usageForecastCopy } from '@superone/shared/subscription-usage-presentation'
+import type { UsageWindow } from '@superone/shared/subscription-usage'
 import { ActivityIndicator, Pressable, View } from 'react-native'
 import { RefreshCw } from 'lucide-react-native'
 import type { CodexRateLimitResetOutcome, RemoteUsage } from '@superone/shared/agent-types'
@@ -46,7 +48,7 @@ export function usageBrandKey(usage: RemoteUsage): string | null {
 
 export function useToneColor() {
   const { tokens: { colors } } = useMobileTheme()
-  return (tone: MeterTone) => tone === 'error' ? colors.error : tone === 'warning' ? colors.warning : colors.success
+  return (tone: MeterTone) => tone === 'muted' ? colors.mutedForeground : tone === 'error' ? colors.error : tone === 'warning' ? colors.warning : colors.success
 }
 
 /** Refresh control for the menu title row — the desktop popover's footer button, moved up. */
@@ -71,13 +73,23 @@ function Row({ label, value, tone }: { label: string; value: string; tone?: Mete
   </View>
 }
 
-function WindowRow({ label, usedPercent, resetsAt }: { label: string; usedPercent: number; resetsAt: number | null }) {
+function WindowRow({ window, now }: { window: UsageWindow; now: number }) {
+  const { label, usedPercent, resetsAt } = window
   const { tokens: { colors } } = useMobileTheme()
   const { t } = useMobileLocale()
   const toneColor = useToneColor()
   const remaining = remainingPercent(usedPercent)
-  const fill = toneColor(usageTone(usedPercent))
+  const fill = toneColor(usageTone(usedPercent, window, now))
   const resetIn = formatResetIn(resetsAt)
+  const copy = usageForecastCopy(window, now)
+  const forecastText: Record<string, string> = {
+    safe: 'At the recent pace, usage should last until reset',
+    eta: 'At the recent pace, runs out in about {{time}}',
+    learning: 'Not enough recent usage to estimate yet',
+    idle: 'No recent consumption; estimate paused',
+    stale: 'Usage is out of date; refresh to estimate',
+    exhausted: 'Included quota used up',
+  }
   return <View style={{ gap: 4 }}>
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
       <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{label}</Text>
@@ -93,6 +105,7 @@ function WindowRow({ label, usedPercent, resetsAt }: { label: string; usedPercen
     <View style={{ height: 4, borderRadius: 2, overflow: 'hidden', backgroundColor: colors.muted }}>
       <View style={{ width: `${remaining}%`, height: '100%', backgroundColor: fill }} />
     </View>
+    {copy ? <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>{t(forecastText[copy.key]).replace('{{time}}', copy.time ?? '')}</Text> : null}
   </View>
 }
 
@@ -174,7 +187,12 @@ export function UsagePanel({ usage, rateLimit, onConsumeResetCredit }: Pick<Usag
   const { tokens: { colors } } = useMobileTheme()
   const { t } = useMobileLocale()
   const toneColor = useToneColor()
-  const live = activeRateLimit(rateLimit)
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [])
+  const live = activeRateLimit(rateLimit, now, usage?.windows)
   const livePercent = live?.utilization != null ? Math.round(live.utilization * 100) : null
   const liveReset = live ? formatResetIn(live.resetsAt ?? null) : null
   // The live event can arrive before any polled reading (a harness whose meter
@@ -200,7 +218,7 @@ export function UsagePanel({ usage, rateLimit, onConsumeResetCredit }: Pick<Usag
       {usage.account ? <Text numberOfLines={1} style={{ color: colors.mutedForeground, fontSize: 11 }}>{usage.account}</Text> : null}
     </View>
     {liveNote}
-    {usage.windows.map((window) => <WindowRow key={window.label} label={window.label} usedPercent={window.usedPercent} resetsAt={window.resetsAt} />)}
+    {usage.windows.map((window) => <WindowRow key={window.id ?? window.label} window={window} now={now} />)}
     {usage.extraUsage ? <Row label={t('Extra usage')}
       value={`$${usage.extraUsage.usedDollars.toFixed(2)}${usage.extraUsage.limitDollars != null ? ` / $${usage.extraUsage.limitDollars.toFixed(2)}` : ''}`} /> : null}
     {usage.creditBalanceDollars != null ? <Row label={t('Credit balance')} value={`$${usage.creditBalanceDollars.toFixed(2)}`} /> : null}

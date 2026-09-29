@@ -14,8 +14,8 @@ export function CodexAccountMeters({ loading, limits, usage, error }: CodexAccou
   const { t } = useTranslation()
   if (loading) return <div aria-label={t('usageGauge.updating')} className="flex flex-col gap-2"><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-2/3" /></div>
   return <div className="flex flex-col gap-3">
-    {limits?.primary && <WindowBar label={formatWindowLabel(limits.primary.windowDurationMins, t)} usedPercent={limits.primary.usedPercent} resetsAt={limits.primary.resetsAt} />}
-    {limits?.secondary && <WindowBar label={formatWindowLabel(limits.secondary.windowDurationMins, t)} usedPercent={limits.secondary.usedPercent} resetsAt={limits.secondary.resetsAt} />}
+    {limits?.primary && <WindowBar label={formatWindowLabel(limits.primary.windowDurationMins, t)} {...limits.primary} />}
+    {limits?.secondary && <WindowBar label={formatWindowLabel(limits.secondary.windowDurationMins, t)} {...limits.secondary} />}
     {usage && <div className="flex flex-col gap-1.5">
       {usage.lifetimeTokens != null && <InfoRow label={t('usageGauge.lifetimeTokens')} value={formatTokens(usage.lifetimeTokens)} />}
       {usage.peakDailyTokens != null && <InfoRow label={t('usageGauge.peakDaily')} value={formatTokens(usage.peakDailyTokens)} />}

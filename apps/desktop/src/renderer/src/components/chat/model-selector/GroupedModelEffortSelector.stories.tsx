@@ -47,9 +47,13 @@ const AGENTS: SelectorAgentOption[] = [
 
 function SelectorStory({
   modelGroups,
+  models = MODELS,
+  effortOptions = EFFORTS,
   withAgents = false,
 }: {
   modelGroups?: SelectorModelGroup[]
+  models?: SelectorModelOption[]
+  effortOptions?: SelectorEffortOption[]
   withAgents?: boolean
 }) {
   const [modelId, setModelId] = useState('gpt-5.3-codex')
@@ -60,11 +64,11 @@ function SelectorStory({
   return (
     <div className="flex min-h-80 items-end justify-center rounded-lg border bg-muted/20 p-6">
       <GroupedModelEffortSelector
-        models={modelGroups ? undefined : MODELS}
+        models={modelGroups ? undefined : models}
         modelGroups={modelGroups}
         selectedModelId={modelId}
         onSelectModel={setModelId}
-        effortOptions={EFFORTS}
+        effortOptions={effortOptions}
         selectedEffort={effort}
         onSelectEffort={setEffort}
         agents={withAgents ? AGENTS : undefined}
@@ -90,6 +94,19 @@ type Story = StoryObj<typeof GroupedModelEffortSelector>
 
 export const FlatModelList: Story = {
   render: () => <SelectorStory />,
+}
+
+const LONG_DESCRIPTION_MODELS = MODELS.map((model) => ({
+  ...model,
+  description: 'A model for demanding coding tasks and everyday work across large projects.',
+}))
+
+export const ScrollableModelList: Story = {
+  render: () => <SelectorStory models={LONG_DESCRIPTION_MODELS} effortOptions={[]} />,
+}
+
+export const ShortModelList: Story = {
+  render: () => <SelectorStory models={LONG_DESCRIPTION_MODELS.slice(0, 2)} effortOptions={[]} />,
 }
 
 export const GroupedModelList: Story = {

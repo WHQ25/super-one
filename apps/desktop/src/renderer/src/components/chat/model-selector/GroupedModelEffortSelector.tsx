@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
+import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { Switch } from '@superone/ui/components/ui/switch'
 import { cn } from '@superone/ui/lib/utils'
 import { ProviderOptionLabel } from '@/components/providers/DefaultProviderRow'
@@ -163,6 +164,20 @@ function RefreshModelsButton({
   )
 }
 
+function SelectorScrollArea({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <ScrollArea
+      type="scroll"
+      className={cn(
+        'max-h-60 min-h-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]>div]:block!',
+        className,
+      )}
+    >
+      {children}
+    </ScrollArea>
+  )
+}
+
 function ModelList({
   models,
   modelGroups,
@@ -183,7 +198,7 @@ function ModelList({
     : (models?.length ?? 0) > 0
 
   return (
-    <div className="max-h-60 min-h-0 shrink overflow-y-auto pr-1">
+    <SelectorScrollArea>
         {hasGroups
           ? modelGroups!.map((group) => {
               const expanded = searchActive || expandedGroupIds.has(group.id)
@@ -234,7 +249,7 @@ function ModelList({
         {!hasModels && (
           <div className="px-2 py-1.5 text-xs text-muted-foreground">{emptyMessage}</div>
         )}
-    </div>
+    </SelectorScrollArea>
   )
 }
 
@@ -585,7 +600,7 @@ export function GroupedModelEffortSelector({
             <AnimatePresence initial={false}>
               {agentsExpanded && !agentsDisabled ? (
                 <motion.div key="agent-list" {...MORPH} className="overflow-hidden">
-                  <div className="max-h-48 min-h-0 overflow-y-auto pr-1">
+                  <SelectorScrollArea className="max-h-48">
                     {agents.map((agent) => {
                       const selected = agent.id === selectedAgentId
                       return (
@@ -610,7 +625,7 @@ export function GroupedModelEffortSelector({
                         </DropdownMenuItem>
                       )
                     })}
-                  </div>
+                  </SelectorScrollArea>
                 </motion.div>
               ) : (
                 <motion.div key="agent-row" {...MORPH} className="overflow-hidden">
@@ -791,7 +806,7 @@ export function GroupedModelEffortSelector({
           {listOpen && providers.length > 0 && onSelectProvider && (
             providersExpanded ? (
               <motion.div key="provider-list" {...MORPH} className="overflow-hidden">
-                <div className="max-h-60 min-h-0 overflow-y-auto pr-1">
+                <SelectorScrollArea>
                   {providers.map((provider) => {
                     const selected = provider.id === selectedProviderId
                     const account = isCodexAccountProvider(provider.id)
@@ -813,7 +828,7 @@ export function GroupedModelEffortSelector({
                       </DropdownMenuItem>
                     )
                   })}
-                </div>
+                </SelectorScrollArea>
                 {onManageProviders && (
                   <>
                     <DropdownMenuSeparator />

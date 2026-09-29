@@ -144,16 +144,17 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
           : await runTool()
         // The executor holds no claims of its own. Protection and delivery are
         // one responsibility and `syncHostActionOutputs` owns it end to end:
-        // it acquires a transfer instance per file BEFORE its first node RPC
-        // and releases it on delivery, on handing the file to a job, or on its
-        // own way out. An executor that also took claims gave two callers the
-        // same label, and cancelling one released the other's file.
+        // it takes ownership of the held delivery handles, pushes selected
+        // files through the committing gate, abandons unmentioned outputs,
+        // and releases unfinished handles to the worker in its finally.
+        // Taking separate claims here would give cancellation a second owner
+        // for the same delivery.
         //
         // Which is why a cancelled action is NOT short-circuited here. The sync
-        // acquires synchronously and then throws on the already-aborted signal,
-        // so its `finally` frees what the tool produced. Returning early
-        // instead would leave a sealed file held by its writer with nothing
-        // downstream to deliver it — pinned for the life of the process.
+        // takes the held handles even when the signal is already aborted,
+        // so its `finally` releases unfinished deliveries. Returning early
+        // instead would strand sealed outputs under the writer's holder,
+        // unavailable to the worker until that holder is retired.
         let toolResult: unknown
         if (sync && artifacts.length > 0) {
           // The held handles this call owns are threaded in so the selection

@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Expand } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import type { NativeWidgetPayload, PreviewerFile } from '@superone/shared/generative-ui/native-widgets'
+import type { ModelPreviewViewState } from '@/components/coding/ModelPreview'
 import { PreviewerFullscreen } from './PreviewerFullscreen'
 import { PreviewerStage } from './PreviewerStage'
 import { PreviewerDots, PreviewerFileChip } from './previewer-chrome'
@@ -38,6 +39,7 @@ export function FilesPreviewer({ payload, projectPath }: FilesPreviewerProps) {
   const [files, setFiles] = useState<PreviewerFile[]>(payload.files ?? [])
   const [index, setIndex] = useState(0)
   const [fullscreen, setFullscreen] = useState(false)
+  const [modelViewStates, setModelViewStates] = useState<Record<string, ModelPreviewViewState>>({})
   const stageRef = useRef<HTMLDivElement>(null)
   const fullscreenButtonRef = useRef<HTMLButtonElement>(null)
   const root = payload.root ?? ''
@@ -88,6 +90,9 @@ export function FilesPreviewer({ payload, projectPath }: FilesPreviewerProps) {
     setFullscreen(false)
     fullscreenButtonRef.current?.focus()
   }, [])
+  const handleModelViewStateChange = useCallback((modelFile: PreviewerFile, state: ModelPreviewViewState) => {
+    setModelViewStates((current) => ({ ...current, [modelFile.absolutePath]: state }))
+  }, [])
 
   if (!file) return null
   const multi = count > 1
@@ -131,6 +136,7 @@ export function FilesPreviewer({ payload, projectPath }: FilesPreviewerProps) {
           state={state}
           mode="card"
           projectPath={projectPath}
+          initialModelViewState={modelViewStates[file.absolutePath] ?? null}
           onUndecodable={markUndecodable}
           onRetry={retry}
         />
@@ -159,6 +165,8 @@ export function FilesPreviewer({ payload, projectPath }: FilesPreviewerProps) {
         onIndexChange={goTo}
         root={root}
         projectPath={projectPath}
+        modelViewState={modelViewStates[file.absolutePath] ?? null}
+        onModelViewStateChange={handleModelViewStateChange}
         onFilesChange={setFiles}
       />
     </div>

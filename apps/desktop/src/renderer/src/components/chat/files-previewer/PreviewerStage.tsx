@@ -11,6 +11,7 @@ import { CopyableMarkdown } from '@/components/chat/CopyableMarkdown'
 import { ImagePreview } from '@/components/coding/ImagePreview'
 import { NotebookPreview } from '@/components/coding/NotebookPreview'
 import { FileWithDiffView } from '@/components/coding/source-control/FileWithDiffView'
+import type { ModelPreviewViewState } from '@/components/coding/ModelPreview'
 import type { PreviewerLoadError, PreviewerLoadState } from './use-previewer-file'
 
 const ModelPreview = lazy(() => import('@/components/coding/ModelPreview').then((module) => ({ default: module.ModelPreview })))
@@ -22,6 +23,8 @@ interface PreviewerStageProps {
   state: PreviewerLoadState
   mode: PreviewerStageMode
   projectPath?: string | null
+  initialModelViewState?: ModelPreviewViewState | null
+  onModelViewStateChange?: (state: ModelPreviewViewState) => void
   onUndecodable: () => void
   onRetry: () => void
 }
@@ -83,7 +86,7 @@ function StageError({ file, error, onRetry }: { file: PreviewerFile; error: Prev
  * not-a-click. `fullscreen` mode mounts the panel's full renderers with
  * everything on.
  */
-export function PreviewerStage({ file, state, mode, projectPath, onUndecodable, onRetry }: PreviewerStageProps) {
+export function PreviewerStage({ file, state, mode, projectPath, initialModelViewState, onModelViewStateChange, onUndecodable, onRetry }: PreviewerStageProps) {
   const { t } = useTranslation()
   const card = mode === 'card'
 
@@ -143,7 +146,18 @@ export function PreviewerStage({ file, state, mode, projectPath, onUndecodable, 
         />
       )
     case 'model':
-      return <Suspense fallback={<div className="size-full" />}><ModelPreview src={state.url!} name={file.name} interactive={!card} onError={onUndecodable} /></Suspense>
+      return (
+        <Suspense fallback={<div className="size-full" />}>
+          <ModelPreview
+            src={state.url!}
+            name={file.name}
+            interactive={!card}
+            initialViewState={initialModelViewState}
+            onViewStateChange={onModelViewStateChange}
+            onError={onUndecodable}
+          />
+        </Suspense>
+      )
     case 'markdown':
       return (
         <div className={cn('h-full w-full overflow-auto py-4', card ? 'px-6 text-sm' : 'px-8')}>

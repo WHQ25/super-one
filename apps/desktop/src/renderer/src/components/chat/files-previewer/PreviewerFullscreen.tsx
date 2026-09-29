@@ -6,6 +6,7 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { CommandShortcut } from '@superone/ui/components/ui/command'
 import type { PreviewerFile } from '@superone/shared/generative-ui/native-widgets'
 import { FullscreenGlassDialog } from '@/components/chat/FullscreenGlassDialog'
+import type { ModelPreviewViewState } from '@/components/coding/ModelPreview'
 import { PreviewerStage } from './PreviewerStage'
 import { PreviewerDots, PreviewerFileChip } from './previewer-chrome'
 import { usePreviewerFile } from './use-previewer-file'
@@ -18,6 +19,8 @@ interface PreviewerFullscreenProps {
   onIndexChange: (index: number) => void
   root: string
   projectPath?: string | null
+  modelViewState?: ModelPreviewViewState | null
+  onModelViewStateChange?: (file: PreviewerFile, state: ModelPreviewViewState) => void
   onFilesChange: (update: (prev: PreviewerFile[]) => PreviewerFile[]) => void
 }
 
@@ -26,7 +29,7 @@ interface PreviewerFullscreenProps {
  * image, every PDF page, selectable text, media with download), dots to jump
  * between files, and the same header chip into the activity panel.
  */
-export function PreviewerFullscreen({ open, onClose, files, index, onIndexChange, root, projectPath, onFilesChange }: PreviewerFullscreenProps) {
+export function PreviewerFullscreen({ open, onClose, files, index, onIndexChange, root, projectPath, modelViewState, onModelViewStateChange, onFilesChange }: PreviewerFullscreenProps) {
   const { t } = useTranslation()
   const stageRef = useRef<HTMLDivElement>(null)
   const count = files.length
@@ -92,6 +95,8 @@ export function PreviewerFullscreen({ open, onClose, files, index, onIndexChange
               state={state}
               mode="fullscreen"
               projectPath={projectPath}
+              initialModelViewState={modelViewState}
+              onModelViewStateChange={(state) => onModelViewStateChange?.(file, state)}
               onUndecodable={markUndecodable}
               onRetry={retry}
             />

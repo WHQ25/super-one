@@ -7,10 +7,18 @@ import { MODEL_PREVIEW_MAX_BYTES } from '@superone/shared/file-preview'
 import { disposeModel, parseModel, placeModelCamera, updateModelCameraClipPlanes } from './model-loader'
 import { addModelFillLights, lightModel } from './model-environment'
 
+export interface ModelPreviewViewState {
+  cameraPosition: [number, number, number]
+  target: [number, number, number]
+}
+
 interface ModelPreviewProps {
   src: string
   name: string
   interactive?: boolean
+  /** Applied on load. A non-interactive preview also follows later values, so a card mirrors its fullscreen view. */
+  initialViewState?: ModelPreviewViewState | null
+  onViewStateChange?: (state: ModelPreviewViewState) => void
   onError?: () => void
   /** Injectable for local USDZ stories; the desktop uses the native composer. */
   composeUsdz?: (bytes: Uint8Array, selections: Record<string, string>) => Promise<{
@@ -24,15 +32,39 @@ function baseOf(src: string): string {
   return src.slice(0, src.lastIndexOf('/') + 1)
 }
 
+function readViewState(camera: PerspectiveCamera, controls: OrbitControls): ModelPreviewViewState {
+  return {
+    cameraPosition: camera.position.toArray() as [number, number, number],
+    target: controls.target.toArray() as [number, number, number],
+  }
+}
+
+function applyViewState(camera: PerspectiveCamera, controls: OrbitControls, state: ModelPreviewViewState): void {
+  camera.position.fromArray(state.cameraPosition)
+  controls.target.fromArray(state.target)
+  controls.update()
+}
+
 /** Orbit to rotate, wheel to zoom, right drag to pan. The parent owns the file URL. */
-export function ModelPreview({ src, name, interactive = true, onError, composeUsdz }: ModelPreviewProps) {
+export function ModelPreview({ src, name, interactive = true, initialViewState, onViewStateChange, onError, composeUsdz }: ModelPreviewProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const resetRef = useRef<(() => void) | null>(null)
   const sourceRef = useRef<{ src: string; bytes: ArrayBuffer } | null>(null)
+  const initialViewStateRef = useRef(initialViewState)
+  const onViewStateChangeRef = useRef(onViewStateChange)
+  const applyViewStateRef = useRef<((state: ModelPreviewViewState) => void) | null>(null)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [message, setMessage] = useState('')
   const [variantSets, setVariantSets] = useState<Array<{ name: string; options: string[]; selected: string }>>([])
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({})
+
+  useEffect(() => { initialViewStateRef.current = initialViewState }, [initialViewState])
+  useEffect(() => { onViewStateChangeRef.current = onViewStateChange }, [onViewStateChange])
+  // An interactive preview owns its camera: the value echoed back is a frame
+  // behind while damping still moves it, and applying it would snap back.
+  useEffect(() => {
+    if (!interactive && initialViewState) applyViewStateRef.current?.(initialViewState)
+  }, [interactive, initialViewState])
 
   useEffect(() => {
     sourceRef.current = null
@@ -117,18 +149,23 @@ export function ModelPreview({ src, name, interactive = true, onError, composeUs
       const controls = new OrbitControls(camera, renderer.domElement)
       controls.enabled = interactive
       controls.enableDamping = true
-      const reset = () => {
+      const emitViewState = () => onViewStateChangeRef.current?.(readViewState(camera, controls))
+      const placeDefault = () => {
         placeModelCamera(camera, bounds, radius, initialDirection)
         controls.target.copy(center)
         controls.update()
       }
-      resetRef.current = reset
-      reset()
+      // Only a user reset reports the default view; reporting it on load would
+      // overwrite the parent's saved view before it is applied below.
+      resetRef.current = () => { placeDefault(); emitViewState() }
+      placeDefault()
+      if (initialViewStateRef.current) applyViewState(camera, controls, initialViewStateRef.current)
+      applyViewStateRef.current = (state) => applyViewState(camera, controls, state)
+      controls.addEventListener('change', emitViewState)
       const resize = () => {
         const { width, height } = host.getBoundingClientRect()
         if (width <= 0 || height <= 0) return
         camera.aspect = width / height
-        placeModelCamera(camera, bounds, radius, initialDirection)
         camera.updateProjectionMatrix()
         renderer.setSize(width, height)
       }
@@ -152,6 +189,7 @@ export function ModelPreview({ src, name, interactive = true, onError, composeUs
       cleanupScene = () => {
         cancelAnimationFrame(frame)
         observer.disconnect()
+        controls.removeEventListener('change', emitViewState)
         controls.dispose()
         mixer?.stopAllAction()
         disposeModel(loaded.object)
@@ -159,6 +197,7 @@ export function ModelPreview({ src, name, interactive = true, onError, composeUs
         renderer.dispose()
         renderer.domElement.remove()
         resetRef.current = null
+        applyViewStateRef.current = null
       }
       provisionalRenderer = null
       provisionalEnvironment = null

@@ -8,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { useEffectiveProjectRoot } from '@/stores/app'
 import { isAbsoluteLocalPath } from '@/lib/file-link'
 import { localFileUrlToPath, toLocalFileUrl, toMediaUrl } from '@/lib/path-utils'
+import type { ModelPreviewViewState } from './ModelPreview'
 
 /**
  * What a media preview loads. The host answers with bytes (a data URI) for a
@@ -113,6 +114,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   const [isDirty, setIsDirty] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [retrying, setRetrying] = useState(false)
+  const [modelViewState, setModelViewState] = useState<ModelPreviewViewState | null>(null)
   const liveContentRef = useRef<string | null>(null)
   const { diff: fileDiff, content: fileContent, tab: activeTab, setTab: setActiveTab } = useOwnFileData(filePath, refreshKey)
   const selectedFile = filePath
@@ -142,6 +144,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
   // Preview + File only (a notebook's raw JSON is not hand-editable safely).
   const isTextEditable = !isBinaryPreview && !isUnpreviewable && !isSvgFile && !isMd && !isNotebook
   const fullFilePath = isAbsoluteLocalPath(selectedFile) ? selectedFile : `${fileRoot}/${selectedFile}`
+  useEffect(() => { setModelViewState(null) }, [fullFilePath])
 
   const tabs = (() => {
     if (loadError || isUnpreviewable) return []
@@ -367,6 +370,8 @@ export function FilePreview({ filePath }: FilePreviewProps) {
                 <ModelPreview
                   src={previewSrc(fileContent?.content, () => toMediaUrl(fullFilePath), toMediaUrl)}
                   name={fileName}
+                  initialViewState={modelViewState}
+                  onViewStateChange={setModelViewState}
                 />
               </Suspense>
             ) : effectiveTab === 'preview' && isSvgFile ? (

@@ -6,6 +6,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NativeWidgetPayload, PreviewerFile } from '@superone/shared/generative-ui/native-widgets'
 import { FilesPreviewer } from './FilesPreviewer'
 
+vi.mock('@/components/coding/ModelPreview', () => ({
+  ModelPreview: (props: {
+    name: string
+    interactive?: boolean
+    initialViewState?: { cameraPosition: [number, number, number]; target: [number, number, number] } | null
+    onViewStateChange?: (state: { cameraPosition: [number, number, number]; target: [number, number, number] }) => void
+  }) => (
+    <button
+      type="button"
+      data-testid={props.interactive ? 'model-fullscreen' : 'model-card'}
+      data-state={JSON.stringify(props.initialViewState ?? null)}
+      onClick={() => props.onViewStateChange?.({ cameraPosition: [1, 2, 3], target: [4, 5, 6] })}
+    >
+      {props.name}
+    </button>
+  ),
+}))
+
 /**
  * The card is a stage, not a workspace: arrows and dots move between files,
  * every click on the stage opens the fullscreen, and nothing inside a slide
@@ -16,6 +34,7 @@ const image: PreviewerFile = { path: 'docs/diagram.png', absolutePath: '/repo/do
 const text: PreviewerFile = { path: 'src/a.ts', absolutePath: '/repo/src/a.ts', name: 'a.ts', kind: 'text', size: 20, note: 'Entry point' }
 const missing: PreviewerFile = { path: 'gone.md', absolutePath: '/repo/gone.md', name: 'gone.md', kind: 'missing', note: 'Not yet written' }
 const clip: PreviewerFile = { path: 'demo.mp4', absolutePath: '/repo/demo.mp4', name: 'demo.mp4', kind: 'video', size: 30 }
+const model: PreviewerFile = { path: 'asset.glb', absolutePath: '/repo/asset.glb', name: 'asset.glb', kind: 'model', size: 40 }
 
 function payload(files: PreviewerFile[]): NativeWidgetPayload {
   return { kind: 'native', nativeType: 'files-previewer', title: 't', root: ROOT, files }
@@ -167,5 +186,20 @@ describe('files previewer card', () => {
     } finally {
       document.removeEventListener('keydown', commitBetweenListeners)
     }
+  })
+
+  it('preserves a 3D model view between fullscreen and the card', async () => {
+    render(<FilesPreviewer payload={payload([model])} />)
+    await screen.findByTestId('model-card')
+
+    fireEvent.click(screen.getByLabelText('Open fullscreen'))
+    fireEvent.click(await screen.findByTestId('model-fullscreen'))
+
+    const saved = JSON.stringify({ cameraPosition: [1, 2, 3], target: [4, 5, 6] })
+    expect(screen.getByTestId('model-card')).toHaveAttribute('data-state', saved)
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.click(screen.getByLabelText('Open fullscreen'))
+    expect(await screen.findByTestId('model-fullscreen')).toHaveAttribute('data-state', saved)
   })
 })

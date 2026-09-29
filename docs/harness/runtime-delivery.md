@@ -1,29 +1,29 @@
-# Harness Hot-Swap & On-Demand Runtime Delivery
+# Harness runtime delivery
 
-Status: **P0–P5 on `refactor/harness-kernel-runtime`** (P5 packaging + picker filter)
-Last updated: 2026-08-11
-Related: `packages/shared/src/environment/harness-installation.ts`, `packages/runtime/src/harness/`, `apps/cli/src/session/harness-*.ts`, `apps/desktop/src/main/harness/`, `apps/desktop/electron-builder.yml`, `apps/desktop/CLAUDE.md` (Environment API migration)
+How harness runtimes reach a machine and how a spawn finds them, for both the
+desktop app and the headless CLI node.
+
+Related code: `packages/shared/src/environment/harness-installation.ts`,
+`packages/runtime/src/harness/`, `apps/desktop/src/main/harness/`,
+`apps/cli/src/session/harness-host.ts`, `apps/desktop/electron-builder.yml`.
 
 ---
 
 ## 1. Decision
 
-Users opt into each harness. Enabling one downloads its runtime on demand; nothing
-ships inside the installer. The CLI's existing harness installation kernel is lifted
-into `@superone/runtime/harness` and consumed by both the CLI node and the desktop
-local environment.
-
-Three decisions are fixed:
+Users opt into each harness. Enabling Claude or Codex downloads its native runtime
+on demand; the installer ships neither binary. One harness installation kernel in
+`@superone/runtime/harness` serves both the CLI node and the desktop.
 
 | Question | Decision |
 |---|---|
-| Artifact source | **R2 primary (`dl.super-one.dev`), npm registry fallback** |
-| Installer baseline | **Nothing bundled** — first-run guided install |
-| Code reuse | **Whole kernel moves to `packages/runtime/harness/`**; CLI and desktop become thin hosts |
+| Artifact source | R2 primary (`dl.super-one.dev`), npm registry fallback |
+| Installer baseline | No managed binary bundled; first-run onboarding installs what the user picks |
+| Code reuse | One kernel in `packages/runtime/src/harness/`; CLI and desktop are thin hosts |
 
 ### Why
 
-Bundle size is the entire motivation. Measured, single platform, uncompressed:
+Bundle size. Measured on one platform, uncompressed:
 
 | Dependency | Size |
 |---|---|
@@ -32,479 +32,270 @@ Bundle size is the entire motivation. Measured, single platform, uncompressed:
 | `@agentclientprotocol/sdk` | 3.1 MB |
 | `@opencode-ai/sdk` + `@opencode-ai/models` | 4.5 MB |
 
-Two managed binaries account for ~576 MB; every harness adapter combined is under
-10 MB. The value is concentrated entirely in `claude` and `codex`.
+The two managed binaries are ~576 MB; every adapter together is under 10 MB.
+Compressed tarballs are ~80 MB (Claude) and ~126 MB (Codex), so the network
+transfer dominates install time; extraction is sub-second.
 
-Secondary wins: harness runtimes decouple from app releases (a Codex bump no longer
-requires an app build), and auto-update deltas shrink to the shell.
+Secondary wins: a harness bump no longer needs an app build, and auto-update
+deltas shrink to the shell.
 
 ### Non-goals
 
-**Adapter TypeScript stays statically compiled.** Only runtime *assets* are hot-swapped.
-Dynamically loading adapter code would buy under 2% of the size while immediately
-hitting ASAR packaging, macOS notarization (downloaded executable code is not covered
-by the app's signature), and type-boundary erosion. Revisit only if third-party
-community harness plugins become a product goal — that changes the L1 boundary.
-
-Also out of scope: replacing the ACP external-command model. ACP agents (Grok) and
-OpenCode already resolve from PATH; they gain the enable/disable switch and status
-surface but no managed download.
+- **Adapter TypeScript stays statically compiled.** Only runtime assets are
+  delivered on demand. Loading adapter code dynamically buys under 2% of the size
+  and collides with ASAR packaging, macOS notarization (downloaded code is not
+  covered by the app signature), and type boundaries. Revisit only if third-party
+  harness plugins become a product goal.
+- **External harnesses are not downloaded.** Grok and OpenCode are user-installed;
+  SuperOne resolves them and gives them the same enable/disable switch and status
+  surface (§6).
 
 ---
 
-## 2. Existing ground
+## 2. Contract and kernel
 
-`packages/shared/src/environment/harness-installation.ts` already defines the contract:
+`packages/shared/src/environment/harness-installation.ts` is the contract:
 
-- `HarnessInstallState`: `disabled | missing | installing | needs_auth | ready | incompatible | error`
-- `enabled` and `state` are **orthogonal facts** — administrator intent vs. runtime readiness
-- `readySessionHarnessIds()` — only `enabled && ready` harnesses are advertised
-- Allowlisted diagnostic codes with secret redaction (`buildHarnessDiagnostic`)
+- `NodeHarnessId`: `claude | codex | opencode | cursor | acp-grok | dsh`, each with a
+  `runtimeSource` (`managed | external`) and the session `HarnessId` it maps to
+  (`acp-grok` → `acp`).
+- `HarnessInstallState`: `disabled | missing | installing | needs_auth | ready | incompatible | error`.
+- `enabled` and `state` are orthogonal: administrator intent vs. runtime readiness.
+- `readySessionHarnessIds()` advertises only `enabled && ready` harnesses.
+- Diagnostics use allowlisted codes with secret redaction (`buildHarnessDiagnostic`).
 
-`apps/cli/src/session/` already implements the kernel:
+The kernel in `packages/runtime/src/harness/`:
 
 | Module | Responsibility |
 |---|---|
-| `harness-manager.ts` | State persistence + transitions (SQLite-backed) |
-| `harness-enable.ts` | enable/disable orchestration, managed vs. external branch |
-| `managed-harness-release.ts` | Version pinning, SHA-256 verification, atomic install into immutable version dirs, `current` pointer |
-| `managed-harness-official.ts` | Official npm package pull, platform package resolution |
-| `harness-runtime-ready.ts` | Readiness probe, `needs_auth` → `ready` promotion |
+| `manager.ts` | Catalog state and transitions, persisted in the host's SQLite `harness_installations` table |
+| `enable.ts` | enable/disable orchestration, managed vs. external branch, `resolveExternalCommand` (PATH search) |
+| `managed-official.ts` | Pinned upstream versions (`OFFICIAL_CLAUDE_SDK_VERSION`, `OFFICIAL_CODEX_NPM_VERSION`) and platform package naming |
+| `managed-release.ts` | Release-manifest pins, SHA-256 verification, offline `releases/` installs |
+| `managed-layout.ts`, `home-path.ts` | Install root and versioned layout (§5) |
+| `managed-tarball-installer.ts`, `tarball-fetch.ts`, `resumable-download.ts` | R2 → npm tarball acquisition, Range-resumable download, extraction |
+| `cdn.ts`, `app-harness-pins.ts` | R2 object keys, channel manifests, per-app-version pins (§4) |
+| `runtime-ready.ts` | Readiness probe, `needs_auth` → `ready` promotion |
+| `grok-runtime.ts`, `cursor-availability.ts` | Grok command resolution; Cursor SDK presence |
 
-Desktop, by contrast, is fully static: binaries are forced in via `asarUnpack`, and
-`apps/desktop/src/main/agent/claude-binary.ts` / `apps/desktop/src/main/codex/app-server-connection.ts`
-call `require.resolve` directly. The only adjacent control is `experimentalAgentsEnabled`,
-a pure UI-visibility flag with no runtime meaning.
-
-### Upstream binaries are already signed
-
-```
-claude → Identifier=com.anthropic.claude-code   Team=Q6L2SF6YDW  flags=0x10000(runtime)
-codex  → Identifier=codex                       Team=2DC432GLL2  flags=0x10000(runtime)
-```
-
-Both ship with Developer ID signatures and hardened runtime. A downloaded binary can
-be spawned directly on macOS — no re-signing, and the app's own hardened runtime does
-not block spawning a separately-signed executable (library validation governs dylib
-loading, not child processes).
-
-**This dictates the artifact format.** R2 must host a **byte-exact mirror of the npm
-tarball**, not a repackaged zip:
-
-1. Any byte change invalidates the Mach-O signature.
-2. `.tgz` preserves the executable bit and symlinks. `codex` vendor contains nested
-   executables (`codex-path/rg`, `codex-resources/zsh/bin/zsh`) that a zip round-trip
-   easily strips.
-3. R2 and the npm fallback serve identical bytes, so **one SHA-256 validates both paths**.
+The kernel imports no Electron, no CLI module and no `better-sqlite3`; its only
+upward import is `../sqlite`.
 
 ---
 
-## 3. Layers
+## 3. Layers and seams
 
 ```
 L0  Contract        packages/shared/src/environment/harness-installation.ts
-                    Already exists. Desktop reuses as-is; no new types.
-
-L1  Kernel          packages/runtime/src/harness/
-                    Lifted from apps/cli/src/session/harness-*.ts.
-                    Pure Node. No Electron, no direct better-sqlite3 import.
-
-L2  Host adapters   desktop: fetch + tar + userData paths + Electron db
-                    cli:     existing spawn('npm') + $NODE_HOME
-                    Both satisfy the same injected interfaces.
-
-L3  Gate            resolveHarnessRuntime(id) is the single spawn-time entry.
-                    Replaces scattered require.resolve calls; throws structured
-                    HarnessNotReadyError that the renderer turns into an install prompt.
-
-L4  Surface         Settings → Harnesses panel; first-run Setup step.
-                    The enabled set drives HarnessPreferencePicker and new-session menus.
+L1  Kernel          packages/runtime/src/harness/   (pure Node)
+L2  Host adapters   desktop: apps/desktop/src/main/harness/
+                    cli:     apps/cli/src/session/harness-host.ts
+L3  Gate            desktop resolveHarnessRuntime(id) → path or HarnessNotReadyError
+L4  Surface         Settings → Harnesses, first-run onboarding, harness-align gate;
+                    the enabled set filters HarnessPreferencePicker and ChatSuggestions
 ```
 
-### L1 seams
+Hosts inject the kernel's couplings through `HarnessKernelDeps`
+(`packages/runtime/src/harness/types.ts`):
 
-The kernel's only external couplings, and how each is inverted:
-
-| Coupling | Site | Injected as |
-|---|---|---|
-| `NodeDatabase` | `harness-manager.ts` | `SqliteDatabase` (already in `packages/runtime/src/sqlite.ts`; add `transaction`) |
-| `resolveNodeHome()` | `harness-enable.ts` | `HarnessHome { root: string }` |
-| `resolveCliReleaseVersion()` | `managed-harness-release.ts` | `releaseVersion: string` |
-| `claude-/codex-turn-runner` resolvers | `harness-runtime-ready.ts`, `harness-enable.ts` | `RuntimeResolver` |
-| `ProviderStore` + `consumerForHarness` | `harness-runtime-ready.ts` | `AuthProbe` |
-| `spawn('npm')` | `managed-harness-official.ts` | `ArtifactFetcher` |
-
-None require changing kernel algorithms. `SqliteDatabase` already exists for exactly
-this purpose ("Hosts pass their real Database instance"), and desktop already owns a
-`better-sqlite3` handle via `getDb()` — no new storage abstraction is needed.
-
-```ts
-// packages/runtime/src/harness/types.ts
-export interface ArtifactFetcher {
-  /** Resolve a pinned artifact to a local file. Must verify digest before returning. */
-  fetch(pin: ManagedArtifactPin, onProgress: (bytes: number, total: number) => void):
-    Promise<{ path: string; cleanup: () => void }>
-}
-
-export interface RuntimeResolver {
-  claudeBinary(installRoot: string): string | undefined
-  codexBinary(installRoot: string): string | undefined
-}
-
-export interface AuthProbe {
-  hasCredentials(id: NodeHarnessId): boolean
-}
-
-export interface HarnessKernelDeps {
-  db: SqliteDatabase
-  home: HarnessHome
-  releaseVersion: string
-  fetcher: ArtifactFetcher
-  resolver: RuntimeResolver
-  auth: AuthProbe
-}
-```
+| Seam | Injected as | Desktop | CLI |
+|---|---|---|---|
+| Database | `TransactionalSqliteDatabase` (`packages/runtime/src/sqlite.ts`) | app DB (`database-migrations.ts`) | node `state.sqlite` |
+| Install root | `HarnessHome.root` | `apps/desktop/src/main/harness/home.ts` | `resolveHarnessHomeRoot()` |
+| Release version | `releaseVersion` / `setHarnessReleaseVersionProvider()` | `app.getVersion()` | CLI release version |
+| Binary discovery | `HarnessRuntimeResolver` | `desktopHarnessResolver` (`host.ts`) | `cliHarnessResolver` |
+| Credentials | `HarnessAuthProbe` | desktop provider bindings | node `ProviderStore` |
+| Download | `ManagedRuntimeInstaller` | `createManagedTarballInstaller` over Chromium `net.fetch` (system proxy) | same installer over `fetch` |
 
 ---
 
 ## 4. Distribution
 
+### Artifacts are byte-exact npm tarballs
+
+Upstream binaries ship with Developer ID signatures and hardened runtime
+(Claude: Team `Q6L2SF6YDW`; Codex: Team `2DC432GLL2`). A downloaded binary is
+spawned as-is; the app's hardened runtime does not block spawning a separately
+signed executable outside the bundle, and files written by the app do not get
+`com.apple.quarantine`. This fixes the artifact format: R2 hosts a byte-exact
+mirror of the npm tarball, not a repackaged zip.
+
+1. Any byte change invalidates the Mach-O signature.
+2. `.tgz` preserves the executable bit and symlinks; Codex vendors nested
+   executables (`codex-path/rg`, `codex-resources/zsh/bin/zsh`).
+3. R2 and npm serve identical bytes, so one SHA-256 validates both paths.
+
 ### R2 layout
 
-Alongside the existing `super-one-releases` bucket, under the same `dl.super-one.dev`:
+Under the `super-one-releases` bucket, served at `https://dl.super-one.dev`
+(`packages/runtime/src/harness/cdn.ts`):
 
 ```
-harness/manifest/<channel>.json
-harness/artifacts/anthropic-ai--claude-agent-sdk/0.3.226.tgz
-harness/artifacts/anthropic-ai--claude-agent-sdk-darwin-arm64/0.3.226.tgz
-harness/artifacts/openai--codex-darwin-arm64/0.146.1.tgz
-...
+harness/manifest/<alpha|stable>.json
+harness/artifacts/<npm-name-sanitized>/<npm-version>.tgz
+app/harness-pins/<appVersion>.json
 ```
 
-Manifest reuses the existing `HarnessReleaseManifest` shape with a `url` added per
-artifact. Channel-keyed (`alpha`/`beta`/`stable`) so harness pins can advance
-independently of app releases while still being channel-gated.
+e.g. `harness/artifacts/anthropic-ai--claude-agent-sdk-darwin-arm64/0.3.284.tgz`,
+`harness/artifacts/openai--codex/0.155.1-darwin-arm64.tgz`.
+
+The channel manifest is a `HarnessReleaseManifest` with optional `url`, `npmName`
+and `npmVersion` per artifact pin (`ManagedArtifactPin` in `managed-release.ts`).
+Channels are `alpha` and `stable`, one per app variant. `app/harness-pins/<version>.json`
+records the pins a given app version expects, so an updating client can fetch
+the target version's runtimes before restart (§7).
+
+Desktop selects its channel with `SUPERONE_HARNESS_CHANNEL`, else the build variant
+(`harnessManifestChannelForVariant()` in `apps/desktop/src/main/variant.ts`: stable →
+`stable`, everything else → `alpha`). The CLI, which has no variant, derives the
+channel from its version (`resolveHarnessManifestChannel`).
 
 ### Platform package naming differs per vendor
 
-The two vendors encode platform differently, and the desktop fetcher must handle both
-explicitly — the CLI currently avoids this by delegating os/cpu resolution to npm:
+`managedPackagePins` in `managed-tarball-installer.ts`:
 
-| Harness | Spec | Shape |
+| Harness | npm spec | Platform encoded in |
 |---|---|---|
-| claude | `@anthropic-ai/claude-agent-sdk-darwin-arm64@0.3.226` | platform in the **package name** |
-| codex | `@openai/codex@0.146.1-darwin-arm64` | platform in the **version** |
+| claude | `@anthropic-ai/claude-agent-sdk-<platform>-<arch>@<ver>` (Linux musl: `-linux-<arch>-musl`) | package name |
+| codex | `@openai/codex@<ver>-<platform>-<arch>` | version |
 
-`@openai/codex-darwin-arm64` does **not** exist on npm — it is a local alias declared in
-`@openai/codex`'s `optionalDependencies` (`npm:@openai/codex@0.146.1-darwin-arm64`).
-Querying the alias name returns 404. Claude additionally needs its main package
-(`@anthropic-ai/claude-agent-sdk`) alongside the platform package; codex needs the main
-package only for the `bin/codex.js` launcher, which the desktop does not use (it drives
-the vendored binary directly over the app-server protocol).
+`@openai/codex-darwin-arm64` does not exist on npm; it is an alias declared in
+`@openai/codex`'s `optionalDependencies` and 404s when queried. Only the platform
+package is fetched: the Claude TS SDK and Codex JS packages stay in the app as
+adapter dependencies, and the desktop drives the vendored Codex binary directly
+over the app-server protocol.
 
-### Actual download sizes
+### Publishing
 
-Compressed tarballs are far smaller than the unpacked footprint, which materially
-changes the first-run experience:
+`.github/workflows/publish-harness.yml` (`workflow_dispatch`: `channel` alpha|stable,
+optional `app_version`, `dry_run`, `ref`) runs `scripts/publish-harness-artifacts.ts`
+(`bun run publish:harness -- --channel <c> [--app-version <v>] [--upload]`):
+`npm pack` each pinned spec → SHA-256 → upload to R2 → write the channel manifest
+and `app/harness-pins/<version>.json`. No build or signing step.
 
-| Artifact | Tarball | Unpacked |
-|---|---|---|
-| `claude-agent-sdk-darwin-arm64` | **80.4 MB** | 279 MB |
-| `codex@…-darwin-arm64` | **125.8 MB** | 324 MB |
-
-### CI
-
-One short workflow — no build step, no signing step:
-
-```
-npm pack <pinned-spec>  →  sha256sum  →  aws s3 cp  →  patch manifest → upload
-```
-
-Pins come from the constants that already exist: `OFFICIAL_CLAUDE_SDK_VERSION`,
-`OFFICIAL_CODEX_NPM_VERSION` in `managed-harness-official.ts`. The workflow reads them
-rather than accepting free-form input, so the manifest cannot drift from the code.
+Pins come only from `OFFICIAL_CLAUDE_SDK_VERSION` / `OFFICIAL_CODEX_NPM_VERSION`
+in `managed-official.ts`; the workflow never takes free-form versions, so the
+manifest cannot drift from the code. `managed-official-lockstep.test.ts` keeps
+those constants equal to the SDK dependency pins in `packages/claude`,
+`apps/desktop` and `apps/cli`.
 
 ### Fetch order
 
-1. R2 `harness/artifacts/...` (CDN, fast in CN)
-2. `registry.npmjs.org` tarball for the same version
-3. Offline `--artifact` upload (CLI air-gapped path, already implemented)
+1. R2 URL from the pin (`harness/artifacts/...`).
+2. `registry.npmjs.org` tarball for the same version.
+3. Offline artifact file (`--artifact` on the CLI; also accepted by the desktop
+   enable IPC) matched against a `release-manifest.json` pin.
 
-All three verify against the same manifest digest. A digest mismatch is a hard failure,
-never a warning.
-
----
-
-## 5. Desktop host
-
-**Install root**: `~/.superone/harness/`, mirroring the existing `~/.superone/mcpb/`
-and `~/.superone/apps/` conventions, and structurally identical to the CLI's
-`$NODE_HOME/releases/<version>/harnesses/<id>/` (immutable version dirs + atomic
-`current` pointer).
-
-**Fetcher**: Electron `net.fetch` (respects system proxy) → stream to temp →
-verify digest → extract `.tgz` preserving mode and symlinks → `rename` into place.
-Note `zip-utils.ts` (`unzipper`) is **not** reusable here — it is zip-only and the
-tarball path must preserve POSIX modes.
-
-**Gate**: `claude-binary.ts` and `app-server-connection.ts` stop calling `require.resolve`
-and route through the kernel's resolver. Not-ready spawns throw `HarnessNotReadyError`,
-which the renderer surfaces as an install prompt rather than a generic failure.
-
-**Progress**: reuse the `UPDATER_EVENT` push shape — main pushes
-`harness:install-progress` to the renderer; store holds per-harness progress.
+Every path verifies against the pin digest (npm path also checks `dist.integrity`).
+A mismatch is a hard failure, never a warning. If the channel manifest cannot be
+fetched, installs continue from npm.
 
 ---
 
-## 6. Migration for existing users
+## 5. Install root and gate
 
-Removing bundled binaries makes an in-place update brick every existing session
-unless handled. **Shipped approach (epoch onboarding + startup pin gate):**
+### Install root
 
-1. **`CURRENT_ONBOARDING_EPOCH`** (`packages/shared/src/onboarding.ts`) — bump to force
-   every install through Welcome → Discover once. Completing onboarding writes
-   `onboardingEpoch` + `onboardingCompletedAt`.
-2. Users re-select harnesses (PATH scan pre-checks detected CLIs; Claude default when
-   none). Enable installs SuperOne-managed pins for Claude/Codex (`forcePin`).
-3. **App update (happy path)**: after the app binary downloads, pre-fetch enabled
-   Claude/Codex pins for the *target* app version (`app/harness-pins/<version>.json`
-   on the CDN, falling back to the running process pins). Restart is blocked until
-   pre-fetch succeeds (`harness-error` + retry). `autoInstallOnAppQuit` stays false
-   until the package is fully ready.
-4. **Startup fallback**: if any enabled harness is not pin-aligned (forced restart,
-   wiped install, missing pins file), blocking `harness-align` still runs. When
-   already aligned, the gate is skipped with no flash.
-5. Grok / OpenCode stay external (PATH); align / pre-fetch do not download them.
+Both hosts use `<personal root>/harness`: `~/.superone/harness` for stable,
+`~/.superone/alpha/harness` for alpha (`home-path.ts`, `apps/desktop/src/main/harness/home.ts`).
+`SUPERONE_HARNESS_HOME` overrides it for tests and labs. Node state (SQLite,
+pairing) stays in `<personal root>/node`; only runtime binaries share this root.
 
-There is no dual-path period — the alpha channel absorbs a one-time forced onboard.
+```
+<harness root>/
+  claude|codex/versions/<runtimeVersion>/   # immutable, one per pin
+  claude|codex/current                      # { runtimeVersion, installRoot?, updatedAt }
+  releases/<cliVersion>/harnesses/<id>/     # offline --artifact installs
+  .download/                                # Range-resumable partial downloads
+  release-manifest.json                     # optional offline pins
+```
+
+Install stages to a temp dir, verifies the digest, extracts with modes and
+symlinks preserved, renames into `versions/<v>/`, then atomically rewrites
+`current`. A partial download never activates. `MANAGED_VERSION_KEEP` (2) versions
+are retained after a switch.
+
+### Gate
+
+Desktop spawn sites (`apps/desktop/src/main/agent/claude-binary.ts`,
+`apps/desktop/src/main/codex/app-server-connection.ts`) go through
+`resolveHarnessRuntime(id)` (`apps/desktop/src/main/harness/resolve-runtime.ts`),
+which returns an absolute path or throws `HarnessNotReadyError`
+(`code: 'HARNESS_NOT_READY'`). The renderer turns that error into an install
+prompt, not a generic spawn failure.
+
+Resolution order for managed harnesses (`desktopHarnessResolver` in `host.ts`):
+
+1. Disabled harness → nothing.
+2. `SUPERONE_CLAUDE_BINARY` / `SUPERONE_CODEX_BINARY`.
+3. Catalog command from a prior enable (`ready` or `needs_auth`).
+4. Managed install under the harness root.
+5. Local platform package — dev only; `allowBundledHarnessPlatformPackages()` is
+   false in packaged apps (`bundled-fallback.ts`).
+6. `codex` on PATH (Codex only).
+
+### Desktop surface
+
+IPC channels (`AgentIpcChannels` in `packages/shared/src/agent-types.ts`):
+`harness:list`, `harness:enable`, `harness:disable`, `harness:probe`,
+`harness:ensure`, `harness:scanCli`, `harness:alignEnabled`, `harness:needsAlign`,
+and the push channel `harness:installProgress` for per-harness download progress.
+Remote-node catalogs use the `environment:harness*` channels.
+
+### Packaging
+
+`apps/desktop/electron-builder.yml` excludes `@anthropic-ai/claude-agent-sdk-{darwin,linux,win32}-*`
+and `@openai/codex-{darwin,linux,win32}-*` from `files`. `asarUnpack` holds
+`**/*.node`, the Cursor platform helpers (`@cursor/sdk-*`) and sharp's libvips,
+none of them harness binaries. Dev builds still resolve the local optional
+dependencies.
 
 ---
 
-## 7. Phases
+## 6. Runtime resolution by harness
 
-| Phase | Content | Gate |
+Desktop `HarnessId` is `claude | codex | acp | opencode | cursor | dsh`; the catalog
+calls Grok `acp-grok`.
+
+| Harness | Source | Resolution |
 |---|---|---|
-| **P0** | Spike: download a `.tgz`, extract, spawn on macOS / Windows / Linux packaged builds | ✅ **macOS PASS** (see §7.1) · Windows / Linux pending |
-| **P1** | Lift kernel to `packages/runtime/src/harness/`, invert the 6 seams, CLI becomes a thin host, existing CLI tests stay green | ✅ **Done** (see §7.2) — 262 CLI + 286 runtime tests green |
-| **P2** | Desktop host adapter: fetcher, install root, db wiring, `resolveHarnessRuntime` gate | ✅ **Done** (see §7.3) — npm tarball install + spawn smoke for Claude |
-| **P3** | CI workflow + R2 manifest + channel wiring | ✅ **Done** (see §7.4) — R2-first fetch + sha256, publish workflow |
-| **P4** | UI: Setup first-run step, Settings → Harnesses panel, enabled-set drives pickers | ✅ **Done** (see §7.5) — Settings panel + nested tabs + Storybook; setup wizard & picker hard-filter deferred to P5 |
-| **P5** | Drop `asarUnpack` entries and the heavy deps from `apps/desktop/package.json` | ✅ **In progress** (see §7.6) — platform binaries excluded from package; pickers filter by catalog enable |
+| `claude` | Managed download | §5 gate; TS SDK bundled, native binary downloaded |
+| `codex` | Managed download | §5 gate, plus `codex` on PATH as a last resort |
+| `cursor` | Bundled, in-process | `@cursor/sdk` ships in the app (`isCursorSdkAvailable`); no binary path |
+| `dsh` | Bundled, in-process | `@deepseek-ai/dsh-*` via `packages/deepseek`; always runnable |
+| `opencode` | External | `SUPERONE_OPENCODE_BINARY` or the catalog command resolved on enable (`enable.ts` `resolveExternalCommand`) |
+| `acp` / `acp-grok` | External | `resolveGrokRuntime` (`packages/runtime/src/harness/grok-runtime.ts`): explicit override or `SUPERONE_ACP_BINARY` or configured command, else `grok` on PATH, else `~/.grok/bin/grok` or `~/.local/bin/grok`; default args `agent stdio`. An invalid explicit command fails closed |
 
-P1 touches `packages/*`, so it runs on a dedicated branch. Note the worktree
-cross-package resolution footgun: changes under `packages/` resolve to the main repo's
-files at runtime until `bun install` runs inside the worktree.
+`cursor` and `dsh` carry `runtimeSource: 'managed'` in the catalog because SuperOne
+owns their runtime, but they are not on the CDN pin chain; their runtime ships
+with the app. Onboarding scans PATH (`scan-cli.ts`) to pre-check detected CLIs;
+detection never installs, upgrades or removes an external executable.
 
-### 7.1 P0 result — macOS (2026-08-11)
+---
 
-Reproduce with `apps/desktop/scripts/harness-spike.cjs` (throwaway; keep until P2 lands):
+## 7. Onboarding and app updates
 
-```
-ELECTRON_RUN_AS_NODE=1 /Applications/SuperOne.app/Contents/MacOS/SuperOne \
-  apps/desktop/scripts/harness-spike.cjs <spikeDir>
-```
+Removing bundled binaries would break every existing session on an in-place
+update unless each client installs its runtimes first. Three mechanisms cover it:
 
-The parent process was the **notarized, hardened-runtime production app**
-(`flags=0x10000(runtime)`, `TeamIdentifier=T527W5ADUG`, `spctl: source=Notarized Developer ID`),
-which is exactly the production spawn context.
+1. **Epoch onboarding.** `CURRENT_ONBOARDING_EPOCH` (`packages/shared/src/onboarding.ts`)
+   forces every install through Welcome → Discover once when bumped; completion
+   records `onboardingEpoch`. Users pick harnesses (PATH scan pre-checks detected
+   CLIs; Claude is pre-checked when nothing is detected). Enabling Claude/Codex
+   installs the SuperOne pin even when a CLI exists on PATH (`forcePin`).
+2. **Update pre-fetch.** After the app update downloads, the updater
+   (`apps/desktop/src/main/updater.ts`, `prefetchEnabledHarnessesForAppUpdate` in
+   `harness/service.ts`) fetches the enabled Claude/Codex pins of the *target*
+   version from `app/harness-pins/<version>.json`, falling back to the running
+   app's pins. Restart stays blocked until this succeeds: failure emits
+   `harness-error` with retry (`updater:retryHarness`), and
+   `autoInstallOnAppQuit` stays false until the package is fully ready.
+3. **Startup pin-alignment gate.** If any enabled managed harness is not at the
+   running app's pin (forced restart, wiped install, missing pins file), the
+   blocking `harness-align` view (`HarnessAlignPage`) installs it before the main
+   UI. When already aligned the gate is skipped without a flash.
 
-| Check | Result |
-|---|---|
-| npm `dist.integrity` (sha512) matches downloaded bytes, both artifacts | PASS |
-| `tar -xzf` preserves exec bit (`-rwxr-xr-x`) on all 4 codex nested binaries | PASS |
-| codex tarball contains **zero symlinks** — one less failure mode | PASS |
-| `codesign -v --strict` after extraction: "valid on disk" + "satisfies its Designated Requirement" | PASS |
-| File written by Electron main via `fetch` → `writeFileSync`: xattr is `com.apple.provenance` only, **no `com.apple.quarantine`** | PASS |
-| hardened-runtime parent spawns binary **outside** the app bundle: `claude --version` → `2.1.226`, `codex --version` → `0.146.1`, bundled `rg` → `15.2.0` | PASS |
-
-Two incidental findings worth keeping:
-
-- `tar -xzf` of a 279 MB payload takes **~0.4 s** — extraction is not a UX concern; the
-  network transfer dominates entirely.
-- `apps/desktop/dist/mac-arm64/` (a `build:mac-dev` artifact) fails to launch with
-  `different Team IDs` on the Electron Framework — its adhoc signature is internally
-  inconsistent. Unrelated to this design, but it means `build:mac-dev` output cannot be
-  used to validate runtime signing behavior; use the installed notarized app instead.
-
-**P0 still unverified — must run before shipping to those platforms:**
-
-- **Windows**: SmartScreen / Mark-of-the-Web. Programmatically written files do not get
-  a `Zone.Identifier` ADS (only browsers set it), so the expectation is PASS, but the
-  vendor binaries' Authenticode status is unconfirmed.
-- **Linux**: lowest risk — only the exec bit matters, and tar preserves it. Confirm
-  inside a packaged AppImage.
-
-### 7.2 P1 result — kernel lift (branch `refactor/harness-kernel-runtime`)
-
-Files moved with `git mv` (history preserved), CLI keeps the historical import
-paths as thin wrappers so **all 53 pre-existing harness tests ran unchanged** —
-they became the equivalence check rather than needing rewrites.
-
-| From (`apps/cli/src/session/`) | To (`packages/runtime/src/harness/`) |
-|---|---|
-| `harness-manager.ts` | `manager.ts` |
-| `managed-harness-release.ts` | `managed-release.ts` |
-| `managed-harness-official.ts` | `managed-official.ts` |
-| `harness-runtime-ready.ts` | `runtime-ready.ts` |
-| `harness-enable.ts` | `enable.ts` |
-| — | `types.ts` (seam interfaces), `index.ts` |
-
-CLI host wiring lives in the new `apps/cli/src/session/harness-host.ts`
-(`cliHarnessResolver` / `cliHarnessAuthProbe` / `cliHarnessDeps`); the five
-original paths remain as wrappers that inject it, preserving every public
-signature.
-
-Seam resolutions, as implemented:
-
-| Seam | Resolution |
-|---|---|
-| `NodeDatabase` | `TransactionalSqliteDatabase` in `packages/runtime/src/sqlite.ts` |
-| `resolveNodeHome()` | `HarnessHome.root` via `HarnessKernelDeps` |
-| `resolveCliReleaseVersion()` | `setHarnessReleaseVersionProvider()`, `SUPERONE_CLI_VERSION` fallback |
-| turn-runner binary resolvers | `HarnessRuntimeResolver` (3 methods) |
-| `ProviderStore` + `consumerForHarness` | `HarnessAuthProbe.hasCredentialFor` |
-| `spawn('npm')` | `ManagedRuntimeInstaller`; `createOfficialNpmInstaller()` is the CLI's |
-
-Verification:
-
-| Check | Result |
-|---|---|
-| CLI suite | 46 files / **262 tests green** |
-| runtime suite | 33 files / **286 tests green** |
-| runtime typecheck | Only 7 pre-existing errors (`llm-proxy`, `shared`), confirmed identical on a stashed clean tree |
-| CLI typecheck | 28 pre-existing errors, **none** in any touched file |
-| Kernel purity | Only upward import is `../sqlite`; no CLI, Electron, `@superone/claude`, or `better-sqlite3` import |
-
-Two incidental changes worth noting:
-
-- `resolveClaudeBinaryPath` / `resolveCodexBinaryPath` had their `harnesses`
-  param narrowed from the concrete `HarnessManager` to `HarnessCatalogReader`
-  (they only ever called `.get()`), so resolvers work from any host.
-- `resolveExternalCommand` (PATH search) is now exported from the kernel rather
-  than duplicated per host.
-
-### 7.3 P2 result — desktop host adapter (branch `refactor/harness-kernel-runtime`)
-
-Desktop consumes the kernel as a thin host. New module tree:
-
-| File | Role |
-|---|---|
-| `apps/desktop/src/main/harness/home.ts` | `~/.superone/harness` root |
-| `apps/desktop/src/main/harness/tarball-installer.ts` | `ManagedRuntimeInstaller` over npm tarball + system `tar` |
-| `apps/desktop/src/main/harness/host.ts` | resolver / auth probe / `desktopHarnessDeps` |
-| `apps/desktop/src/main/harness/service.ts` | singleton `HarnessManager` + enable/disable/ensure |
-| `apps/desktop/src/main/harness/resolve-runtime.ts` | `resolveHarnessRuntime` + `HarnessNotReadyError` |
-
-| Seam | Desktop resolution |
-|---|---|
-| `HarnessHome.root` | `~/.superone/harness` |
-| `releaseVersion` | `app.getVersion()` via `setHarnessReleaseVersionProvider` |
-| `ManagedRuntimeInstaller` | npm registry metadata → fetch tarball → sha512 integrity → `tar -xzf` → `managed-npm/<id>/` |
-| `HarnessRuntimeResolver` | env → catalog command → managed install → bundled SDK / platform package → PATH |
-| `HarnessAuthProbe` | desktop `chat:claude` / `chat:codex` provider bindings |
-| DB | `harness_installations` table added in `database-migrations.ts` |
-
-Binary gates:
-
-- `claude-binary.ts` prefers managed install over bundled `require.resolve`
-- `app-server-connection.ts` prefers managed Codex native binary over bundled platform package
-
-Package pins (desktop fetcher, no host `npm`):
-
-| Harness | npm fetch target |
-|---|---|
-| claude | platform package only (`@anthropic-ai/claude-agent-sdk-<platform>-<arch>@ver`) — TS SDK stays in the app |
-| codex | `@openai/codex@<ver>-<platform>-<arch>` (platform in **version**, not package name) |
-
-Verification:
-
-| Check | Result |
-|---|---|
-| Unit: tarball installer + resolve-runtime | **10 tests green** |
-| Unit: codex app-server-connection (regression) | **25 tests green** |
-| Live smoke: npm fetch claude platform tarball → integrity → extract → spawn `--version` | **PASS** — `2.1.226 (Claude Code)`, mode `755`, 80.4 MB tarball |
-| Desktop node typecheck (touched files) | No new errors (pre-existing unrelated failures only) |
-
-P2 deliberately leaves:
-
-- **R2 primary path** to P3 (installer is npm-only today; integrity still hard-fails)
-- **Settings UI / first-run Setup** to P4
-- **Dropping asarUnpack + deps** to P5 (bundled binaries remain as dev/fallback until then)
-- **IPC surface** for enable/progress (main-process API is ready; renderer wiring is P4)
-
-### 7.4 P3 result — R2 mirror + channel manifest
-
-CDN layout under the existing `super-one-releases` bucket / `dl.super-one.dev`:
-
-```
-harness/manifest/<alpha|beta|stable>.json
-harness/artifacts/<npm-name-sanitized>/<version>.tgz
-```
-
-Examples:
-
-- `harness/artifacts/anthropic-ai--claude-agent-sdk-darwin-arm64/0.3.226.tgz`
-- `harness/artifacts/openai--codex/0.146.1-darwin-arm64.tgz`
-
-| Piece | Location |
-|---|---|
-| Path helpers + `fetchHarnessChannelManifest` | `packages/runtime/src/harness/cdn.ts` |
-| Optional pin fields `url` / `npmName` / `npmVersion` | `ManagedArtifactPin` in `managed-release.ts` |
-| App update pre-fetch pins | `app/harness-pins/<appVersion>.json` via `app-harness-pins.ts` |
-| Publish script | `scripts/publish-harness-artifacts.ts` (`bun run publish:harness -- --channel alpha`) — also writes app pins |
-| CI | `.github/workflows/publish-harness.yml` (workflow_dispatch; optional `app_version`; dry_run supported) |
-| Desktop fetch order | R2 pin URL → npm registry; pin SHA-256 validates both |
-
-Channel selection on desktop: `SUPERONE_HARNESS_CHANNEL` → the build variant (`variantId()`). The version-derived fallback is for `@super-one/cli`, which has no variant.
-
-Pins always come from `OFFICIAL_CLAUDE_SDK_VERSION` / `OFFICIAL_CODEX_NPM_VERSION` in source — the workflow accepts only a channel (and optional app-version key), never free-form package versions. One `publish:harness --upload` publishes both the channel manifest and `app/harness-pins/<version>.json` so desktop clients can pre-fetch target pins before Restart.
-
-Verification:
-
-| Check | Result |
-|---|---|
-| runtime `cdn.test.ts` | **7 tests green** |
-| desktop harness suite (incl. R2-first / npm fallback / sha256) | **15 tests green** |
-| CLI `managed-harness-release` (pin parse compat) | green (optional CDN fields backward-compatible) |
-
-Operational note: first production publish is a manual `workflow_dispatch` on `publish-harness` with `channel=alpha`. Until that runs, desktop continues to install from npm (manifest fetch soft-fails → npm path).
-
-P3 leaves:
-
-- **Settings UI / first-run Setup** to P4
-- **Dropping asarUnpack + deps** to P5
-- **Windows/Linux packaged spawn** still open from P0
-
-### 7.5 P4 result — Settings → Harnesses
-
-| Piece | Status |
-|---|---|
-| IPC `harness:list/enable/disable/probe/ensure` + `harness:installProgress` | ✅ |
-| Main service progress listener + `installing` state | ✅ |
-| Preload `window.app.listHarnesses` / enable / progress | ✅ |
-| Settings tab **Harnesses** (list + detail, enable switch, progress) | ✅ |
-| Nested Claude/Codex config as **tabs** (preferences / skills / MCP / …) | ✅ |
-| Brand titles: LobeHub Text + one-line Claude Code wordmark | ✅ |
-| Meta: version for SDK harnesses; command for ACP; single error surface | ✅ |
-| Storybook install/progress/error mocks (`HarnessesSettingsPage.stories`) | ✅ |
-| i18n en/zh | ✅ |
-| Release skill harness publish step | ✅ (earlier) |
-| First-run Setup wizard step | ⏳ deferred — still use Settings enable; existing `SETUP_*` claude install remains separate |
-| Hard-filter HarnessPreferencePicker / ChatSuggestions by catalog enable | ✅ (P5) |
-
-### 7.6 P5 result — drop bundled platform binaries
-
-| Piece | Status |
-|---|---|
-| `electron-builder.yml`: exclude `claude-agent-sdk-{os}-*` and `codex-{os}-*` from `files` | ✅ |
-| Remove harness paths from `asarUnpack` (keep `**/*.node` only) | ✅ |
-| Packaged app: no `require.resolve` of platform packages (`allowBundledHarnessPlatformPackages`) | ✅ |
-| Dev / electron-vite: still uses local optional deps for convenience | ✅ |
-| ChatSuggestions + HarnessPreferencePicker filter by catalog enable | ✅ |
-| `@anthropic-ai/claude-agent-sdk` / `@openai/codex` JS packages stay (adapter TypeScript) | ✅ — only *platform* packages are excluded |
-| Measure DMG delta on a release build | ⏳ |
-| `prepare:*-optional-deps` may still install platform packages for local multi-arch work | optional cleanup later |
-| First-run harness onboarding (Welcome → Discover scan → enable) | ✅ — PATH scan recommends; Claude/Codex always managed download (product C); default-check Claude when nothing detected |
+External harnesses are never downloaded by onboarding, pre-fetch or alignment.
 
 ---
 
@@ -512,11 +303,12 @@ P3 leaves:
 
 | Risk | Mitigation |
 |---|---|
-| ~~**Spawn blocked on macOS** despite upstream signing~~ | **Retired** — P0 verified under the notarized hardened-runtime app (§7.1) |
-| ~~**Nested executables lose mode**~~ (`rg`, `zsh` under codex vendor) | **Retired** — P0 verified all 4 codex binaries keep `-rwxr-xr-x` through `tar -xzf` |
-| **Windows SmartScreen** on downloaded executables | Still open. Verify on a packaged NSIS build before shipping Windows |
-| **Platform-package naming drift** (codex uses version-suffixed aliases) | Fetcher maps specs explicitly per vendor (§4); a bare alias name 404s on npm |
-| **267 MB download fails midway** in CN | Resumable ranged fetch + atomic rename means a partial download never activates. R2/CDN is the primary path specifically for this |
-| **Manifest drifts from pinned constants** | CI reads the constants from source; never free-form input |
-| **Two install kernels diverge** | Eliminated by the whole-kernel lift — this was the reason to prefer it over a desktop-local implementation |
-| **Offline first run** | Setup step states the requirement explicitly; no silent failure mode |
+| macOS blocks spawning a downloaded binary | Verified not to: a notarized hardened-runtime parent spawns the extracted binaries; no quarantine xattr is set on app-written files |
+| Nested executables lose their mode | `.tgz` extraction keeps `rwx` on Codex's vendored binaries |
+| Windows SmartScreen / Authenticode on downloaded executables | Not verified on a packaged NSIS build; programmatic writes get no Mark-of-the-Web, but vendor Authenticode status is unconfirmed |
+| Linux packaged spawn | Low risk (only the exec bit matters, tar keeps it); not verified inside an AppImage |
+| Platform package naming drift | Pins map specs explicitly per vendor (§4); a bare Codex alias name 404s |
+| Large download fails midway | Range-resumable download and atomic rename; R2 is primary for CN reachability |
+| Manifest drifts from pinned constants | Publisher reads pins from source; lockstep test ties them to package pins |
+| Two install kernels diverge | One kernel in `@superone/runtime/harness` for both hosts |
+| Offline first run | Onboarding states the network requirement; install failures surface in the harness UI |

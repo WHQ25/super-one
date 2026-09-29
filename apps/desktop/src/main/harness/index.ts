@@ -1,7 +1,7 @@
 /**
  * Desktop harness host — kernel wiring, tarball installer, spawn-time gate.
  *
- * See docs/harness/runtime-delivery.md §5 / §7 P2.
+ * See docs/harness/runtime-delivery.md §3 / §5.
  */
 
 export { resolveHarnessHomeRoot } from './home'

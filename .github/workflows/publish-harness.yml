@@ -6,7 +6,7 @@ name: Publish Harness Artifacts
 #   - app/harness-pins/<appVersion>.json  (desktop update pre-fetch)
 #
 # Pins are read from @superone/runtime source constants (never free-form package
-# versions) so the manifest cannot drift from the code (design §4 / P3).
+# versions) so the manifest cannot drift from the code (docs/harness/runtime-delivery.md §4).
 # App-version pins default to root package.json version (the desktop release).
 
 on:

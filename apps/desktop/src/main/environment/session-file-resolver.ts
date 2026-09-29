@@ -1,6 +1,6 @@
 /**
  * `resolveSessionFile(root, path)` — the one place every desktop reader of a
- * session file goes through (`docs/design/session-sync-zone.md` §4.2).
+ * session file goes through (`docs/architecture/session-sync-zone.md` §4.2).
  *
  *   remote root + path under the node zone   → desktop mirror (fetched / refreshed via artifact.*)
  *   remote root + path under the desktop zone → that path (a desktop-produced file)

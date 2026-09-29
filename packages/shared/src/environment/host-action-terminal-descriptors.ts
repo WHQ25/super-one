@@ -7,7 +7,7 @@ import {
 } from '../superone-tool-descriptions'
 
 /**
- * `terminal_*` descriptors (docs/design/terminal-agent-tools.md). Defined once here:
+ * `terminal_*` descriptors (docs/features/terminal-agent-tools.md). Defined once here:
  * the desktop built-in list spreads them and the Zod registration is derived from
  * the JSON Schema, so Claude, the stdio bridge, and remote nodes cannot drift.
  * Remote-node sessions receive an explicit unsupported result from the executor.

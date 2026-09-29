@@ -34,6 +34,7 @@ Desktop spawns `codex app-server` and speaks JSON-RPC over stdio with
 
 ## Documents
 
+- [multi-account.md](multi-account.md) — ChatGPT accounts bound per conversation
 - [api-surface.md](api-surface.md) · [contracts.md](contracts.md) · [backlog.md](backlog.md)
 - [upgrades/](upgrades/) — `0.147/` and `0.154/` are multi-part plans written in Chinese
   before this folder existed.

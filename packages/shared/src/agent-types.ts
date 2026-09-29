@@ -4575,7 +4575,7 @@ export interface TerminalSnapshot {
 
 /**
  * An agent holds a tab only while the command the user approved is its
- * foreground process (docs/design/terminal-agent-tools.md §5). Cleared when the
+ * foreground process (docs/features/terminal-agent-tools.md §5). Cleared when the
  * command exits or the user takes over.
  */
 export interface TerminalAgentControl {

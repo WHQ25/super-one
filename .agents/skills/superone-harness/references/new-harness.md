@@ -177,7 +177,7 @@ order reverting, and verify a completed turn shows up on the Usage page.
 Optional for a first ship — state that explicitly rather than silently deferring it.
 
 - **Remote node / CLI**: `apps/cli/src/session/{harness-cli,harness-enable,harness-host,harness-runners}.ts`, `packages/runtime/src/session/session-provider-store.ts`, and a real (non-simulated) runner in `packages/<harness>/`. Seed the same shared base SessionProvider catalog used by desktop. The simulated runner must never be reachable in production — `createAcpOpenCodeProductionRouter` gates it behind an explicit opt-in for exactly this reason.
-- **Packaging**: `apps/desktop/electron-builder.yml`, `build/afterPack.cjs` if the harness ships platform binaries. Managed runtimes download on demand under `~/.superone/harness` instead — prefer that (see `docs/design/harness-hot-swap.md`).
+- **Packaging**: `apps/desktop/electron-builder.yml`, `build/afterPack.cjs` if the harness ships platform binaries. Managed runtimes download on demand under `~/.superone/harness` instead — prefer that (see `docs/harness/runtime-delivery.md`).
 - **Mobile**: events reach mobile through the shared `AgentEvent` stream, so most of it is free. Check `stripContentBlock` truncation if the harness emits rich tool payloads.
 - **Package extraction**: moving provider code into `packages/<harness>/` is what makes the CLI able to use it. Do it when P5 starts, not before — Cursor extracted at commit 4 of 7.
 

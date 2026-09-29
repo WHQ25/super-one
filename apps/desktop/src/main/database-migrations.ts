@@ -702,7 +702,7 @@ function applyMigrations(db: Database.Database): void {
   // the tests build the exact schema the migration does.
   ensureSessionFileDeliveriesSchema(db)
   // Per-project "always allow" rules for agent terminal commands
-  // (docs/design/terminal-agent-tools.md §5); DDL owned by the module.
+  // (docs/features/terminal-agent-tools.md §5); DDL owned by the module.
   ensureTerminalCommandRulesSchema(db)
 }
 

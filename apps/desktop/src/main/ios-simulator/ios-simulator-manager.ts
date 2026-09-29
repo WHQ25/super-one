@@ -943,7 +943,7 @@ export class IosSimulatorManager {
    * not be told apart.
    *
    * The root is the owning session's sync zone, so a remote agent can read the
-   * path the tool reply gives it (`docs/design/session-sync-zone.md` §6).
+   * path the tool reply gives it (`docs/architecture/session-sync-zone.md` §6).
    * `owners` is the ownership fact already, so the session is read from there
    * rather than threaded through every capture call; an injected `captureRoot`
    * (tests, the manual live harness) still wins.

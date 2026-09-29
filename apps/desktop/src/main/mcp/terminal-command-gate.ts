@@ -6,7 +6,7 @@ import { awaitTerminalCommandConfirm } from './terminal-command-confirm'
 
 /**
  * The one place a `terminal_tabs run` / `attach` command is authorized
- * (docs/design/terminal-agent-tools.md §5).
+ * (docs/features/terminal-agent-tools.md §5).
  *
  * Which layer calls it depends on the harness
  * (`HARNESS_CAPABILITIES[harness].terminalCommandApproval`):

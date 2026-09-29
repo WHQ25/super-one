@@ -1,5 +1,5 @@
 /**
- * Node side of the session sync zone (`docs/design/session-sync-zone.md` §5).
+ * Node side of the session sync zone (`docs/architecture/session-sync-zone.md` §5).
  *
  * `<syncRoot>/<sessionId>/<producer>/<file>` mirrors the desktop's layout.
  * Everything here is scoped to one session directory with the same

@@ -7,7 +7,7 @@
  * every browser tool call resolves its view through `resolveBrowserWebContentsId`,
  * and that is the moment to remember the session (and, for a Host Action,
  * the node) behind the view. A page a remote agent clicked "export" on is a
- * page that agent drove a moment ago (`docs/design/session-sync-zone.md` §6).
+ * page that agent drove a moment ago (`docs/architecture/session-sync-zone.md` §6).
  */
 export interface TabDriver {
   sessionId: string

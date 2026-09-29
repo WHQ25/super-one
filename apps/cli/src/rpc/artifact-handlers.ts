@@ -1,6 +1,6 @@
 /**
  * `artifact.*` RPC handlers — session sync zone transfers
- * (`docs/design/session-sync-zone.md` §5.2).
+ * (`docs/architecture/session-sync-zone.md` §5.2).
  *
  * Authorisation is the Host Action controller binding: the caller's
  * `clientSessionId` must be the session's `controllerClientSessionId`.

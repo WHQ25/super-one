@@ -31,7 +31,7 @@ describe('device snapshot artifacts', () => {
   it('registers the screenshot it hands the agent, so a remote session can read it', async () => {
     // The reply carries `image.path` and nothing else about the pixels; on a
     // remote node that path only resolves if the executor pushed the file
-    // (docs/design/session-sync-zone.md §3).
+    // (docs/architecture/session-sync-zone.md §3).
     const { collectArtifacts, resetArtifactRegistry, takeArtifacts } = await import('../mcp/artifact-registry')
     const { producerDir } = await import('../media-output-paths')
     resetArtifactRegistry()

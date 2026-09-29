@@ -36,7 +36,7 @@ export interface ExecutionEnvironmentDescriptor {
    * Absolute root of this environment's session sync zone, in its own path
    * separator (`<nodeHome>/sync`). Present iff `capabilities.syncZone`. The
    * desktop compares foreign paths against it textually and never resolves
-   * it locally (`docs/design/session-sync-zone.md` §2).
+   * it locally (`docs/architecture/session-sync-zone.md` §2).
    */
   syncRoot?: string
 }

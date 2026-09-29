@@ -669,7 +669,7 @@ export interface GrokWorkflowUpdated {
 
 - Confirmed workflow progress is **not** missing because ACP ToolCall failed — launch completes; progress is a separate channel.
 - `acp-event-map.ts` has no `workflow` entry in `TOOL_ID_TO_NAME` (display-only gap).
-- `docs/design/grok-build-parity.md` does not list workflow/subagent progressive bus in the capability matrix (gap in planning docs, not only code).
+- `docs/harness/acp-grok/grok-build-parity.md` does not list workflow/subagent progressive bus in the capability matrix (gap in planning docs, not only code).
 - SuperOne Claude workflow transcript helpers (`workflow-transcripts.ts`, DAG) remain Claude-harness-specific.
 
 ---

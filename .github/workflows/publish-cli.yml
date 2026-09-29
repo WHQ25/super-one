@@ -3,7 +3,7 @@ name: Publish CLI to npm
 # Builds a publishable `@super-one/cli` package (bundled monorepo code + npm
 # deps for natives/SDK) and publishes to the public registry.
 #
-# Design: docs/design/remote-node-service.md §15.4
+# Design: docs/architecture/remote-node-service.md §15.4
 #
 # Triggers:
 # - workflow_dispatch: manual / release skill lockstep

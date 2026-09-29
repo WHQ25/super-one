@@ -89,7 +89,7 @@ export function injectHostMessage(ref: RefObject<WebView | null>, message: unkno
 
 Problems that stack on a Grok thought stream:
 
-1. **Full snapshot, every tick.** The payload is every restored message plus the growing live turn, not a patch of the last assistant. Design contract in `docs/design/chat-core-contracts.md` §7 already says “pre-reduced patches”; the host currently sends the whole array.
+1. **Full snapshot, every tick.** The payload is every restored message plus the growing live turn, not a patch of the last assistant. Design contract in `docs/architecture/chat-core.md` §7 already says “pre-reduced patches”; the host currently sends the whole array.
 2. **`injectJavaScript` is evaluateJavaScript.** WKWebView (and RN WebView’s wrapper) can silently fail or drop overlapping evals when the source string is large or when a previous eval has not finished. There is no completion handler, no retry, no size guard.
 3. **Grok amplifier.** Thought chunks are long and frequent. Each successful inject is bigger than the last. Once one inject fails, later ones (thinking + text) are larger still, so the WebView can remain frozen on the last thinking-only snapshot for the rest of the turn.
 4. **U+2028 / U+2029.** `JSON.stringify` may emit line/paragraph separators that are illegal in a JS *source* string on older JSC. A single such character in Grok reasoning makes the whole eval a SyntaxError, swallowed by RN WebView.
@@ -231,7 +231,7 @@ Pass: live Reasoning seals when text starts; `.chat-md` / visible prose appears 
 | 33ms host batch | `apps/mobile/src/runtime.ts` `ChatRuntime.schedule` / `AGENT_EVENT_BATCH_MS` |
 | Remote thinking/text passthrough | `apps/desktop/src/main/remote-control-service.ts` ~L668 |
 | Grok ACP map | `apps/desktop/src/main/acp/acp-event-map.ts` `agent_thought_chunk` / `agent_message_chunk` |
-| Host protocol intent | `docs/design/chat-core-contracts.md` §7 |
+| Host protocol intent | `docs/architecture/chat-core.md` §7 |
 | Renderer contract test | `packages/chat-view/src/portable-turn-status.test.ts` “Grok live reasoning then text” |
 | e2e gap (thinking → tool only) | `packages/chat-view/e2e/live-stream.spec.ts` |
 

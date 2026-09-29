@@ -350,8 +350,8 @@ describe('frontmatter round-trip', () => {
   })
 })
 
-describe('docs/test/markdown-formats fixture', () => {
-  const fixturePath = resolve(__dirname, '../../../../../../../docs/test/markdown-formats.md')
+describe('markdown-formats fixture', () => {
+  const fixturePath = resolve(__dirname, '__fixtures__/markdown-formats.md')
   const fixture = readFileSync(fixturePath, 'utf8')
 
   it('preserves frontmatter on round-trip', async () => {

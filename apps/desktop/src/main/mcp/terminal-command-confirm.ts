@@ -6,7 +6,7 @@
  * and OpenCode as well as Claude and Codex. Raised by `terminal-command-gate.ts` from
  * whichever layer authorizes the command for the session's harness.
  *
- * The subject is the *command*, not the terminal (docs/design/terminal-agent-tools.md
+ * The subject is the *command*, not the terminal (docs/features/terminal-agent-tools.md
  * §5): the offered rule is a regex over the command, remembered for this chat session
  * or for the project, so the user approves `bun run storybook` the way they would in
  * their shell tool, and control of the tab ends when the command does.

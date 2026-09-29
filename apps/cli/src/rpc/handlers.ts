@@ -2740,7 +2740,7 @@ function handleSessionRespondHostAction(payload: unknown, ctx: RpcContext): RpcR
 }
 
 /**
- * A deferred artifact transfer landed (`docs/design/session-sync-zone.md` §4.1).
+ * A deferred artifact transfer landed (`docs/architecture/session-sync-zone.md` §4.1).
  *
  * The desktop names the session and the zone-relative paths; the node checks
  * each one itself and builds the wording, so this cannot become a channel for

@@ -113,7 +113,7 @@ export const DEVICE_AGENT_TOOL_NAMES = [
 ] as const
 
 /**
- * Interactive terminal tabs (docs/design/terminal-agent-tools.md). `terminal_tabs` is
+ * Interactive terminal tabs (docs/features/terminal-agent-tools.md). `terminal_tabs` is
  * the one that starts or joins a command, so it is withheld from auto-allow (see
  * {@link NEVER_AUTO_ALLOW_SUPERONE_BARE_NAMES}) and each harness's permission layer
  * decides it; the other three only drive a command that was already approved.

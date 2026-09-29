@@ -7,7 +7,7 @@ import { app } from 'electron'
  * Where session artifacts live.
  *
  * The **sync zone** is one directory per session under `userData`, one
- * subdirectory per producer (`docs/design/session-sync-zone.md` §2). A remote
+ * subdirectory per producer (`docs/architecture/session-sync-zone.md` §2). A remote
  * node mirrors the same relative layout under its own home, so a path on one
  * side maps to the other by prefix replacement alone. Local sessions use the
  * exact same layout — there is nothing to sync, but session deletion has a
@@ -36,7 +36,7 @@ export function captureDir(producer: CaptureProducer): string {
 /**
  * Temp roots that predate the sync zone. Captures and recordings write into
  * the zone now, but a transcript from before this change still names a file
- * here, so these stay readable (`docs/design/session-sync-zone.md` §6).
+ * here, so these stay readable (`docs/architecture/session-sync-zone.md` §6).
  */
 export function builtInCaptureRoots(): string[] {
   return [CAPTURE_ROOT, RECORDING_ROOT, BROWSER_DOWNLOAD_FALLBACK_DIR]

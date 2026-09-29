@@ -599,7 +599,7 @@ async function runPrimitive(
  * Every route to a browser tool passes here — the compact dispatcher, the
  * `browser_perf` wrapper, a saved action's expanded step — so this is where a
  * remote session's node-zone arguments are mapped by the tool's own roles
- * (`docs/design/session-sync-zone.md` §3.1). A refused mapping is an error
+ * (`docs/architecture/session-sync-zone.md` §3.1). A refused mapping is an error
  * reply, never a rejection: callers up the stack read `isError`.
  */
 async function runMappedTool(

@@ -1,6 +1,6 @@
 /**
  * Prefix mapping between the desktop's sync zone and a node's
- * (`docs/design/session-sync-zone.md` §2).
+ * (`docs/architecture/session-sync-zone.md` §2).
  *
  * Each side canonicalises only its *own* root. A foreign path is compared
  * textually against the foreign root exactly as the node reported it, split

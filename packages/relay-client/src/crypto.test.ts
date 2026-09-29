@@ -15,7 +15,7 @@ import {
 } from './crypto'
 
 const vectors = JSON.parse(
-  readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../../docs/design/relay-crypto-golden/vectors.json'), 'utf8'),
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures/relay-crypto-vectors.json'), 'utf8'),
 ) as {
   masterSecretHex: string
   r2Key: string

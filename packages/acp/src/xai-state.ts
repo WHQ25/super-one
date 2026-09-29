@@ -4,7 +4,7 @@
  * Wire: `x.ai/session_notification` (and aliases) carry `{ sessionId, update: { sessionUpdate, … } }`.
  * Standalone methods (`x.ai/task_backgrounded`, `follow_ups`, …) share the same mappers.
  *
- * @see docs/design/grok-xai-ext-notifications.md
+ * @see docs/harness/acp-grok/grok-xai-ext-notifications.md
  */
 import { homedir } from 'node:os'
 import { join } from 'node:path'

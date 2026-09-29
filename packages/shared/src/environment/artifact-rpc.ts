@@ -1,6 +1,6 @@
 /**
  * `artifact.*` — session sync zone transfer RPCs
- * (`docs/design/session-sync-zone.md` §5.2).
+ * (`docs/architecture/session-sync-zone.md` §5.2).
  *
  * All five are scoped by the node to `<syncRoot>/<sessionId>`; the zone lies
  * outside every project, so `workspace.*` cannot reach it and these must not

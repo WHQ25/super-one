@@ -1,6 +1,6 @@
 /**
  * Give every harness turn its session sync zone
- * (`docs/design/session-sync-zone.md` §5.4).
+ * (`docs/architecture/session-sync-zone.md` §5.4).
  *
  * One wrapper in front of the production runner rather than a branch per
  * harness: session start, cold resume and forked children all reach the

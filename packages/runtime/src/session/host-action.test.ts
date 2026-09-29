@@ -163,7 +163,7 @@ describe('Host Action store', () => {
 
   it('renews a live claim up to the action deadline and refuses every other caller', () => {
     // A Host Action whose outputs are still uploading asks for more time
-    // rather than deferring them (docs/design/session-sync-zone.md §4.1).
+    // rather than deferring them (docs/architecture/session-sync-zone.md §4.1).
     const { hostActions } = boot()
     const row = hostActions.create({
       sessionId: 's1',

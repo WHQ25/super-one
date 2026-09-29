@@ -12,6 +12,7 @@ test scope, commit rules, and UI story coverage.
 | Theme, sidebar, icons, z-index, editor DOM | [styling.md](docs/agent-reference/styling.md) |
 | Logs, event trace, raw tool debugging | [debugging.md](docs/agent-reference/debugging.md) |
 | Test runner, integration fixtures, component tests | [testing.md](docs/agent-reference/testing.md) |
+| Verify UI or ACP changes on a dev build over CDP | [self-verify.md](docs/agent-reference/self-verify.md) |
 | Simulator/Android platform integration | [devices.md](docs/agent-reference/devices.md) |
 | Mini-app Host, WebView, bridge APIs, packaging | [miniapps.md](docs/agent-reference/miniapps.md) |
 | New dependencies, feature entry points, startup work, bundle size | [performance.md](docs/agent-reference/performance.md) |

@@ -9,7 +9,7 @@ import {
 
 /**
  * "Always allow in this project" rules for `terminal_tabs run` / `attach`
- * (docs/design/terminal-agent-tools.md §5). SuperOne-owned so every harness
+ * (docs/features/terminal-agent-tools.md §5). SuperOne-owned so every harness
  * shares one answer; keyed by the project key (a path locally, `remote:…` for
  * a node) rather than written into any harness's own settings file.
  *

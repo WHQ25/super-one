@@ -1,6 +1,6 @@
 /**
  * Build the `@native/files-previewer` context for a remote-node session
- * (`docs/design/inline-files-previewer.md` §2.2).
+ * (`docs/features/inline-files-previewer.md` §2.2).
  *
  * The claim carries only `sessionId` + `turnId`, and the local SessionManager
  * has no entry for a node session, so the live `cwd` and the project host path

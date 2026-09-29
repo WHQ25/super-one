@@ -77,7 +77,7 @@ export function systemDownloadDir(): string {
  * and can only read what is in the session sync zone, so with no directory the
  * download goes there rather than into this machine's Downloads folder, and a
  * directory outside the zone is refused instead of silently writing somewhere
- * the agent will never reach (`docs/design/session-sync-zone.md` §9). A node
+ * the agent will never reach (`docs/architecture/session-sync-zone.md` §9). A node
  * path the agent asked for has already been rewritten to its desktop mirror by
  * the Host Action input mapping (§3.1), so it arrives here inside the zone.
  */
@@ -245,7 +245,7 @@ export function registerDownload(sessionId: string | null | undefined, path: str
  * backgrounded, or it was the page's own — is a sealed row the worker will
  * take; this only makes the worker look now rather than at its next tick. The
  * delivery's own completion wake tells the agent the node path works
- * (`docs/design/session-sync-zone.md` §4.1).
+ * (`docs/architecture/session-sync-zone.md` §4.1).
  */
 export function wakeDownloadDelivery(connectionId: string): void {
   void import('../environment/environment-host').then(({ getEnvironmentHost }) => getEnvironmentHost().artifactTransfers?.wake(connectionId))
@@ -263,7 +263,7 @@ const adopted = new Map<string, string>()
  * `browser_download` is. It is adopted here instead, when the agent asks for
  * the list and the session is finally known: the file is copied into the
  * zone, registered, and the zone path is what the agent is told
- * (`docs/design/session-sync-zone.md` §6).
+ * (`docs/architecture/session-sync-zone.md` §6).
  *
  * Returns the path to report — the original when there is nothing to adopt.
  */

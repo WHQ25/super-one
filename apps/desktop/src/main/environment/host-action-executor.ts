@@ -117,7 +117,7 @@ export const desktopHostActionExecutor: HostActionExecutor = async (
           },
         })
 
-        // Session sync zone (docs/design/session-sync-zone.md §3): a node that
+        // Session sync zone (docs/architecture/session-sync-zone.md §3): a node that
         // reports its zone gets node-zone args mapped to the desktop mirror
         // first, and desktop-produced outputs pushed and rewritten afterwards.
         // Older nodes report no zone and get today's behaviour unchanged.

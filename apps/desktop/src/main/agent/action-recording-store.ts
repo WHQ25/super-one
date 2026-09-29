@@ -18,7 +18,7 @@ export interface ActionRecording {
 
 /**
  * Recordings live in the session sync zone, partitioned by which surface was
- * recorded (`docs/design/session-sync-zone.md` §6). The agent is handed
+ * recorded (`docs/architecture/session-sync-zone.md` §6). The agent is handed
  * `savedPath` in the tool reply, so on a remote node the file has to be
  * somewhere the executor can push and rewrite; a recording taken with no
  * session goes to `adhoc`, which is never pushed and never auto-reclaimed.

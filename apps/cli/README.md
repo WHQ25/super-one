@@ -41,4 +41,4 @@ bun run pack:cli -- --dry-run    # npm pack only
 
 - Local remote lab (host credentials, no Docker): [`docs/local-remote-lab.md`](./docs/local-remote-lab.md)
 - Docker SSH lab: [`docker/README.md`](./docker/README.md)
-- Design: `docs/design/remote-node-service.md` §15 (registry vs upload install)
+- Design: `docs/architecture/remote-node-service.md` §15 (registry vs upload install)

@@ -30,7 +30,7 @@ beforeEach(() => {
 describe('action recording storage', () => {
   it('writes a session recording into that session sync zone, partitioned by action target', () => {
     // The agent is handed this path; on a remote node it only resolves if the
-    // file is in the zone (docs/design/session-sync-zone.md §6).
+    // file is in the zone (docs/architecture/session-sync-zone.md §6).
     expect(actionRecordingDir('s1', 'web')).toBe(join(producerDir('s1', 'recording'), 'web'))
     expect(createActionRecordingPath('s1', 'computer', 'mp4'))
       .toMatch(new RegExp(`^${join(producerDir('s1', 'recording'), 'computer').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/[0-9a-f-]+\\.mp4$`))

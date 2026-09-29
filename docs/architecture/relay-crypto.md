@@ -2,7 +2,7 @@
 
 Status: **spike_done** — 2026-08-21
 Frozen trees (zero edits): `apps/desktop/src/main/remote-control-crypto.ts`, Flutter `lib/crypto.dart`
-Vectors: [`vectors.json`](./vectors.json)
+Vectors: [`vectors.json`](../../packages/relay-client/src/fixtures/relay-crypto-vectors.json)
 
 ## Algorithm (unchanged)
 
@@ -35,7 +35,7 @@ Ciphertexts include random IVs. Regenerating changes the JSON. Only recapture if
 
 ## Host application framing (2026-09-14)
 
-[`host-payload-v1.json`](./host-payload-v1.json) adds frozen raw and deflated host
+[`host-payload-v1.json`](../../packages/relay-client/src/fixtures/host-payload-v1.json) adds frozen raw and deflated host
 application vectors. `vectors.json` continues to cover pairing and chunked file
 crypto; it is not the application-frame decoder.
 

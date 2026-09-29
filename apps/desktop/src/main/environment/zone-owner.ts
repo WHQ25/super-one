@@ -1,6 +1,6 @@
 /**
  * Who a session's zone directory belongs to, recorded where the directory is
- * created (`docs/design/session-sync-zone.md` §7).
+ * created (`docs/architecture/session-sync-zone.md` §7).
  *
  * The reclaim sweep only deletes a directory whose owner it can ask — this
  * database for a local session, the node for a remote one — and keeps an

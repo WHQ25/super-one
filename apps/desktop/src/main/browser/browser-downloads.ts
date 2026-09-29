@@ -101,7 +101,7 @@ export interface DownloadUrlOptions {
   /**
    * Session the download belongs to. A remote session's file lands in its sync
    * zone and is registered so the Host Action pushes it to the node
-   * (`docs/design/session-sync-zone.md` §6); a local session is unaffected.
+   * (`docs/architecture/session-sync-zone.md` §6); a local session is unaffected.
    */
   sessionId?: string | null
   onProgress?: (p: DownloadProgress) => void

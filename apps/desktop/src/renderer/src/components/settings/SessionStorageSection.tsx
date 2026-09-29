@@ -40,7 +40,7 @@ function Row({ label, description, action, children }: {
 /**
  * What the session sync zone holds, and the one lever a person has over it.
  *
- * There is no cap on the zone by design (`docs/design/session-sync-zone.md`
+ * There is no cap on the zone by design (`docs/architecture/session-sync-zone.md`
  * §7): a session's artifacts are named by its transcript, so the only safe
  * deletion is a directory whose session is *known* to be gone, and the sweep
  * that finds those already runs on its own. What a person can want is to see

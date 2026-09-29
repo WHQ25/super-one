@@ -4,7 +4,7 @@
  * HTTP transport calls it directly too, so a tool call arriving either way used
  * to run with no call scope at all. A producer it reaches then marks nothing,
  * and the session's zone directory is kept by the reclaim sweep forever
- * (`docs/design/session-sync-zone.md` §7).
+ * (`docs/architecture/session-sync-zone.md` §7).
  */
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'

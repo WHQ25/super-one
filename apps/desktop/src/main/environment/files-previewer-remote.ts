@@ -1,6 +1,6 @@
 /**
  * The `@native/files-previewer` resolver for a remote-node session
- * (`docs/design/inline-files-previewer.md` §2.2, §6.1).
+ * (`docs/features/inline-files-previewer.md` §2.2, §6.1).
  *
  * The agent on the node only ever names node paths. Each is one of three
  * things, and each is stat'd where it actually lives — the desktop never

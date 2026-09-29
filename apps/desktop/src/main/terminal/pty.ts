@@ -12,7 +12,7 @@ export interface PtyLike {
   /**
    * Name of the PTY's foreground process (`tcgetpgrp` on macOS/Linux) — the shell
    * itself at a prompt, the running command otherwise. Agent control of a tab is
-   * bounded by this (docs/design/terminal-agent-tools.md §6).
+   * bounded by this (docs/features/terminal-agent-tools.md §6).
    */
   foregroundProcess(): string
 }

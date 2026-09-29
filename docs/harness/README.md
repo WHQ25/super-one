@@ -7,7 +7,8 @@ we rely on implicitly, and how each version bump was planned and landed.
 These docs are per harness and follow upstream's shape. The cross-harness view
 per capability lives in the `superone-harness` skill
 ([experiences.md](../../.agents/skills/superone-harness/references/experiences.md));
-link a ledger row there instead of repeating it.
+link a ledger row there instead of repeating it. How managed runtimes are
+downloaded, installed and gated is in [runtime-delivery.md](runtime-delivery.md).
 
 | Harness | Pin | Ledger |
 |---|---|---|

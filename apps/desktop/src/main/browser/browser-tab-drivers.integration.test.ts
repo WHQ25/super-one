@@ -4,7 +4,7 @@
  * CDP (via resolvePoint), synthetic (via the renderer), and the plain
  * resolve — records the driver before the action runs, so a tab handed from
  * one session to another does not file the second session's export under the
- * first (`docs/design/session-sync-zone.md` §6).
+ * first (`docs/architecture/session-sync-zone.md` §6).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventEmitter } from 'events'

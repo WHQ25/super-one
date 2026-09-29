@@ -1,6 +1,6 @@
-# 3D preview acceptance samples
+# 3D model preview
 
-The desktop and mobile viewers recognize 11 file extensions. Keep official Apple device assets in `~/Downloads/SuperOne-Apple-3D`; they are local acceptance inputs and are not redistributed with the app. The other downloaded samples live in `~/Downloads/SuperOne-3D-Test-Assets`.
+The desktop and mobile file viewers render 3D models in 11 formats; this page records the acceptance samples and the non-obvious rendering decisions. Keep official Apple device assets in `~/Downloads/SuperOne-Apple-3D`; they are local acceptance inputs and are not redistributed with the app. The other downloaded samples live in `~/Downloads/SuperOne-3D-Test-Assets`.
 
 | Format | Test file | Source |
 | --- | --- | --- |

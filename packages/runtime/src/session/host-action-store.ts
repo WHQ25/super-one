@@ -135,7 +135,7 @@ export interface HostActionStore {
    * The desktop retries a wake until the node acknowledges it, and the
    * acknowledgement is only as durable as the record behind it — an in-memory
    * one forgot every delivery on restart, and the next retry injected the
-   * same sentence again (`docs/design/session-sync-zone.md` §9).
+   * same sentence again (`docs/architecture/session-sync-zone.md` §9).
    */
   hasDeliveredNotification(sessionId: string, notificationId: string): boolean
   recordDeliveredNotification(sessionId: string, notificationId: string, now?: number): void

@@ -1,6 +1,6 @@
 /**
  * Moving one artifact between the desktop zone and a node zone over the
- * `artifact.*` RPCs (`docs/design/session-sync-zone.md` §5.2).
+ * `artifact.*` RPCs (`docs/architecture/session-sync-zone.md` §5.2).
  *
  * Upload streams `ARTIFACT_CHUNK_BYTES` windows in order under one transfer
  * id; a `conflict` carrying the node's expected offset resumes from there,

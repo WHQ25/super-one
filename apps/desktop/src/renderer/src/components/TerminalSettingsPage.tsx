@@ -19,7 +19,7 @@ type Rules =
 
 /**
  * The revoke surface for "Always allow in this project" terminal commands
- * (docs/design/terminal-agent-tools.md §5). Rules live in SuperOne's own DB,
+ * (docs/features/terminal-agent-tools.md §5). Rules live in SuperOne's own DB,
  * not in any harness settings file, so this page is the only place a person
  * can see or drop them. Grouped by project because the same pattern may be
  * allowed in one project and not another.

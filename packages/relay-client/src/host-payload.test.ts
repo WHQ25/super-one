@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { decryptHostPayload, deriveKeys } from './crypto'
 
 it('decodes frozen raw and deflated AES-GCM host vectors', () => {
-  const fixture = JSON.parse(readFileSync(new URL('../../../docs/design/relay-crypto-golden/host-payload-v1.json', import.meta.url), 'utf8'))
+  const fixture = JSON.parse(readFileSync(new URL('./fixtures/host-payload-v1.json', import.meta.url), 'utf8'))
   const keys = deriveKeys(fixture.masterSecretHex)
   for (const vector of fixture.vectors) expect(decryptHostPayload(keys.aesKeyBytes, vector.ciphertextB64)).toEqual(vector.plaintext)
 })

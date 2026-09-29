@@ -106,7 +106,7 @@ describe('downloads for a remote session', () => {
   it("lands in the session sync zone rather than this machine's Downloads folder, and is registered", async () => {
     // The agent runs on the node and is handed this path; a file in the
     // desktop's Downloads folder is one it can never open
-    // (docs/design/session-sync-zone.md §6).
+    // (docs/architecture/session-sync-zone.md §6).
     const path = await collectArtifacts('s1', 'call-1', async () => reserveDownloadPath('report.pdf', null, 's1'), 'conn-1')
     expect(path).toBe(join(producerDir('s1', 'download'), 'report.pdf'))
     expect(takeArtifacts('s1', 'call-1')).toEqual([{ path, producer: 'download', final: false, deliveryId: expect.any(String) }])

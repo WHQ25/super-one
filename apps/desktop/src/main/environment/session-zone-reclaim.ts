@@ -1,5 +1,5 @@
 /**
- * Session deletion reclaims its sync zone (`docs/design/session-sync-zone.md` §7).
+ * Session deletion reclaims its sync zone (`docs/architecture/session-sync-zone.md` §7).
  *
  * Two sides, both routed here so neither is forgotten:
  *  - the desktop copy under `<userData>/sync/<sessionId>` is removed;
@@ -126,7 +126,7 @@ function pruneOldFiles(dir: string, cutoff: number, dryRun = false): number {
 }
 
 /**
- * Reclaim what the zone no longer needs (`docs/design/session-sync-zone.md`
+ * Reclaim what the zone no longer needs (`docs/architecture/session-sync-zone.md`
  * §7). Deliberately evidence-based rather than quota-based: a session's
  * artifacts are named by its transcript, so the only safe thing to delete is a
  * directory whose session is *known* to be gone, plus `adhoc` captures nobody

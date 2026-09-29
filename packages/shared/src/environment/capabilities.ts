@@ -36,7 +36,7 @@ export interface EnvironmentCapabilities {
    */
   drafts: boolean
   /**
-   * Session sync zone (`docs/design/session-sync-zone.md`): the environment
+   * Session sync zone (`docs/architecture/session-sync-zone.md`): the environment
    * reports `descriptor.syncRoot` and serves `artifact.stat/put/get/delete`
    * scoped to `<syncRoot>/<sessionId>`. Absent on older nodes — the desktop
    * then neither rewrites Host Action paths nor mirrors node artifacts.

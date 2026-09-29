@@ -880,7 +880,7 @@ export class EnvironmentHost {
 
   /**
    * The node's session sync zone root and OS, or null when the connection is
-   * not live or the node predates the zone (`docs/design/session-sync-zone.md` §5.1).
+   * not live or the node predates the zone (`docs/architecture/session-sync-zone.md` §5.1).
    */
   getSyncZone(connectionId: string): { syncRoot: string; os: EnvironmentOs } | null {
     try {
@@ -2089,7 +2089,7 @@ export class EnvironmentHost {
     this.sessionEventCursors.delete(this.sessionCursorKey(connectionId, sessionId))
     // Cancel local transfer jobs and delete the node's zone directory before the
     // session row is gone — afterwards the controller binding artifact.delete needs
-    // no longer holds (docs/design/session-sync-zone.md §7).
+    // no longer holds (docs/architecture/session-sync-zone.md §7).
     this.transfers?.dropSession(sessionId)
     if (control?.leaseId && this.getSyncZone(connectionId)) {
       try {

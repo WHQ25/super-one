@@ -1,6 +1,6 @@
 /**
  * The executor's two sync steps around one Host Action
- * (`docs/design/session-sync-zone.md` §3, §3.1, §4.1).
+ * (`docs/architecture/session-sync-zone.md` §3, §3.1, §4.1).
  *
  * Inputs: every string arg under the node zone is mapped to its desktop
  * mirror, fetched first if the desktop does not have it yet — this is what

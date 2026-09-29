@@ -2,7 +2,7 @@ import type { TerminalAgentControl, TerminalEvent } from '@superone/shared/agent
 
 /**
  * Agent control of one tab, bounded by the approved command's lifetime
- * (docs/design/terminal-agent-tools.md §5–§6).
+ * (docs/features/terminal-agent-tools.md §5–§6).
  *
  * "Control" means: the command the user approved is the tab's foreground process.
  * Keystrokes while it runs are input *to that program*; once the shell is back at

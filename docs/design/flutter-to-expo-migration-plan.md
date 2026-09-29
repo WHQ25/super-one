@@ -3,7 +3,7 @@
 Status: **executable plan — re-scoped 2026-09-04 (evening)**. Supersedes `docs/draft/flutter-to-expo-migration.md`. WP-01–22 are software-complete; WP-23/24 are **superseded** by Wave 8 (WP-25–29): land on `main` first, bring the RN shell to product quality, widen chat-view tool coverage, then ship through a lean release. **Executing agents: read §1a, then Wave 8, then start WP-25.**
 Last updated: 2026-09-04 (Wave 8 execution)
 Sources: draft migration, monorepo inventory, validation, work-package catalog, adversarial review (ordering / extraction / protocol / delivery), v0.55.2 remote-parity freeze
-Related: `apps/desktop/CLAUDE.md` (Remote Control), `apps/relay/`, `packages/shared`, external repo `super-one-flutter`, `docs/design/chat-core-contracts.md`, `docs/design/expo-release-runbook.md`
+Related: `apps/desktop/CLAUDE.md` (Remote Control), `apps/relay/`, `packages/shared`, external repo `super-one-flutter`, `docs/architecture/chat-core.md`, `docs/design/expo-release-runbook.md`
 
 ---
 
@@ -16,7 +16,7 @@ Related: `apps/desktop/CLAUDE.md` (Remote Control), `apps/relay/`, `packages/sha
 - **Reduction** lives in pure TS (`@superone/chat-core`), extracted from desktop `applyEventToSession`.
 - **Wire** lives in pure TS (`@superone/relay-client`): crypto, relay/LAN transport, remote RPC.
 - **No production users** — no data migration, staged rollout, or rollback obligation.
-- **Product scope:** Remote Control parity with **current desktop `main`** (0.61.0 at re-scope time; originally frozen at v0.55.2-alpha). The transcript follows `main` automatically because chat-core/chat-view *are* the desktop reducer and presenters; the RN shell must track `main` explicitly (all `PermissionRequest.requestKind` values, all `HarnessId`s for create/send). Not a desktop IDE clone — see `docs/design/chat-core-contracts.md` §1.
+- **Product scope:** Remote Control parity with **current desktop `main`** (0.61.0 at re-scope time; originally frozen at v0.55.2-alpha). The transcript follows `main` automatically because chat-core/chat-view *are* the desktop reducer and presenters; the RN shell must track `main` explicitly (all `PermissionRequest.requestKind` values, all `HarnessId`s for create/send). Not a desktop IDE clone — see `docs/architecture/chat-core.md` §1.
 
 **Execution update (2026-09-04):** branch rebased onto `main`; WP-09 and WP-11–22 are software-complete, and WP-23's software preflight is complete. `@superone/chat-core` owns the full reducer graph and a generated six-scenario `remote.out` TS snapshot oracle; `@superone/chat-view` owns the shared presenters plus self-contained chat and xterm documents; relay-client's ACK/replay/reset, terminal isolation, inline/LAN/R2 upload, and authenticated download invariants are green. WP-19 covers buffer-first reconnect rehydrate, stale-epoch rejection, 33 ms paint batching, live interaction sheets, and bounded WebView crash recovery. The RN shell includes camera QR, encrypted MMKV, lists/settings/files, native composer, IME guard, mentions, attachments, received-file preview/share, editable new-session worktree selection, structured collaboration handoff confirmation, and an iPad master/detail layout at 768 px. Native widget media uses result-owned gallery cards and host-backed file retrieval; nested code-widget iframes remain deliberately deferred under R6. Signed iPhone/iPad simulator and Android 16 emulator Release builds launch with dark SystemUI/Safe Area handling, and the Android QR camera flow opens and closes cleanly. A development Android build also completes remote pairing, cold-relaunch pairing restore, project/session navigation, shared Chat View streaming, interruption, and software-keyboard layout on the built-in device. WP-29 now has repository-owned EAS profiles, remote build-number policy, app-version runtime compatibility, credential guards, a linked Expo project, a configured Update URL, Android signing, a successful internal APK build, a signed iOS production build, and a matching first OTA verified on the built-in Android emulator. iOS build 21 is valid and ready for internal TestFlight; physical acceptance and Flutter archive remain gated.
 
@@ -238,7 +238,7 @@ Inventory + validation outcomes (code paths preferred over draft-only numbers).
 | **C0.1** | **fallback_accepted** (2026-08-21) | Relay + manual host:port. Plist keys stamped on `apps/mobile` for a later WP-22 retry. Notes: `docs/design/expo-p0-spikes.md`. **Do not block P2 pairing on mDNS.** |
 | **C0.2** | **spike_done** (2026-08-21) | Vectors in `docs/design/relay-crypto-golden/`. Unmodified desktop ciphertext decrypts on Flutter 1.0.0+19 and `@noble/ciphers@2.3.0`. Library for WP-08: noble (not quick-crypto). Zero edits under frozen crypto trees. |
 | **C0.5** | **spike_done** (2026-08-14) | `../index` inverted: three symbols live in `event-reducer/transformers.ts` (barrel re-exports). Lifecycle family has no `@/components` / `window` / Maps. Remaining: component predicates, `window.app.trace`, module Maps, `Date.now`, `defaults`↔`index` cycle. Notes: `docs/design/chat-core-extraction-spike.md`. No package cutover. |
-| **C0.6** | **freeze_done** (2026-08-21) | Exhaustive `ChatCorePatch` + key→owner + `SKIPPED_EVENTS` + host table + dual-transport in `docs/design/chat-core-contracts.md`. Baseline v0.55.2 (`messages_retracted`; `model_fallback` is a transcript row, not a patch key). |
+| **C0.6** | **freeze_done** (2026-08-21) | Exhaustive `ChatCorePatch` + key→owner + `SKIPPED_EVENTS` + host table + dual-transport in `docs/architecture/chat-core.md`. Baseline v0.55.2 (`messages_retracted`; `model_fallback` is a transcript row, not a patch key). |
 | **C-seq** | confirmed | Never conflate relay envelope seq with `AgentEvent.seq` (relay-session enqueue; session `nextEventSeq`; Flutter never stamps seq on events). |
 | **C-reconnect** | partial | Flutter reconnect buffer-first at `chat_page.dart:485-513`; open path races — **normalize buffer-first**. |
 | **C-batch** | confirmed | Desktop paragraph-coalesces mobile text (`\n\n` or ≥1000 chars). RN→WebView ≤1/33ms is **new** host design. Shared `AGENT_EVENT_BATCH_MS = 33`. |
@@ -253,7 +253,7 @@ Inventory + validation outcomes (code paths preferred over draft-only numbers).
 ### Must-do-before-code (P0 gates)
 
 - **0.5** chat-core boundary proof + compile-time boundary sketch — **done** (`docs/design/chat-core-extraction-spike.md`)
-- **0.6** freeze contracts + host protocol + dual-transport + buffer-first — **done** (`docs/design/chat-core-contracts.md`)
+- **0.6** freeze contracts + host protocol + dual-transport + buffer-first — **done** (`docs/architecture/chat-core.md`)
 - **0.2** golden AES-GCM/HKDF (+ chunked file) vectors — **done** (`docs/design/relay-crypto-golden/`)
 - **0.3** Metro `@superone/shared` under bun hoisted workspaces — **done** (`apps/mobile/metro.config.js` + `scripts/assert-shared-resolution.ts`)
 - **0.1** mDNS attempt or formal fallback accept (non-blocking for P2) — **fallback accepted** (`docs/design/expo-p0-spikes.md`)
@@ -313,7 +313,7 @@ Keep `super-one-flutter` readable through P7 as behavioural reference (ACK path,
 | **0.3** | Metro + bun hoisted workspaces | `resolver.unstable_enableSymlinks` + `watchFolders`; import `@superone/shared` leaf | Explicit per-package alias map | **spike_done** — `apps/mobile/metro.config.js`; leaf-only rule |
 | **0.4** | WebView streaming perf + RSS | Stress corpus (≥200 turns code+mermaid) + longest recording; sample paint intervals; RSS | Coarser DOM window; tighter RN envelope | **spike_done** — fail-closed window locked; device RSS at WP-18 |
 | **0.5** | chat-core cut | Invert `../index` + relocate component predicates + ports for clock/trace/Maps; no slice drag | Narrow **first family for proof only**; never fork production | **spike_done** — `../index` gone; remaining impurities in spike notes (WP-11) |
-| **0.6** | Host protocol + contracts | Freeze ChatCoreSession/Patch, three projections, dual-transport, buffer-first, `applyReductionPatch` | — | **freeze_done** — `docs/design/chat-core-contracts.md` |
+| **0.6** | Host protocol + contracts | Freeze ChatCoreSession/Patch, three projections, dual-transport, buffer-first, `applyReductionPatch` | — | **freeze_done** — `docs/architecture/chat-core.md` |
 
 **P0 exit:** **complete 2026-08-21.** 0.1 fallback; 0.2 golden+noble; 0.3 Metro config + shared leaf proof; 0.4 fail-closed window; 0.5/0.6 chat-core freeze. Companion: `docs/design/expo-p0-spikes.md`.
 **Gate:** WP-07 / WP-08 / WP-11 / WP-15 may start. Device RSS remains a WP-18 measurement against the locked window.
@@ -350,7 +350,7 @@ Gate wording: **zero test path edits** — allow shim re-exports and import path
 | **depends_on** | — |
 | **parallel_ok_with** | WP-01, WP-03–06 |
 | **Goal** | Freeze `ChatCoreSession` / exhaustive `ChatCorePatch` / three projections / key→owner; host table; dual-transport; buffer-first open+reconnect; `applyReductionPatch` naming. |
-| **Exit** | **done 2026-08-21** — `docs/design/chat-core-contracts.md`: exhaustive patch keys from all families on v0.55.2; read union; key→owner; `SKIPPED_EVENTS`; dual-transport + reconnect; host table; Remote Control vs desktop-only split |
+| **Exit** | **done 2026-08-21** — `docs/architecture/chat-core.md`: exhaustive patch keys from all families on v0.55.2; read union; key→owner; `SKIPPED_EVENTS`; dual-transport + reconnect; host table; Remote Control vs desktop-only split |
 | **Tests** | Contract fixtures as markdown/TS types sketch (implementation later) |
 | **Scope** | `chat-store/types.ts`, event-reducer, `remote-control-service.ts` (read-only), `packages/shared/src/agent-types.ts` |
 
@@ -1110,7 +1110,7 @@ bun run dev:mobile
 | PR | WP | Action |
 |----|-----|--------|
 | **PR1** | **WP-01** | **done 2026-08-14** — inverted three `../index` symbols into `event-reducer/transformers.ts`; impurity map + boundary test recorded. |
-| **PR2** | **WP-02** | **done 2026-08-21** — `docs/design/chat-core-contracts.md` freeze on v0.55.2 (keys, owner, skipped events, host protocol, Remote Control scope). |
+| **PR2** | **WP-02** | **done 2026-08-21** — `docs/architecture/chat-core.md` freeze on v0.55.2 (keys, owner, skipped events, host protocol, Remote Control scope). |
 | **PR3** | **WP-03** | **done 2026-08-21** — golden vectors + desktop decrypt harness; noble 2.3.0 chosen for WP-08. |
 
 After PR1–3 green, run WP-04/05/06 in parallel, then **WP-07 scaffold** once Metro (WP-04) and P0-complete are recorded.
@@ -1243,7 +1243,7 @@ Flutter has **zero** custom MethodChannels — plugin capability only (camera, f
 
 ## Appendix D — Remote Control parity (Expo must / must not)
 
-Frozen with WP-02 on v0.55.2; **baseline moved to current `main` at the 2026-09-04 re-scope** (§1a). The transcript list below is satisfied automatically by chat-core/chat-view; the shell list is owned by WP-27 and must be re-read against `main` (9 `requestKind`s, 6 `HarnessId`s). Source of truth: `docs/design/chat-core-contracts.md` §1.
+Frozen with WP-02 on v0.55.2; **baseline moved to current `main` at the 2026-09-04 re-scope** (§1a). The transcript list below is satisfied automatically by chat-core/chat-view; the shell list is owned by WP-27 and must be re-read against `main` (9 `requestKind`s, 6 `HarnessId`s). Source of truth: `docs/architecture/chat-core.md` §1.
 
 **Must (transcript comes with chat-view extract from this baseline):** sandbox chip; model-fallback notice row; structured error badge; grouped / background task notifications; unified tool status; `@native/*` galleries; DeepSeek Task + `diagnostic`; Cursor nested subagents; Codex Fast / Approve for Me; `messages_retracted`.
 

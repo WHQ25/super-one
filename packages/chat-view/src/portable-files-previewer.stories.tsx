@@ -38,7 +38,7 @@ const TEXTS: Record<string, string> = {
     '}',
     ...Array.from({ length: 30 }, (_, i) => `// line ${i + 7}: enough to scroll inside the card`),
   ].join('\n'),
-  [`${ROOT}/docs/design/inline-files-previewer.md`]: [
+  [`${ROOT}/docs/features/inline-files-previewer.md`]: [
     '# Inline files previewer',
     '',
     'A fixed-height carousel of files with a note under each. [This link](https://example.com) is inert in the card.',
@@ -103,7 +103,7 @@ const files = {
   image: { path: 'shots/drawer-open.png', absolutePath: `${ROOT}/shots/drawer-open-${stamp}.png`, name: 'drawer-open.png', kind: 'image', size: 184_320, note: 'The drawer, open; the active project is already expanded.' },
   video: { path: 'shots/open.mp4', absolutePath: `${ROOT}/shots/open-${stamp}.mp4`, name: 'open.mp4', kind: 'video', size: 5_242_880, note: 'The slide-in, 240ms, no overshoot.' },
   text: { path: 'src/renderer/FilesPreviewer.tsx', absolutePath: `${ROOT}/src/renderer/FilesPreviewer.tsx`, name: 'FilesPreviewer.tsx', kind: 'text', size: 1840, note: 'The card entry point.' },
-  markdown: { path: 'docs/design/inline-files-previewer.md', absolutePath: `${ROOT}/docs/design/inline-files-previewer.md`, name: 'inline-files-previewer.md', kind: 'markdown', size: 9120, note: 'Design doc; section 6 is the phone.' },
+  markdown: { path: 'docs/features/inline-files-previewer.md', absolutePath: `${ROOT}/docs/features/inline-files-previewer.md`, name: 'inline-files-previewer.md', kind: 'markdown', size: 9120, note: 'Design doc; section 6 is the phone.' },
   largeText: { path: 'logs/session.log', absolutePath: `${ROOT}/logs/session.log`, name: 'session.log', kind: 'text', size: 3_145_728, note: 'Too big for the RPC; opens in the preview page.' },
   pdf: { path: 'reports/q3.pdf', absolutePath: `${ROOT}/reports/q3.pdf`, name: 'q3.pdf', kind: 'pdf', size: 512_000, note: 'Page 3 has the chart.' },
   audio: { path: 'assets/memo.m4a', absolutePath: `${ROOT}/assets/memo.m4a`, name: 'memo.m4a', kind: 'audio', size: 1_048_576 },

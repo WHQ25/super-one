@@ -28,9 +28,9 @@ Last updated: 2026-09-29
 
 ## Documents
 
-- Design notes (not moved): [grok-acp-permissions.md](../../design/grok-acp-permissions.md),
-  [grok-build-parity.md](../../design/grok-build-parity.md),
-  [grok-xai-ext-notifications.md](../../design/grok-xai-ext-notifications.md)
+- Design notes: [grok-acp-permissions.md](grok-acp-permissions.md),
+  [grok-build-parity.md](grok-build-parity.md),
+  [grok-xai-ext-notifications.md](grok-xai-ext-notifications.md)
 - [api-surface.md](api-surface.md) · [contracts.md](contracts.md) · [backlog.md](backlog.md)
 - Upgrade docs: none yet; add `upgrades/<version>.md` with the next bump
 

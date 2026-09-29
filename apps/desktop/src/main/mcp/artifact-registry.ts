@@ -1,6 +1,6 @@
 /**
  * Artifact references are registered, not discovered
- * (`docs/design/session-sync-zone.md` §3).
+ * (`docs/architecture/session-sync-zone.md` §3).
  *
  * A tool that writes a file the agent will be handed a path to registers it
  * here at the moment the file is complete. The Host Action executor collects

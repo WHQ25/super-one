@@ -186,7 +186,7 @@ export class DeviceAgentSession {
      * Whose session this device is driven for. Every screenshot the backend
      * writes is registered under it, so a Host Action for a remote session
      * pushes the file the reply's `image.path` names
-     * (`docs/design/session-sync-zone.md` §3). Absent in unit tests that drive
+     * (`docs/architecture/session-sync-zone.md` §3). Absent in unit tests that drive
      * a fake backend directly.
      */
     private readonly sessionId?: string,

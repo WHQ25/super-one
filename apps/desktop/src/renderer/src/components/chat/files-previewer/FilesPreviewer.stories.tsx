@@ -42,7 +42,7 @@ const TEXT_FILES: Record<string, { content: string; language: string }> = {
       ...Array.from({ length: 30 }, (_, i) => `// line ${i + 12}: enough lines to scroll inside the card`),
     ].join('\n'),
   },
-  [`${ROOT}/docs/design/inline-files-previewer.md`]: {
+  [`${ROOT}/docs/features/inline-files-previewer.md`]: {
     language: 'markdown',
     content: [
       '# Inline files previewer',
@@ -76,7 +76,7 @@ const TEXT_FILES: Record<string, { content: string; language: string }> = {
 const files = {
   image: { path: 'docs/design/architecture.svg', absolutePath: DIAGRAM_URL, name: 'architecture.svg', kind: 'image', size: 2048, note: 'Overall architecture: renderer, main and the MCP server; arrows are IPC direction.' },
   text: { path: 'src/renderer/components/chat/FilesPreviewer.tsx', absolutePath: `${ROOT}/src/renderer/components/chat/FilesPreviewer.tsx`, name: 'FilesPreviewer.tsx', kind: 'text', size: 1840, note: 'The new block entry point.' },
-  markdown: { path: 'docs/design/inline-files-previewer.md', absolutePath: `${ROOT}/docs/design/inline-files-previewer.md`, name: 'inline-files-previewer.md', kind: 'markdown', size: 9120, note: 'Design doc; section 2 lists the supported kinds.' },
+  markdown: { path: 'docs/features/inline-files-previewer.md', absolutePath: `${ROOT}/docs/features/inline-files-previewer.md`, name: 'inline-files-previewer.md', kind: 'markdown', size: 9120, note: 'Design doc; section 2 lists the supported kinds.' },
   notebook: { path: 'notebooks/analysis.ipynb', absolutePath: `${ROOT}/notebooks/analysis.ipynb`, name: 'analysis.ipynb', kind: 'notebook', size: 4096, note: 'The last cell plots sessions per harness.' },
   video: { path: 'demo/onboarding.mp4', absolutePath: 'data:video/mp4;base64,AAAA', name: 'onboarding.mp4', kind: 'video', size: 5_242_880, note: 'Screen recording; the first ten seconds show the swipe on the phone.' },
   audio: { path: 'assets/voice-memo.m4a', absolutePath: 'data:audio/mp4;base64,AAAA', name: 'voice-memo.m4a', kind: 'audio', size: 1_048_576, note: 'Product meeting memo, about two minutes.' },

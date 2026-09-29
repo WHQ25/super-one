@@ -1,6 +1,6 @@
 /**
  * Cache-through mirror of node zone artifacts on the desktop
- * (`docs/design/session-sync-zone.md` §4.2).
+ * (`docs/architecture/session-sync-zone.md` §4.2).
  *
  * A node-zone path maps by prefix to `<userData>/sync/<sessionId>/<relative>`.
  * The local copy is trusted only while its size and mtime match what

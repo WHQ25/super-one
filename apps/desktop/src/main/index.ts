@@ -4650,9 +4650,9 @@ function registerIpcHandlers(): void {
     agentService.notifyEventSubscribers({ type: 'session_list_changed', projectPath })
   })
   // A deleted session takes its sync zone and transfer jobs with it
-  // (docs/design/session-sync-zone.md §7) — off the db-layer signal, so the
+  // (docs/architecture/session-sync-zone.md §7) — off the db-layer signal, so the
   // single delete, "delete older" and session_cleanup all reclaim.
-  // Housekeeping for the sync zone (docs/design/session-sync-zone.md §7):
+  // Housekeeping for the sync zone (docs/architecture/session-sync-zone.md §7):
   // directories whose session is provably gone, and adhoc captures nobody
   // claimed. Runs 30 s after launch — never between launch and the first
   // window — and again whenever a node connects, because a node that was

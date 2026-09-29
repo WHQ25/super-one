@@ -17,6 +17,9 @@ function FailedTurn({ provider = 'codex', width = 390, withUsage = true, scheme 
       ...(withUsage ? { durationMs: 45_000, consumedTokens: { input: 18_400, output: 2_600 } } : {}),
       errorInfo: {
         code: provider === 'codex' ? 'cyberPolicy' : 'overloaded',
+        terminalReason: 'api_error',
+        subtype: 'error_during_execution',
+        model: 'claude-opus-5',
         requestId: 'request_' + 'a'.repeat(100),
         raw: 'The request failed before the response finished. Please try again.\n'
           + 'Additional diagnostic details from the provider. '.repeat(4),
@@ -58,6 +61,11 @@ export const ClaudeExpanded: Story = {
 
 export const Narrow: Story = {
   args: { width: 320 },
+  play: CodexExpanded.play,
+}
+
+export const NarrowClaude: Story = {
+  args: { provider: 'claude', width: 320 },
   play: CodexExpanded.play,
 }
 

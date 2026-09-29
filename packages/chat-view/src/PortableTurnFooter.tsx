@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertTriangle, ArrowDown, ArrowUp, Check, ChevronDown, ChevronUp, Clock, Copy, Loader2 } from 'lucide-react'
 import type { ChatMessage } from '@superone/shared/agent-types'
@@ -44,12 +44,16 @@ function PortableErrorBadge({ info }: { info: NonNullable<ChatMessage['metadata'
       {open && (
         <div id={detailsId} className="min-w-0 basis-full rounded-md bg-muted/60 p-2 text-xs leading-relaxed text-muted-foreground">
           <p className="text-foreground">{t(`chat.error.hint.${kind}`)}</p>
-          {rows.map((row) => (
-            <div key={row.label} className="mt-1 flex gap-2 font-mono">
-              <span className="w-24 shrink-0 opacity-60">{row.label}</span>
-              <span className="min-w-0 break-all">{row.value}</span>
-            </div>
-          ))}
+          {rows.length > 0 && (
+            <dl className="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 gap-y-1 font-mono">
+              {rows.map((row) => (
+                <Fragment key={row.label}>
+                  <dt className="opacity-60">{row.label}</dt>
+                  <dd className="min-w-0 break-all">{row.value}</dd>
+                </Fragment>
+              ))}
+            </dl>
+          )}
           <p className="mt-2 border-t pt-2 font-mono break-all whitespace-pre-wrap">{info!.raw}</p>
         </div>
       )}

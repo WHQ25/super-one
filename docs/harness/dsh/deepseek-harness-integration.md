@@ -1238,8 +1238,8 @@ host service exists — so `cordis` listed as healthy while being unmountable.
 The goal this serves: **install third-party dsh plugins at runtime**, so the
 community's host-side ecosystem (tools, model adapters, executors, skills,
 workflows) is reachable without a SuperOne release. UI plugins are explicitly
-out of scope and go through SuperOne's own slot system instead — see
-`docs/draft/superone-ui-plugin-system.md` for why the two tracks separated.
+out of scope: UI extensibility is SuperOne-owned and cross-harness, and dsh
+`client-ui-*` packages never run in SuperOne.
 
 ### Upstream does not solve this, but not for the reason first recorded
 

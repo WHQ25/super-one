@@ -51,3 +51,40 @@ letting Android follow the dimensions published by scrcpy.
 Live checks against a real device: `src/main/device/android/live.manual.test.ts`,
 skipped unless `ANDROID_LIVE=1`. adb binds a daemon port, so it needs to run outside
 the sandbox.
+
+### Computer Use background input
+
+macOS Computer Use drives apps without bringing them to the front. The helper
+(`apps/desktop/native/computer-use-helper`) posts events to the target pid and makes
+the app believe it is active (`SyntheticActivation.swift`); these facts shape it:
+
+- **Chromium windows swallow the first click.** Web content refuses first mouse,
+  so a click into a window that is not key only makes it key. The helper makes the
+  window key first, at a point that is not replayed: the title label, the frame left
+  of the close button when a hit-test says that point is the window itself, else an
+  off-screen click for windows hosting an `AXWebArea`
+  (`SyntheticActivation#keyMakingPoint`). Under a hidden title bar (Electron,
+  Cursor) the strip beside the traffic lights is web content, so the frame point
+  does not apply.
+- **Menu commands in a background app need activation.** AppKit validates menus
+  only for an active app with a key window. The helper presses the command under
+  synthetic activation; if that fails it activates the app for real, presses, and
+  hands the front back in the same call (`AxActions.swift#axPressMenuCommand`).
+- **A focus-steal guard is required.** A driven app can activate itself for real
+  (an Electron app opening a new `BrowserWindow`). `FocusStealGuard.swift` gives
+  the front back when the app was driven in the last 3 s and no HID input arrived
+  in the last 0.5 s; posted events do not count as HID, and activations the helper
+  requests itself are registered first and left alone.
+- **The window server picks a drag's drop target by real stacking order.** Posted
+  pointer events reach a background window by number, but once the drag session
+  starts the drop goes to the frontmost window at the drop point
+  (`WindowCover.swift`). An exposed drop point lands in the background; under
+  another app's window `main/computer-use/platform/macos-adapter.ts` asks the
+  helper to activate the target around the drag and hand the front back; under
+  SuperOne's own window only `computer_run` lowers that window
+  (`main/jev/own-windows.ts`).
+- **The host picks the delivery path per action.** `computer_act` has no delivery
+  field. `macos-adapter.ts#applyOne` uses the AX action for press / select /
+  open / setText, a ref's press capability for left clicks, a scroll bar's value
+  for scrolls that have one, and events posted to the pid for everything else
+  (right-clicks, coordinates, typing, keys, drags, wheel scrolls).

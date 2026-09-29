@@ -1,3 +1,79 @@
 # Codex behavioral contracts
 
-None recorded yet. Format: [the template](../_template/contracts.md).
+Upstream behavior SuperOne depends on that the app-server schema does not state.
+"Observed" names the version and method; re-check an entry when an upgrade touches
+its area. Realtime is experimental upstream (`features.realtime_conversation`,
+enabled by `apps/desktop/src/main/codex/app-server-connection.ts`).
+
+## Realtime voice
+
+### A realtime session is a voice connection on the existing thread
+
+- **Behavior:** `thread/realtime/start` attaches a short-lived realtime session
+  (`realtimeSessionId`) to an existing, already started or resumed thread; it
+  creates no second thread. Work the voice model delegates runs as an ordinary
+  turn on that thread, with the thread's sandbox, permission profile and approval
+  requests. `thread/timeline/list` returns one timeline mixing `realtime` entries
+  (transcript segments, session start/close, promoted items) with turn entries.
+- **Observed:** 0.150.1, live voice sessions and rollouts; 0.155.1, experimental
+  JSON schema from the pinned binary.
+- **Depends on it:** `apps/desktop/src/main/codex/codex-realtime.ts#startCodexRealtime`
+  (resolves the thread through `withThreadConnection`, then streams delegated turns
+  through the normal turn path in `pumpRealtimeDelegatedTurns`),
+  `#listCodexRealtimeTimelinePages` and `#mapCodexRealtimeTimeline` (voice and
+  thread views are two projections of one timeline; SuperOne persists only the
+  `threadId`).
+- **Guard:** `apps/desktop/src/main/codex/codex-realtime.test.ts` (timeline
+  projections); `apps/desktop/src/main/codex/app-server-connection.test.ts`
+  (feature flag).
+
+### Prompt fields replace defaults; empty is not unset
+
+- **Behavior:** `prompt` replaces Codex's built-in voice backend prompt; a
+  non-blank `experimental_realtime_ws_backend_prompt` config beats it, and
+  `prompt: ""` clears the built-in prompt instead of leaving it alone.
+  `includeStartupContext` appends thread context after whichever prompt won.
+  `initialItems` (V3 only, at most 128 items and 8,192 estimated tokens) sit
+  beside the prompt. `realtimeStartInstructions` / `realtimeEndInstructions` go to
+  the backing Codex model, once per transition into or out of realtime, and each
+  replaces Codex's default fragment rather than appending to it.
+- **Observed:** 0.150.1, source reading; 0.155.1, source reading
+  (`codex-rs/core/src/realtime_prompt.rs#prepare_realtime_backend_prompt`,
+  `codex-rs/core/src/context/world_state/realtime.rs`).
+- **Depends on it:** `apps/desktop/src/main/codex/codex-realtime.ts#buildCodexRealtimeStartParams`
+  sends a field only when its constant in
+  `apps/desktop/src/main/agent/superone-system-prompt.ts` (`CODEX_REALTIME_*`) is
+  non-blank. Only `initialItems` is sent today, as one `developer` item.
+- **Guard:** `apps/desktop/src/main/codex/codex-realtime.test.ts` (blank fields
+  absent; the `initialItems` text).
+
+### No realtime model override
+
+- **Behavior:** A model on a Codex-managed realtime session was rejected with
+  `Field session.model is not allowed for this Codex realtime session`; the App
+  Server picks the realtime model and its required headers. 0.155.1 adds
+  `ThreadRealtimeStartParams.model` ("overrides the configured realtime model");
+  it has not been exercised.
+- **Observed:** 0.150.1, live session error; 0.155.1, schema only.
+- **Depends on it:** `apps/desktop/src/main/codex/codex-realtime.ts#buildCodexRealtimeStartParams`
+  (never sends `model`).
+- **Guard:** `apps/desktop/src/main/codex/codex-realtime.test.ts`
+  (`not.toHaveProperty('model')`).
+
+### Delegation envelope and timing are observed, not contracted
+
+- **Behavior:** A delegated request reaches the thread as a user message wrapped
+  in `<realtime_delegation>` with `<input>` and an optional `<transcript_delta>`
+  (each field capped at 4 KiB); the transcript tail flushed at session end
+  (`flushTranscriptTailOnSessionEnd`) adds `<source>transcript_tail_flush</source>`.
+  Delegation fires at the voice model's own utterance and intent boundaries, not
+  on an interval, and one session can delegate several times. Neither the format
+  nor the timing is in the schema.
+- **Observed:** format: 0.150.1 rollouts, 0.155.1 source
+  (`codex-rs/core/src/context/realtime_delegation.rs`); timing: 0.150.1 rollouts
+  only.
+- **Depends on it:** `packages/shared/src/realtime-timeline.ts#isRealtimeDelegationText`
+  (marks delegated turns in `codex-realtime.ts#mapCodexRealtimeTimeline`; the voice
+  view renders them as delegation rows instead of raw XML).
+- **Guard:** `packages/shared/src/realtime-timeline.delegation.test.ts` covers the
+  parser against fixtures only; unguarded against upstream change.

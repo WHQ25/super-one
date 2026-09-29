@@ -35,6 +35,7 @@ the same commit.
 - [chat-core.md](architecture/chat-core.md) — shared reducer, patch contract, host protocol
 - [session-sync-zone.md](architecture/session-sync-zone.md) — session files across hosts
 - [remote-node-service.md](architecture/remote-node-service.md) — the remote node
+- [mobile-remote-control.md](architecture/mobile-remote-control.md) — phone ↔ host protocol: framing, batching, progressive loading, attachments
 - [relay-crypto.md](architecture/relay-crypto.md) — relay encryption and golden vectors
 
 ### Features
@@ -42,6 +43,7 @@ the same commit.
 - [inline-files-previewer.md](features/inline-files-previewer.md) — `@native/files-previewer`
 - [3d-model-preview.md](features/3d-model-preview.md) — 3D formats, samples, USDZ composition
 - [terminal-agent-tools.md](features/terminal-agent-tools.md) — agent terminal control
+- [jev-fast-loop.md](features/jev-fast-loop.md) — Jev fast loop for browser, computer and device runs
 
 ### Development
 

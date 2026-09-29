@@ -5,6 +5,22 @@ import { describe, expect, it } from 'vitest'
 
 const DIR = dirname(fileURLToPath(import.meta.url))
 
+/**
+ * State shared across sessions must come through `ports`, so a Map at module
+ * scope is banned. A Map local to a reducer call is ordinary code. Module scope
+ * is a statement starting at column 0, or the unindented declaration a wrapped
+ * initializer continues.
+ */
+function hasModuleScopeMap(src: string): boolean {
+  const lines = src.split('\n')
+  return lines.some((line, i) => {
+    if (!/new Map\s*[<(]/.test(line)) return false
+    if (!/^\s/.test(line)) return true
+    const prev = lines[i - 1] ?? ''
+    return !/^\s/.test(prev) && /=\s*$/.test(prev)
+  })
+}
+
 describe('chat-core package boundary', () => {
   it('package sources stay independent from desktop and browser globals', () => {
     const hits: string[] = []
@@ -16,7 +32,7 @@ describe('chat-core package boundary', () => {
       if (/apps\/desktop/.test(src)) hits.push(`${name}:desktop-path`)
       if (/from\s+['"]\.\.\//.test(src)) hits.push(`${name}:parent-import`)
       if (/\bwindow\s*\./.test(src)) hits.push(`${name}:window`)
-      if (name !== 'ports.ts' && /new Map\s*[<(]/.test(src)) hits.push(`${name}:module-map`)
+      if (name !== 'ports.ts' && hasModuleScopeMap(src)) hits.push(`${name}:module-map`)
     }
     expect(hits).toEqual([])
   })

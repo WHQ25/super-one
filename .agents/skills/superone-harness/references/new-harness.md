@@ -186,10 +186,12 @@ Optional for a first ship — state that explicitly rather than silently deferri
 <a id="design-pack"></a>
 ## Design pack convention
 
-Before P0 on a non-trivial harness, write `docs/design/<harness>-sdk-harness.md` recording the
-**locked decisions** — which SDK/protocol, which auth mode, which session store, what's explicitly
-out of scope — plus a `README-<harness>-harness.md` index. `docs/harness/cursor/cursor-sdk-harness.md` is
-the model (decisions labelled D1–D8, referenced from commit messages).
+Before P0 on a non-trivial harness, copy `docs/harness/_template/` to `docs/harness/<harness-id>/`
+and write a design doc there recording the **locked decisions** — which SDK/protocol, which auth
+mode, which session store, what's explicitly out of scope — listed from the harness README.
+`docs/harness/cursor/cursor-sdk-harness.md` is the model (decisions labelled D1–D8, referenced from
+commit messages). Pin the upstream exactly and start `api-surface.md` from the first integration;
+conventions are in `docs/harness/README.md`.
 
 This matters more than usual here because harness integrations span many sessions and many files;
 without the locked-decision list, later phases silently re-litigate choices made in P1.

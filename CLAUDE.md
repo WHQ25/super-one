@@ -17,6 +17,7 @@ the change. Reuse content already loaded; a local typo fix needs no architecture
 | Website | [apps/web/CLAUDE.md](apps/web/CLAUDE.md) |
 | Remotion compositions | [apps/video/CLAUDE.md](apps/video/CLAUDE.md) |
 | Shared translations | [packages/shared/src/i18n/CLAUDE.md](packages/shared/src/i18n/CLAUDE.md) |
+| Harness upstream APIs, version upgrades | [docs/harness/README.md](docs/harness/README.md) |
 | Cross-package layout and TypeScript resolution | [repository.md](docs/development/repository.md) |
 | Preparing a commit | [commit-messages.md](docs/development/commit-messages.md) |
 

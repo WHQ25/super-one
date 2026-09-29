@@ -1,6 +1,6 @@
 ---
 name: superone-harness
-description: Add a coding-agent harness or close a harness integration gap in events, capabilities, or host tools. Excludes ordinary UI fixes and API credential configuration.
+description: Add a coding-agent harness, upgrade a harness's pinned version, or close a harness integration gap in events, capabilities, or host tools. Excludes ordinary UI fixes and API credential configuration.
 ---
 
 # Harness integration
@@ -18,6 +18,7 @@ If a provider already speaks ACP, add its agent id before considering a new harn
 | Missing or incorrect chat events | [event-contract.md](references/event-contract.md) |
 | Host MCP injection or permission admission | Host SuperOne tools in [integration.md](references/integration.md) |
 | Whole-harness audit | Completeness standard and recurring traps in [integration.md](references/integration.md) |
+| Version upgrade, or which upstream APIs a harness uses | The harness folder under [docs/harness/](../../../docs/harness/README.md) and its upgrade workflow |
 
 Use Claude, Codex, and Grok as reference implementations for the matching runtime
 shape. For a single capability fix, verify that capability's affected surfaces;
@@ -28,6 +29,10 @@ time. UI catalogs and default branches need inspection for the changed capabilit
 Set capability flags only when the corresponding events and controls work; leave
 unsupported features explicitly off. Preserve exact-name host tool admission and
 executor-side authorization as separate layers.
+
+When a change starts or stops using an upstream interface, update that harness's
+`docs/harness/<harness-id>/api-surface.md` row in the same change; record newly
+found upstream behavior in its `contracts.md`.
 
 Finish with the requested behavior working, affected checks passing, and any
 unverified live or remote paths stated clearly. A new harness needs the full

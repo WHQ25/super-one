@@ -13,7 +13,7 @@ reason). Ledger rows: [api-surface.md](api-surface.md).
 | 3 | `./core` entry point | 0.3.282 | Smaller SDK load in the main process | Must confirm it covers `startup`, `forkSession`, `getSubagentMessages`; uses our installed zod and MCP SDK | open |
 | 4 | `prewarm()` / `SpareProcess.claim()` | 0.3.282 (alpha) | Warm a process before cwd is known; could replace `WarmupManager.keyOf`'s hand-kept list | Alpha API; `ClaimOptions` covers only some options, so the keyed pool stays for the rest | open, wait for stable |
 | 5 | `canUseTool` `options.mcpServer.source === 'sdk'` | ≤0.3.278 | Trust SuperOne tools by origin instead of the `mcp__superone__` name prefix | `allowedTools` admission still matches by name | open |
-| 6 | `result.startup_failure_reason` | ≤0.3.278 | Specific error UI for startup failures (16 reasons) instead of generic text | Mapping table in `result-failure.ts` | open |
+| 6 | `result.startup_failure_reason` | ≤0.3.278 | Specific error UI for startup failures (17 reasons) instead of generic text | Mapping table in `result-failure.ts` | open |
 | 7 | `conversation_reset` | 0.3.281 (fields) | Follow `/clear` and plan-exit resets to the new conversation id and reset the title | Needs a session-level transcript switch | open |
 | 8 | `system/permission_denied` | — | Live notice when a tool is auto-denied, instead of reading `result.permission_denials` after the turn | Low value while denials already show at turn end | open |
 | 9 | `system/memory_recall`, `system/thinking_tokens` | — | Recalled-memory row; live thinking-token estimate | Cosmetic | open |

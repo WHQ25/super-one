@@ -129,11 +129,14 @@ Every alpha release keeps its own notes on its GitHub Release.
   when unnamed.
 - Cmd/Ctrl+B toggles the activity panel and Cmd/Ctrl+Alt+B the sidebar;
   the sidebar shortcut also works on Windows.
-- Claude Agent SDK 0.3.284 (Claude Code 2.1.284): a turn woken by a
+- Claude Agent SDK 0.3.285 (Claude Code 2.1.285): a turn woken by a
   finished background agent no longer fails its tools with "Stream
   closed", forks after a rewind or compaction copy the right history,
   a session no longer stays "needs action" after overlapping permission
-  prompts are answered, and Claude sessions start faster.
+  prompts are answered, disabling an MCP server in settings closes its
+  connection, and Claude sessions start faster. Background shell
+  commands Claude starts now stop at their timeout (30 minutes unless
+  the agent sets one, up to 2 hours).
 
 ## [0.69.0-alpha.2] - 2026-09-26
 

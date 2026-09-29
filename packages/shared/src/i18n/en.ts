@@ -1839,6 +1839,8 @@ export type Messages = {
     sending: string
     creatingSession: string
     codex: {
+      modelsRefreshed: string
+      modelsRefreshFailed: string
       statusRunning: string
       statusReading: string
       statusSearching: string
@@ -5913,6 +5915,8 @@ export const en: Messages = {
     sending: 'Sending…',
     creatingSession: 'Creating session…',
     codex: {
+      modelsRefreshed: 'Codex returned {{count}} models.',
+      modelsRefreshFailed: 'Could not refresh Codex models.',
       statusRunning: 'Running',
       statusReading: 'Reading',
       statusSearching: 'Searching',

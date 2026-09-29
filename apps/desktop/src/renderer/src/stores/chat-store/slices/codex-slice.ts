@@ -27,7 +27,7 @@ export interface CodexSlice {
   setSelectedCodexPermissionPreset: (preset: CodexPermissionPreset, target?: SessionWriteTarget) => void
   setSelectedCodexCollaborationMode: (mode: CodexCollaborationMode, target?: SessionWriteTarget) => void
   loadCodexModels: (projectPath: string, apiProviderId: string | null, force?: boolean) => Promise<ModelOption[]>
-  refreshCodexModels: (force?: boolean) => Promise<void>
+  refreshCodexModels: (force?: boolean) => Promise<ModelOption[] | null>
   refreshCodexSkills: (projectPath?: string) => Promise<void>
 }
 
@@ -189,15 +189,16 @@ export const createCodexSlice: StateCreator<ChatStore, [], [], CodexSlice> = (se
 
   refreshCodexModels: async (force = false) => {
     const { activeProject } = get()
-    if (!activeProject) return
+    if (!activeProject) return null
 
     try {
       const project = getProject(get(), activeProject)
       const sessionId = project._activeSessionId
       const apiProviderId = sessionId ? (project._sessions[sessionId]?.apiProviderId ?? null) : null
-      await get().loadCodexModels(activeProject, apiProviderId, force)
+      return await get().loadCodexModels(activeProject, apiProviderId, force)
     } catch (error) {
       console.warn('[refreshCodexModels] Failed:', error)
+      return null
     }
   },
 

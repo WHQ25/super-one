@@ -1701,8 +1701,22 @@ describe('codex model cache + defaults', () => {
       } as never,
     ])
 
-    await useChatStore.getState().refreshCodexModels(true)
+    const refreshed = await useChatStore.getState().refreshCodexModels(true)
+    expect(refreshed?.map((model) => model.id)).toEqual(['gpt-5.4'])
+    expect(mockWindowApp.codexListModels).toHaveBeenCalledWith('/codex-refresh', null, true)
     expect((useChatStore.getState().harnessResources.codex?.models ?? []).map((m) => m.id)).toEqual(['gpt-5.4'])
+  })
+
+  it('reports a failed manual Codex refresh and keeps the current models', async () => {
+    setupProject('/codex-refresh-failure')
+    const oldModels = [{ id: 'gpt-old', name: 'GPT Old' }] as never
+    mockWindowApp.codexListModels.mockResolvedValueOnce(oldModels)
+    await useChatStore.getState().refreshCodexModels(true)
+    mockWindowApp.codexListModels.mockRejectedValueOnce(new Error('offline'))
+
+    expect(await useChatStore.getState().refreshCodexModels(true)).toBeNull()
+    expect(useChatStore.getState().projectSessions['/codex-refresh-failure'].codexModels).toEqual(oldModels)
+    expect(useChatStore.getState().projectSessions['/codex-refresh-failure'].codexModelsLoading).toBe(false)
   })
 
   it('bypasses the main-process cache and updates claude resources on manual refresh', async () => {

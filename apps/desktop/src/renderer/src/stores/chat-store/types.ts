@@ -463,7 +463,7 @@ export interface ChatStore {
   setSelectedCodexPermissionPreset: (preset: CodexPermissionPreset, target?: SessionWriteTarget) => void
   setSelectedCodexCollaborationMode: (mode: CodexCollaborationMode, target?: SessionWriteTarget) => void
   loadCodexModels: (projectPath: string, apiProviderId: string | null, force?: boolean) => Promise<ModelOption[]>
-  refreshCodexModels: (force?: boolean) => Promise<void>
+  refreshCodexModels: (force?: boolean) => Promise<ModelOption[] | null>
   refreshCodexSkills: (projectPath?: string) => Promise<void>
   refreshCursorSlashItems: (projectPath?: string) => Promise<void>
   setPreferredProvider: (provider: ChatProvider, opts?: { userChosen?: boolean }) => void

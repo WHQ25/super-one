@@ -1,4 +1,6 @@
 import { useEffect, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import type { CodexReasoningEffort } from '@superone/shared/agent-types'
 import { useActiveSession, useChatStore, useScopedSessionActions } from '@/stores/chat'
 import { formatCodexModelName, formatReasoningEffortLabel } from '../chat-input-utils'
@@ -17,6 +19,7 @@ interface Props {
 }
 
 export function CodexModelSelector({ onCloseAutoFocus }: Props) {
+  const { t } = useTranslation()
   const selectedCodexModel = useActiveSession((s) => s.selectedCodexModel)
   const selectedCodexReasoningEffort = useActiveSession((s) => s.selectedCodexReasoningEffort)
   const selectedCodexServiceTier = useActiveSession((s) => s.selectedCodexServiceTier)
@@ -82,7 +85,12 @@ export function CodexModelSelector({ onCloseAutoFocus }: Props) {
             setSelectedCodexServiceTier(value === 'true' ? findCodexFastServiceTier(selectedCodexModelOption)?.id ?? null : null)
           }
         }}
-        onRefreshModels={() => void refreshCodexModels(true)}
+        onRefreshModels={() => {
+          void refreshCodexModels(true).then((fresh) => {
+            if (fresh === null) toast.error(t('chat.codex.modelsRefreshFailed'))
+            else toast.success(t('chat.codex.modelsRefreshed', { count: fresh.length }))
+          })
+        }}
         modelsLoading={codexModelsLoading}
         onCloseAutoFocus={onCloseAutoFocus}
         {...providerProps}

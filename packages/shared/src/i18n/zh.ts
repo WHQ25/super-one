@@ -1946,6 +1946,8 @@ export const zh: Messages = {
     sending: '发送中…',
     creatingSession: '正在创建会话…',
     codex: {
+      modelsRefreshed: 'Codex 返回了 {{count}} 个模型。',
+      modelsRefreshFailed: '无法刷新 Codex 模型列表。',
       statusRunning: '执行中',
       statusReading: '读取中',
       statusSearching: '搜索中',

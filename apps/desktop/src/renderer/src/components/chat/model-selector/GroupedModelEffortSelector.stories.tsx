@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Toaster, toast } from 'sonner'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import {
   GroupedModelEffortSelector,
@@ -134,3 +135,25 @@ function CodexAccountsStory() {
 }
 
 export const CodexAccounts: Story = { render: () => <CodexAccountsStory /> }
+
+function CodexManualRefreshStory() {
+  const [loading, setLoading] = useState(false)
+  return <div className="flex min-h-80 items-end justify-center p-6">
+    <GroupedModelEffortSelector
+      models={MODELS.slice(0, 2)}
+      selectedModelId={MODELS[0].id} onSelectModel={() => {}}
+      effortOptions={EFFORTS} selectedEffort="high" onSelectEffort={() => {}}
+      modelsLoading={loading}
+      onRefreshModels={() => {
+        setLoading(true)
+        window.setTimeout(() => {
+          setLoading(false)
+          toast.success('Codex returned 2 models.')
+        }, 800)
+      }}
+    />
+    <Toaster position="bottom-center" />
+  </div>
+}
+
+export const CodexManualRefresh: Story = { render: () => <CodexManualRefreshStory /> }

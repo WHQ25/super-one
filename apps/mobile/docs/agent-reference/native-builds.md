@@ -1,7 +1,9 @@
 # Mobile native builds and updates
 
 Read for native dependencies, build variants, EAS updates, or release validation.
-The device smoke below is a shipping recommendation, not a gate for routine edits.
+The device smoke below is a shipping recommendation, not a mandatory native-release
+gate or a gate for routine edits. Report whether it was run without implying that
+an unrecorded run passed.
 
 EAS files live in this app directory. Run EAS commands from `apps/mobile`, not the
 monorepo root. `eas.json` pins the root Bun version, builds the `internal` profile as

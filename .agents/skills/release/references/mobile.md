@@ -37,6 +37,10 @@ Two facts decide which of the two you can use:
 Read `apps/mobile/docs/agent-reference/native-builds.md` → **Native-binary updates** when something below
 does not add up; it is the design record.
 
+Physical-device smoke remains recommended for native releases, not a mandatory
+release gate. Use the checklist in that manual when running it and state whether
+it was run; lack of a smoke record is not itself a publication blocker.
+
 ---
 
 ## Decide (per platform)

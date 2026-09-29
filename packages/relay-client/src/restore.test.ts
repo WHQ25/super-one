@@ -27,6 +27,47 @@ it('uses a modern host bootstrap without additional round trips', async () => {
   expect(result).toMatchObject({ hasMore: true, cursor: 200, snapshot: { status: 'streaming' } })
 })
 
+it('keeps live events buffered until an older host supplies history and state', async () => {
+  const remote = client()
+  const batches = [[{ type: 'status_change', status: 'streaming' }]]
+  remote.releaseBuffer.mockReturnValue({ epoch: 7, batches } as never)
+  remote.request.mockImplementation((async ({ type }: { type: string }) => {
+    expect(remote.startBuffering).toHaveBeenCalledOnce()
+    expect(remote.releaseBuffer).not.toHaveBeenCalled()
+    if (type === 'subscribe_session') return { ok: true }
+    if (type === 'load_session_messages') {
+      return { messages: [msg('history')], hasMore: true, cursor: 12, provider: 'claude' }
+    }
+    return { status: 'streaming', inProgressMessages: [msg('live')] }
+  }) as never)
+
+  const result = await restoreSession(remote as never, '/p', 's')
+  expect(remote.request.mock.calls.map(([request]) => request.type)).toEqual([
+    'subscribe_session', 'load_session_messages', 'get_session_state',
+  ])
+  expect(result).toMatchObject({
+    messages: [msg('history')], hasMore: true, cursor: 12, provider: 'claude',
+    snapshot: { status: 'streaming', inProgressMessages: [msg('live')] },
+    liveBatches: batches, epoch: 7,
+  })
+  expect(result.navigationAvailable).toBeUndefined()
+  expect(remote.releaseBuffer).toHaveBeenCalledOnce()
+})
+
+it.each(['load_session_messages', 'get_session_state'])(
+  'releases the buffer when an older host rejects %s', async (failedCommand) => {
+    const remote = client()
+    remote.request.mockImplementation((async ({ type }: { type: string }) => {
+      if (type === failedCommand) return { error: 'history unavailable' }
+      if (type === 'load_session_messages') return { messages: [], hasMore: false, cursor: null }
+      return { ok: true }
+    }) as never)
+    await expect(restoreSession(remote as never, '/p', 's')).rejects.toThrow('history unavailable')
+    expect(remote.releaseBuffer).toHaveBeenCalledOnce()
+    expect(remote.request.mock.calls.at(-1)?.[0].type).toBe(failedCommand)
+  },
+)
+
 function msg(id: string) {
   return { id, role: 'assistant' as const, status: 'complete' as const, content: [{ type: 'text' as const, text: id }], createdAt: '', providerId: 'claude' }
 }

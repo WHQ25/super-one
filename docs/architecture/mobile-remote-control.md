@@ -125,9 +125,18 @@ harness id, and the session snapshot, in one response. The phone reveals its
 cached page first when it has one and merges it with this page.
 
 Older hosts that answer `subscribe_session` without a history page get the
-fallback: `load_session_messages { limit: 8 }` then `get_session_state`
-(`packages/relay-client/src/restore.ts`). Without `navigationAvailable` the phone
-keeps the rail over loaded history only.
+fallback in `packages/relay-client/src/restore.ts`: without a cached transcript,
+`load_session_messages { limit: 8 }` then `get_session_state` if the subscription
+did not include a snapshot. With cached complete rows, restore first asks for
+messages after the last cached ID and falls back to the newest page if that
+anchor fails. Without `navigationAvailable` the phone keeps the rail over loaded
+history only. Keep this compatibility path covered by `restore.test.ts`.
+
+No minimum desktop version is currently enforced by this protocol. The product
+policy is to introduce a minimum supported desktop version and retain tested
+fallbacks within that supported range. The floor, version handshake and rollout
+remain planned in [mobile desktop compatibility](../tasks/mobile-desktop-compatibility/README.md);
+the planned gate must not be described as active before it is implemented.
 
 `loadEarlier` fetches one older page by cursor (`load_session_messages
 { cursor, limit: 24 }`), deduplicates against live rows, and keeps the scroll

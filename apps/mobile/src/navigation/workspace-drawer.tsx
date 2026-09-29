@@ -83,7 +83,7 @@ export function WorkspaceDrawer(props: WorkspaceDrawerProps) {
   }, [visible, panelWidth, closeOut, scrim, settleOpen, slide])
   useEffect(() => {
     // The drawer sits over the still-mounted composer. Leaving the keyboard up
-    // covers the session list — the same unfocus Flutter's drawer does.
+    // covers the session list.
     if (visible) Keyboard.dismiss()
   }, [visible])
   useEffect(() => {

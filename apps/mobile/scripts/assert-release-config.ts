@@ -129,7 +129,7 @@ if (
   !pluginNames.includes('./plugins/with-android-adaptive-icon-inset.js')
   || !existsSync(join(mobileRoot, 'plugins/with-android-adaptive-icon-inset.js'))
 ) {
-  throw new Error('Android adaptive icons must keep the 16% Flutter safe-zone inset after prebuild')
+  throw new Error('Android adaptive icons must keep the 16% safe-zone inset after prebuild')
 }
 
 const easProjectId = app.expo?.extra?.eas?.projectId

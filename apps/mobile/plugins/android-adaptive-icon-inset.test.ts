@@ -34,7 +34,7 @@ describe('applyAdaptiveIconInset', () => {
     expect(applyAdaptiveIconInset(once)).toBe(once)
   })
 
-  it('rewrites an existing inset to the Flutter safe-zone value', () => {
+  it('rewrites an existing inset to the 16% safe-zone value', () => {
     const tight = INSET_XML.replace('16%', '8%')
     expect(applyAdaptiveIconInset(tight)).toBe(INSET_XML)
   })

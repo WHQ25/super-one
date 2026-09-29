@@ -2189,7 +2189,7 @@ export function MobileApp() {
           onPromptSuggestion={(suggestion) => writeCommandLine(suggestion)}
           mentionRows={mentionRows}
           attachments={attachments}
-          // A launch-time readout, as on desktop and in the Flutter app: the
+          // A launch-time readout, as on desktop: the
           // folder chip answers for a session being configured. Both scopes
           // travel — showing only the project's is what made a session folder
           // added here look like it had not been written.

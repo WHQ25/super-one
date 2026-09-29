@@ -2,8 +2,8 @@
 
 /**
  * Android adaptive icons are 108dp; launchers mask to the inner ~72dp, which
- * trims 16% on each side. Flutter's `adaptive_icon_foreground_inset: 16` puts
- * the artwork in that safe zone. Expo writes a full-bleed foreground with no
+ * trims 16% on each side, so the artwork needs a 16% inset to sit in that safe
+ * zone. Expo writes a full-bleed foreground with no
  * inset, so SUPER/ONE get cropped and look oversized on the home screen.
  */
 

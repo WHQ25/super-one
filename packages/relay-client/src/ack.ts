@@ -1,4 +1,4 @@
-/** Flutter-semantic envelope ACK. Envelope seq never lands on AgentEvent.seq. */
+/** Relay envelope ACK. Envelope seq never lands on AgentEvent.seq. */
 
 export const PROCESSED_SEQ_CAP = 2048
 

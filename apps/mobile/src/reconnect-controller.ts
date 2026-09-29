@@ -14,7 +14,7 @@ export type ReconnectControllerHooks = {
   probe?: () => Promise<boolean>
 }
 
-/** Keep the Flutter-proven retry cadence: exponential backoff capped at 30s. */
+/** Retry cadence: exponential backoff capped at 30s. */
 export const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000] as const
 
 /**
@@ -43,7 +43,7 @@ export class ReconnectController {
     this.begin(epoch, false)
   }
 
-  /** App foreground recovery skips the pending delay, matching Flutter forceReconnect. */
+  /** App foreground recovery skips the pending delay. */
   force(epoch: number): void {
     this.cancel()
     this.begin(epoch, true)

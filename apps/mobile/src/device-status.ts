@@ -1,6 +1,5 @@
 /**
- * How a saved device presents in the device list. Mirrors the Flutter
- * `ConnectionStatus` enum so the two clients describe a desktop identically:
+ * How a saved device presents in the device list:
  * reachability (`online*`) is what discovery found, `connected*` is the socket
  * this app currently holds, and the LAN/cloud half names the transport.
  */
@@ -51,8 +50,7 @@ export function isLanStatus(status: DeviceStatus): boolean {
 }
 
 /**
- * Single source of truth for a row's status. Priority matches Flutter's
- * `_deriveStatus`: the socket we hold outranks anything discovery reports, and
+ * Single source of truth for a row's status. Priority: the socket we hold outranks anything discovery reports, and
  * a LAN route outranks the cloud because it is the one we would actually take.
  * A dial in progress outranks even the open socket: the socket opens long
  * before the workspace behind it is loaded, and the row is the only progress

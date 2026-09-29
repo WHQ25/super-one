@@ -132,7 +132,7 @@ export type ChatComposerProps = {
    * Composer surfaces are mutually exclusive, not stacked: a command that opens
    * a panel is answering the same keystrokes the suggestion lists are, and
    * showing both is how `/add-dir` ended up drawn on top of a command list
-   * still offering `/add-dir`. Desktop and Flutter both pick exactly one.
+   * still offering `/add-dir`. Desktop picks exactly one too.
    */
   overlay?: ReactNode
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { AppState } from 'react-native'
 
-/** Flutter parity: immediately replace/recover the socket whenever the app resumes. */
+/** Immediately replace or recover the socket whenever the app resumes. */
 export function useReconnectOnForeground(reconnect: () => void): void {
   const reconnectRef = useRef(reconnect)
   reconnectRef.current = reconnect

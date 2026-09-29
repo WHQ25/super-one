@@ -14,8 +14,8 @@ import { Text } from './text'
 
 /**
  * The list is a strip above the composer, not a page: past four or five rows it
- * scrolls instead of pushing the input off screen. Desktop and Flutter both cap
- * it at the same height.
+ * scrolls instead of pushing the input off screen. Desktop caps it at the same
+ * height.
  */
 const LIST_MAX_HEIGHT = 140
 /** Slow enough to read as a state marker rather than a request in flight. */
@@ -24,7 +24,7 @@ const RUNNING_SPIN_MS = 3_000
 /**
  * The session's todo list, above the composer — the one place it is shown.
  *
- * Phone chrome follows Flutter: a full-bleed strip hairlined off the transcript
+ * Phone chrome is a full-bleed strip hairlined off the transcript
  * and the composer. Tablet chrome follows desktop: an inset rounded card, which
  * only works once there is width to spare on either side.
  */
@@ -86,7 +86,7 @@ export function TodoPanel(props: {
         : {
           // Rules on both edges, same fill: the strip is bounded off the
           // transcript above and the status chips below without becoming its
-          // own colour band. Flutter's borders were right; only its fill was.
+          // own colour band.
           borderTopWidth: StyleSheet.hairlineWidth,
           borderBottomWidth: StyleSheet.hairlineWidth,
           borderColor: colors.border,

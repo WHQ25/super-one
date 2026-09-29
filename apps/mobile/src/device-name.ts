@@ -2,8 +2,7 @@
  * Label the desktop shows for this phone at pairing and register.
  *
  * iOS: the user-assigned device name. iOS 16+ may return the generic "iPhone"
- * unless Apple grants a restricted entitlement — same limit the Flutter client
- * had. Android: brand + model, matching Flutter's `device_info_plus` string.
+ * unless Apple grants a restricted entitlement. Android: brand + model.
  */
 export function resolveMobileDeviceName(info: {
   deviceName?: string | null

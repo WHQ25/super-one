@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "comment": "Captured 2026-08-21 from desktop remote-control-crypto.ts (WebCrypto). IV lives inside each ciphertext. Do not regenerate unless the algorithm changes. Unmodified frames decrypt on Flutter 1.0.0+19 crypto.dart and @noble/ciphers@2.3.0 + @noble/hashes@2.3.0.",
+  "comment": "Captured 2026-08-21 from desktop remote-control-crypto.ts (WebCrypto). IV lives inside each ciphertext. Do not regenerate unless the algorithm changes. Unmodified frames decrypt with @noble/ciphers@2.3.0 + @noble/hashes@2.3.0.",
   "masterSecretHex": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "r2Key": "files/abcdef0123456789abcdef0123456789/deadbeefcafe0001000200030004beef.bin",
   "derived": {

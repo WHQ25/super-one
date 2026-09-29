@@ -14,8 +14,7 @@ import { buildFireTrajectories } from '../fire-sim'
 /**
  * The embers under `MODEL · MAX`, drawn with Skia in immediate mode.
  *
- * This is the same fire as the desktop sprite strip and the old Flutter
- * `CustomPainter`: a halo at `HALO_RADIUS`x the core under a bright core, both
+ * This is the same fire as the desktop sprite strip: a halo at `HALO_RADIUS`x the core under a bright core, both
  * additively blended so overlapping particles compound towards white-hot.
  * `BlendMode.Plus` is the whole reason this needs a real canvas — RN views
  * composite with plain alpha, where overlaps only ever get muddier.

@@ -13,7 +13,7 @@ describe('resolveMobileDeviceName', () => {
     expect(resolveMobileDeviceName({ os: 'ios' })).toBe('iPhone')
   })
 
-  it('composes Android brand and model like the Flutter client', () => {
+  it('composes Android brand and model', () => {
     expect(resolveMobileDeviceName({
       deviceName: 'SM-S911B',
       brand: 'samsung',

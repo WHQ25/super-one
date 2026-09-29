@@ -24,7 +24,7 @@ export interface TodoPanelSummary {
 }
 
 /**
- * Flatten the session's todo map into the rows desktop and Flutter both render.
+ * Flatten the session's todo map into the rows desktop and mobile both render.
  *
  * The dependency graph arrives split in two: a todo names what blocks it
  * (`blockedBy`) *and* what it blocks (`blocks`). A row has to show every gate on

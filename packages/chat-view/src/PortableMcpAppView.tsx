@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
 import { McpAppsError, type ToolAppAttachment } from '@superone/shared/mcp-apps'
-import { markMcpAppActivated, mcpAppNeedsActivation } from './mcp-app-document'
+import { markMcpAppActivated, mcpAppAwaitsLiveActivation, mcpAppNeedsActivation } from './mcp-app-document'
 import { runMcpAppOperation, type McpAppConsent } from './mcp-app-executor'
 
 const McpAppFrame = lazy(() => import('./McpAppFrame'))
@@ -15,8 +15,9 @@ const NO_CONSENT: McpAppConsent = { approve: async () => null, confirmLink: asyn
 
 /**
  * An MCP App View under its tool row. The resource is the host's persisted snapshot when the
- * attachment carries one; otherwise the host loads (and persists) it. A View restored from
- * history without a snapshot waits for the user before anything reaches the server.
+ * attachment carries one; otherwise the host loads (and persists) it. A live View activates
+ * itself first, since the host answers a device only for Views it activated. A View restored
+ * from history waits for the user before anything reaches the server.
  */
 export function PortableMcpAppView({ app, messageId }: { app: ToolAppAttachment; messageId: string }) {
   const { t } = useTranslation()
@@ -25,6 +26,7 @@ export function PortableMcpAppView({ app, messageId }: { app: ToolAppAttachment;
   const [state, setState] = useState<LoadState>({ kind: 'idle' })
   const resource = app.resource ?? loaded
   const waitsForUser = !resource && mcpAppNeedsActivation(app.appInstanceId)
+  const activating = mcpAppAwaitsLiveActivation(app.appInstanceId)
 
   const load = useCallback(async (activate: boolean) => {
     setState({ kind: 'loading' })
@@ -33,16 +35,16 @@ export function PortableMcpAppView({ app, messageId }: { app: ToolAppAttachment;
         await runMcpAppOperation(target, { operation: 'activate' }, NO_CONSENT)
         markMcpAppActivated(app.appInstanceId)
       }
-      setLoaded(await runMcpAppOperation<Resource>(target, { operation: 'load' }, NO_CONSENT))
+      if (!app.resource) setLoaded(await runMcpAppOperation<Resource>(target, { operation: 'load' }, NO_CONSENT))
       setState({ kind: 'idle' })
     } catch (error) {
       setState({ kind: 'failed', error: error instanceof Error ? error : new Error(String(error)) })
     }
-  }, [target, app.appInstanceId])
+  }, [target, app.appInstanceId, app.resource])
 
   useEffect(() => {
-    if (!resource && !waitsForUser) void load(false)
-    // Only a View that appears without its resource loads by itself, once.
+    if (activating || (!resource && !waitsForUser)) void load(activating)
+    // Only a live View, or one that appears without its resource, starts by itself, once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [app.appInstanceId])
 
@@ -57,13 +59,14 @@ export function PortableMcpAppView({ app, messageId }: { app: ToolAppAttachment;
         <p className="text-xs text-error">
           {auth ? t('mcpApp.authRequired', { server: app.binding.server }) : t('mcpApp.loadFailed', { error: state.error.message })}
         </p>
-        <button type="button" onClick={() => { void load(waitsForUser) }} className="rounded bg-muted px-3 py-1.5 text-xs text-foreground">
+        <button type="button" onClick={() => { void load(waitsForUser || activating) }} className="rounded bg-muted px-3 py-1.5 text-xs text-foreground">
           {t('mcpApp.retry')}
         </button>
       </div>
     )
   }
-  if (!html) {
+  // A live View's snapshot waits for its activation: the View calls out as soon as it runs.
+  if (!html || activating) {
     return (
       <div className="my-1.5 flex items-center gap-2 rounded-md bg-muted/40 p-3" data-mcp-app={app.appInstanceId}>
         {state.kind === 'loading' || !waitsForUser ? (

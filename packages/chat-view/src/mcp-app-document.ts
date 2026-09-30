@@ -61,6 +61,15 @@ export function mcpAppNeedsActivation(appInstanceId: string): boolean {
   return !seen || (seen.arrival === 'restored' && !seen.activated)
 }
 
+/**
+ * A live View this document has not yet announced. The host serves each device only the
+ * Views it activated, so a live View activates itself once, before any other operation.
+ */
+export function mcpAppAwaitsLiveActivation(appInstanceId: string): boolean {
+  const seen = arrivals.get(appInstanceId)
+  return seen?.arrival === 'live' && !seen.activated
+}
+
 export function markMcpAppActivated(appInstanceId: string): void {
   arrivals.set(appInstanceId, { arrival: arrivals.get(appInstanceId)?.arrival ?? 'restored', activated: true })
 }

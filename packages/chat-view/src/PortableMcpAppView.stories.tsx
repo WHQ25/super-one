@@ -43,10 +43,13 @@ function attachment(id: string, overrides: Partial<ToolAppAttachment> = {}): Too
  */
 function answer(mode: HostMode, request: Record<string, unknown>, remembered: Set<string>): McpAppHostResult {
   const challenged = typeof request.approval === 'object'
+  // A live View's first request is `activate`, a restored one's `load`; either can fail.
+  if (request.operation === 'activate' || request.operation === 'load') {
+    if (mode === 'fails') return { ok: false, error: { code: 'not_connected', message: 'The desktop is offline' } }
+    if (mode === 'auth') return { ok: false, error: { code: 'auth_required', message: 'Sign in required', challenge: ['Bearer'] } }
+  }
   switch (request.operation) {
     case 'load':
-      if (mode === 'fails') return { ok: false, error: { code: 'not_connected', message: 'The desktop is offline' } }
-      if (mode === 'auth') return { ok: false, error: { code: 'auth_required', message: 'Sign in required', challenge: ['Bearer'] } }
       return { ok: true, value: RESOURCE }
     case 'activate':
     case 'updateModelContext':
@@ -134,6 +137,17 @@ export const Loading: Story = { name: 'Loading · host has not answered', args: 
 export const LoadFailed: Story = { name: 'Load failed · retry', args: { app: attachment(id('fails')), mode: 'fails' } }
 
 export const AuthRequired: Story = { name: 'Auth required · sign in on the desktop', args: { app: attachment(id('auth')), mode: 'auth' } }
+
+/** The snapshot waits for `activate`: the View calls out as soon as it runs. */
+export const LiveWithSnapshot: Story = {
+  name: 'Live with snapshot · activates before it runs',
+  args: { app: attachment(id('live-snapshot'), { resource: RESOURCE }) },
+}
+
+export const LiveActivationFails: Story = {
+  name: 'Live with snapshot · activation fails, retry',
+  args: { app: attachment(id('live-snapshot-fails'), { resource: RESOURCE }), mode: 'fails' },
+}
 
 export const RestoredWithSnapshot: Story = {
   name: 'Restored · paints the snapshot, calls nothing until activated',

@@ -3,7 +3,7 @@ import type { ChatMessage } from '@superone/shared/agent-types'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import {
   buildMcpAppSrcdoc, exitMcpAppFullscreen, forgetMcpAppArrivals, markMcpAppActivated,
-  mcpAppNeedsActivation, mobileMcpAppCsp, noteMcpAppArrivals, setMcpAppFullscreenExit,
+  mcpAppAwaitsLiveActivation, mcpAppNeedsActivation, mobileMcpAppCsp, noteMcpAppArrivals, setMcpAppFullscreenExit,
 } from './mcp-app-document'
 
 const CSP_META = '<meta http-equiv="Content-Security-Policy"'
@@ -69,6 +69,16 @@ describe('MCP App arrivals', () => {
 
   it('treats a View it never saw arrive as restored', () => {
     expect(mcpAppNeedsActivation('from-a-history-window')).toBe(true)
+  })
+
+  it('asks a live View, and only a live one, to activate itself once', () => {
+    noteMcpAppArrivals([turn('m1', { appInstanceId: 'live' })], 'live')
+    noteMcpAppArrivals([turn('m2', { appInstanceId: 'old' })], 'restored')
+    expect(mcpAppAwaitsLiveActivation('live')).toBe(true)
+    expect(mcpAppAwaitsLiveActivation('old')).toBe(false)
+    expect(mcpAppAwaitsLiveActivation('from-a-history-window')).toBe(false)
+    markMcpAppActivated('live')
+    expect(mcpAppAwaitsLiveActivation('live')).toBe(false)
   })
 })
 

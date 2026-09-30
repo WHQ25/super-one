@@ -7,6 +7,7 @@ export const USAGE_RESET_TOLERANCE_MS = 60_000
 export type UsageRisk = 'unknown' | 'safe' | 'watch' | 'risk' | 'critical' | 'exhausted'
 
 export interface UsageForecast {
+  basis?: 'cycle-average'
   sampledAt: number
   status: 'learning' | 'ready' | 'idle'
   ratePerHour: number | null
@@ -16,6 +17,7 @@ export interface UsageForecast {
 }
 
 export interface UsageWindow {
+  windowDurationMins?: number | null
   model?: string
   id?: string
   label: string
@@ -49,14 +51,23 @@ export function usageRisk(window: Pick<UsageWindow, 'usedPercent' | 'resetsAt' |
   return untilEmpty <= 30 * 60_000 ? 'critical' : 'risk'
 }
 
-export function usageWindowTone(window: Pick<UsageWindow, 'usedPercent' | 'resetsAt' | 'forecast'>, now = Date.now()): 'success' | 'warning' | 'error' | 'muted' {
+export function usageWindowTone(window: Pick<UsageWindow, 'usedPercent' | 'resetsAt' | 'forecast'>, now = Date.now()): 'success' | 'warning' | 'error' {
+  if (window.usedPercent <= 0) return 'success'
   const risk = usageRisk(window, now)
   if (risk === 'safe') return 'success'
   if (risk === 'watch' || risk === 'risk') return 'warning'
   if (risk === 'critical' || risk === 'exhausted') return 'error'
-  // Forecast-enabled meters never dress stale/insufficient evidence up as a warning or assurance.
-  if (window.forecast) return 'muted'
   return window.usedPercent >= 90 ? 'error' : window.usedPercent >= 70 ? 'warning' : 'success'
+}
+
+function cycleAverageForecast(window: UsageWindow, sampledAt: number): UsageForecast | null {
+  const duration = window.windowDurationMins
+  if (duration == null || !Number.isFinite(duration) || duration <= 0 || window.resetsAt == null || window.usedPercent <= 0) return null
+  const elapsed = sampledAt - (window.resetsAt * 1000 - duration * 60_000)
+  if (elapsed <= 0 || elapsed >= duration * 60_000) return null
+  const ratePerHour = window.usedPercent / (elapsed / 3_600_000)
+  return { sampledAt, status: 'ready', basis: 'cycle-average', ratePerHour,
+    exhaustsAt: sampledAt + (100 - window.usedPercent) / ratePerHour * 3_600_000, confirmed: false }
 }
 
 /** Recent wall-clock rate. Flat intervals count; sleep/offline gaps and resets start a new series. */
@@ -113,12 +124,13 @@ export class SubscriptionUsageTracker {
     // Manual refresh/multiple clients must not turn one burst into four independent observations.
     if (entry && last && sampledAt - last.at < 60_000) return { ...window, forecast: window.usedPercent === last.usedPercent
       ? entry.forecast
-      : { sampledAt, status: 'learning', ratePerHour: null, exhaustsAt: null, confirmed: false } }
+      : cycleAverageForecast(window, sampledAt) ?? { sampledAt, status: 'learning', ratePerHour: null, exhaustsAt: null, confirmed: false } }
     const samples = [...(entry?.samples ?? []), { at: sampledAt, usedPercent: window.usedPercent, resetsAt: window.resetsAt }]
       .filter((sample) => sampledAt - sample.at <= USAGE_HISTORY_MS).slice(-61)
-    const forecast = forecastUsage(samples)
+    const recent = forecastUsage(samples)
+    const forecast = recent.status === 'learning' ? cycleAverageForecast(window, sampledAt) ?? recent : recent
     const risk = usageRisk({ ...window, forecast }, sampledAt)
-    forecast.confirmed = risk !== 'unknown' && entry?.risk === risk
+    forecast.confirmed = forecast.basis !== 'cycle-average' && entry?.forecast.basis !== 'cycle-average' && risk !== 'unknown' && entry?.risk === risk
     this.history.delete(key)
     this.history.set(key, { samples, forecast, risk })
     // Account removals do not leave unbounded history in a long-running host.

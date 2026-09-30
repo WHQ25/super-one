@@ -351,7 +351,10 @@ async function fetchClaudeRateLimits(force: boolean, credentialDir: string | nul
     const fetchedAt = Date.now()
     const limits = parseUsage(data, buildPlanType(creds.oauth))
     state.cached = { ...limits, quotaKey: state.quotaKey, fetchedAt,
-      windows: limits.windows.map((window) => usageHistory.observe(state.quotaKey!, window, fetchedAt)) }
+      windows: limits.windows.map((window) => usageHistory.observe(state.quotaKey!, { ...window,
+        windowDurationMins: window.id === 'five_hour' ? 300
+          : window.id?.startsWith('seven_day') || window.id?.startsWith('weekly_scoped:') ? 7 * 24 * 60 : null,
+      }, fetchedAt)) }
     return state.cached
   } catch (e) {
     log.info('[claude-usage] getClaudeRateLimits failed: %s', String(e))

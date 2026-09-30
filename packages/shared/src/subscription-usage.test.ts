@@ -11,6 +11,31 @@ function series(rate: number, remaining: number, resetHours: number, tracker = n
 }
 
 describe('subscription runway', () => {
+  it('estimates from the cycle average immediately, then switches to recent consumption', () => {
+    const tracker = new SubscriptionUsageTracker()
+    const input: UsageWindow = { label: '5h', usedPercent: 20, windowDurationMins: 300, resetsAt: now / 1000 + 4 * 3600 }
+    let window = tracker.observe('average', input, now)
+    expect(window.forecast?.ratePerHour).toBeCloseTo(20)
+    expect(window.forecast?.exhaustsAt).toBe(now + 4 * 3_600_000)
+    expect(window.forecast?.basis).toBe('cycle-average')
+    expect(window.forecast?.confirmed).toBe(false)
+    for (let m = 5; m <= 15; m += 5) window = tracker.observe('average', { ...input, usedPercent: 20 + m / 5 }, now + m * 60_000)
+    expect(window.forecast?.basis).toBeUndefined()
+    expect(window.forecast?.ratePerHour).toBeCloseTo(12)
+  })
+  it('keeps unavailable estimates hidden and colors fresh readings by remaining quota', () => {
+    const tracker = new SubscriptionUsageTracker()
+    for (const input of [
+      { usedPercent: 0, windowDurationMins: 300, resetsAt: now / 1000 + 3600 },
+      { usedPercent: 15, resetsAt: now / 1000 + 3600 },
+      { usedPercent: 15, windowDurationMins: 300, resetsAt: now / 1000 + 6 * 3600 },
+    ]) {
+      const window = tracker.observe(JSON.stringify(input), { label: '5h', ...input }, now)
+      expect(window.forecast?.status).toBe('learning')
+      expect(usageWindowTone(window, now)).toBe('success')
+      expect(usageWindowTone(window, now + 11 * 60_000)).toBe('success')
+    }
+  })
   it('keeps 20% remaining calm when the weekly quota resets in half an hour', () => {
     const window = series(5, 20, 0.5)
     expect(window.forecast?.ratePerHour).toBeCloseTo(5)
@@ -24,10 +49,14 @@ describe('subscription runway', () => {
     expect(usageRisk(series(60, 30, 4), now)).toBe('critical')
     expect(usageRisk(series(1, 5, 1 / 6), now)).toBe('safe')
   })
-  it('does not call an old reading safe or hide its age', () => {
+  it('discards stale forecast risk and colors by the reported remaining quota', () => {
     const window = series(5, 20, 0.5)
     expect(usageRisk(window, now + 11 * 60_000)).toBe('unknown')
-    expect(usageWindowTone(window, now + 11 * 60_000)).toBe('muted')
+    expect(usageWindowTone(window, now + 11 * 60_000)).toBe('warning')
+    for (const [usedPercent, tone] of [[0, 'success'], [15, 'success'], [75, 'warning'], [95, 'error']] as const) {
+      expect(usageWindowTone({ ...window, usedPercent }, now + 11 * 60_000)).toBe(tone)
+      expect(usageWindowTone({ ...window, usedPercent, resetsAt: now / 1000 - 1 }, now)).toBe(tone)
+    }
   })
   it('starts learning again after a reset, account switch, usage correction or offline gap', () => {
     for (const change of ['reset', 'account', 'correction', 'gap'] as const) {

@@ -66,7 +66,7 @@ export async function consumeRateLimitReset(
   return result.outcome ?? null
 }
 
-export type MeterTone = 'success' | 'warning' | 'error' | 'muted'
+export type MeterTone = ReturnType<typeof usageWindowTone>
 
 /** Forecast-enabled windows share desktop risk colors; older/raw meters keep percentage thresholds. */
 export function usageTone(usedPercent: number, window?: UsageWindow, now = Date.now()): MeterTone {

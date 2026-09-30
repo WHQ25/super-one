@@ -26,7 +26,8 @@ describe('Codex subscription readings', () => {
     email = 'usage-b@example.test'
     const switched = await readRateLimits(client, 'profile-a')
     expect(switched?.quotaKey).not.toBe(key)
-    expect(switched?.primary?.forecast?.status).toBe('learning')
+    expect(switched?.primary?.forecast?.basis).toBe('cycle-average')
+    expect(switched?.primary?.forecast?.confirmed).toBe(false)
   })
 
   it('keeps limits available when an older server cannot identify the account', async () => {

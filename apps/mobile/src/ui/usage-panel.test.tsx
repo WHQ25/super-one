@@ -73,14 +73,18 @@ test('an expired live warning is not shown', async () => {
 })
 
 
-test('a safe weekly forecast suppresses the live warning and shows why', async () => {
+test('safe forecasts suppress eligible warnings without showing reassurance copy', async () => {
   const sampledAt = Date.now()
   const reset = sampledAt / 1000 + 1800
   const usage: RemoteUsage = { ...claude, windows: [{ id: 'seven_day', label: 'Weekly', usedPercent: 80, resetsAt: reset,
-    forecast: { sampledAt, status: 'ready', ratePerHour: 5, exhaustsAt: sampledAt + 4 * 3600_000, confirmed: true } }] }
+    forecast: { sampledAt, status: 'ready', ratePerHour: 5, exhaustsAt: sampledAt + 4 * 3600_000, confirmed: true } },
+    { label: '5h', usedPercent: 20, resetsAt: reset,
+      forecast: { sampledAt, status: 'ready', basis: 'cycle-average', ratePerHour: 5, exhaustsAt: sampledAt + 4 * 3600_000, confirmed: false } }] }
   await renderWithTheme(<UsagePanel usage={usage} rateLimit={{ status: 'allowed_warning', rateLimitType: 'seven_day', utilization: 0.8, resetsAt: reset }} />)
   expect(screen.queryByText('Approaching limit')).toBeNull()
-  expect(screen.getByText('At the recent pace, usage should last until reset')).toBeTruthy()
+  expect(screen.queryByText('At the recent pace, usage should last until reset')).toBeNull()
+  expect(screen.queryByText('At the average pace this cycle, usage should last until reset')).toBeNull()
+  expect(screen.getByText('80% left')).toBeTruthy()
 })
 
 test('the mobile panel shows the same runway and preserves actual rejection', async () => {

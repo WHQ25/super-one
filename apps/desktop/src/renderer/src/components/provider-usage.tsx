@@ -52,7 +52,7 @@ export function WindowBar(window: UsageWindow) {
   const resetIn = formatResetIn(resetsAt, t)
   const tone = usageWindowTone(window, now)
   const copy = usageForecastCopy(window, now)
-  const color = { success: 'bg-green-500', warning: 'bg-amber-500', error: 'bg-red-500', muted: 'bg-muted-foreground/50' }[tone]
+  const color = { success: 'bg-green-500', warning: 'bg-amber-500', error: 'bg-red-500' }[tone]
   return (
     <div className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">

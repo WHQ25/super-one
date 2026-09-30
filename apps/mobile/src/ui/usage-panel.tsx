@@ -48,7 +48,7 @@ export function usageBrandKey(usage: RemoteUsage): string | null {
 
 export function useToneColor() {
   const { tokens: { colors } } = useMobileTheme()
-  return (tone: MeterTone) => tone === 'muted' ? colors.mutedForeground : tone === 'error' ? colors.error : tone === 'warning' ? colors.warning : colors.success
+  return (tone: MeterTone) => tone === 'error' ? colors.error : tone === 'warning' ? colors.warning : colors.success
 }
 
 /** Refresh control for the menu title row — the desktop popover's footer button, moved up. */
@@ -83,6 +83,7 @@ function WindowRow({ window, now }: { window: UsageWindow; now: number }) {
   const resetIn = formatResetIn(resetsAt)
   const copy = usageForecastCopy(window, now)
   const forecastText: Record<string, string> = {
+    averageEta: 'At the average pace this cycle, runs out in about {{time}}',
     safe: 'At the recent pace, usage should last until reset',
     eta: 'At the recent pace, runs out in about {{time}}',
     learning: 'Not enough recent usage to estimate yet',

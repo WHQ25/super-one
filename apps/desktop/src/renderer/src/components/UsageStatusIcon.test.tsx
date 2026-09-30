@@ -156,7 +156,8 @@ describe('UsageStatusIcon rate-limit tip', () => {
     expect(screen.queryByRole('status')).toBeNull()
     await act(async () => { await Promise.resolve() })
     expect(screen.queryByRole('status')).toBeNull()
-    expect(screen.getByText('Expected to last until reset')).toBeInTheDocument()
+    expect(screen.queryByText('Expected to last until reset')).toBeNull()
+    expect(screen.getByText('20% left')).toBeInTheDocument()
   })
 
   it('forecasts a weekly shortfall without a provider warning and does not repeat it across sessions', async () => {

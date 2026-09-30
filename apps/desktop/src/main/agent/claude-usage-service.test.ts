@@ -34,6 +34,8 @@ describe('Claude subscription sampling at the source', () => {
     const fetch = vi.fn(async () => new Response(JSON.stringify({ seven_day: { utilization: used, resets_at: new Date(start + 86400_000).toISOString() } })))
     vi.stubGlobal('fetch', fetch)
     let reading = await getClaudeRateLimits(false, dir)
+    expect(reading?.windows[0].forecast?.basis).toBe('cycle-average')
+    expect(reading?.windows[0].forecast?.confirmed).toBe(false)
     expect(fetch).toHaveBeenCalledTimes(1)
     for (let m = 1; m < 5; m++) {
       vi.setSystemTime(start + m * 60_000)
@@ -57,6 +59,7 @@ describe('Claude subscription sampling at the source', () => {
     const switched = await getClaudeRateLimits(false, dir)
     expect(switched?.quotaKey).not.toBe(quotaKey)
     expect(switched?.windows[0].usedPercent).toBe(20)
-    expect(switched?.windows[0].forecast?.status).toBe('learning')
+    expect(switched?.windows[0].forecast?.basis).toBe('cycle-average')
+    expect(switched?.windows[0].forecast?.confirmed).toBe(false)
   })
 })

@@ -4026,6 +4026,7 @@ export const zh: Messages = {
     updatedHoursAgo: '{{n}} 小时前更新',
     updatedDaysAgo: '{{n}} 天前更新',
     forecast: {
+      averageEta: '按本周期平均速度，约 {{time}} 后用尽',
       safe: '按近期速度，预计可撑到重置',
       eta: '按近期速度持续使用，约 {{time}} 后用尽',
       learning: '近期样本不足，暂无法估算',

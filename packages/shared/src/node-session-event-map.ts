@@ -282,6 +282,8 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
         delete eventRecord.seq
         delete eventRecord.epoch
         const event = eventRecord as AgentEvent
+        // A host patch targets an existing historical row; it must not open a new assistant turn.
+        if (event.type === 'mcp_app_updated') { push(event); break }
         const rawMessageId = type === 'message_start'
           ? asString(asRecord(eventRecord.message).id)
           : asString(eventRecord.messageId)

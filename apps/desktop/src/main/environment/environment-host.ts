@@ -978,6 +978,11 @@ export class EnvironmentHost {
     return this.asRemoteProviderGw(connectionId).requestMcpAppsProvider({ ...input, ...control })
   }
 
+  async updateMcpAppState(connectionId: string, input: import('@superone/shared/environment/mcp-apps-state-rpc').McpAppsStateRpcRequest): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult> {
+    const control = await this.ensureSessionLease(connectionId, input.sessionId)
+    return this.asRemoteProviderGw(connectionId).updateMcpAppState({ ...input, ...control })
+  }
+
   async listRemoteCredentials(connectionId: string): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).providerListCredentials()
   }
@@ -1895,6 +1900,8 @@ export class EnvironmentHost {
       collaborationMode?: string | Record<string, unknown> | null
       /** Codex review/start target. */
       reviewTarget?: unknown
+      /** Receipt after the node accepts, before waiting for the model turn. */
+      onAccepted?: () => void
     },
   ): Promise<unknown> {
     const { gateway, environmentId } = this.resolveRemote(connectionId)
@@ -1984,6 +1991,7 @@ export class EnvironmentHost {
       clientMessageId: input.clientMessageId,
       ...(Object.keys(options).length > 0 ? { options } : {}),
     })
+    input.onAccepted?.()
 
     try {
       return await this.drainRemoteSessionEvents(connectionId, {

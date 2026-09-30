@@ -1,5 +1,6 @@
 import type { AgentEvent, RealtimeTimelineSegment } from '@superone/shared/agent-types'
 import { dedupeSegmentsByItem } from '@superone/shared/realtime-transcript'
+import { updateMcpAppAttachments } from '@superone/shared/mcp-apps-state'
 import type { ChatCorePatch, ChatCoreSession } from './types'
 import { defaultChatCorePorts, type ChatCorePorts } from './ports'
 export type { ChatCorePorts }
@@ -46,6 +47,9 @@ export function applyEventToSession(
 
     case 'content_delta':
       return reduceContentDelta(session, event, ports)
+
+    case 'mcp_app_updated':
+      return { messages: updateMcpAppAttachments(session.messages, event.appInstanceId, event.update) }
 
     case 'todos_updated':
       return reduceTodosUpdated(session, event)

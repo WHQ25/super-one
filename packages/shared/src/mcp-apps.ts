@@ -136,9 +136,29 @@ export type McpAppHostRequest = McpAppHostOperation & {
 
 export type McpAppRequester = { kind: 'desktop' } | { kind: 'mobile'; deviceId: string }
 
+/** Renderer supplies View identity; main derives the session key from its routing inputs. */
+export type McpAppViewRequest = McpAppHostOperation & Omit<McpAppHostRequest, 'operation' | 'sessionKey'>
+
 export type McpAppHostResult<T = unknown> = McpAppsRpcResult<T> | {
   ok: false
   error: { code: 'approval_required'; challenge: string; prompt: McpAppApprovalPrompt }
+}
+
+/** Session-scoped consent; credentials and configuration generations are never stored here. */
+export interface McpAppToolApproval {
+  node: string
+  session: string
+  server: string
+  account?: string
+  configFingerprint: string
+  tool: string
+}
+
+/** Only the host can author these persisted attachment fields. */
+export interface McpAppAttachmentUpdate {
+  resource?: NonNullable<ToolAppAttachment['resource']>
+  modelContext?: McpAppModelContext
+  approvedTools?: McpAppToolApproval[]
 }
 
 export interface ToolAppAttachment {
@@ -152,6 +172,8 @@ export interface ToolAppAttachment {
   toolInput?: Record<string, unknown>
   toolResult?: McpAppToolResult
   modelContext?: McpAppModelContext
+  /** Private host consent state; not part of the AppBridge payload. */
+  approvedTools?: McpAppToolApproval[]
   status: 'pending' | 'result' | 'cancelled' | 'error'
   error?: McpAppsErrorData
 }

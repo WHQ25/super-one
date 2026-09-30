@@ -1,4 +1,5 @@
 import type { ChatMessage, ContentBlock, RetractedBlockRef } from './agent-types'
+import { mergeMcpAppAttachment } from './mcp-apps-state'
 
 /**
  * Every block that reports the outcome of a tool call, keyed by `toolUseId`.
@@ -196,6 +197,7 @@ export function applyContentDelta(
         ? {
             ...existing,
             ...delta,
+            ...(existing.app || delta.app ? { app: mergeMcpAppAttachment(existing.app, delta.app) } : {}),
             startedAt: existing.startedAt,
             elapsedSeconds: delta.elapsedSeconds ?? existing.elapsedSeconds,
             status: delta.status ?? existing.status,
@@ -209,10 +211,14 @@ export function applyContentDelta(
     return [...content, { ...delta, startedAt: now() }]
   }
   if (isToolResultBlock(delta)) {
+    const app = 'app' in delta ? delta.app : undefined
+    const previous = app ? content.find(b => 'app' in b && b.app?.appInstanceId === app.appInstanceId) : undefined
+    const result = delta.type === 'tool_result' && app && previous && 'app' in previous
+      ? { ...delta, app: mergeMcpAppAttachment(previous.app, app) } : delta
     const updated = content.map((b) =>
       isToolUseBlock(b) && b.toolUseId === delta.toolUseId ? { ...b, status: 'complete' as const } : b,
     )
-    return [...updated, delta]
+    return [...updated, result]
   }
   return [...content, delta]
 }

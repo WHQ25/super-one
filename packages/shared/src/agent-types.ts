@@ -1754,6 +1754,7 @@ export type AgentEventBase =
   | { type: 'message_start'; message: ChatMessage }
   | { type: 'user_message_appended'; message: ChatMessage }
   | { type: 'content_delta'; messageId: string; delta: ContentBlock; isSynthetic?: boolean; isReplay?: boolean }
+  | { type: 'mcp_app_updated'; messageId: string; appInstanceId: string; update: import('./mcp-apps').McpAppAttachmentUpdate }
   | { type: 'tool_input_delta'; messageId: string; toolUseId: string; partialJson: string; parentToolUseId?: string | null }
   /** `heartbeat` marks a liveness-only tick (no progress happened); it must never retract a `subagentRetry` badge. */
   | { type: 'tool_progress'; messageId: string; toolUseId: string; toolName: string; elapsedSeconds: number; parentToolUseId?: string | null; taskId?: string; subagentType?: string; subagentRetry?: SubagentRetryInfo; heartbeat?: boolean }
@@ -4538,6 +4539,7 @@ export const AgentIpcChannels = {
   ENVIRONMENT_DELETE_REMOTE_MCP_CONFIG: 'environment:deleteRemoteMcpConfig',
   /** Node harness.resources aggregate (models + skills/commands/agents/prompts). */
   ENVIRONMENT_MCP_APPS_PROVIDER: 'environment:mcpApps.provider',
+  MCP_APP_HOST_REQUEST: 'environment:mcpApps.hostRequest',
   /** Sign a View's MCP server in through its harness (browser + optional loopback relay). */
   ENVIRONMENT_MCP_APPS_AUTHENTICATE: 'environment:mcpApps.authenticate',
   ENVIRONMENT_HARNESS_RESOURCES: 'environment:harnessResources',

@@ -13,6 +13,7 @@ import {
 } from '@superone/shared/environment'
 import { createNodeSessionEventMapper } from '@superone/shared/node-session-event-map'
 import type { NodeSessionRecord, TranscriptBlock } from './types'
+import { applyMcpAppsCatalogEvents } from './mcp-apps-catalog'
 
 const DEFAULT_LIMIT = 50
 const MAX_LIMIT = 200
@@ -464,7 +465,7 @@ export function buildSessionMessageCatalog(
     })
   }
 
-  return out
+  return applyMcpAppsCatalogEvents(out, events, session.sessionId, contentByAssistant)
 }
 
 /** Page a full catalog with desktop-style end-cursor pagination. */

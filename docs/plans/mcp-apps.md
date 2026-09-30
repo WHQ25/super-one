@@ -192,6 +192,20 @@ identity, operation and optional approval challenge. Session keys use
 `sessionKey(sessionRef(environmentId, sessionId))`; binding resolution stays
 in the host. Desktop and mobile identify their requester separately.
 
+Host-authored `mcp_app_updated` patches existing attachments by `appInstanceId`
+on Claude tool use/results, Codex items and remote catalog rows. Snapshots,
+latest model context and session-scoped tool consent survive JSON/SQLite
+persistence. Native deltas preserve this host state. The node catalog also
+resolves an in-flight View before the assistant transcript row is committed.
+Regular/progressive mobile stripping keeps the complete bounded patch.
+Context enters only the next model request, with host source attribution;
+tool-result `_meta` and the user bubble stay separate. Node context is cached
+between host updates to avoid rescanning the event log on every send.
+
+Checks: attachment/state/projection tests cover both harness dialects and
+remote reconstruction; real temporary SQLite tests cover authenticated
+`mcpApps.state`, lease/binding rejection, runtime restart and next-turn context.
+
 ### 0.3 — Codex 0.159 wire verdict: pass (fixture)
 
 The isolated `apps/desktop/scripts/check-codex-mcp-apps.ts` run proves the

@@ -580,6 +580,8 @@ function enrichPermissionRequest(event: AgentEvent & { type: 'permission_request
 }
 
 export function stripEventForRemote(event: AgentEvent, projectPath?: string): AgentEvent {
+  // Snapshot/context updates are already bounded host data; the phone needs the complete patch.
+  if (event.type === 'mcp_app_updated') return event
   if (event.type === 'user_message_appended') {
     const message = withAttachmentPreviews(event.message)
     return message === event.message ? event : { ...event, message }

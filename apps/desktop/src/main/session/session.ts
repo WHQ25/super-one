@@ -1,4 +1,5 @@
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
+import { mcpAppModelContextText, updateMcpAppAttachments } from '@superone/shared/mcp-apps-state'
 import { admitTurnAttachments } from '@superone/shared/attachment-turn'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { insertCodexTimelineRow, stampCodexTimelineOrder } from '@superone/shared/codex-timeline-rows'
@@ -759,7 +760,7 @@ export class Session implements SessionContract {
         try {
           this.flushFirstTurnPreamble()
           opts?.onAccepted?.()
-          await this.backend.send(request)
+          await this.backend.send(this.withMcpAppContext(request))
         } catch (error) {
           if (request.clientMessageId) this._pendingQueuedRequests.delete(request.clientMessageId)
           throw error
@@ -817,7 +818,7 @@ export class Session implements SessionContract {
       this._status = 'streaming'
       try {
         this.flushFirstTurnPreamble()
-        await this.backend.send(request)
+        await this.backend.send(this.withMcpAppContext(request))
       } finally {
         if ((this._status as SessionStatus) !== 'disposed') this._status = 'ended'
       }
@@ -2085,6 +2086,11 @@ export class Session implements SessionContract {
    * unregistered harness is a compile error, never a silent default.
    */
   private applyReducer(event: AgentEvent): void {
+    if (event.type === 'mcp_app_updated') {
+      this.replaceMessages(updateMcpAppAttachments(this._messages, event.appInstanceId, event.update))
+      this.notifyStateChange()
+      return
+    }
     // The divider outlives the turn and the process: without it in `_messages`
     // a session opened after compaction (mobile, desktop reload) has no boundary.
     if (event.type === 'compact_boundary') {
@@ -2383,6 +2389,7 @@ export class Session implements SessionContract {
 
   emitHostEvent(event: AgentEvent): void {
     if (this._status === 'disposed') return
+    if (event.type === 'mcp_app_updated') this.applyReducer(event)
     trackHostInteraction(this, event)
     this.forwardEvent(event)
   }
@@ -2397,6 +2404,11 @@ export class Session implements SessionContract {
     this._messages = [...this._messages, message]
     this.notifyStateChange()
     this.forwardEvent({ type: 'user_message_appended', message } as AgentEvent)
+  }
+
+  private withMcpAppContext(request: SendMessageRequest): SendMessageRequest {
+    const context = mcpAppModelContextText(this._messages)
+    return context ? { ...request, content: `${request.content}\n\n${context}` } : request
   }
 
   /**

@@ -1,4 +1,6 @@
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
+import type { McpAppAttachmentUpdate } from '@superone/shared/mcp-apps'
+import { findMcpAppAttachment, mcpAppModelContextText, validateMcpAppAttachmentUpdate } from '@superone/shared/mcp-apps-state'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@superone/shared/agent-types'
@@ -176,6 +178,8 @@ interface HostActionWaiter {
 }
 
 export class SessionRuntime {
+  /** Host context changes invalidate this; ordinary sends do not rescan the event log. */
+  private readonly mcpAppContexts = new Map<string, string>()
   private readonly aborts = new Map<string, Set<AbortController>>()
   private readonly live = new Map<string, NodeSessionRecord>()
   /** In-flight turn promises (including runner cleanup / process kill). */
@@ -792,6 +796,13 @@ export class SessionRuntime {
     limit?: number
   }): SessionMessagesListResult {
     const sessionId = String(input.sessionId ?? '').trim()
+    return pageSessionMessageCatalog(sessionId, this.mcpAppMessageCatalog(sessionId), {
+      cursor: input.cursor,
+      limit: input.limit,
+    })
+  }
+
+  private mcpAppMessageCatalog(sessionId: string) {
     if (!sessionId) {
       throw Object.assign(new Error('sessionId required'), { code: 'invalid_argument' })
     }
@@ -807,11 +818,35 @@ export class SessionRuntime {
               (!e.aggregateType || e.aggregateType === 'session') &&
               (!e.aggregateId || e.aggregateId === sessionId),
           )
-    const catalog = buildSessionMessageCatalog(session, events)
-    return pageSessionMessageCatalog(sessionId, catalog, {
-      cursor: input.cursor,
-      limit: input.limit,
-    })
+    return buildSessionMessageCatalog(session, events)
+  }
+
+  updateMcpApp(sessionId: string, appInstanceId: string, update: McpAppAttachmentUpdate): void {
+    const catalog = this.mcpAppMessageCatalog(sessionId)
+    const target = findMcpAppAttachment(catalog, appInstanceId)
+    if (!target || target.app.binding.node !== this.environmentId || target.app.binding.session !== sessionId) throw new McpAppsError('denied', 'MCP App attachment does not belong to this session')
+    const binding = target.app.binding
+    if (update.approvedTools?.some(value => value.node !== binding.node || value.session !== sessionId || value.server !== binding.server || value.account !== binding.account || value.configFingerprint !== binding.configFingerprint)) {
+      throw new McpAppsError('denied', 'MCP App approval binding mismatch')
+    }
+    const patch: McpAppAttachmentUpdate = {
+      ...(update.resource ? { resource: update.resource } : {}),
+      ...(update.modelContext ? { modelContext: { ...update.modelContext, source: { appInstanceId, server: binding.server } } } : {}),
+      ...(update.approvedTools ? { approvedTools: update.approvedTools } : {}),
+    }
+    validateMcpAppAttachmentUpdate(patch)
+    this.events.appendSession({ sessionId, eventType: SESSION_DURABLE_EVENT.agentEvent, payload: {
+      event: { type: 'mcp_app_updated', messageId: target.messageId, appInstanceId, update: patch } satisfies AgentEvent,
+    } })
+    this.mcpAppContexts.delete(sessionId)
+  }
+
+  private mcpAppContextText(sessionId: string): string {
+    const cached = this.mcpAppContexts.get(sessionId)
+    if (cached !== undefined) return cached
+    const text = mcpAppModelContextText(this.mcpAppMessageCatalog(sessionId))
+    this.mcpAppContexts.set(sessionId, text)
+    return text
   }
 
   async send(input: {
@@ -1207,7 +1242,7 @@ export class SessionRuntime {
       const result = await this.turnRunner({
         session: this.clone(session),
         messageId: assistantId,
-        text: opts.text,
+        text: [opts.text, this.mcpAppContextText(session.sessionId)].filter(Boolean).join('\n\n'),
         model: opts.model && opts.model.trim() ? opts.model.trim() : undefined,
         effort: opts.effort && opts.effort.trim() ? opts.effort.trim() : undefined,
         images: opts.images && opts.images.length > 0 ? opts.images : undefined,
@@ -1423,6 +1458,7 @@ export class SessionRuntime {
     // previously-closed session still cleans long-lived harness state.
     void Promise.resolve(this.turnRunner.disposeSession?.(sessionId)).catch(() => undefined)
     this.live.delete(sessionId)
+    this.mcpAppContexts.delete(sessionId)
     this.store.delete(sessionId)
     this.events.appendSession({
       sessionId,

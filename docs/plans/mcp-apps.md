@@ -345,9 +345,9 @@ them.
 |---|---|
 | Chat-view `PortableMcpAppView` on the shared core: inline + fullscreen overlay, consent cards, restored/live by `appInstanceId`, revoke + restart | Done `f0c085951`. Stories `Chat/SuperOne/Portable MCP App` driven with Playwright against a mock `mcpApp` host: app-only paging with approval and Always Allow, model-only call denied, `updateModelContext`, `sendMessage` card, fullscreen, CSP-blocked fetch, restored gating, navigate-away revoke and restart, load failure, auth, pending, 320 px, light/dark. |
 | Bundle cost (Q3) | +154.6 KB (+41 KB gz) chat document; cold open ~694 → ~719 ms. Within the 250 KB / 50 ms budget. |
-| RN `mcpApp` action → relay `mcp_app_request`; `mcpAppFullscreen` → native back / edge swipe | Next. |
-| Desktop `mcp_app_request` handler → `executeMcpAppHostRequest(req, { kind: 'mobile', deviceId })` | Waits for the executor entry. |
-| Device E2E (dev client ↔ dev desktop, fixture tool) | After the two above. |
+| RN `mcpApp` action → relay `mcp_app_request` → `canAccessSession` → `deviceMcpAppHostRequest` → executor seam; `{ response }` envelope; transport failures mapped by send point (`callTool` lost after send → `unknown_outcome`); back / edge swipe close fullscreen | Done `817978e93`. |
+| Devices against the stub (iOS 26.4 sim, Android 16 AVD, local relay, dev desktop, real Claude turn with the stdio fixture) | Restored View → Activate → host reached → "executor not available" → Retry, both platforms; nothing resent automatically. Non-fullscreen back unchanged. |
+| Device E2E with the executor: paging, denied model-only call, fullscreen exit via Android back / iOS edge swipe | After the executor lands. |
 
 ## Log
 

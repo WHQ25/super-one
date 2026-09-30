@@ -45,4 +45,29 @@ describe('MCP App native snapshots', () => {
     expect(() => resources.register({ ...app, resource: { ...app.resource!, html: 'a'.repeat(MCP_APP_HTML_MAX_BYTES + 1) } }, 1, 'superone-renderer://app')).toThrow('size limit')
     expect(() => resources.register(app, 1, 'superone-mcp-app://attacker')).toThrow('Untrusted')
   })
+
+  it('binds a native lifetime to owner, scoped View and immutable provider identity', () => {
+    const resources = new McpAppResourceRegistry()
+    const registration = resources.register(app, 1, 'superone-renderer://app', 'connection:session')
+    const lease = resources.lease(registration.id, 1, 'connection:session', app.appInstanceId)
+    for (const [owner, scope, id] of [[2, 'connection:session', app.appInstanceId], [1, 'connection:another', app.appInstanceId], [1, 'connection:session', 'another']] as const) {
+      expect(() => resources.lease(registration.id, owner, scope, id)).toThrow('does not own')
+    }
+    const { configFingerprint, ...rest } = app.binding
+    lease.validate({ ...app, binding: { configFingerprint, ...rest } })
+    expect(() => lease.validate({ ...app, binding: { ...app.binding, account: 'another' } })).toThrow('binding changed')
+    resources.revoke(`${registration.url}#same-document`)
+    expect(lease.signal.aborted).toBe(true)
+    expect(() => lease.validate(app)).toThrow('revoked')
+  })
+
+  it.each(['document', 'owner'] as const)('aborts native executions when the %s is released', kind => {
+    const resources = new McpAppResourceRegistry()
+    const registration = resources.register(app, 1, 'superone-renderer://app', 'connection:session')
+    const lease = resources.lease(registration.id, 1, 'connection:session', app.appInstanceId)
+    if (kind === 'owner') resources.releaseOwner(1)
+    else resources.release(registration.id, 1)
+    expect(lease.signal.aborted).toBe(true)
+    expect(() => resources.lease(registration.id, 1, 'connection:session', app.appInstanceId)).toThrow('does not own')
+  })
 })

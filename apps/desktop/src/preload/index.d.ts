@@ -853,7 +853,11 @@ interface TerminalAPI {
 
 /** Multi-environment / remote node — Main EnvironmentHost product path. */
 export interface EnvironmentAPI {
-  mcpAppRequest(projectPath: string, sessionId: string, request: import('@superone/shared/mcp-apps').McpAppViewRequest): Promise<import('@superone/shared/mcp-apps').McpAppHostResult>
+  mcpAppRequest(projectPath: string, sessionId: string, request: import('@superone/shared/mcp-apps').McpAppViewRequest, context?: import('@superone/shared/mcp-apps-desktop').McpAppDesktopRequestContext): Promise<import('@superone/shared/mcp-apps').McpAppHostResult>
+  mcpAppRegister(projectPath: string, sessionId: string, target: { appInstanceId: string; messageId?: string }): Promise<import('@superone/shared/mcp-apps').McpAppHostResult<import('@superone/shared/mcp-apps-desktop').McpAppDocumentRegistration>>
+  mcpAppRelease(documentId: string): Promise<void>
+  mcpAppCancel(context: import('@superone/shared/mcp-apps-desktop').McpAppDesktopRequestContext): Promise<void>
+  onMcpAppDocumentRevoked(callback: (event: { url: string }) => void): () => void
   mcpAppsProvider(connectionId: string, input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult>
   /** Sign the View's MCP server in; resolves once the provider no longer reports auth_required. */
   mcpAppsAuthenticate(connectionId: string, target: Pick<import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest, 'binding' | 'origin'>): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<null>>

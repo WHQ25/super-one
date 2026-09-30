@@ -3,6 +3,7 @@ import type { CustomScheme, Protocol } from 'electron'
 import { buildMcpAppCsp } from '@superone/shared/mcp-apps-host/csp'
 import { MCP_APP_HTML_MAX_BYTES, MCP_APP_DATA_MAX_BYTES, McpAppsError, assertMcpAppSize } from '@superone/shared/mcp-apps'
 import type { McpAppsBinding, ToolAppAttachment } from '@superone/shared/mcp-apps'
+import type { McpAppDocumentRegistration } from '@superone/shared/mcp-apps-desktop'
 
 export const MCP_APP_SCHEME = 'superone-mcp-app'
 export const MCP_APP_SCHEME_PRIVILEGES: CustomScheme = {
@@ -25,14 +26,19 @@ export function mcpAppStorageOrigin(binding: McpAppsBinding): string {
   return `${MCP_APP_SCHEME}://${key}`
 }
 
-export interface McpAppRegistration { id: string; url: string; origin: string; appInstanceId: string }
-interface Snapshot extends McpAppRegistration { owner: number; resource: NonNullable<ToolAppAttachment['resource']>; hostOrigin: string; revoked: boolean }
+export type McpAppRegistration = McpAppDocumentRegistration
+interface Snapshot extends McpAppRegistration { owner: number; resource: NonNullable<ToolAppAttachment['resource']>; hostOrigin: string; revoked: boolean; scope?: string; identity: string; lifetime: AbortController }
+
+function documentIdentity(app: ToolAppAttachment): string {
+  const b = app.binding
+  return JSON.stringify([app.appInstanceId, b.node, b.session, b.server, b.account, b.configGeneration, b.configFingerprint, app.resourceUri, app.origin?.providerSessionId, app.origin?.originCallId])
+}
 
 /** Registered, bounded snapshots only. The iframe never selects a filesystem path or provider. */
 export class McpAppResourceRegistry {
   private snapshots = new Map<string, Snapshot>()
 
-  register(app: ToolAppAttachment, owner: number, hostUrl: string): McpAppRegistration {
+  register(app: ToolAppAttachment, owner: number, hostUrl: string, scope?: string): McpAppRegistration {
     if (!app.resource) throw new McpAppsError('invalid', 'MCP App HTML is unavailable')
     if (Buffer.byteLength(app.resource.html, 'utf8') > MCP_APP_HTML_MAX_BYTES) throw new McpAppsError('invalid', 'MCP App HTML exceeds the size limit')
     assertMcpAppSize(app.resource.meta, MCP_APP_DATA_MAX_BYTES)
@@ -41,7 +47,7 @@ export class McpAppResourceRegistry {
     const hostOrigin = `${host.protocol}//${host.host}`
     const origin = mcpAppStorageOrigin(app.binding)
     const id = randomUUID()
-    const record: Snapshot = { id, origin, url: `${origin}/views/${id}/index.html`, appInstanceId: app.appInstanceId, owner, resource: app.resource, hostOrigin, revoked: false }
+    const record: Snapshot = { id, origin, url: `${origin}/views/${id}/index.html`, appInstanceId: app.appInstanceId, owner, resource: app.resource, hostOrigin, revoked: false, scope, identity: documentIdentity(app), lifetime: new AbortController() }
     this.snapshots.set(record.url, record)
     return { id, origin, url: record.url, appInstanceId: record.appInstanceId }
   }
@@ -55,12 +61,25 @@ export class McpAppResourceRegistry {
     return Boolean(record && !record.revoked && (owner === undefined || owner === record.owner))
   }
 
-  revoke(url: string): void { const record = this.find(url); if (record) record.revoked = true }
+  lease(id: string, owner: number, scope: string, appInstanceId: string): { signal: AbortSignal; validate(app: ToolAppAttachment): void } {
+    const record = [...this.snapshots.values()].find(value => value.id === id)
+    if (!record || record.owner !== owner || record.scope !== scope || record.appInstanceId !== appInstanceId) throw new McpAppsError('denied', 'MCP App document does not own this View')
+    if (record.revoked) throw new McpAppsError('cancelled', 'MCP App document was revoked')
+    return { signal: record.lifetime.signal, validate: app => {
+      if (record.revoked || record.lifetime.signal.aborted) throw new McpAppsError('cancelled', 'MCP App document was revoked')
+      if (documentIdentity(app) !== record.identity) throw new McpAppsError('denied', 'MCP App document provider binding changed')
+    } }
+  }
+
+  revoke(url: string): void {
+    const record = this.find(url)
+    if (record) { record.revoked = true; record.lifetime.abort() }
+  }
   release(id: string, owner: number): void {
-    for (const [url, record] of this.snapshots) if (record.id === id && record.owner === owner) this.snapshots.delete(url)
+    for (const [url, record] of this.snapshots) if (record.id === id && record.owner === owner) { record.lifetime.abort(); this.snapshots.delete(url) }
   }
   releaseOwner(owner: number): void {
-    for (const [url, record] of this.snapshots) if (record.owner === owner) this.snapshots.delete(url)
+    for (const [url, record] of this.snapshots) if (record.owner === owner) { record.lifetime.abort(); this.snapshots.delete(url) }
   }
 
   handle(request: Request): Response {

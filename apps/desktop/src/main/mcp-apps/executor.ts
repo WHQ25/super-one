@@ -112,7 +112,12 @@ export function observeRemoteMcpAppEvent(event: AgentEvent): void {
 }
 
 /** The only View-to-host execution entry, shared by desktop IPC and paired devices. */
-export async function executeMcpAppHostRequest(request: McpAppHostRequest, requester: McpAppRequester, signal = new AbortController().signal): Promise<McpAppHostResult> {
+export async function resolveMcpAppHostAttachment(request: Pick<McpAppHostRequest, 'sessionKey' | 'appInstanceId' | 'messageId'>, signal = new AbortController().signal): Promise<McpAppResolvedTarget> {
+  if (!executor) throw new McpAppsError('not_connected', 'MCP App host executor is not available')
+  return executor.resolve(request, signal)
+}
+
+export async function executeMcpAppHostRequest(request: McpAppHostRequest, requester: McpAppRequester, signal = new AbortController().signal, validateTarget?: (target: McpAppResolvedTarget) => void): Promise<McpAppHostResult> {
   if (!executor) return { ok: false, error: { code: 'not_connected', message: 'MCP App host executor is not available' } }
-  return executor.execute(request, requester, signal)
+  return executor.execute(request, requester, signal, validateTarget)
 }

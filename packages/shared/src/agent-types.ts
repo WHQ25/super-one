@@ -4540,6 +4540,9 @@ export const AgentIpcChannels = {
   /** Node harness.resources aggregate (models + skills/commands/agents/prompts). */
   ENVIRONMENT_MCP_APPS_PROVIDER: 'environment:mcpApps.provider',
   MCP_APP_HOST_REQUEST: 'environment:mcpApps.hostRequest',
+  MCP_APP_REGISTER_DOCUMENT: 'environment:mcpApps.registerDocument',
+  MCP_APP_RELEASE_DOCUMENT: 'environment:mcpApps.releaseDocument',
+  MCP_APP_CANCEL_REQUEST: 'environment:mcpApps.cancelRequest',
   /** Sign a View's MCP server in through its harness (browser + optional loopback relay). */
   ENVIRONMENT_MCP_APPS_AUTHENTICATE: 'environment:mcpApps.authenticate',
   ENVIRONMENT_HARNESS_RESOURCES: 'environment:harnessResources',

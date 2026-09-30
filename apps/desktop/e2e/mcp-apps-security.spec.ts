@@ -8,7 +8,7 @@ import type { McpAppResourceRegistry } from '../src/main/mcp-apps/protocol'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import type { BrowserWindow } from 'electron'
 
-interface NativeState { resources: McpAppResourceRegistry; base: ToolAppAttachment; window: BrowserWindow; attempts: string[]; internalAttempts: string[]; permissions: string[]; permissionsWithoutPolicy: Set<string>; popups: string[]; externalUrl: string }
+interface NativeState { resources: McpAppResourceRegistry; leaseSignals: Map<string, AbortSignal>; base: ToolAppAttachment; window: BrowserWindow; attempts: string[]; internalAttempts: string[]; permissions: string[]; permissionsWithoutPolicy: Set<string>; popups: string[]; externalUrl: string }
 declare global { var mcpSecurity: NativeState }
 
 test.describe('MCP App native iframe boundary', () => {
@@ -40,11 +40,13 @@ test.describe('MCP App native iframe boundary', () => {
 
   test.afterAll(async () => { await app?.close(); if (temporary) await rm(temporary, { recursive: true, force: true }) })
 
-  async function mount(session = 'security', nativePermissionProbe = false, strict = false): Promise<{ frame: Frame; url: string }> {
+  async function mount(session = 'security', nativePermissionProbe = false, strict = false): Promise<{ frame: Frame; url: string; id: string }> {
     const payload = await app.evaluate((_electron, input) => {
       const s = globalThis.mcpSecurity
       const fixture = { ...s.base, binding: { ...s.base.binding, session: input.session } }
-      const registration = s.resources.register(fixture, s.window.webContents.id, s.window.webContents.getURL())
+      const scope = `local:${input.session}`
+      const registration = s.resources.register(fixture, s.window.webContents.id, s.window.webContents.getURL(), scope)
+      s.leaseSignals.set(registration.id, s.resources.lease(registration.id, s.window.webContents.id, scope, fixture.appInstanceId).signal)
       if (input.nativePermissionProbe) s.permissionsWithoutPolicy.add(registration.url)
       return { app: fixture, ...registration, nativePermissionProbe: input.nativePermissionProbe }
     }, { session, nativePermissionProbe })
@@ -53,7 +55,7 @@ test.describe('MCP App native iframe boundary', () => {
     const frame = page.frames().find(frame => frame.url() === payload.url)!
     expect(frame).toBeTruthy()
     await frame.waitForFunction(() => (window as unknown as { fixtureState: { ready: boolean } }).fixtureState?.ready)
-    return { frame, url: payload.url }
+    return { frame, url: payload.url, id: payload.id }
   }
 
   test('initial real document loads once, is cross-origin and has no native API', async () => {
@@ -86,12 +88,13 @@ test.describe('MCP App native iframe boundary', () => {
   })
 
   test('native cross-origin navigation is cancelled before an external request', async () => {
-    const { frame, url } = await mount()
+    const { frame, url, id } = await mount()
     await frame.evaluate(target => { location.href = `${target}/navigate?private=fixture` }, externalUrl)
     await expect.poll(async () => page.evaluate(() => window.securityHarness.state.revoked)).toBe(true)
     expect(frame.url()).toBe(url)
     expect(await app.evaluate(() => globalThis.mcpSecurity.attempts)).toEqual([])
     expect(await app.evaluate((_electron, original) => globalThis.mcpSecurity.resources.isActive(original), url)).toBe(false)
+    expect(await app.evaluate((_electron, id) => globalThis.mcpSecurity.leaseSignals.get(id)?.aborted, id)).toBe(true)
   })
 
   test('no-referrer resource vectors never reach internal handlers, and noreferrer cannot open a popup', async () => {
@@ -135,9 +138,10 @@ test.describe('MCP App native iframe boundary', () => {
   })
 
   test('same-document hash/history routing stays active; same-origin new document revokes', async () => {
-    const { frame, url } = await mount()
+    const { frame, url, id } = await mount()
     await frame.evaluate(() => { location.hash = 'page2'; history.pushState({}, '', '/route?page=2') })
     expect(await page.evaluate(() => window.securityHarness.state.revoked)).toBe(false)
+    expect(await app.evaluate((_electron, id) => globalThis.mcpSecurity.leaseSignals.get(id)?.aborted, id)).toBe(false)
     await frame.evaluate(async () => { await (window as unknown as { fixtureRequest: (method: string, params: unknown) => Promise<unknown> }).fixtureRequest('tools/call', { name: 'fixture_next_page', arguments: {} }) })
     expect(await page.evaluate(() => window.securityHarness.state.calls)).toBe(1)
     const next = await app.evaluate(() => {
@@ -151,6 +155,7 @@ test.describe('MCP App native iframe boundary', () => {
     await frame.evaluate(() => { parent.postMessage({ jsonrpc: '2.0', id: 777, method: 'tools/call', params: { name: 'fixture_next_page' } }, '*') })
     expect(await page.evaluate(() => window.securityHarness.state.calls)).toBe(1)
     expect(await app.evaluate((_electron, original) => globalThis.mcpSecurity.resources.isActive(original), url)).toBe(false)
+    expect(await app.evaluate((_electron, id) => globalThis.mcpSecurity.leaseSignals.get(id)?.aborted, id)).toBe(true)
   })
 
   test('storage survives View replacement and is isolated across sessions', async () => {

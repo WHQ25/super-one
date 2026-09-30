@@ -26,6 +26,7 @@ async function start(): Promise<void> {
     }
   }
   const resources = new SecurityResources()
+  const leaseSignals = new Map<string, AbortSignal>()
   registerMcpAppProtocol(protocol, resources)
   const internalAttempts: string[] = []
   for (const scheme of ['local-file', 'superone-app', 'file']) protocol.handle(scheme, request => {
@@ -68,7 +69,7 @@ async function start(): Promise<void> {
   </script></body></html>`
   const base: ToolAppAttachment = { appInstanceId: 'security', binding: { node: 'local', session: 'security', server: 'fixture', configGeneration: 1, configFingerprint: 'stable' }, resourceUri: 'ui://security/view', resource: { html, meta: { permissions: { camera: {} } }, hash: 'security' }, status: 'result', toolInput: {}, toolResult: { content: [{ type: 'text', text: 'Ready' }] } }
   // Only accessible to Playwright's main-process evaluator, never to an iframe.
-  Object.assign(globalThis, { mcpSecurity: { resources, window, base, attempts, internalAttempts, permissions, permissionsWithoutPolicy, popups, externalUrl: `http://127.0.0.1:${port}`, revokedChannel: MCP_APP_DOCUMENT_REVOKED } })
+  Object.assign(globalThis, { mcpSecurity: { resources, leaseSignals, window, base, attempts, internalAttempts, permissions, permissionsWithoutPolicy, popups, externalUrl: `http://127.0.0.1:${port}`, revokedChannel: MCP_APP_DOCUMENT_REVOKED } })
   app.on('before-quit', () => { server.close() })
   await window.loadURL('superone-renderer://app/index.html')
 }

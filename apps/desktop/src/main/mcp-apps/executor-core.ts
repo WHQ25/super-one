@@ -95,16 +95,24 @@ export class McpAppExecutor {
     this.active.set(this.activeKey(ref, app.appInstanceId, requester), this.bindingKey(app))
   }
 
-  async execute(request: McpAppHostRequest, requester: McpAppRequester, signal: AbortSignal): Promise<McpAppHostResult> {
+  async resolve(request: Pick<McpAppHostRequest, 'sessionKey' | 'appInstanceId' | 'messageId'>, signal: AbortSignal): Promise<McpAppResolvedTarget> {
+    if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
+    const ref = typeof request?.sessionKey === 'string' ? parseSessionKey(request.sessionKey) : null
+    if (!ref || typeof request.appInstanceId !== 'string' || !request.appInstanceId) throw new McpAppsError('invalid', 'Scoped MCP App identity required')
+    const target = await this.ports.resolve(ref, request.appInstanceId, request.messageId, signal)
+    if (target.app.binding.node !== target.node || target.app.binding.session !== ref.sessionId) throw new McpAppsError('denied', 'MCP App node or session binding mismatch')
+    return target
+  }
+
+  async execute(request: McpAppHostRequest, requester: McpAppRequester, signal: AbortSignal, validateTarget?: (target: McpAppResolvedTarget) => void): Promise<McpAppHostResult> {
     try {
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
-      const ref = typeof request?.sessionKey === 'string' ? parseSessionKey(request.sessionKey) : null
-      if (!ref || typeof request.appInstanceId !== 'string' || !request.appInstanceId) throw new McpAppsError('invalid', 'Scoped MCP App identity required')
       if (requester.kind === 'mobile' && !requester.deviceId) throw new McpAppsError('denied', 'MCP App device identity required')
       const operation = operationOf(request)
       assertMcpAppSize(operation)
-      const target = await this.ports.resolve(ref, request.appInstanceId, request.messageId, signal)
-      if (target.app.binding.node !== target.node || target.app.binding.session !== ref.sessionId) throw new McpAppsError('denied', 'MCP App node or session binding mismatch')
+      const target = await this.resolve(request, signal)
+      validateTarget?.(target)
+      const ref = target.ref
       const key = this.targetKey(ref, target.app.appInstanceId)
       const activeKey = this.activeKey(ref, target.app.appInstanceId, requester)
       const binding = this.bindingKey(target.app)

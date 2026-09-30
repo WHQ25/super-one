@@ -365,8 +365,15 @@ freshness; catalog hydration and replay do not. Activation checks the original
 provider/session/account. Desktop sends use the original Session queue;
 phone local sends reuse AgentService's ownership, queue and receipt path;
 node sends use the normal leased gateway queue and admission receipt.
-The desktop View shell still needs to register documents and bind IPC requests
-to their native document lifetime before the complete UI acceptance run.
+Native document IPC now registers only the authoritative attachment's snapshot.
+Every iframe operation carries an opaque document/request handle; main checks
+window owner, scoped session, View and original provider identity, then supplies
+the native document AbortSignal to the single executor. Navigation, release and
+window destruction cancel pending work; SDK cancellation has a request-specific
+IPC path. Bare host requests can only load/activate before document creation.
+Concurrent request IDs are unique and bounded; rejecting a duplicate preserves
+the original request's cancellation handle. Restored snapshot registration
+does not contact the provider. Desktop UI wiring and final acceptance remain.
 
 Verification: 38 focused desktop policy/attachment/protocol tests, 9 runtime
 catalog/queue regression tests and 2 real SQLite restart/RPC tests pass.

@@ -209,8 +209,17 @@ ipcRenderer.on(
 )
 
 const environmentAPI = {
-  mcpAppRequest: (projectPath: string, sessionId: string, request: import('@superone/shared/mcp-apps').McpAppViewRequest) =>
-    ipcRenderer.invoke(AgentIpcChannels.MCP_APP_HOST_REQUEST, projectPath, sessionId, request) as Promise<import('@superone/shared/mcp-apps').McpAppHostResult>,
+  mcpAppRequest: (projectPath: string, sessionId: string, request: import('@superone/shared/mcp-apps').McpAppViewRequest, context?: import('@superone/shared/mcp-apps-desktop').McpAppDesktopRequestContext) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_APP_HOST_REQUEST, projectPath, sessionId, request, context) as Promise<import('@superone/shared/mcp-apps').McpAppHostResult>,
+  mcpAppRegister: (projectPath: string, sessionId: string, target: { appInstanceId: string; messageId?: string }) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_APP_REGISTER_DOCUMENT, projectPath, sessionId, target) as Promise<import('@superone/shared/mcp-apps').McpAppHostResult<import('@superone/shared/mcp-apps-desktop').McpAppDocumentRegistration>>,
+  mcpAppRelease: (documentId: string) => ipcRenderer.invoke(AgentIpcChannels.MCP_APP_RELEASE_DOCUMENT, documentId) as Promise<void>,
+  mcpAppCancel: (context: import('@superone/shared/mcp-apps-desktop').McpAppDesktopRequestContext) => ipcRenderer.invoke(AgentIpcChannels.MCP_APP_CANCEL_REQUEST, context) as Promise<void>,
+  onMcpAppDocumentRevoked: (callback: (event: { url: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: { url: string }) => callback(data)
+    ipcRenderer.on('mcpApp:documentRevoked', listener)
+    return () => { ipcRenderer.removeListener('mcpApp:documentRevoked', listener) }
+  },
   mcpAppsProvider: (connectionId: string, input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_MCP_APPS_PROVIDER, connectionId, input) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult>,
   mcpAppsAuthenticate: (connectionId: string, target: Pick<import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest, 'binding' | 'origin'>) =>

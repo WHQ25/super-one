@@ -5,7 +5,7 @@ import { McpAppsError, type McpAppsBinding, type McpAppOrigin } from '@superone/
 import type { McpAppsProviderRpcRequest, McpAppsRpcResult } from '@superone/shared/environment/mcp-apps-rpc'
 import type { Session } from '../session/types'
 import { authenticateMcpApp } from './auth'
-import { mcpAppSessionKey } from './session-key'
+import { registerMcpAppDocumentIpc } from './document-ipc'
 
 let registered = false
 
@@ -34,11 +34,7 @@ export async function routeMcpAppsProviderRequest(
 export function registerMcpAppsProviderIpc(getSession: (id: string) => Session | null): void {
   if (registered) return
   registered = true
-  ipcMain.handle(AgentIpcChannels.MCP_APP_HOST_REQUEST, async (event, projectPath: string, sessionId: string, request: import('@superone/shared/mcp-apps').McpAppViewRequest) => {
-    if (event.senderFrame !== event.sender.mainFrame) return { ok: false, error: { code: 'denied', message: 'MCP App requests must come through the host renderer' } }
-    const { executeMcpAppHostRequest } = await import('./executor')
-    return executeMcpAppHostRequest({ ...request, sessionKey: mcpAppSessionKey(projectPath, sessionId) }, { kind: 'desktop' })
-  })
+  registerMcpAppDocumentIpc()
   ipcMain.handle(AgentIpcChannels.ENVIRONMENT_MCP_APPS_PROVIDER, (_event, connectionId: string, input: McpAppsProviderRpcRequest) =>
     routeMcpAppsProviderRequest(getSession, connectionId, input))
 

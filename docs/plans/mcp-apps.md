@@ -326,6 +326,16 @@ desktop IPC and Quinn's paired-device `mcp_app_request` seam. Main derives
 resolves the stored/live-catalog attachment, verifies node/session ownership
 and routes all provider operations through the common visibility gate.
 
+Remote resolution uses one authenticated `mcpApps.resolveAttachment` RPC
+(`session:read`) and returns only the owning message, attachment, project route
+and session approvals. Neither paged history nor `session.get` is downloaded
+per View request. The node caches its attachment/approval index until the
+durable event revision changes and drops entries when sessions are removed.
+Stale message IDs remain hints; native in-flight catalog rows stay authoritative.
+Verification: 8 runtime index/catalog tests, 2 SQLite RPC/restart tests, and
+the real authenticated remote gateway test pass, including scope rejection,
+missing/cross-session targets, updated approvals and persisted snapshots.
+
 Opaque approval challenges last five minutes and are single-use, bound to
 the requester, View, operation and original provider binding. Tool consent
 can be remembered for this session/node/server/config fingerprint/account/tool.

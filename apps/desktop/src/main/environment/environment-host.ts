@@ -983,6 +983,10 @@ export class EnvironmentHost {
     return this.asRemoteProviderGw(connectionId).updateMcpAppState({ ...input, ...control })
   }
 
+  resolveMcpAppAttachment(connectionId: string, input: import('@superone/shared/environment/mcp-apps-state-rpc').McpAppsResolveAttachmentRequest): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/environment/mcp-apps-state-rpc').McpAppsResolvedAttachment>> {
+    return this.asRemoteProviderGw(connectionId).resolveMcpAppAttachment(input)
+  }
+
   async listRemoteCredentials(connectionId: string): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).providerListCredentials()
   }

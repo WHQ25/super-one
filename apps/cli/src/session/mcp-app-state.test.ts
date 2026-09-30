@@ -42,17 +42,28 @@ describe('durable node MCP App host updates', () => {
       }
       await send('initial')
       const context = () => ({ identity: { environmentId: 'node' }, client: { scopes: ['session:operate'], clientSessionId: 'client' }, leases, sessions: runtime }) as unknown as RpcContext
+      const readContext = () => ({ ...context(), client: { ...context().client, scopes: ['session:read'] } }) as RpcContext
+      const lookup = { sessionId: session.sessionId, appInstanceId: 'view', messageId: 'stale-hint' }
+      expect(await dispatchMcpAppsRpc('mcpApps.resolveAttachment', lookup, context())).toMatchObject({ error: { code: 'forbidden' } })
+      expect(await dispatchMcpAppsRpc('mcpApps.resolveAttachment', lookup, readContext())).toMatchObject({ result: { ok: true, value: { projectId: 'project', app: { appInstanceId: 'view' }, sessionApprovals: [] } } })
+      expect(await dispatchMcpAppsRpc('mcpApps.resolveAttachment', { ...lookup, sessionId: 'another-session' }, readContext())).toMatchObject({ result: { ok: false, error: { code: 'denied' } } })
+      expect(await dispatchMcpAppsRpc('mcpApps.resolveAttachment', { ...lookup, appInstanceId: 'missing' }, readContext())).toMatchObject({ result: { ok: false, error: { code: 'denied' } } })
       const update = { resource: { html: '<html>persisted</html>', hash: 'hash', meta: {} }, modelContext: { structuredContent: { selected: 'b' }, source: { appInstanceId: 'forged', server: 'forged' } } }
       const payload = { sessionId: session.sessionId, appInstanceId: 'view', update, ...control }
       expect(await dispatchMcpAppsRpc('mcpApps.state', payload, context())).toEqual({ result: { ok: true, value: null } })
+      expect(await dispatchMcpAppsRpc('mcpApps.resolveAttachment', lookup, readContext())).toMatchObject({ result: { ok: true, value: { app: { resource: update.resource } } } })
       expect(findMcpAppAttachment(runtime.listMessages({ sessionId: session.sessionId }).messages, 'view')?.app.modelContext?.source).toEqual({ appInstanceId: 'view', server: 'fixture' })
       expect(await dispatchMcpAppsRpc('mcpApps.state', { ...payload, leaseId: 'wrong' }, context())).toMatchObject({ result: { ok: false, error: { code: 'denied' } } })
       expect(await dispatchMcpAppsRpc('mcpApps.state', { ...payload, appInstanceId: 'missing' }, context())).toMatchObject({ result: { ok: false, error: { code: 'denied' } } })
       const approval = { node: 'node', session: session.sessionId, server: 'fixture', account: 'other', configFingerprint: 'config', tool: 'next_page' }
       expect(await dispatchMcpAppsRpc('mcpApps.state', { ...payload, update: { approvedTools: [approval] } }, context())).toMatchObject({ result: { ok: false, error: { code: 'denied' } } })
+      const validApproval = { ...approval, account: 'account' }
+      expect(await dispatchMcpAppsRpc('mcpApps.state', { ...payload, update: { approvedTools: [validApproval] } }, context())).toMatchObject({ result: { ok: true } })
+      expect(await dispatchMcpAppsRpc('mcpApps.resolveAttachment', lookup, readContext())).toMatchObject({ result: { ok: true, value: { sessionApprovals: [validApproval] } } })
       await runtime.dispose()
       runtime = new SessionRuntime(db, events, leases, 'node', runner)
       expect(findMcpAppAttachment(runtime.listMessages({ sessionId: session.sessionId }).messages, 'view')?.app.resource?.html).toBe('<html>persisted</html>')
+      expect(await dispatchMcpAppsRpc('mcpApps.resolveAttachment', lookup, readContext())).toMatchObject({ result: { ok: true, value: { app: { resource: update.resource }, sessionApprovals: [validApproval] } } })
       await send('next user turn')
       expect(modelInputs[1]).toContain('"selected":"b"')
       expect(modelInputs[1]).not.toContain('view-only')

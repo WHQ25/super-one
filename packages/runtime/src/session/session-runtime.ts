@@ -1,6 +1,8 @@
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import type { McpAppAttachmentUpdate } from '@superone/shared/mcp-apps'
-import { findMcpAppAttachment, mcpAppModelContextText, validateMcpAppAttachmentUpdate } from '@superone/shared/mcp-apps-state'
+import { mcpAppModelContextText, validateMcpAppAttachmentUpdate } from '@superone/shared/mcp-apps-state'
+import { McpAppAttachmentIndex } from './mcp-apps-index'
+import type { McpAppsResolvedAttachment } from '@superone/shared/environment/mcp-apps-state-rpc'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@superone/shared/agent-types'
@@ -180,6 +182,7 @@ interface HostActionWaiter {
 export class SessionRuntime {
   /** Host context changes invalidate this; ordinary sends do not rescan the event log. */
   private readonly mcpAppContexts = new Map<string, string>()
+  private readonly mcpAppIndex = new McpAppAttachmentIndex()
   private readonly aborts = new Map<string, Set<AbortController>>()
   private readonly live = new Map<string, NodeSessionRecord>()
   /** In-flight turn promises (including runner cleanup / process kill). */
@@ -821,10 +824,14 @@ export class SessionRuntime {
     return buildSessionMessageCatalog(session, events)
   }
 
+  resolveMcpAppAttachment(sessionId: string, appInstanceId: string): McpAppsResolvedAttachment {
+    const target = this.mcpAppIndex.resolve(sessionId, appInstanceId, this.events.headSequence(), () => this.mcpAppMessageCatalog(sessionId))
+    if (target.app.binding.node !== this.environmentId || target.app.binding.session !== sessionId) throw new McpAppsError('denied', 'MCP App attachment does not belong to this session')
+    return { ...target, projectId: this.live.get(sessionId)!.projectId }
+  }
+
   updateMcpApp(sessionId: string, appInstanceId: string, update: McpAppAttachmentUpdate): void {
-    const catalog = this.mcpAppMessageCatalog(sessionId)
-    const target = findMcpAppAttachment(catalog, appInstanceId)
-    if (!target || target.app.binding.node !== this.environmentId || target.app.binding.session !== sessionId) throw new McpAppsError('denied', 'MCP App attachment does not belong to this session')
+    const target = this.resolveMcpAppAttachment(sessionId, appInstanceId)
     const binding = target.app.binding
     if (update.approvedTools?.some(value => value.node !== binding.node || value.session !== sessionId || value.server !== binding.server || value.account !== binding.account || value.configFingerprint !== binding.configFingerprint)) {
       throw new McpAppsError('denied', 'MCP App approval binding mismatch')
@@ -1459,6 +1466,7 @@ export class SessionRuntime {
     void Promise.resolve(this.turnRunner.disposeSession?.(sessionId)).catch(() => undefined)
     this.live.delete(sessionId)
     this.mcpAppContexts.delete(sessionId)
+    this.mcpAppIndex.delete(sessionId)
     this.store.delete(sessionId)
     this.events.appendSession({
       sessionId,

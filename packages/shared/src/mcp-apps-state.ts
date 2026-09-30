@@ -1,6 +1,6 @@
 import type { AgentEvent, ContentBlock } from './agent-types'
 import { assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, McpAppsError } from './mcp-apps'
-import type { McpAppAttachmentUpdate, ToolAppAttachment } from './mcp-apps'
+import type { McpAppAttachmentUpdate, McpAppToolApproval, ToolAppAttachment } from './mcp-apps'
 
 /** Works with desktop transcripts and the node's denser message catalog. */
 export interface McpAppMessage {
@@ -33,6 +33,16 @@ export function findMcpAppAttachment(messages: readonly McpAppMessage[], appInst
     if (app) return { messageId: message.id, app }
   }
   return undefined
+}
+
+/** Session-owned consent can be reused by another View of the same bound server/tool. */
+export function mcpAppSessionApprovals(messages: readonly McpAppMessage[]): McpAppToolApproval[] {
+  const approvals = new Map<string, McpAppToolApproval>()
+  for (const message of messages) for (const app of mcpAppMessageAttachments(message)) for (const value of app.approvedTools ?? []) {
+    const key = JSON.stringify([value.node, value.session, value.server, value.account, value.configFingerprint, value.tool])
+    approvals.set(key, value)
+  }
+  return [...approvals.values()]
 }
 
 /** Keep host state when a native provider sends the next input/result delta. */

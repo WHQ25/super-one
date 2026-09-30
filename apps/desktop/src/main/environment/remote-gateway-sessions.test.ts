@@ -68,7 +68,14 @@ describe('RemoteEnvironmentGateway sessions + watch', () => {
       if (method === 'mcpServer/tool/call') return await client.callTool({ name: String(params?.tool), arguments: params?.arguments as Record<string, unknown> }) as Record<string, unknown>
       throw new Error('unexpected method')
     })
-    const runner: TurnRunner = async () => ({ finalText: '', providerResume: 'thread:remote-thread' })
+    let nodeId = ''
+    const runner: TurnRunner = async ({ session, messageId, onAgentEvent }) => {
+      onAgentEvent?.({ type: 'codex_item_delta', messageId: messageId!, phase: 'completed', item: { type: 'mcp_tool_call', id: 'call', server: 'fixture', tool: 'items', arguments: {}, status: 'completed', app: {
+        appInstanceId: 'view', binding: { node: nodeId, session: session.sessionId, server: 'fixture', configGeneration: 0, configFingerprint: 'fixture' },
+        origin: { providerSessionId: 'remote-thread' }, resourceUri: 'ui://fixture/items.html', status: 'result',
+      } } })
+      return { finalText: '', providerResume: 'thread:remote-thread' }
+    }
     runner.getMcpAppsProvider = async (_session, binding, origin) => createCodexMcpAppsProvider(binding, origin.providerSessionId, request)
     const nodeHome = mkdtempSync(join(tmpdir(), 'apps-node-'))
     const desk = mkdtempSync(join(tmpdir(), 'apps-desk-'))
@@ -79,11 +86,22 @@ describe('RemoteEnvironmentGateway sessions + watch', () => {
     const manager = new NodeConnectionManager({ credentialStore: new NodeCredentialStore(desk) })
     try {
       const { descriptor } = await manager.pairAndConnect({ baseUrl: rt.server.url, pairingToken: rt.auth.createPairingToken().token, label: 'apps' })
+      nodeId = descriptor.environmentId
       const gw = manager.getGateway(descriptor.environmentId)!
       const project = await gw.openProject(projectDir, 'apps')
       const { sessionId } = await gw.sessions.create({ project: { environmentId: descriptor.environmentId, projectId: project.projectId }, providerId: 'codex', options: { harnessId: 'codex' } })
       const control = await gw.sessions.acquireControl({ resource: { environmentId: descriptor.environmentId, sessionId } })
       const input = { binding: { node: descriptor.environmentId, session: sessionId, server: 'fixture', configGeneration: 0, configFingerprint: 'fixture' }, origin: { providerSessionId: 'remote-thread' }, leaseId: control.leaseId, generation: control.generation }
+      await gw.sessions.send({ session: { environmentId: nodeId, sessionId }, text: 'show fixture', leaseId: control.leaseId, generation: control.generation })
+      for (let i = 0; i < 40; i++) {
+        if ((await gw.sessions.get({ environmentId: nodeId, sessionId }) as { status: string }).status === 'idle') break
+        await new Promise(resolve => setTimeout(resolve, 30))
+      }
+      const target = await gw.resolveMcpAppAttachment({ sessionId, appInstanceId: 'view', messageId: 'stale-hint' })
+      expect(target).toMatchObject({ ok: true, value: { projectId: project.projectId, app: { binding: input.binding, origin: input.origin }, sessionApprovals: [] } })
+      const approval = { node: nodeId, session: sessionId, server: 'fixture', configFingerprint: 'fixture', tool: 'fixture_next_page' }
+      await gw.updateMcpAppState({ sessionId, appInstanceId: 'view', update: { approvedTools: [approval] }, leaseId: control.leaseId, generation: control.generation })
+      expect(await gw.resolveMcpAppAttachment({ sessionId, appInstanceId: 'view' })).toMatchObject({ ok: true, value: { sessionApprovals: [approval] } })
       const resource = await gw.requestMcpAppsProvider({ ...input, operation: 'readResource', uri: 'ui://fixture/items.html' })
       expect(resource).toMatchObject({ ok: true, value: { contents: [{ mimeType: 'text/html;profile=mcp-app' }] } })
       const call = await gw.requestMcpAppsProvider({ ...input, operation: 'callTool', tool: 'fixture_next_page', args: { page: 2 } })

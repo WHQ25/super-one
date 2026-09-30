@@ -2,11 +2,21 @@ import { hasAllScopes, OPERATION_SCOPES } from '@superone/shared/environment'
 import { dispatchMcpAppsProviderRequest } from '@superone/runtime/mcp-apps/provider-rpc'
 import { McpAppsError } from '@superone/shared/mcp-apps'
 import type { McpAppsProviderRpcRequest } from '@superone/shared/environment/mcp-apps-rpc'
-import type { McpAppsStateRpcRequest } from '@superone/shared/environment/mcp-apps-state-rpc'
+import type { McpAppsResolveAttachmentRequest, McpAppsStateRpcRequest } from '@superone/shared/environment/mcp-apps-state-rpc'
 import type { RpcContext, RpcResult } from './handlers'
 
 export async function dispatchMcpAppsRpc(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult | null> {
-  if (method !== 'mcpApps.provider' && method !== 'mcpApps.state') return null
+  if (method !== 'mcpApps.provider' && method !== 'mcpApps.state' && method !== 'mcpApps.resolveAttachment') return null
+  if (method === 'mcpApps.resolveAttachment') {
+    if (!hasAllScopes(ctx.client.scopes, OPERATION_SCOPES.readSession)) return { error: { code: 'forbidden', message: 'session:read required' } }
+    const input = payload as McpAppsResolveAttachmentRequest
+    if (typeof input?.sessionId !== 'string' || !input.sessionId || typeof input.appInstanceId !== 'string' || !input.appInstanceId) return { error: { code: 'invalid_argument', message: 'MCP App attachment identity required' } }
+    try {
+      return { result: { ok: true, value: ctx.sessions.resolveMcpAppAttachment(input.sessionId, input.appInstanceId) } }
+    } catch (error) {
+      return { result: { ok: false, error: error instanceof McpAppsError ? error.toJSON() : { code: 'denied', message: error instanceof Error ? error.message : String(error) } } }
+    }
+  }
   if (!hasAllScopes(ctx.client.scopes, OPERATION_SCOPES.operateSession)) return { error: { code: 'forbidden', message: 'session:operate required' } }
   const control = payload as { leaseId?: string; generation?: string }
   if (method === 'mcpApps.state') {

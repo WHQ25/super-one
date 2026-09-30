@@ -119,6 +119,10 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.rpc('mcpApps.state', input)
   }
 
+  resolveMcpAppAttachment(input: import('@superone/shared/environment/mcp-apps-state-rpc').McpAppsResolveAttachmentRequest): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/environment/mcp-apps-state-rpc').McpAppsResolvedAttachment>> {
+    return this.client.rpc('mcpApps.resolveAttachment', input)
+  }
+
   renewHostActionClaim(input: { actionId: string; claimToken: string; ttlMs?: number }): Promise<{ claimExpiresAt: number; version: number }> {
     return this.client.rpc<{ claimExpiresAt: number; version: number }>('session.renewHostActionClaim', input)
   }

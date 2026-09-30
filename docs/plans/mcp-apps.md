@@ -436,7 +436,11 @@ them.
 | Bundle cost (Q3) | +154.6 KB (+41 KB gz) chat document; cold open ~694 → ~719 ms. Within the 250 KB / 50 ms budget. |
 | RN `mcpApp` action → relay `mcp_app_request` → `canAccessSession` → `deviceMcpAppHostRequest` → executor seam; `{ response }` envelope; transport failures mapped by send point (`callTool` lost after send → `unknown_outcome`); back / edge swipe close fullscreen | Done `817978e93`. |
 | Devices against the stub (iOS 26.4 sim, Android 16 AVD, local relay, dev desktop, real Claude turn with the stdio fixture) | Restored View → Activate → host reached → "executor not available" → Retry, both platforms; nothing resent automatically. Non-fullscreen back unchanged. |
-| Device E2E with the executor: paging, denied model-only call, fullscreen exit via Android back / iOS edge swipe | After the executor lands. |
+| Live View auto-activate on mount (per-requester host activation) | Done `9692421d2`. |
+| iOS: nested `about:blank` iframe load reset the RN channel (react-native-webview top-frame check by URL) | Fixed `31b878ea9` (`targetFrame.isMainFrame`), standalone and cherry-pickable. |
+| Device E2E with the executor, Claude session (iOS 26.4 sim, Android 16 AVD, local relay) | Pass on both: restored with/without snapshot, live auto-activate, app-only paging with approval then remembered, model-only denied, `sendMessage` card lands in the session, fullscreen exit via iOS edge swipe / Android back. Trace ids in `event-trace.db`. |
+| Device E2E, Codex session | With the final acceptance run, using a temporary `CODEX_HOME` (never the user's `~/.codex`). |
+| Fullscreen scope | Covers the chat WebView area; RN header and composer stay visible. Accepted for phase 1. |
 
 ## Log
 

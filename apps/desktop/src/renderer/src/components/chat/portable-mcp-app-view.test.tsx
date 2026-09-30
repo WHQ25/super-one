@@ -12,7 +12,7 @@ vi.mock('../../../../../../../packages/chat-view/src/McpAppFrame', () => ({
   default: ({ app }: { app: ToolAppAttachment }) => <div data-testid="frame">{app.appInstanceId}</div>,
 }))
 
-const RESOURCE = { html: '<!doctype html><p>View</p>', hash: 'v1' }
+const RESOURCE = { html: '<!doctype html><p>View</p>', hash: 'v1', meta: {} }
 let operations: string[] = []
 let dispose: (() => void) | null = null
 

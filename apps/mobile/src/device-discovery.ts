@@ -43,7 +43,8 @@ export class DeviceDiscovery {
   private reachability = new Map<string, DeviceReachability>()
   private addresses = new Map<string, LanAddress>()
   private pairings: SavedPairing[] = []
-  private inFlightLanProbes = new Set<string>()
+  private inFlightLanProbes = new Map<string, Promise<void>>()
+  private inFlightRefresh: Promise<void> | null = null
   private refreshing = false
 
   constructor(
@@ -84,29 +85,49 @@ export class DeviceDiscovery {
    * so a desktop that restarted keeps its Bonjour name but answers on a new
    * port — and neither platform re-resolves a name it has already reported, so
    * a browse left running would hand back the dead port on every refresh.
+   *
+   * A call made while one is running joins it: callers read the result right
+   * after awaiting, so returning early would hand them a half-cleared map.
    */
-  async refresh({ reset }: { reset: boolean }): Promise<void> {
-    if (this.refreshing) return
-    if (this.pairings.length === 0) return
+  refresh({ reset }: { reset: boolean }): Promise<void> {
+    if (this.inFlightRefresh) return this.inFlightRefresh
+    if (this.pairings.length === 0) return Promise.resolve()
     this.refreshing = true
+    this.inFlightRefresh = this.runRefresh(reset).finally(() => {
+      this.refreshing = false
+      this.inFlightRefresh = null
+      this.onChange()
+    })
+    return this.inFlightRefresh
+  }
+
+  /**
+   * Re-probe one desktop's LAN candidates, ignoring earlier verdicts. The
+   * reconnect loop dials what this returns: a route that answered before the
+   * phone was backgrounded says nothing about now. Null means use the relay.
+   */
+  async resolveLan(pairingId: string): Promise<LanAddress | null> {
+    await this.inFlightRefresh
+    const pairing = this.pairings.find((row) => row.id === pairingId)
+    if (!pairing) return null
+    await Promise.all(this.probeKnownLanAddresses([pairing], { recheck: true }))
+    return this.reachability.get(pairingId)?.lan ? this.lanAddressOf(pairingId) : null
+  }
+
+  private async runRefresh(reset: boolean): Promise<void> {
     if (reset) {
       this.reachability.clear()
       this.addresses.clear()
     }
     this.onChange()
     const pairings = this.pairings
-    try {
-      await (reset ? this.ports.restartBrowsing() : this.ports.ensureBrowsing())
-      const lanProbes = this.probeKnownLanAddresses(pairings)
-      const relayProbes = pairings.map(async (pairing) => {
-        const online = await this.ports.checkRelay(pairing)
-        this.apply(pairing.id, { relay: online })
-      })
-      await Promise.all([...lanProbes, ...relayProbes])
-    } finally {
-      this.refreshing = false
-      this.onChange()
-    }
+    await (reset ? this.ports.restartBrowsing() : this.ports.ensureBrowsing())
+    const lanProbes = this.probeKnownLanAddresses(pairings)
+    const relayProbes = pairings.map(async (pairing) => {
+      const online = await this.ports.checkRelay(pairing)
+      this.apply(pairing.id, { relay: online })
+    })
+    await Promise.all([...lanProbes, ...relayProbes])
   }
 
   /** The native browser saw the service set change; probe anything newly visible. */
@@ -114,16 +135,16 @@ export class DeviceDiscovery {
     void Promise.all(this.probeKnownLanAddresses(this.pairings))
   }
 
-  private probeKnownLanAddresses(pairings: SavedPairing[]): Promise<void>[] {
+  private probeKnownLanAddresses(pairings: SavedPairing[], { recheck = false } = {}): Promise<void>[] {
     return pairings.flatMap((pairing) => this.lanCandidates(pairing).flatMap((address) => {
       // Already reachable there — but an advertised port that differs from the
       // one that answered means the desktop restarted, and needs re-probing.
       const known = this.addresses.get(pairing.id)
-      if (this.reachability.get(pairing.id)?.lan && known && sameAddress(known, address)) return []
+      if (!recheck && this.reachability.get(pairing.id)?.lan && known && sameAddress(known, address)) return []
       const key = `${pairing.id}|${address.host}:${address.port}`
-      if (this.inFlightLanProbes.has(key)) return []
-      this.inFlightLanProbes.add(key)
-      return [this.ports.checkLan(address.host, address.port)
+      const inFlight = this.inFlightLanProbes.get(key)
+      if (inFlight) return [inFlight]
+      const probe = this.ports.checkLan(address.host, address.port)
         .then((reachable) => {
           if (reachable) {
             this.addresses.set(pairing.id, address)
@@ -137,7 +158,9 @@ export class DeviceDiscovery {
           this.addresses.delete(pairing.id)
           this.apply(pairing.id, { lan: false })
         })
-        .finally(() => { this.inFlightLanProbes.delete(key) })]
+        .finally(() => { this.inFlightLanProbes.delete(key) })
+      this.inFlightLanProbes.set(key, probe)
+      return [probe]
     }))
   }
 

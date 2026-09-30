@@ -1,7 +1,12 @@
 import { networkLedger, networkMetricsEnabled } from './network-ledger'
-import { RelayClient, type OpenSocket } from '@superone/relay-client'
+import { RelayClient, type MobileIdentity, type OpenSocket } from '@superone/relay-client'
 import { ReconnectController, type ConnectionState } from './reconnect-controller'
 import type { ReconnectInfo } from './device-status'
+import type { LanAddress } from './device-discovery'
+import { logConnection } from './relay-debug'
+
+/** Everything needed to reach one paired desktop over either route. */
+export type DesktopEndpoint = { relayUrl: string; masterSecret: string; identity: MobileIdentity }
 
 export type MobileRelayConnectionHooks = {
   onEvents: (events: unknown[], epoch: number) => void
@@ -20,6 +25,13 @@ export type MobileRelayConnectionHooks = {
    * is the socket peer, so an open socket already answers.
    */
   isDesktopOnline?: () => Promise<boolean>
+  endpoint: DesktopEndpoint
+  /**
+   * Where the desktop answers on the LAN right now; null dials the relay. Asked
+   * before every redial: the route of the first dial goes stale while the
+   * phone sleeps, and redialling it verbatim never recovers.
+   */
+  resolveLan: () => Promise<LanAddress | null>
   suppressDisconnect: () => boolean
   openSocket?: OpenSocket
 }
@@ -27,6 +39,7 @@ export type MobileRelayConnectionHooks = {
 export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): {
   client: RelayClient
   reconnectController: ReconnectController
+  dial: (lan: LanAddress | null) => Promise<void>
 } {
   let client!: RelayClient
   let stopped = false
@@ -40,7 +53,21 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
    */
   let handshakeSeen = false
   let lastDelayMs = 0
-  const report = hooks.onConnection
+  let attempt = 0
+  const { relayUrl, masterSecret, identity } = hooks.endpoint
+  const dial = (lan: LanAddress | null) => lan
+    ? client.connectLan(lan.host, lan.port, masterSecret, identity)
+    : client.connectRelay({ relayUrl, masterSecret, deviceId: identity.deviceId, deviceName: identity.deviceName })
+  const redial = async () => {
+    client.startBuffering()
+    const lan = await hooks.resolveLan()
+    logConnection('dial', { attempt, transport: lan ? 'lan' : 'relay', lan: lan ? `${lan.host}:${lan.port}` : null })
+    await dial(lan)
+  }
+  const report: MobileRelayConnectionHooks['onConnection'] = (state, epoch) => {
+    logConnection('state', { state, epoch, transport: client.transport })
+    hooks.onConnection(state, epoch)
+  }
   const restore = () => hooks.restore(client)
   const restorePeer = () => {
     if (peerRestore) return
@@ -57,7 +84,7 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
       .finally(() => { peerRestore = null })
   }
   const reconnectController = new ReconnectController(
-    () => client.reconnect(),
+    redial,
     restore,
     {
       onState: (state, epoch) => {
@@ -66,6 +93,7 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
           // handshake (below) is what brings this connection back.
           peerLost = state === 'offline'
           lastDelayMs = 0
+          attempt = 0
           hooks.onReconnectInfo?.({ attempting: false, waiting: false, delayMs: 0, nextAtMs: null })
         }
         report(state, epoch)
@@ -75,10 +103,12 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
         || (await hooks.isDesktopOnline?.() ?? true)
         || handshakeSeen,
       onAttempt: () => {
+        attempt += 1
         hooks.onReconnectInfo?.({ attempting: true, waiting: false, delayMs: lastDelayMs, nextAtMs: null })
       },
       onRetry: (error, delayMs) => {
         const reason = error instanceof Error ? error.message : 'connection failed'
+        logConnection('retry', { attempt, transport: client.transport, reason, delayMs })
         lastDelayMs = delayMs
         hooks.onStatus(`${reason} — retrying in ${delayMs / 1_000}s`)
         hooks.onReconnectInfo?.({
@@ -141,10 +171,11 @@ export function createMobileRelayConnection(hooks: MobileRelayConnectionHooks): 
         report('connected', hooks.currentEpoch(client))
         return
       }
+      logConnection('transport lost', { transport: client.transport, looping: reconnectController.isActive })
       reconnectController.start(hooks.currentEpoch(client))
     },
     ...(hooks.openSocket ? { openSocket: hooks.openSocket } : {}),
   })
 
-  return { client, reconnectController }
+  return { client, reconnectController, dial }
 }

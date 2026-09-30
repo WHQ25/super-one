@@ -19,7 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { WebView } from 'react-native-webview'
 import type { HostOutbound } from '@superone/chat-view'
 import {
-  checkRelayDesktopOnline, loadPairings, parsePairQr, RelayClient, savePairings, startPairingHandshake,
+  checkRelayDesktopOnline, loadPairings, parseLanHostPort, parsePairQr, RelayClient, savePairings, startPairingHandshake,
   upsertPairing, type SavedPairing,
 } from '@superone/relay-client'
 import type {
@@ -132,7 +132,7 @@ import { useReconnectOnForeground } from '../use-reconnect-on-foreground'
 import { useDeviceDiscovery } from './use-device-discovery'
 import { isFullBleedScreen } from '../layout-state'
 import { isReachable, type ReconnectInfo } from '../device-status'
-import { logRelayEventTypes } from '../relay-debug'
+import { logConnection, logRelayEventTypes } from '../relay-debug'
 import { dynamicMentionArtworkRevision, dynamicMentionArtworkSnapshot } from '../ui/mention-dynamic-artwork'
 import { loadMcpIcons, mcpIconsRevision, mcpIconsSnapshot } from '../mcp-icons'
 import { useMobileLocale } from '../i18n/context'
@@ -398,12 +398,14 @@ export function MobileApp() {
   useReconnectOnForeground(() => {
     networkLedger.mark('foreground')
     const client = clientRef.current
+    logConnection('foreground', { state: connectionRef.current.state, transport: client?.transport ?? null })
     if (!client || connectionRef.current.state !== 'connected') {
       reconnectControllerRef.current?.force(connectionRef.current.epoch)
       return
     }
     markHarnessResourcesStale(client)
     void client.probeConnection().then(healthy => {
+      logConnection('foreground probe', { healthy, transport: client.transport })
       if (!healthy && clientRef.current === client) reconnectControllerRef.current?.force(connectionRef.current.epoch)
     })
   })
@@ -749,7 +751,7 @@ export function MobileApp() {
     if (Array.isArray(cachedHarnesses)) setHarnessOptions(cachedHarnesses.filter(row => row && typeof row.provider === 'string'))
 
     networkLedger.checkpoint('cache-loaded')
-    const { client, reconnectController } = createMobileRelayConnection({
+    const { client, reconnectController, dial } = createMobileRelayConnection({
       onEvents: (events, epoch) => {
         if (connectGeneration !== connectGenerationRef.current) return
         logRelayEventTypes(events)
@@ -795,6 +797,8 @@ export function MobileApp() {
         }
         connectionRef.current = { state, epoch }
         setConnectionState(state)
+        // A redial may have switched routes (LAN ↔ relay).
+        if (state === 'connected') setActiveTransport(client.transport)
         inject(webRef, { type: 'setConnection', state, epoch })
         // The row falls back to discovery's verdict now; make sure it is current.
         if (state === 'offline') void discovery.refresh({ reset: false })
@@ -805,6 +809,8 @@ export function MobileApp() {
       onStatus: () => { /* DeviceStatus + reconnect own connection feedback. */ },
       onReconnectInfo: setReconnect,
       isDesktopOnline: () => checkRelayDesktopOnline({ relayUrl, masterSecret: secret }).catch(() => false),
+      endpoint: { relayUrl, masterSecret: secret, identity: { deviceId: activeDeviceId, deviceName: getMobileDeviceName() } },
+      resolveLan: () => discovery.resolveLan(pairingId),
       onShutdown: () => {
         setConnectionState('offline')
         setStatus('')
@@ -823,20 +829,7 @@ export function MobileApp() {
     workspaceCacheRef.current = cache
     setWorkspaceCache(cache)
     const hp = (lanHostPort ?? lan).trim()
-    if (hp.includes(':')) {
-      const [host, port] = hp.split(':')
-      await client.connectLan(host, Number(port), secret, {
-        deviceId: activeDeviceId,
-        deviceName: getMobileDeviceName(),
-      })
-    } else {
-      await client.connectRelay({
-        relayUrl,
-        masterSecret: secret,
-        deviceId: activeDeviceId,
-        deviceName: getMobileDeviceName(),
-      })
-    }
+    await dial(parseLanHostPort(hp))
     if (connectGeneration !== connectGenerationRef.current) return
     setActiveTransport(client.transport)
     await rememberPairing({

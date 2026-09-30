@@ -68,17 +68,19 @@ describe('device discovery refresh', () => {
     expect(checkLan).not.toHaveBeenCalled()
   })
 
-  it('ignores a second refresh while one is still running', async () => {
+  it('joins a refresh that is still running instead of starting another', async () => {
     let release = () => {}
     const gate = new Promise<void>((resolve) => { release = resolve })
     const checkRelay = vi.fn(async () => { await gate; return true })
     const { discovery } = harness({ checkRelay })
     discovery.setPairings([pairing('desk-1')])
     const first = discovery.refresh({ reset: true })
-    await discovery.refresh({ reset: true })
-    expect(checkRelay).toHaveBeenCalledTimes(1)
+    const second = discovery.refresh({ reset: true })
+    expect(second).toBe(first)
+    await vi.waitFor(() => expect(checkRelay).toHaveBeenCalledTimes(1))
     release()
-    await first
+    await second
+    expect(discovery.reachabilityOf('desk-1').relay).toBe(true)
     expect(discovery.isRefreshing).toBe(false)
   })
 
@@ -256,5 +258,57 @@ describe('forgetting a device', () => {
     discovery.setPairings([])
     expect(discovery.reachabilityOf('desk-1')).toEqual({ lan: false, relay: false })
     expect(discovery.lanAddressOf('desk-1')).toBeNull()
+  })
+})
+
+describe('device discovery reconnect route', () => {
+  it('re-probes a LAN route that answered earlier and gives it up once it stops answering', async () => {
+    const checkLan = vi.fn(async () => true)
+    const { discovery, services } = harness({ checkLan })
+    services.set('room-secret-desk-1', [{ roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9000 }])
+    discovery.setPairings([pairing('desk-1')])
+    await discovery.refresh({ reset: true })
+    expect(discovery.lanAddressOf('desk-1')).toEqual({ host: '10.0.0.5', port: 9000 })
+
+    checkLan.mockResolvedValue(false)
+    await expect(discovery.resolveLan('desk-1')).resolves.toBeNull()
+    expect(checkLan).toHaveBeenCalledTimes(2)
+    expect(discovery.reachabilityOf('desk-1').lan).toBe(false)
+  })
+
+  it('switches to the address the desktop answers on now', async () => {
+    const checkLan = vi.fn(async (_host: string, port: number) => port === 9000)
+    const { discovery, services } = harness({ checkLan })
+    services.set('room-secret-desk-1', [{ roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9000 }])
+    discovery.setPairings([pairing('desk-1')])
+    await discovery.refresh({ reset: true })
+
+    checkLan.mockImplementation(async (_host: string, port: number) => port === 9001)
+    services.set('room-secret-desk-1', [
+      { roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9000 },
+      { roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9001 },
+    ])
+    await expect(discovery.resolveLan('desk-1')).resolves.toEqual({ host: '10.0.0.5', port: 9001 })
+  })
+
+  it('waits for a running refresh instead of reading its half-cleared results', async () => {
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const { discovery, services } = harness({
+      checkLan: vi.fn(async () => true),
+      restartBrowsing: vi.fn(async () => { await gate }),
+    })
+    discovery.setPairings([pairing('desk-1')])
+    void discovery.refresh({ reset: true })
+    const route = discovery.resolveLan('desk-1')
+    // The browse comes back up with the record only after the refresh began.
+    services.set('room-secret-desk-1', [{ roomId: 'room-secret-desk-1', host: '10.0.0.5', port: 9000 }])
+    release()
+    await expect(route).resolves.toEqual({ host: '10.0.0.5', port: 9000 })
+  })
+
+  it('has no LAN route for a desktop it does not know', async () => {
+    const { discovery } = harness()
+    await expect(discovery.resolveLan('missing')).resolves.toBeNull()
   })
 })

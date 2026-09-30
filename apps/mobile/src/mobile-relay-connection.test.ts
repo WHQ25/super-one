@@ -3,6 +3,7 @@ import type { SocketLike } from '@superone/relay-client'
 import { createMobileRelayConnection } from './mobile-relay-connection'
 
 const MASTER = '0123456789abcdef'.repeat(8)
+const ENDPOINT = { relayUrl: 'wss://relay.example', masterSecret: MASTER, identity: { deviceId: 'phone-1', deviceName: 'Phone' } }
 
 class MockSocket implements SocketLike {
   onopen: (() => void) | null = null
@@ -39,6 +40,8 @@ describe('mobile relay connection lifecycle', () => {
       onStatus: vi.fn(),
       onShutdown: vi.fn(),
       suppressDisconnect: () => false,
+      endpoint: ENDPOINT,
+      resolveLan: async () => null,
       openSocket: () => {
         const socket = new MockSocket()
         sockets.push(socket)
@@ -47,7 +50,7 @@ describe('mobile relay connection lifecycle', () => {
       },
     })
 
-    await connection.client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
+    await connection.dial(null)
     expect(onConnection).toHaveBeenLastCalledWith('connected', 1)
 
     sockets[0].drop()
@@ -77,6 +80,8 @@ describe('mobile relay connection lifecycle', () => {
       onStatus,
       onShutdown,
       suppressDisconnect: () => false,
+      endpoint: ENDPOINT,
+      resolveLan: async () => null,
       openSocket: () => {
         const socket = new MockSocket()
         sockets.push(socket)
@@ -85,7 +90,7 @@ describe('mobile relay connection lifecycle', () => {
       },
     })
 
-    await connection.client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
+    await connection.dial(null)
     sockets[0].emit({ type: 'peer_disconnected' })
     expect(onConnection).toHaveBeenLastCalledWith('offline', 2)
     sockets[0].emit({ type: 'peer_connected' })
@@ -113,6 +118,8 @@ describe('mobile relay connection lifecycle', () => {
       onStatus: vi.fn(),
       onShutdown,
       suppressDisconnect: () => false,
+      endpoint: ENDPOINT,
+      resolveLan: async () => null,
       openSocket: () => {
         const socket = new MockSocket()
         sockets.push(socket)
@@ -121,7 +128,7 @@ describe('mobile relay connection lifecycle', () => {
       },
     })
 
-    await connection.client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
+    await connection.dial(null)
     sockets[0].emit({ type: 'desktop_shutdown' })
     expect(onShutdown).toHaveBeenCalledOnce()
     expect(connection.client.connected).toBe(false)
@@ -146,6 +153,8 @@ describe('mobile relay connection lifecycle', () => {
       onShutdown: vi.fn(),
       isDesktopOnline,
       suppressDisconnect: () => false,
+      endpoint: ENDPOINT,
+      resolveLan: async () => null,
       openSocket: () => {
         const socket = new MockSocket()
         sockets.push(socket)
@@ -154,7 +163,7 @@ describe('mobile relay connection lifecycle', () => {
       },
     })
 
-    await connection.client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
+    await connection.dial(null)
     sockets[0].drop()
     expect(onConnection).toHaveBeenLastCalledWith('reconnecting', 4)
 
@@ -193,6 +202,8 @@ describe('mobile relay connection lifecycle', () => {
       onShutdown: vi.fn(),
       isDesktopOnline,
       suppressDisconnect: () => false,
+      endpoint: ENDPOINT,
+      resolveLan: async () => null,
       openSocket: () => {
         const socket = new MockSocket()
         sockets.push(socket)
@@ -201,7 +212,7 @@ describe('mobile relay connection lifecycle', () => {
       },
     })
 
-    await connection.client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
+    await connection.dial(null)
     sockets[0].drop()
     await vi.advanceTimersByTimeAsync(1_000)
     expect(isDesktopOnline).toHaveBeenCalledTimes(1)
@@ -232,6 +243,8 @@ describe('mobile relay connection lifecycle', () => {
       onShutdown: vi.fn(),
       isDesktopOnline,
       suppressDisconnect: () => false,
+      endpoint: ENDPOINT,
+      resolveLan: async () => ({ host: '192.168.1.2', port: 7788 }),
       openSocket: () => {
         const socket = new MockSocket()
         sockets.push(socket)
@@ -240,12 +253,94 @@ describe('mobile relay connection lifecycle', () => {
       },
     })
 
-    await connection.client.connectLan('192.168.1.2', 7788, MASTER)
+    await connection.dial({ host: '192.168.1.2', port: 7788 })
     sockets[0].drop()
     await vi.advanceTimersByTimeAsync(1_000)
 
     expect(isDesktopOnline).not.toHaveBeenCalled()
     expect(restore).toHaveBeenCalledTimes(1)
     expect(onConnection).toHaveBeenLastCalledWith('connected', 2)
+  })
+
+  it('redials the route discovery resolves now, not the LAN address it first connected on', async () => {
+    vi.useFakeTimers()
+    const urls: string[] = []
+    const sockets: MockSocket[] = []
+    const restore = vi.fn().mockResolvedValue(3)
+    const onConnection = vi.fn()
+    const resolveLan = vi.fn(async () => null)
+    const connection = createMobileRelayConnection({
+      onEvents: vi.fn(),
+      onTerminal: vi.fn(),
+      restore,
+      currentEpoch: () => 1,
+      onConnection,
+      onStatus: vi.fn(),
+      onShutdown: vi.fn(),
+      isDesktopOnline: vi.fn().mockResolvedValue(true),
+      suppressDisconnect: () => false,
+      endpoint: ENDPOINT,
+      resolveLan,
+      openSocket: (url) => {
+        urls.push(url)
+        const socket = new MockSocket()
+        sockets.push(socket)
+        // The address the phone first dialled no longer answers.
+        queueMicrotask(() => (url.includes(':7788') && sockets.length > 1 ? socket.onerror?.() : socket.onopen?.()))
+        return socket
+      },
+    })
+
+    await connection.dial({ host: '192.168.1.2', port: 7788 })
+    sockets[0].drop()
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(resolveLan).toHaveBeenCalledTimes(1)
+    expect(urls).toHaveLength(2)
+    expect(urls[1].startsWith('wss://relay.example/ws?role=mobile')).toBe(true)
+    expect(connection.client.transport).toBe('relay')
+    expect(restore).toHaveBeenCalledTimes(1)
+    expect(onConnection).toHaveBeenLastCalledWith('connected', 3)
+  })
+
+  it('asks for the route again on every retry and follows the desktop to its new LAN port', async () => {
+    vi.useFakeTimers()
+    const urls: string[] = []
+    const restore = vi.fn().mockResolvedValue(4)
+    const onConnection = vi.fn()
+    const resolveLan = vi.fn()
+      .mockResolvedValueOnce({ host: '192.168.1.2', port: 7788 })
+      .mockResolvedValue({ host: '192.168.1.2', port: 9001 })
+    let first!: MockSocket
+    const connection = createMobileRelayConnection({
+      onEvents: vi.fn(),
+      onTerminal: vi.fn(),
+      restore,
+      currentEpoch: () => 1,
+      onConnection,
+      onStatus: vi.fn(),
+      onShutdown: vi.fn(),
+      suppressDisconnect: () => false,
+      endpoint: ENDPOINT,
+      resolveLan,
+      openSocket: (url) => {
+        urls.push(url)
+        const socket = new MockSocket()
+        first ??= socket
+        queueMicrotask(() => (url.includes(':7788') && urls.length > 1 ? socket.onerror?.() : socket.onopen?.()))
+        return socket
+      },
+    })
+
+    await connection.dial({ host: '192.168.1.2', port: 7788 })
+    first.drop()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(urls.at(-1)).toBe('ws://192.168.1.2:7788/ws')
+    expect(restore).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(resolveLan).toHaveBeenCalledTimes(2)
+    expect(urls.at(-1)).toBe('ws://192.168.1.2:9001/ws')
+    expect(onConnection).toHaveBeenLastCalledWith('connected', 4)
   })
 })

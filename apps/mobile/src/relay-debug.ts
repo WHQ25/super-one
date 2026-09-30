@@ -7,3 +7,12 @@ export function logRelayEventTypes(events: unknown[]): void {
       : 'unknown'
   )))
 }
+
+/**
+ * Connection lifecycle diagnostics. Kept in release builds so `adb logcat` or
+ * the device console can show why a reconnect failed. Fields are transport
+ * facts only — never secrets, payloads, or event content.
+ */
+export function logConnection(step: string, fields: Record<string, string | number | boolean | null> = {}): void {
+  console.info(`[reconnect] ${step}`, fields)
+}

@@ -27,6 +27,7 @@ export function useDeviceDiscovery(input: {
   refresh: (opts?: { reset?: boolean }) => Promise<void>
   statusOf: (pairing: SavedPairing) => DeviceStatus
   lanAddressOf: (pairingId: string) => LanAddress | null
+  resolveLan: (pairingId: string) => Promise<LanAddress | null>
 } {
   const [, bumpRevision] = useState(0)
   const discoveryRef = useRef<DeviceDiscovery | null>(null)
@@ -102,5 +103,6 @@ export function useDeviceDiscovery(input: {
     refresh,
     statusOf,
     lanAddressOf: (pairingId) => discovery.lanAddressOf(pairingId),
+    resolveLan: (pairingId) => discovery.resolveLan(pairingId),
   }
 }

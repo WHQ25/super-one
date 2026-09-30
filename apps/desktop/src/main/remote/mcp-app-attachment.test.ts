@@ -34,7 +34,7 @@ describe('MCP App attachment across transcript and mobile projection', () => {
   it('uses standard UI metadata first and defaults visibility to app + model', () => {
     expect(mcpAppResourceUri({ name: 'x', inputSchema: {}, _meta: { ui: { resourceUri: 'ui://a' }, 'ui/resourceUri': 'ui://b' } })).toBe('ui://a')
     expect(mcpAppResourceUri({ name: 'x', inputSchema: {}, _meta: { 'ui/resourceUri': 'ui://b' } })).toBe('ui://b')
-    expect(mcpAppToolVisible({ name: 'x', inputSchema: {} })).toBe(true)
+    expect(mcpAppToolVisible({ name: 'x' })).toBe(true)
     expect(mcpAppToolVisible({ name: 'x', inputSchema: {}, _meta: { ui: { visibility: ['model'] } } })).toBe(false)
   })
 

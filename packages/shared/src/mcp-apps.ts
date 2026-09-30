@@ -31,7 +31,8 @@ export interface McpUiResourceMeta {
 export interface McpToolDescriptor {
   name: string
   description?: string
-  inputSchema: Record<string, unknown>
+  /** Some native providers expose metadata only. The server validates arguments. */
+  inputSchema?: Record<string, unknown>
   outputSchema?: Record<string, unknown>
   annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean; openWorldHint?: boolean; [key: string]: unknown }
   _meta?: { ui?: { resourceUri?: string; visibility?: Array<'model' | 'app'> }; [key: string]: unknown }

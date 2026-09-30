@@ -19,8 +19,8 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { WebView } from 'react-native-webview'
 import type { HostOutbound } from '@superone/chat-view'
 import {
-  checkRelayDesktopOnline, loadPairings, parseLanHostPort, parsePairQr, RelayClient, savePairings, startPairingHandshake,
-  upsertPairing, type SavedPairing,
+  checkRelayDesktopOnline, loadPairings, parseLanHostPort, parsePairQr, RelayClient, RestoreRejectedError, savePairings,
+  startPairingHandshake, upsertPairing, type SavedPairing,
 } from '@superone/relay-client'
 import type {
   AskUserQuestionRequest, ChatMessage, GitDirtyStatus, HarnessId, ImageAttachment, PermissionRequest,
@@ -783,7 +783,18 @@ export function MobileApp() {
         await loadMcpIcons(activeClient, runtimeRef.current?.projectPath)
         const runtime = runtimeRef.current
         if (!runtime) return activeClient.releaseBuffer().epoch
-        await runtime.reopen()
+        try {
+          await runtime.reopen()
+        } catch (error) {
+          if (!(error instanceof RestoreRejectedError)) throw error
+          // The desktop answered, so the link is up; only this session cannot
+          // come back. Redialling would get the same answer forever.
+          logConnection('restore rejected', { reason: error.message })
+          composerSwitchRef.current(null)
+          clearActiveSession()
+          returnToWorkspace()
+          return activeClient.buffer.epoch
+        }
         termRuntimeRef.current?.recover()
         return runtime.epoch
       },

@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest'
-import { restoreSession } from './restore'
+import { RestoreRejectedError, restoreSession } from './restore'
 function client() {
   return { startBuffering: vi.fn(), releaseBuffer: vi.fn(() => ({ epoch: 1, batches: [] })),
     request: vi.fn(async ({ type }: { type: string }) => type === 'load_session_messages'
@@ -18,6 +18,16 @@ it('releases the live buffer and reports a rejected subscription', async () => {
   await expect(restoreSession(remote as never, '/p', 's')).rejects.toThrow('locked')
   expect(remote.request).toHaveBeenCalledTimes(1)
   expect(remote.releaseBuffer).toHaveBeenCalledOnce()
+})
+it('tells a host refusal apart from a transport failure so the caller does not redial it', async () => {
+  const refused = client()
+  refused.request.mockResolvedValue({ error: 'session_not_found' } as never)
+  await expect(restoreSession(refused as never, '/p', 's')).rejects.toBeInstanceOf(RestoreRejectedError)
+
+  const dropped = client()
+  dropped.request.mockRejectedValue(new Error('connection closed') as never)
+  const error = await restoreSession(dropped as never, '/p', 's').catch((reason: unknown) => reason)
+  expect(error).not.toBeInstanceOf(RestoreRejectedError)
 })
 it('uses a modern host bootstrap without additional round trips', async () => {
   const remote = client()

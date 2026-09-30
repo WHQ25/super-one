@@ -65,6 +65,14 @@ export type CachedTranscript = {
   navigationAvailable?: boolean
 }
 
+/**
+ * The host answered and refused to restore the session (not found, locked,
+ * denied). The link is fine, so redialling cannot change the answer.
+ */
+export class RestoreRejectedError extends Error {
+  override name = 'RestoreRejectedError'
+}
+
 function rid(): string {
   return crypto.randomUUID?.() ?? `r${Date.now().toString(36)}`
 }
@@ -161,17 +169,17 @@ export async function restoreSession(
   client.startBuffering()
   try {
     const subscribed = await client.request({ type: 'subscribe_session', projectPath, sessionId, progressive: true } as RemoteCommand) as { error?: string; historyPage?: HistoryPage; snapshot?: SessionSnapshot }
-    if (subscribed.error) throw new Error(subscribed.error)
+    if (subscribed.error) throw new RestoreRejectedError(subscribed.error)
     const subscribedAt = performance.now()
     let page = subscribed.historyPage
-    if (page?.error) throw new Error(page.error)
+    if (page?.error) throw new RestoreRejectedError(page.error)
     const cachedMessages = dropIncompleteTail(cached?.messages ?? [])
     if (!page && cachedMessages.length === 0) {
       // Only the newest page belongs to restore. Older pages are user-driven.
       page = await client.request({
         type: 'load_session_messages', requestId: rid(), projectPath, sessionId, limit: 8,
       } as RemoteCommand) as HistoryPage
-      if (page.error) throw new Error(page.error)
+      if (page.error) throw new RestoreRejectedError(page.error)
     }
     const fresh = page?.messages ?? []
     const emptyHostHistory = Boolean(page && !page.error && fresh.length === 0 && !page.hasMore)
@@ -190,7 +198,7 @@ export async function restoreSession(
           page = await client.request({
             type: 'load_session_messages', requestId: rid(), projectPath, sessionId, limit: 8,
           } as RemoteCommand) as HistoryPage
-          if (page.error) throw new Error(page.error)
+          if (page.error) throw new RestoreRejectedError(page.error)
           merged = { messages: page.messages ?? [], overlapped: false }
           hasMore = Boolean(page.hasMore && page.cursor != null)
           cursor = page.cursor ?? null
@@ -223,7 +231,7 @@ export async function restoreSession(
     const snapshot = subscribed.snapshot ?? await client.request({
       type: 'get_session_state', requestId: rid(), projectPath, sessionId,
     } as RemoteCommand) as SessionSnapshot
-    if (snapshot.error) throw new Error(snapshot.error)
+    if (snapshot.error) throw new RestoreRejectedError(snapshot.error)
     const snapshotAt = performance.now()
     const { epoch, batches } = client.releaseBuffer()
     return {

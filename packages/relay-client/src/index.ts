@@ -14,7 +14,7 @@ export type { PresenceFetch, PresenceResponse } from './presence'
 export { RpcInbox } from './rpc'
 export { RelayClient } from './client'
 export type { MobileIdentity, OpenSocket, SocketLike } from './client'
-export { restoreSession, mergeCachedHistory, appendHistory, dropIncompleteTail } from './restore'
+export { RestoreRejectedError, restoreSession, mergeCachedHistory, appendHistory, dropIncompleteTail } from './restore'
 export type { CachedTranscript, HistoryPage, RestoredSession, SessionSnapshot } from './restore'
 export {
   INLINE_UPLOAD_MAX_BYTES,

@@ -3,7 +3,7 @@
 import { act, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { PortableMessage } from '@superone/chat-view/PortableMessage'
-import { installHostBridge } from '@superone/chat-view/bridge'
+import { installFakeNativeHost } from '@superone/chat-view/fixtures/native-host'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 
 /**
@@ -11,28 +11,13 @@ import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
  * that reference, the way the phone's RN layer relays the desktop's tool detail.
  */
 function installFakeHost(details: Record<string, string>): () => void {
-  const browser = globalThis as unknown as Window & {
-    ReactNativeWebView?: { postMessage(message: string): void }
-    __applyHost?: (message: unknown) => void
-  }
-  const dispose = installHostBridge(() => undefined)
-  browser.ReactNativeWebView = {
-    postMessage(raw: string) {
-      const message = JSON.parse(raw) as { type: string; requestId: string; action: string; payload?: { detailRef?: string; subscriptionId?: string } }
-      if (message.type !== 'requestNative' || message.action !== 'subscribeDetail') return
-      const text = details[message.payload?.detailRef ?? '']
-      queueMicrotask(() => {
-        browser.__applyHost?.({
-          type: 'nativeActionResult',
-          requestId: message.requestId,
-          ...(text === undefined
-            ? { error: 'Tool not found' }
-            : { result: { subscriptionId: message.payload?.subscriptionId, revision: 0, offset: 0, text } }),
-        })
-      })
-    },
-  }
-  return () => { dispose(); delete browser.ReactNativeWebView }
+  return installFakeNativeHost((message, reply) => {
+    if (message.action !== 'subscribeDetail') return
+    const text = details[String(message.payload?.detailRef ?? '')]
+    queueMicrotask(() => reply(text === undefined
+      ? { error: 'Tool not found' }
+      : { result: { subscriptionId: message.payload?.subscriptionId, revision: 0, offset: 0, text } }))
+  })
 }
 
 /** Detail references are cached module-wide by the WebView, so each case needs its own. */

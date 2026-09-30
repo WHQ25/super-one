@@ -16,6 +16,7 @@
     "./WidgetLayoutFrame": "./src/WidgetLayoutFrame.tsx",
     "./use-working-duration": "./src/use-working-duration.ts",
     "./bridge": "./src/bridge.ts",
+    "./fixtures/native-host": "./src/fixtures/native-host.ts",
     "./fixtures/tool-catalog": "./src/fixtures/tool-catalog.ts",
     "./fixtures/widget-mockup": "./src/fixtures/widget-mockup.ts",
     "./host-html": "./src/host-html.ts",

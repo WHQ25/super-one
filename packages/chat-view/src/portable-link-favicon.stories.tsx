@@ -1,16 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { installHostBridge } from './bridge'
+import { installFakeNativeHost } from './fixtures/native-host'
 import { resetHostFaviconCache } from './host-favicon'
 import { PortableMarkdown } from './PortableMarkdown'
 import { PortableTurnProvider } from './PortableTurnAdapters'
 
 type HostMode = 'colour' | 'monochrome' | 'none' | 'slow' | 'unavailable'
-
-interface MockHostWindow extends Window {
-  ReactNativeWebView?: { postMessage(message: string): void }
-  __applyHost?: (message: unknown) => void
-}
 
 /**
  * A 32×32 icon drawn on the fly: a coloured badge, or a dark-grey ring on
@@ -52,28 +47,17 @@ function sampleIcon(seed: string, monochrome: boolean): string {
 function MockHost({ mode, children }: { mode: HostMode; children: React.ReactNode }) {
   const [ready, setReady] = useState(false)
   useEffect(() => {
-    const host = globalThis as unknown as MockHostWindow
-    const uninstall = installHostBridge(() => {})
-    host.__applyHost?.({ type: 'channelToken', token: 'storybook' })
     resetHostFaviconCache()
-    host.ReactNativeWebView = {
-      postMessage(raw: string) {
-        const message = JSON.parse(raw) as { type: string; requestId: string; action: string; payload?: { url: string } }
-        if (message.type !== 'requestNative' || message.action !== 'resolveFavicon') return
-        const reply = (body: Record<string, unknown>) =>
-          host.__applyHost?.({ type: 'nativeActionResult', requestId: message.requestId, ...body })
-        if (mode === 'unavailable') { reply({ error: 'resolveFavicon is not available' }); return }
-        if (mode === 'none') { reply({ result: { ok: true, dataUrl: null } }); return }
-        const origin = new URL(message.payload?.url ?? 'https://example.com').hostname
-        const dataUrl = sampleIcon(origin, mode === 'monochrome')
-        setTimeout(() => reply({ result: { ok: true, dataUrl } }), mode === 'slow' ? 2500 : 120)
-      },
-    }
+    const uninstall = installFakeNativeHost((message, reply) => {
+      if (message.action !== 'resolveFavicon') return
+      if (mode === 'unavailable') { reply({ error: 'resolveFavicon is not available' }); return }
+      if (mode === 'none') { reply({ result: { ok: true, dataUrl: null } }); return }
+      const origin = new URL(String(message.payload?.url ?? 'https://example.com')).hostname
+      const dataUrl = sampleIcon(origin, mode === 'monochrome')
+      setTimeout(() => reply({ result: { ok: true, dataUrl } }), mode === 'slow' ? 2500 : 120)
+    })
     setReady(true)
-    return () => {
-      uninstall()
-      delete host.ReactNativeWebView
-    }
+    return uninstall
   }, [mode])
   return ready ? <>{children}</> : null
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ImageGenerationItem } from '@superone/shared/agent-types'
-import { installHostBridge } from './bridge'
+import { installFakeNativeHost } from './fixtures/native-host'
 import { PortableHostImage } from './PortableHostImage'
 import { PortableImageGallery } from './PortableMediaGalleries'
 import { PortableMarkdown } from './PortableMarkdown'
@@ -9,11 +9,6 @@ import { PortableNativeGallery } from './PortableNativeGallery'
 import { PortableTurnProvider } from './PortableTurnAdapters'
 
 type HostMode = 'lan' | 'relay' | 'unavailable' | 'slow' | 'pending'
-
-interface MockHostWindow extends Window {
-  ReactNativeWebView?: { postMessage(message: string): void }
-  __applyHost?: (message: unknown) => void
-}
 
 /** A 96×64 PNG drawn on the fly so the story needs no fixture file. */
 function samplePng(seed: string): string {
@@ -39,28 +34,17 @@ function samplePng(seed: string): string {
 function MockHost({ mode, children }: { mode: HostMode; children: React.ReactNode }) {
   const [ready, setReady] = useState(false)
   useEffect(() => {
-    const host = globalThis as unknown as MockHostWindow
-    const uninstall = installHostBridge(() => {})
-    host.__applyHost?.({ type: 'channelToken', token: 'storybook' })
-    host.ReactNativeWebView = {
-      postMessage(raw: string) {
-        const message = JSON.parse(raw) as { type: string; requestId: string; action: string; payload?: { path: string; confirmed?: boolean } }
-        if (message.type !== 'requestNative' || message.action !== 'loadImage') return
-        const reply = (body: Record<string, unknown>) =>
-          host.__applyHost?.({ type: 'nativeActionResult', requestId: message.requestId, ...body })
-        const path = message.payload?.path ?? ''
-        if (mode === 'unavailable') { reply({ error: 'loadImage is not available on mobile' }); return }
-        // Never answers: holds the row in its loading state for review.
-        if (mode === 'pending') return
-        if (mode === 'relay' && !message.payload?.confirmed) { reply({ result: { ok: true, confirmRequired: true, size: 412_000 } }); return }
-        setTimeout(() => reply({ result: { ok: true, dataUri: samplePng(path) } }), mode === 'slow' ? 2500 : 120)
-      },
-    }
+    const uninstall = installFakeNativeHost((message, reply) => {
+      if (message.action !== 'loadImage') return
+      const path = String(message.payload?.path ?? '')
+      if (mode === 'unavailable') { reply({ error: 'loadImage is not available on mobile' }); return }
+      // Never answers: holds the row in its loading state for review.
+      if (mode === 'pending') return
+      if (mode === 'relay' && !message.payload?.confirmed) { reply({ result: { ok: true, confirmRequired: true, size: 412_000 } }); return }
+      setTimeout(() => reply({ result: { ok: true, dataUri: samplePng(path) } }), mode === 'slow' ? 2500 : 120)
+    })
     setReady(true)
-    return () => {
-      uninstall()
-      delete host.ReactNativeWebView
-    }
+    return uninstall
   }, [mode])
   return ready ? <>{children}</> : null
 }

@@ -3,7 +3,7 @@
 import { act, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { PortableToolRow } from '@superone/chat-view/PortableToolRow'
-import { installHostBridge } from '@superone/chat-view/bridge'
+import { installFakeNativeHost } from '@superone/chat-view/fixtures/native-host'
 import type { PreviewerFile } from '@superone/shared/generative-ui/native-widgets'
 
 /**
@@ -16,29 +16,18 @@ let sent: Sent[] = []
 let dispose: (() => void) | null = null
 
 function installFakeHost(texts: Record<string, string>): void {
-  const browser = globalThis as unknown as Window & {
-    ReactNativeWebView?: { postMessage(message: string): void }
-    __applyHost?: (message: unknown) => void
-  }
-  const unhook = installHostBridge(() => undefined)
-  browser.ReactNativeWebView = {
-    postMessage(raw: string) {
-      const message = JSON.parse(raw) as { type: string; requestId: string; action: string; payload?: Record<string, unknown> }
-      if (message.type !== 'requestNative') return
-      sent.push({ action: message.action, payload: message.payload })
-      const reply = (body: Record<string, unknown>) => queueMicrotask(() =>
-        browser.__applyHost?.({ type: 'nativeActionResult', requestId: message.requestId, ...body }))
-      if (message.action === 'loadTextFile') {
-        const text = texts[String(message.payload?.path)]
-        reply(text === undefined ? { result: { ok: true, tooLarge: true } } : { result: { ok: true, text } })
-      } else if (message.action === 'loadImage') {
-        reply({ result: { ok: true, dataUri: 'data:image/png;base64,AA==' } })
-      } else {
-        reply({ result: { ok: true } })
-      }
-    },
-  }
-  dispose = () => { unhook(); delete browser.ReactNativeWebView }
+  dispose = installFakeNativeHost((message, send) => {
+    sent.push({ action: message.action, payload: message.payload })
+    const reply: typeof send = (body) => queueMicrotask(() => send(body))
+    if (message.action === 'loadTextFile') {
+      const text = texts[String(message.payload?.path)]
+      reply(text === undefined ? { result: { ok: true, tooLarge: true } } : { result: { ok: true, text } })
+    } else if (message.action === 'loadImage') {
+      reply({ result: { ok: true, dataUri: 'data:image/png;base64,AA==' } })
+    } else {
+      reply({ result: { ok: true } })
+    }
+  })
 }
 
 beforeEach(() => { sent = [] })

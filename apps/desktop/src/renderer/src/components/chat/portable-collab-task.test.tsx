@@ -3,6 +3,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PortableMessage } from '@superone/chat-view/PortableMessage'
+import { installFakeNativeHost } from '@superone/chat-view/fixtures/native-host'
 import type { ChatMessage } from '@superone/shared/agent-types'
 
 /**
@@ -57,14 +58,13 @@ describe('PortableMessage collaboration initial task', () => {
   })
 
   it('asks the shell to open the launching session when its title is tapped', () => {
-    const browser = globalThis as unknown as Window & { ReactNativeWebView?: { postMessage(message: string): void } }
     const posted: Array<{ action: string; payload?: unknown }> = []
-    browser.ReactNativeWebView = { postMessage: (raw) => posted.push(JSON.parse(raw)) }
+    const dispose = installFakeNativeHost((request) => { posted.push(request) })
     try {
       renderTask(collabTaskMessage('Do the thing', 'Mobile file preview'))
       fireEvent.click(screen.getByRole('button', { name: 'Mobile file preview' }))
     } finally {
-      delete browser.ReactNativeWebView
+      dispose()
     }
 
     expect(posted).toEqual([expect.objectContaining({ action: 'openSession', payload: { sessionId: 'parent-1' } })])

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { VideoGenerationItem } from '@superone/shared/agent-types'
-import { installHostBridge } from './bridge'
+import { installFakeNativeHost } from './fixtures/native-host'
 import { PortableHostVideo } from './PortableHostVideo'
 import { PortableVideoGallery } from './PortableMediaGalleries'
 import { PortableMarkdown } from './PortableMarkdown'
@@ -9,11 +9,6 @@ import { PortableNativeGallery } from './PortableNativeGallery'
 import { PortableTurnProvider } from './PortableTurnAdapters'
 
 type HostMode = 'poster' | 'portrait' | 'no-duration' | 'undecodable' | 'unavailable' | 'slow' | 'pending'
-
-interface MockHostWindow extends Window {
-  ReactNativeWebView?: { postMessage(message: string): void }
-  __applyHost?: (message: unknown) => void
-}
 
 /** A first frame drawn on the fly — a tinted field with a film-strip edge — so the story needs no clip. */
 function samplePoster(seed: string, width: number, height: number): string {
@@ -46,34 +41,23 @@ function samplePoster(seed: string, width: number, height: number): string {
 function MockHost({ mode, children }: { mode: HostMode; children: React.ReactNode }) {
   const [ready, setReady] = useState(false)
   useEffect(() => {
-    const host = globalThis as unknown as MockHostWindow
-    const uninstall = installHostBridge(() => {})
-    host.__applyHost?.({ type: 'channelToken', token: 'storybook' })
-    host.ReactNativeWebView = {
-      postMessage(raw: string) {
-        const message = JSON.parse(raw) as { type: string; requestId: string; action: string; payload?: { path: string } }
-        if (message.type !== 'requestNative' || message.action !== 'loadVideoPoster') return
-        const reply = (body: Record<string, unknown>) =>
-          host.__applyHost?.({ type: 'nativeActionResult', requestId: message.requestId, ...body })
-        const path = message.payload?.path ?? ''
-        if (mode === 'unavailable') { reply({ error: 'loadVideoPoster is not available on mobile' }); return }
-        if (mode === 'pending') return
-        if (mode === 'undecodable') { reply({ result: { ok: true, poster: null } }); return }
-        const [width, height] = mode === 'portrait' ? [288, 512] : [512, 288]
-        const poster = {
-          dataUri: samplePoster(path, width, height),
-          width,
-          height,
-          ...(mode === 'no-duration' ? {} : { durationMs: 8_400 + (path.length % 7) * 1000 }),
-        }
-        setTimeout(() => reply({ result: { ok: true, poster } }), mode === 'slow' ? 2500 : 120)
-      },
-    }
+    const uninstall = installFakeNativeHost((message, reply) => {
+      if (message.action !== 'loadVideoPoster') return
+      const path = String(message.payload?.path ?? '')
+      if (mode === 'unavailable') { reply({ error: 'loadVideoPoster is not available on mobile' }); return }
+      if (mode === 'pending') return
+      if (mode === 'undecodable') { reply({ result: { ok: true, poster: null } }); return }
+      const [width, height] = mode === 'portrait' ? [288, 512] : [512, 288]
+      const poster = {
+        dataUri: samplePoster(path, width, height),
+        width,
+        height,
+        ...(mode === 'no-duration' ? {} : { durationMs: 8_400 + (path.length % 7) * 1000 }),
+      }
+      setTimeout(() => reply({ result: { ok: true, poster } }), mode === 'slow' ? 2500 : 120)
+    })
     setReady(true)
-    return () => {
-      uninstall()
-      delete host.ReactNativeWebView
-    }
+    return uninstall
   }, [mode])
   return ready ? <>{children}</> : null
 }

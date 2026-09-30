@@ -3,7 +3,7 @@
 import { act, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { PortableHostImage } from '@superone/chat-view/PortableHostImage'
-import { installHostBridge } from '@superone/chat-view/bridge'
+import { installFakeNativeHost } from '@superone/chat-view/fixtures/native-host'
 
 /**
  * A host image in a remote session: whichever way the row is tapped, the
@@ -15,23 +15,11 @@ let sent: Sent[] = []
 let dispose: (() => void) | null = null
 
 function installFakeHost(): void {
-  const browser = globalThis as unknown as Window & {
-    ReactNativeWebView?: { postMessage(message: string): void }
-    __applyHost?: (message: unknown) => void
-  }
-  const unhook = installHostBridge(() => undefined)
-  browser.ReactNativeWebView = {
-    postMessage(raw: string) {
-      const message = JSON.parse(raw) as { type: string; requestId: string; action: string; payload?: Record<string, unknown> }
-      if (message.type !== 'requestNative') return
-      sent.push({ action: message.action, payload: message.payload })
-      const reply = (body: Record<string, unknown>) => queueMicrotask(() =>
-        browser.__applyHost?.({ type: 'nativeActionResult', requestId: message.requestId, ...body }))
-      // The host cannot paint this one: the row falls back to its chip.
-      reply(message.action === 'loadImage' ? { error: 'loadImage is not available' } : { result: { ok: true } })
-    },
-  }
-  dispose = () => { unhook(); delete browser.ReactNativeWebView }
+  dispose = installFakeNativeHost((message, reply) => {
+    sent.push({ action: message.action, payload: message.payload })
+    // The host cannot paint this one: the row falls back to its chip.
+    queueMicrotask(() => reply(message.action === 'loadImage' ? { error: 'loadImage is not available' } : { result: { ok: true } }))
+  })
 }
 
 beforeEach(() => { sent = []; installFakeHost() })

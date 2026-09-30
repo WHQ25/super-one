@@ -105,6 +105,12 @@ export interface McpAppModelContext {
   source: { appInstanceId: string; server: string }
 }
 
+/** Host-authored approval details. Render previews as plain text, never as View HTML. */
+export type McpAppApprovalPrompt =
+  | { kind: 'callTool'; server: string; tool: string; toolTitle?: string; argsPreview: string; rememberable: boolean }
+  | { kind: 'sendMessage'; server: string; text: string; nonTextBlocks: number }
+  | { kind: 'openLink'; server: string; url: string }
+
 export interface ToolAppAttachment {
   appInstanceId: string
   binding: McpAppsBinding

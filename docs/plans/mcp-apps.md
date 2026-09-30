@@ -184,6 +184,10 @@ including delta reduction → JSON persistence → mobile projection, native
 Codex progressive item projection, metadata/visibility fallbacks, UTF-8 caps
 and structured error serialization. `bun run typecheck:node` passed.
 
+`McpAppApprovalPrompt` is shared by desktop and mobile consent surfaces. Its
+host-authored plain-text variants cover tool calls, message sends and link
+opening; the main executor will issue and validate the approval challenges.
+
 ### 0.3 — Codex 0.159 wire verdict: pass (fixture)
 
 The isolated `apps/desktop/scripts/check-codex-mcp-apps.ts` run proves the

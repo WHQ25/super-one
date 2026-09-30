@@ -134,7 +134,7 @@ export type McpAppHostRequest = McpAppHostOperation & {
   approval?: { challenge: string; remember?: boolean }
 }
 
-export type McpAppRequester = { kind: 'desktop' } | { kind: 'mobile'; deviceId: string }
+export type McpAppRequester = { kind: 'desktop' } | { kind: 'mobile'; deviceId: string; transport?: 'lan' | 'relay' }
 
 /** Renderer supplies View identity; main derives the session key from its routing inputs. */
 export type McpAppViewRequest = McpAppHostOperation & Omit<McpAppHostRequest, 'operation' | 'sessionKey'>

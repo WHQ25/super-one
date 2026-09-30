@@ -1312,7 +1312,7 @@ export class AgentService {
             throw new Error(this.buildSessionAccessError(command.projectPath, command.sessionId))
           }
           const request = deviceMcpAppHostRequest(command.projectPath, command.sessionId, command.request)
-          await respond?.(command.requestId, { response: await executeDeviceMcpAppRequest(request, deviceId) })
+          await respond?.(command.requestId, { response: await executeDeviceMcpAppRequest(request, { kind: 'mobile', deviceId, transport: source?.transport }) })
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }

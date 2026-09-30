@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { McpAppDeviceRequest } from '@superone/shared/agent-types'
 import { parseSessionKey } from '@superone/shared/environment/refs'
 import { remoteProjectKey } from '@superone/shared/remote-resource-key'
-import { deviceMcpAppHostRequest } from './mobile-request'
+const execute = vi.hoisted(() => vi.fn(async () => ({ ok: true, value: null })))
+vi.mock('./executor', () => ({ executeMcpAppHostRequest: execute }))
+import { deviceMcpAppHostRequest, executeDeviceMcpAppRequest } from './mobile-request'
 
 const CALL: McpAppDeviceRequest = { messageId: 'm', appInstanceId: 'view-1', operation: 'callTool', tool: 'fixture_next_page', args: { page: 2 } }
 
@@ -24,5 +26,13 @@ describe('deviceMcpAppHostRequest', () => {
   it('refuses a link, which the phone opens itself', () => {
     const link = { messageId: 'm', appInstanceId: 'view-1', operation: 'openLink', url: 'https://example.com' } as unknown as McpAppDeviceRequest
     expect(() => deviceMcpAppHostRequest('/Users/me/proj', 'sess-1', link)).toThrow('invalid mcp_app_request operation')
+  })
+
+  it('preserves authenticated device identity and the real relay transport', async () => {
+    const request = deviceMcpAppHostRequest('/project', 's', CALL)
+    const requester = { kind: 'mobile' as const, deviceId: 'phone', transport: 'relay' as const }
+    const signal = new AbortController().signal
+    await executeDeviceMcpAppRequest(request, requester, signal)
+    expect(execute).toHaveBeenCalledWith(request, requester, signal)
   })
 })

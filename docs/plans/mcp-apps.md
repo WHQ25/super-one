@@ -345,6 +345,20 @@ plain text with UTF-8 byte caps. Main also enforces three admitted messages
 per View per minute. An ambiguous dispatched tool call returns a host-only
 unknown outcome and is never retried.
 
+Executor review corrections: activation is keyed by requester (`desktop` or
+`mobile:<deviceId>`) as well as the View/binding; activating one surface cannot
+reconnect another. LAN/relay routing preserves the authenticated device's actual
+transport without changing its consent identity. Valid outstanding challenges
+remain consumable after another confirmation remembers consent. Pending
+challenges are capped at eight per View and 1,024 globally. Live remote starts
+are discarded after observation/completion, on message failure/completion, and
+after bounded age/count retention. Structured provider rejections pass through
+unchanged; only a thrown call transport failure produces an unknown outcome.
+Cancellation during consent persistence stops the call before dispatch.
+Verification: 38 desktop executor/route/device/freshness tests pass, including
+one-RPC resolution, relay message source, requester isolation, concurrent
+consent, starvation prevention and definite rejection versus lost reply.
+
 `load` returns persisted HTML without provider traffic; a restored View with
 no snapshot must activate before loading. New live provider events establish
 freshness; catalog hydration and replay do not. Activation checks the original

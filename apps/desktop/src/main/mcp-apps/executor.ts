@@ -4,7 +4,8 @@ import type { AgentEvent, ImageAttachment, RemoteCommand } from '@superone/share
 import { parseSessionKey, type SessionRef } from '@superone/shared/environment/refs'
 import { McpAppsError } from '@superone/shared/mcp-apps'
 import type { McpAppHostRequest, McpAppHostResult, McpAppRequester } from '@superone/shared/mcp-apps'
-import { findMcpAppAttachment, mcpAppEventAttachment } from '@superone/shared/mcp-apps-state'
+import { findMcpAppAttachment, mcpAppEventAttachment, mcpAppSessionApprovals } from '@superone/shared/mcp-apps-state'
+import { RemoteMcpAppFreshness } from './remote-freshness'
 import type { SessionManagerImpl } from '../session/session-manager'
 import type { RemoteResponder } from '../remote-control-service'
 import { McpAppExecutor, type McpAppResolvedTarget } from './executor-core'
@@ -17,7 +18,7 @@ interface MobileSender {
 }
 
 let executor: McpAppExecutor | undefined
-const remoteStarted = new Set<string>()
+const remoteFreshness = new RemoteMcpAppFreshness()
 
 function acceptedSend(deliver: (onAccepted: () => void) => Promise<unknown>, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -37,26 +38,18 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
       const session = local(ref.sessionId)
       const target = findMcpAppAttachment(session.snapshot.messages, appInstanceId, messageId)
       if (!target) throw new McpAppsError('denied', 'MCP App attachment was not found in this session')
-      return { ref, node: 'local', projectPath: session.projectPath, messages: session.snapshot.messages, ...target }
+      return { ref, node: 'local', projectPath: session.projectPath, sessionApprovals: mcpAppSessionApprovals(session.snapshot.messages), ...target }
     }
     const { getEnvironmentHost } = await import('../environment/environment-host')
     const host = getEnvironmentHost()
     const node = host.connections.listKnown().find(value => value.connectionId === ref.environmentId)?.environmentId
     if (!node) throw new McpAppsError('not_connected', 'MCP App node connection unavailable')
-    const rows: import('@superone/shared/environment').SessionMessageBlock[] = []
-    let cursor: string | null | undefined
-    do {
-      if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
-      const page = await host.listSessionMessages(ref.environmentId, { sessionId: ref.sessionId, cursor, limit: 200 })
-      rows.unshift(...page.messages)
-      cursor = page.hasMore ? page.cursor : null
-    } while (cursor)
-    const target = findMcpAppAttachment(rows, appInstanceId, messageId)
-    if (!target) throw new McpAppsError('denied', 'MCP App attachment was not found on this node')
-    const record = await host.getSession(ref.environmentId, ref.sessionId) as { projectId?: string; projectPath?: string }
-    const path = record.projectId ?? record.projectPath
+    if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
+    const resolved = await host.resolveMcpAppAttachment(ref.environmentId, { sessionId: ref.sessionId, appInstanceId, messageId })
+    if (!resolved.ok) throw new McpAppsError(resolved.error.code, resolved.error.message)
+    const path = resolved.value.projectId
     if (!path) throw new McpAppsError('not_connected', 'MCP App session project unavailable')
-    return { ref, node, projectPath: `remote:${ref.environmentId}:${path}`, messages: rows, ...target }
+    return { ref, node, projectPath: `remote:${ref.environmentId}:${path}`, ...resolved.value }
   }
   executor = new McpAppExecutor({
     resolve,
@@ -75,7 +68,7 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
     },
     async provider(target, operation, signal) {
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
-      return routeMcpAppsProviderRequest(id => local(id), target.ref.environmentId, { ...operation, binding: target.app.binding, origin: target.app.origin! }, signal)
+      return routeMcpAppsProviderRequest(id => local(id), target.ref.environmentId, { ...operation, binding: target.app.binding, origin: target.app.origin! }, signal, { propagateTransportErrors: true })
     },
     async sendMessage(target, params, requester, signal) {
       const text: string[] = []
@@ -91,7 +84,7 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
         await acceptedSend(onAccepted => mobile.handleRemoteCommand({ type: 'send_message', requestId: randomUUID(),
           projectPath: target.projectPath, sessionId: target.ref.sessionId, content, images, clientMessageId, priority: 'next' },
         async (_id, data) => { const response = data as { error?: unknown; ok?: boolean }; if (response.error) throw new McpAppsError('denied', String(response.error)); if (response.ok) onAccepted() },
-        { deviceId: requester.deviceId, transport: 'lan' }), signal)
+        { deviceId: requester.deviceId, transport: requester.transport ?? 'lan' }), signal)
       } else if (target.ref.environmentId === 'local') {
         await acceptedSend(onAccepted => local(target.ref.sessionId).send({ content, images, clientMessageId, priority: 'next' }, { onAccepted }), signal)
       } else {
@@ -114,15 +107,8 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
 export function observeRemoteMcpAppEvent(event: AgentEvent): void {
   if (!executor || !event.sessionId || !event.projectPath) return
   const ref = parseSessionKey(mcpAppSessionKey(event.projectPath, event.sessionId))!
-  const callId = event.type === 'codex_item_delta' && event.item.type === 'mcp_tool_call' ? event.item.id
-    : event.type === 'content_delta' && (event.delta.type === 'tool_use' || event.delta.type === 'tool_result') ? event.delta.toolUseId : undefined
-  if (!callId) return
-  const key = JSON.stringify([ref, callId])
-  // UI metadata may first arrive on completion, after the started item had no attachment.
-  if ((event.type === 'codex_item_delta' && event.phase === 'started') || (event.type === 'content_delta' && event.delta.type === 'tool_use')) remoteStarted.add(key)
-  const app = mcpAppEventAttachment(event)
-  if (!app) return
-  if (remoteStarted.has(key)) executor.observeLive(ref, app)
+  const app = remoteFreshness.observe(ref, event)
+  if (app) executor.observeLive(ref, app)
 }
 
 /** The only View-to-host execution entry, shared by desktop IPC and paired devices. */

@@ -15,6 +15,7 @@ export async function routeMcpAppsProviderRequest(
   connectionId: string,
   input: McpAppsProviderRpcRequest,
   signal = new AbortController().signal,
+  options: { propagateTransportErrors?: boolean } = {},
 ): Promise<McpAppsRpcResult> {
   try {
     if (connectionId !== 'local') {
@@ -25,6 +26,7 @@ export async function routeMcpAppsProviderRequest(
     if (!session?.getMcpAppsProvider) throw new McpAppsError('not_connected', 'MCP Apps session unavailable')
     return dispatchMcpAppsProviderRequest(input, await session.getMcpAppsProvider(input.binding, input.origin), signal)
   } catch (error) {
+    if (options.propagateTransportErrors && (error as { transport?: boolean })?.transport === true) throw error
     return { ok: false, error: error instanceof McpAppsError ? error.toJSON() : { code: 'not_connected', message: error instanceof Error ? error.message : String(error) } }
   }
 }

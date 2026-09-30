@@ -385,6 +385,8 @@ export interface CodexMcpToolCallItem {
   tool: string
   arguments: unknown
   app?: ToolAppAttachment
+  mcpAppUi?: { resourceUri: string; preferredModelDisplayMode?: string }
+  appContext?: Record<string, unknown> | null
   result?: { content: unknown[]; structuredContent: unknown; meta?: Record<string, unknown>; isError?: boolean }
   error?: { message: string }
   /** True when the tool result carried `_meta["mcp/www_authenticate"]` (auth-rejected, not user-deny). */
@@ -3930,8 +3932,6 @@ export const AgentIpcChannels = {
   // Codex hooks (read-only)
   CODEX_HOOKS_LIST: 'codex:hooks-list',
   CODEX_MCP_STATUS: 'codex:mcp-status',
-  CODEX_MCP_RESOURCE_READ: 'codex:mcp-resource-read',
-  CODEX_MCP_TOOL_CALL: 'codex:mcp-tool-call',
 
   // Codex skills change notification (push to renderer)
   CODEX_SKILLS_CHANGED: 'codex:skills-changed',
@@ -4537,6 +4537,7 @@ export const AgentIpcChannels = {
   ENVIRONMENT_TOGGLE_REMOTE_MCP_CONFIG: 'environment:toggleRemoteMcpConfig',
   ENVIRONMENT_DELETE_REMOTE_MCP_CONFIG: 'environment:deleteRemoteMcpConfig',
   /** Node harness.resources aggregate (models + skills/commands/agents/prompts). */
+  ENVIRONMENT_MCP_APPS_PROVIDER: 'environment:mcpApps.provider',
   ENVIRONMENT_HARNESS_RESOURCES: 'environment:harnessResources',
   /** Node session_providers CRUD. */
   /** Node-side collaboration agent profiles — authoritative agentIds for @-mentions on a remote session. */

@@ -1,3 +1,6 @@
+import { createCodexMcpAppsProvider } from '@superone/codex/mcp-apps'
+import { McpAppsError } from '@superone/shared/mcp-apps'
+import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
 import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import { nodeCodexAccountStore } from './codex-accounts'
 /**
@@ -41,6 +44,7 @@ import { ensureMcpMerge, type McpMergeMode } from '@superone/runtime/fs'
 import { openTurnAndStream } from './codex-live-turn'
 
 export interface NodeCodexRunnerOptions {
+  environmentId?: string
   nodeHome?: string
   binaryPath?: string | null
   resolveProjectPath: (projectId: string) => string | null
@@ -213,25 +217,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     return live
   }
 
-  const runner: TurnRunner = async (input) => {
-    const harnessId = input.session.harnessId || 'codex'
-    if (harnessId !== 'codex') {
-      throw new Error(
-        `createNodeCodexTurnRunner only handles harness codex (got ${harnessId})`,
-      )
-    }
-
-    const binary = resolveCodexBinaryPath({
-      binaryPath: opts.binaryPath,
-      harnesses: opts.harnesses,
-    })
-    if (!binary) {
-      if (opts.allowSimulatedFallback) return simulatedCodex(input)
-      throw new Error(
-        'Codex binary not available: enable harness codex (managed install) or set SUPERONE_CODEX_BINARY',
-      )
-    }
-
+  const prepare = async (input: Pick<Parameters<TurnRunner>[0], 'session' | 'apiProviderId' | 'sessionDir'>) => {
     const projectRoot =
       opts.resolveProjectPath(input.session.projectId) ||
       process.env.SUPERONE_DEFAULT_CWD ||
@@ -262,8 +248,6 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     }
 
     const sessionId = input.session.sessionId
-    let turnKind = parseTurnKind(input.turnKind)
-
     const hostActionMcp = opts.getCodexHostActionMcp?.(sessionId) ?? null
     const merged = ensureMcpMerge({
       provider: 'codex',
@@ -278,6 +262,32 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       Object.keys(merged.codexMcpServers).length > 0
         ? { mcp_servers: merged.codexMcpServers }
         : undefined
+
+    return { cwd, authEnv, threadConfig, mcpServers: merged.codexMcpServers }
+  }
+
+  const runner: TurnRunner = async (input) => {
+    const harnessId = input.session.harnessId || 'codex'
+    if (harnessId !== 'codex') {
+      throw new Error(
+        `createNodeCodexTurnRunner only handles harness codex (got ${harnessId})`,
+      )
+    }
+
+    const binary = resolveCodexBinaryPath({
+      binaryPath: opts.binaryPath,
+      harnesses: opts.harnesses,
+    })
+    if (!binary) {
+      if (opts.allowSimulatedFallback) return simulatedCodex(input)
+      throw new Error(
+        'Codex binary not available: enable harness codex (managed install) or set SUPERONE_CODEX_BINARY',
+      )
+    }
+
+    const { cwd, authEnv, threadConfig, mcpServers } = await prepare(input)
+    const sessionId = input.session.sessionId
+    let turnKind = parseTurnKind(input.turnKind)
 
     if (input.images?.length && turnKind !== 'run' && turnKind !== 'steer') {
       throw new Error('Attachment: attachments are supported on normal and steered turns only.')
@@ -358,6 +368,8 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
             collaborationMode: input.collaborationMode,
             messageId: input.messageId,
             onAgentEvent: input.onAgentEvent,
+            mcpAppBinding: server => ({ node: opts.environmentId ?? 'node', session: sessionId, server, account: input.apiProviderId ?? undefined,
+              configGeneration: 0, configFingerprint: mcpServerConfigFingerprint(mcpServers[server]) }),
             onDelta: input.onDelta,
             signal: input.signal,
             onTurnStarted: (turnId) => {
@@ -422,6 +434,20 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     return tracked
   }
 
+  runner.getMcpAppsProvider = async (session, binding, origin) => {
+    if (session.harnessId !== 'codex' || binding.session !== session.sessionId || session.providerResume !== `thread:${origin.providerSessionId}`) throw new McpAppsError('invalid', 'MCP App session binding mismatch')
+    const binary = resolveCodexBinaryPath(opts)
+    if (!binary) throw new McpAppsError('not_connected', 'Codex binary unavailable')
+    if (binding.account !== (session.apiProviderId ?? undefined)) throw new McpAppsError('auth_required', 'MCP App account changed')
+    const prepared = await prepare({ session, apiProviderId: session.apiProviderId })
+    if (binding.configFingerprint !== mcpServerConfigFingerprint(prepared.mcpServers[binding.server])) throw new McpAppsError('not_connected', 'MCP App server configuration changed')
+    const live = await openLive(session.sessionId, binary, prepared.authEnv, prepared.cwd)
+    if (!live.threadId) live.threadId = await ensureCodexThread({ client: live.client, cwd: prepared.cwd, threadId: origin.providerSessionId,
+      threadConfig: prepared.threadConfig, signal: new AbortController().signal })
+    if (live.threadId !== origin.providerSessionId) throw new McpAppsError('invalid', 'MCP App thread binding mismatch')
+    live.lastActivityAt = Date.now()
+    return createCodexMcpAppsProvider(binding, live.threadId, live.client.request.bind(live.client))
+  }
   runner.disposeSession = async (sessionId) => {
     await disposeLive(sessionId)
   }
@@ -486,6 +512,10 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
     )
   }
 
+  runner.getMcpAppsProvider = (session, binding, origin) => {
+    if (session.harnessId !== 'codex' || !codex.getMcpAppsProvider) throw new McpAppsError('not_connected', 'Harness does not support MCP Apps')
+    return codex.getMcpAppsProvider(session, binding, origin)
+  }
   runner.disposeSession = async (sessionId) => {
     await Promise.all([
       claude.disposeSession?.(sessionId),

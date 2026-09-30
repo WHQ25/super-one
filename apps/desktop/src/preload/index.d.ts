@@ -361,8 +361,6 @@ interface AppAPI {
   // Codex Hooks (read-only)
   codexListHooks(projectPath: string, opts?: { forceReload?: boolean }): Promise<CodexHookGroup[]>
   codexGetMcpStatus(projectPath: string, serverName?: string): Promise<McpServerInfo[]>
-  codexReadMcpResource(projectPath: string, serverName: string, uri: string): Promise<Record<string, unknown> | null>
-  codexCallMcpTool(projectPath: string, threadId: string, serverName: string, toolName: string, toolArguments?: Record<string, unknown>): Promise<Record<string, unknown>>
 
   // Codex Goal
   /** `threadId` is null before the first turn; main resolves (or starts) the thread itself. */
@@ -855,6 +853,7 @@ interface TerminalAPI {
 
 /** Multi-environment / remote node — Main EnvironmentHost product path. */
 export interface EnvironmentAPI {
+  mcpAppsProvider(connectionId: string, input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult>
   list(): Promise<unknown[]>
   getLocalId(): Promise<string>
   /** iOS-only: is there an Xcode with a usable simctl on this machine at all. */

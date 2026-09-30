@@ -1,3 +1,4 @@
+import { MCP_APPS_EXTENSION } from '@superone/shared/mcp-apps'
 import { ensureShellPath } from '../shell-path'
 import { codexAccountProviderId, isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import { codexAccountStore } from './codex-account-store'
@@ -934,6 +935,7 @@ export async function createAppServerConnection(
       },
       capabilities: compactRecord({
         experimentalApi: true,
+        extensions: MCP_APPS_EXTENSION,
         optOutNotificationMethods: APP_SERVER_OPT_OUT_NOTIFICATIONS.length > 0
           ? [...APP_SERVER_OPT_OUT_NOTIFICATIONS]
           : undefined,

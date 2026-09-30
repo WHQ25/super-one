@@ -1,3 +1,8 @@
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { createFixtureServer } from '../../test/fixtures/mcp-apps/fixture-server'
+import { createCodexMcpAppsProvider } from '@superone/codex/mcp-apps'
+import type { TurnRunner } from '@superone/runtime/session'
 /**
  * Prove RemoteEnvironmentGateway.sessions/interactions/workspace.watch hit real node RPC.
  */
@@ -47,6 +52,48 @@ afterEach(async () => {
 })
 
 describe('RemoteEnvironmentGateway sessions + watch', () => {
+  it('reads an App resource and calls an app-only tool through authenticated remote-project RPC', async () => {
+    const fixture = createFixtureServer()
+    const client = new Client({ name: 'native-protocol-boundary', version: '1' })
+    const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair()
+    await fixture.server.connect(serverTransport)
+    await client.connect(clientTransport)
+    const request = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+      if (method === 'mcpServerStatus/list') {
+        const listed = await client.listTools()
+        return { data: [{ name: 'fixture', tools: Object.fromEntries(listed.tools.map(tool => [tool.name, tool])) }] }
+      }
+      expect(params).toMatchObject({ server: 'fixture', threadId: 'remote-thread' })
+      if (method === 'mcpServer/resource/read') return await client.readResource({ uri: String(params?.uri) }) as Record<string, unknown>
+      if (method === 'mcpServer/tool/call') return await client.callTool({ name: String(params?.tool), arguments: params?.arguments as Record<string, unknown> }) as Record<string, unknown>
+      throw new Error('unexpected method')
+    })
+    const runner: TurnRunner = async () => ({ finalText: '', providerResume: 'thread:remote-thread' })
+    runner.getMcpAppsProvider = async (_session, binding, origin) => createCodexMcpAppsProvider(binding, origin.providerSessionId, request)
+    const nodeHome = mkdtempSync(join(tmpdir(), 'apps-node-'))
+    const desk = mkdtempSync(join(tmpdir(), 'apps-desk-'))
+    const projectDir = mkdtempSync(join(tmpdir(), 'apps-project-'))
+    dirs.push(nodeHome, desk, projectDir)
+    const rt = await startNodeRuntime({ nodeHome, bindHost: '127.0.0.1', bindPort: 0, simulatedHarness: true, turnRunner: runner })
+    runtimes.push(rt)
+    const manager = new NodeConnectionManager({ credentialStore: new NodeCredentialStore(desk) })
+    try {
+      const { descriptor } = await manager.pairAndConnect({ baseUrl: rt.server.url, pairingToken: rt.auth.createPairingToken().token, label: 'apps' })
+      const gw = manager.getGateway(descriptor.environmentId)!
+      const project = await gw.openProject(projectDir, 'apps')
+      const { sessionId } = await gw.sessions.create({ project: { environmentId: descriptor.environmentId, projectId: project.projectId }, providerId: 'codex', options: { harnessId: 'codex' } })
+      const control = await gw.sessions.acquireControl({ resource: { environmentId: descriptor.environmentId, sessionId } })
+      const input = { binding: { node: descriptor.environmentId, session: sessionId, server: 'fixture', configGeneration: 0, configFingerprint: 'fixture' }, origin: { providerSessionId: 'remote-thread' }, leaseId: control.leaseId, generation: control.generation }
+      const resource = await gw.requestMcpAppsProvider({ ...input, operation: 'readResource', uri: 'ui://fixture/items.html' })
+      expect(resource).toMatchObject({ ok: true, value: { contents: [{ mimeType: 'text/html;profile=mcp-app' }] } })
+      const call = await gw.requestMcpAppsProvider({ ...input, operation: 'callTool', tool: 'fixture_next_page', args: { page: 2 } })
+      expect(call).toMatchObject({ ok: true, value: { outcome: 'completed', result: { structuredContent: { page: 2 }, _meta: { 'fixture/private': { visibility: 'app' } } } } })
+      const denied = await gw.requestMcpAppsProvider({ ...input, operation: 'callTool', tool: 'fixture_model_echo', args: {} })
+      expect(denied).toMatchObject({ ok: false, error: { code: 'denied' } })
+      expect(request.mock.calls.filter(([method]) => method === 'mcpServer/tool/call')).toHaveLength(1)
+    } finally { manager.disconnectAll(); await client.close(); await fixture.server.close() }
+  })
+
   it('creates/sends session and watches files through gateway surface', async () => {
     const nodeHome = mkdtempSync(join(tmpdir(), 'rgw-node-'))
     const desk = mkdtempSync(join(tmpdir(), 'rgw-desk-'))

@@ -209,6 +209,8 @@ ipcRenderer.on(
 )
 
 const environmentAPI = {
+  mcpAppsProvider: (connectionId: string, input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_MCP_APPS_PROVIDER, connectionId, input) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult>,
   list: () => ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_LIST),
   getLocalId: () =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_GET_LOCAL_ID) as Promise<string>,
@@ -1468,10 +1470,6 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.CODEX_HOOKS_LIST, projectPath, opts),
   codexGetMcpStatus: (projectPath: string, serverName?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CODEX_MCP_STATUS, projectPath, serverName),
-  codexReadMcpResource: (projectPath: string, serverName: string, uri: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_MCP_RESOURCE_READ, projectPath, serverName, uri),
-  codexCallMcpTool: (projectPath: string, threadId: string, serverName: string, toolName: string, toolArguments?: Record<string, unknown>) =>
-    ipcRenderer.invoke(AgentIpcChannels.CODEX_MCP_TOOL_CALL, projectPath, threadId, serverName, toolName, toolArguments),
 
   // Codex Goal
   codexGetGoal: (sessionId: string, threadId: string | null) =>

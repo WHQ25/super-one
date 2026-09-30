@@ -1,3 +1,5 @@
+import type { McpAppsBinding } from '@superone/shared/mcp-apps'
+import { attachCodexMcpApp, readCodexMcpAppFields } from './mcp-apps'
 /**
  * Electron-free Codex App Server notification -> SuperOne AgentEvent mapping.
  *
@@ -35,6 +37,7 @@ export interface CodexAppServerNotification {
 
 export interface CodexAgentEventMapperOptions {
   messageId: string
+  mcpAppBinding?: (server: string) => McpAppsBinding
   emit: (event: AgentEvent) => void
   model?: string
   turnId?: string | null
@@ -321,6 +324,7 @@ export function mapCodexThreadItem(
             content: Array.isArray(result.content) ? result.content : [],
             structuredContent: result.structuredContent ?? result.structured_content ?? null,
             ...(resultMeta ? { meta: resultMeta } : {}),
+                ...(typeof result.isError === 'boolean' ? { isError: result.isError } : {}),
           }
         : prev?.result
       const mappedError = error
@@ -331,6 +335,7 @@ export function mapCodexThreadItem(
       return {
         id,
         type: 'mcp_tool_call',
+        ...readCodexMcpAppFields(rec, prev ?? undefined),
         server: readString(rec.server) ?? prev?.server ?? '',
         tool: readString(rec.tool) ?? prev?.tool ?? '',
         arguments: rec.arguments ?? prev?.arguments ?? {},
@@ -524,6 +529,7 @@ export function createCodexAgentEventMapper(
   }
   const items = () => order.map((id) => itemMap.get(id)).filter((item): item is CodexThreadItem => Boolean(item))
   const emitItem = (phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => {
+    if (item.type === 'mcp_tool_call' && currentThreadId && options.mcpAppBinding) item = attachCodexMcpApp(item, options.mcpAppBinding(item.server), currentThreadId)
     upsert(item)
     options.emit({ type: 'codex_item_delta', messageId: options.messageId, phase, item })
   }

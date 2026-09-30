@@ -1,3 +1,4 @@
+import { dispatchMcpAppsRpc } from './mcp-apps-handlers'
 import { dirname as configDirname } from 'node:path'
 import {
   DATABASE_SCHEMA_GENERATION,
@@ -333,6 +334,9 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       loadNodeAgentSettings(ctx.settingsConfigPath).experimentalClaudeOpenAiChatEnabled,
   })
   if (harnessResources) return harnessResources
+
+  const mcpApps = await dispatchMcpAppsRpc(method, payload, ctx)
+  if (mcpApps) return mcpApps
 
   const codex = await dispatchCodexRpc(method, payload, {
     nodeHome: configDirname(ctx.settingsConfigPath),

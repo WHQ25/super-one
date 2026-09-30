@@ -111,6 +111,10 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
    * claim/respond are not: the Host Action channel is the consumer's, not the
    * session list's.
    */
+  requestMcpAppsProvider(input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest & { leaseId: string; generation: string }): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult> {
+    return this.client.rpc('mcpApps.provider', input)
+  }
+
   renewHostActionClaim(input: { actionId: string; claimToken: string; ttlMs?: number }): Promise<{ claimExpiresAt: number; version: number }> {
     return this.client.rpc<{ claimExpiresAt: number; version: number }>('session.renewHostActionClaim', input)
   }

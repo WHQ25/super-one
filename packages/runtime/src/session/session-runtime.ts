@@ -1,3 +1,4 @@
+import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@superone/shared/agent-types'
@@ -198,6 +199,12 @@ export class SessionRuntime {
   private readonly hostActionPollWaiters = new Set<() => void>()
   private hostActionExpiryTimer: ReturnType<typeof setInterval> | null = null
   private runtimeReaperTimer: ReturnType<typeof setInterval> | null = null
+  async getMcpAppsProvider(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider> {
+    const session = this.get(binding.session)
+    if (!session || binding.node !== this.environmentId || !this.turnRunner.getMcpAppsProvider) throw new McpAppsError('not_connected', 'MCP Apps provider is unavailable')
+    return this.turnRunner.getMcpAppsProvider(session, binding, origin)
+  }
+
   private readonly runtimeReleases = new Set<string>()
   /**
    * Per-session FIFO of turns accepted while status is streaming for harnesses

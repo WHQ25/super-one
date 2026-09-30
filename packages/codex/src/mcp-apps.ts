@@ -1,0 +1,106 @@
+import type { CodexMcpToolCallItem } from '@superone/shared/agent-types'
+import { assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, MCP_APP_DATA_MAX_BYTES, boundedToolAppAttachment, McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider, type McpAppReadResult, type McpAppToolResult, type McpToolDescriptor, type ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { readCodexMcpWwwAuthenticate } from './protocol-v154'
+
+export type McpAppsRequest = (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
+const challenges = (value: unknown): string[] | undefined => value === undefined ? undefined : Array.isArray(value) ? value.map(String) : [String(value)]
+const record = (value: unknown): Record<string, unknown> | undefined => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+
+/** Keep the provider's routing metadata even when ordinary third-party appContext is null. */
+export function readCodexMcpAppFields(raw: Record<string, unknown>, previous?: CodexMcpToolCallItem): Partial<CodexMcpToolCallItem> {
+  const ui = record(raw.mcpAppUi) ?? (typeof raw.mcpAppResourceUri === 'string' ? { resourceUri: raw.mcpAppResourceUri } : undefined)
+  return {
+    ...(typeof ui?.resourceUri === 'string' ? { mcpAppUi: { resourceUri: ui.resourceUri, ...(typeof ui.preferredModelDisplayMode === 'string' ? { preferredModelDisplayMode: ui.preferredModelDisplayMode } : {}) } } : previous?.mcpAppUi ? { mcpAppUi: previous.mcpAppUi } : {}),
+    ...('appContext' in raw ? { appContext: record(raw.appContext) ?? null } : previous && 'appContext' in previous ? { appContext: previous.appContext } : {}),
+    ...(previous?.app ? { app: previous.app } : {}),
+  }
+}
+
+/** Bind an authoritative native item id; never correlate by tool name or arguments. */
+export function attachCodexMcpApp(item: CodexMcpToolCallItem, binding: McpAppsBinding, threadId: string): CodexMcpToolCallItem {
+  const uri = item.mcpAppUi?.resourceUri
+  if (!uri?.startsWith('ui://') || item.appContext || item.server === 'codex_apps') return item
+  const status: ToolAppAttachment['status'] = item.status === 'in_progress' ? 'pending' : item.error || item.status === 'failed' ? 'error' : 'result'
+  const app: ToolAppAttachment = {
+    ...item.app,
+    appInstanceId: item.app?.appInstanceId ?? `codex:${binding.session}:${threadId}:${item.id}`,
+    binding, origin: { providerSessionId: threadId }, harnessCallId: item.id, resourceUri: uri,
+    ...(record(item.arguments) ? { toolInput: record(item.arguments) } : {}),
+    ...(item.result ? { toolResult: { content: item.result.content, structuredContent: item.result.structuredContent, ...(item.result.meta ? { _meta: item.result.meta } : {}), ...(item.result.isError !== undefined ? { isError: item.result.isError } : {}) } } : {}),
+    status,
+    ...(item.authRequired ? { error: { code: 'auth_required' as const, message: 'MCP authentication required', challenge: challenges(readCodexMcpWwwAuthenticate(item.result?.meta)) } } : item.error ? { error: { code: 'invalid' as const, message: item.error.message } } : {}),
+  }
+  return { ...item, app: boundedToolAppAttachment(app) }
+}
+
+/** Native public-server provider shared by Electron and the headless node. */
+export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: string, request: McpAppsRequest): McpAppsProvider {
+  let disposed = false
+  const guard = (signal?: AbortSignal, origin?: McpAppOrigin) => {
+    if (disposed) throw new McpAppsError('not_connected', 'MCP App provider was disposed')
+    if (signal?.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled before dispatch')
+    if (!threadId || (origin && origin.providerSessionId !== threadId)) throw new McpAppsError('invalid', 'MCP App thread binding mismatch')
+    if (binding.server === 'codex_apps') throw new McpAppsError('invalid', 'Hosted connectors are not supported by this provider')
+  }
+  const invoke = async (method: string, params: Record<string, unknown>, signal?: AbortSignal, origin?: McpAppOrigin, mutates = false) => {
+    guard(signal, origin)
+    try {
+      // No retry: cancellation after dispatch cannot establish whether a tool ran.
+      const result = await request(method, { ...params, threadId, server: binding.server })
+      if (signal?.aborted) throw new McpAppsError(mutates ? 'unknown_outcome' : 'cancelled', 'MCP App request cancelled after dispatch')
+      const challenge = challenges(readCodexMcpWwwAuthenticate(record(result._meta)))
+      if (challenge !== undefined) throw new McpAppsError('auth_required', 'MCP authentication required', challenge)
+      assertMcpAppSize(result, method === 'mcpServer/resource/read' ? MCP_APP_HTML_MAX_BYTES + MCP_APP_DATA_MAX_BYTES : MCP_APP_DATA_MAX_BYTES)
+      return result
+    } catch (error) {
+      if (error instanceof McpAppsError) throw error
+      const message = error instanceof Error ? error.message : String(error)
+      throw new McpAppsError(mutates ? 'unknown_outcome' : /timed? ?out|timeout/i.test(message) ? 'timeout' : 'not_connected', message)
+    }
+  }
+  const tools = async () => {
+    guard()
+    let cursor: unknown
+    const output = new Map<string, McpToolDescriptor>()
+    for (let page = 0; page < 100; page++) {
+      const result = await invoke('mcpServerStatus/list', { detail: 'full', ...(cursor ? { cursor } : {}) })
+      const server = (Array.isArray(result.data) ? result.data : []).map(record).find(s => s?.name === binding.server)
+      if (server?.authStatus === 'notLoggedIn') throw new McpAppsError('auth_required', 'MCP authentication required')
+      const entries = record(server?.tools)
+      for (const [name, value] of Object.entries(entries ?? {})) {
+        const tool = record(value)
+        if (tool) output.set(name, { ...tool, name } as unknown as McpToolDescriptor)
+      }
+      cursor = result.nextCursor
+      if (!cursor) return output
+    }
+    throw new McpAppsError('invalid', 'MCP tool discovery exceeded pagination limit')
+  }
+  return {
+    binding,
+    async ready(signal) { guard(signal); await tools(); return { mode: 'native', resourceRead: true, toolCall: true } },
+    tools,
+    async readResource(req, signal): Promise<McpAppReadResult> {
+      if (!req.uri.startsWith('ui://')) throw new McpAppsError('invalid', 'MCP App resources must use ui://')
+      // originCallId is deliberately omitted for public third-party servers.
+      const catalog = await invoke('mcpServerStatus/list', { detail: 'full' }, signal, req.origin)
+      const server = (Array.isArray(catalog.data) ? catalog.data : []).map(record).find(entry => entry?.name === binding.server)
+      const resource = (Array.isArray(server?.resources) ? server.resources : []).map(record).find(entry => entry?.uri === req.uri)
+      const listMeta = record(resource?._meta)
+      const result = await invoke('mcpServer/resource/read', { uri: req.uri }, signal, req.origin)
+      const contents = (Array.isArray(result.contents) ? result.contents : []).map(value => {
+        const content = value as McpAppReadResult['contents'][number]
+        const meta = record(content._meta)
+        const ui = { ...record(listMeta?.ui), ...record(meta?.ui) }
+        return { ...content, ...(listMeta || meta ? { _meta: { ...listMeta, ...meta, ui } } : {}) }
+      })
+      return { contents, ...(record(result._meta) ? { _meta: record(result._meta) } : {}) }
+    },
+    async callTool(req, signal) {
+      assertMcpAppSize(req.args)
+      const result = await invoke('mcpServer/tool/call', { tool: req.tool, arguments: req.args ?? {} }, signal, req.origin, true)
+      return { result: { content: Array.isArray(result.content) ? result.content : [], ...(result.structuredContent !== undefined ? { structuredContent: result.structuredContent } : {}), ...(record(result._meta) ? { _meta: record(result._meta) } : {}), ...(typeof result.isError === 'boolean' ? { isError: result.isError } : {}) } satisfies McpAppToolResult, outcome: 'completed' }
+    },
+    dispose() { disposed = true },
+  }
+}

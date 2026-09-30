@@ -195,6 +195,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     (simulatedHarness
       ? createMultiHarnessRouter('codex')
       : createProductionTurnRunner({
+          environmentId: identity.environmentId,
           nodeHome: paths.nodeHome,
           harnesses,
           resolveProjectPath: (projectId) => projects.get(projectId)?.path ?? null,

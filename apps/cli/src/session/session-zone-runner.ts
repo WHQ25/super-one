@@ -33,6 +33,7 @@ export function withSessionZone(runner: TurnRunner, syncRoot: string): TurnRunne
       : [...(input.additionalDirectories ?? []), agentDir]
     return runner({ ...input, sessionDir, additionalDirectories })
   }
+  wrapped.getMcpAppsProvider = runner.getMcpAppsProvider
   wrapped.disposeSession = runner.disposeSession
   wrapped.disposeAll = runner.disposeAll
   wrapped.listActiveRuntimes = runner.listActiveRuntimes

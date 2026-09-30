@@ -94,3 +94,5 @@ export {
   isKnownCodexServerRequest,
   jsonRpcMethodNotFound,
 } from './server-request'
+
+export { attachCodexMcpApp, createCodexMcpAppsProvider, readCodexMcpAppFields, type McpAppsRequest } from './mcp-apps'

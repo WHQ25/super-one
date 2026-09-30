@@ -1,3 +1,4 @@
+import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import { admitTurnAttachments } from '@superone/shared/attachment-turn'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { insertCodexTimelineRow, stampCodexTimelineOrder } from '@superone/shared/codex-timeline-rows'
@@ -1164,6 +1165,13 @@ export class Session implements SessionContract {
    */
   async getRateLimits(): Promise<ProviderRateLimits | null> {
     return (await this.backend.getRateLimits?.()) ?? null
+  }
+
+  async getMcpAppsProvider(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider> {
+    await this.ensureStarted()
+    this.touchRuntimeActivity()
+    if (!this.backend.getMcpAppsProvider) throw new McpAppsError('not_connected', 'This harness does not support MCP Apps actions')
+    return this.backend.getMcpAppsProvider(binding, origin)
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {

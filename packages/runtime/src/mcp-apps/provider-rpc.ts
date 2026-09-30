@@ -1,0 +1,21 @@
+import { McpAppsError, mcpAppToolVisible, type McpAppsProvider } from '@superone/shared/mcp-apps'
+import type { McpAppsProviderRpcRequest, McpAppsRpcResult } from '@superone/shared/environment/mcp-apps-rpc'
+
+export async function dispatchMcpAppsProviderRequest(input: McpAppsProviderRpcRequest, provider: McpAppsProvider): Promise<McpAppsRpcResult> {
+  try {
+    const signal = new AbortController().signal
+    switch (input.operation) {
+      case 'ready': return { ok: true, value: await provider.ready(signal) }
+      case 'tools': return { ok: true, value: [...(await provider.tools()).values()] }
+      case 'readResource': return { ok: true, value: await provider.readResource({ uri: input.uri ?? '', origin: input.origin }, signal) }
+      case 'callTool': {
+        const tool = (await provider.tools()).get(input.tool ?? '')
+        if (!tool || !mcpAppToolVisible(tool)) throw new McpAppsError('denied', 'This tool is not available to the App')
+        return { ok: true, value: await provider.callTool({ tool: tool.name, args: input.args ?? {}, origin: input.origin }, signal) }
+      }
+      default: throw new McpAppsError('invalid', 'Unknown MCP Apps operation')
+    }
+  } catch (error) {
+    return { ok: false, error: error instanceof McpAppsError ? error.toJSON() : { code: 'not_connected', message: error instanceof Error ? error.message : String(error) } }
+  } finally { provider.dispose() }
+}

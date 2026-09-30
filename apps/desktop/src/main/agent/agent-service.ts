@@ -4140,8 +4140,6 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.CODEX_SKILLS_TOGGLE)
     ipcMain.removeHandler(AgentIpcChannels.CODEX_HOOKS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.CODEX_MCP_STATUS)
-    ipcMain.removeHandler(AgentIpcChannels.CODEX_MCP_RESOURCE_READ)
-    ipcMain.removeHandler(AgentIpcChannels.CODEX_MCP_TOOL_CALL)
     ipcMain.removeHandler(AgentIpcChannels.CODEX_SKILLS_READ)
     ipcMain.removeHandler(AgentIpcChannels.CODEX_SKILLS_READ_FILE)
     ipcMain.removeHandler(AgentIpcChannels.CODEX_SKILLS_DELETE)

@@ -351,7 +351,9 @@ export class NodeRpcClient {
         return await this.sendOnce<T>(method, payload, envId, idempotencyKey)
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err))
-        if (this.closed || attempt + 1 >= TRANSPORT_RETRY_ATTEMPTS || !isTransportError(lastError)) {
+        // A dispatched App tool may have run even when its reply was lost.
+        // Resending without a confirmed outcome could execute it twice.
+        if (this.closed || attempt + 1 >= TRANSPORT_RETRY_ATTEMPTS || method === 'mcpApps.provider' || !isTransportError(lastError)) {
           throw lastError
         }
         // Drop dead socket so the next attempt reconnects; keep idempotencyKey.

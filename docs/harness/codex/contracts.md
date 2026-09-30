@@ -106,3 +106,21 @@ enabled by `apps/desktop/src/main/codex/app-server-connection.ts`).
   view renders them as delegation rows instead of raw XML).
 - **Guard:** `packages/shared/src/realtime-timeline.delegation.test.ts` covers the
   parser against fixtures only; unguarded against upstream change.
+
+## Native public MCP Apps
+
+- **Observed:** 2026-10-01, pinned 0.159.0, isolated fixture stdio server:
+  the initialize extension reaches the server as
+  `capabilities.extensions["io.modelcontextprotocol/ui"].mimeTypes`.
+  The model catalog excludes the app-only `fixture_next_page` tool while
+  the host can call it with `mcpServer/tool/call {threadId,server,tool,arguments}`.
+  A bound `mcpServer/resource/read {threadId,server,uri}` reads its HTML.
+- **Item shape:** model calls carry `appContext:null`, content,
+  structuredContent and private `_meta`. This fixture emits the legacy
+  `mcpAppResourceUri` while `mcpAppUi` is null, even on 0.159.0. Read the
+  modern field first, then the pinned schema's legacy compatibility field.
+- **Outcome:** no retry after a dispatched call whose reply is lost. The
+  node transport must not automatically resend `mcpApps.provider`.
+- **Guards:** `apps/desktop/src/main/mcp-apps/codex-provider.test.ts`,
+  `apps/desktop/src/main/environment/node-rpc-client.test.ts`, and
+  `apps/desktop/scripts/check-codex-mcp-apps.ts` (live, isolated auth copy).

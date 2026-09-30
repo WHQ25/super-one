@@ -1,3 +1,4 @@
+import type { McpAppsBinding } from '@superone/shared/mcp-apps'
 import type { AttachmentCodexInput } from '@superone/shared/attachment-turn'
 /**
  * Mid-turn-aware Codex run: starts turn/start, exposes turn id for steer,
@@ -76,6 +77,7 @@ export async function openTurnAndStream(opts: {
   model?: string
   reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
   collaborationMode?: Record<string, unknown> | string | null
+  mcpAppBinding?: (server: string) => McpAppsBinding
   messageId?: string
   onAgentEvent?: (event: AgentEvent) => void
   onDelta?: (text: string) => void
@@ -119,6 +121,7 @@ export async function openTurnAndStream(opts: {
     ? createCodexAgentEventMapper({
         messageId: opts.messageId ?? `codex_${turnId ?? Date.now()}`,
         emit: opts.onAgentEvent,
+        mcpAppBinding: opts.mcpAppBinding,
         model: opts.model,
         turnId,
       })

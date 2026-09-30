@@ -58,13 +58,13 @@ feature integration. Unlisted new optional fields are tolerated and unused.
 | `fs/writeFile` | n/a | SuperOne owns projects, remote hosts, sidebar sections and filesystem operations. | — |
 | `fuzzyFileSearch` | unused | No client call or dedicated handler. | — |
 | `hooks/list` | used | Calls the app-server RPC. | `apps/desktop/src/main/codex/codex-hooks-service.ts` |
-| `initialize` | used | Calls the app-server RPC. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/app-server-connection.ts` |
+| `initialize` | used | Advertises io.modelcontextprotocol/ui with text/html;profile=mcp-app in extensions. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/app-server-connection.ts` |
 | `marketplace/add` | used | Calls the app-server RPC. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-marketplace-service.ts` |
 | `marketplace/remove` | used | Calls the app-server RPC. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-marketplace-service.ts` |
 | `marketplace/upgrade` | used | Calls the app-server RPC. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-marketplace-service.ts` |
 | `mcpServer/oauth/login` | used | Calls the app-server RPC. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-experiment-service.ts` |
-| `mcpServer/resource/read` | partial | Reads resources with the legacy connectorId; explicit connector/link target is not exposed. | `packages/codex/src/protocol-v149.ts`, `apps/desktop/src/main/index.ts` |
-| `mcpServer/tool/call` | used | Calls the app-server RPC. | `apps/desktop/src/main/index.ts` |
+| `mcpServer/resource/read` | partial | Public MCP Apps resource reads use the originating threadId through environment RPC. Hosted connector/link target stays deferred. | `packages/codex/src/mcp-apps.ts`, `apps/desktop/src/main/session/backends/codex-backend.ts` |
+| `mcpServer/tool/call` | used | Bound-server App calls use the originating threadId through environment RPC; host gates visibility and approval. | `packages/codex/src/mcp-apps.ts`, `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `mcpServerStatus/list` | partial | Reads server status; new httpOrigin/serverCapabilities fields are unused. | `apps/desktop/src/main/index.ts`, `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `model/list` | partial | Desktop catalog, efforts and speed tiers; availableAccessPrograms is not mapped. | `apps/desktop/src/main/codex/codex-experiment-service.ts` |
 | `modelProvider/capabilities/read` | unused | No client call or dedicated handler. | — |
@@ -245,7 +245,7 @@ feature integration. Unlisted new optional fields are tolerated and unused.
 | `item/reasoning/summaryPartAdded` | used | Consumes the notification. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts` |
 | `item/reasoning/summaryTextDelta` | used | Consumes the notification. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts` |
 | `item/reasoning/textDelta` | used | Consumes the notification. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts` |
-| `item/started` | partial | Maps supported chat/tool items; MCP Apps presentation mcpAppUi is unused. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts` |
+| `item/started` | partial | Maps MCP Apps presentation and full private result. Observed 0.159 fixture items use mcpAppResourceUri with mcpAppUi:null; modern mcpAppUi stays preferred. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts` |
 | `mcpServer/event/stream/notification` | unused | No client call or dedicated handler. | — |
 | `mcpServer/oauthLogin/completed` | used | Consumes the notification. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-experiment-service.ts` |
 | `mcpServer/startupStatus/updated` | used | Consumes the notification. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |

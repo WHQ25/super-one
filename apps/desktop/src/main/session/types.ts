@@ -1,3 +1,4 @@
+import type { McpAppsBinding, McpAppOrigin, McpAppsProvider } from '@superone/shared/mcp-apps'
 import type {
   AgentEvent,
   AgentStatus,
@@ -434,6 +435,7 @@ export interface SessionBackend {
   getContextUsage(): Promise<ContextUsageInfo | null>
   /** Account-level usage/credits for the gauge. Only harnesses that expose one implement it. */
   getRateLimits?(): Promise<ProviderRateLimits | null>
+  getMcpAppsProvider?(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider>
   getMcpServerStatus(): Promise<McpServerInfo[]>
   authenticateMcp?(serverName: string): Promise<void>
   rewindFiles(userMessageId: string, opts?: { dryRun?: boolean; includeConversation?: boolean }): Promise<RewindFilesResult>
@@ -528,6 +530,7 @@ export interface Session {
   respondToPlanApproval(requestId: string, approved: boolean, feedback?: string): void
   getContextUsage(): Promise<ContextUsageInfo | null>
   getRateLimits(): Promise<ProviderRateLimits | null>
+  getMcpAppsProvider?(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider>
   getMcpServerStatus(): Promise<McpServerInfo[]>
   authenticateMcp(serverName: string): Promise<void>
   rewindFiles(userMessageId: string, opts?: { dryRun?: boolean; includeConversation?: boolean }): Promise<RewindFilesResult>

@@ -1,3 +1,4 @@
+import { MCP_APPS_EXTENSION } from '@superone/shared/mcp-apps'
 import type { AttachmentCodexInput } from '@superone/shared/attachment-turn'
 import { superoneSystemPrompt } from '@superone/shared/superone-system-prompt'
 import {
@@ -381,6 +382,7 @@ export async function openCodexAppServer(
       },
       capabilities: {
         experimentalApi: true,
+        extensions: MCP_APPS_EXTENSION,
         // requestAttestation stays omitted (default false). Do not implement
         // inbound attestation/generate this round; unknown inbound methods
         // receive JSON-RPC -32601.

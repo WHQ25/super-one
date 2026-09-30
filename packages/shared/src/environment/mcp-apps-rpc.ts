@@ -1,0 +1,12 @@
+import type { McpAppsBinding, McpAppOrigin, McpAppsErrorData } from '../mcp-apps'
+
+/** Host-authored binding. The untrusted View never receives this API. */
+export interface McpAppsProviderRpcRequest {
+  binding: McpAppsBinding
+  origin: McpAppOrigin
+  operation: 'ready' | 'tools' | 'readResource' | 'callTool'
+  uri?: string
+  tool?: string
+  args?: unknown
+}
+export type McpAppsRpcResult<T = unknown> = { ok: true; value: T } | { ok: false; error: McpAppsErrorData }

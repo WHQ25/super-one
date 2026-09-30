@@ -142,6 +142,41 @@ including delta reduction → JSON persistence → mobile projection, native
 Codex progressive item projection, metadata/visibility fallbacks, UTF-8 caps
 and structured error serialization. `bun run typecheck:node` passed.
 
+### 0.3 — Codex 0.159 wire verdict: pass (fixture)
+
+The isolated `apps/desktop/scripts/check-codex-mcp-apps.ts` run proves the
+extension reaches the fixture's wire initialize, `appContext:null`, full
+content/structuredContent/private `_meta`, originating-thread resource reads
+and host app-only tool calls. The model's available tool catalog lists all six
+model-visible fixture tools and excludes `fixture_next_page`. Actual item UI
+is `mcpAppResourceUri` with `mcpAppUi:null`; mapper reads that schema-declared
+compatibility field as a fallback. Modern `mcpAppUi` remains preferred.
+
+The sandboxed model run failed with `workspace routing discovery failed`;
+the same network-approved isolated check completed successfully. No user
+configuration was changed. Remote actions route through authenticated node
+RPC, control leases, native provider thread binding, and app visibility checks.
+The generic RPC reconnect/resend is disabled for App requests: a lost result
+must not dispatch the call twice. Hosted `codex_apps` remains explicitly off.
+
+### Phase 1.2 — native Codex provider: implemented
+
+Both initialize paths advertise the extension. Both item mappers retain native
+UI/routing metadata and full private results. `CodexBackend` and the node's
+long-lived runner implement the shared provider. Restored activation can reopen
+and resume the original provider thread without creating a model turn.
+`window.environment.mcpAppsProvider` routes local and remote requests; the old
+resource/tool `CODEX_MCP_*` IPC and `window.app` methods are removed.
+
+Checks: 105 desktop provider/backend/transport tests; 18 node runner/client
+tests; desktop node and CLI typechecks pass. Real authenticated remote-project
+RPC test reads fixture HTML, calls the app-only tool, preserves private meta,
+and rejects model-only calls before dispatch (3 gateway scenarios passed).
+The gateway test uses the real node, pairing, leases, WebSocket, SDK fixture and
+native provider; only the external Codex protocol transport is substituted.
+A separate live 0.159 run proves that boundary. Native modules loaded normally
+in this worktree; the initial loopback failure was sandbox `listen EPERM`.
+
 ## Log
 
 - 2026-10-01: proposal drafted; reviewed with Codex (fact corrections on

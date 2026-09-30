@@ -87,6 +87,18 @@ function sentFrames(ws: ReturnType<typeof lastSocket>): Array<{ type?: string; r
 }
 
 describe('NodeRpcClient disconnect signaling', () => {
+  it('does not resend an App tool when the socket loses its completion reply', async () => {
+    const { client, ws } = await connectClient({ supervised: false })
+    const call = client.rpc('mcpApps.provider', { operation: 'callTool' })
+    const rejection = expect(call).rejects.toThrow()
+    ws.readyState = 3
+    ws.emit('close')
+    await rejection
+    expect(sockets).toHaveLength(1)
+    expect(sentFrames(ws)).toHaveLength(1)
+    client.close()
+  })
+
   afterEach(() => {
     sockets.length = 0
     vi.clearAllMocks()

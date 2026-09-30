@@ -1,3 +1,4 @@
+import { readCodexMcpAppFields } from '@superone/codex/mcp-apps'
 import log from '../logger'
 import { DEADLINE_EXCEEDED, INTERRUPT_CANCEL_TIMEOUT_MS, withDeadline } from '../promise-deadline'
 import { trace } from '../agent/event-trace'
@@ -457,6 +458,7 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
       return {
         id,
         type: 'mcp_tool_call',
+        ...readCodexMcpAppFields(rec, prevMcp ?? undefined),
         server: readString(rec.server) ?? prevMcp?.server ?? '',
         tool: readString(rec.tool) ?? prevMcp?.tool ?? '',
         arguments: rec.arguments ?? prevMcp?.arguments ?? {},
@@ -466,6 +468,7 @@ export function mapThreadItemFromAppServer(raw: unknown, previous?: CodexThreadI
                 content: Array.isArray(resultRec.content) ? resultRec.content : [],
                 structuredContent: resultRec.structuredContent ?? resultRec.structured_content ?? null,
                 ...(resultMeta ? { meta: resultMeta } : {}),
+                ...(typeof resultRec.isError === 'boolean' ? { isError: resultRec.isError } : {}),
               },
             }
           : prevMcp?.result

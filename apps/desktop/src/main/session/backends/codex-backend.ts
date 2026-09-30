@@ -1,3 +1,7 @@
+import { attachCodexMcpApp, createCodexMcpAppsProvider } from '@superone/codex/mcp-apps'
+import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
+import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
+import { listCodexMcpConfigs } from '../../codex-config-service'
 import { codexAccountProviderId, CODEX_CLI_ACCOUNT_ID } from '@superone/shared/codex-accounts'
 import { applyCodexBackendSelection, mapCodexPermissionMode, resolveCodexBackendSelection, type CodexBackendSelectionPatch } from './codex-backend-selection'
 import type {
@@ -1322,6 +1326,18 @@ export class CodexBackend implements SessionBackend {
     return cleared
   }
 
+  async getMcpAppsProvider(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider> {
+    this.assertStarted()
+    if (binding.session !== this.startOpts?.sessionId || origin.providerSessionId !== this.providerSessionId) {
+      throw new McpAppsError('invalid', 'MCP App session binding mismatch')
+    }
+    if (binding.account !== (this.startOpts?.apiProviderId ?? undefined)) throw new McpAppsError('auth_required', 'MCP App account changed')
+    const config = listCodexMcpConfigs(this.startOpts!.cwd).find(server => server.name === binding.server)
+    if (binding.configFingerprint !== mcpServerConfigFingerprint(config)) throw new McpAppsError('not_connected', 'MCP App server configuration changed')
+    const connection = await this.ensureManagementConnection()
+    return createCodexMcpAppsProvider(binding, origin.providerSessionId, connection.request.bind(connection))
+  }
+
   async getMcpServerStatus(): Promise<McpServerInfo[]> {
     const session = this.session
     const handle = session?.connectionHandle
@@ -1832,6 +1848,12 @@ export class CodexBackend implements SessionBackend {
         this.emit({ type: 'codex_thread_started', messageId, threadId })
       },
       onItemDelta: (phase, item) => {
+        if (item.type === 'mcp_tool_call' && this.startOpts && this.providerSessionId) {
+          const serverName = item.server
+          const config = listCodexMcpConfigs(this.startOpts.cwd).find(server => server.name === serverName)
+          item = attachCodexMcpApp(item, { node: 'local', session: this.startOpts.sessionId, server: item.server,
+            account: this.startOpts.apiProviderId ?? undefined, configGeneration: 0, configFingerprint: mcpServerConfigFingerprint(config) }, this.providerSessionId)
+        }
         let owner = this.itemOwner.get(item.id)
         if (!owner) {
           const live = this.currentMessageId

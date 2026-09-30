@@ -1,3 +1,4 @@
+import type { McpAppsBinding, McpAppOrigin, McpAppsProvider } from '@superone/shared/mcp-apps'
 import type { SessionTurnEvent } from '@superone/shared/environment'
 import type { AgentEvent } from '@superone/shared/agent-types'
 
@@ -219,6 +220,7 @@ export type TurnRunner = ((input: {
   skipAssistantTranscript?: boolean
 }>) & {
   /** Tear down long-lived harness state for one SuperOne session id. */
+  getMcpAppsProvider?: (session: NodeSessionRecord, binding: McpAppsBinding, origin: McpAppOrigin) => Promise<McpAppsProvider>
   disposeSession?: (sessionId: string) => void | Promise<void>
   /** Tear down all long-lived harness state (runtime stop). */
   disposeAll?: () => void | Promise<void>

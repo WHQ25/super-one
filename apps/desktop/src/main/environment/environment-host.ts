@@ -973,6 +973,11 @@ export class EnvironmentHost {
     return gateway
   }
 
+  async requestMcpAppsProvider(connectionId: string, input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult> {
+    const control = await this.ensureSessionLease(connectionId, input.binding.session)
+    return this.asRemoteProviderGw(connectionId).requestMcpAppsProvider({ ...input, ...control })
+  }
+
   async listRemoteCredentials(connectionId: string): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).providerListCredentials()
   }

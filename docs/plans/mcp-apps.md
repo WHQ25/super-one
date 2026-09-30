@@ -92,8 +92,14 @@ can start as soon as the contract is committed.
   verdicts pass on 0.3.285 (extension advertised, app-only call completed,
   model-only call denied before `mcp_call`, `isError` reported uncertain,
   attachments on both tool rows).
-- **C5 Remote node.** The CLI live session exposes the same provider over the
-  environment RPC that phase 1 adds for Codex.
+- **C5 Remote node.** Done. The node's Claude runner gives each live process
+  its own catalog and `ClaudeToolApps` (binding names the node's environment
+  id and fingerprints the merged server config), and implements
+  `getMcpAppsProvider` with the same checks as Codex: session, Claude session
+  id, account and server config. A View activated after the idle reaper
+  released the process reopens it from the session record, as desktop revives
+  its query. The catalog's single-flight refresh moved into
+  `ClaudeMcpAppsCatalog.refresh` so desktop and node share it.
 - **C6 Tests.** Unit: env helper, catalog mapping (annotations, flat key,
   name normalization), both mapper paths, adapter (normalization, error,
   cancel). A recorded fixture session for replay tests (see

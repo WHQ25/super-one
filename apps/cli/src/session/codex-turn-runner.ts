@@ -473,6 +473,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
 export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): TurnRunner {
   const codex = createNodeCodexTurnRunner(opts)
   const claude = createNodeClaudeTurnRunner({
+    environmentId: opts.environmentId,
     binaryPath: opts.claudeBinaryPath,
     resolveProjectPath: opts.resolveProjectPath,
     harnesses: opts.harnesses,
@@ -513,8 +514,9 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
   }
 
   runner.getMcpAppsProvider = (session, binding, origin) => {
-    if (session.harnessId !== 'codex' || !codex.getMcpAppsProvider) throw new McpAppsError('not_connected', 'Harness does not support MCP Apps')
-    return codex.getMcpAppsProvider(session, binding, origin)
+    const native = session.harnessId === 'codex' ? codex : session.harnessId === 'claude' ? claude : null
+    if (!native?.getMcpAppsProvider) throw new McpAppsError('not_connected', 'Harness does not support MCP Apps')
+    return native.getMcpAppsProvider(session, binding, origin)
   }
   runner.disposeSession = async (sessionId) => {
     await Promise.all([

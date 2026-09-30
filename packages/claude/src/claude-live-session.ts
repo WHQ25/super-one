@@ -8,14 +8,14 @@
 
 import { existsSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { query as sdkQuery, type Options, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import { query as sdkQuery, type Options, type Query, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { resolveMappedClaudeModelId } from '@superone/shared/agent-types'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import type { SessionTurnEvent } from '@superone/shared/environment'
 import { MessageBridge } from './message-bridge'
 import { createClaudeAgentEventMapper } from './agent-event-mapper'
 import { applySdkMessage, createSdkMapState } from './map-sdk-message'
-import { withMcpAppsHostEnv } from './mcp-apps'
+import { withMcpAppsHostEnv, type ClaudeToolApps } from './mcp-apps'
 import { providerSettingsEnv } from './provider-settings-env'
 import { resolveSdkClaudeBinary } from './resolve-sdk-binary'
 import { applyRootPermissionGuard } from './root-permission-guard'
@@ -89,6 +89,8 @@ export interface ClaudeLiveSessionOptions {
   systemPromptAppend?: string
   options?: Partial<Options>
   queryFn?: ClaudeQueryFn
+  /** Attaches MCP App state to tool rows of tools that declare a `ui://` resource. */
+  toolApps?: ClaudeToolApps
 }
 
 interface PendingTurn {
@@ -317,6 +319,11 @@ export class ClaudeLiveSession {
   private questionHandler: ClaudeQuestionHandler | undefined
   private planHandler: ClaudePlanHandler | undefined
   private readonly timing = { pausedMs: 0 }
+  /**
+   * The live SDK query, for control requests outside a turn (MCP Apps
+   * provider). Null when a test `queryFn` yields a bare message stream.
+   */
+  readonly query: Query | null
 
   private constructor(
     private readonly opts: ClaudeLiveSessionOptions,
@@ -348,6 +355,7 @@ export class ClaudeLiveSession {
       },
     )
     const q = queryFn({ prompt: this.bridge, options })
+    this.query = 'mcpServerStatus' in q ? q : null
     this.iterationDone = this.iterate(q)
   }
 
@@ -531,7 +539,7 @@ export class ClaudeLiveSession {
       this.opts.onAmbientEvent?.({ type: 'status_change', status: 'streaming' })
       this.ambient = {
         messageId,
-        mapper: createClaudeAgentEventMapper({ messageId, emit: (event) => this.opts.onAmbientEvent?.(event) }),
+        mapper: createClaudeAgentEventMapper({ messageId, emit: (event) => this.opts.onAmbientEvent?.(event), toolApps: this.opts.toolApps }),
       }
     }
     if (!this.ambient) return
@@ -615,6 +623,7 @@ export class ClaudeLiveSession {
               startedAt: Date.now(),
               pausedMs: () => this.timing.pausedMs,
               isInterrupted: () => cur.input.signal?.aborted === true,
+              toolApps: this.opts.toolApps,
             })
           } else {
             holder._state = createSdkMapState(cur.messageId)

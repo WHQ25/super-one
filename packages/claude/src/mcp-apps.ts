@@ -76,6 +76,33 @@ interface CatalogServer {
  */
 export class ClaudeMcpAppsCatalog {
   private servers = new Map<string, CatalogServer>()
+  private inflight: Promise<void> | null = null
+  private refreshedAt = 0
+
+  /**
+   * Single-flight, and at most every `minIntervalMs` unless forced: a miss for
+   * a server whose tools never load (still connecting, failed) must not
+   * re-query per call. A failed load only leaves Views unattached; it never
+   * rejects, because callers are tool rows and session start.
+   */
+  refresh(
+    load: () => Promise<readonly ClaudeMcpStatusServer[] | undefined>,
+    opts: { force?: boolean; minIntervalMs?: number; onError?: (error: unknown) => void } = {},
+  ): Promise<void> {
+    if (this.inflight) return this.inflight
+    if (!opts.force && Date.now() - this.refreshedAt < (opts.minIntervalMs ?? 5_000)) return Promise.resolve()
+    this.refreshedAt = Date.now()
+    const run = async () => {
+      try {
+        const statuses = await load()
+        if (statuses) this.update(statuses)
+      } catch (error) {
+        opts.onError?.(error)
+      }
+    }
+    this.inflight = run().finally(() => { this.inflight = null })
+    return this.inflight
+  }
 
   update(statuses: readonly ClaudeMcpStatusServer[]): void {
     this.servers = new Map(

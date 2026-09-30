@@ -28,8 +28,11 @@ import {
   resolveSdkClaudeBinary,
   type ClaudeQueryFn,
 } from '@superone/claude'
-import type { PermissionMode } from '@superone/shared/agent-types'
-import { createSimulatedCodexRunner, type TurnRunner } from '@superone/runtime/session'
+import { ClaudeMcpAppsCatalog, ClaudeToolApps, createClaudeMcpAppsProvider } from '@superone/claude/mcp-apps'
+import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
+import type { AgentEvent, PermissionMode } from '@superone/shared/agent-types'
+import { McpAppsError } from '@superone/shared/mcp-apps'
+import { createSimulatedCodexRunner, type NodeSessionRecord, type TurnRunner } from '@superone/runtime/session'
 import type { HarnessCatalogReader } from '@superone/runtime/harness'
 import type { ProviderStore } from '../provider/provider-store'
 import { buildHarnessEnvWithProxy, resolveHarnessService } from '../provider/resolve-service'
@@ -43,6 +46,8 @@ import {
 export const CLAUDE_SESSION_RESUME_PREFIX = 'claude-session:'
 
 export interface NodeClaudeRunnerOptions {
+  /** This node's environment id; MCP App bindings name it. */
+  environmentId?: string
   binaryPath?: string | null
   resolveProjectPath: (projectId: string) => string | null
   harnesses?: HarnessCatalogReader
@@ -176,21 +181,27 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     chunks: ['[claude] ', 'done'],
   })
 
+  interface LiveEntry {
+    live: ClaudeLiveSession
+    hostActionDispose: (() => Promise<void>) | null
+    cwd: string
+    /** Sorted disk MCP names at open time — rebuild when mcp.save changes allowlist. */
+    mcpDiskKey: string
+    /** Sorted directory set at open time — ACP-style: only changes on restart. */
+    additionalDirsKey: string
+    /** Servers the live process was opened with; MCP App bindings fingerprint them. */
+    mcpServers: Record<string, unknown>
+    /** Tool UI metadata of this process, loaded on its first MCP tool call. */
+    mcpAppsCatalog: ClaudeMcpAppsCatalog
+    refreshMcpAppsCatalog: (force?: boolean) => Promise<void>
+    /** Latest turn's sink; a process opened for an MCP App action has none yet. */
+    onAmbientEvent?: (event: AgentEvent) => void
+    busyCount: number
+    lastActivityAt: number
+  }
+
   /** SuperOne sessionId → long-lived Claude process. */
-  const lives = new Map<
-    string,
-    {
-      live: ClaudeLiveSession
-      hostActionDispose: (() => Promise<void>) | null
-      cwd: string
-      /** Sorted disk MCP names at open time — rebuild when mcp.save changes allowlist. */
-      mcpDiskKey: string
-      /** Sorted directory set at open time — ACP-style: only changes on restart. */
-      additionalDirsKey: string
-      busyCount: number
-      lastActivityAt: number
-    }
-  >()
+  const lives = new Map<string, LiveEntry>()
 
   const disposeEntry = async (sessionKey: string): Promise<void> => {
     const entry = lives.get(sessionKey)
@@ -211,40 +222,31 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
   const additionalDirsKeyOf = (dirs: readonly string[] | undefined): string =>
     [...new Set(dirs ?? [])].sort().join('\0')
 
-  const runner: TurnRunner = async (input) => {
-    const harnessId = input.session.harnessId || 'claude'
-    if (harnessId !== 'claude') {
-      throw new Error(
-        `createNodeClaudeTurnRunner only handles harness claude (got ${harnessId})`,
-      )
-    }
-
-    const binary = resolveClaudeBinaryPath({
+  const binaryOrNull = () =>
+    resolveClaudeBinaryPath({
       binaryPath: opts.binaryPath,
       harnesses: opts.harnesses,
       skipSdkBinary: opts.skipSdkBinary,
     })
-    if (!binary) {
-      if (opts.allowSimulatedFallback) return simulatedClaude(input)
-      throw new Error(
-        'Claude Agent SDK binary not available: reinstall optional platform package or set SUPERONE_CLAUDE_BINARY',
-      )
-    }
 
+  /** Cwd, provider env and the root permission guard for one session. */
+  const prepare = async (p: {
+    session: NodeSessionRecord
+    apiProviderId?: string | null
+    permissionMode?: string | null
+    sessionDir?: string
+  }) => {
     const projectRoot =
-      opts.resolveProjectPath(input.session.projectId) ||
+      opts.resolveProjectPath(p.session.projectId) ||
       process.env.SUPERONE_DEFAULT_CWD ||
       process.cwd()
-    const cwd =
-      input.session.cwd && input.session.cwd.trim()
-        ? input.session.cwd.trim()
-        : projectRoot
+    const cwd = p.session.cwd && p.session.cwd.trim() ? p.session.cwd.trim() : projectRoot
 
     const providerEnv =
       opts.providers
         ? await buildHarnessEnvWithProxy(
             'claude',
-            resolveHarnessService(opts.providers, 'claude', input.apiProviderId, {
+            resolveHarnessService(opts.providers, 'claude', p.apiProviderId, {
               experimentalClaudeOpenAiChatEnabled: opts.experimentalClaudeOpenAiChatEnabled?.() ?? false,
             }),
           )
@@ -253,7 +255,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       ...process.env,
       ...opts.env,
       ...providerEnv,
-      ...(input.sessionDir ? { SUPERONE_SESSION_DIR: input.sessionDir } : {}),
+      ...(p.sessionDir ? { SUPERONE_SESSION_DIR: p.sessionDir } : {}),
     }
 
     // Nodes commonly run as root (container / systemd). Claude Code exits
@@ -261,9 +263,129 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     // relax the turn instead of failing it, and tell the client what ran.
     const uid = opts.getuid ? opts.getuid() : process.getuid?.()
     const permissions = applyRootPermissionGuard({
-      permissionMode: input.permissionMode,
+      permissionMode: p.permissionMode ?? undefined,
       uid,
       env: authEnv as Record<string, string | undefined>,
+    })
+    return { cwd, authEnv, uid, permissions }
+  }
+
+  const openEntry = (p: {
+    session: NodeSessionRecord
+    binary: string
+    cwd: string
+    authEnv: NodeJS.ProcessEnv
+    uid: number | undefined
+    permissionMode?: string
+    model?: string | null
+    effort?: string | null
+    sandboxMode?: string | null
+    additionalDirectories?: string[]
+    enabledSkills?: string[]
+    disabledSkills?: string[]
+    apiProviderId?: string | null
+  }): LiveEntry => {
+    const sessionKey = p.session.sessionId
+    const hostActionMcp = opts.createHostActionClaudeMcp?.(sessionKey) ?? null
+    // Merge enabled project+user MCP (disk) with host-action superone.
+    // strictMcpConfig stays true so only this allowlist is loaded.
+    const merged = ensureMcpMerge({
+      provider: 'claude',
+      cwd: p.cwd,
+      hostActionServers: hostActionMcp?.mcpServers as
+        | Record<string, Record<string, unknown>>
+        | undefined,
+      mode: opts.mcpMergeMode,
+      env: p.authEnv,
+      homeDir: opts.homeDir,
+    })
+    const mcpOptions =
+      Object.keys(merged.claudeMcpServers).length > 0
+        ? {
+            mcpServers: merged.claudeMcpServers as NonNullable<Options['mcpServers']>,
+            strictMcpConfig: true as const,
+          }
+        : undefined
+    const mcpAppsCatalog = new ClaudeMcpAppsCatalog()
+    const refreshCatalog = (force = false) => {
+      const query = lives.get(sessionKey)?.live.query
+      return query
+        ? mcpAppsCatalog.refresh(() => query.mcpServerStatus(), { force })
+        : Promise.resolve()
+    }
+    const toolApps = new ClaudeToolApps({
+      catalog: mcpAppsCatalog,
+      binding: (server) => ({
+        node: opts.environmentId ?? 'node',
+        session: sessionKey,
+        server,
+        account: p.apiProviderId ?? undefined,
+        configGeneration: 0,
+        configFingerprint: mcpServerConfigFingerprint(merged.claudeMcpServers[server]),
+      }),
+      providerSessionId: () => lives.get(sessionKey)?.live.sessionId,
+      onCatalogMiss: () => { void refreshCatalog() },
+    })
+    const live = ClaudeLiveSession.open({
+      cwd: p.cwd,
+      onAmbientEvent: (event) => {
+        const current = lives.get(sessionKey)
+        if (!current) return
+        current.lastActivityAt = Date.now()
+        current.onAmbientEvent?.(event)
+      },
+      binaryPath: p.binary,
+      sessionId: parseClaudeSessionResume(p.session.providerResume),
+      model: p.model && p.model.trim() ? p.model.trim() : undefined,
+      effort: p.effort && p.effort.trim() ? p.effort.trim() : undefined,
+      permissionMode: p.permissionMode,
+      uid: p.uid,
+      sandboxMode: p.sandboxMode && p.sandboxMode.trim() ? p.sandboxMode.trim() : undefined,
+      askUserQuestionPreviewFormat: opts.askUserQuestionPreviewFormat?.(),
+      additionalDirectories: p.additionalDirectories?.filter(Boolean),
+      enabledSkills: resolveEnabledSkills(p.cwd, p.enabledSkills, p.disabledSkills),
+      env: p.authEnv,
+      queryFn: opts.queryFn,
+      options: mcpOptions,
+      toolApps,
+    })
+    const entry: LiveEntry = {
+      live,
+      hostActionDispose: hostActionMcp ? () => hostActionMcp.dispose() : null,
+      cwd: p.cwd,
+      mcpDiskKey: mcpDiskKeyOf(merged.diskNames),
+      additionalDirsKey: additionalDirsKeyOf(p.additionalDirectories?.filter(Boolean)),
+      mcpServers: merged.claudeMcpServers,
+      mcpAppsCatalog,
+      refreshMcpAppsCatalog: refreshCatalog,
+      busyCount: 0,
+      lastActivityAt: Date.now(),
+    }
+    lives.set(sessionKey, entry)
+    return entry
+  }
+
+  const runner: TurnRunner = async (input) => {
+    const harnessId = input.session.harnessId || 'claude'
+    if (harnessId !== 'claude') {
+      throw new Error(
+        `createNodeClaudeTurnRunner only handles harness claude (got ${harnessId})`,
+      )
+    }
+
+    const binary = binaryOrNull()
+    if (!binary) {
+      if (opts.allowSimulatedFallback) return simulatedClaude(input)
+      throw new Error(
+        'Claude Agent SDK binary not available: reinstall optional platform package or set SUPERONE_CLAUDE_BINARY',
+      )
+    }
+
+    const { cwd, authEnv, uid, permissions } = await prepare({
+      session: input.session,
+      apiProviderId: input.apiProviderId,
+      permissionMode: input.permissionMode,
+      sessionDir: input.sessionDir,
     })
     if (permissions.downgradedFrom) {
       input.onAgentEvent?.({
@@ -272,9 +394,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       })
     }
 
-    const priorSession = parseClaudeSessionResume(input.session.providerResume)
     const sessionKey = input.session.sessionId
-
     // Probe disk MCP before (re)opening so mcp.save after a live session starts
     // is picked up on the next turn (strict allowlist is fixed at open).
     // diskNames does not depend on host-action servers — skip creating them here.
@@ -303,63 +423,22 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       entry = undefined
     }
 
-    if (!entry) {
-      const hostActionMcp =
-        opts.createHostActionClaudeMcp?.(input.session.sessionId) ?? null
-      // Merge enabled project+user MCP (disk) with host-action superone.
-      // strictMcpConfig stays true so only this allowlist is loaded.
-      const merged = ensureMcpMerge({
-        provider: 'claude',
-        cwd,
-        hostActionServers: hostActionMcp?.mcpServers as
-          | Record<string, Record<string, unknown>>
-          | undefined,
-        mode: opts.mcpMergeMode,
-        env: authEnv,
-        homeDir: opts.homeDir,
-      })
-      const mcpOptions =
-        Object.keys(merged.claudeMcpServers).length > 0
-          ? {
-              mcpServers: merged.claudeMcpServers as NonNullable<Options['mcpServers']>,
-              strictMcpConfig: true as const,
-            }
-          : undefined
-      const live = ClaudeLiveSession.open({
-        cwd,
-        onAmbientEvent: (event) => {
-          const current = lives.get(sessionKey)
-          if (current) current.lastActivityAt = Date.now()
-          input.onAmbientEvent?.(event)
-        },
-        binaryPath: binary,
-        sessionId: priorSession,
-        model: input.model && input.model.trim() ? input.model.trim() : undefined,
-        effort: input.effort && input.effort.trim() ? input.effort.trim() : undefined,
-        permissionMode: permissions.permissionMode,
-        uid,
-        sandboxMode:
-          input.sandboxMode && input.sandboxMode.trim()
-            ? input.sandboxMode.trim()
-            : undefined,
-        askUserQuestionPreviewFormat: opts.askUserQuestionPreviewFormat?.(),
-        additionalDirectories: input.additionalDirectories?.filter(Boolean),
-        enabledSkills: resolveEnabledSkills(cwd, input.enabledSkills, input.disabledSkills),
-        env: authEnv,
-        queryFn: opts.queryFn,
-        options: mcpOptions,
-      })
-      entry = {
-        live,
-        hostActionDispose: hostActionMcp ? () => hostActionMcp.dispose() : null,
-        cwd,
-        mcpDiskKey: mcpDiskKeyOf(merged.diskNames),
-        additionalDirsKey: additionalDirsKeyOf(input.additionalDirectories?.filter(Boolean)),
-        busyCount: 0,
-        lastActivityAt: Date.now(),
-      }
-      lives.set(sessionKey, entry)
-    }
+    entry ??= openEntry({
+      session: input.session,
+      binary,
+      cwd,
+      authEnv,
+      uid,
+      permissionMode: permissions.permissionMode,
+      model: input.model,
+      effort: input.effort,
+      sandboxMode: input.sandboxMode,
+      additionalDirectories: input.additionalDirectories,
+      enabledSkills: input.enabledSkills,
+      disabledSkills: input.disabledSkills,
+      apiProviderId: input.apiProviderId,
+    })
+    entry.onAmbientEvent = input.onAmbientEvent
 
     const prepared = prepareTurnPrompt(input.text, cwd, input.images)
     const content =
@@ -428,6 +507,54 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       activeEntry.busyCount = Math.max(0, activeEntry.busyCount - 1)
       activeEntry.lastActivityAt = Date.now()
     }
+  }
+
+  runner.getMcpAppsProvider = async (session, binding, origin) => {
+    if (
+      (session.harnessId || 'claude') !== 'claude'
+      || binding.session !== session.sessionId
+      || origin.providerSessionId !== parseClaudeSessionResume(session.providerResume)
+    ) {
+      throw new McpAppsError('invalid', 'MCP App session binding mismatch')
+    }
+    if (binding.account !== (session.apiProviderId ?? undefined)) throw new McpAppsError('auth_required', 'MCP App account changed')
+    let entry = lives.get(session.sessionId)
+    if (!entry) {
+      // A View activated after the idle reaper released the process: reopen it
+      // from the durable session defaults, as desktop revives its query.
+      const binary = binaryOrNull()
+      if (!binary) throw new McpAppsError('not_connected', 'Claude runtime unavailable')
+      const { cwd, authEnv, uid, permissions } = await prepare({
+        session,
+        apiProviderId: session.apiProviderId,
+        permissionMode: session.permissionMode,
+      })
+      entry = openEntry({
+        session,
+        binary,
+        cwd,
+        authEnv,
+        uid,
+        permissionMode: permissions.permissionMode,
+        model: session.model,
+        effort: session.effort,
+        sandboxMode: session.sandboxMode,
+        apiProviderId: session.apiProviderId,
+      })
+    }
+    if (binding.configFingerprint !== mcpServerConfigFingerprint(entry.mcpServers[binding.server])) {
+      throw new McpAppsError('not_connected', 'MCP App server configuration changed')
+    }
+    entry.lastActivityAt = Date.now()
+    const current = entry
+    return createClaudeMcpAppsProvider(binding, {
+      query: async () => current.live.query,
+      providerSessionId: () => current.live.sessionId,
+      tools: async () => {
+        await current.refreshMcpAppsCatalog(true)
+        return current.mcpAppsCatalog.tools(binding.server) ?? new Map()
+      },
+    })
   }
 
   runner.disposeSession = async (sessionId: string) => {

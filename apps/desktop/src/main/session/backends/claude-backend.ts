@@ -84,7 +84,6 @@ function invalidLocalBackendStartReason(opts: BackendStartOptions): string | nul
   return null
 }
 
-const MCP_APPS_CATALOG_MIN_REFRESH_MS = 5_000
 const MCP_APPS_CATALOG_TIMEOUT_MS = 10_000
 
 export class ClaudeBackend implements SessionBackend {
@@ -135,8 +134,6 @@ export class ClaudeBackend implements SessionBackend {
 
   /** Tool UI metadata; Claude exposes it only through `mcpServerStatus()`. */
   private readonly mcpAppsCatalog = new ClaudeMcpAppsCatalog()
-  private mcpAppsCatalogRefresh: Promise<void> | null = null
-  private mcpAppsCatalogRefreshedAt = 0
   private readonly toolApps = new ClaudeToolApps({
     catalog: this.mcpAppsCatalog,
     binding: (server) => ({
@@ -372,25 +369,17 @@ export class ClaudeBackend implements SessionBackend {
   /**
    * Loaded on the first MCP tool call rather than at start, so sessions without
    * MCP tools pay nothing; that call still gets its View at `tool_result`.
-   * Single-flight, and at most every few seconds: a miss for a server whose
-   * tools never load (still connecting, failed) must not re-query per call.
    */
   private refreshMcpAppsCatalog(opts: { force?: boolean } = {}): Promise<void> {
     const query = this.query
-    if (!query || this.mcpAppsCatalogRefresh) return this.mcpAppsCatalogRefresh ?? Promise.resolve()
-    if (!opts.force && Date.now() - this.mcpAppsCatalogRefreshedAt < MCP_APPS_CATALOG_MIN_REFRESH_MS) return Promise.resolve()
-    this.mcpAppsCatalogRefreshedAt = Date.now()
-    // A failed refresh only leaves Views unattached; it must never fail the caller (start, a tool row).
-    const refresh = async () => {
-      try {
-        const statuses = await withDeadline(query.mcpServerStatus(), MCP_APPS_CATALOG_TIMEOUT_MS)
-        if (statuses !== DEADLINE_EXCEEDED) this.mcpAppsCatalog.update(statuses)
-      } catch (err) {
-        log.warn('[ClaudeBackend] MCP Apps catalog refresh failed: %s', err instanceof Error ? err.message : String(err))
-      }
-    }
-    this.mcpAppsCatalogRefresh = refresh().finally(() => { this.mcpAppsCatalogRefresh = null })
-    return this.mcpAppsCatalogRefresh
+    if (!query) return Promise.resolve()
+    return this.mcpAppsCatalog.refresh(async () => {
+      const statuses = await withDeadline(query.mcpServerStatus(), MCP_APPS_CATALOG_TIMEOUT_MS)
+      return statuses === DEADLINE_EXCEEDED ? undefined : statuses
+    }, {
+      force: opts.force,
+      onError: (err) => log.warn('[ClaudeBackend] MCP Apps catalog refresh failed: %s', err instanceof Error ? err.message : String(err)),
+    })
   }
 
   /**

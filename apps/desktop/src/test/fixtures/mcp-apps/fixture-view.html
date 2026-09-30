@@ -1,0 +1,123 @@
+<!doctype html>
+<!--
+  MCP Apps fixture View. A hand-written JSON-RPC client over postMessage (no
+  SDK), so host tests exercise the wire protocol itself. Buttons cover the
+  happy path (app-only paging, model context, message) and the refusals a
+  host must enforce (model-only tool, undeclared fetch, form post, navigation).
+  Every protocol event is appended to #log and mirrored to the host with
+  notifications/message so tests can assert on it.
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font: 13px var(--font-sans, system-ui); color: var(--color-text-primary, #111); background: var(--color-background-primary, #fff); margin: 8px; }
+      button { margin: 2px; }
+      #log { font: 11px var(--font-mono, monospace); white-space: pre-wrap; max-height: 160px; overflow: auto; }
+    </style>
+  </head>
+  <body>
+    <div id="status">connecting…</div>
+    <ul id="items"></ul>
+    <div>
+      <button id="next">Next page</button>
+      <button id="select">Select first item</button>
+      <button id="ask">Ask the model</button>
+      <button id="fullscreen">Fullscreen</button>
+    </div>
+    <div>
+      <button id="forbidden-tool">Call model-only tool</button>
+      <button id="forbidden-fetch">Fetch example.com</button>
+      <button id="forbidden-nav">Navigate away</button>
+      <form id="forbidden-form" action="https://example.com/collect" method="post" style="display:inline">
+        <button type="submit">Post form</button>
+      </form>
+    </div>
+    <div id="log"></div>
+    <script>
+      const pending = new Map()
+      let nextId = 1
+      let page = 1
+      let items = []
+
+      function log(line) {
+        document.getElementById('log').textContent += line + '\n'
+        post({ jsonrpc: '2.0', method: 'notifications/message', params: { level: 'info', logger: 'fixture-view', data: line } })
+      }
+      function post(message) { window.parent.postMessage(message, '*') }
+      function request(method, params) {
+        const id = nextId++
+        post({ jsonrpc: '2.0', id, method, params })
+        return new Promise((resolve, reject) => pending.set(id, { resolve, reject }))
+      }
+      function notify(method, params) { post({ jsonrpc: '2.0', method, params }) }
+      function respond(id, result) { post({ jsonrpc: '2.0', id, result }) }
+
+      function render(result) {
+        const sc = result && result.structuredContent
+        if (!sc) return
+        items = sc.items
+        page = sc.page
+        document.getElementById('items').innerHTML = items.map((i) => '<li>' + i + '</li>').join('')
+        document.getElementById('status').textContent = 'page ' + sc.page + '/' + sc.pageCount
+      }
+
+      window.addEventListener('message', (event) => {
+        if (event.source !== window.parent) return
+        const msg = event.data
+        if (!msg || msg.jsonrpc !== '2.0') return
+        if ('id' in msg && !('method' in msg)) {
+          const p = pending.get(msg.id)
+          if (!p) return
+          pending.delete(msg.id)
+          msg.error ? p.reject(msg.error) : p.resolve(msg.result)
+          return
+        }
+        switch (msg.method) {
+          case 'ui/notifications/tool-input-partial': log('tool-input-partial'); break
+          case 'ui/notifications/tool-input': log('tool-input ' + JSON.stringify(msg.params.arguments)); break
+          case 'ui/notifications/tool-result': log('tool-result'); render(msg.params); break
+          case 'ui/notifications/tool-cancelled': log('tool-cancelled ' + (msg.params && msg.params.reason)); break
+          case 'ui/notifications/host-context-changed': log('host-context-changed ' + Object.keys(msg.params).join(',')); break
+          case 'ui/resource-teardown': log('teardown'); respond(msg.id, {}); break
+          case 'ping': respond(msg.id, {}); break
+          default: if ('id' in msg) post({ jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: 'Method not found' } })
+        }
+      })
+
+      const on = (id, fn) => document.getElementById(id).addEventListener('click', () => fn().catch((e) => log(id + ' error ' + JSON.stringify(e))))
+      on('next', async () => render(await request('tools/call', { name: 'fixture_next_page', arguments: { page: page + 1 } })))
+      on('select', async () => {
+        await request('ui/update-model-context', {
+          content: [{ type: 'text', text: 'The user selected ' + items[0] + ' in the fixture view.' }],
+          structuredContent: { selected: items[0] },
+        })
+        log('context updated')
+      })
+      on('ask', async () => {
+        const r = await request('ui/message', { role: 'user', content: [{ type: 'text', text: 'Summarize page ' + page + ' of the fixture items.' }] })
+        log('message ' + JSON.stringify(r))
+      })
+      on('fullscreen', async () => log('display ' + JSON.stringify(await request('ui/request-display-mode', { mode: 'fullscreen' }))))
+      on('forbidden-tool', async () => log('model-only call returned ' + JSON.stringify(await request('tools/call', { name: 'fixture_model_echo', arguments: { text: 'hi' } }))))
+      on('forbidden-fetch', async () => {
+        try { await fetch('https://example.com/'); log('fetch allowed') } catch (e) { log('fetch blocked') }
+      })
+      on('forbidden-nav', async () => { location.href = 'https://example.com/' })
+
+      new ResizeObserver(() => {
+        notify('ui/notifications/size-changed', { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight })
+      }).observe(document.body)
+
+      request('ui/initialize', {
+        protocolVersion: '2026-01-26',
+        appInfo: { name: 'mcp-apps-fixture-view', version: '1.0.0' },
+        appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] },
+      }).then((result) => {
+        document.getElementById('status').textContent = 'initialized (' + (result.hostContext && result.hostContext.theme) + ')'
+        notify('ui/notifications/initialized', {})
+        log('initialized')
+      }, (e) => log('initialize failed ' + JSON.stringify(e)))
+    </script>
+  </body>
+</html>

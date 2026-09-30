@@ -278,25 +278,19 @@ include `codexPlanApproval`, `codexAsyncQuestionAnswer`, `resendFailedMessage`,
 `saveWidgetTemplate`, `openLink`, `openSession`) can be forged by any frame
 in the document, including existing agent-authored widgets.
 
-Verdict: **fails as shipped**; the mobile View host depends on:
+Verdict: **fails as shipped**. Mitigations:
 
-- **M1 Channel token.** RN accepts chat-WebView messages only with a
-  per-document secret delivered by `injectJavaScript` after `ready` (main frame
-  only on both platforms); anything else except `ready` is dropped. JS-only,
-  covers the iOS handler, Android's per-frame object and its
-  `addJavascriptInterface` fallback.
-- **M2 Chat listener source check.** `installHostBridge` ignores `message`
-  events whose source is not `window.parent` (web previews); RN delivers
-  through `__applyHost`.
-- **M3 View document generation.** The View bridge accepts only
-  `event.source === frame.contentWindow` for the current generation; a second
-  `load` revokes the bridge and replaces the frame with an inert state. The
-  chat WebView allows only `about:srcdoc` / `about:blank` navigations. That
-  blocks every sub-frame navigation on iOS; on Android an `https:` navigation
-  still leaves the device (its URL can carry data) until a native patch
-  intercepts sub-frame documents.
-- **M4 Crash guard.** Patch the nil `mainDocumentURL` conversion
-  (dev-client rebuild).
+| # | Mitigation | State |
+|---|---|---|
+| M1 | Channel token: RN issues a per-document secret after `ready` through `injectJavaScript` (main frame only); the document tags every message with it; RN drops the rest. | Done `bd1c6b317`. A frame's forged `codexPlanApproval` is dropped on both platforms; tagged requests still round-trip. |
+| M2 | `installHostBridge` applies `message` events only from the embedding host. | Done `2104e6ac3`. |
+| M3 | View bridge accepts `source === frame.contentWindow` for the current document generation only; a second `load` revokes it and leaves the frame inert. | Part of the View host (below). |
+| M4 | `bun patch` of react-native-webview: nil `url` / `mainDocumentURL` no longer abort. Native: needs a dev-client rebuild. | Done `78264b001`. Not re-verified on device (the crash did not reproduce). |
+| M5 | Chat document CSP `frame-src 'none'`: `srcdoc` frames load, but self-navigation to a new document is refused before the request. | Done `18ac8c984`. Blocked on both platforms (`ERR_BLOCKED_BY_CSP` on Android, `frame-src` violation on iOS). Closes the Android `https:` residual; no native patch needed. |
+
+M5 is inherited by `srcdoc` documents, so a View's own nested frames
+(`frameDomains`) cannot load on mobile; the mobile host must not advertise
+them.
 
 ## Log
 

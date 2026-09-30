@@ -221,6 +221,65 @@ re-check an entry when an upgrade touches its area.
 - **Guard:** unguarded at extraction; `apps/desktop/src/main/remote-control-service.test.ts`
   covers the consumer side.
 
+## MCP Apps
+
+### The host flag works only in the spawn environment
+
+- **Behavior:** The CLI advertises the MCP Apps extension to servers, returns
+  tool `_meta.ui` from `mcpServerStatus` and hides app-only tools from the
+  model only when `CLAUDE_CODE_MCP_APPS_HOST=true` is in the spawn env. The
+  same key in `settings.env` has no effect. Tool annotations arrive as
+  `readOnly` / `destructive` / `openWorld`, not the MCP `*Hint` names.
+- **Observed:** 0.3.285, live fixture server (`server/discover` precedes
+  `initialize`).
+- **Depends on it:** `packages/claude/src/mcp-apps.ts#withMcpAppsHostEnv`, used
+  by desktop `claude-query.ts#buildClaudeOptions`, `run-sdk-turn.ts` and
+  `claude-live-session.ts`; `toMcpToolDescriptor` maps the annotations.
+- **Guard:** `packages/claude/src/mcp-apps.test.ts`;
+  `apps/desktop/scripts/check-claude-mcp-apps.ts` (live).
+
+### MCP results are post-processed, and subagents keep only `_meta`
+
+- **Behavior:** A model-turn MCP result reaches the host as top-level
+  `tool_use_result = { content, structuredContent, _meta }`, where `content` is
+  a string (the JSON of `structuredContent` when present), so the server's
+  text blocks are lost. Inside a subagent `tool_use_result` is only a
+  size-capped `{ _meta }`; the `tool_result` block text is the only content.
+- **Observed:** 0.3.285, recorded turn with a direct and an async subagent call.
+- **Depends on it:** `claudeMcpToolResult` in `packages/claude/src/mcp-apps.ts`
+  (falls back to the block content; no `structuredContent` for subagent rows).
+- **Guard:** `apps/desktop/src/test/integration/claude-mcp-apps-backend.test.ts`
+  (recording `claude-mcp-apps.sdk.json`).
+
+### `mcp_call` has no visibility check and reports `isError` as a failure
+
+- **Behavior:** The internal `mcp_call` control request runs any tool,
+  including model-only ones, without `canUseTool`. A result with `isError`
+  rejects the request with `control_request_failed`, indistinguishable from
+  "could not run". An `AbortSignal` sends `control_cancel_request`, and the
+  server gets `notifications/cancelled`.
+- **Observed:** 0.3.285, live fixture server.
+- **Depends on it:** the dispatch gate in
+  `packages/runtime/src/mcp-apps/provider-rpc.ts` enforces app visibility
+  before the provider; `createClaudeMcpAppsProvider` reports a rejected call
+  and an abort after dispatch as `unknown_outcome`.
+- **Guard:** `CLAUDE_MCP_CALL_VERIFIED_SDK` is pinned to the SDK dependency by
+  `packages/claude/src/mcp-apps.test.ts`; rerun the live check on a bump.
+
+### OAuth with a host redirect needs a reconnect
+
+- **Behavior:** `mcpAuthenticate(server)` without a redirect URI runs the CLI's
+  own localhost listener and reconnects after the callback. With a host
+  redirect URI (`redirectScheme: 'custom'`), `mcpSubmitOAuthCallbackUrl` stores
+  the token but the server stays `needs-auth` until `reconnectMcpServer`.
+  Neither method is in the public `Query` type.
+- **Observed:** 0.3.285, fixture OAuth server.
+- **Depends on it:** `createClaudeMcpAppsProvider` `authenticate` /
+  `submitAuthCallback`; desktop `apps/desktop/src/main/mcp-apps/auth.ts` relays
+  the callback for remote nodes.
+- **Guard:** `apps/desktop/src/main/mcp-apps/provider-auth.test.ts`;
+  `apps/desktop/scripts/check-mcp-apps-oauth.ts` (live).
+
 ## Warm start
 
 ### Warmup reuse key

@@ -105,9 +105,9 @@ can start as soon as the contract is committed.
   with a direct call and an async subagent call; the replay test drives it
   through `createSessionQuery`. The subagent row falls back to the
   `tool_result` block content, keeping `_meta` and no `structuredContent`.
-- **C7 Docs.** `docs/harness/claude/api-surface.md` (env flag, catalog,
-  `readMcpResource`, `mcp_call` and its limits), reopen backlog row 10,
-  `contracts.md` for the attachment.
+- **C7 Docs.** Done. `api-surface.md` rows for the catalog,
+  `readMcpResource`, `mcp_call` and the OAuth control requests; backlog row 10
+  removed (now used); four MCP Apps entries in `contracts.md`.
 
 Acceptance: the phase 1 acceptance run on Claude, plus a View `tools/call`
 to a model-only tool rejected by the executor before `mcp_call`.

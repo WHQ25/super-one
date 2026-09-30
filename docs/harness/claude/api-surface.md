@@ -141,9 +141,9 @@ Methods of the `Query` returned by `query()`.
 | `getContextUsage` | used | Feeds the desktop context-usage meter (`ContextUsage.tsx`) with a per-category token breakdown, using the default `full` detail. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
 | `initializationResult` | used | Waits for the init handshake in the model probes (desktop and node) and reads `available_output_styles` in the desktop CONNECT_CLAUDE probe. | `apps/desktop/src/main/index.ts`, `apps/desktop/src/main/agent/claude-models.ts`, `packages/claude/src/fetch-models.ts` |
 | `interrupt` | used | Desktop Stop button; waits for the ack with a deadline, reads `still_queued` from the receipt, and rebuilds the runtime if there is no ack. Node uses a per-turn AbortSignal instead. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
-| `mcpServerStatus` | used | Lists MCP servers with their status and tools for the desktop MCP panel and the remote `getMcpServerStatus` command. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
+| `mcpServerStatus` | used | Lists MCP servers with their status and tools for the desktop MCP panel and the remote `getMcpServerStatus` command. Also feeds the MCP Apps catalog (tool `_meta.ui`, server status), refreshed lazily when a `mcp__` tool is not in it yet. | `packages/claude/src/mcp-apps.ts`, `apps/desktop/src/main/session/backends/claude-backend.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
 | `readFile` | unused | Would read a file through the CLI's Read permission gate. SuperOne reads files through its own workspace gateway. | — |
-| `readMcpResource` | unused | Would fetch MCP Apps `ui://` widget resources from CLI-dialed servers. | — |
+| `readMcpResource` | used | Fetches MCP Apps `ui://` View resources for the MCP Apps provider, desktop and node. `ui://` only. | `packages/claude/src/mcp-apps.ts`, `apps/desktop/src/main/session/backends/claude-backend.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
 | `reconnectMcpServer` | used | Reconnects an MCP server by name after its config is saved in the desktop MCP settings. | `apps/desktop/src/main/session/backends/claude-backend.ts`, `apps/desktop/src/main/agent/agent-service.ts` |
 | `reinitialize` | unused | Would re-send `initialize` after a transport gap to get back pending `can_use_tool` and dialog requests. | — |
 | `reloadOutputStyles` | unused | Would re-read the output-style directories in the middle of a session. | — |
@@ -277,12 +277,14 @@ Control-protocol request subtypes. Most are sent by a `Query` method or an `Opti
 | `interrupt` | partial | via `interrupt`; desktop Stop only. Node cancels turns with an AbortSignal and never sends it. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
 | `list_models` | n/a | No Query wrapper; it is the model catalog for remote thin clients. SuperOne uses `supportedModels`, which comes from `initialize`. | — |
 | `list_permission_rules` | unused | No Query wrapper; would return live `/permissions` rules and workspace dirs. | — |
-| `mcp_call` | unused | No Query wrapper; would call a CLI-hosted MCP tool without a model turn. | — |
+| `mcp_authenticate` | used | via `mcpAuthenticate`, which is not in the public `Query` type; starts MCP server OAuth for an MCP Apps sign-in. Without a redirect URI the CLI's own localhost listener takes the callback. | `packages/claude/src/mcp-apps.ts`, `apps/desktop/src/main/session/backends/claude-backend.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
+| `mcp_call` | used | No Query wrapper; sent through the internal `Query.request` for MCP Apps View tool calls. Runs no visibility or permission check, so the shared dispatch gate enforces visibility first; version-pinned by `CLAUDE_MCP_CALL_VERIFIED_SDK`. | `packages/claude/src/mcp-apps.ts`, `apps/desktop/src/main/session/backends/claude-backend.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
 | `mcp_message` | used | via SDK MCP servers (`type: 'sdk'`); the in-process `superone` server on desktop and the host-action server on node. | `apps/desktop/src/main/agent/claude-query.ts`, `apps/desktop/src/main/mcp/superone-mcp-server.ts`, `apps/cli/src/session/host-action-mcp-server.ts` |
-| `mcp_read_resource` | unused | via `readMcpResource` (never called); would fetch MCP Apps `ui://` widgets. | — |
-| `mcp_reconnect` | used | via `reconnectMcpServer`; desktop MCP settings save. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
+| `mcp_oauth_callback_url` | used | via `mcpSubmitOAuthCallbackUrl` (untyped); hands a relayed OAuth callback to a remote node's CLI, followed by `mcp_reconnect`. | `packages/claude/src/mcp-apps.ts` |
+| `mcp_read_resource` | used | via `readMcpResource`; MCP Apps View resources. | `packages/claude/src/mcp-apps.ts`, `apps/desktop/src/main/session/backends/claude-backend.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
+| `mcp_reconnect` | used | via `reconnectMcpServer`; desktop MCP settings save, and after a relayed MCP Apps OAuth callback. | `apps/desktop/src/main/session/backends/claude-backend.ts`, `packages/claude/src/mcp-apps.ts` |
 | `mcp_set_servers` | unused | via `setMcpServers` (never called); would swap the dynamic MCP servers live. | — |
-| `mcp_status` | used | via `mcpServerStatus`; desktop MCP status panel and remote command. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
+| `mcp_status` | used | via `mcpServerStatus`; desktop MCP status panel, remote command and the MCP Apps catalog. | `packages/claude/src/mcp-apps.ts`, `apps/desktop/src/main/session/backends/claude-backend.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
 | `mcp_toggle` | used | via `toggleMcpServer`; desktop MCP enable/disable/delete. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
 | `read_file` | unused | via `readFile` (never called); would read files through the CLI's permission gate. | — |
 | `register_repo_root` | unused | No Query wrapper; would add a working-directory root and reload CLAUDE.md/skills/plugins. SuperOne uses `applyFlagSettings` for additional directories instead. | — |

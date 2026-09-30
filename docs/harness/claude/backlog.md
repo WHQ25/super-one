@@ -17,9 +17,8 @@ reason). Ledger rows: [api-surface.md](api-surface.md).
 | 7 | `conversation_reset` | 0.3.281 (fields) | Follow `/clear` and plan-exit resets to the new conversation id and reset the title | Needs a session-level transcript switch | open |
 | 8 | `system/permission_denied` | — | Live notice when a tool is auto-denied, instead of reading `result.permission_denials` after the turn | Low value while denials already show at turn end | open |
 | 9 | `system/memory_recall`, `system/thinking_tokens` | — | Recalled-memory row; live thinking-token estimate | Cosmetic | open |
-| 10 | `readMcpResource()` | 0.3.280 | Fetch MCP Apps `ui://` resources from CLI-dialed servers | MCP Apps are not being pursued | rejected: MCP Apps paused |
-| 11 | `thinking.display: 'highlights'` | ≤0.3.278 | Highlighted thinking | Only works on Anthropic-hosted models; third-party providers get nothing | rejected |
-| 12 | `usage_EXPERIMENTAL_…()` | ≤0.3.278 | Structured `/usage` data | Marked experimental; `claude-usage-service` already covers plan usage | rejected |
+| 10 | `thinking.display: 'highlights'` | ≤0.3.278 | Highlighted thinking | Only works on Anthropic-hosted models; third-party providers get nothing | rejected |
+| 11 | `usage_EXPERIMENTAL_…()` | ≤0.3.278 | Structured `/usage` data | Marked experimental; `claude-usage-service` already covers plan usage | rejected |
 
 ## Integration gaps
 

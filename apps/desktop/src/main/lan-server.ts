@@ -188,6 +188,13 @@ export class LanServer {
     return targets
   }
 
+  private hasDeviceSocket(deviceId: string): boolean {
+    for (const state of this.clients.values()) {
+      if (state.deviceId === deviceId) return true
+    }
+    return false
+  }
+
   kickDevice(deviceId: string): void {
     for (const [ws, state] of this.clients) {
       if (state.deviceId === deviceId) {
@@ -224,8 +231,13 @@ export class LanServer {
       const st = this.clients.get(ws)
       if (!st) return
       if (st.registerTimer) clearTimeout(st.registerTimer)
-      if (st.deviceId) this.callbacks.onClientDisconnected?.({ deviceId: st.deviceId })
       this.clients.delete(ws)
+      if (!st.deviceId) return
+      // A phone that redialled already registered its new socket; the old one
+      // closing late must not take the device offline and drop its subscriptions.
+      const replaced = this.hasDeviceSocket(st.deviceId)
+      log.info('[CONN-DESK] LAN socket closed deviceId=%s replaced=%s', st.deviceId, replaced)
+      if (!replaced) this.callbacks.onClientDisconnected?.({ deviceId: st.deviceId })
     })
 
     ws.on('error', (err) => {
@@ -278,7 +290,16 @@ export class LanServer {
     state.deviceId = deviceId
     state.deviceName = deviceName
 
-    log.info('[CONN-DESK] LAN register received deviceId=%s name=%s', deviceId, deviceName)
+    // LAN has no heartbeat, so the socket a suspended phone left behind can
+    // still read OPEN here. One socket per device, as on the relay.
+    let replacedCount = 0
+    for (const [other, otherState] of this.clients) {
+      if (other === ws || otherState.deviceId !== deviceId) continue
+      other.close(1000, 'replaced')
+      replacedCount++
+    }
+
+    log.info('[CONN-DESK] LAN register received deviceId=%s name=%s replaced=%d', deviceId, deviceName, replacedCount)
     this.callbacks.onClientRegistered?.({ deviceName, deviceId })
 
     try {

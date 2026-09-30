@@ -7,6 +7,7 @@ import WebSocket from 'ws'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { deriveKeys, encryptPayload, bytesToHex } from './remote-control-crypto'
 import { LanServer } from './lan-server'
+import log from './logger'
 import type { RemoteCommand } from '@superone/shared/agent-types'
 
 async function makeKeys() {
@@ -265,5 +266,37 @@ describe('LanServer', () => {
 
     client.close()
     await vi.waitFor(() => expect(server!.isEmpty()).toBe(true), { timeout: 2000 })
+  })
+
+  it('replaces a redialling device socket without reporting the device offline', async () => {
+    const { aesKey } = await makeKeys()
+    const onClientDisconnected = vi.fn()
+    server = new LanServer({
+      getAesKey: () => aesKey,
+      isPairedDevice: () => true,
+      onCommand: vi.fn(),
+      onClientDisconnected,
+      hostName: 'test-host',
+    })
+    const { port } = await server.start({ host: '127.0.0.1' })
+    const register = async () => {
+      const socket = new WebSocket(`ws://127.0.0.1:${port}/ws?role=mobile`)
+      await new Promise<void>((r) => socket.once('open', () => r()))
+      socket.send(JSON.stringify({ type: 'register', deviceName: 'A', mobileDeviceId: 'dev-1' }))
+      await nextFrame(socket, (f) => f.type === 'handshake')
+      return socket
+    }
+
+    const stale = await register()
+    const staleClosed = new Promise<number>((r) => stale.once('close', (code) => r(code)))
+    client = await register()
+    expect(await staleClosed).toBe(1000)
+    await vi.waitFor(() => expect(log.info).toHaveBeenCalledWith(
+      '[CONN-DESK] LAN socket closed deviceId=%s replaced=%s', 'dev-1', true,
+    ), { timeout: 2000 })
+    expect(onClientDisconnected).not.toHaveBeenCalled()
+
+    client.close()
+    await vi.waitFor(() => expect(onClientDisconnected).toHaveBeenCalledWith({ deviceId: 'dev-1' }), { timeout: 2000 })
   })
 })

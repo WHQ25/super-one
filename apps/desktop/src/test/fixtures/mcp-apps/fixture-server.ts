@@ -5,7 +5,10 @@
  *
  * Run standalone with Node's type stripping (Codex / Claude / gateway spikes):
  *   node apps/desktop/src/test/fixtures/mcp-apps/fixture-server.ts --stdio
- *   node apps/desktop/src/test/fixtures/mcp-apps/fixture-server.ts --http 7331 [--token secret]
+ *   node apps/desktop/src/test/fixtures/mcp-apps/fixture-server.ts --http 7331 [--token secret | --oauth]
+ * `--oauth` adds an auto-approving authorization server (the SDK's demo
+ * provider) on its own port: discovery, dynamic client registration, PKCE,
+ * code and refresh grants, so a harness's real MCP OAuth flow runs headless.
  * `MCP_APPS_FIXTURE_LOG=<file>` appends every inbound JSON-RPC message as JSONL,
  * so a spike can check what the harness really sent (e.g. `initialize`).
  *
@@ -15,6 +18,9 @@ import { appendFileSync, readFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import express from 'express'
+import { DemoInMemoryAuthProvider } from '@modelcontextprotocol/sdk/examples/server/demoInMemoryOAuthProvider.js'
+import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
@@ -177,27 +183,65 @@ export function observeTransport(transport: Transport, handle: FixtureServerHand
 
 export interface FixtureHttpServer {
   url: string
+  /** Authorization server issuer when started with `oauth`. */
+  issuer?: string
   close(): Promise<void>
+}
+
+async function listen(server: Server, port = 0): Promise<number> {
+  await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve))
+  return (server.address() as { port: number }).port
+}
+
+/** Auto-approving OAuth authorization server; `authorize` redirects straight back with a code. */
+async function startFixtureAuthServer(): Promise<{ issuer: string; provider: DemoInMemoryAuthProvider; server: Server }> {
+  const provider = new DemoInMemoryAuthProvider()
+  const server = createServer()
+  const issuer = `http://127.0.0.1:${await listen(server)}`
+  const app = express()
+  app.use(mcpAuthRouter({ provider, issuerUrl: new URL(issuer), scopesSupported: ['mcp:tools'] }))
+  server.on('request', app)
+  return { issuer, provider, server }
 }
 
 /**
  * Streamable HTTP, one MCP session per `mcp-session-id`. With `token`, requests
- * without `Authorization: Bearer <token>` get 401 + `WWW-Authenticate`.
+ * without `Authorization: Bearer <token>` get 401 + `WWW-Authenticate`. With
+ * `oauth`, the bearer must be an access token from the fixture's own
+ * authorization server, advertised through protected-resource metadata.
  */
-export async function startFixtureHttpServer(opts: { port?: number; token?: string } = {}): Promise<FixtureHttpServer> {
+export async function startFixtureHttpServer(opts: { port?: number; token?: string; oauth?: boolean } = {}): Promise<FixtureHttpServer> {
   const sessions = new Map<string, StreamableHTTPServerTransport>()
+  const auth = opts.oauth ? await startFixtureAuthServer() : undefined
+  const authorized = async (header: string | undefined): Promise<boolean> => {
+    const bearer = header?.startsWith('Bearer ') ? header.slice(7) : undefined
+    if (opts.token) return bearer === opts.token
+    if (!auth) return true
+    if (!bearer) return false
+    try {
+      const info = await auth.provider.verifyAccessToken(bearer)
+      return !info.expiresAt || info.expiresAt > Date.now() / 1000
+    } catch {
+      return false
+    }
+  }
   const http: Server = createServer(async (req, res) => {
+    const { port } = http.address() as { port: number }
+    const resourceMetadataUrl = `http://127.0.0.1:${port}/.well-known/oauth-protected-resource/mcp`
+    if (auth && req.url?.startsWith('/.well-known/oauth-protected-resource')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({
+        resource: `http://127.0.0.1:${port}/mcp`,
+        authorization_servers: [auth.issuer],
+        scopes_supported: ['mcp:tools'],
+      }))
+      return
+    }
     if (!req.url?.startsWith('/mcp')) {
       res.writeHead(404).end()
       return
     }
-    if (opts.token && req.headers.authorization !== `Bearer ${opts.token}`) {
-      const { port } = http.address() as { port: number }
-      res
-        .writeHead(401, {
-          'WWW-Authenticate': `Bearer resource_metadata="http://127.0.0.1:${port}/.well-known/oauth-protected-resource"`,
-        })
-        .end()
+    if (!(await authorized(req.headers.authorization))) {
+      res.writeHead(401, { 'WWW-Authenticate': `Bearer resource_metadata="${resourceMetadataUrl}"` }).end()
       return
     }
     const sessionId = req.headers['mcp-session-id']
@@ -217,13 +261,14 @@ export async function startFixtureHttpServer(opts: { port?: number; token?: stri
     }
     await transport.handleRequest(req, res, await readJsonBody(req))
   })
-  await new Promise<void>((resolve) => http.listen(opts.port ?? 0, '127.0.0.1', resolve))
-  const { port } = http.address() as { port: number }
+  const port = await listen(http, opts.port)
   return {
     url: `http://127.0.0.1:${port}/mcp`,
+    ...(auth ? { issuer: auth.issuer } : {}),
     close: async () => {
       await Promise.all([...sessions.values()].map((t) => t.close()))
       await new Promise<void>((resolve) => http.close(() => resolve()))
+      if (auth) await new Promise<void>((resolve) => auth.server.close(() => resolve()))
     },
   }
 }
@@ -241,8 +286,8 @@ async function main(argv: string[]): Promise<void> {
     return i >= 0 ? argv[i + 1] : undefined
   }
   if (argv.includes('--http')) {
-    const server = await startFixtureHttpServer({ port: Number(flag('--http') ?? 0), token: flag('--token') })
-    process.stderr.write(`${FIXTURE_SERVER_NAME} listening on ${server.url}\n`)
+    const server = await startFixtureHttpServer({ port: Number(flag('--http') ?? 0), token: flag('--token'), oauth: argv.includes('--oauth') })
+    process.stderr.write(`${FIXTURE_SERVER_NAME} listening on ${server.url}${server.issuer ? ` (OAuth issuer ${server.issuer})` : ''}\n`)
     return
   }
   const handle = createFixtureServer()

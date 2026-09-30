@@ -331,6 +331,16 @@ M5 is inherited by `srcdoc` documents, so a View's own nested frames
 (`frameDomains`) cannot load on mobile; the mobile host must not advertise
 them.
 
+### Mobile View host
+
+| Step | State |
+|---|---|
+| Chat-view `PortableMcpAppView` on the shared core: inline + fullscreen overlay, consent cards, restored/live by `appInstanceId`, revoke + restart | Done `f0c085951`. Stories `Chat/SuperOne/Portable MCP App` driven with Playwright against a mock `mcpApp` host: app-only paging with approval and Always Allow, model-only call denied, `updateModelContext`, `sendMessage` card, fullscreen, CSP-blocked fetch, restored gating, navigate-away revoke and restart, load failure, auth, pending, 320 px, light/dark. |
+| Bundle cost (Q3) | +154.6 KB (+41 KB gz) chat document; cold open ~694 → ~719 ms. Within the 250 KB / 50 ms budget. |
+| RN `mcpApp` action → relay `mcp_app_request`; `mcpAppFullscreen` → native back / edge swipe | Next. |
+| Desktop `mcp_app_request` handler → `executeMcpAppHostRequest(req, { kind: 'mobile', deviceId })` | Waits for the executor entry. |
+| Device E2E (dev client ↔ dev desktop, fixture tool) | After the two above. |
+
 ## Log
 
 - 2026-10-01: proposal drafted; reviewed with Codex (fact corrections on

@@ -106,6 +106,7 @@ import { loadInlineImage } from '../inline-images'
 import { loadTextFile } from '../text-files'
 import { loadVideoPoster } from '../video-posters'
 import { requestLinkFavicon } from '../link-favicons'
+import { requestMcpApp } from '../mcp-apps'
 import { NewFolderSheet } from '../prompts/NewFolderSheet'
 import { FileFinderView } from '../screens/file-finder-view'
 import { leaveMobileSession, sessionRemovalStatus } from '../session-exit'
@@ -203,6 +204,8 @@ export function MobileApp() {
   const [hasTranscript, setHasTranscript] = useState(false)
   const [connectionState, setConnectionState] = useState<'connected' | 'reconnecting' | 'offline'>('offline')
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
+  // An MCP App View covers the transcript; back and the edge swipe close it first.
+  const [mcpAppFullscreen, setMcpAppFullscreen] = useState(false)
   /**
    * Bumped whenever the host reports a session-list change, and once after a
    * reconnect — events that landed while the socket was down were never
@@ -641,6 +644,12 @@ export function MobileApp() {
         if (!client) throw new Error('not connected')
         return requestLinkFavicon(client, url, isDark)
       },
+      mcpApp: async (request) => {
+        const client = clientRef.current
+        if (!client || !project || !sessionId) throw new Error('no active session')
+        return requestMcpApp(client, { projectPath: project.path, sessionId }, request)
+      },
+      mcpAppFullscreen: async (active) => { setMcpAppFullscreen(active) },
       openFile: async (path) => {
         if (!project) throw new Error('no active project')
         const target = resolveRemoteFilePath(project.path, path)
@@ -672,6 +681,8 @@ export function MobileApp() {
     }
     if (transcriptSync.receive(message)) return
     if (message.type === 'ready') {
+      // A new document has no View open, whatever the last one said.
+      setMcpAppFullscreen(false)
       inject(webRef, webViewTheme)
       inject(webRef, { type: 'setViewport', fontScale, locale })
       inject(webRef, { type: 'setConnection', ...connectionRef.current })
@@ -1975,6 +1986,14 @@ export function MobileApp() {
     return () => back.remove()
   }, [screen, tabletMultiPane])
 
+  const exitMcpAppFullscreen = () => inject(webRef, { type: 'exitMcpAppFullscreen' })
+  // Registered after the handler above whenever a View opens, so it is asked first.
+  useEffect(() => {
+    if (screen !== 'chat' || !mcpAppFullscreen) return
+    const back = BackHandler.addEventListener('hardwareBackPress', () => { exitMcpAppFullscreen(); return true })
+    return () => back.remove()
+  }, [screen, mcpAppFullscreen])
+
   /**
    * The composer shows exactly one surface, chosen here.
    *
@@ -2136,7 +2155,7 @@ export function MobileApp() {
           loadingConversation={sessionLoading || remoteDrafts.opening}
           // The tablet keeps the session list on screen, so it has nothing to
           // pull out and the gutter stays free for the transcript.
-          onEdgeSwipe={tabletMultiPane ? undefined : () => setSessionSwitcherOpen(true)}
+          onEdgeSwipe={mcpAppFullscreen ? exitMcpAppFullscreen : tabletMultiPane ? undefined : () => setSessionSwitcherOpen(true)}
           landing={!sessionId ? {
             provider: selectedProvider,
             harnessOptions,

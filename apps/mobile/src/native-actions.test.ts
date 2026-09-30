@@ -232,6 +232,20 @@ describe('native chat actions', () => {
     expect(target.resolveFavicon).toHaveBeenCalledTimes(1)
   })
 
+  it('relays an MCP App operation and keeps the host refusal intact under the acknowledgement', async () => {
+    const refusal = { ok: false, error: { code: 'denied', message: 'This tool is not available to the App' } }
+    const target = { ...ports(), mcpApp: vi.fn(async () => refusal), mcpAppFullscreen: vi.fn() }
+    const payload = { messageId: 'm', appInstanceId: 'view-1', operation: 'callTool', tool: 'fixture_model_echo', args: {} }
+    await expect(resolveNativeRequest({ type: 'requestNative', requestId: 'app', action: 'mcpApp', payload }, target))
+      .resolves.toEqual({ type: 'nativeActionResult', requestId: 'app', result: { ok: true, response: refusal } })
+    expect(target.mcpApp).toHaveBeenCalledWith(payload)
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'link', action: 'mcpApp', payload: { messageId: 'm', appInstanceId: 'view-1', operation: 'openLink', url: 'https://example.com' },
+    }, target)).resolves.toMatchObject({ error: 'invalid mcpApp payload' })
+    await resolveNativeRequest({ type: 'requestNative', requestId: 'fs', action: 'mcpAppFullscreen', payload: { active: true } }, target)
+    expect(target.mcpAppFullscreen).toHaveBeenCalledWith(true)
+  })
+
   it('opens the fullscreen viewer for a picture the transcript already shows', async () => {
     const target = ports()
     await expect(resolveNativeRequest({

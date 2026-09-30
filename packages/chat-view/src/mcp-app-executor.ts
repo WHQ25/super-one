@@ -1,5 +1,5 @@
 import type { McpUiMessageRequest, McpUiRequestDisplayModeRequest } from '@modelcontextprotocol/ext-apps/app-bridge'
-import { McpAppsError, type McpAppModelContext, type McpAppReadResult, type McpAppsCallResult, type McpAppsErrorData } from '@superone/shared/mcp-apps'
+import { McpAppsError, type McpAppApprovalPrompt, type McpAppHostOperation, type McpAppHostResult, type McpAppReadResult, type McpAppsCallResult } from '@superone/shared/mcp-apps'
 import type { McpAppHostExecutor } from '@superone/shared/mcp-apps-host'
 import { NativeRequestTimeout, requestNative, requestNativeAsync } from './bridge'
 
@@ -8,29 +8,9 @@ export type McpAppDisplayMode = McpUiRequestDisplayModeRequest['params']['mode']
 /**
  * Operations the chat document sends through the `mcpApp` native action. The View never
  * names a session, server or binding: the document names its View, RN adds the session,
- * and the host resolves the attachment itself. Links are the exception: the phone opens
- * them locally, after its own confirmation.
+ * and the host resolves the attachment itself. Links open on the phone instead.
  */
-export type McpAppOperation =
-  | { operation: 'load' }
-  | { operation: 'activate' }
-  | { operation: 'callTool'; tool: string; args: Record<string, unknown> }
-  | { operation: 'readResource'; uri: string }
-  | { operation: 'sendMessage'; params: McpUiMessageRequest['params'] }
-  | { operation: 'updateModelContext'; context: McpAppModelContext }
-
-/**
- * What the host wants confirmed, rendered as plain text by the device that shows the View.
- * Mirrors the host contract; `openLink` never reaches the phone.
- */
-export type McpAppApprovalPrompt =
-  | { kind: 'callTool'; server: string; tool: string; toolTitle?: string; argsPreview: string; rememberable: boolean }
-  | { kind: 'sendMessage'; server: string; text: string; nonTextBlocks: number }
-
-export type McpAppHostResult<T = unknown> =
-  | { ok: true; value: T }
-  | { ok: false; error: McpAppsErrorData }
-  | { ok: false; error: { code: 'approval_required'; challenge: string; prompt: McpAppApprovalPrompt; message?: string } }
+export type McpAppOperation = Exclude<McpAppHostOperation, { operation: 'openLink' }>
 
 export interface McpAppTarget {
   messageId: string
@@ -52,7 +32,9 @@ export async function requestMcpApp<T>(
   approval?: { challenge: string; remember?: boolean },
 ): Promise<McpAppHostResult<T>> {
   const timeout = operation.operation === 'callTool' ? CALL_TIMEOUT_MS : undefined
-  return await requestNativeAsync('mcpApp', { ...target, ...operation, ...(approval ? { approval } : {}) }, timeout) as McpAppHostResult<T>
+  // Wrapped, because the shell's own acknowledgement (`ok: true`) would clobber the host's `ok`.
+  const reply = await requestNativeAsync('mcpApp', { ...target, ...operation, ...(approval ? { approval } : {}) }, timeout) as { response: McpAppHostResult<T> }
+  return reply.response
 }
 
 class Declined extends Error {}
@@ -60,14 +42,14 @@ class Declined extends Error {}
 /** Send an operation; when the host asks for approval, confirm here and resend the identical one. */
 export async function runMcpAppOperation<T>(target: McpAppTarget, operation: McpAppOperation, consent: McpAppConsent): Promise<T> {
   let result = await requestMcpApp<T>(target, operation)
-  if (!result.ok && result.error.code === 'approval_required' && 'challenge' in result.error) {
+  if (!result.ok && result.error.code === 'approval_required') {
     const decision = await consent.approve(result.error.prompt)
     if (!decision) throw new Declined()
     result = await requestMcpApp<T>(target, operation, { challenge: result.error.challenge, ...(decision.remember ? { remember: true } : {}) })
   }
   if (result.ok) return result.value
-  const error = result.error as McpAppsErrorData
-  throw new McpAppsError(error.code, error.message, error.challenge)
+  if (result.error.code === 'approval_required') throw new McpAppsError('denied', 'The host asked for approval twice')
+  throw new McpAppsError(result.error.code, result.error.message, result.error.challenge)
 }
 
 export function mcpAppMessageText(message: McpUiMessageRequest['params']): string {
@@ -87,7 +69,8 @@ export function createMcpAppExecutor(
       } catch (error) {
         if (error instanceof Declined) throw new McpAppsError('denied', 'The call was not approved')
         // The request may have reached the server; the View must not retry it blindly.
-        if (!(error instanceof NativeRequestTimeout)) throw error
+        const unknown = error instanceof NativeRequestTimeout || (error instanceof McpAppsError && error.code === 'unknown_outcome')
+        if (!unknown) throw error
         return {
           result: { content: [{ type: 'text', text: 'The result of this call is unknown. It was not retried.' }], isError: true },
           outcome: 'unknown_outcome',

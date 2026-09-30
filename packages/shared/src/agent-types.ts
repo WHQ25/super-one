@@ -5,7 +5,7 @@ import type { TokenOverrides } from './harness-brand'
 import type { SessionGoal } from './session-goal'
 import type { NotificationSettings } from './notifications'
 import type { GitMentionRefKind } from './git-mention-query'
-import type { ToolAppAttachment } from './mcp-apps'
+import type { McpAppHostOperation, McpAppHostRequest, ToolAppAttachment } from './mcp-apps'
 import type { WidgetLayout } from './generative-ui/types'
 
 // --- Image attachments ---
@@ -4750,6 +4750,15 @@ export interface RemoteSystemInfo {
   error?: string
 }
 
+/**
+ * A View operation as a paired device sends it: the View's identity without a session
+ * key, which the host derives from the command's checked project and session. Links
+ * open on the device and never cross.
+ */
+export type McpAppDeviceRequest = Exclude<McpAppHostOperation, { operation: 'openLink' }>
+  & Pick<McpAppHostRequest, 'appInstanceId' | 'approval'>
+  & { messageId: string }
+
 export type RemoteCommand =
   | import('./environment/draft-rpc').DraftRemoteCommand
   | import('./codex-async-question').CodexAsyncQuestionAnswerCommand
@@ -4919,6 +4928,13 @@ export type RemoteCommand =
    * `name` otherwise, in the message as the host holds or persisted it.
    */
   | { type: 'get_attachment'; requestId: string; projectPath: string; sessionId: string; messageId: string; attachmentId?: string; name: string }
+  /**
+   * A server-bound call from an MCP App View on the phone. It names only the View
+   * (`messageId`, `appInstanceId`) and the operation; the host resolves binding and
+   * server, gates the call and answers `{ response }` with its result. Never coalesced
+   * or resent: a tool call that times out has an unknown outcome.
+   */
+  | { type: 'mcp_app_request'; requestId: string; projectPath: string; sessionId: string; request: McpAppDeviceRequest }
   | { type: 'list_directory_for_add_dir'; requestId: string; projectPath: string; rawInput: string }
   | { type: 'validate_add_dir'; requestId: string; projectPath: string; candidate: string }
   | { type: 'add_project_additional_dir'; requestId: string; projectPath: string; dir: string; provider?: HarnessId }

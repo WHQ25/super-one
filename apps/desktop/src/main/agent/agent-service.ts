@@ -105,6 +105,7 @@ import { discoverAllAgents, discoverProjectCommands, readAgentFile } from './dis
 import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace, addMarketplace, removeMarketplace, readMarketplacePluginContent, readMarketplacePluginFile, getGithubStars, listGithubReposForOwner, searchGithubRepositories, listMyGithubRepos } from '../plugins-service'
 import { cacheRemoteImage } from '../image-cache'
 import { resolveFavicon, cacheCapturedFavicon } from '../favicon'
+import { deviceMcpAppHostRequest, executeDeviceMcpAppRequest } from '../mcp-apps/mobile-request'
 import { resolveSiteIdentity } from '../site-identity'
 import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } from '../mcp-library-service'
 import { uninstallMcpbBundle } from '../mcpb/mcpb-installer'
@@ -1300,6 +1301,18 @@ export class AgentService {
         try {
           const { lookupMentionIcons } = await import('./remote-mention-icons')
           await respond?.(command.requestId, { icons: lookupMentionIcons(command.ids ?? []) })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
+      case 'mcp_app_request': {
+        try {
+          if (!this.canAccessSession(command.projectPath, command.sessionId)) {
+            throw new Error(this.buildSessionAccessError(command.projectPath, command.sessionId))
+          }
+          const request = deviceMcpAppHostRequest(command.projectPath, command.sessionId, command.request)
+          await respond?.(command.requestId, { response: await executeDeviceMcpAppRequest(request, deviceId) })
         } catch (err) {
           await respond?.(command.requestId, { error: (err as Error).message })
         }

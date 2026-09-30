@@ -1,9 +1,11 @@
 import { useTranslation } from 'react-i18next'
-import type { McpAppApprovalPrompt } from './mcp-app-executor'
+import type { McpAppApprovalPrompt } from '@superone/shared/mcp-apps'
 
-export type McpAppConsentRequest =
-  | { kind: 'approval'; prompt: McpAppApprovalPrompt; resolve: (decision: { remember: boolean } | null) => void }
-  | { kind: 'link'; url: string; resolve: (open: boolean) => void }
+export interface McpAppConsentRequest {
+  prompt: McpAppApprovalPrompt
+  /** `null` declines; `remember` asks the host to keep a tool approval. */
+  resolve: (decision: { remember: boolean } | null) => void
+}
 
 function Action({ label, onPress, primary }: { label: string; onPress: () => void; primary?: boolean }) {
   return (
@@ -25,19 +27,19 @@ function Action({ label, onPress, primary }: { label: string; onPress: () => voi
 export function McpAppConsentCard({ request }: { request: McpAppConsentRequest }) {
   const { t } = useTranslation()
   const detail = 'rounded bg-background/60 px-2 py-1.5 text-xs text-foreground whitespace-pre-wrap break-words'
-  if (request.kind === 'link') {
+  const { prompt, resolve } = request
+  if (prompt.kind === 'openLink') {
     return (
       <div role="dialog" aria-label={t('mcpApp.openLink')} className="flex flex-col gap-2 rounded-md border border-border bg-card p-2.5">
         <p className="text-sm text-foreground">{t('mcpApp.openLink')}</p>
-        <p className={`${detail} font-mono`}>{request.url}</p>
+        <p className={`${detail} font-mono`}>{prompt.url}</p>
         <div className="flex justify-end gap-2">
-          <Action label={t('common.cancel')} onPress={() => request.resolve(false)} />
-          <Action primary label={t('mcpApp.open')} onPress={() => request.resolve(true)} />
+          <Action label={t('common.cancel')} onPress={() => resolve(null)} />
+          <Action primary label={t('mcpApp.open')} onPress={() => resolve({ remember: false })} />
         </div>
       </div>
     )
   }
-  const { prompt, resolve } = request
   if (prompt.kind === 'sendMessage') {
     return (
       <div role="dialog" aria-label={t('mcpApp.sendMessage', { server: prompt.server })} className="flex flex-col gap-2 rounded-md border border-border bg-card p-2.5">

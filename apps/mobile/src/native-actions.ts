@@ -2,9 +2,10 @@ import type { RefObject } from 'react'
 import type { WebView } from 'react-native-webview'
 import type { HostInbound, HostOutbound } from '@superone/chat-view'
 import { isPreviewableMermaid } from '@superone/chat-view/mermaid-preview'
-import type { SaveWidgetTemplateRequest } from '@superone/shared/agent-types'
+import type { McpAppDeviceRequest, SaveWidgetTemplateRequest } from '@superone/shared/agent-types'
 import { parseWidgetLayout } from '@superone/shared/generative-ui/types'
 import { isPreviewableImageSource, parseImageGenerationInfo, type ImagePreviewTarget } from './image-preview-state'
+import { parseMcpAppRequest } from './mcp-apps'
 import type { TextFileResult } from './text-files'
 import type { VideoPosterResult } from './video-posters'
 
@@ -95,6 +96,13 @@ export interface NativeActionPorts {
    * parent). Only the id is known here; the shell resolves its project.
    */
   openSession(sessionId: string): Promise<void>
+  /**
+   * A server-bound call from an MCP App View, relayed to the host. Resolves to the host's
+   * result as is, including its refusals; see `requestMcpApp`.
+   */
+  mcpApp?(request: McpAppDeviceRequest): Promise<unknown>
+  /** An MCP App View went fullscreen or back; native back and the edge swipe close it while open. */
+  mcpAppFullscreen?(active: boolean): Promise<void>
   /** Resend a user message the host never took, exactly as it went out. */
   resendFailedMessage(messageId: string): Promise<void>
   /** Pull a user message the host never took back into the composer. */
@@ -222,6 +230,12 @@ export async function resolveNativeRequest(
       await ports.resendFailedMessage(payloadString(message, 'messageId'))
     } else if (message.action === 'editFailedMessage') {
       await ports.editFailedMessage(payloadString(message, 'messageId'))
+    } else if (message.action === 'mcpApp') {
+      if (!ports.mcpApp) throw new Error('MCP Apps are unavailable')
+      // Nested: the acknowledgement's `ok` below must not overwrite the host's.
+      result = { response: await ports.mcpApp(parseMcpAppRequest(message.payload)) }
+    } else if (message.action === 'mcpAppFullscreen') {
+      await ports.mcpAppFullscreen?.((message.payload as Record<string, unknown> | undefined)?.active === true)
     } else if (message.action === 'haptic') {
       const style = (message.payload as Record<string, unknown> | undefined)?.style
       // An unknown strength still ticks: feedback is better than a silent gesture.

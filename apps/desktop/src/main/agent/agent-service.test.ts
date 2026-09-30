@@ -2965,6 +2965,24 @@ describe('AgentService.handleRemoteCommand', () => {
     })
   })
 
+  it('refuses an MCP App request for a session outside the named project before it reaches the host', async () => {
+    vi.mocked(dbSessions.sessionBelongsToProject).mockReturnValue(false)
+    const respond = vi.fn()
+    const service = new AgentService()
+
+    await service.handleRemoteCommand({
+      type: 'mcp_app_request',
+      requestId: 'app-1',
+      projectPath: '/project',
+      sessionId: 'session-X',
+      request: { messageId: 'm', appInstanceId: 'view-1', operation: 'load' },
+    }, respond, { deviceId: 'phone-1', transport: 'relay' })
+
+    expect(respond).toHaveBeenCalledWith('app-1', {
+      error: 'Session session-X does not belong to project /project',
+    })
+  })
+
   it('add_project calls addRecentFolder and openFolder', async () => {
     const { addRecentFolder } = await import('../recent-folders')
     const respond = vi.fn()

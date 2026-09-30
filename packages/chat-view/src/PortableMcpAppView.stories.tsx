@@ -1,11 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
+import type { McpAppHostResult, ToolAppAttachment } from '@superone/shared/mcp-apps'
 // The same View the fixture MCP server serves, so the stories drive the real wire protocol.
 import FIXTURE_VIEW_HTML from '../../../apps/desktop/src/test/fixtures/mcp-apps/fixture-view.html?raw'
 import { installFakeNativeHost } from './fixtures/native-host'
 import { noteMcpAppArrivals } from './mcp-app-document'
-import type { McpAppHostResult } from './mcp-app-executor'
 import { PortableMcpAppView } from './PortableMcpAppView'
 import { PortableTurnContext } from './portable-turn-context'
 
@@ -85,7 +84,7 @@ function MockHost({ mode, children }: { mode: HostMode; children: ReactNode }) {
       if (message.action !== 'mcpApp') { console.info('[native]', message.action, message.payload); return }
       if (mode === 'slow') return
       const result = answer(mode, message.payload ?? {}, remembered)
-      setTimeout(() => reply({ result }), 150)
+      setTimeout(() => reply({ result: { ok: true, response: result } }), 150)
     })
     setReady(true)
     return uninstall

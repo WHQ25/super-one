@@ -86,10 +86,14 @@ export default function McpAppFrame({ app, messageId, html, meta }: McpAppFrameP
   const [consent, setConsent] = useState<McpAppConsentRequest | null>(null)
   const target = useMemo(() => ({ messageId, appInstanceId: app.appInstanceId }), [messageId, app.appInstanceId])
 
-  const ask: McpAppConsent = useMemo(() => ({
-    approve: (prompt) => new Promise((resolve) => setConsent({ kind: 'approval', prompt, resolve: (decision) => { setConsent(null); resolve(decision) } })),
-    confirmLink: (url) => new Promise((resolve) => setConsent({ kind: 'link', url, resolve: (open) => { setConsent(null); resolve(open) } })),
-  }), [])
+  const ask: McpAppConsent = useMemo(() => {
+    const approve: McpAppConsent['approve'] = (prompt) =>
+      new Promise((resolve) => setConsent({ prompt, resolve: (decision) => { setConsent(null); resolve(decision) } }))
+    return {
+      approve,
+      confirmLink: async (url) => Boolean(await approve({ kind: 'openLink', server: app.binding.server, url })),
+    }
+  }, [app.binding.server])
   const display = useCallback((mode: McpAppDisplayMode): McpAppDisplayMode => {
     const next = mode === 'fullscreen' ? 'fullscreen' : 'inline'
     setFullscreen(next === 'fullscreen')

@@ -22,3 +22,19 @@ index 95c0fcc91be3ce08c6bfab26bf488e49bf573d0f..ca1c594f3a2861c48bfd04158b4048e9
                  };
                  webViewEventEmitter->onShouldStartLoadWithRequest(data);
              };
+diff --git a/apple/RNCWebViewImpl.m b/apple/RNCWebViewImpl.m
+--- a/apple/RNCWebViewImpl.m
++++ b/apple/RNCWebViewImpl.m
+@@ -1345,7 +1345,11 @@
+ 
+     WKNavigationType navigationType = navigationAction.navigationType;
+     NSURLRequest *request = navigationAction.request;
+-    BOOL isTopFrame = [request.URL isEqual:request.mainDocumentURL];
++    // A document loaded from an HTML string has the URL about:blank, and so does an empty
++    // iframe's first navigation; comparing URLs reported that iframe as a main-frame load.
++    BOOL isTopFrame = navigationAction.targetFrame
++      ? navigationAction.targetFrame.isMainFrame
++      : [request.URL isEqual:request.mainDocumentURL];
+     BOOL hasTargetFrame = navigationAction.targetFrame != nil;
+ 
+     if (_onOpenWindow && !hasTargetFrame) {

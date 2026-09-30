@@ -34,7 +34,15 @@ and reports input and bounded resize messages to RN.
   subscribe → history → snapshot → release; a server `reset` discards pre-reset
   batches and triggers the same restore path.
 - Transport loss retries with bounded backoff until it succeeds or a manual connection
-  cancels the loop. A reopened socket is still `reconnecting`: publish `connected` and
+  cancels the loop. Every redial asks discovery for the route first
+  (`DeviceDiscovery.resolveLan` re-probes the LAN candidates, ignoring earlier
+  verdicts) and dials the relay when none answers — never the address of the first
+  dial, which goes stale while the phone is backgrounded and would retry forever.
+  A restore the host *answers* with an error (`RestoreRejectedError`: session gone,
+  locked, denied) settles the connection and returns to the workspace instead of
+  redialling. The loop logs `[reconnect]` lines (route, state, retry reason) in
+  release builds too; read them with `adb logcat -s ReactNativeJS`.
+  A reopened socket is still `reconnecting`: publish `connected` and
   the new epoch only after rehydrate releases the buffer. **An open relay socket says
   nothing about the desktop** — the relay accepts a lone mobile as a mailbox — so a
   reopened *relay* socket asks `/status` before restoring; a desktop that is away parks
@@ -59,7 +67,14 @@ and reports input and bounded resize messages to RN.
   work; the document acknowledges duplicates without reapplying them. Keep native
   permission state updates outside this document queue.
 - Only relay `event` envelopes advance or emit cumulative ACKs. LAN and terminal
-  frames never produce relay ACKs.
+  frames never produce relay ACKs. A LAN socket and a relay `reset` start the
+  tracker with `rebase()`: LAN seqs are the desktop's run-wide counter, and a reset
+  skips the dropped range, so a watermark cleared to 0 could never advance and
+  would start dropping every event once `processed` reached its cap.
+- The desktop LAN server keeps one socket per device, like the relay: a register
+  closes the device's older sockets, and only the last socket closing reports the
+  device offline. LAN has no heartbeat, so a suspended phone's socket otherwise
+  outlives its redial and unsubscribes the new connection when it finally closes.
 - Development builds log only decrypted `AgentEvent.type` values, never event payloads
   or pairing secrets.
 - Host replies are bound to the relay socket and send generation the request arrived

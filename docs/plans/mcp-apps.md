@@ -13,7 +13,7 @@ Long-term docs affected: `docs/architecture/chat-core.md` (tool app attachment),
 | 0.2 | Fixture server | Local HTTP MCP server with model-only / app-only / default-visibility tools, private `_meta`, `structuredContent` with `outputSchema`, an `isError` result, one auth-rejecting tool, a slow tool for cancel, identical concurrent calls, out-of-order results. Lives with desktop test fixtures. |
 | 0.3 | Codex wire check | Against 0.159 with the fixture: extension reaches server `initialize`; app-only tool hidden from the model; `mcpAppUi` + full result on the item (`appContext` may be null); `resource/read` and `tool/call` with `threadId`. Confirm the node-side protocol path for remote projects; the RPC round trip itself is accepted in phase 1. |
 | 0.4 | Desktop iframe security | `superone-mcp-app://` iframe: cannot reach `parent`, cannot navigate top or open popups, form submission blocked by `form-action 'none'`, cross-origin new-document navigation blocked before the request, same-document routing kept, a new document revokes the bridge, `local-file` / `superone-app` handlers refuse this origin, CSP header blocks undeclared origins, StrictMode double mount leaves one bridge. |
-| 0.5 | Mobile child frame | iOS + Android: nested `srcdoc` frame cannot call the RN bridge directly; meta CSP (incl. `form-action 'none'`) applied before first script. |
+| 0.5 | Mobile child frame | **Done 2026-10-01 — fails as shipped, passes with mitigations M1–M4.** Meta CSP works on both; the frame reaches RN directly on both. Findings in [Mobile track](#mobile-track). |
 | 0.6 | Claude | **Done 2026-10-01 — native, with a gated `mcp_call` adapter.** Findings in [Claude track](#claude-track-phase-2). |
 | 0.7 | Gateway call id | On one gateway harness (OpenCode plugin hook or dsh `callId`), try to pass the harness call id into the upstream request `_meta`. Verdict per harness: attached / adjacent block. An adjacent verdict does not block phase 1. |
 
@@ -189,6 +189,60 @@ The gateway test uses the real node, pairing, leases, WebSocket, SDK fixture and
 native provider; only the external Codex protocol transport is substituted.
 A separate live 0.159 run proves that boundary. Native modules loaded normally
 in this worktree; the initial loopback failure was sandbox `listen EPERM`.
+
+## Mobile track
+
+### Spike 0.5 findings
+
+react-native-webview 13.15.0 (Fabric), the production chat document, iOS 26.4
+simulator and Android 16 emulator (API 36.1). The probe injects a `srcdoc`
+iframe with `sandbox="allow-scripts allow-forms"` and a meta CSP first in
+`<head>` (`default-src 'none'; script-src 'unsafe-inline'; style-src
+'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'`), then
+records what the frame reaches and what RN's `onMessage` receives. Probe page
+kept uncommitted in `apps/mobile/src/preview/WebViewIsolationProbe.tsx`.
+
+| Check | iOS | Android |
+|---|---|---|
+| `window.ReactNativeWebView` in the frame | undefined (main-frame-only user script) | **present**: `addWebMessageListener` with origin rule `*` injects it into every frame, opaque origins included |
+| Frame posts straight to RN | **yes**: `window.webkit.messageHandlers.ReactNativeWebView` exists in every frame; `onMessage` fires with `url=about:srcdoc` | **yes**: `onMessage` fires with `url=null` |
+| After the frame navigates itself (new document, no CSP) | still reaches RN | still reaches RN |
+| `parent.__applyHost`, `top.*`, `localStorage` | SecurityError | SecurityError |
+| Meta CSP before the first script | `fetch` → `connect-src` violation, image → `img-src`, `form.submit()` → `form-action`; all blocked | same |
+| `window.open`, top navigation | `null`, SecurityError | same |
+| Sub-frame navigation seen by `onShouldStartLoadWithRequest` | yes, `isTopFrame:false`, for `data:` and `https:`; returning `false` blocks it | `data:` only (no `isTopFrame` field); **`https:` sub-frame navigation never reaches it** and loads |
+| Chat document listener (`installHostBridge`) | accepts `message` events from any source, so a child frame can inject `HostInbound` | same |
+| Existing widget iframe (`PortableWidgetBlock`) | its handler checks `event.source` against its frame; no document-generation check | same |
+
+One native crash on iOS, not reproduced in later runs: SIGABRT in
+`RNCWebView.mm` building `std::string` from a nil `mainDocumentURL` while
+emitting `onShouldStartLoadWithRequest` for a sub-frame navigation. The path
+is shared with widget iframes.
+
+Impact today: whatever the chat document may ask RN (`requestNative` actions
+include `codexPlanApproval`, `codexAsyncQuestionAnswer`, `resendFailedMessage`,
+`saveWidgetTemplate`, `openLink`, `openSession`) can be forged by any frame
+in the document, including existing agent-authored widgets.
+
+Verdict: **fails as shipped**; the mobile View host depends on:
+
+- **M1 Channel token.** RN accepts chat-WebView messages only with a
+  per-document secret delivered by `injectJavaScript` after `ready` (main frame
+  only on both platforms); anything else except `ready` is dropped. JS-only,
+  covers the iOS handler, Android's per-frame object and its
+  `addJavascriptInterface` fallback.
+- **M2 Chat listener source check.** `installHostBridge` ignores `message`
+  events whose source is not `window.parent` (web previews); RN delivers
+  through `__applyHost`.
+- **M3 View document generation.** The View bridge accepts only
+  `event.source === frame.contentWindow` for the current generation; a second
+  `load` revokes the bridge and replaces the frame with an inert state. The
+  chat WebView allows only `about:srcdoc` / `about:blank` navigations. That
+  blocks every sub-frame navigation on iOS; on Android an `https:` navigation
+  still leaves the device (its URL can carry data) until a native patch
+  intercepts sub-frame documents.
+- **M4 Crash guard.** Patch the nil `mainDocumentURL` conversion
+  (dev-client rebuild).
 
 ## Log
 

@@ -103,6 +103,24 @@ to a model-only tool rejected by the executor before `mcp_call`.
 Phases 3–5 follow the proposal §8 and get their own steps here once their
 spikes are in.
 
+## Codex track
+
+### 0.1 — version verdict: pass
+
+Pin `@modelcontextprotocol/ext-apps` **1.7.5** (the last SDK-1.x-compatible
+release) and `@modelcontextprotocol/sdk` **1.30.0** in desktop, CLI and
+chat-view consumers. This follows the existing SDK 1.x path rather than
+introducing the split SDK 2.x packages. Upstream's
+[v1.7.5 manifest](https://github.com/modelcontextprotocol/ext-apps/blob/v1.7.5/package.json)
+declares SDK `^1.29.0`; 2.0.3 uses `client`/`core` 2.x peers.
+
+Verification: `bun build …/ext-apps/dist/src/app-bridge.js --target browser`
+passes from **both** `apps/desktop` and `packages/chat-view` (142 modules,
+0.62 MB before application minification). The renderer will load the bridge
+behind a lazy component boundary, so the SDK does not enter the startup chunk.
+The install's pre-existing desktop lockfile version correction (0.69→0.70)
+is included alongside this dependency resolution.
+
 ## Log
 
 - 2026-10-01: proposal drafted; reviewed with Codex (fact corrections on

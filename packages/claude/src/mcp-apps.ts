@@ -1,7 +1,13 @@
+import type { Query } from '@anthropic-ai/claude-agent-sdk'
 import {
+  assertMcpAppSize,
   boundedToolAppAttachment,
   mcpAppResourceUri,
+  McpAppsError,
+  type McpAppOrigin,
+  type McpAppReadResult,
   type McpAppsBinding,
+  type McpAppsProvider,
   type McpAppToolResult,
   type McpToolDescriptor,
   type ToolAppAttachment,
@@ -185,5 +191,108 @@ export class ClaudeToolApps {
       ...(call.input ? { toolInput: call.input } : {}),
       ...patch,
     })
+  }
+}
+
+/**
+ * SDK version whose internal `mcp_call` control request was verified against a
+ * live CLI (result shape, `isError`, cancellation). A version test fails on an
+ * SDK bump so the check is repeated before View tool calls ship on it.
+ */
+export const CLAUDE_MCP_CALL_VERIFIED_SDK = '0.3.285'
+
+/** `Query.request` is internal; it is the only way to send `mcp_call`. */
+type ControlRequest = (request: Record<string, unknown>, opts?: { signal?: AbortSignal }) => Promise<unknown>
+
+function controlRequest(query: Query): ControlRequest | undefined {
+  const request = (query as unknown as { request?: unknown }).request
+  return typeof request === 'function' ? (request as ControlRequest).bind(query) : undefined
+}
+
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
+function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new McpAppsError('cancelled', 'MCP App request cancelled'))
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
+  })
+}
+
+export interface ClaudeMcpAppsProviderDeps {
+  /** Live query of the bound session; revives an idle-released runtime. */
+  query: () => Promise<Query | null>
+  /** Current Claude session id; the View's origin must match it. */
+  providerSessionId: () => string | null | undefined
+  /** Fresh tool descriptors of the bound server. */
+  tools: () => Promise<Map<string, McpToolDescriptor>>
+}
+
+/**
+ * Native provider over the Claude CLI's own MCP connection. It performs no
+ * visibility or approval check: `mcp_call` runs any tool of the server, so
+ * the host executor must gate every call before it reaches `callTool`.
+ */
+export function createClaudeMcpAppsProvider(binding: McpAppsBinding, deps: ClaudeMcpAppsProviderDeps): McpAppsProvider {
+  let disposed = false
+
+  const liveQuery = async (signal: AbortSignal, origin?: McpAppOrigin): Promise<Query> => {
+    if (disposed) throw new McpAppsError('not_connected', 'MCP App provider was disposed')
+    if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled before dispatch')
+    const sessionId = deps.providerSessionId()
+    if (origin && origin.providerSessionId !== sessionId) throw new McpAppsError('invalid', 'MCP App session binding mismatch')
+    const query = await deps.query()
+    if (!query) throw new McpAppsError('not_connected', 'Claude session is not running')
+    return query
+  }
+
+  return {
+    binding,
+    async ready(signal) {
+      const query = await liveQuery(signal)
+      return {
+        mode: 'native',
+        resourceRead: typeof query.readMcpResource === 'function',
+        toolCall: controlRequest(query) !== undefined,
+      }
+    },
+    tools: () => deps.tools(),
+    async readResource(req, signal): Promise<McpAppReadResult> {
+      if (!req.uri.startsWith('ui://')) throw new McpAppsError('invalid', 'MCP App resources must use ui://')
+      const query = await liveQuery(signal, req.origin)
+      try {
+        const result = await raceAbort(query.readMcpResource(binding.server, req.uri), signal)
+        assertMcpAppSize(result)
+        return { contents: result.contents }
+      } catch (error) {
+        if (error instanceof McpAppsError) throw error
+        throw new McpAppsError('not_connected', errorMessage(error))
+      }
+    },
+    async callTool(req, signal) {
+      assertMcpAppSize(req.args)
+      const query = await liveQuery(signal, req.origin)
+      const request = controlRequest(query)
+      if (!request) throw new McpAppsError('invalid', 'This Claude runtime cannot call MCP tools for a View')
+      const tool = `mcp__${normalizeClaudeMcpServerName(binding.server)}__${req.tool}`
+      let response: unknown
+      try {
+        response = await request({ subtype: 'mcp_call', tool, arguments: req.args ?? {} }, { signal })
+      } catch (error) {
+        // Cancelling after dispatch cannot tell whether the tool ran.
+        if (signal.aborted) throw new McpAppsError('unknown_outcome', 'MCP App tool call cancelled after dispatch')
+        // A tool's own isError result and "could not run" reject identically,
+        // so the View sees a failed result and the host treats it as uncertain.
+        if ((error as { errorClass?: unknown }).errorClass === 'control_request_failed') {
+          return { result: { content: [{ type: 'text', text: errorMessage(error) }], isError: true }, outcome: 'unknown_outcome' }
+        }
+        throw new McpAppsError('unknown_outcome', errorMessage(error))
+      }
+      const result = claudeMcpToolResult((response as { response?: unknown } | undefined)?.response, false)
+      if (!result) throw new McpAppsError('unknown_outcome', 'Claude returned no MCP tool result')
+      assertMcpAppSize(result)
+      return { result, outcome: 'completed' }
+    },
+    dispose() { disposed = true },
   }
 }

@@ -2,7 +2,8 @@ import type { CanUseTool, OnElicitation, Query, SDKUserMessage } from '@anthropi
 import { randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
 import { MessageBridge } from '../../agent/message-bridge'
-import { ClaudeMcpAppsCatalog, ClaudeToolApps } from '@superone/claude/mcp-apps'
+import { ClaudeMcpAppsCatalog, ClaudeToolApps, createClaudeMcpAppsProvider } from '@superone/claude/mcp-apps'
+import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
 import { buildClaudeOptions, createSessionQuery, buildUserMessage, type SessionQueryOptions, type BackgroundTaskInfo } from '../../agent/claude-query'
 import { getGlobalWarmupManager, WarmupManager } from '../../agent/warmup-manager'
@@ -374,10 +375,10 @@ export class ClaudeBackend implements SessionBackend {
    * Single-flight, and at most every few seconds: a miss for a server whose
    * tools never load (still connecting, failed) must not re-query per call.
    */
-  private refreshMcpAppsCatalog(): Promise<void> {
+  private refreshMcpAppsCatalog(opts: { force?: boolean } = {}): Promise<void> {
     const query = this.query
     if (!query || this.mcpAppsCatalogRefresh) return this.mcpAppsCatalogRefresh ?? Promise.resolve()
-    if (Date.now() - this.mcpAppsCatalogRefreshedAt < MCP_APPS_CATALOG_MIN_REFRESH_MS) return Promise.resolve()
+    if (!opts.force && Date.now() - this.mcpAppsCatalogRefreshedAt < MCP_APPS_CATALOG_MIN_REFRESH_MS) return Promise.resolve()
     this.mcpAppsCatalogRefreshedAt = Date.now()
     // A failed refresh only leaves Views unattached; it must never fail the caller (start, a tool row).
     const refresh = async () => {
@@ -859,6 +860,21 @@ export class ClaudeBackend implements SessionBackend {
     } catch {
       return null
     }
+  }
+
+  async getMcpAppsProvider(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider> {
+    if (binding.session !== this._lastStartOpts?.sessionId || origin.providerSessionId !== this.providerSessionId) {
+      throw new McpAppsError('invalid', 'MCP App session binding mismatch')
+    }
+    return createClaudeMcpAppsProvider(binding, {
+      query: () => this.ensureQuery(),
+      providerSessionId: () => this.providerSessionId,
+      tools: async () => {
+        await this.ensureQuery()
+        await this.refreshMcpAppsCatalog({ force: true })
+        return this.mcpAppsCatalog.tools(binding.server) ?? new Map()
+      },
+    })
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {

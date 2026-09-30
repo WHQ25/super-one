@@ -78,13 +78,20 @@ can start as soon as the contract is committed.
   `_meta`), keyed by the `tool_use` id. A call whose catalog entry arrives late
   is resolved again at its result. As on the Codex path, the resource HTML is
   not fetched by the mapper; the host reads it through the provider (C4).
-- **C4 Provider.** `ClaudeBackend` implements `McpAppsProvider`:
-  `readResource` → `readMcpResource` with a deadline; `callTool` → the
-  `mcp_call` adapter (`typeof query.request === 'function'` + tested SDK
-  version), result normalized as in C3, a rejected request mapped to
-  `{ isError: true }` for the View and to `unknown_outcome` for retry policy,
-  cancellation through the signal. Visibility and approval come only from the
-  shared executor.
+- **C4 Provider.** Done. `ClaudeBackend.getMcpAppsProvider` returns
+  `createClaudeMcpAppsProvider` (`packages/claude/src/mcp-apps.ts`), served by
+  the shared `dispatchMcpAppsProviderRequest` like Codex. `readResource` →
+  `readMcpResource` (abortable race, `ui://` only); `callTool` → internal
+  `mcp_call` with the signal, result normalized as in C3, a rejected request
+  returned as `{ isError: true }` with `outcome: 'unknown_outcome'`, and a
+  cancel after dispatch reported as `unknown_outcome`. `ready()` reports
+  `toolCall: false` when the runtime has no control request, and a test pins
+  `CLAUDE_MCP_CALL_VERIFIED_SDK` to the SDK dependency so a bump reruns the
+  live check. Visibility is enforced only by the shared dispatch gate.
+  `apps/desktop/scripts/check-claude-mcp-apps.ts` runs the live check: all six
+  verdicts pass on 0.3.285 (extension advertised, app-only call completed,
+  model-only call denied before `mcp_call`, `isError` reported uncertain,
+  attachments on both tool rows).
 - **C5 Remote node.** The CLI live session exposes the same provider over the
   environment RPC that phase 1 adds for Codex.
 - **C6 Tests.** Unit: env helper, catalog mapping (annotations, flat key,

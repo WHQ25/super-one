@@ -84,12 +84,15 @@ export type {
 } from './types'
 export {
   CLAUDE_MCP_APPS_HOST_ENV,
+  CLAUDE_MCP_CALL_VERIFIED_SDK,
   ClaudeMcpAppsCatalog,
   ClaudeToolApps,
   claudeMcpToolResult,
+  createClaudeMcpAppsProvider,
   normalizeClaudeMcpServerName,
   toMcpToolDescriptor,
   withMcpAppsHostEnv,
+  type ClaudeMcpAppsProviderDeps,
   type ClaudeMcpStatusServer,
   type ClaudeMcpStatusTool,
   type ClaudeToolAppsOptions,

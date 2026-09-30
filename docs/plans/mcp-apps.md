@@ -1,6 +1,6 @@
 # MCP Apps Host
 
-Status: planned · Updated: 2026-10-01
+Status: in progress · Updated: 2026-10-01
 Goal: host third-party MCP Apps UI, first for Codex on desktop, on a contract that later carries every harness, the remote node and mobile.
 Proposal: [mcp-apps.md](../proposals/mcp-apps.md)
 Long-term docs affected: `docs/architecture/chat-core.md` (tool app attachment), `docs/harness/codex/{api-surface,backlog}.md`, `docs/harness/claude/backlog.md`, a new `docs/features/mcp-apps.md`
@@ -219,7 +219,42 @@ native provider; only the external Codex protocol transport is substituted.
 A separate live 0.159 run proves that boundary. Native modules loaded normally
 in this worktree; the initial loopback failure was sandbox `listen EPERM`.
 
-### Shared host core — implemented; desktop boundary still pending
+### 0.4 — desktop iframe security verdict: pass (isolated Electron)
+
+`superone-mcp-app://` is a secure standard scheme, with persistent origins
+derived from node/session/server/config fingerprint/account (not generations
+or credentials). Only registered, bounded HTML snapshots are served with
+header CSP, `form-action 'none'`, trusted renderer frame-ancestors and a
+denying Permissions-Policy. The native guards are attached to main and
+detached chat windows. Both existing local-file/mini-app handlers reject MCP
+App Origin and Referer before touching assets. MCP App permission checks and
+requests are denied in Electron; iframe permissions are always host grants,
+currently empty. Iframes share the trusted renderer's Electron session;
+per-server/session scheme origins provide storage isolation, and permission
+handlers discriminate requesting/security/embedding origins.
+
+Seven real Electron 44.1.1/Chromium scenarios pass in
+`apps/desktop/e2e/mcp-apps-security.spec.ts`: parent/native API isolation,
+sandbox top navigation/popup denial, header form/connect CSP, external
+navigation cancelled with **zero HTTP requests**, same-document hash/history
+routing, same-origin new-document revocation while WindowProxy stays equal,
+persistent storage and cross-session isolation, declared camera with no grant,
+and actual React StrictMode effect replay leaving one working bridge. A
+separate negative permission probe removes header policy and overgrants the
+iframe to prove Electron still rejects the media request. Setting src before
+insertion produces one initial document load, including the React path.
+
+The test uses production registry/guards/AppBridge/transport with a minimal
+trusted test shell, a loopback request counter and a temporary profile. It
+does not establish final product View UX or fullscreen/PiP acceptance. The
+command is `bunx playwright test e2e/mcp-apps-security.spec.ts --reporter=list
+--output=/tmp/superone-mcp-app-security-results` from desktop. Electron launch
+requires sandbox escalation here, and clears inherited ELECTRON_RUN_AS_NODE.
+Bun's IIFE output failed at runtime on the SDK's require shim; the test uses
+an ESM browser entry (the product shells use Vite). Thirty-two focused unit
+checks plus desktop node and explicit e2e/core typechecks pass.
+
+### Shared host core — implemented
 
 The expanded desktop/mobile scope shares `packages/shared/src/mcp-apps-host/`:
 per-directive header/meta CSP, granted-permission mapping, resolved theme and
@@ -236,13 +271,17 @@ input/results while every backend/context/message/link/display request stays
 gated until explicit activation. Message requests are capped at three/minute;
 unknown tool outcomes are surfaced to the host and never retried.
 
-Checks: 16 focused shared tests pass using the real AppBridge/App protocol and
+Checks: focused shared tests pass using the real AppBridge/App protocol and
 PostMessageTransport. Covered input-before-result, private View result data,
 partial input/cancellation, restore gating, model-context source attribution,
 message loops, unsafe links, auth errors, uncertain calls, source/origin/size
 filtering, outgoing origin pinning, second-load revocation and replacement
-slots. Actual Electron navigation/security and React StrictMode acceptance
-remain pending in 0.4; these unit checks do not establish either boundary.
+slots. Follow-up adds terminal synthetic isError results for payload-free
+provider errors, bounded leftmost-subdomain CSP wildcards, appCapabilities()
+and a shared display-mode intersection check. Unsupported provider block
+types reach the shell's onError state; structuredContent remains optional.
+Actual Electron navigation/security and React StrictMode evidence is above;
+the final product View component is still pending.
 
 ## Mobile track
 

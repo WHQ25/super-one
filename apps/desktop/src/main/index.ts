@@ -30,6 +30,8 @@ import { getProjectAppsDir, getAppBasePath, cacheAppEntry, generateCSP, discover
 import * as devRegistry from './miniapp/dev-registry'
 import { registerMiniAppProtocolHandlers } from './miniapp/miniapp-protocol'
 import { attachMiniAppWebviewGuards } from './miniapp/miniapp-webview-guard'
+import { MCP_APP_SCHEME_PRIVILEGES, registerMcpAppProtocol, isMcpAppUrl } from './mcp-apps/protocol'
+import { attachMcpAppFrameGuards, deniesMcpAppPermission } from './mcp-apps/frame-security'
 import { initMiniAppHostActionBridge, runMiniAppHostAction, settleMiniAppHostAction } from './miniapp/miniapp-host-action-bridge'
 import { isPathExposableByApp } from './miniapp/miniapp-path-exposure'
 import { executeMiniAppTool, hasActiveMiniAppHosts, initMiniAppHost, listMiniAppHosts, notifyMiniAppContextConsumed, postMiniAppWebviewMessage, releaseMiniAppHost, restartMiniAppHost, setMiniAppHostActionRunner, startMiniAppHost, stopAllMiniAppHosts, stopMiniAppHost, stopMiniAppHostsByAppId } from './miniapp/miniapp-host'
@@ -294,6 +296,7 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'local-file', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true } },
   { scheme: 'superone-app', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, standard: true } },
   RENDERER_SCHEME_PRIVILEGES,
+  MCP_APP_SCHEME_PRIVILEGES,
 ])
 
 // Drives app.getPath('logs') and, on macOS, the safeStorage keychain item.
@@ -1144,8 +1147,8 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+  mainWindow.webContents.setWindowOpenHandler(({ url, referrer }) => {
+    if (!isMcpAppUrl(referrer.url)) shell.openExternal(url)
     return { action: 'deny' }
   })
 
@@ -1154,6 +1157,7 @@ function createWindow(): void {
   })
 
   attachMiniAppWebviewGuards(mainWindow)
+  attachMcpAppFrameGuards(mainWindow.webContents)
 
   attachDeviceGestureEvents(mainWindow)
 
@@ -1356,10 +1360,11 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
   })
 
   attachMiniAppWebviewGuards(win)
+  attachMcpAppFrameGuards(win.webContents)
   attachDeviceGestureEvents(win)
 
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+  win.webContents.setWindowOpenHandler(({ url, referrer }) => {
+    if (!isMcpAppUrl(referrer.url)) shell.openExternal(url)
     return { action: 'deny' }
   })
 
@@ -5719,6 +5724,7 @@ app.whenReady().then(async () => {
     })
   }
   registerMiniAppProtocolHandlers(protocol)
+  registerMcpAppProtocol(protocol)
   registerRendererProtocol(join(__dirname, '../renderer'))
   // Built-in browser webviews use partition "persist:browser"; register the same
   // local-file handler so HTML/CSS/asset previews work there (not only in the
@@ -5799,6 +5805,7 @@ app.whenReady().then(async () => {
   const ses = session.defaultSession
   ses.setPermissionRequestHandler((wc, permission, callback, details) => {
     const reqUrl = (details as { requestingUrl?: string }).requestingUrl ?? wc.getURL() ?? ''
+    if (deniesMcpAppPermission(reqUrl, (details as { securityOrigin?: string }).securityOrigin)) { callback(false); return }
     const appId = appIdFromUrl(reqUrl)
     if (!appId) {
       callback(true)
@@ -5834,6 +5841,7 @@ app.whenReady().then(async () => {
     callback(true)
   })
   ses.setPermissionCheckHandler((_wc, permission, requestingOrigin, details) => {
+    if (deniesMcpAppPermission(requestingOrigin, details.requestingUrl, details.securityOrigin, details.embeddingOrigin)) return false
     const appId = appIdFromUrl(requestingOrigin) ?? appIdFromUrl((details as { requestingUrl?: string }).requestingUrl ?? '')
     if (!appId) return true
     if (permission !== 'media') return false

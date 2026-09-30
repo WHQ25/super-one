@@ -63,6 +63,15 @@ describe('miniapp protocol caching', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('Cache-Control')).toBe('no-store')
   })
+
+  it.each(['origin', 'referer'])('refuses MCP App %s before reading local files or mini-app assets', async header => {
+    const handlers = captureHandlers()
+    const headers = { [header]: 'superone-mcp-app://isolated/views/one/index.html' }
+    expect((await handlers['local-file'](new Request('local-file:///projects/private.txt', { headers }))).status).toBe(403)
+    expect((await handlers['superone-app'](new Request('superone-app://demo/index.html', { headers }))).status).toBe(403)
+    expect(mockReadFile).not.toHaveBeenCalled()
+    expect(mockFetchFromDevServer).not.toHaveBeenCalled()
+  })
 })
 
 describe('miniapp protocol dev server', () => {

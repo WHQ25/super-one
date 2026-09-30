@@ -9,6 +9,7 @@ import { trace } from '../agent/event-trace'
 import log from '../logger'
 import { getAppBasePath, generateCSP, readManifest, validatePath } from './miniapp-service'
 import { devServerOrigin, devServerSocketOrigin, fetchFromDevServer } from './miniapp-dev-server'
+import { isMcpAppUrl } from '../mcp-apps/protocol'
 
 const LOCAL_FILE_MIME: Record<string, string> = {
   pdf: 'application/pdf',
@@ -55,7 +56,7 @@ export function registerMiniAppProtocolHandlers(proto: Protocol): void {
   proto.handle('local-file', async (request) => {
     try {
       const origin = request.headers.get('origin') || ''
-      if (origin.startsWith('superone-app://')) {
+      if (origin.startsWith('superone-app://') || isMcpAppUrl(origin) || isMcpAppUrl(request.headers.get('referer') ?? '')) {
         return new Response('Forbidden', { status: 403 })
       }
       const rawPath = decodeURIComponent(new URL(request.url).pathname)
@@ -142,6 +143,7 @@ export function registerMiniAppProtocolHandlers(proto: Protocol): void {
       const filePath = decodeURIComponent(url.pathname || '/index.html')
 
       const origin = request.headers.get('origin') || ''
+      if (isMcpAppUrl(origin) || isMcpAppUrl(request.headers.get('referer') ?? '')) return new Response('MCP App access forbidden', { status: 403 })
       if (origin.startsWith('superone-app://') && origin !== `superone-app://${fullHost}`) {
         return new Response('Cross-app access forbidden', { status: 403 })
       }

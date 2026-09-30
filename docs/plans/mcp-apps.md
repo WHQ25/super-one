@@ -305,6 +305,38 @@ types reach the shell's onError state; structuredContent remains optional.
 Actual Electron navigation/security and React StrictMode evidence is above;
 the final product View component is still pending.
 
+### Phase 1.5 — shared main executor: implemented
+
+`executeMcpAppHostRequest(req, requester, signal)` is the single main entry for
+desktop IPC and Quinn's paired-device `mcp_app_request` seam. Main derives
+`sessionKey` from the project route: `local:<sessionId>` or
+`<connectionId>:<sessionId>`, independently of gateway descriptor IDs. It
+resolves the stored/live-catalog attachment, verifies node/session ownership
+and routes all provider operations through the common visibility gate.
+
+Opaque approval challenges last five minutes and are single-use, bound to
+the requester, View, operation and original provider binding. Tool consent
+can be remembered for this session/node/server/config fingerprint/account/tool.
+Read-only annotations skip prompting only with an explicit host trust policy;
+the default prompts. Every message/link requires confirmation. Previews are
+plain text with UTF-8 byte caps. Main also enforces three admitted messages
+per View per minute. An ambiguous dispatched tool call returns a host-only
+unknown outcome and is never retried.
+
+`load` returns persisted HTML without provider traffic; a restored View with
+no snapshot must activate before loading. New live provider events establish
+freshness; catalog hydration and replay do not. Activation checks the original
+provider/session/account. Desktop sends use the original Session queue;
+phone local sends reuse AgentService's ownership, queue and receipt path;
+node sends use the normal leased gateway queue and admission receipt.
+The desktop View shell still needs to register documents and bind IPC requests
+to their native document lifetime before the complete UI acceptance run.
+
+Verification: 38 focused desktop policy/attachment/protocol tests, 9 runtime
+catalog/queue regression tests and 2 real SQLite restart/RPC tests pass.
+Desktop node/web and CLI typechecks pass. The CLI Vitest startup needed
+escalation for sandboxed localhost DNS; SQLite/native modules themselves work.
+
 ## Mobile track
 
 ### Spike 0.5 findings

@@ -1,5 +1,6 @@
 import { registerComputerUseViewfinderIpc } from './computer-use/viewfinder-ipc'
 import { registerMcpAppsProviderIpc } from './mcp-apps/provider-ipc'
+import { initializeMcpAppExecutor, observeRemoteMcpAppEvent } from './mcp-apps/executor'
 import { codexAccountStore } from './codex/codex-account-store'
 import { registerGrokAuthIpc } from './acp/grok-auth-ipc'
 import { registerCodexAccountIpc } from './codex/codex-account-ipc'
@@ -1148,6 +1149,8 @@ function createWindow(): void {
   })
 
   mainWindow.webContents.setWindowOpenHandler(({ url, referrer }) => {
+    // Defense in depth only: noreferrer removes the referrer. MCP App sandbox omits allow-popups.
+    // Electron 44 HandlerDetails exposes no opener frame to inspect here.
     if (!isMcpAppUrl(referrer.url)) shell.openExternal(url)
     return { action: 'deny' }
   })
@@ -1202,6 +1205,7 @@ function createWindow(): void {
   })
   agentService.setBroadcastFn((event) => publishAgentEvent(event))
   agentService.setSessionManager(sessionManager)
+  initializeMcpAppExecutor(sessionManager, agentService, publishAgentEvent)
   registerMcpAppsProviderIpc(id => sessionManager.getSession(id))
   automationService.setMainWindow(mainWindow)
   automationService.setAgentService(agentService)
@@ -1364,6 +1368,7 @@ function createSessionWindow(projectPath: string, sessionId: string, title?: str
   attachDeviceGestureEvents(win)
 
   win.webContents.setWindowOpenHandler(({ url, referrer }) => {
+    // MCP App sandbox (no allow-popups) is the boundary; referrer filtering is additional defense.
     if (!isMcpAppUrl(referrer.url)) shell.openExternal(url)
     return { action: 'deny' }
   })
@@ -1607,6 +1612,7 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
   })
   // Remote node turns: map session.events → AgentEvent and stream into chat.
   host.setAgentEventSink((event) => {
+    observeRemoteMcpAppEvent(event)
     safeSend(AgentIpcChannels.EVENT, event)
   })
   // Auto-connect desired remotes + network-online edge wake.

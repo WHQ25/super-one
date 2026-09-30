@@ -209,6 +209,8 @@ ipcRenderer.on(
 )
 
 const environmentAPI = {
+  mcpAppRequest: (projectPath: string, sessionId: string, request: import('@superone/shared/mcp-apps').McpAppViewRequest) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_APP_HOST_REQUEST, projectPath, sessionId, request) as Promise<import('@superone/shared/mcp-apps').McpAppHostResult>,
   mcpAppsProvider: (connectionId: string, input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_MCP_APPS_PROVIDER, connectionId, input) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult>,
   mcpAppsAuthenticate: (connectionId: string, target: Pick<import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest, 'binding' | 'origin'>) =>

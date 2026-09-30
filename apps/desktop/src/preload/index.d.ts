@@ -853,6 +853,7 @@ interface TerminalAPI {
 
 /** Multi-environment / remote node — Main EnvironmentHost product path. */
 export interface EnvironmentAPI {
+  mcpAppRequest(projectPath: string, sessionId: string, request: import('@superone/shared/mcp-apps').McpAppViewRequest): Promise<import('@superone/shared/mcp-apps').McpAppHostResult>
   mcpAppsProvider(connectionId: string, input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult>
   /** Sign the View's MCP server in; resolves once the provider no longer reports auth_required. */
   mcpAppsAuthenticate(connectionId: string, target: Pick<import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest, 'binding' | 'origin'>): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<null>>

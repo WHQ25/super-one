@@ -5,27 +5,38 @@ import { McpAppsError, type McpAppsBinding, type McpAppOrigin } from '@superone/
 import type { McpAppsProviderRpcRequest, McpAppsRpcResult } from '@superone/shared/environment/mcp-apps-rpc'
 import type { Session } from '../session/types'
 import { authenticateMcpApp } from './auth'
+import { mcpAppSessionKey } from './session-key'
+
+let registered = false
 
 /** The one local/remote route for provider operations; no harness-specific renderer IPC. */
-async function routeMcpAppsProviderRequest(
+export async function routeMcpAppsProviderRequest(
   getSession: (id: string) => Session | null,
   connectionId: string,
   input: McpAppsProviderRpcRequest,
+  signal = new AbortController().signal,
 ): Promise<McpAppsRpcResult> {
   try {
     if (connectionId !== 'local') {
       const { getEnvironmentHost } = await import('../environment/environment-host')
-      return getEnvironmentHost().requestMcpAppsProvider(connectionId, input)
+      return await getEnvironmentHost().requestMcpAppsProvider(connectionId, input)
     }
     const session = getSession(input.binding.session)
     if (!session?.getMcpAppsProvider) throw new McpAppsError('not_connected', 'MCP Apps session unavailable')
-    return dispatchMcpAppsProviderRequest(input, await session.getMcpAppsProvider(input.binding, input.origin))
+    return dispatchMcpAppsProviderRequest(input, await session.getMcpAppsProvider(input.binding, input.origin), signal)
   } catch (error) {
     return { ok: false, error: error instanceof McpAppsError ? error.toJSON() : { code: 'not_connected', message: error instanceof Error ? error.message : String(error) } }
   }
 }
 
 export function registerMcpAppsProviderIpc(getSession: (id: string) => Session | null): void {
+  if (registered) return
+  registered = true
+  ipcMain.handle(AgentIpcChannels.MCP_APP_HOST_REQUEST, async (event, projectPath: string, sessionId: string, request: import('@superone/shared/mcp-apps').McpAppViewRequest) => {
+    if (event.senderFrame !== event.sender.mainFrame) return { ok: false, error: { code: 'denied', message: 'MCP App requests must come through the host renderer' } }
+    const { executeMcpAppHostRequest } = await import('./executor')
+    return executeMcpAppHostRequest({ ...request, sessionKey: mcpAppSessionKey(projectPath, sessionId) }, { kind: 'desktop' })
+  })
   ipcMain.handle(AgentIpcChannels.ENVIRONMENT_MCP_APPS_PROVIDER, (_event, connectionId: string, input: McpAppsProviderRpcRequest) =>
     routeMcpAppsProviderRequest(getSession, connectionId, input))
 

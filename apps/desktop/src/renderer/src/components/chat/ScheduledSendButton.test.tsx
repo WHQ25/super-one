@@ -250,12 +250,20 @@ describe('scheduled send date field', () => {
 
     const target = new Date(SEND_AT)
     target.setDate(target.getDate() + 1)
-    // A month grid pads with the neighbouring months' days, so the same number
-    // can appear twice — pick the one that belongs to the month on screen.
-    const cell = screen
-      .getAllByRole('gridcell', { name: String(target.getDate()) })
-      .find((el) => !el.hasAttribute('data-outside'))
-    await userEvent.click(cell!.querySelector('button') ?? cell!)
+    // SEND_AT is relative to today, so on the last of the month the target is
+    // in the next one: either in the grid's padding, where its number also
+    // appears in the month on screen, or not shown at all. Match the full date
+    // and page forward when it is missing.
+    const isoDay = [
+      target.getFullYear(),
+      String(target.getMonth() + 1).padStart(2, '0'),
+      String(target.getDate()).padStart(2, '0'),
+    ].join('-')
+    const findCell = () =>
+      screen.getAllByRole('gridcell').find((el) => el.getAttribute('data-day') === isoDay)
+    if (!findCell()) await userEvent.click(screen.getByRole('button', { name: /next month/i }))
+    const cell = findCell()!
+    await userEvent.click(cell.querySelector('button') ?? cell)
 
     const at = onSetSendAt.mock.calls.at(-1)?.[0] as number
     expect(toTimeInputValue(at)).toBe('14:30')

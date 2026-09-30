@@ -36,6 +36,7 @@
     "./workspace/*": "./src/workspace/*.ts",
     "./db": "./src/db/index.ts",
     "./db/*": "./src/db/*.ts",
+    "./mcp-apps/*": "./src/mcp-apps/*.ts",
     "./server": "./src/server/index.ts",
     "./server/*": "./src/server/*.ts"
   },

@@ -8,7 +8,7 @@ import type { McpAppResourceRegistry } from '../src/main/mcp-apps/protocol'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import type { BrowserWindow } from 'electron'
 
-interface NativeState { resources: McpAppResourceRegistry; base: ToolAppAttachment; window: BrowserWindow; attempts: string[]; permissions: string[]; permissionsWithoutPolicy: Set<string>; popups: string[]; externalUrl: string }
+interface NativeState { resources: McpAppResourceRegistry; base: ToolAppAttachment; window: BrowserWindow; attempts: string[]; internalAttempts: string[]; permissions: string[]; permissionsWithoutPolicy: Set<string>; popups: string[]; externalUrl: string }
 declare global { var mcpSecurity: NativeState }
 
 test.describe('MCP App native iframe boundary', () => {
@@ -92,6 +92,46 @@ test.describe('MCP App native iframe boundary', () => {
     expect(frame.url()).toBe(url)
     expect(await app.evaluate(() => globalThis.mcpSecurity.attempts)).toEqual([])
     expect(await app.evaluate((_electron, original) => globalThis.mcpSecurity.resources.isActive(original), url)).toBe(false)
+  })
+
+  test('no-referrer resource vectors never reach internal handlers, and noreferrer cannot open a popup', async () => {
+    const { frame } = await mount('no-referrer')
+    const result = await frame.evaluate(async external => {
+      const blocked: string[] = []
+      const violations: Array<{ uri: string; directive: string }> = []
+      document.addEventListener('securitypolicyviolation', event => violations.push({ uri: event.blockedURI, directive: event.effectiveDirective }))
+      const jobs: Promise<void>[] = []
+      const targets = ['local-file://probe', 'superone-app://probe', 'superone-renderer://app', 'file:///tmp']
+      for (const base of targets) {
+        for (const tag of ['img', 'script', 'link'] as const) jobs.push(new Promise<void>(resolve => {
+          const element = document.createElement(tag)
+          element.onerror = () => { blocked.push(`${base}:${tag}`); resolve() }
+          element.onload = () => resolve()
+          const url = `${base}/forbidden-${tag}`
+          if (element instanceof HTMLLinkElement) { element.rel = 'stylesheet'; element.href = url }
+          else element.src = url
+          document.head.appendChild(element)
+        }))
+        jobs.push(fetch(`${base}/forbidden-fetch`, { mode: 'no-cors', referrerPolicy: 'no-referrer' }).then(() => {}, () => { blocked.push(`${base}:fetch`) }))
+        const iframe = document.createElement('iframe'); iframe.src = `${base}/forbidden-iframe`; document.body.appendChild(iframe)
+        try { const worker = new Worker(`${base}/forbidden-worker`); worker.onerror = () => blocked.push(`${base}:worker`); worker.terminate() } catch { blocked.push(`${base}:worker`) }
+      }
+      const popup = window.open(`${external}/no-referrer-popup`, '_blank', 'noreferrer')
+      await Promise.all(jobs)
+      // Violation events are delivered asynchronously after blocked resource errors.
+      await new Promise(resolve => setTimeout(resolve, 50))
+      return { blocked, violations, popupBlocked: popup === null, referrerPolicy: document.querySelector('meta[name="referrer"]')?.getAttribute('content'), reached: Boolean((window as unknown as { fixtureProbeReached?: boolean }).fixtureProbeReached) }
+    }, externalUrl)
+    expect(result.referrerPolicy).toBe('no-referrer')
+    expect(result.blocked).toHaveLength(20)
+    // file:// is denied by Chromium's local-resource boundary before CSP reports a violation.
+    expect(result.violations.filter(value => value.directive === 'frame-src')).toHaveLength(3)
+    expect(page.frames().some(value => value.url().startsWith('file://'))).toBe(false)
+    expect(result.popupBlocked).toBe(true)
+    expect(result.reached).toBe(false)
+    expect(await app.evaluate(() => globalThis.mcpSecurity.internalAttempts)).toEqual([])
+    expect(await app.evaluate(() => globalThis.mcpSecurity.attempts)).toEqual([])
+    expect(await app.evaluate(() => globalThis.mcpSecurity.popups)).toEqual([])
   })
 
   test('same-document hash/history routing stays active; same-origin new document revokes', async () => {

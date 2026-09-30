@@ -255,7 +255,13 @@ currently empty. Iframes share the trusted renderer's Electron session;
 per-server/session scheme origins provide storage isolation, and permission
 handlers discriminate requesting/security/embedding origins.
 
-Seven real Electron 44.1.1/Chromium scenarios pass in
+Sibling Views with the same node/session/server/account/config fingerprint
+share an origin and can script each other. They are one server/account trust
+boundary. The transport's exact source-window check refuses a sibling's direct
+postMessage impersonation; origin isolation is not per View. Origin/Referer
+handler checks are defense in depth because requests can omit those headers.
+
+Eight real Electron 44.1.1/Chromium scenarios pass in
 `apps/desktop/e2e/mcp-apps-security.spec.ts`: parent/native API isolation,
 sandbox top navigation/popup denial, header form/connect CSP, external
 navigation cancelled with **zero HTTP requests**, same-document hash/history
@@ -265,6 +271,12 @@ and actual React StrictMode effect replay leaving one working bridge. A
 separate negative permission probe removes header policy and overgrants the
 iframe to prove Electron still rejects the media request. Setting src before
 insertion produces one initial document load, including the React path.
+The no-referrer probe attempts image/script/stylesheet/fetch/iframe/Worker
+loads against local-file, superone-app, superone-renderer and file schemes:
+internal protocol handlers receive **zero requests**. Chromium blocks file
+loads before CSP reporting. `window.open(..., '_blank', 'noreferrer')` still
+opens nothing: the sandbox omits allow-popups. Electron 44's HandlerDetails
+has no opener-frame field, so referrer filtering is only an additional guard.
 
 The test uses production registry/guards/AppBridge/transport with a minimal
 trusted test shell, a loopback request counter and a temporary profile. It

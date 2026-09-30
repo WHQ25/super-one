@@ -248,6 +248,23 @@ export const EditedFilesPartial: Story = {
   },
 }
 
+// A codemod across the tree: the file rows scroll inside their own max height.
+export const EditedManyFiles: Story = {
+  name: 'Edited many files (scrolls)',
+  args: {
+    ...EditedFiles.args,
+    input: JSON.stringify({ command: 'bunx codemod rename-symbol park parkSession src/' }),
+    bashEditDiff: {
+      files: Array.from({ length: 40 }, (_, index) => ({
+        filePath: `/Users/me/project/src/main/session/module-${index + 1}.ts`,
+        hunks: [{ oldStart: 3, oldLines: 1, newStart: 3, newLines: 1, lines: ['-park(session)', '+parkSession(session)'] }],
+      })),
+      moreFiles: 0,
+    },
+    autoExpand: true,
+  },
+}
+
 // The CLI skips the diff for git state commands; with no files to list the block
 // keeps the plain Bash layout.
 export const EditDiffSkipped: Story = {

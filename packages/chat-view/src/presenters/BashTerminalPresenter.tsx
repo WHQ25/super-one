@@ -18,6 +18,8 @@ import { ToolIcon } from './ToolIcon'
 import { ToolName } from './ToolRow'
 
 const BASH_LOAD_CHUNK = 50
+// A codemod can touch hundreds of files; the rows scroll instead of stretching the turn.
+const EDIT_ROWS_MAX_HEIGHT = 'max-h-96'
 
 export interface BashOutputSnapshot {
   content: string
@@ -386,7 +388,9 @@ export function BashTerminalPresenter({
             <span>{t('chat.toolBlock.terminalPanel')}</span>
           </div>
           {outputOpen && outputPanel}
-          {editRows.map((row) => <div key={row.toolUseId}>{renderFileTool!(row)}</div>)}
+          <div className={cn(EDIT_ROWS_MAX_HEIGHT, 'space-y-0.5 overflow-y-auto')}>
+            {editRows.map((row) => <div key={row.toolUseId}>{renderFileTool!(row)}</div>)}
+          </div>
           {editNote && <div className="px-2 py-0.5 text-xs text-muted-foreground/70">{editNote}</div>}
         </div>
       ) : outputPanel)}

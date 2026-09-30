@@ -1,4 +1,7 @@
 /** Harness-neutral MCP Apps contracts. No runtime SDK or Electron dependency. */
+import type { McpUiMessageRequest } from '@modelcontextprotocol/ext-apps/app-bridge'
+import type { McpAppsRpcResult } from './environment/mcp-apps-rpc'
+
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 export const MCP_APPS_EXTENSION = { 'io.modelcontextprotocol/ui': { mimeTypes: [MCP_APP_MIME_TYPE] } } as const
 export const MCP_APP_HTML_MAX_BYTES = 2 * 1024 * 1024
@@ -110,6 +113,33 @@ export type McpAppApprovalPrompt =
   | { kind: 'callTool'; server: string; tool: string; toolTitle?: string; argsPreview: string; rememberable: boolean }
   | { kind: 'sendMessage'; server: string; text: string; nonTextBlocks: number }
   | { kind: 'openLink'; server: string; url: string }
+
+export type McpAppHostOperation =
+  | { operation: 'load' }
+  | { operation: 'activate' }
+  | { operation: 'callTool'; tool: string; args: Record<string, unknown> }
+  | { operation: 'readResource'; uri: string }
+  | { operation: 'sendMessage'; params: McpUiMessageRequest['params'] }
+  | { operation: 'updateModelContext'; context: McpAppModelContext }
+  /** Desktop only. The phone confirms and opens links locally. */
+  | { operation: 'openLink'; url: string }
+
+/** The host resolves the attachment and binding; callers supply only scoped View identity. */
+export type McpAppHostRequest = McpAppHostOperation & {
+  /** `sessionKey(sessionRef(environmentId, sessionId))`; never a bare session ID. */
+  sessionKey: string
+  appInstanceId: string
+  /** Lookup hint only; the host verifies the owning message. */
+  messageId?: string
+  approval?: { challenge: string; remember?: boolean }
+}
+
+export type McpAppRequester = { kind: 'desktop' } | { kind: 'mobile'; deviceId: string }
+
+export type McpAppHostResult<T = unknown> = McpAppsRpcResult<T> | {
+  ok: false
+  error: { code: 'approval_required'; challenge: string; prompt: McpAppApprovalPrompt }
+}
 
 export interface ToolAppAttachment {
   appInstanceId: string

@@ -70,7 +70,13 @@ export function installHostBridge(onMessage: (message: HostInbound) => void): ()
       postHost({ type: 'transcriptApplied', ...delivery })
     }
   }
-  const handleMessage = (event: MessageEvent): void => accept(event.data)
+  // Only the embedding host may speak through `message` events: a native dispatch has no
+  // source, a browser host is `parent`. Frames inside the transcript (widgets) post from
+  // their own window and must not be able to impersonate the host.
+  const handleMessage = (event: MessageEvent): void => {
+    if (event.source !== null && event.source !== browser.parent) return
+    accept(event.data)
+  }
   const handleDocumentMessage = (event: Event): void => {
     accept((event as MessageEvent).data)
   }

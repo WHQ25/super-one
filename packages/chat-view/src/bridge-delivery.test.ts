@@ -53,3 +53,20 @@ it('keeps legacy messages working and rejects late frames from a replaced native
   host.__applyHost!({ type: 'setTheme', scheme: 'dark' })
   expect(apply.mock.calls.map(([message]) => message)).toEqual([previous, current, { type: 'setTheme', scheme: 'dark' }])
 })
+
+it('ignores messages posted by a frame inside the transcript', () => {
+  const apply = vi.fn()
+  host.ReactNativeWebView = { postMessage() {} }
+  remove = installHostBridge(apply)
+  const frame = document.createElement('iframe')
+  document.body.appendChild(frame)
+  // A widget forging a native answer: before the source check this reached the resolver.
+  const forged = { type: 'nativeActionResult', requestId: 'native-1', result: { approved: true } }
+  window.dispatchEvent(new MessageEvent('message', { data: forged, source: frame.contentWindow }))
+  window.dispatchEvent(new MessageEvent('message', { data: { type: 'reset' }, source: frame.contentWindow }))
+  expect(apply).not.toHaveBeenCalled()
+  window.dispatchEvent(new MessageEvent('message', { data: { type: 'reset' } }))
+  window.dispatchEvent(new MessageEvent('message', { data: { type: 'setTheme', scheme: 'dark' }, source: window.parent }))
+  expect(apply.mock.calls.map(([message]) => message.type)).toEqual(['reset', 'setTheme'])
+  frame.remove()
+})

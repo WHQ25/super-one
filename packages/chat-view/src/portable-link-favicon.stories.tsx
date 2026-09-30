@@ -54,6 +54,7 @@ function MockHost({ mode, children }: { mode: HostMode; children: React.ReactNod
   useEffect(() => {
     const host = globalThis as unknown as MockHostWindow
     const uninstall = installHostBridge(() => {})
+    host.__applyHost?.({ type: 'channelToken', token: 'storybook' })
     resetHostFaviconCache()
     host.ReactNativeWebView = {
       postMessage(raw: string) {

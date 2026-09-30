@@ -11,6 +11,7 @@ function ProgressiveLoading({ state = 'ready' }: { state?: 'ready' | 'loading' |
     const host = globalThis as typeof globalThis & { ReactNativeWebView?: { postMessage(raw: string): void }; __applyHost?: (value: unknown) => void }
     const previous = host.ReactNativeWebView
     const remove = installHostBridge(message => { if (message.type === 'detailUpdate') deliverDetail(message) })
+    host.__applyHost?.({ type: 'channelToken', token: 'storybook' })
     host.ReactNativeWebView = { postMessage(raw) {
       const request = JSON.parse(raw)
       if (request.action !== 'subscribeDetail' || state === 'loading') return
@@ -113,6 +114,7 @@ function ProgressiveSessionList() {
     const host = globalThis as typeof globalThis & { ReactNativeWebView?: { postMessage(raw: string): void }; __applyHost?: (value: unknown) => void }
     const previous = host.ReactNativeWebView
     const remove = installHostBridge(message => { if (message.type === 'detailUpdate') deliverDetail(message) })
+    host.__applyHost?.({ type: 'channelToken', token: 'storybook' })
     host.ReactNativeWebView = { postMessage(raw) {
       const request = JSON.parse(raw)
       if (request.action !== 'subscribeDetail') return
@@ -184,6 +186,7 @@ function ProgressiveSubagent({ state = 'ready', running = false }: { state?: 're
     const host = globalThis as typeof globalThis & { ReactNativeWebView?: { postMessage(raw: string): void }; __applyHost?: (value: unknown) => void }
     const previous = host.ReactNativeWebView
     const remove = installHostBridge(message => { if (message.type === 'detailUpdate') deliverDetail(message) })
+    host.__applyHost?.({ type: 'channelToken', token: 'storybook' })
     host.ReactNativeWebView = { postMessage(raw) {
       const request = JSON.parse(raw)
       if (request.action !== 'subscribeDetail' || state === 'loading') return
@@ -285,6 +288,7 @@ function ProgressiveGenericTool({ tool }: { tool: keyof typeof GENERIC_DEFERRED_
     const host = globalThis as typeof globalThis & { ReactNativeWebView?: { postMessage(raw: string): void }; __applyHost?: (value: unknown) => void }
     const previous = host.ReactNativeWebView
     const remove = installHostBridge(message => { if (message.type === 'detailUpdate') deliverDetail(message) })
+    host.__applyHost?.({ type: 'channelToken', token: 'storybook' })
     host.ReactNativeWebView = { postMessage(raw) {
       const request = JSON.parse(raw)
       if (request.action !== 'subscribeDetail') return
@@ -356,6 +360,7 @@ function ProgressiveCodexFileChange({ files, state = 'ready' }: { files: 1 | 2; 
     const host = globalThis as typeof globalThis & { ReactNativeWebView?: { postMessage(raw: string): void }; __applyHost?: (value: unknown) => void }
     const previous = host.ReactNativeWebView
     const remove = installHostBridge(message => { if (message.type === 'detailUpdate') deliverDetail(message) })
+    host.__applyHost?.({ type: 'channelToken', token: 'storybook' })
     host.ReactNativeWebView = { postMessage(raw) {
       const request = JSON.parse(raw)
       if (request.action !== 'subscribeDetail') return

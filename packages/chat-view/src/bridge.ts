@@ -7,12 +7,28 @@ interface WebViewGlobal extends Window {
 
 const browser = globalThis as unknown as WebViewGlobal
 
+// The native bridge is reachable from every frame in the WebView, so the native host only
+// trusts messages carrying the secret it injected into this document after `ready`. Boot
+// messages go out before the secret exists; anything else waits for it.
+let channel: string | undefined
+let unsent: HostOutbound[] = []
+
 export function postHost(message: HostOutbound): void {
-  if (browser.ReactNativeWebView) {
-    browser.ReactNativeWebView.postMessage(JSON.stringify(message))
+  const native = browser.ReactNativeWebView
+  if (native) {
+    if (channel) native.postMessage(JSON.stringify({ ...message, channel }))
+    else if (message.type === 'ready' || message.type === 'error') native.postMessage(JSON.stringify(message))
+    else unsent.push(message)
     return
   }
   browser.parent?.postMessage(message, '*')
+}
+
+function openChannel(token: string): void {
+  channel = token
+  const queued = unsent
+  unsent = []
+  for (const message of queued) postHost(message)
 }
 
 export function requestNative(action: string, payload?: unknown): string {
@@ -44,6 +60,10 @@ export function installHostBridge(onMessage: (message: HostInbound) => void): ()
   const retiredChannels = new Set<string>()
   const accept = (value: unknown): void => {
     const message = parseHostInbound(value)
+    if (message?.type === 'channelToken') {
+      if (typeof message.token === 'string' && message.token) openChannel(message.token)
+      return
+    }
     const delivery = message && 'delivery' in message ? message.delivery : undefined
     if (delivery) {
       if (retiredChannels.has(delivery.channelId)) return

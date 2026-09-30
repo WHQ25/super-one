@@ -71,6 +71,7 @@ export type HostInbound =
   | ({ type: 'applyReductionPatch' } & ReductionProjection)
   | ({ type: 'prependHistory' } & ReductionProjection)
   | { type: 'reset' }
+  | { type: 'channelToken'; token: string }
   | { type: 'setConnection'; state: string; epoch: number }
   | { type: 'setTheme'; hue?: number; scheme?: 'light' | 'dark' }
   | {

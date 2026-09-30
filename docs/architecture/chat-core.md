@@ -173,6 +173,7 @@ Realtime voice segments are merged into the message list before projection
 | `setTheme` / `setViewport` | Theme hue and scheme from the shell; safe area, font scale, locale |
 | `setWindow` / `scrollToTurn` | DOM window range and jumps |
 | `nativeActionResult` / `nativeActionProgress` | Replies to `requestNative` |
+| `channelToken` | Per-document secret, sent after `ready` (see [Trust](#trust)) |
 
 ### Outbound (WebView → RN)
 
@@ -183,6 +184,22 @@ Realtime voice segments are merged into the message list before projection
 | `viewState` | Window range, bottom pin, anchor and expanded keys, persisted by RN (`apps/mobile/src/chat-view-state.ts`) |
 | `requestNative` | Host actions: files, links, image and video loading, previews, detail subscriptions, history paging and navigation, failed-send resend/edit, widget saving. Handlers: `apps/mobile/src/native-actions.ts` |
 | `error { fatal }` | Triggers bounded reload + hydrate (`apps/mobile/src/chat-view-recovery.ts`) |
+
+### Trust
+
+The native bridge reaches every frame in the WebView, not only the chat
+document: iOS registers `webkit.messageHandlers.ReactNativeWebView` in all
+frames, and Android injects `ReactNativeWebView` into every origin. Frames
+inside the transcript (widget iframes) must not act as the document:
+
+- RN answers `ready` with `channelToken` through `injectJavaScript`, which runs
+  only in the main frame. The document attaches it to every outbound message as
+  `channel` and holds non-boot messages until it arrives. RN
+  (`apps/mobile/src/screens/chat-webview-channel.ts`) drops anything without the
+  current token; before one is issued only `ready` and a fatal `error` pass, and
+  a main-frame load start clears it.
+- The document applies `message` events only from its embedding host (no
+  source, or `window.parent`); RN itself delivers through `__applyHost`.
 
 ### Document rules
 

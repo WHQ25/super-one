@@ -15,6 +15,7 @@ import { Button, Chip } from '../ui'
 import { useMobileTheme } from '../theme/context'
 import { mobileWebViewTheme } from '../theme/tokens'
 import { injectHostMessage } from '../native-actions'
+import { createChatWebViewChannel } from '../screens/chat-webview-channel'
 
 const CHAT_SOURCE = { html: CHAT_VIEW_HTML }
 const ALL = 'All' as const
@@ -33,6 +34,7 @@ export function ToolCatalogPreview({ onClose, onTheme }: { onClose: () => void; 
   const web = useRef<WebView>(null)
   const [filter, setFilter] = useState<CatalogFilter>(ALL)
   const messages = useMemo(() => toolCatalogMessages(filter === ALL ? undefined : filter), [filter])
+  const [channel] = useState(() => createChatWebViewChannel((message) => injectHostMessage(web, message)))
 
   const paint = () => {
     injectHostMessage(web, mobileWebViewTheme(tokens))
@@ -73,7 +75,11 @@ export function ToolCatalogPreview({ onClose, onTheme }: { onClose: () => void; 
         originWhitelist={['*']}
         source={CHAT_SOURCE}
         style={styles.flex}
-        onMessage={(event) => { if (JSON.parse(event.nativeEvent.data).type === 'ready') paint() }}
+        onLoadStart={channel.reset}
+        onMessage={(event) => {
+          const raw = channel.receive(event.nativeEvent.data)
+          if (raw !== null && JSON.parse(raw).type === 'ready') paint()
+        }}
       />
     </SafeAreaView>
   )

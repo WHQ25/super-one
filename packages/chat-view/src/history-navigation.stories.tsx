@@ -15,6 +15,7 @@ function HistoryNavigationPreview({ state = 'ready', count = 100, scheme = 'ligh
     }))
     const index = extendHistoryIndex({ messageIds: [], entries: [], compacts: [] }, rows)
     let failed = false
+    host.__applyHost?.({ type: 'channelToken', token: 'storybook' })
     host.ReactNativeWebView = { postMessage(raw) {
       const request = JSON.parse(raw)
       if (request.type !== 'requestNative') return

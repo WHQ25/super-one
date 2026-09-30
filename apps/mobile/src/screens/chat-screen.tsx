@@ -20,6 +20,7 @@ import type { UsageMeterProps } from '../ui/usage-panel'
 import { QueuedMessages } from '../ui/queued-messages'
 import { NewSessionLanding, type NewSessionLandingProps } from './new-session-landing'
 import { chatViewPrePaintScript, hostMessageIsReady } from './chat-webview-boot'
+import { createChatWebViewChannel } from './chat-webview-channel'
 import { injectHostMessage } from '../native-actions'
 import { TodoPanel } from '../ui/todo-panel'
 import { PendingPromptBar } from '../ui/pending-prompt-bar'
@@ -162,6 +163,7 @@ export function ChatScreen(props: {
   // Captured on first mount: changing `injectedJavaScriptBeforeContentLoaded`
   // remounts WKWebView and would flash the white default we are covering.
   const prePaint = useRef(chatViewPrePaintScript(tokens.colors.background, tokens.scheme)).current
+  const [channel] = useState(() => createChatWebViewChannel((message) => injectHostMessage(props.webRef, message)))
   return (
     <View style={styles.flex}>
       {/* The edge strip is scoped to the scrolling half of the screen: over the
@@ -176,8 +178,10 @@ export function ChatScreen(props: {
         injectedJavaScriptBeforeContentLoaded={prePaint}
         style={[styles.flex, { backgroundColor: tokens.colors.background }]}
         containerStyle={{ backgroundColor: tokens.colors.background }}
+        onLoadStart={channel.reset}
         onMessage={(event) => {
-          const raw = event.nativeEvent.data
+          const raw = channel.receive(event.nativeEvent.data)
+          if (raw === null) return
           props.onWebMessage(raw)
           if (hostMessageIsReady(raw)) setRendererReady(true)
         }}

@@ -48,6 +48,7 @@ function MockHost({ mode, children }: { mode: HostMode; children: React.ReactNod
   useEffect(() => {
     const host = globalThis as unknown as MockHostWindow
     const uninstall = installHostBridge(() => {})
+    host.__applyHost?.({ type: 'channelToken', token: 'storybook' })
     host.ReactNativeWebView = {
       postMessage(raw: string) {
         const message = JSON.parse(raw) as { type: string; requestId: string; action: string; payload?: { path: string } }

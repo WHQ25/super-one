@@ -23,6 +23,7 @@ function TranscriptRecovery({ lost = 'insertion' }: { lost?: 'none' | 'insertion
       }
       host.__applyHost?.(message)
     })
+    host.__applyHost?.({ type: 'channelToken', token: 'storybook' })
     host.ReactNativeWebView = { postMessage(raw) {
       const message = JSON.parse(raw)
       if (message.type === 'transcriptApplied') delivery.acknowledge(message.channelId, message.sequence)

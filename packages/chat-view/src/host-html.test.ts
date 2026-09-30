@@ -9,6 +9,10 @@ describe('embedded chat document', () => {
     expect(CHAT_VIEW_HTML).toContain('--brand-hue')
   })
 
+  it('refuses frame navigations to anything but srcdoc documents', () => {
+    expect(CHAT_VIEW_HTML).toContain(`<meta http-equiv="Content-Security-Policy" content="frame-src 'none'" />`)
+  })
+
   it('has no build-time asset references or unresolved Vite placeholders', () => {
     expect(CHAT_VIEW_HTML).not.toMatch(/(?:src|href)=["']\.\/assets\//)
     expect(CHAT_VIEW_HTML).not.toContain('__VITE_PRELOAD__')

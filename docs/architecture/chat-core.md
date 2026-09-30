@@ -200,6 +200,10 @@ inside the transcript (widget iframes) must not act as the document:
   a main-frame load start clears it.
 - The document applies `message` events only from its embedding host (no
   source, or `window.parent`); RN itself delivers through `__applyHost`.
+- The document's CSP is `frame-src 'none'` (`packages/chat-view/index.html`).
+  `srcdoc` frames still load, but a frame cannot navigate itself to a new
+  document. This matters on Android, where an `https:` sub-frame navigation
+  never reaches `onShouldStartLoadWithRequest`.
 
 ### Document rules
 

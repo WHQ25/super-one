@@ -2,6 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Frames in the transcript (widgets) are srcdoc documents, which this does not block.
+         It stops a frame from navigating itself to a new document: Android WebView never asks
+         the native navigation hook about an https sub-frame navigation. -->
+    <meta http-equiv="Content-Security-Policy" content="frame-src 'none'" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>SuperOne chat</title>
     <style>

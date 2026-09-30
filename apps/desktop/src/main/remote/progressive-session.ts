@@ -52,7 +52,7 @@ export function projectProgressiveMessage(message: ChatMessage): ChatMessage {
     ? { ...block, thinking: '', remoteDetail: reference(message.id, 'thinking', index) }
     : 'toolName' in block
       ? (isSubagentToolName(block.toolName) ? projectContainer(message, block) : projectTool(block, reference(message.id, 'tool', block.toolUseId)))
-    : block.type === 'tool_result' && deferredIds.has(block.toolUseId)
+    : block.type === 'tool_result' && !block.app && deferredIds.has(block.toolUseId)
       ? {
         type: 'tool_result',
         toolUseId: block.toolUseId,

@@ -5,6 +5,7 @@ import type { TokenOverrides } from './harness-brand'
 import type { SessionGoal } from './session-goal'
 import type { NotificationSettings } from './notifications'
 import type { GitMentionRefKind } from './git-mention-query'
+import type { ToolAppAttachment } from './mcp-apps'
 import type { WidgetLayout } from './generative-ui/types'
 
 // --- Image attachments ---
@@ -160,6 +161,7 @@ interface WorkflowData {
 interface ToolUseBase {
   toolName: string
   toolUseId: string
+  app?: ToolAppAttachment
   input: string
   status?: 'streaming' | 'complete'
   elapsedSeconds?: number
@@ -193,7 +195,7 @@ type ContentBlockData =
   | { type: 'insight'; title: string; content: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: DiffTokenLine[] | null }> }
   | { type: 'tool_use' } & ToolUseBase & ToolMeta & AgentTaskData & WorkflowData
   | { type: RemoteToolType } & ToolUseBase & ToolMeta & AgentTaskData & WorkflowData
-  | { type: 'tool_result'; toolUseId: string; summary: string; outputPath?: string; isTimedOut?: boolean; isError?: boolean; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: TodoToolItem[]; bashEditDiff?: BashEditDiff }
+  | { type: 'tool_result'; toolUseId: string; app?: ToolAppAttachment; summary: string; outputPath?: string; isTimedOut?: boolean; isError?: boolean; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: TodoToolItem[]; bashEditDiff?: BashEditDiff }
   | { type: 'bash_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; bashEditDiff?: BashEditDiff }
   | { type: 'todo_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; todoToolName?: string; toolTodos?: TodoToolItem[] }
   | { type: 'codex_plan'; text: string; itemId: string }
@@ -382,7 +384,8 @@ export interface CodexMcpToolCallItem {
   server: string
   tool: string
   arguments: unknown
-  result?: { content: unknown[]; structuredContent: unknown; meta?: Record<string, unknown> }
+  app?: ToolAppAttachment
+  result?: { content: unknown[]; structuredContent: unknown; meta?: Record<string, unknown>; isError?: boolean }
   error?: { message: string }
   /** True when the tool result carried `_meta["mcp/www_authenticate"]` (auth-rejected, not user-deny). */
   authRequired?: boolean

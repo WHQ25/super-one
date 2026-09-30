@@ -412,6 +412,7 @@ import { splitTextIntoBlocks } from './split-text-blocks'
 export type { TextSegment, SplitResult } from './split-text-blocks'
 
 function stripContentBlock(block: ContentBlock, bashCmds?: Map<string, string>, agentIds?: Set<string>, projectPath?: string): ContentBlock {
+  if ('app' in block && block.app) return block
   if (block.type === 'text') {
     const codeBlockTokens = extractCodeBlockTokens(block.text)
     if (codeBlockTokens) return { ...block, codeBlockTokens }

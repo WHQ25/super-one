@@ -121,6 +121,26 @@ behind a lazy component boundary, so the SDK does not enter the startup chunk.
 The install's pre-existing desktop lockfile version correction (0.69→0.70)
 is included alongside this dependency resolution.
 
+### Phase 1.1 — shared contract: implemented
+
+`packages/shared/src/mcp-apps.ts` owns SDK-free descriptors, binding, origin,
+provider capabilities, structured errors and `ToolAppAttachment`. Provider
+`callTool` returns `{ result, outcome }`: the View receives only the standard
+result, while `unknown_outcome` suppresses automatic retry. This wrapper was
+approved after the Claude spike proved that its control API conflates a
+completed `isError` result with a control rejection.
+
+Attachments travel on `tool_use` / `tool_result` ContentBlocks and native Codex
+items, so existing AgentEvent, reducer and JSON transcript persistence retain
+them. Both regular and progressive mobile projection explicitly preserve
+the resource, original input, full private result and latest model context.
+Caps are 2 MiB for HTML and 1 MiB for data, enforced before persistence/RPC.
+
+Verification: `src/main/remote/mcp-app-attachment.test.ts` — 4 passed,
+including delta reduction → JSON persistence → mobile projection, native
+Codex progressive item projection, metadata/visibility fallbacks, UTF-8 caps
+and structured error serialization. `bun run typecheck:node` passed.
+
 ## Log
 
 - 2026-10-01: proposal drafted; reviewed with Codex (fact corrections on

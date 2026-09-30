@@ -131,7 +131,7 @@ function workflowShell(block: Extract<ContentBlock, { toolName: string }>): Part
 }
 
 export function projectTool(block: ContentBlock, ref: string): ContentBlock {
-  if (!('toolName' in block) || !deferTool(block.toolName)) return block
+  if (!('toolName' in block) || block.app || !deferTool(block.toolName)) return block
   const input = sanitizeRemoteToolInput(block.toolName, block.input)
   const toolLineDelta = block.toolLineDelta ?? computeToolLineDelta(block.toolName, block.input)
   return { type: block.type, toolName: block.toolName, toolUseId: block.toolUseId,
@@ -183,6 +183,7 @@ function fileChangeLineDelta(changes: CodexFileUpdateChange[]): { added: number;
   return added > 0 || removed > 0 ? { added, removed } : undefined
 }
 export function projectCodexTool(item: CodexThreadItem, ref: string): CodexThreadItem {
+  if (item.type === 'mcp_tool_call' && item.app) return item
   if (item.type === 'collab_tool_call') return { ...item, remoteDetail: ref, prompt: undefined, childItems: undefined, agentsStates: {} }
   if (item.type === 'command_execution') return { ...item, remoteDetail: ref, command: item.command.slice(0, 160), aggregatedOutput: '', commandActions: item.commandActions?.map(action => ({ ...action, command: action.command?.slice(0, 160) })) }
   if (item.type === 'file_change') {

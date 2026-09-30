@@ -71,17 +71,21 @@ ACP host never receives; the gateway, as the server Grok sees, avoids that.
 
 ```ts
 interface McpAppsProvider {
-  readonly binding: { node: string; session: string; server: string; account?: string; configGeneration: number }
+  readonly binding: { node: string; session: string; server: string; account?: string; configGeneration: number; configFingerprint: string }
   ready(signal: AbortSignal): Promise<McpAppsCapabilities>        // async readiness + what this provider supports
   tools(): Promise<Map<string, McpToolDescriptor>>                // full descriptor: _meta.ui, visibility, annotations
   readResource(req: { uri: string; origin?: McpAppOrigin }, signal: AbortSignal): Promise<ReadResourceResult>
-  callTool(req: { tool: string; args: unknown; origin?: McpAppOrigin }, signal: AbortSignal): Promise<CallToolResult>
+  callTool(req: { tool: string; args: unknown; origin?: McpAppOrigin }, signal: AbortSignal): Promise<McpAppsCallResult>
   dispose(): void
 }
-// origin carries what the harness needs to route: Codex threadId (+ originCallId for hosted resource reads).
+interface McpAppOrigin { providerSessionId: string; originCallId?: string }
+interface McpAppsCallResult { result: CallToolResult; outcome: 'completed' | 'unknown_outcome' }
+// providerSessionId carries the provider thread/session. originCallId is for hosted resource reads.
+// Send only result to AppBridge. Confirmed non-dispatch failures throw structured errors.
 // Errors are structured: auth_required (with challenge), denied, invalid, not_connected, timeout, cancelled,
 // unknown_outcome. unknown_outcome is only for a dispatched call whose completion cannot be determined;
-// a tool result with isError is a completed failure.
+// a tool result with isError is a completed failure when the provider can determine
+// completion. Claude can return isError with outcome unknown_outcome when its control API conflates failures.
 ```
 
 The host binds each View instance to one provider binding. A View's RPC

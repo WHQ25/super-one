@@ -15,6 +15,7 @@ import type { SessionTurnEvent } from '@superone/shared/environment'
 import { MessageBridge } from './message-bridge'
 import { createClaudeAgentEventMapper } from './agent-event-mapper'
 import { applySdkMessage, createSdkMapState } from './map-sdk-message'
+import { withMcpAppsHostEnv } from './mcp-apps'
 import { providerSettingsEnv } from './provider-settings-env'
 import { resolveSdkClaudeBinary } from './resolve-sdk-binary'
 import { applyRootPermissionGuard } from './root-permission-guard'
@@ -208,9 +209,7 @@ function buildLiveOptions(
       ? opts.effort
       : undefined
 
-  const env = opts.env
-    ? ({ ...process.env, ...opts.env } as Record<string, string | undefined>)
-    : undefined
+  const env = withMcpAppsHostEnv(opts.env ? { ...process.env, ...opts.env } : undefined)
   const settingsEnv = providerSettingsEnv(opts.env)
 
   const sandbox =
@@ -227,13 +226,13 @@ function buildLiveOptions(
   const permissions = applyRootPermissionGuard({
     permissionMode: opts.permissionMode,
     uid: opts.uid === undefined ? process.getuid?.() : opts.uid,
-    env: env ?? (process.env as Record<string, string | undefined>),
+    env,
   })
 
   const base: Options = {
     cwd: opts.cwd,
     ...(binaryPath ? { pathToClaudeCodeExecutable: binaryPath } : {}),
-    model: resolveMappedClaudeModelId(opts.model, env ?? (process.env as Record<string, string | undefined>)),
+    model: resolveMappedClaudeModelId(opts.model, env),
     ...(effort ? { effort } : {}),
     includePartialMessages: true,
     thinking: { type: 'adaptive', display: 'summarized' },
@@ -273,7 +272,7 @@ function buildLiveOptions(
     ...(opts.sessionId ? { resume: opts.sessionId } : {}),
     ...(opts.resumeSessionAt ? { resumeSessionAt: opts.resumeSessionAt } : {}),
     ...(opts.resumeDropsTurn ? { resumeDropsTurn: opts.resumeDropsTurn } : {}),
-    ...(env ? { env } : {}),
+    env,
     // Constant: the CLI only defaults the Bash working-tree diff on in auto /
     // bypassPermissions mode, and the chat renders those edits as file rows.
     settings: { ...(settingsEnv ? { env: settingsEnv } : {}), bashEditDiffEnabled: true },

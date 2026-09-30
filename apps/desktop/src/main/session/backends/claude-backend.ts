@@ -2,6 +2,8 @@ import type { CanUseTool, OnElicitation, Query, SDKUserMessage } from '@anthropi
 import { randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
 import { MessageBridge } from '../../agent/message-bridge'
+import { ClaudeMcpAppsCatalog, ClaudeToolApps } from '@superone/claude/mcp-apps'
+import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
 import { buildClaudeOptions, createSessionQuery, buildUserMessage, type SessionQueryOptions, type BackgroundTaskInfo } from '../../agent/claude-query'
 import { getGlobalWarmupManager, WarmupManager } from '../../agent/warmup-manager'
 import {
@@ -81,6 +83,9 @@ function invalidLocalBackendStartReason(opts: BackendStartOptions): string | nul
   return null
 }
 
+const MCP_APPS_CATALOG_MIN_REFRESH_MS = 5_000
+const MCP_APPS_CATALOG_TIMEOUT_MS = 10_000
+
 export class ClaudeBackend implements SessionBackend {
   readonly kind: HarnessId = 'claude'
 
@@ -126,6 +131,24 @@ export class ClaudeBackend implements SessionBackend {
   private trackPlanFileHandle: ((filePath: string) => void) | null = null
 
   private get warmupManager() { return getGlobalWarmupManager() }
+
+  /** Tool UI metadata; Claude exposes it only through `mcpServerStatus()`. */
+  private readonly mcpAppsCatalog = new ClaudeMcpAppsCatalog()
+  private mcpAppsCatalogRefresh: Promise<void> | null = null
+  private mcpAppsCatalogRefreshedAt = 0
+  private readonly toolApps = new ClaudeToolApps({
+    catalog: this.mcpAppsCatalog,
+    binding: (server) => ({
+      node: 'local',
+      session: this._lastStartOpts?.sessionId ?? '',
+      server,
+      account: this._lastStartOpts?.apiProviderId ?? undefined,
+      configGeneration: 0,
+      configFingerprint: mcpServerConfigFingerprint(this.mcpAppsCatalog.config(server)),
+    }),
+    providerSessionId: () => this.providerSessionId,
+    onCatalogMiss: () => { void this.refreshMcpAppsCatalog() },
+  })
 
   private _lastStartOpts: BackendStartOptions | null = null
   /**
@@ -213,6 +236,7 @@ export class ClaudeBackend implements SessionBackend {
       askUserQuestionPreviewFormat: claudePref.askUserQuestionPreviewFormat,
       systemPromptAppend: opts.systemPromptAppend,
       unattended: opts.unattended,
+      toolApps: this.toolApps,
     }
   }
 
@@ -342,6 +366,30 @@ export class ClaudeBackend implements SessionBackend {
       buildClaudeOptions(queryOptions),
       queryOptions.superoneSessionId,
     )
+  }
+
+  /**
+   * Loaded on the first MCP tool call rather than at start, so sessions without
+   * MCP tools pay nothing; that call still gets its View at `tool_result`.
+   * Single-flight, and at most every few seconds: a miss for a server whose
+   * tools never load (still connecting, failed) must not re-query per call.
+   */
+  private refreshMcpAppsCatalog(): Promise<void> {
+    const query = this.query
+    if (!query || this.mcpAppsCatalogRefresh) return this.mcpAppsCatalogRefresh ?? Promise.resolve()
+    if (Date.now() - this.mcpAppsCatalogRefreshedAt < MCP_APPS_CATALOG_MIN_REFRESH_MS) return Promise.resolve()
+    this.mcpAppsCatalogRefreshedAt = Date.now()
+    // A failed refresh only leaves Views unattached; it must never fail the caller (start, a tool row).
+    const refresh = async () => {
+      try {
+        const statuses = await withDeadline(query.mcpServerStatus(), MCP_APPS_CATALOG_TIMEOUT_MS)
+        if (statuses !== DEADLINE_EXCEEDED) this.mcpAppsCatalog.update(statuses)
+      } catch (err) {
+        log.warn('[ClaudeBackend] MCP Apps catalog refresh failed: %s', err instanceof Error ? err.message : String(err))
+      }
+    }
+    this.mcpAppsCatalogRefresh = refresh().finally(() => { this.mcpAppsCatalogRefresh = null })
+    return this.mcpAppsCatalogRefresh
   }
 
   /**
@@ -818,6 +866,7 @@ export class ClaudeBackend implements SessionBackend {
     if (!query) return []
     try {
       const statuses = await query.mcpServerStatus()
+      this.mcpAppsCatalog.update(statuses)
       return statuses.map((s) => ({
         name: s.name,
         status: s.status,

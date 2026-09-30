@@ -82,3 +82,15 @@ export type {
   ClaudeSdkTurnResult,
   RunClaudeSdkTurnOptions,
 } from './types'
+export {
+  CLAUDE_MCP_APPS_HOST_ENV,
+  ClaudeMcpAppsCatalog,
+  ClaudeToolApps,
+  claudeMcpToolResult,
+  normalizeClaudeMcpServerName,
+  toMcpToolDescriptor,
+  withMcpAppsHostEnv,
+  type ClaudeMcpStatusServer,
+  type ClaudeMcpStatusTool,
+  type ClaudeToolAppsOptions,
+} from './mcp-apps'

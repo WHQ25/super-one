@@ -5,6 +5,7 @@
  * provide the message id and side-effect hooks; the mapper owns only protocol
  * state and emits IPC-safe AgentEvents.
  */
+import type { ClaudeToolApps } from './mcp-apps'
 import type { AgentEvent, MessageMetadata } from '@superone/shared/agent-types'
 import { createDeadStreamLedger } from '@superone/shared/dead-stream-ledger'
 import { createRetractionLedger, mapModelFallbackWire } from '@superone/shared/model-fallback-wire'
@@ -25,6 +26,8 @@ export interface ClaudeAgentEventMapperOptions {
   onSessionId?: (sessionId: string) => void
   onStepBoundary?: () => void
   trackPlanFile?: (filePath: string) => void
+  /** Attaches MCP App state to tool rows of tools that declare a `ui://` resource. */
+  toolApps?: ClaudeToolApps
 }
 
 export interface ClaudeAgentEventApplyResult {
@@ -245,6 +248,7 @@ export function createClaudeAgentEventMapper(
     const isTimedOut = isBash ? extractBashKilled(toolUseResult) : undefined
     const taskCreateTodo = extractTaskCreateTodo(toolName, toolUseResult, text)
     const isError = isClaudeToolLayerError(toolName, sdkIsError, text)
+    const app = options.toolApps?.toolResult(toolUseId, toolUseResult, sdkIsError)
     emit({
       type: 'content_delta',
       messageId,
@@ -257,6 +261,7 @@ export function createClaudeAgentEventMapper(
         ...(isError ? { isError: true } : {}),
         ...(taskCreateTodo ?? {}),
         parentToolUseId,
+        ...(app ? { app } : {}),
       },
       ...(flags?.isSynthetic ? { isSynthetic: true } : {}),
       ...(flags?.isReplay ? { isReplay: true } : {}),
@@ -615,6 +620,7 @@ export function createClaudeAgentEventMapper(
                 const filePath = block.input?.file_path
                 if (typeof filePath === 'string') options.trackPlanFile(filePath)
               }
+              const app = options.toolApps?.toolUse(toolUseId, toolName, block.input)
               emit({
                 type: 'content_delta',
                 messageId,
@@ -624,6 +630,7 @@ export function createClaudeAgentEventMapper(
                   toolUseId,
                   input: stringifyInput(block.input),
                   parentToolUseId: assistantParent,
+                  ...(app ? { app } : {}),
                 },
               })
             }

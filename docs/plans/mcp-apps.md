@@ -58,25 +58,26 @@ is only reconsidered if that happens in a released SDK.
 Depends on phase 1 steps 1, 4 and 5 (contract, View host, executor). C1–C3
 can start as soon as the contract is committed.
 
-- **C1 Host env.** A `packages/claude` helper adds `CLAUDE_CODE_MCP_APPS_HOST=true`
+- **C1 Host env.** Done. A `packages/claude` helper adds `CLAUDE_CODE_MCP_APPS_HOST=true`
   to the spawn env, merging `process.env` when no env is set (SDK env is
   replace, not overlay). Apply it at every query construction:
   `apps/desktop/src/main/agent/claude-query.ts` (session + warmup),
   `packages/claude/src/run-sdk-turn.ts`, `packages/claude/src/claude-live-session.ts`.
   The constant key keeps `WarmupManager.keyOf` stable.
-- **C2 Tool UI catalog.** `ClaudeBackend` reads `mcpServerStatus()` after init
-  and on MCP status changes, when `system/init.capabilities` has
-  `mcp_tool_ui_meta_v1`. It keeps server → tool → UI meta, maps `readOnly` →
-  `readOnlyHint`, applies the flat-key fallback, and resolves the normalized
-  server name in `mcp__<server>__<tool>` back to the raw name that
-  `readMcpResource` needs.
-- **C3 Mapper.** Both tool-result paths in `claude-query.ts` (streamed and
-  assembled) and `packages/claude/src/agent-event-mapper.ts` emit the shared
-  attachment for UI tools: input from `tool_use.input`, result from
-  `tool_use_result` (string `content` normalized to a text block,
-  `structuredContent`, private `_meta`), keyed by the `tool_use` id. The
-  resource snapshot is fetched once per URI + server through
-  `readMcpResource` and attached as an update.
+- **C2 Tool UI catalog.** Done. `ClaudeBackend` loads `mcpServerStatus()` on
+  the first MCP tool call (and whenever the status list is read), not at
+  start, so sessions without MCP tools pay nothing. It keeps server → tool →
+  UI meta, maps `readOnly` → `readOnlyHint`, applies the flat-key fallback, and
+  resolves the normalized server name in `mcp__<server>__<tool>` back to the
+  raw name that `readMcpResource` needs (`packages/claude/src/mcp-apps.ts`).
+- **C3 Mapper.** Done. The complete `tool_use` block and both tool-result paths
+  in `claude-query.ts` (per-block and `tool_use_summary`) and
+  `packages/claude/src/agent-event-mapper.ts` carry the shared attachment for
+  UI tools: input from `tool_use.input`, result from `tool_use_result`
+  (string `content` normalized to a text block, `structuredContent`, private
+  `_meta`), keyed by the `tool_use` id. A call whose catalog entry arrives late
+  is resolved again at its result. As on the Codex path, the resource HTML is
+  not fetched by the mapper; the host reads it through the provider (C4).
 - **C4 Provider.** `ClaudeBackend` implements `McpAppsProvider`:
   `readResource` → `readMcpResource` with a deadline; `callTool` → the
   `mcp_call` adapter (`typeof query.request === 'function'` + tested SDK

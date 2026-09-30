@@ -14,6 +14,7 @@ import {
   isResumeDropsTurnRefusal,
   RESUME_DROPS_TURN_REFUSAL_PREFIX,
 } from '@superone/claude'
+import { withMcpAppsHostEnv, type ClaudeToolApps } from '@superone/claude/mcp-apps'
 import type { MessageBridge } from './message-bridge'
 import { withSubagentResumeSignal } from './subagent-resume-signal'
 import log from '../logger'
@@ -64,6 +65,8 @@ export interface SessionQueryOptions {
    * Applied through the SDK `settings` (flag-settings) layer; see `providerSettingsEnv`.
    */
   settingsEnv?: Record<string, string>
+  /** Attaches MCP App state to tool rows of tools that declare a `ui://` resource. */
+  toolApps?: ClaudeToolApps
   taskBudget?: number
   warmupManager?: WarmupManager
   enabledSkills?: string[]
@@ -138,7 +141,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     sessionId: opts.sessionId,
     abortController: opts.abortController,
     additionalDirectories: opts.additionalDirectories,
-    env: opts.env,
+    env: withMcpAppsHostEnv(opts.env),
     // Derived from the same keys as `env`, so WarmupManager.keyOf needs no extra field.
     // `bashEditDiffEnabled` is constant: the CLI only defaults it on in auto /
     // bypassPermissions mode, and the chat renders Bash edits as file rows.
@@ -239,6 +242,7 @@ export function createSessionQuery(
     timing,
     activeBackgroundTasks,
     modelUsageBaseline: options.modelUsageBaseline,
+    toolApps: options.toolApps,
   })
 
   return { query: q, iterationDone, spawnAbortController, activeBackgroundTasks }
@@ -259,10 +263,11 @@ export interface IterateMessagesOptions {
   activeBackgroundTasks?: Map<string, BackgroundTaskInfo>
   /** Cumulative usage the resumed transcript already carries; not recorded again. */
   modelUsageBaseline?: Record<string, ModelUsageInfo>
+  toolApps?: ClaudeToolApps
 }
 
 export async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<void> {
-  const { emit: rawEmit, getCurrentMessageId, getCurrentStartTime, getInterrupted, onSessionId, trackPlanFile, onQueuedTurnStart, onStepBoundary, bridge, timing } = opts
+  const { emit: rawEmit, getCurrentMessageId, getCurrentStartTime, getInterrupted, onSessionId, trackPlanFile, onQueuedTurnStart, onStepBoundary, bridge, timing, toolApps } = opts
   const emit = withSubagentResumeSignal(rawEmit)
   // Track content_block index → tool_use_id for input_json_delta correlation
   const activeToolBlocks = new Map<number, string>()
@@ -503,6 +508,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               // Bash: CLI sets is_error for non-zero exits too; only <tool_use_error>
               // marks a true tool-layer failure (validation, blocked, cancelled, …).
               const isError = isToolLayerError(toolName, block.is_error === true, text)
+              const app = toolApps?.toolResult(block.tool_use_id, userMsg.tool_use_result, block.is_error === true)
               emit({
                 type: 'content_delta',
                 messageId,
@@ -516,6 +522,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
                   ...(isError ? { isError: true } : {}),
                   ...(taskCreateTodo ?? {}),
                   parentToolUseId,
+                  ...(app ? { app } : {}),
                 },
                 isSynthetic,
                 isReplay,
@@ -893,6 +900,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
                   if (typeof filePath === 'string') trackPlanFile(filePath)
                 }
 
+                const app = toolApps?.toolUse(block.id ?? '', block.name ?? 'unknown', block.input)
                 emit({
                   type: 'content_delta',
                   messageId,
@@ -904,6 +912,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
                       ? block.input
                       : JSON.stringify(block.input ?? {}),
                     parentToolUseId: assistantParent,
+                    ...(app ? { app } : {}),
                   },
                 })
               }
@@ -1062,10 +1071,11 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             const bashEditDiff = isBash ? extractBashEditDiff(raw.tool_use_result) : undefined
             const taskCreateTodo = extractTaskCreateTodo(toolName, raw.tool_use_result, summaryText)
             const isError = isToolLayerError(toolName, raw.is_error === true, summaryText)
+            const app = toolApps?.toolResult(toolUseId, raw.tool_use_result, raw.is_error === true)
             emit({
               type: 'content_delta',
               messageId,
-              delta: { type: 'tool_result', toolUseId, summary: summaryText, ...(outputPath ? { outputPath } : {}), ...(isTimedOut ? { isTimedOut } : {}), ...(bashEditDiff ? { bashEditDiff } : {}), ...(isError ? { isError: true } : {}), ...(taskCreateTodo ?? {}), parentToolUseId: raw.parent_tool_use_id ?? null },
+              delta: { type: 'tool_result', toolUseId, summary: summaryText, ...(outputPath ? { outputPath } : {}), ...(isTimedOut ? { isTimedOut } : {}), ...(bashEditDiff ? { bashEditDiff } : {}), ...(isError ? { isError: true } : {}), ...(taskCreateTodo ?? {}), parentToolUseId: raw.parent_tool_use_id ?? null, ...(app ? { app } : {}) },
             })
           }
           break

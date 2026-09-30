@@ -14,6 +14,7 @@ import { CLAUDE_SYSTEM_PROMPT_APPEND } from '@superone/shared/superone-system-pr
 import { isStaticHostOwnedSuperoneToolQualified } from '@superone/shared/superone-host-owned-tools'
 import { applySdkMessage, createSdkMapState } from './map-sdk-message'
 import { createClaudeAgentEventMapper } from './agent-event-mapper'
+import { withMcpAppsHostEnv } from './mcp-apps'
 import { providerSettingsEnv } from './provider-settings-env'
 import { resolveSdkClaudeBinary } from './resolve-sdk-binary'
 import { applyRootPermissionGuard } from './root-permission-guard'
@@ -118,9 +119,7 @@ function buildOptions(opts: RunClaudeSdkTurnOptions, timing: { pausedMs: number 
     opts.signal.addEventListener('abort', () => abortController.abort(), { once: true })
   }
 
-  const env = opts.env
-    ? ({ ...process.env, ...opts.env } as Record<string, string | undefined>)
-    : undefined
+  const env = withMcpAppsHostEnv(opts.env ? { ...process.env, ...opts.env } : undefined)
   const settingsEnv = providerSettingsEnv(opts.env)
 
   const binaryPath =
@@ -142,7 +141,7 @@ function buildOptions(opts: RunClaudeSdkTurnOptions, timing: { pausedMs: number 
   const permissions = applyRootPermissionGuard({
     permissionMode: opts.permissionMode,
     uid: process.getuid?.(),
-    env: env ?? (process.env as Record<string, string | undefined>),
+    env,
   })
 
   const base: Options = {
@@ -197,7 +196,7 @@ function buildOptions(opts: RunClaudeSdkTurnOptions, timing: { pausedMs: number 
     ...(opts.sessionId ? { resume: opts.sessionId } : {}),
     ...(opts.resumeSessionAt ? { resumeSessionAt: opts.resumeSessionAt } : {}),
     ...(opts.resumeDropsTurn ? { resumeDropsTurn: opts.resumeDropsTurn } : {}),
-    ...(env ? { env } : {}),
+    env,
     // Constant: the CLI only defaults the Bash working-tree diff on in auto /
     // bypassPermissions mode, and the chat renders those edits as file rows.
     settings: { ...(settingsEnv ? { env: settingsEnv } : {}), bashEditDiffEnabled: true },

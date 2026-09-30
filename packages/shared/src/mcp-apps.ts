@@ -113,6 +113,16 @@ export function mcpAppToolVisible(tool: McpToolDescriptor): boolean {
   return tool._meta?.ui?.visibility?.includes('app') ?? true
 }
 
+/** Keep an attachment within the data cap: an oversized input/result becomes an error, never a truncation. */
+export function boundedToolAppAttachment(app: ToolAppAttachment): ToolAppAttachment {
+  try {
+    assertMcpAppSize({ toolInput: app.toolInput, toolResult: app.toolResult })
+    return app
+  } catch (error) {
+    return { ...app, toolInput: undefined, toolResult: undefined, status: 'error', error: (error as McpAppsError).toJSON() }
+  }
+}
+
 /** Apply before transport/persistence; reject rather than truncate protocol data. */
 export function assertMcpAppSize(value: unknown, maxBytes = MCP_APP_DATA_MAX_BYTES): void {
   let json: string

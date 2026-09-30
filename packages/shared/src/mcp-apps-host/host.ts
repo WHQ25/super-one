@@ -1,5 +1,5 @@
 import { AppBridge } from '@modelcontextprotocol/ext-apps/app-bridge'
-import type { McpUiHostCapabilities, McpUiHostContext, McpUiMessageRequest, McpUiRequestDisplayModeRequest } from '@modelcontextprotocol/ext-apps/app-bridge'
+import type { McpUiAppCapabilities, McpUiHostCapabilities, McpUiHostContext, McpUiMessageRequest, McpUiRequestDisplayModeRequest } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { CallToolResultSchema, ReadResourceResultSchema } from '@modelcontextprotocol/sdk/types.js'
 import { assertMcpAppSize, McpAppsError } from '../mcp-apps'
@@ -35,6 +35,7 @@ export interface McpAppHostOptions {
 
 export interface McpAppHost {
   readonly document: McpAppDocument
+  appCapabilities(): McpUiAppCapabilities | undefined
   connect(): Promise<void>
   /** Caller validates provider/account identity before opening this gate. */
   activate(): void
@@ -55,6 +56,7 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
   let revoked = false
   let disposed: Promise<void> | undefined
   let app = options.app
+  let context = options.context
   let sentInput = false
   let lastPartial = ''
   let lastResult = ''
@@ -119,7 +121,10 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new McpAppsError('denied', 'Unsupported MCP App link')
     return options.executor.openLink({ url: url.href }, signal)
   })
-  bridge.onrequestdisplaymode = (params, extra) => execute(extra.signal, async signal => ({ mode: await options.executor.requestDisplayMode(params.mode, signal) }))
+  bridge.onrequestdisplaymode = (params, extra) => execute(extra.signal, async signal => {
+    if (params.mode !== 'inline' && (!bridge.getAppCapabilities()?.availableDisplayModes?.includes(params.mode) || !context.availableDisplayModes?.includes(params.mode))) return { mode: 'inline' }
+    return { mode: await options.executor.requestDisplayMode(params.mode, signal) }
+  })
   bridge.onsizechange = size => {
     if (revoked || !initialized) return
     const width = Number.isFinite(size.width) && size.width! > 0 ? Math.min(size.width!, 4096) : undefined
@@ -145,11 +150,13 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
     if (current.status === 'cancelled' && !sentCancelled) {
       sentCancelled = true
       await bridge.sendToolCancelled({ reason: current.error?.message ?? 'Tool call cancelled' })
-    } else if (current.toolResult) {
-      const result = JSON.stringify(current.toolResult)
+    } else if (current.toolResult || current.status === 'error') {
+      // A provider/size/auth failure is terminal tool output, not a cancellation.
+      const toolResult = current.toolResult ?? { content: [{ type: 'text', text: current.error?.message ?? 'Tool call failed' }], isError: true }
+      const result = JSON.stringify(toolResult)
       if (result !== lastResult) {
         lastResult = result
-        await bridge.sendToolResult(CallToolResultSchema.parse(current.toolResult))
+        await bridge.sendToolResult(CallToolResultSchema.parse(toolResult))
       }
     }
   }
@@ -176,6 +183,7 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
   document.onRevoke(revoke)
   return {
     document,
+    appCapabilities: () => bridge.getAppCapabilities(),
     connect: () => bridge.connect(options.transport),
     activate() { if (!revoked) active = true },
     update(next) {
@@ -184,7 +192,7 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
       app = next
       return queue()
     },
-    updateContext(context) { if (!revoked) bridge.sendHostContextChange(context) },
+    updateContext(next) { context = next; if (!revoked) bridge.sendHostContextChange(next) },
     revoke,
     dispose() {
       if (disposed) return disposed

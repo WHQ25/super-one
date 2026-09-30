@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from '@modelcontextprotocol/ext-apps'
+import type { McpUiAppCapabilities, McpUiToolResultNotification } from '@modelcontextprotocol/ext-apps/app-bridge'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { createMcpAppHost, createMcpAppHostSlot } from './host'
 import type { McpAppHost, McpAppHostExecutor } from './host'
@@ -14,7 +15,7 @@ const attachment: ToolAppAttachment = {
 const cleanup: Array<() => Promise<unknown>> = []
 afterEach(async () => { await Promise.all(cleanup.splice(0).map(fn => fn())) })
 
-async function setup(restored = false, initial = attachment) {
+async function setup(restored = false, initial = attachment, appCapabilities: McpUiAppCapabilities = {}) {
   const executor: McpAppHostExecutor = {
     callTool: vi.fn(async () => ({ result: attachment.toolResult!, outcome: 'completed' as const })),
     readResource: vi.fn(async () => ({ contents: [{ uri: attachment.resourceUri, text: 'html' }] })),
@@ -23,10 +24,11 @@ async function setup(restored = false, initial = attachment) {
   }
   const [hostTransport, viewTransport] = InMemoryTransport.createLinkedPair()
   const notifications: string[] = []
-  const view = new App({ name: 'fixture', version: '1' }, {}, { autoResize: false })
+  const results: McpUiToolResultNotification['params'][] = []
+  const view = new App({ name: 'fixture', version: '1' }, appCapabilities, { autoResize: false })
   view.ontoolinput = () => { notifications.push('input') }
   view.ontoolinputpartial = () => { notifications.push('partial') }
-  view.ontoolresult = result => { notifications.push(`result:${result._meta?.private}`) }
+  view.ontoolresult = result => { notifications.push(`result:${result._meta?.private}`); results.push(result) }
   view.ontoolcancelled = () => { notifications.push('cancelled') }
   const errors: unknown[] = []
   const unknownOutcome = vi.fn()
@@ -39,7 +41,7 @@ async function setup(restored = false, initial = attachment) {
   await host.connect()
   await view.connect(viewTransport)
   await host.update(initial)
-  return { executor, host, view, notifications, errors, unknownOutcome }
+  return { executor, host, view, notifications, results, errors, unknownOutcome }
 }
 
 describe('MCP App shared host', () => {
@@ -99,6 +101,35 @@ describe('MCP App shared host', () => {
     expect((await view.callServerTool({ name: 'next' })).isError).toBe(true)
     expect(executor.callTool).toHaveBeenCalledTimes(2)
     expect(unknownOutcome).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends a terminal error result when the provider has no result payload', async () => {
+    const { notifications, results, errors } = await setup(false, { ...attachment, toolResult: undefined, status: 'error', error: { code: 'invalid', message: 'Result exceeds the size limit' } })
+    expect(notifications).toEqual(['input', 'result:undefined'])
+    expect(results).toEqual([{ content: [{ type: 'text', text: 'Result exceeds the size limit' }], isError: true }])
+    expect(errors).toEqual([])
+  })
+
+  it('returns inline for a display mode the View has not declared', async () => {
+    const { host, view, executor } = await setup()
+    host.updateContext({ availableDisplayModes: ['inline', 'fullscreen', 'pip'] })
+    expect(host.appCapabilities()).toEqual({})
+    expect(await view.requestDisplayMode({ mode: 'fullscreen' })).toEqual({ mode: 'inline' })
+    expect(executor.requestDisplayMode).not.toHaveBeenCalled()
+  })
+
+  it('allows only modes declared by both the host and the View', async () => {
+    const { host, view, executor } = await setup(false, attachment, { availableDisplayModes: ['inline', 'fullscreen'] })
+    host.updateContext({ availableDisplayModes: ['inline', 'fullscreen', 'pip'] })
+    expect(await view.requestDisplayMode({ mode: 'fullscreen' })).toEqual({ mode: 'fullscreen' })
+    expect(await view.requestDisplayMode({ mode: 'pip' })).toEqual({ mode: 'inline' })
+    expect(executor.requestDisplayMode).toHaveBeenCalledTimes(1)
+  })
+
+  it('surfaces unsupported provider content through the shell error callback', async () => {
+    const { notifications, errors } = await setup(false, { ...attachment, toolResult: { content: [{ type: 'tool_result', text: 'SDK-only block' }] } })
+    expect(notifications).toEqual(['input'])
+    expect(errors).toHaveLength(1)
   })
 
   it('revokes the prior bridge before a StrictMode replacement becomes live', async () => {

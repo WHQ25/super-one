@@ -35,6 +35,11 @@ describe('MCP App sandbox policy', () => {
     expect(mcpAppAllowAttribute({ microphone: {}, clipboardWrite: {} })).toBe('microphone; clipboard-write')
   })
 
+  it('accepts a bounded leftmost subdomain wildcard without broadening directives', () => {
+    expect(mcpAppCspDomains({ resourceDomains: ['https://*.example.com:8443/path', 'https://*', 'https://foo.*.com', 'https://*.com', 'https://*.127.0.0.1'] }).resourceDomains).toEqual(['https://*.example.com:8443'])
+    expect(buildMcpAppCsp({ resourceDomains: ['https://*.example.com'] })).toContain("connect-src 'none'")
+  })
+
   it('maps resolved desktop and mobile tokens without framework dependencies', () => {
     const context = mcpAppHostContext({ theme: 'dark', platform: 'mobile', locale: 'zh-CN', timeZone: 'Asia/Shanghai', width: 320, colors: { background: '#111', foreground: '#fff' } })
     expect(context.styles?.variables?.['--color-background-primary']).toBe('#111')

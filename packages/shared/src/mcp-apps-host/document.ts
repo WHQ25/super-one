@@ -1,4 +1,5 @@
 let nextGeneration = 0
+export const MCP_APP_DOCUMENT_REVOKED = 'mcpApp:documentRevoked'
 
 export interface McpAppDocument {
   readonly generation: number

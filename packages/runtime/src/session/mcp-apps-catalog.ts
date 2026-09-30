@@ -12,7 +12,7 @@ export function applyMcpAppsCatalogEvents(messages: SessionMessageBlock[], event
     if (envelope.aggregateId && envelope.aggregateId !== sessionId) continue
     if (envelope.eventType !== SESSION_DURABLE_EVENT.agentEvent) continue
     const event = (envelope.payload as { event?: AgentEvent })?.event
-    if (event && mcpAppEventAttachment(event) && 'messageId' in event) liveAppRows.set(event.messageId, envelope.timestamp)
+    if (event && mcpAppEventAttachment(event) && 'messageId' in event && typeof event.messageId === 'string') liveAppRows.set(event.messageId, envelope.timestamp)
     if (event?.type === 'mcp_app_updated') updates.push(event)
     if (event?.type !== 'codex_item_delta') continue
     const items = itemsByMessage.get(event.messageId) ?? new Map<string, CodexThreadItem>()

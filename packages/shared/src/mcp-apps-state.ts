@@ -24,7 +24,10 @@ export function mcpAppMessageAttachments(message: McpAppMessage): ToolAppAttachm
   return [...apps.values()]
 }
 
-export function findMcpAppAttachment(messages: readonly McpAppMessage[], appInstanceId: string): { messageId: string; app: ToolAppAttachment } | undefined {
+export function findMcpAppAttachment(messages: readonly McpAppMessage[], appInstanceId: string, messageIdHint?: string): { messageId: string; app: ToolAppAttachment } | undefined {
+  const hinted = messageIdHint ? messages.find(message => message.id === messageIdHint) : undefined
+  const hintedApp = hinted && mcpAppMessageAttachments(hinted).find(app => app.appInstanceId === appInstanceId)
+  if (hinted && hintedApp) return { messageId: hinted.id, app: hintedApp }
   for (const message of messages) {
     const app = mcpAppMessageAttachments(message).find(value => value.appInstanceId === appInstanceId)
     if (app) return { messageId: message.id, app }

@@ -54,6 +54,11 @@ describe('harness-neutral MCP App host state', () => {
     expect(mapped.map(value => value.type)).toEqual(['mcp_app_updated'])
   })
 
+  it('treats messageId as a lookup hint and retains the authoritative owning row', () => {
+    expect(findMcpAppAttachment([message([result])], 'view', 'stale-message-id')?.messageId).toBe('m')
+    expect(findMcpAppAttachment([message([result])], 'different-view', 'm')).toBeUndefined()
+  })
+
   it.each(['claude', 'codex'] as const)('resolves an in-flight %s View before its assistant transcript row is committed', harness => {
     const native: AgentEvent = harness === 'claude' ? { type: 'content_delta', messageId: 'm', delta: result }
       : { type: 'codex_item_delta', messageId: 'm', phase: 'completed', item }

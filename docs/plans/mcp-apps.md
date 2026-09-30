@@ -45,7 +45,7 @@ real Haiku turn. Script kept locally in `docs/temp/` (not committed).
 | Model-turn result | `tool_use_result = { content, _meta, structuredContent }` at top level. When `structuredContent` exists, `content` (and what the model sees) is its JSON string, not the server's text content; the private `_meta` stays out of the model's `tool_result`. MCP tools are deferred behind ToolSearch. |
 | `readMcpResource` | Works without a turn, `ui://` only (other schemes refused), returns content `_meta.ui` (csp, prefersBorder). |
 | `mcp_call` | Works through the internal `Query.request({ subtype: 'mcp_call', tool: 'mcp__<server>__<tool>', arguments })`. **No visibility or permission check** (a model-only tool ran). Result is post-processed like a model call (`content` becomes a string). A result with `isError` rejects the control request (`errorClass: control_request_failed`, message = tool text), the same shape as "could not run". `AbortSignal` sends `control_cancel_request`; the server received `notifications/cancelled` within ~1 s. |
-| Subagent results | Not exercised; static evidence says `_meta` is capped and `structuredContent` dropped. Verified in C6. |
+| Subagent results | Verified (C6): inside a subagent `tool_use_result` is only `{ _meta }`; `content` and `structuredContent` are gone. The View gets the `tool_result` block text as `content`. |
 
 Verdict: **native**. `readMcpResource` and tool metadata are public alpha
 APIs; `mcp_call` is internal and goes behind one adapter with a runtime and
@@ -100,11 +100,11 @@ can start as soon as the contract is committed.
   released the process reopens it from the session record, as desktop revives
   its query. The catalog's single-flight refresh moved into
   `ClaudeMcpAppsCatalog.refresh` so desktop and node share it.
-- **C6 Tests.** Unit: env helper, catalog mapping (annotations, flat key,
-  name normalization), both mapper paths, adapter (normalization, error,
-  cancel). A recorded fixture session for replay tests (see
-  `apps/desktop/docs/agent-reference/testing.md`), including one subagent
-  call to settle the subagent row.
+- **C6 Tests.** Done. Unit tests cover the env helper, catalog mapping, both
+  mapper paths and the adapter. `claude-mcp-apps.sdk.json` records a live turn
+  with a direct call and an async subagent call; the replay test drives it
+  through `createSessionQuery`. The subagent row falls back to the
+  `tool_result` block content, keeping `_meta` and no `structuredContent`.
 - **C7 Docs.** `docs/harness/claude/api-surface.md` (env flag, catalog,
   `readMcpResource`, `mcp_call` and its limits), reopen backlog row 10,
   `contracts.md` for the attachment.

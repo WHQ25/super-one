@@ -508,7 +508,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               // Bash: CLI sets is_error for non-zero exits too; only <tool_use_error>
               // marks a true tool-layer failure (validation, blocked, cancelled, …).
               const isError = isToolLayerError(toolName, block.is_error === true, text)
-              const app = toolApps?.toolResult(block.tool_use_id, userMsg.tool_use_result, block.is_error === true)
+              const app = toolApps?.toolResult(block.tool_use_id, userMsg.tool_use_result, block.is_error === true, block.content)
               emit({
                 type: 'content_delta',
                 messageId,

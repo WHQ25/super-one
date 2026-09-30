@@ -248,7 +248,7 @@ export function createClaudeAgentEventMapper(
     const isTimedOut = isBash ? extractBashKilled(toolUseResult) : undefined
     const taskCreateTodo = extractTaskCreateTodo(toolName, toolUseResult, text)
     const isError = isClaudeToolLayerError(toolName, sdkIsError, text)
-    const app = options.toolApps?.toolResult(toolUseId, toolUseResult, sdkIsError)
+    const app = options.toolApps?.toolResult(toolUseId, toolUseResult, sdkIsError, content)
     emit({
       type: 'content_delta',
       messageId,

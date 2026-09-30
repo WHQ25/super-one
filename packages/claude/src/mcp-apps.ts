@@ -145,17 +145,22 @@ export class ClaudeMcpAppsCatalog {
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
 
+const contentBlocks = (content: unknown): unknown[] =>
+  typeof content === 'string' ? [{ type: 'text', text: content }] : Array.isArray(content) ? content : []
+
 /**
  * MCP result from an SDK `tool_use_result` or `mcp_call` response. Claude
  * post-processes `content` into a string (the JSON of `structuredContent` when
  * present), so the server's own text blocks are not recoverable.
+ *
+ * Inside a subagent, `tool_use_result` carries only a size-capped `_meta`;
+ * `blockContent` (the `tool_result` block the model saw) then stands in for
+ * `content`, and `structuredContent` is unavailable.
  */
-export function claudeMcpToolResult(raw: unknown, isError: boolean): McpAppToolResult | undefined {
+export function claudeMcpToolResult(raw: unknown, isError: boolean, blockContent?: unknown): McpAppToolResult | undefined {
   const rec = record(raw)
-  if (!rec || !('content' in rec)) return undefined
-  const content = typeof rec.content === 'string'
-    ? [{ type: 'text', text: rec.content }]
-    : Array.isArray(rec.content) ? rec.content : []
+  if (!rec || (!('content' in rec) && blockContent === undefined)) return undefined
+  const content = contentBlocks('content' in rec ? rec.content : blockContent)
   return {
     content,
     ...(rec.structuredContent !== undefined ? { structuredContent: rec.structuredContent } : {}),
@@ -192,12 +197,15 @@ export class ClaudeToolApps {
     return this.attachment(toolUseId, call, { status: 'pending' })
   }
 
-  /** `tool_result` for a call seen by `toolUse`; `toolUseResult` is the SDK user message field. */
-  toolResult(toolUseId: string, toolUseResult: unknown, isError: boolean): ToolAppAttachment | undefined {
+  /**
+   * `tool_result` for a call seen by `toolUse`. `toolUseResult` is the SDK
+   * user message field; `blockContent` is the `tool_result` block's content.
+   */
+  toolResult(toolUseId: string, toolUseResult: unknown, isError: boolean, blockContent?: unknown): ToolAppAttachment | undefined {
     const call = this.calls.get(toolUseId)
     if (!call) return undefined
     this.calls.delete(toolUseId)
-    const toolResult = claudeMcpToolResult(toolUseResult, isError)
+    const toolResult = claudeMcpToolResult(toolUseResult, isError, blockContent)
     return this.attachment(toolUseId, call, {
       status: isError ? 'error' : 'result',
       ...(toolResult ? { toolResult } : {}),

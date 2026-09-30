@@ -91,6 +91,12 @@ describe('claudeMcpToolResult', () => {
   it('ignores tool_use_result shapes of built-in tools', () => {
     expect(claudeMcpToolResult({ stdout: 'x' }, false)).toBeUndefined()
   })
+
+  it('falls back to the tool_result block inside a subagent, where only _meta survives', () => {
+    const blocks = [{ type: 'text', text: '{"page":3}' }]
+    expect(claudeMcpToolResult({ _meta: { token: 't' } }, false, blocks)).toEqual({ content: blocks, _meta: { token: 't' } })
+    expect(claudeMcpToolResult({ _meta: {} }, true, 'boom')).toEqual({ content: [{ type: 'text', text: 'boom' }], _meta: {}, isError: true })
+  })
 })
 
 describe('ClaudeToolApps', () => {

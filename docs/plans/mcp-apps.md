@@ -14,7 +14,7 @@ Long-term docs affected: `docs/architecture/chat-core.md` (tool app attachment),
 | 0.3 | Codex wire check | Against 0.159 with the fixture: extension reaches server `initialize`; app-only tool hidden from the model; `mcpAppUi` + full result on the item (`appContext` may be null); `resource/read` and `tool/call` with `threadId`. Confirm the node-side protocol path for remote projects; the RPC round trip itself is accepted in phase 1. |
 | 0.4 | Desktop iframe security | `superone-mcp-app://` iframe: cannot reach `parent`, cannot navigate top or open popups, form submission blocked by `form-action 'none'`, cross-origin new-document navigation blocked before the request, same-document routing kept, a new document revokes the bridge, `local-file` / `superone-app` handlers refuse this origin, CSP header blocks undeclared origins, StrictMode double mount leaves one bridge. |
 | 0.5 | Mobile child frame | iOS + Android: nested `srcdoc` frame cannot call the RN bridge directly; meta CSP (incl. `form-action 'none'`) applied before first script. |
-| 0.6 | Claude | `CLAUDE_CODE_MCP_APPS_HOST=true` changes the wire `initialize`; `readMcpResource` on the fixture; `mcp_call` round trip and its result shape; subagent result behavior. Verdict: native / gateway. |
+| 0.6 | Claude | **Done 2026-10-01 — native, with a gated `mcp_call` adapter.** Findings in [Claude track](#claude-track-phase-2). |
 | 0.7 | Gateway call id | On one gateway harness (OpenCode plugin hook or dsh `callId`), try to pass the harness call id into the upstream request `_meta`. Verdict per harness: attached / adjacent block. An adjacent verdict does not block phase 1. |
 
 ## Phase 1 — Codex, desktop, public server, inline
@@ -30,10 +30,78 @@ Acceptance: with the fixture and one real public Apps server — model calls the
 
 Tests: Vitest for the CSP builder, visibility/approval executor, mapper, attachment persistence; Storybook stories for `McpAppView` (loading, error, auth required, restored-inactive, long content, narrow, light/dark).
 
+## Claude track (phase 2)
+
+### Spike 0.6 findings
+
+Claude Agent SDK 0.3.285 / Claude Code 2.1.285, stdio fixture, desktop, a
+real Haiku turn. Script kept locally in `docs/temp/` (not committed).
+
+| Question | Result |
+|---|---|
+| UI extension in `initialize` | Sent only when `CLAUDE_CODE_MCP_APPS_HOST=true` is in the **spawn env** (`Options.env`). The same key in SDK `settings.env` has no effect. The CLI also probes `server/discover` (MCP 2026-07-28) before `initialize`. |
+| Tool UI metadata | `mcpServerStatus()` returns each tool's `_meta.ui` and the flat `ui/resourceUri`, with or without the flag. Annotations are reshaped: `readOnlyHint` arrives as `readOnly`. `system/init.capabilities` lists `mcp_read_resource_v1`, `mcp_tool_ui_meta_v1`; there is no capability for `mcp_call`. |
+| App-only tools | Missing from `system/init.tools`, so hidden from the model, with or without the flag. |
+| Model-turn result | `tool_use_result = { content, _meta, structuredContent }` at top level. When `structuredContent` exists, `content` (and what the model sees) is its JSON string, not the server's text content; the private `_meta` stays out of the model's `tool_result`. MCP tools are deferred behind ToolSearch. |
+| `readMcpResource` | Works without a turn, `ui://` only (other schemes refused), returns content `_meta.ui` (csp, prefersBorder). |
+| `mcp_call` | Works through the internal `Query.request({ subtype: 'mcp_call', tool: 'mcp__<server>__<tool>', arguments })`. **No visibility or permission check** (a model-only tool ran). Result is post-processed like a model call (`content` becomes a string). A result with `isError` rejects the control request (`errorClass: control_request_failed`, message = tool text), the same shape as "could not run". `AbortSignal` sends `control_cancel_request`; the server received `notifications/cancelled` within ~1 s. |
+| Subagent results | Not exercised; static evidence says `_meta` is capped and `structuredContent` dropped. Verified in C6. |
+
+Verdict: **native**. `readMcpResource` and tool metadata are public alpha
+APIs; `mcp_call` is internal and goes behind one adapter with a runtime and
+version gate. If the gate fails, Claude Views render and receive tool input
+and results but their `tools/call` is reported unsupported. Gateway fallback
+is only reconsidered if that happens in a released SDK.
+
+### Steps
+
+Depends on phase 1 steps 1, 4 and 5 (contract, View host, executor). C1–C3
+can start as soon as the contract is committed.
+
+- **C1 Host env.** A `packages/claude` helper adds `CLAUDE_CODE_MCP_APPS_HOST=true`
+  to the spawn env, merging `process.env` when no env is set (SDK env is
+  replace, not overlay). Apply it at every query construction:
+  `apps/desktop/src/main/agent/claude-query.ts` (session + warmup),
+  `packages/claude/src/run-sdk-turn.ts`, `packages/claude/src/claude-live-session.ts`.
+  The constant key keeps `WarmupManager.keyOf` stable.
+- **C2 Tool UI catalog.** `ClaudeBackend` reads `mcpServerStatus()` after init
+  and on MCP status changes, when `system/init.capabilities` has
+  `mcp_tool_ui_meta_v1`. It keeps server → tool → UI meta, maps `readOnly` →
+  `readOnlyHint`, applies the flat-key fallback, and resolves the normalized
+  server name in `mcp__<server>__<tool>` back to the raw name that
+  `readMcpResource` needs.
+- **C3 Mapper.** Both tool-result paths in `claude-query.ts` (streamed and
+  assembled) and `packages/claude/src/agent-event-mapper.ts` emit the shared
+  attachment for UI tools: input from `tool_use.input`, result from
+  `tool_use_result` (string `content` normalized to a text block,
+  `structuredContent`, private `_meta`), keyed by the `tool_use` id. The
+  resource snapshot is fetched once per URI + server through
+  `readMcpResource` and attached as an update.
+- **C4 Provider.** `ClaudeBackend` implements `McpAppsProvider`:
+  `readResource` → `readMcpResource` with a deadline; `callTool` → the
+  `mcp_call` adapter (`typeof query.request === 'function'` + tested SDK
+  version), result normalized as in C3, a rejected request mapped to
+  `{ isError: true }` for the View and to `unknown_outcome` for retry policy,
+  cancellation through the signal. Visibility and approval come only from the
+  shared executor.
+- **C5 Remote node.** The CLI live session exposes the same provider over the
+  environment RPC that phase 1 adds for Codex.
+- **C6 Tests.** Unit: env helper, catalog mapping (annotations, flat key,
+  name normalization), both mapper paths, adapter (normalization, error,
+  cancel). A recorded fixture session for replay tests (see
+  `apps/desktop/docs/agent-reference/testing.md`), including one subagent
+  call to settle the subagent row.
+- **C7 Docs.** `docs/harness/claude/api-surface.md` (env flag, catalog,
+  `readMcpResource`, `mcp_call` and its limits), reopen backlog row 10,
+  `contracts.md` for the attachment.
+
+Acceptance: the phase 1 acceptance run on Claude, plus a View `tools/call`
+to a model-only tool rejected by the executor before `mcp_call`.
+
 ## Later phases
 
-Phases 2–5 follow the proposal §8 and get their own steps here once phase 0
-verdicts are in.
+Phases 3–5 follow the proposal §8 and get their own steps here once their
+spikes are in.
 
 ## Log
 

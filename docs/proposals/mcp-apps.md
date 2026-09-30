@@ -22,7 +22,7 @@ disagree (`ui/message.content` is an array in the schema), the schema wins.
 |---|---|
 | Who hosts the UI | SuperOne, one shared host for every harness. |
 | Where the MCP connection lives | **Capability-driven providers behind one contract** (§4). *Native* when the harness exposes what a host needs on a usable API; *gateway* (SuperOne is the MCP client) otherwise; *unsupported* (text result only) when neither is proven. |
-| Per harness today | Codex: native. Claude: conditional, native only if the §8 spike passes, else gateway. dsh: plugin adapter or gateway, by cost. OpenCode, Cursor, Grok: gateway. |
+| Per harness today | Codex: native. Claude: native, with View `tools/call` behind a gated adapter (spike 0.6). dsh: plugin adapter or gateway, by cost. OpenCode, Cursor, Grok: gateway. |
 | First release | Codex, desktop, public third-party server, inline display. |
 | Tool-row correlation | Never guessed. Native providers use the harness item id. The gateway's own call record is authoritative; attaching it to a harness row is best effort and may fail. |
 | Restored Views | Paint from stored data; backend actions (`tools/call`, `resources/read`, `ui/message`) stay disabled until the user activates the View. |
@@ -52,7 +52,7 @@ are what runs today, not only what `package.json` declares.
 | Harness | Advertises UI ext. | Tool `_meta` + result to host | Host `resources/read` | Host `tools/call` | Hides app-only tools | OAuth trigger | Provider |
 |---|---|---|---|---|---|---|---|
 | Codex app-server 0.159 | Y, `InitializeCapabilities.extensions` (object settings) | Y: `McpServerStatus.tools` (name→Tool map); `mcpToolCall.mcpAppUi`, `appContext`, `result{content,structuredContent,_meta}` | Y `mcpServer/resource/read` (`threadId`; `originCallId` for hosted apps) | Y `mcpServer/tool/call` (`threadId`) | Y | Y | Native |
-| Claude Agent SDK 0.3.285 | Y? `CLAUDE_CODE_MCP_APPS_HOST=true` (static evidence only) | P: `mcpServerStatus().tools[]._meta.ui`; `tool_use_result._meta` / `.structuredContent` at top level; subagent results keep a capped `_meta` only | P `readMcpResource()` alpha, `ui://` only, CLI-dialed servers, check `mcp_read_resource_v1` | P internal `mcp_call`: no public method, **no permission check**, rejects SDK servers, result is post-processed | Y | P runtime-only methods | Conditional |
+| Claude Agent SDK 0.3.285 | Y, `CLAUDE_CODE_MCP_APPS_HOST=true` in the spawn env (verified) | Y: `mcpServerStatus().tools[]._meta.ui`; `tool_use_result._meta` / `.structuredContent` at top level (verified); subagent results keep a capped `_meta` only | Y `readMcpResource()` alpha, `ui://` only (verified) | P internal `mcp_call` (verified): no public method, **no permission check**, `isError` indistinguishable from not-run, result post-processed | Y (verified) | P runtime-only methods | Native (gated `mcp_call`) |
 | dsh 0.1.7 | N (Cordis plugin replaceable) | P: `content` + `structuredContent`, `_meta` dropped; tools hook exposes `callId` | P in-process | P in-process | N | N | Plugin adapter or gateway |
 | OpenCode 1.18.18 (runtime, unpinned) | N (`roots` only) | N on public API | N on public API (internal only) | N | N | Y | Gateway |
 | Cursor SDK 1.0.30 | N | P: text/image + `isError`, no `_meta` / `structuredContent` | N | N | N | P internal | Gateway |

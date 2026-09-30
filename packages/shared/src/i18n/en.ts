@@ -3858,6 +3858,28 @@ export type Messages = {
       failed: string
     }
   }
+  mcpApp: {
+    loading: string
+    activate: string
+    activateHint: string
+    activateToLoad: string
+    loadFailed: string
+    authRequired: string
+    retry: string
+    reloaded: string
+    restart: string
+    unknownOutcome: string
+    exitFullscreen: string
+    approveTool: string
+    allowOnce: string
+    alwaysAllow: string
+    deny: string
+    sendMessage: string
+    nonTextBlocks: string
+    send: string
+    openLink: string
+    open: string
+  }
   filePreview: {
     loadFailed: string
     loadFailedHint: string
@@ -7923,6 +7945,28 @@ export const en: Messages = {
       saved: 'Saved template "{{id}}"',
       failed: 'Could not save template: {{error}}',
     },
+  },
+  mcpApp: {
+    loading: 'Loading app…',
+    activate: 'Activate',
+    activateHint: 'Restored from history. It does not reach the server until you activate it.',
+    activateToLoad: 'Activate to load this app.',
+    loadFailed: 'Could not load the app: {{error}}',
+    authRequired: 'Sign in to {{server}} on the desktop, then retry.',
+    retry: 'Retry',
+    reloaded: 'This app opened a new page and was stopped.',
+    restart: 'Restart',
+    unknownOutcome: 'The result of the last action is unknown. It was not retried.',
+    exitFullscreen: 'Exit Full Screen',
+    approveTool: '{{server}} wants to run {{tool}}',
+    allowOnce: 'Allow Once',
+    alwaysAllow: 'Always Allow',
+    deny: 'Deny',
+    sendMessage: '{{server}} wants to send this message',
+    nonTextBlocks: 'Plus {{count}} non-text attachments',
+    send: 'Send',
+    openLink: 'Open this link?',
+    open: 'Open',
   },
   filePreview: {
     loadFailed: 'Could not read this file',

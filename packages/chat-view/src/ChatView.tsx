@@ -30,6 +30,7 @@ import {
 import { transcriptRow } from './transcript-rows'
 import { ZERO_TURN_TOKENS } from './presenters/turn-footer-model'
 import { CHAT_WINDOW, initialChatWindow, loadPreviousChatWindow, loadNextChatWindow, normalizeChatWindow, type ChatWindowRange } from './chat-window'
+import { exitMcpAppFullscreen, forgetMcpAppArrivals, noteMcpAppArrivals } from './mcp-app-document'
 import { installHostBridge, postHost, requestNativeAsync } from './bridge'
 import { setChatViewLocale } from './i18n'
 import { PortableMessage } from './PortableMessage'
@@ -422,6 +423,7 @@ export function ChatView() {
         return
       case 'initialize':
       case 'hydrate':
+        noteMcpAppArrivals(message.messages, 'restored')
         navigationRequest.current++
         setNavigationLoading(false)
         setNavigationRetry(null)
@@ -444,10 +446,13 @@ export function ChatView() {
         })
         return
       case 'applyReductionPatch':
+        noteMcpAppArrivals(message.messagePatches, 'live')
+        noteMcpAppArrivals(message.messages, 'live')
         if (atBottomRef.current && (message.messages || message.messagePatches)) scrollToBottomRef.current = true
         setState((previous) => applyProjection(previous, message, atBottomRef.current))
         return
       case 'prependHistory':
+        noteMcpAppArrivals(message.messages, 'restored')
         if (!message.messages?.length) return
         setState((previous) => {
           const merged = mergeHistory(message.messages ?? [], previous.messages)
@@ -461,7 +466,11 @@ export function ChatView() {
           }
         })
         return
+      case 'exitMcpAppFullscreen':
+        exitMcpAppFullscreen()
+        return
       case 'reset':
+        forgetMcpAppArrivals()
         navigationRequest.current++
         setNavigationLoading(false)
         setNavigationRetry(null)

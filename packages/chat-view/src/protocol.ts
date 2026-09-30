@@ -72,6 +72,7 @@ export type HostInbound =
   | ({ type: 'prependHistory' } & ReductionProjection)
   | { type: 'reset' }
   | { type: 'channelToken'; token: string }
+  | { type: 'exitMcpAppFullscreen' }
   | { type: 'setConnection'; state: string; epoch: number }
   | { type: 'setTheme'; hue?: number; scheme?: 'light' | 'dark' }
   | {

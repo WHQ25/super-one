@@ -1,7 +1,7 @@
 import { PortableCodexCommand } from './PortableCodexCommand'
 import { DeferredInteractiveTool, isPortableInteractiveTool } from './DeferredInteractiveTool'
 import { DeferredTool, DeferredCodexTool, DeferredDetailStatus, useDeferredToolDetail } from './DeferredTool'
-import { PortableAsyncQuestion, AsyncQuestionTurnContext } from './PortableAsyncQuestion'
+import { PortableAsyncQuestion } from './PortableAsyncQuestion'
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import type {
   ChatMessage,
@@ -24,9 +24,11 @@ import {
 import { requestNative } from './bridge'
 import {
   PortableTurnContext,
+  TurnMessageIdContext,
   type PendingPermission,
   type PortableTurnContextValue,
 } from './portable-turn-context'
+import { PortableMcpAppView } from './PortableMcpAppView'
 import { PortablePlanActions } from './PortablePlanActions'
 import { PortableMarkdown, PortableInsight, PlainCode } from './PortableMarkdown'
 import { PortableImageGallery, PortableVideoGallery } from './PortableMediaGalleries'
@@ -195,7 +197,19 @@ function PortableDocument({ name }: { name: string }) {
   return <FileText className="size-3 shrink-0" aria-label={name} />
 }
 
+/** A call whose server attached an MCP App shows its View under the row. */
 function PortableClaudeTool(props: ClaudeToolPresenterProps) {
+  const messageId = useContext(TurnMessageIdContext)
+  if (!props.app || !messageId) return <PortableClaudeToolRow {...props} />
+  return (
+    <>
+      <PortableClaudeToolRow {...props} />
+      <PortableMcpAppView app={props.app} messageId={messageId} />
+    </>
+  )
+}
+
+function PortableClaudeToolRow(props: ClaudeToolPresenterProps) {
   const { pendingPermission, mcpIcons } = useContext(PortableTurnContext)
   const brandIconSrc = resolveMcpServerIconFromMap('superone', mcpIcons)
   if (isPortableInteractiveTool(props.toolName, props.input)) return <DeferredInteractiveTool {...props} />
@@ -835,7 +849,7 @@ export function PortableClaudeTurn({
   const portableContent = useMemo(() => portableToolBlocks(message.content), [message.content])
   const grouped = useMemo(() => groupContentPresenter(portableContent, GROUP_PORTS), [portableContent])
   return (
-    <ClaudeTurnBodyPresenter
+    <TurnMessageIdContext.Provider value={message.id}><ClaudeTurnBodyPresenter
       grouped={grouped}
       isStreaming={isStreaming}
       detailChatMode={false}
@@ -845,7 +859,7 @@ export function PortableClaudeTurn({
       projectPath={null}
       parts={CLAUDE_PARTS}
       runtime={CLAUDE_RUNTIME}
-    />
+    /></TurnMessageIdContext.Provider>
   )
 }
 
@@ -884,6 +898,7 @@ function claudePropsFromCodexMcp(item: CodexMcpToolCallItem): ClaudeToolPresente
     result: codexMcpItemResultText(item),
     status: item.status === 'in_progress' ? 'streaming' : 'complete',
     isError: item.status === 'failed' || Boolean(item.error),
+    app: item.app,
   }
 }
 
@@ -903,6 +918,8 @@ function DeferredCodexMcp({ item }: { item: CodexMcpToolCallItem }) {
     <>
       <PortableClaudeTool
         {...claudePropsFromCodexMcp(src)}
+        // The projected shell keeps the attachment; the loaded detail may predate its update.
+        app={item.app ?? src.app}
         status={!ready || src.status === 'in_progress' ? 'streaming' : 'complete'}
       />
       <DeferredDetailStatus status={error ? status : undefined} onRetry={retry} />
@@ -1061,7 +1078,7 @@ export function PortableCodexTurn({
     })
   }
   return (
-    <AsyncQuestionTurnContext.Provider value={message.id}><CodexTurnViewPresenter
+    <TurnMessageIdContext.Provider value={message.id}><CodexTurnViewPresenter
       message={message}
       isStreaming={isStreaming}
       isWorking={isStreaming}
@@ -1074,7 +1091,7 @@ export function PortableCodexTurn({
       appNameById={EMPTY_MAP}
       parts={CODEX_PARTS}
       runtime={CODEX_RUNTIME}
-    /></AsyncQuestionTurnContext.Provider>
+    /></TurnMessageIdContext.Provider>
   )
 }
 

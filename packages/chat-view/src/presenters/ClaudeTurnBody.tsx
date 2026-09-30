@@ -1,6 +1,7 @@
 import { Fragment, type ComponentType, type ReactNode } from 'react'
 import { ImageIcon } from 'lucide-react'
 import type { BashEditDiff, ContentBlock } from '@superone/shared/agent-types'
+import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import {
   collapsibleItems,
   countVisibleClaudeProcessSegments,
@@ -48,6 +49,8 @@ export interface ClaudeToolPresenterProps {
   toolLineDelta?: { added: number; removed: number }
   /** `*_run` only: the resume calls folded into this block (groupContent `runContinuations`). */
   runContinuations?: RunContinuation[]
+  /** The MCP App View this call rendered, when its server attached one. */
+  app?: ToolAppAttachment
 }
 
 export interface ClaudeInsightPresenterProps {
@@ -135,6 +138,7 @@ interface RenderOptions {
   errorToolIds: Set<string>
   outputPathMap: Map<string, string>
   bashEditDiffMap?: Map<string, BashEditDiff>
+  toolAppMap?: Map<string, ToolAppAttachment>
   runContinuations?: GroupContentResult['runContinuations']
   projectPath: string | null
   parts: ClaudeTurnBodyPresenterParts
@@ -155,6 +159,7 @@ export function ClaudeBlockPresenter({
   errorToolIds,
   outputPathMap,
   bashEditDiffMap,
+  toolAppMap,
   runContinuations,
   nextBlockType,
   prevBlockType,
@@ -170,6 +175,7 @@ export function ClaudeBlockPresenter({
   errorToolIds?: Set<string>
   outputPathMap?: Map<string, string>
   bashEditDiffMap?: Map<string, BashEditDiff>
+  toolAppMap?: Map<string, ToolAppAttachment>
   runContinuations?: GroupContentResult['runContinuations']
   nextBlockType?: string
   prevBlockType?: string
@@ -220,6 +226,7 @@ export function ClaudeBlockPresenter({
           isError={errorToolIds?.has(block.toolUseId)}
           resultOutputPath={outputPathMap?.get(block.toolUseId)}
           bashEditDiff={bashEditDiffMap?.get(block.toolUseId)}
+          app={toolAppMap?.get(block.toolUseId) ?? block.app}
           autoExpand={runtime.isBackgroundTool(block) ? false : undefined}
           toolDiff={block.toolDiff}
           toolDiffTokens={block.toolDiffTokens}
@@ -316,6 +323,7 @@ function renderSegments(
           errorToolIds={options.errorToolIds}
           outputPathMap={options.outputPathMap}
           bashEditDiffMap={options.bashEditDiffMap}
+          toolAppMap={options.toolAppMap}
           runContinuations={options.runContinuations}
           nextBlockType={segment.blocks[blockIndex + 1]?.type}
           prevBlockType={segment.blocks[blockIndex - 1]?.type}
@@ -372,6 +380,7 @@ function renderSegments(
           errorToolIds={options.errorToolIds}
           outputPathMap={options.outputPathMap}
           bashEditDiffMap={options.bashEditDiffMap}
+          toolAppMap={options.toolAppMap}
           runContinuations={options.runContinuations}
           nextBlockType={nextType}
           prevBlockType={previousType}
@@ -402,6 +411,7 @@ function renderSegments(
         errorToolIds={options.errorToolIds}
         outputPathMap={options.outputPathMap}
         bashEditDiffMap={options.bashEditDiffMap}
+        toolAppMap={options.toolAppMap}
         runContinuations={options.runContinuations}
         nextBlockType={segment.blocks[blockIndex + 1]?.type}
         prevBlockType={segment.blocks[blockIndex - 1]?.type}
@@ -430,6 +440,7 @@ export function ClaudeTurnBodyPresenter({
     errorToolIds: grouped.errorToolIds,
     outputPathMap: grouped.outputPathMap,
     bashEditDiffMap: grouped.bashEditDiffMap,
+    toolAppMap: grouped.toolAppMap,
     runContinuations: grouped.runContinuations,
     projectPath,
     parts,

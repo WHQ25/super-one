@@ -39,13 +39,20 @@ export function requestNative(action: string, payload?: unknown): string {
 
 const pendingRequests = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>()
 
-export function requestNativeAsync(action: string, payload?: unknown): Promise<unknown> {
+export class NativeRequestTimeout extends Error {
+  constructor() {
+    super('Request timed out. Please try again.')
+    this.name = 'NativeRequestTimeout'
+  }
+}
+
+export function requestNativeAsync(action: string, payload?: unknown, timeoutMs = 30_000): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const requestId = `native-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const timeout = setTimeout(() => {
       pendingRequests.delete(requestId)
-      reject(new Error('Request timed out. Please try again.'))
-    }, 30_000)
+      reject(new NativeRequestTimeout())
+    }, timeoutMs)
     pendingRequests.set(requestId, {
       resolve: value => { clearTimeout(timeout); resolve(value) },
       reject: error => { clearTimeout(timeout); reject(error) },

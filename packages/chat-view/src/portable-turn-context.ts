@@ -28,3 +28,6 @@ export const PortableTurnContext = createContext<PortableTurnContextValue>({
   projectPath: null,
   mcpIcons: {},
 })
+
+/** The assistant message a turn renders; rows that talk to the host name it. */
+export const TurnMessageIdContext = createContext<string | null>(null)

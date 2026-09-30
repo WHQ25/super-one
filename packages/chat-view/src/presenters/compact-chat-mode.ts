@@ -84,11 +84,12 @@ export function collapsibleItems<T>(runs: ReadonlyArray<TurnRun<T>>): T[] {
  */
 export function isClaudePinnedSegment(seg: {
   kind: string
-  block?: { type: string; toolName?: string }
+  block?: { type: string; toolName?: string; app?: unknown }
 }, ports: CompactChatModePorts): boolean {
   if (seg.kind !== 'block' || !seg.block) return false
   if (seg.block.type === 'text' || seg.block.type === 'insight') return true
-  return seg.block.type === 'tool_use' && isPinnedToolName(seg.block.toolName ?? '', ports)
+  // An MCP App View is addressed to the user, like a widget.
+  return seg.block.type === 'tool_use' && (Boolean(seg.block.app) || isPinnedToolName(seg.block.toolName ?? '', ports))
 }
 
 /**
@@ -97,7 +98,7 @@ export function isClaudePinnedSegment(seg: {
  */
 export function isCodexPinnedSegment(
   seg: { kind: string; index?: number },
-  itemAt: (index: number) => { type: string; server?: string; tool?: string } | undefined,
+  itemAt: (index: number) => { type: string; server?: string; tool?: string; app?: unknown } | undefined,
   ports: CompactChatModePorts,
 ): boolean {
   if (seg.kind !== 'item' || seg.index == null) return false
@@ -105,7 +106,7 @@ export function isCodexPinnedSegment(
   if (!item) return false
   if (item.type === 'agent_message' || item.type === 'plan') return true
   return item.type === 'mcp_tool_call'
-    && isPinnedToolName(`mcp__${item.server}__${item.tool}`, ports)
+    && (Boolean(item.app) || isPinnedToolName(`mcp__${item.server}__${item.tool}`, ports))
 }
 
 type ClaudeVisibilitySeg = {

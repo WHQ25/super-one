@@ -20,7 +20,7 @@ the change. Reuse content already loaded; a local typo fix needs no architecture
 | Harness upstream APIs, version upgrades | [docs/harness/README.md](docs/harness/README.md) |
 | Cross-package layout and TypeScript resolution | [repository.md](docs/development/repository.md) |
 | Preparing a commit | [commit-messages.md](docs/development/commit-messages.md) |
-| Where a document goes; architecture and feature docs; task docs | [docs/README.md](docs/README.md) |
+| Where a document goes; architecture and feature docs; proposals and plans | [docs/README.md](docs/README.md) |
 
 ## Conventions
 
@@ -33,10 +33,11 @@ the change. Reuse content already loaded; a local typo fix needs no architecture
   Use an established lowercase scope, imperative lowercase subject, no trailing
   period, at most 72 characters. Explain why in the body when useful; incompatible
   changes require a `BREAKING CHANGE:` footer and migration instructions.
-- Working notes for multi-step work (plans, spikes, investigations) go in
-  `docs/tasks/<task-slug>/`. When the work is done, move what stays true into the
-  long-term docs or workspace manuals, point code comments there, and delete the
-  task folder in the same change. Code comments never cite task docs.
+- Direction still under discussion goes in `docs/proposals/<slug>.md`; execution
+  and progress (steps, spikes, investigations) go in `docs/plans/<slug>.md`. When
+  the work is done, move what stays true into the long-term docs or workspace
+  manuals, point code comments there, and delete the plan and its accepted
+  proposal in the same change. Code comments never cite proposals or plans.
 - Keep entrypoints (`CLAUDE.md`, skill `SKILL.md`) short routers. Fix stale
   guidance where it lives instead of adding another always-loaded rule.
 

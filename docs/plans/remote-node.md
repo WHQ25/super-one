@@ -2,7 +2,7 @@
 
 Status: in-progress · Updated: 2026-09-30
 Goal: Close the gaps between the remote node as built and the architecture in the long-term doc, then converge the local desktop runtime onto the same node path.
-Long-term docs affected: [remote-node-service.md](../../architecture/remote-node-service.md), [runtime-delivery.md](../../harness/runtime-delivery.md), [session-sync-zone.md](../../architecture/session-sync-zone.md)
+Long-term docs affected: [remote-node-service.md](../architecture/remote-node-service.md), [runtime-delivery.md](../harness/runtime-delivery.md), [session-sync-zone.md](../architecture/session-sync-zone.md)
 
 ## Known drift (code vs decided behavior)
 

@@ -1,12 +1,13 @@
 # SuperOne docs
 
-`docs/` holds two kinds of documents:
+`docs/` holds three kinds of documents:
 
 - **Long-term docs** describe how SuperOne works now. They change in the same
   commit as the code they describe, and code comments may cite them.
-- **Task docs** are working notes for one piece of work in progress: plans,
-  spikes, investigations, validation logs. They live in `docs/tasks/` and are
-  deleted when the work is done.
+- **Proposals** discuss direction before it is built: macro designs, options,
+  decisions and open questions. They live in `docs/proposals/`.
+- **Plans** track execution: steps, spikes, investigations, validation logs and
+  progress. They live in `docs/plans/` and are deleted when the work is done.
 
 Knowledge that concerns a single workspace belongs in that workspace's manuals
 (`apps/<workspace>/docs/`, routed from its `CLAUDE.md`), not here.
@@ -20,13 +21,14 @@ Knowledge that concerns a single workspace belongs in that workspace's manuals
 | One harness's upstream surface, contracts, upgrades | [harness/](harness/README.md) |
 | Repository conventions and workflow | [development/](#development) |
 | One workspace's internals, testing, release steps | `apps/<workspace>/docs/` |
-| Work in progress | `docs/tasks/<task-slug>/` |
+| Direction under discussion or decided but not yet built | `docs/proposals/<slug>.md` |
+| Execution and progress of work | `docs/plans/<slug>.md` |
 | Scratch that should not be shared | `docs/temp/` (gitignored) |
 
 ## Long-term docs
 
 State the current behavior and the decisions behind it. Leave out progress
-markers, phase tables, dated logs and checklists; those belong in a task doc and
+markers, phase tables, dated logs and checklists; those belong in a plan and
 in git history. When code changes what a long-term doc says, update the doc in
 the same commit.
 
@@ -51,29 +53,53 @@ the same commit.
 - [repository.md](development/repository.md) — workspace layout and TypeScript resolution
 - [commit-messages.md](development/commit-messages.md) — commit format
 
-## Task docs
+## Proposals
 
-One folder per task, `docs/tasks/<task-slug>/`, with a `README.md` that starts:
+One file per proposal, `docs/proposals/<slug>.md`, starting:
 
 ```
-# <Task title>
+# <Title>
+
+Status: draft | accepted | rejected | superseded · Updated: <YYYY-MM-DD>
+Plan: <link, once accepted>
+```
+
+A proposal stays macro: goals, decisions, options, contracts, phases and open
+questions. Update it in place as the discussion moves; the status says whether
+it is settled.
+
+- **Accepted**: execution gets a plan under the same slug.
+- **Rejected**: keep the file, trimmed to the conclusion and the reasons, so the
+  idea is not reopened without new facts.
+- **Superseded**: point to the replacing proposal, then delete once nothing
+  links to it.
+
+## Plans
+
+One file per piece of work, `docs/plans/<slug>.md`, using the proposal's slug
+when there is one. Use a `docs/plans/<slug>/` folder only when parallel tracks
+need separate files. A plan starts:
+
+```
+# <Title>
 
 Status: planned | in-progress | blocked · Updated: <YYYY-MM-DD>
 Goal: <one sentence>
+Proposal: <link, if any>
 Long-term docs affected: <links>
 ```
 
-Split into more files in the same folder when the task needs it.
-
-When the task is done, in the commit that completes it:
+Small work needs no proposal. When the work is done, in the commit that
+completes it:
 
 1. Move what stays true into the long-term docs, workspace manuals, harness
    docs, `CLAUDE.md` or skills: decisions, invariants, traps, how to verify.
-2. Point code comments at those long-term docs. Code never cites a task doc.
-3. Delete the task folder. Git history keeps it.
+2. Point code comments at those long-term docs. Code never cites a proposal or
+   a plan.
+3. Delete the plan and its accepted proposal. Git history keeps them.
 
-A task that is dropped is deleted the same way, after recording why in the
-relevant long-term doc if the decision matters later.
+Dropped work is deleted the same way, after recording why in the relevant
+long-term doc or rejected proposal if the decision matters later.
 
 ## Translations
 

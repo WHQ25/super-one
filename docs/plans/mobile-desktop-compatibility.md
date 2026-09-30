@@ -2,7 +2,7 @@
 
 Status: planned · Updated: 2026-09-30
 Goal: Give the mobile app an explicit supported desktop-version range and a clear upgrade path for older hosts.
-Long-term docs affected: [mobile-remote-control.md](../../architecture/mobile-remote-control.md), [transport.md](../../../apps/mobile/docs/agent-reference/transport.md)
+Long-term docs affected: [mobile-remote-control.md](../architecture/mobile-remote-control.md), [transport.md](../../apps/mobile/docs/agent-reference/transport.md)
 
 ## Agreed policy
 
@@ -40,7 +40,7 @@ progressive history page/snapshot. Existing restore tests retain that coverage.
    the floor, or explicitly define a transition probe for supported older hosts.
 5. Keep fallbacks required by supported versions and remove obsolete ones only
    when the floor makes them unreachable. Update long-term docs with actual
-   behavior and delete this task folder when implemented.
+   behavior and delete this plan when implemented.
 
 ## Verification
 

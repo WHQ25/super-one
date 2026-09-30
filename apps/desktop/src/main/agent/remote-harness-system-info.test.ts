@@ -197,4 +197,18 @@ describe('remote harness system info', () => {
     expect(info.permissionModes).toEqual(['default', 'auto', 'bypassPermissions'])
     expect(info.permissionPresets).toEqual(['read-only', 'default', 'auto-review', 'full-access'])
   })
+
+  it.each(['claude', 'cursor'] as const)('resolves %s model context windows from the host catalog', async (harnessId) => {
+    const deps = dependencies({
+      claude: { models: [model('opus', { resolvedModel: 'claude-opus-5-5' }), model('haiku')] },
+      cursor: { models: [model('claude-opus-5-5', { contextWindow: 200_000 })] },
+    } as Partial<HarnessResourcesMap>)
+    deps.catalogModels = async () => new Map([['claude-opus-5-5', { contextWindow: 1_000_000 }]])
+
+    const info = await buildRemoteHarnessSystemInfo('/repo', harnessId, deps)
+
+    expect(info.models.map((entry) => entry.contextWindow)).toEqual(
+      harnessId === 'claude' ? [1_000_000, undefined] : [200_000],
+    )
+  })
 })

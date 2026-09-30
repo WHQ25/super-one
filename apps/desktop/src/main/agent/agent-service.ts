@@ -1698,6 +1698,16 @@ export class AgentService {
             defaultSandboxMode: () => this.readDefaultSessionPrefs(command.provider).sandboxMode
               ?? getSandboxCapability().defaultMode,
             sandboxSupport: () => getSandboxCapability().supportLevel,
+            catalogModels: async () => {
+              try {
+                const { getModelCatalog } = await import('../model-catalog')
+                const { buildCatalogModelIndex } = await import('@superone/shared/platform-registry')
+                return buildCatalogModelIndex(await getModelCatalog())
+              } catch (err) {
+                log.warn('[get_system_info] model catalog unavailable: %s', err instanceof Error ? err.message : String(err))
+                return new Map()
+              }
+            },
             deepseekPresets: async () => {
               try {
                 const { getDeepseekRuntime } = await import('../deepseek/deepseek-runtime-host')

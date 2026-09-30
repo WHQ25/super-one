@@ -266,8 +266,8 @@ export function MobileApp() {
   const composerSandboxInfo = sessionId
     ? sandboxInfo
     : sandboxInfoFromMode(pendingSandboxMode ?? harnessSelection.defaultSandboxMode ?? 'off')
-  // The phone has no models.dev catalog, so the window comes from the harness's own
-  // model row, whatever a usage event reported, and Claude's built-in fallback.
+  // The phone has no models.dev catalog; the host stamps its catalog window onto each
+  // model row, else a usage event's report or Claude's built-in fallback applies.
   // Cursor's picked `context` param (300k / 1m) wins; the model row carries the default.
   const cursorContextParam = harnessSelection.modelParams.context
   const ringContextWindow = useMemo(() => {

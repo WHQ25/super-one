@@ -18,6 +18,7 @@ import {
   coerceSandboxModeForHarness,
   harnessSandboxModes,
 } from '@superone/shared/harness/harness-sandbox'
+import { lookupCatalogContextWindow } from '@superone/shared/platform-registry'
 import { BASE_SESSION_PROVIDERS } from '@superone/shared/session-provider-definitions'
 import { deriveSessionCatalog } from '../acp/acp-config'
 import { acpModeCatalog, deepseekModeCatalog, openCodeAgentCatalog } from './remote-selector-catalog'
@@ -55,6 +56,11 @@ export interface RemoteHarnessSystemInfoDependencies {
    * "the user chose off" from "this host has no sandbox" out of that alone.
    */
   sandboxSupport?: () => SandboxSupportLevel
+  /**
+   * models.dev index keyed by bare model id. A remote shell carries no catalog,
+   * so each row's context window is resolved here the way the desktop ring does.
+   */
+  catalogModels?: () => Promise<ReadonlyMap<string, { contextWindow?: number }>>
 }
 
 const CODEX_PERMISSION_PRESETS = ['read-only', 'default', 'auto-review', 'full-access'] as const
@@ -100,6 +106,14 @@ function defaultInfo(
   }
 }
 
+function withCatalogContextWindow(
+  model: ModelOption,
+  catalog: ReadonlyMap<string, { contextWindow?: number }>,
+): ModelOption {
+  const contextWindow = lookupCatalogContextWindow([model.id, model.resolvedModel], catalog)
+  return contextWindow ? { ...model, contextWindow } : model
+}
+
 /**
  * A remote shell has no settings store of its own, so the brand hue, locale and
  * sandbox capability of this host travel with the harness catalog rather than as
@@ -112,8 +126,11 @@ export async function buildRemoteHarnessSystemInfo(
   deps: RemoteHarnessSystemInfoDependencies,
 ): Promise<RemoteSystemInfo> {
   const info = await harnessSystemInfo(projectPath, harnessId, deps)
+  // Cursor's window is its own `context` param and never comes from models.dev.
+  const catalog = harnessId === 'cursor' ? null : await deps.catalogModels?.()
   return {
     ...info,
+    ...(catalog && info.models ? { models: info.models.map((model) => withCatalogContextWindow(model, catalog)) } : {}),
     brandHue: deps.settings.agentPreference[harnessId]?.brandHue ?? null,
     locale: deps.currentLocale,
     sandboxSupport: deps.sandboxSupport?.() ?? 'always',

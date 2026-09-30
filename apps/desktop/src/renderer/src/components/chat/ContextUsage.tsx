@@ -5,23 +5,9 @@ import { cn } from '@superone/ui/lib/utils'
 import { useChatStore, useActiveSession, useSessionScope, selectClaudeModels, selectCursorModels } from '@/stores/chat'
 import { resolveRingContextWindow, type ContextUsageCategory } from '@superone/shared/agent-types'
 import { resolveCursorSelectedContextWindow } from '@superone/cursor/cursor-model-selection'
-import { buildCatalogModelIndex, normalizeModelId } from '@superone/shared/platform-registry'
+import { buildCatalogModelIndex, lookupCatalogContextWindow } from '@superone/shared/platform-registry'
 import { useModelCatalog } from '@/hooks/useModelCatalog'
-import { stripOneM } from '@/lib/model-id'
 import { formatTokens } from './chat-shared'
-
-function lookupCatalogContextWindow(
-  modelIds: Array<string | null | undefined>,
-  catalogModels: ReadonlyMap<string, { contextWindow?: number }>,
-): number | null {
-  for (const raw of modelIds) {
-    if (!raw) continue
-    const model = catalogModels.get(normalizeModelId(stripOneM(raw)))
-    const window = model?.contextWindow
-    if (typeof window === 'number' && window > 0) return window
-  }
-  return null
-}
 
 const RING = { size: 16, cx: 8, cy: 8, r: 6 }
 const RING_CIRC = 2 * Math.PI * RING.r

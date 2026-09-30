@@ -1,4 +1,4 @@
-import type { CapabilityTask } from '../agent-types'
+import { stripOneM, type CapabilityTask } from '../agent-types'
 import type { CatalogModel, ModelCatalog } from '../model-catalog-types'
 import { MODEL_TASK_ORDER, modelTasks } from '../model-tasks'
 import type { EndpointSlot, ProtocolFamily, WireProtocol } from './protocols'
@@ -189,6 +189,19 @@ export function buildCatalogModelIndex(catalog: ModelCatalog): Map<string, Catal
     }
   }
   return index
+}
+
+/** First catalog context window among `modelIds` (bare or `[1m]`-suffixed), else null. */
+export function lookupCatalogContextWindow(
+  modelIds: ReadonlyArray<string | null | undefined>,
+  catalogModels: ReadonlyMap<string, { contextWindow?: number }>,
+): number | null {
+  for (const raw of modelIds) {
+    if (!raw) continue
+    const window = catalogModels.get(normalizeModelId(stripOneM(raw)))?.contextWindow
+    if (typeof window === 'number' && window > 0) return window
+  }
+  return null
 }
 
 function hasExplicitEndpointTypes(endpointTypes: unknown): boolean {

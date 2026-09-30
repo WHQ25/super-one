@@ -863,6 +863,11 @@ export class ClaudeBackend implements SessionBackend {
         await this.refreshMcpAppsCatalog({ force: true })
         return this.mcpAppsCatalog.tools(binding.server) ?? new Map()
       },
+      serverStatus: async () => {
+        await this.ensureQuery()
+        await this.refreshMcpAppsCatalog()
+        return this.mcpAppsCatalog.status(binding.server)
+      },
     })
   }
 

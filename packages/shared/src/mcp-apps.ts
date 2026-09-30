@@ -61,6 +61,19 @@ export interface McpAppsCapabilities {
   mode: 'native' | 'gateway' | 'unsupported'
   resourceRead: boolean
   toolCall: boolean
+  /** The provider can start the server's OAuth sign-in. */
+  authenticate: boolean
+}
+
+/**
+ * A started sign-in. The host opens `authUrl` in the user's browser. With
+ * `harness`, the harness receives the redirect itself; with `host-callback`,
+ * the redirect goes to the `redirectUri` the host passed and the host hands the
+ * callback URL back through `submitAuthCallback`; `done` needs no user action.
+ */
+export interface McpAppsAuthStart {
+  authUrl?: string
+  completion: 'harness' | 'host-callback' | 'done'
 }
 
 export interface McpAppsProvider {
@@ -69,6 +82,9 @@ export interface McpAppsProvider {
   tools(): Promise<Map<string, McpToolDescriptor>>
   readResource(req: { uri: string; origin?: McpAppOrigin }, signal: AbortSignal): Promise<McpAppReadResult>
   callTool(req: { tool: string; args: unknown; origin?: McpAppOrigin }, signal: AbortSignal): Promise<McpAppsCallResult>
+  /** `redirectUri` is where the host listens when the harness cannot receive the redirect (remote node). */
+  authenticate?(req: { redirectUri?: string }, signal: AbortSignal): Promise<McpAppsAuthStart>
+  submitAuthCallback?(req: { callbackUrl: string }, signal: AbortSignal): Promise<void>
   dispose(): void
 }
 

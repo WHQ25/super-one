@@ -554,6 +554,10 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
         await current.refreshMcpAppsCatalog(true)
         return current.mcpAppsCatalog.tools(binding.server) ?? new Map()
       },
+      serverStatus: async () => {
+        await current.refreshMcpAppsCatalog()
+        return current.mcpAppsCatalog.status(binding.server)
+      },
     })
   }
 

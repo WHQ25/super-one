@@ -6,6 +6,7 @@ import {
   McpAppsError,
   type McpAppOrigin,
   type McpAppReadResult,
+  type McpAppsAuthStart,
   type McpAppsBinding,
   type McpAppsProvider,
   type McpAppToolResult,
@@ -40,6 +41,7 @@ export interface ClaudeMcpStatusTool {
 
 export interface ClaudeMcpStatusServer {
   name: string
+  status?: string
   config?: unknown
   tools?: ClaudeMcpStatusTool[]
 }
@@ -76,6 +78,7 @@ interface CatalogServer {
  */
 export class ClaudeMcpAppsCatalog {
   private servers = new Map<string, CatalogServer>()
+  private statuses = new Map<string, string>()
   private inflight: Promise<void> | null = null
   private refreshedAt = 0
 
@@ -105,6 +108,7 @@ export class ClaudeMcpAppsCatalog {
   }
 
   update(statuses: readonly ClaudeMcpStatusServer[]): void {
+    this.statuses = new Map(statuses.flatMap((s) => (s.status ? [[s.name, s.status] as const] : [])))
     this.servers = new Map(
       statuses
         .filter((s) => s.tools?.length)
@@ -118,6 +122,11 @@ export class ClaudeMcpAppsCatalog {
 
   config(server: string): unknown {
     return this.servers.get(server)?.config
+  }
+
+  /** Connection status as `mcpServerStatus()` last reported it (`needs-auth`, `connected`, …). */
+  status(server: string): string | undefined {
+    return this.statuses.get(server)
   }
 
   /** Resolve `mcp__<server>__<tool>` to the raw server name; the longest server prefix wins. */
@@ -236,6 +245,24 @@ function controlRequest(query: Query): ControlRequest | undefined {
   return typeof request === 'function' ? (request as ControlRequest).bind(query) : undefined
 }
 
+/**
+ * MCP OAuth control methods exist on the runtime `Query` but not in its
+ * public types. Without `redirectUri` the CLI receives the redirect on its own
+ * localhost listener and reconnects; with one, the host must hand the callback
+ * back and ask for a reconnect.
+ */
+interface ClaudeMcpAuthMethods {
+  mcpAuthenticate(serverName: string, redirectUri?: string): Promise<{ authUrl?: string; redirectScheme?: string } | undefined>
+  mcpSubmitOAuthCallbackUrl(serverName: string, callbackUrl: string): Promise<unknown>
+}
+
+function mcpAuthMethods(query: Query): ClaudeMcpAuthMethods | undefined {
+  const q = query as unknown as Partial<ClaudeMcpAuthMethods>
+  return typeof q.mcpAuthenticate === 'function' && typeof q.mcpSubmitOAuthCallbackUrl === 'function'
+    ? (q as ClaudeMcpAuthMethods)
+    : undefined
+}
+
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -253,6 +280,8 @@ export interface ClaudeMcpAppsProviderDeps {
   providerSessionId: () => string | null | undefined
   /** Fresh tool descriptors of the bound server. */
   tools: () => Promise<Map<string, McpToolDescriptor>>
+  /** Server status from the catalog; may use a recent refresh. */
+  serverStatus: () => Promise<string | undefined>
 }
 
 /**
@@ -273,6 +302,17 @@ export function createClaudeMcpAppsProvider(binding: McpAppsBinding, deps: Claud
     return query
   }
 
+  /**
+   * Refused before dispatch, so the call is known not to have run. A server
+   * that is not connected lists no tools; without this, the dispatch gate
+   * would answer "not available to the App" instead of the real reason.
+   */
+  const assertConnected = async () => {
+    const status = await deps.serverStatus()
+    if (status === 'needs-auth') throw new McpAppsError('auth_required', 'MCP server requires sign-in')
+    if (status !== 'connected') throw new McpAppsError('not_connected', `MCP server is ${status ?? 'unknown'}`)
+  }
+
   return {
     binding,
     async ready(signal) {
@@ -281,12 +321,18 @@ export function createClaudeMcpAppsProvider(binding: McpAppsBinding, deps: Claud
         mode: 'native',
         resourceRead: typeof query.readMcpResource === 'function',
         toolCall: controlRequest(query) !== undefined,
+        authenticate: mcpAuthMethods(query) !== undefined,
       }
     },
-    tools: () => deps.tools(),
+    async tools() {
+      const tools = await deps.tools()
+      await assertConnected()
+      return tools
+    },
     async readResource(req, signal): Promise<McpAppReadResult> {
       if (!req.uri.startsWith('ui://')) throw new McpAppsError('invalid', 'MCP App resources must use ui://')
       const query = await liveQuery(signal, req.origin)
+      await assertConnected()
       try {
         const result = await raceAbort(query.readMcpResource(binding.server, req.uri), signal)
         assertMcpAppSize(result)
@@ -301,6 +347,7 @@ export function createClaudeMcpAppsProvider(binding: McpAppsBinding, deps: Claud
       const query = await liveQuery(signal, req.origin)
       const request = controlRequest(query)
       if (!request) throw new McpAppsError('invalid', 'This Claude runtime cannot call MCP tools for a View')
+      await assertConnected()
       const tool = `mcp__${normalizeClaudeMcpServerName(binding.server)}__${req.tool}`
       let response: unknown
       try {
@@ -319,6 +366,32 @@ export function createClaudeMcpAppsProvider(binding: McpAppsBinding, deps: Claud
       if (!result) throw new McpAppsError('unknown_outcome', 'Claude returned no MCP tool result')
       assertMcpAppSize(result)
       return { result, outcome: 'completed' }
+    },
+    async authenticate(req, signal): Promise<McpAppsAuthStart> {
+      const auth = mcpAuthMethods(await liveQuery(signal))
+      if (!auth) throw new McpAppsError('invalid', 'This Claude runtime cannot start MCP sign-in')
+      try {
+        const started = await raceAbort(auth.mcpAuthenticate(binding.server, req.redirectUri), signal)
+        if (!started?.authUrl) return { completion: 'done' }
+        // The CLI falls back to its own localhost listener when the server refuses the host's redirect.
+        return { authUrl: started.authUrl, completion: started.redirectScheme === 'custom' ? 'host-callback' : 'harness' }
+      } catch (error) {
+        if (error instanceof McpAppsError) throw error
+        throw new McpAppsError('not_connected', errorMessage(error))
+      }
+    },
+    async submitAuthCallback(req, signal) {
+      const query = await liveQuery(signal)
+      const auth = mcpAuthMethods(query)
+      if (!auth) throw new McpAppsError('invalid', 'This Claude runtime cannot finish MCP sign-in')
+      try {
+        await raceAbort(auth.mcpSubmitOAuthCallbackUrl(binding.server, req.callbackUrl), signal)
+        // A submitted callback stores the token but leaves the server in needs-auth until reconnected.
+        await raceAbort(query.reconnectMcpServer(binding.server), signal)
+      } catch (error) {
+        if (error instanceof McpAppsError) throw error
+        throw new McpAppsError('not_connected', errorMessage(error))
+      }
     },
     dispose() { disposed = true },
   }

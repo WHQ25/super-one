@@ -78,7 +78,7 @@ export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: st
   }
   return {
     binding,
-    async ready(signal) { guard(signal); await tools(); return { mode: 'native', resourceRead: true, toolCall: true } },
+    async ready(signal) { guard(signal); await tools(); return { mode: 'native', resourceRead: true, toolCall: true, authenticate: true } },
     tools,
     async readResource(req, signal): Promise<McpAppReadResult> {
       if (!req.uri.startsWith('ui://')) throw new McpAppsError('invalid', 'MCP App resources must use ui://')
@@ -100,6 +100,14 @@ export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: st
       assertMcpAppSize(req.args)
       const result = await invoke('mcpServer/tool/call', { tool: req.tool, arguments: req.args ?? {} }, signal, req.origin, true)
       return { result: { content: Array.isArray(result.content) ? result.content : [], ...(result.structuredContent !== undefined ? { structuredContent: result.structuredContent } : {}), ...(record(result._meta) ? { _meta: record(result._meta) } : {}), ...(typeof result.isError === 'boolean' ? { isError: result.isError } : {}) } satisfies McpAppToolResult, outcome: 'completed' }
+    },
+    // Codex receives the redirect on its own listener and completes the login in the background;
+    // the host watches `tools()` stop reporting auth_required.
+    async authenticate(_req, signal) {
+      const result = await invoke('mcpServer/oauth/login', { name: binding.server }, signal)
+      return typeof result.authorizationUrl === 'string'
+        ? { authUrl: result.authorizationUrl, completion: 'harness' as const }
+        : { completion: 'done' as const }
     },
     dispose() { disposed = true },
   }

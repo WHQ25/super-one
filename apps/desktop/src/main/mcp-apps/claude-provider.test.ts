@@ -33,12 +33,13 @@ function provider(query: Partial<Record<'readMcpResource' | 'request', unknown>>
     query: async () => query as unknown as Query | null,
     providerSessionId: () => 'claude-sid',
     tools: async () => TOOLS,
+    serverStatus: async () => 'connected',
   })
 }
 
 describe('Claude native MCP Apps provider', () => {
   it('reports tool calls unsupported when the runtime has no control request', async () => {
-    expect(await provider({ readMcpResource: vi.fn() }).ready(signal)).toEqual({ mode: 'native', resourceRead: true, toolCall: false })
+    expect(await provider({ readMcpResource: vi.fn() }).ready(signal)).toEqual({ mode: 'native', resourceRead: true, toolCall: false, authenticate: false })
     expect(await provider({ readMcpResource: vi.fn(), request: vi.fn() }).ready(signal)).toMatchObject({ toolCall: true })
   })
 

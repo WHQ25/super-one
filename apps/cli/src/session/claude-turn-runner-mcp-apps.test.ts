@@ -84,7 +84,7 @@ describe('node Claude MCP Apps', () => {
     const { queryFn } = fakeQuery(UI_TURN)
     const runner = runnerWith(queryFn)
     const events: AgentEvent[] = []
-    await runner({ session: session(), text: 'go', onAgentEvent: (e) => events.push(e), signal: new AbortController().signal })
+    await runner({ session: session(), text: 'go', onDelta: () => {}, onAgentEvent: (e) => events.push(e), signal: new AbortController().signal })
     const result = events.flatMap((e) => (e.type === 'content_delta' && e.delta.type === 'tool_result' ? [e.delta] : []))[0]
     expect(result?.app).toMatchObject({
       binding: { node: 'node-1', session: 's1', server: 'fixture' },
@@ -97,7 +97,7 @@ describe('node Claude MCP Apps', () => {
   it('serves app-only calls on the live process and denies model-only tools before mcp_call', async () => {
     const { queryFn, request } = fakeQuery(UI_TURN)
     const runner = runnerWith(queryFn)
-    await runner({ session: session(), text: 'go', signal: new AbortController().signal })
+    await runner({ session: session(), text: 'go', onDelta: () => {}, signal: new AbortController().signal })
     const s = session({ providerResume: 'claude-session:sess-1' })
 
     const provider = await runner.getMcpAppsProvider!(s, binding, origin)

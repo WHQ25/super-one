@@ -211,6 +211,8 @@ ipcRenderer.on(
 const environmentAPI = {
   mcpAppsProvider: (connectionId: string, input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_MCP_APPS_PROVIDER, connectionId, input) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult>,
+  mcpAppsAuthenticate: (connectionId: string, target: Pick<import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest, 'binding' | 'origin'>) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_MCP_APPS_AUTHENTICATE, connectionId, target) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<null>>,
   list: () => ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_LIST),
   getLocalId: () =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_GET_LOCAL_ID) as Promise<string>,

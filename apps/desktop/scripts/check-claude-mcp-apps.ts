@@ -55,6 +55,7 @@ const makeProvider = () => createClaudeMcpAppsProvider(binding, {
     catalog.update(await q.mcpServerStatus())
     return catalog.tools(binding.server) ?? new Map()
   },
+  serverStatus: async () => catalog.status(binding.server),
 })
 const dispatch = (input: Omit<Parameters<typeof dispatchMcpAppsProviderRequest>[0], 'binding' | 'origin'>) =>
   dispatchMcpAppsProviderRequest({ binding, origin: { providerSessionId: sessionId ?? '' }, ...input }, makeProvider())

@@ -13,6 +13,15 @@ export async function dispatchMcpAppsProviderRequest(input: McpAppsProviderRpcRe
         if (!tool || !mcpAppToolVisible(tool)) throw new McpAppsError('denied', 'This tool is not available to the App')
         return { ok: true, value: await provider.callTool({ tool: tool.name, args: input.args ?? {}, origin: input.origin }, signal) }
       }
+      case 'authenticate': {
+        if (!provider.authenticate) throw new McpAppsError('invalid', 'This harness cannot start MCP sign-in')
+        return { ok: true, value: await provider.authenticate({ redirectUri: input.redirectUri }, signal) }
+      }
+      case 'submitAuthCallback': {
+        if (!provider.submitAuthCallback || !input.callbackUrl) throw new McpAppsError('invalid', 'No MCP sign-in callback to submit')
+        await provider.submitAuthCallback({ callbackUrl: input.callbackUrl }, signal)
+        return { ok: true, value: null }
+      }
       default: throw new McpAppsError('invalid', 'Unknown MCP Apps operation')
     }
   } catch (error) {

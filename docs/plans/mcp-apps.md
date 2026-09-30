@@ -112,6 +112,35 @@ can start as soon as the contract is committed.
 Acceptance: the phase 1 acceptance run on Claude, plus a View `tools/call`
 to a model-only tool rejected by the executor before `mcp_call`.
 
+## OAuth for native providers: implemented
+
+Native providers keep the harness's own token store; the host only opens the
+authorization page and, for remote sessions, relays the redirect.
+
+- Contract: optional `authenticate({ redirectUri? })` → `{ authUrl?, completion:
+  'harness' | 'host-callback' | 'done' }` and `submitAuthCallback`, carried by
+  the same provider RPC (`authenticate`, `submitAuthCallback` operations), so
+  node leases and bindings apply.
+- Claude: internal `mcpAuthenticate` / `mcpSubmitOAuthCallbackUrl`. Without a
+  `redirectUri` the CLI listens on its own localhost and reconnects; with one
+  it uses it (`redirectScheme: 'custom'`), and after the callback is submitted
+  the server stays `needs-auth` until `reconnectMcpServer` (verified live).
+  Status `needs-auth` → `auth_required` and any other non-connected status →
+  `not_connected`, before dispatch.
+- Codex: `mcpServer/oauth/login { name, threadId }`, redirect handled by Codex.
+- Desktop: `authenticateMcpApp` (`apps/desktop/src/main/mcp-apps/auth.ts`)
+  behind `window.environment.mcpAppsAuthenticate(connectionId, { binding,
+  origin })`. Remote sessions get an RFC 8252 loopback listener whose URL is
+  passed as `redirectUri`; only http(s) authorization URLs are opened; it
+  resolves when `tools` stops reporting `auth_required`.
+- Verified live with the fixture's `--oauth` server
+  (`apps/desktop/scripts/check-mcp-apps-oauth.ts`, isolated credential
+  stores): Claude local, Claude with the relayed redirect, and Codex each go
+  `auth_required` → signed in → app-only call completed.
+- Known limit: a Codex session on a remote node receives the redirect on the
+  node's localhost; Codex's login takes no redirect override, so signing in
+  from another machine needs a port forward.
+
 ## Later phases
 
 Phases 3–5 follow the proposal §8 and get their own steps here once their

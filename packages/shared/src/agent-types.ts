@@ -4538,6 +4538,8 @@ export const AgentIpcChannels = {
   ENVIRONMENT_DELETE_REMOTE_MCP_CONFIG: 'environment:deleteRemoteMcpConfig',
   /** Node harness.resources aggregate (models + skills/commands/agents/prompts). */
   ENVIRONMENT_MCP_APPS_PROVIDER: 'environment:mcpApps.provider',
+  /** Sign a View's MCP server in through its harness (browser + optional loopback relay). */
+  ENVIRONMENT_MCP_APPS_AUTHENTICATE: 'environment:mcpApps.authenticate',
   ENVIRONMENT_HARNESS_RESOURCES: 'environment:harnessResources',
   /** Node session_providers CRUD. */
   /** Node-side collaboration agent profiles — authoritative agentIds for @-mentions on a remote session. */

@@ -4,9 +4,11 @@ import type { McpAppsBinding, McpAppOrigin, McpAppsErrorData } from '../mcp-apps
 export interface McpAppsProviderRpcRequest {
   binding: McpAppsBinding
   origin: McpAppOrigin
-  operation: 'ready' | 'tools' | 'readResource' | 'callTool'
+  operation: 'ready' | 'tools' | 'readResource' | 'callTool' | 'authenticate' | 'submitAuthCallback'
   uri?: string
   tool?: string
   args?: unknown
+  redirectUri?: string
+  callbackUrl?: string
 }
 export type McpAppsRpcResult<T = unknown> = { ok: true; value: T } | { ok: false; error: McpAppsErrorData }

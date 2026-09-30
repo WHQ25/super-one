@@ -17,11 +17,17 @@
     "./platform-registry/*": "./src/platform-registry/*.ts",
     "./environment": "./src/environment/index.ts",
     "./environment/*": "./src/environment/*.ts",
+    "./mcp-apps-host": "./src/mcp-apps-host/index.ts",
+    "./mcp-apps-host/*": "./src/mcp-apps-host/*.ts",
     "./generative-ui/*": "./src/generative-ui/*.ts",
     "./superone-system-prompt": "./src/superone-system-prompt.ts",
     "./superone-host-owned-tools": "./src/superone-host-owned-tools.ts",
     "./*.js": "./src/*.js",
     "./*.d.ts": "./src/*.d.ts",
     "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "1.7.5",
+    "@modelcontextprotocol/sdk": "1.30.0"
   }
 }

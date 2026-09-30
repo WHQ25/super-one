@@ -219,6 +219,31 @@ native provider; only the external Codex protocol transport is substituted.
 A separate live 0.159 run proves that boundary. Native modules loaded normally
 in this worktree; the initial loopback failure was sandbox `listen EPERM`.
 
+### Shared host core — implemented; desktop boundary still pending
+
+The expanded desktop/mobile scope shares `packages/shared/src/mcp-apps-host/`:
+per-directive header/meta CSP, granted-permission mapping, resolved theme and
+hostContext mapping, document generations, a guarded PostMessageTransport,
+and an AppBridge adapter with an injectable executor. The lightweight barrel
+and CSP leaf contain no runtime SDK; View shells lazy-load `host`/`transport`.
+
+Every iframe load must call `document.loaded()`: its second load permanently
+revokes the same WindowProxy's bridge. Desktop additionally revokes at native
+navigation-start before a new document executes. `createMcpAppHostSlot` closes
+the prior transport before an immediate remount. The executor owns approvals,
+original-session leases/routing and persistence. Restored Views paint persisted
+input/results while every backend/context/message/link/display request stays
+gated until explicit activation. Message requests are capped at three/minute;
+unknown tool outcomes are surfaced to the host and never retried.
+
+Checks: 16 focused shared tests pass using the real AppBridge/App protocol and
+PostMessageTransport. Covered input-before-result, private View result data,
+partial input/cancellation, restore gating, model-context source attribution,
+message loops, unsafe links, auth errors, uncertain calls, source/origin/size
+filtering, outgoing origin pinning, second-load revocation and replacement
+slots. Actual Electron navigation/security and React StrictMode acceptance
+remain pending in 0.4; these unit checks do not establish either boundary.
+
 ## Mobile track
 
 ### Spike 0.5 findings

@@ -6,7 +6,7 @@ import { EventBuffer } from './buffer'
 import { buildLanWsUrl, buildRelayWsUrl, type TransportKind } from './connect'
 import { decryptHostPayload, deriveKeys, encryptPayload } from './crypto'
 import { handleInboundFrame, type InboundFrame, type RelayControlFrame } from './frames'
-import { createRelayHeartbeat, type RelayHeartbeat } from '@superone/shared/relay-heartbeat'
+import { createRelayHeartbeat, RELAY_PING, RELAY_PONG, type RelayHeartbeat } from '@superone/shared/relay-heartbeat'
 import { RpcInbox } from './rpc'
 import { uploadBytes, type HttpPut, type UploadBytesOptions } from './attachments'
 import { downloadDesktopFileBytes, type DownloadProgress, type HttpGet } from './downloads'
@@ -214,7 +214,8 @@ export class RelayClient {
       void this.request({ type: 'list_session_activity' } as RemoteCommand, timeoutMs).then(
         result => finish(!(result as { error?: string })?.error), () => finish(false))
     } else {
-      try { this.sendFrame(ws, JSON.stringify({ type: 'ping' })) } catch { finish(false) }
+      // The relay auto-responds only to the literal heartbeat text, never a JSON frame.
+      try { this.sendFrame(ws, RELAY_PING) } catch { finish(false) }
     }
     return promise
   }
@@ -346,9 +347,7 @@ export class RelayClient {
       try { name = JSON.parse(raw).type ?? name } catch { /* malformed frame still costs bytes */ }
       this.metric({ kind: 'wire-in', name, bytes: new TextEncoder().encode(raw).length })
     }
-    if (this.probe && this.kind === 'relay') {
-      try { if (JSON.parse(raw).type === 'pong') this.probe.finish(true) } catch { /* invalid frame */ }
-    }
+    if (this.probe && this.kind === 'relay' && raw === RELAY_PONG) this.probe.finish(true)
     if (this.heartbeat?.onMessage(raw)) return
     let frame: InboundFrame
     try {

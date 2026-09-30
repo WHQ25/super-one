@@ -34,7 +34,9 @@ it('probes a healthy foreground socket once and resolves false when it closes', 
   await client.connectRelay({ relayUrl: 'wss://relay.example', masterSecret: MASTER })
   const probe = client.probeConnection()
   expect(client.probeConnection()).toBe(probe)
-  socket.emit({ type: 'pong' })
+  // The relay's auto-response pair is the literal text, as the heartbeat uses.
+  expect(socket.sent.at(-1)).toBe('ping')
+  socket.onmessage?.({ data: 'pong' })
   await expect(probe).resolves.toBe(true)
   const lost = client.probeConnection()
   client.disconnect()

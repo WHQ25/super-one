@@ -59,7 +59,7 @@ export function handleInboundFrame(
   const type = frame.type
   if (type === 'pong') return { kind: 'pong' }
   if (type === 'reset') {
-    tracker.clear()
+    tracker.rebase()
     return { kind: 'reset' }
   }
   if (type === 'desktop_shutdown') {

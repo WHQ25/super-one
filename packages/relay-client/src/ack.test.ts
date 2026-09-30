@@ -133,6 +133,19 @@ describe('handleInboundFrame', () => {
     expect(t.lastAckedSeq).toBe(0)
   })
 
+  it('advances from the first seq after a reset instead of stalling below the dropped range', () => {
+    const t = new SeqAckTracker()
+    t.see(4); t.markProcessed(4)
+    handleInboundFrame({ type: 'reset' }, t, () => ({}))
+    const start = 900
+    for (let seq = start; seq < start + PROCESSED_SEQ_CAP + 10; seq++) {
+      expect(t.see(seq)).toBe(true)
+      t.markProcessed(seq)
+    }
+    expect(t.lastAckedSeq).toBe(start + PROCESSED_SEQ_CAP + 9)
+    expect(t.processed.size).toBe(0)
+  })
+
   it('surfaces desktop lifecycle control frames without touching ACK state', () => {
     const tracker = new SeqAckTracker()
     tracker.see(1); tracker.markProcessed(1)

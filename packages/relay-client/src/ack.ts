@@ -6,10 +6,15 @@ export class SeqAckTracker {
   lastAckedSeq = 0
   unackedCount = 0
   readonly processed = new Set<number>()
+  private baseFromNextSeq = false
 
   /** Add seq before decrypt. False = duplicate / already contiguous. */
   see(seq: number): boolean {
     if (!Number.isSafeInteger(seq) || seq <= 0) return false
+    if (this.baseFromNextSeq) {
+      this.baseFromNextSeq = false
+      this.lastAckedSeq = seq - 1
+    }
     if (seq <= this.lastAckedSeq || this.processed.has(seq)) return false
     this.processed.add(seq)
     this.trim()
@@ -54,6 +59,18 @@ export class SeqAckTracker {
     this.lastAckedSeq = 0
     this.unackedCount = 0
     this.processed.clear()
+    this.baseFromNextSeq = false
+  }
+
+  /**
+   * For a stream whose earlier seqs will never arrive: after a relay `reset`, or
+   * on a LAN socket that joins the desktop's frame counter mid-run. The next seq
+   * seen becomes the watermark base; clearing to 0 instead would leave it unable
+   * to advance, and once `processed` hits its cap `trim` evicts every new seq.
+   */
+  rebase(): void {
+    this.clear()
+    this.baseFromNextSeq = true
   }
 }
 

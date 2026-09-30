@@ -1,5 +1,6 @@
 import { encryptHostTestPayload as encryptPayload } from './test-host-frame'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { PROCESSED_SEQ_CAP } from './ack'
 import { deriveKeys } from './crypto'
 import { RelayClient, type SocketLike } from './client'
 import { restoreSession } from './restore'
@@ -345,6 +346,24 @@ describe('RelayClient', () => {
     })
     expect(events).toEqual([[{ type: 'lan-event' }]])
     expect(sockets[1].sent.some((frame) => frame.includes('"ack"'))).toBe(false)
+  })
+
+  it('keeps delivering LAN events past the processed-seq cap when joining mid-run', async () => {
+    let socket: MockSocket | null = null
+    let delivered = 0
+    const client = new RelayClient({
+      openSocket: () => {
+        socket = new MockSocket()
+        queueMicrotask(() => socket?.onopen?.())
+        return socket
+      },
+      onEvents: () => { delivered += 1 },
+    })
+    await client.connectLan('192.0.2.1', 7788, MASTER)
+    const data = encryptPayload(deriveKeys(MASTER).aesKeyBytes, [{ type: 'lan-event' }])
+    const total = PROCESSED_SEQ_CAP + 50
+    for (let seq = 5_000; seq < 5_000 + total; seq++) socket!.emit({ type: 'event', seq, data })
+    expect(delivered).toBe(total)
   })
 
   it('downloads a desktop file over LAN by resolving {lanHost} to the connected host', async () => {

@@ -114,7 +114,8 @@ export class RelayClient {
     this.closed = false
     const keys = deriveKeys(masterSecret)
     this.channelKeyHex = keys.channelKeyHex
-    this.tracker.clear()
+    // LAN frames carry the desktop's run-wide counter, not a per-socket seq.
+    this.tracker.rebase()
     await this.open(buildLanWsUrl(host, port), keys.aesKeyBytes, false, identity)
   }
 

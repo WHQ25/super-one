@@ -4,7 +4,7 @@ import type { McpUiAppCapabilities, McpUiToolResultNotification } from '@modelco
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { createMcpAppHost, createMcpAppHostSlot } from './host'
 import type { McpAppHost, McpAppHostExecutor } from './host'
-import { McpAppsError } from '../mcp-apps'
+import { McpAppsError, MCP_APP_OUTPUT_MAX_BYTES } from '../mcp-apps'
 import type { ToolAppAttachment } from '../mcp-apps'
 
 const attachment: ToolAppAttachment = {
@@ -45,6 +45,20 @@ async function setup(restored = false, initial = attachment, appCapabilities: Mc
 }
 
 describe('MCP App shared host', () => {
+  it('delivers a large View-only result but rejects oversized results and inputs', async () => {
+    const { view, executor } = await setup()
+    vi.mocked(executor.callTool).mockResolvedValue({ outcome: 'completed', result: { content: [{ type: 'text', text: 'x'.repeat(MCP_APP_OUTPUT_MAX_BYTES - 100) }] } })
+    await expect(view.callServerTool({ name: 'large' })).resolves.toHaveProperty('content')
+    vi.mocked(executor.callTool).mockResolvedValue({ outcome: 'completed', result: { content: [{ type: 'text', text: 'x'.repeat(MCP_APP_OUTPUT_MAX_BYTES) }] } })
+    await expect(view.callServerTool({ name: 'large' })).rejects.toThrow('size limit')
+    await expect(view.callServerTool({ name: 'large', arguments: { x: 'x'.repeat(1024 * 1024) } })).rejects.toThrow('size limit')
+    expect(executor.callTool).toHaveBeenCalledTimes(2)
+    vi.mocked(executor.readResource).mockResolvedValue({ contents: [{ uri: 'ui://large', text: 'x'.repeat(MCP_APP_OUTPUT_MAX_BYTES - 100) }] })
+    await expect(view.readServerResource({ uri: 'ui://large' })).resolves.toHaveProperty('contents')
+    vi.mocked(executor.readResource).mockResolvedValue({ contents: [{ uri: 'ui://large', text: 'x'.repeat(MCP_APP_OUTPUT_MAX_BYTES) }] })
+    await expect(view.readServerResource({ uri: 'ui://large' })).rejects.toThrow('size limit')
+  })
+
   it('returns a policy refusal to the View without replacing it with a host error', async () => {
     const { view, executor, errors } = await setup()
     vi.mocked(executor.callTool).mockRejectedValueOnce(new McpAppsError('denied', 'Model-only tool'))

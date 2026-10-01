@@ -1,7 +1,7 @@
 import { mcpAppPresentation } from '@superone/shared/mcp-apps-metadata'
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
 import {
-  assertMcpAppSize,
+  assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, MCP_APP_DATA_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES,
   boundedToolAppAttachment,
   mcpAppResourceUri,
   McpAppsError,
@@ -365,7 +365,7 @@ export function createClaudeMcpAppsProvider(binding: McpAppsBinding, deps: Claud
       await assertConnected()
       try {
         const result = await raceAbort(query.readMcpResource(binding.server, req.uri), signal)
-        assertMcpAppSize(result)
+        assertMcpAppSize(result, req.transient ? MCP_APP_OUTPUT_MAX_BYTES : MCP_APP_HTML_MAX_BYTES + MCP_APP_DATA_MAX_BYTES)
         return { contents: result.contents }
       } catch (error) {
         if (error instanceof McpAppsError) throw error
@@ -394,7 +394,7 @@ export function createClaudeMcpAppsProvider(binding: McpAppsBinding, deps: Claud
       }
       const result = claudeMcpToolResult((response as { response?: unknown } | undefined)?.response, false)
       if (!result) throw new McpAppsError('unknown_outcome', 'Claude returned no MCP tool result')
-      assertMcpAppSize(result)
+      assertMcpAppSize(result, MCP_APP_OUTPUT_MAX_BYTES)
       return { result, outcome: 'completed' }
     },
     async authenticate(req, signal): Promise<McpAppsAuthStart> {

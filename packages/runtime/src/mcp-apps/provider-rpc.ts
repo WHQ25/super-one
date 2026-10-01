@@ -1,4 +1,4 @@
-import { McpAppsError, mcpAppToolVisible, type McpAppsProvider } from '@superone/shared/mcp-apps'
+import { assertMcpAppSize, MCP_APP_DATA_MAX_BYTES, MCP_APP_HTML_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES, McpAppsError, mcpAppToolVisible, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import type { McpAppsProviderRpcRequest, McpAppsRpcResult } from '@superone/shared/environment/mcp-apps-rpc'
 
 export async function dispatchMcpAppsProviderRequest(input: McpAppsProviderRpcRequest, provider: McpAppsProvider, signal = new AbortController().signal): Promise<McpAppsRpcResult> {
@@ -7,12 +7,19 @@ export async function dispatchMcpAppsProviderRequest(input: McpAppsProviderRpcRe
     switch (input.operation) {
       case 'ready': return { ok: true, value: await provider.ready(signal) }
       case 'tools': return { ok: true, value: [...(await provider.tools()).values()] }
-      case 'readResource': return { ok: true, value: await provider.readResource({ uri: input.uri ?? '', origin: input.origin }, signal) }
+      case 'readResource': {
+        const value = await provider.readResource({ uri: input.uri ?? '', origin: input.origin, transient: input.transient }, signal)
+        assertMcpAppSize(value, input.transient ? MCP_APP_OUTPUT_MAX_BYTES : MCP_APP_HTML_MAX_BYTES + MCP_APP_DATA_MAX_BYTES)
+        return { ok: true, value }
+      }
       case 'callTool': {
         const tool = (await provider.tools()).get(input.tool ?? '')
         if (!tool || !mcpAppToolVisible(tool)) throw new McpAppsError('denied', 'This tool is not available to the App')
         if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
-        return { ok: true, value: await provider.callTool({ tool: tool.name, args: input.args ?? {}, origin: input.origin }, signal) }
+        assertMcpAppSize(input.args ?? {})
+        const value = await provider.callTool({ tool: tool.name, args: input.args ?? {}, origin: input.origin }, signal)
+        assertMcpAppSize(value.result, MCP_APP_OUTPUT_MAX_BYTES)
+        return { ok: true, value }
       }
       case 'authenticate': {
         if (!provider.authenticate) throw new McpAppsError('invalid', 'This harness cannot start MCP sign-in')

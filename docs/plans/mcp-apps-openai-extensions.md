@@ -79,8 +79,8 @@ to a file, so the model does not see the catalog; that is Claude CLI behavior.
 
 ### Data cap decision
 
-Selected option 2 (implementation pending): transient View-initiated tool/read
-output will get an 8 MiB
+Selected option 2 (implemented): transient View-initiated tool/read output
+has an 8 MiB
 cap across provider, executor, host and host-to-View transport. View-to-host
 requests, persisted tool input/result and model context remain 1 MiB; HTML
 remains 2 MiB. Claude resource reads must use the same 2+1 MiB envelope as
@@ -110,3 +110,26 @@ Metadata review follow-up: persisted presentation now stores only the resolved
 safe icon per theme (deduplicating neutral icons). Icons over 32 KiB are
 dropped, titles are bounded, and the independent 70 KiB presentation budget
 cannot turn an otherwise valid tool result into an error.
+
+### Transient output cap slice
+
+View-only tool/read output is bounded at 8 MiB in native providers, the
+shared provider RPC dispatch, executor and shared host. The postMessage
+transport tracks View tool/read request ids so only the corresponding
+host-to-View reply uses the larger cap (plus 1 KiB for its JSON-RPC envelope).
+View requests and persisted tool-result notifications remain 1 MiB.
+Claude initial HTML reads now use the same 2+1 MiB envelope as Codex; a
+host-authored transient flag distinguishes View reads from snapshot reads.
+
+A phone-path integration test sends a random 2 MiB result via
+`mcp_app_request`, the real host encryption/framing and the existing
+RpcInbox chunk reassembly/phone decryption. It also confirms that an
+oversized result produces structured `invalid` without waiting for a
+timeout, and an oversized inbound request never reaches the provider.
+This is transport integration coverage, not a physical phone/relay smoke.
+
+Cap verification: desktop/provider/executor/host/transport/phone integration
+selection 61 passed; Codex catalog/cap selection 6 passed; node/web
+typechecks passed. Boundary tests keep inbound 1 MiB, allow transient
+output below 8 MiB, reject output above it, and preserve Claude full content
+plus structuredContent. No live device capture in this slice.

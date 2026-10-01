@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createCodexMcpAppsProvider, type McpAppsRequest } from './mcp-apps'
 import { invalidateCodexMcpAppsCatalog, CODEX_MCP_APPS_CATALOG_TTL_MS } from './mcp-apps-catalog'
 import { dispatchMcpAppsProviderRequest } from '@superone/runtime/mcp-apps/provider-rpc'
+import { MCP_APP_OUTPUT_MAX_BYTES } from '@superone/shared/mcp-apps'
 import type { McpAppsBinding } from '@superone/shared/mcp-apps'
 
 const binding: McpAppsBinding = { node: 'local', session: 's', server: 'fixture', configGeneration: 0, configFingerprint: 'config' }
@@ -55,4 +56,21 @@ it('carries tool titles and server icons through native status discovery', async
 it('normalizes null server titles and icons to absent presentation fields', async () => {
   const request = vi.fn<McpAppsRequest>(async () => ({ data: [{ name: 'fixture', serverInfo: { name: 'fixture', title: null, version: '1', icons: null }, tools: { next: { name: 'next', title: null, icons: null } } }] }))
   expect((await createCodexMcpAppsProvider(binding, 'thread', request).tools()).get('next')?.serverInfo).toEqual({})
+})
+
+it('bounds transient tool and read output at 8 MiB while keeping requests and snapshots smaller', async () => {
+  let bytes = 2 * 1024 * 1024
+  const request = vi.fn<McpAppsRequest>(async method => method === 'mcpServerStatus/list' ? catalog : method === 'mcpServer/resource/read' ? { contents: [{ uri: 'ui://large', text: 'x'.repeat(bytes) }] } : { content: [{ type: 'text', text: 'x'.repeat(bytes) }] })
+  const p = createCodexMcpAppsProvider(binding, 'thread', request)
+  await expect(p.callTool({ tool: 'next', args: {} }, new AbortController().signal)).resolves.toHaveProperty('result')
+  await expect(p.readResource({ uri: 'ui://large' }, new AbortController().signal)).resolves.toHaveProperty('contents')
+  bytes = 4 * 1024 * 1024
+  await expect(p.readResource({ uri: 'ui://large' }, new AbortController().signal)).rejects.toMatchObject({ code: 'invalid' })
+  await expect(p.readResource({ uri: 'ui://large', transient: true }, new AbortController().signal)).resolves.toHaveProperty('contents')
+  bytes = MCP_APP_OUTPUT_MAX_BYTES
+  await expect(p.callTool({ tool: 'next', args: {} }, new AbortController().signal)).rejects.toMatchObject({ code: 'invalid' })
+  await expect(p.readResource({ uri: 'ui://large', transient: true }, new AbortController().signal)).rejects.toMatchObject({ code: 'invalid' })
+  const count = request.mock.calls.length
+  await expect(p.callTool({ tool: 'next', args: { x: 'x'.repeat(1024 * 1024) } }, new AbortController().signal)).rejects.toMatchObject({ code: 'invalid' })
+  expect(request.mock.calls).toHaveLength(count)
 })

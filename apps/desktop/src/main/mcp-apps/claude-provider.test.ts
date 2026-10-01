@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
 import { CLAUDE_MCP_CALL_VERIFIED_SDK, createClaudeMcpAppsProvider, toMcpToolDescriptor } from '@superone/claude/mcp-apps'
 import { dispatchMcpAppsProviderRequest } from '@superone/runtime/mcp-apps/provider-rpc'
+import { MCP_APP_OUTPUT_MAX_BYTES } from '@superone/shared/mcp-apps'
 import type { McpAppsBinding, McpToolDescriptor } from '@superone/shared/mcp-apps'
 
 const binding: McpAppsBinding = { node: 'local', session: 's', server: 'my fixture', configGeneration: 0, configFingerprint: 'fp' }
@@ -38,6 +39,30 @@ function provider(query: Partial<Record<'readMcpResource' | 'request', unknown>>
 }
 
 describe('Claude native MCP Apps provider', () => {
+  it('retains the Claude JSON text duplicate within the transient output budget', async () => {
+    const structuredContent = { data: 'x'.repeat(1024 * 1024) }
+    const request = vi.fn(async () => ({ response: { content: JSON.stringify(structuredContent), structuredContent } }))
+    const p = provider({ request })
+    const response = await p.callTool({ tool: 'fixture_next_page', args: {} }, signal)
+    expect(response.result.structuredContent).toEqual(structuredContent)
+    expect(response.result.content).toEqual([{ type: 'text', text: JSON.stringify(structuredContent) }])
+    request.mockResolvedValue({ response: { content: 'x'.repeat(MCP_APP_OUTPUT_MAX_BYTES), structuredContent } })
+    await expect(p.callTool({ tool: 'fixture_next_page', args: {} }, signal)).rejects.toMatchObject({ code: 'invalid' })
+    await expect(p.callTool({ tool: 'fixture_next_page', args: { x: 'x'.repeat(1024 * 1024) } }, signal)).rejects.toMatchObject({ code: 'invalid' })
+    expect(request).toHaveBeenCalledTimes(2)
+  })
+
+  it('allows 2 MiB HTML envelopes and separates transient reads from snapshot reads', async () => {
+    const readMcpResource = vi.fn(async () => ({ contents: [{ uri: 'ui://fixture/items.html', text: 'x'.repeat(2 * 1024 * 1024) }] }))
+    const p = provider({ readMcpResource })
+    await expect(p.readResource({ uri: 'ui://fixture/items.html' }, signal)).resolves.toHaveProperty('contents')
+    readMcpResource.mockResolvedValue({ contents: [{ uri: 'ui://fixture/items.html', text: 'x'.repeat(4 * 1024 * 1024) }] })
+    await expect(p.readResource({ uri: 'ui://fixture/items.html' }, signal)).rejects.toMatchObject({ code: 'invalid' })
+    await expect(p.readResource({ uri: 'ui://fixture/items.html', transient: true }, signal)).resolves.toHaveProperty('contents')
+    readMcpResource.mockResolvedValue({ contents: [{ uri: 'ui://fixture/items.html', text: 'x'.repeat(MCP_APP_OUTPUT_MAX_BYTES) }] })
+    await expect(p.readResource({ uri: 'ui://fixture/items.html', transient: true }, signal)).rejects.toMatchObject({ code: 'invalid' })
+  })
+
   it('reports tool calls unsupported when the runtime has no control request', async () => {
     expect(await provider({ readMcpResource: vi.fn() }).ready(signal)).toEqual({ mode: 'native', resourceRead: true, toolCall: false, authenticate: false })
     expect(await provider({ readMcpResource: vi.fn(), request: vi.fn() }).ready(signal)).toMatchObject({ toolCall: true })

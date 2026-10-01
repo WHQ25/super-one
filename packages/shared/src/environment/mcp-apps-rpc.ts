@@ -5,6 +5,8 @@ export interface McpAppsProviderRpcRequest {
   binding: McpAppsBinding
   origin: McpAppOrigin
   operation: 'ready' | 'tools' | 'readResource' | 'callTool' | 'authenticate' | 'submitAuthCallback'
+  /** Host-only: a View read result, rather than the initial persisted HTML snapshot. */
+  transient?: boolean
   uri?: string
   tool?: string
   args?: unknown

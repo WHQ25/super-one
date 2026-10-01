@@ -1,5 +1,5 @@
 import type { CodexMcpToolCallItem } from '@superone/shared/agent-types'
-import { assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, MCP_APP_DATA_MAX_BYTES, boundedToolAppAttachment, McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider, type McpAppReadResult, type McpAppToolResult, type McpToolDescriptor, type ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, MCP_APP_DATA_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES, boundedToolAppAttachment, McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider, type McpAppReadResult, type McpAppToolResult, type McpToolDescriptor, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { readCodexMcpWwwAuthenticate } from './protocol-v154'
 import { codexMcpAppsCatalog, invalidateCodexMcpAppsCatalog } from './mcp-apps-catalog'
 
@@ -53,7 +53,7 @@ export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: st
     if (!threadId || (origin && origin.providerSessionId !== threadId)) throw new McpAppsError('invalid', 'MCP App thread binding mismatch')
     if (binding.server === 'codex_apps') throw new McpAppsError('invalid', 'Hosted connectors are not supported by this provider')
   }
-  const invoke = async (method: string, params: Record<string, unknown>, signal?: AbortSignal, origin?: McpAppOrigin, mutates = false) => {
+  const invoke = async (method: string, params: Record<string, unknown>, signal?: AbortSignal, origin?: McpAppOrigin, mutates = false, maxBytes = MCP_APP_DATA_MAX_BYTES) => {
     guard(signal, origin)
     try {
       // No retry: cancellation after dispatch cannot establish whether a tool ran.
@@ -61,7 +61,7 @@ export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: st
       if (signal?.aborted) throw new McpAppsError(mutates ? 'unknown_outcome' : 'cancelled', 'MCP App request cancelled after dispatch')
       const challenge = challenges(readCodexMcpWwwAuthenticate(record(result._meta)))
       if (challenge !== undefined) throw new McpAppsError('auth_required', 'MCP authentication required', challenge)
-      assertMcpAppSize(result, method === 'mcpServer/resource/read' ? MCP_APP_HTML_MAX_BYTES + MCP_APP_DATA_MAX_BYTES : MCP_APP_DATA_MAX_BYTES)
+      assertMcpAppSize(result, maxBytes)
       return result
     } catch (error) {
       if (error instanceof McpAppsError) throw error
@@ -109,7 +109,7 @@ export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: st
       const server = (await catalog()).find(entry => entry.name === binding.server)
       const resource = (Array.isArray(server?.resources) ? server.resources : []).map(record).find(entry => entry?.uri === req.uri)
       const listMeta = record(resource?._meta)
-      const result = await invoke('mcpServer/resource/read', { uri: req.uri }, signal, req.origin)
+      const result = await invoke('mcpServer/resource/read', { uri: req.uri }, signal, req.origin, false, req.transient ? MCP_APP_OUTPUT_MAX_BYTES : MCP_APP_HTML_MAX_BYTES + MCP_APP_DATA_MAX_BYTES)
       const contents = (Array.isArray(result.contents) ? result.contents : []).map(value => {
         const content = value as McpAppReadResult['contents'][number]
         const meta = record(content._meta)
@@ -120,7 +120,7 @@ export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: st
     },
     async callTool(req, signal) {
       assertMcpAppSize(req.args)
-      const result = await invoke('mcpServer/tool/call', { tool: req.tool, arguments: req.args ?? {} }, signal, req.origin, true)
+      const result = await invoke('mcpServer/tool/call', { tool: req.tool, arguments: req.args ?? {} }, signal, req.origin, true, MCP_APP_OUTPUT_MAX_BYTES)
       return { result: codexToolResult(result), outcome: 'completed' }
     },
     // Codex receives the redirect on its own listener and completes the login in the background;

@@ -46,7 +46,14 @@ Upstream behavior we rely on is recorded per harness: Claude
   binding, the harness call id, the resource URI, the resource snapshot
   (`{ html, meta, hash }`), the original input, the full result (including the
   private `_meta`) and the latest model context. Caps are 2 MiB for HTML and
-  1 MiB for data, enforced before persistence and RPC.
+  1 MiB for persisted tool data and model context. View requests also stay
+  at 1 MiB. Transient View-initiated tool/resource results (never persisted)
+  have an 8 MiB cap across provider RPC, executor, host and the corresponding
+  host-to-View reply; other bridge traffic keeps the 1 MiB cap. Initial
+  resource reads allow the 2 MiB HTML plus 1 MiB metadata envelope on both
+  providers. Presentation is separate: only a resolved safe image per theme
+  is saved, icons over 32 KiB are dropped, and presentation has a 70 KiB
+  budget. A large icon never makes otherwise valid tool data fail.
 - **`mcp_app_updated`** is the harness-neutral host event that patches an
   attachment by `appInstanceId` (snapshot, model context), wherever it lives:
   Claude blocks, Codex items or rows reconstructed from a remote node.

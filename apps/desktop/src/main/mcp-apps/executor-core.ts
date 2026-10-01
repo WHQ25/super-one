@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { McpUiMessageRequestSchema, McpUiUpdateModelContextRequestSchema } from '@modelcontextprotocol/ext-apps/app-bridge'
 import { parseSessionKey, type SessionRef } from '@superone/shared/environment/refs'
 import type { McpAppsProviderRpcRequest, McpAppsRpcResult } from '@superone/shared/environment/mcp-apps-rpc'
-import { assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, MCP_APP_MIME_TYPE, McpAppsError, mcpAppToolVisible } from '@superone/shared/mcp-apps'
+import { assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES, MCP_APP_MIME_TYPE, McpAppsError, mcpAppToolVisible } from '@superone/shared/mcp-apps'
 import type { McpAppApprovalPrompt, McpAppAttachmentUpdate, McpAppHostOperation, McpAppHostRequest, McpAppHostResult, McpAppRequester, McpAppReadResult, McpAppsCallResult, McpAppsCapabilities, McpToolDescriptor, ToolAppAttachment } from '@superone/shared/mcp-apps'
 
 export interface McpAppResolvedTarget {
@@ -157,8 +157,8 @@ export class McpAppExecutor {
         }
         case 'readResource': {
           if (!capabilities.resourceRead) throw new McpAppsError('denied', 'MCP App resources are unavailable')
-          const value = unwrap<McpAppReadResult>(await this.ports.provider(target, operation, signal))
-          assertMcpAppSize(value)
+          const value = unwrap<McpAppReadResult>(await this.ports.provider(target, { ...operation, transient: true }, signal))
+          assertMcpAppSize(value, MCP_APP_OUTPUT_MAX_BYTES)
           return { ok: true, value }
         }
         case 'callTool': {
@@ -174,7 +174,7 @@ export class McpAppExecutor {
           }
           if (!response.ok) return response
           const value = response.value as McpAppsCallResult
-          assertMcpAppSize(value)
+          assertMcpAppSize(value.result, MCP_APP_OUTPUT_MAX_BYTES)
           return { ok: true, value }
         }
         case 'updateModelContext': {

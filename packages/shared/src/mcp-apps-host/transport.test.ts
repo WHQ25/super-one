@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { createMcpAppTransport } from './transport'
-import { MCP_APP_DATA_MAX_BYTES } from '../mcp-apps'
+import { MCP_APP_DATA_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES } from '../mcp-apps'
 import { createMcpAppDocument } from './document'
 
 let transport: Transport | undefined
@@ -28,6 +28,22 @@ describe('MCP App postMessage transport', () => {
     await transport.close()
     notify(target, origin)
     expect(received).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows 8 MiB only for replies to View tool/read requests', async () => {
+    const target = { postMessage: vi.fn() } as unknown as Window
+    transport = createMcpAppTransport(target, 'null')
+    await transport.start()
+    const request = (id: number, method: string) => window.dispatchEvent(new MessageEvent('message', { source: target, origin: 'null', data: { jsonrpc: '2.0', id, method, params: {} } }))
+    const result = { content: [{ type: 'text' as const, text: 'a'.repeat(MCP_APP_OUTPUT_MAX_BYTES - 100) }] }
+    for (const [id, method] of [[1, 'tools/call'], [2, 'resources/read']] as const) {
+      request(id, method)
+      await expect(transport.send({ jsonrpc: '2.0', id, result })).resolves.toBeUndefined()
+    }
+    request(3, 'tools/call')
+    await expect(transport.send({ jsonrpc: '2.0', id: 3, result: { content: [{ type: 'text', text: 'a'.repeat(MCP_APP_OUTPUT_MAX_BYTES) }] } })).rejects.toThrow('size limit')
+    await expect(transport.send({ jsonrpc: '2.0', id: 4, result })).rejects.toThrow('size limit')
+    await expect(transport.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: result })).rejects.toThrow('size limit')
   })
 
   it('pins outgoing messages and rejects sending after document revocation', async () => {

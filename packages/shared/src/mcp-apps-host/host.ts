@@ -3,7 +3,7 @@ import { AppBridge } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { McpUiAppCapabilities, McpUiHostCapabilities, McpUiHostContext, McpUiMessageRequest, McpUiRequestDisplayModeRequest } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { CallToolResultSchema, ReadResourceResultSchema } from '@modelcontextprotocol/sdk/types.js'
-import { assertMcpAppSize, McpAppsError } from '../mcp-apps'
+import { assertMcpAppSize, MCP_APP_OUTPUT_MAX_BYTES, McpAppsError } from '../mcp-apps'
 import type { McpAppModelContext, McpAppReadResult, McpAppsCallResult, ToolAppAttachment, McpUiResourceMeta } from '../mcp-apps'
 import { createMcpAppDocument } from './document'
 import type { McpAppDocument } from './document'
@@ -92,12 +92,12 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
     const response = await options.executor.callTool(request, signal)
     // Ambiguous outcomes stay host-only and are never automatically retried.
     if (response.outcome === 'unknown_outcome') options.onUnknownOutcome?.(response)
-    assertMcpAppSize(response.result)
+    assertMcpAppSize(response.result, MCP_APP_OUTPUT_MAX_BYTES)
     return CallToolResultSchema.parse(response.result)
   })
   bridge.onreadresource = (params, extra) => execute(extra.signal, async signal => {
     const result = await options.executor.readResource({ uri: params.uri }, signal)
-    assertMcpAppSize(result)
+    assertMcpAppSize(result, MCP_APP_OUTPUT_MAX_BYTES)
     return ReadResourceResultSchema.parse(result)
   })
   bridge.onmessage = (params, extra) => execute(extra.signal, signal => {

@@ -33,6 +33,10 @@ export interface McpUiResourceMeta {
 
 export interface McpToolDescriptor {
   name: string
+  title?: string
+  icons?: McpAppIcon[]
+  /** Provider-authored initialize/server-status metadata, not tool-supplied metadata. */
+  serverInfo?: { name?: string; version?: string; title?: string; icons?: McpAppIcon[] }
   description?: string
   /** Some native providers expose metadata only. The server validates arguments. */
   inputSchema?: Record<string, unknown>
@@ -40,6 +44,9 @@ export interface McpToolDescriptor {
   annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean; openWorldHint?: boolean; [key: string]: unknown }
   _meta?: { ui?: { resourceUri?: string; visibility?: Array<'model' | 'app'> }; [key: string]: unknown }
 }
+
+export interface McpAppIcon { src: string; mimeType?: string; sizes?: string[]; theme?: 'light' | 'dark' }
+export interface McpAppPresentation { toolTitle: string; toolIcons?: McpAppIcon[]; serverTitle?: string; serverIcons?: McpAppIcon[] }
 
 export interface McpAppToolResult {
   content: unknown[]
@@ -143,6 +150,7 @@ export type McpAppHostResult<T = unknown> = McpAppsRpcResult<T> | {
 export interface McpAppAttachmentUpdate {
   resource?: NonNullable<ToolAppAttachment['resource']>
   modelContext?: McpAppModelContext
+  presentation?: McpAppPresentation
 }
 
 export interface ToolAppAttachment {
@@ -152,6 +160,8 @@ export interface ToolAppAttachment {
   harnessCallId?: string
   gatewayCallId?: string
   resourceUri: string
+  toolName?: string
+  presentation?: McpAppPresentation
   resource?: { html: string; meta: McpUiResourceMeta; hash: string }
   toolInput?: Record<string, unknown>
   toolResult?: McpAppToolResult
@@ -172,10 +182,10 @@ export function mcpAppToolVisible(tool: McpToolDescriptor): boolean {
 /** Keep an attachment within the data cap: an oversized input/result becomes an error, never a truncation. */
 export function boundedToolAppAttachment(app: ToolAppAttachment): ToolAppAttachment {
   try {
-    assertMcpAppSize({ toolInput: app.toolInput, toolResult: app.toolResult })
+    assertMcpAppSize({ toolInput: app.toolInput, toolResult: app.toolResult, presentation: app.presentation })
     return app
   } catch (error) {
-    return { ...app, toolInput: undefined, toolResult: undefined, status: 'error', error: (error as McpAppsError).toJSON() }
+    return { ...app, toolInput: undefined, toolResult: undefined, presentation: undefined, status: 'error', error: (error as McpAppsError).toJSON() }
   }
 }
 

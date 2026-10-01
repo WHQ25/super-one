@@ -1,3 +1,4 @@
+import { mcpAppPresentationIcon } from '@superone/shared/mcp-apps-metadata'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { IDockviewPanelHeaderProps } from 'dockview-core'
@@ -310,8 +311,9 @@ export function SideChatTab(props: IDockviewPanelHeaderProps) {
 export function McpAppTab(props: IDockviewPanelHeaderProps<{ appInstanceId: string }>) {
   const key = props.params.appInstanceId
   const owner = useMcpAppLayout(state => state.views[key])
-  const server = owner?.app.binding.server ?? props.api.title
-  const icon = useMcpServerIcon(server)
+  const server = owner?.app.presentation?.serverTitle ?? owner?.app.binding.server ?? props.api.title
+  const fallbackIcon = useMcpServerIcon(owner?.app.binding.server)
+  const icon = mcpAppPresentationIcon(owner?.app.presentation) ?? fallbackIcon
   const active = useIsActive(props.api)
   return <div className={tabChipClass(active)}>
     <HoverCloseSlot onClose={() => props.api.close()}>

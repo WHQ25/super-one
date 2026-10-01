@@ -35,7 +35,7 @@ export function attachCodexMcpApp(item: CodexMcpToolCallItem, binding: McpAppsBi
   const app: ToolAppAttachment = {
     ...item.app,
     appInstanceId: item.app?.appInstanceId ?? `codex:${binding.session}:${threadId}:${item.id}`,
-    binding, origin: { providerSessionId: threadId }, harnessCallId: item.id, resourceUri: uri,
+    binding, origin: { providerSessionId: threadId }, harnessCallId: item.id, resourceUri: uri, toolName: item.tool,
     ...(record(item.arguments) ? { toolInput: record(item.arguments) } : {}),
     ...(item.result ? { toolResult: codexToolResult({ content: item.result.content, structuredContent: item.result.structuredContent, _meta: item.result.meta, isError: item.result.isError }) } : {}),
     status,
@@ -89,7 +89,11 @@ export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: st
     const entries = record(server?.tools)
     for (const [name, value] of Object.entries(entries ?? {})) {
       const tool = record(value)
-      if (tool) output.set(name, { ...tool, name } as unknown as McpToolDescriptor)
+      const info = record(server?.serverInfo)
+      if (tool) output.set(name, { ...tool, name, serverInfo: {
+        ...(typeof info?.title === 'string' ? { title: info.title } : {}),
+        ...(Array.isArray(info?.icons) ? { icons: info.icons } : {}),
+      } } as unknown as McpToolDescriptor)
     }
     return output
   }

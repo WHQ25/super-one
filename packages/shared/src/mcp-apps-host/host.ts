@@ -1,9 +1,10 @@
+import { mcpAppResourceModes } from '../mcp-apps-metadata'
 import { AppBridge } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { McpUiAppCapabilities, McpUiHostCapabilities, McpUiHostContext, McpUiMessageRequest, McpUiRequestDisplayModeRequest } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { CallToolResultSchema, ReadResourceResultSchema } from '@modelcontextprotocol/sdk/types.js'
 import { assertMcpAppSize, McpAppsError } from '../mcp-apps'
-import type { McpAppModelContext, McpAppReadResult, McpAppsCallResult, ToolAppAttachment } from '../mcp-apps'
+import type { McpAppModelContext, McpAppReadResult, McpAppsCallResult, ToolAppAttachment, McpUiResourceMeta } from '../mcp-apps'
 import { createMcpAppDocument } from './document'
 import type { McpAppDocument } from './document'
 
@@ -19,6 +20,7 @@ export interface McpAppHostExecutor {
 
 export interface McpAppHostOptions {
   app: ToolAppAttachment
+  resourceMeta?: McpUiResourceMeta
   transport: Transport
   executor: McpAppHostExecutor
   context: McpUiHostContext
@@ -125,8 +127,9 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
     return options.executor.openLink({ url: url.href }, signal)
   })
   bridge.onrequestdisplaymode = (params, extra) => execute(extra.signal, async signal => {
+    const resourceModes = mcpAppResourceModes(options.resourceMeta ?? app.resource?.meta)
     const declared = bridge.getAppCapabilities()?.availableDisplayModes
-    if (!context.availableDisplayModes?.includes(params.mode) || (declared && !declared.includes(params.mode))) return { mode: 'inline' }
+    if ((resourceModes && !resourceModes.includes(params.mode)) || !context.availableDisplayModes?.includes(params.mode) || (declared && !declared.includes(params.mode))) return { mode: 'inline' }
     return { mode: await options.executor.requestDisplayMode(params.mode, signal) }
   })
   bridge.onsizechange = size => {

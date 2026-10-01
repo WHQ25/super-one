@@ -176,3 +176,9 @@ describe('ClaudeToolApps', () => {
     expect(apps.toolResult('toolu_7', huge, false)).toMatchObject({ status: 'error', toolResult: undefined, error: { code: 'invalid' } })
   })
 })
+
+it('keeps runtime server title and icons in the Claude catalog', () => {
+  const catalog = new ClaudeMcpAppsCatalog()
+  catalog.update([{ ...FIXTURE_STATUS, serverInfo: { name: 'fixture', version: '1', title: 'Fixture CAD', icons: [{ src: 'data:image/svg+xml,%3Csvg/%3E' }] } }])
+  expect(catalog.tools(FIXTURE_STATUS.name)?.get(FIXTURE_STATUS.tools![0].name)?.serverInfo).toMatchObject({ title: 'Fixture CAD', icons: [{ src: 'data:image/svg+xml,%3Csvg/%3E' }] })
+})

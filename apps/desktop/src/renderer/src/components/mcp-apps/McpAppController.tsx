@@ -1,3 +1,4 @@
+import { mcpAppPresentationIcon, mcpAppResourceModes } from '@superone/shared/mcp-apps-metadata'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
@@ -27,7 +28,7 @@ type Ready = Extract<McpAppPreparedDocument, { state: 'ready' }>
 export function McpAppController({ owner }: { owner: McpAppOwner }) {
   const { app, route, api } = owner
   const toolName = owner.toolName ?? `mcp__${app.binding.server}__app`
-  const icon = useMcpServerIcon(app.binding.server)
+  const fallbackIcon = useMcpServerIcon(app.binding.server)
   const { t, i18n } = useTranslation()
   const { mode, surface, request: requestMode } = useMcpAppDisplayMode(app.appInstanceId)
   const panelWidth = useActivityPanelStore(state => state.panelWidth)
@@ -51,6 +52,7 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
   const anchor = useRef<HTMLDivElement>(null)
   const [inlineWidth, setInlineWidth] = useState(0)
   const isDark = useIsDark()
+  const icon = mcpAppPresentationIcon(app.presentation, isDark ? 'dark' : 'light') ?? fallbackIcon
   const onError = useCallback((value: unknown) => {
     if (value instanceof McpAppsError && value.code === 'inactive') {
       setActive(false); setError(null); setEmphasized(true)
@@ -113,13 +115,13 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
   const context = useMemo(() => {
     const css = getComputedStyle(document.documentElement)
     return mcpAppHostContext({ theme: isDark ? 'dark' : 'light', platform: 'desktop', locale: i18n.language,
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, displayMode: mode, availableDisplayModes: ['inline', 'fullscreen', 'pip'],
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, displayMode: mode, availableDisplayModes: mcpAppResourceModes(ready?.meta) ?? ['inline', 'fullscreen', 'pip'],
       width: mode === 'inline' ? inlineWidth : surface === 'fullscreen' ? fullscreenWidth : surface === 'pip' ? viewport.width : undefined,
       maxHeight: mode === 'inline' ? 600 : surface === 'fullscreen' ? (panelHeight ?? 0) - 34 : surface === 'pip' ? viewport.height : undefined,
       colors: { background: css.getPropertyValue('--background').trim(), foreground: css.getPropertyValue('--foreground').trim(), muted: css.getPropertyValue('--muted').trim(), mutedForeground: css.getPropertyValue('--muted-foreground').trim(), border: css.getPropertyValue('--border').trim(), primary: css.getPropertyValue('--primary').trim() },
       fontFamily: css.fontFamily, monoFontFamily: css.getPropertyValue('--font-mono').trim(), radius: css.getPropertyValue('--radius').trim(),
     })
-  }, [isDark, i18n.language, mode, surface, inlineWidth, fullscreenWidth, panelHeight, viewport])
+  }, [isDark, i18n.language, mode, surface, inlineWidth, fullscreenWidth, panelHeight, viewport, ready?.meta])
   const executor = useMemo(() => ready ? createDesktopMcpAppExecutor({ api, route, app, document: ready.document, consent, displayMode: requestMode }) : null, [api, route, app.appInstanceId, ready, consent, requestMode])
   const onMode = (next: typeof mode) => { void requestMode(next, new AbortController().signal) }
   useEffect(() => {
@@ -147,7 +149,7 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
     {!available && (owner.renderFallback?.(trailing) ?? <div className="flex items-center justify-end gap-1.5 text-xs">{trailing}</div>)}
     {/* Keep the destination connected while showing the normal error/pending row. */}
     <div hidden={!available}>
-      <EmbeddedToolView title={`${app.binding.server} · ${owner.title ?? app.resourceUri}`} icon={<ToolBrandIcon src={icon} alt={app.binding.server} icon={getToolDisplay(toolName, {}).icon} />} actions={owner.details && <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.toolDetails')} aria-expanded={detailsOpen} onClick={() => setDetailsOpen(value => !value)}><CodeXml className="size-3.5" /></IconButton>}>
+      <EmbeddedToolView title={`${app.presentation?.serverTitle ?? app.binding.server} · ${app.presentation?.toolTitle ?? owner.title ?? app.resourceUri}`} icon={<ToolBrandIcon src={icon} alt={app.binding.server} icon={getToolDisplay(toolName, {}).icon} />} actions={owner.details && <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.toolDetails')} aria-expanded={detailsOpen} onClick={() => setDetailsOpen(value => !value)}><CodeXml className="size-3.5" /></IconButton>}>
         {detailsOpen && <div className="mb-2">{owner.details}</div>}
         <div className="relative">
           {ready && <div ref={inline} data-mcp-app-surface={app.appInstanceId} style={{ height: surface === 'inline' ? Math.max(80, Math.min(height, 600)) : 0 }} className="w-full overflow-hidden rounded-md" />}

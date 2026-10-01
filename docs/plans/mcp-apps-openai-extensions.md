@@ -74,3 +74,34 @@ to a file, so the model does not see the catalog; that is Claude CLI behavior.
    attachments on desktop and phone; hidden `audience: ["assistant"]` blocks;
    images through the real image input.
 5. Re-run the baseline on both harnesses and record the result here.
+
+## Implementation progress
+
+### Data cap decision
+
+Selected option 2 (implementation pending): transient View-initiated tool/read
+output will get an 8 MiB
+cap across provider, executor, host and host-to-View transport. View-to-host
+requests, persisted tool input/result and model context remain 1 MiB; HTML
+remains 2 MiB. Claude resource reads must use the same 2+1 MiB envelope as
+Codex. Full content and structuredContent are retained. View-only calls do
+not persist their results; remote payload framing separately caps the total
+uncompressed payload at 32 MiB and chunks encrypted responses.
+
+### Metadata slice
+
+Shared presentation carries tool title and icons plus server title/icons
+through persisted attachments, including history and phone projection.
+Resource metadata keeps OpenAI sibling keys alongside stable UI fields.
+Views always initialize inline, and resource mode declarations constrain
+subsequent View requests. Headers and fullscreen tabs use safe image URIs
+with tool-icon, server-icon and generic fallback order. Desktop/phone
+stories use production presentation metadata. Live verification remains in
+S1 after the cap and remaining extension slices.
+
+Verification for this slice: desktop/shared host, executor, attachment, state
+projection and View component selections: 78 tests passed; Claude MCP Apps
+and event-mapper selections: 21 passed; Codex catalog selection: 5 passed.
+`bun run typecheck:node` and `bun run typecheck:web` passed. Package Vitest
+needed sandbox escalation after localhost DNS failed during initialization.
+No dev instance or live screenshot was produced for this slice.

@@ -130,7 +130,8 @@ revokes the bridge (the View shows Restart).
   pending work.
 - **Presentation**: an available View replaces its tool row, in the same
   borderless frame and hover header as widgets (`EmbeddedToolView`): server
-  icon (`ToolBrandIcon`, same fallback as MCP rows), `server · tool` and a
+  icon (`ToolBrandIcon`, tool icons then server icons then the MCP fallback),
+  `server title · tool title` (tool title → annotations.title → name) and a
   `CodeXml` toggle for the tool details. Pending, auth, error, revoked and
   snapshot-less restored Views keep the ordinary MCP row with their state and
   one action in its trailing slot. Restored snapshots show a persistent

@@ -836,6 +836,7 @@ export class SessionRuntime {
 
     const patch: McpAppAttachmentUpdate = {
       ...(update.resource ? { resource: update.resource } : {}),
+      ...(update.presentation ? { presentation: update.presentation } : {}),
       ...(update.modelContext ? { modelContext: { ...update.modelContext, source: { appInstanceId, server: binding.server } } } : {}),
     }
     validateMcpAppAttachmentUpdate(patch)

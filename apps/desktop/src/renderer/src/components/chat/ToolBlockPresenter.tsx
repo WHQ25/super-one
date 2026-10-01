@@ -173,6 +173,7 @@ const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileC
 
 
 export const ToolBlockPresenter = memo(function ToolBlockPresenter({
+  app,
   trailing,
   toolName,
   toolUseId,
@@ -552,6 +553,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
 
   return (
     <GenericToolRowPresenter
+      presentation={app?.presentation}
       trailing={trailing}
       toolName={toolName}
       toolUseId={toolUseId}

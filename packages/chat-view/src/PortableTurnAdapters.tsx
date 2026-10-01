@@ -227,7 +227,7 @@ function PortableClaudeToolRow(props: ClaudeToolPresenterProps & { trailing?: Re
   const dedicated = renderDedicatedTool(props, brandIconSrc)
   if (dedicated) return dedicated
   const awaitingPermission = isPermissionPending(pendingPermission, props.toolUseId, props.toolName)
-  const row = <PortableToolRow {...props} />
+  const row = <PortableToolRow {...props} presentation={props.app?.presentation} />
   // The desktop surfaces a pending approval as its own prompt block; the phone marks the row.
   return awaitingPermission
     ? <div data-permission-pending="true" className="rounded ring-1 ring-inset ring-primary/30">{row}</div>

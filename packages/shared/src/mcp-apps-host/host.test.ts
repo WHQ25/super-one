@@ -154,6 +154,16 @@ describe('MCP App shared host', () => {
     expect(executor.requestDisplayMode).toHaveBeenCalledOnce()
   })
 
+  it('starts inline even with a fullscreen preference and restricts requests using resource modes', async () => {
+    const { host, view, executor } = await setup(false, { ...attachment, resource: { html: '', hash: 'x', meta: { 'openai/ui': { preferredDisplayMode: 'fullscreen', availableDisplayModes: ['inline'] } } } })
+    expect(view.getHostContext()?.displayMode).toBeUndefined() // This fixture has only theme; no executor moves on initialize.
+    expect(executor.requestDisplayMode).not.toHaveBeenCalled()
+    host.updateContext({ displayMode: 'inline', availableDisplayModes: ['inline', 'fullscreen', 'pip'] })
+    expect(await view.requestDisplayMode({ mode: 'fullscreen' })).toEqual({ mode: 'inline' })
+    expect(await view.requestDisplayMode({ mode: 'pip' })).toEqual({ mode: 'inline' })
+    expect(executor.requestDisplayMode).not.toHaveBeenCalled()
+  })
+
   it('allows only modes declared by both the host and the View', async () => {
     const { host, view, executor } = await setup(false, attachment, { availableDisplayModes: ['inline', 'fullscreen'] })
     host.updateContext({ availableDisplayModes: ['inline', 'fullscreen', 'pip'] })

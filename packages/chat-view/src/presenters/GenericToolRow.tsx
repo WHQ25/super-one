@@ -1,3 +1,5 @@
+import type { McpAppPresentation } from '@superone/shared/mcp-apps'
+import { mcpAppPresentationIcon } from '@superone/shared/mcp-apps-metadata'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Ban, ChevronRight, TriangleAlert } from 'lucide-react'
@@ -78,6 +80,7 @@ export interface GenericToolRowPorts {
 }
 
 export interface GenericToolRowProps {
+  presentation?: McpAppPresentation
   hasDeferredDetails?: boolean
   /**
    * The call's own state and its one action (an MCP App that is loading or waits for
@@ -168,6 +171,7 @@ function ToolResult({ text }: { text: string }) {
  * same row the desktop does — the differences live entirely in `ports`.
  */
 export function GenericToolRowPresenter({
+  presentation,
   hasDeferredDetails,
   trailing,
   defaultExpanded,
@@ -293,7 +297,7 @@ export function GenericToolRowPresenter({
   const headerSummary = artifactLink && summary === artifactLink.label ? '' : summary
 
   const displayName = mcpInfo
-    ? <>{mcpInfo.serverName}<span className="text-muted-foreground"> · </span>{mcpInfo.mcpToolName.replace(/_/g, ' ')}</>
+    ? <>{presentation?.serverTitle ?? mcpInfo.serverName}<span className="text-muted-foreground"> · </span>{presentation?.toolTitle ?? mcpInfo.mcpToolName.replace(/_/g, ' ')}</>
     : toolName === 'Workflow' && isWorkflowSmokeCheck(params)
       ? 'Smoke check'
       : getToolLabel(toolName)
@@ -323,7 +327,7 @@ export function GenericToolRowPresenter({
         ) : showError ? (
           <TriangleAlert className="size-3 shrink-0 text-warning" />
         ) : (
-          <ToolBrandIcon src={isMcp ? ports.mcpIconSrc : undefined} alt={mcpInfo?.serverName ?? ''} icon={display.icon} />
+          <ToolBrandIcon src={isMcp ? mcpAppPresentationIcon(presentation) ?? ports.mcpIconSrc : undefined} alt={mcpInfo?.serverName ?? ''} icon={display.icon} />
         )}
         <ToolName
           streaming={isStreaming}

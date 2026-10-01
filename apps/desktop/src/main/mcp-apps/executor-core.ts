@@ -1,3 +1,4 @@
+import { mcpAppPresentation, mcpAppResourceMeta } from '@superone/shared/mcp-apps-metadata'
 import { createHash, randomUUID } from 'node:crypto'
 import { McpUiMessageRequestSchema, McpUiUpdateModelContextRequestSchema } from '@modelcontextprotocol/ext-apps/app-bridge'
 import { parseSessionKey, type SessionRef } from '@superone/shared/environment/refs'
@@ -148,8 +149,10 @@ export class McpAppExecutor {
           const result = unwrap<McpAppReadResult>(await this.ports.provider(target, { operation: 'readResource', uri: target.app.resourceUri }, signal))
           const resource = result.contents.find(value => value.uri === target.app.resourceUri && value.mimeType === MCP_APP_MIME_TYPE && typeof value.text === 'string')
           if (!resource?.text || new TextEncoder().encode(resource.text).byteLength > MCP_APP_HTML_MAX_BYTES) throw new McpAppsError('invalid', 'MCP App HTML is missing or exceeds the size limit')
-          const snapshot = { html: resource.text, meta: (resource._meta?.ui ?? resource._meta ?? {}) as NonNullable<ToolAppAttachment['resource']>['meta'], hash: createHash('sha256').update(resource.text).digest('hex') }
-          await this.ports.persist(target, { resource: snapshot }, signal)
+          const snapshot = { html: resource.text, meta: mcpAppResourceMeta(resource._meta), hash: createHash('sha256').update(resource.text).digest('hex') }
+          const tools = unwrap<McpToolDescriptor[]>(await this.ports.provider(target, { operation: 'tools' }, signal))
+          const tool = tools.find(tool => tool.name === target.app.toolName)
+          await this.ports.persist(target, { resource: snapshot, ...(tool ? { presentation: mcpAppPresentation(tool) } : {}) }, signal)
           return { ok: true, value: snapshot }
         }
         case 'readResource': {

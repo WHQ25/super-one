@@ -1,3 +1,4 @@
+import { mcpAppPresentation } from '@superone/shared/mcp-apps-metadata'
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
 import {
   assertMcpAppSize,
@@ -34,14 +35,17 @@ export function withMcpAppsHostEnv(
 /** Tool entry of `Query.mcpServerStatus()`; `_meta` carries only the MCP Apps keys. */
 export interface ClaudeMcpStatusTool {
   name: string
+  title?: string
+  icons?: McpToolDescriptor['icons']
   description?: string
-  annotations?: { readOnly?: boolean; destructive?: boolean; openWorld?: boolean }
+  annotations?: { readOnly?: boolean; destructive?: boolean; openWorld?: boolean; title?: string }
   _meta?: Record<string, unknown>
 }
 
 export interface ClaudeMcpStatusServer {
   name: string
   status?: string
+  serverInfo?: McpToolDescriptor['serverInfo']
   config?: unknown
   tools?: ClaudeMcpStatusTool[]
 }
@@ -60,12 +64,15 @@ export function normalizeClaudeMcpName(name: string): string {
 export function toMcpToolDescriptor(tool: ClaudeMcpStatusTool): McpToolDescriptor {
   const a = tool.annotations
   const annotations = a && {
+    ...(a.title ? { title: a.title } : {}),
     ...(a.readOnly !== undefined ? { readOnlyHint: a.readOnly } : {}),
     ...(a.destructive !== undefined ? { destructiveHint: a.destructive } : {}),
     ...(a.openWorld !== undefined ? { openWorldHint: a.openWorld } : {}),
   }
   return {
     name: tool.name,
+    ...(tool.title ? { title: tool.title } : {}),
+    ...(tool.icons ? { icons: tool.icons } : {}),
     ...(tool.description !== undefined ? { description: tool.description } : {}),
     ...(annotations && Object.keys(annotations).length > 0 ? { annotations } : {}),
     ...(tool._meta ? { _meta: tool._meta as McpToolDescriptor['_meta'] } : {}),
@@ -120,7 +127,7 @@ export class ClaudeMcpAppsCatalog {
       statuses
         .filter((s) => s.tools?.length)
         .map((s) => {
-          const tools = new Map(s.tools!.map((t) => [t.name, toMcpToolDescriptor(t)]))
+          const tools = new Map(s.tools!.map((t) => [t.name, { ...toMcpToolDescriptor(t), ...(s.serverInfo ? { serverInfo: s.serverInfo } : {}) }]))
           const qualified = new Map<string, McpToolDescriptor | null>()
           for (const tool of tools.values()) {
             const key = normalizeClaudeMcpName(tool.name)
@@ -246,7 +253,7 @@ export class ClaudeToolApps {
       binding,
       ...(providerSessionId ? { origin: { providerSessionId } } : {}),
       harnessCallId: toolUseId,
-      resourceUri,
+      resourceUri, toolName: resolved.tool.name, presentation: mcpAppPresentation(resolved.tool),
       ...(call.input ? { toolInput: call.input } : {}),
       ...patch,
     })

@@ -41,7 +41,7 @@ export function mergeMcpAppAttachment(previous: ToolAppAttachment | undefined, n
   const identity = (app: ToolAppAttachment): string => JSON.stringify([app.binding.node, app.binding.session, app.binding.server, app.binding.account,
     app.binding.configGeneration, app.binding.configFingerprint, app.resourceUri, app.origin?.providerSessionId, app.origin?.originCallId])
   if (identity(previous) !== identity(next)) return next
-  return { ...next, resource: previous.resource ?? next.resource, modelContext: previous.modelContext ?? next.modelContext }
+  return { ...next, resource: previous.resource ?? next.resource, modelContext: previous.modelContext ?? next.modelContext, presentation: previous.presentation ?? next.presentation }
 }
 
 export function validateMcpAppAttachmentUpdate(update: McpAppAttachmentUpdate): void {
@@ -51,14 +51,15 @@ export function validateMcpAppAttachmentUpdate(update: McpAppAttachmentUpdate): 
     }
     assertMcpAppSize({ meta: update.resource.meta, hash: update.resource.hash })
   }
-  assertMcpAppSize({ modelContext: update.modelContext })
+  assertMcpAppSize({ modelContext: update.modelContext, presentation: update.presentation })
 }
 
 /** Changes only existing attachments, preserving every provider-authored identity field. */
 export function updateMcpAppAttachments<T extends McpAppMessage>(messages: readonly T[], appInstanceId: string, update: McpAppAttachmentUpdate): T[] {
   validateMcpAppAttachmentUpdate(update)
   const patch = { ...(update.resource ? { resource: update.resource } : {}),
-    ...(update.modelContext ? { modelContext: update.modelContext } : {}) }
+    ...(update.modelContext ? { modelContext: update.modelContext } : {}),
+    ...(update.presentation ? { presentation: update.presentation } : {}) }
   const replace = <B>(block: B): B => {
     const app = record(block).app as ToolAppAttachment | undefined
     if (app?.appInstanceId !== appInstanceId) return block

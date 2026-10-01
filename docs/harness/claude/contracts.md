@@ -230,6 +230,8 @@ re-check an entry when an upgrade touches its area.
   model only when `CLAUDE_CODE_MCP_APPS_HOST=true` is in the spawn env. The
   same key in `settings.env` has no effect. Tool annotations arrive as
   `readOnly` / `destructive` / `openWorld`, not the MCP `*Hint` names.
+  Runtime `serverInfo` also preserves `title` and `icons` (Bits & Bolts,
+  2026-10-01), although the SDK type declares only name/version.
 - **Observed:** 0.3.285, live fixture server (`server/discover` precedes
   `initialize`).
 - **Depends on it:** `packages/claude/src/mcp-apps.ts#withMcpAppsHostEnv`, used

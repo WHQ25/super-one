@@ -32,6 +32,7 @@ function attachment(id: string, overrides: Partial<ToolAppAttachment> = {}): Too
     origin: { providerSessionId: 'thread-1' },
     harnessCallId: `call-${id}`,
     resourceUri: 'ui://fixture/items.html',
+    presentation: { toolTitle: 'Browse library', serverTitle: 'MCP Apps Fixture', serverIcons: [{ src: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"%3E%3Cpath fill="%237c3aed" d="M2 2h16v16H2z"/%3E%3C/svg%3E' }] },
     toolInput: { page: 1 },
     toolResult: page(1),
     status: 'result',
@@ -114,6 +115,7 @@ function ToolRow({ app, trailing, expanded }: { app: ToolAppAttachment; trailing
       result={result}
       trailing={trailing}
       defaultExpanded={expanded}
+      presentation={app.presentation}
     />
   )
 }
@@ -228,3 +230,6 @@ export const NextToWidgetAndRowWithBrandIcon: Story = {
   parameters: { mcpIcons: { 'mcp-apps-fixture': BRAND_ICON } },
   args: { app: attachment(id('neighbours-brand'), { resource: RESOURCE }), neighbours: true },
 }
+
+export const ToolMetadata: Story = { name: 'Tool title and server icon metadata', args: { app: attachment(id('metadata'), { resource: RESOURCE }) } }
+export const LongTitleNarrow: Story = { args: { width: 320, app: attachment(id('long-title'), { resource: RESOURCE, presentation: { toolTitle: 'Browse the engineering library with a very long descriptive tool title', serverTitle: 'Fixture CAD library' } }) } }

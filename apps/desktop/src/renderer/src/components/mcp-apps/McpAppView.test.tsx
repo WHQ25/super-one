@@ -30,6 +30,16 @@ function setup() {
 }
 afterEach(() => { cleanup(); frame.props = null })
 describe('MCP App desktop View lifecycle', () => {
+  it('renders safe tool metadata and keeps fullscreen preference inline on initialize', async () => {
+    const s = setup()
+    vi.mocked(s.api.mcpAppRegister).mockResolvedValue({ ok: true, value: { ...prepared, meta: { 'openai/ui': { preferredDisplayMode: 'fullscreen', availableDisplayModes: ['inline', 'fullscreen'] } } } })
+    render(<><McpAppHostLayer /><McpAppView app={{ ...app, presentation: { toolTitle: 'Browse library', serverTitle: 'Fixture CAD', toolIcons: [{ src: 'data:image/svg+xml,%3Csvg/%3E' }] } }} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></>)
+    await screen.findByText('Fixture CAD · Browse library')
+    expect(await screen.findByRole('img')).toHaveAttribute('src', 'data:image/svg+xml,%3Csvg/%3E')
+    expect(frame.props?.context.displayMode).toBe('inline')
+    expect(frame.props?.context.availableDisplayModes).toEqual(['inline', 'fullscreen'])
+  })
+
   it('prefers the visible main transcript over a later floating claim', async () => {
     const s = setup()
     render(<><McpAppHostLayer />

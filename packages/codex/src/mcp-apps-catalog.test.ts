@@ -45,3 +45,14 @@ describe('Codex MCP App catalog cache', () => {
     expect(listCount(request)).toBe(3)
   })
 })
+
+it('carries tool titles and server icons through native status discovery', async () => {
+  const request = vi.fn<McpAppsRequest>(async () => ({ data: [{ name: 'fixture', serverInfo: { name: 'fixture', version: '1', title: 'Fixture CAD', icons: [{ src: 'https://example.com/cad.png' }] }, tools: { next: { name: 'next', title: 'Browse', icons: [{ src: 'https://example.com/tool.png' }] } } }] }))
+  const tool = (await createCodexMcpAppsProvider(binding, 'thread', request).tools()).get('next')
+  expect(tool).toMatchObject({ title: 'Browse', icons: [{ src: 'https://example.com/tool.png' }], serverInfo: { title: 'Fixture CAD', icons: [{ src: 'https://example.com/cad.png' }] } })
+})
+
+it('normalizes null server titles and icons to absent presentation fields', async () => {
+  const request = vi.fn<McpAppsRequest>(async () => ({ data: [{ name: 'fixture', serverInfo: { name: 'fixture', title: null, version: '1', icons: null }, tools: { next: { name: 'next', title: null, icons: null } } }] }))
+  expect((await createCodexMcpAppsProvider(binding, 'thread', request).tools()).get('next')?.serverInfo).toEqual({})
+})

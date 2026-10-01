@@ -33,7 +33,7 @@ export default function McpAppFrame(props: McpAppFrameProps) {
       void props.api.mcpAppRelease(props.registration.id).catch(() => {})
     })
     const document = createMcpAppDocument()
-    const host = createMcpAppHost({ app: latest.current.app, executor: latest.current.executor,
+    const host = createMcpAppHost({ app: latest.current.app, resourceMeta: props.meta, executor: latest.current.executor,
       transport: createMcpAppTransport(element.contentWindow!, props.registration.origin, window, document), document,
       restored: !latest.current.active, context: latest.current.context,
       // Permissions are deliberately ungranted, even if the resource requests them.

@@ -55,3 +55,6 @@ export const ChineseNarrow: Story = { args: { narrow: true }, globals: { locale:
 export const ScrollingTranscript: Story = { args: { scrolling: true } }
 export const Fullscreen: Story = { args: { initialMode: 'fullscreen' } }
 export const PictureInPicture: Story = { args: { initialMode: 'pip' } }
+
+/** Metadata comes from the attachment, without relying on the desktop icon cache. */
+export const ToolMetadata: Story = {}

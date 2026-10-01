@@ -1,3 +1,4 @@
+import { mcpAppPresentationIcon, mcpAppResourceModes } from '@superone/shared/mcp-apps-metadata'
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CodeXml, Loader2, X } from 'lucide-react'
@@ -36,7 +37,7 @@ const COLOR_SOURCES = {
   primaryForeground: '--primary-foreground', destructive: '--error',
 } as const
 
-function readHostContext(node: HTMLElement, scheme: 'light' | 'dark', fullscreen: boolean) {
+function readHostContext(node: HTMLElement, scheme: 'light' | 'dark', fullscreen: boolean, meta?: McpUiResourceMeta) {
   const styles = getComputedStyle(node)
   const root = getComputedStyle(document.documentElement)
   const inset = (edge: string) => Number.parseFloat(root.getPropertyValue(`--safe-area-${edge}`)) || 0
@@ -49,7 +50,7 @@ function readHostContext(node: HTMLElement, scheme: 'light' | 'dark', fullscreen
     locale: document.documentElement.lang || 'en',
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     displayMode: fullscreen ? 'fullscreen' : 'inline',
-    availableDisplayModes: ['inline', 'fullscreen'],
+    availableDisplayModes: mcpAppResourceModes(meta) ?? ['inline', 'fullscreen'],
     width: node.clientWidth,
     maxHeight: fullscreen ? window.innerHeight : MAX_INLINE_HEIGHT,
     touch: true,
@@ -129,11 +130,11 @@ export default function McpAppFrame({ app, messageId, html, meta, toolName, row 
     const slot = slotFor(app.appInstanceId)
     const document = createMcpAppDocument()
     const host = createMcpAppHost({
-      app,
+      app, resourceMeta: meta,
       document,
       transport: createMcpAppTransport(frame, 'null'),
       executor: createMcpAppExecutor(target, ask, display),
-      context: readHostContext(root, scheme, false),
+      context: readHostContext(root, scheme, false, meta),
       capabilities: {
         openLinks: {}, serverTools: {}, serverResources: {}, logging: {},
         updateModelContext: { text: {} }, message: { text: {} },
@@ -171,7 +172,7 @@ export default function McpAppFrame({ app, messageId, html, meta, toolName, row 
   useEffect(() => { void hostRef.current?.update(app).catch(() => {}) }, [app])
 
   useEffect(() => {
-    if (root) hostRef.current?.updateContext(readHostContext(root, scheme, fullscreen))
+    if (root) hostRef.current?.updateContext(readHostContext(root, scheme, fullscreen, meta))
   }, [root, scheme, fullscreen])
 
   const onLoad = () => {
@@ -207,7 +208,7 @@ export default function McpAppFrame({ app, messageId, html, meta, toolName, row 
   }
 
   const tool = parseMcpToolName(toolName)
-  const server = tool?.serverName ?? app.binding.server
+  const server = app.presentation?.serverTitle ?? tool?.serverName ?? app.binding.server
   const frameStyle = fullscreen ? { width: '100%', height: '100%' } : { width: '100%', height }
   return (
     <div
@@ -226,8 +227,8 @@ export default function McpAppFrame({ app, messageId, html, meta, toolName, row 
         </div>
       ) : (
         <PortableBlockHeader
-          icon={<ToolBrandIcon src={iconSrc} alt={server} icon={getToolDisplay(toolName, app.toolInput ?? {}).icon} className="text-muted-foreground/70" />}
-          title={tool ? `${server} · ${tool.mcpToolName.replace(/_/g, ' ')}` : server}
+          icon={<ToolBrandIcon src={mcpAppPresentationIcon(app.presentation, scheme) ?? iconSrc} alt={server} icon={getToolDisplay(toolName, app.toolInput ?? {}).icon} className="text-muted-foreground/70" />}
+          title={`${server} · ${app.presentation?.toolTitle ?? tool?.mcpToolName ?? app.resourceUri}`}
         >
           {inactive ? (
             // Keyed by the attempt so each one restarts the pulse.

@@ -18,14 +18,13 @@ import { miniAppPipViewport } from '@/components/miniapp/miniapp-pip-layout'
 import { useMcpAppLayout, type McpAppOwner } from './layout-store'
 import { useMcpAppDisplayMode } from './use-display-mode'
 import { McpAppPip } from './McpAppPip'
-import { McpAppFullscreen } from './McpAppFullscreen'
 import { createDesktopMcpAppExecutor, type McpAppConsent } from './desktop-executor'
 import { McpAppConsent as ConsentDialog, type PendingMcpConsent } from './McpAppConsent'
 
 const Frame = lazy(() => import('./McpAppFrame'))
 type Ready = Extract<McpAppPreparedDocument, { state: 'ready' }>
 
-export function McpAppController({ owner, fullscreenArea }: { owner: McpAppOwner; fullscreenArea: { element: HTMLElement; width: number; height: number } | null }) {
+export function McpAppController({ owner }: { owner: McpAppOwner }) {
   const { app, route, api } = owner
   const toolName = owner.toolName ?? `mcp__${app.binding.server}__app`
   const icon = useMcpServerIcon(app.binding.server)
@@ -33,6 +32,7 @@ export function McpAppController({ owner, fullscreenArea }: { owner: McpAppOwner
   const { mode, surface, request: requestMode } = useMcpAppDisplayMode(app.appInstanceId)
   const panelWidth = useActivityPanelStore(state => state.panelWidth)
   const panelHeight = useActivityPanelStore(state => state.bounds?.height)
+  const fullscreenWidth = useActivityPanelStore(state => state.bounds?.width)
   const viewport = useMemo(() => miniAppPipViewport(panelWidth, panelHeight), [panelWidth, panelHeight])
   const [ready, setReady] = useState<Ready | null>(null)
   const [loading, setLoading] = useState(true)
@@ -114,14 +114,24 @@ export function McpAppController({ owner, fullscreenArea }: { owner: McpAppOwner
     const css = getComputedStyle(document.documentElement)
     return mcpAppHostContext({ theme: isDark ? 'dark' : 'light', platform: 'desktop', locale: i18n.language,
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, displayMode: mode, availableDisplayModes: ['inline', 'fullscreen', 'pip'],
-      width: mode === 'inline' ? inlineWidth : surface === 'fullscreen' ? fullscreenArea?.width : surface === 'pip' ? viewport.width : undefined,
-      maxHeight: mode === 'inline' ? 600 : surface === 'fullscreen' ? (fullscreenArea?.height ?? 0) - 36 : surface === 'pip' ? viewport.height : undefined,
+      width: mode === 'inline' ? inlineWidth : surface === 'fullscreen' ? fullscreenWidth : surface === 'pip' ? viewport.width : undefined,
+      maxHeight: mode === 'inline' ? 600 : surface === 'fullscreen' ? (panelHeight ?? 0) - 34 : surface === 'pip' ? viewport.height : undefined,
       colors: { background: css.getPropertyValue('--background').trim(), foreground: css.getPropertyValue('--foreground').trim(), muted: css.getPropertyValue('--muted').trim(), mutedForeground: css.getPropertyValue('--muted-foreground').trim(), border: css.getPropertyValue('--border').trim(), primary: css.getPropertyValue('--primary').trim() },
       fontFamily: css.fontFamily, monoFontFamily: css.getPropertyValue('--font-mono').trim(), radius: css.getPropertyValue('--radius').trim(),
     })
-  }, [isDark, i18n.language, mode, surface, inlineWidth, fullscreenArea?.width, fullscreenArea?.height, viewport])
+  }, [isDark, i18n.language, mode, surface, inlineWidth, fullscreenWidth, panelHeight, viewport])
   const executor = useMemo(() => ready ? createDesktopMcpAppExecutor({ api, route, app, document: ready.document, consent, displayMode: requestMode }) : null, [api, route, app.appInstanceId, ready, consent, requestMode])
   const onMode = (next: typeof mode) => { void requestMode(next, new AbortController().signal) }
+  useEffect(() => {
+    if (surface !== 'fullscreen' || !ready) return
+    const exit = () => useMcpAppLayout.getState().setMode(app.appInstanceId, 'inline')
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !document.querySelector('[role="dialog"]')) { event.preventDefault(); exit() }
+    }
+    const unsubscribe = api.onMcpAppEscape?.(event => { if (event.url === ready.document.url && !document.querySelector('[role="dialog"]')) exit() })
+    window.addEventListener('keydown', escape)
+    return () => { unsubscribe?.(); window.removeEventListener('keydown', escape) }
+  }, [api, surface, ready, app.appInstanceId])
   const available = !!ready && initialized && !error && !unknown && !revoked
   const action = revoked
     ? <Button size="sm" variant="ghost" className="h-5 px-1.5 text-xs" disabled={loading} onClick={() => setGeneration(value => value + 1)}>{t('mcpApp.restart')}</Button>
@@ -151,7 +161,6 @@ export function McpAppController({ owner, fullscreenArea }: { owner: McpAppOwner
     {owner.row && createPortal(row, owner.row)}
     {ready && executor && <Suspense fallback={null}><Frame app={app} meta={ready.meta} registration={ready.document} api={api} executor={executor} context={context} active={active}
       onHost={value => { host.current = value }} onInitialized={() => setInitialized(true)} onError={onError} onUnknown={() => setUnknown(true)} onRevoked={() => setRevoked(true)} onHeight={setHeight} /></Suspense>}
-    {surface === 'fullscreen' && ready && !revoked && <McpAppFullscreen appInstanceId={app.appInstanceId} server={app.binding.server} toolName={toolName} container={fullscreenArea?.element} api={api} url={ready.document.url} onExit={() => onMode('inline')} />}
     {surface === 'pip' && ready && !revoked && <McpAppPip appInstanceId={app.appInstanceId} title={app.binding.server} toolName={toolName} viewport={viewport} onMode={onMode} />}
     <ConsentDialog pending={pending[0]} />
   </>

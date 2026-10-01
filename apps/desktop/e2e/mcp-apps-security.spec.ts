@@ -1,7 +1,7 @@
 import { test, expect, _electron as electron } from '@playwright/test'
 import type { ElectronApplication, Page, Frame } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, mkdir, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, copyFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { McpAppResourceRegistry } from '../src/main/mcp-apps/protocol'
@@ -21,16 +21,17 @@ test.describe('MCP App native iframe boundary', () => {
     temporary = await mkdtemp(join(tmpdir(), 'superone-mcp-app-security-'))
     const profile = join(temporary, 'profile')
     await mkdir(profile)
-    const build = (name: string, target: 'browser' | 'node', output: string) => execFileSync('bun', ['build', resolve(`e2e/fixtures/mcp-apps-security-${name}.ts`), '--target', target, '--format', target === 'node' ? 'cjs' : 'esm', '--external', 'electron', '--outfile', join(temporary, output)], { encoding: 'utf8' })
+    const build = (name: string, target: 'browser' | 'node', output: string) => execFileSync('bun', ['build', resolve(`e2e/fixtures/mcp-apps-security-${name}.ts`), '--target', target, '--format', target === 'node' ? 'cjs' : 'esm', '--external', 'electron', '--tsconfig-override', resolve('tsconfig.web.json'), '--outfile', join(temporary, output)], { encoding: 'utf8' })
     build('main', 'node', 'main.cjs')
     build('preload', 'node', 'preload.cjs')
     build('host', 'browser', 'host.js')
+    await copyFile(resolve('../../node_modules/dockview/dist/styles/dockview.css'), join(temporary, 'dockview.css'))
     const env: Record<string, string> = { ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string')), MCP_APPS_SECURITY_BUILD: temporary, MCP_APPS_SECURITY_PROFILE: profile }
     // SuperOne's command process inherits Node mode; a real Electron launch must clear it.
     delete env.ELECTRON_RUN_AS_NODE
     app = await electron.launch({ args: [join(temporary, 'main.cjs')], env })
     page = await app.firstWindow()
-    page.on('pageerror', error => console.error('[security renderer]', error.message))
+    page.on('pageerror', error => { console.error('[security renderer]', error.message); void page.evaluate(message => window.securityHarness?.state.errors.push(message), error.message) })
     page.on('console', message => { if (message.type() === 'error') console.error('[security console]', message.text()) })
     await page.waitForURL('superone-renderer://app/index.html')
     await page.reload()
@@ -132,8 +133,47 @@ test.describe('MCP App native iframe boundary', () => {
 
   test('a prematurely removed surface revokes gracefully without HierarchyRequestError', async () => {
     await mount('removed-surface', false, false, true)
-    await page.evaluate(() => { window.securityHarness.move('fullscreen'); window.securityHarness.removeSurfaceFirst(); window.securityHarness.move('inline') })
+    await page.evaluate(() => window.securityHarness.move('fullscreen'))
+    await expect(page.locator('[data-mcp-app-fullscreen] #mcp-view')).toBeVisible()
+    await page.evaluate(() => { window.securityHarness.removeSurfaceFirst(); window.securityHarness.move('inline') })
     expect(await page.evaluate(() => window.securityHarness.state)).toMatchObject({ loads: 1, revoked: true, errors: [] })
+  })
+
+  for (const exit of ['Shrink', 'Close', 'Escape', 'inline', 'pip'] as const) {
+    test(`real Dockview fullscreen → ${exit} preserves the iframe document`, async () => {
+      const { frame } = await mount(`dockview-${exit}`, false, false, true)
+      await frame.evaluate(() => Object.assign(window.fixtureState, { selected: 4 }))
+      const requestMode = async (mode: string) => frame.evaluate(async mode => {
+        await (window as unknown as { fixtureRequest(method: string, params: unknown): Promise<unknown> }).fixtureRequest('ui/request-display-mode', { mode })
+      }, mode)
+      await requestMode('fullscreen')
+      await expect(page.locator('[data-mcp-app-fullscreen] #mcp-view')).toBeVisible()
+      if (exit === 'Shrink' || exit === 'Close') await page.getByRole('button', { name: exit, exact: true }).click()
+      else if (exit === 'Escape') {
+        await app.evaluate(() => { globalThis.mcpSecurity.window.show(); globalThis.mcpSecurity.window.focus() })
+        await frame.locator('body').click()
+        await expect.poll(() => app.evaluate(() => globalThis.mcpSecurity.window.webContents.focusedFrame?.url)).toBe(frame.url())
+        await app.evaluate(() => globalThis.mcpSecurity.window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'ESC' }))
+      } else await requestMode(exit)
+      await expect(page.locator('[data-mcp-app-fullscreen]')).toHaveCount(0)
+      await expect(page.locator(`[data-production-mode=${exit === 'pip' ? 'pip' : 'inline'}] #mcp-view`)).toHaveCount(1)
+      expect(await page.evaluate(() => window.securityHarness.activity())).toEqual({ showPanel: false, maximized: false, panels: [] })
+      expect(await page.evaluate(() => window.securityHarness.sameWindow())).toBe(true)
+      expect(await frame.evaluate(() => (window.fixtureState as unknown as { selected: number }).selected)).toBe(4)
+      expect(await page.evaluate(() => window.securityHarness.state)).toMatchObject({ loads: 1, revoked: false, errors: [] })
+      await frame.evaluate(async () => { await (window as unknown as { fixtureRequest(method: string, params: unknown): Promise<unknown> }).fixtureRequest('tools/call', { name: 'fixture_next_page' }) })
+      expect(await page.evaluate(() => window.securityHarness.state.calls)).toBe(1)
+    })
+  }
+
+  test('exiting an App restores an existing visible maximized activity tab', async () => {
+    await mount('previous-maximized', false, false, true)
+    await page.evaluate(() => { window.securityHarness.baseline(); window.securityHarness.move('fullscreen') })
+    await expect(page.locator('[data-mcp-app-fullscreen] #mcp-view')).toBeVisible()
+    await page.getByRole('button', { name: 'Shrink', exact: true }).click()
+    await expect(page.locator('[data-mcp-app-fullscreen]')).toHaveCount(0)
+    expect(await page.evaluate(() => window.securityHarness.activity())).toEqual({ showPanel: true, maximized: true, panels: ['baseline'] })
+    expect(await page.evaluate(() => window.securityHarness.state)).toMatchObject({ loads: 1, revoked: false, errors: [] })
   })
 
   test('sandbox blocks top navigation/popups and header CSP blocks forms/network', async () => {

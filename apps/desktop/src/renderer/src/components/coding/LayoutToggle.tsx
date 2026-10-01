@@ -8,12 +8,11 @@ import { toggleSidebar, toggleActivitySide } from '@/lib/layout-actions'
 
 const isMac = window.app.platform === 'darwin'
 
-export function LayoutToggle({ maximized: maximizedOverride }: { maximized?: boolean } = {}) {
+export function LayoutToggle() {
   const { t } = useTranslation()
   const showSidebar = useAppStore((s) => s.showSidebar)
   const showPanel = useActivityPanelStore((s) => s.showPanel)
-  const panelMaximized = useActivityPanelStore((s) => s.maximized)
-  const maximized = maximizedOverride ?? panelMaximized
+  const maximized = useActivityPanelStore((s) => s.maximized)
   const side = useActivityPanelStore((s) => s.side)
   // When maximized, chat is a floating overlay — side swap is meaningless.
   const showSideToggle = showPanel && !maximized

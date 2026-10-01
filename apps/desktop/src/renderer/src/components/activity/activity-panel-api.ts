@@ -7,6 +7,8 @@ import { isBlankUrl, normalizeUrl } from '@/components/browser/browser-url'
 import { normalizeFileLinkTarget } from '@/lib/file-link'
 import { LAYOUT } from '@/lib/layout-constants'
 import { disposeActivityTermInstance } from './activity-terminal'
+import { closeMcpAppTabs } from './mcp-app-tabs'
+import { useMcpAppLayout } from '@/components/mcp-apps/layout-store'
 
 let dockApi: DockviewApi | null = null
 let pendingAction: (() => void) | null = null
@@ -112,6 +114,7 @@ export function setOnDockReady(cb: (() => void) | null) {
 }
 
 export function getDockSnapshot(): SerializedDockview | null {
+  closeMcpAppTabs()
   return dockApi?.toJSON() ?? null
 }
 
@@ -672,6 +675,15 @@ export function closeBrowserTab(browserId: string) {
   const existing = dockApi?.panels.find((p) => p.id === browserId)
   existing?.api.close()
   useBrowserStore.getState().remove(browserId)
+}
+
+/** Protocol fullscreen opens a transient standard tab and maximizes its group. */
+export function openMcpAppTab(appInstanceId: string): void {
+  useMcpAppLayout.getState().setMode(appInstanceId, 'fullscreen')
+}
+
+export function closeMcpAppTab(appInstanceId: string): void {
+  useMcpAppLayout.getState().setMode(appInstanceId, 'inline')
 }
 
 export function maximizeActivityPanel() {

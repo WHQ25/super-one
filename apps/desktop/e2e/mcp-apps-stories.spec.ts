@@ -139,7 +139,7 @@ test('inline scroll stays aligned and available Views share the widget hover hea
   await expect(details).toHaveAttribute('aria-expanded', 'false')
   await view.locator('#fullscreen').click()
   await expect(page.locator('[data-mcp-app-fullscreen]')).toBeVisible()
-  await page.getByRole('button', { name: 'Exit Full Screen', exact: true }).click()
+  await page.getByRole('button', { name: 'Restore Activity Panel', exact: true }).click()
   await expect(page.locator('[data-mcp-app-fullscreen]')).toHaveCount(0)
   await expect(page.locator('iframe[data-mcp-app-frame]')).toHaveAttribute('data-test-identity', 'original')
   await view.locator('#next').click()

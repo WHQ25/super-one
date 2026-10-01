@@ -7,6 +7,7 @@ import { TrajectoryPanel } from '@/components/trajectory/TrajectoryPanel'
 import { DeviceDockPanel } from '@/components/device/DeviceDockPanel'
 import { SideChatPanel } from '@/components/chat/SideChatPanel'
 import { ActivityTerminalPanel } from './ActivityTerminalPanel'
+import { McpAppPanel } from '@/components/mcp-apps/McpAppPanel'
 
 function FilePreviewPanel(props: IDockviewPanelProps<{ filePath: string }>) {
   return <FilePreview filePath={props.params.filePath} />
@@ -38,6 +39,7 @@ function SideChatDockPanel(props: IDockviewPanelProps<{ projectPath: string; ses
 }
 
 export const activityPanelComponents: Record<string, React.FunctionComponent<IDockviewPanelProps>> = {
+  'mcp-app': McpAppPanel as React.FunctionComponent<IDockviewPanelProps>,
   'file-preview': FilePreviewPanel,
   'miniapp': MiniAppPanel as React.FunctionComponent<IDockviewPanelProps>,
   'miniapp-tool-preview': ToolUiPreviewPanel as React.FunctionComponent<IDockviewPanelProps>,

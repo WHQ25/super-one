@@ -20,6 +20,10 @@ import { deviceFamilyIcon } from '@/components/device/device-icons'
 import { closeActivityTerminalTab, closeBrowserTab, closeDeviceTab, closeToolUiPreviewTab, closeTrajectoryTab, toggleMaximizedActivityGroup } from './activity-panel-api'
 import { useTerminalAgentControl } from './activity-terminal'
 import { requestCloseSideChat } from '@/lib/side-chat-actions'
+import { ToolBrandIcon } from '@/components/chat/ToolIcon'
+import { useMcpServerIcon } from '@/components/chat/use-mcp-server-icon'
+import { getToolDisplay } from '@/components/chat/tool-display'
+import { useMcpAppLayout } from '@/components/mcp-apps/layout-store'
 
 function useIsActive(api: IDockviewPanelHeaderProps['api']) {
   const [active, setActive] = useState(api.isActive)
@@ -303,7 +307,23 @@ export function SideChatTab(props: IDockviewPanelHeaderProps) {
   )
 }
 
+export function McpAppTab(props: IDockviewPanelHeaderProps<{ appInstanceId: string }>) {
+  const key = props.params.appInstanceId
+  const owner = useMcpAppLayout(state => state.views[key])
+  const server = owner?.app.binding.server ?? props.api.title
+  const icon = useMcpServerIcon(server)
+  const active = useIsActive(props.api)
+  return <div className={tabChipClass(active)}>
+    <HoverCloseSlot onClose={() => props.api.close()}>
+      <ToolBrandIcon src={icon} alt={server} icon={getToolDisplay(owner?.toolName ?? `mcp__${server}__app`, {}).icon} />
+    </HoverCloseSlot>
+    <TabTitle>{server}</TabTitle>
+    <MaximizeTabAction api={props.api} active={active} />
+  </div>
+}
+
 export const activityTabComponents: Record<string, React.FunctionComponent<IDockviewPanelHeaderProps>> = {
+  'mcp-app-tab': McpAppTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'file-preview-tab': FilePreviewTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'miniapp-tab': MiniAppTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'miniapp-tool-preview-tab': ToolUiPreviewTab as React.FunctionComponent<IDockviewPanelHeaderProps>,

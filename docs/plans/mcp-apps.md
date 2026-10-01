@@ -481,11 +481,12 @@ renderer interaction checks; the native scheme is covered by the Electron suite.
 
 The desktop supports only protocol modes `inline`, `fullscreen` and `pip`.
 The View requests entry; the host has only a fullscreen exit/Esc and PiP return
-to chat. There is no activity-panel registration or host mode toolbar.
+to chat. Fullscreen opens a transient standard activity-panel tab and maximizes
+it; there is no host mode toolbar.
 
 The persistent controller owns an imperative iframe and bridge outside the
-transcript. Inline uses normal DOM flow; fullscreen fills the main content
-container with a slim server header; PiP uses the existing placement/drag/resize
+transcript. Inline uses normal DOM flow; fullscreen uses the standard maximized
+activity panel and tab chrome; PiP uses the existing placement/drag/resize
 primitives. Store transitions first atomically park the iframe in a connected
 container, then destination attachment moves it into the connected surface.
 Ref detach/unmount never moves a frame. A violated connected-node/same-document
@@ -542,3 +543,33 @@ inapplicable activity-side switch.
 
 Validation: web typecheck and the two affected browser mode/details flows pass.
 Native sidebar/window-fullscreen/glass comparison captures remain to be collected.
+
+
+### 2026-10-01 — fullscreen is a real maximized activity tab
+
+The user clarified that fullscreen must use the standard activity panel, rather
+than a main-content container with matching chrome. This supersedes the custom
+fullscreen presentation above. `mcp-app` / `mcp-app-tab` are registered alongside
+other activity kinds. The tab uses the standard close slot, title and maximize
+control with the shared MCP brand icon. Entry reveals the panel and invokes the
+existing `toggleMaximizedActivityGroup` path; Shrink, tab close, native Esc and a
+View request for inline close the transient tab and return its document to chat.
+Fullscreen → PiP also closes the tab. Previous panel visibility, active tab and
+maximize state are restored. Session layout parking returns the View inline
+before taking a snapshot, so transient fullscreen tabs are not restored as an
+unmaximized, non-spec mode.
+
+`onWillMutateLayout` parks fullscreen documents before Dockview changes DOM;
+`onDidMutateLayout` and connected surface refs resume them. Ref detach never
+moves a document, and an invalid/disconnected move revokes without throwing.
+A row props update keeps its stable inline destination across immediate
+reclaims, fixing a missing destination seen on the fullscreen → PiP → chat path.
+The custom fullscreen container, z-layer and maximized header override are gone.
+The shared activity header helper remains useful for the panel and watermark.
+
+Validation: 43 production lifecycle/activity API Vitest tests, web typecheck,
+10 updated `Chat/MCP Apps` browser story tests with the real ActivityPanel,
+and 17 native Electron tests
+cover all five exit paths (same `contentWindow`, one load, retained selection,
+subsequent app tool call, no exception), prior hidden panel restoration and an
+existing maximized tab. Native window comparison captures are still pending.

@@ -1,25 +1,28 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { useMemo, useEffect, useRef } from 'react'
+import { useMemo, useEffect } from 'react'
 import { Button } from '@superone/ui/components/ui/button'
 import { ToolBlock } from '@/components/chat/ToolBlock'
 import { WidgetBlock } from '@/components/chat/WidgetBlock'
 import { PrettyJSONCodeBlock } from '@/components/chat/tool-result-views'
 import { useSettingsStore } from '@/stores/settings'
+import { ActivityPanel } from '@/components/activity/ActivityPanel'
+import { useActivityPanelStore } from '@/stores/activity-panel'
 import { McpAppHostLayer } from './McpAppHostLayer'
 import { useMcpAppLayout, type McpAppSurface } from './layout-store'
 import McpAppView from './McpAppView'
 import { createMcpAppStoryFixture, type McpAppStoryState } from './story-fixture'
 
 function Scenario({ state = 'live', narrow = false, scrolling = false, initialMode = 'inline' }: { state?: McpAppStoryState; narrow?: boolean; scrolling?: boolean; initialMode?: McpAppSurface }) {
-  const boundary = useRef<HTMLDivElement>(null)
+  const maximized = useActivityPanelStore(state => state.maximized)
   const fixture = useMemo(() => createMcpAppStoryFixture(state), [state])
   useEffect(() => {
     useSettingsStore.setState(state => ({ mcpMetaCache: { ...state.mcpMetaCache, [fixture.app.binding.server]: { name: fixture.app.binding.server, icons: [{ src: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"%3E%3Cpath fill="%237c3aed" d="M2 1h12v14H2z"/%3E%3C/svg%3E' }] } } }))
     useMcpAppLayout.getState().setMode(fixture.app.appInstanceId, initialMode)
   }, [fixture, initialMode])
   const toolName = `mcp__${fixture.app.binding.server}__fixture_list_items`
-  return <><McpAppHostLayer boundary={boundary} /><div ref={boundary} className="relative h-screen">
-    <div data-chat-root data-mcp-transcript className="mx-auto min-w-0 overflow-y-auto p-4" style={{ width: narrow ? 320 : 720, maxWidth: '100%', height: scrolling ? 600 : undefined }}>
+  return <><McpAppHostLayer /><div className="relative flex h-screen">
+    <ActivityPanel getMaxWidth={() => window.innerWidth} transitionMs={0} />
+    <div data-chat-root data-mcp-transcript className="mx-auto min-w-0 overflow-y-auto p-4" style={{ display: maximized ? 'none' : undefined, width: narrow ? 320 : 720, maxWidth: '100%', height: scrolling ? 600 : undefined }}>
       {scrolling && <div className="h-60 text-xs text-muted-foreground">Earlier transcript content</div>}
       <div data-normal-mcp-row><ToolBlock toolName={`mcp__${fixture.app.binding.server}__fixture_model_echo`} input='{"text":"normal MCP tool"}' status="complete" result="Normal MCP result" autoExpand={false} /></div>
       <div data-app-mcp-row><McpAppView app={fixture.app} toolName={toolName} api={fixture.api} route={{ projectPath: '/storybook', sessionId: fixture.app.binding.session }} title="fixture list items"

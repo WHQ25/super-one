@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { ReactNode } from 'react'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import type { McpAppDesktopApi, McpAppRoute } from './desktop-executor'
+import { syncMcpAppTab } from '@/components/activity/mcp-app-tabs'
 
 export type McpAppSurface = 'inline' | 'fullscreen' | 'pip'
 export interface McpAppOwner {
@@ -41,7 +42,16 @@ function move(key: string, park = false): void {
   const target = mode && surfaces.get(key)?.[mode]
   const parent = !park && target?.isConnected ? target : parkingContainer()
   if (!frame.iframe.isConnected || !parent.isConnected || frame.iframe.ownerDocument !== parent.ownerDocument) { invalidMove(frame); return }
-  if (frame.iframe.parentNode !== parent) parent.moveBefore(frame.iframe, null)
+  if (frame.iframe.parentNode !== parent) {
+    try { parent.moveBefore(frame.iframe, null) } catch { invalidMove(frame) }
+  }
+}
+
+export function parkMcpAppFullscreenFrames(): void {
+  for (const [key, owner] of Object.entries(useMcpAppLayout.getState().views)) if (owner.mode === 'fullscreen') move(key, true)
+}
+export function resumeMcpAppFullscreenFrames(): void {
+  for (const [key, owner] of Object.entries(useMcpAppLayout.getState().views)) if (owner.mode === 'fullscreen') move(key)
 }
 
 interface McpAppLayoutState {
@@ -59,13 +69,17 @@ export const useMcpAppLayout = create<McpAppLayoutState>((set, get) => ({
   claim(owner) {
     const key = owner.app.appInstanceId
     set(state => ({ views: { ...state.views, [key]: { ...owner, mode: state.views[key]?.mode ?? 'inline' } } }))
+    move(key)
     return () => {
       if (get().views[key]?.row !== owner.row) return
-      get().surface(key, 'inline', null)
+      move(key, true)
       set(state => ({ views: { ...state.views, [key]: { ...state.views[key]!, row: null } } }))
-      // React StrictMode can immediately reclaim the row; do not replace its bridge.
+      // A props update or StrictMode can reclaim the same row immediately. Its
+      // stable surface ref will not fire again, so retain that destination.
       queueMicrotask(() => {
-        if (get().views[key]?.row || get().views[key]?.mode !== 'inline') return
+        if (get().views[key]?.row) return
+        get().surface(key, 'inline', null)
+        if (get().views[key]?.mode !== 'inline') return
         set(state => { const views = { ...state.views }; delete views[key]; return { views } })
         surfaces.delete(key)
       })
@@ -84,6 +98,7 @@ export const useMcpAppLayout = create<McpAppLayoutState>((set, get) => ({
       set(state => ({ views: { ...state.views, [key]: { ...owner, mode } } }))
       move(key)
     }
+    syncMcpAppTab(key, mode)
   },
   surface(key, mode, element) {
     const targets = surfaces.get(key) ?? {}
@@ -106,5 +121,8 @@ export const useMcpAppLayout = create<McpAppLayoutState>((set, get) => ({
       iframe.remove()
     }
   },
-  clear() { set({ views: {} }); surfaces.clear() },
+  clear() {
+    for (const key of Object.keys(get().views)) get().setMode(key, 'inline')
+    set({ views: {} }); surfaces.clear()
+  },
 }))

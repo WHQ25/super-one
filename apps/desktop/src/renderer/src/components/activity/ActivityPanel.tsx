@@ -14,7 +14,8 @@ import { ACTIVITY_PANEL_TRANSITION, LAYOUT } from '@/lib/layout-constants'
 import { ActivityHeaderPrefix } from './ActivityHeaderPrefix'
 import { ResizeHandleLine } from '@/components/ResizeHandleLine'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger } from '@superone/ui/components/ui/dropdown-menu'
-import { isLayoutSwapping, launchInGroup, restorePanelWidthAfterSideChat, setDockApi, SIDE_CHAT_PANEL_ID } from './activity-panel-api'
+import { isLayoutSwapping, launchInGroup, restorePanelWidthAfterSideChat, setDockApi, SIDE_CHAT_PANEL_ID, toggleMaximizedActivityGroup } from './activity-panel-api'
+import { connectMcpAppTabs } from './mcp-app-tabs'
 import { useActivityLaunchTypes } from './activity-launch-types'
 import { activityPanelComponents } from './panels'
 import { activityTabComponents } from './ActivityTab'
@@ -137,6 +138,7 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
     apiRef.current = event.api
     observeDockview(event.api)
     setDockApi(event.api)
+    connectMcpAppTabs(event.api, toggleMaximizedActivityGroup)
 
     const syncHasPanels = () => useActivityPanelStore.getState().setHasPanels(event.api.panels.length > 0)
     syncHasPanels()
@@ -233,6 +235,7 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
       resizeObserverRef.current = null
       const cur = useActivityViewStateStore.getState()._currentSessionId
       if (cur) useActivityViewStateStore.getState().park(cur)
+      connectMcpAppTabs(null)
       setDockApi(null)
       apiRef.current = null
     }

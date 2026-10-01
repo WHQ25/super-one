@@ -172,7 +172,7 @@ have size caps; stored snapshots follow the server's account lifecycle
 | Permissions | `permissions` → iframe `allow`; the granted set reported truthfully in `hostCapabilities.sandbox`. | Only what the device actually grants. |
 | Protocol | `AppBridge` + `PostMessageTransport`, one per mounted View instance, torn down with `ui/resource-teardown`; StrictMode double mount covered by test. | Same bridge in `packages/chat-view`; server-bound calls go to the host over environment RPC. |
 | Theme | SuperOne tokens → spec `--color-*` / `--font-*` / `--border-radius-*`, reusing `WIDGET_THEME_TOKEN_SOURCES`. | Same. |
-| Display | `inline`, `fullscreen` (main content area) and `pip`. Enter only through View requests; the host provides exit controls. Respect an explicit View declaration. | `inline`, then `fullscreen` (sheet). |
+| Display | `inline`, `fullscreen` (a standard activity tab, maximized in the main content area) and `pip`. Enter only through View requests; the host provides exit controls. Respect an explicit View declaration. | `inline`, then `fullscreen` (sheet). |
 
 Available Views replace their tool row, using the same borderless frame and hover
 header as widgets: server icon/name, tool display name and one details toggle.

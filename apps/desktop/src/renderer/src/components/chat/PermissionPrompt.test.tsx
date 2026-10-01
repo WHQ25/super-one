@@ -5,6 +5,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ButtonHTMLAttributes, ReactElement, ReactNode } from 'react'
 import type { PermissionRequest } from '@superone/shared/agent-types'
+import { elicitationFormRequest } from '@superone/shared/schema-form'
 import { ChatRootContext } from './is-focus-in-chat'
 
 const chatState = {
@@ -180,6 +181,30 @@ describe('PermissionPrompt', () => {
 
     expect(screen.getByRole('button', { name: /open in browser/i })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /allow for this session/i })).toBeNull()
+  })
+
+  it('answers a form elicitation with the composer content', () => {
+    activeSessionState.sessionProvider = 'codex'
+    activeSessionState.pendingPermissions = [{
+      requestId: 'elicit-form',
+      toolName: 'bits-and-bolts',
+      input: {},
+      allowAlwaysAllow: false,
+      requestKind: 'mcp_elicitation',
+      serverName: 'bits-and-bolts',
+      message: 'Choose a CAD part',
+      ...elicitationFormRequest({
+        type: 'object',
+        required: ['part'],
+        properties: { part: { type: 'string', title: 'Part', oneOf: [{ const: 'hex', title: 'Hex bolt' }] } },
+      }),
+    }]
+
+    renderInChat(<PermissionPrompt />)
+    fireEvent.click(screen.getByRole('radio', { name: /Hex bolt/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+
+    expect(chatState.respondToPermission).toHaveBeenCalledWith('elicit-form', true, false, undefined, undefined, undefined, { part: 'hex' })
   })
 
   it('opens a URL elicitation in the browser and keeps the waiting card', () => {

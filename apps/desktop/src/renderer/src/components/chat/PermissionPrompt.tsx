@@ -17,7 +17,7 @@ import { EditDiff, WriteDiff } from './ToolBlock'
 import { modes as permissionModes } from './PermissionModeSelector'
 import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
 import { eligibilityFromStore } from '@/lib/auto-mode-eligibility'
-import { ElicitationForm, isElicitationFormValid } from './ElicitationForm'
+import { SchemaFormComposer } from '../schema-form/SchemaFormComposer'
 import { getPermissionPromptConfig } from './permission-prompt/permission-prompt-config'
 import { VideoGenConfirmPromptContainer } from './VideoGenConfirmPromptContainer'
 import { ConfigConfirmPromptContainer } from './ConfigConfirmPromptContainer'
@@ -178,7 +178,7 @@ export function PermissionPrompt() {
     || isWebMcpTrustConfirm
     || isSessionCleanupConfirm
     || isAutomationConfirm
-  const elicitationForm = pendingPermission?.elicitationForm ?? []
+  const schemaForm = pendingPermission?.schemaForm
   const elicitationUrl = pendingPermission?.elicitationUrl
   const [urlOpened, setUrlOpened] = useState(false)
   useEffect(() => { setUrlOpened(false) }, [requestId])
@@ -200,7 +200,6 @@ export function PermissionPrompt() {
   )
   const fastMode = autoEligible ? 'auto' : 'acceptEdits'
   const suggestionsCount = pendingPermission?.suggestions?.length ?? 0
-  const [formValues, setFormValues] = useState<Record<string, unknown>>({})
 
   const apps = useMiniAppStore((s) => s.apps)
   const pendingInput = pendingPermission?.input
@@ -231,7 +230,6 @@ export function PermissionPrompt() {
     setRememberRule(null)
     setIsFeedbackFocused(false)
     setIsCollapsed(false)
-    setFormValues({})
   }, [requestId, suggestionsCount])
 
   useEffect(() => {
@@ -292,7 +290,7 @@ export function PermissionPrompt() {
   const handleAllow = useCallback(() => {
     if (!requestId) return
     if (isElicitation) {
-      respondToPermission(requestId, true, false, undefined, undefined, undefined, formValues)
+      respondToPermission(requestId, true)
       return
     }
     if (terminalRule && rememberRule) {
@@ -318,12 +316,17 @@ export function PermissionPrompt() {
     } else {
       respondToPermission(requestId, true)
     }
-  }, [requestId, respondToPermission, selectedSuggestions, isElicitation, formValues, autoEligible, pendingPermission, setPermissionMode, terminalRule, rememberRule])
+  }, [requestId, respondToPermission, selectedSuggestions, isElicitation, autoEligible, pendingPermission, setPermissionMode, terminalRule, rememberRule])
 
   const handleElicitationAlwaysAllow = useCallback(() => {
     if (!requestId) return
-    respondToPermission(requestId, true, true, undefined, undefined, undefined, formValues)
-  }, [requestId, respondToPermission, formValues])
+    respondToPermission(requestId, true, true)
+  }, [requestId, respondToPermission])
+
+  const handleFormSubmit = useCallback((content: Record<string, unknown>, always: boolean) => {
+    if (!requestId) return
+    respondToPermission(requestId, true, always, undefined, undefined, undefined, content)
+  }, [requestId, respondToPermission])
 
   const handleElicitationDecline = useCallback(() => {
     if (!requestId) return
@@ -509,7 +512,6 @@ export function PermissionPrompt() {
       : riskLevel === 'medium'
         ? 'text-amber-500'
         : 'text-muted-foreground'
-    const formValid = isElicitationFormValid(elicitationForm, formValues)
     const isUrlElicit = Boolean(elicitationUrl)
 
     return (
@@ -572,17 +574,24 @@ export function PermissionPrompt() {
                   {t('common.cancel')}
                 </PermissionActionButton>
               </div>
+            ) : schemaForm ? (
+              <SchemaFormComposer
+                key={requestId}
+                form={schemaForm}
+                requester={pendingPermission.serverName ?? 'MCP'}
+                allowAlways={supportsAlwaysPersist}
+                onSubmit={handleFormSubmit}
+                onDecline={handleElicitationDecline}
+                onCancel={handleCancel}
+              />
             ) : (
               <>
-                {elicitationForm.length > 0 && (
-                  <ElicitationForm fields={elicitationForm} value={formValues} onChange={setFormValues} />
-                )}
                 <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
-                  <PermissionActionButton tone="approve" disabled={!formValid} onClick={handleAllow}>
+                  <PermissionActionButton tone="approve" onClick={handleAllow}>
                     {t('chat.permission.allow')}
                   </PermissionActionButton>
                   {supportsAlwaysPersist && (
-                    <PermissionActionButton tone="primary" disabled={!formValid} onClick={handleElicitationAlwaysAllow}>
+                    <PermissionActionButton tone="primary" onClick={handleElicitationAlwaysAllow}>
                       {t('chat.permission.alwaysAllow')}
                     </PermissionActionButton>
                   )}

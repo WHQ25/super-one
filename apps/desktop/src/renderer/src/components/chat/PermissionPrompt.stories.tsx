@@ -3,6 +3,7 @@ import { useEffect, type ReactNode } from 'react'
 import { PermissionPrompt } from './PermissionPrompt'
 import { useChatStore, type ChatProvider } from '@/stores/chat'
 import type { PermissionRequest } from '@superone/shared/agent-types'
+import { elicitationFormRequest } from '@superone/shared/schema-form'
 
 function StoryShell({ children, width = 720 }: { children: ReactNode; width?: number }) {
   return (
@@ -398,6 +399,64 @@ export const AcpElicitation: Story = {
           elicitationUrl: 'https://github.com/login/oauth',
           elicitationId: 'e-1',
         }}
+      />
+      <Story />
+    </>
+  )],
+}
+
+function formElicitation(requestId: string, message: string, requestedSchema: unknown): PermissionRequest {
+  return {
+    requestId,
+    toolName: 'bits-and-bolts',
+    toolUseId: requestId,
+    input: {},
+    allowAlwaysAllow: false,
+    requestKind: 'mcp_elicitation',
+    serverName: 'bits-and-bolts',
+    message,
+    ...elicitationFormRequest(requestedSchema),
+  }
+}
+
+/** Codex `openaiForm`: `cad.reviewForm` in the elicitation card. */
+export const McpFormElicitation: Story = {
+  decorators: [(Story) => (
+    <>
+      <SeedPermission
+        sessionProvider="codex"
+        request={formElicitation('p-form', 'Review a CAD reference', {
+          type: 'object',
+          required: ['reference', 'priority', 'approved', 'tolerance'],
+          properties: {
+            reference: { type: 'string', title: 'CAD or file URI', format: 'uri', pattern: '^(cad|file):' },
+            priority: { type: 'string', title: 'Priority', enum: ['low', 'normal', 'high'] },
+            approved: { type: 'boolean', title: 'Approved' },
+            tolerance: { type: 'number', title: 'Tolerance (mm)', minimum: 0, maximum: 10 },
+          },
+        })}
+      />
+      <Story />
+    </>
+  )],
+}
+
+/** An implicit resource selection needs user uploads, which SuperOne does not offer yet. */
+export const McpUnsupportedForm: Story = {
+  decorators: [(Story) => (
+    <>
+      <SeedPermission
+        sessionProvider="codex"
+        request={formElicitation('p-form-unsupported', 'Choose CAD references', {
+          type: 'object',
+          properties: {
+            references: {
+              type: 'array',
+              items: { type: 'string', format: 'uri' },
+              'x-openai-input': { type: 'resource', selection: 'implicit', options: [] },
+            },
+          },
+        })}
       />
       <Story />
     </>

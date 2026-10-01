@@ -2013,6 +2013,40 @@ export type Messages = {
       automationEnabledOff: string
       automationChangeFromTo: string
     }
+    /** Declarative forms (MCP elicitation, OpenAI extended forms). */
+    schemaForm: {
+      submit: string
+      submitAlways: string
+      dismiss: string
+      unsupportedTitle: string
+      unsupportedBody: string
+      selectPlaceholder: string
+      suggestions: string
+      add: string
+      addPlaceholder: string
+      remove: string
+      noResources: string
+      uriPlaceholder: string
+      dateTimePlaceholder: string
+      errors: {
+        required: string
+        type: string
+        minLength: string
+        maxLength: string
+        pattern: string
+        formatEmail: string
+        formatUri: string
+        formatDate: string
+        formatDateTime: string
+        minimum: string
+        maximum: string
+        integer: string
+        minItems: string
+        maxItems: string
+        unique: string
+        option: string
+      }
+    }
     devicePreview: {
       label: string
       expandedLabel: string
@@ -6116,6 +6150,39 @@ export const en: Messages = {
       automationEnabledOn: 'on',
       automationEnabledOff: 'off',
       automationChangeFromTo: '{{from}} → {{to}}',
+    },
+    schemaForm: {
+      submit: 'Submit',
+      submitAlways: 'Submit and Always Allow',
+      dismiss: 'Dismiss',
+      unsupportedTitle: 'SuperOne can\'t show this form',
+      unsupportedBody: '{{requester}} asked for input SuperOne does not support yet. Dismiss it to tell the server the form was not completed.',
+      selectPlaceholder: 'Choose…',
+      suggestions: 'Suggestions',
+      add: 'Add',
+      addPlaceholder: 'Type a value and press Enter',
+      remove: 'Remove {{name}}',
+      noResources: 'Nothing to choose from.',
+      uriPlaceholder: 'https://… or another URI',
+      dateTimePlaceholder: '2026-01-31T09:00:00Z',
+      errors: {
+        required: 'Required',
+        type: 'Enter a valid value',
+        minLength: 'Use at least {{limit}} characters',
+        maxLength: 'Use at most {{limit}} characters',
+        pattern: 'Doesn\'t match the expected format',
+        formatEmail: 'Enter an email address',
+        formatUri: 'Enter a URI, such as https://example.com',
+        formatDate: 'Enter a date as YYYY-MM-DD',
+        formatDateTime: 'Enter a date and time with a time zone, such as 2026-01-31T09:00:00Z',
+        minimum: 'Must be at least {{limit}}',
+        maximum: 'Must be at most {{limit}}',
+        integer: 'Must be a whole number',
+        minItems: 'Choose at least {{limit}}',
+        maxItems: 'Choose at most {{limit}}',
+        unique: 'Each value can appear only once',
+        option: 'Choose one of the listed options',
+      },
     },
     devicePreview: {
       label: 'Device picture in picture',

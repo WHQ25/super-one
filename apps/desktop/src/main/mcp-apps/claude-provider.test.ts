@@ -66,6 +66,12 @@ describe('Claude native MCP Apps provider', () => {
     })
   })
 
+  it('normalizes the tool name the way Claude qualifies it', async () => {
+    const request = vi.fn(async () => NEXT_PAGE_RESPONSE)
+    await provider({ request }).callTool({ tool: 'cad.library', args: {}, origin }, signal)
+    expect(request).toHaveBeenCalledWith({ subtype: 'mcp_call', tool: 'mcp__my_fixture__cad_library', arguments: {} }, { signal })
+  })
+
   it('reports a rejected mcp_call as a failed result with an uncertain outcome', async () => {
     const request = vi.fn(async () => { throw controlRequestFailed('fixture failure') })
     expect(await provider({ request }).callTool({ tool: 'fixture_next_page', args: {} }, signal)).toEqual({

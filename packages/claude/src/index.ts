@@ -89,7 +89,7 @@ export {
   ClaudeToolApps,
   claudeMcpToolResult,
   createClaudeMcpAppsProvider,
-  normalizeClaudeMcpServerName,
+  normalizeClaudeMcpName,
   toMcpToolDescriptor,
   withMcpAppsHostEnv,
   type ClaudeMcpAppsProviderDeps,

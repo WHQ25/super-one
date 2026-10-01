@@ -5,6 +5,7 @@ import {
   ClaudeMcpAppsCatalog,
   ClaudeToolApps,
   claudeMcpToolResult,
+  normalizeClaudeMcpName,
   toMcpToolDescriptor,
   withMcpAppsHostEnv,
   type ClaudeMcpStatusServer,
@@ -76,6 +77,26 @@ describe('ClaudeMcpAppsCatalog', () => {
       { name: 'a__b', tools: [{ name: 'run', _meta: { ui: { resourceUri: 'ui://x' } } }] },
     ])
     expect(catalog.resolve('mcp__a__b__run')?.server).toBe('a__b')
+  })
+
+  it('resolves tool names Claude normalized, back to the raw tool', () => {
+    const catalog = new ClaudeMcpAppsCatalog()
+    catalog.update([{ name: 'bits-and-bolts', tools: [{ name: 'cad.library', _meta: { ui: { resourceUri: 'ui://x' } } }] }])
+    expect(catalog.resolve('mcp__bits-and-bolts__cad_library')?.tool.name).toBe('cad.library')
+  })
+
+  it('does not guess between raw tool names that normalize alike', () => {
+    const catalog = new ClaudeMcpAppsCatalog()
+    catalog.update([{ name: 's', tools: [{ name: 'a.b' }, { name: 'a_b' }] }])
+    expect(catalog.resolve('mcp__s__a_b')).toBeUndefined()
+  })
+})
+
+describe('normalizeClaudeMcpName', () => {
+  it('replaces characters outside [a-zA-Z0-9_-] and collapses claude.ai connector names', () => {
+    expect(normalizeClaudeMcpName('cad.library')).toBe('cad_library')
+    expect(normalizeClaudeMcpName('my fixture')).toBe('my_fixture')
+    expect(normalizeClaudeMcpName('claude.ai  Claude Docs.')).toBe('claude_ai_Claude_Docs')
   })
 })
 

@@ -46,9 +46,14 @@ export interface ClaudeMcpStatusServer {
   tools?: ClaudeMcpStatusTool[]
 }
 
-/** How Claude Code spells a server inside `mcp__<server>__<tool>`. */
-export function normalizeClaudeMcpServerName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9_-]/g, '_')
+/**
+ * How Claude Code spells a server or tool name inside `mcp__<server>__<tool>`;
+ * it normalizes both parts. Mirrors the CLI, including its `claude.ai `
+ * connector rule.
+ */
+export function normalizeClaudeMcpName(name: string): string {
+  const normalized = name.replace(/[^a-zA-Z0-9_-]/g, '_')
+  return name.startsWith('claude.ai ') ? normalized.replace(/_+/g, '_').replace(/^_|_$/g, '') : normalized
 }
 
 /** Claude reports hint annotations without the `Hint` suffix; restore the MCP names. */
@@ -70,6 +75,8 @@ export function toMcpToolDescriptor(tool: ClaudeMcpStatusTool): McpToolDescripto
 interface CatalogServer {
   config: unknown
   tools: Map<string, McpToolDescriptor>
+  /** Normalized name → tool; names that normalize alike map to null and never resolve. */
+  qualified: Map<string, McpToolDescriptor | null>
 }
 
 /**
@@ -112,7 +119,15 @@ export class ClaudeMcpAppsCatalog {
     this.servers = new Map(
       statuses
         .filter((s) => s.tools?.length)
-        .map((s) => [s.name, { config: s.config, tools: new Map(s.tools!.map((t) => [t.name, toMcpToolDescriptor(t)])) }]),
+        .map((s) => {
+          const tools = new Map(s.tools!.map((t) => [t.name, toMcpToolDescriptor(t)]))
+          const qualified = new Map<string, McpToolDescriptor | null>()
+          for (const tool of tools.values()) {
+            const key = normalizeClaudeMcpName(tool.name)
+            qualified.set(key, qualified.has(key) ? null : tool)
+          }
+          return [s.name, { config: s.config, tools, qualified }]
+        }),
     )
   }
 
@@ -133,9 +148,9 @@ export class ClaudeMcpAppsCatalog {
   resolve(qualifiedName: string): { server: string; tool: McpToolDescriptor } | undefined {
     let best: { server: string; tool: McpToolDescriptor; prefixLength: number } | undefined
     for (const [server, entry] of this.servers) {
-      const prefix = `mcp__${normalizeClaudeMcpServerName(server)}__`
+      const prefix = `mcp__${normalizeClaudeMcpName(server)}__`
       if (!qualifiedName.startsWith(prefix) || (best && best.prefixLength >= prefix.length)) continue
-      const tool = entry.tools.get(qualifiedName.slice(prefix.length))
+      const tool = entry.qualified.get(qualifiedName.slice(prefix.length))
       if (tool) best = { server, tool, prefixLength: prefix.length }
     }
     return best && { server: best.server, tool: best.tool }
@@ -356,7 +371,7 @@ export function createClaudeMcpAppsProvider(binding: McpAppsBinding, deps: Claud
       const request = controlRequest(query)
       if (!request) throw new McpAppsError('invalid', 'This Claude runtime cannot call MCP tools for a View')
       await assertConnected()
-      const tool = `mcp__${normalizeClaudeMcpServerName(binding.server)}__${req.tool}`
+      const tool = `mcp__${normalizeClaudeMcpName(binding.server)}__${normalizeClaudeMcpName(req.tool)}`
       let response: unknown
       try {
         response = await request({ subtype: 'mcp_call', tool, arguments: req.args ?? {} }, { signal })

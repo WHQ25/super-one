@@ -30,7 +30,25 @@ type Inst =
   | { op: 'assert'; kind: 'start' | 'end' | 'word' | 'nonword' }
   | { op: 'match' }
 
+/**
+ * Exactly one construct that matches a single code point: `.`, one class, or one
+ * escape. Groups, alternation, quantifiers and anchors can only appear inside a
+ * class, where they are literal. Linear by construction: each alternative starts
+ * with a different character.
+ */
+const SINGLE_CODE_POINT_ATOM = /^(?:\.|\[(?:[^\\\]]|\\[^])*\]|\\(?:[dDwWsSfnrtv0]|[pP]\{[A-Za-z0-9_=]+\}|u\{[0-9a-fA-F]+\}|u[dD][89abAB][0-9a-fA-F]{2}\\u[dD][c-fC-F][0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|c[A-Za-z]|[$()*+./?[\\\]^{|}-]))$/
+
+/**
+ * The only path to the native engine. Anything but one single-code-point atom
+ * would bring backtracking back, so a slice that fails the check is unsupported,
+ * never matched natively.
+ */
+export function assertSingleCodePointAtom(source: string): void {
+  if (!SINGLE_CODE_POINT_ATOM.test(source)) throw new UnsupportedPattern('an unexpected atom')
+}
+
 function nativeAtom(source: string): (cp: number) => boolean {
+  assertSingleCodePointAtom(source)
   const re = new RegExp(`^(?:${source})$`, 'u')
   return (cp) => re.test(String.fromCodePoint(cp))
 }
@@ -84,7 +102,8 @@ class Parser {
     }
     // Lazy and greedy quantifiers accept the same strings; only `test` is needed.
     if (this.peek() === '?') this.i++
-    if (node.t === 'assert') throw new UnsupportedPattern('a quantified assertion')
+    // A bare quantified assertion (`^*`) already failed the native syntax check; a
+    // group holding one (`(?:^)*`) is valid, and `mark` keeps its epsilon loop finite.
     return { t: 'rep', node, min, max }
   }
 

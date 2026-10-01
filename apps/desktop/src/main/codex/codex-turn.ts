@@ -52,11 +52,10 @@ import type {
   CodexSandboxMode,
   CodexThreadItem,
   CodexUsageInfo,
-  ElicitationFormField,
   PermissionRequest,
   UsageInfo,
 } from '@superone/shared/agent-types'
-import { parseElicitationSchema } from '../agent/elicitation-schema'
+import { acceptedElicitationContent, elicitationFormRequest } from '@superone/shared/schema-form'
 import { getCodexSuperoneMcpConfig } from '../mcp/superone-mcp-stdio-state'
 import { isToolPreapproved, isBuiltInSuperoneTool } from '../mcp/superone-mcp-server'
 import { gateTerminalTabsCall, isTerminalTabsTool } from '../mcp/terminal-tabs-harness-gate'
@@ -160,7 +159,6 @@ export type ParsedApprovalRequest =
   | {
     request: PermissionRequest
     responseKind: 'elicitation'
-    formFields: ElicitationFormField[]
   }
 
 function readBoolean(value: unknown): boolean | null {
@@ -830,10 +828,10 @@ export function mapApprovalRequest(notification: AppServerNotification): ParsedA
       ? (meta.persist as unknown[]).filter((v): v is string => typeof v === 'string')
       : []
     const supportsAlwaysPersist = persistFlags.includes('always')
-    const schema = asRecord(notification.params.requestedSchema)
-    const formFields = parseElicitationSchema(schema)
+    // `form`, and `openaiForm` / `openai/form` (OpenAI extended forms) share one schema model.
+    const form = elicitationFormRequest(notification.params.requestedSchema)
 
-    const miniAppToolName = serverName === 'superone' && formFields.length === 0
+    const miniAppToolName = serverName === 'superone' && !form.schemaForm
       ? extractSuperoneMiniAppToolName(message)
       : null
     if (miniAppToolName) {
@@ -841,7 +839,6 @@ export function mapApprovalRequest(notification: AppServerNotification): ParsedA
       // what lets the host judge args-aware approvals (terminal commands, miniapp_call).
       return {
         responseKind: 'elicitation',
-        formFields: [],
         request: {
           requestId,
           toolName: miniAppToolName,
@@ -855,7 +852,6 @@ export function mapApprovalRequest(notification: AppServerNotification): ParsedA
 
     return {
       responseKind: 'elicitation',
-      formFields,
       request: {
         requestId,
         toolName: serverName,
@@ -868,7 +864,7 @@ export function mapApprovalRequest(notification: AppServerNotification): ParsedA
         ...(subtitle ? { subtitle } : {}),
         ...(riskLevel ? { riskLevel } : {}),
         supportsAlwaysPersist,
-        ...(formFields.length > 0 ? { elicitationForm: formFields } : {}),
+        ...form,
       },
     }
   }
@@ -1016,9 +1012,6 @@ export async function processServerRequest(
           responseKind: parsedApprovalRequest.responseKind,
           questions: parsedApprovalRequest.responseKind === 'user_input'
             ? parsedApprovalRequest.questions
-            : undefined,
-          formFields: parsedApprovalRequest.responseKind === 'elicitation'
-            ? parsedApprovalRequest.formFields
             : undefined,
           event: pendingEvent,
           resolve,
@@ -2982,20 +2975,27 @@ export function respondToCodexElicitation(
   const pending = session.pendingApprovals.get(requestId)
   if (!pending || pending.responseKind !== 'elicitation') return false
 
-  session.pendingApprovals.delete(requestId)
   if (decision === 'cancel') {
+    session.pendingApprovals.delete(requestId)
     pending.resolve({ action: 'cancel', content: null, _meta: null })
     return true
   }
   if (allow) {
-    const content = formAnswers && Object.keys(formAnswers).length > 0 ? formAnswers : null
+    const schemaForm = pending.event.type === 'permission_request' ? pending.event.request.schemaForm : undefined
+    const accepted = acceptedElicitationContent(schemaForm, formAnswers)
+    if (!accepted.ok) {
+      log.warn('[codex] elicitation answer rejected requestId=%s: %s', requestId, accepted.reason)
+      return false
+    }
+    session.pendingApprovals.delete(requestId)
     pending.resolve({
       action: 'accept',
-      content,
+      content: schemaForm ? accepted.content : null,
       _meta: alwaysAllow ? { persist: 'always' } : null,
     })
     return true
   }
+  session.pendingApprovals.delete(requestId)
   pending.resolve({ action: 'decline', content: null, _meta: null })
   return true
 }

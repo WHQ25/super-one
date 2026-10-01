@@ -86,8 +86,8 @@ export function nodePendingToPermissionRequest(
   const input = pending.input && typeof pending.input === 'object' ? pending.input : {}
   const elicitationUrl = typeof input.elicitationUrl === 'string' ? input.elicitationUrl : undefined
   const elicitationId = typeof input.elicitationId === 'string' ? input.elicitationId : undefined
-  const elicitationForm = Array.isArray(input.elicitationForm)
-    ? input.elicitationForm as PermissionRequest['elicitationForm']
+  const schemaForm = input.schemaForm && typeof input.schemaForm === 'object'
+    ? input.schemaForm as PermissionRequest['schemaForm']
     : undefined
   const requestKind = pending.requestKind === 'mcp_elicitation' ? 'mcp_elicitation' as const : undefined
   return {
@@ -101,7 +101,7 @@ export function nodePendingToPermissionRequest(
     ...(pending.serverName ? { serverName: pending.serverName } : {}),
     ...(elicitationUrl ? { elicitationUrl, subtitle: elicitationUrl } : {}),
     ...(elicitationId ? { elicitationId } : {}),
-    ...(elicitationForm?.length ? { elicitationForm } : {}),
+    ...(schemaForm ? { schemaForm } : {}),
   }
 }
 

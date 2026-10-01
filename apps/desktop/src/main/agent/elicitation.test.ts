@@ -7,7 +7,6 @@ vi.mock('../mcp/superone-mcp-server', () => ({
 }))
 
 import type { AgentEvent } from '@superone/shared/agent-types'
-import { parseElicitationSchema } from './elicitation-schema'
 import {
   createOnElicitation,
   respondToElicitation,
@@ -35,33 +34,6 @@ function makeSignal(aborted = false): AbortSignal {
   return { aborted } as AbortSignal
 }
 
-describe('parseElicitationSchema', () => {
-  it('parses flat string/number/boolean/enum properties into form fields', () => {
-    const fields = parseElicitationSchema({
-      type: 'object',
-      properties: {
-        name: { type: 'string', title: 'Your name', description: 'Full name' },
-        age: { type: 'number' },
-        agree: { type: 'boolean' },
-        color: { type: 'string', enum: ['red', 'blue'] },
-        nested: { type: 'object' },
-      },
-      required: ['name'],
-    })
-    expect(fields).toEqual([
-      { name: 'name', type: 'string', label: 'Your name', description: 'Full name', required: true },
-      { name: 'age', type: 'number', label: 'age', required: false },
-      { name: 'agree', type: 'boolean', label: 'agree', required: false },
-      { name: 'color', type: 'enum', label: 'color', required: false, enumOptions: ['red', 'blue'] },
-    ])
-  })
-
-  it('returns [] for null schema or empty properties', () => {
-    expect(parseElicitationSchema(null)).toEqual([])
-    expect(parseElicitationSchema({ type: 'object', properties: {} })).toEqual([])
-  })
-})
-
 describe('createOnElicitation', () => {
   it('declines url-mode requests immediately', async () => {
     const pending = new Map<string, PendingElicitation>()
@@ -83,6 +55,11 @@ describe('createOnElicitation', () => {
     const event = events[0]
     if (event.type !== 'permission_request') throw new Error('expected permission_request')
     expect(event.request.requestKind).toBe('mcp_elicitation')
+    expect(event.request.schemaForm).toEqual({
+      supported: true,
+      fields: [{ name: 'environment', kind: 'text', label: 'Environment', required: true }],
+    })
+    // Phone builds that predate schemaForm still read the flat list.
     expect(event.request.elicitationForm).toEqual([
       { name: 'environment', type: 'string', label: 'Environment', required: true },
     ])
@@ -116,6 +93,34 @@ describe('respondToElicitation', () => {
     const resolved = new Promise((resolve) => held.resolve = resolve as never)
     expect(respondToElicitation(pending, requestId, true, undefined, { environment: 'staging' })).toBe(true)
     await expect(resolved).resolves.toEqual({ action: 'accept', content: { environment: 'staging' } })
+  })
+
+  it('keeps the request pending when the answers do not satisfy the form', () => {
+    const { pending, requestId } = parkRequest()
+    expect(respondToElicitation(pending, requestId, true, undefined, {})).toBe(false)
+    expect(respondToElicitation(pending, requestId, true, undefined, { environment: 3 })).toBe(false)
+    expect(pending.has(requestId)).toBe(true)
+  })
+
+  it('drops answers for fields the form does not declare', async () => {
+    const { pending, requestId } = parkRequest()
+    const held = pending.get(requestId)!
+    const resolved = new Promise((resolve) => held.resolve = resolve as never)
+    expect(respondToElicitation(pending, requestId, true, undefined, { environment: 'prod', extra: 'x' })).toBe(true)
+    await expect(resolved).resolves.toEqual({ action: 'accept', content: { environment: 'prod' } })
+  })
+
+  it('never accepts a form it could not display', () => {
+    const pending = new Map<string, PendingElicitation>()
+    const events: AgentEvent[] = []
+    void createOnElicitation(pending, (e) => events.push(e))(makeRequest({
+      requestedSchema: { type: 'object', properties: { when: { type: 'string', format: 'color' } } },
+    }), { signal: makeSignal() })
+    const event = events[0]
+    if (event?.type !== 'permission_request') throw new Error('expected permission_request')
+    expect(event.request.schemaForm).toMatchObject({ supported: false, field: 'when' })
+    expect(event.request.elicitationForm).toBeUndefined()
+    expect(respondToElicitation(pending, event.request.requestId, true, undefined, { when: 'red' })).toBe(false)
   })
 
   it('reject forwards feedback as flat content', async () => {

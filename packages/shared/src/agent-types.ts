@@ -7,6 +7,7 @@ import type { NotificationSettings } from './notifications'
 import type { GitMentionRefKind } from './git-mention-query'
 import type { McpAppHostOperation, McpAppHostRequest, ToolAppAttachment } from './mcp-apps'
 import type { WidgetLayout } from './generative-ui/types'
+import type { SchemaForm } from './schema-form'
 
 // --- Image attachments ---
 
@@ -1127,6 +1128,9 @@ export interface PermissionRequest {
   elicitationId?: string
   riskLevel?: 'low' | 'medium' | 'high'
   supportsAlwaysPersist?: boolean
+  /** Form-mode MCP elicitation: the parsed `requestedSchema`, or why it cannot be shown. */
+  schemaForm?: SchemaForm
+  /** @deprecated Kept for phone builds that predate `schemaForm`; read `schemaForm`. */
   elicitationForm?: ElicitationFormField[]
   /** Present only when requestKind === 'video_gen_confirm'. */
   videoGenConfirm?: VideoGenConfirmPayload

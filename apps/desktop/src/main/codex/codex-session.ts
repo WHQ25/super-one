@@ -2,7 +2,6 @@ import type {
   AgentEvent,
   CodexPermissionPreset,
   CodexReasoningEffort,
-  ElicitationFormField,
 } from '@superone/shared/agent-types'
 import {
   CODEX_PERMISSION_PRESETS,
@@ -42,7 +41,6 @@ export type PendingCodexApprovalResponse =
 export interface PendingCodexApproval {
   responseKind: 'decision' | 'user_input' | 'elicitation'
   questions?: AppServerUserInputQuestion[]
-  formFields?: ElicitationFormField[]
   event: AgentEvent
   resolve: (response: PendingCodexApprovalResponse) => void
   reject: (error: Error) => void

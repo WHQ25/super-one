@@ -81,6 +81,7 @@ import {
   upsertMcpServer,
 } from '../../acp/acp-xai-mcp-status'
 import { buildAcpSessionMcpServers } from '../../acp/acp-mcp'
+import { acceptedElicitationContent } from '@superone/shared/schema-form'
 
 export interface AcpBackendConfig {
   agentId?: string
@@ -1674,10 +1675,19 @@ export class AcpBackend implements SessionBackend {
     if (resolveComputerUseGrant(requestId, allow, alwaysAllow)) return true
     const elicit = this.pendingElicitations.get(requestId)
     if (elicit) {
+      if (allow && decision !== 'cancel') {
+        const schemaForm = elicit.event.type === 'permission_request' ? elicit.event.request.schemaForm : undefined
+        const accepted = acceptedElicitationContent(schemaForm, formAnswers)
+        if (!accepted.ok) {
+          log.warn('[AcpBackend] elicitation answer rejected requestId=%s: %s', requestId, accepted.reason)
+          return false
+        }
+        this.pendingElicitations.delete(requestId)
+        elicit.resolve({ kind: 'accept', content: accepted.content })
+        return true
+      }
       this.pendingElicitations.delete(requestId)
-      if (decision === 'cancel') elicit.resolve({ kind: 'cancel' })
-      else if (allow) elicit.resolve({ kind: 'accept', content: formAnswers })
-      else elicit.resolve({ kind: 'decline' })
+      elicit.resolve({ kind: decision === 'cancel' ? 'cancel' : 'decline' })
       return true
     }
     const pending = this.pendingPermissions.get(requestId)

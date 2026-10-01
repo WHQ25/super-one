@@ -9,7 +9,7 @@ import { readAppSettings } from '../app-settings-service'
 import type { ElicitationRequest, ElicitationResult, PermissionUpdate } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentEvent, PermissionMode, QuestionAnnotations } from '@superone/shared/agent-types'
 import { answeredQuestionDelta, buildAnsweredQuestionInput } from '@superone/shared/ask-user-question'
-import { parseElicitationSchema } from './elicitation-schema'
+import { acceptedElicitationContent, elicitationFormRequest } from '@superone/shared/schema-form'
 import { trace } from './event-trace'
 
 export interface PendingPermission {
@@ -59,7 +59,7 @@ export function createOnElicitation(
       return { action: 'decline' }
     }
 
-    const elicitationForm = parseElicitationSchema(request.requestedSchema ?? null)
+    const form = elicitationFormRequest(request.requestedSchema)
     const requestId = `elicit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
     const permEvent: AgentEvent = {
@@ -74,7 +74,7 @@ export function createOnElicitation(
         serverName: request.serverName,
         message: request.message,
         ...(request.description ? { subtitle: request.description } : {}),
-        ...(elicitationForm.length > 0 ? { elicitationForm } : {}),
+        ...form,
       },
     }
     return new Promise<ElicitationResult>((resolve) => {
@@ -107,17 +107,22 @@ export function respondToElicitation(
 ): boolean {
   const pending = pendingElicitations.get(requestId)
   if (!pending) return false
+  if (allow && decision !== 'cancel') {
+    const schemaForm = pending.event.type === 'permission_request' ? pending.event.request.schemaForm : undefined
+    const accepted = acceptedElicitationContent(schemaForm, formAnswers)
+    if (!accepted.ok) {
+      log.warn('[onElicitation] answer rejected requestId=%s: %s', requestId, accepted.reason)
+      return false
+    }
+    pendingElicitations.delete(requestId)
+    trace('permission.flow', 'elicit_resolve', { source: 'response', allow, cancel: false }, requestId)
+    pending.resolve({ action: 'accept', ...(schemaForm ? { content: accepted.content } : {}) })
+    return true
+  }
   pendingElicitations.delete(requestId)
   trace('permission.flow', 'elicit_resolve', { source: 'response', allow, cancel: decision === 'cancel' }, requestId)
   if (decision === 'cancel') {
     pending.resolve({ action: 'cancel' })
-    return true
-  }
-  if (allow) {
-    const content = formAnswers && Object.keys(formAnswers).length > 0
-      ? (formAnswers as Record<string, string | number | boolean | string[]>)
-      : undefined
-    pending.resolve({ action: 'accept', ...(content ? { content } : {}) })
     return true
   }
   const feedback = typeof formAnswers?.feedback === 'string' ? formAnswers.feedback : undefined

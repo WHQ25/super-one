@@ -5,7 +5,7 @@ import type {
   QuestionAnnotations,
   UserQuestion,
 } from '@superone/shared/agent-types'
-import { parseElicitationSchema } from '../agent/elicitation-schema'
+import { elicitationFormRequest } from '@superone/shared/schema-form'
 
 /** Grok ACP client methods (agent → client). */
 export const XAI_ASK_USER_QUESTION = 'x.ai/ask_user_question'
@@ -359,9 +359,7 @@ export function buildMcpElicitPermissionRequest(
   params: GrokMcpElicitParams,
   requestId: string,
 ): PermissionRequest {
-  const elicitationForm = params.mode === 'form'
-    ? parseElicitationSchema(params.requestedSchema ?? null)
-    : []
+  const form = params.mode === 'form' ? elicitationFormRequest(params.requestedSchema) : {}
   return {
     requestId,
     toolName: params.serverName,
@@ -373,7 +371,7 @@ export function buildMcpElicitPermissionRequest(
     message: params.message,
     ...(params.url ? { subtitle: params.url, elicitationUrl: params.url } : {}),
     ...(params.elicitationId ? { elicitationId: params.elicitationId } : {}),
-    ...(elicitationForm.length > 0 ? { elicitationForm } : {}),
+    ...form,
   }
 }
 

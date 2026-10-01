@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { elicitationFormRequest } from '@superone/shared/schema-form'
 
 // The harness install-root module (reached via the codex binary resolver) pulls
 // in electron, which has no ESM named exports under vitest.
@@ -777,6 +778,7 @@ describe('respondToCodexPermission', () => {
     const session = makeSession()
     session.pendingApprovals.set('req-2', {
       responseKind: 'elicitation',
+      event: { type: 'permission_request', request: { requestId: 'req-2', toolName: 'demo', input: {}, allowAlwaysAllow: true } },
       resolve,
       reject: vi.fn(),
     })
@@ -813,7 +815,7 @@ describe('mapApprovalRequest mcpServer/elicitation/request', () => {
 
     expect(parsed?.responseKind).toBe('elicitation')
     if (parsed?.responseKind !== 'elicitation') return
-    expect(parsed.formFields).toEqual([])
+    expect(parsed.request.schemaForm).toBeUndefined()
     expect(parsed.request).toMatchObject({
       requestId: '0',
       toolName: 'computer-use',
@@ -851,13 +853,69 @@ describe('mapApprovalRequest mcpServer/elicitation/request', () => {
 
     expect(parsed?.responseKind).toBe('elicitation')
     if (parsed?.responseKind !== 'elicitation') return
-    expect(parsed.formFields).toEqual([
+    expect(parsed.request.schemaForm).toEqual({
+      supported: true,
+      fields: [
+        { name: 'name', kind: 'text', label: 'Name', description: 'Your name', required: true },
+        { name: 'age', kind: 'number', integer: true, label: 'age', required: false },
+        { name: 'optIn', kind: 'boolean', label: 'Opt-in', required: false },
+        { name: 'mood', kind: 'select', label: 'Mood', required: true, options: [{ value: 'happy', label: 'happy' }, { value: 'sad', label: 'sad' }] },
+      ],
+    })
+    expect(parsed.request.elicitationForm).toEqual([
       { name: 'name', type: 'string', label: 'Name', description: 'Your name', required: true },
       { name: 'age', type: 'number', label: 'age', required: false },
       { name: 'optIn', type: 'boolean', label: 'Opt-in', required: false },
       { name: 'mood', type: 'enum', label: 'Mood', required: true, enumOptions: ['happy', 'sad'] },
     ])
-    expect(parsed.request.elicitationForm).toEqual(parsed.formFields)
+  })
+
+  it.each(['openaiForm', 'openai/form'])('parses %s extended forms with the shared schema model', (mode) => {
+    const parsed = mapApprovalRequest({
+      requestIdRaw: 8,
+      requestId: '8',
+      method: 'mcpServer/elicitation/request',
+      params: {
+        mode,
+        message: 'Choose a CAD part',
+        serverName: 'bits-and-bolts',
+        requestedSchema: {
+          type: 'object',
+          required: ['part'],
+          properties: {
+            part: {
+              type: 'string',
+              title: 'CAD part',
+              oneOf: [{ const: 'hex', title: 'Hex bolt', 'x-openai-thumbnail': { src: 'https://example.com/hex.png' } }],
+            },
+          },
+        },
+      },
+    })
+
+    if (parsed?.responseKind !== 'elicitation') throw new Error('expected elicitation')
+    expect(parsed.request.schemaForm).toMatchObject({
+      supported: true,
+      fields: [{ kind: 'select', options: [{ value: 'hex', label: 'Hex bolt', thumbnail: { src: 'https://example.com/hex.png' } }] }],
+    })
+  })
+
+  it('reports an extended form with an unknown input as unsupported', () => {
+    const parsed = mapApprovalRequest({
+      requestIdRaw: 9,
+      requestId: '9',
+      method: 'mcpServer/elicitation/request',
+      params: {
+        mode: 'openaiForm',
+        message: 'Pick',
+        serverName: 'bits-and-bolts',
+        requestedSchema: { type: 'object', properties: { part: { type: 'openai/imagePicker', items: [] } } },
+      },
+    })
+
+    if (parsed?.responseKind !== 'elicitation') throw new Error('expected elicitation')
+    expect(parsed.request.schemaForm).toMatchObject({ supported: false, field: 'part' })
+    expect(parsed.request.elicitationForm).toBeUndefined()
   })
 })
 
@@ -943,7 +1001,7 @@ describe('mapApprovalRequest superone mini-app tool elicitation', () => {
 
     expect(parsed?.responseKind).toBe('elicitation')
     if (parsed?.responseKind !== 'elicitation') return
-    expect(parsed.formFields).toEqual([])
+    expect(parsed.request.schemaForm).toBeUndefined()
     expect(parsed.request.toolName).toBe('mcp__superone__excalidraw__clear_canvas')
     expect(parsed.request.allowAlwaysAllow).toBe(false)
     expect(parsed.request.supportsAlwaysPersist).toBe(false)
@@ -1045,7 +1103,7 @@ describe('mapApprovalRequest superone mini-app tool elicitation', () => {
 
     if (parsed?.responseKind !== 'elicitation') throw new Error('expected elicitation')
     expect(parsed.request.requestKind).toBe('mcp_elicitation')
-    expect(parsed.formFields.length).toBeGreaterThan(0)
+    expect(parsed.request.schemaForm).toMatchObject({ supported: true, fields: [{ name: 'note' }] })
   })
 })
 
@@ -1121,11 +1179,15 @@ describe('processServerRequest', () => {
 describe('respondToCodexElicitation', () => {
   beforeEach(() => { vi.clearAllMocks() })
 
-  function setupPending() {
+  function setupPending(requestedSchema?: Record<string, unknown>) {
     const resolve = vi.fn()
     const session = makeSession()
     session.pendingApprovals.set('e1', {
       responseKind: 'elicitation',
+      event: {
+        type: 'permission_request',
+        request: { requestId: 'e1', toolName: 'demo', input: {}, allowAlwaysAllow: false, ...elicitationFormRequest(requestedSchema) },
+      },
       resolve,
       reject: vi.fn(),
     })
@@ -1144,14 +1206,39 @@ describe('respondToCodexElicitation', () => {
     expect(resolve).toHaveBeenCalledWith({ action: 'accept', content: null, _meta: { persist: 'always' } })
   })
 
+  const personSchema = {
+    type: 'object',
+    required: ['name'],
+    properties: { name: { type: 'string' }, age: { type: 'integer' } },
+  }
+
   it('serializes accept + form answers as content', () => {
-    const { session, resolve } = setupPending()
+    const { session, resolve } = setupPending(personSchema)
     respondToCodexElicitation(session, 'e1', true, false, undefined, { name: 'Alice', age: 30 })
     expect(resolve).toHaveBeenCalledWith({
       action: 'accept',
       content: { name: 'Alice', age: 30 },
       _meta: null,
     })
+  })
+
+  it('keeps the request pending when answers do not satisfy the form', () => {
+    const { session, resolve } = setupPending(personSchema)
+    expect(respondToCodexElicitation(session, 'e1', true, false, undefined, { age: 1.5 })).toBe(false)
+    expect(resolve).not.toHaveBeenCalled()
+    expect(session.pendingApprovals.has('e1')).toBe(true)
+  })
+
+  it('only returns resource URIs the server offered', () => {
+    const { session, resolve } = setupPending({
+      type: 'object',
+      properties: {
+        ref: { type: 'string', format: 'uri', 'x-openai-input': { type: 'resource', options: [{ uri: 'cad://a', name: 'a' }] } },
+      },
+    })
+    expect(respondToCodexElicitation(session, 'e1', true, false, undefined, { ref: 'file:///etc/passwd' })).toBe(false)
+    expect(respondToCodexElicitation(session, 'e1', true, false, undefined, { ref: 'cad://a' })).toBe(true)
+    expect(resolve).toHaveBeenCalledWith({ action: 'accept', content: { ref: 'cad://a' }, _meta: null })
   })
 
   it('serializes decline correctly', () => {

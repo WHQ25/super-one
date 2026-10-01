@@ -3,6 +3,7 @@
  * and frame scheduled-task inject prompts.
  */
 import type { PendingInteraction } from '@superone/runtime/session'
+import { elicitationFormRequest } from '@superone/shared/schema-form'
 
 function asRecord(v: unknown): Record<string, unknown> | null {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return null
@@ -72,23 +73,7 @@ export function grokElicitToPendingInteraction(raw: unknown): {
   const elicitationId = str(o, 'elicitationId', 'elicitation_id')
   const toolCallId = str(o, 'toolCallId', 'tool_call_id')
   const requestId = toolCallId || `acp_elicit_${Date.now().toString(36)}`
-  const schema = asRecord(o.requestedSchema ?? o.requested_schema)
-  const form: Array<Record<string, unknown>> = []
-  const properties = schema ? asRecord(schema.properties) : null
-  if (properties) {
-    const required = Array.isArray(schema?.required) ? schema!.required as unknown[] : []
-    for (const [name, spec] of Object.entries(properties)) {
-      const field = asRecord(spec)
-      if (!field) continue
-      form.push({
-        name,
-        type: typeof field.type === 'string' ? field.type : 'string',
-        label: typeof field.title === 'string' ? field.title : name,
-        required: required.includes(name),
-        ...(typeof field.description === 'string' ? { description: field.description } : {}),
-      })
-    }
-  }
+  const form = elicitationFormRequest(o.requestedSchema ?? o.requested_schema)
   return {
     elicitationId,
     interaction: {
@@ -104,7 +89,7 @@ export function grokElicitToPendingInteraction(raw: unknown): {
       input: {
         ...(url ? { elicitationUrl: url } : {}),
         ...(elicitationId ? { elicitationId } : {}),
-        ...(form.length ? { elicitationForm: form } : {}),
+        ...form,
       },
     },
   }

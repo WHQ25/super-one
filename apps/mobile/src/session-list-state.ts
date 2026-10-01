@@ -164,7 +164,9 @@ const holdsSession = (group: SessionListGroup, sessionId: string) =>
 
 /**
  * Overlay live activity onto listed rows, and insert a live/unseen/pending
- * session the host has not paged in yet so the sidebar can still name it.
+ * session the host has not paged in yet so the sidebar can still name it. An
+ * inserted collaboration child keeps its parent, so it nests rather than
+ * rendering beside the parent it belongs to.
  */
 export function mergeActivityIntoRows(
   rows: SessionListRow[],
@@ -178,6 +180,7 @@ export function mergeActivityIntoRows(
     pendingCount: number
     isUnseen?: boolean
     realtimeActive?: boolean
+    parentSessionId?: string | null
   }>>,
   projectPath?: string | null,
 ): SessionListRow[] {
@@ -210,6 +213,7 @@ export function mergeActivityIntoRows(
       isUnseen: session.isUnseen,
       status: session.status,
       realtimeActive: session.realtimeActive,
+      parentSessionId: session.parentSessionId ?? null,
       projectPath: session.projectPath,
     })
   }

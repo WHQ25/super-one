@@ -159,6 +159,19 @@ it('broadcasts pending summaries for an unopened session and clears them after r
   expect(transport.sent[1].event).toMatchObject({ type: 'session_activity', activity: { pendingCount: 0, pendingReason: { en: null, zh: null } } })
 })
 
+it('names a collaboration child\'s parent, so a phone that has not listed it nests it', async () => {
+  const transport = makeFakeTransport()
+  const session = {
+    ...makeFakeSession({ id: 'child' }),
+    snapshot: { id: 'child', projectPath: '/p', harnessId: 'claude', status: 'streaming' },
+    getPendingInteractions: () => [],
+  } as unknown as Session
+  const parentOf = (id: string) => id === 'child' ? 'parent' : null
+  const broadcaster = new MobileBroadcaster(makeFakeManager(new Map([['child', session]])), transport, parentOf)
+  await broadcaster.broadcast({ type: 'status_change', status: 'streaming', sessionId: 'child' })
+  expect(transport.sent[0].event).toMatchObject({ type: 'session_activity', activity: { sessionId: 'child', parentSessionId: 'parent' } })
+})
+
 it('carries the host read receipt on the summary and re-summarizes on session_seen', async () => {
   const transport = makeFakeTransport()
   const session = {

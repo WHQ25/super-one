@@ -10,6 +10,11 @@ export function collaborationStore(): CollaborationStore {
   return new CollaborationStore(getDb())
 }
 
+/** The collaboration parent that spawned `sessionId`; null for any other session. */
+export function spawnParentOf(sessionId: string): string | null {
+  return collaborationStore().spawnGrantForChild(sessionId)?.parent_session_id ?? null
+}
+
 export function onCollaborationMailboxChanged(listener: (sessionId: string) => void): () => void {
   events.on('changed', listener)
   return () => { events.off('changed', listener) }

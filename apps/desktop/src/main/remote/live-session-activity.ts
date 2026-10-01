@@ -6,11 +6,12 @@ import type { Session } from '../session/types'
  * and the `list_session_activity` snapshot alike — two builders used to read
  * status two different ways, and a phone's row depended on which one it heard last.
  */
-export function liveSessionActivity(session: Session): SessionActivity {
+export function liveSessionActivity(session: Session, parentSessionId: string | null): SessionActivity {
   return summarizeSessionActivity({
     ...session.snapshot,
     status: session.activityStatus(),
     seenCompletedMessageId: session.seenCompletedMessageId,
     realtimeActive: session.realtimeActive,
+    parentSessionId,
   }, session.getPendingInteractions())
 }

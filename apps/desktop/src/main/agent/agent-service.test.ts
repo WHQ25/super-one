@@ -170,6 +170,8 @@ vi.mock('../database', () => ({
   getDb: vi.fn(),
 }))
 
+vi.mock('../session/collaboration-mailbox', () => ({ spawnParentOf: () => null }))
+
 const realtimeTimelineRepoMocks = vi.hoisted(() => ({
   loadRealtimeTimeline: vi.fn(),
   reconcileRealtimeTimeline: vi.fn((_sessionId: string, timeline: unknown) => timeline),

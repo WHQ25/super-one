@@ -207,6 +207,38 @@ test('updates the scheduled icon from a host list invalidation without reopening
   await waitFor(() => expect(screen.queryByTestId('session-scheduled-send')).toBeNull())
   expect(screen.getByText('Scheduled review')).toBeTruthy()
 })
+test('reads past a page that ends inside a collaboration parent\'s children', async () => {
+  // The host pages rows, not groups: a 30-row page can stop halfway through
+  // one parent's children, which expanded to show only that first half.
+  const children = Array.from({ length: 34 }, (_, index) => ({ sessionId: `c${index}`, title: `Child ${index}`, parentSessionId: 'p' }))
+  const hosted: SessionListRow[] = [{ sessionId: 'p', title: 'Parent' }, ...children, { sessionId: 'q', title: 'Next parent' }]
+  const request = jest.fn(async (command: { offset?: number; limit?: number }) => {
+    const offset = command.offset ?? 0
+    return { sessions: hosted.slice(offset, offset + (command.limit ?? 30)), totalCount: hosted.length }
+  })
+  const client = { request } as unknown as RelayClient
+  await renderWithTheme(row({ expanded: true, client, seed: [] }))
+  await waitFor(() => expect(request).toHaveBeenCalledTimes(2))
+  await act(async () => { fireEvent.press(await screen.findByRole('button', { name: 'Show sessions started by Parent' })) })
+  expect(screen.getByText('Child 33')).toBeTruthy()
+  expect(screen.getByText('Next parent')).toBeTruthy()
+})
+
+test('nests a child the host has not listed yet under its parent once it runs again', async () => {
+  const running: SessionActivity = {
+    sessionId: 'child', projectPath: '/repo', status: 'streaming', provider: 'claude', parentSessionId: 's1',
+    pendingCount: 0, pendingReason: { en: null, zh: null }, title: 'Woken child',
+  }
+  await renderWithTheme(
+    <SessionActivityContext.Provider value={{ child: running }}>
+      {row({ expanded: true })}
+    </SessionActivityContext.Provider>,
+  )
+  // A collapsed parent still shows its live child — nested, so the parent gains the toggle.
+  expect(screen.getByRole('button', { name: 'Show sessions started by Fix the drawer' })).toBeTruthy()
+  expect(screen.getByText('Woken child')).toBeTruthy()
+})
+
 /**
  * The drawer's close and reopen, as the row sees it: unmounted, then mounted
  * again against the same cache. Driven by a prop through `rerender` — a bare

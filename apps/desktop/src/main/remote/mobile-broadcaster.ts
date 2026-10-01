@@ -25,6 +25,8 @@ export class MobileBroadcaster {
   constructor(
     private readonly sessionManager: SessionManager,
     private readonly transport: MobileTransport,
+    /** Spawn grants live in the database; without one, no session has a parent. */
+    private readonly spawnParentOf: (sessionId: string) => string | null = () => null,
   ) {}
 
   async broadcast(event: AgentEvent): Promise<void> {
@@ -42,7 +44,7 @@ export class MobileBroadcaster {
     if (!session.ephemeral && SESSION_ACTIVITY_EVENTS.has(event.type)) {
       await this.transport.sendAgentEvent({
         type: 'session_activity',
-        activity: liveSessionActivity(session),
+        activity: liveSessionActivity(session, this.spawnParentOf(session.id)),
         ...(event.type === 'status_change' && event.status === 'idle' ? { completed: true } : {}),
       })
     }

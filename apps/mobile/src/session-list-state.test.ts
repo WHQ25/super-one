@@ -232,6 +232,14 @@ describe('mergeActivityIntoRows', () => {
     expect(merged[1]?.pendingCount).toBe(1)
   })
 
+  it('keeps the collaboration parent of a live session it inserts', () => {
+    const merged = mergeActivityIntoRows([row('parent')], {
+      child: { sessionId: 'child', projectPath: '/repo', status: 'streaming', pendingCount: 0, parentSessionId: 'parent' },
+    }, '/repo')
+    expect(groupSessionRows(merged).map(({ parent, children }) => [parent.sessionId, children.map((child) => child.sessionId)]))
+      .toEqual([['parent', ['child']]])
+  })
+
   it('keeps a session in a voice call live, listed or not', () => {
     const merged = mergeActivityIntoRows([row('listed')], {
       listed: { sessionId: 'listed', projectPath: '/repo', status: 'idle', pendingCount: 0, realtimeActive: true },

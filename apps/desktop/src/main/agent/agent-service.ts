@@ -11,6 +11,7 @@ import { handleDetailCommand } from '../remote/detail-command'
 import { readRemoteSessionList } from '../remote/session-lists'
 import type { SessionActivity } from '@superone/shared/session-activity'
 import { liveSessionActivity } from '../remote/live-session-activity'
+import { spawnParentOf } from '../session/collaboration-mailbox'
 import { answerRemoteAsyncQuestion } from './remote-async-question'
 import { randomUUID } from 'crypto'
 import { newMessageId } from '@superone/shared/message-id'
@@ -1552,7 +1553,7 @@ export class AgentService {
       case 'list_session_activity': {
         const sessions: SessionActivity[] = []
         this.sessionManager?.forEachSession((session) => {
-          if (!session.ephemeral) sessions.push(liveSessionActivity(session))
+          if (!session.ephemeral) sessions.push(liveSessionActivity(session, spawnParentOf(session.id)))
         })
         await respond?.(command.requestId, { sessions })
         break

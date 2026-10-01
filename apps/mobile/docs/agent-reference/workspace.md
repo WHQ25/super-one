@@ -47,6 +47,10 @@ rendering a whole fetch page at once. The count is groups, not rows, so an
 expanded collaboration parent's children ride along instead of costing slots, and
 the group holding the active session is appended past the limit rather than
 promoted — switching sessions must not reshuffle the list under the finger.
+The host still pages *rows*, so a page can stop inside a parent's children; the
+list reads on until the group after the last revealed one has started (desktop's
+`nextRootTarget` rule). A live child the list has not paged in yet is inserted
+from `session_activity`, whose `parentSessionId` nests it under its parent.
 Live work is the exception, matching the desktop sidebar: groups that are
 running, unseen, or waiting on the user are partitioned to the top of the
 project, and a collapsed project still renders those rows (plus the active

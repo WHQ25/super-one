@@ -196,13 +196,16 @@ export function useProjectSessions({
     return read(loadedCount)
       .then((page) => {
         if (request !== generation.current) return
+        const known = new Set(rows.map((row) => row.sessionId))
+        const grew = page.sessions.some((row) => !known.has(row.sessionId))
         setRows((current) => {
           const seen = new Set(current.map((row) => row.sessionId))
           return [...current, ...page.sessions.filter((row) => !seen.has(row.sessionId))]
         })
-        // An empty page ends the list whatever the count said, so a host that
-        // over-reports its total cannot leave "Show more" stuck on screen.
-        setTotal(page.sessions.length ? page.totalCount : loadedCount)
+        // A page with nothing new ends the list whatever the count said, so a
+        // host that over-reports its total cannot leave "Show more" stuck on
+        // screen, nor the group top-up below re-read the same offset forever.
+        setTotal(grew ? page.totalCount : loadedCount)
       })
       .catch((cause: unknown) => {
         if (request === generation.current) {
@@ -210,12 +213,22 @@ export function useProjectSessions({
         }
       })
       .finally(() => { if (request === generation.current) setLoadingMore(false) })
-  }, [read, loadedCount])
+  }, [read, rows, loadedCount])
 
   const groupCount = useMemo(() => groupSessionRows(rows).length, [rows])
   // Either there are groups held back from the list, or the host is still
   // holding rows this client has never asked for.
   const hasMore = groupCount > revealed || loadedCount < total
+
+  // The host pages rows, not groups, so a page can end inside a collaboration
+  // parent's children. A revealed group is whole only once the group after it
+  // has started — the desktop sidebar's `nextRootTarget` rule — so read on
+  // until it has, or the host has nothing left.
+  const groupsCut = groupCount <= revealed && loadedCount < total
+  useEffect(() => {
+    if (!armed || !visible || !listExpanded || !loaded || busy || loadingMore || error || !groupsCut) return
+    void fetchPage()
+  }, [armed, visible, listExpanded, loaded, busy, loadingMore, error, groupsCut, fetchPage])
 
   const items = useMemo(
     () => flattenSessionGroups(
@@ -234,7 +247,7 @@ export function useProjectSessions({
       const next = revealed + SESSION_REVEAL_STEP
       // Reveal is free until it runs past the loaded rows; only then does it
       // cost a round trip, and the page it fetches covers several more reveals.
-      if (groupCount < next && loadedCount < total) {
+      if (groupCount <= next && loadedCount < total) {
         void fetchPage().then(() => setRevealed(next))
         return
       }

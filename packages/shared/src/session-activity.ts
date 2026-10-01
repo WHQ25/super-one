@@ -21,12 +21,17 @@ export interface SessionActivity {
   seenCompletedMessageId?: string | null
   /** A realtime voice call is open; keeps the row live like a running turn. Absent on older hosts. */
   realtimeActive?: boolean
+  /**
+   * Collaboration parent, so a remote sidebar nests a live child it has not
+   * listed yet under that parent instead of beside it. Absent on older hosts.
+   */
+  parentSessionId?: string | null
   pendingCount: number
   pendingReason: Record<Locale, string | null>
 }
 
 export function summarizeSessionActivity(
-  snapshot: { id: string; projectPath: string; status: string; harnessId: HarnessId; acpAgentId?: string | null; title?: string | null; messages?: readonly ChatMessage[]; seenCompletedMessageId?: string | null; realtimeActive?: boolean },
+  snapshot: { id: string; projectPath: string; status: string; harnessId: HarnessId; acpAgentId?: string | null; title?: string | null; messages?: readonly ChatMessage[]; seenCompletedMessageId?: string | null; realtimeActive?: boolean; parentSessionId?: string | null },
   interactions: AgentEvent[],
 ): SessionActivity {
   const permissions = interactions.flatMap(event => event.type === 'permission_request' ? [event.request] : [])
@@ -44,6 +49,7 @@ export function summarizeSessionActivity(
     ...(snapshot.messages ? { completedMessageId: lastCompletedMessageId(snapshot.messages) } : {}),
     ...(snapshot.seenCompletedMessageId !== undefined ? { seenCompletedMessageId: snapshot.seenCompletedMessageId } : {}),
     ...(snapshot.realtimeActive ? { realtimeActive: true } : {}),
+    ...(snapshot.parentSessionId ? { parentSessionId: snapshot.parentSessionId } : {}),
     pendingCount: new Set([...permissions.map(request => `permission:${request.requestId}`), ...questions.map(request => `question:${request.requestId}`), ...plans.map(request => `plan:${request.requestId}`)]).size,
     pendingReason: { en: reason('en'), zh: reason('zh') },
   }

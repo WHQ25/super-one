@@ -89,6 +89,7 @@ import { TerminalBroadcaster } from './remote/terminal-broadcaster'
 import { nodePtySpawner } from './terminal/pty'
 import { DeviceRegistry } from './remote/device-registry'
 import { MobileBroadcaster } from './remote/mobile-broadcaster'
+import { spawnParentOf } from './session/collaboration-mailbox'
 import { watchSessionDeletes, watchSessionList } from './session-list-watch'
 import { localDraftStore } from './db-drafts'
 import { withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-content'
@@ -4636,7 +4637,7 @@ function registerIpcHandlers(): void {
 
   agentService.setRemoteControlService(remoteControlService)
   agentService.setDeviceRegistry(deviceRegistry)
-  const mobileBroadcaster = new MobileBroadcaster(sessionManager, remoteControlService)
+  const mobileBroadcaster = new MobileBroadcaster(sessionManager, remoteControlService, spawnParentOf)
   agentService.addEventSubscriber((event) => {
     void mobileBroadcaster.broadcast(event)
   })

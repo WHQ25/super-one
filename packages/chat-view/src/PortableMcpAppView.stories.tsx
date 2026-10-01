@@ -100,6 +100,8 @@ interface Args {
   arrival: 'live' | 'restored'
   mode: HostMode
   width: number
+  /** A transcript shorter than the View, which scrolls like the phone's. */
+  height?: number
 }
 
 function Preview({ app, arrival, mode }: Args) {
@@ -120,7 +122,7 @@ const meta = {
   parameters: { layout: 'padded' },
   decorators: [(Story, context) => (
     <PortableTurnContext.Provider value={{ scheme: context.globals.theme === 'light' ? 'light' : 'dark', pendingPermission: null, mcpIcons: {}, projectPath: null }}>
-      <div style={{ width: context.args.width, colorScheme: context.globals.theme === 'light' ? 'light' : 'dark' }}><Story /></div>
+      <div style={{ width: context.args.width, height: context.args.height, overflowY: context.args.height ? 'auto' : undefined, colorScheme: context.globals.theme === 'light' ? 'light' : 'dark' }}><Story /></div>
     </PortableTurnContext.Provider>
   )],
   args: { app: attachment(id('live')), arrival: 'live', mode: 'ok', width: 390 },
@@ -171,3 +173,9 @@ export const NavigatesAway: Story = {
 }
 
 export const Narrow: Story = { name: 'Narrow · 320 px', args: { app: attachment(id('narrow'), { resource: RESOURCE }), width: 320 } }
+
+/** Next page's approval card lands below a short transcript and scrolls itself into view. */
+export const ConsentBelowTheFold: Story = {
+  name: 'Consent below the fold · card scrolls into view',
+  args: { app: attachment(id('consent-fold'), { resource: RESOURCE }), height: 320 },
+}

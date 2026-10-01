@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import type { AgentEvent, ImageAttachment, RemoteCommand } from '@superone/shared/agent-types'
+import type { AgentEvent, RemoteCommand } from '@superone/shared/agent-types'
+import { mcpAppContent } from '@superone/shared/mcp-apps-content'
 import { parseSessionKey, type SessionRef } from '@superone/shared/environment/refs'
 import { McpAppsError } from '@superone/shared/mcp-apps'
 import type { McpAppHostRequest, McpAppHostResult, McpAppRequester } from '@superone/shared/mcp-apps'
@@ -69,27 +70,36 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
       return routeMcpAppsProviderRequest(id => local(id), target.ref.environmentId, { ...operation, binding: target.app.binding, origin: target.app.origin! }, signal, { propagateTransportErrors: true })
     },
-    async sendMessage(target, params, requester, signal) {
-      const text: string[] = []
-      const images: ImageAttachment[] = []
-      for (const block of params.content) {
-        if (block.type === 'text') text.push(block.text)
-        else if (block.type === 'image') images.push({ name: 'MCP App image', mimeType: block.mimeType, base64: block.data })
-        else throw new McpAppsError('invalid', `MCP App message content ${block.type} is not supported`)
+    async createMessageSession(target, signal) {
+      if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App message cancelled')
+      if (target.ref.environmentId === 'local') {
+        const source = local(target.ref.sessionId).snapshot
+        const session = manager.createSession({ projectPath: source.projectPath, cwd: source.cwd, providerId: source.providerId, apiProviderId: source.apiProviderId })
+        return { ref: { environmentId: 'local', sessionId: session.id }, projectPath: source.projectPath }
       }
-      const content = `[MCP App: ${target.app.binding.server}]\n${text.join('\n')}`
+      const { getEnvironmentHost } = await import('../environment/environment-host')
+      const host = getEnvironmentHost()
+      const source = await host.getSession(target.ref.environmentId, target.ref.sessionId) as { projectId?: string; providerId?: string; harnessId?: string } | null
+      if (!source?.projectId || !source.providerId || !source.harnessId) throw new McpAppsError('not_connected', 'MCP App source conversation settings are unavailable')
+      const session = await host.createSession(target.ref.environmentId, { projectId: source.projectId, providerId: source.providerId, harnessId: source.harnessId })
+      return { ref: { ...target.ref, sessionId: session.sessionId }, projectPath: target.projectPath }
+    },
+    async sendMessage(target, params, requester, signal) {
       const clientMessageId = randomUUID()
+      const { text, ...display } = mcpAppContent(params.content, target.app.binding.server, `mcp:${clientMessageId}`)
+      const content = `[MCP App: ${target.app.binding.server}]\n${text}`
+      const { images, userMessageContent, contexts } = display
       if (requester.kind === 'mobile' && target.ref.environmentId === 'local') {
         await acceptedSend(onAccepted => mobile.handleRemoteCommand({ type: 'send_message', requestId: randomUUID(),
-          projectPath: target.projectPath, sessionId: target.ref.sessionId, content, images, clientMessageId, priority: 'next' },
+          projectPath: target.projectPath, sessionId: target.ref.sessionId, content, images, userMessageContent, contexts, clientMessageId, priority: 'next' },
         async (_id, data) => { const response = data as { error?: unknown; ok?: boolean }; if (response.error) throw new McpAppsError('denied', String(response.error)); if (response.ok) onAccepted() },
         { deviceId: requester.deviceId, transport: requester.transport ?? 'lan' }), signal)
       } else if (target.ref.environmentId === 'local') {
-        await acceptedSend(onAccepted => local(target.ref.sessionId).send({ content, images, clientMessageId, priority: 'next' }, { onAccepted }), signal)
+        await acceptedSend(onAccepted => local(target.ref.sessionId).send({ content, images, userMessageContent, contexts, clientMessageId, priority: 'next' }, { onAccepted }), signal)
       } else {
         const { getEnvironmentHost } = await import('../environment/environment-host')
         await acceptedSend(onAccepted => getEnvironmentHost().sendSessionMessage(target.ref.environmentId, {
-          sessionId: target.ref.sessionId, text: content, images, clientMessageId, projectPath: target.projectPath, onAccepted,
+          sessionId: target.ref.sessionId, text: content, images, userMessageContent, contexts, echoUserMessage: true, clientMessageId, projectPath: target.projectPath, onAccepted,
         }), signal)
       }
     },

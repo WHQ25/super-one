@@ -11,7 +11,7 @@ import { upsertCodexItem } from '@superone/chat-core'
  * text + tools only for older nodes that do not populate `content`.
  */
 function contentFromSessionMessageBlock(block: SessionMessageBlock): ContentBlock[] {
-  if (Array.isArray(block.content) && block.content.length > 0) {
+  if (Array.isArray(block.content)) {
     return block.content.map((b) => ({ ...b })) as ContentBlock[]
   }
   const content: ContentBlock[] = []
@@ -56,12 +56,7 @@ export function sessionMessageBlocksToChatMessages(
   for (const block of blocks) {
     const role = block.role === 'assistant' || block.role === 'user' ? block.role : null
     if (!role) continue
-    const content =
-      role === 'user'
-        ? (typeof block.text === 'string' && block.text
-            ? ([{ type: 'text', text: block.text }] as ContentBlock[])
-            : [])
-        : contentFromSessionMessageBlock(block)
+    const content = contentFromSessionMessageBlock(block)
     out.push({
       id: block.id || crypto.randomUUID(),
       role,
@@ -71,6 +66,8 @@ export function sessionMessageBlocksToChatMessages(
         ? new Date(block.createdAt).toISOString()
         : new Date().toISOString(),
       providerId,
+      ...(block.contexts ? { contexts: block.contexts } : {}),
+      ...(block.attachments ? { attachments: block.attachments } : {}),
       ...(block.metadata ? { metadata: block.metadata as ChatMessage['metadata'] } : {}),
       ...(block.checkpointId ? { checkpointId: block.checkpointId } : {}),
       ...(block.resumePointId ? { resumePointId: block.resumePointId } : {}),
@@ -99,7 +96,8 @@ export function preferCatalogMessages(
   if (localMessages.length === 0) return catalogMessages
 
   const pickRicher = (local: ChatMessage, cat: ChatMessage): ChatMessage => {
-    const message = local.content.length >= cat.content.length ? local : cat
+    const chosen = local.role === 'user' && cat.contexts?.length ? cat : local.content.length >= cat.content.length ? local : cat
+    const message = { ...chosen, contexts: chosen.contexts ?? cat.contexts ?? local.contexts, attachments: chosen.attachments ?? cat.attachments ?? local.attachments }
     if (!cat.metadata && !local.metadata) return message
     const catalogCodex = cat.metadata?.codex
     const localCodex = local.metadata?.codex

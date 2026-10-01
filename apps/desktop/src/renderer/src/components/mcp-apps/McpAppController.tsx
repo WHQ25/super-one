@@ -15,6 +15,7 @@ import { useMcpServerIcon } from '@/components/chat/use-mcp-server-icon'
 import { getToolDisplay } from '@/components/chat/tool-display'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { useActivityPanelStore } from '@/stores/activity-panel'
+import { useChatStore } from '@/stores/chat'
 import { miniAppPipViewport } from '@/components/miniapp/miniapp-pip-layout'
 import { useMcpAppLayout, type McpAppOwner } from './layout-store'
 import { useMcpAppDisplayMode } from './use-display-mode'
@@ -122,7 +123,9 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
       fontFamily: css.fontFamily, monoFontFamily: css.getPropertyValue('--font-mono').trim(), radius: css.getPropertyValue('--radius').trim(),
     })
   }, [isDark, i18n.language, mode, surface, inlineWidth, fullscreenWidth, panelHeight, viewport, ready?.meta])
-  const executor = useMemo(() => ready ? createDesktopMcpAppExecutor({ api, route, app, document: ready.document, consent, displayMode: requestMode }) : null, [api, route, app.appInstanceId, ready, consent, requestMode])
+  const executor = useMemo(() => ready ? createDesktopMcpAppExecutor({ api, route, app, document: ready.document, consent, displayMode: requestMode,
+    navigate: destination => useChatStore.getState().switchToSession(destination.projectPath, destination.sessionId),
+  }) : null, [api, route, app.appInstanceId, ready, consent, requestMode])
   const onMode = (next: typeof mode) => { void requestMode(next, new AbortController().signal) }
   useEffect(() => {
     if (surface !== 'fullscreen' || !ready) return

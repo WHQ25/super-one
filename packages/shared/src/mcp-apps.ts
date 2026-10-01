@@ -2,6 +2,7 @@
 import { compactMcpAppPresentation, MCP_APP_PRESENTATION_MAX_BYTES } from './mcp-apps-metadata'
 import type { McpUiMessageRequest } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { McpAppsRpcResult } from './environment/mcp-apps-rpc'
+import type { ContextAttachment } from './context-attachments'
 
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 export const MCP_APPS_EXTENSION = { 'io.modelcontextprotocol/ui': { mimeTypes: [MCP_APP_MIME_TYPE] } } as const
@@ -118,16 +119,22 @@ export interface McpAppModelContext {
   source: { appInstanceId: string; server: string }
 }
 
+export type McpAppMessageParams = McpUiMessageRequest['params'] & { _meta?: Record<string, unknown> }
+
 /** Host-authored approval details. Render previews as plain text, never as View HTML. */
-export type McpAppApprovalPrompt = { kind: 'sendMessage'; server: string; text: string; nonTextBlocks: number }
+export type McpAppApprovalPrompt = { kind: 'sendMessage'; server: string; text: string; nonTextBlocks: number; items?: ContextAttachment[]; target?: 'active' | 'new' }
 
 export type McpAppHostOperation =
   | { operation: 'load' }
   | { operation: 'activate' }
   | { operation: 'callTool'; tool: string; args: Record<string, unknown> }
   | { operation: 'readResource'; uri: string }
-  | { operation: 'sendMessage'; params: McpUiMessageRequest['params'] }
+  | { operation: 'sendMessage'; params: McpAppMessageParams }
+  /** Trusted host continuation after navigating to a confirmed new conversation. */
+  | { operation: 'sendPreparedMessage'; pendingSend: string }
   | { operation: 'updateModelContext'; context: McpAppModelContext }
+
+export interface McpAppPreparedMessage { pendingSend: string; route: { projectPath: string; sessionId: string } }
 
 /** The host resolves the attachment and binding; callers supply only scoped View identity. */
 export type McpAppHostRequest = McpAppHostOperation & {

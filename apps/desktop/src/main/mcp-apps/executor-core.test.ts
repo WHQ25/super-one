@@ -42,6 +42,52 @@ function challenge(result: McpAppHostResult): string {
 }
 
 describe('MCP App host executor', () => {
+  it('creates a confirmed new session, then sends only after a single-use host handoff', async () => {
+    const s = setup({ fresh: true })
+    s.ports.createMessageSession = vi.fn(async () => ({ ref: { environmentId: 'local', sessionId: 'new' }, projectPath: '/project' }))
+    const message: McpAppHostOperation = { operation: 'sendMessage', params: { role: 'user', content: [{ type: 'text', text: 'Selected page 2' }], _meta: { 'openai/message': { target: 'new' } } } }
+    const prompt = await s.run(message)
+    expect(prompt).toMatchObject({ error: { prompt: { target: 'new' } } })
+    expect(s.ports.createMessageSession).not.toHaveBeenCalled()
+    const prepared = await s.run(message, { challenge: challenge(prompt) })
+    if (!prepared.ok) throw new Error('Expected pending send')
+    const value = prepared.value as { pendingSend: string; route: unknown }
+    expect(value.route).toEqual({ projectPath: '/project', sessionId: 'new' })
+    expect(s.ports.createMessageSession).toHaveBeenCalledOnce()
+    expect(s.ports.sendMessage).not.toHaveBeenCalled()
+    expect(await s.run({ operation: 'sendPreparedMessage', pendingSend: value.pendingSend })).toMatchObject({ ok: true })
+    expect(s.ports.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ ref: { environmentId: 'local', sessionId: 'new' }, projectPath: '/project' }), expect.any(Object), REQUESTER, expect.any(AbortSignal))
+    expect(await s.run({ operation: 'sendPreparedMessage', pendingSend: value.pendingSend })).toMatchObject({ ok: false, error: { code: 'denied' } })
+    expect(s.ports.sendMessage).toHaveBeenCalledOnce()
+  })
+
+  it('refuses phone new-session messages before approval and rejects send:false', async () => {
+    const s = setup({ fresh: true })
+    const phone: McpAppRequester = { kind: 'mobile', deviceId: 'phone' }
+    await s.run({ operation: 'activate' }, undefined, phone)
+    for (const options of [{ target: 'new' }, { send: false }]) {
+      const operation: McpAppHostOperation = { operation: 'sendMessage', params: { role: 'user', content: [], _meta: { 'openai/message': options } } }
+      const result = await s.run(operation, undefined, phone)
+      expect(result).toMatchObject({ ok: false, error: { code: options.send === false ? 'invalid' : 'denied' } })
+    }
+    expect(s.ports.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('refuses expired handoffs, changed bindings, and phone attempts without dispatching', async () => {
+    for (const refuse of ['expiry', 'binding', 'phone']) {
+      const s = setup({ fresh: true })
+      s.ports.createMessageSession = async () => ({ ref: { environmentId: 'local', sessionId: 'new' }, projectPath: '/project' })
+      const message: McpAppHostOperation = { operation: 'sendMessage', params: { role: 'user', content: [], _meta: { 'openai/message': { target: 'new' } } } }
+      const prepared = await s.run(message, { challenge: challenge(await s.run(message)) })
+      if (!prepared.ok) throw new Error('Expected handoff')
+      if (refuse === 'expiry') s.advance(300_001)
+      if (refuse === 'binding') s.change({ binding: { ...APP.binding, configFingerprint: 'changed' } })
+      const requester: McpAppRequester = refuse === 'phone' ? { kind: 'mobile', deviceId: 'phone' } : REQUESTER
+      const result = await s.run({ operation: 'sendPreparedMessage', pendingSend: (prepared.value as { pendingSend: string }).pendingSend }, undefined, requester)
+      expect(result).toMatchObject({ ok: false, error: { code: 'denied' } })
+      expect(s.ports.sendMessage).not.toHaveBeenCalled()
+    }
+  })
   it('paints a restored snapshot without any provider call, and gates every outbound operation', async () => {
     const s = setup({ snapshot: true })
     expect(await s.run({ operation: 'load' })).toMatchObject({ ok: true, value: { html: '<html>restored</html>' } })

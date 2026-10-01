@@ -60,7 +60,7 @@ export function registerMcpAppDocumentIpc(resources: McpAppResourceRegistry = mc
       const sessionKey = mcpAppSessionKey(projectPath, sessionId)
       if (!context) {
         // Trusted shell loads a snapshot before creating the iframe, or activates a restored View.
-        if (request.operation !== 'load' && request.operation !== 'activate') throw new McpAppsError('denied', 'MCP App document lease required')
+        if (!['load', 'activate', 'sendPreparedMessage'].includes(request.operation)) throw new McpAppsError('denied', 'MCP App document lease required')
         const { executeMcpAppHostRequest } = await import('./executor')
         return executeMcpAppHostRequest({ ...request, sessionKey }, { kind: 'desktop' })
       }

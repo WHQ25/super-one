@@ -3973,6 +3973,8 @@ export const zh: Messages = {
     revoked: '应用已离开原页面。重新启动以打开新的安全 View。',
     unknown: '工具可能已经执行，但结果未知。再次提交前请检查服务器状态。',
     approveMessage: '向此会话发送消息',
+    approveNewMessage: '向新会话发送消息',
+    newConversation: '在当前项目中创建新会话、切换到它并发送此消息。',
     nonText: '包含 {{count}} 个非文本内容块。',
     allow: '允许一次',
     inline: '返回聊天',

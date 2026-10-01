@@ -3,6 +3,7 @@ import { App } from '@modelcontextprotocol/ext-apps'
 import type { McpUiAppCapabilities, McpUiToolResultNotification } from '@modelcontextprotocol/ext-apps/app-bridge'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { createMcpAppHost, createMcpAppHostSlot } from './host'
+import { mcpAppMessageCapabilities } from './capabilities'
 import type { McpAppHost, McpAppHostExecutor } from './host'
 import { McpAppsError, MCP_APP_OUTPUT_MAX_BYTES } from '../mcp-apps'
 import type { ToolAppAttachment } from '../mcp-apps'
@@ -33,7 +34,7 @@ async function setup(restored = false, initial = attachment, appCapabilities: Mc
   const errors: unknown[] = []
   const unknownOutcome = vi.fn()
   const host = createMcpAppHost({ app: initial, transport: hostTransport, executor, restored,
-    context: { theme: 'dark' }, capabilities: { serverTools: {}, serverResources: {}, openLinks: {}, message: { text: {} }, updateModelContext: { text: {} } },
+    context: { theme: 'dark' }, capabilities: { ...mcpAppMessageCapabilities, serverTools: {}, serverResources: {}, openLinks: {}, updateModelContext: { text: {} } },
     onError: error => errors.push(error),
     onUnknownOutcome: unknownOutcome,
   })
@@ -45,6 +46,13 @@ async function setup(restored = false, initial = attachment, appCapabilities: Mc
 }
 
 describe('MCP App shared host', () => {
+  it('advertises rich messages and preserves OpenAI request metadata through AppBridge', async () => {
+    const { view, executor } = await setup()
+    expect(view.getHostCapabilities()).toMatchObject({ experimental: { 'openai/message': {} }, message: { text: {}, image: {}, resourceLink: {}, resource: {} } })
+    const params = { role: 'user' as const, content: [{ type: 'text' as const, text: 'part', _meta: { 'openai/title': 'Part' } }], _meta: { 'openai/message': { target: 'new' } } }
+    await view.sendMessage(params)
+    expect(executor.sendMessage).toHaveBeenCalledWith(params, expect.any(AbortSignal))
+  })
   it('delivers a large View-only result but rejects oversized results and inputs', async () => {
     const { view, executor } = await setup()
     vi.mocked(executor.callTool).mockResolvedValue({ outcome: 'completed', result: { content: [{ type: 'text', text: 'x'.repeat(MCP_APP_OUTPUT_MAX_BYTES - 100) }] } })

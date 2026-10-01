@@ -1,4 +1,6 @@
 import type { McpAppIcon, McpAppPresentation, McpToolDescriptor, McpUiResourceMeta } from './mcp-apps'
+import { safeImageUri } from './image-uri'
+export { safeImageUri as safeMcpAppImage } from './image-uri'
 
 export type McpAppDisplayMode = 'inline' | 'fullscreen' | 'pip'
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -6,18 +8,10 @@ const title = (value: unknown): string | undefined => typeof value === 'string' 
 export const MCP_APP_ICON_MAX_BYTES = 32 * 1024
 export const MCP_APP_PRESENTATION_MAX_BYTES = 70 * 1024
 
-/** Untrusted icons are always images, never executable markup or host-local URLs. */
-export function safeMcpAppImage(src: unknown): string | undefined {
-  if (typeof src !== 'string') return undefined
-  if (/^data:image\/(?:svg\+xml|png|jpeg|gif|webp|avif|x-icon)(?:;[^,]*)?,/i.test(src)) return src
-  try { const url = new URL(src); if (url.protocol === 'https:' && !url.username && !url.password) return url.href } catch { /* Invalid URL. */ }
-  return undefined
-}
-
 export function mcpAppIcon(icons?: McpAppIcon[], theme?: 'light' | 'dark'): string | undefined {
   if (!Array.isArray(icons)) return undefined
   const candidates = theme ? [...icons.filter(icon => icon?.theme === theme), ...icons.filter(icon => !icon?.theme)] : icons
-  return candidates.map(icon => safeMcpAppImage(icon?.src)).find(src => !!src && new TextEncoder().encode(src).byteLength <= MCP_APP_ICON_MAX_BYTES)
+  return candidates.map(icon => safeImageUri(icon?.src)).find(src => !!src && new TextEncoder().encode(src).byteLength <= MCP_APP_ICON_MAX_BYTES)
 }
 
 /** Persist only the winning safe image per theme, with a neutral image deduplicated. */

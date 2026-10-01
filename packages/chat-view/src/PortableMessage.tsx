@@ -1,3 +1,4 @@
+import { ContextAttachments } from '@superone/ui/components/ui/context-attachments'
 import { memo, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
@@ -267,9 +268,7 @@ export const PortableMessage = memo(function PortableMessage({
             )}
           contexts={message.contexts?.length
             ? (
-              <div className="space-y-1 text-xs text-muted-foreground">
-                {message.contexts.map((context) => <div key={`${context.appId}-${context.summary}`}>{context.appName}: {context.summary}</div>)}
-              </div>
+              <ContextAttachments items={message.contexts.map(context => ({ id: context.appId, title: context.summary, source: context.appName, content: context.content, thumbnail: context.thumbnail }))} />
             )
             : undefined}
           sendFailure={isUser && message.metadata?.sendFailure

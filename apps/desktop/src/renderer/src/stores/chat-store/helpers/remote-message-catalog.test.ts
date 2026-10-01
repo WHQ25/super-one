@@ -7,6 +7,13 @@ import {
 } from './remote-message-catalog'
 
 describe('remote-message-catalog', () => {
+  it('restores a chip-only user message without exposing the model payload as bubble text', () => {
+    const contexts = [{ appId: 'mcp:part', appName: 'CAD', summary: 'Dial', content: '{"part":"dial"}' }]
+    const catalog = sessionMessageBlocksToChatMessages([{ id: 'u1', role: 'user', text: '{"part":"dial"}', content: [], contexts, createdAt: 1, sortOrder: 0 }])
+    expect(catalog[0]).toMatchObject({ content: [], contexts })
+    const stale: ChatMessage = { id: 'u1', role: 'user', status: 'complete', content: [{ type: 'text', text: '{"part":"dial"}' }], createdAt: '', providerId: 'codex' }
+    expect(preferCatalogMessages([stale], catalog)[0]).toMatchObject({ content: [], contexts })
+  })
   const shell: CodexCommandExecutionItem = { id: 'shell', type: 'command_execution', command: 'bun test', aggregatedOutput: 'passed', status: 'completed' }
   const codexCatalog = (): ChatMessage[] => sessionMessageBlocksToChatMessages([{ id: 'a1', role: 'assistant', text: 'done', createdAt: 2, sortOrder: 0,
     content: [{ type: 'text', text: 'done' }], metadata: { codex: { threadId: 'thread', usage: null, items: [shell] } },

@@ -1,10 +1,11 @@
 import { mcpAppResourceModes } from '../mcp-apps-metadata'
 import { AppBridge } from '@modelcontextprotocol/ext-apps/app-bridge'
-import type { McpUiAppCapabilities, McpUiHostCapabilities, McpUiHostContext, McpUiMessageRequest, McpUiRequestDisplayModeRequest } from '@modelcontextprotocol/ext-apps/app-bridge'
+import type { McpUiAppCapabilities, McpUiHostCapabilities, McpUiHostContext, McpUiRequestDisplayModeRequest } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { CallToolResultSchema, ReadResourceResultSchema } from '@modelcontextprotocol/sdk/types.js'
 import { assertMcpAppSize, MCP_APP_OUTPUT_MAX_BYTES, McpAppsError } from '../mcp-apps'
-import type { McpAppModelContext, McpAppReadResult, McpAppsCallResult, ToolAppAttachment, McpUiResourceMeta } from '../mcp-apps'
+import type { McpAppMessageParams, McpAppModelContext, McpAppReadResult, McpAppsCallResult, ToolAppAttachment, McpUiResourceMeta } from '../mcp-apps'
+import { McpAppMessageRequestSchema } from './message-schema'
 import { createMcpAppDocument } from './document'
 import type { McpAppDocument } from './document'
 
@@ -12,7 +13,7 @@ import type { McpAppDocument } from './document'
 export interface McpAppHostExecutor {
   callTool(request: { tool: string; args: Record<string, unknown> }, signal: AbortSignal): Promise<McpAppsCallResult>
   readResource(request: { uri: string }, signal: AbortSignal): Promise<McpAppReadResult>
-  sendMessage(request: McpUiMessageRequest['params'], signal: AbortSignal): Promise<{ isError?: boolean }>
+  sendMessage(request: McpAppMessageParams, signal: AbortSignal): Promise<{ isError?: boolean }>
   updateModelContext(context: McpAppModelContext, signal: AbortSignal): Promise<void>
   openLink(request: { url: string }, signal: AbortSignal): Promise<{ isError?: boolean }>
   requestDisplayMode(mode: McpUiRequestDisplayModeRequest['params']['mode'], signal: AbortSignal): Promise<McpUiRequestDisplayModeRequest['params']['mode']>
@@ -100,7 +101,8 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
     assertMcpAppSize(result, MCP_APP_OUTPUT_MAX_BYTES)
     return ReadResourceResultSchema.parse(result)
   })
-  bridge.onmessage = (params, extra) => execute(extra.signal, signal => {
+  bridge.setRequestHandler(McpAppMessageRequestSchema, (request, extra) => execute(extra.signal, signal => {
+    const params = request.params
     assertMcpAppSize(params)
     const now = Date.now()
     while (messageTimes.length && messageTimes[0] <= now - 60_000) messageTimes.shift()
@@ -108,7 +110,7 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
     messageTimes.push(now)
     // Executor confirms every request and uses the original session's normal send queue.
     return options.executor.sendMessage(params, signal)
-  })
+  }))
   bridge.onupdatemodelcontext = (params, extra) => execute(extra.signal, async signal => {
     // Whitelist the two model-facing fields; never inject tool result _meta.
     const context: McpAppModelContext = {

@@ -1,5 +1,6 @@
 import type { McpAppsBinding, McpAppOrigin, McpAppsProvider } from '@superone/shared/mcp-apps'
 import type { SessionTurnEvent } from '@superone/shared/environment'
+import type { MessageDisplayFields } from '@superone/shared/message-display'
 import type { AgentEvent } from '@superone/shared/agent-types'
 
 export type SessionStatus =
@@ -86,12 +87,14 @@ export interface NodeSessionRecord {
 
 /** Image/document attachment for a remote turn (base64 payload). */
 export interface TurnImageAttachment {
+  id?: string
   name?: string
   mimeType: string
   base64: string
 }
 
-export interface TranscriptBlock {
+export interface TranscriptBlock extends MessageDisplayFields {
+  attachments?: TurnImageAttachment[]
   id: string
   role: 'user' | 'assistant' | 'system'
   text: string

@@ -91,10 +91,27 @@ the only View-to-host entry, used by desktop IPC and by the phone's
 |---|---|
 | `tools/call` | App-visible tools on the bound server only. No host approval: the person operating the View has consented. Agent-initiated calls keep the harness's own approvals. An ambiguous dispatched call returns `unknown_outcome` and is never retried. |
 | `resources/read` | Bound server only. |
-| `ui/message` | Confirmed every time (plain-text card, single-use challenge bound to requester, View, message and binding). Sent as a user turn in the View's original session through its normal queue and receipt; on the phone, through the phone send path. Three messages per View per minute. |
+| `ui/message` | Confirmed every time (host card with labeled attachments, single-use challenge bound to requester, View, message and binding). `openai/message` defaults to `target: active`, which uses the View's original session and normal queue/receipt. On desktop, `target: new` creates a conversation in the same project and harness, switches to it, then sends through that path. Phone supports `active` only and explicitly refuses `new`. Three messages per View per minute. |
 | `ui/update-model-context` | Per-View context entry in the original session, last write wins. It keeps `content` / `structuredContent` with source attribution and is added to the next model request. It never includes the tool result's private `_meta`. |
 | `ui/open-link` | The shared host accepts credential-free http(s) only. Desktop opens it through the standard external-link prompt (built-in or external browser); the phone uses the transcript link path. |
 | `ui/request-display-mode` | Allowed when the host offers the mode and, if the View declared `availableDisplayModes`, the View declared it too. An undeclared View's request counts as intent. Otherwise the answer is `inline`. |
+
+`experimental["openai/message"]` and message text/image/resourceLink/resource
+modalities are advertised by the shared host on both shells. The pinned
+ext-apps message schema omits request `_meta`, so the host registers a schema
+that retains MCP request metadata before dispatching the OpenAI extension.
+Only immediate `send: true` is supported. Titled text/resources appear as
+labeled chips in confirmation cards and persisted user bubbles; untitled text
+is ordinary message text. Images and image/PDF resource blobs use actual turn
+attachments. Other resource blobs retain their public URI/MIME/blob data as
+model text. Block `_meta` never enters model input. Remote node transcript,
+live events and message catalogs preserve the same display override and
+attachments, including a host-originated bubble while another turn is draining.
+
+Phone new-conversation messages remain an open compatibility gap. The native
+shell must retain the original route across navigation and complete the
+device-bound handoff after switching; session creation itself is already
+shared. The current `target: new` refusal is a structured error.
 
 Host to View: `tool-input-partial` while streaming, `tool-input` once before
 the result, `tool-result` (a synthetic `isError` result when the call failed

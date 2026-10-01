@@ -1,3 +1,4 @@
+import { parseMessageDisplay, type MessageDisplayFields } from '@superone/shared/message-display'
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import type { McpAppAttachmentUpdate } from '@superone/shared/mcp-apps'
 import { mcpAppModelContextText, mcpAppModelInput, validateMcpAppAttachmentUpdate } from '@superone/shared/mcp-apps-state'
@@ -130,7 +131,8 @@ interface AgentsConfirmWaiter {
 }
 
 /** Options for one harness turn (active or queued). */
-interface TurnOpts {
+interface TurnOpts extends MessageDisplayFields {
+  echoUserMessage?: boolean
   text: string
   requestId?: string
   model?: string | null
@@ -867,6 +869,9 @@ export class SessionRuntime {
     effort?: string | null
     /** Inline image/document attachments for this turn. */
     images?: TurnImageAttachment[]
+    userMessageContent?: MessageDisplayFields['userMessageContent']
+    contexts?: MessageDisplayFields['contexts']
+    echoUserMessage?: boolean
     /** Claude-style permission mode for this turn (falls back to session.permissionMode). */
     permissionMode?: string | null
     /** Sandbox policy for this turn (falls back to session.sandboxMode). */
@@ -920,6 +925,8 @@ export class SessionRuntime {
 
     const turnOpts: TurnOpts = {
       text: input.text,
+      ...parseMessageDisplay(input),
+      echoUserMessage: input.echoUserMessage,
       requestId: input.requestId,
       model: pick(input.model, session.model),
       effort: pick(input.effort, session.effort),
@@ -1117,6 +1124,9 @@ export class SessionRuntime {
       id: randomUUID(),
       role: 'user',
       text: opts.text,
+      ...(opts.userMessageContent ? { userMessageContent: opts.userMessageContent } : {}),
+      ...(opts.contexts?.length ? { contexts: opts.contexts } : {}),
+      ...(opts.images?.length ? { attachments: opts.images } : {}),
       createdAt: Date.now(),
     }
     session.transcript.push(userBlock)
@@ -1135,6 +1145,10 @@ export class SessionRuntime {
       payload: {
         blockId: userBlock.id,
         text: opts.text,
+        ...(userBlock.userMessageContent ? { userMessageContent: userBlock.userMessageContent } : {}),
+        ...(userBlock.contexts ? { contexts: userBlock.contexts } : {}),
+        ...(userBlock.attachments ? { attachments: userBlock.attachments } : {}),
+        ...(opts.echoUserMessage ? { echoUserMessage: true } : {}),
         ...(opts.source ? { source: opts.source } : {}),
       },
       causationRequestId: opts.requestId,

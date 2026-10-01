@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { McpAppApprovalPrompt } from '@superone/shared/mcp-apps'
+import { ContextAttachments } from '@superone/ui/components/ui/context-attachments'
 
 export interface McpAppConsentRequest {
   prompt: McpAppApprovalPrompt
@@ -57,7 +58,8 @@ export function McpAppConsentCard({ request }: { request: McpAppConsentRequest }
   return (
     <ConsentDialog label={t('mcpApp.sendMessage', { server: prompt.server })}>
       <p className="text-sm text-foreground">{t('mcpApp.sendMessage', { server: prompt.server })}</p>
-      <p className={`${detail} max-h-40 overflow-y-auto`}>{prompt.text}</p>
+      {prompt.text && <p className={`${detail} max-h-40 overflow-y-auto`}>{prompt.text}</p>}
+      <ContextAttachments items={prompt.items ?? []} />
       {prompt.nonTextBlocks > 0 ? (
         <p className="text-xs text-muted-foreground">{t('mcpApp.nonTextBlocks', { count: prompt.nonTextBlocks })}</p>
       ) : null}

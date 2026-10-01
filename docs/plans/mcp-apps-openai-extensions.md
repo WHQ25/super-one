@@ -4,7 +4,10 @@ Proposal: [mcp-apps-openai-extensions.md](../proposals/mcp-apps-openai-extension
 Phase 1 is the View level: metadata, `openai/message`, model-context
 attachments. Decisions already made: agent-invoked Views always start inline;
 model context is state that stays attached until replaced or removed;
-`openai/interactionCursor` is not advertised.
+blocks are independently removable (last visible removal clears the View,
+including assistant-only hidden blocks). Desktop `target: new` confirms,
+creates a conversation in the same project/harness, switches, then sends;
+phone supports `active` only. `openai/interactionCursor` is not advertised.
 
 ## Baseline (S0, 2026-10-01)
 
@@ -73,7 +76,15 @@ to a file, so the model does not see the catalog; that is Claude CLI behavior.
    `hostContext["openai/modelContext"]` on init and after removal; removable
    attachments on desktop and phone; hidden `audience: ["assistant"]` blocks;
    images through the real image input.
-5. Re-run the baseline on both harnesses and record the result here.
+5. **UI resource caching** (user approved): content-addressed HTML storage and
+   hash references on new attachments, with legacy inline snapshots readable.
+   Bounded LRU read cache keys include the owning session/provider origin,
+   binding identity and resource URI. New calls paint cached HTML immediately,
+   then revalidate in the background; a changed hash only affects later calls.
+   Phone fetches/caches each hash once. Optional cheap catalog prefetch.
+   Verify dedupe, legacy reads, no live swap, origin isolation and phone fetch-once;
+   measure Codex first-paint latency before/after.
+6. Re-run the baseline on both harnesses and record the result here.
 
 ## Implementation progress
 
@@ -133,3 +144,55 @@ selection 61 passed; Codex catalog/cap selection 6 passed; node/web
 typechecks passed. Boundary tests keep inbound 1 MiB, allow transient
 output below 8 MiB, reject output above it, and preserve Claude full content
 plus structuredContent. No live device capture in this slice.
+
+### OpenAI message slice
+
+The shared host advertises `experimental["openai/message"]` and text, image,
+resourceLink and embedded-resource modalities. Pinned ext-apps 1.7.5 omits
+request metadata in its message schema; a shared schema preserves `_meta`
+before interpreting the OpenAI target. `send: false` and unsupported targets
+are explicitly refused. Phone supports `active` only in this slice;
+`target: new` returns a structured `denied` result.
+
+Messages use the normal session admission path. Desktop `new` uses a
+confirmed, bounded, single-use handoff: create from authoritative source
+project/provider/harness settings, switch in the renderer, then send. The
+handoff survives the old View unmount but cannot be replayed or transferred
+to another View/device. Model input receives plain content without block
+metadata and real image/PDF attachments. Titled text and resources become
+labeled chips; untitled text remains ordinary bubble text. Other binary
+resources retain public URI/MIME/blob fields as text.
+
+A generic `ContextAttachments` component supports previews and removal,
+shared by confirmation cards and message bubbles and ready for the composer
+model-context slice. Node transcript, live events and catalogs preserve the
+rich display separately from model text and actual attachment input; a
+host-originated message is echoed even while an optimistic send drain is
+already active. Stories cover rich desktop/phone confirmations and generic
+attachment loading/empty/error/long/narrow states. Live screenshots and real
+Bits & Bolts/model validation remain in S1 after model context and caching.
+
+Message verification: desktop/shared host, executor, document lease, rich
+content, attachment chips, node event mapping and remote hydrate selections
+passed (111 tests after the final handoff refusal coverage). Node restart/live
+message and existing MCP state integration selections passed (4 tests, both
+Claude and Codex simulated runners). Desktop node/web, CLI and standalone
+chat-view typechecks passed. A parallel typecheck/test run caused existing
+1-second lazy UI test windows to expire; the complete selection passed with
+`--maxWorkers=2` after typechecks finished. No product timeout changed.
+Package Vitest again needed sandbox escalation for localhost resolution.
+No dev instance was started for this slice; no live screenshots yet.
+
+### Open gap: phone new-conversation messages
+
+Phone `target: new` remains deferred until after S1, unless model context
+needs the same RN continuation work. Session creation is already shared
+through the host and EnvironmentHost; node ownership is not the blocker.
+The missing piece is the RN continuation across navigation: capture the
+original session route, await the destination switch, then consume the
+same-device handoff token through the original route. An ordinary request
+after navigation uses the new session route, which cannot resolve the old
+View, and navigation unmounts its WebView. The shared handoff can be reused
+once the native shell owns that continuation. The current refusal is
+explicit; it never silently drops the requested message. Implementation
+order remains model context, UI resource caching, S1, then this phone gap.

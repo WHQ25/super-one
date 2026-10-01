@@ -1,4 +1,5 @@
 import { mcpAppPresentationIcon, mcpAppResourceModes } from '@superone/shared/mcp-apps-metadata'
+import { mcpAppMessageCapabilities } from '@superone/shared/mcp-apps-host/capabilities'
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CodeXml, Loader2, X } from 'lucide-react'
@@ -136,8 +137,9 @@ export default function McpAppFrame({ app, messageId, html, meta, toolName, row 
       executor: createMcpAppExecutor(target, ask, display),
       context: readHostContext(root, scheme, false, meta),
       capabilities: {
+        ...mcpAppMessageCapabilities,
         openLinks: {}, serverTools: {}, serverResources: {}, logging: {},
-        updateModelContext: { text: {} }, message: { text: {} },
+        updateModelContext: { text: {} },
         sandbox: { permissions: {}, csp: mobileMcpAppCsp(meta) },
       } satisfies McpUiHostCapabilities,
       restored: mcpAppNeedsActivation(app.appInstanceId),

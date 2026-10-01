@@ -1,6 +1,8 @@
 import { mcpAppPresentation, mcpAppResourceMeta } from '@superone/shared/mcp-apps-metadata'
+import { mcpAppMessagePreview, mcpAppMessageTarget } from '@superone/shared/mcp-apps-content'
 import { createHash, randomUUID } from 'node:crypto'
-import { McpUiMessageRequestSchema, McpUiUpdateModelContextRequestSchema } from '@modelcontextprotocol/ext-apps/app-bridge'
+import { McpUiUpdateModelContextRequestSchema } from '@modelcontextprotocol/ext-apps/app-bridge'
+import { McpAppMessageRequestSchema } from '@superone/shared/mcp-apps-host/message-schema'
 import { parseSessionKey, type SessionRef } from '@superone/shared/environment/refs'
 import type { McpAppsProviderRpcRequest, McpAppsRpcResult } from '@superone/shared/environment/mcp-apps-rpc'
 import { assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES, MCP_APP_MIME_TYPE, McpAppsError, mcpAppToolVisible } from '@superone/shared/mcp-apps'
@@ -19,6 +21,7 @@ export interface McpAppExecutorPorts {
   persist(target: McpAppResolvedTarget, update: McpAppAttachmentUpdate, signal: AbortSignal): Promise<void>
   provider(target: McpAppResolvedTarget, operation: Omit<McpAppsProviderRpcRequest, 'binding' | 'origin'>, signal: AbortSignal): Promise<McpAppsRpcResult>
   sendMessage(target: McpAppResolvedTarget, params: Extract<McpAppHostOperation, { operation: 'sendMessage' }>['params'], requester: McpAppRequester, signal: AbortSignal): Promise<void>
+  createMessageSession?(target: McpAppResolvedTarget, signal: AbortSignal): Promise<{ ref: SessionRef; projectPath: string }>
   now?(): number
 }
 
@@ -26,13 +29,6 @@ function jsonHash(value: unknown): string {
   const canonical = (v: unknown): unknown => Array.isArray(v) ? v.map(canonical)
     : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b)).map(([k, x]) => [k, canonical(x)])) : v
   return createHash('sha256').update(JSON.stringify(canonical(value))).digest('hex')
-}
-
-/** UTF-8 byte cap for plain-text approval previews, without splitting a character. */
-function preview(text: string, maxBytes: number): string {
-  const bytes = new TextEncoder().encode(text)
-  if (bytes.byteLength <= maxBytes) return text
-  return new TextDecoder('utf-8', { fatal: false }).decode(bytes.slice(0, maxBytes - 3)).replace(/\uFFFD$/, '') + '…'
 }
 
 function unwrap<T>(result: McpAppsRpcResult): T {
@@ -50,7 +46,10 @@ function operationOf(request: McpAppHostRequest): McpAppHostOperation {
       if (typeof request.uri !== 'string' || !request.uri) throw new McpAppsError('invalid', 'Invalid MCP App resource URI')
       try { new URL(request.uri) } catch { throw new McpAppsError('invalid', 'Invalid MCP App resource URI') }
       return { operation: 'readResource', uri: request.uri }
-    case 'sendMessage': return { operation: 'sendMessage', params: McpUiMessageRequestSchema.parse({ method: 'ui/message', params: request.params }).params }
+    case 'sendMessage': return { operation: 'sendMessage', params: McpAppMessageRequestSchema.parse({ method: 'ui/message', params: request.params }).params }
+    case 'sendPreparedMessage':
+      if (typeof request.pendingSend !== 'string' || request.pendingSend.length > 128) throw new McpAppsError('invalid', 'Invalid MCP App pending message')
+      return { operation: 'sendPreparedMessage', pendingSend: request.pendingSend }
     case 'updateModelContext': {
       const params = McpUiUpdateModelContextRequestSchema.parse({ method: 'ui/update-model-context', params: request.context }).params
       return { operation: 'updateModelContext', context: { ...(params.content ? { content: params.content } : {}), ...(params.structuredContent ? { structuredContent: params.structuredContent } : {}), source: { appInstanceId: '', server: '' } } }
@@ -60,6 +59,11 @@ function operationOf(request: McpAppHostRequest): McpAppHostOperation {
 }
 
 interface Challenge { expires: number; key: string; binding: string; view: string }
+interface PendingMessage {
+  expires: number; key: string; binding: string; bytes: number
+  destination: { ref: SessionRef; projectPath: string }
+  params: Extract<McpAppHostOperation, { operation: 'sendMessage' }>['params']
+}
 
 function requesterKey(requester: McpAppRequester): string {
   return requester.kind === 'desktop' ? 'desktop' : `mobile:${requester.deviceId}`
@@ -70,6 +74,7 @@ export class McpAppExecutor {
   private readonly active = new Map<string, string>()
   private readonly challenges = new Map<string, Challenge>()
   private readonly messageTimes = new Map<string, number[]>()
+  private readonly pendingSends = new Map<string, PendingMessage>()
   constructor(private readonly ports: McpAppExecutorPorts) {}
   private now(): number { return this.ports.now?.() ?? Date.now() }
   private targetKey(ref: SessionRef, appInstanceId: string): string { return JSON.stringify([ref.environmentId, ref.sessionId, appInstanceId]) }
@@ -106,6 +111,14 @@ export class McpAppExecutor {
       const key = this.targetKey(ref, target.app.appInstanceId)
       const activeKey = this.activeKey(ref, target.app.appInstanceId, requester)
       const binding = this.bindingKey(target.app)
+      for (const [id, pending] of this.pendingSends) if (pending.expires <= this.now()) this.pendingSends.delete(id)
+      if (operation.operation === 'sendPreparedMessage') {
+        const pending = this.pendingSends.get(operation.pendingSend)
+        this.pendingSends.delete(operation.pendingSend)
+        if (requester.kind !== 'desktop' || !pending || pending.key !== activeKey || pending.binding !== binding) throw new McpAppsError('denied', 'MCP App pending message expired or does not match this View')
+        await this.ports.sendMessage({ ...target, ...pending.destination }, pending.params, requester, signal)
+        return { ok: true, value: {} }
+      }
       if (operation.operation === 'load' && target.app.resource) return { ok: true, value: target.app.resource }
       if (!target.app.origin?.providerSessionId) throw new McpAppsError('not_connected', 'MCP App provider origin unavailable')
       if (operation.operation !== 'activate' && this.active.get(activeKey) !== binding) throw new McpAppsError('inactive', 'Activate this restored MCP App to reconnect')
@@ -124,9 +137,11 @@ export class McpAppExecutor {
         const tool = tools.find(value => value.name === operation.tool)
         if (!tool || !mcpAppToolVisible(tool)) throw new McpAppsError('denied', 'This tool is not available to the App')
       } else if (operation.operation === 'sendMessage') {
-        prompt = { kind: 'sendMessage', server: target.app.binding.server,
-          text: preview(operation.params.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n'), 4096),
-          nonTextBlocks: operation.params.content.filter(block => block.type !== 'text').length }
+        const details = mcpAppMessagePreview(operation.params, target.app.binding.server)
+        if (details.target === 'new' && requester.kind === 'mobile') throw new McpAppsError('denied', 'Creating a new conversation from an MCP App is supported on desktop only; use target: active on phone')
+        if (details.target === 'new' && !this.ports.createMessageSession) throw new McpAppsError('not_connected', 'MCP App new conversation routing is unavailable')
+        prompt = { kind: 'sendMessage', server: target.app.binding.server, ...details }
+        assertMcpAppSize(prompt)
       }
       const challengeKey = jsonHash({ ref, appInstanceId: target.app.appInstanceId, requester: requesterKey(requester), operation })
       for (const [id, challenge] of this.challenges) if (challenge.expires <= this.now()) this.challenges.delete(id)
@@ -187,6 +202,15 @@ export class McpAppExecutor {
           if (times.length >= 3) throw new McpAppsError('denied', 'MCP App message rate limit reached')
           times.push(this.now())
           this.messageTimes.set(key, times)
+          if (mcpAppMessageTarget(operation.params) === 'new') {
+            const bytes = new TextEncoder().encode(JSON.stringify(operation.params)).byteLength
+            if (this.pendingSends.size >= 64 || [...this.pendingSends.values()].reduce((total, pending) => total + pending.bytes, bytes) > 16 * 1024 * 1024) throw new McpAppsError('denied', 'Too many pending MCP App messages')
+            const destination = await this.ports.createMessageSession!(target, signal)
+            if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App message cancelled')
+            const pendingSend = randomUUID()
+            this.pendingSends.set(pendingSend, { expires: this.now() + 300_000, key: activeKey, binding, bytes, destination, params: operation.params })
+            return { ok: true, value: { pendingSend, route: { projectPath: destination.projectPath, sessionId: destination.ref.sessionId } } }
+          }
           await this.ports.sendMessage(target, operation.params, requester, signal)
           return { ok: true, value: {} }
         }

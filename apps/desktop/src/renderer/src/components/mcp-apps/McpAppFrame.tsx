@@ -1,4 +1,5 @@
 import { mcpAppCspDomains } from '@superone/shared/mcp-apps-host/csp'
+import { mcpAppMessageCapabilities } from '@superone/shared/mcp-apps-host/capabilities'
 import { useLayoutEffect, useRef } from 'react'
 import type { McpUiHostContext } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { ToolAppAttachment, McpUiResourceMeta } from '@superone/shared/mcp-apps'
@@ -37,7 +38,7 @@ export default function McpAppFrame(props: McpAppFrameProps) {
       transport: createMcpAppTransport(element.contentWindow!, props.registration.origin, window, document), document,
       restored: !latest.current.active, context: latest.current.context,
       // Permissions are deliberately ungranted, even if the resource requests them.
-      capabilities: { serverTools: {}, serverResources: {}, openLinks: {}, message: { text: {}, image: {} }, updateModelContext: { text: {} }, logging: {}, sandbox: { permissions: {}, csp: mcpAppCspDomains(props.meta.csp) } },
+      capabilities: { ...mcpAppMessageCapabilities, serverTools: {}, serverResources: {}, openLinks: {}, updateModelContext: { text: {} }, logging: {}, sandbox: { permissions: {}, csp: mcpAppCspDomains(props.meta.csp) } },
       onInitialized: () => latest.current.onInitialized(host.appCapabilities()?.availableDisplayModes ?? ['inline']),
       onError: error => latest.current.onError(error), onUnknownOutcome: () => latest.current.onUnknown(),
       onSizeChanged: size => { if (size.height) latest.current.onHeight(size.height) },

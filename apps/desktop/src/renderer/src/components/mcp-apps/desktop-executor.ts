@@ -1,4 +1,4 @@
-import { McpAppsError, type McpAppApprovalPrompt, type McpAppHostOperation, type McpAppsCallResult, type ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { McpAppsError, type McpAppApprovalPrompt, type McpAppHostOperation, type McpAppPreparedMessage, type McpAppsCallResult, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import type { McpAppHostExecutor } from '@superone/shared/mcp-apps-host'
 import type { McpAppDocumentRegistration } from '@superone/shared/mcp-apps-desktop'
@@ -11,16 +11,17 @@ export type McpAppConsent = (prompt: McpAppApprovalPrompt, signal: AbortSignal) 
 export function createDesktopMcpAppExecutor(options: {
   api: McpAppDesktopApi; route: McpAppRoute; app: ToolAppAttachment; document: McpAppDocumentRegistration
   consent: McpAppConsent; displayMode: McpAppHostExecutor['requestDisplayMode']
+  navigate?(route: McpAppRoute): Promise<void>
 }): McpAppHostExecutor {
   const { api, route, app, document } = options
-  const execute = async <T>(operation: McpAppHostOperation, signal: AbortSignal): Promise<T> => {
+  const execute = async <T>(operation: McpAppHostOperation, signal: AbortSignal, documentRequired = true): Promise<T> => {
     if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
     const context = { documentId: document.id, requestId: crypto.randomUUID() }
     const cancel = () => { void api.mcpAppCancel(context).catch(() => {}) }
     signal.addEventListener('abort', cancel, { once: true })
     const request = { ...operation, appInstanceId: app.appInstanceId }
     try {
-      let result = await api.mcpAppRequest(route.projectPath, route.sessionId, request, context)
+      let result = await api.mcpAppRequest(route.projectPath, route.sessionId, request, documentRequired ? context : undefined)
       if (!result.ok && result.error.code === 'approval_required') {
         const approval = await options.consent(result.error.prompt, signal)
         if (!approval || signal.aborted) throw new McpAppsError(signal.aborted ? 'cancelled' : 'denied', 'MCP App request declined')
@@ -47,7 +48,17 @@ export function createDesktopMcpAppExecutor(options: {
       }
     },
     readResource: (request, signal) => execute({ operation: 'readResource', ...request }, signal),
-    sendMessage: async (params, signal) => { await execute({ operation: 'sendMessage', params }, signal); return {} },
+    sendMessage: async (params, signal) => {
+      const result = await execute<Partial<McpAppPreparedMessage>>({ operation: 'sendMessage', params }, signal)
+      if (result?.pendingSend && result.route) {
+        if (!options.navigate) throw new McpAppsError('not_connected', 'New conversation navigation is unavailable')
+        await options.navigate(result.route)
+        // Navigation may unmount the original View. The confirmed single-use handoff
+        // owns this send independently of that document's lifetime.
+        await execute({ operation: 'sendPreparedMessage', pendingSend: result.pendingSend }, new AbortController().signal, false)
+      }
+      return {}
+    },
     updateModelContext: async (context, signal) => { await execute({ operation: 'updateModelContext', context }, signal) },
     openLink: async ({ url }, signal) => {
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App link cancelled')

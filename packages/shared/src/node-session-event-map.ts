@@ -9,6 +9,7 @@
  * Missing optional fields are skipped, unknown event types yield nothing,
  * and non-text payloads never throw.
  */
+import { parseMessageDisplay } from './message-display'
 import type {
   AgentEvent,
   AgentStatus,
@@ -166,12 +167,24 @@ function mapPlanRequest(
   }
 }
 
-function userMessage(ctx: NodeSessionEventMapContext, blockId: string, text: string, nowIso: string): ChatMessage {
+function userMessage(ctx: NodeSessionEventMapContext, blockId: string, text: string, nowIso: string, payload: Record<string, unknown>): ChatMessage {
+  let display: ReturnType<typeof parseMessageDisplay> = {}
+  try { display = parseMessageDisplay(payload) } catch { /* Older/malformed optional display fields do not break the event stream. */ }
+  const attachments = Array.isArray(payload.attachments) ? payload.attachments.flatMap(value => {
+    const item = value as Record<string, unknown> | null
+    return item && typeof item.mimeType === 'string' && typeof item.base64 === 'string'
+      ? [{ name: typeof item.name === 'string' ? item.name : 'Attachment', mimeType: item.mimeType, base64: item.base64, ...(typeof item.id === 'string' ? { id: item.id } : {}) }] : []
+  }) : undefined
   return {
     id: blockId,
     role: 'user',
     status: 'complete',
-    content: text ? [{ type: 'text', text }] : [],
+    content: display.userMessageContent ?? [
+      ...(attachments ?? []).map(item => ({ type: item.mimeType === 'application/pdf' ? 'document' as const : 'image' as const, name: item.name, ...(item.id ? { id: item.id } : {}) })),
+      ...(text ? [{ type: 'text' as const, text }] : []),
+    ],
+    ...(display.contexts ? { contexts: display.contexts } : {}),
+    ...(attachments?.length ? { attachments } : {}),
     createdAt: nowIso,
     providerId: ctx.providerId ?? 'codex',
   }
@@ -247,12 +260,12 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
 
     switch (eventType) {
       case SESSION_DURABLE_EVENT.userMessage: {
-        if (ctx.skipUserMessage) break
+        if (ctx.skipUserMessage && payload.echoUserMessage !== true) break
         const blockId = asString(payload.blockId) ?? `user-${envelope.eventId}`
         const text = asString(payload.text) ?? ''
         push({
           type: 'user_message_appended',
-          message: userMessage(ctx, blockId, text, nowIso()),
+          message: userMessage(ctx, blockId, text, nowIso(), payload),
         })
         break
       }

@@ -11,6 +11,9 @@ import { McpAppHostLayer } from './McpAppHostLayer'
 import { useMcpAppLayout, type McpAppSurface } from './layout-store'
 import McpAppView from './McpAppView'
 import { createMcpAppStoryFixture, type McpAppStoryState } from './story-fixture'
+import { McpAppConsent } from './McpAppConsent'
+import { mcpAppMessagePreview } from '@superone/shared/mcp-apps-content'
+import { richMcpAppMessage } from '../../../../test/fixtures/mcp-apps/rich-message'
 
 function Scenario({ state = 'live', narrow = false, scrolling = false, initialMode = 'inline' }: { state?: McpAppStoryState; narrow?: boolean; scrolling?: boolean; initialMode?: McpAppSurface }) {
   const maximized = useActivityPanelStore(state => state.maximized)
@@ -58,3 +61,6 @@ export const PictureInPicture: Story = { args: { initialMode: 'pip' } }
 
 /** Metadata comes from the attachment, without relying on the desktop icon cache. */
 export const ToolMetadata: Story = {}
+
+export const RichMessageConfirmation: Story = { render: () => <McpAppConsent pending={{ id: 'rich', prompt: { kind: 'sendMessage', server: 'Bits & Bolts', ...mcpAppMessagePreview(richMcpAppMessage, 'Bits & Bolts') }, finish: () => {} }} /> }
+export const NewConversationConfirmation: Story = { render: () => <McpAppConsent pending={{ id: 'new', prompt: { kind: 'sendMessage', server: 'Bits & Bolts', ...mcpAppMessagePreview({ ...richMcpAppMessage, _meta: { 'openai/message': { target: 'new' } } }, 'Bits & Bolts') }, finish: () => {} }} /> }

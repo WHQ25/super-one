@@ -29,6 +29,11 @@ const ctx = {
 }
 
 describe('mapNodeSessionEvents (text-only)', () => {
+  it('echoes a host-origin rich message during an existing optimistic send drain', () => {
+    const contexts = [{ appId: 'mcp:part', appName: 'CAD', summary: 'Dial', content: '{"part":"dial"}' }]
+    const events = mapNodeSessionEvents([envelope({ eventType: 'session.user_message', payload: { blockId: 'u1', text: '{"part":"dial"}', userMessageContent: [], contexts, echoUserMessage: true } })], { ...ctx, skipUserMessage: true })
+    expect(events).toMatchObject([{ type: 'user_message_appended', message: { content: [], contexts } }])
+  })
   it('passes lossless AgentEvents through and suppresses legacy completion duplicates', () => {
     const events = mapNodeSessionEvents(
       [

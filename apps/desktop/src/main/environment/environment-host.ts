@@ -1,3 +1,4 @@
+import { parseMessageDisplay, type MessageDisplayFields } from '@superone/shared/message-display'
 import { remoteSuperoneHome, remoteNodePort } from './remote-data-path'
 import { app } from 'electron'
 import { join } from 'node:path'
@@ -1873,6 +1874,10 @@ export class EnvironmentHost {
     input: {
       sessionId: string
       text: string
+      userMessageContent?: MessageDisplayFields['userMessageContent']
+      contexts?: MessageDisplayFields['contexts']
+      /** This caller does not optimistically append a user bubble. */
+      echoUserMessage?: boolean
       clientMessageId?: string
       /** Desktop project key for AgentEvent routing (`remote:<id>:<path>`). */
       projectPath?: string
@@ -1895,7 +1900,7 @@ export class EnvironmentHost {
       /** Skills to exclude; node may discover and filter. */
       disabledSkills?: string[]
       /** Image/document attachments (base64) — node persists under turn cwd. */
-      images?: Array<{ name?: string; mimeType: string; base64: string }>
+      images?: Array<{ id?: string; name?: string; mimeType: string; base64: string }>
       /** Node provider credential id for this turn. */
       apiProviderId?: string | null
       /** Codex turn kind: run|steer|review|compact (session.send options.turnKind). */
@@ -1982,6 +1987,8 @@ export class EnvironmentHost {
     if (disabledSkills.length > 0) options.disabledSkills = disabledSkills
     if (apiProviderId) options.apiProviderId = apiProviderId
     if (images.length > 0) options.images = images
+    Object.assign(options, parseMessageDisplay(input))
+    if (input.echoUserMessage) options.echoUserMessage = true
     if (input.turnKind === 'run' || input.turnKind === 'steer' || input.turnKind === 'review' || input.turnKind === 'compact') {
       options.turnKind = input.turnKind
     }
@@ -2002,7 +2009,7 @@ export class EnvironmentHost {
         sessionId: input.sessionId,
         projectPath: input.projectPath,
         providerId: input.providerId,
-        skipUserMessage: true,
+        skipUserMessage: !input.echoUserMessage,
         establishCursor: false,
         // A Claude live session may accept a second send while the first drain is
         // active. Share that drain and cursor so events are neither duplicated nor

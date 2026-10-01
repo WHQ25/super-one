@@ -1,3 +1,4 @@
+import { mcpAppMessagePreview } from '@superone/shared/mcp-apps-content'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import type { McpAppDesktopApi } from './desktop-executor'
 import viewHtml from '../../../../test/fixtures/mcp-apps/fixture-view.html?raw'
@@ -21,7 +22,7 @@ export function createMcpAppStoryFixture(state: McpAppStoryState = 'live') {
     async mcpAppRequest(_project, _session, request) {
       if (request.operation === 'activate') { active = true; return { ok: true, value: {} } }
       if (request.operation === 'callTool' && state === 'unknown') return { ok: true, value: { outcome: 'unknown_outcome', result: { isError: true, content: [{ type: 'text', text: 'Server disconnected after dispatch' }] } } }
-      if (!request.approval && request.operation === 'sendMessage') return { ok: false, error: { code: 'approval_required', challenge: 'storybook-challenge', prompt: { kind: 'sendMessage', server: app.binding.server, text: request.params.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n'), nonTextBlocks: 0 } } }
+      if (!request.approval && request.operation === 'sendMessage') return { ok: false, error: { code: 'approval_required', challenge: 'storybook-challenge', prompt: { kind: 'sendMessage', server: app.binding.server, ...mcpAppMessagePreview(request.params, app.binding.server) } } }
       return { ok: true, value: request.operation === 'callTool' ? { outcome: 'completed', result: result(Number(request.args.page ?? 2)) } : {} }
     },
     async mcpAppsAuthenticate() { authenticated = true; return { ok: true, value: null } },

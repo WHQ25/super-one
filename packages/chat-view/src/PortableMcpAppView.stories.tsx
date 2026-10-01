@@ -1,3 +1,7 @@
+import { mcpAppMessagePreview } from '@superone/shared/mcp-apps-content'
+import type { McpAppMessageParams } from '@superone/shared/mcp-apps'
+import { richMcpAppMessage } from '../../../apps/desktop/src/test/fixtures/mcp-apps/rich-message'
+import { McpAppConsentCard } from './McpAppConsentCard'
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { McpAppHostResult, ToolAppAttachment } from '@superone/shared/mcp-apps'
@@ -64,11 +68,10 @@ function answer(mode: HostMode, request: Record<string, unknown>): McpAppHostRes
       return { ok: true, value: { result: page(Number((request.args as { page?: number }).page) || 1), outcome: 'completed' } }
     case 'sendMessage': {
       if (challenged) return { ok: true, value: {} }
-      const params = request.params as { content: Array<{ type: string; text?: string }> }
+      const params = request.params as McpAppMessageParams
       return { ok: false, error: { code: 'approval_required', challenge: 'story-message', prompt: {
         kind: 'sendMessage', server: 'mcp-apps-fixture',
-        text: params.content.filter((block) => block.type === 'text').map((block) => block.text).join('\n'),
-        nonTextBlocks: params.content.filter((block) => block.type !== 'text').length,
+        ...mcpAppMessagePreview(params, 'mcp-apps-fixture'),
       } } }
     }
     default:
@@ -169,6 +172,8 @@ type Story = StoryObj<typeof meta>
 
 /** Next page runs at once; Ask the model is confirmed first; the model-only button is refused by the host. */
 export const Live: Story = { name: 'Live · app-only paging, denied model-only call' }
+export const RichMessageConfirmation: Story = { render: () => <McpAppConsentCard request={{ prompt: { kind: 'sendMessage', server: 'Bits & Bolts', ...mcpAppMessagePreview(richMcpAppMessage, 'Bits & Bolts') }, resolve: () => {} }} /> }
+export const RichMessageNarrow: Story = { ...RichMessageConfirmation, args: { width: 280 } }
 
 export const Loading: Story = { name: 'Loading · host has not answered', args: { app: attachment(id('slow')), mode: 'slow' } }
 

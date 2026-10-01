@@ -5,13 +5,27 @@ vi.mock('@/lib/external-link', () => ({ requestOpenExternalLink: vi.fn() }))
 import { createDesktopMcpAppExecutor, type McpAppDesktopApi } from './desktop-executor'
 
 const app: ToolAppAttachment = { appInstanceId: 'v', binding: { node: 'remote-node', session: 'original', server: 'fixture', configGeneration: 0, configFingerprint: 'config' }, resourceUri: 'ui://fixture/view', status: 'result' }
-function setup() {
+function setup(navigate?: (route: { projectPath: string; sessionId: string }) => Promise<void>) {
   const api = { mcpAppRequest: vi.fn(), mcpAppCancel: vi.fn(async () => {}) } as unknown as McpAppDesktopApi
   const consent = vi.fn(async () => ({} as Record<string, never> | null))
-  const executor = createDesktopMcpAppExecutor({ api, route: { projectPath: 'remote:connection:/project', sessionId: 'original' }, app, document: { id: 'document', url: '', origin: '', appInstanceId: 'v' }, consent, displayMode: async mode => mode })
+  const executor = createDesktopMcpAppExecutor({ api, route: { projectPath: 'remote:connection:/project', sessionId: 'original' }, app, document: { id: 'document', url: '', origin: '', appInstanceId: 'v' }, consent, displayMode: async mode => mode, navigate })
   return { api, consent, executor, request: vi.mocked(api.mcpAppRequest) }
 }
 describe('desktop MCP App host adapter', () => {
+  it('switches before sending a confirmed new-session handoff, even when the old View unmounts', async () => {
+    const signal = new AbortController()
+    const order: string[] = []
+    const s = setup(async destination => { expect(destination.sessionId).toBe('new'); order.push('switch'); signal.abort() })
+    s.request.mockImplementation(async (_project, _sid, request, context) => {
+      if (request.operation === 'sendMessage') return { ok: true, value: { pendingSend: 'token', route: { projectPath: 'remote:connection:/project', sessionId: 'new' } } }
+      expect(context).toBeUndefined()
+      expect(request).toMatchObject({ operation: 'sendPreparedMessage', pendingSend: 'token' })
+      order.push('send')
+      return { ok: true, value: {} }
+    })
+    await s.executor.sendMessage({ role: 'user', content: [], _meta: { 'openai/message': { target: 'new' } } }, signal.signal)
+    expect(order).toEqual(['switch', 'send'])
+  })
   it('routes links to the existing link UI without invoking the main executor', async () => {
     const s = setup()
     await s.executor.openLink({ url: 'https://example.com/' }, new AbortController().signal)

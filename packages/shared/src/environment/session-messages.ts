@@ -7,7 +7,7 @@
  * Live catch-up still uses `session.events` with `afterSequence`.
  */
 
-import type { ContentBlock } from '../agent-types'
+import type { ChatMessageContext, ContentBlock, ImageAttachment } from '../agent-types'
 
 /** Tool use + result summary attached to an assistant message block. */
 export interface SessionMessageToolSummary {
@@ -43,6 +43,8 @@ export interface SessionMessageBlock {
    * Prefer over interleaving `text` + `tools` when non-empty.
    */
   content?: ContentBlock[]
+  contexts?: ChatMessageContext[]
+  attachments?: ImageAttachment[]
   tools?: SessionMessageToolSummary[]
   metadata?: Record<string, unknown>
   checkpointId?: string

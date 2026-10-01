@@ -3880,6 +3880,8 @@ export type Messages = {
     revoked: string
     unknown: string
     approveMessage: string
+    approveNewMessage: string
+    newConversation: string
     nonText: string
     allow: string
     inline: string
@@ -7974,6 +7976,8 @@ export const en: Messages = {
     revoked: 'The App navigated away. Restart to open a new secure View.',
     unknown: 'The tool may have completed, but its outcome is unknown. Check the server before submitting it again.',
     approveMessage: 'Send Message to This Session',
+    approveNewMessage: 'Send message to a new conversation',
+    newConversation: 'Create a new conversation in this project, switch to it, and send this message.',
     nonText: 'Includes {{count}} non-text content blocks.',
     allow: 'Allow Once',
     inline: 'Return to Chat',

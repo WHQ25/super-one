@@ -1,3 +1,4 @@
+import { parseMessageDisplay } from '@superone/shared/message-display'
 import { dispatchMcpAppsRpc } from './mcp-apps-handlers'
 import { dirname as configDirname } from 'node:path'
 import {
@@ -2449,6 +2450,7 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
           mimeType,
           base64,
           ...(typeof row.name === 'string' ? { name: row.name } : {}),
+          ...(typeof row.id === 'string' ? { id: row.id } : {}),
         }
       })
       .filter((x): x is NonNullable<typeof x> => x != null)
@@ -2537,6 +2539,8 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
     const result = await ctx.sessions.send({
       sessionId: String(p.sessionId ?? ''),
       text: String(p.text ?? ''),
+      ...parseMessageDisplay(options),
+      echoUserMessage: options.echoUserMessage === true,
       client: { clientSessionId: ctx.client.clientSessionId },
       leaseId: String(p.leaseId ?? ''),
       generation: String(p.generation ?? ''),

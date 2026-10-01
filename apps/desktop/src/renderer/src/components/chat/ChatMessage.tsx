@@ -20,6 +20,7 @@ import { CodexTurnView } from './CodexTurnView'
 import { ImageGalleryBlock } from './ImageGalleryBlock'
 import { VideoGalleryBlock } from './VideoGalleryBlock'
 import { AttachmentChip, AttachmentPreviewDialog } from './attachment-chip'
+import { ContextAttachments } from '@superone/ui/components/ui/context-attachments'
 import { TooltipProvider } from '@superone/ui/components/ui/tooltip'
 import { UserSelectionChip } from './UserSelectionChip'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
@@ -254,7 +255,9 @@ function MessageContextChips({ contexts }: { contexts: ChatMessageContext[] }) {
   return (
     <div className="mb-1.5 flex flex-wrap gap-1">
       {contexts.map((ctx) => (
-        <MessageContextChipItem key={ctx.appId} ctx={ctx} />
+        ctx.appId.startsWith('mcp:')
+          ? <ContextAttachments key={ctx.appId} items={[{ id: ctx.appId, title: ctx.summary, source: ctx.appName, content: ctx.content, thumbnail: ctx.thumbnail }]} />
+          : <MessageContextChipItem key={ctx.appId} ctx={ctx} />
       ))}
     </div>
   )

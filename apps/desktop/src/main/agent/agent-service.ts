@@ -518,7 +518,7 @@ export class AgentService {
     })
   }
 
-  private async runCodexRemoteTurn(projectPath: string, sessionId: string, deviceId: string, command: { content: string; model?: string; effort?: string; serviceTier?: string | null; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }, onAccepted?: () => void): Promise<void> {
+  private async runCodexRemoteTurn(projectPath: string, sessionId: string, deviceId: string, command: { content: string; userMessageContent?: SendMessageRequest['userMessageContent']; contexts?: SendMessageRequest['contexts']; model?: string; effort?: string; serviceTier?: string | null; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }, onAccepted?: () => void): Promise<void> {
     const userMessageId = newMessageId('user')
     const assistantMessageId = newMessageId('remote')
     const mgr = this.requireSessionManager()
@@ -543,6 +543,8 @@ export class AgentService {
           assistantMessageId,
           ...(command.priority ? { priority: command.priority } : {}),
           images: command.images,
+          userMessageContent: command.userMessageContent,
+          contexts: command.contexts,
           model: command.model,
           effort: command.effort as SendMessageRequest['effort'] | undefined,
           codex: {
@@ -765,6 +767,8 @@ export class AgentService {
                   model: command.model,
                   effort: command.effort as SendMessageRequest['effort'] | undefined,
                   images: command.images,
+                  userMessageContent: command.userMessageContent,
+                  contexts: command.contexts,
                   priority: command.priority,
                   clientMessageId: command.clientMessageId,
                   ...(command.agent ? { agent: command.agent } : {}),

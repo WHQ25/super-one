@@ -637,6 +637,9 @@ existing elicitation card, and `SchemaFormFields` (phone `PermissionSheet`).
 - Answers are checked in main against the form before they reach the server.
   Unknown keys are dropped, invalid answers keep the request pending, and
   resource fields only return URIs the server offered.
+- A server's `pattern` never runs on a backtracking engine (renderer, phone or
+  main). It is compiled by `linear-regex.ts`, a linear-time NFA simulation. A
+  pattern that needs backreferences or lookaround makes the form unsupported.
 - Forms never offer "Always Allow". Codex reads `_meta.persist` only on its
   own tool-approval elicitations, which have no fields.
 - Older phones get the flat `elicitationForm` only for forms it can express.

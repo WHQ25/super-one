@@ -7,6 +7,7 @@
  * and is never partially displayed, as OpenAI's spec requires.
  */
 import type { ElicitationFormField, PermissionRequest } from './agent-types'
+import { compileLinearRegex, UnsupportedPattern, type LinearRegex } from './linear-regex'
 import { safeMcpAppImage } from './mcp-apps-metadata'
 
 /** MCP client capability for OpenAI's extended forms (`openai/elicitation/create`). */
@@ -195,9 +196,11 @@ function parseTextConstraints(rec: Rec): SchemaFormTextConstraints {
   const pattern = optString(rec, 'pattern')
   if (pattern !== undefined) {
     try {
-      new RegExp(pattern, 'u')
-    } catch {
-      throw new Unsupported('"pattern" is not a valid regular expression')
+      linearPattern(pattern)
+    } catch (err) {
+      throw new Unsupported(err instanceof UnsupportedPattern
+        ? `"pattern" uses ${err.message}`
+        : '"pattern" is not a valid regular expression')
     }
   }
   const minLength = optCount(rec, 'minLength')
@@ -434,7 +437,43 @@ function codePoints(value: string): number {
   return [...value].length
 }
 
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+/**
+ * Server patterns run only on the linear-time engine: a backtracking one can be
+ * stalled by `^(a+)+$` on the renderer, the phone or main. Compiled once each.
+ */
+const compiledPatterns = new Map<string, LinearRegex>()
+function linearPattern(pattern: string): LinearRegex {
+  let compiled = compiledPatterns.get(pattern)
+  if (!compiled) {
+    compiled = compileLinearRegex(pattern)
+    compiledPatterns.set(pattern, compiled)
+  }
+  return compiled
+}
+
+/**
+ * A form parsed on one runtime is validated on another (the phone's Hermes). A
+ * pattern this runtime cannot compile matches nothing: the field stays
+ * unanswerable rather than crashing the form.
+ */
+function matchesPattern(pattern: string, value: string): boolean {
+  let compiled: LinearRegex
+  try {
+    compiled = linearPattern(pattern)
+  } catch {
+    return false
+  }
+  return compiled.test(value)
+}
+
+/** One `@`, no whitespace, a dot inside the domain. Written without a backtracking regex. */
+function isEmail(value: string): boolean {
+  const at = value.indexOf('@')
+  if (at <= 0 || at !== value.lastIndexOf('@') || /\s/.test(value)) return false
+  const domain = value.slice(at + 1)
+  const dot = domain.lastIndexOf('.')
+  return dot > 0 && dot < domain.length - 1
+}
 const URI = /^[a-z][a-z\d+.-]*:\S*$/i
 const DATE = /^(\d{4})-(\d{2})-(\d{2})$/
 const DATE_TIME = /^(\d{4}-\d{2}-\d{2})[Tt ](\d{2}):(\d{2}):(\d{2})(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/
@@ -449,7 +488,7 @@ function isValidDate(value: string): boolean {
 
 function matchesFormat(format: SchemaFormTextFormat, value: string): boolean {
   switch (format) {
-    case 'email': return EMAIL.test(value)
+    case 'email': return isEmail(value)
     case 'uri': return URI.test(value)
     case 'date': return isValidDate(value)
     case 'date-time': {
@@ -463,7 +502,7 @@ function checkText(c: SchemaFormTextConstraints, value: string): SchemaFormError
   if (c.minLength !== undefined && codePoints(value) < c.minLength) return { code: 'minLength', limit: c.minLength }
   if (c.maxLength !== undefined && codePoints(value) > c.maxLength) return { code: 'maxLength', limit: c.maxLength }
   if (c.format && !matchesFormat(c.format, value)) return { code: 'format', limit: c.format }
-  if (c.pattern !== undefined && !new RegExp(c.pattern, 'u').test(value)) return { code: 'pattern', limit: c.pattern }
+  if (c.pattern !== undefined && !matchesPattern(c.pattern, value)) return { code: 'pattern', limit: c.pattern }
   return null
 }
 

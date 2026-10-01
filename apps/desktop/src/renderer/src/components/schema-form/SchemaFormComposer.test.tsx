@@ -94,6 +94,18 @@ describe('SchemaFormComposer', () => {
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
+  it('mounts a form whose default defeats a backtracking regex without stalling', () => {
+    const start = performance.now()
+    const { onSubmit } = renderForm({
+      type: 'object',
+      properties: { code: { type: 'string', title: 'Code', pattern: '^(a+)+$', default: `${'a'.repeat(5000)}!` } },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByText("Doesn't match the expected format")).toBeTruthy()
+    expect(performance.now() - start).toBeLessThan(2000)
+  })
+
   it('shows none of an unsupported form and only lets it be dismissed', () => {
     const { onCancel } = renderForm({
       type: 'object',

@@ -266,3 +266,57 @@ describe('acceptedElicitationContent', () => {
     expect(acceptedElicitationContent({ supported: false, reason: 'x' }, {})).toMatchObject({ ok: false })
   })
 })
+
+describe('server-supplied patterns', () => {
+  const timed = <T>(run: () => T): T => {
+    const start = performance.now()
+    const result = run()
+    expect(performance.now() - start).toBeLessThan(1000)
+    return result
+  }
+
+  it('validates a catastrophic-backtracking pattern and its default without stalling', () => {
+    const schema = {
+      type: 'object',
+      properties: { f: { type: 'string', pattern: '^(a+)+$', default: `${'a'.repeat(5000)}!` } },
+    }
+    const parsed = timed(() => fields(schema))
+    expect(timed(() => validateSchemaForm(parsed, initialSchemaFormValues(parsed)))).toEqual({
+      f: { code: 'pattern', limit: '^(a+)+$' },
+    })
+    // The same check guards answers from other clients in main.
+    expect(timed(() => acceptedElicitationContent({ supported: true, fields: parsed }, { f: `${'a'.repeat(5000)}!` }))).toMatchObject({ ok: false })
+  })
+
+  it.each([
+    ['(a)\\1', 'a backreference'],
+    ['^(?=a)', 'lookaround'],
+  ])('reports a form whose pattern %j needs %s as unsupported', (pattern, reason) => {
+    expect(parseSchemaForm({ type: 'object', properties: { f: { type: 'string', pattern } } }))
+      .toEqual({ supported: false, field: 'f', reason: `"pattern" uses ${reason}` })
+  })
+
+  it('still validates ordinary patterns', () => {
+    const cad = [field({ type: 'string', pattern: '^(cad|file):' }, true)]
+    expect(validateSchemaForm(cad, { f: 'cad://parts/hex' })).toEqual({})
+    expect(validateSchemaForm(cad, { f: 'https://x.y' }).f).toMatchObject({ code: 'pattern' })
+    const email = [field({ type: 'string', pattern: '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$' }, true)]
+    expect(validateSchemaForm(email, { f: 'name@example.com' })).toEqual({})
+    expect(timed(() => validateSchemaForm(email, { f: `a@${'.'.repeat(5000)}@` })).f).toMatchObject({ code: 'pattern' })
+  })
+
+  it('checks the email format without a backtracking regex', () => {
+    const email = [field({ type: 'string', format: 'email' }, true)]
+    expect(timed(() => validateSchemaForm(email, { f: `a@${'.'.repeat(50000)}@` })).f).toEqual({ code: 'format', limit: 'email' })
+    for (const bad of ['a@b', '@b.co', 'a@b.', 'a@.co', 'a b@c.co', 'a@b@c.co']) {
+      expect(validateSchemaForm(email, { f: bad }).f).toMatchObject({ code: 'format' })
+    }
+  })
+})
+
+describe('patterns parsed elsewhere', () => {
+  it('treats a pattern this runtime cannot compile as not matching instead of throwing', () => {
+    const received: SchemaFormField[] = [{ name: 'f', label: 'f', required: true, kind: 'text', pattern: '(a)\\1' }]
+    expect(validateSchemaForm(received, { f: 'aa' })).toEqual({ f: { code: 'pattern', limit: '(a)\\1' } })
+  })
+})

@@ -137,8 +137,9 @@ revokes the bridge (the View shows Restart).
   Activate chip that pulses when a blocked operation is attempted.
 - **Display modes**: `inline`, `fullscreen` and `pip`, entered only on the
   View's request. Fullscreen opens a transient standard activity-panel tab and
-  maximizes it; Shrink, the tab's ×, Esc or a View request for inline return
-  it to the chat and restore the panel's previous state. The controller owns
+  maximizes it. The tab has no maximize/restore button; closing it, Esc,
+  un-maximizing the panel or a View request for inline return the View to the
+  chat and restore the panel's previous state. The controller owns
   the iframe outside React and moves it with `moveBefore()`, which keeps the
   document alive. Moves go through a connected parking container and never
   run from an unmount; a move that cannot be made revokes the View instead of

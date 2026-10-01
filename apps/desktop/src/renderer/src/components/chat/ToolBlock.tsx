@@ -52,7 +52,8 @@ import {
   type ToolRowTone,
 } from './tool-row'
 import { ToolRendererFrame } from './ToolRendererFrame'
-import { parseMcpToolName } from './tool-display'
+import { getToolLabel, parseMcpToolName } from './tool-display'
+import { unwrapMcpResultText } from './presenters/tool-block-utils'
 import { useMcpServerIcon } from './use-mcp-server-icon'
 
 const McpAppView = lazy(() => import('../mcp-apps/McpAppView'))
@@ -340,18 +341,23 @@ export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
     }),
   }), [cwd, homedir, mcpIconSrc, miniApps, stallLevel, streamingInputPreview, switchSession, t, toolInterceptState])
 
-  return (
-    <>
-    <ToolBlockPresenter
+  const renderRow = (trailing?: ReactNode) => <ToolBlockPresenter
       {...props}
+      trailing={trailing ?? props.trailing}
       allowExpand={nestedDefaults?.allowExpand !== false}
       defaultAutoExpand={nestedDefaults?.defaultAutoExpand}
       autoExpandFileDiffs={autoExpandFileDiffs}
       ports={ports}
     />
-      {props.app && <Suspense fallback={null}><McpAppView app={props.app} /></Suspense>}
-    </>
-  )
+  if (props.app) {
+    const details = <div className="space-y-2 rounded-md bg-muted/20 p-2 text-xs">
+      <div className="text-muted-foreground">{t('trajectory.inspector.arguments')}</div>
+      {ports.renderJson(props.input)}
+      {props.result && <><div className="text-muted-foreground">{t('trajectory.inspector.result')}</div>{ports.renderJson(unwrapMcpResultText(props.result))}</>}
+    </div>
+    return <Suspense fallback={renderRow()}><McpAppView app={props.app} title={getToolLabel(props.toolName)} details={details} renderFallback={renderRow} /></Suspense>
+  }
+  return renderRow()
 })
 
 export { FileChip }

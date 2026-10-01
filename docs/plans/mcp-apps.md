@@ -477,20 +477,35 @@ Command: `MCP_APPS_STORYBOOK_URL=http://localhost:6006 bunx playwright test
 Chromium needed sandbox escalation for macOS MachPort registration. These are
 renderer interaction checks; the native scheme is covered by the Electron suite.
 
-### Desktop display modes: implemented
+### Desktop View presentation and display modes
 
-View-declared fullscreen opens the Activity dock; View-declared PiP uses the
-existing placement/drag/resize primitives and the full panel viewport. One fixed
-portal owns the iframe for inline, dock and PiP; mode changes update geometry and
-host context only. The dock reports bounds/visibility; closing its tab returns to
-inline, and stale parked panels are removed. Requested CSP domains are normalized
-per directive in initialize, with no device permissions granted.
+The desktop supports only protocol modes `inline`, `fullscreen` and `pip`.
+The View requests entry; the host has only a fullscreen exit/Esc and PiP return
+to chat. There is no activity-panel registration or host mode toolbar.
 
-The production Storybook wire fixture proves fullscreen → dock → PiP → inline
-keeps the same iframe element and page state, followed by an approved app-only
-call on the same bridge. Native fixture `0ce6e57f0` declares all three modes.
-Final dev desktop/public server/remote node acceptance remains.
+The persistent controller owns an imperative iframe and bridge outside the
+transcript. Inline uses normal DOM flow; fullscreen fills the main content
+container with a slim server header; PiP uses the existing placement/drag/resize
+primitives. Store transitions first atomically park the iframe in a connected
+container, then destination attachment moves it into the connected surface.
+Ref detach/unmount never moves a frame. A violated connected-node/same-document
+invariant revokes gracefully and offers Restart.
 
+Available live/restored Views replace the ordinary tool row and share
+`EmbeddedToolView` with WidgetBlock. A hover header exposes server icon/name,
+tool name and one details IconButton. Unavailable Views use the ordinary MCP
+row with state and one trailing action. Restored snapshots have a persistent
+Activate chip that briefly pulses after a blocked inactive operation.
+
+Checks so far: 11 native Electron tests pass, including no-reload/state/bridge
+preservation, native iframe-focused Esc, zero same-frame scroll alignment error
+and graceful handling of a prematurely disconnected surface. Six desktop
+lifecycle tests and 37 activity API regression tests pass. Desktop node/web
+typechecks pass. All 10 final Storybook browser acceptance tests pass: direct
+app-only dispatch, inactive chip emphasis, auth/retry/missing snapshot, revoke
+and unknown outcome, light/dark/narrow/long content, the widget comparison,
+details toggle, zero scroll alignment error and no-reload fullscreen/PiP.
+Glass rendering investigation, public server and remote node acceptance remain.
 
 ### 2026-10-01 — user decision: View consent policy supersedes the original executor policy
 

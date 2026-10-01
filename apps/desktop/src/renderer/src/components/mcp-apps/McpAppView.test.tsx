@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { useEffect } from 'react'
 import { act, fireEvent, render, screen, waitFor, cleanup } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
@@ -6,18 +7,18 @@ import { McpAppsError } from '@superone/shared/mcp-apps'
 import type { McpAppFrameProps } from './McpAppFrame'
 import type { McpAppDesktopApi } from './desktop-executor'
 const frame = vi.hoisted(() => ({ props: null as McpAppFrameProps | null }))
-vi.mock('@/components/activity/activity-panel-api', () => ({ openMcpAppTab: vi.fn(), getDockApi: () => null }))
 vi.mock('@/stores/chat', () => ({ useChatStore: (fn: (s: unknown) => unknown) => fn({ projectSessions: {} }), useSessionScope: () => null }))
-vi.mock('@/hooks/useSlotBounds', () => ({ useSlotBounds: () => {} }))
 vi.mock('@/hooks/use-is-dark', () => ({ useIsDark: () => false }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }) }))
-vi.mock('./McpAppFrame', () => ({ default: (props: McpAppFrameProps) => { frame.props = props; return <div data-testid="frame" /> } }))
+vi.mock('./McpAppFrame', () => ({ default: (props: McpAppFrameProps) => { frame.props = props; useEffect(() => props.onInitialized(['inline', 'fullscreen', 'pip']), []); return <div data-testid="frame" /> } }))
 import McpAppView from './McpAppView'
+import { McpAppHostLayer } from './McpAppHostLayer'
+vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
 const app: ToolAppAttachment = { appInstanceId: 'v', binding: { node: 'local', session: 'original', server: 'fixture', configGeneration: 0, configFingerprint: 'config' }, origin: { providerSessionId: 'thread' }, resourceUri: 'ui://fixture/view', status: 'result' }
 const prepared = { state: 'ready', document: { id: 'doc', url: 'superone-mcp-app://origin/view', origin: 'superone-mcp-app://origin', appInstanceId: 'v' }, active: false, meta: {} } as const
 function setup() {
   const api: McpAppDesktopApi = { mcpAppRegister: vi.fn<McpAppDesktopApi['mcpAppRegister']>(async () => ({ ok: true, value: prepared })), mcpAppRequest: vi.fn<McpAppDesktopApi['mcpAppRequest']>(async () => ({ ok: true, value: {} })), mcpAppCancel: vi.fn(async () => {}), mcpAppRelease: vi.fn(async () => {}), onMcpAppDocumentRevoked: () => () => {}, mcpAppsAuthenticate: vi.fn<McpAppDesktopApi['mcpAppsAuthenticate']>(async () => ({ ok: true, value: null })) }
-  return { api, mount: () => render(<McpAppView app={app} route={{ projectPath: '/original-project', sessionId: 'original' }} api={api} />) }
+  return { api, mount: () => render(<><McpAppHostLayer /><McpAppView app={app} route={{ projectPath: '/original-project', sessionId: 'original' }} api={api} /></>) }
 }
 afterEach(() => { cleanup(); frame.props = null })
 describe('MCP App desktop View lifecycle', () => {
@@ -25,6 +26,7 @@ describe('MCP App desktop View lifecycle', () => {
     const s = setup(); vi.mocked(s.api.mcpAppRegister).mockResolvedValueOnce({ ok: true, value: { ...prepared, active: true } })
     s.mount(); await screen.findByTestId('frame'); expect(frame.props?.active).toBe(true)
     act(() => frame.props!.onError(new McpAppsError('inactive', 'Activate to reconnect')))
+    expect(document.querySelector('[data-mcp-app-activate]')?.getAttribute('data-emphasized')).toBe('true')
     expect(frame.props?.active).toBe(false); expect(screen.getByText('mcpApp.activate')).toBeTruthy()
     expect(s.api.mcpAppRequest).not.toHaveBeenCalled()
     fireEvent.click(screen.getByText('mcpApp.activate'))
@@ -53,13 +55,15 @@ describe('MCP App desktop View lifecycle', () => {
   })
   it('renders host consent as plain text, declines and shows unknown/revoked states', async () => {
     const s = setup(); s.mount(); await screen.findByTestId('frame')
-    vi.mocked(s.api.mcpAppRequest).mockResolvedValue({ ok: false, error: { code: 'approval_required', challenge: 'c', prompt: { kind: 'callTool', server: 'fixture', tool: 'next', argsPreview: '<img src=x onerror=evil()>', rememberable: true } } })
+    vi.mocked(s.api.mcpAppRequest).mockResolvedValue({ ok: false, error: { code: 'approval_required', challenge: 'c', prompt: { kind: 'sendMessage', server: 'fixture', text: '<img src=x onerror=evil()>', nonTextBlocks: 0 } } })
     let call!: Promise<unknown>
-    act(() => { call = frame.props!.executor.callTool({ tool: 'next', args: {} }, new AbortController().signal).catch(error => error) })
+    act(() => { call = frame.props!.executor.sendMessage({ role: 'user', content: [{ type: 'text', text: '<img src=x onerror=evil()>' }] }, new AbortController().signal).catch(error => error) })
     await screen.findByText('<img src=x onerror=evil()>'); expect(document.querySelector('img')).toBeNull()
     fireEvent.click(screen.getByText('mcpApp.deny')); expect(await call).toMatchObject({ code: 'denied' }); expect(s.api.mcpAppRequest).toHaveBeenCalledTimes(1)
-    act(() => { frame.props!.onUnknown(); frame.props!.onRevoked() })
-    expect(screen.getByText('mcpApp.unknown')).toBeTruthy(); fireEvent.click(screen.getByText('mcpApp.restart'))
+    act(() => frame.props!.onUnknown())
+    expect(screen.getByText('mcpApp.unknown')).toBeTruthy()
+    act(() => frame.props!.onRevoked())
+    fireEvent.click(screen.getByText('mcpApp.restart'))
     await waitFor(() => expect(s.api.mcpAppRegister).toHaveBeenCalledTimes(2))
   })
   it('releases a late registration when its shell has already unmounted', async () => {

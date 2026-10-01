@@ -341,25 +341,6 @@ export function openMiniAppTab(instanceKey: string, appId: string, label: string
   })
 }
 
-/** MCP App fullscreen means a dock panel; its iframe remains owned by the chat View. */
-export function openMcpAppTab(appInstanceId: string, title: string): void {
-  ensureVisible()
-  execOrDefer(() => {
-    if (!dockApi) return
-    const id = `mcp-app:${appInstanceId}`
-    const existing = dockApi.getPanel(id)
-    if (existing) { activateInMaximizedGroup(existing); return }
-    const position = positionInMaximizedGroup()
-    dockApi.addPanel({ id, component: 'mcp-app', title, params: { appInstanceId }, ...(position ? { position } : {}) })
-  })
-}
-
-export function closeGhostMcpAppPanels(isAlive: (key: string) => boolean): void {
-  for (const panel of [...(dockApi?.panels ?? [])]) {
-    if (panel.id.startsWith('mcp-app:') && !isAlive(panel.id.slice(8))) panel.api.close()
-  }
-}
-
 /** Open (or reveal) the fixture-driven tool UI preview of one development mini-app. */
 export function openToolUiPreviewTab(previewKey: string, label: string, opts?: { reveal?: boolean }) {
   if (opts?.reveal !== false) ensureVisible()

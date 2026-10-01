@@ -3880,9 +3880,7 @@ export type Messages = {
     revoked: string
     unknown: string
     approveMessage: string
-    approveLink: string
     nonText: string
-    remember: string
     allow: string
     inline: string
     fullscreen: string
@@ -7976,12 +7974,10 @@ export const en: Messages = {
     revoked: 'The App navigated away. Restart to open a new secure View.',
     unknown: 'The tool may have completed, but its outcome is unknown. Check the server before submitting it again.',
     approveMessage: 'Send Message to This Session',
-    approveLink: 'Open External Link',
     nonText: 'Includes {{count}} non-text content blocks.',
-    remember: 'Always Allow This Tool in This Session',
     allow: 'Allow Once',
     inline: 'Return to Chat',
-    fullscreen: 'Open in Panel',
+    fullscreen: 'Fullscreen',
     pip: 'Picture in Picture',
   },
   filePreview: {

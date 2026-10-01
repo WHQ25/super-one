@@ -858,6 +858,7 @@ export interface EnvironmentAPI {
   mcpAppRelease(documentId: string): Promise<void>
   mcpAppCancel(context: import('@superone/shared/mcp-apps-desktop').McpAppDesktopRequestContext): Promise<void>
   onMcpAppDocumentRevoked(callback: (event: { url: string }) => void): () => void
+  onMcpAppEscape(callback: (event: { url: string }) => void): () => void
   mcpAppsProvider(connectionId: string, input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult>
   /** Sign the View's MCP server in; resolves once the provider no longer reports auth_required. */
   mcpAppsAuthenticate(connectionId: string, target: Pick<import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest, 'binding' | 'origin'>): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<null>>

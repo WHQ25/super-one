@@ -1,4 +1,3 @@
-import { McpAppPanel } from '@/components/mcp-apps/McpAppSlot'
 import type { IDockviewPanelProps } from 'dockview-core'
 import { FilePreview } from '@/components/coding/FilePreview'
 import { MiniAppSlot } from '@/components/miniapp/MiniAppSlot'
@@ -40,7 +39,6 @@ function SideChatDockPanel(props: IDockviewPanelProps<{ projectPath: string; ses
 
 export const activityPanelComponents: Record<string, React.FunctionComponent<IDockviewPanelProps>> = {
   'file-preview': FilePreviewPanel,
-  'mcp-app': McpAppPanel as React.FunctionComponent<IDockviewPanelProps>,
   'miniapp': MiniAppPanel as React.FunctionComponent<IDockviewPanelProps>,
   'miniapp-tool-preview': ToolUiPreviewPanel as React.FunctionComponent<IDockviewPanelProps>,
   'browser': BrowserPanel as React.FunctionComponent<IDockviewPanelProps>,

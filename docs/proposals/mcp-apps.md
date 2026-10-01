@@ -172,7 +172,14 @@ have size caps; stored snapshots follow the server's account lifecycle
 | Permissions | `permissions` → iframe `allow`; the granted set reported truthfully in `hostCapabilities.sandbox`. | Only what the device actually grants. |
 | Protocol | `AppBridge` + `PostMessageTransport`, one per mounted View instance, torn down with `ui/resource-teardown`; StrictMode double mount covered by test. | Same bridge in `packages/chat-view`; server-bound calls go to the host over environment RPC. |
 | Theme | SuperOne tokens → spec `--color-*` / `--font-*` / `--border-radius-*`, reusing `WIDGET_THEME_TOKEN_SOURCES`. | Same. |
-| Display | `inline`, `fullscreen` (main content area) and `pip`; Open in Panel is a separate host action. Host-supported modes only; respect an explicit View declaration. | `inline`, then `fullscreen` (sheet). |
+| Display | `inline`, `fullscreen` (main content area) and `pip`. Enter only through View requests; the host provides exit controls. Respect an explicit View declaration. | `inline`, then `fullscreen` (sheet). |
+
+Available Views replace their tool row, using the same borderless frame and hover
+header as widgets: server icon/name, tool display name and one details toggle.
+Pending, missing-snapshot, auth, error and revoked Views retain the ordinary MCP
+tool row with their state and one action at its right edge. Restored snapshots
+paint without a backend call and show a persistent Activate chip; a blocked
+inactive operation briefly emphasizes it.
 
 `appCapabilities.availableDisplayModes` is optional: when absent, a View's explicit display-mode request counts as intent; when present, both its declaration and the host's modes must allow the request.
 

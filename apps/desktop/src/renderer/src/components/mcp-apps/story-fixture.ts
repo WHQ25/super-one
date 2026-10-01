@@ -14,16 +14,14 @@ export function createMcpAppStoryFixture(state: McpAppStoryState = 'live') {
       if (state === 'error' && registrations++ === 0) return { ok: false, error: { code: 'not_connected', message: 'The fixture server is unavailable.' } }
       if (state === 'missing' && !active) return { ok: true, value: { state: 'inactive' } }
       let html = viewHtml
-      if (['approval', 'unknown'].includes(state)) html = html.replace("log('initialized')", "log('initialized'); document.getElementById('next').click()")
+      if (['approval', 'unknown'].includes(state)) html = html.replace("log('initialized')", "log('initialized'); document.getElementById('" + (state === 'approval' ? 'ask' : 'next') + "').click()")
       url = 'data:text/html;base64,' + btoa(String.fromCharCode(...new TextEncoder().encode(html)))
       return { ok: true, value: { state: 'ready', document: { id: crypto.randomUUID(), url, origin: 'null', appInstanceId: app.appInstanceId }, active, meta: {} } }
     },
     async mcpAppRequest(_project, _session, request) {
       if (request.operation === 'activate') { active = true; return { ok: true, value: {} } }
       if (request.operation === 'callTool' && state === 'unknown') return { ok: true, value: { outcome: 'unknown_outcome', result: { isError: true, content: [{ type: 'text', text: 'Server disconnected after dispatch' }] } } }
-      if (!request.approval && request.operation === 'callTool') return { ok: false, error: { code: 'approval_required', challenge: 'storybook-challenge', prompt: { kind: 'callTool', server: app.binding.server, tool: request.tool, argsPreview: JSON.stringify(request.args, null, 2), rememberable: true } } }
       if (!request.approval && request.operation === 'sendMessage') return { ok: false, error: { code: 'approval_required', challenge: 'storybook-challenge', prompt: { kind: 'sendMessage', server: app.binding.server, text: request.params.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n'), nonTextBlocks: 0 } } }
-      if (!request.approval && request.operation === 'openLink') return { ok: false, error: { code: 'approval_required', challenge: 'storybook-challenge', prompt: { kind: 'openLink', server: app.binding.server, url: request.url } } }
       return { ok: true, value: request.operation === 'callTool' ? { outcome: 'completed', result: result(Number(request.args.page ?? 2)) } : {} }
     },
     async mcpAppsAuthenticate() { authenticated = true; return { ok: true, value: null } },

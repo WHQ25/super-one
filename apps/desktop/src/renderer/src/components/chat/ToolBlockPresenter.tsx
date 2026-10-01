@@ -93,6 +93,7 @@ const DEBUG_TOOL_NAMES: string[] = import.meta.env.DEV
 
 
 export interface ToolBlockProps {
+  trailing?: ReactNode
   app?: ToolAppAttachment
   toolName: string
   toolUseId?: string
@@ -172,6 +173,7 @@ const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileC
 
 
 export const ToolBlockPresenter = memo(function ToolBlockPresenter({
+  trailing,
   toolName,
   toolUseId,
   input,
@@ -550,6 +552,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
 
   return (
     <GenericToolRowPresenter
+      trailing={trailing}
       toolName={toolName}
       toolUseId={toolUseId}
       input={input}

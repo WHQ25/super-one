@@ -3,14 +3,17 @@ import { createMcpAppTransport } from '@superone/shared/mcp-apps-host/transport'
 import { createMcpAppDocument, mcpAppAllowAttribute } from '@superone/shared/mcp-apps-host'
 import type { McpAppHostExecutor, McpAppHost } from '@superone/shared/mcp-apps-host/host'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
+import McpAppFrame from '../../src/renderer/src/components/mcp-apps/McpAppFrame'
+import { useMcpAppLayout } from '../../src/renderer/src/components/mcp-apps/layout-store'
+import type { McpAppDesktopApi } from '../../src/renderer/src/components/mcp-apps/desktop-executor'
 import { createElement, StrictMode, useEffect, useRef } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Root } from 'react-dom/client'
 
 declare global {
   interface Window {
-    securityNative: { onRevoke(fn: (url: string) => void): void; canExecute(url: string): boolean }
-    securityHarness: { mount(app: ToolAppAttachment, url: string, origin: string, overgrantProbe?: boolean, strict?: boolean): Promise<void>; state: { loads: number; calls: number; errors: string[]; revoked: boolean; setups: number; cleanups: number }; sameWindow(): boolean }
+    securityNative: { onRevoke(fn: (url: string) => void): void; onEscape(fn: (url: string) => void): void; canExecute(url: string): boolean }
+    securityHarness: { mount(app: ToolAppAttachment, url: string, origin: string, overgrantProbe?: boolean, strict?: boolean, production?: boolean): Promise<void>; move(mode: 'inline' | 'fullscreen' | 'pip'): void; removeSurfaceFirst(): void; state: { loads: number; calls: number; errors: string[]; revoked: boolean; setups: number; cleanups: number }; sameWindow(): boolean }
   }
 }
 const slot = createMcpAppHostSlot()
@@ -19,16 +22,56 @@ let reactRoot: Root | undefined
 let reactContainer: HTMLDivElement | undefined
 const state = { loads: 0, calls: 0, errors: [] as string[], revoked: false, setups: 0, cleanups: 0 }
 window.securityNative.onRevoke(url => { if (current?.url === url) { current.host.revoke(); state.revoked = true } })
+window.securityNative.onEscape(url => { if (current?.url === url) useMcpAppLayout.getState().setMode('security', 'inline') })
 window.securityHarness = {
   state,
   sameWindow: () => current?.target === current?.frame.contentWindow,
-  async mount(app, url, origin, overgrantProbe = false, strict = false) {
+  move(mode) { useMcpAppLayout.getState().setMode('security', mode) },
+  removeSurfaceFirst() {
+    document.querySelector('[data-production-mode=fullscreen]')!.remove()
+    useMcpAppLayout.getState().surface('security', 'fullscreen', null)
+  },
+  async mount(app, url, origin, overgrantProbe = false, strict = false, production = false) {
     current?.host.revoke()
     reactRoot?.unmount()
     reactRoot = undefined
     reactContainer?.remove()
     current?.frame.remove()
+    document.querySelectorAll('[data-production-mode], #production-transcript').forEach(element => element.remove())
+    useMcpAppLayout.getState().clear()
     state.loads = 0; state.calls = 0; state.errors = []; state.revoked = false; state.setups = 0; state.cleanups = 0
+    if (production) {
+      const transcript = document.createElement('div'); transcript.id = 'production-transcript'
+      transcript.style.cssText = 'height:300px;width:600px;overflow:auto'
+      transcript.innerHTML = '<div style="height:100px"></div><div data-production-mode="inline" style="height:200px;width:100%"></div><div style="height:1200px"></div>'
+      document.body.appendChild(transcript)
+      const row = transcript.querySelector<HTMLElement>('[data-production-mode=inline]')!
+      const nativeListeners = new Set<(event: { url: string }) => void>()
+      const api = { onMcpAppDocumentRevoked: (callback: (event: { url: string }) => void) => { nativeListeners.add(callback); return () => nativeListeners.delete(callback) }, mcpAppRelease: async () => {} } as McpAppDesktopApi
+      window.securityNative.onRevoke(url => nativeListeners.forEach(callback => callback({ url })))
+      useMcpAppLayout.getState().claim({ app, route: { projectPath: '/security', sessionId: app.binding.session }, api, row })
+      useMcpAppLayout.getState().surface(app.appInstanceId, 'inline', row)
+      for (const mode of ['fullscreen', 'pip'] as const) {
+        const element = document.createElement('div'); element.dataset.productionMode = mode
+        element.style.cssText = 'width:600px;height:300px'; document.body.appendChild(element)
+        useMcpAppLayout.getState().surface(app.appInstanceId, mode, element)
+      }
+      reactContainer = document.createElement('div'); document.body.appendChild(reactContainer)
+      reactRoot = createRoot(reactContainer)
+      reactRoot.render(createElement(McpAppFrame, {
+        app, meta: {}, registration: { id: 'native', url, origin, appInstanceId: app.appInstanceId }, api,
+        executor: { async callTool() { state.calls++; return { result: { content: [] }, outcome: 'completed' } }, async readResource() { return { contents: [] } }, async sendMessage() { return {} }, async updateModelContext() {}, async openLink() { return {} }, async requestDisplayMode(mode) { return mode } },
+        context: { theme: 'light', platform: 'desktop' }, active: true,
+        onHost(host) {
+          if (!host) return
+          const frame = document.querySelector<HTMLIFrameElement>('[data-mcp-app-frame]')!
+          current = { host, frame, target: frame.contentWindow!, url }
+          frame.id = 'mcp-view'; frame.addEventListener('load', () => state.loads++)
+        },
+        onInitialized() {}, onHeight() {}, onUnknown() {}, onRevoked() { state.revoked = true }, onError(error) { state.errors.push(String(error)) },
+      }))
+      return
+    }
     if (strict) {
       reactContainer = document.createElement('div')
       document.body.appendChild(reactContainer)

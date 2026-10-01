@@ -169,9 +169,6 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
         restorePanelWidthAfterSideChat()
         void import('@/lib/side-chat-actions').then((m) => m.handleSideChatTabRemoved(sessionId))
       }
-      if (panel.id.startsWith('mcp-app:') && !isLayoutSwapping()) {
-        void import('../mcp-apps/layout-store').then(({ useMcpAppLayout }) => useMcpAppLayout.getState().owners[panel.id.slice(8)]?.())
-      }
       if (event.api.panels.length === 0) {
         useActivityPanelStore.getState().setShowPanel(false)
       }

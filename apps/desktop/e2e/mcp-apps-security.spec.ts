@@ -40,7 +40,7 @@ test.describe('MCP App native iframe boundary', () => {
 
   test.afterAll(async () => { await app?.close(); if (temporary) await rm(temporary, { recursive: true, force: true }) })
 
-  async function mount(session = 'security', nativePermissionProbe = false, strict = false): Promise<{ frame: Frame; url: string; id: string }> {
+  async function mount(session = 'security', nativePermissionProbe = false, strict = false, production = false): Promise<{ frame: Frame; url: string; id: string }> {
     const payload = await app.evaluate((_electron, input) => {
       const s = globalThis.mcpSecurity
       const fixture = { ...s.base, binding: { ...s.base.binding, session: input.session } }
@@ -50,7 +50,7 @@ test.describe('MCP App native iframe boundary', () => {
       if (input.nativePermissionProbe) s.permissionsWithoutPolicy.add(registration.url)
       return { app: fixture, ...registration, nativePermissionProbe: input.nativePermissionProbe }
     }, { session, nativePermissionProbe })
-    await page.evaluate(async input => { await window.securityHarness.mount(input.app, input.url, input.origin, input.nativePermissionProbe, input.strict) }, { ...payload, strict })
+    await page.evaluate(async input => { await window.securityHarness.mount(input.app, input.url, input.origin, input.nativePermissionProbe, input.strict, input.production) }, { ...payload, strict, production })
     await expect.poll(async () => page.evaluate(() => window.securityHarness.state.loads)).toBe(1)
     const frame = page.frames().find(frame => frame.url() === payload.url)!
     expect(frame).toBeTruthy()
@@ -68,6 +68,72 @@ test.describe('MCP App native iframe boundary', () => {
       return { parentError, native: typeof window.securityNative, require: typeof (window as unknown as { require?: unknown }).require }
     })
     expect(result).toEqual({ parentError: 'SecurityError', native: 'undefined', require: 'undefined' })
+  })
+
+  test('moveBefore preserves the sandboxed scheme document across every display container', async () => {
+    const { frame, url, id } = await mount('atomic-move')
+    await frame.evaluate(() => {
+      Object.assign(window.fixtureState, { selected: 4 })
+      const input = document.createElement('input'); input.id = 'preserved'; input.value = 'unsaved input'
+      document.body.appendChild(input)
+    })
+    await page.evaluate(async () => {
+      const iframe = document.querySelector<HTMLIFrameElement>('#mcp-view')!
+      const target = iframe.contentWindow
+      const containers = ['inline', 'fullscreen', 'pip'].map(mode => {
+        const container = document.createElement('div'); container.dataset.displayMode = mode
+        document.body.appendChild(container); return container
+      })
+      for (const container of [...containers, containers[0]!]) {
+        container.moveBefore(iframe, null)
+        await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+        if (iframe.contentWindow !== target) throw new Error('The iframe WindowProxy changed')
+      }
+    })
+    expect(await frame.evaluate(() => ({ selected: (window.fixtureState as unknown as { selected: number }).selected, input: document.querySelector<HTMLInputElement>('#preserved')?.value }))).toEqual({ selected: 4, input: 'unsaved input' })
+    expect(await page.evaluate(() => ({ loads: window.securityHarness.state.loads, revoked: window.securityHarness.state.revoked, sameWindow: window.securityHarness.sameWindow() }))).toEqual({ loads: 1, revoked: false, sameWindow: true })
+    expect(await app.evaluate((_electron, original) => globalThis.mcpSecurity.resources.isActive(original), url)).toBe(true)
+    expect(await app.evaluate((_electron, original) => globalThis.mcpSecurity.leaseSignals.get(original)?.aborted, id)).toBe(false)
+    await frame.evaluate(async () => { await (window as unknown as { fixtureRequest: (method: string, params: unknown) => Promise<unknown> }).fixtureRequest('tools/call', { name: 'fixture_next_page', arguments: {} }) })
+    expect(await page.evaluate(() => window.securityHarness.state.calls)).toBe(1)
+  })
+
+  test('production iframe/store move before teardown and inline scrolling has no overlay lag', async () => {
+    const { frame } = await mount('production-flow', false, false, true)
+    await frame.evaluate(() => Object.assign(window.fixtureState, { selected: 4 }))
+    const errors = await page.evaluate(async () => {
+      const transcript = document.querySelector<HTMLElement>('#production-transcript')!
+      const iframe = document.querySelector<HTMLIFrameElement>('#mcp-view')!
+      const row = document.querySelector<HTMLElement>('[data-production-mode=inline]')!
+      const errors: number[] = []
+      for (const top of [10, 60, 120, 220, 0]) await new Promise<void>(resolve => requestAnimationFrame(() => {
+        transcript.scrollTop = top
+        const a = iframe.getBoundingClientRect(), b = row.getBoundingClientRect()
+        errors.push(Math.abs(a.top - b.top), Math.abs(a.left - b.left), Math.abs(a.width - b.width))
+        resolve()
+      }))
+      return errors
+    })
+    expect(Math.max(...errors)).toBe(0)
+    for (const mode of ['fullscreen', 'inline', 'pip', 'fullscreen', 'inline'] as const) {
+      await page.evaluate(mode => window.securityHarness.move(mode), mode)
+      await expect.poll(() => page.evaluate(() => window.securityHarness.sameWindow())).toBe(true)
+    }
+    expect(await frame.evaluate(() => (window.fixtureState as unknown as { selected: number }).selected)).toBe(4)
+    expect(await page.evaluate(() => window.securityHarness.state)).toMatchObject({ loads: 1, revoked: false, errors: [] })
+    await page.evaluate(() => window.securityHarness.move('fullscreen'))
+    await app.evaluate(() => { globalThis.mcpSecurity.window.show(); globalThis.mcpSecurity.window.focus() })
+    await frame.locator('body').click()
+    await expect.poll(() => app.evaluate(() => globalThis.mcpSecurity.window.webContents.focusedFrame?.url)).toBe(frame.url())
+    await app.evaluate(() => globalThis.mcpSecurity.window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'ESC' }))
+    await expect(page.locator('[data-production-mode=inline] #mcp-view')).toHaveCount(1)
+    expect(await page.evaluate(() => window.securityHarness.state)).toMatchObject({ loads: 1, revoked: false, errors: [] })
+  })
+
+  test('a prematurely removed surface revokes gracefully without HierarchyRequestError', async () => {
+    await mount('removed-surface', false, false, true)
+    await page.evaluate(() => { window.securityHarness.move('fullscreen'); window.securityHarness.removeSurfaceFirst(); window.securityHarness.move('inline') })
+    expect(await page.evaluate(() => window.securityHarness.state)).toMatchObject({ loads: 1, revoked: true, errors: [] })
   })
 
   test('sandbox blocks top navigation/popups and header CSP blocks forms/network', async () => {

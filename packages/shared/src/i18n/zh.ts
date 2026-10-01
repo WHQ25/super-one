@@ -3973,12 +3973,10 @@ export const zh: Messages = {
     revoked: '应用已离开原页面。重新启动以打开新的安全 View。',
     unknown: '工具可能已经执行，但结果未知。再次提交前请检查服务器状态。',
     approveMessage: '向此会话发送消息',
-    approveLink: '打开外部链接',
     nonText: '包含 {{count}} 个非文本内容块。',
-    remember: '在此会话中始终允许此工具',
     allow: '允许一次',
     inline: '返回聊天',
-    fullscreen: '在面板中打开',
+    fullscreen: '全屏',
     pip: '画中画',
   },
   filePreview: {

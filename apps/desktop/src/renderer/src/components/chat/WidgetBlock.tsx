@@ -8,6 +8,8 @@ import { Download, Bookmark } from 'lucide-react'
 import { WidgetLayoutFrame } from '@superone/chat-view/WidgetLayoutFrame'
 import { useChatStore } from '@/stores/chat'
 import { WidgetSaveDialog } from './WidgetSaveDialog'
+import { EmbeddedToolView } from './EmbeddedToolView'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 
 const THROTTLE_MS = 150
 
@@ -232,30 +234,22 @@ export function WidgetBlock({ data, streaming }: WidgetBlockProps) {
   const displayTitle = data.title.replace(/_/g, ' ')
 
   return (
-    <div className="group/widget my-2 w-full">
-      <div className="mb-1.5 flex h-5 items-center justify-end gap-1.5 px-1 opacity-0 transition-opacity group-hover/widget:opacity-100">
-        <span className="text-xs text-muted-foreground/70">
-          {displayTitle}
-        </span>
-        {mountIframe && iframeReady && (
+    <EmbeddedToolView title={displayTitle} actions={mountIframe && iframeReady && (
           <>
-            <button
+            <IconButton size="xs" variant="ghost"
               onClick={(e) => downloadWidget(finalSrcdoc, displayTitle, e)}
-              className="text-muted-foreground/70 transition-colors hover:text-foreground"
-              title={t('tooltips.saveAsHtml')}
+              tooltip={t('tooltips.saveAsHtml')}
             >
               <Download className="size-3.5" />
-            </button>
-            <button
+            </IconButton>
+            <IconButton size="xs" variant="ghost"
               onClick={(e) => { e.stopPropagation(); setSaveOpen(true) }}
-              className="text-muted-foreground/70 transition-colors hover:text-foreground"
-              title={data.templateId ? t('widget.save.updateTitle') : t('widget.save.title')}
+              tooltip={data.templateId ? t('widget.save.updateTitle') : t('widget.save.title')}
             >
               <Bookmark className="size-3.5" />
-            </button>
+            </IconButton>
           </>
-        )}
-      </div>
+        )}>
       <WidgetLayoutFrame layout={data.layout}>
         <div className="relative">
           {showShadow && (
@@ -273,6 +267,6 @@ export function WidgetBlock({ data, streaming }: WidgetBlockProps) {
         </div>
       </WidgetLayoutFrame>
       {saveOpen && <WidgetSaveDialog data={data} open={saveOpen} onOpenChange={setSaveOpen} />}
-    </div>
+    </EmbeddedToolView>
   )
 }

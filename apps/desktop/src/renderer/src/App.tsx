@@ -27,6 +27,8 @@ import { MiniAppClipboardGuard } from '@/components/MiniAppClipboardGuard'
 import { MiniAppMediaIndicator } from '@/components/miniapp/MiniAppMediaIndicator'
 import { MiniWindowHeader } from '@/components/MiniWindowApp'
 import { MiniAppHostLayer } from '@/components/miniapp/MiniAppHostLayer'
+import { McpAppHostLayer } from '@/components/mcp-apps/McpAppHostLayer'
+import { useMcpAppLayout } from '@/components/mcp-apps/layout-store'
 import { BrowserHostLayer } from '@/components/browser/BrowserHostLayer'
 import { DeviceHostLayer } from '@/components/device/DeviceHostLayer'
 import { Z } from '@/lib/z-layers'
@@ -388,6 +390,7 @@ function App(): React.JSX.Element {
   const clampPanelsRef = useRef<() => void>(() => {})
   const sidebarRef = useRef<HTMLDivElement>(null)
   const sidebarInnerRef = useRef<HTMLDivElement>(null)
+  const mcpFullscreen = useMcpAppLayout(state => Object.values(state.views).some(view => view.mode === 'fullscreen'))
   const mainWrapperRef = useRef<HTMLDivElement>(null)
 
   const getLinkedPanel = useCallback((newW: number, prevW: number) => {
@@ -554,6 +557,7 @@ function App(): React.JSX.Element {
         >
           <div className="text-sm">{t('common.loading')}</div>
         </div>
+        <McpAppHostLayer boundary={mainWrapperRef} />
         <MiniAppHostLayer />
         <BrowserHostLayer />
         <ComputerUseHostLayer />
@@ -593,6 +597,7 @@ function App(): React.JSX.Element {
             </Suspense>
           )}
         </div>
+        <McpAppHostLayer boundary={mainWrapperRef} />
         <MiniAppHostLayer />
         <BrowserHostLayer />
         <ComputerUseHostLayer />
@@ -635,7 +640,7 @@ function App(): React.JSX.Element {
 
       {/* Main area wrapper — windowed: floating glass card; fullscreen: edge-flush
           (keep left radius only while the sidebar is open to soften that seam). */}
-      <div ref={mainWrapperRef} className={cn(
+      <div ref={mainWrapperRef} data-main-content style={{ zIndex: mcpFullscreen ? Z.HOST_MCP_APP_FULLSCREEN : undefined }} className={cn(
         'relative z-20 flex min-w-0 flex-1 overflow-hidden bg-card',
         compactMiniShell
           ? 'rounded-none border-0 shadow-none'
@@ -767,7 +772,8 @@ function App(): React.JSX.Element {
       {import.meta.env.DEV && <DebugPanel />}
       </div>
     </div>
-    <MiniAppHostLayer />
+    <McpAppHostLayer boundary={mainWrapperRef} />
+        <MiniAppHostLayer />
     <BrowserHostLayer />
     <ComputerUseHostLayer />
     <DeviceHostLayer />

@@ -15,6 +15,12 @@ function frameUrl(frame: WebFrameMain | null | undefined): string {
 
 /** Native boundary for every chat window; cancellation happens before network navigation. */
 export function attachMcpAppFrameGuards(contents: WebContents, resources: McpAppResourceRegistry = mcpAppResources): void {
+  // Cross-origin iframe key events never bubble to the shell DOM. Relay only this
+  // host UI shortcut from native input; it does not grant the View a native API.
+  contents.on('before-input-event', (_event, input) => {
+    const url = frameUrl(contents.focusedFrame)
+    if (input.type === 'keyDown' && input.key === 'Escape' && isMcpAppUrl(url)) contents.send('mcpApp:escape', { url })
+  })
   const documents = new Map<number, string>()
   const previousUrl = (frame: WebFrameMain | null | undefined): string => {
     if (!frame) return ''

@@ -16,6 +16,7 @@
  *    40  MOSAIC_DROP                 single-session drop overlay
  *    45  HOST_BROWSER_EXPANDED       browser host layer, overlay open
  *    46  HOST_DEVICE_EXPANDED        device host layer, overlay open
+ *    47  HOST_MCP_APP_FULLSCREEN     MCP View over the main content area
  *  ┌ 50  MODAL ───────────────────── pinned; see below
  *   198  PLAN_MARKER                 plan-review underline strokes
  *   200  PLAN_STICKY                 plan-review sticky buttons
@@ -64,6 +65,7 @@ export const Z = {
   HOST_DEVICE: 40,
   HOST_BROWSER_EXPANDED: 45,
   HOST_DEVICE_EXPANDED: 46,
+  HOST_MCP_APP_FULLSCREEN: 47,
 
   // Layout affordances that ride along with the host layers.
   MOSAIC_DROP: 40,

@@ -7,6 +7,7 @@ import { createMcpAppHost, createMcpAppHostSlot, type McpAppHost, type McpAppHos
 import { createMcpAppDocument } from '@superone/shared/mcp-apps-host/document'
 import { createMcpAppTransport } from '@superone/shared/mcp-apps-host/transport'
 import type { McpAppDesktopApi } from './desktop-executor'
+import { useMcpAppLayout } from './layout-store'
 
 export interface McpAppFrameProps {
   app: ToolAppAttachment; meta: McpUiResourceMeta; registration: McpAppDocumentRegistration; api: McpAppDesktopApi
@@ -15,14 +16,22 @@ export interface McpAppFrameProps {
   onError(error: unknown): void; onUnknown(): void; onRevoked(): void; onHeight(height: number): void
 }
 
-/** This component and its iframe stay mounted when the display mode changes. */
+/** Store-owned imperative iframe: React never removes it while changing surfaces. */
 export default function McpAppFrame(props: McpAppFrameProps) {
-  const iframe = useRef<HTMLIFrameElement>(null)
   const hostRef = useRef<McpAppHost | null>(null)
   const slot = useRef<ReturnType<typeof createMcpAppHostSlot> | null>(null)
   const latest = useRef(props); latest.current = props
   useLayoutEffect(() => {
-    const element = iframe.current!
+    const element = window.document.createElement('iframe')
+    element.title = `${props.app.binding.server} MCP App`
+    element.dataset.mcpAppFrame = props.app.appInstanceId
+    element.sandbox.value = 'allow-scripts allow-same-origin allow-forms'
+    element.allow = ''; element.referrerPolicy = 'no-referrer'
+    element.className = 'block h-full w-full border-0'
+    const releaseFrame = useMcpAppLayout.getState().frame(props.app.appInstanceId, element, () => {
+      hostRef.current?.revoke(); latest.current.onRevoked()
+      void props.api.mcpAppRelease(props.registration.id).catch(() => {})
+    })
     const document = createMcpAppDocument()
     const host = createMcpAppHost({ app: latest.current.app, executor: latest.current.executor,
       transport: createMcpAppTransport(element.contentWindow!, props.registration.origin, window, document), document,
@@ -49,11 +58,11 @@ export default function McpAppFrame(props: McpAppFrameProps) {
       unsubscribe(); element.removeEventListener('load', load)
       host.revoke(); void slot.current!.release(host)
       hostRef.current = null; latest.current.onHost(null)
+      releaseFrame()
     }
   }, [props.registration.id, props.api])
   useLayoutEffect(() => { if (props.active) hostRef.current?.activate() }, [props.active])
   useLayoutEffect(() => { void hostRef.current?.update(props.app).catch(props.onError) }, [props.app, props.onError])
   useLayoutEffect(() => { hostRef.current?.updateContext(props.context) }, [props.context])
-  return <iframe ref={iframe} title={`${props.app.binding.server} MCP App`} data-mcp-app-frame={props.app.appInstanceId}
-    sandbox="allow-scripts allow-same-origin allow-forms" allow="" referrerPolicy="no-referrer" className="h-full w-full border-0" />
+  return null
 }

@@ -209,6 +209,11 @@ ipcRenderer.on(
 )
 
 const environmentAPI = {
+  onMcpAppEscape: (callback: (event: { url: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: { url: string }) => callback(data)
+    ipcRenderer.on('mcpApp:escape', listener)
+    return () => { ipcRenderer.removeListener('mcpApp:escape', listener) }
+  },
   mcpAppRequest: (projectPath: string, sessionId: string, request: import('@superone/shared/mcp-apps').McpAppViewRequest, context?: import('@superone/shared/mcp-apps-desktop').McpAppDesktopRequestContext) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_APP_HOST_REQUEST, projectPath, sessionId, request, context) as Promise<import('@superone/shared/mcp-apps').McpAppHostResult>,
   mcpAppRegister: (projectPath: string, sessionId: string, target: { appInstanceId: string; messageId?: string }) =>

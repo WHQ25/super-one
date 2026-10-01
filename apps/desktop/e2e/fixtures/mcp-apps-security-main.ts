@@ -40,7 +40,7 @@ async function start(): Promise<void> {
       return new Response('window.fixtureProbeReached = true', { headers: { 'content-type': 'text/javascript', 'access-control-allow-origin': '*' } })
     }
     if (url.pathname === '/host.js') return new Response(readFileSync(join(directory, 'host.js')), { headers: { 'content-type': 'text/javascript' } })
-    return new Response('<!doctype html><html><head><meta charset="utf-8"></head><body><script type="module" src="/host.js"></script></body></html>', { headers: { 'content-type': 'text/html' } })
+    return new Response('<!doctype html><html><head><meta charset="utf-8"><style>iframe[data-mcp-app-frame]{display:block;width:100%;height:100%;border:0}</style></head><body><script type="module" src="/host.js"></script></body></html>', { headers: { 'content-type': 'text/html' } })
   })
   const attempts: string[] = []
   const permissions: string[] = []

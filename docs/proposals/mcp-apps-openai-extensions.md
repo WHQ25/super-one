@@ -127,6 +127,8 @@ rows.
   server is configured in only one harness, or in several.
 - Does Codex app-server expose entrypoints or plugin metadata itself? If it
   does, read them from Codex instead of re-deriving them from `tools/list`.
-- Claude does not advertise `openai/elicitation` to servers; do they fall back
-  to standard forms cleanly?
-- Phone parity for entrypoints, settings and forms.
+- Answered: servers do not reliably fall back when Claude omits
+  `openai/elicitation`. Bits & Bolts throws instead of using standard forms,
+  so OpenAI forms on Claude need the
+  [compatibility layer](mcp-apps-compat-layer.md).
+- Phone parity for entrypoints and settings (forms render on the phone).

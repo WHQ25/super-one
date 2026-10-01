@@ -1,4 +1,6 @@
 import { attachmentPrompt, buildAttachmentTurn } from '@superone/shared/attachment-turn'
+import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
+import { closeCompatSession, getCompatSession } from '../../mcp-apps/compat-registry'
 import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import type {
   AgentEvent,
@@ -375,6 +377,7 @@ export class CursorBackend implements SessionBackend {
     // decisions and survive a rebuild (approving one is what triggers it).
     this.interactions.cancelQuestions('runtime closed')
     if (runtime) await runtime.close().catch((error) => log.debug('[CursorBackend] runtime close failed:', error))
+    if (this.opts) await closeCompatSession(this.opts.sessionId)
   }
 
   async close(): Promise<void> {
@@ -400,6 +403,14 @@ export class CursorBackend implements SessionBackend {
       effort: this.effort,
     })
     if (selection) this.runtime?.setModel(selection)
+  }
+
+  async getMcpAppsProvider(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider> {
+    if (binding.session !== this.opts?.sessionId) throw new McpAppsError('invalid', 'MCP App session binding mismatch')
+    await this.ensureRuntime()
+    const compat = getCompatSession(binding.session)
+    if (!compat) throw new McpAppsError('not_connected', 'MCP Apps compatibility client unavailable')
+    return compat.provider(binding, origin)
   }
 
   async setSessionMode(modeId: string): Promise<void> {

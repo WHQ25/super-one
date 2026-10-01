@@ -3,6 +3,7 @@ import { bindLocalCallScope } from './local-call-scope'
 import { bindToolErrorLog } from './tool-error-log'
 import { McpServer, type RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { randomUUID } from 'crypto'
+import { getCompatSession } from '../mcp-apps/compat-registry'
 import { BrowserWindow } from 'electron'
 import log from '../logger'
 import { setJevRunHostEventResolver } from '../jev/run-events'
@@ -93,13 +94,15 @@ export function getAuthorizedAppsForSession(sessionId: string): Array<{
     if (entry.sessionId !== sessionId) continue
     out.push({ appId: entry.appId, tools: entry.tools })
   }
-  return out
+  return [...out, ...(getCompatSession(sessionId)?.catalog() ?? [])]
 }
 
 export function getAppToolEntryForSession(
   sessionId: string,
   appId: string,
 ): { projectDir: string; tools: MiniAppToolDefinition[] } | null {
+  const compat = getCompatSession(sessionId)?.catalog().find(app => app.appId === appId)
+  if (compat) return { projectDir: '', tools: compat.tools }
   const entry = appToolDefs.get(makeAppKey(sessionId, appId))
   if (!entry) return null
   return { projectDir: entry.projectDir, tools: entry.tools }
@@ -110,6 +113,11 @@ export function miniappToolDepsForSurface(): MiniappToolDeps {
     getAuthorizedApps: getAuthorizedAppsForSession,
     getAppEntry: getAppToolEntryForSession,
     dispatchAppToolCall,
+    dispatchCompatToolCall: async (sessionId, appId, tool, input) => {
+      const compat = getCompatSession(sessionId)
+      if (!compat?.catalog().some(app => app.appId === appId)) return null
+      return compat.call(appId, tool, input)
+    },
     isAppToolPreapproved,
     markAppToolPreapproved,
     getEmitHostEvent: (sessionId) => {

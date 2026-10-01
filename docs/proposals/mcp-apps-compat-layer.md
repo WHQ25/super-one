@@ -1,6 +1,6 @@
 # MCP Apps compatibility layer through mini-apps
 
-Status: draft · Updated: 2026-10-01
+Status: phase 1 pilot in progress · Updated: 2026-10-01
 
 Part of [mini-apps-and-mcp-apps.md](mini-apps-and-mcp-apps.md).
 
@@ -92,7 +92,7 @@ sequenceDiagram
 | Codex | Codex config | Not needed today: Codex carries the whole set | — |
 | Claude | Claude config files, read by the CLI | A per-session exclusion (`strictMcpConfig` with an explicit list, or disabled-server settings) | To verify |
 | ACP (Grok) | Shared config, pushed in `session/new` (`acp-mcp.ts`) | Omit from the pushed list | Feasible |
-| Cursor SDK | Shared config, built per session (`cursor-mcp.ts`) | Omit from `mcpServers` | Feasible |
+| Cursor SDK | Shared config, built per session (`cursor-mcp.ts`) | Omit from `mcpServers` | Local stdio pilot implemented/tested; live model turn unverified (isolated profile has no API key) |
 | OpenCode | Shared config, added with `mcp.add`; OpenCode also loads its own `opencode.json` | Omit from `mcp.add`; servers from `opencode.json` need a per-session disconnect | To verify |
 | dsh | `~/.dsh/profiles/<profile>/cordis.patch.yml` | A per-session override of the Cordis entry | To verify |
 | Remote node | `mcp-merge.ts` | Same omission on the node | To verify |
@@ -120,15 +120,34 @@ sequenceDiagram
    [mcp-apps-openai-extensions.md](mcp-apps-openai-extensions.md).
 4. Remote nodes and the phone.
 
-## 6. Open questions
+## 6. Pilot findings and open questions
 
 - How well models use App tools through `miniapp_list` / `miniapp_call`
   compared with native tool names, and whether the layer should hand the
   model a short usage note per server.
-- Whether the first turn waits for discovery, or a server is rerouted only
-  from the next session start once discovery has seen it (cached per config
-  fingerprint).
-- Where the compat client runs: in main, or in a MiniApp Host process per
-  server for crash isolation of stdio children.
-- Where the record id lives in the result when a harness keeps only text
-  content.
+- **Discovery (phase 1):** the first local Cursor turn waits for discovery,
+  bounded to 10 seconds per server. Non-App discovery is cached in memory by
+  local node/config fingerprint, including cwd for relative stdio paths, so
+  later sessions do not start a second probe. App connections are retained for
+  their session. A failure or timeout stays native for that session; HTTP/SSE
+  (including servers requiring auth) stay native in this local-only pilot.
+  Discovery includes visibility-only `_meta.ui` declarations; malformed
+  visibility grants neither the model nor the View. Cache entries validate
+  config/environment changes without adding credential values to the binding.
+- **Process (phase 1):** the compat client runs in main, lazy-loaded at local
+  Cursor use, and supervises stdio children. Moving it to a MiniApp Host for
+  crash isolation remains a later decision; Views keep the MCP App sandbox.
+- **Correlation (phase 1):** a host-generated random UUID travels as the first
+  text content block, `[superone-mcp-app:<id>]`. Cursor SDK 1.0.30 drops both
+  `structuredContent` and `_meta` and may serialize its content envelope as
+  JSON; the marker survives its summary cap. Only an exact `miniapp_call` row
+  in that session can claim its host record, once, and the host stamps that
+  row's real harness call id. No tool-name/arguments/FIFO matching. A direct
+  upstream call-id path remains open: Cursor sends only `{name, arguments}`
+  to MCP, even though its internal client holds the harness call id.
+- **Result data (phase 1):** the View reads the original complete result from
+  the host record. The MCP reply retains structured content for clients that
+  carry it, plus a bounded text summary for Cursor; private `_meta` never
+  enters the model reply.
+
+Execution and evidence: [phase 1 log](../plans/mcp-apps-compat-layer.md).

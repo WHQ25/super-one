@@ -2,6 +2,7 @@ import type { McpServerConfig as CursorMcpServerConfig } from '@cursor/sdk'
 import { toCursorMcpConfig } from '@superone/cursor'
 import { listMcpConfigs } from '../mcp-config-service'
 import { getSuperoneMcpHttpConfig } from '../mcp/superone-mcp-stdio-state'
+import { getCompatSession } from '../mcp-apps/compat-registry'
 
 export {
   toCursorMcpConfig,
@@ -20,6 +21,7 @@ export function buildCursorMcpServers(
 
   for (const config of listMcpConfigs(cwd)) {
     if (config.disabled) continue
+    if (config.name === SUPERONE_MCP_NAME || getCompatSession(superoneSessionId)?.omittedServers.has(config.name)) continue
     const mapped = toCursorMcpConfig(config)
     if (mapped) servers[config.name] = mapped
   }

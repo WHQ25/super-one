@@ -7,6 +7,7 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 import type { MiniAppToolDefinition } from '@superone/shared/miniapp-types'
 import { jsonSchemaToZodShape } from './json-schema-zod'
@@ -19,7 +20,8 @@ import {
 import { awaitMiniappCallConfirm } from './miniapp-call-confirm'
 
 export type MiniappToolReply = {
-  content: Array<{ type: 'text'; text: string }>
+  content: CallToolResult['content']
+  structuredContent?: Record<string, unknown>
   isError?: boolean
 }
 
@@ -77,6 +79,8 @@ export interface MiniappToolDeps {
   isAppToolPreapproved(appId: string, toolName: string): boolean
   /** Persist alwaysAllow for the rest of the process. */
   markAppToolPreapproved(appId: string, toolName: string): void
+  /** Compatibility calls return MCP content directly after this executor's approval. */
+  dispatchCompatToolCall?(sessionId: string, appId: string, toolName: string, args: Record<string, unknown>): Promise<MiniappToolReply | null>
   /**
    * Host event emitter for the SuperOne session. When null, non-preapproved
    * calls hard-deny (same as video_gen without a session).
@@ -222,6 +226,8 @@ export async function executeMiniappCall(
       }
     }
 
+    const compat = await deps.dispatchCompatToolCall?.(sessionId, appId, tool, parsed.data as Record<string, unknown>)
+    if (compat) return compat
     const result = await deps.dispatchAppToolCall(
       sessionId,
       entry.projectDir,

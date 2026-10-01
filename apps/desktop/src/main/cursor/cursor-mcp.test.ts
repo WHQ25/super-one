@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { McpServerConfig } from '@superone/shared/agent-types'
+import { closeCompatSession, setCompatSession, type CompatSession } from '../mcp-apps/compat-registry'
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/superone-test' },
@@ -7,7 +9,8 @@ vi.mock('electron', () => ({
   ipcMain: { handle: () => undefined },
 }))
 vi.mock('@electron-toolkit/utils', () => ({ is: { dev: true } }))
-const { httpConfig } = vi.hoisted(() => ({
+const { httpConfig, configs } = vi.hoisted(() => ({
+  configs: [] as McpServerConfig[],
   httpConfig: {
     url: 'http://127.0.0.1:60309/mcp',
     headers: { Authorization: 'Bearer test', 'X-Superone-Session': 's1' },
@@ -19,7 +22,7 @@ vi.mock('../mcp/superone-mcp-stdio-state', () => ({
   getSuperoneMcpHttpConfig: () => httpConfig,
 }))
 vi.mock('../mcp-config-service', () => ({
-  listMcpConfigs: () => [],
+  listMcpConfigs: () => configs,
 }))
 
 import { buildCursorMcpServers, stripStdioCwd, toCursorMcpConfig } from './cursor-mcp'
@@ -63,12 +66,24 @@ describe('toCursorMcpConfig', () => {
 })
 
 describe('buildCursorMcpServers', () => {
+  afterEach(async () => { configs.length = 0; await closeCompatSession('s1') })
   it('injects SuperOne over HTTP so Agent.create is not blocked on stdio IPC bring-up', () => {
     expect(buildCursorMcpServers('/proj', 's1').superone).toEqual({
       type: 'http',
       url: 'http://127.0.0.1:60309/mcp',
       headers: { Authorization: 'Bearer test', 'X-Superone-Session': 's1' },
     })
+  })
+  it('omits rerouted App servers only in their session and leaves source config untouched', () => {
+    configs.push(
+      { name: 'fixture', type: 'stdio', scope: 'project', command: 'node', args: ['fixture.ts'] },
+      { name: 'plain', type: 'stdio', scope: 'project', command: 'node', args: ['plain.ts'] },
+    )
+    const before = JSON.stringify(configs)
+    setCompatSession('s1', { omittedServers: new Set(['fixture']), close: async () => undefined } as CompatSession)
+    expect(Object.keys(buildCursorMcpServers('/proj', 's1'))).toEqual(['plain', 'superone'])
+    expect(Object.keys(buildCursorMcpServers('/proj', 's2'))).toEqual(['fixture', 'plain', 'superone'])
+    expect(JSON.stringify(configs)).toBe(before)
   })
 })
 

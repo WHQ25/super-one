@@ -1,5 +1,18 @@
 # Cursor SDK behavioral contracts
 
+## MCP App compatibility results
+
+- **Behavior:** SDK 1.0.30's MCP client sends `{name, arguments}` without the
+  harness call id, and returns only `{content, isError}` from MCP tool calls.
+  `structuredContent` and private `_meta` do not reach the model/SDK events.
+- **Observed:** Installed `dist/esm/357.js`, `McpSdkClient.callTool`; exercised
+  through the real Cursor event mapper with a stdio fixture result.
+- **Depends on it:** Desktop `mcp-apps/compat-session.ts` and `compat-records.ts`.
+  The first text block carries the host record id; the View reads original
+  structured/private data from that record. The model gets a bounded text
+  summary of structured output.
+- **Guard:** Desktop `compat-session.test.ts` and `compat-records.test.ts`.
+
 ## Exclusive live content sources
 
 - **Behavior:** `onDelta` and `Run.stream()` can describe the same live output.

@@ -21,7 +21,8 @@ surfaces (`widget_show`, mini-apps) keep their own contracts.
 |---|---|---|
 | Codex app-server (0.159) | Native | UI extension in `initialize`; item `mcpAppUi` (or `mcpAppResourceUri`) plus full result; `mcpServer/resource/read` and `mcpServer/tool/call` routed by `threadId`; `mcpServer/oauth/login`. Hosted `codex_apps` connectors are not supported. |
 | Claude Agent SDK (0.3.285) | Native | `CLAUDE_CODE_MCP_APPS_HOST=true` in the spawn env; tool UI metadata from `mcpServerStatus()`; result from `tool_use_result`; `readMcpResource()`; View tool calls through the internal `mcp_call` control request. |
-| Others | Unsupported | The tool row shows the text result. A compatibility layer through mini-apps is proposed in [proposals/mcp-apps-compat-layer.md](../proposals/mcp-apps-compat-layer.md). |
+| Cursor (desktop local stdio pilot) | Compatibility | Session discovery omits connected App servers from Cursor's MCP list and exposes their model-visible tools via `miniapp_list` / `miniapp_call`. A host record carries the full result to the same View/executor. Source configs stay untouched; cloud, remote nodes, HTTP and OAuth are not included in the pilot. |
+| Others | Unsupported | The tool row shows the text result. Broader rerouting is planned in [proposals/mcp-apps-compat-layer.md](../proposals/mcp-apps-compat-layer.md). |
 
 Upstream behavior we rely on is recorded per harness: Claude
 [api-surface](../harness/claude/api-surface.md) and
@@ -61,8 +62,10 @@ Upstream behavior we rely on is recorded per harness: Claude
 - **Host state survives provider completion**: streaming and final item snapshots
   merge the resource, presentation and model context from the same App origin.
   Native lifecycle fields still advance normally.
-- **Correlation** is by the harness item id only, never guessed from the tool
-  name or arguments.
+- **Correlation** uses native harness item ids, or a host-authored random record
+  id carried in the compatibility result's first text block and claimed once
+  by that session's actual `miniapp_call` row. It is never guessed from tool
+  names or arguments.
 
 `packages/runtime/src/mcp-apps/provider-rpc.ts`
 (`dispatchMcpAppsProviderRequest`) is the single provider dispatch gate for

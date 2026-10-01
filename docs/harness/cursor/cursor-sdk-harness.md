@@ -78,6 +78,14 @@ MCP endpoint. HTTP avoids the stdio bridge's initialization wait on the first
 turn. The full SuperOne tool catalog is therefore **MCP**, not a copied custom
 SDK tool catalog.
 
+For local stdio MCP App servers, desktop performs bounded discovery before
+prewarm/create and reroutes connected App servers through `miniapp_list` /
+`miniapp_call` for that session. The source config stays untouched. Ordinary
+servers stay native and their discovery is cached. The compatibility provider
+supplies resource reads and View calls through the shared MCP Apps executor;
+agent calls use the existing mini-app approval gate. Cloud and remote-node
+sessions keep their existing paths. See [MCP Apps](../../features/mcp-apps.md).
+
 Local custom tools provide session metadata and the awaiting question bridge
 (`superone_ask_user_question`). They are not exposed to cloud agents. A completed
 `createPlan` call triggers host plan review; the backend owns the follow-up

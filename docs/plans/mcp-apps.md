@@ -464,3 +464,15 @@ documents require Restart.
 Verification: 9 native IPC, 3 desktop executor and 5 View lifecycle tests pass;
 shared host checks and desktop node/web typechecks pass. Colocated Storybook
 coverage and browser interaction evidence follow in the next commit.
+
+Desktop View stories are colocated at
+`apps/desktop/src/renderer/src/components/mcp-apps/McpAppView.stories.tsx`.
+Loading, live, restored snapshot, restored without snapshot, consent, auth,
+error/retry, unknown outcome, revoked/restart, long, narrow, light and dark use
+the production View and a wire-protocol fixture. Five real Chromium tests prove
+AppBridge initialization, approved pagination, passive restore/activation,
+auth/load retry, revocation/restart, unknown outcome, width and height bounds.
+Command: `MCP_APPS_STORYBOOK_URL=http://localhost:6006 bunx playwright test
+ e2e/mcp-apps-stories.spec.ts --reporter=line --output=/private/tmp/mcp-apps-story-results`.
+Chromium needed sandbox escalation for macOS MachPort registration. These are
+renderer interaction checks; the native scheme is covered by the Electron suite.

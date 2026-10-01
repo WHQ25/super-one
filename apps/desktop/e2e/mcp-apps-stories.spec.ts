@@ -1,0 +1,61 @@
+import { test, expect } from '@playwright/test'
+const base = process.env.MCP_APPS_STORYBOOK_URL
+test.skip(!base, 'Start the development Storybook and set MCP_APPS_STORYBOOK_URL')
+async function open(page: import('@playwright/test').Page, story: string) {
+  await page.goto(`${base}/iframe.html?id=chat-mcp-apps--${story}&viewMode=story`)
+  return page.frameLocator('iframe[data-mcp-app-frame]')
+}
+test('live App initializes, confirms a call and updates the same document', async ({ page }) => {
+  const view = await open(page, 'live')
+  await expect(view.locator('#status')).toHaveText('page 1/4')
+  const src = await page.locator('iframe[data-mcp-app-frame]').getAttribute('src')
+  await view.getByRole('button', { name: 'Next page' }).click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+  await page.getByRole('button', { name: 'Allow Once', exact: true }).click()
+  await expect(view.locator('#status')).toHaveText('page 2/4')
+  expect(await page.locator('iframe[data-mcp-app-frame]').getAttribute('src')).toBe(src)
+})
+test('restored snapshot paints and gates calls until Activate', async ({ page }) => {
+  const view = await open(page, 'restored-inactive')
+  await expect(view.locator('#status')).toHaveText('page 1/4')
+  await view.getByRole('button', { name: 'Next page' }).click()
+  await expect(view.locator('#log')).toContainText('Activate this restored')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Activate', exact: true }).click()
+  await view.getByRole('button', { name: 'Next page' }).click()
+  await page.getByRole('button', { name: 'Allow Once', exact: true }).click()
+  await expect(view.locator('#status')).toHaveText('page 2/4')
+})
+test('auth, loading retry and missing snapshot remain actionable', async ({ page }) => {
+  let view = await open(page, 'auth-required')
+  await page.getByRole('button', { name: 'Sign In', exact: true }).click()
+  await expect(view.locator('#status')).toHaveText('page 1/4')
+  view = await open(page, 'error-retry')
+  await page.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(view.locator('#status')).toHaveText('page 1/4')
+  view = await open(page, 'restored-without-snapshot')
+  await expect(page.locator('iframe[data-mcp-app-frame]')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Activate', exact: true }).click()
+  await expect(view.locator('#status')).toHaveText('page 1/4')
+})
+test('unknown and revoked states do not replay a mutation', async ({ page }) => {
+  await open(page, 'unknown-outcome')
+  await expect(page.getByText('The tool may have completed', { exact: false })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0)
+  const view = await open(page, 'revoked-restart')
+  await expect(view.locator('#status')).toHaveText('page 1/4')
+  await page.getByRole('button', { name: 'Simulate Navigation' }).click()
+  await expect(page.getByRole('button', { name: 'Restart', exact: true })).toBeVisible()
+  await expect(page.locator('[data-mcp-app-surface]')).toBeHidden()
+  await page.getByRole('button', { name: 'Restart', exact: true }).click()
+  await expect(view.locator('#status')).toHaveText('page 1/4')
+})
+test('narrow and long content fit in both themes', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 })
+  for (const story of ['narrow', 'long-content', 'light', 'dark']) {
+    const view = await open(page, story)
+    await expect(view.locator('#status')).toHaveText('page 1/4')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    expect(await page.locator('[data-mcp-app-surface]').evaluate(el => el.getBoundingClientRect().height)).toBeLessThanOrEqual(600)
+  }
+})

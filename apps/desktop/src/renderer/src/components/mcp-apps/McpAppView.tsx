@@ -11,6 +11,11 @@ import { Skeleton } from '@superone/ui/components/ui/skeleton'
 import { useChatStore, useSessionScope } from '@/stores/chat'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { useSlotBounds } from '@/hooks/useSlotBounds'
+import { useActivityPanelStore } from '@/stores/activity-panel'
+import { miniAppPipViewport } from '@/components/miniapp/miniapp-pip-layout'
+import { useMcpAppLayout } from './layout-store'
+import { useMcpAppDisplayMode } from './use-display-mode'
+import { McpAppPip, type McpAppPipSurface } from './McpAppPip'
 import { Z } from '@/lib/z-layers'
 import { createDesktopMcpAppExecutor, type McpAppConsent, type McpAppDesktopApi, type McpAppRoute } from './desktop-executor'
 import { McpAppConsent as ConsentDialog, type PendingMcpConsent } from './McpAppConsent'
@@ -23,6 +28,13 @@ export default function McpAppView({ app, route: explicitRoute, api: explicitApi
   const scope = useSessionScope()
   const projectPath = useChatStore(state => Object.entries(state.projectSessions).find(([, project]) => !!project._sessions[app.binding.session])?.[0])
   const route = useMemo(() => explicitRoute ?? { projectPath: scope?.sessionId === app.binding.session ? scope.projectPath : projectPath ?? '', sessionId: app.binding.session }, [explicitRoute, scope?.sessionId, scope?.projectPath, projectPath, app.binding.session])
+  const { mode, modes, setModes, request: requestMode } = useMcpAppDisplayMode(app.appInstanceId, app.binding.server)
+  const panelSlot = useMcpAppLayout(state => state.slots[app.appInstanceId])
+  const panelShown = useActivityPanelStore(state => state.showPanel)
+  const panelWidth = useActivityPanelStore(state => state.panelWidth)
+  const panelHeight = useActivityPanelStore(state => state.bounds?.height)
+  const viewport = useMemo(() => miniAppPipViewport(panelWidth, panelHeight), [panelWidth, panelHeight])
+  const [pipSurface, setPipSurface] = useState<McpAppPipSurface | null>(null)
   const api = explicitApi ?? window.environment
   const [ready, setReady] = useState<Ready | null>(null)
   const [loading, setLoading] = useState(true)
@@ -40,6 +52,7 @@ export default function McpAppView({ app, route: explicitRoute, api: explicitApi
   const [clip, setClip] = useState('inset(0px)')
   const isDark = useIsDark()
   const onError = useCallback((value: unknown) => setError(value instanceof McpAppsError ? value : new McpAppsError('invalid', value instanceof Error ? value.message : String(value))), [])
+  useEffect(() => { if (mode === 'fullscreen' && !panelShown && modes.includes('pip')) void requestMode('pip', new AbortController().signal) }, [mode, panelShown, modes, requestMode])
   const consent = useCallback<McpAppConsent>((prompt, signal) => new Promise(resolve => {
     if (signal.aborted) { resolve(null); return }
     const id = crypto.randomUUID()
@@ -51,7 +64,7 @@ export default function McpAppView({ app, route: explicitRoute, api: explicitApi
   useEffect(() => {
     let cancelled = false
     let documentId: string | undefined
-    setLoading(true); setError(null); setReady(null); setRevoked(false); setUnknown(false); setInitialized(false)
+    setLoading(true); setError(null); setReady(null); setRevoked(false); setUnknown(false); setInitialized(false); setModes(['inline'])
     if (!route.projectPath) { onError(new McpAppsError('not_connected', 'MCP App session route unavailable')); setLoading(false); return }
     void api.mcpAppRegister(route.projectPath, route.sessionId, { appInstanceId: app.appInstanceId }).then(result => {
       if (!result.ok) { if (result.error.code === 'approval_required') throw new McpAppsError('denied', 'MCP App preparation requires approval'); throw new McpAppsError(result.error.code, result.error.message) }
@@ -62,7 +75,7 @@ export default function McpAppView({ app, route: explicitRoute, api: explicitApi
       } else if (!cancelled) setActive(false)
     }).catch(value => { if (!cancelled) onError(value) }).finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true; if (documentId) void api.mcpAppRelease(documentId).catch(() => {}) }
-  }, [api, route.projectPath, route.sessionId, app.appInstanceId, generation, onError])
+  }, [api, route.projectPath, route.sessionId, app.appInstanceId, JSON.stringify([app.binding, app.origin, app.resourceUri]), generation, onError, setModes])
   const activate = async (authenticate = false) => {
     setLoading(true); setError(null)
     try {
@@ -94,15 +107,20 @@ export default function McpAppView({ app, route: explicitRoute, api: explicitApi
   const context = useMemo(() => {
     const css = getComputedStyle(document.documentElement)
     return mcpAppHostContext({ theme: isDark ? 'dark' : 'light', platform: 'desktop', locale: i18n.language,
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, width: bounds?.width, maxHeight: 600,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, displayMode: mode, availableDisplayModes: ['inline', 'fullscreen', 'pip'],
+      width: mode === 'inline' ? bounds?.width : mode === 'fullscreen' ? panelSlot?.bounds.width : viewport.width,
+      maxHeight: mode === 'inline' ? 600 : mode === 'fullscreen' ? panelSlot?.bounds.height : viewport.height,
       colors: { background: css.getPropertyValue('--background').trim(), foreground: css.getPropertyValue('--foreground').trim(), muted: css.getPropertyValue('--muted').trim(), mutedForeground: css.getPropertyValue('--muted-foreground').trim(), border: css.getPropertyValue('--border').trim(), primary: css.getPropertyValue('--primary').trim() },
       fontFamily: css.fontFamily, monoFontFamily: css.getPropertyValue('--font-mono').trim(), radius: css.getPropertyValue('--radius').trim(),
     })
-  }, [isDark, i18n.language, bounds?.width])
-  const executor = useMemo(() => ready ? createDesktopMcpAppExecutor({ api, route, app, document: ready.document, consent, displayMode: async () => 'inline' }) : null, [api, route, app.appInstanceId, ready, consent])
+  }, [isDark, i18n.language, mode, bounds?.width, panelSlot?.bounds.width, panelSlot?.bounds.height, viewport])
+  const executor = useMemo(() => ready ? createDesktopMcpAppExecutor({ api, route, app, document: ready.document, consent, displayMode: requestMode }) : null, [api, route, app.appInstanceId, ready, consent, requestMode])
+  const surface = mode === 'inline' ? bounds : mode === 'fullscreen' ? (panelShown && panelSlot?.visible ? panelSlot.bounds : null) : pipSurface
+  const onMode = (next: typeof mode) => { void requestMode(next, new AbortController().signal) }
   return <div className="my-2 min-w-0 rounded-lg border border-border bg-background" data-mcp-app-view={app.appInstanceId}>
     <div className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
       <span className="min-w-0 flex-1 truncate font-medium">{app.binding.server}</span>
+      {initialized && active && !revoked && modes.filter(value => value !== mode).map(value => <Button key={value} size="sm" variant="ghost" onClick={() => onMode(value)}>{t(`mcpApp.${value}`)}</Button>)}
       {revoked ? <Button size="sm" variant="outline" onClick={() => setGeneration(value => value + 1)}>{t('mcpApp.restart')}</Button>
         : !active && !error ? <Button size="sm" variant="outline" disabled={loading} onClick={() => void activate()}>{t('mcpApp.activate')}</Button> : null}
     </div>
@@ -115,12 +133,13 @@ export default function McpAppView({ app, route: explicitRoute, api: explicitApi
     </AlertDescription></Alert>}
     {unknown && <Alert className="mb-2 rounded-none border-x-0"><AlertDescription className="text-xs">{t('mcpApp.unknown')}</AlertDescription></Alert>}
     {revoked && <p className="px-3 pb-3 text-xs text-muted-foreground">{t('mcpApp.revoked')}</p>}
-    {ready && <div ref={anchor} style={{ height: Math.max(80, Math.min(height, 600)) }} className="w-full" />}
-    {ready && executor && createPortal(<div data-mcp-app-surface={app.appInstanceId} className="fixed overflow-hidden bg-background" style={{ left: bounds?.left ?? 0, top: bounds?.top ?? 0, width: bounds?.width ?? 0, height: bounds?.height ?? 0, clipPath: clip, visibility: bounds && !revoked ? 'visible' : 'hidden', zIndex: Z.HOST_MINIAPP }}>
-      <Suspense fallback={<Skeleton className="h-full w-full" />}><Frame app={app} registration={ready.document} api={api} executor={executor} context={context} active={active}
-        onHost={value => { host.current = value }} onInitialized={() => setInitialized(true)} onError={onError} onUnknown={() => setUnknown(true)} onRevoked={() => setRevoked(true)} onHeight={setHeight} /></Suspense>
+    {ready && <div ref={anchor} style={{ height: mode === 'inline' ? Math.max(80, Math.min(height, 600)) : 0 }} className="w-full" />}
+    {ready && executor && createPortal(<div data-mcp-app-surface={app.appInstanceId} className="fixed overflow-hidden bg-background" style={{ left: surface?.left ?? 0, top: surface?.top ?? 0, width: surface?.width ?? 0, height: surface?.height ?? 0, transform: mode === 'pip' && pipSurface ? `scale(${pipSurface.scale})` : undefined, transformOrigin: 'top left', clipPath: mode === 'inline' ? clip : undefined, visibility: surface && !revoked ? 'visible' : 'hidden', zIndex: Z.HOST_MINIAPP }}>
+      <Suspense fallback={<Skeleton className="h-full w-full" />}><Frame app={app} meta={ready.meta} registration={ready.document} api={api} executor={executor} context={context} active={active}
+        onHost={value => { host.current = value }} onInitialized={available => { setModes(available); setInitialized(true) }} onError={onError} onUnknown={() => setUnknown(true)} onRevoked={() => setRevoked(true)} onHeight={setHeight} /></Suspense>
     </div>, document.body)}
     {ready && !initialized && !revoked && <span className="sr-only">{t('mcpApp.loading')}</span>}
+    {mode === 'pip' && ready && !revoked && <McpAppPip appInstanceId={app.appInstanceId} title={app.binding.server} viewport={viewport} modes={modes} onMode={onMode} onSurface={setPipSurface} />}
     <ConsentDialog pending={pending[0]} />
   </div>
 }

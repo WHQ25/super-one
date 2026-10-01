@@ -476,3 +476,17 @@ Command: `MCP_APPS_STORYBOOK_URL=http://localhost:6006 bunx playwright test
  e2e/mcp-apps-stories.spec.ts --reporter=line --output=/private/tmp/mcp-apps-story-results`.
 Chromium needed sandbox escalation for macOS MachPort registration. These are
 renderer interaction checks; the native scheme is covered by the Electron suite.
+
+### Desktop display modes: implemented
+
+View-declared fullscreen opens the Activity dock; View-declared PiP uses the
+existing placement/drag/resize primitives and the full panel viewport. One fixed
+portal owns the iframe for inline, dock and PiP; mode changes update geometry and
+host context only. The dock reports bounds/visibility; closing its tab returns to
+inline, and stale parked panels are removed. Requested CSP domains are normalized
+per directive in initialize, with no device permissions granted.
+
+The production Storybook wire fixture proves fullscreen → dock → PiP → inline
+keeps the same iframe element and page state, followed by an approved app-only
+call on the same bridge. Native fixture `0ce6e57f0` declares all three modes.
+Final dev desktop/public server/remote node acceptance remains.

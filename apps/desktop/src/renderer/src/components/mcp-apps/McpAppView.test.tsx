@@ -5,6 +5,7 @@ import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import type { McpAppFrameProps } from './McpAppFrame'
 import type { McpAppDesktopApi } from './desktop-executor'
 const frame = vi.hoisted(() => ({ props: null as McpAppFrameProps | null }))
+vi.mock('@/components/activity/activity-panel-api', () => ({ openMcpAppTab: vi.fn(), getDockApi: () => null }))
 vi.mock('@/stores/chat', () => ({ useChatStore: (fn: (s: unknown) => unknown) => fn({ projectSessions: {} }), useSessionScope: () => null }))
 vi.mock('@/hooks/useSlotBounds', () => ({ useSlotBounds: () => {} }))
 vi.mock('@/hooks/use-is-dark', () => ({ useIsDark: () => false }))

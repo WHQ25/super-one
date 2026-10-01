@@ -34,7 +34,7 @@ export function ToolGroup({ blocks, sealed = false }: ToolGroupProps) {
       blocks={blocks}
       sealed={sealed}
       getToolVerb={getToolVerb}
-      renderTool={renderDesktopTool}
+      renderTool={(block, index) => renderDesktopTool({ ...block, app: blocks.findLast((value): value is Extract<ContentBlock, { type: 'tool_result' }> => value.type === 'tool_result' && value.toolUseId === block.toolUseId && !!value.app)?.app ?? block.app }, index)}
     />
   )
 }

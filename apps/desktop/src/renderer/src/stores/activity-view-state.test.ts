@@ -9,6 +9,7 @@ const {
   mockIsDockReady,
   mockSetOnDockReady,
   mockSetShowPanel,
+  mockCloseGhostMcpAppPanels,
   mockCloseGhostMiniAppPanels,
   mockCloseGhostSideChatPanel,
   mockMaterializeOwnedBrowserTabs,
@@ -21,6 +22,7 @@ const {
   mockIsDockReady: vi.fn<() => boolean>(),
   mockSetOnDockReady: vi.fn<(cb: (() => void) | null) => void>(),
   mockSetShowPanel: vi.fn(),
+  mockCloseGhostMcpAppPanels: vi.fn<(isAlive: (key: string) => boolean) => void>(),
   mockCloseGhostMiniAppPanels: vi.fn<(isAlive: (appId: string) => boolean) => void>(),
   mockCloseGhostSideChatPanel: vi.fn<(isAlive: (sessionId: string) => boolean) => void>(),
   sideChatRef: { value: null as { sessionId: string } | null },
@@ -35,6 +37,7 @@ vi.mock('@/components/activity/activity-panel-api', () => ({
   isDockReady: mockIsDockReady,
   setOnDockReady: mockSetOnDockReady,
   setCurrentSessionIdGetter: vi.fn(),
+  closeGhostMcpAppPanels: mockCloseGhostMcpAppPanels,
   closeGhostMiniAppPanels: mockCloseGhostMiniAppPanels,
   closeGhostSideChatPanel: mockCloseGhostSideChatPanel,
   materializeOwnedBrowserTabs: mockMaterializeOwnedBrowserTabs,
@@ -82,6 +85,7 @@ beforeEach(async () => {
   mockIsDockReady.mockReset()
   mockSetOnDockReady.mockReset()
   mockSetShowPanel.mockReset()
+  mockCloseGhostMcpAppPanels.mockReset()
   mockCloseGhostMiniAppPanels.mockReset()
   mockMaterializeOwnedBrowserTabs.mockReset()
   mockShowPanel = false

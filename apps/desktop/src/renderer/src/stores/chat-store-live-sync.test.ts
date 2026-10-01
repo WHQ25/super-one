@@ -275,6 +275,18 @@ function makeSnapshotEntry(overrides: Partial<{
 }
 
 describe('syncLiveSnapshots', () => {
+  it('marks a host message as owned before a harness has emitted init_ready', () => {
+    useChatStore.setState({ activeProject: '/p', projectSessions: { '/p': {
+      ...projectExtras(), _activeSessionId: 'sid-1', _sessions: { 'sid-1': { ...createEmptySession(), sessionProvider: 'codex', preferredProvider: 'codex' } },
+    } } as never })
+    useChatStore.getState().handleAgentEvent({ type: 'message_start', sessionId: 'sid-1', projectPath: '/p',
+      message: { id: 'host-message', role: 'assistant', status: 'streaming', content: [], providerId: 'codex', createdAt: '' },
+    } as AgentEvent)
+    expect(useChatStore.getState().projectSessions['/p']._sessions['sid-1'].hostSessionOwned).toBe(true)
+    useChatStore.getState().setPreferredProvider('claude')
+    expect(useChatStore.getState().projectSessions['/p']._sessions['sid-1'].sessionProvider).toBe('codex')
+  })
+
   it('refuses a missing host-created destination instead of restoring the default harness', async () => {
     const { navigateMcpAppSession } = await import('../components/mcp-apps/session-navigation')
     useChatStore.setState({ activeProject: '/p' })

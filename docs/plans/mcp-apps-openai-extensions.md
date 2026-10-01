@@ -439,7 +439,9 @@ now clones authoritative source settings and cwd, and renderer navigation
 adopts the already-created local/node session before switching. Adoption pins
 the inherited selection in that same state update. Automatic draft defaults
 also refuse to reset any host-owned live/adopted session; an explicit user
-harness choice remains available. Remote creation finishes settings under the
+harness choice remains available. Both scoped `init_ready` and host
+`message_start` establish ownership, including a native first turn without
+an initialization event. Remote creation finishes settings under the
 existing control lease, and `session.patchSettings` has a mutation idempotency
 key.
 
@@ -460,6 +462,10 @@ It prefers the resolved presentation title and falls back to the server id.
 The display label does not alter binding identity or model text. Desktop/shared
 selection: 68 tests passed; portable View/lifecycle selection: 5 passed;
 desktop node/web and portable typechecks passed.
+Native-receipt guard follow-up: live Codex starts can omit `init_ready`; a scoped
+host `message_start` now establishes the same ownership before automatic defaults
+can run. The lifecycle/live-sync/default-policy selection passed 75 tests and
+`typecheck:web` passed.
 
 ## Phase 2: forms
 

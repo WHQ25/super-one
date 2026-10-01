@@ -347,6 +347,9 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       const targetSession = project._sessions[targetSid]
       const delta = applyEventToSession(targetSession, event)
       const updatedSession = { ...targetSession, ...delta }
+      // Some harnesses start a native turn without init_ready. A scoped host
+      // message is also authoritative receipt that this is no longer a draft.
+      if (event.type === 'message_start' && eventSessionId) updatedSession.hostSessionOwned = true
       // Stream traffic outranks a stale `idle`: a session that is still being
       // written to is streaming, whatever the last status event claimed. This
       // is what keeps Stop reachable when a harness misses a re-arm.

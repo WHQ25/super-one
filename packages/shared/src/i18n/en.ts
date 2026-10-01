@@ -820,6 +820,8 @@ export type Messages = {
         settingSourceProject: string
         settingSourceUser: string
         settingSourcePlugins: string
+        mcpAppsCompatTitle: string
+        mcpAppsCompatDescription: string
         envVarsTitle: string
         envVarsDescription: string
         envVarsPlaceholder: string
@@ -4890,6 +4892,9 @@ export const en: Messages = {
         settingSourceProject: 'Project (.cursor/)',
         settingSourceUser: 'User (~/.cursor/)',
         settingSourcePlugins: 'Plugins',
+        mcpAppsCompatTitle: 'MCP Apps Compatibility',
+        mcpAppsCompatDescription:
+          "SuperOne will launch the session's local MCP App servers itself, outside Cursor's team MCP allowlist, network controls, and any Cursor sandbox. Off by default. Changes apply at the next runtime start or rebuild; sandboxed sessions keep native routing.",
         envVarsTitle: 'Cloud env vars',
         envVarsDescription: 'KEY=value lines injected into cloud agent shells (encrypted at rest by Cursor). Names cannot start with CURSOR_.',
         envVarsPlaceholder: 'STAGING_API_TOKEN=…',

@@ -5,7 +5,8 @@ Scope: phase 1, local Cursor sessions and the MCP Apps fixture. Branch:
 
 ## Plan
 
-1. Discover local stdio App servers before Cursor receives its session list;
+1. After the user's Cursor opt-in, discover local stdio App servers before
+   Cursor receives its session list;
    retain one compat connection and omit only connected App servers. Cache
    non-App discovery by local node/config fingerprint including project cwd.
 2. Add their model-visible tools to `miniapp_list` and dispatch through the
@@ -90,13 +91,39 @@ Scope: phase 1, local Cursor sessions and the MCP Apps fixture. Branch:
   30 tests passed across five affected files; node/web typechecks and
   `git diff --check` passed. No further live model verification was attempted.
 
+## User opt-in decision (2026-10-01)
+
+- Parent relayed the user's decision: Cursor rerouting is off by default and
+  enabled manually. Added `mcpAppsCompatEnabled` to the existing `cursor-base`
+  config, shown in Settings → Harnesses → Cursor → Preferences, with en/zh
+  copy plainly describing the team MCP allowlist/network/sandbox bypass.
+- No opt-in means no compat discovery, client or server omission. Explicit
+  opt-in keeps the existing local stdio pilot, still skipping sandbox requests.
+  The existing save path marks Cursor sessions for rebuild and refreshes their
+  config; switching off closes the compat client at the next start/rebuild.
+- Parent agreed this field must not be exposed through agent config tools:
+  agents cannot enable a policy-bypass setting. Cursor base runtime preferences
+  were already absent from those registries. Added a field comment and a
+  registry rejection test to preserve that boundary; no parallel settings store.
+- SDK 1.0.30 team-policy detection remains unavailable. The opted-in path does
+  not enforce those private policies; the user accepts that disclosed boundary.
+- Settings stories cover off/on/saving, en/zh, 320px width and dark mode using
+  the production row. Live Storybook inspection checked off → on interaction,
+  280px card client/scroll width equality in en/zh narrow cases, control bounds,
+  and Chinese dark presentation with no console errors. This verifies settings
+  presentation, not the still-blocked live Cursor model/View turn.
+- Verification: 48 desktop tests passed across five affected files, plus seven
+  Cursor config tests. Node/web typechecks and `git diff --check` passed.
+  The settings preview tab and Storybook server were closed after verification.
+
 ## Remaining live checks
 
 **The Cursor live model turn is not verified.** The isolated profile has no
 Cursor User API key; the SDK's global login does not satisfy SuperOne's Cursor
 runtime. Once that profile has a key, verify all of the following:
 
-1. Start a fresh local Cursor session with the scratch fixture `.mcp.json`.
+1. Enable MCP Apps Compatibility in Cursor Preferences, save it, then start a
+   fresh local Cursor session with the scratch fixture `.mcp.json` and sandbox off.
    Confirm Cursor receives only the native servers plus SuperOne, with the
    App fixture omitted, and no user config files changed.
 2. Ask the model to discover the fixture with `miniapp_list`, inspect its

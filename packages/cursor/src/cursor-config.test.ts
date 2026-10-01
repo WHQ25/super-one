@@ -10,6 +10,12 @@ import {
 } from './cursor-config'
 
 describe('cursor-config', () => {
+  it('requires an explicit boolean opt-in for desktop MCP Apps compatibility', () => {
+    for (const value of [undefined, false, 'true', 1]) {
+      expect(readCursorConfig({ mcpAppsCompatEnabled: value }).mcpAppsCompatEnabled).toBe(false)
+    }
+    expect(readCursorConfig({ mcpAppsCompatEnabled: true }).mcpAppsCompatEnabled).toBe(true)
+  })
   it('maps Agent / Plan / Full Access honestly (sandbox is separate)', () => {
     expect(mapPermissionToCursorLocal('plan')).toEqual({
       mode: 'plan',

@@ -867,6 +867,9 @@ export const zh: Messages = {
         settingSourceProject: '项目（.cursor/）',
         settingSourceUser: '用户（~/.cursor/）',
         settingSourcePlugins: '插件',
+        mcpAppsCompatTitle: 'MCP Apps 兼容层',
+        mcpAppsCompatDescription:
+          '开启后，SuperOne 会自行启动会话的本地 MCP App 服务器，不受 Cursor 的团队 MCP 白名单、网络控制或任何 Cursor 沙箱约束。默认关闭；下次启动或重建会话运行时后生效。启用沙箱的会话仍走原生路由。',
         envVarsTitle: '云端环境变量',
         envVarsDescription: '以 KEY=value 注入云端 Agent shell（Cursor 侧加密存储）。变量名不能以 CURSOR_ 开头。',
         envVarsPlaceholder: 'STAGING_API_TOKEN=…',

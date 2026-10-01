@@ -11,6 +11,7 @@ import { useActiveSession, useChatStore } from '@/stores/chat'
 import { ProviderModelsList } from './providers/ProviderModelsList'
 import { SettingsRow, SettingsSection, settingsRowClassName } from './settings/SettingsSection'
 import { SettingsSegmentedControl } from './settings/SettingsSegmentedControl'
+import { CursorMcpAppsCompatSetting } from './CursorMcpAppsCompatSetting'
 
 type CursorAuthStatus = {
   configured: boolean
@@ -78,6 +79,7 @@ export function CursorAuthSettings({
   const [cloudAgentsLoading, setCloudAgentsLoading] = useState(false)
   const [forceRecovering, setForceRecovering] = useState(false)
   const [toolPreset, setToolPreset] = useState<ToolPreset>('default')
+  const [mcpAppsCompatEnabled, setMcpAppsCompatEnabled] = useState(false)
   const [browserLoggingIn, setBrowserLoggingIn] = useState(false)
   const [usageAgentId, setUsageAgentId] = useState('')
   const [usage, setUsage] = useState<UsageSnapshot | null>(null)
@@ -118,6 +120,7 @@ export function CursorAuthSettings({
       const config = await window.app.getCursorBaseConfig()
       setDisabledModelIds(config.disabledModelIds ?? [])
       setCloud(config.runtime === 'cloud')
+      setMcpAppsCompatEnabled(config.mcpAppsCompatEnabled === true)
       setAutoCreatePR(Boolean(config.autoCreatePR))
       setWorkOnCurrentBranch(Boolean(config.workOnCurrentBranch))
       setCloudEnvType(config.cloudEnvType ?? 'cloud')
@@ -334,6 +337,7 @@ export function CursorAuthSettings({
         cloudEnvType: cloud ? cloudEnvType : 'cloud',
         settingSources,
         toolPreset,
+        mcpAppsCompatEnabled,
         // Named presets expand at runtime; clear stored lists so they do not stick.
         tools: undefined,
         disallowedTools: undefined,
@@ -527,6 +531,7 @@ export function CursorAuthSettings({
 
       {showPreferences ? <>
       <SettingsSection>
+        <CursorMcpAppsCompatSetting enabled={mcpAppsCompatEnabled} onChange={setMcpAppsCompatEnabled} disabled={saving} />
         <SettingsRow
           label={t('settings.harnesses.cursor.toolPresetTitle')}
           description={t('settings.harnesses.cursor.toolPresetDescription')}

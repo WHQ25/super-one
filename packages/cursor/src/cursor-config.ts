@@ -26,6 +26,8 @@ export interface CursorConfig {
    */
   settingSources?: Array<'project' | 'user' | 'team' | 'mdm' | 'plugins' | 'all'>
   sandboxEnabled?: boolean
+  /** UI-only opt-in: bypasses Cursor team MCP policy. Never expose through config tools. */
+  mcpAppsCompatEnabled?: boolean
   autoReview?: boolean
   enableAgentRetries?: boolean
   useHttp1ForAgent?: boolean
@@ -191,6 +193,7 @@ export function readCursorConfig(value: unknown): CursorConfig {
         typeof s === 'string')
       : undefined,
     sandboxEnabled: typeof config.sandboxEnabled === 'boolean' ? config.sandboxEnabled : undefined,
+    mcpAppsCompatEnabled: config.mcpAppsCompatEnabled === true,
     autoReview: typeof config.autoReview === 'boolean' ? config.autoReview : undefined,
     enableAgentRetries: typeof config.enableAgentRetries === 'boolean' ? config.enableAgentRetries : undefined,
     useHttp1ForAgent: typeof config.useHttp1ForAgent === 'boolean' ? config.useHttp1ForAgent : undefined,

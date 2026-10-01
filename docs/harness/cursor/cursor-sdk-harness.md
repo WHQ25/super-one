@@ -78,8 +78,16 @@ MCP endpoint. HTTP avoids the stdio bridge's initialization wait on the first
 turn. The full SuperOne tool catalog is therefore **MCP**, not a copied custom
 SDK tool catalog.
 
-For local stdio MCP App servers, desktop performs bounded discovery before
-prewarm/create and reroutes connected App servers through `miniapp_list` /
+MCP Apps compatibility is off by default. The user can enable it under Cursor
+Preferences; the description explains that SuperOne starts local App servers
+outside Cursor's team MCP allowlist, network controls and sandbox. The SDK
+cannot expose those team policies for detection, so agent config tools cannot
+enable the setting. Changes apply on runtime start/rebuild; turning it off
+closes the previous compat client then. Sandbox requests always keep native
+routing. See [restrictions contract](contracts.md#local-mcp-restrictions-and-compatibility-routing).
+
+When opted in, desktop performs bounded discovery of local stdio MCP App servers
+before prewarm/create and reroutes connected App servers through `miniapp_list` /
 `miniapp_call` for that session. The source config stays untouched. Ordinary
 servers stay native and their discovery is cached. The compatibility provider
 supplies resource reads and View calls through the shared MCP Apps executor;

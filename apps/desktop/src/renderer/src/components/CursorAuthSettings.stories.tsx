@@ -12,6 +12,7 @@ type Scenario = {
   section: CursorSettingsSection
   configured?: boolean
   cloud?: boolean
+  mcpAppsCompatEnabled?: boolean
   cloudAgents?: 'none' | 'some' | 'long'
   models?: boolean
   width?: number
@@ -44,6 +45,7 @@ function Frame({ scenario, children }: { scenario: Scenario; children: ReactNode
       runtime: scenario.cloud ? 'cloud' : 'local',
       settingSources: ['project', 'user'],
       toolPreset: 'readonly',
+      mcpAppsCompatEnabled: scenario.mcpAppsCompatEnabled ?? false,
       cloudEnvType: 'cloud',
       repos: scenario.cloud ? [{ url: 'https://github.com/superone/superone' }] : [],
       cloudEnvVars: scenario.cloud ? { STAGING_API_TOKEN: '…' } : {},
@@ -112,6 +114,7 @@ type Story = StoryObj<typeof meta>
 export const AccountMissingKey: Story = { args: { section: 'account' } }
 export const AccountConfigured: Story = { args: { section: 'account', configured: true } }
 export const Preferences: Story = { args: { section: 'preferences', configured: true } }
+export const PreferencesCompatOn: Story = { args: { section: 'preferences', configured: true, mcpAppsCompatEnabled: true } }
 export const Models: Story = { args: { section: 'models', configured: true, models: true } }
 export const ModelsEmpty: Story = { args: { section: 'models' } }
 export const CloudOff: Story = { args: { section: 'cloud', configured: true } }

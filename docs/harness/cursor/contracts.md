@@ -21,11 +21,19 @@
   team/MCP policy query or service injection. `Cursor.me()` / `SDKUser` do not
   report team membership or controls, and SuperOne's account resources cannot
   establish that restrictions are absent. No durable team-policy cache was
-  found. Team controls therefore remain an unresolved compatibility release
-  gate; disabling the session sandbox is not proof that rerouting is permitted.
+  found. Disabling the session sandbox is not proof that rerouting is permitted.
+- **User opt-in:** Desktop rerouting defaults off. Only the person using
+  Settings → Harnesses → Cursor → Preferences can enable
+  `cursor-base.mcpAppsCompatEnabled`; agent config tools intentionally cannot.
+  The setting discloses that SuperOne starts local App servers outside Cursor's
+  team MCP allowlist, network controls and sandbox. Off means no compat probe,
+  connection or omission. Changes apply at the next runtime start/rebuild;
+  disabling closes previous compat clients then. Sandbox requests stay native
+  even when opted in. This is explicit user acceptance of the policy boundary,
+  not a claim that SuperOne can enforce Cursor's private team restrictions.
 - **Guard:** Desktop `cursor-runtime.test.ts` checks create/prewarm, existing
-  client cleanup, native list restoration, and setting precedence. Team-policy
-  detection has no supported API or asserted guarantee.
+  client cleanup, default-off discovery, native list restoration and setting
+  precedence. Team-policy detection has no supported API or asserted guarantee.
 
 ## MCP App compatibility results
 

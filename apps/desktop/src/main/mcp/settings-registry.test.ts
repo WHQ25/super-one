@@ -61,6 +61,11 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
 }
 
 describe('settings registry validation', () => {
+  it('keeps the Cursor MCP policy-bypass opt-in unavailable to agent config tools', () => {
+    const { valid, rejected } = validateChanges([{ key: 'mcpAppsCompatEnabled', value: true }], makeSettings())
+    expect(valid).toEqual([])
+    expect(rejected).toEqual([{ key: 'mcpAppsCompatEnabled', reason: 'unknown settings key' }])
+  })
   it('hides Computer Use configuration outside macOS', () => {
     expect(settingsDomainsForPlatform('darwin').some((domain) => domain.domain === 'computer-use')).toBe(true)
     expect(settingsDomainsForPlatform('win32').some((domain) => domain.domain === 'computer-use')).toBe(false)

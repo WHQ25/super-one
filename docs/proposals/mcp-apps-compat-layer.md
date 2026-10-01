@@ -42,6 +42,13 @@ name.
 - **SuperOne is the MCP client.** It advertises the UI extension and the
   OpenAI extensions it implements, reads titles, icons and capabilities, and
   injects request `_meta`, so these harnesses get the full extension set.
+- **Cursor pilot is user opt-in.** Rerouting is off by default, enabled only in
+  the existing Cursor Preferences UI, with an explicit explanation that
+  SuperOne starts local App servers outside Cursor's team MCP allowlist,
+  network controls and sandbox. SDK 1.0.30 cannot expose those team controls for
+  detection. Agent config tools cannot enable it; sandbox requests stay native
+  even with the opt-in. This user decision accepts the disclosed boundary for
+  the pilot and does not settle policy integration for later harnesses.
 
 ## 2. Flow
 
@@ -92,7 +99,7 @@ sequenceDiagram
 | Codex | Codex config | Not needed today: Codex carries the whole set | — |
 | Claude | Claude config files, read by the CLI | A per-session exclusion (`strictMcpConfig` with an explicit list, or disabled-server settings) | To verify |
 | ACP (Grok) | Shared config, pushed in `session/new` (`acp-mcp.ts`) | Omit from the pushed list | Feasible |
-| Cursor SDK | Shared config, built per session (`cursor-mcp.ts`) | Omit from `mcpServers` | Local stdio pilot implemented/tested; live model turn unverified (isolated profile has no API key) |
+| Cursor SDK | Shared config, built per session (`cursor-mcp.ts`) | Omit from `mcpServers` after user opt-in; sandbox requests stay native | Local stdio pilot implemented/tested, off by default; live model turn unverified (isolated profile has no API key) |
 | OpenCode | Shared config, added with `mcp.add`; OpenCode also loads its own `opencode.json` | Omit from `mcp.add`; servers from `opencode.json` need a per-session disconnect | To verify |
 | dsh | `~/.dsh/profiles/<profile>/cordis.patch.yml` | A per-session override of the Cordis entry | To verify |
 | Remote node | `mcp-merge.ts` | Same omission on the node | To verify |
@@ -125,8 +132,8 @@ sequenceDiagram
 - How well models use App tools through `miniapp_list` / `miniapp_call`
   compared with native tool names, and whether the layer should hand the
   model a short usage note per server.
-- **Discovery (phase 1):** the first local Cursor turn waits for discovery,
-  bounded to 10 seconds per server. Non-App discovery is cached in memory by
+- **Discovery (phase 1):** when the user opts in, the first local Cursor turn
+  waits for discovery, bounded to 10 seconds per server. Non-App discovery is cached in memory by
   local node/config fingerprint, including cwd for relative stdio paths, so
   later sessions do not start a second probe. App connections are retained for
   their session. A failure or timeout stays native for that session; HTTP/SSE
@@ -142,8 +149,12 @@ sequenceDiagram
   servers. Cursor SDK also applies organization MCP/network controls separately
   from the session sandbox. Its public API and account metadata cannot detect
   these policies; the internal dashboard service has only an in-memory cache.
-  Resolving or explicitly gating this policy gap is a release decision still
-  open, not covered by the session sandbox check. See the
+  The user chose default-off, UI-only opt-in with a plain-language disclosure
+  of the bypass. Fully native routing includes no discovery spawn while off;
+  changes take effect at the next runtime start/rebuild and close prior compat
+  clients when disabled. Automatic team-policy detection/enforcement remains
+  unavailable; future harness coverage still needs its own policy decision.
+  See the
   [Cursor contracts](../harness/cursor/contracts.md).
 - **Correlation (phase 1):** a host-generated random UUID travels as the first
   text content block, `[superone-mcp-app:<id>]`. Cursor SDK 1.0.30 drops both

@@ -20,13 +20,13 @@ vi.mock('@superone/cursor', async importOriginal => ({
 import { createCursorRuntime, prewarmCursorWorkspace, type CursorRuntimeOptions } from './cursor-runtime'
 
 const opts: CursorRuntimeOptions = {
-  sessionId: 's', cwd: '/tmp/project', config: {}, permissionMode: 'agent', onEvent: () => undefined,
+  sessionId: 's', cwd: '/tmp/project', config: { mcpAppsCompatEnabled: true }, permissionMode: 'agent', onEvent: () => undefined,
 }
 function compat(): CompatSession {
   return { omittedServers: new Set(['fixture']), close: vi.fn(async () => undefined) } as unknown as CompatSession
 }
 
-describe('desktop Cursor compatibility sandbox boundary', () => {
+describe('desktop Cursor compatibility opt-in and sandbox boundary', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     configs.push({ name: 'fixture', type: 'stdio', scope: 'project', command: 'node', args: ['fixture.ts'] })
@@ -39,6 +39,26 @@ describe('desktop Cursor compatibility sandbox boundary', () => {
     })
   })
   afterEach(async () => { configs.length = 0; await closeCompatSession('s') })
+
+  it.each([
+    ['create', createCursorRuntime, createCore], ['prewarm', prewarmCursorWorkspace, prewarmCore],
+  ] as const)('%s defaults to fully native routing without discovery', async (_name, run, core) => {
+    await run({ ...opts, config: {} })
+    expect(prepare).not.toHaveBeenCalled()
+    expect(getCompatSession('s')).toBeUndefined()
+    expect(core.mock.calls[0][0].buildMcpServers(opts.cwd, 's')).toHaveProperty('fixture')
+  })
+
+  it('closes an existing compat client and restores native routing when the opt-in flips off', async () => {
+    await createCursorRuntime(opts)
+    const previous = getCompatSession('s')!
+    prepare.mockClear()
+    await createCursorRuntime({ ...opts, config: { mcpAppsCompatEnabled: false } })
+    expect(prepare).not.toHaveBeenCalled()
+    expect(previous.close).toHaveBeenCalledOnce()
+    expect(getCompatSession('s')).toBeUndefined()
+    expect(createCore.mock.calls[1][0].buildMcpServers(opts.cwd, 's')).toHaveProperty('fixture')
+  })
 
   it.each([
     ['create', createCursorRuntime, createCore], ['prewarm', prewarmCursorWorkspace, prewarmCore],
@@ -55,12 +75,12 @@ describe('desktop Cursor compatibility sandbox boundary', () => {
   })
 
   it('honors config sandbox when the session does not override it', async () => {
-    await createCursorRuntime({ ...opts, config: { sandboxEnabled: true } })
+    await createCursorRuntime({ ...opts, config: { mcpAppsCompatEnabled: true, sandboxEnabled: true } })
     expect(prepare).not.toHaveBeenCalled()
   })
 
   it('matches SDK precedence when the session explicitly disables config sandbox', async () => {
-    await createCursorRuntime({ ...opts, config: { sandboxEnabled: true }, sandboxEnabled: false })
+    await createCursorRuntime({ ...opts, config: { mcpAppsCompatEnabled: true, sandboxEnabled: true }, sandboxEnabled: false })
     expect(prepare).toHaveBeenCalledWith('s', opts.cwd)
     const injected = createCore.mock.calls[0][0]
     expect(injected.buildMcpServers(opts.cwd, 's')).not.toHaveProperty('fixture')

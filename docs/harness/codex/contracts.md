@@ -121,6 +121,22 @@ enabled by `apps/desktop/src/main/codex/app-server-connection.ts`).
   modern field first, then the pinned schema's legacy compatibility field.
 - **Outcome:** no retry after a dispatched call whose reply is lost. The
   node transport must not automatically resend `mcpApps.provider`.
+- **Discovery cost (0.159.0, 2026-10-01):** `mcpServerStatus/list` creates
+  a discovery connection set rather than reading only the thread's live
+  connections. `detail: full` also lists resources and templates from every
+  server, including the automatic hosted `codex_apps` server. With Bits &
+  Bolts, that took 4.3–9.2 s. `toolsAndAuthOnly` took 93–151 ms after tool
+  discovery was warm, but its first hosted tool discovery still took
+  3.95–4.78 s. The protocol has no per-server inventory filter.
+  Resource reads and tool calls reuse the bound thread and took 9–27 ms.
+- **App catalog lifetime:** cache tool descriptors by connection, thread and
+  binding configuration, invalidating on reload, startup-status updates and
+  sign-in. Missing tools get one single-flight refresh, throttled to one per
+  thread every 10 s; `notLoggedIn` snapshots are not retained. The provider
+  prefers read-content `_meta.ui`; only missing UI metadata requires an
+  awaited full-inventory fallback before building the document's CSP.
+  Optional tool/server presentation loads after the HTML snapshot is ready;
+  its late update is discarded if the attachment binding changes.
 - **Guards:** `apps/desktop/src/main/mcp-apps/codex-provider.test.ts`,
   `apps/desktop/src/main/environment/node-rpc-client.test.ts`, and
   `apps/desktop/scripts/check-codex-mcp-apps.ts` (live, isolated auth copy).

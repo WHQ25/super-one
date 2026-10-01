@@ -67,6 +67,16 @@ call only tools whose `_meta.ui.visibility` includes `"app"` (missing means
 `["model","app"]`). This gate is the only one for Claude, because `mcp_call`
 runs any tool without a permission check.
 
+Codex tool discovery uses `mcpServerStatus/list` with `toolsAndAuthOnly` and
+a catalog scoped to the connection, thread and configuration. Reload,
+reconnect and sign-in invalidate it; a missing tool gets one refresh, at most
+once per thread every 10 seconds. Resource reads prefer content `_meta.ui`.
+Servers with list-only UI metadata use a separate full-inventory fallback,
+awaited before the document's security policy is built. This avoids listing
+unrelated hosted connector resources on ordinary View requests.
+Tool/server titles and icons hydrate after the HTML snapshot becomes ready;
+the host re-checks the attachment binding before applying a late update.
+
 ## Host executor
 
 `apps/desktop/src/main/mcp-apps/executor.ts` (`executeMcpAppHostRequest`) is

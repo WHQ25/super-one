@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { McpAppExecutor, type McpAppExecutorPorts, type McpAppResolvedTarget } from './executor-core'
 import { McpAppsError, MCP_APP_MIME_TYPE, type McpAppHostOperation, type McpAppHostRequest, type McpAppHostResult, type McpAppRequester, type McpToolDescriptor, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { findMcpAppAttachment, updateMcpAppAttachments } from '@superone/shared/mcp-apps-state'
+import { dispatchMcpAppsProviderRequest } from '@superone/runtime/mcp-apps/provider-rpc'
 import type { ChatMessage } from '@superone/shared/agent-types'
 
 const APP: ToolAppAttachment = { appInstanceId: 'view', binding: { node: 'local', session: 's', server: 'fixture', account: 'account', configGeneration: 0, configFingerprint: 'config' },
@@ -17,12 +18,14 @@ function setup(options: { snapshot?: boolean; fresh?: boolean; tools?: McpToolDe
   let messages: ChatMessage[] = [{ id: 'm', role: 'assistant', status: 'complete', createdAt: '', providerId: 'claude', content: [{ type: 'tool_result', toolUseId: 'call', summary: '', app }] }]
   let now = 1000
   const target = (): McpAppResolvedTarget => ({ ref: { environmentId: 'local', sessionId: 's' }, node: 'local', projectPath: '/project', ...findMcpAppAttachment(messages, 'view')! })
-  const provider = vi.fn<McpAppExecutorPorts['provider']>(async (_target, operation) => {
-    if (operation.operation === 'ready') return { ok: true, value: { mode: 'native', resourceRead: true, toolCall: true } }
-    if (operation.operation === 'tools') return { ok: true, value: options.tools ?? [{ name: 'next_page', _meta: { ui: { visibility: ['app'] } } }] }
-    if (operation.operation === 'readResource') return { ok: true, value: { contents: [{ uri: operation.uri, mimeType: MCP_APP_MIME_TYPE, text: '<html>fresh</html>', _meta: { ui: { prefersBorder: true } } }] } }
-    return { ok: true, value: { result: { content: [{ type: 'text', text: 'page 2' }], isError: false }, outcome: 'completed' } }
-  })
+  const tools = vi.fn(async () => new Map<string, McpToolDescriptor>((options.tools ?? [{ name: 'next_page', _meta: { ui: { visibility: ['app'] } } }]).map(tool => [tool.name, tool])))
+  const callTool = vi.fn(async () => ({ result: { content: [{ type: 'text', text: 'page 2' }], isError: false }, outcome: 'completed' as const }))
+  const provider = vi.fn<McpAppExecutorPorts['provider']>((target, operation, abort) => dispatchMcpAppsProviderRequest({ ...operation, binding: target.app.binding, origin: target.app.origin! }, {
+    binding: target.app.binding, tools, callTool,
+    async ready() { return { mode: 'native', resourceRead: true, toolCall: true } },
+    async readResource(req) { return { contents: [{ uri: req.uri, mimeType: MCP_APP_MIME_TYPE, text: '<html>fresh</html>', _meta: { ui: { prefersBorder: true } } }] } },
+    dispose() {},
+  }, abort))
   const ports: McpAppExecutorPorts = {
     resolve: vi.fn(async () => target()), provider,
     persist: vi.fn(async (_target, update) => { messages = updateMcpAppAttachments(messages, 'view', update) }),
@@ -32,7 +35,7 @@ function setup(options: { snapshot?: boolean; fresh?: boolean; tools?: McpToolDe
   if (options.fresh) executor.observeLive(target().ref, app)
   const request = (operation: McpAppHostOperation = CALL, approval?: McpAppHostRequest['approval']): McpAppHostRequest => ({ sessionKey: 'local:s', appInstanceId: 'view', messageId: 'm', ...operation, ...(approval ? { approval } : {}) })
   const run = (operation: McpAppHostOperation = CALL, approval?: McpAppHostRequest['approval'], requester = REQUESTER) => executor.execute(request(operation, approval), requester, signal())
-  return { executor, ports, provider, run, request, target, change: (patch: Partial<ToolAppAttachment>) => { messages = messages.map(message => ({ ...message, content: message.content.map(block => 'app' in block && block.app ? { ...block, app: { ...block.app, ...patch } } : block) })) }, advance: (ms: number) => { now += ms } }
+  return { executor, ports, provider, tools, callTool, run, request, target, change: (patch: Partial<ToolAppAttachment>) => { messages = messages.map(message => ({ ...message, content: message.content.map(block => 'app' in block && block.app ? { ...block, app: { ...block.app, ...patch } } : block) })) }, advance: (ms: number) => { now += ms } }
 }
 
 function challenge(result: McpAppHostResult): string {
@@ -103,7 +106,7 @@ describe('MCP App host executor', () => {
     await s.run({ operation: 'activate' })
     const loaded = await s.run({ operation: 'load' })
     expect(loaded).toMatchObject({ ok: true, value: { html: '<html>fresh</html>', meta: { prefersBorder: true } } })
-    expect(s.ports.persist).toHaveBeenCalledOnce()
+    expect(vi.mocked(s.ports.persist).mock.calls.filter(([, update]) => update.resource)).toHaveLength(1)
     s.provider.mockClear()
     expect(await s.run({ operation: 'load' })).toEqual(loaded)
     expect(s.provider).not.toHaveBeenCalled()
@@ -113,7 +116,30 @@ describe('MCP App host executor', () => {
     const s = setup({ fresh: true, tools: [{ name: 'library', title: 'Library', serverInfo: { title: 'CAD', icons: [{ src: 'https://example.com/cad.png' }] } }] })
     s.change({ toolName: 'library' })
     await s.run({ operation: 'load' })
-    expect(s.target().app.presentation).toEqual({ toolTitle: 'Library', serverTitle: 'CAD', icons: [{ src: 'https://example.com/cad.png' }] })
+    await vi.waitFor(() => expect(s.target().app.presentation).toEqual({ toolTitle: 'Library', serverTitle: 'CAD', icons: [{ src: 'https://example.com/cad.png' }] }))
+  })
+
+  it.each([false, true])('paints before slow presentation discovery and discards changed bindings (%s)', async changeBinding => {
+    const s = setup({ fresh: true })
+    let finish!: (tools: Map<string, McpToolDescriptor>) => void
+    s.tools.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    s.change({ toolName: 'library' })
+    expect(await s.run({ operation: 'load' })).toMatchObject({ ok: true, value: { html: '<html>fresh</html>' } })
+    expect(s.target().app.resource?.meta).toEqual({ prefersBorder: true })
+    expect(s.target().app.presentation).toBeUndefined()
+    if (changeBinding) s.change({ binding: { ...APP.binding, configFingerprint: 'new-config' } })
+    finish(new Map([['library', { name: 'library', title: 'Library' }]]))
+    await vi.waitFor(() => expect(s.tools).toHaveResolved())
+    if (changeBinding) expect(s.target().app.presentation).toBeUndefined()
+    else await vi.waitFor(() => expect(s.target().app.presentation?.toolTitle).toBe('Library'))
+  })
+
+  it('keeps valid resource HTML when optional presentation discovery fails', async () => {
+    const s = setup({ fresh: true })
+    s.tools.mockRejectedValue(new Error('Catalog unavailable'))
+    expect(await s.run({ operation: 'load' })).toMatchObject({ ok: true, value: { html: '<html>fresh</html>' } })
+    await expect(s.tools.mock.results[0].value).rejects.toThrow('Catalog unavailable')
+    expect(s.target().app.resource?.html).toBe('<html>fresh</html>')
   })
 
   it('allows a new live attachment to load automatically', async () => {
@@ -137,10 +163,10 @@ describe('MCP App host executor', () => {
     expect(await s.run(CALL, undefined, requester)).toMatchObject({ ok: true, value: { outcome: 'completed' } })
     expect(s.ports.persist).not.toHaveBeenCalled()
     s.provider.mockClear()
-    const original = s.provider.getMockImplementation()!
-    s.provider.mockImplementation(async (target, op, abort) => op.operation === 'tools' ? { ok: true, value: [{ name: 'next_page', _meta: { ui: { visibility: ['model'] } } }] } : original(target, op, abort))
+    expect(s.tools).toHaveBeenCalledTimes(1)
+    s.tools.mockResolvedValue(new Map([['next_page', { name: 'next_page', _meta: { ui: { visibility: ['model'] } } }]]))
     expect(await s.run(CALL, undefined, requester)).toMatchObject({ ok: false, error: { code: 'denied' } })
-    expect(s.provider.mock.calls.some(([, op]) => op.operation === 'callTool')).toBe(false)
+    expect(s.callTool).toHaveBeenCalledTimes(1)
   })
 
   it('consumes a challenge exactly once, including simultaneous confirmations', async () => {
@@ -220,10 +246,9 @@ describe('MCP App host executor', () => {
 
   it('cancels before dispatch if the document dies during catalog resolution', async () => {
     const s = setup({ fresh: true }); const controller = new AbortController()
-    const original = s.provider.getMockImplementation()!
-    s.provider.mockImplementation(async (target, operation, abort) => { if (operation.operation === 'tools') controller.abort(); return original(target, operation, abort) })
+    s.tools.mockImplementation(async () => { controller.abort(); return new Map([['next_page', { name: 'next_page' }]]) })
     expect(await s.executor.execute(s.request(CALL), REQUESTER, controller.signal)).toMatchObject({ ok: false, error: { code: 'cancelled' } })
-    expect(s.provider.mock.calls.some(([, op]) => op.operation === 'callTool')).toBe(false)
+    expect(s.callTool).not.toHaveBeenCalled()
   })
 
   it('keeps a completed isError tool result and its private View metadata intact', async () => {

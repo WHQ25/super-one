@@ -69,23 +69,28 @@ export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: st
       throw new McpAppsError(mutates ? 'unknown_outcome' : /timed? ?out|timeout/i.test(message) ? 'timeout' : 'not_connected', message)
     }
   }
-  const catalog = () => codexMcpAppsCatalog(connectionKey, JSON.stringify([threadId, binding]), async () => {
+  const catalog = (detail: 'toolsAndAuthOnly' | 'full' = 'toolsAndAuthOnly', refresh = false) => codexMcpAppsCatalog(connectionKey, JSON.stringify([threadId, binding, detail]), async () => {
     guard()
     let cursor: unknown
     const output: Record<string, unknown>[] = []
     for (let page = 0; page < 100; page++) {
-      const result = await invoke('mcpServerStatus/list', { detail: 'full', ...(cursor ? { cursor } : {}) })
+      const result = await invoke('mcpServerStatus/list', { detail, ...(cursor ? { cursor } : {}) })
       output.push(...(Array.isArray(result.data) ? result.data : []).map(record).filter((s): s is Record<string, unknown> => !!s))
       cursor = result.nextCursor
       if (!cursor) return output
     }
     throw new McpAppsError('invalid', 'MCP tool discovery exceeded pagination limit')
-  })
-  const tools = async () => {
+  }, refresh ? threadId : undefined)
+  const tools: McpAppsProvider['tools'] = async (options) => {
     guard()
-    const server = (await catalog()).find(s => s.name === binding.server)
+    const server = (await catalog('toolsAndAuthOnly', options?.refresh)).find(s => s.name === binding.server)
     const output = new Map<string, McpToolDescriptor>()
-    if (server?.authStatus === 'notLoggedIn') throw new McpAppsError('auth_required', 'MCP authentication required')
+    if (server?.authStatus === 'notLoggedIn') {
+      // Login completion is observed by tools() polling, so never retain a
+      // pre-login snapshot while the harness finishes its OAuth callback.
+      invalidateCodexMcpAppsCatalog(connectionKey)
+      throw new McpAppsError('auth_required', 'MCP authentication required')
+    }
     const entries = record(server?.tools)
     for (const [name, value] of Object.entries(entries ?? {})) {
       const tool = record(value)
@@ -106,13 +111,21 @@ export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: st
       if (!req.uri.startsWith('ui://')) throw new McpAppsError('invalid', 'MCP App resources must use ui://')
       // originCallId is deliberately omitted for public third-party servers.
       guard(signal, req.origin)
-      const server = (await catalog()).find(entry => entry.name === binding.server)
-      const resource = (Array.isArray(server?.resources) ? server.resources : []).map(record).find(entry => entry?.uri === req.uri)
-      const listMeta = record(resource?._meta)
       const result = await invoke('mcpServer/resource/read', { uri: req.uri }, signal, req.origin, false, req.transient ? MCP_APP_OUTPUT_MAX_BYTES : MCP_APP_HTML_MAX_BYTES + MCP_APP_DATA_MAX_BYTES)
-      const contents = (Array.isArray(result.contents) ? result.contents : []).map(value => {
+      const rawContents = Array.isArray(result.contents) ? result.contents : []
+      let listMeta: Record<string, unknown> | undefined
+      if (rawContents.some(value => record(value)?.uri === req.uri && !record(record(record(value)?._meta)?.ui))) {
+        // Read-content UI metadata is authoritative. Full discovery also lists
+        // resources/templates from unrelated hosted connectors and can take
+        // seconds; use it only for servers that put UI metadata on the list entry.
+        const server = (await catalog('full')).find(entry => entry.name === binding.server)
+        const resource = (Array.isArray(server?.resources) ? server.resources : []).map(record).find(entry => entry?.uri === req.uri)
+        listMeta = record(resource?._meta)
+      }
+      const contents = rawContents.map(value => {
         const content = value as McpAppReadResult['contents'][number]
         const meta = record(content._meta)
+        if (record(meta?.ui)) return content
         const ui = { ...record(listMeta?.ui), ...record(meta?.ui) }
         return { ...content, ...(listMeta || meta ? { _meta: { ...listMeta, ...meta, ui } } : {}) }
       })

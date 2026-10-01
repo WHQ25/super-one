@@ -5,12 +5,48 @@ import { mapThreadItemFromAppServer } from '../codex/codex-turn'
 import { dispatchMcpAppsProviderRequest } from '@superone/runtime/mcp-apps/provider-rpc'
 import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
 import type { McpAppsBinding } from '@superone/shared/mcp-apps'
+import { McpAppExecutor, type McpAppResolvedTarget } from './executor-core'
+import { McpAppResourceRegistry } from './protocol'
 
 const binding: McpAppsBinding = { node: 'local', session: 's', server: 'fixture', configGeneration: 0, configFingerprint: 'config' }
 const origin = { providerSessionId: 'thread-1' }
 const signal = new AbortController().signal
 
 describe('Codex native MCP Apps', () => {
+  it('awaits list-only security metadata before registering the resource document', async () => {
+    const uri = 'ui://fixture/items.html'
+    const key = {}
+    const request = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+      if (method === 'mcpServer/resource/read') return { contents: [{ uri, mimeType: 'text/html;profile=mcp-app', text: '<html/>' }] }
+      return { data: [{ name: 'fixture', tools: { items: { name: 'items' } },
+        ...(params?.detail === 'full' ? { resources: [{ uri, _meta: { ui: { csp: { connectDomains: ['https://allowed.example'], resourceDomains: [] } } } }] } : {}),
+      }] }
+    })
+    const target: McpAppResolvedTarget = { ref: { environmentId: 'local', sessionId: 's' }, node: 'local', projectPath: '/project', messageId: 'm', app: {
+      appInstanceId: 'view', binding, origin, resourceUri: uri, toolName: 'items', status: 'result',
+    } }
+    const executor = new McpAppExecutor({
+      resolve: async () => target,
+      persist: async (_target, update) => { target.app = { ...target.app, ...update } },
+      provider: (_target, operation, abort) => dispatchMcpAppsProviderRequest({ ...operation, binding, origin }, createCodexMcpAppsProvider(binding, 'thread-1', request, key), abort),
+      sendMessage: async () => {},
+    })
+    executor.observeLive(target.ref, target.app)
+    for (let i = 0; i < 2; i++) {
+      target.app = { ...target.app, resource: undefined }
+      expect(await executor.execute({ operation: 'load', sessionKey: 'local:s', appInstanceId: 'view' }, { kind: 'desktop' }, signal)).toMatchObject({ ok: true })
+    }
+    const registry = new McpAppResourceRegistry()
+    const registration = registry.register(target.app, 1, 'http://localhost:5173')
+    const document = registry.handle(new Request(registration.url))
+    const csp = document.headers.get('Content-Security-Policy')!
+    expect(csp).toContain("default-src 'none'")
+    expect(csp).toContain('connect-src https://allowed.example')
+    expect(csp).toContain("form-action 'none'")
+    expect(request.mock.calls.filter(([method]) => method === 'mcpServerStatus/list').map(([, params]) => params?.detail)).toEqual(['full', 'toolsAndAuthOnly'])
+    expect(request.mock.calls.filter(([method]) => method === 'mcpServer/resource/read')).toHaveLength(2)
+  })
+
   it('preserves UI, null appContext and private structured result in both mappers', () => {
     const raw = { id: 'item-1', type: 'mcpToolCall', server: 'fixture', tool: 'items', arguments: { page: 1 }, status: 'completed',
       mcpAppUi: { resourceUri: 'ui://fixture/items.html', preferredModelDisplayMode: 'inline' }, appContext: null,

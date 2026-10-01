@@ -7,7 +7,7 @@ import { McpUiUpdateModelContextRequestSchema } from '@modelcontextprotocol/ext-
 import { McpAppMessageRequestSchema } from '@superone/shared/mcp-apps-host/message-schema'
 import { parseSessionKey, type SessionRef } from '@superone/shared/environment/refs'
 import type { McpAppsProviderRpcRequest, McpAppsRpcResult } from '@superone/shared/environment/mcp-apps-rpc'
-import { assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES, MCP_APP_MIME_TYPE, McpAppsError, mcpAppToolVisible } from '@superone/shared/mcp-apps'
+import { assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES, MCP_APP_MIME_TYPE, McpAppsError } from '@superone/shared/mcp-apps'
 import type { McpAppApprovalPrompt, McpAppAttachmentUpdate, McpAppHostOperation, McpAppHostRequest, McpAppHostResult, McpAppRequester, McpAppReadResult, McpAppsCallResult, McpAppsCapabilities, McpToolDescriptor, ToolAppAttachment } from '@superone/shared/mcp-apps'
 
 export interface McpAppResolvedTarget {
@@ -135,6 +135,15 @@ export class McpAppExecutor {
     }
   }
 
+  private async updatePresentation(target: McpAppResolvedTarget, signal: AbortSignal): Promise<void> {
+    const tools = unwrap<McpToolDescriptor[]>(await this.ports.provider(target, { operation: 'tools' }, signal))
+    const tool = tools.find(tool => tool.name === target.app.toolName)
+    if (!tool || signal.aborted) return
+    const current = await this.ports.resolve(target.ref, target.app.appInstanceId, target.messageId, signal)
+    if (signal.aborted || this.bindingKey(current.app) !== this.bindingKey(target.app)) return
+    await this.ports.persist(current, { presentation: mcpAppPresentation(tool) }, signal)
+  }
+
   async execute(request: McpAppHostRequest, requester: McpAppRequester, signal: AbortSignal, validateTarget?: (target: McpAppResolvedTarget) => void): Promise<McpAppHostResult> {
     try {
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
@@ -171,9 +180,8 @@ export class McpAppExecutor {
       let prompt: McpAppApprovalPrompt | undefined
       if (operation.operation === 'callTool') {
         if (!capabilities.toolCall) throw new McpAppsError('denied', 'MCP App tool calls are unavailable')
-        const tools = unwrap<McpToolDescriptor[]>(await this.ports.provider(target, { operation: 'tools' }, signal))
-        const tool = tools.find(value => value.name === operation.tool)
-        if (!tool || !mcpAppToolVisible(tool)) throw new McpAppsError('denied', 'This tool is not available to the App')
+        // The shared provider dispatch gate checks app visibility immediately
+        // before dispatch, for local and remote sessions alike.
       } else if (operation.operation === 'sendMessage') {
         const details = mcpAppMessagePreview(operation.params, target.app.binding.server)
         if (details.target === 'new' && requester.kind === 'mobile') throw new McpAppsError('denied', 'Creating a new conversation from an MCP App is supported on desktop only; use target: active on phone')
@@ -203,9 +211,11 @@ export class McpAppExecutor {
           const resource = result.contents.find(value => value.uri === target.app.resourceUri && value.mimeType === MCP_APP_MIME_TYPE && typeof value.text === 'string')
           if (!resource?.text || new TextEncoder().encode(resource.text).byteLength > MCP_APP_HTML_MAX_BYTES) throw new McpAppsError('invalid', 'MCP App HTML is missing or exceeds the size limit')
           const snapshot = { html: resource.text, meta: mcpAppResourceMeta(resource._meta), hash: createHash('sha256').update(resource.text).digest('hex') }
-          const tools = unwrap<McpToolDescriptor[]>(await this.ports.provider(target, { operation: 'tools' }, signal))
-          const tool = tools.find(tool => tool.name === target.app.toolName)
-          await this.ports.persist(target, { resource: snapshot, ...(tool ? { presentation: mcpAppPresentation(tool) } : {}) }, signal)
+          await this.ports.persist(target, { resource: snapshot }, signal)
+          // Titles/icons are optional presentation, not document security. Cold
+          // tool discovery must not delay first paint; its failure keeps the
+          // fallback header. Resource metadata (including CSP) is already read.
+          void this.updatePresentation(target, signal).catch(() => {})
           return { ok: true, value: snapshot }
         }
         case 'readResource': {

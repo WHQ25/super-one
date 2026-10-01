@@ -93,7 +93,7 @@ export interface McpAppsAuthStart {
 export interface McpAppsProvider {
   readonly binding: McpAppsBinding
   ready(signal: AbortSignal): Promise<McpAppsCapabilities>
-  tools(): Promise<Map<string, McpToolDescriptor>>
+  tools(options?: { refresh?: boolean }): Promise<Map<string, McpToolDescriptor>>
   readResource(req: { uri: string; origin?: McpAppOrigin; transient?: boolean }, signal: AbortSignal): Promise<McpAppReadResult>
   callTool(req: { tool: string; args: unknown; origin?: McpAppOrigin }, signal: AbortSignal): Promise<McpAppsCallResult>
   /** `redirectUri` is where the host listens when the harness cannot receive the redirect (remote node). */

@@ -13,7 +13,10 @@ export async function dispatchMcpAppsProviderRequest(input: McpAppsProviderRpcRe
         return { ok: true, value }
       }
       case 'callTool': {
-        const tool = (await provider.tools()).get(input.tool ?? '')
+        let tool = (await provider.tools()).get(input.tool ?? '')
+        // Codex does not forward tools/list_changed. Give cached providers one
+        // bounded refresh on a miss; visibility denials never trigger discovery.
+        if (!tool) tool = (await provider.tools({ refresh: true })).get(input.tool ?? '')
         if (!tool || !mcpAppToolVisible(tool)) throw new McpAppsError('denied', 'This tool is not available to the App')
         if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
         assertMcpAppSize(input.args ?? {})

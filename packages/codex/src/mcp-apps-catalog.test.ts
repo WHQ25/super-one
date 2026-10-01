@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createCodexMcpAppsProvider, type McpAppsRequest } from './mcp-apps'
-import { invalidateCodexMcpAppsCatalog, CODEX_MCP_APPS_CATALOG_TTL_MS } from './mcp-apps-catalog'
+import { invalidateCodexMcpAppsCatalog } from './mcp-apps-catalog'
 import { dispatchMcpAppsProviderRequest } from '@superone/runtime/mcp-apps/provider-rpc'
 import { MCP_APP_OUTPUT_MAX_BYTES } from '@superone/shared/mcp-apps'
 import type { McpAppsBinding } from '@superone/shared/mcp-apps'
@@ -11,7 +11,7 @@ const listCount = (request: ReturnType<typeof vi.fn<McpAppsRequest>>) => request
 afterEach(() => vi.useRealTimers())
 
 describe('Codex MCP App catalog cache', () => {
-  it('ready performs no discovery; callTool reuses one list across facade recreation within TTL', async () => {
+  it('keeps lightweight discovery off repeated View calls even after a long idle', async () => {
     vi.useFakeTimers()
     const key = {}, request = vi.fn<McpAppsRequest>(async method => method === 'mcpServerStatus/list' ? catalog : { content: [] })
     const provider = () => createCodexMcpAppsProvider(binding, 'thread', request, key)
@@ -21,9 +21,10 @@ describe('Codex MCP App catalog cache', () => {
       expect(await dispatchMcpAppsProviderRequest({ operation: 'callTool', binding, origin: { providerSessionId: 'thread' }, tool: 'next', args: {} }, provider())).toMatchObject({ ok: true })
     }
     expect(listCount(request)).toBe(1)
-    vi.advanceTimersByTime(CODEX_MCP_APPS_CATALOG_TTL_MS + 1)
+    expect(request.mock.calls[0]).toEqual(['mcpServerStatus/list', { detail: 'toolsAndAuthOnly', threadId: 'thread', server: 'fixture' }])
+    vi.advanceTimersByTime(60 * 60 * 1000)
     await provider().tools()
-    expect(listCount(request)).toBe(2)
+    expect(listCount(request)).toBe(1)
   })
   it('shares concurrent discovery and isolates configuration and connection generations', async () => {
     const key = {}, request = vi.fn<McpAppsRequest>(async () => catalog)
@@ -45,6 +46,72 @@ describe('Codex MCP App catalog cache', () => {
     await provider().tools()
     expect(listCount(request)).toBe(3)
   })
+  it('refreshes a notLoggedIn snapshot while waiting for OAuth completion', async () => {
+    const key = {}, request = vi.fn<McpAppsRequest>()
+      .mockResolvedValueOnce({ data: [{ name: 'fixture', authStatus: 'notLoggedIn' }] })
+      .mockResolvedValue(catalog)
+    const provider = () => createCodexMcpAppsProvider(binding, 'thread', request, key)
+    await expect(provider().tools()).rejects.toMatchObject({ code: 'auth_required' })
+    expect((await provider().tools()).has('next')).toBe(true)
+    expect(listCount(request)).toBe(2)
+  })
+  it('does not republish a pending catalog invalidated by reconnect', async () => {
+    let complete!: (value: Record<string, unknown>) => void
+    const key = {}, request = vi.fn<McpAppsRequest>()
+      .mockImplementationOnce(() => new Promise(resolve => { complete = resolve }))
+      .mockResolvedValue({ data: [{ name: 'fixture', tools: {} }] })
+    const provider = () => createCodexMcpAppsProvider(binding, 'thread', request, key)
+    const stale = provider().tools()
+    invalidateCodexMcpAppsCatalog(key)
+    expect((await provider().tools()).size).toBe(0)
+    complete(catalog)
+    await stale
+    expect((await provider().tools()).size).toBe(0)
+    expect(listCount(request)).toBe(2)
+  })
+  it('discovers a newly added app tool on a miss, once across concurrent calls', async () => {
+    let added = false
+    const key = {}, request = vi.fn<McpAppsRequest>(async method => method === 'mcpServerStatus/list'
+      ? { data: [{ name: 'fixture', tools: added ? { added: { name: 'added' } } : {} }] }
+      : { content: [] })
+    const provider = () => createCodexMcpAppsProvider(binding, 'thread', request, key)
+    await provider().tools()
+    added = true
+    const input = { operation: 'callTool' as const, binding, origin: { providerSessionId: 'thread' }, tool: 'added', args: {} }
+    expect(await Promise.all([dispatchMcpAppsProviderRequest(input, provider()), dispatchMcpAppsProviderRequest(input, provider())])).toEqual([
+      { ok: true, value: { result: { content: [] }, outcome: 'completed' } },
+      { ok: true, value: { result: { content: [] }, outcome: 'completed' } },
+    ])
+    expect(listCount(request)).toBe(2)
+  })
+  it('limits sequential unknown-tool refreshes to one per session every ten seconds', async () => {
+    vi.useFakeTimers()
+    const key = {}, request = vi.fn<McpAppsRequest>(async () => catalog)
+    const miss = (tool: string) => dispatchMcpAppsProviderRequest({ operation: 'callTool', binding, origin: { providerSessionId: 'thread' }, tool, args: {} }, createCodexMcpAppsProvider(binding, 'thread', request, key))
+    for (const name of ['unknown1', 'unknown2', 'unknown3']) expect(await miss(name)).toMatchObject({ ok: false, error: { code: 'denied' } })
+    expect(listCount(request)).toBe(2) // initial discovery plus one miss refresh
+    vi.advanceTimersByTime(9_999)
+    await miss('unknown4')
+    expect(listCount(request)).toBe(2)
+    vi.advanceTimersByTime(1)
+    await miss('unknown5')
+    expect(listCount(request)).toBe(3)
+    expect(request.mock.calls.some(([method]) => method === 'mcpServer/tool/call')).toBe(false)
+  })
+  it('does not refresh or dispatch a model-only tool found in the cached catalog', async () => {
+    const request = vi.fn<McpAppsRequest>(async () => ({ data: [{ name: 'fixture', tools: { secret: { name: 'secret', _meta: { ui: { visibility: ['model'] } } } } }] }))
+    const input = { operation: 'callTool' as const, binding, origin: { providerSessionId: 'thread' }, tool: 'secret', args: {} }
+    expect(await dispatchMcpAppsProviderRequest(input, createCodexMcpAppsProvider(binding, 'thread', request))).toMatchObject({ ok: false, error: { code: 'denied' } })
+    expect(request).toHaveBeenCalledTimes(1)
+  })
+})
+
+it('uses read-content UI metadata without discovering unrelated server resources', async () => {
+  const meta = { ui: { csp: { connectDomains: ['https://read.example'] } }, 'openai/ui': { preferredDisplayMode: 'inline' } }
+  const request = vi.fn<McpAppsRequest>(async () => ({ contents: [{ uri: 'ui://fixture/view', text: '<html/>', _meta: meta }] }))
+  const provider = createCodexMcpAppsProvider(binding, 'thread', request)
+  expect((await provider.readResource({ uri: 'ui://fixture/view' }, new AbortController().signal)).contents[0]._meta).toEqual(meta)
+  expect(request.mock.calls.map(([method]) => method)).toEqual(['mcpServer/resource/read'])
 })
 
 it('carries tool titles and server icons through native status discovery', async () => {

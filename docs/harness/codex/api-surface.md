@@ -65,7 +65,7 @@ feature integration. Unlisted new optional fields are tolerated and unused.
 | `mcpServer/oauth/login` | used | Calls the app-server RPC. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-experiment-service.ts` |
 | `mcpServer/resource/read` | partial | Public MCP Apps resource reads use the originating threadId through environment RPC. Hosted connector/link target stays deferred. | `packages/codex/src/mcp-apps.ts`, `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `mcpServer/tool/call` | used | Bound-server App calls use the originating threadId through environment RPC; host gates visibility and approval. | `packages/codex/src/mcp-apps.ts`, `apps/desktop/src/main/session/backends/codex-backend.ts` |
-| `mcpServerStatus/list` | partial | Reads server status and MCP Apps tool title/icons and serverInfo title/icons; httpOrigin/serverCapabilities remain unused. | `apps/desktop/src/main/index.ts`, `apps/desktop/src/main/session/backends/codex-backend.ts` |
+| `mcpServerStatus/list` | partial | Status panels use full inventory. MCP Apps tool discovery uses toolsAndAuthOnly; full resource inventory is a lazy fallback for missing read-content UI metadata. httpOrigin/serverCapabilities remain unused. | `packages/codex/src/mcp-apps.ts`, `apps/desktop/src/main/index.ts`, `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `model/list` | partial | Desktop catalog, efforts and speed tiers; availableAccessPrograms is not mapped. | `apps/desktop/src/main/codex/codex-experiment-service.ts` |
 | `modelProvider/capabilities/read` | unused | No client call or dedicated handler. | — |
 | `permissionProfile/list` | unused | No client call or dedicated handler. | — |

@@ -197,7 +197,6 @@ once the native shell owns that continuation. The current refusal is
 explicit; it never silently drops the requested message. Implementation
 order remains model context, UI resource caching, S1, then this phone gap.
 
-
 ### Model context slice
 
 The shared host advertises `experimental["openai/modelContext"]` and all requested
@@ -244,3 +243,69 @@ No live dev instance or screenshot has been produced; Bits & Bolts/model and
 physical-phone validation remain in S1 after the approved UI resource cache.
 Phone `target: new` remains deferred; model context does not require its navigation
 continuation.
+
+### Codex per-request latency (2026-10-01)
+
+Measured the same Bits & Bolts server and copied project in an isolated
+`mcp-apps-latency` dev profile, pinned Codex 0.159.0. Temporary timestamp
+logs covered renderer registration/requests, IPC, executor, provider gate,
+catalog and app-server request/response; View JSON-RPC messages established
+initialization and the usable library/part. Logs and probe scripts were
+removed after measurement. No HTML cache or Codex configuration change.
+
+| Hop | Initial View before | Initial View after | Idle `cad.readPart` before | Idle `cad.readPart` after |
+|---|---:|---:|---:|---:|
+| Renderer to IPC | 1–4 ms | 0–4 ms | about 1 ms | 0–1 ms |
+| Provider acquire / ready | 0–1 ms | 0–1 ms | 0–1 ms | 0–1 ms |
+| Blocking inventory discovery | full: 7,621 ms | none; light runs in background | full: 9,153 ms | none; cached tools |
+| Resource / tool RPC | HTML: 16 / 56 ms | HTML: 18 / 50 ms | 12 ms | 13 ms |
+| Renderer registration round trip | 7,703 / 7,736 ms | 61 / 93 ms | — | — |
+| Host tool-request round trip (IPC to IPC) | — | — | 9,179 ms | 17 ms (18 ms at renderer) |
+| Host loading to View initialized | 8,352 ms | 724 ms | — | — |
+
+The two HTML readings/registrations come from development StrictMode and
+share one single-flight catalog; production code was not changed to hide
+that development behavior. Initialization means the View rendered its
+shell, not that all CAD data or 3D work was complete. On the final cold run,
+the View's automatic `cad.listParts` shared the pending background catalog
+and took 4,152 ms; the library entries appeared 5,266 ms after registration.
+Subsequent part requests completed in 18 ms at the renderer and rendered
+the 12,544-triangle Bug keycap. Model-turn latency is outside these timings.
+
+Root cause and controls:
+
+- Direct MCP SDK over stdio: connect 86–158 ms, tools/list 20–34 ms,
+  resources/list 2–6 ms, 831,524-byte UI read 5–9 ms,
+  737,652-byte `cad.readPart` result 4–11 ms. Large result copies and
+  thread routing contributed milliseconds, not the multi-second delay.
+- Codex full status discovery creates a fresh connection set and lists
+  resources/templates for every server. An isolated credential copy with
+  only Bits configured still automatically included `codex_apps`:
+  full 4,824–6,694 ms, light 102–151 ms after warming. A light-first run
+  measured 3,952 ms cold, 93 ms warm, then full 4,258–4,880 ms.
+- A measurement-only control disabled hosted apps in that isolated thread:
+  Bits-only full 100–128 ms, light 103–107 ms. User global servers were
+  absent in both controls. The fix preserves hosted apps and user config.
+- Protocol 0.159 has `full` / `toolsAndAuthOnly`, `threadId` and pagination,
+  but no per-server filter or resource-list RPC. Thread-scoped status
+  still does discovery; resource read/tool call reuse the live thread.
+
+Fix: use light discovery for tool admission/presentation; retain a
+connection/thread/configuration catalog until reload, reconnect or sign-in;
+refresh a missing tool once with single-flight and a 10-second per-thread
+throttle; do not retain `notLoggedIn` snapshots. The provider gate performs
+the visibility check once. Prefer resource-read content `_meta.ui`, which
+Bits and the fixture supply, and await a separate full-inventory fallback
+for list-only security metadata. Optional presentation hydrates after the
+HTML snapshot returns, with a binding check before the late update.
+
+Regression coverage includes idle calls, concurrent discovery/refresh,
+new and unknown tools, model-only denial, configuration/reconnect isolation,
+OAuth polling, list-only CSP in the served document, and slow/failed/stale
+presentation updates. Desktop live validation was local; no new physical
+phone smoke was run for this latency slice.
+
+Final verification after removing probes: desktop executor/provider/document
+and connection selections 50 passed; Codex catalog selection 12 passed;
+authenticated remote-node App fixture 1 passed (2 unrelated cases skipped);
+`typecheck:node` and `git diff --check` passed.

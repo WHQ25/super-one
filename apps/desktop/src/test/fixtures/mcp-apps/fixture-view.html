@@ -24,6 +24,8 @@
       <button id="select">Select first item</button>
       <button id="ask">Ask the model</button>
       <button id="fullscreen">Fullscreen</button>
+      <button id="pip">Picture in picture</button>
+      <button id="inline">Inline</button>
     </div>
     <div>
       <button id="forbidden-tool">Call model-only tool</button>
@@ -99,6 +101,8 @@
         log('message ' + JSON.stringify(r))
       })
       on('fullscreen', async () => log('display ' + JSON.stringify(await request('ui/request-display-mode', { mode: 'fullscreen' }))))
+      on('pip', async () => log('display ' + JSON.stringify(await request('ui/request-display-mode', { mode: 'pip' }))))
+      on('inline', async () => log('display ' + JSON.stringify(await request('ui/request-display-mode', { mode: 'inline' }))))
       on('forbidden-tool', async () => log('model-only call returned ' + JSON.stringify(await request('tools/call', { name: 'fixture_model_echo', arguments: { text: 'hi' } }))))
       on('forbidden-fetch', async () => {
         try { await fetch('https://example.com/'); log('fetch allowed') } catch (e) { log('fetch blocked') }
@@ -112,7 +116,7 @@
       request('ui/initialize', {
         protocolVersion: '2026-01-26',
         appInfo: { name: 'mcp-apps-fixture-view', version: '1.0.0' },
-        appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] },
+        appCapabilities: { availableDisplayModes: ['inline', 'fullscreen', 'pip'] },
       }).then((result) => {
         document.getElementById('status').textContent = 'initialized (' + (result.hostContext && result.hostContext.theme) + ')'
         notify('ui/notifications/initialized', {})

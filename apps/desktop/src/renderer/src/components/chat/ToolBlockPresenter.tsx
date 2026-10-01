@@ -1,3 +1,4 @@
+import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Ban, ChevronRight, TriangleAlert } from 'lucide-react'
@@ -92,6 +93,7 @@ const DEBUG_TOOL_NAMES: string[] = import.meta.env.DEV
 
 
 export interface ToolBlockProps {
+  app?: ToolAppAttachment
   toolName: string
   toolUseId?: string
   input: string

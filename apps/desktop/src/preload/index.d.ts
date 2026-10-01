@@ -854,7 +854,7 @@ interface TerminalAPI {
 /** Multi-environment / remote node — Main EnvironmentHost product path. */
 export interface EnvironmentAPI {
   mcpAppRequest(projectPath: string, sessionId: string, request: import('@superone/shared/mcp-apps').McpAppViewRequest, context?: import('@superone/shared/mcp-apps-desktop').McpAppDesktopRequestContext): Promise<import('@superone/shared/mcp-apps').McpAppHostResult>
-  mcpAppRegister(projectPath: string, sessionId: string, target: { appInstanceId: string; messageId?: string }): Promise<import('@superone/shared/mcp-apps').McpAppHostResult<import('@superone/shared/mcp-apps-desktop').McpAppDocumentRegistration>>
+  mcpAppRegister(projectPath: string, sessionId: string, target: { appInstanceId: string; messageId?: string }): Promise<import('@superone/shared/mcp-apps').McpAppHostResult<import('@superone/shared/mcp-apps-desktop').McpAppPreparedDocument>>
   mcpAppRelease(documentId: string): Promise<void>
   mcpAppCancel(context: import('@superone/shared/mcp-apps-desktop').McpAppDesktopRequestContext): Promise<void>
   onMcpAppDocumentRevoked(callback: (event: { url: string }) => void): () => void

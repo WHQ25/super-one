@@ -121,3 +121,7 @@ export async function executeMcpAppHostRequest(request: McpAppHostRequest, reque
   if (!executor) return { ok: false, error: { code: 'not_connected', message: 'MCP App host executor is not available' } }
   return executor.execute(request, requester, signal, validateTarget)
 }
+
+export function isMcpAppHostActive(target: McpAppResolvedTarget): boolean {
+  return executor?.isActive(target) ?? false
+}

@@ -95,6 +95,10 @@ export class McpAppExecutor {
     this.active.set(this.activeKey(ref, app.appInstanceId, requester), this.bindingKey(app))
   }
 
+  isActive(target: McpAppResolvedTarget, requester: McpAppRequester = { kind: 'desktop' }): boolean {
+    return this.active.get(this.activeKey(target.ref, target.app.appInstanceId, requester)) === this.bindingKey(target.app)
+  }
+
   async resolve(request: Pick<McpAppHostRequest, 'sessionKey' | 'appInstanceId' | 'messageId'>, signal: AbortSignal): Promise<McpAppResolvedTarget> {
     if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
     const ref = typeof request?.sessionKey === 'string' ? parseSessionKey(request.sessionKey) : null

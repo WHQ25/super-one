@@ -212,7 +212,7 @@ const environmentAPI = {
   mcpAppRequest: (projectPath: string, sessionId: string, request: import('@superone/shared/mcp-apps').McpAppViewRequest, context?: import('@superone/shared/mcp-apps-desktop').McpAppDesktopRequestContext) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_APP_HOST_REQUEST, projectPath, sessionId, request, context) as Promise<import('@superone/shared/mcp-apps').McpAppHostResult>,
   mcpAppRegister: (projectPath: string, sessionId: string, target: { appInstanceId: string; messageId?: string }) =>
-    ipcRenderer.invoke(AgentIpcChannels.MCP_APP_REGISTER_DOCUMENT, projectPath, sessionId, target) as Promise<import('@superone/shared/mcp-apps').McpAppHostResult<import('@superone/shared/mcp-apps-desktop').McpAppDocumentRegistration>>,
+    ipcRenderer.invoke(AgentIpcChannels.MCP_APP_REGISTER_DOCUMENT, projectPath, sessionId, target) as Promise<import('@superone/shared/mcp-apps').McpAppHostResult<import('@superone/shared/mcp-apps-desktop').McpAppPreparedDocument>>,
   mcpAppRelease: (documentId: string) => ipcRenderer.invoke(AgentIpcChannels.MCP_APP_RELEASE_DOCUMENT, documentId) as Promise<void>,
   mcpAppCancel: (context: import('@superone/shared/mcp-apps-desktop').McpAppDesktopRequestContext) => ipcRenderer.invoke(AgentIpcChannels.MCP_APP_CANCEL_REQUEST, context) as Promise<void>,
   onMcpAppDocumentRevoked: (callback: (event: { url: string }) => void) => {

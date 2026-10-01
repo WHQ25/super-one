@@ -3879,6 +3879,18 @@ export type Messages = {
     send: string
     openLink: string
     open: string
+    restored: string
+    authenticate: string
+    revoked: string
+    unknown: string
+    approveMessage: string
+    approveLink: string
+    nonText: string
+    remember: string
+    allow: string
+    inline: string
+    fullscreen: string
+    pip: string
   }
   filePreview: {
     loadFailed: string
@@ -7967,6 +7979,18 @@ export const en: Messages = {
     send: 'Send',
     openLink: 'Open this link?',
     open: 'Open',
+    restored: 'This saved View is inactive. Activate to reconnect to its original server and session.',
+    authenticate: 'Sign In',
+    revoked: 'The App navigated away. Restart to open a new secure View.',
+    unknown: 'The tool may have completed, but its outcome is unknown. Check the server before submitting it again.',
+    approveMessage: 'Send Message to This Session',
+    approveLink: 'Open External Link',
+    nonText: 'Includes {{count}} non-text content blocks.',
+    remember: 'Always Allow This Tool in This Session',
+    allow: 'Allow Once',
+    inline: 'Return to Chat',
+    fullscreen: 'Open in Panel',
+    pip: 'Picture in Picture',
   },
   filePreview: {
     loadFailed: 'Could not read this file',

@@ -450,3 +450,17 @@ them.
   with precision fixes: gateway keeps `structuredContent` / `isError`, Codex
   snapshots per turn, `originCallId` is resource-read only, narrower
   `unknown_outcome`, `form-action 'none'`, persistent origin identities.
+
+### Phase 1.4 — desktop shared View and consent: implemented
+
+Claude `tool_use/result` and Codex `mcp_tool_call` pass their attachment to the
+same lazy ToolBlock View. Native preparation returns requester-specific live
+state; historical snapshots paint without provider access, and absent historical
+snapshots require Activate. Outbound operations use AppBridge and native
+document/request leases. Consent is plain text; auth reconnects the original
+binding without replaying a tool; unknown outcomes expose no retry; revoked
+documents require Restart.
+
+Verification: 9 native IPC, 3 desktop executor and 5 View lifecycle tests pass;
+shared host checks and desktop node/web typechecks pass. Colocated Storybook
+coverage and browser interaction evidence follow in the next commit.

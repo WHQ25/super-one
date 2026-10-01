@@ -1,6 +1,6 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
-import { McpAppsError, type McpAppViewRequest } from '@superone/shared/mcp-apps'
+import { McpAppsError, type McpAppViewRequest, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import type { McpAppDesktopRequestContext } from '@superone/shared/mcp-apps-desktop'
 import { mcpAppResources, type McpAppResourceRegistry } from './protocol'
 import { mcpAppSessionKey } from './session-key'
@@ -21,10 +21,18 @@ export function registerMcpAppDocumentIpc(resources: McpAppResourceRegistry = mc
     try {
       assertHost(event)
       const sessionKey = mcpAppSessionKey(projectPath, sessionId)
-      const { resolveMcpAppHostAttachment } = await import('./executor')
+      const { resolveMcpAppHostAttachment, isMcpAppHostActive, executeMcpAppHostRequest } = await import('./executor')
       const resolved = await resolveMcpAppHostAttachment({ sessionKey, appInstanceId: target.appInstanceId, messageId: target.messageId })
+      const active = isMcpAppHostActive(resolved)
+      let app = resolved.app
+      if (!app.resource) {
+        if (!active) return { ok: true, value: { state: 'inactive' } }
+        const loaded = await executeMcpAppHostRequest({ sessionKey, appInstanceId: target.appInstanceId, messageId: target.messageId, operation: 'load' }, { kind: 'desktop' })
+        if (!loaded.ok) return loaded
+        app = { ...app, resource: loaded.value as ToolAppAttachment['resource'] }
+      }
       if (event.sender.isDestroyed()) throw new McpAppsError('cancelled', 'MCP App container was closed')
-      const registration = resources.register(resolved.app, event.sender.id, event.sender.mainFrame.url, sessionKey)
+      const registration = resources.register(app, event.sender.id, event.sender.mainFrame.url, sessionKey)
       if (!owners.has(event.sender.id)) {
         owners.add(event.sender.id)
         event.sender.once('destroyed', () => {
@@ -33,7 +41,7 @@ export function registerMcpAppDocumentIpc(resources: McpAppResourceRegistry = mc
           for (const [key, request] of pending) if (request.owner === event.sender.id) { request.controller.abort(); pending.delete(key) }
         })
       }
-      return { ok: true, value: registration }
+      return { ok: true, value: { state: 'ready', document: registration, active, meta: app.resource!.meta } }
     } catch (error) { return failure(error) }
   })
   ipcMain.handle(AgentIpcChannels.MCP_APP_RELEASE_DOCUMENT, (event, id: string) => {

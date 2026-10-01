@@ -67,6 +67,18 @@ describe('MCP App shared host', () => {
     expect(executor.callTool).toHaveBeenCalledWith({ tool: 'next', args: { page: 2 } }, expect.any(AbortSignal))
   })
 
+  it('sends only changed host context fields and skips unchanged notifications', async () => {
+    const { host, view } = await setup()
+    const changes: unknown[] = []
+    view.onhostcontextchanged = change => { changes.push(change) }
+    host.updateContext({ theme: 'dark' })
+    host.updateContext({ theme: 'light', locale: 'en' })
+    host.updateContext({ theme: 'light', locale: 'en' })
+    host.updateContext({ theme: 'light', locale: 'zh' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(changes).toEqual([{ theme: 'light', locale: 'en' }, { locale: 'zh' }])
+  })
+
   it('attributes model context to the original View and excludes extraneous private meta', async () => {
     const { view, executor } = await setup()
     await view.updateModelContext({ content: [{ type: 'text', text: 'selected' }], structuredContent: { id: 'a' } })

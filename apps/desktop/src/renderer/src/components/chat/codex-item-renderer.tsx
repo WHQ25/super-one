@@ -317,6 +317,7 @@ export function renderCodexItem(
           <div key={`${item.id}-${index}`} className="my-0.5 space-y-0.5">
             <ToolBlock
               toolName={`mcp__${item.server}__${item.tool}`}
+              app={item.app}
               input={safeStringify(item.arguments)}
               status={toToolStatus(item.status)}
               result={result || undefined}

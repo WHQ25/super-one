@@ -192,7 +192,11 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
       app = next
       return queue()
     },
-    updateContext(next) { context = next; if (!revoked) bridge.sendHostContextChange(next) },
+    updateContext(next) {
+      const patch = Object.fromEntries(Object.entries(next).filter(([key, value]) => JSON.stringify(context[key as keyof McpUiHostContext]) !== JSON.stringify(value)))
+      context = next
+      if (!revoked && Object.keys(patch).length) bridge.sendHostContextChange(patch)
+    },
     revoke,
     dispose() {
       if (disposed) return disposed

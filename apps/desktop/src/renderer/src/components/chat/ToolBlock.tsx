@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { lazy, Suspense, memo, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronRight } from 'lucide-react'
 import { diffLines } from 'diff'
@@ -54,6 +54,8 @@ import {
 import { ToolRendererFrame } from './ToolRendererFrame'
 import { parseMcpToolName } from './tool-display'
 import { useMcpServerIcon } from './use-mcp-server-icon'
+
+const McpAppView = lazy(() => import('../mcp-apps/McpAppView'))
 
 function toolRowTone(isDenied?: boolean, isError?: boolean): ToolRowTone {
   if (isDenied) return 'denied'
@@ -339,6 +341,7 @@ export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
   }), [cwd, homedir, mcpIconSrc, miniApps, stallLevel, streamingInputPreview, switchSession, t, toolInterceptState])
 
   return (
+    <>
     <ToolBlockPresenter
       {...props}
       allowExpand={nestedDefaults?.allowExpand !== false}
@@ -346,6 +349,8 @@ export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
       autoExpandFileDiffs={autoExpandFileDiffs}
       ports={ports}
     />
+      {props.app && <Suspense fallback={null}><McpAppView app={props.app} /></Suspense>}
+    </>
   )
 })
 

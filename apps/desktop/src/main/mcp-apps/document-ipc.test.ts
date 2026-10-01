@@ -7,9 +7,9 @@ import type { McpAppDocumentRegistration } from '@superone/shared/mcp-apps-deskt
 import { McpAppExecutor, type McpAppExecutorPorts, type McpAppResolvedTarget } from './executor-core'
 import { McpAppResourceRegistry } from './protocol'
 
-const native = vi.hoisted(() => ({ handlers: new Map<string, (...args: any[]) => any>(), resolve: vi.fn(), execute: vi.fn() }))
+const native = vi.hoisted(() => ({ handlers: new Map<string, (...args: any[]) => any>(), resolve: vi.fn(), execute: vi.fn(), active: vi.fn() }))
 vi.mock('electron', () => ({ ipcMain: { handle: (channel: string, handler: (...args: any[]) => any) => native.handlers.set(channel, handler) } }))
-vi.mock('./executor', () => ({ resolveMcpAppHostAttachment: native.resolve, executeMcpAppHostRequest: native.execute }))
+vi.mock('./executor', () => ({ resolveMcpAppHostAttachment: native.resolve, executeMcpAppHostRequest: native.execute, isMcpAppHostActive: native.active }))
 import { registerMcpAppDocumentIpc } from './document-ipc'
 
 const app: ToolAppAttachment = { appInstanceId: 'view', binding: { node: 'local', session: 's', server: 'fixture', configGeneration: 0, configFingerprint: 'config' },
@@ -27,11 +27,12 @@ function setup(owner = 1) {
   const executor = new McpAppExecutor({ resolve: async () => target, persist: async () => {}, provider, sendMessage: async () => {}, openLink: async () => {} })
   executor.observeLive(target.ref, app)
   native.resolve.mockResolvedValue(target)
+  native.active.mockImplementation(value => executor.isActive(value))
   native.execute.mockImplementation((request, requester, signal = new AbortController().signal, validate) => executor.execute(request, requester, signal, validate))
   const register = async (): Promise<McpAppDocumentRegistration> => {
     const result = await invoke(C.MCP_APP_REGISTER_DOCUMENT, '/project', 's', { appInstanceId: 'view', messageId: 'hint', resource: { html: 'forged' } })
     expect(result.ok).toBe(true)
-    return result.value
+    return result.value.document
   }
   const request = { appInstanceId: 'view', operation: 'callTool', tool: 'next_page', args: {} } as const
   return { resources, sender, event, invoke, provider, executor, register, request }
@@ -49,6 +50,23 @@ describe('MCP App native document IPC', () => {
     expect(await s.invoke(C.MCP_APP_HOST_REQUEST, '/project', 's', { appInstanceId: 'view', operation: 'load' })).toMatchObject({ ok: true, value: app.resource })
     const subframe = { ...s.event, senderFrame: { url: document.url } }
     expect(await native.handlers.get(C.MCP_APP_REGISTER_DOCUMENT)!(subframe, '/project', 's', { appInstanceId: 'view' })).toMatchObject({ ok: false, error: { code: 'denied' } })
+  })
+
+  it('paints restored snapshots without provider access and leaves missing snapshots inactive', async () => {
+    const s = setup()
+    native.active.mockReturnValue(false)
+    expect(await s.invoke(C.MCP_APP_REGISTER_DOCUMENT, '/project', 's', { appInstanceId: 'view' })).toMatchObject({ ok: true, value: { state: 'ready', active: false } })
+    native.resolve.mockResolvedValue({ ...target, app: { ...app, resource: undefined } })
+    expect(await s.invoke(C.MCP_APP_REGISTER_DOCUMENT, '/project', 's', { appInstanceId: 'view' })).toEqual({ ok: true, value: { state: 'inactive' } })
+    expect(s.provider).not.toHaveBeenCalled()
+  })
+
+  it('loads live snapshots through the common executor before registering', async () => {
+    const s = setup()
+    native.resolve.mockResolvedValue({ ...target, app: { ...app, resource: undefined } })
+    native.execute.mockResolvedValue({ ok: true, value: app.resource })
+    expect(await s.invoke(C.MCP_APP_REGISTER_DOCUMENT, '/project', 's', { appInstanceId: 'view' })).toMatchObject({ ok: true, value: { state: 'ready', active: true } })
+    expect(native.execute).toHaveBeenCalledWith(expect.objectContaining({ operation: 'load', sessionKey: 'local:s' }), { kind: 'desktop' })
   })
 
   it('rejects another View/session/owner and changed provider bindings before provider access', async () => {

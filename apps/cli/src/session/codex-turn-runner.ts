@@ -446,7 +446,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       threadConfig: prepared.threadConfig, signal: new AbortController().signal })
     if (live.threadId !== origin.providerSessionId) throw new McpAppsError('invalid', 'MCP App thread binding mismatch')
     live.lastActivityAt = Date.now()
-    return createCodexMcpAppsProvider(binding, live.threadId, live.client.request.bind(live.client))
+    return createCodexMcpAppsProvider(binding, live.threadId, live.client.request.bind(live.client), live.client.request)
   }
   runner.disposeSession = async (sessionId) => {
     await disposeLive(sessionId)

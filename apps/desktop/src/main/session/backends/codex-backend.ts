@@ -1335,7 +1335,7 @@ export class CodexBackend implements SessionBackend {
     const config = listCodexMcpConfigs(this.startOpts!.cwd).find(server => server.name === binding.server)
     if (binding.configFingerprint !== mcpServerConfigFingerprint(config)) throw new McpAppsError('not_connected', 'MCP App server configuration changed')
     const connection = await this.ensureManagementConnection()
-    return createCodexMcpAppsProvider(binding, origin.providerSessionId, connection.request.bind(connection))
+    return createCodexMcpAppsProvider(binding, origin.providerSessionId, connection.request.bind(connection), connection.request)
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {

@@ -1,4 +1,5 @@
 import { MCP_APPS_EXTENSION } from '@superone/shared/mcp-apps'
+import { invalidateCodexMcpAppsCatalog } from '@superone/codex/mcp-apps-catalog'
 import { ensureShellPath } from '../shell-path'
 import { codexAccountProviderId, isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import { codexAccountStore } from './codex-account-store'
@@ -742,6 +743,7 @@ export async function createAppServerConnection(
   }
 
   const dispatchNotification = (notif: AppServerNotification): void => {
+    if (notif.method.startsWith('mcpServer/') && notif.method.endsWith('/updated')) invalidateCodexMcpAppsCatalog(connection.request)
     diagnostics.notification(notif.method, notif.params)
     const waiter = notificationWaiters.shift()
     if (waiter) waiter(notif)
@@ -835,6 +837,7 @@ export async function createAppServerConnection(
 
   const connection: AppServerConnection = {
     request: async (method, params) => {
+      if (method === 'config/mcpServer/reload') invalidateCodexMcpAppsCatalog(connection.request)
       if (!APP_SERVER_IDEMPOTENT_METHODS.has(method)) {
         return sendOnce(method, params)
       }

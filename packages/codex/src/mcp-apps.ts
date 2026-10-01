@@ -1,6 +1,7 @@
 import type { CodexMcpToolCallItem } from '@superone/shared/agent-types'
 import { assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, MCP_APP_DATA_MAX_BYTES, boundedToolAppAttachment, McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider, type McpAppReadResult, type McpAppToolResult, type McpToolDescriptor, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { readCodexMcpWwwAuthenticate } from './protocol-v154'
+import { codexMcpAppsCatalog, invalidateCodexMcpAppsCatalog } from './mcp-apps-catalog'
 
 export type McpAppsRequest = (method: string, params?: Record<string, unknown>) => Promise<Record<string, unknown>>
 const challenges = (value: unknown): string[] | undefined => value === undefined ? undefined : Array.isArray(value) ? value.map(String) : [String(value)]
@@ -34,7 +35,7 @@ export function attachCodexMcpApp(item: CodexMcpToolCallItem, binding: McpAppsBi
 }
 
 /** Native public-server provider shared by Electron and the headless node. */
-export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: string, request: McpAppsRequest): McpAppsProvider {
+export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: string, request: McpAppsRequest, connectionKey: object = request): McpAppsProvider {
   let disposed = false
   const guard = (signal?: AbortSignal, origin?: McpAppOrigin) => {
     if (disposed) throw new McpAppsError('not_connected', 'MCP App provider was disposed')
@@ -58,33 +59,40 @@ export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: st
       throw new McpAppsError(mutates ? 'unknown_outcome' : /timed? ?out|timeout/i.test(message) ? 'timeout' : 'not_connected', message)
     }
   }
-  const tools = async () => {
+  const catalog = () => codexMcpAppsCatalog(connectionKey, JSON.stringify([threadId, binding]), async () => {
     guard()
     let cursor: unknown
-    const output = new Map<string, McpToolDescriptor>()
+    const output: Record<string, unknown>[] = []
     for (let page = 0; page < 100; page++) {
       const result = await invoke('mcpServerStatus/list', { detail: 'full', ...(cursor ? { cursor } : {}) })
-      const server = (Array.isArray(result.data) ? result.data : []).map(record).find(s => s?.name === binding.server)
-      if (server?.authStatus === 'notLoggedIn') throw new McpAppsError('auth_required', 'MCP authentication required')
-      const entries = record(server?.tools)
-      for (const [name, value] of Object.entries(entries ?? {})) {
-        const tool = record(value)
-        if (tool) output.set(name, { ...tool, name } as unknown as McpToolDescriptor)
-      }
+      output.push(...(Array.isArray(result.data) ? result.data : []).map(record).filter((s): s is Record<string, unknown> => !!s))
       cursor = result.nextCursor
       if (!cursor) return output
     }
     throw new McpAppsError('invalid', 'MCP tool discovery exceeded pagination limit')
+  })
+  const tools = async () => {
+    guard()
+    const server = (await catalog()).find(s => s.name === binding.server)
+    const output = new Map<string, McpToolDescriptor>()
+    if (server?.authStatus === 'notLoggedIn') throw new McpAppsError('auth_required', 'MCP authentication required')
+    const entries = record(server?.tools)
+    for (const [name, value] of Object.entries(entries ?? {})) {
+      const tool = record(value)
+      if (tool) output.set(name, { ...tool, name } as unknown as McpToolDescriptor)
+    }
+    return output
   }
   return {
     binding,
-    async ready(signal) { guard(signal); await tools(); return { mode: 'native', resourceRead: true, toolCall: true, authenticate: true } },
+    // The owning backend established the initialized 0.159 connection and advertised the UI extension.
+    async ready(signal) { guard(signal); return { mode: 'native', resourceRead: true, toolCall: true, authenticate: true } },
     tools,
     async readResource(req, signal): Promise<McpAppReadResult> {
       if (!req.uri.startsWith('ui://')) throw new McpAppsError('invalid', 'MCP App resources must use ui://')
       // originCallId is deliberately omitted for public third-party servers.
-      const catalog = await invoke('mcpServerStatus/list', { detail: 'full' }, signal, req.origin)
-      const server = (Array.isArray(catalog.data) ? catalog.data : []).map(record).find(entry => entry?.name === binding.server)
+      guard(signal, req.origin)
+      const server = (await catalog()).find(entry => entry.name === binding.server)
       const resource = (Array.isArray(server?.resources) ? server.resources : []).map(record).find(entry => entry?.uri === req.uri)
       const listMeta = record(resource?._meta)
       const result = await invoke('mcpServer/resource/read', { uri: req.uri }, signal, req.origin)
@@ -104,6 +112,7 @@ export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: st
     // Codex receives the redirect on its own listener and completes the login in the background;
     // the host watches `tools()` stop reporting auth_required.
     async authenticate(_req, signal) {
+      invalidateCodexMcpAppsCatalog(connectionKey)
       const result = await invoke('mcpServer/oauth/login', { name: binding.server }, signal)
       return typeof result.authorizationUrl === 'string'
         ? { authUrl: result.authorizationUrl, completion: 'harness' as const }

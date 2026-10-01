@@ -1,4 +1,5 @@
 import { MCP_APPS_EXTENSION } from '@superone/shared/mcp-apps'
+import { invalidateCodexMcpAppsCatalog } from './mcp-apps-catalog'
 import type { AttachmentCodexInput } from '@superone/shared/attachment-turn'
 import { superoneSystemPrompt } from '@superone/shared/superone-system-prompt'
 import {
@@ -149,6 +150,7 @@ export async function openCodexAppServer(
   }
 
   const pushNotification = (n: { method: string; params: Record<string, unknown> }) => {
+    if (n.method.startsWith('mcpServer/') && n.method.endsWith('/updated')) invalidateCodexMcpAppsCatalog(request)
     if (notificationWaiters.length) {
       const w = notificationWaiters.shift()!
       clearTimeout(w.timer)
@@ -294,6 +296,7 @@ export async function openCodexAppServer(
     timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
   ) =>
     new Promise<Record<string, unknown>>((resolve, reject) => {
+      if (method === 'config/mcpServer/reload') invalidateCodexMcpAppsCatalog(request)
       if (closed) {
         reject(new Error('Codex app-server connection closed'))
         return

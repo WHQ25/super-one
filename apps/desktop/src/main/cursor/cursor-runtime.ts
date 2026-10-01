@@ -57,7 +57,11 @@ export async function createCursorRuntime(
 
 async function prepareCompat(opts: CursorRuntimeOptions): Promise<CompatSession | undefined> {
   const { readCursorConfig } = await import('@superone/cursor')
-  if (readCursorConfig(opts.config).runtime === 'cloud' || opts.providerSessionId?.startsWith('bc-')) {
+  const config = readCursorConfig(opts.config)
+  // Compat cannot reproduce SDK sandbox policy; keep those servers native.
+  // Use the requested value, even if the SDK later falls back on this platform.
+  const sandboxRequested = opts.sandboxEnabled ?? config.sandboxEnabled ?? false
+  if (config.runtime === 'cloud' || opts.providerSessionId?.startsWith('bc-') || sandboxRequested) {
     await closeCompatSession(opts.sessionId)
     return
   }

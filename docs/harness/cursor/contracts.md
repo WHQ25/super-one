@@ -1,5 +1,32 @@
 # Cursor SDK behavioral contracts
 
+## Local MCP restrictions and compatibility routing
+
+- **Behavior:** Session sandbox requests reach SDK `local.sandboxOptions.enabled`.
+  MCP permission checks can fail closed in sandbox/auto-review runs. Separately,
+  authenticated SDK dashboard services read team admin MCP/network controls and
+  can start stdio servers through `buildMcpSandboxPolicy` / `spawnInSandbox`,
+  even when the session filesystem sandbox is disabled.
+- **Observed:** SDK 1.0.30 installed `dist/esm/357.js` (`DefinitionMcpLoader`,
+  team settings service and local executor initialization); `options.d.ts`
+  documents the fail-closed MCP behavior. Team settings come from internal
+  `getTeamAdminSettingsOrEmptyIfNotInTeam`, cached in a `settingsPromise` for
+  300000 ms, and a feature gate participates in policy selection.
+- **Depends on it:** Desktop compatibility discovery is skipped when sandbox is
+  requested, before any stdio spawn. Existing compat clients are closed and
+  servers stay in the native list. Session settings override config settings,
+  matching the core adapter; requests still skip compat if SDK platform support
+  would later disable the sandbox.
+- **Detection limit:** SDK package exports and public declarations expose no
+  team/MCP policy query or service injection. `Cursor.me()` / `SDKUser` do not
+  report team membership or controls, and SuperOne's account resources cannot
+  establish that restrictions are absent. No durable team-policy cache was
+  found. Team controls therefore remain an unresolved compatibility release
+  gate; disabling the session sandbox is not proof that rerouting is permitted.
+- **Guard:** Desktop `cursor-runtime.test.ts` checks create/prewarm, existing
+  client cleanup, native list restoration, and setting precedence. Team-policy
+  detection has no supported API or asserted guarantee.
+
 ## MCP App compatibility results
 
 - **Behavior:** SDK 1.0.30's MCP client sends `{name, arguments}` without the

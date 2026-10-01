@@ -137,6 +137,14 @@ sequenceDiagram
 - **Process (phase 1):** the compat client runs in main, lazy-loaded at local
   Cursor use, and supervises stdio children. Moving it to a MiniApp Host for
   crash isolation remains a later decision; Views keep the MCP App sandbox.
+- **Restrictions (phase 1):** a Cursor session requesting sandbox skips compat
+  discovery/rerouting, closes any existing compat client and keeps native MCP
+  servers. Cursor SDK also applies organization MCP/network controls separately
+  from the session sandbox. Its public API and account metadata cannot detect
+  these policies; the internal dashboard service has only an in-memory cache.
+  Resolving or explicitly gating this policy gap is a release decision still
+  open, not covered by the session sandbox check. See the
+  [Cursor contracts](../harness/cursor/contracts.md).
 - **Correlation (phase 1):** a host-generated random UUID travels as the first
   text content block, `[superone-mcp-app:<id>]`. Cursor SDK 1.0.30 drops both
   `structuredContent` and `_meta` and may serialize its content envelope as
@@ -145,6 +153,9 @@ sequenceDiagram
   row's real harness call id. No tool-name/arguments/FIFO matching. A direct
   upstream call-id path remains open: Cursor sends only `{name, arguments}`
   to MCP, even though its internal client holds the harness call id.
+  Unclaimed records expire after five minutes even if the session is idle;
+  each session retains at most 32 and evicts the oldest when full. Expired or
+  evicted markers cannot attach a View; already attached records are unaffected.
 - **Result data (phase 1):** the View reads the original complete result from
   the host record. The MCP reply retains structured content for clients that
   carry it, plus a bounded text summary for Cursor; private `_meta` never

@@ -67,6 +67,29 @@ Scope: phase 1, local Cursor sessions and the MCP Apps fixture. Branch:
 - The isolated Electron instance and renderer server were stopped; CDP 9382
   and renderer 5181 no longer have listeners.
 
+## Review follow-up (2026-10-01)
+
+- Sandbox requests now skip compat before discovery in both create and prewarm.
+  Any prior client closes and native servers return to the SDK list. The gate
+  uses the same session-over-config precedence as the core, conservatively
+  retaining native routing even if platform support would later disable sandbox.
+- Pending host records now have a per-session cap of 32, evicting oldest first,
+  and a five-minute TTL. One unref'ed expiry timer releases idle records without
+  needing another turn; claim/close cancel or reschedule it. Attached records
+  already transferred to the transcript are unaffected.
+- SDK source proves independent team MCP/network restrictions: its internal
+  dashboard provider fetches `getTeamAdminSettingsOrEmptyIfNotInTeam`, caches
+  settings in memory for 300000 ms, and derives policies with a feature gate.
+  Public SDK exports contain no policy query or team-service injection, no
+  durable policy cache was found, and `Cursor.me()` / existing SuperOne account
+  resources do not expose membership or restrictions. Personal user ids cannot
+  prove policy absence. This unresolved bypass risk was reported to the parent
+  for a user release/gating decision; no private API access or inference added.
+- New focused checks cover sandbox create/prewarm and config precedence, cap
+  eviction, independent deadlines, idle expiration and close timer cleanup.
+  30 tests passed across five affected files; node/web typechecks and
+  `git diff --check` passed. No further live model verification was attempted.
+
 ## Remaining live checks
 
 **The Cursor live model turn is not verified.** The isolated profile has no

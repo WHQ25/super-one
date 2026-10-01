@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { mapInteractionUpdate } from '@superone/cursor'
 import { CompatRecords } from './compat-records'
@@ -11,6 +11,7 @@ const result = (id: string, summary: string): AgentEvent => ({ type: 'content_de
   delta: { type: 'tool_result', toolUseId: id, summary } })
 
 describe('compatibility App record correlation', () => {
+  afterEach(() => { vi.useRealTimers() })
   it('claims only a real miniapp_call result in its session and rejects forgery/replay', () => {
     const records = new CompatRecords('s')
     const record = records.record(app)
@@ -57,5 +58,48 @@ describe('compatibility App record correlation', () => {
       ] } },
     } } as never).map(event => records.attach(event))
     expect(events.at(-1)).toMatchObject({ delta: { app: { appInstanceId: record.id, harnessCallId: 'cursor-call' } } })
+  })
+
+  it('evicts the oldest unclaimed record above 32 while keeping all newer records claimable', () => {
+    const records = new CompatRecords('s')
+    const all = Array.from({ length: 33 }, () => records.record(app))
+    all.forEach((record, index) => {
+      const id = `call-${index}`
+      records.attach(start(id))
+      const attached = records.attach(result(id, record.marker))
+      if (index === 0) expect(attached).not.toHaveProperty('delta.app')
+      else expect(attached).toMatchObject({ delta: { app: { appInstanceId: record.id } } })
+    })
+  })
+
+  it('expires idle unclaimed records after five minutes and preserves newer records until their own deadline', () => {
+    vi.useFakeTimers()
+    const records = new CompatRecords('s')
+    const old = records.record(app)
+    vi.advanceTimersByTime(60_000)
+    const recent = records.record(app)
+    expect(vi.getTimerCount()).toBe(1)
+    vi.advanceTimersByTime(4 * 60_000)
+    records.attach(start('old'))
+    expect(records.attach(result('old', old.marker))).not.toHaveProperty('delta.app')
+    records.attach(start('recent'))
+    expect(records.attach(result('recent', recent.marker))).toMatchObject({ delta: { app: { appInstanceId: recent.id } } })
+    expect(vi.getTimerCount()).toBe(0)
+    const idle = records.record(app)
+    vi.advanceTimersByTime(5 * 60_000)
+    expect(vi.getTimerCount()).toBe(0)
+    records.attach(start('idle'))
+    expect(records.attach(result('idle', idle.marker))).not.toHaveProperty('delta.app')
+  })
+
+  it('cancels expiration and releases records when its session closes', () => {
+    vi.useFakeTimers()
+    const records = new CompatRecords('s')
+    const record = records.record(app)
+    records.attach(start('call'))
+    records.clear()
+    expect(vi.getTimerCount()).toBe(0)
+    records.attach(start('again'))
+    expect(records.attach(result('again', record.marker))).not.toHaveProperty('delta.app')
   })
 })

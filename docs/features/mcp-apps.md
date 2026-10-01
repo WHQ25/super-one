@@ -21,7 +21,7 @@ surfaces (`widget_show`, mini-apps) keep their own contracts.
 |---|---|---|
 | Codex app-server (0.159) | Native | UI extension in `initialize`; item `mcpAppUi` (or `mcpAppResourceUri`) plus full result; `mcpServer/resource/read` and `mcpServer/tool/call` routed by `threadId`; `mcpServer/oauth/login`. Hosted `codex_apps` connectors are not supported. |
 | Claude Agent SDK (0.3.285) | Native | `CLAUDE_CODE_MCP_APPS_HOST=true` in the spawn env; tool UI metadata from `mcpServerStatus()`; result from `tool_use_result`; `readMcpResource()`; View tool calls through the internal `mcp_call` control request. |
-| Cursor (desktop local stdio pilot) | Compatibility | Session discovery omits connected App servers from Cursor's MCP list and exposes their model-visible tools via `miniapp_list` / `miniapp_call`. A host record carries the full result to the same View/executor. Source configs stay untouched; cloud, remote nodes, HTTP and OAuth are not included in the pilot. |
+| Cursor (desktop local stdio pilot) | Compatibility | Session discovery omits connected App servers from Cursor's MCP list and exposes their model-visible tools via `miniapp_list` / `miniapp_call`. A host record carries the full result to the same View/executor. Sandbox requests stay native; organization MCP/network policy detection is an unresolved release gate (see [Cursor contracts](../harness/cursor/contracts.md)). Source configs stay untouched; cloud, remote nodes, HTTP and OAuth are not included in the pilot. |
 | Others | Unsupported | The tool row shows the text result. Broader rerouting is planned in [proposals/mcp-apps-compat-layer.md](../proposals/mcp-apps-compat-layer.md). |
 
 Upstream behavior we rely on is recorded per harness: Claude

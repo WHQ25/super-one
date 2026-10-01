@@ -2,9 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { PermissionRequest } from '@superone/shared/agent-types'
 import {
   defaultPermissionFormAnswers,
-  elicitationAnswersAreValid,
-  initialElicitationAnswers,
   permissionSuggestionLabel,
+  permissionSchemaForm,
   permissionSheetPresentation,
 } from './permission-sheet-state'
 
@@ -92,26 +91,22 @@ describe('permission sheet state', () => {
     expect(defaultPermissionFormAnswers(config)).toEqual({ configJson: '{"theme":"light"}' })
   })
 
-  it('initializes and validates elicitation answers', () => {
-    const fields = [
-      { name: 'scope', type: 'enum' as const, label: 'Scope', required: true, enumOptions: ['repo', 'user'], defaultValue: 'repo' },
-      { name: 'note', type: 'string' as const, label: 'Note', required: true },
+  it('prefers the parsed schema form and maps a legacy field list onto it', () => {
+    const legacy = request('mcp_elicitation')
+    legacy.elicitationForm = [
+      { name: 'scope', type: 'enum', label: 'Scope', required: true, enumOptions: ['repo', 'user'], defaultValue: 'repo' },
+      { name: 'estimate', type: 'number', label: 'Estimate', required: false },
     ]
-    const answers = initialElicitationAnswers(fields)
-    expect(answers).toEqual({ scope: 'repo', note: '' })
-    expect(elicitationAnswersAreValid(fields, answers)).toBe(false)
-    expect(elicitationAnswersAreValid(fields, { ...answers, note: 'ok' })).toBe(true)
-  })
-
-  it('rejects non-finite numeric fields and undeclared enum options', () => {
-    const fields = [
-      { name: 'estimate', label: 'Estimate', type: 'number' as const, required: true },
-      { name: 'scope', label: 'Scope', type: 'enum' as const, required: true, enumOptions: ['session'] },
-    ]
-    expect(elicitationAnswersAreValid(fields, { estimate: '2.5', scope: 'session' })).toBe(true)
-    expect(elicitationAnswersAreValid(fields, { estimate: 'NaN', scope: 'session' })).toBe(false)
-    expect(elicitationAnswersAreValid(fields, { estimate: Infinity, scope: 'session' })).toBe(false)
-    expect(elicitationAnswersAreValid(fields, { estimate: 2, scope: 'forever' })).toBe(false)
+    expect(permissionSchemaForm(legacy)).toEqual({
+      supported: true,
+      fields: [
+        { name: 'scope', label: 'Scope', required: true, kind: 'select', options: [{ value: 'repo', label: 'repo' }, { value: 'user', label: 'user' }], default: 'repo' },
+        { name: 'estimate', label: 'Estimate', required: false, kind: 'number', integer: false },
+      ],
+    })
+    const parsed = { ...legacy, schemaForm: { supported: false as const, reason: 'type "object"' } }
+    expect(permissionSchemaForm(parsed)).toEqual(parsed.schemaForm)
+    expect(permissionSchemaForm(request('mcp_elicitation'))).toBeUndefined()
   })
 
   it('presents selectable permission suggestions in human terms', () => {

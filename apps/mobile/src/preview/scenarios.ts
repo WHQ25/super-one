@@ -1,4 +1,5 @@
 import type { AskUserQuestionRequest, PermissionRequest, PlanApprovalRequest } from '@superone/shared/agent-types'
+import { elicitationFormRequest } from '@superone/shared/schema-form'
 import { ordinaryPermission, permissionExamples, permissionRequest } from './permissions'
 
 type ScenarioMeta = { id: string; title: string; description: string }
@@ -45,6 +46,10 @@ export const nativeScenarios: NativeScenario[] = [
     const kind = key as NonNullable<PermissionRequest['requestKind']>
     return { id: `permission/${kind}`, category: 'Permissions', title: kind.replaceAll('_', ' '), description: `Production PermissionSheet · ${kind}`, request: permissionRequest(kind) }
   }),
+  { id: 'permission/mcp-form-unsupported', category: 'Permissions', title: 'Unsupported form', description: 'A form with an input the phone cannot render is reported, never partially shown.', request: {
+    requestId: 'preview-form-unsupported', toolName: 'bits-and-bolts', input: {}, allowAlwaysAllow: false, requestKind: 'mcp_elicitation', serverName: 'Bits & Bolts', message: 'Choose CAD references',
+    ...elicitationFormRequest({ type: 'object', properties: { references: { type: 'array', items: { type: 'string', format: 'uri' }, 'x-openai-input': { type: 'resource', selection: 'implicit', options: [] } } } }),
+  } },
   { id: 'permission/delete-config', category: 'Permissions', title: 'Delete configuration', description: 'Destructive resource confirmation.', request: {
     requestId: 'preview-delete-config', toolName: 'mcp__superone__config_apply', input: {}, allowAlwaysAllow: false, requestKind: 'config_confirm',
     configConfirm: { resource: { resource: 'provider', operation: 'delete', title: 'Preview provider', fields: [] } },

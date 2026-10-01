@@ -4,6 +4,7 @@ import {
   type ElicitationFormField,
   type PermissionRequest,
 } from '@superone/shared/agent-types'
+import type { SchemaForm, SchemaFormField } from '@superone/shared/schema-form'
 import { buildCollaborationFormAnswers } from './collaboration-state'
 
 export type PermissionSheetItem = {
@@ -254,23 +255,25 @@ export function permissionSheetPresentation(request: PermissionRequest): Permiss
   }
 }
 
-export function initialElicitationAnswers(fields: ElicitationFormField[]): Record<string, unknown> {
-  return Object.fromEntries(fields.map((field) => [field.name, field.defaultValue ?? (field.type === 'boolean' ? false : '')]))
+/**
+ * The form an elicitation asks for. Desktops that predate `schemaForm` send only
+ * the flat legacy list, which maps onto the same model so one renderer serves both.
+ */
+export function permissionSchemaForm(request: Pick<PermissionRequest, 'schemaForm' | 'elicitationForm'>): SchemaForm | undefined {
+  if (request.schemaForm) return request.schemaForm
+  if (!request.elicitationForm?.length) return undefined
+  return { supported: true, fields: request.elicitationForm.map(legacySchemaFormField) }
 }
 
-export function elicitationAnswersAreValid(
-  fields: ElicitationFormField[],
-  answers: Record<string, unknown>,
-): boolean {
-  return fields.every((field) => {
-    const value = answers[field.name]
-    const empty = value === undefined || value === null || String(value).trim() === ''
-    if (empty) return !field.required
-    if (field.type === 'boolean') return typeof value === 'boolean'
-    if (field.type === 'number') return (typeof value === 'number' || typeof value === 'string') && Number.isFinite(Number(value))
-    if (field.type === 'enum') return field.enumOptions?.includes(String(value)) ?? false
-    return typeof value === 'string'
-  })
+function legacySchemaFormField(field: ElicitationFormField): SchemaFormField {
+  const base = { name: field.name, label: field.label, required: field.required, ...(field.description ? { description: field.description } : {}) }
+  const def = field.defaultValue
+  switch (field.type) {
+    case 'enum': return { ...base, kind: 'select', options: (field.enumOptions ?? []).map((value) => ({ value, label: value })), ...(typeof def === 'string' ? { default: def } : {}) }
+    case 'number': return { ...base, kind: 'number', integer: false, ...(typeof def === 'number' ? { default: def } : {}) }
+    case 'boolean': return { ...base, kind: 'boolean', ...(typeof def === 'boolean' ? { default: def } : {}) }
+    case 'string': return { ...base, kind: 'text', ...(typeof def === 'string' ? { default: def } : {}) }
+  }
 }
 
 export function defaultPermissionFormAnswers(request: PermissionRequest): Record<string, unknown> | undefined {

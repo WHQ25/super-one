@@ -79,6 +79,12 @@ export interface GenericToolRowPorts {
 
 export interface GenericToolRowProps {
   hasDeferredDetails?: boolean
+  /**
+   * The call's own state and its one action (an MCP App that is loading or waits for
+   * Activate, say), at the row's right edge before the elapsed time. Taps on it never
+   * toggle the row.
+   */
+  trailing?: ReactNode
   onDetailRetry?: () => void
   detailStatus?: string
   onExpandedChange?: (expanded: boolean) => void
@@ -161,6 +167,7 @@ function ToolResult({ text }: { text: string }) {
  */
 export function GenericToolRowPresenter({
   hasDeferredDetails,
+  trailing,
   detailStatus,
   onDetailRetry,
   onExpandedChange,
@@ -320,6 +327,8 @@ export function GenericToolRowPresenter({
         <ToolName
           streaming={isStreaming}
           tone={showDenied ? 'denied' : showError ? 'error' : 'default'}
+          // The state's action must stay tappable on a narrow row; the name gives way.
+          className={trailing ? 'min-w-0 shrink truncate' : undefined}
         >
           {isStreaming
             ? toolName === 'Bash' ? t('chat.toolBlock.running') : <>{getToolVerb(toolName)}…</>
@@ -374,12 +383,17 @@ export function GenericToolRowPresenter({
             )}
           </span>
         )}
+        {trailing && (
+          <span className="ml-auto flex items-center gap-1.5 text-muted-foreground" onClick={(event) => event.stopPropagation()}>
+            {trailing}
+          </span>
+        )}
         {isStreaming && elapsedSeconds != null && elapsedSeconds >= 1 && (
-          <span className={cn('ml-auto shrink-0 transition-colors duration-500', getStallColor(ports.stallLevel))}>{Math.round(elapsedSeconds)}s</span>
+          <span className={cn(!trailing && 'ml-auto', 'shrink-0 transition-colors duration-500', getStallColor(ports.stallLevel))}>{Math.round(elapsedSeconds)}s</span>
         )}
         {expandable && (
           <ChevronRight
-            className={cn('ml-auto size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')}
+            className={cn(!trailing && 'ml-auto', 'size-3 shrink-0 text-muted-foreground transition-transform duration-200', expanded && 'rotate-90')}
           />
         )}
       </div>

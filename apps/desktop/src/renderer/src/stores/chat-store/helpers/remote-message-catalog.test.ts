@@ -1,11 +1,53 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionMessageBlock } from '@superone/shared/environment'
+import type { ChatMessage, CodexCommandExecutionItem } from '@superone/shared/agent-types'
 import {
   preferCatalogMessages,
   sessionMessageBlocksToChatMessages,
 } from './remote-message-catalog'
 
 describe('remote-message-catalog', () => {
+  const shell: CodexCommandExecutionItem = { id: 'shell', type: 'command_execution', command: 'bun test', aggregatedOutput: 'passed', status: 'completed' }
+  const codexCatalog = (): ChatMessage[] => sessionMessageBlocksToChatMessages([{ id: 'a1', role: 'assistant', text: 'done', createdAt: 2, sortOrder: 0,
+    content: [{ type: 'text', text: 'done' }], metadata: { codex: { threadId: 'thread', usage: null, items: [shell] } },
+  }], 'codex')
+  const textSnapshot = (): ChatMessage => ({ id: 'a1', role: 'assistant', status: 'complete', content: [{ type: 'text', text: 'done' }], createdAt: '', providerId: 'codex' })
+
+  it('restores native item rows when a cold transcript has equally long text content', () => {
+    const local = textSnapshot()
+    const merged = preferCatalogMessages([local], codexCatalog())
+    expect(merged[0].content).toEqual(local.content)
+    expect(merged[0].metadata?.codex?.items).toEqual([shell])
+    expect(local.metadata).toBeUndefined()
+  })
+
+  it('densifies native metadata from a catalog suffix without moving older turns', () => {
+    const older = { ...textSnapshot(), id: 'older' }
+    const merged = preferCatalogMessages([older, textSnapshot()], codexCatalog())
+    expect(merged.map(message => message.id)).toEqual(['older', 'a1'])
+    expect(merged[1].metadata?.codex?.items).toEqual([shell])
+  })
+
+  it('keeps local native metadata when an older catalog only has richer text', () => {
+    const local = codexCatalog()[0]
+    const catalog = { ...textSnapshot(), content: [{ type: 'text' as const, text: 'done' }, { type: 'text' as const, text: 'details' }] }
+    const merged = preferCatalogMessages([local], [catalog])[0]
+    expect(merged.content).toEqual(catalog.content)
+    expect(merged.metadata?.codex?.items).toEqual([shell])
+  })
+
+  it('keeps newer live items and catalog-only rows during concurrent hydrate', () => {
+    const local: ChatMessage = { ...textSnapshot(), status: 'streaming', metadata: { codex: { threadId: 'thread', usage: null,
+      items: [{ ...shell, aggregatedOutput: 'new output', status: 'in_progress' }, { id: 'answer', type: 'agent_message', text: 'streaming answer' }],
+    } } }
+    const catalog = codexCatalog()
+    catalog[0].metadata!.codex!.items.push({ id: 'earlier', type: 'agent_message', text: 'earlier' })
+    expect(preferCatalogMessages([local], catalog)[0].metadata?.codex?.items).toEqual([
+      { ...shell, aggregatedOutput: 'new output', status: 'in_progress' }, { id: 'earlier', type: 'agent_message', text: 'earlier' }, { id: 'answer', type: 'agent_message', text: 'streaming answer' },
+    ])
+    expect(preferCatalogMessages([{ ...local, status: 'complete' }], catalog)[0].metadata?.codex?.items[0]).toEqual(shell)
+  })
+
   it('prefers event-ordered content over text+tools when present', () => {
     const blocks: SessionMessageBlock[] = [
       {

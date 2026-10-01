@@ -4,6 +4,7 @@
  */
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import type { SessionMessageBlock } from '@superone/shared/environment'
+import { upsertCodexItem } from '@superone/chat-core'
 
 /**
  * Prefer event-log ordered `content` (agent emission order). Fall back to
@@ -97,8 +98,23 @@ export function preferCatalogMessages(
   if (catalogMessages.length === 0) return localMessages
   if (localMessages.length === 0) return catalogMessages
 
-  const pickRicher = (local: ChatMessage, cat: ChatMessage): ChatMessage =>
-    local.content.length >= cat.content.length ? local : cat
+  const pickRicher = (local: ChatMessage, cat: ChatMessage): ChatMessage => {
+    const message = local.content.length >= cat.content.length ? local : cat
+    if (!cat.metadata && !local.metadata) return message
+    const catalogCodex = cat.metadata?.codex
+    const localCodex = local.metadata?.codex
+    // Text snapshots and native Codex items are independent. Equal-length
+    // transcript content must not discard the catalog's durable item rows.
+    // Keep catalog order, add local-only items, and preserve newer live items
+    // while hydration races the stream. Completed catalog items are canonical.
+    const catalogItems = catalogCodex?.items ?? []
+    const catalogIds = new Set(catalogItems.map(item => item.id))
+    const items = (localCodex?.items ?? []).reduce((current, item) =>
+      local.status === 'streaming' || !catalogIds.has(item.id) ? upsertCodexItem(current, item) : current, catalogItems)
+    return { ...message, metadata: { ...local.metadata, ...cat.metadata,
+      ...(catalogCodex || localCodex ? { codex: { threadId: null, usage: null, ...localCodex, ...catalogCodex, items } } : {}),
+    } }
+  }
 
   // Local timeline is complete enough — preserve order, densify by id.
   if (localMessages.length >= catalogMessages.length) {

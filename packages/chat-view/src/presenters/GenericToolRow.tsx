@@ -85,6 +85,8 @@ export interface GenericToolRowProps {
    * toggle the row.
    */
   trailing?: ReactNode
+  /** Opens with its details shown, as when the user asked for them from elsewhere. */
+  defaultExpanded?: boolean
   onDetailRetry?: () => void
   detailStatus?: string
   onExpandedChange?: (expanded: boolean) => void
@@ -168,6 +170,7 @@ function ToolResult({ text }: { text: string }) {
 export function GenericToolRowPresenter({
   hasDeferredDetails,
   trailing,
+  defaultExpanded,
   detailStatus,
   onDetailRetry,
   onExpandedChange,
@@ -245,7 +248,7 @@ export function GenericToolRowPresenter({
         : Object.keys(params).some((key) => key !== 'file_path'))
   )
   const hasDiff = hasCompleteDiff || hasStreamingDiffContent
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(defaultExpanded ?? false)
   useEffect(() => { onExpandedChange?.(expanded) }, [expanded, onExpandedChange])
   const gridRef = useRef<HTMLDivElement>(null)
 
@@ -384,7 +387,8 @@ export function GenericToolRowPresenter({
           </span>
         )}
         {trailing && (
-          <span className="ml-auto flex items-center gap-1.5 text-muted-foreground" onClick={(event) => event.stopPropagation()}>
+          // Capped so a long state truncates before the tool's name does.
+          <span className="ml-auto flex max-w-[60%] items-center gap-1.5 text-muted-foreground" onClick={(event) => event.stopPropagation()}>
             {trailing}
           </span>
         )}

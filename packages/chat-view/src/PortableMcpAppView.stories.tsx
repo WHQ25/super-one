@@ -7,6 +7,8 @@ import { installFakeNativeHost } from './fixtures/native-host'
 import { noteMcpAppArrivals } from './mcp-app-document'
 import { PortableMcpAppView } from './PortableMcpAppView'
 import { PortableTurnContext } from './portable-turn-context'
+import { PortableToolRow } from './PortableToolRow'
+import { PortableWidgetBlock } from './PortableWidgetBlock'
 
 type HostMode = 'ok' | 'slow' | 'fails' | 'auth'
 
@@ -95,15 +97,54 @@ interface Args {
   width: number
   /** A transcript shorter than the View, which scrolls like the phone's. */
   height?: number
+  /** A widget and a plain MCP call around the View, to compare their frames. */
+  neighbours?: boolean
 }
 
-function Preview({ app, arrival, mode }: Args) {
+const TOOL_NAME = 'mcp__mcp-apps-fixture__fixture_list_items'
+
+function ToolRow({ app, trailing, expanded }: { app: ToolAppAttachment; trailing?: ReactNode; expanded?: boolean }) {
+  const result = (app.toolResult as ReturnType<typeof page> | undefined)?.content[0]?.text
+  return (
+    <PortableToolRow
+      toolName={TOOL_NAME}
+      toolUseId={app.harnessCallId ?? app.appInstanceId}
+      input={JSON.stringify(app.toolInput ?? {})}
+      status={app.status === 'pending' ? 'streaming' : 'complete'}
+      result={result}
+      trailing={trailing}
+      defaultExpanded={expanded}
+    />
+  )
+}
+
+const WIDGET = {
+  title: 'weekly_summary',
+  widget_code: '<div style="padding:16px;font:14px system-ui;color:var(--color-text-primary)">A widget the agent drew</div>',
+  width: 800,
+  height: 120,
+  isSVG: false,
+}
+
+function Preview({ app, arrival, mode, neighbours }: Args) {
   // How the View reached the document decides whether it may call out before activation.
   const [noted] = useState(() => {
     noteMcpAppArrivals([{ id: 'm', role: 'assistant', status: 'complete', createdAt: '', providerId: 'claude', content: [{ type: 'tool_result', toolUseId: 't', summary: '', app }] }], arrival)
     return true
   })
-  return noted ? <MockHost mode={mode}><PortableMcpAppView app={app} messageId="m" /></MockHost> : null
+  if (!noted) return null
+  const view = <PortableMcpAppView app={app} messageId="m" toolName={TOOL_NAME} row={({ trailing, expanded } = {}) => <ToolRow app={app} trailing={trailing} expanded={expanded} />} />
+  return (
+    <MockHost mode={mode}>
+      {neighbours ? (
+        <>
+          <PortableWidgetBlock data={WIDGET} />
+          <PortableToolRow toolName="mcp__mcp-apps-fixture__fixture_status" toolUseId="plain" input="{}" status="complete" result="ok" />
+          {view}
+        </>
+      ) : view}
+    </MockHost>
+  )
 }
 
 let next = 0
@@ -171,4 +212,10 @@ export const Narrow: Story = { name: 'Narrow · 320 px', args: { app: attachment
 export const ConsentBelowTheFold: Story = {
   name: 'Consent below the fold · card scrolls into view',
   args: { app: attachment(id('consent-fold'), { resource: RESOURCE }), height: 320 },
+}
+
+/** The View reads like the widget above it, not like the plain MCP call between them. */
+export const NextToWidgetAndRow: Story = {
+  name: 'Next to a widget and a plain MCP row',
+  args: { app: attachment(id('neighbours'), { resource: RESOURCE }), neighbours: true },
 }

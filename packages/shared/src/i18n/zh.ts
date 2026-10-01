@@ -3963,6 +3963,7 @@ export const zh: Messages = {
     restart: '重新启动',
     unknownOutcome: '上一次操作的结果未知，未自动重试。',
     exitFullscreen: '退出全屏',
+    toolDetails: '工具详情',
     deny: '拒绝',
     sendMessage: '{{server}} 请求发送以下消息',
     nonTextBlocks: '另有 {{count}} 个非文本附件',

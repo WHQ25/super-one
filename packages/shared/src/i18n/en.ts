@@ -3870,6 +3870,7 @@ export type Messages = {
     restart: string
     unknownOutcome: string
     exitFullscreen: string
+    toolDetails: string
     deny: string
     sendMessage: string
     nonTextBlocks: string
@@ -7965,6 +7966,7 @@ export const en: Messages = {
     restart: 'Restart',
     unknownOutcome: 'The result of the last action is unknown. It was not retried.',
     exitFullscreen: 'Exit Full Screen',
+    toolDetails: 'Tool Details',
     deny: 'Deny',
     sendMessage: '{{server}} wants to send this message',
     nonTextBlocks: 'Plus {{count}} non-text attachments',

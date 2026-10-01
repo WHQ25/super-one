@@ -6,6 +6,7 @@ import { buildWidgetSrcdoc, widgetThemeVars, WIDGET_FRAME_WIDTH } from '@superon
 import { requestNative, requestNativeAsync } from './bridge'
 import { PortableTurnContext } from './portable-turn-context'
 import { WidgetLayoutFrame } from './WidgetLayoutFrame'
+import { PORTABLE_BLOCK_CLASS, PortableBlockHeader, PortableBlockHeaderButton } from './PortableBlockHeader'
 
 /**
  * A code widget on the phone.
@@ -212,27 +213,22 @@ export function PortableWidgetBlock({ data }: { data: WidgetData }) {
     // The horizontal inset is the block's own: the transcript's padding stops here, and
     // a frame running to the screen edge is part of what made a widget read as a panel
     // dropped into the conversation rather than as part of the reply.
-    <div ref={setRoot} className="my-2 w-full px-1" data-widget-title={data.title}>
-      <div className="mb-1 flex h-6 items-center gap-1.5 px-0.5">
-        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground/70">{displayTitle}</span>
+    <div ref={setRoot} className={PORTABLE_BLOCK_CLASS} data-widget-title={data.title}>
+      <PortableBlockHeader title={displayTitle}>
         {save.kind === 'saving' ? (
           <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground/70" aria-label={saveLabel} />
         ) : save.kind === 'saved' ? (
           <Check className="size-3.5 shrink-0 text-success" aria-label={t('widget.save.confirm')} />
         ) : (
-          <button
-            type="button"
-            aria-label={saveLabel}
-            aria-expanded={save.kind === 'editing'}
-            onClick={() => setSave(save.kind === 'editing' ? { kind: 'idle' } : { kind: 'editing' })}
-            // Negative margin keeps the drawn glyph small while the tap target stays
-            // finger-sized, the same trade the tool rows make with `hitSlop`.
-            className="-m-2 shrink-0 p-2 text-muted-foreground/70"
+          <PortableBlockHeaderButton
+            label={saveLabel}
+            expanded={save.kind === 'editing'}
+            onPress={() => setSave(save.kind === 'editing' ? { kind: 'idle' } : { kind: 'editing' })}
           >
             <Bookmark className={`size-3.5 ${data.templateId ? 'fill-current' : ''}`} />
-          </button>
+          </PortableBlockHeaderButton>
         )}
-      </div>
+      </PortableBlockHeader>
       <WidgetLayoutFrame layout={data.layout}>
         <iframe
           ref={iframeRef}

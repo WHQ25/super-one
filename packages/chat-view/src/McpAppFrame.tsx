@@ -1,16 +1,20 @@
-import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Loader2, Maximize2, X } from 'lucide-react'
+import { Braces, Loader2, Plug, X } from 'lucide-react'
 import type { McpUiHostCapabilities } from '@modelcontextprotocol/ext-apps/app-bridge'
 import { McpAppsError, type McpUiResourceMeta, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { createMcpAppDocument, mcpAppHostContext } from '@superone/shared/mcp-apps-host'
 import { createMcpAppHost, createMcpAppHostSlot, type McpAppHost } from '@superone/shared/mcp-apps-host/host'
 import { createMcpAppTransport } from '@superone/shared/mcp-apps-host/transport'
+import { resolveMcpServerIconFromMap } from '@superone/shared/mcp-server-icon'
+import { parseMcpToolName } from '@superone/shared/tool-ui'
 import { requestNative } from './bridge'
 import { McpAppConsentCard, type McpAppConsentRequest } from './McpAppConsentCard'
+import { PORTABLE_BLOCK_CLASS, PortableBlockHeader, PortableBlockHeaderButton, PortableInlineAction } from './PortableBlockHeader'
 import { buildMcpAppSrcdoc, markMcpAppActivated, mcpAppNeedsActivation, mobileMcpAppCsp, setMcpAppFullscreenExit } from './mcp-app-document'
 import { createMcpAppExecutor, runMcpAppOperation, type McpAppConsent, type McpAppDisplayMode } from './mcp-app-executor'
 import { PortableTurnContext } from './portable-turn-context'
+import type { McpAppToolRow } from './PortableMcpAppView'
 
 const MIN_HEIGHT = 80
 /** Taller Views scroll inside their frame; the transcript keeps its own scroll. */
@@ -63,15 +67,21 @@ export interface McpAppFrameProps {
   messageId: string
   html: string
   meta: McpUiResourceMeta | undefined
+  toolName: string
+  /** The call's tool row: the raw details on request, and the View's stand-in once it stops. */
+  row: McpAppToolRow
 }
 
 /**
  * The live half of a View: an opaque `srcdoc` frame and its AppBridge. Loaded lazily, so the
- * MCP SDK is only evaluated once a transcript actually shows an App.
+ * MCP SDK is only evaluated once a transcript actually shows an App. It is framed like a
+ * widget, under a muted `server · tool` header; the host offers no display modes of its own,
+ * only the exit from the fullscreen the View asked for.
  */
-export default function McpAppFrame({ app, messageId, html, meta }: McpAppFrameProps) {
+export default function McpAppFrame({ app, messageId, html, meta, toolName, row }: McpAppFrameProps) {
   const { t } = useTranslation()
-  const { scheme } = useContext(PortableTurnContext)
+  const { scheme, mcpIcons } = useContext(PortableTurnContext)
+  const [details, setDetails] = useState(false)
   const [root, setRoot] = useState<HTMLDivElement | null>(null)
   const frameRef = useRef<HTMLIFrameElement>(null)
   const hostRef = useRef<McpAppHost | null>(null)
@@ -81,6 +91,8 @@ export default function McpAppFrame({ app, messageId, html, meta }: McpAppFrameP
   const [restart, setRestart] = useState(0)
   const [inactive, setInactive] = useState(() => mcpAppNeedsActivation(app.appInstanceId))
   const [activating, setActivating] = useState<'idle' | 'busy' | string>('idle')
+  // Counts the View's attempts the host refused while inactive; each one pulses Activate.
+  const [nudges, setNudges] = useState(0)
   const [fullscreen, setFullscreen] = useState(false)
   const [unknownOutcome, setUnknownOutcome] = useState(false)
   const [consent, setConsent] = useState<McpAppConsentRequest | null>(null)
@@ -128,12 +140,18 @@ export default function McpAppFrame({ app, messageId, html, meta }: McpAppFrameP
       restored: mcpAppNeedsActivation(app.appInstanceId),
       onSizeChanged: (size) => { if (size.height) setHeight(Math.min(MAX_INLINE_HEIGHT, Math.max(MIN_HEIGHT, size.height))) },
       onUnknownOutcome: () => setUnknownOutcome(true),
-      // The host stopped serving this View; the executor already forgot its activation.
-      onError: (error) => { if (error instanceof McpAppsError && error.code === 'inactive') { setInactive(true); setActivating('idle') } },
+      // A restored View tried to call out, or the host stopped serving it; either way it
+      // waits for Activate, and the attempt points the user there.
+      onError: (error) => {
+        if (!(error instanceof McpAppsError) || error.code !== 'inactive') return
+        setInactive(true)
+        setActivating('idle')
+        setNudges((value) => value + 1)
+      },
     })
     slot.replace(host)
     hostRef.current = host
-    const stop = document.onRevoke(() => setRevoked(true))
+    const stop = document.onRevoke(() => { setRevoked(true); setFullscreen(false) })
     let cancelled = false
     setSrcdoc(null)
     void host.connect().then(() => { if (!cancelled) setSrcdoc(buildMcpAppSrcdoc(html, meta)) })
@@ -172,6 +190,23 @@ export default function McpAppFrame({ app, messageId, html, meta }: McpAppFrameP
     }
   }
 
+  // The document is gone; the call is a tool row again until the user restarts its View.
+  if (revoked) {
+    return (
+      <div ref={setRoot} data-mcp-app={app.appInstanceId}>
+        {row({ trailing: (
+          <>
+            <span className="min-w-0 truncate">{t('mcpApp.reloaded')}</span>
+            <PortableInlineAction label={t('mcpApp.restart')} onPress={() => { setRevoked(false); setRestart((value) => value + 1) }} />
+          </>
+        ) })}
+      </div>
+    )
+  }
+
+  const tool = parseMcpToolName(toolName)
+  const server = tool?.serverName ?? app.binding.server
+  const iconSrc = resolveMcpServerIconFromMap(server, mcpIcons)
   const frameStyle = fullscreen ? { width: '100%', height: '100%' } : { width: '100%', height }
   return (
     <div
@@ -179,49 +214,47 @@ export default function McpAppFrame({ app, messageId, html, meta }: McpAppFrameP
       data-mcp-app={app.appInstanceId}
       className={fullscreen
         ? 'fixed inset-0 z-50 flex flex-col bg-background pt-[var(--safe-area-top,0px)] pb-[var(--safe-area-bottom,0px)]'
-        : 'my-1.5 w-full'}
+        : PORTABLE_BLOCK_CLASS}
     >
       {fullscreen ? (
         <div className="flex h-10 shrink-0 items-center gap-2 px-2">
-          <span className="min-w-0 flex-1 truncate text-sm text-foreground">{app.binding.server}</span>
+          <span className="min-w-0 flex-1 truncate text-sm text-foreground">{server}</span>
           <button type="button" aria-label={t('mcpApp.exitFullscreen')} onClick={() => display('inline')} className="-m-1 p-2 text-muted-foreground">
             <X className="size-4" />
           </button>
         </div>
-      ) : inactive ? (
-        <div className="mb-1 flex items-center gap-2 px-0.5">
-          <span className="min-w-0 flex-1 text-xs text-muted-foreground">{t('mcpApp.activateHint')}</span>
-          <button
-            type="button"
-            disabled={activating === 'busy'}
-            onClick={() => { void activate() }}
-            className="flex shrink-0 items-center gap-1 rounded bg-muted px-2.5 py-1 text-xs text-foreground disabled:opacity-50"
-          >
-            {activating === 'busy' ? <Loader2 className="size-3 animate-spin" /> : <Maximize2 className="size-3 rotate-45" />}
-            {t('mcpApp.activate')}
-          </button>
-        </div>
-      ) : null}
+      ) : (
+        <PortableBlockHeader
+          icon={iconSrc
+            ? <img src={iconSrc} alt="" className="size-3.5 shrink-0 rounded-sm object-cover" />
+            : <Plug className="size-3 shrink-0 text-muted-foreground/70" />}
+          title={tool ? `${server} · ${tool.mcpToolName.replace(/_/g, ' ')}` : server}
+        >
+          {inactive ? (
+            // Keyed by the attempt so each one restarts the pulse.
+            <span key={nudges} className={nudges ? 'rounded motion-safe:animate-[pulse_0.5s_ease-in-out_3]' : undefined}>
+              <PortableInlineAction label={t('mcpApp.activate')} disabled={activating === 'busy'} onPress={() => { void activate() }}>
+                {activating === 'busy' ? <Loader2 className="size-3 animate-spin" /> : null}
+              </PortableInlineAction>
+            </span>
+          ) : null}
+          <PortableBlockHeaderButton label={t('mcpApp.toolDetails')} expanded={details} onPress={() => setDetails((value) => !value)}>
+            <Braces className="size-3.5" />
+          </PortableBlockHeaderButton>
+        </PortableBlockHeader>
+      )}
+      {details && !fullscreen ? <div className="mb-1">{row({ expanded: true })}</div> : null}
       <div className={fullscreen ? 'relative min-h-0 flex-1' : 'relative'}>
-        {revoked ? (
-          <div className="flex flex-col items-start gap-2 rounded-md bg-muted/40 p-3">
-            <p className="text-xs text-muted-foreground">{t('mcpApp.reloaded')}</p>
-            <button type="button" onClick={() => { setRevoked(false); setRestart((value) => value + 1) }} className="rounded bg-muted px-3 py-1.5 text-xs text-foreground">
-              {t('mcpApp.restart')}
-            </button>
-          </div>
-        ) : (
-          <iframe
-            key={restart}
-            ref={frameRef}
-            title={app.binding.server}
-            srcDoc={srcdoc ?? undefined}
-            onLoad={onLoad}
-            sandbox="allow-scripts allow-forms"
-            className={`block rounded-md border-0 ${app.resource?.meta.prefersBorder ?? meta?.prefersBorder ? 'ring-1 ring-border' : ''}`}
-            style={frameStyle}
-          />
-        )}
+        <iframe
+          key={restart}
+          ref={frameRef}
+          title={server}
+          srcDoc={srcdoc ?? undefined}
+          onLoad={onLoad}
+          sandbox="allow-scripts allow-forms"
+          className={`block rounded-md border-0 ${app.resource?.meta.prefersBorder ?? meta?.prefersBorder ? 'ring-1 ring-border' : ''}`}
+          style={frameStyle}
+        />
         {consent ? (
           // Above the frame in fullscreen, where the frame covers the whole document.
           <div className={fullscreen ? 'absolute inset-x-2 bottom-2 z-10' : 'mt-1.5'}>

@@ -197,19 +197,21 @@ function PortableDocument({ name }: { name: string }) {
   return <FileText className="size-3 shrink-0" aria-label={name} />
 }
 
-/** A call whose server attached an MCP App shows its View under the row. */
+/** A call whose server attached an MCP App shows its View in place of the row. */
 function PortableClaudeTool(props: ClaudeToolPresenterProps) {
   const messageId = useContext(TurnMessageIdContext)
   if (!props.app || !messageId) return <PortableClaudeToolRow {...props} />
   return (
-    <>
-      <PortableClaudeToolRow {...props} />
-      <PortableMcpAppView app={props.app} messageId={messageId} />
-    </>
+    <PortableMcpAppView
+      app={props.app}
+      messageId={messageId}
+      toolName={props.toolName}
+      row={({ trailing, expanded } = {}) => <PortableClaudeToolRow {...props} trailing={trailing} defaultExpanded={expanded} />}
+    />
   )
 }
 
-function PortableClaudeToolRow(props: ClaudeToolPresenterProps) {
+function PortableClaudeToolRow(props: ClaudeToolPresenterProps & { trailing?: ReactNode; defaultExpanded?: boolean }) {
   const { pendingPermission, mcpIcons } = useContext(PortableTurnContext)
   const brandIconSrc = resolveMcpServerIconFromMap('superone', mcpIcons)
   if (isPortableInteractiveTool(props.toolName, props.input)) return <DeferredInteractiveTool {...props} />

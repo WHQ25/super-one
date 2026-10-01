@@ -38,7 +38,9 @@ function show(id: string, arrival: 'live' | 'restored', resource?: typeof RESOUR
     ...(resource ? { resource } : {}),
   }
   noteMcpAppArrivals([{ id: 'm', role: 'assistant', status: 'complete', createdAt: '', providerId: 'claude', content: [{ type: 'tool_result', toolUseId: 't', summary: '', app }] }], arrival)
-  return render(<PortableMcpAppView app={app} messageId="m" />)
+  return render(
+    <PortableMcpAppView app={app} messageId="m" toolName="mcp__fixture__view" row={({ trailing } = {}) => <div data-testid="row">{trailing}</div>} />,
+  )
 }
 
 afterEach(() => {
@@ -60,7 +62,10 @@ describe('PortableMcpAppView activation', () => {
     installHost(ok)
     const view = show('live-snapshot', 'live', RESOURCE)
     expect(view.queryByTestId('frame')).toBeNull()
+    expect(view.getByTestId('row')).toBeTruthy()
     await waitFor(() => expect(view.getByTestId('frame')).toBeTruthy())
+    // The View stands in place of the row once there is one.
+    expect(view.queryByTestId('row')).toBeNull()
     expect(operations).toEqual(['activate'])
   })
 
@@ -75,7 +80,7 @@ describe('PortableMcpAppView activation', () => {
   it('shows the sign-in state when a live View cannot activate', async () => {
     installHost(() => ({ ok: false, error: { code: 'auth_required', message: 'Sign in required', challenge: ['Bearer'] } }))
     const view = show('live-auth', 'live', RESOURCE)
-    await waitFor(() => expect(view.container.querySelector('.text-error')).toBeTruthy())
+    await waitFor(() => expect(view.getByTestId('row').querySelector('.text-error')).toBeTruthy())
     expect(view.queryByTestId('frame')).toBeNull()
     expect(operations).toEqual(['activate'])
   })

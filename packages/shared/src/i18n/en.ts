@@ -2016,7 +2016,6 @@ export type Messages = {
     /** Declarative forms (MCP elicitation, OpenAI extended forms). */
     schemaForm: {
       submit: string
-      submitAlways: string
       dismiss: string
       unsupportedTitle: string
       unsupportedBody: string
@@ -6153,7 +6152,6 @@ export const en: Messages = {
     },
     schemaForm: {
       submit: 'Submit',
-      submitAlways: 'Submit and Always Allow',
       dismiss: 'Dismiss',
       unsupportedTitle: 'SuperOne can\'t show this form',
       unsupportedBody: '{{requester}} asked for input SuperOne does not support yet. Dismiss it to tell the server the form was not completed.',

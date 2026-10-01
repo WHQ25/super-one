@@ -323,9 +323,9 @@ export function PermissionPrompt() {
     respondToPermission(requestId, true, true)
   }, [requestId, respondToPermission])
 
-  const handleFormSubmit = useCallback((content: Record<string, unknown>, always: boolean) => {
+  const handleFormSubmit = useCallback((content: Record<string, unknown>) => {
     if (!requestId) return
-    respondToPermission(requestId, true, always, undefined, undefined, undefined, content)
+    respondToPermission(requestId, true, false, undefined, undefined, undefined, content)
   }, [requestId, respondToPermission])
 
   const handleElicitationDecline = useCallback(() => {
@@ -579,7 +579,6 @@ export function PermissionPrompt() {
                 key={requestId}
                 form={schemaForm}
                 requester={pendingPermission.serverName ?? 'MCP'}
-                allowAlways={supportsAlwaysPersist}
                 onSubmit={handleFormSubmit}
                 onDecline={handleElicitationDecline}
                 onCancel={handleCancel}

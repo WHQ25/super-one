@@ -84,7 +84,8 @@ export function permissionSheetPresentation(request: PermissionRequest): Permiss
         description: request.subtitle || 'The connected tool needs more information before it can continue.',
         approveLabel: 'Continue',
         denyLabel: 'Decline',
-        alwaysLabel: request.supportsAlwaysPersist ? 'Continue & remember' : undefined,
+        // A remembered answer belongs to an approval, never to a form's input.
+        alwaysLabel: request.supportsAlwaysPersist && !permissionSchemaForm(request) ? 'Continue & remember' : undefined,
         items: [],
       }
     case 'video_gen_confirm': {

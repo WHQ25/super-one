@@ -31,7 +31,7 @@ function Shell({ children, width = 560 }: { children: ReactNode; width?: number 
 }
 
 /** Production composer around a raw `requestedSchema`, echoing what it would send. */
-function Composer({ schema, requester = 'Bits & Bolts', allowAlways }: { schema: unknown; requester?: string; allowAlways?: boolean }) {
+function Composer({ schema, requester = 'Bits & Bolts' }: { schema: unknown; requester?: string }) {
   const [sent, setSent] = useState<string | null>(null)
   const reply = (text: string) => setSent(text)
   return (
@@ -39,8 +39,7 @@ function Composer({ schema, requester = 'Bits & Bolts', allowAlways }: { schema:
       <SchemaFormComposer
         form={parseSchemaForm(schema)}
         requester={requester}
-        allowAlways={allowAlways}
-        onSubmit={(content: Record<string, SchemaFormValue>, always) => reply(JSON.stringify({ action: 'accept', always, content }, null, 2))}
+        onSubmit={(content: Record<string, SchemaFormValue>) => reply(JSON.stringify({ action: 'accept', content }, null, 2))}
         onDecline={() => reply('{ "action": "decline" }')}
         onCancel={() => reply('{ "action": "cancel" }')}
       />
@@ -84,7 +83,7 @@ const ALL_KINDS = {
   },
 }
 
-export const AllInputKinds: Story = { args: { schema: ALL_KINDS, allowAlways: true } }
+export const AllInputKinds: Story = { args: { schema: ALL_KINDS } }
 
 /** `cad.pickFile`: titled options with `x-openai-thumbnail` render as an image grid. */
 export const Thumbnails: Story = {

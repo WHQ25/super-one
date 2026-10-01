@@ -2117,7 +2117,6 @@ export const zh: Messages = {
     },
     schemaForm: {
       submit: '提交',
-      submitAlways: '提交并始终允许',
       dismiss: '关闭',
       unsupportedTitle: 'SuperOne 暂时无法显示此表单',
       unsupportedBody: '{{requester}} 请求的输入类型 SuperOne 尚不支持。关闭后会告知服务器表单未完成。',

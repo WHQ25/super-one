@@ -107,6 +107,9 @@ describe('permission sheet state', () => {
     const parsed = { ...legacy, schemaForm: { supported: false as const, reason: 'type "object"' } }
     expect(permissionSchemaForm(parsed)).toEqual(parsed.schemaForm)
     expect(permissionSchemaForm(request('mcp_elicitation'))).toBeUndefined()
+    // Remembering belongs to approvals; a form's input is never remembered.
+    expect(permissionSheetPresentation({ ...legacy, supportsAlwaysPersist: true }).alwaysLabel).toBeUndefined()
+    expect(permissionSheetPresentation({ ...request('mcp_elicitation'), supportsAlwaysPersist: true }).alwaysLabel).toBe('Continue & remember')
   })
 
   it('presents selectable permission suggestions in human terms', () => {

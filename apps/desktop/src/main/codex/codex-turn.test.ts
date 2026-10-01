@@ -1222,6 +1222,12 @@ describe('respondToCodexElicitation', () => {
     })
   })
 
+  it('never persists a form answer, even when asked to', () => {
+    const { session, resolve } = setupPending(personSchema)
+    respondToCodexElicitation(session, 'e1', true, true, undefined, { name: 'Alice' })
+    expect(resolve).toHaveBeenCalledWith({ action: 'accept', content: { name: 'Alice' }, _meta: null })
+  })
+
   it('keeps the request pending when answers do not satisfy the form', () => {
     const { session, resolve } = setupPending(personSchema)
     expect(respondToCodexElicitation(session, 'e1', true, false, undefined, { age: 1.5 })).toBe(false)

@@ -2995,7 +2995,8 @@ export function respondToCodexElicitation(
     pending.resolve({
       action: 'accept',
       content: schemaForm ? accepted.content : null,
-      _meta: alwaysAllow ? { persist: 'always' } : null,
+      // `persist` remembers an approval. A form's input is never remembered or replayed.
+      _meta: alwaysAllow && !schemaForm ? { persist: 'always' } : null,
     })
     return true
   }

@@ -16,11 +16,9 @@ export interface SchemaFormComposerProps {
   form: SchemaForm
   /** Who asked, for the unsupported notice. */
   requester: string
-  onSubmit: (content: Record<string, SchemaFormValue>, always: boolean) => void
+  onSubmit: (content: Record<string, SchemaFormValue>) => void
   onDecline: () => void
   onCancel: () => void
-  /** Offer "Submit and always allow" (Codex `_meta.persist: always`). */
-  allowAlways?: boolean
 }
 
 /**
@@ -31,7 +29,7 @@ export interface SchemaFormComposerProps {
  * A form SuperOne cannot fully render is reported, never partially shown; the only
  * action left is to dismiss it, which tells the server the form was cancelled.
  */
-export function SchemaFormComposer({ form, requester, onSubmit, onDecline, onCancel, allowAlways }: SchemaFormComposerProps) {
+export function SchemaFormComposer({ form, requester, onSubmit, onDecline, onCancel }: SchemaFormComposerProps) {
   const { t } = useTranslation()
   const fields = form.supported ? form.fields : []
   const [values, setValues] = useState<SchemaFormValues>(() => initialSchemaFormValues(fields))
@@ -69,12 +67,12 @@ export function SchemaFormComposer({ form, requester, onSubmit, onDecline, onCan
     setValues((current) => ({ ...current, [name]: value }))
     setTouched((current) => (current === 'all' || current.has(name) ? current : new Set(current).add(name)))
   }
-  const submit = (always: boolean) => {
+  const submit = () => {
     if (Object.keys(errors).length > 0) {
       setTouched('all')
       return
     }
-    onSubmit(schemaFormContent(fields, values), always)
+    onSubmit(schemaFormContent(fields, values))
   }
 
   return (
@@ -84,10 +82,7 @@ export function SchemaFormComposer({ form, requester, onSubmit, onDecline, onCan
         <SchemaFormFields fields={fields} values={values} errors={shownErrors} onChange={setField} />
       </div>
       <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
-        <PermissionActionButton tone="approve" onClick={() => submit(false)}>{t('chat.schemaForm.submit')}</PermissionActionButton>
-        {allowAlways && (
-          <PermissionActionButton tone="primary" onClick={() => submit(true)}>{t('chat.schemaForm.submitAlways')}</PermissionActionButton>
-        )}
+        <PermissionActionButton tone="approve" onClick={submit}>{t('chat.schemaForm.submit')}</PermissionActionButton>
         <PermissionActionButton tone="reject" onClick={onDecline}>{t('chat.permission.decline')}</PermissionActionButton>
         <PermissionActionButton tone="neutral" onClick={onCancel}>{t('common.cancel')}</PermissionActionButton>
       </div>

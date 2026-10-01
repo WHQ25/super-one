@@ -5,9 +5,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { parseSchemaForm } from '@superone/shared/schema-form'
 import { SchemaFormComposer } from './SchemaFormComposer'
 
-function renderForm(schema: unknown, extra: { allowAlways?: boolean } = {}) {
+function renderForm(schema: unknown) {
   const handlers = { onSubmit: vi.fn(), onDecline: vi.fn(), onCancel: vi.fn() }
-  render(<SchemaFormComposer form={parseSchemaForm(schema)} requester="Bits & Bolts" {...handlers} {...extra} />)
+  render(<SchemaFormComposer form={parseSchemaForm(schema)} requester="Bits & Bolts" {...handlers} />)
   return handlers
 }
 
@@ -27,7 +27,7 @@ describe('SchemaFormComposer', () => {
     fireEvent.change(screen.getByLabelText(/CAD or file URI/), { target: { value: 'cad://parts/hex' } })
     fireEvent.change(screen.getByLabelText(/Tolerance/), { target: { value: '2.5' } })
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
-    expect(onSubmit).toHaveBeenCalledWith({ reference: 'cad://parts/hex', tolerance: 2.5, approved: false }, false)
+    expect(onSubmit).toHaveBeenCalledWith({ reference: 'cad://parts/hex', tolerance: 2.5, approved: false })
   })
 
   it('reveals errors instead of submitting invalid answers', () => {
@@ -39,7 +39,7 @@ describe('SchemaFormComposer', () => {
     expect(screen.getAllByRole('alert')).toHaveLength(2)
   })
 
-  it('picks thumbnail options and offers always-allow when asked', () => {
+  it('picks thumbnail options', () => {
     const { onSubmit } = renderForm({
       type: 'object',
       required: ['part'],
@@ -49,11 +49,11 @@ describe('SchemaFormComposer', () => {
           { const: 'washer', title: 'Washer' },
         ] },
       },
-    }, { allowAlways: true })
+    })
     expect(screen.getAllByRole('radio')).toHaveLength(2)
     fireEvent.click(screen.getByRole('radio', { name: /Washer/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Submit and Always Allow' }))
-    expect(onSubmit).toHaveBeenCalledWith({ part: 'washer' }, true)
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    expect(onSubmit).toHaveBeenCalledWith({ part: 'washer' })
   })
 
   it('selects supplied resources only', () => {
@@ -69,7 +69,7 @@ describe('SchemaFormComposer', () => {
     })
     fireEvent.click(screen.getByRole('checkbox', { name: /b\.stl/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
-    expect(onSubmit).toHaveBeenCalledWith({ refs: ['cad://a', 'cad://b'] }, false)
+    expect(onSubmit).toHaveBeenCalledWith({ refs: ['cad://a', 'cad://b'] })
   })
 
   it('adds free-text list values with Enter and from suggestions', () => {
@@ -82,7 +82,7 @@ describe('SchemaFormComposer', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
     fireEvent.click(screen.getByRole('button', { name: 'Washer' }))
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
-    expect(onSubmit).toHaveBeenCalledWith({ tags: ['custom-spacer', 'washer'] }, false)
+    expect(onSubmit).toHaveBeenCalledWith({ tags: ['custom-spacer', 'washer'] })
   })
 
   it('declines and cancels without content', () => {

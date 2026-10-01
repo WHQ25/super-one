@@ -237,7 +237,7 @@ feature integration. Unlisted new optional fields are tolerated and unused.
 | `item/autoApprovalReview/started` | unused | No client call or dedicated handler. | — |
 | `item/commandExecution/outputDelta` | used | Consumes the notification. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts` |
 | `item/commandExecution/terminalInteraction` | unused | No client call or dedicated handler. | — |
-| `item/completed` | partial | Maps native MCP Apps presentation and private View results alongside chat/tool items. Harness-neutral host updates persist snapshots/context on those items and node catalog rows. Final desktop View acceptance remains pending. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts`, `apps/desktop/src/main/mcp-apps/executor.ts` |
+| `item/completed` | partial | Maps native MCP Apps presentation and private View results alongside chat/tool items. Harness-neutral host updates persist snapshots/context on those items and node catalog rows. Desktop and paired-node View acceptance passes, including public Excalidraw, real next-turn context, native fullscreen/PiP lifecycle and restart activation gating. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-fork-listener.ts`, `apps/desktop/src/main/mcp-apps/executor.ts` |
 | `item/fileChange/outputDelta` | unused | No client call or dedicated handler. | — |
 | `item/fileChange/patchUpdated` | unused | No client call or dedicated handler. | — |
 | `item/mcpToolCall/progress` | unused | No client call or dedicated handler. | — |

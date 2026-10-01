@@ -9,10 +9,10 @@ Long-term docs affected: `docs/architecture/chat-core.md` (tool app attachment),
 
 | # | Spike | Pass criteria |
 |---|---|---|
-| 0.1 | Pin versions | Choose ext-apps 2.x (+ MCP SDK 2.x for `app-bridge` only) or the last SDK-1.x-compatible release; `AppBridge` builds in the renderer and `packages/chat-view`. |
+| 0.1 | Pin versions | **Done — pass, ext-apps 1.7.5 / SDK 1.30.0.** Choose ext-apps 2.x (+ MCP SDK 2.x for `app-bridge` only) or the last SDK-1.x-compatible release; `AppBridge` builds in the renderer and `packages/chat-view`. |
 | 0.2 | Fixture server | Local HTTP MCP server with model-only / app-only / default-visibility tools, private `_meta`, `structuredContent` with `outputSchema`, an `isError` result, one auth-rejecting tool, a slow tool for cancel, identical concurrent calls, out-of-order results. Lives with desktop test fixtures. |
-| 0.3 | Codex wire check | Against 0.159 with the fixture: extension reaches server `initialize`; app-only tool hidden from the model; `mcpAppUi` + full result on the item (`appContext` may be null); `resource/read` and `tool/call` with `threadId`. Confirm the node-side protocol path for remote projects; the RPC round trip itself is accepted in phase 1. |
-| 0.4 | Desktop iframe security | `superone-mcp-app://` iframe: cannot reach `parent`, cannot navigate top or open popups, form submission blocked by `form-action 'none'`, cross-origin new-document navigation blocked before the request, same-document routing kept, a new document revokes the bridge, `local-file` / `superone-app` handlers refuse this origin, CSP header blocks undeclared origins, StrictMode double mount leaves one bridge. |
+| 0.3 | Codex wire check | **Done — pass, 0.159.0 fixture wire and paired node.** Against 0.159 with the fixture: extension reaches server `initialize`; app-only tool hidden from the model; `mcpAppUi` + full result on the item (`appContext` may be null); `resource/read` and `tool/call` with `threadId`. Confirm the node-side protocol path for remote projects; the RPC round trip itself is accepted in phase 1. |
+| 0.4 | Desktop iframe security | **Done — pass, 18 native Electron tests.** `superone-mcp-app://` iframe: cannot reach `parent`, cannot navigate top or open popups, form submission blocked by `form-action 'none'`, cross-origin new-document navigation blocked before the request, same-document routing kept, a new document revokes the bridge, `local-file` / `superone-app` handlers refuse this origin, CSP header blocks undeclared origins, StrictMode double mount leaves one bridge. |
 | 0.5 | Mobile child frame | **Done 2026-10-01 — fails as shipped, passes with mitigations M1–M4.** Meta CSP works on both; the frame reaches RN directly on both. Findings in [Mobile track](#mobile-track). |
 | 0.6 | Claude | **Done 2026-10-01 — native, with a gated `mcp_call` adapter.** Findings in [Claude track](#claude-track-phase-2). |
 | 0.7 | Gateway call id | On one gateway harness (OpenCode plugin hook or dsh `callId`), try to pass the harness call id into the upstream request `_meta`. Verdict per harness: attached / adjacent block. An adjacent verdict does not block phase 1. |
@@ -600,3 +600,48 @@ Both returned to the visible main row with the same iframe element and
 `contentWindow`, zero additional loads and no window errors. The fixture's
 other exit paths remain separate evidence; the broader acceptance matrix
 is still pending.
+
+
+### 2026-10-01 — final desktop and paired-node acceptance
+
+Desktop Phase 1 steps 1–5 are implemented and the final native acceptance
+passes. Harness API/backlog documentation records the completed acceptance;
+long-term feature documentation is part of the parent session's consolidated
+MCP Apps documentation pass. This does not close the gateway or mobile tracks.
+
+| Acceptance | Result and evidence |
+|---|---|
+| Native macOS fullscreen/chrome matrix | Pass for all eight combinations of native window fullscreen on/off, sidebar shown/hidden, glass on/off. Each entered the real maximized activity tab, toggled the sidebar, then used standard Shrink. The iframe element and WindowProxy remained equal, with zero additional loads and no window errors. Native captures were visually reviewed. Maximize initially hides the sidebar; shown cells explicitly reveal it after entry. |
+| Glass sidebar animation | Pass in the actual App with the public Codex Excalidraw View. The native keyboard toggle changed sidebar state; the animation recording and its middle frame showed no stale chrome or content smear. |
+| Public Excalidraw, Claude and Codex | Pass. Both render a native View and enter the standard maximized activity tab through the View's Edit button. Codex editing added “Verified Codex MCP App”; the View's app-only save_checkpoint returned a checkpoint and updated model context with the edited scene. Standard Shrink retained the document and bridge. No export/share action was used. |
+| Local next-turn context | Pass: the real completed Claude reply was item-7 and Codex reply was item-4 after the corresponding selections. These are model replies, not just stored context assertions. |
+| Paired node, Claude and Codex | Pass: a fresh first-turn View automatically opens, app-only paging runs over the environment RPC, a model-only call is refused before provider dispatch, and a subsequent page request still succeeds. Each real next-turn reply was item-4. Node host updates retain the original app/server attribution. |
+| Real Electron process restart | Pass: local and remote Claude/Codex restore snapshot Views with an Activate gate. Pre-activation clicks return inactive. Logged resource/tool counts remain unchanged for both remote harnesses (13 to 13) and local Claude; local Codex produces the inactive bridge refusal. Local Claude/Codex explicit activation restores app-only paging. Remote Codex retains its historical tool/View row after the catalog fix below and explicit Activate restores app-only paging. |
+| Security and lifecycle checks | The final native Electron suite has 18 passing tests. Shared host + desktop View lifecycle have 23 passing tests; production ActivityPanel stories previously passed all 10 browser cases. Desktop node/web typechecks pass. |
+
+Evidence remains outside git at `/tmp/claude/mcp-final-matrix/`: the eight
+`os{0,1}-sidebar{0,1}-glass{0,1}-fullscreen.png` images and toggled counterparts,
+`glass-toggle.mp4`, `glass-toggle-middle.png`,
+`public-codex-edited-fullscreen.png`, and the two remote next-turn captures.
+`/private/tmp/mcp-final-remote-restore-evidence.txt` records the paired-node
+pre-activation wire counters. These are macOS desktop checks; they do not
+claim another desktop OS or physical-device acceptance.
+
+Two acceptance findings were fixed. A policy refusal is returned to the
+individual App request without hiding its View (`86eef6735`); a later allowed
+call succeeds. Node first-turn providers validate the existing runtime's own
+reported Claude session id / Codex thread id before the durable resume token
+is written (`b421e1f83`). Only an absent live entry permits durable fallback;
+wrong session, missing identity, account and configuration checks still fail.
+The two affected CLI suites have 17 passing tests and CLI typecheck passes.
+
+The process-restart run also exposed a pre-existing general remote Codex
+history bug. Node persistence and session.messages.list already retained
+metadata.codex.items; renderer catalog merging dropped them whenever the
+text-only transcript had equally many content blocks. Independent commit
+`c9b6febff` merges catalog metadata separately from text, retains catalog item
+order and local-only items, and preserves newer streaming items during
+concurrent hydration. Cold restore, catalog suffix, older text-only node,
+Claude/reconnect and phone ChatRuntime projection checks total 21 passing
+tests. This commit contains no MCP-specific contract and can be picked
+separately.

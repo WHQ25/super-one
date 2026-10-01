@@ -1,4 +1,5 @@
 import { MCP_APPS_EXTENSION } from '@superone/shared/mcp-apps'
+import { OPENAI_FORM_ELICITATION_EXTENSION } from '@superone/shared/schema-form'
 import { invalidateCodexMcpAppsCatalog } from '@superone/codex/mcp-apps-catalog'
 import { ensureShellPath } from '../shell-path'
 import { codexAccountProviderId, isCodexAccountProvider } from '@superone/shared/codex-accounts'
@@ -41,6 +42,18 @@ import type {
 export const APP_SERVER_RESPONSE_TIMEOUT_MS = 15_000
 
 export const APP_SERVER_THREAD_LIFECYCLE_TIMEOUT_MS = 70_000
+
+/**
+ * MCP extensions this host implements, forwarded by Codex to MCP servers.
+ * `openai/standard-form-input` is Codex-only and never forwarded: without it,
+ * Codex declines every form with fields in full-access threads, but a form
+ * asks for input rather than permission.
+ */
+const CODEX_CLIENT_EXTENSIONS = {
+  ...MCP_APPS_EXTENSION,
+  ...OPENAI_FORM_ELICITATION_EXTENSION,
+  'openai/standard-form-input': {},
+}
 
 const APP_SERVER_SLOW_METHODS = new Set<string>(['thread/start', 'thread/resume', 'plugin/reconcile'])
 
@@ -938,7 +951,7 @@ export async function createAppServerConnection(
       },
       capabilities: compactRecord({
         experimentalApi: true,
-        extensions: MCP_APPS_EXTENSION,
+        extensions: CODEX_CLIENT_EXTENSIONS,
         optOutNotificationMethods: APP_SERVER_OPT_OUT_NOTIFICATIONS.length > 0
           ? [...APP_SERVER_OPT_OUT_NOTIFICATIONS]
           : undefined,

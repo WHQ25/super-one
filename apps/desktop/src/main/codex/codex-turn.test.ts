@@ -2535,6 +2535,8 @@ describe('runCodexTurn turn/start payload', () => {
     expect(request).toHaveBeenCalledWith('thread/start', expect.objectContaining({
       approvalPolicy: 'never',
       sandbox: 'danger-full-access',
+      // Without it Codex declines every MCP form in a full-access thread.
+      threadSource: 'user',
     }))
     expect(request).toHaveBeenCalledWith('turn/start', expect.objectContaining({
       threadId: 'thread-4',

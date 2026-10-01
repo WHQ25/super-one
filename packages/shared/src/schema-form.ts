@@ -9,6 +9,9 @@
 import type { ElicitationFormField, PermissionRequest } from './agent-types'
 import { safeMcpAppImage } from './mcp-apps-metadata'
 
+/** MCP client capability for OpenAI's extended forms (`openai/elicitation/create`). */
+export const OPENAI_FORM_ELICITATION_EXTENSION = { 'openai/elicitation': { form: {} } } as const
+
 export type SchemaFormTextFormat = 'email' | 'uri' | 'date' | 'date-time'
 
 export interface SchemaFormImage {

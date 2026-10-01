@@ -1445,6 +1445,10 @@ export async function resolveThread(
           config: threadConfig,
           historyMode: 'paginated',
           experimentalRawEvents: false,
+          // Persisted and restored on resume. Besides analytics, Codex surfaces
+          // MCP forms in full-access threads only for user threads (with the
+          // `openai/standard-form-input` client extension).
+          threadSource: 'user',
         }),
       )
       trace('codex.thread', 'start_response', {

@@ -225,6 +225,12 @@ describe('createAppServerConnection', () => {
     const parsed = JSON.parse(firstPayload)
     expect(parsed.method).toBe('initialize')
     expect(parsed.id).toBe(1)
+    // Codex forwards these to MCP servers (`openai/standard-form-input` stays in Codex).
+    expect(parsed.params.capabilities.extensions).toEqual({
+      'io.modelcontextprotocol/ui': { mimeTypes: ['text/html;profile=mcp-app'] },
+      'openai/elicitation': { form: {} },
+      'openai/standard-form-input': {},
+    })
 
     // The next payload should be the initialized notification (no id)
     const secondPayload = stdinLines.join('').split('\n').filter(Boolean)[1]

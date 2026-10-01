@@ -78,7 +78,9 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
       return value
     } catch (error) {
       if (error instanceof McpAppsError && error.code === 'inactive') active = false
-      if (!revoked && !combined.aborted) options.onError?.(error)
+      // A policy refusal belongs to this request. Keep the View usable for
+      // subsequent allowed calls; lifecycle/auth failures still reach the host.
+      if (!revoked && !combined.aborted && !(error instanceof McpAppsError && error.code === 'denied')) options.onError?.(error)
       throw error
     }
   }

@@ -45,6 +45,14 @@ async function setup(restored = false, initial = attachment, appCapabilities: Mc
 }
 
 describe('MCP App shared host', () => {
+  it('returns a policy refusal to the View without replacing it with a host error', async () => {
+    const { view, executor, errors } = await setup()
+    vi.mocked(executor.callTool).mockRejectedValueOnce(new McpAppsError('denied', 'Model-only tool'))
+    await expect(view.callServerTool({ name: 'model-only' })).rejects.toThrow('Model-only')
+    expect(errors).toEqual([])
+    await expect(view.callServerTool({ name: 'next' })).resolves.toMatchObject({ structuredContent: { page: 1 } })
+    expect(executor.callTool).toHaveBeenCalledTimes(2)
+  })
   it('closes activation after the host restarts and waits for an explicit Activate', async () => {
     const { host, view, executor, errors } = await setup()
     vi.mocked(executor.callTool).mockRejectedValueOnce(new McpAppsError('inactive', 'Activate to reconnect'))

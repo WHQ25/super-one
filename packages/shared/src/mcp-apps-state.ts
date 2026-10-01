@@ -99,6 +99,13 @@ export function mcpAppModelContextText(messages: readonly McpAppMessage[]): stri
   return entries.size ? `<mcp-app-context>\n${JSON.stringify([...entries.values()])}\n</mcp-app-context>` : ''
 }
 
+/** One model-send boundary for desktop/phone commands and both headless runners. */
+export function mcpAppModelInput<T extends { text: string; prompt?: string }>(input: T, context: string): T {
+  if (!context) return input
+  return { ...input, text: `${input.text}\n\n${context}`,
+    ...(input.prompt !== undefined ? { prompt: `${input.prompt}\n\n${context}` } : {}) }
+}
+
 export function mcpAppEventAttachment(event: AgentEvent): ToolAppAttachment | undefined {
   if (event.type === 'content_delta' && 'app' in event.delta) return event.delta.app
   if (event.type === 'codex_item_delta' && event.item.type === 'mcp_tool_call') return event.item.app

@@ -1,6 +1,6 @@
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import type { McpAppAttachmentUpdate } from '@superone/shared/mcp-apps'
-import { mcpAppModelContextText, validateMcpAppAttachmentUpdate } from '@superone/shared/mcp-apps-state'
+import { mcpAppModelContextText, mcpAppModelInput, validateMcpAppAttachmentUpdate } from '@superone/shared/mcp-apps-state'
 import { McpAppAttachmentIndex } from './mcp-apps-index'
 import type { McpAppsResolvedAttachment } from '@superone/shared/environment/mcp-apps-state-rpc'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
@@ -1249,7 +1249,7 @@ export class SessionRuntime {
       const result = await this.turnRunner({
         session: this.clone(session),
         messageId: assistantId,
-        text: [opts.text, this.mcpAppContextText(session.sessionId)].filter(Boolean).join('\n\n'),
+        text: mcpAppModelInput({ text: opts.text }, this.mcpAppContextText(session.sessionId)).text,
         model: opts.model && opts.model.trim() ? opts.model.trim() : undefined,
         effort: opts.effort && opts.effort.trim() ? opts.effort.trim() : undefined,
         images: opts.images && opts.images.length > 0 ? opts.images : undefined,

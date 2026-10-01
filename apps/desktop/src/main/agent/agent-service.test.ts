@@ -4053,6 +4053,25 @@ describe('AgentService terminal remote commands', () => {
 })
 
 describe('mobile attachment admission receipt', () => {
+  it.each(['claude', 'codex'] as const)('phone send_message reaches the shared %s context boundary once', async (harness) => {
+    const { Session } = await import('../session/session')
+    const send = vi.fn(async (_request: import('@superone/shared/agent-types').SendMessageRequest) => {})
+    const app = { appInstanceId: 'view', binding: { server: 'fixture' }, resourceUri: 'ui://fixture',
+      modelContext: { content: [{ type: 'text', text: 'Selected item-4' }] }, toolResult: { _meta: { secret: 'private-result' } } }
+    const session = new Session({ id: 'sid-1', projectPath: '/p', cwd: '/p', harnessId: harness, providerId: harness, providerConfig: {},
+      backend: { start: async () => {}, send, onEvent: () => () => {}, onProviderSessionId: () => () => {}, onPermissionModeApplied: () => () => {} } as unknown as import('../session/types').SessionBackend,
+      initialMessages: [{ id: 'previous', role: 'assistant', status: 'complete', content: harness === 'claude' ? [{ type: 'tool_result', toolUseId: 'call', summary: 'done', app }] : [],
+        ...(harness === 'codex' ? { metadata: { codex: { items: [{ type: 'mcp_tool_call', app }] } } } : {}), createdAt: '', providerId: harness }] as import('@superone/shared/agent-types').ChatMessage[],
+    })
+    const service = new AgentService()
+    ;(service as unknown as { sessionManager: unknown }).sessionManager = { getSession: () => session }
+    await service.handleRemoteCommand({ type: 'send_message', provider: harness, requestId: 'receipt', projectPath: '/p', sessionId: 'sid-1', content: 'question' }, vi.fn(), { deviceId: 'phone', transport: 'relay' })
+    await vi.waitFor(() => expect(send).toHaveBeenCalledOnce())
+    const input = send.mock.calls[0]![0].content
+    expect(input).toContain('Selected item-4')
+    expect(input.match(/<mcp-app-context>/g)).toHaveLength(1)
+    expect(input).not.toContain('private-result')
+  })
   it('rejects a session that cannot be resumed instead of acknowledging a dropped message', async () => {
     const service = new AgentService()
     ;(service as unknown as { sessionManager: unknown }).sessionManager = {

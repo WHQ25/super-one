@@ -66,6 +66,7 @@ describe('durable node MCP App host updates', () => {
       expect(await dispatchMcpAppsRpc('mcpApps.resolveAttachment', lookup, readContext())).toMatchObject({ result: { ok: true, value: { app: { resource: update.resource }, sessionApprovals: [validApproval] } } })
       await send('next user turn')
       expect(modelInputs[1]).toContain('"selected":"b"')
+      expect(modelInputs[1]!.match(/<mcp-app-context>/g)).toHaveLength(1)
       expect(modelInputs[1]).not.toContain('view-only')
       expect(runtime.get(session.sessionId)?.transcript.at(-2)?.text).toBe('next user turn')
     } finally {

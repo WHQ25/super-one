@@ -2,7 +2,7 @@ import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, u
 import { useTranslation } from 'react-i18next'
 import { Loader2, Maximize2, X } from 'lucide-react'
 import type { McpUiHostCapabilities } from '@modelcontextprotocol/ext-apps/app-bridge'
-import type { McpUiResourceMeta, ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { McpAppsError, type McpUiResourceMeta, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { createMcpAppDocument, mcpAppHostContext } from '@superone/shared/mcp-apps-host'
 import { createMcpAppHost, createMcpAppHostSlot, type McpAppHost } from '@superone/shared/mcp-apps-host/host'
 import { createMcpAppTransport } from '@superone/shared/mcp-apps-host/transport'
@@ -132,6 +132,8 @@ export default function McpAppFrame({ app, messageId, html, meta }: McpAppFrameP
       restored: mcpAppNeedsActivation(app.appInstanceId),
       onSizeChanged: (size) => { if (size.height) setHeight(Math.min(MAX_INLINE_HEIGHT, Math.max(MIN_HEIGHT, size.height))) },
       onUnknownOutcome: () => setUnknownOutcome(true),
+      // The host stopped serving this View; the executor already forgot its activation.
+      onError: (error) => { if (error instanceof McpAppsError && error.code === 'inactive') { setInactive(true); setActivating('idle') } },
     })
     slot.replace(host)
     hostRef.current = host

@@ -74,6 +74,16 @@ export function markMcpAppActivated(appInstanceId: string): void {
   arrivals.set(appInstanceId, { arrival: arrivals.get(appInstanceId)?.arrival ?? 'restored', activated: true })
 }
 
+/**
+ * The host no longer serves this View (it restarted, for one). It waits for the user to
+ * activate it again like a restored View, rather than activating itself or replaying the
+ * request, and its next start asks the host again.
+ */
+export function markMcpAppInactive(appInstanceId: string): void {
+  arrivals.set(appInstanceId, { arrival: 'restored', activated: false })
+  starts.delete(appInstanceId)
+}
+
 type Resource = NonNullable<ToolAppAttachment['resource']>
 const starts = new Map<string, Promise<Resource | null>>()
 

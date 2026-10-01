@@ -4,7 +4,7 @@ import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import {
   buildMcpAppSrcdoc, exitMcpAppFullscreen, forgetMcpAppArrivals, markMcpAppActivated,
   mcpAppAwaitsLiveActivation, mcpAppNeedsActivation, mobileMcpAppCsp, noteMcpAppArrivals, setMcpAppFullscreenExit,
-  startMcpApp,
+  markMcpAppInactive, startMcpApp,
 } from './mcp-app-document'
 
 const CSP_META = '<meta http-equiv="Content-Security-Policy"'
@@ -81,6 +81,16 @@ describe('MCP App arrivals', () => {
     markMcpAppActivated('live')
     expect(mcpAppAwaitsLiveActivation('live')).toBe(false)
   })
+
+  it('makes a View the host stopped serving wait for Activate, never activating itself', () => {
+    noteMcpAppArrivals([turn('m', { appInstanceId: 'live' })], 'live')
+    markMcpAppActivated('live')
+    markMcpAppInactive('live')
+    expect(mcpAppNeedsActivation('live')).toBe(true)
+    expect(mcpAppAwaitsLiveActivation('live')).toBe(false)
+    markMcpAppActivated('live')
+    expect(mcpAppNeedsActivation('live')).toBe(false)
+  })
 })
 
 describe('startMcpApp', () => {
@@ -103,6 +113,14 @@ describe('startMcpApp', () => {
   it('forgets a failed start so Retry asks the host again', async () => {
     await expect(startMcpApp('v', () => Promise.reject(new Error('timeout')))).rejects.toThrow('timeout')
     expect(await startMcpApp('v', async () => resource)).toBe(resource)
+  })
+
+  it('starts an inactive View again instead of reusing the start that activated it', async () => {
+    await startMcpApp('v', async () => resource)
+    markMcpAppInactive('v')
+    let runs = 0
+    await startMcpApp('v', async () => { runs++; return null })
+    expect(runs).toBe(1)
   })
 
   it('starts again in a new document', async () => {

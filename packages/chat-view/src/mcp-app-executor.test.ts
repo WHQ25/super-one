@@ -10,6 +10,7 @@ vi.mock('./bridge', async (importOriginal) => ({
 
 const { NativeRequestTimeout } = await import('./bridge')
 const { createMcpAppExecutor } = await import('./mcp-app-executor')
+const { forgetMcpAppArrivals, markMcpAppActivated, mcpAppNeedsActivation } = await import('./mcp-app-document')
 
 const target = { messageId: 'm', appInstanceId: 'view-1' }
 const signal = new AbortController().signal
@@ -47,6 +48,15 @@ describe('MCP App executor on the phone', () => {
     native.async.mockResolvedValueOnce(host({ ok: false, error: { code: 'approval_required', challenge: 'c1', prompt } }))
     await expect(executor(null).run.callTool({ tool: 't', args: {} }, signal)).rejects.toMatchObject({ code: 'denied' })
     expect(native.async).toHaveBeenCalledTimes(1)
+  })
+
+  it('forgets the activation of a View the host stopped serving, without replaying the call', async () => {
+    markMcpAppActivated(target.appInstanceId)
+    native.async.mockResolvedValue(host({ ok: false, error: { code: 'inactive', message: 'Activate this restored MCP App to reconnect' } }))
+    await expect(executor().run.callTool({ tool: 'fixture_next_page', args: {} }, signal)).rejects.toMatchObject({ code: 'inactive' })
+    expect(native.async).toHaveBeenCalledTimes(1)
+    expect(mcpAppNeedsActivation(target.appInstanceId)).toBe(true)
+    forgetMcpAppArrivals()
   })
 
   it('surfaces the host gate, e.g. a model-only tool, as a structured error', async () => {

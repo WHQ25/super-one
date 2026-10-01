@@ -41,7 +41,9 @@ export function PortableMcpAppView({ app, messageId }: { app: ToolAppAttachment;
       if (value) setLoaded(value)
       setState({ kind: 'idle' })
     } catch (error) {
-      setState({ kind: 'failed', error: error instanceof Error ? error : new Error(String(error)) })
+      // The host stopped serving this View: it waits for Activate again instead of failing.
+      if (error instanceof McpAppsError && error.code === 'inactive') setState({ kind: 'idle' })
+      else setState({ kind: 'failed', error: error instanceof Error ? error : new Error(String(error)) })
     }
   }, [target, app.appInstanceId, app.resource])
 

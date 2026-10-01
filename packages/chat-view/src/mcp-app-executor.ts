@@ -2,6 +2,7 @@ import type { McpUiMessageRequest, McpUiRequestDisplayModeRequest } from '@model
 import { McpAppsError, type McpAppApprovalPrompt, type McpAppHostOperation, type McpAppHostResult, type McpAppReadResult, type McpAppsCallResult } from '@superone/shared/mcp-apps'
 import type { McpAppHostExecutor } from '@superone/shared/mcp-apps-host'
 import { NativeRequestTimeout, requestNative, requestNativeAsync } from './bridge'
+import { markMcpAppInactive } from './mcp-app-document'
 
 export type McpAppDisplayMode = McpUiRequestDisplayModeRequest['params']['mode']
 
@@ -49,6 +50,7 @@ export async function runMcpAppOperation<T>(target: McpAppTarget, operation: Mcp
   }
   if (result.ok) return result.value
   if (result.error.code === 'approval_required') throw new McpAppsError('denied', 'The host asked for approval twice')
+  if (result.error.code === 'inactive') markMcpAppInactive(target.appInstanceId)
   throw new McpAppsError(result.error.code, result.error.message, result.error.challenge)
 }
 

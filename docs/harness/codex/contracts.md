@@ -133,7 +133,11 @@ enabled by `apps/desktop/src/main/codex/app-server-connection.ts`).
   binding configuration, invalidating on reload, startup-status updates and
   sign-in. Missing tools get one single-flight refresh, throttled to one per
   thread every 10 s; `notLoggedIn` snapshots are not retained. The provider
-  prefers read-content `_meta.ui`; only missing UI metadata requires an
+  starts light discovery when a live native App attachment arrives, sharing
+  that pending request with View admission. Ordinary thread startup does not
+  prewarm; the cold cost is paid once per connection/thread/configuration
+  until explicit invalidation (or cache eviction).
+  The provider prefers read-content `_meta.ui`; only missing UI metadata requires an
   awaited full-inventory fallback before building the document's CSP.
   Optional tool/server presentation loads after the HTML snapshot is ready;
   its late update is discarded if the attachment binding changes.

@@ -996,6 +996,25 @@ describe('CodexBackend send()', () => {
     expect(backend.getCurrentProviderSessionId()).toBe('thread-99')
   })
 
+  it('prewarms discovery at attachment time without delaying item events', async () => {
+    const pending = backend.send({ content: 'x' }), cb = service.capturedCallbacks!
+    let finish!: (value: Record<string, unknown>) => void
+    const request = vi.fn((method: string) => method === 'mcpServerStatus/list'
+      ? new Promise<Record<string, unknown>>(resolve => { finish = resolve }) : Promise.resolve({}))
+    const session = (backend as unknown as { session: { connectionHandle: unknown } }).session
+    session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+    cb.onThreadStarted!('thread-app')
+    const item = { type: 'mcp_tool_call' as const, id: 'native', server: 'fixture', tool: 'next', arguments: {}, status: 'completed' as const }
+    cb.onItemDelta!('completed', item)
+    expect(request).not.toHaveBeenCalled()
+    cb.onItemDelta!('completed', { ...item, mcpAppUi: { resourceUri: 'ui://fixture/view' } })
+    expect(request).toHaveBeenCalledWith('mcpServerStatus/list', expect.objectContaining({ detail: 'toolsAndAuthOnly', threadId: 'thread-app' }))
+    expect(events).toContainEqual(expect.objectContaining({ type: 'codex_item_delta', item: expect.objectContaining({ app: expect.objectContaining({ resourceUri: 'ui://fixture/view' }) }) }))
+    finish({ data: [{ name: 'fixture', tools: {} }] })
+    service.resolveRun(makeResult())
+    await pending
+  })
+
   it('persists queued sends and swaps bubbles when Core consumes the client message id', async () => {
     const pending = backend.send({ content: 'first', assistantMessageId: 'a1' })
     const request = vi.fn(async (method: string) => method === 'thread/queue/add'

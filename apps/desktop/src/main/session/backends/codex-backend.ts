@@ -1,4 +1,4 @@
-import { attachCodexMcpApp, createCodexMcpAppsProvider } from '@superone/codex/mcp-apps'
+import { attachCodexMcpApp, createCodexMcpAppsProvider, prewarmCodexMcpAppCatalog } from '@superone/codex/mcp-apps'
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
 import { listCodexMcpConfigs } from '../../codex-config-service'
@@ -1853,6 +1853,8 @@ export class CodexBackend implements SessionBackend {
           const config = listCodexMcpConfigs(this.startOpts.cwd).find(server => server.name === serverName)
           item = attachCodexMcpApp(item, { node: 'local', session: this.startOpts.sessionId, server: item.server,
             account: this.startOpts.apiProviderId ?? undefined, configGeneration: 0, configFingerprint: mcpServerConfigFingerprint(config) }, this.providerSessionId)
+          const connection = this.session?.connectionHandle?.connection
+          if (connection) prewarmCodexMcpAppCatalog(item, connection.request.bind(connection), connection.request)
         }
         let owner = this.itemOwner.get(item.id)
         if (!owner) {

@@ -1,4 +1,4 @@
-import { createCodexMcpAppsProvider } from '@superone/codex/mcp-apps'
+import { createCodexMcpAppsProvider, prewarmCodexMcpAppCatalog } from '@superone/codex/mcp-apps'
 import { McpAppsError } from '@superone/shared/mcp-apps'
 import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
 import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
@@ -367,7 +367,12 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
             reasoningEffort,
             collaborationMode: input.collaborationMode,
             messageId: input.messageId,
-            onAgentEvent: input.onAgentEvent,
+            onAgentEvent: event => {
+              if (event.type === 'codex_item_delta' && event.item.type === 'mcp_tool_call') {
+                prewarmCodexMcpAppCatalog(event.item, conn.client.request.bind(conn.client), conn.client.request)
+              }
+              input.onAgentEvent?.(event)
+            },
             mcpAppBinding: server => ({ node: opts.environmentId ?? 'node', session: sessionId, server, account: input.apiProviderId ?? undefined,
               configGeneration: 0, configFingerprint: mcpServerConfigFingerprint(mcpServers[server]) }),
             onDelta: input.onDelta,

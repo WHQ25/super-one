@@ -44,6 +44,15 @@ export function attachCodexMcpApp(item: CodexMcpToolCallItem, binding: McpAppsBi
   return { ...item, app: boundedToolAppAttachment(app) }
 }
 
+/** Start discovery when a live attachment arrives, alongside its eventual HTML read. */
+export function prewarmCodexMcpAppCatalog(item: CodexMcpToolCallItem, request: McpAppsRequest, connectionKey: object = request): void {
+  const app = item.app, threadId = app?.origin?.providerSessionId
+  if (!app || !threadId) return
+  const provider = createCodexMcpAppsProvider(app.binding, threadId, request, connectionKey)
+  // The actual View request still awaits catalog admission and reports failures.
+  void provider.tools().catch(() => {}).finally(() => provider.dispose())
+}
+
 /** Native public-server provider shared by Electron and the headless node. */
 export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: string, request: McpAppsRequest, connectionKey: object = request): McpAppsProvider {
   let disposed = false

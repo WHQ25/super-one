@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createCodexMcpAppsProvider, type McpAppsRequest } from './mcp-apps'
+import { attachCodexMcpApp, createCodexMcpAppsProvider, prewarmCodexMcpAppCatalog, type McpAppsRequest } from './mcp-apps'
+import type { CodexMcpToolCallItem } from '@superone/shared/agent-types'
 import { invalidateCodexMcpAppsCatalog } from './mcp-apps-catalog'
 import { dispatchMcpAppsProviderRequest } from '@superone/runtime/mcp-apps/provider-rpc'
 import { MCP_APP_OUTPUT_MAX_BYTES } from '@superone/shared/mcp-apps'
@@ -11,6 +12,30 @@ const listCount = (request: ReturnType<typeof vi.fn<McpAppsRequest>>) => request
 afterEach(() => vi.useRealTimers())
 
 describe('Codex MCP App catalog cache', () => {
+  it('prewarms only attached Apps and shares discovery with real visibility admission', async () => {
+    let complete!: (value: Record<string, unknown>) => void
+    const request = vi.fn<McpAppsRequest>(method => method === 'mcpServerStatus/list'
+      ? new Promise(resolve => { complete = resolve }) : Promise.resolve({ content: [] }))
+    const key = {}, item: CodexMcpToolCallItem = { type: 'mcp_tool_call', id: 'native', server: 'fixture', tool: 'next', status: 'completed', arguments: {} }
+    prewarmCodexMcpAppCatalog(item, request, key)
+    expect(request).not.toHaveBeenCalled()
+    const attached = attachCodexMcpApp({ ...item, mcpAppUi: { resourceUri: 'ui://fixture/view' } }, binding, 'thread')
+    prewarmCodexMcpAppCatalog(attached, request, key)
+    prewarmCodexMcpAppCatalog(attached, request, key)
+    expect(listCount(request)).toBe(1)
+    const call = dispatchMcpAppsProviderRequest({ operation: 'callTool', binding, origin: { providerSessionId: 'thread' }, tool: 'next', args: {} }, createCodexMcpAppsProvider(binding, 'thread', request, key))
+    expect(request.mock.calls.some(([method]) => method === 'mcpServer/tool/call')).toBe(false)
+    complete(catalog)
+    expect(await call).toMatchObject({ ok: true })
+    expect(listCount(request)).toBe(1)
+  })
+  it('allows real discovery to retry a failed background prewarm', async () => {
+    const request = vi.fn<McpAppsRequest>().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(catalog), key = {}
+    const item = attachCodexMcpApp({ type: 'mcp_tool_call', id: 'native', server: 'fixture', tool: 'next', status: 'completed', arguments: {}, mcpAppUi: { resourceUri: 'ui://fixture/view' } }, binding, 'thread')
+    prewarmCodexMcpAppCatalog(item, request, key)
+    await vi.waitFor(async () => expect((await createCodexMcpAppsProvider(binding, 'thread', request, key).tools()).has('next')).toBe(true))
+    expect(listCount(request)).toBe(2)
+  })
   it('keeps lightweight discovery off repeated View calls even after a long idle', async () => {
     vi.useFakeTimers()
     const key = {}, request = vi.fn<McpAppsRequest>(async method => method === 'mcpServerStatus/list' ? catalog : { content: [] })

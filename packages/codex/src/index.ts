@@ -95,4 +95,4 @@ export {
   jsonRpcMethodNotFound,
 } from './server-request'
 
-export { attachCodexMcpApp, createCodexMcpAppsProvider, readCodexMcpAppFields, type McpAppsRequest } from './mcp-apps'
+export { attachCodexMcpApp, createCodexMcpAppsProvider, prewarmCodexMcpAppCatalog, readCodexMcpAppFields, type McpAppsRequest } from './mcp-apps'

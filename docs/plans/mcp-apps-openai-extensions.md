@@ -309,3 +309,14 @@ Final verification after removing probes: desktop executor/provider/document
 and connection selections 50 passed; Codex catalog selection 12 passed;
 authenticated remote-node App fixture 1 passed (2 unrelated cases skipped);
 `typecheck:node` and `git diff --check` passed.
+
+Attachment-time prewarm follow-up: desktop and headless live native App
+events start the same single-flight light catalog before forwarding the
+attachment, overlapping discovery with HTML loading. Ordinary session
+startup does not prewarm. View calls continue to await actual tool visibility;
+failed prewarms are evicted and retried by a real request. The cold hosted
+connector cost remains once per connection/thread/binding configuration
+until invalidation or eviction. The timing table above was measured before
+this follow-up; it does not claim a new cold-data latency measurement.
+Prewarm verification: Codex catalog 14 passed, desktop backend 88 passed,
+headless Codex runner 12 passed; `typecheck:node` and `git diff --check` passed.

@@ -194,6 +194,15 @@ describe('createNodeCodexTurnRunner', () => {
     expect(provider.binding).toEqual(binding)
     await expect(runner.getMcpAppsProvider!(session({ providerResume: 'thread:other' }), binding, { providerSessionId: 'other' }))
       .rejects.toMatchObject({ code: 'invalid' })
+    expect(lines.some(line => line.includes('mcpServerStatus/list'))).toBe(false)
+    child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'item/completed', params: {
+      item: { type: 'mcpToolCall', id: 'native', server: 'fixture', tool: 'next', arguments: {}, status: 'completed', mcpAppUi: { resourceUri: 'ui://fixture/view' } },
+    } })}\n`)
+    await pump()
+    const discovery = JSON.parse(lines.find(line => line.includes('mcpServerStatus/list'))!)
+    expect(discovery.params).toMatchObject({ threadId: 't-abc', detail: 'toolsAndAuthOnly' })
+    expect(agentEvents).toContainEqual(expect.objectContaining({ type: 'codex_item_delta', item: expect.objectContaining({ app: expect.objectContaining({ binding }) }) }))
+    child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: discovery.id, result: { data: [{ name: 'fixture', tools: {} }] } })}\n`)
     child.stdout.write(
       `${JSON.stringify({
         jsonrpc: '2.0',
@@ -210,6 +219,7 @@ describe('createNodeCodexTurnRunner', () => {
       'message_start',
       'status_change',
       'codex_thread_started',
+      'codex_item_delta',
       'codex_item_delta',
       'message_complete',
       'status_change',

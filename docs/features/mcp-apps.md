@@ -70,7 +70,10 @@ runs any tool without a permission check.
 Codex tool discovery uses `mcpServerStatus/list` with `toolsAndAuthOnly` and
 a catalog scoped to the connection, thread and configuration. Reload,
 reconnect and sign-in invalidate it; a missing tool gets one refresh, at most
-once per thread every 10 seconds. Resource reads prefer content `_meta.ui`.
+once per thread every 10 seconds. Live App attachment events start discovery
+in the background alongside HTML loading; ordinary sessions do not prewarm.
+View tool calls still await the catalog's visibility check.
+Resource reads prefer content `_meta.ui`.
 Servers with list-only UI metadata use a separate full-inventory fallback,
 awaited before the document's security policy is built. This avoids listing
 unrelated hosted connector resources on ordinary View requests.

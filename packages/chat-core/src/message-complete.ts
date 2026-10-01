@@ -1,3 +1,4 @@
+import { mergeMcpAppBlocks } from '@superone/shared/mcp-apps-state'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
 import { getCodexCompletionEventMeta, getCodexContextTokens } from './codex-pure'
@@ -68,7 +69,7 @@ export function reduceMessageComplete(
                 ? { turnId: codexCompletionMeta.turnId ?? prevCodex?.turnId }
                 : {}),
               usage: codexCompletionMeta.usage ?? prevCodex?.usage ?? null,
-              items: codexCompletionMeta.items.length > 0 ? codexCompletionMeta.items : (prevCodex?.items ?? []),
+              items: codexCompletionMeta.items.length > 0 ? mergeMcpAppBlocks(prevCodex?.items ?? [], codexCompletionMeta.items) : (prevCodex?.items ?? []),
               ...(prevCodex?.planApproval ? { planApproval: prevCodex.planApproval } : {}),
               ...(() => {
                 const failed = prevCodex?.mcpStartup?.filter((s) => s.status === 'failed')

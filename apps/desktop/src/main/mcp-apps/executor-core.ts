@@ -1,3 +1,4 @@
+import { McpAppResourceCache, mcpAppResourceReadKey, type McpAppResourceSnapshot } from '@superone/shared/mcp-app-resource'
 import { mcpAppPresentation, mcpAppResourceMeta } from '@superone/shared/mcp-apps-metadata'
 import { mcpAppMessagePreview, mcpAppMessageTarget } from '@superone/shared/mcp-apps-content'
 import { mcpAppContextState, removeMcpAppContextBlock } from '@superone/shared/mcp-app-model-context'
@@ -24,6 +25,7 @@ export interface McpAppExecutorPorts {
   provider(target: McpAppResolvedTarget, operation: Omit<McpAppsProviderRpcRequest, 'binding' | 'origin'>, signal: AbortSignal): Promise<McpAppsRpcResult>
   sendMessage(target: McpAppResolvedTarget, params: Extract<McpAppHostOperation, { operation: 'sendMessage' }>['params'], requester: McpAppRequester, signal: AbortSignal): Promise<void>
   createMessageSession?(target: McpAppResolvedTarget, signal: AbortSignal): Promise<{ ref: SessionRef; projectPath: string }>
+  hydrateResource?(target: McpAppResolvedTarget, signal: AbortSignal): Promise<McpAppResourceSnapshot>
   now?(): number
 }
 
@@ -40,7 +42,10 @@ function unwrap<T>(result: McpAppsRpcResult): T {
 
 function operationOf(request: McpAppHostRequest): McpAppHostOperation {
   switch (request.operation) {
-    case 'load': case 'activate': return { operation: request.operation }
+    case 'load':
+      if (request.referenceOnly !== undefined && typeof request.referenceOnly !== 'boolean') throw new McpAppsError('invalid', 'Invalid MCP App resource load')
+      return { operation: 'load', ...(request.referenceOnly ? { referenceOnly: true } : {}) }
+    case 'activate': return { operation: 'activate' }
     case 'callTool':
       if (typeof request.tool !== 'string' || !request.tool || !request.args || typeof request.args !== 'object' || Array.isArray(request.args)) throw new McpAppsError('invalid', 'Invalid MCP App tool call')
       return { operation: 'callTool', tool: request.tool, args: request.args }
@@ -76,6 +81,7 @@ function requesterKey(requester: McpAppRequester): string {
 
 /** Host policy is shared by desktop IPC and paired-device requests. */
 export class McpAppExecutor {
+  private readonly resourceReads = new McpAppResourceCache()
   private readonly contextWrites = new Map<string, { tail: Promise<unknown>; pending: number }>()
   private pendingContextWrites = 0
   private readonly active = new Map<string, string>()
@@ -135,6 +141,21 @@ export class McpAppExecutor {
     }
   }
 
+  private async hydrateResource(target: McpAppResolvedTarget, signal: AbortSignal): Promise<McpAppResourceSnapshot> {
+    if (target.app.resource?.html !== undefined) return target.app.resource as McpAppResourceSnapshot
+    if (this.ports.hydrateResource) return this.ports.hydrateResource(target, signal)
+    throw new McpAppsError('invalid', 'Saved MCP App HTML is unavailable')
+  }
+
+  private async readSnapshot(target: McpAppResolvedTarget, signal: AbortSignal): Promise<McpAppResourceSnapshot> {
+    const result = unwrap<McpAppReadResult>(await this.ports.provider(target, { operation: 'readResource', uri: target.app.resourceUri }, signal))
+    const resource = result.contents.find(value => value.uri === target.app.resourceUri && value.mimeType === MCP_APP_MIME_TYPE && typeof value.text === 'string')
+    if (!resource?.text || new TextEncoder().encode(resource.text).byteLength > MCP_APP_HTML_MAX_BYTES) throw new McpAppsError('invalid', 'MCP App HTML is missing or exceeds the size limit')
+    const current = await this.ports.resolve(target.ref, target.app.appInstanceId, target.messageId, signal)
+    if (mcpAppResourceReadKey(current.app) !== mcpAppResourceReadKey(target.app)) throw new McpAppsError('inactive', 'MCP App resource binding changed')
+    return { html: resource.text, meta: mcpAppResourceMeta(resource._meta), hash: createHash('sha256').update(resource.text).digest('hex') }
+  }
+
   private async updatePresentation(target: McpAppResolvedTarget, signal: AbortSignal): Promise<void> {
     const tools = unwrap<McpToolDescriptor[]>(await this.ports.provider(target, { operation: 'tools' }, signal))
     const tool = tools.find(tool => tool.name === target.app.toolName)
@@ -166,7 +187,12 @@ export class McpAppExecutor {
         await this.ports.sendMessage({ ...target, ...pending.destination }, pending.params, requester, signal)
         return { ok: true, value: {} }
       }
-      if (operation.operation === 'load' && target.app.resource) return { ok: true, value: target.app.resource }
+      let missingResource = false
+      if (operation.operation === 'load' && target.app.resource) {
+        if (operation.referenceOnly) return { ok: true, value: { hash: target.app.resource.hash, meta: target.app.resource.meta } }
+        try { return { ok: true, value: await this.hydrateResource(target, signal) } }
+        catch (error) { if (!(error instanceof McpAppsError) || error.code !== 'invalid') throw error; missingResource = true }
+      }
       if (!target.app.origin?.providerSessionId) throw new McpAppsError('not_connected', 'MCP App provider origin unavailable')
       if (operation.operation !== 'activate' && this.active.get(activeKey) !== binding) throw new McpAppsError('inactive', 'Activate this restored MCP App to reconnect')
       const capabilities = unwrap<McpAppsCapabilities>(await this.ports.provider(target, { operation: 'ready' }, signal))
@@ -207,16 +233,28 @@ export class McpAppExecutor {
       switch (operation.operation) {
         case 'load': {
           if (!capabilities.resourceRead) throw new McpAppsError('denied', 'MCP App resources are unavailable')
-          const result = unwrap<McpAppReadResult>(await this.ports.provider(target, { operation: 'readResource', uri: target.app.resourceUri }, signal))
-          const resource = result.contents.find(value => value.uri === target.app.resourceUri && value.mimeType === MCP_APP_MIME_TYPE && typeof value.text === 'string')
-          if (!resource?.text || new TextEncoder().encode(resource.text).byteLength > MCP_APP_HTML_MAX_BYTES) throw new McpAppsError('invalid', 'MCP App HTML is missing or exceeds the size limit')
-          const snapshot = { html: resource.text, meta: mcpAppResourceMeta(resource._meta), hash: createHash('sha256').update(resource.text).digest('hex') }
-          await this.ports.persist(target, { resource: snapshot }, signal)
+          if (missingResource && target.app.resource) {
+            const fetched = await this.readSnapshot(target, signal)
+            if (fetched.hash !== target.app.resource.hash) throw new McpAppsError('invalid', 'Saved MCP App version is no longer available')
+            const snapshot = { ...target.app.resource, html: fetched.html }
+            await this.ports.persist(target, { resource: snapshot }, signal)
+            return { ok: true, value: snapshot }
+          }
+          const readKey = mcpAppResourceReadKey(target.app)
+          const cached = this.resourceReads.get(readKey)
+          const snapshot = cached ?? await this.resourceReads.load(readKey, () => this.readSnapshot(target, signal))
+          // Revalidation updates only the cache for later calls. This View keeps its fixed snapshot.
+          if (cached) void this.resourceReads.refresh(readKey, () => this.readSnapshot(target, AbortSignal.timeout(15_000))).catch(() => {})
+          const current = await this.ports.resolve(target.ref, target.app.appInstanceId, target.messageId, signal)
+          validateTarget?.(current)
+          if (mcpAppResourceReadKey(current.app) !== readKey) throw new McpAppsError('inactive', 'MCP App resource binding changed')
+          if (current.app.resource) return { ok: true, value: operation.referenceOnly ? { hash: current.app.resource.hash, meta: current.app.resource.meta } : await this.hydrateResource(current, signal) }
+          await this.ports.persist(current, { resource: snapshot }, signal)
           // Titles/icons are optional presentation, not document security. Cold
           // tool discovery must not delay first paint; its failure keeps the
           // fallback header. Resource metadata (including CSP) is already read.
           void this.updatePresentation(target, signal).catch(() => {})
-          return { ok: true, value: snapshot }
+          return { ok: true, value: operation.referenceOnly ? { hash: snapshot.hash, meta: snapshot.meta } : snapshot }
         }
         case 'readResource': {
           if (!capabilities.resourceRead) throw new McpAppsError('denied', 'MCP App resources are unavailable')

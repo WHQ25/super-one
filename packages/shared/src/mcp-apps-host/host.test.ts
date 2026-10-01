@@ -166,7 +166,7 @@ describe('MCP App shared host', () => {
     expect(notifications).toEqual(['partial'])
     await host.update({ ...attachment, status: 'cancelled' })
     expect(notifications).toEqual(['partial', 'input', 'cancelled'])
-    expect(() => host.update({ ...attachment, appInstanceId: 'another' })).toThrow('binding changed')
+    await expect(host.update({ ...attachment, appInstanceId: 'another' })).rejects.toThrow('binding changed')
   })
 
   it('surfaces auth failures to the native shell and does not retry uncertain calls', async () => {
@@ -178,6 +178,24 @@ describe('MCP App shared host', () => {
     expect((await view.callServerTool({ name: 'next' })).isError).toBe(true)
     expect(executor.callTool).toHaveBeenCalledTimes(2)
     expect(unknownOutcome).toHaveBeenCalledTimes(1)
+  })
+
+  it('omits the initial result notification while a size-limited View remains usable', async () => {
+    const { notifications, results, errors, view } = await setup(false, { ...attachment, toolResult: undefined, toolResultOmitted: { bytes: 1050849, reason: 'size_limit' } })
+    expect(notifications).toEqual(['input'])
+    expect(results).toEqual([]); expect(errors).toEqual([])
+    expect((await view.callServerTool({ name: 'next' })).content).toEqual(attachment.toolResult!.content)
+  })
+
+  it('bounds legacy oversized payloads before initial/update notifications and rejects invalid bindings asynchronously', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const huge = { ...attachment, toolResult: { content: [{ type: 'text', text: 'x'.repeat(2 * 1024 * 1024) }] } }
+      const { host, notifications, results, errors } = await setup(false, huge)
+      await expect(host.update(huge)).resolves.toBeUndefined()
+      expect(notifications).toEqual(['input']); expect(results).toEqual([]); expect(errors).toEqual([])
+      expect(warn).toHaveBeenCalled()
+    } finally { warn.mockRestore() }
   })
 
   it('sends a terminal error result when the provider has no result payload', async () => {

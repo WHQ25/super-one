@@ -1,3 +1,4 @@
+import type { McpAppResourceSnapshot } from '@superone/shared/mcp-app-resource'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
@@ -8,7 +9,7 @@ import { PortableInlineAction } from './PortableBlockHeader'
 
 const McpAppFrame = lazy(() => import('./McpAppFrame'))
 
-type Resource = NonNullable<ToolAppAttachment['resource']>
+type Resource = McpAppResourceSnapshot
 type LoadState = { kind: 'idle' } | { kind: 'loading' } | { kind: 'failed'; error: McpAppsError | Error }
 
 // Loading and activation never ask for approval; a host that did would be refused here.
@@ -37,8 +38,9 @@ export function PortableMcpAppView({ app, messageId, toolName, row }: PortableMc
   const target = useMemo(() => ({ messageId, appInstanceId: app.appInstanceId }), [messageId, app.appInstanceId])
   const [loaded, setLoaded] = useState<Resource | null>(null)
   const [state, setState] = useState<LoadState>({ kind: 'idle' })
-  const resource = app.resource ?? loaded
-  const waitsForUser = !resource && mcpAppNeedsActivation(app.appInstanceId)
+  const [requiresActivation, setRequiresActivation] = useState(false)
+  const resource = app.resource?.html !== undefined ? app.resource as Resource : loaded
+  const waitsForUser = requiresActivation || (!app.resource && mcpAppNeedsActivation(app.appInstanceId))
   const activating = mcpAppAwaitsLiveActivation(app.appInstanceId)
 
   const load = useCallback(async (activate: boolean) => {
@@ -49,13 +51,14 @@ export function PortableMcpAppView({ app, messageId, toolName, row }: PortableMc
           await runMcpAppOperation(target, { operation: 'activate' }, NO_CONSENT)
           markMcpAppActivated(app.appInstanceId)
         }
-        return app.resource ? null : runMcpAppOperation<Resource>(target, { operation: 'load' }, NO_CONSENT)
+        return app.resource?.html !== undefined ? null : runMcpAppOperation<Resource>(target, { operation: 'load' }, NO_CONSENT)
       })
       if (value) setLoaded(value)
+      setRequiresActivation(false)
       setState({ kind: 'idle' })
     } catch (error) {
       // The host stopped serving this View: it waits for Activate again instead of failing.
-      if (error instanceof McpAppsError && error.code === 'inactive') setState({ kind: 'idle' })
+      if (error instanceof McpAppsError && error.code === 'inactive') { setState({ kind: 'idle' }); setRequiresActivation(true) }
       else setState({ kind: 'failed', error: error instanceof Error ? error : new Error(String(error)) })
     }
   }, [target, app.appInstanceId, app.resource])

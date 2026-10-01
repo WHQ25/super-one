@@ -6,13 +6,13 @@ import type { McpAppsResolveAttachmentRequest, McpAppsStateRpcRequest } from '@s
 import type { RpcContext, RpcResult } from './handlers'
 
 export async function dispatchMcpAppsRpc(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult | null> {
-  if (method !== 'mcpApps.provider' && method !== 'mcpApps.state' && method !== 'mcpApps.resolveAttachment') return null
-  if (method === 'mcpApps.resolveAttachment') {
+  if (method !== 'mcpApps.provider' && method !== 'mcpApps.state' && method !== 'mcpApps.resolveAttachment' && method !== 'mcpApps.resource') return null
+  if (method === 'mcpApps.resolveAttachment' || method === 'mcpApps.resource') {
     if (!hasAllScopes(ctx.client.scopes, OPERATION_SCOPES.readSession)) return { error: { code: 'forbidden', message: 'session:read required' } }
     const input = payload as McpAppsResolveAttachmentRequest
     if (typeof input?.sessionId !== 'string' || !input.sessionId || typeof input.appInstanceId !== 'string' || !input.appInstanceId) return { error: { code: 'invalid_argument', message: 'MCP App attachment identity required' } }
     try {
-      return { result: { ok: true, value: ctx.sessions.resolveMcpAppAttachment(input.sessionId, input.appInstanceId) } }
+      return { result: { ok: true, value: method === 'mcpApps.resource' ? ctx.sessions.loadMcpAppResource(input.sessionId, input.appInstanceId) : ctx.sessions.resolveMcpAppAttachment(input.sessionId, input.appInstanceId) } }
     } catch (error) {
       return { result: { ok: false, error: error instanceof McpAppsError ? error.toJSON() : { code: 'denied', message: error instanceof Error ? error.message : String(error) } } }
     }

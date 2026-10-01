@@ -1,3 +1,4 @@
+import { McpAppResourceCache, type McpAppResourceSnapshot } from '@superone/shared/mcp-app-resource'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import type { McpUiResourceMeta, ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { mcpAppCspDomains, mcpAppCspMeta } from '@superone/shared/mcp-apps-host'
@@ -82,28 +83,36 @@ export function markMcpAppActivated(appInstanceId: string): void {
 export function markMcpAppInactive(appInstanceId: string): void {
   arrivals.set(appInstanceId, { arrival: 'restored', activated: false })
   starts.delete(appInstanceId)
+  startedResources.delete(appInstanceId)
 }
 
-type Resource = NonNullable<ToolAppAttachment['resource']>
+type Resource = McpAppResourceSnapshot
 const starts = new Map<string, Promise<Resource | null>>()
+let startedResources = new McpAppResourceCache()
 
 /**
  * Activate and load a View once per document. Its row remounts (a sealed turn, a virtualized
  * list scrolling back), so a remount joins the start in flight or reuses its result instead of
- * asking the host again. A failed start is forgotten, so Retry runs it again.
+ * asking the host again. Completed HTML uses a bounded LRU; eviction releases the
+ * document cache and a later remount reloads through the phone's bounded cache. A failed start is forgotten, so Retry runs it again.
  */
 export function startMcpApp(appInstanceId: string, run: () => Promise<Resource | null>): Promise<Resource | null> {
+  const cached = startedResources.get(appInstanceId)
+  if (cached) return Promise.resolve(cached)
   const pending = starts.get(appInstanceId)
   if (pending) return pending
-  const started = run()
+  const started = run().then(resource => {
+    if (resource && starts.get(appInstanceId) === started) startedResources.put(appInstanceId, resource)
+    return resource
+  }).finally(() => { if (starts.get(appInstanceId) === started) starts.delete(appInstanceId) })
   starts.set(appInstanceId, started)
-  started.catch(() => { if (starts.get(appInstanceId) === started) starts.delete(appInstanceId) })
   return started
 }
 
 export function forgetMcpAppArrivals(): void {
   arrivals.clear()
   starts.clear()
+  startedResources = new McpAppResourceCache()
 }
 
 let fullscreenExit: (() => void) | null = null

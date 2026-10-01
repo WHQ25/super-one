@@ -43,8 +43,9 @@ Upstream behavior we rely on is recorded per harness: Claude
 - **`ToolAppAttachment`** rides on the Claude `tool_use` / `tool_result`
   content blocks and on native Codex items, so the existing `AgentEvent`,
   reducer, JSON/SQLite persistence and mobile projection carry it. It holds the
-  binding, the harness call id, the resource URI, the resource snapshot
-  (`{ html, meta, hash }`), the original input, the full result (including the
+  binding, the harness call id, the resource URI, the resource reference
+  (`{ hash, meta }`; legacy `{ html, meta, hash }` snapshots remain readable),
+  the original input, the bounded initial result (including the
   private `_meta`) and the latest model context. Caps are 2 MiB for HTML and
   1 MiB for persisted tool data and model context. View requests also stay
   at 1 MiB. Transient View-initiated tool/resource results (never persisted)
@@ -57,6 +58,9 @@ Upstream behavior we rely on is recorded per harness: Claude
 - **`mcp_app_updated`** is the harness-neutral host event that patches an
   attachment by `appInstanceId` (snapshot, model context), wherever it lives:
   Claude blocks, Codex items or rows reconstructed from a remote node.
+- **Host state survives provider completion**: streaming and final item snapshots
+  merge the resource, presentation and model context from the same App origin.
+  Native lifecycle fields still advance normally.
 - **Correlation** is by the harness item id only, never guessed from the tool
   name or arguments.
 
@@ -80,6 +84,44 @@ unrelated hosted connector resources on ordinary View requests.
 Tool/server titles and icons hydrate after the HTML snapshot becomes ready;
 the host re-checks the attachment binding before applying a late update.
 
+## UI resource storage and cache
+
+Desktop and headless Node hosts each own a `mcp-app-resources` directory beside
+session storage. New attachment updates write UTF-8 HTML under its SHA-256 hash,
+using a temporary file and atomic rename, and persist only `{ hash, meta }`.
+Disk reads validate a lowercase 64-character hash filename, the HTML cap and its
+digest; corrupt or missing blobs never become a served document. Old inline
+snapshots need no migration. A missing historical blob may be refetched after
+Activate only if the original hash still matches, retaining its original metadata.
+A changed server version never silently replaces an existing View.
+
+A bounded LRU (32 entries, 16 MiB of UTF-8 serialized snapshots) single-flights
+cold reads. New Views in the same owning node/session/provider thread, server,
+account and configuration share a resource-URI cache. A hit paints immediately
+and revalidates in the background for later calls; live Views and history keep
+fixed snapshots. Startup and session/project deletion schedule reference GC,
+retaining blobs used by any persisted attachment and allowing five minutes for
+in-flight writes. A failed reference scan skips collection.
+
+Phone loads use trusted attachment references, fetching HTML once per bounded
+cache entry and retaining per-View metadata. Remote reads use `mcpApps.resource`
+and phone requests use `load`; both resolve session/App identity on the host,
+never a caller-supplied hash. The Node owns its authoritative blobs; desktop
+may cache a copy after an authorized Node fetch. Phone WebView remounts also
+use a bounded cache rather than retaining every completed HTML promise.
+
+If an initial agent tool result exceeds the 1 MiB attachment budget, the shared
+bound helper drops `toolResult` and retains `status: result` plus
+`toolResultOmitted: { bytes, reason: "size_limit" }`. Oversized inputs remain
+errors. The resource, presentation and model context stay intact. No initial
+`ui/notifications/tool-result` is sent for an omitted result, and no replacement
+result is fabricated. The omission marker wins over any raw-result fallback.
+Desktop, phone and the shared host apply the same bounds to legacy View input;
+size failures cannot escape into React. Bits & Bolts recovers by calling `cad.listParts` itself;
+View-only calls retain their 8 MiB bound. Restored desktop and phone Views show
+that the initial result was not saved and invite activation to reload, or a new
+origin-tool invocation. The host never automatically reruns that tool.
+
 ## Host executor
 
 `apps/desktop/src/main/mcp-apps/executor.ts` (`executeMcpAppHostRequest`) is
@@ -97,6 +139,12 @@ the only View-to-host entry, used by desktop IPC and by the phone's
   A View restored from history paints from its snapshot without contacting the
   provider. View-originated outbound operations return `inactive` until the user presses
   Activate, which also re-checks the original provider, session and account.
+  Successful activation reloads the desktop/phone View from the same pinned HTML
+  and binding. Its new initialize receives persisted tool input/result (or the
+  omitted state) and model context; the App can make its own startup requests.
+  The host does not rerun the originating tool or replace the HTML with the
+  server's current version. Failed activation keeps the current View and shows
+  the error without reloading. Host restore actions sit outside the View content.
 - **Remote first turn**: until the durable resume token is written, a node
   validates the live runtime's own Claude session id or Codex thread id.
 

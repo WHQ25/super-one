@@ -3,7 +3,7 @@ import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import type { McpAppDesktopApi } from './desktop-executor'
 import viewHtml from '../../../../test/fixtures/mcp-apps/fixture-view.html?raw'
 export type McpAppStoryState = 'live' | 'loading' | 'inactive' | 'missing' | 'approval' | 'auth' | 'error' | 'unknown' | 'revoked' | 'long'
-export function createMcpAppStoryFixture(state: McpAppStoryState = 'live') {
+export function createMcpAppStoryFixture(state: McpAppStoryState = 'live', { topRightControl = false }: { topRightControl?: boolean } = {}) {
   let active = !['inactive', 'missing'].includes(state), authenticated = state !== 'auth', registrations = 0, url = ''
   const listeners = new Set<(value: { url: string }) => void>()
   const result = (page = 1) => ({ content: [{ type: 'text', text: `page ${page}` }], structuredContent: { page, pageCount: 4, items: Array.from({ length: state === 'long' ? 60 : 4 }, (_, n) => `Item ${page}-${n + 1} · A useful result with a longer description`) }, _meta: { private: 'View only' } })
@@ -15,6 +15,7 @@ export function createMcpAppStoryFixture(state: McpAppStoryState = 'live') {
       if (state === 'error' && registrations++ === 0) return { ok: false, error: { code: 'not_connected', message: 'The fixture server is unavailable.' } }
       if (state === 'missing' && !active) return { ok: true, value: { state: 'inactive' } }
       let html = viewHtml
+      if (topRightControl) html = html.replace('<button id="fullscreen">Fullscreen</button>', '<button id="fullscreen" style="position:fixed;top:8px;right:8px">Expand</button>')
       if (['approval', 'unknown'].includes(state)) html = html.replace("log('initialized')", "log('initialized'); document.getElementById('" + (state === 'approval' ? 'ask' : 'next') + "').click()")
       url = 'data:text/html;base64,' + btoa(String.fromCharCode(...new TextEncoder().encode(html)))
       return { ok: true, value: { state: 'ready', document: { id: crypto.randomUUID(), url, origin: 'null', appInstanceId: app.appInstanceId }, active, meta: {} } }

@@ -1,7 +1,9 @@
+import { createMcpAppResourceGc } from '../mcp-apps/resource-gc'
+import type { McpAppResourceStore, McpAppResourceSnapshot } from '@superone/shared/mcp-app-resource'
 import { parseMessageDisplay, type MessageDisplayFields } from '@superone/shared/message-display'
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import type { McpAppAttachmentUpdate } from '@superone/shared/mcp-apps'
-import { mcpAppModelContextInput, mcpAppModelInput, validateMcpAppAttachmentUpdate } from '@superone/shared/mcp-apps-state'
+import { mcpAppResourceHashes, mcpAppModelContextInput, mcpAppModelInput, validateMcpAppAttachmentUpdate } from '@superone/shared/mcp-apps-state'
 import { McpAppAttachmentIndex } from './mcp-apps-index'
 import type { McpAppsResolvedAttachment } from '@superone/shared/environment/mcp-apps-state-rpc'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
@@ -201,6 +203,8 @@ export class SessionRuntime {
   private readonly agentsConfirmWaiters = new Map<string, AgentsConfirmWaiter>()
   private readonly defaultApiProviderId?: (harnessId: string) => string | null
   private readonly agentsConfirmTimeoutMs: number
+  private readonly mcpAppResources?: McpAppResourceStore
+  private readonly mcpAppGc?: ReturnType<typeof createMcpAppResourceGc>
   private readonly hostActions: HostActionStore | null
   /** Live waiters for requestHostAction terminal settlement. */
   private readonly hostActionWaiters = new Map<string, HostActionWaiter>()
@@ -249,6 +253,7 @@ export class SessionRuntime {
       defaultApiProviderId?: (harnessId: string) => string | null
       agentsConfirmTimeoutMs?: number
       hostActions?: HostActionStore | null
+      mcpAppResources?: McpAppResourceStore
       /** Tests may disable or shorten the runtime sweep; production uses 30s. */
       runtimeReaperIntervalMs?: number
     },
@@ -257,8 +262,13 @@ export class SessionRuntime {
     this.agentsConfirmTimeoutMs =
       opts?.agentsConfirmTimeoutMs ?? DEFAULT_AGENTS_CONFIRM_TIMEOUT_MS
     this.hostActions = opts?.hostActions ?? null
+    this.mcpAppResources = opts?.mcpAppResources
     this.hydrateFromStore()
     this.reconcileAfterRestart()
+    if (this.mcpAppResources) {
+      this.mcpAppGc = createMcpAppResourceGc(this.mcpAppResources, () => mcpAppResourceHashes(this.store.loadAll().flatMap(session => this.mcpAppMessageCatalog(session.sessionId))))
+      this.mcpAppGc.schedule()
+    }
     const runtimeReaperIntervalMs =
       opts?.runtimeReaperIntervalMs ?? SESSION_RUNTIME_REAPER_INTERVAL_MS
     if (
@@ -832,12 +842,23 @@ export class SessionRuntime {
     return { ...target, projectId: this.live.get(sessionId)!.projectId }
   }
 
+  loadMcpAppResource(sessionId: string, appInstanceId: string): McpAppResourceSnapshot {
+    const { app } = this.resolveMcpAppAttachment(sessionId, appInstanceId)
+    if (!app.resource) throw new McpAppsError('invalid', 'Saved MCP App resource is unavailable')
+    if (app.resource.html !== undefined) return app.resource as McpAppResourceSnapshot
+    if (!this.mcpAppResources) throw new McpAppsError('invalid', 'Saved MCP App HTML is unavailable')
+    return this.mcpAppResources.hydrate(app.resource)
+  }
+
   updateMcpApp(sessionId: string, appInstanceId: string, update: McpAppAttachmentUpdate): void {
     const target = this.resolveMcpAppAttachment(sessionId, appInstanceId)
     const binding = target.app.binding
+    // A remote writer must supply bytes; accepting a caller-chosen CAS reference
+    // could attach another session's blob to an otherwise authorized View.
+    if (update.resource && update.resource.html === undefined) throw new McpAppsError('invalid', 'MCP App resource updates must include HTML')
 
     const patch: McpAppAttachmentUpdate = {
-      ...(update.resource ? { resource: update.resource } : {}),
+      ...(update.resource ? { resource: update.resource.html !== undefined && this.mcpAppResources ? this.mcpAppResources.put(update.resource as McpAppResourceSnapshot) : update.resource } : {}),
       ...(update.presentation ? { presentation: update.presentation } : {}),
       ...(update.modelContext !== undefined ? { modelContext: update.modelContext ? { ...update.modelContext, source: { appInstanceId, server: binding.server } } : null } : {}),
     }
@@ -1481,6 +1502,7 @@ export class SessionRuntime {
     this.mcpAppContexts.delete(sessionId)
     this.mcpAppIndex.delete(sessionId)
     this.store.delete(sessionId)
+    this.mcpAppGc?.schedule()
     this.events.appendSession({
       sessionId,
       eventType: SESSION_DURABLE_EVENT.removed,
@@ -2535,6 +2557,7 @@ export class SessionRuntime {
    *   covers client killTimeout 2s + SIGKILL window with headroom).
    */
   async dispose(timeoutMs = 5_000): Promise<void> {
+    this.mcpAppGc?.dispose()
     this.disposing = true
     if (this.runtimeReaperTimer) {
       clearInterval(this.runtimeReaperTimer)

@@ -1,8 +1,12 @@
 import { boundedToolAppAttachment, MCP_APP_DATA_MAX_BYTES } from './mcp-apps'
 import { describe, expect, it } from 'vitest'
-import { mcpAppIcon, mcpAppPresentation, mcpAppResourceMeta, mcpAppResourceModes, safeMcpAppImage } from './mcp-apps-metadata'
+import { mcpAppHeaderTitle, mcpAppIcon, mcpAppPresentation, mcpAppResourceMeta, mcpAppResourceModes, safeMcpAppImage } from './mcp-apps-metadata'
 
 describe('MCP App presentation metadata', () => {
+  it('shows identical resolved server/tool titles once on both host surfaces', () => {
+    expect(mcpAppHeaderTitle('Bits & Bolts', 'Bits & Bolts')).toBe('Bits & Bolts')
+    expect(mcpAppHeaderTitle('Bits & Bolts', ' Browse library ')).toBe('Bits & Bolts ·  Browse library ')
+  })
   it('uses tool title then annotation title then name', () => {
     expect(mcpAppPresentation({ name: 'cad.library', title: 'Library', annotations: { title: 'Old' } }).toolTitle).toBe('Library')
     expect(mcpAppPresentation({ name: 'cad.library', annotations: { title: 'Old' } }).toolTitle).toBe('Old')
@@ -30,4 +34,14 @@ it('drops oversized icons and persists only the winning image for each theme', (
   const app = boundedToolAppAttachment({ appInstanceId: 'v', binding: { node: 'local', session: 's', server: 'cad', configGeneration: 0, configFingerprint: 'x' }, resourceUri: 'ui://cad', status: 'result', toolResult: { content: [{ type: 'text', text: 'x'.repeat(MCP_APP_DATA_MAX_BYTES - 100) }] }, presentation: { toolTitle: 'library', serverIcons: [{ src: big }] } })
   expect(app.status).toBe('result')
   expect(app.presentation).toEqual({ toolTitle: 'library' })
+})
+
+it('omits oversized initial results, preserves host state and rejects oversized inputs independently', () => {
+  const base = { appInstanceId: 'v', binding: { node: 'local', session: 's', server: 'cad', configGeneration: 0, configFingerprint: 'x' }, resourceUri: 'ui://cad', status: 'result' as const, resource: { hash: 'a'.repeat(64), meta: {} }, presentation: { toolTitle: 'Library' }, modelContext: null }
+  const result = { content: [{ type: 'text', text: 'x'.repeat(MCP_APP_DATA_MAX_BYTES) }] }
+  const bounded = boundedToolAppAttachment({ ...base, toolInput: {}, toolResult: result })
+  expect(bounded).toMatchObject({ ...base, toolResult: undefined, toolInput: {}, toolResultOmitted: { bytes: new TextEncoder().encode(JSON.stringify(result)).byteLength, reason: 'size_limit' } })
+  expect(bounded.error).toBeUndefined()
+  expect(boundedToolAppAttachment({ ...base, toolResult: { content: [{ type: 'text', text: 'raw fallback' }] }, toolResultOmitted: bounded.toolResultOmitted }).toolResult).toBeUndefined()
+  expect(boundedToolAppAttachment({ ...base, toolInput: { x: 'x'.repeat(MCP_APP_DATA_MAX_BYTES) } })).toMatchObject({ status: 'error', error: { code: 'invalid' } })
 })

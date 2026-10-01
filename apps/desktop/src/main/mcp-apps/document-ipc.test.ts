@@ -61,6 +61,16 @@ describe('MCP App native document IPC', () => {
     expect(s.provider).not.toHaveBeenCalled()
   })
 
+  it('hydrates a restored hash reference through the executor without provider activation', async () => {
+    const s = setup()
+    native.active.mockReturnValue(false)
+    native.resolve.mockResolvedValue({ ...target, app: { ...app, resource: { hash: app.resource!.hash, meta: {} } } })
+    native.execute.mockResolvedValue({ ok: true, value: app.resource })
+    expect(await s.invoke(C.MCP_APP_REGISTER_DOCUMENT, '/project', 's', { appInstanceId: 'view' })).toMatchObject({ ok: true, value: { state: 'ready', active: false } })
+    expect(native.execute).toHaveBeenCalledWith(expect.objectContaining({ operation: 'load' }), { kind: 'desktop' })
+    expect(s.provider).not.toHaveBeenCalled()
+  })
+
   it('loads live snapshots through the common executor before registering', async () => {
     const s = setup()
     native.resolve.mockResolvedValue({ ...target, app: { ...app, resource: undefined } })

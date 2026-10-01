@@ -320,3 +320,107 @@ until invalidation or eviction. The timing table above was measured before
 this follow-up; it does not claim a new cold-data latency measurement.
 Prewarm verification: Codex catalog 14 passed, desktop backend 88 passed,
 headless Codex runner 12 passed; `typecheck:node` and `git diff --check` passed.
+
+### UI resource cache and durable host state
+
+Implemented shared bounded single-flight/LRU caches and content-addressed HTML
+storage on desktop and Node. New durable attachments carry hash/meta; legacy
+inline HTML remains readable on desktop, Node and phone. Phone's trusted shell
+loader caches HTML by owning origin and hash; the host resolves session/App
+identity rather than accepting a raw hash. Disk storage validates SHA-256 names,
+writes via temp/atomic rename, verifies read digests and treats corruption as a
+missing resource. Reference GC runs at startup and after deletion with a
+five-minute write grace; unique deleted-session blobs are collected while
+shared blobs remain. Existing Views keep their snapshot across revalidation.
+
+Live uncovered a separate completion overwrite: desktop native Codex item upsert
+and finalization replaced host state, as did chat-core completion snapshots.
+All now reuse the shared attachment merge, including final native item snapshots
+that omit the extension. Claude input/result paths use the same attachment merge.
+Replay tests cover host writes before result/completion for both dialects.
+
+The current library result is 1,050,849 bytes at the native Codex boundary;
+normalizing away null gives a 1,050,824-byte App result, above the 1,048,576-byte
+persisted budget. Approved degradation keeps a working View in `result`, omits
+its initial `toolResult` and stores `toolResultOmitted` byte size/reason. Desktop
+and phone expose this on restore. Only tool-input is notified; no initial result
+or fabricated error is sent. Bits & Bolts loads its data via `cad.listParts`.
+Do not raise the cap. **Follow-up after this slice:** extend CAS to oversized
+initial results up to the 8 MiB transient bound, then fetch by authorized identity
+on demand, preserving fidelity without repeated relay/bridge event payloads.
+
+Codex shell measurements use the same test project/profile and loading placeholder
+insertion → `ui/notifications/initialized`, excluding model-turn latency:
+
+| Condition | Before resource cache | After resource cache |
+|---|---:|---:|
+| Frontend warm, new Codex thread | 312 ms | 225 ms |
+| Same thread/frontend warm, fresh View | 192 ms | 166 ms |
+| First View after dev restart | Not sampled in this comparison | 904 ms; 1,125 ms after completion fix restart |
+
+Blake's isolated cold shell baseline was 724 ms (see preceding latency table).
+It differs in cold frontend/process state; these single samples establish no
+cold-start speedup. Catalog prewarm and HTML caching do not remove cold App data
+loading or model latency. The main observed benefit is durable deduplication and
+fetch-once behavior. Live completion persists `{hash,meta}`, status `result`, an
+omitted marker and no error; identical Views share one 821,045-byte HTML blob.
+
+Cache live evidence: `/private/tmp/claude-501/s0/cache-codex-after.png` and
+`cache-codex-merged-live.png`.
+No physical-phone or live remote-node smoke was performed for this slice;
+authenticated SQLite/RPC tests cover Node ownership, restart, fetch authorization
+and deletion GC. Full S1 remains after the other approved extension branches.
+
+Restore smoke also found legacy S0 inline attachments carrying a 1,050,824-byte
+initial result without an omission marker. Updating a retained old View threw a
+synchronous host size assertion into React. Desktop/phone View boundaries and the
+shared host now use the same bound helper; marker wins over raw fallbacks, and
+host update rejects security checks asynchronously. Tests feed oversized legacy
+results directly into both View components and ensure usable omitted state.
+Codex raw `item.result` is still persisted separately in `metadata.codex`, so the
+~1 MiB native result exists in SQLite once regardless of the attachment cap.
+This is a constraint for the result-CAS follow-up, not fixed by HTML deduplication.
+
+User chose activation **reload**: successful activation remounts each restored
+desktop/phone View from its same pinned HTML and binding. New initialize gets
+the persisted input/result or omitted state, plus persisted model context.
+Failure keeps the original View and shows an error. The host does not replay
+the originating tool. Both locales describe reconnect/reload, and Activate
+lives in host chrome outside the View; it no longer obscures top-right View
+controls. Desktop stories include a narrow restored/omitted View with its own
+top-right Expand button. Shared header formatting also shows identical resolved
+server/tool titles once on desktop and phone.
+
+After a full process restart on port 9372, restored session
+`2ab2106e-b37a-45fc-9816-58552024e94c` loaded its hash/meta snapshot without
+React errors, showed the omission notice and waited for Activate. Activate
+created a new iframe at the **same document URL**, emitted a new initialize,
+and Bits & Bolts itself called `cad.listParts`; the library then populated
+automatically. Evidence: `cache-codex-restored-strip.png` (unobscured Expand)
+and `cache-codex-activated-reloaded.png` in `/private/tmp/claude-501/s0/`.
+
+Omission only affects the host App attachment/initial View notification.
+`attachCodexMcpApp` retains the native `item.result` object unchanged; a
+regression test asserts identity and the original item's serialized bytes.
+No harness/model tool-response path was changed. The model's live “no displayable
+content” sentence is its interpretation; this slice does not establish model-side
+truncation or claim that S0 produced the same sentence.
+
+Final focused verification (overlapping selections, not a full suite):
+
+- Desktop: `bunx vitest run` executor/cache/document IPC/completion/View and
+  shared resource/metadata/host selections: 11 files, 114 tests passed.
+- `packages/chat-view`: Frame lifecycle/SSR, document cache and executor:
+  4 files, 31 tests passed. Lifecycle tests use the real App SDK/shared host
+  for reinitialize, context/input/result preservation, and failed activation.
+- `packages/runtime`: CAS/integrity/GC: 2 files, 6 tests passed.
+- `apps/cli`: real SQLite/resource RPC/state restore: 2 files, 3 tests passed.
+- Codex catalog/output identity: 15 passed; Claude attachments: 19 passed;
+  chat-core completion replay: 2 passed; mobile relay/cache: 7 passed.
+- Desktop `bun run typecheck:node` / `typecheck:web`, mobile `bun run typecheck`
+  (including portable build), and portable `bunx tsc --noEmit -p tsconfig.json`
+  passed. Node/runtime/core typechecks passed earlier in the slice.
+- `git diff --check` passed. Package Vitest commands needed unsandboxed
+  execution because the sandbox failed localhost DNS resolution; no test failed
+  after rerunning in the authorized environment. Portable build retains its
+  existing chunk-size warning.

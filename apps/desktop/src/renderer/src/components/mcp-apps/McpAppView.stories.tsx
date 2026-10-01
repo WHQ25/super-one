@@ -15,13 +15,15 @@ import { McpAppConsent } from './McpAppConsent'
 import { mcpAppMessagePreview } from '@superone/shared/mcp-apps-content'
 import { richMcpAppMessage } from '../../../../test/fixtures/mcp-apps/rich-message'
 
-function Scenario({ state = 'live', narrow = false, scrolling = false, initialMode = 'inline', restoredContext = false }: { restoredContext?: boolean; state?: McpAppStoryState; narrow?: boolean; scrolling?: boolean; initialMode?: McpAppSurface }) {
+function Scenario({ state = 'live', narrow = false, scrolling = false, initialMode = 'inline', restoredContext = false, cachedReference = false, resultOmitted = false, topRightControl = false }: { topRightControl?: boolean; resultOmitted?: boolean; cachedReference?: boolean; restoredContext?: boolean; state?: McpAppStoryState; narrow?: boolean; scrolling?: boolean; initialMode?: McpAppSurface }) {
   const maximized = useActivityPanelStore(state => state.maximized)
   const fixture = useMemo(() => {
-    const value = createMcpAppStoryFixture(state)
+    const value = createMcpAppStoryFixture(state, { topRightControl })
     if (restoredContext) value.app.modelContext = { updateId: 'restored-context-id', content: [{ type: 'text', text: 'Selected part', _meta: { 'openai/title': 'Agent dial' } }], source: { appInstanceId: value.app.appInstanceId, server: value.app.binding.server } }
+    if (resultOmitted) value.app.toolResultOmitted = { bytes: 1050849, reason: 'size_limit' }
+    if (cachedReference) value.app.resource = { hash: 'a'.repeat(64), meta: {} }
     return value
-  }, [state, restoredContext])
+  }, [state, restoredContext, cachedReference, resultOmitted, topRightControl])
   useEffect(() => {
     useSettingsStore.setState(state => ({ mcpMetaCache: { ...state.mcpMetaCache, [fixture.app.binding.server]: { name: fixture.app.binding.server, icons: [{ src: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"%3E%3Cpath fill="%237c3aed" d="M2 1h12v14H2z"/%3E%3C/svg%3E' }] } } }))
     useMcpAppLayout.getState().setMode(fixture.app.appInstanceId, initialMode)
@@ -70,3 +72,11 @@ export const RichMessageConfirmation: Story = { render: () => <McpAppConsent pen
 export const NewConversationConfirmation: Story = { render: () => <McpAppConsent pending={{ id: 'new', prompt: { kind: 'sendMessage', server: 'Bits & Bolts', ...mcpAppMessagePreview({ ...richMcpAppMessage, _meta: { 'openai/message': { target: 'new' } } }, 'Bits & Bolts') }, finish: () => {} }} /> }
 
 export const RestoredModelContext: Story = { args: { state: 'inactive', restoredContext: true } }
+
+export const RestoredResourceReference: Story = { args: { state: 'inactive', cachedReference: true } }
+export const CachedReferenceLoading: Story = { args: { state: 'loading', cachedReference: true } }
+export const CachedReferenceRetry: Story = { args: { state: 'error', cachedReference: true } }
+
+export const RestoredOmittedResult: Story = { args: { state: 'inactive', cachedReference: true, resultOmitted: true } }
+export const RestoredOmittedResultNarrow: Story = { args: { state: 'inactive', cachedReference: true, resultOmitted: true, narrow: true } }
+export const RestoredOmittedResultWithViewControl: Story = { args: { state: 'inactive', cachedReference: true, resultOmitted: true, topRightControl: true, narrow: true } }

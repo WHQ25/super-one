@@ -1,3 +1,4 @@
+import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { describe, expect, it, vi } from 'vitest'
 import type { McpAppDeviceRequest, RemoteCommand } from '@superone/shared/agent-types'
 import { parseMcpAppRequest, requestMcpApp } from './mcp-apps'
@@ -46,4 +47,44 @@ describe('requestMcpApp', () => {
     await expect(requestMcpApp(client(async () => ({ error: 'Session sess-1 does not belong to project /x' })), SESSION, READ))
       .resolves.toMatchObject({ ok: false, error: { code: 'denied', message: 'Session sess-1 does not belong to project /x' } })
   })
+})
+
+
+it('fetches HTML once per authorized hash across Views, retaining each reference metadata', async () => {
+  const reference = { hash: 'a'.repeat(64), meta: { prefersBorder: true } }
+  const app: ToolAppAttachment = { appInstanceId: 'view', status: 'result', binding: { node: 'node', session: SESSION.sessionId, server: 'CAD', configGeneration: 1, configFingerprint: 'cfg' }, origin: { providerSessionId: 'thread' }, resourceUri: 'ui://cad' }
+  const host = { request: vi.fn(async (command: RemoteCommand) => {
+    if (command.type !== 'mcp_app_request') throw new Error('Unexpected request')
+    return { response: { ok: true, value: command.request.operation === 'load' && command.request.referenceOnly ? reference : { ...reference, html: 'saved' } } }
+  }) }
+  const request = { messageId: 'm', appInstanceId: 'view', operation: 'load' as const }
+  expect(await requestMcpApp(host, SESSION, request, app)).toMatchObject({ value: { html: 'saved' } })
+  const second = { ...app, appInstanceId: 'view-2', resource: { ...reference, meta: {} } }
+  expect(await requestMcpApp(host, SESSION, { ...request, appInstanceId: second.appInstanceId }, second)).toMatchObject({ value: { html: 'saved', meta: {} } })
+  expect(host.request).toHaveBeenCalledTimes(2)
+  for (const [command] of host.request.mock.calls) {
+    expect(command.type).toBe('mcp_app_request')
+    if (command.type === 'mcp_app_request') expect(command.request).not.toHaveProperty('hash')
+  }
+  const changed = { ...second, binding: { ...second.binding, configFingerprint: 'changed' } }
+  await requestMcpApp(host, SESSION, { ...request, appInstanceId: second.appInstanceId }, changed)
+  expect(host.request).toHaveBeenCalledTimes(3)
+})
+
+it('single-flights phone hash loads, supports legacy inline hosts, and never caches a denied or mismatched result', async () => {
+  const reference = { hash: 'a'.repeat(64), meta: {} }
+  const app: ToolAppAttachment = { appInstanceId: 'view', status: 'result', binding: { node: 'node', session: SESSION.sessionId, server: 'CAD', configGeneration: 1, configFingerprint: 'cfg' }, resourceUri: 'ui://cad', resource: reference }
+  const request = { messageId: 'm', appInstanceId: 'view', operation: 'load' as const }
+  const host = client(async () => ({ response: { ok: true, value: { ...reference, html: 'saved' } } }))
+  const [a, b] = await Promise.all([requestMcpApp(host, SESSION, request, app), requestMcpApp(host, SESSION, request, app)])
+  expect(a).toEqual(b); expect(host.request).toHaveBeenCalledOnce()
+  const legacy = client(async () => ({ response: { ok: true, value: { ...reference, html: 'legacy' } } }))
+  expect(await requestMcpApp(legacy, SESSION, request, { ...app, resource: undefined })).toMatchObject({ value: { html: 'legacy' } })
+  expect(legacy.request).toHaveBeenCalledOnce()
+  for (const response of [{ ok: false, error: { code: 'denied', message: 'Session inaccessible' } }, { ok: true, value: { ...reference, hash: 'b'.repeat(64), html: 'wrong' } }]) {
+    const failed = client(async () => ({ response }))
+    expect(await requestMcpApp(failed, SESSION, request, app)).toMatchObject({ ok: false })
+    expect(await requestMcpApp(failed, SESSION, request, app)).toMatchObject({ ok: false })
+    expect(failed.request).toHaveBeenCalledTimes(2)
+  }
 })

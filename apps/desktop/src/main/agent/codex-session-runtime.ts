@@ -1,3 +1,4 @@
+import { mergeMcpAppBlocks } from '@superone/shared/mcp-apps-state'
 import type { AgentEvent, ChatMessage, CodexRunResult, CodexThreadItem, CodexUsageInfo } from '@superone/shared/agent-types'
 import { sealCodexItems, sealCodexMetadata } from '@superone/shared/content-delta'
 import { applySeqToMessage, isReplayedEventForMessage } from '@superone/shared/event-seq-utils'
@@ -21,7 +22,7 @@ function upsertCodexItem(items: CodexThreadItem[], next: CodexThreadItem): Codex
   const idx = items.findIndex((item) => item.id === next.id)
   if (idx === -1) return [...items, next]
   const cloned = [...items]
-  cloned[idx] = next
+  cloned[idx] = mergeMcpAppBlocks([items[idx]], [next])[0]
   return cloned
 }
 
@@ -381,7 +382,7 @@ export function finalizeCodexAssistantMessage(
           ...(args.result.turnId ? { turnId: args.result.turnId } : {}),
           usage: args.result.usage,
           ...(args.result.turnUsage ? { turnUsage: args.result.turnUsage } : {}),
-          items: sealCodexItems(args.result.items),
+          items: mergeMcpAppBlocks(message.metadata?.codex?.items ?? [], sealCodexItems(args.result.items)),
           ...(args.model ? { model: args.model } : {}),
         },
       } : {
@@ -391,7 +392,7 @@ export function finalizeCodexAssistantMessage(
           threadId: args.result.threadId,
           ...(args.result.turnId ? { turnId: args.result.turnId } : {}),
           usage: null,
-          items: sealCodexItems(args.result.items),
+          items: mergeMcpAppBlocks(message.metadata?.codex?.items ?? [], sealCodexItems(args.result.items)),
           ...(args.model ? { model: args.model } : {}),
         },
       },

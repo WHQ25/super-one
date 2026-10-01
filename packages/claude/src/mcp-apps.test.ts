@@ -169,11 +169,11 @@ describe('ClaudeToolApps', () => {
     expect(apps.toolResult('toolu_6', TOOL_USE_RESULT, false)).toMatchObject({ status: 'result', toolInput: { page: 1 } })
   })
 
-  it('turns an oversized result into an error instead of truncating it', () => {
+  it('omits an oversized initial result while keeping the live View usable', () => {
     const apps = toolApps()
     apps.toolUse('toolu_7', 'mcp__my_fixture__fixture_list_items', {})
     const huge = { content: 'x'.repeat(2 * 1024 * 1024) }
-    expect(apps.toolResult('toolu_7', huge, false)).toMatchObject({ status: 'error', toolResult: undefined, error: { code: 'invalid' } })
+    expect(apps.toolResult('toolu_7', huge, false)).toMatchObject({ status: 'result', toolResult: undefined, toolResultOmitted: { bytes: expect.any(Number), reason: 'size_limit' } })
   })
 })
 

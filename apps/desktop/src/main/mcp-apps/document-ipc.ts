@@ -25,8 +25,8 @@ export function registerMcpAppDocumentIpc(resources: McpAppResourceRegistry = mc
       const resolved = await resolveMcpAppHostAttachment({ sessionKey, appInstanceId: target.appInstanceId, messageId: target.messageId })
       const active = isMcpAppHostActive(resolved)
       let app = resolved.app
-      if (!app.resource) {
-        if (!active) return { ok: true, value: { state: 'inactive' } }
+      if (app.resource?.html === undefined) {
+        if (!app.resource && !active) return { ok: true, value: { state: 'inactive' } }
         const loaded = await executeMcpAppHostRequest({ sessionKey, appInstanceId: target.appInstanceId, messageId: target.messageId, operation: 'load' }, { kind: 'desktop' })
         if (!loaded.ok) return loaded
         app = { ...app, resource: loaded.value as ToolAppAttachment['resource'] }

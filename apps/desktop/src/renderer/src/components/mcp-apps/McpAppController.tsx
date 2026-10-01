@@ -1,10 +1,9 @@
-import { mcpAppPresentationIcon, mcpAppResourceModes } from '@superone/shared/mcp-apps-metadata'
+import { mcpAppHeaderTitle, mcpAppPresentationIcon, mcpAppResourceModes } from '@superone/shared/mcp-apps-metadata'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { McpAppsError } from '@superone/shared/mcp-apps'
 import type { McpAppPreparedDocument } from '@superone/shared/mcp-apps-desktop'
-import type { McpAppHost } from '@superone/shared/mcp-apps-host'
 import { mcpAppHostContext } from '@superone/shared/mcp-apps-host/context'
 import { Button } from '@superone/ui/components/ui/button'
 import { CodeXml } from 'lucide-react'
@@ -43,13 +42,14 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
   const [unknown, setUnknown] = useState(false)
   const [revoked, setRevoked] = useState(false)
   const [generation, setGeneration] = useState(0)
+  const [reload, setReload] = useState(0)
+  const [activationError, setActivationError] = useState<McpAppsError | null>(null)
   const [height, setHeight] = useState(240)
   const [initialized, setInitialized] = useState(false)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [emphasized, setEmphasized] = useState(false)
   const pulseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const [pending, setPending] = useState<PendingMcpConsent[]>([])
-  const host = useRef<McpAppHost | null>(null)
   const anchor = useRef<HTMLDivElement>(null)
   const [inlineWidth, setInlineWidth] = useState(0)
   const isDark = useIsDark()
@@ -88,7 +88,7 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
     return () => { cancelled = true; if (documentId) void api.mcpAppRelease(documentId).catch(() => {}) }
   }, [api, route.projectPath, route.sessionId, app.appInstanceId, JSON.stringify([app.binding, app.origin, app.resourceUri]), generation, onError])
   const activate = async (authenticate = false) => {
-    setLoading(true); setError(null)
+    setLoading(true); setError(null); setActivationError(null)
     try {
       if (authenticate) {
         if (!app.origin) throw new McpAppsError('not_connected', 'MCP App provider origin unavailable')
@@ -98,8 +98,15 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
       }
       const result = await api.mcpAppRequest(route.projectPath, route.sessionId, { appInstanceId: app.appInstanceId, operation: 'activate' })
       if (!result.ok) { if (result.error.code === 'approval_required') throw new McpAppsError('denied', 'Activation requires approval'); throw new McpAppsError(result.error.code, result.error.message) }
-      if (ready && !revoked) { host.current?.activate(); setActive(true) } else setGeneration(value => value + 1)
-    } catch (value) { onError(value) } finally { setLoading(false) }
+      if (ready && !revoked) {
+        // Keep this registration's pinned HTML and binding. A fresh bridge lets
+        // the App initialize again with activation and persisted context live.
+        setActive(true); setInitialized(false); setReload(value => value + 1)
+      } else setGeneration(value => value + 1)
+    } catch (value) {
+      if (ready && !revoked) setActivationError(value instanceof McpAppsError ? value : new McpAppsError('invalid', value instanceof Error ? value.message : String(value)))
+      else onError(value)
+    } finally { setLoading(false) }
   }
   const inline = useCallback((element: HTMLDivElement | null) => {
     anchor.current = element
@@ -152,11 +159,17 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
     {!available && (owner.renderFallback?.(trailing) ?? <div className="flex items-center justify-end gap-1.5 text-xs">{trailing}</div>)}
     {/* Keep the destination connected while showing the normal error/pending row. */}
     <div hidden={!available}>
-      <EmbeddedToolView title={`${app.presentation?.serverTitle ?? app.binding.server} · ${app.presentation?.toolTitle ?? owner.title ?? app.resourceUri}`} icon={<ToolBrandIcon src={icon} alt={app.binding.server} icon={getToolDisplay(toolName, {}).icon} />} actions={owner.details && <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.toolDetails')} aria-expanded={detailsOpen} onClick={() => setDetailsOpen(value => !value)}><CodeXml className="size-3.5" /></IconButton>}>
+      <EmbeddedToolView title={mcpAppHeaderTitle(app.presentation?.serverTitle ?? app.binding.server, app.presentation?.toolTitle ?? owner.title ?? app.resourceUri)} icon={<ToolBrandIcon src={icon} alt={app.binding.server} icon={getToolDisplay(toolName, {}).icon} />} actions={owner.details && <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.toolDetails')} aria-expanded={detailsOpen} onClick={() => setDetailsOpen(value => !value)}><CodeXml className="size-3.5" /></IconButton>}>
+        {available && !active && surface === 'inline' && <div data-mcp-app-restore-strip className="mb-2 flex items-start justify-between gap-2">
+          <div className="min-w-0 text-xs">
+            <p data-mcp-app-result-omitted={app.toolResultOmitted ? '' : undefined} className="text-muted-foreground">{t(app.toolResultOmitted ? 'mcpApp.resultOmitted' : 'mcpApp.restored')}</p>
+            {activationError && <p role="alert" className="mt-1 break-words text-error">{activationError.message}</p>}
+          </div>
+          <Button data-mcp-app-activate data-emphasized={emphasized || undefined} size="sm" variant="secondary" disabled={loading} className={`h-6 shrink-0 px-2 text-xs text-muted-foreground ${emphasized ? 'animate-pulse ring-2 ring-ring/50' : ''}`} onClick={() => void activate(activationError?.code === 'auth_required')}>{t(activationError?.code === 'auth_required' ? 'mcpApp.authenticate' : 'mcpApp.activate')}</Button>
+        </div>}
         {detailsOpen && <div className="mb-2">{owner.details}</div>}
         <div className="relative">
           {ready && <div ref={inline} data-mcp-app-surface={app.appInstanceId} style={{ height: surface === 'inline' ? Math.max(80, Math.min(height, 600)) : 0 }} className="w-full overflow-hidden rounded-md" />}
-          {available && !active && !loading && surface === 'inline' && <Button data-mcp-app-activate data-emphasized={emphasized || undefined} size="sm" variant="secondary" className={`absolute right-2 top-2 h-6 px-2 text-xs text-muted-foreground ${emphasized ? 'animate-pulse ring-2 ring-ring/50' : ''}`} title={t('mcpApp.restored')} onClick={() => void activate()}>{t('mcpApp.activate')}</Button>}
         </div>
         {ready && !initialized && <span className="sr-only">{t('mcpApp.loading')}</span>}
       </EmbeddedToolView>
@@ -164,8 +177,8 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
   </>
   return <>
     {owner.row && createPortal(row, owner.row)}
-    {ready && executor && <Suspense fallback={null}><Frame app={app} meta={ready.meta} registration={ready.document} api={api} executor={executor} context={context} active={active}
-      onHost={value => { host.current = value }} onInitialized={() => setInitialized(true)} onError={onError} onUnknown={() => setUnknown(true)} onRevoked={() => setRevoked(true)} onHeight={setHeight} /></Suspense>}
+    {ready && executor && <Suspense fallback={null}><Frame key={reload} app={app} meta={ready.meta} registration={ready.document} api={api} executor={executor} context={context} active={active}
+      onHost={() => {}} onInitialized={() => setInitialized(true)} onError={onError} onUnknown={() => setUnknown(true)} onRevoked={() => setRevoked(true)} onHeight={setHeight} /></Suspense>}
     {surface === 'pip' && ready && !revoked && <McpAppPip appInstanceId={app.appInstanceId} title={app.binding.server} toolName={toolName} viewport={viewport} onMode={onMode} />}
     <ConsentDialog pending={pending[0]} />
   </>

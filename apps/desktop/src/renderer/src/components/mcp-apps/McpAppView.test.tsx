@@ -6,14 +6,14 @@ import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { McpAppsError } from '@superone/shared/mcp-apps'
 import type { McpAppFrameProps } from './McpAppFrame'
 import type { McpAppDesktopApi } from './desktop-executor'
-const frame = vi.hoisted(() => ({ props: null as McpAppFrameProps | null }))
+const frame = vi.hoisted(() => ({ props: null as McpAppFrameProps | null, initialized: [] as McpAppFrameProps[] }))
 vi.mock('@/stores/chat', () => ({ useChatStore: (fn: (s: unknown) => unknown) => fn({ projectSessions: {} }), useSessionScope: () => null }))
 vi.mock('@/hooks/use-is-dark', () => ({ useIsDark: () => false }))
 // Lifecycle tests exercise preparation/activation/consent, independent of the
 // window chrome; browser and native tests cover those surfaces.
 vi.mock('./McpAppPip', () => ({ McpAppPip: () => null }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }) }))
-vi.mock('./McpAppFrame', () => ({ default: (props: McpAppFrameProps) => { frame.props = props; useEffect(() => props.onInitialized(['inline', 'fullscreen', 'pip']), []); return <div data-testid="frame" /> } }))
+vi.mock('./McpAppFrame', () => ({ default: (props: McpAppFrameProps) => { frame.props = props; useEffect(() => { frame.initialized.push(props); props.onInitialized(['inline', 'fullscreen', 'pip']) }, []); return <div data-testid="frame" /> } }))
 import McpAppView from './McpAppView'
 import { McpAppHostLayer } from './McpAppHostLayer'
 vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
@@ -28,7 +28,7 @@ function setup() {
   const api: McpAppDesktopApi = { mcpAppRegister: vi.fn<McpAppDesktopApi['mcpAppRegister']>(async () => ({ ok: true, value: prepared })), mcpAppRequest: vi.fn<McpAppDesktopApi['mcpAppRequest']>(async () => ({ ok: true, value: {} })), mcpAppCancel: vi.fn(async () => {}), mcpAppRelease: vi.fn(async () => {}), onMcpAppDocumentRevoked: () => () => {}, mcpAppsAuthenticate: vi.fn<McpAppDesktopApi['mcpAppsAuthenticate']>(async () => ({ ok: true, value: null })) }
   return { api, mount: () => render(<><McpAppHostLayer /><McpAppView app={app} route={{ projectPath: '/original-project', sessionId: 'original' }} api={api} /></>) }
 }
-afterEach(() => { cleanup(); frame.props = null })
+afterEach(() => { cleanup(); frame.props = null; frame.initialized = [] })
 describe('MCP App desktop View lifecycle', () => {
   it('renders safe tool metadata and keeps fullscreen preference inline on initialize', async () => {
     const s = setup()
@@ -38,6 +38,32 @@ describe('MCP App desktop View lifecycle', () => {
     expect(await screen.findByRole('img')).toHaveAttribute('src', 'data:image/svg+xml,%3Csvg/%3E')
     expect(frame.props?.context.displayMode).toBe('inline')
     expect(frame.props?.context.availableDisplayModes).toEqual(['inline', 'fullscreen'])
+  })
+
+  it('shows the omitted initial-result state on restore and removes it after activation', async () => {
+    const s = setup()
+    render(<><McpAppHostLayer /><McpAppView app={{ ...app, toolResultOmitted: { bytes: 1050849, reason: 'size_limit' } }} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></>)
+    expect(await screen.findByText('mcpApp.resultOmitted')).toBeTruthy()
+    const activate = await screen.findByText('mcpApp.activate')
+    // View content can occupy its entire top-right corner. Host actions belong
+    // to a sibling strip and never overlay that content.
+    const strip = activate.closest('[data-mcp-app-restore-strip]')
+    expect(strip).toBeTruthy()
+    expect(strip?.nextElementSibling?.querySelector('[data-mcp-app-surface]')).toBeTruthy()
+    expect(activate.className).not.toContain('absolute')
+    fireEvent.click(activate)
+    await waitFor(() => expect(screen.queryByText('mcpApp.resultOmitted')).toBeNull())
+    expect(s.api.mcpAppRequest).toHaveBeenCalledTimes(1)
+  })
+
+  it('bounds an oversized legacy result at the component boundary and keeps the restored View', async () => {
+    const s = setup(), warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(() => render(<><McpAppHostLayer /><McpAppView app={{ ...app, toolResult: { content: [{ type: 'text', text: 'x'.repeat(2 * 1024 * 1024) }] } }} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></>)).not.toThrow()
+      expect(await screen.findByText('mcpApp.resultOmitted')).toBeTruthy()
+      expect(frame.props?.app.toolResult).toBeUndefined()
+      expect(warn).toHaveBeenCalled()
+    } finally { warn.mockRestore() }
   })
 
   it('prefers the visible main transcript over a later floating claim', async () => {
@@ -70,7 +96,7 @@ describe('MCP App desktop View lifecycle', () => {
     expect(s.api.mcpAppRegister).toHaveBeenCalledTimes(1)
     expect(s.api.mcpAppRelease).not.toHaveBeenCalled()
   })
-  it('recovers lost host activation without reconnecting or replaying the failed call', async () => {
+  it('reloads after lost host activation without replaying the failed call', async () => {
     const s = setup(); vi.mocked(s.api.mcpAppRegister).mockResolvedValueOnce({ ok: true, value: { ...prepared, active: true } })
     s.mount(); await screen.findByTestId('frame'); expect(frame.props?.active).toBe(true)
     act(() => frame.props!.onError(new McpAppsError('inactive', 'Activate to reconnect')))
@@ -79,6 +105,7 @@ describe('MCP App desktop View lifecycle', () => {
     expect(s.api.mcpAppRequest).not.toHaveBeenCalled()
     fireEvent.click(screen.getByText('mcpApp.activate'))
     await waitFor(() => expect(frame.props?.active).toBe(true))
+    expect(frame.initialized).toHaveLength(2)
     expect(s.api.mcpAppRequest).toHaveBeenCalledTimes(1)
   })
   it('paints restored snapshots without activating and reconnects only on explicit action', async () => {
@@ -88,6 +115,33 @@ describe('MCP App desktop View lifecycle', () => {
     await waitFor(() => expect(frame.props?.active).toBe(true))
     expect(s.api.mcpAppRequest).toHaveBeenCalledWith('/original-project', 'original', { appInstanceId: 'v', operation: 'activate' })
     ui.unmount(); expect(s.api.mcpAppRelease).toHaveBeenCalledWith('doc')
+  })
+  it('reinitializes the same pinned document and context after activation without rerunning the origin tool', async () => {
+    const s = setup(), saved = { ...app, resource: { hash: 'a'.repeat(64), meta: {} }, modelContext: { updateId: 'saved', content: [{ type: 'text' as const, text: 'Selected part' }], source: { appInstanceId: app.appInstanceId, server: app.binding.server } } }
+    render(<><McpAppHostLayer /><McpAppView app={saved} route={{ projectPath: '/original-project', sessionId: 'original' }} api={s.api} /></>)
+    await screen.findByTestId('frame')
+    const document = frame.props?.registration
+    fireEvent.click(await screen.findByText('mcpApp.activate'))
+    await waitFor(() => expect(frame.initialized).toHaveLength(2))
+    expect(frame.props?.registration).toBe(document)
+    expect(frame.props?.app.resource?.hash).toBe(saved.resource.hash)
+    expect(frame.props?.app.binding).toEqual(saved.binding)
+    expect(frame.props?.app.modelContext).toEqual(saved.modelContext)
+    expect(frame.props?.active).toBe(true)
+    expect(s.api.mcpAppRegister).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(s.api.mcpAppRequest).mock.calls.map(call => call[2].operation)).toEqual(['activate'])
+  })
+  it('keeps the current View mounted and shows a failed activation', async () => {
+    const s = setup()
+    vi.mocked(s.api.mcpAppRequest).mockResolvedValue({ ok: false, error: { code: 'not_connected', message: 'Server unavailable' } })
+    s.mount(); await screen.findByTestId('frame')
+    const current = screen.getByTestId('frame')
+    fireEvent.click(screen.getByText('mcpApp.activate'))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Server unavailable')
+    expect(screen.getByTestId('frame')).toBe(current)
+    expect(frame.initialized).toHaveLength(1)
+    expect(document.querySelector('[data-mcp-app-surface]')?.closest('[hidden]')).toBeNull()
+    expect(s.api.mcpAppRegister).toHaveBeenCalledTimes(1)
   })
   it('requires activation before preparing a missing historical snapshot', async () => {
     const s = setup(); vi.mocked(s.api.mcpAppRegister).mockResolvedValueOnce({ ok: true, value: { state: 'inactive' } })

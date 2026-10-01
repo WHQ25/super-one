@@ -3,7 +3,7 @@ import { AppBridge } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { McpUiAppCapabilities, McpUiHostCapabilities, McpUiHostContext, McpUiRequestDisplayModeRequest } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { CallToolResultSchema, ReadResourceResultSchema } from '@modelcontextprotocol/sdk/types.js'
-import { assertMcpAppSize, MCP_APP_OUTPUT_MAX_BYTES, McpAppsError } from '../mcp-apps'
+import { boundedToolAppAttachment, assertMcpAppSize, MCP_APP_OUTPUT_MAX_BYTES, McpAppsError } from '../mcp-apps'
 import type { McpAppMessageParams, McpAppModelContext, McpAppReadResult, McpAppsCallResult, ToolAppAttachment, McpUiResourceMeta } from '../mcp-apps'
 import { McpAppMessageRequestSchema } from './message-schema'
 import { mcpAppContextState, type McpAppModelContextState } from '../mcp-app-model-context'
@@ -60,7 +60,7 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
   let initialized = false
   let revoked = false
   let disposed: Promise<void> | undefined
-  let app = options.app
+  let app = boundedToolAppAttachment(options.app, true)
   let context = initialContext
   const contextChanged = (next: McpUiHostContext): void => {
     if (revoked) return
@@ -206,10 +206,9 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
     appCapabilities: () => bridge.getAppCapabilities(),
     connect: () => bridge.connect(options.transport),
     activate() { if (!revoked) active = true },
-    update(next) {
+    async update(next) {
       if (next.appInstanceId !== app.appInstanceId || JSON.stringify(next.binding) !== JSON.stringify(app.binding)) throw new McpAppsError('invalid', 'MCP App binding changed')
-      assertMcpAppSize({ toolInput: next.toolInput, toolResult: next.toolResult })
-      app = next
+      app = boundedToolAppAttachment(next, true)
       contextChanged({ ...context, 'openai/modelContext': mcpAppContextState(app) })
       return queue()
     },

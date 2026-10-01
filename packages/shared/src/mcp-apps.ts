@@ -1,3 +1,4 @@
+import type { McpAppResource } from './mcp-app-resource'
 /** Harness-neutral MCP Apps contracts. No runtime SDK or Electron dependency. */
 import { compactMcpAppPresentation, MCP_APP_PRESENTATION_MAX_BYTES } from './mcp-apps-metadata'
 import type { McpUiMessageRequest } from '@modelcontextprotocol/ext-apps/app-bridge'
@@ -127,7 +128,7 @@ export type McpAppMessageParams = McpUiMessageRequest['params'] & { _meta?: Reco
 export type McpAppApprovalPrompt = { kind: 'sendMessage'; server: string; text: string; nonTextBlocks: number; items?: ContextAttachment[]; target?: 'active' | 'new' }
 
 export type McpAppHostOperation =
-  | { operation: 'load' }
+  | { operation: 'load'; referenceOnly?: boolean }
   | { operation: 'activate' }
   | { operation: 'callTool'; tool: string; args: Record<string, unknown> }
   | { operation: 'readResource'; uri: string }
@@ -176,9 +177,11 @@ export interface ToolAppAttachment {
   resourceUri: string
   toolName?: string
   presentation?: McpAppPresentation
-  resource?: { html: string; meta: McpUiResourceMeta; hash: string }
+  resource?: McpAppResource
   toolInput?: Record<string, unknown>
   toolResult?: McpAppToolResult
+  /** Initial result was too large for durable attachment state; live App calls still work. */
+  toolResultOmitted?: { bytes: number; reason: 'size_limit' }
   modelContext?: McpAppModelContext | null
   status: 'pending' | 'result' | 'cancelled' | 'error'
   error?: McpAppsErrorData
@@ -193,18 +196,27 @@ export function mcpAppToolVisible(tool: McpToolDescriptor): boolean {
   return tool._meta?.ui?.visibility?.includes('app') ?? true
 }
 
-/** Keep an attachment within the data cap: an oversized input/result becomes an error, never a truncation. */
-export function boundedToolAppAttachment(app: ToolAppAttachment): ToolAppAttachment {
+/** Keep durable data bounded without turning a working View into an error for an oversized result. */
+export function boundedToolAppAttachment(app: ToolAppAttachment, logOmission = false): ToolAppAttachment {
+  // An explicit omission always wins over raw harness data or restored fallbacks.
+  if (app.toolResultOmitted && app.toolResult) app = { ...app, toolResult: undefined }
   if (app.presentation) {
     const presentation = compactMcpAppPresentation(app.presentation)
     try { assertMcpAppSize(presentation, MCP_APP_PRESENTATION_MAX_BYTES); app = { ...app, presentation } }
     catch { app = { ...app, presentation: undefined } }
   }
   try {
-    assertMcpAppSize({ toolInput: app.toolInput, toolResult: app.toolResult })
+    assertMcpAppSize({ toolInput: app.toolInput })
+    const result = JSON.stringify(app.toolResult)
+    const bytes = result === undefined ? 0 : new TextEncoder().encode(result).byteLength
+    const total = new TextEncoder().encode(JSON.stringify({ toolInput: app.toolInput, toolResult: app.toolResult })).byteLength
+    if (app.toolResult && total > MCP_APP_DATA_MAX_BYTES) {
+      if (logOmission) console.warn('[MCP App] Initial result omitted at View boundary', { appInstanceId: app.appInstanceId, bytes })
+      return { ...app, toolResult: undefined, toolResultOmitted: { bytes, reason: 'size_limit' } }
+    }
     return app
   } catch (error) {
-    return { ...app, toolInput: undefined, toolResult: undefined, status: 'error', error: (error as McpAppsError).toJSON() }
+    return { ...app, toolInput: undefined, toolResult: undefined, status: 'error', error: (error instanceof McpAppsError ? error : new McpAppsError('invalid', 'MCP App data must be JSON serializable')).toJSON() }
   }
 }
 

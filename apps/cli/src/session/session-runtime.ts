@@ -1,3 +1,5 @@
+import { dirname, join } from 'node:path'
+import { createMcpAppResourceStore } from '@superone/runtime/mcp-apps/resource-store'
 /**
  * CLI SessionRuntime: wires SQLite store + EventLog + ControlLeaseService into
  * `@superone/runtime/session`. Prefer importing types from the core package.
@@ -46,6 +48,7 @@ export class SessionRuntime extends CoreSessionRuntime {
     super(createSqliteSessionStore(db), events, leases, environmentId, turnRunner, {
       ...opts,
       hostActions: createSqliteHostActionStore(db),
+      ...(db.name !== ':memory:' ? { mcpAppResources: createMcpAppResourceStore(join(dirname(db.name), 'mcp-app-resources')) } : {}),
     })
   }
 }

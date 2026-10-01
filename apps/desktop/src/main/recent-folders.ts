@@ -67,6 +67,7 @@ export function removeRecentFolder(folderPath: string): void {
   const db = getDb()
   const projectId = getProjectId(folderPath)
   db.prepare('DELETE FROM projects WHERE path = ?').run(folderPath)
+  void import('./mcp-apps/resource-store').then(module => module.scheduleMcpAppResourceGc()).catch(() => {})
   if (projectId) dropMiniAppOrderBucket(projectId)
 }
 

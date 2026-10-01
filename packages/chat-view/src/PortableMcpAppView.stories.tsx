@@ -241,3 +241,13 @@ export const ToolMetadata: Story = { name: 'Tool title and server icon metadata'
 export const LongTitleNarrow: Story = { args: { width: 320, app: attachment(id('long-title'), { resource: RESOURCE, presentation: { toolTitle: 'Browse the engineering library with a very long descriptive tool title', serverTitle: 'Fixture CAD library' } }) } }
 
 export const RestoredModelContext = { args: { app: attachment('restored-context', { resource: RESOURCE, modelContext: { updateId: 'restored-context-id', content: [{ type: 'text', text: 'Selected part', _meta: { 'openai/title': 'Agent dial' } }], source: { appInstanceId: 'restored-context', server: 'mcp-apps-fixture' } } }), arrival: 'restored' } }
+
+export const RestoredResourceReference: Story = {
+  name: 'Restored hash reference · hydrate without activating',
+  args: { app: attachment(id('restored-ref'), { resource: { hash: RESOURCE.hash, meta: RESOURCE.meta } }), arrival: 'restored' },
+}
+export const RestoredReferenceLoading: Story = { ...RestoredResourceReference, args: { ...RestoredResourceReference.args, app: attachment(id('restored-ref-loading'), { resource: { hash: RESOURCE.hash, meta: RESOURCE.meta } }), mode: 'slow' } }
+export const RestoredReferenceOffline: Story = { ...RestoredResourceReference, args: { ...RestoredResourceReference.args, app: attachment(id('restored-ref-offline'), { resource: { hash: RESOURCE.hash, meta: RESOURCE.meta } }), mode: 'fails' } }
+
+export const RestoredOmittedResult: Story = { args: { app: attachment(id('omitted'), { resource: { hash: RESOURCE.hash, meta: RESOURCE.meta }, toolResult: undefined, toolResultOmitted: { bytes: 1050849, reason: 'size_limit' } }), arrival: 'restored' } }
+export const RestoredOmittedResultNarrow: Story = { ...RestoredOmittedResult, args: { ...RestoredOmittedResult.args, width: 320 } }

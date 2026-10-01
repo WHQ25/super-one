@@ -312,6 +312,7 @@ export function updateSessionTitle(sid: string, title: string): void {
 
 export function deleteSessionRecord(sid: string): void {
   getDb().prepare('DELETE FROM sessions WHERE id = ?').run(sid)
+  void import('../mcp-apps/resource-store').then(module => module.scheduleMcpAppResourceGc()).catch(() => {})
 }
 
 export interface SaveSessionStateInput {

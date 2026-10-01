@@ -8,6 +8,11 @@ const title = (value: unknown): string | undefined => typeof value === 'string' 
 export const MCP_APP_ICON_MAX_BYTES = 32 * 1024
 export const MCP_APP_PRESENTATION_MAX_BYTES = 70 * 1024
 
+/** Server and tool may advertise the same title; show that label only once. */
+export function mcpAppHeaderTitle(server: string, tool: string): string {
+  return server.trim() === tool.trim() ? server : `${server} · ${tool}`
+}
+
 export function mcpAppIcon(icons?: McpAppIcon[], theme?: 'light' | 'dark'): string | undefined {
   if (!Array.isArray(icons)) return undefined
   const candidates = theme ? [...icons.filter(icon => icon?.theme === theme), ...icons.filter(icon => !icon?.theme)] : icons

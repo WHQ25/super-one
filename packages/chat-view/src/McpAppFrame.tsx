@@ -1,10 +1,10 @@
-import { mcpAppPresentationIcon, mcpAppResourceModes } from '@superone/shared/mcp-apps-metadata'
+import { mcpAppHeaderTitle, mcpAppPresentationIcon, mcpAppResourceModes } from '@superone/shared/mcp-apps-metadata'
 import { mcpAppMessageCapabilities } from '@superone/shared/mcp-apps-host/capabilities'
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CodeXml, Loader2, X } from 'lucide-react'
 import type { McpUiHostCapabilities } from '@modelcontextprotocol/ext-apps/app-bridge'
-import { McpAppsError, type McpUiResourceMeta, type ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { boundedToolAppAttachment, McpAppsError, type McpUiResourceMeta, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { createMcpAppDocument, mcpAppHostContext } from '@superone/shared/mcp-apps-host'
 import { createMcpAppHost, createMcpAppHostSlot, type McpAppHost } from '@superone/shared/mcp-apps-host/host'
 import { createMcpAppTransport } from '@superone/shared/mcp-apps-host/transport'
@@ -81,7 +81,8 @@ export interface McpAppFrameProps {
  * widget, under a muted `server · tool` header; the host offers no display modes of its own,
  * only the exit from the fullscreen the View asked for.
  */
-export default function McpAppFrame({ app, messageId, html, meta, toolName, row }: McpAppFrameProps) {
+export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolName, row }: McpAppFrameProps) {
+  const app = useMemo(() => boundedToolAppAttachment(rawApp, true), [rawApp])
   const { t } = useTranslation()
   const { scheme } = useContext(PortableTurnContext)
   const iconSrc = useMcpToolIconSrc(toolName)
@@ -186,8 +187,10 @@ export default function McpAppFrame({ app, messageId, html, meta, toolName, row 
     try {
       await runMcpAppOperation(target, { operation: 'activate' }, ask)
       markMcpAppActivated(app.appInstanceId)
-      hostRef.current?.activate()
       setInactive(false)
+      // Reuse the pinned HTML, metadata and attachment; the new initialize sees
+      // persisted model context and may retry the App's own startup calls.
+      setRestart((value) => value + 1)
       setActivating('idle')
     } catch (error) {
       setActivating(error instanceof Error ? error.message : String(error))
@@ -229,7 +232,7 @@ export default function McpAppFrame({ app, messageId, html, meta, toolName, row 
       ) : (
         <PortableBlockHeader
           icon={<ToolBrandIcon src={mcpAppPresentationIcon(app.presentation, scheme) ?? iconSrc} alt={server} icon={getToolDisplay(toolName, app.toolInput ?? {}).icon} className="text-muted-foreground/70" />}
-          title={`${server} · ${app.presentation?.toolTitle ?? tool?.mcpToolName ?? app.resourceUri}`}
+          title={mcpAppHeaderTitle(server, app.presentation?.toolTitle ?? tool?.mcpToolName ?? app.resourceUri)}
         >
           {inactive ? (
             // Keyed by the attempt so each one restarts the pulse.
@@ -246,6 +249,7 @@ export default function McpAppFrame({ app, messageId, html, meta, toolName, row 
       )}
       {details && !fullscreen ? <div className="mb-1">{row({ expanded: true })}</div> : null}
       <div className={fullscreen ? 'relative min-h-0 flex-1' : 'relative'}>
+        {inactive && <p data-mcp-app-result-omitted={app.toolResultOmitted ? '' : undefined} className="px-2 py-1 text-xs text-muted-foreground">{t(app.toolResultOmitted ? 'mcpApp.resultOmitted' : 'mcpApp.restored')}</p>}
         <iframe
           key={restart}
           ref={frameRef}

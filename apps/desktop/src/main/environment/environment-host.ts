@@ -988,6 +988,10 @@ export class EnvironmentHost {
     return this.asRemoteProviderGw(connectionId).resolveMcpAppAttachment(input)
   }
 
+  loadMcpAppResource(connectionId: string, input: import('@superone/shared/environment/mcp-apps-state-rpc').McpAppsResolveAttachmentRequest): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-app-resource').McpAppResourceSnapshot>> {
+    return this.asRemoteProviderGw(connectionId).loadMcpAppResource(input)
+  }
+
   async listRemoteCredentials(connectionId: string): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).providerListCredentials()
   }

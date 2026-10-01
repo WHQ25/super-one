@@ -39,7 +39,7 @@ export class McpAppResourceRegistry {
   private snapshots = new Map<string, Snapshot>()
 
   register(app: ToolAppAttachment, owner: number, hostUrl: string, scope?: string): McpAppRegistration {
-    if (!app.resource) throw new McpAppsError('invalid', 'MCP App HTML is unavailable')
+    if (app.resource?.html === undefined) throw new McpAppsError('invalid', 'MCP App HTML is unavailable')
     if (Buffer.byteLength(app.resource.html, 'utf8') > MCP_APP_HTML_MAX_BYTES) throw new McpAppsError('invalid', 'MCP App HTML exceeds the size limit')
     assertMcpAppSize(app.resource.meta, MCP_APP_DATA_MAX_BYTES)
     const host = new URL(hostUrl)

@@ -3865,6 +3865,7 @@ export type Messages = {
     activateHint: string
     activateToLoad: string
     loadFailed: string
+    resultOmitted: string
     authRequired: string
     retry: string
     reloaded: string
@@ -7959,9 +7960,10 @@ export const en: Messages = {
     removeContext: 'Remove Context',
     loading: 'Loading app…',
     activate: 'Activate',
-    activateHint: 'Restored from history. It does not reach the server until you activate it.',
+    activateHint: 'Restored from history. Activate to reconnect and reload the App.',
     activateToLoad: 'Activate to load this app.',
     loadFailed: 'Could not load the app: {{error}}',
+    resultOmitted: 'Initial result was too large to save. Activate to reload the App, or ask the agent to run the tool again.',
     authRequired: 'Sign in to {{server}} on the desktop, then retry.',
     retry: 'Retry',
     reloaded: 'This app opened a new page and was stopped.',
@@ -7973,7 +7975,7 @@ export const en: Messages = {
     sendMessage: '{{server}} wants to send this message',
     nonTextBlocks: 'Plus {{count}} non-text attachments',
     send: 'Send',
-    restored: 'This saved View is inactive. Activate to reconnect to its original server and session.',
+    restored: 'This saved View is inactive. Activate to reconnect to its original server and session and reload the App.',
     authenticate: 'Sign In',
     revoked: 'The App navigated away. Restart to open a new secure View.',
     unknown: 'The tool may have completed, but its outcome is unknown. Check the server before submitting it again.',

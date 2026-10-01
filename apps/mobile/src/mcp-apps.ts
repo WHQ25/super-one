@@ -1,3 +1,5 @@
+import { McpAppResourceCache, mcpAppResourceReadKey, type McpAppResourceSnapshot } from '@superone/shared/mcp-app-resource'
+import { McpAppsError, type McpAppHostResult, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import type { RelayClient } from '@superone/relay-client'
 import type { McpAppDeviceRequest, RemoteCommand } from '@superone/shared/agent-types'
 import type { McpAppsErrorCode } from '@superone/shared/mcp-apps'
@@ -31,7 +33,7 @@ function failure(code: McpAppsErrorCode, message: string) {
  * The host's own answer passes through untouched; only transport failures are mapped,
  * by whether the command could have reached the host.
  */
-export async function requestMcpApp(
+async function invokeMcpApp(
   client: Pick<RelayClient, 'request'>,
   session: { projectPath: string; sessionId: string },
   request: McpAppDeviceRequest,
@@ -53,4 +55,42 @@ export async function requestMcpApp(
   // The host refused the command itself, e.g. a session this device may not reach.
   if (reply?.error) return failure('denied', reply.error)
   return reply?.response
+}
+
+
+const resourceCaches = new WeakMap<object, McpAppResourceCache>()
+
+/** Two-phase trusted shell load: metadata is small, HTML crosses the relay once per cached hash. */
+export async function requestMcpApp(
+  client: Pick<RelayClient, 'request'>,
+  session: { projectPath: string; sessionId: string },
+  request: McpAppDeviceRequest,
+  app?: ToolAppAttachment,
+): Promise<unknown> {
+  if (request.operation !== 'load' || !app || app.appInstanceId !== request.appInstanceId) return invokeMcpApp(client, session, request)
+  const cache = resourceCaches.get(client) ?? new McpAppResourceCache()
+  resourceCaches.set(client, cache)
+  let reference = app.resource
+  if (!reference) {
+    const result = await invokeMcpApp(client, session, { ...request, referenceOnly: true }) as McpAppHostResult<McpAppResourceSnapshot>
+    if (!result?.ok) return result ?? failure('invalid', 'Missing MCP App resource response')
+    reference = result.value
+  }
+  const key = JSON.stringify([session.projectPath, session.sessionId, mcpAppResourceReadKey(app), reference.hash])
+  if (reference.html !== undefined) {
+    cache.put(key, reference as McpAppResourceSnapshot)
+    return { ok: true, value: reference }
+  }
+  try {
+    const value = await cache.load(key, async () => {
+      const result = await invokeMcpApp(client, session, { ...request, referenceOnly: undefined }) as McpAppHostResult<McpAppResourceSnapshot>
+      if (!result?.ok) throw result ?? new McpAppsError('invalid', 'Missing MCP App resource response')
+      if (result.value.hash !== reference.hash || typeof result.value.html !== 'string') throw new McpAppsError('invalid', 'Saved MCP App resource changed')
+      return result.value
+    })
+    return { ok: true, value: { ...reference, html: value.html } }
+  } catch (error) {
+    if (error && typeof error === 'object' && 'ok' in error) return error
+    return failure(error instanceof McpAppsError ? error.code : 'invalid', error instanceof Error ? error.message : String(error))
+  }
 }

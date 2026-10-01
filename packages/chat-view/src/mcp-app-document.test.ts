@@ -110,6 +110,18 @@ describe('startMcpApp', () => {
     expect(runs).toBe(1)
   })
 
+  it('bounds completed HTML retained across remounts by entries and bytes', async () => {
+    for (let i = 0; i < 33; i++) await startMcpApp(String(i), async () => resource)
+    let runs = 0
+    await startMcpApp('0', async () => { runs++; return resource })
+    expect(runs).toBe(1)
+    forgetMcpAppArrivals()
+    const large = { ...resource, html: 'x'.repeat(2 * 1024 * 1024) }
+    for (let i = 0; i < 9; i++) await startMcpApp(String(i), async () => large)
+    await startMcpApp('0', async () => { runs++; return large })
+    expect(runs).toBe(2)
+  })
+
   it('forgets a failed start so Retry asks the host again', async () => {
     await expect(startMcpApp('v', () => Promise.reject(new Error('timeout')))).rejects.toThrow('timeout')
     expect(await startMcpApp('v', async () => resource)).toBe(resource)

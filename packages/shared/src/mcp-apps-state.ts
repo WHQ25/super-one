@@ -1,8 +1,9 @@
+import { validateMcpAppResource } from './mcp-app-resource'
 import { compactMcpAppPresentation, MCP_APP_PRESENTATION_MAX_BYTES } from './mcp-apps-metadata'
 import type { AgentEvent, ContentBlock, ImageAttachment } from './agent-types'
 import { mcpAppContextInput, mcpAppContextItems, type McpAppContextAttachment } from './mcp-app-model-context'
 import { validateTurnAttachments } from './attachment-validation'
-import { assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, McpAppsError } from './mcp-apps'
+import { assertMcpAppSize } from './mcp-apps'
 import type { McpAppAttachmentUpdate, ToolAppAttachment } from './mcp-apps'
 
 /** Works with desktop transcripts and the node's denser message catalog. */
@@ -47,13 +48,26 @@ export function mergeMcpAppAttachment(previous: ToolAppAttachment | undefined, n
   return { ...next, resource: previous.resource ?? next.resource, modelContext: previous.modelContext !== undefined ? previous.modelContext : next.modelContext, presentation: previous.presentation ?? next.presentation }
 }
 
+/** Final provider snapshots may replace rows, but never host state on the same App origin. */
+export function mergeMcpAppBlocks<B>(previous: readonly B[], next: readonly B[]): B[] {
+  const apps = new Map(previous.flatMap(block => {
+    const app = record(block).app as ToolAppAttachment | undefined
+    return app ? [[app.appInstanceId, app] as const] : []
+  }))
+  const rows = new Map(previous.map(block => [record(block).id, block]))
+  return next.map(block => {
+    const value = record(block)
+    const app = value.app as ToolAppAttachment | undefined
+    if (app) return { ...block, app: mergeMcpAppAttachment(apps.get(app.appInstanceId), app) }
+    // Completion snapshots can omit the extension entirely. Exact native item id
+    // and type still identify the same call; never guess by server/tool/arguments.
+    const previousRow = typeof value.id === 'string' ? record(rows.get(value.id)) : {}
+    return previousRow.type === value.type && previousRow.app ? { ...block, app: previousRow.app } : block
+  })
+}
+
 export function validateMcpAppAttachmentUpdate(update: McpAppAttachmentUpdate): void {
-  if (update.resource) {
-    if (typeof update.resource.html !== 'string' || new TextEncoder().encode(update.resource.html).byteLength > MCP_APP_HTML_MAX_BYTES) {
-      throw new McpAppsError('invalid', 'MCP App HTML exceeds the size limit')
-    }
-    assertMcpAppSize({ meta: update.resource.meta, hash: update.resource.hash })
-  }
+  if (update.resource) validateMcpAppResource(update.resource)
   assertMcpAppSize({ modelContext: update.modelContext })
   if (update.modelContext) {
     mcpAppContextInput({ appInstanceId: update.modelContext.source.appInstanceId, binding: { server: update.modelContext.source.server }, modelContext: update.modelContext } as ToolAppAttachment)
@@ -94,6 +108,11 @@ function latestApps(messages: readonly McpAppMessage[]) {
     entries.set(app.appInstanceId, { app, messageId: message.id })
   }
   return [...entries.values()]
+}
+
+/** References used by host GC; legacy inline snapshots remain untouched. */
+export function mcpAppResourceHashes(messages: readonly McpAppMessage[]): Set<string> {
+  return new Set(messages.flatMap(message => mcpAppMessageAttachments(message).flatMap(app => app.resource && /^[a-f0-9]{64}$/.test(app.resource.hash) ? [app.resource.hash] : [])))
 }
 
 /** Complete composer state independent of transcript pagination; never includes View HTML/tool output. */

@@ -11,6 +11,17 @@ const catalog = { data: [{ name: 'fixture', tools: { next: { name: 'next', input
 const listCount = (request: ReturnType<typeof vi.fn<McpAppsRequest>>) => request.mock.calls.filter(([method]) => method === 'mcpServerStatus/list').length
 afterEach(() => vi.useRealTimers())
 
+it('omits an oversized App snapshot without changing the native model tool result', () => {
+  const result = { content: [{ type: 'text', text: 'x'.repeat(1050849) }], structuredContent: null, meta: { private: 'View data' } }
+  const item: CodexMcpToolCallItem = { type: 'mcp_tool_call', id: 'native', server: 'fixture', tool: 'next', status: 'completed', arguments: {}, result, mcpAppUi: { resourceUri: 'ui://fixture/view' } }
+  const original = JSON.stringify(item)
+  const attached = attachCodexMcpApp(item, binding, 'thread')
+  expect(attached.result).toBe(result)
+  expect(JSON.stringify(item)).toBe(original)
+  expect(attached.app).toMatchObject({ status: 'result', toolResultOmitted: { reason: 'size_limit' } })
+  expect(attached.app?.toolResult).toBeUndefined()
+})
+
 describe('Codex MCP App catalog cache', () => {
   it('prewarms only attached Apps and shares discovery with real visibility admission', async () => {
     let complete!: (value: Record<string, unknown>) => void

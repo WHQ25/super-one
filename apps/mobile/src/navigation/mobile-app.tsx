@@ -1,3 +1,4 @@
+import { findMcpAppAttachment } from '@superone/shared/mcp-apps-state'
 import type { McpAppContextAttachment } from '@superone/shared/mcp-app-model-context'
 import { PersistedWorkspace } from '../persisted-workspace'
 import { mergeRestoredDraftText, userMessageText } from '@superone/chat-core'
@@ -652,7 +653,8 @@ export function MobileApp() {
       mcpApp: async (request) => {
         const client = clientRef.current
         if (!client || !project || !sessionId) throw new Error('no active session')
-        return requestMcpApp(client, { projectPath: project.path, sessionId }, request)
+        const app = findMcpAppAttachment(runtimeRef.current?.messages ?? [], request.appInstanceId, request.messageId)?.app
+        return requestMcpApp(client, { projectPath: project.path, sessionId }, request, app)
       },
       mcpAppFullscreen: async (active) => { setMcpAppFullscreen(active) },
       openFile: async (path) => {

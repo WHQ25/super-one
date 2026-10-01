@@ -1,3 +1,5 @@
+import { getMcpAppResourceStore as resourceStore } from './resource-store'
+import type { McpAppResourceSnapshot } from '@superone/shared/mcp-app-resource'
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent, RemoteCommand } from '@superone/shared/agent-types'
 import { mcpAppContent } from '@superone/shared/mcp-apps-content'
@@ -55,8 +57,9 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
     resolve,
     async persist(target, update, signal) {
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
+      const compact = update.resource?.html !== undefined ? { ...update, resource: resourceStore().put(update.resource as McpAppResourceSnapshot) } : update
       const event: AgentEvent = { type: 'mcp_app_updated', sessionId: target.ref.sessionId, projectPath: target.projectPath,
-        messageId: target.messageId, appInstanceId: target.app.appInstanceId, update }
+        messageId: target.messageId, appInstanceId: target.app.appInstanceId, update: compact }
       if (target.ref.environmentId === 'local') local(target.ref.sessionId).emitHostEvent(event)
       else {
         const { getEnvironmentHost } = await import('../environment/environment-host')
@@ -65,6 +68,18 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
         publish(event)
         mobile.notifyEventSubscribers(event)
       }
+    },
+    async hydrateResource(target, signal) {
+      if (!target.app.resource) throw new McpAppsError('invalid', 'Saved MCP App resource is unavailable')
+      if (target.ref.environmentId === 'local') return resourceStore().hydrate(target.app.resource)
+      try { return resourceStore().hydrate(target.app.resource) } catch { /* Fetch an owning-node snapshot, never current server HTML. */ }
+      const { getEnvironmentHost } = await import('../environment/environment-host')
+      const result = await getEnvironmentHost().loadMcpAppResource(target.ref.environmentId, { sessionId: target.ref.sessionId, appInstanceId: target.app.appInstanceId })
+      if (!result.ok) throw new McpAppsError(result.error.code, result.error.message)
+      if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App resource load cancelled')
+      const reference = resourceStore().put(result.value)
+      if (reference.hash !== target.app.resource.hash) throw new McpAppsError('invalid', 'Saved MCP App resource changed')
+      return { ...target.app.resource, html: result.value.html }
     },
     async provider(target, operation, signal) {
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')

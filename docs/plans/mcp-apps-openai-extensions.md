@@ -560,6 +560,25 @@ host `message_start` now establishes the same ownership before automatic default
 can run. The lifecycle/live-sync/default-policy selection passed 75 tests and
 `typecheck:web` passed.
 
+### Pre-merge review: provider binding identity
+
+Desktop Claude, desktop Codex and the node Claude runner now use one shared
+binding-identity assertion for session, native thread, account and server config.
+Identity changes fail with `inactive` / `not_connected`, rather than initiating
+sign-in for a different account. Desktop Claude strictly reloads server status
+when obtaining a provider and after idle revive, without the old catalog throttle;
+failed identity refresh is closed. Providers recheck after asynchronous catalog
+refresh and immediately before native read/call/auth dispatch. Claude catalogs
+retain configs even while a needs-auth server exposes no tools.
+
+Regression coverage: same-name server changes across idle release/resume,
+account changes after obtaining a provider, tool-discovery config changes, node
+runtime replacement, and node project-config reload. Desktop binding/provider
+selection: 104 tests passed; Codex backend: 88; node Claude: 7; Claude package: 20;
+Codex provider package: 15. Desktop `typecheck:node` and `git diff --check` passed.
+Package/CLI Vitest required an unrestricted rerun after sandbox localhost DNS
+blocked initialization. No live acceptance rerun was performed for this fix.
+
 ## Phase 2: forms
 
 Branch `feat/mcp-apps-forms`. One schema model

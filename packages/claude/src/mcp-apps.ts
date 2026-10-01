@@ -125,9 +125,8 @@ export class ClaudeMcpAppsCatalog {
     this.statuses = new Map(statuses.flatMap((s) => (s.status ? [[s.name, s.status] as const] : [])))
     this.servers = new Map(
       statuses
-        .filter((s) => s.tools?.length)
         .map((s) => {
-          const tools = new Map(s.tools!.map((t) => [t.name, { ...toMcpToolDescriptor(t), ...(s.serverInfo ? { serverInfo: s.serverInfo } : {}) }]))
+          const tools = new Map((s.tools ?? []).map((t) => [t.name, { ...toMcpToolDescriptor(t), ...(s.serverInfo ? { serverInfo: s.serverInfo } : {}) }]))
           const qualified = new Map<string, McpToolDescriptor | null>()
           for (const tool of tools.values()) {
             const key = normalizeClaudeMcpName(tool.name)
@@ -312,6 +311,8 @@ export interface ClaudeMcpAppsProviderDeps {
   tools: () => Promise<Map<string, McpToolDescriptor>>
   /** Server status from the catalog; may use a recent refresh. */
   serverStatus: () => Promise<string | undefined>
+  /** Recheck current account/configuration after asynchronous refresh, before native dispatch. */
+  assertBinding: () => void
 }
 
 /**
@@ -329,6 +330,7 @@ export function createClaudeMcpAppsProvider(binding: McpAppsBinding, deps: Claud
     if (origin && origin.providerSessionId !== sessionId) throw new McpAppsError('invalid', 'MCP App session binding mismatch')
     const query = await deps.query()
     if (!query) throw new McpAppsError('not_connected', 'Claude session is not running')
+    deps.assertBinding()
     return query
   }
 
@@ -339,6 +341,7 @@ export function createClaudeMcpAppsProvider(binding: McpAppsBinding, deps: Claud
    */
   const assertConnected = async () => {
     const status = await deps.serverStatus()
+    deps.assertBinding()
     if (status === 'needs-auth') throw new McpAppsError('auth_required', 'MCP server requires sign-in')
     if (status !== 'connected') throw new McpAppsError('not_connected', `MCP server is ${status ?? 'unknown'}`)
   }
@@ -363,6 +366,7 @@ export function createClaudeMcpAppsProvider(binding: McpAppsBinding, deps: Claud
       if (!req.uri.startsWith('ui://')) throw new McpAppsError('invalid', 'MCP App resources must use ui://')
       const query = await liveQuery(signal, req.origin)
       await assertConnected()
+      deps.assertBinding()
       try {
         const result = await raceAbort(query.readMcpResource(binding.server, req.uri), signal)
         assertMcpAppSize(result, req.transient ? MCP_APP_OUTPUT_MAX_BYTES : MCP_APP_HTML_MAX_BYTES + MCP_APP_DATA_MAX_BYTES)
@@ -380,6 +384,7 @@ export function createClaudeMcpAppsProvider(binding: McpAppsBinding, deps: Claud
       await assertConnected()
       const tool = `mcp__${normalizeClaudeMcpName(binding.server)}__${normalizeClaudeMcpName(req.tool)}`
       let response: unknown
+      deps.assertBinding()
       try {
         response = await request({ subtype: 'mcp_call', tool, arguments: req.args ?? {} }, { signal })
       } catch (error) {
@@ -400,6 +405,7 @@ export function createClaudeMcpAppsProvider(binding: McpAppsBinding, deps: Claud
     async authenticate(req, signal): Promise<McpAppsAuthStart> {
       const auth = mcpAuthMethods(await liveQuery(signal))
       if (!auth) throw new McpAppsError('invalid', 'This Claude runtime cannot start MCP sign-in')
+      deps.assertBinding()
       try {
         const started = await raceAbort(auth.mcpAuthenticate(binding.server, req.redirectUri), signal)
         if (!started?.authUrl) return { completion: 'done' }
@@ -414,9 +420,11 @@ export function createClaudeMcpAppsProvider(binding: McpAppsBinding, deps: Claud
       const query = await liveQuery(signal)
       const auth = mcpAuthMethods(query)
       if (!auth) throw new McpAppsError('invalid', 'This Claude runtime cannot finish MCP sign-in')
+      deps.assertBinding()
       try {
         await raceAbort(auth.mcpSubmitOAuthCallbackUrl(binding.server, req.callbackUrl), signal)
         // A submitted callback stores the token but leaves the server in needs-auth until reconnected.
+        deps.assertBinding()
         await raceAbort(query.reconnectMcpServer(binding.server), signal)
       } catch (error) {
         if (error instanceof McpAppsError) throw error

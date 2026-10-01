@@ -1,6 +1,7 @@
 import { attachCodexMcpApp, createCodexMcpAppsProvider, prewarmCodexMcpAppCatalog } from '@superone/codex/mcp-apps'
-import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
+import type { McpAppsBinding, McpAppOrigin, McpAppsProvider } from '@superone/shared/mcp-apps'
 import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
+import { assertMcpAppsBindingIdentity } from '@superone/shared/mcp-app-binding'
 import { listCodexMcpConfigs } from '../../codex-config-service'
 import { codexAccountProviderId, CODEX_CLI_ACCOUNT_ID } from '@superone/shared/codex-accounts'
 import { applyCodexBackendSelection, mapCodexPermissionMode, resolveCodexBackendSelection, type CodexBackendSelectionPatch } from './codex-backend-selection'
@@ -1328,14 +1329,21 @@ export class CodexBackend implements SessionBackend {
 
   async getMcpAppsProvider(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider> {
     this.assertStarted()
-    if (binding.session !== this.startOpts?.sessionId || origin.providerSessionId !== this.providerSessionId) {
-      throw new McpAppsError('invalid', 'MCP App session binding mismatch')
+    const assertBinding = () => {
+      const config = this.startOpts && listCodexMcpConfigs(this.startOpts.cwd).find(server => server.name === binding.server)
+      assertMcpAppsBindingIdentity(binding, origin, {
+        session: this.startOpts?.sessionId, providerSessionId: this.providerSessionId,
+        account: this.startOpts?.apiProviderId, configFingerprint: mcpServerConfigFingerprint(config),
+      })
     }
-    if (binding.account !== (this.startOpts?.apiProviderId ?? undefined)) throw new McpAppsError('auth_required', 'MCP App account changed')
-    const config = listCodexMcpConfigs(this.startOpts!.cwd).find(server => server.name === binding.server)
-    if (binding.configFingerprint !== mcpServerConfigFingerprint(config)) throw new McpAppsError('not_connected', 'MCP App server configuration changed')
+    assertBinding()
     const connection = await this.ensureManagementConnection()
-    return createCodexMcpAppsProvider(binding, origin.providerSessionId, connection.request.bind(connection), connection.request)
+    assertBinding()
+    const request: typeof connection.request = (...args) => {
+      assertBinding()
+      return connection.request(...args)
+    }
+    return createCodexMcpAppsProvider(binding, origin.providerSessionId, request, connection.request)
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {

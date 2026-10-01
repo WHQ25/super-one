@@ -48,6 +48,7 @@ const catalog = new ClaudeMcpAppsCatalog()
 let sessionId: string | null = null
 // One provider per request, as the IPC and node routes do: dispatch disposes it.
 const makeProvider = () => createClaudeMcpAppsProvider(binding, {
+    assertBinding: () => {},
   query: async () => q,
   // No Claude session id exists before the first turn; a real View only exists after one.
   providerSessionId: () => sessionId ?? '',

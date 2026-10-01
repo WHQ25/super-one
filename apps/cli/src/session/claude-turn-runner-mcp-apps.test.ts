@@ -80,6 +80,34 @@ const binding: McpAppsBinding = {
 const origin = { providerSessionId: 'sess-1' }
 
 describe('node Claude MCP Apps', () => {
+  it('refuses a held provider when the account changes or its runtime is replaced', async () => {
+    const { queryFn, request } = fakeQuery([])
+    const runner = runnerWith(queryFn)
+    const s = session({ providerResume: 'claude-session:sess-1' })
+    const provider = await runner.getMcpAppsProvider!(s, binding, origin)
+    s.apiProviderId = 'other'
+    await expect(provider.authenticate!({}, new AbortController().signal)).rejects.toMatchObject({ code: 'not_connected' })
+    s.apiProviderId = undefined
+    await runner.disposeSession?.(s.sessionId)
+    await expect(provider.callTool({ tool: 'next', args: {}, origin }, new AbortController().signal)).rejects.toMatchObject({ code: 'inactive' })
+    expect(request).not.toHaveBeenCalled()
+    await runner.disposeAll?.()
+  })
+
+  it('rejects a changed same-name server after idle release reloads project config', async () => {
+    const { queryFn, request } = fakeQuery([])
+    const runner = runnerWith(queryFn)
+    const s = session({ providerResume: 'claude-session:sess-1' })
+    writeFileSync(join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { fixture: { command: 'old' } } }))
+    const first = await runner.getMcpAppsProvider!(s, { ...binding, configFingerprint: mcpServerConfigFingerprint({ type: 'stdio', command: 'old' }) }, origin)
+    first.dispose()
+    await runner.disposeSession?.(s.sessionId)
+    writeFileSync(join(dir, '.mcp.json'), JSON.stringify({ mcpServers: { fixture: { command: 'new' } } }))
+    await expect(runner.getMcpAppsProvider!(s, { ...binding, configFingerprint: mcpServerConfigFingerprint({ type: 'stdio', command: 'old' }) }, origin)).rejects.toMatchObject({ code: 'not_connected' })
+    expect(request).not.toHaveBeenCalled()
+    await runner.disposeAll?.()
+  })
+
   it('attaches the app to the tool row with a node-scoped binding', async () => {
     const { queryFn } = fakeQuery(UI_TURN)
     const runner = runnerWith(queryFn)
@@ -130,7 +158,7 @@ describe('node Claude MCP Apps', () => {
     await expect(firstRead).resolves.toEqual({ contents: [{ uri: 'ui://fixture/items.html', text: '<html/>' }] })
     // A durable identity must not allow a View from a different live process.
     await expect(runner.getMcpAppsProvider!(session({ providerResume: 'claude-session:other' }), binding, { providerSessionId: 'other' }))
-      .rejects.toMatchObject({ code: 'invalid' })
+      .rejects.toMatchObject({ code: 'inactive' })
     expect(queryFn).toHaveBeenCalledTimes(1)
     await runner.disposeAll?.()
   })
@@ -150,10 +178,10 @@ describe('node Claude MCP Apps', () => {
     const { queryFn } = fakeQuery([])
     const runner = runnerWith(queryFn)
     const s = session({ providerResume: 'claude-session:sess-1' })
-    await expect(runner.getMcpAppsProvider!(session(), binding, origin)).rejects.toMatchObject({ code: 'invalid' })
-    await expect(runner.getMcpAppsProvider!(s, binding, { providerSessionId: 'other' })).rejects.toMatchObject({ code: 'invalid' })
+    await expect(runner.getMcpAppsProvider!(session(), binding, origin)).rejects.toMatchObject({ code: 'inactive' })
+    await expect(runner.getMcpAppsProvider!(s, binding, { providerSessionId: 'other' })).rejects.toMatchObject({ code: 'inactive' })
     await expect(runner.getMcpAppsProvider!(session({ providerResume: 'claude-session:sess-1', apiProviderId: 'p2' }), binding, origin))
-      .rejects.toMatchObject({ code: 'auth_required' })
+      .rejects.toMatchObject({ code: 'not_connected' })
     await expect(runner.getMcpAppsProvider!(s, { ...binding, configFingerprint: 'elsewhere' }, origin)).rejects.toMatchObject({ code: 'not_connected' })
   })
 })

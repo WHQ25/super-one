@@ -20,6 +20,7 @@
  * providerResume: `claude-session:<session_id>` for SDK `resume`.
  */
 
+import { assertMcpAppsBindingIdentity } from '@superone/shared/mcp-app-binding'
 import { existsSync } from 'node:fs'
 import type { Options } from '@anthropic-ai/claude-agent-sdk'
 import {
@@ -519,9 +520,9 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       || binding.session !== session.sessionId
       || origin.providerSessionId !== providerSessionId
     ) {
-      throw new McpAppsError('invalid', 'MCP App session binding mismatch')
+      throw new McpAppsError('inactive', 'MCP App session binding changed')
     }
-    if (binding.account !== (session.apiProviderId ?? undefined)) throw new McpAppsError('auth_required', 'MCP App account changed')
+    if (binding.account !== (session.apiProviderId ?? undefined)) throw new McpAppsError('not_connected', 'MCP App account changed')
     if (!entry) {
       // A View activated after the idle reaper released the process: reopen it
       // from the durable session defaults, as desktop revives its query.
@@ -545,12 +546,18 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
         apiProviderId: session.apiProviderId,
       })
     }
-    if (binding.configFingerprint !== mcpServerConfigFingerprint(entry.mcpServers[binding.server])) {
-      throw new McpAppsError('not_connected', 'MCP App server configuration changed')
-    }
     entry.lastActivityAt = Date.now()
     const current = entry
+    const assertBinding = () => {
+      if (lives.get(session.sessionId) !== current) throw new McpAppsError('inactive', 'MCP App runtime changed')
+      assertMcpAppsBindingIdentity(binding, origin, {
+        session: session.sessionId, providerSessionId: current.live.sessionId,
+        account: session.apiProviderId, configFingerprint: mcpServerConfigFingerprint(current.mcpServers[binding.server]),
+      })
+    }
+    assertBinding()
     return createClaudeMcpAppsProvider(binding, {
+      assertBinding,
       query: async () => current.live.query,
       providerSessionId: () => current.live.sessionId,
       tools: async () => {

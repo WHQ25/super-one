@@ -31,6 +31,7 @@ const TOOLS = new Map<string, McpToolDescriptor>([
 
 function provider(query: Partial<Record<'readMcpResource' | 'request', unknown>> | null) {
   return createClaudeMcpAppsProvider(binding, {
+    assertBinding: () => {},
     query: async () => query as unknown as Query | null,
     providerSessionId: () => 'claude-sid',
     tools: async () => TOOLS,

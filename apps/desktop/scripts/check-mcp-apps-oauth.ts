@@ -61,6 +61,7 @@ async function checkClaude(hostCallback: boolean): Promise<boolean> {
   for (let i = 0; i < 40 && (await load()).find((s) => s.name === 'fixture')?.status === 'pending'; i++) await new Promise((r) => setTimeout(r, 250))
   try {
     return await exercise(`claude${hostCallback ? '-remote' : ''}`, () => createClaudeMcpAppsProvider(binding, {
+    assertBinding: () => {},
       query: async () => q,
       providerSessionId: () => '',
       tools: async () => { await catalog.refresh(load, { force: true }); return catalog.tools('fixture') ?? new Map() },

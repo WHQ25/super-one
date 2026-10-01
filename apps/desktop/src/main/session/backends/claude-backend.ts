@@ -5,6 +5,7 @@ import { MessageBridge } from '../../agent/message-bridge'
 import { ClaudeMcpAppsCatalog, ClaudeToolApps, createClaudeMcpAppsProvider } from '@superone/claude/mcp-apps'
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
+import { assertMcpAppsBindingIdentity } from '@superone/shared/mcp-app-binding'
 import { buildClaudeOptions, createSessionQuery, buildUserMessage, type SessionQueryOptions, type BackgroundTaskInfo } from '../../agent/claude-query'
 import { getGlobalWarmupManager, WarmupManager } from '../../agent/warmup-manager'
 import {
@@ -852,20 +853,41 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async getMcpAppsProvider(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider> {
-    if (binding.session !== this._lastStartOpts?.sessionId || origin.providerSessionId !== this.providerSessionId) {
-      throw new McpAppsError('invalid', 'MCP App session binding mismatch')
+    const assertBinding = () => assertMcpAppsBindingIdentity(binding, origin, {
+      session: this._lastStartOpts?.sessionId, providerSessionId: this.providerSessionId,
+      account: this._lastStartOpts?.apiProviderId,
+      configFingerprint: mcpServerConfigFingerprint(this.mcpAppsCatalog.config(binding.server)),
+    })
+    let checkedRuntime: Query | null = null
+    const query = async () => {
+      const current = await this.ensureQuery()
+      if (current && current !== checkedRuntime) {
+        // A resumed CLI can load a different same-name server from disk. Do not
+        // trust the old catalog or its refresh throttle across that boundary.
+        const statuses = await withDeadline(current.mcpServerStatus(), MCP_APPS_CATALOG_TIMEOUT_MS)
+        if (statuses === DEADLINE_EXCEEDED) throw new McpAppsError('not_connected', 'MCP App server identity refresh timed out')
+        if (current !== this.query) throw new McpAppsError('inactive', 'MCP App runtime changed')
+        this.mcpAppsCatalog.update(statuses)
+        checkedRuntime = current
+      }
+      assertBinding()
+      return current
     }
+    await query()
     return createClaudeMcpAppsProvider(binding, {
-      query: () => this.ensureQuery(),
+      query,
+      assertBinding,
       providerSessionId: () => this.providerSessionId,
       tools: async () => {
-        await this.ensureQuery()
+        await query()
         await this.refreshMcpAppsCatalog({ force: true })
+        assertBinding()
         return this.mcpAppsCatalog.tools(binding.server) ?? new Map()
       },
       serverStatus: async () => {
-        await this.ensureQuery()
+        await query()
         await this.refreshMcpAppsCatalog()
+        assertBinding()
         return this.mcpAppsCatalog.status(binding.server)
       },
     })

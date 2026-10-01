@@ -9,6 +9,7 @@ const signal = new AbortController().signal
 
 function claude(query: Record<string, unknown>, status = 'connected') {
   return createClaudeMcpAppsProvider(binding, {
+    assertBinding: () => {},
     query: async () => query as unknown as Query,
     providerSessionId: () => 'sid',
     tools: async () => new Map(),

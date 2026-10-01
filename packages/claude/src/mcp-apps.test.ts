@@ -63,6 +63,13 @@ describe('toMcpToolDescriptor', () => {
 })
 
 describe('ClaudeMcpAppsCatalog', () => {
+  it('keeps server identity while sign-in prevents tool discovery', () => {
+    const catalog = new ClaudeMcpAppsCatalog()
+    catalog.update([{ name: 'cad', status: 'needs-auth', config: { type: 'http', url: 'https://example.com/mcp' } }])
+    expect(catalog.config('cad')).toEqual({ type: 'http', url: 'https://example.com/mcp' })
+    expect(catalog.tools('cad')?.size).toBe(0)
+  })
+
   it('resolves a qualified tool name back to the raw server name', () => {
     const catalog = new ClaudeMcpAppsCatalog()
     catalog.update([FIXTURE_STATUS])

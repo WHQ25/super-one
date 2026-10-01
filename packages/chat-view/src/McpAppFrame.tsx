@@ -1,4 +1,4 @@
-import { mcpAppHeaderTitle, mcpAppPresentationIcon, mcpAppResourceModes } from '@superone/shared/mcp-apps-metadata'
+import { mcpAppHeaderTitle, mcpAppServerTitle, mcpAppPresentationIcon, mcpAppResourceModes } from '@superone/shared/mcp-apps-metadata'
 import { mcpAppMessageCapabilities } from '@superone/shared/mcp-apps-host/capabilities'
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -212,7 +212,7 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
   }
 
   const tool = parseMcpToolName(toolName)
-  const server = app.presentation?.serverTitle ?? tool?.serverName ?? app.binding.server
+  const server = mcpAppServerTitle(app)
   const frameStyle = fullscreen ? { width: '100%', height: '100%' } : { width: '100%', height }
   return (
     <div

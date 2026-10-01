@@ -1,7 +1,7 @@
 import type { ContextAttachment } from './context-attachments'
 import { contextAttachmentPreview } from './context-attachments'
 import { mcpAppContent } from './mcp-apps-content'
-import { mcpAppPresentationIcon } from './mcp-apps-metadata'
+import { mcpAppPresentationIcon, mcpAppServerTitle } from './mcp-apps-metadata'
 import type { McpAppModelContext, ToolAppAttachment } from './mcp-apps'
 import { McpAppsError } from './mcp-apps'
 
@@ -27,13 +27,13 @@ export function mcpAppContextBlockVisible(block: unknown): boolean {
 
 /** All model input is projected through the same metadata-free content contract. */
 export function mcpAppContextInput(app: ToolAppAttachment) {
-  return mcpAppContent(app.modelContext?.content ?? [], app.binding.server, `mcp:context:${app.appInstanceId}:${mcpAppContextState(app)?.updateId ?? ''}`)
+  return mcpAppContent(app.modelContext?.content ?? [], mcpAppServerTitle(app), `mcp:context:${app.appInstanceId}:${mcpAppContextState(app)?.updateId ?? ''}`)
 }
 
 export function mcpAppContextItems(app: ToolAppAttachment, messageId: string, scheme: 'light' | 'dark' = 'light'): McpAppContextAttachment[] {
   const state = mcpAppContextState(app)
   if (!state) return []
-  const source = app.presentation?.serverTitle ?? app.presentation?.toolTitle ?? app.binding.server
+  const source = mcpAppServerTitle(app)
   const base = { appInstanceId: app.appInstanceId, messageId, updateId: state.updateId, source }
   const previews = (images: ReturnType<typeof mcpAppContent>['images']) => images.filter(image => image.mimeType.startsWith('image/')).map(image => ({ src: `data:${image.mimeType};base64,${image.base64}`, alt: image.name }))
   const items = (state.content ?? []).flatMap((block, blockIndex) => {

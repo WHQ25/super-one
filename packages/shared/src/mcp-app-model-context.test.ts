@@ -5,14 +5,14 @@ import type { ToolAppAttachment } from './mcp-apps'
 
 const visible = { type: 'text', text: '{"part":"dial"}', _meta: { 'openai/title': 'Agent dial', private: 'block-private', 'openai/thumbnail': { src: 'https://example.com/dial.png' } } }
 const hidden = { type: 'text', text: 'Model background', annotations: { audience: ['assistant'] }, _meta: { private: 'hidden-private' } }
-const app: ToolAppAttachment = { appInstanceId: 'view', binding: { node: 'local', session: 's', server: 'CAD', configGeneration: 1, configFingerprint: 'config' }, status: 'result', resourceUri: 'ui://cad', presentation: { toolTitle: 'Library', icons: [{ src: 'https://example.com/icon.png' }] }, modelContext: { updateId: 'update-1', content: [visible, hidden, { type: 'text', text: 'Another block' }], structuredContent: { selected: 'dial' }, source: { appInstanceId: 'forged', server: 'forged' } } }
+const app: ToolAppAttachment = { appInstanceId: 'view', binding: { node: 'local', session: 's', server: 'CAD', configGeneration: 1, configFingerprint: 'config' }, status: 'result', resourceUri: 'ui://cad', presentation: { toolTitle: 'Library', serverTitle: 'Fixture CAD', icons: [{ src: 'https://example.com/icon.png' }] }, modelContext: { updateId: 'update-1', content: [visible, hidden, { type: 'text', text: 'Another block' }], structuredContent: { selected: 'dial' }, source: { appInstanceId: 'forged', server: 'forged' } } }
 const message = (value: ToolAppAttachment) => ({ id: 'm', content: [{ type: 'tool_result' as const, toolUseId: 'call', summary: '', app: value }] })
 
 describe('persistent composer model context', () => {
   it('shows each visible block, safe thumbnail and bounded text; hides background while a block is visible', () => {
     const items = mcpAppContextItems(app, 'm')
     expect(items.map(item => item.blockIndex)).toEqual([0, 2])
-    expect(items[0]).toMatchObject({ title: 'Agent dial', thumbnail: 'https://example.com/dial.png', updateId: 'update-1' })
+    expect(items[0]).toMatchObject({ source: 'Fixture CAD', title: 'Agent dial', thumbnail: 'https://example.com/dial.png', updateId: 'update-1' })
     expect(items.some(item => item.content?.includes('Model background'))).toBe(false)
     const long = { ...app, modelContext: { ...app.modelContext!, content: [{ type: 'text', text: '中'.repeat(3000) }] } }
     expect(new TextEncoder().encode(mcpAppContextItems(long, 'm')[0].content).length).toBeLessThanOrEqual(4096)
@@ -22,7 +22,7 @@ describe('persistent composer model context', () => {
     for (const content of [[hidden], []]) {
       const value = { ...app, modelContext: { ...app.modelContext!, content } }
       const [item] = mcpAppContextItems(value, 'm')
-      expect(item).toMatchObject({ title: 'Library context', thumbnail: 'https://example.com/icon.png' })
+      expect(item).toMatchObject({ title: 'Fixture CAD context', thumbnail: 'https://example.com/icon.png' })
       expect(item.blockIndex).toBeUndefined()
       expect(item.content).toContain('selected')
       expect(removeMcpAppContextBlock(value, item.updateId)).toBeNull()

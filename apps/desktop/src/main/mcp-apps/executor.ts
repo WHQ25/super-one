@@ -1,4 +1,5 @@
 import { getMcpAppResourceStore as resourceStore } from './resource-store'
+import { mcpAppServerTitle } from '@superone/shared/mcp-apps-metadata'
 import type { McpAppResourceSnapshot } from '@superone/shared/mcp-app-resource'
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent, RemoteCommand } from '@superone/shared/agent-types'
@@ -120,7 +121,7 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
     },
     async sendMessage(target, params, requester, signal) {
       const clientMessageId = randomUUID()
-      const { text, ...display } = mcpAppContent(params.content, target.app.binding.server, `mcp:${clientMessageId}`)
+      const { text, ...display } = mcpAppContent(params.content, mcpAppServerTitle(target.app), `mcp:${clientMessageId}`)
       const content = `[MCP App: ${target.app.binding.server}]\n${text}`
       const { images, userMessageContent, contexts } = display
       if (requester.kind === 'mobile' && target.ref.environmentId === 'local') {

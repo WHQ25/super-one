@@ -1,11 +1,17 @@
 import { boundedToolAppAttachment, MCP_APP_DATA_MAX_BYTES } from './mcp-apps'
 import { describe, expect, it } from 'vitest'
-import { mcpAppHeaderTitle, mcpAppIcon, mcpAppPresentation, mcpAppResourceMeta, mcpAppResourceModes, safeMcpAppImage } from './mcp-apps-metadata'
+import { mcpAppHeaderTitle, mcpAppServerTitle, mcpAppIcon, mcpAppPresentation, mcpAppResourceMeta, mcpAppResourceModes, safeMcpAppImage } from './mcp-apps-metadata'
 
 describe('MCP App presentation metadata', () => {
   it('shows identical resolved server/tool titles once on both host surfaces', () => {
     expect(mcpAppHeaderTitle('Bits & Bolts', 'Bits & Bolts')).toBe('Bits & Bolts')
     expect(mcpAppHeaderTitle('Bits & Bolts', ' Browse library ')).toBe('Bits & Bolts ·  Browse library ')
+  })
+  it('resolves the server source label with a binding fallback', () => {
+    const binding = { server: 'bits-and-bolts' } as never
+    expect(mcpAppServerTitle({ binding, presentation: { toolTitle: 'Library', serverTitle: 'Bits & Bolts' } })).toBe('Bits & Bolts')
+    expect(mcpAppServerTitle({ binding, presentation: { toolTitle: 'Library', serverTitle: ' ' } })).toBe('bits-and-bolts')
+    expect(mcpAppServerTitle({ binding })).toBe('bits-and-bolts')
   })
   it('uses tool title then annotation title then name', () => {
     expect(mcpAppPresentation({ name: 'cad.library', title: 'Library', annotations: { title: 'Old' } }).toolTitle).toBe('Library')

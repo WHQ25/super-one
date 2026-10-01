@@ -1,4 +1,4 @@
-import { mcpAppHeaderTitle, mcpAppPresentationIcon, mcpAppResourceModes } from '@superone/shared/mcp-apps-metadata'
+import { mcpAppHeaderTitle, mcpAppServerTitle, mcpAppPresentationIcon, mcpAppResourceModes } from '@superone/shared/mcp-apps-metadata'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
@@ -160,7 +160,7 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
     {!available && (owner.renderFallback?.(trailing) ?? <div className="flex items-center justify-end gap-1.5 text-xs">{trailing}</div>)}
     {/* Keep the destination connected while showing the normal error/pending row. */}
     <div hidden={!available}>
-      <EmbeddedToolView title={mcpAppHeaderTitle(app.presentation?.serverTitle ?? app.binding.server, app.presentation?.toolTitle ?? owner.title ?? app.resourceUri)} icon={<ToolBrandIcon src={icon} alt={app.binding.server} icon={getToolDisplay(toolName, {}).icon} />} actions={owner.details && <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.toolDetails')} aria-expanded={detailsOpen} onClick={() => setDetailsOpen(value => !value)}><CodeXml className="size-3.5" /></IconButton>}>
+      <EmbeddedToolView title={mcpAppHeaderTitle(mcpAppServerTitle(app), app.presentation?.toolTitle ?? owner.title ?? app.resourceUri)} icon={<ToolBrandIcon src={icon} alt={app.binding.server} icon={getToolDisplay(toolName, {}).icon} />} actions={owner.details && <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.toolDetails')} aria-expanded={detailsOpen} onClick={() => setDetailsOpen(value => !value)}><CodeXml className="size-3.5" /></IconButton>}>
         {available && !active && surface === 'inline' && <div data-mcp-app-restore-strip className="mb-2 flex items-start justify-between gap-2">
           <div className="min-w-0 text-xs">
             <p data-mcp-app-result-omitted={app.toolResultOmitted ? '' : undefined} className="text-muted-foreground">{t(app.toolResultOmitted ? 'mcpApp.resultOmitted' : 'mcpApp.restored')}</p>

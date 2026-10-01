@@ -1,4 +1,4 @@
-import type { McpAppIcon, McpAppPresentation, McpToolDescriptor, McpUiResourceMeta } from './mcp-apps'
+import type { McpAppIcon, McpAppPresentation, McpToolDescriptor, McpUiResourceMeta, ToolAppAttachment } from './mcp-apps'
 import { safeImageUri } from './image-uri'
 export { safeImageUri as safeMcpAppImage } from './image-uri'
 
@@ -7,6 +7,11 @@ const record = (value: unknown): Record<string, unknown> => value && typeof valu
 const title = (value: unknown): string | undefined => typeof value === 'string' && value.trim() ? value.slice(0, 512) : undefined
 export const MCP_APP_ICON_MAX_BYTES = 32 * 1024
 export const MCP_APP_PRESENTATION_MAX_BYTES = 70 * 1024
+
+/** Use the presentation label on every surface, retaining the binding id as fallback. */
+export function mcpAppServerTitle(app: Pick<ToolAppAttachment, 'presentation' | 'binding'>): string {
+  return title(app.presentation?.serverTitle) ?? app.binding.server
+}
 
 /** Server and tool may advertise the same title; show that label only once. */
 export function mcpAppHeaderTitle(server: string, tool: string): string {

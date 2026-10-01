@@ -454,6 +454,13 @@ acceptance window, with no debug code added to the repository. Evidence is in
 `claude-verified-titled-new` captures. Mosaic mode is not covered by this
 single-pane proof and remains a navigation coverage gap.
 
+S1 label follow-up: one shared server-title resolver now supplies message and
+model-context chip sources, confirmation labels, and desktop/phone View headers.
+It prefers the resolved presentation title and falls back to the server id.
+The display label does not alter binding identity or model text. Desktop/shared
+selection: 68 tests passed; portable View/lifecycle selection: 5 passed;
+desktop node/web and portable typechecks passed.
+
 ## Phase 2: forms
 
 Branch `feat/mcp-apps-forms`. One schema model

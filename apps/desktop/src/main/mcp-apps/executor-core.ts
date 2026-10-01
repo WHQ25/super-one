@@ -1,6 +1,7 @@
 import { McpAppResourceCache, mcpAppResourceReadKey, type McpAppResourceSnapshot } from '@superone/shared/mcp-app-resource'
 import { mcpAppPresentation, mcpAppResourceMeta } from '@superone/shared/mcp-apps-metadata'
 import { mcpAppMessagePreview, mcpAppMessageTarget } from '@superone/shared/mcp-apps-content'
+import { mcpAppServerTitle } from '@superone/shared/mcp-apps-metadata'
 import { mcpAppContextState, removeMcpAppContextBlock } from '@superone/shared/mcp-app-model-context'
 import { validateMcpAppAttachmentUpdate } from '@superone/shared/mcp-apps-state'
 import { createHash, randomUUID } from 'node:crypto'
@@ -209,10 +210,11 @@ export class McpAppExecutor {
         // The shared provider dispatch gate checks app visibility immediately
         // before dispatch, for local and remote sessions alike.
       } else if (operation.operation === 'sendMessage') {
-        const details = mcpAppMessagePreview(operation.params, target.app.binding.server)
+        const server = mcpAppServerTitle(target.app)
+        const details = mcpAppMessagePreview(operation.params, server)
         if (details.target === 'new' && requester.kind === 'mobile') throw new McpAppsError('denied', 'Creating a new conversation from an MCP App is supported on desktop only; use target: active on phone')
         if (details.target === 'new' && !this.ports.createMessageSession) throw new McpAppsError('not_connected', 'MCP App new conversation routing is unavailable')
-        prompt = { kind: 'sendMessage', server: target.app.binding.server, ...details }
+        prompt = { kind: 'sendMessage', server, ...details }
         assertMcpAppSize(prompt)
       }
       const challengeKey = jsonHash({ ref, appInstanceId: target.app.appInstanceId, requester: requesterKey(requester), operation })

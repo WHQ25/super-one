@@ -17,7 +17,7 @@ vi.mock('../environment/environment-host', () => ({ getEnvironmentHost: () => ({
 import { executeMcpAppHostRequest, initializeMcpAppExecutor } from './executor'
 
 const app: ToolAppAttachment = { appInstanceId: 'view', binding: { node: 'local', session: 's', server: 'fixture', configGeneration: 0, configFingerprint: 'config' },
-  origin: { providerSessionId: 'thread' }, resourceUri: 'ui://fixture/view', resource: { html: '<html>saved</html>', hash: 'hash', meta: {} } }
+  presentation: { toolTitle: 'Library', serverTitle: 'Fixture CAD' }, origin: { providerSessionId: 'thread' }, resourceUri: 'ui://fixture/view', resource: { html: '<html>saved</html>', hash: 'hash', meta: {} } }
 const send = vi.fn(async (_request, callbacks) => { callbacks.onAccepted() })
 const newSession = { id: 'new', send, snapshot: { harnessId: 'claude' }, broadcastSettingsPatch: vi.fn() }
 const createSession = vi.fn(() => newSession)
@@ -47,6 +47,7 @@ describe('main MCP App executor adapters', () => {
     ], _meta: { 'openai/message': { target: 'new' } } } }
     const prompt = await executeMcpAppHostRequest(request, requester)
     if (prompt.ok || prompt.error.code !== 'approval_required') throw new Error('Expected approval')
+    expect(prompt.error.prompt).toMatchObject({ server: 'Fixture CAD', items: [expect.objectContaining({ source: 'Fixture CAD' }), expect.objectContaining({ source: 'Fixture CAD' })] })
     const prepared = await executeMcpAppHostRequest({ ...request, approval: { challenge: prompt.error.challenge } }, requester)
     if (!prepared.ok) throw new Error('Expected handoff')
     expect(createSession).toHaveBeenCalledExactlyOnceWith({ projectPath: '/project', cwd: '/project/worktree', gitBranch: 'feature', providerId: 'claude-base', apiProviderId: 'account', model: 'sonnet', effort: 'high', permissionMode: 'auto', sandboxMode: 'auto', acpAgentId: null, codexServiceTier: undefined })
@@ -54,7 +55,7 @@ describe('main MCP App executor adapters', () => {
     expect(send).not.toHaveBeenCalled()
     const pendingSend = (prepared.value as { pendingSend: string }).pendingSend
     expect(await executeMcpAppHostRequest({ sessionKey: 'local:s', appInstanceId: 'view', operation: 'sendPreparedMessage', pendingSend }, requester)).toMatchObject({ ok: true })
-    expect(send).toHaveBeenCalledWith(expect.objectContaining({ content: '[MCP App: fixture]\n{"part":"dial"}', images: [expect.objectContaining({ name: 'Drawing', mimeType: 'image/png', base64: 'iVBORw0KGgo=' })], userMessageContent: [expect.objectContaining({ type: 'image', name: 'Drawing' })], contexts: [expect.objectContaining({ summary: 'Dial', content: '{"part":"dial"}' })] }), expect.any(Object))
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ content: '[MCP App: fixture]\n{"part":"dial"}', images: [expect.objectContaining({ name: 'Drawing', mimeType: 'image/png', base64: 'iVBORw0KGgo=' })], userMessageContent: [expect.objectContaining({ type: 'image', name: 'Drawing' })], contexts: [expect.objectContaining({ appName: 'Fixture CAD', summary: 'Dial', content: '{"part":"dial"}' })] }), expect.any(Object))
   })
 
   it('creates remote new conversations from authoritative node project/provider/harness settings', async () => {

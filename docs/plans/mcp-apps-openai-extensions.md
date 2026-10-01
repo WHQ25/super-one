@@ -424,3 +424,8 @@ Final focused verification (overlapping selections, not a full suite):
   execution because the sandbox failed localhost DNS resolution; no test failed
   after rerunning in the authorized environment. Portable build retains its
   existing chunk-size warning.
+
+Startup GC follow-up: desktop document-host registration explicitly schedules
+a sweep for an existing CAS directory even if no View is opened in that run;
+the store's lazy first-access sweep alone was insufficient. IPC startup coverage
+verifies this occurs before attachment resolution or loading.

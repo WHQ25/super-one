@@ -4,6 +4,7 @@ import { McpAppsError, type McpAppViewRequest, type ToolAppAttachment } from '@s
 import type { McpAppDesktopRequestContext } from '@superone/shared/mcp-apps-desktop'
 import { mcpAppResources, type McpAppResourceRegistry } from './protocol'
 import { mcpAppSessionKey } from './session-key'
+import { scheduleMcpAppResourceGc } from './resource-store'
 
 function failure(error: unknown) {
   return { ok: false as const, error: error instanceof McpAppsError ? error.toJSON() : { code: 'invalid' as const, message: error instanceof Error ? error.message : String(error) } }
@@ -15,6 +16,8 @@ function assertHost(event: IpcMainInvokeEvent): void {
 
 /** The document handle binds all iframe-originated operations to native navigation lifetime. */
 export function registerMcpAppDocumentIpc(resources: McpAppResourceRegistry = mcpAppResources): void {
+  // Sweep an existing CAS at host startup, even if no View is opened this run.
+  scheduleMcpAppResourceGc()
   const pending = new Map<string, { owner: number; documentId: string; controller: AbortController }>()
   const owners = new Set<number>()
   ipcMain.handle(AgentIpcChannels.MCP_APP_REGISTER_DOCUMENT, async (event, projectPath: string, sessionId: string, target: { appInstanceId: string; messageId?: string }) => {

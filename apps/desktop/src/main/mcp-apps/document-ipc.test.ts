@@ -7,9 +7,10 @@ import type { McpAppDocumentRegistration } from '@superone/shared/mcp-apps-deskt
 import { McpAppExecutor, type McpAppExecutorPorts, type McpAppResolvedTarget } from './executor-core'
 import { McpAppResourceRegistry } from './protocol'
 
-const native = vi.hoisted(() => ({ handlers: new Map<string, (...args: any[]) => any>(), resolve: vi.fn(), execute: vi.fn(), active: vi.fn() }))
+const native = vi.hoisted(() => ({ handlers: new Map<string, (...args: any[]) => any>(), resolve: vi.fn(), execute: vi.fn(), active: vi.fn(), gc: vi.fn() }))
 vi.mock('electron', () => ({ ipcMain: { handle: (channel: string, handler: (...args: any[]) => any) => native.handlers.set(channel, handler) } }))
 vi.mock('./executor', () => ({ resolveMcpAppHostAttachment: native.resolve, executeMcpAppHostRequest: native.execute, isMcpAppHostActive: native.active }))
+vi.mock('./resource-store', () => ({ scheduleMcpAppResourceGc: native.gc }))
 import { registerMcpAppDocumentIpc } from './document-ipc'
 
 const app: ToolAppAttachment = { appInstanceId: 'view', binding: { node: 'local', session: 's', server: 'fixture', configGeneration: 0, configFingerprint: 'config' },
@@ -38,9 +39,15 @@ function setup(owner = 1) {
   return { resources, sender, event, invoke, provider, executor, register, request }
 }
 
-beforeEach(() => { native.handlers.clear(); native.resolve.mockReset(); native.execute.mockReset() })
+beforeEach(() => { native.handlers.clear(); native.resolve.mockReset(); native.execute.mockReset(); native.gc.mockReset() })
 
 describe('MCP App native document IPC', () => {
+  it('schedules existing resource collection when the host starts, before any View loads', () => {
+    setup()
+    expect(native.gc).toHaveBeenCalledTimes(1)
+    expect(native.resolve).not.toHaveBeenCalled()
+    expect(native.execute).not.toHaveBeenCalled()
+  })
   it('registers only the authoritative snapshot and refuses privileged operations without a lease', async () => {
     const s = setup()
     const document = await s.register()

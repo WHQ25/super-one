@@ -18,8 +18,8 @@ const signal = new AbortController().signal
 const host = (response: unknown) => ({ ok: true, response })
 const prompt = { kind: 'callTool' as const, server: 'fixture', tool: 'fixture_next_page', argsPreview: '{}', rememberable: true }
 
-function executor(decision: { remember: boolean } | null = { remember: false }, link = true) {
-  const consent = { approve: vi.fn(async () => decision), confirmLink: vi.fn(async () => link) }
+function executor(decision: { remember: boolean } | null = { remember: false }) {
+  const consent = { approve: vi.fn(async () => decision) }
   return { consent, run: createMcpAppExecutor(target, consent, (mode) => mode) }
 }
 
@@ -93,10 +93,11 @@ describe('MCP App executor on the phone', () => {
     expect(native.async).toHaveBeenCalledTimes(1)
   })
 
-  it('opens links on the phone only after its own confirmation', async () => {
-    await expect(executor(null, false).run.openLink({ url: 'https://example.com' }, signal)).resolves.toEqual({ isError: true })
-    expect(native.fire).not.toHaveBeenCalled()
-    await executor().run.openLink({ url: 'https://example.com' }, signal)
+  it('opens a link the way the transcript does, without an App-specific confirmation', async () => {
+    const { run, consent } = executor()
+    await expect(run.openLink({ url: 'https://example.com' }, signal)).resolves.toEqual({})
     expect(native.fire).toHaveBeenCalledWith('openLink', { url: 'https://example.com' })
+    expect(consent.approve).not.toHaveBeenCalled()
+    expect(native.async).not.toHaveBeenCalled()
   })
 })

@@ -3877,8 +3877,6 @@ export type Messages = {
     sendMessage: string
     nonTextBlocks: string
     send: string
-    openLink: string
-    open: string
     restored: string
     authenticate: string
     revoked: string
@@ -7977,8 +7975,6 @@ export const en: Messages = {
     sendMessage: '{{server}} wants to send this message',
     nonTextBlocks: 'Plus {{count}} non-text attachments',
     send: 'Send',
-    openLink: 'Open this link?',
-    open: 'Open',
     restored: 'This saved View is inactive. Activate to reconnect to its original server and session.',
     authenticate: 'Sign In',
     revoked: 'The App navigated away. Restart to open a new secure View.',

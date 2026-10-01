@@ -55,18 +55,6 @@ export function McpAppConsentCard({ request }: { request: McpAppConsentRequest }
   const { t } = useTranslation()
   const detail = 'rounded bg-background/60 px-2 py-1.5 text-xs text-foreground whitespace-pre-wrap break-words'
   const { prompt, resolve } = request
-  if (prompt.kind === 'openLink') {
-    return (
-      <ConsentDialog label={t('mcpApp.openLink')}>
-        <p className="text-sm text-foreground">{t('mcpApp.openLink')}</p>
-        <p className={`${detail} font-mono`}>{prompt.url}</p>
-        <div className="flex justify-end gap-2">
-          <Action label={t('common.cancel')} onPress={() => resolve(null)} />
-          <Action primary label={t('mcpApp.open')} onPress={() => resolve({ remember: false })} />
-        </div>
-      </ConsentDialog>
-    )
-  }
   if (prompt.kind === 'sendMessage') {
     return (
       <ConsentDialog label={t('mcpApp.sendMessage', { server: prompt.server })}>

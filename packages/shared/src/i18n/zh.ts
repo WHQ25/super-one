@@ -3970,8 +3970,6 @@ export const zh: Messages = {
     sendMessage: '{{server}} 请求发送以下消息',
     nonTextBlocks: '另有 {{count}} 个非文本附件',
     send: '发送',
-    openLink: '打开此链接？',
-    open: '打开',
     restored: '此历史 View 尚未连接。激活后将连接原服务器和会话。',
     authenticate: '登录',
     revoked: '应用已离开原页面。重新启动以打开新的安全 View。',

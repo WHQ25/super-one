@@ -9,9 +9,9 @@ export type McpAppDisplayMode = McpUiRequestDisplayModeRequest['params']['mode']
 /**
  * Operations the chat document sends through the `mcpApp` native action. The View never
  * names a session, server or binding: the document names its View, RN adds the session,
- * and the host resolves the attachment itself. Links open on the phone instead.
+ * and the host resolves the attachment itself.
  */
-export type McpAppOperation = Exclude<McpAppHostOperation, { operation: 'openLink' }>
+export type McpAppOperation = McpAppHostOperation
 
 export interface McpAppTarget {
   messageId: string
@@ -21,7 +21,6 @@ export interface McpAppTarget {
 export interface McpAppConsent {
   /** `null` declines; `remember` asks the host to keep the approval for this tool. */
   approve(prompt: McpAppApprovalPrompt): Promise<{ remember: boolean } | null>
-  confirmLink(url: string): Promise<boolean>
 }
 
 /** A tool call can outlive the default request timeout; its outcome is then unknown. */
@@ -94,7 +93,8 @@ export function createMcpAppExecutor(
       await run({ operation: 'updateModelContext', context })
     },
     async openLink({ url }) {
-      if (!await consent.confirmLink(url)) return { isError: true }
+      // Exactly what a link in the transcript does: the shell checks the scheme and hands it
+      // to the system browser.
       requestNative('openLink', { url })
       return {}
     },

@@ -26,7 +26,7 @@ beforeEach(() => { mocks.resolve.mockReset(); mocks.provider.mockClear(); mobile
 
 describe('main MCP App executor adapters', () => {
   it('resolves a remote View in one scoped RPC without downloading session history', async () => {
-    mocks.resolve.mockResolvedValueOnce({ ok: true, value: { projectId: '/node/project', messageId: 'authoritative-row', app: { ...app, binding: { ...app.binding, node: 'node' } }, sessionApprovals: [] } })
+    mocks.resolve.mockResolvedValueOnce({ ok: true, value: { projectId: '/node/project', messageId: 'authoritative-row', app: { ...app, binding: { ...app.binding, node: 'node' } } } })
     expect(await executeMcpAppHostRequest({ sessionKey: 'connection:s', appInstanceId: 'view', messageId: 'stale-hint', operation: 'load' }, { kind: 'desktop' }))
       .toEqual({ ok: true, value: app.resource })
     expect(mocks.resolve).toHaveBeenCalledExactlyOnceWith('connection', { sessionId: 's', appInstanceId: 'view', messageId: 'stale-hint' })

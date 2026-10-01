@@ -1,10 +1,11 @@
 import { McpAppsError, type McpAppApprovalPrompt, type McpAppHostOperation, type McpAppsCallResult, type ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { requestOpenExternalLink } from '@/lib/external-link'
 import type { McpAppHostExecutor } from '@superone/shared/mcp-apps-host'
 import type { McpAppDocumentRegistration } from '@superone/shared/mcp-apps-desktop'
 
-export type McpAppDesktopApi = Pick<Window['environment'], 'mcpAppRegister' | 'mcpAppRelease' | 'mcpAppRequest' | 'mcpAppCancel' | 'onMcpAppDocumentRevoked' | 'mcpAppsAuthenticate'>
+export type McpAppDesktopApi = Pick<Window['environment'], 'mcpAppRegister' | 'mcpAppRelease' | 'mcpAppRequest' | 'mcpAppCancel' | 'onMcpAppDocumentRevoked' | 'mcpAppsAuthenticate'> & Partial<Pick<Window['environment'], 'onMcpAppEscape'>>
 export interface McpAppRoute { projectPath: string; sessionId: string }
-export type McpAppConsent = (prompt: McpAppApprovalPrompt, signal: AbortSignal) => Promise<{ remember?: boolean } | null>
+export type McpAppConsent = (prompt: McpAppApprovalPrompt, signal: AbortSignal) => Promise<Record<string, never> | null>
 
 /** Only this trusted renderer adapter has access to preload. The iframe receives AppBridge. */
 export function createDesktopMcpAppExecutor(options: {
@@ -48,7 +49,11 @@ export function createDesktopMcpAppExecutor(options: {
     readResource: (request, signal) => execute({ operation: 'readResource', ...request }, signal),
     sendMessage: async (params, signal) => { await execute({ operation: 'sendMessage', params }, signal); return {} },
     updateModelContext: async (context, signal) => { await execute({ operation: 'updateModelContext', context }, signal) },
-    openLink: async (request, signal) => { await execute({ operation: 'openLink', ...request }, signal); return {} },
+    openLink: async ({ url }, signal) => {
+      if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App link cancelled')
+      requestOpenExternalLink(url)
+      return {}
+    },
     requestDisplayMode: options.displayMode,
   }
 }

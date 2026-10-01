@@ -1,5 +1,5 @@
 import type { McpAppMessage } from '@superone/shared/mcp-apps-state'
-import { mcpAppMessageAttachments, mcpAppSessionApprovals } from '@superone/shared/mcp-apps-state'
+import { mcpAppMessageAttachments } from '@superone/shared/mcp-apps-state'
 import { McpAppsError } from '@superone/shared/mcp-apps'
 import type { McpAppsResolvedAttachment } from '@superone/shared/environment/mcp-apps-state-rpc'
 
@@ -11,10 +11,9 @@ export class McpAppAttachmentIndex {
     let entry = this.sessions.get(sessionId)
     if (entry?.revision !== revision) {
       const messages = catalog()
-      const sessionApprovals = mcpAppSessionApprovals(messages)
       const apps = new Map<string, Omit<McpAppsResolvedAttachment, 'projectId'>>()
       for (const message of messages) for (const app of mcpAppMessageAttachments(message)) {
-        apps.set(app.appInstanceId, { messageId: message.id, app, sessionApprovals })
+        apps.set(app.appInstanceId, { messageId: message.id, app })
       }
       entry = { revision, apps }
       this.sessions.set(sessionId, entry)

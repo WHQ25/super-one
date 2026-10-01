@@ -14,7 +14,7 @@ import { registerMcpAppDocumentIpc } from './document-ipc'
 
 const app: ToolAppAttachment = { appInstanceId: 'view', binding: { node: 'local', session: 's', server: 'fixture', configGeneration: 0, configFingerprint: 'config' },
   origin: { providerSessionId: 'thread' }, resourceUri: 'ui://fixture/view', resource: { html: '<html>authoritative</html>', hash: 'hash', meta: {} } }
-const target: McpAppResolvedTarget = { ref: { environmentId: 'local', sessionId: 's' }, node: 'local', projectPath: '/project', messageId: 'm', app, sessionApprovals: [{ node: 'local', session: 's', server: 'fixture', configFingerprint: 'config', tool: 'next_page' }] }
+const target: McpAppResolvedTarget = { ref: { environmentId: 'local', sessionId: 's' }, node: 'local', projectPath: '/project', messageId: 'm', app }
 
 function setup(owner = 1) {
   const resources = new McpAppResourceRegistry()

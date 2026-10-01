@@ -172,21 +172,21 @@ have size caps; stored snapshots follow the server's account lifecycle
 | Permissions | `permissions` → iframe `allow`; the granted set reported truthfully in `hostCapabilities.sandbox`. | Only what the device actually grants. |
 | Protocol | `AppBridge` + `PostMessageTransport`, one per mounted View instance, torn down with `ui/resource-teardown`; StrictMode double mount covered by test. | Same bridge in `packages/chat-view`; server-bound calls go to the host over environment RPC. |
 | Theme | SuperOne tokens → spec `--color-*` / `--font-*` / `--border-radius-*`, reusing `WIDGET_THEME_TOKEN_SOURCES`. | Same. |
-| Display | `inline`, `fullscreen` (dock panel) and `pip`. Host-supported modes only; respect an explicit View declaration. | `inline`, then `fullscreen` (sheet). |
+| Display | `inline`, `fullscreen` (main content area) and `pip`; Open in Panel is a separate host action. Host-supported modes only; respect an explicit View declaration. | `inline`, then `fullscreen` (sheet). |
 
 `appCapabilities.availableDisplayModes` is optional: when absent, a View's explicit display-mode request counts as intent; when present, both its declaration and the host's modes must allow the request.
 
 ## 6. View → host methods
 
-All handled in the host executor, against the View's bound provider.
+Provider operations use the host executor against the View's bound provider. Links use the existing local external-link interface.
 
 | Method | Handling |
 |---|---|
-| `tools/call` | Only tools whose visibility includes `"app"` on the bound server. Needs approval per server identity + account + tool, remembered on request. `readOnlyHint` skips the prompt only for servers the user marked trusted. No automatic retry after `unknown_outcome`. |
+| `tools/call` | Only tools whose visibility includes `"app"` on the bound server. View-initiated calls do not need host approval: the human operating the View has consented. Agent-initiated calls retain harness approvals. No automatic retry after `unknown_outcome`. |
 | `resources/read` | Bound server only. |
 | `ui/message` | A real user turn in the View's original session, attributed to the app, through the normal queue / permission / receipt flow. First release: confirm every message. Never sent during restore or startup; rate-limited to stop self-triggered loops. |
 | `ui/update-model-context` | Per-View context entry in the original session: keeps `content[]` / `structuredContent` and source, last write wins, injected on the next user turn. Built on the context-card UI, not on the mini-app active-session target. |
-| `ui/open-link` | Consent-gated `openExternal`. |
+| `ui/open-link` | Shared host validates credential-free http(s); desktop uses `requestOpenExternalLink` and the standard LinkSafetyModal; phone uses the transcript link path. No main-executor link operation. |
 | `ui/request-display-mode` | Answer with the resulting mode. |
 | `ui/notifications/size-changed` | Resize inline frame, capped. |
 | Draft: `ui/download-file`, request-teardown, sampling, app-provided tools | Not advertised in the first release. |

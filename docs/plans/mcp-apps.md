@@ -23,12 +23,12 @@ Long-term docs affected: `docs/architecture/chat-core.md` (tool app attachment),
 2. **Codex provider** (`packages/codex`, `CodexBackend`): send the UI extension at `initialize` (`app-server-connection.ts`, `app-server-client.ts`); map `mcpAppUi` / `appContext` in `agent-event-mapper.ts` and `codex-turn.ts`; implement `readResource` / `callTool` with thread routing; delete the unused `CODEX_MCP_RESOURCE_READ` / `CODEX_MCP_TOOL_CALL` IPC and `window.app` methods. Exposed through environment RPC, not local-only IPC; acceptance includes one remote-project round trip.
 3. **Scheme + CSP** (`apps/desktop/src/main`): `superone-mcp-app://` handler serving registered snapshots only, per-directive CSP builder with origin parsing, handler audit from 0.4.
 4. **View host** (renderer): `McpAppView` in the tool row with `AppBridge`, theme variable map, size, teardown; activation gate for restored Views; text fallback when no attachment.
-5. **Executor**: `tools/call` visibility + approval, `resources/read`, `ui/message` (per-message confirm, queue, receipt, loop cap), `ui/update-model-context` (per-View context entry in the original session), `ui/open-link`.
+5. **Executor**: `tools/call` visibility (View calls need no host approval), `resources/read`, `ui/message` (per-message confirm, queue, receipt, loop cap), `ui/update-model-context` (per-View context entry in the original session), `ui/open-link`.
 6. **Docs**: harness docs and backlog rows; feature doc.
 
 Acceptance: with the fixture and one real public Apps server — model calls the tool → View renders → click → View calls an app-only tool → View updates → `update-model-context` → next turn reflects the selection; after app restart the View paints and makes **no** backend call until activated; unsupported harnesses show the text result.
 
-Tests: Vitest for the CSP builder, visibility/approval executor, mapper, attachment persistence; Storybook stories for `McpAppView` (loading, error, auth required, restored-inactive, long content, narrow, light/dark).
+Tests: Vitest for the CSP builder, visibility/message-confirmation executor, mapper, attachment persistence; Storybook stories for `McpAppView` (loading, error, auth required, restored-inactive, long content, narrow, light/dark).
 
 ## Claude track (phase 2)
 
@@ -490,3 +490,21 @@ The production Storybook wire fixture proves fullscreen → dock → PiP → inl
 keeps the same iframe element and page state, followed by an approved app-only
 call on the same bridge. Native fixture `0ce6e57f0` declares all three modes.
 Final dev desktop/public server/remote node acceptance remains.
+
+
+### 2026-10-01 — user decision: View consent policy supersedes the original executor policy
+
+Shared contract committed in `55653cbe9`: only `sendMessage` carries a confirmation
+prompt and opaque challenge. View-initiated app-visible tools dispatch directly
+on desktop and phone; model-only tools remain denied at both routing and executor
+boundaries. Agent-originated calls retain the harness's permission flow.
+`approvedTools`, remembered approval keys, trust exceptions and their persistence
+paths have been deleted; old development data is ignored without a migration.
+Desktop links are validated by the shared host and enter the existing external-link
+UI in the renderer. The main executor has no link operation or `shell.openExternal`.
+
+Checks: 40 desktop executor/IPC tests, 3 runtime index tests and 2 actual SQLite
+node RPC/restart tests pass. Earlier approval/Always Allow acceptance entries above
+record the superseded implementation, not the current policy. Message confirmations
+remain plain text, single-use, bound to the exact requester/View/message/binding,
+with the existing per-View rate cap and original-session queued delivery.

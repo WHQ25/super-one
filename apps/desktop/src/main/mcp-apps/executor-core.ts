@@ -3,7 +3,7 @@ import { McpUiMessageRequestSchema, McpUiUpdateModelContextRequestSchema } from 
 import { parseSessionKey, type SessionRef } from '@superone/shared/environment/refs'
 import type { McpAppsProviderRpcRequest, McpAppsRpcResult } from '@superone/shared/environment/mcp-apps-rpc'
 import { assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, MCP_APP_MIME_TYPE, McpAppsError, mcpAppToolVisible } from '@superone/shared/mcp-apps'
-import type { McpAppApprovalPrompt, McpAppAttachmentUpdate, McpAppHostOperation, McpAppHostRequest, McpAppHostResult, McpAppRequester, McpAppReadResult, McpAppsCallResult, McpAppsCapabilities, McpAppToolApproval, McpToolDescriptor, ToolAppAttachment } from '@superone/shared/mcp-apps'
+import type { McpAppApprovalPrompt, McpAppAttachmentUpdate, McpAppHostOperation, McpAppHostRequest, McpAppHostResult, McpAppRequester, McpAppReadResult, McpAppsCallResult, McpAppsCapabilities, McpToolDescriptor, ToolAppAttachment } from '@superone/shared/mcp-apps'
 
 export interface McpAppResolvedTarget {
   ref: SessionRef
@@ -11,7 +11,6 @@ export interface McpAppResolvedTarget {
   projectPath: string
   messageId: string
   app: ToolAppAttachment
-  sessionApprovals: readonly McpAppToolApproval[]
 }
 
 export interface McpAppExecutorPorts {
@@ -19,9 +18,6 @@ export interface McpAppExecutorPorts {
   persist(target: McpAppResolvedTarget, update: McpAppAttachmentUpdate, signal: AbortSignal): Promise<void>
   provider(target: McpAppResolvedTarget, operation: Omit<McpAppsProviderRpcRequest, 'binding' | 'origin'>, signal: AbortSignal): Promise<McpAppsRpcResult>
   sendMessage(target: McpAppResolvedTarget, params: Extract<McpAppHostOperation, { operation: 'sendMessage' }>['params'], requester: McpAppRequester, signal: AbortSignal): Promise<void>
-  openLink(url: string): Promise<void>
-  /** Read-only hints never confer trust by themselves. No trust policy means prompt. */
-  trustedServer?(target: McpAppResolvedTarget): boolean
   now?(): number
 }
 
@@ -58,19 +54,8 @@ function operationOf(request: McpAppHostRequest): McpAppHostOperation {
       const params = McpUiUpdateModelContextRequestSchema.parse({ method: 'ui/update-model-context', params: request.context }).params
       return { operation: 'updateModelContext', context: { ...(params.content ? { content: params.content } : {}), ...(params.structuredContent ? { structuredContent: params.structuredContent } : {}), source: { appInstanceId: '', server: '' } } }
     }
-    case 'openLink': {
-      let url: URL
-      try { url = new URL(request.url) } catch { throw new McpAppsError('invalid', 'Invalid MCP App link') }
-      if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new McpAppsError('denied', 'Unsupported MCP App link')
-      return { operation: 'openLink', url: url.href }
-    }
     default: throw new McpAppsError('invalid', 'Unknown MCP App host operation')
   }
-}
-
-function approvalKey(app: ToolAppAttachment, tool: string): McpAppToolApproval {
-  const { node, session, server, account, configFingerprint } = app.binding
-  return { node, session, server, ...(account ? { account } : {}), configFingerprint, tool }
 }
 
 interface Challenge { expires: number; key: string; binding: string; view: string }
@@ -132,36 +117,22 @@ export class McpAppExecutor {
       }
 
       let prompt: McpAppApprovalPrompt | undefined
-      let tool: McpToolDescriptor | undefined
-      let remembered = false
       if (operation.operation === 'callTool') {
         if (!capabilities.toolCall) throw new McpAppsError('denied', 'MCP App tool calls are unavailable')
         const tools = unwrap<McpToolDescriptor[]>(await this.ports.provider(target, { operation: 'tools' }, signal))
-        tool = tools.find(value => value.name === operation.tool)
+        const tool = tools.find(value => value.name === operation.tool)
         if (!tool || !mcpAppToolVisible(tool)) throw new McpAppsError('denied', 'This tool is not available to the App')
-        const consentKey = jsonHash(approvalKey(target.app, operation.tool))
-        remembered = target.sessionApprovals.some(approval => jsonHash(approval) === consentKey)
-        if (!remembered && !(tool.annotations?.readOnlyHint === true && this.ports.trustedServer?.(target) === true)) prompt = {
-          kind: 'callTool', server: target.app.binding.server, tool: operation.tool,
-          ...(typeof tool.annotations?.title === 'string' ? { toolTitle: tool.annotations.title } : {}),
-          argsPreview: preview(JSON.stringify(operation.args, null, 2), 2048), rememberable: true,
-        }
       } else if (operation.operation === 'sendMessage') {
         prompt = { kind: 'sendMessage', server: target.app.binding.server,
           text: preview(operation.params.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n'), 4096),
           nonTextBlocks: operation.params.content.filter(block => block.type !== 'text').length }
-      } else if (operation.operation === 'openLink') {
-        if (requester.kind !== 'desktop') throw new McpAppsError('denied', 'Open links on the device showing this View')
-        prompt = { kind: 'openLink', server: target.app.binding.server, url: operation.url }
       }
       const challengeKey = jsonHash({ ref, appInstanceId: target.app.appInstanceId, requester: requesterKey(requester), operation })
       for (const [id, challenge] of this.challenges) if (challenge.expires <= this.now()) this.challenges.delete(id)
       if (request.approval) {
         const challenge = this.challenges.get(request.approval.challenge)
         this.challenges.delete(request.approval.challenge) // single use, even for an invalid confirmation
-        // Another confirmation may already have remembered this tool's consent.
-        if (!challenge || challenge.key !== challengeKey || challenge.binding !== binding) throw new McpAppsError('denied', 'MCP App approval expired or does not match this request')
-        if (request.approval.remember && operation.operation !== 'callTool') throw new McpAppsError('invalid', 'Only tool approvals can be remembered')
+        if (!prompt || !challenge || challenge.key !== challengeKey || challenge.binding !== binding) throw new McpAppsError('denied', 'MCP App approval expired or does not match this request')
       } else if (prompt) {
         const pendingForView = [...this.challenges.values()].filter(challenge => challenge.view === key).length
         if (pendingForView >= 8 || this.challenges.size >= 1024) throw new McpAppsError('denied', 'Too many pending MCP App approvals')
@@ -188,11 +159,6 @@ export class McpAppExecutor {
           return { ok: true, value }
         }
         case 'callTool': {
-          if (request.approval?.remember && !remembered) {
-            const approvedTools = [...(target.app.approvedTools ?? []), approvalKey(target.app, operation.tool)]
-            if (approvedTools.length > 64) throw new McpAppsError('denied', 'MCP App session approval limit reached')
-            await this.ports.persist(target, { approvedTools }, signal)
-          }
           if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled before dispatch')
           let response: McpAppsRpcResult
           try { response = await this.ports.provider(target, operation, signal) }
@@ -221,9 +187,7 @@ export class McpAppExecutor {
           await this.ports.sendMessage(target, operation.params, requester, signal)
           return { ok: true, value: {} }
         }
-        case 'openLink':
-          await this.ports.openLink(operation.url)
-          return { ok: true, value: {} }
+
       }
     } catch (error) {
       const data = error instanceof McpAppsError ? error.toJSON() : { code: 'invalid' as const, message: error instanceof Error ? error.message : String(error) }

@@ -833,13 +833,10 @@ export class SessionRuntime {
   updateMcpApp(sessionId: string, appInstanceId: string, update: McpAppAttachmentUpdate): void {
     const target = this.resolveMcpAppAttachment(sessionId, appInstanceId)
     const binding = target.app.binding
-    if (update.approvedTools?.some(value => value.node !== binding.node || value.session !== sessionId || value.server !== binding.server || value.account !== binding.account || value.configFingerprint !== binding.configFingerprint)) {
-      throw new McpAppsError('denied', 'MCP App approval binding mismatch')
-    }
+
     const patch: McpAppAttachmentUpdate = {
       ...(update.resource ? { resource: update.resource } : {}),
       ...(update.modelContext ? { modelContext: { ...update.modelContext, source: { appInstanceId, server: binding.server } } } : {}),
-      ...(update.approvedTools ? { approvedTools: update.approvedTools } : {}),
     }
     validateMcpAppAttachmentUpdate(patch)
     this.events.appendSession({ sessionId, eventType: SESSION_DURABLE_EVENT.agentEvent, payload: {

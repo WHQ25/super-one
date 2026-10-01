@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { shell } from 'electron'
 import type { AgentEvent, ImageAttachment, RemoteCommand } from '@superone/shared/agent-types'
 import { parseSessionKey, type SessionRef } from '@superone/shared/environment/refs'
 import { McpAppsError } from '@superone/shared/mcp-apps'
 import type { McpAppHostRequest, McpAppHostResult, McpAppRequester } from '@superone/shared/mcp-apps'
-import { findMcpAppAttachment, mcpAppEventAttachment, mcpAppSessionApprovals } from '@superone/shared/mcp-apps-state'
+import { findMcpAppAttachment, mcpAppEventAttachment } from '@superone/shared/mcp-apps-state'
 import { RemoteMcpAppFreshness } from './remote-freshness'
 import type { SessionManagerImpl } from '../session/session-manager'
 import type { RemoteResponder } from '../remote-control-service'
@@ -38,7 +37,7 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
       const session = local(ref.sessionId)
       const target = findMcpAppAttachment(session.snapshot.messages, appInstanceId, messageId)
       if (!target) throw new McpAppsError('denied', 'MCP App attachment was not found in this session')
-      return { ref, node: 'local', projectPath: session.projectPath, sessionApprovals: mcpAppSessionApprovals(session.snapshot.messages), ...target }
+      return { ref, node: 'local', projectPath: session.projectPath, ...target }
     }
     const { getEnvironmentHost } = await import('../environment/environment-host')
     const host = getEnvironmentHost()
@@ -94,7 +93,6 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
         }), signal)
       }
     },
-    openLink: url => shell.openExternal(url),
   })
   manager.onAny((sid, event, replay) => {
     if (replay) return

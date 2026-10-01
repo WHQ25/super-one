@@ -98,10 +98,7 @@ describe('RemoteEnvironmentGateway sessions + watch', () => {
         await new Promise(resolve => setTimeout(resolve, 30))
       }
       const target = await gw.resolveMcpAppAttachment({ sessionId, appInstanceId: 'view', messageId: 'stale-hint' })
-      expect(target).toMatchObject({ ok: true, value: { projectId: project.projectId, app: { binding: input.binding, origin: input.origin }, sessionApprovals: [] } })
-      const approval = { node: nodeId, session: sessionId, server: 'fixture', configFingerprint: 'fixture', tool: 'fixture_next_page' }
-      await gw.updateMcpAppState({ sessionId, appInstanceId: 'view', update: { approvedTools: [approval] }, leaseId: control.leaseId, generation: control.generation })
-      expect(await gw.resolveMcpAppAttachment({ sessionId, appInstanceId: 'view' })).toMatchObject({ ok: true, value: { sessionApprovals: [approval] } })
+      expect(target).toMatchObject({ ok: true, value: { projectId: project.projectId, app: { binding: input.binding, origin: input.origin } } })
       const resource = await gw.requestMcpAppsProvider({ ...input, operation: 'readResource', uri: 'ui://fixture/items.html' })
       expect(resource).toMatchObject({ ok: true, value: { contents: [{ mimeType: 'text/html;profile=mcp-app' }] } })
       const call = await gw.requestMcpAppsProvider({ ...input, operation: 'callTool', tool: 'fixture_next_page', args: { page: 2 } })

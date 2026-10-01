@@ -67,7 +67,7 @@ describe('MCP App host executor', () => {
     const s = setup({ fresh: true, tools: [{ name: 'library', title: 'Library', serverInfo: { title: 'CAD', icons: [{ src: 'https://example.com/cad.png' }] } }] })
     s.change({ toolName: 'library' })
     await s.run({ operation: 'load' })
-    expect(s.target().app.presentation).toEqual({ toolTitle: 'Library', serverTitle: 'CAD', serverIcons: [{ src: 'https://example.com/cad.png' }] })
+    expect(s.target().app.presentation).toEqual({ toolTitle: 'Library', serverTitle: 'CAD', icons: [{ src: 'https://example.com/cad.png' }] })
   })
 
   it('allows a new live attachment to load automatically', async () => {

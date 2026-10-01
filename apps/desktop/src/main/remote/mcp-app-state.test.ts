@@ -16,7 +16,7 @@ const app: ToolAppAttachment = { appInstanceId: 'view', binding: { node: 'node',
 const use: ContentBlock = { type: 'tool_use', toolUseId: 'call', toolName: 'mcp__fixture__items', input: '{}', app }
 const result: ContentBlock = { type: 'tool_result', toolUseId: 'call', summary: 'done', app }
 const item: CodexMcpToolCallItem = { id: 'call', type: 'mcp_tool_call', server: 'fixture', tool: 'items', arguments: {}, status: 'completed', app }
-const update: McpAppAttachmentUpdate = { presentation: { toolTitle: 'Browse library', serverTitle: 'CAD', serverIcons: [{ src: 'https://example.com/cad.png' }] }, resource: { html: '<html>saved</html>', hash: 'hash', meta: {} },
+const update: McpAppAttachmentUpdate = { presentation: { toolTitle: 'Browse library', serverTitle: 'CAD', icons: [{ src: 'https://example.com/cad.png' }] }, resource: { html: '<html>saved</html>', hash: 'hash', meta: {} },
   modelContext: { structuredContent: { selected: 'b' }, source: { appInstanceId: 'view', server: 'fixture' } } }
 const event: AgentEvent = { type: 'mcp_app_updated', messageId: 'm', appInstanceId: 'view', update }
 const message = (content: ContentBlock[], codex = false): ChatMessage => ({ id: 'm', role: 'assistant', status: 'complete', createdAt: '', providerId: codex ? 'codex' : 'claude', content,

@@ -2,7 +2,9 @@ import type { McpAppIcon, McpAppPresentation, McpToolDescriptor, McpUiResourceMe
 
 export type McpAppDisplayMode = 'inline' | 'fullscreen' | 'pip'
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
-const title = (value: unknown): string | undefined => typeof value === 'string' && value.trim() ? value : undefined
+const title = (value: unknown): string | undefined => typeof value === 'string' && value.trim() ? value.slice(0, 512) : undefined
+export const MCP_APP_ICON_MAX_BYTES = 32 * 1024
+export const MCP_APP_PRESENTATION_MAX_BYTES = 70 * 1024
 
 /** Untrusted icons are always images, never executable markup or host-local URLs. */
 export function safeMcpAppImage(src: unknown): string | undefined {
@@ -15,14 +17,24 @@ export function safeMcpAppImage(src: unknown): string | undefined {
 export function mcpAppIcon(icons?: McpAppIcon[], theme?: 'light' | 'dark'): string | undefined {
   if (!Array.isArray(icons)) return undefined
   const candidates = theme ? [...icons.filter(icon => icon?.theme === theme), ...icons.filter(icon => !icon?.theme)] : icons
-  return candidates.map(icon => safeMcpAppImage(icon?.src)).find(Boolean)
+  return candidates.map(icon => safeMcpAppImage(icon?.src)).find(src => !!src && new TextEncoder().encode(src).byteLength <= MCP_APP_ICON_MAX_BYTES)
+}
+
+/** Persist only the winning safe image per theme, with a neutral image deduplicated. */
+export function compactMcpAppPresentation(presentation: McpAppPresentation): McpAppPresentation {
+  const resolve = (theme: 'light' | 'dark') => mcpAppIcon(presentation.icons, theme)
+    ?? mcpAppIcon(presentation.toolIcons, theme) ?? mcpAppIcon(presentation.serverIcons, theme)
+  const light = resolve('light'), dark = resolve('dark')
+  const icons: McpAppIcon[] = light && light === dark ? [{ src: light }]
+    : [...(light ? [{ src: light, theme: 'light' as const }] : []), ...(dark ? [{ src: dark, theme: 'dark' as const }] : [])]
+  return { toolTitle: title(presentation.toolTitle) ?? 'App',
+    ...(title(presentation.serverTitle) ? { serverTitle: title(presentation.serverTitle) } : {}),
+    ...(icons.length ? { icons } : {}) }
 }
 
 export function mcpAppPresentation(tool: McpToolDescriptor): McpAppPresentation {
-  return { toolTitle: title(tool.title) ?? title(tool.annotations?.title) ?? tool.name,
-    ...(tool.icons ? { toolIcons: tool.icons } : {}),
-    ...(tool.serverInfo?.title ? { serverTitle: tool.serverInfo.title } : {}),
-    ...(tool.serverInfo?.icons ? { serverIcons: tool.serverInfo.icons } : {}) }
+  return compactMcpAppPresentation({ toolTitle: title(tool.title) ?? title(tool.annotations?.title) ?? tool.name,
+    toolIcons: tool.icons, serverTitle: tool.serverInfo?.title, serverIcons: tool.serverInfo?.icons })
 }
 
 /** Keep OpenAI siblings of `_meta.ui`, while exposing the stable UI fields to existing hosts. */
@@ -40,5 +52,5 @@ export function mcpAppResourceModes(meta?: McpUiResourceMeta): McpAppDisplayMode
 }
 
 export function mcpAppPresentationIcon(presentation?: McpAppPresentation, theme?: 'light' | 'dark'): string | undefined {
-  return mcpAppIcon(presentation?.toolIcons, theme) ?? mcpAppIcon(presentation?.serverIcons, theme)
+  return mcpAppIcon(presentation?.icons, theme) ?? mcpAppIcon(presentation?.toolIcons, theme) ?? mcpAppIcon(presentation?.serverIcons, theme)
 }

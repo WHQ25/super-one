@@ -105,3 +105,8 @@ and event-mapper selections: 21 passed; Codex catalog selection: 5 passed.
 `bun run typecheck:node` and `bun run typecheck:web` passed. Package Vitest
 needed sandbox escalation after localhost DNS failed during initialization.
 No dev instance or live screenshot was produced for this slice.
+
+Metadata review follow-up: persisted presentation now stores only the resolved
+safe icon per theme (deduplicating neutral icons). Icons over 32 KiB are
+dropped, titles are bounded, and the independent 70 KiB presentation budget
+cannot turn an otherwise valid tool result into an error.

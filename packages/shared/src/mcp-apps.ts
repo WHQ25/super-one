@@ -1,4 +1,5 @@
 /** Harness-neutral MCP Apps contracts. No runtime SDK or Electron dependency. */
+import { compactMcpAppPresentation, MCP_APP_PRESENTATION_MAX_BYTES } from './mcp-apps-metadata'
 import type { McpUiMessageRequest } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { McpAppsRpcResult } from './environment/mcp-apps-rpc'
 
@@ -46,7 +47,7 @@ export interface McpToolDescriptor {
 }
 
 export interface McpAppIcon { src: string; mimeType?: string; sizes?: string[]; theme?: 'light' | 'dark' }
-export interface McpAppPresentation { toolTitle: string; toolIcons?: McpAppIcon[]; serverTitle?: string; serverIcons?: McpAppIcon[] }
+export interface McpAppPresentation { toolTitle: string; icons?: McpAppIcon[]; toolIcons?: McpAppIcon[]; serverTitle?: string; serverIcons?: McpAppIcon[] }
 
 export interface McpAppToolResult {
   content: unknown[]
@@ -181,11 +182,16 @@ export function mcpAppToolVisible(tool: McpToolDescriptor): boolean {
 
 /** Keep an attachment within the data cap: an oversized input/result becomes an error, never a truncation. */
 export function boundedToolAppAttachment(app: ToolAppAttachment): ToolAppAttachment {
+  if (app.presentation) {
+    const presentation = compactMcpAppPresentation(app.presentation)
+    try { assertMcpAppSize(presentation, MCP_APP_PRESENTATION_MAX_BYTES); app = { ...app, presentation } }
+    catch { app = { ...app, presentation: undefined } }
+  }
   try {
-    assertMcpAppSize({ toolInput: app.toolInput, toolResult: app.toolResult, presentation: app.presentation })
+    assertMcpAppSize({ toolInput: app.toolInput, toolResult: app.toolResult })
     return app
   } catch (error) {
-    return { ...app, toolInput: undefined, toolResult: undefined, presentation: undefined, status: 'error', error: (error as McpAppsError).toJSON() }
+    return { ...app, toolInput: undefined, toolResult: undefined, status: 'error', error: (error as McpAppsError).toJSON() }
   }
 }
 

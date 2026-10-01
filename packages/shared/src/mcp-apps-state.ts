@@ -1,3 +1,4 @@
+import { compactMcpAppPresentation, MCP_APP_PRESENTATION_MAX_BYTES } from './mcp-apps-metadata'
 import type { AgentEvent, ContentBlock } from './agent-types'
 import { assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, McpAppsError } from './mcp-apps'
 import type { McpAppAttachmentUpdate, ToolAppAttachment } from './mcp-apps'
@@ -51,7 +52,8 @@ export function validateMcpAppAttachmentUpdate(update: McpAppAttachmentUpdate): 
     }
     assertMcpAppSize({ meta: update.resource.meta, hash: update.resource.hash })
   }
-  assertMcpAppSize({ modelContext: update.modelContext, presentation: update.presentation })
+  assertMcpAppSize({ modelContext: update.modelContext })
+  if (update.presentation) assertMcpAppSize(compactMcpAppPresentation(update.presentation), MCP_APP_PRESENTATION_MAX_BYTES)
 }
 
 /** Changes only existing attachments, preserving every provider-authored identity field. */
@@ -59,7 +61,7 @@ export function updateMcpAppAttachments<T extends McpAppMessage>(messages: reado
   validateMcpAppAttachmentUpdate(update)
   const patch = { ...(update.resource ? { resource: update.resource } : {}),
     ...(update.modelContext ? { modelContext: update.modelContext } : {}),
-    ...(update.presentation ? { presentation: update.presentation } : {}) }
+    ...(update.presentation ? { presentation: compactMcpAppPresentation(update.presentation) } : {}) }
   const replace = <B>(block: B): B => {
     const app = record(block).app as ToolAppAttachment | undefined
     if (app?.appInstanceId !== appInstanceId) return block

@@ -60,6 +60,98 @@ isolated `SUPERONE_INSTANCE=mcp-apps-acceptance` profile, project with
 Claude itself reports the 1 MB `cad.library` result as too large and saves it
 to a file, so the model does not see the catalog; that is Claude CLI behavior.
 
+## Live baseline (S1, 2026-10-01)
+
+Same built Bits & Bolts fixture, test project and isolated acceptance profile as
+S0. Native Claude and Codex only; the compatibility path is off. Main changes
+were tested after full process restarts on fresh CDP ports (9373–9378), and all
+instances started for S1 were stopped. Captures, protocol/latency records and
+helpers are together in `/private/tmp/claude-501/s1/`.
+
+| Area | Claude | Codex |
+|---|---|---|
+| View appears for `cad.library` | Works; library populates through the View's own `cad.listParts` | Works; library populates through the View's own `cad.listParts` |
+| Data cap | Works without raising persisted limits: initial App result is omitted at 1,100,750 bytes; pinned HTML remains available; full View-only reads succeed | Works: initial App result is omitted at 1,050,824 bytes; pinned HTML remains available; full View-only reads succeed |
+| Latency | Host placeholder → initialized: first sample 829 ms, repeat 151 ms; `cad.readPart` request → reply: first 1,215 ms, repeat 948 ms | Host placeholder → initialized: first sample 928 ms, repeat 170 ms; `cad.readPart` request → reply: first 4,299 ms, repeat 43 ms |
+| Inline, 3D viewer, View tool calls | Works; Bug keycap renders 12,544 triangles, no host tool confirmation | Same |
+| Expand → fullscreen tab | Works; maximized activity tab, loaded server SVG icon, no host mode/restore control | Same |
+| App's own settings page | Viewer settings opens inside the View | Same |
+| Native `ui/message` with image | Confirmation on every call; PNG is real model input and the model describes the keycap correctly. Fixture's untitled JSON still appears in the card | Same; untitled JSON in the bubble uses the existing collapsed code block |
+| Titled message content | Same-iframe protocol probe: titled text, image, resource link and embedded text resource appear as labeled items in confirmation and bubble; no raw JSON for those titled items, source `Bits & Bolts` | Same |
+| `ui/update-model-context` | Visible text/image chips; independent removal, final removal → `No view attached`; restored initialization gets saved context, no `Context state unavailable` | Same; full restart preserves the image block and chips, then removal clears state and notifies the View |
+| `ui/download-file` | Still not advertised: explicit `This host does not support file downloads.` | Same |
+| Row header | `Bits & Bolts · cad.library`, safe loaded server SVG. Claude SDK drops tool titles and supplies no `annotations.title`, so name fallback is used | `Bits & Bolts` once: server and tool titles are equal; safe loaded server SVG |
+| Desktop `target: new` | Confirm → one new host session → adopt/switch → send. Sonnet 5.5 / High / Auto / On and actual image input verified in main, renderer and visible pane | Same; GPT6.1 Sol / Low / Approve for Me / On retained; real image answer and titled chips verified |
+| History restore → Activate | Full restart restores omitted-result notice and context. Activate remounts the same document URL, initializes again, and View calls `cad.listParts`; host never replays `cad.library` | Same; saved HTML hash and text/image context survive the restart |
+| Forms | `pickFile`, `reviewForm`, implicit `pickReferences` each return the expected MCP tool error: client does not support OpenAI form requests; no fallback/crash | New threads: thumbnail `pickFile` → selected part/View; review required/pattern/maximum errors then valid accept; implicit selection → unsupported/Dismiss → server `cancel` |
+
+Timing boundary: “first” means the first measured View after process restart,
+with the CAS already on disk; it is not an empty-cache benchmark. Placeholder →
+initialized excludes model reasoning, native tool execution and MCP startup.
+Repeat uses the same process, session and server binding. Full send → initialized
+samples were Claude 8,136 / 1,928 ms and Codex 17,763 / 6,721 ms; Codex's first
+sample used its native default model, while later calls explicitly selected
+GPT6.1 Sol / Low. These end-to-end samples are not a controlled model-latency
+comparison. The initial omitted result is only the host's durable App snapshot;
+this run does not establish model-side truncation or alter the native tool result.
+
+The fixture does not emit `openai/title` itself. Titled-content and `target: new`
+coverage therefore uses captured fixture payloads with those protocol fields,
+sent from the actual trusted View iframe through the production host, permission,
+normal session admission and real model/image paths. Native Ask is separately
+verified. Binding identity remains the server id; display source titles use the
+shared presentation resolver.
+
+Representative evidence (all under the capture directory):
+
+- `claude-part-ready-probe.png`, `codex-first-part.png`: actual 3D preview.
+- `claude-expand.png`, `codex-expand.png`: fullscreen tab with loaded icon.
+- `claude-settings.png`, `codex-settings.png`: the View's settings page.
+- `claude-attach.png`, `codex-attach.png`, `codex-restored-remove.png`: visible
+  context blocks and removal notification.
+- `claude-verified-titled-new-{confirm,bubble}.png` and
+  `codex-verified-titled-{active,new}-{confirm,bubble}.png`: confirmed rich
+  content, new-session UI and actual model answers.
+- `claude-verified-handoff-trace.json`, `claude-verified-new-settings.json`,
+  `codex-verified-new-settings.json`:
+  authoritative source/adoption/settings and visible-pane identity.
+- `claude-traced-{restored,activated}.png`, `codex-{restored,activated}.png`,
+  corresponding `*-restore.json`, and `codex-restored-context.json`: full
+  restart, pinned-document remount, own View tool call and saved image context.
+- `codex-pickFile-thumbnail.png`, `codex-reviewForm-{required,invalid,valid}.png`,
+  `codex-implicit-unsupported.png`, `codex-{review,implicit}-server-result.json`:
+  actual form UI and server accept/cancel results.
+- `claude-{cold,warm}-library.json`, `codex-{first,warm}-library-log.json`,
+  `claude-part.json`, `codex-{first,warm-read}-part.json`: bounded timing records.
+
+Remaining work identified in S1 (recorded, not implemented in this pass):
+
+- Collapse untitled long text/JSON in the confirmation and bubble with an
+  expandable full-text preview, shared by desktop and phone.
+- Add standard MCP Apps `ui/download-file`, native desktop save flow with
+  payload limits, and the existing phone download/share path.
+- Tell the model when an interactive View actually renders through a
+  harness-provided tool hook. Claude CLI still spills its large tool result
+  and can say no View rendered while the host View works.
+- Phone `target: new` remains explicitly refused pending the shell-owned
+  continuation described below. Mosaic target navigation, physical-phone
+  smoke and a live remote-node smoke are not covered by this single-pane
+  desktop baseline; shared/portable and authenticated node integration
+  coverage remains the evidence for those code paths.
+- An unchosen Codex UI default label can differ from the native effective
+  default (initial sample: displayed GPT6.1 Sol, native GPT6 Luna). Explicit
+  source selection was synchronized before inherited-model acceptance.
+
+S1 fixes and checks: `ebfa8950a` inherits/adopts the host-created session,
+`ddc7e8629` resolves attachment source titles, and `7fce42ad6` protects native
+host receipt without an init event. Targeted desktop selections passed 113,
+68 and 75 tests respectively (overlapping selections); portable View/lifecycle
+passed 5 tests. Desktop `typecheck:node` / `typecheck:web`, portable standalone
+TypeScript and the portable production build passed. The build retains its
+existing chunk-size warning. Vitest needed unsandboxed localhost resolution;
+that initialization error is separate from test results. No debug instrumentation
+was added to repository code; temporary window wrappers were cleared by restart.
+
 ## Steps
 
 1. **Data cap** (blocker): decide the limits for View tool results and
@@ -84,7 +176,8 @@ to a file, so the model does not see the catalog; that is Claude CLI behavior.
    Phone fetches/caches each hash once. Optional cheap catalog prefetch.
    Verify dedupe, legacy reads, no live swap, origin isolation and phone fetch-once;
    measure Codex first-paint latency before/after.
-6. Re-run the baseline on both harnesses and record the result here.
+6. **Completed:** re-run the native desktop baseline on both harnesses; S1
+   results, timing boundaries, captures and remaining gaps are recorded above.
 
 ## Implementation progress
 

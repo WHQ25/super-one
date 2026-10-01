@@ -191,6 +191,8 @@ export interface PerSessionState extends ChatCoreSession {
    * manual pick — component-local memory dies with the component, this does not.
    */
   harnessUserChosen: boolean
+  /** Confirmed by a host init/live/node snapshot; auto-defaults may only reset renderer drafts. */
+  hostSessionOwned?: boolean
   /** Selected ACP agent id when preferredProvider/sessionProvider is acp. */
   acpAgentId: string | null
   /** Selected OpenCode primary agent for this session. */
@@ -411,7 +413,7 @@ export interface ChatStore {
   setDisabledSkills: (list: string[]) => void
 
   handleAgentEvent: (event: AgentEvent) => void
-  syncLiveSnapshots: () => Promise<void>
+  syncLiveSnapshots: (options?: { adoptSession?: { projectPath: string; sessionId: string } }) => Promise<void>
 
   focusProject: (projectPath: string, opts?: { carryOpenDraft?: boolean }) => Promise<void>
   ensureSession: (projectPath: string) => void

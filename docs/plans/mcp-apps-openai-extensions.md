@@ -430,6 +430,30 @@ a sweep for an existing CAS directory even if no View is opened in that run;
 the store's lazy first-access sweep alone was insufficient. IPC startup coverage
 verifies this occurs before attachment resolution or loading.
 
+### S1 new-conversation regression
+
+Live Claude testing found that a `target: new` conversation inherited the
+harness but lost model/effort/access settings, and DB-only renderer navigation
+could paint the default harness before its first message. The shared executor
+now clones authoritative source settings and cwd, and renderer navigation
+adopts the already-created local/node session before switching. Adoption pins
+the inherited selection in that same state update. Automatic draft defaults
+also refuse to reset any host-owned live/adopted session; an explicit user
+harness choice remains available. Remote creation finishes settings under the
+existing control lease, and `session.patchSettings` has a mutation idempotency
+key.
+
+Verification: 113 tests across executor, authenticated node integration/RPC,
+live restore, remote hydrate, handoff and draft-default policy passed;
+`typecheck:node`, `typecheck:web` and `git diff --check` passed. Live Claude
+`target: new` preserved Sonnet 5.5 / High / Auto / On: main, renderer and the
+actual single-pane session scope agreed on the new ID, and the model described
+the real PNG. Temporary action/state/scope logging was confined to the isolated
+acceptance window, with no debug code added to the repository. Evidence is in
+`/private/tmp/claude-501/s1/claude-verified-handoff-trace.json` and the
+`claude-verified-titled-new` captures. Mosaic mode is not covered by this
+single-pane proof and remains a navigation coverage gap.
+
 ## Phase 2: forms
 
 Branch `feat/mcp-apps-forms`. One schema model

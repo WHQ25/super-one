@@ -119,6 +119,7 @@ export function ProviderSelector({
   const acpAgentId = useActiveSession((s) => s.acpAgentId)
   const messageCount = useActiveSession((s) => s.messages.length)
   const harnessUserChosen = useActiveSession((s) => s.harnessUserChosen)
+  const hostSessionOwned = useActiveSession((s) => s.hostSessionOwned)
   const agents = useChatStore((s) => s.harnessResources.acp?.agents ?? EMPTY_ACP_AGENTS)
   const setPreferredProvider = useChatStore((s) => s.setPreferredProvider)
   const setAcpAgentId = useChatStore((s) => s.setAcpAgentId)
@@ -466,6 +467,7 @@ export function ProviderSelector({
     const decision = resolveAutoApplyHarness({
       disableAutoApply,
       harnessUserChosen,
+      hostSessionOwned,
       fixedHarness,
       suggestionHarness,
       orderedHarnesses,
@@ -480,6 +482,7 @@ export function ProviderSelector({
   }, [
     disableAutoApply,
     harnessUserChosen,
+    hostSessionOwned,
     suggestionHarness,
     fixedHarness,
     orderedHarnesses,

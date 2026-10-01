@@ -72,6 +72,27 @@ async function bootNode(): Promise<NodeRuntime> {
 }
 
 describe('EnvironmentHost product path', () => {
+  it('creates a remote Claude conversation with inherited settings and cwd before returning', async () => {
+    const ud = mkdtempSync(join(tmpdir(), 'eh-inherit-'))
+    const projectDir = mkdtempSync(join(tmpdir(), 'eh-project-'))
+    electron.setUserData(ud)
+    dirs.push(ud, projectDir)
+    const rt = await bootNode()
+    const host = new EnvironmentHost(ud)
+    const { connectionId, descriptor } = await host.pairRemote({
+      baseUrl: rt.server.url, pairingToken: rt.auth.createPairingToken().token, label: 'inherit',
+    })
+    const project = await host.getGateway(descriptor.environmentId)!.openProject(projectDir)
+    const settings = { model: 'sonnet', effort: 'high', permissionMode: 'auto', sandboxMode: 'on', apiProviderId: 'account' }
+    const created = await host.createSession(connectionId, {
+      projectId: project.projectId, harnessId: 'claude', providerId: 'claude', cwd: projectDir, settings,
+    })
+    expect(await host.getSession(connectionId, created.sessionId)).toMatchObject({
+      harnessId: 'claude', providerId: 'claude', cwd: projectDir, ...settings,
+    })
+    host.disconnect(connectionId)
+  })
+
   it('constructs WorkspaceRouter and routes remote listDir without local FS', async () => {
     const ud = mkdtempSync(join(tmpdir(), 'eh-ud-'))
     electron.setUserData(ud)

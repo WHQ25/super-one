@@ -50,6 +50,7 @@ import type { CodexMcpOauthLoginOptions } from '@superone/shared/agent-types'
 import { SshTunnelManager } from './ssh-tunnel-manager'
 import { formatConnectionLog } from './connection-log'
 import { shouldAbortRemoteSessionDrain } from './session-drain-policy'
+import { createRemoteSession, type RemoteSessionCreateInput } from './create-remote-session'
 import {
   bootstrapNodeOverSsh,
   restartNodeOverSsh,
@@ -631,7 +632,7 @@ export class EnvironmentHost {
    */
   async createSession(
     connectionId: string,
-    input: { projectId: string; title?: string; providerId?: string; harnessId?: string },
+    input: RemoteSessionCreateInput,
   ): Promise<{
     sessionId: string
     title: string
@@ -648,17 +649,11 @@ export class EnvironmentHost {
       throw Object.assign(new Error('projectId is required'), { code: 'invalid_argument' })
     }
     const { gateway, environmentId } = this.resolveRemote(connectionId)
-    // Match desktop default preferredProvider — not codex.
-    const harnessId = input.harnessId ?? 'claude'
-    const providerId = input.providerId ?? harnessId
-    const { sessionId } = await gateway.sessions.create({
-      project: { environmentId, projectId: input.projectId },
-      providerId,
-      title: input.title,
-      options: { harnessId },
-    })
-    const got = await gateway.sessions.get({ environmentId, sessionId })
-    return this.mapRemoteSessionEntry(got ?? { sessionId, title: input.title, harnessId, providerId })
+    return this.mapRemoteSessionEntry(await createRemoteSession(input, {
+      gateway, environmentId,
+      control: sessionId => this.ensureSessionLease(connectionId, sessionId),
+      setCwd: (sessionId, cwd) => this.setSessionCwd(connectionId, sessionId, cwd),
+    }))
   }
 
   /** Per remote session control lease (desktop Main owns lease lifecycle). */

@@ -25,6 +25,10 @@ const base = {
 }
 
 describe('auto-applying the default harness to an empty session', () => {
+  it('does not auto-reset a host-owned empty session without a manual harness pin', () => {
+    expect(resolveAutoApplyHarness({ ...base, hostSessionOwned: true, harnessUserChosen: false }))
+      .toEqual({ remember: null, apply: null })
+  })
   it('adopts the preferred harness on a fresh session', () => {
     expect(resolveAutoApplyHarness(base)).toEqual({ remember: GROK, apply: GROK })
   })

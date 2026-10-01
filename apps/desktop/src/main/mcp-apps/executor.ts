@@ -88,15 +88,34 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
     async createMessageSession(target, signal) {
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App message cancelled')
       if (target.ref.environmentId === 'local') {
-        const source = local(target.ref.sessionId).snapshot
-        const session = manager.createSession({ projectPath: source.projectPath, cwd: source.cwd, providerId: source.providerId, apiProviderId: source.apiProviderId })
+        const owner = local(target.ref.sessionId)
+        const source = owner.snapshot
+        const settings = owner.getUiSettings()
+        const sandbox = owner.getCurrentSandboxInfo()
+        const session = manager.createSession({
+          projectPath: source.projectPath, cwd: source.cwd, gitBranch: source.gitBranch,
+          providerId: source.providerId, apiProviderId: source.apiProviderId,
+          model: source.selectedModel ?? undefined, effort: owner.getSelectedEffort(),
+          permissionMode: owner.getCurrentPermissionMode(),
+          sandboxMode: !sandbox.enabled ? 'off' : sandbox.autoAllowBash ? 'auto' : 'on',
+          codexServiceTier: settings.selectedCodexServiceTier, acpAgentId: source.acpAgentId,
+        })
+        if (session.snapshot.harnessId !== source.harnessId) throw new McpAppsError('invalid', 'New conversation harness does not match its source')
+        session.broadcastSettingsPatch(settings)
         return { ref: { environmentId: 'local', sessionId: session.id }, projectPath: source.projectPath }
       }
       const { getEnvironmentHost } = await import('../environment/environment-host')
       const host = getEnvironmentHost()
-      const source = await host.getSession(target.ref.environmentId, target.ref.sessionId) as { projectId?: string; providerId?: string; harnessId?: string } | null
+      const source = await host.getSession(target.ref.environmentId, target.ref.sessionId) as {
+        projectId?: string; providerId?: string; harnessId?: string; cwd?: string | null
+        model?: string | null; effort?: string | null; permissionMode?: string | null; sandboxMode?: string | null; apiProviderId?: string | null
+      } | null
       if (!source?.projectId || !source.providerId || !source.harnessId) throw new McpAppsError('not_connected', 'MCP App source conversation settings are unavailable')
-      const session = await host.createSession(target.ref.environmentId, { projectId: source.projectId, providerId: source.providerId, harnessId: source.harnessId })
+      const session = await host.createSession(target.ref.environmentId, {
+        projectId: source.projectId, providerId: source.providerId, harnessId: source.harnessId, cwd: source.cwd ?? null,
+        settings: { model: source.model ?? null, effort: source.effort ?? null, permissionMode: source.permissionMode ?? null,
+          sandboxMode: source.sandboxMode ?? null, apiProviderId: source.apiProviderId ?? null },
+      })
       return { ref: { ...target.ref, sessionId: session.sessionId }, projectPath: target.projectPath }
     },
     async sendMessage(target, params, requester, signal) {

@@ -760,6 +760,7 @@ export function setPreferredProviderImpl(
   const { activeProject } = get()
   if (!activeProject) return
   const session = getActivePerSession(get())
+  if (!opts?.userChosen && session.hostSessionOwned) return
   if (session.sessionProvider && session.messages.length > 0) return
   if (session.sessionProvider === provider || (provider === 'claude' && !session.sessionProvider && session.preferredProvider === 'claude')) {
     return

@@ -30,6 +30,7 @@ export function createDefaultPerSessionState(): PerSessionState {
     chatInputFocusNonce: 0,
     chatInputRestoreFocusNonce: 0,
     harnessUserChosen: false,
+    hostSessionOwned: false,
     draftText: '',
     draftJson: null,
     draftId: null,

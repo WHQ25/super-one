@@ -20,6 +20,7 @@ import { useMcpAppLayout, type McpAppOwner } from './layout-store'
 import { useMcpAppDisplayMode } from './use-display-mode'
 import { McpAppPip } from './McpAppPip'
 import { createDesktopMcpAppExecutor, type McpAppConsent } from './desktop-executor'
+import { navigateMcpAppSession } from './session-navigation'
 import { McpAppConsent as ConsentDialog, type PendingMcpConsent } from './McpAppConsent'
 
 const Frame = lazy(() => import('./McpAppFrame'))
@@ -131,7 +132,7 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
     })
   }, [isDark, i18n.language, mode, surface, inlineWidth, fullscreenWidth, panelHeight, viewport, ready?.meta])
   const executor = useMemo(() => ready ? createDesktopMcpAppExecutor({ api, route, app, document: ready.document, consent, displayMode: requestMode,
-    navigate: destination => useChatStore.getState().switchToSession(destination.projectPath, destination.sessionId),
+    navigate: navigateMcpAppSession,
   }) : null, [api, route, app.appInstanceId, ready, consent, requestMode])
   const onMode = (next: typeof mode) => { void requestMode(next, new AbortController().signal) }
   useEffect(() => {

@@ -239,6 +239,7 @@ export interface AutoApplyHarnessDecision {
 export function resolveAutoApplyHarness(input: {
   disableAutoApply: boolean
   harnessUserChosen: boolean
+  hostSessionOwned?: boolean
   fixedHarness: SuggestionHarnessOption | null
   /** `undefined` while settings are still loading — decide nothing yet. */
   suggestionHarness: SuggestionHarnessPreference | null | undefined
@@ -249,6 +250,7 @@ export function resolveAutoApplyHarness(input: {
 }): AutoApplyHarnessDecision {
   const none: AutoApplyHarnessDecision = { remember: null, apply: null }
   if (input.disableAutoApply) return none
+  if (input.hostSessionOwned) return none
   if (input.harnessUserChosen) return none
   if (!input.fixedHarness) return none
   if (input.suggestionHarness === undefined) return none

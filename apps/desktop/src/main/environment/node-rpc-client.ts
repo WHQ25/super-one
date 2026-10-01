@@ -672,6 +672,7 @@ function isMutatingMethod(method: string): boolean {
     method === 'git.worktreeAssignBranch' ||
     method === 'git.worktreeHandoff' ||
     method === 'session.fork' ||
+    method === 'session.patchSettings' ||
     method.includes('setCwd') ||
     method.includes('session.set') ||
     method === 'harness.enable' ||

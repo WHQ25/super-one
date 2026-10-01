@@ -87,6 +87,16 @@ function sentFrames(ws: ReturnType<typeof lastSocket>): Array<{ type?: string; r
 }
 
 describe('NodeRpcClient disconnect signaling', () => {
+  it('assigns an idempotency key to a session settings mutation', async () => {
+    const { client, ws } = await connectClient({ supervised: true })
+    const request = client.rpc('session.patchSettings', { sessionId: 'new', settings: { model: 'sonnet' } })
+    const rejection = expect(request).rejects.toThrow()
+    const frame = JSON.parse(ws.send.mock.calls.at(-1)![0])
+    expect(frame.idempotencyKey).toEqual(expect.any(String))
+    client.close()
+    await rejection
+  })
+
   it('does not resend an App tool when the socket loses its completion reply', async () => {
     const { client, ws } = await connectClient({ supervised: false })
     const call = client.rpc('mcpApps.provider', { operation: 'callTool' })

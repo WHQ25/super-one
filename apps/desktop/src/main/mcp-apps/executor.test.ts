@@ -19,9 +19,9 @@ import { executeMcpAppHostRequest, initializeMcpAppExecutor } from './executor'
 const app: ToolAppAttachment = { appInstanceId: 'view', binding: { node: 'local', session: 's', server: 'fixture', configGeneration: 0, configFingerprint: 'config' },
   origin: { providerSessionId: 'thread' }, resourceUri: 'ui://fixture/view', resource: { html: '<html>saved</html>', hash: 'hash', meta: {} } }
 const send = vi.fn(async (_request, callbacks) => { callbacks.onAccepted() })
-const newSession = { id: 'new', send }
+const newSession = { id: 'new', send, snapshot: { harnessId: 'claude' }, broadcastSettingsPatch: vi.fn() }
 const createSession = vi.fn(() => newSession)
-const session = { projectPath: '/project', send, snapshot: { projectPath: '/project', cwd: '/project', providerId: 'codex-base', apiProviderId: 'account', messages: [{ id: 'm', content: [{ type: 'tool_result', toolUseId: 'call', summary: '', app }] }] } }
+const session = { getUiSettings: () => ({ selectedModel: 'sonnet', selectedEffort: 'high', permissionMode: 'auto', sandboxInfo: { enabled: true, autoAllowBash: true } }), getCurrentSandboxInfo: () => ({ enabled: true, autoAllowBash: true }), getCurrentPermissionMode: () => 'auto', getSelectedEffort: () => 'high', projectPath: '/project', send, snapshot: { projectPath: '/project', cwd: '/project/worktree', gitBranch: 'feature', harnessId: 'claude', acpAgentId: null, selectedModel: 'sonnet', selectedEffort: 'high', providerId: 'claude-base', apiProviderId: 'account', messages: [{ id: 'm', content: [{ type: 'tool_result', toolUseId: 'call', summary: '', app }] }] } }
 const manager = { getSession: (id: string) => id === 'new' ? newSession : session, createSession, onAny: vi.fn() } as unknown as SessionManagerImpl
 const mobile = { handleRemoteCommand: vi.fn<Parameters<typeof initializeMcpAppExecutor>[1]['handleRemoteCommand']>(async (command, respond) => { await respond?.(command.requestId, { ok: true }) }), notifyEventSubscribers: vi.fn() }
 initializeMcpAppExecutor(manager, mobile, vi.fn())
@@ -49,7 +49,8 @@ describe('main MCP App executor adapters', () => {
     if (prompt.ok || prompt.error.code !== 'approval_required') throw new Error('Expected approval')
     const prepared = await executeMcpAppHostRequest({ ...request, approval: { challenge: prompt.error.challenge } }, requester)
     if (!prepared.ok) throw new Error('Expected handoff')
-    expect(createSession).toHaveBeenCalledExactlyOnceWith({ projectPath: '/project', cwd: '/project', providerId: 'codex-base', apiProviderId: 'account' })
+    expect(createSession).toHaveBeenCalledExactlyOnceWith({ projectPath: '/project', cwd: '/project/worktree', gitBranch: 'feature', providerId: 'claude-base', apiProviderId: 'account', model: 'sonnet', effort: 'high', permissionMode: 'auto', sandboxMode: 'auto', acpAgentId: null, codexServiceTier: undefined })
+    expect(newSession.broadcastSettingsPatch).toHaveBeenCalledWith(session.getUiSettings())
     expect(send).not.toHaveBeenCalled()
     const pendingSend = (prepared.value as { pendingSend: string }).pendingSend
     expect(await executeMcpAppHostRequest({ sessionKey: 'local:s', appInstanceId: 'view', operation: 'sendPreparedMessage', pendingSend }, requester)).toMatchObject({ ok: true })
@@ -58,7 +59,7 @@ describe('main MCP App executor adapters', () => {
 
   it('creates remote new conversations from authoritative node project/provider/harness settings', async () => {
     mocks.resolve.mockResolvedValue({ ok: true, value: { projectId: 'project', messageId: 'm', app: { ...app, binding: { ...app.binding, node: 'node' } } } })
-    mocks.remoteSession.mockResolvedValue({ projectId: 'project', providerId: 'claude-personal', harnessId: 'claude' })
+    mocks.remoteSession.mockResolvedValue({ projectId: 'project', providerId: 'claude-personal', harnessId: 'claude', cwd: '/node/worktree', model: 'sonnet', effort: 'high', permissionMode: 'auto', sandboxMode: 'on', apiProviderId: 'account' })
     mocks.createRemoteSession.mockResolvedValue({ sessionId: 'new-remote' })
     mocks.remoteSend.mockImplementation(async (_connection, input) => { input.onAccepted() })
     const requester = { kind: 'desktop' as const }
@@ -69,7 +70,7 @@ describe('main MCP App executor adapters', () => {
     if (prompt.ok || prompt.error.code !== 'approval_required') throw new Error('Expected approval')
     const prepared = await executeMcpAppHostRequest({ ...request, approval: { challenge: prompt.error.challenge } }, requester)
     if (!prepared.ok) throw new Error('Expected handoff')
-    expect(mocks.createRemoteSession).toHaveBeenCalledExactlyOnceWith('connection', { projectId: 'project', providerId: 'claude-personal', harnessId: 'claude' })
+    expect(mocks.createRemoteSession).toHaveBeenCalledExactlyOnceWith('connection', { projectId: 'project', providerId: 'claude-personal', harnessId: 'claude', cwd: '/node/worktree', settings: { model: 'sonnet', effort: 'high', permissionMode: 'auto', sandboxMode: 'on', apiProviderId: 'account' } })
     expect(await executeMcpAppHostRequest({ ...identity, operation: 'sendPreparedMessage', pendingSend: (prepared.value as { pendingSend: string }).pendingSend }, requester)).toMatchObject({ ok: true })
     expect(mocks.remoteSend).toHaveBeenCalledWith('connection', expect.objectContaining({ sessionId: 'new-remote', projectPath: 'remote:connection:project', echoUserMessage: true, userMessageContent: [{ type: 'text', text: 'compare' }] }))
   })

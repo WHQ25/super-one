@@ -1,6 +1,10 @@
 import type {
   AskUserQuestionRequest,
   ChatMessage,
+  CodexReasoningEffort,
+  EffortLevel,
+  PermissionMode,
+  SandboxMode,
   ContentBlock,
   PermissionRequest,
   PlanApprovalRequest,
@@ -39,6 +43,12 @@ export type NodeSessionSnapshot = {
   status?: string
   harnessId?: string
   providerId?: string
+  model?: string | null
+  effort?: EffortLevel | CodexReasoningEffort | null
+  permissionMode?: PermissionMode | null
+  sandboxMode?: SandboxMode | null
+  apiProviderId?: string | null
+  cwd?: string | null
   transcript?: NodeTranscriptBlock[]
   pendingInteraction?: NodePendingInteraction | null
   updatedAt?: number

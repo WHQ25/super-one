@@ -75,6 +75,7 @@ export async function hydrateRemotePerSession(
   previous?: PerSessionState | null,
   /** Already-fetched node snapshot — pass to avoid a second `session.get`. */
   knownSnap?: NodeSessionSnapshot | null,
+  opts?: { adoptSession?: boolean },
 ): Promise<PerSessionState> {
   const remote = parseRemoteProjectKey(projectKey)
   if (!remote) {
@@ -103,9 +104,21 @@ export async function hydrateRemotePerSession(
     : 'claude') as ChatProvider
   return {
     ...base,
-    // Preserve renderer model/effort selection across node re-hydrate (node has no model field yet).
-    selectedModel: previous?.selectedModel ?? base.selectedModel,
-    selectedEffort: previous?.selectedEffort ?? base.selectedEffort,
+    selectedModel: previous?.modelUserChosen ? previous.selectedModel : snap?.model ?? previous?.selectedModel ?? base.selectedModel,
+    selectedEffort: previous?.effortUserChosen ? previous.selectedEffort : (snap?.effort as PerSessionState['selectedEffort']) ?? previous?.selectedEffort ?? base.selectedEffort,
+    ...(snap?.sessionId ? { hostSessionOwned: true } : {}),
+    ...(opts?.adoptSession ? {
+      harnessUserChosen: true, modelUserChosen: !!snap?.model, effortUserChosen: !!snap?.effort,
+      ...(snap?.permissionMode ? { permissionMode: snap.permissionMode } : {}),
+      ...(snap?.sandboxMode ? { sandboxInfo: { enabled: snap.sandboxMode !== 'off', autoAllowBash: snap.sandboxMode === 'auto' } } : {}),
+      apiProviderId: snap?.apiProviderId ?? null,
+      cwd: snap?.cwd ?? remote.path,
+      _worktreePath: snap?.cwd && snap.cwd !== remote.path ? snap.cwd : null,
+      ...(chatProvider === 'codex' ? {
+        selectedCodexModel: snap?.model ?? '', selectedCodexReasoningEffort: (snap?.effort ?? undefined) as PerSessionState['selectedCodexReasoningEffort'],
+        codexModelUserChosen: !!snap?.model, codexReasoningEffortUserChosen: !!snap?.effort,
+      } : {}),
+    } : {}),
     sessionProvider: chatProvider,
     preferredProvider: chatProvider,
     messages,
@@ -131,7 +144,7 @@ export async function hydrateRemoteSessionWithCatalog(
   projectKey: string,
   sessionId: string,
   previous?: PerSessionState | null,
-  opts?: { catalogLimit?: number },
+  opts?: { catalogLimit?: number; adoptSession?: boolean },
 ): Promise<{ hydrated: PerSessionState; snap: NodeSessionSnapshot | null }> {
   const remote = parseRemoteProjectKey(projectKey)
   if (!remote) {
@@ -141,7 +154,7 @@ export async function hydrateRemoteSessionWithCatalog(
     remote.connectionId,
     sessionId,
   )) as NodeSessionSnapshot | null
-  let hydrated = await hydrateRemotePerSession(projectKey, sessionId, previous, snap)
+  let hydrated = await hydrateRemotePerSession(projectKey, sessionId, previous, snap, opts)
 
   // Draft session ids only exist in the renderer until first send — nothing to page.
   if (!snap?.sessionId) return { hydrated, snap }

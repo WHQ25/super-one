@@ -102,7 +102,7 @@ function sessionPatchFromUiSettings(
  */
 export interface EventSlice {
   handleAgentEvent: (event: AgentEvent) => void
-  syncLiveSnapshots: () => Promise<void>
+  syncLiveSnapshots: ChatStore['syncLiveSnapshots']
 }
 
 export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (set, get) => ({
@@ -451,6 +451,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       const updatedProject = { ...project, _sessions: updatedSessions }
 
       if (event.type === 'init_ready') {
+        if (event.sessionId) updatedSession.hostSessionOwned = true
         updatedSession.cwd = event.cwd
         updatedSession.sandboxInfo = event.sandboxInfo
         updatedProject.homedir = event.homedir
@@ -753,7 +754,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
     }
   },
 
-  syncLiveSnapshots: async () => {
+  syncLiveSnapshots: async (options) => {
     const getSnap = window.agent.getLiveSnapshots
     if (!getSnap) return
     const projectsAtRequest = get().projectSessions
@@ -808,6 +809,13 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
             : false,
           sessionProvider: provider,
           preferredProvider: provider,
+          hostSessionOwned: true,
+          // A host-created conversation inherits an explicit harness choice.
+          // Pin it in this same paint: an empty-session selector otherwise
+          // applies the user's default and disposes the new runtime before send.
+          ...(options?.adoptSession?.projectPath === entry.projectPath && options.adoptSession.sessionId === entry.sid
+            ? { harnessUserChosen: true, modelUserChosen: !!entry.snapshot.selectedModel, effortUserChosen: !!entry.snapshot.selectedEffort }
+            : {}),
           // Live UI settings first (permission / codex presets / effort / …), then
           // explicit snapshot fields as authoritative fallbacks.
           ...fromUi,

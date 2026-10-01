@@ -579,6 +579,20 @@ describe('ensureSessionImpl slashCommands', () => {
 })
 
 describe('setPreferredProviderImpl', () => {
+  it('refuses an automatic default reset after main owns the empty session', () => {
+    setupProject()
+    patchSession({ sessionProvider: 'claude', preferredProvider: 'claude', hostSessionOwned: true, harnessUserChosen: false })
+    useChatStore.getState().setPreferredProvider('codex', { userChosen: false })
+    expect(activeProjectState()._sessions[activeProjectState()._activeSessionId!]).toMatchObject({ sessionProvider: 'claude', preferredProvider: 'claude' })
+    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
+  })
+
+  it('still permits a manual harness selection on a host-owned empty session', () => {
+    setupProject()
+    patchSession({ sessionProvider: 'claude', preferredProvider: 'claude', hostSessionOwned: true })
+    useChatStore.getState().setPreferredProvider('codex', { userChosen: true })
+    expect(activeProjectState()._sessions[activeProjectState()._activeSessionId!]).toMatchObject({ preferredProvider: 'codex', harnessUserChosen: true })
+  })
   it('is a no-op when sessionProvider already matches the requested provider', () => {
     setupProject()
     patchSession({ sessionProvider: 'claude', preferredProvider: 'claude' })

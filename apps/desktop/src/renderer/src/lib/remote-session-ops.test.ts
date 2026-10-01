@@ -49,9 +49,19 @@ const {
   pollRemoteSessionAgentEvents,
   mapNodeSessionEvents,
   mergeRemoteHydrateWithCurrent,
+  hydrateRemoteSessionWithCatalog,
 } = await import('./remote-session-ops')
 
 describe('resolveNodeSessionId', () => {
+  it('adopts the existing Claude node session with all inherited settings and never creates another', async () => {
+    getSession.mockResolvedValueOnce({ sessionId: 'host-created', harnessId: 'claude', providerId: 'claude-personal', status: 'idle', transcript: [],
+      model: 'sonnet', effort: 'high', permissionMode: 'auto', sandboxMode: 'on', apiProviderId: 'account', cwd: '/work/app/worktree' })
+    const { hydrated } = await hydrateRemoteSessionWithCatalog('remote:env-1:/work/app', 'host-created', null, { adoptSession: true })
+    expect(hydrated).toMatchObject({ sessionProvider: 'claude', preferredProvider: 'claude', hostSessionOwned: true,
+      harnessUserChosen: true, modelUserChosen: true, effortUserChosen: true, selectedModel: 'sonnet', selectedEffort: 'high',
+      permissionMode: 'auto', sandboxInfo: { enabled: true, autoAllowBash: false }, apiProviderId: 'account', cwd: '/work/app/worktree', _worktreePath: '/work/app/worktree' })
+    expect(createSession).not.toHaveBeenCalled()
+  })
   beforeEach(() => {
     getSession.mockReset()
     createSession.mockReset()

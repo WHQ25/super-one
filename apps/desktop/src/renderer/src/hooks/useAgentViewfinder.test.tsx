@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { useChatStore } from '@/stores/chat'
@@ -15,6 +15,7 @@ import { useAgentViewfinder } from './useAgentViewfinder'
 let agentEventListener: ((event: never) => void) | null = null
 let computerClaimListener: ((claim: never) => void) | null = null
 let deviceClaimListener: ((claim: never) => void) | null = null
+let computerFrameListener: ((frame: never) => void) | null = null
 
 beforeEach(() => {
   agentEventListener = null
@@ -31,7 +32,11 @@ beforeEach(() => {
       computerClaimListener = listener
       return () => { computerClaimListener = null }
     }),
-    onComputerUseViewfinderFrame: vi.fn(() => () => undefined),
+    onComputerUseViewfinderFrame: vi.fn((listener: (frame: never) => void) => {
+      computerFrameListener = listener
+      return () => { computerFrameListener = null }
+    }),
+    getComputerUseViewfinderTarget: vi.fn(async () => null),
     hideComputerUseViewfinder: vi.fn(async () => true),
   })
   Object.assign(window.environment, {
@@ -56,6 +61,47 @@ beforeEach(() => {
 })
 
 describe('agent viewfinder activity bridge', () => {
+  it('accepts frames after restoring a computer claim emitted before subscription', async () => {
+    Object.assign(window.app, {
+      getComputerUseViewfinderTarget: vi.fn(async () => ({ active: true, sessionId: 'session-a', windowId: 42 })),
+    })
+    renderHook(() => useAgentViewfinder())
+
+    await waitFor(() => expect(selectViewfinderTarget(useAgentViewfinderStore.getState(), 'session-a'))
+      .toEqual({ kind: 'computer', targetId: '42' }))
+    act(() => computerFrameListener?.({ sessionId: 'session-a', windowId: 42, width: 480, height: 320, data: 'jpeg' } as never))
+    expect(useComputerViewfinderStore.getState().frames['session-a']?.data).toBe('jpeg')
+  })
+
+  it.each(['release', 'turn-end', 'device'] as const)('ignores a delayed computer snapshot after %s', async (change) => {
+    let resolve!: (claim: unknown) => void
+    Object.assign(window.app, {
+      getComputerUseViewfinderTarget: vi.fn(() => new Promise((done) => { resolve = done })),
+    })
+    renderHook(() => useAgentViewfinder())
+    act(() => {
+      if (change === 'release') computerClaimListener?.({ active: false, sessionId: 'session-a' } as never)
+      if (change === 'turn-end') agentEventListener?.({ type: 'status_change', status: 'idle', sessionId: 'session-a' } as never)
+      if (change === 'device') deviceClaimListener?.({ sessionId: 'session-a', deviceId: 'ios:device-a' } as never)
+    })
+    await act(async () => { resolve({ active: true, sessionId: 'session-a', windowId: 42 }) })
+
+    expect(useComputerViewfinderStore.getState().targets['session-a']).toBeUndefined()
+    expect(selectViewfinderTarget(useAgentViewfinderStore.getState(), 'session-a')?.kind).not.toBe('computer')
+  })
+
+  it('does not read a stale native target when another surface finishes its turn', async () => {
+    useAgentViewfinderStore.getState().activate('session-a', 'browser', 'browser-a')
+    const read = vi.fn(async () => ({ active: true, sessionId: 'session-a', windowId: 42 }))
+    Object.assign(window.app, { getComputerUseViewfinderTarget: read })
+    renderHook(() => useAgentViewfinder())
+
+    await act(async () => agentEventListener?.({ type: 'status_change', status: 'idle', sessionId: 'session-a' } as never))
+
+    expect(read).not.toHaveBeenCalled()
+    expect(selectViewfinderTarget(useAgentViewfinderStore.getState(), 'session-a')).toBeNull()
+  })
+
   it('uses the execution-layer device claim when the harness tool event is absent', () => {
     renderHook(() => useAgentViewfinder())
 

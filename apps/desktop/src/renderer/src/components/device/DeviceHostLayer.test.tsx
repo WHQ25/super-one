@@ -18,6 +18,7 @@ vi.mock('./device-video', () => ({
 import {
   IOS_SIMULATOR_DEVICE as DEVICE,
   IOS_SIMULATOR_SESSION_ID,
+  IOS_SIMULATOR_READY,
   iosSimulatorRect,
   stubIosSimulatorEnvironment as stubEnvironment,
 } from '../../../../test/fixtures/ios-simulator'
@@ -149,6 +150,112 @@ afterEach(() => {
 })
 
 describe('iOS Simulator surface handover', () => {
+  it.each(['ios-sim', 'android'] as const)('restores an already-ready %s device without opening the Activity panel', async (provider) => {
+    stubEnvironment()
+    const device = provider === 'ios-sim' ? DEVICE : {
+      ...DEVICE, id: 'android:emulator-5554', provider, platform: 'android' as const,
+    }
+    window.environment.deviceList = vi.fn(async () => [device])
+    Object.assign(window.environment, {
+      deviceState: vi.fn(async () => ({ ...IOS_SIMULATOR_READY, deviceId: device.id, device })),
+    })
+    window.environment.deviceBind = vi.fn(async () => ({ ...IOS_SIMULATOR_READY, deviceId: device.id, device }))
+    useDeviceInstanceStore.setState({ byId: {} })
+    useChatStore.setState({
+      activeProject: '/project',
+      projectSessions: { '/project': { _activeSessionId: SESSION_ID } },
+    } as unknown as Parameters<typeof useChatStore.setState>[0])
+    useAgentViewfinderStore.getState().activate(SESSION_ID, 'device', device.id)
+    mountChatRoot()
+    render(<DeviceHostLayer />)
+
+    await waitFor(() => expect(document.querySelector('[data-device-pip]')).not.toBeNull())
+    expect(useDevicePipStore.getState().device?.id).toBe(device.id)
+    expect(useActivityPanelStore.getState().showPanel).toBe(false)
+  })
+
+  it('restores the incoming session device without a new device event', async () => {
+    stubEnvironment()
+    await renderReady()
+    const incoming = { ...DEVICE, id: 'ios:second', boundSessionId: 'session-2' }
+    window.environment.deviceList = vi.fn(async () => [DEVICE, incoming])
+    window.environment.deviceState = vi.fn(async () => ({
+      ...IOS_SIMULATOR_READY, deviceId: incoming.id, device: incoming, owner: 'session-2',
+    }))
+    window.environment.deviceBind = vi.fn(async (sessionId, deviceId) => ({
+      ...IOS_SIMULATOR_READY, deviceId, owner: sessionId, device: deviceId === incoming.id ? incoming : DEVICE,
+    }))
+    act(() => {
+      useAgentViewfinderStore.getState().activate('session-2', 'device', incoming.id)
+      useChatStore.setState({
+        projectSessions: { '/project': { _activeSessionId: 'session-2' } },
+      } as unknown as Parameters<typeof useChatStore.setState>[0])
+    })
+
+    await waitFor(() => expect(useDevicePipStore.getState().device?.id).toBe(incoming.id))
+    await waitFor(() => expect(document.querySelector('[data-device-pip]')).not.toBeNull())
+    expect(window.environment.onAnyDeviceState).toHaveBeenCalledTimes(1)
+    expect(useActivityPanelStore.getState().showPanel).toBe(false)
+  })
+
+  it.each(['release', 'target-change', 'session-change'] as const)('ignores a delayed ready reading after %s', async (change) => {
+    stubEnvironment()
+    let resolve!: (state: typeof IOS_SIMULATOR_READY) => void
+    window.environment.deviceState = vi.fn(() => new Promise<typeof IOS_SIMULATOR_READY>((done) => { resolve = done }))
+    let announce!: (state: typeof IOS_SIMULATOR_READY) => void
+    window.environment.onAnyDeviceState = vi.fn((listener) => { announce = listener; return () => {} })
+    useDeviceInstanceStore.setState({ byId: {} })
+    useChatStore.setState({
+      activeProject: '/project', projectSessions: { '/project': { _activeSessionId: SESSION_ID } },
+    } as unknown as Parameters<typeof useChatStore.setState>[0])
+    useAgentViewfinderStore.getState().activate(SESSION_ID, 'device', DEVICE.id)
+    mountChatRoot()
+    render(<DeviceHostLayer />)
+    await waitFor(() => expect(window.environment.deviceState).toHaveBeenCalled())
+    act(() => {
+      if (change === 'release') announce({ ...IOS_SIMULATOR_READY, owner: null, device: null, phase: 'idle' })
+      if (change === 'target-change') useAgentViewfinderStore.getState().activate(SESSION_ID, 'browser', 'browser-a')
+      if (change === 'session-change') useChatStore.setState({
+        projectSessions: { '/project': { _activeSessionId: 'session-2' } },
+      } as unknown as Parameters<typeof useChatStore.setState>[0])
+    })
+    await act(async () => { resolve(IOS_SIMULATOR_READY) })
+
+    expect(useDevicePipStore.getState().readyInstanceId).toBeNull()
+    expect(document.querySelector('[data-device-pip]')).toBeNull()
+  })
+
+  it('keeps a dismissed device hidden when restoring missing metadata', async () => {
+    stubEnvironment()
+    window.environment.deviceState = vi.fn(async () => IOS_SIMULATOR_READY)
+    useDevicePipStore.getState().hidePreview(INSTANCE_ID)
+    useChatStore.setState({
+      activeProject: '/project', projectSessions: { '/project': { _activeSessionId: SESSION_ID } },
+    } as unknown as Parameters<typeof useChatStore.setState>[0])
+    useAgentViewfinderStore.getState().activate(SESSION_ID, 'device', DEVICE.id)
+    mountChatRoot()
+    render(<DeviceHostLayer />)
+
+    await waitFor(() => expect(useDevicePipStore.getState().readyDevices[INSTANCE_ID]?.id).toBe(DEVICE.id))
+    expect(useDevicePipStore.getState().hiddenInstanceId).toBe(INSTANCE_ID)
+    expect(document.querySelector('[data-device-pip]')).toBeNull()
+    expect(window.environment.deviceBind).not.toHaveBeenCalled()
+  })
+
+  it('does not guess an omitted target when the session holds two devices', async () => {
+    stubEnvironment()
+    window.environment.deviceList = vi.fn(async () => [DEVICE, { ...DEVICE, id: 'ios:second' }])
+    window.environment.deviceState = vi.fn(async () => IOS_SIMULATOR_READY)
+    useDeviceInstanceStore.setState({ byId: {} })
+    useChatStore.setState({
+      activeProject: '/project', projectSessions: { '/project': { _activeSessionId: SESSION_ID } },
+    } as unknown as Parameters<typeof useChatStore.setState>[0])
+    useAgentViewfinderStore.getState().activate(SESSION_ID, 'device')
+    await act(async () => { render(<DeviceHostLayer />) })
+
+    expect(window.environment.deviceState).not.toHaveBeenCalled()
+    expect(useDevicePipStore.getState().readyInstanceId).toBeNull()
+  })
 
   it('moves the running panel to the Activity tab instead of rebuilding it there', async () => {
     const { openDeviceStream, closeDeviceStream } = stubEnvironment()

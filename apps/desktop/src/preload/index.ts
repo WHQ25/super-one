@@ -226,6 +226,8 @@ const environmentAPI = {
 
   deviceList: () =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_LIST) as Promise<DeviceDescriptor[]>,
+  deviceState: (deviceId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_STATE, deviceId) as Promise<DeviceState>,
   deviceSetupOptions: () =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_DEVICE_SETUP_OPTIONS) as Promise<DeviceSetupOption[]>,
   deviceSetupOpen: (kind: DeviceSetupKind) =>
@@ -1891,6 +1893,8 @@ const appAPI = {
       ipcRenderer.removeListener(AgentIpcChannels.COMPUTER_USE_DISPLAYS_CHANGED, handler)
     }
   },
+  getComputerUseViewfinderTarget: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.COMPUTER_USE_VIEWFINDER_CLAIM, sessionId) as Promise<ComputerUseViewfinderClaim | null>,
   onComputerUseViewfinderClaim: (
     callback: (claim: ComputerUseViewfinderClaim) => void,
   ) => {

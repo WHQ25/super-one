@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { PipDimensions } from '@/lib/pip-layout'
 import { usePipPlacement } from './use-pip-placement'
@@ -63,6 +63,58 @@ function mount(key: string | null = 'a') {
 }
 
 describe('pip placement', () => {
+  it('lays out when the chat mounts after the preview became active', async () => {
+    const main = document.querySelector('[data-main-area]')!
+    const root = main.firstElementChild!
+    root.remove()
+    const { result } = mount()
+    expect(result.current.layout).toBeNull()
+
+    act(() => { main.appendChild(root) })
+
+    await waitFor(() => expect(result.current.layout).toEqual({ left: 888, top: 62, width: 200, height: 100 }))
+  })
+
+  it('re-measures a replacement chat without toggling the preview', async () => {
+    const { result } = mount()
+    const root = document.querySelector('[data-chat-root]')!
+    const replacement = root.cloneNode() as HTMLElement
+    replacement.getBoundingClientRect = () => ({ ...NARROW, right: 400, bottom: 750 }) as DOMRect
+
+    act(() => { root.replaceWith(replacement) })
+
+    await waitFor(() => expect(result.current.layout?.left).toBe(188))
+  })
+
+  it('waits for the main chat instead of observing a hidden side chat', async () => {
+    const main = document.querySelector('[data-main-area]')!
+    const root = main.firstElementChild!
+    root.remove()
+    const side = document.createElement('div')
+    side.setAttribute('data-chat-root', '')
+    side.getBoundingClientRect = () => COLLAPSED as DOMRect
+    document.body.prepend(side)
+    const { result } = mount()
+    expect(result.current.layout).toBeNull()
+
+    act(() => { main.appendChild(root) })
+
+    await waitFor(() => expect(result.current.layout?.left).toBe(888))
+  })
+
+  it('does not reuse a departed chat boundary when the preview is reactivated', () => {
+    const { result, rerender } = renderHook(
+      ({ active }) => usePipPlacement({ key: 'a', active, aspect: ASPECT, dims: DIMS }),
+      { initialProps: { active: true } },
+    )
+    expect(result.current.layout).not.toBeNull()
+    rerender({ active: false })
+    act(() => { document.querySelector('[data-chat-root]')!.remove() })
+    rerender({ active: true })
+
+    expect(result.current.layout).toBeNull()
+  })
+
   it('opens a fresh preview at the top-right of the chat', () => {
     const { result } = mount()
     expect(result.current.layout).toEqual({ left: 888, top: 62, width: 200, height: 100 })

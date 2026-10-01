@@ -585,6 +585,7 @@ interface AppAPI {
   listComputerUseDisplays(): Promise<ComputerUseDisplayInfo[]>
   onComputerUseDisplaysChanged(callback: () => void): () => void
   /** Computer Use target metadata for the session-owned picture-in-picture. */
+  getComputerUseViewfinderTarget(sessionId: string): Promise<ComputerUseViewfinderClaim | null>
   onComputerUseViewfinderClaim(
     callback: (claim: ComputerUseViewfinderClaim) => void,
   ): () => void
@@ -866,6 +867,8 @@ export interface EnvironmentAPI {
 
   /** Every touch device this machine can offer, both platforms, in catalog order. */
   deviceList(): Promise<DeviceDescriptor[]>
+  /** Read current ownership and readiness without binding or starting a device. */
+  deviceState(deviceId: string): Promise<DeviceState>
   /** Every way a device could still be ADDED, and what stands in the way of each. */
   deviceSetupOptions(): Promise<DeviceSetupOption[]>
   /**

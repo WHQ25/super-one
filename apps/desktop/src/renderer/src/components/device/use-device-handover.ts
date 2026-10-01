@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { DEVICE_CAPABILITIES, deviceMatchesReference, isDeviceLandscape, parseDeviceId } from '@superone/shared/device'
+import { DEVICE_CAPABILITIES, deviceMatchesReference, isDeviceLandscape, parseDeviceId, type DeviceState } from '@superone/shared/device'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useChatStore } from '@/stores/chat'
 import { selectActiveChatSessionId } from '@/stores/chat-store/selectors'
@@ -43,9 +43,9 @@ function revealDeviceTab(instanceId: string, sessionId: string, label: string): 
  * `device_request_control` is approved, and a hook that only ran while the preview was
  * already showing could never see it.
  *
- * Main pushes state on change only, so a window opened onto an already-bound session
- * shows nothing until something moves. That is deliberate — the preview is a reaction
- * to a grant, not a permanent second copy of the Activity panel.
+ * State events do not replay. When a device is the active viewfinder but has no
+ * ready metadata yet, read its current state without waiting for another grant or
+ * for the Activity tab to mount and bind it again.
  */
 export function useDeviceHandover(): void {
   const { t } = useTranslation()
@@ -70,95 +70,118 @@ export function useDeviceHandover(): void {
   })
   const activityShown = useActivityPanelStore((state) => state.showPanel)
   const { instanceId, sessionId, deviceOnScreen } = useDevicePreview()
+  const stateVersions = useRef(new Map<string, number>())
 
   useEffect(() => {
     if (activeTarget?.kind !== 'device' || !targetedInstanceId) return
     useDevicePipStore.getState().activateReady(targetedInstanceId)
   }, [activeTarget?.kind, activeTarget?.targetId, targetedInstanceId])
 
-  useEffect(() => {
-    if (!currentSessionId) {
-      useDevicePipStore.getState().setReady(null)
+  const applyState = useCallback((state: DeviceState, restoring = false) => {
+    const store = useDevicePipStore.getState()
+    const instances = useDeviceInstanceStore.getState()
+    const watching = instanceHolding(instances.byId, state.deviceId)
+    const bound = state.owner && state.phase === 'ready' ? state.device : null
+    if (!bound) {
+      if (!watching) return
+      // Only the tab the preview is actually showing may clear it. A session may
+      // hold several devices, and another one going idle says nothing about this.
+      store.forgetReady(watching.instanceId)
+      // A tab in the dock keeps its picker; one that only ever existed to carry
+      // the floating preview has nothing left to be.
+      if (!hasDeviceTab(watching.instanceId)) instances.close(watching.instanceId)
       return
     }
-    // Every device, not one: this is the hook that notices a device BECOMING this
-    // session's, which is precisely the moment before there is an id to subscribe to.
-    return window.environment.onAnyDeviceState((state) => {
-      const store = useDevicePipStore.getState()
-      const instances = useDeviceInstanceStore.getState()
-      const watching = instanceHolding(instances.byId, state.deviceId)
-      const bound = state.owner && state.phase === 'ready' ? state.device : null
-      if (!bound) {
-        if (!watching) return
-        // Only the tab the preview is actually showing may clear it. A session may
-        // hold several devices, and another one going idle says nothing about this.
-        store.forgetReady(watching.instanceId)
-        // A tab in the dock keeps its picker; one that only ever existed to carry
-        // the floating preview has nothing left to be.
-        if (!hasDeviceTab(watching.instanceId)) instances.close(watching.instanceId)
-        return
-      }
-      // A grant that arrives from chat has no tab yet — `device_request_control` was
-      // approved in the conversation, not in the dock — so the instance is opened
-      // here, and `revealDeviceTab` below gives it a tab only if it needs one.
-      const owner = state.owner!
-      const instanceId = watching?.instanceId ?? instances.open(owner, bound.id)
-      // Tool input accepts either the stable id or a human device name. The state
-      // event is the first place both the resolved descriptor and the active tool are
-      // available, so refine the viewfinder target here before strict PiP ownership
-      // compares them. Without this, `Pixel 9` could successfully bind
-      // `android:avd:Pixel_9` and then hide its own preview as a different target.
-      const target = selectViewfinderTarget(useAgentViewfinderStore.getState(), owner)
-      const targetRef = target?.targetId?.trim().toLowerCase() ?? null
-      const exactTarget = targetRef != null && (
-        targetRef === bound.id.toLowerCase()
-        || targetRef === bound.name.toLowerCase()
-        || targetRef === parseDeviceId(bound.id)?.native.toLowerCase()
-      )
-      if (target?.kind === 'device'
-        && target.targetId !== bound.id
-        && (target.targetId == null
-          || exactTarget
-          // Loose references are safe only on the grant that creates the instance.
-          // A later rotation from a similarly named second device must not steal it.
-          || (!watching && deviceMatchesReference(bound, target.targetId)))) {
-        useAgentViewfinderStore.getState().activate(owner, 'device', bound.id)
-      }
-      // Only the transition into ready, never a republish: rotation and the hardware
-      // keyboard push state through this same channel, and reacting to those would
-      // yank the dock to the simulator tab every time the agent turned the device.
-      const arriving = store.readyInstanceId !== instanceId
-      // A republish IS how a rotation arrives, though, and the preview box is the
-      // device's outline — so the shape is read every time.
-      //
-      // Whether the reported size already describes the turned device is the same
-      // platform split the stage draws with. A simulator's framebuffer never changes
-      // shape, so a device on its side is the same numbers swapped by hand; Android
-      // re-shapes it and scrcpy republishes the swapped pair, so swapping again would
-      // hand the preview a portrait box for a landscape phone.
-      const swap = DEVICE_CAPABILITIES[bound.provider].rigidRotation && isDeviceLandscape(state.orientation)
-      const width = (swap ? state.pixelHeight : state.pixelWidth) ?? 0
-      const height = (swap ? state.pixelWidth : state.pixelHeight) ?? 0
-      const previewDevice = {
-        id: bound.id,
-        provider: bound.provider,
-        platform: bound.platform,
-        width,
-        height,
-      }
-      store.rememberReady(instanceId, previewDevice)
-      // Background sessions keep enough metadata to restore their PiP, but must not
-      // replace the device drawn in the conversation currently on screen.
-      if (owner !== currentSessionId) return
-      store.setReady(instanceId, previewDevice)
-      // The preview is suppressed while the Activity panel is up, so a grant that
-      // lands then would show the user nothing at all. Give it the tab instead —
-      // whichever surface is available, approving a device has to reveal one.
-      if (arriving && useActivityPanelStore.getState().showPanel) {
-        revealDeviceTab(instanceId, owner, openTabLabel)
-      }
+    // A grant that arrives from chat has no tab yet — `device_request_control` was
+    // approved in the conversation, not in the dock — so the instance is opened
+    // here, and `revealDeviceTab` below gives it a tab only if it needs one.
+    const owner = state.owner!
+    const instanceId = watching?.instanceId ?? instances.open(owner, bound.id)
+    // Tool input accepts either the stable id or a human device name. The state
+    // event is the first place both the resolved descriptor and the active tool are
+    // available, so refine the viewfinder target here before strict PiP ownership
+    // compares them. Without this, `Pixel 9` could successfully bind
+    // `android:avd:Pixel_9` and then hide its own preview as a different target.
+    const target = selectViewfinderTarget(useAgentViewfinderStore.getState(), owner)
+    const targetRef = target?.targetId?.trim().toLowerCase() ?? null
+    const exactTarget = targetRef != null && (
+      targetRef === bound.id.toLowerCase()
+      || targetRef === bound.name.toLowerCase()
+      || targetRef === parseDeviceId(bound.id)?.native.toLowerCase()
+    )
+    if (target?.kind === 'device'
+      && target.targetId !== bound.id
+      && (target.targetId == null
+        || exactTarget
+        // Loose references are safe only on the grant that creates the instance.
+        // A later rotation from a similarly named second device must not steal it.
+        || (!watching && deviceMatchesReference(bound, target.targetId)))) {
+      useAgentViewfinderStore.getState().activate(owner, 'device', bound.id)
+    }
+    // Only the transition into ready, never a republish: rotation and the hardware
+    // keyboard push state through this same channel, and reacting to those would
+    // yank the dock to the simulator tab every time the agent turned the device.
+    const arriving = store.readyInstanceId !== instanceId
+    // A republish IS how a rotation arrives, though, and the preview box is the
+    // device's outline — so the shape is read every time.
+    //
+    // Whether the reported size already describes the turned device is the same
+    // platform split the stage draws with. A simulator's framebuffer never changes
+    // shape, so a device on its side is the same numbers swapped by hand; Android
+    // re-shapes it and scrcpy republishes the swapped pair, so swapping again would
+    // hand the preview a portrait box for a landscape phone.
+    const swap = DEVICE_CAPABILITIES[bound.provider].rigidRotation && isDeviceLandscape(state.orientation)
+    const width = (swap ? state.pixelHeight : state.pixelWidth) ?? 0
+    const height = (swap ? state.pixelWidth : state.pixelHeight) ?? 0
+    const previewDevice = {
+      id: bound.id,
+      provider: bound.provider,
+      platform: bound.platform,
+      width,
+      height,
+    }
+    store.rememberReady(instanceId, previewDevice)
+    // Background sessions keep enough metadata to restore their PiP, but must not
+    // replace the device drawn in the conversation currently on screen.
+    if (owner !== selectActiveChatSessionId(useChatStore.getState())) return
+    // Reading an existing binding is not a fresh grant and must keep dismissal.
+    if (restoring) store.activateReady(instanceId)
+    else store.setReady(instanceId, previewDevice)
+    // The preview is suppressed while the Activity panel is up, so a grant that
+    // lands then would show the user nothing at all. Give it the tab instead —
+    // whichever surface is available, approving a device has to reveal one.
+    if (arriving && useActivityPanelStore.getState().showPanel) {
+      revealDeviceTab(instanceId, owner, openTabLabel)
+    }
+  }, [openTabLabel])
+
+  useEffect(() => window.environment.onAnyDeviceState((state) => {
+    stateVersions.current.set(state.deviceId, (stateVersions.current.get(state.deviceId) ?? 0) + 1)
+    applyState(state)
+  }), [applyState])
+
+  useEffect(() => {
+    if (!currentSessionId) useDevicePipStore.getState().setReady(null)
+    if (!currentSessionId || activeTarget?.kind !== 'device' || targetedInstanceId) return
+    let cancelled = false
+    const versions = new Map(stateVersions.current)
+    void window.environment.deviceList().then(async (devices) => {
+      const held = devices.filter((device) => device.boundSessionId === currentSessionId
+        && device.running && (activeTarget.targetId == null || deviceMatchesReference(device, activeTarget.targetId)))
+      // An omitted id is only unambiguous while the session holds one device.
+      if (held.length !== 1 || cancelled) return
+      const deviceId = held[0]!.id
+      const state = await window.environment.deviceState(deviceId)
+      if (cancelled || state.owner !== currentSessionId
+        || stateVersions.current.get(deviceId) !== versions.get(deviceId)
+        || selectActiveChatSessionId(useChatStore.getState()) !== currentSessionId
+        || selectViewfinderTarget(useAgentViewfinderStore.getState(), currentSessionId) !== activeTarget) return
+      applyState(state, true)
+    }).catch((error: unknown) => {
+      if (!cancelled) console.warn('[device-pip] Could not restore current device state', error)
     })
-  }, [currentSessionId, openTabLabel])
+    return () => { cancelled = true }
+  }, [currentSessionId, activeTarget, targetedInstanceId, applyState])
 
   // Opening the Activity panel takes the device back to its tab; the preview exists
   // only for the case where there is nowhere else to watch it. Which means the tab

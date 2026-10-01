@@ -74,8 +74,14 @@ interface PlacementState {
  * for the chat. The bare fallback covers the mini window, which has no main area.
  */
 function pipBoundary(): HTMLElement | null {
-  return document.querySelector<HTMLElement>('[data-main-area] [data-chat-root]')
-    ?? document.querySelector<HTMLElement>('[data-chat-root]')
+  const main = document.querySelector('[data-main-area]')
+  // A main area with no chat yet is still loading. A side chat must not become
+  // the boundary just because it mounted first. Mosaic also keeps hidden roots.
+  const roots = (main ?? document).querySelectorAll<HTMLElement>('[data-chat-root]')
+  return [...roots].find((root) => {
+    const rect = root.getBoundingClientRect()
+    return rect.width > 0 && rect.height > 0
+  }) ?? roots[0] ?? null
 }
 
 export function usePipPlacement({ key, active, aspect, dims }: PipPlacementOptions): PipPlacement {
@@ -91,10 +97,10 @@ export function usePipPlacement({ key, active, aspect, dims }: PipPlacementOptio
 
   useLayoutEffect(() => {
     if (!active || key == null) return
-    const boundary = pipBoundary()
-    if (!boundary) return
+    let boundary: HTMLElement | null = null
 
     const measure = (): void => {
+      if (!boundary?.isConnected) return
       const rect = boundary.getBoundingClientRect()
       // A collapsed boundary is not information: a panel still animating open, or a
       // chat root that is display:none. Fitting into it would move the preview
@@ -106,7 +112,8 @@ export function usePipPlacement({ key, active, aspect, dims }: PipPlacementOptio
       // inheriting a portrait one's height and spanning the whole chat.
       const turned = aspectRef.current !== aspect
       aspectRef.current = aspect
-      setBounds(next)
+      setBounds((current) => current && current.left === next.left && current.top === next.top
+        && current.width === next.width && current.height === next.height ? current : next)
       setState((current) => {
         if (current.key !== key) return current
         if (current.pristine || !current.layout) {
@@ -122,13 +129,39 @@ export function usePipPlacement({ key, active, aspect, dims }: PipPlacementOptio
         }
       })
     }
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(boundary)
-    window.addEventListener('resize', measure)
+    const refreshBoundary = (): void => {
+      const next = pipBoundary()
+      if (next === boundary) {
+        if (!next) setBounds(null)
+        return
+      }
+      observer.disconnect()
+      boundary = next
+      if (boundary) observer.observe(boundary)
+      else setBounds(null)
+    }
+    const refresh = (): void => {
+      refreshBoundary()
+      measure()
+    }
+    const observer = new ResizeObserver(refresh)
+    // Session panes can mount later or be replaced while the target stays the
+    // same. ResizeObserver alone cannot discover the arriving element. Watch
+    // boundary membership only; streaming chat content does not need a remeasure.
+    const mounting = new MutationObserver((records) => {
+      if (!boundary?.isConnected || records.some((record) => (
+        [...record.addedNodes, ...record.removedNodes].some((node) => node instanceof Element
+          && (node.matches('[data-chat-root], [data-main-area]')
+            || node.querySelector('[data-chat-root], [data-main-area]')))
+      ))) refresh()
+    })
+    mounting.observe(document.body, { childList: true, subtree: true })
+    refresh()
+    window.addEventListener('resize', refresh)
     return () => {
       observer.disconnect()
-      window.removeEventListener('resize', measure)
+      mounting.disconnect()
+      window.removeEventListener('resize', refresh)
     }
   }, [active, aspect, dims, key])
 

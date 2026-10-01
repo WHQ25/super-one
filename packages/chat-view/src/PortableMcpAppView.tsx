@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
 import { McpAppsError, type ToolAppAttachment } from '@superone/shared/mcp-apps'
-import { markMcpAppActivated, mcpAppAwaitsLiveActivation, mcpAppNeedsActivation } from './mcp-app-document'
+import { markMcpAppActivated, mcpAppAwaitsLiveActivation, mcpAppNeedsActivation, startMcpApp } from './mcp-app-document'
 import { runMcpAppOperation, type McpAppConsent } from './mcp-app-executor'
 
 const McpAppFrame = lazy(() => import('./McpAppFrame'))
@@ -31,11 +31,14 @@ export function PortableMcpAppView({ app, messageId }: { app: ToolAppAttachment;
   const load = useCallback(async (activate: boolean) => {
     setState({ kind: 'loading' })
     try {
-      if (activate) {
-        await runMcpAppOperation(target, { operation: 'activate' }, NO_CONSENT)
-        markMcpAppActivated(app.appInstanceId)
-      }
-      if (!app.resource) setLoaded(await runMcpAppOperation<Resource>(target, { operation: 'load' }, NO_CONSENT))
+      const value = await startMcpApp(app.appInstanceId, async () => {
+        if (activate) {
+          await runMcpAppOperation(target, { operation: 'activate' }, NO_CONSENT)
+          markMcpAppActivated(app.appInstanceId)
+        }
+        return app.resource ? null : runMcpAppOperation<Resource>(target, { operation: 'load' }, NO_CONSENT)
+      })
+      if (value) setLoaded(value)
       setState({ kind: 'idle' })
     } catch (error) {
       setState({ kind: 'failed', error: error instanceof Error ? error : new Error(String(error)) })

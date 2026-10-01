@@ -4,6 +4,7 @@ import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import {
   buildMcpAppSrcdoc, exitMcpAppFullscreen, forgetMcpAppArrivals, markMcpAppActivated,
   mcpAppAwaitsLiveActivation, mcpAppNeedsActivation, mobileMcpAppCsp, noteMcpAppArrivals, setMcpAppFullscreenExit,
+  startMcpApp,
 } from './mcp-app-document'
 
 const CSP_META = '<meta http-equiv="Content-Security-Policy"'
@@ -79,6 +80,35 @@ describe('MCP App arrivals', () => {
     expect(mcpAppAwaitsLiveActivation('from-a-history-window')).toBe(false)
     markMcpAppActivated('live')
     expect(mcpAppAwaitsLiveActivation('live')).toBe(false)
+  })
+})
+
+describe('startMcpApp', () => {
+  afterEach(forgetMcpAppArrivals)
+  const resource = { html: '<p>x</p>', meta: {}, hash: 'h' }
+
+  it('lets a remount join the start in flight and reuse its result', async () => {
+    let runs = 0
+    let finish!: (value: typeof resource) => void
+    const run = () => { runs++; return new Promise<typeof resource>(resolve => { finish = resolve }) }
+    const first = startMcpApp('v', run)
+    const joined = startMcpApp('v', run)
+    finish(resource)
+    expect(await first).toBe(resource)
+    expect(await joined).toBe(resource)
+    expect(await startMcpApp('v', run)).toBe(resource)
+    expect(runs).toBe(1)
+  })
+
+  it('forgets a failed start so Retry asks the host again', async () => {
+    await expect(startMcpApp('v', () => Promise.reject(new Error('timeout')))).rejects.toThrow('timeout')
+    expect(await startMcpApp('v', async () => resource)).toBe(resource)
+  })
+
+  it('starts again in a new document', async () => {
+    await startMcpApp('v', async () => null)
+    forgetMcpAppArrivals()
+    expect(await startMcpApp('v', async () => resource)).toBe(resource)
   })
 })
 

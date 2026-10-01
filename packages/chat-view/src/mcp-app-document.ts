@@ -74,8 +74,26 @@ export function markMcpAppActivated(appInstanceId: string): void {
   arrivals.set(appInstanceId, { arrival: arrivals.get(appInstanceId)?.arrival ?? 'restored', activated: true })
 }
 
+type Resource = NonNullable<ToolAppAttachment['resource']>
+const starts = new Map<string, Promise<Resource | null>>()
+
+/**
+ * Activate and load a View once per document. Its row remounts (a sealed turn, a virtualized
+ * list scrolling back), so a remount joins the start in flight or reuses its result instead of
+ * asking the host again. A failed start is forgotten, so Retry runs it again.
+ */
+export function startMcpApp(appInstanceId: string, run: () => Promise<Resource | null>): Promise<Resource | null> {
+  const pending = starts.get(appInstanceId)
+  if (pending) return pending
+  const started = run()
+  starts.set(appInstanceId, started)
+  started.catch(() => { if (starts.get(appInstanceId) === started) starts.delete(appInstanceId) })
+  return started
+}
+
 export function forgetMcpAppArrivals(): void {
   arrivals.clear()
+  starts.clear()
 }
 
 let fullscreenExit: (() => void) | null = null

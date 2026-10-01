@@ -20,7 +20,7 @@ export interface McpAppTarget {
 
 export interface McpAppConsent {
   /** Only a message the View wrote is confirmed; the user's own taps in the View are consent. */
-  approve(prompt: McpAppApprovalPrompt): Promise<boolean>
+  approve(prompt: McpAppApprovalPrompt, signal: AbortSignal): Promise<boolean>
 }
 
 /** A tool call can outlive the default request timeout; its outcome is then unknown. */
@@ -39,12 +39,21 @@ export async function requestMcpApp<T>(
 
 class Declined extends Error {}
 
+function checkCancellation(signal: AbortSignal, toolDispatched = false): void {
+  if (signal.aborted) throw new McpAppsError(toolDispatched ? 'unknown_outcome' : 'cancelled', 'MCP App request cancelled')
+}
+
 /** Send an operation; when the host asks for approval, confirm here and resend the identical one. */
-export async function runMcpAppOperation<T>(target: McpAppTarget, operation: McpAppOperation, consent: McpAppConsent): Promise<T> {
+export async function runMcpAppOperation<T>(target: McpAppTarget, operation: McpAppOperation, consent: McpAppConsent, signal = new AbortController().signal): Promise<T> {
+  checkCancellation(signal)
   let result = await requestMcpApp<T>(target, operation)
+  checkCancellation(signal, operation.operation === 'callTool')
   if (!result.ok && result.error.code === 'approval_required') {
-    if (!await consent.approve(result.error.prompt)) throw new Declined()
+    const approved = await consent.approve(result.error.prompt, signal)
+    checkCancellation(signal)
+    if (!approved) throw new Declined()
     result = await requestMcpApp<T>(target, operation, { challenge: result.error.challenge })
+    checkCancellation(signal)
   }
   if (result.ok) return result.value
   if (result.error.code === 'approval_required') throw new McpAppsError('denied', 'The host asked for approval twice')
@@ -61,14 +70,14 @@ export function createMcpAppExecutor(
   consent: McpAppConsent,
   display: (mode: McpAppDisplayMode) => McpAppDisplayMode,
 ): McpAppHostExecutor {
-  const run = <T>(operation: McpAppOperation) => runMcpAppOperation<T>(target, operation, consent)
+  const run = <T>(operation: McpAppOperation, signal: AbortSignal) => runMcpAppOperation<T>(target, operation, consent, signal)
   return {
-    async callTool({ tool, args }) {
+    async callTool({ tool, args }, signal) {
       try {
-        return await run<McpAppsCallResult>({ operation: 'callTool', tool, args })
+        return await run<McpAppsCallResult>({ operation: 'callTool', tool, args }, signal)
       } catch (error) {
         // The request may have reached the server; the View must not retry it blindly.
-        const unknown = error instanceof NativeRequestTimeout || (error instanceof McpAppsError && error.code === 'unknown_outcome')
+        const unknown = error instanceof NativeRequestTimeout || (error instanceof McpAppsError && error.code === 'unknown_outcome') || (signal.aborted && !(error instanceof McpAppsError && error.code === 'cancelled'))
         if (!unknown) throw error
         return {
           result: { content: [{ type: 'text', text: 'The result of this call is unknown. It was not retried.' }], isError: true },
@@ -76,27 +85,29 @@ export function createMcpAppExecutor(
         }
       }
     },
-    async readResource({ uri }) {
-      return run<McpAppReadResult>({ operation: 'readResource', uri })
+    async readResource({ uri }, signal) {
+      return run<McpAppReadResult>({ operation: 'readResource', uri }, signal)
     },
-    async sendMessage(params) {
+    async sendMessage(params, signal) {
       try {
-        return await run<{ isError?: boolean }>({ operation: 'sendMessage', params })
+        return await run<{ isError?: boolean }>({ operation: 'sendMessage', params }, signal)
       } catch (error) {
         if (error instanceof Declined) return { isError: true }
         throw error
       }
     },
-    async updateModelContext(context) {
-      return run({ operation: 'updateModelContext', context })
+    async updateModelContext(context, signal) {
+      return run({ operation: 'updateModelContext', context }, signal)
     },
-    async openLink({ url }) {
+    async openLink({ url }, signal) {
+      checkCancellation(signal)
       // Exactly what a link in the transcript does: the shell checks the scheme and hands it
       // to the system browser.
       requestNative('openLink', { url })
       return {}
     },
-    async requestDisplayMode(mode) {
+    async requestDisplayMode(mode, signal) {
+      checkCancellation(signal)
       return display(mode)
     },
   }

@@ -101,12 +101,28 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
   const [fullscreen, setFullscreen] = useState(false)
   const [unknownOutcome, setUnknownOutcome] = useState(false)
   const [consent, setConsent] = useState<McpAppConsentRequest | null>(null)
+  const consentRef = useRef<McpAppConsentRequest | null>(null)
+  const cancelConsent = useCallback(() => { consentRef.current?.resolve(false) }, [])
   const target = useMemo(() => ({ messageId, appInstanceId: app.appInstanceId }), [messageId, app.appInstanceId])
 
   const ask: McpAppConsent = useMemo(() => ({
-    approve: (prompt) =>
-      new Promise((resolve) => setConsent({ prompt, resolve: (confirmed) => { setConsent(null); resolve(confirmed) } })),
-  }), [])
+    approve: (prompt, signal) => new Promise((resolve) => {
+      if (signal.aborted) { resolve(false); return }
+      cancelConsent()
+      let settled = false
+      const cancel = () => request.resolve(false)
+      const request: McpAppConsentRequest = { prompt, resolve: confirmed => {
+        if (settled) return
+        settled = true
+        signal.removeEventListener('abort', cancel)
+        if (consentRef.current === request) { consentRef.current = null; setConsent(null) }
+        resolve(confirmed && !signal.aborted)
+      } }
+      consentRef.current = request
+      signal.addEventListener('abort', cancel, { once: true })
+      setConsent(request)
+    }),
+  }), [cancelConsent])
   const display = useCallback((mode: McpAppDisplayMode): McpAppDisplayMode => {
     const next = mode === 'fullscreen' ? 'fullscreen' : 'inline'
     setFullscreen(next === 'fullscreen')
@@ -156,12 +172,13 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
     })
     slot.replace(host)
     hostRef.current = host
-    const stop = document.onRevoke(() => { setRevoked(true); setFullscreen(false) })
+    const stop = document.onRevoke(() => { cancelConsent(); setRevoked(true); setFullscreen(false) })
     let cancelled = false
     setSrcdoc(null)
     void host.connect().then(() => { if (!cancelled) setSrcdoc(buildMcpAppSrcdoc(html, meta)) })
     return () => {
       cancelled = true
+      cancelConsent()
       stop()
       if (hostRef.current === host) hostRef.current = null
       void slot.release(host)

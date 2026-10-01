@@ -7,7 +7,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { mcpAppContextState } from '@superone/shared/mcp-app-model-context'
-import { forgetMcpAppArrivals } from './mcp-app-document'
+import { forgetMcpAppArrivals, markMcpAppActivated } from './mcp-app-document'
 
 const wire = vi.hoisted(() => ({ pairs: [] as Array<{ transport: Transport; target: Window }>, native: vi.fn() }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string, params?: { error?: string }) => params?.error ? `${key}: ${params.error}` : key }) }))
@@ -91,4 +91,30 @@ it('failed phone activation keeps the existing document and reports the error', 
   expect(container!.textContent).toContain('Server unavailable')
   expect(wire.pairs).toHaveLength(1)
   expect(wire.native.mock.calls.map(call => call[1].operation)).toEqual(['activate'])
+})
+
+it.each(['reload', 'unmount'])('cancels pending phone consent on %s and ignores a stale confirm', async reason => {
+  markMcpAppActivated(saved.appInstanceId)
+  wire.native.mockResolvedValue({ response: { ok: false, error: { code: 'approval_required', challenge: 'c', prompt: { kind: 'sendMessage', server: 'cad', text: 'Send', nonTextBlocks: 0 } } } })
+  await mount()
+  const { view } = await initialize(0)
+  // Keep the real SDK request pending until the native consent card appears.
+  let send!: Promise<unknown>
+  await act(async () => {
+    send = view.sendMessage({ role: 'user', content: [{ type: 'text', text: 'Send' }] }).catch(error => error)
+    await new Promise(resolve => setTimeout(resolve, 0))
+  })
+  await vi.waitFor(() => expect(container!.querySelector('[role=dialog]')).not.toBeNull())
+  const confirm = [...container!.querySelectorAll('button')].find(button => button.textContent === 'mcpApp.send')!
+  if (reason === 'reload') {
+    const frame = container!.querySelector('iframe')!
+    // The first document load is accepted; the second revokes its lifetime.
+    await act(async () => { frame.dispatchEvent(new Event('load')); frame.dispatchEvent(new Event('load')) })
+    expect(container!.querySelector('[role=dialog]')).toBeNull()
+  } else {
+    await act(async () => root!.unmount()); root = undefined
+  }
+  await act(async () => confirm.click())
+  await send
+  expect(wire.native.mock.calls.map(call => call[1].operation)).toEqual(['sendMessage'])
 })

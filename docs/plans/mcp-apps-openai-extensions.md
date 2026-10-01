@@ -579,6 +579,18 @@ Codex provider package: 15. Desktop `typecheck:node` and `git diff --check` pass
 Package/CLI Vitest required an unrestricted rerun after sandbox localhost DNS
 blocked initialization. No live acceptance rerun was performed for this fix.
 
+### Pre-merge review: phone consent cancellation
+
+The portable executor now carries the View lifetime's AbortSignal through every
+operation and its confirmation step. It checks before dispatch, after replies,
+and before consuming an approval challenge. Reload/revoke/unmount immediately
+settles pending consent as cancelled; stale confirmation callbacks cannot resend.
+Calls already dispatched retain unknown-outcome/no-retry handling.
+
+Portable executor/frame coverage: 20 tests passed, including real App SDK/bridge
+reload and unmount while consent is pending. Portable `tsc --noEmit` and desktop
+`typecheck:web` passed. Physical phone acceptance was not rerun.
+
 ## Phase 2: forms
 
 Branch `feat/mcp-apps-forms`. One schema model

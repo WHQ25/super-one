@@ -48,7 +48,7 @@ describe('MCP App executor on the phone', () => {
       .mockResolvedValueOnce(host({ ok: true, value: {} }))
     const { run, consent } = executor()
     await expect(run.sendMessage(message, signal)).resolves.toEqual({})
-    expect(consent.approve).toHaveBeenCalledWith(prompt)
+    expect(consent.approve).toHaveBeenCalledWith(prompt, signal)
     const [first, second] = native.async.mock.calls
     expect(second![1]).toEqual({ ...first![1], approval: { challenge: 'c1' } })
   })
@@ -94,6 +94,43 @@ describe('MCP App executor on the phone', () => {
     native.async.mockResolvedValueOnce(host({ ok: false, error: { code: 'approval_required', challenge: 'c2', prompt } }))
     await expect(executor(false).run.sendMessage(message, signal)).resolves.toEqual({ isError: true })
     expect(native.async).toHaveBeenCalledTimes(1)
+  })
+
+  it('never resends a confirmed message after abort during pending consent', async () => {
+    native.async.mockResolvedValueOnce(host({ ok: false, error: { code: 'approval_required', challenge: 'c', prompt } }))
+    let confirm!: (decision: boolean) => void
+    const consent = { approve: vi.fn(() => new Promise<boolean>(resolve => { confirm = resolve })) }
+    const run = createMcpAppExecutor(target, consent, mode => mode)
+    const controller = new AbortController()
+    const send = run.sendMessage(message, controller.signal)
+    const failure = expect(send).rejects.toMatchObject({ code: 'cancelled' })
+    await vi.waitFor(() => expect(consent.approve).toHaveBeenCalledOnce())
+    controller.abort(); confirm(true)
+    await failure
+    expect(native.async).toHaveBeenCalledOnce()
+  })
+
+  it('does not dispatch an already revoked request or show consent after a late reply', async () => {
+    await expect(executor().run.sendMessage(message, AbortSignal.abort())).rejects.toMatchObject({ code: 'cancelled' })
+    expect(native.async).not.toHaveBeenCalled()
+    const controller = new AbortController()
+    native.async.mockImplementationOnce(async () => {
+      controller.abort()
+      return host({ ok: false, error: { code: 'approval_required', challenge: 'late', prompt } })
+    })
+    const { run, consent } = executor()
+    await expect(run.sendMessage(message, controller.signal)).rejects.toMatchObject({ code: 'cancelled' })
+    expect(consent.approve).not.toHaveBeenCalled()
+    expect(native.async).toHaveBeenCalledOnce()
+  })
+
+  it('preserves unknown outcome for a tool aborted after dispatch without retry', async () => {
+    const controller = new AbortController()
+    native.async.mockImplementationOnce(async () => { controller.abort(); return host({ ok: true, value: { result: { content: [] }, outcome: 'completed' } }) })
+    expect(await executor().run.callTool({ tool: 't', args: {} }, controller.signal)).toMatchObject({ outcome: 'unknown_outcome' })
+    expect(native.async).toHaveBeenCalledOnce()
+    await expect(executor().run.callTool({ tool: 't', args: {} }, AbortSignal.abort())).rejects.toMatchObject({ code: 'cancelled' })
+    expect(native.async).toHaveBeenCalledOnce()
   })
 
   it('opens a link the way the transcript does, without an App-specific confirmation', async () => {

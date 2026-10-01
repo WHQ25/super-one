@@ -21,7 +21,7 @@ surfaces (`widget_show`, mini-apps) keep their own contracts.
 |---|---|---|
 | Codex app-server (0.159) | Native | UI extension in `initialize`; item `mcpAppUi` (or `mcpAppResourceUri`) plus full result; `mcpServer/resource/read` and `mcpServer/tool/call` routed by `threadId`; `mcpServer/oauth/login`. Hosted `codex_apps` connectors are not supported. |
 | Claude Agent SDK (0.3.285) | Native | `CLAUDE_CODE_MCP_APPS_HOST=true` in the spawn env; tool UI metadata from `mcpServerStatus()`; result from `tool_use_result`; `readMcpResource()`; View tool calls through the internal `mcp_call` control request. |
-| Others | Unsupported | The tool row shows the text result. A gateway provider is proposed in [proposals/mcp-apps-gateway.md](../proposals/mcp-apps-gateway.md). |
+| Others | Unsupported | The tool row shows the text result. A compatibility layer through mini-apps is proposed in [proposals/mcp-apps-compat-layer.md](../proposals/mcp-apps-compat-layer.md). |
 
 Upstream behavior we rely on is recorded per harness: Claude
 [api-surface](../harness/claude/api-surface.md) and

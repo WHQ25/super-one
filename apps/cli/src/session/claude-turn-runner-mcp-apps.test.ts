@@ -112,6 +112,29 @@ describe('node Claude MCP Apps', () => {
     expect(queryFn).toHaveBeenCalledTimes(1)
   })
 
+  it('opens a first-turn View before the live session identity is persisted', async () => {
+    const { queryFn } = fakeQuery(UI_TURN)
+    const runner = runnerWith(queryFn)
+    const s = session()
+    let firstRead: Promise<unknown> | undefined
+    await runner({ session: s, text: 'go', onDelta: () => {}, signal: new AbortController().signal,
+      onAgentEvent: (event) => {
+        if (event.type === 'content_delta' && event.delta.type === 'tool_result' && event.delta.app) {
+          firstRead = runner.getMcpAppsProvider!(s, binding, origin).then((provider) =>
+            provider.readResource({ uri: 'ui://fixture/items.html', origin }, new AbortController().signal))
+        }
+      },
+    })
+    expect(s.providerResume).toBeNull()
+    expect(firstRead).toBeDefined()
+    await expect(firstRead).resolves.toEqual({ contents: [{ uri: 'ui://fixture/items.html', text: '<html/>' }] })
+    // A durable identity must not allow a View from a different live process.
+    await expect(runner.getMcpAppsProvider!(session({ providerResume: 'claude-session:other' }), binding, { providerSessionId: 'other' }))
+      .rejects.toMatchObject({ code: 'invalid' })
+    expect(queryFn).toHaveBeenCalledTimes(1)
+    await runner.disposeAll?.()
+  })
+
   it('reopens a released process from the session record for a restored View', async () => {
     const { queryFn, request } = fakeQuery([])
     const runner = runnerWith(queryFn)
@@ -127,6 +150,7 @@ describe('node Claude MCP Apps', () => {
     const { queryFn } = fakeQuery([])
     const runner = runnerWith(queryFn)
     const s = session({ providerResume: 'claude-session:sess-1' })
+    await expect(runner.getMcpAppsProvider!(session(), binding, origin)).rejects.toMatchObject({ code: 'invalid' })
     await expect(runner.getMcpAppsProvider!(s, binding, { providerSessionId: 'other' })).rejects.toMatchObject({ code: 'invalid' })
     await expect(runner.getMcpAppsProvider!(session({ providerResume: 'claude-session:sess-1', apiProviderId: 'p2' }), binding, origin))
       .rejects.toMatchObject({ code: 'auth_required' })

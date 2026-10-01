@@ -435,7 +435,12 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
   }
 
   runner.getMcpAppsProvider = async (session, binding, origin) => {
-    if (session.harnessId !== 'codex' || binding.session !== session.sessionId || session.providerResume !== `thread:${origin.providerSessionId}`) throw new McpAppsError('invalid', 'MCP App session binding mismatch')
+    // Live thread identity is available before the first turn persists its
+    // resume token, and takes precedence over a stale durable identity.
+    const existing = liveBySession.get(session.sessionId)
+    const threadId = existing ? existing.threadId
+      : (session.providerResume?.startsWith('thread:') ? session.providerResume.slice(7) : null)
+    if (session.harnessId !== 'codex' || binding.session !== session.sessionId || threadId !== origin.providerSessionId) throw new McpAppsError('invalid', 'MCP App session binding mismatch')
     const binary = resolveCodexBinaryPath(opts)
     if (!binary) throw new McpAppsError('not_connected', 'Codex binary unavailable')
     if (binding.account !== (session.apiProviderId ?? undefined)) throw new McpAppsError('auth_required', 'MCP App account changed')

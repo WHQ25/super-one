@@ -17,6 +17,7 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 import { shutdownAll as shutdownAllProxies } from '@superone/runtime/llm-proxy'
 import { openNodeDatabase } from '../db/database'
 import { ProviderStore } from '../provider/provider-store'
+import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
 
 function session(over: Partial<NodeSessionRecord> = {}): NodeSessionRecord {
   return {
@@ -186,6 +187,13 @@ describe('createNodeCodexTurnRunner', () => {
         params: { itemId: 'answer-1', delta: 'pong' },
       })}\n`,
     )
+    const binding = { node: 'node', session: 's1', server: 'fixture', configGeneration: 0,
+      configFingerprint: mcpServerConfigFingerprint(undefined) }
+    // A first-turn View must work while the durable resume token is still null.
+    const provider = await runner.getMcpAppsProvider!(session(), binding, { providerSessionId: 't-abc' })
+    expect(provider.binding).toEqual(binding)
+    await expect(runner.getMcpAppsProvider!(session({ providerResume: 'thread:other' }), binding, { providerSessionId: 'other' }))
+      .rejects.toMatchObject({ code: 'invalid' })
     child.stdout.write(
       `${JSON.stringify({
         jsonrpc: '2.0',
@@ -267,6 +275,41 @@ describe('createNodeCodexTurnRunner', () => {
     const result = await turnP
     expect(result.providerResume).toBe('thread:prior-1')
     rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('requires a matching durable identity to reopen a released MCP App thread', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-app-resume-'))
+    const bin = join(dir, 'codex')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+    const child = createFakeChild()
+    const lines: Array<{ id: number; method: string; params?: { threadId?: string } }> = []
+    child.stdin.on('data', (b: Buffer) => {
+      for (const line of b.toString().split('\n')) {
+        if (!line.trim()) continue
+        const request = JSON.parse(line)
+        lines.push(request)
+        if (request.method === 'initialize') child.stdout.write(`${JSON.stringify({ id: request.id, result: {} })}\n`)
+        if (request.method === 'thread/resume') child.stdout.write(`${JSON.stringify({ id: request.id, result: { thread: { id: 'prior-1' } } })}\n`)
+      }
+    })
+    const spawnFn: CodexSpawnFn = vi.fn(() => asSpawnChild(child))
+    const runner = createNodeCodexTurnRunner({ binaryPath: bin, resolveProjectPath: () => dir, spawnFn, allowSimulatedFallback: false })
+    const binding = { node: 'node', session: 's1', server: 'fixture', configGeneration: 0,
+      configFingerprint: mcpServerConfigFingerprint(undefined) }
+    const origin = { providerSessionId: 'prior-1' }
+    try {
+      await expect(runner.getMcpAppsProvider!(session(), binding, origin)).rejects.toMatchObject({ code: 'invalid' })
+      await expect(runner.getMcpAppsProvider!(session({ providerResume: 'thread:other' }), binding, origin))
+        .rejects.toMatchObject({ code: 'invalid' })
+      expect(spawnFn).not.toHaveBeenCalled()
+      const provider = await runner.getMcpAppsProvider!(session({ providerResume: 'thread:prior-1' }), binding, origin)
+      expect(provider.binding).toEqual(binding)
+      expect(lines.find((line) => line.method === 'thread/resume')?.params?.threadId).toBe('prior-1')
+    } finally {
+      await runner.disposeAll?.()
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('picks loopback proxy base URL for openai-chat credentials', async () => {

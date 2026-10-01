@@ -510,15 +510,18 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
   }
 
   runner.getMcpAppsProvider = async (session, binding, origin) => {
+    let entry = lives.get(session.sessionId)
+    // The first tool result can open a View before the turn's resume identity
+    // is persisted. An existing runtime is authoritative for this session.
+    const providerSessionId = entry ? entry.live.sessionId : parseClaudeSessionResume(session.providerResume)
     if (
       (session.harnessId || 'claude') !== 'claude'
       || binding.session !== session.sessionId
-      || origin.providerSessionId !== parseClaudeSessionResume(session.providerResume)
+      || origin.providerSessionId !== providerSessionId
     ) {
       throw new McpAppsError('invalid', 'MCP App session binding mismatch')
     }
     if (binding.account !== (session.apiProviderId ?? undefined)) throw new McpAppsError('auth_required', 'MCP App account changed')
-    let entry = lives.get(session.sessionId)
     if (!entry) {
       // A View activated after the idle reaper released the process: reopen it
       // from the durable session defaults, as desktop revives its query.

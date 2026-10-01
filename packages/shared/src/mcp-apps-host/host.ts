@@ -66,7 +66,7 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
   const check = (): void => {
     if (revoked || !document.active) throw new McpAppsError('cancelled', 'MCP App view is closed')
     if (!initialized) throw new McpAppsError('denied', 'MCP App has not initialized')
-    if (!active) throw new McpAppsError('denied', 'Activate this restored MCP App to reconnect')
+    if (!active) throw new McpAppsError('inactive', 'Activate this restored MCP App to reconnect')
   }
   const execute = async <T>(signal: AbortSignal, fn: (signal: AbortSignal) => Promise<T>): Promise<T> => {
     check()
@@ -77,6 +77,7 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
       if (combined.aborted || revoked) throw new McpAppsError('cancelled', 'MCP App request cancelled')
       return value
     } catch (error) {
+      if (error instanceof McpAppsError && error.code === 'inactive') active = false
       if (!revoked && !combined.aborted) options.onError?.(error)
       throw error
     }
@@ -122,7 +123,8 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
     return options.executor.openLink({ url: url.href }, signal)
   })
   bridge.onrequestdisplaymode = (params, extra) => execute(extra.signal, async signal => {
-    if (params.mode !== 'inline' && (!bridge.getAppCapabilities()?.availableDisplayModes?.includes(params.mode) || !context.availableDisplayModes?.includes(params.mode))) return { mode: 'inline' }
+    const declared = bridge.getAppCapabilities()?.availableDisplayModes
+    if (!context.availableDisplayModes?.includes(params.mode) || (declared && !declared.includes(params.mode))) return { mode: 'inline' }
     return { mode: await options.executor.requestDisplayMode(params.mode, signal) }
   })
   bridge.onsizechange = size => {

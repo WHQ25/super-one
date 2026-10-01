@@ -172,7 +172,9 @@ have size caps; stored snapshots follow the server's account lifecycle
 | Permissions | `permissions` → iframe `allow`; the granted set reported truthfully in `hostCapabilities.sandbox`. | Only what the device actually grants. |
 | Protocol | `AppBridge` + `PostMessageTransport`, one per mounted View instance, torn down with `ui/resource-teardown`; StrictMode double mount covered by test. | Same bridge in `packages/chat-view`; server-bound calls go to the host over environment RPC. |
 | Theme | SuperOne tokens → spec `--color-*` / `--font-*` / `--border-radius-*`, reusing `WIDGET_THEME_TOKEN_SOURCES`. | Same. |
-| Display | `inline` first; `fullscreen` (dock panel) and `pip` later. Only modes the View declared. | `inline`, then `fullscreen` (sheet). |
+| Display | `inline`, `fullscreen` (dock panel) and `pip`. Host-supported modes only; respect an explicit View declaration. | `inline`, then `fullscreen` (sheet). |
+
+`appCapabilities.availableDisplayModes` is optional: when absent, a View's explicit display-mode request counts as intent; when present, both its declaration and the host's modes must allow the request.
 
 ## 6. View → host methods
 

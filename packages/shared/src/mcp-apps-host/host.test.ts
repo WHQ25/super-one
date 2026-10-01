@@ -45,6 +45,17 @@ async function setup(restored = false, initial = attachment, appCapabilities: Mc
 }
 
 describe('MCP App shared host', () => {
+  it('closes activation after the host restarts and waits for an explicit Activate', async () => {
+    const { host, view, executor, errors } = await setup()
+    vi.mocked(executor.callTool).mockRejectedValueOnce(new McpAppsError('inactive', 'Activate to reconnect'))
+    await expect(view.callServerTool({ name: 'next' })).rejects.toThrow('Activate')
+    expect(errors[0]).toMatchObject({ code: 'inactive' })
+    await expect(view.callServerTool({ name: 'next' })).rejects.toThrow('Activate')
+    expect(executor.callTool).toHaveBeenCalledTimes(1)
+    host.activate()
+    await view.callServerTool({ name: 'next' })
+    expect(executor.callTool).toHaveBeenCalledTimes(2)
+  })
   it('initializes before sending input then full private View result exactly once', async () => {
     const { host, notifications, errors } = await setup()
     await host.update(attachment)
@@ -122,12 +133,15 @@ describe('MCP App shared host', () => {
     expect(errors).toEqual([])
   })
 
-  it('returns inline for a display mode the View has not declared', async () => {
+  it('accepts explicit intent when the View omits its optional mode declaration', async () => {
     const { host, view, executor } = await setup()
     host.updateContext({ availableDisplayModes: ['inline', 'fullscreen', 'pip'] })
     expect(host.appCapabilities()).toEqual({})
+    expect(await view.requestDisplayMode({ mode: 'fullscreen' })).toEqual({ mode: 'fullscreen' })
+    expect(executor.requestDisplayMode).toHaveBeenCalledOnce()
+    host.updateContext({ availableDisplayModes: ['inline'] })
     expect(await view.requestDisplayMode({ mode: 'fullscreen' })).toEqual({ mode: 'inline' })
-    expect(executor.requestDisplayMode).not.toHaveBeenCalled()
+    expect(executor.requestDisplayMode).toHaveBeenCalledOnce()
   })
 
   it('allows only modes declared by both the host and the View', async () => {

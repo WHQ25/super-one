@@ -45,14 +45,14 @@ describe('MCP App host executor', () => {
     const s = setup({ snapshot: true })
     expect(await s.run({ operation: 'load' })).toMatchObject({ ok: true, value: { html: '<html>restored</html>' } })
     for (const operation of [CALL, { operation: 'readResource', uri: APP.resourceUri }, { operation: 'updateModelContext', context: { source: { appInstanceId: 'x', server: 'x' } } }, { operation: 'sendMessage', params: { role: 'user', content: [{ type: 'text', text: 'hi' }] } }, { operation: 'openLink', url: 'https://example.com' }] as McpAppHostOperation[]) {
-      expect(await s.run(operation)).toMatchObject({ ok: false, error: { code: 'denied' } })
+      expect(await s.run(operation)).toMatchObject({ ok: false, error: { code: 'inactive' } })
     }
     expect(s.provider).not.toHaveBeenCalled()
   })
 
   it('requires activation when restored HTML is missing, then persists a single load', async () => {
     const s = setup()
-    expect(await s.run({ operation: 'load' })).toMatchObject({ ok: false, error: { code: 'denied' } })
+    expect(await s.run({ operation: 'load' })).toMatchObject({ ok: false, error: { code: 'inactive' } })
     await s.run({ operation: 'activate' })
     const loaded = await s.run({ operation: 'load' })
     expect(loaded).toMatchObject({ ok: true, value: { html: '<html>fresh</html>', meta: { prefersBorder: true } } })
@@ -101,6 +101,7 @@ describe('MCP App host executor', () => {
     if (kind === 'binding') { s.change({ binding: { ...APP.binding, account: 'other' } }); await s.run({ operation: 'activate' }) }
     const call = kind === 'args' ? { ...CALL, args: { page: 3 } } as McpAppHostOperation : CALL
     const requester = kind === 'requester' ? { kind: 'mobile' as const, deviceId: 'phone' } : REQUESTER
+    if (kind === 'requester') await s.run({ operation: 'activate' }, undefined, requester)
     expect(await s.run(call, { challenge: id }, requester)).toMatchObject({ ok: false, error: { code: 'denied' } })
     expect(s.provider.mock.calls.some(([, op]) => op.operation === 'callTool')).toBe(false)
   })
@@ -130,9 +131,9 @@ describe('MCP App host executor', () => {
     const s = setup({ snapshot: true, fresh: true })
     const phone: McpAppRequester = { kind: 'mobile', deviceId: 'phone', transport: 'lan' }
     const other: McpAppRequester = { kind: 'mobile', deviceId: 'other', transport: 'relay' }
-    expect(await s.run(CALL, undefined, phone)).toMatchObject({ ok: false, error: { code: 'denied' } })
+    expect(await s.run(CALL, undefined, phone)).toMatchObject({ ok: false, error: { code: 'inactive' } })
     expect(await s.run({ operation: 'activate' }, undefined, phone)).toMatchObject({ ok: true })
-    expect(await s.run(CALL, undefined, other)).toMatchObject({ ok: false, error: { code: 'denied' } })
+    expect(await s.run(CALL, undefined, other)).toMatchObject({ ok: false, error: { code: 'inactive' } })
     const id = challenge(await s.run(CALL, undefined, phone))
     expect(await s.run(CALL, { challenge: id }, { ...phone, transport: 'relay' })).toMatchObject({ ok: true })
     s.executor.observeLive(s.target().ref, s.target().app, other)
@@ -219,6 +220,7 @@ describe('MCP App host executor', () => {
     await s.run(link, { challenge: challenge(await s.run(link)) })
     expect(s.ports.openLink).toHaveBeenCalledWith('https://example.com/')
     challenge(await s.run(link))
+    await s.run({ operation: 'activate' }, undefined, { kind: 'mobile', deviceId: 'phone' })
     expect(await s.run(link, undefined, { kind: 'mobile', deviceId: 'phone' })).toMatchObject({ ok: false, error: { code: 'denied' } })
     expect(await s.run({ operation: 'openLink', url: 'file:///etc/passwd' })).toMatchObject({ ok: false, error: { code: 'denied' } })
   })

@@ -2,6 +2,7 @@
 import { act, fireEvent, render, screen, waitFor, cleanup } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { McpAppsError } from '@superone/shared/mcp-apps'
 import type { McpAppFrameProps } from './McpAppFrame'
 import type { McpAppDesktopApi } from './desktop-executor'
 const frame = vi.hoisted(() => ({ props: null as McpAppFrameProps | null }))
@@ -20,6 +21,16 @@ function setup() {
 }
 afterEach(() => { cleanup(); frame.props = null })
 describe('MCP App desktop View lifecycle', () => {
+  it('recovers lost host activation without reconnecting or replaying the failed call', async () => {
+    const s = setup(); vi.mocked(s.api.mcpAppRegister).mockResolvedValueOnce({ ok: true, value: { ...prepared, active: true } })
+    s.mount(); await screen.findByTestId('frame'); expect(frame.props?.active).toBe(true)
+    act(() => frame.props!.onError(new McpAppsError('inactive', 'Activate to reconnect')))
+    expect(frame.props?.active).toBe(false); expect(screen.getByText('mcpApp.activate')).toBeTruthy()
+    expect(s.api.mcpAppRequest).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByText('mcpApp.activate'))
+    await waitFor(() => expect(frame.props?.active).toBe(true))
+    expect(s.api.mcpAppRequest).toHaveBeenCalledTimes(1)
+  })
   it('paints restored snapshots without activating and reconnects only on explicit action', async () => {
     const s = setup(); const ui = s.mount(); await screen.findByTestId('frame')
     expect(s.api.mcpAppRequest).not.toHaveBeenCalled(); expect(frame.props?.active).toBe(false)

@@ -80,3 +80,17 @@ test('View declares dock/PiP modes and keeps iframe identity, state and bridge',
   await page.getByRole('button', { name: 'Allow Once', exact: true }).click()
   await expect(view.locator('#status')).toHaveText('page 2/4')
 })
+
+test('a hidden-mounted View measures when visibility resumes', async ({ page }) => {
+  // Native visibility under the automation driver is always visible on macOS;
+  // control the visibility signal to reproduce the suspended layout hook.
+  await page.addInitScript(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => !(window as unknown as { mcpVisible?: boolean }).mcpVisible })
+  })
+  const view = await open(page, 'live')
+  await expect(view.locator('#status')).toHaveText('page 1/4')
+  await expect(page.locator('[data-mcp-app-surface]')).toBeHidden()
+  await page.evaluate(() => { (window as unknown as { mcpVisible: boolean }).mcpVisible = true; document.dispatchEvent(new Event('visibilitychange')) })
+  await expect(page.locator('[data-mcp-app-surface]')).toBeVisible()
+  expect(await page.locator('[data-mcp-app-surface]').evaluate(el => el.getBoundingClientRect().width)).toBeGreaterThan(0)
+})

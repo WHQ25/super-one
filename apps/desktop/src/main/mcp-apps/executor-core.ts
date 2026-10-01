@@ -122,7 +122,7 @@ export class McpAppExecutor {
       const binding = this.bindingKey(target.app)
       if (operation.operation === 'load' && target.app.resource) return { ok: true, value: target.app.resource }
       if (!target.app.origin?.providerSessionId) throw new McpAppsError('not_connected', 'MCP App provider origin unavailable')
-      if (operation.operation !== 'activate' && this.active.get(activeKey) !== binding) throw new McpAppsError('denied', 'Activate this restored MCP App to reconnect')
+      if (operation.operation !== 'activate' && this.active.get(activeKey) !== binding) throw new McpAppsError('inactive', 'Activate this restored MCP App to reconnect')
       const capabilities = unwrap<McpAppsCapabilities>(await this.ports.provider(target, { operation: 'ready' }, signal))
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
       if (capabilities.mode === 'unsupported') throw new McpAppsError('not_connected', 'This harness does not support MCP Apps')

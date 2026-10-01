@@ -91,7 +91,7 @@ export interface McpAppsProvider {
   dispose(): void
 }
 
-export type McpAppsErrorCode = 'auth_required' | 'denied' | 'invalid' | 'not_connected' | 'timeout' | 'cancelled' | 'unknown_outcome'
+export type McpAppsErrorCode = 'auth_required' | 'inactive' | 'denied' | 'invalid' | 'not_connected' | 'timeout' | 'cancelled' | 'unknown_outcome'
 export interface McpAppsErrorData { code: McpAppsErrorCode; message: string; challenge?: string[] }
 export class McpAppsError extends Error implements McpAppsErrorData {
   constructor(readonly code: McpAppsErrorCode, message: string, readonly challenge?: string[]) {

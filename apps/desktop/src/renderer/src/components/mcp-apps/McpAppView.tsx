@@ -51,7 +51,10 @@ export default function McpAppView({ app, route: explicitRoute, api: explicitApi
   const [bounds, setBounds] = useState<DOMRectReadOnly | null>(null)
   const [clip, setClip] = useState('inset(0px)')
   const isDark = useIsDark()
-  const onError = useCallback((value: unknown) => setError(value instanceof McpAppsError ? value : new McpAppsError('invalid', value instanceof Error ? value.message : String(value))), [])
+  const onError = useCallback((value: unknown) => {
+    if (value instanceof McpAppsError && value.code === 'inactive') { setActive(false); setError(null); return }
+    setError(value instanceof McpAppsError ? value : new McpAppsError('invalid', value instanceof Error ? value.message : String(value)))
+  }, [])
   useEffect(() => { if (mode === 'fullscreen' && !panelShown && modes.includes('pip')) void requestMode('pip', new AbortController().signal) }, [mode, panelShown, modes, requestMode])
   const consent = useCallback<McpAppConsent>((prompt, signal) => new Promise(resolve => {
     if (signal.aborted) { resolve(null); return }

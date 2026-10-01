@@ -9,6 +9,10 @@ import type { McpAppDesktopApi } from './desktop-executor'
 const frame = vi.hoisted(() => ({ props: null as McpAppFrameProps | null }))
 vi.mock('@/stores/chat', () => ({ useChatStore: (fn: (s: unknown) => unknown) => fn({ projectSessions: {} }), useSessionScope: () => null }))
 vi.mock('@/hooks/use-is-dark', () => ({ useIsDark: () => false }))
+// Lifecycle tests exercise preparation/activation/consent, independent of the
+// window chrome; browser and native tests cover those surfaces.
+vi.mock('./McpAppFullscreen', () => ({ McpAppFullscreen: () => null }))
+vi.mock('./McpAppPip', () => ({ McpAppPip: () => null }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }) }))
 vi.mock('./McpAppFrame', () => ({ default: (props: McpAppFrameProps) => { frame.props = props; useEffect(() => props.onInitialized(['inline', 'fullscreen', 'pip']), []); return <div data-testid="frame" /> } }))
 import McpAppView from './McpAppView'

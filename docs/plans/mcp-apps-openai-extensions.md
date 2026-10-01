@@ -634,6 +634,8 @@ existing elicitation card, and `SchemaFormFields` (phone `PermissionSheet`).
 - No user-added files or directories (`userOptions`). They are ignored on
   single and explicit selection, as on ChatGPT web. Implicit selection always
   offers them, so it is unsupported.
+- A form with more than 100 fields, or a schema over a fixed size, is
+  unsupported; the check is cheap and runs before any field is parsed.
 - Answers are checked in main against the form before they reach the server.
   Unknown keys are dropped, invalid answers keep the request pending, and
   resource fields only return URIs the server offered. These checks are
@@ -642,10 +644,12 @@ existing elicitation card, and `SchemaFormFields` (phone `PermissionSheet`).
 - Main never runs a server's `pattern`. The renderer and phone show it as an
   inline hint through `linear-regex.ts`, a linear-time NFA simulation with a
   compile budget (source length, nesting, repetition counts, node visits) and a
-  step budget per pattern and per form validation. A pattern that is invalid,
-  needs backreferences or lookaround, or exceeds a budget gets no hint; the
-  form stays supported and the native engine is never a fallback. Compiled
-  patterns live in an LRU bounded by count and total instructions.
+  step budget per pattern. One budget per form validation pays for compiling
+  and matching alike, so distinct costly patterns cannot add up. A pattern
+  that is invalid, oversized, needs backreferences or lookaround, or exceeds a
+  budget gets no hint; the form stays supported and the native engine is never
+  a fallback. Compiled patterns live in an LRU bounded by count and total
+  instructions; oversized sources are never cached.
 - Forms never offer "Always Allow". Codex reads `_meta.persist` only on its
   own tool-approval elicitations, which have no fields.
 - Older phones get the flat `elicitationForm` only for forms it can express.

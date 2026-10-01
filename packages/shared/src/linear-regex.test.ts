@@ -94,6 +94,18 @@ describe('match budget', () => {
     expect(compileLinearRegex('c').test('aab', budget)).toBe(false)
   })
 
+  it('charges compile work to the budget, also when compiling fails', () => {
+    const failed = { steps: 1_000_000 }
+    expect(() => compileLinearRegex('((?:){1000}){1000}', failed)).toThrow(new UnsupportedPattern('too complex'))
+    expect(1_000_000 - failed.steps).toBeGreaterThan(100_000)
+    const oversized = { steps: 1_000_000 }
+    expect(() => compileLinearRegex('a'.repeat(1_000_000), oversized)).toThrow(new UnsupportedPattern('too complex'))
+    expect(1_000_000 - oversized.steps).toBe(2048)
+    const compiled = { steps: 1000 }
+    compileLinearRegex('ab', compiled)
+    expect(1000 - compiled.steps).toBe(2 + 3)
+  })
+
   it('reports its size in instructions', () => {
     expect(compileLinearRegex('ab').size).toBe(3)
   })

@@ -13,10 +13,11 @@
  * Both phases are budgeted, since a small pattern can still be made expensive:
  * compiling stops with `UnsupportedPattern('too complex')` past the limits
  * below, and `test` gives up (`undefined`) once its `MatchBudget` runs out.
+ * Compiling charges its work to a budget too, whether or not it succeeds.
  */
 
 /** Upper bounds on source length, group nesting and compiled NFA instructions. */
-const MAX_SOURCE_LENGTH = 2048
+export const MAX_PATTERN_LENGTH = 2048
 const MAX_DEPTH = 64
 const MAX_INSTRUCTIONS = 10_000
 /** Every node visit counts, so repeating what compiles to nothing, `(?:){1000000000}`, stays bounded. */
@@ -186,7 +187,8 @@ class Parser {
 
 class Compiler {
   readonly prog: Inst[] = []
-  private work = 0
+  /** Node visits so far, charged to the caller's budget. */
+  work = 0
 
   private emit(inst: Inst): number {
     if (this.prog.length >= MAX_INSTRUCTIONS) throw new UnsupportedPattern('too complex')
@@ -249,12 +251,19 @@ export interface LinearRegex {
   test(input: string, budget?: MatchBudget): boolean | undefined
 }
 
-/** Compile `pattern`, or throw `UnsupportedPattern` / `SyntaxError`. */
-export function compileLinearRegex(pattern: string): LinearRegex {
-  if (pattern.length > MAX_SOURCE_LENGTH) throw new UnsupportedPattern('too complex')
-  new RegExp(pattern, 'u') // Reject invalid syntax the way the native engine would.
+/**
+ * Compile `pattern`, or throw `UnsupportedPattern` / `SyntaxError`. `budget`
+ * pays for the work either way: one step per source character and node visit.
+ */
+export function compileLinearRegex(pattern: string, budget?: MatchBudget): LinearRegex {
   const compiler = new Compiler()
-  compiler.compile(new Parser(pattern).parse())
+  try {
+    if (pattern.length > MAX_PATTERN_LENGTH) throw new UnsupportedPattern('too complex')
+    new RegExp(pattern, 'u') // Reject invalid syntax the way the native engine would.
+    compiler.compile(new Parser(pattern).parse())
+  } finally {
+    if (budget) budget.steps -= Math.min(pattern.length, MAX_PATTERN_LENGTH) + compiler.work
+  }
   compiler.prog.push({ op: 'match' })
   const prog = compiler.prog
 

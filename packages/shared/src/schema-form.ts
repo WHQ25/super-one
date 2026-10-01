@@ -11,7 +11,7 @@
  * server validates its own answers.
  */
 import type { ElicitationFormField, PermissionRequest } from './agent-types'
-import { compileLinearRegex, type LinearRegex, type MatchBudget } from './linear-regex'
+import { compileLinearRegex, MAX_PATTERN_LENGTH, type LinearRegex, type MatchBudget } from './linear-regex'
 import { LruMap } from './lru-map'
 import { safeMcpAppImage } from './mcp-apps-metadata'
 
@@ -391,14 +391,39 @@ function parseField(name: string, raw: unknown, required: boolean): SchemaFormFi
   }
 }
 
+/** Caps checked before parsing, in main too, so an oversized form is cheap to reject; none could render sensibly. */
+const MAX_FIELDS = 100
+const MAX_SCHEMA_SIZE = 1_000_000
+
+/** Whether a JSON value's size (keys and strings in characters, plus one per entry) exceeds `limit`; stops counting once it does. */
+function exceedsSize(root: unknown, limit: number): boolean {
+  let size = 0
+  const stack = [root]
+  while (stack.length) {
+    const item = stack.pop()
+    if (typeof item === 'string') size += item.length
+    else if (item !== null && typeof item === 'object') {
+      for (const key in item) {
+        size += key.length + 1
+        if (size > limit) return true
+        stack.push((item as Rec)[key])
+      }
+    }
+    if (size > limit) return true
+  }
+  return false
+}
+
 /** Parse a `requestedSchema`. An absent or empty schema is a form with no fields. */
 export function parseSchemaForm(schema: unknown): SchemaForm {
   if (schema === undefined || schema === null) return { supported: true, fields: [] }
   if (!isRecord(schema) || (schema.type !== undefined && schema.type !== 'object')) {
     return { supported: false, reason: 'the schema is not an object' }
   }
+  if (exceedsSize(schema, MAX_SCHEMA_SIZE)) return { supported: false, reason: 'the schema is too large' }
   if (schema.properties === undefined) return { supported: true, fields: [] }
   if (!isRecord(schema.properties)) return { supported: false, reason: '"properties" is not an object' }
+  if (Object.keys(schema.properties).length > MAX_FIELDS) return { supported: false, reason: `more than ${MAX_FIELDS} fields` }
   let required: string[]
   try {
     required = schema.required === undefined ? [] : stringArray(schema.required, '"required"')
@@ -436,20 +461,21 @@ function codePoints(value: string): number {
 
 /**
  * Server patterns run only on the linear-time engine, within a step budget per
- * pattern and per form validation: a backtracking engine can be stalled by
- * `^(a+)+$`, and even a linear one by `a{9998}b` against a long value.
+ * pattern and one per form validation that pays for compiling and matching: a
+ * backtracking engine can be stalled by `^(a+)+$`, and even a linear one by
+ * `a{9998}b` against a long value or by many patterns that are costly to compile.
  */
 const PATTERN_STEPS = 200_000
 const FORM_PATTERN_STEPS = 1_000_000
 
 /** Compiled patterns, bounded by count and total instructions; `null` caches a pattern that cannot run. */
 const compiledPatterns = new LruMap<string, LinearRegex | null>(64, { max: 50_000, weigh: (compiled) => compiled?.size ?? 1 })
-function linearPattern(pattern: string): LinearRegex | null {
+function linearPattern(pattern: string, budget: MatchBudget): LinearRegex | null {
   const cached = compiledPatterns.get(pattern)
   if (cached !== undefined) return cached
   let compiled: LinearRegex | null
   try {
-    compiled = compileLinearRegex(pattern)
+    compiled = compileLinearRegex(pattern, budget)
   } catch {
     // Invalid, unsupported (backreferences, lookaround) or over budget on this runtime.
     compiled = null
@@ -464,7 +490,9 @@ function linearPattern(pattern: string): LinearRegex | null {
  * never made unsupported and the native engine is never a fallback.
  */
 function matchesPattern(pattern: string, value: string, budget: MatchBudget): boolean | undefined {
-  const compiled = linearPattern(pattern)
+  // Before the cache: a spent budget skips every remaining hint, and an oversized source never becomes a key.
+  if (budget.steps <= 0 || pattern.length > MAX_PATTERN_LENGTH) return undefined
+  const compiled = linearPattern(pattern, budget)
   if (!compiled || budget.steps <= 0) return undefined
   const call = { steps: Math.min(PATTERN_STEPS, budget.steps) }
   const before = call.steps

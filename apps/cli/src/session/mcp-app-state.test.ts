@@ -18,9 +18,11 @@ describe('durable node MCP App host updates', () => {
     const events = new EventLog(db, 'node')
     const leases = new ControlLeaseService(db)
     const modelInputs: string[] = []
-    const runner: TurnRunner = async ({ session, messageId, text, onAgentEvent }) => {
+    const modelImages: unknown[] = []
+    const runner: TurnRunner = async ({ session, messageId, text, images, onAgentEvent }) => {
       if (!messageId) throw new Error('Runtime must supply a message ID')
       modelInputs.push(text)
+      modelImages.push(images)
       const app: ToolAppAttachment = { appInstanceId: 'view', binding: { node: 'node', session: session.sessionId, server: 'fixture', account: 'account', configGeneration: 0, configFingerprint: 'config' },
         origin: { providerSessionId: 'thread' }, resourceUri: 'ui://fixture/view', status: 'result', toolResult: { content: [], _meta: { secret: 'view-only' } } }
       if (modelInputs.length === 1) {
@@ -48,7 +50,7 @@ describe('durable node MCP App host updates', () => {
       expect(await dispatchMcpAppsRpc('mcpApps.resolveAttachment', lookup, readContext())).toMatchObject({ result: { ok: true, value: { projectId: 'project', app: { appInstanceId: 'view' } } } })
       expect(await dispatchMcpAppsRpc('mcpApps.resolveAttachment', { ...lookup, sessionId: 'another-session' }, readContext())).toMatchObject({ result: { ok: false, error: { code: 'denied' } } })
       expect(await dispatchMcpAppsRpc('mcpApps.resolveAttachment', { ...lookup, appInstanceId: 'missing' }, readContext())).toMatchObject({ result: { ok: false, error: { code: 'denied' } } })
-      const update = { resource: { html: '<html>persisted</html>', hash: 'hash', meta: {} }, modelContext: { structuredContent: { selected: 'b' }, source: { appInstanceId: 'forged', server: 'forged' } } }
+      const update = { resource: { html: '<html>persisted</html>', hash: 'hash', meta: {} }, modelContext: { updateId: 'revision-1', content: [{ type: 'text', text: 'Visible selection', _meta: { 'openai/title': 'Selection', private: 'block-private' } }, { type: 'text', text: 'Hidden selection', annotations: { audience: ['assistant'] } }, { type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgo=' }], structuredContent: { selected: 'b' }, source: { appInstanceId: 'forged', server: 'forged' } } }
       const payload = { sessionId: session.sessionId, appInstanceId: 'view', update, ...control }
       expect(await dispatchMcpAppsRpc('mcpApps.state', payload, context())).toEqual({ result: { ok: true, value: null } })
       expect(await dispatchMcpAppsRpc('mcpApps.resolveAttachment', lookup, readContext())).toMatchObject({ result: { ok: true, value: { app: { resource: update.resource } } } })
@@ -64,6 +66,20 @@ describe('durable node MCP App host updates', () => {
       expect(modelInputs[1]!.match(/<mcp-app-context>/g)).toHaveLength(1)
       expect(modelInputs[1]).not.toContain('view-only')
       expect(runtime.get(session.sessionId)?.transcript.at(-2)?.text).toBe('next user turn')
+      expect(modelInputs[1]).toContain('Hidden selection')
+      expect(modelInputs[1]).not.toMatch(/block-private|openai\/title|iVBORw0KGgo/)
+      expect(modelImages[1]).toMatchObject([{ mimeType: 'image/png', base64: 'iVBORw0KGgo=' }])
+      await send('another turn')
+      expect(modelInputs[2]).toContain('Hidden selection')
+      expect(modelImages[2]).toEqual(modelImages[1])
+      expect(await dispatchMcpAppsRpc('mcpApps.state', { ...payload, update: { modelContext: null } }, context())).toMatchObject({ result: { ok: true } })
+      await runtime.dispose()
+      runtime = new SessionRuntime(db, events, leases, 'node', runner)
+      expect(findMcpAppAttachment(runtime.listMessages({ sessionId: session.sessionId }).messages, 'view')?.app.modelContext).toBeNull()
+      await send('after clear')
+      expect(modelInputs[3]).not.toContain('<mcp-app-context>')
+      expect(modelImages[3]).toBeUndefined()
+
     } finally {
       await runtime.dispose()
       db.close()

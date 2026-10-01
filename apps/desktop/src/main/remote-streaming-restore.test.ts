@@ -59,3 +59,18 @@ describe('opening a running session from mobile', () => {
     runtime.dispose()
   })
 })
+
+
+it('restores all composer context from passive history without sending View HTML or tool output', async () => {
+  const app = { appInstanceId: 'view', status: 'result' as const, resourceUri: 'ui://cad',
+    binding: { node: 'local', session: 'session', server: 'CAD', configGeneration: 1, configFingerprint: 'config' },
+    resource: { html: 'private-html', hash: 'hash', meta: {} }, toolResult: { content: [], _meta: { private: 'tool-private' } },
+    modelContext: { updateId: 'r1', content: [{ type: 'text', text: 'Selected part' }], source: { appInstanceId: 'view', server: 'CAD' } } }
+  const history: ChatMessage[] = [{ id: 'old-view', role: 'assistant', status: 'complete', createdAt: '',
+    content: [{ type: 'tool_result', toolUseId: 'call', summary: '', app }] }]
+  const restored = await buildRemoteSessionSnapshot(null, '/project', 'session', true, history)
+  expect(restored.inProgressMessages).toEqual([])
+  expect(restored.mcpAppContexts).toHaveLength(1)
+  expect(restored.mcpAppContexts[0]).toMatchObject({ messageId: 'old-view', app: { modelContext: { updateId: 'r1' } } })
+  expect(JSON.stringify(restored.mcpAppContexts)).not.toMatch(/private-html|tool-private/)
+})

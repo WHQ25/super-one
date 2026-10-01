@@ -1,3 +1,5 @@
+import { ContextAttachments } from '../ui/context-attachments'
+import type { ContextAttachment } from '@superone/shared/context-attachments'
 import { NativeComposerInput, composerInputMinHeight, COMPOSER_INPUT_MAX_HEIGHT, type NativeComposerBinding } from '../ui/native-composer-input'
 import { nativeMentionEditorAvailable } from '../ui/native-mention-editor'
 import type { ComposerCursor } from '../composer-cursor'
@@ -47,6 +49,10 @@ export type ComposerSelection = {
 export type ChatComposerProps = {
   nativeDraft?: NativeComposerBinding
   provider: HarnessId
+  contextAttachments?: ContextAttachment[]
+  removingContexts?: string[]
+  contextError?: string
+  onRemoveContext?: (id: string) => void
   draft: string; streaming: boolean; attachments: ImageAttachment[]
   /**
    * Session restore is in flight. The chips above the input belong to the
@@ -243,6 +249,7 @@ export function ChatComposer(props: ChatComposerProps) {
         ? { borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: 6 }
         : { flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
         <View style={tablet ? undefined : { flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 20, overflow: 'hidden' }}>
+          <ContextAttachments items={props.contextAttachments ?? []} removing={props.removingContexts} error={props.contextError} onRemove={props.onRemoveContext} />
           {props.attachments.length ? <View style={{ padding: 6 }}><AttachmentStrip attachments={props.attachments} onRemove={props.onRemoveAttachment} /></View> : null}
           {props.nativeDraft && nativeMentionEditorAvailable ? <NativeComposerInput key={props.nativeDraft.generation ?? 0} binding={props.nativeDraft} tablet={tablet}
             editable={!props.loadingConversation} placeholder={props.placeholder ?? 'Ask anything…'} onSubmit={props.onSubmitFromKeyboard}

@@ -28,7 +28,7 @@ export function mcpAppContent(content: unknown[], source: string, idPrefix: stri
   for (const [index, value] of content.entries()) {
     const block = record(value)
     const meta = record(block._meta)
-    const title = typeof meta['openai/title'] === 'string' ? meta['openai/title'].slice(0, 512) : undefined
+    const title = typeof meta['openai/title'] === 'string' && meta['openai/title'].trim() ? meta['openai/title'].slice(0, 512) : undefined
     const thumbnail = mcpAppIcon([{ src: String(record(meta['openai/thumbnail']).src ?? '') }])
     const id = `${idPrefix}:${index}`
     let body: string
@@ -55,7 +55,12 @@ export function mcpAppContent(content: unknown[], source: string, idPrefix: stri
           if (typeof resource.mimeType === 'string' && (resource.mimeType.startsWith('image/') || resource.mimeType === 'application/pdf')) {
             image = { name: title || resource.uri, mimeType: resource.mimeType, base64: resource.blob }
             body = resource.uri
-          } else body = JSON.stringify({ uri: resource.uri, ...(typeof resource.mimeType === 'string' ? { mimeType: resource.mimeType } : {}), blob: resource.blob })
+          } else {
+            const blob = resource.blob
+            if (blob.length % 4 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(blob)) throw new McpAppsError('invalid', 'Invalid MCP App resource blob')
+            const byteSize = blob.length / 4 * 3 - (blob.endsWith('==') ? 2 : blob.endsWith('=') ? 1 : 0)
+            body = JSON.stringify({ uri: resource.uri, ...(typeof resource.mimeType === 'string' ? { mimeType: resource.mimeType } : {}), byteSize })
+          }
         } else throw new McpAppsError('invalid', 'MCP App embedded resource needs text or a blob')
         break
       }

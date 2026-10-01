@@ -288,3 +288,6 @@ function SendingPreview() {
   </View>
 }
 export const SendAfterComposition = { render: () => <MobileThemeProvider><SendingPreview /></MobileThemeProvider> }
+
+export const AttachedContext = { args: { contextAttachments: [{ id: 'dial', title: 'Agent dial', source: 'Bits & Bolts', content: '{"part":"dial"}' }, { id: 'background', title: 'CAD context', content: 'Background selection' }], onRemoveContext: noop } }
+export const ContextRemovalError = { args: { contextAttachments: [{ id: 'dial', title: 'Agent dial', source: 'CAD' }], contextError: 'Could not remove context. The host is disconnected.', onRemoveContext: noop } }

@@ -1,5 +1,6 @@
 import { networkLedger } from './network-ledger'
 import { requestHarnessResource } from './harness-resource-cache'
+import { McpAppContextAttachments } from './mcp-app-context-attachments'
 import { extendHistoryIndex, mergeIndexedHistory, type SessionHistoryIndex } from '@superone/shared/session-history-index'
 import { isCompactSlashSend } from '@superone/shared/compact-boundary'
 import { codexAsyncAnswerId } from '@superone/shared/codex-async-question'
@@ -109,6 +110,11 @@ function localUserMessage(id: string, text: string, images?: ImageAttachment[]):
 type SendMessageCommand = Extract<RemoteCommand, { type: 'send_message' }>
 
 export class ChatRuntime {
+  private readonly appContexts = new McpAppContextAttachments()
+  get contextAttachments() { return this.appContexts.items(this.session.messages) }
+  removeContextAttachment(id: string): Promise<void> {
+    return this.appContexts.remove(id, this.client, { projectPath: this.projectPath, sessionId: this.sessionId }, this.session.messages)
+  }
   session: SessionState = createDefaultChatCoreSession()
   /**
    * A fact about the running process, not a setting — so it is only ever what the
@@ -162,6 +168,7 @@ export class ChatRuntime {
     this.persistTranscript()
     this.projectPath = projectPath
     this.sessionId = sessionId
+    this.appContexts.restore(undefined)
     this.resolvedQuestionIds.clear()
     this.resolvedPermissionIds.clear()
     this.attachmentBytes.clear()
@@ -174,7 +181,8 @@ export class ChatRuntime {
       const cached = this.readTranscript(projectPath, sessionId)
       networkLedger.mark('open-session')
       if (cached?.messages.length) {
-        this.session = { ...createDefaultChatCoreSession(), messages: [...cached.messages] }
+        this.appContexts.restore(cached.mcpAppContexts)
+        this.session = { ...createDefaultChatCoreSession(), messages: this.appContexts.reconcile(cached.messages) }
         this.hasMoreHistory = cached.hasMore
         this.historyCursor = cached.cursor
         if (cached.provider) this.provider = cached.provider
@@ -186,6 +194,7 @@ export class ChatRuntime {
       const restored = await restoreSession(this.client, projectPath, sessionId, cached)
       if (generation !== this.restoreGeneration) return
       this.restoreMetrics = restored.metrics
+      this.appContexts.restore(restored.snapshot.mcpAppContexts)
       this.navigationAvailable = restored.navigationAvailable === true
       this.hasMoreHistory = restored.hasMore
       this.historyCursor = restored.cursor
@@ -211,6 +220,7 @@ export class ChatRuntime {
       const liveMessages = restored.snapshot.inProgressMessages ?? []
       const liveIds = new Set(liveMessages.map((message) => message.id))
       session.messages = [...session.messages.filter((message) => !liveIds.has(message.id)), ...liveMessages]
+      session.messages = this.appContexts.reconcile(session.messages)
       // Usage events predating the snapshot are intentionally deduplicated.
       // Restore the denominator from persisted usage before releasing live data.
       for (let i = session.messages.length - 1; i >= 0; i--) {
@@ -231,7 +241,7 @@ export class ChatRuntime {
       for (const event of restoreEvents) {
         if (event.sessionId && event.sessionId !== this.sessionId) continue
         if (this.handleSideEvent(event)) continue
-        this.captureRuntimeFacts(event)
+        this.captureRuntimeFacts(event, session.messages)
         if (!this.shouldApplyEvent(event)) continue
         session = this.reduce(session, event)
       }
@@ -265,10 +275,11 @@ export class ChatRuntime {
       const older = (page.messages ?? []).filter(message => !ids.has(message.id))
       this.session = { ...this.session, messages: this.navigationIndex
         ? mergeIndexedHistory(this.navigationIndex, older, this.session.messages) : [...older, ...this.session.messages] }
+      this.session = { ...this.session, messages: this.appContexts.reconcile(this.session.messages) }
       this.historyCursor = page.cursor ?? null
       this.hasMoreHistory = Boolean(page.hasMore && this.historyCursor != null && this.historyCursor !== cursor)
       this.persistTranscript()
-      return older
+      return this.appContexts.reconcile(older)
     })()
     this.historyRequest = request
     void request.finally(() => { if (this.historyRequest === request) this.historyRequest = null }).catch(() => {})
@@ -304,7 +315,8 @@ export class ChatRuntime {
     if (generation !== this.restoreGeneration) throw new Error('Session changed')
     if (!Array.isArray(result.messages)) throw new Error('History is unavailable')
     this.session = { ...this.session, messages: mergeIndexedHistory(index, result.messages, this.session.messages) }
-    return { messages: result.messages }
+    this.session = { ...this.session, messages: this.appContexts.reconcile(this.session.messages) }
+    return { messages: this.appContexts.reconcile(result.messages) }
   }
 
   async subscribeDetail(detailRef: string, subscriptionId: string): Promise<Record<string, unknown>> {
@@ -473,6 +485,7 @@ export class ChatRuntime {
       hasMore: this.hasMoreHistory,
       cursor: this.historyCursor,
       navigationAvailable: this.navigationAvailable,
+      ...(this.appContexts.snapshot() ? { mcpAppContexts: this.appContexts.snapshot() } : {}),
     })
   }
 
@@ -980,7 +993,8 @@ export class ChatRuntime {
    * which bypasses `apply()` — miss that and a resumed session shows the sandbox
    * the snapshot reported instead of the one a later event corrected it to.
    */
-  private captureRuntimeFacts(event: AgentEvent): void {
+  private captureRuntimeFacts(event: AgentEvent, messages = this.session.messages): void {
+    this.appContexts.capture(event, messages)
     if (event.type === 'init_ready') this.sandboxInfo = event.sandboxInfo
     if (event.type === 'agent_setting_change' && event.patch?.sandboxInfo) {
       this.sandboxInfo = event.patch.sandboxInfo

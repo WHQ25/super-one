@@ -1,5 +1,7 @@
 import { mcpAppPresentation, mcpAppResourceMeta } from '@superone/shared/mcp-apps-metadata'
 import { mcpAppMessagePreview, mcpAppMessageTarget } from '@superone/shared/mcp-apps-content'
+import { mcpAppContextState, removeMcpAppContextBlock } from '@superone/shared/mcp-app-model-context'
+import { validateMcpAppAttachmentUpdate } from '@superone/shared/mcp-apps-state'
 import { createHash, randomUUID } from 'node:crypto'
 import { McpUiUpdateModelContextRequestSchema } from '@modelcontextprotocol/ext-apps/app-bridge'
 import { McpAppMessageRequestSchema } from '@superone/shared/mcp-apps-host/message-schema'
@@ -54,6 +56,9 @@ function operationOf(request: McpAppHostRequest): McpAppHostOperation {
       const params = McpUiUpdateModelContextRequestSchema.parse({ method: 'ui/update-model-context', params: request.context }).params
       return { operation: 'updateModelContext', context: { ...(params.content ? { content: params.content } : {}), ...(params.structuredContent ? { structuredContent: params.structuredContent } : {}), source: { appInstanceId: '', server: '' } } }
     }
+    case 'removeModelContext':
+      if (typeof request.updateId !== 'string' || !request.updateId || request.updateId.length > 512 || (request.blockIndex !== undefined && (!Number.isInteger(request.blockIndex) || request.blockIndex < 0))) throw new McpAppsError('invalid', 'Invalid MCP App context removal')
+      return { operation: 'removeModelContext', updateId: request.updateId, ...(request.blockIndex !== undefined ? { blockIndex: request.blockIndex } : {}) }
     default: throw new McpAppsError('invalid', 'Unknown MCP App host operation')
   }
 }
@@ -71,6 +76,8 @@ function requesterKey(requester: McpAppRequester): string {
 
 /** Host policy is shared by desktop IPC and paired-device requests. */
 export class McpAppExecutor {
+  private readonly contextWrites = new Map<string, { tail: Promise<unknown>; pending: number }>()
+  private pendingContextWrites = 0
   private readonly active = new Map<string, string>()
   private readonly challenges = new Map<string, Challenge>()
   private readonly messageTimes = new Map<string, number[]>()
@@ -99,6 +106,35 @@ export class McpAppExecutor {
     return target
   }
 
+  private async writeContext(request: McpAppHostRequest, operation: Extract<McpAppHostOperation, { operation: 'updateModelContext' | 'removeModelContext' }>, signal: AbortSignal, validateTarget?: (target: McpAppResolvedTarget) => void) {
+    const key = JSON.stringify([request.sessionKey, request.appInstanceId])
+    const queue = this.contextWrites.get(key) ?? { tail: Promise.resolve(), pending: 0 }
+    if (queue.pending >= 32 || this.pendingContextWrites >= 1024) throw new McpAppsError('denied', 'Too many pending MCP App context updates')
+    queue.pending++; this.pendingContextWrites++
+    const write = queue.tail.catch(() => {}).then(async () => {
+      const target = await this.resolve(request, signal)
+      validateTarget?.(target)
+      const source = { appInstanceId: target.app.appInstanceId, server: target.app.binding.server }
+      let modelContext = operation.operation === 'removeModelContext'
+        ? removeMcpAppContextBlock(target.app, operation.updateId, operation.blockIndex)
+        : operation.context.content?.length || operation.context.structuredContent ? { ...operation.context, source } : null
+      if (modelContext) {
+        const previous = target.app.modelContext
+        const unchanged = jsonHash({ content: previous?.content, structuredContent: previous?.structuredContent }) === jsonHash({ content: modelContext.content, structuredContent: modelContext.structuredContent })
+        modelContext = { ...modelContext, source, updateId: unchanged && previous?.updateId ? previous.updateId : randomUUID() }
+      }
+      validateMcpAppAttachmentUpdate({ modelContext })
+      await this.ports.persist(target, { modelContext }, signal)
+      return { ok: true as const, value: mcpAppContextState({ ...target.app, modelContext }) }
+    })
+    queue.tail = write
+    this.contextWrites.set(key, queue)
+    try { return await write } finally {
+      queue.pending--; this.pendingContextWrites--
+      if (!queue.pending) this.contextWrites.delete(key)
+    }
+  }
+
   async execute(request: McpAppHostRequest, requester: McpAppRequester, signal: AbortSignal, validateTarget?: (target: McpAppResolvedTarget) => void): Promise<McpAppHostResult> {
     try {
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
@@ -111,6 +147,8 @@ export class McpAppExecutor {
       const key = this.targetKey(ref, target.app.appInstanceId)
       const activeKey = this.activeKey(ref, target.app.appInstanceId, requester)
       const binding = this.bindingKey(target.app)
+      // Composer state can be removed from restored/offline history without waking the provider.
+      if (operation.operation === 'removeModelContext') return await this.writeContext(request, operation, signal, validateTarget)
       for (const [id, pending] of this.pendingSends) if (pending.expires <= this.now()) this.pendingSends.delete(id)
       if (operation.operation === 'sendPreparedMessage') {
         const pending = this.pendingSends.get(operation.pendingSend)
@@ -193,9 +231,10 @@ export class McpAppExecutor {
           return { ok: true, value }
         }
         case 'updateModelContext': {
-          const modelContext = { ...operation.context, source: { appInstanceId: target.app.appInstanceId, server: target.app.binding.server } }
-          await this.ports.persist(target, { modelContext }, signal)
-          return { ok: true, value: null }
+          return await this.writeContext(request, operation, signal, fresh => {
+            validateTarget?.(fresh)
+            if (this.bindingKey(fresh.app) !== binding) throw new McpAppsError('inactive', 'MCP App binding changed')
+          })
         }
         case 'sendMessage': {
           const times = (this.messageTimes.get(key) ?? []).filter(time => time > this.now() - 60_000)

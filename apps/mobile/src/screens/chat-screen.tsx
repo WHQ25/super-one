@@ -1,3 +1,4 @@
+import type { ContextAttachment } from '@superone/shared/context-attachments'
 import type { NativeComposerBinding } from '../ui/native-composer-input'
 import type { ComposerCursor } from '../composer-cursor'
 import type { MentionSearchState } from '../navigation/use-composer-suggestions'
@@ -38,6 +39,10 @@ const CHAT_SOURCE = { html: CHAT_VIEW_HTML }
 const coverStyle = { zIndex: 1, elevation: 4, shadowColor: 'transparent' } as const
 
 export function ChatScreen(props: {
+  contextAttachments?: ContextAttachment[]
+  removingContexts?: string[]
+  contextError?: string
+  onRemoveContext?: (id: string) => void
   nativeDraft?: NativeComposerBinding
   provider: HarnessId
   landing?: NewSessionLandingProps

@@ -1415,7 +1415,7 @@ export class AgentService {
         }
         try {
           const session = this.findSessionBySid(command.projectPath, command.sessionId)
-          const state = await buildRemoteSessionSnapshot(session, command.projectPath, command.sessionId, isProgressiveSession(deviceId, command.sessionId))
+          const state = await buildRemoteSessionSnapshot(session, command.projectPath, command.sessionId, isProgressiveSession(deviceId, command.sessionId), session ? [] : loadSessionState(command.sessionId)?.messages ?? [])
           trace('remote.cmd', 'get_session_state', {
             projectPath: command.projectPath,
             sessionId: command.sessionId,

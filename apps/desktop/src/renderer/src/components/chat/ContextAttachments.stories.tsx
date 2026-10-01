@@ -23,3 +23,8 @@ export const Error: Story = { args: { error: 'Could not remove context. The host
 export const LongContent: Story = { args: { initial: [{ id: 'long', source: 'An app with a long name', title: 'An extremely long attachment label '.repeat(5), content: 'Long payload\n'.repeat(200) }] } }
 export const Narrow: Story = { args: { width: 280 } }
 export const NarrowLong: Story = { args: { width: 280, initial: [{ id: 'long', source: 'Bits & Bolts', title: 'An extremely long attachment label '.repeat(5) }] } }
+
+export const BackgroundContext: Story = { args: { initial: [{ id: 'background', title: 'Bits & Bolts context', content: 'Hidden background selection\n{"part":"dial"}' }] } }
+export const Removing: Story = { render: () => <ContextAttachments items={items} onRemove={() => {}} removing={items.map(item => item.id)} /> }
+export const Dark: Story = { globals: { theme: 'dark' } }
+export const ChineseNarrow: Story = { args: { width: 280 }, globals: { locale: 'zh' } }

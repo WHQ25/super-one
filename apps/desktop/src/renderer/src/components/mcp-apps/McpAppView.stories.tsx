@@ -15,9 +15,13 @@ import { McpAppConsent } from './McpAppConsent'
 import { mcpAppMessagePreview } from '@superone/shared/mcp-apps-content'
 import { richMcpAppMessage } from '../../../../test/fixtures/mcp-apps/rich-message'
 
-function Scenario({ state = 'live', narrow = false, scrolling = false, initialMode = 'inline' }: { state?: McpAppStoryState; narrow?: boolean; scrolling?: boolean; initialMode?: McpAppSurface }) {
+function Scenario({ state = 'live', narrow = false, scrolling = false, initialMode = 'inline', restoredContext = false }: { restoredContext?: boolean; state?: McpAppStoryState; narrow?: boolean; scrolling?: boolean; initialMode?: McpAppSurface }) {
   const maximized = useActivityPanelStore(state => state.maximized)
-  const fixture = useMemo(() => createMcpAppStoryFixture(state), [state])
+  const fixture = useMemo(() => {
+    const value = createMcpAppStoryFixture(state)
+    if (restoredContext) value.app.modelContext = { updateId: 'restored-context-id', content: [{ type: 'text', text: 'Selected part', _meta: { 'openai/title': 'Agent dial' } }], source: { appInstanceId: value.app.appInstanceId, server: value.app.binding.server } }
+    return value
+  }, [state, restoredContext])
   useEffect(() => {
     useSettingsStore.setState(state => ({ mcpMetaCache: { ...state.mcpMetaCache, [fixture.app.binding.server]: { name: fixture.app.binding.server, icons: [{ src: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"%3E%3Cpath fill="%237c3aed" d="M2 1h12v14H2z"/%3E%3C/svg%3E' }] } } }))
     useMcpAppLayout.getState().setMode(fixture.app.appInstanceId, initialMode)
@@ -64,3 +68,5 @@ export const ToolMetadata: Story = {}
 
 export const RichMessageConfirmation: Story = { render: () => <McpAppConsent pending={{ id: 'rich', prompt: { kind: 'sendMessage', server: 'Bits & Bolts', ...mcpAppMessagePreview(richMcpAppMessage, 'Bits & Bolts') }, finish: () => {} }} /> }
 export const NewConversationConfirmation: Story = { render: () => <McpAppConsent pending={{ id: 'new', prompt: { kind: 'sendMessage', server: 'Bits & Bolts', ...mcpAppMessagePreview({ ...richMcpAppMessage, _meta: { 'openai/message': { target: 'new' } } }, 'Bits & Bolts') }, finish: () => {} }} /> }
+
+export const RestoredModelContext: Story = { args: { state: 'inactive', restoredContext: true } }

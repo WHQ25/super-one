@@ -6,6 +6,7 @@ import type {
   SandboxInfo,
 } from '@superone/shared/agent-types'
 import type { RelayClient } from './client'
+import type { McpAppContextSource } from '@superone/shared/mcp-apps-state'
 
 export type HistoryPage = {
   navigationAvailable?: boolean
@@ -17,6 +18,8 @@ export type HistoryPage = {
 }
 
 export type SessionSnapshot = {
+  /** All active context, including Views outside the loaded history pages. */
+  mcpAppContexts?: McpAppContextSource[]
   /** Authoritative live turn, including completed rows not yet in persisted history. */
   inProgressMessages?: ChatMessage[]
   pendingInteractions?: AgentEvent[]
@@ -58,6 +61,7 @@ export type RestoredSession = {
 
 /** A previously opened transcript kept on the phone for this connection. */
 export type CachedTranscript = {
+  mcpAppContexts?: McpAppContextSource[]
   messages: ChatMessage[]
   provider?: string
   hasMore: boolean

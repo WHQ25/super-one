@@ -8,6 +8,7 @@ export interface ContextAttachmentItem {
   source?: string
   content?: string
   thumbnail?: string
+  previewImages?: Array<{ src: string; alt: string }>
 }
 
 /** Shared attachment presentation for app context, message confirmations and bubbles. */
@@ -33,6 +34,7 @@ export function ContextAttachments({ items, onRemove, removing = [], removeLabel
           </PopoverTrigger>
           <PopoverContent side="top" align="start" className="w-80 max-w-[calc(100vw-2rem)] p-3" onOpenAutoFocus={event => event.preventDefault()}>
             <p className="break-words text-xs font-medium">{item.title}</p>
+            {item.previewImages?.map((preview, index) => <img key={index} src={preview.src} alt={preview.alt} referrerPolicy="no-referrer" className="mt-2 max-h-40 w-full rounded object-contain" />)}
             {item.content && <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap break-all text-xs text-muted-foreground">{item.content}</pre>}
           </PopoverContent>
         </Popover>

@@ -88,7 +88,7 @@ export function createMcpAppExecutor(
       }
     },
     async updateModelContext(context) {
-      await run({ operation: 'updateModelContext', context })
+      return run({ operation: 'updateModelContext', context })
     },
     async openLink({ url }) {
       // Exactly what a link in the transcript does: the shell checks the scheme and hands it

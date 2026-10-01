@@ -20,6 +20,7 @@ export function createMcpAppStoryFixture(state: McpAppStoryState = 'live') {
       return { ok: true, value: { state: 'ready', document: { id: crypto.randomUUID(), url, origin: 'null', appInstanceId: app.appInstanceId }, active, meta: {} } }
     },
     async mcpAppRequest(_project, _session, request) {
+      if (request.operation === 'updateModelContext') return { ok: true, value: { ...request.context, updateId: 'story-update' } }
       if (request.operation === 'activate') { active = true; return { ok: true, value: {} } }
       if (request.operation === 'callTool' && state === 'unknown') return { ok: true, value: { outcome: 'unknown_outcome', result: { isError: true, content: [{ type: 'text', text: 'Server disconnected after dispatch' }] } } }
       if (!request.approval && request.operation === 'sendMessage') return { ok: false, error: { code: 'approval_required', challenge: 'storybook-challenge', prompt: { kind: 'sendMessage', server: app.binding.server, ...mcpAppMessagePreview(request.params, app.binding.server) } } }

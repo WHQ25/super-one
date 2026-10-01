@@ -30,9 +30,19 @@ describe('MCP App rich message content', () => {
 
   it('retains opaque embedded resources without private metadata and rejects invalid image input before confirmation', () => {
     const result = mcpAppContent([{ type: 'resource', resource: { uri: 'data:model', blob: 'YmluYXJ5', _meta: { private: 'secret' } } }], 'CAD', 'mcp:m')
-    expect(JSON.parse(result.text)).toEqual({ uri: 'data:model', blob: 'YmluYXJ5' })
+    expect(JSON.parse(result.text)).toEqual({ uri: 'data:model', byteSize: 6 })
     expect(result.images).toEqual([])
+    expect(result.contexts[0]?.content).not.toContain('YmluYXJ5')
     expect(() => mcpAppMessagePreview({ role: 'user', content: [{ type: 'image', mimeType: 'image/png', data: 'invalid' }] }, 'CAD')).toThrow('invalid base64')
+  })
+
+  it('summarizes a large opaque binary resource instead of embedding base64 in the prompt', () => {
+    const blob = 'Ymlu'.repeat(150_000)
+    const result = mcpAppContent([{ type: 'resource', resource: { uri: 'file:///part.stl', mimeType: 'application/octet-stream', blob }, _meta: { 'openai/title': 'CAD source' } }], 'CAD', 'mcp:blob')
+    expect(JSON.parse(result.text)).toEqual({ uri: 'file:///part.stl', mimeType: 'application/octet-stream', byteSize: 450_000 })
+    expect(result.text.length).toBeLessThan(150)
+    expect(result.contexts[0].summary).toBe('CAD source')
+    expect(result.text).not.toContain(blob)
   })
 
   it('uses titles rather than raw payloads in a bounded confirmation preview', () => {

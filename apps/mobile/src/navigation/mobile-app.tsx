@@ -1,3 +1,4 @@
+import type { McpAppContextAttachment } from '@superone/shared/mcp-app-model-context'
 import { PersistedWorkspace } from '../persisted-workspace'
 import { mergeRestoredDraftText, userMessageText } from '@superone/chat-core'
 import { networkLedger } from '../network-ledger'
@@ -228,6 +229,9 @@ export function MobileApp() {
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
   const attachmentsRef = useRef(attachments)
   attachmentsRef.current = attachments
+  const [contextAttachments, setContextAttachments] = useState<McpAppContextAttachment[]>([])
+  const [removingContextViews, setRemovingContextViews] = useState<string[]>([])
+  const [contextError, setContextError] = useState('')
   const [queuedMessages, setQueuedMessages] = useState<ChatMessage[]>([])
   const [todos, setTodos] = useState<Record<string, TodoItem>>({})
   const [promptSuggestions, setPromptSuggestions] = useState<string[]>([])
@@ -486,6 +490,7 @@ export function MobileApp() {
     if (includeMcpIcons) mcpIconsRevisionRef.current = iconsRevision
     setHasTranscript(runtime.session.messages.length > 0)
     setStreaming(runtime.streaming)
+    setContextAttachments(runtime.contextAttachments)
     setQueuedMessages(runtime.session.queuedMessages)
     setTodos(runtime.session.todos)
     setPromptSuggestions(runtime.session.promptSuggestions)
@@ -1191,6 +1196,9 @@ export function MobileApp() {
     setHasTranscript(false)
     setTodos({})
     setPromptSuggestions([])
+    setContextAttachments([])
+    setRemovingContextViews([])
+    setContextError('')
     setQueuedMessages([])
     setSlashOutput(null)
     setSandboxInfo(null)
@@ -2152,6 +2160,21 @@ export function MobileApp() {
 
       {route === 'chat' ? (
         <ChatScreen provider={selectedProvider}
+          contextAttachments={contextAttachments}
+          removingContexts={contextAttachments.filter(item => removingContextViews.includes(item.appInstanceId)).map(item => item.id)}
+          contextError={contextError}
+          onRemoveContext={(id) => {
+            const runtime = runtimeRef.current
+            const item = contextAttachments.find(value => value.id === id)
+            if (!runtime || !item) return
+            setContextError('')
+            setRemovingContextViews(value => [...value, item.appInstanceId])
+            void runtime.removeContextAttachment(id).catch(error => {
+              if (runtimeRef.current === runtime) setContextError(error instanceof Error ? error.message : String(error))
+            }).finally(() => {
+              if (runtimeRef.current === runtime) setRemovingContextViews(value => value.filter(view => view !== item.appInstanceId))
+            })
+          }}
           loadingConversation={sessionLoading || remoteDrafts.opening}
           // The tablet keeps the session list on screen, so it has nothing to
           // pull out and the gutter stays free for the transcript.

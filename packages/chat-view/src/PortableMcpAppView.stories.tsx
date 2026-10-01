@@ -58,8 +58,9 @@ function answer(mode: HostMode, request: Record<string, unknown>): McpAppHostRes
   switch (request.operation) {
     case 'load':
       return { ok: true, value: RESOURCE }
-    case 'activate':
     case 'updateModelContext':
+      return { ok: true, value: { ...(request.context as object), updateId: 'story-update' } }
+    case 'activate':
     case 'readResource':
       return { ok: true, value: {} }
     case 'callTool':
@@ -238,3 +239,5 @@ export const NextToWidgetAndRowWithBrandIcon: Story = {
 
 export const ToolMetadata: Story = { name: 'Tool title and server icon metadata', args: { app: attachment(id('metadata'), { resource: RESOURCE }) } }
 export const LongTitleNarrow: Story = { args: { width: 320, app: attachment(id('long-title'), { resource: RESOURCE, presentation: { toolTitle: 'Browse the engineering library with a very long descriptive tool title', serverTitle: 'Fixture CAD library' } }) } }
+
+export const RestoredModelContext = { args: { app: attachment('restored-context', { resource: RESOURCE, modelContext: { updateId: 'restored-context-id', content: [{ type: 'text', text: 'Selected part', _meta: { 'openai/title': 'Agent dial' } }], source: { appInstanceId: 'restored-context', server: 'mcp-apps-fixture' } } }), arrival: 'restored' } }

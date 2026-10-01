@@ -59,7 +59,7 @@ export function createDesktopMcpAppExecutor(options: {
       }
       return {}
     },
-    updateModelContext: async (context, signal) => { await execute({ operation: 'updateModelContext', context }, signal) },
+    updateModelContext: (context, signal) => execute({ operation: 'updateModelContext', context }, signal),
     openLink: async ({ url }, signal) => {
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App link cancelled')
       requestOpenExternalLink(url)

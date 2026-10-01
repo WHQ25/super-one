@@ -237,7 +237,7 @@ describe('MCP App host executor', () => {
   it('persists only the allowed context fields with host-authored source attribution', async () => {
     const s = setup({ fresh: true })
     expect(await s.run({ operation: 'updateModelContext', context: { structuredContent: { selected: 2 }, source: { appInstanceId: 'forged', server: 'forged' }, _meta: { secret: 'not-model' } } as never })).toMatchObject({ ok: true })
-    expect(s.target().app.modelContext).toEqual({ structuredContent: { selected: 2 }, source: { appInstanceId: 'view', server: 'fixture' } })
+    expect(s.target().app.modelContext).toEqual({ structuredContent: { selected: 2 }, source: { appInstanceId: 'view', server: 'fixture' }, updateId: expect.any(String) })
   })
 
   it('confirms every View-authored message and rejects the removed main-process link operation', async () => {
@@ -254,5 +254,60 @@ describe('MCP App host executor', () => {
     for (let i = 0; i < 3; i++) expect(await s.run(message, { challenge: challenge(await s.run(message)) })).toMatchObject({ ok: true })
     expect(await s.run(message, { challenge: challenge(await s.run(message)) })).toMatchObject({ ok: false, error: { code: 'denied' } })
     expect(s.ports.sendMessage).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('MCP App model context revisions and composer removal', () => {
+  const update: McpAppHostOperation = { operation: 'updateModelContext', context: { content: [{ type: 'text', text: 'first' }, { type: 'text', text: 'second' }, { type: 'text', text: 'background', annotations: { audience: ['assistant'] } }], structuredContent: { selected: true }, source: { appInstanceId: '', server: '' } } }
+  it('returns durable IDs, keeps identical updates idempotent and rejects stale removal after replacement', async () => {
+    const s = setup({ fresh: true })
+    const first = await s.run(update)
+    expect(first).toMatchObject({ ok: true, value: { updateId: expect.any(String) } })
+    const id = s.target().app.modelContext!.updateId!
+    expect(await s.run(update)).toMatchObject({ ok: true, value: { updateId: id } })
+    await s.run({ operation: 'updateModelContext', context: { ...update.context, content: [{ type: 'text', text: 'replacement' }] } })
+    expect(s.target().app.modelContext!.updateId).not.toBe(id)
+    expect(await s.run({ operation: 'removeModelContext', updateId: id, blockIndex: 0 })).toMatchObject({ ok: false, error: { code: 'invalid' } })
+    expect(s.target().app.modelContext!.content).toEqual([{ type: 'text', text: 'replacement' }])
+  })
+  it.each([{ kind: 'desktop' }, { kind: 'mobile', deviceId: 'phone' }] as const)('removes $kind history context without activating or contacting the provider', async requester => {
+    const s = setup()
+    s.change({ origin: undefined, modelContext: { ...update.context, updateId: 'old' } })
+    expect(await s.run({ operation: 'removeModelContext', updateId: 'old', blockIndex: 0 }, undefined, requester)).toMatchObject({ ok: true, value: { updateId: expect.any(String) } })
+    expect(s.provider).not.toHaveBeenCalled()
+    const id = s.target().app.modelContext!.updateId!
+    expect(s.target().app.modelContext!.content).toHaveLength(2)
+    expect(await s.run({ operation: 'removeModelContext', updateId: id, blockIndex: 0 }, undefined, requester)).toEqual({ ok: true, value: null })
+    expect(s.target().app.modelContext).toBeNull()
+    expect(s.provider).not.toHaveBeenCalled()
+  })
+  it('serializes competing removals so the same old revision cannot remove a second block', async () => {
+    const s = setup()
+    s.change({ modelContext: { ...update.context, updateId: 'old' } })
+    const results = await Promise.all([0, 1].map(blockIndex => s.run({ operation: 'removeModelContext', updateId: 'old', blockIndex })))
+    expect(results.filter(result => result.ok)).toHaveLength(1)
+    expect(s.target().app.modelContext!.content).toHaveLength(2)
+  })
+  it('bounds a blocked context write backlog before it can retain unbounded payloads', async () => {
+    const s = setup()
+    s.change({ modelContext: { ...update.context, updateId: 'old' } })
+    let unblock!: () => void
+    const blocked = new Promise<void>(resolve => { unblock = resolve })
+    const persist = s.ports.persist as ReturnType<typeof vi.fn>
+    const original = persist.getMockImplementation()!
+    persist.mockImplementationOnce(async (...args: unknown[]) => { await blocked; return original(...args) })
+    const pending = Array.from({ length: 33 }, () => s.run({ operation: 'removeModelContext', updateId: 'old', blockIndex: 0 }))
+    await expect(pending[32]).resolves.toMatchObject({ ok: false, error: { code: 'denied' } })
+    unblock()
+    await Promise.all(pending)
+  })
+
+  it('clears an empty replacement and refuses invalid image content before persistence', async () => {
+    const s = setup({ fresh: true })
+    await s.run(update)
+    expect(await s.run({ operation: 'updateModelContext', context: { content: [], source: { appInstanceId: '', server: '' } } })).toEqual({ ok: true, value: null })
+    expect(s.target().app.modelContext).toBeNull()
+    expect(await s.run({ operation: 'updateModelContext', context: { content: [{ type: 'image', mimeType: 'image/png', data: 'invalid' }], source: { appInstanceId: '', server: '' } } })).toMatchObject({ ok: false, error: { code: 'invalid' } })
+    expect(s.target().app.modelContext).toBeNull()
   })
 })

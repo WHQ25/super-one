@@ -6,6 +6,7 @@ import { CallToolResultSchema, ReadResourceResultSchema } from '@modelcontextpro
 import { assertMcpAppSize, MCP_APP_OUTPUT_MAX_BYTES, McpAppsError } from '../mcp-apps'
 import type { McpAppMessageParams, McpAppModelContext, McpAppReadResult, McpAppsCallResult, ToolAppAttachment, McpUiResourceMeta } from '../mcp-apps'
 import { McpAppMessageRequestSchema } from './message-schema'
+import { mcpAppContextState, type McpAppModelContextState } from '../mcp-app-model-context'
 import { createMcpAppDocument } from './document'
 import type { McpAppDocument } from './document'
 
@@ -14,7 +15,7 @@ export interface McpAppHostExecutor {
   callTool(request: { tool: string; args: Record<string, unknown> }, signal: AbortSignal): Promise<McpAppsCallResult>
   readResource(request: { uri: string }, signal: AbortSignal): Promise<McpAppReadResult>
   sendMessage(request: McpAppMessageParams, signal: AbortSignal): Promise<{ isError?: boolean }>
-  updateModelContext(context: McpAppModelContext, signal: AbortSignal): Promise<void>
+  updateModelContext(context: McpAppModelContext, signal: AbortSignal): Promise<McpAppModelContextState>
   openLink(request: { url: string }, signal: AbortSignal): Promise<{ isError?: boolean }>
   requestDisplayMode(mode: McpUiRequestDisplayModeRequest['params']['mode'], signal: AbortSignal): Promise<McpUiRequestDisplayModeRequest['params']['mode']>
 }
@@ -52,14 +53,22 @@ export interface McpAppHost {
 /** Load this leaf lazily. Neither the shared contracts nor CSP import the SDK at runtime. */
 export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
   const document = options.document ?? createMcpAppDocument()
-  const bridge = new AppBridge(null, { name: 'SuperOne', version: '1' }, options.capabilities, { hostContext: options.context })
+  const initialContext = { ...options.context, 'openai/modelContext': mcpAppContextState(options.app) }
+  const bridge = new AppBridge(null, { name: 'SuperOne', version: '1' }, options.capabilities, { hostContext: initialContext })
   const lifetime = new AbortController()
   let active = !options.restored
   let initialized = false
   let revoked = false
   let disposed: Promise<void> | undefined
   let app = options.app
-  let context = options.context
+  let context = initialContext
+  const contextChanged = (next: McpUiHostContext): void => {
+    if (revoked) return
+    // AppBridge retains this object for initialize; no notification may precede connect.
+    if (!initialized) { Object.assign(initialContext, next); context = initialContext; return }
+    context = next as typeof context
+    bridge.setHostContext(next)
+  }
   let sentInput = false
   let lastPartial = ''
   let lastResult = ''
@@ -113,14 +122,16 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
   }))
   bridge.onupdatemodelcontext = (params, extra) => execute(extra.signal, async signal => {
     // Whitelist the two model-facing fields; never inject tool result _meta.
-    const context: McpAppModelContext = {
+    const modelContext: McpAppModelContext = {
       ...(params.content ? { content: params.content } : {}),
       ...(params.structuredContent ? { structuredContent: params.structuredContent } : {}),
       source: { appInstanceId: app.appInstanceId, server: app.binding.server },
     }
-    assertMcpAppSize(context)
-    await options.executor.updateModelContext(context, signal)
-    return {}
+    assertMcpAppSize(modelContext)
+    const state = await options.executor.updateModelContext(modelContext, signal)
+    app = { ...app, modelContext: state ? { ...state, source: modelContext.source } : null }
+    contextChanged({ ...context, 'openai/modelContext': state })
+    return { _meta: { 'openai/modelContext': { updateId: state?.updateId ?? crypto.randomUUID() } } }
   })
   bridge.onopenlink = (params, extra) => execute(extra.signal, signal => {
     let url: URL
@@ -199,12 +210,11 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
       if (next.appInstanceId !== app.appInstanceId || JSON.stringify(next.binding) !== JSON.stringify(app.binding)) throw new McpAppsError('invalid', 'MCP App binding changed')
       assertMcpAppSize({ toolInput: next.toolInput, toolResult: next.toolResult })
       app = next
+      contextChanged({ ...context, 'openai/modelContext': mcpAppContextState(app) })
       return queue()
     },
     updateContext(next) {
-      const patch = Object.fromEntries(Object.entries(next).filter(([key, value]) => JSON.stringify(context[key as keyof McpUiHostContext]) !== JSON.stringify(value)))
-      context = next
-      if (!revoked && Object.keys(patch).length) bridge.sendHostContextChange(patch)
+      contextChanged({ ...next, 'openai/modelContext': context['openai/modelContext'] })
     },
     revoke,
     dispose() {

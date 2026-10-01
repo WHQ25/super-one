@@ -113,6 +113,8 @@ export class McpAppsError extends Error implements McpAppsErrorData {
 }
 
 export interface McpAppModelContext {
+  /** Host-authored revision; optional only for snapshots written by older hosts. */
+  updateId?: string
   content?: unknown[]
   structuredContent?: Record<string, unknown>
   /** Host-authored source attribution. */
@@ -133,6 +135,8 @@ export type McpAppHostOperation =
   /** Trusted host continuation after navigating to a confirmed new conversation. */
   | { operation: 'sendPreparedMessage'; pendingSend: string }
   | { operation: 'updateModelContext'; context: McpAppModelContext }
+  /** Trusted composer removal; not exposed to the View's AppBridge. */
+  | { operation: 'removeModelContext'; updateId: string; blockIndex?: number }
 
 export interface McpAppPreparedMessage { pendingSend: string; route: { projectPath: string; sessionId: string } }
 
@@ -159,7 +163,7 @@ export type McpAppHostResult<T = unknown> = McpAppsRpcResult<T> | {
 /** Only the host can author these persisted attachment fields. */
 export interface McpAppAttachmentUpdate {
   resource?: NonNullable<ToolAppAttachment['resource']>
-  modelContext?: McpAppModelContext
+  modelContext?: McpAppModelContext | null
   presentation?: McpAppPresentation
 }
 
@@ -175,7 +179,7 @@ export interface ToolAppAttachment {
   resource?: { html: string; meta: McpUiResourceMeta; hash: string }
   toolInput?: Record<string, unknown>
   toolResult?: McpAppToolResult
-  modelContext?: McpAppModelContext
+  modelContext?: McpAppModelContext | null
   status: 'pending' | 'result' | 'cancelled' | 'error'
   error?: McpAppsErrorData
 }

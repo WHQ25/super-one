@@ -38,7 +38,7 @@ export default function McpAppFrame(props: McpAppFrameProps) {
       transport: createMcpAppTransport(element.contentWindow!, props.registration.origin, window, document), document,
       restored: !latest.current.active, context: latest.current.context,
       // Permissions are deliberately ungranted, even if the resource requests them.
-      capabilities: { ...mcpAppMessageCapabilities, serverTools: {}, serverResources: {}, openLinks: {}, updateModelContext: { text: {} }, logging: {}, sandbox: { permissions: {}, csp: mcpAppCspDomains(props.meta.csp) } },
+      capabilities: { ...mcpAppMessageCapabilities, serverTools: {}, serverResources: {}, openLinks: {}, logging: {}, sandbox: { permissions: {}, csp: mcpAppCspDomains(props.meta.csp) } },
       onInitialized: () => latest.current.onInitialized(host.appCapabilities()?.availableDisplayModes ?? ['inline']),
       onError: error => latest.current.onError(error), onUnknownOutcome: () => latest.current.onUnknown(),
       onSizeChanged: size => { if (size.height) latest.current.onHeight(size.height) },

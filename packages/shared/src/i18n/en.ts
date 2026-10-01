@@ -3859,6 +3859,7 @@ export type Messages = {
     }
   }
   mcpApp: {
+    removeContext: string
     loading: string
     activate: string
     activateHint: string
@@ -7955,6 +7956,7 @@ export const en: Messages = {
     },
   },
   mcpApp: {
+    removeContext: 'Remove Context',
     loading: 'Loading app…',
     activate: 'Activate',
     activateHint: 'Restored from history. It does not reach the server until you activate it.',

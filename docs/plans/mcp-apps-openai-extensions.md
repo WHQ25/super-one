@@ -161,7 +161,7 @@ handoff survives the old View unmount but cannot be replayed or transferred
 to another View/device. Model input receives plain content without block
 metadata and real image/PDF attachments. Titled text and resources become
 labeled chips; untitled text remains ordinary bubble text. Other binary
-resources retain public URI/MIME/blob fields as text.
+resources contribute public URI/MIME/byte-size fields as text, without raw base64.
 
 A generic `ContextAttachments` component supports previews and removal,
 shared by confirmation cards and message bubbles and ready for the composer
@@ -196,3 +196,51 @@ View, and navigation unmounts its WebView. The shared handoff can be reused
 once the native shell owns that continuation. The current refusal is
 explicit; it never silently drops the requested message. Implementation
 order remains model context, UI resource caching, S1, then this phone gap.
+
+
+### Model context slice
+
+The shared host advertises `experimental["openai/modelContext"]` and all requested
+content kinds plus structured content. Durable per-View revisions are returned
+in `_meta["openai/modelContext"].updateId` and exposed in host context on initialize,
+remount and changes. Empty updates and user removal persist explicit `null`, so
+late provider attachment deltas cannot resurrect cleared state. Per-View context
+writes are serialized with bounded queues; stale chip revisions are refused.
+Trusted composer removal does not require a provider connection or activation.
+
+Context remains attached on every desktop/node model send until replaced or
+removed. Images use the existing real image input; block `_meta` is excluded from
+model input. Opaque binary resource blocks now contribute only URI, MIME type and
+byte size, retaining the labeled attachment without flooding the prompt with
+base64. SQLite restart tests cover two successive sends with actual images,
+metadata exclusion, removal and a second restart with no remaining context.
+
+Desktop and native phone composers use the generic attachment contract. Each
+visible block has its own chip and bounded preview. Assistant-only blocks and
+structured content stay in the background while visible blocks exist; removing
+the last visible chip clears them too. Background-only state produces one
+`<App title> context` chip per View, with an App icon and a bounded payload preview.
+The phone restores a thin authoritative context snapshot independently of its
+history pages, and reconciles cached and newly loaded pages against it. Removal
+keeps state visible until the durable host event arrives and exposes failures.
+
+Native SVG icons use the installed `react-native-svg` renderer (no per-icon
+WebView), with a 32 KiB URI limit, vector-only nodes and stripped external
+references. Tests use the actual Bits & Bolts SVG and cover base64, malformed,
+oversized and external-reference cases. Stories cover restored View state and
+generic/native composer loading, empty, error, removing, long and narrow states.
+
+Verification: the desktop/shared/executor/composer/remote selection passed
+169 tests across 13 files; an additional passive-history snapshot test passed in
+the 3-test remote restore file (170 tests total for the selection). Phone state,
+history and runtime selections passed 36 tests; native composer/attachment
+components passed 30 tests. CLI SQLite/image/clear/restart integration passed
+4 tests with both simulated harness runners. Desktop `typecheck:node` and
+`typecheck:web`, mobile `tsc --noEmit -p tsconfig.json`, CLI typecheck and standalone
+chat-view typecheck passed. Vitest in mobile/CLI needed sandbox escalation after
+localhost DNS failed before initialization. These are component and integration
+checks, not a real harness, WebView or device smoke.
+No live dev instance or screenshot has been produced; Bits & Bolts/model and
+physical-phone validation remain in S1 after the approved UI resource cache.
+Phone `target: new` remains deferred; model context does not require its navigation
+continuation.

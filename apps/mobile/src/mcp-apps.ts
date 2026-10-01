@@ -4,7 +4,7 @@ import type { McpAppsErrorCode } from '@superone/shared/mcp-apps'
 import { randomId } from './ids'
 
 /** What a phone View may ask the host for. Links open on the phone and never cross. */
-const OPERATIONS: ReadonlySet<string> = new Set<McpAppDeviceRequest['operation']>(['load', 'activate', 'callTool', 'readResource', 'sendMessage', 'updateModelContext'])
+const OPERATIONS: ReadonlySet<string> = new Set<McpAppDeviceRequest['operation']>(['load', 'activate', 'callTool', 'readResource', 'sendMessage', 'updateModelContext', 'removeModelContext'])
 
 /**
  * The chat document gives up after 120 s on a tool call and 30 s otherwise. The relay

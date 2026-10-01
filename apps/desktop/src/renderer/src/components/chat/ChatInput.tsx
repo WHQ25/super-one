@@ -48,6 +48,7 @@ import { useBrowserStore } from '@/stores/browser'
 import { buildImageAttachment } from './image-compress'
 import { ChatInputDirsHint } from './ChatInputDirsHint'
 import { ContextBar } from './ContextBar'
+import { McpAppContextAttachments } from './McpAppContextAttachments'
 import { ModelSelector } from './ModelSelector'
 import { AddDirPopup, type AddDirPopupHandle } from './AddDirPopup'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
@@ -2054,6 +2055,8 @@ export function ChatInput() {
         )}
 
         <BrowserAnnotationChips annotations={browserAnnotations} onRemove={removeBrowserAnnotation} onClear={clearBrowserAnnotations} />
+
+        <McpAppContextAttachments />
 
         <ContextBar
           contexts={miniAppContexts}

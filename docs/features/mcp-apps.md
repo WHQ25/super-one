@@ -82,7 +82,7 @@ the only View-to-host entry, used by desktop IPC and by the phone's
 - **Activation** is keyed by requester (`desktop` or `mobile:<deviceId>`).
   A View that arrives live activates automatically on the device showing it.
   A View restored from history paints from its snapshot without contacting the
-  provider. Any outbound operation returns `inactive` until the user presses
+  provider. View-originated outbound operations return `inactive` until the user presses
   Activate, which also re-checks the original provider, session and account.
 - **Remote first turn**: until the durable resume token is written, a node
   validates the live runtime's own Claude session id or Codex thread id.
@@ -92,7 +92,7 @@ the only View-to-host entry, used by desktop IPC and by the phone's
 | `tools/call` | App-visible tools on the bound server only. No host approval: the person operating the View has consented. Agent-initiated calls keep the harness's own approvals. An ambiguous dispatched call returns `unknown_outcome` and is never retried. |
 | `resources/read` | Bound server only. |
 | `ui/message` | Confirmed every time (host card with labeled attachments, single-use challenge bound to requester, View, message and binding). `openai/message` defaults to `target: active`, which uses the View's original session and normal queue/receipt. On desktop, `target: new` creates a conversation in the same project and harness, switches to it, then sends through that path. Phone supports `active` only and explicitly refuses `new`. Three messages per View per minute. |
-| `ui/update-model-context` | Per-View context entry in the original session, last write wins. It keeps `content` / `structuredContent` with source attribution and is added to the next model request. It never includes the tool result's private `_meta`. |
+| `ui/update-model-context` | Per-View context entry in the original session, last write wins. It keeps `content` / `structuredContent` with source attribution and accompanies every model request until replaced or removed. Each visible block is a removable composer attachment on desktop and phone; background-only state has one removable App context chip. The update result and `hostContext["openai/modelContext"]` carry `updateId`; cleared state is `null`. |
 | `ui/open-link` | The shared host accepts credential-free http(s) only. Desktop opens it through the standard external-link prompt (built-in or external browser); the phone uses the transcript link path. |
 | `ui/request-display-mode` | Allowed when the host offers the mode and, if the View declared `availableDisplayModes`, the View declared it too. An undeclared View's request counts as intent. Otherwise the answer is `inline`. |
 
@@ -103,10 +103,30 @@ that retains MCP request metadata before dispatching the OpenAI extension.
 Only immediate `send: true` is supported. Titled text/resources appear as
 labeled chips in confirmation cards and persisted user bubbles; untitled text
 is ordinary message text. Images and image/PDF resource blobs use actual turn
-attachments. Other resource blobs retain their public URI/MIME/blob data as
-model text. Block `_meta` never enters model input. Remote node transcript,
+attachments. Other resource blobs contribute only public URI, MIME type and byte size as
+model text; raw base64 is omitted. Block `_meta` never enters model input. Remote node transcript,
 live events and message catalogs preserve the same display override and
 attachments, including a host-originated bubble while another turn is draining.
+
+`experimental["openai/modelContext"]` and text/image/resourceLink/resource plus
+structured content are advertised by the shared host. Context images use actual
+model image input on every send; block `_meta` remains only in UI/View state.
+`openai/title` and safe `openai/thumbnail` shape the generic composer attachments.
+Assistant-only blocks and structured content stay in the background while visible
+blocks exist. Removing the last visible block clears all state for that View.
+With background-only state, one `<App title> context` chip offers a bounded
+preview and clears the whole View when removed. Trusted composer removal works
+without provider activation and emits `host-context-changed` with `null`.
+Stale chip revisions cannot remove a newer update. The host maintains the same
+state before initialize, after remount, and across SQLite/history restore.
+
+Phone restore includes a thin context snapshot independent of transcript pages,
+so context from an unloaded old View remains removable. Cached/history pages are
+reconciled against that snapshot to prevent a cleared context from reappearing.
+Native composer SVG data icons use capped (32 KiB) `SvgXml` vector rendering;
+scripts, event handlers and external image/reference/paint resources are omitted.
+Malformed icons fall back to the generic attachment icon. PNG/JPEG and HTTPS
+images use native `Image`; the composer creates no WebView per icon.
 
 Phone new-conversation messages remain an open compatibility gap. The native
 shell must retain the original route across navigation and complete the

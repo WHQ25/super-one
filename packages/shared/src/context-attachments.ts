@@ -5,6 +5,7 @@ export interface ContextAttachment {
   source?: string
   content?: string
   thumbnail?: string
+  previewImages?: Array<{ src: string; alt: string }>
 }
 
 /** Plain UTF-8 preview without splitting a multibyte character. */

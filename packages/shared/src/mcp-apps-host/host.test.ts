@@ -16,11 +16,11 @@ const attachment: ToolAppAttachment = {
 const cleanup: Array<() => Promise<unknown>> = []
 afterEach(async () => { await Promise.all(cleanup.splice(0).map(fn => fn())) })
 
-async function setup(restored = false, initial = attachment, appCapabilities: McpUiAppCapabilities = {}) {
+async function setup(restored = false, initial = attachment, appCapabilities: McpUiAppCapabilities = {}, beforeInitialize?: (host: McpAppHost) => Promise<void>) {
   const executor: McpAppHostExecutor = {
     callTool: vi.fn(async () => ({ result: attachment.toolResult!, outcome: 'completed' as const })),
     readResource: vi.fn(async () => ({ contents: [{ uri: attachment.resourceUri, text: 'html' }] })),
-    sendMessage: vi.fn(async () => ({})), updateModelContext: vi.fn(async () => {}),
+    sendMessage: vi.fn(async () => ({})), updateModelContext: vi.fn(async context => ({ ...context, updateId: 'update-1' })),
     openLink: vi.fn(async () => ({})), requestDisplayMode: vi.fn(async mode => mode),
   }
   const [hostTransport, viewTransport] = InMemoryTransport.createLinkedPair()
@@ -34,14 +34,15 @@ async function setup(restored = false, initial = attachment, appCapabilities: Mc
   const errors: unknown[] = []
   const unknownOutcome = vi.fn()
   const host = createMcpAppHost({ app: initial, transport: hostTransport, executor, restored,
-    context: { theme: 'dark' }, capabilities: { ...mcpAppMessageCapabilities, serverTools: {}, serverResources: {}, openLinks: {}, updateModelContext: { text: {} } },
+    context: { theme: 'dark' }, capabilities: { ...mcpAppMessageCapabilities, serverTools: {}, serverResources: {}, openLinks: {} },
     onError: error => errors.push(error),
     onUnknownOutcome: unknownOutcome,
   })
   cleanup.push(async () => { host.revoke(); await host.dispose(); await view.close() })
   await host.connect()
+  await beforeInitialize?.(host)
   await view.connect(viewTransport)
-  await host.update(initial)
+  if (!beforeInitialize) await host.update(initial)
   return { executor, host, view, notifications, results, errors, unknownOutcome }
 }
 
@@ -126,6 +127,27 @@ describe('MCP App shared host', () => {
     const { view, executor } = await setup()
     await view.updateModelContext({ content: [{ type: 'text', text: 'selected' }], structuredContent: { id: 'a' } })
     expect(executor.updateModelContext).toHaveBeenCalledWith({ content: [{ type: 'text', text: 'selected' }], structuredContent: { id: 'a' }, source: { appInstanceId: 'one', server: 'fixture' } }, expect.any(AbortSignal))
+  })
+
+  it('advertises rich context, restores its revision, returns updateId and notifies a clear', async () => {
+    const initial = { ...attachment, modelContext: { updateId: 'restored-id', content: [{ type: 'text', text: 'restored', _meta: { 'openai/title': 'Part' } }], source: { appInstanceId: 'one', server: 'fixture' } } }
+    const { view, host } = await setup(false, initial)
+    expect(view.getHostCapabilities()).toMatchObject({ experimental: { 'openai/modelContext': {} }, updateModelContext: { image: {}, resource: {}, resourceLink: {}, structuredContent: {} } })
+    expect(view.getHostContext()?.['openai/modelContext']).toMatchObject({ updateId: 'restored-id', content: initial.modelContext.content })
+    const result = await view.updateModelContext({ content: [{ type: 'text', text: 'new' }] })
+    expect(result._meta).toEqual({ 'openai/modelContext': { updateId: 'update-1' } })
+    const changes: unknown[] = []
+    view.onhostcontextchanged = params => { changes.push(params) }
+    await host.update({ ...initial, modelContext: null })
+    await vi.waitFor(() => expect(changes).toContainEqual({ 'openai/modelContext': null }))
+    const remount = await setup(true, { ...initial, modelContext: null })
+    expect(remount.view.getHostContext()?.['openai/modelContext']).toBeNull()
+  })
+
+  it('initializes with a removal that happened while the View was still loading', async () => {
+    const initial = { ...attachment, modelContext: { updateId: 'old', content: [{ type: 'text', text: 'Old' }], source: { appInstanceId: 'one', server: 'fixture' } } }
+    const { view } = await setup(false, initial, {}, host => host.update({ ...initial, modelContext: null }))
+    expect(view.getHostContext()?.['openai/modelContext']).toBeNull()
   })
 
   it('limits message loops and rejects unsafe links before calling the executor', async () => {

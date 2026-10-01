@@ -1,7 +1,7 @@
 import { parseMessageDisplay, type MessageDisplayFields } from '@superone/shared/message-display'
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import type { McpAppAttachmentUpdate } from '@superone/shared/mcp-apps'
-import { mcpAppModelContextText, mcpAppModelInput, validateMcpAppAttachmentUpdate } from '@superone/shared/mcp-apps-state'
+import { mcpAppModelContextInput, mcpAppModelInput, validateMcpAppAttachmentUpdate } from '@superone/shared/mcp-apps-state'
 import { McpAppAttachmentIndex } from './mcp-apps-index'
 import type { McpAppsResolvedAttachment } from '@superone/shared/environment/mcp-apps-state-rpc'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
@@ -183,7 +183,7 @@ interface HostActionWaiter {
 
 export class SessionRuntime {
   /** Host context changes invalidate this; ordinary sends do not rescan the event log. */
-  private readonly mcpAppContexts = new Map<string, string>()
+  private readonly mcpAppContexts = new Map<string, ReturnType<typeof mcpAppModelContextInput>>()
   private readonly mcpAppIndex = new McpAppAttachmentIndex()
   private readonly aborts = new Map<string, Set<AbortController>>()
   private readonly live = new Map<string, NodeSessionRecord>()
@@ -839,7 +839,7 @@ export class SessionRuntime {
     const patch: McpAppAttachmentUpdate = {
       ...(update.resource ? { resource: update.resource } : {}),
       ...(update.presentation ? { presentation: update.presentation } : {}),
-      ...(update.modelContext ? { modelContext: { ...update.modelContext, source: { appInstanceId, server: binding.server } } } : {}),
+      ...(update.modelContext !== undefined ? { modelContext: update.modelContext ? { ...update.modelContext, source: { appInstanceId, server: binding.server } } : null } : {}),
     }
     validateMcpAppAttachmentUpdate(patch)
     this.events.appendSession({ sessionId, eventType: SESSION_DURABLE_EVENT.agentEvent, payload: {
@@ -848,10 +848,10 @@ export class SessionRuntime {
     this.mcpAppContexts.delete(sessionId)
   }
 
-  private mcpAppContextText(sessionId: string): string {
+  private mcpAppContextInput(sessionId: string): ReturnType<typeof mcpAppModelContextInput> {
     const cached = this.mcpAppContexts.get(sessionId)
     if (cached !== undefined) return cached
-    const text = mcpAppModelContextText(this.mcpAppMessageCatalog(sessionId))
+    const text = mcpAppModelContextInput(this.mcpAppMessageCatalog(sessionId))
     this.mcpAppContexts.set(sessionId, text)
     return text
   }
@@ -1258,13 +1258,14 @@ export class SessionRuntime {
         ? opts.sandboxMode.trim()
         : undefined
     try {
+      const modelInput = mcpAppModelInput({ text: opts.text, images: opts.images?.map(image => ({ ...image, name: image.name ?? 'Attachment' })) }, this.mcpAppContextInput(session.sessionId))
       const result = await this.turnRunner({
         session: this.clone(session),
         messageId: assistantId,
-        text: mcpAppModelInput({ text: opts.text }, this.mcpAppContextText(session.sessionId)).text,
+        text: modelInput.text,
         model: opts.model && opts.model.trim() ? opts.model.trim() : undefined,
         effort: opts.effort && opts.effort.trim() ? opts.effort.trim() : undefined,
-        images: opts.images && opts.images.length > 0 ? opts.images : undefined,
+        images: modelInput.images?.length ? modelInput.images : undefined,
         permissionMode,
         sandboxMode,
         additionalDirectories: opts.additionalDirectories?.filter(Boolean),

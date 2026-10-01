@@ -35,6 +35,16 @@ describe('model context at the desktop send boundary', () => {
     expect(codex.codex?.mode).toBe('run')
     expect(withMcpAppContext({ content: 'question' }, messages).content).toContain('Selected item-4')
   })
+  it('sends image context as real backend attachment input with no base64 or block metadata in prompts', async () => {
+    const { session, send } = host('codex')
+    session.emitHostEvent({ type: 'mcp_app_updated', messageId: 'message', appInstanceId: 'view', update: { modelContext: { updateId: 'r1', source: { appInstanceId: 'view', server: 'fixture' }, content: [{ type: 'image', mimeType: 'image/png', data: 'iVBORw0KGgo=', _meta: { private: 'block-private' } }] } } })
+    await session.send({ content: 'question', codex: { prompt: 'explicit question' } })
+    const request = send.mock.calls[0]![0]
+    expect(request.images).toMatchObject([{ mimeType: 'image/png', base64: 'iVBORw0KGgo=' }])
+    expect(request.codex?.prompt).not.toMatch(/iVBORw0KGgo|block-private/)
+    expect(session.snapshot.messages.at(-1)?.attachments).toBeUndefined()
+  })
+
   it('keeps sends without App context unchanged', () => {
     const request = { content: 'hello', codex: { prompt: 'hello' } }
     expect(withMcpAppContext(request, [])).toBe(request)

@@ -3952,6 +3952,7 @@ export const zh: Messages = {
     },
   },
   mcpApp: {
+    removeContext: '移除上下文',
     loading: '正在加载应用…',
     activate: '激活',
     activateHint: '从历史记录恢复。激活前不会访问服务器。',

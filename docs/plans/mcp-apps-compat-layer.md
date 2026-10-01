@@ -116,6 +116,33 @@ Scope: phase 1, local Cursor sessions and the MCP Apps fixture. Branch:
   Cursor config tests. Node/web typechecks and `git diff --check` passed.
   The settings preview tab and Storybook server were closed after verification.
 
+## Shared-contract rebase (2026-10-01)
+
+- Rebased the pilot onto `9bc78a5ac`, including the model-context / `ui/message`,
+  CAS resource, Codex catalog-refresh and forms work. Resolved the feature-doc
+  overlap by retaining both the shared lifecycle description and compat record
+  correlation. No shared contract or executor implementation changes needed.
+- Compat implements `tools({ refresh: true })` for the shared gate's missing-tool
+  retry. Default reads stay cached; concurrent refreshes share one paginated
+  request chain with a 10-second deadline, 100-page bound and 10-second cooldown.
+  Refreshed descriptors keep server attribution and normalized visibility.
+  Known visibility denials never trigger discovery.
+- Moved `boundedToolAppAttachment` into the record boundary so every producer
+  follows the shared omission policy. Initial results can use the same 8 MiB
+  transient output ceiling as View calls; above the 1 MiB persisted-data budget,
+  the record marks the omitted result and keeps the working View.
+- The production compat path already uses the shared executor's CAS persistence.
+  Updated the fixture integration to use the actual resource store: saved
+  attachments contain only hash/meta, a new store hydrates HTML from disk without
+  a provider call, and Activate preserves the saved hash. A shared delta-merge
+  regression checks that late tool results preserve CAS and model context.
+- Verification: the original seven compat files plus Cursor runtime and
+  settings regressions passed (90 tests / 10 desktop files), as did the seven
+  Cursor config tests, node/web typechecks and `git diff --check`. The package
+  config run needed unsandboxed execution after sandbox DNS failed to resolve
+  localhost. The accepted live Cursor API-key boundary is unchanged; no new
+  GUI or model claim is made by these integration tests.
+
 ## Remaining live checks
 
 **The Cursor live model turn is not verified.** The isolated profile has no

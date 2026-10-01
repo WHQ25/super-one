@@ -167,9 +167,22 @@ sequenceDiagram
   Unclaimed records expire after five minutes even if the session is idle;
   each session retains at most 32 and evicts the oldest when full. Expired or
   evicted markers cannot attach a View; already attached records are unaffected.
-- **Result data (phase 1):** the View reads the original complete result from
-  the host record. The MCP reply retains structured content for clients that
-  carry it, plus a bounded text summary for Cursor; private `_meta` never
-  enters the model reply.
+- **Catalog refresh (phase 1):** ordinary provider reads use the session's
+  cached catalog. The shared View gate requests one refresh when a tool is
+  missing; concurrent refreshes share a paginated `tools/list`, bounded to
+  10 seconds / 100 pages, with a 10-second cooldown. Known visibility denials
+  never refresh. Refreshed descriptors retain visibility normalization and
+  server attribution; app-only tools stay out of `miniapp_list`.
+- **Result data (phase 1):** the View reads the original result from the
+  bounded host record. Initial results beyond the shared 1 MiB attachment
+  budget retain a working View with `toolResultOmitted`, instead of changing
+  a completed call into an error. The MCP reply retains structured content for
+  clients that carry it, plus a bounded text summary for Cursor; private `_meta`
+  never enters the model reply.
+- **History (phase 1):** compat uses the existing executor's CAS path. Saved
+  resources contain hash/meta, and cold restoration hydrates HTML from disk
+  without a provider call. The shared attachment merge preserves that resource
+  reference and model context across later tool-result deltas. Activate enables
+  outbound calls without replacing the saved hash.
 
 Execution and evidence: [phase 1 log](../plans/mcp-apps-compat-layer.md).

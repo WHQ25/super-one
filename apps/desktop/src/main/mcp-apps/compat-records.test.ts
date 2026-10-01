@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AgentEvent } from '@superone/shared/agent-types'
+import type { AgentEvent, ContentBlock } from '@superone/shared/agent-types'
+import { MCP_APP_DATA_MAX_BYTES } from '@superone/shared/mcp-apps'
+import { mcpAppEventAttachment } from '@superone/shared/mcp-apps-state'
+import { applyContentDelta } from '@superone/shared/content-delta'
 import { mapInteractionUpdate } from '@superone/cursor'
 import { CompatRecords } from './compat-records'
 
@@ -58,6 +61,21 @@ describe('compatibility App record correlation', () => {
       ] } },
     } } as never).map(event => records.attach(event))
     expect(events.at(-1)).toMatchObject({ delta: { app: { appInstanceId: record.id, harnessCallId: 'cursor-call' } } })
+  })
+
+  it('bounds records before attachment and preserves CAS/context through the shared delta merge', () => {
+    const records = new CompatRecords('s')
+    const record = records.record({ ...app, toolResult: { content: [{ type: 'text', text: 'x'.repeat(MCP_APP_DATA_MAX_BYTES) }] } })
+    records.attach(start('call'))
+    const initial = mcpAppEventAttachment(records.attach(result('call', record.marker)))!
+    expect(initial).toMatchObject({ status: 'result', toolResult: undefined, toolResultOmitted: { reason: 'size_limit' } })
+    const resource = { hash: 'a'.repeat(64), meta: { prefersBorder: true } }
+    const modelContext = { content: [{ type: 'text', text: 'Selected item' }], source: { appInstanceId: record.id, server: 'fixture' } }
+    const previous: ContentBlock = { type: 'tool_result', toolUseId: 'call', summary: record.marker,
+      app: { ...initial, resource, modelContext } }
+    const merged = applyContentDelta([previous], { type: 'tool_result', toolUseId: 'call', summary: 'final', app: initial })
+    expect(merged.at(-1)).toMatchObject({ app: { resource, modelContext, toolResultOmitted: initial.toolResultOmitted } })
+    records.clear()
   })
 
   it('evicts the oldest unclaimed record above 32 while keeping all newer records claimable', () => {

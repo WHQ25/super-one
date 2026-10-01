@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
-import { McpAppsError, MCP_APPS_EXTENSION, assertMcpAppSize, boundedToolAppAttachment, mcpAppResourceUri,
+import { McpAppsError, MCP_APPS_EXTENSION, assertMcpAppSize, mcpAppResourceUri,
   MCP_APP_HTML_MAX_BYTES, MCP_APP_DATA_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES,
   type McpAppToolResult, type McpToolDescriptor, type McpAppsProvider, type McpAppsBinding, type McpAppOrigin,
 } from '@superone/shared/mcp-apps'
@@ -18,6 +18,7 @@ import { CompatRecords } from './compat-records'
 import { getCompatSession, setCompatSession, type CompatSession } from './compat-registry'
 
 const DISCOVERY_TIMEOUT_MS = 10_000
+const TOOLS_REFRESH_COOLDOWN_MS = 10_000
 /** Non-App servers need only one probe per node/config, not one extra spawn per session. */
 const discovery = new Map<string, { configKey: string; isApp: boolean }>()
 const preparing = new Map<string, { key: string; session: LocalCompatSession; promise: Promise<CompatSession> }>()
@@ -37,6 +38,22 @@ function normalizeTool(tool: McpToolDescriptor): McpToolDescriptor {
   return { ...tool, _meta: { ...tool._meta, ui: { ...(ui && typeof ui === 'object' ? ui : {}), visibility: [] } } }
 }
 
+async function readTools(client: Client): Promise<Map<string, McpToolDescriptor>> {
+  const tools = new Map<string, McpToolDescriptor>()
+  const serverInfo = client.getServerVersion()
+  const deadline = Date.now() + DISCOVERY_TIMEOUT_MS
+  let cursor: string | undefined
+  for (let page = 0; page < 100; page++) {
+    const timeout = deadline - Date.now()
+    if (timeout <= 0) throw new McpAppsError('timeout', 'MCP Apps tool discovery timed out')
+    const result = await client.listTools(cursor ? { cursor } : undefined, { timeout })
+    for (const tool of result.tools as McpToolDescriptor[]) tools.set(tool.name, { ...normalizeTool(tool), serverInfo })
+    cursor = result.nextCursor
+    if (!cursor) return tools
+  }
+  throw new McpAppsError('invalid', 'MCP tool discovery exceeded pagination limit')
+}
+
 export function compatConfigFingerprint(cwd: string, config: McpServerConfig): string {
   return createHash('sha256').update(JSON.stringify({ cwd, type: config.type,
     server: mcpServerConfigFingerprint(config) })).digest('hex')
@@ -47,6 +64,8 @@ interface Connection {
   binding: McpAppsBinding
   client: Client
   tools: Map<string, McpToolDescriptor>
+  toolsRefresh?: Promise<Map<string, McpToolDescriptor>>
+  lastToolsRefresh: number
   connected: boolean
 }
 
@@ -88,28 +107,19 @@ export class LocalCompatSession implements CompatSession {
       const tools = await Promise.race([
         (async () => {
           await client.connect(transport)
-          const tools: McpToolDescriptor[] = []
-          let cursor: string | undefined
-          do {
-            const page = await client.listTools(cursor ? { cursor } : undefined)
-            tools.push(...(page.tools as McpToolDescriptor[]).map(normalizeTool))
-            cursor = page.nextCursor
-          } while (cursor)
-          return tools
+          return readTools(client)
         })(),
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => reject(new McpAppsError('timeout', 'MCP Apps discovery timed out')), this.discoveryTimeoutMs)
         }),
       ])
-      const isApp = tools.some(tool => tool._meta?.ui !== undefined || !!mcpAppResourceUri(tool))
+      const isApp = [...tools.values()].some(tool => tool._meta?.ui !== undefined || !!mcpAppResourceUri(tool))
       discovery.set(key, { configKey, isApp })
       if (!isApp || this.closed) { await client.close(); this.clients.delete(client); return }
-      const serverInfo = client.getServerVersion()
       const binding: McpAppsBinding = { node: 'local', session: this.sessionId, server: config.name,
         configGeneration: 0, configFingerprint: fingerprint }
       const appId = `mcp-app:${config.name}:${fingerprint.slice(0, 16)}`
-      const connection: Connection = { appId, binding, client, connected: true,
-        tools: new Map(tools.map(tool => [tool.name, { ...tool, serverInfo }])) }
+      const connection: Connection = { appId, binding, client, connected: true, tools, lastToolsRefresh: -Infinity }
       client.onclose = () => { connection.connected = false }
       this.connections.set(appId, connection)
       this.omittedServers.add(config.name)
@@ -137,6 +147,19 @@ export class LocalCompatSession implements CompatSession {
     return connection
   }
 
+  private refreshTools(connection: Connection): Promise<Map<string, McpToolDescriptor>> {
+    if (connection.toolsRefresh) return connection.toolsRefresh
+    if (Date.now() - connection.lastToolsRefresh < TOOLS_REFRESH_COOLDOWN_MS) return Promise.resolve(connection.tools)
+    connection.lastToolsRefresh = Date.now()
+    const refresh = readTools(connection.client).then(tools => {
+      this.connection(connection.appId)
+      connection.tools = tools
+      return tools
+    }).finally(() => { if (connection.toolsRefresh === refresh) connection.toolsRefresh = undefined })
+    connection.toolsRefresh = refresh
+    return refresh
+  }
+
   async call(appId: string, toolName: string, input: Record<string, unknown>): Promise<MiniappToolReply> {
     const connection = this.connection(appId)
     const tool = connection.tools.get(toolName)
@@ -148,13 +171,13 @@ export class LocalCompatSession implements CompatSession {
     catch (error) {
       throw new McpAppsError('unknown_outcome', `MCP App call was dispatched; do not retry: ${error instanceof Error ? error.message : String(error)}`)
     }
-    assertMcpAppSize(result)
+    assertMcpAppSize(result, MCP_APP_OUTPUT_MAX_BYTES)
     const resourceUri = mcpAppResourceUri(tool)
-    const record = resourceUri ? this.records.record(boundedToolAppAttachment({
-      appInstanceId: '', binding: connection.binding, origin: { providerSessionId: this.sessionId },
+    const record = resourceUri ? this.records.record({
+      binding: connection.binding, origin: { providerSessionId: this.sessionId },
       resourceUri, toolName, presentation: mcpAppPresentation(tool), toolInput: input, toolResult: result,
       status: result.isError ? 'error' : 'result',
-    })) : undefined
+    }) : undefined
     return {
       content: [
         ...(record ? [{ type: 'text' as const, text: record.marker }] : []),
@@ -183,7 +206,7 @@ export class LocalCompatSession implements CompatSession {
     return {
       binding,
       ready: async signal => { check(signal); return { mode: 'gateway', resourceRead: true, toolCall: true, authenticate: false } },
-      tools: async () => { check(); return connection.tools },
+      tools: async options => { check(); return options?.refresh ? this.refreshTools(connection) : connection.tools },
       readResource: async (req, signal) => {
         check(signal)
         const result = await connection.client.readResource({ uri: req.uri }, { signal })

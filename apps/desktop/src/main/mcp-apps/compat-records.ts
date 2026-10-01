@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@superone/shared/agent-types'
-import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { boundedToolAppAttachment, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 
 const CALL_NAME = 'mcp__superone__miniapp_call'
 const MAX_PENDING_RECORDS = 32
@@ -20,7 +20,7 @@ export class CompatRecords {
     this.pruneExpired()
     if (this.pending.size >= MAX_PENDING_RECORDS) this.pending.delete(this.pending.keys().next().value!)
     const id = randomUUID()
-    this.pending.set(id, { app: { ...app, appInstanceId: id, gatewayCallId: id }, expiresAt: Date.now() + PENDING_TTL_MS })
+    this.pending.set(id, { app: boundedToolAppAttachment({ ...app, appInstanceId: id, gatewayCallId: id }), expiresAt: Date.now() + PENDING_TTL_MS })
     this.scheduleExpiry()
     return { id, marker: `[superone-mcp-app:${id}]` }
   }

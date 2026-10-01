@@ -402,7 +402,12 @@ function exceedsSize(root: unknown, limit: number): boolean {
   while (stack.length) {
     const item = stack.pop()
     if (typeof item === 'string') size += item.length
-    else if (item !== null && typeof item === 'object') {
+    else if (Array.isArray(item)) {
+      // `for…in` would enumerate every index up front; one per entry is a lower bound to check first.
+      size += item.length
+      if (size > limit) return true
+      for (let i = 0; i < item.length; i++) stack.push(item[i])
+    } else if (item !== null && typeof item === 'object') {
       for (const key in item) {
         size += key.length + 1
         if (size > limit) return true

@@ -44,6 +44,23 @@ describe('form size caps', () => {
     expect(parseSchemaForm({ type: 'object', properties: { f: { type: 'string', oneOf: options } } }))
       .toEqual({ supported: false, reason: 'the schema is too large' })
   })
+
+  it('rejects a huge array by its length without enumerating it', () => {
+    const touched = { indices: 0, keys: 0 }
+    const huge = new Proxy(new Array<null>(5_000_000).fill(null), {
+      get: (target, key, receiver) => {
+        if (typeof key === 'string' && /^\d+$/.test(key)) touched.indices++
+        return Reflect.get(target, key, receiver)
+      },
+      ownKeys: (target) => {
+        touched.keys++
+        return Reflect.ownKeys(target)
+      },
+    })
+    expect(parseSchemaForm({ type: 'object', properties: { f: { type: 'string', 'x-vendor': huge } } }))
+      .toEqual({ supported: false, reason: 'the schema is too large' })
+    expect(touched).toEqual({ indices: 0, keys: 0 })
+  })
 })
 
 describe('one budget for compiling and matching', () => {

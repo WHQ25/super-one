@@ -57,3 +57,19 @@ it('rejects a configuration changed during tool discovery before mcp_call', asyn
   hoisted.captured.mockQueryMcpServerStatus.mockResolvedValue([{ name: 'cad', status: 'connected', config: { ...config, command: 'changed' }, tools: [{ name: 'next' }] }])
   await expect(provider.tools()).rejects.toMatchObject({ code: 'not_connected' })
 })
+
+it('ignores old runtime status arriving after revive and keeps the old View disconnected', async () => {
+  const { backend, provider } = await start()
+  let finish!: (value: unknown[]) => void
+  hoisted.captured.mockQueryMcpServerStatus.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const oldStatus = backend.getMcpServerStatus()
+  await vi.waitFor(() => expect(finish).toBeDefined())
+  hoisted.captured.iterationDone?.resolve()
+  await backend.releaseRuntime('idle')
+  hoisted.captured.mockQueryMcpServerStatus.mockResolvedValue([{ name: 'cad', status: 'connected', config: { ...config, command: 'new-server' }, tools: [{ name: 'next' }] }])
+  const read = () => provider.readResource({ uri: 'ui://cad', origin }, new AbortController().signal)
+  await expect(read()).rejects.toMatchObject({ code: 'not_connected', message: 'MCP App server configuration changed' })
+  finish([{ name: 'cad', status: 'connected', config, tools: [{ name: 'next' }] }])
+  expect(await oldStatus).toEqual([])
+  await expect(read()).rejects.toMatchObject({ code: 'not_connected', message: 'MCP App server configuration changed' })
+})

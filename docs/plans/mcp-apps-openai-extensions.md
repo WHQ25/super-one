@@ -579,6 +579,12 @@ Codex provider package: 15. Desktop `typecheck:node` and `git diff --check` pass
 Package/CLI Vitest required an unrestricted rerun after sandbox localhost DNS
 blocked initialization. No live acceptance rerun was performed for this fix.
 
+A follow-up also ignores server-status/catalog responses belonging to a released
+Claude query and marks a runtime checked only after its identity passes. This
+prevents a delayed old status response from overwriting the revived server's
+identity. The desktop binding/provider selection passed 105 tests with this
+out-of-order response scenario, and `typecheck:node` passed.
+
 ### Pre-merge review: phone consent cancellation
 
 The portable executor now carries the View lifetime's AbortSignal through every

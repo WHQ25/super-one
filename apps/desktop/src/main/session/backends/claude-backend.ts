@@ -376,7 +376,7 @@ export class ClaudeBackend implements SessionBackend {
     if (!query) return Promise.resolve()
     return this.mcpAppsCatalog.refresh(async () => {
       const statuses = await withDeadline(query.mcpServerStatus(), MCP_APPS_CATALOG_TIMEOUT_MS)
-      return statuses === DEADLINE_EXCEEDED ? undefined : statuses
+      return statuses === DEADLINE_EXCEEDED || query !== this.query ? undefined : statuses
     }, {
       force: opts.force,
       onError: (err) => log.warn('[ClaudeBackend] MCP Apps catalog refresh failed: %s', err instanceof Error ? err.message : String(err)),
@@ -868,6 +868,7 @@ export class ClaudeBackend implements SessionBackend {
         if (statuses === DEADLINE_EXCEEDED) throw new McpAppsError('not_connected', 'MCP App server identity refresh timed out')
         if (current !== this.query) throw new McpAppsError('inactive', 'MCP App runtime changed')
         this.mcpAppsCatalog.update(statuses)
+        assertBinding()
         checkedRuntime = current
       }
       assertBinding()
@@ -898,6 +899,7 @@ export class ClaudeBackend implements SessionBackend {
     if (!query) return []
     try {
       const statuses = await query.mcpServerStatus()
+      if (query !== this.query) return []
       this.mcpAppsCatalog.update(statuses)
       return statuses.map((s) => ({
         name: s.name,

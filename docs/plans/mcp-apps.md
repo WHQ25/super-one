@@ -592,4 +592,11 @@ Regression evidence: nine lifecycle/ownership Vitest cases, native Electron
 Dockview tests with main + floating claims and hidden-main layout across five
 exit paths, and a native hidden-container park/reveal case. Browser checks
 cover fullscreen → PiP → inline, Shrink → inline and visibility resumption.
-A real App restart and two-row return check remain the final verification.
+Real App verification after restarting at `7218a43f8`: the public Excalidraw
+Claude View entered via Edit, then returned through the standard Shrink.
+Repeated protocol fullscreen requests from that same real iframe exercised
+Shrink and tab close with both the main transcript and App-mounted ChatPanel.
+Both returned to the visible main row with the same iframe element and
+`contentWindow`, zero additional loads and no window errors. The fixture's
+other exit paths remain separate evidence; the broader acceptance matrix
+is still pending.

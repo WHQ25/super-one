@@ -1,6 +1,6 @@
 import type { AgentEvent, ContentBlock } from './agent-types'
 import { assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, McpAppsError } from './mcp-apps'
-import type { McpAppAttachmentUpdate, McpAppToolApproval, ToolAppAttachment } from './mcp-apps'
+import type { McpAppAttachmentUpdate, ToolAppAttachment } from './mcp-apps'
 
 /** Works with desktop transcripts and the node's denser message catalog. */
 export interface McpAppMessage {
@@ -35,24 +35,13 @@ export function findMcpAppAttachment(messages: readonly McpAppMessage[], appInst
   return undefined
 }
 
-/** Session-owned consent can be reused by another View of the same bound server/tool. */
-export function mcpAppSessionApprovals(messages: readonly McpAppMessage[]): McpAppToolApproval[] {
-  const approvals = new Map<string, McpAppToolApproval>()
-  for (const message of messages) for (const app of mcpAppMessageAttachments(message)) for (const value of app.approvedTools ?? []) {
-    const key = JSON.stringify([value.node, value.session, value.server, value.account, value.configFingerprint, value.tool])
-    approvals.set(key, value)
-  }
-  return [...approvals.values()]
-}
-
 /** Keep host state when a native provider sends the next input/result delta. */
 export function mergeMcpAppAttachment(previous: ToolAppAttachment | undefined, next: ToolAppAttachment | undefined): ToolAppAttachment | undefined {
   if (!previous || !next || previous.appInstanceId !== next.appInstanceId) return next ?? previous
   const identity = (app: ToolAppAttachment): string => JSON.stringify([app.binding.node, app.binding.session, app.binding.server, app.binding.account,
     app.binding.configGeneration, app.binding.configFingerprint, app.resourceUri, app.origin?.providerSessionId, app.origin?.originCallId])
   if (identity(previous) !== identity(next)) return next
-  return { ...next, resource: previous.resource ?? next.resource, modelContext: previous.modelContext ?? next.modelContext,
-    approvedTools: previous.approvedTools ?? next.approvedTools }
+  return { ...next, resource: previous.resource ?? next.resource, modelContext: previous.modelContext ?? next.modelContext }
 }
 
 export function validateMcpAppAttachmentUpdate(update: McpAppAttachmentUpdate): void {
@@ -62,20 +51,18 @@ export function validateMcpAppAttachmentUpdate(update: McpAppAttachmentUpdate): 
     }
     assertMcpAppSize({ meta: update.resource.meta, hash: update.resource.hash })
   }
-  assertMcpAppSize({ modelContext: update.modelContext, approvedTools: update.approvedTools })
+  assertMcpAppSize({ modelContext: update.modelContext })
 }
 
 /** Changes only existing attachments, preserving every provider-authored identity field. */
 export function updateMcpAppAttachments<T extends McpAppMessage>(messages: readonly T[], appInstanceId: string, update: McpAppAttachmentUpdate): T[] {
   validateMcpAppAttachmentUpdate(update)
   const patch = { ...(update.resource ? { resource: update.resource } : {}),
-    ...(update.modelContext ? { modelContext: update.modelContext } : {}),
-    ...(update.approvedTools ? { approvedTools: update.approvedTools } : {}) }
+    ...(update.modelContext ? { modelContext: update.modelContext } : {}) }
   const replace = <B>(block: B): B => {
     const app = record(block).app as ToolAppAttachment | undefined
     if (app?.appInstanceId !== appInstanceId) return block
-    const approvals = update.approvedTools ? [...new Map([...(app.approvedTools ?? []), ...update.approvedTools].map(value => [JSON.stringify(value), value])).values()] : app.approvedTools
-    return { ...block, app: { ...app, ...patch, ...(approvals ? { approvedTools: approvals } : {}) } }
+    return { ...block, app: { ...app, ...patch } }
   }
   return messages.map(message => {
     if (!mcpAppMessageAttachments(message).some(app => app.appInstanceId === appInstanceId)) return message

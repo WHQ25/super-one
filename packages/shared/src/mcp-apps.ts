@@ -109,10 +109,7 @@ export interface McpAppModelContext {
 }
 
 /** Host-authored approval details. Render previews as plain text, never as View HTML. */
-export type McpAppApprovalPrompt =
-  | { kind: 'callTool'; server: string; tool: string; toolTitle?: string; argsPreview: string; rememberable: boolean }
-  | { kind: 'sendMessage'; server: string; text: string; nonTextBlocks: number }
-  | { kind: 'openLink'; server: string; url: string }
+export type McpAppApprovalPrompt = { kind: 'sendMessage'; server: string; text: string; nonTextBlocks: number }
 
 export type McpAppHostOperation =
   | { operation: 'load' }
@@ -121,8 +118,6 @@ export type McpAppHostOperation =
   | { operation: 'readResource'; uri: string }
   | { operation: 'sendMessage'; params: McpUiMessageRequest['params'] }
   | { operation: 'updateModelContext'; context: McpAppModelContext }
-  /** Desktop only. The phone confirms and opens links locally. */
-  | { operation: 'openLink'; url: string }
 
 /** The host resolves the attachment and binding; callers supply only scoped View identity. */
 export type McpAppHostRequest = McpAppHostOperation & {
@@ -131,7 +126,7 @@ export type McpAppHostRequest = McpAppHostOperation & {
   appInstanceId: string
   /** Lookup hint only; the host verifies the owning message. */
   messageId?: string
-  approval?: { challenge: string; remember?: boolean }
+  approval?: { challenge: string }
 }
 
 export type McpAppRequester = { kind: 'desktop' } | { kind: 'mobile'; deviceId: string; transport?: 'lan' | 'relay' }
@@ -144,21 +139,10 @@ export type McpAppHostResult<T = unknown> = McpAppsRpcResult<T> | {
   error: { code: 'approval_required'; challenge: string; prompt: McpAppApprovalPrompt }
 }
 
-/** Session-scoped consent; credentials and configuration generations are never stored here. */
-export interface McpAppToolApproval {
-  node: string
-  session: string
-  server: string
-  account?: string
-  configFingerprint: string
-  tool: string
-}
-
 /** Only the host can author these persisted attachment fields. */
 export interface McpAppAttachmentUpdate {
   resource?: NonNullable<ToolAppAttachment['resource']>
   modelContext?: McpAppModelContext
-  approvedTools?: McpAppToolApproval[]
 }
 
 export interface ToolAppAttachment {
@@ -172,8 +156,6 @@ export interface ToolAppAttachment {
   toolInput?: Record<string, unknown>
   toolResult?: McpAppToolResult
   modelContext?: McpAppModelContext
-  /** Private host consent state; not part of the AppBridge payload. */
-  approvedTools?: McpAppToolApproval[]
   status: 'pending' | 'result' | 'cancelled' | 'error'
   error?: McpAppsErrorData
 }

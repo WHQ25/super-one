@@ -9,9 +9,10 @@ export const PORTABLE_BLOCK_CLASS = 'my-2 w-full px-1'
 
 export function PortableBlockHeader({ icon, title, children }: { icon?: ReactNode; title: string; children?: ReactNode }) {
   return (
-    <div className="mb-1 flex h-6 items-center gap-1.5 px-0.5">
+    // Right-aligned like the desktop's, so the block's content keeps the reply's left edge.
+    <div className="mb-1 flex h-6 items-center justify-end gap-1.5 px-0.5 text-xs text-muted-foreground/70">
       {icon}
-      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground/70">{title}</span>
+      <span className="min-w-0 truncate">{title}</span>
       {children}
     </div>
   )

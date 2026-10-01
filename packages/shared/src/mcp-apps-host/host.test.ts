@@ -64,7 +64,7 @@ describe('MCP App shared host', () => {
   })
 
   it('paints restored results but gates every executor until explicit activation', async () => {
-    const { host, view, executor, notifications } = await setup(true)
+    const { host, view, executor, notifications, errors } = await setup(true)
     expect(notifications).toEqual(['input', 'result:view-only'])
     await expect(view.callServerTool({ name: 'next' })).rejects.toThrow('Activate')
     await expect(view.readServerResource({ uri: 'ui://fixture/items' })).rejects.toThrow('Activate')
@@ -72,6 +72,8 @@ describe('MCP App shared host', () => {
     expect(executor.callTool).not.toHaveBeenCalled()
     expect(executor.readResource).not.toHaveBeenCalled()
     expect(executor.sendMessage).not.toHaveBeenCalled()
+    expect(errors).toHaveLength(3)
+    expect(errors.every(error => error instanceof McpAppsError && error.code === 'inactive')).toBe(true)
     host.activate()
     const result = await view.callServerTool({ name: 'next', arguments: { page: 2 } })
     expect(result._meta).toEqual({ private: 'view-only' })

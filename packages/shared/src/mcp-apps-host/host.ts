@@ -69,10 +69,10 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
     if (!active) throw new McpAppsError('inactive', 'Activate this restored MCP App to reconnect')
   }
   const execute = async <T>(signal: AbortSignal, fn: (signal: AbortSignal) => Promise<T>): Promise<T> => {
-    check()
     const combined = AbortSignal.any([signal, lifetime.signal])
-    if (combined.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
     try {
+      check()
+      if (combined.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
       const value = await fn(combined)
       if (combined.aborted || revoked) throw new McpAppsError('cancelled', 'MCP App request cancelled')
       return value

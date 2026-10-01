@@ -355,7 +355,7 @@ export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
       {ports.renderJson(props.input)}
       {props.result && <><div className="text-muted-foreground">{t('trajectory.inspector.result')}</div>{ports.renderJson(unwrapMcpResultText(props.result))}</>}
     </div>
-    return <Suspense fallback={renderRow()}><McpAppView app={props.app} title={getToolLabel(props.toolName)} details={details} renderFallback={renderRow} /></Suspense>
+    return <Suspense fallback={renderRow()}><McpAppView app={props.app} toolName={props.toolName} title={getToolLabel(props.toolName)} details={details} renderFallback={renderRow} /></Suspense>
   }
   return renderRow()
 })

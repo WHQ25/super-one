@@ -523,3 +523,22 @@ node RPC/restart tests pass. Earlier approval/Always Allow acceptance entries ab
 record the superseded implementation, not the current policy. Message confirmations
 remain plain text, single-use, bound to the exact requester/View/message/binding,
 with the existing per-View rate cap and original-session queued delivery.
+
+### 2026-10-01 — desktop native chrome parity
+
+The MCP details toggle uses `CodeXml` and `mcpApp.toolDetails`. All three App
+surfaces use the same shared `ToolBrandIcon` and `getToolDisplay` fallback as
+ordinary MCP rows; no separate icon fallback or unsafe image fetch is added.
+Excalidraw's actual initialize response supplies only `{name: "Excalidraw",
+version: "1.0.0"}`, with no icons. Claude's current public SDK `serverInfo` type
+exposes name/version only; further icon discovery was explicitly deferred.
+
+Fullscreen occupies the same main-content bounds as a maximized activity area.
+It shares `useActivityHeaderLayout` / `ActivityHeaderPrefix` with ActivityPanel
+for the exact traffic-light padding and layout-toggle hosting rules. Its 34 px
+header reuses `tabChipClass`, `TabTitle` and `TabActionButton`, with a `Shrink`
+exit. Fullscreen LayoutToggle treats this surface as maximized and omits the
+inapplicable activity-side switch.
+
+Validation: web typecheck and the two affected browser mode/details flows pass.
+Native sidebar/window-fullscreen/glass comparison captures remain to be collected.

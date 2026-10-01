@@ -3,17 +3,15 @@ import { Plus } from 'lucide-react'
 import { DockviewReact } from 'dockview-react'
 import type { DockviewReadyEvent, DockviewApi, DockviewTheme, IDockviewHeaderActionsProps, IWatermarkPanelProps } from 'dockview-core'
 import 'dockview/dist/styles/dockview.css'
-import { useAppStore } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useActivityViewStateStore } from '@/stores/activity-view-state'
 import { useActivityDropStore } from '@/stores/activity-drop'
 import { useMiniAppStore } from '@/stores/miniapp'
-import { useFullscreen } from '@/hooks/useFullscreen'
 import { useActivityPanelOnScreen } from '@/hooks/useActivityPanelOnScreen'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { useSlotBounds } from '@/hooks/useSlotBounds'
 import { ACTIVITY_PANEL_TRANSITION, LAYOUT } from '@/lib/layout-constants'
-import { LayoutToggle } from '@/components/coding/LayoutToggle'
+import { ActivityHeaderPrefix } from './ActivityHeaderPrefix'
 import { ResizeHandleLine } from '@/components/ResizeHandleLine'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger } from '@superone/ui/components/ui/dropdown-menu'
 import { isLayoutSwapping, launchInGroup, restorePanelWidthAfterSideChat, setDockApi, SIDE_CHAT_PANEL_ID } from './activity-panel-api'
@@ -42,28 +40,14 @@ interface ActivityPanelProps {
 }
 
 function ActivityPrefixActions() {
-  const showSidebar = useAppStore((s) => s.showSidebar)
-  const side = useActivityPanelStore((s) => s.side)
-  const maximized = useActivityPanelStore((s) => s.maximized)
-  const isFullscreen = useFullscreen()
-  const isMac = window.app.platform === 'darwin'
-  const hostsLayoutToggle = (maximized || side === 'left') && !(isMac && showSidebar)
-  const needsTrafficLightPadding = isMac && !isFullscreen && !showSidebar && (maximized || side === 'left')
-
-  if (!hostsLayoutToggle) return null
-  return (
-    <div className={cn('flex h-full items-center', needsTrafficLightPadding ? 'pl-2' : '')}>
-      {needsTrafficLightPadding && <div className="h-full w-[66px] shrink-0" />}
-      <LayoutToggle />
-    </div>
-  )
+  return <ActivityHeaderPrefix />
 }
 
 function ActivityWatermark({ group }: IWatermarkPanelProps) {
   return (
     <div className="relative h-full">
       <div className="absolute inset-x-0 top-0 z-10 h-[34px]">
-        <ActivityPrefixActions />
+        <ActivityHeaderPrefix />
       </div>
       <ActivityLauncher group={group} />
     </div>

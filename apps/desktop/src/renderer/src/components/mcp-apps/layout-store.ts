@@ -11,6 +11,7 @@ export interface McpAppOwner {
   row: HTMLElement | null
   mode: McpAppSurface
   title?: string
+  toolName?: string
   details?: ReactNode
   renderFallback?: (trailing: ReactNode) => ReactNode
 }

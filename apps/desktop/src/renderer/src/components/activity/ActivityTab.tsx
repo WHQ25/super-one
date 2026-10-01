@@ -95,7 +95,7 @@ export function tabChipClass(active: boolean): string {
  * vs `clientWidth` is the only thing that knows, so a ResizeObserver re-asks
  * whenever the flex row hands this span a different width.
  */
-function TabTitle({ children }: { children: React.ReactNode }) {
+export function TabTitle({ children }: { children: React.ReactNode }) {
   const ref = useRef<HTMLSpanElement>(null)
   const [clipped, setClipped] = useState(false)
 
@@ -137,7 +137,7 @@ export function FilePreviewTab(props: IDockviewPanelHeaderProps<{ filePath: stri
   )
 }
 
-function TabActionButton({
+export function TabActionButton({
   active,
   onClick,
   title,

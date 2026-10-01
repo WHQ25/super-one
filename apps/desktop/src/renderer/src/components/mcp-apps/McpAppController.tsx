@@ -6,10 +6,12 @@ import type { McpAppPreparedDocument } from '@superone/shared/mcp-apps-desktop'
 import type { McpAppHost } from '@superone/shared/mcp-apps-host'
 import { mcpAppHostContext } from '@superone/shared/mcp-apps-host/context'
 import { Button } from '@superone/ui/components/ui/button'
-import { Code, Puzzle } from 'lucide-react'
+import { CodeXml } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { EmbeddedToolView } from '@/components/chat/EmbeddedToolView'
+import { ToolBrandIcon } from '@/components/chat/ToolIcon'
 import { useMcpServerIcon } from '@/components/chat/use-mcp-server-icon'
+import { getToolDisplay } from '@/components/chat/tool-display'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { miniAppPipViewport } from '@/components/miniapp/miniapp-pip-layout'
@@ -25,6 +27,8 @@ type Ready = Extract<McpAppPreparedDocument, { state: 'ready' }>
 
 export function McpAppController({ owner, fullscreenArea }: { owner: McpAppOwner; fullscreenArea: { element: HTMLElement; width: number; height: number } | null }) {
   const { app, route, api } = owner
+  const toolName = owner.toolName ?? `mcp__${app.binding.server}__app`
+  const icon = useMcpServerIcon(app.binding.server)
   const { t, i18n } = useTranslation()
   const { mode, surface, request: requestMode } = useMcpAppDisplayMode(app.appInstanceId)
   const panelWidth = useActivityPanelStore(state => state.panelWidth)
@@ -42,7 +46,6 @@ export function McpAppController({ owner, fullscreenArea }: { owner: McpAppOwner
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [emphasized, setEmphasized] = useState(false)
   const pulseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const icon = useMcpServerIcon(app.binding.server)
   const [pending, setPending] = useState<PendingMcpConsent[]>([])
   const host = useRef<McpAppHost | null>(null)
   const anchor = useRef<HTMLDivElement>(null)
@@ -134,7 +137,7 @@ export function McpAppController({ owner, fullscreenArea }: { owner: McpAppOwner
     {!available && (owner.renderFallback?.(trailing) ?? <div className="flex items-center justify-end gap-1.5 text-xs">{trailing}</div>)}
     {/* Keep the destination connected while showing the normal error/pending row. */}
     <div hidden={!available}>
-      <EmbeddedToolView title={`${app.binding.server} · ${owner.title ?? app.resourceUri}`} icon={icon ? <img src={icon} alt="" className="size-3.5 shrink-0" /> : <Puzzle className="size-3.5 shrink-0" />} actions={owner.details && <IconButton size="xs" variant="ghost" tooltip={t('trajectory.inspector.tools')} aria-expanded={detailsOpen} onClick={() => setDetailsOpen(value => !value)}><Code className="size-3.5" /></IconButton>}>
+      <EmbeddedToolView title={`${app.binding.server} · ${owner.title ?? app.resourceUri}`} icon={<ToolBrandIcon src={icon} alt={app.binding.server} icon={getToolDisplay(toolName, {}).icon} />} actions={owner.details && <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.toolDetails')} aria-expanded={detailsOpen} onClick={() => setDetailsOpen(value => !value)}><CodeXml className="size-3.5" /></IconButton>}>
         {detailsOpen && <div className="mb-2">{owner.details}</div>}
         <div className="relative">
           {ready && <div ref={inline} data-mcp-app-surface={app.appInstanceId} style={{ height: surface === 'inline' ? Math.max(80, Math.min(height, 600)) : 0 }} className="w-full overflow-hidden rounded-md" />}
@@ -148,8 +151,8 @@ export function McpAppController({ owner, fullscreenArea }: { owner: McpAppOwner
     {owner.row && createPortal(row, owner.row)}
     {ready && executor && <Suspense fallback={null}><Frame app={app} meta={ready.meta} registration={ready.document} api={api} executor={executor} context={context} active={active}
       onHost={value => { host.current = value }} onInitialized={() => setInitialized(true)} onError={onError} onUnknown={() => setUnknown(true)} onRevoked={() => setRevoked(true)} onHeight={setHeight} /></Suspense>}
-    {surface === 'fullscreen' && ready && !revoked && <McpAppFullscreen appInstanceId={app.appInstanceId} server={app.binding.server} container={fullscreenArea?.element} api={api} url={ready.document.url} onExit={() => onMode('inline')} />}
-    {surface === 'pip' && ready && !revoked && <McpAppPip appInstanceId={app.appInstanceId} title={app.binding.server} viewport={viewport} onMode={onMode} />}
+    {surface === 'fullscreen' && ready && !revoked && <McpAppFullscreen appInstanceId={app.appInstanceId} server={app.binding.server} toolName={toolName} container={fullscreenArea?.element} api={api} url={ready.document.url} onExit={() => onMode('inline')} />}
+    {surface === 'pip' && ready && !revoked && <McpAppPip appInstanceId={app.appInstanceId} title={app.binding.server} toolName={toolName} viewport={viewport} onMode={onMode} />}
     <ConsentDialog pending={pending[0]} />
   </>
 }

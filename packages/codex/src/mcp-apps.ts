@@ -7,6 +7,16 @@ export type McpAppsRequest = (method: string, params?: Record<string, unknown>) 
 const challenges = (value: unknown): string[] | undefined => value === undefined ? undefined : Array.isArray(value) ? value.map(String) : [String(value)]
 const record = (value: unknown): Record<string, unknown> | undefined => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
 
+/** Codex serializes absent optional result fields as null; the MCP result schema only allows them absent. */
+function codexToolResult(result: { content?: unknown; structuredContent?: unknown; _meta?: unknown; isError?: unknown }): McpAppToolResult {
+  return {
+    content: Array.isArray(result.content) ? result.content : [],
+    ...(record(result.structuredContent) ? { structuredContent: record(result.structuredContent) } : {}),
+    ...(record(result._meta) ? { _meta: record(result._meta) } : {}),
+    ...(typeof result.isError === 'boolean' ? { isError: result.isError } : {}),
+  }
+}
+
 /** Keep the provider's routing metadata even when ordinary third-party appContext is null. */
 export function readCodexMcpAppFields(raw: Record<string, unknown>, previous?: CodexMcpToolCallItem): Partial<CodexMcpToolCallItem> {
   const ui = record(raw.mcpAppUi) ?? (typeof raw.mcpAppResourceUri === 'string' ? { resourceUri: raw.mcpAppResourceUri } : undefined)
@@ -27,7 +37,7 @@ export function attachCodexMcpApp(item: CodexMcpToolCallItem, binding: McpAppsBi
     appInstanceId: item.app?.appInstanceId ?? `codex:${binding.session}:${threadId}:${item.id}`,
     binding, origin: { providerSessionId: threadId }, harnessCallId: item.id, resourceUri: uri,
     ...(record(item.arguments) ? { toolInput: record(item.arguments) } : {}),
-    ...(item.result ? { toolResult: { content: item.result.content, structuredContent: item.result.structuredContent, ...(item.result.meta ? { _meta: item.result.meta } : {}), ...(item.result.isError !== undefined ? { isError: item.result.isError } : {}) } } : {}),
+    ...(item.result ? { toolResult: codexToolResult({ content: item.result.content, structuredContent: item.result.structuredContent, _meta: item.result.meta, isError: item.result.isError }) } : {}),
     status,
     ...(item.authRequired ? { error: { code: 'auth_required' as const, message: 'MCP authentication required', challenge: challenges(readCodexMcpWwwAuthenticate(item.result?.meta)) } } : item.error ? { error: { code: 'invalid' as const, message: item.error.message } } : {}),
   }
@@ -107,7 +117,7 @@ export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: st
     async callTool(req, signal) {
       assertMcpAppSize(req.args)
       const result = await invoke('mcpServer/tool/call', { tool: req.tool, arguments: req.args ?? {} }, signal, req.origin, true)
-      return { result: { content: Array.isArray(result.content) ? result.content : [], ...(result.structuredContent !== undefined ? { structuredContent: result.structuredContent } : {}), ...(record(result._meta) ? { _meta: record(result._meta) } : {}), ...(typeof result.isError === 'boolean' ? { isError: result.isError } : {}) } satisfies McpAppToolResult, outcome: 'completed' }
+      return { result: codexToolResult(result), outcome: 'completed' }
     },
     // Codex receives the redirect on its own listener and completes the login in the background;
     // the host watches `tools()` stop reporting auth_required.

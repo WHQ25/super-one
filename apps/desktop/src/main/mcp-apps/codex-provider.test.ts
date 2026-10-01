@@ -26,6 +26,16 @@ describe('Codex native MCP Apps', () => {
     }
   })
 
+  it('drops the null optional fields Codex emits, which the View result schema rejects', async () => {
+    const raw = { id: 'item-1', type: 'mcpToolCall', server: 'fixture', tool: 'items', status: 'completed',
+      mcpAppUi: { resourceUri: 'ui://fixture/items.html' }, result: { content: [{ type: 'text', text: 'items' }], structuredContent: null, _meta: null } }
+    const mapped = mapCodexThreadItem(raw)
+    if (mapped?.type !== 'mcp_tool_call') throw new Error('bad item')
+    expect(attachCodexMcpApp(mapped, binding, 'thread-1').app?.toolResult).toEqual({ content: [{ type: 'text', text: 'items' }] })
+    const request = vi.fn(async () => ({ content: [], structuredContent: null, _meta: null, isError: false }))
+    expect((await createCodexMcpAppsProvider(binding, 'thread-1', request).callTool({ tool: 'next', args: {}, origin }, signal)).result).toEqual({ content: [], isError: false })
+  })
+
   it('reads the legacy native URI when 0.159 emits null mcpAppUi', () => {
     expect(mapCodexThreadItem({ id: 'legacy', type: 'mcpToolCall', server: 'fixture', tool: 'items', mcpAppUi: null, mcpAppResourceUri: 'ui://fixture/items.html' })).toMatchObject({ mcpAppUi: { resourceUri: 'ui://fixture/items.html' } })
   })

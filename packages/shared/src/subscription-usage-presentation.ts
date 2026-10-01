@@ -1,4 +1,4 @@
-import { usageRisk, USAGE_FRESH_MS, type UsageWindow } from './subscription-usage'
+import { USAGE_FRESH_MS, type UsageWindow } from './subscription-usage'
 
 /** Copy inputs only; each surface supplies its normal translator. No provider or UI dependencies. */
 export function usageForecastCopy(window: UsageWindow, now = Date.now()): { key: string; time?: string } | null {
@@ -9,7 +9,7 @@ export function usageForecastCopy(window: UsageWindow, now = Date.now()): { key:
   if (window.usedPercent >= 100) return { key: 'exhausted' }
   if (forecast.status === 'idle') return { key: 'idle' }
   if (forecast.status !== 'ready' || forecast.exhaustsAt == null) return null
-  if (usageRisk(window, now) === 'safe') return null
+  if (window.resetsAt == null || forecast.exhaustsAt <= now || forecast.exhaustsAt >= window.resetsAt * 1000) return null
   return { key: forecast.basis === 'cycle-average' ? 'averageEta' : 'eta', time: formatUsageDuration(forecast.exhaustsAt - now) }
 }
 

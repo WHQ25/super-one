@@ -1,91 +1,67 @@
 import { describe, expect, it } from 'vitest'
 import { SubscriptionUsageTracker, usageRisk, usageWindowTone, type UsageWindow } from './subscription-usage'
+import { usageForecastCopy } from './subscription-usage-presentation'
 
 const now = Date.UTC(2026, 8, 30, 12)
-function series(rate: number, remaining: number, resetHours: number, tracker = new SubscriptionUsageTracker(), key = 'account-a'): UsageWindow {
-  let result: UsageWindow = { id: 'weekly', label: 'Weekly', usedPercent: 0, resetsAt: (now + resetHours * 3_600_000) / 1000 }
-  for (let minute = -60; minute <= 0; minute += 5) {
-    result = tracker.observe(key, { ...result, usedPercent: 100 - remaining + minute / 60 * rate }, now + minute * 60_000)
-  }
-  return result
-}
+const input = (usedPercent = 40): UsageWindow => ({ id: '5h', label: '5h', usedPercent, windowDurationMins: 300, resetsAt: now / 1000 + 3 * 3600 })
+const observe = (used: number) => new SubscriptionUsageTracker().observe('a', input(used), now)
 
-describe('subscription runway', () => {
-  it('estimates from the cycle average immediately, then switches to recent consumption', () => {
+describe('OpenUsage cycle-average pacing', () => {
+  it('always uses the cycle average, including after many samples and inactivity', () => {
     const tracker = new SubscriptionUsageTracker()
-    const input: UsageWindow = { label: '5h', usedPercent: 20, windowDurationMins: 300, resetsAt: now / 1000 + 4 * 3600 }
-    let window = tracker.observe('average', input, now)
-    expect(window.forecast?.ratePerHour).toBeCloseTo(20)
-    expect(window.forecast?.exhaustsAt).toBe(now + 4 * 3_600_000)
-    expect(window.forecast?.basis).toBe('cycle-average')
-    expect(window.forecast?.confirmed).toBe(false)
-    for (let m = 5; m <= 15; m += 5) window = tracker.observe('average', { ...input, usedPercent: 20 + m / 5 }, now + m * 60_000)
-    expect(window.forecast?.basis).toBeUndefined()
-    expect(window.forecast?.ratePerHour).toBeCloseTo(12)
-  })
-  it('keeps unavailable estimates hidden and colors fresh readings by remaining quota', () => {
-    const tracker = new SubscriptionUsageTracker()
-    for (const input of [
-      { usedPercent: 0, windowDurationMins: 300, resetsAt: now / 1000 + 3600 },
-      { usedPercent: 15, resetsAt: now / 1000 + 3600 },
-      { usedPercent: 15, windowDurationMins: 300, resetsAt: now / 1000 + 6 * 3600 },
-    ]) {
-      const window = tracker.observe(JSON.stringify(input), { label: '5h', ...input }, now)
-      expect(window.forecast?.status).toBe('learning')
-      expect(usageWindowTone(window, now)).toBe('success')
-      expect(usageWindowTone(window, now + 11 * 60_000)).toBe('success')
-    }
-  })
-  it('keeps 20% remaining calm when the weekly quota resets in half an hour', () => {
-    const window = series(5, 20, 0.5)
-    expect(window.forecast?.ratePerHour).toBeCloseTo(5)
-    expect(window.forecast?.exhaustsAt).toBeCloseTo(now + 4 * 3_600_000)
+    let window = tracker.observe('a', input(), now)
+    expect(window.forecast).toMatchObject({ basis: 'cycle-average', ratePerHour: 20, exhaustsAt: now + 3 * 3600_000, confirmed: false })
+    for (let m = 5; m <= 30; m += 5) window = tracker.observe('a', input(40 + m / 5), now + m * 60_000)
+    expect(window.forecast?.ratePerHour).toBeCloseTo(46 / 2.5)
     expect(window.forecast?.confirmed).toBe(true)
-    expect(usageRisk(window, now)).toBe('safe')
-    expect(usageWindowTone(window, now)).toBe('success')
+    window = tracker.observe('a', input(46), now + 60 * 60_000)
+    expect(window.forecast?.status).toBe('ready')
+    expect(window.forecast?.ratePerHour).toBeCloseTo(46 / 3)
   })
-  it('warns when the same 20% will run out before reset, even far above a fixed percentage threshold', () => {
-    expect(usageRisk(series(10, 20, 48), now)).toBe('risk')
-    expect(usageRisk(series(60, 30, 4), now)).toBe('critical')
-    expect(usageRisk(series(1, 5, 1 / 6), now)).toBe('safe')
-  })
-  it('discards stale forecast risk and colors by the reported remaining quota', () => {
-    const window = series(5, 20, 0.5)
-    expect(usageRisk(window, now + 11 * 60_000)).toBe('unknown')
-    expect(usageWindowTone(window, now + 11 * 60_000)).toBe('warning')
-    for (const [usedPercent, tone] of [[0, 'success'], [15, 'success'], [75, 'warning'], [95, 'error']] as const) {
-      expect(usageWindowTone({ ...window, usedPercent }, now + 11 * 60_000)).toBe(tone)
-      expect(usageWindowTone({ ...window, usedPercent, resetsAt: now / 1000 - 1 }, now)).toBe(tone)
+  it('waits for max(one minute, one percent of the period)', () => {
+    for (const duration of [30, 300, 10080]) {
+      const minimum = Math.max(60_000, duration * 60_000 * 0.01)
+      for (const elapsed of [minimum - 1, minimum]) {
+        const window = new SubscriptionUsageTracker().observe('a', { ...input(1), windowDurationMins: duration,
+          resetsAt: (now + duration * 60_000 - elapsed) / 1000 }, now)
+        expect(window.forecast?.status).toBe(elapsed < minimum ? 'learning' : 'ready')
+      }
     }
   })
-  it('starts learning again after a reset, account switch, usage correction or offline gap', () => {
-    for (const change of ['reset', 'account', 'correction', 'gap'] as const) {
-      const tracker = new SubscriptionUsageTracker()
-      const window = series(5, 20, 48, tracker)
-      const next = tracker.observe(change === 'account' ? 'b' : 'account-a', {
-        ...window, usedPercent: change === 'correction' ? 30 : 81,
-        resetsAt: window.resetsAt! + (change === 'reset' ? 7 * 86400 : 0),
-      }, now + (change === 'gap' ? 16 : 5) * 60_000)
-      expect(next.forecast?.status).toBe('learning')
+  it('requires valid usage, duration and an active cycle', () => {
+    for (const window of [input(0), input(-1), input(101), input(NaN), { ...input(), windowDurationMins: undefined },
+      { ...input(), resetsAt: null }, { ...input(), resetsAt: now / 1000 }, { ...input(), resetsAt: now / 1000 + 6 * 3600 }]) {
+      const result = new SubscriptionUsageTracker().observe('a', window, now)
+      expect(result.forecast?.status).toBe('learning')
+      expect(usageForecastCopy(result, now)).toBeNull()
     }
   })
-  it('does not learn from cached reads or rapid refreshes', () => {
-    const tracker = new SubscriptionUsageTracker()
-    const window: UsageWindow = { label: 'Weekly', usedPercent: 80, resetsAt: now / 1000 + 3600 }
-    for (let i = 0; i < 20; i++) expect(tracker.observe('a', window, now + i * 1000).forecast?.status).toBe('learning')
+  it('matches projected 90% and 100% color boundaries', () => {
+    for (const [used, risk, tone] of [[36, 'safe', 'success'], [38, 'watch', 'warning'], [40, 'watch', 'warning'],
+      [41, 'risk', 'error'], [95, 'critical', 'error'], [100, 'exhausted', 'error']] as const) {
+      const window = observe(used)
+      expect(usageRisk(window, now)).toBe(risk)
+      expect(usageWindowTone(window, now)).toBe(tone)
+    }
   })
-  it('keeps flat intervals and stops projecting after sustained inactivity', () => {
-    const tracker = new SubscriptionUsageTracker()
-    let window = series(10, 20, 48, tracker)
-    for (let m = 5; m <= 25; m += 5) window = tracker.observe('account-a', window, now + m * 60_000)
-    expect(window.forecast?.status).toBe('idle')
-    expect(window.forecast?.exhaustsAt).toBeNull()
+  it('shows the ETA only strictly before reset', () => {
+    for (const used of [36, 38, 40]) expect(usageForecastCopy(observe(used), now)).toBeNull()
+    expect(usageForecastCopy(observe(60), now)).toEqual({ key: 'averageEta', time: '1h 20m' })
+    expect(usageForecastCopy(observe(100), now)).toEqual({ key: 'exhausted' })
   })
-  it('reacts to an acceleration and keeps windows independent', () => {
+  it('isolates accounts and windows; cached and rapid readings cannot confirm', () => {
     const tracker = new SubscriptionUsageTracker()
-    let window = series(2, 40, 48, tracker)
-    window = tracker.observe('account-a', { ...window, usedPercent: 70 }, now + 5 * 60_000)
-    expect(window.forecast!.ratePerHour!).toBeGreaterThan(20)
-    expect(tracker.observe('account-a', { ...window, id: '5h', label: '5h' }, now + 5 * 60_000).forecast?.status).toBe('learning')
+    tracker.observe('a', input(60), now)
+    expect(tracker.observe('a', input(80), now).usedPercent).toBe(60)
+    expect(tracker.observe('a', input(60), now + 30_000).forecast?.confirmed).toBe(false)
+    expect(tracker.observe('a', input(60), now + 60_000).forecast?.confirmed).toBe(true)
+    expect(tracker.observe('b', input(60), now + 60_000).forecast?.confirmed).toBe(false)
+    expect(tracker.observe('a', { ...input(60), id: 'other' }, now + 60_000).forecast?.confirmed).toBe(false)
+    expect(tracker.observe('a', input(30), now + 120_000).forecast?.confirmed).toBe(false)
+    expect(tracker.observe('a', { ...input(), resetsAt: input().resetsAt! + 300 * 60 }, now + 180_000).forecast?.confirmed).toBe(false)
+  })
+  it('expires old readings', () => {
+    expect(usageRisk(observe(60), now + 11 * 60_000)).toBe('unknown')
+    expect(usageForecastCopy(observe(60), now + 11 * 60_000)).toEqual({ key: 'stale' })
   })
 })

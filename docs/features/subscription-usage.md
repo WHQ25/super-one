@@ -1,7 +1,8 @@
 # Subscription usage estimates
 
 Claude and Codex subscription meters estimate when the included quota will run
-out at the recent consumption rate, initially using the cycle average. Desktop
+out at the average consumption rate since the current cycle started, matching
+[OpenUsage pacing](https://github.com/robinebers/openusage/blob/main/Sources/OpenUsage/Support/Pace.swift). Desktop
 and mobile use the same host observations and shared forecast/risk functions.
 Session token counts are not
 used: the provider's account quota also includes usage from other clients.
@@ -14,37 +15,33 @@ profile. Opaque keys, never credentials, cross the UI/remote boundary.
 
 - Active turns and an open desktop usage popover refresh every five minutes.
   Starting/finishing turns and manual refreshes continue to fetch readings.
-- The tracker holds at most one hour of readings in host memory. Restarting the
-  host loses this history. With a known duration and future reset, the first
-  positive reading estimates speed as consumption divided by time since cycle
-  start (reset minus duration). At least four independent readings spanning
-  15 minutes and one percentage point of consumption switch to the recent rate.
-- Interval rates use elapsed wall-clock time, with a 20-minute weighting
-  half-life. Flat intervals count; after 20 minutes with no growth the estimate
-  pauses. It describes continued usage at this pace, not working hours.
-- Cached and failed requests do not advance the source timestamp. Samples less
+- With a known duration and future reset, positive consumption is divided by
+  elapsed time since cycle start (reset minus duration). Remaining quota divided
+  by that rate gives the projected time to exhaustion. No recent-rate estimator
+  or inactivity cutoff is used.
+- Estimation starts after the greater of one minute or 1% of the cycle duration.
+  Zero consumption, missing duration/reset, and inactive cycles have no estimate.
+- Cached and failed requests do not advance the source timestamp. Readings less
   than a minute apart cannot confirm a forecast. Observations more than ten
-  minutes old lose their forecast coloring and cannot suppress warnings.
-- A different reset, a decrease in reported consumption, or a gap over 15
-  minutes starts a new series. Account changes never reuse another account's
-  cached reading. The tracker is bounded to 256 account/window histories.
+  minutes old lose forecast coloring and cannot suppress warnings.
+- Only the latest independent reading is retained per account/window. A different
+  reset, consumption decrease, or gap over 15 minutes clears confirmation, but
+  a valid cycle average is available immediately. Storage is bounded to 256
+  account/window entries; inactive entries expire after one hour.
 
 ## Presentation and warnings
 
-Each window shows an approximate time to exhaustion or an idle/stale status.
-Safe forecasts and insufficient data show no forecast line. Cycle-average
-estimates are labelled separately from recent-rate estimates.
-Remaining percentages and provider reset times remain visible.
-Readings without a valid forecast, including stale readings, use percentage
-thresholds for meter colors. Zero consumption is always green; meter fills use
-only green, amber and red.
+An approximate exhaustion time is shown only when exhaustion falls strictly
+before reset, using cycle-average wording. Insufficient data shows no forecast
+line; stale data is labelled. Remaining percentages and reset times stay visible.
+Readings without a valid forecast use percentage thresholds for meter colors.
+Zero consumption is always green; fills use only green, amber and red.
 
-An estimate at least 20% beyond the remaining reset time is considered safe.
-Within 20% of the reset boundary, the meter is cautious without proactively
-interrupting the user. Exhaustion clearly before reset is a warning; exhaustion
-within 30 minutes is urgent. Two independent observations must agree before a
-recent-rate forecast triggers a bubble or suppresses the provider's early warning.
-Cycle-average forecasts remain unconfirmed and never trigger those actions.
+Projected consumption at reset determines pacing: at most 90% is safe/green,
+above 90% through 100% is close/amber, and above 100% means exhaustion before
+reset (red). Exhaustion within 30 minutes also receives urgent alert severity. Two independent observations must agree on the risk before a forecast
+triggers a bubble or suppresses the provider's early warning. These confirmation
+and alert rules remain SuperOne-specific.
 
 Desktop selects the earliest relevant window and shows a six-second bubble.
 Model-specific pools only generate forecasts for the selected model. Bubbles
@@ -62,12 +59,12 @@ their existing threshold behavior.
 
 ## Verification
 
-- Shared forecast and alert tests cover reset timing, acceleration, inactivity,
+- Shared forecast and alert tests cover reset timing, cycle-average rates, initial-window protection, inactivity,
   stale/cache handling, account separation, window selection and alert episodes.
 - Claude/Codex source tests cover cache timestamps, failed reads and login
   changes. Harness transport tests preserve forecasts on the phone.
 - Desktop `UsageStatusIcon` and mobile usage-panel tests cover safe-warning
   suppression and rejection precedence.
 - Storybook `Sidebar/SubscriptionUsage` has safe, risky, urgent, boundary,
-  learning, idle, stale and rejected scenarios. `Mobile/ContextRing` includes
+  missing-duration, quiet, stale and rejected scenarios. `Mobile/ContextRing` includes
   forecast panel scenarios.

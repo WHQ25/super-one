@@ -1,6 +1,7 @@
 # MCP Apps: OpenAI extension compatibility
 
-Status: draft · Updated: 2026-10-01
+Status: accepted · Updated: 2026-10-01
+Plan: [plans/mcp-apps-openai-extensions.md](../plans/mcp-apps-openai-extensions.md)
 
 Part of [mini-apps-and-mcp-apps.md](mini-apps-and-mcp-apps.md).
 
@@ -66,18 +67,18 @@ using settings or file entrypoints is rerouted.
 
 | Extension | SuperOne surface | Mini-app counterpart |
 |---|---|---|
-| Resource `_meta["openai/ui"]` `availableDisplayModes` / `preferredDisplayMode`; Codex `preferredModelDisplayMode` | First paint in the preferred mode before `initialize`. We still offer `pip` | — |
+| Resource `_meta["openai/ui"]` `availableDisplayModes` / `preferredDisplayMode`; Codex `preferredModelDisplayMode` | Agent-invoked Views always start inline, as in ChatGPT; the metadata only shapes the placeholder before `initialize` and limits which modes a View may request. Fullscreen comes from the View's own request. We still offer `pip` | — |
 | Tool `icons`, server icons (`server/discover`, `serverInfo`), tool `title` → `annotations.title` → `name` | Row header, sidebar entry, tab | `logo`, `displayName` |
 | Global entrypoint, deep link | Apps sidebar entry; opens a session with the App as a pinned activity tab, and `ui/message` and model context target that session. `hostContext["openai/deepLink"]` once SuperOne has a URL scheme | Apps panel |
 | Thread entrypoint | "Open app" in a session's activity panel; one instance per session | — |
 | File entrypoint, host resources (`read`, `subscribe`, `openai/resources/write` with `etag`) | "Open with" in the file preview; host-handled opaque `host-resource://` URIs; `_meta["openai/resource"].path` injected into the App's server calls | — |
 | `openai/settings` | Settings page for the server, native controls; a `tool` item that is an App opens it in a dialog | Mini-app settings use the same renderer |
-| `openai/modelContext` | Removable context attachments in the composer (text, image, resource link, embedded resource), `openai/title`, `openai/thumbnail`, hidden `audience: ["assistant"]` blocks; `hostContext["openai/modelContext"]` with `updateId`, `null` after removal | `agent.setContext` becomes one attachment kind |
+| `openai/modelContext` | Removable context attachments in the composer (text, image, resource link, embedded resource), `openai/title`, `openai/thumbnail`, hidden `audience: ["assistant"]` blocks; `hostContext["openai/modelContext"]` with `updateId`, `null` after removal. Context is state: it stays attached and goes with every message until the View replaces it or the user removes it | `agent.setContext` becomes one attachment kind |
 | `openai/message` | `target: "new"` starts a session in the same project and harness; titled items become removable composer chips; same confirmation card | `agent.sendPrompt` |
 | `openai/files/open` | Opens the path in the file preview; paths outside the session's workspace need confirmation | `host.revealInFolder` |
 | Composer at-mentions (`mentions/search`) | A server section in the existing `@` mention popup, inserting resource links | input-surfaces entry points |
 | `openai/elicitation` forms | One schema-form composer: thumbnails, option descriptions, suggested values, `pattern`, resource picker with previews (an App tool or resource link) | Tool `intercept` forms; input-surfaces decision prompts |
-| `openai/interactionCursor` | `hostContext` value from the user's setting | — |
+| `openai/interactionCursor` | Not advertised: SuperOne has no cursor preference, and Apps default to `pointer` | — |
 | Plugin onboarding | Out of scope until SuperOne has plugin packages | — |
 
 ## 5. Hosting without a tool call
@@ -104,9 +105,15 @@ rows.
 
 ## 7. Phases
 
-1. **View-level**: display-mode metadata, icons and titles, model-context
-   attachments, `openai/message` targets, `interactionCursor`. Acceptance with
-   the Bits & Bolts example plugin on Codex and Claude.
+1. **View-level**, in slices:
+   - Baseline: run the Bits & Bolts example plugin on the current host and
+     record what degrades; add `openai/*` keys to the fixture server.
+   - Metadata: tool `title` and `icons`, resource display-mode metadata.
+   - `openai/message`: `target: "new"`, image and resource content, titled
+     items.
+   - Model context: content kinds, `updateId`, removable attachments on
+     desktop and phone, host-context sync, images through the real image
+     input.
 2. **Forms**: the shared schema-form composer, used by Codex `openai/form` and
    standard elicitations.
 3. **Entrypoints and settings**: the §5 binding, thread then global

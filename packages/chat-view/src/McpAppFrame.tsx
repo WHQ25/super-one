@@ -1,13 +1,11 @@
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Braces, Loader2, Plug, X } from 'lucide-react'
+import { CodeXml, Loader2, X } from 'lucide-react'
 import type { McpUiHostCapabilities } from '@modelcontextprotocol/ext-apps/app-bridge'
 import { McpAppsError, type McpUiResourceMeta, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { createMcpAppDocument, mcpAppHostContext } from '@superone/shared/mcp-apps-host'
 import { createMcpAppHost, createMcpAppHostSlot, type McpAppHost } from '@superone/shared/mcp-apps-host/host'
 import { createMcpAppTransport } from '@superone/shared/mcp-apps-host/transport'
-import { resolveMcpServerIconFromMap } from '@superone/shared/mcp-server-icon'
-import { parseMcpToolName } from '@superone/shared/tool-ui'
 import { requestNative } from './bridge'
 import { McpAppConsentCard, type McpAppConsentRequest } from './McpAppConsentCard'
 import { PORTABLE_BLOCK_CLASS, PortableBlockHeader, PortableBlockHeaderButton, PortableInlineAction } from './PortableBlockHeader'
@@ -15,6 +13,9 @@ import { buildMcpAppSrcdoc, markMcpAppActivated, mcpAppNeedsActivation, mobileMc
 import { createMcpAppExecutor, runMcpAppOperation, type McpAppConsent, type McpAppDisplayMode } from './mcp-app-executor'
 import { PortableTurnContext } from './portable-turn-context'
 import type { McpAppToolRow } from './PortableMcpAppView'
+import { useMcpToolIconSrc } from './PortableToolRow'
+import { getToolDisplay, parseMcpToolName } from './presenters/tool-display'
+import { ToolBrandIcon } from './presenters/ToolIcon'
 
 const MIN_HEIGHT = 80
 /** Taller Views scroll inside their frame; the transcript keeps its own scroll. */
@@ -80,7 +81,8 @@ export interface McpAppFrameProps {
  */
 export default function McpAppFrame({ app, messageId, html, meta, toolName, row }: McpAppFrameProps) {
   const { t } = useTranslation()
-  const { scheme, mcpIcons } = useContext(PortableTurnContext)
+  const { scheme } = useContext(PortableTurnContext)
+  const iconSrc = useMcpToolIconSrc(toolName)
   const [details, setDetails] = useState(false)
   const [root, setRoot] = useState<HTMLDivElement | null>(null)
   const frameRef = useRef<HTMLIFrameElement>(null)
@@ -206,7 +208,6 @@ export default function McpAppFrame({ app, messageId, html, meta, toolName, row 
 
   const tool = parseMcpToolName(toolName)
   const server = tool?.serverName ?? app.binding.server
-  const iconSrc = resolveMcpServerIconFromMap(server, mcpIcons)
   const frameStyle = fullscreen ? { width: '100%', height: '100%' } : { width: '100%', height }
   return (
     <div
@@ -225,9 +226,7 @@ export default function McpAppFrame({ app, messageId, html, meta, toolName, row 
         </div>
       ) : (
         <PortableBlockHeader
-          icon={iconSrc
-            ? <img src={iconSrc} alt="" className="size-3.5 shrink-0 rounded-sm object-cover" />
-            : <Plug className="size-3 shrink-0 text-muted-foreground/70" />}
+          icon={<ToolBrandIcon src={iconSrc} alt={server} icon={getToolDisplay(toolName, app.toolInput ?? {}).icon} className="text-muted-foreground/70" />}
           title={tool ? `${server} · ${tool.mcpToolName.replace(/_/g, ' ')}` : server}
         >
           {inactive ? (
@@ -239,7 +238,7 @@ export default function McpAppFrame({ app, messageId, html, meta, toolName, row 
             </span>
           ) : null}
           <PortableBlockHeaderButton label={t('mcpApp.toolDetails')} expanded={details} onPress={() => setDetails((value) => !value)}>
-            <Braces className="size-3.5" />
+            <CodeXml className="size-3.5" />
           </PortableBlockHeaderButton>
         </PortableBlockHeader>
       )}

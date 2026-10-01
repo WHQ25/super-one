@@ -1,4 +1,5 @@
 import { Terminal, FileText, FileEdit, FilePlus, Search, FolderSearch, Globe, Download, MessageCircleQuestion, Wrench, Plug, ClipboardList, Bot, BookOpen, Paintbrush, Toolbox, Package, Pencil, Image as ImageIcon, Smartphone } from 'lucide-react'
+import { cn } from '@superone/ui/lib/utils'
 import type { ToolIcon as ToolIconName } from './tool-display'
 
 const iconComponents: Record<ToolIconName, React.FC<{ className?: string }>> = {
@@ -32,4 +33,11 @@ interface ToolIconProps {
 export function ToolIcon({ icon, className }: ToolIconProps) {
   const Icon = iconComponents[icon]
   return <Icon className={className} />
+}
+
+/** A tool's icon as its row draws it: the MCP server's brand icon when one resolved, else the tool's own. */
+export function ToolBrandIcon({ src, alt, icon, className }: { src?: string; alt: string; icon: ToolIconName; className?: string }) {
+  return src
+    ? <img src={src} alt={alt} className="size-3.5 shrink-0 rounded-sm object-cover" />
+    : <ToolIcon icon={icon} className={cn('size-3 shrink-0 text-muted-foreground', className)} />
 }

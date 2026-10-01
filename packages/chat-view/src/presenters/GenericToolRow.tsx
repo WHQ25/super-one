@@ -5,7 +5,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { AskUserQuestionResultPresenter } from './AskUserQuestionResult'
 import { resolveArtifactLink } from './artifact-link'
 import { getStallColor, type StallLevel } from './stall-color'
-import { ToolIcon } from './ToolIcon'
+import { ToolBrandIcon } from './ToolIcon'
 import { ToolName } from './ToolRow'
 import {
   formatReadMeta,
@@ -322,10 +322,8 @@ export function GenericToolRowPresenter({
           <Ban className="size-3 shrink-0 text-error" />
         ) : showError ? (
           <TriangleAlert className="size-3 shrink-0 text-warning" />
-        ) : isMcp && ports.mcpIconSrc ? (
-          <img src={ports.mcpIconSrc} alt={mcpInfo.serverName} className="size-3.5 shrink-0 rounded-sm object-cover" />
         ) : (
-          <ToolIcon icon={display.icon} className="size-3 shrink-0 text-muted-foreground" />
+          <ToolBrandIcon src={isMcp ? ports.mcpIconSrc : undefined} alt={mcpInfo?.serverName ?? ''} icon={display.icon} />
         )}
         <ToolName
           streaming={isStreaming}

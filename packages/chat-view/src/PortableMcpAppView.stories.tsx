@@ -155,7 +155,7 @@ const meta = {
   component: Preview,
   parameters: { layout: 'padded' },
   decorators: [(Story, context) => (
-    <PortableTurnContext.Provider value={{ scheme: context.globals.theme === 'light' ? 'light' : 'dark', pendingPermission: null, mcpIcons: {}, projectPath: null }}>
+    <PortableTurnContext.Provider value={{ scheme: context.globals.theme === 'light' ? 'light' : 'dark', pendingPermission: null, mcpIcons: (context.parameters.mcpIcons as Record<string, string> | undefined) ?? {}, projectPath: null }}>
       <div style={{ width: context.args.width, height: context.args.height, overflowY: context.args.height ? 'auto' : undefined, colorScheme: context.globals.theme === 'light' ? 'light' : 'dark' }}><Story /></div>
     </PortableTurnContext.Provider>
   )],
@@ -218,4 +218,13 @@ export const ConsentBelowTheFold: Story = {
 export const NextToWidgetAndRow: Story = {
   name: 'Next to a widget and a plain MCP row',
   args: { app: attachment(id('neighbours'), { resource: RESOURCE }), neighbours: true },
+}
+
+const BRAND_ICON = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="3" fill="#7c3aed"/><path d="M4 11V5l4 3 4-3v6" stroke="#fff" stroke-width="1.6" fill="none"/></svg>')}`
+
+/** With a brand icon the header and the row draw the same one; without, the same tool icon. */
+export const NextToWidgetAndRowWithBrandIcon: Story = {
+  name: 'Next to a widget and a plain MCP row · brand icon',
+  parameters: { mcpIcons: { 'mcp-apps-fixture': BRAND_ICON } },
+  args: { app: attachment(id('neighbours-brand'), { resource: RESOURCE }), neighbours: true },
 }

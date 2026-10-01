@@ -291,6 +291,15 @@ const PORTABLE_TOOL_ROW_PORTS: GenericToolRowPorts = {
 export type PortableToolRowProps = Omit<GenericToolRowProps, 'ports' | 'allowExpand' | 'autoExpandFileDiffs'>
   & { allowExpand?: boolean }
 
+/** The brand icon of the MCP server behind a tool, when the host knows one. */
+export function useMcpToolIconSrc(toolName: string): string | undefined {
+  const { mcpIcons } = useContext(PortableTurnContext)
+  return useMemo(() => {
+    const info = parseMcpToolName(toolName)
+    return info ? resolveMcpServerIconFromMap(info.serverName, mcpIcons) : undefined
+  }, [mcpIcons, toolName])
+}
+
 export function PortableToolRow({ allowExpand = true, ...props }: PortableToolRowProps) {
   // The desktop mounts `WidgetBlock` for a settled widget call; the phone renders the
   // same payload natively, so the short-circuit lives here rather than in the shared row.
@@ -311,12 +320,7 @@ export function PortableToolRow({ allowExpand = true, ...props }: PortableToolRo
     () => (isWidgetTool && !nativeWidget && props.result ? parseWidgetResult(props.result) : null),
     [isWidgetTool, nativeWidget, props.result],
   )
-  const { mcpIcons } = useContext(PortableTurnContext)
-  const mcpIconSrc = useMemo(() => {
-    const info = parseMcpToolName(props.toolName)
-    if (!info) return undefined
-    return resolveMcpServerIconFromMap(info.serverName, mcpIcons)
-  }, [mcpIcons, props.toolName])
+  const mcpIconSrc = useMcpToolIconSrc(props.toolName)
   const ports = useMemo<GenericToolRowPorts>(
     () => ({ ...PORTABLE_TOOL_ROW_PORTS, mcpIconSrc }),
     [mcpIconSrc],

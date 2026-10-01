@@ -5,9 +5,14 @@
  *
  * A form containing any input SuperOne cannot render parses as `unsupported`
  * and is never partially displayed, as OpenAI's spec requires.
+ *
+ * `pattern` and `format` are advisory: the renderers show them as inline hints,
+ * while main checks answers structurally and never runs a server's pattern. The
+ * server validates its own answers.
  */
 import type { ElicitationFormField, PermissionRequest } from './agent-types'
-import { compileLinearRegex, UnsupportedPattern, type LinearRegex } from './linear-regex'
+import { compileLinearRegex, type LinearRegex, type MatchBudget } from './linear-regex'
+import { LruMap } from './lru-map'
 import { safeMcpAppImage } from './mcp-apps-metadata'
 
 /** MCP client capability for OpenAI's extended forms (`openai/elicitation/create`). */
@@ -193,16 +198,8 @@ const TEXT_FORMATS = new Set<string>(['email', 'uri', 'date', 'date-time'])
 function parseTextConstraints(rec: Rec): SchemaFormTextConstraints {
   const format = optString(rec, 'format')
   if (format !== undefined && !TEXT_FORMATS.has(format)) throw new Unsupported(`format "${format}"`)
+  // Not compiled here: parsing runs in main, which never executes a server's pattern.
   const pattern = optString(rec, 'pattern')
-  if (pattern !== undefined) {
-    try {
-      linearPattern(pattern)
-    } catch (err) {
-      throw new Unsupported(err instanceof UnsupportedPattern
-        ? `"pattern" uses ${err.message}`
-        : '"pattern" is not a valid regular expression')
-    }
-  }
   const minLength = optCount(rec, 'minLength')
   const maxLength = optCount(rec, 'maxLength')
   return {
@@ -438,32 +435,42 @@ function codePoints(value: string): number {
 }
 
 /**
- * Server patterns run only on the linear-time engine: a backtracking one can be
- * stalled by `^(a+)+$` on the renderer, the phone or main. Compiled once each.
+ * Server patterns run only on the linear-time engine, within a step budget per
+ * pattern and per form validation: a backtracking engine can be stalled by
+ * `^(a+)+$`, and even a linear one by `a{9998}b` against a long value.
  */
-const compiledPatterns = new Map<string, LinearRegex>()
-function linearPattern(pattern: string): LinearRegex {
-  let compiled = compiledPatterns.get(pattern)
-  if (!compiled) {
+const PATTERN_STEPS = 200_000
+const FORM_PATTERN_STEPS = 1_000_000
+
+/** Compiled patterns, bounded by count and total instructions; `null` caches a pattern that cannot run. */
+const compiledPatterns = new LruMap<string, LinearRegex | null>(64, { max: 50_000, weigh: (compiled) => compiled?.size ?? 1 })
+function linearPattern(pattern: string): LinearRegex | null {
+  const cached = compiledPatterns.get(pattern)
+  if (cached !== undefined) return cached
+  let compiled: LinearRegex | null
+  try {
     compiled = compileLinearRegex(pattern)
-    compiledPatterns.set(pattern, compiled)
+  } catch {
+    // Invalid, unsupported (backreferences, lookaround) or over budget on this runtime.
+    compiled = null
   }
+  compiledPatterns.set(pattern, compiled)
   return compiled
 }
 
 /**
- * A form parsed on one runtime is validated on another (the phone's Hermes). A
- * pattern this runtime cannot compile matches nothing: the field stays
- * unanswerable rather than crashing the form.
+ * Whether `value` matches, or `undefined` when the pattern cannot be checked
+ * within budget here. Then no hint is shown and the server decides; the form is
+ * never made unsupported and the native engine is never a fallback.
  */
-function matchesPattern(pattern: string, value: string): boolean {
-  let compiled: LinearRegex
-  try {
-    compiled = linearPattern(pattern)
-  } catch {
-    return false
-  }
-  return compiled.test(value)
+function matchesPattern(pattern: string, value: string, budget: MatchBudget): boolean | undefined {
+  const compiled = linearPattern(pattern)
+  if (!compiled || budget.steps <= 0) return undefined
+  const call = { steps: Math.min(PATTERN_STEPS, budget.steps) }
+  const before = call.steps
+  const matches = compiled.test(value, call)
+  budget.steps -= before - call.steps
+  return matches
 }
 
 /** One `@`, no whitespace, a dot inside the domain. Written without a backtracking regex. */
@@ -498,11 +505,15 @@ function matchesFormat(format: SchemaFormTextFormat, value: string): boolean {
   }
 }
 
-function checkText(c: SchemaFormTextConstraints, value: string): SchemaFormError | null {
+/** `hints` is the pattern budget when `format` and `pattern` are checked, `null` for structural checks only. */
+type Hints = MatchBudget | null
+
+function checkText(c: SchemaFormTextConstraints, value: string, hints: Hints): SchemaFormError | null {
   if (c.minLength !== undefined && codePoints(value) < c.minLength) return { code: 'minLength', limit: c.minLength }
   if (c.maxLength !== undefined && codePoints(value) > c.maxLength) return { code: 'maxLength', limit: c.maxLength }
+  if (!hints) return null
   if (c.format && !matchesFormat(c.format, value)) return { code: 'format', limit: c.format }
-  if (c.pattern !== undefined && !matchesPattern(c.pattern, value)) return { code: 'pattern', limit: c.pattern }
+  if (c.pattern !== undefined && matchesPattern(c.pattern, value, hints) === false) return { code: 'pattern', limit: c.pattern }
   return null
 }
 
@@ -516,10 +527,10 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((v) => typeof v === 'string')
 }
 
-function checkField(field: SchemaFormField, value: SchemaFormValue): SchemaFormError | null {
+function checkField(field: SchemaFormField, value: SchemaFormValue, hints: Hints): SchemaFormError | null {
   switch (field.kind) {
     case 'text':
-      return typeof value === 'string' ? checkText(field, value) : { code: 'type' }
+      return typeof value === 'string' ? checkText(field, value, hints) : { code: 'type' }
     case 'number':
       if (typeof value !== 'number' || !Number.isFinite(value)) return { code: 'type' }
       if (field.integer && !Number.isInteger(value)) return { code: 'integer' }
@@ -540,7 +551,7 @@ function checkField(field: SchemaFormField, value: SchemaFormValue): SchemaFormE
       if (!isStringArray(value)) return { code: 'type' }
       if (field.uniqueItems && new Set(value).size !== value.length) return { code: 'unique' }
       for (const item of value) {
-        const error = checkText(field.item, item)
+        const error = checkText(field.item, item, hints)
         if (error) return error
       }
       return checkCount(field, value.length)
@@ -567,8 +578,12 @@ function submittedValue(field: SchemaFormField, value: SchemaFormValue | undefin
   return value
 }
 
-/** Per-field errors for the current answers; an empty object means submittable. */
+/** Per-field errors for the current answers, with format and pattern hints; an empty object means submittable. */
 export function validateSchemaForm(fields: readonly SchemaFormField[], values: SchemaFormValues): Record<string, SchemaFormError> {
+  return fieldErrors(fields, values, { steps: FORM_PATTERN_STEPS })
+}
+
+function fieldErrors(fields: readonly SchemaFormField[], values: SchemaFormValues, hints: Hints): Record<string, SchemaFormError> {
   const errors: Record<string, SchemaFormError> = {}
   for (const field of fields) {
     const value = submittedValue(field, values[field.name])
@@ -576,7 +591,7 @@ export function validateSchemaForm(fields: readonly SchemaFormField[], values: S
       if (field.required) errors[field.name] = { code: 'required' }
       continue
     }
-    const error = checkField(field, value)
+    const error = checkField(field, value, hints)
     if (error) errors[field.name] = error
   }
   return errors
@@ -620,8 +635,9 @@ export function elicitationFormRequest(schema: unknown): Pick<PermissionRequest,
 
 /**
  * Check answers arriving from any client (desktop, an older phone) against the
- * form before they reach the server: only declared fields, valid values, and
- * resource URIs the server itself offered.
+ * form before they reach the server: only declared fields, valid types, options,
+ * bounds, and resource URIs the server itself offered. `format` and `pattern` are
+ * left to the server, so main never runs server-supplied patterns.
  */
 export function acceptedElicitationContent(
   form: SchemaForm | undefined,
@@ -630,7 +646,7 @@ export function acceptedElicitationContent(
   if (!form) return { ok: true, content: {} }
   if (!form.supported) return { ok: false, reason: `unsupported form: ${form.reason}` }
   const values = (answers ?? {}) as SchemaFormValues
-  const errors = Object.entries(validateSchemaForm(form.fields, values))
+  const errors = Object.entries(fieldErrors(form.fields, values, null))
   if (errors.length > 0) return { ok: false, reason: errors.map(([name, e]) => `${name}: ${e.code}`).join(', ') }
   return { ok: true, content: schemaFormContent(form.fields, values) }
 }

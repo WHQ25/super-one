@@ -58,9 +58,44 @@ describe('compileLinearRegex', () => {
     expect(() => compileLinearRegex(pattern)).toThrow(new UnsupportedPattern(reason))
   })
 
+  it.each([
+    ['an empty repetition', '(?:){1000000000}'],
+    ['nested empty repetitions', '((?:){1000}){1000}'],
+    ['nested empty stars', '(?:(?:(?:)*)*){9999}'],
+    ['a huge count', 'x{99999}'],
+    ['deep nesting', `${'('.repeat(100)}a${')'.repeat(100)}`],
+    ['a long source', 'a'.repeat(5000)],
+  ])('stops compiling %s within budget', (_, pattern) => {
+    const start = performance.now()
+    expect(() => compileLinearRegex(pattern)).toThrow(new UnsupportedPattern('too complex'))
+    expect(performance.now() - start).toBeLessThan(1000)
+  })
+
   it('rejects invalid syntax like the native engine', () => {
     expect(() => compileLinearRegex('(')).toThrow(SyntaxError)
     expect(() => compileLinearRegex('a**')).toThrow(SyntaxError)
+  })
+})
+
+describe('match budget', () => {
+  it('gives up on an expensive match and spends the budget', () => {
+    const linear = compileLinearRegex('a{9998}b')
+    const budget = { steps: 200_000 }
+    const start = performance.now()
+    expect(linear.test(`${'a'.repeat(200_000)}!`, budget)).toBeUndefined()
+    expect(performance.now() - start).toBeLessThan(1000)
+    expect(budget.steps).toBeLessThanOrEqual(0)
+  })
+
+  it('deducts only the steps a cheap match used', () => {
+    const budget = { steps: 1000 }
+    expect(compileLinearRegex('b').test('aab', budget)).toBe(true)
+    expect(budget.steps).toBeGreaterThan(900)
+    expect(compileLinearRegex('c').test('aab', budget)).toBe(false)
+  })
+
+  it('reports its size in instructions', () => {
+    expect(compileLinearRegex('ab').size).toBe(3)
   })
 })
 

@@ -9,12 +9,25 @@
  * `.`) are delegated to the native engine one code point at a time, which keeps
  * their full semantics and cannot backtrack. Test semantics match
  * `new RegExp(pattern, 'u').test(input)`: unanchored, no flags.
+ *
+ * Both phases are budgeted, since a small pattern can still be made expensive:
+ * compiling stops with `UnsupportedPattern('too complex')` past the limits
+ * below, and `test` gives up (`undefined`) once its `MatchBudget` runs out.
  */
 
-/** Upper bound on compiled NFA instructions; `a{1000}{1000}` stays bounded. */
+/** Upper bounds on source length, group nesting and compiled NFA instructions. */
+const MAX_SOURCE_LENGTH = 2048
+const MAX_DEPTH = 64
 const MAX_INSTRUCTIONS = 10_000
+/** Every node visit counts, so repeating what compiles to nothing, `(?:){1000000000}`, stays bounded. */
+const MAX_COMPILE_WORK = 100_000
 
 export class UnsupportedPattern extends Error {}
+
+export interface MatchBudget {
+  /** Remaining NFA steps; `test` deducts what it used. */
+  steps: number
+}
 
 type Node =
   | { t: 'atom'; test: (cp: number) => boolean }
@@ -55,6 +68,7 @@ function nativeAtom(source: string): (cp: number) => boolean {
 
 class Parser {
   private i = 0
+  private depth = 0
   constructor(private readonly src: string) {}
 
   parse(): Node {
@@ -97,6 +111,7 @@ class Parser {
       min = Number(m[1])
       max = m[2] === undefined ? min : m[3] === '' ? Infinity : Number(m[3])
       this.i += m[0].length
+      if (min > MAX_INSTRUCTIONS || (max !== Infinity && max > MAX_INSTRUCTIONS)) throw new UnsupportedPattern('too complex')
     } else {
       return node
     }
@@ -131,7 +146,9 @@ class Parser {
     } else if (this.peek() === '?') {
       throw new UnsupportedPattern('lookaround')
     }
+    if (++this.depth > MAX_DEPTH) throw new UnsupportedPattern('too complex')
     const node = this.alternation()
+    this.depth--
     if (this.peek() !== ')') throw new UnsupportedPattern('unterminated group')
     this.i++
     return node
@@ -169,6 +186,7 @@ class Parser {
 
 class Compiler {
   readonly prog: Inst[] = []
+  private work = 0
 
   private emit(inst: Inst): number {
     if (this.prog.length >= MAX_INSTRUCTIONS) throw new UnsupportedPattern('too complex')
@@ -177,6 +195,7 @@ class Compiler {
   }
 
   compile(node: Node): void {
+    if (++this.work > MAX_COMPILE_WORK) throw new UnsupportedPattern('too complex')
     switch (node.t) {
       case 'atom': this.emit({ op: 'atom', test: node.test }); return
       case 'assert': this.emit({ op: 'assert', kind: node.kind }); return
@@ -220,16 +239,19 @@ class Compiler {
   }
 }
 
-const isWord = (cp: number | undefined) => cp !== undefined && (
-  (cp >= 48 && cp <= 57) || (cp >= 65 && cp <= 90) || (cp >= 97 && cp <= 122) || cp === 95
-)
+/** ASCII word characters; astral code points and lone surrogates are not, so UTF-16 units suffice. */
+const isWord = (unit: number) => (unit >= 48 && unit <= 57) || (unit >= 65 && unit <= 90) || (unit >= 97 && unit <= 122) || unit === 95
 
 export interface LinearRegex {
-  test(input: string): boolean
+  /** Compiled NFA instructions, a measure of the pattern's memory and per-step cost. */
+  readonly size: number
+  /** Whether `input` matches; `undefined` when `budget` ran out first. */
+  test(input: string, budget?: MatchBudget): boolean | undefined
 }
 
 /** Compile `pattern`, or throw `UnsupportedPattern` / `SyntaxError`. */
 export function compileLinearRegex(pattern: string): LinearRegex {
+  if (pattern.length > MAX_SOURCE_LENGTH) throw new UnsupportedPattern('too complex')
   new RegExp(pattern, 'u') // Reject invalid syntax the way the native engine would.
   const compiler = new Compiler()
   compiler.compile(new Parser(pattern).parse())
@@ -237,50 +259,59 @@ export function compileLinearRegex(pattern: string): LinearRegex {
   const prog = compiler.prog
 
   return {
-    test(input) {
-      const cps = Array.from(input, (ch) => ch.codePointAt(0)!)
+    size: prog.length,
+    test(input, budget) {
+      const limit = budget ? budget.steps : Infinity
+      let steps = 0
+      const done = (result: boolean | undefined) => {
+        if (budget) budget.steps -= steps
+        return result
+      }
       const mark = new Int32Array(prog.length).fill(-1)
       let current: number[] = []
-      let next: number[] = []
       let matched = false
 
-      // Follow epsilon edges from `pc` at position `pos`; `generation` dedups states per step.
-      const add = (list: number[], start: number, pos: number, generation: number) => {
+      // Follow epsilon edges from `pc` at UTF-16 index `at`; `generation` dedups states per step.
+      const add = (list: number[], start: number, at: number, generation: number) => {
         const stack = [start]
         while (stack.length) {
           const pc = stack.pop()!
           if (mark[pc] === generation) continue
           mark[pc] = generation
+          steps++
           const inst = prog[pc]!
           if (inst.op === 'jmp') stack.push(inst.x)
           else if (inst.op === 'split') stack.push(inst.y, inst.x)
           else if (inst.op === 'assert') {
-            const before = cps[pos - 1]
-            const after = cps[pos]
-            const ok = inst.kind === 'start' ? pos === 0
-              : inst.kind === 'end' ? pos === cps.length
-                : (isWord(before) !== isWord(after)) === (inst.kind === 'word')
+            const ok = inst.kind === 'start' ? at === 0
+              : inst.kind === 'end' ? at === input.length
+                : (isWord(input.charCodeAt(at - 1)) !== isWord(input.charCodeAt(at))) === (inst.kind === 'word')
             if (ok) stack.push(pc + 1)
           } else if (inst.op === 'match') matched = true
           else list.push(pc)
         }
       }
 
-      for (let pos = 0; pos <= cps.length; pos++) {
+      // Walk code points by UTF-16 index; a lone surrogate is one code point, as in `u` mode.
+      for (let at = 0; ; ) {
         // Unanchored search: a new attempt may start at every position.
-        add(current, 0, pos, pos)
-        if (matched) return true
-        if (pos === cps.length) break
-        const cp = cps[pos]!
-        next = []
+        add(current, 0, at, at)
+        if (matched) return done(true)
+        if (at === input.length) return done(false)
+        const cp = input.codePointAt(at)!
+        const nextAt = at + (cp > 0xffff ? 2 : 1)
+        const next: number[] = []
         for (const pc of current) {
+          steps++
           const inst = prog[pc] as Extract<Inst, { op: 'atom' }>
-          if (inst.test(cp)) add(next, pc + 1, pos + 1, pos + 1)
+          if (inst.test(cp)) add(next, pc + 1, nextAt, nextAt)
         }
-        if (matched) return true
+        if (matched) return done(true)
+        // One position costs at most a few steps per instruction, so checking here bounds the overshoot.
+        if (steps > limit) return done(undefined)
         current = next
+        at = nextAt
       }
-      return matched
     },
   }
 }

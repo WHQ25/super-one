@@ -138,7 +138,7 @@ describe('parseSchemaForm: unsupported forms', () => {
     ['an unknown type', { type: 'object', properties: {} }],
     ['a nested object', { type: 'object' }],
     ['an unknown string format', { type: 'string', format: 'color' }],
-    ['an invalid pattern', { type: 'string', pattern: '(' }],
+    ['a non-string pattern', { type: 'string', pattern: 1 }],
     ['an unknown input type', { type: 'string', format: 'uri', 'x-openai-input': { type: 'calendar', options: [] } }],
     ['implicit resource selection', { type: 'array', items: { type: 'string', format: 'uri' }, 'x-openai-input': { type: 'resource', selection: 'implicit', options: [] } }],
     ['a selection mode on a single field', { type: 'string', format: 'uri', 'x-openai-input': { type: 'resource', selection: 'explicit', options: [] } }],
@@ -275,25 +275,58 @@ describe('server-supplied patterns', () => {
     return result
   }
 
-  it('validates a catastrophic-backtracking pattern and its default without stalling', () => {
-    const schema = {
-      type: 'object',
-      properties: { f: { type: 'string', pattern: '^(a+)+$', default: `${'a'.repeat(5000)}!` } },
-    }
-    const parsed = timed(() => fields(schema))
+  const textForm = (property: Record<string, unknown>) => timed(() => fields({ type: 'object', properties: { f: { type: 'string', ...property } } }))
+
+  it('hints a catastrophic-backtracking pattern and its default without stalling', () => {
+    const parsed = textForm({ pattern: '^(a+)+$', default: `${'a'.repeat(5000)}!` })
     expect(timed(() => validateSchemaForm(parsed, initialSchemaFormValues(parsed)))).toEqual({
       f: { code: 'pattern', limit: '^(a+)+$' },
     })
-    // The same check guards answers from other clients in main.
-    expect(timed(() => acceptedElicitationContent({ supported: true, fields: parsed }, { f: `${'a'.repeat(5000)}!` }))).toMatchObject({ ok: false })
+  })
+
+  it('never runs a pattern or format in main, but keeps structural checks', () => {
+    const parsed = textForm({ pattern: 'a{9998}b', format: 'email', minLength: 2 })
+    const value = `${'a'.repeat(200_000)}!`
+    expect(timed(() => acceptedElicitationContent({ supported: true, fields: parsed }, { f: value }))).toEqual({ ok: true, content: { f: value } })
+    expect(acceptedElicitationContent({ supported: true, fields: parsed }, { f: 'a' })).toEqual({ ok: false, reason: 'f: minLength' })
+    expect(acceptedElicitationContent({ supported: true, fields: parsed }, { f: 1 })).toEqual({ ok: false, reason: 'f: type' })
   })
 
   it.each([
-    ['(a)\\1', 'a backreference'],
-    ['^(?=a)', 'lookaround'],
-  ])('reports a form whose pattern %j needs %s as unsupported', (pattern, reason) => {
-    expect(parseSchemaForm({ type: 'object', properties: { f: { type: 'string', pattern } } }))
-      .toEqual({ supported: false, field: 'f', reason: `"pattern" uses ${reason}` })
+    ['a backreference', '(a)\\1'],
+    ['lookaround', '^(?=a)'],
+    ['invalid syntax', '('],
+    ['an empty repetition', '(?:){1000000000}'],
+    ['nested empty repetitions', '((?:){1000}){1000}'],
+    ['deep nesting', `${'('.repeat(100)}a${')'.repeat(100)}`],
+  ])('skips the hint for a pattern with %s instead of rejecting the form', (_, pattern) => {
+    const parsed = textForm({ pattern })
+    expect(parsed).toEqual([expect.objectContaining({ kind: 'text', pattern })])
+    expect(timed(() => validateSchemaForm(parsed, { f: 'zz' }))).toEqual({})
+  })
+
+  it('skips the hint when a match exceeds its budget', () => {
+    const parsed = textForm({ pattern: 'a{9998}b', default: `${'a'.repeat(200_000)}!` })
+    expect(timed(() => validateSchemaForm(parsed, initialSchemaFormValues(parsed)))).toEqual({})
+  })
+
+  it('shares one budget across the form', () => {
+    const heavy = { type: 'string', pattern: 'a{9998}b' }
+    const cheap = { type: 'string', pattern: '^x$' }
+    const value = `${'a'.repeat(200_000)}!`
+    const heavyFields = Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`h${i}`, heavy]))
+    const form = fields({ type: 'object', properties: { ...heavyFields, cheap } })
+    const values = { ...Object.fromEntries(Object.keys(heavyFields).map((name) => [name, value])), cheap: 'y' }
+    expect(timed(() => validateSchemaForm(form, values))).toEqual({})
+    expect(validateSchemaForm(fields({ type: 'object', properties: { cheap } }), { cheap: 'y' })).toEqual({ cheap: { code: 'pattern', limit: '^x$' } })
+  })
+
+  it('keeps hinting after the pattern cache churns', () => {
+    const cad = [field({ type: 'string', pattern: '^(cad|file):' }, true)]
+    expect(validateSchemaForm(cad, { f: 'https://x.y' }).f).toMatchObject({ code: 'pattern' })
+    for (let i = 0; i < 200; i++) validateSchemaForm([field({ type: 'string', pattern: `^${'x'.repeat(i)}$` }, true)], { f: 'y' })
+    expect(validateSchemaForm(cad, { f: 'https://x.y' }).f).toMatchObject({ code: 'pattern' })
+    expect(validateSchemaForm(cad, { f: 'cad://parts/hex' })).toEqual({})
   })
 
   it('still validates ordinary patterns', () => {
@@ -315,8 +348,8 @@ describe('server-supplied patterns', () => {
 })
 
 describe('patterns parsed elsewhere', () => {
-  it('treats a pattern this runtime cannot compile as not matching instead of throwing', () => {
+  it('skips the hint for a pattern this runtime cannot compile instead of throwing', () => {
     const received: SchemaFormField[] = [{ name: 'f', label: 'f', required: true, kind: 'text', pattern: '(a)\\1' }]
-    expect(validateSchemaForm(received, { f: 'aa' })).toEqual({ f: { code: 'pattern', limit: '(a)\\1' } })
+    expect(validateSchemaForm(received, { f: 'aa' })).toEqual({})
   })
 })

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, ChatMessage, SendMessageRequest } from '@superone/shared/agent-types'
 import type { BackendStartOptions, HarnessId, SessionBackend, SessionProvider } from './types'
+import { watchSessionCloses } from '../session-list-watch'
 
 const hoisted = vi.hoisted(() => ({
   providers: new Map<string, SessionProvider>(),
@@ -700,7 +701,11 @@ describe('SessionManager', () => {
         onSessionDisposed: (sid) => { disposed.push(sid) },
       })
       const s = mgr2.createSession({ projectPath: '/pp', providerId: 'claude-base' })
+      const closed = vi.fn()
+      const stop = watchSessionCloses(closed)
       await mgr2.disposeSession(s.snapshot.id)
+      stop()
+      expect(closed).toHaveBeenCalledExactlyOnceWith({ environmentId: 'local', sessionId: s.id })
       expect(disposed).toEqual([s.snapshot.id])
     })
 

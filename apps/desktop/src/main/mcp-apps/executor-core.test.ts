@@ -45,6 +45,82 @@ function challenge(result: McpAppHostResult): string {
 }
 
 describe('MCP App host executor', () => {
+  it('returns retained maps to baseline after session churn and keeps a live View active', async () => {
+    const s = setup({ fresh: true })
+    const counts = () => {
+      const state = s.executor as unknown as { active: Map<string, string>; messageTimes: Map<string, number[]>; challenges: Map<string, unknown>; pendingSends: Map<string, unknown>; requests: Set<unknown> }
+      return [state.active.size, state.messageTimes.size, state.challenges.size, state.pendingSends.size, state.requests.size]
+    }
+    const baseline = counts()
+    s.ports.resolve = async ref => ({ ...s.target(), ref, app: { ...APP, binding: { ...APP.binding, session: ref.sessionId } } })
+    for (let i = 0; i < 100; i++) {
+      const ref = { environmentId: 'local', sessionId: `closed-${i}` }
+      const app = { ...APP, binding: { ...APP.binding, session: ref.sessionId } }
+      const requester: McpAppRequester = { kind: 'mobile', deviceId: `device-${i}` }
+      s.executor.observeLive(ref, app, requester)
+      const request = { ...s.request(MESSAGE), sessionKey: `local:${ref.sessionId}` }
+      const prompt = await s.executor.execute(request, requester, signal())
+      expect(await s.executor.execute({ ...request, approval: { challenge: challenge(prompt) } }, requester, signal())).toMatchObject({ ok: true })
+      challenge(await s.executor.execute(request, requester, signal()))
+      s.executor.releaseSession(ref)
+      expect(counts()).toEqual(baseline)
+    }
+    expect(s.executor.isActive(s.target())).toBe(true)
+  })
+
+  it('releases only the disconnected requester and invalidates its pending approval', async () => {
+    const s = setup({ fresh: true })
+    const phone: McpAppRequester = { kind: 'mobile', deviceId: 'phone' }
+    const other: McpAppRequester = { kind: 'mobile', deviceId: 'other' }
+    await s.run({ operation: 'activate' }, undefined, phone)
+    await s.run({ operation: 'activate' }, undefined, other)
+    const approval = challenge(await s.run(MESSAGE, undefined, phone))
+    s.executor.releaseRequester(phone)
+    expect(s.executor.isActive(s.target(), phone)).toBe(false)
+    expect(s.executor.isActive(s.target(), other)).toBe(true)
+    expect(s.executor.isActive(s.target())).toBe(true)
+    await s.run({ operation: 'activate' }, undefined, phone)
+    expect(await s.run(MESSAGE, { challenge: approval }, phone)).toMatchObject({ ok: false, error: { code: 'denied' } })
+    expect(s.ports.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('expires idle rate-limit keys without evicting a quiet live activation', async () => {
+    const s = setup({ fresh: true })
+    await s.run(MESSAGE, { challenge: challenge(await s.run(MESSAGE)) })
+    const state = s.executor as unknown as { messageTimes: Map<string, number[]> }
+    expect(state.messageTimes.size).toBe(1)
+    s.advance(60_001); s.executor.sweepExpired()
+    expect(state.messageTimes.size).toBe(0)
+    expect(s.executor.isActive(s.target())).toBe(true)
+    expect(await s.run(CALL)).toMatchObject({ ok: true })
+  })
+
+  it('cannot reactivate a closed scope when an in-flight ready reply arrives late', async () => {
+    const s = setup()
+    let finish!: (value: Awaited<ReturnType<McpAppExecutorPorts['provider']>>) => void
+    s.provider.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const activation = s.run({ operation: 'activate' })
+    await vi.waitFor(() => expect(s.provider).toHaveBeenCalledOnce())
+    s.executor.releaseSession(s.target().ref)
+    finish({ ok: true, value: { mode: 'native', resourceRead: true, toolCall: true } })
+    expect(await activation).toMatchObject({ ok: false, error: { code: 'cancelled' } })
+    expect(s.executor.isActive(s.target())).toBe(false)
+  })
+
+  it.each(['source', 'destination'])('drops a prepared message when its %s session closes', async owner => {
+    const s = setup({ fresh: true })
+    const destination = { environmentId: 'local', sessionId: 'new' }
+    s.ports.createMessageSession = async () => ({ ref: destination, projectPath: '/project' })
+    const message: McpAppHostOperation = { operation: 'sendMessage', params: { role: 'user', content: [], _meta: { 'openai/message': { target: 'new' } } } }
+    const result = await s.run(message, { challenge: challenge(await s.run(message)) })
+    if (!result.ok) throw new Error('Expected prepared message')
+    s.executor.releaseSession(owner === 'source' ? s.target().ref : destination)
+    const state = s.executor as unknown as { pendingSends: Map<string, unknown> }
+    expect(state.pendingSends.size).toBe(0)
+    await s.run({ operation: 'sendPreparedMessage', pendingSend: (result.value as { pendingSend: string }).pendingSend })
+    expect(s.ports.sendMessage).not.toHaveBeenCalled()
+  })
+
   it('creates a confirmed new session, then sends only after a single-use host handoff', async () => {
     const s = setup({ fresh: true })
     s.ports.createMessageSession = vi.fn(async () => ({ ref: { environmentId: 'local', sessionId: 'new' }, projectPath: '/project' }))

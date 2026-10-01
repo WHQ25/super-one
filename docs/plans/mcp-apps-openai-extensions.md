@@ -591,6 +591,27 @@ Portable executor/frame coverage: 20 tests passed, including real App SDK/bridge
 reload and unmount while consent is pending. Portable `tsc --noEmit` and desktop
 `typecheck:web` passed. Physical phone acceptance was not rerun.
 
+### Pre-merge review: executor scope cleanup
+
+Session close/delete and complete requester disconnect release scoped View
+activation, pending approvals and message handoffs; in-flight operations are
+aborted so a late ready reply cannot recreate activation. Local runtime disposal
+and all DB delete paths share lifecycle notifications. Remote node removal and
+closed/removed durable events use the connection-scoped identity. The remote
+start/completion tracker also drops a closed session's outstanding starts.
+
+Idle message-rate keys expire after their existing 60-second window; an unref'ed
+host timer also reclaims idle approval/handoff state without requiring traffic.
+Live activations have no TTL or count eviction. Rate limiting remains shared
+across a View's requesters.
+
+Executor/lifecycle/DB/authenticated Node selection: 166 tests passed, including
+100 session/device churn cycles returning all retained maps to baseline, requester
+isolation, quiet live activation retention, late activation replies, prepared
+message source/destination teardown, and real Node removal notifications.
+Desktop node/web and portable typechecks passed; portable production build passed
+with the existing chunk-size warning. No live desktop/phone smoke was rerun.
+
 ## Phase 2: forms
 
 Branch `feat/mcp-apps-forms`. One schema model

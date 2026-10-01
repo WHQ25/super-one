@@ -17,6 +17,7 @@ import { ProjectResourceCache } from './project-resource-cache'
 import { cancelMcpReload } from '../mcp/mcp-reload-scheduler'
 import { closeSuperoneMcpHttpSessions } from '../mcp/superone-mcp-http-state'
 import { Session } from './session'
+import { notifySessionClosed } from '../session-list-watch'
 import {
   getRuntimeIdleTimeoutMs,
   SESSION_RUNTIME_REAPER_INTERVAL_MS,
@@ -480,6 +481,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       this.perSessionUnsub.delete(sessionId)
     }
     await session.dispose()
+    notifySessionClosed({ environmentId: 'local', sessionId })
     this.disposedReceipts.set(sessionId, session.seenCompletedMessageId)
     await closeSuperoneMcpHttpSessions(sessionId)
     try {

@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
+import { watchSessionCloses } from '../session-list-watch'
 
 const electron = vi.hoisted(() => {
   const store = new Map<string, string>()
@@ -90,6 +91,13 @@ describe('EnvironmentHost product path', () => {
     expect(await host.getSession(connectionId, created.sessionId)).toMatchObject({
       harnessId: 'claude', providerId: 'claude', cwd: projectDir, ...settings,
     })
+    const closed = vi.fn()
+    const stop = watchSessionCloses(closed)
+    try {
+      await host.removeSession(connectionId, created.sessionId)
+      expect(closed).toHaveBeenCalledExactlyOnceWith({ environmentId: connectionId, sessionId: created.sessionId })
+      expect(await host.getSession(connectionId, created.sessionId)).toBeNull()
+    } finally { stop() }
     host.disconnect(connectionId)
   })
 

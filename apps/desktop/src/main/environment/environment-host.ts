@@ -1,3 +1,4 @@
+import { notifySessionClosed } from '../session-list-watch'
 import { parseMessageDisplay, type MessageDisplayFields } from '@superone/shared/message-display'
 import { remoteSuperoneHome, remoteNodePort } from './remote-data-path'
 import { app } from 'electron'
@@ -25,6 +26,7 @@ import type {
   ResourceProvider,
 } from '@superone/shared/environment'
 import {
+  SESSION_DURABLE_EVENT,
   DEFAULT_REMOTE_INSTALL_SOURCE,
   DESKTOP_UPGRADE_REQUIRED,
   decideRemoteCliAction,
@@ -1814,6 +1816,7 @@ export class EnvironmentHost {
           if (signal.aborted) return
           afterSequence = ev.sequence
           if (ev.aggregateType === 'session' && ev.aggregateId === input.sessionId) {
+            if (ev.eventType === SESSION_DURABLE_EVENT.closed || ev.eventType === SESSION_DURABLE_EVENT.removed) notifySessionClosed({ environmentId: connectionId, sessionId: input.sessionId })
             for (const agentEvent of mapper.map(ev)) {
               this.agentEventSink?.(agentEvent)
             }
@@ -2122,6 +2125,7 @@ export class EnvironmentHost {
       }
     }
     const result = await gateway.removeSession(sessionId, control)
+    notifySessionClosed({ environmentId: connectionId, sessionId })
     this.sessionLeases.delete(this.leaseKey(connectionId, sessionId))
     // The desktop mirror of this session's artifacts is ours to remove.
     void import('./session-zone-reclaim').then((m) => m.removeSessionZone(sessionId)).catch(() => undefined)

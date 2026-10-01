@@ -1,6 +1,6 @@
 import { registerComputerUseViewfinderIpc } from './computer-use/viewfinder-ipc'
 import { registerMcpAppsProviderIpc } from './mcp-apps/provider-ipc'
-import { initializeMcpAppExecutor, observeRemoteMcpAppEvent } from './mcp-apps/executor'
+import { initializeMcpAppExecutor, observeRemoteMcpAppEvent, releaseMcpAppRequester } from './mcp-apps/executor'
 import { codexAccountStore } from './codex/codex-account-store'
 import { registerGrokAuthIpc } from './acp/grok-auth-ipc'
 import { registerCodexAccountIpc } from './codex/codex-account-ipc'
@@ -607,6 +607,7 @@ const remoteCallbacks: RemoteControlCallbacks = {
     safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: true, name, transport, firstConnect })
   },
   onClientDisconnected: ({ deviceId }) => {
+    releaseMcpAppRequester({ kind: 'mobile', deviceId })
     safeSend(AgentIpcChannels.REMOTE_DEVICE_STATUS_CHANGED, { id: deviceId, online: false })
     deviceRegistry.handleDeviceDisconnected(deviceId)
   },

@@ -14,6 +14,7 @@ import type { RemoteResponder } from '../remote-control-service'
 import { McpAppExecutor, type McpAppResolvedTarget } from './executor-core'
 import { routeMcpAppsProviderRequest } from './provider-ipc'
 import { mcpAppSessionKey } from './session-key'
+import { watchSessionCloses, watchSessionDeletes } from '../session-list-watch'
 
 interface MobileSender {
   handleRemoteCommand(command: RemoteCommand, respond?: RemoteResponder, source?: { deviceId: string; transport: 'lan' | 'relay' }): Promise<void>
@@ -144,7 +145,15 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
     const app = mcpAppEventAttachment(event)
     if (app) executor!.observeLive({ environmentId: 'local', sessionId: sid }, app)
   })
+  const releaseSession = (ref: SessionRef) => { executor!.releaseSession(ref); remoteFreshness.releaseSession(ref) }
+  watchSessionCloses(releaseSession)
+  watchSessionDeletes(ids => { for (const sessionId of ids) releaseSession({ environmentId: 'local', sessionId }) })
+  // Time-based cleanup only applies to short-lived approvals/rate windows.
+  // A quiet live View keeps its activation until session/requester teardown.
+  setInterval(() => executor!.sweepExpired(), 60_000).unref()
 }
+
+export function releaseMcpAppRequester(requester: McpAppRequester): void { executor?.releaseRequester(requester) }
 
 /** Remote hydrate never calls this; only the live turn stream establishes freshness. */
 export function observeRemoteMcpAppEvent(event: AgentEvent): void {

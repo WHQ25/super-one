@@ -69,7 +69,7 @@ function operationOf(request: McpAppHostRequest): McpAppHostOperation {
   }
 }
 
-interface Challenge { expires: number; key: string; binding: string; view: string }
+interface Challenge { expires: number; key: string; binding: string; view: string; scope: string }
 interface PendingMessage {
   expires: number; key: string; binding: string; bytes: number
   destination: { ref: SessionRef; projectPath: string }
@@ -89,11 +89,52 @@ export class McpAppExecutor {
   private readonly challenges = new Map<string, Challenge>()
   private readonly messageTimes = new Map<string, number[]>()
   private readonly pendingSends = new Map<string, PendingMessage>()
+  private readonly requests = new Set<{ ref: SessionRef; requester: string; abort: AbortController }>()
   constructor(private readonly ports: McpAppExecutorPorts) {}
   private now(): number { return this.ports.now?.() ?? Date.now() }
   private targetKey(ref: SessionRef, appInstanceId: string): string { return JSON.stringify([ref.environmentId, ref.sessionId, appInstanceId]) }
   private activeKey(ref: SessionRef, appInstanceId: string, requester: McpAppRequester): string { return JSON.stringify([this.targetKey(ref, appInstanceId), requesterKey(requester)]) }
   private bindingKey(app: ToolAppAttachment): string { return jsonHash({ binding: app.binding, origin: app.origin, resourceUri: app.resourceUri }) }
+
+  private matchesTarget(key: string, ref: SessionRef): boolean {
+    const [environmentId, sessionId] = JSON.parse(key) as string[]
+    return environmentId === ref.environmentId && sessionId === ref.sessionId
+  }
+
+  private matchesScope(key: string, ref?: SessionRef, requester?: string): boolean {
+    const [target, owner] = JSON.parse(key) as string[]
+    return (!ref || this.matchesTarget(target, ref)) && (!requester || owner === requester)
+  }
+
+  /** A closed/deleted session cannot retain activation or pending approvals. */
+  releaseSession(ref: SessionRef): void { this.releaseScope(ref) }
+
+  /** Called only when this requester disconnects, not when one of its transports drops. */
+  releaseRequester(requester: McpAppRequester): void { this.releaseScope(undefined, requesterKey(requester)) }
+
+  private releaseScope(ref?: SessionRef, requester?: string): void {
+    for (const key of this.active.keys()) if (this.matchesScope(key, ref, requester)) this.active.delete(key)
+    for (const [id, value] of this.challenges) if (this.matchesScope(value.scope, ref, requester)) this.challenges.delete(id)
+    for (const [id, value] of this.pendingSends) {
+      if (this.matchesScope(value.key, ref, requester) || (ref && value.destination.ref.environmentId === ref.environmentId && value.destination.ref.sessionId === ref.sessionId)) this.pendingSends.delete(id)
+    }
+    if (ref) for (const key of this.messageTimes.keys()) if (this.matchesTarget(key, ref)) this.messageTimes.delete(key)
+    for (const request of this.requests) {
+      if ((!ref || (request.ref.environmentId === ref.environmentId && request.ref.sessionId === ref.sessionId)) && (!requester || request.requester === requester)) request.abort.abort()
+    }
+  }
+
+  /** Expire idle rate/approval state; live activations have no age-based eviction. */
+  sweepExpired(): void {
+    const now = this.now()
+    for (const [key, times] of this.messageTimes) {
+      const recent = times.filter(time => time > now - 60_000)
+      if (recent.length) this.messageTimes.set(key, recent)
+      else this.messageTimes.delete(key)
+    }
+    for (const [id, value] of this.challenges) if (value.expires <= now) this.challenges.delete(id)
+    for (const [id, value] of this.pendingSends) if (value.expires <= now) this.pendingSends.delete(id)
+  }
 
   /** Only a new live provider event can auto-activate a View; replay/hydrate never calls this. */
   observeLive(ref: SessionRef, app: ToolAppAttachment, requester: McpAppRequester = { kind: 'desktop' }): void {
@@ -167,7 +208,11 @@ export class McpAppExecutor {
   }
 
   async execute(request: McpAppHostRequest, requester: McpAppRequester, signal: AbortSignal, validateTarget?: (target: McpAppResolvedTarget) => void): Promise<McpAppHostResult> {
+    const ref = typeof request?.sessionKey === 'string' ? parseSessionKey(request.sessionKey) : null
+    const lifetime = ref ? { ref, requester: requesterKey(requester), abort: new AbortController() } : undefined
+    if (lifetime) { this.requests.add(lifetime); signal = AbortSignal.any([signal, lifetime.abort.signal]) }
     try {
+      this.sweepExpired()
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
       if (requester.kind === 'mobile' && !requester.deviceId) throw new McpAppsError('denied', 'MCP App device identity required')
       const operation = operationOf(request)
@@ -180,7 +225,6 @@ export class McpAppExecutor {
       const binding = this.bindingKey(target.app)
       // Composer state can be removed from restored/offline history without waking the provider.
       if (operation.operation === 'removeModelContext') return await this.writeContext(request, operation, signal, validateTarget)
-      for (const [id, pending] of this.pendingSends) if (pending.expires <= this.now()) this.pendingSends.delete(id)
       if (operation.operation === 'sendPreparedMessage') {
         const pending = this.pendingSends.get(operation.pendingSend)
         this.pendingSends.delete(operation.pendingSend)
@@ -218,7 +262,6 @@ export class McpAppExecutor {
         assertMcpAppSize(prompt)
       }
       const challengeKey = jsonHash({ ref, appInstanceId: target.app.appInstanceId, requester: requesterKey(requester), operation })
-      for (const [id, challenge] of this.challenges) if (challenge.expires <= this.now()) this.challenges.delete(id)
       if (request.approval) {
         const challenge = this.challenges.get(request.approval.challenge)
         this.challenges.delete(request.approval.challenge) // single use, even for an invalid confirmation
@@ -227,7 +270,7 @@ export class McpAppExecutor {
         const pendingForView = [...this.challenges.values()].filter(challenge => challenge.view === key).length
         if (pendingForView >= 8 || this.challenges.size >= 1024) throw new McpAppsError('denied', 'Too many pending MCP App approvals')
         const challenge = randomUUID()
-        this.challenges.set(challenge, { expires: this.now() + 300_000, key: challengeKey, binding, view: key })
+        this.challenges.set(challenge, { expires: this.now() + 300_000, key: challengeKey, binding, view: key, scope: activeKey })
         return { ok: false, error: { code: 'approval_required', challenge, prompt } }
       }
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
@@ -305,9 +348,10 @@ export class McpAppExecutor {
         }
 
       }
+      throw new McpAppsError('invalid', 'Unhandled MCP App host operation')
     } catch (error) {
       const data = error instanceof McpAppsError ? error.toJSON() : { code: 'invalid' as const, message: error instanceof Error ? error.message : String(error) }
       return { ok: false, error: data }
-    }
+    } finally { if (lifetime) this.requests.delete(lifetime) }
   }
 }

@@ -9,6 +9,13 @@ const item: CodexMcpToolCallItem = { type: 'mcp_tool_call', id: 'call', server: 
 const delta = (phase: 'started' | 'completed', app?: ToolAppAttachment, id = 'call'): AgentEvent => ({ type: 'codex_item_delta', messageId: 'm', phase, item: { ...item, id, ...(app ? { app } : {}) } })
 
 describe('remote MCP App live freshness', () => {
+  it('does not use an abandoned start after its session closed', () => {
+    const tracker = new RemoteMcpAppFreshness()
+    tracker.observe(ref, delta('started'))
+    tracker.releaseSession(ref)
+    expect(tracker.observe(ref, delta('completed', app))).toBeUndefined()
+  })
+
   it('allows metadata first arriving at completion, then forgets the start', () => {
     const tracker = new RemoteMcpAppFreshness()
     expect(tracker.observe(ref, delta('started'))).toBeUndefined()

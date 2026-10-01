@@ -8,6 +8,11 @@ export class RemoteMcpAppFreshness {
   private readonly started = new Map<string, { ref: string; messageId?: string; at: number }>()
   constructor(private readonly now = Date.now) {}
 
+  releaseSession(ref: SessionRef): void {
+    const refKey = JSON.stringify([ref.environmentId, ref.sessionId])
+    for (const [key, value] of this.started) if (value.ref === refKey) this.started.delete(key)
+  }
+
   observe(ref: SessionRef, event: AgentEvent): ToolAppAttachment | undefined {
     const refKey = JSON.stringify([ref.environmentId, ref.sessionId])
     const now = this.now()

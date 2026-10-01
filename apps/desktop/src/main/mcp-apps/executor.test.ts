@@ -14,7 +14,8 @@ vi.mock('../environment/environment-host', () => ({ getEnvironmentHost: () => ({
   resolveMcpAppAttachment: mocks.resolve,
   getSession: mocks.remoteSession, createSession: mocks.createRemoteSession, sendSessionMessage: mocks.remoteSend,
 }) }))
-import { executeMcpAppHostRequest, initializeMcpAppExecutor } from './executor'
+import { executeMcpAppHostRequest, initializeMcpAppExecutor, releaseMcpAppRequester } from './executor'
+import { notifySessionClosed, notifySessionsDeleted } from '../session-list-watch'
 
 const app: ToolAppAttachment = { appInstanceId: 'view', binding: { node: 'local', session: 's', server: 'fixture', configGeneration: 0, configFingerprint: 'config' },
   presentation: { toolTitle: 'Library', serverTitle: 'Fixture CAD' }, origin: { providerSessionId: 'thread' }, resourceUri: 'ui://fixture/view', resource: { html: '<html>saved</html>', hash: 'hash', meta: {} } }
@@ -29,6 +30,18 @@ initializeMcpAppExecutor(manager, mobile, vi.fn())
 beforeEach(() => { mocks.resolve.mockReset(); mocks.provider.mockClear(); mobile.handleRemoteCommand.mockClear(); send.mockClear(); createSession.mockClear(); mocks.remoteSession.mockReset(); mocks.createRemoteSession.mockReset(); mocks.remoteSend.mockReset() })
 
 describe('main MCP App executor adapters', () => {
+  it.each(['close', 'delete', 'disconnect'])('requires reactivation after %s tears down its owner scope', async reason => {
+    const requester = { kind: 'mobile' as const, deviceId: 'cleanup-phone' }
+    const identity = { sessionKey: 'local:s', appInstanceId: 'view' }
+    await executeMcpAppHostRequest({ ...identity, operation: 'activate' }, requester)
+    if (reason === 'close') notifySessionClosed({ environmentId: 'local', sessionId: 's' })
+    else if (reason === 'delete') notifySessionsDeleted(['s'])
+    else releaseMcpAppRequester(requester)
+    const result = await executeMcpAppHostRequest({ ...identity, operation: 'sendMessage', params: { role: 'user', content: [] } }, requester)
+    expect(result).toMatchObject({ ok: false, error: { code: 'inactive' } })
+    expect(mobile.handleRemoteCommand).not.toHaveBeenCalled()
+  })
+
   it('resolves a remote View in one scoped RPC without downloading session history', async () => {
     mocks.resolve.mockResolvedValueOnce({ ok: true, value: { projectId: '/node/project', messageId: 'authoritative-row', app: { ...app, binding: { ...app.binding, node: 'node' } } } })
     expect(await executeMcpAppHostRequest({ sessionKey: 'connection:s', appInstanceId: 'view', messageId: 'stale-hint', operation: 'load' }, { kind: 'desktop' }))

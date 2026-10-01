@@ -1,3 +1,4 @@
+import type { SessionRef } from '@superone/shared/environment/refs'
 /**
  * "Some project's session list just changed" — the one signal remote clients
  * re-read their list on.
@@ -46,4 +47,16 @@ export function watchSessionDeletes(watcher: SessionDeleteWatcher): () => void {
 export function notifySessionsDeleted(sessionIds: string[]): void {
   if (sessionIds.length === 0) return
   for (const watcher of sessionDeleteWatchers) watcher(sessionIds)
+}
+
+/** Runtime close, including remote sessions, independently of durable row deletion. */
+const sessionCloseWatchers = new Set<(ref: SessionRef) => void>()
+
+export function watchSessionCloses(watcher: (ref: SessionRef) => void): () => void {
+  sessionCloseWatchers.add(watcher)
+  return () => { sessionCloseWatchers.delete(watcher) }
+}
+
+export function notifySessionClosed(ref: SessionRef): void {
+  for (const watcher of sessionCloseWatchers) watcher(ref)
 }

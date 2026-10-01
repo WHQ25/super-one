@@ -17,6 +17,11 @@ vi.mock('./McpAppFrame', () => ({ default: (props: McpAppFrameProps) => { frame.
 import McpAppView from './McpAppView'
 import { McpAppHostLayer } from './McpAppHostLayer'
 vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 600, height: 240 } as DOMRect)
+Object.defineProperty(HTMLElement.prototype, 'checkVisibility', { configurable: true, value() {
+  for (let element: HTMLElement | null = this; element; element = element.parentElement) if (element.hidden || element.style.display === 'none') return false
+  return true
+} })
 const app: ToolAppAttachment = { appInstanceId: 'v', binding: { node: 'local', session: 'original', server: 'fixture', configGeneration: 0, configFingerprint: 'config' }, origin: { providerSessionId: 'thread' }, resourceUri: 'ui://fixture/view', status: 'result' }
 const prepared = { state: 'ready', document: { id: 'doc', url: 'superone-mcp-app://origin/view', origin: 'superone-mcp-app://origin', appInstanceId: 'v' }, active: false, meta: {} } as const
 function setup() {
@@ -25,6 +30,36 @@ function setup() {
 }
 afterEach(() => { cleanup(); frame.props = null })
 describe('MCP App desktop View lifecycle', () => {
+  it('prefers the visible main transcript over a later floating claim', async () => {
+    const s = setup()
+    render(<><McpAppHostLayer />
+      <div data-testid="main-row"><McpAppView app={app} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></div>
+      <div data-chat-panel data-testid="floating-row"><McpAppView app={app} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></div>
+    </>)
+    await waitFor(() => expect(screen.getByTestId('main-row').textContent).toContain('mcpApp.activate'))
+    expect(screen.getByTestId('floating-row').textContent).toBe('')
+  })
+  it('keeps a hidden claim parked and adopts it when its container becomes visible', async () => {
+    const s = setup()
+    render(<><McpAppHostLayer /><div data-testid="main-row" style={{ display: 'none' }}><McpAppView app={app} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></div></>)
+    await screen.findByTestId('frame')
+    expect(screen.getByTestId('main-row').textContent).toBe('')
+    act(() => { screen.getByTestId('main-row').style.display = 'block' })
+    await waitFor(() => expect(screen.getByTestId('main-row').textContent).toContain('mcpApp.activate'))
+    expect(s.api.mcpAppRegister).toHaveBeenCalledTimes(1)
+    expect(s.api.mcpAppRelease).not.toHaveBeenCalled()
+  })
+  it('hands a maximized floating transcript claim back to its mounted main row', async () => {
+    const s = setup()
+    const main = (hidden: boolean) => <div data-testid="main-row" style={{ display: hidden ? 'none' : undefined }}><McpAppView app={app} route={{ projectPath: '/original-project', sessionId: 'original' }} api={s.api} /></div>
+    const floating = <div data-chat-panel data-testid="floating-row"><McpAppView app={app} route={{ projectPath: '/original-project', sessionId: 'original' }} api={s.api} /></div>
+    const ui = render(<><McpAppHostLayer />{main(true)}{floating}</>)
+    await waitFor(() => expect(screen.getByTestId('floating-row').textContent).toContain('mcpApp.activate'))
+    ui.rerender(<><McpAppHostLayer />{main(false)}</>)
+    await waitFor(() => expect(screen.getByTestId('main-row').textContent).toContain('mcpApp.activate'))
+    expect(s.api.mcpAppRegister).toHaveBeenCalledTimes(1)
+    expect(s.api.mcpAppRelease).not.toHaveBeenCalled()
+  })
   it('recovers lost host activation without reconnecting or replaying the failed call', async () => {
     const s = setup(); vi.mocked(s.api.mcpAppRegister).mockResolvedValueOnce({ ok: true, value: { ...prepared, active: true } })
     s.mount(); await screen.findByTestId('frame'); expect(frame.props?.active).toBe(true)

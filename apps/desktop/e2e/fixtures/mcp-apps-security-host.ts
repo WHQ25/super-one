@@ -4,9 +4,9 @@ import { createMcpAppDocument, mcpAppAllowAttribute } from '@superone/shared/mcp
 import type { McpAppHostExecutor, McpAppHost } from '@superone/shared/mcp-apps-host/host'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import McpAppFrame from '../../src/renderer/src/components/mcp-apps/McpAppFrame'
-import { useMcpAppLayout } from '../../src/renderer/src/components/mcp-apps/layout-store'
+import { useMcpAppLayout, type McpAppOwner } from '../../src/renderer/src/components/mcp-apps/layout-store'
 import type { McpAppDesktopApi } from '../../src/renderer/src/components/mcp-apps/desktop-executor'
-import { createElement, StrictMode, useEffect, useRef } from 'react'
+import { createElement, Fragment, StrictMode, useEffect, useLayoutEffect, useRef } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Root } from 'react-dom/client'
 import { DockviewReact } from 'dockview-react'
@@ -66,7 +66,8 @@ window.securityHarness = {
       const nativeListeners = new Set<(event: { url: string }) => void>()
       const api = { onMcpAppDocumentRevoked: (callback: (event: { url: string }) => void) => { nativeListeners.add(callback); return () => nativeListeners.delete(callback) }, mcpAppRelease: async () => {} } as McpAppDesktopApi
       window.securityNative.onRevoke(url => nativeListeners.forEach(callback => callback({ url })))
-      useMcpAppLayout.getState().claim({ app, route: { projectPath: '/security', sessionId: app.binding.session }, api, row })
+      const owner = { app, route: { projectPath: '/security', sessionId: app.binding.session }, api, row }
+      useMcpAppLayout.getState().claim(owner)
       useMcpAppLayout.getState().surface(app.appInstanceId, 'inline', row)
       for (const mode of ['pip'] as const) {
         const element = document.createElement('div'); element.dataset.productionMode = mode
@@ -75,10 +76,10 @@ window.securityHarness = {
       }
       dockContainer = document.createElement('div'); dockContainer.style.cssText = 'width:700px;height:400px'; document.body.appendChild(dockContainer)
       dockRoot = createRoot(dockContainer)
-      await new Promise<void>(resolve => dockRoot!.render(createElement(DockviewReact, {
+      await new Promise<void>(resolve => dockRoot!.render(createElement(Fragment, {}, createElement(DockviewReact, {
         components: { 'mcp-app': McpAppPanel, baseline: () => createElement('div', {}, 'Existing activity') }, tabComponents: { 'mcp-app-tab': NativeTab },
         onReady({ api }: { api: DockviewApi }) { dockApi = api; connectMcpAppTabs(api); resolve() },
-      })))
+      }), createElement(FloatingTranscript, { owner }))))
       reactContainer = document.createElement('div'); document.body.appendChild(reactContainer)
       reactRoot = createRoot(reactContainer)
       reactRoot.render(createElement(McpAppFrame, {
@@ -135,6 +136,22 @@ function NativeTab({ api }: IDockviewPanelHeaderProps) {
   return createElement('div', {}, api.title,
     createElement('button', { onClick: () => api.close() }, 'Close'),
     createElement('button', { onClick: () => api.exitMaximized() }, 'Shrink'))
+}
+
+/** Activity maximization adds a second transcript while the main one stays mounted. */
+function FloatingTranscript({ owner }: { owner: Omit<McpAppOwner, 'mode'> }) {
+  const maximized = useActivityPanelStore(state => state.maximized)
+  const row = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    owner.row!.style.display = maximized ? 'none' : ''
+    if (!maximized) return
+    const release = useMcpAppLayout.getState().claim({ ...owner, row: row.current })
+    return () => {
+      release()
+      queueMicrotask(() => { if (owner.row?.isConnected) useMcpAppLayout.getState().surface(owner.app.appInstanceId, 'inline', owner.row) })
+    }
+  }, [maximized, owner])
+  return createElement('div', { 'data-chat-panel': '' }, createElement('div', { ref: row, style: { width: 600, height: 200, display: maximized ? 'block' : 'none' }, 'data-native-floating-claim': maximized ? '' : undefined }))
 }
 
 /** Exercise the production core under actual React effect replay in Chromium. */

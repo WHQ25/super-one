@@ -19,6 +19,26 @@ export interface McpAppOwner {
 interface FrameOwner { iframe: HTMLIFrameElement; revoke(): void; failed: boolean }
 const frames = new Map<string, FrameOwner>()
 const surfaces = new Map<string, Partial<Record<McpAppSurface, HTMLElement>>>()
+const claims = new Map<string, Map<symbol, Omit<McpAppOwner, 'mode'>>>()
+function visibleRow(row: HTMLElement | null): row is HTMLElement {
+  if (!row?.isConnected) return false
+  const container = row.closest<HTMLElement>('[data-chat-root]') ?? row
+  const bounds = container.getBoundingClientRect()
+  return bounds.width > 0 && bounds.height > 0 && container.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })
+}
+function refreshClaim(key: string): void {
+  const state = useMcpAppLayout.getState()
+  const owner = state.views[key]
+  if (!owner) return
+  const visible = [...(claims.get(key)?.values() ?? [])].filter(value => visibleRow(value.row))
+  const selected = visible.find(value => !value.row!.closest('[data-chat-panel]')) ?? visible[0]
+  const row = selected?.row ?? null
+  if (owner.row !== row || (selected && (owner.app !== selected.app || owner.route !== selected.route || owner.api !== selected.api || owner.details !== selected.details || owner.title !== selected.title || owner.toolName !== selected.toolName || owner.renderFallback !== selected.renderFallback))) {
+    move(key, true)
+    useMcpAppLayout.setState(current => ({ views: { ...current.views, [key]: { ...(selected ?? owner), row, mode: owner.mode } } }))
+  }
+  move(key)
+}
 let parking: HTMLDivElement | undefined
 function parkingContainer(): HTMLDivElement {
   if (!parking?.isConnected) {
@@ -38,9 +58,11 @@ function invalidMove(frame: FrameOwner): void {
 function move(key: string, park = false): void {
   const frame = frames.get(key)
   if (!frame || frame.failed) return
-  const mode = useMcpAppLayout.getState().views[key]?.mode
+  const owner = useMcpAppLayout.getState().views[key]
+  const mode = owner?.mode
   const target = mode && surfaces.get(key)?.[mode]
-  const parent = !park && target?.isConnected ? target : parkingContainer()
+  const inlineVisible = mode !== 'inline' || (visibleRow(owner?.row ?? null) && owner!.row!.contains(target ?? null))
+  const parent = !park && inlineVisible && target?.isConnected ? target : parkingContainer()
   if (!frame.iframe.isConnected || !parent.isConnected || frame.iframe.ownerDocument !== parent.ownerDocument) { invalidMove(frame); return }
   if (frame.iframe.parentNode !== parent) {
     try { parent.moveBefore(frame.iframe, null) } catch { invalidMove(frame) }
@@ -68,16 +90,29 @@ export const useMcpAppLayout = create<McpAppLayoutState>((set, get) => ({
   views: {},
   claim(owner) {
     const key = owner.app.appInstanceId
-    set(state => ({ views: { ...state.views, [key]: { ...owner, mode: state.views[key]?.mode ?? 'inline' } } }))
-    move(key)
+    const token = Symbol(key)
+    const rows = claims.get(key) ?? new Map()
+    rows.set(token, owner); claims.set(key, rows)
+    if (!get().views[key]) set(state => ({ views: { ...state.views, [key]: { ...owner, row: null, mode: 'inline' } } }))
+    const container = owner.row?.closest<HTMLElement>('[data-chat-root]') ?? owner.row
+    const resize = new ResizeObserver(() => refreshClaim(key))
+    if (container) resize.observe(container)
+    const mutation = new MutationObserver(() => refreshClaim(key))
+    for (let element = container; element; element = element.parentElement) mutation.observe(element, { attributes: true, attributeFilter: ['class', 'style', 'hidden'] })
+    refreshClaim(key)
     return () => {
+      resize.disconnect(); mutation.disconnect()
+      rows.delete(token)
+      if (claims.get(key) !== rows) return
+      if (rows.size === 0) claims.delete(key)
       if (get().views[key]?.row !== owner.row) return
       move(key, true)
       set(state => ({ views: { ...state.views, [key]: { ...state.views[key]!, row: null } } }))
+      refreshClaim(key)
       // A props update or StrictMode can reclaim the same row immediately. Its
       // stable surface ref will not fire again, so retain that destination.
       queueMicrotask(() => {
-        if (get().views[key]?.row) return
+        if (get().views[key]?.row || claims.get(key)?.size) return
         get().surface(key, 'inline', null)
         if (get().views[key]?.mode !== 'inline') return
         set(state => { const views = { ...state.views }; delete views[key]; return { views } })
@@ -90,15 +125,9 @@ export const useMcpAppLayout = create<McpAppLayoutState>((set, get) => ({
     if (!owner) return
     // Park synchronously before React can remove the previous surface.
     move(key, true)
-    if (mode === 'inline' && !owner.row) {
-      get().surface(key, owner.mode, null)
-      set(state => { const views = { ...state.views }; delete views[key]; return { views } })
-      surfaces.delete(key)
-    } else {
-      set(state => ({ views: { ...state.views, [key]: { ...owner, mode } } }))
-      move(key)
-    }
+    set(state => ({ views: { ...state.views, [key]: { ...owner, mode } } }))
     syncMcpAppTab(key, mode)
+    refreshClaim(key)
   },
   surface(key, mode, element) {
     const targets = surfaces.get(key) ?? {}
@@ -123,6 +152,6 @@ export const useMcpAppLayout = create<McpAppLayoutState>((set, get) => ({
   },
   clear() {
     for (const key of Object.keys(get().views)) get().setMode(key, 'inline')
-    set({ views: {} }); surfaces.clear()
+    set({ views: {} }); surfaces.clear(); claims.clear()
   },
 }))

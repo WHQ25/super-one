@@ -573,3 +573,23 @@ and 17 native Electron tests
 cover all five exit paths (same `contentWindow`, one load, retained selection,
 subsequent app tool call, no exception), prior hidden panel restoration and an
 existing maximized tab. Native window comparison captures are still pending.
+
+
+### 2026-10-01 — main and floating transcript ownership
+
+The actual App mounts a second `ChatContent` in `ChatPanel` while an activity
+panel is maximized. Real-window comparison exposed an owner loss when the
+floating row unmounted, despite the original main row remaining mounted.
+The registry now tracks each row claim. Inline chooses a connected visible
+chat container (non-zero bounds and CSS visibility/opacity), preferring the
+main transcript; registration order does not override that preference. If
+none is visible, the iframe stays parked. Resize and scoped attribute
+observers adopt the row when its container becomes visible. No scroll polling
+or iframe overlay positioning is added. Provider/bridge ownership stays with
+the persistent controller throughout the handoff.
+
+Regression evidence: nine lifecycle/ownership Vitest cases, native Electron
+Dockview tests with main + floating claims and hidden-main layout across five
+exit paths, and a native hidden-container park/reveal case. Browser checks
+cover fullscreen → PiP → inline, Shrink → inline and visibility resumption.
+A real App restart and two-row return check remain the final verification.

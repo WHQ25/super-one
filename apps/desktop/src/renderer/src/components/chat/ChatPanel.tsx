@@ -395,6 +395,7 @@ export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchor
       )}
       <motion.div
         ref={panelRef}
+        data-chat-panel=""
         style={{ position: 'fixed', top: 0, left: 0, x: mvX, y: mvY }}
         animate={{ width: targetW, height: targetH, borderRadius: targetRadius }}
         initial={{ width: targetW, height: targetH, borderRadius: targetRadius }}

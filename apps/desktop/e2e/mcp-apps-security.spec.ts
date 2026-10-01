@@ -148,6 +148,7 @@ test.describe('MCP App native iframe boundary', () => {
       }, mode)
       await requestMode('fullscreen')
       await expect(page.locator('[data-mcp-app-fullscreen] #mcp-view')).toBeVisible()
+      await expect(page.locator('[data-native-floating-claim]')).toHaveCount(1)
       if (exit === 'Shrink' || exit === 'Close') await page.getByRole('button', { name: exit, exact: true }).click()
       else if (exit === 'Escape') {
         await app.evaluate(() => { globalThis.mcpSecurity.window.show(); globalThis.mcpSecurity.window.focus() })
@@ -173,6 +174,16 @@ test.describe('MCP App native iframe boundary', () => {
     await page.getByRole('button', { name: 'Shrink', exact: true }).click()
     await expect(page.locator('[data-mcp-app-fullscreen]')).toHaveCount(0)
     expect(await page.evaluate(() => window.securityHarness.activity())).toEqual({ showPanel: true, maximized: true, panels: ['baseline'] })
+    expect(await page.evaluate(() => window.securityHarness.state)).toMatchObject({ loads: 1, revoked: false, errors: [] })
+  })
+
+  test('an inline document parks while no transcript is visible and returns without reload', async () => {
+    await mount('hidden-transcript', false, false, true)
+    await page.evaluate(() => { document.querySelector<HTMLElement>('[data-production-mode=inline]')!.style.display = 'none' })
+    await expect(page.locator('[data-mcp-app-parking] #mcp-view')).toHaveCount(1)
+    await page.evaluate(() => { document.querySelector<HTMLElement>('[data-production-mode=inline]')!.style.display = '' })
+    await expect(page.locator('[data-production-mode=inline] #mcp-view')).toBeVisible()
+    expect(await page.evaluate(() => window.securityHarness.sameWindow())).toBe(true)
     expect(await page.evaluate(() => window.securityHarness.state)).toMatchObject({ loads: 1, revoked: false, errors: [] })
   })
 

@@ -88,7 +88,7 @@ export default function McpAppFrame({ app, messageId, html, meta }: McpAppFrameP
 
   const ask: McpAppConsent = useMemo(() => ({
     approve: (prompt) =>
-      new Promise((resolve) => setConsent({ prompt, resolve: (decision) => { setConsent(null); resolve(decision) } })),
+      new Promise((resolve) => setConsent({ prompt, resolve: (confirmed) => { setConsent(null); resolve(confirmed) } })),
   }), [])
   const display = useCallback((mode: McpAppDisplayMode): McpAppDisplayMode => {
     const next = mode === 'fullscreen' ? 'fullscreen' : 'inline'

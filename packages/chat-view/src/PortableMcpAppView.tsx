@@ -11,7 +11,7 @@ type Resource = NonNullable<ToolAppAttachment['resource']>
 type LoadState = { kind: 'idle' } | { kind: 'loading' } | { kind: 'failed'; error: McpAppsError | Error }
 
 // Loading and activation never ask for approval; a host that did would be refused here.
-const NO_CONSENT: McpAppConsent = { approve: async () => null }
+const NO_CONSENT: McpAppConsent = { approve: async () => false }
 
 /**
  * An MCP App View under its tool row. The resource is the host's persisted snapshot when the

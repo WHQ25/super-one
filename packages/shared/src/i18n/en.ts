@@ -3870,9 +3870,6 @@ export type Messages = {
     restart: string
     unknownOutcome: string
     exitFullscreen: string
-    approveTool: string
-    allowOnce: string
-    alwaysAllow: string
     deny: string
     sendMessage: string
     nonTextBlocks: string
@@ -7968,9 +7965,6 @@ export const en: Messages = {
     restart: 'Restart',
     unknownOutcome: 'The result of the last action is unknown. It was not retried.',
     exitFullscreen: 'Exit Full Screen',
-    approveTool: '{{server}} wants to run {{tool}}',
-    allowOnce: 'Allow Once',
-    alwaysAllow: 'Always Allow',
     deny: 'Deny',
     sendMessage: '{{server}} wants to send this message',
     nonTextBlocks: 'Plus {{count}} non-text attachments',

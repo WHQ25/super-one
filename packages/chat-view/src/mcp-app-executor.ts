@@ -19,8 +19,8 @@ export interface McpAppTarget {
 }
 
 export interface McpAppConsent {
-  /** `null` declines; `remember` asks the host to keep the approval for this tool. */
-  approve(prompt: McpAppApprovalPrompt): Promise<{ remember: boolean } | null>
+  /** Only a message the View wrote is confirmed; the user's own taps in the View are consent. */
+  approve(prompt: McpAppApprovalPrompt): Promise<boolean>
 }
 
 /** A tool call can outlive the default request timeout; its outcome is then unknown. */
@@ -29,7 +29,7 @@ const CALL_TIMEOUT_MS = 120_000
 export async function requestMcpApp<T>(
   target: McpAppTarget,
   operation: McpAppOperation,
-  approval?: { challenge: string; remember?: boolean },
+  approval?: { challenge: string },
 ): Promise<McpAppHostResult<T>> {
   const timeout = operation.operation === 'callTool' ? CALL_TIMEOUT_MS : undefined
   // Wrapped, because the shell's own acknowledgement (`ok: true`) would clobber the host's `ok`.
@@ -43,9 +43,8 @@ class Declined extends Error {}
 export async function runMcpAppOperation<T>(target: McpAppTarget, operation: McpAppOperation, consent: McpAppConsent): Promise<T> {
   let result = await requestMcpApp<T>(target, operation)
   if (!result.ok && result.error.code === 'approval_required') {
-    const decision = await consent.approve(result.error.prompt)
-    if (!decision) throw new Declined()
-    result = await requestMcpApp<T>(target, operation, { challenge: result.error.challenge, ...(decision.remember ? { remember: true } : {}) })
+    if (!await consent.approve(result.error.prompt)) throw new Declined()
+    result = await requestMcpApp<T>(target, operation, { challenge: result.error.challenge })
   }
   if (result.ok) return result.value
   if (result.error.code === 'approval_required') throw new McpAppsError('denied', 'The host asked for approval twice')
@@ -68,7 +67,6 @@ export function createMcpAppExecutor(
       try {
         return await run<McpAppsCallResult>({ operation: 'callTool', tool, args })
       } catch (error) {
-        if (error instanceof Declined) throw new McpAppsError('denied', 'The call was not approved')
         // The request may have reached the server; the View must not retry it blindly.
         const unknown = error instanceof NativeRequestTimeout || (error instanceof McpAppsError && error.code === 'unknown_outcome')
         if (!unknown) throw error

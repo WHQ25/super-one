@@ -41,7 +41,7 @@ function attachment(id: string, overrides: Partial<ToolAppAttachment> = {}): Too
  * Stands in for RN and the desktop: answers the `mcpApp` native action the way the host
  * executor does, including main-issued approval challenges and the visibility gate.
  */
-function answer(mode: HostMode, request: Record<string, unknown>, remembered: Set<string>): McpAppHostResult {
+function answer(mode: HostMode, request: Record<string, unknown>): McpAppHostResult {
   const challenged = typeof request.approval === 'object'
   // A live View's first request is `activate`, a restored one's `load`; either can fail.
   if (request.operation === 'activate' || request.operation === 'load') {
@@ -55,16 +55,10 @@ function answer(mode: HostMode, request: Record<string, unknown>, remembered: Se
     case 'updateModelContext':
     case 'readResource':
       return { ok: true, value: {} }
-    case 'callTool': {
+    case 'callTool':
+      // The user's tap in the View is consent; only the visibility gate applies.
       if (request.tool !== 'fixture_next_page') return { ok: false, error: { code: 'denied', message: 'This tool is not available to the App' } }
-      if (!remembered.has('fixture_next_page') && !challenged) {
-        return { ok: false, error: { code: 'approval_required', challenge: 'story-challenge', prompt: {
-          kind: 'callTool', server: 'mcp-apps-fixture', tool: 'fixture_next_page', argsPreview: JSON.stringify(request.args, null, 2), rememberable: true,
-        } } }
-      }
-      if ((request.approval as { remember?: boolean } | undefined)?.remember) remembered.add('fixture_next_page')
       return { ok: true, value: { result: page(Number((request.args as { page?: number }).page) || 1), outcome: 'completed' } }
-    }
     case 'sendMessage': {
       if (challenged) return { ok: true, value: {} }
       const params = request.params as { content: Array<{ type: string; text?: string }> }
@@ -82,11 +76,10 @@ function answer(mode: HostMode, request: Record<string, unknown>, remembered: Se
 function MockHost({ mode, children }: { mode: HostMode; children: ReactNode }) {
   const [ready, setReady] = useState(false)
   useEffect(() => {
-    const remembered = new Set<string>()
     const uninstall = installFakeNativeHost((message, reply) => {
       if (message.action !== 'mcpApp') { console.info('[native]', message.action, message.payload); return }
       if (mode === 'slow') return
-      const result = answer(mode, message.payload ?? {}, remembered)
+      const result = answer(mode, message.payload ?? {})
       setTimeout(() => reply({ result: { ok: true, response: result } }), 150)
     })
     setReady(true)
@@ -131,7 +124,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Next page asks for approval once (Always Allow remembers it); the model-only button is refused by the host. */
+/** Next page runs at once; Ask the model is confirmed first; the model-only button is refused by the host. */
 export const Live: Story = { name: 'Live · app-only paging, denied model-only call' }
 
 export const Loading: Story = { name: 'Loading · host has not answered', args: { app: attachment(id('slow')), mode: 'slow' } }
@@ -174,7 +167,7 @@ export const NavigatesAway: Story = {
 
 export const Narrow: Story = { name: 'Narrow · 320 px', args: { app: attachment(id('narrow'), { resource: RESOURCE }), width: 320 } }
 
-/** Next page's approval card lands below a short transcript and scrolls itself into view. */
+/** Ask the model's confirmation card lands below a short transcript and scrolls itself into view. */
 export const ConsentBelowTheFold: Story = {
   name: 'Consent below the fold · card scrolls into view',
   args: { app: attachment(id('consent-fold'), { resource: RESOURCE }), height: 320 },

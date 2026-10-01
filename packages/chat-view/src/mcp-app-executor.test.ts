@@ -16,9 +16,10 @@ const target = { messageId: 'm', appInstanceId: 'view-1' }
 const signal = new AbortController().signal
 /** The shell wraps the host's answer so its own acknowledgement cannot clobber `ok`. */
 const host = (response: unknown) => ({ ok: true, response })
-const prompt = { kind: 'callTool' as const, server: 'fixture', tool: 'fixture_next_page', argsPreview: '{}', rememberable: true }
+const prompt = { kind: 'sendMessage' as const, server: 'fixture', text: 'hi', nonTextBlocks: 0 }
+const message = { role: 'user' as const, content: [{ type: 'text' as const, text: 'hi' }] }
 
-function executor(decision: { remember: boolean } | null = { remember: false }) {
+function executor(decision = true) {
   const consent = { approve: vi.fn(async () => decision) }
   return { consent, run: createMcpAppExecutor(target, consent, (mode) => mode) }
 }
@@ -32,22 +33,24 @@ describe('MCP App executor on the phone', () => {
     expect(native.async).toHaveBeenCalledWith('mcpApp', { ...target, operation: 'readResource', uri: 'ui://fixture/items.html' }, undefined)
   })
 
-  it('confirms a challenged call here and resends the identical operation with the challenge', async () => {
+  it('sends a tool call the user made in the View without asking again', async () => {
     const value = { result: { content: [] }, outcome: 'completed' }
-    native.async
-      .mockResolvedValueOnce(host({ ok: false, error: { code: 'approval_required', challenge: 'c1', prompt } }))
-      .mockResolvedValueOnce(host({ ok: true, value }))
-    const { run, consent } = executor({ remember: true })
+    native.async.mockResolvedValueOnce(host({ ok: true, value }))
+    const { run, consent } = executor()
     await expect(run.callTool({ tool: 'fixture_next_page', args: { page: 2 } }, signal)).resolves.toEqual(value)
-    expect(consent.approve).toHaveBeenCalledWith(prompt)
-    const [first, second] = native.async.mock.calls
-    expect(second![1]).toEqual({ ...first![1], approval: { challenge: 'c1', remember: true } })
+    expect(native.async).toHaveBeenCalledWith('mcpApp', { ...target, operation: 'callTool', tool: 'fixture_next_page', args: { page: 2 } }, 120_000)
+    expect(consent.approve).not.toHaveBeenCalled()
   })
 
-  it('refuses a call the user denies without sending it again', async () => {
-    native.async.mockResolvedValueOnce(host({ ok: false, error: { code: 'approval_required', challenge: 'c1', prompt } }))
-    await expect(executor(null).run.callTool({ tool: 't', args: {} }, signal)).rejects.toMatchObject({ code: 'denied' })
-    expect(native.async).toHaveBeenCalledTimes(1)
+  it('confirms a message the View wrote and resends the identical operation with the challenge', async () => {
+    native.async
+      .mockResolvedValueOnce(host({ ok: false, error: { code: 'approval_required', challenge: 'c1', prompt } }))
+      .mockResolvedValueOnce(host({ ok: true, value: {} }))
+    const { run, consent } = executor()
+    await expect(run.sendMessage(message, signal)).resolves.toEqual({})
+    expect(consent.approve).toHaveBeenCalledWith(prompt)
+    const [first, second] = native.async.mock.calls
+    expect(second![1]).toEqual({ ...first![1], approval: { challenge: 'c1' } })
   })
 
   it('forgets the activation of a View the host stopped serving, without replaying the call', async () => {
@@ -88,8 +91,8 @@ describe('MCP App executor on the phone', () => {
   })
 
   it('answers a declined message as an error instead of sending it', async () => {
-    native.async.mockResolvedValueOnce(host({ ok: false, error: { code: 'approval_required', challenge: 'c2', prompt: { kind: 'sendMessage', server: 'fixture', text: 'hi', nonTextBlocks: 0 } } }))
-    await expect(executor(null).run.sendMessage({ role: 'user', content: [{ type: 'text', text: 'hi' }] }, signal)).resolves.toEqual({ isError: true })
+    native.async.mockResolvedValueOnce(host({ ok: false, error: { code: 'approval_required', challenge: 'c2', prompt } }))
+    await expect(executor(false).run.sendMessage(message, signal)).resolves.toEqual({ isError: true })
     expect(native.async).toHaveBeenCalledTimes(1)
   })
 

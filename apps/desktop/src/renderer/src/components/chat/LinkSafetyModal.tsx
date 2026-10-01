@@ -1,9 +1,9 @@
-import { useState, useCallback, useEffect } from 'react'
-import { createPortal } from 'react-dom'
+import { useState, useCallback } from 'react'
 import { useTranslation, Trans } from 'react-i18next'
-import { ExternalLink, Copy, Check, X, Globe } from 'lucide-react'
+import { ExternalLink, Copy, Check, Globe } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@superone/ui/components/ui/dialog'
 
 interface LinkSafetyModalProps {
   url: string
@@ -33,40 +33,25 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm, onOpenInApp }
     onClose()
   }, [onOpenInApp, onClose])
 
-  useEffect(() => {
-    if (!isOpen) return
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [isOpen, onClose])
-
-  if (!isOpen) return null
-
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/30" />
-      <div
-        className="relative mx-4 flex w-full max-w-sm flex-col gap-3 rounded-xl border border-border bg-background p-5 shadow-xl"
+  // A Radix dialog, not a bare portal: opened from inside another modal dialog
+  // (e.g. a Markdown link in the files previewer fullscreen) it must join Radix's
+  // layer stack, or the outer dialog's `pointer-events: none` on <body> and its
+  // focus trap leave this one visible but dead.
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent
+        className="flex max-w-sm flex-col gap-3 rounded-xl p-5 sm:max-w-sm [&>[data-slot=dialog-close]]:top-3 [&>[data-slot=dialog-close]]:right-3"
+        // Portalled, but React still bubbles through the link's ancestors.
         onClick={(e) => e.stopPropagation()}
       >
-        <button
-          className="absolute top-3 right-3 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          onClick={onClose}
-          type="button"
-        >
-          <X className="size-4" />
-        </button>
-
-        <div className="flex items-center gap-2 text-sm font-medium">
+        <DialogTitle className="flex items-center gap-2 text-sm font-medium leading-normal">
           <ExternalLink className="size-4 shrink-0" />
           <span>{t('chat.linkSafety.openExternal')}</span>
-        </div>
+        </DialogTitle>
 
-        <div className={cn('break-all rounded-md bg-muted px-3 py-2 font-mono text-xs', url.length > 80 && 'max-h-24 overflow-y-auto')}>
+        <DialogDescription className={cn('break-all rounded-md bg-muted px-3 py-2 font-mono text-xs text-foreground', url.length > 80 && 'max-h-24 overflow-y-auto')}>
           {url}
-        </div>
+        </DialogDescription>
 
         <div className="flex flex-col gap-2">
           <button
@@ -107,8 +92,7 @@ export function LinkSafetyModal({ url, isOpen, onClose, onConfirm, onOpenInApp }
             />
           </p>
         )}
-      </div>
-    </div>,
-    document.body,
+      </DialogContent>
+    </Dialog>
   )
 }

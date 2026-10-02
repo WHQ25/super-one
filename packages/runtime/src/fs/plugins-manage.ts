@@ -232,32 +232,38 @@ function detectPluginContents(installPath: string): {
   hasAgents: boolean
   hasSkills: boolean
   hasHooks: boolean
+  hasMod: boolean
   hasMcpServers: boolean
 } {
+  const modules = readHooksJson(installPath)?.modules
   return {
     hasCommands: existsSync(join(installPath, 'commands')),
     hasAgents: existsSync(join(installPath, 'agents')),
     hasSkills: existsSync(join(installPath, 'skills')),
     hasHooks: existsSync(join(installPath, 'hooks')),
+    hasMod: Array.isArray(modules) && modules.length > 0,
     hasMcpServers: existsSync(join(installPath, '.mcp.json')),
   }
 }
 
-function readHookEvents(installPath: string): Record<string, unknown> {
+function readHooksJson(installPath: string): { hooks?: unknown; modules?: unknown } | null {
   const candidates = [join(installPath, 'hooks', 'hooks.json'), join(installPath, 'hooks.json')]
   for (const p of candidates) {
     if (!existsSync(p)) continue
     try {
       const raw = JSON.parse(readFileSync(p, 'utf-8'))
-      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
-      const events = (raw as { hooks?: unknown }).hooks
-      if (!events || typeof events !== 'object' || Array.isArray(events)) continue
-      return events as Record<string, unknown>
+      if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw
     } catch {
       // continue
     }
   }
-  return {}
+  return null
+}
+
+function readHookEvents(installPath: string): Record<string, unknown> {
+  const events = readHooksJson(installPath)?.hooks
+  if (!events || typeof events !== 'object' || Array.isArray(events)) return {}
+  return events as Record<string, unknown>
 }
 
 function readMcpServersMap(installPath: string): Record<string, unknown> {

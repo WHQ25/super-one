@@ -726,11 +726,24 @@ export interface MessageMetadata {
    */
   modelFallback?: ModelFallbackMeta
   /**
+   * A line an installed plugin wrote for the user, or a plugin that failed to
+   * load. Present only on the synthetic transcript row minted for a
+   * `plugin_notice` log (see `buildPluginNoticeMessage`); never sent to the model.
+   */
+  pluginNotice?: PluginNoticeMeta
+  /**
    * A user message the host never took: the bubble stays in the transcript with
    * a failure row until it is resent or pulled back into the composer. Local to
    * the sender — the host has no copy of a message it rejected.
    */
   sendFailure?: SendFailure
+}
+
+export interface PluginNoticeMeta {
+  /** The plugin's name as the harness reports it. */
+  plugin: string
+  /** `error`: the plugin, or one of its components, failed to load. */
+  level?: 'error'
 }
 
 export interface SendFailure {
@@ -1910,6 +1923,14 @@ export type AgentEventBase =
       refusalCategory?: string | null
     }
   /**
+   * Something an installed plugin raised for the user, never for the model
+   * (Claude Code mods' `$.ui.log` / `toast` / `status`, and plugin load errors).
+   * `log` becomes a transcript notice row, `toast` a transient notification and
+   * `status` the plugin's pinned line by the composer, which `text: null` clears.
+   * `text` is plain text: render it as a text node, never as markup.
+   */
+  | { type: 'plugin_notice'; kind: 'log' | 'toast' | 'status'; plugin: string; text: string | null; level?: 'error'; timeoutMs?: number }
+  /**
    * Blocks the harness retracted from one of our messages (SDK
    * `retracted_message_uuids` / `supersedes` on a refusal fallback). One SDK
    * frame is a single API step, and our assistant message folds every step of
@@ -2528,6 +2549,8 @@ export interface PluginInfo {
   hasAgents: boolean
   hasSkills: boolean
   hasHooks: boolean
+  /** A Claude Code mod: `hooks/hooks.json` names a hooks module that runs inside the CLI. */
+  hasMod?: boolean
   hasMcpServers: boolean
   latestVersion?: string
   hasUpdate: boolean

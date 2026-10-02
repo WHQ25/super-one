@@ -15,6 +15,7 @@ import {
   RESUME_DROPS_TURN_REFUSAL_PREFIX,
 } from '@superone/claude'
 import { withMcpAppsHostEnv, type ClaudeToolApps } from '@superone/claude/mcp-apps'
+import { mapPluginErrors, mapPluginUiMessage } from '@superone/claude/plugin-notice-wire'
 import type { MessageBridge } from './message-bridge'
 import { withSubagentResumeSignal } from './subagent-resume-signal'
 import log from '../logger'
@@ -352,6 +353,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   let pendingQueuedTurns = 0
   let turnUserEchoSeen = false
   const timestampAppliedIds = new Set<string>()
+  const reportedPluginErrors = new Set<string>()
 
   const activeBackgroundTasks = opts.activeBackgroundTasks ?? new Map<string, BackgroundTaskInfo>()
 
@@ -595,6 +597,10 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
                 fastModeDisabledReason: sys.fast_mode_disabled_reason,
               },
             })
+            for (const notice of mapPluginErrors(sys.plugin_errors, reportedPluginErrors)) emit(notice)
+          } else if (sys.subtype === 'ui_log' || sys.subtype === 'ui_toast' || sys.subtype === 'ui_status') {
+            const notice = mapPluginUiMessage(sys)
+            if (notice) emit(notice)
           } else if (sys.subtype === 'hook_started') {
             emit({
               type: 'hook_started',

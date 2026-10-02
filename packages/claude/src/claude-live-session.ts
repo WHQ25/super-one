@@ -310,6 +310,7 @@ export class ClaudeLiveSession {
   private ambient: AmbientTurn | null = null
   private readonly backgroundTaskIds = new Set<string>()
   private idleSystemMapper: ReturnType<typeof createClaudeAgentEventMapper> | null = null
+  private readonly reportedPluginErrors = new Set<string>()
   private sdkSessionId: string | null
   private closed = false
   private readonly iterationDone: Promise<void>
@@ -539,7 +540,7 @@ export class ClaudeLiveSession {
       this.opts.onAmbientEvent?.({ type: 'status_change', status: 'streaming' })
       this.ambient = {
         messageId,
-        mapper: createClaudeAgentEventMapper({ messageId, emit: (event) => this.opts.onAmbientEvent?.(event), toolApps: this.opts.toolApps }),
+        mapper: createClaudeAgentEventMapper({ messageId, emit: (event) => this.opts.onAmbientEvent?.(event), toolApps: this.opts.toolApps, reportedPluginErrors: this.reportedPluginErrors }),
       }
     }
     if (!this.ambient) return
@@ -571,6 +572,7 @@ export class ClaudeLiveSession {
             this.idleSystemMapper ??= createClaudeAgentEventMapper({
               messageId: '',
               emit: (event) => this.opts.onAmbientEvent?.(event),
+              reportedPluginErrors: this.reportedPluginErrors,
             })
             this.idleSystemMapper.apply(msg)
           } else {
@@ -624,6 +626,7 @@ export class ClaudeLiveSession {
               pausedMs: () => this.timing.pausedMs,
               isInterrupted: () => cur.input.signal?.aborted === true,
               toolApps: this.opts.toolApps,
+              reportedPluginErrors: this.reportedPluginErrors,
             })
           } else {
             holder._state = createSdkMapState(cur.messageId)

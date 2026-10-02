@@ -13,6 +13,7 @@ import { readTerminalSlashCommands } from '@superone/shared/slash-commands'
 import { sessionGoalFromClaudeActive } from '@superone/shared/session-goal'
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import { buildClaudeResultFailure, isClaudeResultError } from './result-failure'
+import { mapPluginErrors, mapPluginUiMessage } from './plugin-notice-wire'
 
 type Raw = Record<string, any>
 
@@ -28,6 +29,11 @@ export interface ClaudeAgentEventMapperOptions {
   trackPlanFile?: (filePath: string) => void
   /** Attaches MCP App state to tool rows of tools that declare a `ui://` resource. */
   toolApps?: ClaudeToolApps
+  /**
+   * `plugin_errors` already reported by this runtime. Init repeats every turn,
+   * so a long-lived process shares one set across its per-turn mappers.
+   */
+  reportedPluginErrors?: Set<string>
 }
 
 export interface ClaudeAgentEventApplyResult {
@@ -204,6 +210,7 @@ export function createClaudeAgentEventMapper(
   const processedStepIds = new Set<string>()
   const subagentTracking = new Map<string, { stepIds: Set<string>; input: number; output: number }>()
   const activeBackgroundTasks = new Map<string, { toolUseId?: string; description: string }>()
+  const reportedPluginErrors = options.reportedPluginErrors ?? new Set<string>()
   let lastAssistantUsage: Raw | null = null
   let lastTopLevelAssistantUuid = ''
   // SDK wire frame -> the blocks it put in our message, so a refusal fallback's
@@ -299,6 +306,14 @@ export function createClaudeAgentEventMapper(
             fastModeDisabledReason: system.fast_mode_disabled_reason,
           },
         })
+        for (const notice of mapPluginErrors(system.plugin_errors, reportedPluginErrors)) emit(notice)
+        break
+      }
+      case 'ui_log':
+      case 'ui_toast':
+      case 'ui_status': {
+        const notice = mapPluginUiMessage(system)
+        if (notice) emit(notice)
         break
       }
       case 'hook_started':

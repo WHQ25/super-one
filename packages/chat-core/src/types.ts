@@ -81,6 +81,11 @@ export interface ChatCoreSession {
   pendingPlanApproval: PlanApprovalRequest | null
   planApprovalOutcome: { approved: boolean; feedback?: string } | null
   permissionMode: PermissionMode
+  /**
+   * Each plugin's pinned status line (`plugin_notice` with kind `status`), keyed
+   * by plugin name in the order the plugins first set one.
+   */
+  pluginStatus: Record<string, string>
   apiRetry: {
     attempt: number
     maxRetries?: number

@@ -29,6 +29,10 @@ Every alpha release keeps its own notes on its GitHub Release.
   changes and panel resizes.
 - Refreshing Codex models from the model selector confirms the result,
   or reports a failure and keeps the current list.
+- Claude Code mods: lines a mod writes appear in the transcript, its
+  notifications show as toasts, and its status line sits above the
+  composer. Plugins that fail to load say why in the transcript, and the
+  plugins page marks which plugins are mods.
 
 ### Fixed
 
@@ -66,6 +70,10 @@ Every alpha release keeps its own notes on its GitHub Release.
   connection, and Claude sessions start faster. Background shell
   commands Claude starts now stop at their timeout (30 minutes unless
   the agent sets one, up to 2 hours).
+- Claude Agent SDK 0.3.287 (Claude Code 2.1.287): installed Claude Code
+  mods now run in Claude sessions. Steering a running turn lets running
+  commands finish instead of stopping them, and a reply cut short no
+  longer looks like it is still streaming.
 
 ## [0.70.0-alpha] - 2026-09-30
 

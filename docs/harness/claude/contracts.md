@@ -115,15 +115,24 @@ re-check an entry when an upgrade touches its area.
 - **Guard:** `apps/desktop/src/main/agent/claude-query.test.ts` (background task
   cases); the empty-`result` case is unguarded.
 
-### `priority: 'now'` aborts running tools
+### `priority: 'now'` ends the turn as `aborted_tools`
 
-- **Behavior:** A user message sent with `priority: 'now'` aborts the tools in
-  flight. The turn then ends as `subtype: 'success'` with
-  `terminal_reason: 'aborted_tools'`, and the aborted tools appear in
-  `permission_denials`. A user Stop instead ends with `error_during_execution`.
-- **Observed:** 0.3.x, trace.
+- **Behavior:** A user message sent with `priority: 'now'` ends the running turn
+  as `subtype: 'success'` with `terminal_reason: 'aborted_tools'`, and the
+  steer's answer follows as its own turn. Since 0.3.286 a running shell command,
+  agent or MCP call is no longer stopped: a foreground Bash call keeps running
+  (reported as a `task_started` / `task_notification` pair), its `tool_result`
+  arrives normally, and `permission_denials` stays empty. Before 0.3.286 the
+  tools in flight were aborted and listed in `permission_denials`. A
+  WebFetch/WebSearch that steps aside reports `tool_use_result:
+  { detachedToolCall: true }` (0.3.287). A steer that lands while the reply is
+  streaming ends that turn with `terminal_reason: 'aborted_streaming'`. A user
+  Stop instead ends with `error_during_execution`.
+- **Observed:** 0.3.x, trace; 0.3.287 live probe.
 - **Depends on it:** `apps/desktop/src/main/session/backends/claude-backend.ts`
-  (`steeredTurnMessageId` strips the terminal reason from a steered turn).
+  (`steeredTurnMessageId` strips the terminal reason from a steered turn);
+  desktop `claude-query.ts` backfills a denied result for calls still listed in
+  `permission_denials`, a no-op since 0.3.286.
 - **Guard:** `apps/desktop/src/main/session/backends/claude-backend.test.ts`.
 
 ### Interrupt leaves queued messages; cancelling them is untyped
@@ -203,13 +212,17 @@ re-check an entry when an upgrade touches its area.
 - **Behavior:** A message type in `sdk.d.ts` is not proof the runtime sends it
   (`session_state_changed` was typed long before it was sent), and the runtime
   sends messages and fields that are not declared: `system/model_fallback`,
-  `active_goal`, `command_lifecycle`, and `tool_use_id` on `system/task_updated`.
+  `active_goal`, `command_lifecycle`, `tool_use_id` on `system/task_updated`,
+  and the mods messages `system/ui_log {plugin, text}`,
+  `system/ui_toast {plugin, text, timeout_ms}` and
+  `system/ui_status {plugin, text | null}`.
 - **Observed:** 0.2.114 (`session_state_changed`), 0.3.232–0.3.284
-  (`model_fallback`), 0.3.284 (the others).
+  (`model_fallback`), 0.3.284 (the others), 0.3.287 (`ui_*`).
 - **Depends on it:** `packages/shared/src/model-fallback-wire.ts` reads fallback
   fields defensively; both mappers handle `active_goal` (→ `session_goal`);
   desktop `claude-query.ts` handles `command_lifecycle` and reads `tool_use_id`
-  on `task_updated`.
+  on `task_updated`; `packages/claude/src/plugin-notice-wire.ts` maps `ui_*`
+  (→ `plugin_notice`).
 - **Guard:** verify new subscriptions with a trace before relying on them.
 
 ### Task tools carry the real id only in the result
@@ -220,6 +233,57 @@ re-check an entry when an upgrade touches its area.
 - **Depends on it:** `extractTaskCreateTodo` in desktop `claude-query.ts`.
 - **Guard:** unguarded at extraction; `apps/desktop/src/main/remote-control-service.test.ts`
   covers the consumer side.
+
+## Mods
+
+Claude Code mods (2.1.287+) are plugins whose `hooks/hooks.json` names a hooks
+module that runs inside the CLI process. Upstream docs:
+<https://code.claude.com/docs/en/plugins/mods/overview>.
+
+### Installed mods run in SDK sessions
+
+- **Behavior:** Mods are on by default and load with the user's plugins, so
+  `settingSources` with `user` runs them in every SuperOne session. Their hooks
+  run; nothing they draw (panes, the band above the prompt, replaced rows)
+  reaches an SDK host. What reaches it: `ui_log` / `ui_toast` / `ui_status`
+  (raised in `session.start` they arrive before `system/init`), and the effects
+  of their hooks. The CLI writes `.claude-plugin/types/` into the plugin
+  directory when it loads one.
+- **Observed:** 0.3.287 live probe.
+- **Depends on it:** `plugin_notice` mapping in both mappers.
+- **Guard:** `apps/desktop/src/main/agent/claude-query.test.ts`,
+  `packages/claude/src/plugin-notice-wire.test.ts`.
+
+### A mod can approve a tool call without `canUseTool`
+
+- **Behavior:** A `tool.check` hook answering `{ decision: 'allow' }` runs the
+  call with no `can_use_tool` request, under `permissionMode: 'default'`.
+  SuperOne's approval prompt never appears for it.
+- **Observed:** 0.3.287 live probe (`touch` ran; `canUseTool` was not called).
+- **Depends on it:** nothing; the user installed the mod. Upstream documents it.
+- **Guard:** unguarded.
+
+### A mod can start a turn
+
+- **Behavior:** `$.prompt.submit` after a `result` starts a turn with no host
+  input: `command_lifecycle`, a second `system/init`, assistant frames, then its
+  own `result`.
+- **Observed:** 0.3.287 live probe.
+- **Depends on it:** the self-started turn path in desktop `claude-query.ts`
+  (`resultSeen || !turnMessageId` mints a message) and the ambient turn in
+  `packages/claude/src/claude-live-session.ts`, the same paths a background
+  task's wake takes.
+- **Guard:** `apps/desktop/src/main/agent/claude-query.test.ts` (a turn a mod
+  submits after the result).
+
+### A hooks module that fails to load is not in `plugin_errors`
+
+- **Behavior:** A hooks module the CLI refuses at load (for example a
+  `turn.step` hook that is not an async generator) leaves the plugin in
+  `plugins[]` with no `plugin_errors` entry. The reason is only in the debug log.
+- **Observed:** 0.3.287 live probe.
+- **Depends on it:** nothing; SuperOne can only show what `plugin_errors` reports.
+- **Guard:** unguarded.
 
 ## MCP Apps
 

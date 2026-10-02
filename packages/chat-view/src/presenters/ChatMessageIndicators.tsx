@@ -84,6 +84,8 @@ export function findLastAssistantMessageId(
       // A model-fallback notice is appended mid-turn, below the reply that is
       // still streaming; letting it claim the tail renders that reply as done.
       && !message.metadata?.modelFallback
+      // A plugin's notice can land below a reply that is still streaming.
+      && !message.metadata?.pluginNotice
       // A spoken reply is complete the moment it is transcribed. Letting one at the
       // tail claim this would take the spinner off the Codex turn actually running.
       && !isRealtimeVoiceMessage(message),

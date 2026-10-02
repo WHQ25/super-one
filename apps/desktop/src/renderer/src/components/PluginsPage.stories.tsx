@@ -86,6 +86,15 @@ const INSTALLED: PluginInfo[] = [
     description: 'Draft release notes from merged PRs.',
     hasSkills: true,
   }),
+  installed({
+    name: 'token-weather',
+    marketplace: TEAM.marketplace,
+    author: 'Acme Platform',
+    version: '0.1.0',
+    description: 'Forecasts how full the context window is getting, above the prompt.',
+    hasHooks: true,
+    hasMod: true,
+  }),
 ]
 
 const MARKETPLACE: MarketplacePlugin[] = [

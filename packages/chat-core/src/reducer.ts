@@ -116,6 +116,11 @@ export function applyEventToSession(
     case 'files_persisted':
     case 'elicitation_complete':
       return event.type === 'elicitation_complete' ? { waitingElicitation: null } : {}
+    // A plugin's `log` renders from the transcript row the main process appends
+    // for it and a `toast` is a host side effect; only the pinned status is state.
+    case 'plugin_notice':
+      return event.kind === 'status' ? { pluginStatus: withPluginStatus(session.pluginStatus, event.plugin, event.text) } : {}
+
     // The swap is rendered from the transcript row the main process appends for
     // it, so there is no session state to patch here.
     case 'model_fallback':
@@ -238,4 +243,11 @@ export function applyEventToSession(
       return { realtimeSessionId: null }
   }
   return {}
+}
+
+function withPluginStatus(current: Record<string, string>, plugin: string, text: string | null): Record<string, string> {
+  if (text) return { ...current, [plugin]: text }
+  if (!(plugin in current)) return current
+  const { [plugin]: _cleared, ...rest } = current
+  return rest
 }

@@ -3713,6 +3713,7 @@ export const zh: Messages = {
         agents: '代理',
         skills: '技能',
         hooks: 'Hooks',
+        mod: 'Mod',
         mcp: 'MCP',
         other: '其他',
       },

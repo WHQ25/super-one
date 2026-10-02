@@ -25,6 +25,7 @@ import {
   PanelLeftOpen,
   Code,
   BookOpen,
+  Blocks,
 } from 'lucide-react'
 import { GithubIcon } from '@superone/ui/components/ui/github-icon'
 import { motion, AnimatePresence } from 'motion/react'
@@ -1006,6 +1007,7 @@ const BADGE_CONFIG = [
   { key: 'hasAgents', labelKey: 'resources.plugins.capability.agents', icon: Bot },
   { key: 'hasSkills', labelKey: 'resources.plugins.capability.skills', icon: Puzzle },
   { key: 'hasHooks', labelKey: 'resources.plugins.capability.hooks', icon: Webhook },
+  { key: 'hasMod', labelKey: 'resources.plugins.capability.mod', icon: Blocks },
   { key: 'hasMcpServers', labelKey: 'resources.plugins.capability.mcp', icon: Server },
 ] as const
 

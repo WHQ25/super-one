@@ -30,6 +30,7 @@ import { wrapGitMention } from '@superone/shared/git-mention-tags'
 import { DebugMentionDecoration, syncDebugMentionHint } from './debug-mention-decoration'
 import { PromptSuggestion } from './prompt-suggestion'
 import { PromptSuggestionChips } from './PromptSuggestionChips'
+import { PluginStatusLines } from './PluginNotice'
 import { addBrowserImageToChat, extractDraggedImageUrl } from '../browser/browser-image'
 import type { MentionNodeAttrs } from './mention-node'
 import type { SlashCommandInfo, ImageAttachment } from '@superone/shared/agent-types'
@@ -386,6 +387,7 @@ export function ChatInput() {
     const acpSlashCommandsStatus = useActiveSession((s) => s.acpSlashCommandsStatus)
     const acpAgentId = useActiveSession((s) => s.acpAgentId)
     const sessionGoal = useActiveSession((s) => s.sessionGoal)
+    const pluginStatus = useActiveSession((s) => s.pluginStatus)
     const acpAgents = useChatStore((s) => s.harnessResources?.acp?.agents)
     const ensureAcpSlashCommands = useChatStore((s) => s.ensureAcpSlashCommands)
     // Catalog may be empty in a fresh mini-window; fall back to id-derived brand name.
@@ -1898,6 +1900,7 @@ export function ChatInput() {
         {status !== 'streaming' && (
           <PromptSuggestionChips suggestions={alternateSuggestions} onSelect={applySuggestion} />
         )}
+        <PluginStatusLines statuses={pluginStatus} />
         <div
           className={cn(
             'relative mx-3 mb-1 rounded-xl border border-border px-3 py-2',

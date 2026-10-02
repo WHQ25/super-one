@@ -58,6 +58,17 @@ describe('plugins-manage', () => {
     expect(listed[0]!.key).toBe('demo@mp')
   })
 
+  it('marks a plugin whose hooks.json names a hooks module as a mod', () => {
+    expect(listPlugins(project, { homeDir: home })[0]!.hasMod).toBe(false)
+
+    mkdirSync(join(installPath, 'hooks'))
+    writeFileSync(join(installPath, 'hooks', 'hooks.json'), JSON.stringify({ modules: ['./register.js'] }))
+    expect(listPlugins(project, { homeDir: home })[0]!.hasMod).toBe(true)
+
+    writeFileSync(join(installPath, 'hooks', 'hooks.json'), JSON.stringify({ hooks: { Stop: [] } }))
+    expect(listPlugins(project, { homeDir: home })[0]).toMatchObject({ hasHooks: true, hasMod: false })
+  })
+
   it('reads plugin detail and file content', () => {
     const detail = readPluginContent(project, 'demo@mp', { homeDir: home })
     expect(detail?.description).toBe('Demo plugin')

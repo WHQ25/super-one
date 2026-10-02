@@ -77,6 +77,7 @@ import {
 } from './task-notification-queue'
 import { ensureShellPath, isShellPathReady } from '../shell-path'
 import { buildModelFallbackMessage, modelFallbackSignature } from './model-fallback-notification'
+import { buildPluginNoticeMessage, isPluginLogEvent } from './plugin-notice-message'
 import {
   LOCAL_OWNER,
   SessionClaimConflictError,
@@ -1964,6 +1965,7 @@ export class Session implements SessionContract {
         modelFallbackRow = buildModelFallbackMessage(sequenced)
       }
     }
+    const pluginNoticeRow = isPluginLogEvent(sequenced) ? buildPluginNoticeMessage(sequenced) : null
     this.applyReducer(sequenced)
     // A run that finishes while the session is on a desktop screen is read as
     // it lands. Recorded before fan-out so the idle-triggered activity summary
@@ -1989,6 +1991,7 @@ export class Session implements SessionContract {
     // re-emits it as user_message_appended — renderer and mobile both pick it up
     // without either having to reduce task_notification a second time.
     if (modelFallbackRow) this.appendTranscriptMessage(modelFallbackRow)
+    if (pluginNoticeRow) this.appendTranscriptMessage(pluginNoticeRow)
     if (tagged.type === 'acp_models') {
       this._cachedAcpModels = tagged
       // Keep Session.model aligned with agent-advertised selection for snapshots.

@@ -19,6 +19,7 @@ export function createDefaultChatCoreSession(): ChatCoreSession {
     pendingPlanApproval: null,
     planApprovalOutcome: null,
     permissionMode: 'default',
+    pluginStatus: {},
     apiRetry: null,
     session: null,
     _providerSessionId: null,

@@ -9,7 +9,7 @@ reason). Ledger rows: [api-surface.md](api-surface.md).
 | # | Capability | Since | Benefit | Cost / risk | Decision |
 |---|---|---|---|---|---|
 | 1 | `system/informational` messages | 0.3.283 (sent during turns) | Shows warnings and notices the CLI raises mid-turn, such as a UserPromptSubmit hook's block reason; both mappers drop them today | Needs a chat row style per `level`; both mappers change | open |
-| 2 | `plugin_errors` on `system/init` | 0.3.283 | Explains why a plugin did not load instead of it silently missing | Small; needs a place in plugin settings or an init notice | open |
+| 2 | `plugin_errors` on `system/init` | 0.3.283 | Explains why a plugin did not load instead of it silently missing | Small; needs a place in plugin settings or an init notice | adopt ([0.3.287](upgrades/0.3.287.md)): transcript error notice. A hooks module that fails to load is not reported there |
 | 3 | `./core` entry point | 0.3.282 | Smaller SDK load in the main process | Must confirm it covers `startup`, `forkSession`, `getSubagentMessages`; uses our installed zod and MCP SDK | open |
 | 4 | `prewarm()` / `SpareProcess.claim()` | 0.3.282 (alpha) | Warm a process before cwd is known; could replace `WarmupManager.keyOf`'s hand-kept list | Alpha API; `ClaimOptions` covers only some options, so the keyed pool stays for the rest | open, wait for stable |
 | 5 | `canUseTool` `options.mcpServer.source === 'sdk'` | ≤0.3.278 | Trust SuperOne tools by origin instead of the `mcp__superone__` name prefix | `allowedTools` admission still matches by name | open |
@@ -19,6 +19,8 @@ reason). Ledger rows: [api-surface.md](api-surface.md).
 | 9 | `system/memory_recall`, `system/thinking_tokens` | — | Recalled-memory row; live thinking-token estimate | Cosmetic | open |
 | 10 | `thinking.display: 'highlights'` | ≤0.3.278 | Highlighted thinking | Only works on Anthropic-hosted models; third-party providers get nothing | rejected |
 | 11 | `usage_EXPERIMENTAL_…()` | ≤0.3.278 | Structured `/usage` data | Marked experimental; `claude-usage-service` already covers plan usage | rejected |
+| 12 | Draw mod UI (panes, the band above the prompt) | 0.3.287 (2.1.287) | Mods' panes and controls in SuperOne, as Claude Desktop shows them | Only the internal control protocol carries it (`ui_attach`, `ui_render`, `ui_press`, `ui_input`, `ui_select`, `ui_close` and `system/ui_invalidate` / `ui_panes`); `sdk.d.ts` declares none and `Query` has no method to send them. `RenderSurface` is a closed set (`terminal`, `desktop`, `mobile`, `vscode`), so SuperOne would attach as `desktop`. Needs a renderer for the element tree (Box, Text, Button, Link, Code, Markdown, Input, Select, Svg) | open, wait for a public SDK API |
+| 13 | `get_task_output` control request | 0.3.287 | Live tail of a background shell or Monitor task without reading its output file | No Query wrapper | open |
 
 ## Integration gaps
 

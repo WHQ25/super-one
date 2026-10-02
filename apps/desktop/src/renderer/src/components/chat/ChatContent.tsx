@@ -13,6 +13,7 @@ import { ArrowDown, ChevronsUp, GitFork, PenLine, Play, ShipWheel, Trash2 } from
 import { AnimatePresence, motion } from 'motion/react'
 import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, ApiRetryIndicator, findLastAssistantMessageId, parseCompactMarker, parseTurnMetaMarker, isRedundantTurnSummaryMarker, TurnMetaIndicator, RecappingIndicator } from './ChatMessage'
 import { ModelFallbackRow } from './ModelFallbackRow'
+import { PluginNoticeRow } from './PluginNotice'
 import { selectClaudeModels } from '@/stores/chat-store/selectors'
 import { ChatSuggestions } from './ChatSuggestions'
 import { SideChatEmptyState } from './SideChatEmptyState'
@@ -344,6 +345,15 @@ function ChatTranscript({
                 return (
                   <div key={msg.id} data-message-id={msg.id} className="chat-message-wrapper">
                     <ModelFallbackRow meta={fallbackMeta} models={modelCatalog} />
+                  </div>
+                )
+              }
+              const pluginNotice = msg.metadata?.pluginNotice
+              if (pluginNotice) {
+                const text = msg.content[0]?.type === 'text' ? msg.content[0].text : ''
+                return (
+                  <div key={msg.id} data-message-id={msg.id} className="chat-message-wrapper">
+                    <PluginNoticeRow meta={pluginNotice} text={text} />
                   </div>
                 )
               }

@@ -7,6 +7,28 @@ import {
 } from './agent-event-mapper'
 
 describe('createClaudeAgentEventMapper', () => {
+  it('maps mod ui messages and shares reported plugin errors across per-turn mappers', () => {
+    const events: AgentEvent[] = []
+    const reportedPluginErrors = new Set<string>()
+    const init = {
+      type: 'system',
+      subtype: 'init',
+      session_id: 's1',
+      plugin_errors: [{ plugin: 'broken@acme', type: 'generic-error', message: 'bad manifest' }],
+    }
+    for (const messageId of ['turn-1', 'turn-2']) {
+      const mapper = createClaudeAgentEventMapper({ messageId, emit: (event) => events.push(event), reportedPluginErrors })
+      mapper.apply(init as never)
+      mapper.apply({ type: 'system', subtype: 'ui_log', plugin: 'probe', text: messageId } as never)
+    }
+
+    expect(events.filter((e) => e.type === 'plugin_notice')).toEqual([
+      { type: 'plugin_notice', kind: 'log', plugin: 'broken@acme', text: 'bad manifest', level: 'error' },
+      { type: 'plugin_notice', kind: 'log', plugin: 'probe', text: 'turn-1' },
+      { type: 'plugin_notice', kind: 'log', plugin: 'probe', text: 'turn-2' },
+    ])
+  })
+
   it('maps streaming text, thinking, tool input, and stream boundaries like desktop', () => {
     const events: AgentEvent[] = []
     const mapper = createClaudeAgentEventMapper({

@@ -1,6 +1,6 @@
 # Claude Agent SDK API surface
 
-Ledger version: `0.3.285` · Check: `bun scripts/harness-api-inventory.ts claude`
+Ledger version: `0.3.287` · Check: `bun scripts/harness-api-inventory.ts claude`
 
 Every upstream interface of `@anthropic-ai/claude-agent-sdk` and how SuperOne uses it. Runtimes: **desktop** (local sessions), **node** (remote node CLI through `packages/claude`), **probe** (catalog queries with `maxTurns: 0`). Status vocabulary and row format: [docs/harness/README.md](../README.md#ledger-api-surfacemd). Undeclared messages and methods SuperOne relies on are in [contracts.md](contracts.md#typed-messages-may-not-be-emitted-untyped-ones-may-be).
 
@@ -193,7 +193,7 @@ Members of the `SDKMessage` union as `type` or `type/subtype`. Desktop maps them
 | `system/hook_response` | used | → `hook_complete` event (output, stdout/stderr, exit code, outcome) in both mappers, but the reducer ignores it. Without `includeHookEvents` it only arrives for SessionStart/Setup. | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/agent-event-mapper.ts`, `packages/chat-core/src/reducer.ts` |
 | `system/hook_started` | used | → `hook_started` event in both mappers, but the reducer ignores it. Without `includeHookEvents` it only arrives for SessionStart/Setup. | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/agent-event-mapper.ts`, `packages/chat-core/src/reducer.ts` |
 | `system/informational` | unused | Would show plaintext banners, e.g. a UserPromptSubmit hook's block reason, status lines, or command output. | — |
-| `system/init` | used | → `session_init` event in both mappers (model, tools, MCP servers, slash commands, skills, agents, output styles, plugins, effort, fast mode) and a session-id callback. | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/agent-event-mapper.ts` |
+| `system/init` | used | → `session_init` event in both mappers (model, tools, MCP servers, slash commands, skills, agents, output styles, plugins, effort, fast mode) and a session-id callback. `plugin_errors` → `plugin_notice` error rows, once per error per runtime. | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/agent-event-mapper.ts` |
 | `system/local_command_output` | used | → `slash_command_output` event in both mappers. | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/agent-event-mapper.ts` |
 | `system/memory_recall` | unused | Would show an inline "Recalled from memory" row. | — |
 | `system/mirror_error` | n/a | Only sent when a `SessionStore` transcript mirror is configured, and none is. | — |
@@ -268,6 +268,7 @@ Control-protocol request subtypes. Most are sent by a `Query` method or an `Opti
 | `file_suggestions` | unused | No Query wrapper; would give CLI @-mention file autocomplete. SuperOne uses its own `fuzzy-file-search.ts`. | — |
 | `get_binary_version` | n/a | No Query wrapper; it serves `/version` for `--remote` thin clients, and SuperOne gets the version from its own binary resolution. | — |
 | `get_context_usage` | used | via `getContextUsage`; desktop context meter. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
+| `get_task_output` | unused | No Query wrapper; would read the last 8 KiB of a background shell or Monitor task's output. | — |
 | `get_hooks_listing` | unused | No Query wrapper; would return the `/hooks` menu listing. | — |
 | `get_session_cost` | n/a | No Query wrapper; it is the thin-client `/usage` cost text, and SuperOne reads cost from result messages. | — |
 | `get_settings` | unused | No Query wrapper; would return the effective merged settings and each source's settings. | — |

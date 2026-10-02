@@ -3620,6 +3620,7 @@ export type Messages = {
         agents: string
         skills: string
         hooks: string
+        mod: string
         mcp: string
         other: string
       }
@@ -7763,6 +7764,7 @@ export const en: Messages = {
         agents: 'Agents',
         skills: 'Skills',
         hooks: 'Hooks',
+        mod: 'Mod',
         mcp: 'MCP',
         other: 'Other',
       },

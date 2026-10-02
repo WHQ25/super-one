@@ -557,6 +557,38 @@ describe('createSessionQuery', () => {
     expect(usageEvents[2]).toMatchObject({ inputTokens: 218, outputTokens: 20 })
   })
 
+  it('maps mod ui messages, including ones raised before init, and reports each plugin error once', async () => {
+    const pluginErrors = [{ plugin: 'broken@acme', type: 'hook-load-failed', message: 'register.js not found' }]
+    state.messages = [
+      { type: 'system', subtype: 'ui_log', plugin: 'probe', text: 'loaded' },
+      { type: 'system', subtype: 'ui_status', plugin: 'probe', text: 'on' },
+      { type: 'system', subtype: 'init', session_id: 'sdk-1', plugin_errors: pluginErrors },
+      { type: 'system', subtype: 'ui_toast', plugin: 'probe', text: 'hi', timeout_ms: 4000 },
+      { type: 'system', subtype: 'init', session_id: 'sdk-1', plugin_errors: pluginErrors },
+      { type: 'system', subtype: 'ui_status', plugin: 'probe', text: null },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-turn',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    expect(events.filter((e) => e.type === 'plugin_notice')).toEqual([
+      { type: 'plugin_notice', kind: 'log', plugin: 'probe', text: 'loaded' },
+      { type: 'plugin_notice', kind: 'status', plugin: 'probe', text: 'on' },
+      { type: 'plugin_notice', kind: 'log', plugin: 'broken@acme', text: 'register.js not found', level: 'error' },
+      { type: 'plugin_notice', kind: 'toast', plugin: 'probe', text: 'hi', timeoutMs: 4000 },
+      { type: 'plugin_notice', kind: 'status', plugin: 'probe', text: null },
+    ])
+  })
+
   it('evicts only the refused partial on a refusal fallback, never the turn\'s earlier work', async () => {
     state.messages = [
       // A completed tool round, then the primary model's refused partial.
@@ -1379,6 +1411,38 @@ describe('createSessionQuery', () => {
     expect(deltas.length).toBeGreaterThan(0)
     expect(deltas.every((d) => d.messageId === currentId)).toBe(true)
     expect((events.find((e) => e.type === 'message_complete') as Record<string, unknown>).messageId).toBe(currentId)
+  })
+
+  it('opens its own message for a turn a mod submits after the result', async () => {
+    // `$.prompt.submit` from a mod's turn.complete hook: the CLI starts a turn
+    // with no send(), announced by command_lifecycle and a second init.
+    state.messages = [
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'DONE' }] } },
+      { type: 'result', subtype: 'success', usage: {} },
+      { type: 'command_lifecycle', state: 'started' },
+      { type: 'system', subtype: 'init', session_id: 'sdk-1' },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'MOD-TURN-OK' }] } },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    let currentId = 'msg-user-turn'
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => currentId,
+      () => Date.now() - 50,
+      () => false,
+      undefined,
+      (id) => { currentId = id },
+    )
+    await handle.iterationDone
+
+    const modTurnId = currentId
+    expect(modTurnId).not.toBe('msg-user-turn')
+    expect(events.filter((e) => e.type === 'message_start').map((e) => (e.message as Record<string, unknown>).id)).toEqual([modTurnId])
+    expect(events.filter((e) => e.type === 'message_complete').map((e) => e.messageId)).toEqual(['msg-user-turn', modTurnId])
   })
 
   it('maps iterator errors to interrupted status when already interrupted', async () => {

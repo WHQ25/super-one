@@ -4053,6 +4053,35 @@ describe('pending interactions survive window reopen', () => {
   })
 })
 
+describe('Session plugin notice transcript row', () => {
+  it('appends a plugin log line to the transcript, between turns too', () => {
+    const { session, backend } = makeSession()
+    const events: AgentEvent[] = []
+    session.on((e) => events.push(e))
+
+    backend.emit({ type: 'plugin_notice', kind: 'log', plugin: 'blast-radius', text: 'held rm -rf dist' })
+
+    const rows = session.snapshot.messages.filter((m) => m.metadata?.pluginNotice)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      role: 'assistant',
+      providerId: 'system',
+      content: [{ type: 'text', text: 'held rm -rf dist' }],
+      metadata: { pluginNotice: { plugin: 'blast-radius' } },
+    })
+    expect(events.filter((e) => e.type === 'user_message_appended')).toHaveLength(1)
+  })
+
+  it('keeps toasts and status lines out of the transcript', () => {
+    const { session, backend } = makeSession()
+
+    backend.emit({ type: 'plugin_notice', kind: 'toast', plugin: 'p', text: 'hi' })
+    backend.emit({ type: 'plugin_notice', kind: 'status', plugin: 'p', text: 'busy' })
+
+    expect(session.snapshot.messages.filter((m) => m.metadata?.pluginNotice)).toHaveLength(0)
+  })
+})
+
 describe('Session model fallback transcript row', () => {
   function fallback(overrides: Partial<Extract<AgentEvent, { type: 'model_fallback' }>> = {}): AgentEvent {
     return {

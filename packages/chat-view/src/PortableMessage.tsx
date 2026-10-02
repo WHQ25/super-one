@@ -2,7 +2,7 @@ import { ContextAttachments } from '@superone/ui/components/ui/context-attachmen
 import { memo, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
-import { CircleStop, RefreshCw } from 'lucide-react'
+import { CircleStop, Puzzle, RefreshCw, TriangleAlert } from 'lucide-react'
 import { ChatMessagePresenter } from './presenters/ChatMessage'
 import { TurnSummaryAboveFooter } from './presenters/ChatMessageIndicators'
 import { collaborationLabelKey, isModelOnlyWakeMessage } from './presenters/collaboration-label'
@@ -187,6 +187,7 @@ export const PortableMessage = memo(function PortableMessage({
     [goalObjective, message],
   )
   const fallback = message.metadata?.modelFallback
+  const pluginNotice = message.metadata?.pluginNotice
   const body = fallback
     ? (
       <div className="my-1 flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 px-2 py-1.5 text-xs">
@@ -195,6 +196,19 @@ export const PortableMessage = memo(function PortableMessage({
           {fallback.outcome === 'declined' ? 'Model declined' : 'Model switched'}
           {fallback.fromModel ? ` from ${fallback.fromModel}` : ''}
           {fallback.toModel ? ` to ${fallback.toModel}` : ''}
+        </span>
+      </div>
+    )
+    : pluginNotice
+    ? (
+      <div className="my-1 flex items-start gap-2 px-0.5 text-xs text-muted-foreground" role="note">
+        {pluginNotice.level === 'error'
+          ? <TriangleAlert className="mt-0.5 size-3 shrink-0 text-error" />
+          : <Puzzle className="mt-0.5 size-3 shrink-0" />}
+        <span className="min-w-0 break-words">
+          <span className="font-medium">{pluginNotice.plugin}</span>
+          {' '}
+          {message.content[0]?.type === 'text' ? message.content[0].text : ''}
         </span>
       </div>
     )

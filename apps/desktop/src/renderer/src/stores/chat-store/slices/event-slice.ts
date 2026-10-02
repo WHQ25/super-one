@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand'
+import { toast } from 'sonner'
 import type {
   AgentEvent,
   AgentStatus,
@@ -754,6 +755,15 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
     }
     if (event.type === 'worktree_missing' && projectPath === get().activeProject) {
       useAppStore.getState().setActiveWorktree(projectPath, null)
+    }
+    // Like the CLI's notification bar, a plugin's toast belongs to the session on
+    // screen; one raised by a background session would read as this one's.
+    if (
+      event.type === 'plugin_notice' && event.kind === 'toast' && event.text
+      && projectPath === get().activeProject
+      && eventSessionId === get().projectSessions[projectPath]?._activeSessionId
+    ) {
+      toast(event.text, { description: event.plugin, ...(event.timeoutMs ? { duration: event.timeoutMs } : {}) })
     }
   },
 

@@ -6,8 +6,11 @@ import type { McpAppFileHandler } from '@superone/shared/mcp-app-files'
 import { McpAppOpenWithActions, McpAppOpenWithButton } from './McpAppOpenWith'
 
 const CAD_ICON = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"%3E%3Cpath fill="%237c3aed" d="M2 1h12v14H2z"/%3E%3C/svg%3E'
+// One-colour black stroke: painted in the text colour so it stays visible on the dark theme.
+const MONO_ICON = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%23000" stroke-width="2"%3E%3Cpath d="M12 2 21 7v10l-9 5-9-5V7z"/%3E%3Ccircle cx="12" cy="12" r="3"/%3E%3C/svg%3E'
 const HANDLERS: McpAppFileHandler[] = [
   { server: 'bits-and-bolts', tool: 'cad.open', title: 'Bits & Bolts CAD viewer', serverTitle: 'Bits & Bolts', icon: CAD_ICON },
+  { server: 'nut-works', tool: 'nut.view', title: 'Nut Works viewer', serverTitle: 'Nut Works', icon: MONO_ICON },
   { server: 'mesh-tools', tool: 'mesh.inspect', title: 'Mesh inspector with a very long descriptive tool title for narrow panes' },
 ]
 

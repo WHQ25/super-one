@@ -362,7 +362,6 @@ export const TreeRow = memo(function TreeRow({
   })
 
   const menuItems: AdaptiveMenuEntry[] = [
-    ...openWith.entries,
     { kind: 'item', id: 'addToChat', label: t('sidebar.contextMenu.addToChat'), icon: AtSign, onSelect: () => {
       chatInputAPI.insertMention?.(
         item.isDirectory ? 'directory' : 'file',
@@ -383,8 +382,9 @@ export const TreeRow = memo(function TreeRow({
     { kind: 'item', id: 'copyRelativePath', label: t('sidebar.contextMenu.copyRelativePath'), icon: Copy, onSelect: () => navigator.clipboard.writeText(item.path) },
     { kind: 'item', id: 'openFolder', label: t('sidebar.contextMenu.openFolder'), icon: FolderOpen, onSelect: () => window.app.showInFolder(currentFolder, item.path) },
     { kind: 'separator' },
-    // Mutations group: rename, then (folders only) create inside this folder.
+    // Rename, then Open With (files) or create inside this folder (folders).
     { kind: 'item', id: 'rename', label: t('sidebar.contextMenu.renameFile'), icon: Pencil, onSelect: () => setRenamingPath(item.path) },
+    ...openWith.entries,
     ...(item.isDirectory
       ? [
           { kind: 'item' as const, id: 'newFile', label: t('sidebar.contextMenu.newFile'), icon: FilePlus, onSelect: () => startDraft(currentFolder, item.path, 'file') },

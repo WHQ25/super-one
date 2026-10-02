@@ -1,7 +1,8 @@
-import { AppWindow, Eye } from 'lucide-react'
+import { Eye, SquareArrowOutUpRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import type { McpAppFileHandler } from '@superone/shared/mcp-app-files'
+import { McpIcon } from '@superone/ui/components/ui/McpIcon'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import type { SessionScope } from '@/stores/chat-store/session-scope'
 import { openFileWithMcpApp, prefetchMcpAppFileHandlers, useMcpAppFileHandlers, useMcpAppFileRoute } from './file-apps'
@@ -32,12 +33,12 @@ export function useOpenWithMenu(absolutePath: string | null | undefined, options
   const prefetch = () => { if (absolutePath) prefetchMcpAppFileHandlers(route, absolutePath) }
   if (!absolutePath || state?.status !== 'ready' || !state.handlers.length) return { entries: [], prefetch }
   return { prefetch, entries: [{
-    kind: 'submenu', id: 'openWith', label: t('mcpApp.openWith'), icon: AppWindow,
+    kind: 'submenu', id: 'openWith', label: t('mcpApp.openWith'), icon: SquareArrowOutUpRight,
     items: [
       { kind: 'item', id: 'openWith:superone', label: t('mcpApp.superOnePreview'), icon: Eye, onSelect: options.openInSuperOne },
       { kind: 'separator' },
       ...state.handlers.map(handler => ({
-        kind: 'item' as const, id: `openWith:${handler.server}:${handler.tool}`, label: handler.title, icon: AppWindow,
+        kind: 'item' as const, id: `openWith:${handler.server}:${handler.tool}`, label: handler.title, icon: McpIcon,
         onSelect: () => open(handler, absolutePath, route),
       })),
     ],

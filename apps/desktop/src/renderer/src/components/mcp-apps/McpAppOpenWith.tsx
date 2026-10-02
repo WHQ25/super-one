@@ -1,10 +1,11 @@
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AppWindow, Loader2 } from 'lucide-react'
+import { AppWindow, Loader2, SquareArrowOutUpRight } from 'lucide-react'
 import type { McpAppFileHandler } from '@superone/shared/mcp-app-files'
 import { Button } from '@superone/ui/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@superone/ui/components/ui/dropdown-menu'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
+import { McpAppIcon } from '@superone/ui/components/ui/mcp-app-icon'
 import type { SessionScope } from '@/stores/chat-store/session-scope'
 import { prefetchMcpAppFileHandlers, useMcpAppFileHandlers, useMcpAppFileRoute, type McpAppFileHandlersState } from './file-apps'
 import type { McpAppRoute } from './desktop-executor'
@@ -33,7 +34,7 @@ export function McpAppOpenWithButton(props: OpenWithProps) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <IconButton size="sm" variant="ghost" tooltip={t('mcpApp.openWith')} data-mcp-app-open-with="">
-          <AppWindow className="size-3.5" />
+          <SquareArrowOutUpRight className="size-3.5" />
         </IconButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">
@@ -69,7 +70,5 @@ export function McpAppOpenWithActions(props: OpenWithProps) {
 }
 
 function HandlerIcon({ handler }: { handler: McpAppFileHandler }) {
-  return handler.icon
-    ? <img src={handler.icon} alt="" className="size-3.5 shrink-0 rounded-sm object-contain" />
-    : <AppWindow className="size-3.5 shrink-0" />
+  return <McpAppIcon src={handler.icon} className="size-3.5 shrink-0" fallback={<AppWindow className="size-3.5 shrink-0" />} />
 }

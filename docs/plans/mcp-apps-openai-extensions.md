@@ -714,9 +714,9 @@ model context, `openai/message` and most form features. Still missing:
 
 | Area | State |
 |---|---|
-| File entrypoint, host resources (`read` / `subscribe` / `openai/resources/write`), path injection | Codex sessions on local projects: done. Claude needs step 1; remote projects and phone later |
+| File entrypoint, host resources (`read` / `subscribe` / `openai/resources/write`), path injection | Codex sessions on local projects: done. Claude lists Apps through step 1; opening a file not yet verified live. Remote projects and phone later |
 | `openai/files/open` | Not supported — Phase 3 |
-| Composer at-mentions (`mentions/search`) | Codex sessions on local projects: done. Claude needs step 1; remote projects and phone later |
+| Composer at-mentions (`mentions/search`) | Codex and Claude sessions on local projects: done. Remote projects and phone later |
 | Form previews (`openai/preview`) | Parsed, not shown — Phase 3 host follow-ups |
 | Form `userOptions`, implicit selection | Ignored / refused — Phase 3 host follow-ups |
 | `ui/download-file`, collapsed untitled long text | S1 leftovers — Phase 3 host follow-ups |
@@ -747,12 +747,26 @@ Ordered ahead of proposal phase 3 (entrypoints, settings) by user decision.
   when its tab closes. Menus look Apps up when they open (this may start the
   harness); an open preview only asks a running harness and otherwise shows
   no App control.
-- **Claude**: SDK 0.3.285 withholds every tool `_meta` key except `ui` and
-  `ui/resourceUri`, and `mcp_call` takes no `_meta`. In Claude sessions
-  SuperOne connects to the server itself — stdio and HTTP, with SuperOne's
-  own OAuth — for discovery and for every call of a host-originated App.
-  Server configs come from Claude's `mcpServerStatus()`. The model's own tool
-  calls stay on Claude's connection.
+- **Claude**: SDK 0.3.287 still withholds every tool `_meta` key except `ui`
+  and `ui/resourceUri`, and `mcp_call` takes no `_meta`. In Claude sessions
+  SuperOne connects to the server itself (stdio, HTTP, SSE) for discovery and
+  for every call of a host-originated App; such bindings carry
+  `hostClient: true`. Server configs come from Claude's `mcpServerStatus()`.
+  The model's own tool calls and model-originated Views stay on Claude's
+  connection.
+- **Eligible servers** (2026-10-02): only servers Claude reports `connected`
+  (so its project-trust approval has run), not `source: sdk`, not
+  `claudeai-proxy`, and with at least one tool declaring `_meta.ui` (which
+  the SDK passes through). Other servers never get a second connection.
+- **HTTP credentials** (2026-10-02, user decision): config headers when they
+  carry `Authorization`; otherwise Claude's own MCP OAuth token, read only,
+  from its credential store (`mcpOAuth["<server>|<hash>"]` in the keychain
+  item or `.credentials.json` of the session's credential domain). SuperOne
+  never refreshes or writes it: refresh tokens rotate. An expiring token or a
+  401 asks Claude to reconnect the server (its `tokens()` refreshes under a
+  cross-process lock), then reads again once. Sign-in goes through Claude's
+  `mcpAuthenticate`, so one sign-in serves both. The format is internal and
+  pinned to a verified SDK version; a mismatch reads as `auth_required`.
 - **Codex**: stays on app-server. Protocol 0.159 (`generate-json-schema`)
   carries full `Tool._meta` in `mcpServerStatus/list` and accepts `_meta` on
   `mcpServer/tool/call`.
@@ -761,16 +775,16 @@ Ordered ahead of proposal phase 3 (entrypoints, settings) by user decision.
 
 - A stdio server reached directly runs as a second process. Servers that keep
   state in memory can disagree with what the model sees through Claude.
-- Direct HTTP connections hold their own OAuth tokens, separate from Claude
-  CLI's; signing in once per server per tool is visible to the user.
+- The Claude credential format is internal; an SDK bump must re-verify it.
 
 ### Steps
 
 1. **Direct client for Claude sessions**: resolve server configs from
-   `mcpServerStatus()`, connect over stdio or HTTP, `tools/list` with full
-   `_meta`, cached by config fingerprint; idle teardown; OAuth sign-in and
-   token storage. Security review before shipping (spawned commands, token
-   storage, which configs are eligible). Builds on `compat-session.ts`.
+   `mcpServerStatus()`, connect over stdio, HTTP or SSE, `tools/list` with
+   full `_meta`; one client per server per session, idle teardown; Claude's
+   tokens as above. Security review before shipping (spawned commands, token
+   reuse, which configs are eligible). Shares its connect code with
+   `compat-session.ts`.
 2. **Host-origin binding** (proposal §5): host-originated `ToolAppAttachment`
    records per session, outside transcript rows, found by executor
    `resolve`, document registration and the node's App index; restored with
@@ -847,7 +861,7 @@ unreadable or over-budget resources keep only the tag, and the model reads them
 itself. The same block is stored as its own text block of the user message, so
 hovering a sent chip shows exactly what the agent got (also after reload),
 and hovering a composer chip reads it now to preview what sending will inline;
-composer restore drops it. Claude sessions show no section until step 1.
+composer restore drops it. Claude sessions reach the server through step 1.
 Chips and rows show the server's icon, remembered per server name across
 restarts so a transcript never asks a harness, else the icon SuperOne already
 knows for the server (as tool rows show it); one-colour SVG icons are painted
@@ -857,6 +871,46 @@ highlight where the query occurs, though the server did the matching.
 Verified live (Codex 0.159, Bits & Bolts, CDP): cold lookup about 10 s, warm
 5 ms; `@keycap` lists the server's parts; the chip survives send; with the
 content inlined the model answered without a tool call (before: list + read).
+
+**Claude direct client (step 1): done; security review below.**
+Connect code in `mcp-apps/host-client.ts`, shared with `compat-session.ts`;
+eligible servers from `ClaudeMcpAppsCatalog.hostServers()`; `ClaudeBackend`
+serves `hostClient` bindings from its own `HostClients` and keeps sign-in on
+Claude's `mcpAuthenticate`. HTTP tokens come from
+`mcp-apps/claude-mcp-token.ts` over the credential reader shared with the
+usage meter (`agent/claude-credential-store.ts`); renewal is
+`reconnectMcpServer`, once per expiry or 401. The layout check is pinned by
+`CLAUDE_MCP_OAUTH_VERIFIED_SDK`.
+
+Verified live (Claude, Opus 5.5, CDP): over stdio, `@pointer` lists Bits &
+Bolts, the composer hover previews the 192-character resource, and the model
+answered from the inlined content without a tool call; Claude sessions also
+list Bits & Bolts under Open With. Over HTTP, the OAuth fixture signed in
+through Claude's `mcpAuthenticate` and the direct client then connected with
+the token Claude stored, with no second sign-in.
+
+Security review (2026-10-02), with what it changed:
+
+- **Spawned commands**: only servers Claude reports `connected` (its project
+  trust ran), not `sdk`, not `managed` (status redacts their URL and headers),
+  declaring MCP Apps UI. Claude's status omits stdio `env`; it comes from the
+  config file Claude read (`listMcpConfigs`) only when command and args match
+  exactly, else the server is not reached directly (plugin servers, `${VAR}`
+  expansion). Env goes through `buildSafeEnv`; cwd is the session's.
+  Eligibility is rechecked before every request, so a server Claude drops is
+  no longer reached. Children exit with the app (checked live).
+- **Token reuse**: read only, held in memory per connection, never logged.
+  Sent only to the config URL's origin (an SSE endpoint or any other URL gets
+  none); an exact-key entry whose `serverUrl` disagrees is refused. The
+  connection key includes account and credential domain, so switching Claude
+  accounts reconnects. Keychain reads use `execFileSync('security', …)` with
+  fixed arguments; a first cross-app read can show the macOS keychain prompt.
+- **Binding marker**: `hostClient` only moves a binding of an eligible server
+  onto SuperOne's own connection; identity checks are unchanged and the flag
+  is part of the app and document identity. Calls still pass the executor's
+  visibility and approval gates; request `_meta` is host-authored only.
+- **Accepted**: a second process per stdio App server (state may differ from
+  the model's); HTTP without TLS is allowed exactly as Claude allows it.
 
 Out of this phase: phone parity (file preview "more" menu is the natural
 place), remote-node direct clients, global/thread entrypoints, settings.

@@ -4,7 +4,7 @@ import { McpAppsError, type McpAppsBinding } from '@superone/shared/mcp-apps'
 import { FIXTURE_PRIVATE_META_KEY, FIXTURE_VIEW_URI, startFixtureHttpServer, type FixtureHttpServer } from '../../test/fixtures/mcp-apps/fixture-server'
 
 vi.mock('../shell-path', () => ({ ensureShellPath: async () => undefined }))
-import { HostClients, hostClientConfig, type HostClientProviderDeps } from './host-client'
+import { HostClients, bearerFetch, hostClientConfig, type HostClientProviderDeps } from './host-client'
 
 const fixture = fileURLToPath(new URL('../../test/fixtures/mcp-apps/fixture-server.ts', import.meta.url))
 const stdio = { type: 'stdio', command: process.execPath, args: [fixture, '--stdio'] }
@@ -60,6 +60,15 @@ describe('HostClients', () => {
     expect(await provider.tools()).not.toBe(first)
   })
 
+  it('reconnects when the credentials behind the connection change', async () => {
+    let scope = 'account-a'
+    const { provider } = setup(stdio, { credentialScope: () => scope })
+    const first = await provider.tools()
+    expect(await provider.tools()).toBe(first)
+    scope = 'account-b'
+    expect(await provider.tools()).not.toBe(first)
+  })
+
   it('closes an idle connection and reconnects on the next request', async () => {
     const { provider } = setup(stdio, {}, 50)
     const first = await provider.tools()
@@ -73,6 +82,30 @@ describe('HostClients', () => {
     expect((await provider.tools()).has('fixture_list_items')).toBe(true)
     const { provider: unsigned } = setup({ type: 'http', url: http.url })
     expect(await code(unsigned.tools())).toBe('auth_required')
+  })
+
+  it('sends the harness token when the config has none, renewing it on a 401 or before expiry', async () => {
+    http = await startFixtureHttpServer({ token: 'secret' })
+    const url = http.url
+    let stored = { accessToken: 'revoked' } as { accessToken: string; expiresAt?: number }
+    const renew = vi.fn(async () => { stored = { accessToken: 'secret' } })
+    expect((await setup({ type: 'http', url }, { token: { read: () => stored, renew } }).provider.tools()).size).toBeGreaterThan(0)
+    expect(renew).toHaveBeenCalledOnce()
+
+    stored = { accessToken: 'revoked', expiresAt: Date.now() + 1_000 }
+    renew.mockClear()
+    expect((await setup({ type: 'http', url }, { token: { read: () => stored, renew } }).provider.tools()).size).toBeGreaterThan(0)
+    expect(renew).toHaveBeenCalledOnce()
+  })
+
+  it('reads a missing harness token as sign-in, and leaves a config Authorization header alone', async () => {
+    http = await startFixtureHttpServer({ token: 'secret' })
+    const renew = vi.fn(async () => undefined)
+    expect(await code(setup({ type: 'http', url: http.url }, { token: { read: () => null, renew } }).provider.tools())).toBe('auth_required')
+    expect(renew).not.toHaveBeenCalled()
+    const read = vi.fn(() => ({ accessToken: 'wrong' }))
+    expect((await setup({ type: 'http', url: http.url, headers: { authorization: 'Bearer secret' } }, { token: { read, renew } }).provider.tools()).size).toBeGreaterThan(0)
+    expect(read).not.toHaveBeenCalled()
   })
 
   it('refuses before connecting: other sessions, changed bindings, non-ui documents, unreachable configs, after close', async () => {
@@ -94,5 +127,21 @@ describe('HostClients', () => {
     await provider.authenticate!({}, signal())
     expect(authenticate).toHaveBeenCalledOnce()
     expect(await provider.tools()).not.toBe(first)
+  })
+})
+
+describe('bearerFetch', () => {
+  it('sends the token to the server origin only', async () => {
+    const seen: Array<[string, string | null]> = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string | URL, init?: RequestInit) => {
+      seen.push([String(url), new Headers(init?.headers).get('authorization')])
+      return new Response('{}')
+    }))
+    try {
+      const send = bearerFetch({ type: 'sse', url: 'https://mcp.example.com/sse', headers: {} }, { read: () => ({ accessToken: 't' }), renew: async () => undefined })
+      await send('https://mcp.example.com/messages?session=1', { method: 'POST' })
+      await send('https://elsewhere.example.net/collect', { method: 'POST' })
+      expect(seen).toEqual([['https://mcp.example.com/messages?session=1', 'Bearer t'], ['https://elsewhere.example.net/collect', null]])
+    } finally { vi.unstubAllGlobals() }
   })
 })

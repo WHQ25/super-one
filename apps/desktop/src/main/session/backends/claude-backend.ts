@@ -7,6 +7,7 @@ import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvi
 import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
 import { assertMcpAppsBindingIdentity } from '@superone/shared/mcp-app-binding'
 import { HostClients } from '../../mcp-apps/host-client'
+import { readClaudeMcpToken } from '../../mcp-apps/claude-mcp-token'
 import { claudeHostClientConfig } from '../../mcp-apps/claude-host-config'
 import { buildClaudeOptions, createSessionQuery, buildUserMessage, type SessionQueryOptions, type BackgroundTaskInfo } from '../../agent/claude-query'
 import { getGlobalWarmupManager, WarmupManager } from '../../agent/warmup-manager'
@@ -909,14 +910,26 @@ export class ClaudeBackend implements SessionBackend {
       },
     })
     if (!binding.hostClient) return native
+    const credentialDir = () => (this._lastStartOpts?.config as ClaudeConfig | undefined)?.extraEnv?.CLAUDE_SECURESTORAGE_CONFIG_DIR ?? null
     const host = this.hostClients.provider(binding, {
       config: () => this.hostClientConfig(binding.server),
       cwd: () => this._lastStartOpts?.cwd,
+      credentialScope: () => JSON.stringify([this._lastStartOpts?.apiProviderId ?? null, credentialDir()]),
       providerSessionId: () => this.providerSessionId,
       // Rechecked per request: a server Claude disconnects or disables is no longer reached directly.
       assertBinding: () => {
         assertBinding()
         if (!this.hostClientConfig(binding.server)) throw new McpAppsError('not_connected', 'This MCP server is not available to Apps in this session')
+      },
+      // Claude's own token, read only; Claude renews it when it reconnects the server.
+      token: {
+        read: (config) => readClaudeMcpToken(credentialDir(), binding.server, config),
+        renew: async () => {
+          const current = await query()
+          if (!current) throw new McpAppsError('not_connected', 'Claude session is not running')
+          const reconnected = await withDeadline(current.reconnectMcpServer(binding.server), MCP_APPS_CATALOG_TIMEOUT_MS)
+          if (reconnected === DEADLINE_EXCEEDED) throw new McpAppsError('not_connected', 'Claude did not reconnect the MCP server in time')
+        },
       },
       // Sign-in stays Claude's: one sign-in serves the model and host Apps.
       authenticate: native.authenticate,

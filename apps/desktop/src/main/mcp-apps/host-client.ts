@@ -3,7 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
+import type { FetchLike, Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { McpAppsError, MCP_APPS_EXTENSION, assertMcpAppSize,
   MCP_APP_HTML_MAX_BYTES, MCP_APP_DATA_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES,
   type McpAppOrigin, type McpAppsBinding, type McpAppsProvider, type McpAppToolResult, type McpToolDescriptor,
@@ -19,6 +19,8 @@ import { ensureShellPath } from '../shell-path'
 export const HOST_CLIENT_DISCOVERY_TIMEOUT_MS = 10_000
 const TOOLS_REFRESH_COOLDOWN_MS = 10_000
 const IDLE_CLOSE_MS = 5 * 60_000
+/** Renew a little before expiry so a request never leaves with a dead token. */
+const TOKEN_RENEW_MARGIN_MS = 60_000
 
 /** tools/list _meta is an open JSON bag; malformed visibility must grant neither surface. */
 export function normalizeTool(tool: McpToolDescriptor): McpToolDescriptor {
@@ -74,9 +76,9 @@ export function stdioTransport(config: Extract<HostClientConfig, { type: 'stdio'
     env: buildSafeEnv(config.env) as Record<string, string>, stderr: 'ignore' })
 }
 
-function transport(config: HostClientConfig, cwd: string): Transport {
+function transport(config: HostClientConfig, cwd: string, fetch?: FetchLike): Transport {
   if (config.type === 'stdio') return stdioTransport(config, cwd)
-  const options = { requestInit: { headers: config.headers } }
+  const options = { requestInit: { headers: config.headers }, ...(fetch ? { fetch } : {}) }
   return config.type === 'http' ? new StreamableHTTPClientTransport(new URL(config.url), options) : new SSEClientTransport(new URL(config.url), options)
 }
 
@@ -89,15 +91,61 @@ function connectError(error: unknown): McpAppsError {
   return new McpAppsError('not_connected', message)
 }
 
+/** An OAuth access token a harness holds for a server. */
+export interface HostClientToken { accessToken: string; expiresAt?: number }
+
+/** Where an HTTP server's token comes from when its config carries no `Authorization` header. */
+export interface HostClientTokenSource {
+  read(config: Extract<HostClientConfig, { type: 'http' | 'sse' }>): HostClientToken | null
+  /** Ask the harness to renew its token; `read` returns the renewed one afterwards. */
+  renew(): Promise<void>
+}
+
+const hasAuthorization = (headers: Record<string, string>): boolean => Object.keys(headers).some(name => name.toLowerCase() === 'authorization')
+
+/**
+ * Adds the harness's bearer token to requests for the server's own origin;
+ * nothing else ever sees it. An expiring token, or a 401, asks the harness to
+ * renew it once; no token at all is a sign-in.
+ */
+export function bearerFetch(config: Extract<HostClientConfig, { type: 'http' | 'sse' }>, source: HostClientTokenSource): FetchLike {
+  const origin = new URL(config.url).origin
+  let current: HostClientToken | null = null
+  const usable = (token: HostClientToken | null) => token && (token.expiresAt === undefined || token.expiresAt - Date.now() > TOKEN_RENEW_MARGIN_MS) ? token : null
+  const resolve = async (renew: boolean): Promise<HostClientToken> => {
+    const stored = source.read(config)
+    if (!stored) throw new McpAppsError('auth_required', 'MCP server requires sign-in')
+    if (!renew && usable(stored)) return stored
+    await source.renew()
+    const renewed = usable(source.read(config))
+    if (!renewed) throw new McpAppsError('auth_required', 'MCP server requires sign-in')
+    return renewed
+  }
+  return async (url, init) => {
+    if (new URL(url).origin !== origin) return fetch(url, init)
+    current = usable(current) ?? await resolve(false)
+    const send = (token: HostClientToken) => {
+      const headers = new Headers(init?.headers)
+      headers.set('Authorization', `Bearer ${token.accessToken}`)
+      return fetch(url, { ...init, headers })
+    }
+    const response = await send(current)
+    if (response.status !== 401) return response
+    current = await resolve(true)
+    return send(current)
+  }
+}
+
 /** Connected client with its first tools/list, or a typed failure; nothing is left running on failure. */
-export async function connectHostClient(name: string, config: HostClientConfig, cwd: string, timeoutMs = HOST_CLIENT_DISCOVERY_TIMEOUT_MS): Promise<{ client: Client; tools: Map<string, McpToolDescriptor> }> {
+export async function connectHostClient(name: string, config: HostClientConfig, cwd: string, timeoutMs = HOST_CLIENT_DISCOVERY_TIMEOUT_MS, token?: HostClientTokenSource): Promise<{ client: Client; tools: Map<string, McpToolDescriptor> }> {
   if (config.type === 'stdio') await ensureShellPath()
   const client = new Client({ name, version: '1.0.0' }, { capabilities: { extensions: MCP_APPS_EXTENSION } })
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     const tools = await Promise.race([
       (async () => {
-        await client.connect(transport(config, cwd))
+        const fetch = config.type !== 'stdio' && token && !hasAuthorization(config.headers) ? bearerFetch(config, token) : undefined
+        await client.connect(transport(config, cwd, fetch))
         return readTools(client, timeoutMs)
       })(),
       new Promise<never>((_, reject) => {
@@ -125,10 +173,14 @@ export interface HostClientProviderDeps {
   /** The server's current config as the harness reports it. */
   config: () => unknown
   cwd: () => string | undefined
+  /** Whose credentials the connection carries (account, credential domain); a change reconnects. */
+  credentialScope?: () => string
   /** Current provider session; a request's origin must match it. */
   providerSessionId: () => string | null | undefined
   /** Recheck account/configuration identity before every dispatch. */
   assertBinding: () => void
+  /** Token for an HTTP server whose config carries no `Authorization` header. */
+  token?: HostClientTokenSource
   /** The harness's own sign-in for this server; the next connect picks up its result. */
   authenticate?: McpAppsProvider['authenticate']
   submitAuthCallback?: McpAppsProvider['submitAuthCallback']
@@ -150,14 +202,14 @@ export class HostClients {
     const config = hostClientConfig(deps.config())
     const cwd = deps.cwd()
     if (!config || !cwd) throw new McpAppsError('not_connected', 'This MCP server cannot be reached directly')
-    // The key covers env and headers: a rotated credential must reconnect, never reuse.
-    const key = createHash('sha256').update(JSON.stringify({ cwd, config })).digest('hex')
+    // The key covers env, headers and whose token: a changed credential must reconnect, never reuse.
+    const key = createHash('sha256').update(JSON.stringify({ cwd, config, credentials: deps.credentialScope?.() })).digest('hex')
     const current = this.connections.get(server)
     if (current?.key === key && current.connected) return this.touch(server, current)
     if (current) this.drop(server, current)
     const pending = this.connecting.get(server)
     if (pending?.key === key) return pending.promise
-    const promise = connectHostClient(this.clientName, config, cwd).then(({ client, tools }) => {
+    const promise = connectHostClient(this.clientName, config, cwd, HOST_CLIENT_DISCOVERY_TIMEOUT_MS, deps.token).then(({ client, tools }) => {
       const connection: Connection = { key, client, tools, lastToolsRefresh: Date.now(), connected: true }
       if (this.closed || this.connecting.get(server)?.promise !== promise) {
         void client.close().catch(() => undefined)

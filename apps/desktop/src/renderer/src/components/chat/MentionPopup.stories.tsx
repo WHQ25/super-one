@@ -61,7 +61,10 @@ mockIpc('agent', 'listDirectory', async () => [])
 mockIpc('agent', 'searchMentions', async () => [])
 mockIpc('app', 'listComputerUseInstalledApps', async () => [])
 
-const CAD_ICON = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"%3E%3Cpath fill="%237c3aed" d="M2 1h12v14H2z"/%3E%3C/svg%3E'
+/** Bits & Bolts' real icon: one hard-coded dark stroke, tinted to the theme. */
+const CAD_ICON = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path fill="none" stroke="#27272a" stroke-width="3" stroke-linejoin="round" d="M9.5 4.75h13L29 16l-6.5 11.25h-13L3 16zM13 10.8h6l3 5.2-3 5.2h-6L10 16z"/></svg>')
+/** A two-colour logo, shown as the image it is. */
+const TRACKER_ICON = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#2563eb"/><path d="M4 8h8" stroke="#fff" stroke-width="2"/></svg>')
 const PARTS: McpMentionSource = {
   server: 'bits-and-bolts', tool: 'search_mentions', title: 'Bits & Bolts', icon: CAD_ICON,
   items: [
@@ -71,7 +74,7 @@ const PARTS: McpMentionSource = {
   ],
 }
 const TICKETS: McpMentionSource = {
-  server: 'tracker', tool: 'mentions', title: 'tracker',
+  server: 'tracker', tool: 'mentions', title: 'tracker', icon: TRACKER_ICON,
   items: [{ uri: 'tracker://issues/412', label: 'Bolt torque table is out of date', detail: 'ENG-412 · open' }],
 }
 

@@ -8,7 +8,7 @@ import { parseUserMentions, type UserMentionKind } from '@superone/shared/user-m
 import { isStoredCapabilityId } from '@superone/shared/capability-prompt-tags'
 
 function blended(kind: UserMentionKind) {
-  return isStoredCapabilityId(kind) || kind === 'agent-profile' || kind === 'session' || kind === 'git' || kind === 'desktop-app'
+  return isStoredCapabilityId(kind) || kind === 'agent-profile' || kind === 'session' || kind === 'git' || kind === 'desktop-app' || kind === 'mcp-resource'
 }
 
 /** User text is literal, as on desktop. Only explicit structured mentions become
@@ -17,7 +17,7 @@ export function PortableUserText({ text, mentionArtwork = {} }: { text: string; 
   return <span className="user-text-with-mentions">{parseUserMentions(text).map((segment, index) => {
     if (segment.type === 'text') return <span key={index} className="user-text-rest">{segment.text}</span>
     const { kind, value, displayName } = segment
-    const label = kind === 'miniapp' || kind === 'mcp-resource' || blended(kind) ? displayName || value : value.replace(/[/\\]+$/, '').split(/[/\\]/).at(-1) || value
+    const label = kind === 'miniapp' || blended(kind) ? displayName || value : value.replace(/[/\\]+$/, '').split(/[/\\]/).at(-1) || value
     if (kind === 'agent') return <span key={index} data-mention-kind={kind} title={value}
       className="box-decoration-clone break-normal rounded-md border border-primary/40 bg-primary/15 px-1.5 py-0.5 text-xs leading-5 font-medium text-primary">
       @{label}

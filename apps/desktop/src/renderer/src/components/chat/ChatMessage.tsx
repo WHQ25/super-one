@@ -170,7 +170,7 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
 
   const isBlendedChip = isBlendedMentionKind(resolvedKind)
   const display =
-    resolvedKind === 'miniapp' || resolvedKind === 'mcp-resource' || isBlendedChip
+    resolvedKind === 'miniapp' || isBlendedChip
       ? (displayName || value)
       : (value.replace(/\/$/, '').split('/').pop() || value)
 

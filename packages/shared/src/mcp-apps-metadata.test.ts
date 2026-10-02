@@ -1,6 +1,6 @@
 import { boundedToolAppAttachment, MCP_APP_DATA_MAX_BYTES } from './mcp-apps'
 import { describe, expect, it } from 'vitest'
-import { mcpAppHeaderTitle, mcpAppServerTitle, mcpAppIcon, mcpAppPresentation, mcpAppResourceMeta, mcpAppResourceModes, safeMcpAppImage } from './mcp-apps-metadata'
+import { mcpAppHeaderTitle, mcpAppServerTitle, mcpAppIcon, mcpAppMonochromeSvg, mcpAppPresentation, mcpAppResourceMeta, mcpAppResourceModes, safeMcpAppImage } from './mcp-apps-metadata'
 
 describe('MCP App presentation metadata', () => {
   it('shows identical resolved server/tool titles once on both host surfaces', () => {
@@ -50,4 +50,24 @@ it('omits oversized initial results, preserves host state and rejects oversized 
   expect(bounded.error).toBeUndefined()
   expect(boundedToolAppAttachment({ ...base, toolResult: { content: [{ type: 'text', text: 'raw fallback' }] }, toolResultOmitted: bounded.toolResultOmitted }).toolResult).toBeUndefined()
   expect(boundedToolAppAttachment({ ...base, toolInput: { x: 'x'.repeat(MCP_APP_DATA_MAX_BYTES) } })).toMatchObject({ status: 'error', error: { code: 'invalid' } })
+})
+
+describe('mcpAppMonochromeSvg', () => {
+  const svg = (body: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">${body}</svg>`
+  const encoded = (body: string) => `data:image/svg+xml,${encodeURIComponent(svg(body))}`
+
+  it('accepts one hard-coded colour, currentColor and the default fill, in either encoding', () => {
+    expect(mcpAppMonochromeSvg(encoded('<path fill="none" stroke="#27272a" d="M0 0"/>'))).toContain('#27272a')
+    expect(mcpAppMonochromeSvg(encoded('<path style="fill:currentColor" d="M0 0"/><path stroke="currentColor"/>'))).toBeDefined()
+    expect(mcpAppMonochromeSvg(encoded('<path d="M0 0"/>'))).toBeDefined()
+    expect(mcpAppMonochromeSvg(`data:image/svg+xml;base64,${btoa(svg('<path fill="#000"/>'))}`)).toBeDefined()
+  })
+
+  it('leaves multi-colour, embedded raster, non-SVG and malformed icons alone', () => {
+    expect(mcpAppMonochromeSvg(encoded('<path fill="#7c3aed"/><path stroke="#fff"/>'))).toBeUndefined()
+    expect(mcpAppMonochromeSvg(encoded('<image href="data:image/png;base64,AAAA"/>'))).toBeUndefined()
+    expect(mcpAppMonochromeSvg('data:image/png;base64,AAAA')).toBeUndefined()
+    expect(mcpAppMonochromeSvg('https://example.com/icon.svg')).toBeUndefined()
+    expect(mcpAppMonochromeSvg('data:image/svg+xml,%E0%A4%A')).toBeUndefined()
+  })
 })

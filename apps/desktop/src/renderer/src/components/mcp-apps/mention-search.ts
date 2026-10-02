@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { MENTION_SEARCH_DEBOUNCE_MS } from '@superone/shared/mention-search-debounce'
 import type { McpMentionSource } from '@superone/shared/mcp-app-mentions'
 import type { McpAppRoute } from './desktop-executor'
+import { rememberMcpMentionIcons } from './mention-icons'
 
 export interface McpMentionSearchState {
   /** One section per server tool. While a query is in flight they keep the previous items. */
@@ -45,6 +46,7 @@ export function useMcpMentionSearch(route: McpAppRoute | null, query: string, en
         const { sources, incomplete } = result.value
         // Only a complete answer says which servers search; an incomplete one may be missing some.
         if (!incomplete) knownSources.set(key, sources.map(source => ({ ...source, items: [] })))
+        rememberMcpMentionIcons(sources)
         setState({ sources, loading: false, incomplete: !!incomplete, failed: false })
       }).catch(() => {
         if (gen !== generation.current) return

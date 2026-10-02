@@ -6,18 +6,52 @@
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
 import { mcpResourceMentionIcon } from '@superone/ui/components/ui/mention-icons'
-import type { McpMentionItem, McpMentionSource } from '@superone/shared/mcp-app-mentions'
+import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
+import { parseMcpMentionValue, type McpMentionItem, type McpMentionSource } from '@superone/shared/mcp-app-mentions'
 import type { McpMentionSearchState } from '@/components/mcp-apps/mention-search'
+import { useMcpMentionIcon } from '@/components/mcp-apps/mention-icons'
+import { McpAppIcon } from '@/components/mcp-apps/McpAppIcon'
+import { useMcpServerIcon } from './use-mcp-server-icon'
 import { PopupSectionHeader } from './popup-groups'
 import { STACKED_BODY_CLASS, STACKED_DETAIL_CLASS, STACKED_ICON_CLASS, STACKED_ROW_CLASS, mentionRowClass } from './mention-row-layout'
 
-export interface McpMentionFlatItem { kind: 'mcp-resource'; server: string; tool: string; title: string; sourceIcon?: string; item: McpMentionItem }
+export interface McpMentionFlatItem {
+  kind: 'mcp-resource'
+  server: string
+  tool: string
+  title: string
+  sourceIcon?: string
+  item: McpMentionItem
+  /** Where the query occurs in the label / detail; the server matched however it likes. */
+  matchIndices: number[]
+  detailMatchIndices: number[]
+}
 
 export const mcpMentionGroupKey = (source: Pick<McpMentionSource, 'server' | 'tool'>) => `mcp:${source.server}/${source.tool}`
 
-export function mcpMentionFlatItems(sources: McpMentionSource[]): McpMentionFlatItem[] {
+export function mcpMentionFlatItems(sources: McpMentionSource[], match: (text: string) => number[] | null): McpMentionFlatItem[] {
   return sources.flatMap(({ server, tool, title, icon, items }) =>
-    items.map(item => ({ kind: 'mcp-resource' as const, server, tool, title, ...(icon ? { sourceIcon: icon } : {}), item })))
+    items.map(item => ({
+      kind: 'mcp-resource' as const, server, tool, title, ...(icon ? { sourceIcon: icon } : {}), item,
+      matchIndices: match(item.label) ?? [],
+      detailMatchIndices: item.detail ? match(item.detail) ?? [] : [],
+    })))
+}
+
+/**
+ * The icon a server is shown with: what its search answers carried, else the icon
+ * SuperOne already knows for that server (tool rows use the same), else none.
+ */
+function useMcpMentionServerIcon(server: string | undefined): string | undefined {
+  const declared = useMcpMentionIcon(server)
+  const known = useMcpServerIcon(server)
+  return declared ?? known
+}
+
+/** The chip's leading icon, else the MCP mark. `.mention-chip__icon` sizes it. */
+export function McpMentionChipIcon({ value }: { value: string }) {
+  const icon = useMcpMentionServerIcon(parseMcpMentionValue(value)?.server)
+  return <McpAppIcon src={icon} fallback={mcpResourceMentionIcon()} />
 }
 
 /** Something the popup must stay open for even with no selectable rows. */
@@ -25,10 +59,16 @@ export function mcpMentionHasStatus(state: McpMentionSearchState): boolean {
   return state.failed || state.incomplete || state.sources.some(source => source.failed || (state.loading && !source.items.length))
 }
 
-function McpIcon({ src, className }: { src?: string; className?: string }) {
-  return src
-    ? <img src={src} alt="" className={cn('size-3.5 shrink-0 rounded-sm object-contain', className)} />
-    : <span className={cn('flex size-3.5 shrink-0 [&>svg]:size-3.5', className)}>{mcpResourceMentionIcon('text-muted-foreground')}</span>
+/** A row's icon: the item's own, else its server's. */
+function McpIcon({ src, server, className }: { src?: string; server: string; className?: string }) {
+  const serverIcon = useMcpMentionServerIcon(server)
+  return (
+    <McpAppIcon
+      src={src ?? serverIcon}
+      className={cn('size-3.5 shrink-0', className)}
+      fallback={<span className={cn('flex size-3.5 shrink-0 [&>svg]:size-3.5', className)}>{mcpResourceMentionIcon('text-muted-foreground')}</span>}
+    />
+  )
 }
 
 export function McpMentionRow({ entry, selected, setItemRef, onHover, onSelect }: {
@@ -49,10 +89,16 @@ export function McpMentionRow({ entry, selected, setItemRef, onHover, onSelect }
       className={cn(mentionRowClass(selected), item.detail && STACKED_ROW_CLASS)}
       title={item.uri}
     >
-      <McpIcon src={item.icon ?? entry.sourceIcon} className={item.detail ? STACKED_ICON_CLASS : undefined} />
+      <McpIcon src={item.icon ?? entry.sourceIcon} server={entry.server} className={item.detail ? STACKED_ICON_CLASS : undefined} />
       <span className={STACKED_BODY_CLASS}>
-        <span className="min-w-0 truncate font-medium @md:flex-1">{item.label}</span>
-        {item.detail ? <span className={cn(STACKED_DETAIL_CLASS, '@md:max-w-[50%] @md:shrink-0')}>{item.detail}</span> : null}
+        <span className="min-w-0 truncate font-medium @md:flex-1">
+          <HighlightedText text={item.label} indices={entry.matchIndices} className="truncate" />
+        </span>
+        {item.detail ? (
+          <span className={cn(STACKED_DETAIL_CLASS, '@md:max-w-[50%] @md:shrink-0')}>
+            <HighlightedText text={item.detail} indices={entry.detailMatchIndices} className="truncate" />
+          </span>
+        ) : null}
       </span>
     </button>
   )

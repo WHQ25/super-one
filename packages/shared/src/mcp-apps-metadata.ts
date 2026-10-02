@@ -24,6 +24,33 @@ export function mcpAppIcon(icons?: McpAppIcon[], theme?: 'light' | 'dark'): stri
   return candidates.map(icon => safeImageUri(icon?.src)).find(src => !!src && new TextEncoder().encode(src).byteLength <= MCP_APP_ICON_MAX_BYTES)
 }
 
+const PAINT = /(?:^|[\s;"'{])(?:fill|stroke|stop-color|color)\s*[:=]\s*["']?\s*([^"';\s>)]+\)?)/gi
+
+/**
+ * The SVG inside a data URI icon when it is drawn in one colour, else undefined.
+ * Such icons are tinted with the text colour: the spec asks for monochrome
+ * `currentColor` icons, which an `<img>` can never resolve, and servers that
+ * hard-code a dark stroke would vanish on a dark theme. Multi-colour logos,
+ * raster images and remote URLs are drawn as they are.
+ */
+export function mcpAppMonochromeSvg(src: string): string | undefined {
+  const match = /^data:image\/svg\+xml(;[^,]*)?,(.*)$/is.exec(src)
+  if (!match) return undefined
+  let svg: string
+  try {
+    svg = /;base64/i.test(match[1] ?? '') ? atob(match[2]) : decodeURIComponent(match[2])
+  } catch {
+    return undefined
+  }
+  if (/<(?:image|foreignObject)\b/i.test(svg)) return undefined
+  const colours = new Set<string>()
+  for (const [, value] of svg.matchAll(PAINT)) {
+    const colour = value.toLowerCase()
+    if (colour !== 'none' && colour !== 'transparent' && colour !== 'currentcolor' && colour !== 'inherit' && !colour.startsWith('url(')) colours.add(colour)
+  }
+  return colours.size <= 1 ? svg : undefined
+}
+
 /** Persist only the winning safe image per theme, with a neutral image deduplicated. */
 export function compactMcpAppPresentation(presentation: McpAppPresentation): McpAppPresentation {
   const resolve = (theme: 'light' | 'dark') => mcpAppIcon(presentation.icons, theme)

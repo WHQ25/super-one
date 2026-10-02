@@ -716,7 +716,7 @@ model context, `openai/message` and most form features. Still missing:
 |---|---|
 | File entrypoint, host resources (`read` / `subscribe` / `openai/resources/write`), path injection | Codex sessions on local projects: done. Claude lists Apps through step 1; opening a file not yet verified live. Remote projects and phone later |
 | `openai/files/open` | Not supported — Phase 3 |
-| Composer at-mentions (`mentions/search`) | Codex and Claude sessions on local projects: done. Remote projects and phone later |
+| Composer at-mentions (`mentions/search`) | Codex and Claude sessions on local projects, desktop and phone: done. Remote projects later |
 | Form previews (`openai/preview`) | Parsed, not shown — Phase 3 host follow-ups |
 | Form `userOptions`, implicit selection | Ignored / refused — Phase 3 host follow-ups |
 | `ui/download-file`, collapsed untitled long text | S1 leftovers — Phase 3 host follow-ups |
@@ -871,6 +871,23 @@ highlight where the query occurs, though the server did the matching.
 Verified live (Codex 0.159, Bits & Bolts, CDP): cold lookup about 10 s, warm
 5 ms; `@keycap` lists the server's parts; the chip survives send; with the
 content inlined the model answered without a tool call (before: list + read).
+
+**Phone mentions: done; offline preview driven on the iOS Simulator.** The phone
+searches over the remote command `search_mcp_mentions` and reads over
+`read_mcp_mentions`; both share `searchMcpMentions` / `readMcpMentions` with the
+IPC (`agent-service.ts`). As on the desktop, a send reads the mentioned resources
+first and appends the block itself (`mcpMentionContentForModel` in
+`mention-search.ts`), so the optimistic bubble already carries what each chip sent.
+Popup state, chip-card status, the 30 s preview cache and `mcpResourceTargets` are
+shared in `mcp-app-mentions.ts`. Rows come from `mention-rows.ts`, status lines
+from `ui/composer-suggestions.tsx` (stories `Mobile/MentionSuggestions` `Mcp*`).
+Tapping a chip opens the desktop hover card: in the transcript the shared
+`McpMentionCard` (`chat-view/presenters/McpMentionCard.tsx`), in the composer the
+native editor's `onMentionPress` and `ui/mcp-mention-preview.tsx` (stories
+`Mobile/McpMentionPreview`). Chips and rows show the MCP mark, not the server's
+icon. A desktop too old to answer times out quietly: the phone leaves out the
+desktop's "Couldn't reach MCP servers" line. Android compiles; its chip tap was
+not driven on a device.
 
 **Claude direct client (step 1): done; security review below.**
 Connect code in `mcp-apps/host-client.ts`, shared with `compat-session.ts`;

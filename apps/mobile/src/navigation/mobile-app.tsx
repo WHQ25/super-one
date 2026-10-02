@@ -33,6 +33,7 @@ import type {
 import { resolveRingContextWindow, SESSION_AGENT_LAUNCHES_FIELD } from '@superone/shared/agent-types'
 import { selectedCatalogContextWindow } from '@superone/shared/model-option-params'
 import { ChatRuntime, type SessionWorktreeFacts } from '../runtime'
+import { mcpMentionContentForModel, previewMcpMention } from '../mention-search'
 import { openedSessionSelection } from '../session-restore-selection'
 import { TerminalRuntime, type TerminalUi } from '../terminal-runtime'
 import { randomId } from '../ids'
@@ -361,7 +362,7 @@ export function MobileApp() {
   const fatalReloadRef = useRef({ startedAt: 0, count: 0 })
   const mentionArtworkRevisionRef = useRef(-1)
   const mcpIconsRevisionRef = useRef(-1)
-  const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${project?.path}:${sessionId}:${selectedProvider}:${selectedAcpAgentId ?? ''}`, { client: clientRef, projectPath: project?.path, provider: selectedProvider, acpAgentId: selectedAcpAgentId, projects, iconStore: mobileKv })
+  const suggestions = useComposerSuggestions(runtimeRef, `${activePairingId}:${project?.path}:${sessionId}:${selectedProvider}:${selectedAcpAgentId ?? ''}`, { client: clientRef, projectPath: project?.path, provider: selectedProvider, acpAgentId: selectedAcpAgentId, projects, sessionId, iconStore: mobileKv })
   const { slashHits, mentionRows } = suggestions
   const remoteDrafts = useMobileDraftSession({
     kv, pairingId: activePairingId, clientRef, composer: composerDraft, attachments, sessionId,
@@ -669,8 +670,8 @@ export function MobileApp() {
     })
     inject(webRef, result)
   }
-  const recoverChatView = (message: string) => {
   const exitMcpAppFullscreen = () => inject(webRef, { type: 'exitMcpAppFullscreen' })
+  const recoverChatView = (message: string) => {
     const now = Date.now()
     const recovery = registerFatalChatViewError(fatalReloadRef.current, now)
     fatalReloadRef.current = recovery.state
@@ -1524,6 +1525,11 @@ export function MobileApp() {
     }).catch(failSessionTransition)
   }
 
+  // Stable per session: the preview card reads again whenever this changes.
+  const projectPath = project?.path
+  const previewComposerMcpMention = useMemo(() => projectPath && sessionId
+    ? (value: string) => clientRef.current ? previewMcpMention(clientRef.current, projectPath, sessionId, value) : Promise.resolve(null)
+    : undefined, [projectPath, sessionId])
   const pendingSendKind = useRef<'send' | 'steer' | 'soon'>('send')
   const send = useComposerSend(composerDraft.editorRef, `${activePairingId}:${project?.path}:${sessionId}`, async () => {
     const kind = pendingSendKind.current
@@ -1578,7 +1584,11 @@ export function MobileApp() {
     const runtime = runtimeRef.current
     if (!runtime) return
     const { needsClientMessageId: queued } = composerQueuedSendFields(runtime.session.status, selectedProvider, kind)
-    runtime.send(text, {
+    // As the desktop composer does: the bubble then carries what each MCP chip sent.
+    const mcpContent = clientRef.current && project && runtime.sessionId
+      ? await mcpMentionContentForModel(clientRef.current, project.path, runtime.sessionId, text) : ''
+    if (runtimeRef.current !== runtime) return
+    runtime.send(text + mcpContent, {
       images: attachments,
       ...(selectedProvider === 'codex' && remoteDrafts.settings?.codexCollaborationMode
         ? { collaborationMode: remoteDrafts.settings.codexCollaborationMode } : {}),
@@ -1603,6 +1613,11 @@ export function MobileApp() {
     if (composerDraft.clearSent(sentDraft.revision) && !composerDraft.editorRef.current) suggestions.update('')
     setAttachments((current) => current.filter((item) => !attachments.includes(item)))
   }, setStatus)
+  const sendFromComposer = (kind: 'send' | 'steer' | 'soon') => {
+    pendingSendKind.current = kind
+    void send()
+    mcpApp.closeComposer()
+  }
 
   const onDraft = (text: string) => {
     composerDraft.changeText(text)
@@ -1613,11 +1628,6 @@ export function MobileApp() {
    * Rewrite the composer's command line and nothing else.
    *
    * Slash commands, the folder chips and `/add-dir`'s own navigation all land
-  const sendFromComposer = (kind: 'send' | 'steer' | 'soon') => {
-    pendingSendKind.current = kind
-    void send()
-    mcpApp.closeComposer()
-  }
    * here: anything the user typed on a later line — including mention chips,
    * which the plain editor cannot rebuild — has to survive being sent to a
    * panel and back.
@@ -1945,6 +1955,14 @@ export function MobileApp() {
       onSwitchSession={() => setSessionSwitcherOpen(true)}
       onOpenTerminal={openTerminal}
       onFork={route === 'chat' && canForkSession ? forkSession : undefined}
+      mcpApp={route === 'chat' && mcpApp.view ? {
+        title: mcpApp.view.title,
+        composerOpen: mcpApp.composerOpen,
+        streaming,
+        unread: mcpApp.unread,
+        onExit: exitMcpAppFullscreen,
+        onToggleComposer: mcpApp.toggleComposer,
+      } : undefined}
       terminal={route === 'terminal' ? {
         tabs: terminalUi.tabs,
         activeId: terminalUi.activeId,
@@ -1955,14 +1973,6 @@ export function MobileApp() {
           runUiAction(() => termRuntimeRef.current?.create(p.path, runtimeRef.current?.sessionId), setStatus, 'terminal failed')
         },
         onClose: (terminalId) => termRuntimeRef.current?.closeTab(terminalId),
-      mcpApp={route === 'chat' && mcpApp.view ? {
-        title: mcpApp.view.title,
-        composerOpen: mcpApp.composerOpen,
-        streaming,
-        unread: mcpApp.unread,
-        onExit: exitMcpAppFullscreen,
-        onToggleComposer: mcpApp.toggleComposer,
-      } : undefined}
       } : undefined}
       onOpenFiles={() => openFiles('session')}
       onOpenFilesRoot={() => runUiAction(() => loadDirectory(fileBrowserHome(browserMode, directoryPath)), setStatus, 'failed to load directory')}
@@ -2197,6 +2207,7 @@ export function MobileApp() {
             })
           }}
           loadingConversation={sessionLoading || remoteDrafts.opening}
+          composerHidden={!!mcpApp.view && !mcpApp.composerOpen}
           // The tablet keeps the session list on screen, so it has nothing to
           // pull out and the gutter stays free for the transcript.
           onEdgeSwipe={mcpApp.view ? exitMcpAppFullscreen : tabletMultiPane ? undefined : () => setSessionSwitcherOpen(true)}
@@ -2207,7 +2218,6 @@ export function MobileApp() {
             onHarness: selectHarness,
             activeProvider: harnessSelection.activeProvider,
             projectName: project?.name,
-          composerHidden={!!mcpApp.view && !mcpApp.composerOpen}
             onOpenProject: () => setScreen('project-picker'),
             worktreeSelection,
             worktreeInfo,
@@ -2359,6 +2369,8 @@ export function MobileApp() {
           onMentionLoadMore={suggestions.loadMore}
           mentionQuery={suggestions.mentionQuery}
           mentionGroupLabels={suggestions.mentionGroupLabels}
+          mcpMentions={suggestions.mcpMentions}
+          previewMcpMention={previewComposerMcpMention}
           overlay={composerOverlay}
           onSubmitFromKeyboard={() => {
             const hasContent = draftRef.current.trim().length > 0 || attachments.length > 0

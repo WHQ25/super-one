@@ -53,6 +53,7 @@
     "./presenters/LinkFavicon": "./src/presenters/LinkFavicon.tsx",
     "./presenters/ListAgentsToolBlock": "./src/presenters/ListAgentsToolBlock.tsx",
     "./presenters/MediaProvidersBlock": "./src/presenters/MediaProvidersBlock.tsx",
+    "./presenters/McpMentionCard": "./src/presenters/McpMentionCard.tsx",
     "./presenters/MermaidBlock": "./src/presenters/MermaidBlock.tsx",
     "./presenters/PlanModeBlocks": "./src/presenters/PlanModeBlocks.tsx",
     "./presenters/ReasoningBlock": "./src/presenters/ReasoningBlock.tsx",

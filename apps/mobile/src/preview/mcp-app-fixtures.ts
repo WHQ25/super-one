@@ -1,5 +1,30 @@
 import type { ChatMessage } from '@superone/shared/agent-types'
 import type { McpAppHostResult, ToolAppAttachment } from '@superone/shared/mcp-apps'
+import {
+  MCP_MENTION_SEARCH_IDLE, encodeMcpMentionValue, formatMcpResourceReminder, wrapMcpResourceMention,
+  type McpMentionReadResource, type McpMentionSearchState, type McpMentionSource,
+} from '@superone/shared/mcp-app-mentions'
+
+const PART_TEXT = 'Hex bolt M6 × 30\nGrade 8.8, stainless steel, ISO 4017\nThread pitch 1.0 mm, head 10 mm across flats'
+
+/** A server answering `@` in the preview: one part with text, one the read refuses. */
+export const previewMcpMentionSource: McpMentionSource = { server: 'bits', tool: 'search_parts', title: 'Bits CAD', items: [
+  { uri: 'cad://parts/hex-bolt', label: 'Hex bolt', detail: 'M6 × 30, stainless' },
+  { uri: 'cad://parts/hex-nut', label: 'Hex nut', detail: 'Binary STEP model' },
+] }
+export const previewMcpMentions: McpMentionSearchState = { ...MCP_MENTION_SEARCH_IDLE, sources: [previewMcpMentionSource] }
+
+/** The host's read of a composer chip, after the half second a warm server takes. */
+export function readPreviewMcpMention(value: string): Promise<McpMentionReadResource | null> {
+  const resource: McpMentionReadResource = value.endsWith('hex-bolt')
+    ? { server: 'bits', uri: 'cad://parts/hex-bolt', text: PART_TEXT }
+    : { server: 'bits', uri: 'cad://parts/hex-nut', skipped: 'binary' }
+  return new Promise((resolve) => setTimeout(() => resolve(resource), 500))
+}
+
+const SENT_MCP_TEXT = `Mark a few places worth visiting in Hangzhou on a map, and size ${wrapMcpResourceMention(encodeMcpMentionValue('bits', 'cad://parts/hex-bolt'), 'Hex bolt')} for the sign posts.`
+  + formatMcpResourceReminder([{ server: 'bits', uri: 'cad://parts/hex-bolt', text: PART_TEXT }])
+
 /**
  * A hand-written MCP App View (JSON-RPC over postMessage, no SDK) for the preview's
  * `mcp-app` transcript: enough of the protocol to initialize, paint the tool result and
@@ -64,7 +89,7 @@ const app: ToolAppAttachment = {
 
 export const previewMcpAppMessages: ChatMessage[] = [
   { id: 'preview-mcp-user', role: 'user', providerId: 'claude', status: 'complete', createdAt: '',
-    content: [{ type: 'text', text: 'Mark a few places worth visiting in Hangzhou on a map.' }] },
+    content: [{ type: 'text', text: SENT_MCP_TEXT }] },
   { id: 'preview-mcp-assistant', role: 'assistant', providerId: 'claude', status: 'complete', createdAt: '', content: [
     { type: 'tool_use', toolName: 'mcp__maps__show_places', toolUseId: 'preview-maps-call', input: JSON.stringify(app.toolInput), status: 'complete', app },
     { type: 'tool_result', toolUseId: 'preview-maps-call', summary: 'Marked 3 places in Hangzhou.', app },

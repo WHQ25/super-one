@@ -6,6 +6,7 @@ import { DefaultMiniAppIcon } from '@superone/ui/components/ui/DefaultMiniAppIco
 import { MentionChipBody } from '@superone/ui/components/ui/MentionChipBody'
 import { parseUserMentions, type UserMentionKind } from '@superone/shared/user-mention-parser'
 import { isStoredCapabilityId } from '@superone/shared/capability-prompt-tags'
+import { McpMentionSentTap } from './presenters/McpMentionCard'
 
 function blended(kind: UserMentionKind) {
   return isStoredCapabilityId(kind) || kind === 'agent-profile' || kind === 'session' || kind === 'git' || kind === 'desktop-app' || kind === 'mcp-resource'
@@ -27,9 +28,10 @@ export function PortableUserText({ text, mentionArtwork = {} }: { text: string; 
       ? <img src={`data:image/png;base64,${dynamic}`} alt="" className="block size-full rounded-[22%] object-contain" />
       : (kind === 'agent-profile' ? <AgentProfileIcon refValue={value} /> : kind === 'directory' ? <Folder className="text-primary" /> : staticMentionIcon(kind, value)) ?? (kind === 'file' ? <FileIcon name={label} />
         : kind === 'miniapp' ? <DefaultMiniAppIcon /> : kind === 'desktop-app' ? staticMentionIcon('computer') : kind === 'mcp-resource' ? mcpResourceMentionIcon() : <Bot />)
-    return <span key={index} data-mention-kind={kind} title={value}
+    const chip = <span key={index} data-mention-kind={kind} title={value}
       className={`mention-chip ${blended(kind) ? 'mention-chip--blended' : 'mention-chip--resource'}`}>
       <MentionChipBody icon={icon} label={label} />
     </span>
+    return kind === 'mcp-resource' ? <McpMentionSentTap key={index} value={value}>{chip}</McpMentionSentTap> : chip
   })}</span>
 }

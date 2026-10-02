@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
 import { McpAppsError } from '@superone/shared/mcp-apps'
 import {
-  MCP_MENTION_INLINE_MAX_CHARS, MCP_MENTION_INLINE_TOTAL_MAX_CHARS, MCP_MENTION_QUERY_MAX_CHARS, isMcpMentionSearchTool, mcpMentionItems,
+  MCP_MENTION_INLINE_MAX_CHARS, MCP_MENTION_INLINE_TOTAL_MAX_CHARS, MCP_MENTION_QUERY_MAX_CHARS, MCP_MENTION_READ_MAX, isMcpMentionSearchTool, mcpMentionItems,
   type McpMentionReadResource, type McpMentionSearchResult, type McpMentionSource,
 } from '@superone/shared/mcp-app-mentions'
 import { mcpAppIcon, mcpAppPresentation, mcpAppPresentationIcon } from '@superone/shared/mcp-apps-metadata'
@@ -49,44 +49,54 @@ async function readMention(session: Session, bindings: Array<Omit<HostToolCandid
 
 /**
  * Composer @-mention search: every server tool that declares `mentions/search`, asked in parallel.
- * Typing `@` is a user action, so it may load the session and start its harness.
+ * The desktop composer and paired devices both search through here.
  */
+export async function searchMcpMentions(session: Session | null, projectPath: string, query: string): Promise<McpMentionSearchResult> {
+  if (parseRemoteProjectKey(projectPath)) return { sources: [], unavailable: 'remote' }
+  if (!session || !(await session.getMcpAppsHostBindings?.({ start: true }))?.length) return { sources: [] }
+  const signal = AbortSignal.timeout(15_000)
+  const { candidates, incomplete } = await findHostTools(session, isMcpMentionSearchTool, signal)
+  const text = typeof query === 'string' ? query.slice(0, MCP_MENTION_QUERY_MAX_CHARS) : ''
+  const sources = await Promise.all(candidates.map(candidate => searchSource(session, candidate, text, signal)))
+  return { sources, ...(incomplete ? { incomplete: true as const } : {}) }
+}
+
+/**
+ * At send: the mentioned resources' text, so the model needs no tool round-trip to read them;
+ * and a chip's preview of it. `targets` comes from the renderer or a paired device, so it is checked here.
+ */
+export async function readMcpMentions(session: Session | null, projectPath: string, targets: Array<{ server: string; uri: string }>): Promise<McpMentionReadResource[]> {
+  if (!Array.isArray(targets) || targets.length > MCP_MENTION_READ_MAX || targets.some(target => typeof target?.server !== 'string' || typeof target.uri !== 'string')) throw new McpAppsError('invalid', 'Invalid mention read request')
+  const unique = targets.filter((target, index) => targets.findIndex(other => other.server === target.server && other.uri === target.uri) === index)
+  const bindings = parseRemoteProjectKey(projectPath) ? [] : (await session?.getMcpAppsHostBindings?.({ start: true })) ?? []
+  if (!session || !bindings.length) return unique.map(target => ({ ...target, skipped: 'failed' as const }))
+  const signal = AbortSignal.timeout(15_000)
+  const read = await Promise.all(unique.map(target => readMention(session, bindings, target, signal)))
+  // Message order decides who gets the shared budget.
+  let budget = MCP_MENTION_INLINE_TOTAL_MAX_CHARS
+  return read.map(resource => {
+    if (resource.text === undefined) return resource
+    if (resource.text.length > budget) return { server: resource.server, uri: resource.uri, skipped: 'budget' as const }
+    budget -= resource.text.length
+    return resource
+  })
+}
+
+/** Typing `@` is a user action, so it may load the session and start its harness. */
 export function registerMcpAppMentionIpc(getSession: (id: string) => Session | null, resumeSession: (id: string) => Session): void {
   const sessionFor = hostSessionResolver(getSession, resumeSession)
 
   ipcMain.handle(AgentIpcChannels.MCP_APP_MENTION_SEARCH, async (event, projectPath: string, sessionId: string, query: string): Promise<McpAppsRpcResult<McpMentionSearchResult>> => {
     try {
       assertHostRenderer(event)
-      if (parseRemoteProjectKey(projectPath)) return { ok: true, value: { sources: [], unavailable: 'remote' } }
-      const session = sessionFor(sessionId, false)
-      if (!session || !(await session.getMcpAppsHostBindings?.({ start: true }))?.length) return { ok: true, value: { sources: [] } }
-      const signal = AbortSignal.timeout(15_000)
-      const { candidates, incomplete } = await findHostTools(session, isMcpMentionSearchTool, signal)
-      const text = typeof query === 'string' ? query.slice(0, MCP_MENTION_QUERY_MAX_CHARS) : ''
-      const sources = await Promise.all(candidates.map(candidate => searchSource(session, candidate, text, signal)))
-      return { ok: true, value: { sources, ...(incomplete ? { incomplete: true as const } : {}) } }
+      return { ok: true, value: await searchMcpMentions(parseRemoteProjectKey(projectPath) ? null : sessionFor(sessionId, false), projectPath, query) }
     } catch (error) { return hostRpcFailure(error) }
   })
 
-  // At send: the mentioned resources' text, so the model needs no tool round-trip to read them.
   ipcMain.handle(AgentIpcChannels.MCP_APP_MENTION_READ, async (event, projectPath: string, sessionId: string, targets: Array<{ server: string; uri: string }>): Promise<McpAppsRpcResult<McpMentionReadResource[]>> => {
     try {
       assertHostRenderer(event)
-      if (!Array.isArray(targets) || targets.length > 20 || targets.some(target => typeof target?.server !== 'string' || typeof target.uri !== 'string')) throw new McpAppsError('invalid', 'Invalid mention read request')
-      const unique = targets.filter((target, index) => targets.findIndex(other => other.server === target.server && other.uri === target.uri) === index)
-      const session = parseRemoteProjectKey(projectPath) ? null : sessionFor(sessionId, false)
-      const bindings = (await session?.getMcpAppsHostBindings?.({ start: true })) ?? []
-      if (!session || !bindings.length) return { ok: true, value: unique.map(target => ({ ...target, skipped: 'failed' as const })) }
-      const signal = AbortSignal.timeout(15_000)
-      const read = await Promise.all(unique.map(target => readMention(session, bindings, target, signal)))
-      // Message order decides who gets the shared budget.
-      let budget = MCP_MENTION_INLINE_TOTAL_MAX_CHARS
-      return { ok: true, value: read.map(resource => {
-        if (resource.text === undefined) return resource
-        if (resource.text.length > budget) return { server: resource.server, uri: resource.uri, skipped: 'budget' as const }
-        budget -= resource.text.length
-        return resource
-      }) }
+      return { ok: true, value: await readMcpMentions(parseRemoteProjectKey(projectPath) ? null : sessionFor(sessionId, false), projectPath, targets) }
     } catch (error) { return hostRpcFailure(error) }
   })
 }

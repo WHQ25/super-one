@@ -1,5 +1,8 @@
 import type { RelayClient } from '@superone/relay-client'
 import type { RemoteCommand } from '@superone/shared/agent-types'
+import {
+  createMcpMentionPreviewCache, formatMcpResourceReminder, mcpResourceTargets, parseMcpMentionValue, type McpMentionReadResource, type McpMentionSearchResult,
+} from '@superone/shared/mcp-app-mentions'
 import { randomId } from './ids'
 import { mentionIconPngPayload } from './mentions'
 
@@ -69,4 +72,73 @@ export async function requestMentionIcons(
     if (png) icons[id] = png
   }
   return icons
+}
+
+/** The host gives servers 15 s; a little more covers the relay. */
+const MCP_MENTION_SEARCH_TIMEOUT_MS = 20_000
+
+/**
+ * Items the session's MCP servers offer for `@` (`mentions/search`). A server may
+ * start its harness to answer, so this waits as long as the host does.
+ */
+export async function requestMcpMentionSearch(
+  client: Pick<RelayClient, 'request'>,
+  projectPath: string,
+  sessionId: string,
+  query: string,
+): Promise<McpMentionSearchResult> {
+  const reply = await client.request({
+    type: 'search_mcp_mentions', requestId: randomId(), projectPath, sessionId, query,
+  }, MCP_MENTION_SEARCH_TIMEOUT_MS) as (McpMentionSearchResult & { error?: string }) | null
+  if (!reply || reply.error || !Array.isArray(reply.sources)) throw new Error(reply?.error ?? 'MCP mention search failed')
+  return reply
+}
+
+/** The text of mentioned MCP resources, read through the session's servers as the desktop composer reads them. */
+export async function requestMcpMentionRead(
+  client: Pick<RelayClient, 'request'>,
+  projectPath: string,
+  sessionId: string,
+  targets: Array<{ server: string; uri: string }>,
+): Promise<McpMentionReadResource[]> {
+  const reply = await client.request({
+    type: 'read_mcp_mentions', requestId: randomId(), projectPath, sessionId, targets,
+  }, MCP_MENTION_SEARCH_TIMEOUT_MS) as { resources?: McpMentionReadResource[]; error?: string } | null
+  if (!reply || reply.error || !Array.isArray(reply.resources)) throw new Error(reply?.error ?? 'MCP mention read failed')
+  return reply.resources
+}
+
+/**
+ * The agent-only block a send appends for the MCP resources `text` mentions, so the
+ * model needs no tool round-trip and the bubble keeps what was sent for each chip.
+ * Empty when nothing is mentioned or the read fails: the tags still name the resources.
+ */
+export async function mcpMentionContentForModel(
+  client: Pick<RelayClient, 'request'>,
+  projectPath: string,
+  sessionId: string,
+  text: string,
+): Promise<string> {
+  const targets = mcpResourceTargets(text)
+  if (!targets.length) return ''
+  try {
+    return formatMcpResourceReminder(await requestMcpMentionRead(client, projectPath, sessionId, targets))
+  } catch {
+    return ''
+  }
+}
+
+const previews = createMcpMentionPreviewCache()
+
+/** What sending would inline for one composer chip, read now as a send will. `null`: no answer. */
+export function previewMcpMention(
+  client: Pick<RelayClient, 'request'>,
+  projectPath: string,
+  sessionId: string,
+  value: string,
+): Promise<McpMentionReadResource | null> {
+  const target = parseMcpMentionValue(value)
+  if (!target) return Promise.resolve(null)
+  return previews(JSON.stringify([projectPath, sessionId, value]), () =>
+    requestMcpMentionRead(client, projectPath, sessionId, [target]).then((resources) => resources[0] ?? null))
 }

@@ -1,15 +1,21 @@
 import { wrapAgentMention } from '@superone/shared/agent-mention-tags'
 import { wrapGitMention } from '@superone/shared/git-mention-tags'
+import { wrapMcpResourceMention } from '@superone/shared/mcp-app-mentions'
 import { isBuiltinCapabilityId, wrapCapabilityMention, type BuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { wrapPathRefMention } from '@superone/shared/miniapp-prompt-tags'
 import type { ComposerCursor } from './composer-cursor'
 
 /** One UTF-16 position in UITextView/EditText, regardless of the visible label. */
 export const MENTION_OBJECT = '\uFFFC'
+const TOKEN_KINDS = ['file', 'directory', 'agent', 'agent-profile', 'miniapp', 'desktop-app', 'session', 'git', 'mcp-resource'] as const
 export type MentionToken = {
-  kind: 'file' | 'directory' | 'agent' | 'agent-profile' | 'miniapp' | 'desktop-app' | 'session' | 'git' | BuiltinCapabilityId
+  kind: typeof TOKEN_KINDS[number] | BuiltinCapabilityId
   value: string
   displayName: string
+}
+/** The one list of what may be a chip: picked from the popup, and read back from native. */
+export function isMentionTokenKind(kind: string): kind is MentionToken['kind'] {
+  return (TOKEN_KINDS as readonly string[]).includes(kind) || isBuiltinCapabilityId(kind)
 }
 export type MentionSegment = { text: string } | { mention: MentionToken }
 export type MentionDocument = readonly MentionSegment[]
@@ -108,6 +114,7 @@ export function serializeMentionDocument(document: MentionDocument): string {
     else if (kind === 'desktop-app') tag = `<superone-desktop-app><name>${displayName}</name><bundleId>${value}</bundleId></superone-desktop-app>`
     else if (kind === 'session') tag = `<superone-session><title>${displayName}</title><sessionId>${value}</sessionId></superone-session>`
     else if (kind === 'git') tag = wrapGitMention(value, displayName)
+    else if (kind === 'mcp-resource') tag = wrapMcpResourceMention(value, displayName)
     else tag = wrapPathRefMention(kind, kind === 'directory' && !value.endsWith('/') ? `${value}/` : value, displayName || value)
     return ` ${tag} `
   }).join('').trim()

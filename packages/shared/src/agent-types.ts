@@ -4975,6 +4975,16 @@ export type RemoteCommand =
    * or resent: a tool call that times out has an unknown outcome.
    */
   | { type: 'mcp_app_request'; requestId: string; projectPath: string; sessionId: string; request: McpAppDeviceRequest }
+  /**
+   * `mentions/search` across the session's MCP servers; answers an `McpMentionSearchResult`.
+   * An older host never answers, which the device treats as no server items.
+   */
+  | { type: 'search_mcp_mentions'; requestId: string; projectPath: string; sessionId: string; query: string }
+  /**
+   * The text of mentioned MCP resources, answered as `{ resources: McpMentionReadResource[] }`:
+   * a composer chip's preview, and what a send inlines, as the desktop composer reads them.
+   */
+  | { type: 'read_mcp_mentions'; requestId: string; projectPath: string; sessionId: string; targets: Array<{ server: string; uri: string }> }
   | { type: 'list_directory_for_add_dir'; requestId: string; projectPath: string; rawInput: string }
   | { type: 'validate_add_dir'; requestId: string; projectPath: string; candidate: string }
   | { type: 'add_project_additional_dir'; requestId: string; projectPath: string; dir: string; provider?: HarnessId }

@@ -1,4 +1,5 @@
 import { useState, type ComponentProps } from 'react'
+import { MCP_MENTION_SEARCH_IDLE, type McpMentionSource } from '@superone/shared/mcp-app-mentions'
 import { View } from 'react-native'
 import { buildMentionRows } from '../mention-rows'
 import { gitRefItems } from '../git-mention'
@@ -16,7 +17,7 @@ const rootRows = buildMentionRows('', {
   capabilityIds: previewCapabilityIds,
 })
 
-type PreviewProps = Pick<ComponentProps<typeof MentionSuggestions>, 'rows' | 'search' | 'breadcrumbs'> & { width?: number }
+type PreviewProps = Pick<ComponentProps<typeof MentionSuggestions>, 'rows' | 'search' | 'breadcrumbs' | 'mcp'> & { width?: number }
 
 function Preview({ width = 390, ...props }: PreviewProps) {
   const [selection, setSelection] = useState('')
@@ -78,4 +79,33 @@ export const GitCommits = { args: {
 export const GitCommitShaMatch = { args: {
   width: 360,
   rows: buildMentionRows('', { remote: gitRefItems(commitRefs, '081'), agentProfiles: [], scoped: true }),
+} }
+
+const mcpParts: McpMentionSource = { server: 'bits', tool: 'search_parts', title: 'Bits CAD', items: [
+  { uri: 'cad://parts/hex-bolt', label: 'Hex bolt', detail: 'M6 × 30, stainless' },
+  { uri: 'cad://parts/hex-nut', label: 'Hex nut', detail: 'M6, nylon insert' },
+] }
+const mcpDocs: McpMentionSource = { server: 'notion', tool: 'search', title: 'Notion', items: [] }
+const mcpRows = (sources: McpMentionSource[], remote = previewRootMentionItems.filter((item) => item.kind === 'dir-entry')) =>
+  buildMentionRows('hex', { remote, agentProfiles: [], mcp: sources })
+/** `@hex`: Bits CAD answered and sits before Files; Notion is still searching. Select a part to see its value. */
+export const McpItems = { args: {
+  rows: mcpRows([mcpParts, mcpDocs]),
+  mcp: { ...MCP_MENTION_SEARCH_IDLE, sources: [mcpParts, mcpDocs], loading: true },
+} }
+/** A new `@` before any server answered: the sections the session had last time, searching. */
+export const McpSearching = { args: {
+  rows: [],
+  mcp: { ...MCP_MENTION_SEARCH_IDLE, sources: [{ ...mcpParts, items: [] }, mcpDocs], loading: true },
+} }
+/** One server failed, one found nothing, and another has not answered at all. */
+export const McpFailedAndIncomplete = { args: {
+  rows: [],
+  mcp: { ...MCP_MENTION_SEARCH_IDLE, sources: [{ ...mcpParts, items: [], failed: true as const }, mcpDocs], incomplete: true },
+} }
+const mcpLong: McpMentionSource = { ...mcpParts, title: 'Bits CAD — engineering parts library for the factory floor', items: [
+  { uri: 'cad://parts/hex-bolt-long', label: 'Hex bolt with a very long catalogue name, grade 8.8', detail: 'M6 × 30, stainless steel, ISO 4017, pack of 100' },
+] }
+export const McpNarrowLongNames = { args: {
+  width: 320, rows: mcpRows([mcpLong], []), mcp: { ...MCP_MENTION_SEARCH_IDLE, sources: [mcpLong] },
 } }

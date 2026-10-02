@@ -16,6 +16,8 @@ import android.text.TextWatcher
 import android.text.style.ReplacementSpan
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.view.inputmethod.BaseInputConnection
@@ -32,6 +34,11 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
   private val onDocumentChange by EventDispatcher<Map<String, Any?>>()
   private val onContentHeightChange by EventDispatcher<Map<String, Any>>()
   private val onSubmit by EventDispatcher<Map<String, Any>>()
+  private val onMentionPress by EventDispatcher<Map<String, Any>>()
+  /** The chip a touch went down on, and where; a tap that ends on it opens its preview. */
+  private var chipDown: ChipHit? = null
+  private var downX = 0f
+  private var downY = 0f
   private var submitOnReturn = false
   private var lastContentHeight = 0
   private var eventCount = 0
@@ -64,6 +71,29 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
         }
       }
       return super.onTextContextMenuItem(id)
+    }
+    // A tap on a chip opens its preview. The EditText gets a cancel instead of the up, so
+    // it neither places the caret nor raises the keyboard, which would move the composer
+    // under the preview and close it. Drags and long presses stay the EditText's.
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+      when (event.actionMasked) {
+        MotionEvent.ACTION_DOWN -> { chipDown = chipAt(event.x, event.y); downX = event.x; downY = event.y }
+        MotionEvent.ACTION_UP -> {
+          val down = chipDown
+          chipDown = null
+          val slop = ViewConfiguration.get(context).scaledTouchSlop
+          if (down != null && kotlin.math.hypot(event.x - downX, event.y - downY) < slop && chipAt(event.x, event.y)?.offset == down.offset
+            && event.eventTime - event.downTime < ViewConfiguration.getLongPressTimeout()) {
+            val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
+            super.onTouchEvent(cancel)
+            cancel.recycle()
+            pressChip(down)
+            return true
+          }
+        }
+        MotionEvent.ACTION_CANCEL -> chipDown = null
+      }
+      return super.onTouchEvent(event)
     }
     override fun onSelectionChanged(start: Int, end: Int) {
       super.onSelectionChanged(start, end)
@@ -229,6 +259,37 @@ class MentionEditorView(context: Context, appContext: AppContext) : ExpoView(con
     changing = false
     eventCount++
     publish()
+  }
+
+  private class ChipHit(val offset: Int, val span: ChipSpan, val left: Float, val top: Float, val right: Float, val bottom: Float)
+
+  /** The chip drawn under a point in the editor's own coordinates, framed in the same space. */
+  private fun chipAt(x: Float, y: Float): ChipHit? {
+    val layout = editor.layout ?: return null
+    val value = editor.text ?: return null
+    val lx = x - editor.totalPaddingLeft + editor.scrollX
+    val ly = y - editor.totalPaddingTop + editor.scrollY
+    val line = layout.getLineForVertical(ly.toInt())
+    if (ly < layout.getLineTop(line) || ly > layout.getLineBottom(line)) return null
+    val nearest = layout.getOffsetForHorizontal(line, lx)
+    for (offset in listOf(nearest, nearest - 1)) {
+      if (offset < layout.getLineStart(line) || offset >= layout.getLineEnd(line)) continue
+      val span = value.getSpans(offset, offset + 1, ChipSpan::class.java).firstOrNull { value.getSpanStart(it) == offset } ?: continue
+      val left = layout.getPrimaryHorizontal(offset)
+      val right = if (offset + 1 < layout.getLineEnd(line)) layout.getPrimaryHorizontal(offset + 1) else layout.getLineRight(line)
+      if (lx < minOf(left, right) || lx > maxOf(left, right)) continue
+      val dx = editor.totalPaddingLeft - editor.scrollX.toFloat()
+      val dy = editor.totalPaddingTop - editor.scrollY.toFloat()
+      return ChipHit(offset, span, minOf(left, right) + dx, layout.getLineTop(line) + dy, maxOf(left, right) + dx, layout.getLineBottom(line) + dy)
+    }
+    return null
+  }
+
+  private fun pressChip(hit: ChipHit) {
+    val density = resources.displayMetrics.density
+    onMentionPress(mapOf("offset" to hit.offset, "kind" to hit.span.kind, "value" to hit.span.value, "displayName" to hit.span.label,
+      "x" to (editor.left + hit.left) / density, "y" to (editor.top + hit.top) / density,
+      "width" to (hit.right - hit.left) / density, "height" to (hit.bottom - hit.top) / density))
   }
 
   private fun publishContentHeight() {

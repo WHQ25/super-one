@@ -45,6 +45,17 @@ private final class MentionAttachment: NSTextAttachment {
 
 private final class MentionTextView: UITextView {
   private(set) var insertingLiteral = false
+  /// Whether a point (in this view) lands on a chip, and the recognizer that answers it.
+  var hitsChip: ((CGPoint) -> Bool)?
+  weak var chipTap: UIGestureRecognizer?
+  // A tap on a chip opens its preview; placing the caret or raising the keyboard as well
+  // would move the composer under the preview, which closes it.
+  override func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+    let onChip = hitsChip?(recognizer.location(in: self)) == true
+    if recognizer === chipTap { return onChip }
+    if recognizer is UITapGestureRecognizer, onChip { return false }
+    return super.gestureRecognizerShouldBegin(recognizer)
+  }
   override var keyCommands: [UIKeyCommand]? {
     (super.keyCommands ?? []) + [UIKeyCommand(input: "\r", modifierFlags: .shift, action: #selector(insertLineBreak))]
   }
@@ -68,6 +79,7 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
   let onDocumentChange = EventDispatcher()
   let onContentHeightChange = EventDispatcher()
   let onSubmit = EventDispatcher()
+  let onMentionPress = EventDispatcher()
   private var submitOnReturn = false
   private var lastContentHeight: CGFloat = 0
   private let editor = MentionTextView()
@@ -101,6 +113,10 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
       self.eventCount += 1
       self.publish()
     }
+    let chipTap = UITapGestureRecognizer(target: self, action: #selector(pressChip(_:)))
+    editor.addGestureRecognizer(chipTap)
+    editor.chipTap = chipTap
+    editor.hitsChip = { [weak self] point in self?.chip(at: point) != nil }
     placeholderLabel.font = editorFont
     placeholderLabel.textColor = mutedForeground
     placeholderLabel.isAccessibilityElement = false
@@ -169,6 +185,25 @@ final class MentionEditorView: ExpoView, UITextViewDelegate {
       return false
     }
     return true
+  }
+  /// The chip drawn under `point` (editor coordinates), with its offset and frame in the editor.
+  private func chip(at point: CGPoint) -> (offset: Int, attachment: MentionAttachment, frame: CGRect)? {
+    let storage = editor.textStorage
+    guard storage.length > 0 else { return nil }
+    let inset = editor.textContainerInset
+    let location = CGPoint(x: point.x - inset.left, y: point.y - inset.top)
+    let glyph = editor.layoutManager.glyphIndex(for: location, in: editor.textContainer)
+    let offset = editor.layoutManager.characterIndexForGlyph(at: glyph)
+    guard offset < storage.length, let attachment = storage.attribute(.attachment, at: offset, effectiveRange: nil) as? MentionAttachment else { return nil }
+    let frame = editor.layoutManager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: editor.textContainer)
+    guard frame.contains(location) else { return nil }
+    return (offset, attachment, frame.offsetBy(dx: inset.left, dy: inset.top))
+  }
+  @objc private func pressChip(_ recognizer: UITapGestureRecognizer) {
+    guard let hit = chip(at: recognizer.location(in: editor)) else { return }
+    let frame = editor.convert(hit.frame, to: self)
+    onMentionPress(["offset": hit.offset, "kind": hit.attachment.kind, "value": hit.attachment.value, "displayName": hit.attachment.label,
+      "x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height])
   }
   func setEditable(_ value: Bool) {
     editor.isEditable = value

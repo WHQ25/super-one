@@ -26,6 +26,7 @@ import { WorkspaceDrawer } from '../navigation/workspace-drawer'
 import { WorkspaceSidebar } from '../navigation/workspace-sidebar'
 import { WorkspaceListCache } from '../workspace-list-cache'
 import { ChatScreen } from '../screens/chat-screen'
+import { previewMcpMentions, readPreviewMcpMention } from './mcp-app-fixtures'
 import { PermissionSheet } from '../prompts/PermissionSheet'
 import { ordinaryPermission } from './permissions'
 import { FilesScreen } from '../screens/files-screen'
@@ -267,7 +268,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   const updateMentionHits = (text: string, cursorEnd: number, composing = false) => {
     const query = !composing && extractMentionQuery(text, cursorEnd)
     setMentionRows(query
-      ? buildMentionRows(query.query, { remote: previewMentionItems, agentProfiles: previewAgentProfiles, capabilityIds: previewCapabilityIds })
+      ? buildMentionRows(query.query, { remote: previewMentionItems, agentProfiles: previewAgentProfiles, capabilityIds: previewCapabilityIds, mcp: previewMcpMentions.sources })
       : [])
   }
   const acceptDraft = (snapshot: MentionEditorSnapshot) => {
@@ -374,12 +375,12 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   const [pending, setPending] = useState<'none' | 'sheet' | 'collapsed'>('none')
   const web = useRef<WebView>(null)
   const terminal = useRef<WebView>(null)
-  const chooseAgent = (option: RemoteHarnessOption) => {
   const mcpApp = useMcpAppFullscreen(page === 'Chat')
   const exitMcpApp = () => injectHostMessage(web, { type: 'exitMcpAppFullscreen' })
+  const chooseAgent = (option: RemoteHarnessOption) => {
     const value = option.provider
     setAcpAgentId(option.acpAgentId)
-    setProvider(value); setHarness(value); setMode(HARNESS_LAUNCH_OPTIONS[value].permissionModes.includes('default') ? 'default' : HARNESS_LAUNCH_OPTIONS[value].permissionModes[0]!) }
+    setProvider(value); setHarness(value); setMode(HARNESS_LAUNCH_OPTIONS[value].permissionModes.includes('default') ? 'default' : HARNESS_LAUNCH_OPTIONS[value].permissionModes[0] ?? 'default') }
   const paintChat = () => {
     injectHostMessage(web, mobileWebViewTheme(tokens))
     injectHostMessage(web, { type: 'setViewport', fontScale, locale: 'en' })
@@ -391,12 +392,12 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
     const message = JSON.parse(raw)
     if (message.type === 'ready') { mcpApp.show(null); paintChat() }
     if (message.type !== 'requestNative') return
-    answerTranscriptRequest(transcript, message.action, message.payload)
     if (message.action === 'mcpAppFullscreen') {
       mcpApp.show(parseMcpAppFullscreen(message.payload))
       injectHostMessage(web, { type: 'nativeActionResult', requestId: message.requestId, result: { ok: true } })
       return
     }
+    answerTranscriptRequest(transcript, message.action, message.payload)
       .then((result) => injectHostMessage(web, { type: 'nativeActionResult', requestId: message.requestId, result }))
       .catch((error: Error) => injectHostMessage(web, { type: 'nativeActionResult', requestId: message.requestId, error: error.message }))
   }
@@ -405,8 +406,8 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
     if (!captured.text.trim() && !attachments.length) return
     setMessages((current) => [...current, { ...initialMessages[0], id: `preview-${current.length}`, content: [{ type: 'text', text: captured.text }], attachments }])
     chatDraft.clearSent(captured.revision); setAttachments([]); setPage('Chat')
-  }, (message) => Alert.alert('Could not send', message))
     mcpApp.closeComposer()
+  }, (message) => Alert.alert('Could not send', message))
   const chat = page === 'New session' || page === 'Chat' || page === 'Workspace'
   // Standalone galleries share the catch-all 'files' route but draw themselves.
   const gallery = page === 'Network ledger' || page === 'Drafts' || page === 'Icons' || page === 'Git indicators' || page === 'Session status' || page === 'Composer suggestions' || page === 'Chip editor' || page === 'LAN browser' || page === 'Loading states' || page === 'Usage'
@@ -465,9 +466,9 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
           else setPage('New session')
         }} onSwitchSession={() => setDrawer(true)} onOpenTerminal={() => setPage('Terminal')} onOpenFiles={() => setPage('Files')}
           onFork={page === 'Chat' ? () => {} : undefined}
-          files={route === 'files' ? { kind: previewBrowserMode.kind,
           mcpApp={chat && mcpApp.view ? { title: mcpApp.view.title, composerOpen: mcpApp.composerOpen, streaming: page === 'Chat',
             unread: mcpApp.unread, onExit: exitMcpApp, onToggleComposer: mcpApp.toggleComposer } : undefined}
+          files={route === 'files' ? { kind: previewBrowserMode.kind,
             finderOpen: page === 'File search' || page === 'Go to folder',
             onToggleFinder: () => setPage(page === 'File search' ? 'Files'
               : page === 'Go to folder' ? 'Computer files'
@@ -529,6 +530,7 @@ todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={p
             onAttachImage={() => setAttachments((current) => [...current, { id: 'img', name: 'shot.png', mimeType: 'image/png', base64: '' }])}
             onAttachPdf={() => setAttachments((current) => [...current, { id: 'pdf', name: 'mobile-design-review.pdf', mimeType: 'application/pdf', base64: '' }])}
             onInsertSnippet={(snippet) => changeDraft(`${chatDraft.draft}${snippet}`)}
+            mcpMentions={previewMcpMentions} previewMcpMention={readPreviewMcpMention}
             nativeDraft={nativeEditor ? { controller: chatDraft.editorRef, document: chatDraft.document.current, generation: chatDraft.generation, onChange: acceptDraft, onError: setEditorError } : undefined}
             onDraft={changeDraft} onSubmitFromKeyboard={send} onSend={send} onStop={() => setPage('New session')} /> : null}
           {page === 'Devices' || page === 'Pairing' ? <PairingsScreen scannerOpen={false} paste="" lan=""

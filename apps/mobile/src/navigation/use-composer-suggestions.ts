@@ -22,6 +22,7 @@ import {
 import { enabledGitMentionPortals } from '@superone/shared/git-mention-query'
 import { filterSlashCommands, type SlashCommandInfo } from '../slash'
 import { peekSlashCatalog, requestSlashCatalog, type SlashCatalogStatus } from '../slash-catalog'
+import { useMcpMentionSearch } from './use-mcp-mention-search'
 
 export type MentionSearchState = {
   active: boolean
@@ -64,6 +65,8 @@ export interface ComposerSuggestionSource {
   acpAgentId?: string | null
   /** Every project the host offers — the `@session` portal's scope choices. */
   projects?: readonly { path: string; name?: string }[]
+  /** The open session, whose MCP servers answer `@` too; none on the new-session landing. */
+  sessionId?: string | null
   /**
    * Where fetched app icons live between searches and between runs. Injected
    * rather than imported so this hook stays free of the encrypted native store.
@@ -365,6 +368,15 @@ export function useComposerSuggestions(
   }
 
   /**
+   * Server items sit beside capabilities, as on the desktop: on `@` and plain
+   * queries, not inside a portal and not while a folder is being browsed.
+   */
+  const mcpQuery = mentionQuery !== null && !isSessionMentionQuery(mentionQuery)
+    && !isGitMentionQuery(mentionQuery, enabledGitMentionPortals(mentionResults.gitAvailability)) && !mentionQuery.endsWith('/')
+    ? mentionQuery : null
+  const mcpMentions = useMcpMentionSearch(host.client, projectPath, host.sessionId, mcpQuery)
+
+  /**
    * Rows are derived, so the catalog that arrives with a search result re-ranks
    * what is already on screen instead of waiting for another keystroke.
    *
@@ -391,10 +403,11 @@ export function useComposerSuggestions(
       // The desktop shows a path minus the directory already typed, so the two
       // surfaces truncate at the same place.
       ...(session ? {} : { scopeDir: mentionScopeDir(mentionQuery) }),
+      ...(mcpQuery !== null ? { mcp: mcpMentions.sources } : {}),
     })
     // `iconRevision` is what makes a late-arriving icon repaint the rows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mentionQuery, mentionResults, iconRevision])
+  }, [mentionQuery, mentionResults, iconRevision, mcpQuery, mcpMentions.sources])
 
   /**
    * The sessions group is called *Recent* until a title is typed, because until
@@ -479,6 +492,8 @@ export function useComposerSuggestions(
   return {
     slashHits, slashCatalogStatus, mentionRows, mentionSearch, requestedCursor,
     mentionQuery, mentionGroupLabels,
+    /** Servers still searching, empty or failed; their items are already in `mentionRows`. */
+    mcpMentions: mcpQuery !== null ? mcpMentions : undefined,
     update, updateNative, select, insert, insertSnippet, snippetAtCursor, clear, applyProgrammatic,
     dismissSlash: () => setSlashDismissed(true),
     retry: searchMentions,

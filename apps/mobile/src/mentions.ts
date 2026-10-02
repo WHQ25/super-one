@@ -53,6 +53,8 @@ export type MentionItem = {
   descriptionIndices?: number[]
   /** Extra names a collaborator answers to; matched but never highlighted. */
   aliases?: string[]
+  /** An MCP server item's section (`mcp:<server>/<tool>`); `path` is its chip value. */
+  mcpGroup?: `mcp:${string}`
   /** Validated PNG payload supplied by the paired desktop for dynamic app identities. */
   iconPng?: string
   /**
@@ -125,7 +127,9 @@ export function parseMentionItems(rows: unknown): MentionItem[] {
 
 /** Exactly what selecting this item writes into a plain-text draft. */
 export function mentionInsertText(item: MentionItem): string {
-  return item.navigateTo !== undefined ? `@${item.navigateTo}` : `@${item.path} `
+  if (item.navigateTo !== undefined) return `@${item.navigateTo}`
+  // An MCP item's path is `<server>:<uri>`; the plain editor shows what the chip would.
+  return `@${item.kind === 'mcp-resource' ? item.label ?? item.path : item.path} `
 }
 
 export function insertMention(text: string, query: MentionQuery, item: MentionItem): string {

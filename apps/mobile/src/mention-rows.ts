@@ -3,6 +3,7 @@ import { compareBuiltinMentionMatches, matchBuiltinMention } from '@superone/sha
 import { groupItems, type PopupGroup } from '@superone/shared/popup-groups'
 import { SESSION_MENTION_KEYWORD, SESSION_MENTION_NAV_PREFIX } from '@superone/shared/session-mention-query'
 import { GH_MENTION_KEYWORD, GH_MENTION_NAV_PREFIX, GIT_MENTION_KEYWORD, GIT_MENTION_NAV_PREFIX, isGitHubRefKind, parseGitMentionValue, type GitMentionCapabilities } from '@superone/shared/git-mention-query'
+import { encodeMcpMentionValue, mcpMentionGroupKey, mcpMentionMatchIndices, type McpMentionSource } from '@superone/shared/mcp-app-mentions'
 import { GH_UNAVAILABLE_HINT } from './git-mention'
 import type { MentionItem } from './mentions'
 
@@ -37,6 +38,8 @@ export const MENTION_GROUP_ORDER = [
 ] as const
 
 export type MentionGroupKey = typeof MENTION_GROUP_ORDER[number]
+/** One section per MCP server tool, titled by the server and placed before Files, as on the desktop. */
+export type McpMentionGroupKey = `mcp:${string}`
 
 export const MENTION_GROUP_LABELS: Record<MentionGroupKey, string> = {
   capability: 'Built-in',
@@ -96,7 +99,8 @@ export interface MentionRow {
   disabled?: boolean
 }
 
-export function mentionGroupKey(item: MentionItem): MentionGroupKey {
+export function mentionGroupKey(item: MentionItem): MentionGroupKey | McpMentionGroupKey {
+  if (item.kind === 'mcp-resource' && item.mcpGroup) return item.mcpGroup
   // The session portal is a built-in the user reaches the same way, so it
   // belongs in the same group and the same ranking.
   if (item.kind === 'builtin' || item.kind === 'session-portal' || item.kind === 'git-portal' || isBuiltinCapabilityId(item.kind)) return 'capability'
@@ -156,6 +160,8 @@ export interface MentionRowInput {
   scopeDir?: string
   /** What the `@git` / `@gh` portals can do here; an older host leaves it unset. */
   gitAvailability?: GitMentionCapabilities
+  /** Items the session's MCP servers answered with, one source per server tool. */
+  mcp?: McpMentionSource[]
 }
 
 const DEFAULT_CAPABILITIES = ['widget', 'debug']
@@ -339,7 +345,20 @@ export function buildMentionRows(query: string, input: MentionRowInput): Mention
     seen.add(key)
     rows.push(remoteRow(item, input.scopeDir ?? ''))
   }
+  for (const source of input.mcp ?? []) rows.push(...source.items.map((item) => mcpRow(source, item, query)))
   return rows
+}
+
+/** A server item: its title, with the description or name under it as the desktop stacks it when narrow. */
+function mcpRow(source: McpMentionSource, entry: McpMentionSource['items'][number], query: string): MentionRow {
+  const item: MentionItem = {
+    kind: 'mcp-resource', path: encodeMcpMentionValue(source.server, entry.uri), label: entry.label,
+    ...(entry.detail ? { description: entry.detail } : {}), mcpGroup: mcpMentionGroupKey(source),
+  }
+  return {
+    item, label: entry.label, labelIndices: mcpMentionMatchIndices(entry.label, query), inlineIndices: [],
+    ...(entry.detail ? { hint: entry.detail, hintIndices: mcpMentionMatchIndices(entry.detail, query) } : {}),
+  }
 }
 
 /**
@@ -400,5 +419,6 @@ export function mentionRowKey(item: MentionItem): string {
 }
 
 export function groupMentionRows(rows: MentionRow[]): PopupGroup<MentionRow>[] {
-  return groupItems(rows, (row) => mentionGroupKey(row.item), MENTION_GROUP_ORDER)
+  const mcp = [...new Set(rows.flatMap((row) => row.item.mcpGroup ? [row.item.mcpGroup] : []))]
+  return groupItems(rows, (row) => mentionGroupKey(row.item), MENTION_GROUP_ORDER.flatMap((key) => key === 'file' ? [...mcp, key] : [key]))
 }

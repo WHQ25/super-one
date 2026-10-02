@@ -65,10 +65,10 @@ import {
   type GitFlatItem,
 } from './GitMentionRows'
 import { STACKED_BODY_CLASS, STACKED_DETAIL_CLASS, STACKED_ICON_CLASS, STACKED_ROW_CLASS, mentionRowClass } from './mention-row-layout'
-import { encodeMcpMentionValue } from '@superone/shared/mcp-app-mentions'
+import { encodeMcpMentionValue, mcpMentionGroupKey, mcpMentionHasStatus } from '@superone/shared/mcp-app-mentions'
 import { useMcpMentionSearch } from '@/components/mcp-apps/mention-search'
 import type { McpAppRoute } from '@/components/mcp-apps/desktop-executor'
-import { McpMentionRow, McpMentionStatus, mcpMentionFlatItems, mcpMentionGroupKey, mcpMentionHasStatus, type McpMentionFlatItem } from './McpMentionRows'
+import { McpMentionRow, McpMentionStatus, mcpMentionFlatItems, type McpMentionFlatItem } from './McpMentionRows'
 
 export { SESSION_MENTION_NAV_PREFIX }
 
@@ -339,7 +339,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const isBrowseMode = !isPortalMode && (!query || query.endsWith('/'))
     // Server items sit beside capabilities: on `@` and plain queries, not inside a portal or a folder.
     const mcp = useMcpMentionSearch(mcpRoute, query, !isPortalMode && !(isBrowseMode && query))
-    const mcpItems = useMemo(() => mcpMentionFlatItems(mcp.sources, (text) => fuzzyMatchIndices(text, query)), [mcp.sources, query])
+    const mcpItems = useMemo(() => mcpMentionFlatItems(mcp.sources, query), [mcp.sources, query])
     const mcpShowsStatus = mcpMentionHasStatus(mcp)
     const browseDir = isBrowseMode ? query : ''
     const lastSlash = query.lastIndexOf('/')

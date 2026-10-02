@@ -7,8 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
 import { mcpResourceMentionIcon } from '@superone/ui/components/ui/mention-icons'
 import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
-import { parseMcpMentionValue, type McpMentionItem, type McpMentionSource } from '@superone/shared/mcp-app-mentions'
-import type { McpMentionSearchState } from '@/components/mcp-apps/mention-search'
+import { mcpMentionGroupKey, mcpMentionMatchIndices, parseMcpMentionValue, type McpMentionItem, type McpMentionSearchState, type McpMentionSource } from '@superone/shared/mcp-app-mentions'
 import { useMcpMentionIcon } from '@/components/mcp-apps/mention-icons'
 import { McpAppIcon } from '@superone/ui/components/ui/mcp-app-icon'
 import { useMcpServerIcon } from './use-mcp-server-icon'
@@ -27,14 +26,12 @@ export interface McpMentionFlatItem {
   detailMatchIndices: number[]
 }
 
-export const mcpMentionGroupKey = (source: Pick<McpMentionSource, 'server' | 'tool'>) => `mcp:${source.server}/${source.tool}`
-
-export function mcpMentionFlatItems(sources: McpMentionSource[], match: (text: string) => number[] | null): McpMentionFlatItem[] {
+export function mcpMentionFlatItems(sources: McpMentionSource[], query: string): McpMentionFlatItem[] {
   return sources.flatMap(({ server, tool, title, icon, items }) =>
     items.map(item => ({
       kind: 'mcp-resource' as const, server, tool, title, ...(icon ? { sourceIcon: icon } : {}), item,
-      matchIndices: match(item.label) ?? [],
-      detailMatchIndices: item.detail ? match(item.detail) ?? [] : [],
+      matchIndices: mcpMentionMatchIndices(item.label, query),
+      detailMatchIndices: item.detail ? mcpMentionMatchIndices(item.detail, query) : [],
     })))
 }
 
@@ -52,11 +49,6 @@ function useMcpMentionServerIcon(server: string | undefined): string | undefined
 export function McpMentionChipIcon({ value }: { value: string }) {
   const icon = useMcpMentionServerIcon(parseMcpMentionValue(value)?.server)
   return <McpAppIcon src={icon} fallback={mcpResourceMentionIcon()} />
-}
-
-/** Something the popup must stay open for even with no selectable rows. */
-export function mcpMentionHasStatus(state: McpMentionSearchState): boolean {
-  return state.failed || state.incomplete || state.sources.some(source => source.failed || (state.loading && !source.items.length))
 }
 
 /** A row's icon: the item's own, else its server's. */

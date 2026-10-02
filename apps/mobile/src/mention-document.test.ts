@@ -64,6 +64,7 @@ describe('native mention document', () => {
       { kind: 'miniapp', value: 'app-1', displayName: 'App' },
       { kind: 'desktop-app', value: 'com.example.app', displayName: 'Editor' },
       { kind: 'session', value: 'session-1', displayName: 'Review' },
+      { kind: 'mcp-resource', value: 'bits:cad://parts/hex-bolt', displayName: 'Hex bolt' },
     ]
     const serialized = serializeMentionDocument([{ text: 'Typed @codex stays plain. ' }, ...mentions.map((mention) => ({ mention }))])
     const recovered = parseUserMentions(serialized)

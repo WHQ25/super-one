@@ -26,9 +26,9 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Elicitation forms render on desktop and phone with OpenAI extended
   fields (thumbnails, option descriptions, suggested values, resource
   pickers), and Codex offers form elicitation to MCP servers.
-- @ mentions search MCP servers that support `mentions/search`; a picked
-  item's text is inlined at send, and hovering its chip shows what the
-  agent receives.
+- @ mentions search MCP servers that support `mentions/search`, on desktop
+  and the phone; a picked item's text is inlined at send, and hovering its
+  chip (tapping it on the phone) shows what the agent receives.
 - Open With offers MCP Apps that declare a file entrypoint; SuperOne's
   own preview stays the default.
 - Desktop previews STEP and IGES CAD models.

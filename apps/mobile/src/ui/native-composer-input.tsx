@@ -1,5 +1,6 @@
 import { useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react'
-import { NativeMentionEditor } from './native-mention-editor'
+import { View } from 'react-native'
+import { NativeMentionEditor, type MentionPress } from './native-mention-editor'
 import { nativeMentionSpans, nativeMentionText, type MentionDocument } from '../mention-document'
 import type { MentionEditorCommand, MentionEditorSnapshot } from '../mention-editor-state'
 import { selectNativeMention } from '../mention-selection'
@@ -44,11 +45,16 @@ export function composerInputMinHeight(tablet: boolean): number {
 
 export const COMPOSER_INPUT_MAX_HEIGHT = 144
 
-export function NativeComposerInput({ binding, tablet, editable, placeholder, onSubmit, onFocus, onBlur }: {
+export function NativeComposerInput({ binding, tablet, editable, placeholder, onSubmit, onFocus, onBlur, onMentionPress }: {
   binding: NativeComposerBinding; tablet: boolean; editable: boolean; placeholder: string; onSubmit(): void
   onFocus?: () => void
   onBlur?: () => void
+  /** A chip was tapped; `frame` is in `editor`'s points, for whoever anchors a card to it. */
+  onMentionPress?: (press: MentionPress, editor: RefObject<View | null>) => void
 }) {
+  // Measured from a plain host view: an Expo native view's ref has no `measureInWindow`.
+  const view = useRef<View>(null)
+  const pressMention = (press: MentionPress) => onMentionPress?.(press, view)
   const [command, setCommand] = useState<MentionEditorCommand>(() => ({ id: 0, eventCount: 0, start: 0, end: 0,
     text: nativeMentionText(binding.document), tokens: nativeMentionSpans(binding.document) }))
   const snapshot = useRef<MentionEditorSnapshot | null>(null)
@@ -130,7 +136,7 @@ export function NativeComposerInput({ binding, tablet, editable, placeholder, on
     prepareSubmit,
     canSubmit: () => !!snapshot.current && !snapshot.current.composing && !snapshot.current.rejection && pending.current === null,
   }))
-  return <NativeMentionEditor command={command} editable={editable} placeholder={placeholder} accessibilityLabel="Message"
+  return <View ref={view} collapsable={false}><NativeMentionEditor onMentionPress={onMentionPress ? pressMention : undefined} command={command} editable={editable} placeholder={placeholder} accessibilityLabel="Message"
     onFocus={onFocus} onBlur={onBlur}
     autoSize={{ minHeight: composerInputMinHeight(tablet), maxHeight: COMPOSER_INPUT_MAX_HEIGHT }} submitBehavior={tablet ? 'submit' : 'newline'}
     onSubmit={() => { if (pending.current === null) onSubmit() }}
@@ -148,5 +154,5 @@ export function NativeComposerInput({ binding, tablet, editable, placeholder, on
         finishSubmission(new Error('The draft changed before the edit could be applied. Please review it and send again.'))
       } else startSubmission()
       if (next.rejection) binding.onError('The draft changed before the edit could be applied. Please select the item again.')
-    }} />
+    }} /></View>
 }

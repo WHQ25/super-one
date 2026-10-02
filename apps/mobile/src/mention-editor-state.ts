@@ -1,5 +1,4 @@
-import { documentFromNativeMentions, MENTION_OBJECT, type MentionSegment, type MentionToken } from './mention-document'
-import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
+import { documentFromNativeMentions, isMentionTokenKind, MENTION_OBJECT, type MentionSegment, type MentionToken } from './mention-document'
 
 export type NativeMentionSpan = MentionToken & { offset: number }
 export type MentionEditorCommand = {
@@ -12,7 +11,6 @@ export type MentionEditorSnapshot = {
   eventCount: number; start: number; end: number; composing: boolean; rejection?: string; submissionId?: number; supportsPrepareSubmit?: boolean
 }
 
-const tokenKinds = new Set(['file', 'directory', 'agent', 'agent-profile', 'miniapp', 'desktop-app', 'session', 'git'])
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('Invalid native editor snapshot')
   return value as Record<string, unknown>
@@ -33,7 +31,7 @@ export function parseMentionEditorSnapshot(raw: unknown): MentionEditorSnapshot 
   if (Math.max(start, end) > text.length) throw new RangeError('Native editor selection is outside the draft')
   const tokens = value.tokens.map((rawToken): NativeMentionSpan => {
     const token = record(rawToken)
-    if (typeof token.kind !== 'string' || (!tokenKinds.has(token.kind) && !isBuiltinCapabilityId(token.kind))
+    if (typeof token.kind !== 'string' || !isMentionTokenKind(token.kind)
       || typeof token.value !== 'string' || !token.value || typeof token.displayName !== 'string') {
       throw new TypeError('Invalid native mention identity')
     }

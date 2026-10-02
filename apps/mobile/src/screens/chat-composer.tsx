@@ -1,4 +1,8 @@
 import { ContextAttachments } from '../ui/context-attachments'
+import { McpMentionPreviewMenu } from '../ui/mcp-mention-preview'
+import type { AnchorRect } from '../ui/popover-layout'
+import { useMenuHost } from '../ui/menu-host'
+import type { McpMentionReadResource, McpMentionSearchState } from '@superone/shared/mcp-app-mentions'
 import type { ContextAttachment } from '@superone/shared/context-attachments'
 import { NativeComposerInput, composerInputMinHeight, COMPOSER_INPUT_MAX_HEIGHT, type NativeComposerBinding } from '../ui/native-composer-input'
 import { nativeMentionEditorAvailable } from '../ui/native-mention-editor'
@@ -120,6 +124,10 @@ export type ChatComposerProps = {
   /** The raw `@` query, so the overlay can show where in the tree it points. */
   mentionQuery?: string | null
   mentionGroupLabels?: Partial<Record<string, string>>
+  /** The session's MCP servers answering `@`; see `MentionSuggestions`. */
+  mcpMentions?: McpMentionSearchState
+  /** What sending will inline for an MCP chip, opened by tapping it; absent before a session. */
+  previewMcpMention?: (value: string) => Promise<McpMentionReadResource | null>
   placeholder?: string
   /**
    * Pin the chrome for stories. Unset in production — width and height decide
@@ -148,6 +156,8 @@ export function ChatComposer(props: ChatComposerProps) {
   const { width, height } = useWindowDimensions()
   const tablet = props.tablet ?? shouldUseTabletComposer(width, height)
   const [inputFocused, setInputFocused] = useState(false)
+  const [mcpPreview, setMcpPreview] = useState<{ value: string; anchor: AnchorRect } | null>(null)
+  const menuHost = useMenuHost()
   // The app's root SafeAreaView already clears the home indicator, so a gap of
   // our own on top of it left the composer a full input-height off the bottom.
   // Raising the keyboard hides that inset behind it without shrinking it, and
@@ -238,7 +248,7 @@ export function ChatComposer(props: ChatComposerProps) {
         : null}
       <SlashSuggestions matches={props.slashHits} status={props.slashCatalogStatus} onSelect={props.onSlash} onDismiss={props.onSlashDismiss} />
       <MentionSuggestions rows={props.mentionRows} onSelect={props.onMention} search={props.mentionSearch}
-        onRetry={props.onMentionRetry} onLoadMore={props.onMentionLoadMore} groupLabels={props.mentionGroupLabels}
+        onRetry={props.onMentionRetry} onLoadMore={props.onMentionLoadMore} groupLabels={props.mentionGroupLabels} mcp={props.mcpMentions}
         // A session title may contain a slash; only a path query has a trail.
         breadcrumbs={props.mentionQuery && !isSessionMentionQuery(props.mentionQuery) && !isGitMentionQuery(props.mentionQuery)
           ? mentionBreadcrumbs(props.mentionQuery) : []} />
@@ -250,10 +260,15 @@ export function ChatComposer(props: ChatComposerProps) {
         : { flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
         <View style={tablet ? undefined : { flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 20, overflow: 'hidden' }}>
           <ContextAttachments items={props.contextAttachments ?? []} removing={props.removingContexts} error={props.contextError} onRemove={props.onRemoveContext} />
+          {props.previewMcpMention ? <McpMentionPreviewMenu press={mcpPreview} read={props.previewMcpMention} onDismiss={() => setMcpPreview(null)} /> : null}
           {props.attachments.length ? <View style={{ padding: 6 }}><AttachmentStrip attachments={props.attachments} onRemove={props.onRemoveAttachment} /></View> : null}
           {props.nativeDraft && nativeMentionEditorAvailable ? <NativeComposerInput key={props.nativeDraft.generation ?? 0} binding={props.nativeDraft} tablet={tablet}
             editable={!props.loadingConversation} placeholder={props.placeholder ?? 'Ask anything…'} onSubmit={props.onSubmitFromKeyboard}
-            onFocus={onFocus} onBlur={onBlur} /> : <TextInput
+            onFocus={onFocus} onBlur={onBlur}
+            onMentionPress={props.previewMcpMention ? (press, editor) => {
+              if (press.kind !== 'mcp-resource') return
+              menuHost.measure(editor, (at) => setMcpPreview({ value: press.value, anchor: { ...press.frame, x: at.x + press.frame.x, y: at.y + press.frame.y } }))
+            } : undefined} /> : <TextInput
             accessibilityLabel="Message"
             editable={!props.loadingConversation}
             style={{ color: colors.foreground, fontSize: 15, lineHeight: 22, minHeight: composerInputMinHeight(tablet), maxHeight: COMPOSER_INPUT_MAX_HEIGHT, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10, textAlignVertical: 'top' }}

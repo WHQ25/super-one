@@ -1322,6 +1322,22 @@ export class AgentService {
         }
         break
       }
+      case 'search_mcp_mentions':
+      case 'read_mcp_mentions': {
+        try {
+          if (!this.canAccessSession(command.projectPath, command.sessionId)) {
+            throw new Error(this.buildSessionAccessError(command.projectPath, command.sessionId))
+          }
+          const { readMcpMentions, searchMcpMentions } = await import('../mcp-apps/mention-search-ipc')
+          const session = this.mcpMentionSession(command.sessionId)
+          await respond?.(command.requestId, command.type === 'search_mcp_mentions'
+            ? await searchMcpMentions(session, command.projectPath, command.query)
+            : { resources: await readMcpMentions(session, command.projectPath, command.targets) })
+        } catch (err) {
+          await respond?.(command.requestId, { error: (err as Error).message })
+        }
+        break
+      }
       case 'resolve_favicon': {
         try {
           await respond?.(command.requestId, { dataUrl: await resolveFavicon(command.url, command.isDark === true) })
@@ -2272,6 +2288,14 @@ export class AgentService {
     this.sessionManager?.markSessionNeedsRebuild(sessionId, harnessId)
   }
 
+
+  /** The session MCP mentions are searched and read through; loading it is fine, the user asked. */
+  private mcpMentionSession(sessionId: string): import('../session/types').Session | null {
+    const mgr = this.sessionManager
+    const loaded = mgr?.getSession(sessionId)
+    if (!mgr || loaded) return loaded ?? null
+    try { return mgr.resumeSession(sessionId, { passive: true }) } catch { return null }
+  }
 
   private findSessionBySid(projectPath: string, sessionId: string): import('../session/types').Session | undefined {
     const session = this.sessionManager?.getSession(sessionId)

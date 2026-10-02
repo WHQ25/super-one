@@ -37,8 +37,8 @@ export function staticMentionIcon(kind: string, value?: string) {
 
 /**
  * An MCP server item (`mentions/search`) whose server has no icon: the MCP mark.
- * Kept out of `staticMentionIcon`: the mobile app renders those glyphs natively
- * and has no MCP mentions yet.
+ * Kept out of `staticMentionIcon`: a desktop chip shows the server's own icon
+ * first. `apps/mobile/scripts/generate-mention-artwork.ts` renders it for phones.
  */
 export function mcpResourceMentionIcon(className = 'text-foreground') {
   return <McpIcon className={className} />

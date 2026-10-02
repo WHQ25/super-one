@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import { ActivityIndicator, Image, Pressable, ScrollView, View } from 'react-native'
 import { Text } from './text'
 import type { MentionSearchState } from '../navigation/use-composer-suggestions'
@@ -16,6 +16,7 @@ import { HarnessIcon } from './harness-icon'
 import { brandKeyForAgentRef } from '@superone/shared/agent-mention-tags'
 import { mentionGlyphArtwork } from './mention-glyph-data'
 import { useMobileLocale } from '../i18n/context'
+import { mcpMentionGroupKey, mcpMentionHasStatus, type McpMentionSearchState } from '@superone/shared/mcp-app-mentions'
 
 function MatchText({ text, indices = [], muted }: { text: string; indices?: number[]; muted?: boolean }) {
   const { tokens: { colors } } = useMobileTheme()
@@ -38,12 +39,13 @@ function MatchText({ text, indices = [], muted }: { text: string; indices?: numb
   </Text>
 }
 
-function SectionTitle({ title, count, action }: { title: string; count: number; action?: ReactNode }) {
+/** `count` is left out for a section with nothing listed yet. */
+function SectionTitle({ title, count, action }: { title: string; count?: number; action?: ReactNode }) {
   const { tokens: { colors } } = useMobileTheme()
   const { t } = useMobileLocale()
   return <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 6, gap: 6 }}>
     <Text accessibilityRole="header" style={{ color: colors.mutedForeground, fontSize: 12 }}>{t(title)}</Text>
-    <Text style={{ flex: 1, color: colors.mutedForeground, fontSize: 11 }}>{count}</Text>
+    <Text style={{ flex: 1, color: colors.mutedForeground, fontSize: 11 }}>{count ?? ''}</Text>
     {action}
   </View>
 }
@@ -127,7 +129,8 @@ export function MentionIdentity({ item, size = 16 }: { item: MentionItem; size?:
     const png = mentionGlyphArtwork('agent', scheme, colors.foreground)
     return png ? <Image accessible={false} source={{ uri: `data:image/png;base64,${png}` }} style={{ width: size, height: size }} /> : <Bot size={size} color={colors.foreground} />
   }
-  if (mentionGroupKey(item) === 'file') return <FileTypeIcon name={item.path} directory={item.isDirectory || item.kind === 'directory'} size={size} />
+  // An MCP item is grouped by its server only in a list; on its own it must not read as a file.
+  if (item.kind !== 'mcp-resource' && mentionGroupKey(item) === 'file') return <FileTypeIcon name={item.path} directory={item.isDirectory || item.kind === 'directory'} size={size} />
   // The portal is a way into the session archive and a scope row is a folder,
   // so they borrow those glyphs rather than falling through to the generic one.
   // `all` gets the stacked-folders glyph the desktop gives it, because it is
@@ -188,7 +191,21 @@ function MentionBreadcrumbs({ trail, onSelect }: {
   </ScrollView>
 }
 
-export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore, breadcrumbs, groupLabels }: {
+/** Server sections without rows — still searching, empty or failed — then the notice, as on the desktop. */
+function McpMentionStatus({ state }: { state: McpMentionSearchState }) {
+  const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
+  const line = (text: string) => <Text style={{ paddingHorizontal: 8, paddingBottom: 6, color: colors.mutedForeground, fontSize: 12 }}>{t(text)}</Text>
+  return <>
+    {state.sources.filter((source) => !source.items.length).map((source) => <View key={mcpMentionGroupKey(source)}>
+      <SectionTitle title={source.title} />
+      {line(state.loading ? 'Searching…' : state.failed || source.failed ? 'Search failed' : 'No matches')}
+    </View>)}
+    {state.incomplete ? line("Some MCP servers haven't answered yet") : null}
+  </>
+}
+
+export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore, breadcrumbs, groupLabels, mcp }: {
   rows: MentionRow[]
   /** Per-group overrides; the sessions group is *Recent* before a title query. */
   groupLabels?: Partial<Record<string, string>>
@@ -199,10 +216,23 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
   onLoadMore?: () => void
   /** Directory trail of the open query; empty at the project root. */
   breadcrumbs?: { label: string; query: string }[]
+  /** The session's MCP servers; their items are already in `rows`. */
+  mcp?: McpMentionSearchState
 }) {
   const { tokens: { colors } } = useMobileTheme()
   const { t } = useMobileLocale()
-  if (!rows.length && !search?.active) return null
+  // A lookup that failed outright says nothing a user can act on: on a desktop too old
+  // to search servers it would fail on every `@`. The desktop's "Couldn't reach MCP
+  // servers" line is left out for that reason.
+  const mcpStatus = mcp && !(mcp.failed && !mcp.sources.length) && mcpMentionHasStatus(mcp) ? <McpMentionStatus state={mcp} /> : null
+  if (!rows.length && !search?.active && !mcpStatus) return null
+  // Status-only server sections take their place in the order, before files.
+  const groups = groupMentionRows(rows)
+  const fileGroupIndex = groups.findIndex((group) => group.key === 'file')
+  // A server's section is titled by the server, as on the desktop.
+  const groupTitle = (key: string) => groupLabels?.[key]
+    ?? mcp?.sources.find((source) => mcpMentionGroupKey(source) === key)?.title
+    ?? MENTION_GROUP_LABELS[key as MentionGroupKey]
   return <View testID="mention-suggestions" style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface, overflow: 'hidden' }}>
     {breadcrumbs?.length ? <MentionBreadcrumbs trail={breadcrumbs} onSelect={onSelect} /> : null}
     <ScrollView testID="mention-list" keyboardShouldPersistTaps="always" style={{ maxHeight: 256, flexGrow: 0 }} contentContainerStyle={{ padding: 6 }}
@@ -214,8 +244,10 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
         if (!search?.hasMore || search.loading || !onLoadMore) return
         if (contentSize.height - contentOffset.y - layoutMeasurement.height < 48) onLoadMore()
       }}>
-      {groupMentionRows(rows).map((group) => <View key={group.key}>
-        <SectionTitle title={groupLabels?.[group.key] ?? MENTION_GROUP_LABELS[group.key as MentionGroupKey]} count={group.items.length} />
+      {groups.map((group, groupIndex) => <Fragment key={group.key}>
+        {groupIndex === fileGroupIndex ? mcpStatus : null}
+        <View>
+        <SectionTitle title={groupTitle(group.key)} count={group.items.length} />
         {group.items.map((row) => {
           const { item, label, labelIndices, inline, inlineIndices, trailing, badge, hint, hintIndices, disabled } = row
           // Match desktop handles: include the typed @ only when the keyword
@@ -255,7 +287,9 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
               onPress={() => onSelect(directoryMentionItem(item))} /> : null}
           </View>
         })}
-      </View>)}
+        </View>
+      </Fragment>)}
+      {fileGroupIndex < 0 ? mcpStatus : null}
       {search?.loading ? <View accessibilityLiveRegion="polite" style={{ padding: 8, flexDirection: 'row', gap: 8 }}>
         <ActivityIndicator size="small" color={colors.mutedForeground} />
         <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>{t('Searching…')}</Text>
@@ -268,7 +302,7 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
           style={({ pressed }) => ({ paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, backgroundColor: pressed ? colors.muted : 'transparent' })}>
           <Text style={{ color: colors.primary, fontSize: 12 }}>{t('Retry')}</Text>
         </Pressable> : null}
-      </View> : !rows.length ? <Text accessibilityLiveRegion="polite" style={{ padding: 8, color: colors.mutedForeground, fontSize: 12 }}>
+      </View> : !rows.length && !mcpStatus ? <Text accessibilityLiveRegion="polite" style={{ padding: 8, color: colors.mutedForeground, fontSize: 12 }}>
         {/* What "nothing" means depends on what was asked: no projects match,
             no recent sessions, or no matches at all. */}
         {t(search?.emptyLabel ?? 'No matches')}

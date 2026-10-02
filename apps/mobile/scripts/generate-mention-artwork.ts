@@ -6,6 +6,7 @@ import { createElement, type ComponentType } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import * as lucide from 'lucide-react'
 import { GithubIcon } from '@superone/ui/components/ui/github-icon'
+import McpMono from '@lobehub/icons/es/MCP/components/Mono'
 import { DefaultMiniAppIcon } from '../../../packages/ui/src/components/ui/DefaultMiniAppIcon'
 import { desktopMentionGlyphs } from './mention-glyphs'
 import files from '../src/ui/file-icons.generated.json'
@@ -30,9 +31,12 @@ for (const color of colors) {
   variants[color] = entries
 }
 const glyphs: Record<string, { icon: string; light: string; dark: string; artwork: Record<string, string> }> = {}
-for (const [kind, glyph] of Object.entries(desktopMentionGlyphs())) {
+// An MCP server item's fallback (`mcpResourceMentionIcon`), kept out of the desktop's
+// static glyphs because its chips prefer the server's own icon.
+const mcpResource = { icon: 'McpIcon', light: '$foreground', dark: '$foreground' }
+for (const [kind, glyph] of [...Object.entries(desktopMentionGlyphs()), ['mcp-resource', mcpResource] as const]) {
   // lucide 1.0 dropped brand marks; the desktop carries GitHub's itself.
-  const local: Record<string, ComponentType<{ color: string }>> = { GithubIcon }
+  const local: Record<string, ComponentType<{ color: string }>> = { GithubIcon, McpIcon: McpMono as ComponentType<{ color: string }> }
   const Icon = local[glyph.icon] ?? (lucide as unknown as Record<string, ComponentType<{ color: string }>>)[glyph.icon]
   if (!Icon) throw new Error(`Unknown desktop Lucide icon: ${glyph.icon}`)
   const inks = [...new Set([glyph.light, glyph.dark].flatMap((tone) => tone === '$foreground' ? colors : [tone]))]

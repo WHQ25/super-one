@@ -1,4 +1,4 @@
-import { formatMcpResourceReminder, parseMcpMentionValue, type McpMentionReadResource } from '@superone/shared/mcp-app-mentions'
+import { createMcpMentionPreviewCache, formatMcpResourceReminder, parseMcpMentionValue, type McpMentionReadResource } from '@superone/shared/mcp-app-mentions'
 import type { McpAppRoute } from './desktop-executor'
 import type { Mention } from '@/stores/chat-store/types'
 
@@ -22,21 +22,12 @@ export async function mcpMentionContentForModel(projectPath: string, sessionId: 
   }
 }
 
-/** Hovering again within this window reuses the read; sending always reads afresh. */
-const PREVIEW_TTL_MS = 30_000
-const previews = new Map<string, { at: number; read: Promise<McpMentionReadResource | null> }>()
+const previews = createMcpMentionPreviewCache()
 
 /** What sending would inline for one composer chip, read now through the same path. `null`: no answer. */
 export function previewMcpMention(route: McpAppRoute, value: string): Promise<McpMentionReadResource | null> {
   const target = parseMcpMentionValue(value)
   if (!target) return Promise.resolve(null)
-  const key = JSON.stringify([route.projectPath, route.sessionId, value])
-  const cached = previews.get(key)
-  if (cached && Date.now() - cached.at < PREVIEW_TTL_MS) return cached.read
-  const read = window.environment.mcpAppMentionRead(route.projectPath, route.sessionId, [target])
-    .then((result) => (result.ok ? result.value[0] ?? null : null))
-  previews.set(key, { at: Date.now(), read })
-  // A failed read is not worth keeping: the next hover may find the server up.
-  void read.then((resource) => { if (!resource || resource.skipped === 'failed') previews.delete(key) }, () => previews.delete(key))
-  return read
+  return previews(JSON.stringify([route.projectPath, route.sessionId, value]), () =>
+    window.environment.mcpAppMentionRead(route.projectPath, route.sessionId, [target]).then((result) => (result.ok ? result.value[0] ?? null : null)))
 }

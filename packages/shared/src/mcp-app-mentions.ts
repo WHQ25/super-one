@@ -43,6 +43,47 @@ export interface McpMentionSource {
  */
 export interface McpMentionSearchResult { sources: McpMentionSource[]; unavailable?: 'remote'; incomplete?: true }
 
+/** What a composer's `@` popup shows for the session's servers while the user types. */
+export interface McpMentionSearchState {
+  /** One section per server tool. While a query is in flight they keep the previous items. */
+  sources: McpMentionSource[]
+  loading: boolean
+  /** Some server did not answer; more may appear on a later keystroke. */
+  incomplete: boolean
+  /** The lookup itself failed (no per-server answer): an older host, the relay, a closed session. */
+  failed: boolean
+}
+
+export const MCP_MENTION_SEARCH_IDLE: McpMentionSearchState = { sources: [], loading: false, incomplete: false, failed: false }
+
+/** Something the popup must stay open for even with no selectable rows. */
+export function mcpMentionHasStatus(state: McpMentionSearchState): boolean {
+  return state.failed || state.incomplete || state.sources.some(source => source.failed || (state.loading && !source.items.length))
+}
+
+const withoutItems = (sources: McpMentionSource[]) => sources.map(source => ({ ...source, items: [] }))
+
+/**
+ * Sections the last complete answer for a session (`key`) had, without items, so a
+ * new popup shows them as searching at once rather than popping them in later.
+ */
+const knownSources = new Map<string, McpMentionSource[]>()
+
+/** A query went out: keep what is on screen, else the sections this session had last time. */
+export function mcpMentionSearchStarted(key: string, previous: McpMentionSearchState): McpMentionSearchState {
+  return { sources: previous.sources.length ? previous.sources : withoutItems(knownSources.get(key) ?? []), loading: true, incomplete: false, failed: false }
+}
+
+export function mcpMentionSearchAnswered(key: string, { sources, incomplete }: McpMentionSearchResult): McpMentionSearchState {
+  // Only a complete answer says which servers search; an incomplete one may be missing some.
+  if (!incomplete) knownSources.set(key, withoutItems(sources))
+  return { sources, loading: false, incomplete: !!incomplete, failed: false }
+}
+
+export function mcpMentionSearchFailed(previous: McpMentionSearchState): McpMentionSearchState {
+  return { sources: withoutItems(previous.sources), loading: false, incomplete: false, failed: true }
+}
+
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
 
@@ -86,6 +127,18 @@ export function mcpMentionItems(structuredContent: unknown): McpMentionItem[] {
   return output
 }
 
+/** One popup section per server tool: `mcp:<server>/<tool>`. */
+export const mcpMentionGroupKey = (source: Pick<McpMentionSource, 'server' | 'tool'>): `mcp:${string}` => `mcp:${source.server}/${source.tool}`
+
+/**
+ * Where the query occurs in an item's label or detail, for highlighting. The server already
+ * matched however it likes, so a miss only means nothing is highlighted.
+ */
+export function mcpMentionMatchIndices(text: string, query: string): number[] {
+  const at = query ? text.toLowerCase().indexOf(query.toLowerCase()) : -1
+  return at < 0 ? [] : Array.from({ length: query.length }, (_, index) => at + index)
+}
+
 /** Chip value: `<server>:<uri>`, the server percent-encoded so the first `:` splits. */
 export function encodeMcpMentionValue(server: string, uri: string): string {
   return `${encodeURIComponent(server)}:${uri}`
@@ -119,6 +172,17 @@ export function wrapMcpResourceMention(value: string, displayName: string): stri
 /** Chip value and label recovered from a tag match. */
 export function mcpResourceTagMention(server: string, name: string, uri: string): { value: string; displayName: string } {
   return { value: encodeMcpMentionValue(unescapeTagText(server).trim(), unescapeTagText(uri).trim()), displayName: unescapeTagText(name).trim() }
+}
+
+/** Mentions read per message; the rest keep their tag, which still names the resource. */
+export const MCP_MENTION_READ_MAX = 20
+
+/** What a message's MCP resource tags name, in order, at most `MCP_MENTION_READ_MAX`. */
+export function mcpResourceTargets(text: string): Array<{ server: string; uri: string }> {
+  return [...text.matchAll(MCP_RESOURCE_TAG_REGEX)].flatMap(([, server, name, uri]) => {
+    const target = parseMcpMentionValue(mcpResourceTagMention(server, name, uri).value)
+    return target ? [target] : []
+  }).slice(0, MCP_MENTION_READ_MAX)
 }
 
 /** Text of one mentioned resource inlined for the model; larger text is cut and says so. */
@@ -160,6 +224,44 @@ export function formatMcpResourceReminder(resources: McpMentionReadResource[]): 
 const RESOURCE_ENTRY_REGEX = /<resource server="([^"]*)" uri="([^"]*)"(?: mimeType="([^"]*)")?>\n([\s\S]*?)\n<\/resource>/g
 const TRUNCATION_NOTE = /\n\[Truncated at \d+ characters; read the resource for the rest\.\]$/
 const unquoteAttr = (value: string) => value.replace(/&lt;/g, '<').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+
+/** Opening a chip again within this window reuses the read; sending always reads afresh. */
+const MCP_MENTION_PREVIEW_TTL_MS = 30_000
+
+/**
+ * A composer chip's preview reads, kept briefly per `key` (scope and chip value). A read
+ * that found nothing is dropped at once: the next look may find the server up.
+ */
+export function createMcpMentionPreviewCache(now: () => number = Date.now) {
+  const previews = new Map<string, { at: number; read: Promise<McpMentionReadResource | null> }>()
+  return (key: string, read: () => Promise<McpMentionReadResource | null>): Promise<McpMentionReadResource | null> => {
+    const cached = previews.get(key)
+    if (cached && now() - cached.at < MCP_MENTION_PREVIEW_TTL_MS) return cached.read
+    const next = read()
+    previews.set(key, { at: now(), read: next })
+    void next.then((resource) => { if (!resource || resource.skipped === 'failed') previews.delete(key) }, () => previews.delete(key))
+    return next
+  }
+}
+
+/** A chip card's read: `loading`/`failed` only while a composer chip previews. */
+export type McpMentionCardState = { status: 'loading' } | { status: 'failed' } | { status: 'read'; resource?: McpMentionReadResource }
+
+/** A preview read as a card state: no answer, or a read the server refused, is a failure. */
+export function mcpMentionPreviewState(resource: McpMentionReadResource | null): McpMentionCardState {
+  return resource && resource.skipped !== 'failed' ? { status: 'read', resource } : { status: 'failed' }
+}
+
+/**
+ * The line a chip card shows: what a sent chip carried, or what sending will inline.
+ * `count` is the characters inlined (the cap when truncated).
+ */
+export function mcpMentionCardStatus(state: McpMentionCardState): { line: 'loading' | 'failed' | 'content' | 'truncated' | 'linkOnly'; count: number } {
+  if (state.status !== 'read') return { line: state.status, count: 0 }
+  const text = state.resource?.text
+  if (text === undefined) return { line: 'linkOnly', count: 0 }
+  return state.resource?.truncated ? { line: 'truncated', count: MCP_MENTION_INLINE_MAX_CHARS } : { line: 'content', count: text.length }
+}
 
 /**
  * What a message's content block gave the model, keyed by `encodeMcpMentionValue`,

@@ -4,7 +4,7 @@ public class MentionEditorModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SuperOneMentionEditor")
     View(MentionEditorView.self) {
-      Events("onDocumentChange", "onContentHeightChange", "onSubmit")
+      Events("onDocumentChange", "onContentHeightChange", "onSubmit", "onMentionPress")
       Prop("submitOnReturn") { (view: MentionEditorView, value: Bool) in view.setSubmitOnReturn(value) }
       Prop("editable") { (view: MentionEditorView, value: Bool) in view.setEditable(value) }
       Prop("placeholder") { (view: MentionEditorView, value: String) in view.setPlaceholder(value) }

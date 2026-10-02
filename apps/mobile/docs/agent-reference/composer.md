@@ -33,7 +33,9 @@ value. JS edits are commands carrying the last seen `eventCount`, and native rej
 a stale count or an active composition (the snapshot reports the `rejection`). A
 chip is one UTF-16 object position (U+FFFC) holding kind, value and display name.
 Copy/cut expand chips to plain text; paste inserts literal text and never creates a
-token. The document serialises to desktop tags only when the draft is captured for
+token. Tapping a chip emits `onMentionPress` (kind, value, frame in the editor) and
+is withheld from the text view, so neither caret nor keyboard moves under the card
+it opens; `isMentionTokenKind` is the one list of chip kinds both directions check. The document serialises to desktop tags only when the draft is captured for
 send (`composer-draft-state.ts`). The plain `TextInput` fallback flattens to text,
 so the two editors send different payloads — tests assert the sent payload on both.
 

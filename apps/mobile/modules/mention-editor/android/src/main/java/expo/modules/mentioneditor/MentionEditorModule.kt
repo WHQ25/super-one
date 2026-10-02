@@ -7,7 +7,7 @@ class MentionEditorModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("SuperOneMentionEditor")
     View(MentionEditorView::class) {
-      Events("onDocumentChange", "onContentHeightChange", "onSubmit")
+      Events("onDocumentChange", "onContentHeightChange", "onSubmit", "onMentionPress")
       Prop("submitOnReturn") { view: MentionEditorView, value: Boolean -> view.setSubmitOnReturn(value) }
       Prop("editable") { view: MentionEditorView, value: Boolean -> view.setEditable(value) }
       Prop("placeholder") { view: MentionEditorView, value: String -> view.setPlaceholder(value) }

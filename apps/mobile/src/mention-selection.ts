@@ -1,5 +1,4 @@
-import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
-import { nativeMentionSpans, nativeMentionText, type MentionDocument, type MentionToken } from './mention-document'
+import { isMentionTokenKind, nativeMentionSpans, nativeMentionText, type MentionDocument, type MentionToken } from './mention-document'
 import type { MentionEditorCommand, MentionEditorSnapshot } from './mention-editor-state'
 import { extractMentionQuery, type MentionItem } from './mentions'
 
@@ -9,11 +8,11 @@ export function mentionTokenFromItem(item: MentionItem): MentionToken | undefine
   const kind = item.kind === 'builtin' ? item.path
     : item.kind === 'dir-entry' ? (item.isDirectory ? 'directory' : 'file')
     : item.kind === 'git-ref' ? 'git' : item.kind
-  if (!isBuiltinCapabilityId(kind) && !['file', 'directory', 'agent', 'agent-profile', 'session', 'git', 'miniapp', 'desktop-app'].includes(kind)) return
+  if (!isMentionTokenKind(kind)) return
   const pathLike = kind === 'file' || kind === 'directory' || kind === 'agent'
   const displayName = item.label?.replace(/^@/, '') || (pathLike
     ? item.path.replace(/[/\\]+$/, '').split(/[/\\]/).at(-1) : item.path) || item.path
-  return { kind: kind as MentionToken['kind'], value: item.path, displayName }
+  return { kind, value: item.path, displayName }
 }
 
 /** Produce a native transaction. Do not optimistically update the sendable

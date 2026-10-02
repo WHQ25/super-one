@@ -14,6 +14,7 @@ import { ZERO_TURN_TOKENS, type TurnTokenCounts } from './presenters/turn-footer
 import { PortableCollabTaskBubble } from './PortableCollabTaskBubble'
 import { attachmentForBlock, PortableAttachmentChip } from './PortableAttachmentChip'
 import { PortableUserText } from './PortableUserText'
+import { McpMentionSentProvider } from './presenters/McpMentionCard'
 import { PortableToolRow } from './PortableToolRow'
 import { PortableTurnFooter } from './PortableTurnFooter'
 import {
@@ -78,7 +79,7 @@ function PortableUserContent({
       ))}
     </div>
   )
-  return [chips, ...rest.map((block, index) => {
+  return <McpMentionSentProvider content={message.content}>{[chips, ...rest.map((block, index) => {
     if (block.type === 'text') {
       return <PortableUserText key={index} text={block.text} mentionArtwork={mentionArtwork} />
     }
@@ -101,7 +102,7 @@ function PortableUserContent({
       )
     }
     return null
-  })]
+  })]}</McpMentionSentProvider>
 }
 
 /**

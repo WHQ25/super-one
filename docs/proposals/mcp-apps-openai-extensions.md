@@ -1,6 +1,6 @@
 # MCP Apps: OpenAI extension compatibility
 
-Status: accepted · Updated: 2026-10-01
+Status: accepted · Updated: 2026-10-02
 Plan: [plans/mcp-apps-openai-extensions.md](../plans/mcp-apps-openai-extensions.md)
 
 Part of [mini-apps-and-mcp-apps.md](mini-apps-and-mcp-apps.md).
@@ -50,7 +50,7 @@ passes through.
 
 | Needs from the MCP client | Codex 0.159 | Claude SDK 0.3.285 | Compat layer |
 |---|---|---|---|
-| Tool `_meta` (entrypoints, display modes) | Yes | Yes | Yes |
+| Tool `_meta` (entrypoints, display modes) | Yes | `ui` only; other keys withheld | Yes |
 | Tool `title`, `icons` | Yes | No | Yes |
 | Server capabilities (`openai/settings`) | Yes (since 0.155) | No | Yes |
 | Request `_meta` on View tool calls (`openai/resource` path) | Yes (`mcpServer/tool/call`) | No (`mcp_call` takes tool and arguments) | Yes |
@@ -60,8 +60,10 @@ passes through.
 The compat layer is [mcp-apps-compat-layer.md](mcp-apps-compat-layer.md). This
 table decides routing there: a server whose extensions a harness does not
 carry is served through the layer in that harness's sessions. On Claude, a
-missing title or icon only falls back to the name and server icon; a server
-using settings or file entrypoints is rerouted.
+missing title or icon only falls back to the name and server icon. For file
+entrypoints and mentions, SuperOne connects to the server itself in Claude
+sessions (stdio and HTTP) for discovery and host-originated App calls; see the
+plan's phase 3.
 
 ## 4. Mapping
 
@@ -116,10 +118,10 @@ rows.
      input.
 2. **Forms**: the shared schema-form composer, used by Codex `openai/form` and
    standard elicitations.
-3. **Entrypoints and settings**: the §5 binding, thread then global
-   entrypoints, the shared settings renderer.
-4. **Files and mentions**: file entrypoints, resource writes, `files/open`,
-   `@` mentions.
+3. **Files and mentions**: the §5 binding, file entrypoints, resource
+   writes, `files/open`, `@` mentions.
+4. **Entrypoints and settings**: thread then global entrypoints, the shared
+   settings renderer.
 
 ## 8. Open questions
 

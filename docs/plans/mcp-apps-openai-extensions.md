@@ -1,4 +1,4 @@
-# MCP Apps: OpenAI extension compatibility — phase 1
+# MCP Apps: OpenAI extension compatibility
 
 Proposal: [mcp-apps-openai-extensions.md](../proposals/mcp-apps-openai-extensions.md).
 Phase 1 is the View level: metadata, `openai/message`, model-context
@@ -705,3 +705,104 @@ Live check on Bits & Bolts (dev instance, Codex 0.159):
 - **User-added resources**: need a security review first. Native main-process
   dialog only, `file://` URIs, `accept` enforced, local stdio servers only.
 - **URL-mode** Codex elicitations still show a plain approval without a link.
+
+## Remaining gaps (audit, 2026-10-02)
+
+Checked against `openai/mcp-extensions` `docs/spec.md`. Phases 1–2 cover
+model context, `openai/message` and most form features. Still missing:
+
+| Area | State |
+|---|---|
+| File entrypoint, host resources (`read` / `subscribe` / `openai/resources/write`), path injection | Not supported — Phase 3 |
+| `openai/files/open` | Not supported — Phase 3 |
+| Composer at-mentions (`mentions/search`) | Not supported — Phase 3 |
+| Form previews (`openai/preview`) | Parsed, not shown — Phase 3 host follow-ups |
+| Form `userOptions`, implicit selection | Ignored / refused — Phase 3 host follow-ups |
+| `ui/download-file`, collapsed untitled long text | S1 leftovers — Phase 3 host follow-ups |
+| Form capability on Claude and on the remote-node Codex client | Not advertised — after Phase 3 |
+| Global and thread entrypoints, deep links | Not supported — later; need the host-origin binding from Phase 3 |
+| Structured settings (`openai/settings`) | Not supported — later; needs server capabilities, which Claude withholds |
+| Plugin onboarding | Out of scope until SuperOne has plugin packages |
+| Display modes | Supported, except `preferredDisplayMode` on first render (deliberate) and phone PiP |
+
+## Phase 3: files and mentions
+
+Ordered ahead of proposal phase 3 (entrypoints, settings) by user decision.
+
+### Decisions (2026-10-02)
+
+- **Default viewer**: SuperOne's own preview opens any format it supports. An
+  App that declares a file entrypoint for the extension is an alternative the
+  user picks, never a silent replacement. Formats SuperOne cannot preview
+  show the existing placeholder with one "Open with <App>" action per App, so
+  every App launch (a tool call on the server) is an explicit user action.
+- **Entry points**: an "Open With" submenu in the file-chip context menu
+  (`useFileChipContextMenu`) and the file-tree context menu (`TreeRow`), an
+  "Open With" control in the open file preview's header, and the
+  unpreviewable placeholder. All list SuperOne Preview first, then each App.
+- **Host session**: the App belongs to the session of the pane where the
+  action happens (a chip uses its message's session). Its `ui/message` and
+  model context go there. While that session has no harness yet (an empty
+  draft), App entries are disabled with the reason as a tooltip.
+- **Claude**: SDK 0.3.285 withholds every tool `_meta` key except `ui` and
+  `ui/resourceUri`, and `mcp_call` takes no `_meta`. In Claude sessions
+  SuperOne connects to the server itself — stdio and HTTP, with SuperOne's
+  own OAuth — for discovery and for every call of a host-originated App.
+  Server configs come from Claude's `mcpServerStatus()`. The model's own tool
+  calls stay on Claude's connection.
+- **Codex**: stays on app-server. Protocol 0.159 (`generate-json-schema`)
+  carries full `Tool._meta` in `mcpServerStatus/list` and accepts `_meta` on
+  `mcpServer/tool/call`.
+
+### Risks
+
+- A stdio server reached directly runs as a second process. Servers that keep
+  state in memory can disagree with what the model sees through Claude.
+- Direct HTTP connections hold their own OAuth tokens, separate from Claude
+  CLI's; signing in once per server per tool is visible to the user.
+
+### Steps
+
+1. **Direct client for Claude sessions**: resolve server configs from
+   `mcpServerStatus()`, connect over stdio or HTTP, `tools/list` with full
+   `_meta`, cached by config fingerprint; idle teardown; OAuth sign-in and
+   token storage. Security review before shipping (spawned commands, token
+   storage, which configs are eligible). Builds on `compat-session.ts`.
+2. **Host-origin binding** (proposal §5): host-originated `ToolAppAttachment`
+   records per session, outside transcript rows, found by executor
+   `resolve`, document registration and the node's App index; restored with
+   the session. Visibility is ignored only for the entrypoint tool itself.
+3. **Catalog API**: per session, the file-entrypoint Apps for an extension and
+   the `mentions/search` tools (`visibility` includes `app`), with title and
+   icon; Codex from its catalog, Claude from step 1.
+4. **Open a file with an App**: call the entrypoint tool with
+   `{ file: { name, resourceUri } }` (opaque `host-resource://` URI), create
+   the attachment, open it as an activity tab next to the file tab, send the
+   same arguments as `ui/notifications/tool-input`. Advertise
+   `experimental["openai/resource"]` only to Views opened this way.
+5. **Host resources**: `resources/read` for the opened URI (`representation`
+   text/blob, size cap, `etag`, `writable`); `resources/subscribe` /
+   `unsubscribe` backed by a file watcher (`notifications/resources/updated`);
+   `openai/resources/write` for that URI only, after a `writable` read, with
+   `ifMatch`, inside the workspace, under a size cap (`saved` / `conflict` /
+   `too-large`). Remote-project files go through the existing remote file API.
+6. **Path injection**: `_meta["openai/resource"].path` on tool calls from a
+   file-entrypoint View — Codex `mcpServer/tool/call` `_meta`, Claude through
+   the direct client. Views never receive the path.
+7. **UI**: the four entry points from the decisions, with stories for loading,
+   no App, several Apps, disabled (no harness) and narrow layouts.
+8. **`openai/files/open`**: advertise `experimental["openai/files"]`; open the
+   path in the file preview; paths outside the session's workspace need
+   confirmation.
+9. **Mentions**: a server section in `MentionPopup` per `mentions/search`
+   tool, debounced `{ query }` calls, inserting a resource-link mention kind
+   (`MentionNodeAttrs`, `ChatInput` serialization, user-bubble chip). The
+   model receives the link with its server and URI.
+10. **Host follow-ups**: form previews (`resource_link` read from the
+    eliciting server under the transient cap; `mcp_app_tool` previews through
+    step 2), `userOptions` (security review first: main-process dialog,
+    `file://`, `accept` enforced, local servers only), `ui/download-file`,
+    and collapsed untitled long text in confirmations and bubbles.
+
+Out of this phase: phone parity (file preview "more" menu is the natural
+place), remote-node direct clients, global/thread entrypoints, settings.

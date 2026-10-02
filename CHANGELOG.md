@@ -15,6 +15,148 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- MCP Apps: the interactive UI an MCP server ships with a tool renders as
+  a View in place of its tool row, in Claude and Codex sessions, on
+  desktop, on the phone and for sessions on remote nodes. Views can open
+  in the activity panel, fullscreen or picture-in-picture, sign in
+  through the harness's own OAuth login, ask to send messages (approved
+  in the composer) and attach context to later sends. Cursor can route
+  local App servers through SuperOne after an explicit opt-in in its
+  preferences.
+- Elicitation forms render on desktop and phone with OpenAI extended
+  fields (thumbnails, option descriptions, suggested values, resource
+  pickers), and Codex offers form elicitation to MCP servers.
+- @ mentions search MCP servers that support `mentions/search`; a picked
+  item's text is inlined at send, and hovering its chip shows what the
+  agent receives.
+- Open With offers MCP Apps that declare a file entrypoint; SuperOne's
+  own preview stays the default.
+- Desktop previews STEP and IGES CAD models.
+- Claude Code mods: lines a mod writes appear in the transcript, its
+  notifications show as toasts, and its status line sits above the
+  composer. Plugins that fail to load say why in the transcript, and the
+  plugins page marks which plugins are mods.
+- Files previewer cards fit their tallest image or video; composer
+  context previews span the composer and are titled by their source; a
+  bash block's edited-file list scrolls past a maximum height.
+
+### Fixed
+
+- Quota forecasts pace on the average since the window started, so most
+  readings show an estimate and short bursts no longer swing it.
+- Mobile reconnects reliably after the phone was backgrounded or its LAN
+  route changed, and no longer drops live events on long LAN
+  connections or after a relay reset.
+- Mobile: frames inside the chat can no longer send native requests;
+  the iOS chat no longer crashes when an embedded frame loads;
+  collaboration children stay nested in the sidebar; the context ring
+  uses the model's real window.
+- Device and Computer Use previews appear when switching to a target
+  that is already active.
+- The link dialog works inside the files previewer's fullscreen view,
+  and native context menus keep `&` in labels.
+- 3D previews no longer wash out coloured materials and untextured
+  meshes.
+
+### Changed
+
+- Claude Agent SDK 0.3.287 (Claude Code 2.1.287): installed Claude Code
+  mods now run in Claude sessions. Steering a running turn lets running
+  commands finish instead of stopping them, and a reply cut short no
+  longer looks like it is still streaming.
+
+## [0.71.0-alpha] - 2026-10-02
+
+### Added
+
+- MCP Apps: the interactive UI an MCP server ships with a tool
+  (`io.modelcontextprotocol/ui`) renders as a View in place of its tool
+  row, in Claude and Codex sessions, on desktop, on the phone and for
+  sessions on remote nodes. Views keep a header with the App's icon and
+  title, collapse into an ordinary tool row, open in the activity panel,
+  go fullscreen or picture-in-picture without reloading, and leave a card
+  in the chat that brings them back.
+- MCP App servers that need sign-in authenticate through Claude's or
+  Codex's own OAuth login, including when the harness runs on another
+  machine; tokens stay in the harness's store.
+- Messages an App asks to send, and new conversations it asks to start,
+  are approved in the composer slot (Escape declines). Context an App
+  attaches rides along on every send as a removable composer chip, with
+  images sent as real image inputs.
+- Restored Views reload from a cached copy of the App's HTML shared
+  across history and devices; Activate brings a restored snapshot back.
+- Cursor (opt-in, off by default): Settings → Harnesses → Cursor →
+  Preferences can route local stdio MCP App servers through SuperOne so
+  their Views render. The setting discloses that this bypasses Cursor's
+  team MCP and network controls.
+- Elicitation forms render from one shared schema model on desktop and
+  phone, including OpenAI extended forms (thumbnails, option
+  descriptions, suggested values, resource pickers), and Codex now
+  offers form elicitation to MCP servers. A form that cannot be fully
+  rendered shows a notice and can only be dismissed.
+- @ mentions search MCP servers that support `mentions/search`. A picked
+  item becomes a chip with the server's icon, its text is inlined into
+  the message at send, and hovering the chip shows exactly what the
+  agent receives.
+- Open With offers MCP Apps that declare a file entrypoint, from file
+  chip and file tree menus, the preview header and the placeholder for
+  formats SuperOne cannot preview. SuperOne's own preview stays the
+  default.
+- Desktop previews STEP and IGES CAD models as coloured meshes.
+- Claude Code mods: lines a mod writes appear in the transcript, its
+  notifications show as toasts, and its status line sits above the
+  composer. Plugins that fail to load say why in the transcript, and the
+  plugins page marks which plugins are mods.
+- Files previewer cards fit their tallest image or video instead of a
+  fixed height; composer context previews span the composer and are
+  titled by their source; a bash block's edited-file list scrolls past a
+  maximum height.
+
+### Fixed
+
+- Quota forecasts pace on the average since the window started, so most
+  readings show an estimate and short bursts no longer swing it; risk is
+  graded by projected usage at reset.
+- Mobile reconnects re-resolve the desktop route (LAN or relay) on every
+  retry, stop redialling when the desktop refuses a session restore, and
+  no longer tear down a healthy relay socket on returning to the
+  foreground. A redialled phone no longer goes offline when its stale
+  LAN socket closes, and live events after the 2048th on a LAN socket or
+  after a relay reset are no longer dropped.
+- Mobile: frames inside the chat (such as agent widgets) can no longer
+  send native requests; the iOS chat no longer crashes or stops
+  responding when an embedded frame loads; collaboration children stay
+  nested in the sidebar; the context ring uses the model's real window
+  (for example 1M for Opus 5.5).
+- Device and Computer Use previews appear when switching to a target
+  that is already active.
+- Links opened from the files previewer's fullscreen view respond to
+  clicks in the link dialog.
+- Native context menus keep `&` in labels.
+- 3D previews use softer lighting, so coloured materials and untextured
+  meshes no longer wash out.
+
+### Changed
+
+- Claude Agent SDK 0.3.287 (Claude Code 2.1.287): installed Claude Code
+  mods now run in Claude sessions. Steering a running turn lets running
+  commands finish instead of stopping them, and a reply cut short no
+  longer looks like it is still streaming.
+
+### Performance
+
+- Codex: MCP App View requests no longer wait 8–9 s on full MCP
+  discovery, and catalogs prewarm when an App attachment arrives.
+
+### Tests
+
+- An MCP Apps fixture server and View (with an OAuth mode), a recorded
+  Claude MCP Apps turn replay, and desktop View state coverage.
+
+## [0.70.0] - 2026-09-30
+
+### Added
+
 - Claude and Codex subscription meters estimate when each quota window
   runs out at the recent pace, on desktop and mobile; desktop shows a
   bubble when a window is likely to run out before it resets.
@@ -29,10 +171,6 @@ Every alpha release keeps its own notes on its GitHub Release.
   changes and panel resizes.
 - Refreshing Codex models from the model selector confirms the result,
   or reports a failure and keeps the current list.
-- Claude Code mods: lines a mod writes appear in the transcript, its
-  notifications show as toasts, and its status line sits above the
-  composer. Plugins that fail to load say why in the transcript, and the
-  plugins page marks which plugins are mods.
 
 ### Fixed
 
@@ -70,78 +208,6 @@ Every alpha release keeps its own notes on its GitHub Release.
   connection, and Claude sessions start faster. Background shell
   commands Claude starts now stop at their timeout (30 minutes unless
   the agent sets one, up to 2 hours).
-- Claude Agent SDK 0.3.287 (Claude Code 2.1.287): installed Claude Code
-  mods now run in Claude sessions. Steering a running turn lets running
-  commands finish instead of stopping them, and a reply cut short no
-  longer looks like it is still streaming.
-
-## [0.70.0-alpha] - 2026-09-30
-
-### Added
-
-- Claude and Codex subscription meters estimate when each quota window
-  runs out at the recent pace, on desktop and mobile; desktop shows a
-  bubble when a window is likely to run out before it resets.
-- Browser tabs playing sound show a speaker after the title, background
-  tabs included; clicking it mutes or unmutes the tab.
-- Development mini-apps hot-reload from their Vite dev server while
-  `bun run dev` runs, and their tab shows a lightning badge. The template
-  builds every page named in `manifest.templates`.
-- Agents can inspect and operate development mini-app panels and tool
-  UIs with the regular `browser_*` tools, including a fixture-driven tool
-  UI preview (`miniapp_dev_preview`); MiniApp Host output and failures
-  appear in the view console.
-- A 3D model keeps its camera view between the files previewer's
-  fullscreen, its card and the file panel, and across USDZ variant
-  changes and panel resizes.
-- Refreshing Codex models from the model selector confirms the result,
-  or reports a failure and keeps the current list.
-- Android phone emulators can use a 3D Pixel reference shell when its
-  model file is installed locally.
-
-### Fixed
-
-- Claude replies that arrive before the prompt is consumed, or after a
-  turn has settled, are kept as their own turns instead of being lost
-  (#64).
-- Computer Use app grants answered in Cursor and DeepSeek sessions take
-  effect instead of timing out after 120 s.
-- Interrupting a reply no longer marks an already delivered message as
-  failed or offers to resend it.
-- Codex skills and slash commands show their argument hints.
-- Daily Claude usage statistics no longer count a session's earlier
-  turns again after the session idles out or is stopped and then
-  continues.
-- Mobile: collaboration cards open the collaborator's session; cached
-  3D models load in the chat WebView, with Draco assets bundled for
-  offline use; turn error detail labels no longer overlap.
-- Model selector scrollbars overlay the list.
-- Browser tabs theme classic page scrollbars, so dark pages no longer
-  show a light track.
-- The agent's background browser PiP keeps the maximized browser
-  viewport instead of turning tall beside a narrow activity panel.
-- Mini-app picture-in-picture keeps its aspect ratio regardless of the
-  dock slot.
-
-### Changed
-
-- Codex: upgraded the app-server runtime to `0.159.0`, enabling GPT-6.1
-  Sol discovery for eligible accounts. Forking older conversations from
-  a selected message remains supported after upstream removed
-  `thread/rollback`.
-- Claude Agent SDK 0.3.285 (Claude Code 2.1.285): a turn woken by a
-  finished background agent no longer fails its tools with "Stream
-  closed", forks after a rewind or compaction copy the right history,
-  a session no longer stays "needs action" after overlapping permission
-  prompts are answered, disabling an MCP server in settings closes its
-  connection, and Claude sessions start faster. Background shell
-  commands Claude starts now stop at their timeout (30 minutes unless
-  the agent sets one, up to 2 hours).
-
-### Tests
-
-- Mobile legacy session restore is covered, and the chat-core boundary
-  check flags only module-scope maps.
 
 ## [0.69.0] - 2026-09-26
 

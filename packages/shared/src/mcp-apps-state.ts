@@ -43,7 +43,7 @@ export function findMcpAppAttachment(messages: readonly McpAppMessage[], appInst
 export function mergeMcpAppAttachment(previous: ToolAppAttachment | undefined, next: ToolAppAttachment | undefined): ToolAppAttachment | undefined {
   if (!previous || !next || previous.appInstanceId !== next.appInstanceId) return next ?? previous
   const identity = (app: ToolAppAttachment): string => JSON.stringify([app.binding.node, app.binding.session, app.binding.server, app.binding.account,
-    app.binding.configGeneration, app.binding.configFingerprint, app.resourceUri, app.origin?.providerSessionId, app.origin?.originCallId])
+    app.binding.configGeneration, app.binding.configFingerprint, app.binding.hostClient, app.resourceUri, app.origin?.providerSessionId, app.origin?.originCallId])
   if (identity(previous) !== identity(next)) return next
   return { ...next, resource: previous.resource ?? next.resource, modelContext: previous.modelContext !== undefined ? previous.modelContext : next.modelContext, presentation: previous.presentation ?? next.presentation }
 }

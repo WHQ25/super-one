@@ -6,6 +6,8 @@ import { ClaudeMcpAppsCatalog, ClaudeToolApps, createClaudeMcpAppsProvider } fro
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
 import { assertMcpAppsBindingIdentity } from '@superone/shared/mcp-app-binding'
+import { HostClients } from '../../mcp-apps/host-client'
+import { claudeHostClientConfig } from '../../mcp-apps/claude-host-config'
 import { buildClaudeOptions, createSessionQuery, buildUserMessage, type SessionQueryOptions, type BackgroundTaskInfo } from '../../agent/claude-query'
 import { getGlobalWarmupManager, WarmupManager } from '../../agent/warmup-manager'
 import {
@@ -137,17 +139,30 @@ export class ClaudeBackend implements SessionBackend {
   private readonly mcpAppsCatalog = new ClaudeMcpAppsCatalog()
   private readonly toolApps = new ClaudeToolApps({
     catalog: this.mcpAppsCatalog,
-    binding: (server) => ({
+    binding: (server) => this.mcpAppsBinding(server),
+    providerSessionId: () => this.providerSessionId,
+    onCatalogMiss: () => { void this.refreshMcpAppsCatalog() },
+  })
+
+  /** SuperOne's own connections for host-originated Apps; Claude's hide tool `_meta` and take no request `_meta`. */
+  private readonly hostClients = new HostClients('superone-mcp-apps-host')
+
+  private mcpAppsBinding(server: string): McpAppsBinding {
+    return {
       node: 'local',
       session: this._lastStartOpts?.sessionId ?? '',
       server,
       account: this._lastStartOpts?.apiProviderId ?? undefined,
       configGeneration: 0,
       configFingerprint: mcpServerConfigFingerprint(this.mcpAppsCatalog.config(server)),
-    }),
-    providerSessionId: () => this.providerSessionId,
-    onCatalogMiss: () => { void this.refreshMcpAppsCatalog() },
-  })
+    }
+  }
+
+  /** Direct-connection config for a server Claude may share; null when it must stay on Claude's connection. */
+  private hostClientConfig(server: string) {
+    const cwd = this._lastStartOpts?.cwd
+    return cwd && this.mcpAppsCatalog.hostServers().includes(server) ? claudeHostClientConfig(cwd, server, this.mcpAppsCatalog.config(server)) : null
+  }
 
   private _lastStartOpts: BackendStartOptions | null = null
   /**
@@ -589,6 +604,7 @@ export class ClaudeBackend implements SessionBackend {
 
   async close(): Promise<void> {
     await this.releaseRuntime('close')
+    this.hostClients.close()
     this.eventListeners.clear()
     this.providerSessionIdListeners.clear()
     this.permissionModeAppliedListeners.clear()
@@ -875,7 +891,7 @@ export class ClaudeBackend implements SessionBackend {
       return current
     }
     await query()
-    return createClaudeMcpAppsProvider(binding, {
+    const native = createClaudeMcpAppsProvider(binding, {
       query,
       assertBinding,
       providerSessionId: () => this.providerSessionId,
@@ -892,6 +908,31 @@ export class ClaudeBackend implements SessionBackend {
         return this.mcpAppsCatalog.status(binding.server)
       },
     })
+    if (!binding.hostClient) return native
+    const host = this.hostClients.provider(binding, {
+      config: () => this.hostClientConfig(binding.server),
+      cwd: () => this._lastStartOpts?.cwd,
+      providerSessionId: () => this.providerSessionId,
+      // Rechecked per request: a server Claude disconnects or disables is no longer reached directly.
+      assertBinding: () => {
+        assertBinding()
+        if (!this.hostClientConfig(binding.server)) throw new McpAppsError('not_connected', 'This MCP server is not available to Apps in this session')
+      },
+      // Sign-in stays Claude's: one sign-in serves the model and host Apps.
+      authenticate: native.authenticate,
+      submitAuthCallback: native.submitAuthCallback,
+    })
+    return { ...host, dispose: () => { host.dispose(); native.dispose() } }
+  }
+
+  async getMcpAppsHostBindings(): Promise<Array<{ binding: McpAppsBinding; origin: McpAppOrigin }>> {
+    if (!(await this.ensureQuery())) return []
+    await this.refreshMcpAppsCatalog({ force: true })
+    const providerSessionId = this.providerSessionId
+    if (!providerSessionId) return []
+    return this.mcpAppsCatalog.hostServers()
+      .filter(server => this.hostClientConfig(server) !== null)
+      .map(server => ({ binding: { ...this.mcpAppsBinding(server), hostClient: true as const }, origin: { providerSessionId } }))
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {

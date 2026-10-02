@@ -26,6 +26,11 @@ export interface McpAppsBinding {
   configGeneration: number
   /** Fingerprint of stable server configuration; excludes rotating credentials. */
   configFingerprint: string
+  /**
+   * Served by SuperOne's own connection to the server rather than the harness's:
+   * host-originated Apps on harnesses whose connection hides what they need.
+   */
+  hostClient?: true
 }
 
 export interface McpAppOrigin {

@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
-import { McpAppsError, MCP_APPS_EXTENSION, assertMcpAppSize, mcpAppResourceUri,
+import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { McpAppsError, assertMcpAppSize, mcpAppResourceUri,
   MCP_APP_HTML_MAX_BYTES, MCP_APP_DATA_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES,
   type McpAppToolResult, type McpToolDescriptor, type McpAppsProvider, type McpAppsBinding, type McpAppOrigin,
 } from '@superone/shared/mcp-apps'
@@ -11,13 +10,12 @@ import type { McpServerConfig } from '@superone/shared/agent-types'
 import type { MiniAppToolDefinition } from '@superone/shared/miniapp-types'
 import type { MiniappToolReply } from '../mcp/miniapp-mcp-tools'
 import { listMcpConfigs } from '../mcp-config-service'
-import { buildSafeEnv } from '../spawn-env'
 import { ensureShellPath } from '../shell-path'
 import log from '../logger'
+import { HOST_CLIENT_DISCOVERY_TIMEOUT_MS, connectHostClient, hostClientConfig, readTools } from './host-client'
 import { CompatRecords } from './compat-records'
 import { getCompatSession, setCompatSession, type CompatSession } from './compat-registry'
 
-const DISCOVERY_TIMEOUT_MS = 10_000
 const TOOLS_REFRESH_COOLDOWN_MS = 10_000
 /** Non-App servers need only one probe per node/config, not one extra spawn per session. */
 const discovery = new Map<string, { configKey: string; isApp: boolean }>()
@@ -27,31 +25,6 @@ const isModelVisible = (tool: McpToolDescriptor): boolean => tool._meta?.ui?.vis
 const structuredSummary = (value: unknown): string => {
   const text = JSON.stringify(value)
   return text.length <= 24_000 ? text : `${text.slice(0, 24_000)}\n[Structured result summary truncated; full data is available in the View.]`
-}
-
-/** tools/list _meta is an open JSON bag; malformed visibility must grant neither surface. */
-function normalizeTool(tool: McpToolDescriptor): McpToolDescriptor {
-  const ui = tool._meta?.ui
-  if (ui === undefined) return tool
-  if (ui && typeof ui === 'object' && !Array.isArray(ui) &&
-    (ui.visibility === undefined || (Array.isArray(ui.visibility) && ui.visibility.every(value => value === 'model' || value === 'app')))) return tool
-  return { ...tool, _meta: { ...tool._meta, ui: { ...(ui && typeof ui === 'object' ? ui : {}), visibility: [] } } }
-}
-
-async function readTools(client: Client): Promise<Map<string, McpToolDescriptor>> {
-  const tools = new Map<string, McpToolDescriptor>()
-  const serverInfo = client.getServerVersion()
-  const deadline = Date.now() + DISCOVERY_TIMEOUT_MS
-  let cursor: string | undefined
-  for (let page = 0; page < 100; page++) {
-    const timeout = deadline - Date.now()
-    if (timeout <= 0) throw new McpAppsError('timeout', 'MCP Apps tool discovery timed out')
-    const result = await client.listTools(cursor ? { cursor } : undefined, { timeout })
-    for (const tool of result.tools as McpToolDescriptor[]) tools.set(tool.name, { ...normalizeTool(tool), serverInfo })
-    cursor = result.nextCursor
-    if (!cursor) return tools
-  }
-  throw new McpAppsError('invalid', 'MCP tool discovery exceeded pagination limit')
 }
 
 export function compatConfigFingerprint(cwd: string, config: McpServerConfig): string {
@@ -76,7 +49,7 @@ export class LocalCompatSession implements CompatSession {
   private readonly records: CompatRecords
   private closed = false
   configKey = ''
-  constructor(readonly sessionId: string, readonly cwd: string, private readonly discoveryTimeoutMs = DISCOVERY_TIMEOUT_MS) { this.records = new CompatRecords(sessionId) }
+  constructor(readonly sessionId: string, readonly cwd: string, private readonly discoveryTimeoutMs = HOST_CLIENT_DISCOVERY_TIMEOUT_MS) { this.records = new CompatRecords(sessionId) }
 
   async discover(configs: McpServerConfig[]): Promise<void> {
     this.configKey = sessionConfigKey(this.cwd, configs)
@@ -96,23 +69,11 @@ export class LocalCompatSession implements CompatSession {
     const configKey = sessionConfigKey(this.cwd, [config])
     const cached = discovery.get(key)
     if (cached?.configKey === configKey && !cached.isApp) return
-    const client = new Client({ name: 'superone-mcp-apps-compat', version: '1.0.0' }, {
-      capabilities: { extensions: MCP_APPS_EXTENSION },
-    })
-    this.clients.add(client)
-    const transport = new StdioClientTransport({ command: config.command!, args: config.args,
-      cwd: this.cwd, env: buildSafeEnv(config.env ?? {}) as Record<string, string>, stderr: 'ignore' })
-    let timer: ReturnType<typeof setTimeout> | undefined
+    const stdio = hostClientConfig(config)
+    if (stdio?.type !== 'stdio') return
     try {
-      const tools = await Promise.race([
-        (async () => {
-          await client.connect(transport)
-          return readTools(client)
-        })(),
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new McpAppsError('timeout', 'MCP Apps discovery timed out')), this.discoveryTimeoutMs)
-        }),
-      ])
+      const { client, tools } = await connectHostClient('superone-mcp-apps-compat', stdio, this.cwd, this.discoveryTimeoutMs)
+      this.clients.add(client)
       const isApp = [...tools.values()].some(tool => tool._meta?.ui !== undefined || !!mcpAppResourceUri(tool))
       discovery.set(key, { configKey, isApp })
       if (!isApp || this.closed) { await client.close(); this.clients.delete(client); return }
@@ -127,9 +88,7 @@ export class LocalCompatSession implements CompatSession {
       // A failed probe proves no extension coverage. Keep this session's native path.
       log.debug('[McpAppsCompat] discovery stayed native', { server: config.name,
         reason: error instanceof Error ? error.message : String(error) })
-      await client.close().catch(() => undefined)
-      this.clients.delete(client)
-    } finally { if (timer) clearTimeout(timer) }
+    }
   }
 
   catalog(): Array<{ appId: string; tools: MiniAppToolDefinition[] }> {

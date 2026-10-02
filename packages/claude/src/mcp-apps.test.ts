@@ -97,6 +97,21 @@ describe('ClaudeMcpAppsCatalog', () => {
     catalog.update([{ name: 's', tools: [{ name: 'a.b' }, { name: 'a_b' }] }])
     expect(catalog.resolve('mcp__s__a_b')).toBeUndefined()
   })
+
+  it('offers only connected, configured App servers for a second connection', () => {
+    const catalog = new ClaudeMcpAppsCatalog()
+    const app = [{ name: 'search', _meta: { ui: { visibility: ['app'] } } }]
+    catalog.update([
+      { name: 'cad', status: 'connected', source: 'project', tools: app },
+      { name: 'legacy', status: 'connected', tools: [{ name: 'view', _meta: { 'ui/resourceUri': 'ui://x' } }] },
+      { name: 'plain', status: 'connected', source: 'user', tools: [{ name: 'run' }] },
+      { name: 'pending', status: 'pending', source: 'project', tools: app },
+      { name: 'signed-out', status: 'needs-auth', source: 'user', tools: app },
+      { name: 'superone', status: 'connected', source: 'sdk', tools: app },
+      { name: 'org', status: 'connected', scope: 'managed', source: 'managed', tools: app },
+    ])
+    expect(catalog.hostServers()).toEqual(['cad', 'legacy'])
+  })
 })
 
 describe('normalizeClaudeMcpName', () => {

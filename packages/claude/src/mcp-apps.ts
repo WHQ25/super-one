@@ -47,6 +47,10 @@ export interface ClaudeMcpStatusServer {
   status?: string
   serverInfo?: McpToolDescriptor['serverInfo']
   config?: unknown
+  /** Config scope; `managed` configs arrive with their URL and headers redacted. */
+  scope?: string
+  /** Where the definition came from (`sdk`, `plugin`, a config scope); absent on older CLIs. */
+  source?: string
   tools?: ClaudeMcpStatusTool[]
 }
 
@@ -81,6 +85,8 @@ export function toMcpToolDescriptor(tool: ClaudeMcpStatusTool): McpToolDescripto
 
 interface CatalogServer {
   config: unknown
+  scope?: string
+  source?: string
   tools: Map<string, McpToolDescriptor>
   /** Normalized name → tool; names that normalize alike map to null and never resolve. */
   qualified: Map<string, McpToolDescriptor | null>
@@ -132,7 +138,7 @@ export class ClaudeMcpAppsCatalog {
             const key = normalizeClaudeMcpName(tool.name)
             qualified.set(key, qualified.has(key) ? null : tool)
           }
-          return [s.name, { config: s.config, tools, qualified }]
+          return [s.name, { config: s.config, ...(s.scope ? { scope: s.scope } : {}), ...(s.source ? { source: s.source } : {}), tools, qualified }]
         }),
     )
   }
@@ -143,6 +149,18 @@ export class ClaudeMcpAppsCatalog {
 
   config(server: string): unknown {
     return this.servers.get(server)?.config
+  }
+
+  /**
+   * Servers SuperOne may also connect to itself for host-originated Apps:
+   * connected (so Claude's own trust checks have run), not hosted by the SDK
+   * host, not managed (its config arrives redacted), and declaring MCP Apps
+   * UI on a tool (the SDK passes `ui` through). No other server gets a second
+   * connection.
+   */
+  hostServers(): string[] {
+    return [...this.servers].filter(([name, server]) => this.statuses.get(name) === 'connected' && server.source !== 'sdk' && server.scope !== 'managed' &&
+      [...server.tools.values()].some(tool => tool._meta?.ui !== undefined || !!mcpAppResourceUri(tool))).map(([name]) => name)
   }
 
   /** Connection status as `mcpServerStatus()` last reported it (`needs-auth`, `connected`, …). */

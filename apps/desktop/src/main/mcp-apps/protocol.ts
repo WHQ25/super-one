@@ -31,7 +31,7 @@ interface Snapshot extends McpAppRegistration { owner: number; resource: NonNull
 
 function documentIdentity(app: ToolAppAttachment): string {
   const b = app.binding
-  return JSON.stringify([app.appInstanceId, b.node, b.session, b.server, b.account, b.configGeneration, b.configFingerprint, app.resourceUri, app.origin?.providerSessionId, app.origin?.originCallId])
+  return JSON.stringify([app.appInstanceId, b.node, b.session, b.server, b.account, b.configGeneration, b.configFingerprint, b.hostClient, app.resourceUri, app.origin?.providerSessionId, app.origin?.originCallId])
 }
 
 /** Registered, bounded snapshots only. The iframe never selects a filesystem path or provider. */

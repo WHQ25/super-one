@@ -101,8 +101,11 @@ export interface NativeActionPorts {
    * result as is, including its refusals; see `requestMcpApp`.
    */
   mcpApp?(request: McpAppDeviceRequest): Promise<unknown>
-  /** An MCP App View went fullscreen or back; native back and the edge swipe close it while open. */
-  mcpAppFullscreen?(active: boolean): Promise<void>
+  /**
+   * An MCP App View went fullscreen (`title` names it in the native header) or back (`null`);
+   * native back and the edge swipe close it while open.
+   */
+  mcpAppFullscreen?(view: { title: string } | null): Promise<void>
   /** Resend a user message the host never took, exactly as it went out. */
   resendFailedMessage(messageId: string): Promise<void>
   /** Pull a user message the host never took back into the composer. */
@@ -150,6 +153,12 @@ function parseSaveWidgetTemplate(message: NativeRequest): SaveWidgetTemplateRequ
 
 export function injectHostMessage(ref: RefObject<WebView | null>, message: unknown): void {
   ref.current?.injectJavaScript(`globalThis.__applyHost(${JSON.stringify(message)});true;`)
+}
+
+/** `mcpAppFullscreen`'s payload: the View's name while it is open, `null` once it closes. */
+export function parseMcpAppFullscreen(payload: unknown): { title: string } | null {
+  const value = payload as Record<string, unknown> | undefined
+  return value?.active === true ? { title: typeof value.title === 'string' ? value.title : '' } : null
 }
 
 export async function resolveNativeRequest(
@@ -235,7 +244,7 @@ export async function resolveNativeRequest(
       // Nested: the acknowledgement's `ok` below must not overwrite the host's.
       result = { response: await ports.mcpApp(parseMcpAppRequest(message.payload)) }
     } else if (message.action === 'mcpAppFullscreen') {
-      await ports.mcpAppFullscreen?.((message.payload as Record<string, unknown> | undefined)?.active === true)
+      await ports.mcpAppFullscreen?.(parseMcpAppFullscreen(message.payload))
     } else if (message.action === 'haptic') {
       const style = (message.payload as Record<string, unknown> | undefined)?.style
       // An unknown strength still ticks: feedback is better than a silent gesture.

@@ -8,6 +8,7 @@ import { invalidateGitResources, requestGitResource } from '../git-resource-cach
 import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import { refreshSessionCatalog } from '../session-catalog-refresh'
 import { useComposerSend } from './use-composer-send'
+import { useMcpAppFullscreen } from './use-mcp-app-fullscreen'
 import { useTranscriptSync } from './use-transcript-sync'
 import { SessionActivityContext, useWorkspaceActivity } from './use-session-activity'
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
@@ -207,7 +208,7 @@ export function MobileApp() {
   const [connectionState, setConnectionState] = useState<'connected' | 'reconnecting' | 'offline'>('offline')
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false)
   // An MCP App View covers the transcript; back and the edge swipe close it first.
-  const [mcpAppFullscreen, setMcpAppFullscreen] = useState(false)
+  const mcpApp = useMcpAppFullscreen(streaming)
   /**
    * Bumped whenever the host reports a session-list change, and once after a
    * reconnect — events that landed while the socket was down were never
@@ -656,7 +657,7 @@ export function MobileApp() {
         const app = findMcpAppAttachment(runtimeRef.current?.messages ?? [], request.appInstanceId, request.messageId)?.app
         return requestMcpApp(client, { projectPath: project.path, sessionId }, request, app)
       },
-      mcpAppFullscreen: async (active) => { setMcpAppFullscreen(active) },
+      mcpAppFullscreen: async (view) => { mcpApp.show(view) },
       openFile: async (path) => {
         if (!project) throw new Error('no active project')
         const target = resolveRemoteFilePath(project.path, path)
@@ -669,6 +670,7 @@ export function MobileApp() {
     inject(webRef, result)
   }
   const recoverChatView = (message: string) => {
+  const exitMcpAppFullscreen = () => inject(webRef, { type: 'exitMcpAppFullscreen' })
     const now = Date.now()
     const recovery = registerFatalChatViewError(fatalReloadRef.current, now)
     fatalReloadRef.current = recovery.state
@@ -689,7 +691,7 @@ export function MobileApp() {
     if (transcriptSync.receive(message)) return
     if (message.type === 'ready') {
       // A new document has no View open, whatever the last one said.
-      setMcpAppFullscreen(false)
+      mcpApp.show(null)
       inject(webRef, webViewTheme)
       inject(webRef, { type: 'setViewport', fontScale, locale })
       inject(webRef, { type: 'setConnection', ...connectionRef.current })
@@ -1611,6 +1613,11 @@ export function MobileApp() {
    * Rewrite the composer's command line and nothing else.
    *
    * Slash commands, the folder chips and `/add-dir`'s own navigation all land
+  const sendFromComposer = (kind: 'send' | 'steer' | 'soon') => {
+    pendingSendKind.current = kind
+    void send()
+    mcpApp.closeComposer()
+  }
    * here: anything the user typed on a later line — including mention chips,
    * which the plain editor cannot rebuild — has to survive being sent to a
    * panel and back.
@@ -1948,6 +1955,14 @@ export function MobileApp() {
           runUiAction(() => termRuntimeRef.current?.create(p.path, runtimeRef.current?.sessionId), setStatus, 'terminal failed')
         },
         onClose: (terminalId) => termRuntimeRef.current?.closeTab(terminalId),
+      mcpApp={route === 'chat' && mcpApp.view ? {
+        title: mcpApp.view.title,
+        composerOpen: mcpApp.composerOpen,
+        streaming,
+        unread: mcpApp.unread,
+        onExit: exitMcpAppFullscreen,
+        onToggleComposer: mcpApp.toggleComposer,
+      } : undefined}
       } : undefined}
       onOpenFiles={() => openFiles('session')}
       onOpenFilesRoot={() => runUiAction(() => loadDirectory(fileBrowserHome(browserMode, directoryPath)), setStatus, 'failed to load directory')}
@@ -1996,13 +2011,17 @@ export function MobileApp() {
     return () => back.remove()
   }, [screen, tabletMultiPane])
 
-  const exitMcpAppFullscreen = () => inject(webRef, { type: 'exitMcpAppFullscreen' })
-  // Registered after the handler above whenever a View opens, so it is asked first.
+  // Registered after the handler above whenever a View opens, so it is asked first; an open
+  // composer is put away before the View is left.
   useEffect(() => {
-    if (screen !== 'chat' || !mcpAppFullscreen) return
-    const back = BackHandler.addEventListener('hardwareBackPress', () => { exitMcpAppFullscreen(); return true })
+    if (screen !== 'chat' || !mcpApp.view) return
+    const back = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (mcpApp.composerOpen) mcpApp.toggleComposer()
+      else exitMcpAppFullscreen()
+      return true
+    })
     return () => back.remove()
-  }, [screen, mcpAppFullscreen])
+  }, [screen, mcpApp.view, mcpApp.composerOpen, mcpApp.toggleComposer])
 
   /**
    * The composer shows exactly one surface, chosen here.
@@ -2180,7 +2199,7 @@ export function MobileApp() {
           loadingConversation={sessionLoading || remoteDrafts.opening}
           // The tablet keeps the session list on screen, so it has nothing to
           // pull out and the gutter stays free for the transcript.
-          onEdgeSwipe={mcpAppFullscreen ? exitMcpAppFullscreen : tabletMultiPane ? undefined : () => setSessionSwitcherOpen(true)}
+          onEdgeSwipe={mcpApp.view ? exitMcpAppFullscreen : tabletMultiPane ? undefined : () => setSessionSwitcherOpen(true)}
           landing={!sessionId ? {
             provider: selectedProvider,
             harnessOptions,
@@ -2188,6 +2207,7 @@ export function MobileApp() {
             onHarness: selectHarness,
             activeProvider: harnessSelection.activeProvider,
             projectName: project?.name,
+          composerHidden={!!mcpApp.view && !mcpApp.composerOpen}
             onOpenProject: () => setScreen('project-picker'),
             worktreeSelection,
             worktreeInfo,
@@ -2346,11 +2366,11 @@ export function MobileApp() {
               hasContent,
               lastTextChangeAt: lastDraftChangeAtRef.current,
               now: Date.now(),
-            })) void send()
+            })) sendFromComposer('send')
           }}
-          onSend={() => { pendingSendKind.current = 'send'; void send() }}
-          onSteer={() => { pendingSendKind.current = 'steer'; void send() }}
-          onSteerSoon={() => { pendingSendKind.current = 'soon'; void send() }}
+          onSend={() => sendFromComposer('send')}
+          onSteer={() => sendFromComposer('steer')}
+          onSteerSoon={() => sendFromComposer('soon')}
           onStop={() => runUiAction(() => runtimeRef.current?.interrupt(), setStatus, 'interrupt failed')}
         />
       ) : null}

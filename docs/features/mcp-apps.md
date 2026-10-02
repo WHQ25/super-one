@@ -280,8 +280,12 @@ revokes the bridge (the View shows Restart).
 - Requests go RN → relay `mcp_app_request` → `canAccessSession` → the host
   executor. They are never coalesced or resent. A `callTool` lost after
   sending becomes `unknown_outcome`; other lost requests become `timeout`.
-- Modes are `inline` and `fullscreen` (an overlay of the chat area; Android
-  back and the iOS edge swipe exit it). Presentation mirrors desktop, with an
+- Modes are `inline` and `fullscreen`. Fullscreen covers the chat WebView with
+  the frameless View in the same document, so the View never reloads; RN swaps
+  the chat header for the View's (back exits, a toggle shows the composer,
+  which starts hidden and hides again after a send) and Android back and the
+  iOS edge swipe exit it. A restored View stays inline until activated.
+  Presentation mirrors desktop, with an
   always-visible muted header (`PortableBlockHeader`) and the row's `trailing`
   slot.
 

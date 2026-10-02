@@ -4016,7 +4016,6 @@ export const zh: Messages = {
     reloaded: '此应用打开了新页面，已被停止。',
     restart: '重新启动',
     unknownOutcome: '上一次操作的结果未知，未自动重试。',
-    exitFullscreen: '退出全屏',
     toolDetails: '工具详情',
     openInPanel: '在面板中打开',
     deny: '拒绝',

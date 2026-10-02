@@ -1,6 +1,6 @@
 import { WorkspaceButton } from '../ui/workspace-button'
-import { ArrowLeft, Bot, Folder, FolderPlus, MonitorSmartphone, MoreHorizontal, X } from 'lucide-react-native'
-import { Pressable, View } from 'react-native'
+import { ArrowLeft, Bot, Folder, FolderPlus, MessageSquare, MonitorSmartphone, MoreHorizontal, X } from 'lucide-react-native'
+import { ActivityIndicator, Pressable, View } from 'react-native'
 import { Text } from '../ui/text'
 import { AnimatedSessionTitle } from '../ui/animated-session-title'
 import type { HarnessId, SessionForkMode } from '@superone/shared/agent-types'
@@ -105,6 +105,8 @@ export function MobileHeader(props: {
     onCreate: () => void
     onClose: (terminalId: string) => void
   }
+  /** Chat only: an MCP App View is fullscreen and the header is its own; see `McpAppHeader`. */
+  mcpApp?: McpAppHeaderProps
   /** Commits the screen's draft. Back discards it, so only routes with a draft pass this. */
   onConfirm?: () => void
   /** Action label; defaults to `Confirm`. */
@@ -126,6 +128,7 @@ export function MobileHeader(props: {
   // The device list carries its own wordmark inside the page, and session search
   // is a search field with a Cancel beside it — both own their whole screen.
   if (props.route === 'pair' || props.route === 'session-search') return null
+  if (chat && props.mcpApp) return <McpAppHeader {...props.mcpApp} />
   return (
     <View style={chat ? [styles.top, styles.topBorderless] : styles.top}>
       <View style={props.onConfirm ? { minWidth: CONFIRM_SLOT_WIDTH, alignItems: 'flex-start' } : undefined}>
@@ -206,6 +209,48 @@ export function MobileHeader(props: {
           />
         )}
       </AnchoredMenu>
+    </View>
+  )
+}
+
+export interface McpAppHeaderProps {
+  title: string
+  composerOpen: boolean
+  /** A turn is running. The transcript is out of sight, so the toggle carries it. */
+  streaming: boolean
+  /** A turn finished while the composer was put away. */
+  unread: boolean
+  onExit: () => void
+  onToggleComposer: () => void
+}
+
+/**
+ * The header of a fullscreen MCP App View. The View takes the whole screen below it, the
+ * composer included: the trailing toggle brings that back, and back leaves fullscreen.
+ */
+function McpAppHeader(props: McpAppHeaderProps) {
+  const styles = useMobileStyles()
+  const { tokens } = useMobileTheme()
+  const label = props.composerOpen ? 'Hide composer'
+    : props.streaming ? 'Show composer, agent is working'
+      : props.unread ? 'Show composer, new reply' : 'Show composer'
+  return (
+    <View testID="mcp-app-header" style={[styles.top, styles.topBorderless]}>
+      <IconButton icon={ArrowLeft} label="Exit full screen" onPress={props.onExit} />
+      <View style={styles.headerTitleGroup}>
+        <View style={styles.headerTitleRow}>
+          <Text numberOfLines={1} style={styles.title}>{props.title}</Text>
+        </View>
+      </View>
+      <View style={{ overflow: 'visible' }}>
+        <IconButton icon={MessageSquare} label={label} active={props.composerOpen} onPress={props.onToggleComposer} />
+        {props.streaming && !props.composerOpen ? <ActivityIndicator testID="mcp-app-header-running" size="small"
+          color={tokens.colors.mutedForeground} pointerEvents="none"
+          style={{ position: 'absolute', right: 2, top: 2, transform: [{ scale: 0.6 }] }} />
+          : props.unread && !props.composerOpen ? <View testID="mcp-app-header-unread" pointerEvents="none" accessible={false} style={{
+            position: 'absolute', right: 10, top: 10, width: 8, height: 8, borderRadius: 4, backgroundColor: tokens.colors.error,
+          }} /> : null}
+      </View>
     </View>
   )
 }

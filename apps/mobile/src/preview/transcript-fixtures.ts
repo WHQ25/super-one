@@ -1,6 +1,7 @@
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { extendHistoryIndex } from '@superone/shared/session-history-index'
 import type { ReductionProjection } from '@superone/chat-view'
+import { answerPreviewMcpApp, previewMcpAppMessages } from './mcp-app-fixtures'
 
 /**
  * Every transient state the chat document can be in, selectable from the
@@ -14,7 +15,7 @@ import type { ReductionProjection } from '@superone/chat-view'
  */
 export const transcriptStates = [
   'live', 'restoring', 'history', 'history-slow', 'history-failed', 'index-loading', 'index-failed',
-  'creating', 'sending', 'api-retry', 'compacting', 'compact-error', 'recapping',
+  'creating', 'sending', 'api-retry', 'compacting', 'compact-error', 'recapping', 'mcp-app',
 ] as const
 export type TranscriptState = typeof transcriptStates[number]
 
@@ -48,6 +49,7 @@ export function transcriptProjection(state: TranscriptState, live: ChatMessage[]
     case 'compacting': return { ...session, sessionStatus: 'streaming', isCompacting: true, compactingStartedAt: Date.now() - 4_000 }
     case 'compact-error': return { ...session, compactError: 'Context compaction failed: the model returned an empty summary.' }
     case 'recapping': return { ...session, sessionStatus: 'streaming', isRecapping: true }
+    case 'mcp-app': return { ...session, messages: [...live, ...previewMcpAppMessages] }
     default: return session
   }
 }
@@ -75,5 +77,7 @@ export async function answerTranscriptRequest(state: TranscriptState, action: st
     const end = direction === 'before' ? position : Math.min(HISTORY_LENGTH, start + HISTORY_PAGE)
     return { messages: historyRows.slice(start, end) }
   }
+  // Nested like `native-actions`: the acknowledgement's `ok` must not overwrite the host's.
+  if (action === 'mcpApp') return { ok: true, response: answerPreviewMcpApp(payload) }
   throw new Error(`preview cannot answer ${action}`)
 }

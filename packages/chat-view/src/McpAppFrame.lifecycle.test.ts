@@ -7,7 +7,8 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { mcpAppContextState } from '@superone/shared/mcp-app-model-context'
-import { forgetMcpAppArrivals, markMcpAppActivated } from './mcp-app-document'
+import { exitMcpAppFullscreen, forgetMcpAppArrivals, markMcpAppActivated } from './mcp-app-document'
+import { requestNative } from './bridge'
 
 const wire = vi.hoisted(() => ({ pairs: [] as Array<{ transport: Transport; target: Window }>, native: vi.fn() }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string, params?: { error?: string }) => params?.error ? `${key}: ${params.error}` : key }) }))
@@ -34,7 +35,7 @@ afterEach(async () => {
   await act(async () => root?.unmount())
   await Promise.all(views.splice(0).map(view => view.close()))
   container?.remove(); root = undefined; container = undefined
-  wire.pairs = []; wire.native.mockReset(); forgetMcpAppArrivals()
+  wire.pairs = []; wire.native.mockReset(); vi.mocked(requestNative).mockReset(); forgetMcpAppArrivals()
   vi.unstubAllGlobals()
 })
 
@@ -48,8 +49,8 @@ async function mount(app: ToolAppAttachment = saved) {
 
 const activateButton = () => container!.querySelector<HTMLButtonElement>('[data-mcp-app-activate]')
 
-async function initialize(index: number) {
-  const view = new App({ name: 'fixture', version: '1' }, {}, { autoResize: false })
+async function initialize(index: number, capabilities: ConstructorParameters<typeof App>[1] = {}) {
+  const view = new App({ name: 'fixture', version: '1' }, capabilities, { autoResize: false })
   const inputs: unknown[] = [], results: unknown[] = []
   view.ontoolinput = input => { inputs.push(input) }
   view.ontoolresult = result => { results.push(result) }
@@ -160,4 +161,32 @@ it.each(['reload', 'unmount'])('cancels pending phone consent on %s and ignores 
   await act(async () => confirm.click())
   await send
   expect(wire.native.mock.calls.map(call => call[1].operation)).toEqual(['sendMessage'])
+})
+
+it('goes fullscreen without its frame, in the same document, and leaves through native back', async () => {
+  markMcpAppActivated(saved.appInstanceId)
+  await mount()
+  const { view } = await initialize(0, { availableDisplayModes: ['inline', 'fullscreen'] })
+  const frame = container!.querySelector('iframe')
+  await act(async () => { await expect(view.requestDisplayMode({ mode: 'fullscreen' })).resolves.toEqual({ mode: 'fullscreen' }) })
+  expect(container!.querySelector('[data-mcp-app-fullscreen]')).not.toBeNull()
+  // The native header names the View and is the way out, so the frame's own header is hidden, not unmounted.
+  expect(container!.querySelector('[data-embedded-tool-header]')?.parentElement?.className).toContain('[&>[data-embedded-tool-header]]:hidden')
+  expect(container!.querySelector('iframe')).toBe(frame)
+  expect(requestNative).toHaveBeenLastCalledWith('mcpAppFullscreen', { active: true, title: 'cad' })
+  await vi.waitFor(() => expect(view.getHostContext()?.displayMode).toBe('fullscreen'))
+  await act(async () => { expect(exitMcpAppFullscreen()).toBe(true) })
+  expect(container!.querySelector('[data-mcp-app-fullscreen]')).toBeNull()
+  expect(container!.querySelector('iframe')).toBe(frame)
+  expect(requestNative).toHaveBeenLastCalledWith('mcpAppFullscreen', { active: false })
+  await vi.waitFor(() => expect(view.getHostContext()?.displayMode).toBe('inline'))
+})
+
+it('keeps a restored View inline until it is activated, where its Activate action is', async () => {
+  await mount()
+  const { view } = await initialize(0, { availableDisplayModes: ['inline', 'fullscreen'] })
+  await act(async () => { await expect(view.requestDisplayMode({ mode: 'fullscreen' })).rejects.toThrow('Activate') })
+  expect(container!.querySelector('[data-mcp-app-fullscreen]')).toBeNull()
+  expect(activateButton()).not.toBeNull()
+  expect(requestNative).not.toHaveBeenCalledWith('mcpAppFullscreen', expect.objectContaining({ active: true }))
 })

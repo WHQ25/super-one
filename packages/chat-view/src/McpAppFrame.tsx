@@ -2,7 +2,7 @@ import { mcpAppServerTitle, mcpAppResourceModes } from '@superone/shared/mcp-app
 import { mcpAppMessageCapabilities } from '@superone/shared/mcp-apps-host/capabilities'
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Loader2, Maximize, Power, RotateCw, X } from 'lucide-react'
+import { Loader2, Maximize, Power, RotateCw } from 'lucide-react'
 import type { McpUiHostCapabilities } from '@modelcontextprotocol/ext-apps/app-bridge'
 import { boundedToolAppAttachment, McpAppsError, type McpUiResourceMeta, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { createMcpAppDocument, mcpAppHostContext } from '@superone/shared/mcp-apps-host'
@@ -78,7 +78,9 @@ export interface McpAppFrameProps {
  * The live half of a View: an opaque `srcdoc` frame and its AppBridge. Loaded lazily, so the
  * MCP SDK is only evaluated once a transcript actually shows an App. It wears the desktop's
  * frame (`McpAppChrome`): the same header actions, state card and collapse. The phone's one
- * other display mode is fullscreen, offered when both the resource and the View allow it.
+ * other display mode is fullscreen, offered when both the resource and the View allow it: the
+ * View covers the transcript without its frame, and the native header above names it and is
+ * the way back out.
  */
 export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolName, details }: McpAppFrameProps) {
   const app = useMemo(() => boundedToolAppAttachment(rawApp, true), [rawApp])
@@ -132,16 +134,24 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
     return next
   }, [])
 
+  const server = mcpAppServerTitle(app)
+  const available = initialized && !unknownOutcome && !revoked
+  const restoring = available && inactive
+  // Activate and the state card live in the frame's header, which fullscreen hides, so any
+  // of those states shows the View inline instead.
+  const expanded = fullscreen && available && !inactive
+
   useEffect(() => {
-    if (!fullscreen) return
-    // RN routes the Android back button and the iOS edge swipe here while this is open.
-    requestNative('mcpAppFullscreen', { active: true })
+    if (!expanded) return
+    // RN swaps its header for the View's and routes the Android back button and the iOS edge
+    // swipe here while this is open.
+    requestNative('mcpAppFullscreen', { active: true, title: server })
     const release = setMcpAppFullscreenExit(() => setFullscreen(false))
     return () => {
       release()
       requestNative('mcpAppFullscreen', { active: false })
     }
-  }, [fullscreen])
+  }, [expanded, server])
 
   // Layout effect: the bridge must listen before the frame's first script runs, and the
   // frame's WindowProxy exists from mount; `srcdoc` is only assigned once it listens.
@@ -165,13 +175,14 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
       restored: mcpAppNeedsActivation(app.appInstanceId),
       onInitialized: () => { setViewModes(host.appCapabilities()?.availableDisplayModes ?? ['inline']); setInitialized(true) },
       onSizeChanged: (size) => { if (size.height) setHeight(Math.min(MAX_INLINE_HEIGHT, Math.max(MIN_HEIGHT, size.height))) },
-      onUnknownOutcome: () => setUnknownOutcome(true),
+      onUnknownOutcome: () => { setUnknownOutcome(true); setFullscreen(false) },
       // A restored View tried to call out, or the host stopped serving it; either way it
       // waits for Activate, and the attempt points the user there.
       onError: (error) => {
         if (!(error instanceof McpAppsError) || error.code !== 'inactive') return
         setInactive(true)
         setActivating(false)
+        setFullscreen(false)
         emphasize()
       },
     })
@@ -196,8 +207,8 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
   useEffect(() => { void hostRef.current?.update(app).catch(() => {}) }, [app])
 
   useEffect(() => {
-    if (root) hostRef.current?.updateContext(readHostContext(root, scheme, fullscreen, meta))
-  }, [root, scheme, fullscreen])
+    if (root) hostRef.current?.updateContext(readHostContext(root, scheme, expanded, meta))
+  }, [root, scheme, expanded])
 
   const onLoad = () => {
     // The initial about:blank load precedes `srcdoc`; only the View's own document counts.
@@ -224,13 +235,10 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
     }
   }
 
-  const server = mcpAppServerTitle(app)
-  const available = initialized && !unknownOutcome && !revoked
-  const restoring = available && inactive
   // Host-initiated modes are limited to those both the resource and the View declare.
-  const canExpand = available && !fullscreen && viewModes.includes('fullscreen')
+  const canExpand = available && !restoring && !expanded && viewModes.includes('fullscreen')
     && (mcpAppResourceModes(meta) ?? ['fullscreen']).includes('fullscreen')
-  const shown = available && (fullscreen || !collapsed)
+  const shown = available && (expanded || !collapsed)
   const state: McpAppState | null = available ? null
     : revoked ? { message: t('mcpApp.revoked'), action: <McpAppStateButton icon={<RotateCw className="size-3.5" />} label={t('mcpApp.restart')} onClick={() => { setRevoked(false); setRestart((value) => value + 1) }} /> }
     : unknownOutcome ? { message: t('mcpApp.unknown') }
@@ -239,24 +247,22 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
     <div
       ref={setRoot}
       data-mcp-app={app.appInstanceId}
-      className={fullscreen
-        ? 'fixed inset-0 z-50 flex flex-col bg-background px-2 pt-[calc(var(--safe-area-top,0px)+0.5rem)] pb-[var(--safe-area-bottom,0px)]'
-        : undefined}
+      data-mcp-app-fullscreen={expanded || undefined}
+      className={expanded ? 'fixed inset-0 z-50 flex flex-col bg-background' : undefined}
     >
       <McpAppChrome
         app={app}
         toolName={toolName}
         details={details}
         state={state}
-        className={fullscreen ? 'my-0 flex min-h-0 flex-1 flex-col' : undefined}
-        collapsed={!fullscreen && collapsed}
-        onToggleCollapsed={!available || fullscreen ? undefined : () => {
+        // Hidden rather than unmounted: dropping the frame would remount the iframe and reload the View.
+        className={expanded ? 'my-0 flex min-h-0 flex-1 flex-col [&>[data-embedded-tool-header]]:hidden' : undefined}
+        collapsed={!expanded && collapsed}
+        onToggleCollapsed={!available || expanded ? undefined : () => {
           if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) setCollapsing(true)
           setCollapsed((value) => !value)
         }}
-        actions={fullscreen
-          ? <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.exitFullscreen')} onClick={() => display('inline')}><X className="size-3" /></IconButton>
-          : canExpand ? <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.fullscreen')} onClick={() => display('fullscreen')}><Maximize className="size-3" /></IconButton> : null}
+        actions={canExpand ? <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.fullscreen')} onClick={() => display('fullscreen')}><Maximize className="size-3" /></IconButton> : null}
         activation={restoring ? (
           <McpAppActivateButton emphasized={emphasized} disabled={activating} aria-label={t('mcpApp.activate')} data-mcp-app-result-omitted={app.toolResultOmitted ? '' : undefined}
             // Why the snapshot is empty belongs with the action that refills it.
@@ -270,14 +276,14 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
           </div>
         ) : null}
       >
-        <div className={fullscreen ? 'relative min-h-0 flex-1' : 'relative'}>
+        <div className={expanded ? 'relative min-h-0 flex-1' : 'relative'}>
           {/* Zero height rather than `hidden` while loading: the View lays out at its real width. */}
           <div
             aria-hidden={!shown || undefined}
-            style={{ height: fullscreen ? '100%' : shown ? height : 0 }}
+            style={{ height: expanded ? '100%' : shown ? height : 0 }}
             onTransitionEnd={(event) => { if (event.target === event.currentTarget && event.propertyName === 'height') setCollapsing(false) }}
-            className={cn('w-full overflow-hidden rounded-md',
-              shown && (app.resource?.meta.prefersBorder ?? meta?.prefersBorder) && 'ring-1 ring-border',
+            className={cn('w-full overflow-hidden', !expanded && 'rounded-md',
+              shown && !expanded && (app.resource?.meta.prefersBorder ?? meta?.prefersBorder) && 'ring-1 ring-border',
               collapsing && 'transition-[height] duration-200 ease-out motion-reduce:transition-none')}
           >
             <iframe
@@ -288,12 +294,12 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
               onLoad={onLoad}
               sandbox="allow-scripts allow-forms"
               className="block border-0"
-              style={fullscreen ? { width: '100%', height: '100%' } : { width: '100%', height }}
+              style={expanded ? { width: '100%', height: '100%' } : { width: '100%', height }}
             />
           </div>
           {consent ? (
             // Above the frame in fullscreen, where the frame covers the whole document.
-            <div className={fullscreen ? 'absolute inset-x-2 bottom-2 z-10' : 'mt-1.5'}>
+            <div className={expanded ? 'absolute inset-x-2 bottom-2 z-10' : 'mt-1.5'}>
               <McpAppConsentCard request={consent} />
             </div>
           ) : null}

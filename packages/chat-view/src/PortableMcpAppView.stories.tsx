@@ -213,6 +213,13 @@ export const NavigatesAway: Story = {
   args: { app: attachment(id('nav'), { resource: RESOURCE }) },
 }
 
+export const Fullscreen: Story = {
+  name: 'Fullscreen · frame hidden, native header owns the way out',
+  args: { app: attachment(id('fullscreen'), { resource: RESOURCE }) },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole('button', { name: 'Fullscreen' }, { timeout: 5000 }))
+  },
+}
 export const Narrow: Story = { name: 'Narrow · 320 px', args: { app: attachment(id('narrow'), { resource: RESOURCE }), width: 320 } }
 
 /** Ask the model's confirmation card lands below a short transcript and scrolls itself into view. */

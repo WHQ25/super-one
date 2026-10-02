@@ -106,6 +106,12 @@ export function ChatScreen(props: {
    */
   onEdgeSwipe?: () => void
   mentionQuery?: string | null
+  /**
+   * A fullscreen MCP App View has the screen: the composer and the panels stacked on it
+   * are hidden until the header's toggle brings them back. Collapsed prompts stay, since
+   * they wait on an answer.
+   */
+  composerHidden?: boolean
   mentionGroupLabels?: Partial<Record<string, string>>
   draft: string
   streaming: boolean
@@ -221,18 +227,22 @@ export function ChatScreen(props: {
       {!props.loadingConversation ? props.collapsedPrompts?.map((prompt) => (
         <PendingPromptBar key={prompt.request.requestId} prompt={prompt} onExpand={(id) => props.onExpandPrompt?.(id)} />
       )) : null}
-      {!props.loadingConversation ? <TodoPanel todos={props.todos} /> : null}
-      {!props.loadingConversation && props.queuedMessages.length ? (
-        <QueuedMessages
-          messages={props.queuedMessages}
-          canSteer={!!props.canSteer && props.streaming}
-          canSteerSoon={!!props.canSteerSoon && props.streaming}
-          onEdit={(id) => props.onEditQueued?.(id)}
-          onSteer={(id) => props.onSteerQueued?.(id)}
-          onSteerSoon={(id) => props.onSteerQueuedSoon?.(id)}
-        />
-      ) : null}
-      <ChatComposer {...props} />
+      {/* Hidden, never unmounted: the native editor clears a sent draft asynchronously, and
+          unmounting it mid-send would restore the draft on the way back. */}
+      <View testID="chat-composer-stack" style={props.composerHidden ? { display: 'none' } : undefined}>
+        {!props.loadingConversation ? <TodoPanel todos={props.todos} /> : null}
+        {!props.loadingConversation && props.queuedMessages.length ? (
+          <QueuedMessages
+            messages={props.queuedMessages}
+            canSteer={!!props.canSteer && props.streaming}
+            canSteerSoon={!!props.canSteerSoon && props.streaming}
+            onEdit={(id) => props.onEditQueued?.(id)}
+            onSteer={(id) => props.onSteerQueued?.(id)}
+            onSteerSoon={(id) => props.onSteerQueuedSoon?.(id)}
+          />
+        ) : null}
+        <ChatComposer {...props} />
+      </View>
     </View>
   )
 }

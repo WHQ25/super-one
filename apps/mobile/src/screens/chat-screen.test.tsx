@@ -25,6 +25,7 @@ function screenUi(overrides: {
   loadingConversation?: boolean
   todos?: boolean
   landing?: NewSessionLandingProps
+  composerHidden?: boolean
 } = {}) {
   return <SafeAreaProvider initialMetrics={{
     frame: { x: 0, y: 0, width: 390, height: 844 },
@@ -35,6 +36,7 @@ function screenUi(overrides: {
       webRef={createRef<WebView>()}
       loadingConversation={overrides.loadingConversation}
       landing={overrides.landing}
+      composerHidden={overrides.composerHidden}
       permissionModes={['default']}
       permissionMode="default"
       sandboxInfo={null}
@@ -134,4 +136,17 @@ test('the new-session landing covers the hidden renderer instead of stacking bel
     bottom: 0,
     left: 0,
   })
+})
+
+test('a fullscreen MCP App hides the composer and its panels without unmounting the editor', async () => {
+  const view = await renderWithTheme(screenUi({ todos: true, composerHidden: true }))
+
+  expect(screen.getByTestId('chat-webview')).toBeTruthy()
+  expect(screen.queryByLabelText('Message')).toBeNull()
+  // Still mounted: a send clears the native draft after the composer is put away.
+  const editor = screen.getByLabelText('Message', { includeHiddenElements: true })
+
+  await view.rerender(screenUi({ todos: true }))
+  expect(screen.getByLabelText('Message')).toBe(editor)
+  expect(screen.getByTestId('todo-panel')).toBeTruthy()
 })

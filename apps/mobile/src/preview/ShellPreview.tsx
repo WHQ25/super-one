@@ -54,7 +54,8 @@ import { isFullBleedScreen, shouldUseTabletMultiPane } from '../layout-state'
 import { worktreeSelectionError } from '../worktree-state'
 import { useMobileStyles, useMobileTheme } from '../theme/context'
 import { mobileWebViewTheme } from '../theme/tokens'
-import { injectHostMessage } from '../native-actions'
+import { injectHostMessage, parseMcpAppFullscreen } from '../native-actions'
+import { useMcpAppFullscreen } from '../navigation/use-mcp-app-fullscreen'
 import { Button, SelectionField, Sheet } from '../ui'
 import { StatusBanner } from '../ui/status-banner'
 import { GitIndicatorGallery } from './GitIndicatorGallery'
@@ -374,6 +375,8 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   const web = useRef<WebView>(null)
   const terminal = useRef<WebView>(null)
   const chooseAgent = (option: RemoteHarnessOption) => {
+  const mcpApp = useMcpAppFullscreen(page === 'Chat')
+  const exitMcpApp = () => injectHostMessage(web, { type: 'exitMcpAppFullscreen' })
     const value = option.provider
     setAcpAgentId(option.acpAgentId)
     setProvider(value); setHarness(value); setMode(HARNESS_LAUNCH_OPTIONS[value].permissionModes.includes('default') ? 'default' : HARNESS_LAUNCH_OPTIONS[value].permissionModes[0]!) }
@@ -386,9 +389,14 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   /** The document's history requests, answered (slowly, or not at all) per transcript state. */
   const onChatMessage = (raw: string) => {
     const message = JSON.parse(raw)
-    if (message.type === 'ready') paintChat()
+    if (message.type === 'ready') { mcpApp.show(null); paintChat() }
     if (message.type !== 'requestNative') return
     answerTranscriptRequest(transcript, message.action, message.payload)
+    if (message.action === 'mcpAppFullscreen') {
+      mcpApp.show(parseMcpAppFullscreen(message.payload))
+      injectHostMessage(web, { type: 'nativeActionResult', requestId: message.requestId, result: { ok: true } })
+      return
+    }
       .then((result) => injectHostMessage(web, { type: 'nativeActionResult', requestId: message.requestId, result }))
       .catch((error: Error) => injectHostMessage(web, { type: 'nativeActionResult', requestId: message.requestId, error: error.message }))
   }
@@ -398,6 +406,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
     setMessages((current) => [...current, { ...initialMessages[0], id: `preview-${current.length}`, content: [{ type: 'text', text: captured.text }], attachments }])
     chatDraft.clearSent(captured.revision); setAttachments([]); setPage('Chat')
   }, (message) => Alert.alert('Could not send', message))
+    mcpApp.closeComposer()
   const chat = page === 'New session' || page === 'Chat' || page === 'Workspace'
   // Standalone galleries share the catch-all 'files' route but draw themselves.
   const gallery = page === 'Network ledger' || page === 'Drafts' || page === 'Icons' || page === 'Git indicators' || page === 'Session status' || page === 'Composer suggestions' || page === 'Chip editor' || page === 'LAN browser' || page === 'Loading states' || page === 'Usage'
@@ -457,6 +466,8 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
         }} onSwitchSession={() => setDrawer(true)} onOpenTerminal={() => setPage('Terminal')} onOpenFiles={() => setPage('Files')}
           onFork={page === 'Chat' ? () => {} : undefined}
           files={route === 'files' ? { kind: previewBrowserMode.kind,
+          mcpApp={chat && mcpApp.view ? { title: mcpApp.view.title, composerOpen: mcpApp.composerOpen, streaming: page === 'Chat',
+            unread: mcpApp.unread, onExit: exitMcpApp, onToggleComposer: mcpApp.toggleComposer } : undefined}
             finderOpen: page === 'File search' || page === 'Go to folder',
             onToggleFinder: () => setPage(page === 'File search' ? 'Files'
               : page === 'Go to folder' ? 'Computer files'
@@ -472,7 +483,8 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
           : !!worktreeSelectionError(worktreeDraft, PREVIEW_BRANCHES, PREVIEW_CHECKED_OUT)} />
         <StatusBanner message={editorError} onDismiss={() => setEditorError('')} />
         <View style={isFullBleedScreen(route) ? styles.flex : styles.page}>
-          {chat ? <ChatScreen provider={provider} onEdgeSwipe={() => setDrawer(true)} loadingConversation={page === 'Chat' && transcript === 'restoring'} landing={page === 'New session' ? {
+          {chat ? <ChatScreen provider={provider} onEdgeSwipe={mcpApp.view ? exitMcpApp : () => setDrawer(true)}
+            composerHidden={!!mcpApp.view && !mcpApp.composerOpen} loadingConversation={page === 'Chat' && transcript === 'restoring'} landing={page === 'New session' ? {
               provider, harnessOptions: PREVIEW_HARNESS_OPTIONS,
               activeHarnessKey: suggestionHarnessKey(provider, acpAgentId), onHarness: chooseAgent,
               projectName: projectList.find((item) => item.path === projectPath)?.name,

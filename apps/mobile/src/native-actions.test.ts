@@ -242,8 +242,10 @@ describe('native chat actions', () => {
     await expect(resolveNativeRequest({
       type: 'requestNative', requestId: 'link', action: 'mcpApp', payload: { messageId: 'm', appInstanceId: 'view-1', operation: 'openLink', url: 'https://example.com' },
     }, target)).resolves.toMatchObject({ error: 'invalid mcpApp payload' })
-    await resolveNativeRequest({ type: 'requestNative', requestId: 'fs', action: 'mcpAppFullscreen', payload: { active: true } }, target)
-    expect(target.mcpAppFullscreen).toHaveBeenCalledWith(true)
+    await resolveNativeRequest({ type: 'requestNative', requestId: 'fs', action: 'mcpAppFullscreen', payload: { active: true, title: 'Maps' } }, target)
+    expect(target.mcpAppFullscreen).toHaveBeenLastCalledWith({ title: 'Maps' })
+    await resolveNativeRequest({ type: 'requestNative', requestId: 'fs2', action: 'mcpAppFullscreen', payload: { active: false } }, target)
+    expect(target.mcpAppFullscreen).toHaveBeenLastCalledWith(null)
   })
 
   it('opens the fullscreen viewer for a picture the transcript already shows', async () => {

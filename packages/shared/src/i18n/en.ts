@@ -3923,7 +3923,6 @@ export type Messages = {
     reloaded: string
     restart: string
     unknownOutcome: string
-    exitFullscreen: string
     toolDetails: string
     openInPanel: string
     deny: string
@@ -8082,7 +8081,6 @@ export const en: Messages = {
     reloaded: 'This app opened a new page and was stopped.',
     restart: 'Restart',
     unknownOutcome: 'The result of the last action is unknown. It was not retried.',
-    exitFullscreen: 'Exit Full Screen',
     toolDetails: 'Tool Details',
     openInPanel: 'Open in Panel',
     deny: 'Deny',

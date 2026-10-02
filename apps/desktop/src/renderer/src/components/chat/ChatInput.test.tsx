@@ -54,6 +54,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     pendingQuestion: null as unknown,
     pendingPlanApproval: null as unknown,
     awaitingAssistantReply: false,
+    pluginStatus: {} as Record<string, string>,
   }
 
   const chatActions = {

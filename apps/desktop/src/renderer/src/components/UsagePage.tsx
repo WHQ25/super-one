@@ -464,7 +464,7 @@ export function UsagePage() {
           ) : isAll ? (
             isAreaRange
               ? <DailyHarnessAreaChart data={dailyByHarness} colors={harnessColors} t={t} />
-              : <DailyHarnessChart data={dailyByHarness} series={activeSeries} colors={harnessColors} t={t} showTopLabels={preset === '7d'} />
+              : <DailyHarnessChart data={dailyByHarness} series={activeSeries} colors={harnessColors} t={t} />
           ) : (
             isAreaRange
               ? <DailyTokenTypeAreaChart data={dailyByTokenType} colors={typeColors} t={t} />
@@ -960,7 +960,7 @@ function ModelAxisTick({
   )
 }
 
-function DailyHarnessChart({ data, series, colors, t, showTopLabels }: { data: DailyHarnessRow[]; series: readonly HarnessSeries[]; colors: HarnessColors; t: (key: string) => string; showTopLabels?: boolean }) {
+function DailyHarnessChart({ data, series, colors, t }: { data: DailyHarnessRow[]; series: readonly HarnessSeries[]; colors: HarnessColors; t: (key: string) => string }) {
   const rowTotal = (d: DailyHarnessRow) => HARNESS_SERIES.reduce((sum, { key }) => sum + d[key], 0)
   const totals = data.map(rowTotal)
   const positives = totals.filter((v) => v > 0)
@@ -968,7 +968,7 @@ function DailyHarnessChart({ data, series, colors, t, showTopLabels }: { data: D
   return (
     <SizedChart height={240}>
       {({ width: cw, height: ch }) => (
-        <BarChart width={cw} height={ch} data={data} margin={{ top: showTopLabels ? 24 : 8, right: 8, left: 8, bottom: 4 }} barCategoryGap={showTopLabels ? 12 : 4}>
+        <BarChart width={cw} height={ch} data={data} margin={{ top: 8, right: 8, left: 8, bottom: 4 }} barCategoryGap={data.length <= 7 ? 12 : 4}>
           <defs>
             {HARNESS_SERIES.map(({ key }) => (
               <linearGradient key={key} id={`bar-${key}`} x1="0" y1="0" x2="0" y2="1">
@@ -1007,17 +1007,8 @@ function DailyHarnessChart({ data, series, colors, t, showTopLabels }: { data: D
               ? <HarnessTooltip row={payload[0]?.payload as DailyHarnessRow | undefined} label={label} colors={colors} t={t} />
               : null}
           />
-          {series.map(({ key, label }, idx) => (
-            <Bar key={key} dataKey={key} name={label} fill={`url(#bar-${key})`} radius={[3, 3, 0, 0]}>
-              {idx === series.length - 1 && showTopLabels && (
-                <LabelList
-                  dataKey={rowTotal}
-                  position="top"
-                  formatter={(v) => typeof v === 'number' && v > 0 ? formatNumber(v) : ''}
-                  style={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                />
-              )}
-            </Bar>
+          {series.map(({ key, label }) => (
+            <Bar key={key} dataKey={key} name={label} fill={`url(#bar-${key})`} radius={[3, 3, 0, 0]} />
           ))}
         </BarChart>
       )}

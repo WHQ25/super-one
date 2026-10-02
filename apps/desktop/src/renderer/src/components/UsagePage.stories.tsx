@@ -125,7 +125,7 @@ export const Empty: Story = { decorators: [seed({})] }
 /** Today: the chart breaks tokens down per model; the grok model has no list price. */
 export const Populated: Story = { decorators: [seed({ days: 120 })] }
 
-/** Last 7 days: daily bars by harness with totals on top. */
+/** Last 7 days: daily bars by harness without totals attached to an individual bar. */
 export const LastSevenDays: Story = {
   decorators: [seed({ days: 120 })],
   play: async ({ canvasElement }) => {

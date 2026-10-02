@@ -134,6 +134,7 @@ describe('code widget on the phone', () => {
       '--muted': 'oklch(0.269 0 0)',
       '--background': 'oklch(0.145 0 0)',
       '--foreground': 'oklch(0.985 0 0)',
+      '--border': 'oklch(0.269 0 0)',
     } as Record<string, string>)[token] ?? '')
 
     expect(vars['--color-background-primary']).toBe('oklch(0.205 0 0)')
@@ -144,7 +145,10 @@ describe('code widget on the phone', () => {
     expect(vars['--color-text-primary']).toBe('oklch(0.985 0 0)')
     // A token the host cannot resolve keeps the widget's built-in default rather than
     // being overridden with an empty string.
-    expect(vars).not.toHaveProperty('--color-border-primary')
+    expect(vars).not.toHaveProperty('--color-text-secondary')
+    // The dark `--border` equals `--muted`, so a mapped border would vanish on the
+    // secondary surface widgets draw lines on; the built-in translucent ink stays.
+    expect(vars).not.toHaveProperty('--color-border-tertiary')
   })
 
   it('applies host colours inside the frame rather than only toggling dark', () => {

@@ -125,9 +125,10 @@ export const WIDGET_THEME_TOKEN_SOURCES = {
   '--color-text-primary': '--foreground',
   '--color-text-secondary': '--muted-foreground',
   '--color-text-tertiary': '--muted-foreground',
-  '--color-border-primary': '--border',
-  '--color-border-secondary': '--border',
-  '--color-border-tertiary': '--border',
+  // `--color-border-*` stay on the built-in translucent ink on purpose. Widgets draw
+  // borders and gridlines on `--color-background-secondary`, and the host's dark
+  // `--border` is the same opaque colour as `--muted`, so mapping it made every such
+  // line vanish. A translucent ink reads on any host surface, as on the desktop.
   // Short aliases the older diagram styles still read.
   '--p': '--foreground',
   '--s': '--muted-foreground',

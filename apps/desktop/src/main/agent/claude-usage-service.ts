@@ -1,11 +1,9 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { homedir, userInfo } from 'node:os'
-import { join } from 'node:path'
+import { writeFileSync } from 'node:fs'
 import log from '../logger'
 import type { ClaudeRateLimits } from '@superone/shared/agent-types'
 import { parseUsage, type UsageResponse } from './claude-usage-parse'
-import { keychainServiceNames } from './claude-account-parse'
+import { claudeCredentialsPath, findClaudeCredentialStore } from './claude-credential-store'
 import { createHash, randomUUID } from 'node:crypto'
 import { SubscriptionUsageTracker } from '@superone/shared/subscription-usage'
 import { AsyncCoalescer } from '../async-cache'
@@ -15,7 +13,6 @@ const USAGE_URL = `${BASE_API_URL}/api/oauth/usage`
 const REFRESH_URL = 'https://platform.claude.com/v1/oauth/token'
 const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 const SCOPES = 'user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload'
-const CRED_FILE_NAME = '.credentials.json'
 const USAGE_USER_AGENT = 'claude-code/2.1.69'
 const REFRESH_BUFFER_MS = 5 * 60 * 1000
 const MIN_USAGE_FETCH_INTERVAL_MS = 5 * 60 * 1000
@@ -74,15 +71,6 @@ function usageStateFor(credentialDir: string | null): DomainUsageState {
   return state
 }
 
-function configDir(): string {
-  return process.env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), '.claude')
-}
-
-/** `.credentials.json` for one domain. The CLI keeps it inside the securestorage dir. */
-function credentialsPath(credentialDir: string | null): string {
-  return join(credentialDir ?? configDir(), CRED_FILE_NAME)
-}
-
 function tryParseJson<T>(text: string | null | undefined): T | null {
   if (!text) return null
   try {
@@ -92,61 +80,12 @@ function tryParseJson<T>(text: string | null | undefined): T | null {
   }
 }
 
-function tryParseCredentialJSON(text: string | null): CredentialFile | null {
-  if (!text) return null
-  const direct = tryParseJson<CredentialFile>(text)
-  if (direct) return direct
-  let hex = text.trim()
-  if (hex.startsWith('0x') || hex.startsWith('0X')) hex = hex.slice(2)
-  if (!hex || hex.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(hex)) return null
-  return tryParseJson<CredentialFile>(Buffer.from(hex, 'hex').toString('utf8'))
-}
-
-function readKeychain(service: string, account: string): string | null {
-  if (process.platform !== 'darwin') return null
-  for (const args of [
-    ['find-generic-password', '-s', service, '-a', account, '-w'],
-    ['find-generic-password', '-s', service, '-w'],
-  ]) {
-    try {
-      const value = execFileSync('security', args, { encoding: 'utf8' }).trim()
-      if (value) return value
-    } catch {
-      // item missing for these args; try next candidate
-    }
-  }
-  return null
-}
-
-function loadKeychainCredentials(account: string, credentialDir: string | null): LoadedCreds | null {
-  for (const service of keychainServiceNames(credentialDir)) {
-    const parsed = tryParseCredentialJSON(readKeychain(service, account))
-    const oauth = parsed?.claudeAiOauth
-    if (parsed && oauth?.accessToken) {
-      return { credentialDir, oauth, source: 'keychain', serviceName: service, account, fullData: parsed }
-    }
-  }
-  return null
-}
-
-function loadFileCredentials(credentialDir: string | null): LoadedCreds | null {
-  const file = credentialsPath(credentialDir)
-  if (!existsSync(file)) return null
-  try {
-    const parsed = tryParseCredentialJSON(readFileSync(file, 'utf8'))
-    const oauth = parsed?.claudeAiOauth
-    if (parsed && oauth?.accessToken) {
-      return { credentialDir, oauth, source: 'file', serviceName: null, account: null, fullData: parsed }
-    }
-  } catch (e) {
-    log.warn('[claude-usage] credentials file read failed: %s', String(e))
-  }
-  return null
-}
-
 function loadCredentials(credentialDir: string | null): LoadedCreds | null {
-  const account = userInfo().username
-  const stored = loadKeychainCredentials(account, credentialDir) ?? loadFileCredentials(credentialDir)
+  const found = findClaudeCredentialStore(credentialDir, (data) => !!(data as CredentialFile).claudeAiOauth?.accessToken)
+  const stored: LoadedCreds | null = found && {
+    credentialDir, oauth: (found.data as CredentialFile).claudeAiOauth!, source: found.source,
+    serviceName: found.serviceName, account: found.account, fullData: found.data as CredentialFile,
+  }
   // CLAUDE_CODE_OAUTH_TOKEN describes the ambient environment, not a specific account. Letting it
   // stand in for a named domain would report the env token's usage under that account's identity.
   const envToken = credentialDir ? undefined : process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()
@@ -175,7 +114,7 @@ function saveCredentials(creds: LoadedCreds): void {
   const text = JSON.stringify(creds.fullData)
   if (creds.source === 'file') {
     try {
-      writeFileSync(credentialsPath(creds.credentialDir), text, { mode: 0o600 })
+      writeFileSync(claudeCredentialsPath(creds.credentialDir), text, { mode: 0o600 })
     } catch (e) {
       log.error('[claude-usage] write credentials file failed: %s', String(e))
     }

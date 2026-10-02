@@ -3928,6 +3928,10 @@ export type Messages = {
     pip: string
     shownInPanel: string
     shownInPip: string
+    openWith: string
+    superOnePreview: string
+    openWithApp: string
+    openFileFailed: string
   }
   filePreview: {
     loadFailed: string
@@ -8067,6 +8071,10 @@ export const en: Messages = {
     pip: 'Picture in Picture',
     shownInPanel: 'Showing in the Activity panel.',
     shownInPip: 'Showing in picture-in-picture.',
+    openWith: 'Open With',
+    superOnePreview: 'SuperOne Preview',
+    openWithApp: 'Open with {{app}}',
+    openFileFailed: 'Could not open {{name}}: {{error}}',
   },
   filePreview: {
     loadFailed: 'Could not read this file',

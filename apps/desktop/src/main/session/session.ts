@@ -1176,6 +1176,13 @@ export class Session implements SessionContract {
     return this.backend.getMcpAppsProvider(binding, origin)
   }
 
+  async getMcpAppsHostBindings(options: { start?: boolean } = {}): Promise<Array<{ binding: McpAppsBinding; origin: McpAppOrigin }>> {
+    if (!this.backend.getMcpAppsHostBindings || (options.start === false && !this.backendStarted)) return []
+    await this.ensureStarted()
+    this.touchRuntimeActivity()
+    return this.backend.getMcpAppsHostBindings()
+  }
+
   async getMcpServerStatus(): Promise<McpServerInfo[]> {
     if (!this.backendStarted) return []
     this.touchRuntimeActivity()

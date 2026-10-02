@@ -14,6 +14,8 @@ export interface McpAppOwner {
   title?: string
   toolName?: string
   details?: ReactNode
+  /** A View the host opened outside the transcript: it has no inline row and closes with its tab. */
+  onClose?: () => void
 }
 interface FrameOwner { iframe: HTMLIFrameElement; revoke(): void; failed: boolean }
 const frames = new Map<string, FrameOwner>()
@@ -78,6 +80,8 @@ export function resumeMcpAppFullscreenFrames(): void {
 interface McpAppLayoutState {
   views: Record<string, McpAppOwner>
   claim(owner: Omit<McpAppOwner, 'mode'>): () => void
+  /** Show a host-opened View (`onClose` set) in its own activity tab. */
+  openHost(owner: Omit<McpAppOwner, 'mode' | 'row'> & { onClose: () => void }, maximized?: boolean): void
   /** `maximized` applies to the fullscreen activity tab only. */
   setMode(key: string, mode: McpAppSurface, maximized?: boolean): void
   surface(key: string, mode: McpAppSurface, element: HTMLElement | null): void
@@ -120,9 +124,23 @@ export const useMcpAppLayout = create<McpAppLayoutState>((set, get) => ({
       })
     }
   },
+  openHost(owner, maximized = false) {
+    const key = owner.app.appInstanceId
+    if (!get().views[key]) set(state => ({ views: { ...state.views, [key]: { ...owner, row: null, mode: 'fullscreen' } } }))
+    syncMcpAppTab(key, 'fullscreen', maximized)
+  },
   setMode(key, mode, maximized = true) {
     const owner = get().views[key]
     if (!owner) return
+    if (owner.onClose && mode === 'inline') {
+      // A host-opened View has no row to return to: leaving its tab closes it.
+      move(key, true)
+      syncMcpAppTab(key, 'inline')
+      set(state => { const views = { ...state.views }; delete views[key]; return { views } })
+      surfaces.delete(key)
+      owner.onClose()
+      return
+    }
     // Park synchronously before React can remove the previous surface.
     move(key, true)
     set(state => ({ views: { ...state.views, [key]: { ...owner, mode } } }))

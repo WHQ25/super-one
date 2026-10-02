@@ -4021,6 +4021,10 @@ export const zh: Messages = {
     pip: '画中画',
     shownInPanel: '正在活动面板中显示。',
     shownInPip: '正在画中画中显示。',
+    openWith: '打开方式',
+    superOnePreview: 'SuperOne 预览',
+    openWithApp: '用 {{app}} 打开',
+    openFileFailed: '无法打开 {{name}}：{{error}}',
   },
   filePreview: {
     loadFailed: '无法读取该文件',

@@ -6,7 +6,7 @@ import type { AgentEvent, RemoteCommand } from '@superone/shared/agent-types'
 import { mcpAppContent } from '@superone/shared/mcp-apps-content'
 import { parseSessionKey, type SessionRef } from '@superone/shared/environment/refs'
 import { McpAppsError } from '@superone/shared/mcp-apps'
-import type { McpAppHostRequest, McpAppHostResult, McpAppRequester } from '@superone/shared/mcp-apps'
+import type { McpAppHostRequest, McpAppHostResult, McpAppRequester, ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { findMcpAppAttachment, mcpAppEventAttachment } from '@superone/shared/mcp-apps-state'
 import { RemoteMcpAppFreshness } from './remote-freshness'
 import type { SessionManagerImpl } from '../session/session-manager'
@@ -15,6 +15,7 @@ import { McpAppExecutor, type McpAppResolvedTarget } from './executor-core'
 import { routeMcpAppsProviderRequest } from './provider-ipc'
 import { mcpAppSessionKey } from './session-key'
 import { watchSessionCloses, watchSessionDeletes } from '../session-list-watch'
+import { hostFileApp, readHostFile, releaseHostFileApps, subscribeHostFile, unsubscribeHostFile, updateHostFileApp, writeHostFile } from './host-files'
 
 interface MobileSender {
   handleRemoteCommand(command: RemoteCommand, respond?: RemoteResponder, source?: { deviceId: string; transport: 'lan' | 'relay' }): Promise<void>
@@ -38,6 +39,8 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
   if (executor) return
   const local = (id: string) => manager.getSession(id) ?? manager.resumeSession(id, { passive: true })
   const resolve = async (ref: SessionRef, appInstanceId: string, messageId: string | undefined, signal: AbortSignal): Promise<McpAppResolvedTarget> => {
+    const file = hostFileApp(ref, appInstanceId)
+    if (file) return { ref, node: 'local', projectPath: file.projectPath, messageId: '', app: file.app }
     if (ref.environmentId === 'local') {
       const session = local(ref.sessionId)
       const target = findMcpAppAttachment(session.snapshot.messages, appInstanceId, messageId)
@@ -60,6 +63,8 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
     async persist(target, update, signal) {
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
       const compact = update.resource?.html !== undefined ? { ...update, resource: resourceStore().put(update.resource as McpAppResourceSnapshot) } : update
+      const file = hostFileApp(target.ref, target.app.appInstanceId)
+      if (file) { updateHostFileApp(file, compact); return }
       const event: AgentEvent = { type: 'mcp_app_updated', sessionId: target.ref.sessionId, projectPath: target.projectPath,
         messageId: target.messageId, appInstanceId: target.app.appInstanceId, update: compact }
       if (target.ref.environmentId === 'local') local(target.ref.sessionId).emitHostEvent(event)
@@ -86,6 +91,21 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
     async provider(target, operation, signal) {
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
       return routeMcpAppsProviderRequest(id => local(id), target.ref.environmentId, { ...operation, binding: target.app.binding, origin: target.app.origin! }, signal, { propagateTransportErrors: true })
+    },
+    async hostResource(target, request, signal) {
+      const file = hostFileApp(target.ref, target.app.appInstanceId)
+      if (!file) throw new McpAppsError('denied', 'Host resources are unavailable to this App')
+      if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
+      switch (request.kind) {
+        case 'read': return readHostFile(file, request.uri, request.representation)
+        case 'write': return writeHostFile(file, request.params)
+        case 'subscribe': return subscribeHostFile(file, request.uri)
+        case 'unsubscribe': return unsubscribeHostFile(file)
+      }
+    },
+    fileToolMeta(target) {
+      const file = hostFileApp(target.ref, target.app.appInstanceId)
+      return file ? { 'openai/resource': { path: file.path } } : {}
     },
     async createMessageSession(target, signal) {
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App message cancelled')
@@ -145,7 +165,7 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
     const app = mcpAppEventAttachment(event)
     if (app) executor!.observeLive({ environmentId: 'local', sessionId: sid }, app)
   })
-  const releaseSession = (ref: SessionRef) => { executor!.releaseSession(ref); remoteFreshness.releaseSession(ref) }
+  const releaseSession = (ref: SessionRef) => { executor!.releaseSession(ref); remoteFreshness.releaseSession(ref); releaseHostFileApps(ref) }
   watchSessionCloses(releaseSession)
   watchSessionDeletes(ids => { for (const sessionId of ids) releaseSession({ environmentId: 'local', sessionId }) })
   // Time-based cleanup only applies to short-lived approvals/rate windows.
@@ -154,6 +174,9 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
 }
 
 export function releaseMcpAppRequester(requester: McpAppRequester): void { executor?.releaseRequester(requester) }
+
+/** A View the host just opened itself is live, like one from a new provider event. */
+export function activateMcpAppHostView(ref: SessionRef, app: ToolAppAttachment): void { executor?.observeLive(ref, app) }
 
 /** Remote hydrate never calls this; only the live turn stream establishes freshness. */
 export function observeRemoteMcpAppEvent(event: AgentEvent): void {

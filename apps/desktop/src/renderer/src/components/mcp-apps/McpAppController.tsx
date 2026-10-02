@@ -121,13 +121,15 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
   const context = useMemo(() => {
     const css = getComputedStyle(document.documentElement)
     return mcpAppHostContext({ theme: isDark ? 'dark' : 'light', platform: 'desktop', locale: i18n.language,
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, displayMode: mode, availableDisplayModes: mcpAppResourceModes(ready?.meta) ?? ['inline', 'fullscreen', 'pip'],
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, displayMode: mode,
+      // A View opened on a file lives in its tab; returning inline would close it.
+      availableDisplayModes: app.file ? ['fullscreen'] : mcpAppResourceModes(ready?.meta) ?? ['inline', 'fullscreen', 'pip'],
       width: mode === 'inline' ? inlineWidth : surface === 'fullscreen' ? fullscreenWidth : surface === 'pip' ? viewport.width : undefined,
       maxHeight: mode === 'inline' ? undefined : surface === 'fullscreen' ? (panelHeight ?? 0) - 34 : surface === 'pip' ? viewport.height : undefined,
       colors: { background: css.getPropertyValue('--background').trim(), foreground: css.getPropertyValue('--foreground').trim(), muted: css.getPropertyValue('--muted').trim(), mutedForeground: css.getPropertyValue('--muted-foreground').trim(), border: css.getPropertyValue('--border').trim(), primary: css.getPropertyValue('--primary').trim() },
       fontFamily: css.fontFamily, monoFontFamily: css.getPropertyValue('--font-mono').trim(), radius: css.getPropertyValue('--radius').trim(),
     })
-  }, [isDark, i18n.language, mode, surface, inlineWidth, fullscreenWidth, panelHeight, viewport, ready?.meta])
+  }, [isDark, i18n.language, mode, surface, inlineWidth, fullscreenWidth, panelHeight, viewport, ready?.meta, app.file])
   const executor = useMemo(() => ready ? createDesktopMcpAppExecutor({ api, route, app, document: ready.document, consent, displayMode: requestMode,
     navigate: navigateMcpAppSession,
   }) : null, [api, route, app.appInstanceId, ready, consent, requestMode])

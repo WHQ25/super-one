@@ -2,18 +2,23 @@ import { mcpAppResourceModes } from '../mcp-apps-metadata'
 import { AppBridge } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { McpUiAppCapabilities, McpUiHostCapabilities, McpUiHostContext, McpUiRequestDisplayModeRequest } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
-import { CallToolResultSchema, ReadResourceResultSchema } from '@modelcontextprotocol/sdk/types.js'
+import { CallToolResultSchema, ErrorCode, McpError, ReadResourceResultSchema } from '@modelcontextprotocol/sdk/types.js'
 import { boundedToolAppAttachment, assertMcpAppSize, MCP_APP_OUTPUT_MAX_BYTES, McpAppsError } from '../mcp-apps'
 import type { McpAppMessageParams, McpAppModelContext, McpAppReadResult, McpAppsCallResult, ToolAppAttachment, McpUiResourceMeta } from '../mcp-apps'
 import { McpAppMessageRequestSchema } from './message-schema'
 import { mcpAppContextState, type McpAppModelContextState } from '../mcp-app-model-context'
 import { createMcpAppDocument } from './document'
+import { MCP_APP_RESOURCE_WRITE_MAX_BYTES, type McpAppResourceWriteParams, type McpAppResourceWriteResult } from '../mcp-app-files'
 import type { McpAppDocument } from './document'
 
 /** Implement approvals, leases, original-session routing and persistence behind this interface. */
 export interface McpAppHostExecutor {
   callTool(request: { tool: string; args: Record<string, unknown> }, signal: AbortSignal): Promise<McpAppsCallResult>
-  readResource(request: { uri: string }, signal: AbortSignal): Promise<McpAppReadResult>
+  readResource(request: { uri: string; representation?: 'text' | 'blob' }, signal: AbortSignal): Promise<McpAppReadResult>
+  /** File-entrypoint Views only (`openai/resource`). */
+  subscribeResource?(request: { uri: string }, signal: AbortSignal): Promise<void>
+  unsubscribeResource?(request: { uri: string }, signal: AbortSignal): Promise<void>
+  writeResource?(request: McpAppResourceWriteParams, signal: AbortSignal): Promise<McpAppResourceWriteResult>
   sendMessage(request: McpAppMessageParams, signal: AbortSignal): Promise<{ isError?: boolean }>
   updateModelContext(context: McpAppModelContext, signal: AbortSignal): Promise<McpAppModelContextState>
   openLink(request: { url: string }, signal: AbortSignal): Promise<{ isError?: boolean }>
@@ -45,6 +50,8 @@ export interface McpAppHost {
   activate(): void
   update(app: ToolAppAttachment): Promise<void>
   updateContext(context: McpUiHostContext): void
+  /** Forward a host file change to a View that subscribed to `uri`. */
+  resourceUpdated(uri: string): void
   /** Synchronous gate close for navigation/unmount; outstanding executions are aborted. */
   revoke(): void
   dispose(): Promise<void>
@@ -106,7 +113,8 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
     return CallToolResultSchema.parse(response.result)
   })
   bridge.onreadresource = (params, extra) => execute(extra.signal, async signal => {
-    const result = await options.executor.readResource({ uri: params.uri }, signal)
+    const representation = (params._meta?.['openai/resource'] as { representation?: unknown } | undefined)?.representation
+    const result = await options.executor.readResource({ uri: params.uri, ...(representation === 'text' || representation === 'blob' ? { representation } : {}) }, signal)
     assertMcpAppSize(result, MCP_APP_OUTPUT_MAX_BYTES)
     return ReadResourceResultSchema.parse(result)
   })
@@ -142,9 +150,50 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
   bridge.onrequestdisplaymode = (params, extra) => execute(extra.signal, async signal => {
     const resourceModes = mcpAppResourceModes(options.resourceMeta ?? app.resource?.meta)
     const declared = bridge.getAppCapabilities()?.availableDisplayModes
-    if ((resourceModes && !resourceModes.includes(params.mode)) || !context.availableDisplayModes?.includes(params.mode) || (declared && !declared.includes(params.mode))) return { mode: 'inline' }
+    // A refused request reports the mode actually in effect.
+    if ((resourceModes && !resourceModes.includes(params.mode)) || !context.availableDisplayModes?.includes(params.mode) || (declared && !declared.includes(params.mode))) return { mode: context.displayMode ?? 'inline' }
     return { mode: await options.executor.requestDisplayMode(params.mode, signal) }
   })
+  // Resource subscriptions and writes exist only for the file a file-entrypoint View opened.
+  const subscriptions = new Set<string>()
+  if (options.capabilities.experimental?.['openai/resource']) {
+    const { subscribeResource, unsubscribeResource, writeResource } = options.executor
+    const uriOf = (params: unknown): string => {
+      const uri = (params as { uri?: unknown } | undefined)?.uri
+      if (typeof uri !== 'string' || !uri.trim() || uri.length > 2048) throw new McpError(ErrorCode.InvalidParams, 'Invalid resource URI')
+      return uri
+    }
+    bridge.fallbackRequestHandler = async (request, extra) => {
+      switch (request.method) {
+        case 'resources/subscribe': return execute(extra.signal, async signal => {
+          const uri = uriOf(request.params)
+          if (!subscribeResource) throw new McpAppsError('denied', 'Resource subscriptions are unavailable')
+          await subscribeResource({ uri }, signal)
+          subscriptions.add(uri)
+          return {}
+        })
+        case 'resources/unsubscribe': return execute(extra.signal, async signal => {
+          const uri = uriOf(request.params)
+          subscriptions.delete(uri)
+          await unsubscribeResource?.({ uri }, signal)
+          return {}
+        })
+        case 'openai/resources/write': return execute(extra.signal, async signal => {
+          const params = request.params as Record<string, unknown> | undefined
+          const uri = uriOf(params)
+          const ifMatch = params?.ifMatch
+          const text = params?.text, blob = params?.blob
+          if ((typeof text === 'string') === (typeof blob === 'string') || (ifMatch !== undefined && (typeof ifMatch !== 'string' || !ifMatch))) throw new McpError(ErrorCode.InvalidParams, 'Invalid resource write')
+          const bytes = typeof text === 'string' ? new TextEncoder().encode(text).byteLength : Math.floor((blob as string).replace(/=+$/, '').length * 3 / 4)
+          if (bytes > MCP_APP_RESOURCE_WRITE_MAX_BYTES) return { outcome: 'too-large', maxBytes: MCP_APP_RESOURCE_WRITE_MAX_BYTES }
+          if (!writeResource) throw new McpAppsError('denied', 'Resource writes are unavailable')
+          const write = { uri, ...(typeof ifMatch === 'string' ? { ifMatch } : {}), ...(typeof text === 'string' ? { text } : { blob: blob as string }) } as McpAppResourceWriteParams
+          return await writeResource(write, signal)
+        })
+        default: throw new McpError(ErrorCode.MethodNotFound, `Method not found: ${request.method}`)
+      }
+    }
+  }
   bridge.onsizechange = size => {
     if (revoked || !initialized) return
     const width = Number.isFinite(size.width) && size.width! > 0 ? Math.min(size.width!, 4096) : undefined
@@ -214,6 +263,10 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
     },
     updateContext(next) {
       contextChanged({ ...next, 'openai/modelContext': context['openai/modelContext'] })
+    },
+    resourceUpdated(uri) {
+      if (revoked || !initialized || !subscriptions.has(uri)) return
+      void bridge.notification({ method: 'notifications/resources/updated', params: { uri } } as never).catch(() => {})
     },
     revoke,
     dispose() {

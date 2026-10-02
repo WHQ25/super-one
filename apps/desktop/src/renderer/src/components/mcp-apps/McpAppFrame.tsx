@@ -1,5 +1,5 @@
 import { mcpAppCspDomains } from '@superone/shared/mcp-apps-host/csp'
-import { mcpAppMessageCapabilities } from '@superone/shared/mcp-apps-host/capabilities'
+import { mcpAppFileCapabilities, mcpAppMessageCapabilities } from '@superone/shared/mcp-apps-host/capabilities'
 import { useLayoutEffect, useRef } from 'react'
 import type { McpUiHostContext } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { ToolAppAttachment, McpUiResourceMeta } from '@superone/shared/mcp-apps'
@@ -38,17 +38,21 @@ export default function McpAppFrame(props: McpAppFrameProps) {
       transport: createMcpAppTransport(element.contentWindow!, props.registration.origin, window, document), document,
       restored: !latest.current.active, context: latest.current.context,
       // Permissions are deliberately ungranted, even if the resource requests them.
-      capabilities: { ...mcpAppMessageCapabilities, serverTools: {}, serverResources: {}, openLinks: {}, logging: {}, sandbox: { permissions: {}, csp: mcpAppCspDomains(props.meta.csp) } },
+      capabilities: { ...(props.app.file ? mcpAppFileCapabilities : mcpAppMessageCapabilities), serverTools: {}, serverResources: {}, openLinks: {}, logging: {}, sandbox: { permissions: {}, csp: mcpAppCspDomains(props.meta.csp) } },
       onInitialized: () => latest.current.onInitialized(host.appCapabilities()?.availableDisplayModes ?? ['inline']),
       onError: error => latest.current.onError(error), onUnknownOutcome: () => latest.current.onUnknown(),
       onSizeChanged: size => { if (size.height) latest.current.onHeight(size.height) },
     })
     slot.current ??= createMcpAppHostSlot()
     slot.current.replace(host); hostRef.current = host; latest.current.onHost(host)
-    const unsubscribe = props.api.onMcpAppDocumentRevoked(event => {
+    const unsubscribeRevoked = props.api.onMcpAppDocumentRevoked(event => {
       if (event.url !== props.registration.url) return
       host.revoke(); latest.current.onRevoked()
     })
+    const unsubscribeUpdates = props.app.file ? props.api.onMcpAppResourceUpdated?.(event => {
+      if (event.appInstanceId === props.app.appInstanceId) host.resourceUpdated(event.uri)
+    }) : undefined
+    const unsubscribe = () => { unsubscribeRevoked(); unsubscribeUpdates?.() }
     const load = () => {
       try { if (element.contentWindow?.location.href === 'about:blank') return } catch { /* Isolated document. */ }
       if (!document.loaded()) { host.revoke(); latest.current.onRevoked() }

@@ -225,6 +225,17 @@ const environmentAPI = {
     ipcRenderer.on('mcpApp:documentRevoked', listener)
     return () => { ipcRenderer.removeListener('mcpApp:documentRevoked', listener) }
   },
+  mcpAppFileHandlers: (projectPath: string, sessionId: string, filePath: string, options?: { passive?: boolean }) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_APP_FILE_HANDLERS, projectPath, sessionId, filePath, options) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-app-files').McpAppFileHandlersResult>>,
+  mcpAppOpenFile: (projectPath: string, sessionId: string, target: { server: string; tool: string; path: string }) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_APP_OPEN_FILE, projectPath, sessionId, target) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-apps').ToolAppAttachment>>,
+  mcpAppCloseFile: (projectPath: string, sessionId: string, appInstanceId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_APP_CLOSE_FILE, projectPath, sessionId, appInstanceId) as Promise<void>,
+  onMcpAppResourceUpdated: (callback: (event: { appInstanceId: string; uri: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: { appInstanceId: string; uri: string }) => callback(data)
+    ipcRenderer.on('mcpApp:resourceUpdated', listener)
+    return () => { ipcRenderer.removeListener('mcpApp:resourceUpdated', listener) }
+  },
   mcpAppsProvider: (connectionId: string, input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_MCP_APPS_PROVIDER, connectionId, input) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult>,
   mcpAppsAuthenticate: (connectionId: string, target: Pick<import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest, 'binding' | 'origin'>) =>

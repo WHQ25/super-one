@@ -4,6 +4,7 @@ import { compactMcpAppPresentation, MCP_APP_PRESENTATION_MAX_BYTES } from './mcp
 import type { McpUiMessageRequest } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { McpAppsRpcResult } from './environment/mcp-apps-rpc'
 import type { ContextAttachment } from './context-attachments'
+import type { McpAppResourceWriteParams } from './mcp-app-files'
 
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 export const MCP_APPS_EXTENSION = { 'io.modelcontextprotocol/ui': { mimeTypes: [MCP_APP_MIME_TYPE] } } as const
@@ -96,7 +97,8 @@ export interface McpAppsProvider {
   ready(signal: AbortSignal): Promise<McpAppsCapabilities>
   tools(options?: { refresh?: boolean }): Promise<Map<string, McpToolDescriptor>>
   readResource(req: { uri: string; origin?: McpAppOrigin; transient?: boolean }, signal: AbortSignal): Promise<McpAppReadResult>
-  callTool(req: { tool: string; args: unknown; origin?: McpAppOrigin }, signal: AbortSignal): Promise<McpAppsCallResult>
+  /** `meta` is host-authored request `_meta`; providers that cannot forward it refuse a call that carries it. */
+  callTool(req: { tool: string; args: unknown; origin?: McpAppOrigin; meta?: Record<string, unknown> }, signal: AbortSignal): Promise<McpAppsCallResult>
   /** `redirectUri` is where the host listens when the harness cannot receive the redirect (remote node). */
   authenticate?(req: { redirectUri?: string }, signal: AbortSignal): Promise<McpAppsAuthStart>
   submitAuthCallback?(req: { callbackUrl: string }, signal: AbortSignal): Promise<void>
@@ -131,7 +133,11 @@ export type McpAppHostOperation =
   | { operation: 'load'; referenceOnly?: boolean }
   | { operation: 'activate' }
   | { operation: 'callTool'; tool: string; args: Record<string, unknown> }
-  | { operation: 'readResource'; uri: string }
+  | { operation: 'readResource'; uri: string; representation?: 'text' | 'blob' }
+  /** File-entrypoint Views only, on their own host resource. */
+  | { operation: 'subscribeResource'; uri: string }
+  | { operation: 'unsubscribeResource'; uri: string }
+  | { operation: 'writeResource'; params: McpAppResourceWriteParams }
   | { operation: 'sendMessage'; params: McpAppMessageParams }
   /** Trusted host continuation after navigating to a confirmed new conversation. */
   | { operation: 'sendPreparedMessage'; pendingSend: string }
@@ -176,6 +182,8 @@ export interface ToolAppAttachment {
   gatewayCallId?: string
   resourceUri: string
   toolName?: string
+  /** Set only on a View the host opened through a file entrypoint; such Views live in memory, outside the transcript. */
+  file?: { name: string; resourceUri: string }
   presentation?: McpAppPresentation
   resource?: McpAppResource
   toolInput?: Record<string, unknown>

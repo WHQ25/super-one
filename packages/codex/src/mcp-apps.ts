@@ -142,7 +142,7 @@ export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: st
     },
     async callTool(req, signal) {
       assertMcpAppSize(req.args)
-      const result = await invoke('mcpServer/tool/call', { tool: req.tool, arguments: req.args ?? {} }, signal, req.origin, true, MCP_APP_OUTPUT_MAX_BYTES)
+      const result = await invoke('mcpServer/tool/call', { tool: req.tool, arguments: req.args ?? {}, ...(req.meta ? { _meta: req.meta } : {}) }, signal, req.origin, true, MCP_APP_OUTPUT_MAX_BYTES)
       return { result: codexToolResult(result), outcome: 'completed' }
     },
     // Codex receives the redirect on its own listener and completes the login in the background;

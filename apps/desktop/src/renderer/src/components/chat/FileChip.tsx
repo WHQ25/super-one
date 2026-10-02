@@ -21,18 +21,21 @@ export function FileChip({ name, title, filePath, lineNumber, endLine, className
   const targetLineNumber = lineNumber ?? parsed?.lineNumber
   const targetEndLine = lineNumber != null ? endLine : parsed?.endLine
   const dragEndRef = useRef(0)
-  const menuItems = useFileChipContextMenu(targetPath)
-
-  const handleClick = (e: React.MouseEvent): void => {
-    if (Date.now() - dragEndRef.current < 200) return
-    if (clickReleasedOnSelection(e.currentTarget)) return
-    e.stopPropagation()
+  const open = (): void => {
     if (!targetPath) return
     const projectPath = useChatStore.getState().activeProject
     if (!projectPath) return
     const relative = toProjectRelativePath(targetPath, projectPath)
     useSourceControlStore.getState().selectFile(projectPath, relative, targetLineNumber)
     openFileTab(relative)
+  }
+  const menu = useFileChipContextMenu(targetPath, open)
+
+  const handleClick = (e: React.MouseEvent): void => {
+    if (Date.now() - dragEndRef.current < 200) return
+    if (clickReleasedOnSelection(e.currentTarget)) return
+    e.stopPropagation()
+    open()
   }
 
   const chip = (
@@ -46,6 +49,6 @@ export function FileChip({ name, title, filePath, lineNumber, endLine, className
     />
   )
 
-  if (menuItems.length === 0) return chip
-  return <AdaptiveContextMenu items={menuItems} yieldWhen={hasTextSelection}>{chip}</AdaptiveContextMenu>
+  if (menu.items.length === 0) return chip
+  return <AdaptiveContextMenu items={menu.items} onOpen={menu.onOpen} yieldWhen={hasTextSelection}>{chip}</AdaptiveContextMenu>
 }

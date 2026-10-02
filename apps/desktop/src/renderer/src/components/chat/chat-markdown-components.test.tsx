@@ -11,7 +11,8 @@ vi.mock('@/components/chat/chat-input-api', () => ({
   chatInputAPI: { insertMention: vi.fn() },
 }))
 
-vi.mock('@/components/activity/activity-panel-api', () => ({
+vi.mock('@/components/activity/activity-panel-api', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/components/activity/activity-panel-api')>(),
   openBrowserTab: vi.fn(),
   openFileTab: vi.fn(),
 }))

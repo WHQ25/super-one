@@ -7,6 +7,9 @@ import { cn } from '@superone/ui/lib/utils'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { useEffectiveProjectRoot } from '@/stores/app'
 import { isAbsoluteLocalPath } from '@/lib/file-link'
+import { absoluteFilePath } from '@/components/chat/file-chip-context-menu'
+import { McpAppOpenWithActions, McpAppOpenWithButton } from '@/components/mcp-apps/McpAppOpenWith'
+import { lastTouchedPane } from '@/stores/chat-store/session-scope'
 import { localFileUrlToPath, toLocalFileUrl, toMediaUrl } from '@/lib/path-utils'
 import type { ModelPreviewViewState } from './ModelPreview'
 
@@ -274,6 +277,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
           ))}
         </div>
         {isDirty && <span className="size-1.5 rounded-full bg-orange-600 dark:bg-orange-400" title={t('tooltips.unsavedChanges')} />}
+        {!loadError && !isUnpreviewable && <McpAppOpenWithButton absolutePath={absoluteFilePath(selectedFile, fileRoot)} scope={lastTouchedPane()} />}
         {tabs.length > 1 && (
           <Tabs value={effectiveTab} onValueChange={handleTabChange}>
             <TabsList>
@@ -305,6 +309,7 @@ export function FilePreview({ filePath }: FilePreviewProps) {
             <span className="text-xs">
               {fileContent?.language === 'too-large' ? t('filePreview.tooLarge') : t('filePreview.binary')}
             </span>
+            <McpAppOpenWithActions absolutePath={absoluteFilePath(selectedFile, fileRoot)} scope={lastTouchedPane()} />
           </div>
         ) : (
           <>

@@ -84,6 +84,12 @@ describe('Codex native MCP Apps', () => {
     expect(await provider.callTool({ tool: 'next', args: { page: 2 }, origin }, signal)).toEqual({ result: { content: [], isError: true, structuredContent: { failed: true }, _meta: { private: 1 } }, outcome: 'completed' })
   })
 
+  it('forwards host request metadata on View tool calls', async () => {
+    const request = vi.fn(async () => ({ content: [] }))
+    await createCodexMcpAppsProvider(binding, 'thread-1', request).callTool({ tool: 'cad.readPart', args: {}, origin, meta: { 'openai/resource': { path: '/w/part.stl' } } }, signal)
+    expect(request).toHaveBeenCalledWith('mcpServer/tool/call', { server: 'fixture', threadId: 'thread-1', tool: 'cad.readPart', arguments: {}, _meta: { 'openai/resource': { path: '/w/part.stl' } } })
+  })
+
   it('refuses model-only calls before dispatch and rejects mismatched threads', async () => {
     const request = vi.fn(async () => ({ data: [{ name: 'fixture', tools: { secret: { name: 'secret', _meta: { ui: { visibility: ['model'] } } } } }] }))
     const provider = createCodexMcpAppsProvider(binding, 'thread-1', request)

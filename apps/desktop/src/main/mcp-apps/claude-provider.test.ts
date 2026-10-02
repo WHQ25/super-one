@@ -40,6 +40,12 @@ function provider(query: Partial<Record<'readMcpResource' | 'request', unknown>>
 }
 
 describe('Claude native MCP Apps provider', () => {
+  it('refuses request metadata it cannot forward rather than dropping it', async () => {
+    const request = vi.fn()
+    await expect(provider({ request }).callTool({ tool: 'fixture_next_page', args: {}, meta: { 'openai/resource': { path: '/w/part.stl' } } }, signal)).rejects.toMatchObject({ code: 'denied' })
+    expect(request).not.toHaveBeenCalled()
+  })
+
   it('retains the Claude JSON text duplicate within the transient output budget', async () => {
     const structuredContent = { data: 'x'.repeat(1024 * 1024) }
     const request = vi.fn(async () => ({ response: { content: JSON.stringify(structuredContent), structuredContent } }))

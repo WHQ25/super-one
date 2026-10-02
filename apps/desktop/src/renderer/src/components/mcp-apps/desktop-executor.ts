@@ -3,7 +3,7 @@ import { requestOpenExternalLink } from '@/lib/external-link'
 import type { McpAppHostExecutor } from '@superone/shared/mcp-apps-host'
 import type { McpAppDocumentRegistration } from '@superone/shared/mcp-apps-desktop'
 
-export type McpAppDesktopApi = Pick<Window['environment'], 'mcpAppRegister' | 'mcpAppRelease' | 'mcpAppRequest' | 'mcpAppCancel' | 'onMcpAppDocumentRevoked' | 'mcpAppsAuthenticate'> & Partial<Pick<Window['environment'], 'onMcpAppEscape'>>
+export type McpAppDesktopApi = Pick<Window['environment'], 'mcpAppRegister' | 'mcpAppRelease' | 'mcpAppRequest' | 'mcpAppCancel' | 'onMcpAppDocumentRevoked' | 'mcpAppsAuthenticate'> & Partial<Pick<Window['environment'], 'onMcpAppEscape' | 'onMcpAppResourceUpdated' | 'mcpAppCloseFile'>>
 export interface McpAppRoute { projectPath: string; sessionId: string }
 export type McpAppConsent = (prompt: McpAppApprovalPrompt, signal: AbortSignal) => Promise<Record<string, never> | null>
 
@@ -48,6 +48,9 @@ export function createDesktopMcpAppExecutor(options: {
       }
     },
     readResource: (request, signal) => execute({ operation: 'readResource', ...request }, signal),
+    subscribeResource: (request, signal) => execute({ operation: 'subscribeResource', ...request }, signal),
+    unsubscribeResource: (request, signal) => execute({ operation: 'unsubscribeResource', ...request }, signal),
+    writeResource: (params, signal) => execute({ operation: 'writeResource', params }, signal),
     sendMessage: async (params, signal) => {
       const result = await execute<Partial<McpAppPreparedMessage>>({ operation: 'sendMessage', params }, signal)
       if (result?.pendingSend && result.route) {

@@ -10,6 +10,8 @@ export interface McpAppsProviderRpcRequest {
   uri?: string
   tool?: string
   args?: unknown
+  /** Host-authored request `_meta` for `callTool`. */
+  meta?: Record<string, unknown>
   redirectUri?: string
   callbackUrl?: string
 }

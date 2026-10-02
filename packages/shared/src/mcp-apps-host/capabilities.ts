@@ -6,3 +6,11 @@ export const mcpAppMessageCapabilities = {
   message: { text: {}, image: {}, resourceLink: {}, resource: {} },
   updateModelContext: { text: {}, image: {}, resourceLink: {}, resource: {}, structuredContent: {} },
 } satisfies McpUiHostCapabilities
+
+/**
+ * A View opened through a file entrypoint lives outside the transcript, so it has no
+ * session to message or attach context to; it reads and writes its file instead.
+ */
+export const mcpAppFileCapabilities = {
+  experimental: { 'openai/resource': {} },
+} satisfies McpUiHostCapabilities

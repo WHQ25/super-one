@@ -11,8 +11,8 @@ vi.mock('lucide-react', async (importOriginal) => {
 })
 
 vi.mock('@/stores/chat', () => ({
-  useChatStore: (selector: (state: { toolRenderers: Record<string, never>; activeProject: string | null }) => unknown) =>
-    selector({ toolRenderers: {}, activeProject: '/proj' }),
+  useChatStore: (selector: (state: { toolRenderers: Record<string, never>; activeProject: string | null; projectSessions: Record<string, never> }) => unknown) =>
+    selector({ toolRenderers: {}, activeProject: '/proj', projectSessions: {} }),
   useActiveSession: (selector: (state: { cwd: string; homedir: string }) => unknown) =>
     selector({ cwd: '/proj', homedir: '/Users/test' }),
   useBashOutput: () => ({ chunks: [], completed: true }),

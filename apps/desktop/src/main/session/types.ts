@@ -436,6 +436,8 @@ export interface SessionBackend {
   /** Account-level usage/credits for the gauge. Only harnesses that expose one implement it. */
   getRateLimits?(): Promise<ProviderRateLimits | null>
   getMcpAppsProvider?(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider>
+  /** Bindings for host-initiated App calls (file entrypoints); empty until the harness has a live provider session. */
+  getMcpAppsHostBindings?(): Promise<Array<{ binding: McpAppsBinding; origin: McpAppOrigin }>>
   getMcpServerStatus(): Promise<McpServerInfo[]>
   authenticateMcp?(serverName: string): Promise<void>
   rewindFiles(userMessageId: string, opts?: { dryRun?: boolean; includeConversation?: boolean }): Promise<RewindFilesResult>
@@ -531,6 +533,9 @@ export interface Session {
   getContextUsage(): Promise<ContextUsageInfo | null>
   getRateLimits(): Promise<ProviderRateLimits | null>
   getMcpAppsProvider?(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider>
+  /** Bindings for host-initiated App calls (file entrypoints); empty until the harness has a live provider session. */
+  /** `start: false` answers only from a harness that is already running. */
+  getMcpAppsHostBindings?(options?: { start?: boolean }): Promise<Array<{ binding: McpAppsBinding; origin: McpAppOrigin }>>
   getMcpServerStatus(): Promise<McpServerInfo[]>
   authenticateMcp(serverName: string): Promise<void>
   rewindFiles(userMessageId: string, opts?: { dryRun?: boolean; includeConversation?: boolean }): Promise<RewindFilesResult>

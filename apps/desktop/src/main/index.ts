@@ -1207,7 +1207,7 @@ function createWindow(): void {
   agentService.setBroadcastFn((event) => publishAgentEvent(event))
   agentService.setSessionManager(sessionManager)
   initializeMcpAppExecutor(sessionManager, agentService, publishAgentEvent)
-  registerMcpAppsProviderIpc(id => sessionManager.getSession(id))
+  registerMcpAppsProviderIpc(id => sessionManager.getSession(id), id => sessionManager.resumeSession(id, { passive: true }))
   automationService.setMainWindow(mainWindow)
   automationService.setAgentService(agentService)
   automationService.start()

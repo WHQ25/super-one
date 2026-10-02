@@ -18,6 +18,8 @@ interface AdaptiveContextMenuProps {
   contentClassName?: string
   /** Checked at right-click time: when true, this menu stays closed and the event bubbles on to an ancestor's menu. */
   yieldWhen?: () => boolean
+  /** Called as the menu opens, e.g. to start loading entries that appear once ready. */
+  onOpen?: () => void
 }
 
 function ContextMenuEntries({ items }: { items: AdaptiveMenuEntry[] }) {
@@ -51,13 +53,14 @@ function ContextMenuEntries({ items }: { items: AdaptiveMenuEntry[] }) {
   })
 }
 
-export function AdaptiveContextMenu({ items, children, contentClassName, yieldWhen }: AdaptiveContextMenuProps) {
+export function AdaptiveContextMenu({ items, children, contentClassName, yieldWhen, onOpen }: AdaptiveContextMenuProps) {
   const liquidGlass = useAppStore((s) => s.liquidGlass)
 
   if (liquidGlass) {
     const open = (e: MouseEvent) => {
       if (yieldWhen?.()) return
       e.preventDefault()
+      onOpen?.()
       void showNativeContextMenu(toNativeMenu(items))
     }
     if (isValidElement(children)) {
@@ -77,7 +80,7 @@ export function AdaptiveContextMenu({ items, children, contentClassName, yieldWh
   }
 
   return (
-    <ContextMenu>
+    <ContextMenu onOpenChange={onOpen ? (open) => { if (open) onOpen() } : undefined}>
       {/* Radix skips opening when the event arrives already default-prevented. */}
       <ContextMenuTrigger asChild onContextMenu={yieldWhen ? (e) => { if (yieldWhen()) e.preventDefault() } : undefined}>
         {children}

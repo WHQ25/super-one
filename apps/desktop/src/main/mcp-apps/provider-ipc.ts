@@ -6,6 +6,7 @@ import type { McpAppsProviderRpcRequest, McpAppsRpcResult } from '@superone/shar
 import type { Session } from '../session/types'
 import { authenticateMcpApp } from './auth'
 import { registerMcpAppDocumentIpc } from './document-ipc'
+import { registerMcpAppFileIpc } from './file-apps-ipc'
 
 let registered = false
 
@@ -31,10 +32,11 @@ export async function routeMcpAppsProviderRequest(
   }
 }
 
-export function registerMcpAppsProviderIpc(getSession: (id: string) => Session | null): void {
+export function registerMcpAppsProviderIpc(getSession: (id: string) => Session | null, resumeSession: (id: string) => Session): void {
   if (registered) return
   registered = true
   registerMcpAppDocumentIpc()
+  registerMcpAppFileIpc(getSession, resumeSession)
   ipcMain.handle(AgentIpcChannels.ENVIRONMENT_MCP_APPS_PROVIDER, (_event, connectionId: string, input: McpAppsProviderRpcRequest) =>
     routeMcpAppsProviderRequest(getSession, connectionId, input))
 

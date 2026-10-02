@@ -16,11 +16,7 @@ export { fileChipLabel }
 
 export function InlineFileChip({ name, filePath, lineNumber, endLine }: { name: string; filePath: string; lineNumber?: number; endLine?: number }) {
   const dragEndRef = useRef(0)
-  const menuItems = useFileChipContextMenu(filePath)
-  const handleClick = (e: React.MouseEvent): void => {
-    if (Date.now() - dragEndRef.current < 200) return
-    if (clickReleasedOnSelection(e.currentTarget)) return
-    e.stopPropagation()
+  const open = (): void => {
     const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
     const openPath = toProjectRelativePath(filePath, projectRoot)
     // selectFile needs a project root for git/diff IPC; absolute external paths
@@ -30,8 +26,15 @@ export function InlineFileChip({ name, filePath, lineNumber, endLine }: { name: 
     }
     openFileTab(openPath)
   }
+  const menu = useFileChipContextMenu(filePath, open)
+  const handleClick = (e: React.MouseEvent): void => {
+    if (Date.now() - dragEndRef.current < 200) return
+    if (clickReleasedOnSelection(e.currentTarget)) return
+    e.stopPropagation()
+    open()
+  }
   return (
-    <AdaptiveContextMenu items={menuItems} yieldWhen={hasTextSelection}>
+    <AdaptiveContextMenu items={menu.items} onOpen={menu.onOpen} yieldWhen={hasTextSelection}>
         <span
           role="button"
           onClick={handleClick}

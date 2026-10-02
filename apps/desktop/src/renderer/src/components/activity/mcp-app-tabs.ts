@@ -65,7 +65,7 @@ export function syncMcpAppTab(key: string, mode: McpAppSurface, maximized = true
   try {
     store.setShowPanel(true, { forTab: true })
     const group = dock.groups.find(group => group.id === store.maximizedGroupId)
-    const panel = dock.addPanel({ id: panelId(key), component: 'mcp-app', tabComponent: 'mcp-app-tab', title: owner.app.binding.server,
+    const panel = dock.addPanel({ id: panelId(key), component: 'mcp-app', tabComponent: 'mcp-app-tab', title: owner.app.file?.name ?? owner.app.binding.server,
       params: { appInstanceId: key }, renderer: 'always',
       ...(group ? { position: { referenceGroup: group, direction: 'within' as const } } : {}),
     })

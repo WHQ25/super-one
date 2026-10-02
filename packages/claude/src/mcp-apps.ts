@@ -378,6 +378,8 @@ export function createClaudeMcpAppsProvider(binding: McpAppsBinding, deps: Claud
     },
     async callTool(req, signal) {
       assertMcpAppSize(req.args)
+      // `mcp_call` takes no request `_meta`; dropping it would silently lose host data.
+      if (req.meta) throw new McpAppsError('denied', 'This Claude runtime cannot forward request metadata to MCP tools')
       const query = await liveQuery(signal, req.origin)
       const request = controlRequest(query)
       if (!request) throw new McpAppsError('invalid', 'This Claude runtime cannot call MCP tools for a View')

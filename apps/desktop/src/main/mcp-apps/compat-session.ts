@@ -218,7 +218,7 @@ export class LocalCompatSession implements CompatSession {
         assertMcpAppSize(req.args)
         let result: McpAppToolResult
         try {
-          result = await connection.client.callTool({ name: req.tool, arguments: req.args as Record<string, unknown> }, undefined, { signal }) as McpAppToolResult
+          result = await connection.client.callTool({ name: req.tool, arguments: req.args as Record<string, unknown>, ...(req.meta ? { _meta: req.meta } : {}) }, undefined, { signal }) as McpAppToolResult
         } catch (error) {
           throw new McpAppsError('unknown_outcome', `MCP App call was dispatched; do not retry: ${error instanceof Error ? error.message : String(error)}`)
         }

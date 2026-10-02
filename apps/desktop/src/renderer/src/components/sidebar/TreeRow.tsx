@@ -158,6 +158,9 @@ export const autoExpandedDirs = new Set<string>()
 
 import { getDropAction, getTargetDir, isChildPath, isWithinFolder, toAbsolutePath, internalDragSource } from './drag-drop-utils'
 import { buildDragImagePng, preloadDragIcons, loadIconFromSvgElement } from './drag-image-builder'
+import { useOpenWithMenu } from '@/components/mcp-apps/open-with-menu'
+import { absoluteFilePath } from '@/components/chat/file-chip-context-menu'
+import { lastTouchedPane } from '@/stores/chat-store/session-scope'
 
 preloadDragIcons()
 
@@ -353,7 +356,13 @@ export const TreeRow = memo(function TreeRow({
     </button>
   )
 
+  const openWith = useOpenWithMenu(item.isDirectory ? undefined : absoluteFilePath(item.path, currentFolder), {
+    scope: lastTouchedPane(),
+    openInSuperOne: () => { useSourceControlStore.getState().selectFile(currentFolder, item.path); openFileTab(item.path) },
+  })
+
   const menuItems: AdaptiveMenuEntry[] = [
+    ...openWith.entries,
     { kind: 'item', id: 'addToChat', label: t('sidebar.contextMenu.addToChat'), icon: AtSign, onSelect: () => {
       chatInputAPI.insertMention?.(
         item.isDirectory ? 'directory' : 'file',
@@ -387,7 +396,7 @@ export const TreeRow = memo(function TreeRow({
   ]
 
   return (
-    <AdaptiveContextMenu items={menuItems}>
+    <AdaptiveContextMenu items={menuItems} onOpen={openWith.prefetch}>
       {rowContent}
     </AdaptiveContextMenu>
   )

@@ -20,7 +20,7 @@ export async function dispatchMcpAppsProviderRequest(input: McpAppsProviderRpcRe
         if (!tool || !mcpAppToolVisible(tool)) throw new McpAppsError('denied', 'This tool is not available to the App')
         if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
         assertMcpAppSize(input.args ?? {})
-        const value = await provider.callTool({ tool: tool.name, args: input.args ?? {}, origin: input.origin }, signal)
+        const value = await provider.callTool({ tool: tool.name, args: input.args ?? {}, origin: input.origin, ...(input.meta ? { meta: input.meta } : {}) }, signal)
         assertMcpAppSize(value.result, MCP_APP_OUTPUT_MAX_BYTES)
         return { ok: true, value }
       }

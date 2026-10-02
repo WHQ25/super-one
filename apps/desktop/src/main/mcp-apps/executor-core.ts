@@ -10,6 +10,7 @@ import { McpAppMessageRequestSchema } from '@superone/shared/mcp-apps-host/messa
 import { parseSessionKey, type SessionRef } from '@superone/shared/environment/refs'
 import type { McpAppsProviderRpcRequest, McpAppsRpcResult } from '@superone/shared/environment/mcp-apps-rpc'
 import { assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES, MCP_APP_MIME_TYPE, McpAppsError } from '@superone/shared/mcp-apps'
+import { isMcpAppHostResource, type McpAppResourceWriteParams, type McpAppResourceWriteResult } from '@superone/shared/mcp-app-files'
 import type { McpAppApprovalPrompt, McpAppAttachmentUpdate, McpAppHostOperation, McpAppHostRequest, McpAppHostResult, McpAppRequester, McpAppReadResult, McpAppsCallResult, McpAppsCapabilities, McpToolDescriptor, ToolAppAttachment } from '@superone/shared/mcp-apps'
 
 export interface McpAppResolvedTarget {
@@ -27,7 +28,22 @@ export interface McpAppExecutorPorts {
   sendMessage(target: McpAppResolvedTarget, params: Extract<McpAppHostOperation, { operation: 'sendMessage' }>['params'], requester: McpAppRequester, signal: AbortSignal): Promise<void>
   createMessageSession?(target: McpAppResolvedTarget, signal: AbortSignal): Promise<{ ref: SessionRef; projectPath: string }>
   hydrateResource?(target: McpAppResolvedTarget, signal: AbortSignal): Promise<McpAppResourceSnapshot>
+  /** The opened file of a file-entrypoint View (`target.app.file`); never another URI. */
+  hostResource?(target: McpAppResolvedTarget, request: HostResourceRequest, signal: AbortSignal): Promise<McpAppReadResult | McpAppResourceWriteResult | void>
+  /** Request `_meta` added to a file-entrypoint View's tool calls (`openai/resource.path`). */
+  fileToolMeta?(target: McpAppResolvedTarget): Record<string, unknown>
   now?(): number
+}
+
+export type HostResourceRequest =
+  | { kind: 'read'; uri: string; representation?: 'text' | 'blob' }
+  | { kind: 'subscribe' | 'unsubscribe'; uri: string }
+  | { kind: 'write'; params: McpAppResourceWriteParams }
+
+function resourceUri(uri: unknown): string {
+  if (typeof uri !== 'string' || !uri || uri.length > 2048) throw new McpAppsError('invalid', 'Invalid MCP App resource URI')
+  try { new URL(uri) } catch { throw new McpAppsError('invalid', 'Invalid MCP App resource URI') }
+  return uri
 }
 
 function jsonHash(value: unknown): string {
@@ -50,10 +66,18 @@ function operationOf(request: McpAppHostRequest): McpAppHostOperation {
     case 'callTool':
       if (typeof request.tool !== 'string' || !request.tool || !request.args || typeof request.args !== 'object' || Array.isArray(request.args)) throw new McpAppsError('invalid', 'Invalid MCP App tool call')
       return { operation: 'callTool', tool: request.tool, args: request.args }
-    case 'readResource':
-      if (typeof request.uri !== 'string' || !request.uri) throw new McpAppsError('invalid', 'Invalid MCP App resource URI')
-      try { new URL(request.uri) } catch { throw new McpAppsError('invalid', 'Invalid MCP App resource URI') }
-      return { operation: 'readResource', uri: request.uri }
+    case 'readResource': {
+      if (request.representation !== undefined && request.representation !== 'text' && request.representation !== 'blob') throw new McpAppsError('invalid', 'Invalid MCP App resource representation')
+      return { operation: 'readResource', uri: resourceUri(request.uri), ...(request.representation ? { representation: request.representation } : {}) }
+    }
+    case 'subscribeResource':
+    case 'unsubscribeResource': return { operation: request.operation, uri: resourceUri(request.uri) }
+    case 'writeResource': {
+      const params = request.params as Partial<McpAppResourceWriteParams> | undefined
+      const text = params?.text, blob = params?.blob, ifMatch = params?.ifMatch
+      if ((typeof text === 'string') === (typeof blob === 'string') || (ifMatch !== undefined && (typeof ifMatch !== 'string' || !ifMatch))) throw new McpAppsError('invalid', 'Invalid MCP App resource write')
+      return { operation: 'writeResource', params: { uri: resourceUri(params?.uri), ...(ifMatch ? { ifMatch } : {}), ...(typeof text === 'string' ? { text } : { blob: blob as string }) } }
+    }
     case 'sendMessage': return { operation: 'sendMessage', params: McpAppMessageRequestSchema.parse({ method: 'ui/message', params: request.params }).params }
     case 'sendPreparedMessage':
       if (typeof request.pendingSend !== 'string' || request.pendingSend.length > 128) throw new McpAppsError('invalid', 'Invalid MCP App pending message')
@@ -216,13 +240,18 @@ export class McpAppExecutor {
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
       if (requester.kind === 'mobile' && !requester.deviceId) throw new McpAppsError('denied', 'MCP App device identity required')
       const operation = operationOf(request)
-      assertMcpAppSize(operation)
+      // A file save (base64 or escaped text) uses the transient View cap, like the read that opened it.
+      assertMcpAppSize(operation, operation.operation === 'writeResource' ? MCP_APP_OUTPUT_MAX_BYTES : undefined)
       const target = await this.resolve(request, signal)
       validateTarget?.(target)
       const ref = target.ref
       const key = this.targetKey(ref, target.app.appInstanceId)
       const activeKey = this.activeKey(ref, target.app.appInstanceId, requester)
       const binding = this.bindingKey(target.app)
+      const file = target.app.file
+      // A file-entrypoint View is not in the transcript: it cannot message the session or attach context.
+      if (file && ['sendMessage', 'sendPreparedMessage', 'updateModelContext', 'removeModelContext'].includes(operation.operation)) throw new McpAppsError('denied', 'Apps opened on a file cannot message the conversation')
+      if (!file && ['subscribeResource', 'unsubscribeResource', 'writeResource'].includes(operation.operation)) throw new McpAppsError('denied', 'Only an App opened on a file can subscribe to or write it')
       // Composer state can be removed from restored/offline history without waking the provider.
       if (operation.operation === 'removeModelContext') return await this.writeContext(request, operation, signal, validateTarget)
       if (operation.operation === 'sendPreparedMessage') {
@@ -302,15 +331,22 @@ export class McpAppExecutor {
           return { ok: true, value: operation.referenceOnly ? { hash: snapshot.hash, meta: snapshot.meta } : snapshot }
         }
         case 'readResource': {
+          if (isMcpAppHostResource(operation.uri)) {
+            if (!file || !this.ports.hostResource) throw new McpAppsError('denied', 'Host resources are unavailable to this App')
+            const value = await this.ports.hostResource(target, { kind: 'read', uri: operation.uri, representation: operation.representation }, signal) as McpAppReadResult
+            assertMcpAppSize(value, MCP_APP_OUTPUT_MAX_BYTES)
+            return { ok: true, value }
+          }
           if (!capabilities.resourceRead) throw new McpAppsError('denied', 'MCP App resources are unavailable')
-          const value = unwrap<McpAppReadResult>(await this.ports.provider(target, { ...operation, transient: true }, signal))
+          const value = unwrap<McpAppReadResult>(await this.ports.provider(target, { operation: 'readResource', uri: operation.uri, transient: true }, signal))
           assertMcpAppSize(value, MCP_APP_OUTPUT_MAX_BYTES)
           return { ok: true, value }
         }
         case 'callTool': {
           if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled before dispatch')
           let response: McpAppsRpcResult
-          try { response = await this.ports.provider(target, operation, signal) }
+          const meta = file ? this.ports.fileToolMeta?.(target) : undefined
+          try { response = await this.ports.provider(target, { ...operation, ...(meta ? { meta } : {}) }, signal) }
           catch {
             // Only a missing transport reply is ambiguous. A structured provider
             // rejection can prove it failed before execution and must pass through.
@@ -328,6 +364,14 @@ export class McpAppExecutor {
             validateTarget?.(fresh)
             if (this.bindingKey(fresh.app) !== binding) throw new McpAppsError('inactive', 'MCP App binding changed')
           })
+        }
+        case 'subscribeResource':
+        case 'unsubscribeResource':
+        case 'writeResource': {
+          if (!this.ports.hostResource) throw new McpAppsError('denied', 'Host resources are unavailable to this App')
+          const request: HostResourceRequest = operation.operation === 'writeResource' ? { kind: 'write', params: operation.params }
+            : { kind: operation.operation === 'subscribeResource' ? 'subscribe' : 'unsubscribe', uri: operation.uri }
+          return { ok: true, value: (await this.ports.hostResource(target, request, signal)) ?? {} }
         }
         case 'sendMessage': {
           const times = (this.messageTimes.get(key) ?? []).filter(time => time > this.now() - 60_000)

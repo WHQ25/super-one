@@ -859,6 +859,12 @@ export interface EnvironmentAPI {
   mcpAppCancel(context: import('@superone/shared/mcp-apps-desktop').McpAppDesktopRequestContext): Promise<void>
   onMcpAppDocumentRevoked(callback: (event: { url: string }) => void): () => void
   onMcpAppEscape(callback: (event: { url: string }) => void): () => void
+  /** Apps whose file entrypoint opens this file, for the given session's harness. `passive` never starts the harness. */
+  mcpAppFileHandlers(projectPath: string, sessionId: string, filePath: string, options?: { passive?: boolean }): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-app-files').McpAppFileHandlersResult>>
+  /** Calls the App's entrypoint on an absolute path; the returned View lives in memory only. */
+  mcpAppOpenFile(projectPath: string, sessionId: string, target: { server: string; tool: string; path: string }): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-apps').ToolAppAttachment>>
+  mcpAppCloseFile(projectPath: string, sessionId: string, appInstanceId: string): Promise<void>
+  onMcpAppResourceUpdated(callback: (event: { appInstanceId: string; uri: string }) => void): () => void
   mcpAppsProvider(connectionId: string, input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult>
   /** Sign the View's MCP server in; resolves once the provider no longer reports auth_required. */
   mcpAppsAuthenticate(connectionId: string, target: Pick<import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest, 'binding' | 'origin'>): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<null>>

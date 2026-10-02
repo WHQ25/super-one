@@ -8,21 +8,27 @@ import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 import { isAbsoluteLocalPath, isHtmlFilePath, toProjectRelativePath } from '@/lib/file-link'
 import { toLocalFileUrl } from '@/lib/path-utils'
 import { displayHostPath } from '@/lib/remote-project-key'
+import { useSessionScope } from '@/stores/chat-store/session-scope'
+import { useOpenWithMenu } from '@/components/mcp-apps/open-with-menu'
 
 /**
  * Host-absolute path for a chip. Remote projects are keyed as
  * `remote:<connectionId>:<hostPath>`, so the root has to be unwrapped before it
  * is joined — otherwise the key prefix leaks into file URLs and the clipboard.
  */
-function absoluteFilePath(filePath: string, projectRoot: string | null | undefined): string {
+export function absoluteFilePath(filePath: string, projectRoot: string | null | undefined): string {
   if (isAbsoluteLocalPath(filePath)) return filePath
   const root = projectRoot ? displayHostPath(projectRoot).replace(/[/\\]+$/, '') : ''
   return root ? `${root}/${filePath.replace(/^\.\//, '')}` : filePath
 }
 
-export function useFileChipContextMenu(filePath: string | undefined): AdaptiveMenuEntry[] {
+/** `onOpen` starts the "Open With" lookup; pass it to the menu so Apps appear once known. */
+export function useFileChipContextMenu(filePath: string | undefined, openInSuperOne: () => void): { items: AdaptiveMenuEntry[]; onOpen: () => void } {
   const { t } = useTranslation()
-  if (!filePath) return []
+  const scope = useSessionScope()
+  const absolute = filePath ? absoluteFilePath(filePath, selectEffectiveProjectRoot(useAppStore.getState())) : undefined
+  const openWith = useOpenWithMenu(absolute, { scope, openInSuperOne })
+  if (!filePath) return { items: [], onOpen: openWith.prefetch }
 
   const handleOpenFolder = (): void => {
     const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
@@ -58,7 +64,8 @@ export function useFileChipContextMenu(filePath: string | undefined): AdaptiveMe
     openBrowserTab(toLocalFileUrl(absoluteFilePath(filePath, projectRoot)))
   }
 
-  return [
+  return { onOpen: openWith.prefetch, items: [
+    ...openWith.entries,
     { kind: 'item', id: 'openFolder', label: t('sidebar.contextMenu.openFolder'), icon: FolderOpen, onSelect: handleOpenFolder },
     { kind: 'item', id: 'addToChat', label: t('sidebar.contextMenu.addToChat'), icon: AtSign, onSelect: handleAddToChat },
     ...(isHtmlFilePath(filePath)
@@ -72,5 +79,5 @@ export function useFileChipContextMenu(filePath: string | undefined): AdaptiveMe
       : []),
     { kind: 'item', id: 'copyPath', label: t('sidebar.contextMenu.copyPath'), icon: Copy, onSelect: handleCopyPath },
     { kind: 'item', id: 'copyRelativePath', label: t('sidebar.contextMenu.copyRelativePath'), icon: Copy, onSelect: handleCopyRelativePath },
-  ]
+  ] }
 }

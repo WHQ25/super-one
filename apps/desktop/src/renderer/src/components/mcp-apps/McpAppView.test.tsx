@@ -47,11 +47,12 @@ describe('MCP App desktop View lifecycle', () => {
     expect(frame.props?.context.availableDisplayModes).toEqual(['inline', 'fullscreen'])
   })
 
-  it('shows the omitted initial-result state on restore and removes it after activation', async () => {
+  it('explains the omitted initial result on the Activate button, not above the View, and drops it after activation', async () => {
     const s = setup()
     render(<><McpAppHostLayer /><McpAppView app={{ ...app, toolResultOmitted: { bytes: 1050849, reason: 'size_limit' } }} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></>)
-    expect(await screen.findByText('mcpApp.resultOmitted')).toBeTruthy()
     const activate = await screen.findByRole('button', { name: 'mcpApp.activate' })
+    expect(activate.hasAttribute('data-mcp-app-result-omitted')).toBe(true)
+    expect(screen.queryByText('mcpApp.resultOmitted')).toBeNull()
     // View content can occupy its entire top-right corner. Activate is the last
     // action in the host header above it, before the trailing collapse toggle.
     const header = activate.closest('[data-embedded-tool-header]')
@@ -61,7 +62,7 @@ describe('MCP App desktop View lifecycle', () => {
     expect(header?.parentElement?.querySelector('[data-mcp-app-surface]')).toBeTruthy()
     expect(activate.className).not.toContain('absolute')
     fireEvent.click(activate)
-    await waitFor(() => expect(screen.queryByText('mcpApp.resultOmitted')).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'mcpApp.activate' })).toBeNull())
     expect(s.api.mcpAppRequest).toHaveBeenCalledTimes(1)
   })
 
@@ -69,7 +70,7 @@ describe('MCP App desktop View lifecycle', () => {
     const s = setup(), warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       expect(() => render(<><McpAppHostLayer /><McpAppView app={{ ...app, toolResult: { content: [{ type: 'text', text: 'x'.repeat(2 * 1024 * 1024) }] } }} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></>)).not.toThrow()
-      expect(await screen.findByText('mcpApp.resultOmitted')).toBeTruthy()
+      expect((await screen.findByRole('button', { name: 'mcpApp.activate' })).hasAttribute('data-mcp-app-result-omitted')).toBe(true)
       expect(frame.props?.app.toolResult).toBeUndefined()
       expect(warn).toHaveBeenCalled()
     } finally { warn.mockRestore() }

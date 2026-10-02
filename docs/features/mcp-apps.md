@@ -248,9 +248,10 @@ revokes the bridge (the View shows Restart).
   the message and its action (Sign In, Retry, Restart or Activate). Loading
   shows a spinner instead; an unknown outcome has no action.
   Restored snapshots end the header with an
-  Activate button (its tooltip explains reconnecting) that pulses when a
-  blocked operation is attempted; an omitted result or activation error shows
-  as a note above the View.
+  Activate button that pulses when a blocked operation is attempted. Its
+  tooltip explains reconnecting, or, when the initial result was too large to
+  save, that activating reloads it; an activation error shows as a note above
+  the View. The phone has no hover and keeps the omitted-result note inline.
 - **Display modes**: `inline`, `fullscreen` and `pip`. Fullscreen is a
   transient standard activity-panel tab; the View sees `fullscreen` whether or
   not the tab is maximized. A View request maximizes the tab. For Views that

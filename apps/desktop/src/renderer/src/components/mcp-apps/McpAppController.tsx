@@ -178,7 +178,9 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
         {owner.details && <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.toolDetails')} aria-expanded={detailsOpen} onClick={() => setDetailsOpen(value => !value)}><CodeXml className="size-3" /></IconButton>}
         {restoring && (activationError?.code === 'auth_required'
           ? <IconButton data-mcp-app-activate data-emphasized={emphasized || undefined} size="xs" variant="ghost" disabled={loading} tooltip={t('mcpApp.authenticate')} className={emphasized ? 'animate-pulse ring-2 ring-ring/50' : undefined} onClick={() => void activate(true)}><LogIn className="size-3" /></IconButton>
-          : <IconButton data-mcp-app-activate data-emphasized={emphasized || undefined} size="xs" variant="ghost" disabled={loading} aria-label={t('mcpApp.activate')} tooltip={t('mcpApp.activateTooltip')} className={emphasized ? 'animate-pulse ring-2 ring-ring/50' : undefined} onClick={() => void activate()}><Power className="size-3" /></IconButton>)}
+          : <IconButton data-mcp-app-activate data-emphasized={emphasized || undefined} size="xs" variant="ghost" disabled={loading} aria-label={t('mcpApp.activate')} data-mcp-app-result-omitted={app.toolResultOmitted ? '' : undefined}
+            // Why the snapshot is empty belongs with the action that refills it.
+            tooltip={t(app.toolResultOmitted ? 'mcpApp.resultOmitted' : 'mcpApp.activateTooltip')} className={emphasized ? 'animate-pulse ring-2 ring-ring/50' : undefined} onClick={() => void activate()}><Power className="size-3" /></IconButton>)}
       </>}>
         {stateCard && <div data-mcp-app-state-card className="mb-2 flex min-h-[50px] min-w-0 items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs">
           <div className="flex min-w-0 items-center gap-2">
@@ -187,9 +189,8 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
           </div>
           {stateCard.action}
         </div>}
-        {!collapsed && restoring && (app.toolResultOmitted || activationError) && <div data-mcp-app-restore-note className="mb-2 min-w-0 text-xs">
-          {app.toolResultOmitted && <p data-mcp-app-result-omitted className="text-muted-foreground">{t('mcpApp.resultOmitted')}</p>}
-          {activationError && <p role="alert" className="mt-1 break-words text-error">{activationError.message}</p>}
+        {!collapsed && restoring && activationError && <div data-mcp-app-restore-note className="mb-2 min-w-0 text-xs">
+          <p role="alert" className="break-words text-error">{activationError.message}</p>
         </div>}
         {!collapsed && detailsOpen && <div className="mb-2">{owner.details}</div>}
         <div className="relative" hidden={!available}>

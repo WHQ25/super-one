@@ -1,4 +1,5 @@
 import type { ContextAttachment } from '@superone/shared/context-attachments'
+import type { McpMentionReadResource, McpMentionSearchState } from '@superone/shared/mcp-app-mentions'
 import type { NativeComposerBinding } from '../ui/native-composer-input'
 import type { ComposerCursor } from '../composer-cursor'
 import type { MentionSearchState } from '../navigation/use-composer-suggestions'
@@ -105,14 +106,16 @@ export function ChatScreen(props: {
    * takes its place, and it opens the workspace rather than leaving the device.
    */
   onEdgeSwipe?: () => void
-  mentionQuery?: string | null
   /**
    * A fullscreen MCP App View has the screen: the composer and the panels stacked on it
    * are hidden until the header's toggle brings them back. Collapsed prompts stay, since
    * they wait on an answer.
    */
   composerHidden?: boolean
+  mentionQuery?: string | null
   mentionGroupLabels?: Partial<Record<string, string>>
+  mcpMentions?: McpMentionSearchState
+  previewMcpMention?: (value: string) => Promise<McpMentionReadResource | null>
   draft: string
   streaming: boolean
   onWebMessage: (raw: string) => void

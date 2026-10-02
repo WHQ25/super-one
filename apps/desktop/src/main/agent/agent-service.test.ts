@@ -172,6 +172,12 @@ vi.mock('../database', () => ({
 
 vi.mock('../session/collaboration-mailbox', () => ({ spawnParentOf: () => null }))
 
+const mcpMentionMocks = vi.hoisted(() => ({
+  readMcpMentions: vi.fn(async (): Promise<unknown[]> => []),
+  searchMcpMentions: vi.fn(async () => ({ sources: [] })),
+}))
+vi.mock('../mcp-apps/mention-search-ipc', () => mcpMentionMocks)
+
 const realtimeTimelineRepoMocks = vi.hoisted(() => ({
   loadRealtimeTimeline: vi.fn(),
   reconcileRealtimeTimeline: vi.fn((_sessionId: string, timeline: unknown) => timeline),
@@ -1608,6 +1614,43 @@ describe('AgentService.handleRemoteCommand', () => {
 
     expect(activeSession.owner.kind).toBe('local')
     expect((service as unknown as { isRemoteLockedSession: (p: string) => boolean }).isRemoteLockedSession('/p')).toBe(false)
+  })
+
+  it('read_mcp_mentions answers with the mentioned resources\' text', async () => {
+    const service = new AgentService()
+    const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p' })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => activeSession),
+      getSession: vi.fn(() => activeSession),
+      forEachSession: vi.fn(),
+    }
+    const resources = [{ server: 'bits', uri: 'cad://hex', text: 'hex' }]
+    mcpMentionMocks.readMcpMentions.mockResolvedValueOnce(resources)
+    const respond = vi.fn()
+    const targets = [{ server: 'bits', uri: 'cad://hex' }]
+
+    await service.handleRemoteCommand({ type: 'read_mcp_mentions', requestId: 'r1', projectPath: '/p', sessionId: 'sid-1', targets } as never, respond)
+
+    expect(mcpMentionMocks.readMcpMentions).toHaveBeenCalledWith(activeSession, '/p', targets)
+    expect(respond).toHaveBeenCalledWith('r1', { resources })
+  })
+
+  it('search_mcp_mentions answers with the session servers\' items', async () => {
+    const service = new AgentService()
+    const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p' })
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getActiveSession: vi.fn(() => activeSession),
+      getSession: vi.fn(() => activeSession),
+      forEachSession: vi.fn(),
+    }
+    const result = { sources: [{ server: 'bits', tool: 'search', title: 'Bits', items: [{ uri: 'cad://hex', label: 'Hex' }] }] }
+    mcpMentionMocks.searchMcpMentions.mockResolvedValueOnce(result)
+    const respond = vi.fn()
+
+    await service.handleRemoteCommand({ type: 'search_mcp_mentions', requestId: 'r1', projectPath: '/p', sessionId: 'sid-1', query: 'he' } as never, respond)
+
+    expect(mcpMentionMocks.searchMcpMentions).toHaveBeenCalledWith(activeSession, '/p', 'he')
+    expect(respond).toHaveBeenCalledWith('r1', result)
   })
 
   it('remote lock covers active remote-owned sessions without subscription', async () => {

@@ -166,3 +166,32 @@ runtime. Once that profile has a key, verify all of the following:
 6. Repeat with a natural request without explicit dispatcher instructions to
    assess model discovery/usability. No per-server usage hint is justified by
    the current evidence.
+
+## Other harnesses (survey, 2026-10-02)
+
+Deferred by the user; recorded so the work can resume without a new survey.
+
+**No Claude-style side channel.** ACP, OpenCode and dsh hand SuperOne only
+the text of an MCP result: `structuredContent` and `_meta` are gone, and none
+of them can run a View's tool call on its own connection or advertise the UI
+extension. A SuperOne connection beside the harness would give the View
+partial data and a second server process, so each needs the rerouting path.
+
+**Reuse.** `compat-session.ts`, the SuperOne server's catalog and the
+`miniapp_call` dispatch are harness-neutral. Harness-specific: the call name
+`CALL_NAME` in `compat-records.ts`, and the summary text written for a harness
+that keeps only `content`. Discovery is local stdio only. Cursor's hook points
+(per harness): an opt-in gate and lazy `prepareCompatSession`
+(`cursor/cursor-runtime.ts`), discovery awaited before the runtime and
+prewarm, the `omittedServers` filter (`cursor/cursor-mcp.ts`), `compat.attach`
+in the event callback, the backend's `getMcpAppsProvider`, and close.
+
+| Harness | Omit per session | Result | Native route | Blockers |
+|---|---|---|---|---|
+| ACP (Grok, `opencode acp`) | Yes: `buildAcpSessionMcpServers` (`acp/acp-mcp.ts`), also re-sent by Grok's update-servers extension. Not Grok's own TOML servers | Text, capped at 4000 chars (`packages/acp/src/tool-result-map.ts`); `toolCallId` | Only the unstable MCP-over-ACP transport (`mcp.acp`), if Grok advertises it | Grok sandboxes its process; rerouted servers run outside it, like Cursor's team controls. ACP re-emits `tool_use`; a re-emit under another name would miss the record |
+| OpenCode | Yes: `syncMcpServers` adds shared-config servers per `opencode serve`; servers from its own `opencode.json` need a per-session disconnect; a shared `serverUrl` has no session isolation | `part.state.output` string; `callID`; upstream cap unchecked | No: SDK has no resource read or client tool call | The row name is `superone_miniapp_call` (`openCodeToolName` passes it through), so `CALL_NAME` never matches; `miniapp_call` may also trigger OpenCode's own permission prompt |
+| dsh | No: servers come from dsh's `cordis.patch.yml`, mounted once for every session (`packages/deepseek/src/mcp-servers.ts`) | Text blocks only; `toolCallId`; an `isError` result is thrown as text (marker survival unchecked) | Partly: the in-process client can read resources but drops tool `_meta.ui` and has no direct tool call | Needs a decision first: omit App servers globally or scope servers per agent. Shell sandbox does not cover rerouted servers |
+
+Suggested order: ACP (one filter plus `attach`, Cursor-style opt-in and
+disclosure), then OpenCode (make the call name a `CompatRecords` parameter),
+then dsh after its scoping decision.

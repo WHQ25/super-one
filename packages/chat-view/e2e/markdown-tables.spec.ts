@@ -105,3 +105,23 @@ test('keeps a wide table inside the phone rather than stretching the transcript'
   const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth)
   expect(documentWidth).toBeLessThanOrEqual(390)
 })
+
+test('keeps a wide display formula inside the phone rather than stretching the transcript', async ({ page }) => {
+  await send(page, {
+    type: 'hydrate',
+    sessionStatus: 'idle',
+    messages: [message('math', [
+      'Projected usage:',
+      '',
+      '$$',
+      '\\text{projected} = \\text{used} + (100 - \\text{used}) \\times \\frac{\\text{time until reset}}{\\text{time until exhausted}} + \\text{margin}',
+      '$$',
+    ].join('\n'))],
+  })
+
+  await expect(page.locator('article[data-turn-id="math"] .katex-display')).toBeVisible()
+
+  // Same rule as a wide table: the formula scrolls in its own box, never the document.
+  const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+  expect(documentWidth).toBeLessThanOrEqual(390)
+})

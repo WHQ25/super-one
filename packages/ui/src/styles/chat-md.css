@@ -126,6 +126,19 @@
   background-color: color-mix(in oklch, var(--muted), transparent 60%);
 }
 
+/* --- Display math ---
+   KaTeX lays a display formula out on one unbreakable line. Without its own
+   scroll box a wide one widens whatever scrolls next — on the phone that is the
+   document, so the whole transcript slides sideways. `overflow-x: auto` forces
+   overflow-y off `visible`, so it is pinned hidden with a little block padding
+   to keep tall fractions and radicals from clipping. */
+.chat-md .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-block: 0.25em;
+  scrollbar-width: none;
+}
+
 /* --- Paragraphs --- */
 .chat-md p {
   margin: 0.3em 0;

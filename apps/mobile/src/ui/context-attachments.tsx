@@ -1,5 +1,5 @@
 import { ActivityIndicator, Image, Pressable, View } from 'react-native'
-import { FileText, X } from 'lucide-react-native'
+import { AppWindow, X } from 'lucide-react-native'
 import type { ContextAttachment } from '@superone/shared/context-attachments'
 import { safeImageUri } from '@superone/shared/image-uri'
 import { useMobileTheme } from '../theme/context'
@@ -7,6 +7,7 @@ import { useMobileLocale } from '../i18n/context'
 import { AnchoredMenu, useMenuAnchor } from './anchored-menu'
 import { Text } from './text'
 import { ContextThumbnail } from './context-thumbnail'
+import { monospace } from '../prompts/styles'
 
 /** Native renderer of the same generic attachment contract used by desktop composers. */
 export function ContextAttachments({ items, onRemove, removing = [], loading, error }: {
@@ -25,30 +26,41 @@ export function ContextAttachments({ items, onRemove, removing = [], loading, er
 
 function Attachment({ item, onRemove, removing }: { item: ContextAttachment; onRemove?: (id: string) => void; removing: boolean }) {
   const menu = useMenuAnchor()
-  const { tokens: { colors } } = useMobileTheme()
+  const { tokens: { colors, radius } } = useMobileTheme()
   const { t } = useMobileLocale()
-  const thumbnail = safeImageUri(item.thumbnail ?? item.icon)
+  const icon = safeImageUri(item.icon)
+  const thumbnail = safeImageUri(item.thumbnail)
   const title = item.fields === undefined ? item.title : item.fields === 1 ? t('1 field') : t('{{count}} fields').replace('{{count}}', String(item.fields))
+  const appIcon = <AppWindow size={12} color={colors.mutedForeground} />
+  // The desktop chip: a filled single line of icon, source, a muted summary and a small remove action.
   return <>
-    <View style={{ maxWidth: '100%', flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: 8 }}>
-      <Pressable ref={menu.ref} accessibilityRole="button" accessibilityLabel={title} onPress={menu.open}
-        style={{ flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 32, paddingHorizontal: 8 }}>
-        {thumbnail ? <ContextThumbnail key={thumbnail} src={thumbnail} /> : <FileText size={14} color={colors.mutedForeground} />}
-        <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12 }}>{item.source ? `${item.source} · ` : ''}{title}</Text>
+    <View style={{ maxWidth: '100%', flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: radius.sm, backgroundColor: colors.muted, paddingHorizontal: 6, paddingVertical: 2 }}>
+      <Pressable ref={menu.ref} accessibilityRole="button" accessibilityLabel={title} onPress={menu.open} hitSlop={{ top: 10, bottom: 10, left: 6 }}
+        style={{ flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        {icon ? <ContextThumbnail key={icon} src={icon} size={12} fallback={thumbnail ? null : appIcon} /> : thumbnail ? null : appIcon}
+        {thumbnail ? <ContextThumbnail key={thumbnail} src={thumbnail} size={16} /> : null}
+        {item.source ? <>
+          <Text numberOfLines={1} style={{ flexShrink: 0, maxWidth: 140, fontSize: 12, fontWeight: '500', color: colors.foreground }}>{item.source}</Text>
+          <Text style={{ fontSize: 10, color: colors.mutedForeground }}>·</Text>
+        </> : null}
+        <Text numberOfLines={1} style={{ flexShrink: 1, maxWidth: 240, fontSize: 11, color: colors.mutedForeground }}>{title}</Text>
       </Pressable>
-      {onRemove ? <Pressable accessibilityRole="button" accessibilityLabel={`${t('Remove Attachment')}: ${title}`} accessibilityState={{ disabled: removing }} disabled={removing} hitSlop={6} onPress={() => onRemove(item.id)} style={{ padding: 8 }}>
-        {removing ? <ActivityIndicator size="small" color={colors.mutedForeground} /> : <X size={12} color={colors.mutedForeground} />}
+      {onRemove ? <Pressable accessibilityRole="button" accessibilityLabel={`${t('Remove Attachment')}: ${title}`} accessibilityState={{ disabled: removing }} disabled={removing} hitSlop={10} onPress={() => onRemove(item.id)} style={{ marginLeft: 2, opacity: removing ? 0.5 : 0.7 }}>
+        {removing ? <ActivityIndicator size="small" color={colors.mutedForeground} style={{ width: 10, height: 10, transform: [{ scale: 0.5 }] }} /> : <X size={10} color={colors.mutedForeground} />}
       </Pressable> : null}
     </View>
-    <AnchoredMenu anchor={menu.anchor} title={item.source ?? title} onDismiss={menu.close} width={320}>
+    {/* As wide as the composer allows, like the desktop popover (up to 40rem). */}
+    <AnchoredMenu anchor={menu.anchor} title={item.source ?? title} onDismiss={menu.close} width={640} titleProminent
+      titleIcon={icon ? <ContextThumbnail key={icon} src={icon} size={14} fallback={<AppWindow size={14} color={colors.mutedForeground} />} /> : <AppWindow size={14} color={colors.mutedForeground} />}>
       <ContextAttachmentPreview item={item} />
     </AnchoredMenu>
   </>
 }
 
 export function ContextAttachmentPreview({ item }: { item: ContextAttachment }) {
-  return <View style={{ padding: 12, gap: 8 }}>
-    {item.previewImages?.map((image, index) => safeImageUri(image.src) ? <Image key={index} accessibilityLabel={image.alt} source={{ uri: safeImageUri(image.src)! }} resizeMode="contain" style={{ width: '100%', height: 160 }} /> : null)}
-    <Text selectable style={{ fontSize: 12 }}>{item.content || item.title}</Text>
+  const { tokens: { colors, radius } } = useMobileTheme()
+  return <View style={{ paddingHorizontal: 4, paddingBottom: 4, gap: 6 }}>
+    {item.previewImages?.map((image, index) => safeImageUri(image.src) ? <Image key={index} accessibilityLabel={image.alt} source={{ uri: safeImageUri(image.src)! }} resizeMode="contain" style={{ width: '100%', height: 160, borderRadius: 4 }} /> : null)}
+    {item.content ? <Text selectable style={{ borderRadius: radius.sm, backgroundColor: colors.muted, padding: 8, fontFamily: monospace, fontSize: 12, lineHeight: 19, color: colors.mutedForeground }}>{item.content}</Text> : null}
   </View>
 }

@@ -44,6 +44,7 @@ import { ProjectPickerScreen } from '../screens/project-picker-screen'
 import { AddProjectScreen } from '../screens/add-project-screen'
 import { useAddProject } from '../navigation/use-add-project'
 import { previewAddProjectRequest } from './add-project-fixtures'
+import { previewAppContext } from './context-attachment-fixtures'
 import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
 import { AppSettingsScreen } from '../screens/app-settings-screen'
 import { UpdatePromptGallery } from './UpdatePromptGallery'
@@ -292,6 +293,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   // A goal the chip can actually be driven against: the menu's rows move it
   // through its states here rather than reaching a harness.
   const [goal, setGoal] = useState<SessionGoal | null>(PREVIEW_GOAL)
+  const [appContext, setAppContext] = useState(true)
   const goalCapability = resolveGoalCapability(provider, acpAgentId)
   // `/add-dir` and the folder chips open the same page; its two steps are their
   // own preview pages so both are reachable without a live host to browse.
@@ -483,6 +485,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
             selection={{ ...pickerCatalogs, model, models: previewModels, effort, efforts, onModel: chooseModel, onEffort: setEffort }}
             webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={slashDismissed ? [] : filterSlashCommands(chatDraft.draft, previewSlashCatalog, provider)} slashCatalogStatus={!slashDismissed && chatDraft.draft.startsWith('/') ? slashStatus : 'ready'} mentionRows={mentionRows} attachments={attachments} projectDirs={page === 'New session' ? previewDirs : []} sessionDirs={page === 'New session' ? previewSessionDirs : []} onManageDirectories={() => setPage('Additional folders')} queuedMessages={[]}
 todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={page === 'Chat'}
+            contextAttachments={page === 'Chat' && appContext ? [previewAppContext] : []} onRemoveContext={() => setAppContext(false)}
             collapsedPrompts={page === 'Chat' && pending === 'collapsed' ? [{ kind: 'permission', request: ordinaryPermission }] : undefined}
             onExpandPrompt={() => setPending('sheet')}
             sandboxInfo={sandbox} contextTokens={82_400} contextWindow={200_000} totalCostUsd={0.4213}

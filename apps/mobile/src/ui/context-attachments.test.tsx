@@ -61,3 +61,15 @@ test('invalid or oversized native SVG icons fall back to the generic attachment 
   await renderWithTheme(<ContextAttachments items={[{ id: 'bg', title: 'CAD context', thumbnail: 'data:image/svg+xml,%zz' }]} />)
   expect(screen.getByTestId('context-thumbnail-fallback')).toBeTruthy()
 })
+
+test('a one-colour server icon follows the theme like the desktop chip, a coloured one keeps its colours', async () => {
+  const result = await renderWithTheme(<ContextAttachments items={[{ id: 'bg', title: 'selected view', source: 'Bits & Bolts', icon: `data:image/svg+xml,${encodeURIComponent(bitsAndBoltsIcon)}` }]} />)
+  const icon = screen.getByTestId('context-thumbnail-svg')
+  expect(icon.props.xml).toContain('stroke="currentColor"')
+  expect(icon.props.xml).not.toContain('#27272a')
+  expect(screen.getByText('Bits & Bolts')).toBeTruthy()
+  expect(screen.getByText('selected view')).toBeTruthy()
+  const coloured = '<svg viewBox="0 0 2 1"><rect width="1" height="1" fill="#f00"/><rect x="1" width="1" height="1" fill="#00f"/></svg>'
+  await result.rerender(<ContextAttachments items={[{ id: 'bg', title: 'selected view', icon: `data:image/svg+xml,${encodeURIComponent(coloured)}` }]} />)
+  expect(screen.getByTestId('context-thumbnail-svg').props.xml).toContain('fill="#f00"')
+})

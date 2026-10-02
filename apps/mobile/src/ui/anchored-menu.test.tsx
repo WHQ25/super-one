@@ -67,3 +67,21 @@ test('stays open around the keyboard its own search field raised, re-measuring t
   await keyboard('keyboardDidShow', 500, 350)
   expect(onDismiss).toHaveBeenCalledTimes(1)
 })
+
+test('a prominent title names the source like the desktop popover; menus keep a muted label', async () => {
+  const menu = (prominent: boolean) => render(
+    <SafeAreaProvider initialMetrics={{ frame: { x: 0, y: 0, width: 390, height: 844 }, insets: { top: 47, left: 0, right: 0, bottom: 34 } }}>
+      <MobileThemeProvider colorScheme="dark" locale="en">
+        <AnchoredMenu anchor={ANCHOR} title="Bits & Bolts" onDismiss={() => {}} titleProminent={prominent}>{null}</AnchoredMenu>
+      </MobileThemeProvider>
+    </SafeAreaProvider>,
+  )
+  const style = () => Object.assign({}, ...[screen.getByRole('header', { name: 'Bits & Bolts' }).props.style].flat())
+  const plain = await menu(false)
+  const muted = style()
+  expect(muted.fontWeight).toBeUndefined()
+  await plain.unmount()
+  await menu(true)
+  expect(style().fontWeight).toBe('500')
+  expect(style().color).not.toBe(muted.color)
+})

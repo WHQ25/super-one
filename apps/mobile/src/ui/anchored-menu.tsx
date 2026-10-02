@@ -33,6 +33,10 @@ type AnchoredMenuProps = {
   anchor: AnchorRect | null; title: string; onDismiss: () => void; children: ReactNode; width?: number
   /** Controls that belong on the title row, e.g. refresh and search. */
   titleAccessory?: ReactNode
+  /** The source's icon, before the title. */
+  titleIcon?: ReactNode
+  /** Name the content's source in the foreground instead of a muted menu label. */
+  titleProminent?: boolean
   /** `useMenuAnchor().remeasure` — needed by menus that hold a `MenuTextInput`. */
   remeasure?: () => void
 }
@@ -43,12 +47,12 @@ export function AnchoredMenu(props: AnchoredMenuProps) {
   useEffect(() => {
     if (props.anchor) host.show(id, <MenuSurface {...props} />)
     else host.hide(id)
-  }, [host, id, props.anchor, props.title, props.onDismiss, props.children, props.width, props.titleAccessory, props.remeasure])
+  }, [host, id, props.anchor, props.title, props.onDismiss, props.children, props.width, props.titleAccessory, props.titleIcon, props.titleProminent, props.remeasure])
   useEffect(() => () => host.hide(id), [host, id])
   return null
 }
 
-function MenuSurface({ anchor, title, onDismiss, children, width = 300, titleAccessory, remeasure }: AnchoredMenuProps) {
+function MenuSurface({ anchor, title, onDismiss, children, width = 300, titleAccessory, titleIcon, titleProminent, remeasure }: AnchoredMenuProps) {
   const { tokens: { colors, radius, shadows } } = useMobileTheme()
   const { t } = useMobileLocale()
   const translatedTitle = t(title)
@@ -109,8 +113,10 @@ function MenuSurface({ anchor, title, onDismiss, children, width = 300, titleAcc
         borderRadius: radius.lg, backgroundColor: colors.surface, ...shadows.popover }}>
         <ScrollView keyboardShouldPersistTaps="always" bounces={false}
           onContentSizeChange={(_, height) => setContentHeight(height + 2)} contentContainerStyle={{ padding: 4 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 8, paddingRight: titleAccessory ? 0 : 8 }}>
-            <Text ref={titleRef} accessible accessibilityRole="header" style={{ paddingVertical: 8, fontSize: 12, color: colors.mutedForeground }}>{translatedTitle}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: titleIcon ? 6 : 8, paddingLeft: titleProminent ? 4 : 8, paddingRight: titleAccessory ? 0 : 8 }}>
+            {titleIcon}
+            <Text ref={titleRef} accessible accessibilityRole="header" style={{ paddingVertical: titleProminent ? 6 : 8, fontSize: 12, ...(titleProminent ? { flexShrink: 1, fontWeight: '500', color: colors.foreground } : { color: colors.mutedForeground }) }}
+              numberOfLines={titleProminent ? 1 : undefined}>{translatedTitle}</Text>
             {titleAccessory}
           </View>
           {children}

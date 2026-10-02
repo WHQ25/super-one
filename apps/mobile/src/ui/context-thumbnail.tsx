@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Image, View } from 'react-native'
 import { FileText } from 'lucide-react-native'
 import { parse, SvgXml, type XmlAST } from 'react-native-svg'
 import { safeImageUri } from '@superone/shared/image-uri'
+import { mcpAppMonochromeSvg } from '@superone/shared/mcp-apps-metadata'
 import { useMobileTheme } from '../theme/context'
 
 const SVG_URI_MAX_BYTES = 32 * 1024
@@ -55,14 +56,27 @@ export function contextSvgXml(src: string): string | undefined {
   } catch { return undefined }
 }
 
-export function ContextThumbnail({ src }: { src: string }) {
+/** Paint every colour of a one-colour icon with `currentColor`, the way the desktop masks it. */
+function monochrome(xml: string): string {
+  return xml.replace(/\b(fill|stroke|color|stopColor)="(?!none"|transparent"|url\()[^"]*"/gi, '$1="currentColor"')
+}
+
+/**
+ * A server icon or a content thumbnail. Like the desktop's `McpAppIcon`, a one-colour
+ * SVG follows the theme (muted text colour) instead of keeping a colour picked for one
+ * background; anything else is shown as the image it is.
+ */
+export function ContextThumbnail({ src, size = 20, fallback }: { src: string; size?: number; fallback?: ReactNode }) {
   const [nativeFailed, setNativeFailed] = useState(false)
   const { tokens: { colors } } = useMobileTheme()
-  const xml = useMemo(() => contextSvgXml(src), [src])
-  const fallback = <View testID="context-thumbnail-fallback"><FileText size={14} color={colors.mutedForeground} /></View>
+  const xml = useMemo(() => {
+    const safe = contextSvgXml(src)
+    return safe && mcpAppMonochromeSvg(src) !== undefined ? monochrome(safe) : safe
+  }, [src])
+  const missing = <View testID="context-thumbnail-fallback">{fallback ?? <FileText size={size * 0.7} color={colors.mutedForeground} />}</View>
   if (/^data:image\/svg\+xml[;,]/i.test(src)) return xml
-    ? <SvgXml testID="context-thumbnail-svg" xml={xml} width={20} height={20} fallback={fallback} onError={() => {}} /> : fallback
+    ? <SvgXml testID="context-thumbnail-svg" xml={xml} width={size} height={size} color={colors.mutedForeground} fallback={missing} onError={() => {}} /> : missing
   const uri = safeImageUri(src)
-  if (nativeFailed || !uri) return fallback
-  return <Image source={{ uri }} onError={() => setNativeFailed(true)} style={{ width: 20, height: 20, borderRadius: 4 }} />
+  if (nativeFailed || !uri) return missing
+  return <Image source={{ uri }} onError={() => setNativeFailed(true)} style={{ width: size, height: size, borderRadius: 2 }} />
 }

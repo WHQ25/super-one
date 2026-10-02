@@ -3744,7 +3744,8 @@ function registerIpcHandlers(): void {
         specs.map((spec) => {
           if (spec.type === 'separator') return { type: 'separator' }
           const item: Electron.MenuItemConstructorOptions = {
-            label: spec.label,
+            // Labels are plain text (file and App names); Electron reads a single `&` as a mnemonic marker and drops it.
+            label: spec.label?.replaceAll('&', '&&'),
             enabled: spec.enabled !== false,
           }
           if (spec.iconDataUrl) {

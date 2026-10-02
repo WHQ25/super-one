@@ -10,6 +10,7 @@ import { AgentProfileIcon } from '@superone/ui/components/harness/AgentProfileIc
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { DesktopAppIcon } from './DesktopAppIcon'
 import { McpMentionChipIcon } from './McpMentionRows'
+import { McpMentionPreviewHover } from './McpMentionSent'
 import type { MentionNodeAttrs } from './mention-node'
 
 /**
@@ -92,7 +93,13 @@ export function MentionChip({ node }: NodeViewProps) {
         isBlendedChip ? 'mention-chip--blended' : 'mention-chip--resource',
       )}
     >
-      <MentionChipBody icon={mentionChipIcon(kind, value, displayName)} label={label} />
+      {kind === 'mcp-resource' ? (
+        <McpMentionPreviewHover value={value}>
+          <MentionChipBody icon={mentionChipIcon(kind, value, displayName)} label={label} />
+        </McpMentionPreviewHover>
+      ) : (
+        <MentionChipBody icon={mentionChipIcon(kind, value, displayName)} label={label} />
+      )}
     </NodeViewWrapper>
   )
 }

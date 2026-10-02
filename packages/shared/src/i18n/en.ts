@@ -3113,6 +3113,14 @@ export type Messages = {
       mcpSearchFailed: string
       mcpUnavailable: string
       mcpIncomplete: string
+      mcpSentContent: string
+      mcpSentTruncated: string
+      mcpSentLinkOnly: string
+      mcpPreviewContent: string
+      mcpPreviewTruncated: string
+      mcpPreviewLinkOnly: string
+      mcpPreviewLoading: string
+      mcpPreviewFailed: string
       loadingGitRefs: string
       disabled: string
       computerUseDisabledHint: string
@@ -7262,6 +7270,14 @@ export const en: Messages = {
       mcpSearchFailed: 'Search failed',
       mcpUnavailable: "Couldn't reach MCP servers",
       mcpIncomplete: "Some MCP servers haven't answered yet",
+      mcpSentContent: 'Sent to the agent with the message ({{count}} characters):',
+      mcpSentTruncated: 'Sent to the agent with the message: the first {{count}} characters, the rest left out:',
+      mcpSentLinkOnly: 'Only the link was sent; the agent reads the resource itself if it needs it.',
+      mcpPreviewContent: 'Will be sent to the agent with the message ({{count}} characters, read again at send):',
+      mcpPreviewTruncated: 'Will be sent to the agent with the message: the first {{count}} characters, read again at send:',
+      mcpPreviewLinkOnly: "This resource can't be inlined; only the link will be sent.",
+      mcpPreviewLoading: 'Reading the resource…',
+      mcpPreviewFailed: "Couldn't read it now; SuperOne tries again when you send.",
       loadingGitRefs: 'Loading…',
       disabled: 'Off',
       computerUseDisabledHint: 'Enable Computer Use in Settings first',

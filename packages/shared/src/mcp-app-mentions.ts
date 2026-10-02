@@ -121,7 +121,66 @@ export function mcpResourceTagMention(server: string, name: string, uri: string)
   return { value: encodeMcpMentionValue(unescapeTagText(server).trim(), unescapeTagText(uri).trim()), displayName: unescapeTagText(name).trim() }
 }
 
+/** Text of one mentioned resource inlined for the model; larger text is cut and says so. */
+export const MCP_MENTION_INLINE_MAX_CHARS = 20_000
+/** All mentioned resources of one message together. */
+export const MCP_MENTION_INLINE_TOTAL_MAX_CHARS = 60_000
+
+/**
+ * A mentioned resource as read at send time. `skipped` resources are not inlined
+ * (binary, unreadable, over the total budget); the model still has their link.
+ */
+export interface McpMentionReadResource {
+  server: string
+  uri: string
+  mimeType?: string
+  text?: string
+  truncated?: true
+  skipped?: 'binary' | 'failed' | 'budget'
+}
+
+export const MCP_RESOURCE_REMINDER_REGEX = /\n*<superone-mcp-resource-content>[\s\S]*?<\/superone-mcp-resource-content>\n*/g
+
+const quoteAttr = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+/** Server text must not close the wrapper early: the bubble strips it by its closing tag. */
+const neutralize = (text: string) => text.replace(/<\/(superone-mcp-resource-content|resource)\b/gi, '<\\/$1')
+
+/** Agent-only block with the mentioned resources' text; empty when nothing was read. */
+export function formatMcpResourceReminder(resources: McpMentionReadResource[]): string {
+  const read = resources.filter(resource => resource.text !== undefined)
+  if (!read.length) return ''
+  const blocks = read.map(resource => {
+    const attrs = `server="${quoteAttr(resource.server)}" uri="${quoteAttr(resource.uri)}"${resource.mimeType ? ` mimeType="${quoteAttr(resource.mimeType)}"` : ''}`
+    const note = resource.truncated ? `\n[Truncated at ${MCP_MENTION_INLINE_MAX_CHARS} characters; read the resource for the rest.]` : ''
+    return `<resource ${attrs}>\n${neutralize(resource.text!)}${note}\n</resource>`
+  })
+  return `\n\n<superone-mcp-resource-content>\nThe user @-mentioned these MCP resources. SuperOne already read them for you; do not read them again unless you need content marked as truncated.\n${blocks.join('\n')}\n</superone-mcp-resource-content>`
+}
+
+const RESOURCE_ENTRY_REGEX = /<resource server="([^"]*)" uri="([^"]*)"(?: mimeType="([^"]*)")?>\n([\s\S]*?)\n<\/resource>/g
+const TRUNCATION_NOTE = /\n\[Truncated at \d+ characters; read the resource for the rest\.\]$/
+const unquoteAttr = (value: string) => value.replace(/&lt;/g, '<').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
+
+/**
+ * What a message's content block gave the model, keyed by `encodeMcpMentionValue`,
+ * so a chip can show exactly what was sent for it. Inverse of `formatMcpResourceReminder`.
+ */
+export function parseMcpResourceReminder(text: string): Map<string, McpMentionReadResource> {
+  const output = new Map<string, McpMentionReadResource>()
+  for (const [block] of text.matchAll(MCP_RESOURCE_REMINDER_REGEX)) {
+    for (const [, server, uri, mimeType, body] of block.matchAll(RESOURCE_ENTRY_REGEX)) {
+      const truncated = TRUNCATION_NOTE.test(body)
+      const content = body.replace(TRUNCATION_NOTE, '').replace(/<\\\/(superone-mcp-resource-content|resource)\b/gi, '</$1')
+      const resource = { server: unquoteAttr(server), uri: unquoteAttr(uri) }
+      output.set(encodeMcpMentionValue(resource.server, resource.uri), {
+        ...resource, ...(mimeType ? { mimeType: unquoteAttr(mimeType) } : {}), text: content, ...(truncated ? { truncated: true as const } : {}),
+      })
+    }
+  }
+  return output
+}
+
 /** User-visible collapse: `@Hex bolt`. */
 export function replaceMcpResourceTagsWithMention(text: string): string {
-  return text.replace(MCP_RESOURCE_TAG_REGEX, (_full, _server, name) => `@${unescapeTagText(String(name)).trim()}`)
+  return text.replace(MCP_RESOURCE_REMINDER_REGEX, '').replace(MCP_RESOURCE_TAG_REGEX, (_full, _server, name) => `@${unescapeTagText(String(name)).trim()}`)
 }

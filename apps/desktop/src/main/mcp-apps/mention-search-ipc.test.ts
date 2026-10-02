@@ -14,7 +14,7 @@ const mentionTool: McpToolDescriptor = {
 }
 const event = { senderFrame: 'main', sender: { mainFrame: 'main' } }
 
-function session(servers: Record<string, { tools?: McpToolDescriptor[] | Error; call?: (args: unknown) => unknown }>) {
+function session(servers: Record<string, { tools?: McpToolDescriptor[] | Error; call?: (args: unknown) => unknown; read?: (uri: string, transient?: boolean) => unknown }>) {
   const calls: Array<{ server: string; args: unknown }> = []
   const value = {
     getMcpAppsHostBindings: vi.fn(async () => Object.keys(servers).map(server => ({ binding: { server }, origin: { providerSessionId: 't' } }))),
@@ -29,6 +29,7 @@ function session(servers: Record<string, { tools?: McpToolDescriptor[] | Error; 
           calls.push({ server, args })
           return { result: await spec.call!(args), outcome: 'completed' }
         },
+        readResource: async ({ uri, transient }: { uri: string; transient?: boolean }) => spec.read!(uri, transient),
         dispose: () => {},
       } as unknown as McpAppsProvider
     }),
@@ -80,5 +81,50 @@ describe('MCP mention search IPC', () => {
     registerMcpAppMentionIpc(() => target, () => target)
     const result = await handlers.get(AgentIpcChannels.MCP_APP_MENTION_SEARCH)!({ senderFrame: 'child', sender: { mainFrame: 'main' } }, '/work', 's', 'a')
     expect(result).toMatchObject({ ok: false, error: { code: 'denied' } })
+  })
+})
+
+describe('MCP mention read IPC', () => {
+  const read = (target: Session | null, targets: unknown, projectPath = '/work') => {
+    handlers.clear()
+    registerMcpAppMentionIpc(() => target, () => { if (!target) throw new Error('missing'); return target })
+    return handlers.get(AgentIpcChannels.MCP_APP_MENTION_READ)!(event, projectPath, 'session-1', targets)
+  }
+
+  it('reads text transiently, caps it, skips binary and failures, and dedupes', async () => {
+    const long = 'x'.repeat(25_000)
+    const { session: target } = session({
+      bits: { read: (uri, transient) => {
+        if (!transient) throw new Error('must be transient')
+        if (uri === 'cad://text') return { contents: [{ uri, mimeType: 'text/markdown', text: '# A' }, { uri, text: 'more' }] }
+        if (uri === 'cad://long') return { contents: [{ uri, text: long }] }
+        if (uri === 'cad://bin') return { contents: [{ uri, blob: 'AAAA', mimeType: 'model/stl' }] }
+        throw new Error('gone')
+      } },
+    })
+    const result = await read(target, [
+      { server: 'bits', uri: 'cad://text' }, { server: 'bits', uri: 'cad://text' }, { server: 'bits', uri: 'cad://long' },
+      { server: 'bits', uri: 'cad://bin' }, { server: 'bits', uri: 'cad://gone' }, { server: 'other', uri: 'x://1' },
+    ]) as { ok: true; value: Array<Record<string, unknown>> }
+    expect(result.value).toEqual([
+      { server: 'bits', uri: 'cad://text', mimeType: 'text/markdown', text: '# A\n\nmore' },
+      { server: 'bits', uri: 'cad://long', text: 'x'.repeat(20_000), truncated: true },
+      { server: 'bits', uri: 'cad://bin', skipped: 'binary' },
+      { server: 'bits', uri: 'cad://gone', skipped: 'failed' },
+      { server: 'other', uri: 'x://1', skipped: 'failed' },
+    ])
+  })
+
+  it('stops inlining once the message budget is spent', async () => {
+    const { session: target } = session({ bits: { read: (uri) => ({ contents: [{ uri, text: 'y'.repeat(20_000) }] }) } })
+    const result = await read(target, [1, 2, 3, 4].map(i => ({ server: 'bits', uri: `cad://${i}` }))) as { ok: true; value: Array<Record<string, unknown>> }
+    expect(result.value.map(resource => resource.skipped ?? 'read')).toEqual(['read', 'read', 'read', 'budget'])
+  })
+
+  it('answers remote projects, missing sessions and malformed requests without reading', async () => {
+    const { session: target } = session({ bits: { read: () => { throw new Error('unexpected read') } } })
+    expect(await read(target, [{ server: 'bits', uri: 'a://1' }], 'remote:node-1:/work')).toEqual({ ok: true, value: [{ server: 'bits', uri: 'a://1', skipped: 'failed' }] })
+    expect(await read(null, [{ server: 'bits', uri: 'a://1' }])).toEqual({ ok: true, value: [{ server: 'bits', uri: 'a://1', skipped: 'failed' }] })
+    expect(await read(target, [{ server: 1 }])).toMatchObject({ ok: false, error: { code: 'invalid' } })
   })
 })

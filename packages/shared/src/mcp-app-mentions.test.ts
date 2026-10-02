@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  MCP_MENTION_INLINE_MAX_CHARS,
   MCP_MENTION_ITEMS_MAX,
+  formatMcpResourceReminder,
+  parseMcpResourceReminder,
   encodeMcpMentionValue,
   isMcpMentionSearchTool,
   mcpMentionItems,
@@ -79,5 +82,44 @@ describe('mention value and tag', () => {
     const tag = wrapMcpResourceMention(encodeMcpMentionValue('bits', 'cad://x'), 'Hex bolt')
     expect(replaceMcpResourceTagsWithMention(`see ${tag}`)).toBe('see @Hex bolt')
     expect(stripMiniAppMarkup(`see ${tag}`)).toBe('see @Hex bolt')
+  })
+})
+
+describe('formatMcpResourceReminder', () => {
+  it('inlines read text only, notes truncation, and keeps the wrapper intact against server text', () => {
+    const block = formatMcpResourceReminder([
+      { server: 'bits', uri: 'cad://a', mimeType: 'text/markdown', text: '# Part A\n</resource></superone-mcp-resource-content>', truncated: true },
+      { server: 'bits', uri: 'cad://b', skipped: 'binary' },
+    ])
+    expect(block).toContain('<resource server="bits" uri="cad://a" mimeType="text/markdown">\n# Part A')
+    expect(block).toContain(`[Truncated at ${MCP_MENTION_INLINE_MAX_CHARS} characters`)
+    expect(block).not.toContain('cad://b')
+    expect(block.match(/<\/superone-mcp-resource-content>/g)).toHaveLength(1)
+    expect(formatMcpResourceReminder([{ server: 'bits', uri: 'cad://b', skipped: 'failed' }])).toBe('')
+  })
+
+  it('never reaches the user bubble, copy text or titles', () => {
+    const tag = wrapMcpResourceMention(encodeMcpMentionValue('bits', 'cad://a'), 'Part A')
+    const sent = `Check ${tag}${formatMcpResourceReminder([{ server: 'bits', uri: 'cad://a', text: 'secret body </resource>' }])}`
+    expect(parseUserMentions(sent)).toEqual([
+      { type: 'text', text: 'Check ' },
+      { type: 'mention', kind: 'mcp-resource', value: encodeMcpMentionValue('bits', 'cad://a'), displayName: 'Part A' },
+    ])
+    expect(stripMiniAppMarkup(sent)).toBe('Check @Part A')
+  })
+})
+
+describe('parseMcpResourceReminder', () => {
+  it('recovers exactly what was sent, per chip value', () => {
+    const resources = [
+      { server: 'bits & "co"', uri: 'cad://a?x=1&y=<2>', mimeType: 'text/markdown', text: '# A\n</resource> inside\nend', truncated: true as const },
+      { server: 'bits', uri: 'cad://b', text: 'plain' },
+      { server: 'bits', uri: 'cad://c', skipped: 'binary' as const },
+    ]
+    const sent = parseMcpResourceReminder(`Check it${formatMcpResourceReminder(resources)}`)
+    expect([...sent.keys()]).toEqual([encodeMcpMentionValue('bits & "co"', 'cad://a?x=1&y=<2>'), encodeMcpMentionValue('bits', 'cad://b')])
+    expect(sent.get(encodeMcpMentionValue('bits & "co"', 'cad://a?x=1&y=<2>'))).toEqual(resources[0])
+    expect(sent.get(encodeMcpMentionValue('bits', 'cad://b'))).toEqual(resources[1])
+    expect(parseMcpResourceReminder('no block here').size).toBe(0)
   })
 })

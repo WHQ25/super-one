@@ -838,13 +838,25 @@ renderer in `components/mcp-apps/mention-search.ts` and
 `Chat/MentionChip`). Typing `@` may start the harness. Each server tool is a
 popup section before files; items are resource links or OpenAI resources,
 capped at 50 per server. A picked item becomes an `mcp-resource` chip whose
-tag carries server, title and URI: Codex's `mention` input only takes `app://`
-and `plugin://` paths, so the model gets the self-describing tag and reads the
-resource with its own MCP tools. Claude sessions show no section until step 1.
+tag carries server, title and URI and is drawn like @collaborator and @git chips (Codex's `mention` input only takes `app://`
+and `plugin://` paths). At send the host reads each mentioned resource through
+the session's connection (`mcpAppMentionRead`, a transient read) and appends its text as
+an agent-only `<superone-mcp-resource-content>` block, 20k characters per
+resource and 60k per message; bubbles, copy text and titles strip it. Binary,
+unreadable or over-budget resources keep only the tag, and the model reads them
+itself. The same block is stored as its own text block of the user message, so
+hovering a sent chip shows exactly what the agent got (also after reload),
+and hovering a composer chip reads it now to preview what sending will inline;
+composer restore drops it. Claude sessions show no section until step 1.
+Chips and rows show the server's icon, remembered per server name across
+restarts so a transcript never asks a harness, else the icon SuperOne already
+knows for the server (as tool rows show it); one-colour SVG icons are painted
+in the text colour (the spec asks for `currentColor`), others as images. Rows
+highlight where the query occurs, though the server did the matching.
 
 Verified live (Codex 0.159, Bits & Bolts, CDP): cold lookup about 10 s, warm
-5 ms; `@keycap` lists the server's parts; the chip survives send; the model
-read the mentioned resource and answered from it.
+5 ms; `@keycap` lists the server's parts; the chip survives send; with the
+content inlined the model answered without a tool call (before: list + read).
 
 Out of this phase: phone parity (file preview "more" menu is the natural
 place), remote-node direct clients, global/thread entrypoints, settings.

@@ -1,4 +1,5 @@
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
+import { MCP_RESOURCE_REMINDER_REGEX } from '@superone/shared/mcp-app-mentions'
 import type { ChatCoreSession } from './types'
 
 type SendFailedEvent = Extract<AgentEvent, { type: 'user_message_send_failed' }>
@@ -7,9 +8,12 @@ function withSendFailure(message: ChatMessage, error: string): ChatMessage {
   return { ...message, metadata: { ...message.metadata, sendFailure: { error } } }
 }
 
-/** The composer text a user message was sent from (paste segments included). */
+/**
+ * The composer text a user message was sent from (paste segments included). The
+ * stored copy of mentioned MCP resources is what the host read, not what was typed.
+ */
 export function userMessageText(message: ChatMessage): string {
-  return message.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('')
+  return message.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('').replace(MCP_RESOURCE_REMINDER_REGEX, '')
 }
 
 /** Put a sent message's text back in front of whatever has been typed since. */

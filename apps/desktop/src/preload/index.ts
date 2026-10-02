@@ -233,6 +233,8 @@ const environmentAPI = {
     ipcRenderer.invoke(AgentIpcChannels.MCP_APP_CLOSE_FILE, projectPath, sessionId, appInstanceId) as Promise<void>,
   mcpAppMentionSearch: (projectPath: string, sessionId: string, query: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_APP_MENTION_SEARCH, projectPath, sessionId, query) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-app-mentions').McpMentionSearchResult>>,
+  mcpAppMentionRead: (projectPath: string, sessionId: string, targets: Array<{ server: string; uri: string }>) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_APP_MENTION_READ, projectPath, sessionId, targets) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-app-mentions').McpMentionReadResource[]>>,
   onMcpAppResourceUpdated: (callback: (event: { appInstanceId: string; uri: string }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: { appInstanceId: string; uri: string }) => callback(data)
     ipcRenderer.on('mcpApp:resourceUpdated', listener)

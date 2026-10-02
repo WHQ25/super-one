@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { createDefaultChatCoreSession } from './defaults'
 import { applyEventToSession } from './reducer'
-import { withoutSendFailure } from './send-failure'
+import { userMessageText, withoutSendFailure } from './send-failure'
+import { formatMcpResourceReminder } from '@superone/shared/mcp-app-mentions'
 
 function user(id: string, text = 'hi'): ChatMessage {
   return { id, role: 'user', status: 'complete', content: [{ type: 'text', text }], createdAt: '', providerId: 'local' }
@@ -62,5 +63,13 @@ describe('user_message_send_failed', () => {
     expect(withoutSendFailure(failed).metadata).toEqual({ source: 'user' })
     const clean = user('u2')
     expect(withoutSendFailure(clean)).toBe(clean)
+  })
+})
+
+describe('userMessageText', () => {
+  it('restores what was typed, not the MCP resource text the host read for the agent', () => {
+    const message = user('u1', 'Check this')
+    message.content.push({ type: 'text', text: formatMcpResourceReminder([{ server: 'bits', uri: 'cad://a', text: '# Part A' }]).trim() })
+    expect(userMessageText(message)).toBe('Check this')
   })
 })

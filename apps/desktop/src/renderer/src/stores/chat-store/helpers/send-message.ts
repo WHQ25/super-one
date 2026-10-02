@@ -964,6 +964,13 @@ export async function sendMessageImpl(
     }
     pendingDesktopAppReminder = `\n\n<superone-desktop-app-reminder>\n${lines.join('\n')}\n</superone-desktop-app-reminder>`
   }
+  // MCP server items: the host reads their text now so the model need not call a tool for it.
+  // No session yet means no server answered a search either, so there is nothing to read.
+  const mcpMentionSid = resolveWriteSid()
+  const mcpResourceSuffix = mcpMentionSid && mentions.some((m) => m.kind === 'mcp-resource')
+    ? await import('../../../components/mcp-apps/mention-content').then(({ mcpMentionContentForModel }) =>
+      mcpMentionContentForModel(projectPath, mcpMentionSid, mentions))
+    : ''
   // desktop-app reminder is appended only after grant IPC succeeds (below).
   let finalContent =
     agentContent +
@@ -973,6 +980,7 @@ export async function sendMessageImpl(
     sessionReminderSuffix +
     agentReminderSuffix +
     capabilityReminderSuffix +
+    mcpResourceSuffix +
     annotationSuffix
   const codexCommand = parseCodexCommand(rawContent)
   // Note: codex command is re-built after grant if desktop-app reminder is added.
@@ -1198,6 +1206,10 @@ export async function sendMessageImpl(
           ? segments.flatMap((s) => ('attachmentId' in s ? [] : [{ type: 'text' as const, text: s.text, isPaste: s.isPaste }]))
           : rawContent ? [{ type: 'text' as const, text: rawContent }] : []),
       ]
+
+  // Keep what the host read for mentioned MCP resources with the message, so its
+  // chips can show what the agent got. The bubble and copy text strip the block.
+  if (mcpResourceSuffix) userContent.push({ type: 'text', text: mcpResourceSuffix.trim() })
 
   const userMessageId = newMessageId('user')
   const messageContexts = activeContexts.length > 0

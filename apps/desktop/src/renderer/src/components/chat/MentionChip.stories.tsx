@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ChatMessage as ChatMessageType } from '@superone/shared/agent-types'
-import { encodeMcpMentionValue, wrapMcpResourceMention } from '@superone/shared/mcp-app-mentions'
+import { userEvent } from 'storybook/test'
+import { encodeMcpMentionValue, formatMcpResourceReminder, wrapMcpResourceMention, type McpMentionReadResource } from '@superone/shared/mcp-app-mentions'
 import { wrapPathRefMention } from '@superone/shared/miniapp-prompt-tags'
 import { rememberMcpMentionIcons } from '@/components/mcp-apps/mention-icons'
 import { ChatMessage } from './ChatMessage'
@@ -15,12 +16,16 @@ rememberMcpMentionIcons([
   { server: 'tracker', tool: 'mentions', title: 'tracker', icon: TRACKER_ICON, items: [] },
 ])
 
-/** The user bubble as sent: chips come from the structured tags the composer writes. */
-function Bubble({ text, width = 560 }: { text: string; width?: number }) {
+/**
+ * The user bubble as sent: chips come from the structured tags the composer writes;
+ * `sent` is what the host read for mentioned MCP resources, stored as its own block.
+ */
+function Bubble({ text, sent = [], width = 560 }: { text: string; sent?: McpMentionReadResource[]; width?: number }) {
+  const block = formatMcpResourceReminder(sent).trim()
   const message: ChatMessageType = {
     id: 'user-1', role: 'user', status: 'complete', providerId: 'user',
     createdAt: new Date(Date.now() - 60_000).toISOString(),
-    content: [{ type: 'text', text }],
+    content: [{ type: 'text', text }, ...(block ? [{ type: 'text' as const, text: block }] : [])],
   }
   return (
     <div className="@container rounded-xl border border-border/60 bg-background p-3" style={{ width, maxWidth: '100%' }}>
@@ -59,4 +64,48 @@ export const McpResourceLongNarrow: Story = {
 /** A server with no icon of its own, and none SuperOne knows, shows the MCP mark. */
 export const McpResourceUnknownServerIcon: Story = {
   args: { text: `Open ${part('tracker://issues/412', 'Bolt torque table is out of date', 'no-icon-server')}` },
+}
+
+const firstMcpChip = (root: HTMLElement) => root.querySelector<HTMLElement>('[data-mention-kind="mcp-resource"]')!
+
+const HEX_BOLT = `# Hex bolt M8 × 40
+
+ISO 4017 hex head screw, fully threaded. Recreated from the supplier drawing.
+
+| Property | Value |
+|---|---|
+| Thread | M8 × 1.25 |
+| Length | 40 mm |
+| Head | 13 mm across flats |
+
+Tags: fastener, metric, iso-4017`
+
+/** Hovering a sent chip shows exactly what went to the agent with the message. */
+export const McpResourceSentContent: Story = {
+  args: {
+    text: `Check ${part('cad://parts/hex-bolt-m8', 'Hex bolt M8 × 40')} against the torque table`,
+    sent: [{ server: 'bits-and-bolts', uri: 'cad://parts/hex-bolt-m8', mimeType: 'text/markdown', text: HEX_BOLT }],
+  },
+  play: async ({ canvasElement }) => {
+    await userEvent.hover(firstMcpChip(canvasElement))
+  },
+}
+
+/** A resource cut at the per-resource cap says so; the agent can still read the rest. */
+export const McpResourceSentTruncated: Story = {
+  args: {
+    text: `Summarize ${part('cad://parts/catalogue', 'Full fastener catalogue')}`,
+    sent: [{ server: 'bits-and-bolts', uri: 'cad://parts/catalogue', text: Array.from({ length: 80 }, (_, i) => `Row ${i + 1}: M${4 + (i % 12)} bolt, ${10 + i} mm`).join('\n'), truncated: true }],
+  },
+  play: async ({ canvasElement }) => {
+    await userEvent.hover(firstMcpChip(canvasElement))
+  },
+}
+
+/** Binary or unreadable resources were not inlined: the hover says the agent only got the link. */
+export const McpResourceLinkOnly: Story = {
+  args: { text: `Open ${part('cad://parts/bracket.step', 'Bracket assembly')}` },
+  play: async ({ canvasElement }) => {
+    await userEvent.hover(firstMcpChip(canvasElement))
+  },
 }

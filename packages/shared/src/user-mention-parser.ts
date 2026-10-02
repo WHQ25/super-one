@@ -9,7 +9,7 @@ import {
   AGENT_TAG_REGEX,
 } from './agent-mention-tags'
 import { GIT_HOST_TAG_REGEX, GIT_TAG_REGEX, gitTagDisplayName, gitTagValue } from './git-mention-tags'
-import { MCP_RESOURCE_TAG_REGEX, mcpResourceTagMention } from './mcp-app-mentions'
+import { MCP_RESOURCE_REMINDER_REGEX, MCP_RESOURCE_TAG_REGEX, mcpResourceTagMention } from './mcp-app-mentions'
 import {
   DESKTOP_APP_REMINDER_REGEX,
   DESKTOP_APP_TAG_REGEX,
@@ -197,6 +197,7 @@ export function parseUserMentions(text: string): UserTextSegment[] {
     .replace(DESKTOP_APP_REMINDER_REGEX, '')
     .replace(SESSION_REMINDER_REGEX, '')
     .replace(AGENT_REMINDER_REGEX, '')
+    .replace(MCP_RESOURCE_REMINDER_REGEX, '')
 
   // 2. Extract structured tags only (popup-selected mentions).
   const tagMatches = [

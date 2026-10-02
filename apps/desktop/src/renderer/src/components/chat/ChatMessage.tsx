@@ -25,6 +25,7 @@ import { TooltipProvider } from '@superone/ui/components/ui/tooltip'
 import { UserSelectionChip } from './UserSelectionChip'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { MentionChipContent, isBlendedMentionKind, mentionChipIcon } from './MentionChip'
+import { McpMentionSentHover, McpMentionSentProvider } from './McpMentionSent'
 import { PasteChipPreview } from './PasteChipPreview'
 import { PASTE_CHIP_LINE_THRESHOLD, PASTE_CHIP_CHAR_THRESHOLD } from './paste-chip-node'
 import { getActiveSessionView, useChatStore, useSessionScope } from '@/stores/chat'
@@ -184,7 +185,7 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
 
   // Same .mention-chip* CSS as composer — em-only, scales with Cmd+= zoom.
   // break-normal resists the bubble's break-all so labels wrap between words.
-  return (
+  const chip = (
     <MentionChipContent
       blended={isBlendedChip}
       kind={resolvedKind}
@@ -197,6 +198,7 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
       label={display}
     />
   )
+  return resolvedKind === 'mcp-resource' ? <McpMentionSentHover value={value}>{chip}</McpMentionSentHover> : chip
 }
 
 export function UserTextBlock({ text, isPaste }: { text: string; isPaste?: boolean }) {
@@ -347,36 +349,38 @@ export const ChatMessage = memo(function ChatMessage({
   const body = delegation ? (
     <RealtimeDelegationBody delegation={delegation} />
   ) : isUser ? (
-    <TooltipProvider delayDuration={200}>
-      {message.userSelections && message.userSelections.length > 0 && (
-        <div className="mb-1.5 flex flex-wrap gap-1">
-          <UserSelectionChip selections={message.userSelections} readOnly />
-        </div>
-      )}
-      {message.content.map((block, index) => {
-        if (block.type === 'image' || block.type === 'document') {
-          const attachment = message.attachments?.find((item) => (
-            block.id ? item.id === block.id : item.name === block.name
-          ))
-          return attachment
-            ? <AttachmentChip key={index} att={attachment} onOpen={() => setPreviewAtt(attachment)} />
-            : null
-        }
-        return block.type === 'text'
-          ? <UserTextBlock key={index} text={goalObjective ?? block.text} isPaste={block.isPaste} />
-          : (
-            <ClaudeBlockPresenter
-              key={index}
-              block={block}
-              index={index}
-              isStreaming={false}
-              parts={CLAUDE_TURN_PARTS}
-              runtime={CLAUDE_TURN_RUNTIME}
-            />
-          )
-      })}
-      <AttachmentPreviewDialog attachment={previewAtt} onClose={() => setPreviewAtt(null)} />
-    </TooltipProvider>
+    <McpMentionSentProvider content={message.content}>
+      <TooltipProvider delayDuration={200}>
+        {message.userSelections && message.userSelections.length > 0 && (
+          <div className="mb-1.5 flex flex-wrap gap-1">
+            <UserSelectionChip selections={message.userSelections} readOnly />
+          </div>
+        )}
+        {message.content.map((block, index) => {
+          if (block.type === 'image' || block.type === 'document') {
+            const attachment = message.attachments?.find((item) => (
+              block.id ? item.id === block.id : item.name === block.name
+            ))
+            return attachment
+              ? <AttachmentChip key={index} att={attachment} onOpen={() => setPreviewAtt(attachment)} />
+              : null
+          }
+          return block.type === 'text'
+            ? <UserTextBlock key={index} text={goalObjective ?? block.text} isPaste={block.isPaste} />
+            : (
+              <ClaudeBlockPresenter
+                key={index}
+                block={block}
+                index={index}
+                isStreaming={false}
+                parts={CLAUDE_TURN_PARTS}
+                runtime={CLAUDE_TURN_RUNTIME}
+              />
+            )
+        })}
+        <AttachmentPreviewDialog attachment={previewAtt} onClose={() => setPreviewAtt(null)} />
+      </TooltipProvider>
+    </McpMentionSentProvider>
   ) : isCodexMessage ? (
     <CodexTurnView
       message={message}

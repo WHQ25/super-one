@@ -363,7 +363,8 @@ export function createClaudeMcpAppsProvider(binding: McpAppsBinding, deps: Claud
       return tools
     },
     async readResource(req, signal): Promise<McpAppReadResult> {
-      if (!req.uri.startsWith('ui://')) throw new McpAppsError('invalid', 'MCP App resources must use ui://')
+      // A View may read any resource of its own server; only a View document must be `ui://`.
+      if (!req.uri.startsWith('ui://') && !req.transient) throw new McpAppsError('invalid', 'MCP App resources must use ui://')
       const query = await liveQuery(signal, req.origin)
       await assertConnected()
       deps.assertBinding()

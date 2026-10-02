@@ -84,6 +84,15 @@ describe('Codex native MCP Apps', () => {
     expect(await provider.callTool({ tool: 'next', args: { page: 2 }, origin }, signal)).toEqual({ result: { content: [], isError: true, structuredContent: { failed: true }, _meta: { private: 1 } }, outcome: 'completed' })
   })
 
+  it('lets a View read any resource of its own server but loads documents only from ui://', async () => {
+    const request = vi.fn(async () => ({ contents: [{ uri: 'cad-resource://fixture/import.wasm', blob: 'AGFzbQ==', mimeType: 'application/wasm' }] }))
+    const provider = createCodexMcpAppsProvider(binding, 'thread-1', request)
+    expect(await provider.readResource({ uri: 'cad-resource://fixture/import.wasm', transient: true }, signal)).toEqual({ contents: [{ uri: 'cad-resource://fixture/import.wasm', blob: 'AGFzbQ==', mimeType: 'application/wasm' }] })
+    expect(request).toHaveBeenCalledWith('mcpServer/resource/read', { server: 'fixture', threadId: 'thread-1', uri: 'cad-resource://fixture/import.wasm' })
+    await expect(provider.readResource({ uri: 'cad-resource://fixture/import.wasm' }, signal)).rejects.toMatchObject({ code: 'invalid' })
+    expect(request).toHaveBeenCalledTimes(1)
+  })
+
   it('forwards host request metadata on View tool calls', async () => {
     const request = vi.fn(async () => ({ content: [] }))
     await createCodexMcpAppsProvider(binding, 'thread-1', request).callTool({ tool: 'cad.readPart', args: {}, origin, meta: { 'openai/resource': { path: '/w/part.stl' } } }, signal)

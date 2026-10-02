@@ -117,11 +117,14 @@ export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: st
     async ready(signal) { guard(signal); return { mode: 'native', resourceRead: true, toolCall: true, authenticate: true } },
     tools,
     async readResource(req, signal): Promise<McpAppReadResult> {
-      if (!req.uri.startsWith('ui://')) throw new McpAppsError('invalid', 'MCP App resources must use ui://')
+      const document = req.uri.startsWith('ui://')
+      // A View may read any resource of its own server; only a View document must be `ui://`.
+      if (!document && !req.transient) throw new McpAppsError('invalid', 'MCP App resources must use ui://')
       // originCallId is deliberately omitted for public third-party servers.
       guard(signal, req.origin)
       const result = await invoke('mcpServer/resource/read', { uri: req.uri }, signal, req.origin, false, req.transient ? MCP_APP_OUTPUT_MAX_BYTES : MCP_APP_HTML_MAX_BYTES + MCP_APP_DATA_MAX_BYTES)
       const rawContents = Array.isArray(result.contents) ? result.contents : []
+      if (!document) return { contents: rawContents as McpAppReadResult['contents'], ...(record(result._meta) ? { _meta: record(result._meta) } : {}) }
       let listMeta: Record<string, unknown> | undefined
       if (rawContents.some(value => record(value)?.uri === req.uri && !record(record(record(value)?._meta)?.ui))) {
         // Read-content UI metadata is authoritative. Full discovery also lists

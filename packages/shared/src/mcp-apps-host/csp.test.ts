@@ -8,7 +8,9 @@ describe('MCP App sandbox policy', () => {
     expect(csp).toContain("connect-src 'none'")
     expect(csp).toContain("frame-src 'none'")
     expect(csp).toContain("form-action 'none'")
-    expect(csp).not.toContain('unsafe-eval')
+    // Eval, WebAssembly and same-origin workers run code the View could already run inline.
+    expect(csp).toContain("script-src 'self' 'unsafe-inline' 'unsafe-eval'")
+    expect(csp).toContain("worker-src 'self' blob: data:")
     expect(mcpAppCspMeta()).toContain(`content="${csp}"`)
   })
 
@@ -19,7 +21,8 @@ describe('MCP App sandbox policy', () => {
       frameDomains: ['https://frame.test/embed'], baseUriDomains: ['https://base.test/path'],
     }).split('; ')
     expect(csp.find(d => d.startsWith('connect-src'))).toBe('connect-src wss://socket.test https://api.test')
-    expect(csp.find(d => d.startsWith('script-src'))).toBe("script-src 'self' 'unsafe-inline' https://cdn.test")
+    expect(csp.find(d => d.startsWith('script-src'))).toBe("script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.test")
+    expect(csp.find(d => d.startsWith('worker-src'))).toBe("worker-src 'self' blob: data:")
     expect(csp.find(d => d.startsWith('frame-src'))).toBe('frame-src https://frame.test')
     expect(csp.find(d => d.startsWith('base-uri'))).toBe('base-uri https://base.test')
   })

@@ -5,13 +5,18 @@ import type { McpUiMessageRequest } from '@modelcontextprotocol/ext-apps/app-bri
 import type { McpAppsRpcResult } from './environment/mcp-apps-rpc'
 import type { ContextAttachment } from './context-attachments'
 import type { McpAppResourceWriteParams } from './mcp-app-files'
+import { MAX_REMOTE_PAYLOAD_BYTES } from './remote-payload'
 
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app'
 export const MCP_APPS_EXTENSION = { 'io.modelcontextprotocol/ui': { mimeTypes: [MCP_APP_MIME_TYPE] } } as const
 export const MCP_APP_HTML_MAX_BYTES = 2 * 1024 * 1024
 export const MCP_APP_DATA_MAX_BYTES = 1024 * 1024
-/** View-only tool/resource output, never persisted in the transcript. */
-export const MCP_APP_OUTPUT_MAX_BYTES = 8 * 1024 * 1024
+/**
+ * View-only tool/resource output, never persisted in the transcript. Large enough for
+ * App assets (a CAD importer's wasm); it leaves room for the RPC envelope inside one
+ * remote payload so phone and node paths fail here, with a clear error, not in framing.
+ */
+export const MCP_APP_OUTPUT_MAX_BYTES = MAX_REMOTE_PAYLOAD_BYTES - 64 * 1024
 
 export interface McpAppsBinding {
   node: string

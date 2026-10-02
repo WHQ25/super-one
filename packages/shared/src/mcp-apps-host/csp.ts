@@ -32,7 +32,11 @@ export function buildMcpAppCsp(csp?: CspDomains): string {
   const resources = sources(domains.resourceDomains, '')
   return [
     "default-src 'none'",
-    `script-src 'self' 'unsafe-inline' ${resources}`.trim(),
+    // Eval, WebAssembly and workers add no origin or network reach: connect-src still
+    // governs what they fetch, and inline script already runs arbitrary code. Emscripten
+    // glue (e.g. a CAD importer) builds functions with `new Function`.
+    `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${resources}`.trim(),
+    "worker-src 'self' blob: data:",
     `style-src 'self' 'unsafe-inline' ${resources}`.trim(),
     `img-src 'self' data: ${resources}`.trim(),
     `media-src 'self' data: ${resources}`.trim(),

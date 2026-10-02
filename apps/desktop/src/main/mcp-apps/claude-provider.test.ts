@@ -75,13 +75,16 @@ describe('Claude native MCP Apps provider', () => {
     expect(await provider({ readMcpResource: vi.fn(), request: vi.fn() }).ready(signal)).toMatchObject({ toolCall: true })
   })
 
-  it('reads ui:// resources by raw server name and refuses other schemes before dispatch', async () => {
+  it('reads View documents only from ui:// and refuses other schemes before dispatch', async () => {
     const readMcpResource = vi.fn(async () => ({ contents: [{ uri: 'ui://fixture/items.html', text: '<html/>', _meta: { ui: { prefersBorder: true } } }] }))
     const p = provider({ readMcpResource })
     expect(await p.readResource({ uri: 'ui://fixture/items.html', origin }, signal)).toEqual({ contents: [{ uri: 'ui://fixture/items.html', text: '<html/>', _meta: { ui: { prefersBorder: true } } }] })
     expect(readMcpResource).toHaveBeenCalledWith('my fixture', 'ui://fixture/items.html')
     await expect(p.readResource({ uri: 'file:///etc/hosts' }, signal)).rejects.toMatchObject({ code: 'invalid' })
     expect(readMcpResource).toHaveBeenCalledTimes(1)
+    // A View's own reads may use the server's other schemes; the server decides what they mean.
+    await p.readResource({ uri: 'cad-resource://fixture/import.wasm', transient: true }, signal)
+    expect(readMcpResource).toHaveBeenLastCalledWith('my fixture', 'cad-resource://fixture/import.wasm')
   })
 
   it('calls the qualified tool and normalizes the post-processed result', async () => {

@@ -30,7 +30,7 @@ describe('MCP App postMessage transport', () => {
     expect(received).toHaveBeenCalledTimes(1)
   })
 
-  it('allows 8 MiB only for replies to View tool/read requests', async () => {
+  it('allows the transient output cap only for replies to View tool/read requests', async () => {
     const target = { postMessage: vi.fn() } as unknown as Window
     transport = createMcpAppTransport(target, 'null')
     await transport.start()

@@ -184,8 +184,9 @@ was added to repository code; temporary window wrappers were cleared by restart.
 ### Data cap decision
 
 Selected option 2 (implemented): transient View-initiated tool/read output
-has an 8 MiB
-cap across provider, executor, host and host-to-View transport. View-to-host
+has one cap across provider, executor, host and host-to-View transport:
+32 MiB minus 64 KiB, so a reply plus its RPC envelope fits one remote payload
+(raised from 8 MiB on 2026-10-02 for App assets such as a 7.6 MB CAD wasm). View-to-host
 requests, persisted tool input/result and model context remain 1 MiB; HTML
 remains 2 MiB. Claude resource reads must use the same 2+1 MiB envelope as
 Codex. Full content and structuredContent are retained. View-only calls do
@@ -217,7 +218,7 @@ cannot turn an otherwise valid tool result into an error.
 
 ### Transient output cap slice
 
-View-only tool/read output is bounded at 8 MiB in native providers, the
+View-only tool/read output is bounded by the transient cap in native providers, the
 shared provider RPC dispatch, executor and shared host. The postMessage
 transport tracks View tool/read request ids so only the corresponding
 host-to-View reply uses the larger cap (plus 1 KiB for its JSON-RPC envelope).
@@ -439,7 +440,7 @@ its initial `toolResult` and stores `toolResultOmitted` byte size/reason. Deskto
 and phone expose this on restore. Only tool-input is notified; no initial result
 or fabricated error is sent. Bits & Bolts loads its data via `cad.listParts`.
 Do not raise the cap. **Follow-up after this slice:** extend CAS to oversized
-initial results up to the 8 MiB transient bound, then fetch by authorized identity
+initial results up to the transient bound, then fetch by authorized identity
 on demand, preserving fidelity without repeated relay/bridge event payloads.
 
 Codex shell measurements use the same test project/profile and loading placeholder
@@ -699,8 +700,8 @@ Live check on Bits & Bolts (dev instance, Codex 0.159):
 - **Previews** (`_meta["openai/preview"]`): parsed but not shown, and the option
   stays selectable. Planned path: main checks the URI against the pending
   elicitation's `resource_link` preview targets and reads it from the server
-  that sent the elicitation, with the transient View output cap. The Codex
-  provider's `readResource` accepts only `ui://` today. `mcp_app_tool`
+  that sent the elicitation, with the transient View output cap. Transient
+  provider reads accept any URI of the server; only documents need `ui://`. `mcp_app_tool`
   previews wait for hosting a View without a tool call (proposal §5).
 - **User-added resources**: need a security review first. Native main-process
   dialog only, `file://` URIs, `accept` enforced, local stdio servers only.
@@ -713,7 +714,7 @@ model context, `openai/message` and most form features. Still missing:
 
 | Area | State |
 |---|---|
-| File entrypoint, host resources (`read` / `subscribe` / `openai/resources/write`), path injection | Not supported — Phase 3 |
+| File entrypoint, host resources (`read` / `subscribe` / `openai/resources/write`), path injection | Codex sessions on local projects: done. Claude needs step 1; remote projects and phone later |
 | `openai/files/open` | Not supported — Phase 3 |
 | Composer at-mentions (`mentions/search`) | Not supported — Phase 3 |
 | Form previews (`openai/preview`) | Parsed, not shown — Phase 3 host follow-ups |
@@ -741,9 +742,11 @@ Ordered ahead of proposal phase 3 (entrypoints, settings) by user decision.
   "Open With" control in the open file preview's header, and the
   unpreviewable placeholder. All list SuperOne Preview first, then each App.
 - **Host session**: the App belongs to the session of the pane where the
-  action happens (a chip uses its message's session). Its `ui/message` and
-  model context go there. While that session has no harness yet (an empty
-  draft), App entries are disabled with the reason as a tooltip.
+  action happens (a chip uses its message's session). It lives in memory only:
+  no transcript row, no `ui/message`, no model context, gone on restart or
+  when its tab closes. Menus look Apps up when they open (this may start the
+  harness); an open preview only asks a running harness and otherwise shows
+  no App control.
 - **Claude**: SDK 0.3.285 withholds every tool `_meta` key except `ui` and
   `ui/resourceUri`, and `mcp_call` takes no `_meta`. In Claude sessions
   SuperOne connects to the server itself — stdio and HTTP, with SuperOne's
@@ -803,6 +806,28 @@ Ordered ahead of proposal phase 3 (entrypoints, settings) by user decision.
     step 2), `userOptions` (security review first: main-process dialog,
     `file://`, `accept` enforced, local servers only), `ui/download-file`,
     and collapsed untitled long text in confirmations and bubbles.
+
+### Progress
+
+**Codex file open (steps 3–7, local projects): done.** Shared contracts in
+`packages/shared/src/mcp-app-files.ts`; main in `mcp-apps/host-files.ts` and
+`file-apps-ipc.ts`; renderer in `components/mcp-apps/file-apps.ts`,
+`open-with-menu.ts` and `McpAppOpenWith.tsx` (story `MCP Apps/Open With`).
+Lookups ask every server in parallel; a server that does not answer within
+15 s marks the answer `incomplete`, which the renderer does not cache.
+File reads and writes share one size cap derived from the transient cap.
+
+Found while testing Bits & Bolts and changed for every View (user decisions):
+transient reads may use any URI of the View's own server; the transient cap
+is 32 MiB (above); the View CSP allows `'unsafe-eval'` and
+`worker-src 'self' blob: data:` (Emscripten glue and its worker), still with
+no new origins.
+
+Verified live (Codex 0.159, Bits & Bolts, CDP): cold and warm lookups; Open
+With from the preview header; STL and a CAx-IF STEP assembly render; save
+writes the file without a self-notification; an external change reloads the
+View; closing the tab releases the watcher. Native context menus (chip, tree)
+share the tested hook but were not driven live.
 
 Out of this phase: phone parity (file preview "more" menu is the natural
 place), remote-node direct clients, global/thread entrypoints, settings.

@@ -161,7 +161,7 @@ it('normalizes null server titles and icons to absent presentation fields', asyn
   expect((await createCodexMcpAppsProvider(binding, 'thread', request).tools()).get('next')?.serverInfo).toEqual({})
 })
 
-it('bounds transient tool and read output at 8 MiB while keeping requests and snapshots smaller', async () => {
+it('bounds transient tool and read output at the View output cap while keeping requests and snapshots smaller', async () => {
   let bytes = 2 * 1024 * 1024
   const request = vi.fn<McpAppsRequest>(async method => method === 'mcpServerStatus/list' ? catalog : method === 'mcpServer/resource/read' ? { contents: [{ uri: 'ui://large', text: 'x'.repeat(bytes) }] } : { content: [{ type: 'text', text: 'x'.repeat(bytes) }] })
   const p = createCodexMcpAppsProvider(binding, 'thread', request)

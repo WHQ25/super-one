@@ -56,7 +56,7 @@ describe('ACP mode catalog', () => {
 })
 
 describe('OpenCode agent catalog', () => {
-  it('defaults to build, the same agent the desktop store resolves', () => {
+  it('leaves the default agent to OpenCode configuration', () => {
     const projection = openCodeAgentCatalog({
       models: [],
       agents: [
@@ -66,12 +66,12 @@ describe('OpenCode agent catalog', () => {
       commands: [],
     } as never)
 
-    expect(projection.selectedAgentId).toBe('build')
+    expect(projection.selectedAgentId).toBeNull()
     expect(projection.agents.map((agent) => agent.id)).toEqual(['general', 'build'])
   })
 
-  it('falls back to the first agent, and stays empty without a catalog', () => {
-    expect(openCodeAgentCatalog({ agents: [{ id: 'plan', name: 'plan', modelId: null }] } as never).selectedAgentId).toBe('plan')
+  it('does not force the first agent, and stays empty without a catalog', () => {
+    expect(openCodeAgentCatalog({ agents: [{ id: 'plan', name: 'plan', modelId: null }] } as never).selectedAgentId).toBeNull()
     expect(openCodeAgentCatalog(null)).toEqual({ agents: [], selectedAgentId: null })
   })
 })

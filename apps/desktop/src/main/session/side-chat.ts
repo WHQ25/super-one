@@ -277,26 +277,10 @@ async function deleteOpenCodeForkedSession(
   cwd: string,
   providerConfig: unknown,
 ): Promise<void> {
-  const [{ OpenCodeClient, startOpenCodeServer }, { readOpenCodeConfig }] = await Promise.all([
-    import('../opencode/opencode-client'),
+  const [{ withOpenCodeSessionAdmin }, { readOpenCodeConfig }] = await Promise.all([
+    import('../opencode/opencode-runtime'),
     import('../opencode/opencode-event-map'),
   ])
-  const config = readOpenCodeConfig(providerConfig)
-  const server = await startOpenCodeServer({
-    binaryPath: config.binaryPath,
-    cwd,
-    env: config.env,
-    serverUrl: config.serverUrl,
-    timeoutMs: config.startupTimeoutMs,
-  })
-  try {
-    const client = new OpenCodeClient({
-      baseUrl: server.url,
-      directory: cwd,
-      password: config.serverPassword,
-    })
-    await client.deleteSession(providerSessionId)
-  } finally {
-    await server.close()
-  }
+  await withOpenCodeSessionAdmin(readOpenCodeConfig(providerConfig), cwd, (client) =>
+    client.deleteSession(providerSessionId))
 }

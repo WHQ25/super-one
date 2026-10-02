@@ -20,8 +20,8 @@ export function codexPermissionModeForPreset(
 
 export interface HarnessSessionDefaults {
   /**
-   * Never empty — falls back to the first mode the harness declares, which is
-   * what it would start in anyway.
+   * Never empty — the first supported mode, or the neutral wire value
+   * `default` for harnesses with native configuration and no mode selector.
    */
   permissionMode: PermissionMode
   /** What the user configured, or `''` when they have not. */
@@ -52,13 +52,15 @@ export function sessionDefaultsForHarness(
   preferences: AppSettings['agentPreference'],
   harnessId: HarnessId,
 ): HarnessSessionDefaults {
-  const configuredPermissionMode = configuredPermissionModeFor(preferences, harnessId)
   const offered = HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes
+  // A harness without modes runs its own permission configuration, whatever an
+  // older client left in its storage slot.
+  const configuredPermissionMode = offered.length > 0 ? configuredPermissionModeFor(preferences, harnessId) : ''
   return {
     // A stored mode this harness no longer offers is not asserted at it.
     permissionMode: configuredPermissionMode && offered.includes(configuredPermissionMode)
       ? configuredPermissionMode
-      : offered[0]!,
+      : offered[0] ?? 'default',
     configuredPermissionMode,
     sandboxMode: sandboxDefaultForHarness(preferences, harnessId),
   }

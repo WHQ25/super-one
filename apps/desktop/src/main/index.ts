@@ -164,7 +164,8 @@ import { detectTextOrBinary, maxReadableBytes } from './file-read-limits'
 import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
 import { setUnsavedBuffer } from './acp/acp-unsaved-buffer'
-import { closeAllOpenCodeServers, probeOpenCodeResources, reapOrphanOpenCodeServers } from './opencode/opencode-client'
+import { closeAllOpenCodeServers, reapOrphanOpenCodeServers } from './opencode/opencode-client'
+import { probeOpenCodeResources } from './opencode/opencode-runtime'
 import { probeCursorResources } from './cursor/cursor-client'
 import { encryptCursorApiKey, readCursorConfig, resolveCursorApiKey } from './cursor/cursor-auth'
 import {
@@ -4857,7 +4858,7 @@ function registerIpcHandlers(): void {
         force,
         isUsable: (r) => (r.models?.length ?? 0) > 0 || (r.agents?.length ?? 0) > 0,
         probe: () => probeOpenCodeResources({ cwd: resolveProbeCwd() }),
-        fallbackToCacheOnError: true,
+        fallbackToCacheOnError: !force,
         onCacheHit: (hit) => {
           log.info('[CONNECT_OPENCODE] cache fresh (ageMs=%d), skipping probe', hit.ageMs)
         },
@@ -4865,7 +4866,8 @@ function registerIpcHandlers(): void {
           log.warn('[CONNECT_OPENCODE] failed: %s', error instanceof Error ? error.message : String(error))
         },
       })
-    } catch {
+    } catch (error) {
+      if (force) throw error
       return { models: [], agents: [] }
     }
   })

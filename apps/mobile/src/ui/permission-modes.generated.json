@@ -55,53 +55,7 @@
       "dark": "$destructive"
     }
   ],
-  "opencode": [
-    {
-      "id": "default",
-      "label": "Normal",
-      "description": "Prompts for dangerous operations",
-      "icon": "Shield",
-      "triggerIcon": "Shield",
-      "light": "$mutedForeground",
-      "dark": "$mutedForeground"
-    },
-    {
-      "id": "plan",
-      "label": "Plan Mode",
-      "description": "Planning only, no actual execution",
-      "icon": "PenLine",
-      "triggerIcon": "PenLine",
-      "light": "#155dfc",
-      "dark": "#51a2ff"
-    },
-    {
-      "id": "acceptEdits",
-      "label": "Accept Edits",
-      "description": "Auto-accept file edit operations",
-      "icon": "FastForward",
-      "triggerIcon": "FastForward",
-      "light": "#9810fa",
-      "dark": "#c27aff"
-    },
-    {
-      "id": "dontAsk",
-      "label": "Don't Ask",
-      "description": "Deny anything not pre-approved",
-      "icon": "Lock",
-      "triggerIcon": "Lock",
-      "light": "#ff6900",
-      "dark": "#ff8904"
-    },
-    {
-      "id": "bypassPermissions",
-      "label": "Bypass",
-      "description": "Bypass all permission checks",
-      "icon": "ShieldOff",
-      "triggerIcon": "ShieldOff",
-      "light": "$destructive",
-      "dark": "$destructive"
-    }
-  ],
+  "opencode": [],
   "acp": [
     {
       "id": "default",

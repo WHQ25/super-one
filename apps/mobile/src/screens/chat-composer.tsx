@@ -12,6 +12,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { AttachmentStrip } from '../ui/attachment-strip'
 import { SlashSuggestions, MentionSuggestions, PromptSuggestions } from '../ui/composer-suggestions'
 import { ModelPicker } from '../ui/model-picker'
+import { AgentSelector } from '../ui/agent-selector'
 import { ArrowUp, AtSign, ChevronsUp, FileText, Image as ImageIcon, Paperclip, ShipWheel, Square } from 'lucide-react-native'
 import { ScrollView, TextInput, View, useWindowDimensions } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -23,6 +24,7 @@ import type {
   SandboxSupportLevel,
 } from '@superone/shared/agent-types'
 import type { GoalCapability } from '@superone/shared/harness/harness-capabilities'
+import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import type { SessionGoal } from '@superone/shared/agent-types'
 import type { SelectorCatalogParam } from '../model-picker-state'
 import type { MatchedSlashCommand } from '../slash'
@@ -185,7 +187,9 @@ export function ChatComposer(props: ChatComposerProps) {
   const controls = <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled"
       style={{ flex: 1 }} contentContainerStyle={{ alignItems: 'center' }}>
-      {props.selection ? <ModelPicker {...props.selection} harness={props.provider} compact /> : null}
+      {props.selection ? <ModelPicker {...props.selection} agents={undefined} onAgent={undefined} harness={props.provider} compact /> : null}
+      {HARNESS_LAUNCH_OPTIONS[props.provider].permissionModes.length === 0 && props.selection?.onAgent && <AgentSelector agents={props.selection.agents ?? []} value={props.selection.agent ?? null}
+        onChange={props.selection.onAgent} onRefresh={props.selection.onRefresh} />}
       <PermissionModeSelector harness={props.provider} modes={props.permissionModes} value={props.permissionMode} onChange={props.onPermissionMode} />
     </ScrollView>
     <View testID="composer-status-readouts" style={{ flexDirection: 'row', alignItems: 'center' }}>

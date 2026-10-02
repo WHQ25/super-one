@@ -2,6 +2,7 @@ import { ensureShellPath } from '../shell-path'
 import { attachmentPrompt, buildAttachmentTurn } from '@superone/shared/attachment-turn'
 import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'child_process'
+import { randomBytes } from 'crypto'
 import { promisify } from 'util'
 import { existsSync } from 'fs'
 import { homedir } from 'os'
@@ -50,6 +51,59 @@ export interface OpenCodeClientOptions {
 
 const effortLevels = new Set<EffortLevel>(['low', 'medium', 'high', 'xhigh', 'max'])
 
+/** OpenCode model variants that SuperOne exposes as effort levels. */
+export function openCodeEffortLevels(variantIds: string[]): EffortLevel[] {
+  return variantIds.filter((value): value is EffortLevel => effortLevels.has(value as EffortLevel))
+}
+
+/** Basic auth OpenCode expects for `OPENCODE_SERVER_PASSWORD` (user `opencode`). */
+export function openCodeAuthorization(password: string): string {
+  return `Basic ${Buffer.from(`opencode:${password}`, 'utf8').toString('base64')}`
+}
+
+interface OpenCodeTokenUsage {
+  input: number
+  output: number
+  reasoning: number
+  cache: { read: number; write: number }
+  total?: number
+}
+
+export function buildOpenCodeContextUsage(
+  tokens: OpenCodeTokenUsage,
+  model: string,
+  models: ModelOption[],
+): ContextUsageInfo | null {
+  const maxTokens = models.find((candidate) => candidate.id === model)?.contextWindow
+  if (!maxTokens) return null
+  const categories = [
+    { name: 'Input', tokens: tokens.input, color: '#22c55e' },
+    { name: 'Output', tokens: tokens.output, color: '#06b6d4' },
+    { name: 'Reasoning', tokens: tokens.reasoning, color: '#8b5cf6' },
+    { name: 'Cache read', tokens: tokens.cache.read, color: '#6366f1' },
+    { name: 'Cache write', tokens: tokens.cache.write, color: '#f59e0b' },
+  ]
+  const totalTokens = tokens.total
+    ?? categories.reduce((total, category) => total + category.tokens, 0)
+  return {
+    categories,
+    totalTokens,
+    maxTokens,
+    percentage: Math.min(100, (totalTokens / maxTokens) * 100),
+    model,
+  }
+}
+
+/** Validated prompt text plus the images OpenCode receives inline. */
+export function openCodeAttachmentTurn(
+  images: ImageAttachment[] | undefined,
+  text: string,
+): { text: string; images: Array<{ mimeType: string; name: string; base64: string }> } {
+  validateTurnAttachments(images, text)
+  const turn = buildAttachmentTurn(images, { inlineImages: true, requirePaths: true })
+  return { text: attachmentPrompt(text, turn.note), images: turn.attachments.filter(a => a.inline) }
+}
+
 export function parseOpenCodeModelSlug(model: string | null | undefined): { providerID: string; modelID: string } | null {
   const value = model?.trim()
   if (!value) return null
@@ -63,8 +117,7 @@ export function parseModels(payload: ProviderListResponse): ModelOption[] {
   return payload.all
     .filter((provider) => connected.has(provider.id))
     .flatMap((provider) => Object.values(provider.models).map((model) => {
-      const supportedEffortLevels = Object.keys(model.variants ?? {})
-        .filter((value): value is EffortLevel => effortLevels.has(value as EffortLevel))
+      const supportedEffortLevels = openCodeEffortLevels(Object.keys(model.variants ?? {}))
       return {
         id: `${provider.id}/${model.id}`,
         name: model.name || model.id,
@@ -161,9 +214,7 @@ export class OpenCodeClient {
       baseUrl: opts.baseUrl.replace(/\/$/, ''),
       directory: opts.directory,
       throwOnError: true,
-      ...(opts.password
-        ? { headers: { Authorization: `Basic ${Buffer.from(`opencode:${opts.password}`, 'utf8').toString('base64')}` } }
-        : {}),
+      ...(opts.password ? { headers: { Authorization: openCodeAuthorization(opts.password) } } : {}),
     })
   }
 
@@ -225,6 +276,11 @@ export class OpenCodeClient {
     await this.sdk.session.update({ sessionID: sessionId, permission })
   }
 
+  async sessionPermissions(sessionId: string): Promise<PermissionRuleset> {
+    const result = await this.sdk.session.get({ sessionID: sessionId })
+    return result.data?.permission ?? []
+  }
+
   async updateSessionTitle(sessionId: string, title: string): Promise<void> {
     await this.sdk.session.update({ sessionID: sessionId, title })
   }
@@ -237,11 +293,9 @@ export class OpenCodeClient {
     images?: ImageAttachment[]
     system?: string
   }): Promise<void> {
-    validateTurnAttachments(input.images, input.text)
-    const turn = buildAttachmentTurn(input.images, { inlineImages: true, requirePaths: true })
-    const text = attachmentPrompt(input.text, turn.note)
-    const parts: TextPartInput[] = text ? [{ type: 'text', text }] : []
-    const fileParts = imageParts(turn.attachments.filter(a => a.inline))
+    const turn = openCodeAttachmentTurn(input.images, input.text)
+    const parts: TextPartInput[] = turn.text ? [{ type: 'text', text: turn.text }] : []
+    const fileParts = imageParts(turn.images)
     const model = parseOpenCodeModelSlug(input.model)
     if (input.model && !model) throw new OpenCodeApiError(`Invalid OpenCode model id: ${input.model}`)
     await this.sdk.session.promptAsync({
@@ -262,13 +316,12 @@ export class OpenCodeClient {
     agent?: string
     images?: ImageAttachment[]
   }): Promise<void> {
-    validateTurnAttachments(input.images, input.arguments)
-    const turn = buildAttachmentTurn(input.images, { inlineImages: true, requirePaths: true })
-    const parts = imageParts(turn.attachments.filter(a => a.inline))
+    const turn = openCodeAttachmentTurn(input.images, input.arguments ?? '')
+    const parts = imageParts(turn.images)
     await this.sdk.session.command({
       sessionID: sessionId,
       command: input.command,
-      arguments: attachmentPrompt(input.arguments ?? '', turn.note),
+      arguments: turn.text,
       model: input.model,
       variant: input.variant,
       agent: input.agent,
@@ -345,25 +398,7 @@ export class OpenCodeClient {
     const assistant = messages.findLast((message) => message.info.role === 'assistant')
     if (!assistant || assistant.info.role !== 'assistant') return null
     const info = assistant.info
-    const model = `${info.providerID}/${info.modelID}`
-    const maxTokens = models.find((candidate) => candidate.id === model)?.contextWindow
-    if (!maxTokens) return null
-    const categories = [
-      { name: 'Input', tokens: info.tokens.input, color: '#22c55e' },
-      { name: 'Output', tokens: info.tokens.output, color: '#06b6d4' },
-      { name: 'Reasoning', tokens: info.tokens.reasoning, color: '#8b5cf6' },
-      { name: 'Cache read', tokens: info.tokens.cache.read, color: '#6366f1' },
-      { name: 'Cache write', tokens: info.tokens.cache.write, color: '#f59e0b' },
-    ]
-    const totalTokens = info.tokens.total
-      ?? categories.reduce((total, category) => total + category.tokens, 0)
-    return {
-      categories,
-      totalTokens,
-      maxTokens,
-      percentage: Math.min(100, (totalTokens / maxTokens) * 100),
-      model,
-    }
+    return buildOpenCodeContextUsage(info.tokens, `${info.providerID}/${info.modelID}`, models)
   }
 
   async diff(sessionId: string, messageId: string): Promise<SnapshotFileDiff[]> {
@@ -418,8 +453,14 @@ export class OpenCodeClient {
   }
 }
 
+/** `v1`: OpenCode 1.x routes (`@opencode-ai/sdk`). `v2`: OpenCode 2.x `/api/*`. */
+export type OpenCodeProtocol = 'v1' | 'v2'
+
 export interface OpenCodeServerHandle {
   url: string
+  protocol: OpenCodeProtocol
+  /** Basic-auth password; generated for spawned servers, configured for attached ones. */
+  password?: string
   exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }> | null
   close(): Promise<void>
 }
@@ -482,11 +523,11 @@ async function waitForServer(
   exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>,
   timeoutMs: number,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<{ url: string; protocol: OpenCodeProtocol }> {
   let output = ''
-  return new Promise<string>((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     let settled = false
-    const finish = (error?: Error, url?: string) => {
+    const finish = (error?: Error, ready?: { url: string; protocol: OpenCodeProtocol }) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
@@ -494,12 +535,13 @@ async function waitForServer(
       child.stderr.off('data', onData)
       signal?.removeEventListener('abort', onAbort)
       if (error) reject(error)
-      else resolve(url!)
+      else resolve(ready!)
     }
     const onData = (chunk: Buffer) => {
       output = appendOutput(output, chunk)
-      const match = output.match(/^opencode server listening.*?\s+(https?:\/\/[^\s]+)/im)
-      if (match?.[1]) finish(undefined, match[1])
+      // 1.x: `opencode server listening on <url>`; 2.x: `server listening on <url>`.
+      const match = output.match(/^(opencode )?server listening.*?\s+(https?:\/\/[^\s]+)/im)
+      if (match?.[2]) finish(undefined, { url: match[2], protocol: match[1] ? 'v1' : 'v2' })
     }
     const onAbort = () => finish(new Error('OpenCode server startup aborted'))
     const timer = setTimeout(() => finish(new Error(`Timed out waiting for OpenCode server: ${output.trim()}`)), timeoutMs)
@@ -563,18 +605,55 @@ export async function reapOrphanOpenCodeServers(): Promise<number> {
   return killed
 }
 
+/**
+ * Attached servers only (a spawned one names its version in the ready line).
+ * 2.x answers `GET /api/info` with its version; 1.x has no such route (it 404s or
+ * proxies the web app), so anything but a 2.x version JSON means 1.x. Both
+ * versions answer a wrong or missing password with 401, which no protocol fixes.
+ */
+async function detectOpenCodeProtocol(url: string, password: string | undefined, signal?: AbortSignal): Promise<OpenCodeProtocol> {
+  let response: Response
+  try {
+    response = await fetch(`${url}/api/info`, {
+      headers: password ? { Authorization: openCodeAuthorization(password) } : {},
+      signal: AbortSignal.any([AbortSignal.timeout(5000), ...(signal ? [signal] : [])]),
+    })
+  } catch (error) {
+    if (signal?.aborted) throw error
+    return 'v1'
+  }
+  if (response.status === 401) {
+    throw new OpenCodeApiError(`OpenCode server at ${url} rejected the server password`)
+  }
+  try {
+    if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) return 'v1'
+    const info = await response.json() as { version?: unknown }
+    const major = typeof info.version === 'string' ? Number.parseInt(info.version, 10) : NaN
+    return major >= 2 ? 'v2' : 'v1'
+  } catch (error) {
+    if (signal?.aborted) throw error
+    return 'v1'
+  }
+}
+
 export async function startOpenCodeServer(opts: {
   binaryPath?: string
   cwd: string
   env?: Record<string, string>
   serverUrl?: string | null
+  serverPassword?: string
   timeoutMs?: number
   signal?: AbortSignal
 }): Promise<OpenCodeServerHandle> {
   if (opts.serverUrl?.trim()) {
-    return { url: opts.serverUrl.trim().replace(/\/$/, ''), exited: null, close: async () => undefined }
+    const url = opts.serverUrl.trim().replace(/\/$/, '')
+    const protocol = await detectOpenCodeProtocol(url, opts.serverPassword, opts.signal)
+    return { url, protocol, password: opts.serverPassword, exited: null, close: async () => undefined }
   }
   await ensureShellPath()
+  // 2.x always requires auth and prints a random password when none is set;
+  // 1.x enables basic auth from the same variable.
+  const password = opts.env?.OPENCODE_SERVER_PASSWORD || randomBytes(24).toString('base64url')
   // Not detached: serve must die with SuperOne. Older builds used detached:true
   // and leaked multi-hour ~1GB orphans under PPID 1 after force-quit.
   const child = spawn(opts.binaryPath?.trim() || defaultBinaryPath(), [...OPENCODE_SERVE_ARGS], {
@@ -583,6 +662,7 @@ export async function startOpenCodeServer(opts: {
       ...opts.env,
       PATH: openCodePath(opts.env?.PATH ?? process.env.PATH),
       OPENCODE_CONFIG_CONTENT: opts.env?.OPENCODE_CONFIG_CONTENT ?? '{}',
+      OPENCODE_SERVER_PASSWORD: password,
     }),
     stdio: 'pipe',
   })
@@ -597,10 +677,14 @@ export async function startOpenCodeServer(opts: {
     child.once('close', finish)
   })
   try {
-    const url = await waitForServer(child, exited, opts.timeoutMs ?? 10000, opts.signal)
+    const ready = await waitForServer(child, exited, opts.timeoutMs ?? 10000, opts.signal)
+    const url = ready.url.replace(/\/$/, '')
+    const protocol = ready.protocol
     let closePromise: Promise<void> | null = null
     const handle: OpenCodeServerHandle = {
-      url: url.replace(/\/$/, ''),
+      url,
+      protocol,
+      password,
       exited,
       close: () => {
         closePromise ??= (async () => {
@@ -618,26 +702,5 @@ export async function startOpenCodeServer(opts: {
   } catch (error) {
     await stopChild(child, exited)
     throw new OpenCodeApiError(error instanceof Error ? error.message : String(error), error)
-  }
-}
-
-export async function probeOpenCodeResources(config: {
-  binaryPath?: string
-  cwd: string
-  env?: Record<string, string>
-  serverUrl?: string | null
-  serverPassword?: string
-}): Promise<OpenCodeResources> {
-  const server = await startOpenCodeServer(config)
-  try {
-    const client = new OpenCodeClient({ baseUrl: server.url, directory: config.cwd, password: config.serverPassword })
-    const [providers, agents, commands] = await Promise.all([client.providerList(), client.agents(), client.commands()])
-    return {
-      models: parseModels(providers),
-      agents: parseOpenCodeAgents(agents),
-      commands: withOpenCodeLocalCommands(parseOpenCodeCommands(commands)),
-    }
-  } finally {
-    await server.close()
   }
 }

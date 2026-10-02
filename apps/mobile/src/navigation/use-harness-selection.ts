@@ -122,9 +122,7 @@ export function useHarnessSelection() {
     const effort = (missingCodexModel || draftIdentity.current) && claimedEffort
       ? claimedEffort
       : resolveSelectedEffort(nextEfforts, claimedEffort || info.defaults?.effort)
-    const modes = info.permissionModes?.length
-      ? info.permissionModes
-      : info.permissionPresets ?? []
+    const modes = info.permissionModes ?? info.permissionPresets ?? []
     const nextPermissionMode = claimedPermissionMode && (draftIdentity.current || modes.includes(claimedPermissionMode))
       ? claimedPermissionMode
       : info.defaults?.permissionMode && modes.includes(info.defaults.permissionMode)

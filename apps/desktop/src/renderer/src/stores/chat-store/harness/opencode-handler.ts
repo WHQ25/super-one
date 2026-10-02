@@ -29,10 +29,6 @@ export function reconcileOpenCodeSelection(
   return { modelId: model?.id ?? fallback.modelId, effort, matched: Boolean(matched) }
 }
 
-export function resolveDefaultOpenCodeAgent(agents: OpenCodeResources['agents']): string | null {
-  return agents.find((agent) => agent.id === 'build')?.id ?? agents[0]?.id ?? null
-}
-
 export function applyOpenCodeResources(s: ChatStore, resources: OpenCodeResources): Partial<ChatStore> {
   const projects = { ...s.projectSessions }
   let changed = false
@@ -46,10 +42,13 @@ export function applyOpenCodeResources(s: ChatStore, resources: OpenCodeResource
       active.selectedModel,
       active.selectedEffort,
     )
-    const agentId = resources.agents.some((agent) => agent.id === active.openCodeAgentId)
-      ? active.openCodeAgentId
-      : resolveDefaultOpenCodeAgent(resources.agents)
-    if (matched && active.selectedEffort === effort && active.openCodeAgentId === agentId) continue
+    // Migrate the old Plan permission once. Any other selection stays: this
+    // catalog is probed outside the project, so it lacks project-defined agents;
+    // the session's own list (`session_agents`) validates the selection.
+    const migratePlan = active.permissionMode === 'plan'
+      && (active.sessionAgents ?? resources.agents).some((agent) => agent.id === 'plan')
+    const agentId = migratePlan ? 'plan' : active.openCodeAgentId
+    if (matched && active.selectedEffort === effort && active.openCodeAgentId === agentId && active.permissionMode === 'default') continue
     projects[path] = {
       ...project,
       _sessions: {
@@ -59,6 +58,7 @@ export function applyOpenCodeResources(s: ChatStore, resources: OpenCodeResource
           selectedModel: modelId,
           selectedEffort: effort,
           openCodeAgentId: agentId,
+          permissionMode: 'default',
         },
       },
     }

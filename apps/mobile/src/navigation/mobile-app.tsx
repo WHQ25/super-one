@@ -28,7 +28,7 @@ import {
 import type {
   AskUserQuestionRequest, ChatMessage, GitDirtyStatus, HarnessId, ImageAttachment, PermissionRequest,
   ListHarnessOptionsResponse, PlanApprovalRequest, RemoteCommand, RemoteHarnessOption,
-  SandboxInfo, SandboxMode, SessionAgentLaunchProposal, SessionForkMode, SessionForkResult, SessionGoal, TodoItem, WorktreeInfo,
+  OpenCodeAgentOption, SandboxInfo, SandboxMode, SessionAgentLaunchProposal, SessionForkMode, SessionForkResult, SessionGoal, TodoItem, WorktreeInfo,
 } from '@superone/shared/agent-types'
 import { resolveRingContextWindow, SESSION_AGENT_LAUNCHES_FIELD } from '@superone/shared/agent-types'
 import { selectedCatalogContextWindow } from '@superone/shared/model-option-params'
@@ -249,6 +249,8 @@ export function MobileApp() {
   const [workflowsOpen, setWorkflowsOpen] = useState(false)
   const [sandboxInfo, setSandboxInfo] = useState<SandboxInfo | null>(null)
   const [sessionGoal, setSessionGoal] = useState<SessionGoal | null>(null)
+  /** The live session's project agents; the harness catalog lacks project-defined ones. */
+  const [sessionAgents, setSessionAgents] = useState<OpenCodeAgentOption[] | null>(null)
   /**
    * A sandbox picked before the session exists. There is no runtime to push it
    * to yet, so it is held here, drives the chip, and rides `create_session` —
@@ -501,6 +503,7 @@ export function MobileApp() {
     setPermMode(runtime.permissionMode)
     setSandboxInfo(runtime.sandboxInfo)
     setSessionGoal(runtime.session.sessionGoal)
+    setSessionAgents(runtime.session.sessionAgents)
     setSessionWorktree((current) => {
       const next = { ...runtime.worktree, removed: runtime.session._worktreeRemoved }
       return current.isWorktree === next.isWorktree && current.worktreePath === next.worktreePath
@@ -2229,7 +2232,7 @@ export function MobileApp() {
           selection={{ model: selectedModel, models, providerName: harnessSelection.activeProviderName,
             activeProvider: harnessSelection.activeProvider, onRefresh: refreshModels,
             effort: selectedEffort, efforts, acpAgentId: selectedAcpAgentId,
-            agents: harnessSelection.agents, agent: harnessSelection.selectedAgentId,
+            agents: sessionAgents ?? harnessSelection.agents, agent: harnessSelection.selectedAgentId,
             onAgent: harnessSelection.selectAgent,
             modes: harnessSelection.modes, mode: harnessSelection.selectedModeId,
             modeLabel: harnessSelection.modeLabel, modesLocked: harnessSelection.modesLocked,

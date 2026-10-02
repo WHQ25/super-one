@@ -153,4 +153,16 @@ describe('connectWithHarnessResourceCache', () => {
       fallbackToCacheOnError: true,
     })).resolves.toEqual(stale)
   })
+  it('rejects a forced OpenCode refresh without returning the old catalog', async () => {
+    const stale = { models: [{ id: 'old' }], agents: [] }
+    getCachedHarnessResources.mockReturnValue(stale)
+    const failure = new Error('OpenCode unavailable')
+    await expect(connectWithHarnessResourceCache('opencode', {
+      force: true,
+      probe: vi.fn().mockRejectedValue(failure),
+      fallbackToCacheOnError: false,
+    })).rejects.toThrow(failure)
+    expect(setCachedHarnessResources).not.toHaveBeenCalled()
+  })
+
 })

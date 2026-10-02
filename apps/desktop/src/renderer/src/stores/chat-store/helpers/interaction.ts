@@ -25,6 +25,7 @@ import {
   _computeHasPendingInteraction,
 } from './lifecycle'
 import { resolveProvider } from './provider-routing'
+import { openCodeAgentsFor } from '../opencode-selectors'
 import {
   commitPerSession,
   getProject,
@@ -668,15 +669,20 @@ export async function setSandboxModeImpl(
 export function cyclePermissionModeImpl(get: () => ChatStore, target?: SessionWriteTarget): void {
   const { session } = resolveWriteScope(get(), target)
   const provider = resolveProvider(session)
+  if (provider === 'opencode') {
+    const agents = openCodeAgentsFor(get(), session)
+    if (agents.length === 0) return
+    const index = agents.findIndex((agent) => agent.id === session.openCodeAgentId)
+    get().setOpenCodeAgentId(agents[(index + 1) % agents.length].id, target)
+    return
+  }
   // ACP/Grok: only modes SuperOne can drive over the wire (see acpPermissionModes).
-  // OpenCode: no auto classifier. Cursor: Agent / Plan / Full Access. Claude: full cycle (excludes bypass/dontAsk).
+  // Cursor: Agent / Plan / Full Access. Claude: full cycle (excludes bypass/dontAsk).
   const permissionModes: PermissionMode[] = provider === 'acp'
     ? [...ACP_PERMISSION_MODES]
-    : provider === 'opencode'
-      ? PERMISSION_MODES.filter((mode) => mode !== 'auto')
-      : provider === 'cursor'
-        ? [...CURSOR_PERMISSION_MODES]
-        : PERMISSION_MODES
+    : provider === 'cursor'
+      ? [...CURSOR_PERMISSION_MODES]
+      : PERMISSION_MODES
   const startIdx = permissionModes.indexOf(session.permissionMode)
   const anchor = startIdx === -1 ? 0 : startIdx
   const next = permissionModes[(anchor + 1) % permissionModes.length]
@@ -686,6 +692,20 @@ export function cyclePermissionModeImpl(get: () => ChatStore, target?: SessionWr
 export function togglePlanModeShortcutImpl(get: () => ChatStore, target?: SessionWriteTarget): void {
   const { session } = resolveWriteScope(get(), target)
   const provider = resolveProvider(session)
+  if (provider === 'opencode') {
+    const agents = openCodeAgentsFor(get(), session)
+    if (session.openCodeAgentId !== 'plan') {
+      if (agents.some((agent) => agent.id === 'plan')) get().setOpenCodeAgentId('plan', target)
+      return
+    }
+    // The runtime keeps its last agent, so leaving Plan must name one: the agent
+    // used before Plan, else OpenCode's built-in default.
+    const next = [session.openCodeAgentBeforePlan, 'build']
+      .find((id) => agents.some((agent) => agent.id === id))
+      ?? agents.find((agent) => agent.id !== 'plan')?.id
+    if (next) get().setOpenCodeAgentId(next, target)
+    return
+  }
   if (provider === 'codex') {
     const next: CodexCollaborationMode = session.selectedCodexCollaborationMode === 'plan' ? 'default' : 'plan'
     get().setSelectedCodexCollaborationMode(next, target)

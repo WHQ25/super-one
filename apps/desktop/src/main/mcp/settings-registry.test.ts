@@ -61,6 +61,11 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
 }
 
 describe('settings registry validation', () => {
+  it('does not expose an OpenCode permission preset through config tools', () => {
+    const { valid, rejected } = validateChanges([{ key: 'opencodeDefaultPermissionMode', value: 'bypassPermissions' }], makeSettings())
+    expect(valid).toEqual([])
+    expect(rejected).toEqual([{ key: 'opencodeDefaultPermissionMode', reason: 'unknown settings key' }])
+  })
   it('keeps the Cursor MCP policy-bypass opt-in unavailable to agent config tools', () => {
     const { valid, rejected } = validateChanges([{ key: 'mcpAppsCompatEnabled', value: true }], makeSettings())
     expect(valid).toEqual([])

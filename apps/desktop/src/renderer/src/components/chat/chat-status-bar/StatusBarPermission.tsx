@@ -4,7 +4,7 @@ import { AcpPermissionSelector } from '../AcpPermissionSelector'
 import { CodexPermissionSelector } from '../CodexPermissionSelector'
 import { CursorPermissionSelector } from '../CursorPermissionSelector'
 import { DeepseekPermissionSelector } from '../DeepseekPermissionSelector'
-import { OpenCodePermissionSelector } from '../OpenCodePermissionSelector'
+import { OpenCodeAgentSelector } from '../OpenCodeAgentSelector'
 import { PermissionModeSelector } from '../PermissionModeSelector'
 
 export function StatusBarPermission({
@@ -28,7 +28,7 @@ export function StatusBarPermission({
     )
   }
   if (activeProvider === 'opencode') {
-    return <OpenCodePermissionSelector compact={compactIndicators} />
+    return <OpenCodeAgentSelector compact={compactIndicators} />
   }
   if (activeProvider === 'cursor') {
     return <CursorPermissionSelector compact={compactIndicators} />

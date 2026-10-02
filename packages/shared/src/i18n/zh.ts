@@ -1948,6 +1948,18 @@ export const zh: Messages = {
     runningCommand: '正在执行 /{{command}}…',
     sending: '发送中…',
     creatingSession: '正在创建会话…',
+    opencode: {
+      agent: '智能体',
+      defaultAgent: '默认智能体',
+      noAgents: '暂无可用智能体，请刷新重试。',
+      refreshAgents: '刷新智能体',
+      loadingAgents: '正在加载智能体…',
+      agentsRefreshed: 'OpenCode 返回了 {{count}} 个智能体。',
+      agentsRefreshFailed: '无法刷新 OpenCode 智能体列表。',
+      nativePermissions: '权限遵循 OpenCode 配置及所选智能体的规则。',
+      modelsRefreshed: 'OpenCode 返回了 {{count}} 个模型。',
+      modelsRefreshFailed: '无法刷新 OpenCode 模型列表。',
+    },
     codex: {
       modelsRefreshed: 'Codex 返回了 {{count}} 个模型。',
       modelsRefreshFailed: '无法刷新 Codex 模型列表。',

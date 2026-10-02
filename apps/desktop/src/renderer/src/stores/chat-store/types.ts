@@ -199,6 +199,8 @@ export interface PerSessionState extends ChatCoreSession {
   acpAgentId: string | null
   /** Selected OpenCode primary agent for this session. */
   openCodeAgentId: string | null
+  /** Agent selected before switching to OpenCode's `plan`; leaving Plan returns to it. */
+  openCodeAgentBeforePlan?: string | null
   /** Models from ACP session/new configOptions (category=model). */
   acpModels: ModelOption[]
   /** ACP config option id used for set_config_option (usually "model"). */

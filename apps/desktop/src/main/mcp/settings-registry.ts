@@ -32,8 +32,8 @@ export interface SettingsDomainDef {
 /**
  * Session defaults for the harnesses whose only app-level settings are these.
  * Generated from the harness table rather than hand-listed, so adding a harness
- * cannot silently leave it unconfigurable — which is how ACP, OpenCode and
- * DeepSeek ended up with no way to set a permission mode at all.
+ * cannot silently leave it unconfigurable. Harnesses whose permissions are
+ * configured natively expose no permission-mode setting here.
  *
  * Claude and Codex are excluded because they own richer domains of their own.
  */
@@ -51,7 +51,9 @@ const SESSION_DEFAULT_LABELS: Record<typeof SESSION_DEFAULT_HARNESSES[number], s
   opencode: HARNESS_CAPABILITIES.opencode.displayName,
 }
 
-const SESSION_DEFAULT_DOMAINS: SettingsDomainDef[] = SESSION_DEFAULT_HARNESSES.map((harnessId) => ({
+const SESSION_DEFAULT_DOMAINS: SettingsDomainDef[] = SESSION_DEFAULT_HARNESSES
+  .filter((harnessId) => HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes.length > 0)
+  .map((harnessId) => ({
   domain: `agent-${harnessId}`,
   label: `${SESSION_DEFAULT_LABELS[harnessId]} Defaults`,
   description: `Default settings for new ${SESSION_DEFAULT_LABELS[harnessId]} chat sessions.`,

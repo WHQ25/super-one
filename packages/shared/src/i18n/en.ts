@@ -1840,6 +1840,18 @@ export type Messages = {
     runningCommand: string
     sending: string
     creatingSession: string
+    opencode: {
+      modelsRefreshed: string
+      modelsRefreshFailed: string
+      agent: string
+      defaultAgent: string
+      noAgents: string
+      refreshAgents: string
+      loadingAgents: string
+      agentsRefreshed: string
+      agentsRefreshFailed: string
+      nativePermissions: string
+    }
     codex: {
       modelsRefreshed: string
       modelsRefreshFailed: string
@@ -6010,6 +6022,18 @@ export const en: Messages = {
     runningCommand: 'Running /{{command}}…',
     sending: 'Sending…',
     creatingSession: 'Creating session…',
+    opencode: {
+      agent: 'Agent',
+      defaultAgent: 'Default Agent',
+      noAgents: 'No agents available. Refresh to try again.',
+      refreshAgents: 'Refresh Agents',
+      loadingAgents: 'Loading agents…',
+      agentsRefreshed: 'OpenCode returned {{count}} agents.',
+      agentsRefreshFailed: 'Could not refresh OpenCode agents.',
+      nativePermissions: 'Permissions follow your OpenCode configuration and the selected agent.',
+      modelsRefreshed: 'OpenCode returned {{count}} models.',
+      modelsRefreshFailed: 'Could not refresh OpenCode models.',
+    },
     codex: {
       modelsRefreshed: 'Codex returned {{count}} models.',
       modelsRefreshFailed: 'Could not refresh Codex models.',

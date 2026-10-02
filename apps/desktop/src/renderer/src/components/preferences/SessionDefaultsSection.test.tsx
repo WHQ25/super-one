@@ -50,6 +50,13 @@ beforeEach(() => {
 })
 
 describe('SessionDefaultsSection', () => {
+  it('offers no permission row on a harness that declares no modes', async () => {
+    render(<SessionDefaultsSection harnessId="opencode" />)
+    await waitFor(() => expect(getAppSettings).toHaveBeenCalled())
+    expect(screen.queryByText('settings.preferences.permissionMode.label')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
   /**
    * The row has to say what the session would actually start in. Showing a
    * blank, or Claude's mode, is how the phone and the desktop drifted apart.

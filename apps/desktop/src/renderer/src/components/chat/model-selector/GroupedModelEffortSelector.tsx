@@ -91,12 +91,12 @@ interface GroupedModelEffortSelectorProps {
   onSelectMode?: (id: string) => void
   modesDisabled?: boolean
   modesDisabledReason?: string
-  /** Optional primary-agent list (e.g. OpenCode build/plan/general). */
+  /** Optional primary-agent list for callers that combine agent and model selection. */
   agents?: SelectorAgentOption[]
   selectedAgentId?: string | null
   selectedAgentLabel?: string | null
   onSelectAgent?: (id: string) => void
-  /** Disable agent picking (e.g. OpenCode plan permission forces the plan agent). */
+  /** Disable agent picking while the caller cannot change it. */
   agentsDisabled?: boolean
   providers?: SelectorProviderOption[]
   selectedProviderId?: string | null

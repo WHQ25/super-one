@@ -813,6 +813,13 @@ describe('Session state machine', () => {
     expect(session.permissionMode).toBe('plan')
   })
 
+  it('setPermissionMode rejects a mode before recording it on a harness that declares none', async () => {
+    ;({ session, backend } = makeSession({ harnessId: 'opencode' as never, permissionMode: 'default' }))
+    await expect(session.setPermissionMode('bypassPermissions')).rejects.toThrow(/no permission modes/)
+    expect(session.permissionMode).toBe('default')
+    expect(backend.setPermissionModeCalls).toEqual([])
+  })
+
   it('getRateLimits forwards to backend even when backendStarted is false (prewarm path)', async () => {
     ;({ session, backend } = makeSession({ permissionMode: 'default' }))
     backend.getRateLimitsResult = {

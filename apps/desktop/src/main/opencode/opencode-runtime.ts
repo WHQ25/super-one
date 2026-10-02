@@ -1,11 +1,13 @@
 import { superoneSystemPrompt } from '@superone/shared/superone-system-prompt'
-import type { PermissionRuleset, PermissionV2Request, QuestionV2Request, Todo } from '@opencode-ai/sdk/v2'
+import type { McpLocalConfig, McpRemoteConfig, PermissionRuleset } from '@opencode-ai/sdk/v2'
 import type {
   ContextUsageInfo,
   EffortLevel,
   ImageAttachment,
+  McpServerConfig,
   McpServerInfo,
   ModelOption,
+  OpenCodeResources,
   PermissionMode,
   SlashCommandInfo,
 } from '@superone/shared/agent-types'
@@ -20,14 +22,14 @@ import {
   type OpenCodeEvent,
   type OpenCodeServerHandle,
 } from './opencode-client'
-import type { SnapshotFileDiff } from '@opencode-ai/sdk/v2'
+import type { OpenCodeV2Event } from './opencode-v2-types'
 import { listMcpConfigs } from '../mcp-config-service'
 import log from '../logger'
 import {
   getSuperoneMcpHttpConfig,
   getSuperoneMcpStdioConfig,
 } from '../mcp/superone-mcp-stdio-state'
-import { listOpenCodeAutoAllowSuperoneBareNames } from '../mcp/superone-host-owned-tools'
+import { listAllHostOwnedSuperoneBareNamesForRecognition, listOpenCodeAutoAllowSuperoneBareNames } from '../mcp/superone-host-owned-tools'
 
 const SUPERONE_MCP_NAME = 'superone'
 
@@ -39,9 +41,19 @@ export interface OpenCodeRuntimeConfig {
   startupTimeoutMs?: number
 }
 
+/** 2.x events are wrapped: several share a `type` with 1.x events but not their shape. */
 export type OpenCodeRuntimeEvent = OpenCodeEvent | {
   type: 'runtime.error'
   properties: { message: string }
+} | {
+  type: 'v2'
+  event: OpenCodeV2Event
+}
+
+export interface OpenCodeFileChange {
+  file?: string
+  additions: number
+  deletions: number
 }
 
 export interface OpenCodeRuntimeOptions {
@@ -50,6 +62,7 @@ export interface OpenCodeRuntimeOptions {
   cwd: string
   config: OpenCodeRuntimeConfig
   providerSessionId?: string
+  /** Legacy launch input, used only to restore a previously selected Plan agent. */
   permissionMode: PermissionMode
   onEvent: (event: OpenCodeRuntimeEvent) => void
   systemPromptAppend?: string
@@ -57,12 +70,12 @@ export interface OpenCodeRuntimeOptions {
 
 export interface OpenCodeRuntime {
   readonly sessionId: string
+  readonly agent?: string
   readonly models: ModelOption[]
   readonly agents: Array<{ id: string; name: string; description?: string }>
   readonly commands: SlashCommandInfo[]
-  readonly initialTodos: Todo[]
-  readonly pendingPermissions: PermissionV2Request[]
-  readonly pendingQuestions: QuestionV2Request[]
+  /** Replayed once on attach: todos and interactions still pending on the session. */
+  readonly snapshotEvents: OpenCodeRuntimeEvent[]
   setTitle(title: string): Promise<void>
   prompt(text: string, model?: string, effort?: EffortLevel, images?: ImageAttachment[], agent?: string): Promise<void>
   command(name: string, args?: string, model?: string, effort?: EffortLevel, images?: ImageAttachment[], agent?: string): Promise<void>
@@ -72,11 +85,11 @@ export interface OpenCodeRuntime {
   share(): Promise<string>
   unshare(): Promise<void>
   getContextUsage(): Promise<ContextUsageInfo | null>
-  diff(messageId: string): Promise<SnapshotFileDiff[]>
+  /** Files changed from the turn of user message `messageId` through the latest turn. */
+  diff(messageId: string): Promise<OpenCodeFileChange[]>
   revert(messageId: string): Promise<void>
   unrevert(): Promise<void>
   setModel(model: string): Promise<void>
-  setPermissionMode(mode: PermissionMode): Promise<void>
   cancel(): Promise<void>
   permissionReply(requestId: string, reply: 'once' | 'always' | 'reject'): Promise<void>
   questionReply(requestId: string, answers: string[][]): Promise<void>
@@ -93,7 +106,7 @@ export interface OpenCodeRuntime {
  * SuperOne-owned MCP tools that must not block OpenCode turns.
  * Names come from superone-host-owned-tools (Claude/Codex/ACP parity).
  */
-function builtInSuperoneAllowRules(): PermissionRuleset {
+export function buildOpenCodeHostPermissionRules(): PermissionRuleset {
   return listOpenCodeAutoAllowSuperoneBareNames().map((name) => ({
     permission: `${SUPERONE_MCP_NAME}_${name}`,
     pattern: '*',
@@ -101,24 +114,16 @@ function builtInSuperoneAllowRules(): PermissionRuleset {
   }))
 }
 
-export function buildOpenCodePermissionRules(mode: PermissionMode): PermissionRuleset {
-  if (mode === 'bypassPermissions') {
-    return [{ permission: '*', pattern: '*', action: 'allow' }]
-  }
-  const builtInSuperoneRules = builtInSuperoneAllowRules()
-  if (mode === 'dontAsk') {
-    return [
-      { permission: '*', pattern: '*', action: 'deny' },
-      ...builtInSuperoneRules,
-      { permission: 'question', pattern: '*', action: 'allow' },
-    ]
-  }
-  return [
-    { permission: '*', pattern: '*', action: 'ask' },
-    ...(mode === 'acceptEdits' ? [{ permission: 'edit', pattern: '*', action: 'allow' as const }] : []),
-    ...builtInSuperoneRules,
-    { permission: 'question', pattern: '*', action: 'allow' },
-  ]
+/** Remove the old SuperOne preset overlay, keeping native session rules intact. */
+export function reconcileOpenCodePermissions(existing: PermissionRuleset = []): PermissionRuleset {
+  const hostNames = new Set(listAllHostOwnedSuperoneBareNamesForRecognition().map((name) => `${SUPERONE_MCP_NAME}_${name}`))
+  const isHostAllow = (rule: PermissionRuleset[number]) =>
+    rule.action === 'allow' && rule.pattern === '*' && hostNames.has(rule.permission)
+  const first = existing[0]
+  const legacyPreset = first?.permission === '*' && first.pattern === '*' && existing.slice(1).every((rule) =>
+    isHostAllow(rule) || (rule.action === 'allow' && rule.pattern === '*' && (rule.permission === 'question' || rule.permission === 'edit')))
+  const nativeRules = legacyPreset ? [] : existing.filter((rule) => !isHostAllow(rule))
+  return [...nativeRules, ...buildOpenCodeHostPermissionRules()]
 }
 
 function eventSessionId(event: OpenCodeEvent): string | undefined {
@@ -127,7 +132,7 @@ function eventSessionId(event: OpenCodeEvent): string | undefined {
   return typeof sessionId === 'string' ? sessionId : undefined
 }
 
-function errorMessage(error: unknown): string {
+export function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message
   if (error && typeof error === 'object') {
     const value = error as Record<string, unknown>
@@ -141,11 +146,11 @@ function errorMessage(error: unknown): string {
   return String(error)
 }
 
-async function closeServer(server: OpenCodeServerHandle): Promise<void> {
+export async function closeServer(server: OpenCodeServerHandle): Promise<void> {
   await server.close().catch(() => undefined)
 }
 
-function withAbortSignal<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+export function withAbortSignal<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (!signal) return promise
   if (signal.aborted) return Promise.reject(new Error('OpenCode runtime initialization aborted'))
   return new Promise<T>((resolve, reject) => {
@@ -167,8 +172,20 @@ function withAbortSignal<T>(promise: Promise<T>, signal?: AbortSignal): Promise<
   })
 }
 
-async function syncMcpServers(
-  client: OpenCodeClient,
+/** Protocol-specific MCP registration; `host` marks SuperOne's own server. */
+export interface OpenCodeMcpRegistrar<T> {
+  /** Null when the config cannot be registered (no command or URL). */
+  toConfig(config: McpServerConfig, host: boolean): T | null
+  add(name: string, config: T): Promise<void>
+  disconnect(name: string): Promise<void>
+}
+
+/**
+ * Register the project's MCP servers plus SuperOne's host server (shared HTTP,
+ * falling back to stdio) and disconnect the ones no longer configured.
+ */
+export async function syncMcpServers<T>(
+  registrar: OpenCodeMcpRegistrar<T>,
   cwd: string,
   sessionId: string,
   previousNames: Set<string>,
@@ -176,7 +193,7 @@ async function syncMcpServers(
   const configs = new Map(
     listMcpConfigs(cwd).flatMap((config) => {
       if (config.name === SUPERONE_MCP_NAME) return []
-      const mapped = toOpenCodeMcpConfig(config)
+      const mapped = registrar.toConfig(config, false)
       return mapped ? [[config.name, mapped] as const] : []
     }),
   )
@@ -187,60 +204,87 @@ async function syncMcpServers(
   if (hasSuperone) nextNames.add(SUPERONE_MCP_NAME)
 
   for (const name of previousNames) {
-    if (!nextNames.has(name)) await client.disconnectMcp(name).catch(() => undefined)
+    if (!nextNames.has(name)) await registrar.disconnect(name).catch(() => undefined)
   }
-  await Promise.all([...configs].map(([name, config]) => client.addMcp(name, config)))
+  await Promise.all([...configs].map(([name, config]) => registrar.add(name, config)))
+
+  const addHost = async (config: Omit<McpServerConfig, 'name' | 'scope'>) => {
+    const mapped = registrar.toConfig({ name: SUPERONE_MCP_NAME, scope: 'project', ...config }, true)
+    if (mapped) await registrar.add(SUPERONE_MCP_NAME, mapped)
+  }
 
   if (superoneHttp) {
     try {
-      await client.addMcp(SUPERONE_MCP_NAME, {
-        type: 'remote',
-        url: superoneHttp.url,
-        headers: superoneHttp.headers,
-        enabled: true,
-      })
+      await addHost({ type: 'http', url: superoneHttp.url, headers: superoneHttp.headers })
       return nextNames
     } catch (err) {
       if (!superoneStdio) throw err
       log.warn('[opencode] shared HTTP MCP registration failed; falling back to stdio:', err)
-      await client.disconnectMcp(SUPERONE_MCP_NAME).catch(() => undefined)
+      await registrar.disconnect(SUPERONE_MCP_NAME).catch(() => undefined)
     }
   }
 
   if (superoneStdio) {
-    await client.addMcp(SUPERONE_MCP_NAME, {
-      type: 'local',
-      command: [superoneStdio.command, ...superoneStdio.args],
-      environment: superoneStdio.env,
-      enabled: true,
-      timeout: 60_000,
-    })
+    await addHost({ type: 'stdio', command: superoneStdio.command, args: superoneStdio.args, env: superoneStdio.env })
   }
   return nextNames
 }
 
-export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promise<OpenCodeRuntime> {
-  const server = await startOpenCodeServer({
-    binaryPath: opts.config.binaryPath,
-    cwd: opts.cwd,
-    env: opts.config.env,
-    serverUrl: opts.config.serverUrl,
-    timeoutMs: opts.config.startupTimeoutMs,
-    signal: opts.signal,
+function openCodeV1McpRegistrar(client: OpenCodeClient): OpenCodeMcpRegistrar<McpLocalConfig | McpRemoteConfig> {
+  return {
+    toConfig: (config, host) => {
+      const mapped = toOpenCodeMcpConfig(config)
+      return host && mapped?.type === 'local' ? { ...mapped, timeout: 60_000 } : mapped
+    },
+    add: (name, config) => client.addMcp(name, config),
+    disconnect: (name) => client.disconnectMcp(name),
+  }
+}
+
+export function startOpenCodeServerFromConfig(
+  config: OpenCodeRuntimeConfig,
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<OpenCodeServerHandle> {
+  return startOpenCodeServer({
+    binaryPath: config.binaryPath,
+    cwd,
+    env: config.env,
+    serverUrl: config.serverUrl,
+    serverPassword: config.serverPassword,
+    timeoutMs: config.startupTimeoutMs,
+    signal,
   })
+}
+
+export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promise<OpenCodeRuntime> {
+  const server = await startOpenCodeServerFromConfig(opts.config, opts.cwd, opts.signal)
+  if (server.protocol === 'v2') {
+    try {
+      const { createOpenCodeV2Runtime } = await import('./opencode-v2-runtime')
+      return await createOpenCodeV2Runtime(server, opts)
+    } catch (error) {
+      await closeServer(server)
+      throw error
+    }
+  }
   let closing = false
   try {
-    const client = new OpenCodeClient({ baseUrl: server.url, directory: opts.cwd, password: opts.config.serverPassword })
-    let mcpNames = await withAbortSignal(syncMcpServers(client, opts.cwd, opts.sessionId, new Set()), opts.signal)
+    const client = new OpenCodeClient({ baseUrl: server.url, directory: opts.cwd, password: server.password })
+    const mcpRegistrar = openCodeV1McpRegistrar(client)
+    let mcpNames = await withAbortSignal(syncMcpServers(mcpRegistrar, opts.cwd, opts.sessionId, new Set()), opts.signal)
     const [providers, agents, commands] = await withAbortSignal(
       Promise.all([client.providerList(), client.agents(), client.commands()]),
       opts.signal,
     )
-    const permission = buildOpenCodePermissionRules(opts.permissionMode)
+    const permission = buildOpenCodeHostPermissionRules()
     const session = opts.providerSessionId
       ? { id: opts.providerSessionId }
       : await withAbortSignal(client.createSession(permission), opts.signal)
-    if (opts.providerSessionId) await withAbortSignal(client.updatePermission(session.id, permission), opts.signal)
+    if (opts.providerSessionId) {
+      const existing = await withAbortSignal(client.sessionPermissions(session.id), opts.signal)
+      await withAbortSignal(client.updatePermission(session.id, reconcileOpenCodePermissions(existing)), opts.signal)
+    }
 
     const abortController = new AbortController()
     const [stream, initialTodos, pendingInteractions] = await withAbortSignal(
@@ -283,24 +327,36 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
       })
     }
 
-    let permissionMode = opts.permissionMode
+    let selectedAgent = opts.permissionMode === 'plan' ? 'plan' : undefined
+    const selectAgent = (agent: string | undefined) => (selectedAgent = agent ?? selectedAgent)
     const models = parseModels(providers)
     const parsedAgents = parseOpenCodeAgents(agents)
     return {
       sessionId: session.id,
+      get agent() { return selectedAgent },
       models,
       agents: parsedAgents,
       commands: withOpenCodeLocalCommands(parseOpenCodeCommands(commands)),
-      initialTodos,
-      pendingPermissions: pendingInteractions.permissions,
-      pendingQuestions: pendingInteractions.questions,
+      snapshotEvents: [
+        { id: 'snapshot-todos', type: 'todo.updated', properties: { sessionID: session.id, todos: initialTodos } },
+        ...pendingInteractions.permissions.map((request) => ({
+          id: `snapshot-${request.id}`,
+          type: 'permission.v2.asked' as const,
+          properties: request,
+        })),
+        ...pendingInteractions.questions.map((request) => ({
+          id: `snapshot-${request.id}`,
+          type: 'question.v2.asked' as const,
+          properties: request,
+        })),
+      ],
       setTitle: (title) => client.updateSessionTitle(session.id, title),
       prompt: (text, model, effort, images, agent) => client.promptAsync(session.id, {
         text,
         model,
         variant: effort,
         images,
-        agent: permissionMode === 'plan' ? 'plan' : agent,
+        agent: selectAgent(agent),
         system: superoneSystemPrompt(opts.systemPromptAppend),
       }),
       command: (name, args, model, effort, images, agent) => client.command(session.id, {
@@ -309,12 +365,12 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
         model,
         variant: effort,
         images,
-        agent: permissionMode === 'plan' ? 'plan' : agent,
+        agent: selectAgent(agent),
       }),
       shell: (command, model, agent) => client.shell(session.id, {
         command,
         model,
-        agent: permissionMode === 'plan' ? 'plan' : agent ?? parsedAgents[0]?.id ?? 'build',
+        agent: selectAgent(agent) ?? parsedAgents[0]?.id ?? 'build',
       }),
       init: (model) => client.initSession(session.id, model),
       compact: (model) => client.summarize(session.id, model),
@@ -325,10 +381,6 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
       revert: (messageId) => client.revert(session.id, messageId),
       unrevert: () => client.unrevert(session.id),
       setModel: async () => undefined,
-      setPermissionMode: async (mode) => {
-        await client.updatePermission(session.id, buildOpenCodePermissionRules(mode))
-        permissionMode = mode
-      },
       cancel: () => client.abort(session.id),
       permissionReply: (requestId, reply) => client.permissionReply(requestId, reply),
       questionReply: (requestId, answers) => client.questionReply(requestId, answers),
@@ -338,24 +390,24 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
         if (opts.config.serverUrl?.trim()) {
           throw new Error('MCP OAuth is only supported for a local OpenCode runtime')
         }
-        mcpNames = await syncMcpServers(client, opts.cwd, opts.sessionId, mcpNames)
+        mcpNames = await syncMcpServers(mcpRegistrar, opts.cwd, opts.sessionId, mcpNames)
         await client.authenticateMcp(name)
       },
       reconnectMcp: async (name) => {
-        mcpNames = await syncMcpServers(client, opts.cwd, opts.sessionId, mcpNames)
+        mcpNames = await syncMcpServers(mcpRegistrar, opts.cwd, opts.sessionId, mcpNames)
         await client.disconnectMcp(name).catch(() => undefined)
         await client.connectMcp(name)
       },
       toggleMcpServer: async (name, enabled) => {
         if (enabled) {
-          mcpNames = await syncMcpServers(client, opts.cwd, opts.sessionId, mcpNames)
+          mcpNames = await syncMcpServers(mcpRegistrar, opts.cwd, opts.sessionId, mcpNames)
           await client.connectMcp(name)
         } else {
           await client.disconnectMcp(name)
         }
       },
       reloadMcpServers: async () => {
-        mcpNames = await syncMcpServers(client, opts.cwd, opts.sessionId, mcpNames)
+        mcpNames = await syncMcpServers(mcpRegistrar, opts.cwd, opts.sessionId, mcpNames)
       },
       close: async () => {
         if (closing) return
@@ -369,5 +421,51 @@ export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promi
     closing = true
     await closeServer(server)
     throw error
+  }
+}
+
+/** Models, agents and commands from a short-lived server, for the harness picker. */
+export async function probeOpenCodeResources(config: OpenCodeRuntimeConfig & { cwd: string }): Promise<OpenCodeResources> {
+  const server = await startOpenCodeServerFromConfig(config, config.cwd)
+  try {
+    if (server.protocol === 'v2') {
+      const { OpenCodeV2Client } = await import('./opencode-v2-client')
+      return await new OpenCodeV2Client({ baseUrl: server.url, directory: config.cwd, password: server.password }).resources()
+    }
+    const client = new OpenCodeClient({ baseUrl: server.url, directory: config.cwd, password: server.password })
+    const [providers, agents, commands] = await Promise.all([client.providerList(), client.agents(), client.commands()])
+    return {
+      models: parseModels(providers),
+      agents: parseOpenCodeAgents(agents),
+      commands: withOpenCodeLocalCommands(parseOpenCodeCommands(commands)),
+    }
+  } finally {
+    await server.close()
+  }
+}
+
+/** Session operations outside a live runtime (fork, side-chat cleanup). */
+export interface OpenCodeSessionAdmin {
+  forkSession(sessionId: string, messageId?: string): Promise<{ id: string; directory: string }>
+  moveSession(sessionId: string, directory: string): Promise<void>
+  deleteSession(sessionId: string): Promise<void>
+}
+
+/** Runs `fn` against a short-lived server started from the session's config. */
+export async function withOpenCodeSessionAdmin<T>(
+  config: OpenCodeRuntimeConfig,
+  cwd: string,
+  fn: (admin: OpenCodeSessionAdmin) => Promise<T>,
+): Promise<T> {
+  const server = await startOpenCodeServerFromConfig(config, cwd)
+  try {
+    const clientOptions = { baseUrl: server.url, directory: cwd, password: server.password }
+    if (server.protocol === 'v2') {
+      const { OpenCodeV2Client } = await import('./opencode-v2-client')
+      return await fn(new OpenCodeV2Client(clientOptions))
+    }
+    return await fn(new OpenCodeClient(clientOptions))
+  } finally {
+    await server.close()
   }
 }

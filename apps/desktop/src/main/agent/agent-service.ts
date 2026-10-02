@@ -307,7 +307,8 @@ export class AgentService {
       acpAgentId = cfg.acpAgentId ?? null
       apiProviderId = cfg.apiProviderId
     } else {
-      permissionMode = cfg.permissionMode ?? 'bypassPermissions'
+      // Only the legacy Plan selection seeds an agent; permissions are native.
+      permissionMode = cfg.permissionMode === 'plan' ? 'plan' : 'default'
       apiProviderId = cfg.apiProviderId
     }
 

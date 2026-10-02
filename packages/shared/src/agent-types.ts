@@ -1986,6 +1986,12 @@ export type AgentEventBase =
       error?: string
       agentId?: string | null
     }
+  /**
+   * Native primary agents the session's runtime offers in its own project,
+   * project-defined ones included. Supersedes the harness-level catalog, which
+   * is probed outside any project, for this session.
+   */
+  | { type: 'session_agents'; agents: OpenCodeAgentOption[] }
   /** ACP available_commands_update for slash-command popup. */
   | {
       type: 'acp_commands'

@@ -46,7 +46,7 @@ describe('sessionDefaultsForHarness', () => {
   it.each(HARNESSES)('falls back to the first mode %s declares when unconfigured', (harnessId) => {
     const defaults = sessionDefaultsForHarness(preferences(), harnessId)
 
-    expect(defaults.permissionMode).toBe(HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes[0])
+    expect(defaults.permissionMode).toBe(HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes[0] ?? 'default')
     expect(defaults.configuredPermissionMode).toBe('')
   })
 
@@ -71,7 +71,8 @@ describe('sessionDefaultsForHarness', () => {
     })
 
     expect(sessionDefaultsForHarness(prefs, 'acp').permissionMode).toBe('plan')
-    expect(sessionDefaultsForHarness(prefs, 'opencode').permissionMode).toBe('acceptEdits')
+    expect(sessionDefaultsForHarness(prefs, 'opencode').permissionMode).toBe('default')
+    expect(sessionDefaultsForHarness(prefs, 'opencode').configuredPermissionMode).toBe('')
   })
 
   /** Cursor's ladder shares no spelling with Claude's, so it gets its own value. */

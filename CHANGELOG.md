@@ -15,6 +15,10 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- OpenCode uses a native agent selector with its own refresh control, separate
+  from model and effort. Permissions now follow OpenCode configuration instead
+  of Claude-style presets on desktop and its mobile controller.
+
 - MCP Apps: the interactive UI an MCP server ships with a tool renders as
   a View in place of its tool row, in Claude and Codex sessions, on
   desktop, on the phone and for sessions on remote nodes. Views can open
@@ -42,6 +46,10 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Fixed
 
+- OpenCode works again with OpenCode 2: SuperOne detects the installed
+  version and speaks its new server API, while OpenCode 1 keeps working.
+  Session sharing and MCP sign-in from SuperOne are not available with
+  OpenCode 2.
 - Quota forecasts pace on the average since the window started, so most
   readings show an estimate and short bursts no longer swing it.
 - Mobile reconnects reliably after the phone was backgrounded or its LAN

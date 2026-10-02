@@ -60,7 +60,7 @@ function dependencies(
 
 describe('remote harness system info', () => {
   it.each([
-    ['opencode', ['default', 'plan', 'acceptEdits', 'dontAsk', 'bypassPermissions']],
+    ['opencode', []],
     ['cursor', ['agent', 'plan', 'bypassPermissions']],
     ['dsh', ['plan', 'default', 'bypassPermissions']],
   ] as const)('keeps %s on its own model and permission catalog', async (harnessId, permissionModes) => {
@@ -151,7 +151,7 @@ describe('remote harness system info', () => {
       dependencies(resources, { [harnessId]: mode }),
     )
 
-    expect(info.defaults?.permissionMode).toBe(mode)
+    expect(info.defaults?.permissionMode).toBe(harnessId === 'opencode' ? 'default' : mode)
   })
 
   /** Claude's setting is Claude's alone now — it must not reach another harness. */

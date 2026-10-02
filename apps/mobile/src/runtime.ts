@@ -437,8 +437,7 @@ export class ChatRuntime {
     const info = await requestHarnessResource(this.client, 'get_system_info', this.projectPath, provider) as SystemInfo
 
     this.provider = provider
-    if (info.permissionModes?.length) this.permissionModes = info.permissionModes
-    else if (info.permissionPresets?.length) this.permissionModes = info.permissionPresets
+    this.permissionModes = info.permissionModes ?? info.permissionPresets ?? []
     this.models = info.models ?? []
     if (info.defaults?.permissionMode && !this.session.permissionMode) {
       this.session.permissionMode = info.defaults.permissionMode as SessionState['permissionMode']

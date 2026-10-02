@@ -62,7 +62,7 @@ export function acpModeCatalog(source: AcpModeSource | null): AcpModeProjection 
   }
 }
 
-/** OpenCode primary agents; `build` is the default the desktop store also picks. */
+/** Unselected means OpenCode's configured default, not a forced Build agent. */
 export function openCodeAgentCatalog(resources: OpenCodeResources | null | undefined): {
   agents: RemoteAgentOption[]
   selectedAgentId: string | null
@@ -72,8 +72,7 @@ export function openCodeAgentCatalog(resources: OpenCodeResources | null | undef
     name: agent.name,
     ...(agent.description ? { description: agent.description } : {}),
   }))
-  const selectedAgentId = agents.find((agent) => agent.id === 'build')?.id ?? agents[0]?.id ?? null
-  return { agents, selectedAgentId }
+  return { agents, selectedAgentId: null }
 }
 
 /** DeepSeek presets are a mode pick, and a session that has produced output cannot switch. */

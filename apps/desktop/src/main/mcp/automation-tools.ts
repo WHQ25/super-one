@@ -511,7 +511,6 @@ const DEFAULT_ACP_CONFIG: import('@superone/shared/agent-types').AcpRunConfig = 
 
 const DEFAULT_OPENCODE_CONFIG: import('@superone/shared/agent-types').OpenCodeRunConfig = {
   type: 'opencode',
-  permissionMode: 'bypassPermissions',
 }
 
 function defaultConfigForType(type: AgentRunConfig['type']): AgentRunConfig {

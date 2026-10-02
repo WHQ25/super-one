@@ -34,7 +34,7 @@ const dsh = [
   entry('default', en.chat.deepseekPermissionPresets.workspaceWrite, 'ShieldCheck', 'text-muted-foreground'),
   entry('bypassPermissions', en.chat.deepseekPermissionPresets.fullAccess, 'ShieldOff', 'text-destructive'),
 ]
-const output = `${JSON.stringify({ claude, opencode: claude.filter((mode) => mode.id !== 'auto'), acp, cursor, codex, dsh }, null, 2)}\n`
+const output = `${JSON.stringify({ claude, opencode: [], acp, cursor, codex, dsh }, null, 2)}\n`
 const target = resolve(import.meta.dirname, '../src/ui/permission-modes.generated.json')
 if (process.argv.includes('--check')) {
   if (readFileSync(target, 'utf8') !== output) throw new Error('Permission presentation is stale. Run generate-permission-modes.ts')

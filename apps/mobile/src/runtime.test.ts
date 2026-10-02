@@ -41,6 +41,15 @@ function fakeClient(epoch = 1) {
 afterEach(() => vi.useRealTimers())
 
 describe('ChatRuntime', () => {
+  it('clears the previous harness permission catalog when OpenCode offers no modes', async () => {
+    const client = fakeClient()
+    const runtime = new ChatRuntime(client as never, () => {})
+    await runtime.create('/p', { provider: 'claude' })
+    await runtime.loadSystemInfo('claude')
+    client.request.mockResolvedValueOnce({ permissionModes: [], models: [], agents: [{ id: 'build', name: 'Build' }] })
+    await runtime.loadSystemInfo('opencode')
+    expect(runtime.permissionModes).toEqual([])
+  })
   it('create_session then restore, and loads slash commands', async () => {
     const client = fakeClient()
     const paints: unknown[] = []
@@ -622,4 +631,3 @@ it('paints the saved transcript before the subscribe response arrives', async ()
   await opening
   runtime.dispose()
 })
-

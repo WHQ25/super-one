@@ -31,6 +31,7 @@ import type {
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
 import { lastCompletedMessageId } from '@superone/shared/session-activity'
 import log from '../logger'
@@ -300,6 +301,7 @@ export class Session implements SessionContract {
   private _cachedAcpModels: AgentEvent | null = null
   private _cachedAcpModes: AgentEvent | null = null
   private _cachedAcpCommands: AgentEvent | null = null
+  private _cachedSessionAgents: AgentEvent | null = null
   /**
    * Backend is compacting right now. Replayed as `status_indicator` so a
    * subscriber that arrives mid-compaction (mobile opening the session, a
@@ -938,6 +940,11 @@ export class Session implements SessionContract {
   async setPermissionMode(mode: PermissionMode): Promise<void> {
     this.assertNotDisposed()
     this.touchRuntimeActivity()
+    // A harness that declares no modes runs its own permission configuration;
+    // reject before recording a mode it would never apply.
+    if (mode !== 'default' && HARNESS_LAUNCH_OPTIONS[this.harnessId].permissionModes.length === 0) {
+      throw new Error(`${this.harnessId} has no permission modes; permissions follow its own configuration`)
+    }
     const prev = this.permissionMode
     trace('permission.flow', 'session_setMode_in', { sid: this.id, prev, next: mode, status: this._status, backendStarted: this.backendStarted })
     if (prev === mode) {
@@ -1629,11 +1636,12 @@ export class Session implements SessionContract {
         projectPath: this.projectPath,
       } as AgentEvent)
     }
-    // ACP model/mode/command catalogs are one-shot at runtime start — cache them
-    // so mini-window live sync can show model names without re-probing the agent.
+    // Runtime catalogs (ACP models/modes/commands, native agents) are one-shot at
+    // runtime start — cache them so late subscribers see them without a re-probe.
     if (this._cachedAcpModels) out.push(this._cachedAcpModels)
     if (this._cachedAcpModes) out.push(this._cachedAcpModes)
     if (this._cachedAcpCommands) out.push(this._cachedAcpCommands)
+    if (this._cachedSessionAgents) out.push(this._cachedSessionAgents)
     if (this._compacting) {
       out.push({ type: 'status_indicator', indicator: 'compacting', sessionId: this.id, projectPath: this.projectPath })
     }
@@ -2006,6 +2014,8 @@ export class Session implements SessionContract {
       }
     } else if (tagged.type === 'acp_commands') {
       this._cachedAcpCommands = tagged
+    } else if (tagged.type === 'session_agents') {
+      this._cachedSessionAgents = tagged
     } else if (tagged.type === 'permission_mode_change') {
       this.mergeUiSettings({ permissionMode: tagged.mode })
     }

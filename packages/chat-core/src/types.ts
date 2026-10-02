@@ -14,6 +14,7 @@ import type {
   JevRunPlatform,
   McpServerInfo,
   ModelOption,
+  OpenCodeAgentOption,
   PermissionMode,
   PermissionRequest,
   PlanApprovalRequest,
@@ -175,6 +176,8 @@ export interface ChatCoreSession {
   codexReasoningEffortUserChosen: boolean
   codexPlanRejectHintActive: boolean
   openCodeAgentId: string | null
+  /** From the running runtime (`session_agents`); null until it reports. */
+  sessionAgents: OpenCodeAgentOption[] | null
   apiProviderId: string | null
   acpAgentId: string | null
   acpModels: ModelOption[]

@@ -203,7 +203,7 @@ function LaunchConfigRow({ launch, profile, onChange }: {
       })),
     ]
     : []
-  const permissionMode = config.permissionMode ?? HARNESS_LAUNCH_OPTIONS[harness].permissionModes[0]!
+  const permissionMode = config.permissionMode ?? HARNESS_LAUNCH_OPTIONS[harness].permissionModes[0] ?? 'default'
   return <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.xs,
     marginTop: spacing.xs, paddingVertical: 2, borderRadius: 8, borderWidth: 1, borderColor: colors.border }}>
     <ModelPicker compact harness={harness}

@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ForkContext, ForkSource } from '../types'
 
 const mocks = vi.hoisted(() => ({
-  startServer: vi.fn(async () => ({
+  startServer: vi.fn(async (opts: { serverPassword?: string }) => ({
     url: 'http://127.0.0.1:4000',
+    protocol: 'v1',
+    password: opts.serverPassword,
     exited: null,
     close: vi.fn(async () => undefined),
   })),

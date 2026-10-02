@@ -51,7 +51,6 @@ const defaultAcpConfig: AcpRunConfig = {
 
 const defaultOpenCodeConfig: OpenCodeRunConfig = {
   type: 'opencode',
-  permissionMode: 'bypassPermissions',
 }
 
 const defaultSchedule: AutomationSchedule = {
@@ -474,16 +473,7 @@ export function AutomationDialog({
                         placeholder="provider/model"
                       />
                     </label>
-                    <PopoverSelect
-                      label={t('resources.automation.permission')}
-                      value={form.opencodeConfig.permissionMode ?? 'bypassPermissions'}
-                      options={permissionModes.map((m) => ({
-                        ...m,
-                        label: t(`chat.permissionModes.${m.id}.label`),
-                        description: t(`chat.permissionModes.${m.id}.description`),
-                      }))}
-                      onChange={(v) => updateOpenCode({ permissionMode: v as OpenCodeRunConfig['permissionMode'] })}
-                    />
+                    <p className="text-xs text-muted-foreground">{t('chat.opencode.nativePermissions')}</p>
                   </>
                 )}
               </div>

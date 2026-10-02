@@ -132,7 +132,7 @@ export function ChatInput() {
     const { sendMessage, setShowReviewPanel } = storeActions
     const sessionScope = useSessionScope()
     const mcpRoute = useMcpAppFileRoute(sessionScope)
-    const { text, draftJson, status, attachments, browserAnnotations, mentions, permissionMode, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, projectExtraDirs, additionalDirs, additionalDirsDirty } =
+    const { text, draftJson, status, attachments, browserAnnotations, mentions, permissionMode, openCodeAgentId, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, projectExtraDirs, additionalDirs, additionalDirsDirty } =
       useActiveSession(useShallow((s) => ({
         text: s.draftText,
         draftJson: s.draftJson,
@@ -141,6 +141,7 @@ export function ChatInput() {
         browserAnnotations: s.browserAnnotations,
         mentions: s.mentions,
         permissionMode: s.permissionMode,
+        openCodeAgentId: s.openCodeAgentId,
         hasPendingInteraction: s.hasPendingInteraction,
         queuedMessages: s.queuedMessages,
         miniAppContexts: s.miniAppContexts,
@@ -1545,6 +1546,7 @@ export function ChatInput() {
     const providerPlaceholder = resolveChatInputPlaceholder(t, {
       provider: activeProviderForResources,
       permissionMode,
+      openCodeAgentId,
       codexPlanMode: isCodexPlanMode,
       acpAgentName: acpAgentName || t('chat.suggestions.acpLabel'),
     })

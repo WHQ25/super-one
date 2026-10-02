@@ -36,11 +36,14 @@ export function resolveChatInputPlaceholder(
     permissionMode: PermissionMode
     codexPlanMode: boolean
     acpAgentName: string
+    openCodeAgentId?: string | null
   },
 ): string {
   const mode = options.provider === 'codex'
     ? (options.codexPlanMode ? 'plan' : 'ask')
-    : (options.permissionMode === 'plan' ? 'plan' : 'ask')
+    : options.provider === 'opencode'
+      ? (options.openCodeAgentId === 'plan' ? 'plan' : 'ask')
+      : (options.permissionMode === 'plan' ? 'plan' : 'ask')
   const key = PLACEHOLDER_KEYS[options.provider][mode]
 
   if (options.provider === 'acp') {

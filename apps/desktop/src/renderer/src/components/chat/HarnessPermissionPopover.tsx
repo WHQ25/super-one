@@ -3,6 +3,7 @@ import { ChevronDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import type { CodexPermissionPreset, HarnessId, PermissionMode } from '@superone/shared/agent-types'
+import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import { AcpPermissionModeList, acpPermissionModeOption } from './AcpPermissionModeList'
 import { CodexPermissionPresetList, codexPermissionPresetOption } from './CodexPermissionPresetList'
 import {
@@ -11,7 +12,6 @@ import {
 } from './cursorPermissionModes'
 import { CursorPermissionModeList, cursorPermissionModeOption } from './CursorPermissionModeList'
 import { DEEPSEEK_PERMISSION_MODES } from './deepseekPermissionModes'
-import { OPENCODE_PERMISSION_MODES } from './opencodePermissionModes'
 import { modes, PermissionModeList } from './PermissionModeList'
 import { PERMISSION_POPOVER_CLASS } from './permissionPopoverStyles'
 
@@ -54,6 +54,7 @@ export function HarnessPermissionPopover({
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
+  if (HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes.length === 0) return null
 
   const select = (mode: PermissionMode): void => {
     onChange(mode)
@@ -100,12 +101,10 @@ export function HarnessPermissionPopover({
       ),
     }
   } else {
-    // Claude offers every mode; OpenCode/DeepSeek only the subset their backends implement.
-    const availableModes = harnessId === 'opencode'
-      ? OPENCODE_PERMISSION_MODES
-      : harnessId === 'dsh'
-        ? DEEPSEEK_PERMISSION_MODES
-        : modes.map((mode) => mode.id)
+    // Claude offers every mode; DeepSeek only the subset its backend implements.
+    const availableModes = harnessId === 'dsh'
+      ? DEEPSEEK_PERMISSION_MODES
+      : modes.map((mode) => mode.id)
     const active = modes.find((mode) => mode.id === value && availableModes.includes(mode.id)) ?? modes[0]
     trigger = {
       label: t(`chat.permissionModes.${active.id}.label`),

@@ -44,13 +44,15 @@ vi.mock('../logger', () => ({
   default: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }))
 
-vi.mock('./opencode-client', () => ({
+vi.mock('./opencode-client', async (importOriginal) => ({
+  toOpenCodeMcpConfig: (await importOriginal<typeof import('./opencode-client')>()).toOpenCodeMcpConfig,
   OpenCodeClient: class {
     providerList = async () => ({ connected: [], default: {}, all: [] })
     agents = async () => [{ name: 'build', mode: 'primary', hidden: false }]
     commands = async () => [{ name: 'review', source: 'command', hints: [], template: '' }]
     createSession = mocks.createSession
     updatePermission = mocks.updatePermission
+    sessionPermissions = async () => [{ permission: '*', pattern: '*', action: 'allow' as const }]
     updateSessionTitle = mocks.updateSessionTitle
     promptAsync = mocks.promptAsync
     command = mocks.command
@@ -92,12 +94,10 @@ vi.mock('./opencode-client', () => ({
   }],
   startOpenCodeServer: async () => ({
     url: 'http://127.0.0.1:4000',
+    protocol: 'v1',
     exited: null,
     close: mocks.closeServer,
   }),
-  toOpenCodeMcpConfig: (config: { command?: string; disabled?: boolean }) => config.command
-    ? { type: 'local', command: [config.command], enabled: !config.disabled }
-    : null,
 }))
 
 vi.mock('../mcp-config-service', () => ({
@@ -122,7 +122,7 @@ vi.mock('../mcp/superone-mcp-stdio-state', () => ({
 import {
   setComputerUseEnabledForTests,
 } from '../computer-use/tools'
-import { buildOpenCodePermissionRules, createOpenCodeRuntime } from './opencode-runtime'
+import { buildOpenCodeHostPermissionRules, reconcileOpenCodePermissions, createOpenCodeRuntime } from './opencode-runtime'
 
 describe('opencode-runtime', () => {
   beforeEach(() => {
@@ -141,7 +141,7 @@ describe('opencode-runtime', () => {
     mocks.events = []
   })
 
-  it('uses plan agent and updates live permission rules', async () => {
+  it('selects native agents without changing permissions or forcing Plan', async () => {
     const runtime = await createOpenCodeRuntime({
       sessionId: 'superone-session',
       cwd: '/project',
@@ -151,7 +151,7 @@ describe('opencode-runtime', () => {
       onEvent: vi.fn(),
     })
 
-    await runtime.prompt('Plan this', 'openai/gpt-5', 'high', undefined, 'build')
+    await runtime.prompt('Plan this', 'openai/gpt-5', 'high', undefined, 'plan')
     expect(mocks.promptAsync).toHaveBeenCalledWith('oc-session', {
       text: 'Plan this',
       system: `${SUPERONE_SYSTEM_PROMPT_APPEND}\n\ncaller extra`,
@@ -170,19 +170,17 @@ describe('opencode-runtime', () => {
       enabled: true,
     })
 
-    await runtime.setPermissionMode('bypassPermissions')
-    expect(mocks.updatePermission).toHaveBeenCalledWith('oc-session', [
-      { permission: '*', pattern: '*', action: 'allow' },
-    ])
+    expect(mocks.updatePermission).not.toHaveBeenCalled()
+    expect(mocks.createSession).toHaveBeenCalledWith(buildOpenCodeHostPermissionRules())
 
-    await runtime.prompt('Build this', 'openai/gpt-5')
+    await runtime.prompt('Build this', 'openai/gpt-5', undefined, undefined, 'build')
     expect(mocks.promptAsync).toHaveBeenLastCalledWith('oc-session', {
       text: 'Build this',
       system: `${SUPERONE_SYSTEM_PROMPT_APPEND}\n\ncaller extra`,
       model: 'openai/gpt-5',
       variant: undefined,
       images: undefined,
-      agent: undefined,
+      agent: 'build',
     })
     expect(runtime.commands).toEqual([
       { name: 'review', description: '', argumentHint: '', isSkill: false },
@@ -191,9 +189,14 @@ describe('opencode-runtime', () => {
       { name: 'share', description: 'Share session', argumentHint: '', isSkill: false },
       { name: 'unshare', description: 'Unshare session', argumentHint: '', isSkill: false },
     ])
-    expect(runtime.initialTodos).toEqual([{ content: 'Resume work', status: 'pending', priority: 'high' }])
-    expect(runtime.pendingPermissions).toEqual([expect.objectContaining({ id: 'permission-1' })])
-    expect(runtime.pendingQuestions).toEqual([expect.objectContaining({ id: 'question-1' })])
+    expect(runtime.snapshotEvents).toEqual([
+      expect.objectContaining({
+        type: 'todo.updated',
+        properties: { sessionID: 'oc-session', todos: [{ content: 'Resume work', status: 'pending', priority: 'high' }] },
+      }),
+      expect.objectContaining({ type: 'permission.v2.asked', properties: expect.objectContaining({ id: 'permission-1' }) }),
+      expect.objectContaining({ type: 'question.v2.asked', properties: expect.objectContaining({ id: 'question-1' }) }),
+    ])
     await runtime.setTitle('Renamed session')
     expect(mocks.updateSessionTitle).toHaveBeenCalledWith('oc-session', 'Renamed session')
     await runtime.command('review', 'working tree', 'openai/gpt-5', 'high', undefined, 'general')
@@ -205,10 +208,9 @@ describe('opencode-runtime', () => {
       images: undefined,
       agent: 'general',
     })
-    await runtime.setPermissionMode('plan')
     await runtime.shell('git status', 'openai/gpt-5', 'general')
     expect(mocks.shell).toHaveBeenCalledWith('oc-session', {
-      command: 'git status', model: 'openai/gpt-5', agent: 'plan',
+      command: 'git status', model: 'openai/gpt-5', agent: 'general',
     })
     expect(await runtime.getMcpServerStatus()).toEqual([{ name: 'github', status: 'connected' }])
     await runtime.authenticateMcp('github')
@@ -276,6 +278,21 @@ describe('opencode-runtime', () => {
     await runtime.close()
   })
 
+  it('disconnects a configured MCP server once its config can no longer be registered', async () => {
+    const runtime = await createOpenCodeRuntime({
+      sessionId: 'superone-session',
+      cwd: '/project',
+      config: {},
+      permissionMode: 'default',
+      onEvent: vi.fn(),
+    })
+    mocks.mcpConfigs = [{ name: 'project-tools', type: 'stdio', command: '' }]
+    await runtime.reloadMcpServers()
+
+    expect(mocks.disconnectMcp).toHaveBeenCalledWith('project-tools')
+    await runtime.close()
+  })
+
   it('reserves the superone MCP name for the built-in server', async () => {
     mocks.mcpConfigs = [
       { name: 'superone', type: 'stdio', command: 'user-superone' },
@@ -316,21 +333,27 @@ describe('opencode-runtime', () => {
     await runtime.close()
   })
 
-  it('builds deny and accept-edits rules without disabling questions', () => {
-    const denyRules = buildOpenCodePermissionRules('dontAsk')
-    expect(denyRules).toContainEqual({ permission: '*', pattern: '*', action: 'deny' })
-    expect(denyRules).toContainEqual({ permission: 'question', pattern: '*', action: 'allow' })
-    expect(denyRules).toContainEqual({ permission: 'superone_session_rename', pattern: '*', action: 'allow' })
-    expect(buildOpenCodePermissionRules('acceptEdits')).toContainEqual({
-      permission: 'edit',
-      pattern: '*',
-      action: 'allow',
-    })
+  it('only admits host tools, leaving native tools and third-party tools to OpenCode', () => {
+    const rules = buildOpenCodeHostPermissionRules()
+    expect(rules).toContainEqual({ permission: 'superone_session_rename', pattern: '*', action: 'allow' })
+    for (const permission of ['*', 'edit', 'read', 'question', 'bash', 'shell', 'github_*', 'superone_*']) {
+      expect(rules.some((rule) => rule.permission === permission)).toBe(false)
+    }
+  })
+
+  it('removes legacy preset overlays on resume, but preserves native resource rules', () => {
+    expect(reconcileOpenCodePermissions([
+      { permission: '*', pattern: '*', action: 'ask' },
+      { permission: 'edit', pattern: '*', action: 'allow' },
+      { permission: 'question', pattern: '*', action: 'allow' },
+    ])).toEqual(buildOpenCodeHostPermissionRules())
+    const native = [{ permission: 'shell', pattern: 'git push *', action: 'deny' as const }]
+    expect(reconcileOpenCodePermissions(native)).toEqual([...native, ...buildOpenCodeHostPermissionRules()])
   })
 
   it('auto-allows SuperOne computer-use tools when the feature is enabled', () => {
     setComputerUseEnabledForTests(true)
-    const rules = buildOpenCodePermissionRules('default')
+    const rules = buildOpenCodeHostPermissionRules()
     for (const name of [
       'computer_apps',
       'computer_snapshot',
@@ -350,7 +373,7 @@ describe('opencode-runtime', () => {
 
   it('does not auto-allow computer-use tools when the feature is disabled', () => {
     setComputerUseEnabledForTests(false)
-    const rules = buildOpenCodePermissionRules('default')
+    const rules = buildOpenCodeHostPermissionRules()
     expect(rules).not.toContainEqual({
       permission: 'superone_computer_apps',
       pattern: '*',

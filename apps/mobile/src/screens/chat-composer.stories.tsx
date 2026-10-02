@@ -76,6 +76,16 @@ export const Default = {
   name: 'Phone · compact empty hides send',
 }
 
+function OpenCodeAgentsPreview() {
+  const [agent, setAgent] = useState('plan')
+  return <Preview {...base} provider="opencode" permissionModes={[]} tablet={false} selection={{
+    ...base.selection!, agent, onAgent: setAgent,
+    agents: [{ id: 'build', name: 'Build' }, { id: 'plan', name: 'Plan' }, { id: 'reviewer', name: 'Reviewer' }],
+    onRefresh: async () => { await new Promise((resolve) => setTimeout(resolve, 700)) },
+  }} />
+}
+export const OpenCodeNativeAgents = { render: () => <OpenCodeAgentsPreview /> }
+
 /** A landscape phone is wide enough for the sidebar but keeps this compact field. */
 /**
  * The status row is two anchored groups: what the turn will do on the left,

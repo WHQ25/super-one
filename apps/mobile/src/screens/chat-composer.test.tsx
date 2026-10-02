@@ -61,6 +61,21 @@ test('the folder count rides in the status row, counting both scopes', async () 
   expect(screen.getByTestId('phone-composer-status')).toBeTruthy()
 })
 
+test('OpenCode has a separate native agent trigger, and the model trigger only names model and effort', async () => {
+  await renderWithTheme(composer({
+    provider: 'opencode', permissionModes: [],
+    selection: {
+      model: 'openai/gpt', models: [{ id: 'openai/gpt', name: 'GPT', description: '' }],
+      effort: 'high', efforts: [{ value: 'low', label: 'Low' }, { value: 'high', label: 'High' }],
+      onModel: () => {}, onEffort: () => {},
+      agents: [{ id: 'plan', name: 'Plan' }], agent: 'plan', onAgent: () => {},
+    },
+  }))
+  expect(screen.getByLabelText('Agent: Plan')).toBeTruthy()
+  expect(screen.getByLabelText('Model: GPT, High')).toBeTruthy()
+  expect(screen.queryByLabelText(/Permission [Mm]ode:/)).toBeNull()
+})
+
 test('with no panel open the command list has the slot', async () => {
   await renderWithTheme(composer({ draft: '/cl', slashHits: [command('clear')] }))
 

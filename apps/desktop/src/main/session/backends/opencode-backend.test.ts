@@ -40,7 +40,6 @@ describe('OpenCodeBackend', () => {
   let diff: ReturnType<typeof vi.fn>
   let revert: ReturnType<typeof vi.fn>
   let unrevert: ReturnType<typeof vi.fn>
-  let setPermissionMode: ReturnType<typeof vi.fn>
   let permissionReply: ReturnType<typeof vi.fn>
   let questionReply: ReturnType<typeof vi.fn>
   let questionReject: ReturnType<typeof vi.fn>
@@ -74,7 +73,6 @@ describe('OpenCodeBackend', () => {
     ])
     revert = vi.fn(async () => undefined)
     unrevert = vi.fn(async () => undefined)
-    setPermissionMode = vi.fn(async () => undefined)
     permissionReply = vi.fn(async () => undefined)
     questionReply = vi.fn(async () => undefined)
     questionReject = vi.fn(async () => undefined)
@@ -89,9 +87,7 @@ describe('OpenCodeBackend', () => {
       models: [{ id: 'openai/gpt-5', name: 'GPT-5', description: '', contextWindow: 400_000 }],
       agents: [],
       commands: [{ name: 'review', description: '', argumentHint: '', isSkill: false }],
-      initialTodos: [],
-      pendingPermissions: [],
-      pendingQuestions: [],
+      snapshotEvents: [] as OpenCodeRuntimeEvent[],
       setTitle,
       prompt,
       command,
@@ -105,7 +101,6 @@ describe('OpenCodeBackend', () => {
       revert,
       unrevert,
       setModel: vi.fn(async () => undefined),
-      setPermissionMode,
       cancel: vi.fn(async () => undefined),
       permissionReply,
       questionReply,
@@ -136,6 +131,16 @@ describe('OpenCodeBackend', () => {
 
     expect(close).toHaveBeenCalledOnce()
     expect(backend.hasActiveRuntime()).toBe(false)
+  })
+
+  it('reports the runtime project agents once the runtime is ready', async () => {
+    runtime = { ...runtime, agents: [{ id: 'build', name: 'Build' }, { id: 'local-docs', name: 'Local Docs' }] }
+    const backend = new OpenCodeBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((event) => events.push(event))
+    await backend.start(startOptions())
+    expect(events).toContainEqual({ type: 'session_agents', agents: runtime.agents })
+    await backend.close()
   })
 
   it('preserves a new runtime created while an old pending runtime is released', async () => {
@@ -353,21 +358,33 @@ describe('OpenCodeBackend', () => {
   })
 
   it('restores todo and pending interaction snapshots on session resume', async () => {
-    Object.assign(runtime, {
-      initialTodos: [{ content: 'Resume work', status: 'in_progress', priority: 'high' }],
-      pendingPermissions: [{
-        id: 'permission-snapshot',
-        sessionID: 'oc-session',
-        action: 'bash',
-        resources: ['git status'],
-        save: ['git *'],
-      }],
-      pendingQuestions: [{
-        id: 'question-snapshot',
-        sessionID: 'oc-session',
-        questions: [{ question: 'Continue?', header: 'Continue', options: [], multiple: false }],
-      }],
-    })
+    runtime.snapshotEvents = [
+      {
+        id: 'snapshot-todos',
+        type: 'todo.updated',
+        properties: { sessionID: 'oc-session', todos: [{ content: 'Resume work', status: 'in_progress', priority: 'high' }] },
+      },
+      {
+        id: 'snapshot-permission',
+        type: 'permission.v2.asked',
+        properties: {
+          id: 'permission-snapshot',
+          sessionID: 'oc-session',
+          action: 'bash',
+          resources: ['git status'],
+          save: ['git *'],
+        },
+      },
+      {
+        id: 'snapshot-question',
+        type: 'question.v2.asked',
+        properties: {
+          id: 'question-snapshot',
+          sessionID: 'oc-session',
+          questions: [{ question: 'Continue?', header: 'Continue', options: [], multiple: false }],
+        },
+      },
+    ] as OpenCodeRuntimeEvent[]
     const backend = new OpenCodeBackend()
     const events: AgentEvent[] = []
     backend.onEvent((event) => events.push(event))
@@ -537,10 +554,33 @@ describe('OpenCodeBackend', () => {
     backend.respondToQuestion('question-1', { 'Pick values': 'A, B', 'Name it': 'One, Two' })
     expect(questionReply).toHaveBeenCalledWith('question-1', [['A', 'B'], ['One, Two']])
 
-    await backend.setPermissionMode('plan')
-    expect(setPermissionMode).toHaveBeenCalledWith('plan')
     await backend.close()
     expect(questionReject).not.toHaveBeenCalled()
+  })
+
+  it('retires a legacy Plan mode once and reports the agent only when it differs from the request', async () => {
+    runtime = { ...runtime, agent: 'plan' }
+    const backend = new OpenCodeBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((event) => events.push(event))
+    const applied = vi.fn()
+    backend.onPermissionModeApplied(applied)
+    await backend.start(startOptions({ permissionMode: 'plan' }))
+
+    const seeded = backend.send({ content: 'plan it', assistantMessageId: 'asst-1' })
+    await vi.waitFor(() => expect(applied).toHaveBeenCalledWith('default'))
+    route({ id: 'idle-1', type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
+    await seeded
+    expect(events).toContainEqual({ type: 'agent_setting_change', patch: { openCodeAgentId: 'plan' } })
+
+    events.length = 0
+    const explicit = backend.send({ content: 'again', agent: 'plan', assistantMessageId: 'asst-2' })
+    await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(2))
+    route({ id: 'idle-2', type: 'session.idle', properties: { sessionID: 'oc-session' } } as OpenCodeRuntimeEvent)
+    await explicit
+    expect(applied).toHaveBeenCalledOnce()
+    expect(events.some((event) => event.type === 'agent_setting_change')).toBe(false)
+    await backend.close()
   })
 
   it('routes MCP status and lifecycle calls through the runtime', async () => {

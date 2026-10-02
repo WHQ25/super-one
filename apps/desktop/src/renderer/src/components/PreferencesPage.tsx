@@ -303,6 +303,12 @@ function ClaudePreferencesPage() {
   )
 }
 
+/** OpenCode declares no permission modes; say where its permissions come from instead. */
+function OpenCodeNativePermissionsNote() {
+  const { t } = useTranslation()
+  return <p className="text-sm text-muted-foreground">{t('chat.opencode.nativePermissions')}</p>
+}
+
 export function PreferencesPage({ provider }: { provider?: SettingsProvider } = {}) {
   const storeProvider = useAppStore((s) => s.settingsProvider)
   const settingsProvider = provider ?? storeProvider
@@ -313,6 +319,13 @@ export function PreferencesPage({ provider }: { provider?: SettingsProvider } = 
     return (
       <HarnessPreferencesPage harnessId="dsh">
         <DshSubagentModelsSettings />
+      </HarnessPreferencesPage>
+    )
+  }
+  if (settingsProvider === 'opencode') {
+    return (
+      <HarnessPreferencesPage harnessId="opencode">
+        <OpenCodeNativePermissionsNote />
       </HarnessPreferencesPage>
     )
   }

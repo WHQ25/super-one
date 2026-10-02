@@ -1,5 +1,5 @@
-import { OpenCodeClient, startOpenCodeServer } from '../../opencode/opencode-client'
 import { readOpenCodeConfig } from '../../opencode/opencode-event-map'
+import { withOpenCodeSessionAdmin } from '../../opencode/opencode-runtime'
 import type { ForkContext, ForkSource } from '../types'
 
 function resolveOpenCodeForkAnchor(ctx: ForkContext): string | undefined {
@@ -17,20 +17,7 @@ export async function forkOpenCodeSession(
   ctx: ForkContext,
 ): Promise<string> {
   const sourceCwd = source.cwd ?? source.projectPath
-  const config = readOpenCodeConfig(source.providerConfig)
-  const server = await startOpenCodeServer({
-    binaryPath: config.binaryPath,
-    cwd: sourceCwd,
-    env: config.env,
-    serverUrl: config.serverUrl,
-    timeoutMs: config.startupTimeoutMs,
-  })
-  try {
-    const client = new OpenCodeClient({
-      baseUrl: server.url,
-      directory: sourceCwd,
-      password: config.serverPassword,
-    })
+  return withOpenCodeSessionAdmin(readOpenCodeConfig(source.providerConfig), sourceCwd, async (client) => {
     const forked = await client.forkSession(source.providerSessionId, resolveOpenCodeForkAnchor(ctx))
     if (forked.directory !== targetCwd) {
       try {
@@ -41,7 +28,5 @@ export async function forkOpenCodeSession(
       }
     }
     return forked.id
-  } finally {
-    await server.close()
-  }
+  })
 }

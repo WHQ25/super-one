@@ -199,6 +199,12 @@ export function applyEventToSession(
       return patch
     }
 
+    case 'session_agents': {
+      // The project's own list is authoritative: a selection it lacks no longer exists.
+      const known = session.openCodeAgentId === null || event.agents.some((agent) => agent.id === session.openCodeAgentId)
+      return { sessionAgents: event.agents, ...(known ? {} : { openCodeAgentId: null }) }
+    }
+
     case 'acp_commands': {
       const sessionProvider = session.sessionProvider ?? session.preferredProvider
       if (sessionProvider !== 'acp') return {}

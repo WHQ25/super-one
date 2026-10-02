@@ -1,12 +1,11 @@
 import { useMemo } from 'react'
 import type { EffortLevel } from '@superone/shared/agent-types'
 import { formatEffortLabel } from '@superone/shared/effort-labels'
-import { selectOpenCodeAgents, useActiveSession, useChatStore, useScopedSessionActions } from '@/stores/chat'
-import { resolveDefaultOpenCodeAgent } from '@/stores/chat-store/harness/opencode-handler'
+import { useActiveSession, useChatStore, useScopedSessionActions } from '@/stores/chat'
 import { groupModelsBySlashPrefix, resolveSlashModelLabel, splitSlashModelId } from '../ModelSelectorLists'
+import { useOpenCodeResourceRefresh } from '../useOpenCodeResourceRefresh'
 import {
   GroupedModelEffortSelector,
-  type SelectorAgentOption,
   type SelectorModelGroup,
 } from './GroupedModelEffortSelector'
 
@@ -20,20 +19,11 @@ function resolveEffortForModel(
 }
 
 export function OpenCodeModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Event) => void } = {}) {
+  const { refresh: refreshModels, loading: modelsLoading } = useOpenCodeResourceRefresh('models')
   const resources = useChatStore((state) => state.harnessResources.opencode)
-  const agents = useChatStore(selectOpenCodeAgents)
   const selectedModel = useActiveSession((state) => state.selectedModel)
   const selectedEffort = useActiveSession((state) => state.selectedEffort)
-  const selectedAgentId = useActiveSession((state) => state.openCodeAgentId)
-  const permissionMode = useActiveSession((state) => state.permissionMode)
-  const { setSelectedModel, setSelectedEffort, setOpenCodeAgentId } = useScopedSessionActions()
-
-  const isPlanMode = permissionMode === 'plan'
-  const effectiveAgentId = isPlanMode
-    ? 'plan'
-    : (selectedAgentId ?? resolveDefaultOpenCodeAgent(agents))
-  const selectedAgent = agents.find((agent) => agent.id === effectiveAgentId)
-  const agentLabel = isPlanMode ? 'Plan' : (selectedAgent?.name ?? 'Agent')
+  const { setSelectedModel, setSelectedEffort } = useScopedSessionActions()
 
   const current = resources?.models.find((model) => model.id === selectedModel)
   // Prefer catalog display name; if selection is not in OpenCode catalog (stale race),
@@ -55,15 +45,6 @@ export function OpenCodeModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?:
     [resources?.models],
   )
 
-  const agentOptions = useMemo<SelectorAgentOption[]>(
-    () => agents.map((agent) => ({
-      id: agent.id,
-      name: agent.name,
-      description: agent.description,
-    })),
-    [agents],
-  )
-
   const effortOptions = (current?.supportedEffortLevels ?? []).map((value) => ({
     value,
     label: formatEffortLabel(value),
@@ -76,20 +57,10 @@ export function OpenCodeModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?:
     setSelectedEffort(effort)
   }
 
-  const selectAgent = (agentId: string) => {
-    setOpenCodeAgentId(agentId)
-    const agent = agents.find((item) => item.id === agentId)
-    const modelId = agent?.modelId
-    if (!modelId || !resources?.models.some((model) => model.id === modelId)) return
-    selectModel(modelId)
-  }
-
-  if (groups.length === 0 && agentOptions.length === 0) {
-    return <span className="rounded-lg px-2 py-1 text-xs text-muted-foreground">OpenCode</span>
-  }
-
   return (
     <GroupedModelEffortSelector
+      onRefreshModels={() => void refreshModels()}
+      modelsLoading={modelsLoading}
       modelGroups={groups}
       selectedModelId={selectedModel}
       selectedModelLabel={modelLabel}
@@ -97,11 +68,6 @@ export function OpenCodeModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?:
       effortOptions={effortOptions}
       selectedEffort={selectedEffort ?? null}
       onSelectEffort={(value) => setSelectedEffort(value as EffortLevel)}
-      agents={agentOptions}
-      selectedAgentId={effectiveAgentId}
-      selectedAgentLabel={agentLabel}
-      onSelectAgent={selectAgent}
-      agentsDisabled={isPlanMode}
       onCloseAutoFocus={onCloseAutoFocus}
     />
   )

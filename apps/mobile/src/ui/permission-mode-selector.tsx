@@ -26,6 +26,7 @@ export function PermissionModeSelector({ harness, modes, value, onChange, disabl
   const selected = permissionPresentation(harness, value)
   const TriggerIcon = icons[selected.triggerIcon] ?? Shield
   const available = orderedPermissionModes(harness, modes)
+  if (modes.length === 0) return null
   return <>
     <Pressable ref={menu.ref} disabled={disabled || !modes.length} accessibilityRole="button" accessibilityLabel={`${t('Permission mode')}: ${t(selected.label)}`}
       accessibilityState={{ disabled: disabled || !modes.length, expanded: !!menu.anchor }} onPress={menu.open}

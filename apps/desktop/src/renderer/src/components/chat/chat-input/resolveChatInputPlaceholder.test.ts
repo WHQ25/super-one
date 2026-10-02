@@ -5,7 +5,7 @@ import { resolveChatInputPlaceholder } from './resolveChatInputPlaceholder'
 const t = ((key: string, options?: { agent?: string }) => options?.agent ? `${key}:${options.agent}` : key) as TFunction
 
 describe('resolveChatInputPlaceholder', () => {
-  it('uses OpenCode copy for normal and plan modes', () => {
+  it('uses the native OpenCode agent for planning copy', () => {
     expect(resolveChatInputPlaceholder(t, {
       provider: 'opencode',
       permissionMode: 'default',
@@ -14,7 +14,8 @@ describe('resolveChatInputPlaceholder', () => {
     })).toBe('chat.placeholder.openCodeAsk')
     expect(resolveChatInputPlaceholder(t, {
       provider: 'opencode',
-      permissionMode: 'plan',
+      permissionMode: 'default',
+      openCodeAgentId: 'plan',
       codexPlanMode: false,
       acpAgentName: '',
     })).toBe('chat.placeholder.openCodePlan')

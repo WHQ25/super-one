@@ -341,7 +341,7 @@ import type { HarnessHandler, HarnessHandlerMap } from './harness/harness-handle
 import { applyAcpResources, connectAcpResources, getCachedAcpCatalog, refreshAcpModels, sessionPatchFromAcpCatalog } from './harness/acp-handler'
 import { applyClaudeResources } from './harness/claude-handler'
 import { applyCodexResources } from './harness/codex-handler'
-import { applyOpenCodeResources, reconcileOpenCodeSelection, resolveDefaultOpenCodeAgent } from './harness/opencode-handler'
+import { applyOpenCodeResources, reconcileOpenCodeSelection } from './harness/opencode-handler'
 import { applyCursorResources } from './harness/cursor-handler'
 import { applyDeepseekResources } from './harness/deepseek-handler'
 
@@ -886,7 +886,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       await _parkActiveSession(activeProject, freshProject._activeSessionId)
     }
 
-    const defaultPermissionMode = await _getDefaultPermissionMode()
+    const defaultPermissionMode = await _getDefaultPermissionMode(restoredProvider)
     const baseSession: PerSessionState = {
       ...applyCachedCodexPermissionPreset(createDefaultPerSessionState()),
       permissionMode: defaultPermissionMode,
@@ -905,7 +905,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
           sessionProvider: restoredProvider,
           acpAgentId: restoredProvider === 'acp' ? savedAcpAgentId : null,
           openCodeAgentId: restoredProvider === 'opencode'
-            ? savedOpenCodeAgentId ?? resolveDefaultOpenCodeAgent(get().harnessResources.opencode?.agents ?? [])
+            ? savedOpenCodeAgentId
             : null,
         }
       : {

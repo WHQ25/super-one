@@ -65,6 +65,7 @@ export function createDefaultChatCoreSession(): ChatCoreSession {
     codexReasoningEffortUserChosen: false,
     codexPlanRejectHintActive: false,
     openCodeAgentId: null,
+    sessionAgents: null,
     apiProviderId: null,
     acpAgentId: null,
     acpModels: [],

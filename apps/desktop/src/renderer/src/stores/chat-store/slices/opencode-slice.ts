@@ -11,11 +11,15 @@ export const createOpenCodeSlice: StateCreator<ChatStore, [], [], OpenCodeSlice>
     const { projectPath, sessionId, session } = resolveWriteScope(get(), target)
     if (!projectPath) return
     const provider = session.sessionProvider ?? session.preferredProvider
-    if (provider !== 'opencode' || session.openCodeAgentId === agentId) return
-    set((state) => commitPerSession(state, target, () => ({ openCodeAgentId: agentId })))
+    if (provider !== 'opencode' || (session.openCodeAgentId === agentId && session.permissionMode === 'default')) return
+    const patch = { openCodeAgentId: agentId, permissionMode: 'default' as const }
+    const enteringPlan = agentId === 'plan' && session.openCodeAgentId !== 'plan'
+    set((state) => commitPerSession(state, target, () => (
+      enteringPlan ? { ...patch, openCodeAgentBeforePlan: session.openCodeAgentId } : patch
+    )))
 
     if (sessionId) {
-      void window.agent.broadcastSessionSetting(sessionId, { openCodeAgentId: agentId })
+      void window.agent.broadcastSessionSetting(sessionId, patch)
     }
   },
 })

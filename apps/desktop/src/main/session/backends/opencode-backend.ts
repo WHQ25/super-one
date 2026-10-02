@@ -20,7 +20,6 @@ import { gateTerminalTabsCall } from '../../mcp/terminal-tabs-harness-gate'
 import { dispatchOpenCodeRequest } from '../../opencode/opencode-command'
 import {
   commonPrefixLength,
-  mapOpenCodeTodos,
   mapOpenCodePermissionRequest,
   mapOpenCodeQuestionRequest,
   openCodeAssistantMetadata,
@@ -38,6 +37,7 @@ import {
   type OpenCodeRuntimeEvent,
   type OpenCodeRuntimeOptions,
 } from '../../opencode/opencode-runtime'
+import { OpenCodeV2TurnTranslator, type OpenCodeV2TurnAction } from '../../opencode/opencode-v2-event-map'
 import {
   TaskNotificationFlush,
   TaskNotificationQueue,
@@ -104,6 +104,9 @@ export class OpenCodeBackend implements SessionBackend {
   private activeCompaction: { preTokens: number; startedAt: number } | null = null
   private pendingPermissions = new Map<string, { request: PermissionRequest; event: AgentEvent }>()
   private pendingQuestions = new Map<string, { request: AskUserQuestionRequest; event: AgentEvent }>()
+  private readonly v2Turn = new OpenCodeV2TurnTranslator({
+    contextWindow: (model) => this.runtime?.models.find((candidate) => candidate.id === model)?.contextWindow,
+  })
   private listeners = new Set<(event: AgentEvent) => void>()
   private providerSessionListeners = new Set<(id: string) => void>()
   private permissionModeListeners = new Set<(mode: PermissionMode) => void>()
@@ -173,13 +176,8 @@ export class OpenCodeBackend implements SessionBackend {
       opts.providerSessionId = runtime.sessionId
       for (const callback of this.providerSessionListeners) callback(runtime.sessionId)
       this.emit({ type: 'provider_session_id', providerSessionId: runtime.sessionId })
-      this.emit(mapOpenCodeTodos(runtime.initialTodos))
-      for (const request of runtime.pendingPermissions) {
-        this.routeEvent({ id: `snapshot-${request.id}`, type: 'permission.v2.asked', properties: request })
-      }
-      for (const request of runtime.pendingQuestions) {
-        this.routeEvent({ id: `snapshot-${request.id}`, type: 'question.v2.asked', properties: request })
-      }
+      this.emit({ type: 'session_agents', agents: runtime.agents })
+      for (const event of runtime.snapshotEvents) this.routeEvent(event)
       return runtime
     }).finally(() => {
       if (this.runtimePromise === promise) this.runtimePromise = null
@@ -251,6 +249,7 @@ export class OpenCodeBackend implements SessionBackend {
         this.emit({ type: 'status_indicator', indicator: 'compacting' })
       }
       const dispatch = await dispatchOpenCodeRequest(runtime, request)
+      this.syncNativeSettings(runtime, request.agent)
       if (dispatch.kind === 'local') {
         this.emit({ type: 'slash_command_output', messageId, content: dispatch.content })
         this.complete(messageId)
@@ -346,11 +345,10 @@ export class OpenCodeBackend implements SessionBackend {
 
   async setSessionMode(_modeId: string): Promise<void> {}
 
+  /** Session only admits `default` here; it clears a legacy Plan seed before the runtime starts. */
   async setPermissionMode(mode: PermissionMode): Promise<void> {
     this.permissionMode = mode
     if (this.opts) this.opts.permissionMode = mode
-    if (this.runtime) await this.runtime.setPermissionMode(mode)
-    for (const callback of this.permissionModeListeners) callback(mode)
   }
 
   async setSandbox(_sandboxInfo: SandboxInfo): Promise<void> {}
@@ -445,6 +443,23 @@ export class OpenCodeBackend implements SessionBackend {
     for (const listener of this.listeners) listener(event)
   }
 
+  /**
+   * After a dispatch the runtime has applied the turn's agent. A legacy Plan
+   * launch has become the native `plan` agent, so the mode retires; the agent is
+   * reported only when it differs from what the turn asked for (a seeded or
+   * sticky selection).
+   */
+  private syncNativeSettings(runtime: OpenCodeRuntime, requestedAgent: string | undefined): void {
+    if (this.permissionMode !== 'default') {
+      this.permissionMode = 'default'
+      if (this.opts) this.opts.permissionMode = 'default'
+      for (const callback of this.permissionModeListeners) callback('default')
+    }
+    if (runtime.agent && runtime.agent !== requestedAgent) {
+      this.emit({ type: 'agent_setting_change', patch: { openCodeAgentId: runtime.agent } })
+    }
+  }
+
   private resetTurnState(): void {
     this.terminalMessageId = null
     this.messageRoleById.clear()
@@ -453,6 +468,7 @@ export class OpenCodeBackend implements SessionBackend {
     this.completedToolIds.clear()
     this.capturedUserMessageIds.clear()
     this.latestMetadata = undefined
+    this.v2Turn.reset()
   }
 
   private complete(messageId: string, interrupted = false): void {
@@ -501,17 +517,13 @@ export class OpenCodeBackend implements SessionBackend {
   /**
    * `terminal_tabs` is left out of the SuperOne allow rules so OpenCode's own
    * permission mode sees it. OpenCode's ask carries no arguments for MCP tools,
-   * but the tool part for the same callID was published — with `state.input` —
-   * before the tool started, so the command is read from there and answered by
-   * the host terminal gate. Allow-once only: OpenCode's `always` is name-level.
+   * but the call's input was published before the ask (1.x tool part
+   * `state.input`, 2.x `session.tool.called`), so the command is read from
+   * there and answered by the host terminal gate. Allow-once only: OpenCode's
+   * `always` is name-level.
    */
-  private gateTerminalPermission(requestId: string, permission: string, callID: string | undefined): boolean {
-    if (!isOpenCodeTerminalTabsPermission(permission) || !callID || !this.opts) return false
-    const part = [...this.partById.values()].find((p) => p.type === 'tool' && p.callID === callID)
-    const input = part?.type === 'tool' && 'input' in part.state && part.state.input && typeof part.state.input === 'object'
-      ? part.state.input as Record<string, unknown>
-      : null
-    if (!input) return false
+  private gateTerminalPermission(requestId: string, permission: string, input: Record<string, unknown> | null): boolean {
+    if (!isOpenCodeTerminalTabsPermission(permission) || !input || !this.opts) return false
     const runtime = this.runtime
     const messageId = this.currentMessageId
     const signal = this.terminalPermissionAbort.signal
@@ -525,6 +537,95 @@ export class OpenCodeBackend implements SessionBackend {
       }
     })
     return true
+  }
+
+  /** 1.x: the tool part for `callID` carries the call's arguments. */
+  private toolInputForCall(callID: string | undefined): Record<string, unknown> | null {
+    if (!callID) return null
+    const part = [...this.partById.values()].find((p) => p.type === 'tool' && p.callID === callID)
+    return part?.type === 'tool' && 'input' in part.state && part.state.input && typeof part.state.input === 'object'
+      ? part.state.input as Record<string, unknown>
+      : null
+  }
+
+  private addPermission(request: PermissionRequest, permission: string, toolInput: Record<string, unknown> | null): void {
+    if (this.gateTerminalPermission(request.requestId, permission, toolInput)) return
+    if (this.pendingPermissions.has(request.requestId)) return
+    const item = { type: 'permission_request', request } as AgentEvent
+    this.pendingPermissions.set(request.requestId, { request, event: item })
+    this.emit(item)
+  }
+
+  private resolvePermission(requestId: string, approved: boolean): void {
+    this.pendingPermissions.delete(requestId)
+    this.emit({ type: 'interaction_resolved', interactionType: 'permission', requestId, approved })
+  }
+
+  private addQuestion(request: AskUserQuestionRequest): void {
+    if (this.pendingQuestions.has(request.requestId)) return
+    const item = { type: 'ask_user_question', request } as AgentEvent
+    this.pendingQuestions.set(request.requestId, { request, event: item })
+    this.emit(item)
+  }
+
+  private resolveQuestion(requestId: string): void {
+    this.pendingQuestions.delete(requestId)
+    this.emit({ type: 'interaction_resolved', interactionType: 'question', requestId })
+  }
+
+  private compacted(messageId: string | null): void {
+    const compaction = this.activeCompaction
+    if (compaction && messageId) {
+      this.emit({ type: 'slash_command_output', messageId, content: '' })
+    }
+    this.emit({
+      type: 'compact_boundary',
+      trigger: compaction ? 'manual' : 'auto',
+      preTokens: compaction?.preTokens ?? this.lastContextTokens,
+      ...(compaction ? { durationMs: Date.now() - compaction.startedAt } : {}),
+    })
+    this.emit({ type: 'status_indicator', indicator: null, compactResult: 'success' })
+    this.activeCompaction = null
+  }
+
+  private applyV2Action(action: OpenCodeV2TurnAction, messageId: string | null): void {
+    switch (action.type) {
+      case 'agent':
+        this.emit(action.event)
+        return
+      case 'step_ended':
+        this.latestMetadata = action.metadata
+        this.lastContextTokens = action.contextTokens
+        return
+      case 'permission':
+        this.addPermission(action.request, action.permission, action.toolInput)
+        return
+      case 'permission_resolved':
+        this.resolvePermission(action.requestId, action.approved)
+        return
+      case 'question':
+        this.addQuestion(action.request)
+        return
+      case 'question_resolved':
+        this.resolveQuestion(action.requestId)
+        return
+      case 'compaction_started':
+        // Manual `/compact` already raised the indicator in send().
+        if (!this.activeCompaction) this.emit({ type: 'status_indicator', indicator: 'compacting' })
+        return
+      case 'compacted':
+        this.compacted(messageId)
+        return
+      case 'compaction_failed':
+        this.activeCompaction = null
+        this.emit({ type: 'status_indicator', indicator: null, compactResult: 'failed', compactError: action.error })
+        return
+      case 'complete':
+        if (messageId) this.complete(messageId, action.interrupted)
+        return
+      case 'fail':
+        if (messageId) this.fail(messageId, action.error)
+    }
   }
 
   private emitTool(part: Extract<Part, { type: 'tool' }>, messageId: string): void {
@@ -565,6 +666,10 @@ export class OpenCodeBackend implements SessionBackend {
       if (messageId) this.fail(messageId, event.properties.message)
       else this.emit({ type: 'status_change', status: 'error' })
       this.invalidateRuntime()
+      return
+    }
+    if (event.type === 'v2') {
+      for (const action of this.v2Turn.apply(event.event, messageId)) this.applyV2Action(action, messageId)
       return
     }
     if (routeOpenCodeTodoEvent(event, (item) => this.emit(item))) return
@@ -636,63 +741,44 @@ export class OpenCodeBackend implements SessionBackend {
     }
 
     if (event.type === 'permission.asked') {
-      if (this.gateTerminalPermission(event.properties.id, event.properties.permission, event.properties.tool?.callID)) return
-      const request = mapOpenCodePermissionRequest({
+      const callID = event.properties.tool?.callID
+      this.addPermission(mapOpenCodePermissionRequest({
         id: event.properties.id,
         permission: event.properties.permission,
         patterns: event.properties.patterns,
         metadata: event.properties.metadata,
         always: event.properties.always,
-        toolUseId: event.properties.tool?.callID,
-      })
-      const item = { type: 'permission_request', request } as AgentEvent
-      if (this.pendingPermissions.has(request.requestId)) return
-      this.pendingPermissions.set(request.requestId, { request, event: item })
-      this.emit(item)
+        toolUseId: callID,
+      }), event.properties.permission, this.toolInputForCall(callID))
       return
     }
 
     if (event.type === 'permission.v2.asked') {
-      if (this.gateTerminalPermission(event.properties.id, event.properties.action, event.properties.source?.callID)) return
-      const request = mapOpenCodePermissionRequest({
+      const callID = event.properties.source?.callID
+      this.addPermission(mapOpenCodePermissionRequest({
         id: event.properties.id,
         permission: event.properties.action,
         patterns: event.properties.resources,
         metadata: event.properties.metadata,
         always: event.properties.save,
-        toolUseId: event.properties.source?.callID,
-      })
-      const item = { type: 'permission_request', request } as AgentEvent
-      if (this.pendingPermissions.has(request.requestId)) return
-      this.pendingPermissions.set(request.requestId, { request, event: item })
-      this.emit(item)
+        toolUseId: callID,
+      }), event.properties.action, this.toolInputForCall(callID))
       return
     }
 
     if (event.type === 'permission.replied' || event.type === 'permission.v2.replied') {
-      this.pendingPermissions.delete(event.properties.requestID)
-      this.emit({
-        type: 'interaction_resolved',
-        interactionType: 'permission',
-        requestId: event.properties.requestID,
-        approved: event.properties.reply !== 'reject',
-      })
+      this.resolvePermission(event.properties.requestID, event.properties.reply !== 'reject')
       return
     }
 
     if (event.type === 'question.asked' || event.type === 'question.v2.asked') {
-      const request = mapOpenCodeQuestionRequest({ id: event.properties.id, questions: event.properties.questions })
-      const item = { type: 'ask_user_question', request } as AgentEvent
-      if (this.pendingQuestions.has(request.requestId)) return
-      this.pendingQuestions.set(request.requestId, { request, event: item })
-      this.emit(item)
+      this.addQuestion(mapOpenCodeQuestionRequest({ id: event.properties.id, questions: event.properties.questions }))
       return
     }
 
     if (event.type === 'question.replied' || event.type === 'question.rejected'
       || event.type === 'question.v2.replied' || event.type === 'question.v2.rejected') {
-      this.pendingQuestions.delete(event.properties.requestID)
-      this.emit({ type: 'interaction_resolved', interactionType: 'question', requestId: event.properties.requestID })
+      this.resolveQuestion(event.properties.requestID)
       return
     }
 
@@ -713,18 +799,7 @@ export class OpenCodeBackend implements SessionBackend {
     }
 
     if (event.type === 'session.compacted') {
-      const compaction = this.activeCompaction
-      if (compaction && messageId) {
-        this.emit({ type: 'slash_command_output', messageId, content: '' })
-      }
-      this.emit({
-        type: 'compact_boundary',
-        trigger: compaction ? 'manual' : 'auto',
-        preTokens: compaction?.preTokens ?? this.lastContextTokens,
-        ...(compaction ? { durationMs: Date.now() - compaction.startedAt } : {}),
-      })
-      this.emit({ type: 'status_indicator', indicator: null, compactResult: 'success' })
-      this.activeCompaction = null
+      this.compacted(messageId)
       return
     }
 

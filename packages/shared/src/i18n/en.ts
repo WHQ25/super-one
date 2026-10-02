@@ -3899,6 +3899,7 @@ export type Messages = {
     activate: string
     activateHint: string
     activateToLoad: string
+    activateTooltip: string
     loadFailed: string
     resultOmitted: string
     authRequired: string
@@ -3908,6 +3909,7 @@ export type Messages = {
     unknownOutcome: string
     exitFullscreen: string
     toolDetails: string
+    openInPanel: string
     deny: string
     sendMessage: string
     nonTextBlocks: string
@@ -3945,6 +3947,8 @@ export type Messages = {
     closeMiniApp: string
     returnToPanel: string
     expandToPlainText: string
+    expandView: string
+    collapseView: string
     save: string
     newAutomation: string
     newSession: string
@@ -8032,6 +8036,7 @@ export const en: Messages = {
     activate: 'Activate',
     activateHint: 'Restored from history. Activate to reconnect and reload the App.',
     activateToLoad: 'Activate to load this app.',
+    activateTooltip: 'Activate to reconnect and reload',
     loadFailed: 'Could not load the app: {{error}}',
     resultOmitted: 'Initial result was too large to save. Activate to reload the App, or ask the agent to run the tool again.',
     authRequired: 'Sign in to {{server}} on the desktop, then retry.',
@@ -8041,11 +8046,12 @@ export const en: Messages = {
     unknownOutcome: 'The result of the last action is unknown. It was not retried.',
     exitFullscreen: 'Exit Full Screen',
     toolDetails: 'Tool Details',
+    openInPanel: 'Open in Panel',
     deny: 'Deny',
     sendMessage: '{{server}} wants to send this message',
     nonTextBlocks: 'Plus {{count}} non-text attachments',
     send: 'Send',
-    restored: 'This saved View is inactive. Activate to reconnect to its original server and session and reload the App.',
+    restored: 'This View is not connected. Activate to reload it.',
     authenticate: 'Sign In',
     revoked: 'The App navigated away. Restart to open a new secure View.',
     unknown: 'The tool may have completed, but its outcome is unknown. Check the server before submitting it again.',
@@ -8078,6 +8084,8 @@ export const en: Messages = {
     closeMiniApp: 'Close mini-app',
     returnToPanel: 'Return to panel',
     expandToPlainText: 'Expand to plain text',
+    expandView: 'Expand',
+    collapseView: 'Collapse',
     save: 'Save ({{shortcut}})',
     newAutomation: 'New Automation',
     newSession: 'New Session',

@@ -237,18 +237,29 @@ revokes the bridge (the View shows Restart).
   a main-registered handle. Navigation, release and window close abort its
   pending work.
 - **Presentation**: an available View replaces its tool row, in the same
-  borderless frame and hover header as widgets (`EmbeddedToolView`): server
-  icon (`ToolBrandIcon`, tool icons then server icons then the MCP fallback),
+  borderless frame as widgets (`EmbeddedToolView`), with the header pinned
+  instead of revealed on hover. Inline Views have no host height cap. The
+  header shows the server icon (`ToolBrandIcon`, tool icons then server icons
+  then the MCP fallback),
   `server title · tool title` (tool title → annotations.title → name) and a
-  `CodeXml` toggle for the tool details. Pending, auth, error, revoked and
-  snapshot-less restored Views keep the ordinary MCP row with their state and
-  one action in its trailing slot. Restored snapshots show a persistent
-  Activate chip that pulses when a blocked operation is attempted.
-- **Display modes**: `inline`, `fullscreen` and `pip`, entered only on the
-  View's request. Fullscreen opens a transient standard activity-panel tab and
-  maximizes it. The tab has no maximize/restore button; closing it, Esc,
-  un-maximizing the panel or a View request for inline return the View to the
-  chat and restore the panel's previous state. The controller owns
+  `CodeXml` toggle for the tool details. Loading, auth, error,
+  unknown-outcome, revoked and snapshot-less restored Views show the header
+  title alone, without actions or the collapse toggle, above one card holding
+  the message and its action (Sign In, Retry, Restart or Activate). Loading
+  shows a spinner instead; an unknown outcome has no action.
+  Restored snapshots end the header with an
+  Activate button (its tooltip explains reconnecting) that pulses when a
+  blocked operation is attempted; an omitted result or activation error shows
+  as a note above the View.
+- **Display modes**: `inline`, `fullscreen` and `pip`. Fullscreen is a
+  transient standard activity-panel tab; the View sees `fullscreen` whether or
+  not the tab is maximized. A View request maximizes the tab. For Views that
+  declare fullscreen, the inline header adds Open in Panel (unmaximized) and
+  Full Screen (maximized); the tab's own maximize/restore action switches
+  between the two. Closing the tab, Esc or a View request for inline return the
+  View to the chat and restore the panel's previous state. The inline header's
+  title and trailing chevron collapse the View to its header by zeroing the
+  inline height, so the document stays connected. The controller owns
   the iframe outside React and moves it with `moveBefore()`, which keeps the
   document alive. Moves go through a connected parking container and never
   run from an unmount; a move that cannot be made revokes the View instead of

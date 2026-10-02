@@ -1,4 +1,4 @@
-import type { DockviewApi } from 'dockview-core'
+import type { DockviewApi, IDockviewPanel } from 'dockview-core'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { parkMcpAppFullscreenFrames, resumeMcpAppFullscreenFrames, useMcpAppLayout, type McpAppSurface } from '@/components/mcp-apps/layout-store'
 
@@ -24,8 +24,8 @@ export function connectMcpAppTabs(api: DockviewApi | null, maximizePanel?: (pane
       if (dock !== api) return
       for (const [key, tab] of tabs) {
         if (tab.opening) continue
-        const panel = api.getPanel(panelId(key))
-        if (!panel || !panel.api.isMaximized()) useMcpAppLayout.getState().setMode(key, 'inline')
+        // Shrinking keeps the View in its tab; only closing the tab returns it to the chat.
+        if (!api.getPanel(panelId(key))) useMcpAppLayout.getState().setMode(key, 'inline')
       }
     })
   })
@@ -33,8 +33,8 @@ export function connectMcpAppTabs(api: DockviewApi | null, maximizePanel?: (pane
   for (const [key, owner] of Object.entries(useMcpAppLayout.getState().views)) if (owner.mode === 'fullscreen') syncMcpAppTab(key, 'fullscreen')
 }
 
-/** A fullscreen View is a real, maximized activity tab; no unmaximized mode. */
-export function syncMcpAppTab(key: string, mode: McpAppSurface): void {
+/** A fullscreen View is a real activity tab, maximized on request and toggled from its tab. */
+export function syncMcpAppTab(key: string, mode: McpAppSurface, maximized = true): void {
   if (mode !== 'fullscreen') {
     const tab = tabs.get(key)
     if (!tab) return
@@ -52,8 +52,14 @@ export function syncMcpAppTab(key: string, mode: McpAppSurface): void {
     return
   }
   const owner = useMcpAppLayout.getState().views[key]
-  if (!dock || !owner || tabs.has(key)) return
+  if (!dock || !owner) return
   const store = useActivityPanelStore.getState()
+  if (tabs.has(key)) {
+    const panel = dock.getPanel(panelId(key))
+    panel?.api.setActive()
+    if (maximized && panel && !panel.api.isMaximized()) maximizePanel(panel)
+    return
+  }
   const tab = { previous: { showPanel: store.showPanel, maximizedGroupId: store.maximizedGroupId, activePanelId: dock.activePanel?.id }, opening: true }
   tabs.set(key, tab)
   try {
@@ -63,11 +69,13 @@ export function syncMcpAppTab(key: string, mode: McpAppSurface): void {
       params: { appInstanceId: key }, renderer: 'always',
       ...(group ? { position: { referenceGroup: group, direction: 'within' as const } } : {}),
     })
-    if (!panel.api.isMaximized()) {
-      if (maximize) maximize(panel.id)
-      else { panel.api.maximize(); store.setMaximizedGroup(panel.group.id) }
-    }
+    if (maximized && !panel.api.isMaximized()) maximizePanel(panel)
   } finally { tab.opening = false }
+}
+
+function maximizePanel(panel: IDockviewPanel): void {
+  if (maximize) maximize(panel.id)
+  else { panel.api.maximize(); useActivityPanelStore.getState().setMaximizedGroup(panel.group.id) }
 }
 
 /** Fullscreen tabs are transient and never enter a parked session snapshot. */

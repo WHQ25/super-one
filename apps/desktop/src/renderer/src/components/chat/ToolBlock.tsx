@@ -341,9 +341,8 @@ export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
     }),
   }), [cwd, homedir, mcpIconSrc, miniApps, stallLevel, streamingInputPreview, switchSession, t, toolInterceptState])
 
-  const renderRow = (trailing?: ReactNode) => <ToolBlockPresenter
+  const renderRow = () => <ToolBlockPresenter
       {...props}
-      trailing={trailing ?? props.trailing}
       allowExpand={nestedDefaults?.allowExpand !== false}
       defaultAutoExpand={nestedDefaults?.defaultAutoExpand}
       autoExpandFileDiffs={autoExpandFileDiffs}
@@ -355,7 +354,7 @@ export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
       {ports.renderJson(props.input)}
       {props.result && <><div className="text-muted-foreground">{t('trajectory.inspector.result')}</div>{ports.renderJson(unwrapMcpResultText(props.result))}</>}
     </div>
-    return <Suspense fallback={renderRow()}><McpAppView app={props.app} toolName={props.toolName} title={getToolLabel(props.toolName)} details={details} renderFallback={renderRow} /></Suspense>
+    return <Suspense fallback={renderRow()}><McpAppView app={props.app} toolName={props.toolName} title={getToolLabel(props.toolName)} details={details} /></Suspense>
   }
   return renderRow()
 })

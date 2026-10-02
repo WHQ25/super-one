@@ -16,5 +16,10 @@ export function useMcpAppDisplayMode(key: string) {
     }
     return next
   }, [key])
-  return { mode, surface, request }
+  /** Host-initiated: the user's header action, not a View request. */
+  const open = useCallback(async (maximized: boolean) => {
+    const { openMcpAppTab } = await import('@/components/activity/activity-panel-api')
+    openMcpAppTab(key, maximized)
+  }, [key])
+  return { mode, surface, request, open }
 }

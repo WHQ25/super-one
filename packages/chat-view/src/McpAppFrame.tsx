@@ -21,7 +21,6 @@ import { ToolBrandIcon } from './presenters/ToolIcon'
 
 const MIN_HEIGHT = 80
 /** Taller Views scroll inside their frame; the transcript keeps its own scroll. */
-const MAX_INLINE_HEIGHT = 720
 
 // One slot per View: a remount (DOM windowing, StrictMode) revokes the old document's bridge
 // before the new one connects, and the old transport closes before the new one starts.
@@ -53,7 +52,7 @@ function readHostContext(node: HTMLElement, scheme: 'light' | 'dark', fullscreen
     displayMode: fullscreen ? 'fullscreen' : 'inline',
     availableDisplayModes: mcpAppResourceModes(meta) ?? ['inline', 'fullscreen'],
     width: node.clientWidth,
-    maxHeight: fullscreen ? window.innerHeight : MAX_INLINE_HEIGHT,
+    maxHeight: fullscreen ? window.innerHeight : undefined,
     touch: true,
     hover: false,
     safeAreaInsets: fullscreen
@@ -159,7 +158,7 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
         sandbox: { permissions: {}, csp: mobileMcpAppCsp(meta) },
       } satisfies McpUiHostCapabilities,
       restored: mcpAppNeedsActivation(app.appInstanceId),
-      onSizeChanged: (size) => { if (size.height) setHeight(Math.min(MAX_INLINE_HEIGHT, Math.max(MIN_HEIGHT, size.height))) },
+      onSizeChanged: (size) => { if (size.height) setHeight(Math.max(MIN_HEIGHT, size.height)) },
       onUnknownOutcome: () => setUnknownOutcome(true),
       // A restored View tried to call out, or the host stopped serving it; either way it
       // waits for Activate, and the attempt points the user there.

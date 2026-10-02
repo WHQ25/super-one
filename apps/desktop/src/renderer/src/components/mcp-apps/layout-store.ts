@@ -14,7 +14,6 @@ export interface McpAppOwner {
   title?: string
   toolName?: string
   details?: ReactNode
-  renderFallback?: (trailing: ReactNode) => ReactNode
 }
 interface FrameOwner { iframe: HTMLIFrameElement; revoke(): void; failed: boolean }
 const frames = new Map<string, FrameOwner>()
@@ -33,7 +32,7 @@ function refreshClaim(key: string): void {
   const visible = [...(claims.get(key)?.values() ?? [])].filter(value => visibleRow(value.row))
   const selected = visible.find(value => !value.row!.closest('[data-chat-panel]')) ?? visible[0]
   const row = selected?.row ?? null
-  if (owner.row !== row || (selected && (owner.app !== selected.app || owner.route !== selected.route || owner.api !== selected.api || owner.details !== selected.details || owner.title !== selected.title || owner.toolName !== selected.toolName || owner.renderFallback !== selected.renderFallback))) {
+  if (owner.row !== row || (selected && (owner.app !== selected.app || owner.route !== selected.route || owner.api !== selected.api || owner.details !== selected.details || owner.title !== selected.title || owner.toolName !== selected.toolName))) {
     move(key, true)
     useMcpAppLayout.setState(current => ({ views: { ...current.views, [key]: { ...(selected ?? owner), row, mode: owner.mode } } }))
   }
@@ -79,7 +78,8 @@ export function resumeMcpAppFullscreenFrames(): void {
 interface McpAppLayoutState {
   views: Record<string, McpAppOwner>
   claim(owner: Omit<McpAppOwner, 'mode'>): () => void
-  setMode(key: string, mode: McpAppSurface): void
+  /** `maximized` applies to the fullscreen activity tab only. */
+  setMode(key: string, mode: McpAppSurface, maximized?: boolean): void
   surface(key: string, mode: McpAppSurface, element: HTMLElement | null): void
   frame(key: string, iframe: HTMLIFrameElement, revoke: () => void): () => void
   clear(): void
@@ -120,13 +120,13 @@ export const useMcpAppLayout = create<McpAppLayoutState>((set, get) => ({
       })
     }
   },
-  setMode(key, mode) {
+  setMode(key, mode, maximized = true) {
     const owner = get().views[key]
     if (!owner) return
     // Park synchronously before React can remove the previous surface.
     move(key, true)
     set(state => ({ views: { ...state.views, [key]: { ...owner, mode } } }))
-    syncMcpAppTab(key, mode)
+    syncMcpAppTab(key, mode, maximized)
     refreshClaim(key)
   },
   surface(key, mode, element) {

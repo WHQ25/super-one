@@ -1,19 +1,21 @@
 /** @vitest-environment jsdom */
 import { useEffect } from 'react'
-import { act, fireEvent, render, screen, waitFor, cleanup } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within, cleanup } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { McpAppsError } from '@superone/shared/mcp-apps'
 import type { McpAppFrameProps } from './McpAppFrame'
 import type { McpAppDesktopApi } from './desktop-executor'
-const frame = vi.hoisted(() => ({ props: null as McpAppFrameProps | null, initialized: [] as McpAppFrameProps[] }))
+const frame = vi.hoisted(() => ({ props: null as McpAppFrameProps | null, initialized: [] as McpAppFrameProps[], modes: ['inline', 'fullscreen', 'pip'] as Array<'inline' | 'fullscreen' | 'pip'> }))
+const panel = vi.hoisted(() => ({ openMcpAppTab: vi.fn(), closeMcpAppTab: vi.fn() }))
+vi.mock('@/components/activity/activity-panel-api', () => panel)
 vi.mock('@/stores/chat', () => ({ useChatStore: (fn: (s: unknown) => unknown) => fn({ projectSessions: {} }), useSessionScope: () => null }))
 vi.mock('@/hooks/use-is-dark', () => ({ useIsDark: () => false }))
 // Lifecycle tests exercise preparation/activation/consent, independent of the
 // window chrome; browser and native tests cover those surfaces.
 vi.mock('./McpAppPip', () => ({ McpAppPip: () => null }))
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }) }))
-vi.mock('./McpAppFrame', () => ({ default: (props: McpAppFrameProps) => { frame.props = props; useEffect(() => { frame.initialized.push(props); props.onInitialized(['inline', 'fullscreen', 'pip']) }, []); return <div data-testid="frame" /> } }))
+vi.mock('./McpAppFrame', () => ({ default: (props: McpAppFrameProps) => { frame.props = props; useEffect(() => { frame.initialized.push(props); props.onInitialized(frame.modes) }, []); return <div data-testid="frame" /> } }))
 import McpAppView from './McpAppView'
 import { McpAppHostLayer } from './McpAppHostLayer'
 vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
@@ -28,7 +30,7 @@ function setup() {
   const api: McpAppDesktopApi = { mcpAppRegister: vi.fn<McpAppDesktopApi['mcpAppRegister']>(async () => ({ ok: true, value: prepared })), mcpAppRequest: vi.fn<McpAppDesktopApi['mcpAppRequest']>(async () => ({ ok: true, value: {} })), mcpAppCancel: vi.fn(async () => {}), mcpAppRelease: vi.fn(async () => {}), onMcpAppDocumentRevoked: () => () => {}, mcpAppsAuthenticate: vi.fn<McpAppDesktopApi['mcpAppsAuthenticate']>(async () => ({ ok: true, value: null })) }
   return { api, mount: () => render(<><McpAppHostLayer /><McpAppView app={app} route={{ projectPath: '/original-project', sessionId: 'original' }} api={api} /></>) }
 }
-afterEach(() => { cleanup(); frame.props = null; frame.initialized = [] })
+afterEach(() => { cleanup(); frame.props = null; frame.initialized = []; frame.modes = ['inline', 'fullscreen', 'pip']; vi.clearAllMocks() })
 describe('MCP App desktop View lifecycle', () => {
   it('renders safe tool metadata and keeps fullscreen preference inline on initialize', async () => {
     const s = setup()
@@ -36,6 +38,8 @@ describe('MCP App desktop View lifecycle', () => {
     render(<><McpAppHostLayer /><McpAppView app={{ ...app, presentation: { toolTitle: 'Browse library', serverTitle: 'Fixture CAD', toolIcons: [{ src: 'data:image/svg+xml,%3Csvg/%3E' }] } }} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></>)
     await screen.findByText('Fixture CAD · Browse library')
     expect(await screen.findByRole('img')).toHaveAttribute('src', 'data:image/svg+xml,%3Csvg/%3E')
+    // The header shows while preparing; the frame's context exists once it mounts.
+    await screen.findByTestId('frame')
     expect(frame.props?.context.displayMode).toBe('inline')
     expect(frame.props?.context.availableDisplayModes).toEqual(['inline', 'fullscreen'])
   })
@@ -44,12 +48,14 @@ describe('MCP App desktop View lifecycle', () => {
     const s = setup()
     render(<><McpAppHostLayer /><McpAppView app={{ ...app, toolResultOmitted: { bytes: 1050849, reason: 'size_limit' } }} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></>)
     expect(await screen.findByText('mcpApp.resultOmitted')).toBeTruthy()
-    const activate = await screen.findByText('mcpApp.activate')
-    // View content can occupy its entire top-right corner. Host actions belong
-    // to a sibling strip and never overlay that content.
-    const strip = activate.closest('[data-mcp-app-restore-strip]')
-    expect(strip).toBeTruthy()
-    expect(strip?.nextElementSibling?.querySelector('[data-mcp-app-surface]')).toBeTruthy()
+    const activate = await screen.findByRole('button', { name: 'mcpApp.activate' })
+    // View content can occupy its entire top-right corner. Activate is the last
+    // action in the host header above it, before the trailing collapse toggle.
+    const header = activate.closest('[data-embedded-tool-header]')
+    expect(header).toBeTruthy()
+    expect(activate.nextElementSibling).toBe(header?.querySelector('[data-embedded-tool-toggle]'))
+    expect(header?.lastElementChild?.hasAttribute('data-embedded-tool-toggle')).toBe(true)
+    expect(header?.parentElement?.querySelector('[data-mcp-app-surface]')).toBeTruthy()
     expect(activate.className).not.toContain('absolute')
     fireEvent.click(activate)
     await waitFor(() => expect(screen.queryByText('mcpApp.resultOmitted')).toBeNull())
@@ -72,7 +78,7 @@ describe('MCP App desktop View lifecycle', () => {
       <div data-testid="main-row"><McpAppView app={app} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></div>
       <div data-chat-panel data-testid="floating-row"><McpAppView app={app} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></div>
     </>)
-    await waitFor(() => expect(screen.getByTestId('main-row').textContent).toContain('mcpApp.activate'))
+    await waitFor(() => expect(within(screen.getByTestId('main-row')).queryByRole('button', { name: 'mcpApp.activate' })).toBeTruthy())
     expect(screen.getByTestId('floating-row').textContent).toBe('')
   })
   it('keeps a hidden claim parked and adopts it when its container becomes visible', async () => {
@@ -81,7 +87,7 @@ describe('MCP App desktop View lifecycle', () => {
     await screen.findByTestId('frame')
     expect(screen.getByTestId('main-row').textContent).toBe('')
     act(() => { screen.getByTestId('main-row').style.display = 'block' })
-    await waitFor(() => expect(screen.getByTestId('main-row').textContent).toContain('mcpApp.activate'))
+    await waitFor(() => expect(within(screen.getByTestId('main-row')).queryByRole('button', { name: 'mcpApp.activate' })).toBeTruthy())
     expect(s.api.mcpAppRegister).toHaveBeenCalledTimes(1)
     expect(s.api.mcpAppRelease).not.toHaveBeenCalled()
   })
@@ -90,9 +96,9 @@ describe('MCP App desktop View lifecycle', () => {
     const main = (hidden: boolean) => <div data-testid="main-row" style={{ display: hidden ? 'none' : undefined }}><McpAppView app={app} route={{ projectPath: '/original-project', sessionId: 'original' }} api={s.api} /></div>
     const floating = <div data-chat-panel data-testid="floating-row"><McpAppView app={app} route={{ projectPath: '/original-project', sessionId: 'original' }} api={s.api} /></div>
     const ui = render(<><McpAppHostLayer />{main(true)}{floating}</>)
-    await waitFor(() => expect(screen.getByTestId('floating-row').textContent).toContain('mcpApp.activate'))
+    await waitFor(() => expect(within(screen.getByTestId('floating-row')).queryByRole('button', { name: 'mcpApp.activate' })).toBeTruthy())
     ui.rerender(<><McpAppHostLayer />{main(false)}</>)
-    await waitFor(() => expect(screen.getByTestId('main-row').textContent).toContain('mcpApp.activate'))
+    await waitFor(() => expect(within(screen.getByTestId('main-row')).queryByRole('button', { name: 'mcpApp.activate' })).toBeTruthy())
     expect(s.api.mcpAppRegister).toHaveBeenCalledTimes(1)
     expect(s.api.mcpAppRelease).not.toHaveBeenCalled()
   })
@@ -101,9 +107,9 @@ describe('MCP App desktop View lifecycle', () => {
     s.mount(); await screen.findByTestId('frame'); expect(frame.props?.active).toBe(true)
     act(() => frame.props!.onError(new McpAppsError('inactive', 'Activate to reconnect')))
     expect(document.querySelector('[data-mcp-app-activate]')?.getAttribute('data-emphasized')).toBe('true')
-    expect(frame.props?.active).toBe(false); expect(screen.getByText('mcpApp.activate')).toBeTruthy()
+    expect(frame.props?.active).toBe(false); expect(screen.getByRole('button', { name: 'mcpApp.activate' })).toBeTruthy()
     expect(s.api.mcpAppRequest).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByText('mcpApp.activate'))
+    fireEvent.click(screen.getByRole('button', { name: 'mcpApp.activate' }))
     await waitFor(() => expect(frame.props?.active).toBe(true))
     expect(frame.initialized).toHaveLength(2)
     expect(s.api.mcpAppRequest).toHaveBeenCalledTimes(1)
@@ -111,7 +117,7 @@ describe('MCP App desktop View lifecycle', () => {
   it('paints restored snapshots without activating and reconnects only on explicit action', async () => {
     const s = setup(); const ui = s.mount(); await screen.findByTestId('frame')
     expect(s.api.mcpAppRequest).not.toHaveBeenCalled(); expect(frame.props?.active).toBe(false)
-    fireEvent.click(screen.getByText('mcpApp.activate'))
+    fireEvent.click(screen.getByRole('button', { name: 'mcpApp.activate' }))
     await waitFor(() => expect(frame.props?.active).toBe(true))
     expect(s.api.mcpAppRequest).toHaveBeenCalledWith('/original-project', 'original', { appInstanceId: 'v', operation: 'activate' })
     ui.unmount(); expect(s.api.mcpAppRelease).toHaveBeenCalledWith('doc')
@@ -121,7 +127,7 @@ describe('MCP App desktop View lifecycle', () => {
     render(<><McpAppHostLayer /><McpAppView app={saved} route={{ projectPath: '/original-project', sessionId: 'original' }} api={s.api} /></>)
     await screen.findByTestId('frame')
     const document = frame.props?.registration
-    fireEvent.click(await screen.findByText('mcpApp.activate'))
+    fireEvent.click(await screen.findByRole('button', { name: 'mcpApp.activate' }))
     await waitFor(() => expect(frame.initialized).toHaveLength(2))
     expect(frame.props?.registration).toBe(document)
     expect(frame.props?.app.resource?.hash).toBe(saved.resource.hash)
@@ -136,7 +142,7 @@ describe('MCP App desktop View lifecycle', () => {
     vi.mocked(s.api.mcpAppRequest).mockResolvedValue({ ok: false, error: { code: 'not_connected', message: 'Server unavailable' } })
     s.mount(); await screen.findByTestId('frame')
     const current = screen.getByTestId('frame')
-    fireEvent.click(screen.getByText('mcpApp.activate'))
+    fireEvent.click(screen.getByRole('button', { name: 'mcpApp.activate' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Server unavailable')
     expect(screen.getByTestId('frame')).toBe(current)
     expect(frame.initialized).toHaveLength(1)
@@ -145,13 +151,17 @@ describe('MCP App desktop View lifecycle', () => {
   })
   it('requires activation before preparing a missing historical snapshot', async () => {
     const s = setup(); vi.mocked(s.api.mcpAppRegister).mockResolvedValueOnce({ ok: true, value: { state: 'inactive' } })
-    s.mount(); await screen.findByText('mcpApp.restored'); expect(screen.queryByTestId('frame')).toBeNull()
-    fireEvent.click(screen.getByText('mcpApp.activate')); await screen.findByTestId('frame')
+    s.mount(); const activate = await screen.findByRole('button', { name: 'mcpApp.activate' }); expect(screen.queryByTestId('frame')).toBeNull()
+    expect(activate.closest('[data-mcp-app-state-card]')).toBeTruthy(); expect(document.querySelector('.tool-node')).toBeNull()
+    expect(document.querySelector('[data-embedded-tool-toggle]')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'mcpApp.activate' })); await screen.findByTestId('frame')
     expect(s.api.mcpAppRegister).toHaveBeenCalledTimes(2)
   })
   it('offers auth and retries preparation without replaying a failed mutation', async () => {
     const s = setup(); vi.mocked(s.api.mcpAppRegister).mockResolvedValueOnce({ ok: false, error: { code: 'auth_required', message: 'Sign in' } })
-    s.mount(); fireEvent.click(await screen.findByText('mcpApp.authenticate')); await screen.findByTestId('frame')
+    s.mount(); const signIn = await screen.findByRole('button', { name: 'mcpApp.authenticate' })
+    expect(signIn.closest('[data-mcp-app-state-card]')).toBeTruthy(); expect(screen.getByRole('alert')).toHaveTextContent('Sign in')
+    fireEvent.click(signIn); await screen.findByTestId('frame')
     expect(s.api.mcpAppsAuthenticate).toHaveBeenCalledWith('local', { binding: app.binding, origin: app.origin })
     expect(vi.mocked(s.api.mcpAppRequest).mock.calls.map(call => call[2].operation)).toEqual(['activate'])
   })
@@ -165,8 +175,44 @@ describe('MCP App desktop View lifecycle', () => {
     act(() => frame.props!.onUnknown())
     expect(screen.getByText('mcpApp.unknown')).toBeTruthy()
     act(() => frame.props!.onRevoked())
-    fireEvent.click(screen.getByText('mcpApp.restart'))
+    fireEvent.click(screen.getByRole('button', { name: 'mcpApp.restart' }))
     await waitFor(() => expect(s.api.mcpAppRegister).toHaveBeenCalledTimes(2))
+  })
+  it('offers panel and fullscreen header actions only for Views that declare fullscreen', async () => {
+    const s = setup(); vi.mocked(s.api.mcpAppRegister).mockResolvedValue({ ok: true, value: { ...prepared, active: true } })
+    s.mount()
+    fireEvent.click(await screen.findByRole('button', { name: 'mcpApp.openInPanel' }))
+    await waitFor(() => expect(panel.openMcpAppTab).toHaveBeenLastCalledWith('v', false))
+    fireEvent.click(screen.getByRole('button', { name: 'tooltips.maximizeActivityPanel' }))
+    await waitFor(() => expect(panel.openMcpAppTab).toHaveBeenLastCalledWith('v', true))
+    cleanup(); frame.modes = ['inline']
+    setup().mount(); await screen.findByTestId('frame')
+    expect(screen.queryByRole('button', { name: 'mcpApp.openInPanel' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'tooltips.maximizeActivityPanel' })).toBeNull()
+  })
+  it('collapses from the title without unmounting the View and expands again', async () => {
+    const s = setup(); vi.mocked(s.api.mcpAppRegister).mockResolvedValue({ ok: true, value: { ...prepared, active: true } })
+    s.mount(); const current = await screen.findByTestId('frame')
+    const surface = () => document.querySelector<HTMLElement>('[data-mcp-app-surface]')!
+    const toggle = document.querySelector<HTMLElement>('[data-embedded-tool-toggle]')!
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(surface().style.height).not.toBe('0px')
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(surface().style.height).toBe('0px')
+    expect(screen.getByTestId('frame')).toBe(current)
+    fireEvent.click(document.querySelector<HTMLElement>('[data-embedded-tool-title]')!)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(surface().style.height).not.toBe('0px')
+    expect(frame.initialized).toHaveLength(1)
+  })
+  it('shows preparation as a loading card under the plain header', async () => {
+    const s = setup(); vi.mocked(s.api.mcpAppRegister).mockImplementation(() => new Promise(() => {}))
+    s.mount()
+    const card = (await screen.findByText('mcpApp.loading')).closest('[data-mcp-app-state-card]')
+    expect(card).toBeTruthy(); expect(card?.querySelector('[data-mcp-app-action]')).toBeNull()
+    expect(document.querySelector('[data-embedded-tool-header]')?.closest('[hidden]')).toBeNull()
+    expect(document.querySelector('[data-embedded-tool-toggle]')).toBeNull()
   })
   it('releases a late registration when its shell has already unmounted', async () => {
     const s = setup(); let finish!: (value: any) => void

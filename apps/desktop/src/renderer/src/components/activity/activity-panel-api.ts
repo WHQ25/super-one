@@ -677,9 +677,9 @@ export function closeBrowserTab(browserId: string) {
   useBrowserStore.getState().remove(browserId)
 }
 
-/** Protocol fullscreen opens a transient standard tab and maximizes its group. */
-export function openMcpAppTab(appInstanceId: string): void {
-  useMcpAppLayout.getState().setMode(appInstanceId, 'fullscreen')
+/** Fullscreen opens a transient standard tab, maximized unless the user chose the panel. */
+export function openMcpAppTab(appInstanceId: string, maximized = true): void {
+  useMcpAppLayout.getState().setMode(appInstanceId, 'fullscreen', maximized)
 }
 
 export function closeMcpAppTab(appInstanceId: string): void {

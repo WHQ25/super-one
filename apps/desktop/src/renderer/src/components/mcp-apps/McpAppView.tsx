@@ -12,15 +12,14 @@ export interface McpAppViewProps {
   title?: string
   toolName?: string
   details?: ReactNode
-  renderFallback?: (trailing: ReactNode) => ReactNode
 }
-export default function McpAppView({ app: rawApp, route: explicitRoute, api: explicitApi, title, toolName, details, renderFallback }: McpAppViewProps) {
+export default function McpAppView({ app: rawApp, route: explicitRoute, api: explicitApi, title, toolName, details }: McpAppViewProps) {
   const app = useMemo(() => boundedToolAppAttachment(rawApp, true), [rawApp])
   const scope = useSessionScope()
   const projectPath = useChatStore(state => Object.entries(state.projectSessions).find(([, project]) => !!project._sessions[app.binding.session])?.[0])
   const route = useMemo(() => explicitRoute ?? { projectPath: scope?.sessionId === app.binding.session ? scope.projectPath : projectPath ?? '', sessionId: app.binding.session }, [explicitRoute, scope?.sessionId, scope?.projectPath, projectPath, app.binding.session])
   const api = explicitApi ?? window.environment
   const row = useRef<HTMLDivElement>(null)
-  useLayoutEffect(() => useMcpAppLayout.getState().claim({ app, route, api, title, toolName, details, renderFallback, row: row.current }), [app, route, api, title, toolName, details, renderFallback])
+  useLayoutEffect(() => useMcpAppLayout.getState().claim({ app, route, api, title, toolName, details, row: row.current }), [app, route, api, title, toolName, details])
   return <div ref={row} className="min-w-0" data-mcp-app-view={app.appInstanceId} />
 }

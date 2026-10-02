@@ -55,7 +55,6 @@ test('narrow and long content fit in both themes', async ({ page }) => {
     const view = await open(page, story)
     await expect(view.locator('#status')).toHaveText('page 1/4')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-    expect(await page.locator('[data-mcp-app-surface]').evaluate(el => el.getBoundingClientRect().height)).toBeLessThanOrEqual(600)
   }
 })
 test('View requests fullscreen/PiP modes and keeps iframe identity, state and bridge', async ({ page }) => {
@@ -113,18 +112,21 @@ test('inline scroll stays aligned and available Views share the widget hover hea
   })
   expect(Math.max(...differences)).toBe(0)
   await expect(page.locator('[data-app-mcp-row] .tool-node')).toHaveCount(0)
-  await expect(page.locator('[data-app-mcp-row] [data-embedded-tool-header]')).toContainText('MCP Apps Fixture · fixture list items')
+  await expect(page.locator('[data-app-mcp-row] [data-embedded-tool-header]')).toContainText('Fixture CAD · Browse library')
   await expect(page.locator('[data-comparison-widget] [data-embedded-tool-header]')).toContainText('Widget comparison')
 })
 
- test('loading/auth/error use the ordinary MCP row with one inline action', async ({ page }) => {
-  for (const [story, action] of [['loading', null], ['auth-required', 'Sign In'], ['error-retry', 'Retry'], ['restored-without-snapshot', 'Activate']] as const) {
+ test('loading and settled states show a message card under the plain View header', async ({ page }) => {
+  for (const [story, action] of [['loading', null], ['auth-required', 'Sign In'], ['error-retry', 'Retry'], ['restored-without-snapshot', 'Activate'], ['unknown-outcome', null]] as const) {
     await open(page, story)
-    const row = page.locator('[data-app-mcp-row] .tool-node')
-    await expect(row).toBeVisible()
-    await expect(row).toContainText('fixture list items')
-    if (action) await expect(row.getByRole('button', { name: action, exact: true })).toBeVisible()
-    await expect(page.locator('[data-app-mcp-row] [data-embedded-tool-header]')).toBeHidden()
+    const header = page.locator('[data-app-mcp-row] [data-embedded-tool-header]')
+    await expect(header).toContainText('Fixture CAD · Browse library')
+    await expect(page.locator('[data-app-mcp-row] .tool-node')).toHaveCount(0)
+    await expect(header.locator('[data-embedded-tool-toggle], [data-mcp-app-action]')).toHaveCount(0)
+    const card = page.locator('[data-app-mcp-row] [data-mcp-app-state-card]')
+    await expect(card).toBeVisible()
+    if (action) await expect(card.getByRole('button', { name: action, exact: true })).toBeVisible()
+    else await expect(card.locator('[data-mcp-app-action]')).toHaveCount(0)
   }
 })
  test('details toggle without hiding or replacing the View, fullscreen exit preserves the bridge', async ({ page }) => {
@@ -132,14 +134,17 @@ test('inline scroll stays aligned and available Views share the widget hover hea
   await expect(view.locator('#status')).toHaveText('page 1/4')
   await page.locator('iframe[data-mcp-app-frame]').evaluate(el => { el.dataset.testIdentity = 'original' })
   await page.locator('[data-app-mcp-row]').hover()
-  const details = page.locator('[data-app-mcp-row] [data-embedded-tool-header] button')
+  const details = page.locator('[data-app-mcp-row] [data-embedded-tool-header]').getByRole('button', { name: 'Tool Details' })
   await details.click()
   await expect(details).toHaveAttribute('aria-expanded', 'true')
   await details.click()
   await expect(details).toHaveAttribute('aria-expanded', 'false')
   await view.locator('#fullscreen').click()
   await expect(page.locator('[data-mcp-app-fullscreen]')).toBeVisible()
+  // Shrinking keeps the View in its activity tab; the View's own inline request returns it.
   await page.getByRole('button', { name: 'Restore Activity Panel', exact: true }).click()
+  await expect(page.locator('[data-mcp-app-fullscreen]')).toBeVisible()
+  await view.locator('#inline').click()
   await expect(page.locator('[data-mcp-app-fullscreen]')).toHaveCount(0)
   await expect(page.locator('iframe[data-mcp-app-frame]')).toHaveAttribute('data-test-identity', 'original')
   await view.locator('#next').click()

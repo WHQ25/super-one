@@ -139,7 +139,7 @@ test.describe('MCP App native iframe boundary', () => {
     expect(await page.evaluate(() => window.securityHarness.state)).toMatchObject({ loads: 1, revoked: true, errors: [] })
   })
 
-  for (const exit of ['Shrink', 'Close', 'Escape', 'inline', 'pip'] as const) {
+  for (const exit of ['Close', 'Escape', 'inline', 'pip'] as const) {
     test(`real Dockview fullscreen → ${exit} preserves the iframe document`, async () => {
       const { frame } = await mount(`dockview-${exit}`, false, false, true)
       await frame.evaluate(() => Object.assign(window.fixtureState, { selected: 4 }))
@@ -149,7 +149,7 @@ test.describe('MCP App native iframe boundary', () => {
       await requestMode('fullscreen')
       await expect(page.locator('[data-mcp-app-fullscreen] #mcp-view')).toBeVisible()
       await expect(page.locator('[data-native-floating-claim]')).toHaveCount(1)
-      if (exit === 'Shrink' || exit === 'Close') await page.getByRole('button', { name: exit, exact: true }).click()
+      if (exit === 'Close') await page.getByRole('button', { name: exit, exact: true }).click()
       else if (exit === 'Escape') {
         await app.evaluate(() => { globalThis.mcpSecurity.window.show(); globalThis.mcpSecurity.window.focus() })
         await frame.locator('body').click()
@@ -167,11 +167,27 @@ test.describe('MCP App native iframe boundary', () => {
     })
   }
 
+  test('Shrink keeps a fullscreen View in its activity tab until the tab closes', async () => {
+    const { frame } = await mount('dockview-shrink', false, false, true)
+    await frame.evaluate(() => Object.assign(window.fixtureState, { selected: 4 }))
+    await frame.evaluate(async () => { await (window as unknown as { fixtureRequest(method: string, params: unknown): Promise<unknown> }).fixtureRequest('ui/request-display-mode', { mode: 'fullscreen' }) })
+    await expect(page.locator('[data-mcp-app-fullscreen] #mcp-view')).toBeVisible()
+    await page.getByRole('button', { name: 'Shrink', exact: true }).click()
+    await expect(page.locator('[data-mcp-app-fullscreen] #mcp-view')).toBeVisible()
+    // The harness has no maximize listener; the surviving tab is the Dockview fact under test.
+    expect((await page.evaluate(() => window.securityHarness.activity())).panels.some(id => id.startsWith('mcp-app:'))).toBe(true)
+    await page.getByRole('button', { name: 'Close', exact: true }).click()
+    await expect(page.locator('[data-mcp-app-fullscreen]')).toHaveCount(0)
+    await expect(page.locator('[data-production-mode=inline] #mcp-view')).toHaveCount(1)
+    expect(await frame.evaluate(() => (window.fixtureState as unknown as { selected: number }).selected)).toBe(4)
+    expect(await page.evaluate(() => window.securityHarness.state)).toMatchObject({ loads: 1, revoked: false, errors: [] })
+  })
+
   test('exiting an App restores an existing visible maximized activity tab', async () => {
     await mount('previous-maximized', false, false, true)
     await page.evaluate(() => { window.securityHarness.baseline(); window.securityHarness.move('fullscreen') })
     await expect(page.locator('[data-mcp-app-fullscreen] #mcp-view')).toBeVisible()
-    await page.getByRole('button', { name: 'Shrink', exact: true }).click()
+    await page.getByRole('button', { name: 'Close', exact: true }).click()
     await expect(page.locator('[data-mcp-app-fullscreen]')).toHaveCount(0)
     expect(await page.evaluate(() => window.securityHarness.activity())).toEqual({ showPanel: true, maximized: true, panels: ['baseline'] })
     expect(await page.evaluate(() => window.securityHarness.state)).toMatchObject({ loads: 1, revoked: false, errors: [] })

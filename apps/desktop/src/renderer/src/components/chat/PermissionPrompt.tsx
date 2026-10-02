@@ -7,6 +7,7 @@ import { useChatStore, useActiveSession, selectClaudeModels, selectClaudeAccount
 import { useMiniAppStore } from '@/stores/miniapp'
 import { resolveMiniAppToolIdentity } from '@/lib/miniapp-tool-identity'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
+import { McpAppIcon } from '@superone/ui/components/ui/mcp-app-icon'
 import { Circle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert, AlertTriangle, ExternalLink, Copy, Loader2, SquareTerminal } from 'lucide-react'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { ToolIcon } from './ToolIcon'
@@ -616,9 +617,7 @@ export function PermissionPrompt() {
   const display = getToolDisplay(toolName ?? '', input, cwd, homedir)
   const toolGlyph = isTerminalCommandConfirm
     ? <SquareTerminal className="size-3.5 shrink-0 text-muted-foreground" />
-    : mcpIconSrc
-      ? <img src={mcpIconSrc} alt="" className="size-3.5 shrink-0 rounded-sm object-cover" />
-      : <ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-muted-foreground" />
+    : <McpAppIcon src={mcpIconSrc} className="size-3.5 shrink-0 text-muted-foreground" fallback={<ToolIcon icon={display.icon} className="size-3.5 shrink-0 text-muted-foreground" />} />
   // A first-party tool keeps the words its own chat row uses. Only the generic
   // fallback is shared with third-party MCP servers.
   const deviceLabelKey = deviceToolVerbKey(toolName ?? '', input)
@@ -653,10 +652,8 @@ export function PermissionPrompt() {
             <ShieldAlert className="size-3.5 shrink-0 animate-pulse text-amber-500" />
           ) : miniAppInfo ? (
             <MiniAppIcon appId={miniAppInfo.appId} className="size-3.5 shrink-0 animate-pulse" />
-          ) : mcpIconSrc ? (
-            <img src={mcpIconSrc} alt="" className="size-3.5 shrink-0 animate-pulse rounded-sm object-cover" />
           ) : (
-            <ToolIcon icon={display.icon} className="size-3.5 shrink-0 animate-pulse text-muted-foreground" />
+            <McpAppIcon src={mcpIconSrc} className="size-3.5 shrink-0 animate-pulse text-muted-foreground" fallback={<ToolIcon icon={display.icon} className="size-3.5 shrink-0 animate-pulse text-muted-foreground" />} />
           )}
           {isSandboxNetwork ? (
             <span className="text-xs font-medium text-foreground">{t('chat.permission.sandboxNetwork')}</span>

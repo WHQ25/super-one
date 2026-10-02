@@ -25,13 +25,26 @@ export function mcpAppIcon(icons?: McpAppIcon[], theme?: 'light' | 'dark'): stri
 }
 
 const PAINT = /(?:^|[\s;"'{])(?:fill|stroke|stop-color|color)\s*[:=]\s*["']?\s*([^"';\s>)]+\)?)/gi
+const NEUTRAL_NAMES = new Set(['black', 'white', 'gray', 'grey', 'silver', 'dimgray', 'dimgrey', 'darkgray', 'darkgrey', 'lightgray', 'lightgrey', 'gainsboro', 'whitesmoke'])
+
+/** Black, white or a grey: a colour that only works on one theme. A brand hue reads on both. */
+function isNeutralColour(colour: string): boolean {
+  if (NEUTRAL_NAMES.has(colour)) return true
+  let channels: number[] | undefined
+  const hex = /^#([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/.exec(colour)?.[1]
+  if (hex) channels = (hex.length <= 4 ? [...hex.slice(0, 3)].map(c => c + c) : [hex.slice(0, 2), hex.slice(2, 4), hex.slice(4, 6)]).map(c => parseInt(c, 16))
+  const rgb = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/.exec(colour)
+  if (rgb) channels = rgb.slice(1, 4).map(Number)
+  return !!channels && Math.max(...channels) - Math.min(...channels) <= 24
+}
 
 /**
- * The SVG inside a data URI icon when it is drawn in one colour, else undefined.
- * Such icons are tinted with the text colour: the spec asks for monochrome
- * `currentColor` icons, which an `<img>` can never resolve, and servers that
- * hard-code a dark stroke would vanish on a dark theme. Multi-colour logos,
- * raster images and remote URLs are drawn as they are.
+ * The SVG inside a data URI icon when it is drawn in one neutral colour (or
+ * the default black), else undefined. Such icons are tinted with the text
+ * colour: the spec asks for monochrome `currentColor` icons, which an `<img>`
+ * can never resolve, and servers that hard-code a dark stroke would vanish on
+ * a dark theme. Brand-coloured and multi-colour logos, raster images and
+ * remote URLs are drawn as they are.
  */
 export function mcpAppMonochromeSvg(src: string): string | undefined {
   const match = /^data:image\/svg\+xml(;[^,]*)?,(.*)$/is.exec(src)
@@ -48,7 +61,7 @@ export function mcpAppMonochromeSvg(src: string): string | undefined {
     const colour = value.toLowerCase()
     if (colour !== 'none' && colour !== 'transparent' && colour !== 'currentcolor' && colour !== 'inherit' && !colour.startsWith('url(')) colours.add(colour)
   }
-  return colours.size <= 1 ? svg : undefined
+  return colours.size === 0 || (colours.size === 1 && [...colours].every(isNeutralColour)) ? svg : undefined
 }
 
 /** Persist only the winning safe image per theme, with a neutral image deduplicated. */

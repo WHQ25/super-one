@@ -56,14 +56,18 @@ describe('mcpAppMonochromeSvg', () => {
   const svg = (body: string) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">${body}</svg>`
   const encoded = (body: string) => `data:image/svg+xml,${encodeURIComponent(svg(body))}`
 
-  it('accepts one hard-coded colour, currentColor and the default fill, in either encoding', () => {
+  it('accepts one neutral hard-coded colour, currentColor and the default fill, in either encoding', () => {
     expect(mcpAppMonochromeSvg(encoded('<path fill="none" stroke="#27272a" d="M0 0"/>'))).toContain('#27272a')
+    expect(mcpAppMonochromeSvg(encoded('<path fill="white"/>'))).toBeDefined()
+    expect(mcpAppMonochromeSvg(encoded('<path style="fill:rgb(40,40,46)"/>'))).toBeDefined()
     expect(mcpAppMonochromeSvg(encoded('<path style="fill:currentColor" d="M0 0"/><path stroke="currentColor"/>'))).toBeDefined()
     expect(mcpAppMonochromeSvg(encoded('<path d="M0 0"/>'))).toBeDefined()
     expect(mcpAppMonochromeSvg(`data:image/svg+xml;base64,${btoa(svg('<path fill="#000"/>'))}`)).toBeDefined()
   })
 
-  it('leaves multi-colour, embedded raster, non-SVG and malformed icons alone', () => {
+  it('leaves brand-coloured, multi-colour, embedded raster, non-SVG and malformed icons alone', () => {
+    expect(mcpAppMonochromeSvg(encoded('<path fill="#0ea5e9"/>'))).toBeUndefined()
+    expect(mcpAppMonochromeSvg(encoded('<path fill="hsl(200 80% 50%)"/>'))).toBeUndefined()
     expect(mcpAppMonochromeSvg(encoded('<path fill="#7c3aed"/><path stroke="#fff"/>'))).toBeUndefined()
     expect(mcpAppMonochromeSvg(encoded('<image href="data:image/png;base64,AAAA"/>'))).toBeUndefined()
     expect(mcpAppMonochromeSvg('data:image/png;base64,AAAA')).toBeUndefined()

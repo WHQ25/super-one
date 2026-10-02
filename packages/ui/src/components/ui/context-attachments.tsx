@@ -1,6 +1,7 @@
 import { AppWindow, Loader2, X } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from './popover'
 import { cn } from '../../lib/utils'
+import { McpAppIcon } from './mcp-app-icon'
 
 export interface ContextAttachmentItem {
   id: string
@@ -34,9 +35,7 @@ export function ContextAttachments({ items, onRemove, removing = [], removeLabel
         <Popover>
           <PopoverTrigger asChild>
             <button type="button" className="flex min-w-0 cursor-pointer items-center gap-1 text-left" aria-label={item.title}>
-              {item.icon
-                ? <img src={item.icon} alt="" referrerPolicy="no-referrer" className="size-3 shrink-0 rounded-sm object-contain" />
-                : !item.thumbnail && <AppWindow className="size-3 shrink-0 text-muted-foreground" />}
+              <McpAppIcon src={item.icon} className="size-3 shrink-0 text-muted-foreground" fallback={!item.thumbnail && <AppWindow className="size-3 shrink-0 text-muted-foreground" />} />
               {item.thumbnail && <img src={item.thumbnail} alt="" referrerPolicy="no-referrer" className="size-4 shrink-0 rounded-sm object-cover" />}
               {item.source && <>
                 <span className="max-w-35 shrink-0 truncate font-medium text-foreground">{item.source}</span>

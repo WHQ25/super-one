@@ -67,8 +67,8 @@ function createNeutralStudio(): { scene: Scene; dispose: () => void } {
 
 /** Gentle direct fill keeps non-PBR meshes legible without flattening metallic reflections. */
 export function addModelFillLights(scene: Scene): void {
-  scene.add(new HemisphereLight(0xffffff, 0xaaaaaa, 0.5))
-  const light = new DirectionalLight(0xffffff, 0.7)
+  scene.add(new HemisphereLight(0xffffff, 0xaaaaaa, 0.2))
+  const light = new DirectionalLight(0xffffff, 0.4)
   light.position.set(2, 4, 5)
   scene.add(light)
 }
@@ -86,9 +86,11 @@ export function lightModel(scene: Scene, renderer: WebGLRenderer): () => void {
     }
   })()
   scene.environment = environment.texture
-  scene.environmentIntensity = 1.5
+  // Under exposure 1 and a brighter environment, colored parts washed out and
+  // untextured meshes went near white against the light theme.
+  scene.environmentIntensity = 0.8
   renderer.toneMapping = NeutralToneMapping
-  renderer.toneMappingExposure = 1
+  renderer.toneMappingExposure = 0.75
   return () => {
     scene.environment = null
     environment.dispose()

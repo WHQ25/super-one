@@ -162,7 +162,7 @@ function validateZipSize(bytes: ArrayBuffer): void {
 export function meshModel(...parts: Array<{ geometry: BufferGeometry; color?: Color; name?: string }>): LoadedModel {
   const group = new Group()
   for (const { geometry, color, name } of parts) {
-    const mesh = new Mesh(geometry, new MeshStandardMaterial({ color: color ?? 0xb8c5d3, vertexColors: geometry.hasAttribute('color'), side: DoubleSide }))
+    const mesh = new Mesh(geometry, new MeshStandardMaterial({ color: color ?? 0x9aa4b0, vertexColors: geometry.hasAttribute('color'), side: DoubleSide }))
     if (name) mesh.name = name
     group.add(mesh)
   }

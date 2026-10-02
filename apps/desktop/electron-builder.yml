@@ -63,6 +63,9 @@ files:
   - "!node_modules/@base-ui/**"
   - "!node_modules/@splinetool/runtime/**"
   - "!node_modules/prettier/**"
+  # Vite emits the OpenCascade wasm; ship only its LGPL-2.1 license texts here.
+  - "!node_modules/occt-import-js/**"
+  - "node_modules/occt-import-js/dist/license.*.txt"
   # P5: do not ship managed harness platform binaries (~500MB+). Runtimes
   # install on demand via Settings → Harnesses (R2/npm tarball).
   - "!node_modules/@anthropic-ai/claude-agent-sdk-darwin-*/**"

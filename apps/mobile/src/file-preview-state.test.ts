@@ -144,6 +144,11 @@ describe('transfer completion', () => {
     const pdf = { ...image, name: 'spec.pdf', mimeType: 'application/pdf' }
     expect(completeTransfer(pdf, 'file:///cache/spec.pdf')).toMatchObject({ kind: 'transfer', phase: 'ready', localUri: 'file:///cache/spec.pdf' })
   })
+
+  it('keeps CAD files on the transfer card, since only the desktop can tessellate them', () => {
+    const step = { ...image, path: '/proj/parts/bracket.STEP', name: 'bracket.STEP', mimeType: 'model/step' }
+    expect(completeTransfer(step, 'file:///cache/bracket.STEP')).toMatchObject({ kind: 'transfer', phase: 'ready', localUri: 'file:///cache/bracket.STEP' })
+  })
 })
 
 describe('image preview state', () => {

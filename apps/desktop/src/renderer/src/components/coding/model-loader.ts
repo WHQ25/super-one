@@ -1,4 +1,4 @@
-import { BufferGeometry, DoubleSide, Group, LoadingManager, Mesh, MeshStandardMaterial, Vector3, type AnimationClip, type Box3, type Material, type Object3D, type PerspectiveCamera, type Texture } from 'three'
+import { BufferGeometry, type Color, DoubleSide, Group, LoadingManager, Mesh, MeshStandardMaterial, Vector3, type AnimationClip, type Box3, type Material, type Object3D, type PerspectiveCamera, type Texture } from 'three'
 import dracoDecoderUrl from 'three/examples/jsm/libs/draco/gltf/draco_wasm_wrapper.js?url'
 import dracoWasmUrl from 'three/examples/jsm/libs/draco/gltf/draco_decoder.wasm?url'
 
@@ -100,13 +100,13 @@ export async function parseModel(name: string, bytes: ArrayBuffer, baseUrl = '')
       const { STLLoader } = await import('three/addons/loaders/STLLoader.js')
       const geometry = new STLLoader().parse(bytes)
       if (!geometry.hasAttribute('normal')) geometry.computeVertexNormals()
-      return meshModel(geometry)
+      return meshModel({ geometry })
     }
     case '.ply': {
       const { PLYLoader } = await import('three/addons/loaders/PLYLoader.js')
       const geometry = new PLYLoader().parse(bytes)
       if (!geometry.hasAttribute('normal')) geometry.computeVertexNormals()
-      return meshModel(geometry)
+      return meshModel({ geometry })
     }
     case '.3mf': {
       validateZipSize(bytes)
@@ -158,9 +158,13 @@ function validateZipSize(bytes: ArrayBuffer): void {
   }
 }
 
-function meshModel(geometry: BufferGeometry): LoadedModel {
-  const material = new MeshStandardMaterial({ color: 0xb8c5d3, vertexColors: geometry.hasAttribute('color'), side: DoubleSide })
+/** One mesh per part; a part without its own color uses the neutral preview gray. */
+export function meshModel(...parts: Array<{ geometry: BufferGeometry; color?: Color; name?: string }>): LoadedModel {
   const group = new Group()
-  group.add(new Mesh(geometry, material))
+  for (const { geometry, color, name } of parts) {
+    const mesh = new Mesh(geometry, new MeshStandardMaterial({ color: color ?? 0xb8c5d3, vertexColors: geometry.hasAttribute('color'), side: DoubleSide }))
+    if (name) mesh.name = name
+    group.add(mesh)
+  }
   return { object: group, animations: [] }
 }

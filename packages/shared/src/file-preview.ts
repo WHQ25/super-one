@@ -64,8 +64,11 @@ export const MODEL_MIME: Readonly<Record<string, string>> = {
   '.usda': 'model/vnd.usd', '.usdc': 'model/vnd.usd',
   '.obj': 'model/obj', '.fbx': 'application/octet-stream',
   '.stl': 'model/stl', '.ply': 'application/octet-stream', '.3mf': 'model/3mf',
+  '.step': 'model/step', '.stp': 'model/step', '.iges': 'model/iges', '.igs': 'model/iges',
 }
 export const MODEL_EXTENSIONS: ReadonlySet<string> = new Set(Object.keys(MODEL_MIME))
+/** CAD exchange formats the desktop tessellates with OpenCascade; the phone viewer cannot load them. */
+export const CAD_MODEL_EXTENSIONS: ReadonlySet<string> = new Set(['.step', '.stp', '.iges', '.igs'])
 export const MODEL_PREVIEW_MAX_BYTES = 100 * 1024 * 1024
 export const NOTEBOOK_EXTENSIONS: ReadonlySet<string> = new Set(['.ipynb'])
 export const MARKDOWN_EXTENSIONS: ReadonlySet<string> = new Set(['.md', '.mdx', '.markdown'])

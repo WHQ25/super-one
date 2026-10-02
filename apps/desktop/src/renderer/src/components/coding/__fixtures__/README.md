@@ -4,6 +4,7 @@
 - `triangle.usda`: generated in this repository as a minimal triangle mesh.
 - `triangle.usdc` and `triangle.usd`: generated from `triangle.usda` with Apple's `usdcat` command. Regenerate with `usdcat triangle.usda -o triangle.usdc` and `usdcat triangle.usda -o triangle.usd`.
 - `triangle.usdz`: ZIP_STORED archive containing `triangle.usda` as its first entry, for the USDZ preview and lighting path.
+- `box.step`: repository-authored 20 × 20 × 10 mm box, an AP214 manifold B-rep with six planar faces, for the OpenCascade (STEP) preview path.
 - `variant-card.usdz`: repository-authored card with `Pose = Closed/Open` variants. `variant-card-closed.usdz` and `variant-card-open.usdz` are flattened preview copies used by the Storybook control fixture. Regenerate them with `usdcat --flatten` on macOS.
 
 The other format samples used for local acceptance testing are under `~/Downloads/SuperOne-3D-Test-Assets`; Apple device USDZ files stay under `~/Downloads/SuperOne-Apple-3D` and are not redistributed here.

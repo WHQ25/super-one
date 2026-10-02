@@ -5,6 +5,7 @@ import usdzUrl from './__fixtures__/triangle.usdz?url'
 import variantCardUrl from './__fixtures__/variant-card.usdz?url'
 import cardClosedUrl from './__fixtures__/variant-card-closed.usdz?url'
 import cardOpenUrl from './__fixtures__/variant-card-open.usdz?url'
+import boxStepUrl from './__fixtures__/box.step?url'
 import { ModelPreview } from './ModelPreview'
 
 const glassDecorator: Decorator = (Story) => (
@@ -31,6 +32,9 @@ export const Usdz: Story = {
   decorators: [glassDecorator],
 }
 export const Invalid: Story = { args: { src: 'data:model/gltf-binary;base64,YmFk', name: 'bad.glb' } }
+/** STEP tessellated by OpenCascade in a worker; the spinner covers the wasm load. */
+export const Step: Story = { args: { src: boxStepUrl, name: 'box.step' } }
+export const StepInvalid: Story = { args: { src: 'data:model/step;base64,SVNPLTEwMzAzLTIxOw==', name: 'broken.step' } }
 /** The canvas must leave the glass panel visible behind the model. */
 export const Glass: Story = {
   decorators: [glassDecorator],

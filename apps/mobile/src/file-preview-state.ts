@@ -1,5 +1,5 @@
 import type { ImageGenerationInfo, ReadDesktopFileError, ReadDesktopFileResponse } from '@superone/shared/agent-types'
-import { fileKindFromName, isMarkdownFileName } from '@superone/shared/file-preview'
+import { CAD_MODEL_EXTENSIONS, extensionOf, fileKindFromName, isMarkdownFileName } from '@superone/shared/file-preview'
 import type { TransportKind } from '@superone/relay-client'
 import { imagePreviewFileName, parseImageDataUri, type ImagePreviewTarget } from './image-preview-state'
 
@@ -322,7 +322,7 @@ export function completeTransfer(
   if (current.mimeType.startsWith('video/')) {
     return { kind: 'video', path: current.path, name: current.name, localUri, mimeType: current.mimeType, size: current.size }
   }
-  if (fileKindFromName(current.name) === 'model') {
+  if (fileKindFromName(current.name) === 'model' && !CAD_MODEL_EXTENSIONS.has(extensionOf(current.name))) {
     return { kind: 'model', path: current.path, name: current.name, localUri, mimeType: current.mimeType, size: current.size }
   }
   return { ...current, phase: 'ready', localUri }

@@ -6,6 +6,7 @@ import { Button } from '@superone/ui/components/ui/button'
 import { MODEL_PREVIEW_MAX_BYTES } from '@superone/shared/file-preview'
 import { disposeModel, parseModel, placeModelCamera, updateModelCameraClipPlanes } from './model-loader'
 import { addModelFillLights, lightModel } from './model-environment'
+import { isCadModel, parseCadModel } from './cad-loader'
 
 export interface ModelPreviewViewState {
   cameraPosition: [number, number, number]
@@ -113,7 +114,7 @@ export function ModelPreview({ src, name, interactive = true, initialViewState, 
       if (cancelled) return
       let loaded: Awaited<ReturnType<typeof parseModel>>
       try {
-        loaded = await parseModel(name, previewBytes, baseOf(src))
+        loaded = isCadModel(name) ? await parseCadModel(name, previewBytes, abort.signal) : await parseModel(name, previewBytes, baseOf(src))
       } catch (error) {
         throw composeError ?? error
       }

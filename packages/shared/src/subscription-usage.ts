@@ -8,6 +8,8 @@ export type UsageRisk = 'unknown' | 'safe' | 'watch' | 'risk' | 'critical' | 'ex
 
 export interface UsageForecast {
   basis?: 'cycle-average'
+  /** Quota period length; only an exhaustion within the last tenth of it is treated as a risk. */
+  periodMs?: number
   sampledAt: number
   status: 'learning' | 'ready' | 'idle'
   ratePerHour: number | null
@@ -43,7 +45,9 @@ export function usageRisk(window: Pick<UsageWindow, 'usedPercent' | 'resetsAt' |
     * (resetsAt * 1000 - forecast.sampledAt) / (forecast.exhaustsAt - forecast.sampledAt)
   if (projectedUsage <= 90) return 'safe'
   if (projectedUsage <= 100) return 'watch'
-  return untilEmpty <= 30 * 60_000 ? 'critical' : 'risk'
+  if (untilEmpty <= 30 * 60_000) return 'critical'
+  // Early-cycle pace is noisy; running out hours away stays a warning until it is imminent.
+  return forecast.periodMs != null && untilEmpty <= forecast.periodMs * 0.1 ? 'risk' : 'watch'
 }
 
 export function usageWindowTone(window: Pick<UsageWindow, 'usedPercent' | 'resetsAt' | 'forecast'>, now = Date.now()): 'success' | 'warning' | 'error' {
@@ -61,7 +65,7 @@ function cycleAverageForecast(window: UsageWindow, sampledAt: number): UsageFore
   const elapsed = sampledAt - (window.resetsAt * 1000 - duration * 60_000)
   if (elapsed < Math.max(60_000, duration * 60_000 * 0.01) || elapsed >= duration * 60_000) return null
   const ratePerHour = window.usedPercent / (elapsed / 3_600_000)
-  return { sampledAt, status: 'ready', basis: 'cycle-average', ratePerHour,
+  return { sampledAt, status: 'ready', basis: 'cycle-average', periodMs: duration * 60_000, ratePerHour,
     exhaustsAt: sampledAt + (100 - window.usedPercent) / ratePerHour * 3_600_000, confirmed: false }
 }
 

@@ -10,7 +10,7 @@ export function usageForecastCopy(window: UsageWindow, now = Date.now()): { key:
   if (forecast.status === 'idle') return { key: 'idle' }
   if (forecast.status !== 'ready' || forecast.exhaustsAt == null) return null
   if (window.resetsAt == null || forecast.exhaustsAt <= now || forecast.exhaustsAt >= window.resetsAt * 1000) return null
-  return { key: forecast.basis === 'cycle-average' ? 'averageEta' : 'eta', time: formatUsageDuration(forecast.exhaustsAt - now) }
+  return { key: 'eta', time: formatUsageDuration(forecast.exhaustsAt - now) }
 }
 
 export function formatUsageDuration(milliseconds: number): string {

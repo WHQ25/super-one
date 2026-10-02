@@ -165,7 +165,7 @@ describe('UsageStatusIcon rate-limit tip', () => {
     ;(window.app.claudeGetRateLimits as ReturnType<typeof vi.fn>).mockResolvedValue({
       quotaKey: 'account-risk', planType: 'Max', fetchedAt: now, extraUsage: null,
       windows: [{ id: 'seven_day', label: 'Weekly', usedPercent: 80, resetsAt: now / 1000 + 86400,
-        forecast: { sampledAt: now, status: 'ready', ratePerHour: 10, exhaustsAt: now + 2 * 3600_000, confirmed: true } }],
+        forecast: { sampledAt: now, status: 'ready', periodMs: 7 * 86_400_000, ratePerHour: 10, exhaustsAt: now + 2 * 3600_000, confirmed: true } }],
     })
     const { rerender } = render(<UsageStatusIcon />)
     await act(async () => { await Promise.resolve() })

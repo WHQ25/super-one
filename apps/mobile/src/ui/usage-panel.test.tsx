@@ -92,6 +92,6 @@ test('the mobile panel shows the same runway and preserves actual rejection', as
   const usage: RemoteUsage = { ...claude, windows: [{ id: 'seven_day', label: 'Weekly', usedPercent: 80, resetsAt: sampledAt / 1000 + 86400,
     forecast: { sampledAt, status: 'ready', ratePerHour: 10, exhaustsAt: sampledAt + 2 * 3600_000, confirmed: true } }] }
   await renderWithTheme(<UsagePanel usage={usage} rateLimit={{ status: 'rejected', resetsAt: sampledAt / 1000 + 86400 }} />)
-  expect(screen.getByText('At the recent pace, runs out in about 2h')).toBeTruthy()
+  expect(screen.getByText('Runs out in about 2h')).toBeTruthy()
   expect(screen.getByText('Rate limited')).toBeTruthy()
 })

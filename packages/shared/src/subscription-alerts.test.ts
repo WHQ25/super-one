@@ -4,7 +4,7 @@ import type { UsageWindow } from './subscription-usage'
 
 const now = Date.UTC(2026, 8, 30, 12)
 const safe: UsageWindow = { id: 'seven_day', label: 'Weekly', usedPercent: 80, resetsAt: now / 1000 + 1800,
-  forecast: { sampledAt: now, status: 'ready', ratePerHour: 5, exhaustsAt: now + 4 * 3_600_000, confirmed: true } }
+  forecast: { sampledAt: now, status: 'ready', periodMs: 7 * 86_400_000, ratePerHour: 5, exhaustsAt: now + 4 * 3_600_000, confirmed: true } }
 const warning: LiveUsageLimit = { status: 'allowed_warning', rateLimitType: 'seven_day', utilization: 0.8, resetsAt: safe.resetsAt! }
 
 describe('subscription alerts', () => {

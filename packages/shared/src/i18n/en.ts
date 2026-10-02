@@ -4025,7 +4025,7 @@ export type Messages = {
     updatedMinutesAgo: string
     updatedHoursAgo: string
     updatedDaysAgo: string
-    forecast: { averageEta: string; safe: string; eta: string; learning: string; idle: string; stale: string; exhausted: string; warning: string }
+    forecast: { safe: string; eta: string; learning: string; idle: string; stale: string; exhausted: string; warning: string }
     rateLimit: {
       approaching: string
       limited: string
@@ -8185,9 +8185,8 @@ export const en: Messages = {
     updatedHoursAgo: 'Updated {{n}}h ago',
     updatedDaysAgo: 'Updated {{n}}d ago',
     forecast: {
-      averageEta: 'At the average pace this cycle, runs out in about {{time}}',
       safe: 'At the recent pace, usage should last until reset',
-      eta: 'At the recent pace, runs out in about {{time}}',
+      eta: 'Runs out in about {{time}}',
       learning: 'Not enough recent usage to estimate yet',
       idle: 'No recent consumption; estimate paused',
       stale: 'Usage is out of date; refresh to estimate',

@@ -12,10 +12,10 @@ type Scenario = 'safe' | 'risk' | 'critical' | 'watch' | 'learning' | 'average' 
 
 function reading(scenario: Scenario): ClaudeRateLimits {
   const now = Date.now() - (scenario === 'stale' ? 11 * 60_000 : 0)
-  const weekly = scenario === 'safe' || scenario === 'rejected'
+  const weekly = scenario === 'safe' || scenario === 'rejected' || scenario === 'risk'
   const duration = weekly ? 7 * 24 * 60 : 300
-  const resetHours = weekly ? 0.5 : 3
-  const usedPercent = scenario === 'critical' ? 95 : scenario === 'watch' ? 38 : weekly ? 80 : 60
+  const resetHours = scenario === 'risk' ? 48 : weekly ? 0.5 : 3
+  const usedPercent = scenario === 'critical' ? 95 : scenario === 'watch' ? 38 : scenario === 'risk' ? 90 : weekly ? 80 : 60
   const tracker = new SubscriptionUsageTracker()
   const input = { id: weekly ? 'seven_day' : 'five_hour', label: weekly ? 'Weekly' : '5h',
     windowDurationMins: scenario === 'learning' ? null : duration, usedPercent, resetsAt: now / 1000 + resetHours * 3600 }

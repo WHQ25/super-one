@@ -38,15 +38,24 @@ describe('OpenUsage cycle-average pacing', () => {
   })
   it('matches projected 90% and 100% color boundaries', () => {
     for (const [used, risk, tone] of [[36, 'safe', 'success'], [38, 'watch', 'warning'], [40, 'watch', 'warning'],
-      [41, 'risk', 'error'], [95, 'critical', 'error'], [100, 'exhausted', 'error']] as const) {
+      [41, 'watch', 'warning'], [95, 'critical', 'error'], [100, 'exhausted', 'error']] as const) {
       const window = observe(used)
       expect(usageRisk(window, now)).toBe(risk)
       expect(usageWindowTone(window, now)).toBe(tone)
     }
   })
+  it('turns red only when exhaustion is within a tenth of the period', () => {
+    // On-pace early burst: 12% after 34 minutes of a 5h window runs out minutes before reset.
+    const early = new SubscriptionUsageTracker().observe('a', { ...input(12), resetsAt: (now + 266 * 60_000) / 1000 }, now)
+    expect(usageRisk(early, now)).toBe('watch')
+    const weekly = (used: number) => new SubscriptionUsageTracker().observe('a',
+      { ...input(used), windowDurationMins: 10080, resetsAt: (now + 48 * 3600_000) / 1000 }, now)
+    expect(usageRisk(weekly(80), now)).toBe('watch')
+    expect(usageRisk(weekly(90), now)).toBe('risk')
+  })
   it('shows the ETA only strictly before reset', () => {
     for (const used of [36, 38, 40]) expect(usageForecastCopy(observe(used), now)).toBeNull()
-    expect(usageForecastCopy(observe(60), now)).toEqual({ key: 'averageEta', time: '1h 20m' })
+    expect(usageForecastCopy(observe(60), now)).toEqual({ key: 'eta', time: '1h 20m' })
     expect(usageForecastCopy(observe(100), now)).toEqual({ key: 'exhausted' })
   })
   it('isolates accounts and windows; cached and rapid readings cannot confirm', () => {

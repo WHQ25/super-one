@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react'
-import { Blocks, Bot, Cloud, Cpu, KeyRound, Palette, Puzzle, Server, Webhook } from 'lucide-react'
+import { Blocks, Bot, Cloud, Cpu, KeyRound, Palette, Puzzle, Webhook } from 'lucide-react'
+import { McpIcon } from '@superone/ui/components/ui/McpIcon'
 import type { SettingsProvider } from '@superone/shared/agent-types'
 import type { HarnessConfigSection } from '@/stores/app'
 
@@ -11,7 +12,7 @@ export const CONFIG_TAB_META: Record<
   account: { labelKey: 'settings.layout.tabs.account', icon: KeyRound },
   agents: { labelKey: 'settings.layout.tabs.agents', icon: Bot },
   skills: { labelKey: 'settings.layout.tabs.skills', icon: Puzzle },
-  mcp: { labelKey: 'settings.layout.tabs.mcp', icon: Server },
+  mcp: { labelKey: 'settings.layout.tabs.mcp', icon: McpIcon },
   hooks: { labelKey: 'settings.layout.tabs.hooks', icon: Webhook },
   plugins: { labelKey: 'settings.layout.tabs.plugins', icon: Blocks },
   cloud: { labelKey: 'settings.layout.tabs.cloud', icon: Cloud },

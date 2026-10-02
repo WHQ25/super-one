@@ -10,7 +10,7 @@ import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 
 /**
  * SuperOne's own MCP tools that render as a verb plus a subject. `tool-display.ts`
- * answers `{ icon: 'plug', summary: '' }` for anything starting with `mcp__`, so
+ * answers `{ icon: 'mcp', summary: '' }` for anything starting with `mcp__`, so
  * before the descriptors were shared these arrived on the phone as an unlabelled
  * row — the desktop's table and its inline branches lived in the renderer only.
  *

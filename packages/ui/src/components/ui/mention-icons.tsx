@@ -1,7 +1,8 @@
 import { cloneElement, type ReactElement } from 'react'
-import { Bot, Bug, CircleDot, FolderGit2, Folder, GitBranch, GitCommitHorizontal, GitPullRequest, Globe, LayoutDashboard, Link2, MessageSquare, MousePointer2, Tag, Users } from 'lucide-react'
+import { Bot, Bug, CircleDot, FolderGit2, Folder, GitBranch, GitCommitHorizontal, GitPullRequest, Globe, LayoutDashboard, MessageSquare, MousePointer2, Tag, Users } from 'lucide-react'
 import { parseGitMentionValue, type GitMentionRefKind } from '@superone/shared/git-mention-query'
 import { GithubIcon } from './github-icon'
+import { McpIcon } from './McpIcon'
 
 /**
  * Static mention identities shared by desktop chips and the mobile transcript.
@@ -35,11 +36,12 @@ export function staticMentionIcon(kind: string, value?: string) {
 }
 
 /**
- * An MCP server item (`mentions/search`). Kept out of `staticMentionIcon`: the
- * mobile app renders those glyphs natively and has no MCP mentions yet.
+ * An MCP server item (`mentions/search`) whose server has no icon: the MCP mark.
+ * Kept out of `staticMentionIcon`: the mobile app renders those glyphs natively
+ * and has no MCP mentions yet.
  */
 export function mcpResourceMentionIcon(className = 'text-foreground') {
-  return <Link2 className={className} />
+  return <McpIcon className={className} />
 }
 
 /** Glyph key for one git ref kind (`git:branch` …) — what the mobile artwork is indexed by. */

@@ -1,5 +1,6 @@
 import { Terminal, FileText, FileEdit, FilePlus, Search, FolderSearch, Globe, Download, MessageCircleQuestion, Wrench, Plug, ClipboardList, Bot, BookOpen, Paintbrush, Toolbox, Package, Pencil, Image as ImageIcon, Smartphone } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
+import { McpIcon } from '@superone/ui/components/ui/McpIcon'
 import type { ToolIcon as ToolIconName } from './tool-display'
 
 const iconComponents: Record<ToolIconName, React.FC<{ className?: string }>> = {
@@ -13,6 +14,9 @@ const iconComponents: Record<ToolIconName, React.FC<{ className?: string }>> = {
   'download': Download,
   'message-circle': MessageCircleQuestion,
   'wrench': Wrench,
+  // MCP tools whose server has no icon of its own.
+  'mcp': McpIcon,
+  // Mini-app tool blocks whose app has no icon.
   'plug': Plug,
   'clipboard-list': ClipboardList,
   'bot': Bot,

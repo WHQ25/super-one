@@ -8,7 +8,7 @@ import type { ToolIcon } from './tool-display'
  * and half as a run of inline `if (mcpToolName === …)` branches. The phone reaches
  * tool rows through a different dispatcher and got none of it, so every tool here
  * arrived as a bare `plug` icon with no label — `tool-display.ts` answers
- * `{ icon: 'plug', summary: '' }` for anything starting with `mcp__`.
+ * `{ icon: 'mcp', summary: '' }` for anything starting with `mcp__`.
  *
  * Keeping the descriptor separate from the rendering is what lets both surfaces
  * share it: each one owns its own `ToolIcon` and `t`, and neither owns the table.

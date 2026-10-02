@@ -65,7 +65,7 @@ export function getToolVerb(toolName: string): string {
 
 /** Shared tool name → icon key + summary extraction for ToolBlock & PermissionPrompt. */
 
-export type ToolIcon = 'terminal' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'download' | 'message-circle' | 'wrench' | 'plug' | 'clipboard-list' | 'bot' | 'book-open' | 'canvas' | 'toolbox' | 'package' | 'pencil' | 'image' | 'smartphone'
+export type ToolIcon = 'terminal' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'download' | 'message-circle' | 'wrench' | 'mcp' | 'plug' | 'clipboard-list' | 'bot' | 'book-open' | 'canvas' | 'toolbox' | 'package' | 'pencil' | 'image' | 'smartphone'
 
 export interface ToolDisplay {
   icon: ToolIcon
@@ -194,7 +194,7 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
 
   // MCP tools: `mcp__{server}__{tool}` (Claude/Codex) or `{server}__{tool}` (Grok).
   if (parseMcpToolName(toolName)) {
-    return { icon: 'plug', summary: '' }
+    return { icon: 'mcp', summary: '' }
   }
 
   switch (toolName) {
@@ -313,7 +313,7 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
     case 'UseTool': {
       const name = String(input.tool_name ?? input.name ?? input.tool ?? '')
       const server = input.server ? String(input.server) : ''
-      return { icon: 'plug', summary: server && name ? `${server} · ${name}` : name }
+      return { icon: 'mcp', summary: server && name ? `${server} · ${name}` : name }
     }
     case 'MemorySearch':
       return { icon: 'book-open', summary: String(input.query ?? input.text ?? '') }

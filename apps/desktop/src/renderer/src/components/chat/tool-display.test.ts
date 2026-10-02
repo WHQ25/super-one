@@ -138,11 +138,11 @@ describe('getToolDisplay', () => {
 
   it('maps MCP tools to plug icon', () => {
     expect(getToolDisplay('mcp__filesystem__read_file', {})).toEqual({
-      icon: 'plug',
+      icon: 'mcp',
       summary: '',
     })
     expect(getToolDisplay('GitHub__list_issues', {})).toEqual({
-      icon: 'plug',
+      icon: 'mcp',
       summary: '',
     })
   })
@@ -181,7 +181,7 @@ describe('getToolDisplay', () => {
       summary: 'github pr',
     })
     expect(getToolDisplay('UseTool', { tool_name: 'GitHub__list_issues', server: 'GitHub' })).toEqual({
-      icon: 'plug',
+      icon: 'mcp',
       summary: 'GitHub · GitHub__list_issues',
     })
     expect(getToolDisplay('MemorySearch', { query: 'auth decision' })).toEqual({
@@ -306,6 +306,6 @@ describe('getToolDisplay for device tools', () => {
 
   it('leaves a third-party device_* tool on the generic MCP row', () => {
     expect(getToolDisplay('mcp__other__device_request_control', { device: 'x' }))
-      .toEqual({ icon: 'plug', summary: '' })
+      .toEqual({ icon: 'mcp', summary: '' })
   })
 })

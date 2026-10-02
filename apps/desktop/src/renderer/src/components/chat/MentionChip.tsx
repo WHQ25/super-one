@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { NodeViewWrapper } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
-import { staticMentionIcon } from '@superone/ui/components/ui/mention-icons'
+import { mcpResourceMentionIcon, staticMentionIcon } from '@superone/ui/components/ui/mention-icons'
 import { cn } from '@superone/ui/lib/utils'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { MentionChipBody } from '@superone/ui/components/ui/MentionChipBody'
@@ -69,6 +69,7 @@ export function mentionChipIcon(
   if (staticIcon) return staticIcon
   if (kind === 'miniapp') return <MiniAppIcon appId={value} />
   if (kind === 'desktop-app') return <DesktopAppIcon bundleId={value} />
+  if (kind === 'mcp-resource') return mcpResourceMentionIcon()
   // width/height attrs are overridden by .mention-chip__icon > svg { 100% }.
   return <FileIcon name={displayName} size={16} />
 }

@@ -1,5 +1,5 @@
 import { cloneElement, type ReactElement } from 'react'
-import { Bot, Bug, CircleDot, FolderGit2, Folder, GitBranch, GitCommitHorizontal, GitPullRequest, Globe, LayoutDashboard, MessageSquare, MousePointer2, Tag, Users } from 'lucide-react'
+import { Bot, Bug, CircleDot, FolderGit2, Folder, GitBranch, GitCommitHorizontal, GitPullRequest, Globe, LayoutDashboard, Link2, MessageSquare, MousePointer2, Tag, Users } from 'lucide-react'
 import { parseGitMentionValue, type GitMentionRefKind } from '@superone/shared/git-mention-query'
 import { GithubIcon } from './github-icon'
 
@@ -32,6 +32,14 @@ export function staticMentionIcon(kind: string, value?: string) {
   if (kind === 'widget') return <LayoutDashboard className="text-amber-600 dark:text-amber-400" />
   if (kind === 'debug') return <Bug className="text-rose-600 dark:text-rose-400" />
   return null
+}
+
+/**
+ * An MCP server item (`mentions/search`). Kept out of `staticMentionIcon`: the
+ * mobile app renders those glyphs natively and has no MCP mentions yet.
+ */
+export function mcpResourceMentionIcon(className = 'text-foreground') {
+  return <Link2 className={className} />
 }
 
 /** Glyph key for one git ref kind (`git:branch` …) — what the mobile artwork is indexed by. */

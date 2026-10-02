@@ -27,6 +27,8 @@ import { SessionMentionDecoration, syncPortalMentionDismissed } from './session-
 import { GitMentionDecoration } from './git-mention-decoration'
 import { useEnabledGitMentionPortals } from './use-git-mention-capabilities'
 import { wrapGitMention } from '@superone/shared/git-mention-tags'
+import { wrapMcpResourceMention } from '@superone/shared/mcp-app-mentions'
+import { useMcpAppFileRoute } from '@/components/mcp-apps/file-apps'
 import { DebugMentionDecoration, syncDebugMentionHint } from './debug-mention-decoration'
 import { PromptSuggestion } from './prompt-suggestion'
 import { PromptSuggestionChips } from './PromptSuggestionChips'
@@ -129,6 +131,7 @@ export function ChatInput() {
     })))
     const { sendMessage, setShowReviewPanel } = storeActions
     const sessionScope = useSessionScope()
+    const mcpRoute = useMcpAppFileRoute(sessionScope)
     const { text, draftJson, status, attachments, browserAnnotations, mentions, permissionMode, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, projectExtraDirs, additionalDirs, additionalDirsDirty } =
       useActiveSession(useShallow((s) => ({
         text: s.draftText,
@@ -918,7 +921,7 @@ export function ChatInput() {
           kind = 'desktop-app'
           mentionValue = value
           displayName = displayNameHint || value
-        } else if (kindHint === 'session' || kindHint === 'git') {
+        } else if (kindHint === 'session' || kindHint === 'git' || kindHint === 'mcp-resource') {
           kind = kindHint
           mentionValue = value
           displayName = displayNameHint || value
@@ -1001,6 +1004,8 @@ export function ChatInput() {
               current += ` <superone-session><title>${attrs.displayName}</title><sessionId>${attrs.value}</sessionId></superone-session> `
             } else if (attrs.kind === 'git') {
               current += ` ${wrapGitMention(attrs.value, attrs.displayName)} `
+            } else if (attrs.kind === 'mcp-resource') {
+              current += ` ${wrapMcpResourceMention(attrs.value, attrs.displayName)} `
             } else if (attrs.kind === 'agent-profile') {
               current += ` ${wrapAgentMention(attrs.value, attrs.displayName)} `
             } else if (isBuiltinCapabilityId(attrs.kind)) {
@@ -2054,6 +2059,7 @@ export function ChatInput() {
               mentionInfoRef.current = null
             }}
             showAgents={showAgentMentions}
+            mcpRoute={mcpRoute}
           />
         )}
 

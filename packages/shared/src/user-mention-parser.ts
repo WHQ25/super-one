@@ -9,6 +9,7 @@ import {
   AGENT_TAG_REGEX,
 } from './agent-mention-tags'
 import { GIT_HOST_TAG_REGEX, GIT_TAG_REGEX, gitTagDisplayName, gitTagValue } from './git-mention-tags'
+import { MCP_RESOURCE_TAG_REGEX, mcpResourceTagMention } from './mcp-app-mentions'
 import {
   DESKTOP_APP_REMINDER_REGEX,
   DESKTOP_APP_TAG_REGEX,
@@ -29,6 +30,8 @@ export type UserMentionKind =
   | 'agent-profile'
   /** Git ref — value is `<kind>:<id>` (see `git-mention-query`). */
   | 'git'
+  /** MCP server item (`mentions/search`) — value is `<server>:<uri>` (see `mcp-app-mentions`). */
+  | 'mcp-resource'
   | StoredCapabilityId
 
 export type UserTextSegment =
@@ -133,6 +136,16 @@ function findGitTags(text: string): TagMatch[] {
   return out
 }
 
+function findMcpResourceTags(text: string): TagMatch[] {
+  const out: TagMatch[] = []
+  const re = new RegExp(MCP_RESOURCE_TAG_REGEX)
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    out.push({ start: m.index, end: m.index + m[0].length, kind: 'mcp-resource', ...mcpResourceTagMention(m[1], m[2], m[3]) })
+  }
+  return out
+}
+
 function findAgentTags(text: string): TagMatch[] {
   const out: TagMatch[] = []
   const re = new RegExp(AGENT_TAG_REGEX)
@@ -192,6 +205,7 @@ export function parseUserMentions(text: string): UserTextSegment[] {
     ...findDesktopAppTags(withoutReminder),
     ...findSessionTags(withoutReminder),
     ...findGitTags(withoutReminder),
+    ...findMcpResourceTags(withoutReminder),
     ...findAgentTags(withoutReminder),
     ...findPathRefTags(withoutReminder),
   ].sort((a, b) => a.start - b.start)

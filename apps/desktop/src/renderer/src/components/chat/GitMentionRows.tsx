@@ -22,7 +22,7 @@ import {
   type ParsedGitMentionQuery,
 } from './git-mention-query'
 import type { GitMentionAvailability } from './use-git-mention'
-import { STACKED_BODY_CLASS, STACKED_DETAIL_CLASS, STACKED_ICON_CLASS, STACKED_ROW_CLASS } from './mention-row-layout'
+import { STACKED_BODY_CLASS, STACKED_DETAIL_CLASS, STACKED_ICON_CLASS, STACKED_ROW_CLASS, mentionRowClass } from './mention-row-layout'
 import type { BuiltinMentionMatchRank } from './mention-capability-match'
 
 export type GitFlatItem =
@@ -152,13 +152,6 @@ interface RowProps {
   onHover: () => void
 }
 
-function rowClass(selected: boolean): string {
-  return cn(
-    'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
-    selected ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-accent/40',
-  )
-}
-
 function HighlightedHandle({ keyword, indices }: { keyword: string; indices: number[] }) {
   const shifted = indices.length > 0 ? [0, ...indices.map((i) => i + 1)] : indices
   return <HighlightedText text={`@${keyword}`} indices={shifted} className="truncate" />
@@ -184,7 +177,7 @@ export function GitPortalRow({
       onClick={() => { if (!disabled) onNavigate() }}
       onMouseEnter={onHover}
       className={cn(
-        rowClass(selected),
+        mentionRowClass(selected),
         disabled && 'cursor-not-allowed opacity-55 hover:bg-transparent data-[disabled]:pointer-events-auto',
       )}
       data-index={index}
@@ -226,7 +219,7 @@ export function GitKindRow({
       onMouseDown={(e) => e.preventDefault()}
       onClick={onNavigate}
       onMouseEnter={onHover}
-      className={rowClass(selected)}
+      className={mentionRowClass(selected)}
     >
       {gitRefIcon(item.refKind, 'size-3.5 shrink-0 text-foreground')}
       <span className="min-w-0 flex-1 truncate">
@@ -271,7 +264,7 @@ export function GitRefRow({
         onMouseDown={(e) => e.preventDefault()}
         onClick={onSelect}
         onMouseEnter={onHover}
-        className={cn(rowClass(selected), 'items-start')}
+        className={cn(mentionRowClass(selected), 'items-start')}
         title={ref.detail}
       >
         {gitRefIcon(ref.kind, cn('mt-0.5 size-3.5 shrink-0', stateIconClass(ref.state)))}
@@ -306,7 +299,7 @@ export function GitRefRow({
       onMouseDown={(e) => e.preventDefault()}
       onClick={onSelect}
       onMouseEnter={onHover}
-      className={cn(rowClass(selected), STACKED_ROW_CLASS)}
+      className={cn(mentionRowClass(selected), STACKED_ROW_CLASS)}
       title={ref.kind === 'commit' ? ref.id : ref.detail}
     >
       {gitRefIcon(ref.kind, cn('size-3.5 shrink-0 text-foreground', STACKED_ICON_CLASS))}

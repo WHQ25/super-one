@@ -77,6 +77,8 @@ export type MentionKind =
    * taken by Claude's `.claude/agents` subagents.
    */
   | 'agent-profile'
+  /** MCP server item from `mentions/search` — value is `<server>:<uri>` (see `mcp-app-mentions`). */
+  | 'mcp-resource'
 export interface Mention {
   kind: MentionKind
   value: string

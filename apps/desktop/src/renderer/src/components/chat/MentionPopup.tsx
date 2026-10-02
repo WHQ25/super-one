@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo, type UIEvent } from 'react'
+import { Fragment, useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo, type UIEvent } from 'react'
 import { Bot, Bug, Folder, Folders, Globe, LayoutDashboard, MessageSquare, MousePointer2 } from 'lucide-react'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { cn } from '@superone/ui/lib/utils'
@@ -64,7 +64,11 @@ import {
   isGitFlatItem,
   type GitFlatItem,
 } from './GitMentionRows'
-import { STACKED_BODY_CLASS, STACKED_DETAIL_CLASS, STACKED_ICON_CLASS, STACKED_ROW_CLASS } from './mention-row-layout'
+import { STACKED_BODY_CLASS, STACKED_DETAIL_CLASS, STACKED_ICON_CLASS, STACKED_ROW_CLASS, mentionRowClass } from './mention-row-layout'
+import { encodeMcpMentionValue } from '@superone/shared/mcp-app-mentions'
+import { useMcpMentionSearch } from '@/components/mcp-apps/mention-search'
+import type { McpAppRoute } from '@/components/mcp-apps/desktop-executor'
+import { McpMentionRow, McpMentionStatus, mcpMentionFlatItems, mcpMentionGroupKey, mcpMentionHasStatus, type McpMentionFlatItem } from './McpMentionRows'
 
 export { SESSION_MENTION_NAV_PREFIX }
 
@@ -82,6 +86,8 @@ interface MentionPopupProps {
   onClose: () => void
   onResultState?: (query: string, isEmpty: boolean) => void
   showAgents?: boolean
+  /** Session whose MCP servers are asked for `mentions/search` items; none without a session. */
+  mcpRoute?: McpAppRoute | null
 }
 
 /** Built-in entry that opens session search (not a capability-prompt-tags id). */
@@ -146,6 +152,7 @@ type FlatItem =
       matchIndices: number[]
     }
   | GitFlatItem
+  | McpMentionFlatItem
 
 type InstalledDesktopApp = { app: string; bundleId: string; aliases: string[] }
 
@@ -212,6 +219,7 @@ function mentionGroupKey(item: FlatItem): string {
   if (item.kind === 'desktop-app') return 'desktop-app'
   if (item.kind === 'agent') return 'agent'
   if (item.kind === 'miniapp') return 'miniapp'
+  if (item.kind === 'mcp-resource') return mcpMentionGroupKey(item)
   return 'file'
 }
 
@@ -278,7 +286,7 @@ function capabilityIcon(id: BuiltinCapabilityId | SessionPortalId, disabled?: bo
 }
 
 export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
-  function MentionPopup({ query, selectedIndex, onSelect, onSetSelectedIndex, onResultState, showAgents = true }, ref) {
+  function MentionPopup({ query, selectedIndex, onSelect, onSetSelectedIndex, onResultState, showAgents = true, mcpRoute = null }, ref) {
     const { t } = useTranslation()
     const activeProject = useChatStore((s) => s.activeProject)
     const recentFolders = useAppStore((s) => s.recentFolders)
@@ -329,6 +337,10 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const [sessionLoading, setSessionLoading] = useState(false)
 
     const isBrowseMode = !isPortalMode && (!query || query.endsWith('/'))
+    // Server items sit beside capabilities: on `@` and plain queries, not inside a portal or a folder.
+    const mcp = useMcpMentionSearch(mcpRoute, query, !isPortalMode && !(isBrowseMode && query))
+    const mcpItems = useMemo(() => mcpMentionFlatItems(mcp.sources), [mcp.sources])
+    const mcpShowsStatus = mcpMentionHasStatus(mcp)
     const browseDir = isBrowseMode ? query : ''
     const lastSlash = query.lastIndexOf('/')
     const scopeDir = !isPortalMode && !isBrowseMode && lastSlash >= 0 ? query.slice(0, lastSlash + 1) : undefined
@@ -855,6 +867,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           ...matchedCapabilities,
           ...matchedDesktopApps,
           ...matchedMiniApps,
+          ...mcpItems,
         ]
         for (const entry of dirEntries) items.push({ kind: 'dir-entry', entry, prefix: browseDir })
         if (!query) {
@@ -871,6 +884,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         ...matchedCapabilities,
         ...matchedDesktopApps,
         ...matchedMiniApps,
+        ...mcpItems,
       ]
       for (const item of searchResults) {
         if (item.kind === 'agent') {
@@ -882,11 +896,13 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         }
       }
       return items
-    }, [isGitMode, matchedGitItems, isSessionMode, parsedSessionQuery?.phase, matchedSessionProjects, matchedSessions, isBrowseMode, browseDir, query, searchResults, dirEntries, agentEntries, scopeDir, matchedCapabilities, matchedDesktopApps, matchedMiniApps, matchedAgentTargets])
+    }, [isGitMode, matchedGitItems, isSessionMode, parsedSessionQuery?.phase, matchedSessionProjects, matchedSessions, isBrowseMode, browseDir, query, searchResults, dirEntries, agentEntries, scopeDir, matchedCapabilities, matchedDesktopApps, matchedMiniApps, matchedAgentTargets, mcpItems])
 
+    // Server sections are dynamic; they go right before files, which can run long.
+    const mcpGroupKeys = useMemo(() => mcp.sources.map(mcpMentionGroupKey), [mcp.sources])
     const mentionGroups = useMemo(
-      () => groupItems(flatItems, mentionGroupKey, MENTION_GROUP_ORDER),
-      [flatItems]
+      () => groupItems(flatItems, mentionGroupKey, MENTION_GROUP_ORDER.flatMap((key) => key === 'file' ? [...mcpGroupKeys, key] : [key])),
+      [flatItems, mcpGroupKeys]
     )
     const orderedItems = useMemo(() => mentionGroups.flatMap((g) => g.items), [mentionGroups])
 
@@ -912,8 +928,10 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       // Otherwise file-search empties first, ChatInput locks the @ prefix, and
       // desktop apps that arrive a moment later never surface.
       if (!desktopAppsReady) return
-      onResultState?.(query, orderedItems.length === 0)
-    }, [searchCompleted, completedQuery, orderedItems.length, query, onResultState, desktopAppsReady, isPortalMode])
+      // Same for server items, which can take seconds while a harness starts.
+      if (mcp.loading) return
+      onResultState?.(query, orderedItems.length === 0 && !mcpShowsStatus)
+    }, [searchCompleted, completedQuery, orderedItems.length, query, onResultState, desktopAppsReady, isPortalMode, mcp.loading, mcpShowsStatus])
 
     const handleItemClick = useCallback(
       (item: FlatItem, action: 'navigate' | 'select') => {
@@ -948,6 +966,10 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         }
         if (item.kind === 'agent-profile') {
           onSelect(item.target.ref, 'select', 'agent-profile', item.target.displayName)
+          return
+        }
+        if (item.kind === 'mcp-resource') {
+          onSelect(encodeMcpMentionValue(item.server, item.item.uri), 'select', 'mcp-resource', item.item.label)
           return
         }
         if (action === 'navigate' && isDirItem(item)) {
@@ -1017,6 +1039,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       if (key === 'desktop-app') return t('chat.mentionPopup.groupDesktopApps')
       if (key === 'agent') return t('chat.mentionPopup.groupAgents')
       if (key === 'miniapp') return t('chat.mentionPopup.groupMiniApps')
+      const source = mcp.sources.find((value) => mcpMentionGroupKey(value) === key)
+      if (source) return source.title
       return t('chat.mentionPopup.groupFiles')
     }
 
@@ -1026,10 +1050,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     }
 
     const renderItem = (item: FlatItem, i: number) => {
-      const rowClass = cn(
-        'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors',
-        i === selectedIndex ? 'bg-accent text-accent-foreground' : 'text-foreground hover:bg-accent/40'
-      )
+      const rowClass = mentionRowClass(i === selectedIndex)
       if (item.kind === 'git-portal') {
         return (
           <GitPortalRow
@@ -1062,6 +1083,18 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             key={`gr-${item.ref.kind}-${item.ref.id}`}
             item={item}
             index={i}
+            selected={i === selectedIndex}
+            setItemRef={setItemRef(i)}
+            onHover={() => onSetSelectedIndex(i)}
+            onSelect={() => handleItemClick(item, 'select')}
+          />
+        )
+      }
+      if (item.kind === 'mcp-resource') {
+        return (
+          <McpMentionRow
+            key={`mcp-${item.server}-${item.tool}-${item.item.uri}`}
+            entry={item}
             selected={i === selectedIndex}
             setItemRef={setItemRef(i)}
             onHover={() => onSetSelectedIndex(i)}
@@ -1333,9 +1366,12 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     }
 
     // Session mode always stays open (empty state). Other modes hide when truly empty.
-    if (!isPortalMode && searchCompleted && completedQuery === query && orderedItems.length === 0) {
+    if (!isPortalMode && searchCompleted && completedQuery === query && orderedItems.length === 0 && !mcpShowsStatus) {
       return null
     }
+    // Status-only server sections take their place in the order, before files.
+    const mcpStatus = isPortalMode ? null : <McpMentionStatus state={mcp} />
+    const fileGroupIndex = mentionGroups.findIndex((group) => group.key === 'file')
 
     const sessionScopeLabel = (() => {
       if (!parsedSessionQuery?.scope) return ''
@@ -1470,12 +1506,18 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
               ) : null}
             </div>
           ) : (
-            mentionGroups.map((group) => (
-              <div key={group.key}>
-                <PopupSectionHeader label={groupLabel(group.key)} count={group.items.length} />
-                {group.items.map((item, j) => renderItem(item, group.startIndex + j))}
-              </div>
-            ))
+            <>
+              {mentionGroups.map((group, index) => (
+                <Fragment key={group.key}>
+                  {index === fileGroupIndex ? mcpStatus : null}
+                  <div>
+                    <PopupSectionHeader label={groupLabel(group.key)} count={group.items.length} />
+                    {group.items.map((item, j) => renderItem(item, group.startIndex + j))}
+                  </div>
+                </Fragment>
+              ))}
+              {fileGroupIndex < 0 ? mcpStatus : null}
+            </>
           )}
           {isSessionMode && sessionLoading ? (
             <div className="px-2 py-1.5 text-2xs text-muted-foreground">

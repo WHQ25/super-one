@@ -864,6 +864,8 @@ export interface EnvironmentAPI {
   /** Calls the App's entrypoint on an absolute path; the returned View lives in memory only. */
   mcpAppOpenFile(projectPath: string, sessionId: string, target: { server: string; tool: string; path: string }): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-apps').ToolAppAttachment>>
   mcpAppCloseFile(projectPath: string, sessionId: string, appInstanceId: string): Promise<void>
+  /** Items from every server `mentions/search` tool for the composer; may start the session's harness. */
+  mcpAppMentionSearch(projectPath: string, sessionId: string, query: string): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-app-mentions').McpMentionSearchResult>>
   onMcpAppResourceUpdated(callback: (event: { appInstanceId: string; uri: string }) => void): () => void
   mcpAppsProvider(connectionId: string, input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult>
   /** Sign the View's MCP server in; resolves once the provider no longer reports auth_required. */

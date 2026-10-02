@@ -716,7 +716,7 @@ model context, `openai/message` and most form features. Still missing:
 |---|---|
 | File entrypoint, host resources (`read` / `subscribe` / `openai/resources/write`), path injection | Codex sessions on local projects: done. Claude needs step 1; remote projects and phone later |
 | `openai/files/open` | Not supported — Phase 3 |
-| Composer at-mentions (`mentions/search`) | Not supported — Phase 3 |
+| Composer at-mentions (`mentions/search`) | Codex sessions on local projects: done. Claude needs step 1; remote projects and phone later |
 | Form previews (`openai/preview`) | Parsed, not shown — Phase 3 host follow-ups |
 | Form `userOptions`, implicit selection | Ignored / refused — Phase 3 host follow-ups |
 | `ui/download-file`, collapsed untitled long text | S1 leftovers — Phase 3 host follow-ups |
@@ -828,6 +828,23 @@ With from the preview header; STL and a CAx-IF STEP assembly render; save
 writes the file without a self-notification; an external change reloads the
 View; closing the tab releases the watcher. Native context menus (chip, tree)
 share the tested hook but were not driven live.
+
+**Codex mentions (step 9, local projects): done.** Shared contracts, item
+parsing and the `<superone-mcp-resource>` tag in
+`packages/shared/src/mcp-app-mentions.ts`; main in `mcp-apps/mention-search-ipc.ts`,
+which shares discovery with file entrypoints through `mcp-apps/host-tools.ts`;
+renderer in `components/mcp-apps/mention-search.ts` and
+`components/chat/McpMentionRows.tsx` (stories `Chat/MentionPopup` `Mcp*`,
+`Chat/MentionChip`). Typing `@` may start the harness. Each server tool is a
+popup section before files; items are resource links or OpenAI resources,
+capped at 50 per server. A picked item becomes an `mcp-resource` chip whose
+tag carries server, title and URI: Codex's `mention` input only takes `app://`
+and `plugin://` paths, so the model gets the self-describing tag and reads the
+resource with its own MCP tools. Claude sessions show no section until step 1.
+
+Verified live (Codex 0.159, Bits & Bolts, CDP): cold lookup about 10 s, warm
+5 ms; `@keycap` lists the server's parts; the chip survives send; the model
+read the mentioned resource and answered from it.
 
 Out of this phase: phone parity (file preview "more" menu is the natural
 place), remote-node direct clients, global/thread entrypoints, settings.

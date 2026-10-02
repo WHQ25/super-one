@@ -4575,6 +4575,8 @@ export const AgentIpcChannels = {
   MCP_APP_FILE_HANDLERS: 'environment:mcpApps.fileHandlers',
   MCP_APP_OPEN_FILE: 'environment:mcpApps.openFile',
   MCP_APP_CLOSE_FILE: 'environment:mcpApps.closeFile',
+  /** Composer @-mentions from servers that declare `mentions/search`. */
+  MCP_APP_MENTION_SEARCH: 'environment:mcpApps.mentionSearch',
   /** Sign a View's MCP server in through its harness (browser + optional loopback relay). */
   ENVIRONMENT_MCP_APPS_AUTHENTICATE: 'environment:mcpApps.authenticate',
   ENVIRONMENT_HARNESS_RESOURCES: 'environment:harnessResources',

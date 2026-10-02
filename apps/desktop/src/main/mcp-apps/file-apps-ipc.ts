@@ -1,79 +1,30 @@
-import { ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { ipcMain } from 'electron'
 import path from 'node:path'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
-import { boundedToolAppAttachment, mcpAppResourceUri, McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpToolDescriptor, type ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { boundedToolAppAttachment, mcpAppResourceUri, McpAppsError, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { mcpAppFileExtension, mcpAppFileExtensions, type McpAppFileHandlersResult, type McpAppFileInput } from '@superone/shared/mcp-app-files'
 import { mcpAppPresentation, mcpAppPresentationIcon } from '@superone/shared/mcp-apps-metadata'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import type { McpAppsRpcResult } from '@superone/shared/environment/mcp-apps-rpc'
 import type { Session } from '../session/types'
 import { hostFileApp, openHostFileApp, releaseHostFileApp, updateHostFileApp } from './host-files'
+import { assertHostRenderer, findHostTools, hostRpcFailure, hostSessionResolver, type HostToolCandidate } from './host-tools'
 
-function failure(error: unknown): McpAppsRpcResult<never> {
-  return { ok: false, error: error instanceof McpAppsError ? error.toJSON() : { code: 'invalid', message: error instanceof Error ? error.message : String(error) } }
-}
+interface Candidate extends HostToolCandidate { resourceUri: string }
 
-function assertHost(event: IpcMainInvokeEvent): void {
-  if (event.senderFrame !== event.sender.mainFrame) throw new McpAppsError('denied', 'MCP App requests must come through the host renderer')
-}
-
-interface Candidate { binding: McpAppsBinding; origin: McpAppOrigin; tool: McpToolDescriptor; resourceUri: string }
-
-function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const abort = () => reject(new McpAppsError('timeout', 'MCP tool discovery timed out'))
-    if (signal.aborted) { abort(); return }
-    signal.addEventListener('abort', abort, { once: true })
-    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort))
-  })
-}
-
-/**
- * Tools whose file entrypoint accepts this extension. Visibility does not apply to entrypoints.
- * Servers are asked together: a cold harness starts them all at once, and one slow or
- * signed-out server must neither hide the others nor pass for "no Apps".
- */
+/** Tools whose file entrypoint accepts this extension. Visibility does not apply to entrypoints. */
 async function fileTools(session: Session, extension: string, signal: AbortSignal): Promise<{ candidates: Candidate[]; incomplete: boolean }> {
-  if (!extension || !session.getMcpAppsHostBindings || !session.getMcpAppsProvider) return { candidates: [], incomplete: false }
-  const getProvider = session.getMcpAppsProvider.bind(session)
-  let incomplete = false
-  const lists = await Promise.all((await session.getMcpAppsHostBindings()).map(async ({ binding, origin }) => {
-    try {
-      const pending = getProvider(binding, origin)
-      const provider = await untilAborted(pending, signal).catch((error: unknown) => {
-        void pending.then(late => late.dispose(), () => {})
-        throw error
-      })
-      try {
-        const output: Candidate[] = []
-        for (const tool of (await untilAborted(provider.tools(), signal)).values()) {
-          const resourceUri = mcpAppResourceUri(tool)
-          if (resourceUri && mcpAppFileExtensions(tool).includes(extension)) output.push({ binding, origin, tool, resourceUri })
-        }
-        return output
-      } finally { provider.dispose() }
-    } catch {
-      incomplete = true
-      return []
-    }
-  }))
-  return { candidates: lists.flat(), incomplete }
+  if (!extension) return { candidates: [], incomplete: false }
+  const { candidates, incomplete } = await findHostTools(session, tool => !!mcpAppResourceUri(tool) && mcpAppFileExtensions(tool).includes(extension), signal)
+  return { candidates: candidates.map(candidate => ({ ...candidate, resourceUri: mcpAppResourceUri(candidate.tool)! })), incomplete }
 }
 
-/**
- * `getSession` finds a loaded session; `resumeSession` also loads a persisted one without starting its harness.
- * Passive lookups never load a session; user actions may.
- */
 export function registerMcpAppFileIpc(getSession: (id: string) => Session | null, resumeSession: (id: string) => Session): void {
-  const sessionFor = (id: string, passive: boolean): Session | null => {
-    if (!id) return null
-    if (passive) return getSession(id)
-    try { return resumeSession(id) } catch { return null }
-  }
+  const sessionFor = hostSessionResolver(getSession, resumeSession)
 
   ipcMain.handle(AgentIpcChannels.MCP_APP_FILE_HANDLERS, async (event, projectPath: string, sessionId: string, filePath: string, options?: { passive?: boolean }): Promise<McpAppsRpcResult<McpAppFileHandlersResult>> => {
     try {
-      assertHost(event)
+      assertHostRenderer(event)
       if (parseRemoteProjectKey(projectPath)) return { ok: true, value: { handlers: [], unavailable: 'remote' } }
       const session = sessionFor(sessionId, options?.passive === true)
       if (!session) return { ok: true, value: { handlers: [], unavailable: 'no-session' } }
@@ -85,12 +36,12 @@ export function registerMcpAppFileIpc(getSession: (id: string) => Session | null
         const icon = mcpAppPresentationIcon(presentation)
         return { server: binding.server, tool: tool.name, title: presentation.toolTitle, ...(presentation.serverTitle ? { serverTitle: presentation.serverTitle } : {}), ...(icon ? { icon } : {}) }
       }) } }
-    } catch (error) { return failure(error) }
+    } catch (error) { return hostRpcFailure(error) }
   })
 
   ipcMain.handle(AgentIpcChannels.MCP_APP_OPEN_FILE, async (event, projectPath: string, sessionId: string, target: { server: string; tool: string; path: string }): Promise<McpAppsRpcResult<ToolAppAttachment>> => {
     try {
-      assertHost(event)
+      assertHostRenderer(event)
       if (parseRemoteProjectKey(projectPath)) throw new McpAppsError('not_connected', 'Opening remote files with Apps is not supported yet')
       if (typeof target?.path !== 'string' || !path.isAbsolute(target.path) || typeof target.server !== 'string' || typeof target.tool !== 'string') throw new McpAppsError('invalid', 'Invalid file App request')
       const session = sessionFor(sessionId, false)
@@ -119,11 +70,11 @@ export function registerMcpAppFileIpc(getSession: (id: string) => Session | null
       const { activateMcpAppHostView } = await import('./executor')
       activateMcpAppHostView(entry.ref, entry.app)
       return { ok: true, value: boundedToolAppAttachment(entry.app) }
-    } catch (error) { return failure(error) }
+    } catch (error) { return hostRpcFailure(error) }
   })
 
   ipcMain.handle(AgentIpcChannels.MCP_APP_CLOSE_FILE, (event, _projectPath: string, sessionId: string, appInstanceId: string) => {
-    assertHost(event)
+    assertHostRenderer(event)
     const entry = typeof appInstanceId === 'string' ? hostFileApp({ environmentId: 'local', sessionId }, appInstanceId) : undefined
     if (entry) releaseHostFileApp(entry)
   })

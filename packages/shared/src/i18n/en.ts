@@ -3108,6 +3108,11 @@ export type Messages = {
       hintCompleteGitKind: string
       hintSelectGitRef: string
       hintTypeGitQuery: string
+      mcpSearching: string
+      mcpNoMatches: string
+      mcpSearchFailed: string
+      mcpUnavailable: string
+      mcpIncomplete: string
       loadingGitRefs: string
       disabled: string
       computerUseDisabledHint: string
@@ -7252,6 +7257,11 @@ export const en: Messages = {
       hintCompleteGitKind: 'complete ref type',
       hintSelectGitRef: 'select ref',
       hintTypeGitQuery: 'type to filter',
+      mcpSearching: 'Searching…',
+      mcpNoMatches: 'No matches',
+      mcpSearchFailed: 'Search failed',
+      mcpUnavailable: "Couldn't reach MCP servers",
+      mcpIncomplete: "Some MCP servers haven't answered yet",
       loadingGitRefs: 'Loading…',
       disabled: 'Off',
       computerUseDisabledHint: 'Enable Computer Use in Settings first',

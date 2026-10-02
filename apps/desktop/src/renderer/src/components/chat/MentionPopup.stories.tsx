@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect, useRef, useState } from 'react'
 import type { GitMentionCapabilities, GitMentionRef, GitMentionRefsResult } from '@superone/shared/git-mention-query'
+import type { McpMentionSearchResult, McpMentionSource } from '@superone/shared/mcp-app-mentions'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
@@ -60,7 +61,35 @@ mockIpc('agent', 'listDirectory', async () => [])
 mockIpc('agent', 'searchMentions', async () => [])
 mockIpc('app', 'listComputerUseInstalledApps', async () => [])
 
-function Preview({ query, repo = true, github = true, refs, width = 560 }: { query: string; repo?: boolean; github?: boolean; refs?: typeof refsResult; width?: number }) {
+const CAD_ICON = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"%3E%3Cpath fill="%237c3aed" d="M2 1h12v14H2z"/%3E%3C/svg%3E'
+const PARTS: McpMentionSource = {
+  server: 'bits-and-bolts', tool: 'search_mentions', title: 'Bits & Bolts', icon: CAD_ICON,
+  items: [
+    { uri: 'cad://parts/hex-bolt-m8', label: 'Hex bolt M8 × 40', detail: 'hex-bolt-m8.step' },
+    { uri: 'cad://parts/hex-nut-m8', label: 'Hex nut M8', detail: 'hex-nut-m8.step' },
+    { uri: 'cad://parts/washer-m8', label: 'Flat washer M8' },
+  ],
+}
+const TICKETS: McpMentionSource = {
+  server: 'tracker', tool: 'mentions', title: 'tracker',
+  items: [{ uri: 'tracker://issues/412', label: 'Bolt torque table is out of date', detail: 'ENG-412 · open' }],
+}
+
+/**
+ * How the composer's session answers `mentions/search` in a story. `answer` gets the query;
+ * a pending promise stands for a harness that is still starting.
+ */
+type McpAnswer = (query: string) => Promise<{ ok: true; value: McpMentionSearchResult } | { ok: false; error: { code: string; message: string } }>
+const answerWith = (value: McpMentionSearchResult): McpAnswer => async () => ({ ok: true, value })
+let mcpSession = 0
+
+function Preview({ query, repo = true, github = true, refs, width = 560, mcp, typeAfter }: { query: string; repo?: boolean; github?: boolean; refs?: typeof refsResult; width?: number; mcp?: McpAnswer; typeAfter?: string }) {
+  // A fresh session per render keeps the hook's known-sections cache from leaking between stories.
+  const [mcpRoute] = useState(() => mcp ? { projectPath: PROJECT, sessionId: `story-mcp-${++mcpSession}` } : null)
+  if (mcp) {
+    const env = (window as unknown as { environment?: Record<string, unknown> }).environment ?? {}
+    ;(window as unknown as { environment: Record<string, unknown> }).environment = { ...env, mcpAppMentionSearch: (_project: string, _session: string, q: string) => mcp(q) }
+  }
   const [ready, setReady] = useState(false)
   const [selected, setSelected] = useState(0)
   const [current, setCurrent] = useState(query)
@@ -81,6 +110,11 @@ function Preview({ query, repo = true, github = true, refs, width = 560 }: { que
       useChatStore.setState(prevChat)
     }
   }, [query, repo, github, refs])
+  useEffect(() => {
+    if (typeAfter === undefined) return
+    const timer = setTimeout(() => setCurrent(typeAfter), 800)
+    return () => clearTimeout(timer)
+  }, [typeAfter])
   if (!ready) return null
   return (
     <div className="flex flex-col gap-2" style={{ width, maxWidth: '100%' }}>
@@ -91,6 +125,7 @@ function Preview({ query, repo = true, github = true, refs, width = 560 }: { que
           query={current}
           selectedIndex={selected}
           onSetSelectedIndex={setSelected}
+          mcpRoute={mcpRoute}
           onClose={() => setLog((l) => [...l, 'close'])}
           onSelect={(value, action, kind, displayName) => {
             if (action === 'navigate') {
@@ -199,5 +234,53 @@ export const GitLongContent: Story = {
         date: hoursAgo(5),
       }],
     }),
+  },
+}
+
+/** Bare `@` in a session whose MCP servers declare `mentions/search`: one section per server, before files. */
+export const McpServerItems: Story = { args: { query: '', mcp: answerWith({ sources: [PARTS, TICKETS] }) } }
+
+/** Items stay in the server's own order and text; nothing is highlighted because the server did the matching. */
+export const McpServerItemsFiltered: Story = {
+  args: { query: 'hex', mcp: answerWith({ sources: [{ ...PARTS, items: PARTS.items.slice(0, 2) }, { ...TICKETS, items: [] }] }) },
+}
+
+/**
+ * Typing after the first answer: sections the session is known to have show "Searching…" until
+ * the server answers (here it never does).
+ */
+export const McpSearching: Story = {
+  args: { query: '', typeAfter: 'hex', mcp: async (q) => q ? new Promise(() => {}) : { ok: true, value: { sources: [{ ...PARTS, items: [] }] } } },
+}
+
+/** One server failed and another is still starting: the failed one says so, the rest is flagged. */
+export const McpFailedAndIncomplete: Story = {
+  args: { query: 'bolt', mcp: answerWith({ incomplete: true, sources: [{ ...PARTS, items: [], failed: true }] }) },
+}
+
+/** The lookup itself failed (e.g. the harness could not start). */
+export const McpUnavailable: Story = {
+  args: { query: '', mcp: async () => ({ ok: false, error: { code: 'not_connected', message: 'Harness failed to start' } }) },
+}
+
+/**
+ * No server declares `mentions/search` — every Claude session today, since its SDK withholds the
+ * extension metadata — so the popup is exactly the usual one.
+ */
+export const McpNoServers: Story = { args: { query: '', mcp: answerWith({ sources: [] }) } }
+
+/** Long titles and details truncate; a narrow popup moves the detail under the title. */
+export const McpLongContentNarrow: Story = {
+  args: {
+    query: 'flange',
+    width: 340,
+    mcp: answerWith({ sources: [{
+      ...PARTS,
+      title: 'Bits & Bolts parts library with an unusually long server title',
+      items: [
+        { uri: 'cad://parts/flange', label: 'Weld-neck flange DN150 PN40 with raised face and a very long catalogue description', detail: 'weld-neck-flange-dn150-pn40-raised-face-extended.step' },
+        { uri: 'cad://parts/flange-gasket', label: 'Spiral wound gasket', detail: 'spiral-wound-gasket.step' },
+      ],
+    }] }),
   },
 }

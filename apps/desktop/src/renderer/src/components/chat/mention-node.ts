@@ -14,6 +14,7 @@ export interface MentionNodeAttrs {
     | 'session'
     | 'git'
     | 'agent-profile'
+    | 'mcp-resource'
   value: string
   displayName: string
 }

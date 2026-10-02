@@ -40,7 +40,7 @@ function Attachment({ item, onRemove, removing }: { item: ContextAttachment; onR
         {removing ? <ActivityIndicator size="small" color={colors.mutedForeground} /> : <X size={12} color={colors.mutedForeground} />}
       </Pressable> : null}
     </View>
-    <AnchoredMenu anchor={menu.anchor} title={title} onDismiss={menu.close} width={320}>
+    <AnchoredMenu anchor={menu.anchor} title={item.source ?? title} onDismiss={menu.close} width={320}>
       <ContextAttachmentPreview item={item} />
     </AnchoredMenu>
   </>

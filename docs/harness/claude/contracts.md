@@ -324,13 +324,14 @@ module that runs inside the CLI process. Upstream docs:
   rejects the request with `control_request_failed`, indistinguishable from
   "could not run". An `AbortSignal` sends `control_cancel_request`, and the
   server gets `notifications/cancelled`.
-- **Observed:** 0.3.285, live fixture server.
+- **Observed:** 0.3.287, live fixture server.
 - **Depends on it:** the dispatch gate in
   `packages/runtime/src/mcp-apps/provider-rpc.ts` enforces app visibility
   before the provider; `createClaudeMcpAppsProvider` reports a rejected call
   and an abort after dispatch as `unknown_outcome`.
 - **Guard:** `CLAUDE_MCP_CALL_VERIFIED_SDK` is pinned to the SDK dependency by
-  `packages/claude/src/mcp-apps.test.ts`; rerun the live check on a bump.
+  `apps/desktop/src/main/mcp-apps/claude-provider.test.ts`; on a bump, rerun
+  `bun apps/desktop/scripts/check-claude-mcp-apps.ts`.
 
 ### OAuth with a host redirect needs a reconnect
 

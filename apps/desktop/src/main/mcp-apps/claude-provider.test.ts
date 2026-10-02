@@ -142,7 +142,7 @@ describe('Claude native MCP Apps provider', () => {
   it('is pinned to the SDK version whose mcp_call was verified live', () => {
     const manifest = JSON.parse(readFileSync(new URL('../../../../../packages/claude/package.json', import.meta.url), 'utf8')) as { dependencies: Record<string, string> }
     const version = manifest.dependencies['@anthropic-ai/claude-agent-sdk']
-    // On failure: rerun the live mcp_call check (plan: Claude track, spike 0.6), then update the constant.
+    // On failure: rerun `bun apps/desktop/scripts/check-claude-mcp-apps.ts`, then update the constant.
     expect(version).toBe(CLAUDE_MCP_CALL_VERIFIED_SDK)
   })
 })

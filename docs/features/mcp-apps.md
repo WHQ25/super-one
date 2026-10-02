@@ -20,7 +20,7 @@ surfaces (`widget_show`, mini-apps) keep their own contracts.
 | Harness | Provider | How |
 |---|---|---|
 | Codex app-server (0.159) | Native | UI extension in `initialize`; item `mcpAppUi` (or `mcpAppResourceUri`) plus full result; `mcpServer/resource/read` and `mcpServer/tool/call` routed by `threadId`; `mcpServer/oauth/login`. Hosted `codex_apps` connectors are not supported. |
-| Claude Agent SDK (0.3.285) | Native | `CLAUDE_CODE_MCP_APPS_HOST=true` in the spawn env; tool UI metadata from `mcpServerStatus()`; result from `tool_use_result`; `readMcpResource()`; View tool calls through the internal `mcp_call` control request. |
+| Claude Agent SDK (0.3.287) | Native | `CLAUDE_CODE_MCP_APPS_HOST=true` in the spawn env; tool UI metadata from `mcpServerStatus()`; result from `tool_use_result`; `readMcpResource()`; View tool calls through the internal `mcp_call` control request. |
 | Cursor (desktop local stdio pilot) | Compatibility (user opt-in, off by default) | Enable in Settings → Harnesses → Cursor → Preferences. Session discovery then omits connected App servers from Cursor's MCP list and exposes their model-visible tools via `miniapp_list` / `miniapp_call`; a bounded host record carries the result to the same View/executor and CAS store. Sandbox requests stay native. The opt-in discloses the bypass of Cursor team MCP/network controls, which its SDK cannot expose for detection (see [Cursor contracts](../harness/cursor/contracts.md)). Source configs stay untouched; cloud, remote nodes, HTTP and OAuth are not included. |
 | Others | Unsupported | The tool row shows the text result. Broader rerouting is planned in [proposals/mcp-apps-compat-layer.md](../proposals/mcp-apps-compat-layer.md). |
 

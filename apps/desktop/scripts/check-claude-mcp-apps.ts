@@ -58,8 +58,8 @@ const makeProvider = () => createClaudeMcpAppsProvider(binding, {
   },
   serverStatus: async () => catalog.status(binding.server),
 })
-const dispatch = (input: Omit<Parameters<typeof dispatchMcpAppsProviderRequest>[0], 'binding' | 'origin'>) =>
-  dispatchMcpAppsProviderRequest({ binding, origin: { providerSessionId: sessionId ?? '' }, ...input }, makeProvider())
+const dispatch = (input: Omit<Parameters<typeof dispatchMcpAppsProviderRequest>[0], 'binding' | 'origin'>, signal?: AbortSignal) =>
+  dispatchMcpAppsProviderRequest({ binding, origin: { providerSessionId: sessionId ?? '' }, ...input }, makeProvider(), signal)
 
 try {
   const checks = {
@@ -69,6 +69,8 @@ try {
     appOnlyCall: await dispatch({ operation: 'callTool', tool: 'fixture_next_page', args: { page: 2 } }),
     modelOnlyCall: await dispatch({ operation: 'callTool', tool: 'fixture_model_echo', args: { text: 'hi' } }),
     failingCall: await dispatch({ operation: 'callTool', tool: 'fixture_fail', args: {} }),
+    // Aborted after dispatch: the server must see the cancellation.
+    abortedCall: await dispatch({ operation: 'callTool', tool: 'fixture_slow', args: { ms: 10_000 } }, AbortSignal.timeout(500)),
   }
   const summary = {
     ready: checks.ready,
@@ -77,6 +79,7 @@ try {
     appOnlyCall: checks.appOnlyCall,
     modelOnlyCall: checks.modelOnlyCall,
     failingCall: checks.failingCall,
+    abortedCall: checks.abortedCall,
   }
   console.log(JSON.stringify({ kind: 'provider', ...summary }, null, 2))
 
@@ -98,6 +101,7 @@ try {
     appOnlyCallCompleted: checks.appOnlyCall.ok && (checks.appOnlyCall.value as { outcome: string }).outcome === 'completed',
     modelOnlyDenied: !checks.modelOnlyCall.ok && checks.modelOnlyCall.error.code === 'denied',
     failingIsUncertain: checks.failingCall.ok && (checks.failingCall.value as { outcome: string }).outcome === 'unknown_outcome',
+    abortReachedServer: lines.some((m) => m.method === 'notifications/cancelled'),
     toolUseAttached: apps.some((a) => a.row === 'tool_use' && a.app.status === 'pending'),
     toolResultAttached: apps.some((a) => a.row === 'tool_result' && a.app.toolResult?.structuredContent !== undefined),
   }

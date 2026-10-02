@@ -3926,6 +3926,8 @@ export type Messages = {
     inline: string
     fullscreen: string
     pip: string
+    shownInPanel: string
+    shownInPip: string
   }
   filePreview: {
     loadFailed: string
@@ -8063,6 +8065,8 @@ export const en: Messages = {
     inline: 'Return to Chat',
     fullscreen: 'Fullscreen',
     pip: 'Picture in Picture',
+    shownInPanel: 'Showing in the Activity panel.',
+    shownInPip: 'Showing in picture-in-picture.',
   },
   filePreview: {
     loadFailed: 'Could not read this file',

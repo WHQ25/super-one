@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { McpAppsError } from '@superone/shared/mcp-apps'
 import type { McpAppPreparedDocument } from '@superone/shared/mcp-apps-desktop'
 import { mcpAppHostContext } from '@superone/shared/mcp-apps-host/context'
-import { CodeXml, Loader2, LogIn, Maximize, Maximize2, Power, RotateCw } from 'lucide-react'
+import { CodeXml, Loader2, LogIn, Maximize, Maximize2, PanelRight, PictureInPicture2, Power, RotateCw, Undo2 } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { EmbeddedToolView } from '@/components/chat/EmbeddedToolView'
@@ -151,7 +151,13 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
   // Every state other than an available View shares one card: what is happening and what to do.
   const stateButton = (icon: ReactNode, label: string, onClick: () => void) =>
     <Button data-mcp-app-action size="sm" variant="secondary" disabled={loading} className="h-7 shrink-0 gap-1.5 px-2.5 text-xs" onClick={onClick}>{icon}{label}</Button>
-  const stateCard: { message: string; icon?: ReactNode; alert?: boolean; action?: ReactNode } | null = available ? null
+  const stateCard: { message: string; icon?: ReactNode; alert?: boolean; action?: ReactNode } | null = available
+    // A View shown elsewhere leaves its row empty; say where it went and offer the way back.
+    ? surface === 'inline' ? null : {
+      message: t(surface === 'pip' ? 'mcpApp.shownInPip' : 'mcpApp.shownInPanel'),
+      icon: surface === 'pip' ? <PictureInPicture2 className="size-3.5 shrink-0 text-muted-foreground" /> : <PanelRight className="size-3.5 shrink-0 text-muted-foreground" />,
+      action: <IconButton data-mcp-app-action size="md" tooltip={t('mcpApp.inline')} className="shrink-0" onClick={() => onMode('inline')}><Undo2 className="size-3.5" /></IconButton>,
+    }
     : preparing ? { message: t('mcpApp.loading'), icon: <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" /> }
     : revoked ? { message: t('mcpApp.revoked'), action: stateButton(<RotateCw className="size-3.5" />, t('mcpApp.restart'), () => setGeneration(value => value + 1)) }
     : error?.code === 'auth_required' ? { message: error.message, alert: true, action: stateButton(<LogIn className="size-3.5" />, t('mcpApp.authenticate'), () => void activate(true)) }

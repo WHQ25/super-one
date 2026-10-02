@@ -19,6 +19,7 @@ vi.mock('./McpAppFrame', () => ({ default: (props: McpAppFrameProps) => { frame.
 import McpAppView from './McpAppView'
 import { McpAppHostLayer } from './McpAppHostLayer'
 import { McpAppConsentComposer } from './McpAppConsent'
+import { useMcpAppLayout } from './layout-store'
 vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
 vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 600, height: 240 } as DOMRect)
 Object.defineProperty(HTMLElement.prototype, 'checkVisibility', { configurable: true, value() {
@@ -197,6 +198,19 @@ describe('MCP App desktop View lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: 'mcpApp.allow' }))
     expect(await second).toEqual({})
     expect(vi.mocked(s.api.mcpAppRequest).mock.calls.filter(call => call[2].approval).map(call => call[2].approval)).toEqual([{ challenge: 'c-second' }])
+  })
+  it('says where a View shown outside the transcript went and returns it inline', async () => {
+    const s = setup(); vi.mocked(s.api.mcpAppRegister).mockResolvedValue({ ok: true, value: { ...prepared, active: true } })
+    panel.closeMcpAppTab.mockImplementation((key: string) => useMcpAppLayout.getState().setMode(key, 'inline'))
+    s.mount(); await screen.findByTestId('frame')
+    expect(document.querySelector('[data-mcp-app-state-card]')).toBeNull()
+    act(() => useMcpAppLayout.getState().setMode('v', 'pip'))
+    expect(screen.getByText('mcpApp.shownInPip').closest('[data-mcp-app-state-card]')).toBeTruthy()
+    act(() => useMcpAppLayout.getState().setMode('v', 'fullscreen'))
+    expect(screen.getByText('mcpApp.shownInPanel')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'mcpApp.inline' }))
+    await waitFor(() => expect(document.querySelector('[data-mcp-app-state-card]')).toBeNull())
+    expect(panel.closeMcpAppTab).toHaveBeenCalledWith('v')
   })
   it('offers panel and fullscreen header actions only for Views that declare fullscreen', async () => {
     const s = setup(); vi.mocked(s.api.mcpAppRegister).mockResolvedValue({ ok: true, value: { ...prepared, active: true } })

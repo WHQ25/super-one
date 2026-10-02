@@ -4019,6 +4019,8 @@ export const zh: Messages = {
     inline: '返回聊天',
     fullscreen: '全屏',
     pip: '画中画',
+    shownInPanel: '正在活动面板中显示。',
+    shownInPip: '正在画中画中显示。',
   },
   filePreview: {
     loadFailed: '无法读取该文件',

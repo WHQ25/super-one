@@ -1,7 +1,8 @@
 import { useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@superone/ui/components/ui/button'
+import { Undo2 } from 'lucide-react'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { ToolBrandIcon } from '@/components/chat/ToolIcon'
 import { useMcpServerIcon } from '@/components/chat/use-mcp-server-icon'
 import { getToolDisplay } from '@/components/chat/tool-display'
@@ -26,7 +27,7 @@ export function McpAppPip({ appInstanceId, title, toolName, viewport, onMode }: 
     <div onPointerDown={onPointerDown} className="pointer-events-auto flex h-[30px] cursor-grab items-center gap-1 rounded-t-lg bg-background px-2 text-xs">
       <ToolBrandIcon src={icon} alt={title} icon={getToolDisplay(toolName, {}).icon} />
       <span className="min-w-0 flex-1 truncate">{title}</span>
-      <Button size="sm" variant="ghost" onPointerDown={event => event.stopPropagation()} onClick={() => onMode('inline')}>{t('mcpApp.inline')}</Button>
+      <IconButton size="sm" variant="ghost" tooltip={t('mcpApp.inline')} className="shrink-0" onPointerDown={event => event.stopPropagation()} onClick={() => onMode('inline')}><Undo2 className="size-3.5" /></IconButton>
     </div>
     <div className="pointer-events-auto relative overflow-hidden" style={{ height: layout.height }}>
       <div ref={surface} style={{ width: viewport.width, height: viewport.height, transform: `scale(${layout.width / viewport.width})`, transformOrigin: 'top left' }} />

@@ -12,6 +12,8 @@ import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { cn } from '@superone/ui/lib/utils'
 import { createDragCapture } from '@/lib/drag-capture'
 import { clearUnseenCompleted } from '@/stores/chat-store/helpers/unseen-completed'
+import { useHasMcpAppConsent } from '@/components/mcp-apps/consent-store'
+import { McpAppConsentComposer } from '@/components/mcp-apps/McpAppConsent'
 
 const OFFSET = 8
 const DEFAULT_PANEL_W = 360
@@ -102,6 +104,9 @@ export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchor
 
   const isRunning = sessionStatus === 'streaming' || sessionStatus === 'background'
   const pendingReason = getPendingReason(pendingPermissions, pendingQuestion, pendingPlanApproval, t)
+  // Collapsed, the bubble itself opens into the App's message approval; expanded,
+  // ChatContent swaps it into the composer slot. Agent decisions keep the bubble.
+  const appConsent = useHasMcpAppConsent(sessionId) && !isOpen && !pendingReason
 
   // Clear unseen flag when user opens panel
   useEffect(() => {
@@ -180,13 +185,25 @@ export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchor
     if (!isOpen) setExpansionComplete(false)
   }, [isOpen])
 
+  const consentRef = useRef<HTMLDivElement>(null)
+  const [consentH, setConsentH] = useState(0)
+  useLayoutEffect(() => {
+    const element = consentRef.current
+    if (!appConsent || !element) return
+    const measure = () => setConsentH(element.offsetHeight)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [appConsent])
+
   // Compute target dimensions
   const collapsedW = pendingReason
     ? Math.min(COLLAPSED_PENDING_PADDING + pendingTextW, COLLAPSED_PENDING_MAX_W)
     : COLLAPSED_SIZE
-  const targetW = isOpen ? panelW : collapsedW
-  const targetH = isOpen ? expandedH : COLLAPSED_SIZE
-  const targetRadius = isOpen ? 16 : COLLAPSED_SIZE / 2
+  const targetW = isOpen || appConsent ? panelW : collapsedW
+  const targetH = isOpen ? expandedH : appConsent ? consentH : COLLAPSED_SIZE
+  const targetRadius = isOpen || appConsent ? 16 : COLLAPSED_SIZE / 2
 
   // Sync motion-value position to anchor rest whenever anchor/size/window changes.
   // Skipped during drag/resize — those write to motion values directly.
@@ -438,6 +455,11 @@ export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchor
             >
               <Plus className="size-3.5" />
             </button>
+          </div>
+        ) : appConsent ? (
+          // Laid out at the final width so the bubble's growth clips the card instead of reflowing it.
+          <div ref={consentRef} className="shrink-0 bg-card" style={{ width: panelW }}>
+            <McpAppConsentComposer sessionId={sessionId} framed={false} />
           </div>
         ) : (
           <CollapsedChatPanelView

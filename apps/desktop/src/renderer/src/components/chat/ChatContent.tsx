@@ -44,6 +44,8 @@ import {
   useCodexRealtimeViewStore,
 } from '@/stores/codex-realtime-view'
 import { useRealtimeCallStore } from '@/stores/realtime-call'
+import { useHasMcpAppConsent } from '@/components/mcp-apps/consent-store'
+import { McpAppConsentComposer } from '@/components/mcp-apps/McpAppConsent'
 
 interface ChatContentProps {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
@@ -499,6 +501,9 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   const needsDecision = (pendingPermissions?.length ?? 0) > 0
     || pendingQuestion != null
     || pendingPlanApproval != null
+  // An App asking to send a message takes the slot, but never over the agent's
+  // own decisions: those are answered in the composer underneath first.
+  const appConsent = useHasMcpAppConsent(displayedSessionId) && !needsDecision
   // The local snapshot needs no backing thread, so every Codex session on screen
   // restores it; only the provider reconcile waits for the thread id, because
   // reaching Codex would otherwise start a backend just to read history.
@@ -679,9 +684,13 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
           </div>
           <ComposerSwitch
             className="mx-auto w-full min-w-0 max-w-3xl"
-            kind={showRealtimeComposer ? 'voice' : 'text'}
+            kind={appConsent ? 'app-consent' : showRealtimeComposer ? 'voice' : 'text'}
             alignTo="text"
-            render={(kind) => (kind === 'voice' ? <RealtimeCallComposer /> : <ChatComposerShell showTodoPopup />)}
+            render={(kind) => (
+              kind === 'app-consent' ? <McpAppConsentComposer sessionId={displayedSessionId!} />
+                : kind === 'voice' ? <RealtimeCallComposer />
+                : <ChatComposerShell showTodoPopup />
+            )}
           />
         </>
       )}

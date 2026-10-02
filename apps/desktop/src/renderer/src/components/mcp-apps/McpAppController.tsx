@@ -21,7 +21,7 @@ import { useMcpAppDisplayMode } from './use-display-mode'
 import { McpAppPip } from './McpAppPip'
 import { createDesktopMcpAppExecutor, type McpAppConsent } from './desktop-executor'
 import { navigateMcpAppSession } from './session-navigation'
-import { McpAppConsent as ConsentDialog, type PendingMcpConsent } from './McpAppConsent'
+import { requestMcpAppConsent } from './consent-store'
 
 const Frame = lazy(() => import('./McpAppFrame'))
 type Ready = Extract<McpAppPreparedDocument, { state: 'ready' }>
@@ -55,7 +55,6 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
   const [collapsing, setCollapsing] = useState(false)
   const [emphasized, setEmphasized] = useState(false)
   const pulseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const [pending, setPending] = useState<PendingMcpConsent[]>([])
   const anchor = useRef<HTMLDivElement>(null)
   const [inlineWidth, setInlineWidth] = useState(0)
   const isDark = useIsDark()
@@ -70,14 +69,7 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
     setError(value instanceof McpAppsError ? value : new McpAppsError('invalid', value instanceof Error ? value.message : String(value)))
   }, [])
   useEffect(() => () => clearTimeout(pulseTimer.current), [])
-  const consent = useCallback<McpAppConsent>((prompt, signal) => new Promise(resolve => {
-    if (signal.aborted) { resolve(null); return }
-    const id = crypto.randomUUID()
-    const finish = (value: Record<string, never> | null) => { signal.removeEventListener('abort', abort); setPending(queue => queue.filter(item => item.id !== id)); resolve(value) }
-    const abort = () => finish(null)
-    signal.addEventListener('abort', abort, { once: true })
-    setPending(queue => [...queue, { id, prompt, finish }])
-  }), [])
+  const consent = useCallback<McpAppConsent>((prompt, signal) => requestMcpAppConsent(route.sessionId, prompt, signal), [route.sessionId])
   useEffect(() => {
     let cancelled = false
     let documentId: string | undefined
@@ -205,6 +197,5 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
     {ready && executor && <Suspense fallback={null}><Frame key={reload} app={app} meta={ready.meta} registration={ready.document} api={api} executor={executor} context={context} active={active}
       onHost={() => {}} onInitialized={modes => { setViewModes(modes); setInitialized(true) }} onError={onError} onUnknown={() => setUnknown(true)} onRevoked={() => setRevoked(true)} onHeight={setHeight} /></Suspense>}
     {surface === 'pip' && ready && !revoked && <McpAppPip appInstanceId={app.appInstanceId} title={app.binding.server} toolName={toolName} viewport={viewport} onMode={onMode} />}
-    <ConsentDialog pending={pending[0]} />
   </>
 }

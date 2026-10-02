@@ -18,6 +18,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 vi.mock('./McpAppFrame', () => ({ default: (props: McpAppFrameProps) => { frame.props = props; useEffect(() => { frame.initialized.push(props); props.onInitialized(frame.modes) }, []); return <div data-testid="frame" /> } }))
 import McpAppView from './McpAppView'
 import { McpAppHostLayer } from './McpAppHostLayer'
+import { McpAppConsentComposer } from './McpAppConsent'
 vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
 vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 600, height: 240 } as DOMRect)
 Object.defineProperty(HTMLElement.prototype, 'checkVisibility', { configurable: true, value() {
@@ -28,7 +29,7 @@ const app: ToolAppAttachment = { appInstanceId: 'v', binding: { node: 'local', s
 const prepared = { state: 'ready', document: { id: 'doc', url: 'superone-mcp-app://origin/view', origin: 'superone-mcp-app://origin', appInstanceId: 'v' }, active: false, meta: {} } as const
 function setup() {
   const api: McpAppDesktopApi = { mcpAppRegister: vi.fn<McpAppDesktopApi['mcpAppRegister']>(async () => ({ ok: true, value: prepared })), mcpAppRequest: vi.fn<McpAppDesktopApi['mcpAppRequest']>(async () => ({ ok: true, value: {} })), mcpAppCancel: vi.fn(async () => {}), mcpAppRelease: vi.fn(async () => {}), onMcpAppDocumentRevoked: () => () => {}, mcpAppsAuthenticate: vi.fn<McpAppDesktopApi['mcpAppsAuthenticate']>(async () => ({ ok: true, value: null })) }
-  return { api, mount: () => render(<><McpAppHostLayer /><McpAppView app={app} route={{ projectPath: '/original-project', sessionId: 'original' }} api={api} /></>) }
+  return { api, mount: () => render(<><McpAppHostLayer /><McpAppView app={app} route={{ projectPath: '/original-project', sessionId: 'original' }} api={api} /><McpAppConsentComposer sessionId="original" /></>) }
 }
 afterEach(() => { cleanup(); frame.props = null; frame.initialized = []; frame.modes = ['inline', 'fullscreen', 'pip']; vi.clearAllMocks() })
 describe('MCP App desktop View lifecycle', () => {
@@ -171,12 +172,31 @@ describe('MCP App desktop View lifecycle', () => {
     let call!: Promise<unknown>
     act(() => { call = frame.props!.executor.sendMessage({ role: 'user', content: [{ type: 'text', text: '<img src=x onerror=evil()>' }] }, new AbortController().signal).catch(error => error) })
     await screen.findByText('<img src=x onerror=evil()>'); expect(document.querySelector('img')).toBeNull()
-    fireEvent.click(screen.getByText('mcpApp.deny')); expect(await call).toMatchObject({ code: 'denied' }); expect(s.api.mcpAppRequest).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /mcpApp\.deny/ })); expect(await call).toMatchObject({ code: 'denied' }); expect(s.api.mcpAppRequest).toHaveBeenCalledTimes(1)
     act(() => frame.props!.onUnknown())
     expect(screen.getByText('mcpApp.unknown')).toBeTruthy()
     act(() => frame.props!.onRevoked())
     fireEvent.click(screen.getByRole('button', { name: 'mcpApp.restart' }))
     await waitFor(() => expect(s.api.mcpAppRegister).toHaveBeenCalledTimes(2))
+  })
+  it('queues message approvals in the session composer; Escape declines and Allow consumes the challenge once', async () => {
+    const s = setup(); s.mount(); await screen.findByTestId('frame')
+    const textOf = (request: Parameters<McpAppDesktopApi['mcpAppRequest']>[2]) => request.operation === 'sendMessage' && request.params.content[0]?.type === 'text' ? request.params.content[0].text : ''
+    vi.mocked(s.api.mcpAppRequest).mockImplementation(async (_project, _session, request) => request.approval
+      ? { ok: true, value: {} }
+      : { ok: false, error: { code: 'approval_required', challenge: `c-${textOf(request)}`, prompt: { kind: 'sendMessage', server: 'fixture', text: textOf(request), nonTextBlocks: 0 } } })
+    const send = (text: string) => frame.props!.executor.sendMessage({ role: 'user', content: [{ type: 'text', text }] }, new AbortController().signal).catch(error => error)
+    let first!: Promise<unknown>, second!: Promise<unknown>
+    act(() => { first = send('first'); second = send('second') })
+    await screen.findByText('first')
+    expect(document.querySelector('[data-mcp-app-consent-queue]')).toHaveTextContent('1/2')
+    fireEvent.keyDown(document.querySelector('[data-mcp-app-consent]')!, { key: 'Escape' })
+    expect(await first).toMatchObject({ code: 'denied' })
+    await screen.findByText('second')
+    fireEvent.click(screen.getByRole('button', { name: 'mcpApp.allow' }))
+    expect(await second).toEqual({})
+    expect(vi.mocked(s.api.mcpAppRequest).mock.calls.filter(call => call[2].approval).map(call => call[2].approval)).toEqual([{ challenge: 'c-second' }])
   })
   it('offers panel and fullscreen header actions only for Views that declare fullscreen', async () => {
     const s = setup(); vi.mocked(s.api.mcpAppRegister).mockResolvedValue({ ok: true, value: { ...prepared, active: true } })

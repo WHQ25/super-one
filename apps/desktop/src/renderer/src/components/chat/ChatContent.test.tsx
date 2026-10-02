@@ -247,6 +247,7 @@ import { ChatContent } from './ChatContent'
 import { useAppStore } from '@/stores/app'
 import { resetCodexRealtimeHydrationForTests, useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { resetRealtimeCallForTests, useRealtimeCallStore } from '@/stores/realtime-call'
+import { requestMcpAppConsent } from '@/components/mcp-apps/consent-store'
 import { createRef } from 'react'
 
 function renderContent() {
@@ -393,6 +394,34 @@ describe('ChatContent worktree-removed banner', () => {
     // The indicator shares the composer's hover group with the controls.
     expect(composer.contains(screen.getByTestId('realtime-call-indicator'))).toBe(true)
     expect(screen.queryByTestId('chat-input')).toBeNull()
+  })
+
+  it('swaps an App message approval into the slot, but yields to agent decisions', async () => {
+    hoisted.sessionState._worktreeRemoved = false
+    hoisted.sessionState.session = { sessionId: 'sid-1' }
+    hoisted.sessionState.messages = []
+    hoisted.isRemoteLocked.value = false
+    const controller = new AbortController()
+    const other = requestMcpAppConsent('sid-2', { kind: 'sendMessage', server: 'fixture', text: 'elsewhere', nonTextBlocks: 0 }, controller.signal)
+
+    const { rerender } = renderContent()
+    expect(screen.getByTestId('chat-input')).toBeInTheDocument()
+
+    let answer!: Promise<unknown>
+    act(() => { answer = requestMcpAppConsent('sid-1', { kind: 'sendMessage', server: 'fixture', text: 'hello from the app', nonTextBlocks: 0 }, controller.signal) })
+    expect(await screen.findByText('hello from the app')).toBeInTheDocument()
+    expect(screen.queryByText('elsewhere')).toBeNull()
+    expect(screen.queryByTestId('chat-input')).toBeNull()
+
+    Object.assign(hoisted.sessionState, { pendingPermissions: [{ requestId: 'r1' }] })
+    rerender(<ChatContent scrollViewportRef={createRef<HTMLDivElement>()} />)
+    expect(screen.getByTestId('chat-input')).toBeInTheDocument()
+    expect(screen.queryByText('hello from the app')).toBeNull()
+
+    Object.assign(hoisted.sessionState, { pendingPermissions: undefined })
+    controller.abort()
+    expect(await answer).toBeNull()
+    expect(await other).toBeNull()
   })
 })
 

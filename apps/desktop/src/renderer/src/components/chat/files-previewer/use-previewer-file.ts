@@ -29,6 +29,30 @@ function mediaUrl(file: PreviewerFile): string {
   return file.kind === 'video' || file.kind === 'audio' || file.kind === 'model' ? toMediaUrl(file.absolutePath) : toLocalFileUrl(file.absolutePath)
 }
 
+/**
+ * A node-session media file has no desktop file:// path; resolve it through
+ * the same remote-media path the markdown images use — readProjectFile ->
+ * resolveSessionFile -> a data URI, or the mirror's local-file URL for
+ * session-zone media (inline-files-previewer.md §4.3).
+ */
+function isRemoteMedia(root: string, file: PreviewerFile): boolean {
+  return !!parseRemoteProjectKey(root) && !file.absolutePath.startsWith('data:')
+}
+
+async function resolveRemoteMediaUrl(root: string, file: PreviewerFile): Promise<string | null> {
+  const resolved = await resolveDisplayMediaSrc(resolveMediaSrcForProject(file.absolutePath, root))
+  if (!resolved) return null
+  // Zone media comes back as its mirror's local-file URL: from here on
+  // it is a local file, and streams the way one does.
+  const mirror = localFileUrlToPath(resolved)
+  return mirror ? mediaUrl({ ...file, absolutePath: mirror }) : resolved
+}
+
+/** The URL a media-class slide loads from; `null` when a remote file cannot be resolved. */
+export function resolvePreviewerMediaUrl(root: string, file: PreviewerFile): Promise<string | null> {
+  return isRemoteMedia(root, file) ? resolveRemoteMediaUrl(root, file) : Promise.resolve(mediaUrl(file))
+}
+
 function languageToError(language: string): PreviewerLoadError | null {
   if (language === 'binary') return 'binary'
   if (language === 'too-large') return 'too_large'
@@ -53,20 +77,12 @@ export function usePreviewerFile(root: string, file: PreviewerFile, active: bool
       return
     }
     if (!TEXT_KINDS.has(file.kind)) {
-      // A node-session media file has no desktop file:// path; resolve it through
-      // the same remote-media path the markdown images use — readProjectFile ->
-      // resolveSessionFile -> a data URI, or the mirror's local-file URL for
-      // session-zone media (inline-files-previewer.md §4.3).
-      if (parseRemoteProjectKey(root) && !file.absolutePath.startsWith('data:')) {
+      if (isRemoteMedia(root, file)) {
         let cancelled = false
         setState({ status: 'loading' })
-        void resolveDisplayMediaSrc(resolveMediaSrcForProject(file.absolutePath, root)).then((resolved) => {
+        void resolveRemoteMediaUrl(root, file).then((url) => {
           if (cancelled) return
-          if (!resolved) { setState({ status: 'error', error: 'io' }); return }
-          // Zone media comes back as its mirror's local-file URL: from here on
-          // it is a local file, and streams the way one does.
-          const mirror = localFileUrlToPath(resolved)
-          setState({ status: 'ready', url: mirror ? mediaUrl({ ...file, absolutePath: mirror }) : resolved })
+          setState(url ? { status: 'ready', url } : { status: 'error', error: 'io' })
         }).catch(() => { if (!cancelled) setState({ status: 'error', error: 'io' }) })
         return () => { cancelled = true }
       }

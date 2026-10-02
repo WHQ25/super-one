@@ -45,7 +45,7 @@ function parseResult(value: unknown): Phase {
 }
 
 /** One request per (root, path) at a time; the answer is memoised when it carries bytes. */
-function loadImage(root: string | undefined, path: string, confirmed: boolean): Promise<Phase> {
+export function loadHostImage(root: string | undefined, path: string, confirmed: boolean): Promise<Phase> {
   const store = cacheKey(root, path)
   const cached = loaded.get(store)
   if (cached) return Promise.resolve({ kind: 'ready', dataUri: cached })
@@ -125,14 +125,14 @@ export function PortableHostImage({ path, root, label, className, pictureClassNa
       setPhase({ kind: 'ready', dataUri: cached })
     } else {
       setPhase({ kind: 'loading' })
-      void loadImage(root, path, false).then((next) => { if (live) setPhase(next) })
+      void loadHostImage(root, path, false).then((next) => { if (live) setPhase(next) })
     }
     return () => { live = false }
   }, [root, path])
 
   const confirm = () => {
     setPhase({ kind: 'loading' })
-    void loadImage(root, path, true).then(setPhase)
+    void loadHostImage(root, path, true).then(setPhase)
   }
 
   const Box = inline ? 'span' : 'div'

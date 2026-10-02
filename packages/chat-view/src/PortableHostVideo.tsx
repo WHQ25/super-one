@@ -50,7 +50,7 @@ function parseResult(value: unknown): Phase {
 }
 
 /** One request per (root, path) at a time; the answer is memoised when it carries a poster. */
-function loadPoster(root: string | undefined, path: string): Promise<Phase> {
+export function loadHostVideoPoster(root: string | undefined, path: string): Promise<Phase> {
   const store = cacheKey(root, path)
   const cached = loaded.get(store)
   if (cached) return Promise.resolve({ kind: 'ready', poster: cached })
@@ -116,7 +116,7 @@ export function PortableHostVideo({ path, root, label, className, tileClassName,
       setPhase({ kind: 'ready', poster: cached })
     } else {
       setPhase({ kind: 'loading' })
-      void loadPoster(root, path).then((next) => { if (live) setPhase(next) })
+      void loadHostVideoPoster(root, path).then((next) => { if (live) setPhase(next) })
     }
     return () => { live = false }
   }, [root, path])

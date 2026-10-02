@@ -174,6 +174,13 @@ export const RemoteNodeSession: Story = {
   },
 }
 
+/** Media and chips only: the stage shrinks to the tallest slide (the 640×400 image at the card width). */
+export const MediaOnly: Story = {
+  name: 'Media only · stage fits the tallest slide',
+  args: { payload: payload([files.image, files.video, files.audio, files.missing]) },
+}
+/** All chips: the stage drops to its floor. */
+export const ChipsOnly: Story = { args: { payload: payload([files.pdf, files.missing, files.binary]) } }
 export const Missing: Story = { args: { payload: payload([files.missing]) } }
 export const Slow: Story = { name: 'Slow host · spinners until the bytes land', args: { mode: 'slow' } }
 export const Unavailable: Story = {

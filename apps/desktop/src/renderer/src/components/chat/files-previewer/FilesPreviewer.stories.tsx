@@ -24,6 +24,16 @@ const diagramSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400
 </svg>`
 const DIAGRAM_URL = `data:image/svg+xml;utf8,${encodeURIComponent(diagramSvg)}`
 
+/** A wide, short strip: what a cropped UI screenshot looks like. */
+function stripUrl(height: number, label: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 ${height}" width="1600" height="${height}">
+  <rect width="1600" height="${height}" fill="#1f1f1f"/>
+  <rect x="40" y="24" width="480" height="48" rx="12" fill="#2e2e2e"/>
+  <text x="72" y="56" font-family="system-ui" font-size="22" fill="#e5e5e5">${label}</text>
+</svg>`
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+}
+
 const TEXT_FILES: Record<string, { content: string; language: string }> = {
   [`${ROOT}/src/renderer/components/chat/FilesPreviewer.tsx`]: {
     language: 'typescript',
@@ -190,6 +200,18 @@ function RemoteFixtures({ children }: { children: React.ReactNode }) {
 export const RemoteNodeSession: Story = {
   args: { payload: { kind: 'native', nativeType: 'files-previewer', title: 'evidence', root: NODE_ROOT, files: [nodeFiles.shot, nodeFiles.report, nodeFiles.source] } },
   decorators: [(Story) => <RemoteFixtures><div style={{ maxWidth: 720, containerType: 'inline-size' }}><Story /></div></RemoteFixtures>],
+}
+
+/** Media only: the card shrinks to its tallest slide (the 1600×600 strip scaled to the width) instead of the fixed height. */
+export const ShortMedia: Story = {
+  args: {
+    payload: payload([
+      { path: 'shots/composer.png', absolutePath: stripUrl(400, 'Composer chip'), name: 'composer.png', kind: 'image', size: 4096, note: 'Context chip in the composer.' },
+      { path: 'shots/toolbar.png', absolutePath: stripUrl(600, 'Toolbar'), name: 'toolbar.png', kind: 'image', size: 4096 },
+      files.audio,
+      files.missing,
+    ]),
+  },
 }
 
 export const LongNote: Story = { args: { payload: payload([files.longNote, files.text]) } }

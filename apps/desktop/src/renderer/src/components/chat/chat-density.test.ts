@@ -22,7 +22,7 @@ describe('chat density utilities', () => {
         .split('\n')
         .flatMap((line, index) => {
           // Stage card: paging files must not reflow the transcript, so the
-          // height is a fixed px pair (PREVIEWER_CARD_HEIGHT_CLASS).
+          // height and its cap are fixed px pairs (PREVIEWER_CARD_HEIGHT_CLASS).
           if (line.includes('PREVIEWER_CARD_HEIGHT_CLASS =')) return []
           return FIXED_DENSITY_UTILITY.test(line)
             ? [`${path.slice(CHAT_COMPONENT_DIR.length + 1)}:${index + 1}`]

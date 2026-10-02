@@ -9,6 +9,7 @@ import { PreviewerFullscreen } from './PreviewerFullscreen'
 import { PreviewerStage } from './PreviewerStage'
 import { PreviewerDots, PreviewerFileChip } from './previewer-chrome'
 import { usePreviewerFile } from './use-previewer-file'
+import { useStageContentHeight } from './use-stage-height'
 
 export interface FilesPreviewerProps {
   payload: NativeWidgetPayload
@@ -16,11 +17,13 @@ export interface FilesPreviewerProps {
 }
 
 /**
- * Fixed height so switching files never reflows the transcript. The chat pane
- * is the `@container` (ChatPanel.tsx); below `@lg` (512px) the pane is a
- * floating panel or a narrow split, where 640px would fill the whole viewport.
+ * `fill` is the fixed height a card takes when a slide fills whatever it gets
+ * (text, PDF, model); `fit` caps a card sized to its tallest media slide
+ * (use-stage-height.ts). The chat pane is the `@container` (ChatPanel.tsx);
+ * below `@lg` (512px) the pane is a floating panel or a narrow split, where
+ * 640px would fill the whole viewport.
  */
-export const PREVIEWER_CARD_HEIGHT_CLASS = 'h-[480px] @lg:h-[640px]'
+const PREVIEWER_CARD_HEIGHT_CLASS = { fill: 'h-[480px] @lg:h-[640px]', fit: 'max-h-[480px] @lg:max-h-[640px]' }
 
 /** True when the click landed on a media element's native control bar or on a button the stage owns. */
 export function isStageControlTarget(target: EventTarget | null): boolean {
@@ -30,7 +33,7 @@ export function isStageControlTarget(target: EventTarget | null): boolean {
 }
 
 /**
- * The card: a fixed-height carousel of files with a note under each. It is a
+ * The card: a carousel, as tall as its tallest slide, of files with a note under each. It is a
  * stage, not a workspace — arrows and dots move between files, the stage click
  * opens fullscreen, and that is the whole interaction surface.
  */
@@ -40,7 +43,9 @@ export function FilesPreviewer({ payload, projectPath }: FilesPreviewerProps) {
   const [index, setIndex] = useState(0)
   const [fullscreen, setFullscreen] = useState(false)
   const [modelViewStates, setModelViewStates] = useState<Record<string, ModelPreviewViewState>>({})
+  const cardRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
+  const [cardWidth, setCardWidth] = useState(0)
   const fullscreenButtonRef = useRef<HTMLButtonElement>(null)
   const root = payload.root ?? ''
 
@@ -53,6 +58,15 @@ export function FilesPreviewer({ payload, projectPath }: FilesPreviewerProps) {
   const goTo = useCallback((i: number) => setIndex(Math.max(0, Math.min(count - 1, i))), [count])
 
   const { state, markUndecodable, restat } = usePreviewerFile(root, file, true)
+  const stageHeight = useStageContentHeight(root, files, cardWidth)
+
+  useEffect(() => {
+    const card = cardRef.current
+    if (!card) return
+    const observer = new ResizeObserver(([entry]) => setCardWidth(entry.contentRect.width))
+    observer.observe(card)
+    return () => observer.disconnect()
+  }, [])
 
   // A retry re-asks the host for its verdict; a file that appeared since the call replaces its row.
   const retry = useCallback(async () => {
@@ -99,7 +113,8 @@ export function FilesPreviewer({ payload, projectPath }: FilesPreviewerProps) {
 
   return (
     <div
-      className={cn('group/previewer @container my-3 flex flex-col overflow-hidden', PREVIEWER_CARD_HEIGHT_CLASS)}
+      ref={cardRef}
+      className={cn('group/previewer @container my-3 flex flex-col overflow-hidden', stageHeight === null ? PREVIEWER_CARD_HEIGHT_CLASS.fill : PREVIEWER_CARD_HEIGHT_CLASS.fit)}
       tabIndex={0}
       onKeyDown={onKeyDown}
       data-testid="files-previewer"
@@ -126,7 +141,8 @@ export function FilesPreviewer({ payload, projectPath }: FilesPreviewerProps) {
 
       <div
         ref={stageRef}
-        className="relative flex min-h-0 flex-1 cursor-zoom-in items-center justify-center overflow-hidden rounded-lg bg-transparent"
+        className={cn('relative flex min-h-0 cursor-zoom-in items-center justify-center overflow-hidden rounded-lg bg-transparent', stageHeight === null && 'flex-1')}
+        style={stageHeight === null ? undefined : { height: stageHeight }}
         onClickCapture={onStageClickCapture}
         onContextMenu={(e) => { if (!isStageControlTarget(e.target)) e.preventDefault() }}
         data-testid="previewer-stage"
@@ -149,9 +165,20 @@ export function FilesPreviewer({ payload, projectPath }: FilesPreviewerProps) {
       </div>
 
       <div className="flex shrink-0 flex-col items-center gap-2 px-3 pt-3 pb-1">
-        {file.note && (
-          <div className="line-clamp-2 max-w-prose text-center text-xs leading-snug text-muted-foreground" title={file.note} data-testid="previewer-note">
-            {file.note}
+        {/* Every note stacks in one cell so the footer is as tall as the longest. */}
+        {files.some((f) => f.note) && (
+          <div className="grid max-w-prose">
+            {files.map((f, i) => f.note && (
+              <div
+                key={i}
+                className={cn('col-start-1 row-start-1 line-clamp-2 text-center text-xs leading-snug text-muted-foreground', f !== file && 'invisible')}
+                title={f.note}
+                aria-hidden={f !== file}
+                data-testid={f === file ? 'previewer-note' : undefined}
+              >
+                {f.note}
+              </div>
+            ))}
           </div>
         )}
         {multi && <PreviewerDots count={count} index={index} onSelect={goTo} />}

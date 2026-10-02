@@ -12,13 +12,15 @@ import { PortableMarkdown } from './PortableMarkdown'
 import { PortableTurnContext } from './portable-turn-context'
 import { resolveLanguage } from './portable-code-plugin'
 import { beginSwipe, endSwipe, trackSwipe, type SwipeTracking } from './previewer-swipe'
+import { usePortableStageHeight } from './use-portable-stage-height'
 
 /**
- * Stage height on the phone. The stage, not the card, is fixed: a note that
- * wraps to a second line grows the card below the stage instead of shrinking
- * the preview, so paging between files never resizes the image under the
- * finger. Shorter than the desktop's so the message above and the dots below
- * stay on screen together at the common viewport heights.
+ * Stage height on the phone, and its cap when the stage fits its tallest
+ * media slide (use-portable-stage-height.ts). The stage, not the card, is
+ * sized: a note that wraps to a second line grows the card below the stage
+ * instead of shrinking the preview, so paging between files never resizes the
+ * image under the finger. Shorter than the desktop's so the message above and
+ * the dots below stay on screen together at the common viewport heights.
  */
 export const PORTABLE_PREVIEWER_STAGE_HEIGHT = 320
 
@@ -216,8 +218,8 @@ function Stage({ file, root, scheme }: { file: PreviewerFile; root: string; sche
 }
 
 /**
- * The phone's files previewer: a fixed-height-stage carousel the finger pages
- * through, one file in the DOM at a time. The stage is a real preview for
+ * The phone's files previewer: a carousel the finger pages through, one file
+ * in the DOM at a time, its stage as tall as the tallest slide. The stage is a real preview for
  * images and small text, a poster for video, and a chip for the rest; a tap
  * anywhere on it opens the file in the shell's own fullscreen preview
  * (`previewFile`), so the card never grows a viewer of its own. No arrows —
@@ -232,8 +234,19 @@ export function PortableFilesPreviewer({ payload, toolUseId }: { payload: Native
   const count = files.length
   const file = files[Math.min(index, count - 1)]
   const tracking = useRef<SwipeTracking | null>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
+  const [cardWidth, setCardWidth] = useState(0)
+  const stageHeight = usePortableStageHeight(root, files, cardWidth, PORTABLE_PREVIEWER_STAGE_HEIGHT) ?? PORTABLE_PREVIEWER_STAGE_HEIGHT
   // Set on a release that was a swipe; the click the browser synthesises next is dropped.
   const suppressClick = useRef(false)
+
+  useEffect(() => {
+    const card = cardRef.current
+    if (!card) return
+    const observer = new ResizeObserver(([entry]) => setCardWidth(entry.contentRect.width))
+    observer.observe(card)
+    return () => observer.disconnect()
+  }, [])
 
   const goTo = useCallback((next: number) => {
     setIndex(Math.max(0, Math.min(count - 1, next)))
@@ -293,6 +306,7 @@ export function PortableFilesPreviewer({ payload, toolUseId }: { payload: Native
 
   return (
     <div
+      ref={cardRef}
       className="my-2 flex flex-col"
       data-native-widget="files-previewer"
       data-tool-use-id={toolUseId}
@@ -310,7 +324,7 @@ export function PortableFilesPreviewer({ payload, toolUseId }: { payload: Native
 
       <div
         className="relative shrink-0 overflow-hidden rounded-lg bg-muted/30"
-        style={{ height: PORTABLE_PREVIEWER_STAGE_HEIGHT, touchAction: 'pan-y' }}
+        style={{ height: stageHeight, touchAction: 'pan-y' }}
         data-previewer-stage
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

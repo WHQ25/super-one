@@ -172,13 +172,13 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
     <div>
       <EmbeddedToolView pinnedHeader collapsed={collapsed} onToggleCollapsed={!available ? undefined : () => { if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) setCollapsing(true); setCollapsed(value => !value) }} title={mcpAppHeaderTitle(mcpAppServerTitle(app), app.presentation?.toolTitle ?? owner.title ?? app.resourceUri)} icon={<ToolBrandIcon src={icon} alt={app.binding.server} icon={getToolDisplay(toolName, {}).icon} />} actions={<>
         {canExpand && <>
-          <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.openInPanel')} onClick={() => void openSurface(false)}><Maximize2 className="size-3.5" /></IconButton>
-          <IconButton size="xs" variant="ghost" tooltip={t('tooltips.maximizeActivityPanel')} onClick={() => void openSurface(true)}><Maximize className="size-3.5" /></IconButton>
+          <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.openInPanel')} onClick={() => void openSurface(false)}><Maximize2 className="size-3" /></IconButton>
+          <IconButton size="xs" variant="ghost" tooltip={t('tooltips.maximizeActivityPanel')} onClick={() => void openSurface(true)}><Maximize className="size-3" /></IconButton>
         </>}
-        {owner.details && <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.toolDetails')} aria-expanded={detailsOpen} onClick={() => setDetailsOpen(value => !value)}><CodeXml className="size-3.5" /></IconButton>}
+        {owner.details && <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.toolDetails')} aria-expanded={detailsOpen} onClick={() => setDetailsOpen(value => !value)}><CodeXml className="size-3" /></IconButton>}
         {restoring && (activationError?.code === 'auth_required'
-          ? <IconButton data-mcp-app-activate data-emphasized={emphasized || undefined} size="xs" variant="ghost" disabled={loading} tooltip={t('mcpApp.authenticate')} className={emphasized ? 'animate-pulse ring-2 ring-ring/50' : undefined} onClick={() => void activate(true)}><LogIn className="size-3.5" /></IconButton>
-          : <IconButton data-mcp-app-activate data-emphasized={emphasized || undefined} size="xs" variant="ghost" disabled={loading} aria-label={t('mcpApp.activate')} tooltip={t('mcpApp.activateTooltip')} className={emphasized ? 'animate-pulse ring-2 ring-ring/50' : undefined} onClick={() => void activate()}><Power className="size-3.5" /></IconButton>)}
+          ? <IconButton data-mcp-app-activate data-emphasized={emphasized || undefined} size="xs" variant="ghost" disabled={loading} tooltip={t('mcpApp.authenticate')} className={emphasized ? 'animate-pulse ring-2 ring-ring/50' : undefined} onClick={() => void activate(true)}><LogIn className="size-3" /></IconButton>
+          : <IconButton data-mcp-app-activate data-emphasized={emphasized || undefined} size="xs" variant="ghost" disabled={loading} aria-label={t('mcpApp.activate')} tooltip={t('mcpApp.activateTooltip')} className={emphasized ? 'animate-pulse ring-2 ring-ring/50' : undefined} onClick={() => void activate()}><Power className="size-3" /></IconButton>)}
       </>}>
         {stateCard && <div data-mcp-app-state-card className="mb-2 flex min-h-[50px] min-w-0 items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs">
           <div className="flex min-w-0 items-center gap-2">

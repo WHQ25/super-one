@@ -28,18 +28,19 @@ function Attachment({ item, onRemove, removing }: { item: ContextAttachment; onR
   const { tokens: { colors } } = useMobileTheme()
   const { t } = useMobileLocale()
   const thumbnail = safeImageUri(item.thumbnail ?? item.icon)
+  const title = item.fields === undefined ? item.title : item.fields === 1 ? t('1 field') : t('{{count}} fields').replace('{{count}}', String(item.fields))
   return <>
     <View style={{ maxWidth: '100%', flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: 8 }}>
-      <Pressable ref={menu.ref} accessibilityRole="button" accessibilityLabel={item.title} onPress={menu.open}
+      <Pressable ref={menu.ref} accessibilityRole="button" accessibilityLabel={title} onPress={menu.open}
         style={{ flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 32, paddingHorizontal: 8 }}>
         {thumbnail ? <ContextThumbnail key={thumbnail} src={thumbnail} /> : <FileText size={14} color={colors.mutedForeground} />}
-        <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12 }}>{item.source ? `${item.source} · ` : ''}{item.title}</Text>
+        <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: 12 }}>{item.source ? `${item.source} · ` : ''}{title}</Text>
       </Pressable>
-      {onRemove ? <Pressable accessibilityRole="button" accessibilityLabel={`${t('Remove Attachment')}: ${item.title}`} accessibilityState={{ disabled: removing }} disabled={removing} hitSlop={6} onPress={() => onRemove(item.id)} style={{ padding: 8 }}>
+      {onRemove ? <Pressable accessibilityRole="button" accessibilityLabel={`${t('Remove Attachment')}: ${title}`} accessibilityState={{ disabled: removing }} disabled={removing} hitSlop={6} onPress={() => onRemove(item.id)} style={{ padding: 8 }}>
         {removing ? <ActivityIndicator size="small" color={colors.mutedForeground} /> : <X size={12} color={colors.mutedForeground} />}
       </Pressable> : null}
     </View>
-    <AnchoredMenu anchor={menu.anchor} title={item.title} onDismiss={menu.close} width={320}>
+    <AnchoredMenu anchor={menu.anchor} title={title} onDismiss={menu.close} width={320}>
       <ContextAttachmentPreview item={item} />
     </AnchoredMenu>
   </>

@@ -38,6 +38,22 @@ function withoutSourcePrefix(text: string, source: string): string {
   return rest.replace(/^[\s:·|,\-–—]+/, '') || text
 }
 
+/**
+ * Text that labels structured data (`selected view: {...}`) is titled by the
+ * label alone; bare data by its field count. The data stays in the preview.
+ */
+function structuredTitle(text: string): { title: string } | { title: string; fields: number } | undefined {
+  const start = text.search(/[{[]/)
+  if (start < 0) return undefined
+  let data: unknown
+  try { data = JSON.parse(text.slice(start)) } catch { return undefined }
+  if (!data || typeof data !== 'object') return undefined
+  const label = text.slice(0, start).replace(/[\s:：·|,=\-–—]+$/, '').trim()
+  if (label) return { title: label }
+  const fields = Array.isArray(data) ? data.length : Object.keys(data).length
+  return { title: `${fields} ${fields === 1 ? 'field' : 'fields'}`, fields }
+}
+
 export function mcpAppContextItems(app: ToolAppAttachment, messageId: string, scheme: 'light' | 'dark' = 'light'): McpAppContextAttachment[] {
   const state = mcpAppContextState(app)
   if (!state) return []
@@ -49,8 +65,10 @@ export function mcpAppContextItems(app: ToolAppAttachment, messageId: string, sc
     if (!mcpAppContextBlockVisible(block)) return []
     const data = mcpAppContent([block], source, `mcp:context:${app.appInstanceId}:${state.updateId}:${blockIndex}`)
     const item = data.items[0]
-    return [{ ...base, ...item, id: `${app.appInstanceId}:${state.updateId}:${blockIndex}`, blockIndex,
-      title: item?.title ?? (contextAttachmentPreview(withoutSourcePrefix(data.text, source), 100) || `${source} context`),
+    const text = withoutSourcePrefix(data.text, source)
+    const structured = item?.title ? undefined : structuredTitle(text)
+    return [{ ...base, ...item, ...structured, id: `${app.appInstanceId}:${state.updateId}:${blockIndex}`, blockIndex,
+      title: item?.title ?? structured?.title ?? (contextAttachmentPreview(text, 100) || `${source} context`),
       previewImages: previews(data.images),
       ...(data.images[0]?.mimeType.startsWith('image/') && !item?.thumbnail ? { thumbnail: previews(data.images)[0]?.src } : {}),
       ...(data.text ? { content: contextAttachmentPreview(data.text) } : {}) }]

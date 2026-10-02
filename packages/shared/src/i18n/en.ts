@@ -3909,6 +3909,8 @@ export type Messages = {
   }
   mcpApp: {
     removeContext: string
+    contextFields_one: string
+    contextFields_other: string
     loading: string
     activate: string
     activateHint: string
@@ -8066,6 +8068,8 @@ export const en: Messages = {
   },
   mcpApp: {
     removeContext: 'Remove Context',
+    contextFields_one: '{{count}} field',
+    contextFields_other: '{{count}} fields',
     loading: 'Loading app…',
     activate: 'Activate',
     activateHint: 'Restored from history. Activate to reconnect and reload the App.',

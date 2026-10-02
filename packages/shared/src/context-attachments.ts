@@ -6,6 +6,8 @@ export interface ContextAttachment {
   /** The source's own icon; `thumbnail` previews the attached content itself. */
   icon?: string
   content?: string
+  /** Structured data with no label of its own: `title` is "N fields" in English; renderers word it in the user's language. */
+  fields?: number
   thumbnail?: string
   previewImages?: Array<{ src: string; alt: string }>
 }

@@ -4002,6 +4002,8 @@ export const zh: Messages = {
   },
   mcpApp: {
     removeContext: '移除上下文',
+    contextFields_one: '{{count}} 个字段',
+    contextFields_other: '{{count}} 个字段',
     loading: '正在加载应用…',
     activate: '激活',
     activateHint: '从历史记录恢复。激活后将重新连接并加载应用。',

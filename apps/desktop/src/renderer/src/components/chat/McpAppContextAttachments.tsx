@@ -18,10 +18,11 @@ export function McpAppContextAttachments() {
   const routeKey = JSON.stringify(route)
   const currentRoute = useRef(routeKey); currentRoute.current = routeKey
   const isDark = useIsDark()
-  const items = useMemo(() => mcpAppContextAttachments(messages ?? [], isDark ? 'dark' : 'light'), [messages, isDark])
+  const { t } = useTranslation()
+  const items = useMemo(() => mcpAppContextAttachments(messages ?? [], isDark ? 'dark' : 'light')
+    .map(item => item.fields === undefined ? item : { ...item, title: t('mcpApp.contextFields', { count: item.fields }) }), [messages, isDark, t])
   const [pending, setPending] = useState<{ route: string; views: string[] }>({ route: '', views: [] })
   const [error, setError] = useState<{ route: string; message: string }>()
-  const { t } = useTranslation()
   const removing = pending.route === routeKey ? items.filter(item => pending.views.includes(item.appInstanceId)).map(item => item.id) : []
   const remove = async (id: string) => {
     const item = items.find(item => item.id === id)

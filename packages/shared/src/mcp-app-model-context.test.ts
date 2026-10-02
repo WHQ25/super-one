@@ -11,7 +11,7 @@ const message = (value: ToolAppAttachment) => ({ id: 'm', content: [{ type: 'too
 describe('persistent composer model context', () => {
   it('drops a repeated source name from derived titles but keeps explicit titles and content', () => {
     const titles = (blocks: unknown[]) => mcpAppContextItems({ ...app, modelContext: { updateId: 'u', content: blocks } }, 'm').map(item => item.title)
-    expect(titles([{ type: 'text', text: 'Fixture CAD selected view: {"part":"dial"}' }])).toEqual(['selected view: {"part":"dial"}'])
+    expect(titles([{ type: 'text', text: 'Fixture CAD selected view: {"part":"dial"}' }])).toEqual(['selected view'])
     expect(titles([{ type: 'text', text: 'fixture cad — dial' }])).toEqual(['dial'])
     expect(titles([{ type: 'text', text: 'Fixture CADence notes' }])).toEqual(['Fixture CADence notes'])
     expect(titles([{ type: 'text', text: 'Fixture CAD' }])).toEqual(['Fixture CAD'])
@@ -19,6 +19,15 @@ describe('persistent composer model context', () => {
     const [item] = mcpAppContextItems({ ...app, modelContext: { updateId: 'u', content: [{ type: 'text', text: 'Fixture CAD selected view: {}' }] } }, 'm')
     expect(item?.content).toBe('Fixture CAD selected view: {}')
   })
+  it('titles structured data by its label, or by its field count when it has none', () => {
+    const items = (text: string) => mcpAppContextItems({ ...app, modelContext: { updateId: 'u', content: [{ type: 'text', text }] } }, 'm')
+    expect(items('selected view: {"page":"viewer","dirty":false,"part":"dial"}')[0]).toMatchObject({ title: 'selected view', content: 'selected view: {"page":"viewer","dirty":false,"part":"dial"}' })
+    expect(items('{"page":"viewer","part":"dial"}')[0]).toMatchObject({ title: '2 fields', fields: 2 })
+    expect(items('[1]')[0]).toMatchObject({ title: '1 field', fields: 1 })
+    expect(items('Picked {not json} here')[0]?.title).toBe('Picked {not json} here')
+    expect(items('selected view: {"part":"dial"}')[0]?.fields).toBeUndefined()
+  })
+
   it('shows each visible block, safe thumbnail and bounded text; hides background while a block is visible', () => {
     const items = mcpAppContextItems(app, 'm')
     expect(items.map(item => item.blockIndex)).toEqual([0, 2])

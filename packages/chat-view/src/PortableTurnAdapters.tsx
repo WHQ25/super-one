@@ -206,7 +206,7 @@ function PortableClaudeTool(props: ClaudeToolPresenterProps) {
       app={props.app}
       messageId={messageId}
       toolName={props.toolName}
-      row={({ trailing, expanded } = {}) => <PortableClaudeToolRow {...props} trailing={trailing} defaultExpanded={expanded} />}
+      details={<PortableClaudeToolRow {...props} defaultExpanded />}
     />
   )
 }

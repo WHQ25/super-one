@@ -108,7 +108,7 @@ interface Args {
 
 const TOOL_NAME = 'mcp__mcp-apps-fixture__fixture_list_items'
 
-function ToolRow({ app, trailing, expanded }: { app: ToolAppAttachment; trailing?: ReactNode; expanded?: boolean }) {
+function ToolRow({ app, expanded }: { app: ToolAppAttachment; expanded?: boolean }) {
   const result = (app.toolResult as ReturnType<typeof page> | undefined)?.content[0]?.text
   return (
     <PortableToolRow
@@ -117,7 +117,6 @@ function ToolRow({ app, trailing, expanded }: { app: ToolAppAttachment; trailing
       input={JSON.stringify(app.toolInput ?? {})}
       status={app.status === 'pending' ? 'streaming' : 'complete'}
       result={result}
-      trailing={trailing}
       defaultExpanded={expanded}
       presentation={app.presentation}
     />
@@ -139,7 +138,7 @@ function Preview({ app, arrival, mode, neighbours }: Args) {
     return true
   })
   if (!noted) return null
-  const view = <PortableMcpAppView app={app} messageId="m" toolName={TOOL_NAME} row={({ trailing, expanded } = {}) => <ToolRow app={app} trailing={trailing} expanded={expanded} />} />
+  const view = <PortableMcpAppView app={app} messageId="m" toolName={TOOL_NAME} details={<ToolRow app={app} expanded />} />
   return (
     <MockHost mode={mode}>
       {neighbours ? (

@@ -1,11 +1,12 @@
 import type { McpAppResourceSnapshot } from '@superone/shared/mcp-app-resource'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Power, RotateCw } from 'lucide-react'
 import { McpAppsError, type ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { McpAppStateButton, type McpAppState } from '@superone/ui/components/ui/mcp-app-state'
+import { McpAppChrome } from './McpAppChrome'
 import { markMcpAppActivated, mcpAppAwaitsLiveActivation, mcpAppNeedsActivation, startMcpApp } from './mcp-app-document'
 import { runMcpAppOperation, type McpAppConsent } from './mcp-app-executor'
-import { PortableInlineAction } from './PortableBlockHeader'
 
 const McpAppFrame = lazy(() => import('./McpAppFrame'))
 
@@ -19,21 +20,19 @@ export interface PortableMcpAppViewProps {
   app: ToolAppAttachment
   messageId: string
   toolName: string
-  row: McpAppToolRow
+  /** The call's tool row, expanded, behind the header's details toggle. */
+  details: ReactNode
 }
-
-/** The call's own tool row: a state and its one action at its right edge, or its details open. */
-export type McpAppToolRow = (options?: { trailing?: ReactNode; expanded?: boolean }) => ReactNode
 
 /**
  * An MCP App View in place of its tool row, the way a widget stands in a reply. Until there
- * is a View to show (loading, failed, or restored without a snapshot), the call keeps its
- * normal row and the state sits in it. The resource is the host's persisted snapshot when
+ * is a View to show (loading, failed, or restored without a snapshot), the desktop's state
+ * card stands in its place under the same header. The resource is the host's persisted snapshot when
  * the attachment carries one; otherwise the host loads (and persists) it. A live View
  * activates itself first, since the host answers a device only for Views it activated. A View
  * restored from history waits for the user before anything reaches the server.
  */
-export function PortableMcpAppView({ app, messageId, toolName, row }: PortableMcpAppViewProps) {
+export function PortableMcpAppView({ app, messageId, toolName, details }: PortableMcpAppViewProps) {
   const { t } = useTranslation()
   const target = useMemo(() => ({ messageId, appInstanceId: app.appInstanceId }), [messageId, app.appInstanceId])
   const [loaded, setLoaded] = useState<Resource | null>(null)
@@ -73,27 +72,27 @@ export function PortableMcpAppView({ app, messageId, toolName, row }: PortableMc
   const html = resource?.html
   const meta = useMemo(() => resource?.meta, [resource?.hash]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const chrome = (card: McpAppState) => <McpAppChrome app={app} toolName={toolName} details={details} state={card} />
+  const loading: McpAppState = { message: t('mcpApp.loading'), icon: <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" /> }
   if (state.kind === 'failed') {
+    // Signing in happens on the desktop; the phone can only try again afterwards.
     const auth = state.error instanceof McpAppsError && state.error.code === 'auth_required'
-    return row({ trailing: (
-      <>
-        <span className="min-w-0 truncate text-error">
-          {auth ? t('mcpApp.authRequired', { server: app.binding.server }) : t('mcpApp.loadFailed', { error: state.error.message })}
-        </span>
-        <PortableInlineAction label={t('mcpApp.retry')} onPress={() => { void load(waitsForUser || activating) }} />
-      </>
-    ) })
+    return chrome({
+      message: auth ? t('mcpApp.authRequired', { server: app.binding.server }) : state.error.message,
+      alert: true,
+      action: <McpAppStateButton icon={<RotateCw className="size-3.5" />} label={t('mcpApp.retry')} onClick={() => { void load(waitsForUser || activating) }} />,
+    })
   }
-  const loading = <><Loader2 className="size-3 shrink-0 animate-spin" /><span className="truncate">{t('mcpApp.loading')}</span></>
   // A live View's snapshot waits for its activation: the View calls out as soon as it runs.
   if (!html || activating) {
-    return row({ trailing: state.kind === 'loading' || !waitsForUser
-      ? loading
-      : <PortableInlineAction label={t('mcpApp.activate')} onPress={() => { void load(true) }} /> })
+    return chrome(state.kind === 'loading' || !waitsForUser ? loading : {
+      message: t('mcpApp.restored'),
+      action: <McpAppStateButton icon={<Power className="size-3.5" />} label={t('mcpApp.activate')} onClick={() => { void load(true) }} />,
+    })
   }
   return (
-    <Suspense fallback={row({ trailing: loading })}>
-      <McpAppFrame app={app} messageId={messageId} html={html} meta={meta} toolName={toolName} row={row} />
+    <Suspense fallback={chrome(loading)}>
+      <McpAppFrame app={app} messageId={messageId} html={html} meta={meta} toolName={toolName} details={details} />
     </Suspense>
   )
 }

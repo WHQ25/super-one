@@ -42,9 +42,11 @@ async function mount(app: ToolAppAttachment = saved) {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   container = document.createElement('div'); document.body.append(container)
   root = createRoot(container)
-  await act(async () => root!.render(createElement(McpAppFrame, { app, messageId: 'm', html, meta: saved.resource!.meta, toolName: 'mcp__cad__library', row: () => null })))
+  await act(async () => root!.render(createElement(McpAppFrame, { app, messageId: 'm', html, meta: saved.resource!.meta, toolName: 'mcp__cad__library', details: null })))
   await vi.waitFor(() => expect(wire.pairs).toHaveLength(1))
 }
+
+const activateButton = () => container!.querySelector<HTMLButtonElement>('[data-mcp-app-activate]')
 
 async function initialize(index: number) {
   const view = new App({ name: 'fixture', version: '1' }, {}, { autoResize: false })
@@ -56,6 +58,47 @@ async function initialize(index: number) {
   return { view, inputs, results }
 }
 
+it('loads behind the state card and shows the View once it initializes', async () => {
+  await mount()
+  expect(container!.querySelector('[data-mcp-app-state-card]')?.textContent).toContain('mcpApp.loading')
+  await initialize(0)
+  expect(container!.querySelector('[data-mcp-app-state-card]')).toBeNull()
+  expect(container!.querySelector('iframe')).not.toBeNull()
+})
+
+it('explains an omitted result on the activate action and drops it after activation', async () => {
+  wire.native.mockResolvedValue({ response: { ok: true, value: {} } })
+  await mount({ ...saved, toolResult: undefined, toolResultOmitted: { bytes: 1050849, reason: 'size_limit' } })
+  await initialize(0)
+  expect(activateButton()?.getAttribute('aria-label')).toBe('mcpApp.activate')
+  expect(activateButton()?.hasAttribute('data-mcp-app-result-omitted')).toBe(true)
+  await act(async () => activateButton()!.click())
+  await vi.waitFor(() => expect(wire.pairs).toHaveLength(2))
+  await initialize(1)
+  expect(activateButton()).toBeNull()
+})
+
+it('bounds an oversized legacy result before rendering the phone View', async () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    await mount({ ...saved, toolResult: { content: [{ type: 'text', text: 'x'.repeat(2 * 1024 * 1024) }] } })
+    await initialize(0)
+    expect(activateButton()?.hasAttribute('data-mcp-app-result-omitted')).toBe(true)
+    expect(warn).toHaveBeenCalled()
+  } finally { warn.mockRestore() }
+})
+
+it('collapses the View into a row and expands it again', async () => {
+  await mount(); await initialize(0)
+  const surface = container!.querySelector('iframe')!.parentElement!
+  const toggle = container!.querySelector<HTMLElement>('[data-embedded-tool-toggle]')!
+  await act(async () => toggle.click())
+  expect(surface.style.height).toBe('0px')
+  expect(container!.querySelector('[data-embedded-tool-header]')?.hasAttribute('data-collapsed')).toBe(true)
+  await act(async () => container!.querySelector<HTMLElement>('[data-embedded-tool-title]')!.click())
+  expect(surface.style.height).not.toBe('0px')
+})
+
 it.each([false, true])('activation reinitializes pinned phone HTML and context (omitted=%s)', async omitted => {
   wire.native.mockResolvedValue({ response: { ok: true, value: {} } })
   const app = omitted ? { ...saved, toolResult: undefined, toolResultOmitted: { bytes: 1050849, reason: 'size_limit' as const } } : saved
@@ -63,7 +106,7 @@ it.each([false, true])('activation reinitializes pinned phone HTML and context (
   const first = await initialize(0), oldFrame = container!.querySelector('iframe')
   await act(async () => { await expect(first.view.callServerTool({ name: 'cad.listParts' })).rejects.toThrow('Activate') })
   expect(wire.native).not.toHaveBeenCalled()
-  const activate = [...container!.querySelectorAll('button')].find(button => button.textContent === 'mcpApp.activate')!
+  const activate = activateButton()!
   await act(async () => activate.click())
   await vi.waitFor(() => expect(wire.pairs).toHaveLength(2))
   const next = await initialize(1), frame = container!.querySelector('iframe')!
@@ -85,7 +128,7 @@ it('failed phone activation keeps the existing document and reports the error', 
   wire.native.mockResolvedValue({ response: { ok: false, error: { code: 'not_connected', message: 'Server unavailable' } } })
   await mount(); await initialize(0)
   const oldFrame = container!.querySelector('iframe')
-  const activate = [...container!.querySelectorAll('button')].find(button => button.textContent === 'mcpApp.activate')!
+  const activate = activateButton()!
   await act(async () => activate.click())
   expect(container!.querySelector('iframe')).toBe(oldFrame)
   expect(container!.textContent).toContain('Server unavailable')

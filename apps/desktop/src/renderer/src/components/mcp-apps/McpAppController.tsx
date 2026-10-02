@@ -6,9 +6,9 @@ import { McpAppsError } from '@superone/shared/mcp-apps'
 import type { McpAppPreparedDocument } from '@superone/shared/mcp-apps-desktop'
 import { mcpAppHostContext } from '@superone/shared/mcp-apps-host/context'
 import { CodeXml, Loader2, LogIn, Maximize, Maximize2, PanelRight, PictureInPicture2, Power, RotateCw, Undo2 } from 'lucide-react'
-import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
-import { EmbeddedToolView } from '@/components/chat/EmbeddedToolView'
+import { EmbeddedToolView } from '@superone/ui/components/ui/embedded-tool-view'
+import { McpAppActivateButton, McpAppStateButton, McpAppStateCard, useMcpAppEmphasis, type McpAppState } from '@superone/ui/components/ui/mcp-app-state'
 import { ToolBrandIcon } from '@/components/chat/ToolIcon'
 import { useMcpServerIcon } from '@/components/chat/use-mcp-server-icon'
 import { getToolDisplay } from '@/components/chat/tool-display'
@@ -53,22 +53,18 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
   const [collapsed, setCollapsed] = useState(false)
   // Only the user's toggle animates; View-reported height changes apply immediately.
   const [collapsing, setCollapsing] = useState(false)
-  const [emphasized, setEmphasized] = useState(false)
-  const pulseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const [emphasized, emphasize] = useMcpAppEmphasis()
   const anchor = useRef<HTMLDivElement>(null)
   const [inlineWidth, setInlineWidth] = useState(0)
   const isDark = useIsDark()
   const icon = mcpAppPresentationIcon(app.presentation, isDark ? 'dark' : 'light') ?? fallbackIcon
   const onError = useCallback((value: unknown) => {
     if (value instanceof McpAppsError && value.code === 'inactive') {
-      setActive(false); setError(null); setEmphasized(true)
-      clearTimeout(pulseTimer.current)
-      pulseTimer.current = setTimeout(() => setEmphasized(false), 1800)
+      setActive(false); setError(null); emphasize()
       return
     }
     setError(value instanceof McpAppsError ? value : new McpAppsError('invalid', value instanceof Error ? value.message : String(value)))
-  }, [])
-  useEffect(() => () => clearTimeout(pulseTimer.current), [])
+  }, [emphasize])
   const consent = useCallback<McpAppConsent>((prompt, signal) => requestMcpAppConsent(route.sessionId, prompt, signal), [route.sessionId])
   useEffect(() => {
     let cancelled = false
@@ -150,10 +146,8 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
   const canExpand = available && surface === 'inline' && viewModes.includes('fullscreen')
     && (mcpAppResourceModes(ready?.meta) ?? ['fullscreen']).includes('fullscreen')
   const preparing = !available && !error && !unknown && !revoked && (loading || (!!ready && !initialized))
-  // Every state other than an available View shares one card: what is happening and what to do.
-  const stateButton = (icon: ReactNode, label: string, onClick: () => void) =>
-    <Button data-mcp-app-action size="sm" variant="secondary" disabled={loading} className="h-7 shrink-0 gap-1.5 px-2.5 text-xs" onClick={onClick}>{icon}{label}</Button>
-  const stateCard: { message: string; icon?: ReactNode; alert?: boolean; action?: ReactNode } | null = available
+  const stateButton = (icon: ReactNode, label: string, onClick: () => void) => <McpAppStateButton icon={icon} label={label} disabled={loading} onClick={onClick} />
+  const stateCard: McpAppState | null = available
     // A View shown elsewhere leaves its row empty; say where it went and offer the way back.
     ? surface === 'inline' ? null : {
       message: t(surface === 'pip' ? 'mcpApp.shownInPip' : 'mcpApp.shownInPanel'),
@@ -170,25 +164,19 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
     : null
   const row = <>
     <div>
-      <EmbeddedToolView pinnedHeader collapsed={collapsed} onToggleCollapsed={!available ? undefined : () => { if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) setCollapsing(true); setCollapsed(value => !value) }} title={mcpAppHeaderTitle(mcpAppServerTitle(app), app.presentation?.toolTitle ?? owner.title ?? app.resourceUri)} icon={<ToolBrandIcon src={icon} alt={app.binding.server} icon={getToolDisplay(toolName, {}).icon} />} actions={<>
+      <EmbeddedToolView pinnedHeader collapsed={collapsed} expandLabel={t('tooltips.expandView')} collapseLabel={t('tooltips.collapseView')} onToggleCollapsed={!available ? undefined : () => { if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) setCollapsing(true); setCollapsed(value => !value) }} title={mcpAppHeaderTitle(mcpAppServerTitle(app), app.presentation?.toolTitle ?? owner.title ?? app.resourceUri)} icon={<ToolBrandIcon src={icon} alt={app.binding.server} icon={getToolDisplay(toolName, {}).icon} />} actions={<>
         {canExpand && <>
           <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.openInPanel')} onClick={() => void openSurface(false)}><Maximize2 className="size-3" /></IconButton>
           <IconButton size="xs" variant="ghost" tooltip={t('tooltips.maximizeActivityPanel')} onClick={() => void openSurface(true)}><Maximize className="size-3" /></IconButton>
         </>}
         {owner.details && <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.toolDetails')} aria-expanded={detailsOpen} onClick={() => setDetailsOpen(value => !value)}><CodeXml className="size-3" /></IconButton>}
         {restoring && (activationError?.code === 'auth_required'
-          ? <IconButton data-mcp-app-activate data-emphasized={emphasized || undefined} size="xs" variant="ghost" disabled={loading} tooltip={t('mcpApp.authenticate')} className={emphasized ? 'animate-pulse ring-2 ring-ring/50' : undefined} onClick={() => void activate(true)}><LogIn className="size-3" /></IconButton>
-          : <IconButton data-mcp-app-activate data-emphasized={emphasized || undefined} size="xs" variant="ghost" disabled={loading} aria-label={t('mcpApp.activate')} data-mcp-app-result-omitted={app.toolResultOmitted ? '' : undefined}
+          ? <McpAppActivateButton emphasized={emphasized} disabled={loading} tooltip={t('mcpApp.authenticate')} onClick={() => void activate(true)}><LogIn className="size-3" /></McpAppActivateButton>
+          : <McpAppActivateButton emphasized={emphasized} disabled={loading} aria-label={t('mcpApp.activate')} data-mcp-app-result-omitted={app.toolResultOmitted ? '' : undefined}
             // Why the snapshot is empty belongs with the action that refills it.
-            tooltip={t(app.toolResultOmitted ? 'mcpApp.resultOmitted' : 'mcpApp.activateTooltip')} className={emphasized ? 'animate-pulse ring-2 ring-ring/50' : undefined} onClick={() => void activate()}><Power className="size-3" /></IconButton>)}
+            tooltip={t(app.toolResultOmitted ? 'mcpApp.resultOmitted' : 'mcpApp.activateTooltip')} onClick={() => void activate()}><Power className="size-3" /></McpAppActivateButton>)}
       </>}>
-        {stateCard && <div data-mcp-app-state-card className="mb-2 flex min-h-[50px] min-w-0 items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs">
-          <div className="flex min-w-0 items-center gap-2">
-            {stateCard.icon}
-            <p role={stateCard.alert ? 'alert' : undefined} className={`min-w-0 break-words ${stateCard.alert ? 'text-error' : 'text-muted-foreground'}`}>{stateCard.message}</p>
-          </div>
-          {stateCard.action}
-        </div>}
+        {stateCard && <McpAppStateCard state={stateCard} />}
         {!collapsed && restoring && activationError && <div data-mcp-app-restore-note className="mb-2 min-w-0 text-xs">
           <p role="alert" className="break-words text-error">{activationError.message}</p>
         </div>}

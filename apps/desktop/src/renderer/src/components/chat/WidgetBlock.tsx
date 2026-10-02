@@ -8,7 +8,7 @@ import { Download, Bookmark } from 'lucide-react'
 import { WidgetLayoutFrame } from '@superone/chat-view/WidgetLayoutFrame'
 import { useChatStore } from '@/stores/chat'
 import { WidgetSaveDialog } from './WidgetSaveDialog'
-import { EmbeddedToolView } from './EmbeddedToolView'
+import { EmbeddedToolView } from '@superone/ui/components/ui/embedded-tool-view'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 
 const THROTTLE_MS = 150

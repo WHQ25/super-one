@@ -99,7 +99,7 @@ describe('builtin registry', () => {
     const moonshot = findPlatform(BUILTIN_PLATFORMS, 'moonshot')
     expect(kimi?.brand).toBe('kimi')
     expect(moonshot?.brand).toBe('moonshot')
-    expect(kimi?.plans.map((p) => p.id)).toEqual(['plus', 'pro', 'max', 'andante', 'moderato', 'allegretto'])
+    expect(kimi?.plans.map((p) => p.id)).toEqual(['plus', 'pro', 'max'])
     expect(moonshot?.plans.map((p) => p.id).sort()).toEqual(['cn', 'global'])
     for (const plan of [...(kimi?.plans ?? []), ...(moonshot?.plans ?? [])]) {
       expect(plan.endpoints.some((e) => e.protocols.includes('anthropic-messages'))).toBe(true)

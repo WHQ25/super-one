@@ -1,3 +1,4 @@
+import { LEGACY_KIMI_PLANS } from './builtin'
 import { relaySiteRoot } from './relay-identify'
 import type { CapabilityTask } from '../agent-types'
 import type { CatalogProvider, ModelCatalog } from '../model-catalog-types'
@@ -33,6 +34,7 @@ export function findPlatform(platforms: Platform[], platformId: string): Platfor
 
 export function findPlan(platform: Platform | undefined, planId: string): Plan | undefined {
   return platform?.plans.find((p) => p.id === planId)
+    ?? (platform?.id === 'kimi' ? LEGACY_KIMI_PLANS.find((p) => p.id === planId) : undefined)
 }
 
 export function findEndpoint(plan: Plan | undefined, endpointId: string): ServiceEndpoint | undefined {

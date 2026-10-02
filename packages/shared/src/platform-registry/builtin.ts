@@ -288,6 +288,67 @@ const KIMI_EXTRA_ENV = {
   CLAUDE_CODE_EFFORT_LEVEL: 'max',
 }
 
+// Retired plans remain resolvable for existing credentials, but are not selectable.
+export const LEGACY_KIMI_PLANS: Platform['plans'] = [
+  {
+    id: 'andante',
+    name: 'Andante（已停售）',
+    description: 'Kimi Code Andante（旧套餐，已停售）— kimi-for-coding，1M 上下文',
+    auth: 'api-key',
+    baseUrl: 'https://api.kimi.com',
+    apiKeyUrl: 'https://www.kimi.com/code/console',
+    endpoints: [
+      anthropic('/coding', {
+        extraEnv: KIMI_ANDANTE_EXTRA_ENV,
+        modelMapping: KIMI_ANDANTE_MODELS,
+        models: KIMI_ANDANTE_ENDPOINT_MODELS,
+      }),
+      openaiChat('/coding/v1', {
+        modelMapping: KIMI_ANDANTE_MODELS,
+        models: KIMI_ANDANTE_ENDPOINT_MODELS,
+      }),
+    ],
+  },
+  {
+    id: 'moderato',
+    name: 'Moderato（已停售）',
+    description: 'Kimi Code Moderato（旧套餐，已停售，对应 Plus）— k3 / kimi-for-coding，K3 限 256k 上下文',
+    auth: 'api-key',
+    baseUrl: 'https://api.kimi.com',
+    apiKeyUrl: 'https://www.kimi.com/code/console',
+    endpoints: [
+      anthropic('/coding', {
+        extraEnv: KIMI_MODERATO_EXTRA_ENV,
+        modelMapping: KIMI_MODERATO_MODELS,
+        models: KIMI_MODERATO_ENDPOINT_MODELS,
+      }),
+      openaiChat('/coding/v1', {
+        modelMapping: KIMI_MODERATO_MODELS,
+        models: KIMI_MODERATO_ENDPOINT_MODELS,
+      }),
+    ],
+  },
+  {
+    id: 'allegretto',
+    name: 'Allegretto+（已停售）',
+    description: 'Kimi Code Allegretto 及以上（旧套餐，已停售，对应 Pro）— k3[1m] / HighSpeed，最高 1M 上下文',
+    auth: 'api-key',
+    baseUrl: 'https://api.kimi.com',
+    apiKeyUrl: 'https://www.kimi.com/code/console',
+    endpoints: [
+      anthropic('/coding', {
+        extraEnv: KIMI_ALLEGRETTO_EXTRA_ENV,
+        modelMapping: KIMI_ALLEGRETTO_MODELS,
+        models: KIMI_ALLEGRETTO_ENDPOINT_MODELS,
+      }),
+      openaiChat('/coding/v1', {
+        modelMapping: KIMI_ALLEGRETTO_MODELS,
+        models: KIMI_ALLEGRETTO_ENDPOINT_MODELS,
+      }),
+    ],
+  },
+]
+
 // --- built-in platforms -------------------------------------------------------
 
 export const BUILTIN_PLATFORMS: Platform[] = [
@@ -495,63 +556,6 @@ export const BUILTIN_PLATFORMS: Platform[] = [
           openaiChat('/coding/v1', {
             modelMapping: KIMI_PRO_MODELS,
             models: KIMI_PRO_ENDPOINT_MODELS,
-          }),
-        ],
-      },
-      {
-        id: 'andante',
-        name: 'Andante（已停售）',
-        description: 'Kimi Code Andante（旧套餐，已停售）— kimi-for-coding，1M 上下文',
-        auth: 'api-key',
-        baseUrl: 'https://api.kimi.com',
-        apiKeyUrl: 'https://www.kimi.com/code/console',
-        endpoints: [
-          anthropic('/coding', {
-            extraEnv: KIMI_ANDANTE_EXTRA_ENV,
-            modelMapping: KIMI_ANDANTE_MODELS,
-            models: KIMI_ANDANTE_ENDPOINT_MODELS,
-          }),
-          openaiChat('/coding/v1', {
-            modelMapping: KIMI_ANDANTE_MODELS,
-            models: KIMI_ANDANTE_ENDPOINT_MODELS,
-          }),
-        ],
-      },
-      {
-        id: 'moderato',
-        name: 'Moderato（已停售）',
-        description: 'Kimi Code Moderato（旧套餐，已停售，对应 Plus）— k3 / kimi-for-coding，K3 限 256k 上下文',
-        auth: 'api-key',
-        baseUrl: 'https://api.kimi.com',
-        apiKeyUrl: 'https://www.kimi.com/code/console',
-        endpoints: [
-          anthropic('/coding', {
-            extraEnv: KIMI_MODERATO_EXTRA_ENV,
-            modelMapping: KIMI_MODERATO_MODELS,
-            models: KIMI_MODERATO_ENDPOINT_MODELS,
-          }),
-          openaiChat('/coding/v1', {
-            modelMapping: KIMI_MODERATO_MODELS,
-            models: KIMI_MODERATO_ENDPOINT_MODELS,
-          }),
-        ],
-      },
-      {
-        id: 'allegretto',
-        name: 'Allegretto+（已停售）',
-        description: 'Kimi Code Allegretto 及以上（旧套餐，已停售，对应 Pro）— k3[1m] / HighSpeed，最高 1M 上下文',
-        auth: 'api-key',
-        baseUrl: 'https://api.kimi.com',
-        apiKeyUrl: 'https://www.kimi.com/code/console',
-        endpoints: [
-          anthropic('/coding', {
-            extraEnv: KIMI_ALLEGRETTO_EXTRA_ENV,
-            modelMapping: KIMI_ALLEGRETTO_MODELS,
-            models: KIMI_ALLEGRETTO_ENDPOINT_MODELS,
-          }),
-          openaiChat('/coding/v1', {
-            modelMapping: KIMI_ALLEGRETTO_MODELS,
-            models: KIMI_ALLEGRETTO_ENDPOINT_MODELS,
           }),
         ],
       },

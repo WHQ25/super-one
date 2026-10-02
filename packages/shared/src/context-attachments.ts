@@ -3,6 +3,8 @@ export interface ContextAttachment {
   id: string
   title: string
   source?: string
+  /** The source's own icon; `thumbnail` previews the attached content itself. */
+  icon?: string
   content?: string
   thumbnail?: string
   previewImages?: Array<{ src: string; alt: string }>

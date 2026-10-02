@@ -27,7 +27,7 @@ function Attachment({ item, onRemove, removing }: { item: ContextAttachment; onR
   const menu = useMenuAnchor()
   const { tokens: { colors } } = useMobileTheme()
   const { t } = useMobileLocale()
-  const thumbnail = safeImageUri(item.thumbnail)
+  const thumbnail = safeImageUri(item.thumbnail ?? item.icon)
   return <>
     <View style={{ maxWidth: '100%', flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: 8 }}>
       <Pressable ref={menu.ref} accessibilityRole="button" accessibilityLabel={item.title} onPress={menu.open}

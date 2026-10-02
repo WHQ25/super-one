@@ -9,6 +9,16 @@ const app: ToolAppAttachment = { appInstanceId: 'view', binding: { node: 'local'
 const message = (value: ToolAppAttachment) => ({ id: 'm', content: [{ type: 'tool_result' as const, toolUseId: 'call', summary: '', app: value }] })
 
 describe('persistent composer model context', () => {
+  it('drops a repeated source name from derived titles but keeps explicit titles and content', () => {
+    const titles = (blocks: unknown[]) => mcpAppContextItems({ ...app, modelContext: { updateId: 'u', content: blocks } }, 'm').map(item => item.title)
+    expect(titles([{ type: 'text', text: 'Fixture CAD selected view: {"part":"dial"}' }])).toEqual(['selected view: {"part":"dial"}'])
+    expect(titles([{ type: 'text', text: 'fixture cad — dial' }])).toEqual(['dial'])
+    expect(titles([{ type: 'text', text: 'Fixture CADence notes' }])).toEqual(['Fixture CADence notes'])
+    expect(titles([{ type: 'text', text: 'Fixture CAD' }])).toEqual(['Fixture CAD'])
+    expect(titles([{ type: 'text', text: 'x', _meta: { 'openai/title': 'Fixture CAD dial' } }])).toEqual(['Fixture CAD dial'])
+    const [item] = mcpAppContextItems({ ...app, modelContext: { updateId: 'u', content: [{ type: 'text', text: 'Fixture CAD selected view: {}' }] } }, 'm')
+    expect(item?.content).toBe('Fixture CAD selected view: {}')
+  })
   it('shows each visible block, safe thumbnail and bounded text; hides background while a block is visible', () => {
     const items = mcpAppContextItems(app, 'm')
     expect(items.map(item => item.blockIndex)).toEqual([0, 2])
@@ -22,7 +32,7 @@ describe('persistent composer model context', () => {
     for (const content of [[hidden], []]) {
       const value = { ...app, modelContext: { ...app.modelContext!, content } }
       const [item] = mcpAppContextItems(value, 'm')
-      expect(item).toMatchObject({ title: 'Fixture CAD context', thumbnail: 'https://example.com/icon.png' })
+      expect(item).toMatchObject({ title: 'Fixture CAD context', icon: 'https://example.com/icon.png' })
       expect(item.blockIndex).toBeUndefined()
       expect(item.content).toContain('selected')
       expect(removeMcpAppContextBlock(value, item.updateId)).toBeNull()

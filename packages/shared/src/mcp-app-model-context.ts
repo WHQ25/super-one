@@ -30,18 +30,27 @@ export function mcpAppContextInput(app: ToolAppAttachment) {
   return mcpAppContent(app.modelContext?.content ?? [], mcpAppServerTitle(app), `mcp:context:${app.appInstanceId}:${mcpAppContextState(app)?.updateId ?? ''}`)
 }
 
+/** A title derived from text often restates the source the chip already shows. */
+function withoutSourcePrefix(text: string, source: string): string {
+  if (!source || text.slice(0, source.length).toLowerCase() !== source.toLowerCase()) return text
+  const rest = text.slice(source.length)
+  if (!/^[\s:·|,\-–—]/.test(rest)) return text
+  return rest.replace(/^[\s:·|,\-–—]+/, '') || text
+}
+
 export function mcpAppContextItems(app: ToolAppAttachment, messageId: string, scheme: 'light' | 'dark' = 'light'): McpAppContextAttachment[] {
   const state = mcpAppContextState(app)
   if (!state) return []
   const source = mcpAppServerTitle(app)
-  const base = { appInstanceId: app.appInstanceId, messageId, updateId: state.updateId, source }
+  const icon = mcpAppPresentationIcon(app.presentation, scheme)
+  const base = { appInstanceId: app.appInstanceId, messageId, updateId: state.updateId, source, ...(icon ? { icon } : {}) }
   const previews = (images: ReturnType<typeof mcpAppContent>['images']) => images.filter(image => image.mimeType.startsWith('image/')).map(image => ({ src: `data:${image.mimeType};base64,${image.base64}`, alt: image.name }))
   const items = (state.content ?? []).flatMap((block, blockIndex) => {
     if (!mcpAppContextBlockVisible(block)) return []
     const data = mcpAppContent([block], source, `mcp:context:${app.appInstanceId}:${state.updateId}:${blockIndex}`)
     const item = data.items[0]
     return [{ ...base, ...item, id: `${app.appInstanceId}:${state.updateId}:${blockIndex}`, blockIndex,
-      title: item?.title ?? (contextAttachmentPreview(data.text, 100) || `${source} context`),
+      title: item?.title ?? (contextAttachmentPreview(withoutSourcePrefix(data.text, source), 100) || `${source} context`),
       previewImages: previews(data.images),
       ...(data.images[0]?.mimeType.startsWith('image/') && !item?.thumbnail ? { thumbnail: previews(data.images)[0]?.src } : {}),
       ...(data.text ? { content: contextAttachmentPreview(data.text) } : {}) }]
@@ -51,7 +60,7 @@ export function mcpAppContextItems(app: ToolAppAttachment, messageId: string, sc
   const data = mcpAppContextInput(app)
   const payload = [data.text, ...data.images.map(image => `${image.name} (${image.mimeType})`), state.structuredContent ? JSON.stringify(state.structuredContent) : ''].filter(Boolean).join('\n')
   return [{ ...base, source: undefined, id: `${app.appInstanceId}:${state.updateId}:background`, title: `${source} context`,
-    content: contextAttachmentPreview(payload), previewImages: previews(data.images), thumbnail: mcpAppPresentationIcon(app.presentation, scheme) }]
+    content: contextAttachmentPreview(payload), previewImages: previews(data.images) }]
 }
 
 /** A stale chip must never remove a newer replacement. Last visible removal clears background too. */

@@ -77,10 +77,13 @@ export class RemoteDraftLibrary {
     this.ports.changed()
     return this.ready.then(() => this.persist())
   }
+  private async loadRecords(): Promise<void> {
+    const { drafts } = await this.request<{ drafts: DraftListEntry[] }>({ type: 'list_drafts', requestId: randomId() })
+    this.records = new Map(drafts.map((row) => [row.id, row]))
+  }
   refresh(): Promise<void> {
     return this.run(async () => {
-      const { drafts } = await this.request<{ drafts: DraftListEntry[] }>({ type: 'list_drafts', requestId: randomId() })
-      this.records = new Map(drafts.map((row) => [row.id, row]))
+      await this.loadRecords()
       this.ports.changed()
     })
   }
@@ -176,6 +179,9 @@ export class RemoteDraftLibrary {
           this.leases.delete(id)
         }
       }
+      // A `draft_changed` pushed while the phone was away (a draft sent or
+      // deleted on the desktop) is gone; only the host's list still knows.
+      await this.loadRecords()
       if (activeId && !this.leases.has(activeId)) {
         const result = await this.request<DraftOpenResult>({ type: 'open_draft', requestId: randomId(), draftId: activeId })
         this.leases.set(activeId, result.leaseId)

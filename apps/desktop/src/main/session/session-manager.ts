@@ -86,6 +86,13 @@ export class SessionManagerImpl implements SessionManagerContract {
   private sessions = new Map<string, Session>()
   /** Read receipts of sessions disposed in this process, handed back once if one is resumed. */
   private disposedReceipts = new Map<string, string | null>()
+  /**
+   * Desktop panes showing each session. Held here rather than on the Session:
+   * a pane often mounts before its runtime exists (history opened from the
+   * sidebar, a draft recreated on harness switch), and a completion landing
+   * on screen must still count as read on every client.
+   */
+  private foregroundViews = new Map<string, number>()
   private sessionProjects = new Map<string, string>()
   private activeByProject = new Map<string, string>()
   private projectResources: ProjectResourceCache
@@ -573,6 +580,14 @@ export class SessionManagerImpl implements SessionManagerContract {
     for (const cb of this.sessionListeners) {
       try { cb(session) } catch (err) { log.warn('[SessionManager] sessionCreated handler error:', err) }
     }
+    for (let views = this.foregroundViews.get(session.id) ?? 0; views > 0; views--) session.setForeground(true)
+  }
+
+  setSessionForeground(sessionId: string, visible: boolean): void {
+    const views = Math.max(0, (this.foregroundViews.get(sessionId) ?? 0) + (visible ? 1 : -1))
+    if (views > 0) this.foregroundViews.set(sessionId, views)
+    else this.foregroundViews.delete(sessionId)
+    this.sessions.get(sessionId)?.setForeground(visible)
   }
 
   async reapIdleRuntimes(now = Date.now()): Promise<void> {

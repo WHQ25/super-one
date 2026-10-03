@@ -228,6 +228,18 @@ describe('SessionManager', () => {
       expect((hoisted.backendsCreated[0] as FakeBackend).releaseRuntimeCalls).toBe(1)
     })
 
+    it('applies a pane shown before its session existed', async () => {
+      mgr.setSessionForeground('shown-early', true)
+      mgr.createSession({ id: 'shown-early', projectPath: '/shown-early', providerId: 'claude-base' }).prewarm()
+
+      await mgr.reapIdleRuntimes(Date.now() + 60 * 60_000)
+      expect((hoisted.backendsCreated[0] as FakeBackend).releaseRuntimeCalls).toBe(0)
+
+      mgr.setSessionForeground('shown-early', false)
+      await mgr.reapIdleRuntimes(Date.now() + 60 * 60_000)
+      expect((hoisted.backendsCreated[0] as FakeBackend).releaseRuntimeCalls).toBe(1)
+    })
+
     it('does not release streaming, pending-interaction, or background-task sessions', async () => {
       const streaming = mgr.createSession({ id: 'streaming', projectPath: '/streaming', providerId: 'claude-base' })
       const pending = mgr.createSession({ id: 'pending', projectPath: '/pending', providerId: 'claude-base' })

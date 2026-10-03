@@ -879,12 +879,6 @@ export function setPreferredProviderImpl(
       ? window.agent.resetSession(draftSid).catch(() => null)
       : Promise.resolve(null)
 
-  const reassertForeground = (): void => {
-    if (!draftSid) return
-    if (getProject(get(), activeProject)._activeSessionId !== draftSid) return
-    void window.agent.setSessionForeground?.(draftSid, true)
-  }
-
   if (provider === 'codex') {
     const project = getProject(get(), activeProject)
     const sess = getActivePerSession(get())
@@ -917,7 +911,6 @@ export function setPreferredProviderImpl(
       }
       void disposePriorMain.then(() => {
         triggerPrewarm(get())
-        reassertForeground()
       })
     } else {
       void (async () => {
@@ -941,7 +934,6 @@ export function setPreferredProviderImpl(
         }
         await disposePriorMain
         triggerPrewarm(get())
-        reassertForeground()
       })()
     }
   }
@@ -963,7 +955,6 @@ export function setPreferredProviderImpl(
       }
       await disposePriorMain
       triggerPrewarm(get())
-      reassertForeground()
     })
   }
   if (provider === 'cursor') {
@@ -977,7 +968,6 @@ export function setPreferredProviderImpl(
       if (!model) {
         await disposePriorMain
         triggerPrewarm(get())
-        reassertForeground()
         return
       }
       const remembered = await (async () => {
@@ -1019,7 +1009,6 @@ export function setPreferredProviderImpl(
       }
       await disposePriorMain
       triggerPrewarm(get())
-      reassertForeground()
     })
     const project = getProject(get(), activeProject)
     if (!project._cursorSlashItemsLoading) {
@@ -1049,7 +1038,6 @@ export function setPreferredProviderImpl(
       }
       await disposePriorMain
       triggerPrewarm(get())
-      reassertForeground()
     })
   }
   if (provider === 'claude') {

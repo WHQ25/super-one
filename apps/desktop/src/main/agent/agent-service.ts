@@ -3997,7 +3997,7 @@ export class AgentService {
     })
 
     ipcMain.handle(AgentIpcChannels.SET_SESSION_FOREGROUND, (_event, sessionId: string, foreground: boolean) => {
-      this.requireSessionManager().getSession(sessionId)?.setForeground(foreground)
+      this.requireSessionManager().setSessionForeground(sessionId, foreground)
     })
 
     ipcMain.handle(AgentIpcChannels.GET_LIVE_SNAPSHOTS, () => {

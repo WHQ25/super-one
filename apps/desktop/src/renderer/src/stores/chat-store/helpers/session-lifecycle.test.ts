@@ -797,7 +797,6 @@ describe('setPreferredProviderImpl', () => {
       PATH,
       expect.objectContaining({ provider: 'dsh', model: 'deepseek-v4-pro' }),
     )
-    expect(mockWindowAgent.setSessionForeground).toHaveBeenCalled()
   })
 
   it('preserves a DeepSeek model selected while resources initialize', async () => {

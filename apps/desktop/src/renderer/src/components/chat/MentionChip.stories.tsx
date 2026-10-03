@@ -16,6 +16,10 @@ rememberMcpMentionIcons([
   { server: 'tracker', tool: 'mentions', title: 'tracker', icon: TRACKER_ICON, items: [] },
 ])
 
+// A file chip's right-click menu asks which MCP Apps open the file: none here.
+const storyWindow = window as unknown as { environment?: Record<string, unknown> }
+storyWindow.environment = { ...storyWindow.environment, mcpAppFileHandlers: async () => ({ ok: true, value: { handlers: [] } }) }
+
 /**
  * The user bubble as sent: chips come from the structured tags the composer writes;
  * `sent` is what the host read for mentioned MCP resources, stored as its own block.
@@ -107,5 +111,13 @@ export const McpResourceLinkOnly: Story = {
   args: { text: `Open ${part('cad://parts/bracket.step', 'Bracket assembly')}` },
   play: async ({ canvasElement }) => {
     await userEvent.hover(firstMcpChip(canvasElement))
+  },
+}
+
+/** A sent file mention behaves like a file chip: click opens the file, the icon drags it out, the name selects as text, right-click shows the file menu. */
+export const FileMentionContextMenu: Story = {
+  args: { text: `Review ${wrapPathRefMention('file', 'docs/torque.md', 'torque.md')} before the next build` },
+  play: async ({ canvasElement }) => {
+    await userEvent.pointer({ keys: '[MouseRight]', target: canvasElement.querySelector<HTMLElement>('[data-mention-kind="file"]')! })
   },
 }

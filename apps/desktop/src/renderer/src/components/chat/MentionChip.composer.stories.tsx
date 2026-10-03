@@ -29,6 +29,8 @@ function Composer({ answer, width = 560 }: { answer: Answer; width?: number }) {
     const env = (window as unknown as { environment?: Record<string, unknown> }).environment ?? {}
     ;(window as unknown as { environment: Record<string, unknown> }).environment = {
       ...env,
+      // The file chip's right-click menu asks which MCP Apps open the file: none here.
+      mcpAppFileHandlers: async () => ({ ok: true, value: { handlers: [] } }),
       mcpAppMentionRead: async (_project: string, _session: string, targets: Array<{ server: string; uri: string }>) => ({
         ok: true,
         value: targets.map((target): McpMentionReadResource => answer === 'text'
@@ -56,6 +58,8 @@ function Composer({ answer, width = 560 }: { answer: Answer; width?: number }) {
           { type: 'mention', attrs: { kind: 'agent-profile', value: 'codex-base', displayName: 'Codex' } },
           { type: 'text', text: ' on ' },
           { type: 'mention', attrs: { kind: 'git', value: encodeGitMentionValue('branch', 'main'), displayName: 'main' } },
+          { type: 'text', text: ' against ' },
+          { type: 'mention', attrs: { kind: 'file', value: 'docs/torque.md', displayName: 'torque.md' } },
         ],
       }],
     },
@@ -101,3 +105,19 @@ export const PreviewLinkOnly: Story = { args: { answer: 'binary' } }
 export const PreviewFailed: Story = { args: { answer: 'failed' } }
 
 export const Narrow: Story = { args: { answer: 'text', width: 320 } }
+
+/** A file chip in the composer acts like FileChip: click opens the file, the icon drags it out, right-click shows the file menu. */
+export const FileMentionContextMenu: Story = {
+  args: { answer: 'text' },
+  play: async ({ canvasElement }) => {
+    const chip = await new Promise<HTMLElement>((resolve) => {
+      const find = () => {
+        const found = canvasElement.querySelector<HTMLElement>('[data-mention-kind="file"]')
+        if (found) resolve(found)
+        else setTimeout(find, 50)
+      }
+      find()
+    })
+    await userEvent.pointer({ keys: '[MouseRight]', target: chip })
+  },
+}

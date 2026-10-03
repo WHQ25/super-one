@@ -1,12 +1,8 @@
-import { useRef } from 'react'
 import { FileChipShell } from '@superone/chat-view/presenters/FileChipShell'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
-import { openFileTab } from '@/components/activity/activity-panel-api'
 import { DraggableFileIcon } from './DraggableFileIcon'
-import { useFileChipContextMenu } from './file-chip-context-menu'
-import { useChatStore } from '@/stores/chat'
-import { useSourceControlStore } from '@/stores/source-control'
-import { clickReleasedOnSelection, formatLineRange, hasTextSelection, parseFileLinkTarget, toProjectRelativePath } from '@/lib/file-link'
+import { useFileChipActions } from './file-chip-context-menu'
+import { formatLineRange, hasTextSelection, parseFileLinkTarget } from '@/lib/file-link'
 
 export function FileChip({ name, title, filePath, lineNumber, endLine, className }: {
   name: string
@@ -20,23 +16,7 @@ export function FileChip({ name, title, filePath, lineNumber, endLine, className
   const targetPath = parsed?.filePath
   const targetLineNumber = lineNumber ?? parsed?.lineNumber
   const targetEndLine = lineNumber != null ? endLine : parsed?.endLine
-  const dragEndRef = useRef(0)
-  const open = (): void => {
-    if (!targetPath) return
-    const projectPath = useChatStore.getState().activeProject
-    if (!projectPath) return
-    const relative = toProjectRelativePath(targetPath, projectPath)
-    useSourceControlStore.getState().selectFile(projectPath, relative, targetLineNumber)
-    openFileTab(relative)
-  }
-  const menu = useFileChipContextMenu(targetPath, open)
-
-  const handleClick = (e: React.MouseEvent): void => {
-    if (Date.now() - dragEndRef.current < 200) return
-    if (clickReleasedOnSelection(e.currentTarget)) return
-    e.stopPropagation()
-    open()
-  }
+  const { dragEndRef, menu, handleClick } = useFileChipActions(targetPath, targetLineNumber)
 
   const chip = (
     <FileChipShell

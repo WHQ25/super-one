@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { ComponentPropsWithoutRef, ComponentPropsWithRef, ReactNode } from 'react'
 import { NodeViewWrapper } from '@tiptap/react'
 import type { NodeViewProps } from '@tiptap/react'
 import { staticMentionIcon } from '@superone/ui/components/ui/mention-icons'
@@ -12,6 +12,11 @@ import { DesktopAppIcon } from './DesktopAppIcon'
 import { McpMentionChipIcon } from './McpMentionRows'
 import { McpMentionPreviewHover } from './McpMentionSent'
 import type { MentionNodeAttrs } from './mention-node'
+import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
+import { absoluteFilePath, useFileChipActions } from './file-chip-context-menu'
+import { useFileDragProps } from './DraggableFileIcon'
+import { hasTextSelection } from '@/lib/file-link'
+import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 
 /**
  * Chips that carry a human label rather than a path: they render "blended"
@@ -34,22 +39,27 @@ export function isBlendedMentionKind(kind: string): boolean {
  * Shared shell for composer + bubble mention chips.
  * Bubble: parent .user-text-with-mentions is normal inline flow.
  * Composer: .mention-chip uses vertical-align: baseline in the paragraph.
+ * Remaining props and `ref` land on the outer span, so a file chip can take its
+ * click and Radix `asChild` context-menu trigger; `iconProps` make the icon its drag handle.
  */
 export function MentionChipContent({
   blended,
   kind,
   icon,
   label,
+  iconProps,
   className,
-}: {
+  ...rest
+}: Omit<ComponentPropsWithRef<'span'>, 'children'> & {
   blended: boolean
   kind?: string
   icon: ReactNode
   label: string
-  className?: string
+  iconProps?: ComponentPropsWithoutRef<'span'>
 }) {
   return (
     <span
+      {...rest}
       data-mention-kind={kind}
       className={cn(
         'mention-chip select-none',
@@ -57,7 +67,7 @@ export function MentionChipContent({
         className,
       )}
     >
-      <MentionChipBody icon={icon} label={label} />
+      <MentionChipBody icon={icon} label={label} iconProps={iconProps} />
     </span>
   )
 }
@@ -77,8 +87,42 @@ export function mentionChipIcon(
   return <FileIcon name={displayName} size={16} />
 }
 
+/**
+ * A file mention, in the composer or a sent bubble, acts like FileChip: click
+ * opens the file, the icon drags it out, right-click shows the file menu.
+ */
+export function useFileMentionActions(value: string, label: string) {
+  const filePath = absoluteFilePath(value, selectEffectiveProjectRoot(useAppStore.getState()))
+  const { dragEndRef, menu, handleClick } = useFileChipActions(filePath)
+  const dragProps = useFileDragProps(label, filePath, dragEndRef)
+  return {
+    menu,
+    chipProps: { role: 'button', title: value, onClick: handleClick },
+    iconProps: dragProps && { ...dragProps, className: 'cursor-grab active:cursor-grabbing' },
+  }
+}
+
+function FileMentionNodeView({ value, label }: { value: string; label: string }) {
+  const { menu, chipProps, iconProps } = useFileMentionActions(value, label)
+  return (
+    <AdaptiveContextMenu items={menu.items} onOpen={menu.onOpen} yieldWhen={hasTextSelection}>
+      <NodeViewWrapper
+        as="span"
+        contentEditable={false}
+        data-mention=""
+        data-mention-kind="file"
+        {...chipProps}
+        className="mention-chip mention-chip--resource cursor-pointer select-none"
+      >
+        <MentionChipBody icon={mentionChipIcon('file', value, label)} label={label} iconProps={iconProps} />
+      </NodeViewWrapper>
+    </AdaptiveContextMenu>
+  )
+}
+
 export function MentionChip({ node }: NodeViewProps) {
   const { kind, value, displayName } = node.attrs as MentionNodeAttrs
+  if (kind === 'file') return <FileMentionNodeView value={value} label={displayName} />
   const isBlendedChip = isBlendedMentionKind(kind)
   const label = kind === 'agent' && displayName.includes(':') ? displayName.split(':').pop()! : displayName
 

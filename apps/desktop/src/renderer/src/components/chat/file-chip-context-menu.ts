@@ -1,11 +1,13 @@
+import { useRef, type MouseEvent } from 'react'
 import { AtSign, Copy, FolderOpen, Globe } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
-import { openBrowserTab } from '@/components/activity/activity-panel-api'
+import { openBrowserTab, openFileTab } from '@/components/activity/activity-panel-api'
 import { chatInputAPI } from '@/components/chat/chat-input-api'
 import { toMentionPath } from '@/components/chat/chat-input-utils'
 import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
-import { isAbsoluteLocalPath, isHtmlFilePath, toProjectRelativePath } from '@/lib/file-link'
+import { useSourceControlStore } from '@/stores/source-control'
+import { clickReleasedOnSelection, isAbsoluteLocalPath, isHtmlFilePath, toProjectRelativePath } from '@/lib/file-link'
 import { toLocalFileUrl } from '@/lib/path-utils'
 import { displayHostPath } from '@/lib/remote-project-key'
 import { useSessionScope } from '@/stores/chat-store/session-scope'
@@ -80,4 +82,30 @@ export function useFileChipContextMenu(filePath: string | undefined, openInSuper
     { kind: 'item', id: 'copyPath', label: t('sidebar.contextMenu.copyPath'), icon: Copy, onSelect: handleCopyPath },
     { kind: 'item', id: 'copyRelativePath', label: t('sidebar.contextMenu.copyRelativePath'), icon: Copy, onSelect: handleCopyRelativePath },
   ] }
+}
+
+/**
+ * Click-to-open and the context menu, shared by every chip that stands for a file
+ * (tool rows, markdown links, sent @-mentions). A click right after a drag or one
+ * released on a text selection is not an open.
+ */
+export function useFileChipActions(filePath: string | undefined, lineNumber?: number) {
+  const dragEndRef = useRef(0)
+  const open = (): void => {
+    if (!filePath) return
+    const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
+    const openPath = toProjectRelativePath(filePath, projectRoot)
+    // selectFile needs a project root for git/diff IPC; absolute external paths
+    // still read via readProjectFile when the path is absolute.
+    if (projectRoot) void useSourceControlStore.getState().selectFile(projectRoot, openPath, lineNumber)
+    openFileTab(openPath)
+  }
+  const menu = useFileChipContextMenu(filePath, open)
+  const handleClick = (e: MouseEvent): void => {
+    if (Date.now() - dragEndRef.current < 200) return
+    if (clickReleasedOnSelection(e.currentTarget)) return
+    e.stopPropagation()
+    open()
+  }
+  return { dragEndRef, menu, handleClick }
 }

@@ -1,13 +1,11 @@
-import { useRef } from 'react'
 import { cn } from '@superone/ui/lib/utils'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
-import { openFileTab, openBrowserTab } from '@/components/activity/activity-panel-api'
+import { openBrowserTab } from '@/components/activity/activity-panel-api'
 import { DraggableFileIcon } from '@/components/chat/DraggableFileIcon'
-import { useFileChipContextMenu } from '@/components/chat/file-chip-context-menu'
+import { useFileChipActions } from '@/components/chat/file-chip-context-menu'
 import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
-import { useSourceControlStore } from '@/stores/source-control'
-import { clickReleasedOnSelection, formatLineRange, hasTextSelection, resolveProjectFileHref, toProjectRelativePath } from '@/lib/file-link'
+import { formatLineRange, hasTextSelection, resolveProjectFileHref } from '@/lib/file-link'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { fileChipLabel } from '@superone/chat-view/presenters/file-chip-label'
 import { LinkFaviconPresenter, type LinkFaviconPorts } from '@superone/chat-view/presenters/LinkFavicon'
@@ -15,24 +13,7 @@ import { LinkFaviconPresenter, type LinkFaviconPorts } from '@superone/chat-view
 export { fileChipLabel }
 
 export function InlineFileChip({ name, filePath, lineNumber, endLine }: { name: string; filePath: string; lineNumber?: number; endLine?: number }) {
-  const dragEndRef = useRef(0)
-  const open = (): void => {
-    const projectRoot = selectEffectiveProjectRoot(useAppStore.getState())
-    const openPath = toProjectRelativePath(filePath, projectRoot)
-    // selectFile needs a project root for git/diff IPC; absolute external paths
-    // still read via readProjectFile when the path is absolute.
-    if (projectRoot) {
-      void useSourceControlStore.getState().selectFile(projectRoot, openPath, lineNumber)
-    }
-    openFileTab(openPath)
-  }
-  const menu = useFileChipContextMenu(filePath, open)
-  const handleClick = (e: React.MouseEvent): void => {
-    if (Date.now() - dragEndRef.current < 200) return
-    if (clickReleasedOnSelection(e.currentTarget)) return
-    e.stopPropagation()
-    open()
-  }
+  const { dragEndRef, menu, handleClick } = useFileChipActions(filePath, lineNumber)
   return (
     <AdaptiveContextMenu items={menu.items} onOpen={menu.onOpen} yieldWhen={hasTextSelection}>
         <span

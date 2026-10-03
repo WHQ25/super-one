@@ -35,6 +35,10 @@
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
+/* File mentions open like file chips; match their hover. */
+.mention-chip--resource[role='button']:hover {
+  background: color-mix(in oklab, var(--muted) 80%, transparent);
+}
 .mention-chip__icon {
   display: inline-block;
   width: 1em;

@@ -24,7 +24,9 @@ import { ContextAttachments } from '@superone/ui/components/ui/context-attachmen
 import { TooltipProvider } from '@superone/ui/components/ui/tooltip'
 import { UserSelectionChip } from './UserSelectionChip'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
-import { MentionChipContent, isBlendedMentionKind, mentionChipIcon } from './MentionChip'
+import { MentionChipContent, isBlendedMentionKind, mentionChipIcon, useFileMentionActions } from './MentionChip'
+import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
+import { hasTextSelection } from '@/lib/file-link'
 import { McpMentionSentHover } from './McpMentionSent'
 import { McpMentionSentProvider } from '@superone/chat-view/presenters/McpMentionCard'
 import { PasteChipPreview } from './PasteChipPreview'
@@ -149,6 +151,24 @@ function RestContent({ rest, forcePlain }: { rest: string; forcePlain?: boolean 
   return <span className="user-text-rest">{rest}</span>
 }
 
+function FileMentionInlineChip({ value, label }: { value: string; label: string }) {
+  const { menu, chipProps, iconProps } = useFileMentionActions(value, label)
+  return (
+    <AdaptiveContextMenu items={menu.items} onOpen={menu.onOpen} yieldWhen={hasTextSelection}>
+      <MentionChipContent
+        {...chipProps}
+        blended={false}
+        kind="file"
+        // Like FileChip: the name stays selectable text; only the icon drags the file.
+        className="break-normal cursor-pointer select-text"
+        icon={mentionChipIcon('file', value, label)}
+        label={label}
+        iconProps={iconProps}
+      />
+    </AdaptiveContextMenu>
+  )
+}
+
 function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind; value: string; displayName?: string }) {
   // Mentions re-parsed from plain text only know directory via trailing `/`.
   // Older inserts (and some drop paths) lost that marker and rendered folders
@@ -183,6 +203,8 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
       </span>
     )
   }
+
+  if (resolvedKind === 'file') return <FileMentionInlineChip value={value} label={display} />
 
   // Same .mention-chip* CSS as composer — em-only, scales with Cmd+= zoom.
   // break-normal resists the bubble's break-all so labels wrap between words.

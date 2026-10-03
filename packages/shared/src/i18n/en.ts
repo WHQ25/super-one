@@ -3949,6 +3949,7 @@ export type Messages = {
     approveNewMessage: string
     newConversation: string
     nonText: string
+    approveOpenFile: string
     allow: string
     inline: string
     fullscreen: string
@@ -8119,6 +8120,7 @@ export const en: Messages = {
     approveNewMessage: 'Send message to a new conversation',
     newConversation: 'Create a new conversation in this project, switch to it, and send this message.',
     nonText: 'Includes {{count}} non-text content blocks.',
+    approveOpenFile: 'Open File Outside This Project',
     allow: 'Allow Once',
     inline: 'Return to Chat',
     fullscreen: 'Fullscreen',

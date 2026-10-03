@@ -19,6 +19,8 @@ export interface McpAppHostExecutor {
   subscribeResource?(request: { uri: string }, signal: AbortSignal): Promise<void>
   unsubscribeResource?(request: { uri: string }, signal: AbortSignal): Promise<void>
   writeResource?(request: McpAppResourceWriteParams, signal: AbortSignal): Promise<McpAppResourceWriteResult>
+  /** `openai/files/open`; advertised only with `experimental["openai/files"]`. */
+  openFile?(request: { path: string }, signal: AbortSignal): Promise<void>
   sendMessage(request: McpAppMessageParams, signal: AbortSignal): Promise<{ isError?: boolean }>
   updateModelContext(context: McpAppModelContext, signal: AbortSignal): Promise<McpAppModelContextState>
   openLink(request: { url: string }, signal: AbortSignal): Promise<{ isError?: boolean }>
@@ -156,43 +158,50 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
   })
   // Resource subscriptions and writes exist only for the file a file-entrypoint View opened.
   const subscriptions = new Set<string>()
-  if (options.capabilities.experimental?.['openai/resource']) {
-    const { subscribeResource, unsubscribeResource, writeResource } = options.executor
-    const uriOf = (params: unknown): string => {
-      const uri = (params as { uri?: unknown } | undefined)?.uri
-      if (typeof uri !== 'string' || !uri.trim() || uri.length > 2048) throw new McpError(ErrorCode.InvalidParams, 'Invalid resource URI')
-      return uri
+  const hostResources = !!options.capabilities.experimental?.['openai/resource']
+  const openFiles = !!options.capabilities.experimental?.['openai/files']
+  const { subscribeResource, unsubscribeResource, writeResource, openFile } = options.executor
+  const uriOf = (params: unknown): string => {
+    const uri = (params as { uri?: unknown } | undefined)?.uri
+    if (typeof uri !== 'string' || !uri.trim() || uri.length > 2048) throw new McpError(ErrorCode.InvalidParams, 'Invalid resource URI')
+    return uri
+  }
+  if (hostResources || openFiles) bridge.fallbackRequestHandler = async (request, extra) => {
+    if (hostResources) switch (request.method) {
+      case 'resources/subscribe': return execute(extra.signal, async signal => {
+        const uri = uriOf(request.params)
+        if (!subscribeResource) throw new McpAppsError('denied', 'Resource subscriptions are unavailable')
+        await subscribeResource({ uri }, signal)
+        subscriptions.add(uri)
+        return {}
+      })
+      case 'resources/unsubscribe': return execute(extra.signal, async signal => {
+        const uri = uriOf(request.params)
+        subscriptions.delete(uri)
+        await unsubscribeResource?.({ uri }, signal)
+        return {}
+      })
+      case 'openai/resources/write': return execute(extra.signal, async signal => {
+        const params = request.params as Record<string, unknown> | undefined
+        const uri = uriOf(params)
+        const ifMatch = params?.ifMatch
+        const text = params?.text, blob = params?.blob
+        if ((typeof text === 'string') === (typeof blob === 'string') || (ifMatch !== undefined && (typeof ifMatch !== 'string' || !ifMatch))) throw new McpError(ErrorCode.InvalidParams, 'Invalid resource write')
+        const bytes = typeof text === 'string' ? new TextEncoder().encode(text).byteLength : Math.floor((blob as string).replace(/=+$/, '').length * 3 / 4)
+        if (bytes > MCP_APP_RESOURCE_WRITE_MAX_BYTES) return { outcome: 'too-large', maxBytes: MCP_APP_RESOURCE_WRITE_MAX_BYTES }
+        if (!writeResource) throw new McpAppsError('denied', 'Resource writes are unavailable')
+        const write = { uri, ...(typeof ifMatch === 'string' ? { ifMatch } : {}), ...(typeof text === 'string' ? { text } : { blob: blob as string }) } as McpAppResourceWriteParams
+        return await writeResource(write, signal)
+      })
     }
-    bridge.fallbackRequestHandler = async (request, extra) => {
-      switch (request.method) {
-        case 'resources/subscribe': return execute(extra.signal, async signal => {
-          const uri = uriOf(request.params)
-          if (!subscribeResource) throw new McpAppsError('denied', 'Resource subscriptions are unavailable')
-          await subscribeResource({ uri }, signal)
-          subscriptions.add(uri)
-          return {}
-        })
-        case 'resources/unsubscribe': return execute(extra.signal, async signal => {
-          const uri = uriOf(request.params)
-          subscriptions.delete(uri)
-          await unsubscribeResource?.({ uri }, signal)
-          return {}
-        })
-        case 'openai/resources/write': return execute(extra.signal, async signal => {
-          const params = request.params as Record<string, unknown> | undefined
-          const uri = uriOf(params)
-          const ifMatch = params?.ifMatch
-          const text = params?.text, blob = params?.blob
-          if ((typeof text === 'string') === (typeof blob === 'string') || (ifMatch !== undefined && (typeof ifMatch !== 'string' || !ifMatch))) throw new McpError(ErrorCode.InvalidParams, 'Invalid resource write')
-          const bytes = typeof text === 'string' ? new TextEncoder().encode(text).byteLength : Math.floor((blob as string).replace(/=+$/, '').length * 3 / 4)
-          if (bytes > MCP_APP_RESOURCE_WRITE_MAX_BYTES) return { outcome: 'too-large', maxBytes: MCP_APP_RESOURCE_WRITE_MAX_BYTES }
-          if (!writeResource) throw new McpAppsError('denied', 'Resource writes are unavailable')
-          const write = { uri, ...(typeof ifMatch === 'string' ? { ifMatch } : {}), ...(typeof text === 'string' ? { text } : { blob: blob as string }) } as McpAppResourceWriteParams
-          return await writeResource(write, signal)
-        })
-        default: throw new McpError(ErrorCode.MethodNotFound, `Method not found: ${request.method}`)
-      }
-    }
+    if (openFiles && request.method === 'openai/files/open') return execute(extra.signal, async signal => {
+      const path = (request.params as { path?: unknown } | undefined)?.path
+      if (typeof path !== 'string' || !path || path.length > 4096) throw new McpError(ErrorCode.InvalidParams, 'Invalid file path')
+      if (!openFile) throw new McpAppsError('denied', 'Opening local files is unavailable')
+      await openFile({ path }, signal)
+      return {}
+    })
+    throw new McpError(ErrorCode.MethodNotFound, `Method not found: ${request.method}`)
   }
   bridge.onsizechange = size => {
     if (revoked || !initialized) return

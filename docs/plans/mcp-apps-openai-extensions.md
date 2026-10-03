@@ -720,7 +720,7 @@ model context, `openai/message` and most form features. Still missing:
 | Area | State |
 |---|---|
 | File entrypoint, host resources (`read` / `subscribe` / `openai/resources/write`), path injection | Codex sessions on local projects: done. Claude lists Apps through step 1; opening a file not yet verified live. Remote projects and phone later |
-| `openai/files/open` | Not supported — Phase 3 |
+| `openai/files/open` | Desktop local sessions: done (any harness; see features/mcp-apps.md). Remote sessions and phone not advertised |
 | Composer at-mentions (`mentions/search`) | Codex and Claude sessions on local projects, desktop and phone: done. Remote projects later |
 | Form previews (`openai/preview`) | Parsed, not shown — Phase 3 host follow-ups |
 | Form `userOptions`, implicit selection | Ignored / refused — Phase 3 host follow-ups |

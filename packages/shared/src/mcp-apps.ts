@@ -143,7 +143,10 @@ export interface McpAppModelContext {
 export type McpAppMessageParams = McpUiMessageRequest['params'] & { _meta?: Record<string, unknown> }
 
 /** Host-authored approval details. Render previews as plain text, never as View HTML. */
-export type McpAppApprovalPrompt = { kind: 'sendMessage'; server: string; text: string; nonTextBlocks: number; items?: ContextAttachment[]; target?: 'active' | 'new' }
+export type McpAppMessagePrompt = { kind: 'sendMessage'; server: string; text: string; nonTextBlocks: number; items?: ContextAttachment[]; target?: 'active' | 'new' }
+/** `openai/files/open` for a file outside the session's project; `path` is the host-resolved real path. */
+export type McpAppOpenFilePrompt = { kind: 'openFile'; server: string; path: string }
+export type McpAppApprovalPrompt = McpAppMessagePrompt | McpAppOpenFilePrompt
 
 export type McpAppHostOperation =
   | { operation: 'load'; referenceOnly?: boolean }
@@ -155,6 +158,8 @@ export type McpAppHostOperation =
   | { operation: 'unsubscribeResource'; uri: string }
   | { operation: 'writeResource'; params: McpAppResourceWriteParams }
   | { operation: 'sendMessage'; params: McpAppMessageParams }
+  /** `openai/files/open`: an absolute path on the session's host, desktop local sessions only. */
+  | { operation: 'openFile'; path: string }
   /** Trusted host continuation after navigating to a confirmed new conversation. */
   | { operation: 'sendPreparedMessage'; pendingSend: string }
   | { operation: 'updateModelContext'; context: McpAppModelContext }

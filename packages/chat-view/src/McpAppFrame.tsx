@@ -114,7 +114,7 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
 
   const ask: McpAppConsent = useMemo(() => ({
     approve: (prompt, signal) => new Promise((resolve) => {
-      if (signal.aborted) { resolve(false); return }
+      if (signal.aborted || prompt.kind !== 'sendMessage') { resolve(false); return }
       cancelConsent()
       let settled = false
       const cancel = () => request.resolve(false)

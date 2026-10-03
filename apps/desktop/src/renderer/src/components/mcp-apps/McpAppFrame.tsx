@@ -1,5 +1,5 @@
 import { mcpAppCspDomains } from '@superone/shared/mcp-apps-host/csp'
-import { mcpAppFileCapabilities, mcpAppMessageCapabilities } from '@superone/shared/mcp-apps-host/capabilities'
+import { MCP_APP_OPEN_FILES_EXTENSION, mcpAppFileCapabilities, mcpAppMessageCapabilities } from '@superone/shared/mcp-apps-host/capabilities'
 import { useLayoutEffect, useRef } from 'react'
 import type { McpUiHostContext } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { ToolAppAttachment, McpUiResourceMeta } from '@superone/shared/mcp-apps'
@@ -15,6 +15,12 @@ export interface McpAppFrameProps {
   executor: McpAppHostExecutor; context: McpUiHostContext; active: boolean
   onHost(host: McpAppHost | null): void; onInitialized(modes: Array<'inline' | 'fullscreen' | 'pip'>): void
   onError(error: unknown): void; onUnknown(): void; onRevoked(): void; onHeight(height: number): void
+}
+
+/** Desktop shows files only from its own machine, so remote sessions do not offer `openai/files`. */
+function mcpAppDesktopCapabilities(app: ToolAppAttachment) {
+  const base = app.file ? mcpAppFileCapabilities : mcpAppMessageCapabilities
+  return app.binding.node === 'local' ? { ...base, experimental: { ...base.experimental, ...MCP_APP_OPEN_FILES_EXTENSION } } : base
 }
 
 /** Store-owned imperative iframe: React never removes it while changing surfaces. */
@@ -38,7 +44,7 @@ export default function McpAppFrame(props: McpAppFrameProps) {
       transport: createMcpAppTransport(element.contentWindow!, props.registration.origin, window, document), document,
       restored: !latest.current.active, context: latest.current.context,
       // Permissions are deliberately ungranted, even if the resource requests them.
-      capabilities: { ...(props.app.file ? mcpAppFileCapabilities : mcpAppMessageCapabilities), serverTools: {}, serverResources: {}, openLinks: {}, logging: {}, sandbox: { permissions: {}, csp: mcpAppCspDomains(props.meta.csp) } },
+      capabilities: { ...mcpAppDesktopCapabilities(props.app), serverTools: {}, serverResources: {}, openLinks: {}, logging: {}, sandbox: { permissions: {}, csp: mcpAppCspDomains(props.meta.csp) } },
       onInitialized: () => latest.current.onInitialized(host.appCapabilities()?.availableDisplayModes ?? ['inline']),
       onError: error => latest.current.onError(error), onUnknownOutcome: () => latest.current.onUnknown(),
       onSizeChanged: size => { if (size.height) latest.current.onHeight(size.height) },

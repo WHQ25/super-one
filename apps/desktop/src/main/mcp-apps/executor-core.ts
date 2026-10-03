@@ -5,6 +5,7 @@ import { mcpAppServerTitle } from '@superone/shared/mcp-apps-metadata'
 import { mcpAppContextState, removeMcpAppContextBlock } from '@superone/shared/mcp-app-model-context'
 import { validateMcpAppAttachmentUpdate } from '@superone/shared/mcp-apps-state'
 import { createHash, randomUUID } from 'node:crypto'
+import { isAbsolute } from 'node:path'
 import { McpUiUpdateModelContextRequestSchema } from '@modelcontextprotocol/ext-apps/app-bridge'
 import { McpAppMessageRequestSchema } from '@superone/shared/mcp-apps-host/message-schema'
 import { parseSessionKey, type SessionRef } from '@superone/shared/environment/refs'
@@ -32,6 +33,8 @@ export interface McpAppExecutorPorts {
   hostResource?(target: McpAppResolvedTarget, request: HostResourceRequest, signal: AbortSignal): Promise<McpAppReadResult | McpAppResourceWriteResult | void>
   /** Request `_meta` added to a file-entrypoint View's tool calls (`openai/resource.path`). */
   fileToolMeta?(target: McpAppResolvedTarget): Record<string, unknown>
+  /** `openai/files/open`: the existing file's real path, and whether it lies inside the session's project. */
+  openFile?(target: McpAppResolvedTarget, path: string, signal: AbortSignal): Promise<{ path: string; insideProject: boolean }>
   now?(): number
 }
 
@@ -79,6 +82,9 @@ function operationOf(request: McpAppHostRequest): McpAppHostOperation {
       return { operation: 'writeResource', params: { uri: resourceUri(params?.uri), ...(ifMatch ? { ifMatch } : {}), ...(typeof text === 'string' ? { text } : { blob: blob as string }) } }
     }
     case 'sendMessage': return { operation: 'sendMessage', params: McpAppMessageRequestSchema.parse({ method: 'ui/message', params: request.params }).params }
+    case 'openFile':
+      if (typeof request.path !== 'string' || !request.path || request.path.length > 4096 || !isAbsolute(request.path)) throw new McpAppsError('invalid', 'MCP App file paths must be absolute')
+      return { operation: 'openFile', path: request.path }
     case 'sendPreparedMessage':
       if (typeof request.pendingSend !== 'string' || request.pendingSend.length > 128) throw new McpAppsError('invalid', 'Invalid MCP App pending message')
       return { operation: 'sendPreparedMessage', pendingSend: request.pendingSend }
@@ -231,6 +237,39 @@ export class McpAppExecutor {
     await this.ports.persist(current, { presentation: mcpAppPresentation(tool) }, signal)
   }
 
+  /**
+   * Single-use approval bound to requester, View, binding and the exact operation. Returns the
+   * `approval_required` answer to send, or nothing once `request.approval` matched.
+   */
+  private challenge(request: McpAppHostRequest, requester: McpAppRequester, target: McpAppResolvedTarget, operation: McpAppHostOperation, prompt: McpAppApprovalPrompt | undefined): McpAppHostResult | undefined {
+    const view = this.targetKey(target.ref, target.app.appInstanceId)
+    const binding = this.bindingKey(target.app)
+    const key = jsonHash({ ref: target.ref, appInstanceId: target.app.appInstanceId, requester: requesterKey(requester), operation })
+    if (request.approval) {
+      const challenge = this.challenges.get(request.approval.challenge)
+      this.challenges.delete(request.approval.challenge) // single use, even for an invalid confirmation
+      if (!prompt || !challenge || challenge.key !== key || challenge.binding !== binding) throw new McpAppsError('denied', 'MCP App approval expired or does not match this request')
+      return undefined
+    }
+    if (!prompt) return undefined
+    const pendingForView = [...this.challenges.values()].filter(challenge => challenge.view === view).length
+    if (pendingForView >= 8 || this.challenges.size >= 1024) throw new McpAppsError('denied', 'Too many pending MCP App approvals')
+    const challenge = randomUUID()
+    this.challenges.set(challenge, { expires: this.now() + 300_000, key, binding, view, scope: this.activeKey(target.ref, target.app.appInstanceId, requester) })
+    return { ok: false, error: { code: 'approval_required', challenge, prompt } }
+  }
+
+  /** Opening a file needs no provider; only the host shows it, and paths outside the project are confirmed. */
+  private async openFile(request: McpAppHostRequest, requester: McpAppRequester, target: McpAppResolvedTarget, path: string, signal: AbortSignal): Promise<McpAppHostResult> {
+    if (requester.kind !== 'desktop' || target.node !== 'local' || !this.ports.openFile) throw new McpAppsError('denied', 'Opening local files is available only for local sessions on the desktop')
+    const file = await this.ports.openFile(target, path, signal)
+    if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
+    const prompt: McpAppApprovalPrompt | undefined = file.insideProject ? undefined : { kind: 'openFile', server: mcpAppServerTitle(target.app), path: file.path }
+    // Keyed by the resolved path, so a link swapped after the prompt cannot redirect the approval.
+    const pending = this.challenge(request, requester, target, { operation: 'openFile', path: file.path }, prompt)
+    return pending ?? { ok: true, value: { path: file.path } }
+  }
+
   async execute(request: McpAppHostRequest, requester: McpAppRequester, signal: AbortSignal, validateTarget?: (target: McpAppResolvedTarget) => void): Promise<McpAppHostResult> {
     const ref = typeof request?.sessionKey === 'string' ? parseSessionKey(request.sessionKey) : null
     const lifetime = ref ? { ref, requester: requesterKey(requester), abort: new AbortController() } : undefined
@@ -269,6 +308,7 @@ export class McpAppExecutor {
       }
       if (!target.app.origin?.providerSessionId) throw new McpAppsError('not_connected', 'MCP App provider origin unavailable')
       if (operation.operation !== 'activate' && this.active.get(activeKey) !== binding) throw new McpAppsError('inactive', 'Activate this restored MCP App to reconnect')
+      if (operation.operation === 'openFile') return await this.openFile(request, requester, target, operation.path, signal)
       const capabilities = unwrap<McpAppsCapabilities>(await this.ports.provider(target, { operation: 'ready' }, signal))
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
       if (capabilities.mode === 'unsupported') throw new McpAppsError('not_connected', 'This harness does not support MCP Apps')
@@ -290,18 +330,8 @@ export class McpAppExecutor {
         prompt = { kind: 'sendMessage', server, ...details }
         assertMcpAppSize(prompt)
       }
-      const challengeKey = jsonHash({ ref, appInstanceId: target.app.appInstanceId, requester: requesterKey(requester), operation })
-      if (request.approval) {
-        const challenge = this.challenges.get(request.approval.challenge)
-        this.challenges.delete(request.approval.challenge) // single use, even for an invalid confirmation
-        if (!prompt || !challenge || challenge.key !== challengeKey || challenge.binding !== binding) throw new McpAppsError('denied', 'MCP App approval expired or does not match this request')
-      } else if (prompt) {
-        const pendingForView = [...this.challenges.values()].filter(challenge => challenge.view === key).length
-        if (pendingForView >= 8 || this.challenges.size >= 1024) throw new McpAppsError('denied', 'Too many pending MCP App approvals')
-        const challenge = randomUUID()
-        this.challenges.set(challenge, { expires: this.now() + 300_000, key: challengeKey, binding, view: key, scope: activeKey })
-        return { ok: false, error: { code: 'approval_required', challenge, prompt } }
-      }
+      const pending = this.challenge(request, requester, target, operation, prompt)
+      if (pending) return pending
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
 
       switch (operation.operation) {

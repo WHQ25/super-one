@@ -1,5 +1,6 @@
 import { McpAppsError, type McpAppApprovalPrompt, type McpAppHostOperation, type McpAppPreparedMessage, type McpAppsCallResult, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { requestOpenExternalLink } from '@/lib/external-link'
+import { openFileTab } from '@/components/activity/activity-panel-api'
 import type { McpAppHostExecutor } from '@superone/shared/mcp-apps-host'
 import type { McpAppDocumentRegistration } from '@superone/shared/mcp-apps-desktop'
 
@@ -67,6 +68,11 @@ export function createDesktopMcpAppExecutor(options: {
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App link cancelled')
       requestOpenExternalLink(url)
       return {}
+    },
+    openFile: async ({ path }, signal) => {
+      // The host answers with the real path it checked (and, outside the project, the user confirmed).
+      const result = await execute<{ path: string }>({ operation: 'openFile', path }, signal)
+      openFileTab(result.path)
     },
     requestDisplayMode: options.displayMode,
   }

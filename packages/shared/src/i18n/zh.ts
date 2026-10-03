@@ -4042,6 +4042,7 @@ export const zh: Messages = {
     approveNewMessage: '向新会话发送消息',
     newConversation: '在当前项目中创建新会话、切换到它并发送此消息。',
     nonText: '包含 {{count}} 个非文本内容块。',
+    approveOpenFile: '打开项目外的文件',
     allow: '允许一次',
     inline: '返回聊天',
     fullscreen: '全屏',

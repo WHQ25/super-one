@@ -15,6 +15,8 @@ const prompts = {
   newConversation: { kind: 'sendMessage', server, ...mcpAppMessagePreview({ ...richMcpAppMessage, _meta: { 'openai/message': { target: 'new' } } }, server) },
   plain: { kind: 'sendMessage', server, text: 'Order 4× M3 hex bolts and add them to the build sheet.', nonTextBlocks: 0 },
   long: { kind: 'sendMessage', server, text: Array.from({ length: 40 }, (_, i) => `Line ${i + 1}: a long, page-authored message the App wants to send on the user's behalf.`).join('\n'), nonTextBlocks: 2 },
+  openFile: { kind: 'openFile', server, path: '/Users/me/.codex/bits-and-bolts/library/parts/hex-bolt-m3x12.stl' },
+  openFileLongPath: { kind: 'openFile', server, path: `/Volumes/Shared Projects/${Array.from({ length: 12 }, (_, i) => `nested-folder-${i + 1}`).join('/')}/assembly with a very long file name.step` },
 } satisfies Record<string, McpAppApprovalPrompt>
 
 /** Queues real requests in the store, so Allow / Deny / Escape dequeue exactly as in the app. */
@@ -38,7 +40,7 @@ function Scenario({ queue, framed = true, width = 720 }: { queue: Array<keyof ty
   </div>
 }
 
-const meta: Meta<typeof Scenario> = { title: 'Chat/MCP Apps/Message Consent', component: Scenario, parameters: { layout: 'fullscreen' }, args: { queue: ['rich'] } }
+const meta: Meta<typeof Scenario> = { title: 'Chat/MCP Apps/Consent', component: Scenario, parameters: { layout: 'fullscreen' }, args: { queue: ['rich'] } }
 export default meta
 type Story = StoryObj<typeof Scenario>
 
@@ -51,3 +53,7 @@ export const LongContent: Story = { args: { queue: ['long'] } }
 export const CollapsedChatBubble: Story = { args: { framed: false, width: 360 } }
 export const ChineseNarrow: Story = { args: { width: 360 }, globals: { locale: 'zh' } }
 export const Dark: Story = { globals: { theme: 'dark' } }
+/** `openai/files/open` for a file outside the session's project. */
+export const OpenFileOutsideProject: Story = { args: { queue: ['openFile'] } }
+export const OpenFileLongPathNarrow: Story = { args: { queue: ['openFileLongPath'], width: 360 } }
+export const OpenFileChineseDark: Story = { args: { queue: ['openFile'] }, globals: { locale: 'zh', theme: 'dark' } }

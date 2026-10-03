@@ -14,3 +14,6 @@ export const mcpAppMessageCapabilities = {
 export const mcpAppFileCapabilities = {
   experimental: { 'openai/resource': {} },
 } satisfies McpUiHostCapabilities
+
+/** `openai/files/open`: only where the host can show a file of the session's machine (desktop, local sessions). */
+export const MCP_APP_OPEN_FILES_EXTENSION = { 'openai/files': {} } as const

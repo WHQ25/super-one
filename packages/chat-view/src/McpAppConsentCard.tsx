@@ -1,10 +1,11 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { McpAppApprovalPrompt } from '@superone/shared/mcp-apps'
+import type { McpAppMessagePrompt } from '@superone/shared/mcp-apps'
 import { ContextAttachments } from '@superone/ui/components/ui/context-attachments'
 
 export interface McpAppConsentRequest {
-  prompt: McpAppApprovalPrompt
+  /** The phone confirms only messages; the host refuses its other approval kinds before asking. */
+  prompt: McpAppMessagePrompt
   resolve: (confirmed: boolean) => void
 }
 

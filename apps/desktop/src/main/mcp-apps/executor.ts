@@ -15,6 +15,7 @@ import { McpAppExecutor, type McpAppResolvedTarget } from './executor-core'
 import { routeMcpAppsProviderRequest } from './provider-ipc'
 import { mcpAppSessionKey } from './session-key'
 import { watchSessionCloses, watchSessionDeletes } from '../session-list-watch'
+import { resolveMcpAppOpenFile } from './open-file'
 import { hostFileApp, readHostFile, releaseHostFileApps, subscribeHostFile, unsubscribeHostFile, updateHostFileApp, writeHostFile } from './host-files'
 
 interface MobileSender {
@@ -107,6 +108,7 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
       const file = hostFileApp(target.ref, target.app.appInstanceId)
       return file ? { 'openai/resource': { path: file.path } } : {}
     },
+    openFile: (target, path) => resolveMcpAppOpenFile(target.projectPath, path),
     async createMessageSession(target, signal) {
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App message cancelled')
       if (target.ref.environmentId === 'local') {

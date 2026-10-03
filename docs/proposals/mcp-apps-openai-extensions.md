@@ -57,13 +57,13 @@ passes through.
 | `openai/elicitation` advertised to the server | Yes (`openai/form`) | No | Yes |
 | Host-initiated tool calls | Yes | Yes | Yes |
 
-The compat layer is [mcp-apps-compat-layer.md](mcp-apps-compat-layer.md). This
-table decides routing there: a server whose extensions a harness does not
-carry is served through the layer in that harness's sessions. On Claude, a
-missing title or icon only falls back to the name and server icon. For file
-entrypoints and mentions, SuperOne connects to the server itself in Claude
-sessions (stdio and HTTP) for discovery and host-originated App calls; see the
-plan's phase 3.
+Routing follows the
+[extension routing rule](../features/mcp-apps.md#extension-routing-rule); the
+[compat layer](mcp-apps-compat-layer.md) is paused and serves no harness here.
+On Claude, a missing title or icon only falls back to the name and server icon.
+For file entrypoints and mentions, SuperOne connects to the server itself in
+Claude sessions (stdio and HTTP) for discovery and host-originated App calls;
+see the plan's phase 3. `openai/elicitation` forms are not built for Claude.
 
 ## 4. Mapping
 
@@ -130,7 +130,6 @@ rows.
 - Does Codex app-server expose entrypoints or plugin metadata itself? If it
   does, read them from Codex instead of re-deriving them from `tools/list`.
 - Answered: servers do not reliably fall back when Claude omits
-  `openai/elicitation`. Bits & Bolts throws instead of using standard forms,
-  so OpenAI forms on Claude need the
-  [compatibility layer](mcp-apps-compat-layer.md).
+  `openai/elicitation`. Bits & Bolts throws instead of using standard forms;
+  per the routing rule, OpenAI forms are not built for Claude.
 - Phone parity for entrypoints and settings (forms render on the phone).

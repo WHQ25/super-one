@@ -699,7 +699,8 @@ Live check on Bits & Bolts (dev instance, Codex 0.159):
 - **Claude**: Claude does not advertise `openai/elicitation`, and Bits & Bolts
   does not fall back to standard forms. `createElicitInput` throws, so
   `cad.pickFile`, `cad.pickReferences` and `cad.reviewForm` fail with a tool
-  error. This is for the compat layer.
+  error. Not built: the routing rule keeps forms on harnesses that can
+  declare them (features/mcp-apps.md).
 - **Remote node Codex**: form capability and durable answers are implemented,
   including standalone View calls between turns (2026-10-03). Native file picking
   and previews remain local-desktop only; node ACP form content is separate work.
@@ -732,9 +733,9 @@ model context, `openai/message` and most form features. Still missing:
 | Form `userOptions`, implicit selection | Local desktop Codex stdio: done after security review. Remote-node/phone implicit selection refused; explicit supplied choices retained |
 | `ui/download-file` | Done on desktop and phone (see features/mcp-apps.md) |
 | Collapsed untitled long text | S1 leftover — Phase 3 host follow-up |
-| Form capability on Claude and on the remote-node Codex client | Codex desktop/node forms: done. Claude capability still absent; node ACP form content remains separate work |
+| Form capability on Claude and on the remote-node Codex client | Codex desktop/node forms: done. Claude: not built (routing rule); node ACP form content remains separate work |
 | Global and thread entrypoints, deep links | Not supported — later; need the host-origin binding from Phase 3 |
-| Structured settings (`openai/settings`) | Not supported — later; needs server capabilities, which Claude withholds |
+| Structured settings (`openai/settings`) | Not supported — later (Phase 4). Codex reports server capabilities; on Claude, which withholds them, read them from the direct client (`hostClient`) |
 | Plugin onboarding | Out of scope until SuperOne has plugin packages |
 | Display modes | Supported, except `preferredDisplayMode` on first render (deliberate) and phone PiP |
 

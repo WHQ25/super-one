@@ -213,7 +213,7 @@ export function SchemaFormComposer({ form: requestedForm, requester, onSubmit, o
   }
 
   return (
-    <div ref={rootRef} tabIndex={-1} className="flex flex-col gap-3 outline-none">
+    <div ref={rootRef} tabIndex={-1} className="flex flex-col gap-3 outline-none focus-visible:shadow-none">
       {steps.length > 1 && (
         <div className="flex items-center gap-2">
           <div className="flex flex-1 gap-1" aria-hidden>

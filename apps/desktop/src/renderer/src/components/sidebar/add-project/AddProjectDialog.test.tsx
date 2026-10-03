@@ -714,15 +714,22 @@ describe('add-project dialog', () => {
 
     await screen.findByText('Repository')
     expect(input().value).toBe('~/Github/')
-    // Checkbox is pre-checked when a default was applied.
-    expect(screen.getByText('Save as Default Clone Path')).toBeInTheDocument()
-    const checkbox = screen.getByRole('checkbox', { name: 'Save as Default Clone Path' })
-    expect(checkbox).toHaveAttribute('data-state', 'checked')
+    // Already on the saved default — nothing to save.
+    expect(
+      screen.queryByRole('checkbox', { name: 'Save as Default Clone Path' }),
+    ).not.toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: /Shallow Clone/ })).toHaveAttribute(
       'data-state',
       'checked',
     )
     await waitFor(() => expect(browsePath).toHaveBeenCalledWith('local', '~/Github/'))
+
+    // Moving off the default offers it again, unchecked.
+    fireEvent.change(input(), { target: { value: '~/Projects/' } })
+    expect(screen.getByRole('checkbox', { name: 'Save as Default Clone Path' })).toHaveAttribute(
+      'data-state',
+      'unchecked',
+    )
   })
 
   it('saves the current destination as default when the checkbox is checked', async () => {

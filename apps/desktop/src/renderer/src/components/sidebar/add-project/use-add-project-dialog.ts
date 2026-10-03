@@ -135,7 +135,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
   const [githubUnavailable, setGithubUnavailable] = useState(false)
   /** Saved default parent dir for this connection (destination step prefill). */
   const [defaultClonePath, setDefaultClonePath] = useState<string | null>(null)
-  /** When true, successful clone writes the current path as defaultClonePath. */
+  /** When true, a successful clone into a non-default path saves it as defaultClonePath. */
   const [saveAsDefault, setSaveAsDefault] = useState(false)
   /** Destination checkbox: default on — most clones only need the tip commit. */
   const [shallowClone, setShallowClone] = useState(true)
@@ -554,6 +554,14 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
       : null
   const clonePreviewPath =
     step.kind === 'destination' && resolved.path ? joinBrowsePath(resolved.path, step.repoName) : ''
+  const isDefaultClonePath = useCallback(
+    (dir: string) =>
+      defaultClonePath !== null && ensureBrowseDirectoryPath(defaultClonePath) === dir,
+    [defaultClonePath],
+  )
+  /** Offer "save as default" only when the destination differs from the saved one. */
+  const canSaveAsDefault =
+    step.kind === 'destination' && !isDefaultClonePath(ensureBrowseDirectoryPath(query))
 
   /** Child directory rows — create is a separate section; confirm is ⇧↵. */
   const directoryItems: AddProjectListItem[] = useMemo(() => {
@@ -768,7 +776,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
         },
         dest,
       )
-      setSaveAsDefault(Boolean(saved))
+      setSaveAsDefault(false)
     },
     [goToStep, initialPath],
   )
@@ -909,27 +917,16 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
           directoryName: step.repoName,
           shallow: shallowClone,
         })
-        // Persist (or clear) the default clone parent after a successful clone.
+        // Persist a changed default clone parent after a successful clone.
         const currentDir = ensureBrowseDirectoryPath(
           parentPathOverride ?? (query.trim() || parentPath),
         )
-        if (saveAsDefault && currentDir) {
+        if (saveAsDefault && currentDir && !isDefaultClonePath(currentDir)) {
           await window.app.saveAppSettings({
             defaultClonePaths: { [connectionId]: currentDir },
           })
           defaultClonePathRef.current = currentDir
           setDefaultClonePath(currentDir)
-        } else if (
-          !saveAsDefault &&
-          defaultClonePath &&
-          ensureBrowseDirectoryPath(defaultClonePath) === currentDir
-        ) {
-          // Unchecked while still on the saved default → clear it.
-          await window.app.saveAppSettings({
-            defaultClonePaths: { [connectionId]: '' },
-          })
-          defaultClonePathRef.current = null
-          setDefaultClonePath(null)
         }
         onOpened(project)
         onOpenChange(false)
@@ -948,7 +945,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
       t,
       query,
       saveAsDefault,
-      defaultClonePath,
+      isDefaultClonePath,
       shallowClone,
     ],
   )
@@ -1170,6 +1167,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     willCreatePath,
     clonePreviewPath,
     pathInlineGhost,
+    canSaveAsDefault,
     saveAsDefault,
     setSaveAsDefault,
     shallowClone,

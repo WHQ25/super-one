@@ -31,7 +31,7 @@ vi.mock('../db-sessions', () => ({
 }))
 
 import { sessionRenameHandler, sessionTagHandler, sessionTagListHandler } from './session-tag-tools'
-import { noteAcpTaskLifecycle, _resetMainThreadSessionGuardForTests } from './main-thread-session-guard'
+import { noteAcpTaskLifecycle, PARENT_CALL_WAIT_MS, _resetMainThreadSessionGuardForTests } from './main-thread-session-guard'
 import type { BuiltInSuperoneToolDeps } from './superone-mcp-builtins'
 
 function textResult(result: { content: Array<{ type: string; text: string }> }): string {
@@ -62,42 +62,46 @@ describe('session_tag', () => {
     _resetMainThreadSessionGuardForTests()
   })
 
-  it('denies when an ACP subagent is live and the parent has no grant', () => {
+  it('denies when an ACP subagent is live and the parent announced no call', async () => {
+    vi.useFakeTimers()
     noteAcpTaskLifecycle('self-session', { type: 'task_started', taskId: 'sa-1', taskType: 'general-purpose' })
-    const result = sessionTagHandler({ add: ['subagent-should-fail'] }, makeDeps())
+    const pending = sessionTagHandler({ add: ['subagent-should-fail'] }, makeDeps())
+    await vi.advanceTimersByTimeAsync(PARENT_CALL_WAIT_MS)
+    const result = await pending
+    vi.useRealTimers()
     expect(result.isError).toBe(true)
     expect(textResult(result)).toMatch(/main thread/i)
     expect(setSessionTagsMock).not.toHaveBeenCalled()
   })
 
-  it('defaults to the current session and adds tags', () => {
-    const result = sessionTagHandler({ add: ['Auth'] }, makeDeps())
+  it('defaults to the current session and adds tags', async () => {
+    const result = await sessionTagHandler({ add: ['Auth'] }, makeDeps())
     expect(result.isError).toBeUndefined()
     expect(getSessionTagsMock).toHaveBeenCalledWith('self-session')
     expect(setSessionTagsMock).toHaveBeenCalledWith('self-session', ['oauth', 'auth'])
     expect(textResult(result)).toContain('"auth"')
   })
 
-  it('bulk-adds to sessionIds', () => {
-    const result = sessionTagHandler({ sessionIds: ['a', 'b'], add: ['desktop'] }, makeDeps())
+  it('bulk-adds to sessionIds', async () => {
+    const result = await sessionTagHandler({ sessionIds: ['a', 'b'], add: ['desktop'] }, makeDeps())
     expect(setSessionTagsMock).toHaveBeenCalledTimes(2)
     expect(textResult(result)).toContain('"count"')
   })
 
-  it('rejects add+set together and empty add', () => {
-    expect(sessionTagHandler({ add: ['a'], set: [] }, makeDeps()).isError).toBe(true)
-    expect(sessionTagHandler({ add: [] }, makeDeps()).isError).toBe(true)
+  it('rejects add+set together and empty add', async () => {
+    expect((await sessionTagHandler({ add: ['a'], set: [] }, makeDeps())).isError).toBe(true)
+    expect((await sessionTagHandler({ add: [] }, makeDeps())).isError).toBe(true)
   })
 
-  it('reports missing sessions', () => {
-    const result = sessionTagHandler({ sessionId: 'missing', add: ['x'] }, makeDeps())
+  it('reports missing sessions', async () => {
+    const result = await sessionTagHandler({ sessionId: 'missing', add: ['x'] }, makeDeps())
     expect(textResult(result)).toMatch(/missing/)
     expect(setSessionTagsMock).not.toHaveBeenCalled()
   })
 
-  it('rejects bulk sessionIds with set or remove', () => {
-    expect(sessionTagHandler({ sessionIds: ['a'], set: ['x'] }, makeDeps()).isError).toBe(true)
-    expect(sessionTagHandler({ sessionIds: ['a'], remove: ['oauth'] }, makeDeps()).isError).toBe(true)
+  it('rejects bulk sessionIds with set or remove', async () => {
+    expect((await sessionTagHandler({ sessionIds: ['a'], set: ['x'] }, makeDeps())).isError).toBe(true)
+    expect((await sessionTagHandler({ sessionIds: ['a'], remove: ['oauth'] }, makeDeps())).isError).toBe(true)
     expect(setSessionTagsMock).not.toHaveBeenCalled()
   })
 })
@@ -114,16 +118,16 @@ describe('session_rename tags', () => {
     _resetMainThreadSessionGuardForTests()
   })
 
-  it('does not apply tags when the title is empty', () => {
-    const result = sessionRenameHandler({ title: '   ', tags: ['desktop'] }, makeDeps())
+  it('does not apply tags when the title is empty', async () => {
+    const result = await sessionRenameHandler({ title: '   ', tags: ['desktop'] }, makeDeps())
     expect(result.isError).toBe(true)
     expect(textResult(result)).toMatch(/empty title/)
     expect(setSessionTagsMock).not.toHaveBeenCalled()
   })
 
-  it('still writes tags when the title is user_locked', () => {
+  it('still writes tags when the title is user_locked', async () => {
     isSessionUserRenamedMock.mockReturnValue(true)
-    const result = sessionRenameHandler({ title: 'New Title', tags: ['desktop'] }, makeDeps())
+    const result = await sessionRenameHandler({ title: 'New Title', tags: ['desktop'] }, makeDeps())
     expect(result.isError).toBe(true)
     expect(textResult(result)).toMatch(/user_locked/)
     expect(setSessionTagsMock).toHaveBeenCalledWith('self-session', ['desktop'])

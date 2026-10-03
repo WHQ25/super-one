@@ -24,7 +24,12 @@ for argument-aware mini-app preapproval.
 An `mcp__superone__` prefix alone is not authorization. Third-party MCP calls do
 not become host-owned. Executor confirmation and feature gates still run after
 admission. Main-thread-only calls from the parent use allow-once, preventing a
-persistent grant from being inherited by children. Ordinary built-ins can prefer
+persistent grant from being inherited by children. Children share the parent's
+SuperOne MCP connection and often skip `session/request_permission`, so while an
+ACP task is live `main-thread-session-guard.ts` runs a main-thread-only tool only
+against a single-use credit from that call's `tool_call` on the parent ACP
+session stream (child calls stream under the child session id). Always-approve
+parent calls therefore still pass. Ordinary built-ins can prefer
 an offered always-allow option. Mini-app preapproval remains argument-specific.
 
 `acp-permission-map.ts` preserves option IDs from the request. Always-allow

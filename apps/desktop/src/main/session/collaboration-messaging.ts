@@ -35,7 +35,7 @@ export async function sendSessionMessage(
   args: SessionSendArgs,
   host: SessionManager,
 ) {
-  const denied = denyMainThreadOnlyIfSubagent(callerSessionId, 'session_collab_send')
+  const denied = await denyMainThreadOnlyIfSubagent(callerSessionId, 'session_collab_send')
   if (denied) return toolResult(denied, true)
   const grants = store()
   let channel: ReturnType<typeof resolveSendChannel>
@@ -94,7 +94,7 @@ export async function retrieveSessionMessages(
   callerSessionId: string,
   args: SessionRetrieveArgs,
 ) {
-  const denied = denyMainThreadOnlyIfSubagent(callerSessionId, 'session_collab_retrieve')
+  const denied = await denyMainThreadOnlyIfSubagent(callerSessionId, 'session_collab_retrieve')
   if (denied) return toolResult(denied, true)
   let read: ReturnType<typeof readCallerMailbox>
   try {

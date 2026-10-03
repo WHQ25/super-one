@@ -38,7 +38,7 @@ import { notifySessionRecapReceived } from '../../acp/acp-recap-focus'
 import { mapPermissionDecision, mapPermissionRequest, type PendingPermissionOptions } from '../../acp/acp-permission-map'
 import { decideAcpPermission } from '../../acp/acp-permission-preapprove'
 import { gateTerminalTabsCall } from '../../mcp/terminal-tabs-harness-gate'
-import { grantParentMainThreadCall } from '../../mcp/main-thread-session-guard'
+import { noteParentMainThreadCall } from '../../mcp/main-thread-session-guard'
 import {
   buildAskUserQuestionRequest,
   buildMcpElicitPermissionRequest,
@@ -865,7 +865,7 @@ export class AcpBackend implements SessionBackend {
       // so Grok stops re-prompting. Main-thread-only tools stay allow-once
       // so a parent grant is not inherited by Grok child sessions.
       if (!decision.alwaysAllow && this.startOpts?.sessionId) {
-        grantParentMainThreadCall(this.startOpts.sessionId)
+        noteParentMainThreadCall(this.startOpts.sessionId, params.toolCall.toolCallId, decision.toolName)
       }
       log.info(
         '[AcpBackend] auto-allow permission tool=%s reason=%s always=%s requestId=%s',

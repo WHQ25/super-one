@@ -45,6 +45,7 @@ import { resolveAcpClientVersion } from './acp-client-info'
 import {
   clearMainThreadSessionGuard,
   noteAcpTaskLifecycle,
+  noteParentMainThreadCall,
 } from '../mcp/main-thread-session-guard'
 import { buildAcpSessionMcpServers } from './acp-mcp'
 import { acpHostContextText, isLeadingSlashPrompt } from './acp-host-context'
@@ -115,6 +116,7 @@ import {
   GROK_ACP_CLIENT_IDENTIFIER,
   grokSessionPermissionMeta,
   grokYoloModeNotificationParams,
+  parentMainThreadToolName,
 } from './acp-permission-preapprove'
 import { parseGrokBilling } from './acp-billing'
 import {
@@ -1156,6 +1158,10 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         const migrate = noteToolCorrelationFromAgentEvents(mapped, xaiCorrelation)
         const superoneSid = opts.superoneSessionId
         if (superoneSid) {
+          if (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update') {
+            const parentTool = parentMainThreadToolName(update)
+            if (parentTool) noteParentMainThreadCall(superoneSid, update.toolCallId, parentTool)
+          }
           for (const event of mapped) {
             noteAcpTaskLifecycle(superoneSid, event)
           }

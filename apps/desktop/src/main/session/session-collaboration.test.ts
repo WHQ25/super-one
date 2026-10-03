@@ -165,7 +165,12 @@ import {
   retrieveSessionMessages,
 } from './session-collaboration'
 import { resolveSessionAgentsConfirm } from './session-collaboration-confirm'
-import { _resetMainThreadSessionGuardForTests, noteLiveAcpSubagent } from '../mcp/main-thread-session-guard'
+import {
+  _resetMainThreadSessionGuardForTests,
+  noteLiveAcpSubagent,
+  noteParentMainThreadCall,
+  PARENT_CALL_WAIT_MS,
+} from '../mcp/main-thread-session-guard'
 
 function resultJson(result: { content: Array<{ text: string }> }) {
   return JSON.parse(result.content[0].text) as Record<string, any>
@@ -1241,15 +1246,62 @@ describe('@agent mention targets', () => {
     const { host } = fakeHost(parent)
     const [grant] = await approveLaunches(parent, host)
     const started = resultJson(await startLaunch(grant, host))
+    await sendSessionMessage(started.sessionId, { content: 'for the parent only' }, host)
+    noteLiveAcpSubagent('parent', 'sub-1', true)
+    vi.useFakeTimers()
+    try {
+      // No parent tool call was announced on the parent ACP stream.
+      const sending = sendSessionMessage('parent', { to: started.sessionId, content: 'x' }, host)
+      await vi.advanceTimersByTimeAsync(PARENT_CALL_WAIT_MS)
+      const sent = await sending
+      expect(sent.isError).toBe(true)
+      expect(String(resultJson(sent).message ?? resultJson(sent))).toMatch(/main thread/)
+      const reading = retrieveSessionMessages('parent', {})
+      await vi.advanceTimersByTimeAsync(PARENT_CALL_WAIT_MS)
+      const read = await reading
+      expect(read.isError).toBe(true)
+      expect(String(resultJson(read).message ?? resultJson(read))).toMatch(/main thread/)
+    } finally {
+      vi.useRealTimers()
+      _resetMainThreadSessionGuardForTests()
+    }
+    // The subagent neither sent as the parent nor drained its inbox.
+    const childInbox = resultJson(await retrieveSessionMessages(started.sessionId, {}))
+    expect(childInbox.status).toBe('empty')
+    const parentInbox = resultJson(await retrieveSessionMessages('parent', {}))
+    expect(parentInbox.messages).toMatchObject([{ content: 'for the parent only' }])
+  })
+
+  it('lets the parent use the mailbox while an ACP subagent is live', async () => {
+    const parent = fakeSession('parent')
+    const { host, sessions } = fakeHost(parent)
+    const [grant] = await approveLaunches(parent, host)
+    const started = resultJson(await startLaunch(grant, host))
+    const childId = started.sessionId as string
+    await sendSessionMessage(childId, { content: 'VERDICT: PASS' }, host)
     noteLiveAcpSubagent('parent', 'sub-1', true)
     try {
-      const sent = resultJson(await sendSessionMessage('parent', { to: started.sessionId, content: 'x' }, host))
-      expect(String(sent.message ?? sent)).toMatch(/main thread/)
-      const read = resultJson(await retrieveSessionMessages('parent', {}))
-      expect(String(read.message ?? read)).toMatch(/main thread/)
+      noteParentMainThreadCall('parent', 'tc-retrieve', 'mcp__superone__session_collab_retrieve')
+      const read = await retrieveSessionMessages('parent', { from: [childId] })
+      expect(read.isError).toBeUndefined()
+      expect(resultJson(read).messages).toMatchObject([{ content: 'VERDICT: PASS' }])
+      const undelivered = state.db!.prepare(
+        "SELECT COUNT(*) AS n FROM session_collaboration_messages WHERE recipient_session_id = 'parent' AND delivered_at IS NULL",
+      ).get() as { n: number }
+      expect(undelivered.n).toBe(0)
+
+      const wake = sessions.get(childId)?.injectTaskNotification as ReturnType<typeof vi.fn>
+      wake.mockClear()
+      noteParentMainThreadCall('parent', 'tc-send', 'superone__session_collab_send')
+      const sent = await sendSessionMessage('parent', { to: childId, content: 'thanks', clientMessageId: 'review-1' }, host)
+      expect(sent.isError).toBeUndefined()
+      expect(resultJson(sent)).toMatchObject({ status: 'sent', reused: false })
+      expect(wake).toHaveBeenCalledTimes(1)
     } finally {
       _resetMainThreadSessionGuardForTests()
     }
+    const childInbox = resultJson(await retrieveSessionMessages(childId, {}))
+    expect(childInbox.messages).toMatchObject([{ content: 'thanks' }])
   })
 
   it('tells a session with no peers how to get one', async () => {

@@ -7,6 +7,7 @@ import {
   decideAcpPermission,
   grokSessionPermissionMeta,
   grokYoloModeNotificationParams,
+  parentMainThreadToolName,
   shouldAutoAllowAcpPermission,
   toClaudeMcpToolName,
 } from './acp-permission-preapprove'
@@ -239,6 +240,25 @@ describe('decideAcpPermission', () => {
     })
     const result = decideAcpPermission({ ...params, sessionId: 'acp-main' }, 'acp-main')
     expect(result.kind).toBe('deny')
+  })
+})
+
+describe('parentMainThreadToolName', () => {
+  it('names a main-thread-only tool streamed as a Grok use_tool call', () => {
+    const call = perm({
+      title: 'superone__session_collab_send',
+      rawInput: { tool_name: 'superone__session_collab_send', tool_input: { content: 'x' } },
+    }).toolCall
+    expect(parentMainThreadToolName(call)).toBe('mcp__superone__session_collab_send')
+  })
+
+  it('ignores ordinary tools and calls marked as a subagent', () => {
+    expect(parentMainThreadToolName(perm({ rawInput: { tool_name: 'superone__session_list' } }).toolCall)).toBeNull()
+    const child = perm({
+      rawInput: { tool_name: 'superone__session_collab_retrieve', tool_input: {} },
+      meta: { 'x.ai/tool': { name: 'use_tool', agent_id: 'worker-1' } },
+    }).toolCall
+    expect(parentMainThreadToolName(child)).toBeNull()
   })
 })
 

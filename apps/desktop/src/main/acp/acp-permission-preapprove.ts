@@ -20,7 +20,9 @@ export function toClaudeMcpToolName(raw: string): string | null {
   return null
 }
 
-function collectCandidateClaudeNames(params: RequestPermissionRequest): string[] {
+type AcpToolCall = RequestPermissionRequest['toolCall']
+
+function collectCandidateClaudeNames(toolCall: AcpToolCall): string[] {
   const out: string[] = []
   const push = (raw: unknown) => {
     if (typeof raw !== 'string' || !raw.trim()) return
@@ -28,10 +30,10 @@ function collectCandidateClaudeNames(params: RequestPermissionRequest): string[]
     if (claude && !out.includes(claude)) out.push(claude)
   }
 
-  const normalized = normalizeAcpTool(params.toolCall)
+  const normalized = normalizeAcpTool(toolCall)
   if (normalized?.toolName) push(normalized.toolName)
 
-  const rawInput = params.toolCall.rawInput
+  const rawInput = toolCall.rawInput
   if (rawInput && typeof rawInput === 'object' && !Array.isArray(rawInput)) {
     const r = rawInput as Record<string, unknown>
     push(r.tool_name)
@@ -39,9 +41,9 @@ function collectCandidateClaudeNames(params: RequestPermissionRequest): string[]
     push(r.name)
   }
 
-  if (typeof params.toolCall.title === 'string') push(params.toolCall.title)
+  if (typeof toolCall.title === 'string') push(toolCall.title)
 
-  const meta = (params.toolCall as { _meta?: Record<string, unknown> | null })._meta
+  const meta = (toolCall as { _meta?: Record<string, unknown> | null })._meta
   const xai = meta && typeof meta === 'object' ? meta['x.ai/tool'] : null
   if (xai && typeof xai === 'object' && !Array.isArray(xai)) {
     push((xai as { name?: unknown }).name)
@@ -74,7 +76,11 @@ function looksLikeAcpSubagentCall(
   mainSessionId: string | null | undefined,
 ): boolean {
   if (mainSessionId && params.sessionId && params.sessionId !== mainSessionId) return true
-  const meta = (params.toolCall as { _meta?: Record<string, unknown> | null })._meta
+  return hasSubagentToolMeta(params.toolCall)
+}
+
+function hasSubagentToolMeta(toolCall: AcpToolCall): boolean {
+  const meta = (toolCall as { _meta?: Record<string, unknown> | null })._meta
   if (meta && typeof meta === 'object') {
     if (typeof meta.subagent_id === 'string' && meta.subagent_id.trim()) return true
     const xai = meta['x.ai/tool']
@@ -105,7 +111,7 @@ export function decideAcpPermission(
   params: RequestPermissionRequest,
   mainSessionId?: string | null,
 ): AcpPermissionDecision {
-  const names = collectCandidateClaudeNames(params)
+  const names = collectCandidateClaudeNames(params.toolCall)
   const mainThreadTool = names.find((name) => isMainThreadOnlySuperoneTool(name))
   if (mainThreadTool && looksLikeAcpSubagentCall(params, mainSessionId)) {
     return { kind: 'deny', toolName: mainThreadTool, reason: 'main_thread_only' }
@@ -124,11 +130,20 @@ export function decideAcpPermission(
   }
 }
 
+/**
+ * The main-thread-only SuperOne tool a tool call on the parent ACP session
+ * stream invokes, or null. A call carrying subagent metadata is not the parent's.
+ */
+export function parentMainThreadToolName(toolCall: AcpToolCall): string | null {
+  if (hasSubagentToolMeta(toolCall)) return null
+  return collectCandidateClaudeNames(toolCall).find((name) => isMainThreadOnlySuperoneTool(name)) ?? null
+}
+
 export function shouldAutoAllowAcpPermission(
   params: RequestPermissionRequest,
 ): { allow: true; reason: AcpPreapproveReason; toolName: string } | { allow: false } {
   const input = collectToolInput(params)
-  for (const name of collectCandidateClaudeNames(params)) {
+  for (const name of collectCandidateClaudeNames(params.toolCall)) {
     if (isBuiltInSuperoneTool(name)) {
       return { allow: true, reason: 'builtin', toolName: name }
     }

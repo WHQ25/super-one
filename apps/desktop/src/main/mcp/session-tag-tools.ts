@@ -45,8 +45,8 @@ export interface SessionTagArgs {
   set?: string[]
 }
 
-export function sessionTagHandler(args: SessionTagArgs, deps: BuiltInSuperoneToolDeps) {
-  const denied = denyMainThreadOnlyIfSubagent(deps.sessionId, 'session_tag')
+export async function sessionTagHandler(args: SessionTagArgs, deps: BuiltInSuperoneToolDeps) {
+  const denied = await denyMainThreadOnlyIfSubagent(deps.sessionId, 'session_tag')
   if (denied) return toolResult(denied, true)
 
   const op = parseSessionTagOp(args)
@@ -193,8 +193,8 @@ export function sessionTagListHandler(args: SessionTagListArgs, deps: BuiltInSup
   })
 }
 
-export function sessionRenameHandler(args: { title: string; tags?: string[] }, deps: BuiltInSuperoneToolDeps) {
-  const denied = denyMainThreadOnlyIfSubagent(deps.sessionId, 'session_rename')
+export async function sessionRenameHandler(args: { title: string; tags?: string[] }, deps: BuiltInSuperoneToolDeps) {
+  const denied = await denyMainThreadOnlyIfSubagent(deps.sessionId, 'session_rename')
   if (denied) {
     return {
       content: [{ type: 'text' as const, text: denied }],

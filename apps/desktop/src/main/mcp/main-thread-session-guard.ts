@@ -1,8 +1,13 @@
 /**
  * Grok/ACP spawn_subagent inherits the parent's SuperOne MCP connection.
  * Those calls never carry agentID and often skip session/request_permission
- * (same stdio helper, same SuperOne session). Track live ACP subagents and
- * only allow main-thread-only tools while a parent grant is in flight.
+ * (same stdio helper, same SuperOne session), and the MCP `tools/call` itself
+ * names no caller. While an ACP subagent is live, a main-thread-only tool runs
+ * only if the parent announced that exact call: Grok streams every parent tool
+ * call on the parent ACP session before it executes, while a child's calls
+ * stream on the child session id, which the host never routes into the parent
+ * stream. Each announced call is a single-use credit for one MCP call of the
+ * same tool.
  */
 
 import { isMainThreadOnlySuperoneTool, superoneBareToolName } from '@superone/shared/superone-host-owned-tools'
@@ -10,10 +15,21 @@ import { isMainThreadOnlySuperoneTool, superoneBareToolName } from '@superone/sh
 const IGNORE_TASK_TYPES = new Set(['goal', 'workflow', 'monitor'])
 
 const liveSubagents = new Map<string, Set<string>>()
-/** sessionId → epoch ms until which a parent main-thread call is expected. */
-const parentGrantUntil = new Map<string, number>()
 
-const PARENT_GRANT_TTL_MS = 20_000
+interface ParentCall {
+  tool: string
+  until: number
+  spent: boolean
+}
+
+/** sessionId → parent toolCallId → credit. Spent ids stay so later updates of the call cannot re-credit it. */
+const parentCalls = new Map<string, Map<string, ParentCall>>()
+const parentCallWaiters = new Map<string, Set<() => void>>()
+
+/** Covers the gap between the streamed tool call and its MCP request (including a permission round trip). */
+const PARENT_CALL_TTL_MS = 60_000
+/** The MCP request travels a different pipe than the ACP stream, so it can arrive first. */
+export const PARENT_CALL_WAIT_MS = 1_000
 
 export function noteLiveAcpSubagent(sessionId: string, subagentId: string, live: boolean): void {
   if (!sessionId || !subagentId) return
@@ -50,14 +66,63 @@ export function noteAcpTaskLifecycle(
   }
 }
 
-export function grantParentMainThreadCall(sessionId: string, now = Date.now()): void {
-  if (!sessionId) return
-  parentGrantUntil.set(sessionId, now + PARENT_GRANT_TTL_MS)
+/** Record a main-thread-only tool call the parent ACP session announced. Repeats of one call id refresh it. */
+export function noteParentMainThreadCall(
+  sessionId: string,
+  toolCallId: string,
+  toolName: string,
+  now = Date.now(),
+): void {
+  if (!sessionId || !toolCallId || !isMainThreadOnlySuperoneTool(toolName)) return
+  let calls = parentCalls.get(sessionId)
+  if (!calls) {
+    calls = new Map()
+    parentCalls.set(sessionId, calls)
+  }
+  const existing = calls.get(toolCallId)
+  if (existing) {
+    if (!existing.spent) existing.until = now + PARENT_CALL_TTL_MS
+    return
+  }
+  calls.set(toolCallId, { tool: superoneBareToolName(toolName), until: now + PARENT_CALL_TTL_MS, spent: false })
+  const waiters = parentCallWaiters.get(sessionId)
+  if (waiters) for (const wake of [...waiters]) wake()
+}
+
+function spendParentCall(sessionId: string, tool: string, now: number): boolean {
+  const calls = parentCalls.get(sessionId)
+  if (!calls) return false
+  for (const call of calls.values()) {
+    if (!call.spent && call.tool === tool && now <= call.until) {
+      call.spent = true
+      return true
+    }
+  }
+  return false
+}
+
+function nextParentCall(sessionId: string, ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    let waiters = parentCallWaiters.get(sessionId)
+    if (!waiters) {
+      waiters = new Set()
+      parentCallWaiters.set(sessionId, waiters)
+    }
+    const set = waiters
+    const wake = () => {
+      clearTimeout(timer)
+      set.delete(wake)
+      if (set.size === 0 && parentCallWaiters.get(sessionId) === set) parentCallWaiters.delete(sessionId)
+      resolve()
+    }
+    const timer = setTimeout(wake, ms)
+    set.add(wake)
+  })
 }
 
 export function clearMainThreadSessionGuard(sessionId: string): void {
   liveSubagents.delete(sessionId)
-  parentGrantUntil.delete(sessionId)
+  parentCalls.delete(sessionId)
 }
 
 export function liveAcpSubagentCount(sessionId: string): number {
@@ -72,21 +137,28 @@ export function mainThreadDenyMessage(toolName: string): string {
   )
 }
 
-/** Null = allowed. String = deny message for the model. */
-export function denyMainThreadOnlyIfSubagent(
+/**
+ * Null = allowed. String = deny message for the model. Always spends a
+ * matching parent credit first, so one the parent left unspent cannot be
+ * picked up by a subagent started later.
+ */
+export async function denyMainThreadOnlyIfSubagent(
   sessionId: string,
   toolName: string,
-  now = Date.now(),
-): string | null {
+): Promise<string | null> {
   if (!isMainThreadOnlySuperoneTool(toolName)) return null
-  const live = liveAcpSubagentCount(sessionId)
-  if (live <= 0) return null
-  const until = parentGrantUntil.get(sessionId) ?? 0
-  if (now <= until) return null
-  return mainThreadDenyMessage(toolName)
+  const tool = superoneBareToolName(toolName)
+  const deadline = Date.now() + PARENT_CALL_WAIT_MS
+  for (;;) {
+    const now = Date.now()
+    if (spendParentCall(sessionId, tool, now)) return null
+    if (liveAcpSubagentCount(sessionId) === 0) return null
+    if (now >= deadline) return mainThreadDenyMessage(toolName)
+    await nextParentCall(sessionId, deadline - now)
+  }
 }
 
 export function _resetMainThreadSessionGuardForTests(): void {
   liveSubagents.clear()
-  parentGrantUntil.clear()
+  parentCalls.clear()
 }

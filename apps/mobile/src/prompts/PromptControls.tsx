@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Pressable, TextInput, View, type TextInputProps } from 'react-native'
 import { Text } from '../ui/text'
-import { Check, CheckCircle2, Circle, Square, SquareCheck, X, type LucideIcon } from 'lucide-react-native'
+import { Check, CheckCircle2, ChevronLeft, Circle, Square, SquareCheck, X, type LucideIcon } from 'lucide-react-native'
 import { useMobileTheme } from '../theme/context'
 import { usePromptStyles } from './styles'
 import { useMobileLocale } from '../i18n/context'
@@ -43,18 +43,25 @@ export function PromptPill({ label, selected, onPress, multi = false }: { label:
  */
 export type PromptActionsTone = 'decision' | 'submit'
 
-export function PromptActions({ onApprove, onReject, approveLabel, rejectLabel, disabled, tone = 'decision', feedback, children }: {
+export function PromptActions({ onApprove, onReject, onBack, approveLabel, rejectLabel, disabled, tone = 'decision', feedback, children }: {
   onApprove: () => void; onReject: () => void; approveLabel: string; rejectLabel: string
+  /** A stepped prompt's way back, first in the action row; omit on the first step. */
+  onBack?: () => void
   disabled?: boolean; tone?: PromptActionsTone
   feedback?: { value: string; onChange: (text: string) => void; placeholder?: string }
   children?: ReactNode
 }) {
   const styles = usePromptStyles()
+  const { tokens: { colors } } = useMobileTheme()
   const { t } = useMobileLocale()
   return <View style={styles.footer}>
     {feedback ? <PromptInput testID="prompt-feedback" accessibilityLabel={feedback.placeholder ?? t('Optional feedback')} placeholder={feedback.placeholder ?? t('Optional feedback')} value={feedback.value} onChangeText={feedback.onChange} returnKeyType="send" onSubmitEditing={onReject} /> : null}
     {children}
     <View style={styles.row}>
+      {onBack ? <Pressable testID="prompt-back" accessibilityRole="button" accessibilityLabel={t('Back')} onPress={onBack}
+        style={({ pressed }) => [styles.action, { flex: 0, width: 44, paddingHorizontal: 0, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background }, pressed && styles.pressed]}>
+        <ChevronLeft size={18} color={colors.mutedForeground} />
+      </Pressable> : null}
       <Action testID="prompt-approve" label={t(approveLabel)} icon={Check} onPress={onApprove} disabled={disabled} tone={tone === 'decision' ? 'approve' : 'primary'} />
       <Action testID="prompt-reject" label={t(rejectLabel)} icon={X} onPress={onReject} tone={tone === 'decision' ? 'reject' : 'neutral'} />
     </View>

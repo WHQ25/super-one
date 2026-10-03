@@ -2,6 +2,7 @@ import { Pressable } from 'react-native'
 import { ChevronUp } from 'lucide-react-native'
 import { pendingPromptHeader, type PendingPrompt } from '../pending-prompt-state'
 import { pendingPromptIcon } from '../prompts/prompt-icon'
+import { elicitationServer, PromptGlyph } from '../prompts/PromptGlyph'
 import { useMobileTheme } from '../theme/context'
 import { useMobileLocale } from '../i18n/context'
 import { Pulse } from './pulse'
@@ -52,7 +53,7 @@ export function PendingPromptBar(props: {
       })}
     >
       <Pulse active>
-        <Icon size={16} color={colors.mutedForeground} />
+        <PromptGlyph icon={Icon} server={props.prompt.kind === 'permission' ? elicitationServer(props.prompt.request) : undefined} />
       </Pulse>
       <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: '500', color: colors.foreground, flexShrink: 1 }}>{label}</Text>
       {detail ? <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, color: colors.mutedForeground }}>{detail}</Text> : null}

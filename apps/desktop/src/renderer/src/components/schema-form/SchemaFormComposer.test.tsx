@@ -9,8 +9,13 @@ import type { McpAppReadResult } from '@superone/shared/mcp-apps'
 
 function renderForm(schema: unknown) {
   const handlers = { onSubmit: vi.fn(), onDecline: vi.fn(), onCancel: vi.fn() }
-  render(<SchemaFormComposer form={parseSchemaForm(schema)} requester="Bits & Bolts" {...handlers} />)
+  render(<div data-chat-root><SchemaFormComposer form={parseSchemaForm(schema)} requester="Bits & Bolts" {...handlers} /></div>)
   return handlers
+}
+
+/** Keys reach the composer's window listener from whatever holds focus. */
+function press(key: string) {
+  fireEvent.keyDown(document.activeElement ?? document.body, { key })
 }
 
 const REVIEW = {
@@ -24,21 +29,139 @@ const REVIEW = {
 }
 
 describe('SchemaFormComposer', () => {
-  it('submits typed content once every field is valid', () => {
+  it('asks typed fields together, then each choice, and submits on the last step', () => {
     const { onSubmit } = renderForm(REVIEW)
+    expect(screen.getByLabelText('Step 1 of 2')).toBeTruthy()
+    expect(screen.queryByRole('radiogroup', { name: 'Approved' })).toBeNull()
     fireEvent.change(screen.getByLabelText(/CAD or file URI/), { target: { value: 'cad://parts/hex' } })
     fireEvent.change(screen.getByLabelText(/Tolerance/), { target: { value: '2.5' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    fireEvent.click(screen.getByRole('button', { name: /Next/ }))
+    expect(screen.getByRole('radio', { name: /No/ }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: /Submit/ }))
     expect(onSubmit).toHaveBeenCalledWith({ reference: 'cad://parts/hex', tolerance: 2.5, approved: false })
   })
 
-  it('reveals errors instead of submitting invalid answers', () => {
+  it('reveals the step errors instead of moving on', () => {
     const { onSubmit } = renderForm(REVIEW)
     fireEvent.change(screen.getByLabelText(/CAD or file URI/), { target: { value: 'https://x.y' } })
     expect(screen.getByRole('alert')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
-    expect(onSubmit).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: /Next/ }))
     expect(screen.getAllByRole('alert')).toHaveLength(2)
+    expect(screen.getByLabelText('Step 1 of 2')).toBeTruthy()
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('moves on with digit picks, goes back with answers kept, and submits with Enter', () => {
+    const { onSubmit } = renderForm({
+      type: 'object',
+      required: ['priority', 'note'],
+      properties: {
+        priority: { type: 'string', title: 'Priority', enum: ['low', 'normal', 'high'] },
+        approved: { type: 'boolean', title: 'Approved' },
+        note: { type: 'string', title: 'Note' },
+      },
+    })
+    press('2')
+    expect(screen.getByLabelText('Step 2 of 3')).toBeTruthy()
+    press('1')
+    const note = screen.getByLabelText(/Note/)
+    expect(document.activeElement).toBe(note)
+    // Digits typed into a field stay text.
+    fireEvent.keyDown(note, { key: '3' })
+    expect(screen.getByLabelText('Step 3 of 3')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    expect(screen.getByRole('radio', { name: /Yes/ }).getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(screen.getByRole('radio', { name: /Yes/ }))
+    fireEvent.change(screen.getByLabelText(/Note/), { target: { value: 'ship it' } })
+    press('Enter')
+    expect(onSubmit).toHaveBeenCalledWith({ priority: 'normal', approved: true, note: 'ship it' })
+  })
+
+  describe('two-digit option numbers', () => {
+    const MANY = {
+      type: 'object',
+      required: ['part'],
+      properties: { part: { type: 'string', title: 'Part', enum: Array.from({ length: 23 }, (_, i) => `part-${i + 1}`) } },
+    }
+    const checked = (name: string) => screen.getByRole('radio', { name }).getAttribute('aria-checked')
+
+    it('waits on a digit that could start a longer number, then completes it', () => {
+      renderForm(MANY)
+      press('2')
+      expect(checked('part-2')).toBe('false')
+      expect(screen.getByText('2_')).toBeTruthy()
+      press('3')
+      expect(checked('part-23')).toBe('true')
+      expect(screen.queryByText('2_')).toBeNull()
+    })
+
+    it('picks the waiting number after the pause, or at once with Enter', () => {
+      vi.useFakeTimers()
+      try {
+        renderForm(MANY)
+        press('1')
+        act(() => { vi.advanceTimersByTime(700) })
+        expect(checked('part-1')).toBe('true')
+        press('2')
+        press('Enter')
+        expect(checked('part-2')).toBe('true')
+      } finally { vi.useRealTimers() }
+    })
+
+    it('picks at once when no longer number exists, and restarts on a digit that cannot continue', () => {
+      renderForm(MANY)
+      press('5')
+      expect(checked('part-5')).toBe('true')
+      press('2')
+      press('7')
+      expect(checked('part-7')).toBe('true')
+    })
+
+    it('lets Backspace and Escape undo typed digits without cancelling the form', () => {
+      const { onCancel, onSubmit } = renderForm(MANY)
+      press('2')
+      press('Backspace')
+      expect(screen.queryByText('2_')).toBeNull()
+      press('1')
+      press('Escape')
+      expect(screen.queryByText('1_')).toBeNull()
+      expect(onCancel).not.toHaveBeenCalled()
+      expect(onSubmit).not.toHaveBeenCalled()
+      expect(screen.getAllByRole('radio').every((radio) => radio.getAttribute('aria-checked') === 'false')).toBe(true)
+    })
+
+    it('numbers supplied resources and toggles them by number', () => {
+      const { onSubmit } = renderForm({
+        type: 'object',
+        properties: { refs: { type: 'array', items: { type: 'string', format: 'uri' },
+          'x-openai-input': { type: 'resource', selection: 'explicit', options: [{ uri: 'cad://a', name: 'a.stl' }, { uri: 'cad://b', name: 'b.stl' }] } } },
+      })
+      press('2')
+      press('Enter')
+      expect(onSubmit).toHaveBeenCalledWith({ refs: ['cad://b'] })
+    })
+  })
+
+  it('leaves a field with Escape, then cancels the form', () => {
+    const { onCancel } = renderForm(REVIEW)
+    const reference = screen.getByLabelText(/CAD or file URI/)
+    expect(document.activeElement).toBe(reference)
+    press('Escape')
+    expect(document.activeElement).not.toBe(reference)
+    expect(onCancel).not.toHaveBeenCalled()
+    press('Escape')
+    expect(onCancel).toHaveBeenCalledOnce()
+  })
+
+  it('leaves keys typed outside the form alone', () => {
+    const { onSubmit, onCancel } = renderForm({ type: 'object', properties: { priority: { type: 'string', enum: ['low', 'high'] } } })
+    const elsewhere = document.createElement('textarea')
+    document.querySelector('[data-chat-root]')!.appendChild(elsewhere)
+    elsewhere.focus()
+    for (const key of ['1', 'Enter', 'Escape']) fireEvent.keyDown(elsewhere, { key })
+    expect(screen.getByRole('radio', { name: /low/ }).getAttribute('aria-checked')).toBe('false')
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(onCancel).not.toHaveBeenCalled()
   })
 
   it('picks thumbnail options', () => {
@@ -54,7 +177,7 @@ describe('SchemaFormComposer', () => {
     })
     expect(screen.getAllByRole('radio')).toHaveLength(2)
     fireEvent.click(screen.getByRole('radio', { name: /Washer/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Submit/ }))
     expect(onSubmit).toHaveBeenCalledWith({ part: 'washer' })
   })
 
@@ -70,7 +193,7 @@ describe('SchemaFormComposer', () => {
       },
     })
     fireEvent.click(screen.getByRole('checkbox', { name: /b\.stl/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Submit/ }))
     expect(onSubmit).toHaveBeenCalledWith({ refs: ['cad://a', 'cad://b'] })
   })
 
@@ -83,7 +206,7 @@ describe('SchemaFormComposer', () => {
     fireEvent.change(input, { target: { value: 'custom-spacer' } })
     fireEvent.keyDown(input, { key: 'Enter' })
     fireEvent.click(screen.getByRole('button', { name: 'Washer' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Submit/ }))
     expect(onSubmit).toHaveBeenCalledWith({ tags: ['custom-spacer', 'washer'] })
   })
 
@@ -102,7 +225,7 @@ describe('SchemaFormComposer', () => {
       type: 'object',
       properties: { code: { type: 'string', title: 'Code', pattern: '^(a+)+$', default: `${'a'.repeat(5000)}!` } },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Submit/ }))
     expect(onSubmit).not.toHaveBeenCalled()
     expect(screen.getByText("Doesn't match the expected format")).toBeTruthy()
     expect(performance.now() - start).toBeLessThan(2000)
@@ -114,7 +237,7 @@ describe('SchemaFormComposer', () => {
       properties: { note: { type: 'string', title: 'Note' }, when: { type: 'string', format: 'color' } },
     })
     expect(screen.queryByText('Note')).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Submit' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Submit/ })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
     expect(onCancel).toHaveBeenCalledOnce()
   })
@@ -145,7 +268,7 @@ describe('SchemaFormComposer native resources', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add files…' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Remove part.stl' })).toBeTruthy())
     fireEvent.click(screen.getByRole('button', { name: 'Remove tool.stl' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Submit/ }))
     expect(onSubmit).toHaveBeenCalledWith({ refs: ['cad://a', 'file:///part.stl'] })
     expect(pick).toHaveBeenCalledWith('refs')
   })
@@ -154,11 +277,11 @@ describe('SchemaFormComposer native resources', () => {
     const { onSubmit } = resourceComposer({ pick, preview: vi.fn() })
     fireEvent.click(screen.getByRole('checkbox', { name: /a\.stl/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Add files…' }))
-    await waitFor(() => expect((screen.getByRole('button', { name: 'Submit' }) as HTMLButtonElement).disabled).toBe(false))
+    await waitFor(() => expect((screen.getByRole('button', { name: /^Submit/ }) as HTMLButtonElement).disabled).toBe(false))
     fireEvent.click(screen.getByRole('button', { name: 'Add files…' }))
     await screen.findByText('File type denied')
     fireEvent.click(screen.getByRole('checkbox', { name: /b\.stl/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Submit/ }))
     expect(onSubmit).toHaveBeenCalledWith({ refs: ['cad://a', 'cad://b'] })
   })
   it('disables submit while picking and discards a late result after this request unmounts', async () => {
@@ -166,7 +289,7 @@ describe('SchemaFormComposer native resources', () => {
     const pick = vi.fn(() => new Promise<Array<{ uri: string; name: string }>>(resolve => { answer = resolve }))
     const { onSubmit, unmount } = resourceComposer({ pick, preview: vi.fn() })
     fireEvent.click(screen.getByRole('button', { name: 'Add files…' }))
-    expect((screen.getByRole('button', { name: 'Submit' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: /^Submit/ }) as HTMLButtonElement).disabled).toBe(true)
     unmount()
     await act(async () => { answer([{ uri: 'file:///late.stl', name: 'late.stl' }]) })
     expect(onSubmit).not.toHaveBeenCalled()
@@ -180,7 +303,7 @@ describe('SchemaFormComposer native resources', () => {
     await screen.findByText('<script>danger()</script>')
     expect(container.querySelector('script')).toBeNull()
     expect(preview).toHaveBeenCalledWith('refs', 'cad://a')
-    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Submit/ }))
     expect(onSubmit).toHaveBeenCalledWith({})
   })
   it('ignores an older preview after switching options and keeps error options selectable', async () => {
@@ -198,7 +321,7 @@ describe('SchemaFormComposer native resources', () => {
   })
   it('refuses implicit selection when this client has no native picker', () => {
     resourceComposer(undefined, true)
-    expect(screen.queryByRole('button', { name: 'Submit' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Submit/ })).toBeNull()
     expect(screen.getByRole('button', { name: 'Dismiss' })).toBeTruthy()
   })
 })

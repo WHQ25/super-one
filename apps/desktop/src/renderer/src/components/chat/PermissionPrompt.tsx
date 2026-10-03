@@ -8,6 +8,7 @@ import { useMiniAppStore } from '@/stores/miniapp'
 import { resolveMiniAppToolIdentity } from '@/lib/miniapp-tool-identity'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { McpAppIcon } from '@superone/ui/components/ui/mcp-app-icon'
+import { cn } from '@superone/ui/lib/utils'
 import { Circle, CheckCircle2, ChevronDown, ChevronUp, ShieldAlert, AlertTriangle, ExternalLink, Copy, Loader2, SquareTerminal } from 'lucide-react'
 import { requestOpenExternalLink } from '@/lib/external-link'
 import { ToolIcon } from './ToolIcon'
@@ -173,6 +174,10 @@ export function PermissionPrompt() {
   const toggleRememberRule = useCallback((scope: TerminalCommandRuleScope) => {
     setRememberRule((current) => (current === scope ? null : scope))
   }, [])
+  const schemaForm = pendingPermission?.schemaForm
+  const elicitationUrl = pendingPermission?.elicitationUrl
+  // The form composer owns its keys: Space and Enter belong to its fields.
+  const isSchemaFormElicitation = isElicitation && Boolean(schemaForm) && !elicitationUrl
   const isSelfManagedConfirm =
     isVideoGenConfirm
     || isConfigConfirm
@@ -181,8 +186,7 @@ export function PermissionPrompt() {
     || isWebMcpTrustConfirm
     || isSessionCleanupConfirm
     || isAutomationConfirm
-  const schemaForm = pendingPermission?.schemaForm
-  const elicitationUrl = pendingPermission?.elicitationUrl
+    || isSchemaFormElicitation
   const [urlOpened, setUrlOpened] = useState(false)
   useEffect(() => { setUrlOpened(false) }, [requestId])
   const supportsAlwaysPersist = pendingPermission?.supportsAlwaysPersist ?? false
@@ -207,7 +211,7 @@ export function PermissionPrompt() {
   const apps = useMiniAppStore((s) => s.apps)
   const pendingInput = pendingPermission?.input
   // Hooks must precede the per-kind early returns below.
-  const mcpIconSrc = useMcpServerIcon(parseMcpToolName(toolName ?? '')?.serverName)
+  const mcpIconSrc = useMcpServerIcon(isElicitation ? pendingPermission?.serverName : parseMcpToolName(toolName ?? '')?.serverName)
   const miniAppInfo: MiniAppToolInfo | null = useMemo(() => {
     if (!toolName) return null
     const mcpInfo = parseMcpToolName(toolName)
@@ -516,34 +520,37 @@ export function PermissionPrompt() {
         ? 'text-amber-500'
         : 'text-muted-foreground'
     const isUrlElicit = Boolean(elicitationUrl)
+    // Who is asking: the server's icon, else the MCP mark; a flagged risk keeps the warning colour.
+    const icon = (className: string) => isUrlElicit && urlOpened
+      ? <Loader2 className={`${className} animate-spin ${riskColor}`} />
+      : riskLevel === 'medium' || riskLevel === 'high'
+        ? <AlertTriangle className={`${className} ${riskColor}`} />
+        : <McpAppIcon src={mcpIconSrc} className={`${className} text-muted-foreground`} fallback={<ToolIcon icon="mcp" className={`${className} text-muted-foreground`} />} />
 
     return (
       <div className="mx-3 mb-2">
-        {isCollapsed ? (
+        {isCollapsed && (
           <button
             type="button"
             onClick={() => setIsCollapsed(false)}
             className="flex w-full cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent"
           >
-            {isUrlElicit && urlOpened
-              ? <Loader2 className={`size-3.5 shrink-0 animate-spin ${riskColor}`} />
-              : <AlertTriangle className={`size-3.5 shrink-0 ${riskColor}`} />}
+            {icon('size-3.5 shrink-0')}
             <span className="min-w-0 flex-1 truncate text-xs text-foreground">
               {isUrlElicit && urlOpened ? t('chat.permission.waitingElicitation') : message}
             </span>
             <ChevronUp className="size-3.5 shrink-0 text-muted-foreground" />
           </button>
-        ) : (
-          <div className="rounded-lg border border-border bg-card p-3">
+        )}
+        {/* Stays mounted while collapsed so a half-filled form keeps its answers. */}
+        <div className={cn('rounded-lg border border-border bg-card p-3', isCollapsed && 'hidden')}>
             <button
               type="button"
               onClick={() => setIsCollapsed(true)}
               className="group mb-2 flex w-full cursor-pointer items-start justify-between gap-2 text-left"
             >
               <div className="flex items-start gap-1.5">
-                {isUrlElicit && urlOpened
-                  ? <Loader2 className={`mt-0.5 size-3.5 shrink-0 animate-spin ${riskColor}`} />
-                  : <AlertTriangle className={`mt-0.5 size-3.5 shrink-0 ${riskColor}`} />}
+                {icon('mt-0.5 size-3.5 shrink-0')}
                 <div className="min-w-0">
                   <div className="text-xs font-medium text-foreground">
                     {isUrlElicit && urlOpened ? t('chat.permission.waitingElicitation') : message}
@@ -586,6 +593,7 @@ export function PermissionPrompt() {
                 onSubmit={handleFormSubmit}
                 onDecline={handleElicitationDecline}
                 onCancel={handleCancel}
+                active={!isCollapsed}
               />
             ) : (
               <>
@@ -607,8 +615,7 @@ export function PermissionPrompt() {
                 </div>
               </>
             )}
-          </div>
-        )}
+        </div>
       </div>
     )
   }

@@ -5,6 +5,8 @@ import {
   initialSchemaFormValues,
   parseSchemaForm,
   schemaFormContent,
+  schemaFormStepAdvancesOnPick,
+  schemaFormSteps,
   validateSchemaForm,
   type SchemaFormField,
 } from './schema-form'
@@ -171,6 +173,33 @@ describe('initialSchemaFormValues', () => {
         empty: { type: 'string' },
       },
     }))).toEqual({ name: 'x', on: false, tags: ['a'] })
+  })
+})
+
+describe('schemaFormSteps', () => {
+  const names = (steps: SchemaFormField[][]) => steps.map((step) => step.map((f) => f.name))
+
+  it('gives each choice its own step and keeps runs of typed fields together', () => {
+    const steps = schemaFormSteps(fields({
+      type: 'object',
+      properties: {
+        reference: { type: 'string' },
+        tolerance: { type: 'number' },
+        priority: { type: 'string', enum: ['low', 'high'] },
+        approved: { type: 'boolean' },
+        tags: { type: 'array', items: { type: 'string' } },
+        checks: { type: 'array', items: { type: 'string', enum: ['lint', 'unit'] } },
+        note: { type: 'string' },
+        part: { type: 'string', format: 'uri', 'x-openai-input': { type: 'resource', options: [] } },
+      },
+    }))
+    expect(names(steps)).toEqual([['reference', 'tolerance'], ['priority'], ['approved'], ['tags'], ['checks'], ['note'], ['part']])
+    expect(steps.map(schemaFormStepAdvancesOnPick)).toEqual([false, true, true, false, false, false, false])
+  })
+
+  it('keeps an all-text form on one step and an empty form on none', () => {
+    expect(names(schemaFormSteps(fields({ type: 'object', properties: { a: { type: 'string' }, b: { type: 'integer' } } })))).toEqual([['a', 'b']])
+    expect(schemaFormSteps([])).toEqual([])
   })
 })
 

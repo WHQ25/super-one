@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { Image, Pressable, StyleSheet, Switch, View, type KeyboardTypeOptions } from 'react-native'
-import { CheckCircle2, Circle, FileText, ImageIcon, Plus, Square, SquareCheck, X } from 'lucide-react-native'
+import { useState, type ReactNode } from 'react'
+import { Image, Pressable, StyleSheet, View, type KeyboardTypeOptions } from 'react-native'
+import { Check, FileText, ImageIcon, Plus, Square, SquareCheck, X } from 'lucide-react-native'
 import { formatBytes } from '@superone/shared/format-bytes'
 import type {
   SchemaFormError,
@@ -14,7 +14,7 @@ import type {
 import { Text } from '../ui/text'
 import { useMobileTheme } from '../theme/context'
 import { useMobileLocale } from '../i18n/context'
-import { PromptChoice, PromptInput, PromptPill } from './PromptControls'
+import { PromptInput, PromptPill } from './PromptControls'
 import { usePromptStyles } from './styles'
 
 type FieldOf<K extends SchemaFormField['kind']> = Extract<SchemaFormField, { kind: K }>
@@ -51,41 +51,44 @@ function asList(value: SchemaFormValue | undefined): string[] {
 }
 
 /** Server image already limited to https/data by the shared parser; a fallback glyph otherwise. */
-function Thumbnail({ image, size }: { image?: SchemaFormImage; size?: number }) {
+function Thumbnail({ image, size = THUMBNAIL_SIZE }: { image?: SchemaFormImage; size?: number }) {
   const { tokens: { colors, radius } } = useMobileTheme()
   const [failed, setFailed] = useState(false)
-  const box = size ? { width: size, height: size } : { width: '100%' as const, aspectRatio: 1 }
+  const box = { width: size, height: size }
   if (!image || failed) {
     return <View style={[box, { backgroundColor: colors.muted, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' }]}>
-      <ImageIcon size={size ? size / 2 : 24} color={colors.mutedForeground} />
+      <ImageIcon size={size / 2} color={colors.mutedForeground} />
     </View>
   }
   return <Image source={{ uri: image.src }} onError={() => setFailed(true)} resizeMode="cover" style={[box, { borderRadius: radius.sm, backgroundColor: colors.muted }]} />
 }
 
-/** OpenAI spec: when any option has a thumbnail, every option renders as an image. */
-function ThumbnailGrid({ options, selected, multi, onToggle }: { options: SchemaFormOption[]; selected: readonly string[]; multi: boolean; onToggle: (value: string) => void }) {
+/**
+ * One borderless choice, as on the desktop: an optional image, the text, and the
+ * selection at the end — a check on the chosen single option, a checkbox per
+ * row for multiple choice.
+ */
+function ChoiceRow({ testID, label, meta, media, selected, multi, onPress }: { testID: string; label: string; meta?: string; media?: ReactNode; selected: boolean; multi: boolean; onPress: () => void }) {
   const styles = usePromptStyles()
   const { tokens: { colors } } = useMobileTheme()
-  return <View style={local.grid}>
-    {options.map((option) => {
-      const checked = selected.includes(option.value)
-      return <Pressable key={option.value} testID={`prompt-option-${option.label}`} accessibilityRole={multi ? 'checkbox' : 'radio'} accessibilityState={{ checked }} accessibilityLabel={option.label}
-        onPress={() => onToggle(option.value)} style={({ pressed }) => [styles.choice, local.tile, checked && styles.selectedChoice, pressed && styles.pressed]}>
-        <Thumbnail image={option.thumbnail} />
-        <Text style={styles.body} numberOfLines={3}>{option.label}</Text>
-        {option.description ? <Text style={styles.meta} numberOfLines={3}>{option.description}</Text> : null}
-        {checked ? <View style={[local.badge, { backgroundColor: colors.primary }]}><CheckCircle2 size={14} color={colors.primaryForeground} /></View> : null}
-      </Pressable>
-    })}
-  </View>
+  const Mark = multi ? selected ? SquareCheck : Square : Check
+  return <Pressable testID={testID} accessibilityRole={multi ? 'checkbox' : 'radio'} accessibilityState={{ checked: selected }} accessibilityLabel={label}
+    onPress={onPress} style={({ pressed }) => [styles.choice, local.row, selected && styles.selectedChoice, pressed && styles.pressed]}>
+    {media}
+    <View style={styles.grow}>
+      <Text style={styles.body} numberOfLines={media ? 2 : undefined}>{label}</Text>
+      {meta ? <Text style={styles.meta} numberOfLines={media ? 2 : undefined}>{meta}</Text> : null}
+    </View>
+    <Mark size={18} color={selected ? colors.primary : colors.mutedForeground} style={!multi && !selected ? local.hidden : undefined} />
+  </Pressable>
 }
 
 function Choices({ options, selected, multi, onToggle }: { options: SchemaFormOption[]; selected: readonly string[]; multi: boolean; onToggle: (value: string) => void }) {
-  const styles = usePromptStyles()
-  if (options.some((o) => o.thumbnail)) return <ThumbnailGrid options={options} selected={selected} multi={multi} onToggle={onToggle} />
-  return <View style={styles.tight}>
-    {options.map((option) => <PromptChoice key={option.value} multi={multi} label={option.label} description={option.description} selected={selected.includes(option.value)} onPress={() => onToggle(option.value)} />)}
+  // OpenAI spec: when any option has a thumbnail, every option renders with an image.
+  const images = options.some((o) => o.thumbnail)
+  return <View style={local.list}>
+    {options.map((option) => <ChoiceRow key={option.value} testID={`prompt-option-${option.label}`} label={option.label} meta={option.description}
+      media={images ? <Thumbnail image={option.thumbnail} /> : undefined} multi={multi} selected={selected.includes(option.value)} onPress={() => onToggle(option.value)} />)}
   </View>
 }
 
@@ -111,8 +114,9 @@ function TextField({ field, value, onChange }: { field: FieldOf<'text'>; value: 
 }
 
 function NumberField({ field, value, onChange }: { field: FieldOf<'number'>; value: SchemaFormValue | undefined; onChange: (value: SchemaFormValue | undefined) => void }) {
-  // Keep the typed text: "1." or "-" are drafts that are not numbers yet.
-  const [draft, setDraft] = useState(() => (typeof value === 'number' ? String(value) : ''))
+  // Keep the typed text: "1." or "-" are drafts that are not numbers yet. A step
+  // remounts its fields, so an unfinished draft comes back from the value.
+  const [draft, setDraft] = useState(() => (value === undefined || typeof value === 'object' ? '' : String(value)))
   return <PromptInput testID={`prompt-field-${field.name}`} accessibilityLabel={field.label} value={draft}
     keyboardType={field.integer ? 'number-pad' : 'decimal-pad'}
     onChangeText={(raw) => {
@@ -158,20 +162,11 @@ function TextListField({ field, value, onChange }: { field: FieldOf<'text-list'>
 }
 
 function ResourceRow({ resource, selected, multi, onPress }: { resource: SchemaFormResource; selected: boolean; multi: boolean; onPress: () => void }) {
-  const styles = usePromptStyles()
   const { tokens: { colors, radius } } = useMobileTheme()
-  const Icon = multi ? selected ? SquareCheck : Square : selected ? CheckCircle2 : Circle
   const meta = resource.description ?? [resource.title ? resource.name : undefined, resource.size !== undefined ? formatBytes(resource.size) : undefined].filter(Boolean).join(' · ')
-  return <Pressable testID={`prompt-option-${resource.uri}`} accessibilityRole={multi ? 'checkbox' : 'radio'} accessibilityState={{ checked: selected }} accessibilityLabel={resource.title ?? resource.name}
-    onPress={onPress} style={({ pressed }) => [styles.choice, local.resource, selected && styles.selectedChoice, pressed && styles.pressed]}>
-    <Icon size={16} color={selected ? colors.primary : colors.mutedForeground} />
-    {resource.thumbnail ? <Thumbnail image={resource.thumbnail} size={36} />
-      : <View style={[local.fileIcon, { backgroundColor: colors.muted, borderRadius: radius.sm }]}><FileText size={18} color={colors.mutedForeground} /></View>}
-    <View style={styles.grow}>
-      <Text style={styles.body} numberOfLines={1}>{resource.title ?? resource.name}</Text>
-      {meta ? <Text style={styles.meta} numberOfLines={1}>{meta}</Text> : null}
-    </View>
-  </Pressable>
+  return <ChoiceRow testID={`prompt-option-${resource.uri}`} label={resource.title ?? resource.name} meta={meta || undefined} multi={multi} selected={selected} onPress={onPress}
+    media={resource.thumbnail ? <Thumbnail image={resource.thumbnail} />
+      : <View style={[local.fileIcon, { backgroundColor: colors.muted, borderRadius: radius.sm }]}><FileText size={18} color={colors.mutedForeground} /></View>} />
 }
 
 function ResourceField({ field, value, onChange }: { field: FieldOf<'resource'>; value: SchemaFormValue | undefined; onChange: (value: SchemaFormValue | undefined) => void }) {
@@ -180,7 +175,7 @@ function ResourceField({ field, value, onChange }: { field: FieldOf<'resource'>;
   const selected = multi ? asList(value) : typeof value === 'string' ? [value] : []
   const { t } = useMobileLocale()
   if (!field.options.length) return <Text style={styles.meta}>{t('Nothing to choose from.')}</Text>
-  return <View style={styles.tight}>
+  return <View style={local.list}>
     {field.options.map((resource) => <ResourceRow key={resource.uri} resource={resource} multi={multi} selected={selected.includes(resource.uri)}
       onPress={() => onChange(multi ? toggle(selected, resource.uri) : resource.uri)} />)}
   </View>
@@ -205,22 +200,12 @@ export function SchemaFormFields({ fields, values, errors, onChange }: {
       const set = (next: SchemaFormValue | undefined) => onChange(field.name, next)
       const error = errors[field.name]
       const label = `${field.label}${field.required ? ' *' : ''}`
-      if (field.kind === 'boolean') {
-        return <View key={field.name} style={styles.tight}>
-          <View style={styles.row}>
-            <View style={styles.grow}>
-              <Text style={styles.body}>{field.label}</Text>
-              {field.description ? <Text style={styles.meta}>{field.description}</Text> : null}
-            </View>
-            <Switch testID={`prompt-field-${field.name}`} accessibilityLabel={field.label} value={value === true} trackColor={{ true: colors.primary }} onValueChange={set} />
-          </View>
-          {error ? <Text style={[styles.meta, { color: colors.destructive }]}>{errorText(error)}</Text> : null}
-        </View>
-      }
       return <View key={field.name} style={styles.tight}>
         <Text style={styles.body}>{label}</Text>
         {field.description ? <Text style={styles.meta}>{field.description}</Text> : null}
-        {field.kind === 'text' ? <TextField field={field} value={value} onChange={set} />
+        {field.kind === 'boolean' ? <Choices options={[{ value: 'true', label: t('Yes') }, { value: 'false', label: t('No') }]} multi={false}
+          selected={typeof value === 'boolean' ? [String(value)] : []} onToggle={(v) => set(v === 'true')} />
+          : field.kind === 'text' ? <TextField field={field} value={value} onChange={set} />
           : field.kind === 'number' ? <NumberField field={field} value={value} onChange={set} />
             : field.kind === 'select' ? <Choices options={field.options} multi={false} selected={typeof value === 'string' ? [value] : []} onToggle={set} />
               : field.kind === 'multiselect' ? <Choices options={field.options} multi selected={asList(value)} onToggle={(v) => set(toggle(asList(value), v))} />
@@ -232,11 +217,12 @@ export function SchemaFormFields({ fields, values, errors, onChange }: {
   </View>
 }
 
+const THUMBNAIL_SIZE = 40
+
 const local = StyleSheet.create({
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8 },
-  tile: { flexDirection: 'column', alignItems: 'stretch', width: '48.5%', paddingHorizontal: 8, paddingVertical: 8, gap: 6 },
-  badge: { position: 'absolute', top: 12, right: 12, borderRadius: 999, padding: 2 },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '100%' },
-  resource: { alignItems: 'center' },
-  fileIcon: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  list: { gap: 2 },
+  row: { alignItems: 'center', borderWidth: 0 },
+  hidden: { opacity: 0 },
+  fileIcon: { width: THUMBNAIL_SIZE, height: THUMBNAIL_SIZE, alignItems: 'center', justifyContent: 'center' },
 })

@@ -28,7 +28,8 @@ const RESOURCES = [
 ]
 
 function Shell({ children, width = 560 }: { children: ReactNode; width?: number }) {
-  return <div className="@container rounded-lg border border-border bg-card p-3" style={{ maxWidth: width }}>{children}</div>
+  // A chat pane root, as in the app: the composer's keys work only inside one.
+  return <div data-chat-root className="@container rounded-lg border border-border bg-card p-3" style={{ maxWidth: width }}>{children}</div>
 }
 
 /** Production composer around a raw `requestedSchema`, echoing what it would send. */
@@ -86,6 +87,74 @@ const ALL_KINDS = {
 }
 
 export const AllInputKinds: Story = { args: { schema: ALL_KINDS } }
+
+/** `cad.reviewForm`: typed fields share a step, each choice gets its own; digits pick and move on. */
+const REVIEW = {
+  type: 'object',
+  required: ['reference', 'priority', 'tolerance'],
+  properties: {
+    reference: { type: 'string', title: 'CAD or file URI', format: 'uri', pattern: '^(cad|file):', default: 'cad://parts/part_keycap_bug' },
+    priority: { type: 'string', title: 'Priority', enum: ['low', 'normal', 'high'] },
+    approved: { type: 'boolean', title: 'Approved' },
+    tolerance: { type: 'number', title: 'Tolerance (mm)', minimum: 0, maximum: 10, default: 1.5 },
+  },
+}
+
+export const Stepped: Story = {
+  args: { schema: REVIEW },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: /^Next/ }))
+    await userEvent.keyboard('2')
+    await expect(canvas.getByLabelText('Step 3 of 4')).toBeInTheDocument()
+    await userEvent.click(canvas.getByRole('button', { name: 'Back' }))
+    await expect(canvas.getByRole('radio', { name: /normal/ })).toHaveAttribute('aria-checked', 'true')
+    await userEvent.keyboard('3')
+    await userEvent.click(canvas.getByRole('radio', { name: /Yes/ }))
+    await userEvent.click(canvas.getByRole('button', { name: /^Submit/ }))
+    await expect(canvas.findByTestId('sent')).resolves.toHaveTextContent('"priority": "high"')
+  },
+}
+
+/** 23 regions: "2" lights up 2 and 20–23 and waits; "3" completes 23. */
+export const ManyOptions: Story = {
+  args: {
+    schema: {
+      type: 'object',
+      required: ['region'],
+      properties: { region: { type: 'string', title: 'Region', enum: [
+        'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2', 'ca-central-1', 'sa-east-1', 'eu-west-1', 'eu-west-2',
+        'eu-west-3', 'eu-central-1', 'eu-central-2', 'eu-north-1', 'eu-south-1', 'me-south-1', 'af-south-1', 'ap-east-1',
+        'ap-south-1', 'ap-south-2', 'ap-northeast-1', 'ap-northeast-2', 'ap-northeast-3', 'ap-southeast-1', 'ap-southeast-2',
+      ] } },
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.keyboard('2')
+    await expect(canvas.getByText('2_')).toBeInTheDocument()
+    await userEvent.keyboard('3')
+    await expect(canvas.getByRole('radio', { name: /ap-southeast-2/ })).toHaveAttribute('aria-checked', 'true')
+  },
+}
+
+/** Moving on with a missing choice reveals the error and stays on the step. */
+export const SteppedRequired: Story = {
+  args: { schema: REVIEW },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: /^Next/ }))
+    await userEvent.click(canvas.getByRole('button', { name: /^Next/ }))
+    await expect(canvas.getByText('Required')).toBeInTheDocument()
+    await expect(canvas.getByLabelText('Step 2 of 4')).toBeInTheDocument()
+  },
+}
+
+export const SteppedNarrowDarkChinese: Story = {
+  args: { schema: REVIEW },
+  parameters: { shellWidth: 300 },
+  globals: { theme: 'dark', locale: 'zh' },
+}
 
 /** `cad.pickFile`: titled options with `x-openai-thumbnail` render as an image grid. */
 export const Thumbnails: Story = {
@@ -176,7 +245,7 @@ export const NativeImplicitResources: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole('button', { name: 'Remove M6 washer' }))
-    await userEvent.click(canvas.getByRole('button', { name: 'Submit' }))
+    await userEvent.click(canvas.getByRole('button', { name: /^Submit/ }))
     await expect(canvas.findByTestId('sent')).resolves.toHaveTextContent('cad://parts/hex-bolt')
     await expect(canvas.getByTestId('sent')).not.toHaveTextContent('cad://parts/washer')
   },
@@ -187,17 +256,17 @@ export const NativeDirectory: Story = {
   } } }, resources: { ...nativeActions, pick: async () => [{ uri: 'file:///workspace/cad-parts', name: 'cad-parts' }] } },
 }
 
-/** Submitting with invalid answers reveals every error and sends nothing. */
+/** Moving on with invalid answers reveals every error on the step and stays there. */
 export const ValidationErrors: Story = {
   args: { schema: ALL_KINDS },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await userEvent.type(canvas.getByLabelText(/Release name/), 'ab')
     await userEvent.type(canvas.getByLabelText(/CAD or file URI/), 'https://example.com/part')
-    await userEvent.click(canvas.getByRole('button', { name: 'Submit' }))
+    await userEvent.click(canvas.getByRole('button', { name: /^Next/ }))
     await expect(canvas.getByText('Use at least 3 characters')).toBeInTheDocument()
     await expect(canvas.getByText("Doesn't match the expected format")).toBeInTheDocument()
-    await expect(canvas.getAllByText('Required').length).toBeGreaterThan(0)
+    await expect(canvas.getByLabelText(/^Step 1 of/)).toBeInTheDocument()
     await expect(canvas.queryByTestId('sent')).toBeNull()
   },
 }

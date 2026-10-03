@@ -207,7 +207,7 @@ describe('PermissionPrompt + real store integration', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Add files…' }))
       await screen.findByRole('radio', { name: /picked.stl/ })
       expect(pick).toHaveBeenCalledWith('alpha', 'native-form', 'part')
-      fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+      fireEvent.click(screen.getByRole('button', { name: /^Submit/ }))
       await waitFor(() => expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith('alpha', 'native-form', true, false, undefined, undefined, undefined, { part: 'file:///picked.stl' }))
     } finally { Object.defineProperty(window, 'environment', { configurable: true, value: original }) }
   })

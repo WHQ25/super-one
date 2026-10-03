@@ -202,9 +202,36 @@ describe('PermissionPrompt', () => {
 
     renderInChat(<PermissionPrompt />)
     fireEvent.click(screen.getByRole('radio', { name: /Hex bolt/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Submit/ }))
 
     expect(chatState.respondToPermission).toHaveBeenCalledWith('elicit-form', true, false, undefined, undefined, undefined, { part: 'hex' })
+  })
+
+  it('leaves Space and Enter in a form field to the form, never answering without content', () => {
+    activeSessionState.sessionProvider = 'codex'
+    activeSessionState.pendingPermissions = [{
+      requestId: 'elicit-text',
+      toolName: 'bits-and-bolts',
+      input: {},
+      allowAlwaysAllow: false,
+      requestKind: 'mcp_elicitation',
+      serverName: 'bits-and-bolts',
+      message: 'Review a CAD reference',
+      ...elicitationFormRequest({ type: 'object', required: ['note'], properties: { note: { type: 'string', title: 'Note' } } }),
+    }]
+
+    renderInChat(<PermissionPrompt />)
+    const note = screen.getByLabelText(/Note/)
+    note.focus()
+    fireEvent.keyDown(note, { key: ' ' })
+    fireEvent.keyDown(note, { key: 'Enter' })
+
+    expect(screen.getByLabelText(/Note/)).toBeTruthy()
+    expect(screen.getByText('Required')).toBeTruthy()
+    expect(chatState.respondToPermission).not.toHaveBeenCalled()
+    fireEvent.change(note, { target: { value: 'looks good' } })
+    fireEvent.keyDown(note, { key: 'Enter' })
+    expect(chatState.respondToPermission).toHaveBeenCalledWith('elicit-text', true, false, undefined, undefined, undefined, { note: 'looks good' })
   })
 
   it('opens a URL elicitation in the browser and keeps the waiting card', () => {

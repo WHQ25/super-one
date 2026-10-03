@@ -1,5 +1,5 @@
 appId: ${APP_ID}
-name: Required elicitation fields gate typed submission
+name: Stepped elicitation forms gate each step and keep typed answers
 tags: [native, extended]
 ---
 - runFlow:
@@ -7,25 +7,45 @@ tags: [native, extended]
     env:
       SCENARIO: permission/mcp_elicitation
 - assertVisible:
+    id: prompt-step-progress
+    text: "Step 1 of 7"
+- assertVisible:
     id: prompt-approve
     enabled: false
 - tapOn:
-    id: prompt-field-title
-- inputText: "Preview issue"
+    id: prompt-field-reference
+- inputText: "cad://parts/hex-bolt"
 - assertVisible:
     id: prompt-approve
     enabled: true
 - tapOn:
+    id: prompt-approve
+# Each choice is its own step; a single pick moves on.
+- tapOn:
+    id: prompt-option-M6 washer
+- assertVisible:
+    text: "Step 3 of 7"
+- tapOn:
+    id: prompt-back
+- assertVisible:
+    text: "Step 2 of 7"
+- tapOn:
+    id: prompt-option-M6 washer
+- tapOn:
     id: prompt-option-High
 - tapOn:
-    id: prompt-field-notify
-- scrollUntilVisible:
-    element:
-      id: prompt-field-estimate
-    direction: DOWN
+    id: prompt-field-tolerance
+- inputText: "0.5"
 - tapOn:
-    id: prompt-field-estimate
-- inputText: "3"
+    id: prompt-approve
+- tapOn:
+    id: prompt-option-Yes
+- assertVisible:
+    text: "Step 6 of 7"
+- tapOn:
+    id: prompt-approve
+- assertVisible:
+    text: "Step 7 of 7"
 - tapOn:
     id: prompt-approve
 - runFlow:
@@ -33,7 +53,9 @@ tags: [native, extended]
     env:
       ACTION: allow
       REQUEST_ID: preview-mcp_elicitation
-- assertTrue: ${JSON.parse(maestro.copiedText).payload.formAnswers.title === "Preview issue"}
-- assertTrue: ${JSON.parse(maestro.copiedText).payload.formAnswers.priority === "High"}
-- assertTrue: ${JSON.parse(maestro.copiedText).payload.formAnswers.notify === true}
-- assertTrue: ${JSON.parse(maestro.copiedText).payload.formAnswers.estimate === 3}
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.formAnswers.reference === "cad://parts/hex-bolt"}
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.formAnswers.part === "washer"}
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.formAnswers.priority === "high"}
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.formAnswers.tolerance === 0.5}
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.formAnswers.approved === true}
+- assertTrue: ${JSON.parse(maestro.copiedText).payload.formAnswers.references[0] === "cad://parts/washer"}

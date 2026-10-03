@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from 'react'
+import { isValidElement, useRef, type ReactElement, type ReactNode } from 'react'
 import { Animated, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native'
 import { Text } from '../ui/text'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -19,7 +19,8 @@ import { useMobileLocale } from '../i18n/context'
  * Modal hidden, so answers typed so far survive the round trip.
  */
 export function PromptSheet({ title, subtitle, icon: Icon, children, footer, onDismiss, onCollapse, collapsed = false, spacious = false }: {
-  title: string; subtitle?: string; icon: LucideIcon; children: ReactNode; footer?: ReactNode
+  /** A kind glyph, or an element already drawn at 16 pt (see `PromptGlyph`). */
+  title: string; subtitle?: string; icon: LucideIcon | ReactElement; children: ReactNode; footer?: ReactNode
   onDismiss: () => void; onCollapse?: () => void; collapsed?: boolean; spacious?: boolean
 }) {
   const { tokens: { colors, radius, spacing } } = useMobileTheme()
@@ -52,7 +53,7 @@ export function PromptSheet({ title, subtitle, icon: Icon, children, footer, onD
               <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
             </View> : null}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: spacing.lg, paddingRight: 6, paddingVertical: tablet ? 8 : 2, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-              <Icon size={16} color={colors.mutedForeground} />
+              {isValidElement(Icon) ? Icon : <Icon size={16} color={colors.mutedForeground} />}
               <View style={{ flex: 1, minWidth: 0, paddingVertical: 6 }}>
                 <Text testID="prompt-title" style={{ color: colors.foreground, fontSize: 16, lineHeight: 22, fontWeight: '600' }}>{translatedTitle}</Text>
                 {subtitle ? <Text numberOfLines={1} style={{ color: colors.mutedForeground, fontSize: 12, lineHeight: 18 }}>{subtitle}</Text> : null}

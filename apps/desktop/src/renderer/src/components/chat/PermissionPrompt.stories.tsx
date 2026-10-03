@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect, type ReactNode } from 'react'
 import { PermissionPrompt } from './PermissionPrompt'
 import { useChatStore, type ChatProvider } from '@/stores/chat'
+import { useSettingsStore } from '@/stores/settings'
 import type { PermissionRequest } from '@superone/shared/agent-types'
 import { elicitationFormRequest } from '@superone/shared/schema-form'
 
@@ -433,6 +434,43 @@ export const McpFormElicitation: Story = {
             priority: { type: 'string', title: 'Priority', enum: ['low', 'normal', 'high'] },
             approved: { type: 'boolean', title: 'Approved' },
             tolerance: { type: 'number', title: 'Tolerance (mm)', minimum: 0, maximum: 10 },
+          },
+        })}
+      />
+      <Story />
+    </>
+  )],
+}
+
+const swatch = (color: string) => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8" fill="${color}"/></svg>`)}`
+const BITS_ICON = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M12 22V12M21 7l-9 5-9-5"/></svg>')}`
+
+/** The server's own icon for the card header, as the MCP probe caches it; cleared on unmount. */
+function SeedMcpIcon({ server, src }: { server: string; src: string }) {
+  useEffect(() => {
+    const previous = useSettingsStore.getState().mcpMeta
+    useSettingsStore.setState({ mcpMeta: { ...previous, [server]: { name: server, icons: [{ src }] } } })
+    return () => useSettingsStore.setState({ mcpMeta: previous })
+  }, [server, src])
+  return null
+}
+
+/** `cad.pickFile` with its server icon in the header; image options are list rows. */
+export const McpFormWithServerIcon: Story = {
+  decorators: [(Story) => (
+    <>
+      <SeedMcpIcon server="bits-and-bolts" src={BITS_ICON} />
+      <SeedPermission
+        sessionProvider="codex"
+        request={formElicitation('p-form-icon', 'Choose a CAD part', {
+          type: 'object',
+          required: ['part'],
+          properties: {
+            part: { type: 'string', title: 'CAD part', oneOf: [
+              { const: 'hex', title: 'M6 hex bolt', description: 'Fastener for the main joint.', 'x-openai-thumbnail': { src: swatch('#0ea5e9') } },
+              { const: 'washer', title: 'M6 washer', 'x-openai-thumbnail': { src: swatch('#f97316') } },
+              { const: 'spacer', title: 'Nylon spacer' },
+            ] },
           },
         })}
       />

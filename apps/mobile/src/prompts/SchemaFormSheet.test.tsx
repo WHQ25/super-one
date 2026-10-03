@@ -37,14 +37,45 @@ test('an extended form submits typed content once it validates', async () => {
   expect(screen.getByText("Doesn't match the expected format")).toBeTruthy()
   expect(screen.getByTestId('prompt-approve')).toBeDisabled()
 
+  // Typed fields share the first step; the choice gets the last one. An MCP decline has no reason field.
+  expect(screen.queryByTestId('prompt-option-Washer')).toBeNull()
+  expect(screen.queryByTestId('prompt-feedback')).toBeNull()
   await act(async () => {
     fireEvent.changeText(screen.getByTestId('prompt-field-reference'), 'cad://parts/hex')
     fireEvent.changeText(screen.getByTestId('prompt-field-tolerance'), '0.5')
-    fireEvent.press(screen.getByTestId('prompt-option-Washer'))
   })
+  await act(async () => { fireEvent.press(screen.getByTestId('prompt-approve')) })
+  expect(screen.getByLabelText('Step 2 of 2')).toBeTruthy()
+  expect(onAllow).not.toHaveBeenCalled()
+  await act(async () => { fireEvent.press(screen.getByTestId('prompt-option-Washer')) })
   await act(async () => { fireEvent.press(screen.getByTestId('prompt-approve')) })
 
   expect(onAllow).toHaveBeenCalledWith('form-1', { reference: 'cad://parts/hex', tolerance: 0.5, part: 'washer' }, false, undefined)
+})
+
+test('a pick moves on to the next step and Back keeps the answer', async () => {
+  const onAllow = jest.fn()
+  await renderWithTheme(withInsets(<PermissionSheet perm={form({
+    type: 'object',
+    required: ['priority'],
+    properties: {
+      priority: { type: 'string', title: 'Priority', enum: ['low', 'normal', 'high'] },
+      approved: { type: 'boolean', title: 'Approved' },
+    },
+  })} onAllow={onAllow} onDeny={() => {}} />))
+
+  expect(screen.getByTestId('prompt-approve')).toBeDisabled()
+  expect(screen.queryByTestId('prompt-back')).toBeNull()
+  await act(async () => { fireEvent.press(screen.getByTestId('prompt-option-normal')) })
+  expect(screen.getByLabelText('Step 2 of 2')).toBeTruthy()
+  expect(screen.getByTestId('prompt-option-No')).toBeChecked()
+  await act(async () => { fireEvent.press(screen.getByTestId('prompt-back')) })
+  expect(screen.getByTestId('prompt-option-normal')).toBeChecked()
+  await act(async () => { fireEvent.press(screen.getByTestId('prompt-option-normal')) })
+  await act(async () => { fireEvent.press(screen.getByTestId('prompt-option-Yes')) })
+  await act(async () => { fireEvent.press(screen.getByTestId('prompt-approve')) })
+
+  expect(onAllow).toHaveBeenCalledWith('form-1', { priority: 'normal', approved: true }, false, undefined)
 })
 
 test('a resource picker returns the chosen supplied URIs', async () => {

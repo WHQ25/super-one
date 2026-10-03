@@ -71,7 +71,7 @@ bun run test:mobile:ui --platform android --device emulator-5554 --theme all
 | question-custom | Whitespace cannot submit; custom text is submitted; reopening resets answers; dismiss has no answers |
 | question-notes | Preview defaults are submittable; notes survive option changes and accompany the selected answer |
 | plan-decisions | Rejection trims feedback; plain approval and Accept edits continuation send distinct callbacks |
-| permission-elicitation | Required input gates submission; enum, boolean, and numeric answers retain their types |
+| permission-elicitation | Each form step gates moving on; a single pick advances and Back keeps it; enum, boolean, and numeric answers retain their types |
 | permission-grants | Computer, device, and WebMCP grants distinguish session approval from persistent approval |
 | permission-structured | Video parameters, collaboration launch identities/modes, and automation config reach approval |
 | permission-destructive | Session cleanup, provider deletion, and automation deletion support distinct deny/allow callbacks |

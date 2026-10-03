@@ -2031,9 +2031,15 @@ export type Messages = {
     schemaForm: {
       submit: string
       dismiss: string
+      next: string
+      back: string
+      yes: string
+      no: string
+      progress: string
+      hintSelect: string
+      hintCancel: string
       unsupportedTitle: string
       unsupportedBody: string
-      selectPlaceholder: string
       suggestions: string
       add: string
       addPlaceholder: string
@@ -6216,9 +6222,15 @@ export const en: Messages = {
     schemaForm: {
       submit: 'Submit',
       dismiss: 'Dismiss',
+      next: 'Next',
+      back: 'Back',
+      yes: 'Yes',
+      no: 'No',
+      progress: 'Step {{current}} of {{total}}',
+      hintSelect: 'select',
+      hintCancel: 'cancel',
       unsupportedTitle: 'SuperOne can\'t show this form',
       unsupportedBody: '{{requester}} asked for input SuperOne does not support yet. Dismiss it to tell the server the form was not completed.',
-      selectPlaceholder: 'Choose…',
       suggestions: 'Suggestions',
       add: 'Add',
       addPlaceholder: 'Type a value and press Enter',

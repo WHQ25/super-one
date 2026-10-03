@@ -494,6 +494,28 @@ export function schemaFormForResourceHost(form: SchemaForm, nativePicker: boolea
   }) }
 }
 
+/** Kinds answered by picking; a stepped form gives each one its own step. */
+const CHOICE_KINDS: ReadonlySet<SchemaFormFieldKind> = new Set(['select', 'boolean', 'multiselect', 'resource'])
+
+/**
+ * The steps of a form shown one at a time, in field order: each choice field
+ * alone, each run of typed fields (text, number, text list) together.
+ */
+export function schemaFormSteps(fields: readonly SchemaFormField[]): SchemaFormField[][] {
+  const steps: SchemaFormField[][] = []
+  for (const field of fields) {
+    const last = steps[steps.length - 1]
+    if (last && !CHOICE_KINDS.has(field.kind) && !CHOICE_KINDS.has(last[0]!.kind)) last.push(field)
+    else steps.push([field])
+  }
+  return steps
+}
+
+/** A step answered by one pick, so picking moves on to the next step. */
+export function schemaFormStepAdvancesOnPick(step: readonly SchemaFormField[]): boolean {
+  return step.length === 1 && (step[0]!.kind === 'select' || step[0]!.kind === 'boolean')
+}
+
 function codePoints(value: string): number {
   return [...value].length
 }

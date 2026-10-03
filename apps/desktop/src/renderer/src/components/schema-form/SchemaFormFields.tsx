@@ -1,9 +1,7 @@
 import { useId, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, Plus, X } from 'lucide-react'
+import { Plus, X } from 'lucide-react'
 import { Input } from '@superone/ui/components/ui/input'
-import { Switch } from '@superone/ui/components/ui/switch'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@superone/ui/components/ui/select'
 import { cn } from '@superone/ui/lib/utils'
 import type {
   SchemaFormError,
@@ -16,7 +14,7 @@ import type {
 import type { McpFormResourceActions } from '@superone/shared/mcp-form-resources'
 import { SchemaFormResourceField } from './SchemaFormResourceField'
 import { SchemaFormThumbnail } from './SchemaFormThumbnail'
-import { SchemaFormChoiceMark } from './SchemaFormChoiceMark'
+import { SchemaFormChoiceRow, type ChoiceNumbers } from './SchemaFormChoiceRow'
 
 type FieldOf<K extends SchemaFormField['kind']> = Extract<SchemaFormField, { kind: K }>
 
@@ -56,14 +54,14 @@ export function useSchemaFormErrorText(): (error: SchemaFormError) => string {
 
 function OptionText({ label, description }: { label: string; description?: string }) {
   return (
-    <span className="min-w-0 flex-1">
+    <>
       <span className="block break-words text-xs text-foreground">{label}</span>
       {description && <span className="mt-0.5 block break-words text-xs text-muted-foreground">{description}</span>}
-    </span>
+    </>
   )
 }
 
-/** Shared row/tile chrome for single and multiple choice, so both read alike. */
+/** Single and multiple choice as one numbered list, so both read alike. */
 function ChoiceList({
   options,
   multiple,
@@ -71,6 +69,7 @@ function ChoiceList({
   invalid,
   describedBy,
   label,
+  numbers,
   onToggle,
 }: {
   options: SchemaFormOption[]
@@ -79,63 +78,32 @@ function ChoiceList({
   invalid: boolean
   describedBy?: string
   label: string
+  numbers?: ChoiceNumbers
   onToggle: (value: string) => void
 }) {
-  // OpenAI spec: if any option has a thumbnail, every option renders as an image.
-  const tiles = options.some((o) => o.thumbnail)
+  // OpenAI spec: if any option has a thumbnail, every option renders with an image.
+  const images = options.some((o) => o.thumbnail)
   return (
     <div
       role={multiple ? 'group' : 'radiogroup'}
       aria-label={label}
       aria-invalid={invalid || undefined}
       aria-describedby={describedBy}
-      className={tiles ? 'grid grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] gap-2' : 'flex flex-col gap-1'}
+      className="flex flex-col gap-0.5"
     >
-      {options.map((option) => {
-        const checked = selected.includes(option.value)
-        const common = {
-          role: multiple ? 'checkbox' : 'radio',
-          'aria-checked': checked,
-          onClick: () => onToggle(option.value),
-        } as const
-        if (tiles) {
-          return (
-            <button
-              key={option.value}
-              type="button"
-              {...common}
-              className={cn(
-                'group relative flex cursor-pointer flex-col overflow-hidden rounded-md border text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none',
-                checked ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-foreground/30',
-              )}
-            >
-              <SchemaFormThumbnail image={option.thumbnail} className="aspect-square w-full" />
-              <span className="flex items-start gap-1.5 p-1.5">
-                <OptionText label={option.label} description={option.description} />
-              </span>
-              {checked && (
-                <span className="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                  <Check className="size-3" aria-hidden />
-                </span>
-              )}
-            </button>
-          )
-        }
-        return (
-          <button
-            key={option.value}
-            type="button"
-            {...common}
-            className={cn(
-              'flex cursor-pointer items-start gap-2 rounded-md border px-2 py-1.5 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none',
-              checked ? 'border-primary bg-primary/5' : 'border-border hover:bg-accent',
-            )}
-          >
-            <SchemaFormChoiceMark multiple={multiple} checked={checked} className="mt-0.5" />
-            <OptionText label={option.label} description={option.description} />
-          </button>
-        )
-      })}
+      {options.map((option, index) => (
+        <SchemaFormChoiceRow
+          key={option.value}
+          index={index}
+          numbers={numbers}
+          multiple={multiple}
+          checked={selected.includes(option.value)}
+          onSelect={() => onToggle(option.value)}
+          media={images && <SchemaFormThumbnail image={option.thumbnail} className="size-8 shrink-0 rounded" />}
+        >
+          <OptionText label={option.label} description={option.description} />
+        </SchemaFormChoiceRow>
+      ))}
     </div>
   )
 }
@@ -202,7 +170,8 @@ function Suggestions({ options, isActive, onPick }: { options: SchemaFormOption[
 
 function NumberField({ field, value, invalid, describedBy, onChange, id }: FieldProps<'number'> & { id: string }) {
   // Keep the typed text: "1." or "-" are valid drafts that are not numbers yet.
-  const [draft, setDraft] = useState(() => (typeof value === 'number' ? String(value) : ''))
+  // A step remounts its fields, so an unfinished draft comes back from the value.
+  const [draft, setDraft] = useState(() => (value === undefined || typeof value === 'object' ? '' : String(value)))
   return (
     <Input
       id={id}
@@ -225,38 +194,19 @@ function NumberField({ field, value, invalid, describedBy, onChange, id }: Field
   )
 }
 
-/** Rich or few options are laid out in full; a long plain list fits a menu. */
-function selectInMenu(field: FieldOf<'select'>): boolean {
-  return field.options.length > 4 && !field.options.some((o) => o.thumbnail || o.description)
-}
-
-function SelectField({ field, value, invalid, describedBy, onChange, id }: FieldProps<'select'> & { id: string }) {
-  const { t } = useTranslation()
+function SelectField({ field, value, invalid, describedBy, onChange, numbers }: FieldProps<'select'> & { numbers?: ChoiceNumbers }) {
   const current = typeof value === 'string' ? value : ''
-  if (!selectInMenu(field)) {
-    return (
-      <ChoiceList
-        options={field.options}
-        multiple={false}
-        selected={current ? [current] : []}
-        invalid={invalid}
-        describedBy={describedBy}
-        label={field.label}
-        onToggle={(v) => onChange(v)}
-      />
-    )
-  }
   return (
-    <Select value={current} onValueChange={(v) => onChange(v)}>
-      <SelectTrigger id={id} className="h-7 w-full text-xs" aria-invalid={invalid || undefined} aria-describedby={describedBy}>
-        <SelectValue placeholder={t('chat.schemaForm.selectPlaceholder')} />
-      </SelectTrigger>
-      <SelectContent>
-        {field.options.map((option) => (
-          <SelectItem key={option.value} value={option.value} className="text-xs">{option.label}</SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <ChoiceList
+      options={field.options}
+      multiple={false}
+      selected={current ? [current] : []}
+      invalid={invalid}
+      describedBy={describedBy}
+      label={field.label}
+      numbers={numbers}
+      onToggle={(v) => onChange(v)}
+    />
   )
 }
 
@@ -350,14 +300,38 @@ function FieldFrame({ field, labelFor, error, errorId, children }: {
   )
 }
 
+/** How many options of a field its shortcut numbers reach; zero for a field not answered by picking. */
+export function numberedChoiceCount(field: SchemaFormField): number {
+  if (field.kind === 'boolean') return 2
+  if (field.kind === 'select' || field.kind === 'multiselect') return field.options.length
+  if (field.kind === 'resource' && field.selection !== 'implicit') return field.options.length
+  return 0
+}
+
+/** The answer after picking option `index` by its number; undefined when the field lists no such option. */
+export function pickNumberedChoice(field: SchemaFormField, current: SchemaFormValue | undefined, index: number): SchemaFormValue | undefined {
+  if (index < 0 || index >= numberedChoiceCount(field)) return undefined
+  if (field.kind === 'boolean') return index === 0
+  if (field.kind === 'select') return field.options[index]!.value
+  if (field.kind === 'multiselect') return toggle(asList(current), field.options[index]!.value)
+  if (field.kind === 'resource') {
+    const uri = field.options[index]!.uri
+    return field.selection === 'single' ? uri : toggle(asList(current), uri)
+  }
+  return undefined
+}
+
 /** Every field of a parsed form, with the errors the caller chose to show. */
-export function SchemaFormFields({ fields, values, errors, onChange, resources }: {
+export function SchemaFormFields({ fields, values, errors, onChange, resources, typed }: {
   fields: readonly SchemaFormField[]
   resources?: McpFormResourceActions
   values: SchemaFormValues
   errors: Record<string, SchemaFormError>
   onChange: (name: string, value: SchemaFormValue | undefined) => void
+  /** Digits typed toward an option number; set only when the composer handles number keys. */
+  typed?: string
 }) {
+  const { t } = useTranslation()
   const idBase = useId()
   const errorText = useSchemaFormErrorText()
   return (
@@ -372,23 +346,23 @@ export function SchemaFormFields({ fields, values, errors, onChange, resources }
           describedBy: error ? errorId : undefined,
           onChange: (value: SchemaFormValue | undefined) => onChange(field.name, value),
         }
-        if (field.kind === 'boolean') {
-          return (
-            <div key={field.name} className="flex flex-col gap-1">
-              <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-background/40 px-2 py-1.5">
-                <label htmlFor={id} className="min-w-0 flex-1">
-                  <span className="block text-xs font-medium break-words text-foreground">{field.label}</span>
-                  {field.description && <span className="block text-xs break-words text-muted-foreground">{field.description}</span>}
-                </label>
-                <Switch id={id} checked={props.value === true} onCheckedChange={(checked) => props.onChange(checked)} aria-describedby={props.describedBy} />
-              </div>
-              {error && <p id={errorId} role="alert" className="text-xs text-destructive">{errorText(error)}</p>}
-            </div>
-          )
-        }
-        const control = field.kind === 'text' ? <TextField field={field} id={id} {...props} />
+        const count = numberedChoiceCount(field)
+        const numbers = typed !== undefined && count > 0 ? { count, typed } : undefined
+        const control = field.kind === 'boolean' ? (
+          <ChoiceList
+            options={[{ value: 'true', label: t('chat.schemaForm.yes') }, { value: 'false', label: t('chat.schemaForm.no') }]}
+            multiple={false}
+            selected={typeof props.value === 'boolean' ? [String(props.value)] : []}
+            invalid={props.invalid}
+            describedBy={props.describedBy}
+            label={field.label}
+            numbers={numbers}
+            onToggle={(v) => props.onChange(v === 'true')}
+          />
+        )
+          : field.kind === 'text' ? <TextField field={field} id={id} {...props} />
           : field.kind === 'number' ? <NumberField field={field} id={id} {...props} />
-            : field.kind === 'select' ? <SelectField field={field} id={id} {...props} />
+            : field.kind === 'select' ? <SelectField field={field} numbers={numbers} {...props} />
               : field.kind === 'multiselect' ? (
                 <ChoiceList
                   options={field.options}
@@ -397,13 +371,13 @@ export function SchemaFormFields({ fields, values, errors, onChange, resources }
                   invalid={props.invalid}
                   describedBy={props.describedBy}
                   label={field.label}
+                  numbers={numbers}
                   onToggle={(v) => props.onChange(toggle(asList(props.value), v))}
                 />
               )
                 : field.kind === 'text-list' ? <TextListField field={field} id={id} {...props} />
-                  : <SchemaFormResourceField field={field} resources={resources} {...props} />
+                  : <SchemaFormResourceField field={field} resources={resources} numbers={numbers} {...props} />
         const labelled = field.kind === 'text' || field.kind === 'number' || field.kind === 'text-list'
-          || (field.kind === 'select' && selectInMenu(field))
         return (
           <FieldFrame key={field.name} field={field} labelFor={labelled ? id : undefined} error={error ? errorText(error) : undefined} errorId={errorId}>
             {control}

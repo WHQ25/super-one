@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { Linking, View } from 'react-native'
 import { Text } from '../ui/text'
 import type { HarnessId, RemoteSystemInfo, PermissionRequest } from '@superone/shared/agent-types'
-import { initialSchemaFormValues, schemaFormContent, validateSchemaForm, type SchemaFormValue, type SchemaFormValues } from '@superone/shared/schema-form'
+import { initialSchemaFormValues, schemaFormContent, schemaFormStepAdvancesOnPick, schemaFormSteps, validateSchemaForm, type SchemaFormValue, type SchemaFormValues } from '@superone/shared/schema-form'
 import { permissionSchemaForm, permissionSheetPresentation, permissionSuggestionLabel } from '../permission-sheet-state'
 import { permissionPromptTitle } from '../pending-prompt-state'
 import { permissionPromptIcon } from './prompt-icon'
+import { elicitationServer, PromptGlyph } from './PromptGlyph'
 import { PromptSheet } from './PromptSheet'
 import { PromptActions, PromptChoice, PromptPill } from './PromptControls'
 import { PermissionContent } from './PermissionContent'
@@ -15,6 +16,7 @@ import { showRememberPermission } from './prompt-content'
 import { monospace, usePromptStyles } from './styles'
 import { SchemaFormFields } from './SchemaFormFields'
 import { useMobileLocale } from '../i18n/context'
+import { useMobileTheme } from '../theme/context'
 
 export function PermissionSheet(props: {
   perm: PermissionRequest | null
@@ -35,6 +37,11 @@ export function PermissionSheet(props: {
   const legacyForm = perm?.elicitationForm
   const form = useMemo(() => permissionSchemaForm({ schemaForm, elicitationForm: legacyForm }), [schemaForm, legacyForm])
   const fields = useMemo(() => (form?.supported ? form.fields : []), [form])
+  // A form is asked one step at a time, as on the desktop; see `schemaFormSteps`.
+  const steps = useMemo(() => schemaFormSteps(fields), [fields])
+  const [stepIndex, setStepIndex] = useState(0)
+  const step = steps[stepIndex] ?? []
+  const lastStep = stepIndex >= steps.length - 1
   const [values, setValues] = useState<SchemaFormValues>({})
   // Errors show per field once it is edited; the approve button stays off until all pass.
   const [touched, setTouched] = useState<ReadonlySet<string>>(new Set())
@@ -44,14 +51,15 @@ export function PermissionSheet(props: {
   const [remember, setRemember] = useState<'always' | 'session' | null>(null)
   const [suggestions, setSuggestions] = useState<Set<number>>(new Set())
   useEffect(() => {
-    setValues(initialSchemaFormValues(fields)); setTouched(new Set()); setFeedback(''); setRemember(null); setSuggestions(new Set())
+    setValues(initialSchemaFormValues(fields)); setStepIndex(0); setTouched(new Set()); setFeedback(''); setRemember(null); setSuggestions(new Set())
   }, [fields, perm?.requestId])
-  const formErrors = validateSchemaForm(fields, values)
+  // Earlier steps were valid to move on, and only this step's fields can change.
+  const stepErrors = validateSchemaForm(step, values)
   if (!perm) return null
   const unsupportedForm = form && !form.supported ? form : null
   const presentation = permissionSheetPresentation(perm)
   const allowRemember = Boolean(presentation.alwaysLabel && showRememberPermission(perm))
-  const icon = permissionPromptIcon(perm)
+  const icon = <PromptGlyph icon={permissionPromptIcon(perm)} server={elicitationServer(perm)} />
   const title = permissionPromptTitle(perm)
   const deny = () => props.onDeny(perm.requestId, feedback.trim() || undefined)
   const toggleRemember = (choice: 'always' | 'session') => setRemember((current) => (current === choice ? null : choice))
@@ -63,14 +71,24 @@ export function PermissionSheet(props: {
           : editedPermissionAnswers(perm)
     props.onAllow(perm.requestId, formAnswers, allowRemember && remember === 'always', suggestions.size ? [...suggestions].sort((a, b) => a - b) : undefined)
   }
-  const approveLabel = allowRemember && remember === 'always' ? presentation.alwaysLabel!
+  const setField = (name: string, value: SchemaFormValue | undefined) => {
+    setValues((current) => ({ ...current, [name]: value })); setTouched((current) => new Set(current).add(name))
+    // Picking the one answer a step asks for moves on, except on the last step.
+    if (!lastStep && schemaFormStepAdvancesOnPick(step) && !Object.keys(validateSchemaForm(step, { ...values, [name]: value })).length) setStepIndex(stepIndex + 1)
+  }
+  const stepping = !lastStep && fields.length > 0
+  const approveLabel = stepping ? 'Next' : allowRemember && remember === 'always' ? presentation.alwaysLabel!
     : allowRemember && remember === 'session' && presentation.sessionLabel ? presentation.sessionLabel
       : `${presentation.approveLabel}${suggestions.size ? ` +${suggestions.size}` : ''}`
   return <PromptSheet title={title} icon={icon} onDismiss={deny} collapsed={props.collapsed} onCollapse={props.onCollapse && (() => props.onCollapse!(perm.requestId))} footer={<PromptActions
     approveLabel={approveLabel}
     rejectLabel={unsupportedForm ? 'Dismiss' : feedback.trim() ? `${presentation.denyLabel} with feedback` : presentation.denyLabel}
-    onApprove={approve} onReject={deny} disabled={Boolean(unsupportedForm) || Object.keys(formErrors).length > 0 || !permissionEditsValid(perm) || Object.values(invalidFields).some(Boolean)}
-    feedback={unsupportedForm ? undefined : { value: feedback, onChange: setFeedback }}
+    // A form's answer is not a verdict: brand submit beside a neutral decline, as on the desktop.
+    tone={fields.length ? 'submit' : 'decision'}
+    onApprove={stepping ? () => setStepIndex(stepIndex + 1) : approve}
+    onBack={stepIndex > 0 ? () => setStepIndex(stepIndex - 1) : undefined} onReject={deny} disabled={Boolean(unsupportedForm) || Object.keys(stepErrors).length > 0 || !permissionEditsValid(perm) || Object.values(invalidFields).some(Boolean)}
+    // An MCP decline carries no reason, so an elicitation asks for none, as on the desktop.
+    feedback={unsupportedForm || perm.requestKind === 'mcp_elicitation' ? undefined : { value: feedback, onChange: setFeedback }}
   >{allowRemember && presentation.sessionLabel ? <PromptChoice multi label={t(presentation.sessionLabel)} selected={remember === 'session'} onPress={() => toggleRemember('session')} /> : null}
     {allowRemember ? <PromptChoice multi label={t(presentation.alwaysLabel!)} selected={remember === 'always'} onPress={() => toggleRemember('always')} /> : null}</PromptActions>}>
     {perm.elicitationUrl ? (
@@ -86,8 +104,10 @@ export function PermissionSheet(props: {
       <Text style={styles.body}>{t("SuperOne can't show this form")}</Text>
       <Text style={styles.meta}>{t('This form asks for input SuperOne does not support yet. Dismiss it to tell the server the form was not completed.')}</Text>
       <Text style={[styles.meta, { fontFamily: monospace }]}>{unsupportedForm.field ? `${unsupportedForm.field}: ${unsupportedForm.reason}` : unsupportedForm.reason}</Text>
-    </View> : fields.length ? <SchemaFormFields fields={fields} values={values} errors={Object.fromEntries(Object.entries(formErrors).filter(([name]) => touched.has(name)))}
-      onChange={(name: string, value: SchemaFormValue | undefined) => { setValues((current) => ({ ...current, [name]: value })); setTouched((current) => new Set(current).add(name)) }} /> : null}
+    </View> : fields.length ? <>
+      {steps.length > 1 ? <StepProgress current={stepIndex} total={steps.length} /> : null}
+      <SchemaFormFields key={stepIndex} fields={step} values={values} errors={Object.fromEntries(Object.entries(stepErrors).filter(([name]) => touched.has(name)))} onChange={setField} />
+    </> : null}
     {!perm.requestKind && perm.suggestions?.length ? <View style={styles.tight}>
       <Text style={styles.label}>{t('Permissions to remember')}</Text>
       {perm.suggestions.map((suggestion, index) => <PromptChoice key={index} multi label={permissionSuggestionLabel(suggestion)} selected={suggestions.has(index)} onPress={() => setSuggestions((current) => {
@@ -95,4 +115,14 @@ export function PermissionSheet(props: {
       })} />)}
     </View> : null}
   </PromptSheet>
+}
+
+/** A segment per step, filled up to the current one; the step count is spoken, not shown. */
+function StepProgress({ current, total }: { current: number; total: number }) {
+  const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
+  const label = t('Step {current} of {total}').replace('{current}', String(current + 1)).replace('{total}', String(total))
+  return <View testID="prompt-step-progress" accessible accessibilityRole="progressbar" accessibilityLabel={label} style={{ flexDirection: 'row', gap: 4 }}>
+    {Array.from({ length: total }, (_, index) => <View key={index} style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: index <= current ? colors.primary : colors.border }} />)}
+  </View>
 }

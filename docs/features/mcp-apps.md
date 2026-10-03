@@ -48,7 +48,9 @@ feature takes the first path that works, and is not built otherwise:
 
 Codex desktop and remote nodes advertise the same form extensions. Native
 `form` / `openaiForm` / `openai/form` requests use the shared declarative schema
-and permission UI. Node prompts are durable, restore through snapshots and event
+and permission UI. Desktop and phone ask a form one step at a time
+(`schemaFormSteps`): each choice alone, runs of typed fields together; a single
+pick moves on. Node prompts are durable, restore through snapshots and event
 replay, and accept answers only from the control-lease holder. Form input waits
 even in full-access sessions and is never remembered as an allowed tool. Waiting
 for input does not block ordered notifications or consume RPC/turn timeout

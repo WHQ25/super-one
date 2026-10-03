@@ -88,6 +88,7 @@ import { sessionListInvalidations, type SessionListRow as SessionRow } from '../
 import { WorkspaceListCache } from '../workspace-list-cache'
 import { injectHostMessage as inject, resolveNativeRequest, type NativeActionPorts } from '../native-actions'
 import { createMediaPorts } from '../media-ports'
+import { cacheMcpAppDownload, type CachedDownload } from '../mcp-app-downloads'
 import type { ReconnectController } from '../reconnect-controller'
 import { createMobileRelayConnection } from '../mobile-relay-connection'
 import { SessionTransition } from '../session-transition'
@@ -661,6 +662,11 @@ export function MobileApp() {
       return requestMcpApp(client, { projectPath: project.path, sessionId }, request, app)
     },
     mcpAppFullscreen: async (view) => { mcpApp.show(view) },
+    mcpAppDownload: async (items) => {
+      const files: CachedDownload[] = []
+      for (const item of items) files.push(await cacheMcpAppDownload(item))
+      filePreview.showDownloads(files)
+    },
     openFile: async (path) => {
       if (!project) throw new Error('no active project')
       const target = resolveRemoteFilePath(project.path, path)

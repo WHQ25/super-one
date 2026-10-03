@@ -724,7 +724,7 @@ model context, `openai/message` and most form features. Still missing:
 | Composer at-mentions (`mentions/search`) | Codex and Claude sessions on local projects, desktop and phone: done. Remote projects later |
 | Form previews (`openai/preview`) | Parsed, not shown — Phase 3 host follow-ups |
 | Form `userOptions`, implicit selection | Ignored / refused — Phase 3 host follow-ups |
-| `ui/download-file` | Desktop: done (see features/mcp-apps.md). Phone share/save path not yet |
+| `ui/download-file` | Done on desktop and phone (see features/mcp-apps.md) |
 | Collapsed untitled long text | S1 leftover — Phase 3 host follow-up |
 | Form capability on Claude and on the remote-node Codex client | Not advertised — after Phase 3 |
 | Global and thread entrypoints, deep links | Not supported — later; need the host-origin binding from Phase 3 |

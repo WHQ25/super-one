@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { McpAppExecutor, type McpAppExecutorPorts, type McpAppResolvedTarget } from './executor-core'
-import { mcpAppDownloadName, saveMcpAppDownloads, type McpAppDownloadPorts } from './download-file'
+import { saveMcpAppDownloads, type McpAppDownloadPorts } from './download-file'
 import { MCP_APP_MIME_TYPE, MCP_APP_OUTPUT_MAX_BYTES, type McpAppDownloadContents, type McpAppRequester, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 
 const dirs: string[] = []
@@ -22,20 +22,6 @@ function ports(overrides: Partial<McpAppDownloadPorts> = {}) {
   }
   return { dir, chosen, ports: value }
 }
-
-describe('mcpAppDownloadName', () => {
-  it('uses the file name of the URI, or a link name that is itself a file name', () => {
-    expect(mcpAppDownloadName({ type: 'resource', resource: { uri: 'file:///hex%20bolt.stl', text: '' } })).toBe('hex bolt.stl')
-    expect(mcpAppDownloadName({ type: 'resource_link', uri: 'https://api.example.com/reports/q4.pdf?sig=1', name: 'Q4 Report' })).toBe('q4.pdf')
-    expect(mcpAppDownloadName({ type: 'resource_link', uri: 'https://example.com/r/1', name: 'summary.csv' })).toBe('summary.csv')
-  })
-
-  it('never yields a path, a hidden file or an empty name', () => {
-    expect(mcpAppDownloadName({ type: 'resource', resource: { uri: 'file:///..%2F..%2Fetc%2Fpasswd', text: '' } })).toBe('_.._etc_passwd')
-    expect(mcpAppDownloadName({ type: 'resource', resource: { uri: 'file:///.bashrc', text: '' } })).toBe('bashrc')
-    expect(mcpAppDownloadName({ type: 'resource', resource: { uri: 'file:///', text: '' } })).toBe('download')
-  })
-})
 
 describe('saveMcpAppDownloads', () => {
   it('writes embedded text and base64 blobs where the user chose', async () => {

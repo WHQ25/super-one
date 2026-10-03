@@ -4,6 +4,7 @@ import type { RelayClient } from '@superone/relay-client'
 import type { McpAppDeviceRequest, RemoteCommand } from '@superone/shared/agent-types'
 import type { McpAppsErrorCode } from '@superone/shared/mcp-apps'
 import { randomId } from './ids'
+import { isMcpAppHttpDownload, type McpAppLocalDownload } from '@superone/shared/mcp-app-download'
 
 /** What a phone View may ask the host for. Links open on the phone and never cross. */
 const OPERATIONS: ReadonlySet<string> = new Set<McpAppDeviceRequest['operation']>(['load', 'activate', 'callTool', 'readResource', 'sendMessage', 'updateModelContext', 'removeModelContext'])
@@ -93,4 +94,24 @@ export async function requestMcpApp(
     if (error && typeof error === 'object' && 'ok' in error) return error
     return failure(error instanceof McpAppsError ? error.code : 'invalid', error instanceof Error ? error.message : String(error))
   }
+}
+
+/**
+ * `mcpAppDownload`'s payload: items the chat document already resolved. Each carries
+ * exactly one of the View's text, its base64 bytes, or an http(s) URL the phone fetches.
+ */
+export function parseMcpAppDownloads(payload: unknown): McpAppLocalDownload[] {
+  const items = (payload as Record<string, unknown> | undefined)?.items
+  if (!Array.isArray(items) || !items.length) throw new Error('invalid mcpAppDownload payload')
+  return items.map((value) => {
+    const item = value as Record<string, unknown> | null
+    if (!item || typeof item.name !== 'string' || !item.name || typeof item.mimeType !== 'string') throw new Error('invalid mcpAppDownload item')
+    const base = { name: item.name, mimeType: item.mimeType || 'application/octet-stream' }
+    const sources = ['text', 'base64', 'url'].filter((key) => typeof item[key] === 'string')
+    if (sources.length !== 1) throw new Error('invalid mcpAppDownload item')
+    if (typeof item.text === 'string') return { ...base, text: item.text }
+    if (typeof item.base64 === 'string') return { ...base, base64: item.base64 }
+    if (!isMcpAppHttpDownload(item.url as string)) throw new Error('unsupported mcpAppDownload link')
+    return { ...base, url: item.url as string }
+  })
 }

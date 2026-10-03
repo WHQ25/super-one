@@ -171,7 +171,7 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
       context: readHostContext(root, scheme, false, meta),
       capabilities: {
         ...mcpAppMessageCapabilities,
-        openLinks: {}, serverTools: {}, serverResources: {}, logging: {},
+        openLinks: {}, serverTools: {}, serverResources: {}, logging: {}, downloadFile: {},
         sandbox: { permissions: {}, csp: mobileMcpAppCsp(meta) },
       } satisfies McpUiHostCapabilities,
       restored: mcpAppNeedsActivation(app.appInstanceId),

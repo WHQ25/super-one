@@ -20,6 +20,7 @@ import type { ImagePreviewTarget } from '../image-preview-state'
 import { loadInlineImage } from '../inline-images'
 import { resolveRemoteFilePath } from '../shell-state'
 import { randomId } from '../ids'
+import type { CachedDownload } from '../mcp-app-downloads'
 
 /** How long the phone waits for text or metadata; inline text is at most 512 KiB. */
 const PREVIEW_REQUEST_TIMEOUT_MS = 60_000
@@ -255,6 +256,15 @@ export function useFilePreview(ports: FilePreviewPorts) {
     setState(mermaidPreviewState(svg))
   }, [pushCurrent, setState])
 
+  /** Files an MCP App View downloaded, already on the phone: each a finished transfer, the last on top. */
+  const showDownloads = useCallback((files: readonly CachedDownload[]) => {
+    generation.current++
+    for (const file of files) {
+      pushCurrent()
+      setState(completeTransfer({ kind: 'transfer', path: file.name, name: file.name, size: file.size, mimeType: file.mimeType, needsConfirm: false, phase: 'idle' }, file.localUri))
+    }
+  }, [pushCurrent, setState])
+
   const back = useCallback(() => {
     generation.current++
     const previous = history.current.at(-1) ?? null
@@ -307,5 +317,5 @@ export function useFilePreview(ports: FilePreviewPorts) {
     },
   }), [])
 
-  return { state, covered: history.current, open, showImage, showMermaid, back, close, startTransfer: confirmTransfer, retry, generationPorts }
+  return { state, covered: history.current, open, showImage, showMermaid, showDownloads, back, close, startTransfer: confirmTransfer, retry, generationPorts }
 }

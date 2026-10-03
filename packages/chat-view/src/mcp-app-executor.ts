@@ -2,6 +2,7 @@ import type { McpUiMessageRequest, McpUiRequestDisplayModeRequest } from '@model
 import { McpAppsError, type McpAppApprovalPrompt, type McpAppHostOperation, type McpAppHostResult, type McpAppReadResult, type McpAppsCallResult } from '@superone/shared/mcp-apps'
 import type { McpAppHostExecutor } from '@superone/shared/mcp-apps-host'
 import { NativeRequestTimeout, requestNative, requestNativeAsync } from './bridge'
+import { isMcpAppHttpDownload, mcpAppDownloadName, type McpAppLocalDownload } from '@superone/shared/mcp-app-download'
 import { markMcpAppInactive } from './mcp-app-document'
 
 export type McpAppDisplayMode = McpUiRequestDisplayModeRequest['params']['mode']
@@ -21,6 +22,17 @@ export interface McpAppTarget {
 export interface McpAppConsent {
   /** Only a message the View wrote is confirmed; the user's own taps in the View are consent. */
   approve(prompt: McpAppApprovalPrompt, signal: AbortSignal): Promise<boolean>
+}
+
+/** The shell may fetch a linked file before it opens the preview. */
+const DOWNLOAD_TIMEOUT_MS = 600_000
+const DEFAULT_MIME_TYPE = 'application/octet-stream'
+
+function localDownload(name: string, content: { mimeType?: string; text?: unknown; blob?: unknown }): McpAppLocalDownload {
+  const mimeType = content.mimeType || DEFAULT_MIME_TYPE
+  if (typeof content.text === 'string') return { name, mimeType, text: content.text }
+  if (typeof content.blob === 'string') return { name, mimeType, base64: content.blob }
+  throw new McpAppsError('invalid', 'The download has no content')
 }
 
 /** A tool call can outlive the default request timeout; its outcome is then unknown. */
@@ -109,6 +121,22 @@ export function createMcpAppExecutor(
     async requestDisplayMode(mode, signal) {
       checkCancellation(signal)
       return display(mode)
+    },
+    async downloadFile(contents, signal) {
+      // The bytes land on this phone. Only a link to the View's own server needs the host.
+      const items: McpAppLocalDownload[] = []
+      for (const item of contents) {
+        const name = mcpAppDownloadName(item)
+        if (item.type === 'resource') { items.push(localDownload(name, item.resource)); continue }
+        if (isMcpAppHttpDownload(item.uri)) { items.push({ name, mimeType: item.mimeType ?? DEFAULT_MIME_TYPE, url: item.uri }); continue }
+        const read = await run<McpAppReadResult>({ operation: 'readResource', uri: item.uri }, signal)
+        const content = read.contents.find((value) => value.uri === item.uri) ?? read.contents[0]
+        if (!content) throw new McpAppsError('invalid', 'The linked resource is empty')
+        items.push(localDownload(name, { ...content, mimeType: content.mimeType ?? item.mimeType }))
+      }
+      checkCancellation(signal)
+      await requestNativeAsync('mcpAppDownload', { items }, DOWNLOAD_TIMEOUT_MS)
+      return {}
     },
   }
 }

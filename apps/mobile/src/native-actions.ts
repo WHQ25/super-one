@@ -5,7 +5,8 @@ import { isPreviewableMermaid } from '@superone/chat-view/mermaid-preview'
 import type { McpAppDeviceRequest, SaveWidgetTemplateRequest } from '@superone/shared/agent-types'
 import { parseWidgetLayout } from '@superone/shared/generative-ui/types'
 import { isPreviewableImageSource, parseImageGenerationInfo, type ImagePreviewTarget } from './image-preview-state'
-import { parseMcpAppRequest } from './mcp-apps'
+import { parseMcpAppDownloads, parseMcpAppRequest } from './mcp-apps'
+import type { McpAppLocalDownload } from '@superone/shared/mcp-app-download'
 import type { TextFileResult } from './text-files'
 import type { VideoPosterResult } from './video-posters'
 
@@ -106,6 +107,11 @@ export interface NativeActionPorts {
    * native back and the edge swipe close it while open.
    */
   mcpAppFullscreen?(view: { title: string } | null): Promise<void>
+  /**
+   * A View's `ui/download-file`: put the files on the phone and show them in the
+   * preview, whose menu saves or shares them.
+   */
+  mcpAppDownload?(items: McpAppLocalDownload[]): Promise<void>
   /** Resend a user message the host never took, exactly as it went out. */
   resendFailedMessage(messageId: string): Promise<void>
   /** Pull a user message the host never took back into the composer. */
@@ -243,6 +249,9 @@ export async function resolveNativeRequest(
       if (!ports.mcpApp) throw new Error('MCP Apps are unavailable')
       // Nested: the acknowledgement's `ok` below must not overwrite the host's.
       result = { response: await ports.mcpApp(parseMcpAppRequest(message.payload)) }
+    } else if (message.action === 'mcpAppDownload') {
+      if (!ports.mcpAppDownload) throw new Error('Downloads are unavailable')
+      await ports.mcpAppDownload(parseMcpAppDownloads(message.payload))
     } else if (message.action === 'mcpAppFullscreen') {
       await ports.mcpAppFullscreen?.(parseMcpAppFullscreen(message.payload))
     } else if (message.action === 'haptic') {

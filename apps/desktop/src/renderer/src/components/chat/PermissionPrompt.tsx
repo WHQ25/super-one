@@ -19,6 +19,7 @@ import { modes as permissionModes } from './PermissionModeSelector'
 import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
 import { eligibilityFromStore } from '@/lib/auto-mode-eligibility'
 import { SchemaFormComposer } from '../schema-form/SchemaFormComposer'
+import { useMcpFormResources } from '../schema-form/use-mcp-form-resources'
 import { getPermissionPromptConfig } from './permission-prompt/permission-prompt-config'
 import { VideoGenConfirmPromptContainer } from './VideoGenConfirmPromptContainer'
 import { ConfigConfirmPromptContainer } from './ConfigConfirmPromptContainer'
@@ -149,6 +150,7 @@ export function PermissionPrompt() {
   // not approve. Only the two-button Claude row honours it; Codex never sets it.
   const defaultToNo = pendingPermission?.defaultToNo === true
   const isElicitation = pendingPermission?.requestKind === 'mcp_elicitation'
+  const formResources = useMcpFormResources(requestId, isElicitation && sessionProvider === 'codex')
   const isVideoGenConfirm = pendingPermission?.requestKind === 'video_gen_confirm'
   const isConfigConfirm = pendingPermission?.requestKind === 'config_confirm'
   const isSessionAgentsConfirm = pendingPermission?.requestKind === 'session_agents_confirm'
@@ -579,6 +581,7 @@ export function PermissionPrompt() {
               <SchemaFormComposer
                 key={requestId}
                 form={schemaForm}
+                resources={formResources}
                 requester={pendingPermission.serverName ?? 'MCP'}
                 onSubmit={handleFormSubmit}
                 onDecline={handleElicitationDecline}

@@ -202,7 +202,7 @@ feature integration. Unlisted new optional fields are tolerated and unused.
 | `item/permissions/requestApproval` | unused | No client call or dedicated handler. | — |
 | `item/tool/call` | unused | No client call or dedicated handler. | — |
 | `item/tool/requestUserInput` | partial | Desktop/production CLI question handling; minimal shared client denies. | `packages/codex/src/server-request.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
-| `mcpServer/elicitation/request` | partial | Form responses on desktop and production nodes, including matched standalone View calls between turns; node forms use durable lease-gated permission waiters and preserve notification ordering. URL responses remain desktop-specific; user verification cancels without explicit opt-in. | `packages/codex/src/app-server-client.ts`, `packages/codex/src/elicitation.ts`, `packages/codex/src/mcp-app-elicitation.ts`, `packages/codex/src/server-request.ts` |
+| `mcpServer/elicitation/request` | partial | Form responses on desktop and production nodes, including matched standalone View calls between turns; node forms use durable lease-gated permission waiters and preserve notification ordering. Local desktop supports trusted stdio `userOptions` picking and `resource_link` previews. Tool previews, remote/phone pickers and previews remain deferred. URL responses remain desktop-specific; user verification cancels without explicit opt-in. | `packages/codex/src/app-server-client.ts`, `packages/codex/src/elicitation.ts`, `packages/codex/src/mcp-app-elicitation.ts`, `apps/desktop/src/main/codex/codex-form-resources.ts`, `packages/codex/src/server-request.ts` |
 
 ## Experimental server requests
 

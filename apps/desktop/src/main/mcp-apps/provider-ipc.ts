@@ -8,6 +8,7 @@ import { authenticateMcpApp } from './auth'
 import { registerMcpAppDocumentIpc } from './document-ipc'
 import { registerMcpAppFileIpc } from './file-apps-ipc'
 import { registerMcpAppMentionIpc } from './mention-search-ipc'
+import { registerMcpFormResourceIpc } from './form-resources-ipc'
 
 let registered = false
 
@@ -39,6 +40,7 @@ export function registerMcpAppsProviderIpc(getSession: (id: string) => Session |
   registerMcpAppDocumentIpc()
   registerMcpAppFileIpc(getSession, resumeSession)
   registerMcpAppMentionIpc(getSession, resumeSession)
+  registerMcpFormResourceIpc(getSession)
   ipcMain.handle(AgentIpcChannels.ENVIRONMENT_MCP_APPS_PROVIDER, (_event, connectionId: string, input: McpAppsProviderRpcRequest) =>
     routeMcpAppsProviderRequest(getSession, connectionId, input))
 

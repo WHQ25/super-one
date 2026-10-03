@@ -2039,6 +2039,13 @@ export type Messages = {
       addPlaceholder: string
       remove: string
       noResources: string
+      addFiles: string
+      addDirectory: string
+      preview: string
+      previewLoading: string
+      previewEmpty: string
+      previewBinary: string
+      resourceError: string
       uriPlaceholder: string
       dateTimePlaceholder: string
       errors: {
@@ -6217,6 +6224,13 @@ export const en: Messages = {
       addPlaceholder: 'Type a value and press Enter',
       remove: 'Remove {{name}}',
       noResources: 'Nothing to choose from.',
+      addFiles: 'Add files…',
+      addDirectory: 'Add folder…',
+      preview: 'Preview {{name}}',
+      previewLoading: 'Loading preview…',
+      previewEmpty: 'This resource is empty.',
+      previewBinary: 'Preview unavailable for {{type}}.',
+      resourceError: 'Could not open the resource.',
       uriPlaceholder: 'https://… or another URI',
       dateTimePlaceholder: '2026-01-31T09:00:00Z',
       errors: {

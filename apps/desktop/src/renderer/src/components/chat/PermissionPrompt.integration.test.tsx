@@ -1,9 +1,10 @@
 /** @vitest-environment jsdom */
 
-import { render, screen, act, fireEvent } from '@testing-library/react'
+import { render, screen, act, fireEvent, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode, ButtonHTMLAttributes } from 'react'
 import type { AgentEvent } from '@superone/shared/agent-types'
+import { elicitationFormRequest } from '@superone/shared/schema-form'
 
 const localStorageState = new Map<string, string>()
 const mockLocalStorage = {
@@ -183,6 +184,33 @@ beforeEach(() => {
 })
 
 describe('PermissionPrompt + real store integration', () => {
+  it('binds the local Codex form picker and preview to the active permission request', async () => {
+    seedProjectWithActiveSession('/proj', 'alpha')
+    useChatStore.setState(state => ({ projectSessions: { ...state.projectSessions, '/proj': { ...state.projectSessions['/proj'], _sessions: {
+      ...state.projectSessions['/proj']._sessions, alpha: { ...state.projectSessions['/proj']._sessions.alpha, sessionProvider: 'codex' },
+    } } } }))
+    const original = window.environment
+    const pick = vi.fn(async () => ({ ok: true as const, value: [{ uri: 'file:///picked.stl', name: 'picked.stl' }] }))
+    const preview = vi.fn(async () => ({ ok: true as const, value: { contents: [{ uri: 'cad://preview', text: 'part details' }] } }))
+    Object.defineProperty(window, 'environment', { configurable: true, value: { ...original, mcpFormPickResources: pick, mcpFormPreviewResource: preview } })
+    try {
+      act(() => useChatStore.getState().handleAgentEvent({ type: 'permission_request', projectPath: '/proj', sessionId: 'alpha', request: {
+        requestId: 'native-form', requestKind: 'mcp_elicitation', serverName: 'bits', toolName: 'bits', input: {}, allowAlwaysAllow: false,
+        ...elicitationFormRequest({ type: 'object', properties: { part: { type: 'string', format: 'uri', 'x-openai-input': {
+          type: 'resource', userOptions: {}, options: [{ uri: 'cad://part', name: 'part.stl', _meta: { 'openai/preview': { target: { type: 'resource_link', uri: 'cad://preview', name: 'preview' } } } }],
+        } } } }, { userResources: true }),
+      } }))
+      render(<PermissionPrompt />)
+      fireEvent.click(screen.getByRole('button', { name: 'Preview part.stl' }))
+      await screen.findByText('part details')
+      expect(preview).toHaveBeenCalledWith('alpha', 'native-form', 'part', 'cad://part')
+      fireEvent.click(screen.getByRole('button', { name: 'Add files…' }))
+      await screen.findByRole('radio', { name: /picked.stl/ })
+      expect(pick).toHaveBeenCalledWith('alpha', 'native-form', 'part')
+      fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
+      await waitFor(() => expect(mockWindowAgent.respondToPermission).toHaveBeenCalledWith('alpha', 'native-form', true, false, undefined, undefined, undefined, { part: 'file:///picked.stl' }))
+    } finally { Object.defineProperty(window, 'environment', { configurable: true, value: original }) }
+  })
   it('renders a prompt when permission_request matches the active session id', () => {
     seedProjectWithActiveSession('/proj', 'alpha')
     firePermissionRequest('alpha')

@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react'
 import { expect, userEvent, within } from 'storybook/test'
 import { parseSchemaForm, type SchemaFormValue } from '@superone/shared/schema-form'
 import { SchemaFormComposer } from './SchemaFormComposer'
+import type { McpFormResourceActions } from '@superone/shared/mcp-form-resources'
 
 function swatch(color: string, label: string): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="${color}"/><text x="32" y="38" font-family="sans-serif" font-size="14" fill="white" text-anchor="middle">${label}</text></svg>`
@@ -31,13 +32,14 @@ function Shell({ children, width = 560 }: { children: ReactNode; width?: number 
 }
 
 /** Production composer around a raw `requestedSchema`, echoing what it would send. */
-function Composer({ schema, requester = 'Bits & Bolts' }: { schema: unknown; requester?: string }) {
+function Composer({ schema, requester = 'Bits & Bolts', resources }: { schema: unknown; requester?: string; resources?: McpFormResourceActions }) {
   const [sent, setSent] = useState<string | null>(null)
   const reply = (text: string) => setSent(text)
   return (
     <div className="flex flex-col gap-2">
       <SchemaFormComposer
-        form={parseSchemaForm(schema)}
+        form={parseSchemaForm(schema, { userResources: Boolean(resources) })}
+        resources={resources}
         requester={requester}
         onSubmit={(content: Record<string, SchemaFormValue>) => reply(JSON.stringify({ action: 'accept', content }, null, 2))}
         onDecline={() => reply('{ "action": "decline" }')}
@@ -120,6 +122,69 @@ export const ResourcePicker: Story = {
       },
     },
   },
+}
+
+const NATIVE_RESOURCES = {
+  type: 'object', properties: { refs: {
+    type: 'array', title: 'CAD references', items: { type: 'string', format: 'uri' },
+    'x-openai-input': { type: 'resource', selection: 'explicit', options: RESOURCES.map(resource => ({
+      ...resource, _meta: { ...resource._meta, 'openai/preview': { target: { type: 'resource_link', uri: resource.uri, name: resource.name } } },
+    })), userOptions: { kind: 'file', accept: ['.stl', '.step'] } },
+  } },
+}
+const nativeActions: McpFormResourceActions = {
+  pick: async () => [{ uri: 'file:///workspace/custom-part.stl', name: 'custom-part.stl', size: 8123 }],
+  preview: async () => ({ contents: [{ uri: 'cad://parts/hex-bolt', mimeType: 'text/plain', text: 'M6 hex bolt\nMaterial: stainless steel\nRevision: C\n\n<script>shown as text, never executed</script>' }] }),
+}
+
+/** Production picker with main-process callbacks substituted at its boundary. */
+export const NativeFilesAndPreview: Story = {
+  args: { schema: NATIVE_RESOURCES, resources: nativeActions },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Preview M6 hex bolt' }))
+    await expect(canvas.findByTestId('resource-preview')).resolves.toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: 'Add files…' }))
+    await expect(canvas.findByRole('checkbox', { name: /custom-part.stl/ })).resolves.toHaveAttribute('aria-checked', 'true')
+  },
+}
+export const NativeResourcesNarrow: Story = { ...NativeFilesAndPreview, parameters: { shellWidth: 300 } }
+export const ResourcePreviewLoading: Story = {
+  args: { schema: NATIVE_RESOURCES, resources: { ...nativeActions, preview: () => new Promise(() => {}) } },
+  play: async ({ canvasElement }) => { await userEvent.click(within(canvasElement).getByRole('button', { name: 'Preview M6 hex bolt' })) },
+}
+export const ResourcePreviewError: Story = {
+  args: { schema: NATIVE_RESOURCES, resources: { ...nativeActions, preview: async () => { throw new Error('The MCP server is disconnected.') } } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Preview M6 hex bolt' }))
+    await expect(canvas.findByRole('alert')).resolves.toBeVisible()
+  },
+}
+export const NativeFileDenied: Story = {
+  args: { schema: NATIVE_RESOURCES, resources: { ...nativeActions, pick: async () => { throw new Error('The file does not match .stl or .step.') } } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Add files…' }))
+    await expect(canvas.findByRole('alert')).resolves.toBeVisible()
+  },
+}
+export const NativeImplicitResources: Story = {
+  args: { schema: { type: 'object', properties: { refs: { ...NATIVE_RESOURCES.properties.refs,
+    'x-openai-input': { ...NATIVE_RESOURCES.properties.refs['x-openai-input'], selection: 'implicit' },
+  } } }, resources: nativeActions },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Remove M6 washer' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Submit' }))
+    await expect(canvas.findByTestId('sent')).resolves.toHaveTextContent('cad://parts/hex-bolt')
+    await expect(canvas.getByTestId('sent')).not.toHaveTextContent('cad://parts/washer')
+  },
+}
+export const NativeDirectory: Story = {
+  args: { schema: { type: 'object', properties: { directory: { type: 'string', title: 'CAD folder', format: 'uri',
+    'x-openai-input': { type: 'resource', options: [], userOptions: { kind: 'directory' } },
+  } } }, resources: { ...nativeActions, pick: async () => [{ uri: 'file:///workspace/cad-parts', name: 'cad-parts' }] } },
 }
 
 /** Submitting with invalid answers reveals every error and sends nothing. */

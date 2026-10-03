@@ -1,21 +1,22 @@
 import { useId, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, ImageIcon, Plus, X } from 'lucide-react'
+import { Check, Plus, X } from 'lucide-react'
 import { Input } from '@superone/ui/components/ui/input'
 import { Switch } from '@superone/ui/components/ui/switch'
-import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@superone/ui/components/ui/select'
 import { cn } from '@superone/ui/lib/utils'
-import { formatBytes } from '@superone/shared/format-bytes'
 import type {
   SchemaFormError,
   SchemaFormField,
-  SchemaFormImage,
   SchemaFormOption,
-  SchemaFormResource,
   SchemaFormValue,
   SchemaFormValues,
 } from '@superone/shared/schema-form'
+
+import type { McpFormResourceActions } from '@superone/shared/mcp-form-resources'
+import { SchemaFormResourceField } from './SchemaFormResourceField'
+import { SchemaFormThumbnail } from './SchemaFormThumbnail'
+import { SchemaFormChoiceMark } from './SchemaFormChoiceMark'
 
 type FieldOf<K extends SchemaFormField['kind']> = Extract<SchemaFormField, { kind: K }>
 
@@ -51,28 +52,6 @@ export function useSchemaFormErrorText(): (error: SchemaFormError) => string {
       case 'option': return t('chat.schemaForm.errors.option')
     }
   }
-}
-
-/** Server-supplied image, already restricted to https/data by the parser. Never a host URL. */
-function Thumbnail({ image, className }: { image?: SchemaFormImage; className?: string }) {
-  const [failed, setFailed] = useState(false)
-  if (!image || failed) {
-    return (
-      <div className={cn('flex items-center justify-center bg-muted text-muted-foreground', className)}>
-        <ImageIcon className="size-1/3 min-h-3 min-w-3" aria-hidden />
-      </div>
-    )
-  }
-  return (
-    <img
-      src={image.src}
-      alt=""
-      draggable={false}
-      referrerPolicy="no-referrer"
-      onError={() => setFailed(true)}
-      className={cn('bg-muted object-cover', className)}
-    />
-  )
 }
 
 function OptionText({ label, description }: { label: string; description?: string }) {
@@ -130,7 +109,7 @@ function ChoiceList({
                 checked ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-foreground/30',
               )}
             >
-              <Thumbnail image={option.thumbnail} className="aspect-square w-full" />
+              <SchemaFormThumbnail image={option.thumbnail} className="aspect-square w-full" />
               <span className="flex items-start gap-1.5 p-1.5">
                 <OptionText label={option.label} description={option.description} />
               </span>
@@ -152,28 +131,12 @@ function ChoiceList({
               checked ? 'border-primary bg-primary/5' : 'border-border hover:bg-accent',
             )}
           >
-            <ChoiceMark multiple={multiple} checked={checked} className="mt-0.5" />
+            <SchemaFormChoiceMark multiple={multiple} checked={checked} className="mt-0.5" />
             <OptionText label={option.label} description={option.description} />
           </button>
         )
       })}
     </div>
-  )
-}
-
-function ChoiceMark({ multiple, checked, className }: { multiple: boolean; checked: boolean; className?: string }) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        'flex size-3.5 shrink-0 items-center justify-center border',
-        multiple ? 'rounded-[3px]' : 'rounded-full',
-        checked ? 'border-primary bg-primary text-primary-foreground' : 'border-input',
-        className,
-      )}
-    >
-      {checked && (multiple ? <Check className="size-2.5" /> : <span className="size-1.5 rounded-full bg-current" />)}
-    </span>
   )
 }
 
@@ -229,7 +192,7 @@ function Suggestions({ options, isActive, onPick }: { options: SchemaFormOption[
             isActive(option.value) ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground',
           )}
         >
-          {option.thumbnail && <Thumbnail image={option.thumbnail} className="size-3.5 rounded-full" />}
+          {option.thumbnail && <SchemaFormThumbnail image={option.thumbnail} className="size-3.5 rounded-full" />}
           <span className="truncate">{option.label}</span>
         </button>
       ))}
@@ -364,68 +327,6 @@ function TextListField({ field, value, invalid, describedBy, onChange, id }: Fie
   )
 }
 
-function ResourceRow({ resource, selected, multiple, onToggle }: {
-  resource: SchemaFormResource
-  selected: boolean
-  multiple: boolean
-  onToggle: () => void
-}) {
-  const label = resource.title ?? resource.name
-  const meta = [resource.title ? resource.name : undefined, resource.size !== undefined ? formatBytes(resource.size) : undefined]
-    .filter(Boolean).join(' · ')
-  return (
-    <button
-      type="button"
-      role={multiple ? 'checkbox' : 'radio'}
-      aria-checked={selected}
-      onClick={onToggle}
-      className={cn(
-        'flex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none',
-        selected ? 'border-primary bg-primary/5' : 'border-border hover:bg-accent',
-      )}
-    >
-      <ChoiceMark multiple={multiple} checked={selected} />
-      {resource.thumbnail
-        ? <Thumbnail image={resource.thumbnail} className="size-8 shrink-0 rounded" />
-        : <span className="flex size-8 shrink-0 items-center justify-center rounded bg-muted"><FileIcon name={resource.name} size={16} /></span>}
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs text-foreground">{label}</span>
-        {(resource.description || meta) && (
-          <span className="block truncate text-xs text-muted-foreground">{resource.description ?? meta}</span>
-        )}
-      </span>
-    </button>
-  )
-}
-
-function ResourceField({ field, value, invalid, describedBy, onChange }: FieldProps<'resource'>) {
-  const { t } = useTranslation()
-  const multiple = field.selection !== 'single'
-  const selected = multiple ? asList(value) : typeof value === 'string' ? [value] : []
-  if (field.options.length === 0) {
-    return <p className="rounded-md border border-dashed border-border px-2 py-2 text-xs text-muted-foreground">{t('chat.schemaForm.noResources')}</p>
-  }
-  return (
-    <div
-      role={multiple ? 'group' : 'radiogroup'}
-      aria-label={field.label}
-      aria-invalid={invalid || undefined}
-      aria-describedby={describedBy}
-      className="flex flex-col gap-1"
-    >
-      {field.options.map((resource) => (
-        <ResourceRow
-          key={resource.uri}
-          resource={resource}
-          multiple={multiple}
-          selected={selected.includes(resource.uri)}
-          onToggle={() => onChange(multiple ? toggle(selected, resource.uri) : resource.uri)}
-        />
-      ))}
-    </div>
-  )
-}
-
 function FieldFrame({ field, labelFor, error, errorId, children }: {
   field: SchemaFormField
   labelFor?: string
@@ -450,8 +351,9 @@ function FieldFrame({ field, labelFor, error, errorId, children }: {
 }
 
 /** Every field of a parsed form, with the errors the caller chose to show. */
-export function SchemaFormFields({ fields, values, errors, onChange }: {
+export function SchemaFormFields({ fields, values, errors, onChange, resources }: {
   fields: readonly SchemaFormField[]
+  resources?: McpFormResourceActions
   values: SchemaFormValues
   errors: Record<string, SchemaFormError>
   onChange: (name: string, value: SchemaFormValue | undefined) => void
@@ -499,7 +401,7 @@ export function SchemaFormFields({ fields, values, errors, onChange }: {
                 />
               )
                 : field.kind === 'text-list' ? <TextListField field={field} id={id} {...props} />
-                  : <ResourceField field={field} {...props} />
+                  : <SchemaFormResourceField field={field} resources={resources} {...props} />
         const labelled = field.kind === 'text' || field.kind === 'number' || field.kind === 'text-list'
           || (field.kind === 'select' && selectInMenu(field))
         return (

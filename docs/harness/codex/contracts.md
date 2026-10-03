@@ -178,3 +178,12 @@ enabled by `apps/desktop/src/main/codex/app-server-connection.ts`).
   The existing remote provider route does not forward a View's AbortSignal to
   the node. Remote View teardown alone therefore does not cancel the native RPC;
   permission cancel and session interrupt/close still settle its prompt.
+- **Local form resources:** file/directory `userOptions` require an enabled stdio
+  config and a main-process native picker. Only that pending form field's trusted
+  picked URIs augment structural answer validation; renderer paths never grant
+  access. Main rechecks pending ownership and session/account/configuration after
+  async work and before accept. `resource_link` previews read the declared option
+  target through the original eliciting server/thread; native provider caps apply,
+  without another local IPC cap. Tool previews, remote/phone pickers and previews
+  are deferred. Phone clients reject implicit selection and retain supplied
+  explicit options.

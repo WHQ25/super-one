@@ -868,6 +868,10 @@ export interface EnvironmentAPI {
   mcpAppMentionSearch(projectPath: string, sessionId: string, query: string): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-app-mentions').McpMentionSearchResult>>
   /** Text of mentioned resources for the model at send; unreadable ones come back `skipped`. */
   mcpAppMentionRead(projectPath: string, sessionId: string, targets: Array<{ server: string; uri: string }>): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-app-mentions').McpMentionReadResource[]>>
+  /** Pending local Codex form only; paths originate in a main-process native dialog. */
+  mcpFormPickResources(sessionId: string, requestId: string, field: string): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/schema-form').SchemaFormResource[]>>
+  /** Reads the pending option's declared preview from its eliciting server. */
+  mcpFormPreviewResource(sessionId: string, requestId: string, field: string, optionUri: string): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-apps').McpAppReadResult>>
   onMcpAppResourceUpdated(callback: (event: { appInstanceId: string; uri: string }) => void): () => void
   mcpAppsProvider(connectionId: string, input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult>
   /** Sign the View's MCP server in; resolves once the provider no longer reports auth_required. */

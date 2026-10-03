@@ -4,7 +4,7 @@ import {
   type ElicitationFormField,
   type PermissionRequest,
 } from '@superone/shared/agent-types'
-import type { SchemaForm, SchemaFormField } from '@superone/shared/schema-form'
+import { schemaFormForResourceHost, type SchemaForm, type SchemaFormField } from '@superone/shared/schema-form'
 import { buildCollaborationFormAnswers } from './collaboration-state'
 
 export type PermissionSheetItem = {
@@ -261,7 +261,7 @@ export function permissionSheetPresentation(request: PermissionRequest): Permiss
  * the flat legacy list, which maps onto the same model so one renderer serves both.
  */
 export function permissionSchemaForm(request: Pick<PermissionRequest, 'schemaForm' | 'elicitationForm'>): SchemaForm | undefined {
-  if (request.schemaForm) return request.schemaForm
+  if (request.schemaForm) return schemaFormForResourceHost(request.schemaForm, false)
   if (!request.elicitationForm?.length) return undefined
   return { supported: true, fields: request.elicitationForm.map(legacySchemaFormField) }
 }

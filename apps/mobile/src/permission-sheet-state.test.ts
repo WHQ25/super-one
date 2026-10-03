@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PermissionRequest } from '@superone/shared/agent-types'
+import { parseSchemaForm } from '@superone/shared/schema-form'
 import {
   defaultPermissionFormAnswers,
   permissionSuggestionLabel,
@@ -110,6 +111,16 @@ describe('permission sheet state', () => {
     // Remembering belongs to approvals; a form's input is never remembered.
     expect(permissionSheetPresentation({ ...legacy, supportsAlwaysPersist: true }).alwaysLabel).toBeUndefined()
     expect(permissionSheetPresentation({ ...request('mcp_elicitation'), supportsAlwaysPersist: true }).alwaysLabel).toBe('Continue & remember')
+  })
+
+  it('keeps explicit server options but refuses desktop-only implicit resource forms on the phone', () => {
+    const schema = (selection: string) => ({ type: 'object', properties: { refs: { type: 'array', items: { type: 'string', format: 'uri' },
+      'x-openai-input': { type: 'resource', selection, options: [{ uri: 'cad://a', name: 'a' }], userOptions: {} },
+    } } })
+    const explicit = permissionSchemaForm({ schemaForm: parseSchemaForm(schema('explicit'), { userResources: true }) })
+    expect(explicit?.supported).toBe(true)
+    if (explicit?.supported && explicit.fields[0].kind === 'resource') expect(explicit.fields[0].userOptions).toBeUndefined()
+    expect(permissionSchemaForm({ schemaForm: parseSchemaForm(schema('implicit'), { userResources: true }) })?.supported).toBe(false)
   })
 
   it('presents selectable permission suggestions in human terms', () => {

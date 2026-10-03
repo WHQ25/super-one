@@ -1247,6 +1247,36 @@ describe('respondToCodexElicitation', () => {
     expect(resolve).toHaveBeenCalledWith({ action: 'accept', content: { ref: 'cad://a' }, _meta: null })
   })
 
+  it('binds picked resource answers to the actual pending Codex form and clears them after responding', async () => {
+    const config = await import('../codex-config-service')
+    const resources = await import('./codex-form-resources')
+    const configSpy = vi.spyOn(config, 'listCodexMcpConfigs').mockReturnValue([{ name: 'demo', type: 'stdio', command: 'fixture', scope: 'project' }])
+    const session = makeSession({ threadId: 'root' })
+    const respond = vi.fn(async () => {})
+    const onPermissionRequest = vi.fn()
+    const handling = processServerRequest({ method: 'mcpServer/elicitation/request', requestIdRaw: 0, requestId: '0', params: {
+      threadId: 'root', serverName: 'demo', requestedSchema: { type: 'object', required: ['ref'], properties: {
+        ref: { type: 'string', format: 'uri', 'x-openai-input': { type: 'resource', options: [], userOptions: {} } },
+      } },
+    } }, { respond } as never, session, { onPermissionRequest })
+    try {
+      expect(onPermissionRequest).toHaveBeenCalledWith(expect.objectContaining({ schemaForm: { supported: true, fields: [expect.objectContaining({ userOptions: { kind: 'file' } })] } }))
+      const context = resources.codexFormResources('test-session', '0')
+      context.picked.set('ref', [{ uri: 'file:///picked.stl', name: 'picked.stl' }])
+      expect(respondToCodexElicitation(session, '0', true, false, undefined, { ref: 'file:///forged.stl' })).toBe(false)
+      expect(respond).not.toHaveBeenCalled()
+      expect(respondToCodexElicitation(session, '0', true, false, undefined, { ref: 'file:///picked.stl' })).toBe(true)
+      await handling
+      expect(respond).toHaveBeenCalledWith(0, { action: 'accept', content: { ref: 'file:///picked.stl' }, _meta: null })
+      expect(context.signal.aborted).toBe(true)
+      expect(context.picked.size).toBe(0)
+    } finally {
+      respondToCodexElicitation(session, '0', false, false, 'cancel')
+      await handling
+      configSpy.mockRestore()
+    }
+  })
+
   it('serializes decline correctly', () => {
     const { session, resolve } = setupPending()
     respondToCodexElicitation(session, 'e1', false)

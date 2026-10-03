@@ -235,6 +235,10 @@ const environmentAPI = {
     ipcRenderer.invoke(AgentIpcChannels.MCP_APP_MENTION_SEARCH, projectPath, sessionId, query) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-app-mentions').McpMentionSearchResult>>,
   mcpAppMentionRead: (projectPath: string, sessionId: string, targets: Array<{ server: string; uri: string }>) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_APP_MENTION_READ, projectPath, sessionId, targets) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-app-mentions').McpMentionReadResource[]>>,
+  mcpFormPickResources: (sessionId: string, requestId: string, field: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_FORM_PICK_RESOURCES, sessionId, requestId, field) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/schema-form').SchemaFormResource[]>>,
+  mcpFormPreviewResource: (sessionId: string, requestId: string, field: string, optionUri: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_FORM_PREVIEW_RESOURCE, sessionId, requestId, field, optionUri) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-apps').McpAppReadResult>>,
   onMcpAppResourceUpdated: (callback: (event: { appInstanceId: string; uri: string }) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, data: { appInstanceId: string; uri: string }) => callback(data)
     ipcRenderer.on('mcpApp:resourceUpdated', listener)

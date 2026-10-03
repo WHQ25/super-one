@@ -66,6 +66,24 @@ the existing connection heartbeat detects transport loss and calls are not retri
 Remote View teardown does not yet forward an invocation abort to the node; its
 prompt can still be cancelled through the permission UI or session interrupt/close.
 
+Local Codex permission cards support resource-option `resource_link` previews and
+native `userOptions` file/folder selection. Main resolves a preview from the pending
+form and reads only that declared target through the eliciting server and original
+thread's provider (`transient:true`); the renderer displays inert text or images.
+Native provider limits still apply; local preview IPC adds no byte cap. Other
+binary formats show an unavailable notice. `mcp_app_tool` previews remain deferred
+until a generic host-originated View can be bound without a transcript tool call.
+
+Only configured, enabled local stdio servers may receive user-selected `file://`
+paths. The main-process dialog names the server; filename-extension and MIME
+`accept` rules are checked again on the selected canonical path. Directory picking
+supports no `accept` filter. Main retains a per-request/field allowlist until the
+permission settles, and rejects forged or cross-field URIs and stale session,
+account or configuration bindings. Explicit selection adds picked resources to
+the choices; implicit selection submits every item that remains after removal.
+Remote-node/phone forms keep supplied explicit choices; implicit selection is
+unsupported there. These surfaces do not open the desktop's picker or preview.
+
 ## Shared contract
 
 `packages/shared/src/mcp-apps.ts` owns the SDK-free types.

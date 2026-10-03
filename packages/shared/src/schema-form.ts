@@ -14,6 +14,7 @@ import type { ElicitationFormField, PermissionRequest } from './agent-types'
 import { compileLinearRegex, MAX_PATTERN_LENGTH, type LinearRegex, type MatchBudget } from './linear-regex'
 import { LruMap } from './lru-map'
 import { safeMcpAppImage } from './mcp-apps-metadata'
+import { validResourceAccept } from './mcp-form-resources'
 
 /** MCP client capability for OpenAI's extended forms (`openai/elicitation/create`). */
 export const OPENAI_FORM_ELICITATION_EXTENSION = { 'openai/elicitation': { form: {} } } as const
@@ -46,6 +47,16 @@ export interface SchemaFormResource {
   size?: number
   thumbnail?: SchemaFormImage
   preview?: SchemaFormPreviewTarget
+}
+
+export interface SchemaFormUserResources {
+  kind: 'file' | 'directory'
+  accept?: string[]
+}
+
+export interface SchemaFormParseOptions {
+  /** A trusted host may offer its native picker. Never infer this from server metadata. */
+  userResources?: boolean
 }
 
 export interface SchemaFormTextConstraints {
@@ -94,6 +105,7 @@ export type SchemaFormField =
     /** `single` submits one URI; `explicit` / `implicit` submit a URI array. */
     selection: 'single' | 'explicit' | 'implicit'
     options: SchemaFormResource[]
+    userOptions?: SchemaFormUserResources
     minItems?: number
     maxItems?: number
     default?: string | string[]
@@ -257,12 +269,7 @@ function parsePreview(raw: unknown): SchemaFormPreviewTarget | undefined {
   return undefined
 }
 
-/**
- * User-added files and directories (`userOptions`) are not offered: they are
- * ignored on single and explicit selection, as ChatGPT web does, and implicit
- * selection — which always offers them — is unsupported.
- */
-function parseResourceField(base: SchemaFormFieldBase, rec: Rec, input: Rec): SchemaFormField {
+function parseResourceField(base: SchemaFormFieldBase, rec: Rec, input: Rec, host: SchemaFormParseOptions): SchemaFormField {
   if (input.type !== 'resource' && input.type !== 'file') throw new Unsupported(`input type "${String(input.type)}"`)
   if (!Array.isArray(input.options)) throw new Unsupported('resource input has no "options"')
   const options = input.options.map(parseResource)
@@ -279,10 +286,21 @@ function parseResourceField(base: SchemaFormFieldBase, rec: Rec, input: Rec): Sc
   }
   const selection = multiple ? (input.selection as 'explicit' | 'implicit' | undefined) ?? 'explicit' : 'single'
   if (input.userOptions !== undefined && !isRecord(input.userOptions)) throw new Unsupported('"userOptions" is not an object')
-  if (selection === 'implicit') throw new Unsupported('implicit resource selection requires user-added resources')
+  if (selection === 'implicit' && !host.userResources) throw new Unsupported('implicit resource selection requires user-added resources')
+  let userOptions: SchemaFormUserResources | undefined
+  if (host.userResources && (input.userOptions !== undefined || selection === 'implicit')) {
+    const raw = (input.userOptions ?? {}) as Rec
+    const kind = raw.kind ?? 'file'
+    if (kind !== 'file' && kind !== 'directory') throw new Unsupported('unknown user resource kind')
+    const accept = raw.accept === undefined ? undefined : stringArray(raw.accept, '"accept"')
+    if (accept?.some((value) => !validResourceAccept(value))) throw new Unsupported('invalid resource accept filter')
+    if (kind === 'directory' && accept?.length) throw new Unsupported('accept filters on directories are unsupported')
+    userOptions = { kind, ...(accept ? { accept } : {}) }
+  }
 
   let defaultValue: string | string[] | undefined
   if (rec.default !== undefined) {
+    if (selection === 'implicit') throw new Unsupported('implicit resource selection cannot have a default')
     defaultValue = multiple ? stringArray(rec.default, '"default"') : optString(rec, 'default')
     const defaults = Array.isArray(defaultValue) ? defaultValue : [defaultValue]
     if (defaults.some((uri) => !options.some((o) => o.uri === uri))) throw new Unsupported('a default is not a supplied resource')
@@ -294,13 +312,14 @@ function parseResourceField(base: SchemaFormFieldBase, rec: Rec, input: Rec): Sc
     kind: 'resource',
     selection,
     options,
+    ...(userOptions ? { userOptions } : {}),
     ...(minItems !== undefined ? { minItems } : {}),
     ...(maxItems !== undefined ? { maxItems } : {}),
     ...(defaultValue !== undefined ? { default: defaultValue } : {}),
   }
 }
 
-function parseField(name: string, raw: unknown, required: boolean): SchemaFormField {
+function parseField(name: string, raw: unknown, required: boolean, host: SchemaFormParseOptions): SchemaFormField {
   if (!isRecord(raw)) throw new Unsupported('not a schema object')
   const description = optString(raw, 'description')
   const base: SchemaFormFieldBase = {
@@ -311,7 +330,7 @@ function parseField(name: string, raw: unknown, required: boolean): SchemaFormFi
   }
   if (raw['x-openai-input'] !== undefined) {
     if (!isRecord(raw['x-openai-input'])) throw new Unsupported('"x-openai-input" is not an object')
-    return parseResourceField(base, raw, raw['x-openai-input'])
+    return parseResourceField(base, raw, raw['x-openai-input'], host)
   }
 
   switch (raw.type) {
@@ -420,7 +439,7 @@ function exceedsSize(root: unknown, limit: number): boolean {
 }
 
 /** Parse a `requestedSchema`. An absent or empty schema is a form with no fields. */
-export function parseSchemaForm(schema: unknown): SchemaForm {
+export function parseSchemaForm(schema: unknown, host: SchemaFormParseOptions = {}): SchemaForm {
   if (schema === undefined || schema === null) return { supported: true, fields: [] }
   if (!isRecord(schema) || (schema.type !== undefined && schema.type !== 'object')) {
     return { supported: false, reason: 'the schema is not an object' }
@@ -438,7 +457,7 @@ export function parseSchemaForm(schema: unknown): SchemaForm {
   const fields: SchemaFormField[] = []
   for (const [name, raw] of Object.entries(schema.properties)) {
     try {
-      fields.push(parseField(name, raw, required.includes(name)))
+      fields.push(parseField(name, raw, required.includes(name), host))
     } catch (err) {
       if (err instanceof Unsupported) return { supported: false, field: name, reason: err.message }
       throw err
@@ -453,11 +472,26 @@ export function initialSchemaFormValues(fields: readonly SchemaFormField[]): Sch
   for (const field of fields) {
     if (field.default !== undefined) {
       values[field.name] = Array.isArray(field.default) ? [...field.default] : field.default
+    } else if (field.kind === 'resource' && field.selection === 'implicit') {
+      values[field.name] = field.options.map((option) => option.uri)
     } else if (field.kind === 'boolean') {
       values[field.name] = false
     }
   }
   return values
+}
+
+/** Web/phone clients keep server choices; implicit selection requires a native picker. */
+export function schemaFormForResourceHost(form: SchemaForm, nativePicker: boolean): SchemaForm {
+  if (!form.supported || nativePicker) return form
+  const implicit = form.fields.find(field => field.kind === 'resource' && field.selection === 'implicit')
+  if (implicit) return { supported: false, field: implicit.name, reason: 'implicit resource selection requires user-added resources' }
+  if (!form.fields.some(field => field.kind === 'resource' && field.userOptions)) return form
+  return { supported: true, fields: form.fields.map(field => {
+    if (field.kind !== 'resource' || !field.userOptions) return field
+    const { userOptions: _picker, ...withoutPicker } = field
+    return withoutPicker
+  }) }
 }
 
 function codePoints(value: string): number {
@@ -659,8 +693,8 @@ function legacyElicitationFields(fields: readonly SchemaFormField[]): Elicitatio
 }
 
 /** The form keys of an elicitation `PermissionRequest`; empty for a form without fields. */
-export function elicitationFormRequest(schema: unknown): Pick<PermissionRequest, 'schemaForm' | 'elicitationForm'> {
-  const form = parseSchemaForm(schema)
+export function elicitationFormRequest(schema: unknown, host: SchemaFormParseOptions = {}): Pick<PermissionRequest, 'schemaForm' | 'elicitationForm'> {
+  const form = parseSchemaForm(schema, host)
   if (form.supported && form.fields.length === 0) return {}
   const elicitationForm = form.supported ? legacyElicitationFields(form.fields) : undefined
   return { schemaForm: form, ...(elicitationForm ? { elicitationForm } : {}) }

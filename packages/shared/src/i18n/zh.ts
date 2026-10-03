@@ -2141,6 +2141,13 @@ export const zh: Messages = {
       addPlaceholder: '输入后按回车添加',
       remove: '移除 {{name}}',
       noResources: '没有可选项。',
+      addFiles: '添加文件…',
+      addDirectory: '添加文件夹…',
+      preview: '预览 {{name}}',
+      previewLoading: '正在加载预览…',
+      previewEmpty: '此资源为空。',
+      previewBinary: '暂不支持预览 {{type}}。',
+      resourceError: '无法打开资源。',
       uriPlaceholder: 'https://… 或其他 URI',
       dateTimePlaceholder: '2026-01-31T09:00:00Z',
       errors: {

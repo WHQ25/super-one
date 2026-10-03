@@ -633,14 +633,20 @@ existing elicitation card, and `SchemaFormFields` (phone `PermissionSheet`).
 - A form with any input SuperOne cannot render is reported as unsupported,
   never partially shown. The only action left is Dismiss, which answers
   `cancel` (`decline` on the phone, which has no cancel channel).
-- No user-added files or directories (`userOptions`). They are ignored on
-  single and explicit selection, as on ChatGPT web. Implicit selection always
-  offers them, so it is unsupported.
+- Local desktop Codex forms may add files or directories (`userOptions`) for
+  configured, enabled stdio servers through the main-process native dialog.
+  Extension/MIME `accept` rules are enforced on canonical paths, and main keeps
+  picked URIs per pending request/field. Directory `accept` filters are unsupported.
+  Explicit forms add choices; implicit forms submit all remaining options.
+  Remote-node and phone forms keep supplied explicit choices without uploads;
+  implicit selection remains unsupported on those surfaces.
 - A form with more than 100 fields, or a schema over a fixed size, is
   unsupported; the check is cheap and runs before any field is parsed.
 - Answers are checked in main against the form before they reach the server.
   Unknown keys are dropped, invalid answers keep the request pending, and
-  resource fields only return URIs the server offered. These checks are
+  resource fields only return URIs the server offered or main picked for that
+  pending field. Ownership/session/account/configuration is rechecked before
+  accepting picked paths. These checks are
   structural (types, required, options, length and number bounds); `format`
   and `pattern` are advisory and left to the server.
 - Main never runs a server's `pattern`. The renderer and phone show it as an
@@ -694,18 +700,18 @@ Live check on Bits & Bolts (dev instance, Codex 0.159):
   does not fall back to standard forms. `createElicitInput` throws, so
   `cad.pickFile`, `cad.pickReferences` and `cad.reviewForm` fail with a tool
   error. This is for the compat layer.
-- **Remote node**: `packages/codex/src/app-server-client.ts` answers every
-  server request itself (elicitations are declined), so it does not advertise
-  forms. The node's ACP path accepts without returning content
-  (`formatGrokElicitOutcome`).
-- **Previews** (`_meta["openai/preview"]`): parsed but not shown, and the option
-  stays selectable. Planned path: main checks the URI against the pending
-  elicitation's `resource_link` preview targets and reads it from the server
-  that sent the elicitation, with the transient View output cap. Transient
-  provider reads accept any URI of the server; only documents need `ui://`. `mcp_app_tool`
-  previews wait for hosting a View without a tool call (proposal §5).
-- **User-added resources**: need a security review first. Native main-process
-  dialog only, `file://` URIs, `accept` enforced, local stdio servers only.
+- **Remote node Codex**: form capability and durable answers are implemented,
+  including standalone View calls between turns (2026-10-03). Native file picking
+  and previews remain local-desktop only; node ACP form content is separate work.
+- **Previews** (`_meta["openai/preview"]`): local desktop Codex permission cards
+  show `resource_link` data as inert text/images. Main resolves the target from
+  the pending form, reads from the eliciting server/original thread, and rechecks
+  the binding after reading. Native transient-provider limits apply; local IPC
+  adds no byte cap. Other binary formats show an unavailable notice. Remote/phone
+  previews and `mcp_app_tool` previews are deferred; file-origin Views cannot
+  substitute for generic host-origin binding (proposal §5). Options remain selectable.
+- **User-added resources**: security review completed (2026-10-03), with the
+  native-dialog/local-stdio/accept/trusted-field-allowlist boundaries above.
 - **URL-mode** Codex elicitations still show a plain approval without a link.
 - **Duplicate result storage**: a Codex App result is stored twice in SQLite,
   in the raw `metadata.codex` item and in the attachment (size policy:
@@ -722,11 +728,11 @@ model context, `openai/message` and most form features. Still missing:
 | File entrypoint, host resources (`read` / `subscribe` / `openai/resources/write`), path injection | Codex sessions on local projects: done. Claude lists Apps through step 1; opening a file not yet verified live. Remote projects and phone later |
 | `openai/files/open` | Desktop local sessions: done (any harness; see features/mcp-apps.md). Remote sessions and phone not advertised |
 | Composer at-mentions (`mentions/search`) | Codex and Claude sessions on local projects, desktop and phone: done. Remote projects later |
-| Form previews (`openai/preview`) | Parsed, not shown — Phase 3 host follow-ups |
-| Form `userOptions`, implicit selection | Ignored / refused — Phase 3 host follow-ups |
+| Form previews (`openai/preview`) | `resource_link` on local desktop Codex: done; other binary formats show unavailable. Tool previews and remote/phone previews deferred |
+| Form `userOptions`, implicit selection | Local desktop Codex stdio: done after security review. Remote-node/phone implicit selection refused; explicit supplied choices retained |
 | `ui/download-file` | Done on desktop and phone (see features/mcp-apps.md) |
 | Collapsed untitled long text | S1 leftover — Phase 3 host follow-up |
-| Form capability on Claude and on the remote-node Codex client | Not advertised — after Phase 3 |
+| Form capability on Claude and on the remote-node Codex client | Codex desktop/node forms: done. Claude capability still absent; node ACP form content remains separate work |
 | Global and thread entrypoints, deep links | Not supported — later; need the host-origin binding from Phase 3 |
 | Structured settings (`openai/settings`) | Not supported — later; needs server capabilities, which Claude withholds |
 | Plugin onboarding | Out of scope until SuperOne has plugin packages |
@@ -828,6 +834,24 @@ Ordered ahead of proposal phase 3 (entrypoints, settings) by user decision.
     and collapsed untitled long text in confirmations and bubbles.
 
 ### Progress
+
+**Codex form resources (step 10, local desktop): done after security review,
+2026-10-03.** Pending-form authority and picked URI lifetime are in
+`codex/codex-form-resources.ts`; native dialog and preview reads in
+`mcp-apps/form-resources-ipc.ts`; the production permission card uses
+`SchemaFormComposer` / `SchemaFormResourceField`. Local stdio file/folder picking
+enforces filename/MIME `accept`, canonical paths and per-field provenance;
+implicit removal can be undone before submitting. `resource_link` previews are
+inert text/images from the eliciting server/thread, with native provider limits
+and no additional local IPC byte cap. Tool previews and remote-node/phone picking
+and previews remain deferred. Directory filters are explicitly unsupported.
+The phone keeps supplied explicit choices and rejects implicit forms.
+
+Validation: 245 focused desktop/shared/mobile tests and four Chromium Storybook
+production-component checks (including loading/denied states and 360 px width);
+desktop node/web and mobile typechecks, plus Storybook build. Native picker and
+provider behavior use protocol/IPC fixtures; no new authenticated live MCP or
+actual native-dialog smoke was run for this item.
 
 **Codex file open (steps 3–7, local projects): done.** Shared contracts in
 `packages/shared/src/mcp-app-files.ts`; main in `mcp-apps/host-files.ts` and

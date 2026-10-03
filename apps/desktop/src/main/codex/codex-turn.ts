@@ -56,6 +56,7 @@ import type {
   UsageInfo,
 } from '@superone/shared/agent-types'
 import { acceptedElicitationContent, elicitationFormRequest } from '@superone/shared/schema-form'
+import { prepareCodexFormResources, codexFormWithPickedResources } from './codex-form-resources'
 import { getCodexSuperoneMcpConfig } from '../mcp/superone-mcp-stdio-state'
 import { isToolPreapproved, isBuiltInSuperoneTool } from '../mcp/superone-mcp-server'
 import { gateTerminalTabsCall, isTerminalTabsTool } from '../mcp/terminal-tabs-harness-gate'
@@ -924,6 +925,8 @@ export async function processServerRequest(
 
   const parsedApprovalRequest = mapApprovalRequest(notification)
   if (parsedApprovalRequest) {
+    const registerFormResources = parsedApprovalRequest.responseKind === 'elicitation'
+      ? prepareCodexFormResources(session, notification, parsedApprovalRequest.request) : undefined
     const fallbackResponse: PendingCodexApprovalResponse =
       parsedApprovalRequest.responseKind === 'user_input'
         ? buildUserInputApprovalResponse(parsedApprovalRequest.questions, false)
@@ -1004,6 +1007,7 @@ export async function processServerRequest(
       return true
     }
     let abortPending: (() => void) | undefined
+    let releaseFormResources: (() => void) | undefined
     try {
       const pendingEvent: AgentEvent = parsedApprovalRequest.responseKind === 'user_input'
         ? { type: 'ask_user_question', request: parsedApprovalRequest.request }
@@ -1018,6 +1022,7 @@ export async function processServerRequest(
           resolve,
           reject,
         })
+        releaseFormResources = registerFormResources?.()
         abortPending = () => {
           if (session.pendingApprovals.get(parsedApprovalRequest.request.requestId)?.event === pendingEvent) {
             session.pendingApprovals.delete(parsedApprovalRequest.request.requestId)
@@ -1036,6 +1041,7 @@ export async function processServerRequest(
       await respondToServer(notification.requestIdRaw, response)
       return true
     } finally {
+      releaseFormResources?.()
       if (abortPending) abortSignal?.removeEventListener('abort', abortPending)
       session.pendingApprovals.delete(parsedApprovalRequest.request.requestId)
     }
@@ -3000,7 +3006,13 @@ export function respondToCodexElicitation(
   }
   if (allow) {
     const schemaForm = pending.event.type === 'permission_request' ? pending.event.request.schemaForm : undefined
-    const accepted = acceptedElicitationContent(schemaForm, formAnswers)
+    let accepted: ReturnType<typeof acceptedElicitationContent>
+    try {
+      accepted = acceptedElicitationContent(codexFormWithPickedResources(session.superoneSessionId, requestId, schemaForm), formAnswers)
+    } catch (error) {
+      log.warn('[codex] elicitation binding changed requestId=%s: %s', requestId, error)
+      return false
+    }
     if (!accepted.ok) {
       log.warn('[codex] elicitation answer rejected requestId=%s: %s', requestId, accepted.reason)
       return false

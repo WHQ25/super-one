@@ -211,6 +211,11 @@ export interface ToolAppAttachment {
   error?: McpAppsErrorData
 }
 
+/** A failed call shows as its harness's own tool row, never as a View. */
+export function mcpAppToolFailed(app: ToolAppAttachment): boolean {
+  return app.status === 'error' || (app.status === 'result' && app.toolResult?.isError === true)
+}
+
 /** Why a finished call's View is not opened: its initial result was over the cap. */
 export function mcpAppOmittedMessage(app: ToolAppAttachment, t: (key: string, values?: Record<string, unknown>) => string): string | undefined {
   return app.status === 'result' && app.toolResultOmitted ? t('mcpApp.resultOverLimit', { size: formatBytes(app.toolResultOmitted.bytes) }) : undefined

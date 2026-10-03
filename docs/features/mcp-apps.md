@@ -136,10 +136,12 @@ replacement result is fabricated. The omission marker wins over any raw-result
 fallback. Desktop, phone and the shared host re-check the same cap before a
 View gets its input; size failures cannot escape into React.
 
-An omitted initial result keeps the App's header and details toggle and shows
-the over-limit message with the original size in the state card
-(`mcpAppOmittedMessage`). No document is registered or loaded, so the App's
-default page never takes transcript space. The host never
+A failed call (`status: error`) or an error result (`isError: true`) is shown
+as the harness's standard tool row, with its error, not as a View
+(`mcpAppToolFailed`). An omitted initial result keeps the App's header and
+details toggle and shows the over-limit message with the original size in the
+state card (`mcpAppOmittedMessage`). In both cases no document is registered or
+loaded, so the App's default page never takes transcript space. The host never
 automatically reruns that tool.
 
 **The host does not adapt to servers that send View data in the wrong layer.**

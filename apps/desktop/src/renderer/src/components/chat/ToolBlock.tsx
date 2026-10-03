@@ -36,6 +36,7 @@ import {
 } from './ToolBlockPresenter'
 import { BashTerminalPresenter } from './tool-block-presenters/BashTerminalPresenter'
 import type { BashEditToolUse } from '@superone/shared/bash-edit-diff'
+import { mcpAppToolFailed } from '@superone/shared/mcp-apps'
 import { PrettyJSONCodeBlock, QuestionPreviewContent } from './tool-result-views'
 import { AppToolBlockPresenter, AppToolHeader, type AppToolBlockPresenterProps } from '@superone/chat-view/presenters/AppToolBlock'
 import { ArtifactLinkChip } from './ArtifactLinkChip'
@@ -348,7 +349,7 @@ export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
       autoExpandFileDiffs={autoExpandFileDiffs}
       ports={ports}
     />
-  if (props.app) {
+  if (props.app && !mcpAppToolFailed(props.app)) {
     const details = <div className="space-y-2 rounded-md bg-muted/20 p-2 text-xs">
       <div className="text-muted-foreground">{t('trajectory.inspector.arguments')}</div>
       {ports.renderJson(props.input)}

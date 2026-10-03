@@ -1,4 +1,4 @@
-import { boundedToolAppAttachment, mcpAppOmittedMessage, MCP_APP_DATA_MAX_BYTES, MCP_APP_RESULT_MAX_BYTES } from './mcp-apps'
+import { boundedToolAppAttachment, mcpAppOmittedMessage, mcpAppToolFailed, MCP_APP_DATA_MAX_BYTES, MCP_APP_RESULT_MAX_BYTES } from './mcp-apps'
 import { describe, expect, it } from 'vitest'
 import { mcpAppHeaderTitle, mcpAppServerTitle, mcpAppIcon, mcpAppMonochromeSvg, mcpAppPresentation, mcpAppResourceMeta, mcpAppResourceModes, safeMcpAppImage } from './mcp-apps-metadata'
 
@@ -78,9 +78,13 @@ describe('mcpAppMonochromeSvg', () => {
   })
 })
 
-it('explains an omitted result with its original size', () => {
+it('tells a failed call, which keeps its tool row, from an omitted result, which shows a state card', () => {
   const base = { appInstanceId: 'v', binding: { node: 'local', session: 's', server: 'cad', configGeneration: 0, configFingerprint: 'x' }, resourceUri: 'ui://cad', status: 'result' as const }
   const t = (key: string, values?: Record<string, unknown>) => `${key} ${values?.size}`
+  expect(mcpAppToolFailed({ ...base, status: 'error', error: { code: 'invalid', message: 'Unknown part' } })).toBe(true)
+  expect(mcpAppToolFailed({ ...base, toolResult: { content: [{ type: 'text', text: 'Part not found' }], isError: true } })).toBe(true)
+  expect(mcpAppToolFailed({ ...base, toolResultOmitted: { bytes: 2_500_000, reason: 'size_limit' } })).toBe(false)
+  expect(mcpAppToolFailed({ ...base, status: 'pending' })).toBe(false)
   expect(mcpAppOmittedMessage({ ...base, toolResultOmitted: { bytes: 2_500_000, reason: 'size_limit' } }, t)).toBe('mcpApp.resultOverLimit 2.4 MB')
   expect(mcpAppOmittedMessage(base, t)).toBeUndefined()
 })

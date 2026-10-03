@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('lucide-react', async (importOriginal) => {
@@ -147,6 +147,8 @@ Object.defineProperty(window, 'app', {
   },
   configurable: true,
 })
+
+vi.mock('../mcp-apps/McpAppView', () => ({ default: () => <div data-testid="mcp-app-view" /> }))
 
 const { ToolBlock } = await import('./ToolBlock')
 
@@ -691,5 +693,25 @@ describe('ToolBlock widget_show native previewer', () => {
       <ToolBlock toolName="mcp__superone__widget_show" input="{}" status="complete" result={gallery} />,
     )
     expect(screen.queryByTestId('files-previewer')).toBeNull()
+  })
+})
+
+describe('ToolBlock MCP App calls', () => {
+  const app = { appInstanceId: 'v', binding: { node: 'local', session: 's', server: 'cad', configGeneration: 0, configFingerprint: 'x' }, resourceUri: 'ui://cad/view', toolInput: {} }
+
+  it('shows the View in place of the row for a completed call', async () => {
+    render(<ToolBlock toolName="mcp__cad__pick" input="{}" result="ok" status="complete" app={{ ...app, status: 'result', toolResult: { content: [{ type: 'text', text: 'ok' }] } }} />)
+    expect(await screen.findByTestId('mcp-app-view')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['a failed call', { status: 'error' as const, error: { code: 'invalid' as const, message: 'Unknown part: hex' } }],
+    ['an error result', { status: 'result' as const, toolResult: { content: [{ type: 'text' as const, text: 'Part not found' }], isError: true } }],
+  ])('keeps the standard tool row for %s', async (_name, patch) => {
+    render(<ToolBlock toolName="mcp__cad__pick" input="{}" result="Part not found" isError status="complete" app={{ ...app, ...patch }} />)
+    // Let the lazy View load, so its absence is the routing decision, not a pending import.
+    await act(async () => { await import('../mcp-apps/McpAppView') })
+    expect(screen.queryByTestId('mcp-app-view')).toBeNull()
+    expect(screen.getByText(/pick/i)).toBeInTheDocument()
   })
 })

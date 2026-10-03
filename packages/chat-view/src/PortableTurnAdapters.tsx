@@ -11,6 +11,7 @@ import type {
 } from '@superone/shared/agent-types'
 import { applyDescriptionPersonaLabel, isAlwaysHiddenToolName, isSubagentToolName, parseMcpToolName } from '@superone/shared/tool-ui'
 import { resolveMcpServerIconFromMap } from '@superone/shared/mcp-server-icon'
+import { mcpAppToolFailed } from '@superone/shared/mcp-apps'
 import { isHiddenToolBlock } from './presenters/tool-display'
 import { resolveMarkdownFileLinks } from './presenters/markdown-file-links'
 import {
@@ -197,10 +198,10 @@ function PortableDocument({ name }: { name: string }) {
   return <FileText className="size-3 shrink-0" aria-label={name} />
 }
 
-/** A call whose server attached an MCP App shows its View in place of the row. */
+/** A call whose server attached an MCP App shows its View in place of the row; a failed call keeps the row. */
 function PortableClaudeTool(props: ClaudeToolPresenterProps) {
   const messageId = useContext(TurnMessageIdContext)
-  if (!props.app || !messageId) return <PortableClaudeToolRow {...props} />
+  if (!props.app || !messageId || mcpAppToolFailed(props.app)) return <PortableClaudeToolRow {...props} />
   return (
     <PortableMcpAppView
       app={props.app}

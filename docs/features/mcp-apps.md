@@ -63,8 +63,10 @@ route. An idle unsolicited request without a matching invocation is cancelled.
 Cancelling the last host invocation or closing the session clears the scope's
 pending prompt. Remote provider RPCs keep waiting while the user fills a form;
 the existing connection heartbeat detects transport loss and calls are not retried.
-Remote View teardown does not yet forward an invocation abort to the node; its
-prompt can still be cancelled through the permission UI or session interrupt/close.
+A remote request carries a desktop-minted `invocationId`; when the View goes away
+the desktop sends `mcpApps.cancel` with it, and the node aborts that client's
+invocation (a cancel that overtakes its request still applies). A client's
+disconnect aborts all of its invocations.
 
 Local Codex permission cards support resource-option `resource_link` previews and
 native `userOptions` file/folder selection. Main resolves a preview from the pending

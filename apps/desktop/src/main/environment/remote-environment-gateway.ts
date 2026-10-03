@@ -111,8 +111,16 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
    * claim/respond are not: the Host Action channel is the consumer's, not the
    * session list's.
    */
-  requestMcpAppsProvider(input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest & { leaseId: string; generation: string }): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult> {
-    return this.client.rpc('mcpApps.provider', input)
+  async requestMcpAppsProvider(input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest & { leaseId: string; generation: string }, signal?: AbortSignal): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult> {
+    if (!signal) return this.client.rpc('mcpApps.provider', input)
+    if (signal.aborted) return { ok: false, error: { code: 'cancelled', message: 'MCP App request cancelled' } }
+    // The node keeps serving a request whose View is gone, with any form it raised, until told.
+    const invocationId = randomUUID()
+    const cancel = () => { void this.client.rpc('mcpApps.cancel', { invocationId } satisfies import('@superone/shared/environment/mcp-apps-rpc').McpAppsCancelRpcRequest).catch(() => {}) }
+    signal.addEventListener('abort', cancel, { once: true })
+    try {
+      return await this.client.rpc('mcpApps.provider', { ...input, invocationId })
+    } finally { signal.removeEventListener('abort', cancel) }
   }
 
   updateMcpAppState(input: import('@superone/shared/environment/mcp-apps-state-rpc').McpAppsStateRpcRequest & { leaseId: string; generation: string }): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult> {

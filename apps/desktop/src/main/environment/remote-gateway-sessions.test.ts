@@ -2,6 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { createFixtureServer } from '../../test/fixtures/mcp-apps/fixture-server'
 import { createCodexMcpAppsProvider } from '@superone/codex/mcp-apps'
+import { McpAppsError } from '@superone/shared/mcp-apps'
 import type { TurnRunner } from '@superone/runtime/session'
 /**
  * Prove RemoteEnvironmentGateway.sessions/interactions/workspace.watch hit real node RPC.
@@ -76,7 +77,14 @@ describe('RemoteEnvironmentGateway sessions + watch', () => {
       } } })
       return { finalText: '', providerResume: 'thread:remote-thread' }
     }
-    runner.getMcpAppsProvider = async (_session, binding, origin) => createCodexMcpAppsProvider(binding, origin.providerSessionId, request)
+    // A slow call stands in for one waiting on an MCP form: it runs until the node aborts it.
+    const slowAborted = vi.fn()
+    runner.getMcpAppsProvider = async (_session, binding, origin) => {
+      const provider = createCodexMcpAppsProvider(binding, origin.providerSessionId, request)
+      return { ...provider, callTool: (call, signal) => call.tool !== 'fixture_slow' ? provider.callTool(call, signal) : new Promise((_, reject) => {
+        signal?.addEventListener('abort', () => { slowAborted(); reject(new McpAppsError('cancelled', 'MCP App request cancelled')) }, { once: true })
+      }) }
+    }
     const nodeHome = mkdtempSync(join(tmpdir(), 'apps-node-'))
     const desk = mkdtempSync(join(tmpdir(), 'apps-desk-'))
     const projectDir = mkdtempSync(join(tmpdir(), 'apps-project-'))
@@ -105,6 +113,12 @@ describe('RemoteEnvironmentGateway sessions + watch', () => {
       expect(call).toMatchObject({ ok: true, value: { outcome: 'completed', result: { structuredContent: { page: 2 }, _meta: { 'fixture/private': { visibility: 'app' } } } } })
       const denied = await gw.requestMcpAppsProvider({ ...input, operation: 'callTool', tool: 'fixture_model_echo', args: {} })
       expect(denied).toMatchObject({ ok: false, error: { code: 'denied' } })
+      const abort = new AbortController()
+      const slow = gw.requestMcpAppsProvider({ ...input, operation: 'callTool', tool: 'fixture_slow', args: {} }, abort.signal)
+      await new Promise(resolve => setTimeout(resolve, 50))
+      abort.abort()
+      await expect(slow).resolves.toMatchObject({ ok: false, error: { code: 'cancelled' } })
+      expect(slowAborted).toHaveBeenCalledTimes(1)
       expect(request.mock.calls.filter(([method]) => method === 'mcpServer/tool/call')).toHaveLength(1)
     } finally { manager.disconnectAll(); await client.close(); await fixture.server.close() }
   })

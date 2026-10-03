@@ -971,9 +971,9 @@ export class EnvironmentHost {
     return gateway
   }
 
-  async requestMcpAppsProvider(connectionId: string, input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult> {
+  async requestMcpAppsProvider(connectionId: string, input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest, signal?: AbortSignal): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult> {
     const control = await this.ensureSessionLease(connectionId, input.binding.session)
-    return this.asRemoteProviderGw(connectionId).requestMcpAppsProvider({ ...input, ...control })
+    return this.asRemoteProviderGw(connectionId).requestMcpAppsProvider({ ...input, ...control }, signal)
   }
 
   async updateMcpAppState(connectionId: string, input: import('@superone/shared/environment/mcp-apps-state-rpc').McpAppsStateRpcRequest): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult> {

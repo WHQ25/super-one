@@ -1,5 +1,6 @@
 import { verifyPayload } from '../crypto-util'
 import { dispatchRpc, clearWatchBuffersForClient } from '../rpc/handlers'
+import { cancelMcpAppsInvocationsForClient } from '../rpc/mcp-apps-handlers'
 import { createCliRpcHostHooks } from '../rpc/host-hooks'
 import type { AuthService } from '../auth/auth-service'
 import type { NodeIdentity } from '../identity'
@@ -73,6 +74,7 @@ export async function startNodeServer(opts: NodeServerOptions): Promise<NodeServ
       opts.workspaceWatch.cancelForClient?.(clientSessionId)
       opts.workspaceTailWatch.cancelForClient?.(clientSessionId)
       clearWatchBuffersForClient(clientSessionId)
+      cancelMcpAppsInvocationsForClient(clientSessionId)
     },
     createRpcContext: () => ({
       identity: opts.identity,

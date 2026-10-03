@@ -15,4 +15,8 @@ export interface McpAppsProviderRpcRequest {
   redirectUri?: string
   callbackUrl?: string
 }
+/** Node RPC `mcpApps.cancel`: abort this client's `mcpApps.provider` request sent with `invocationId`. */
+export interface McpAppsCancelRpcRequest {
+  invocationId: string
+}
 export type McpAppsRpcResult<T = unknown> = { ok: true; value: T } | { ok: false; error: McpAppsErrorData }

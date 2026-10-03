@@ -23,7 +23,7 @@ export async function routeMcpAppsProviderRequest(
   try {
     if (connectionId !== 'local') {
       const { getEnvironmentHost } = await import('../environment/environment-host')
-      return await getEnvironmentHost().requestMcpAppsProvider(connectionId, input)
+      return await getEnvironmentHost().requestMcpAppsProvider(connectionId, input, signal)
     }
     const session = getSession(input.binding.session)
     if (!session?.getMcpAppsProvider) throw new McpAppsError('not_connected', 'MCP Apps session unavailable')

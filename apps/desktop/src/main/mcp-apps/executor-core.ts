@@ -286,11 +286,8 @@ export class McpAppExecutor {
   /** Saved on the desktop's own disk, so any desktop session may download; the phone does not offer it. */
   private async downloadFile(requester: McpAppRequester, target: McpAppResolvedTarget, contents: McpAppDownloadContents, signal: AbortSignal): Promise<McpAppHostResult> {
     if (requester.kind !== 'desktop' || !this.ports.downloadFile) throw new McpAppsError('denied', 'Downloads are available only on the desktop')
-    const read = async (uri: string, signal: AbortSignal): Promise<McpAppReadResult> => {
-      const value = unwrap<McpAppReadResult>(await this.ports.provider(target, { operation: 'readResource', uri: resourceUri(uri), transient: true }, signal))
-      assertMcpAppSize(value, MCP_APP_OUTPUT_MAX_BYTES)
-      return value
-    }
+    const read = async (uri: string, signal: AbortSignal): Promise<McpAppReadResult> =>
+      unwrap<McpAppReadResult>(await this.ports.provider(target, { operation: 'readResource', uri: resourceUri(uri), transient: true }, signal))
     return { ok: true, value: await this.ports.downloadFile(target, contents, read, signal) }
   }
 
@@ -303,8 +300,9 @@ export class McpAppExecutor {
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
       if (requester.kind === 'mobile' && !requester.deviceId) throw new McpAppsError('denied', 'MCP App device identity required')
       const operation = operationOf(request)
-      // A file save or download (base64 or escaped text) uses the transient View cap, like a read.
-      assertMcpAppSize(operation, operation.operation === 'writeResource' || operation.operation === 'downloadFile' ? MCP_APP_OUTPUT_MAX_BYTES : undefined)
+      // A file save (base64 or escaped text) uses the transient View cap, like the read that opened it.
+      // A download is not bounded: it only crosses this desktop's own IPC to a file the user chose.
+      if (operation.operation !== 'downloadFile') assertMcpAppSize(operation, operation.operation === 'writeResource' ? MCP_APP_OUTPUT_MAX_BYTES : undefined)
       const target = await this.resolve(request, signal)
       validateTarget?.(target)
       const ref = target.ref

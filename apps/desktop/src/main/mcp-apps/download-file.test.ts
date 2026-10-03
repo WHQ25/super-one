@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { McpAppExecutor, type McpAppExecutorPorts, type McpAppResolvedTarget } from './executor-core'
-import { MCP_APP_LINK_DOWNLOAD_MAX_BYTES, mcpAppDownloadName, saveMcpAppDownloads, type McpAppDownloadPorts } from './download-file'
-import { MCP_APP_MIME_TYPE, type McpAppDownloadContents, type McpAppRequester, type ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { mcpAppDownloadName, saveMcpAppDownloads, type McpAppDownloadPorts } from './download-file'
+import { MCP_APP_MIME_TYPE, MCP_APP_OUTPUT_MAX_BYTES, type McpAppDownloadContents, type McpAppRequester, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 
 const dirs: string[] = []
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
@@ -67,9 +67,7 @@ describe('saveMcpAppDownloads', () => {
     expect(readFileSync(join(dir, 'parts.csv'), 'utf8')).toBe('a,b\n1,2')
   })
 
-  it('refuses a linked download over the cap and a link with credentials goes to the server, not the network', async () => {
-    const big = ports({ fetch: vi.fn(async () => new Response('x', { headers: { 'content-length': String(MCP_APP_LINK_DOWNLOAD_MAX_BYTES + 1) } })) })
-    await expect(saveMcpAppDownloads([{ type: 'resource_link', uri: 'https://example.com/huge.bin', name: 'Huge' }], big.ports, signal())).rejects.toMatchObject({ code: 'invalid' })
+  it('sends a link with credentials to the server, not the network', async () => {
     const creds = ports()
     await saveMcpAppDownloads([{ type: 'resource_link', uri: 'https://user:pw@example.com/a.txt', name: 'A' }], creds.ports, signal())
     expect(creds.ports.fetch).not.toHaveBeenCalled()
@@ -87,7 +85,7 @@ describe('MCP App host executor: downloadFile', () => {
     const provider = vi.fn<McpAppExecutorPorts['provider']>(async (_target, operation) => operation.operation === 'readResource'
       ? { ok: true, value: { contents: [{ uri: operation.uri, mimeType: 'text/csv', text: 'a,b' }] } }
       : { ok: true, value: { mode: 'native', resourceRead: true, toolCall: true } })
-    const downloadFile = vi.fn<NonNullable<McpAppExecutorPorts['downloadFile']>>(async (_target, contents, read, abort) => { await read(contents[0].type === 'resource_link' ? contents[0].uri : '', abort); return {} })
+    const downloadFile = vi.fn<NonNullable<McpAppExecutorPorts['downloadFile']>>(async (_target, contents, read, abort) => { if (contents[0].type === 'resource_link') await read(contents[0].uri, abort); return {} })
     const executor = new McpAppExecutor({ resolve: vi.fn(async () => target), persist: vi.fn(), sendMessage: vi.fn(), provider, downloadFile })
     executor.observeLive(target.ref, APP)
     const run = (contents: unknown, requester: McpAppRequester = { kind: 'desktop' }) =>
@@ -110,5 +108,12 @@ describe('MCP App host executor: downloadFile', () => {
     await expect(s.run([{ type: 'text', text: 'not a resource' }])).resolves.toMatchObject({ ok: false })
     await expect(s.run([{ type: 'resource', resource: { uri: 'file:///v.html', mimeType: MCP_APP_MIME_TYPE } }])).resolves.toMatchObject({ ok: false })
     expect(s.downloadFile).not.toHaveBeenCalled()
+  })
+
+  it('does not bound embedded bytes by the transient View cap', async () => {
+    const s = setup()
+    const text = 'x'.repeat(MCP_APP_OUTPUT_MAX_BYTES + 1024)
+    await expect(s.run([{ type: 'resource', resource: { uri: 'file:///big.txt', text } }])).resolves.toEqual({ ok: true, value: {} })
+    expect(s.downloadFile).toHaveBeenCalledTimes(1)
   })
 })

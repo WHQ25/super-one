@@ -1,11 +1,8 @@
 import { createWriteStream } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
-import { Readable, Transform } from 'node:stream'
+import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { McpAppsError, type McpAppDownloadContents, type McpAppReadResult } from '@superone/shared/mcp-apps'
-
-/** A linked download streams to disk; the View never sees it, so this only bounds the disk write. */
-export const MCP_APP_LINK_DOWNLOAD_MAX_BYTES = 256 * 1024 * 1024
 
 export interface McpAppDownloadPorts {
   /** Save dialog for one item; the chosen path, or null when the user cancels. */
@@ -48,15 +45,8 @@ async function saveLink(uri: string, path: string, ports: McpAppDownloadPorts, s
   // No cookies or credentials: SuperOne's browser sessions never reach a View-chosen URL.
   const response = await (ports.fetch ?? fetch)(uri, { signal, credentials: 'omit', redirect: 'follow' })
   if (!response.ok || !response.body) throw new McpAppsError('not_connected', `Download failed (${response.status})`)
-  if (Number(response.headers.get('content-length')) > MCP_APP_LINK_DOWNLOAD_MAX_BYTES) throw new McpAppsError('invalid', 'The download is too large')
-  let bytes = 0
-  const limit = new Transform({
-    transform(chunk: Buffer, _encoding, done) {
-      bytes += chunk.byteLength
-      done(bytes > MCP_APP_LINK_DOWNLOAD_MAX_BYTES ? new McpAppsError('invalid', 'The download is too large') : null, chunk)
-    },
-  })
-  await pipeline(Readable.fromWeb(response.body as never), limit, createWriteStream(path), { signal })
+  // Streamed straight to the file the user chose, so its size never sits in memory.
+  await pipeline(Readable.fromWeb(response.body as never), createWriteStream(path), { signal })
 }
 
 /**

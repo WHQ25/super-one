@@ -152,11 +152,8 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
     return options.executor.openLink({ url: url.href }, signal)
   })
   const { downloadFile } = options.executor
-  if (options.capabilities.downloadFile && downloadFile) bridge.ondownloadfile = (params, extra) => execute(extra.signal, signal => {
-    // Same bound as a file save: the View sends the bytes it wants saved.
-    assertMcpAppSize(params, MCP_APP_OUTPUT_MAX_BYTES)
-    return downloadFile(params.contents, signal)
-  })
+  // Not size-bounded: the bytes are already in the View and go only to a file the user picks.
+  if (options.capabilities.downloadFile && downloadFile) bridge.ondownloadfile = (params, extra) => execute(extra.signal, signal => downloadFile(params.contents, signal))
   bridge.onrequestdisplaymode = (params, extra) => execute(extra.signal, async signal => {
     const resourceModes = mcpAppResourceModes(options.resourceMeta ?? app.resource?.meta)
     const declared = bridge.getAppCapabilities()?.availableDisplayModes

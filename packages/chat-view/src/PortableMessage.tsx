@@ -38,13 +38,6 @@ import { requestNative } from './bridge'
 
 type PendingPermission = NonNullable<ReductionProjection['pendingPermission']>
 
-/**
- * Same copy the desktop bubble carries. It is a literal on both surfaces
- * because it is not translated there either — parity here means the same
- * string, not a new key only the phone would use.
- */
-const INTERRUPTED_LABEL = 'Interrupted · What should I do instead?'
-
 function resultsByTool(content: ContentBlock[]): Map<string, { result: string; isError: boolean }> {
   const results = new Map<string, { result: string; isError: boolean }>()
   for (const block of content) {
@@ -267,7 +260,7 @@ export const PortableMessage = memo(function PortableMessage({
             ? <PortableVideoGallery items={generated.videos} />
             : undefined}
           interrupted={message.status === 'interrupted'}
-          interruptedLabel={INTERRUPTED_LABEL}
+          interruptedLabel={t('chat.interrupted')}
           turnSummary={message.metadata?.turnSummary
             ? <TurnSummaryAboveFooter summary={message.metadata.turnSummary} />
             : undefined}

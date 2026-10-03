@@ -1600,6 +1600,7 @@ export type Messages = {
       resend: string
       edit: string
     }
+    interrupted: string
     cursor: {
       apiKeyPrompt: {
         title: string
@@ -5772,6 +5773,7 @@ export const en: Messages = {
       resend: 'Resend',
       edit: 'Edit',
     },
+    interrupted: 'Interrupted · What should I do instead?',
     cursor: {
       apiKeyPrompt: {
         title: 'Cursor API Key required',

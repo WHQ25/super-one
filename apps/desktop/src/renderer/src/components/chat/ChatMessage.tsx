@@ -477,7 +477,7 @@ export const ChatMessage = memo(function ChatMessage({
         ? <VideoGalleryBlock items={generatedVideos} />
         : undefined}
       interrupted={message.status === 'interrupted'}
-      interruptedLabel="Interrupted · What should I do instead?"
+      interruptedLabel={t('chat.interrupted')}
       turnSummary={message.metadata?.turnSummary
         ? <TurnSummaryAboveFooter summary={message.metadata.turnSummary} />
         : undefined}

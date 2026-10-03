@@ -1683,6 +1683,7 @@ export const zh: Messages = {
       resend: '重新发送',
       edit: '编辑',
     },
+    interrupted: '已中断 · 接下来要我做什么？',
     cursor: {
       apiKeyPrompt: {
         title: '需要 Cursor API Key',

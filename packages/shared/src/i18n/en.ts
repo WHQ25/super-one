@@ -3950,6 +3950,7 @@ export type Messages = {
     newConversation: string
     nonText: string
     approveOpenFile: string
+    downloadMessage: string
     allow: string
     inline: string
     fullscreen: string
@@ -8121,6 +8122,7 @@ export const en: Messages = {
     newConversation: 'Create a new conversation in this project, switch to it, and send this message.',
     nonText: 'Includes {{count}} non-text content blocks.',
     approveOpenFile: 'Open File Outside This Project',
+    downloadMessage: '{{server}} wants to save “{{name}}”.',
     allow: 'Allow Once',
     inline: 'Return to Chat',
     fullscreen: 'Fullscreen',

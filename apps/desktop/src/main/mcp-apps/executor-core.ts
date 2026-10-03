@@ -6,13 +6,13 @@ import { mcpAppContextState, removeMcpAppContextBlock } from '@superone/shared/m
 import { validateMcpAppAttachmentUpdate } from '@superone/shared/mcp-apps-state'
 import { createHash, randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
-import { McpUiUpdateModelContextRequestSchema } from '@modelcontextprotocol/ext-apps/app-bridge'
+import { McpUiDownloadFileRequestSchema, McpUiUpdateModelContextRequestSchema } from '@modelcontextprotocol/ext-apps/app-bridge'
 import { McpAppMessageRequestSchema } from '@superone/shared/mcp-apps-host/message-schema'
 import { parseSessionKey, type SessionRef } from '@superone/shared/environment/refs'
 import type { McpAppsProviderRpcRequest, McpAppsRpcResult } from '@superone/shared/environment/mcp-apps-rpc'
 import { assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES, MCP_APP_MIME_TYPE, McpAppsError } from '@superone/shared/mcp-apps'
 import { isMcpAppHostResource, type McpAppResourceWriteParams, type McpAppResourceWriteResult } from '@superone/shared/mcp-app-files'
-import type { McpAppApprovalPrompt, McpAppAttachmentUpdate, McpAppHostOperation, McpAppHostRequest, McpAppHostResult, McpAppRequester, McpAppReadResult, McpAppsCallResult, McpAppsCapabilities, McpToolDescriptor, ToolAppAttachment } from '@superone/shared/mcp-apps'
+import type { McpAppDownloadContents, McpAppApprovalPrompt, McpAppAttachmentUpdate, McpAppHostOperation, McpAppHostRequest, McpAppHostResult, McpAppRequester, McpAppReadResult, McpAppsCallResult, McpAppsCapabilities, McpToolDescriptor, ToolAppAttachment } from '@superone/shared/mcp-apps'
 
 export interface McpAppResolvedTarget {
   ref: SessionRef
@@ -35,6 +35,11 @@ export interface McpAppExecutorPorts {
   fileToolMeta?(target: McpAppResolvedTarget): Record<string, unknown>
   /** `openai/files/open`: the existing file's real path, and whether it lies inside the session's project. */
   openFile?(target: McpAppResolvedTarget, path: string, signal: AbortSignal): Promise<{ path: string; insideProject: boolean }>
+  /**
+   * `ui/download-file`: ask where to save each item (the save dialog is the confirmation) and
+   * write it. `read` fetches a non-http resource link from the View's own server.
+   */
+  downloadFile?(target: McpAppResolvedTarget, contents: McpAppDownloadContents, read: (uri: string, signal: AbortSignal) => Promise<McpAppReadResult>, signal: AbortSignal): Promise<{ isError?: boolean }>
   now?(): number
 }
 
@@ -42,6 +47,9 @@ export type HostResourceRequest =
   | { kind: 'read'; uri: string; representation?: 'text' | 'blob' }
   | { kind: 'subscribe' | 'unsubscribe'; uri: string }
   | { kind: 'write'; params: McpAppResourceWriteParams }
+
+/** Each item opens its own save dialog; a View cannot queue an unbounded series of them. */
+const MCP_APP_DOWNLOAD_MAX_ITEMS = 8
 
 function resourceUri(uri: unknown): string {
   if (typeof uri !== 'string' || !uri || uri.length > 2048) throw new McpAppsError('invalid', 'Invalid MCP App resource URI')
@@ -85,6 +93,11 @@ function operationOf(request: McpAppHostRequest): McpAppHostOperation {
     case 'openFile':
       if (typeof request.path !== 'string' || !request.path || request.path.length > 4096 || !isAbsolute(request.path)) throw new McpAppsError('invalid', 'MCP App file paths must be absolute')
       return { operation: 'openFile', path: request.path }
+    case 'downloadFile': {
+      const { contents } = McpUiDownloadFileRequestSchema.parse({ method: 'ui/download-file', params: { contents: request.contents } }).params
+      if (!contents.length || contents.length > MCP_APP_DOWNLOAD_MAX_ITEMS) throw new McpAppsError('invalid', 'Invalid MCP App download')
+      return { operation: 'downloadFile', contents }
+    }
     case 'sendPreparedMessage':
       if (typeof request.pendingSend !== 'string' || request.pendingSend.length > 128) throw new McpAppsError('invalid', 'Invalid MCP App pending message')
       return { operation: 'sendPreparedMessage', pendingSend: request.pendingSend }
@@ -270,6 +283,17 @@ export class McpAppExecutor {
     return pending ?? { ok: true, value: { path: file.path } }
   }
 
+  /** Saved on the desktop's own disk, so any desktop session may download; the phone does not offer it. */
+  private async downloadFile(requester: McpAppRequester, target: McpAppResolvedTarget, contents: McpAppDownloadContents, signal: AbortSignal): Promise<McpAppHostResult> {
+    if (requester.kind !== 'desktop' || !this.ports.downloadFile) throw new McpAppsError('denied', 'Downloads are available only on the desktop')
+    const read = async (uri: string, signal: AbortSignal): Promise<McpAppReadResult> => {
+      const value = unwrap<McpAppReadResult>(await this.ports.provider(target, { operation: 'readResource', uri: resourceUri(uri), transient: true }, signal))
+      assertMcpAppSize(value, MCP_APP_OUTPUT_MAX_BYTES)
+      return value
+    }
+    return { ok: true, value: await this.ports.downloadFile(target, contents, read, signal) }
+  }
+
   async execute(request: McpAppHostRequest, requester: McpAppRequester, signal: AbortSignal, validateTarget?: (target: McpAppResolvedTarget) => void): Promise<McpAppHostResult> {
     const ref = typeof request?.sessionKey === 'string' ? parseSessionKey(request.sessionKey) : null
     const lifetime = ref ? { ref, requester: requesterKey(requester), abort: new AbortController() } : undefined
@@ -279,8 +303,8 @@ export class McpAppExecutor {
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
       if (requester.kind === 'mobile' && !requester.deviceId) throw new McpAppsError('denied', 'MCP App device identity required')
       const operation = operationOf(request)
-      // A file save (base64 or escaped text) uses the transient View cap, like the read that opened it.
-      assertMcpAppSize(operation, operation.operation === 'writeResource' ? MCP_APP_OUTPUT_MAX_BYTES : undefined)
+      // A file save or download (base64 or escaped text) uses the transient View cap, like a read.
+      assertMcpAppSize(operation, operation.operation === 'writeResource' || operation.operation === 'downloadFile' ? MCP_APP_OUTPUT_MAX_BYTES : undefined)
       const target = await this.resolve(request, signal)
       validateTarget?.(target)
       const ref = target.ref
@@ -309,6 +333,7 @@ export class McpAppExecutor {
       if (!target.app.origin?.providerSessionId) throw new McpAppsError('not_connected', 'MCP App provider origin unavailable')
       if (operation.operation !== 'activate' && this.active.get(activeKey) !== binding) throw new McpAppsError('inactive', 'Activate this restored MCP App to reconnect')
       if (operation.operation === 'openFile') return await this.openFile(request, requester, target, operation.path, signal)
+      if (operation.operation === 'downloadFile') return await this.downloadFile(requester, target, operation.contents, signal)
       const capabilities = unwrap<McpAppsCapabilities>(await this.ports.provider(target, { operation: 'ready' }, signal))
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
       if (capabilities.mode === 'unsupported') throw new McpAppsError('not_connected', 'This harness does not support MCP Apps')

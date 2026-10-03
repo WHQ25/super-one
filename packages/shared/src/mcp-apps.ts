@@ -1,7 +1,7 @@
 import type { McpAppResource } from './mcp-app-resource'
 /** Harness-neutral MCP Apps contracts. No runtime SDK or Electron dependency. */
 import { compactMcpAppPresentation, MCP_APP_PRESENTATION_MAX_BYTES } from './mcp-apps-metadata'
-import type { McpUiMessageRequest } from '@modelcontextprotocol/ext-apps/app-bridge'
+import type { McpUiDownloadFileRequest, McpUiMessageRequest } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { McpAppsRpcResult } from './environment/mcp-apps-rpc'
 import type { ContextAttachment } from './context-attachments'
 import type { McpAppResourceWriteParams } from './mcp-app-files'
@@ -141,6 +141,7 @@ export interface McpAppModelContext {
 }
 
 export type McpAppMessageParams = McpUiMessageRequest['params'] & { _meta?: Record<string, unknown> }
+export type McpAppDownloadContents = McpUiDownloadFileRequest['params']['contents']
 
 /** Host-authored approval details. Render previews as plain text, never as View HTML. */
 export type McpAppMessagePrompt = { kind: 'sendMessage'; server: string; text: string; nonTextBlocks: number; items?: ContextAttachment[]; target?: 'active' | 'new' }
@@ -160,6 +161,8 @@ export type McpAppHostOperation =
   | { operation: 'sendMessage'; params: McpAppMessageParams }
   /** `openai/files/open`: an absolute path on the session's host, desktop local sessions only. */
   | { operation: 'openFile'; path: string }
+  /** `ui/download-file`: saved on the desktop after the user picks where. */
+  | { operation: 'downloadFile'; contents: McpAppDownloadContents }
   /** Trusted host continuation after navigating to a confirmed new conversation. */
   | { operation: 'sendPreparedMessage'; pendingSend: string }
   | { operation: 'updateModelContext'; context: McpAppModelContext }

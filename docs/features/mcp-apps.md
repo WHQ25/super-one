@@ -10,8 +10,8 @@ We implement the [stable spec 2026-01-26](https://github.com/modelcontextprotoco
 with `@modelcontextprotocol/ext-apps` **1.7.5** and `@modelcontextprotocol/sdk`
 **1.30.0** (the last SDK-1.x-compatible release). Where spec prose and the
 pinned SDK schema disagree, the schema wins (`ui/message.content` is an array).
-Draft features (`ui/download-file`, sampling, app-provided tools) are not
-advertised. The deprecated flat `_meta["ui/resourceUri"]` is read as a
+Draft features (sampling, app-provided tools) are not advertised, except
+`ui/download-file` on desktop (below). The deprecated flat `_meta["ui/resourceUri"]` is read as a
 fallback; OpenAI's `openai/outputTemplate` is out of scope. SuperOne's own UI
 surfaces (`widget_show`, mini-apps) keep their own contracts.
 
@@ -211,6 +211,7 @@ the only View-to-host entry, used by desktop IPC and by the phone's
 | `ui/message` | Confirmed every time (host card with labeled attachments, single-use challenge bound to requester, View, message and binding). `openai/message` defaults to `target: active`, which uses the View's original session and normal queue/receipt. On desktop, `target: new` creates a conversation in the same project and harness, switches to it, then sends through that path. Phone supports `active` only and explicitly refuses `new`. Three messages per View per minute. |
 | `ui/update-model-context` | Per-View context entry in the original session, last write wins. It keeps `content` / `structuredContent` with source attribution and accompanies every model request until replaced or removed. Each visible block is a removable composer attachment on desktop and phone; background-only state has one removable App context chip. The update result and `hostContext["openai/modelContext"]` carry `updateId`; cleared state is `null`. |
 | `openai/files/open` | Desktop local sessions only (`experimental["openai/files"]`); remote sessions and the phone do not advertise it. Main resolves the absolute path to an existing regular file's real path; inside the session's project it opens in the file preview directly, outside it needs a confirmation that shows the real path. The approval is bound to that real path, so a link changed after the prompt is refused. The provider is never contacted. |
+| `ui/download-file` | Desktop only, every session (`downloadFile`); the phone does not advertise it yet. Each item (at most 8) opens the native save dialog, which names the App and is the confirmation; the first cancel stops the rest and answers `isError`. Embedded text/blob is written as sent (transient cap). An http(s) link without credentials is fetched by main without cookies and streamed to disk (256 MiB cap); any other link is a transient `resources/read` on the View's own server. Bytes are fetched only after a path is chosen. |
 | `ui/open-link` | The shared host accepts credential-free http(s) only. Desktop opens it through the standard external-link prompt (built-in or external browser); the phone uses the transcript link path. |
 | `ui/request-display-mode` | Allowed when the host offers the mode and, if the View declared `availableDisplayModes`, the View declared it too. An undeclared View's request counts as intent. Otherwise the answer is `inline`. |
 

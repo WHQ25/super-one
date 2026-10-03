@@ -4,7 +4,7 @@ import type { McpUiAppCapabilities, McpUiHostCapabilities, McpUiHostContext, Mcp
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { CallToolResultSchema, ErrorCode, McpError, ReadResourceResultSchema } from '@modelcontextprotocol/sdk/types.js'
 import { boundedToolAppAttachment, assertMcpAppSize, MCP_APP_OUTPUT_MAX_BYTES, McpAppsError } from '../mcp-apps'
-import type { McpAppMessageParams, McpAppModelContext, McpAppReadResult, McpAppsCallResult, ToolAppAttachment, McpUiResourceMeta } from '../mcp-apps'
+import type { McpAppDownloadContents, McpAppMessageParams, McpAppModelContext, McpAppReadResult, McpAppsCallResult, ToolAppAttachment, McpUiResourceMeta } from '../mcp-apps'
 import { McpAppMessageRequestSchema } from './message-schema'
 import { mcpAppContextState, type McpAppModelContextState } from '../mcp-app-model-context'
 import { createMcpAppDocument } from './document'
@@ -21,6 +21,8 @@ export interface McpAppHostExecutor {
   writeResource?(request: McpAppResourceWriteParams, signal: AbortSignal): Promise<McpAppResourceWriteResult>
   /** `openai/files/open`; advertised only with `experimental["openai/files"]`. */
   openFile?(request: { path: string }, signal: AbortSignal): Promise<void>
+  /** `ui/download-file`; advertised only with `downloadFile`. `isError` when the user cancels. */
+  downloadFile?(contents: McpAppDownloadContents, signal: AbortSignal): Promise<{ isError?: boolean }>
   sendMessage(request: McpAppMessageParams, signal: AbortSignal): Promise<{ isError?: boolean }>
   updateModelContext(context: McpAppModelContext, signal: AbortSignal): Promise<McpAppModelContextState>
   openLink(request: { url: string }, signal: AbortSignal): Promise<{ isError?: boolean }>
@@ -148,6 +150,12 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
     try { url = new URL(params.url) } catch { throw new McpAppsError('invalid', 'Invalid MCP App link') }
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new McpAppsError('denied', 'Unsupported MCP App link')
     return options.executor.openLink({ url: url.href }, signal)
+  })
+  const { downloadFile } = options.executor
+  if (options.capabilities.downloadFile && downloadFile) bridge.ondownloadfile = (params, extra) => execute(extra.signal, signal => {
+    // Same bound as a file save: the View sends the bytes it wants saved.
+    assertMcpAppSize(params, MCP_APP_OUTPUT_MAX_BYTES)
+    return downloadFile(params.contents, signal)
   })
   bridge.onrequestdisplaymode = (params, extra) => execute(extra.signal, async signal => {
     const resourceModes = mcpAppResourceModes(options.resourceMeta ?? app.resource?.meta)

@@ -74,6 +74,7 @@ export function createDesktopMcpAppExecutor(options: {
       const result = await execute<{ path: string }>({ operation: 'openFile', path }, signal)
       openFileTab(result.path)
     },
+    downloadFile: (contents, signal) => execute({ operation: 'downloadFile', contents }, signal),
     requestDisplayMode: options.displayMode,
   }
 }

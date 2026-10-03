@@ -17,9 +17,12 @@ export interface McpAppFrameProps {
   onError(error: unknown): void; onUnknown(): void; onRevoked(): void; onHeight(height: number): void
 }
 
-/** Desktop shows files only from its own machine, so remote sessions do not offer `openai/files`. */
+/**
+ * Desktop shows files only from its own machine, so remote sessions do not offer `openai/files`.
+ * Downloads are saved on this desktop for any session.
+ */
 function mcpAppDesktopCapabilities(app: ToolAppAttachment) {
-  const base = app.file ? mcpAppFileCapabilities : mcpAppMessageCapabilities
+  const base = { ...(app.file ? mcpAppFileCapabilities : mcpAppMessageCapabilities), downloadFile: {} }
   return app.binding.node === 'local' ? { ...base, experimental: { ...base.experimental, ...MCP_APP_OPEN_FILES_EXTENSION } } : base
 }
 

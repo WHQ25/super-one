@@ -149,6 +149,7 @@ describe('createNodeCodexTurnRunner', () => {
 
     const deltas: string[] = []
     const agentEvents: AgentEvent[] = []
+    const onElicitation = vi.fn(async () => ({ action: 'accept' as const, content: { name: 'dial' }, _meta: null }))
     const turnP = runner({
       session: session(),
       text: 'ping',
@@ -156,11 +157,13 @@ describe('createNodeCodexTurnRunner', () => {
       additionalDirectories: [join(dir, 'shared')],
       onDelta: (d) => deltas.push(d),
       onAgentEvent: (event) => agentEvents.push(event),
+      onElicitation,
       signal: new AbortController().signal,
     })
 
     await pump()
     const init = JSON.parse(lines.find((l) => l.includes('initialize'))!)
+    expect(init.params.capabilities.extensions).toMatchObject({ 'openai/elicitation': { form: {} }, 'openai/standard-form-input': {} })
     child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: init.id, result: {} })}\n`)
 
     await pump()
@@ -180,6 +183,14 @@ describe('createNodeCodexTurnRunner', () => {
       `${JSON.stringify({ jsonrpc: '2.0', id: turn.id, result: { turn: { id: 'u1' } } })}\n`,
     )
     await pump()
+    child.stdout.write(`${JSON.stringify({ id: 'form', method: 'mcpServer/elicitation/request', params: {
+      threadId: 't-abc', serverName: 'fixture', mode: 'openai/form', message: 'Choose a part',
+      requestedSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
+    } })}\n`)
+    await pump()
+    expect(onElicitation).toHaveBeenCalledWith(expect.objectContaining({ kind: 'permission', requestKind: 'mcp_elicitation',
+      schemaForm: { supported: true, fields: [expect.objectContaining({ name: 'name', required: true })] } }), expect.any(AbortSignal))
+    expect(lines.map(l => JSON.parse(l)).find(l => l.id === 'form')).toEqual({ jsonrpc: '2.0', id: 'form', result: { action: 'accept', content: { name: 'dial' }, _meta: null } })
     child.stdout.write(
       `${JSON.stringify({
         jsonrpc: '2.0',

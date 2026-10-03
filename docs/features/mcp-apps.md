@@ -46,6 +46,14 @@ feature takes the first path that works, and is not built otherwise:
    harness to declare a capability in MCP `initialize` (`openai/elicitation`
    forms) exist only where the harness can declare it, today Codex.
 
+Codex desktop and remote nodes advertise the same form extensions. Native
+`form` / `openaiForm` / `openai/form` requests use the shared declarative schema
+and permission UI. Node prompts are durable, restore through snapshots and event
+replay, and accept answers only from the control-lease holder. Form input waits
+even in full-access sessions and is never remembered as an allowed tool. Waiting
+for input does not block ordered notifications or consume RPC/turn timeout
+budgets; interrupt, close, or connection loss cancels the pending form.
+
 ## Shared contract
 
 `packages/shared/src/mcp-apps.ts` owns the SDK-free types.

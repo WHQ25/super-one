@@ -20,7 +20,7 @@ export type NodeTranscriptBlock = {
   createdAt?: number
 }
 
-export type NodePendingInteraction = {
+export type NodePendingInteraction = Pick<PermissionRequest, 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist'> & {
   interactionId: string
   kind?: 'permission' | 'question' | 'plan' | 'session_agents_confirm'
   toolName?: string
@@ -96,22 +96,26 @@ export function nodePendingToPermissionRequest(
   const input = pending.input && typeof pending.input === 'object' ? pending.input : {}
   const elicitationUrl = typeof input.elicitationUrl === 'string' ? input.elicitationUrl : undefined
   const elicitationId = typeof input.elicitationId === 'string' ? input.elicitationId : undefined
-  const schemaForm = input.schemaForm && typeof input.schemaForm === 'object'
+  const schemaForm = pending.schemaForm ?? (input.schemaForm && typeof input.schemaForm === 'object'
     ? input.schemaForm as PermissionRequest['schemaForm']
-    : undefined
+    : undefined)
   const requestKind = pending.requestKind === 'mcp_elicitation' ? 'mcp_elicitation' as const : undefined
   return {
     requestId: pending.interactionId,
     toolName: pending.toolName || 'tool',
     toolUseId: pending.toolUseId,
     input,
-    allowAlwaysAllow: requestKind === 'mcp_elicitation' ? false : pending.allowAlwaysAllow !== false,
+    allowAlwaysAllow: requestKind === 'mcp_elicitation' ? !schemaForm && pending.allowAlwaysAllow === true : pending.allowAlwaysAllow !== false,
     ...(requestKind ? { requestKind } : {}),
     ...(pending.message ? { message: pending.message } : {}),
     ...(pending.serverName ? { serverName: pending.serverName } : {}),
     ...(elicitationUrl ? { elicitationUrl, subtitle: elicitationUrl } : {}),
     ...(elicitationId ? { elicitationId } : {}),
     ...(schemaForm ? { schemaForm } : {}),
+    ...(pending.elicitationForm ? { elicitationForm: pending.elicitationForm } : {}),
+    ...(pending.subtitle ? { subtitle: pending.subtitle } : {}),
+    ...(pending.riskLevel ? { riskLevel: pending.riskLevel } : {}),
+    ...(pending.supportsAlwaysPersist !== undefined ? { supportsAlwaysPersist: pending.supportsAlwaysPersist } : {}),
   }
 }
 

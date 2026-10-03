@@ -42,6 +42,8 @@ import { buildHarnessEnvWithProxy, resolveHarnessService } from '../provider/res
 import { buildCodexAttachmentInput } from '@superone/shared/attachment-turn'
 import { ensureMcpMerge, type McpMergeMode } from '@superone/runtime/fs'
 import { openTurnAndStream } from './codex-live-turn'
+import { codexElicitationRequest } from '@superone/codex/elicitation'
+import { randomUUID } from 'node:crypto'
 
 export interface NodeCodexRunnerOptions {
   environmentId?: string
@@ -163,6 +165,7 @@ interface LiveCodexConnection {
   chain: Promise<unknown>
   busyCount: number
   lastActivityAt: number
+  onElicitation?: Parameters<TurnRunner>[0]['onElicitation']
 }
 
 function parseTurnKind(raw: unknown): CodexTurnKind {
@@ -200,6 +203,20 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       env: authEnv,
       cliArgs: authEnv.SUPERONE_CODEX_ACCOUNT_PROVIDER ? nodeCodexAccountStore(opts.nodeHome).cliOverrides(authEnv.SUPERONE_CODEX_ACCOUNT_PROVIDER) : undefined,
       spawnFn: opts.spawnFn,
+      onServerRequest: async (request, signal) => {
+        const live = liveBySession.get(sessionId)
+        const threadId = request.params.threadId ?? request.params.thread_id
+        if (!live?.onElicitation || (typeof threadId === 'string' && live.threadId && threadId !== live.threadId)) return { action: 'cancel', content: null, _meta: null }
+        const permission = codexElicitationRequest(`codex-elicitation-${randomUUID()}`, request.params)
+        if (!permission) return { action: 'cancel', content: null, _meta: null }
+        live.busyCount += 1
+        try {
+          return { ...await live.onElicitation({ ...permission, interactionId: permission.requestId, kind: 'permission', createdAt: Date.now() }, signal) }
+        } finally {
+          live.busyCount = Math.max(0, live.busyCount - 1)
+          live.lastActivityAt = Date.now()
+        }
+      },
       // Connection outlives individual turns — do not bind open to turn abort.
     })
     const live: LiveCodexConnection = {
@@ -341,6 +358,11 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     }> => {
       const conn = liveBySession.get(sessionId)
       if (!conn) throw new Error('Codex connection disposed')
+      const interactionAbort = new AbortController()
+      const onElicitation: LiveCodexConnection['onElicitation'] = input.onElicitation
+        ? (interaction, signal) => input.onElicitation!(interaction, AbortSignal.any([input.signal, interactionAbort.signal, ...(signal ? [signal] : [])]))
+        : undefined
+      conn.onElicitation = onElicitation
 
       try {
         // Always ensure the server-side thread on a fresh connection (or when
@@ -422,6 +444,9 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
           await disposeLive(sessionId)
         }
         throw err
+      } finally {
+        interactionAbort.abort()
+        if (conn.onElicitation === onElicitation) conn.onElicitation = undefined
       }
     }
 

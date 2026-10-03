@@ -155,3 +155,11 @@ enabled by `apps/desktop/src/main/codex/app-server-connection.ts`).
   and root-thread isolation. `mcp-apps-subagents.test.ts` covers ancestry and child
   native resource/tool routing. A 2026-10-03 isolated live subagent probe stopped
   at `workspace routing discovery failed`; no live subagent turn was verified.
+- **Remote elicitation:** production nodes negotiate `openai/elicitation` form
+  and Codex's `openai/standard-form-input` alongside MCP Apps. The native client
+  dispatches user-waiting requests independently of its ordered notification and
+  RPC-reply reader. Forms reuse SessionRuntime's durable permission waiter and
+  lease-gated response RPC; answers are validated before accepting and forms do
+  not enter `alwaysAllowedTools`. User-input time is excluded from RPC/turn
+  budgets. Form, cancellation, snapshot/replay and per-thread ordering are tested
+  with protocol fixtures; this change has no new authenticated live acceptance.

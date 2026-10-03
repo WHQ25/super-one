@@ -9,6 +9,7 @@ import type { McpAppsResolvedAttachment } from '@superone/shared/environment/mcp
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@superone/shared/agent-types'
+import { acceptedElicitationContent } from '@superone/shared/schema-form'
 import {
   DEFAULT_HOST_ACTION_TOOL_GROUPS,
   HOST_ACTION_CAPABILITY_VERSION,
@@ -40,6 +41,7 @@ import {
 import {
   type ActiveHarnessRuntime,
   type AgentsConfirmOutcome,
+  type ElicitationDecision,
   type NodeSessionRecord,
   type NodeSessionSettings,
   type PendingInteraction,
@@ -78,6 +80,7 @@ export function forkSessionTitle(title: string | null): string {
 export type {
   ActiveHarnessRuntime,
   AgentsConfirmOutcome,
+  ElicitationDecision,
   NodeSessionRecord,
   NodeSessionSettings,
   PendingInteraction,
@@ -91,18 +94,21 @@ export type {
 } from './types'
 export type { LeaseGuard, SessionEventLog, SessionStore } from './ports'
 
+interface PermissionResponse {
+  decision: PermissionDecision
+  reason: 'responded' | 'aborted'
+  clientDecision?: 'allow' | 'deny' | 'allow_always'
+  formAnswers?: Record<string, unknown>
+  cancel?: boolean
+}
+
 interface PermissionWaiter {
   sessionId: string
   /**
    * Single-settlement path for respond / timeout / abort.
    * Always resolves the runner Promise exactly once.
    */
-  settle: (result: {
-    decision: PermissionDecision
-    reason: 'responded' | 'aborted'
-    /** Wire decision when reason is responded (may be allow_always). */
-    clientDecision?: 'allow' | 'deny' | 'allow_always'
-  }) => void
+  settle: (result: PermissionResponse) => void
 }
 
 interface QuestionWaiter {
@@ -1338,6 +1344,8 @@ export class SessionRuntime {
           }
           return this.waitForPermissionDecision(session, interaction, abort.signal, requestId)
         },
+        onElicitation: (interaction, signal) => this.requestElicitation(session.sessionId, interaction,
+          signal ? AbortSignal.any([abort.signal, signal]) : abort.signal, requestId),
         onQuestion: (interaction) =>
           this.waitForQuestionDecision(session, interaction, abort.signal, requestId),
         onPlan: (interaction) =>
@@ -2008,9 +2016,9 @@ export class SessionRuntime {
     client: { clientSessionId: string }
     leaseId: string
     generation: string
-    /** Multi-launch form edits / feedback (session_agents_confirm). */
+    /** Answers for declarative forms or multi-launch confirmation. */
     formAnswers?: Record<string, unknown>
-    /** True when the UI cancelled the multi-launch dialog. */
+    /** True when the UI cancelled the dialog. */
     cancel?: boolean
   }): void {
     const session = this.live.get(input.sessionId)
@@ -2055,8 +2063,12 @@ export class SessionRuntime {
     }
     // allow_always: allow this turn and remember the tool for the session
     // (desktop "always allow" parity — session-scoped, not global).
-    const decision: PermissionDecision = input.decision === 'deny' ? 'deny' : 'allow'
-    if (input.decision === 'allow_always') {
+    const decision: PermissionDecision = input.decision === 'deny' || input.cancel ? 'deny' : 'allow'
+    if (pending.requestKind === 'mcp_elicitation' && decision === 'allow') {
+      const accepted = acceptedElicitationContent(pending.schemaForm, input.formAnswers)
+      if (!accepted.ok) throw Object.assign(new Error(accepted.reason), { code: 'failed_precondition' })
+    }
+    if (input.decision === 'allow_always' && pending.requestKind !== 'mcp_elicitation' && !input.cancel) {
       const tool = session.pendingInteraction?.toolName?.trim()
       if (tool) {
         const list = session.alwaysAllowedTools ?? []
@@ -2071,7 +2083,22 @@ export class SessionRuntime {
       decision,
       reason: 'responded',
       clientDecision: input.decision,
+      formAnswers: input.formAnswers,
+      cancel: input.cancel,
     })
+  }
+
+  /** Elicitation uses the existing durable permission channel and control lease. */
+  async requestElicitation(sessionId: string, interaction: PendingInteraction, signal: AbortSignal, requestId?: string): Promise<ElicitationDecision> {
+    const session = this.live.get(sessionId)
+    if (!session || session.closed || signal.aborted) return { action: 'cancel', content: null, _meta: null }
+    const result = await this.waitForPermissionResponse(session, interaction, signal, requestId)
+    if (result.reason === 'aborted' || result.cancel) return { action: 'cancel', content: null, _meta: null }
+    if (result.decision === 'deny') return { action: 'decline', content: null, _meta: null }
+    const accepted = acceptedElicitationContent(interaction.schemaForm, result.formAnswers)
+    if (!accepted.ok) return { action: 'cancel', content: null, _meta: null }
+    return { action: 'accept', content: interaction.schemaForm ? accepted.content : null,
+      _meta: !interaction.schemaForm && interaction.supportsAlwaysPersist && result.clientDecision === 'allow_always' ? { persist: 'always' } : null }
   }
 
   /**
@@ -2271,13 +2298,23 @@ export class SessionRuntime {
     signal: AbortSignal,
     requestId?: string,
   ): Promise<PermissionDecision> {
+    return this.waitForPermissionResponse(session, interaction, signal, requestId).then(result => result.decision)
+  }
+
+  private waitForPermissionResponse(
+    session: NodeSessionRecord,
+    interaction: PendingInteraction,
+    signal: AbortSignal,
+    requestId?: string,
+  ): Promise<PermissionResponse> {
     // Only one pending interaction per session (wire contract).
     if (session.pendingInteraction) {
       this.rejectPendingPermission(session)
     }
 
-    return new Promise<PermissionDecision>((resolve) => {
+    return new Promise<PermissionResponse>((resolve) => {
       let settled = false
+      const onAbort = () => settle({ decision: 'deny', reason: 'aborted' })
       session.pendingInteraction = interaction
       session.updatedAt = Date.now()
       this.persist(session)
@@ -2288,13 +2325,10 @@ export class SessionRuntime {
         causationRequestId: requestId,
       })
 
-      const settle = (result: {
-        decision: PermissionDecision
-        reason: 'responded' | 'aborted'
-        clientDecision?: 'allow' | 'deny' | 'allow_always'
-      }): void => {
+      const settle = (result: PermissionResponse): void => {
         if (settled) return
         settled = true
+        signal.removeEventListener('abort', onAbort)
         this.permissionWaiters.delete(interaction.interactionId)
         if (session.pendingInteraction?.interactionId === interaction.interactionId) {
           session.pendingInteraction = null
@@ -2307,7 +2341,8 @@ export class SessionRuntime {
             eventType: SESSION_DURABLE_EVENT.permissionResponded,
             payload: {
               interactionId: interaction.interactionId,
-              decision: result.clientDecision ?? result.decision,
+              decision: result.cancel ? 'deny' : result.clientDecision ?? result.decision,
+              ...(result.cancel ? { cancel: true } : {}),
             },
           })
         } else {
@@ -2317,7 +2352,7 @@ export class SessionRuntime {
             payload: { interactionId: interaction.interactionId, decision: 'deny' },
           })
         }
-        resolve(result.decision)
+        resolve(result)
       }
 
       // No deadline: like the desktop, a prompt waits until answered or the turn is aborted.
@@ -2330,13 +2365,7 @@ export class SessionRuntime {
         settle({ decision: 'deny', reason: 'aborted' })
         return
       }
-      signal.addEventListener(
-        'abort',
-        () => {
-          settle({ decision: 'deny', reason: 'aborted' })
-        },
-        { once: true },
-      )
+      signal.addEventListener('abort', onAbort, { once: true })
     })
   }
 

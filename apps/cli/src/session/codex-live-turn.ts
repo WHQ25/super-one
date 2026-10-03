@@ -117,6 +117,8 @@ export async function openTurnAndStream(opts: {
 
   let finalText = ''
   const deadline = Date.now() + TURN_WAIT_TIMEOUT_MS
+  const inputWaitAtStart = opts.client.getUserInputWaitMs?.() ?? 0
+  const remaining = () => deadline - Date.now() + (opts.client.getUserInputWaitMs?.() ?? 0) - inputWaitAtStart
   const agentEventMapper = opts.onAgentEvent
     ? createCodexAgentEventMapper({
         messageId: opts.messageId ?? `codex_${turnId ?? Date.now()}`,
@@ -128,11 +130,11 @@ export async function openTurnAndStream(opts: {
     : null
   agentEventMapper?.start(opts.threadId)
 
-  while (!opts.signal.aborted && Date.now() < deadline) {
+  while (!opts.signal.aborted && remaining() > 0) {
     let note: { method: string; params: Record<string, unknown> } | null
     try {
       note = await opts.client.nextNotification(
-        Math.min(5_000, Math.max(0, deadline - Date.now())),
+        Math.min(5_000, Math.max(0, remaining())),
       )
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err))

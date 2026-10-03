@@ -1,7 +1,7 @@
 import type { McpAppsBinding, McpAppOrigin, McpAppsProvider } from '@superone/shared/mcp-apps'
 import type { SessionTurnEvent } from '@superone/shared/environment'
 import type { MessageDisplayFields } from '@superone/shared/message-display'
-import type { AgentEvent } from '@superone/shared/agent-types'
+import type { AgentEvent, PermissionRequest } from '@superone/shared/agent-types'
 
 export type SessionStatus =
   | 'idle'
@@ -101,7 +101,7 @@ export interface TranscriptBlock extends MessageDisplayFields {
   createdAt: number
 }
 
-export interface PendingInteraction {
+export interface PendingInteraction extends Pick<PermissionRequest, 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist'> {
   interactionId: string
   kind: 'permission' | 'question' | 'plan' | 'session_agents_confirm'
   toolName?: string
@@ -130,6 +130,12 @@ export type AgentsConfirmOutcome = {
 }
 
 export type PermissionDecision = 'allow' | 'deny'
+
+export interface ElicitationDecision {
+  action: 'accept' | 'decline' | 'cancel'
+  content: Record<string, unknown> | null
+  _meta: Record<string, unknown> | null
+}
 
 /** Answers map for ask-user-question interactions. */
 export type QuestionAnswers = unknown
@@ -211,6 +217,8 @@ export type TurnRunner = ((input: {
   /** Harness output produced after this user turn has settled. */
   onAmbientEvent?: (event: AgentEvent) => void
   onPermission?: (interaction: PendingInteraction) => Promise<PermissionDecision>
+  /** Form input always waits for the controller, including full-access sessions. */
+  onElicitation?: (interaction: PendingInteraction, signal?: AbortSignal) => Promise<ElicitationDecision>
   /** Optional user-question waiter (lease-gated via SessionRuntime.respondQuestion). */
   onQuestion?: (interaction: PendingInteraction) => Promise<QuestionAnswers>
   /** Optional plan-approval waiter (lease-gated via SessionRuntime.respondPlan). */

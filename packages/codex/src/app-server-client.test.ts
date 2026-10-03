@@ -12,6 +12,7 @@ import { writeFileSync, mkdtempSync, rmSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
+import { CODEX_CLIENT_EXTENSIONS } from './client-extensions'
 
 type FakeChild = {
   stdin: PassThrough
@@ -66,6 +67,86 @@ async function pump(): Promise<void> {
 }
 
 describe('codex app-server client (Stage 4)', () => {
+  it('keeps RPC replies and per-thread notifications ordered while input is pending', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'codex-form-'))
+    const bin = join(dir, 'codex')
+    writeFileSync(bin, '#!/bin/sh\n')
+    const child = createFakeChild()
+    const lines = collectLines(child.stdin)
+    let settle!: (result: Record<string, unknown>) => void
+    const onServerRequest = vi.fn(() => new Promise<Record<string, unknown>>(resolve => { settle = resolve }))
+    const opening = openCodexAppServer({ binaryPath: bin, spawnFn: () => asSpawnChild(child), onServerRequest })
+    await pump()
+    const init = JSON.parse(lines[0])
+    expect(init.params.capabilities.extensions).toEqual(CODEX_CLIENT_EXTENSIONS)
+    child.stdout.write(`${JSON.stringify({ id: init.id, result: {} })}\n`)
+    const client = await opening
+    try {
+      const rpc = client.request('thread/read', { threadId: 'root' })
+      const outgoing = JSON.parse(lines.at(-1)!)
+      for (const message of [
+        { id: 0, method: 'mcpServer/elicitation/request', params: { threadId: 'root', mode: 'form' } },
+        { method: 'item/started', params: { threadId: 'root', order: 1 } },
+        { method: 'item/started', params: { threadId: 'child', order: 1 } },
+        { id: outgoing.id, result: { thread: { id: 'root' } } },
+        { method: 'item/completed', params: { threadId: 'root', order: 2 } },
+        { method: 'item/completed', params: { threadId: 'child', order: 2 } },
+      ]) child.stdout.write(`${JSON.stringify(message)}\n`)
+      await expect(rpc).resolves.toEqual({ thread: { id: 'root' } })
+      const notes = []
+      for (let i = 0; i < 4; i++) notes.push(await client.nextNotification())
+      expect(notes).toEqual([
+        { method: 'item/started', params: { threadId: 'root', order: 1 } },
+        { method: 'item/started', params: { threadId: 'child', order: 1 } },
+        { method: 'item/completed', params: { threadId: 'root', order: 2 } },
+        { method: 'item/completed', params: { threadId: 'child', order: 2 } },
+      ])
+      expect(onServerRequest).toHaveBeenCalledTimes(1)
+      expect(lines.map(l => JSON.parse(l)).some(l => l.id === 0)).toBe(false)
+      settle({ action: 'accept', content: { choice: 'yes' }, _meta: null })
+      await pump()
+      expect(lines.map(l => JSON.parse(l)).find(l => l.id === 0)).toEqual({ jsonrpc: '2.0', id: 0, result: { action: 'accept', content: { choice: 'yes' }, _meta: null } })
+    } finally { await client.close(); rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('pauses outgoing request deadlines during user input and aborts the host waiter on close', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'codex-form-timeout-'))
+    const bin = join(dir, 'codex')
+    writeFileSync(bin, '#!/bin/sh\n')
+    const child = createFakeChild()
+    const lines = collectLines(child.stdin)
+    let hostSignal!: AbortSignal
+    let settle!: (result: Record<string, unknown>) => void
+    const opening = openCodexAppServer({ binaryPath: bin, spawnFn: () => asSpawnChild(child),
+      onServerRequest: (_, signal) => { hostSignal = signal; return new Promise(resolve => { settle = resolve }) } })
+    await pump()
+    child.stdout.write(`${JSON.stringify({ id: JSON.parse(lines[0]).id, result: {} })}\n`)
+    const client = await opening
+    vi.useFakeTimers()
+    try {
+      const rpc = client.request('mcpServer/tool/call', {})
+      const id = JSON.parse(lines.at(-1)!).id
+      const resolved = vi.fn()
+      void rpc.then(resolved)
+      child.stdout.write(`${JSON.stringify({ id: 'form', method: 'mcpServer/elicitation/request', params: {} })}\n`)
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(600_000)
+      expect(resolved).not.toHaveBeenCalled()
+      expect(client.getUserInputWaitMs!()).toBe(600_000)
+      settle({ action: 'accept', content: null, _meta: null })
+      await vi.advanceTimersByTimeAsync(0)
+      child.stdout.write(`${JSON.stringify({ id, result: { ok: true } })}\n`)
+      await expect(rpc).resolves.toEqual({ ok: true })
+      child.stdout.write(`${JSON.stringify({ id: 'next', method: 'mcpServer/elicitation/request', params: {} })}\n`)
+      await vi.advanceTimersByTimeAsync(0)
+      const closing = client.close()
+      expect(hostSignal.aborted).toBe(true)
+      settle({ action: 'cancel', content: null, _meta: null })
+      await vi.advanceTimersByTimeAsync(0)
+      await closing
+      expect(lines.map(l => JSON.parse(l)).some(l => l.id === 'next')).toBe(false)
+    } finally { vi.useRealTimers(); await client.close(); rmSync(dir, { recursive: true, force: true }) }
+  })
   it('handshakes, starts turn, streams deltas, waits for turn/completed', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'codex-bin-'))
     const bin = join(dir, 'codex')

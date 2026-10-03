@@ -1,4 +1,5 @@
 import { MCP_APPS_EXTENSION } from '@superone/shared/mcp-apps'
+import { CODEX_CLIENT_EXTENSIONS } from './client-extensions'
 import { invalidateCodexMcpAppsCatalog } from './mcp-apps-catalog'
 import type { AttachmentCodexInput } from '@superone/shared/attachment-turn'
 import { superoneSystemPrompt } from '@superone/shared/superone-system-prompt'
@@ -18,7 +19,7 @@ import {
  * - thread/start or thread/resume
  * - turn/start → wait for matching turn/completed (not the turn/start RPC alone)
  * - stream item/agentMessage/delta while the turn runs
- * - respond deny to inbound permission/request methods (no interactive UI yet)
+ * - route elicitation to the host; deny other unsupported approval requests
  *
  * Errors returned to callers are redacted; raw stderr is never the public message.
  */
@@ -52,6 +53,11 @@ export interface CodexAppServerClientOptions {
   spawnFn?: CodexSpawnFn
   signal?: AbortSignal
   clientVersion?: string
+  /** User-waiting requests run independently; replies and notifications stay ordered. */
+  onServerRequest?: (
+    request: { id: string | number; method: string; params: Record<string, unknown> },
+    signal: AbortSignal,
+  ) => Promise<Record<string, unknown> | undefined>
   /** Kill escalation timeout after SIGTERM (ms). Default 2000. */
   killTimeoutMs?: number
 }
@@ -61,6 +67,8 @@ export interface CodexAppServerHandle {
   notify(method: string, params?: Record<string, unknown>): Promise<void>
   /** Await next server notification (or null when closed). */
   nextNotification(timeoutMs?: number): Promise<{ method: string; params: Record<string, unknown> } | null>
+  /** Cumulative user-input wait time; turn budgets exclude this time. */
+  getUserInputWaitMs?(): number
   close(): Promise<void>
   /** Redacted stderr snippet for logs only — not for client-facing errors. */
   getStderrRedacted(): string
@@ -69,7 +77,10 @@ export interface CodexAppServerHandle {
 interface PendingRequest {
   resolve: (value: Record<string, unknown>) => void
   reject: (err: Error) => void
-  timer: ReturnType<typeof setTimeout>
+  timer?: ReturnType<typeof setTimeout>
+  deadlineAt: number
+  remainingMs: number
+  timeoutMessage: string
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
@@ -119,6 +130,10 @@ export async function openCodexAppServer(
   const notificationQueue: Array<{ method: string; params: Record<string, unknown> }> = []
   let nextId = 1
   let closed = false
+  const inboundAbort = new AbortController()
+  const inbound = new Set<string | number>()
+  let inputWaitStartedAt: number | undefined
+  let inputWaitMs = 0
   let readLoopError: Error | null = null
   /** True only after the OS reports process exit — not merely that kill() was called. */
   let processExited = false
@@ -135,7 +150,36 @@ export async function openCodexAppServer(
     }
   }
 
+  const armRequestTimeout = (id: number, waiter: PendingRequest) => {
+    if (inbound.size) return
+    waiter.deadlineAt = Date.now() + waiter.remainingMs
+    waiter.timer = setTimeout(() => {
+      pending.delete(id)
+      waiter.reject(new Error(waiter.timeoutMessage))
+    }, waiter.remainingMs)
+  }
+  const beginInputWait = (id: string | number) => {
+    if (!inbound.size) {
+      inputWaitStartedAt = Date.now()
+      for (const waiter of pending.values()) {
+        clearTimeout(waiter.timer)
+        waiter.timer = undefined
+        waiter.remainingMs = Math.max(0, waiter.deadlineAt - Date.now())
+      }
+    }
+    inbound.add(id)
+  }
+  const endInputWait = (id: string | number) => {
+    inbound.delete(id)
+    if (!inbound.size && inputWaitStartedAt !== undefined) {
+      inputWaitMs += Math.max(0, Date.now() - inputWaitStartedAt)
+      inputWaitStartedAt = undefined
+      if (!closed && !inboundAbort.signal.aborted) for (const [requestId, waiter] of pending) armRequestTimeout(requestId, waiter)
+    }
+  }
+
   const failAll = (err: Error) => {
+    inboundAbort.abort()
     for (const [, p] of pending) {
       clearTimeout(p.timer)
       p.reject(err)
@@ -234,14 +278,35 @@ export async function openCodexAppServer(
         const rec = parsed as Record<string, unknown>
 
         // Inbound server → client request (has method + id).
-        if (typeof rec.method === 'string' && rec.id != null) {
-          const id = rec.id as string | number
+        if (typeof rec.method === 'string' && (typeof rec.id === 'string' || typeof rec.id === 'number')) {
+          const id = rec.id
           const params = rec.params && typeof rec.params === 'object' && !Array.isArray(rec.params)
             ? rec.params as Record<string, unknown>
             : undefined
+          if (rec.method === 'mcpServer/elicitation/request' && !isCodexUserVerificationElicitation(params) && opts.onServerRequest) {
+            if (!inbound.has(id)) {
+              beginInputWait(id)
+              // Do not await user input on readline: native tools can emit notifications
+              // and RPC replies while a form is pending.
+              void (async () => {
+                let result: Record<string, unknown> = elicitationCancelResult()
+                try {
+                  result = await opts.onServerRequest!({ id, method: rec.method as string, params: params ?? {} }, inboundAbort.signal)
+                    ?? { action: 'decline', content: null, _meta: null }
+                } catch { /* cancelled/failed host request */ }
+                try {
+                  if (!closed && !inboundAbort.signal.aborted) writeLine({ jsonrpc: '2.0', id, result })
+                } catch { /* connection closed */ }
+                finally { endInputWait(id) }
+              })()
+            }
+            continue
+          }
           try {
             if (rec.method === 'mcpServer/elicitation/request' && isCodexUserVerificationElicitation(params)) {
               writeLine({ jsonrpc: '2.0', id, result: elicitationCancelResult() })
+            } else if (rec.method === 'mcpServer/elicitation/request') {
+              writeLine({ jsonrpc: '2.0', id, result: { action: 'decline', content: null, _meta: null } })
             } else if (isKnownCodexServerRequest(rec.method)) {
               writeLine({ jsonrpc: '2.0', id, result: approvalDenyResult() })
             } else {
@@ -310,16 +375,15 @@ export async function openCodexAppServer(
         return
       }
       const id = nextId++
-      const timer = setTimeout(() => {
-        pending.delete(id)
-        reject(new Error(`Codex app-server ${method} timed out after ${timeoutMs}ms`))
-      }, timeoutMs)
-      pending.set(id, { resolve, reject, timer })
+      const waiter: PendingRequest = { resolve, reject, remainingMs: timeoutMs, deadlineAt: Date.now() + timeoutMs,
+        timeoutMessage: `Codex app-server ${method} timed out after ${timeoutMs}ms` }
+      pending.set(id, waiter)
+      armRequestTimeout(id, waiter)
       try {
         writeLine({ jsonrpc: '2.0', id, method, params: params ?? {} })
       } catch (err) {
         pending.delete(id)
-        clearTimeout(timer)
+        clearTimeout(waiter.timer)
         reject(safePublicError('Codex app-server write failed', err))
       }
     })
@@ -362,6 +426,7 @@ export async function openCodexAppServer(
   const close = async () => {
     if (closed) return
     closed = true
+    inboundAbort.abort()
     opts.signal?.removeEventListener('abort', onAbort)
     rl.close()
     try {
@@ -385,7 +450,7 @@ export async function openCodexAppServer(
       },
       capabilities: {
         experimentalApi: true,
-        extensions: MCP_APPS_EXTENSION,
+        extensions: opts.onServerRequest ? CODEX_CLIENT_EXTENSIONS : MCP_APPS_EXTENSION,
         // requestAttestation stays omitted (default false). Do not implement
         // inbound attestation/generate this round; unknown inbound methods
         // receive JSON-RPC -32601.
@@ -411,6 +476,7 @@ export async function openCodexAppServer(
       ),
     notify,
     nextNotification,
+    getUserInputWaitMs: () => inputWaitMs + (inputWaitStartedAt === undefined ? 0 : Math.max(0, Date.now() - inputWaitStartedAt)),
     close,
     getStderrRedacted: () => redactHarnessDiagnosticText(stderrBuf.slice(-500)),
   }
@@ -626,6 +692,8 @@ export async function runCodexAppServerTurn(opts: {
 
   let finalText = ''
   const deadline = Date.now() + TURN_WAIT_TIMEOUT_MS
+  const inputWaitAtStart = opts.client.getUserInputWaitMs?.() ?? 0
+  const remaining = () => deadline - Date.now() + (opts.client.getUserInputWaitMs?.() ?? 0) - inputWaitAtStart
   const agentEventMapper = opts.onAgentEvent
     ? createCodexAgentEventMapper({
         messageId: opts.messageId ?? `codex_${turnId ?? Date.now()}`,
@@ -638,10 +706,10 @@ export async function runCodexAppServerTurn(opts: {
   agentEventMapper?.start(threadId)
 
   // Collect notifications until matching turn/completed (or connection dies).
-  while (!opts.signal.aborted && Date.now() < deadline) {
+  while (!opts.signal.aborted && remaining() > 0) {
     let note: { method: string; params: Record<string, unknown> } | null
     try {
-      note = await opts.client.nextNotification(Math.min(5_000, Math.max(0, deadline - Date.now())))
+      note = await opts.client.nextNotification(Math.min(5_000, Math.max(0, remaining())))
     } catch (err) {
       // Connection/process failure — surface immediately (no hot-loop).
       const error = err instanceof Error ? err : new Error(String(err))

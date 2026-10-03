@@ -1,6 +1,7 @@
 /** @vitest-environment node */
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
+import { elicitationFormRequest } from '@superone/shared/schema-form'
 import {
   nodePendingInteractionFields,
   nodePendingToPermissionRequest,
@@ -13,6 +14,13 @@ import {
 } from './remote-session-messages'
 
 describe('nodePendingToPermissionRequest', () => {
+  it('restores declarative form fields and metadata from a node snapshot', () => {
+    const form = elicitationFormRequest({ type: 'object', properties: { name: { type: 'string' } } })
+    const pending = { interactionId: 'form', kind: 'permission' as const, requestKind: 'mcp_elicitation', ...form,
+      subtitle: 'Part', riskLevel: 'low' as const, supportsAlwaysPersist: true, allowAlwaysAllow: true }
+    expect(nodePendingToPermissionRequest(pending)).toMatchObject({ ...form, subtitle: 'Part', riskLevel: 'low', supportsAlwaysPersist: true, allowAlwaysAllow: false })
+    expect(nodePendingToPermissionRequest({ ...pending, schemaForm: undefined, input: { schemaForm: form.schemaForm } })).toMatchObject(form)
+  })
   it('maps permission interactions to PermissionRequest', () => {
     const req = nodePendingToPermissionRequest({
       interactionId: 'i1',

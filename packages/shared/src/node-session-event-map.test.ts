@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { elicitationFormRequest } from './schema-form'
 import type { EnvironmentEventEnvelope } from './environment/events'
 import {
   createNodeSessionEventMapper,
@@ -29,6 +30,14 @@ const ctx = {
 }
 
 describe('mapNodeSessionEvents (text-only)', () => {
+  it('keeps form fields and OpenAI form metadata in durable permission replay', () => {
+    const form = elicitationFormRequest({ type: 'object', properties: { name: { type: 'string' } } })
+    const events = mapNodeSessionEvents([envelope({ eventType: 'session.permission_requested', payload: {
+      interactionId: 'form', requestKind: 'mcp_elicitation', toolName: 'fixture', ...form,
+      subtitle: 'Part', riskLevel: 'low', supportsAlwaysPersist: true, allowAlwaysAllow: true,
+    } })], ctx)
+    expect(events).toMatchObject([{ type: 'permission_request', request: { ...form, subtitle: 'Part', riskLevel: 'low', supportsAlwaysPersist: true, allowAlwaysAllow: false } }])
+  })
   it('echoes a host-origin rich message during an existing optimistic send drain', () => {
     const contexts = [{ appId: 'mcp:part', appName: 'CAD', summary: 'Dial', content: '{"part":"dial"}' }]
     const events = mapNodeSessionEvents([envelope({ eventType: 'session.user_message', payload: { blockId: 'u1', text: '{"part":"dial"}', userMessageContent: [], contexts, echoUserMessage: true } })], { ...ctx, skipUserMessage: true })

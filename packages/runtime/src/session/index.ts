@@ -15,6 +15,7 @@ export {
   type NodeSessionSettings,
   type PendingInteraction,
   type AgentsConfirmOutcome,
+  type ElicitationDecision,
   type PermissionDecision,
   type PlanDecisionResult,
   type QuestionAnswers,

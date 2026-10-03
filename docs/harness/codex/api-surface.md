@@ -202,7 +202,7 @@ feature integration. Unlisted new optional fields are tolerated and unused.
 | `item/permissions/requestApproval` | unused | No client call or dedicated handler. | — |
 | `item/tool/call` | unused | No client call or dedicated handler. | — |
 | `item/tool/requestUserInput` | partial | Desktop/production CLI question handling; minimal shared client denies. | `packages/codex/src/server-request.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
-| `mcpServer/elicitation/request` | partial | Form/URL responses on desktop; user verification cancels without explicit opt-in; minimal client cancels. | `packages/codex/src/app-server-client.ts`, `packages/codex/src/server-request.ts` |
+| `mcpServer/elicitation/request` | partial | Form responses on desktop and production nodes; node forms use durable lease-gated permission waiters and preserve notification ordering. URL responses remain desktop-specific; user verification cancels without explicit opt-in. | `packages/codex/src/app-server-client.ts`, `packages/codex/src/elicitation.ts`, `packages/codex/src/server-request.ts` |
 
 ## Experimental server requests
 

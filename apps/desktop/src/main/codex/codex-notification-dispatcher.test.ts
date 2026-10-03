@@ -15,6 +15,8 @@ vi.mock('../agent/event-trace', () => ({
 
 const { createNotificationDispatcher } = await import('./codex-notification-dispatcher')
 import type { AppServerConnection, AppServerNotification } from './app-server-connection'
+import { createCodexMcpAppsProvider } from '@superone/codex/mcp-apps'
+import { withCodexMcpAppElicitation } from '@superone/codex/mcp-app-elicitation'
 
 function makeQueueConnection(notifications: AppServerNotification[]): { connection: AppServerConnection; release: () => void } {
   const queue: AppServerNotification[] = [...notifications]
@@ -37,7 +39,7 @@ function makeQueueConnection(notifications: AppServerNotification[]): { connecti
 
   const connection: AppServerConnection = {
     request: vi.fn(),
-    respond: vi.fn(),
+    respond: vi.fn(async () => {}),
     notify: vi.fn(),
     nextNotification: () => {
       const queued = queue.shift()
@@ -64,6 +66,51 @@ function pushNotification(connection: AppServerConnection, notif: AppServerNotif
 }
 
 describe('NotificationDispatcher', () => {
+  it('cancels an unscoped idle form and leaves following notifications ordered', async () => {
+    const { connection, release } = makeQueueConnection([
+      { method: 'mcpServer/elicitation/request', requestIdRaw: 'old-form', params: { threadId: 'root', serverName: 'fixture' } },
+      { method: 'item/started', params: { threadId: 'root', order: 1 } },
+      { method: 'item/completed', params: { threadId: 'root', order: 2 } },
+    ])
+    const dispatcher = createNotificationDispatcher(connection, { isMainTurnActive: () => false })
+    expect((await dispatcher.mainInbox.next()).params.order).toBe(1)
+    expect((await dispatcher.mainInbox.next()).params.order).toBe(2)
+    expect(connection.respond).toHaveBeenCalledWith('old-form', { action: 'cancel', content: null, _meta: null })
+    dispatcher.close()
+    release()
+  })
+  it('handles an idle native View form without blocking or reordering thread notifications', async () => {
+    const { connection, release } = makeQueueConnection([])
+    const dispatcher = createNotificationDispatcher(connection), child = dispatcher.registerForkInbox('child')
+    let finishCall!: (value: Record<string, unknown>) => void
+    let answer!: () => void
+    const native = createCodexMcpAppsProvider({ node: 'local', session: 's', server: 'fixture', configGeneration: 0, configFingerprint: 'config' }, 'root', () => new Promise(resolve => { finishCall = resolve }))
+    const handle = vi.fn(async (request: { id: string | number }) => {
+      await new Promise<void>(resolve => { answer = resolve })
+      await connection.respond(request.id, { action: 'accept', content: { count: 3 }, _meta: null })
+      return {}
+    })
+    const provider = withCodexMcpAppElicitation(native, connection, 'root', handle)
+    const call = provider.callTool({ tool: 'next', args: {} }, new AbortController().signal)
+    await vi.waitFor(() => expect(finishCall).toBeDefined())
+    pushNotification(connection, { method: 'mcpServer/elicitation/request', requestIdRaw: 0, params: { threadId: 'root', serverName: 'fixture', turnId: null } })
+    for (const order of [1, 2]) {
+      pushNotification(connection, { method: 'item/started', params: { threadId: 'root', order } })
+      pushNotification(connection, { method: 'item/started', params: { threadId: 'child', order } })
+    }
+    for (const inbox of [dispatcher.mainInbox, child]) {
+      expect((await inbox.next()).params.order).toBe(1)
+      expect((await inbox.next()).params.order).toBe(2)
+    }
+    expect(connection.respond).not.toHaveBeenCalled()
+    expect(handle).toHaveBeenCalledOnce()
+    answer()
+    await vi.waitFor(() => expect(connection.respond).toHaveBeenCalledWith(0, { action: 'accept', content: { count: 3 }, _meta: null }))
+    finishCall({ content: [] })
+    await call
+    dispatcher.close()
+    release()
+  })
   it('routes unregistered thread notifications to mainInbox', async () => {
     const { connection } = makeQueueConnection([
       { method: 'item/started', params: { threadId: 'main-1', item: {} } },

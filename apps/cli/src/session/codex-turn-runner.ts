@@ -44,6 +44,7 @@ import { ensureMcpMerge, type McpMergeMode } from '@superone/runtime/fs'
 import { openTurnAndStream } from './codex-live-turn'
 import { codexElicitationRequest } from '@superone/codex/elicitation'
 import { randomUUID } from 'node:crypto'
+import { withCodexMcpAppElicitation, dispatchCodexMcpAppElicitation, cancelCodexMcpAppInvocations } from '@superone/codex/mcp-app-elicitation'
 
 export interface NodeCodexRunnerOptions {
   environmentId?: string
@@ -182,6 +183,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     const live = liveBySession.get(sessionId)
     if (!live) return
     liveBySession.delete(sessionId)
+    cancelCodexMcpAppInvocations(live.client)
     await live.client.close().catch(() => {})
   }
 
@@ -205,6 +207,10 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       spawnFn: opts.spawnFn,
       onServerRequest: async (request, signal) => {
         const live = liveBySession.get(sessionId)
+        if (live) {
+          const native = dispatchCodexMcpAppElicitation(live.client, request, signal)
+          if (native) return native
+        }
         const threadId = request.params.threadId ?? request.params.thread_id
         if (!live?.onElicitation || (typeof threadId === 'string' && live.threadId && threadId !== live.threadId)) return { action: 'cancel', content: null, _meta: null }
         const permission = codexElicitationRequest(`codex-elicitation-${randomUUID()}`, request.params)
@@ -464,7 +470,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     return tracked
   }
 
-  runner.getMcpAppsProvider = async (session, binding, origin) => {
+  runner.getMcpAppsProvider = async (session, binding, origin, host) => {
     // Live thread identity is available before the first turn persists its
     // resume token, and takes precedence over a stale durable identity.
     const existing = liveBySession.get(session.sessionId)
@@ -481,7 +487,15 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       threadConfig: prepared.threadConfig, signal: new AbortController().signal })
     if (live.threadId !== origin.providerSessionId) throw new McpAppsError('invalid', 'MCP App thread binding mismatch')
     live.lastActivityAt = Date.now()
-    return createCodexMcpAppsProvider(binding, live.threadId, live.client.request.bind(live.client), live.client.request)
+    const provider = createCodexMcpAppsProvider(binding, live.threadId, live.client.request.bind(live.client), live.client.request)
+    if (!host) return provider
+    return withCodexMcpAppElicitation(provider, live.client, live.threadId, async (request, signal) => {
+      const permission = codexElicitationRequest(`codex-elicitation-${randomUUID()}`, request.params)
+      if (!permission) return { action: 'cancel', content: null, _meta: null }
+      live.busyCount += 1
+      try { return { ...await host.onElicitation({ ...permission, interactionId: permission.requestId, kind: 'permission', createdAt: Date.now() }, signal) } }
+      finally { live.busyCount = Math.max(0, live.busyCount - 1); live.lastActivityAt = Date.now() }
+    })
   }
   runner.disposeSession = async (sessionId) => {
     await disposeLive(sessionId)
@@ -548,10 +562,10 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
     )
   }
 
-  runner.getMcpAppsProvider = (session, binding, origin) => {
+  runner.getMcpAppsProvider = (session, binding, origin, host) => {
     const native = session.harnessId === 'codex' ? codex : session.harnessId === 'claude' ? claude : null
     if (!native?.getMcpAppsProvider) throw new McpAppsError('not_connected', 'Harness does not support MCP Apps')
-    return native.getMcpAppsProvider(session, binding, origin)
+    return native.getMcpAppsProvider(session, binding, origin, host)
   }
   runner.disposeSession = async (sessionId) => {
     await Promise.all([

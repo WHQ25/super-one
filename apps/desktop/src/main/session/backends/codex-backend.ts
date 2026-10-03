@@ -1,5 +1,6 @@
 import { attachCodexMcpAppTree, createCodexMcpAppsProvider, prewarmCodexMcpAppCatalog } from '@superone/codex/mcp-apps'
 import { ensureCodexMcpAppThread } from '@superone/codex/mcp-app-thread'
+import { withCodexMcpAppElicitation, cancelCodexMcpAppInvocations } from '@superone/codex/mcp-app-elicitation'
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
 import { assertMcpAppsBindingIdentity } from '@superone/shared/mcp-app-binding'
@@ -44,6 +45,7 @@ import {
 import { resolvePermissionProfile } from '../../codex/app-server-connection'
 import type { AppServerConnectionHandle, CodexProjectAuth } from '../../codex/app-server-connection'
 import { notifyCodexSkillsChanged } from '../../codex/codex-skills-watcher'
+import { createNotificationDispatcher } from '../../codex/codex-notification-dispatcher'
 import {
   buildCodexQueuedInput,
   compactCodexTurn,
@@ -52,6 +54,7 @@ import {
   interruptCodex,
   prewarmCodexConnection,
   prewarmCodexSession,
+  processServerRequest,
   resetCodexSession,
   respondToCodexPermission,
   respondToCodexQuestion,
@@ -1361,7 +1364,25 @@ export class CodexBackend implements SessionBackend {
     }
     await ensureCodexMcpAppThread(request, parentThreadId!, origin.providerSessionId, connection.request)
     assertBinding()
-    return createCodexMcpAppsProvider(binding, origin.providerSessionId, request, connection.request)
+    const session = this.session!
+    session.notificationDispatcher ??= createNotificationDispatcher(connection, {
+      onSkillsChanged: () => notifyCodexSkillsChanged(session.projectPath),
+      onQueueChanged: threadId => session.queueChangedFn?.(threadId),
+      isMainTurnActive: () => Boolean(session.runningController),
+    })
+    return withCodexMcpAppElicitation(createCodexMcpAppsProvider(binding, origin.providerSessionId, request, connection.request), connection,
+      origin.providerSessionId, async (incoming, signal) => {
+        assertBinding()
+        let requestId: string | undefined
+        try {
+          await processServerRequest({ method: 'mcpServer/elicitation/request', requestIdRaw: incoming.id, requestId: String(incoming.id), params: incoming.params }, connection, session, {
+            onPermissionRequest: permission => { requestId = permission.requestId; this.emit({ type: 'permission_request', request: permission }) },
+          }, signal)
+          return {}
+        } finally {
+          if (signal.aborted && requestId) this.emit({ type: 'interaction_resolved', interactionType: 'permission', requestId, approved: false })
+        }
+      })
   }
 
   async getMcpServerStatus(): Promise<McpServerInfo[]> {
@@ -1837,6 +1858,7 @@ export class CodexBackend implements SessionBackend {
   }
 
   private interruptSession(): void {
+    if (this.session?.connectionHandle) cancelCodexMcpAppInvocations(this.session.connectionHandle.connection)
     const session = this.session
     if (!session) return
     try {

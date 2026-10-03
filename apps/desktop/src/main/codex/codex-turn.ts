@@ -1003,6 +1003,7 @@ export async function processServerRequest(
       await respondToServer(notification.requestIdRaw, fallbackResponse)
       return true
     }
+    let abortPending: (() => void) | undefined
     try {
       const pendingEvent: AgentEvent = parsedApprovalRequest.responseKind === 'user_input'
         ? { type: 'ask_user_question', request: parsedApprovalRequest.request }
@@ -1017,6 +1018,14 @@ export async function processServerRequest(
           resolve,
           reject,
         })
+        abortPending = () => {
+          if (session.pendingApprovals.get(parsedApprovalRequest.request.requestId)?.event === pendingEvent) {
+            session.pendingApprovals.delete(parsedApprovalRequest.request.requestId)
+          }
+          resolve(parsedApprovalRequest.responseKind === 'elicitation'
+            ? { action: 'cancel', content: null, _meta: null } : fallbackResponse)
+        }
+        abortSignal?.addEventListener('abort', abortPending, { once: true })
       })
       if (parsedApprovalRequest.responseKind === 'user_input') {
         callbacks?.onAskUserQuestion?.(parsedApprovalRequest.request)
@@ -1027,6 +1036,7 @@ export async function processServerRequest(
       await respondToServer(notification.requestIdRaw, response)
       return true
     } finally {
+      if (abortPending) abortSignal?.removeEventListener('abort', abortPending)
       session.pendingApprovals.delete(parsedApprovalRequest.request.requestId)
     }
   }
@@ -1166,6 +1176,7 @@ export async function withSessionConnection<T>(
       session.notificationDispatcher = createNotificationDispatcher(handle.connection, {
         onSkillsChanged: () => notifyCodexSkillsChanged(session.projectPath),
         onQueueChanged: (threadId) => session.queueChangedFn?.(threadId),
+        isMainTurnActive: () => Boolean(session.runningController),
       })
       log.info(
         '[codex] connection attached sid=%s thread=%s conn=%s',
@@ -1192,6 +1203,7 @@ export async function withSessionConnection<T>(
     session.notificationDispatcher = createNotificationDispatcher(session.connectionHandle.connection, {
       onSkillsChanged: () => notifyCodexSkillsChanged(session.projectPath),
       onQueueChanged: (threadId) => session.queueChangedFn?.(threadId),
+      isMainTurnActive: () => Boolean(session.runningController),
     })
   }
 

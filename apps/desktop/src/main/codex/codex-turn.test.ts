@@ -2165,6 +2165,24 @@ describe('streamTurnEvents superone preapprove short-circuit', () => {
     vi.clearAllMocks()
   })
 
+  it('cancels an idle native form when its invocation aborts and clears its approval', async () => {
+    const session = { ...makeSession(), runningController: null }
+    const respond = vi.fn(async () => {})
+    const connection = { respond } as never
+    const onPermissionRequest = vi.fn()
+    const abort = new AbortController()
+    const handling = processServerRequest({ requestIdRaw: 0, requestId: '0', method: 'mcpServer/elicitation/request', params: {
+      threadId: 'root', serverName: 'fixture', mode: 'form', message: 'Count', requestedSchema: { type: 'object', properties: { count: { type: 'integer' } }, required: ['count'] },
+    } }, connection, session, { onPermissionRequest }, abort.signal)
+    expect(onPermissionRequest).toHaveBeenCalledOnce()
+    expect(session.pendingApprovals.size).toBe(1)
+    abort.abort()
+    await handling
+    expect(respond).toHaveBeenCalledWith(0, { action: 'cancel', content: null, _meta: null })
+    expect(session.pendingApprovals.size).toBe(0)
+    expect(respondToCodexElicitation(session, '0', true, false, undefined, { count: 3 })).toBe(false)
+  })
+
   it('auto-accepts preapproved superone mini-app tools without forwarding to UI', async () => {
     const { isToolPreapproved } = await import('../mcp/superone-mcp-server')
     vi.mocked(isToolPreapproved).mockImplementation(

@@ -31,7 +31,7 @@ export interface NodeRpcClientOptions {
 type Pending = {
   resolve: (value: unknown) => void
   reject: (err: Error) => void
-  timer: ReturnType<typeof setTimeout>
+  timer: ReturnType<typeof setTimeout> | undefined
   /** Socket that sent this request — stale close events must not touch other sockets. */
   socketId: number
 }
@@ -52,7 +52,10 @@ const HEARTBEAT_INTERVAL_MS = 15_000
 /** Consecutive unanswered pings before the socket is declared dead. */
 const HEARTBEAT_MAX_MISSED = 2
 
-function rpcTimeoutMs(method: string): number {
+function rpcTimeoutMs(method: string): number | undefined {
+  // Native provider deadlines still bound server work; user input has no deadline.
+  // Heartbeats/close reject a lost transport without resending an App operation.
+  if (method === 'mcpApps.provider') return undefined
   // Only truly long mutators get 5 minutes — status/branches must not sit on 300s.
   if (
     method === 'git.clone' ||
@@ -464,14 +467,15 @@ export class NodeRpcClient {
     }
 
     return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const timeoutMs = rpcTimeoutMs(method)
+      const timer = timeoutMs === undefined ? undefined : setTimeout(() => {
         this.pending.delete(requestId)
         reject(transportError(`rpc timeout: ${method}`))
         // A silent timeout on the live socket means the transport is gone even
         // though no `close` arrived (dead SSH tunnel). Escalate so the supervisor
         // reconnects instead of leaving every later send to time out too.
         this.reportTransportDead(`rpc timeout: ${method}`, socketId)
-      }, rpcTimeoutMs(method))
+      }, timeoutMs)
       this.pending.set(requestId, {
         resolve: (v) => resolve(v as T),
         reject,

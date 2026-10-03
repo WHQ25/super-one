@@ -150,6 +150,7 @@ describe('createNodeCodexTurnRunner', () => {
     const deltas: string[] = []
     const agentEvents: AgentEvent[] = []
     const onElicitation = vi.fn(async () => ({ action: 'accept' as const, content: { name: 'dial' }, _meta: null }))
+    const turnAbort = new AbortController()
     const turnP = runner({
       session: session(),
       text: 'ping',
@@ -158,7 +159,7 @@ describe('createNodeCodexTurnRunner', () => {
       onDelta: (d) => deltas.push(d),
       onAgentEvent: (event) => agentEvents.push(event),
       onElicitation,
-      signal: new AbortController().signal,
+      signal: turnAbort.signal,
     })
 
     await pump()
@@ -235,6 +236,37 @@ describe('createNodeCodexTurnRunner', () => {
       'message_complete',
       'status_change',
     ])
+
+    // Native View forms outlive the finished turn and its abort signal.
+    turnAbort.abort()
+    const onIdleElicitation = vi.fn(async (_interaction, signal: AbortSignal) => {
+      expect(signal.aborted).toBe(false)
+      return { action: 'accept' as const, content: { name: 'idle-dial' }, _meta: null }
+    })
+    const idleProvider = await runner.getMcpAppsProvider!(session({ providerResume: 'thread:t-abc' }), binding,
+      { providerSessionId: 't-abc' }, { onElicitation: onIdleElicitation })
+    for (const operation of ['callTool', 'readResource'] as const) {
+      const nativeCall = operation === 'callTool'
+        ? idleProvider.callTool({ tool: 'next', args: {} }, new AbortController().signal)
+        : idleProvider.readResource({ uri: 'ui://fixture/view' }, new AbortController().signal)
+      await pump()
+      const outgoing = JSON.parse(lines.at(-1)!)
+      expect(outgoing.method).toBe(operation === 'callTool' ? 'mcpServer/tool/call' : 'mcpServer/resource/read')
+      child.stdout.write(`${JSON.stringify({ id: `idle-${operation}`, method: 'mcpServer/elicitation/request', params: {
+        threadId: 't-abc', turnId: null, serverName: 'fixture', mode: 'form', message: 'Choose',
+        requestedSchema: { type: 'object', properties: { name: { type: 'string' } } },
+      } })}\n`)
+      await pump()
+      expect(lines.map(l => JSON.parse(l)).find(l => l.id === `idle-${operation}`)).toMatchObject({ result: { action: 'accept', content: { name: 'idle-dial' } } })
+      child.stdout.write(`${JSON.stringify({ id: outgoing.id, result: operation === 'callTool' ? { content: [] }
+        : { contents: [{ uri: 'ui://fixture/view', mimeType: 'text/html;profile=mcp-app', text: '<p/>', _meta: { ui: {} } }] } })}\n`)
+      await nativeCall
+    }
+    expect(onIdleElicitation).toHaveBeenCalledTimes(2)
+    child.stdout.write(`${JSON.stringify({ id: 'unscoped', method: 'mcpServer/elicitation/request', params: { threadId: 't-abc', serverName: 'fixture', mode: 'form' } })}\n`)
+    await pump()
+    expect(lines.map(l => JSON.parse(l)).find(l => l.id === 'unscoped')).toMatchObject({ result: { action: 'cancel' } })
+    await runner.disposeAll!()
 
     rmSync(dir, { recursive: true, force: true })
   })

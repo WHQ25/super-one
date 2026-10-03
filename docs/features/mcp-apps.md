@@ -54,6 +54,18 @@ even in full-access sessions and is never remembered as an allowed tool. Waiting
 for input does not block ordered notifications or consume RPC/turn timeout
 budgets; interrupt, close, or connection loss cancels the pending form.
 
+View resource/tool calls also work after their originating model turn ends.
+Codex's standalone elicitation is matched to an active native call by connection,
+thread and server. Native calls stay parallel; the form handler remains active
+until the last call in that thread/server scope ends or cancels. The form's own
+elicitation id identifies its answer. Turn-correlated requests keep their normal turn
+route. An idle unsolicited request without a matching invocation is cancelled.
+Cancelling the last host invocation or closing the session clears the scope's
+pending prompt. Remote provider RPCs keep waiting while the user fills a form;
+the existing connection heartbeat detects transport loss and calls are not retried.
+Remote View teardown does not yet forward an invocation abort to the node; its
+prompt can still be cancelled through the permission UI or session interrupt/close.
+
 ## Shared contract
 
 `packages/shared/src/mcp-apps.ts` owns the SDK-free types.

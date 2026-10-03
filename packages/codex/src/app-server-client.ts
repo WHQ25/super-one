@@ -1,5 +1,6 @@
 import { MCP_APPS_EXTENSION } from '@superone/shared/mcp-apps'
 import { CODEX_CLIENT_EXTENSIONS } from './client-extensions'
+import { CodexUserInputBudget } from './user-input-budget'
 import { invalidateCodexMcpAppsCatalog } from './mcp-apps-catalog'
 import type { AttachmentCodexInput } from '@superone/shared/attachment-turn'
 import { superoneSystemPrompt } from '@superone/shared/superone-system-prompt'
@@ -77,10 +78,7 @@ export interface CodexAppServerHandle {
 interface PendingRequest {
   resolve: (value: Record<string, unknown>) => void
   reject: (err: Error) => void
-  timer?: ReturnType<typeof setTimeout>
-  deadlineAt: number
-  remainingMs: number
-  timeoutMessage: string
+  cancelDeadline: () => void
 }
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
@@ -132,8 +130,7 @@ export async function openCodexAppServer(
   let closed = false
   const inboundAbort = new AbortController()
   const inbound = new Set<string | number>()
-  let inputWaitStartedAt: number | undefined
-  let inputWaitMs = 0
+  const inputBudget = new CodexUserInputBudget()
   let readLoopError: Error | null = null
   /** True only after the OS reports process exit — not merely that kill() was called. */
   let processExited = false
@@ -150,38 +147,10 @@ export async function openCodexAppServer(
     }
   }
 
-  const armRequestTimeout = (id: number, waiter: PendingRequest) => {
-    if (inbound.size) return
-    waiter.deadlineAt = Date.now() + waiter.remainingMs
-    waiter.timer = setTimeout(() => {
-      pending.delete(id)
-      waiter.reject(new Error(waiter.timeoutMessage))
-    }, waiter.remainingMs)
-  }
-  const beginInputWait = (id: string | number) => {
-    if (!inbound.size) {
-      inputWaitStartedAt = Date.now()
-      for (const waiter of pending.values()) {
-        clearTimeout(waiter.timer)
-        waiter.timer = undefined
-        waiter.remainingMs = Math.max(0, waiter.deadlineAt - Date.now())
-      }
-    }
-    inbound.add(id)
-  }
-  const endInputWait = (id: string | number) => {
-    inbound.delete(id)
-    if (!inbound.size && inputWaitStartedAt !== undefined) {
-      inputWaitMs += Math.max(0, Date.now() - inputWaitStartedAt)
-      inputWaitStartedAt = undefined
-      if (!closed && !inboundAbort.signal.aborted) for (const [requestId, waiter] of pending) armRequestTimeout(requestId, waiter)
-    }
-  }
-
   const failAll = (err: Error) => {
     inboundAbort.abort()
     for (const [, p] of pending) {
-      clearTimeout(p.timer)
+      p.cancelDeadline()
       p.reject(err)
     }
     pending.clear()
@@ -285,7 +254,8 @@ export async function openCodexAppServer(
             : undefined
           if (rec.method === 'mcpServer/elicitation/request' && !isCodexUserVerificationElicitation(params) && opts.onServerRequest) {
             if (!inbound.has(id)) {
-              beginInputWait(id)
+              inbound.add(id)
+              inputBudget.begin(id)
               // Do not await user input on readline: native tools can emit notifications
               // and RPC replies while a form is pending.
               void (async () => {
@@ -297,7 +267,7 @@ export async function openCodexAppServer(
                 try {
                   if (!closed && !inboundAbort.signal.aborted) writeLine({ jsonrpc: '2.0', id, result })
                 } catch { /* connection closed */ }
-                finally { endInputWait(id) }
+                finally { inbound.delete(id); inputBudget.end(id) }
               })()
             }
             continue
@@ -324,7 +294,7 @@ export async function openCodexAppServer(
           const waiter = pending.get(id)
           if (!waiter) continue
           pending.delete(id)
-          clearTimeout(waiter.timer)
+          waiter.cancelDeadline()
           if (rec.error) {
             const errObj = rec.error as { message?: string; code?: number }
             waiter.reject(
@@ -375,15 +345,17 @@ export async function openCodexAppServer(
         return
       }
       const id = nextId++
-      const waiter: PendingRequest = { resolve, reject, remainingMs: timeoutMs, deadlineAt: Date.now() + timeoutMs,
-        timeoutMessage: `Codex app-server ${method} timed out after ${timeoutMs}ms` }
+      const cancelDeadline = inputBudget.deadline(timeoutMs, () => {
+        pending.delete(id)
+        reject(new Error(`Codex app-server ${method} timed out after ${timeoutMs}ms`))
+      })
+      const waiter: PendingRequest = { resolve, reject, cancelDeadline }
       pending.set(id, waiter)
-      armRequestTimeout(id, waiter)
       try {
         writeLine({ jsonrpc: '2.0', id, method, params: params ?? {} })
       } catch (err) {
         pending.delete(id)
-        clearTimeout(waiter.timer)
+        waiter.cancelDeadline()
         reject(safePublicError('Codex app-server write failed', err))
       }
     })
@@ -476,7 +448,7 @@ export async function openCodexAppServer(
       ),
     notify,
     nextNotification,
-    getUserInputWaitMs: () => inputWaitMs + (inputWaitStartedAt === undefined ? 0 : Math.max(0, Date.now() - inputWaitStartedAt)),
+    getUserInputWaitMs: () => inputBudget.getWaitMs(),
     close,
     getStderrRedacted: () => redactHarnessDiagnosticText(stderrBuf.slice(-500)),
   }

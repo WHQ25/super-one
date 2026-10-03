@@ -105,6 +105,7 @@ vi.mock('../../codex/codex-turn', () => ({
   prewarmCodexConnection: turnMocks.prewarmCodexConnection,
   prewarmCodexSession: turnMocks.prewarmCodexSession,
   buildCodexQueuedInput: turnMocks.buildCodexQueuedInput,
+  processServerRequest: vi.fn(async () => true),
 }))
 
 const realtimeMocks = vi.hoisted(() => {

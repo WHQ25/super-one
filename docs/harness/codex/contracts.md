@@ -163,3 +163,18 @@ enabled by `apps/desktop/src/main/codex/app-server-connection.ts`).
   not enter `alwaysAllowedTools`. User-input time is excluded from RPC/turn
   budgets. Form, cancellation, snapshot/replay and per-thread ordering are tested
   with protocol fixtures; this change has no new authenticated live acceptance.
+- **Between-turn View forms:** native resource/tool invocation scopes route
+  standalone `mcpServer/elicitation/request` (`turnId:null` or absent) to the
+  session-lifetime permission handler on desktop and nodes. The pinned schema
+  carries thread/server and optional turn correlation, but no tool-call id;
+  parallel same-thread/server calls share the host handler and unrelated forms
+  do not inherit the scope. The last call ending/cancelling clears the scope's
+  form; a single call cannot cancel another call's prompt. Dispatcher notifications
+  remain FIFO. The node host callback
+  comes from SessionRuntime, not a completed turn's abort signal. Cancellation
+  removes the pending approval and does not retry the native tool. Replay tests
+  cover idle resource/tool calls, cancellation and subsequent notification order;
+  authenticated end-to-end acceptance remains unverified for this change.
+  The existing remote provider route does not forward a View's AbortSignal to
+  the node. Remote View teardown alone therefore does not cancel the native RPC;
+  permission cancel and session interrupt/close still settle its prompt.

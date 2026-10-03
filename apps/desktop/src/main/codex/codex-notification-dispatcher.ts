@@ -1,6 +1,7 @@
 import type { AppServerConnection, AppServerNotification } from './app-server-connection'
 import { trace } from '../agent/event-trace'
 import log from '../logger'
+import { dispatchCodexMcpAppElicitation, cancelCodexMcpAppInvocations } from '@superone/codex/mcp-app-elicitation'
 
 const OBSERVED_THREAD_NOTIFICATIONS = new Set([
   'thread/status/changed',
@@ -117,6 +118,7 @@ export interface NotificationDispatcher {
 export interface NotificationDispatcherOptions {
   onSkillsChanged?: () => void
   onQueueChanged?: (threadId: string) => void
+  isMainTurnActive?: () => boolean
 }
 
 export function createNotificationDispatcher(
@@ -213,6 +215,7 @@ export function createNotificationDispatcher(
     close: (reason) => {
       if (dispatcherClosed) return
       dispatcherClosed = true
+      cancelCodexMcpAppInvocations(connection)
       const err = reason ? new Error(reason) : undefined
       closeInboxState(mainState, err)
       for (const state of forkStates.values()) {
@@ -236,6 +239,7 @@ export function createNotificationDispatcher(
       try {
         notif = await connection.nextNotification()
       } catch (err) {
+        cancelCodexMcpAppInvocations(connection)
         const error = err instanceof Error ? err : new Error(String(err))
         closeInboxState(mainState, error)
         for (const state of forkStates.values()) closeInboxState(state, error)
@@ -248,6 +252,17 @@ export function createNotificationDispatcher(
         return
       }
       if (dispatcherClosed) return
+      if (notif.method === 'mcpServer/elicitation/request' && notif.requestIdRaw !== undefined) {
+        const pending = dispatchCodexMcpAppElicitation(connection, { id: notif.requestIdRaw, params: notif.params })
+        if (pending) {
+          // Only user-waiting native requests leave the ordered notification pump.
+          void pending.catch(async error => {
+            log.warn('[codex] native MCP App elicitation failed:', error)
+            try { await connection.respond(notif.requestIdRaw!, { action: 'cancel', content: null, _meta: null }) } catch { /* connection closed */ }
+          })
+          continue
+        }
+      }
       if (OBSERVED_THREAD_NOTIFICATIONS.has(notif.method)) {
         log.info('[codex] %s %s', notif.method, summarizeThreadNotification(notif))
       }
@@ -269,6 +284,13 @@ export function createNotificationDispatcher(
       const realtimeTurnState = threadId && !notif.method.startsWith('thread/realtime/')
         ? realtimeTurnStates.get(threadId)
         : undefined
+      if (notif.method === 'mcpServer/elicitation/request' && notif.requestIdRaw !== undefined
+        && !forkState && !realtimeTurnState && options.isMainTurnActive?.() === false) {
+        // An idle unsolicited request has no consumer. Do not park it until a
+        // future turn, where it could block an unrelated native operation.
+        void connection.respond(notif.requestIdRaw, { action: 'cancel', content: null, _meta: null }).catch(() => {})
+        continue
+      }
       if (process.env.NODE_ENV === 'development' && (notif.method === 'mcpServer/elicitation/request' || notif.method.startsWith('applyExecApproval') || notif.method.startsWith('applyPatchApproval'))) {
         trace('codex.dispatch', 'approval_route', {
           method: notif.method,

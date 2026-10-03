@@ -1,4 +1,5 @@
 import { CODEX_CLIENT_EXTENSIONS } from '@superone/codex/client-extensions'
+import { CodexUserInputBudget } from '@superone/codex/user-input-budget'
 import { invalidateCodexMcpAppsCatalog } from '@superone/codex/mcp-apps-catalog'
 import { ensureShellPath } from '../shell-path'
 import { codexAccountProviderId, isCodexAccountProvider } from '@superone/shared/codex-accounts'
@@ -696,10 +697,11 @@ export async function createAppServerConnection(
   interface ResponseWaiter {
     resolve: (value: Record<string, unknown>) => void
     reject: (err: Error) => void
-    timer: ReturnType<typeof setTimeout>
+    cancelDeadline: () => void
   }
 
   const responseWaiters = new Map<string, ResponseWaiter>()
+  const inputBudget = new CodexUserInputBudget()
   const notificationQueue: AppServerNotification[] = []
   const notificationWaiters: Array<(n: AppServerNotification | null, err?: Error) => void> = []
   let readerError: Error | null = null
@@ -707,7 +709,7 @@ export async function createAppServerConnection(
 
   const rejectAllWaiters = (err: Error): void => {
     for (const waiter of responseWaiters.values()) {
-      clearTimeout(waiter.timer)
+      waiter.cancelDeadline()
       waiter.reject(err)
     }
     responseWaiters.clear()
@@ -780,6 +782,7 @@ export async function createAppServerConnection(
         }
 
         if (method) {
+          if (method === 'mcpServer/elicitation/request' && rawId !== undefined) inputBudget.begin(rawId)
           dispatchNotification({
             requestIdRaw: rawId,
             requestId: rawId !== undefined ? String(rawId) : undefined,
@@ -794,7 +797,7 @@ export async function createAppServerConnection(
         const waiter = responseWaiters.get(key)
         if (!waiter) continue
         responseWaiters.delete(key)
-        clearTimeout(waiter.timer)
+        waiter.cancelDeadline()
         if ('error' in msg && msg.error) {
           waiter.reject(extractJsonRpcError(msg.error))
         } else {
@@ -810,11 +813,11 @@ export async function createAppServerConnection(
     if (readerError) return Promise.reject(readerError)
     const key = String(id)
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
+      const cancelDeadline = inputBudget.deadline(timeoutMs, () => {
         responseWaiters.delete(key)
         reject(new Error(`Codex app-server ${label} timed out after ${timeoutMs}ms`))
-      }, timeoutMs)
-      responseWaiters.set(key, { resolve, reject, timer })
+      })
+      responseWaiters.set(key, { resolve, reject, cancelDeadline })
     })
   }
 
@@ -858,14 +861,16 @@ export async function createAppServerConnection(
 
     respond: async (requestId, result) => {
       if (isDev) trace('codex.appserver.respond', 'client_response', { requestId, result }, String(requestId))
-      await sendMessage(compactRecord({ id: requestId, result: result ?? {} }))
+      try { await sendMessage(compactRecord({ id: requestId, result: result ?? {} })) }
+      finally { inputBudget.end(requestId) }
     },
 
     respondError: async (requestId, code, message) => {
       if (isDev) {
         trace('codex.appserver.respond', 'client_error', { requestId, code, message }, String(requestId))
       }
-      await sendMessage({ id: requestId, error: { code, message } })
+      try { await sendMessage({ id: requestId, error: { code, message } }) }
+      finally { inputBudget.end(requestId) }
     },
 
     notify: async (method, params) => {

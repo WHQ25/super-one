@@ -87,6 +87,19 @@ function sentFrames(ws: ReturnType<typeof lastSocket>): Array<{ type?: string; r
 }
 
 describe('NodeRpcClient disconnect signaling', () => {
+  it('keeps an App provider RPC pending while user input exceeds the ordinary RPC budget', async () => {
+    const { client } = await connectClient({ supervised: true })
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    try {
+      const call = client.rpc('mcpApps.provider', { operation: 'callTool' })
+      const rejection = expect(call).rejects.toThrow()
+      await vi.advanceTimersByTimeAsync(600_000)
+      expect(client.connected).toBe(true)
+      client.close()
+      await rejection
+      expect(sockets).toHaveLength(1)
+    } finally { client.close(); vi.useRealTimers() }
+  })
   it('assigns an idempotency key to a session settings mutation', async () => {
     const { client, ws } = await connectClient({ supervised: true })
     const request = client.rpc('session.patchSettings', { sessionId: 'new', settings: { model: 'sonnet' } })

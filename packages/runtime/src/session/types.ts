@@ -231,7 +231,8 @@ export type TurnRunner = ((input: {
   skipAssistantTranscript?: boolean
 }>) & {
   /** Tear down long-lived harness state for one SuperOne session id. */
-  getMcpAppsProvider?: (session: NodeSessionRecord, binding: McpAppsBinding, origin: McpAppOrigin) => Promise<McpAppsProvider>
+  getMcpAppsProvider?: (session: NodeSessionRecord, binding: McpAppsBinding, origin: McpAppOrigin,
+    host?: { onElicitation: (interaction: PendingInteraction, signal: AbortSignal) => Promise<ElicitationDecision> }) => Promise<McpAppsProvider>
   disposeSession?: (sessionId: string) => void | Promise<void>
   /** Tear down all long-lived harness state (runtime stop). */
   disposeAll?: () => void | Promise<void>

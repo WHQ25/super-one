@@ -221,7 +221,9 @@ export class SessionRuntime {
   async getMcpAppsProvider(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider> {
     const session = this.get(binding.session)
     if (!session || binding.node !== this.environmentId || !this.turnRunner.getMcpAppsProvider) throw new McpAppsError('not_connected', 'MCP Apps provider is unavailable')
-    return this.turnRunner.getMcpAppsProvider(session, binding, origin)
+    return this.turnRunner.getMcpAppsProvider(session, binding, origin, {
+      onElicitation: (interaction, signal) => this.requestElicitation(session.sessionId, interaction, signal),
+    })
   }
 
   private readonly runtimeReleases = new Set<string>()
@@ -1592,6 +1594,8 @@ export class SessionRuntime {
     })
     const aborts = this.aborts.get(sessionId)
     for (const abort of aborts ?? []) abort.abort()
+    // Standalone View forms can be pending while no model turn owns an abort.
+    this.rejectPendingPermission(session)
     // Cancel outstanding host actions so the desktop can abort local work (AbortSignal).
     this.cancelHostActionsForSession(sessionId, 'interrupt')
     if (session.status === 'streaming') {

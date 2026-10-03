@@ -160,6 +160,28 @@ describe('createAppServerConnection', () => {
     vi.unstubAllEnvs()
   })
 
+  it('pauses a native View RPC deadline until the inbound form is answered', async () => {
+    const child = createFakeChild()
+    spawnMock.mockReturnValueOnce(child)
+    const handlePromise = createAppServerConnection({ mode: 'apiKey' })
+    await nextTick()
+    writeLineToChild(child, { id: 1, result: {} })
+    const handle = await handlePromise
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    const request = handle.connection.request('mcpServer/tool/call', { threadId: 'root', server: 'fixture', tool: 'next', arguments: {} })
+    const outcome = vi.fn()
+    void request.then(outcome)
+    await nextTick()
+    writeLineToChild(child, { id: 0, method: 'mcpServer/elicitation/request', params: { threadId: 'root', serverName: 'fixture', mode: 'form' } })
+    expect((await handle.connection.nextNotification()).requestIdRaw).toBe(0)
+    await vi.advanceTimersByTimeAsync(600_000)
+    expect(outcome).not.toHaveBeenCalled()
+    await handle.connection.respond(0, { action: 'accept', content: null, _meta: null })
+    writeLineToChild(child, { id: 2, result: { content: [] } })
+    await expect(request).resolves.toEqual({ content: [] })
+    await handle.close()
+  })
+
   it('logs retry and waiting diagnostics in production without exposing credentials or turn content', async () => {
     vi.stubEnv('NODE_ENV', 'production')
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })

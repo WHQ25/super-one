@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { elicitationFormRequest } from '@superone/shared/schema-form'
+import type { McpAppsProvider } from '@superone/shared/mcp-apps'
 import { SessionRuntime, type NodeSessionRecord, type SessionStore, type SessionEventLog, type PendingInteraction, type TurnRunner } from './session-runtime'
 
 const client = { clientSessionId: 'controller' }
@@ -23,6 +24,24 @@ function fixture(runner: TurnRunner = async () => ({ finalText: '' })) {
 }
 
 describe('durable elicitation on the permission channel', () => {
+  it('gives an idle View provider a session-lifetime form handler', async () => {
+    const runner: TurnRunner = async () => ({ finalText: '' })
+    runner.getMcpAppsProvider = async (_session, binding, _origin, host) => ({
+      binding, ready: async () => ({ mode: 'native', resourceRead: true, toolCall: true, authenticate: false }),
+      tools: async () => new Map(), readResource: async () => ({ contents: [] }), dispose: () => {},
+      callTool: async (_request, signal) => {
+        const response = await host!.onElicitation(form, signal)
+        return { result: { content: [], structuredContent: { answer: response.content } }, outcome: 'completed' }
+      },
+    } satisfies McpAppsProvider)
+    const f = fixture(runner)
+    const provider = await f.runtime.getMcpAppsProvider({ node: 'node', session: f.session.sessionId, server: 'fixture', configGeneration: 0, configFingerprint: 'config' }, { providerSessionId: 'root' })
+    const call = provider.callTool({ tool: 'next', args: {} }, new AbortController().signal)
+    expect(f.runtime.get(f.session.sessionId)?.status).toBe('idle')
+    expect(f.rows.get(f.session.sessionId)?.pendingInteraction).toEqual(form)
+    f.respond({ formAnswers: { count: 3 } })
+    await expect(call).resolves.toMatchObject({ result: { structuredContent: { answer: { count: 3 } } } })
+  })
   it('persists the form and requires valid answers from the lease holder', async () => {
     const f = fixture()
     const result = f.runtime.requestElicitation(f.session.sessionId, form, new AbortController().signal)
@@ -39,11 +58,12 @@ describe('durable elicitation on the permission channel', () => {
     expect(f.log.filter(e => e.eventType === 'session.permission_responded')).toHaveLength(1)
   })
 
-  it.each(['decline', 'cancel', 'abort', 'close'] as const)('settles %s once and clears the persisted prompt', async action => {
+  it.each(['decline', 'cancel', 'abort', 'interrupt', 'close'] as const)('settles %s once and clears the persisted prompt', async action => {
     const f = fixture()
     const abort = new AbortController()
     const result = f.runtime.requestElicitation(f.session.sessionId, form, abort.signal)
     if (action === 'close') f.runtime.close(f.session.sessionId)
+    else if (action === 'interrupt') f.runtime.interrupt(f.session.sessionId, client, lease.leaseId, lease.generation)
     else if (action === 'abort') abort.abort()
     else f.respond({ decision: 'deny', cancel: action === 'cancel' })
     await expect(result).resolves.toEqual({ action: action === 'decline' ? 'decline' : 'cancel', content: null, _meta: null })

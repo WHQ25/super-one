@@ -30,6 +30,22 @@ Upstream behavior we rely on is recorded per harness: Claude
 [api-surface](../harness/codex/api-surface.md) and
 [contracts](../harness/codex/contracts.md).
 
+### Extension routing rule
+
+Each MCP Apps or [OpenAI MCP extension](https://github.com/openai/mcp-extensions)
+feature takes the first path that works, and is not built otherwise:
+
+1. **Native**: the harness speaks it (Codex `mcpServer/tool/call` with request
+   `_meta`, full `Tool._meta`, client extensions in `initialize`).
+2. **Host to server**: the host reaches the server itself. View ↔ host
+   features (`openai/message`, `openai/modelContext`, display modes) need no
+   server; host-initiated calls (`mentions/search`, file entrypoints) use the
+   harness's channel, or SuperOne's direct client (`hostClient`) where the
+   native one lacks the data, as on Claude.
+3. **Neither**: unsupported. Server → harness features that require the
+   harness to declare a capability in MCP `initialize` (`openai/elicitation`
+   forms) exist only where the harness can declare it, today Codex.
+
 ## Shared contract
 
 `packages/shared/src/mcp-apps.ts` owns the SDK-free types.

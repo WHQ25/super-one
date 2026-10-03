@@ -215,6 +215,8 @@ export interface ClaudeToolAppsOptions {
   providerSessionId: () => string | null | undefined
   /** Called when an MCP tool is not in the catalog yet, so the owner can refresh it. */
   onCatalogMiss?: () => void
+  /** Initial result cap; a host whose Views run in this process passes the live cap. */
+  resultMaxBytes?: number
 }
 
 /**
@@ -273,7 +275,7 @@ export class ClaudeToolApps {
       resourceUri, toolName: resolved.tool.name, presentation: mcpAppPresentation(resolved.tool),
       ...(call.input ? { toolInput: call.input } : {}),
       ...patch,
-    })
+    }, this.opts.resultMaxBytes)
   }
 }
 

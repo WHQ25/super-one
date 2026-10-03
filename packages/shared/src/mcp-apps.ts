@@ -12,6 +12,11 @@ export const MCP_APPS_EXTENSION = { 'io.modelcontextprotocol/ui': { mimeTypes: [
 export const MCP_APP_HTML_MAX_BYTES = 2 * 1024 * 1024
 export const MCP_APP_DATA_MAX_BYTES = 1024 * 1024
 /**
+ * Initial tool input and result kept in the transcript and sent to other devices.
+ * The live View in the producing process gets up to `MCP_APP_OUTPUT_MAX_BYTES`.
+ */
+export const MCP_APP_RESULT_MAX_BYTES = 4 * 1024 * 1024
+/**
  * View-only tool/resource output, never persisted in the transcript. Large enough for
  * App assets (a CAD importer's wasm); it leaves room for the RPC envelope inside one
  * remote payload so phone and node paths fail here, with a clear error, not in framing.
@@ -198,7 +203,7 @@ export interface ToolAppAttachment {
   resource?: McpAppResource
   toolInput?: Record<string, unknown>
   toolResult?: McpAppToolResult
-  /** Initial result was too large for durable attachment state; live App calls still work. */
+  /** Initial result exceeded the cap where it was bounded; live App calls still work. */
   toolResultOmitted?: { bytes: number; reason: 'size_limit' }
   modelContext?: McpAppModelContext | null
   status: 'pending' | 'result' | 'cancelled' | 'error'
@@ -214,8 +219,11 @@ export function mcpAppToolVisible(tool: McpToolDescriptor): boolean {
   return tool._meta?.ui?.visibility?.includes('app') ?? true
 }
 
-/** Keep durable data bounded without turning a working View into an error for an oversized result. */
-export function boundedToolAppAttachment(app: ToolAppAttachment, logOmission = false): ToolAppAttachment {
+/**
+ * Keep data bounded without turning a working View into an error for an oversized result.
+ * The default cap is for the transcript and other devices; live Views pass `MCP_APP_OUTPUT_MAX_BYTES`.
+ */
+export function boundedToolAppAttachment(app: ToolAppAttachment, maxBytes = MCP_APP_RESULT_MAX_BYTES, logOmission = false): ToolAppAttachment {
   // An explicit omission always wins over raw harness data or restored fallbacks.
   if (app.toolResultOmitted && app.toolResult) app = { ...app, toolResult: undefined }
   if (app.presentation) {
@@ -228,7 +236,7 @@ export function boundedToolAppAttachment(app: ToolAppAttachment, logOmission = f
     const result = JSON.stringify(app.toolResult)
     const bytes = result === undefined ? 0 : new TextEncoder().encode(result).byteLength
     const total = new TextEncoder().encode(JSON.stringify({ toolInput: app.toolInput, toolResult: app.toolResult })).byteLength
-    if (app.toolResult && total > MCP_APP_DATA_MAX_BYTES) {
+    if (app.toolResult && total > maxBytes) {
       if (logOmission) console.warn('[MCP App] Initial result omitted at View boundary', { appInstanceId: app.appInstanceId, bytes })
       return { ...app, toolResult: undefined, toolResultOmitted: { bytes, reason: 'size_limit' } }
     }

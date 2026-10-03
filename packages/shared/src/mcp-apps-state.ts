@@ -3,7 +3,7 @@ import { compactMcpAppPresentation, MCP_APP_PRESENTATION_MAX_BYTES } from './mcp
 import type { AgentEvent, ContentBlock, ImageAttachment } from './agent-types'
 import { mcpAppContextInput, mcpAppContextItems, type McpAppContextAttachment } from './mcp-app-model-context'
 import { validateTurnAttachments } from './attachment-validation'
-import { assertMcpAppSize } from './mcp-apps'
+import { assertMcpAppSize, boundedToolAppAttachment } from './mcp-apps'
 import type { McpAppAttachmentUpdate, ToolAppAttachment } from './mcp-apps'
 
 /** Works with desktop transcripts and the node's denser message catalog. */
@@ -75,24 +75,78 @@ export function validateMcpAppAttachmentUpdate(update: McpAppAttachmentUpdate): 
   if (update.presentation) assertMcpAppSize(compactMcpAppPresentation(update.presentation), MCP_APP_PRESENTATION_MAX_BYTES)
 }
 
+type AttachmentMap = (app: ToolAppAttachment) => ToolAppAttachment
+
+/** Rewrites attachments on content blocks or Codex items; unchanged inputs keep their identity. */
+function mapBlockApp<B>(block: B, map: AttachmentMap): B {
+  const app = record(block).app as ToolAppAttachment | undefined
+  if (!app?.appInstanceId) return block
+  const next = map(app)
+  return next === app ? block : { ...block, app: next }
+}
+
+function mapBlocks<B>(blocks: B[], map: AttachmentMap): B[] {
+  const next = blocks.map(block => mapBlockApp(block, map))
+  return next.some((block, i) => block !== blocks[i]) ? next : blocks
+}
+
+function mapMetadataApps<M>(metadata: M, map: AttachmentMap): M {
+  const codex = record(record(metadata).codex)
+  if (!Array.isArray(codex.items)) return metadata
+  const items = mapBlocks(codex.items, map)
+  return items === codex.items ? metadata : { ...record(metadata), codex: { ...codex, items } } as M
+}
+
+function mapMessageApps<T extends McpAppMessage>(message: T, map: AttachmentMap): T {
+  const content = message.content && mapBlocks(message.content, map)
+  const metadata = mapMetadataApps(message.metadata, map)
+  if (content === message.content && metadata === message.metadata) return message
+  return { ...message, ...(content ? { content } : {}), ...(metadata !== undefined ? { metadata } : {}) }
+}
+
 /** Changes only existing attachments, preserving every provider-authored identity field. */
 export function updateMcpAppAttachments<T extends McpAppMessage>(messages: readonly T[], appInstanceId: string, update: McpAppAttachmentUpdate): T[] {
   validateMcpAppAttachmentUpdate(update)
   const patch = { ...(update.resource ? { resource: update.resource } : {}),
     ...(update.modelContext !== undefined ? { modelContext: update.modelContext } : {}),
     ...(update.presentation ? { presentation: compactMcpAppPresentation(update.presentation) } : {}) }
-  const replace = <B>(block: B): B => {
-    const app = record(block).app as ToolAppAttachment | undefined
-    if (app?.appInstanceId !== appInstanceId) return block
-    return { ...block, app: { ...app, ...patch } }
+  return messages.map(message => mapMessageApps(message, app => app.appInstanceId === appInstanceId ? { ...app, ...patch } : app))
+}
+
+// A live attachment may carry up to the transient cap; bound each object once.
+const persistedApps = new WeakMap<ToolAppAttachment, ToolAppAttachment>()
+function persistedApp(app: ToolAppAttachment): ToolAppAttachment {
+  if (!app.toolResult) return app
+  let bounded = persistedApps.get(app)
+  if (!bounded) persistedApps.set(app, bounded = boundedToolAppAttachment(app))
+  return bounded.toolResult === app.toolResult && bounded.toolResultOmitted === app.toolResultOmitted ? app : bounded
+}
+
+/** Bound initial results to the transcript cap before persisting or sending to another device. */
+export function persistedMcpAppMessage<T extends McpAppMessage>(message: T): T {
+  return mapMessageApps(message, persistedApp)
+}
+
+export function persistedMcpAppEvent(event: AgentEvent): AgentEvent {
+  switch (event.type) {
+    case 'content_delta': {
+      const delta = mapBlockApp(event.delta, persistedApp)
+      return delta === event.delta ? event : { ...event, delta }
+    }
+    case 'codex_item_delta': {
+      const item = mapBlockApp(event.item, persistedApp)
+      return item === event.item ? event : { ...event, item }
+    }
+    case 'message_start': {
+      const message = persistedMcpAppMessage(event.message)
+      return message === event.message ? event : { ...event, message }
+    }
+    case 'message_complete': {
+      const metadata = mapMetadataApps(event.metadata, persistedApp)
+      return metadata === event.metadata ? event : { ...event, metadata }
+    }
+    default: return event
   }
-  return messages.map(message => {
-    if (!mcpAppMessageAttachments(message).some(app => app.appInstanceId === appInstanceId)) return message
-    const metadata = record(message.metadata)
-    const codex = record(metadata.codex)
-    return { ...message, ...(message.content ? { content: message.content.map(replace) } : {}),
-      ...(Array.isArray(codex.items) ? { metadata: { ...metadata, codex: { ...codex, items: codex.items.map(replace) } } } : {}) }
-  })
 }
 
 /** Model-only context: latest entry per View, with host-authored source attribution. */

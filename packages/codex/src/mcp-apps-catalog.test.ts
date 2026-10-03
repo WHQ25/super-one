@@ -3,7 +3,7 @@ import { attachCodexMcpApp, createCodexMcpAppsProvider, prewarmCodexMcpAppCatalo
 import type { CodexMcpToolCallItem } from '@superone/shared/agent-types'
 import { invalidateCodexMcpAppsCatalog } from './mcp-apps-catalog'
 import { dispatchMcpAppsProviderRequest } from '@superone/runtime/mcp-apps/provider-rpc'
-import { MCP_APP_OUTPUT_MAX_BYTES } from '@superone/shared/mcp-apps'
+import { MCP_APP_OUTPUT_MAX_BYTES, MCP_APP_RESULT_MAX_BYTES } from '@superone/shared/mcp-apps'
 import type { McpAppsBinding } from '@superone/shared/mcp-apps'
 
 const binding: McpAppsBinding = { node: 'local', session: 's', server: 'fixture', configGeneration: 0, configFingerprint: 'config' }
@@ -12,7 +12,7 @@ const listCount = (request: ReturnType<typeof vi.fn<McpAppsRequest>>) => request
 afterEach(() => vi.useRealTimers())
 
 it('omits an oversized App snapshot without changing the native model tool result', () => {
-  const result = { content: [{ type: 'text', text: 'x'.repeat(1050849) }], structuredContent: null, meta: { private: 'View data' } }
+  const result = { content: [{ type: 'text', text: 'x'.repeat(MCP_APP_RESULT_MAX_BYTES) }], structuredContent: null, meta: { private: 'View data' } }
   const item: CodexMcpToolCallItem = { type: 'mcp_tool_call', id: 'native', server: 'fixture', tool: 'next', status: 'completed', arguments: {}, result, mcpAppUi: { resourceUri: 'ui://fixture/view' } }
   const original = JSON.stringify(item)
   const attached = attachCodexMcpApp(item, binding, 'thread')
@@ -20,6 +20,8 @@ it('omits an oversized App snapshot without changing the native model tool resul
   expect(JSON.stringify(item)).toBe(original)
   expect(attached.app).toMatchObject({ status: 'result', toolResultOmitted: { reason: 'size_limit' } })
   expect(attached.app?.toolResult).toBeUndefined()
+  // A host whose Views run in this process keeps it for the live View.
+  expect(attachCodexMcpApp(item, binding, 'thread', MCP_APP_OUTPUT_MAX_BYTES).app?.toolResult?.content).toBe(result.content)
 })
 
 describe('Codex MCP App catalog cache', () => {

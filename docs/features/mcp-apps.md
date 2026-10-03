@@ -47,11 +47,12 @@ Upstream behavior we rely on is recorded per harness: Claude
   binding, the harness call id, the resource URI, the resource reference
   (`{ hash, meta }`; legacy `{ html, meta, hash }` snapshots remain readable),
   the original input, the bounded initial result (including the
-  private `_meta`) and the latest model context. Caps are 2 MiB for HTML and
-  1 MiB for persisted tool data and model context. View requests also stay
-  at 1 MiB. Transient View-initiated tool/resource results (never persisted)
-  have an 8 MiB cap across provider RPC, executor, host and the corresponding
-  host-to-View reply; other bridge traffic keeps the 1 MiB cap. Initial
+  private `_meta`) and the latest model context. Caps are 2 MiB for HTML,
+  4 MiB for the initial tool input and result kept in the transcript or sent to
+  another device, and 1 MiB for model context and View requests. Transient
+  results (never persisted) have a cap of 32 MiB minus 64 KiB for envelope room
+  (`MCP_APP_OUTPUT_MAX_BYTES`) across provider RPC, executor, host and the
+  corresponding host-to-View reply; other bridge traffic keeps the 1 MiB cap. Initial
   resource reads allow the 2 MiB HTML plus 1 MiB metadata envelope on both
   providers. Presentation is separate: only a resolved safe image per theme
   is saved, icons over 32 KiB are dropped, and presentation has a 70 KiB
@@ -113,17 +114,23 @@ never a caller-supplied hash. The Node owns its authoritative blobs; desktop
 may cache a copy after an authorized Node fetch. Phone WebView remounts also
 use a bounded cache rather than retaining every completed HTML promise.
 
-If an initial agent tool result exceeds the 1 MiB attachment budget, the shared
-bound helper drops `toolResult` and retains `status: result` plus
+An initial agent tool result has two bounds. Desktop's own Claude and Codex
+backends attach it with the transient cap, so a View in that desktop gets the
+full result. Every copy that leaves the live process is bounded to 4 MiB:
+SQLite rows (`persistedMcpAppMessage`) and phone events and snapshots
+(`persistedMcpAppEvent` in `remote-content.ts`). A remote node and the Cursor
+compatibility path attach with 4 MiB directly. Over a bound, the shared helper
+drops `toolResult` and keeps `status: result` plus
 `toolResultOmitted: { bytes, reason: "size_limit" }`. Oversized inputs remain
 errors. The resource, presentation and model context stay intact. No initial
 `ui/notifications/tool-result` is sent for an omitted result, and no replacement
 result is fabricated. The omission marker wins over any raw-result fallback.
-Desktop, phone and the shared host apply the same bounds to legacy View input;
-size failures cannot escape into React. Bits & Bolts recovers by calling `cad.listParts` itself;
-View-only calls retain their 8 MiB bound. Restored desktop and phone Views show
-that the initial result was not saved and invite activation to reload, or a new
-origin-tool invocation. The host never automatically reruns that tool.
+Desktop, phone and the shared host bound View input with the transient cap;
+size failures cannot escape into React. Without its initial result a View shows
+only what it loads itself (Bits & Bolts falls back to its library page). Restored
+desktop and phone Views say the initial result was not saved; activation
+reconnects without it, and a new origin-tool invocation is the only way to get
+it again. The host never automatically reruns that tool.
 
 ## Host executor
 

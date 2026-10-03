@@ -1,4 +1,4 @@
-import { boundedToolAppAttachment, MCP_APP_DATA_MAX_BYTES } from './mcp-apps'
+import { boundedToolAppAttachment, MCP_APP_DATA_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES, MCP_APP_RESULT_MAX_BYTES } from './mcp-apps'
 import { describe, expect, it } from 'vitest'
 import { mcpAppHeaderTitle, mcpAppServerTitle, mcpAppIcon, mcpAppMonochromeSvg, mcpAppPresentation, mcpAppResourceMeta, mcpAppResourceModes, safeMcpAppImage } from './mcp-apps-metadata'
 
@@ -44,7 +44,9 @@ it('drops oversized icons and persists only the winning image for each theme', (
 
 it('omits oversized initial results, preserves host state and rejects oversized inputs independently', () => {
   const base = { appInstanceId: 'v', binding: { node: 'local', session: 's', server: 'cad', configGeneration: 0, configFingerprint: 'x' }, resourceUri: 'ui://cad', status: 'result' as const, resource: { hash: 'a'.repeat(64), meta: {} }, presentation: { toolTitle: 'Library' }, modelContext: null }
-  const result = { content: [{ type: 'text', text: 'x'.repeat(MCP_APP_DATA_MAX_BYTES) }] }
+  const result = { content: [{ type: 'text', text: 'x'.repeat(MCP_APP_RESULT_MAX_BYTES) }] }
+  // The live cap keeps what the transcript cap omits.
+  expect(boundedToolAppAttachment({ ...base, toolInput: {}, toolResult: result }, MCP_APP_OUTPUT_MAX_BYTES).toolResult).toBe(result)
   const bounded = boundedToolAppAttachment({ ...base, toolInput: {}, toolResult: result })
   expect(bounded).toMatchObject({ ...base, toolResult: undefined, toolInput: {}, toolResultOmitted: { bytes: new TextEncoder().encode(JSON.stringify(result)).byteLength, reason: 'size_limit' } })
   expect(bounded.error).toBeUndefined()

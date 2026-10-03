@@ -50,6 +50,9 @@ export function createMcpAppTransport(
         if ('result' in message) assertMcpAppSize(message.result, MCP_APP_OUTPUT_MAX_BYTES)
         // A small JSON-RPC envelope is separate from the capped result body.
         assertMcpAppSize(message, MCP_APP_OUTPUT_MAX_BYTES + 1024)
+      } else if ('method' in message && message.method === 'ui/notifications/tool-result') {
+        // The host bounds the initial result with the live cap before sending it.
+        assertMcpAppSize(message, MCP_APP_OUTPUT_MAX_BYTES + 1024)
       } else assertMcpAppSize(message)
       await base.send(message, options)
     },

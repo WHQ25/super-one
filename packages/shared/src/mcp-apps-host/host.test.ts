@@ -5,7 +5,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { createMcpAppHost, createMcpAppHostSlot } from './host'
 import { mcpAppMessageCapabilities } from './capabilities'
 import type { McpAppHost, McpAppHostExecutor } from './host'
-import { McpAppsError, MCP_APP_OUTPUT_MAX_BYTES } from '../mcp-apps'
+import { McpAppsError, MCP_APP_OUTPUT_MAX_BYTES, MCP_APP_RESULT_MAX_BYTES } from '../mcp-apps'
 import type { ToolAppAttachment } from '../mcp-apps'
 
 const attachment: ToolAppAttachment = {
@@ -187,10 +187,18 @@ describe('MCP App shared host', () => {
     expect((await view.callServerTool({ name: 'next' })).content).toEqual(attachment.toolResult!.content)
   })
 
-  it('bounds legacy oversized payloads before initial/update notifications and rejects invalid bindings asynchronously', async () => {
+  it('delivers an initial result above the transcript cap to the live View', async () => {
+    const large = { ...attachment, toolResult: { ...attachment.toolResult!, content: [{ type: 'text' as const, text: 'x'.repeat(MCP_APP_RESULT_MAX_BYTES) }] } }
+    const { notifications, results, errors } = await setup(false, large)
+    expect(notifications).toEqual(['input', 'result:view-only'])
+    expect(results[0].content).toEqual(large.toolResult.content)
+    expect(errors).toEqual([])
+  })
+
+  it('bounds payloads above the live cap before initial/update notifications and rejects invalid bindings asynchronously', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      const huge = { ...attachment, toolResult: { content: [{ type: 'text', text: 'x'.repeat(2 * 1024 * 1024) }] } }
+      const huge = { ...attachment, toolResult: { content: [{ type: 'text', text: 'x'.repeat(MCP_APP_OUTPUT_MAX_BYTES) }] } }
       const { host, notifications, results, errors } = await setup(false, huge)
       await expect(host.update(huge)).resolves.toBeUndefined()
       expect(notifications).toEqual(['input']); expect(results).toEqual([]); expect(errors).toEqual([])

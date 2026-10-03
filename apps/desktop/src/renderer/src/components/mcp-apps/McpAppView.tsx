@@ -1,5 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
-import { boundedToolAppAttachment, type ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { boundedToolAppAttachment, MCP_APP_OUTPUT_MAX_BYTES, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { useChatStore, useSessionScope } from '@/stores/chat'
 import type { McpAppDesktopApi, McpAppRoute } from './desktop-executor'
 import { useMcpAppLayout } from './layout-store'
@@ -14,7 +14,7 @@ export interface McpAppViewProps {
   details?: ReactNode
 }
 export default function McpAppView({ app: rawApp, route: explicitRoute, api: explicitApi, title, toolName, details }: McpAppViewProps) {
-  const app = useMemo(() => boundedToolAppAttachment(rawApp, true), [rawApp])
+  const app = useMemo(() => boundedToolAppAttachment(rawApp, MCP_APP_OUTPUT_MAX_BYTES, true), [rawApp])
   const scope = useSessionScope()
   const projectPath = useChatStore(state => Object.entries(state.projectSessions).find(([, project]) => !!project._sessions[app.binding.session])?.[0])
   const route = useMemo(() => explicitRoute ?? { projectPath: scope?.sessionId === app.binding.session ? scope.projectPath : projectPath ?? '', sessionId: app.binding.session }, [explicitRoute, scope?.sessionId, scope?.projectPath, projectPath, app.binding.session])

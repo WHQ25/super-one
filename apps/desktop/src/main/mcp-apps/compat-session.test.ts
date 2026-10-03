@@ -9,7 +9,7 @@ import { dispatchMcpAppsProviderRequest } from '@superone/runtime/mcp-apps/provi
 import { createMcpAppResourceStore } from '@superone/runtime/mcp-apps/resource-store'
 import type { McpAppResourceSnapshot } from '@superone/shared/mcp-app-resource'
 import { mapInteractionUpdate } from '@superone/cursor'
-import { McpAppsError, MCP_APP_DATA_MAX_BYTES, type McpAppHostOperation } from '@superone/shared/mcp-apps'
+import { McpAppsError, MCP_APP_RESULT_MAX_BYTES, type McpAppHostOperation } from '@superone/shared/mcp-apps'
 import { findMcpAppAttachment, mcpAppModelContextText, updateMcpAppAttachments, type McpAppMessage } from '@superone/shared/mcp-apps-state'
 import { McpAppExecutor, type McpAppExecutorPorts } from './executor-core'
 import { executeMiniappCall, executeMiniappList, type MiniappToolDeps, type MiniappToolReply } from '../mcp/miniapp-mcp-tools'
@@ -197,14 +197,14 @@ describe('Cursor compatibility with the real stdio MCP Apps fixture', () => {
     const [app] = session.catalog()
     const call = vi.spyOn(Client.prototype, 'callTool').mockResolvedValueOnce({
       content: [{ type: 'text', text: 'Large fixture result' }], structuredContent: { page: 1 },
-      _meta: { 'fixture/private': 'x'.repeat(MCP_APP_DATA_MAX_BYTES) },
+      _meta: { 'fixture/private': 'x'.repeat(MCP_APP_RESULT_MAX_BYTES) },
     })
     const reply = await executeMiniappCall('large', { appId: app.appId, tool: 'fixture_list_items', input: { page: 1 } }, deps(session))
     expect(reply.structuredContent).toEqual({ page: 1 })
     expect(JSON.stringify(reply)).not.toContain('fixture/private')
     const { record } = attachReply(session, reply)
     expect(record).toMatchObject({ status: 'result', toolResult: undefined, toolResultOmitted: { reason: 'size_limit' } })
-    expect(record.toolResultOmitted!.bytes).toBeGreaterThan(MCP_APP_DATA_MAX_BYTES)
+    expect(record.toolResultOmitted!.bytes).toBeGreaterThan(MCP_APP_RESULT_MAX_BYTES)
     call.mockRestore()
     const provider = session.provider(record.binding, record.origin!)
     expect(await dispatchMcpAppsProviderRequest({ binding: record.binding, operation: 'readResource', uri: record.resourceUri }, provider)).toMatchObject({

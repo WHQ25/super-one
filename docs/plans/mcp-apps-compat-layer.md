@@ -128,9 +128,9 @@ Scope: phase 1, local Cursor sessions and the MCP Apps fixture. Branch:
   Refreshed descriptors keep server attribution and normalized visibility.
   Known visibility denials never trigger discovery.
 - Moved `boundedToolAppAttachment` into the record boundary so every producer
-  follows the shared omission policy. Initial results can use the same 8 MiB
-  transient output ceiling as View calls; above the 1 MiB persisted-data budget,
-  the record marks the omitted result and keeps the working View.
+  follows the shared omission policy. Above the 4 MiB transcript budget
+  (`MCP_APP_RESULT_MAX_BYTES`), the record marks the omitted result and keeps
+  the working View.
 - The production compat path already uses the shared executor's CAS persistence.
   Updated the fixture integration to use the actual resource store: saved
   attachments contain only hash/meta, a new store hydrates HTML from disk without

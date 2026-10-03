@@ -706,6 +706,16 @@ Live check on Bits & Bolts (dev instance, Codex 0.159):
 - **User-added resources**: need a security review first. Native main-process
   dialog only, `file://` URIs, `accept` enforced, local stdio servers only.
 - **URL-mode** Codex elicitations still show a plain approval without a link.
+- **Large initial results** (2026-10-03): `cad.pickFile` accept returns about
+  1 MB, 96% of it inline previews for the whole catalog
+  ([openai/mcp-extensions#32](https://github.com/openai/mcp-extensions/issues/32)).
+  The live desktop View now gets results up to the transient cap; the
+  transcript and phone keep 4 MiB. Still open: in Codex 0.159 code mode the
+  nested call item for that result has `structuredContent: null` and the
+  serialized result as text (the small cancel result kept it). Unverified
+  whether this is code mode or size; until fixed the View still gets no `part`.
+  Each result is also stored twice in SQLite (`metadata.codex` raw item and
+  the attachment); a result store with references would remove the copy.
 
 ## Remaining gaps (audit, 2026-10-02)
 

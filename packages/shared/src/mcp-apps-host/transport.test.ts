@@ -30,7 +30,7 @@ describe('MCP App postMessage transport', () => {
     expect(received).toHaveBeenCalledTimes(1)
   })
 
-  it('allows the transient output cap only for replies to View tool/read requests', async () => {
+  it('allows the transient output cap only for View request replies and the initial tool result', async () => {
     const target = { postMessage: vi.fn() } as unknown as Window
     transport = createMcpAppTransport(target, 'null')
     await transport.start()
@@ -43,7 +43,9 @@ describe('MCP App postMessage transport', () => {
     request(3, 'tools/call')
     await expect(transport.send({ jsonrpc: '2.0', id: 3, result: { content: [{ type: 'text', text: 'a'.repeat(MCP_APP_OUTPUT_MAX_BYTES) }] } })).rejects.toThrow('size limit')
     await expect(transport.send({ jsonrpc: '2.0', id: 4, result })).rejects.toThrow('size limit')
-    await expect(transport.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: result })).rejects.toThrow('size limit')
+    await expect(transport.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: result })).resolves.toBeUndefined()
+    await expect(transport.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { content: [{ type: 'text', text: 'a'.repeat(MCP_APP_OUTPUT_MAX_BYTES + 1024) }] } })).rejects.toThrow('size limit')
+    await expect(transport.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-input', params: { arguments: { x: 'a'.repeat(MCP_APP_DATA_MAX_BYTES) } } })).rejects.toThrow('size limit')
   })
 
   it('pins outgoing messages and rejects sending after document revocation', async () => {

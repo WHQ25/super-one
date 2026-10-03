@@ -27,8 +27,11 @@ export function readCodexMcpAppFields(raw: Record<string, unknown>, previous?: C
   }
 }
 
-/** Bind an authoritative native item id; never correlate by tool name or arguments. */
-export function attachCodexMcpApp(item: CodexMcpToolCallItem, binding: McpAppsBinding, threadId: string): CodexMcpToolCallItem {
+/**
+ * Bind an authoritative native item id; never correlate by tool name or arguments.
+ * A host whose Views run in this process passes the live cap as `resultMaxBytes`.
+ */
+export function attachCodexMcpApp(item: CodexMcpToolCallItem, binding: McpAppsBinding, threadId: string, resultMaxBytes?: number): CodexMcpToolCallItem {
   const uri = item.mcpAppUi?.resourceUri
   if (!uri?.startsWith('ui://') || item.appContext || item.server === 'codex_apps') return item
   const status: ToolAppAttachment['status'] = item.status === 'in_progress' ? 'pending' : item.error || item.status === 'failed' ? 'error' : 'result'
@@ -41,7 +44,7 @@ export function attachCodexMcpApp(item: CodexMcpToolCallItem, binding: McpAppsBi
     status,
     ...(item.authRequired ? { error: { code: 'auth_required' as const, message: 'MCP authentication required', challenge: challenges(readCodexMcpWwwAuthenticate(item.result?.meta)) } } : item.error ? { error: { code: 'invalid' as const, message: item.error.message } } : {}),
   }
-  return { ...item, app: boundedToolAppAttachment(app) }
+  return { ...item, app: boundedToolAppAttachment(app, resultMaxBytes) }
 }
 
 /** Start discovery when a live attachment arrives, alongside its eventual HTML read. */

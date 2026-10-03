@@ -5,7 +5,7 @@ import { App } from '@modelcontextprotocol/ext-apps'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { afterEach, expect, it, vi } from 'vitest'
-import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { MCP_APP_OUTPUT_MAX_BYTES, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { mcpAppContextState } from '@superone/shared/mcp-app-model-context'
 import { exitMcpAppFullscreen, forgetMcpAppArrivals, markMcpAppActivated } from './mcp-app-document'
 import { requestNative } from './bridge'
@@ -79,10 +79,10 @@ it('explains an omitted result on the activate action and drops it after activat
   expect(activateButton()).toBeNull()
 })
 
-it('bounds an oversized legacy result before rendering the phone View', async () => {
+it('bounds a result above the live cap before rendering the phone View', async () => {
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
   try {
-    await mount({ ...saved, toolResult: { content: [{ type: 'text', text: 'x'.repeat(2 * 1024 * 1024) }] } })
+    await mount({ ...saved, toolResult: { content: [{ type: 'text', text: 'x'.repeat(MCP_APP_OUTPUT_MAX_BYTES) }] } })
     await initialize(0)
     expect(activateButton()?.hasAttribute('data-mcp-app-result-omitted')).toBe(true)
     expect(warn).toHaveBeenCalled()

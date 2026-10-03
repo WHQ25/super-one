@@ -174,7 +174,7 @@ sequenceDiagram
   never refresh. Refreshed descriptors retain visibility normalization and
   server attribution; app-only tools stay out of `miniapp_list`.
 - **Result data (phase 1):** the View reads the original result from the
-  bounded host record. Initial results beyond the shared 1 MiB attachment
+  bounded host record. Initial results beyond the shared 4 MiB attachment
   budget retain a working View with `toolResultOmitted`, instead of changing
   a completed call into an error. The MCP reply retains structured content for
   clients that carry it, plus a bounded text summary for Cursor; private `_meta`

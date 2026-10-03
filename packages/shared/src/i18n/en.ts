@@ -8099,7 +8099,7 @@ export const en: Messages = {
     activateToLoad: 'Activate to load this app.',
     activateTooltip: 'Activate to reconnect and reload',
     loadFailed: 'Could not load the app: {{error}}',
-    resultOmitted: 'Result too large to save. Activate to reload',
+    resultOmitted: 'Initial result was too large to save. Activate to reconnect without it',
     authRequired: 'Sign in to {{server}} on the desktop, then retry.',
     retry: 'Retry',
     reloaded: 'This app opened a new page and was stopped.',

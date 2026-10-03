@@ -4,6 +4,7 @@ import { serializeMessageContent, rowToChatMessage, deriveHarnessId } from './se
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from './usage-stats-service'
 import type { ChatMessage, EffortLevel, HarnessId, SessionHistoryEntry, PinnedSessionEntry } from '@superone/shared/agent-types'
 import { parseTagsJson } from '@superone/shared/session-tags'
+import { persistedMcpAppMessage } from '@superone/shared/mcp-apps-state'
 import { notifySessionList, notifySessionsDeleted } from './session-list-watch'
 
 interface DbSession {
@@ -247,6 +248,7 @@ export function saveSessionState(
       const wasAlreadyCounted = priorCountedIds.has(msg.id)
       const shouldCount = !wasAlreadyCounted && (isUser || isAssistantComplete)
       const usageCountedAt = wasAlreadyCounted || shouldCount ? new Date().toISOString() : null
+      const row = persistedMcpAppMessage(msg)
 
       upsertMsg.run(
         msg.id,
@@ -254,10 +256,10 @@ export function saveSessionState(
         i,
         msg.role,
         msg.status === 'streaming' ? 'interrupted' : msg.status,
-        serializeMessageContent(msg),
+        serializeMessageContent(row),
         msg.createdAt,
         msg.providerId,
-        msg.metadata ? JSON.stringify(msg.metadata) : null,
+        row.metadata ? JSON.stringify(row.metadata) : null,
         msg.checkpointId ?? null,
         msg.resumePointId ?? null,
         usageCountedAt,

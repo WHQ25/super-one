@@ -3,7 +3,7 @@ import { useEffect } from 'react'
 import { act, fireEvent, render, screen, waitFor, within, cleanup } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
-import { McpAppsError } from '@superone/shared/mcp-apps'
+import { McpAppsError, MCP_APP_OUTPUT_MAX_BYTES } from '@superone/shared/mcp-apps'
 import type { McpAppFrameProps } from './McpAppFrame'
 import type { McpAppDesktopApi } from './desktop-executor'
 const frame = vi.hoisted(() => ({ props: null as McpAppFrameProps | null, initialized: [] as McpAppFrameProps[], modes: ['inline', 'fullscreen', 'pip'] as Array<'inline' | 'fullscreen' | 'pip'> }))
@@ -66,10 +66,10 @@ describe('MCP App desktop View lifecycle', () => {
     expect(s.api.mcpAppRequest).toHaveBeenCalledTimes(1)
   })
 
-  it('bounds an oversized legacy result at the component boundary and keeps the restored View', async () => {
+  it('bounds a result above the live cap at the component boundary and keeps the restored View', async () => {
     const s = setup(), warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      expect(() => render(<><McpAppHostLayer /><McpAppView app={{ ...app, toolResult: { content: [{ type: 'text', text: 'x'.repeat(2 * 1024 * 1024) }] } }} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></>)).not.toThrow()
+      expect(() => render(<><McpAppHostLayer /><McpAppView app={{ ...app, toolResult: { content: [{ type: 'text', text: 'x'.repeat(MCP_APP_OUTPUT_MAX_BYTES) }] } }} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></>)).not.toThrow()
       expect((await screen.findByRole('button', { name: 'mcpApp.activate' })).hasAttribute('data-mcp-app-result-omitted')).toBe(true)
       expect(frame.props?.app.toolResult).toBeUndefined()
       expect(warn).toHaveBeenCalled()

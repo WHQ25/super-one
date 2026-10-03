@@ -4,7 +4,7 @@ import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, u
 import { useTranslation } from 'react-i18next'
 import { Loader2, Maximize, Power, RotateCw } from 'lucide-react'
 import type { McpUiHostCapabilities } from '@modelcontextprotocol/ext-apps/app-bridge'
-import { boundedToolAppAttachment, McpAppsError, type McpUiResourceMeta, type ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { boundedToolAppAttachment, MCP_APP_OUTPUT_MAX_BYTES, McpAppsError, type McpUiResourceMeta, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { createMcpAppDocument, mcpAppHostContext } from '@superone/shared/mcp-apps-host'
 import { createMcpAppHost, createMcpAppHostSlot, type McpAppHost } from '@superone/shared/mcp-apps-host/host'
 import { createMcpAppTransport } from '@superone/shared/mcp-apps-host/transport'
@@ -83,7 +83,7 @@ export interface McpAppFrameProps {
  * the way back out.
  */
 export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolName, details }: McpAppFrameProps) {
-  const app = useMemo(() => boundedToolAppAttachment(rawApp, true), [rawApp])
+  const app = useMemo(() => boundedToolAppAttachment(rawApp, MCP_APP_OUTPUT_MAX_BYTES, true), [rawApp])
   const { t } = useTranslation()
   const { scheme } = useContext(PortableTurnContext)
   const [root, setRoot] = useState<HTMLDivElement | null>(null)

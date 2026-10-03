@@ -1,5 +1,5 @@
 import { attachCodexMcpApp, createCodexMcpAppsProvider, prewarmCodexMcpAppCatalog } from '@superone/codex/mcp-apps'
-import type { McpAppsBinding, McpAppOrigin, McpAppsProvider } from '@superone/shared/mcp-apps'
+import { MCP_APP_OUTPUT_MAX_BYTES, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
 import { assertMcpAppsBindingIdentity } from '@superone/shared/mcp-app-binding'
 import { listCodexMcpConfigs } from '../../codex-config-service'
@@ -1872,7 +1872,7 @@ export class CodexBackend implements SessionBackend {
         if (item.type === 'mcp_tool_call' && this.startOpts && this.providerSessionId) {
           const serverName = item.server
           const config = listCodexMcpConfigs(this.startOpts.cwd).find(server => server.name === serverName)
-          item = attachCodexMcpApp(item, this.mcpAppsBinding(item.server, config), this.providerSessionId)
+          item = attachCodexMcpApp(item, this.mcpAppsBinding(item.server, config), this.providerSessionId, MCP_APP_OUTPUT_MAX_BYTES)
           const connection = this.session?.connectionHandle?.connection
           if (connection) prewarmCodexMcpAppCatalog(item, connection.request.bind(connection), connection.request)
         }

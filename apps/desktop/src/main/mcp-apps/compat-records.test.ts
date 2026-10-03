@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, ContentBlock } from '@superone/shared/agent-types'
-import { MCP_APP_DATA_MAX_BYTES } from '@superone/shared/mcp-apps'
+import { MCP_APP_RESULT_MAX_BYTES } from '@superone/shared/mcp-apps'
 import { mcpAppEventAttachment } from '@superone/shared/mcp-apps-state'
 import { applyContentDelta } from '@superone/shared/content-delta'
 import { mapInteractionUpdate } from '@superone/cursor'
@@ -65,7 +65,7 @@ describe('compatibility App record correlation', () => {
 
   it('bounds records before attachment and preserves CAS/context through the shared delta merge', () => {
     const records = new CompatRecords('s')
-    const record = records.record({ ...app, toolResult: { content: [{ type: 'text', text: 'x'.repeat(MCP_APP_DATA_MAX_BYTES) }] } })
+    const record = records.record({ ...app, toolResult: { content: [{ type: 'text', text: 'x'.repeat(MCP_APP_RESULT_MAX_BYTES) }] } })
     records.attach(start('call'))
     const initial = mcpAppEventAttachment(records.attach(result('call', record.marker)))!
     expect(initial).toMatchObject({ status: 'result', toolResult: undefined, toolResultOmitted: { reason: 'size_limit' } })

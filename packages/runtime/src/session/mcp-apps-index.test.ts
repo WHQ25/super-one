@@ -31,4 +31,10 @@ describe('node MCP App attachment index', () => {
     index.delete('s')
     expect(() => index.resolve('s', 'view', '1', () => [])).toThrow('not found')
   })
+
+  it('finds a nested child View under the parent message', () => {
+    const index = new McpAppAttachmentIndex()
+    const nested = { id: 'spawn', type: 'collab_tool_call', childItems: { child: [{ app }] } }
+    expect(index.resolve('s', 'view', '1', () => [{ id: 'parent-message', metadata: { codex: { items: [nested] } } }])).toEqual({ messageId: 'parent-message', app })
+  })
 })

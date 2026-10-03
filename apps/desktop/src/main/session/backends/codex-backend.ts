@@ -1,5 +1,6 @@
-import { attachCodexMcpApp, createCodexMcpAppsProvider, prewarmCodexMcpAppCatalog } from '@superone/codex/mcp-apps'
-import type { McpAppsBinding, McpAppOrigin, McpAppsProvider } from '@superone/shared/mcp-apps'
+import { attachCodexMcpAppTree, createCodexMcpAppsProvider, prewarmCodexMcpAppCatalog } from '@superone/codex/mcp-apps'
+import { ensureCodexMcpAppThread } from '@superone/codex/mcp-app-thread'
+import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
 import { assertMcpAppsBindingIdentity } from '@superone/shared/mcp-app-binding'
 import { listCodexMcpConfigs } from '../../codex-config-service'
@@ -1342,10 +1343,12 @@ export class CodexBackend implements SessionBackend {
 
   async getMcpAppsProvider(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider> {
     this.assertStarted()
+    const parentThreadId = this.providerSessionId
     const assertBinding = () => {
+      if (!parentThreadId || this.providerSessionId !== parentThreadId) throw new McpAppsError('inactive', 'MCP App session binding changed')
       const config = this.startOpts && listCodexMcpConfigs(this.startOpts.cwd).find(server => server.name === binding.server)
       assertMcpAppsBindingIdentity(binding, origin, {
-        session: this.startOpts?.sessionId, providerSessionId: this.providerSessionId,
+        session: this.startOpts?.sessionId, providerSessionId: origin.providerSessionId,
         account: this.startOpts?.apiProviderId, configFingerprint: mcpServerConfigFingerprint(config),
       })
     }
@@ -1356,6 +1359,8 @@ export class CodexBackend implements SessionBackend {
       assertBinding()
       return connection.request(...args)
     }
+    await ensureCodexMcpAppThread(request, parentThreadId!, origin.providerSessionId, connection.request)
+    assertBinding()
     return createCodexMcpAppsProvider(binding, origin.providerSessionId, request, connection.request)
   }
 
@@ -1869,10 +1874,9 @@ export class CodexBackend implements SessionBackend {
         this.emit({ type: 'codex_thread_started', messageId, threadId })
       },
       onItemDelta: (phase, item) => {
-        if (item.type === 'mcp_tool_call' && this.startOpts && this.providerSessionId) {
-          const serverName = item.server
-          const config = listCodexMcpConfigs(this.startOpts.cwd).find(server => server.name === serverName)
-          item = attachCodexMcpApp(item, this.mcpAppsBinding(item.server, config), this.providerSessionId)
+        if ((item.type === 'mcp_tool_call' || item.type === 'collab_tool_call') && this.startOpts && this.providerSessionId) {
+          const configs = listCodexMcpConfigs(this.startOpts.cwd)
+          item = attachCodexMcpAppTree(item, server => this.mcpAppsBinding(server, configs.find(config => config.name === server)), this.providerSessionId)
           const connection = this.session?.connectionHandle?.connection
           if (connection) prewarmCodexMcpAppCatalog(item, connection.request.bind(connection), connection.request)
         }
@@ -1892,6 +1896,12 @@ export class CodexBackend implements SessionBackend {
         this.emit({ type: 'codex_item_delta', messageId: owner, phase, item })
       },
       emitForkItem: (forkThreadId, phase, item) => {
+        if ((item.type === 'mcp_tool_call' || item.type === 'collab_tool_call') && this.startOpts) {
+          const configs = listCodexMcpConfigs(this.startOpts.cwd)
+          item = attachCodexMcpAppTree(item, server => this.mcpAppsBinding(server, configs.find(config => config.name === server)), forkThreadId)
+          const connection = this.session?.connectionHandle?.connection
+          if (connection) prewarmCodexMcpAppCatalog(item, connection.request.bind(connection), connection.request)
+        }
         const owner = this.itemOwner.get(item.id)
           ?? this.forkOwners.get(forkThreadId)
           ?? this.currentMessageId

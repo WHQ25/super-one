@@ -1,6 +1,6 @@
 import type { AgentEvent, CodexThreadItem, ContentBlock } from '@superone/shared/agent-types'
 import { SESSION_DURABLE_EVENT, type EnvironmentEventEnvelope, type SessionMessageBlock } from '@superone/shared/environment'
-import { mcpAppEventAttachment, mergeMcpAppAttachment, updateMcpAppAttachments } from '@superone/shared/mcp-apps-state'
+import { mcpAppEventAttachment, mergeMcpAppBlocks, updateMcpAppAttachments } from '@superone/shared/mcp-apps-state'
 
 /** Preserve native item attachments and then replay harness-neutral host updates. */
 export function applyMcpAppsCatalogEvents(messages: SessionMessageBlock[], events: EnvironmentEventEnvelope[], sessionId: string, contentById: Map<string, ContentBlock[]>): SessionMessageBlock[] {
@@ -17,8 +17,7 @@ export function applyMcpAppsCatalogEvents(messages: SessionMessageBlock[], event
     if (event?.type !== 'codex_item_delta') continue
     const items = itemsByMessage.get(event.messageId) ?? new Map<string, CodexThreadItem>()
     const previous = items.get(event.item.id)
-    items.set(event.item.id, event.item.type === 'mcp_tool_call' && previous?.type === 'mcp_tool_call'
-      ? { ...event.item, app: mergeMcpAppAttachment(previous.app, event.item.app) } : event.item)
+    items.set(event.item.id, previous ? mergeMcpAppBlocks([previous], [event.item])[0] : event.item)
     itemsByMessage.set(event.messageId, items)
   }
   // A View can issue requests before the model turn ends and commits its transcript row.

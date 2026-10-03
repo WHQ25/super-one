@@ -14,7 +14,7 @@ vi.mock('../environment/environment-host', () => ({ getEnvironmentHost: () => ({
   resolveMcpAppAttachment: mocks.resolve,
   getSession: mocks.remoteSession, createSession: mocks.createRemoteSession, sendSessionMessage: mocks.remoteSend,
 }) }))
-import { executeMcpAppHostRequest, initializeMcpAppExecutor, releaseMcpAppRequester } from './executor'
+import { executeMcpAppHostRequest, initializeMcpAppExecutor, isMcpAppHostActive, releaseMcpAppRequester, resolveMcpAppHostAttachment } from './executor'
 import { notifySessionClosed, notifySessionsDeleted } from '../session-list-watch'
 
 const app: ToolAppAttachment = { appInstanceId: 'view', binding: { node: 'local', session: 's', server: 'fixture', configGeneration: 0, configFingerprint: 'config' },
@@ -30,6 +30,24 @@ initializeMcpAppExecutor(manager, mobile, vi.fn())
 beforeEach(() => { mocks.resolve.mockReset(); mocks.provider.mockClear(); mobile.handleRemoteCommand.mockClear(); send.mockClear(); createSession.mockClear(); mocks.remoteSession.mockReset(); mocks.createRemoteSession.mockReset(); mocks.remoteSend.mockReset() })
 
 describe('main MCP App executor adapters', () => {
+  it('auto-activates every child View on a live collab event, but never on replay', async () => {
+    const children = ['first-child', 'second-child'].map(id => ({ id, type: 'mcp_tool_call' as const, server: 'fixture', tool: 'next', arguments: {}, status: 'completed' as const, app: { ...app, appInstanceId: id, origin: { providerSessionId: id } } }))
+    const item = { id: 'spawn', type: 'collab_tool_call' as const, tool: 'spawnAgent' as const, status: 'completed' as const, receiverThreadIds: ['child'], agentsStates: {}, childItems: { child: children } }
+    const row = { id: 'parent', content: [], metadata: { codex: { items: [item] } } }
+    session.snapshot.messages.push(row as unknown as typeof session.snapshot.messages[number])
+    try {
+      const notify = (manager.onAny as ReturnType<typeof vi.fn>).mock.calls[0]![0]
+      const event = { type: 'codex_item_delta', messageId: 'parent', phase: 'updated', item }
+      notify('s', event, true)
+      for (const child of children) expect(isMcpAppHostActive(await resolveMcpAppHostAttachment({ sessionKey: 'local:s', appInstanceId: child.id }))).toBe(false)
+      notify('s', event, false)
+      for (const child of children) expect(isMcpAppHostActive(await resolveMcpAppHostAttachment({ sessionKey: 'local:s', appInstanceId: child.id }))).toBe(true)
+    } finally {
+      session.snapshot.messages.pop()
+      notifySessionClosed({ environmentId: 'local', sessionId: 's' })
+    }
+  })
+
   it.each(['close', 'delete', 'disconnect'])('requires reactivation after %s tears down its owner scope', async reason => {
     const requester = { kind: 'mobile' as const, deviceId: 'cleanup-phone' }
     const identity = { sessionKey: 'local:s', appInstanceId: 'view' }

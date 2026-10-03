@@ -5,6 +5,8 @@ import type {
   CodexGoal,
   CodexRunRequest,
   CodexRunResult,
+  CodexCollabToolCallItem,
+  CodexMcpToolCallItem,
   CodexThreadItem,
   CodexUsageInfo,
   PermissionRequest,
@@ -1011,6 +1013,33 @@ describe('CodexBackend send()', () => {
     expect(request).toHaveBeenCalledWith('mcpServerStatus/list', expect.objectContaining({ detail: 'toolsAndAuthOnly', threadId: 'thread-app' }))
     expect(events).toContainEqual(expect.objectContaining({ type: 'codex_item_delta', item: expect.objectContaining({ app: expect.objectContaining({ resourceUri: 'ui://fixture/view' }) }) }))
     finish({ data: [{ name: 'fixture', tools: {} }] })
+    service.resolveRun(makeResult())
+    await pending
+  })
+
+  it('attaches and prewarms child App metadata on collaboration events using the real child thread', async () => {
+    const pending = backend.send({ content: 'x' }), cb = service.capturedCallbacks!
+    const request = vi.fn(async (method: string, params: Record<string, unknown> = {}) => {
+      if (method === 'thread/read') return { thread: { source: { subAgent: { thread_spawn: { parent_thread_id: 'root' } } } } }
+      if (method === 'mcpServer/resource/read') return { contents: [{ uri: params.uri, mimeType: 'text/html;profile=mcp-app', text: '<p>child</p>', _meta: { ui: {} } }] }
+      return { data: [] }
+    })
+    const session = (backend as unknown as { session: { connectionHandle: unknown } }).session
+    session.connectionHandle = { connection: { request }, close: vi.fn(), getStderr: () => '', onClosed: vi.fn(() => () => {}) }
+    cb.onThreadStarted!('root')
+    cb.onItemDelta!('updated', { id: 'spawn', type: 'collab_tool_call', tool: 'spawnAgent', status: 'completed', receiverThreadIds: ['child'], agentsStates: {}, childItems: { child: [{ id: 'call', type: 'mcp_tool_call', server: 'fixture', tool: 'next', arguments: {}, status: 'completed', mcpAppUi: { resourceUri: 'ui://fixture/view' } }] } })
+    expect(events).toContainEqual(expect.objectContaining({ type: 'codex_item_delta', item: expect.objectContaining({ childItems: { child: [expect.objectContaining({ app: expect.objectContaining({ origin: { providerSessionId: 'child' } }) })] } }) }))
+    expect(request).toHaveBeenCalledWith('mcpServerStatus/list', expect.objectContaining({ threadId: 'child', detail: 'toolsAndAuthOnly' }))
+    expect(backend.getCurrentProviderSessionId()).toBe('root')
+    const event = events.find(event => event.type === 'codex_item_delta' && event.item.type === 'collab_tool_call') as Extract<AgentEvent, { type: 'codex_item_delta' }>
+    const app = ((event.item as CodexCollabToolCallItem).childItems!.child![0] as CodexMcpToolCallItem).app!
+    const provider = await backend.getMcpAppsProvider(app.binding, app.origin!)
+    expect(request).toHaveBeenCalledWith('thread/read', { threadId: 'child', includeTurns: false })
+    expect(request).toHaveBeenCalledWith('thread/resume', { threadId: 'child' })
+    await provider.readResource({ uri: app.resourceUri, origin: app.origin }, new AbortController().signal)
+    expect(request).toHaveBeenCalledWith('mcpServer/resource/read', expect.objectContaining({ threadId: 'child' }))
+    cb.onThreadStarted!('new-root')
+    await expect(provider.readResource({ uri: app.resourceUri, origin: app.origin }, new AbortController().signal)).rejects.toMatchObject({ code: 'inactive' })
     service.resolveRun(makeResult())
     await pending
   })

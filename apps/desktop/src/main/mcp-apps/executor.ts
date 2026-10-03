@@ -7,7 +7,7 @@ import { mcpAppContent } from '@superone/shared/mcp-apps-content'
 import { parseSessionKey, type SessionRef } from '@superone/shared/environment/refs'
 import { McpAppsError } from '@superone/shared/mcp-apps'
 import type { McpAppHostRequest, McpAppHostResult, McpAppRequester, ToolAppAttachment } from '@superone/shared/mcp-apps'
-import { findMcpAppAttachment, mcpAppEventAttachment } from '@superone/shared/mcp-apps-state'
+import { findMcpAppAttachment, mcpAppEventAttachments } from '@superone/shared/mcp-apps-state'
 import { RemoteMcpAppFreshness } from './remote-freshness'
 import type { SessionManagerImpl } from '../session/session-manager'
 import type { RemoteResponder } from '../remote-control-service'
@@ -167,8 +167,7 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
   })
   manager.onAny((sid, event, replay) => {
     if (replay) return
-    const app = mcpAppEventAttachment(event)
-    if (app) executor!.observeLive({ environmentId: 'local', sessionId: sid }, app)
+    for (const app of mcpAppEventAttachments(event)) executor!.observeLive({ environmentId: 'local', sessionId: sid }, app)
   })
   const releaseSession = (ref: SessionRef) => { executor!.releaseSession(ref); remoteFreshness.releaseSession(ref); releaseHostFileApps(ref) }
   watchSessionCloses(releaseSession)
@@ -187,8 +186,7 @@ export function activateMcpAppHostView(ref: SessionRef, app: ToolAppAttachment):
 export function observeRemoteMcpAppEvent(event: AgentEvent): void {
   if (!executor || !event.sessionId || !event.projectPath) return
   const ref = parseSessionKey(mcpAppSessionKey(event.projectPath, event.sessionId))!
-  const app = remoteFreshness.observe(ref, event)
-  if (app) executor.observeLive(ref, app)
+  for (const app of remoteFreshness.observeAll(ref, event)) executor.observeLive(ref, app)
 }
 
 /** The only View-to-host execution entry, shared by desktop IPC and paired devices. */

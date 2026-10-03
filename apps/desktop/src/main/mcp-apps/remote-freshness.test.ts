@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AgentEvent, CodexMcpToolCallItem } from '@superone/shared/agent-types'
+import type { AgentEvent, CodexCollabToolCallItem, CodexMcpToolCallItem } from '@superone/shared/agent-types'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { RemoteMcpAppFreshness } from './remote-freshness'
 
@@ -9,6 +9,29 @@ const item: CodexMcpToolCallItem = { type: 'mcp_tool_call', id: 'call', server: 
 const delta = (phase: 'started' | 'completed', app?: ToolAppAttachment, id = 'call'): AgentEvent => ({ type: 'codex_item_delta', messageId: 'm', phase, item: { ...item, id, ...(app ? { app } : {}) } })
 
 describe('remote MCP App live freshness', () => {
+  const collab = (children: CodexCollabToolCallItem['childItems']): AgentEvent => ({ type: 'codex_item_delta', messageId: 'm', phase: 'updated', item: { id: 'spawn', type: 'collab_tool_call', tool: 'spawnAgent', status: 'completed', receiverThreadIds: ['child'], agentsStates: {}, childItems: children } })
+
+  it('activates all nested live Apps once, independently of the parent phase and repeated child ids', () => {
+    const tracker = new RemoteMcpAppFreshness()
+    const other = { ...app, appInstanceId: 'sibling-view' }
+    const event = collab({ child: [{ ...item, app }], sibling: [{ ...item, app: other }] })
+    expect(tracker.observeAll(ref, event)).toEqual([app, other])
+    expect(tracker.observeAll(ref, event)).toEqual([])
+    expect(tracker.observeAll(ref, collab({ child: [{ ...item, status: 'completed', app }] }))).toEqual([])
+  })
+
+  it('pairs child start with late completion metadata and rejects historical completion or a released scope', () => {
+    const tracker = new RemoteMcpAppFreshness()
+    const complete = collab({ child: [{ ...item, status: 'completed', app }] })
+    expect(tracker.observeAll(ref, complete)).toEqual([])
+    expect(tracker.observeAll(ref, collab({ child: [item] }))).toEqual([])
+    expect(tracker.observeAll(ref, complete)).toEqual([app])
+    expect(tracker.observeAll(ref, complete)).toEqual([])
+    tracker.observeAll(ref, collab({ child: [item] }))
+    tracker.releaseSession(ref)
+    expect(tracker.observeAll(ref, complete)).toEqual([])
+  })
+
   it('does not use an abandoned start after its session closed', () => {
     const tracker = new RemoteMcpAppFreshness()
     tracker.observe(ref, delta('started'))

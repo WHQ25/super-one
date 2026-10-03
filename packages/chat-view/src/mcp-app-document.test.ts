@@ -48,6 +48,21 @@ function turn(id: string, app: Partial<ToolAppAttachment> & { appInstanceId: str
 describe('MCP App arrivals', () => {
   afterEach(forgetMcpAppArrivals)
 
+  it('marks nested child Apps as live or restored at the original arrival boundary', () => {
+    const nested = (id: string) => {
+      const message = turn('m', { appInstanceId: id }, true)
+      const child = message.metadata!.codex!.items[0]!
+      message.metadata!.codex!.items = [{ id: 'spawn', type: 'collab_tool_call', tool: 'spawnAgent', status: 'completed', receiverThreadIds: ['child'], agentsStates: {}, childItems: { child: [child] } }]
+      return message
+    }
+    noteMcpAppArrivals([nested('child-live')], 'live')
+    noteMcpAppArrivals([nested('child-old')], 'restored')
+    expect(mcpAppAwaitsLiveActivation('child-live')).toBe(true)
+    expect(mcpAppNeedsActivation('child-old')).toBe(true)
+    noteMcpAppArrivals([nested('child-old')], 'live')
+    expect(mcpAppAwaitsLiveActivation('child-old')).toBe(false)
+  })
+
   it('treats Views first painted from history as restored until activated', () => {
     noteMcpAppArrivals([turn('m1', { appInstanceId: 'old' }), turn('m2', { appInstanceId: 'codex' }, true)], 'restored')
     expect(mcpAppNeedsActivation('old')).toBe(true)

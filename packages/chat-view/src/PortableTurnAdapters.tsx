@@ -12,6 +12,7 @@ import type {
 import { applyDescriptionPersonaLabel, isAlwaysHiddenToolName, isSubagentToolName, parseMcpToolName } from '@superone/shared/tool-ui'
 import { resolveMcpServerIconFromMap } from '@superone/shared/mcp-server-icon'
 import { mcpAppToolFailed } from '@superone/shared/mcp-apps'
+import { mergeCodexCollabDetail } from './codex-collab-detail'
 import { isHiddenToolBlock } from './presenters/tool-display'
 import { resolveMarkdownFileLinks } from './presenters/markdown-file-links'
 import {
@@ -1010,12 +1011,16 @@ function PortableCodexItem(props: CodexItemPresenterProps) {
 function PortableCodexSubagent({ item: shellItem }: CodexSubagentPresenterProps) {
   const [expanded, setExpanded] = useState(false)
   const { detail, status: detailStatus, retry } = useDeferredToolDetail(shellItem.remoteDetail, expanded, shellItem.status !== 'in_progress')
-  const item = detail.item?.type === 'collab_tool_call' ? detail.item : shellItem
+  const item = detail.item?.type === 'collab_tool_call' ? mergeCodexCollabDetail(shellItem, detail.item) : shellItem
   const view = codexCollabViewModel(item)
   const colors = usePortableSubagentColors(view.colorKey)
   const activityContent = view.activityItems.length > 0 ? (
     <SubagentScrollArea maxHeightClass="max-h-60" className="space-y-0.5 border-t border-border/30 px-2 py-1">
-      {view.activityItems.map((child, index) => <CodexCollabMiniTool key={`${child.id}-${index}`} item={child} />)}
+      {view.activityItems.map((child, index) => child.type === 'collab_tool_call'
+        ? <PortableCodexSubagent key={`${child.id}-${index}`} item={child} />
+        : child.type === 'mcp_tool_call' && child.app
+        ? <PortableClaudeTool key={`${child.id}-${index}`} {...claudePropsFromCodexMcp(child)} />
+        : <CodexCollabMiniTool key={`${child.id}-${index}`} item={child} />)}
     </SubagentScrollArea>
   ) : undefined
   // The collab presenter has a single body slot, so the deferred-load status shares it.

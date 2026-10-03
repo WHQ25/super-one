@@ -10,6 +10,8 @@ import { NestedToolContext } from './nested-tool-context'
 import { useForkNavigation } from './fork-navigation-context'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { getSubagentColorClasses } from './subagent-colors'
+import { ToolBlock } from './ToolBlock'
+import { codexMcpItemResultText } from './presenters/CodexTurnView'
 import {
   CodexCollabBlockPresenter,
   CodexCollabMiniTool,
@@ -21,6 +23,7 @@ export const TASK_CARD_ITEM_TYPES = new Set<CodexThreadItem['type']>([
   'mcp_tool_call',
   'file_change',
   'web_search',
+  'collab_tool_call',
 ])
 
 function getAgentDisplay(items: CodexCollabToolCallItem[]): { name?: string; role?: string } {
@@ -305,7 +308,7 @@ export function CodexCollabBlock({
                     </div>
                   )}
                   {turn.items.map((item, i) => (
-                    <CodexCollabMiniTool key={`${item.id}-${i}`} item={item} />
+                    <CodexCollabActivityTool key={`${item.id}-${i}`} item={item} />
                   ))}
                 </div>
               ))}
@@ -367,6 +370,15 @@ function DesktopCollabMarkdown({ text }: { text: string }) {
   )
 }
 
+function CodexCollabActivityTool({ item }: { item: CodexThreadItem }) {
+  if (item.type === 'collab_tool_call') return <CodexSubagentMarker item={item} />
+  if (item.type === 'mcp_tool_call' && item.app) return <ToolBlock
+    toolName={`mcp__${item.server}__${item.tool}`} toolUseId={item.id} app={item.app}
+    input={typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments)} result={codexMcpItemResultText(item)}
+    status={item.status === 'in_progress' ? 'streaming' : 'complete'} isError={item.status === 'failed' || !!item.error} />
+  return <CodexCollabMiniTool item={item} />
+}
+
 export function CodexSubagentMarker({ item }: { item: CodexCollabToolCallItem }) {
   const forkNav = useForkNavigation()
   const view = useMemo(() => codexCollabViewModel(item), [item])
@@ -390,7 +402,7 @@ export function CodexSubagentMarker({ item }: { item: CodexCollabToolCallItem })
         childContent={view.activityItems.length > 0 ? (
           <CollabScrollArea borderClass={colors.borderL}>
             {view.activityItems.map((child, index) => (
-              <CodexCollabMiniTool key={`${child.id}-${index}`} item={child} />
+              <CodexCollabActivityTool key={`${child.id}-${index}`} item={child} />
             ))}
           </CollabScrollArea>
         ) : undefined}

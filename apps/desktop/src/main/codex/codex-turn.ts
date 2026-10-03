@@ -1589,7 +1589,7 @@ async function drainPrewarmNotifications(
 
     if (method === 'thread/started') {
       const startedThreadId = readString(asRecord(params.thread)?.id)
-      if (startedThreadId) {
+      if (startedThreadId && (!session.threadId || startedThreadId === session.threadId)) {
         session.threadId = startedThreadId
         session.threadReady = true
       }
@@ -1636,7 +1636,7 @@ export async function waitForCodexMcpServerReady(
     }
     if (method === 'thread/started') {
       const startedThreadId = readString(asRecord(params.thread)?.id)
-      if (startedThreadId) { session.threadId = startedThreadId; session.threadReady = true }
+      if (startedThreadId && (!session.threadId || startedThreadId === session.threadId)) { session.threadId = startedThreadId; session.threadReady = true }
       continue
     }
     if (method === 'mcpServer/startupStatus/updated') {
@@ -2016,7 +2016,9 @@ export async function streamTurnEvents(
 
     if (method === 'thread/started') {
       const startedThreadId = readString(asRecord(params.thread)?.id)
-      if (startedThreadId && !subscribedChildThreads.has(startedThreadId)) {
+      // Resuming a saved child View also emits thread/started. It must not replace
+      // the root thread selected before this turn (even before child subscription).
+      if (startedThreadId && (!session.threadId || startedThreadId === session.threadId) && !subscribedChildThreads.has(startedThreadId)) {
         session.threadId = startedThreadId
         session.threadReady = true
         emitThreadStarted(startedThreadId)

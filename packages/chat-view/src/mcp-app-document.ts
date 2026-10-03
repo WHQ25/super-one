@@ -1,6 +1,7 @@
 import { McpAppResourceCache, type McpAppResourceSnapshot } from '@superone/shared/mcp-app-resource'
-import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
-import type { McpUiResourceMeta, ToolAppAttachment } from '@superone/shared/mcp-apps'
+import type { ChatMessage } from '@superone/shared/agent-types'
+import type { McpUiResourceMeta } from '@superone/shared/mcp-apps'
+import { mcpAppMessageAttachments } from '@superone/shared/mcp-apps-state'
 import { mcpAppCspDomains, mcpAppCspMeta } from '@superone/shared/mcp-apps-host'
 
 // Whitespace, comments and the doctype may precede the policy; anything after them may not.
@@ -31,18 +32,6 @@ export function buildMcpAppSrcdoc(html: string, meta: McpUiResourceMeta | undefi
 type Arrival = 'live' | 'restored'
 const arrivals = new Map<string, { arrival: Arrival; activated: boolean }>()
 
-function attachmentsOf(message: ChatMessage): ToolAppAttachment[] {
-  const found: ToolAppAttachment[] = []
-  const visit = (block: ContentBlock): void => {
-    if ((block.type === 'tool_use' || block.type === 'tool_result') && block.app) found.push(block.app)
-  }
-  message.content.forEach(visit)
-  for (const item of message.metadata?.codex?.items ?? []) {
-    if (item.type === 'mcp_tool_call' && item.app) found.push(item.app)
-  }
-  return found
-}
-
 /**
  * Record how each View first reached this document. A View first painted from a hydrate or
  * a history page is restored: it paints but calls nothing until the user activates it. One
@@ -50,7 +39,7 @@ function attachmentsOf(message: ChatMessage): ToolAppAttachment[] {
  */
 export function noteMcpAppArrivals(messages: readonly ChatMessage[] | undefined, arrival: Arrival): void {
   for (const message of messages ?? []) {
-    for (const app of attachmentsOf(message)) {
+    for (const app of mcpAppMessageAttachments(message)) {
       if (!arrivals.has(app.appInstanceId)) arrivals.set(app.appInstanceId, { arrival, activated: false })
     }
   }

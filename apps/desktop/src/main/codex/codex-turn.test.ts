@@ -1537,6 +1537,23 @@ describe('streamTurnEvents child-thread routing', () => {
     vi.clearAllMocks()
   })
 
+  it('replays a native child mcpToolCall with mcpAppUi without replacing the root thread', async () => {
+    const session = makeSession({ threadId: 'root' })
+    const notes = [
+      { method: 'thread/started', params: { thread: { id: 'saved-child-view' } } },
+      { method: 'item/completed', params: { threadId: 'root', item: { id: 'spawn', type: 'collabAgentToolCall', tool: 'spawnAgent', status: 'completed', receiverThreadIds: ['child'], agentsStates: { child: { status: 'running' } } } } },
+      { method: 'item/completed', params: { threadId: 'child', item: { id: 'call', type: 'mcpToolCall', server: 'fixture', tool: 'next', arguments: {}, status: 'completed', appContext: null, mcpAppUi: { resourceUri: 'ui://fixture/view' }, result: { content: [], structuredContent: { page: 1 }, _meta: { private: 'View only' } } } } },
+      { method: 'turn/completed', params: { threadId: 'root', turn: { status: 'completed' } } },
+    ]
+    const connection = { request: vi.fn(async () => ({})), respond: vi.fn(), notify: vi.fn(), nextNotification: vi.fn(async () => notes.shift()!) }
+    const onThreadStarted = vi.fn()
+    const result = await streamTurnEvents(connection as never, session, null, new AbortController(), { onThreadStarted })
+    expect(session.threadId).toBe('root')
+    expect(onThreadStarted).not.toHaveBeenCalledWith('saved-child-view')
+    expect(result.items[0]).toMatchObject({ type: 'collab_tool_call', childItems: { child: [{ type: 'mcp_tool_call', mcpAppUi: { resourceUri: 'ui://fixture/view' }, result: { structuredContent: { page: 1 }, meta: { private: 'View only' } } }] } })
+    await closeSessionConnection(session)
+  })
+
   it('routes snake_case child thread events into collab childItems instead of top-level items', async () => {
     const session = { ...makeSession(), threadId: 'main-thread' }
     const notifications: Array<{ method: string; params: Record<string, unknown> }> = [

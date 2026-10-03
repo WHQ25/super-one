@@ -17,12 +17,36 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 
+/** Native collaboration items keep child calls under their originating thread keys. */
+function mapAppRows<B>(blocks: readonly B[], visit: (block: B) => B): B[] {
+  return blocks.map(block => {
+    const value = record(block)
+    const children = value.type === 'collab_tool_call' ? record(value.childItems) : {}
+    const entries = Object.entries(children).map(([threadId, items]) => [threadId, Array.isArray(items) ? mapAppRows(items, visit as (block: unknown) => unknown) : items])
+    const next = entries.length ? { ...block, childItems: Object.fromEntries(entries) } : block
+    return visit(next as B)
+  })
+}
+
+function appRows(blocks: readonly unknown[]): Record<string, unknown>[] {
+  const rows: Record<string, unknown>[] = []
+  const visit = (blocks: readonly unknown[]) => {
+    for (const block of blocks) {
+      const value = record(block)
+      rows.push(value)
+      if (value.type === 'collab_tool_call') for (const items of Object.values(record(value.childItems))) if (Array.isArray(items)) visit(items)
+    }
+  }
+  visit(blocks)
+  return rows
+}
+
 export function mcpAppMessageAttachments(message: McpAppMessage): ToolAppAttachment[] {
   const items = record(record(message.metadata).codex).items
   const candidates: unknown[] = [...(message.content ?? []), ...(Array.isArray(items) ? items : [])]
   const apps = new Map<string, ToolAppAttachment>()
-  for (const candidate of candidates) {
-    const app = record(candidate).app as ToolAppAttachment | undefined
+  for (const candidate of appRows(candidates)) {
+    const app = candidate.app as ToolAppAttachment | undefined
     if (app?.appInstanceId && app.binding && app.resourceUri) apps.set(app.appInstanceId, app)
   }
   return [...apps.values()]
@@ -54,14 +78,20 @@ export function mergeMcpAppBlocks<B>(previous: readonly B[], next: readonly B[])
     const app = record(block).app as ToolAppAttachment | undefined
     return app ? [[app.appInstanceId, app] as const] : []
   }))
-  const rows = new Map(previous.map(block => [record(block).id, block]))
+  const rows = new Map(previous.map(block => [record(block).id, record(block)]))
   return next.map(block => {
     const value = record(block)
+    const previousRow = typeof value.id === 'string' ? rows.get(value.id) ?? {} : {}
+    if (value.type === 'collab_tool_call' && previousRow.type === value.type) {
+      const previousChildren = record(previousRow.childItems)
+      const childItems = value.childItems === undefined ? previousRow.childItems : Object.fromEntries(Object.entries(record(value.childItems)).map(([threadId, children]) =>
+        [threadId, Array.isArray(children) ? mergeMcpAppBlocks(Array.isArray(previousChildren[threadId]) ? previousChildren[threadId] as unknown[] : [], children) : children]))
+      if (childItems) return { ...block, childItems }
+    }
     const app = value.app as ToolAppAttachment | undefined
     if (app) return { ...block, app: mergeMcpAppAttachment(apps.get(app.appInstanceId), app) }
     // Completion snapshots can omit the extension entirely. Exact native item id
     // and type still identify the same call; never guess by server/tool/arguments.
-    const previousRow = typeof value.id === 'string' ? record(rows.get(value.id)) : {}
     return previousRow.type === value.type && previousRow.app ? { ...block, app: previousRow.app } : block
   })
 }
@@ -90,8 +120,8 @@ export function updateMcpAppAttachments<T extends McpAppMessage>(messages: reado
     if (!mcpAppMessageAttachments(message).some(app => app.appInstanceId === appInstanceId)) return message
     const metadata = record(message.metadata)
     const codex = record(metadata.codex)
-    return { ...message, ...(message.content ? { content: message.content.map(replace) } : {}),
-      ...(Array.isArray(codex.items) ? { metadata: { ...metadata, codex: { ...codex, items: codex.items.map(replace) } } } : {}) }
+    return { ...message, ...(message.content ? { content: mapAppRows(message.content, replace) } : {}),
+      ...(Array.isArray(codex.items) ? { metadata: { ...metadata, codex: { ...codex, items: mapAppRows(codex.items, replace) } } } : {}) }
   })
 }
 
@@ -159,7 +189,11 @@ export function mcpAppModelInput<T extends { text: string; prompt?: string; imag
 }
 
 export function mcpAppEventAttachment(event: AgentEvent): ToolAppAttachment | undefined {
-  if (event.type === 'content_delta' && 'app' in event.delta) return event.delta.app
-  if (event.type === 'codex_item_delta' && event.item.type === 'mcp_tool_call') return event.item.app
-  return undefined
+  return mcpAppEventAttachments(event)[0]
+}
+
+export function mcpAppEventAttachments(event: AgentEvent): ToolAppAttachment[] {
+  if (event.type === 'content_delta' && 'app' in event.delta) return event.delta.app ? [event.delta.app] : []
+  if (event.type === 'codex_item_delta') return mcpAppMessageAttachments({ id: event.messageId, metadata: { codex: { items: [event.item] } } })
+  return []
 }

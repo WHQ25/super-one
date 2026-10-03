@@ -3,6 +3,7 @@ import { bashEditFileChanges } from '@superone/shared/bash-edit-diff'
 import { fileMutationPath, isFileMutationTool } from '@superone/shared/file-mutation'
 import { sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
 import { isSubagentToolName, normalizeTranscriptTool } from '@superone/shared/tool-ui'
+import { mcpAppMessageAttachments } from '@superone/shared/mcp-apps-state'
 import { compactMediaToolResult, computeToolLineDelta, computeToolMeta, stripMessagesForRemote } from '../remote-content'
 
 const SHELL_INPUT_MAX = 1024
@@ -184,7 +185,19 @@ function fileChangeLineDelta(changes: CodexFileUpdateChange[]): { added: number;
 }
 export function projectCodexTool(item: CodexThreadItem, ref: string): CodexThreadItem {
   if (item.type === 'mcp_tool_call' && item.app) return item
-  if (item.type === 'collab_tool_call') return { ...item, remoteDetail: ref, prompt: undefined, childItems: undefined, agentsStates: {} }
+  if (item.type === 'collab_tool_call') {
+    // Keep only the App branches live; ordinary child detail remains lazy.
+    // This also lets attachment updates and arrival gating reach the phone
+    // before expanding/fetching the full collaboration card.
+    const [messageId, kind, key] = JSON.parse(ref)
+    const path: string[] = kind === 'nested-item' ? JSON.parse(key) : [item.id]
+    const childItems = Object.fromEntries(Object.entries(item.childItems ?? {}).flatMap(([threadId, items]) => {
+      const apps = items.filter(child => mcpAppMessageAttachments({ id: messageId, metadata: { codex: { items: [child] } } }).length)
+      return apps.length ? [[threadId, apps.map(child => projectCodexTool(child,
+        JSON.stringify([messageId, 'nested-item', JSON.stringify([...path, threadId, child.id])])))]] : []
+    }))
+    return { ...item, remoteDetail: ref, prompt: undefined, childItems: Object.keys(childItems).length ? childItems : undefined, agentsStates: {} }
+  }
   if (item.type === 'command_execution') return { ...item, remoteDetail: ref, command: item.command.slice(0, 160), aggregatedOutput: '', commandActions: item.commandActions?.map(action => ({ ...action, command: action.command?.slice(0, 160) })) }
   if (item.type === 'file_change') {
     const toolLineDelta = item.toolLineDelta ?? fileChangeLineDelta(item.changes)

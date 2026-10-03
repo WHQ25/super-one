@@ -259,6 +259,15 @@ Nothing is sent before `ui/notifications/initialized`. A subagent's Claude
 result has no `structuredContent` (the SDK keeps only `_meta`), so the View
 gets the `tool_result` block text as `content`.
 
+Codex child calls inside `collab_tool_call.childItems` keep their own thread
+binding and full private result. Attachment indexing, host updates, completion
+merges, resource GC and phone projection traverse those child trees. Desktop
+and phone collaboration cards render App calls with the same View host as a
+root call. A restored child View requires Activate; before native resource or
+tool requests the backend reads provider ancestry and resumes that child on the
+current connection. An unrelated thread cannot reuse the parent's session
+binding. Child `thread/started` notifications never select a new root thread.
+
 ## View host
 
 `packages/shared/src/mcp-apps-host/` is shared by desktop and phone: the

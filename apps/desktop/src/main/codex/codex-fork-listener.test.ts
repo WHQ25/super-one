@@ -143,6 +143,8 @@ describe('fork listener lifecycle', () => {
       },
     })
 
+    push({ method: 'item/completed', params: { threadId: 'fork-thread', item: { id: 'fork-app', type: 'mcpToolCall', server: 'fixture', tool: 'next', status: 'completed', arguments: {}, appContext: null, mcpAppUi: { resourceUri: 'ui://fixture/view' }, result: { content: [], structuredContent: { page: 1 }, _meta: { private: 'View only' } } } } })
+
     // Yield so fork listener consumes inbox.
     for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r))
 
@@ -154,6 +156,7 @@ describe('fork listener lifecycle', () => {
     }))
     expect(latest).toBeDefined()
     const forkChildItems: CodexThreadItem[] = latest.childItems?.['fork-thread'] ?? []
+    expect(forkChildItems.find(item => item.id === 'fork-app')).toMatchObject({ type: 'mcp_tool_call', mcpAppUi: { resourceUri: 'ui://fixture/view' }, result: { structuredContent: { page: 1 }, meta: { private: 'View only' } } })
     const forkMsg = forkChildItems.find((i) => i.id === 'fork-msg-1')
     expect(forkMsg).toBeDefined()
     expect(forkMsg?.type).toBe('agent_message')

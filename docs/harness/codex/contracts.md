@@ -144,3 +144,14 @@ enabled by `apps/desktop/src/main/codex/app-server-connection.ts`).
 - **Guards:** `apps/desktop/src/main/mcp-apps/codex-provider.test.ts`,
   `apps/desktop/src/main/environment/node-rpc-client.test.ts`, and
   `apps/desktop/scripts/check-codex-mcp-apps.ts` (live, isolated auth copy).
+- **Child View routing:** recursive `collab_tool_call.childItems` attachments use
+  their child thread, not the root. Restoration validates `thread/read` ancestry
+  (`source.subAgent.thread_spawn.parent_thread_id`, or `forkedFromId`) before
+  `thread/resume`. The validation/resume is single-flight per connection and
+  root/child pair. Root session/account/config binding is rechecked before every
+  native request; unrelated threads and ancestry cycles fail closed.
+- **Child validation:** pinned 0.159 protocol-event replay covers active-turn and
+  after-turn fork listeners carrying modern `mcpAppUi`, structured/private result,
+  and root-thread isolation. `mcp-apps-subagents.test.ts` covers ancestry and child
+  native resource/tool routing. A 2026-10-03 isolated live subagent probe stopped
+  at `workspace routing discovery failed`; no live subagent turn was verified.

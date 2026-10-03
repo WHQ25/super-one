@@ -1,4 +1,4 @@
-import type { CodexMcpToolCallItem } from '@superone/shared/agent-types'
+import type { CodexMcpToolCallItem, CodexThreadItem } from '@superone/shared/agent-types'
 import { assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, MCP_APP_DATA_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES, boundedToolAppAttachment, McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider, type McpAppReadResult, type McpAppToolResult, type McpToolDescriptor, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { readCodexMcpWwwAuthenticate } from './protocol-v154'
 import { codexMcpAppsCatalog, invalidateCodexMcpAppsCatalog } from './mcp-apps-catalog'
@@ -59,8 +59,21 @@ export function attachCodexMcpApp(item: CodexMcpToolCallItem, binding: McpAppsBi
   return { ...item, app: boundedToolAppAttachment(app) }
 }
 
+/** Child map keys are the originating thread, never the parent's active thread. */
+export function attachCodexMcpAppTree(item: CodexThreadItem, binding: (server: string) => McpAppsBinding, threadId: string): CodexThreadItem {
+  if (item.type === 'mcp_tool_call') return attachCodexMcpApp(item, binding(item.server), threadId)
+  if (item.type !== 'collab_tool_call' || !item.childItems) return item
+  return { ...item, childItems: Object.fromEntries(Object.entries(item.childItems).map(([childThreadId, items]) =>
+    [childThreadId, items.map(child => attachCodexMcpAppTree(child, binding, childThreadId))])) }
+}
+
 /** Start discovery when a live attachment arrives, alongside its eventual HTML read. */
-export function prewarmCodexMcpAppCatalog(item: CodexMcpToolCallItem, request: McpAppsRequest, connectionKey: object = request): void {
+export function prewarmCodexMcpAppCatalog(item: CodexThreadItem, request: McpAppsRequest, connectionKey: object = request): void {
+  if (item.type === 'collab_tool_call') {
+    for (const items of Object.values(item.childItems ?? {})) for (const child of items) prewarmCodexMcpAppCatalog(child, request, connectionKey)
+    return
+  }
+  if (item.type !== 'mcp_tool_call') return
   const app = item.app, threadId = app?.origin?.providerSessionId
   if (!app || !threadId) return
   const provider = createCodexMcpAppsProvider(app.binding, threadId, request, connectionKey)

@@ -1,5 +1,5 @@
 import type { ChatMessage, CodexThreadItem, CodexUsageInfo } from '@superone/shared/agent-types'
-import { mergeMcpAppAttachment } from '@superone/shared/mcp-apps-state'
+import { mergeMcpAppBlocks } from '@superone/shared/mcp-apps-state'
 
 // Pure Codex transforms shared by Desktop and mobile reducers.
 
@@ -8,7 +8,7 @@ export function upsertCodexItem(items: CodexThreadItem[], next: CodexThreadItem)
   if (idx === -1) return [...items, next]
   const cloned = [...items]
   const previous = items[idx]
-  if (previous?.type === 'mcp_tool_call' && next.type === 'mcp_tool_call') next = { ...next, app: mergeMcpAppAttachment(previous.app, next.app) }
+  next = mergeMcpAppBlocks([previous], [next])[0]!
   cloned[idx] = next
   return cloned
 }

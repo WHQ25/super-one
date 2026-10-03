@@ -18,6 +18,7 @@ export const CODEX_COLLAB_ACTIVITY_TYPES = new Set<CodexThreadItem['type']>([
   'mcp_tool_call',
   'file_change',
   'web_search',
+  'collab_tool_call',
 ])
 
 export interface CodexCollabViewModel {
@@ -59,7 +60,7 @@ export function codexCollabViewModel(item: CodexCollabToolCallItem): CodexCollab
     receiverId,
     colorKey: receiverId ?? item.id,
     childItems,
-    activityItems: childItems.filter((child) => CODEX_COLLAB_ACTIVITY_TYPES.has(child.type)),
+    activityItems: Object.values(item.childItems ?? {}).flat().filter((child) => CODEX_COLLAB_ACTIVITY_TYPES.has(child.type)),
     name: state?.nickname ?? '',
     role: state?.role ?? 'agent',
     badge: state?.forkedFromId ? 'forked' : state?.role,

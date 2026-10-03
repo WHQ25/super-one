@@ -20,8 +20,18 @@ it('omits an oversized App snapshot without changing the native model tool resul
   expect(JSON.stringify(item)).toBe(original)
   expect(attached.app).toMatchObject({ status: 'result', toolResultOmitted: { reason: 'size_limit' } })
   expect(attached.app?.toolResult).toBeUndefined()
-  // A host whose Views run in this process keeps it for the live View.
-  expect(attachCodexMcpApp(item, binding, 'thread', MCP_APP_OUTPUT_MAX_BYTES).app?.toolResult?.content).toBe(result.content)
+})
+
+it('marks Codex\'s truncated preview of an oversized result as omitted instead of passing it to the View', () => {
+  const preview = '{"content":[],"structuredContent":{"part":{"id":"hex"' + 'x'.repeat(100) + '…75350 chars truncated…' + '"localFilesystem":true}}'
+  const result = { content: [{ type: 'text', text: preview }], structuredContent: null }
+  const item: CodexMcpToolCallItem = { type: 'mcp_tool_call', id: 'native', server: 'fixture', tool: 'next', status: 'completed', arguments: {}, result, mcpAppUi: { resourceUri: 'ui://fixture/view' } }
+  const app = attachCodexMcpApp(item, binding, 'thread').app
+  expect(app).toMatchObject({ status: 'result', toolResultOmitted: { bytes: new TextEncoder().encode(preview).byteLength + 75350, reason: 'size_limit' } })
+  expect(app?.toolResult).toBeUndefined()
+  // A text result that merely mentions truncation is still the server's own result.
+  const own = { content: [{ type: 'text', text: 'Log …3 chars truncated…' }], structuredContent: null }
+  expect(attachCodexMcpApp({ ...item, result: own }, binding, 'thread').app?.toolResult?.content).toEqual(own.content)
 })
 
 describe('Codex MCP App catalog cache', () => {

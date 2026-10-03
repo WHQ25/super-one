@@ -3,7 +3,7 @@ import { useEffect } from 'react'
 import { act, fireEvent, render, screen, waitFor, within, cleanup } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
-import { McpAppsError, MCP_APP_OUTPUT_MAX_BYTES } from '@superone/shared/mcp-apps'
+import { McpAppsError, MCP_APP_RESULT_MAX_BYTES } from '@superone/shared/mcp-apps'
 import type { McpAppFrameProps } from './McpAppFrame'
 import type { McpAppDesktopApi } from './desktop-executor'
 const frame = vi.hoisted(() => ({ props: null as McpAppFrameProps | null, initialized: [] as McpAppFrameProps[], modes: ['inline', 'fullscreen', 'pip'] as Array<'inline' | 'fullscreen' | 'pip'> }))
@@ -47,31 +47,21 @@ describe('MCP App desktop View lifecycle', () => {
     expect(frame.props?.context.availableDisplayModes).toEqual(['inline', 'fullscreen'])
   })
 
-  it('explains the omitted initial result on the Activate button, not above the View, and drops it after activation', async () => {
+  it('shows an omitted result in the state card without preparing the View', async () => {
     const s = setup()
-    render(<><McpAppHostLayer /><McpAppView app={{ ...app, toolResultOmitted: { bytes: 1050849, reason: 'size_limit' } }} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></>)
-    const activate = await screen.findByRole('button', { name: 'mcpApp.activate' })
-    expect(activate.hasAttribute('data-mcp-app-result-omitted')).toBe(true)
-    expect(screen.queryByText('mcpApp.resultOmitted')).toBeNull()
-    // View content can occupy its entire top-right corner. Activate is the last
-    // action in the host header above it, before the trailing collapse toggle.
-    const header = activate.closest('[data-embedded-tool-header]')
-    expect(header).toBeTruthy()
-    expect(activate.nextElementSibling).toBe(header?.querySelector('[data-embedded-tool-toggle]'))
-    expect(header?.lastElementChild?.hasAttribute('data-embedded-tool-toggle')).toBe(true)
-    expect(header?.parentElement?.querySelector('[data-mcp-app-surface]')).toBeTruthy()
-    expect(activate.className).not.toContain('absolute')
-    fireEvent.click(activate)
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'mcpApp.activate' })).toBeNull())
-    expect(s.api.mcpAppRequest).toHaveBeenCalledTimes(1)
+    render(<><McpAppHostLayer /><McpAppView app={{ ...app, toolResultOmitted: { bytes: 2_500_000, reason: 'size_limit' } }} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></>)
+    expect((await screen.findByRole('alert')).textContent).toBe('mcpApp.resultOverLimit')
+    expect(s.api.mcpAppRegister).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('frame')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'mcpApp.activate' })).toBeNull()
   })
 
-  it('bounds a result above the live cap at the component boundary and keeps the restored View', async () => {
+  it('omits a result above the cap at the component boundary instead of failing the row', async () => {
     const s = setup(), warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      expect(() => render(<><McpAppHostLayer /><McpAppView app={{ ...app, toolResult: { content: [{ type: 'text', text: 'x'.repeat(MCP_APP_OUTPUT_MAX_BYTES) }] } }} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></>)).not.toThrow()
-      expect((await screen.findByRole('button', { name: 'mcpApp.activate' })).hasAttribute('data-mcp-app-result-omitted')).toBe(true)
-      expect(frame.props?.app.toolResult).toBeUndefined()
+      expect(() => render(<><McpAppHostLayer /><McpAppView app={{ ...app, toolResult: { content: [{ type: 'text', text: 'x'.repeat(MCP_APP_RESULT_MAX_BYTES) }] } }} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></>)).not.toThrow()
+      expect((await screen.findByRole('alert')).textContent).toBe('mcpApp.resultOverLimit')
+      expect(s.api.mcpAppRegister).not.toHaveBeenCalled()
       expect(warn).toHaveBeenCalled()
     } finally { warn.mockRestore() }
   })

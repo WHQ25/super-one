@@ -3,7 +3,6 @@ import { humanizePageToolName } from '@superone/shared/page-tool-name'
 import type { AgentEvent, ContentBlock, ChatMessage, TodoToolItem } from '@superone/shared/agent-types'
 import { isSubagentToolName, normalizeTranscriptTool } from '@superone/shared/tool-ui'
 import { remoteToolBlockType, sanitizeRemoteToolInput } from '@superone/shared/remote-tool-input'
-import { persistedMcpAppEvent, persistedMcpAppMessage } from '@superone/shared/mcp-apps-state'
 import { readOutputFile } from './agent/claude-session-runtime'
 import { listWorkflowAgentsSync } from './workflow-transcripts'
 import { highlightCodeSync, highlightCodeByLang, parseAnsiTokens, type DiffTokenLine } from './remote-highlighter'
@@ -580,10 +579,9 @@ function enrichPermissionRequest(event: AgentEvent & { type: 'permission_request
   return event
 }
 
-export function stripEventForRemote(original: AgentEvent, projectPath?: string): AgentEvent {
+export function stripEventForRemote(event: AgentEvent, projectPath?: string): AgentEvent {
   // Snapshot/context updates are already bounded host data; the phone needs the complete patch.
-  if (original.type === 'mcp_app_updated') return original
-  const event = persistedMcpAppEvent(original)
+  if (event.type === 'mcp_app_updated') return event
   if (event.type === 'user_message_appended') {
     const message = withAttachmentPreviews(event.message)
     return message === event.message ? event : { ...event, message }
@@ -619,7 +617,7 @@ export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: st
   // A picture rides along as a thumbnail; the phone asks for the bytes when it
   // is opened (`get_attachment`). Before the Codex early return: user messages
   // are what carry attachments, whichever harness answers them.
-  return messages.map(appendRemoteErrorText).map((msg) => withAttachmentPreviews(persistedMcpAppMessage(msg))).map((msg) => {
+  return messages.map(appendRemoteErrorText).map((msg) => withAttachmentPreviews(msg)).map((msg) => {
     // The WebView uses the same Codex item reducer as desktop. Flattening the
     // snapshot loses the baseline needed by subsequent item patches and makes
     // the next item replace the visible turn with only its newest content.

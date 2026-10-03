@@ -4,7 +4,7 @@ import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, u
 import { useTranslation } from 'react-i18next'
 import { Loader2, Maximize, Power, RotateCw } from 'lucide-react'
 import type { McpUiHostCapabilities } from '@modelcontextprotocol/ext-apps/app-bridge'
-import { boundedToolAppAttachment, MCP_APP_OUTPUT_MAX_BYTES, McpAppsError, type McpUiResourceMeta, type ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { boundedToolAppAttachment, McpAppsError, type McpUiResourceMeta, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { createMcpAppDocument, mcpAppHostContext } from '@superone/shared/mcp-apps-host'
 import { createMcpAppHost, createMcpAppHostSlot, type McpAppHost } from '@superone/shared/mcp-apps-host/host'
 import { createMcpAppTransport } from '@superone/shared/mcp-apps-host/transport'
@@ -83,7 +83,7 @@ export interface McpAppFrameProps {
  * the way back out.
  */
 export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolName, details }: McpAppFrameProps) {
-  const app = useMemo(() => boundedToolAppAttachment(rawApp, MCP_APP_OUTPUT_MAX_BYTES, true), [rawApp])
+  const app = useMemo(() => boundedToolAppAttachment(rawApp, true), [rawApp])
   const { t } = useTranslation()
   const { scheme } = useContext(PortableTurnContext)
   const [root, setRoot] = useState<HTMLDivElement | null>(null)
@@ -264,9 +264,8 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
         }}
         actions={canExpand ? <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.fullscreen')} onClick={() => display('fullscreen')}><Maximize className="size-3" /></IconButton> : null}
         activation={restoring ? (
-          <McpAppActivateButton emphasized={emphasized} disabled={activating} aria-label={t('mcpApp.activate')} data-mcp-app-result-omitted={app.toolResultOmitted ? '' : undefined}
-            // Why the snapshot is empty belongs with the action that refills it.
-            tooltip={t(app.toolResultOmitted ? 'mcpApp.resultOmitted' : 'mcpApp.activateTooltip')} onClick={() => { void activate() }}>
+          <McpAppActivateButton emphasized={emphasized} disabled={activating} aria-label={t('mcpApp.activate')}
+            tooltip={t('mcpApp.activateTooltip')} onClick={() => { void activate() }}>
             {activating ? <Loader2 className="size-3 animate-spin" /> : <Power className="size-3" />}
           </McpAppActivateButton>
         ) : null}

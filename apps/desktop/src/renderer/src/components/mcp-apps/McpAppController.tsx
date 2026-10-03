@@ -2,7 +2,7 @@ import { mcpAppHeaderTitle, mcpAppServerTitle, mcpAppPresentationIcon, mcpAppRes
 import { lazy, Suspense, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { McpAppsError } from '@superone/shared/mcp-apps'
+import { McpAppsError, mcpAppOmittedMessage } from '@superone/shared/mcp-apps'
 import type { McpAppPreparedDocument } from '@superone/shared/mcp-apps-desktop'
 import { mcpAppHostContext } from '@superone/shared/mcp-apps-host/context'
 import { CodeXml, Loader2, LogIn, Maximize, Maximize2, PanelRight, PictureInPicture2, Power, RotateCw, Undo2 } from 'lucide-react'
@@ -39,6 +39,8 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
   const [ready, setReady] = useState<Ready | null>(null)
   const [loading, setLoading] = useState(true)
   const [active, setActive] = useState(false)
+  // An omitted initial result leaves its View nothing to show: no document, only the state card.
+  const omitted = mcpAppOmittedMessage(app, t)
   const [error, setError] = useState<McpAppsError | null>(null)
   const [unknown, setUnknown] = useState(false)
   const [revoked, setRevoked] = useState(false)
@@ -70,6 +72,7 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
     let cancelled = false
     let documentId: string | undefined
     setLoading(true); setError(null); setReady(null); setRevoked(false); setUnknown(false); setInitialized(false)
+    if (omitted) { setLoading(false); return }
     if (!route.projectPath) { onError(new McpAppsError('not_connected', 'MCP App session route unavailable')); setLoading(false); return }
     void api.mcpAppRegister(route.projectPath, route.sessionId, { appInstanceId: app.appInstanceId }).then(result => {
       if (!result.ok) { if (result.error.code === 'approval_required') throw new McpAppsError('denied', 'MCP App preparation requires approval'); throw new McpAppsError(result.error.code, result.error.message) }
@@ -80,7 +83,7 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
       } else if (!cancelled) setActive(false)
     }).catch(value => { if (!cancelled) onError(value) }).finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true; if (documentId) void api.mcpAppRelease(documentId).catch(() => {}) }
-  }, [api, route.projectPath, route.sessionId, app.appInstanceId, JSON.stringify([app.binding, app.origin, app.resourceUri]), generation, onError])
+  }, [api, route.projectPath, route.sessionId, app.appInstanceId, JSON.stringify([app.binding, app.origin, app.resourceUri]), generation, onError, !!omitted])
   const activate = async (authenticate = false) => {
     setLoading(true); setError(null); setActivationError(null)
     try {
@@ -147,7 +150,8 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
     && (mcpAppResourceModes(ready?.meta) ?? ['fullscreen']).includes('fullscreen')
   const preparing = !available && !error && !unknown && !revoked && (loading || (!!ready && !initialized))
   const stateButton = (icon: ReactNode, label: string, onClick: () => void) => <McpAppStateButton icon={icon} label={label} disabled={loading} onClick={onClick} />
-  const stateCard: McpAppState | null = available
+  const stateCard: McpAppState | null = omitted ? { message: omitted, alert: true }
+    : available
     // A View shown elsewhere leaves its row empty; say where it went and offer the way back.
     ? surface === 'inline' ? null : {
       message: t(surface === 'pip' ? 'mcpApp.shownInPip' : 'mcpApp.shownInPanel'),
@@ -172,9 +176,8 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
         {owner.details && <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.toolDetails')} aria-expanded={detailsOpen} onClick={() => setDetailsOpen(value => !value)}><CodeXml className="size-3" /></IconButton>}
         {restoring && (activationError?.code === 'auth_required'
           ? <McpAppActivateButton emphasized={emphasized} disabled={loading} tooltip={t('mcpApp.authenticate')} onClick={() => void activate(true)}><LogIn className="size-3" /></McpAppActivateButton>
-          : <McpAppActivateButton emphasized={emphasized} disabled={loading} aria-label={t('mcpApp.activate')} data-mcp-app-result-omitted={app.toolResultOmitted ? '' : undefined}
-            // Why the snapshot is empty belongs with the action that refills it.
-            tooltip={t(app.toolResultOmitted ? 'mcpApp.resultOmitted' : 'mcpApp.activateTooltip')} onClick={() => void activate()}><Power className="size-3" /></McpAppActivateButton>)}
+          : <McpAppActivateButton emphasized={emphasized} disabled={loading} aria-label={t('mcpApp.activate')}
+            tooltip={t('mcpApp.activateTooltip')} onClick={() => void activate()}><Power className="size-3" /></McpAppActivateButton>)}
       </>}>
         {stateCard && <McpAppStateCard state={stateCard} />}
         {!collapsed && restoring && activationError && <div data-mcp-app-restore-note className="mb-2 min-w-0 text-xs">
@@ -191,7 +194,7 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
   </>
   return <>
     {owner.row && createPortal(row, owner.row)}
-    {ready && executor && <Suspense fallback={null}><Frame key={reload} app={app} meta={ready.meta} registration={ready.document} api={api} executor={executor} context={context} active={active}
+    {ready && executor && !omitted && <Suspense fallback={null}><Frame key={reload} app={app} meta={ready.meta} registration={ready.document} api={api} executor={executor} context={context} active={active}
       onHost={() => {}} onInitialized={modes => { setViewModes(modes); setInitialized(true) }} onError={onError} onUnknown={() => setUnknown(true)} onRevoked={() => setRevoked(true)} onHeight={setHeight} /></Suspense>}
     {surface === 'pip' && ready && !revoked && <McpAppPip appInstanceId={app.appInstanceId} title={app.binding.server} toolName={toolName} viewport={viewport} onMode={onMode} />}
   </>

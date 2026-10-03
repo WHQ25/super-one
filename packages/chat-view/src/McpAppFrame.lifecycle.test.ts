@@ -5,7 +5,7 @@ import { App } from '@modelcontextprotocol/ext-apps'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { afterEach, expect, it, vi } from 'vitest'
-import { MCP_APP_OUTPUT_MAX_BYTES, type ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { MCP_APP_RESULT_MAX_BYTES, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { mcpAppContextState } from '@superone/shared/mcp-app-model-context'
 import { exitMcpAppFullscreen, forgetMcpAppArrivals, markMcpAppActivated } from './mcp-app-document'
 import { requestNative } from './bridge'
@@ -67,24 +67,12 @@ it('loads behind the state card and shows the View once it initializes', async (
   expect(container!.querySelector('iframe')).not.toBeNull()
 })
 
-it('explains an omitted result on the activate action and drops it after activation', async () => {
-  wire.native.mockResolvedValue({ response: { ok: true, value: {} } })
-  await mount({ ...saved, toolResult: undefined, toolResultOmitted: { bytes: 1050849, reason: 'size_limit' } })
-  await initialize(0)
-  expect(activateButton()?.getAttribute('aria-label')).toBe('mcpApp.activate')
-  expect(activateButton()?.hasAttribute('data-mcp-app-result-omitted')).toBe(true)
-  await act(async () => activateButton()!.click())
-  await vi.waitFor(() => expect(wire.pairs).toHaveLength(2))
-  await initialize(1)
-  expect(activateButton()).toBeNull()
-})
-
-it('bounds a result above the live cap before rendering the phone View', async () => {
+it('bounds a result above the cap before rendering the phone View', async () => {
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
   try {
-    await mount({ ...saved, toolResult: { content: [{ type: 'text', text: 'x'.repeat(MCP_APP_OUTPUT_MAX_BYTES) }] } })
-    await initialize(0)
-    expect(activateButton()?.hasAttribute('data-mcp-app-result-omitted')).toBe(true)
+    await mount({ ...saved, toolResult: { content: [{ type: 'text', text: 'x'.repeat(MCP_APP_RESULT_MAX_BYTES) }] } })
+    const { results } = await initialize(0)
+    expect(results).toEqual([])
     expect(warn).toHaveBeenCalled()
   } finally { warn.mockRestore() }
 })

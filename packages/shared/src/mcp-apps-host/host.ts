@@ -67,7 +67,7 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
   let initialized = false
   let revoked = false
   let disposed: Promise<void> | undefined
-  let app = boundedToolAppAttachment(options.app, MCP_APP_OUTPUT_MAX_BYTES, true)
+  let app = boundedToolAppAttachment(options.app, true)
   let context = initialContext
   const contextChanged = (next: McpUiHostContext): void => {
     if (revoked) return
@@ -257,7 +257,7 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
     activate() { if (!revoked) active = true },
     async update(next) {
       if (next.appInstanceId !== app.appInstanceId || JSON.stringify(next.binding) !== JSON.stringify(app.binding)) throw new McpAppsError('invalid', 'MCP App binding changed')
-      app = boundedToolAppAttachment(next, MCP_APP_OUTPUT_MAX_BYTES, true)
+      app = boundedToolAppAttachment(next, true)
       contextChanged({ ...context, 'openai/modelContext': mcpAppContextState(app) })
       return queue()
     },

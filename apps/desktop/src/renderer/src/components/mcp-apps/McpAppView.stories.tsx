@@ -20,7 +20,7 @@ function Scenario({ state = 'live', narrow = false, scrolling = false, initialMo
   const fixture = useMemo(() => {
     const value = createMcpAppStoryFixture(state, { topRightControl })
     if (restoredContext) value.app.modelContext = { updateId: 'restored-context-id', content: [{ type: 'text', text: 'Selected part', _meta: { 'openai/title': 'Agent dial' } }], source: { appInstanceId: value.app.appInstanceId, server: value.app.binding.server } }
-    if (resultOmitted) value.app.toolResultOmitted = { bytes: 1050849, reason: 'size_limit' }
+    if (resultOmitted) value.app.toolResultOmitted = { bytes: 2_500_000, reason: 'size_limit' }
     if (cachedReference) value.app.resource = { hash: 'a'.repeat(64), meta: {} }
     if (darkStrokeIcon && value.app.presentation) value.app.presentation = { ...value.app.presentation, icons: [{ src: DARK_STROKE_ICON }] }
     return value
@@ -57,6 +57,9 @@ export const UnknownOutcome: Story = { args: { state: 'unknown' } }
 export const RevokedRestart: Story = { args: { state: 'revoked' } }
 export const LongContent: Story = { args: { state: 'long' } }
 export const Narrow: Story = { args: { narrow: true } }
+/** An initial result over the cap shows the state card; the View is never prepared. */
+export const OmittedResult: Story = { args: { resultOmitted: true } }
+export const OmittedResultNarrow: Story = { args: { resultOmitted: true, narrow: true } }
 export const Light: Story = { globals: { theme: 'light' } }
 export const Dark: Story = { globals: { theme: 'dark' } }
 /** A one-colour dark-stroke server icon in the App header and the MCP tool row follows the text colour. */
@@ -76,6 +79,3 @@ export const RestoredResourceReference: Story = { args: { state: 'inactive', cac
 export const CachedReferenceLoading: Story = { args: { state: 'loading', cachedReference: true } }
 export const CachedReferenceRetry: Story = { args: { state: 'error', cachedReference: true } }
 
-export const RestoredOmittedResult: Story = { args: { state: 'inactive', cachedReference: true, resultOmitted: true } }
-export const RestoredOmittedResultNarrow: Story = { args: { state: 'inactive', cachedReference: true, resultOmitted: true, narrow: true } }
-export const RestoredOmittedResultWithViewControl: Story = { args: { state: 'inactive', cachedReference: true, resultOmitted: true, topRightControl: true, narrow: true } }

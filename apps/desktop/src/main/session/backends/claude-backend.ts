@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
 import { MessageBridge } from '../../agent/message-bridge'
 import { ClaudeMcpAppsCatalog, ClaudeToolApps, createClaudeMcpAppsProvider } from '@superone/claude/mcp-apps'
-import { MCP_APP_OUTPUT_MAX_BYTES, McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
+import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
 import { assertMcpAppsBindingIdentity } from '@superone/shared/mcp-app-binding'
 import { HostClients } from '../../mcp-apps/host-client'
@@ -143,7 +143,6 @@ export class ClaudeBackend implements SessionBackend {
     binding: (server) => this.mcpAppsBinding(server),
     providerSessionId: () => this.providerSessionId,
     onCatalogMiss: () => { void this.refreshMcpAppsCatalog() },
-    resultMaxBytes: MCP_APP_OUTPUT_MAX_BYTES,
   })
 
   /** SuperOne's own connections for host-originated Apps; Claude's hide tool `_meta` and take no request `_meta`. */

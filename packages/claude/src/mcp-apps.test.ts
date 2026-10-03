@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { MCP_APP_OUTPUT_MAX_BYTES, MCP_APP_RESULT_MAX_BYTES, type McpAppsBinding } from '@superone/shared/mcp-apps'
+import { MCP_APP_RESULT_MAX_BYTES, type McpAppsBinding } from '@superone/shared/mcp-apps'
 import {
   CLAUDE_MCP_APPS_HOST_ENV,
   ClaudeMcpAppsCatalog,
@@ -198,10 +198,10 @@ describe('ClaudeToolApps', () => {
     expect(apps.toolResult('toolu_7', huge, false)).toMatchObject({ status: 'result', toolResult: undefined, toolResultOmitted: { bytes: expect.any(Number), reason: 'size_limit' } })
   })
 
-  it('keeps a result above the transcript cap when the host passes the live cap', () => {
-    const apps = toolApps({ resultMaxBytes: MCP_APP_OUTPUT_MAX_BYTES })
+  it('keeps a large result under the cap for the View', () => {
+    const apps = toolApps()
     apps.toolUse('toolu_8', 'mcp__my_fixture__fixture_list_items', {})
-    const app = apps.toolResult('toolu_8', { content: 'x'.repeat(MCP_APP_RESULT_MAX_BYTES) }, false)
+    const app = apps.toolResult('toolu_8', { content: 'x'.repeat(MCP_APP_RESULT_MAX_BYTES / 2) }, false)
     expect(app?.toolResultOmitted).toBeUndefined()
     expect(app?.toolResult).toBeDefined()
   })

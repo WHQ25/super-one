@@ -47,9 +47,10 @@ Upstream behavior we rely on is recorded per harness: Claude
   binding, the harness call id, the resource URI, the resource reference
   (`{ hash, meta }`; legacy `{ html, meta, hash }` snapshots remain readable),
   the original input, the bounded initial result (including the
-  private `_meta`) and the latest model context. Caps are 2 MiB for HTML,
-  4 MiB for the initial tool input and result kept in the transcript or sent to
-  another device, and 1 MiB for model context and View requests. Transient
+  private `_meta`) and the latest model context. Caps are 2 MiB for HTML and
+  for the initial tool input plus result (`MCP_APP_RESULT_MAX_BYTES`, see
+  [Initial result size](#initial-result-size)), and 1 MiB for the input alone,
+  model context and View requests. Transient
   results (never persisted) have a cap of 32 MiB minus 64 KiB for envelope room
   (`MCP_APP_OUTPUT_MAX_BYTES`) across provider RPC, executor, host and the
   corresponding host-to-View reply; other bridge traffic keeps the 1 MiB cap. Initial
@@ -114,23 +115,49 @@ never a caller-supplied hash. The Node owns its authoritative blobs; desktop
 may cache a copy after an authorized Node fetch. Phone WebView remounts also
 use a bounded cache rather than retaining every completed HTML promise.
 
-An initial agent tool result has two bounds. Desktop's own Claude and Codex
-backends attach it with the transient cap, so a View in that desktop gets the
-full result. Every copy that leaves the live process is bounded to 4 MiB:
-SQLite rows (`persistedMcpAppMessage`) and phone events and snapshots
-(`persistedMcpAppEvent` in `remote-content.ts`). A remote node and the Cursor
-compatibility path attach with 4 MiB directly. Over a bound, the shared helper
-drops `toolResult` and keeps `status: result` plus
-`toolResultOmitted: { bytes, reason: "size_limit" }`. Oversized inputs remain
-errors. The resource, presentation and model context stay intact. No initial
-`ui/notifications/tool-result` is sent for an omitted result, and no replacement
-result is fabricated. The omission marker wins over any raw-result fallback.
-Desktop, phone and the shared host bound View input with the transient cap;
-size failures cannot escape into React. Without its initial result a View shows
-only what it loads itself (Bits & Bolts falls back to its library page). Restored
-desktop and phone Views say the initial result was not saved; activation
-reconnects without it, and a new origin-tool invocation is the only way to get
-it again. The host never automatically reruns that tool.
+### Initial result size
+
+The initial tool input and result share one cap, `MCP_APP_RESULT_MAX_BYTES`
+(2 MiB), for the live View, the transcript and other devices. Attachments are
+bounded where they are created (desktop's Claude and Codex backends, remote
+nodes, the compatibility path), so SQLite rows and phone events carry the same
+copy the live View gets. Users see no size warning: keeping results small is the
+server developer's responsibility. Codex itself replaces a result over 1 MiB
+in the item it sends clients with a middle-truncated text preview without
+`structuredContent` or `_meta` (`truncate_mcp_tool_result_for_event`; the
+model path is not affected). `attachCodexMcpApp` recognizes that preview and
+records the result as omitted instead of passing it to the View.
+
+Over the cap, the shared helper drops `toolResult` and keeps `status: result`
+plus `toolResultOmitted: { bytes, reason: "size_limit" }`. Oversized inputs
+remain errors. The resource, presentation and model context stay intact. No
+initial `ui/notifications/tool-result` is sent for an omitted result, and no
+replacement result is fabricated. The omission marker wins over any raw-result
+fallback. Desktop, phone and the shared host re-check the same cap before a
+View gets its input; size failures cannot escape into React.
+
+An omitted initial result keeps the App's header and details toggle and shows
+the over-limit message with the original size in the state card
+(`mcpAppOmittedMessage`). No document is registered or loaded, so the App's
+default page never takes transcript space. The host never
+automatically reruns that tool.
+
+**The host does not adapt to servers that send View data in the wrong layer.**
+MCP itself only defines a result's `content`, `structuredContent` and `_meta`;
+it does not say which the model sees. The two App conventions disagree on
+`structuredContent`: MCP Apps treats it as View data kept out of model context,
+while OpenAI's Apps SDK treats it as concise data the model can inspect, with
+`_meta` hidden from the model. A server that works under both keeps `content`
+a short summary, `structuredContent` small, View-only data in `_meta`, and lets
+the View load catalogs, previews and geometry with `tools/call` or
+`resources/read`. The caps above are not raised to fit a server that returns
+megabytes per call (Bits & Bolts returns its whole catalog with inline
+previews, about 1 MB per call:
+[openai/mcp-extensions#32](https://github.com/openai/mcp-extensions/issues/32)).
+Such a server fails visibly instead: harnesses truncate or file away the model
+copy, Codex drops the View copy, and the host shows the omitted state. Making it work through larger caps or host-side reconstruction would
+hide the problem from the server's developer and make every harness, the
+transcript and the phone pay for it.
 
 ## Host executor
 
@@ -150,8 +177,8 @@ the only View-to-host entry, used by desktop IPC and by the phone's
   provider. View-originated outbound operations return `inactive` until the user presses
   Activate, which also re-checks the original provider, session and account.
   Successful activation reloads the desktop/phone View from the same pinned HTML
-  and binding. Its new initialize receives persisted tool input/result (or the
-  omitted state) and model context; the App can make its own startup requests.
+  and binding. Its new initialize receives persisted tool input/result and
+  model context; the App can make its own startup requests.
   The host does not rerun the originating tool or replace the HTML with the
   server's current version. Failed activation keeps the current View and shows
   the error without reloading. Host restore actions sit outside the View content.
@@ -249,16 +276,15 @@ revokes the bridge (the View shows Restart).
   header shows the server icon (`ToolBrandIcon`, tool icons then server icons
   then the MCP fallback),
   `server title · tool title` (tool title → annotations.title → name) and a
-  `CodeXml` toggle for the tool details. Loading, auth, error,
+  `CodeXml` toggle for the tool details. Loading, auth, error, failed-call,
   unknown-outcome, revoked and snapshot-less restored Views show the header
   title alone, without actions or the collapse toggle, above one card holding
   the message and its action (Sign In, Retry, Restart or Activate). Loading
   shows a spinner instead; an unknown outcome has no action.
-  Restored snapshots end the header with an
-  Activate button that pulses when a blocked operation is attempted. Its
-  tooltip explains reconnecting, or, when the initial result was too large to
-  save, that activating reloads it; an activation error shows as a note above
-  the View. The phone has no hover and keeps the omitted-result note inline.
+  Restored snapshots start as a collapsed tool row whose chevron mounts the
+  snapshot. Until activation the header ends with an Activate button that
+  pulses when a blocked operation is attempted. Its tooltip explains
+  reconnecting; an activation error shows as a note under the header.
 - **Display modes**: `inline`, `fullscreen` and `pip`. Fullscreen is a
   transient standard activity-panel tab; the View sees `fullscreen` whether or
   not the tab is maximized. A View request maximizes the tab. For Views that

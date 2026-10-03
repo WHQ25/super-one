@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { createMcpAppTransport } from './transport'
-import { MCP_APP_DATA_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES } from '../mcp-apps'
+import { MCP_APP_DATA_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES, MCP_APP_RESULT_MAX_BYTES } from '../mcp-apps'
 import { createMcpAppDocument } from './document'
 
 let transport: Transport | undefined
@@ -43,8 +43,8 @@ describe('MCP App postMessage transport', () => {
     request(3, 'tools/call')
     await expect(transport.send({ jsonrpc: '2.0', id: 3, result: { content: [{ type: 'text', text: 'a'.repeat(MCP_APP_OUTPUT_MAX_BYTES) }] } })).rejects.toThrow('size limit')
     await expect(transport.send({ jsonrpc: '2.0', id: 4, result })).rejects.toThrow('size limit')
-    await expect(transport.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: result })).resolves.toBeUndefined()
-    await expect(transport.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { content: [{ type: 'text', text: 'a'.repeat(MCP_APP_OUTPUT_MAX_BYTES + 1024) }] } })).rejects.toThrow('size limit')
+    await expect(transport.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { content: [{ type: 'text', text: 'a'.repeat(MCP_APP_RESULT_MAX_BYTES - 100) }] } })).resolves.toBeUndefined()
+    await expect(transport.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { content: [{ type: 'text', text: 'a'.repeat(MCP_APP_RESULT_MAX_BYTES + 1024) }] } })).rejects.toThrow('size limit')
     await expect(transport.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-input', params: { arguments: { x: 'a'.repeat(MCP_APP_DATA_MAX_BYTES) } } })).rejects.toThrow('size limit')
   })
 

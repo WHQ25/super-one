@@ -1,6 +1,6 @@
 import { PostMessageTransport } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
-import { assertMcpAppSize, MCP_APP_OUTPUT_MAX_BYTES, McpAppsError } from '../mcp-apps'
+import { assertMcpAppSize, MCP_APP_OUTPUT_MAX_BYTES, MCP_APP_RESULT_MAX_BYTES, McpAppsError } from '../mcp-apps'
 import type { McpAppDocument } from './document'
 
 /** One transport per document. Native navigation guards must call close before a new document executes. */
@@ -51,8 +51,8 @@ export function createMcpAppTransport(
         // A small JSON-RPC envelope is separate from the capped result body.
         assertMcpAppSize(message, MCP_APP_OUTPUT_MAX_BYTES + 1024)
       } else if ('method' in message && message.method === 'ui/notifications/tool-result') {
-        // The host bounds the initial result with the live cap before sending it.
-        assertMcpAppSize(message, MCP_APP_OUTPUT_MAX_BYTES + 1024)
+        // The host bounds the initial input and result to their cap before sending them.
+        assertMcpAppSize(message, MCP_APP_RESULT_MAX_BYTES + 1024)
       } else assertMcpAppSize(message)
       await base.send(message, options)
     },

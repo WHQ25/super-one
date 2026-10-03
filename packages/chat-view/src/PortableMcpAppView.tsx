@@ -2,7 +2,7 @@ import type { McpAppResourceSnapshot } from '@superone/shared/mcp-app-resource'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Loader2, Power, RotateCw } from 'lucide-react'
-import { McpAppsError, type ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { McpAppsError, mcpAppOmittedMessage, type ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { McpAppStateButton, type McpAppState } from '@superone/ui/components/ui/mcp-app-state'
 import { McpAppChrome } from './McpAppChrome'
 import { markMcpAppActivated, mcpAppAwaitsLiveActivation, mcpAppNeedsActivation, startMcpApp } from './mcp-app-document'
@@ -41,6 +41,8 @@ export function PortableMcpAppView({ app, messageId, toolName, details }: Portab
   const resource = app.resource?.html !== undefined ? app.resource as Resource : loaded
   const waitsForUser = requiresActivation || (!app.resource && mcpAppNeedsActivation(app.appInstanceId))
   const activating = mcpAppAwaitsLiveActivation(app.appInstanceId)
+  // An omitted initial result leaves its View nothing to show: no document, only the state card.
+  const omitted = mcpAppOmittedMessage(app, t)
 
   const load = useCallback(async (activate: boolean) => {
     setState({ kind: 'loading' })
@@ -63,7 +65,7 @@ export function PortableMcpAppView({ app, messageId, toolName, details }: Portab
   }, [target, app.appInstanceId, app.resource])
 
   useEffect(() => {
-    if (activating || (!resource && !waitsForUser)) void load(activating)
+    if (!omitted && (activating || (!resource && !waitsForUser))) void load(activating)
     // Only a live View, or one that appears without its resource, starts by itself, once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [app.appInstanceId])
@@ -74,6 +76,7 @@ export function PortableMcpAppView({ app, messageId, toolName, details }: Portab
 
   const chrome = (card: McpAppState) => <McpAppChrome app={app} toolName={toolName} details={details} state={card} />
   const loading: McpAppState = { message: t('mcpApp.loading'), icon: <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" /> }
+  if (omitted) return chrome({ message: omitted, alert: true })
   if (state.kind === 'failed') {
     // Signing in happens on the desktop; the phone can only try again afterwards.
     const auth = state.error instanceof McpAppsError && state.error.code === 'auth_required'

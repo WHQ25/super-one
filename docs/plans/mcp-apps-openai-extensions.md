@@ -187,8 +187,8 @@ Selected option 2 (implemented): transient View-initiated tool/read output
 has one cap across provider, executor, host and host-to-View transport:
 32 MiB minus 64 KiB, so a reply plus its RPC envelope fits one remote payload
 (raised from 8 MiB on 2026-10-02 for App assets such as a 7.6 MB CAD wasm). View-to-host
-requests, persisted tool input/result and model context remain 1 MiB; HTML
-remains 2 MiB. Claude resource reads must use the same 2+1 MiB envelope as
+requests and model context remain 1 MiB; HTML and the initial tool input plus
+result are 2 MiB. Claude resource reads must use the same 2+1 MiB envelope as
 Codex. Full content and structuredContent are retained. View-only calls do
 not persist their results; remote payload framing separately caps the total
 uncompressed payload at 32 MiB and chunks encrypted responses.
@@ -222,7 +222,8 @@ View-only tool/read output is bounded by the transient cap in native providers, 
 shared provider RPC dispatch, executor and shared host. The postMessage
 transport tracks View tool/read request ids so only the corresponding
 host-to-View reply uses the larger cap (plus 1 KiB for its JSON-RPC envelope).
-View requests and persisted tool-result notifications remain 1 MiB.
+View requests remain 1 MiB; initial tool-result notifications use the 2 MiB
+initial-result cap.
 Claude initial HTML reads now use the same 2+1 MiB envelope as Codex; a
 host-authored transient flag distinguishes View reads from snapshot reads.
 
@@ -706,16 +707,10 @@ Live check on Bits & Bolts (dev instance, Codex 0.159):
 - **User-added resources**: need a security review first. Native main-process
   dialog only, `file://` URIs, `accept` enforced, local stdio servers only.
 - **URL-mode** Codex elicitations still show a plain approval without a link.
-- **Large initial results** (2026-10-03): `cad.pickFile` accept returns about
-  1 MB, 96% of it inline previews for the whole catalog
-  ([openai/mcp-extensions#32](https://github.com/openai/mcp-extensions/issues/32)).
-  The live desktop View now gets results up to the transient cap; the
-  transcript and phone keep 4 MiB. Still open: in Codex 0.159 code mode the
-  nested call item for that result has `structuredContent: null` and the
-  serialized result as text (the small cancel result kept it). Unverified
-  whether this is code mode or size; until fixed the View still gets no `part`.
-  Each result is also stored twice in SQLite (`metadata.codex` raw item and
-  the attachment); a result store with references would remove the copy.
+- **Duplicate result storage**: a Codex App result is stored twice in SQLite,
+  in the raw `metadata.codex` item and in the attachment (size policy:
+  [features/mcp-apps.md](../features/mcp-apps.md#initial-result-size)). A
+  result store with references would remove the copy.
 
 ## Remaining gaps (audit, 2026-10-02)
 

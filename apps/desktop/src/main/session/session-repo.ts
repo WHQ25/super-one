@@ -6,7 +6,6 @@ import { notifySessionList } from '../session-list-watch'
 import { recordSessionStarted, recordMessageCounts, type HarnessKind } from '../usage-stats-service'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { sealCodexMetadata, sealStreamingTools } from '@superone/shared/content-delta'
-import { persistedMcpAppMessage } from '@superone/shared/mcp-apps-state'
 import type { ChatMessage, ContentBlock, EffortLevel, ImageAttachment, ChatMessageContext } from '@superone/shared/agent-types'
 import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
 import type { HarnessId, MessagePersistMode } from './types'
@@ -515,17 +514,16 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
       const wasAlreadyCounted = priorCountedIds.has(msg.id)
       const shouldCount = !wasAlreadyCounted && (isUser || isAssistantComplete)
       const usageCountedAt = wasAlreadyCounted || shouldCount ? now : null
-      const row = persistedMcpAppMessage(msg)
       upsertMsg.run(
         msg.id,
         input.sid,
         i,
         msg.role,
         msg.status === 'streaming' ? 'interrupted' : msg.status,
-        serializeMessageContent(row),
+        serializeMessageContent(msg),
         msg.createdAt,
         msg.providerId,
-        row.metadata ? JSON.stringify(row.metadata) : null,
+        msg.metadata ? JSON.stringify(msg.metadata) : null,
         msg.checkpointId ?? null,
         msg.resumePointId ?? null,
         usageCountedAt,

@@ -4022,7 +4022,7 @@ export const zh: Messages = {
     activateToLoad: '激活后加载此应用。',
     activateTooltip: '激活以重新连接并加载',
     loadFailed: '无法加载应用：{{error}}',
-    resultOmitted: '初始结果过大未保存，激活后重新连接，但不恢复该结果',
+    resultOverLimit: '初始结果（{{size}}）超出宿主上限，未打开 App。Server 应只返回 View 需要的数据，其余由 View 按需加载。',
     authRequired: '请先在桌面端登录 {{server}}，然后重试。',
     retry: '重试',
     reloaded: '此应用打开了新页面，已被停止。',

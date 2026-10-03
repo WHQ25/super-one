@@ -187,6 +187,13 @@ export const LiveWithSnapshot: Story = {
   args: { app: attachment(id('live-snapshot'), { resource: RESOURCE }) },
 }
 
+export const OmittedResult: Story = {
+  name: 'Initial result over the host limit · no View',
+  args: { app: attachment(id('omitted'), { toolResult: undefined, toolResultOmitted: { bytes: 2_500_000, reason: 'size_limit' } }) },
+}
+
+export const OmittedResultNarrow: Story = { ...OmittedResult, name: 'Initial result over the host limit · narrow', args: { ...OmittedResult.args, width: 280 } }
+
 export const LiveActivationFails: Story = {
   name: 'Live with snapshot · activation fails, retry',
   args: { app: attachment(id('live-snapshot-fails'), { resource: RESOURCE }), mode: 'fails' },
@@ -255,5 +262,3 @@ export const RestoredResourceReference: Story = {
 export const RestoredReferenceLoading: Story = { ...RestoredResourceReference, args: { ...RestoredResourceReference.args, app: attachment(id('restored-ref-loading'), { resource: { hash: RESOURCE.hash, meta: RESOURCE.meta } }), mode: 'slow' } }
 export const RestoredReferenceOffline: Story = { ...RestoredResourceReference, args: { ...RestoredResourceReference.args, app: attachment(id('restored-ref-offline'), { resource: { hash: RESOURCE.hash, meta: RESOURCE.meta } }), mode: 'fails' } }
 
-export const RestoredOmittedResult: Story = { args: { app: attachment(id('omitted'), { resource: { hash: RESOURCE.hash, meta: RESOURCE.meta }, toolResult: undefined, toolResultOmitted: { bytes: 1050849, reason: 'size_limit' } }), arrival: 'restored' } }
-export const RestoredOmittedResultNarrow: Story = { ...RestoredOmittedResult, args: { ...RestoredOmittedResult.args, width: 320 } }

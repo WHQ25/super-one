@@ -17,6 +17,19 @@ function codexToolResult(result: { content?: unknown; structuredContent?: unknow
   }
 }
 
+// Codex sends clients a result over 1 MiB as a middle-truncated text preview of the whole
+// serialized result, without structuredContent or _meta; the model still gets all of it.
+const CODEX_TRUNCATION_MARKER = /…(\d+) (?:chars|tokens) truncated…/
+
+/** Size of the original result when the item carries Codex's truncated preview instead. */
+function codexTruncatedResultBytes(result: NonNullable<CodexMcpToolCallItem['result']>): number | undefined {
+  if (result.structuredContent != null || result.meta != null || result.content.length !== 1) return undefined
+  const block = record(result.content[0])
+  if (block?.type !== 'text' || typeof block.text !== 'string' || !block.text.startsWith('{"content":')) return undefined
+  const removed = CODEX_TRUNCATION_MARKER.exec(block.text)?.[1]
+  return removed === undefined ? undefined : new TextEncoder().encode(block.text).byteLength + Number(removed)
+}
+
 /** Keep the provider's routing metadata even when ordinary third-party appContext is null. */
 export function readCodexMcpAppFields(raw: Record<string, unknown>, previous?: CodexMcpToolCallItem): Partial<CodexMcpToolCallItem> {
   const ui = record(raw.mcpAppUi) ?? (typeof raw.mcpAppResourceUri === 'string' ? { resourceUri: raw.mcpAppResourceUri } : undefined)
@@ -27,24 +40,23 @@ export function readCodexMcpAppFields(raw: Record<string, unknown>, previous?: C
   }
 }
 
-/**
- * Bind an authoritative native item id; never correlate by tool name or arguments.
- * A host whose Views run in this process passes the live cap as `resultMaxBytes`.
- */
-export function attachCodexMcpApp(item: CodexMcpToolCallItem, binding: McpAppsBinding, threadId: string, resultMaxBytes?: number): CodexMcpToolCallItem {
+/** Bind an authoritative native item id; never correlate by tool name or arguments. */
+export function attachCodexMcpApp(item: CodexMcpToolCallItem, binding: McpAppsBinding, threadId: string): CodexMcpToolCallItem {
   const uri = item.mcpAppUi?.resourceUri
   if (!uri?.startsWith('ui://') || item.appContext || item.server === 'codex_apps') return item
   const status: ToolAppAttachment['status'] = item.status === 'in_progress' ? 'pending' : item.error || item.status === 'failed' ? 'error' : 'result'
+  const truncated = item.result ? codexTruncatedResultBytes(item.result) : undefined
   const app: ToolAppAttachment = {
     ...item.app,
     appInstanceId: item.app?.appInstanceId ?? `codex:${binding.session}:${threadId}:${item.id}`,
     binding, origin: { providerSessionId: threadId }, harnessCallId: item.id, resourceUri: uri, toolName: item.tool,
     ...(record(item.arguments) ? { toolInput: record(item.arguments) } : {}),
-    ...(item.result ? { toolResult: codexToolResult({ content: item.result.content, structuredContent: item.result.structuredContent, _meta: item.result.meta, isError: item.result.isError }) } : {}),
+    ...(truncated !== undefined ? { toolResult: undefined, toolResultOmitted: { bytes: truncated, reason: 'size_limit' as const } }
+      : item.result ? { toolResult: codexToolResult({ content: item.result.content, structuredContent: item.result.structuredContent, _meta: item.result.meta, isError: item.result.isError }) } : {}),
     status,
     ...(item.authRequired ? { error: { code: 'auth_required' as const, message: 'MCP authentication required', challenge: challenges(readCodexMcpWwwAuthenticate(item.result?.meta)) } } : item.error ? { error: { code: 'invalid' as const, message: item.error.message } } : {}),
   }
-  return { ...item, app: boundedToolAppAttachment(app, resultMaxBytes) }
+  return { ...item, app: boundedToolAppAttachment(app) }
 }
 
 /** Start discovery when a live attachment arrives, alongside its eventual HTML read. */

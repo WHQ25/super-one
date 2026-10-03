@@ -3929,7 +3929,7 @@ export type Messages = {
     activateToLoad: string
     activateTooltip: string
     loadFailed: string
-    resultOmitted: string
+    resultOverLimit: string
     authRequired: string
     retry: string
     reloaded: string
@@ -8099,7 +8099,7 @@ export const en: Messages = {
     activateToLoad: 'Activate to load this app.',
     activateTooltip: 'Activate to reconnect and reload',
     loadFailed: 'Could not load the app: {{error}}',
-    resultOmitted: 'Initial result was too large to save. Activate to reconnect without it',
+    resultOverLimit: 'The initial result ({{size}}) is over the host limit, so the App was not opened. The server should return only what the View needs and let it load the rest.',
     authRequired: 'Sign in to {{server}} on the desktop, then retry.',
     retry: 'Retry',
     reloaded: 'This app opened a new page and was stopped.',

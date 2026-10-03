@@ -48,6 +48,20 @@ describe('MCP App postMessage transport', () => {
     await expect(transport.send({ jsonrpc: '2.0', method: 'ui/notifications/tool-input', params: { arguments: { x: 'a'.repeat(MCP_APP_DATA_MAX_BYTES) } } })).rejects.toThrow('size limit')
   })
 
+  it('lets a download carry its file past the data cap, and nothing else', async () => {
+    const target = { postMessage: vi.fn() } as unknown as Window
+    transport = createMcpAppTransport(target, 'null')
+    const received = vi.fn()
+    transport.onmessage = received
+    await transport.start()
+    const blob = 'a'.repeat(MCP_APP_DATA_MAX_BYTES + 1024)
+    const request = (id: number, method: string, params: unknown) => window.dispatchEvent(new MessageEvent('message', { source: target, origin: 'null', data: { jsonrpc: '2.0', id, method, params } }))
+    request(1, 'ui/message', { role: 'user', content: [{ type: 'text', text: blob }] })
+    expect(received).not.toHaveBeenCalled()
+    request(2, 'ui/download-file', { contents: [{ type: 'resource', resource: { uri: 'file:///part.stl', mimeType: 'model/stl', blob } }] })
+    expect(received).toHaveBeenCalledTimes(1)
+  })
+
   it('pins outgoing messages and rejects sending after document revocation', async () => {
     const postMessage = vi.fn()
     transport = createMcpAppTransport({ postMessage } as unknown as Window, 'superone-mcp-app://stable')

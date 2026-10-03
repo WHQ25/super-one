@@ -23,8 +23,9 @@ export function createMcpAppTransport(
     if (event.source !== target) return
     try {
       if (closed || (document && !document.accepts(generation!)) || event.origin !== origin) throw new McpAppsError('denied', 'MCP App document changed')
-      assertMcpAppSize(event.data)
       const message = event.data
+      // A download carries the file itself and is saved on this device, never relayed.
+      if (message?.method !== 'ui/download-file') assertMcpAppSize(message)
       if (message?.method === 'tools/call' || message?.method === 'resources/read') {
         if (!['string', 'number'].includes(typeof message.id) || String(message.id).length > 128 || transient.size >= 1024) throw new McpAppsError('invalid', 'Invalid MCP App request identity')
         transient.add(message.id)

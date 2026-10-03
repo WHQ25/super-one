@@ -187,6 +187,9 @@ vi.mock('../session/realtime-timeline-repo', () => realtimeTimelineRepoMocks)
 const forkSessionMock = vi.fn()
 vi.mock('../session/session-fork', () => ({ forkSession: forkSessionMock }))
 
+const draftStoreMock = { assertControl: vi.fn(), get: vi.fn() }
+vi.mock('../db-drafts', () => ({ localDraftStore: () => draftStoreMock }))
+
 vi.mock('../providers/resolver', () => ({
   resolveChatService: vi.fn(() => null),
   buildRemoteActiveService: vi.fn(() => null),
@@ -3125,6 +3128,47 @@ describe('AgentService.handleRemoteCommand', () => {
 
     expect(setSandboxMode).toHaveBeenCalledWith('auto')
     expect(respond).toHaveBeenCalledWith('create-sandbox', expect.objectContaining({ ok: true }))
+  })
+
+  it('create_session replaces the empty runtime a taken-over draft prewarmed', async () => {
+    // The phone sends into the draft's origin id, which the desktop composer
+    // may have prewarmed; that empty runtime must not reject the session.
+    draftStoreMock.get.mockReturnValue({ originSessionId: 'origin' })
+    const order: string[] = []
+    const prewarmed = { snapshot: { messages: [] }, isStreaming: () => false }
+    const disposeSession = vi.fn(async () => { order.push('dispose') })
+    const createSession = vi.fn(() => { order.push('create'); return { setSelectedSettings: vi.fn() } })
+    const respond = vi.fn()
+    const service = new AgentService()
+    ;(service as { sessionManager: unknown }).sessionManager = { getSession: () => prewarmed, disposeSession, createSession }
+
+    await service.handleRemoteCommand({
+      type: 'create_session', requestId: 'create-draft', sessionId: 'origin', projectPath: '/project',
+      provider: 'codex', draftId: 'draft-1', draftLeaseId: 'lease-1',
+    }, respond, { deviceId: 'phone', transport: 'lan' })
+
+    expect(draftStoreMock.assertControl).toHaveBeenCalledWith('draft-1', 'phone', 'lease-1')
+    expect(order).toEqual(['dispose', 'create'])
+    expect(respond).toHaveBeenCalledWith('create-draft', expect.objectContaining({ ok: true, sessionId: 'origin' }))
+  })
+
+  it('create_session keeps a draft origin that already has messages', async () => {
+    draftStoreMock.get.mockReturnValue({ originSessionId: 'origin' })
+    const disposeSession = vi.fn()
+    const createSession = vi.fn(() => { throw new Error('Session id already active: origin') })
+    const respond = vi.fn()
+    const service = new AgentService()
+    ;(service as { sessionManager: unknown }).sessionManager = {
+      getSession: () => ({ snapshot: { messages: [{ id: 'm1' }] }, isStreaming: () => false }), disposeSession, createSession,
+    }
+
+    await service.handleRemoteCommand({
+      type: 'create_session', requestId: 'create-used', sessionId: 'origin', projectPath: '/project',
+      draftId: 'draft-1', draftLeaseId: 'lease-1',
+    }, respond, { deviceId: 'phone', transport: 'lan' })
+
+    expect(disposeSession).not.toHaveBeenCalled()
+    expect(respond).toHaveBeenCalledWith('create-used', expect.objectContaining({ ok: false }))
   })
 
   it('create_session survives a sandbox the host refuses', async () => {

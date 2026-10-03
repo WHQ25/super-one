@@ -614,11 +614,13 @@ export class AgentService {
         break
       }
       case 'create_session': {
+        let draftOriginSessionId: string | null = null
         if (command.draftId) {
           try {
             const { localDraftStore } = await import('../db-drafts')
             if (!command.draftLeaseId) throw new Error('Draft control is required')
             localDraftStore().assertControl(command.draftId, deviceId, command.draftLeaseId)
+            draftOriginSessionId = localDraftStore().get(command.draftId)?.originSessionId ?? null
           } catch (error) {
             await respond?.(command.requestId, { ok: false, error: error instanceof Error ? error.message : String(error) })
             break
@@ -630,6 +632,13 @@ export class AgentService {
           break
         }
         const mgr = this.requireSessionManager()
+        // A phone that took over a desktop draft sends into its origin session
+        // id. The desktop composer may have prewarmed that id already; the
+        // phone's picks now define the session, so the empty runtime goes.
+        const prewarmed = sessionId === draftOriginSessionId ? mgr.getSession(sessionId) : undefined
+        if (prewarmed && prewarmed.snapshot.messages.length === 0 && !prewarmed.isStreaming()) {
+          await mgr.disposeSession(sessionId)
+        }
 
         let cwd = projectPath
         let recordedGitBranch: string | null | undefined = undefined

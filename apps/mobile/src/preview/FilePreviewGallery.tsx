@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { View } from 'react-native'
 import { FilePreviewModal } from '../ui/file-preview'
-import type { FilePreviewState } from '../file-preview-state'
+import { imagePreviewState, mermaidPreviewState, type FilePreviewState } from '../file-preview-state'
+import type { MarkdownDocumentPorts } from '../markdown-document-requests'
 import { Button, SelectionField } from '../ui'
 import { createFakeGenerationPorts } from './fake-generation-ports'
 import { createFakeMediaPorts, type FakeSaveBehaviour } from './fake-media-ports'
@@ -21,6 +22,8 @@ export function FilePreviewGallery() {
   const [label, setLabel] = useState(FILE_PREVIEW_FIXTURES[0].label)
   const [saveOutcome, setSaveOutcome] = useState<FakeSaveBehaviour>('saved')
   const [open, setOpen] = useState(false)
+  /** A page the Markdown fixture opened on top of itself; back returns to the document. */
+  const [nested, setNested] = useState<FilePreviewState | null>(null)
   const [phase, setPhase] = useState<'idle' | 'downloading' | null>(null)
   const fixture = FILE_PREVIEW_FIXTURES.find((item) => item.label === label) ?? FILE_PREVIEW_FIXTURES[0]
   const bundledModel = fixture.state.kind === 'model' && (fixture.state.name === 'Box.glb' || fixture.state.name === 'triangle.usdz')
@@ -48,6 +51,18 @@ export function FilePreviewGallery() {
           : fixture.state
   const ports = useMemo(() => createFakeMediaPorts({ save: saveOutcome, delayMs: 600 }), [saveOutcome])
   const generationPorts = useMemo(() => createFakeGenerationPorts({ delayMs: 600 }), [])
+  // Diagrams and pictures in the Markdown fixture open and come back as they do
+  // paired; links, copies and host media have nothing behind them here.
+  const documentPorts = useMemo<MarkdownDocumentPorts>(() => ({
+    previewMermaid: async (svg) => { setNested(mermaidPreviewState(svg)) },
+    previewImage: async (target) => { setNested(imagePreviewState(target)) },
+    openLink: async () => {},
+    previewFile: async () => {},
+    copyText: async () => {},
+    resolveFavicon: async () => null,
+    loadImage: async () => { throw new Error('No host in the preview gallery') },
+    loadVideoPoster: async () => null,
+  }), [])
   return (
     <View style={{ flex: 1, gap: 8, paddingHorizontal: 12, paddingVertical: 6 }}>
       <SelectionField compact label="State" value={label}
@@ -58,12 +73,14 @@ export function FilePreviewGallery() {
         onChange={(next) => setSaveOutcome(next as FakeSaveBehaviour)} />
       <Button label="Open preview" onPress={() => setOpen(true)} />
       <FilePreviewModal
-        state={open ? state : null}
+        state={open ? nested ?? state : null}
+        covered={nested ? [state] : []}
         ports={ports}
-        onDismiss={() => setOpen(false)}
+        onDismiss={() => { if (nested) setNested(null); else setOpen(false) }}
         onStartTransfer={() => setPhase('downloading')}
         onRetry={() => setPhase(null)}
         generationPorts={generationPorts}
+        documentPorts={documentPorts}
       />
     </View>
   )

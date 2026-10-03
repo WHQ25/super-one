@@ -305,10 +305,24 @@ test('text offers Save to Files, renders a numbered listing and marks the cited 
   expect(await screen.findByText('Save to Files')).toBeTruthy()
 })
 
-test('markdown renders as prose, not as a listing', async () => {
+test('markdown renders as a document in the chat renderer, not as a listing', async () => {
   await mount({ kind: 'text', path: '/workspace/proj/README.md', name: 'README.md', size: 20, markdown: true, text: '# Title\n\nSome **bold** words.' })
-  expect(screen.getByRole('header')).toHaveTextContent('Title')
+  expect(screen.getByTestId('markdown-document')).toBeTruthy()
   expect(screen.queryByText('# Title')).toBeNull()
+  // Covered until the document reports its first frame.
+  expect(screen.getByText('Loading file…')).toBeTruthy()
+})
+
+test('a Markdown file starts its renderer while the host is still reading it', async () => {
+  await mount({ kind: 'loading', path: '/workspace/proj/README.md', name: 'README.md' })
+  expect(screen.getByTestId('markdown-document')).toBeTruthy()
+  expect(screen.getByText('Loading file…')).toBeTruthy()
+})
+
+test('any other file loading boots no renderer', async () => {
+  await mount({ kind: 'loading', path: PATH, name: 'App.tsx' })
+  expect(screen.queryByTestId('markdown-document')).toBeNull()
+  expect(screen.getByText('Loading file…')).toBeTruthy()
 })
 
 test('a relay transfer shows the size and waits for the Download tap', async () => {

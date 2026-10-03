@@ -4,6 +4,7 @@ import type {
   PermissionRequest,
   PlanApprovalRequest,
 } from '@superone/shared/agent-types'
+import type { MarkdownDocumentPorts } from '../markdown-document-requests'
 import type { MediaPorts } from '../media-ports'
 import type { ChatRuntime } from '../runtime'
 import { PermissionSheet, PlanSheet, QuestionSheet } from '../sheets'
@@ -27,6 +28,7 @@ export function MobileOverlays(props: {
   /** The fullscreen preview every picture and file opens into. */
   filePreview: ReturnType<typeof useFilePreview>
   mediaPorts: MediaPorts
+  documentPorts: MarkdownDocumentPorts
 }) {
   const runtime = () => props.runtimeRef.current
   return (
@@ -90,11 +92,13 @@ export function MobileOverlays(props: {
       <WorkspaceDrawer {...props.workspace} />
       <FilePreviewModal
         state={props.filePreview.state}
+        covered={props.filePreview.covered}
         ports={props.mediaPorts}
-        onDismiss={props.filePreview.close}
+        onDismiss={props.filePreview.back}
         onStartTransfer={props.filePreview.startTransfer}
         onRetry={props.filePreview.retry}
         generationPorts={props.filePreview.generationPorts}
+        documentPorts={props.documentPorts}
       />
     </>
   )

@@ -35,6 +35,17 @@ until the first request settles. Unsupported actions must return an error respon
 `{ ok: true }`. The text body's code listing is highlighted by `ui/code-highlight.ts`
 (lowlight `common` grammars, GitHub palettes per scheme); grammar is chosen from the file
 name only, and unknown or >128 KiB files render plain.
+A Markdown file renders in `ui/markdown-document.tsx`: the chat WebView's own
+`CHAT_VIEW_HTML` booted in its `markdown-document` mode (`chat-view/src/view-mode.ts`),
+so mermaid, math, tables, highlighted code, host images and file chips match the
+transcript, and frontmatter shows as a YAML block as on the desktop editor. Only the
+reading actions pass from that document (`markdown-document-requests.ts`); relative
+media and links resolve against the file's folder, not the project root. The renderer
+mounts while a `.md` page is still `loading`, so its boot overlaps the host read, and the
+loading body covers it until the document posts `documentRendered`. A diagram, picture
+or linked file opened from it stacks on the page: `useFilePreview().back` (the modal's
+Back, edge swipe and Android back) returns to the document, which stayed mounted
+(hidden) underneath with its scroll position; `close` leaves all.
 `loadImage` is how tool screenshots and generated images get onto the transcript: the
 WebView's `PortableHostImage` asks for a path, `inline-images.ts` answers with a data URI
 over LAN and for relay files small enough to ride the RPC (≤512 KiB). Larger relay files

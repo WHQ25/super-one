@@ -1,6 +1,8 @@
 import { createRoot } from 'react-dom/client'
 import { ChatView, ChatViewErrorBoundary } from './ChatView'
 import { initializeChatViewI18n } from './i18n'
+import { MarkdownDocumentView } from './MarkdownDocumentView'
+import { currentChatViewMode } from './view-mode'
 import './theme.css'
 
 // Brand hue is present before the first React paint; setTheme can override it later.
@@ -16,7 +18,7 @@ async function start(): Promise<void> {
   if (!root) throw new Error('chat-view root element is missing')
   createRoot(root).render(
     <ChatViewErrorBoundary>
-      <ChatView />
+      {currentChatViewMode() === 'markdown-document' ? <MarkdownDocumentView /> : <ChatView />}
     </ChatViewErrorBoundary>,
   )
 }

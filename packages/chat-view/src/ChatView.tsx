@@ -32,7 +32,7 @@ import { ZERO_TURN_TOKENS } from './presenters/turn-footer-model'
 import { CHAT_WINDOW, initialChatWindow, loadPreviousChatWindow, loadNextChatWindow, normalizeChatWindow, type ChatWindowRange } from './chat-window'
 import { exitMcpAppFullscreen, forgetMcpAppArrivals, noteMcpAppArrivals } from './mcp-app-document'
 import { installHostBridge, postHost, requestNativeAsync } from './bridge'
-import { setChatViewLocale } from './i18n'
+import { applyDocumentViewport } from './document-viewport'
 import { PortableMessage } from './PortableMessage'
 import { isRealtimeVoiceMessage } from '@superone/shared/realtime-transcript'
 import { extractTurnOutline } from '@superone/shared/turn-outline'
@@ -504,21 +504,8 @@ export function ChatView() {
         }))
         return
       case 'setViewport':
-        if (message.safeArea) {
-          const root = document.documentElement
-          for (const edge of ['top', 'right', 'bottom', 'left'] as const) {
-            const value = message.safeArea[edge] ?? 0
-            root.style.setProperty(`--safe-area-${edge}`, `${Math.max(0, value)}px`)
-          }
-        }
-        if (typeof message.fontScale === 'number') {
-          document.documentElement.style.fontSize = `${Math.max(0.8, Math.min(1.6, message.fontScale)) * 16}px`
-        }
-        if (message.locale) {
-          document.documentElement.lang = message.locale
-          void setChatViewLocale(message.locale)
-          setState((previous) => ({ ...previous, locale: message.locale! }))
-        }
+        applyDocumentViewport(message)
+        if (message.locale) setState((previous) => ({ ...previous, locale: message.locale! }))
         return
       case 'setWindow':
         prepareNavigation()

@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./mermaid-preview": "./src/mermaid-preview.ts",
+    "./view-mode": "./src/view-mode.ts",
     "./PortableHostImage": "./src/PortableHostImage.tsx",
     "./PortableMarkdown": "./src/PortableMarkdown.tsx",
     "./PortableMcpAppView": "./src/PortableMcpAppView.tsx",

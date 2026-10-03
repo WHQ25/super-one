@@ -6,7 +6,7 @@ import StarterKit from '@tiptap/starter-kit'
 import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight'
 import { TableKit } from '@tiptap/extension-table'
 import { common, createLowlight } from 'lowlight'
-import { markdownToDoc, splitFrontmatter } from './markdown-codec'
+import { markdownToDoc } from './markdown-codec'
 import { htmlSchemas, ImageSchema, RawMediaSchema } from './markdown-schemas'
 import { docToMarkdown } from './markdown-serialize'
 
@@ -54,22 +54,6 @@ async function roundTrip(input: string): Promise<string> {
 function normalize(s: string): string {
   return s.replace(/\n{3,}/g, '\n\n').replace(/[ \t]+$/gm, '').trimEnd()
 }
-
-describe('splitFrontmatter', () => {
-  it('parses yaml frontmatter', () => {
-    const r = splitFrontmatter('---\ntitle: Hi\n---\n# Body')
-    expect(r.frontmatter).toBe('title: Hi')
-    expect(r.body).toBe('# Body')
-  })
-
-  it('returns null when no frontmatter', () => {
-    expect(splitFrontmatter('# Title').frontmatter).toBeNull()
-  })
-
-  it('does not match mid-document hr', () => {
-    expect(splitFrontmatter('# Title\n---\nfoo').frontmatter).toBeNull()
-  })
-})
 
 describe('markdown round-trip', () => {
   it('preserves a heading', async () => {

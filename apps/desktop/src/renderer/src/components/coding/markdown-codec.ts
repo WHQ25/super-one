@@ -8,20 +8,8 @@ import StarterKit from '@tiptap/starter-kit'
 import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight'
 import { TableKit } from '@tiptap/extension-table'
 import { common, createLowlight } from 'lowlight'
+import { splitFrontmatter } from '@superone/shared/markdown-frontmatter'
 import { BlockMathSchema, htmlSchemas, ImageSchema, InlineMathSchema, RawMediaSchema } from './markdown-schemas'
-
-const FRONTMATTER_RE = /^---[ \t]*\n([\s\S]*?)\n---[ \t]*\n?([\s\S]*)$/
-
-export interface ParsedMarkdown {
-  frontmatter: string | null
-  body: string
-}
-
-export function splitFrontmatter(source: string): ParsedMarkdown {
-  const m = source.match(FRONTMATTER_RE)
-  if (!m) return { frontmatter: null, body: source }
-  return { frontmatter: m[1], body: m[2] }
-}
 
 const codecLowlight = createLowlight(common)
 

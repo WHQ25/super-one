@@ -86,7 +86,7 @@ import { shouldUseTabletMultiPane } from '../layout-state'
 import { WorkspaceSidebar } from './workspace-sidebar'
 import { sessionListInvalidations, type SessionListRow as SessionRow } from '../session-list-state'
 import { WorkspaceListCache } from '../workspace-list-cache'
-import { injectHostMessage as inject, resolveNativeRequest } from '../native-actions'
+import { injectHostMessage as inject, resolveNativeRequest, type NativeActionPorts } from '../native-actions'
 import { createMediaPorts } from '../media-ports'
 import type { ReconnectController } from '../reconnect-controller'
 import { createMobileRelayConnection } from '../mobile-relay-connection'
@@ -541,137 +541,137 @@ export function MobileApp() {
       runUiAction(() => kv.set(CHAT_VIEW_STATE_KEY, JSON.stringify(chatViewStatesRef.current)), setStatus, 'failed to save view state')
     }, 250)
   }
+  const nativeActionPorts: NativeActionPorts = {
+    subscribeDetail: async (detailRef, subscriptionId) => {
+      const runtime = runtimeRef.current
+      if (!runtime) throw new Error('no active session')
+      return runtime.subscribeDetail(detailRef, subscriptionId)
+    },
+    unsubscribeDetail: async (subscriptionId) => { await runtimeRef.current?.unsubscribeDetail(subscriptionId) },
+    loadNavigationIndex: async () => {
+      const runtime = runtimeRef.current
+      if (!runtime) throw new Error('no active session')
+      const index = await runtime.loadNavigationIndex()
+      if (runtimeRef.current !== runtime) throw new Error('Session changed')
+      return index
+    },
+    loadHistoryWindow: async (anchorId, direction) => {
+      const runtime = runtimeRef.current
+      if (!runtime) throw new Error('no active session')
+      const result = await runtime.loadHistoryWindow(anchorId, direction)
+      if (runtimeRef.current !== runtime) throw new Error('Session changed')
+      return result
+    },
+    loadEarlier: async () => {
+      const runtime = runtimeRef.current
+      if (!runtime) throw new Error('no active session')
+      const messages = await runtime.loadEarlier()
+      if (runtimeRef.current !== runtime) throw new Error('Session changed')
+      return { messages, hasMoreHistory: runtime.hasMoreHistory }
+    },
+    openLink: async (url) => { await Linking.openURL(url) },
+    copyText: async (text) => { await Clipboard.setStringAsync(text) },
+    haptic: async (style) => {
+      await Haptics.impactAsync(
+        style === 'light' ? Haptics.ImpactFeedbackStyle.Light
+          : style === 'heavy' ? Haptics.ImpactFeedbackStyle.Heavy
+            : Haptics.ImpactFeedbackStyle.Medium,
+      )
+    },
+    // Mirrors `clearSent`: the native editor owns the text when it is mounted,
+    // and writing through `changeText` instead would leave the two out of sync.
+    saveWidgetTemplate: async (input) => {
+      const runtime = runtimeRef.current
+      if (!runtime) throw new Error('no active session')
+      await runtime.saveWidgetTemplate(input)
+    },
+    setDraft: async (text) => {
+      if (composerDraft.editorRef.current) composerDraft.editorRef.current.replaceText(text)
+      else composerDraft.changeText(text)
+    },
+    resendFailedMessage: async (messageId) => {
+      runtimeRef.current?.resendFailedMessage(messageId)
+    },
+    editFailedMessage: async (messageId) => {
+      const message = runtimeRef.current?.takeFailedMessage(messageId)
+      if (!message) return
+      const text = mergeRestoredDraftText(userMessageText(message), composerDraft.exportSnapshot().text)
+      if (composerDraft.editorRef.current) composerDraft.editorRef.current.replaceText(text)
+      else composerDraft.changeText(text)
+      const restored = message.attachments ?? []
+      if (restored.length) {
+        setAttachments((current) => [...restored.filter((a) => !current.some((c) => c.id === a.id)), ...current])
+      }
+    },
+    codexAsyncQuestionAnswer: async (messageId, itemId, answers) => {
+      const runtime = runtimeRef.current
+      if (!runtime) throw new Error('no active session')
+      await runtime.answerCodexAsyncQuestion(messageId, itemId, answers)
+    },
+    codexPlanApproval: async (messageId, status, feedback) => {
+      const runtime = runtimeRef.current
+      if (!runtime) throw new Error('no active session')
+      runtime.respondCodexPlan(messageId, status, feedback)
+    },
+    openSession: async (targetId) => {
+      const client = clientRef.current
+      if (!client) throw new Error('not connected')
+      // The WebView fires this and forgets, so failures go to the status line
+      // like every other navigation. The transcript only carries the id; the
+      // row (provider, project) comes from the host so the header and picker
+      // land on the right harness.
+      runUiAction(async () => {
+        const row = await findSession(client, targetId)
+        if (!row) throw new Error('that session is no longer on the host')
+        await openSessionAnywhere(row)
+      }, setStatus, 'failed to open session')
+    },
+    previewFile: (path, line, root) => filePreview.open(path, line, root),
+    previewImage: async (target) => { filePreview.showImage(target) },
+    previewMermaid: async (svg) => { filePreview.showMermaid(svg) },
+    loadImage: async (path, confirmed, root) => {
+      const client = clientRef.current
+      if (!client || !project) throw new Error('no active project')
+      return loadInlineImage({ host: client, transport: activeTransport, projectPath: project.path, sessionId, path, root, confirmed })
+    },
+    loadVideoPoster: async (path, root) => {
+      const client = clientRef.current
+      if (!client || !project) throw new Error('no active project')
+      return loadVideoPoster({ host: client, projectPath: project.path, sessionId, path, root })
+    },
+    loadTextFile: async (path, root) => {
+      const client = clientRef.current
+      if (!client || !project) throw new Error('no active project')
+      return loadTextFile({ host: client, projectPath: project.path, sessionId, path, root })
+    },
+    loadAttachment: async (messageId, ref) => {
+      const runtime = runtimeRef.current
+      if (!runtime) throw new Error('no active session')
+      return runtime.loadAttachment(messageId, ref)
+    },
+    resolveFavicon: async (url, isDark) => {
+      const client = clientRef.current
+      if (!client) throw new Error('not connected')
+      return requestLinkFavicon(client, url, isDark)
+    },
+    mcpApp: async (request) => {
+      const client = clientRef.current
+      if (!client || !project || !sessionId) throw new Error('no active session')
+      const app = findMcpAppAttachment(runtimeRef.current?.messages ?? [], request.appInstanceId, request.messageId)?.app
+      return requestMcpApp(client, { projectPath: project.path, sessionId }, request, app)
+    },
+    mcpAppFullscreen: async (view) => { mcpApp.show(view) },
+    openFile: async (path) => {
+      if (!project) throw new Error('no active project')
+      const target = resolveRemoteFilePath(project.path, path)
+      setFilesOrigin('session')
+      setScreen('files')
+      if (!await loadDirectory(parentRemotePath(target))) throw new Error(`cannot open ${path}`)
+      setStatus(`Opened ${target}`)
+    },
+  }
   const handleNativeRequest = async (message: Extract<HostOutbound, { type: 'requestNative' }>) => {
-    const result = await resolveNativeRequest(message, {
-      subscribeDetail: async (detailRef, subscriptionId) => {
-        const runtime = runtimeRef.current
-        if (!runtime) throw new Error('no active session')
-        return runtime.subscribeDetail(detailRef, subscriptionId)
-      },
-      unsubscribeDetail: async (subscriptionId) => { await runtimeRef.current?.unsubscribeDetail(subscriptionId) },
-      loadNavigationIndex: async () => {
-        const runtime = runtimeRef.current
-        if (!runtime) throw new Error('no active session')
-        const index = await runtime.loadNavigationIndex()
-        if (runtimeRef.current !== runtime) throw new Error('Session changed')
-        return index
-      },
-      loadHistoryWindow: async (anchorId, direction) => {
-        const runtime = runtimeRef.current
-        if (!runtime) throw new Error('no active session')
-        const result = await runtime.loadHistoryWindow(anchorId, direction)
-        if (runtimeRef.current !== runtime) throw new Error('Session changed')
-        return result
-      },
-      loadEarlier: async () => {
-        const runtime = runtimeRef.current
-        if (!runtime) throw new Error('no active session')
-        const messages = await runtime.loadEarlier()
-        if (runtimeRef.current !== runtime) throw new Error('Session changed')
-        return { messages, hasMoreHistory: runtime.hasMoreHistory }
-      },
-      openLink: async (url) => { await Linking.openURL(url) },
-      copyText: async (text) => { await Clipboard.setStringAsync(text) },
-      haptic: async (style) => {
-        await Haptics.impactAsync(
-          style === 'light' ? Haptics.ImpactFeedbackStyle.Light
-            : style === 'heavy' ? Haptics.ImpactFeedbackStyle.Heavy
-              : Haptics.ImpactFeedbackStyle.Medium,
-        )
-      },
-      // Mirrors `clearSent`: the native editor owns the text when it is mounted,
-      // and writing through `changeText` instead would leave the two out of sync.
-      saveWidgetTemplate: async (input) => {
-        const runtime = runtimeRef.current
-        if (!runtime) throw new Error('no active session')
-        await runtime.saveWidgetTemplate(input)
-      },
-      setDraft: async (text) => {
-        if (composerDraft.editorRef.current) composerDraft.editorRef.current.replaceText(text)
-        else composerDraft.changeText(text)
-      },
-      resendFailedMessage: async (messageId) => {
-        runtimeRef.current?.resendFailedMessage(messageId)
-      },
-      editFailedMessage: async (messageId) => {
-        const message = runtimeRef.current?.takeFailedMessage(messageId)
-        if (!message) return
-        const text = mergeRestoredDraftText(userMessageText(message), composerDraft.exportSnapshot().text)
-        if (composerDraft.editorRef.current) composerDraft.editorRef.current.replaceText(text)
-        else composerDraft.changeText(text)
-        const restored = message.attachments ?? []
-        if (restored.length) {
-          setAttachments((current) => [...restored.filter((a) => !current.some((c) => c.id === a.id)), ...current])
-        }
-      },
-      codexAsyncQuestionAnswer: async (messageId, itemId, answers) => {
-        const runtime = runtimeRef.current
-        if (!runtime) throw new Error('no active session')
-        await runtime.answerCodexAsyncQuestion(messageId, itemId, answers)
-      },
-      codexPlanApproval: async (messageId, status, feedback) => {
-        const runtime = runtimeRef.current
-        if (!runtime) throw new Error('no active session')
-        runtime.respondCodexPlan(messageId, status, feedback)
-      },
-      openSession: async (targetId) => {
-        const client = clientRef.current
-        if (!client) throw new Error('not connected')
-        // The WebView fires this and forgets, so failures go to the status line
-        // like every other navigation. The transcript only carries the id; the
-        // row (provider, project) comes from the host so the header and picker
-        // land on the right harness.
-        runUiAction(async () => {
-          const row = await findSession(client, targetId)
-          if (!row) throw new Error('that session is no longer on the host')
-          await openSessionAnywhere(row)
-        }, setStatus, 'failed to open session')
-      },
-      previewFile: (path, line, root) => filePreview.open(path, line, root),
-      previewImage: async (target) => { filePreview.showImage(target) },
-      previewMermaid: async (svg) => { filePreview.showMermaid(svg) },
-      loadImage: async (path, confirmed, root) => {
-        const client = clientRef.current
-        if (!client || !project) throw new Error('no active project')
-        return loadInlineImage({ host: client, transport: activeTransport, projectPath: project.path, sessionId, path, root, confirmed })
-      },
-      loadVideoPoster: async (path, root) => {
-        const client = clientRef.current
-        if (!client || !project) throw new Error('no active project')
-        return loadVideoPoster({ host: client, projectPath: project.path, sessionId, path, root })
-      },
-      loadTextFile: async (path, root) => {
-        const client = clientRef.current
-        if (!client || !project) throw new Error('no active project')
-        return loadTextFile({ host: client, projectPath: project.path, sessionId, path, root })
-      },
-      loadAttachment: async (messageId, ref) => {
-        const runtime = runtimeRef.current
-        if (!runtime) throw new Error('no active session')
-        return runtime.loadAttachment(messageId, ref)
-      },
-      resolveFavicon: async (url, isDark) => {
-        const client = clientRef.current
-        if (!client) throw new Error('not connected')
-        return requestLinkFavicon(client, url, isDark)
-      },
-      mcpApp: async (request) => {
-        const client = clientRef.current
-        if (!client || !project || !sessionId) throw new Error('no active session')
-        const app = findMcpAppAttachment(runtimeRef.current?.messages ?? [], request.appInstanceId, request.messageId)?.app
-        return requestMcpApp(client, { projectPath: project.path, sessionId }, request, app)
-      },
-      mcpAppFullscreen: async (view) => { mcpApp.show(view) },
-      openFile: async (path) => {
-        if (!project) throw new Error('no active project')
-        const target = resolveRemoteFilePath(project.path, path)
-        setFilesOrigin('session')
-        setScreen('files')
-        if (!await loadDirectory(parentRemotePath(target))) throw new Error(`cannot open ${path}`)
-        setStatus(`Opened ${target}`)
-      },
-    })
-    inject(webRef, result)
+    inject(webRef, await resolveNativeRequest(message, nativeActionPorts))
   }
   const exitMcpAppFullscreen = () => inject(webRef, { type: 'exitMcpAppFullscreen' })
   const recoverChatView = (message: string) => {
@@ -2504,6 +2504,7 @@ export function MobileApp() {
         }}
         filePreview={filePreview}
         mediaPorts={mediaPorts}
+        documentPorts={nativeActionPorts}
       />
       {folderPrompt ? <NewFolderSheet
         parent={directoryPath}

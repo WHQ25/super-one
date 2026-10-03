@@ -24,15 +24,36 @@ export function PortableFileChip({ name, filePath }: { name: string; filePath: s
 const VERY_LONG_LINE = 'const configuration = { retries: 3, backoffMs: [250, 500, 1000, 2000, 4000], endpoints: ["https://relay.example.com/v1", "https://relay-fallback.example.com/v1"], headers: { "x-client": "superone-mobile" } }'
 `
 
-const MARKDOWN = `# Remote file preview
+const MARKDOWN = `---
+title: Remote file preview
+status: accepted
+---
 
-A chip in the transcript opens the file **in place**, the way the desktop opens a tab.
+# Remote file preview
+
+A chip in the transcript opens the file **in place**, the way the desktop opens a tab. See [the hook](../apps/mobile/src/navigation/use-file-preview.ts:120).
 
 ## What arrives inline
 
-- Text and code under 512 KiB
-- Markdown, rendered as prose
-- The cited line, when the chip carried one
+- [x] Text and code under 512 KiB
+- [x] Markdown, rendered by the chat pipeline
+- [ ] The cited line, when the chip carried one
+
+\`\`\`mermaid
+sequenceDiagram
+  participant P as Phone
+  participant D as Desktop
+  P->>D: read_desktop_file (statOnly)
+  D-->>P: inline text or metadata
+  P->>D: download (relay needs confirmation)
+\`\`\`
+
+| Transport | Inline | Confirm |
+| --- | ---: | :---: |
+| LAN | 512 KiB | no |
+| Relay | 512 KiB | yes |
+
+The inline cap is $$2^{19}$$ bytes.
 
 \`\`\`ts
 const inline = size <= INLINE_PREVIEW_MAX_BYTES

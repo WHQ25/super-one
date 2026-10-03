@@ -83,6 +83,12 @@ export type HostInbound =
     }
   | { type: 'setWindow'; range: ChatWindowRange; anchorId?: string }
   | { type: 'scrollToTurn'; turnId: string; behavior?: 'auto' | 'smooth' }
+  /**
+   * The Markdown file a `markdown-document` view renders (`view-mode.ts`).
+   * `directory` is the file's folder on the host: relative links resolve
+   * against it, as they do in the desktop's Markdown editor.
+   */
+  | { type: 'showMarkdownDocument'; text: string; directory: string }
   | { type: 'nativeActionResult'; requestId: string; result?: unknown; error?: string }
   | { type: 'nativeActionProgress'; requestId: string; progress: unknown }
 
@@ -91,6 +97,8 @@ export type HostOutbound =
   | { type: 'transcriptApplied'; channelId: string; sequence: number }
   | { type: 'error'; fatal: true; message: string }
   | { type: 'requestNative'; requestId: string; action: string; payload?: unknown }
+  /** A `markdown-document` view painted the document `showMarkdownDocument` sent. */
+  | { type: 'documentRendered' }
   | {
       type: 'viewState'
       range: ChatWindowRange

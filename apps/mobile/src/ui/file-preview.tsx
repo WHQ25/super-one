@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowLeft, CircleAlert, FileDown, FolderDown, ImageDown, MoreHorizontal, Share2 } from 'lucide-react-native'
-import { ActivityIndicator, Animated, Modal, ScrollView, StyleSheet, View } from 'react-native'
+import { ActivityIndicator, Animated, Modal, StyleSheet, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { isMarkdownFileName } from '@superone/shared/file-preview'
 import {
   describeSaveOutcome,
   FILE_PREVIEW_TEXT,
@@ -14,16 +15,16 @@ import {
 import type { ImageGenerationPorts } from '../image-generation-ports'
 import type { MediaPorts } from '../media-ports'
 import { useMobileLocale } from '../i18n/context'
-import { NativeMarkdown } from '../prompts/NativeMarkdown'
+import type { MarkdownDocumentPorts } from '../markdown-document-requests'
 import { useMobileTheme } from '../theme/context'
 import { AnchoredMenu, MenuRow, useMenuAnchor } from './anchored-menu'
 import { CodeListing } from './code-listing'
 import { EdgeSwipeArea } from './edge-swipe'
 import { FileTypeIcon } from './file-icon'
 import { IconButton } from './icon-button'
+import { MarkdownDocumentView } from './markdown-document'
 import { MenuHost } from './menu-host'
 import { Button } from './primitives'
-import { SCROLL_INDICATOR_GUTTER } from './scroll-gutter'
 import { Text } from './text'
 import { useFade } from './use-fade'
 import { VideoPlayerView } from './video-player'
@@ -35,13 +36,21 @@ import { ZoomableModel } from './zoomable-model'
 export type FilePreviewModalProps = {
   /** What to show; `null` keeps the modal closed. */
   state: FilePreviewState | null
+  /**
+   * Pages under `state`, oldest first. Markdown documents among them stay
+   * mounted behind it, so back lands on the same scroll position without a reload.
+   */
+  covered?: readonly FilePreviewState[]
   ports: MediaPorts
+  /** Back: to the page this one was opened from (a Markdown file's diagram or link), else closed. */
   onDismiss: () => void
   /** Approve a relay transfer the page is waiting on. */
   onStartTransfer: () => void
   onRetry: () => void
   /** Host access for a generated image's info panel; without it the panel shows ids and file names. */
   generationPorts?: ImageGenerationPorts
+  /** Host access for a Markdown file's images, links and diagrams; without it they stay inert. */
+  documentPorts?: MarkdownDocumentPorts
 }
 
 /** How long a success line stays before the chrome goes quiet again. */
@@ -53,7 +62,7 @@ const FEEDBACK_MS = 2500
  * chip, or a row in the Files browser.
  *
  * The body follows `state.kind`: a zoomable picture, a playing clip, a
- * mermaid diagram, a code listing or prose, a transfer card while bytes are
+ * mermaid diagram, a code listing or a Markdown document, a transfer card while bytes are
  * still on the desktop, or the loading and error states around them. The chrome is the
  * same throughout — back, the file-type icon and name (the same Symbols
  * artwork a file chip uses), and a menu with the only two things worth doing
@@ -66,7 +75,7 @@ const FEEDBACK_MS = 2500
  * only gets the chrome out of the way, so a finger that lands while lining up
  * a pinch cannot close the thing it was reaching for.
  */
-export function FilePreviewModal({ state, ports, onDismiss, onStartTransfer, onRetry, generationPorts }: FilePreviewModalProps) {
+export function FilePreviewModal({ state, covered = [], ports, onDismiss, onStartTransfer, onRetry, generationPorts, documentPorts }: FilePreviewModalProps) {
   const { tokens: { colors } } = useMobileTheme()
   const [chromeVisible, setChromeVisible] = useState(true)
   const toggleChrome = useCallback(() => setChromeVisible((visible) => !visible), [])
@@ -91,7 +100,10 @@ export function FilePreviewModal({ state, ports, onDismiss, onStartTransfer, onR
           {/* Tapping the picture clears the status bar along with the chrome. */}
           <WindowStatusBar hidden={state.kind === 'image' && !chromeVisible} />
           <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.background }]} accessibilityViewIsModal onAccessibilityEscape={onDismiss}>
-            <PreviewBody state={state} chromeVisible={chromeVisible} onToggleChrome={toggleChrome} onStartTransfer={onStartTransfer} onRetry={onRetry} generationPorts={generationPorts} />
+            <DocumentLayers pages={[...covered, state]} ports={documentPorts} />
+            {isDocumentPage(state) ? null : (
+              <PreviewBody state={state} chromeVisible={chromeVisible} onToggleChrome={toggleChrome} onStartTransfer={onStartTransfer} onRetry={onRetry} generationPorts={generationPorts} />
+            )}
             <EdgeSwipeArea onSwipe={onDismiss} />
             <PreviewChrome state={state} ports={ports} onDismiss={onDismiss} visible={state.kind !== 'image' || chromeVisible} />
           </View>
@@ -103,6 +115,40 @@ export function FilePreviewModal({ state, ports, onDismiss, onStartTransfer, onR
 
 /** Height the chrome row takes; in-flow bodies start below it. */
 const CHROME_ROW_HEIGHT = 48
+
+/**
+ * A page the Markdown renderer owns: a Markdown file, or one still loading.
+ * Starting the renderer at `loading` overlaps its boot with the host read.
+ */
+function isDocumentPage(state: FilePreviewState): state is Extract<FilePreviewState, { kind: 'text' | 'loading' }> {
+  return state.kind === 'text' ? state.markdown : state.kind === 'loading' && isMarkdownFileName(state.name)
+}
+
+/**
+ * Every Markdown page in the stack, the current one on top. A covered document
+ * stays mounted under the page opened from it — a diagram, a picture, a linked
+ * file — so going back shows it as it was left instead of booting the renderer
+ * again. A page's key is its stack position, so it survives being covered.
+ */
+function DocumentLayers({ pages, ports }: { pages: readonly FilePreviewState[]; ports?: MarkdownDocumentPorts }) {
+  const insets = useSafeAreaInsets()
+  const offset = { paddingTop: insets.top + CHROME_ROW_HEIGHT, paddingLeft: insets.left, paddingRight: insets.right }
+  return pages.map((page, index) => {
+    if (!isDocumentPage(page)) return null
+    const current = index === pages.length - 1
+    return (
+      <View
+        key={`${index}:${page.path}`}
+        style={[StyleSheet.absoluteFill, offset, !current && styles.covered]}
+        pointerEvents={current ? 'auto' : 'none'}
+        accessibilityElementsHidden={!current}
+        importantForAccessibility={current ? 'auto' : 'no-hide-descendants'}
+      >
+        <MarkdownDocumentView text={page.kind === 'text' ? page.text : undefined} path={page.path} ports={ports} placeholder={<LoadingBody />} />
+      </View>
+    )
+  })
+}
 
 function PreviewBody({ state, chromeVisible, onToggleChrome, onStartTransfer, onRetry, generationPorts }: {
   state: FilePreviewState
@@ -163,12 +209,7 @@ function PreviewBody({ state, chromeVisible, onToggleChrome, onStartTransfer, on
   }
 
   if (state.kind === 'loading') {
-    return (
-      <View style={[styles.center, offset]}>
-        <ActivityIndicator color={colors.primary} />
-        <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>{t(FILE_PREVIEW_TEXT.loading)}</Text>
-      </View>
-    )
+    return <View style={[styles.flex, offset]}><LoadingBody /></View>
   }
 
   if (state.kind === 'error') {
@@ -199,23 +240,20 @@ function PreviewBody({ state, chromeVisible, onToggleChrome, onStartTransfer, on
     )
   }
 
-  if (state.markdown) {
-    return (
-      <ScrollView style={styles.flex}
-        contentContainerStyle={{
-          paddingTop: (offset?.paddingTop ?? 0) + spacing.md,
-          paddingLeft: spacing.md + insets.left,
-          paddingRight: SCROLL_INDICATOR_GUTTER + spacing.md + insets.right,
-          paddingBottom: spacing.xl,
-        }}>
-        <NativeMarkdown content={state.text} />
-      </ScrollView>
-    )
-  }
-
   return (
     <View style={[styles.flex, { paddingLeft: insets.left, paddingRight: insets.right }]}>
       <CodeListing text={state.text} name={state.name} line={state.line} topInset={offset?.paddingTop ?? 0} />
+    </View>
+  )
+}
+
+function LoadingBody() {
+  const { tokens: { colors } } = useMobileTheme()
+  const { t } = useMobileLocale()
+  return (
+    <View style={styles.center}>
+      <ActivityIndicator color={colors.primary} />
+      <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>{t(FILE_PREVIEW_TEXT.loading)}</Text>
     </View>
   )
 }
@@ -341,6 +379,8 @@ function PreviewChrome({ state, ports, onDismiss, visible }: { state: FilePrevie
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  // Hidden, not unmounted or collapsed: a zero-size WebView would reflow and lose its scroll.
+  covered: { opacity: 0 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 16 },
   progress: { width: 280, maxWidth: '100%', gap: 8 },
   progressRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },

@@ -62,6 +62,16 @@ a {
     calc(14px + var(--safe-area-left));
 }
 
+/* A Markdown file on its own page. The native preview places the WebView below
+   its chrome and inside the safe area, so this only pads the prose. */
+.markdown-document {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 12px 16px 32px;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
 .chat-view-top-sentinel {
   min-height: 1px;
   scroll-margin-top: calc(8px + var(--safe-area-top));

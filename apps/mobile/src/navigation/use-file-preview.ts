@@ -95,6 +95,9 @@ export type FilePreviewPorts = {
  * painted and opens it without any transfer at all. `showMermaid` does the
  * same for a rendered diagram, on a page of its own so pinch-zoom cannot
  * scale the chat WebView.
+ *
+ * A page opened from inside another — a Markdown file's diagram, picture or
+ * linked file — stacks on it: `back` returns there, `close` leaves them all.
  */
 export function useFilePreview(ports: FilePreviewPorts) {
   const [state, setStateValue] = useState<FilePreviewState | null>(null)
@@ -107,6 +110,11 @@ export function useFilePreview(ports: FilePreviewPorts) {
   // Only the newest open() may write its answer back; an older one that resolves
   // late — or one the user has since closed — must not overwrite the page.
   const generation = useRef(0)
+  /**
+   * Pages under the current one, oldest first. Replaced, never mutated: the
+   * modal keeps covered Markdown documents mounted from this list.
+   */
+  const history = useRef<FilePreviewState[]>([])
   const portsRef = useRef(ports)
   portsRef.current = ports
 
@@ -168,7 +176,17 @@ export function useFilePreview(ports: FilePreviewPorts) {
     setState(next)
   }, [setState])
 
-  const open = useCallback(async (path: string, line?: number, root?: string) => {
+  /**
+   * Keep the open page to come back to. With the preview up, the transcript and
+   * the Files list are covered, so a new page can only come from this one. A
+   * page still loading is being replaced, not left.
+   */
+  const pushCurrent = useCallback(() => {
+    const current = stateRef.current
+    if (current && current.kind !== 'loading') history.current = [...history.current, current]
+  }, [])
+
+  const load = useCallback(async (path: string, line?: number, root?: string) => {
     const { clientRef, transport, project, sessionId, pairingId } = portsRef.current
     const client = clientRef.current
     if (!client || !project) throw new Error('no active project')
@@ -220,28 +238,43 @@ export function useFilePreview(ports: FilePreviewPorts) {
     if (next.kind === 'transfer' && next.phase === 'idle' && !next.needsConfirm && !next.inlineBase64) void startTransfer(next)
   }, [setState, startTransfer])
 
+  const open = useCallback((path: string, line?: number, root?: string) => {
+    pushCurrent()
+    return load(path, line, root)
+  }, [pushCurrent, load])
+
   const showImage = useCallback((target: ImagePreviewTarget) => {
     generation.current++
+    pushCurrent()
     setState(imagePreviewState(target))
-  }, [setState])
+  }, [pushCurrent, setState])
 
   const showMermaid = useCallback((svg: string) => {
     generation.current++
+    pushCurrent()
     setState(mermaidPreviewState(svg))
+  }, [pushCurrent, setState])
+
+  const back = useCallback(() => {
+    generation.current++
+    const previous = history.current.at(-1) ?? null
+    history.current = history.current.slice(0, -1)
+    setState(previous)
   }, [setState])
 
   const close = useCallback(() => {
     generation.current++
+    history.current = []
     setState(null)
   }, [setState])
 
   const retry = useCallback(() => {
     const current = stateRef.current
     if (!current || current.kind === 'image' || current.kind === 'mermaid') return
-    // open() only throws before the page shows anything; the page has a state for it.
-    open(current.path, 'line' in current ? current.line : undefined, 'root' in current ? current.root : undefined)
+    // load() only throws before the page shows anything; the page has a state for it.
+    load(current.path, 'line' in current ? current.line : undefined, 'root' in current ? current.root : undefined)
       .catch((error) => setState({ kind: 'error', path: current.path, name: current.name, message: error instanceof Error ? error.message : String(error), ...('root' in current && current.root ? { root: current.root } : {}) }))
-  }, [open, setState])
+  }, [load, setState])
 
   const confirmTransfer = useCallback(() => { void startTransfer() }, [startTransfer])
 
@@ -274,5 +307,5 @@ export function useFilePreview(ports: FilePreviewPorts) {
     },
   }), [])
 
-  return { state, open, showImage, showMermaid, close, startTransfer: confirmTransfer, retry, generationPorts }
+  return { state, covered: history.current, open, showImage, showMermaid, back, close, startTransfer: confirmTransfer, retry, generationPorts }
 }

@@ -39,6 +39,8 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
   const [ready, setReady] = useState<Ready | null>(null)
   const [loading, setLoading] = useState(true)
   const [active, setActive] = useState(false)
+  // A restored View stays a tool row, its document unmounted, until the user opens its snapshot.
+  const [opened, setOpened] = useState(false)
   // An omitted initial result leaves its View nothing to show: no document, only the state card.
   const omitted = mcpAppOmittedMessage(app, t)
   const [error, setError] = useState<McpAppsError | null>(null)
@@ -62,7 +64,8 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
   const icon = mcpAppPresentationIcon(app.presentation, isDark ? 'dark' : 'light') ?? fallbackIcon
   const onError = useCallback((value: unknown) => {
     if (value instanceof McpAppsError && value.code === 'inactive') {
-      setActive(false); setError(null); emphasize()
+      // Only a mounted View reports this; it stays shown while it waits for Activate.
+      setOpened(true); setActive(false); setError(null); emphasize()
       return
     }
     setError(value instanceof McpAppsError ? value : new McpAppsError('invalid', value instanceof Error ? value.message : String(value)))
@@ -145,10 +148,11 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
   }, [api, surface, ready, app.appInstanceId])
   const available = !!ready && initialized && !error && !unknown && !revoked
   const restoring = available && !active && surface === 'inline'
+  const dormant = !!ready && !active && !opened && surface === 'inline'
   // Host-initiated modes are limited to those both the resource and the View declare.
   const canExpand = available && surface === 'inline' && viewModes.includes('fullscreen')
     && (mcpAppResourceModes(ready?.meta) ?? ['fullscreen']).includes('fullscreen')
-  const preparing = !available && !error && !unknown && !revoked && (loading || (!!ready && !initialized))
+  const preparing = !dormant && !available && !error && !unknown && !revoked && (loading || (!!ready && !initialized))
   const stateButton = (icon: ReactNode, label: string, onClick: () => void) => <McpAppStateButton icon={icon} label={label} disabled={loading} onClick={onClick} />
   const stateCard: McpAppState | null = omitted ? { message: omitted, alert: true }
     : available
@@ -168,19 +172,19 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
     : null
   const row = <>
     <div>
-      <EmbeddedToolView pinnedHeader collapsed={collapsed} expandLabel={t('tooltips.expandView')} collapseLabel={t('tooltips.collapseView')} onToggleCollapsed={!available ? undefined : () => { if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) setCollapsing(true); setCollapsed(value => !value) }} title={mcpAppHeaderTitle(mcpAppServerTitle(app), app.presentation?.toolTitle ?? owner.title ?? app.resourceUri)} icon={<ToolBrandIcon src={icon} alt={app.binding.server} icon={getToolDisplay(toolName, {}).icon} />} actions={<>
+      <EmbeddedToolView pinnedHeader collapsed={dormant || collapsed} expandLabel={t('tooltips.expandView')} collapseLabel={t('tooltips.collapseView')} onToggleCollapsed={dormant ? () => setOpened(true) : !available ? undefined : () => { if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) setCollapsing(true); setCollapsed(value => !value) }} title={mcpAppHeaderTitle(mcpAppServerTitle(app), app.presentation?.toolTitle ?? owner.title ?? app.resourceUri)} icon={<ToolBrandIcon src={icon} alt={app.binding.server} icon={getToolDisplay(toolName, {}).icon} />} actions={<>
         {canExpand && <>
           <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.openInPanel')} onClick={() => void openSurface(false)}><Maximize2 className="size-3" /></IconButton>
           <IconButton size="xs" variant="ghost" tooltip={t('tooltips.maximizeActivityPanel')} onClick={() => void openSurface(true)}><Maximize className="size-3" /></IconButton>
         </>}
         {owner.details && <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.toolDetails')} aria-expanded={detailsOpen} onClick={() => setDetailsOpen(value => !value)}><CodeXml className="size-3" /></IconButton>}
-        {restoring && (activationError?.code === 'auth_required'
+        {(restoring || dormant) && (activationError?.code === 'auth_required'
           ? <McpAppActivateButton emphasized={emphasized} disabled={loading} tooltip={t('mcpApp.authenticate')} onClick={() => void activate(true)}><LogIn className="size-3" /></McpAppActivateButton>
           : <McpAppActivateButton emphasized={emphasized} disabled={loading} aria-label={t('mcpApp.activate')}
-            tooltip={t('mcpApp.activateTooltip')} onClick={() => void activate()}><Power className="size-3" /></McpAppActivateButton>)}
+            tooltip={t('mcpApp.activateTooltip')} onClick={() => void activate()}>{dormant && loading ? <Loader2 className="size-3 animate-spin" /> : <Power className="size-3" />}</McpAppActivateButton>)}
       </>}>
         {stateCard && <McpAppStateCard state={stateCard} />}
-        {!collapsed && restoring && activationError && <div data-mcp-app-restore-note className="mb-2 min-w-0 text-xs">
+        {(dormant || !collapsed && restoring) && activationError && <div data-mcp-app-restore-note className="mb-2 min-w-0 text-xs">
           <p role="alert" className="break-words text-error">{activationError.message}</p>
         </div>}
         {!collapsed && detailsOpen && <div className="mb-2">{owner.details}</div>}
@@ -194,7 +198,7 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
   </>
   return <>
     {owner.row && createPortal(row, owner.row)}
-    {ready && executor && !omitted && <Suspense fallback={null}><Frame key={reload} app={app} meta={ready.meta} registration={ready.document} api={api} executor={executor} context={context} active={active}
+    {ready && executor && !omitted && !dormant && <Suspense fallback={null}><Frame key={reload} app={app} meta={ready.meta} registration={ready.document} api={api} executor={executor} context={context} active={active}
       onHost={() => {}} onInitialized={modes => { setViewModes(modes); setInitialized(true) }} onError={onError} onUnknown={() => setUnknown(true)} onRevoked={() => setRevoked(true)} onHeight={setHeight} /></Suspense>}
     {surface === 'pip' && ready && !revoked && <McpAppPip appInstanceId={app.appInstanceId} title={app.binding.server} toolName={toolName} viewport={viewport} onMode={onMode} />}
   </>

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { waitFor } from 'storybook/test'
 import { useMemo, useEffect } from 'react'
 import { Button } from '@superone/ui/components/ui/button'
 import { ToolBlock } from '@/components/chat/ToolBlock'
@@ -48,7 +49,15 @@ export default meta
 type Story = StoryObj<typeof Scenario>
 export const Live: Story = {}
 export const Loading: Story = { args: { state: 'loading' } }
+/** A restored View is a row: its chevron opens the snapshot, Activate reconnects. */
 export const RestoredInactive: Story = { args: { state: 'inactive' } }
+const openRestoredRow: Story['play'] = async ({ canvasElement, userEvent }) => {
+  const toggle = await waitFor(() => { const element = canvasElement.querySelector<HTMLElement>('[data-embedded-tool-toggle]'); if (!element) throw new Error('row'); return element })
+  await userEvent.click(toggle)
+}
+export const RestoredSnapshotOpened: Story = { args: { state: 'inactive' }, play: openRestoredRow }
+export const RestoredActivationFails: Story = { args: { state: 'offline' }, play: async ({ canvas, userEvent }) => { await userEvent.click(await canvas.findByRole('button', { name: 'Activate' })) } }
+export const RestoredInactiveChineseNarrow: Story = { args: { state: 'inactive', narrow: true }, globals: { locale: 'zh' } }
 export const RestoredWithoutSnapshot: Story = { args: { state: 'missing' } }
 export const Approval: Story = { args: { state: 'approval' } }
 export const AuthRequired: Story = { args: { state: 'auth' } }

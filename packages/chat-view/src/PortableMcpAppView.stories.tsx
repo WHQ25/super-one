@@ -4,6 +4,7 @@ import { richMcpAppMessage } from '../../../apps/desktop/src/test/fixtures/mcp-a
 import { McpAppConsentCard } from './McpAppConsentCard'
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { waitFor } from 'storybook/test'
 import type { McpAppHostResult, ToolAppAttachment } from '@superone/shared/mcp-apps'
 // The same View the fixture MCP server serves, so the stories drive the real wire protocol.
 import FIXTURE_VIEW_HTML from '../../../apps/desktop/src/test/fixtures/mcp-apps/fixture-view.html?raw'
@@ -200,9 +201,26 @@ export const LiveActivationFails: Story = {
 }
 
 export const RestoredWithSnapshot: Story = {
-  name: 'Restored · paints the snapshot, calls nothing until activated',
+  name: 'Restored · a row until opened, calls nothing until activated',
   args: { app: attachment(id('restored'), { resource: RESOURCE, toolResult: page(2) }), arrival: 'restored' },
 }
+
+export const RestoredSnapshotOpened: Story = {
+  name: 'Restored · snapshot opened from the row',
+  args: { app: attachment(id('restored-opened'), { resource: RESOURCE, toolResult: page(2) }), arrival: 'restored' },
+  play: async ({ canvasElement, userEvent }) => {
+    const toggle = await waitFor(() => { const element = canvasElement.querySelector<HTMLElement>('[data-embedded-tool-toggle]'); if (!element) throw new Error('row'); return element })
+    await userEvent.click(toggle)
+  },
+}
+
+export const RestoredActivationFails: Story = {
+  name: 'Restored · activation fails under the row',
+  args: { app: attachment(id('restored-offline'), { resource: RESOURCE }), arrival: 'restored', mode: 'fails' },
+  play: async ({ canvas, userEvent }) => { await userEvent.click(await canvas.findByRole('button', { name: 'Activate' })) },
+}
+
+export const RestoredRowNarrow: Story = { ...RestoredWithSnapshot, name: 'Restored · row at 280 px', args: { ...RestoredWithSnapshot.args, app: attachment(id('restored-narrow'), { resource: RESOURCE }), width: 280 } }
 
 export const RestoredWithoutSnapshot: Story = {
   name: 'Restored without snapshot · activate to load',

@@ -175,8 +175,9 @@ the only View-to-host entry, used by desktop IPC and by the phone's
   `mcpApps.resolveAttachment`, which is served from a node-side index.
 - **Activation** is keyed by requester (`desktop` or `mobile:<deviceId>`).
   A View that arrives live activates automatically on the device showing it.
-  A View restored from history paints from its snapshot without contacting the
-  provider. View-originated outbound operations return `inactive` until the user presses
+  A View restored from history starts as a collapsed tool row with no document;
+  expanding it paints the snapshot without contacting the provider.
+  View-originated outbound operations return `inactive` until the user presses
   Activate, which also re-checks the original provider, session and account.
   Successful activation reloads the desktop/phone View from the same pinned HTML
   and binding. Its new initialize receives persisted tool input/result and

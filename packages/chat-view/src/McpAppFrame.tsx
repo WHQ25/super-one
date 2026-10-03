@@ -96,6 +96,8 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
   const [revoked, setRevoked] = useState(false)
   const [restart, setRestart] = useState(0)
   const [inactive, setInactive] = useState(() => mcpAppNeedsActivation(app.appInstanceId))
+  // A restored View stays a tool row, its frame unmounted, until the user opens its snapshot.
+  const [dormant, setDormant] = useState(inactive)
   const [activating, setActivating] = useState(false)
   const [activationError, setActivationError] = useState<string | null>(null)
   const [emphasized, emphasize] = useMcpAppEmphasis()
@@ -157,7 +159,7 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
   // frame's WindowProxy exists from mount; `srcdoc` is only assigned once it listens.
   useLayoutEffect(() => {
     const frame = frameRef.current?.contentWindow
-    if (!frame || !root) return
+    if (dormant || !frame || !root) return
     const slot = slotFor(app.appInstanceId)
     const document = createMcpAppDocument()
     setInitialized(false)
@@ -202,7 +204,7 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
     // The attachment itself flows in through `update`; a new document is only for a new View,
     // new HTML, or an explicit restart.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [app.appInstanceId, html, meta, root, restart])
+  }, [app.appInstanceId, html, meta, root, restart, dormant])
 
   useEffect(() => { void hostRef.current?.update(app).catch(() => {}) }, [app])
 
@@ -222,6 +224,7 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
       await runMcpAppOperation(target, { operation: 'activate' }, ask)
       markMcpAppActivated(app.appInstanceId)
       setInactive(false)
+      setDormant(false)
       // Reuse the pinned HTML, metadata and attachment; the new initialize sees
       // persisted model context and may retry the App's own startup calls.
       setRestart((value) => value + 1)
@@ -239,10 +242,15 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
   const canExpand = available && !restoring && !expanded && viewModes.includes('fullscreen')
     && (mcpAppResourceModes(meta) ?? ['fullscreen']).includes('fullscreen')
   const shown = available && (expanded || !collapsed)
-  const state: McpAppState | null = available ? null
+  const state: McpAppState | null = available || dormant ? null
     : revoked ? { message: t('mcpApp.revoked'), action: <McpAppStateButton icon={<RotateCw className="size-3.5" />} label={t('mcpApp.restart')} onClick={() => { setRevoked(false); setRestart((value) => value + 1) }} /> }
     : unknownOutcome ? { message: t('mcpApp.unknown') }
     : { message: t('mcpApp.loading'), icon: <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" /> }
+  const restoreNote = activationError ? (
+    <div data-mcp-app-restore-note className="mb-2 min-w-0 text-xs">
+      <p role="alert" className="break-words text-error">{activationError}</p>
+    </div>
+  ) : null
   return (
     <div
       ref={setRoot}
@@ -257,24 +265,22 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
         state={state}
         // Hidden rather than unmounted: dropping the frame would remount the iframe and reload the View.
         className={expanded ? 'my-0 flex min-h-0 flex-1 flex-col [&>[data-embedded-tool-header]]:hidden' : undefined}
-        collapsed={!expanded && collapsed}
-        onToggleCollapsed={!available || expanded ? undefined : () => {
+        collapsed={dormant || (!expanded && collapsed)}
+        onToggleCollapsed={dormant ? () => setDormant(false) : !available || expanded ? undefined : () => {
           if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) setCollapsing(true)
           setCollapsed((value) => !value)
         }}
         actions={canExpand ? <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.fullscreen')} onClick={() => display('fullscreen')}><Maximize className="size-3" /></IconButton> : null}
-        activation={restoring ? (
+        activation={restoring || dormant ? (
           <McpAppActivateButton emphasized={emphasized} disabled={activating} aria-label={t('mcpApp.activate')}
             tooltip={t('mcpApp.activateTooltip')} onClick={() => { void activate() }}>
             {activating ? <Loader2 className="size-3 animate-spin" /> : <Power className="size-3" />}
           </McpAppActivateButton>
         ) : null}
-        notice={restoring && activationError ? (
-          <div data-mcp-app-restore-note className="mb-2 min-w-0 text-xs">
-            <p role="alert" className="break-words text-error">{activationError}</p>
-          </div>
-        ) : null}
+        notice={restoring ? restoreNote : null}
       >
+        {/* A row hides the notice line, so its failed activation shows here, as on the desktop. */}
+        {dormant ? restoreNote : null}
         <div className={expanded ? 'relative min-h-0 flex-1' : 'relative'}>
           {/* Zero height rather than `hidden` while loading: the View lays out at its real width. */}
           <div
@@ -285,7 +291,7 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
               shown && !expanded && (app.resource?.meta.prefersBorder ?? meta?.prefersBorder) && 'ring-1 ring-border',
               collapsing && 'transition-[height] duration-200 ease-out motion-reduce:transition-none')}
           >
-            <iframe
+            {!dormant && <iframe
               key={restart}
               ref={frameRef}
               title={server}
@@ -294,7 +300,7 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
               sandbox="allow-scripts allow-forms"
               className="block border-0"
               style={expanded ? { width: '100%', height: '100%' } : { width: '100%', height }}
-            />
+            />}
           </div>
           {consent ? (
             // Above the frame in fullscreen, where the frame covers the whole document.

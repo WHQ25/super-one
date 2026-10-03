@@ -2,9 +2,9 @@ import { mcpAppMessagePreview } from '@superone/shared/mcp-apps-content'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import type { McpAppDesktopApi } from './desktop-executor'
 import viewHtml from '../../../../test/fixtures/mcp-apps/fixture-view.html?raw'
-export type McpAppStoryState = 'live' | 'loading' | 'inactive' | 'missing' | 'approval' | 'auth' | 'error' | 'unknown' | 'revoked' | 'long'
+export type McpAppStoryState = 'live' | 'loading' | 'inactive' | 'offline' | 'missing' | 'approval' | 'auth' | 'error' | 'unknown' | 'revoked' | 'long'
 export function createMcpAppStoryFixture(state: McpAppStoryState = 'live', { topRightControl = false }: { topRightControl?: boolean } = {}) {
-  let active = !['inactive', 'missing'].includes(state), authenticated = state !== 'auth', registrations = 0, url = ''
+  let active = !['inactive', 'offline', 'missing'].includes(state), authenticated = state !== 'auth', registrations = 0, url = ''
   const listeners = new Set<(value: { url: string }) => void>()
   const result = (page = 1) => ({ content: [{ type: 'text', text: `page ${page}` }], structuredContent: { page, pageCount: 4, items: Array.from({ length: state === 'long' ? 60 : 4 }, (_, n) => `Item ${page}-${n + 1} · A useful result with a longer description`) }, _meta: { private: 'View only' } })
   const app: ToolAppAttachment = { appInstanceId: 'storybook-view', binding: { node: 'local', session: 'storybook-session', server: 'MCP Apps Fixture', configGeneration: 1, configFingerprint: 'fixture' }, origin: { providerSessionId: 'storybook-thread' }, resourceUri: 'ui://fixture/view', presentation: { toolTitle: state === 'long' ? 'Browse the engineering library with a very long descriptive tool title' : 'Browse library', serverTitle: 'Fixture CAD', icons: [{ src: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"%3E%3Cpath fill="%230ea5e9" d="M2 2h16v16H2z"/%3E%3C/svg%3E' }] }, status: 'result', toolInput: { page: 1 }, toolResult: result() }
@@ -22,6 +22,8 @@ export function createMcpAppStoryFixture(state: McpAppStoryState = 'live', { top
     },
     async mcpAppRequest(_project, _session, request) {
       if (request.operation === 'updateModelContext') return { ok: true, value: { ...request.context, updateId: 'story-update' } }
+      // A restored View whose server is gone keeps only its snapshot.
+      if (request.operation === 'activate' && state === 'offline') return { ok: false, error: { code: 'not_connected', message: 'The fixture server is unavailable.' } }
       if (request.operation === 'activate') { active = true; return { ok: true, value: {} } }
       if (request.operation === 'callTool' && state === 'unknown') return { ok: true, value: { outcome: 'unknown_outcome', result: { isError: true, content: [{ type: 'text', text: 'Server disconnected after dispatch' }] } } }
       if (!request.approval && request.operation === 'sendMessage') return { ok: false, error: { code: 'approval_required', challenge: 'storybook-challenge', prompt: { kind: 'sendMessage', server: app.binding.server, ...mcpAppMessagePreview(request.params, app.binding.server) } } }

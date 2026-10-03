@@ -39,11 +39,18 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-async function mount(app: ToolAppAttachment = saved) {
+async function render(app: ToolAppAttachment = saved) {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   container = document.createElement('div'); document.body.append(container)
   root = createRoot(container)
   await act(async () => root!.render(createElement(McpAppFrame, { app, messageId: 'm', html, meta: saved.resource!.meta, toolName: 'mcp__cad__library', details: null })))
+}
+
+/** Renders the View with its document; a restored one is opened from its row first. */
+async function mount(app: ToolAppAttachment = saved) {
+  await render(app)
+  const row = container!.querySelector<HTMLElement>('[data-embedded-tool-header][data-collapsed] [data-embedded-tool-toggle]')
+  if (row) await act(async () => row.click())
   await vi.waitFor(() => expect(wire.pairs).toHaveLength(1))
 }
 
@@ -58,6 +65,32 @@ async function initialize(index: number, capabilities: ConstructorParameters<typ
   await act(async () => { await view.connect(wire.pairs[index].transport) })
   return { view, inputs, results }
 }
+
+it('keeps a restored View as a row without a document until it is opened', async () => {
+  await render()
+  expect(container!.querySelector('[data-embedded-tool-header]')?.hasAttribute('data-collapsed')).toBe(true)
+  expect(container!.querySelector('iframe')).toBeNull()
+  expect(container!.querySelector('[data-mcp-app-state-card]')).toBeNull()
+  expect(activateButton()).not.toBeNull()
+  expect(wire.pairs).toHaveLength(0)
+  await act(async () => container!.querySelector<HTMLElement>('[data-embedded-tool-title]')!.click())
+  await vi.waitFor(() => expect(wire.pairs).toHaveLength(1))
+  expect(wire.native).not.toHaveBeenCalled()
+})
+
+it('activates a restored row directly, or reports the failure under the row', async () => {
+  wire.native.mockResolvedValueOnce({ response: { ok: false, error: { code: 'not_connected', message: 'Server unavailable' } } })
+  await render()
+  await act(async () => activateButton()!.click())
+  expect(container!.querySelector('[role=alert]')?.textContent).toBe('Server unavailable')
+  expect(container!.querySelector('iframe')).toBeNull()
+  wire.native.mockResolvedValue({ response: { ok: true, value: {} } })
+  await act(async () => activateButton()!.click())
+  await vi.waitFor(() => expect(wire.pairs).toHaveLength(1))
+  await initialize(0)
+  expect(container!.querySelector('[data-embedded-tool-header]')?.hasAttribute('data-collapsed')).toBe(false)
+  expect(activateButton()).toBeNull()
+})
 
 it('loads behind the state card and shows the View once it initializes', async () => {
   await mount()

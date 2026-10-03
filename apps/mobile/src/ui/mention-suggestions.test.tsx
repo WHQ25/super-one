@@ -32,7 +32,7 @@ test.each([
 
 test.each(['', 'Assistant', 'gpt'])('leaves the handle unhighlighted for query %s', async (query) => {
   const rows = buildMentionRows(query, {
-    remote: [], agentProfiles: [{ ...agentProfile, label: 'Assistant', aliases: ['gpt'] }],
+    remote: [], agentProfiles: [{ ...agentProfile, label: 'Assistant', aliases: ['gpt'] }], capabilityIds: [],
   }).filter((entry) => entry.item.path === agentProfile.path)
   await renderWithTheme(<MentionSuggestions rows={rows} onSelect={() => {}} />)
   expect(screen.getByText('@codex')).not.toHaveStyle({ fontWeight: '700' })

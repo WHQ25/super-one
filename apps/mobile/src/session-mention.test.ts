@@ -99,7 +99,7 @@ describe('empty states', () => {
 
 describe('the portal in the mention list', () => {
   it('is discovered among the capabilities, and navigates instead of inserting', () => {
-    const rows = buildMentionRows('sess', { remote: [], agentProfiles: [] })
+    const rows = buildMentionRows('sess', { remote: [], agentProfiles: [], capabilityIds: [] })
     const portal = rows.find((row) => row.item.kind === 'session-portal')
     expect(portal?.item.navigateTo).toBe('session ')
     expect(groupMentionRows(rows).find((group) => group.items.includes(portal!))?.key).toBe('capability')

@@ -6,8 +6,9 @@ import { MentionIconCache, type MentionIconStore } from '../mention-icon-cache'
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import type { ChatRuntime } from '../runtime'
 import { cursorAfterEdit, insertAtCursor, triggerSnippet, type ComposerCursor } from '../composer-cursor'
-import { extractMentionQuery, insertMention, parseMentionItems, parseAgentMentionItems, type MentionItem } from '../mentions'
+import { extractMentionQuery, insertMention, parseMentionItems, type MentionItem } from '../mentions'
 import { buildMentionRows, type MentionRow } from '../mention-rows'
+import { peekMentionCatalog, rememberMentionCatalog, type MentionCatalog } from '../mention-catalog'
 import { deriveMentionMode, mentionScopeDir } from '../mention-browse-state'
 import { filterBrowseItems, requestDirectory } from '../mention-browse'
 import {
@@ -16,8 +17,8 @@ import {
   type SessionMentionLoadState,
 } from '../session-mention'
 import {
-  gitEmptyLabel, gitKindItems, gitRefItems, isGitMentionQuery, parseGitAvailability, parseGitMentionQuery,
-  requestGitMentionRefs, type GitMentionCapabilities,
+  gitEmptyLabel, gitKindItems, gitRefItems, isGitMentionQuery, parseGitMentionQuery,
+  requestGitMentionRefs,
 } from '../git-mention'
 import { enabledGitMentionPortals } from '@superone/shared/git-mention-query'
 import { filterSlashCommands, type SlashCommandInfo } from '../slash'
@@ -41,9 +42,6 @@ export { MENTION_SEARCH_DEBOUNCE_MS }
 /** One shape for every producer, so the caller never branches on which ran. */
 type MentionFetch = {
   remote: MentionItem[]
-  agentProfiles: MentionItem[]
-  capabilityIds?: unknown
-  gitAvailability?: GitMentionCapabilities
   /** Another page is available; only the session portal pages today. */
   hasMore?: boolean
   /** What this producer's "nothing found" means, when it is not just "no matches". */
@@ -68,6 +66,11 @@ export interface ComposerSuggestionSource {
   /** The open session, whose MCP servers answer `@` too; none on the new-session landing. */
   sessionId?: string | null
   /**
+   * The link can answer requests. The client is dialled after the composer is
+   * already usable, so what was asked before this turns true is asked again.
+   */
+  connected: boolean
+  /**
    * Where fetched app icons live between searches and between runs. Injected
    * rather than imported so this hook stays free of the encrypted native store.
    */
@@ -84,14 +87,24 @@ export function useComposerSuggestions(
   const [catalog, setCatalog] = useState<SlashCommandInfo[]>([])
   const [catalogStatus, setCatalogStatus] = useState<SlashCatalogStatus>('loading')
   const [mentionQuery, setMentionQuery] = useState<string | null>(null)
-  const [mentionResults, setMentionResults] = useState<MentionFetch>({ remote: [], agentProfiles: [] })
+  const [mentionResults, setMentionResults] = useState<MentionFetch>({ remote: [] })
   const [mentionSearch, setMentionSearch] = useState<MentionSearchState>(CLOSED)
   const [requestedCursor, setRequestedCursor] = useState<ComposerCursor>()
   const text = useRef('')
   const cursor = useRef<ComposerCursor>({ start: 0, end: 0 })
   const generation = useRef(0)
   const catalogGeneration = useRef(0)
-  const mentionCatalog = useRef<{ agentProfiles: MentionItem[]; capabilityIds?: unknown; gitAvailability?: GitMentionCapabilities }>({ agentProfiles: [] })
+  /**
+   * Collaborators, capability switches and portal availability. Fetched ahead of
+   * the first `@` so the list opens already matching the desktop; unset only
+   * while nothing has been heard from the host for this project.
+   */
+  const [mentionCatalog, setMentionCatalogState] = useState<MentionCatalog>()
+  const mentionCatalogRef = useRef<MentionCatalog | undefined>(undefined)
+  const setMentionCatalog = (next: MentionCatalog | undefined) => {
+    mentionCatalogRef.current = next
+    setMentionCatalogState(next)
+  }
   const inFlightQuery = useRef<string | null>(null)
   const debounce = useRef<ReturnType<typeof setTimeout>>(undefined)
   /**
@@ -123,7 +136,6 @@ export function useComposerSuggestions(
     setMentionSearch(CLOSED)
   }
   useEffect(() => {
-    mentionCatalog.current = { agentProfiles: [] }
     cwd.current = null
     sessionPaging.current = null
     clear()
@@ -133,16 +145,16 @@ export function useComposerSuggestions(
   // Catalog load is keyed on the same context as everything else, so switching
   // project, harness or device refetches rather than showing the last one's
   // commands.
-  const { projectPath, provider, acpAgentId } = host
+  const { projectPath, provider, acpAgentId, connected } = host
   useEffect(() => {
     const request = ++catalogGeneration.current
     const client = host.client.current
-    if (!client || !projectPath || !provider) {
+    if (!projectPath || !provider) {
       setCatalog([])
       setCatalogStatus('ready')
       return
     }
-    const cached = peekSlashCatalog(client, projectPath, provider, acpAgentId)
+    const cached = client ? peekSlashCatalog(client, projectPath, provider, acpAgentId) : undefined
     if (cached) {
       setCatalog(cached)
       setCatalogStatus('ready')
@@ -150,6 +162,8 @@ export function useComposerSuggestions(
     }
     setCatalog([])
     setCatalogStatus('loading')
+    // Still dialling: `connected` turning true runs this again.
+    if (!client || !connected) return
     void requestSlashCatalog(client, projectPath, provider, acpAgentId).then((commands) => {
       if (request !== catalogGeneration.current) return
       setCatalog(commands)
@@ -162,7 +176,7 @@ export function useComposerSuggestions(
     return () => { catalogGeneration.current++ }
     // `contextKey` also covers the connected device, which the two values below
     // cannot express on their own.
-  }, [contextKey, projectPath, provider, acpAgentId])
+  }, [contextKey, projectPath, provider, acpAgentId, connected])
 
   /**
    * Derived rather than stored, so a catalog that lands *after* the user typed
@@ -178,17 +192,26 @@ export function useComposerSuggestions(
   // unconditionally popped a "Loading commands…" strip above an empty input.
   const slashCatalogStatus: SlashCatalogStatus = !slashDismissed && draft.startsWith('/') ? catalogStatus : 'ready'
 
-  const carried = () => ({
-    agentProfiles: mentionCatalog.current.agentProfiles,
-    capabilityIds: mentionCatalog.current.capabilityIds,
-    gitAvailability: mentionCatalog.current.gitAvailability,
-  })
+  // The project's catalog, ahead of any `@`: the slash catalog above is
+  // preloaded for the same reason. A context it already knows shows at once.
+  useEffect(() => {
+    const client = host.client.current
+    const cached = peekMentionCatalog(client, projectPath)
+    setMentionCatalog(cached)
+    if (cached || !connected || !client || !projectPath) return
+    let current = true
+    void requestMentionSearch(client, projectPath, '').then((result) => {
+      if (current && !result.error) setMentionCatalog(rememberMentionCatalog(client, projectPath, result))
+    }).catch(() => { /* The `@` search asks again and reports its own failure. */ })
+    return () => { current = false }
+    // `contextKey` covers the device and project; the client is read through it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contextKey, connected])
+
   const absorb = (result: MentionSearchResult): MentionFetch => {
     if (typeof result.cwd === 'string' && result.cwd) cwd.current = result.cwd
-    const agentProfiles = parseAgentMentionItems(result.agentTargets)
-    const gitAvailability = parseGitAvailability(result.gitMention)
-    mentionCatalog.current = { agentProfiles, capabilityIds: result.capabilityIds, gitAvailability }
-    return { remote: parseMentionItems(result.items), agentProfiles, capabilityIds: result.capabilityIds, gitAvailability }
+    setMentionCatalog(rememberMentionCatalog(host.client.current, projectPath, result))
+    return { remote: parseMentionItems(result.items) }
   }
   const browseRoot = (runtime: ChatRuntime | null) => cwd.current || runtime?.mentionRoot || projectPath || ''
 
@@ -208,7 +231,6 @@ export function useComposerSuggestions(
     if (parsed.phase === 'pick-project') {
       return async () => ({
         remote: sessionProjectItems(projects, parsed.projectToken, projectPath ?? null),
-        ...carried(),
         emptyLabel: sessionEmptyLabel(parsed.phase),
       })
     }
@@ -223,26 +245,26 @@ export function useComposerSuggestions(
       })
       const items = [...(previous?.items ?? []), ...sessionItems(rows, parsed.titleQuery)]
       sessionPaging.current = { query, state: next, items }
-      return { remote: items, ...carried(), hasMore: next.hasMore, emptyLabel: sessionEmptyLabel(parsed.phase) }
+      return { remote: items, hasMore: next.hasMore, emptyLabel: sessionEmptyLabel(parsed.phase) }
     }
   }
 
   /** The `@git` portal: pick a ref kind, then filter that kind's refs on the host. */
   /** Portals the host said it can serve; a portal that is off does not own the grammar. */
-  const gitPortals = () => enabledGitMentionPortals(mentionCatalog.current.gitAvailability)
+  const gitPortals = () => enabledGitMentionPortals(mentionCatalogRef.current?.gitAvailability)
 
   const gitLookup = (query: string, client: RelayClient | null): (() => Promise<MentionFetch>) | null => {
     const parsed = parseGitMentionQuery(query, gitPortals())
     if (!parsed) return null
     if (parsed.phase === 'pick-kind') {
-      return async () => ({ remote: gitKindItems(parsed.portal, parsed.kindToken), ...carried(), emptyLabel: gitEmptyLabel(parsed) })
+      return async () => ({ remote: gitKindItems(parsed.portal, parsed.kindToken), emptyLabel: gitEmptyLabel(parsed) })
     }
     const kind = parsed.refKind
     if (!kind || !client || !projectPath) return null
     return async () => {
       const result = await requestGitMentionRefs(client, projectPath, kind, parsed.refQuery)
-      if (!result.ok) return { remote: [], ...carried(), emptyLabel: gitEmptyLabel(parsed, result) }
-      return { remote: gitRefItems(result.refs, parsed.refQuery), ...carried(), emptyLabel: gitEmptyLabel(parsed) }
+      if (!result.ok) return { remote: [], emptyLabel: gitEmptyLabel(parsed, result) }
+      return { remote: gitRefItems(result.refs, parsed.refQuery), emptyLabel: gitEmptyLabel(parsed) }
     }
   }
 
@@ -278,7 +300,7 @@ export function useComposerSuggestions(
         ])
         if (error) throw new Error(error)
         if (catalog?.error) throw new Error(catalog.error)
-        const fetched = catalog ? absorb(catalog) : { remote: [], ...carried() }
+        const fetched = catalog ? absorb(catalog) : { remote: [] }
         return { ...fetched, remote: [
           ...fetched.remote.filter((item) => item.kind === 'agent' || item.kind === 'miniapp'),
           ...items,
@@ -336,9 +358,16 @@ export function useComposerSuggestions(
       return
     }
     setMentionQuery(query.query)
+    if (!connected) {
+      // Nothing to ask yet, and nothing guessed: the link coming up asks.
+      generation.current++
+      inFlightQuery.current = null
+      setMentionSearch({ active: true, loading: true })
+      return
+    }
     const lookup = mentionLookup(query.query, runtime, client)
     if (!lookup) {
-      setMentionResults({ remote: [], ...carried() })
+      setMentionResults({ remote: [] })
       setMentionSearch({ active: true, loading: false })
       return
     }
@@ -348,7 +377,6 @@ export function useComposerSuggestions(
     if (inFlightQuery.current === query.query) return
     inFlightQuery.current = query.query
     const request = ++generation.current
-    setMentionResults((current) => ({ ...current, ...carried() }))
     setMentionSearch({ active: true, loading: true })
     if (debounce.current) clearTimeout(debounce.current)
     debounce.current = setTimeout(() => {
@@ -367,14 +395,23 @@ export function useComposerSuggestions(
     }, MENTION_SEARCH_DEBOUNCE_MS)
   }
 
+  // An `@` typed while dialling waited on the link; ask it now.
+  useEffect(() => {
+    if (!connected || mentionQuery === null) return
+    inFlightQuery.current = null
+    searchMentions()
+    // Only the link coming up re-asks; keystrokes already drive every other search.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected])
+
   /**
    * Server items sit beside capabilities, as on the desktop: on `@` and plain
    * queries, not inside a portal and not while a folder is being browsed.
    */
   const mcpQuery = mentionQuery !== null && !isSessionMentionQuery(mentionQuery)
-    && !isGitMentionQuery(mentionQuery, enabledGitMentionPortals(mentionResults.gitAvailability)) && !mentionQuery.endsWith('/')
+    && !isGitMentionQuery(mentionQuery, enabledGitMentionPortals(mentionCatalog?.gitAvailability)) && !mentionQuery.endsWith('/')
     ? mentionQuery : null
-  const mcpMentions = useMcpMentionSearch(host.client, projectPath, host.sessionId, mcpQuery)
+  const mcpMentions = useMcpMentionSearch(host.client, connected, projectPath, host.sessionId, mcpQuery)
 
   /**
    * Rows are derived, so the catalog that arrives with a search result re-ranks
@@ -388,9 +425,12 @@ export function useComposerSuggestions(
     if (mentionQuery === null) return []
     const mode = deriveMentionMode(mentionQuery)
     // A portal grammar (session / git) owns the list: no needle, no file scope.
-    const session = isSessionMentionQuery(mentionQuery) || isGitMentionQuery(mentionQuery, enabledGitMentionPortals(mentionResults.gitAvailability))
+    const session = isSessionMentionQuery(mentionQuery) || isGitMentionQuery(mentionQuery, enabledGitMentionPortals(mentionCatalog?.gitAvailability))
     return buildMentionRows(session || mode.kind === 'browse' ? '' : mode.needle, {
       ...mentionResults,
+      agentProfiles: mentionCatalog?.agentProfiles ?? [],
+      capabilityIds: mentionCatalog?.capabilityIds,
+      gitAvailability: mentionCatalog?.gitAvailability,
       // Rows carry an icon id; the bytes come from the device's cache, which
       // may have filled in after the search returned.
       remote: mentionResults.remote.map((item) => {
@@ -407,7 +447,7 @@ export function useComposerSuggestions(
     })
     // `iconRevision` is what makes a late-arriving icon repaint the rows.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mentionQuery, mentionResults, iconRevision, mcpQuery, mcpMentions.sources])
+  }, [mentionQuery, mentionResults, mentionCatalog, iconRevision, mcpQuery, mcpMentions.sources])
 
   /**
    * The sessions group is called *Recent* until a title is typed, because until

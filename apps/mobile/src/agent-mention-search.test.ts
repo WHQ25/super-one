@@ -23,7 +23,7 @@ describe('remote provider search to structured message', () => {
     }
     // Filtering moved to the row builder: an alias matches, a display name matches.
     const matched = (query: string) =>
-      buildMentionRows(query, { remote: [], agentProfiles: parseAgentMentionItems(targets) })
+      buildMentionRows(query, { remote: [], agentProfiles: parseAgentMentionItems(targets), capabilityIds: [] })
         .filter((row) => row.item.kind === 'agent-profile').map((row) => row.item.path)
     expect(matched('xai')[0]).toBe('acp-base:grok-build')
     expect(matched('REVIEW')[0]).toBe('codex-work-review')
@@ -36,13 +36,13 @@ describe('remote provider search to structured message', () => {
     } } as never, '/workspace/project', 'xai')
     expect(commands).toEqual([expect.objectContaining({ type: 'search_mentions', projectPath: '/workspace/project', query: 'xai' })])
     expect(commands[0]).not.toHaveProperty('sessionId')
-    const item = buildMentionRows('xai', { remote: [], agentProfiles: parseAgentMentionItems(result.agentTargets) })
+    const item = buildMentionRows('xai', { remote: [], agentProfiles: parseAgentMentionItems(result.agentTargets), capabilityIds: [] })
       .find((row) => row.item.kind === 'agent-profile')!.item
     expect(mentionTokenFromItem(item)).toEqual({ kind: 'agent-profile', value: 'acp-base:grok-build', displayName: 'Grok' })
   })
   it('keeps same-named project agents distinct and supports older hosts without targets', () => {
     const resource = parseMentionItems([{ kind: 'agent', path: 'codex' }])
-    const rows = buildMentionRows('', { remote: resource, agentProfiles: parseAgentMentionItems(targets) })
+    const rows = buildMentionRows('', { remote: resource, agentProfiles: parseAgentMentionItems(targets), capabilityIds: [] })
     // A project agent named `codex` is not the Codex collaborator, and the two
     // land in different groups.
     expect(rows.filter((row) => row.item.kind === 'agent').map((row) => row.item)).toEqual(resource)

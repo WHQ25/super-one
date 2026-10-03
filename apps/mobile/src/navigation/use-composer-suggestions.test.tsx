@@ -30,19 +30,21 @@ function memoryIconStore() {
   }
 }
 
-async function mount(client: unknown, runtime: ChatRuntime | null = null) {
+async function mount(client: unknown, runtime: ChatRuntime | null = null, connected = true) {
   const runtimeRef = createRef<ChatRuntime>() as { current: ChatRuntime | null }
   runtimeRef.current = runtime
   const clientRef = { current: client as RelayClient | null }
   // `renderHook` is async in RNTL 14, like `render`.
-  return await renderHook(() =>
+  const hook = await renderHook(({ connected }: { connected: boolean }) =>
     useComposerSuggestions(runtimeRef, 'device:/work/app::claude', {
       client: clientRef,
+      connected,
       projectPath: '/work/app',
       provider: 'claude',
       iconStore: memoryIconStore(),
-    }),
+    }), { initialProps: { connected } },
   )
+  return { ...hook, clientRef }
 }
 
 test('opens the overlay when the catalog lands after the user typed', async () => {
@@ -142,13 +144,14 @@ test('keeps matching once the draft grows a second line', async () => {
 
 
 test('uses the connection-preloaded catalog without loading or another request', async () => {
-  const client = { request: jest.fn(async () => ({ userSlashCommands: [{ name: 'clear' }] })) }
+  const client = { request: jest.fn(async (_command: Command) => ({ userSlashCommands: [{ name: 'clear' }] })) }
   await preloadHarnessResources(client, '/work/app', ['claude'])
   const { result } = await mount(client)
   await act(async () => { result.current.update('/c') })
   expect(result.current.slashCatalogStatus).toBe('ready')
   expect(result.current.slashHits.map((command) => command.name)).toEqual(['clear'])
-  expect(client.request).toHaveBeenCalledTimes(2)
+  // Only the two preloaded harness resources; the `@` catalog is its own request.
+  expect(client.request.mock.calls.filter(([command]) => command.type !== 'search_mentions')).toHaveLength(2)
 })
 
 const mentionCatalog = {
@@ -195,6 +198,54 @@ test.each(['typed', 'native', 'toolbar'])('loads collaborators and miniapps on t
   expect(result.current.mentionRows.find((row) => row.item.path === 'browser')?.disabled).toBeUndefined()
 })
 
+test('opens the first @ already matching the desktop, from the catalog fetched on connect', async () => {
+  let answer: ((value: unknown) => void) | undefined
+  const client = mentionClient()
+  const request = client.request.getMockImplementation()!
+  const { result } = await mount(client)
+  await waitFor(() => expect(result.current.mentionRows).toEqual([]))
+  await waitFor(() => expect(client.request).toHaveBeenCalledWith(expect.objectContaining({ type: 'search_mentions', query: '' })))
+
+  // The `@` search itself is still out; collaborators and switches are not waiting on it.
+  client.request.mockImplementation((command) => command.type === 'search_mentions'
+    ? new Promise((resolve) => { answer = resolve }) : request(command))
+  await act(async () => { result.current.update('@') })
+  const rows = result.current.mentionRows
+  expect(rows.map((row) => row.item)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'agent-profile', path: 'codex-review' })]))
+  expect(rows.find((row) => row.item.path === 'browser')?.disabled).toBeUndefined()
+  expect(rows.find((row) => row.item.path === 'computer')?.disabled).toBe(true)
+  await act(async () => { answer?.(mentionCatalog) })
+})
+
+test('waits for the link instead of guessing, then asks', async () => {
+  // The composer is usable before the client is dialled. That `@` used to show
+  // a default list that the host's answer corrected a moment later.
+  const { result, rerender, clientRef } = await mount(null, null, false)
+  await act(async () => { result.current.update('@') })
+  expect(result.current.mentionSearch).toEqual({ active: true, loading: true })
+  expect(result.current.mentionRows).toEqual([])
+
+  const client = mentionClient()
+  clientRef.current = client as unknown as RelayClient
+  await rerender({ connected: true })
+
+  await waitFor(() => expect(result.current.mentionSearch.loading).toBe(false))
+  expect(result.current.mentionRows.map((row) => row.item))
+    .toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'agent-profile', path: 'codex-review' })]))
+})
+
+test('loads the slash catalog once the link comes up', async () => {
+  const { result, rerender, clientRef } = await mount(null, null, false)
+  await act(async () => { result.current.update('/') })
+  expect(result.current.slashCatalogStatus).toBe('loading')
+
+  clientRef.current = { request: jest.fn(async () => ({ userSlashCommands: [{ name: 'clear' }] })) } as unknown as RelayClient
+  await rerender({ connected: true })
+
+  await waitFor(() => expect(result.current.slashCatalogStatus).toBe('ready'))
+  expect(result.current.slashHits.map((hit) => hit.name)).toContain('clear')
+})
+
 test('the toolbar @ opens the overlay even right after a word', async () => {
   const client = mentionClient()
   const { result } = await mount(client)
@@ -231,7 +282,10 @@ test('browses a nested directory without loading unrelated mention targets', asy
   await act(async () => { result.current.update('@src/') })
   await waitFor(() => expect(result.current.mentionSearch.loading).toBe(false))
   expect(result.current.mentionRows.map((row) => row.item.path)).toEqual(['src/nested.ts'])
-  expect(client.request).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'search_mentions' }))
+  // The one search is the catalog fetched on connect, not one for this folder.
+  expect(client.request.mock.calls.filter(([command]) => command.type === 'search_mentions')).toEqual([
+    [expect.objectContaining({ query: '' })],
+  ])
 })
 
 test('restores collaborators and miniapps when a breadcrumb returns to the root', async () => {

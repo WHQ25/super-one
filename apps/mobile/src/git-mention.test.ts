@@ -78,22 +78,22 @@ describe('ref rows', () => {
 
 describe('portal availability', () => {
   it('is disabled with a reason outside a repository, enterable otherwise', () => {
-    const off = buildMentionRows('gi', { remote: [], agentProfiles: [], gitAvailability: { repo: 'not-repo', github: false } })
+    const off = buildMentionRows('gi', { remote: [], agentProfiles: [], capabilityIds: [], gitAvailability: { repo: 'not-repo', github: false } })
       .find((row) => row.item.kind === 'git-portal')
     expect(off).toMatchObject({ disabled: true, hint: 'Not a git repository' })
     expect(off?.item.navigateTo).toBeUndefined()
-    const on = buildMentionRows('gi', { remote: [], agentProfiles: [] }).find((row) => row.item.kind === 'git-portal')
+    const on = buildMentionRows('gi', { remote: [], agentProfiles: [], capabilityIds: [] }).find((row) => row.item.kind === 'git-portal')
     expect(on).toMatchObject({ inline: '@git' })
   })
 
   it('greys out only the GitHub portal when gh cannot be used', () => {
-    const rows = buildMentionRows('g', { remote: [], agentProfiles: [], gitAvailability: { repo: 'ready', github: false } })
+    const rows = buildMentionRows('g', { remote: [], agentProfiles: [], capabilityIds: [], gitAvailability: { repo: 'ready', github: false } })
       .filter((row) => row.item.kind === 'git-portal')
     expect(Object.fromEntries(rows.map((row) => [row.item.path, row.disabled ?? false]))).toEqual({ git: false, gh: true })
     expect(rows.find((row) => row.item.path === 'gh')).toMatchObject({ hint: 'Needs the gh CLI signed in and a GitHub remote' })
-    const pending = buildMentionRows('gh', { remote: [], agentProfiles: [] }).find((row) => row.item.path === 'gh')
+    const pending = buildMentionRows('gh', { remote: [], agentProfiles: [], capabilityIds: [] }).find((row) => row.item.path === 'gh')
     expect(pending).toMatchObject({ inline: '@gh', item: { navigateTo: 'gh ' } })
-    const ready = buildMentionRows('gh', { remote: [], agentProfiles: [], gitAvailability: { repo: 'ready', github: true } })
+    const ready = buildMentionRows('gh', { remote: [], agentProfiles: [], capabilityIds: [], gitAvailability: { repo: 'ready', github: true } })
       .find((row) => row.item.path === 'gh')
     expect(ready).toMatchObject({ inline: '@gh', item: { navigateTo: 'gh ' } })
   })

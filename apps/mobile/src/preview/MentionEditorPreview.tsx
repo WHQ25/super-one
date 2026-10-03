@@ -4,6 +4,7 @@ import { Text } from '../ui/text'
 import { MentionSuggestions } from '../ui/composer-suggestions'
 import { buildMentionRows } from '../mention-rows'
 import { extractMentionQuery, type MentionItem } from '../mentions'
+import { previewCapabilityIds } from './composer-fixtures'
 import { selectNativeMention } from '../mention-selection'
 import { useMentionArtwork } from '../ui/mention-artwork'
 import { NativeMentionEditor, nativeMentionEditorAvailable } from '../ui/native-mention-editor'
@@ -47,7 +48,7 @@ export function MentionEditorPreview() {
     }} autoSize={{ minHeight: 42, maxHeight: 144 }}
       onChange={(value) => { setSnapshot(value); setError('') }} onError={setError}
       style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 12 }} />
-    <MentionSuggestions rows={buildMentionRows(query?.query ?? '', { remote: matches, agentProfiles: [] })} onSelect={(item) => {
+    <MentionSuggestions rows={buildMentionRows(query?.query ?? '', { remote: matches, agentProfiles: [], capabilityIds: previewCapabilityIds })} onSelect={(item) => {
       const next = selectNativeMention(snapshot, item, command.id + 1)
       if (next) setCommand(next)
     }} />

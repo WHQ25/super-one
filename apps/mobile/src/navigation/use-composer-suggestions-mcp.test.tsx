@@ -19,7 +19,7 @@ async function mount(client: ReturnType<typeof hostClient>, sessionId: string | 
   const clientRef = { current: client as unknown as RelayClient }
   const store = { get: async () => null, set: async () => {} }
   return await renderHook(() => useComposerSuggestions(runtimeRef, `device:/work/app:${sessionId}:claude`, {
-    client: clientRef, projectPath: '/work/app', provider: 'claude', sessionId, iconStore: store,
+    client: clientRef, connected: true, projectPath: '/work/app', provider: 'claude', sessionId, iconStore: store,
   }))
 }
 

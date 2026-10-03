@@ -254,7 +254,7 @@ export function ComposerSuggestionsGallery() {
 
     <Section title="Mention · truncation" note="Long path, and a row with no label at all.">
       <MentionSuggestions
-        rows={buildMentionRows('use', { remote: previewLongMentionItems, agentProfiles: [] })}
+        rows={buildMentionRows('use', { remote: previewLongMentionItems, agentProfiles: [], capabilityIds: previewCapabilityIds })}
         onSelect={() => {}}
         search={{ active: true, loading: false }}
       />

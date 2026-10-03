@@ -48,7 +48,7 @@ export const Refreshing = { args: { search: { active: true, loading: true } } }
 /** Retry replaces the error with the complete root catalog. */
 export const Failed = { args: { rows: [], search: { active: true, loading: false, error: 'Host unavailable' } } }
 export const NoInstalledTargets = { args: {
-  rows: buildMentionRows('', { remote: previewRootMentionItems.filter((item) => item.kind === 'dir-entry'), agentProfiles: [] }),
+  rows: buildMentionRows('', { remote: previewRootMentionItems.filter((item) => item.kind === 'dir-entry'), agentProfiles: [], capabilityIds: previewCapabilityIds }),
 } }
 export const NoMatches = { args: { rows: [] } }
 export const NarrowLongNames = { args: {

@@ -13,11 +13,12 @@ import { requestMcpMentionSearch } from '../mention-search'
  */
 export function useMcpMentionSearch(
   client: RefObject<RelayClient | null>,
+  connected: boolean,
   projectPath: string | undefined,
   sessionId: string | null | undefined,
   query: string | null,
 ): McpMentionSearchState {
-  const key = projectPath && sessionId && query !== null ? JSON.stringify([projectPath, sessionId]) : ''
+  const key = connected && projectPath && sessionId && query !== null ? JSON.stringify([projectPath, sessionId]) : ''
   const [state, setState] = useState<McpMentionSearchState>(MCP_MENTION_SEARCH_IDLE)
   const generation = useRef(0)
 

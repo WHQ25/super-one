@@ -26,7 +26,9 @@ const variants: Record<string, Record<string, Record<string, string>>> = {}
 const images: Record<string, string> = {}
 const browser = await chromium.launch()
 try {
-  const page = await browser.newPage({ viewport: { width: 32, height: 32 }, deviceScaleFactor: 8, reducedMotion: 'reduce' })
+  // Marks keep a fixed 14px frame, so render at the desktop composer's 14px (`text-sm`)
+  // em; a larger em pads the PNG and shrinks the mark once natives scale it to 1em.
+  const page = await browser.newPage({ viewport: { width: 32, height: 32 }, deviceScaleFactor: 128 / 14, reducedMotion: 'reduce' })
   await page.route('**/*', (route) => route.abort())
   for (const [scheme, colors] of Object.entries(themes)) {
     variants[scheme] = {}
@@ -36,7 +38,7 @@ try {
         const icon = renderToStaticMarkup(createElement(AgentProfileIcon, { refValue }))
         await page.setContent(`<html class="${scheme === 'dark' ? 'dark' : ''}"><head><style>${css}</style>
           <style>:root{--foreground:${foreground}}html:root,body{margin:0;background:transparent!important;color-scheme:light}
-          #mark{font-size:16px;color:var(--foreground);margin:0;vertical-align:top}
+          #mark{font-size:14px;color:var(--foreground);margin:0;vertical-align:top}
           #mark *{animation:none!important;transition:none!important}</style></head>
           <body><span id="mark" class="mention-chip__icon">${icon}</span></body></html>`)
         const png = await page.locator('#mark').screenshot({ omitBackground: true })

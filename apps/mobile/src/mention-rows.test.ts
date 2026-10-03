@@ -76,7 +76,7 @@ describe('buildMentionRows', () => {
   })
 
   it('matches an alias but highlights only what the row shows', () => {
-    const rows = buildMentionRows('gpt', { remote: [], agentProfiles: [profile('codex-base', 'Codex', 'codex', ['gpt'])] })
+    const rows = buildMentionRows('gpt', { remote: [], agentProfiles: [profile('codex-base', 'Codex', 'codex', ['gpt'])], capabilityIds: [] })
     expect(rows.map((row) => row.item.path)).toEqual(['codex-base'])
     expect(rows[0]!.inlineIndices).toEqual([])
   })
@@ -99,7 +99,7 @@ describe('buildMentionRows', () => {
   })
 
   it('shows a collaborator as name and slug, without its ref', () => {
-    const [row] = buildMentionRows('codex', { remote: [], agentProfiles: [profile('codex-base', 'Codex', 'codex')] })
+    const [row] = buildMentionRows('codex', { remote: [], agentProfiles: [profile('codex-base', 'Codex', 'codex')], capabilityIds: [] })
     expect(row).toMatchObject({ label: 'Codex', inline: '@codex' })
     expect(row!.trailing).toBeUndefined()
   })

@@ -147,7 +147,7 @@ export interface MentionRowInput {
   remote: MentionItem[]
   /** Launchable provider identities, from the host's collaboration registry. */
   agentProfiles: MentionItem[]
-  /** Capability ids the desktop currently has switched on. */
+  /** Capability ids the desktop currently has switched on; unset until it answers, which hides the whole catalog. */
   capabilityIds?: unknown
   /**
    * The query is anchored — to a directory (`@src/app`) or to the session
@@ -164,7 +164,6 @@ export interface MentionRowInput {
   mcp?: McpMentionSource[]
 }
 
-const DEFAULT_CAPABILITIES = ['widget', 'debug']
 
 /**
  * Rank within a group, never across groups.
@@ -215,10 +214,8 @@ function capabilityHint(id: string): string {
   return 'Enable it in the desktop settings'
 }
 
-function capabilityRows(query: string, capabilityIds: unknown, gitAvailability?: GitMentionCapabilities): MentionRow[] {
-  const available = new Set(
-    Array.isArray(capabilityIds) ? capabilityIds.filter(isBuiltinCapabilityId) : DEFAULT_CAPABILITIES,
-  )
+function capabilityRows(query: string, capabilityIds: unknown[], gitAvailability?: GitMentionCapabilities): MentionRow[] {
+  const available = new Set(capabilityIds.filter((id): id is string => typeof id === 'string' && isBuiltinCapabilityId(id)))
   // Typed up front: the portal joins this list and its keyword is not one of
   // the capability ids.
   const matches: { keyword: string; rank: 0 | 1 | 2; row: MentionRow }[] = BUILTIN_CAPABILITIES.flatMap((capability) => {
@@ -334,7 +331,9 @@ function agentProfileRows(query: string, profiles: MentionItem[]): MentionRow[] 
  */
 export function buildMentionRows(query: string, input: MentionRowInput): MentionRow[] {
   const hasQuery = !!query.trim()
-  const rows = input.scoped
+  // Until the host answers, its catalog is not guessed at: a default list would
+  // be corrected in front of the user a moment later.
+  const rows = input.scoped || !Array.isArray(input.capabilityIds)
     ? []
     : [...capabilityRows(query, input.capabilityIds, input.gitAvailability), ...agentProfileRows(query, input.agentProfiles)]
   const seen = new Set(rows.map((row) => mentionRowKey(row.item)))

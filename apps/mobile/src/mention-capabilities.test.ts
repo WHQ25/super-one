@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { availableMentionCapabilityIds, mentionCapabilityAvailability } from '@superone/shared/mention-capabilities'
 import { buildMentionRows } from './mention-rows'
+import { hostCapabilityIds } from './mention-catalog'
 import { mentionTokenFromItem } from './mention-selection'
 
 const paths = (query: string, capabilityIds?: unknown) =>
@@ -27,9 +28,15 @@ describe('host capability settings to mobile mention menu', () => {
     expect(buildMentionRows('browser', { remote: [], agentProfiles: [], capabilityIds: ids })[0]?.disabled).toBe(true)
   })
 
+  it('guesses nothing before the host answers', () => {
+    // A default list would be corrected in front of the user a moment later.
+    expect(paths('')).toEqual([])
+  })
+
   it('uses the host platform and retains safe legacy-host behavior', () => {
     expect(mentionCapabilityAvailability({ computerUseEnabled: true }, 'win32').computer).toBe(false)
-    expect(enabled('')).toEqual(['widget', 'debug', 'session', 'git', 'gh'])
+    // A host that answered without the field only ever had these two on.
+    expect(enabled('', hostCapabilityIds(undefined))).toEqual(['widget', 'debug', 'session', 'git', 'gh'])
     expect(enabled('', [])).toEqual(['session', 'git', 'gh'])
     expect(enabled('', ['unknown', 'browser', null])).toEqual(['browser', 'session', 'git', 'gh'])
   })

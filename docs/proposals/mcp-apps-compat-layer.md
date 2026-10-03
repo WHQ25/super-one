@@ -1,6 +1,11 @@
 # MCP Apps compatibility layer through mini-apps
 
-Status: phase 1 pilot in progress · Updated: 2026-10-01
+Status: paused · Updated: 2026-10-03
+
+Paused by product priority: SuperOne mini-apps are the primary App surface on
+every harness, and MCP Apps stay on each harness's native support. The phase 1
+Cursor pilot stays as shipped, behind the Cursor setting that is off by
+default; no further phases are planned until this is reopened.
 
 Part of [mini-apps-and-mcp-apps.md](mini-apps-and-mcp-apps.md).
 
@@ -12,9 +17,10 @@ Grok), and servers using extensions a native harness does not pass through
 (today Claude). The host, View, executor
 and shared contract are described in
 [features/mcp-apps.md](../features/mcp-apps.md); OpenAI extensions in
-[mcp-apps-openai-extensions.md](mcp-apps-openai-extensions.md). Supersedes the
-gateway proposal, which exposed SuperOne as a proxy under the original server
-name.
+[mcp-apps-openai-extensions.md](mcp-apps-openai-extensions.md). The parked
+[mcp-apps-gateway.md](mcp-apps-gateway.md) proposes replacing the rerouting
+through `miniapp_call` with a gateway under the original server name, now that
+Codex and Claude identify their calls in request `_meta`.
 
 ## 1. Decisions
 
@@ -174,8 +180,8 @@ sequenceDiagram
   never refresh. Refreshed descriptors retain visibility normalization and
   server attribution; app-only tools stay out of `miniapp_list`.
 - **Result data (phase 1):** the View reads the original result from the
-  bounded host record. Initial results beyond the shared 4 MiB attachment
-  budget retain a working View with `toolResultOmitted`, instead of changing
+  bounded host record. Initial results beyond the shared 2 MiB initial-result
+  cap retain a working View with `toolResultOmitted`, instead of changing
   a completed call into an error. The MCP reply retains structured content for
   clients that carry it, plus a bounded text summary for Cursor; private `_meta`
   never enters the model reply.

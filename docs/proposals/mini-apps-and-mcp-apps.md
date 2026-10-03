@@ -5,6 +5,7 @@ Status: draft · Updated: 2026-10-01
 Scope: the long-term relation between SuperOne mini-apps and MCP Apps, and the
 order in which we get there. Detailed proposals:
 [mcp-apps-compat-layer.md](mcp-apps-compat-layer.md) (every harness),
+[mcp-apps-gateway.md](mcp-apps-gateway.md) (parked: native tools, SuperOne-hosted Views),
 [mcp-apps-openai-extensions.md](mcp-apps-openai-extensions.md) (OpenAI
 extensions), [superone-mcp-extensions.md](superone-mcp-extensions.md)
 (`superone/*`). The current host is

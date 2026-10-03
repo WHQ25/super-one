@@ -1,5 +1,9 @@
 # MCP Apps compatibility layer execution log
 
+Status: paused 2026-10-03 with the [proposal](../proposals/mcp-apps-compat-layer.md).
+The Cursor pilot stays behind its opt-in setting; open items below are not
+being worked on.
+
 Scope: phase 1, local Cursor sessions and the MCP Apps fixture. Branch:
 `feat/mcp-apps-compat`. Design: [compat layer](../proposals/mcp-apps-compat-layer.md).
 
@@ -128,7 +132,7 @@ Scope: phase 1, local Cursor sessions and the MCP Apps fixture. Branch:
   Refreshed descriptors keep server attribution and normalized visibility.
   Known visibility denials never trigger discovery.
 - Moved `boundedToolAppAttachment` into the record boundary so every producer
-  follows the shared omission policy. Above the 4 MiB transcript budget
+  follows the shared omission policy. Above the 2 MiB initial-result cap
   (`MCP_APP_RESULT_MAX_BYTES`), the record marks the omitted result and keeps
   the working View.
 - The production compat path already uses the shared executor's CAS persistence.

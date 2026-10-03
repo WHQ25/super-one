@@ -529,8 +529,9 @@ export class Session implements SessionContract {
   /**
    * Composer withdraws when the worktree checkout is gone. Main process must
    * refuse new turns the same way — collab / mobile / automation otherwise
-   * bypass the READ ONLY banner. Live deletion of the directory is detected
-   * at resume (`missingWorktreePath`) and by collaboration's DB-path check.
+   * bypass the READ ONLY banner. Deletion of the directory is detected at
+   * resume (`missingWorktreePath`), when a pane opens a live session
+   * (`markWorktreeRemoved`), and by collaboration's DB-path check.
    */
   private rejectIfWorktreeRemoved(): SessionWorktreeRemovedError | null {
     if (!this._missingWorktreePath) return null
@@ -642,13 +643,30 @@ export class Session implements SessionContract {
       this.forwardEvent({ type: 'agent_setting_change', patch: { permissionMode: mode } } as AgentEvent)
     }))
     this.emitInitReady()
-    if (this._missingWorktreePath) {
-      this._cachedWorktreeMissing = this.forwardEvent({
-        type: 'worktree_missing',
-        worktreePath: this._missingWorktreePath,
-        fallbackCwd: this._cwd,
-      } as AgentEvent)
-    }
+    if (this._missingWorktreePath) this.emitWorktreeMissing(this._cwd)
+  }
+
+  private emitWorktreeMissing(fallbackCwd: string): void {
+    this._cachedWorktreeMissing = this.forwardEvent({
+      type: 'worktree_missing',
+      worktreePath: this._missingWorktreePath!,
+      fallbackCwd,
+    } as AgentEvent)
+  }
+
+  /**
+   * The worktree was deleted under a live session. Go read-only as a resume
+   * would, and stop the turn: the withdrawn composer no longer shows a pending
+   * permission or question, so one left open hangs in the sidebar forever, and
+   * approving it would only run a tool in a deleted cwd. `_cwd` stays the
+   * worktree path so the persisted row still records it.
+   */
+  async markWorktreeRemoved(): Promise<void> {
+    if (this._status === 'disposed' || this._missingWorktreePath) return
+    if (this._cwd === this.projectPath) return
+    this._missingWorktreePath = this._cwd
+    this.emitWorktreeMissing(this.projectPath)
+    await this.interrupt()
   }
 
   get snapshot(): SessionSnapshot {

@@ -59,6 +59,9 @@ const agentAPI = {
   interrupt: (sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.INTERRUPT, sessionId) as Promise<boolean>,
 
+  reportWorktreeRemoved: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.WORKTREE_REMOVED, sessionId) as Promise<void>,
+
   startRealtimeVoice: (projectPath: string, sessionId: string, request: RealtimeVoiceStartRequest) =>
     ipcRenderer.invoke(AgentIpcChannels.START_REALTIME_VOICE, projectPath, sessionId, request) as Promise<void>,
 

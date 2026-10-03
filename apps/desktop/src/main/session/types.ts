@@ -487,6 +487,8 @@ export interface Session {
   onLifecycle(handler: (event: SessionLifecycleEvent) => void): () => void
   send(request: SendMessageRequest, opts?: { providerOrigin?: SendProviderOrigin; onAccepted?: () => void }): Promise<void>
   interrupt(): Promise<boolean>
+  /** Worktree deleted under the live session: go read-only and stop the turn. */
+  markWorktreeRemoved(): Promise<void>
   startRealtimeVoice(request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest): Promise<void>
   stopRealtimeVoice(): Promise<void>
   getRealtimeTimeline(): Promise<import('@superone/shared/agent-types').RealtimeTimelineResult>

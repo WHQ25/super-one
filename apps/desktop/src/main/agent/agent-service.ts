@@ -61,6 +61,7 @@ import { authorizeAndStat, FileBridgeError, readPreferInline, type AuthorizedFil
 import { tmpdir } from 'os'
 import { app } from 'electron'
 import { activateWorktree, getCheckedOutBranches, getWorktreeInfo, gitErrorMessage } from '../git/worktree-ops'
+import { worktreeExists } from '../git/worktree-alive'
 import { coerceSandboxModeForCapability, getSandboxCapability } from '../sandbox-platform'
 import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './fuzzy-file-search'
 import { SessionClaimConflictError, SessionLockedError, type BackendCommand, type Session as SessionContract } from '../session/types'
@@ -2745,6 +2746,14 @@ export class AgentService {
       return session.interrupt()
     })
 
+    ipcMain.handle(AgentIpcChannels.WORKTREE_REMOVED, async (_event, sessionId: string) => {
+      const session = this.sessionManager?.getSession(sessionId)
+      const { worktreePath, projectPath } = session?.snapshot ?? {}
+      // Re-check here: the renderer only reports what it saw, main decides.
+      if (!session || !worktreePath || !projectPath || worktreeExists(worktreePath, projectPath)) return
+      await session.markWorktreeRemoved()
+    })
+
     ipcMain.handle(AgentIpcChannels.START_REALTIME_VOICE, async (_event, projectPath: string, sessionId: string, request: import('@superone/shared/agent-types').RealtimeVoiceStartRequest) => {
       this.throwIfRemoteLocked(projectPath)
       // Realtime voice forces the session onto codex. Record the harness it had first:
@@ -4135,6 +4144,7 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.START_QUEUED_MESSAGES)
     ipcMain.removeHandler(AgentIpcChannels.PREWARM)
     ipcMain.removeHandler(AgentIpcChannels.INTERRUPT)
+    ipcMain.removeHandler(AgentIpcChannels.WORKTREE_REMOVED)
     ipcMain.removeHandler(AgentIpcChannels.START_REALTIME_VOICE)
     ipcMain.removeHandler(AgentIpcChannels.STOP_REALTIME_VOICE)
     ipcMain.removeHandler(AgentIpcChannels.LOAD_REALTIME_TIMELINE)

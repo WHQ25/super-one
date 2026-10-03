@@ -3888,6 +3888,7 @@ export const AgentIpcChannels = {
   START_QUEUED_MESSAGES: 'agent:start-queued-messages',
   PREWARM: 'agent:prewarm',
   INTERRUPT: 'agent:interrupt',
+  WORKTREE_REMOVED: 'agent:worktree-removed',
   START_REALTIME_VOICE: 'agent:start-realtime-voice',
   STOP_REALTIME_VOICE: 'agent:stop-realtime-voice',
   LOAD_REALTIME_TIMELINE: 'agent:load-realtime-timeline',

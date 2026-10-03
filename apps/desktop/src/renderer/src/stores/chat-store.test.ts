@@ -51,6 +51,7 @@ const mockWindowAgent = {
   getSessionId: vi.fn().mockResolvedValue(''),
   sendMessage: vi.fn().mockResolvedValue(undefined),
   interrupt: vi.fn().mockResolvedValue(true),
+  reportWorktreeRemoved: vi.fn().mockResolvedValue(undefined),
   respondToPermission: vi.fn().mockResolvedValue(true),
   answerQuestion: vi.fn().mockResolvedValue(undefined),
   dismissQuestion: vi.fn().mockResolvedValue(undefined),
@@ -4438,6 +4439,7 @@ describe('switchSession Case A worktree existence check', () => {
     expect(after.cwd).toBe('/test')
     expect(mockSetActiveWorktree).toHaveBeenCalledWith('/test', null)
     expect(mockWindowApp.worktreeExists).toHaveBeenCalledWith('/test/.worktrees/vanished', '/test')
+    expect(mockWindowAgent.reportWorktreeRemoved).toHaveBeenCalledWith(sid)
   })
 
   it('keeps worktree active when the directory still exists', async () => {
@@ -4471,6 +4473,7 @@ describe('switchSession Case A worktree existence check', () => {
     const after = useChatStore.getState().projectSessions['/test']._sessions[sid]
     expect(after._worktreeRemoved).toBe(false)
     expect(mockSetActiveWorktree).toHaveBeenCalledWith('/test', '/test/.worktrees/alive')
+    expect(mockWindowAgent.reportWorktreeRemoved).not.toHaveBeenCalled()
   })
 
   it('skips the worktree check for sessions without an active worktree', async () => {

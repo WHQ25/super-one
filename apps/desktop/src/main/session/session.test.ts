@@ -3080,6 +3080,36 @@ describe('Session persist hook', () => {
       await session.injectTaskNotification('mailbox ready')
       expect(backend.sendCalls).toHaveLength(0)
     })
+
+    it('markWorktreeRemoved stops a turn waiting on the user and goes read-only', async () => {
+      const { session, backend } = makeSession({ cwd: '/tmp/proj/.worktrees/feat' })
+      const captured: AgentEvent[] = []
+      session.on((e) => captured.push(e))
+      const send = session.send({ content: 'x' })
+      await new Promise((r) => setTimeout(r, 0))
+      expect(session.snapshot.status).toBe('streaming')
+
+      const mark = session.markWorktreeRemoved()
+      backend.resolveInterrupt?.()
+      backend.resolveSend?.()
+      await Promise.all([send, mark])
+
+      expect(backend.interruptCalls).toBe(1)
+      expect(session.snapshot.worktreeMissing).toBe(true)
+      expect(session.snapshot.worktreePath).toBe('/tmp/proj/.worktrees/feat')
+      const ev = captured.find((e) => e.type === 'worktree_missing') as Extract<AgentEvent, { type: 'worktree_missing' }>
+      expect(ev).toMatchObject({ worktreePath: '/tmp/proj/.worktrees/feat', fallbackCwd: '/tmp/proj' })
+      await expect(session.send({ content: 'again' })).rejects.toBeInstanceOf(SessionWorktreeRemovedError)
+
+      await session.markWorktreeRemoved()
+      expect(captured.filter((e) => e.type === 'worktree_missing')).toHaveLength(1)
+    })
+
+    it('markWorktreeRemoved ignores a session running in the project root', async () => {
+      const { session } = makeSession()
+      await session.markWorktreeRemoved()
+      expect(session.snapshot.worktreeMissing).toBe(false)
+    })
   })
 
   describe('init_ready event lifecycle', () => {

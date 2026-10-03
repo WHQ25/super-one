@@ -38,6 +38,7 @@ interface AgentAPI {
   startQueuedMessages(projectPath: string, sessionId?: string): Promise<boolean>
   prewarm(projectPath: string, hint?: AgentPrewarmHint): Promise<void>
   interrupt(sessionId: string): Promise<boolean>
+  reportWorktreeRemoved(sessionId: string): Promise<void>
   startRealtimeVoice(projectPath: string, sessionId: string, request: RealtimeVoiceStartRequest): Promise<void>
   stopRealtimeVoice(projectPath: string, sessionId: string): Promise<void>
   loadRealtimeTimeline(sessionId: string): Promise<RealtimeTimelineResult | null>

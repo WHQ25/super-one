@@ -733,6 +733,9 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         !!cachedTarget._worktreePath &&
         !cachedTarget._worktreeRemoved &&
         !(await window.app.worktreeExists(cachedTarget._worktreePath, activeProject))
+      // The read-only composer hides pending prompts; main must stop the turn
+      // that is waiting on them, or they stay pending in the sidebar.
+      if (worktreeMissing) void window.agent.reportWorktreeRemoved(sessionId).catch((err) => console.warn('[switchSession] reportWorktreeRemoved failed:', err))
 
       set((s) => {
         const proj = getProject(s, activeProject)

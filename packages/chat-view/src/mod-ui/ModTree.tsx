@@ -213,10 +213,13 @@ function ButtonNode({ node }: { node: Extract<ModElement, { type: 'Button' }> })
     run(() =>
       actIn(env)('press', { plugin: node.press.plugin, handle: node.press.handle, key, surface: env.client.surface, clientId: env.client.clientId }, env),
     )
-  const data = { 'data-mod-control': '', 'data-mod-key': key, 'data-mod-plugin': node.press.plugin, 'data-mod-hotkey': hotkey }
+  // The phone has no keyboard for hotkeys and no terminal look to keep: a
+  // bordered button in the UI font (`plain` only drops a terminal's brackets).
+  const touch = env.client.surface === 'mobile'
+  const data = { 'data-mod-control': '', 'data-mod-key': key, 'data-mod-plugin': node.press.plugin, 'data-mod-hotkey': touch ? undefined : hotkey }
   if (role === 'dismiss') {
     return (
-      <Button {...data} type="button" size="icon-xs" variant="ghost" className={PRESSED_CLASS} aria-label={label} title={label} disabled={pending} onClick={press} autoFocus={autoFocus}>
+      <Button {...data} type="button" size={touch ? 'icon-sm' : 'icon-xs'} variant="ghost" className={`${touch ? 'size-7' : ''} ${PRESSED_CLASS}`} aria-label={label} title={label} disabled={pending} onClick={press} autoFocus={autoFocus}>
         <X />
       </Button>
     )
@@ -225,16 +228,16 @@ function ButtonNode({ node }: { node: Extract<ModElement, { type: 'Button' }> })
     <Button
       {...data}
       type="button"
-      size="xs"
-      variant={plain ? 'ghost' : variant === 'primary' ? 'default' : 'outline'}
-      className={`w-fit shrink-0 font-normal ${PRESSED_CLASS}`}
+      size={touch ? 'sm' : 'xs'}
+      variant={plain && !touch ? 'ghost' : variant === 'primary' ? 'default' : 'outline'}
+      className={`w-fit shrink-0 font-normal ${touch ? 'h-7 px-2.5 font-sans' : ''} ${PRESSED_CLASS}`}
       style={dimColor ? { opacity: 0.62 } : undefined}
       disabled={pending}
       onClick={press}
       autoFocus={autoFocus}
     >
       {label}
-      {hotkey ? <Kbd className="ml-0.5">{hotkey}</Kbd> : null}
+      {hotkey && !touch ? <Kbd className="ml-0.5">{hotkey}</Kbd> : null}
     </Button>
   )
 }

@@ -48,7 +48,7 @@ a press whose only effect is a held toast still shows. `$.ui.ask` and the dev-fo
   client `superone-desktop`, reporting the window's columns with
   `isFullscreen: true`, so the CLI always places a pane. Tiles and windows on
   one session share the client.
-- **Phone** attaches as `mobile`, client `mobile:<deviceId>`. Its requests go
+- **Phone** attaches as `mobile`, client `mobile-<deviceId>`. Its requests go
   through the RemoteCommand `mod_ui_request`; the desktop checks session access
   and stamps the surface and client id, so a phone can only speak as itself.
   A device that disconnects is detached from every session it attached to.
@@ -59,7 +59,7 @@ a press whose only effect is a held toast still shows. `$.ui.ask` and the dev-fo
 - **Remote node** hosts the adapter in its live session; the desktop calls RPC
   `session.modUi`. Ops that change what a plugin sees (`MOD_UI_MUTATING_OPS`)
   need the control lease and an idempotency key, so a retried press runs once.
-  The node runs every op under the caller's pairing (`<clientId>@<pairing>`)
+  The node runs every op under the caller's pairing (`<clientId>.<pairing>`)
   and `session.events` reads those ids back as the caller's own, so two
   desktops on one node keep separate clients. The desktop pulls the node's
   events after attaching and after each such op, since an idle session has no

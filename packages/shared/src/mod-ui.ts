@@ -308,9 +308,13 @@ export const MOD_UI_MUTATING_OPS: ReadonlySet<ModUiOp> = new Set<ModUiOp>([
   'press', 'input', 'select', 'paneShow', 'paneFocus', 'close', 'scroll', 'focus', 'clientPress', 'message', 'promptEdit',
 ])
 
+// The CLI refuses a `ui_attach` whose client id is not 1-64 of letters, digits,
+// `.`, `_` or `-` (docs/harness/claude/contracts.md), so derived ids join their
+// parts with `-` / `.`.
+
 /** The client id a phone attaches as: one per device, so its scroll and focus stay its own. */
 export function mobileModClientId(deviceId: string): string {
-  return `mobile:${deviceId}`
+  return `mobile-${deviceId}`
 }
 
 /** A phone's request as the desktop forwards it: the phone may only speak as itself. */
@@ -327,7 +331,7 @@ export function asDeviceModUiRequest<O extends ModUiOp>(request: ModUiRequest<O>
  * two desktops on one node stay apart.
  */
 export function nodeModClientId(clientId: string, clientSessionId: string): string {
-  return `${clientId}@${clientSessionId}`
+  return `${clientId}.${clientSessionId}`
 }
 
 /** A view's request as a node runs it, under the RPC caller's own pairing. */
@@ -343,7 +347,7 @@ export function asNodeCallerModUiRequest<O extends ModUiOp>(request: ModUiReques
  */
 export function asNodeReaderModEvent(event: AgentEvent, clientSessionId: string): AgentEvent {
   if (!('clientId' in event) || !event.type.startsWith('mod_')) return event
-  const suffix = `@${clientSessionId}`
+  const suffix = nodeModClientId('', clientSessionId)
   return event.clientId.endsWith(suffix) ? { ...event, clientId: event.clientId.slice(0, -suffix.length) } : event
 }
 

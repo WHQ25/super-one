@@ -11,6 +11,13 @@ it('stamps a phone request with its own surface and client id', () => {
   expect(asDeviceModUiRequest({ plugin: 'p' }, 'dev1')).toEqual({ plugin: 'p' })
 })
 
+it('derives client ids the CLI accepts on ui_attach', () => {
+  const cliClientId = /^[A-Za-z0-9._-]{1,64}$/
+  const uuid = '54eb2266-72d2-4460-9fad-50957d3f316b'
+  expect(mobileModClientId(uuid)).toMatch(cliClientId)
+  expect(nodeModClientId('superone-desktop', uuid)).toMatch(cliClientId)
+})
+
 it('scopes a node caller\'s client id to its pairing and reads only its own back', () => {
   expect(asNodeCallerModUiRequest({ clientId: 'superone-desktop' }, 'c1')).toEqual({ clientId: nodeModClientId('superone-desktop', 'c1') })
   const focus = { type: 'mod_focus', clientId: nodeModClientId('superone-desktop', 'c1'), component: 'Pane', instanceId: 'i', plugin: 'p', key: 'k' } as const

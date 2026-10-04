@@ -1972,13 +1972,13 @@ describe('Session read receipt', () => {
     void session.send({ content: 'hi' })
     await vi.waitFor(() => expect(backend.started).toBe(true))
 
-    session.detachModClient('mobile:dev-A')
+    session.detachModClient('mobile-dev-A')
     expect(modUi).not.toHaveBeenCalled()
-    await session.modUi('attach', { surface: 'mobile', clientId: 'mobile:dev-A' })
-    session.detachModClient('mobile:dev-A')
-    session.detachModClient('mobile:dev-A')
+    await session.modUi('attach', { surface: 'mobile', clientId: 'mobile-dev-A' })
+    session.detachModClient('mobile-dev-A')
+    session.detachModClient('mobile-dev-A')
     await vi.waitFor(() => expect(modUi).toHaveBeenCalledTimes(2))
-    expect(modUi).toHaveBeenLastCalledWith('detach', { clientId: 'mobile:dev-A' })
+    expect(modUi).toHaveBeenLastCalledWith('detach', { clientId: 'mobile-dev-A' })
     backend.resolveSend?.()
   })
 

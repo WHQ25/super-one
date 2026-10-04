@@ -299,13 +299,17 @@ module that runs inside the CLI process. Upstream docs:
   `ui_surface_v1` in `initializationResult().capabilities` before any turn,
   and `ui_render` answers in 0–9 ms. Surfaces are a closed set (`desktop`,
   `mobile`, `vscode`); SuperOne attaches as `desktop` and each phone as
-  `mobile`. An error reply to a CLI→host request costs the CLI a 5 s wait.
-- **Observed:** 0.3.287 live probe and recordings.
+  `mobile`. `ui_attach` refuses a `client_id` that is not 1-64 of letters,
+  digits, `.`, `_` or `-` (`:` is reserved by the CLI). An error reply to a
+  CLI→host request costs the CLI a 5 s wait.
+- **Observed:** 0.3.287 live probe and recordings; the `client_id` rule from a
+  phone attach refused in 0.3.287.
 - **Depends on it:** `packages/claude/src/mod-surface/` (the only place that
   touches `request` / `setUiHost`; it is unavailable when either is missing),
   and every surface in [features/claude-mods.md](../../features/claude-mods.md).
 - **Guard:** `packages/claude/src/mod-surface/mod-surface.test.ts` (capability
-  gate, missing private API, recorded ops, pushes and host requests).
+  gate, missing private API, recorded ops, pushes and host requests);
+  `packages/shared/src/mod-ui.test.ts` (derived client ids).
 
 ### Only the first engine ref carries rewritten props
 

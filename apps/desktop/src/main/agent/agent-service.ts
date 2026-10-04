@@ -1347,6 +1347,8 @@ export class AgentService {
           await respond?.(command.requestId, { response })
         } catch (err) {
           const e = err as Error
+          // The phone's mod client keeps failures to itself, so release builds see them only here.
+          if (e.name !== MOD_UI_UNAVAILABLE) log.warn('[agent-service] mod_ui_request %s failed sid=%s device=%s: %s', command.op, command.sessionId, deviceId, e.message)
           await respond?.(command.requestId, { error: e.name === MOD_UI_UNAVAILABLE ? `${MOD_UI_UNAVAILABLE}: ${e.message}` : e.message })
         }
         break

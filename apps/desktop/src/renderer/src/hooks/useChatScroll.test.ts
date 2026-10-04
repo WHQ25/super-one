@@ -2,6 +2,7 @@
 
 import { renderHook, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { useChatScroll } from './useChatScroll'
 
 vi.mock('@/stores/chat', () => ({
@@ -86,6 +87,7 @@ class MockResizeObserver {
 
 describe('useChatScroll', () => {
   beforeEach(() => {
+    useCodexRealtimeViewStore.setState({ sessions: {} })
     resizeSubscriptions = []
     mockSessionScope = null
     vi.stubGlobal('ResizeObserver', MockResizeObserver)
@@ -111,6 +113,36 @@ describe('useChatScroll', () => {
       cb(entries, {} as ResizeObserver)
     }
   }
+
+  it('rebinds to the realtime viewport and follows speech even with an empty backing thread', () => {
+    mockSessionState = { ...mockSessionState, messages: [], sessionProvider: 'codex' }
+    const thread = createMockViewport()
+    const voice = createMockViewport()
+    const ref = { current: thread.el }
+    const { result } = renderHook(() => useChatScroll({ scrollViewportRef: ref }))
+    ref.current = voice.el
+    act(() => useCodexRealtimeViewStore.getState().setRealtimeStarting('session-1', true))
+    expect(voice.state.scrollTop).toBe(200)
+    expect(resizeSubscriptions.some((sub) => sub.target === voice.el)).toBe(true)
+    expect(resizeSubscriptions.some((sub) => sub.target === thread.el)).toBe(false)
+    voice.state.scrollHeight = 800
+    act(() => useCodexRealtimeViewStore.getState().startTranscriptItem('session-1', {
+      itemId: 'speech', realtimeSessionId: 'rt', role: 'assistant', text: 'Hello',
+    }))
+    expect(voice.state.scrollTop).toBe(500)
+    act(() => wheelUp(voice.el))
+    voice.state.scrollHeight = 1000
+    act(() => useCodexRealtimeViewStore.getState().appendTranscriptItemDelta('session-1', 'speech', ' world'))
+    act(() => fireResize(voice.el))
+    expect(voice.state.scrollTop).toBe(500)
+    expect(result.current.showScrollButton).toBe(true)
+    act(() => result.current.scrollToBottom())
+    expect(voice.state.scrollTop).toBe(700)
+    ref.current = thread.el
+    act(() => useCodexRealtimeViewStore.getState().setView('session-1', 'thread'))
+    expect(thread.state.scrollTop).toBe(200)
+    expect(resizeSubscriptions.some((sub) => sub.target === voice.el)).toBe(false)
+  })
 
   it('scrolls to bottom on ResizeObserver callback when following', () => {
     const { el, state } = createMockViewport()

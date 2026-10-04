@@ -1,5 +1,7 @@
 import { useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react'
 import { useActiveSession, useSessionScope } from '@/stores/chat'
+import { EMPTY_CODEX_REALTIME_SESSION_VIEW, useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
+import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 
 interface UseChatScrollOptions {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
@@ -59,6 +61,13 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
   const messages = useActiveSession((s) => s.messages)
   const activeSessionId = useActiveSession((s) => s._activeSessionId)
   const sessionId = scope?.sessionId ?? activeSessionId
+  const provider = useActiveSession((s) => resolveProvider(s))
+  const realtime = useCodexRealtimeViewStore((s) => sessionId
+    ? s.sessions[sessionId] ?? EMPTY_CODEX_REALTIME_SESSION_VIEW
+    : EMPTY_CODEX_REALTIME_SESSION_VIEW)
+  const showRealtime = provider === 'codex' && realtime.hasTimeline && realtime.view === 'realtime'
+  // The two views mount different viewports, even within the same session.
+  const viewKey = showRealtime ? 'realtime' : 'thread'
   const sessionKey = scope ? `${scope.projectPath}\0${scope.sessionId}` : activeSessionId
   const pendingPlanApproval = useActiveSession((s) => s.pendingPlanApproval)
 
@@ -87,7 +96,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
         window.app.trace?.('scroll', 'session_switch', { sessionId, scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight, msgCount: messages.length })
       }
     }
-  }, [sessionKey, scrollViewportRef])
+  }, [sessionKey, viewKey, scrollViewportRef])
 
   const prevPlanApprovalRef = useRef(pendingPlanApproval)
   useLayoutEffect(() => {
@@ -103,7 +112,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     }
   }, [pendingPlanApproval])
 
-  const viewportMounted = !pendingPlanApproval && messages.length > 0
+  const viewportMounted = !pendingPlanApproval && (showRealtime || messages.length > 0)
 
   const pauseAutoScroll = useCallback((allowStationaryBottomResume: boolean) => {
     const el = scrollViewportRef.current
@@ -168,9 +177,9 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
       el.removeEventListener('touchmove', handleTouchMove)
       el.removeEventListener('keydown', handleKeyDown)
     }
-  }, [sessionKey, viewportMounted, scrollViewportRef, pauseAutoScroll])
+  }, [sessionKey, viewKey, viewportMounted, scrollViewportRef, pauseAutoScroll])
 
-  const lastMsgIsUser = messages.length > 0 && messages[messages.length - 1].role === 'user'
+  const lastMsgIsUser = !showRealtime && messages.length > 0 && messages[messages.length - 1].role === 'user'
 
   useLayoutEffect(() => {
     const el = scrollViewportRef.current
@@ -191,7 +200,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
       allowStationaryBottomResumeRef.current = false
       setShowScrollButton(false)
     }
-  }, [messages, lastMsgIsUser, scrollViewportRef])
+  }, [messages, showRealtime ? realtime : null, viewKey, lastMsgIsUser, scrollViewportRef])
 
   useEffect(() => {
     const viewport = scrollViewportRef.current
@@ -220,7 +229,7 @@ export function useChatScroll({ scrollViewportRef }: UseChatScrollOptions): UseC
     observer.observe(content)
     observer.observe(viewport)
     return () => observer.disconnect()
-  }, [sessionKey, viewportMounted, scrollViewportRef])
+  }, [sessionKey, viewKey, viewportMounted, scrollViewportRef])
 
   const scrollToBottom = useCallback(() => {
     const el = scrollViewportRef.current

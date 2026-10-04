@@ -1,3 +1,4 @@
+import { ArrowDown } from 'lucide-react'
 import { Fragment, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
@@ -19,6 +20,9 @@ interface CodexRealtimeTranscriptProps {
   sessionId: string
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
   liquidGlass: boolean
+  showScrollButton?: boolean
+  scrollToBottom?: () => void
+  stopAutoScroll?: () => void
   /** The backing thread; only its delegated ranges surface here, as cards. */
   threadMessages: readonly ChatMessage[]
   sessionStatus: AgentStatus
@@ -53,6 +57,9 @@ export function CodexRealtimeTranscript({
   sessionId,
   scrollViewportRef,
   liquidGlass,
+  showScrollButton = false,
+  scrollToBottom,
+  stopAutoScroll,
   threadMessages,
   sessionStatus,
   needsDecision,
@@ -103,9 +110,10 @@ export function CodexRealtimeTranscript({
     const viewport = scrollViewportRef.current
     const target = viewport?.querySelector(`[data-voice-turn-id="${CSS.escape(voiceTurnId)}"]`)
     if (!target) return
+    stopAutoScroll?.()
     target.scrollIntoView({ behavior: 'smooth', block: 'start' })
     clearJump(sessionId)
-  }, [activities, clearJump, pendingJump, scrollViewportRef, sessionId])
+  }, [activities, clearJump, pendingJump, scrollViewportRef, sessionId, stopAutoScroll])
 
   const loading = realtime.loadStatus === 'idle' || realtime.loadStatus === 'loading'
   // The composer's voice mark carries the connecting state; the transcript only
@@ -160,6 +168,15 @@ export function CodexRealtimeTranscript({
           )}
         </SelectionContextMenuZone>
       </ScrollArea>
+      {showScrollButton && scrollToBottom && layout.length > 0 && (
+        <button
+          onClick={scrollToBottom}
+          aria-label={t('chat.realtimeVoice.scrollToBottom')}
+          className="absolute bottom-3 left-1/2 z-10 flex size-7 -translate-x-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+        >
+          <ArrowDown className="size-3.5" />
+        </button>
+      )}
       {!liquidGlass && <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent" />}
     </div>
   )

@@ -1589,6 +1589,7 @@ export const zh: Messages = {
       copiedToClipboard: '{{plugin}} 已将文本复制到剪贴板',
     },
     realtimeVoice: {
+      scrollToBottom: '滚动到底部',
       start: '开始语音对话',
       stop: '结束语音对话',
       muteMicrophone: '关闭麦克风',

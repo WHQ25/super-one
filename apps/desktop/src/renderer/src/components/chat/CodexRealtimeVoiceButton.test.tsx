@@ -1,12 +1,13 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { resetRealtimeCallForTests, useRealtimeCallStore } from '@/stores/realtime-call'
 import { VOICE_READY_CUE_MIC_GUARD_MS } from '@/lib/audio-cue'
 import { CodexRealtimeVoiceButton } from './CodexRealtimeVoiceButton'
+import { RealtimeCallControls } from './RealtimeCallControls'
 import { RealtimeCallIndicator } from './RealtimeCallIndicator'
 import { mergeCodexRealtimeMessages } from './codex-realtime-messages'
 
@@ -128,6 +129,37 @@ describe('realtime voice surfaces', () => {
     emit?.({ type: 'realtime_sdp', sessionId: 'session-1', sdp: 'v=0\r\n' })
     await waitFor(() => expect(screen.getByRole('button', { name: 'Mute microphone' })).toBeEnabled())
   }
+
+  it('hides other session voice entries until the global call is idle', () => {
+    useRealtimeCallStore.setState({ sessionId: 'session-1', state: 'starting' })
+    render(<CodexRealtimeVoiceButton projectPath="/repo" sessionId="session-2" />)
+    expect(screen.queryByRole('button', { name: 'Start Voice Conversation' })).toBeNull()
+    for (const state of ['active', 'stopping', 'idle'] as const) {
+      act(() => useRealtimeCallStore.setState({ state }))
+      expect(screen.queryByRole('button', { name: 'Start Voice Conversation' }) !== null).toBe(state === 'idle')
+    }
+  })
+
+  it('uses M only in the voice view and ignores typing and modified or repeated keys', async () => {
+    render(<VoiceSurfaces />)
+    await reachConnectedCall()
+    const controls = render(<RealtimeCallControls layout="centered" microphoneShortcutEnabled />)
+    fireEvent.keyDown(window, { key: 'm' })
+    expect(microphoneTrack.enabled).toBe(false)
+    fireEvent.keyDown(window, { key: 'm', repeat: true })
+    fireEvent.keyDown(window, { key: 'm', metaKey: true })
+    fireEvent.keyDown(window, { key: 'm', isComposing: true })
+    const input = document.createElement('input')
+    document.body.append(input)
+    fireEvent.keyDown(input, { key: 'm' })
+    input.remove()
+    expect(microphoneTrack.enabled).toBe(false)
+    fireEvent.keyDown(window, { key: 'm' })
+    expect(microphoneTrack.enabled).toBe(true)
+    controls.rerender(<RealtimeCallControls layout="centered" microphoneShortcutEnabled={false} />)
+    fireEvent.keyDown(window, { key: 'm' })
+    expect(microphoneTrack.enabled).toBe(true)
+  })
 
   it('marks the unified transcript as starting before the SDP answer', async () => {
     render(<VoiceSurfaces />)

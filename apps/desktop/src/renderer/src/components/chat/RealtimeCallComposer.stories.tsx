@@ -5,6 +5,7 @@ import type { PermissionRequest } from '@superone/shared/agent-types'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { resetRealtimeCallForTests, useRealtimeCallStore, type RealtimeCallActivity, type RealtimeCallState } from '@/stores/realtime-call'
+import { CodexRealtimeVoiceButton } from './CodexRealtimeVoiceButton'
 import { RealtimeCallComposer } from './RealtimeCallComposer'
 
 const projectPath = '/storybook/voice-composer'
@@ -27,9 +28,10 @@ interface PreviewProps {
   permission?: boolean
   muted?: boolean
   width?: number
+  otherSession?: boolean
 }
 
-function Preview({ state, activity = 'listening', captions = false, permission = false, muted = false, width = 620 }: PreviewProps) {
+function Preview({ state, activity = 'listening', captions = false, permission = false, muted = false, width = 620, otherSession = false }: PreviewProps) {
   const [ready, setReady] = useState(false)
   useEffect(() => {
     const previous = useChatStore.getState()
@@ -65,7 +67,7 @@ function Preview({ state, activity = 'listening', captions = false, permission =
   }, [activity, captions, muted, permission, state])
   return (
     <div className="@container flex max-w-full flex-col rounded-xl border bg-card pt-2" style={{ width }}>
-      {ready && <TooltipProvider><RealtimeCallComposer /></TooltipProvider>}
+      {ready && <TooltipProvider><RealtimeCallComposer />{otherSession && <CodexRealtimeVoiceButton projectPath={projectPath} sessionId="new-session" />}</TooltipProvider>}
     </div>
   )
 }
@@ -91,3 +93,6 @@ export const NarrowDarkChinese: Story = {
   globals: { theme: 'dark', locale: 'zh', harness: 'codex' },
   render: () => <Preview state="active" activity="assistant-speaking" captions width={320} />,
 }
+
+/** Press M to toggle the microphone; another conversation has no start-call entry. */
+export const MicrophoneShortcutAndOtherSession: Story = { render: () => <Preview state="active" otherSession /> }

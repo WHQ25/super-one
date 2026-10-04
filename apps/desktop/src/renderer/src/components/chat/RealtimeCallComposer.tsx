@@ -15,7 +15,7 @@ import { RealtimeCallControls } from './RealtimeCallControls'
  * harness pickers, queue) belongs to the backing thread and returns with
  * `ChatComposerShell` once the call ends.
  */
-export const RealtimeCallComposer = memo(function RealtimeCallComposer() {
+export const RealtimeCallComposer = memo(function RealtimeCallComposer({ microphoneShortcutEnabled = true }: { microphoneShortcutEnabled?: boolean }) {
   const { t } = useTranslation()
   const liveState = useRealtimeCallStore((store) => store.state)
   // After a hang-up the store is idle before this composer has slid out. Keep
@@ -49,7 +49,7 @@ export const RealtimeCallComposer = memo(function RealtimeCallComposer() {
             <span className="text-xs text-muted-foreground">{t('chat.realtimeVoice.stopping')}</span>
           ) : (
             <div data-testid="realtime-call-controls" className="flex items-center gap-1.5">
-              <RealtimeCallControls layout="centered" />
+              <RealtimeCallControls layout="centered" microphoneShortcutEnabled={microphoneShortcutEnabled} />
             </div>
           )}
         </div>

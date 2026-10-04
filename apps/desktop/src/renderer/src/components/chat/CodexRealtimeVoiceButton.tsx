@@ -24,9 +24,14 @@ export function CodexRealtimeVoiceButton({
   disabled = false,
 }: CodexRealtimeVoiceButtonProps) {
   const { t } = useTranslation()
+  const otherCallEngaged = useRealtimeCallStore((store) => (
+    store.state !== 'idle' && store.sessionId !== sessionId
+  ))
   const callState = useRealtimeCallStore((store) => (
     store.sessionId === sessionId ? store.state : 'idle'
   ))
+
+  if (otherCallEngaged) return null
 
   // Connected, the button becomes the call's whole control set. It lives here rather
   // than on the indicator above the composer because this strip is where every other

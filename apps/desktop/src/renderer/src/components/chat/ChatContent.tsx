@@ -682,6 +682,9 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
               <CodexRealtimeTranscript
                 sessionId={displayedSessionId!}
                 scrollViewportRef={scrollViewportRef}
+                showScrollButton={showScrollButton}
+                scrollToBottom={scrollToBottom}
+                stopAutoScroll={stopAutoScroll}
                 liquidGlass={liquidGlass}
                 threadMessages={threadMessages}
                 sessionStatus={sessionStatus}
@@ -703,7 +706,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             alignTo="text"
             render={(kind) => (
               kind === 'app-consent' ? <McpAppConsentComposer sessionId={displayedSessionId!} />
-                : kind === 'voice' ? <RealtimeCallComposer />
+                : kind === 'voice' ? <RealtimeCallComposer microphoneShortcutEnabled={showRealtimeComposer && !appConsent} />
                 : <ChatComposerShell showTodoPopup />
             )}
           />

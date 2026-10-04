@@ -4,9 +4,10 @@ import type { AgentStatus, ChatMessage, CodexThreadItem, RealtimeTimelineResult 
 import { mockIpc } from '../../../../../.storybook/mock-ipc'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { EMPTY_CODEX_REALTIME_SESSION_VIEW, useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
+import { useChatScroll } from '@/hooks/useChatScroll'
 import { CodexRealtimeTranscript } from './CodexRealtimeTranscript'
 
-type Scenario = 'restored' | 'repeated' | 'empty' | 'loading' | 'error' | 'delegation' | 'plan'
+type Scenario = 'restored' | 'repeated' | 'empty' | 'loading' | 'error' | 'delegation' | 'plan' | 'scroll'
 type WorkStatus = 'working' | 'completed' | 'failed' | 'needs-decision'
 
 const projectPath = '/storybook/voice'
@@ -43,17 +44,19 @@ function delegatedWork(status: WorkStatus, options: { plan?: boolean; long?: boo
 function Preview({ scenario, width = 760 }: { scenario: Scenario; width?: number }) {
   const [ready, setReady] = useState(false)
   const [workStatus, setWorkStatus] = useState<WorkStatus>(scenario === 'delegation' ? 'working' : 'completed')
-  const scrollViewportRef = useRef<HTMLDivElement>(null)
   const sessionId = `storybook-voice-${scenario}`
   const withWork = scenario === 'delegation' || scenario === 'plan'
-  const hasSpeech = scenario === 'restored' || scenario === 'repeated' || withWork
+  const hasSpeech = scenario === 'restored' || scenario === 'repeated' || scenario === 'scroll' || withWork
   const sessionStatus: AgentStatus = workStatus === 'working' ? 'streaming' : workStatus === 'failed' ? 'error' : 'idle'
   const threadMessages: ChatMessage[] = withWork
     ? [delegatedWork(workStatus, { plan: scenario === 'plan', long: width < 480 })]
     : hasSpeech ? [typed] : []
   useEffect(() => {
     const timeline: RealtimeTimelineResult = {
-      segments: hasSpeech ? [
+      segments: scenario === 'scroll' ? Array.from({ length: 24 }, (_, i) => ({
+        id: `scroll-${i}`, realtimeSessionId: 'rt', role: i % 2 === 0 ? 'user' as const : 'assistant' as const,
+        position: i, text: `Voice turn ${i + 1}: checking automatic scrolling and browsing earlier conversation.`,
+      })) : hasSpeech ? [
         {
           id: 'voice-user', realtimeSessionId: 'rt', role: 'user', position: 2,
           text: 'Please check the voice settings. 请检查语音设置。',
@@ -78,22 +81,20 @@ function Preview({ scenario, width = 760 }: { scenario: Scenario; width?: number
         [sessionId]: { ...EMPTY_CODEX_REALTIME_SESSION_VIEW, ...timeline, starting: scenario === 'loading' },
       },
     }))
-    // The plan footer answers through the active session, so seed one in plan mode.
+    // The scroll hook and plan footer both read the active session.
     const previous = useChatStore.getState()
-    if (scenario === 'plan') {
-      const project = createDefaultProjectState()
-      const session = createDefaultPerSessionState()
-      Object.assign(session, { selectedCodexCollaborationMode: 'plan', sessionProvider: 'codex' })
-      useChatStore.setState({
-        activeProject: projectPath,
-        projectSessions: { ...previous.projectSessions, [projectPath]: { ...project, _activeSessionId: sessionId, _sessions: { [sessionId]: session } } },
-        approveCodexPlan: async () => { setWorkStatus('completed') },
-        rejectCodexPlan: async () => { setWorkStatus('failed') },
-      })
-    }
+    const project = createDefaultProjectState()
+    const session = createDefaultPerSessionState()
+    Object.assign(session, { selectedCodexCollaborationMode: 'plan', sessionProvider: 'codex' })
+    useChatStore.setState({
+      activeProject: projectPath,
+      projectSessions: { ...previous.projectSessions, [projectPath]: { ...project, _activeSessionId: sessionId, _sessions: { [sessionId]: session } } },
+      approveCodexPlan: async () => { setWorkStatus('completed') },
+      rejectCodexPlan: async () => { setWorkStatus('failed') },
+    })
     setReady(true)
     return () => {
-      if (scenario === 'plan') useChatStore.setState(previous)
+      useChatStore.setState(previous)
       useCodexRealtimeViewStore.setState((state) => {
         const sessions = { ...state.sessions }
         delete sessions[sessionId]
@@ -112,13 +113,17 @@ function Preview({ scenario, width = 760 }: { scenario: Scenario; width?: number
           <option value="needs-decision">Needs decision</option>
         </select>
       </label>}
-      {ready && <CodexRealtimeTranscript
-        sessionId={sessionId} scrollViewportRef={scrollViewportRef}
-        liquidGlass={false} threadMessages={threadMessages}
-        sessionStatus={sessionStatus} needsDecision={workStatus === 'needs-decision'}
-      />}
+      {ready && <ScrollableTranscript sessionId={sessionId} threadMessages={threadMessages}
+        sessionStatus={sessionStatus} needsDecision={workStatus === 'needs-decision'} />}
+
     </div>
   )
+}
+
+function ScrollableTranscript(props: { sessionId: string; threadMessages: ChatMessage[]; sessionStatus: AgentStatus; needsDecision: boolean }) {
+  const scrollViewportRef = useRef<HTMLDivElement>(null)
+  const scroll = useChatScroll({ scrollViewportRef })
+  return <CodexRealtimeTranscript {...props} {...scroll} scrollViewportRef={scrollViewportRef} liquidGlass={false} />
 }
 
 const meta: Meta<typeof CodexRealtimeTranscript> = {
@@ -146,3 +151,6 @@ export const DelegatedWorkNarrowDark: Story = {
 }
 /** A plan the delegated turn ended on is answered under the status line, without leaving the voice view. */
 export const PlanAwaitingApproval: Story = { render: () => <Preview scenario="plan" /> }
+
+/** Starts at the latest turn; scrolling upward pauses following and exposes the return button. */
+export const LongTimelineAutoScroll: Story = { render: () => <Preview scenario="scroll" /> }

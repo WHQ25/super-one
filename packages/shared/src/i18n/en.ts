@@ -1496,6 +1496,7 @@ export type Messages = {
       copiedToClipboard: string
     }
     realtimeVoice: {
+      scrollToBottom: string
       start: string
       stop: string
       muteMicrophone: string
@@ -5728,6 +5729,7 @@ export const en: Messages = {
       copiedToClipboard: '{{plugin}} copied text to the clipboard',
     },
     realtimeVoice: {
+      scrollToBottom: 'Scroll to Bottom',
       start: 'Start Voice Conversation',
       stop: 'Stop Voice Conversation',
       muteMicrophone: 'Mute microphone',

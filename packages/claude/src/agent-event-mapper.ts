@@ -229,6 +229,7 @@ export function createClaudeAgentEventMapper(
   let rejectedRateLimitResetsAt: number | undefined
   let hasRejectedRateLimit = false
   let pendingSlashOutput = ''
+  let pendingSlashCommand: string | undefined
   let messageInputTokens = 0
   let messageOutputTokens = 0
   let resultSeen = false
@@ -620,6 +621,7 @@ export function createClaudeAgentEventMapper(
               .join('')
               .trim()
             if (text) pendingSlashOutput = pendingSlashOutput ? `${pendingSlashOutput}\n${text}` : text
+            if (typeof raw.local_command_run?.command === 'string') pendingSlashCommand = raw.local_command_run.command
           }
           for (const block of blocks) {
             if (block.type === 'text' && assistantParent && block.text) {
@@ -772,7 +774,14 @@ export function createClaudeAgentEventMapper(
             emit({ type: 'message_interrupted', messageId, metadata })
             activeBackgroundTasks.clear()
           } else if (!resultIsError) {
-            if (pendingSlashOutput) emit({ type: 'slash_command_output', messageId, content: pendingSlashOutput })
+            if (pendingSlashOutput) {
+              emit({
+                type: 'slash_command_output',
+                messageId,
+                content: pendingSlashOutput,
+                ...(pendingSlashCommand ? { command: pendingSlashCommand } : {}),
+              })
+            }
             emit({ type: 'message_complete', messageId, metadata })
           } else {
             // Hosts: if isResumeDropsTurnRefusal(error), clear fork target + full-resume only (never retry same args).
@@ -787,6 +796,7 @@ export function createClaudeAgentEventMapper(
           hasRejectedRateLimit = false
           rejectedRateLimitResetsAt = undefined
           pendingSlashOutput = ''
+          pendingSlashCommand = undefined
           resultSeen = true
           options.onStepBoundary?.()
           emit({ type: 'status_change', status: activeBackgroundTasks.size === 0 ? 'idle' : 'background' })

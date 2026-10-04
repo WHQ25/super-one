@@ -1881,7 +1881,11 @@ export type AgentEventBase =
    */
   | { type: 'jev_run_update'; runId: string; platform: JevRunPlatform; action?: JevRunAction; outcome?: JevRunOutcome }
   | { type: 'auth_status'; isAuthenticating: boolean; output: string[]; error?: string }
-  | { type: 'slash_command_output'; messageId: string; content: string }
+  /**
+   * `command` is the slash command the output belongs to, when the wire names
+   * it (Claude's synthetic stdout message carries `local_command_run`).
+   */
+  | { type: 'slash_command_output'; messageId: string; content: string; command?: string }
   /**
    * Undeclared SDK wire message: a local slash command's only progress signal.
    * `refused` (SDK 0.3.238) is a terminal state like completed/cancelled — a

@@ -31,11 +31,11 @@ const TURN_PRESERVING_COMMANDS = new Set(['goal'])
 /**
  * The command a sent message runs, or `''` for an ordinary message.
  *
- * The wire messages that follow — `slash_command_lifecycle`, then
- * `slash_command_output` — carry no command name, so the only place it can be
- * learned is the input the user actually sent. Every surface that sends has to
- * record it or the output arrives unattributable, which is how mobile ended up
- * showing `Command / executed.`
+ * `slash_command_lifecycle` carries no command name, and `slash_command_output`
+ * only does when the harness wire names it, so the input the user actually sent
+ * is the fallback. Every surface that sends has to record it or the output
+ * arrives unattributable, which is how mobile ended up showing
+ * `Command / executed.`
  */
 export function pendingSlashCommandFrom(content: string): string {
   return content.match(/^\/(\S+)/)?.[1] ?? ''
@@ -259,7 +259,9 @@ export function reduceSlash(
     }
 
     case 'slash_command_output': {
-      const cmd = session._pendingSlashCommand
+      // The wire's name wins: _pendingSlashCommand is renderer-local and has to
+      // survive the whole turn, which a long `/goal` run does not guarantee.
+      const cmd = event.command ?? session._pendingSlashCommand
       const compactUserId = session._pendingCompactUserId
       const filtered = session.messages.filter(
         (m) => m.id !== event.messageId && (!compactUserId || m.id !== compactUserId),

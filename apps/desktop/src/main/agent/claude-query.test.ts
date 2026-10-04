@@ -1032,6 +1032,31 @@ describe('createSessionQuery', () => {
 
     const slash = events.find((e) => e.type === 'slash_command_output') as Record<string, unknown> | undefined
     expect(slash?.content).toBe('Context: 42% used')
+    expect(slash).not.toHaveProperty('command')
+  })
+
+  it('names the command the synthetic stdout came from', async () => {
+    state.messages = [
+      {
+        type: 'assistant',
+        message: { id: 'step-goal', model: '<synthetic>', content: [{ type: 'text', text: 'Goal set: ship it' }] },
+        local_command_run: { command: 'goal', args: 'ship it' },
+      },
+      { type: 'result', subtype: 'success' },
+    ]
+
+    const events: Array<Record<string, unknown>> = []
+    const handle = createSessionQuery(
+      { consumedTags: [], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => events.push(event as unknown as Record<string, unknown>),
+      () => 'msg-goal',
+      () => Date.now() - 50,
+      () => false,
+    )
+    await handle.iterationDone
+
+    expect(events.find((e) => e.type === 'slash_command_output')).toMatchObject({ content: 'Goal set: ship it', command: 'goal' })
   })
 
   it('decorates message_error with provider-aware hint when assistant carries model_not_found and result has api_error_status', async () => {

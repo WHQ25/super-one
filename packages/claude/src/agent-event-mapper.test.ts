@@ -314,6 +314,20 @@ describe('createClaudeAgentEventMapper', () => {
     }))
   })
 
+  it('names the command synthetic slash output came from', () => {
+    const events: AgentEvent[] = []
+    const mapper = createClaudeAgentEventMapper({ messageId: 'm-goal', emit: (event) => events.push(event) })
+
+    mapper.apply({
+      type: 'assistant',
+      message: { id: 'step-goal', model: '<synthetic>', content: [{ type: 'text', text: 'Goal set: ship it' }] },
+      local_command_run: { command: 'goal', args: 'ship it' },
+    })
+    mapper.apply({ type: 'result', subtype: 'success' })
+
+    expect(events).toContainEqual({ type: 'slash_command_output', messageId: 'm-goal', content: 'Goal set: ship it', command: 'goal' })
+  })
+
   it('does not turn an allowed-warning rate-limit event into a failed turn', () => {
     const events: AgentEvent[] = []
     const mapper = createClaudeAgentEventMapper({ messageId: 'm-warning', emit: (event) => events.push(event) })

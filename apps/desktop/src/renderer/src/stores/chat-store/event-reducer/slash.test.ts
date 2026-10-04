@@ -475,6 +475,20 @@ describe('reduceSlash: slash_command_output', () => {
     expect(patch).toEqual({ _pendingSlashCommand: '' })
   })
 
+  it('keeps the /goal turn by the command the event names when the pending command was lost', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [
+      makeMessage('user', { role: 'user' }),
+      makeMessage('source', { role: 'assistant', content: [{ type: 'text', text: 'Ran the suite, all green.' }] }),
+    ]
+
+    const patch = reduceSlash(session, {
+      type: 'slash_command_output', messageId: 'source', content: 'Goal set: all tests pass', command: 'goal',
+    } as never)
+
+    expect(patch).toEqual({ _pendingSlashCommand: '' })
+  })
+
   it('does not mint an empty report message when stdout is blank', () => {
     const session = createDefaultPerSessionState()
     session._pendingSlashCommand = 'code-review'

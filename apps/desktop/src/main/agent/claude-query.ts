@@ -329,6 +329,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   let lastRateLimitResetsAt: number | undefined
   let hasRejectedRateLimit = false
   let pendingSlashOutput = ''
+  let pendingSlashCommand: string | undefined
   // Per-step dedup: track processed step IDs (SDK message IDs) and latest step tokens
   const processedStepIds = new Set<string>()
   let messageInputTokens = 0
@@ -872,6 +873,9 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             if (text) {
               pendingSlashOutput = pendingSlashOutput ? `${pendingSlashOutput}\n${text}` : text
             }
+            // Undeclared in the SDK types: the local command this stdout belongs to.
+            const run = (msg as { local_command_run?: { command?: unknown } }).local_command_run
+            if (typeof run?.command === 'string') pendingSlashCommand = run.command
           }
 
           const content = msg.message?.content
@@ -1150,7 +1154,12 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             activeBackgroundTasks.clear()
           } else if (!isClaudeResultError(result, hasRejectedRateLimit)) {
             if (pendingSlashOutput) {
-              emit({ type: 'slash_command_output', messageId, content: pendingSlashOutput })
+              emit({
+                type: 'slash_command_output',
+                messageId,
+                content: pendingSlashOutput,
+                ...(pendingSlashCommand ? { command: pendingSlashCommand } : {}),
+              })
             }
             emit({ type: 'message_complete', messageId, metadata })
           } else {
@@ -1197,6 +1206,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           hasRejectedRateLimit = false
           lastRateLimitResetsAt = undefined
           pendingSlashOutput = ''
+          pendingSlashCommand = undefined
 
           resultSeen = true
           turnActive = false

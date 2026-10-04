@@ -477,6 +477,7 @@ export interface ChatStore {
   setAcpAgentId: (agentId: string | null) => void
   setOpenCodeAgentId: (agentId: string | null, target?: SessionWriteTarget) => void
   setSelectedAcpMode: (modeId: string, target?: SessionWriteTarget) => void
+  setSelectedAcpContextWindow: (contextWindow: number, target?: SessionWriteTarget) => Promise<boolean>
   /** Lazy-load ACP slash commands when the / popup opens (also refreshes cache). */
   ensureAcpSlashCommands: () => void
 

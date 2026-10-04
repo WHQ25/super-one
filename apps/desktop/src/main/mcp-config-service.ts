@@ -44,6 +44,7 @@ interface RawMcpEntry {
   env?: Record<string, string>
   url?: string
   headers?: Record<string, string>
+  bearerTokenFile?: string
 }
 
 function extractServers(
@@ -67,6 +68,7 @@ function extractServers(
       // http
       url: raw.url,
       headers: raw.headers,
+      bearerTokenFile: typeof raw.bearerTokenFile === 'string' ? raw.bearerTokenFile : undefined,
     }
   })
 }
@@ -100,7 +102,7 @@ export function listMcpConfigs(cwd: string): McpServerConfig[] {
 
 export function saveMcpConfig(
   name: string,
-  config: Partial<Pick<McpServerConfig, 'type' | 'command' | 'args' | 'env' | 'url' | 'headers'>>,
+  config: Partial<Pick<McpServerConfig, 'type' | 'command' | 'args' | 'env' | 'url' | 'headers' | 'bearerTokenFile'>>,
   scope: ResourceScope,
   cwd: string
 ): void {
@@ -118,6 +120,7 @@ export function saveMcpConfig(
     if (config.headers && Object.keys(config.headers).length > 0) {
       entry.headers = config.headers
     }
+    if (config.bearerTokenFile) entry.bearerTokenFile = config.bearerTokenFile
   } else {
     entry.command = config.command ?? ''
     entry.args = config.args ?? []

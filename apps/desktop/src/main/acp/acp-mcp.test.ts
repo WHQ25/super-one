@@ -24,6 +24,7 @@ import {
   SUPERONE_ACP_MCP_NAME,
   buildAcpSessionMcpServers,
   mcpTransportCapsFromAgent,
+  omitUntrustedProjectMcpServers,
   toAcpMcpServer,
 } from './acp-mcp'
 
@@ -74,6 +75,13 @@ describe('toAcpMcpServer', () => {
       name: 'linear',
       url: 'https://mcp.linear.app',
       headers: [{ name: 'Authorization', value: 'Bearer t' }],
+    })
+    expect(toAcpMcpServer(
+      { ...httpCfg, bearerTokenFile: 'relative/token' },
+      { http: true, sse: false },
+    )).toMatchObject({
+      headers: [{ name: 'Authorization', value: 'Bearer t' }],
+      _meta: { 'x.ai/mcp/bearerTokenFile': 'relative/token' },
     })
 
     const sseCfg: McpServerConfig = {
@@ -154,6 +162,47 @@ describe('buildAcpSessionMcpServers', () => {
         env: [],
       },
     ])
+  })
+
+  it('omits project-scope servers when includeProjectScope is false', () => {
+    const servers = buildAcpSessionMcpServers({
+      cwd: '/proj',
+      superoneSessionId: 'sid-1',
+      includeProjectScope: false,
+      listConfigs: () => [
+        stdio('user-gh'),
+        stdio('repo-local', { scope: 'project' }),
+      ],
+    })
+    expect(servers.map((s) => s.name)).toEqual(['superone', 'user-gh'])
+  })
+
+  it('drops project-scope names from a refresh list', () => {
+    const servers = omitUntrustedProjectMcpServers(
+      [
+        { name: 'superone', command: 'node' },
+        { name: 'user-gh', command: 'gh' },
+        { name: 'repo-local', command: 'repo' },
+      ],
+      '/proj',
+      () => [
+        stdio('user-gh'),
+        stdio('repo-local', { scope: 'project' }),
+      ],
+    )
+    expect(servers.map((s) => s.name)).toEqual(['superone', 'user-gh'])
+  })
+
+  it('drops a project server whose config key has surrounding spaces', () => {
+    const project = stdio(' repo-local ', { scope: 'project', command: 'repo-mcp' })
+    const mapped = toAcpMcpServer(project, { http: false, sse: false })
+    expect(mapped?.name).toBe('repo-local')
+    const servers = omitUntrustedProjectMcpServers(
+      [mapped, { name: ' user-gh ', command: 'gh' }],
+      '/proj',
+      () => [stdio('user-gh'), project],
+    )
+    expect(servers.map((s) => s?.name)).toEqual([' user-gh '])
   })
 })
 

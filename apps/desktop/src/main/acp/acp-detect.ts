@@ -5,6 +5,7 @@ import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { ensureShellPath } from '../shell-path'
 import { buildSafeEnv } from '../spawn-env'
+import { resolveDesktopGrokLaunch } from '../harness/grok-launch'
 import { BUILTIN_ACP_AGENTS, type AcpAgentDefinition } from './agent-catalog'
 
 const execFileAsync = promisify(execFile)
@@ -106,6 +107,19 @@ async function whichCommand(command: string, pathEnv: string): Promise<string | 
 }
 
 export async function detectAgent(def: AcpAgentDefinition): Promise<DetectedAcpAgent> {
+  if (def.id === 'grok-build') {
+    const resolved = resolveDesktopGrokLaunch()
+    if (resolved?.command) {
+      return {
+        id: def.id,
+        name: def.name,
+        installed: true,
+        commandPreview: [resolved.command, ...resolved.args].join(' '),
+        installHint: def.installHint,
+        resolvedPath: resolved.command,
+      }
+    }
+  }
   const pathEnv = await ensureSearchPath()
   const resolvedPath = await whichCommand(def.command, pathEnv)
   return {

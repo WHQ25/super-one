@@ -270,6 +270,28 @@ describe('mapSessionUpdate', () => {
     })
   })
 
+  it('prefixes only a failed Generic Auto classifier deny', () => {
+    const text = 'Tool `Bash` was not executed: Auto mode blocked this action (shell)'
+    const completed = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_ok',
+      status: 'completed',
+      content: [{ type: 'content', content: { type: 'text', text } }],
+    }, ctx)
+    const failed = mapSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call_deny',
+      status: 'failed',
+      content: [{ type: 'content', content: { type: 'text', text } }],
+    }, ctx)
+    expect(completed.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')).toMatchObject({
+      delta: { summary: text, isError: false },
+    })
+    expect(failed.find((e) => e.type === 'content_delta' && e.delta.type === 'tool_result')).toMatchObject({
+      delta: { summary: `[denied] ${text}`, isError: true },
+    })
+  })
+
   it('maps execute tool_call to Bash', () => {
     const update: SessionUpdate = {
       sessionUpdate: 'tool_call',

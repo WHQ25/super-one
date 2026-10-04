@@ -1,10 +1,10 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
 import { useActiveSession, useChatStore, useScopedSessionActions } from '@/stores/chat'
 import type { AcpAgentDescriptor } from '@superone/shared/agent-types'
 import { acpAgentDisplayName } from '@superone/shared/acp-brand'
-import { formatEffortOptionLabel, sortEffortsAscending } from '@superone/shared/effort-labels'
+import { formatEffortOptionLabel, isAcpEffortConfigId, sortEffortsAscending } from '@superone/shared/effort-labels'
 import {
   groupModelsBySlashPrefix,
   resolveSlashModelLabel,
@@ -15,6 +15,7 @@ import {
   type SelectorModelGroup,
   type SelectorModelOption,
 } from './GroupedModelEffortSelector'
+import { AcpContextWindowSelect } from './AcpContextWindowSelect'
 
 const EMPTY_ACP_AGENTS: AcpAgentDescriptor[] = []
 const NO_EFFORT: SelectorEffortOption[] = []
@@ -33,19 +34,22 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
   const acpModelsStatus = useActiveSession((s) => s.acpModelsStatus)
   const acpModelsError = useActiveSession((s) => s.acpModelsError)
   const selectedModel = useActiveSession((s) => s.selectedModel)
-  // Grok: category=mode options with configId null are reasoning effort (not session mode).
-  // Real session modes keep acpModeConfigId set and stay in AcpModeSelector (status bar).
+  // Grok effort is configId null (legacy x.ai) or `reasoning_effort` (thought_level).
+  // Real session modes (OpenCode `mode`) stay in AcpModeSelector.
   const acpModes = useActiveSession((s) => s.acpModes)
   const acpModeConfigId = useActiveSession((s) => s.acpModeConfigId)
   const selectedAcpModeId = useActiveSession((s) => s.selectedAcpModeId)
   const agents = useChatStore((s) => s.harnessResources.acp?.agents ?? EMPTY_ACP_AGENTS)
-  const { setSelectedModel, setSelectedAcpMode } = useScopedSessionActions()
+  const { setSelectedModel, setSelectedAcpMode, setSelectedAcpContextWindow } = useScopedSessionActions()
+  const [windowPick, setWindowPick] = useState<number | null>(null)
+  useEffect(() => { setWindowPick(null) }, [selectedModel])
 
   const agent = agents.find((a) => a.id === acpAgentId)
   // Prefer catalog name; if agents aren't loaded yet (mini-window cold start), derive from id.
   const agentLabel = agent?.name ?? (acpAgentId ? acpAgentDisplayName(acpAgentId) : null)
   const grouped = useGroupedSlashList(acpAgentId)
   const currentModel = acpModels.find((m) => m.id === selectedModel)
+  const windows = currentModel?.contextWindows ?? []
   // Prefer catalog display name; fall back to raw selectedModel id (live sync may
   // have the id before acp_models replay fills names).
   const modelLabel = currentModel
@@ -70,7 +74,7 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
 
   // Grok effort lives next to the model (GroupedModelEffortSelector), same as Claude/Codex.
   // Agent may emit high→low; slider is left→right ascending (low … high).
-  const effortIsAcpModeCatalog = acpModeConfigId == null && acpModes.length > 0
+  const effortIsAcpModeCatalog = isAcpEffortConfigId(acpModeConfigId) && acpModes.length > 0
   const effortOptions = useMemo<SelectorEffortOption[]>(() => {
     if (!effortIsAcpModeCatalog) return NO_EFFORT
     return sortEffortsAscending(acpModes.map((m) => ({
@@ -142,6 +146,17 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
         selectedEffortLabel={selectedEffortLabel}
         onSelectEffort={setSelectedAcpMode}
         onCloseAutoFocus={onCloseAutoFocus}
+      />
+      <AcpContextWindowSelect
+        windows={windows}
+        value={windowPick}
+        onChange={(next) => {
+          const previous = windowPick
+          setWindowPick(next)
+          void setSelectedAcpContextWindow(next).then((ok) => {
+            if (!ok) setWindowPick(previous)
+          })
+        }}
       />
     </div>
   )

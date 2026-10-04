@@ -178,6 +178,47 @@ describe('acp-model-cache', () => {
     expect(readAcpResourcesCache().configByAgentId?.['grok-build']?.extraModes?.[1]?.id).toBe('high')
   })
 
+  it('stores Grok reasoning_effort as thought_level, not a session mode', () => {
+    writeAcpResourcesCache({
+      agents: [{ id: 'grok-build', name: 'Grok', installed: true, commandPreview: 'grok' }],
+      selectedAgentId: 'grok-build',
+      configByAgentId: {
+        'grok-build': {
+          configOptions: [{
+            id: 'model',
+            name: 'Model',
+            category: 'model',
+            type: 'select',
+            currentValue: 'grok-4.6',
+            options: [{ value: 'grok-4.6', name: 'Grok 4.6' }],
+          }],
+          extraModels: [{ id: 'grok-4.6', name: 'Grok 4.6', description: '' }],
+          selectedModelId: 'grok-4.6',
+          modelConfigId: 'model',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+    })
+    upsertAcpAgentModes('grok-build', {
+      configId: 'reasoning_effort',
+      selectedModeId: 'high',
+      modes: [
+        { id: 'high', name: 'High', description: '' },
+        { id: 'low', name: 'Low', description: '' },
+      ],
+    })
+    const cached = readAcpResourcesCache().configByAgentId?.['grok-build']
+    const effort = cached?.configOptions.find((option) => option.id === 'reasoning_effort')
+    expect(effort?.category).toBe('thought_level')
+    expect(cached?.configOptions.some((option) => option.category === 'mode')).toBe(false)
+    expect(cached?.extraModes?.map((mode) => mode.id)).toEqual(['high', 'low'])
+    const session = getCachedSessionCatalog('grok-build')
+    expect(session?.modeConfigId).toBe('reasoning_effort')
+    expect(session?.modes.map((mode) => mode.id)).toEqual(['low', 'high'])
+    expect(session?.selectedModeId).toBe('high')
+    expect(session?.models[0]?.id).toBe('grok-4.6')
+  })
+
   it('migrates legacy modelsByAgentId into configByAgentId on read', () => {
     cacheStore.set('acp', {
       agents: [{ id: 'opencode', name: 'OpenCode', installed: true, commandPreview: 'opencode acp' }],

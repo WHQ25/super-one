@@ -540,6 +540,7 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
     allowSimulatedFallback: opts.allowSimulatedFallback,
     resolveProjectPath: opts.resolveProjectPath,
     acpBinaryPath: opts.acpBinaryPath,
+    harnesses: opts.harnesses,
     openCodeBinaryPath: opts.openCodeBinaryPath,
     getAcpMcpServers: opts.getAcpHostActionMcpServers,
     getOpenCodeSuperoneMcp: opts.getOpenCodeHostActionMcp,

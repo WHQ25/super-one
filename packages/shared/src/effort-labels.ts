@@ -53,6 +53,24 @@ export function isKnownEffortLevel(value: string): boolean {
   return value.trim().toLowerCase() in EFFORT_ASC_RANK
 }
 
+/**
+ * Grok reasoning effort is an ACP config option, not an OpenCode session mode.
+ * `null` / empty is the legacy x.ai extraModes catalog (still the effort slider).
+ * `mode` and other ids are real session modes.
+ */
+export function isAcpEffortConfigId(configId: string | null | undefined): boolean {
+  if (configId == null || configId.trim() === '') return true
+  const key = configId.trim().toLowerCase()
+  return key === 'reasoning_effort' || key === 'thought_level'
+}
+
+/** ACP select whose id or category is Grok reasoning effort (`reasoning_effort` / `thought_level`). */
+export function isAcpEffortConfigOption(option: { id?: string | null; category?: string | null }): boolean {
+  const id = option.id?.trim().toLowerCase()
+  const category = option.category?.trim().toLowerCase()
+  return id === 'reasoning_effort' || category === 'thought_level' || category === 'reasoning_effort'
+}
+
 function rankKey(id: string, name: string): string {
   const fromId = id.trim().toLowerCase()
   if (fromId in EFFORT_ASC_RANK) return fromId

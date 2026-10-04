@@ -94,6 +94,48 @@ describe('getCachedAcpCatalog', () => {
     expect(patch.selectedAcpModeId).toBe('high')
   })
 
+  it('hydrates Grok reasoning_effort as effort, not a session mode', () => {
+    const withEffort: AcpResources = {
+      ...resources,
+      configByAgentId: {
+        ...resources.configByAgentId,
+        'grok-build': {
+          configOptions: [
+            {
+              id: 'model',
+              name: 'Model',
+              category: 'model',
+              type: 'select',
+              currentValue: 'grok-4.6',
+              options: [{ value: 'grok-4.6', name: 'Grok 4.6' }],
+            },
+            {
+              id: 'reasoning_effort',
+              name: 'Reasoning Effort',
+              category: 'thought_level',
+              type: 'select',
+              currentValue: 'high',
+              options: [
+                { value: 'xhigh', name: 'X-High' },
+                { value: 'high', name: 'High' },
+                { value: 'low', name: 'Low' },
+              ],
+            },
+          ],
+          selectedModelId: 'grok-4.6',
+          modelConfigId: 'model',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+    }
+    const catalog = getCachedAcpCatalog(withEffort, 'grok-build')
+    expect(catalog?.modelConfigId).toBe('model')
+    expect(catalog?.modeConfigId).toBe('reasoning_effort')
+    expect(catalog?.modes.map((mode) => mode.id)).toEqual(['low', 'high', 'xhigh'])
+    expect(catalog?.selectedModeId).toBe('high')
+    expect(sessionPatchFromAcpCatalog(catalog!).acpModeConfigId).toBe('reasoning_effort')
+  })
+
   it('returns null for missing agent or empty models', () => {
     expect(getCachedAcpCatalog(resources, 'missing')).toBeNull()
     expect(getCachedAcpCatalog(null, 'opencode')).toBeNull()

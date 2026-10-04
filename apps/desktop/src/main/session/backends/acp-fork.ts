@@ -17,6 +17,7 @@ import {
 import { resolveAcpClientVersion } from '../../acp/acp-client-info'
 import { GROK_ACP_CLIENT_IDENTIFIER } from '../../acp/acp-permission-preapprove'
 import { resolveAcpLaunch } from '../../acp/agent-catalog'
+import { resolveDesktopGrokLaunch } from '../../harness/grok-launch'
 import { spawnAcpProcess } from '../../acp/acp-process'
 import log from '../../logger'
 import { ensureShellPath } from '../../shell-path'
@@ -54,12 +55,33 @@ export function grokForkInitializeParams(version: string): Record<string, unknow
   }
 }
 
+/** Same binary as chat and login. An explicit command wins; otherwise the harness resolver. */
+export function resolveGrokForkLaunch(request: {
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+}): { command: string; args: string[] } {
+  const explicit = request.command?.trim()
+  if (explicit) {
+    return { command: explicit, args: request.args?.length ? request.args : ['agent', 'stdio'] }
+  }
+  const resolved = resolveDesktopGrokLaunch({
+    args: request.args,
+    env: request.env,
+  })
+  if (!resolved) {
+    throw new Error('Grok command not found. Check Settings → Harnesses → Grok.')
+  }
+  return { command: resolved.command, args: resolved.args }
+}
+
 async function spawnGrokFork(request: GrokForkRequest): Promise<string> {
   await ensureShellPath()
+  const grok = resolveGrokForkLaunch(request)
   const launch = resolveAcpLaunch({
-    agentId: request.agentId,
-    command: request.command,
-    args: request.args,
+    agentId: request.agentId ?? 'grok-build',
+    command: grok.command,
+    args: grok.args,
     env: request.env,
     cwd: request.sourceCwd,
     defaultCwd: request.sourceCwd,

@@ -1,6 +1,7 @@
 import type { ContentBlock } from '@superone/shared/agent-types'
 import type { ToolCallUpdate } from '@agentclientprotocol/sdk'
 import { getBuiltinCapability } from '@superone/shared/capability-prompt-tags'
+import { withGrokAutoDenyPrefix } from '@superone/shared/grok-auto-deny'
 import {
   isSessionArchiveToolName,
   looksLikeSessionArchiveJson,
@@ -117,11 +118,13 @@ export function toolResultFromUpdate(update: ToolCallUpdate, terminalOutput?: st
     .join('\n')
   const toolName = normalizeAcpTool(update)?.toolName
   const capped = shouldKeepFullToolResult(summary, toolName) ? summary : summary.slice(0, 4000)
+  const failed = update.status === 'failed'
+  const text = withGrokAutoDenyPrefix(capped || (failed ? 'failed' : 'done'), failed)
   return {
     type: 'tool_result',
     toolUseId: update.toolCallId,
-    summary: capped || (update.status === 'failed' ? 'failed' : 'done'),
-    isError: update.status === 'failed',
+    summary: text,
+    isError: failed,
   }
 }
 

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   agent,
+  ClientContext,
   methods,
   ndJsonStream,
   PROTOCOL_VERSION,
@@ -21,6 +22,7 @@ import {
   XAI_YOLO_MODE_CHANGED,
   xaiExtWireMethod,
 } from './acp-xai-extensions'
+import { XAI_UPDATE_MCP_SERVERS } from './acp-xai-mcp-status'
 import {
   XAI_COMPACT_CONVERSATION,
   XAI_INTERJECT,
@@ -201,6 +203,7 @@ describe('createAcpRuntime (in-process agent)', () => {
       exitPlanMode: true,
       clientIdentifier: 'superone',
     })
+    expect((captured.initialize?.clientCapabilities as { _meta?: unknown } | undefined)?._meta).toBeUndefined()
     const clientInfo = captured.initialize?.clientInfo as { name?: string; version?: string }
     expect(clientInfo?.name).toBe('superone')
     expect(clientInfo?.version).toMatch(/^\d+\.\d+/)
@@ -647,6 +650,146 @@ describe('createAcpRuntime (in-process agent)', () => {
     expect(loadCapture.loads[0]?._meta).toMatchObject({
       clientIdentifier: 'superone',
       reasoningEffort: 'low',
+      noReplay: true,
+    })
+    await runtime.close()
+  })
+
+  it('does not set noReplay on a non-Grok session/load', async () => {
+    const loadCapture: CapturedLoad = { loads: [], news: 0 }
+    const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'custom', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      resumeSessionId: 'prior-custom-session',
+      streamFactory: async () => makeEchoAgentStream(captured, { loadSession: true }, loadCapture),
+    })
+    expect(loadCapture.loads[0]?._meta).not.toMatchObject({ noReplay: true })
+    await runtime.close()
+  })
+
+  it('advertises folder trust only when a handler is wired', async () => {
+    const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      onFolderTrust: async () => 'reject',
+      streamFactory: async () => makeEchoAgentStream(captured),
+    })
+    expect(captured.initialize?.clientCapabilities).toMatchObject({
+      _meta: { 'x.ai/folderTrust': { interactive: true } },
+    })
+    await runtime.close()
+  })
+
+  it('does not advertise folder trust for a non-grok agent that has a handler', async () => {
+    const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'custom', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      onFolderTrust: async () => 'trust',
+      streamFactory: async () => makeEchoAgentStream(captured),
+    })
+    expect((captured.initialize?.clientCapabilities as { _meta?: unknown } | undefined)?._meta).toBeUndefined()
+    await runtime.close()
+  })
+
+  it.each([
+    ['x.ai/folder_trust/request', 'trust'],
+    ['x.ai/folder_trust/request', 'reject'],
+    ['_x.ai/folder_trust/request', 'trust'],
+    ['_x.ai/folder_trust/request', 'reject'],
+  ] as const)('answers %s with outcome %s', async (method, outcome) => {
+    let result: unknown
+    const seen: unknown[] = []
+    const agentApp = agent({ name: 'trust-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.session.new, async (ctx) => {
+        queueMicrotask(() => {
+          void ctx.client.request(method as never, {
+            session_id: 'trust-session',
+            cwd: '/tmp/proj',
+            workspace: '/tmp/ws',
+            config_kinds: ['project', 1],
+          } as never).then((value) => { result = value })
+        })
+        return { sessionId: 'trust-session' }
+      })
+      .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
+      .onNotification(methods.agent.session.cancel, async () => {})
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const clientStream = ndJsonStream(clientToAgent.writable, agentToClient.readable)
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      onFolderTrust: async (request) => {
+        seen.push(request)
+        return outcome
+      },
+      streamFactory: async () => ({
+        stream: clientStream,
+        dispose: () => {
+          try { void clientToAgent.writable.close().catch(() => undefined) } catch { /* */ }
+          try { void agentToClient.writable.close().catch(() => undefined) } catch { /* */ }
+        },
+      }),
+    })
+    await vi.waitFor(() => {
+      expect(result).toEqual({ outcome })
+    })
+    expect(seen).toEqual([{
+      sessionId: 'trust-session',
+      cwd: '/tmp/proj',
+      workspace: '/tmp/ws',
+      configKinds: ['project'],
+    }])
+    await runtime.close()
+  })
+
+  it('rejects folder trust when the dialog exceeds folderTrustTimeoutMs', async () => {
+    let result: unknown
+    const agentApp = agent({ name: 'trust-timeout-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.session.new, async (ctx) => {
+        queueMicrotask(() => {
+          void ctx.client.request('x.ai/folder_trust/request' as never, {
+            sessionId: 'trust-session',
+            cwd: '/tmp/proj',
+            workspace: '/tmp/ws',
+            configKinds: [],
+          } as never).then((value) => { result = value })
+        })
+        return { sessionId: 'trust-session' }
+      })
+      .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
+      .onNotification(methods.agent.session.cancel, async () => {})
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const clientStream = ndJsonStream(clientToAgent.writable, agentToClient.readable)
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      onFolderTrust: () => new Promise(() => {}),
+      folderTrustTimeoutMs: 5,
+      streamFactory: async () => ({
+        stream: clientStream,
+        dispose: () => {
+          try { void clientToAgent.writable.close().catch(() => undefined) } catch { /* */ }
+          try { void agentToClient.writable.close().catch(() => undefined) } catch { /* */ }
+        },
+      }),
+    })
+    await vi.waitFor(() => {
+      expect(result).toEqual({ outcome: 'reject' })
     })
     await runtime.close()
   })
@@ -697,6 +840,78 @@ describe('createAcpRuntime (in-process agent)', () => {
       },
     ])
     expect(runtime.getModelConfig()?.selectedModelId).toBe('grok-4.5')
+    await runtime.close()
+  })
+
+  it('reads thought_level as reasoning_effort and updates it with set_config_option', async () => {
+    const effortOptions = (current: string) => [
+      {
+        id: 'model',
+        name: 'Model',
+        category: 'model' as const,
+        type: 'select' as const,
+        currentValue: 'grok-4.6',
+        options: [{ value: 'grok-4.6', name: 'Grok 4.6' }],
+      },
+      {
+        id: 'reasoning_effort',
+        name: 'Reasoning Effort',
+        category: 'thought_level' as const,
+        type: 'select' as const,
+        currentValue: current,
+        options: [
+          { value: 'low', name: 'Low' },
+          { value: 'high', name: 'High' },
+        ],
+      },
+    ]
+    const setCalls: Array<Record<string, unknown>> = []
+    const agentApp = agent({ name: 'effort-agent' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.session.new, async () => ({
+        sessionId: 'test-session-1',
+        configOptions: effortOptions('high'),
+      }))
+      .onRequest(methods.agent.session.setConfigOption, async (ctx) => {
+        setCalls.push(ctx.params as Record<string, unknown>)
+        const params = ctx.params as { configId?: string; value?: string }
+        const next = params.configId === 'reasoning_effort' ? String(params.value ?? 'high') : 'high'
+        return { configOptions: effortOptions(next) }
+      })
+      .onRequest(methods.agent.session.prompt, async () => ({ stopReason: 'end_turn' as const }))
+      .onNotification(methods.agent.session.cancel, async () => {})
+
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const clientStream = ndJsonStream(clientToAgent.writable, agentToClient.readable)
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      streamFactory: async () => ({
+        stream: clientStream,
+        dispose: () => {
+          try { void clientToAgent.writable.close().catch(() => undefined) } catch { /* */ }
+          try { void agentToClient.writable.close().catch(() => undefined) } catch { /* */ }
+        },
+      }),
+    })
+
+    expect(runtime.getModeConfig()?.configId).toBe('reasoning_effort')
+    expect(runtime.getModeConfig()?.selectedModeId).toBe('high')
+    expect(runtime.getModeConfig()?.modes.map((mode) => mode.id)).toEqual(['low', 'high'])
+
+    await runtime.setConfigOption('reasoning_effort', 'low')
+    expect(setCalls).toContainEqual({
+      sessionId: 'test-session-1',
+      configId: 'reasoning_effort',
+      value: 'low',
+    })
+    expect(runtime.getModeConfig()?.selectedModeId).toBe('low')
+    expect(runtime.getModeConfig()?.configId).toBe('reasoning_effort')
     await runtime.close()
   })
 
@@ -863,6 +1078,131 @@ describe('createAcpRuntime (in-process agent)', () => {
     await expect(runtime.setPermissionMode('plan')).rejects.toThrow(/Internal error/)
     await runtime.prompt('still asking', 'msg-after-failed-plan', () => {})
     expect(promptMetas[0]?.mode).toBe('agent')
+    await runtime.close()
+  })
+
+  it('does not stamp plan when create-time session/set_mode fails', async () => {
+    const resolved: string[] = []
+    const promptMetas: Array<{ mode?: string } | undefined> = []
+    const agentApp = agent({ name: 'create-plan-fail' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'test-session-1' }))
+      .onRequest(methods.agent.session.setMode, async () => {
+        throw new Error('set_mode rejected')
+      })
+      .onRequest(methods.agent.session.prompt, async (ctx) => {
+        const params = ctx.params as { _meta?: { mode?: string } }
+        promptMetas.push(params._meta)
+        return { stopReason: 'end_turn' as const }
+      })
+      .onNotification(methods.agent.session.cancel, async () => {})
+
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permissionMode: 'plan',
+      onPermissionModeResolved: (mode) => { resolved.push(mode) },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      streamFactory: async () => ({
+        stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+        dispose: () => {},
+      }),
+    })
+    expect(resolved).toEqual(['default'])
+    await runtime.prompt('still asking', 'msg-create-plan-fail', () => {})
+    expect(promptMetas[0]?.mode).toBe('agent')
+    await runtime.close()
+  })
+
+  it('restores plan when yolo_mode_changed fails after leaving plan', async () => {
+    const promptMetas: Array<{ mode?: string } | undefined> = []
+    const agentApp = agent({ name: 'yolo-fail' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'test-session-1' }))
+      .onRequest(methods.agent.session.setMode, async () => ({}))
+      .onRequest(methods.agent.session.prompt, async (ctx) => {
+        const params = ctx.params as { _meta?: { mode?: string } }
+        promptMetas.push(params._meta)
+        return { stopReason: 'end_turn' as const }
+      })
+      .onNotification(methods.agent.session.cancel, async () => {})
+      .onNotification(XAI_YOLO_MODE_CHANGED_WIRE, (raw) => raw, async () => {})
+
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    // yolo_mode_changed is a JSON-RPC notification. The agent cannot reject it.
+    // A failure is a local send error, which is what rolls plan back.
+    const originalNotify = ClientContext.prototype.notify
+    const notifySpy = vi.spyOn(ClientContext.prototype, 'notify').mockImplementation(function (method, params) {
+      if (String(method).includes('yolo_mode_changed')) return Promise.reject(new Error('yolo rejected'))
+      return originalNotify.call(this, method, params as never)
+    })
+    try {
+      const runtime = await createAcpRuntime({
+        launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+        permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+        streamFactory: async () => ({
+          stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+          dispose: () => {},
+        }),
+      })
+      await runtime.setPermissionMode('plan')
+      await expect(runtime.setPermissionMode('auto')).rejects.toThrow(/yolo rejected/)
+      await runtime.prompt('still planning', 'msg-after-yolo-fail', () => {})
+      expect(promptMetas[0]?.mode).toBe('plan')
+      await runtime.close()
+    } finally {
+      notifySpy.mockRestore()
+    }
+  })
+
+  it('rejects leaving plan when set_mode default fails and does not send yolo', async () => {
+    const promptMetas: Array<{ mode?: string } | undefined> = []
+    let yolo = 0
+    const agentApp = agent({ name: 'leave-plan-fail' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'test-session-1' }))
+      .onRequest(methods.agent.session.setMode, async (ctx) => {
+        const modeId = (ctx.params as { modeId?: string }).modeId
+        if (modeId === 'default') throw new Error('set_mode default rejected')
+        return {}
+      })
+      .onRequest(methods.agent.session.prompt, async (ctx) => {
+        const params = ctx.params as { _meta?: { mode?: string } }
+        promptMetas.push(params._meta)
+        return { stopReason: 'end_turn' as const }
+      })
+      .onNotification(methods.agent.session.cancel, async () => {})
+      .onNotification(XAI_YOLO_MODE_CHANGED_WIRE, (raw) => raw, async () => { yolo += 1 })
+
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      streamFactory: async () => ({
+        stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+        dispose: () => {},
+      }),
+    })
+    await runtime.setPermissionMode('plan')
+    await expect(runtime.setPermissionMode('auto')).rejects.toThrow(/Internal error/)
+    expect(yolo).toBe(0)
+    await runtime.prompt('still planning', 'msg-leave-plan-fail', () => {})
+    expect(promptMetas[0]?.mode).toBe('plan')
     await runtime.close()
   })
 
@@ -1602,6 +1942,52 @@ describe('ACP host integration (MCP + system prompt)', () => {
     await runtime.close()
   })
 
+  it('delivers the first live chunk after a no-replay load', async () => {
+    let notifyUpdate: ((text: string) => Promise<unknown>) | null = null
+    const agentApp = agent({ name: 'live-after-load' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: { loadSession: true },
+      }))
+      .onRequest(methods.agent.session.load, async (ctx) => {
+        notifyUpdate = (text: string) => ctx.client.notify(methods.client.session.update, {
+          sessionId: 'prior-session',
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text },
+          },
+        })
+        return {}
+      })
+      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'should-not-new' }))
+      .onNotification(methods.agent.session.cancel, async () => {})
+
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    const texts: string[] = []
+    const runtime = await createAcpRuntime({
+      launch: { agentId: 'custom', command: 'unused', defaultCwd: '/tmp/proj' },
+      permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+      resumeSessionId: 'prior-session',
+      onSessionEvent: (event) => {
+        if (event.type !== 'content_delta' || event.delta.type !== 'text') return
+        texts.push(event.delta.text)
+      },
+      streamFactory: async () => ({
+        stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+        dispose: () => {},
+      }),
+    })
+    expect(notifyUpdate).not.toBeNull()
+    await notifyUpdate!('FIRST-LIVE-CHUNK')
+    await notifyUpdate!('SECOND-LIVE-CHUNK')
+    await vi.waitFor(() => {
+      expect(texts).toEqual(['FIRST-LIVE-CHUNK', 'SECOND-LIVE-CHUNK'])
+    })
+    await runtime.close()
+  })
+
   it('falls back to session/new when session/load fails', async () => {
     const loadCapture: CapturedLoad = { loads: [], news: 0 }
     const captured: CapturedRequests = { newSession: null, prompts: [] }
@@ -1686,6 +2072,146 @@ describe('ACP host integration (MCP + system prompt)', () => {
       name: 'linear',
       url: 'https://mcp.linear.app',
     })
+  })
+
+  it.each([
+    ['trust', 'grok-build', ['superone', 'user-gh'], ['superone', 'user-gh', 'repo-local']],
+    ['reject', 'grok-build', ['superone', 'user-gh'], null],
+    ['omit', 'grok-build', ['superone', 'user-gh'], null],
+    ['trust', 'custom', ['superone', 'user-gh', 'repo-local'], null],
+  ] as const)('gates project MCP for %s on %s', async (trust, agentId, initialNames, updatedNames) => {
+    const { listMcpConfigs } = await import('../mcp-config-service')
+    vi.mocked(listMcpConfigs).mockImplementation(() => [
+      { name: 'user-gh', type: 'stdio', scope: 'user', command: 'gh-mcp', args: [] },
+      { name: 'repo-local', type: 'stdio', scope: 'project', command: 'repo-mcp', args: [] },
+    ])
+    const updates: Array<{ mcpServers?: Array<{ name?: string }> }> = []
+    const captured: CapturedRequests = { newSession: null, prompts: [] }
+    const updateWire = xaiExtWireMethod(XAI_UPDATE_MCP_SERVERS)
+    const agentApp = agent({ name: 'mcp-trust' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest(methods.agent.session.new, async (ctx) => {
+        captured.newSession = ctx.params as Record<string, unknown>
+        if (agentId === 'grok-build' && trust !== 'omit') {
+          await ctx.client.request('_x.ai/folder_trust/request' as never, {
+            cwd: '/tmp/proj',
+            workspace: '/tmp/proj',
+            config_kinds: ['mcp'],
+          } as never)
+        }
+        return { sessionId: 'mcp-session' }
+      })
+      .onRequest(updateWire, (raw: unknown) => raw, async (ctx) => {
+        updates.push(ctx.params as { mcpServers?: Array<{ name?: string }> })
+        return { ok: true }
+      })
+      .onNotification(methods.agent.session.cancel, async () => {})
+
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    try {
+      const runtime = await createAcpRuntime({
+        launch: { agentId, command: 'unused', defaultCwd: '/tmp/proj' },
+        permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+        superoneSessionId: 'sid-mcp-trust',
+        ...(trust === 'omit' ? {} : { onFolderTrust: async () => (trust === 'reject' ? 'reject' : 'trust') }),
+        streamFactory: async () => ({
+          stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+          dispose: () => {},
+        }),
+      })
+      const initial = captured.newSession?.mcpServers as Array<{ name: string }>
+      expect(initial.map((s) => s.name)).toEqual(initialNames)
+      if (updatedNames) {
+        await vi.waitFor(() => expect(updates).toHaveLength(1))
+        expect(updates[0]?.mcpServers?.map((s) => s.name)).toEqual(updatedNames)
+      } else {
+        await new Promise((r) => setTimeout(r, 30))
+        expect(updates).toEqual([])
+      }
+      if (agentId === 'grok-build') {
+        expect(runtime.allowsProjectMcp()).toBe(trust === 'trust')
+        await runtime.updateMcpServers([
+          { name: 'superone', command: 'node', args: [] },
+          { name: 'user-gh', command: 'gh', args: [] },
+          { name: 'repo-local', command: 'repo', args: [] },
+        ])
+        const expected = trust === 'trust'
+          ? ['superone', 'user-gh', 'repo-local']
+          : ['superone', 'user-gh']
+        await vi.waitFor(() => {
+          expect(updates.at(-1)?.mcpServers?.map((s) => s.name)).toEqual(expected)
+        })
+      }
+      await runtime.close()
+    } finally {
+      vi.mocked(listMcpConfigs).mockImplementation(() => [])
+    }
+  })
+
+  it('omits project MCP from grok session/load and a later refresh', async () => {
+    const { listMcpConfigs } = await import('../mcp-config-service')
+    vi.mocked(listMcpConfigs).mockImplementation(() => [
+      { name: 'user-gh', type: 'stdio', scope: 'user', command: 'gh-mcp', args: [] },
+      { name: 'repo-local', type: 'stdio', scope: 'project', command: 'repo-mcp', args: [] },
+    ])
+    const loads: Array<Record<string, unknown>> = []
+    const updates: Array<{ mcpServers?: Array<{ name?: string }> }> = []
+    const updateWire = xaiExtWireMethod(XAI_UPDATE_MCP_SERVERS)
+    const agentApp = agent({ name: 'mcp-load-trust' })
+      .onRequest(methods.agent.initialize, async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: { loadSession: true },
+      }))
+      .onRequest(methods.agent.session.load, async (ctx) => {
+        loads.push(ctx.params as Record<string, unknown>)
+        await ctx.client.request('_x.ai/folder_trust/request' as never, {
+          cwd: '/tmp/proj',
+          workspace: '/tmp/proj',
+          config_kinds: ['mcp'],
+        } as never)
+        return {}
+      })
+      .onRequest(methods.agent.session.new, async () => ({ sessionId: 'should-not-new' }))
+      .onRequest(updateWire, (raw: unknown) => raw, async (ctx) => {
+        updates.push(ctx.params as { mcpServers?: Array<{ name?: string }> })
+        return { ok: true }
+      })
+      .onNotification(methods.agent.session.cancel, async () => {})
+
+    const clientToAgent = new TransformStream<Uint8Array>()
+    const agentToClient = new TransformStream<Uint8Array>()
+    agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
+    try {
+      const runtime = await createAcpRuntime({
+        launch: { agentId: 'grok-build', command: 'unused', defaultCwd: '/tmp/proj' },
+        permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+        superoneSessionId: 'sid-mcp-load',
+        resumeSessionId: 'prior-grok-session',
+        onFolderTrust: async () => 'reject',
+        streamFactory: async () => ({
+          stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+          dispose: () => {},
+        }),
+      })
+      const loaded = loads[0]?.mcpServers as Array<{ name: string }>
+      expect(loaded.map((s) => s.name)).toEqual(['superone', 'user-gh'])
+      expect(runtime.allowsProjectMcp()).toBe(false)
+      await runtime.updateMcpServers([
+        { name: 'superone', command: 'node', args: [] },
+        { name: 'user-gh', command: 'gh', args: [] },
+        { name: 'repo-local', command: 'repo', args: [] },
+      ])
+      await vi.waitFor(() => expect(updates).toHaveLength(1))
+      expect(updates[0]?.mcpServers?.map((s) => s.name)).toEqual(['superone', 'user-gh'])
+      await runtime.close()
+    } finally {
+      vi.mocked(listMcpConfigs).mockImplementation(() => [])
+    }
   })
 
   it('appends the host-context block after the first non-slash prompt only', async () => {

@@ -99,6 +99,37 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
+  it('keeps contextWindows when configOptions have no window list', async () => {
+    setAcpRuntimeFactory(async () => mockRuntime({
+      getConfigOptions: () => [{
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        type: 'select',
+        currentValue: 'grok-4.6',
+        options: [{ value: 'grok-4.6', name: 'Grok 4.6' }],
+      }],
+      getModelConfig: () => ({
+        configId: null,
+        selectedModelId: 'grok-4.6',
+        models: [{
+          id: 'grok-4.6',
+          name: 'Grok 4.6',
+          description: '',
+          contextWindows: [128_000, 256_000],
+        }],
+      }),
+    }))
+    const backend = new AcpBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    const ready = events.filter((e): e is Extract<AgentEvent, { type: 'acp_models' }> =>
+      e.type === 'acp_models' && e.status === 'ready' && e.models.length > 0)
+    expect(ready.at(-1)?.models[0]?.contextWindows).toEqual([128_000, 256_000])
+    await backend.close()
+  })
+
   it('ignores OpenCode mode ids as session/new reasoningEffort', async () => {
     let captured: AcpRuntimeOptions | undefined
     setAcpRuntimeFactory(async (opts) => {
@@ -269,6 +300,159 @@ describe('AcpBackend', () => {
       { inputTokens: 800, outputTokens: 50, cacheReadTokens: 100 },
       { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 },
     ])
+    await backend.close()
+  })
+
+  it('records Grok workflow tokens only after the spawning prompt returns', async () => {
+    let phase: 'first' | 'second' = 'first'
+    let sessionEvent: AcpRuntimeOptions['onSessionEvent'] | undefined
+    setAcpRuntimeFactory(async (opts) => {
+      sessionEvent = opts.onSessionEvent
+      return mockRuntime({
+        getConfigOptions: () => [],
+        prompt: async (_text, messageId, onEvent) => {
+          if (phase === 'first') {
+            onEvent({
+              type: 'task_started',
+              taskId: 'wf_1',
+              description: 'parity',
+              taskType: 'workflow',
+            })
+            onEvent({
+              type: 'task_progress',
+              taskId: 'wf_1',
+              description: 'parity',
+              usage: { totalTokens: 1000, toolUses: 1, durationMs: 10 },
+            })
+            onEvent({
+              type: 'message_usage',
+              messageId,
+              inputTokens: 100,
+              outputTokens: 40,
+            })
+            onEvent({ type: 'message_complete', messageId })
+            onEvent({ type: 'status_change', status: 'idle' })
+            return
+          }
+          // A later prompt must not swallow session-only workflow growth.
+          onEvent({
+            type: 'task_progress',
+            taskId: 'wf_1',
+            description: 'parity',
+            usage: { totalTokens: 4000, toolUses: 3, durationMs: 30 },
+          })
+          onEvent({
+            type: 'message_usage',
+            messageId,
+            inputTokens: 20,
+            outputTokens: 8,
+          })
+          onEvent({ type: 'message_complete', messageId })
+          onEvent({ type: 'status_change', status: 'idle' })
+        },
+      })
+    })
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await backend.send({ content: 'run workflow', assistantMessageId: 'a1' })
+
+    expect(recordGrokFromUsageMock.mock.calls.map((c) => c[0])).toEqual([
+      { inputTokens: 100, outputTokens: 40, cacheReadTokens: 0 },
+    ])
+
+    sessionEvent?.({
+      type: 'task_progress',
+      taskId: 'wf_1',
+      description: 'parity',
+      usage: { totalTokens: 1000, toolUses: 1, durationMs: 10 },
+    })
+    sessionEvent?.({
+      type: 'task_progress',
+      taskId: 'wf_1',
+      description: 'parity',
+      usage: { totalTokens: 2500, toolUses: 2, durationMs: 20 },
+    })
+    sessionEvent?.({
+      type: 'task_progress',
+      taskId: 'wf_1',
+      description: 'parity',
+      usage: { totalTokens: 2500, toolUses: 2, durationMs: 20 },
+    })
+    sessionEvent?.({
+      type: 'task_started',
+      taskId: 'sub_1',
+      description: 'child',
+      taskType: 'subagent',
+    })
+    sessionEvent?.({
+      type: 'task_progress',
+      taskId: 'sub_1',
+      description: 'child',
+      usage: { totalTokens: 9999, toolUses: 1, durationMs: 1 },
+    })
+
+    expect(recordGrokFromUsageMock.mock.calls.map((c) => c[0])).toEqual([
+      { inputTokens: 100, outputTokens: 40, cacheReadTokens: 0 },
+      { inputTokens: 0, outputTokens: 1500, cacheReadTokens: 0 },
+    ])
+
+    phase = 'second'
+    await backend.send({ content: 'continue', assistantMessageId: 'a2' })
+    sessionEvent?.({
+      type: 'task_notification',
+      taskId: 'wf_1',
+      taskStatus: 'completed',
+      outputFile: '',
+      summary: 'done',
+      usage: { totalTokens: 4000, toolUses: 4, durationMs: 40 },
+    })
+    sessionEvent?.({
+      type: 'task_notification',
+      taskId: 'wf_1',
+      taskStatus: 'completed',
+      outputFile: '',
+      summary: 'done',
+      usage: { totalTokens: 4500, toolUses: 5, durationMs: 50 },
+    })
+
+    expect(recordGrokFromUsageMock.mock.calls.map((c) => c[0])).toEqual([
+      { inputTokens: 100, outputTokens: 40, cacheReadTokens: 0 },
+      { inputTokens: 0, outputTokens: 1500, cacheReadTokens: 0 },
+      { inputTokens: 0, outputTokens: 1500, cacheReadTokens: 0 },
+      { inputTokens: 20, outputTokens: 8, cacheReadTokens: 0 },
+      { inputTokens: 0, outputTokens: 500, cacheReadTokens: 0 },
+    ])
+    expect(recordGrokFromUsageMock.mock.calls.every((c) => c[1] === 'm1')).toBe(true)
+    await backend.close()
+  })
+
+  it('does not record workflow token totals for a non-Grok ACP agent', async () => {
+    let sessionEvent: AcpRuntimeOptions['onSessionEvent'] | undefined
+    setAcpRuntimeFactory(async (opts) => {
+      sessionEvent = opts.onSessionEvent
+      return mockRuntime({
+        prompt: async (_text, messageId, onEvent) => {
+          onEvent({
+            type: 'task_started',
+            taskId: 'wf_1',
+            description: 'parity',
+            taskType: 'workflow',
+          })
+          onEvent({ type: 'message_complete', messageId })
+          onEvent({ type: 'status_change', status: 'idle' })
+        },
+      })
+    })
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'opencode' }))
+    await backend.send({ content: 'run', assistantMessageId: 'a1' })
+    sessionEvent?.({
+      type: 'task_progress',
+      taskId: 'wf_1',
+      description: 'parity',
+      usage: { totalTokens: 800, toolUses: 1, durationMs: 5 },
+    })
+    expect(recordGrokFromUsageMock).not.toHaveBeenCalled()
     await backend.close()
   })
 
@@ -617,6 +801,85 @@ describe('AcpBackend', () => {
       e.type === 'acp_modes' && e.selectedModeId === 'high')
     expect(modeEvt?.configId).toBeNull()
     expect(modeEvt?.modes.map((m) => m.id)).toEqual(['low', 'medium', 'high'])
+    await backend.close()
+  })
+
+  it('keeps Grok reasoning_effort selectable after the session exists', async () => {
+    const grokOptions = (effort: string, model = 'grok-4.6') => [
+      {
+        id: 'model',
+        name: 'Model',
+        category: 'model' as const,
+        type: 'select' as const,
+        currentValue: model,
+        options: [
+          { value: 'grok-4.6', name: 'Grok 4.6' },
+          { value: 'grok-4.5', name: 'Grok 4.5' },
+        ],
+      },
+      {
+        id: 'reasoning_effort',
+        name: 'Reasoning Effort',
+        category: 'thought_level' as const,
+        type: 'select' as const,
+        currentValue: effort,
+        options: [
+          { value: 'xhigh', name: 'X-High' },
+          { value: 'high', name: 'High' },
+          { value: 'medium', name: 'Medium' },
+          { value: 'low', name: 'Low' },
+        ],
+      },
+    ]
+    const setModel = vi.fn(async () => {})
+    const setConfigOption = vi.fn(async (id: string, value: string) => (
+      id === 'reasoning_effort' ? grokOptions(value) : grokOptions('high', value)
+    ))
+    setAcpRuntimeFactory(async () => mockRuntime({
+      getConfigOptions: () => grokOptions('high'),
+      getModelConfig: () => ({
+        configId: 'model',
+        selectedModelId: 'grok-4.6',
+        models: [
+          { id: 'grok-4.6', name: 'Grok 4.6', description: '' },
+          { id: 'grok-4.5', name: 'Grok 4.5', description: '' },
+        ],
+      }),
+      getModeConfig: () => null,
+      setModel,
+      setConfigOption,
+    }))
+    const backend = new AcpBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((event) => events.push(event))
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await new Promise((r) => setTimeout(r, 10))
+
+    const readyModes = events.filter((event): event is Extract<AgentEvent, { type: 'acp_modes' }> =>
+      event.type === 'acp_modes' && event.status === 'ready')
+    const lastReady = readyModes[readyModes.length - 1]
+    expect(lastReady?.configId).toBe('reasoning_effort')
+    expect(lastReady?.selectedModeId).toBe('high')
+    expect(lastReady?.modes.map((mode) => mode.id)).toEqual(['low', 'medium', 'high', 'xhigh'])
+
+    events.length = 0
+    await backend.setSessionMode('low')
+    expect(setConfigOption).toHaveBeenCalledWith('reasoning_effort', 'low')
+    expect(setModel).not.toHaveBeenCalled()
+    const afterPick = events.find((event): event is Extract<AgentEvent, { type: 'acp_modes' }> =>
+      event.type === 'acp_modes' && event.status === 'ready' && event.selectedModeId === 'low')
+    expect(afterPick?.configId).toBe('reasoning_effort')
+    expect(afterPick?.modes.map((mode) => mode.id)).toEqual(['low', 'medium', 'high', 'xhigh'])
+
+    events.length = 0
+    await backend.setModel('grok-4.5')
+    expect(setConfigOption).toHaveBeenCalledWith('model', 'grok-4.5')
+    expect(setConfigOption).toHaveBeenCalledWith('reasoning_effort', 'low')
+    const afterModel = events.filter((event): event is Extract<AgentEvent, { type: 'acp_modes' }> =>
+      event.type === 'acp_modes' && event.status === 'ready')
+    expect(afterModel[afterModel.length - 1]?.configId).toBe('reasoning_effort')
+    expect(afterModel[afterModel.length - 1]?.modes.length).toBeGreaterThan(1)
+    expect(afterModel[afterModel.length - 1]?.selectedModeId).toBe('low')
     await backend.close()
   })
 
@@ -1677,6 +1940,26 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
+  it('reload and reconnect ask the runtime whether project MCP is allowed', async () => {
+    const updateMcpServers = vi.fn(async () => {})
+    const allowsProjectMcp = vi.fn(() => false)
+    const spy = vi.spyOn(acpMcp, 'buildAcpSessionMcpServers').mockReturnValue([] as never)
+    setAcpRuntimeFactory(async () => mockRuntime({
+      updateMcpServers,
+      allowsProjectMcp,
+      getAgentCapabilities: () => null,
+    }))
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    await backend.reloadMcpServers()
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ includeProjectScope: false }))
+    allowsProjectMcp.mockReturnValue(true)
+    await backend.reconnectMcp('user-gh')
+    expect(spy).toHaveBeenLastCalledWith(expect.objectContaining({ includeProjectScope: true }))
+    spy.mockRestore()
+    await backend.close()
+  })
+
   it('authenticateMcp forwards the server name to the runtime', async () => {
     const authenticateMcp = vi.fn(async () => {})
     setAcpRuntimeFactory(async () => mockRuntime({ authenticateMcp }))
@@ -1684,6 +1967,78 @@ describe('AcpBackend', () => {
     await backend.start(startOpts({ agentId: 'grok-build' }))
     await backend.authenticateMcp('github')
     expect(authenticateMcp).toHaveBeenCalledWith('github')
+    await backend.close()
+  })
+
+  it('resolves folder trust from the permission dialog', async () => {
+    let captured: AcpRuntimeOptions | undefined
+    setAcpRuntimeFactory(async (opts) => {
+      captured = opts
+      return mockRuntime()
+    })
+    const backend = new AcpBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((event) => events.push(event))
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    const request = {
+      sessionId: 's1',
+      cwd: '/tmp/proj',
+      workspace: '/tmp/ws',
+      configKinds: ['project'],
+    }
+    const trusted = captured!.onFolderTrust!(request)
+    const allowEvent = events.find((event): event is Extract<AgentEvent, { type: 'permission_request' }> =>
+      event.type === 'permission_request' && event.request.requestKind === 'folder_trust')
+    expect(allowEvent?.request).toMatchObject({
+      toolName: 'FolderTrust',
+      allowAlwaysAllow: false,
+      requestKind: 'folder_trust',
+      input: {
+        cwd: request.cwd,
+        workspace: request.workspace,
+        configKinds: request.configKinds,
+      },
+    })
+    expect(backend.respondToPermission(allowEvent!.request.requestId, true)).toBe(true)
+    await expect(trusted).resolves.toBe('trust')
+
+    const denied = captured!.onFolderTrust!(request)
+    const denyEvent = events.filter((event): event is Extract<AgentEvent, { type: 'permission_request' }> =>
+      event.type === 'permission_request' && event.request.requestKind === 'folder_trust').at(-1)
+    expect(backend.respondToPermission(denyEvent!.request.requestId, false)).toBe(true)
+    await expect(denied).resolves.toBe('reject')
+
+    const cancelled = captured!.onFolderTrust!(request)
+    const cancelEvent = events.filter((event): event is Extract<AgentEvent, { type: 'permission_request' }> =>
+      event.type === 'permission_request' && event.request.requestKind === 'folder_trust').at(-1)
+    expect(backend.respondToPermission(
+      cancelEvent!.request.requestId,
+      true,
+      undefined,
+      undefined,
+      undefined,
+      'cancel',
+    )).toBe(true)
+    await expect(cancelled).resolves.toBe('reject')
+    await backend.close()
+  })
+
+  it.each(['interrupt', 'close'] as const)('rejects a pending folder trust on %s', async (action) => {
+    let captured: AcpRuntimeOptions | undefined
+    setAcpRuntimeFactory(async (opts) => {
+      captured = opts
+      return mockRuntime()
+    })
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'grok-build' }))
+    const pending = captured!.onFolderTrust!({
+      sessionId: 's1',
+      cwd: '/tmp/proj',
+      workspace: '/tmp/ws',
+      configKinds: [],
+    })
+    await backend[action]()
+    await expect(pending).resolves.toBe('reject')
     await backend.close()
   })
 })

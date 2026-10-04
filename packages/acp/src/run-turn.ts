@@ -17,6 +17,9 @@ import {
   type AcpAgentEventMapper,
 } from './agent-event-mapper'
 import { mapPermissionDecision, mapPermissionRequest } from './permission-map'
+import { pickNonInteractiveAcpAuthMethod } from './auth-method'
+import { resolveNodeAcpClientVersion } from './client-version'
+import { grokNodePermissionMeta, isGrokAcpLaunch } from './grok-turn-meta'
 import { spawnAcpProcess, type AcpLaunch } from './process'
 import {
   XAI_ASK_USER_QUESTION,
@@ -44,6 +47,12 @@ export interface RunAcpTurnOptions {
   launch?: AcpLaunch | null
   resolveProjectPath?: (projectId: string) => string | null
   clientName?: string
+  /**
+   * SuperOne release version. The CLI passes `resolveCliReleaseVersion()`.
+   * Omitted callers fall back to the in-repo package walk, which is `0.0.0`
+   * in a published bundle that has no `super-one` package.json.
+   */
+  clientVersion?: string
   /**
    * MCP servers for session/new (e.g. SuperOne Host Action HTTP).
    * Shape matches ACP `McpServer` descriptors.
@@ -244,22 +253,47 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
       }
 
       const connection = clientBuilder.connect(processHandle.stream)
+      const grok = isGrokAcpLaunch(launch)
 
-      await connection.agent.request(methods.agent.initialize, {
+      const initResult = await connection.agent.request(methods.agent.initialize, {
         protocolVersion: PROTOCOL_VERSION,
-        clientInfo: { name: opts.clientName ?? 'superone-node', version: '0.0.0' },
-        clientCapabilities: {},
+        clientInfo: {
+          name: opts.clientName ?? 'superone-node',
+          version: opts.clientVersion?.trim() || resolveNodeAcpClientVersion(),
+        },
+        clientCapabilities: grok
+          ? { fs: { readTextFile: false, writeTextFile: false }, terminal: false }
+          : {},
         _meta: {
           askUserQuestion: true,
           exitPlanMode: true,
           clientIdentifier: 'superone',
         },
-      })
+      }) as {
+        authMethods?: Array<{ id?: string }>
+        _meta?: Record<string, unknown> | null
+      }
+
+      if (grok) {
+        const authMethods = Array.isArray(initResult.authMethods) ? initResult.authMethods : []
+        const defaultAuthId = typeof initResult._meta?.defaultAuthMethodId === 'string'
+          ? initResult._meta.defaultAuthMethodId
+          : null
+        const methodId = pickNonInteractiveAcpAuthMethod(authMethods, defaultAuthId)
+        if (methodId) {
+          await connection.agent.request(methods.agent.authenticate, { methodId })
+        }
+      }
 
       const mcpServers =
         opts.getMcpServers?.(input.session.sessionId) ?? opts.mcpServers ?? []
+      const permissionMeta = grok ? grokNodePermissionMeta(input.permissionMode) : null
       const active = await connection.agent
-        .buildSession({ cwd, mcpServers: mcpServers as never })
+        .buildSession({
+          cwd,
+          mcpServers: mcpServers as never,
+          ...(permissionMeta ? { _meta: permissionMeta } : {}),
+        })
         .start()
       const sessionId = active.sessionId
       if (!sessionId) throw new Error('ACP session/new did not return sessionId')

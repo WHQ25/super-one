@@ -5,6 +5,7 @@ import type {
   AcpSessionCatalog,
   ModelOption,
 } from '@superone/shared/agent-types'
+import { isAcpEffortConfigOption, sortEffortsAscending } from '@superone/shared/effort-labels'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 
 export interface AcpModelConfig {
@@ -73,6 +74,18 @@ function isModeSelect(o: ConfigOptionLike): boolean {
   return o.type === 'select' && (o.category === 'mode' || o.id === 'mode')
 }
 
+function isReasoningEffortSelect(o: ConfigOptionLike): boolean {
+  return (o.type == null || o.type === 'select') && isAcpEffortConfigOption(o)
+}
+
+function sortEffortModeOptions(modes: ModelOption[]): ModelOption[] {
+  return sortEffortsAscending(modes.map((mode) => ({
+    value: mode.id,
+    label: mode.name,
+    mode,
+  }))).map((item) => item.mode)
+}
+
 function serializeSelectValues(options: unknown): AcpConfigSelectValue[] | undefined {
   if (!Array.isArray(options)) return undefined
   const out: AcpConfigSelectValue[] = []
@@ -129,7 +142,7 @@ export function serializeConfigOptions(
   return out
 }
 
-/** Prefer category "model", else option id "model", else first non-mode select. */
+/** Prefer category "model", else option id "model", else first select that is neither a session mode nor reasoning effort. */
 export function extractModelConfig(
   configOptions: Array<ConfigOptionLike | SessionConfigOption> | null | undefined,
 ): AcpModelConfig | null {
@@ -140,7 +153,7 @@ export function extractModelConfig(
 
   const byCategory = selects.find((o) => o.category === 'model')
   const byId = selects.find((o) => o.id === 'model')
-  const fallback = selects.find((o) => !isModeSelect(o))
+  const fallback = selects.find((o) => !isModeSelect(o) && !isReasoningEffortSelect(o))
   const chosen = byCategory ?? byId ?? fallback
   if (!chosen || chosen.type !== 'select' || typeof chosen.id !== 'string') return null
 
@@ -163,6 +176,39 @@ export function extractModelConfig(
   }
 }
 
+function selectToModeConfig(
+  chosen: ConfigOptionLike,
+  opts?: { sortEffort?: boolean },
+): AcpModeConfig | null {
+  if ((chosen.type != null && chosen.type !== 'select') || typeof chosen.id !== 'string') return null
+  const modes: ModelOption[] = flattenSelectOptions(chosen.options).map((opt) => ({
+    id: opt.value,
+    name: opt.name,
+    description: opt.description,
+  }))
+  if (modes.length === 0) return null
+  const ordered = opts?.sortEffort ? sortEffortModeOptions(modes) : modes
+  const selected =
+    typeof chosen.currentValue === 'string' && ordered.some((m) => m.id === chosen.currentValue)
+      ? chosen.currentValue
+      : (ordered[0]?.id ?? null)
+  return {
+    configId: chosen.id,
+    modes: ordered,
+    selectedModeId: selected,
+  }
+}
+
+/** Grok reasoning effort: id `reasoning_effort`, category `thought_level`. */
+export function extractReasoningEffortConfig(
+  configOptions: Array<ConfigOptionLike | SessionConfigOption> | null | undefined,
+): AcpModeConfig | null {
+  if (!configOptions?.length) return null
+  const chosen = configOptions.find((o) => isReasoningEffortSelect(o))
+  if (!chosen) return null
+  return selectToModeConfig(chosen, { sortEffort: true })
+}
+
 /** Prefer category "mode", else option id "mode". No fallback to other selects. */
 export function extractModeConfig(
   configOptions: Array<ConfigOptionLike | SessionConfigOption> | null | undefined,
@@ -172,23 +218,13 @@ export function extractModeConfig(
   const selects = configOptions.filter((o) => o.type === 'select')
   const chosen = selects.find((o) => o.category === 'mode')
     ?? selects.find((o) => o.id === 'mode')
-  if (!chosen || chosen.type !== 'select' || typeof chosen.id !== 'string') return null
+  if (!chosen) return null
+  return selectToModeConfig(chosen)
+}
 
-  const modes: ModelOption[] = flattenSelectOptions(chosen.options).map((opt) => ({
-    id: opt.value,
-    name: opt.name,
-    description: opt.description,
-  }))
-  if (modes.length === 0) return null
-
-  const selected =
-    typeof chosen.currentValue === 'string' && modes.some((m) => m.id === chosen.currentValue)
-      ? chosen.currentValue
-      : (modes[0]?.id ?? null)
-
-  return {
-    configId: chosen.id,
-    modes,
-    selectedModeId: selected,
-  }
+/** Grok reasoning effort when present, otherwise a real session-mode select. */
+export function modesFromConfigOptions(
+  configOptions: Array<ConfigOptionLike | SessionConfigOption> | null | undefined,
+): AcpModeConfig | null {
+  return extractReasoningEffortConfig(configOptions) ?? extractModeConfig(configOptions)
 }

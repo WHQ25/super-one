@@ -96,6 +96,24 @@ describe('tool result capping', () => {
     expect(summaryOf(completed(JSON.stringify({ logs: 'x'.repeat(20000) }))).length).toBe(4000)
   })
 
+  it('prefixes a Generic Auto classifier deny so the tool row shows denied', () => {
+    const update = {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call-deny',
+      status: 'failed',
+      content: [{
+        type: 'content',
+        content: { type: 'text', text: 'Tool `Bash` was not executed: Auto mode blocked this action (shell)' },
+      }],
+    } as never
+    expect(summaryOf(update)).toBe('[denied] Tool `Bash` was not executed: Auto mode blocked this action (shell)')
+  })
+
+  it('does not prefix a completed result that only quotes the classifier sentence', () => {
+    const text = 'Tool `Bash` was not executed: Auto mode blocked this action (shell)'
+    expect(summaryOf(completed(text))).toBe(text)
+  })
+
   it('still caps a workflow result that merely has a state id and a root', () => {
     // The loose first cut of the predicate exempted any {stateId, root:{…}}.
     const payload = JSON.stringify({ stateId: 'S1', root: { rootId: '@r1' }, blob: 'y'.repeat(20000) })

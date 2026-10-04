@@ -1133,6 +1133,7 @@ export interface PermissionRequest {
     | 'webmcp_trust_confirm'
     | 'device_control_confirm'
     | 'terminal_command_confirm'
+    | 'folder_trust'
   serverName?: string
   message?: string
   subtitle?: string
@@ -2243,6 +2244,8 @@ export interface ModelOption {
   provider?: string
   /** Provider-reported maximum context tokens when the harness exposes it. */
   contextWindow?: number
+  /** Windows the model can switch to. The picker appears only when this has more than one. */
+  contextWindows?: number[]
   resolvedModel?: string
   isDefault?: boolean
   supportsEffort?: boolean
@@ -2666,6 +2669,8 @@ export interface McpServerConfig {
   // http fields
   url?: string
   headers?: Record<string, string>
+  /** Path Grok re-reads per request. Absolute or `~/`. The secret stays in the file. */
+  bearerTokenFile?: string
 }
 
 // --- MCP server metadata (from initialize) ---

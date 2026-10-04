@@ -156,7 +156,13 @@ class FakeBackend implements SessionBackend {
   }
 
   setModelCalls: string[] = []
-  async setModel(model: string): Promise<void> { this.setModelCalls.push(model) }
+  setModelOpts: Array<{ contextWindow?: number } | undefined> = []
+  setModelError: Error | null = null
+  async setModel(model: string, opts?: { contextWindow?: number }): Promise<void> {
+    this.setModelCalls.push(model)
+    this.setModelOpts.push(opts)
+    if (this.setModelError) throw this.setModelError
+  }
   setCodexSelectionCalls: Array<{
     model?: string | null
     reasoningEffort?: import('@superone/shared/agent-types').CodexReasoningEffort | null
@@ -176,8 +182,10 @@ class FakeBackend implements SessionBackend {
     this.setSessionModeCalls.push(modeId)
   }
   setPermissionModeCalls: import('@superone/shared/agent-types').PermissionMode[] = []
+  setPermissionModeError: Error | null = null
   async setPermissionMode(mode: import('@superone/shared/agent-types').PermissionMode): Promise<void> {
     this.setPermissionModeCalls.push(mode)
+    if (this.setPermissionModeError) throw this.setPermissionModeError
   }
   setSandboxCalls: import('@superone/shared/agent-types').SandboxInfo[] = []
   async setSandbox(info: import('@superone/shared/agent-types').SandboxInfo): Promise<void> {
@@ -811,6 +819,32 @@ describe('Session state machine', () => {
     await session.setPermissionMode('plan')
     expect(backend.setPermissionModeCalls).toEqual(['plan'])
     expect(session.permissionMode).toBe('plan')
+  })
+
+  it('setPermissionMode leaves the chip when the backend rejects', async () => {
+    ;({ session, backend } = makeSession({ permissionMode: 'default' }))
+    const events: import('@superone/shared/agent-types').AgentEvent[] = []
+    session.on((event) => events.push(event))
+    const after = events.length
+    backend.setPermissionModeError = new Error('rpc failed')
+    await expect(session.setPermissionMode('plan')).rejects.toThrow('rpc failed')
+    expect(session.permissionMode).toBe('default')
+    expect(session.getUiSettings().permissionMode).toBe('default')
+    expect(events.slice(after).some((event) => event.type === 'permission_mode_change')).toBe(false)
+  })
+
+  it('setSelectedSettings sends a picked context window on the current model', async () => {
+    ;({ session, backend } = makeSession({ model: 'grok-4.5' }))
+    await session.setSelectedSettings({ contextWindow: 256000 })
+    expect(backend.setModelCalls).toEqual(['grok-4.5'])
+    expect(backend.setModelOpts[0]).toEqual({ contextWindow: 256000 })
+  })
+
+  it('setSelectedSettings surfaces an invalid context window instead of retrying', async () => {
+    ;({ session, backend } = makeSession({ model: 'grok-4.5' }))
+    backend.setModelError = new Error('invalid_params')
+    await expect(session.setSelectedSettings({ contextWindow: 0 })).rejects.toThrow('invalid_params')
+    expect(backend.setModelOpts[0]).toEqual({ contextWindow: 0 })
   })
 
   it('setPermissionMode rejects a mode before recording it on a harness that declares none', async () => {

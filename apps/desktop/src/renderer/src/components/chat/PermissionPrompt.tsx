@@ -29,6 +29,7 @@ import { SessionCleanupConfirmPromptContainer } from './SessionCleanupConfirmPro
 import { AutomationConfirmPromptContainer } from './AutomationConfirmPrompt'
 import { ComputerUseGrantPrompt } from './ComputerUseGrantPrompt'
 import { WebMcpTrustPrompt } from './WebMcpTrustPrompt'
+import { FolderTrustPrompt } from './FolderTrustPrompt'
 import { ApproveRejectBar, PermissionActionButton } from './PermissionActionBar'
 import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 
@@ -453,6 +454,16 @@ export function PermissionPrompt() {
   }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, handleAlwaysAllow, isCodexDecisionPrompt, hasHostAlwaysButton, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef, defaultToNo, terminalRule, toggleRememberRule])
 
   if (!pendingPermission) return null
+
+  if (pendingPermission.requestKind === 'folder_trust') {
+    return (
+      <FolderTrustPrompt
+        request={pendingPermission}
+        onTrust={() => { void respondToPermission(pendingPermission.requestId, true) }}
+        onReject={() => { void respondToPermission(pendingPermission.requestId, false) }}
+      />
+    )
+  }
 
   if (isVideoGenConfirm) {
     return <VideoGenConfirmPromptContainer request={pendingPermission} />

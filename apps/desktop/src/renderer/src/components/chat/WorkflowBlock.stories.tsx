@@ -115,6 +115,26 @@ export const Complete: Story = {
   )],
 }
 
+export const LaunchDenied: Story = {
+  args: {
+    toolBlock: {
+      type: 'tool_use',
+      toolName: 'Workflow',
+      toolUseId: 'wf-denied',
+      input: JSON.stringify({ source: { type: 'name', name: 'grok-build-parity' } }),
+      status: 'complete',
+    } as ContentBlock & { type: 'tool_use' },
+    resultBlock: {
+      type: 'tool_result',
+      toolUseId: 'wf-denied',
+      isError: true,
+      summary: 'Tool `workflow` was not executed: Auto mode blocked this action',
+    } as ContentBlock,
+    isStreaming: false,
+    defaultExpanded: true,
+  },
+}
+
 export const Collapsed: Story = {
   args: {
     toolBlock: makeToolBlock('wf-collapsed'),

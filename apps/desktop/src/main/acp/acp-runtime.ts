@@ -1,5 +1,6 @@
 import { ensureShellPath } from '../shell-path'
 import { authenticateGrokCached } from './grok-cached-auth'
+import { parseFolderTrustRequest, settleFolderTrust } from './folder-trust'
 import {
   client,
   methods,
@@ -19,9 +20,9 @@ import {
   buildSetModelParams,
   coalesceModeConfig,
   coalesceModelConfig,
-  extractModeConfig,
   extractModelConfig,
   extractModesFromNewSessionResult,
+  modesFromConfigOptions,
   extractModelsFromInitializeResult,
   extractModelsFromNewSessionResult,
   readAgentCapabilities,
@@ -47,7 +48,7 @@ import {
   noteAcpTaskLifecycle,
   noteParentMainThreadCall,
 } from '../mcp/main-thread-session-guard'
-import { buildAcpSessionMcpServers } from './acp-mcp'
+import { buildAcpSessionMcpServers, omitUntrustedProjectMcpServers } from './acp-mcp'
 import { acpHostContextText, isLeadingSlashPrompt } from './acp-host-context'
 import { resolveAcpLaunch, type ResolvedAcpLaunch } from './agent-catalog'
 import { handleReadTextFile, handleWriteTextFile } from './acp-fs'
@@ -254,6 +255,11 @@ export interface AcpRuntime {
     force?: boolean
   }): Promise<GrokRewindExecuteResult>
   updateMcpServers(servers: unknown[]): Promise<void>
+  /**
+   * Grok may attach host project-scope MCP only after folder trust.
+   * Other agents always return true.
+   */
+  allowsProjectMcp(): boolean
   /** `x.ai/mcp/auth_trigger` for one server. Throws when Grok does not authenticate it. */
   authenticateMcp(serverName: string): Promise<void>
   getSessionUsage(): Promise<{ totalTokens: number; inputTokens: number; outputTokens: number } | null>
@@ -295,6 +301,18 @@ export interface AcpRuntimeOptions {
   superoneSessionId?: string
   /** SuperOne session permission mode — mapped to Grok yolo/auto on session/new. */
   permissionMode?: PermissionMode
+  /**
+   * Create-time plan `session/set_mode` failed. The host chip must leave plan.
+   * Successful switches still commit through `Session.setPermissionMode`.
+   */
+  onPermissionModeResolved?: (mode: PermissionMode) => void
+  /**
+   * Folder trust dialog. Advertised only when this is set on a grok-build launch.
+   * Trust is the only outcome that loads project rules, MCP, hooks, and skills.
+   */
+  onFolderTrust?: (request: import('./folder-trust').FolderTrustRequest) => Promise<'trust' | 'reject'>
+  /** Override the 30-minute folder-trust wait. Tests use a few milliseconds. */
+  folderTrustTimeoutMs?: number
   /** Host pick for session/new and session/load `_meta.reasoningEffort`. */
   reasoningEffort?: string
   /**
@@ -380,21 +398,36 @@ function isXaiTurnCompletedNotification(method: string, params: Record<string, u
   return kind === 'turn_completed'
 }
 
-/** Discard historical session/update events replayed by session/load (UI uses SuperOne DB). */
-async function drainLoadReplay(session: ActiveSession, maxQuietMs = 40, maxEvents = 20_000): Promise<number> {
+type AcpSessionUpdateMessage = Awaited<ReturnType<ActiveSession['nextUpdate']>>
+
+/**
+ * Discard historical session/update events replayed by session/load.
+ * The quiet-timeout read stays pending: ACP's queue is FIFO, so abandoning
+ * that `nextUpdate()` would steal the first live event from the pump.
+ */
+async function drainLoadReplay(
+  session: ActiveSession,
+  maxQuietMs = 40,
+  maxEvents = 20_000,
+): Promise<{ drained: number; held: Promise<AcpSessionUpdateMessage> | null }> {
   let drained = 0
   for (;;) {
-    if (drained >= maxEvents) break
-    const msg = await Promise.race([
-      session.nextUpdate().then((m) => ({ kind: 'msg' as const, m })),
-      new Promise<{ kind: 'quiet' }>((resolve) => {
-        setTimeout(() => resolve({ kind: 'quiet' }), maxQuietMs)
-      }),
-    ])
-    if (msg.kind === 'quiet') break
-    drained += 1
+    if (drained >= maxEvents) return { drained, held: null }
+    const pending = session.nextUpdate()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const msg = await Promise.race([
+        pending.then((m) => ({ kind: 'msg' as const, m })),
+        new Promise<{ kind: 'quiet' }>((resolve) => {
+          timer = setTimeout(() => resolve({ kind: 'quiet' }), maxQuietMs)
+        }),
+      ])
+      if (msg.kind === 'quiet') return { drained, held: pending }
+      drained += 1
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
   }
-  return drained
 }
 
 function formatProcessExit(
@@ -427,6 +460,8 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     },
   })
   let stampedRules = false
+  /** True only after create-time `session/set_mode` plan succeeds. */
+  let hostPlanApplied = false
   let processHandle: AcpProcessHandle | null = null
   let disposeStream: (() => void) | null = null
   let stream: Stream
@@ -460,6 +495,11 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
 
   let connection: ClientConnection | null = null
   let session: ActiveSession | null = null
+  /** In-flight load drain read. The pump must await this before calling nextUpdate again. */
+  let heldLoadUpdate: Promise<AcpSessionUpdateMessage> | null = null
+  let projectMcpTrusted = false
+  let mcpSessionId: string | null = null
+  let projectMcpUpdateStarted = false
   let initModels: AcpModelConfig | null = null
   let sessionModels: AcpModelConfig | null = null
   let agentCapabilities: AcpAgentCapabilities | null = null
@@ -634,6 +674,45 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       .onRequest(XAI_MCP_ELICIT, mcpElicitParams, mcpElicitHandler)
       .onRequest(`_${XAI_MCP_ELICIT}`, mcpElicitParams, mcpElicitHandler)
 
+    const attachTrustedProjectMcp = () => {
+      if (launch.agentId !== 'grok-build' || !projectMcpTrusted || !connection || !mcpSessionId) return
+      if (projectMcpUpdateStarted) return
+      projectMcpUpdateStarted = true
+      const servers = buildAcpSessionMcpServers({
+        cwd: launch.cwd,
+        superoneSessionId: opts.superoneSessionId,
+        agentCapabilities,
+        includeProjectScope: true,
+      })
+      const sessionId = mcpSessionId
+      void connection.agent.request(xaiExtWireMethod(XAI_UPDATE_MCP_SERVERS), {
+        sessionId,
+        mcpServers: servers,
+      }).then(() => {
+        mcpAttached = servers.some((s) => s.name === 'superone')
+      }).catch((err) => {
+        log.warn('[acp-runtime] project MCP update after folder trust failed:', err)
+      })
+    }
+
+    const advertiseFolderTrust = launch.agentId === 'grok-build' && typeof opts.onFolderTrust === 'function'
+    if (advertiseFolderTrust) {
+      const folderTrustHandler = async (ctx: { params: unknown }) => {
+        const settled = await settleFolderTrust(
+          () => opts.onFolderTrust!(parseFolderTrustRequest(ctx.params)),
+          opts.folderTrustTimeoutMs ?? 30 * 60 * 1000,
+        )
+        if (settled.outcome === 'trust') {
+          projectMcpTrusted = true
+          attachTrustedProjectMcp()
+        }
+        return settled
+      }
+      clientBuilder = clientBuilder
+        .onRequest('x.ai/folder_trust/request', (raw: unknown) => raw, folderTrustHandler)
+        .onRequest('_x.ai/folder_trust/request', (raw: unknown) => raw, folderTrustHandler)
+    }
+
     // Grok progressive ExtNotification bus (workflow / subagent / bg / usage / …)
     for (const method of XAI_EXT_NOTIFICATION_METHODS) {
       const m = method
@@ -660,6 +739,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       clientCapabilities: {
         fs: { readTextFile: useHostDelegation, writeTextFile: useHostDelegation },
         terminal: useHostDelegation,
+        ...(advertiseFolderTrust
+          ? { _meta: { 'x.ai/folderTrust': { interactive: true } } }
+          : {}),
       },
       _meta: {
         askUserQuestion: true,
@@ -719,10 +801,13 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       )
     }
 
+    // Grok treats host-forwarded `.claude/settings.json` servers as foreign.
+    // Withhold project scope until folder trust, including when trust is not advertised.
     const mcpServers = buildAcpSessionMcpServers({
       cwd: launch.cwd,
       superoneSessionId: opts.superoneSessionId,
       agentCapabilities,
+      includeProjectScope: launch.agentId !== 'grok-build',
     })
     mcpAttached = mcpServers.some((s) => s.name === 'superone')
     const extraRoots = fsRoots.slice(1)
@@ -754,6 +839,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     const resumeId = opts.resumeSessionId?.trim() || ''
     const loadSessionCap = agentCapabilities?.loadSession === true
     if (resumeId && loadSessionCap) {
+      let loaded: ActiveSession | null = null
       try {
         // Attach routing *before* load so replayed session/update is not dropped.
         const sessionResponse: {
@@ -764,12 +850,16 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           [key: string]: unknown
         } = { sessionId: resumeId }
         const agentWithAttach = connection.agent as unknown as AcpAgentWithAttach
-        const loaded = agentWithAttach.attachSession(sessionResponse)
+        loaded = agentWithAttach.attachSession(sessionResponse)
+        const loadMeta = launch.agentId === 'grok-build'
+          ? { ...sessionMeta, noReplay: true }
+          : sessionMeta
         const loadResult = await connection.agent.request(
           methods.agent.session.load,
           {
             sessionId: resumeId,
             ...sessionRequestBase,
+            ...(Object.keys(loadMeta).length > 0 ? { _meta: loadMeta } : {}),
           },
         ) as {
           configOptions?: SessionConfigOption[] | null
@@ -781,14 +871,15 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           if (loadResult.modes !== undefined) sessionResponse.modes = loadResult.modes
           if (loadResult._meta !== undefined) sessionResponse._meta = loadResult._meta
         }
-        const replayed = await drainLoadReplay(loaded)
+        const replay = await drainLoadReplay(loaded!)
         session = loaded
+        heldLoadUpdate = replay.held
         sessionVia = 'load'
         log.info(
           '[acp-runtime] session/load ok id=%s agent=%s replayed=%d',
           resumeId,
           launch.agentId,
-          replayed,
+          replay.drained,
         )
       } catch (err) {
         log.warn(
@@ -797,6 +888,10 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           launch.agentId,
           err,
         )
+        const abandoned = heldLoadUpdate
+        heldLoadUpdate = null
+        if (abandoned) void abandoned.catch(() => {})
+        try { loaded?.dispose() } catch { /* ignore */ }
         try { session?.dispose() } catch { /* ignore */ }
         session = null
       }
@@ -834,6 +929,8 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       }
     }
     if (!session) throw new Error('ACP session not established')
+    mcpSessionId = session.sessionId
+    attachTrustedProjectMcp()
     // Grok applies rules only at creation. Other ACP agents may ignore this extension.
     stampedRules = launch.agentId === 'grok-build' && sessionVia === 'new'
       && typeof sessionMetaOverlay.rules === 'string'
@@ -863,12 +960,19 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           sessionId: session.sessionId,
           modeId: 'plan',
         })
+        hostPlanApplied = true
         log.info('[acp-runtime] session/set_mode plan on create agent=%s', launch.agentId)
       } catch (err) {
         log.warn('[acp-runtime] session/set_mode plan on create failed:', err)
+        try { opts.onPermissionModeResolved?.('default') } catch (hookErr) {
+          log.warn('[acp-runtime] permission rollback hook failed:', hookErr)
+        }
       }
     }
   } catch (err) {
+    const abandoned = heldLoadUpdate
+    heldLoadUpdate = null
+    if (abandoned) void abandoned.catch(() => {})
     opts.signal?.removeEventListener('abort', abortInitialization)
     await processHandle?.kill().catch(() => undefined)
     disposeStream?.()
@@ -890,7 +994,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   )
   let modeConfig: AcpModeConfig | null = coalesceModeConfig(
     extractModesFromNewSessionResult(activeSession.newSessionResponse),
-    extractModeConfig(configOptions),
+    modesFromConfigOptions(configOptions),
   )
   const seedContextWindowFromModels = (cfg: AcpModelConfig | null) => {
     if (!cfg?.selectedModelId) return
@@ -912,7 +1016,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   // `current_mode_update` default must restore this, not force SuperOne `default`.
   let yoloBaseline: PermissionMode =
     opts.permissionMode && opts.permissionMode !== 'plan' ? opts.permissionMode : 'default'
-  let acpSessionMode: 'plan' | 'default' = opts.permissionMode === 'plan' ? 'plan' : 'default'
+  let acpSessionMode: 'plan' | 'default' = hostPlanApplied ? 'plan' : 'default'
   let pumping = true
   /**
    * Per-turn streaming state. A newer `session/prompt` must never mutate an
@@ -1057,8 +1161,10 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     while (pumping && !closed) {
       try {
         let connectionClosed = false
+        const updatePromise = heldLoadUpdate ?? activeSession.nextUpdate()
+        heldLoadUpdate = null
         const next = await Promise.race([
-          activeSession.nextUpdate().then((m) => ({ type: 'msg' as const, m })),
+          updatePromise.then((m) => ({ type: 'msg' as const, m })),
           activeConnection.closed.then(() => {
             connectionClosed = true
             return { type: 'closed' as const }
@@ -1249,7 +1355,15 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       if (Array.isArray(result.configOptions)) {
         configOptions = result.configOptions
         modelConfig = coalesceModelConfig(extractModelConfig(configOptions), modelConfig)
-        modeConfig = coalesceModeConfig(extractModeConfig(configOptions), modeConfig)
+        const fromOptions = modesFromConfigOptions(configOptions)
+        if (fromOptions) {
+          modeConfig = fromOptions
+        } else if (modeConfig?.configId != null) {
+          // A real config option that disappeared (effort the model no longer
+          // advertises, or a session mode the agent dropped). Legacy x.ai
+          // effort uses configId null and is not part of configOptions.
+          modeConfig = null
+        }
       }
       return configOptions
     },
@@ -1327,13 +1441,25 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         acpSessionMode = 'plan'
         return
       }
-      acpSessionMode = 'default'
-      yoloBaseline = mode
-      // Leaving plan (or switching permission): restore agent mode then yolo baseline.
-      try {
-        await setAcpSessionMode('default')
-      } catch (err) {
-        log.debug('[acp-runtime] set_mode default before yolo (may be unsupported):', err)
+      const wasPlan = acpSessionMode === 'plan'
+      let leftPlan = false
+      // yolo_mode_changed does not leave plan. A failed set_mode(default) must
+      // surface when the session is actually in plan. Agents that have no
+      // set_mode still switch Ask/Auto/YOLO without one.
+      if (wasPlan) {
+        try {
+          await setAcpSessionMode('default')
+          leftPlan = true
+        } catch (err) {
+          log.warn('[acp-runtime] set_mode default failed while leaving plan:', err)
+          throw err
+        }
+      } else {
+        try {
+          await setAcpSessionMode('default')
+        } catch (err) {
+          log.debug('[acp-runtime] set_mode default before yolo (may be unsupported):', err)
+        }
       }
       const params = grokYoloModeNotificationParams(mode)
       try {
@@ -1346,7 +1472,15 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         )
       } catch (err) {
         log.warn('[acp-runtime] yolo_mode_changed failed agent=%s mode=%s:', launch.agentId, mode, err)
+        if (leftPlan) {
+          try { await setAcpSessionMode('plan') } catch (restoreErr) {
+            log.warn('[acp-runtime] restore plan after yolo failure failed:', restoreErr)
+          }
+        }
+        throw err
       }
+      acpSessionMode = 'default'
+      yoloBaseline = mode
     },
     async prompt(text, messageId, onEvent, images, promptOpts) {
       let settled = false
@@ -1556,10 +1690,16 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       })
       return parseGrokRewindExecute(raw)
     },
+    allowsProjectMcp() {
+      return launch.agentId !== 'grok-build' || projectMcpTrusted
+    },
     async updateMcpServers(servers) {
+      const mcpServers = launch.agentId !== 'grok-build' || projectMcpTrusted
+        ? servers
+        : omitUntrustedProjectMcpServers(servers, launch.cwd)
       await activeConnection.agent.request(xaiExtWireMethod(XAI_UPDATE_MCP_SERVERS), {
         sessionId: activeSession.sessionId,
-        mcpServers: servers,
+        mcpServers,
       })
     },
     async authenticateMcp(serverName) {

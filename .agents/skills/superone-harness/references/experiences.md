@@ -74,6 +74,9 @@ Notes that bite:
   mapped third-party providers deliberately show no effort picker, and that is by design.
 - **ACP derives models from `configOptions`**, with `extraModels`/`extraModes` for agents (Grok) that
   put them elsewhere. `acp-handler.ts` `sessionCatalogFromConfig()` is the whole story.
+  Grok reasoning effort is config id `reasoning_effort` (category `thought_level`) and stays on the
+  model slider via `session/set_config_option`. OpenCode `mode` stays a status-bar session mode.
+  A null config id is the legacy x.ai effort catalog (`session/set_model` + `_meta.reasoningEffort`).
 - A model id ending in `[1m]` means the 1M-context variant (a Claude Code convention), surfaced as an
   optional toggle only when the catalog says the model supports it.
 
@@ -223,6 +226,12 @@ renders as generic `use tool` is not done.
 
 `HarnessKind` in `usage-stats-service.ts` is **not** `HarnessId` — it splits ACP into `grok`. Adding a
 harness id without adding a `HarnessKind` gives a permanently empty usage row with no error.
+
+Grok workflow agents that finish during the spawning prompt are already inside that prompt's
+`message_usage`. Agents that finish after the prompt returns are session-only: their cumulative
+`tokens_used` arrives on `task_progress` / `task_notification` and is written to `usage_daily` from
+there. Do not add that number to the context ring or to `message_usage` again. The wire total is
+input+output combined, so the delta is stored in `output_tokens`.
 
 ---
 

@@ -22,8 +22,9 @@ capability count or a release checklist.
 - Standard ACP messages become `AgentEvent`; xAI notifications supply workflow,
   child-agent, background-task, usage and settings state that is absent from the
   ordinary tool acknowledgement.
-- Entering Plan updates local state after `session/set_mode` succeeds. The
-  permission baseline and reasoning effort remain separate.
+- The ACP runtime updates its plan state after `session/set_mode` succeeds.
+  The session permission chip is written before that RPC. The permission
+  baseline and reasoning effort remain separate.
 - Cancellation asks the agent to stop and has a bounded local stop fallback so
   a missing upstream terminal response does not leave Stop permanently active.
 
@@ -56,11 +57,15 @@ tool call in the transcript.
 ## CLI/node boundary
 
 The node uses shared ACP event/permission/elicitation helpers, advertises ask and
-exit-plan support, and consumes the shared xAI notification mapping. It still
-initializes with an empty `clientCapabilities` object and client version `0.0.0`.
-It does not inherit the desktop backend's live session controls or self-echo
+exit-plan support, and consumes the shared xAI notification mapping. A Grok
+launch initializes with host filesystem and terminal off, a production client
+version from `resolveCliReleaseVersion()` (the in-repo package walk remains only
+when the caller omits `clientVersion`), and explicit yolo/auto booleans. Other ACP
+launches still send empty `clientCapabilities`. The node does not inherit the
+desktop backend's live session controls, folder-trust dialog, or self-echo
 filter merely by importing the mapper. Headless plan approval is cancelled when
-no approving host path exists.
+no approving host path exists. Production turns use the harness-stored `grok`
+binary with args `agent stdio`, resolved again on each ACP turn.
 
 Do not enable a capability flag on the strength of desktop support alone.
 The remaining node and extension work is recorded in [backlog](backlog.md).

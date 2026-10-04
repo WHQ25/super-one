@@ -2868,7 +2868,7 @@ export class AgentService {
       return session.setSandboxMode(mode)
     })
 
-    ipcMain.handle(AgentIpcChannels.SET_SESSION_SETTINGS, (_event, projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null; agentPreset?: string | null }, sessionId?: string) => {
+    ipcMain.handle(AgentIpcChannels.SET_SESSION_SETTINGS, (_event, projectPath: string, settings: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null; agentPreset?: string | null; contextWindow?: number | null }, sessionId?: string) => {
       // An explicit id is a scoped write from a pane that is not the project's
       // active chat — a mosaic tile, or a side chat, whose picker would
       // otherwise re-configure the conversation it was forked from.
@@ -2882,8 +2882,9 @@ export class AgentService {
       // belongs to an entirely different project.
       if (session.snapshot.projectPath !== projectPath) return
       if (this.isSessionRemoteLocked(session)) return
-      session.setSelectedSettings(settings)
+      const applied = session.setSelectedSettings(settings)
       if (settings.agentPreset !== undefined) session.setAgentPreset(settings.agentPreset)
+      return applied
     })
 
     ipcMain.handle(AgentIpcChannels.SET_SESSION_API_PROVIDER, (_event, sessionId: string, apiProviderId: string | null) => {

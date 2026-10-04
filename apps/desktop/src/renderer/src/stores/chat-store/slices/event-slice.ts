@@ -10,6 +10,7 @@ import type {
   EffortLevel,
   SessionSettingsPatch,
 } from '@superone/shared/agent-types'
+import { isAcpEffortConfigId, isAcpEffortConfigOption } from '@superone/shared/effort-labels'
 import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
 import { useAppStore } from '../../app'
 import type { ChatProvider, ChatStore, PerSessionState } from '../types'
@@ -644,13 +645,28 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
               },
             }
           } else if (event.type === 'acp_modes') {
-            // Grok effort: configId is null → store as extraModes so UI keeps
-            // modeConfigId null (effort slider next to model, not status-bar mode).
-            // Real session modes: configId set → configOptions category=mode.
-            if (event.configId == null) {
-              const withoutMode = prevOptions.filter(
-                (o) => o.category !== 'mode' && o.id !== 'mode',
+            // Grok effort: configId null (legacy x.ai) or `reasoning_effort`
+            // (thought_level). Keep it as extraModes so the model slider still
+            // treats it as effort. Real session modes: any other configId,
+            // stored as configOptions category=mode.
+            if (isAcpEffortConfigId(event.configId)) {
+              const withoutEffort = prevOptions.filter(
+                (o) => o.category !== 'mode' && o.id !== 'mode' && !isAcpEffortConfigOption(o),
               )
+              const configOptions = event.configId
+                ? [...withoutEffort, {
+                    id: event.configId,
+                    name: 'Reasoning Effort',
+                    category: 'thought_level' as const,
+                    type: 'select' as const,
+                    currentValue: event.selectedModeId,
+                    options: event.modes.map((m) => ({
+                      value: m.id,
+                      name: m.name,
+                      description: m.description || null,
+                    })),
+                  }]
+                : withoutEffort
               harnessUpdate = {
                 harnessResources: {
                   ...s.harnessResources,
@@ -659,13 +675,13 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
                     configByAgentId: {
                       ...(acp.configByAgentId ?? {}),
                       [agentId]: {
-                        configOptions: withoutMode,
+                        configOptions,
                         extraModels: prevConfig?.extraModels,
                         selectedModelId: prevConfig?.selectedModelId ?? null,
                         modelConfigId: prevConfig?.modelConfigId ?? null,
                         extraModes: event.modes,
                         selectedModeId: event.selectedModeId,
-                        modeConfigId: null,
+                        modeConfigId: event.configId,
                         slashCommands: prevConfig?.slashCommands,
                         updatedAt: now,
                       },
@@ -673,7 +689,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
                   },
                 },
               }
-            } else {
+            } else if (event.configId) {
               const modeId = event.configId
               const modeOpt = {
                 id: modeId,
@@ -688,7 +704,7 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
                 })),
               }
               const withoutMode = prevOptions.filter(
-                (o) => o.category !== 'mode' && o.id !== 'mode' && o.id !== modeId,
+                (o) => o.category !== 'mode' && o.id !== 'mode' && o.id !== modeId && !isAcpEffortConfigOption(o),
               )
               harnessUpdate = {
                 harnessResources: {

@@ -25,6 +25,17 @@ describe('ACP mode catalog', () => {
     expect(projection.modes).toEqual([])
   })
 
+  it('reads Grok reasoning_effort as effort after the session config id is set', () => {
+    const projection = acpModeCatalog({
+      modeConfigId: 'reasoning_effort',
+      selectedModeId: 'high',
+      modes: [mode('high', 'High'), mode('low', 'Low')],
+    })
+
+    expect(projection.efforts.map((option) => option.value)).toEqual(['low', 'high'])
+    expect(projection.modes).toEqual([])
+  })
+
   it('keeps real session modes out of effort, so the client does not draw a slider for them', () => {
     const projection = acpModeCatalog({
       modeConfigId: 'mode-config',

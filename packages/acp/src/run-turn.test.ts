@@ -98,7 +98,7 @@ vi.mock('@agentclientprotocol/sdk', () => ({
   client: vi.fn(() => mocks.app),
   methods: {
     client: { session: { requestPermission: 'session/request_permission' } },
-    agent: { initialize: 'initialize' },
+    agent: { initialize: 'initialize', authenticate: 'authenticate' },
   },
   PROTOCOL_VERSION: 1,
 }))
@@ -232,6 +232,74 @@ describe('ACP production turn runner AgentEvents', () => {
         },
       }),
     )
+    const initCalls = mocks.connection.agent.request.mock.calls as unknown as Array<[string, { clientCapabilities?: unknown; clientInfo?: { version?: string } }]>
+    const initCall = initCalls.find((call) => call[0] === 'initialize')
+    expect(initCall?.[1]).toEqual(expect.objectContaining({
+      clientCapabilities: {},
+    }))
+    expect(initCall?.[1]?.clientInfo?.version).toMatch(/^\d+\.\d+/)
+  })
+
+  it('authenticates a grok launch before session/new and stamps permission meta', async () => {
+    mocks.active.nextUpdate.mockResolvedValue({ kind: 'stop', stopReason: 'end_turn' })
+    mocks.connection.agent.request.mockReset()
+    mocks.connection.agent.request
+      .mockResolvedValueOnce({ authMethods: [{ id: 'cached_token' }] })
+      .mockResolvedValueOnce({})
+    const runner = createAcpAgentTurnRunner({
+      launch: { command: '/opt/grok', agentId: 'grok-build' },
+      resolveProjectPath: () => '/tmp',
+    })
+    await runner({
+      session: session(),
+      messageId: 'message-grok-init',
+      text: 'go',
+      permissionMode: 'auto',
+      onAgentEvent: () => {},
+      onDelta: () => {},
+      signal: new AbortController().signal,
+    })
+    const grokCalls = mocks.connection.agent.request.mock.calls as unknown as Array<[string, unknown]>
+    expect(grokCalls.map((call) => call[0])).toEqual([
+      'initialize',
+      'authenticate',
+    ])
+    expect(grokCalls[1]?.[1]).toEqual({ methodId: 'cached_token' })
+    expect(grokCalls[0]?.[1]).toEqual(expect.objectContaining({
+      clientCapabilities: {
+        fs: { readTextFile: false, writeTextFile: false },
+        terminal: false,
+      },
+    }))
+    expect(mocks.connection.agent.buildSession).toHaveBeenCalledWith(expect.objectContaining({
+      _meta: {
+        clientIdentifier: 'superone',
+        yoloMode: false,
+        autoMode: true,
+      },
+    }))
+    mocks.connection.agent.request.mockImplementation(async () => ({}))
+  })
+
+  it('sends an explicit clientVersion on initialize', async () => {
+    mocks.connection.agent.request.mockClear()
+    mocks.active.nextUpdate.mockResolvedValue({ kind: 'stop', stopReason: 'end_turn' })
+    const runner = createAcpAgentTurnRunner({
+      launch: { command: '/fake/acp' },
+      resolveProjectPath: () => '/tmp',
+      clientVersion: '9.9.9',
+    })
+    await runner({
+      session: session(),
+      messageId: 'message-client-version',
+      text: 'go',
+      onAgentEvent: () => {},
+      onDelta: () => {},
+      signal: new AbortController().signal,
+    })
+    const initCalls = mocks.connection.agent.request.mock.calls as unknown as Array<[string, { clientInfo?: { name?: string; version?: string } }]>
+    const initCall = initCalls.find((call) => call[0] === 'initialize')
+    expect(initCall?.[1]?.clientInfo).toEqual({ name: 'superone-node', version: '9.9.9' })
   })
 
   it('cancels ask_user_question immediately when the runner has no question UI', async () => {

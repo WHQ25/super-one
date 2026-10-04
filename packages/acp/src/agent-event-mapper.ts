@@ -2,7 +2,7 @@ import type { AgentErrorInfo, AgentEvent, SlashCommandInfo } from '@superone/sha
 import { buildAgentErrorInfo } from '@superone/shared/agent-error'
 import type { SessionConfigOption, SessionUpdate } from '@agentclientprotocol/sdk'
 import { readArgumentHintFromMarkdownFile } from '@superone/runtime/fs'
-import { extractModeConfig, extractModelConfig } from './config-map'
+import { extractModelConfig, modesFromConfigOptions } from './config-map'
 import { isHiddenAcpPermissionSlashCommand } from './slash-filter'
 import {
   extractEmbeddedTerminalId,
@@ -205,7 +205,7 @@ export function mapSessionUpdate(
           status: 'ready',
         })
       }
-      const modes = extractModeConfig(configOptions)
+      const modes = modesFromConfigOptions(configOptions)
       if (modes) {
         events.push({
           type: 'acp_modes',

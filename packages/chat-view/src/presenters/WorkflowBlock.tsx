@@ -196,6 +196,11 @@ export function WorkflowBlockPresenter({
             {t('chat.workflow.spawning', 'Starting workflow…')}
           </span>
         )}
+        {!expanded && !isSpawning && terminalStatus === 'failed' && (
+          <span className="min-w-0 truncate text-left text-destructive">
+            {t('chat.workflow.failed', 'Workflow failed')}
+          </span>
+        )}
         {isRunning && retryBadge}
         <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
           {!expanded && activePhase && <span className="text-primary">{activePhase}</span>}
@@ -339,13 +344,18 @@ export function WorkflowBlockPresenter({
                   {elapsed > 0 ? ` · ${formatElapsed(elapsed)}` : ''}
                 </span>
               </>
-            ) : (
+            ) : isComplete ? (
               <>
                 <Check className="size-3 shrink-0 text-success" />
                 <span>
                   {t('chat.workflow.done', 'Workflow complete')}
                   {elapsed > 0 ? ` · ${formatElapsed(elapsed)}` : ''}
                 </span>
+              </>
+            ) : (
+              <>
+                <Loader2 className="size-3 animate-spin" />
+                <span>{t('chat.workflow.spawning', 'Starting workflow…')}</span>
               </>
             )}
             <span className="ml-auto flex items-center gap-1.5">{stats}</span>

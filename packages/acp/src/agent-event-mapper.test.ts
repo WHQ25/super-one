@@ -92,6 +92,29 @@ describe('ACP AgentEvent mapper', () => {
     }))
 
     expect(mapSessionUpdate(update({
+      sessionUpdate: 'config_option_update',
+      configOptions: [{
+        id: 'reasoning_effort',
+        name: 'Reasoning Effort',
+        category: 'thought_level',
+        type: 'select',
+        currentValue: 'high',
+        options: [
+          { value: 'high', name: 'High' },
+          { value: 'low', name: 'Low' },
+        ],
+      }],
+    }), { messageId: 'message-1' })).toContainEqual(expect.objectContaining({
+      type: 'acp_modes',
+      configId: 'reasoning_effort',
+      selectedModeId: 'high',
+      modes: [
+        { id: 'low', name: 'Low', description: '' },
+        { id: 'high', name: 'High', description: '' },
+      ],
+    }))
+
+    expect(mapSessionUpdate(update({
       sessionUpdate: 'available_commands_update',
       availableCommands: [
         { name: 'review', description: 'Review changes', input: { hint: '[path]' } },

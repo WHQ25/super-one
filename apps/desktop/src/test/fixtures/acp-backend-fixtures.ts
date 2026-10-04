@@ -120,6 +120,7 @@ export function mockAcpRuntime(overrides?: Partial<AcpRuntime>): AcpRuntime {
       conflicts: [],
     }),
     updateMcpServers: async () => {},
+    allowsProjectMcp: () => true,
     authenticateMcp: async () => {},
     getAgentCapabilities: () => null,
     getSessionUsage: async () => null,

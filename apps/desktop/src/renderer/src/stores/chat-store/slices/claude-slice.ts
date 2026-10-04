@@ -1,3 +1,4 @@
+import { toast } from 'sonner'
 import type { StateCreator } from 'zustand'
 import { shallow } from 'zustand/shallow'
 import type { EffortLevel, ModelOption } from '@superone/shared/agent-types'
@@ -43,6 +44,7 @@ export interface ClaudeSlice {
   setCursorModelParam: (id: string, value: string, target?: SessionWriteTarget) => void
   setFastMode: (enabled: boolean) => void
   setSelectedAcpMode: (modeId: string, target?: SessionWriteTarget) => void
+  setSelectedAcpContextWindow: (contextWindow: number, target?: SessionWriteTarget) => Promise<boolean>
   refreshClaudeResources: (force?: boolean) => Promise<void>
   refreshCursorSlashItems: (projectPath?: string) => Promise<void>
   /** Load Claude models for a project (remote → node provider store; local → connectClaude). */
@@ -256,6 +258,20 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     if (session.selectedAcpModeId === modeId) return
     set((s) => commitPerSession(s, target, () => ({ selectedAcpModeId: modeId })))
     void window.agent.setSessionSettings(projectPath, { mode: modeId }, ipcSessionId)
+  },
+
+  setSelectedAcpContextWindow: async (contextWindow, target) => {
+    const { projectPath, ipcSessionId, session } = resolveWriteScope(get(), target)
+    if (!projectPath) return false
+    const provider = session.sessionProvider ?? session.preferredProvider
+    if (provider !== 'acp') return false
+    try {
+      await window.agent.setSessionSettings(projectPath, { contextWindow }, ipcSessionId)
+      return true
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+      return false
+    }
   },
 
   setSelectedModel: (model, target) => {

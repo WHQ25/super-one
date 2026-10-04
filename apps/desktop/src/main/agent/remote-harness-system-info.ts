@@ -210,8 +210,8 @@ async function harnessSystemInfo(
       const sessionCatalog = catalog ? deriveSessionCatalog(catalog) : null
       const models = sessionCatalog?.models ?? []
       const model = preferredModel(models, sessionCatalog?.selectedModelId)
-      // Only Grok-style extraModes are reasoning effort; real `configOptions`
-      // modes are a session mode the backend applies through set_session_mode.
+      // Grok effort is extraModes or config id `reasoning_effort`. A real
+      // session mode (`mode`) stays out of the effort slider.
       const { efforts, modes, selectedModeId } = acpModeCatalog(sessionCatalog && {
         modes: sessionCatalog.modes,
         modeConfigId: sessionCatalog.modeConfigId,

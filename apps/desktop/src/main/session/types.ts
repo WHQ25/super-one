@@ -355,7 +355,7 @@ export interface SessionBackend {
   stopRealtimeVoice?(): Promise<void>
   getRealtimeTimeline?(): Promise<import('@superone/shared/agent-types').RealtimeTimelineResult>
   close(): Promise<void>
-  setModel(model: string): Promise<void>
+  setModel(model: string, opts?: { contextWindow?: number }): Promise<void>
   setCodexSelection?(selection: {
     model?: string | null
     reasoningEffort?: CodexReasoningEffort | null
@@ -499,9 +499,9 @@ export interface Session {
   getCurrentPermissionMode(): PermissionMode
   getCurrentSandboxInfo(): SandboxInfo
   getUiSettings(): import('@superone/shared/agent-types').SessionSettingsPatch
-  setModel(model: string): Promise<void>
+  setModel(model: string, opts?: { contextWindow?: number }): Promise<void>
   setSessionMode(modeId: string): Promise<void>
-  setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null }): void
+  setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null; contextWindow?: number | null }): void | Promise<void>
   broadcastSettingsPatch(patch: import('@superone/shared/agent-types').SessionSettingsPatch): void
   getSelectedModel(): string | undefined
   getSelectedEffort(): SendMessageRequest['effort']

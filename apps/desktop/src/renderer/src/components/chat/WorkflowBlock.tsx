@@ -14,6 +14,7 @@ import {
   resolveGrokWorkflowDir,
   stripWorkflowNamePrefix,
   workflowArtifactPath,
+  workflowToolTargetLabel,
   type WorkflowMeta,
 } from './workflow-utils'
 import { useWorkflowAgents, type WorkflowAgentInfo } from './use-workflow-agents'
@@ -123,12 +124,23 @@ export function WorkflowBlock({
   const hasTranscript = !!transcriptDir
   const hasLaunchIdentity = hasTranscript || !!runKey || !!progress?.taskId
   const launched = hasLaunchIdentity || !!progress
-  const isComplete = progress
+  // A denied or blocked call is ToolCallStatus::Failed ("was not executed") and
+  // never receives a run id. That is a start failure, not a finished run.
+  const launchError = resultBlock?.type === 'tool_result' && resultBlock.isError === true
+    ? resultBlock.summary
+    : undefined
+  const launchFailed = !!launchError && !hasLaunchIdentity && !progress
+  const isComplete = launchFailed || (progress
     ? progress.completed === true
-    : !!launch.transcriptDir || !!toolBlock.taskResultText || (!!runKey && !isStreaming)
-  const isRunning = launched ? !isComplete : isStreaming
-  const isSpawning = !launched && !isComplete && !meta.name
-  const terminalStatus = progress?.status
+    : !!launch.transcriptDir || !!toolBlock.taskResultText || (!!runKey && !isStreaming))
+  const isRunning = launchFailed ? false : (launched ? !isComplete : isStreaming)
+  const name = meta.name
+    || toolBlock.workflowName
+    || launch.name
+    || workflowToolTargetLabel(toolBlock.input)
+    || undefined
+  const isSpawning = !launchFailed && !launched && !isComplete && !name
+  const terminalStatus = launchFailed ? 'failed' as const : progress?.status
   const transcriptAgents = useWorkflowAgents(transcriptDir, hasTranscript, isComplete)
   const liveAgents: WorkflowAgentInfo[] = useMemo(() => {
     const rows = progress?.workflowAgents ?? toolBlock.workflowAgents
@@ -165,13 +177,14 @@ export function WorkflowBlock({
     ?? (resultBlock?.type === 'tool_result' ? resultBlock.outputPath : undefined)
   const output = useWorkflowOutput(outputFile, expanded && hasTranscript)
   const resultText = useMemo(() => {
+    if (launchFailed && launchError) return launchError
     if (progress?.resultText) return progress.resultText
     if (typeof toolBlock.taskResultText === 'string' && toolBlock.taskResultText) {
       return toolBlock.taskResultText
     }
     if (!output || output.result === undefined) return undefined
     return typeof output.result === 'string' ? output.result : JSON.stringify(output.result, null, 2)
-  }, [output, progress?.resultText, toolBlock.taskResultText])
+  }, [launchError, launchFailed, output, progress?.resultText, toolBlock.taskResultText])
   const agentsTokens = useMemo(
     () => agents.reduce((sum, agent) => sum + (agent.tokens ?? 0), 0),
     [agents],
@@ -186,7 +199,6 @@ export function WorkflowBlock({
     () => mergeWorkflowPhaseRows(livePhases, diskMeta?.phases, meta.phases, toolBlock.workflowPhases),
     [diskMeta?.phases, livePhases, meta.phases, toolBlock.workflowPhases],
   )
-  const name = meta.name || toolBlock.workflowName || launch.name || undefined
   const description = stripWorkflowNamePrefix(
     meta.description || toolBlock.workflowDescription || progress?.description || undefined,
     name,
@@ -232,7 +244,9 @@ export function WorkflowBlock({
         progress?.summary || progress?.description || toolBlock.taskSummary,
         name,
       )}
-      terminalSummary={stripWorkflowNamePrefix(progress?.summary, name)}
+      terminalSummary={launchFailed
+        ? launchError
+        : stripWorkflowNamePrefix(progress?.summary, name)}
       formatTokens={formatTokens}
       StructuredOutput={DesktopStructuredOutput}
     />

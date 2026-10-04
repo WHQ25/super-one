@@ -40,6 +40,7 @@ export function useScopedSessionActions() {
     setCursorModelParams: s.setCursorModelParams,
     setCursorModelParam: s.setCursorModelParam,
     setSelectedAcpMode: s.setSelectedAcpMode,
+    setSelectedAcpContextWindow: s.setSelectedAcpContextWindow,
     setSelectedCodexModel: s.setSelectedCodexModel,
     setSelectedCodexReasoningEffort: s.setSelectedCodexReasoningEffort,
     setSelectedCodexServiceTier: s.setSelectedCodexServiceTier,
@@ -68,6 +69,7 @@ export function useScopedSessionActions() {
       setCursorModelParams: (params: Record<string, string>) => actions.setCursorModelParams(params, target),
       setCursorModelParam: (id: string, value: string) => actions.setCursorModelParam(id, value, target),
       setSelectedAcpMode: (modeId: string) => actions.setSelectedAcpMode(modeId, target),
+      setSelectedAcpContextWindow: (contextWindow: number) => actions.setSelectedAcpContextWindow(contextWindow, target),
       setSelectedCodexModel: (model: string) => actions.setSelectedCodexModel(model, target),
       setSelectedCodexReasoningEffort: (effort?: CodexReasoningEffort) =>
         actions.setSelectedCodexReasoningEffort(effort, target),

@@ -10,6 +10,7 @@ import type {
   ModelOption,
   SlashCommandInfo,
 } from '@superone/shared/agent-types'
+import { isAcpEffortConfigId, isAcpEffortConfigOption } from '@superone/shared/effort-labels'
 import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
 import { listBuiltinAgentDescriptors, getBuiltinAgent } from './agent-catalog'
 import { createAcpRuntime } from './acp-runtime'
@@ -187,7 +188,7 @@ export function upsertAcpAgentConfig(
   return next
 }
 
-/** Persist Grok-style effort modes (modeConfigId null) without wiping models. */
+/** Persist session modes, or Grok effort (`reasoning_effort` / null), without wiping models. */
 export function upsertAcpAgentModes(agentId: string, mode: AcpModeConfig): AcpResources {
   const current = readAcpResourcesCache()
   const prev = current.configByAgentId?.[agentId]
@@ -202,10 +203,11 @@ export function upsertAcpAgentModes(agentId: string, mode: AcpModeConfig): AcpRe
     slashCommands: prev?.slashCommands,
     updatedAt: new Date().toISOString(),
   }
-  // When modes use a real setConfigOption id, prefer configOptions form.
-  if (mode.configId) {
+  // Real session modes use category=mode. Grok effort must stay thought_level
+  // (or extraModes when configId is null) so the next launch still draws a slider.
+  if (mode.configId && !isAcpEffortConfigId(mode.configId)) {
     const withoutMode = (prev?.configOptions ?? []).filter(
-      (o) => o.category !== 'mode' && o.id !== 'mode' && o.id !== mode.configId,
+      (o) => o.category !== 'mode' && o.id !== 'mode' && o.id !== mode.configId && !isAcpEffortConfigOption(o),
     )
     nextCatalog.configOptions = [
       ...withoutMode,
@@ -225,10 +227,28 @@ export function upsertAcpAgentModes(agentId: string, mode: AcpModeConfig): AcpRe
     nextCatalog.extraModes = undefined
     nextCatalog.modeConfigId = mode.configId
   } else {
-    // Strip any previously faked mode configOptions so derive keeps modeConfigId null.
-    nextCatalog.configOptions = (prev?.configOptions ?? []).filter(
-      (o) => o.category !== 'mode' && o.id !== 'mode',
+    const withoutEffort = (prev?.configOptions ?? []).filter(
+      (o) => o.category !== 'mode' && o.id !== 'mode' && !isAcpEffortConfigOption(o),
     )
+    nextCatalog.configOptions = mode.configId
+      ? [
+          ...withoutEffort,
+          {
+            id: mode.configId,
+            name: 'Reasoning Effort',
+            category: 'thought_level',
+            type: 'select',
+            currentValue: mode.selectedModeId,
+            options: mode.modes.map((m) => ({
+              value: m.id,
+              name: m.name,
+              description: m.description || null,
+            })),
+          },
+        ]
+      : withoutEffort
+    nextCatalog.extraModes = mode.modes
+    nextCatalog.modeConfigId = mode.configId
   }
   const configByAgentId = { ...(current.configByAgentId ?? {}), [agentId]: nextCatalog }
   const next = normalizeResources({ ...current, configByAgentId })

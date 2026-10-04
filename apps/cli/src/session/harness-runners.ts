@@ -1,7 +1,10 @@
+import type { HarnessCatalogReader } from '@superone/runtime/harness'
+import { resolveGrokRuntime } from '@superone/runtime/harness'
 import type { HarnessId } from '@superone/shared/session-types'
 import { NODE_HARNESS_DEFINITIONS } from '@superone/shared/environment/harness-installation'
 import { createSimulatedTurnRunner, type TurnRunner } from '@superone/runtime/session'
 import { createAcpTurnRunner, createSimulatedAcpTurnRunner } from '@superone/acp'
+import { resolveCliReleaseVersion } from '../cli-release-version'
 import {
   createOpenCodeTurnRunner,
   createSimulatedOpenCodeTurnRunner,
@@ -66,10 +69,31 @@ export function createMultiHarnessRouter(
  * simulated **only** when `allowSimulatedFallback: true` (tests / CI overlay).
  * Production must pass false or omit — never silently simulate.
  */
+/** Harness-stored grok binary when the catalog has one; otherwise the explicit path. */
+export function resolveProductionAcpLaunch(opts: {
+  harnesses?: HarnessCatalogReader | null
+  acpBinaryPath?: string | null
+}): { binaryPath?: string | null; args?: string[]; agentId?: string } {
+  if (opts.harnesses) {
+    const grok = resolveGrokRuntime(opts.harnesses, {
+      command: opts.acpBinaryPath?.trim() || undefined,
+    })
+    if (grok) {
+      return { binaryPath: grok.command, args: grok.args, agentId: 'grok-build' }
+    }
+  }
+  return { binaryPath: opts.acpBinaryPath ?? null }
+}
+
 export function createAcpOpenCodeProductionRouter(opts?: {
   allowSimulatedFallback?: boolean
   resolveProjectPath?: (projectId: string) => string | null
   acpBinaryPath?: string | null
+  acpArgs?: string[]
+  acpAgentId?: string
+  harnesses?: HarnessCatalogReader | null
+  /** ACP clientInfo.version. Defaults to the CLI release version. */
+  clientVersion?: string
   openCodeBinaryPath?: string | null
   /** SuperOne Host Action MCP for ACP session/new. */
   getAcpMcpServers?: (sessionId: string) => unknown[] | null
@@ -80,14 +104,6 @@ export function createAcpOpenCodeProductionRouter(opts?: {
 }): TurnRunner {
   // Opt-in only. `undefined` and `false` both fail closed without a real binary.
   const allowSim = opts?.allowSimulatedFallback === true
-  const acp = createAcpTurnRunner({
-    allowSimulatedFallback: allowSim,
-    resolveProjectPath: opts?.resolveProjectPath,
-    binaryPath: opts?.acpBinaryPath,
-    getMcpServers: opts?.getAcpMcpServers
-      ? (sessionId) => opts.getAcpMcpServers!(sessionId) ?? []
-      : undefined,
-  })
   const opencode = createOpenCodeTurnRunner({
     allowSimulatedFallback: allowSim,
     resolveProjectPath: opts?.resolveProjectPath,
@@ -96,7 +112,26 @@ export function createAcpOpenCodeProductionRouter(opts?: {
   })
   return async (input) => {
     const harnessId = input.session.harnessId || 'codex'
-    if (harnessId === 'acp') return acp(input)
+    if (harnessId === 'acp') {
+      // Catalog enable and command changes happen after the node process starts.
+      // Resolve on the turn so the first ACP call sees the current grok binary.
+      const acpLaunch = resolveProductionAcpLaunch({
+        harnesses: opts?.harnesses,
+        acpBinaryPath: opts?.acpBinaryPath,
+      })
+      const acp = createAcpTurnRunner({
+        allowSimulatedFallback: allowSim,
+        resolveProjectPath: opts?.resolveProjectPath,
+        binaryPath: acpLaunch.binaryPath,
+        args: opts?.acpArgs ?? acpLaunch.args,
+        agentId: opts?.acpAgentId ?? acpLaunch.agentId,
+        clientVersion: opts?.clientVersion ?? resolveCliReleaseVersion(),
+        getMcpServers: opts?.getAcpMcpServers
+          ? (sessionId) => opts.getAcpMcpServers!(sessionId) ?? []
+          : undefined,
+      })
+      return acp(input)
+    }
     if (harnessId === 'opencode') return opencode(input)
     throw new Error(`createAcpOpenCodeProductionRouter: unexpected harness ${harnessId}`)
   }

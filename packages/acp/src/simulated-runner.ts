@@ -29,9 +29,13 @@ export interface CreateAcpTurnRunnerOptions extends RunAcpTurnOptions {
   /** Explicit agent binary path (or SUPERONE_ACP_BINARY / SUPERONE_ACP_COMMAND). */
   binaryPath?: string | null
   args?: string[]
+  /** Production grok launches set this to `grok-build`. */
+  agentId?: string
 }
 
-function resolveLaunch(opts: CreateAcpTurnRunnerOptions): AcpLaunch | null {
+const DEFAULT_GROK_ARGS = ['agent', 'stdio']
+
+export function resolveAcpProductionLaunch(opts: CreateAcpTurnRunnerOptions): AcpLaunch | null {
   if (opts.launch?.command) return opts.launch
   const fromEnv =
     process.env.SUPERONE_ACP_BINARY?.trim() ||
@@ -41,10 +45,13 @@ function resolveLaunch(opts: CreateAcpTurnRunnerOptions): AcpLaunch | null {
   if (fromEnv.includes('/') || fromEnv.includes('\\')) {
     if (!existsSync(fromEnv)) return null
   }
+  const fromOpts = opts.args?.filter((arg) => arg.trim().length > 0) ?? []
+  const fromEnvArgs = process.env.SUPERONE_ACP_ARGS?.trim().split(/\s+/).filter(Boolean) ?? []
+  const args = fromOpts.length > 0 ? fromOpts : fromEnvArgs.length > 0 ? fromEnvArgs : DEFAULT_GROK_ARGS
   return {
     command: fromEnv,
-    args: opts.args ?? (process.env.SUPERONE_ACP_ARGS?.trim().split(/\s+/).filter(Boolean) || []),
-    agentId: opts.launch?.agentId ?? 'acp',
+    args,
+    agentId: opts.agentId ?? 'grok-build',
   }
 }
 
@@ -52,12 +59,13 @@ function resolveLaunch(opts: CreateAcpTurnRunnerOptions): AcpLaunch | null {
  * Production entry: real ACP agent process when command is configured, else simulated.
  */
 export function createAcpTurnRunner(opts: CreateAcpTurnRunnerOptions = {}): TurnRunner {
-  const launch = resolveLaunch(opts)
+  const launch = resolveAcpProductionLaunch(opts)
   if (launch) {
     return createAcpAgentTurnRunner({
       launch,
       resolveProjectPath: opts.resolveProjectPath,
       clientName: opts.clientName,
+      clientVersion: opts.clientVersion,
       mcpServers: opts.mcpServers,
       getMcpServers: opts.getMcpServers,
     })

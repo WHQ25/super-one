@@ -6,6 +6,7 @@ import type {
   EffortLevel,
   ModelOption,
 } from '@superone/shared/agent-types'
+import { isAcpEffortConfigOption } from '@superone/shared/effort-labels'
 import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 
@@ -64,7 +65,9 @@ function flattenSelectOptions(options: unknown): Array<{ value: string; name: st
 export interface AcpModeConfig {
   /**
    * ACP configId for session/set_config_option.
+   * `reasoning_effort` is Grok thought_level (effort slider, session/set_config_option).
    * null when modes come from Grok x.ai/sessionConfig (effort via session/set_model + _meta.reasoningEffort).
+   * `mode` is a real session mode (OpenCode), not reasoning effort.
    */
   configId: string | null
   modes: ModelOption[]
@@ -73,6 +76,10 @@ export interface AcpModeConfig {
 
 function isModeSelect(o: ConfigOptionLike): boolean {
   return o.type === 'select' && (o.category === 'mode' || o.id === 'mode')
+}
+
+function isReasoningEffortSelect(o: ConfigOptionLike): boolean {
+  return (o.type == null || o.type === 'select') && isAcpEffortConfigOption(o)
 }
 
 function serializeSelectValues(options: unknown): AcpConfigSelectValue[] | undefined {
@@ -131,7 +138,7 @@ export function serializeConfigOptions(
   return out
 }
 
-/** Prefer category "model", else option id "model", else first non-mode select. */
+/** Prefer category "model", else option id "model", else first select that is neither a session mode nor reasoning effort. */
 export function extractModelConfig(
   configOptions: Array<ConfigOptionLike | SessionConfigOption> | null | undefined,
 ): AcpModelConfig | null {
@@ -142,7 +149,7 @@ export function extractModelConfig(
 
   const byCategory = selects.find((o) => o.category === 'model')
   const byId = selects.find((o) => o.id === 'model')
-  const fallback = selects.find((o) => !isModeSelect(o))
+  const fallback = selects.find((o) => !isModeSelect(o) && !isReasoningEffortSelect(o))
   const chosen = byCategory ?? byId ?? fallback
   if (!chosen || chosen.type !== 'select' || typeof chosen.id !== 'string') return null
 
@@ -165,6 +172,42 @@ export function extractModelConfig(
   }
 }
 
+function selectToModeConfig(
+  chosen: ConfigOptionLike,
+  opts?: { sortEffort?: boolean },
+): AcpModeConfig | null {
+  if ((chosen.type != null && chosen.type !== 'select') || typeof chosen.id !== 'string') return null
+  const modes: ModelOption[] = flattenSelectOptions(chosen.options).map((opt) => ({
+    id: opt.value,
+    name: opt.name,
+    description: opt.description,
+  }))
+  if (modes.length === 0) return null
+  const ordered = opts?.sortEffort ? sortEffortModesAscending(modes) : modes
+  const selected =
+    typeof chosen.currentValue === 'string' && ordered.some((m) => m.id === chosen.currentValue)
+      ? chosen.currentValue
+      : (ordered[0]?.id ?? null)
+  return {
+    configId: chosen.id,
+    modes: ordered,
+    selectedModeId: selected,
+  }
+}
+
+/**
+ * Grok reasoning effort: config id `reasoning_effort`, category `thought_level`.
+ * Values stay on the model-selector slider and change via session/set_config_option.
+ */
+export function extractReasoningEffortConfig(
+  configOptions: Array<ConfigOptionLike | SessionConfigOption> | null | undefined,
+): AcpModeConfig | null {
+  if (!configOptions?.length) return null
+  const chosen = configOptions.find((o) => isReasoningEffortSelect(o))
+  if (!chosen) return null
+  return selectToModeConfig(chosen, { sortEffort: true })
+}
+
 /** Prefer category "mode", else option id "mode". No fallback to other selects. */
 export function extractModeConfig(
   configOptions: Array<ConfigOptionLike | SessionConfigOption> | null | undefined,
@@ -174,25 +217,18 @@ export function extractModeConfig(
   const selects = configOptions.filter((o) => o.type === 'select')
   const chosen = selects.find((o) => o.category === 'mode')
     ?? selects.find((o) => o.id === 'mode')
-  if (!chosen || chosen.type !== 'select' || typeof chosen.id !== 'string') return null
+  if (!chosen) return null
+  return selectToModeConfig(chosen)
+}
 
-  const modes: ModelOption[] = flattenSelectOptions(chosen.options).map((opt) => ({
-    id: opt.value,
-    name: opt.name,
-    description: opt.description,
-  }))
-  if (modes.length === 0) return null
-
-  const selected =
-    typeof chosen.currentValue === 'string' && modes.some((m) => m.id === chosen.currentValue)
-      ? chosen.currentValue
-      : (modes[0]?.id ?? null)
-
-  return {
-    configId: chosen.id,
-    modes,
-    selectedModeId: selected,
-  }
+/**
+ * Effort catalog when Grok advertises `reasoning_effort`, otherwise a real
+ * session-mode select. Does not read x.ai/sessionConfig.
+ */
+export function modesFromConfigOptions(
+  configOptions: Array<ConfigOptionLike | SessionConfigOption> | null | undefined,
+): AcpModeConfig | null {
+  return extractReasoningEffortConfig(configOptions) ?? extractModeConfig(configOptions)
 }
 
 function overlayModelOption(primary: ModelOption, extra: ModelOption | undefined): ModelOption {
@@ -207,6 +243,9 @@ function overlayModelOption(primary: ModelOption, extra: ModelOption | undefined
       : {}),
     ...(primary.supportedEffortLevels == null && extra.supportedEffortLevels != null
       ? { supportedEffortLevels: extra.supportedEffortLevels }
+      : {}),
+    ...(primary.contextWindows == null && extra.contextWindows != null
+      ? { contextWindows: extra.contextWindows }
       : {}),
   }
 }
@@ -246,7 +285,8 @@ export function deriveSessionCatalog(catalog: AcpAgentConfigCatalog): AcpSession
       ?? models[0]?.id
       ?? null)
   const modelConfigId = fromOptions?.configId ?? catalog.modelConfigId ?? null
-  const modesCfg = extractModeConfig(catalog.configOptions)
+  // Grok thought_level wins over a session mode and over legacy extraModes.
+  const modesCfg = modesFromConfigOptions(catalog.configOptions)
   // Prefer standard configOptions modes; else Grok-style extraModes (modeConfigId may be null).
   const modes = modesCfg?.modes.length
     ? modesCfg.modes
@@ -319,12 +359,14 @@ export function extractModelsFromAgentModelsField(raw: unknown): AcpModelConfig 
       ?? (meta && typeof meta.context_window === 'number' ? meta.context_window : undefined)
       ?? (meta && typeof meta.contextWindow === 'number' ? meta.contextWindow : undefined)
     const contextWindow = typeof rawCw === 'number' && Number.isFinite(rawCw) && rawCw > 0 ? rawCw : undefined
+    const listedWindows = parseContextWindows(meta?.contextWindows ?? m.contextWindows)
     const effortLevels = parseModelEffortLevels(m, meta)
     models.push({
       id,
       name,
       description: typeof m.description === 'string' ? m.description : '',
       ...(contextWindow != null ? { contextWindow } : {}),
+      ...(listedWindows ? { contextWindows: listedWindows } : {}),
       ...(effortLevels ? { supportsEffort: true, supportedEffortLevels: effortLevels } : {}),
     })
   }
@@ -336,6 +378,12 @@ export function extractModelsFromAgentModelsField(raw: unknown): AcpModelConfig 
       : (models[0]?.id ?? null)
 
   return { configId: null, models, selectedModelId: current }
+}
+
+function parseContextWindows(raw: unknown): number[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const windows = raw.filter((item): item is number => typeof item === 'number' && Number.isFinite(item) && item > 0)
+  return windows.length > 0 ? windows : undefined
 }
 
 const ACP_EFFORT_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max'])
@@ -483,11 +531,11 @@ export function extractModesFromXaiSessionConfig(meta: unknown): AcpModeConfig |
   }
 }
 
-/** Modes from session/new: standard configOptions first, else Grok x.ai sessionConfig. */
+/** Modes from session/new: Grok reasoning_effort, else session mode, else x.ai sessionConfig. */
 export function extractModesFromNewSessionResult(result: unknown): AcpModeConfig | null {
   if (!result || typeof result !== 'object') return null
   const r = result as Record<string, unknown>
-  const fromConfig = extractModeConfig(r.configOptions as SessionConfigOption[] | undefined)
+  const fromConfig = modesFromConfigOptions(r.configOptions as SessionConfigOption[] | undefined)
   if (fromConfig) return fromConfig
   return extractModesFromXaiSessionConfig(r._meta)
 }
@@ -562,6 +610,11 @@ export function coalesceModelConfig(...candidates: Array<AcpModelConfig | null |
 export interface AcpSetModelOptions {
   /** Grok reasoning effort id (minimal|low|medium|high|xhigh|…). */
   reasoningEffort?: string
+  /**
+   * Listed context window. Omitted means the agent keeps the current window.
+   * An unsupported number is sent as-is so the agent returns invalid_params.
+   */
+  contextWindow?: number
 }
 
 /**
@@ -574,11 +627,14 @@ export function buildSetModelParams(
   opts?: AcpSetModelOptions,
 ): Record<string, unknown> {
   const effort = opts?.reasoningEffort?.trim()
+  const meta: Record<string, unknown> = {}
+  if (effort) meta.reasoningEffort = effort
+  if (opts?.contextWindow != null && Number.isFinite(opts.contextWindow)) {
+    meta.contextWindow = opts.contextWindow
+  }
   return {
     sessionId,
     modelId,
-    ...(effort
-      ? { _meta: { reasoningEffort: effort } }
-      : {}),
+    ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
   }
 }

@@ -1635,6 +1635,16 @@ export type Messages = {
       auto: { label: string; description: string }
       alwaysApprove: { label: string; description: string }
       autoFailClosedToast: string
+      folderTrustTitle: string
+      folderTrustBody: string
+      folderTrustWorkspace: string
+      folderTrustCwd: string
+      folderTrustKinds: string
+      folderTrustEmptyKinds: string
+      folderTrustAllow: string
+      folderTrustReject: string
+      contextWindowLabel: string
+      contextWindowPreserve: string
     }
     /** Cursor SDK modes — Agent / Plan / Full Access (sandbox is separate). */
     cursorPermissionModes: {
@@ -5828,6 +5838,16 @@ export const en: Messages = {
         description: 'Skip ordinary prompts; deny rules still apply',
       },
       autoFailClosedToast: 'Grok Auto under SuperOne will deny classifier blocks without asking. Stay on Ask if you want a prompt.',
+      folderTrustTitle: 'Trust this folder?',
+      folderTrustBody: 'Grok loads project rules, MCP servers, hooks, and skills only after you trust the folder.',
+      folderTrustWorkspace: 'Workspace',
+      folderTrustCwd: 'Directory',
+      folderTrustKinds: 'Config',
+      folderTrustEmptyKinds: 'No project config kinds were listed.',
+      folderTrustAllow: 'Trust',
+      folderTrustReject: 'Don\'t trust',
+      contextWindowLabel: 'Context window',
+      contextWindowPreserve: 'Keep current',
     },
     cursorPermissionModes: {
       agent: {

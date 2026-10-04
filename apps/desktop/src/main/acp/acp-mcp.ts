@@ -9,6 +9,12 @@ import type { AcpAgentCapabilities } from './acp-config'
 
 export const SUPERONE_ACP_MCP_NAME = 'superone'
 
+function bearerTokenMeta(file: string | undefined): { _meta: { 'x.ai/mcp/bearerTokenFile': string } } | Record<string, never> {
+  const tokenFile = file?.trim()
+  if (!tokenFile) return {}
+  return { _meta: { 'x.ai/mcp/bearerTokenFile': tokenFile } }
+}
+
 export function buildSuperoneAcpMcpServer(
   superoneSessionId: string,
   caps: AcpMcpTransportCaps = { http: false, sse: false },
@@ -59,7 +65,7 @@ export function toAcpMcpServer(
   caps: AcpMcpTransportCaps,
 ): McpServer | null {
   if (config.disabled) return null
-  const name = config.name?.trim()
+  const name = acpMcpName(config.name)
   if (!name) return null
 
   if (config.type === 'http') {
@@ -71,6 +77,7 @@ export function toAcpMcpServer(
       name,
       url,
       headers: Object.entries(config.headers ?? {}).map(([n, value]) => ({ name: n, value })),
+      ...bearerTokenMeta(config.bearerTokenFile),
     }
   }
 
@@ -83,6 +90,7 @@ export function toAcpMcpServer(
       name,
       url,
       headers: Object.entries(config.headers ?? {}).map(([n, value]) => ({ name: n, value })),
+      ...bearerTokenMeta(config.bearerTokenFile),
     }
   }
 
@@ -107,6 +115,12 @@ export function buildAcpSessionMcpServers(opts: {
   agentCapabilities?: AcpAgentCapabilities | null
   /** Inject for tests — defaults to listMcpConfigs(cwd). */
   listConfigs?: (cwd: string) => McpServerConfig[]
+  /**
+   * When false, omit `scope: 'project'` servers. Grok does not treat every
+   * host project file as project-scoped, so the host must gate them itself.
+   * Default true keeps non-Grok sessions unchanged.
+   */
+  includeProjectScope?: boolean
 }): McpServer[] {
   const servers: McpServer[] = []
   const reserved = new Set<string>()
@@ -121,7 +135,9 @@ export function buildAcpSessionMcpServers(opts: {
   }
 
   const list = opts.listConfigs ?? listMcpConfigs
+  const includeProject = opts.includeProjectScope !== false
   for (const cfg of list(opts.cwd)) {
+    if (!includeProject && cfg.scope === 'project') continue
     if (reserved.has(cfg.name)) continue
     const mapped = toAcpMcpServer(cfg, caps)
     if (!mapped) continue
@@ -132,4 +148,45 @@ export function buildAcpSessionMcpServers(opts: {
   }
 
   return servers
+}
+
+/** Same identity `toAcpMcpServer` writes onto the ACP descriptor. */
+function acpMcpName(name: string | undefined): string {
+  return name?.trim() ?? ''
+}
+
+/** Names Grok would not treat as project-scoped, so the host must drop them itself. */
+export function projectScopedMcpNames(
+  cwd: string,
+  listConfigs?: (cwd: string) => McpServerConfig[],
+): Set<string> {
+  const list = listConfigs ?? listMcpConfigs
+  const names = new Set<string>()
+  for (const cfg of list(cwd)) {
+    if (cfg.scope !== 'project') continue
+    const name = acpMcpName(cfg.name)
+    if (name) names.add(name)
+  }
+  return names
+}
+
+/**
+ * Drop project-scope servers from an already-built ACP list.
+ * Used by every grok-build update, including reload and reconnect.
+ */
+export function omitUntrustedProjectMcpServers<T>(
+  servers: T[],
+  cwd: string,
+  listConfigs?: (cwd: string) => McpServerConfig[],
+): T[] {
+  const blocked = projectScopedMcpNames(cwd, listConfigs)
+  if (blocked.size === 0) return servers
+  return servers.filter((server) => {
+    const raw = server && typeof server === 'object' && 'name' in server
+      ? (server as { name?: unknown }).name
+      : undefined
+    if (typeof raw !== 'string') return true
+    const name = acpMcpName(raw)
+    return !name || !blocked.has(name)
+  })
 }

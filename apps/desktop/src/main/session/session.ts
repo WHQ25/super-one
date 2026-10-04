@@ -969,12 +969,10 @@ export class Session implements SessionContract {
       trace('permission.flow', 'session_setMode_noop', { sid: this.id, mode })
       return
     }
-    this.permissionMode = mode
-    this.mergeUiSettings({ permissionMode: mode })
-    this.forwardEvent({ type: 'permission_mode_change', mode })
-    this.forwardEvent({ type: 'agent_setting_change', patch: { permissionMode: mode } } as AgentEvent)
-    // Always push to the backend: ACP/Claude may already have a prewarmed runtime
-    // before ensureStarted() flips backendStarted. Backends no-op when not ready.
+    // Always push to the backend first. ACP/Claude may already have a prewarmed
+    // runtime before ensureStarted() flips backendStarted. The chip is written
+    // only after the RPC succeeds, so a failed set_mode or yolo_mode_changed
+    // leaves the previous mode in place.
     trace('permission.flow', 'session_setMode_fast_path', { sid: this.id, prev, next: mode, backendStarted: this.backendStarted })
     try {
       await this.backend.setPermissionMode(mode)
@@ -983,6 +981,10 @@ export class Session implements SessionContract {
       trace('permission.flow', 'session_setMode_fast_error', { sid: this.id, mode, err: (err as Error)?.message })
       throw err
     }
+    this.permissionMode = mode
+    this.mergeUiSettings({ permissionMode: mode })
+    this.forwardEvent({ type: 'permission_mode_change', mode })
+    this.forwardEvent({ type: 'agent_setting_change', patch: { permissionMode: mode } } as AgentEvent)
   }
 
   async setSandboxMode(mode: SandboxMode): Promise<SandboxInfo> {
@@ -1021,15 +1023,16 @@ export class Session implements SessionContract {
     return this.sandboxInfo
   }
 
-  async setModel(model: string): Promise<void> {
+  async setModel(model: string, opts?: { contextWindow?: number }): Promise<void> {
     this.assertNotDisposed()
     this.touchRuntimeActivity()
     this.model = model
     // Always push: ACP may already have a prewarmed runtime before backendStarted flips.
     try {
-      await this.backend.setModel(model)
+      await this.backend.setModel(model, opts)
     } catch (err) {
       log.warn('[Session] backend.setModel failed:', err)
+      if (opts?.contextWindow != null) throw err
     }
   }
 
@@ -1061,7 +1064,7 @@ export class Session implements SessionContract {
     })
   }
 
-  setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null }): void {
+  setSelectedSettings(opts: { model?: string | null; effort?: SendMessageRequest['effort'] | null; mode?: string | null; contextWindow?: number | null }): void | Promise<void> {
     this.assertNotDisposed()
     let changed = false
     if (opts.model !== undefined) {
@@ -1080,20 +1083,27 @@ export class Session implements SessionContract {
       this.mergeUiSettings({ selectedAcpModeId: opts.mode })
       void this.setSessionMode(opts.mode)
     }
-    if (!changed && opts.mode === undefined) return
-    const patch: import('@superone/shared/agent-types').SessionSettingsPatch = {
-      selectedModel: this.model ?? null,
-      selectedEffort: this.effort ?? null,
-      ...(opts.mode ? { selectedAcpModeId: opts.mode } : {}),
+    const applyWindow = opts.contextWindow != null && Number.isFinite(opts.contextWindow)
+    if (!changed && opts.mode === undefined && !applyWindow) return
+    if (changed || opts.mode !== undefined) {
+      const patch: import('@superone/shared/agent-types').SessionSettingsPatch = {
+        selectedModel: this.model ?? null,
+        selectedEffort: this.effort ?? null,
+        ...(opts.mode ? { selectedAcpModeId: opts.mode } : {}),
+      }
+      this.mergeUiSettings(patch)
+      this.forwardEvent({
+        type: 'agent_setting_change',
+        selectedModel: this.model ?? null,
+        selectedEffort: this.effort ?? null,
+        patch,
+      })
+      if (changed) this.notifyStateChange()
     }
-    this.mergeUiSettings(patch)
-    this.forwardEvent({
-      type: 'agent_setting_change',
-      selectedModel: this.model ?? null,
-      selectedEffort: this.effort ?? null,
-      patch,
-    })
-    if (changed) this.notifyStateChange()
+    if (applyWindow) {
+      if (!this.model) throw new Error('ACP model is not selected')
+      return this.setModel(this.model, { contextWindow: opts.contextWindow as number })
+    }
   }
 
   getSelectedModel(): string | undefined { return this.model }

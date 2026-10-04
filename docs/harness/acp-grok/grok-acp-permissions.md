@@ -58,20 +58,34 @@ to that notification: it can cause otherwise valid updates to be ignored.
 `acceptEdits` and `dontAsk` have no distinct mapping in this control.
 
 Grok's Generic-client Auto can deny a classifier-blocked request without asking
-the host. `acp-auto-honesty.ts` supplies the user-facing explanation. The host
-must not promise Claude's Auto semantics or spoof client identity to change it.
+the host. A failed tool result shaped as `Tool \`name\` was not executed: Auto mode blocked this action`
+is shown as a deny on that tool card. A successful result that only quotes the
+sentence is left unchanged. `acp-auto-honesty.ts` supplies the one-time
+explanation. The host must not promise Claude's Auto semantics or spoof client
+identity to change it.
 
 ## Plan mode and reasoning effort
 
 Entering Plan uses ACP `session/set_mode` with `modeId: 'plan'`. The desktop
-runtime commits its local plan state only after that request succeeds; failure
-propagates rather than leaving the selector in a mode the agent never entered.
-Leaving plan resets the local state, attempts the default session mode, then
-sends the permission baseline. The latter calls are best-effort and logged.
+runtime and `Session.setPermissionMode` both commit the mode only after
+`session/set_mode` or `x.ai/yolo_mode_changed` succeeds. A failure leaves the
+chip on the previous mode. Create-time plan is recorded before the runtime
+exists; if that `set_mode` fails, the runtime reports `default` and the session
+rolls the chip back. `yolo_mode_changed` is a JSON-RPC notification, so the
+agent cannot reject it. Only a local send failure rolls a plan exit back, and
+the runtime then tries to restore `session/set_mode` plan.
+Leaving plan requires `session/set_mode` `default` to succeed before the
+permission baseline is sent. A failure stays on plan and does not send
+`yolo_mode_changed`. A switch that was not in plan may still ignore an
+unsupported `set_mode`.
 
-Prompt `_meta.mode` uses `plan` or `agent`. Reasoning effort uses Grok model/config
-resources and must not be inferred from the host permission selector. Agent
-`current_mode_update` notifications synchronize the session-mode state.
+Prompt `_meta.mode` uses `plan` or `agent`. Reasoning effort is ACP config
+option `reasoning_effort` (category `thought_level`), changed with
+`session/set_config_option`, and stays on the model-selector slider. Older
+agents that only advertise x.ai `sessionConfig` category `mode` still switch
+with `session/set_model` and `_meta.reasoningEffort`. Effort must not be
+inferred from the host permission selector. Agent `current_mode_update`
+notifications synchronize the session-mode state.
 
 `x.ai/ask_user_question`, `x.ai/exit_plan_mode` and `x.ai/mcp/elicit` have separate
 reverse-request handlers. Plan review is a shared `plan_approval` interaction;

@@ -37,7 +37,10 @@ harness README.
 
 A ledger starts with the first upgrade planned after the harness gets an exact pin.
 `api-surface.md` stays explicitly unstarted until inventoried; existing integration
-knowledge can populate `contracts.md` and `backlog.md` independently.
+knowledge can populate `contracts.md` and `backlog.md` independently. A
+user-installed runtime that SuperOne does not pin, such as Grok or OpenCode,
+still gets `upgrades/<version>.md`. That version is the runtime revision that
+was read, not the SDK caret.
 
 | Document | Changes by | Answers |
 |---|---|---|

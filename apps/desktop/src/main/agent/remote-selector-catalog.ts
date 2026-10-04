@@ -11,7 +11,7 @@ import type {
   RemoteProviderOption,
 } from '@superone/shared/agent-types'
 import { claudeAccountProviderId } from '@superone/shared/agent-types'
-import { formatEffortOptionLabel, sortEffortsAscending } from '@superone/shared/effort-labels'
+import { formatEffortOptionLabel, isAcpEffortConfigId, sortEffortsAscending } from '@superone/shared/effort-labels'
 
 /**
  * The catalogs the desktop model selector renders next to model + effort, projected
@@ -21,7 +21,7 @@ import { formatEffortOptionLabel, sortEffortsAscending } from '@superone/shared/
 
 export interface AcpModeSource {
   modes: ModelOption[]
-  /** `null` means the agent ships Grok-style extraModes, which ARE reasoning effort. */
+  /** `null` or `reasoning_effort` means Grok reasoning effort. Other ids are session modes. */
   modeConfigId: string | null
   selectedModeId: string | null
 }
@@ -37,12 +37,13 @@ export interface AcpModeProjection {
  * `AcpModelSelector` does. Sending real session modes as `efforts` used to make
  * mobile draw a slider for `ask`/`code`, which the backend then dropped, because
  * only `low…max` survive `asGrokReasoningEffort`.
+ * Grok's live catalog uses config id `reasoning_effort` (category `thought_level`).
  */
 export function acpModeCatalog(source: AcpModeSource | null): AcpModeProjection {
   const modes = source?.modes ?? []
   if (modes.length === 0) return { efforts: [], modes: [], selectedModeId: null }
 
-  if (source!.modeConfigId == null) {
+  if (isAcpEffortConfigId(source!.modeConfigId)) {
     const efforts = sortEffortsAscending(modes.map((mode) => ({
       value: mode.id,
       label: formatEffortOptionLabel(mode.name || mode.id),

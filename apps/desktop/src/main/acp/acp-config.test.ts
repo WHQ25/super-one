@@ -91,6 +91,24 @@ describe('extractModelConfig', () => {
     ] as SessionConfigOption[]
     expect(extractModelConfig(options)).toBeNull()
   })
+
+  it('does not treat Grok reasoning_effort as the model list', () => {
+    const options = [
+      {
+        id: 'reasoning_effort',
+        name: 'Reasoning Effort',
+        category: 'thought_level',
+        type: 'select',
+        currentValue: 'high',
+        options: [
+          { value: 'low', name: 'Low' },
+          { value: 'high', name: 'High' },
+        ],
+      },
+    ] as SessionConfigOption[]
+    expect(extractModelConfig(options)).toBeNull()
+    expect(extractModeConfig(options)).toBeNull()
+  })
 })
 
 describe('extractModeConfig', () => {
@@ -207,6 +225,28 @@ describe('serializeConfigOptions + deriveSessionCatalog', () => {
     expect(session.models[0]).toMatchObject({ id: 'grok-4.6', contextWindow: 500_000 })
   })
 
+  it('overlays extraModels contextWindows onto configOptions models', () => {
+    const session = deriveSessionCatalog({
+      configOptions: [{
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        type: 'select',
+        currentValue: 'grok-4.6',
+        options: [{ value: 'grok-4.6', name: 'Grok 4.6' }],
+      }],
+      extraModels: [{
+        id: 'grok-4.6',
+        name: 'Grok 4.6',
+        description: '',
+        contextWindows: [128_000, 256_000],
+      }],
+      selectedModelId: 'grok-4.6',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    })
+    expect(session.models[0]?.contextWindows).toEqual([128_000, 256_000])
+  })
+
   it('uses extraModes with null modeConfigId for Grok effort', () => {
     const session = deriveSessionCatalog({
       configOptions: [],
@@ -289,6 +329,23 @@ describe('extractModelsFromInitializeResult (Grok)', () => {
       },
     })
     expect(result?.models[0]?.contextWindow).toBe(500_000)
+  })
+
+  it('keeps a contextWindows list when the model offers more than one', () => {
+    const result = extractModelsFromInitializeResult({
+      protocolVersion: 1,
+      _meta: {
+        modelState: {
+          currentModelId: 'grok-4.5',
+          availableModels: [{
+            modelId: 'grok-4.5',
+            name: 'Grok 4.5',
+            _meta: { contextWindows: [128_000, 256_000, 0, 'big'] },
+          }],
+        },
+      },
+    })
+    expect(result?.models[0]?.contextWindows).toEqual([128_000, 256_000])
   })
 
   it('reads grok-4.6 reasoningEfforts from model meta and ignores minimal', () => {
@@ -386,6 +443,29 @@ describe('extractModelsFromNewSessionResult (Grok)', () => {
       { id: 'grok-4.5', name: 'Grok 4.5', description: '', contextWindow: 500_000 },
     ])
   })
+
+  it('keeps contextWindows from models when configOptions win the picker', () => {
+    const result = extractModelsFromNewSessionResult({
+      sessionId: 's1',
+      configOptions: [{
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        type: 'select',
+        currentValue: 'grok-4.6',
+        options: [{ value: 'grok-4.6', name: 'Grok 4.6' }],
+      }],
+      models: {
+        currentModelId: 'grok-4.6',
+        availableModels: [{
+          modelId: 'grok-4.6',
+          name: 'Grok 4.6',
+          _meta: { contextWindows: [128_000, 256_000] },
+        }],
+      },
+    })
+    expect(result?.models[0]?.contextWindows).toEqual([128_000, 256_000])
+  })
 })
 
 describe('coalesceModelConfig', () => {
@@ -471,6 +551,65 @@ describe('extractModesFromXaiSessionConfig (Grok effort)', () => {
     expect(result?.configId).toBe('mode')
     expect(result?.selectedModeId).toBe('code')
   })
+
+  it('extractModesFromNewSessionResult keeps Grok thought_level as the effort catalog', () => {
+    const result = extractModesFromNewSessionResult({
+      configOptions: [
+        {
+          id: 'model',
+          name: 'Model',
+          category: 'model',
+          type: 'select',
+          currentValue: 'grok-4.6',
+          options: [{ value: 'grok-4.6', name: 'Grok 4.6' }],
+        },
+        {
+          id: 'reasoning_effort',
+          name: 'Reasoning Effort',
+          category: 'thought_level',
+          type: 'select',
+          currentValue: 'high',
+          options: [
+            { value: 'minimal', name: 'Minimal' },
+            { value: 'xhigh', name: 'X-High' },
+            { value: 'high', name: 'High' },
+            { value: 'low', name: 'Low' },
+          ],
+        },
+      ],
+      _meta: {
+        'x.ai/sessionConfig': {
+          options: [{ id: 'medium', category: 'mode', label: 'Medium', selected: true }],
+        },
+      },
+    })
+    expect(result?.configId).toBe('reasoning_effort')
+    expect(result?.modes.map((mode) => mode.id)).toEqual(['minimal', 'low', 'high', 'xhigh'])
+    expect(result?.selectedModeId).toBe('high')
+  })
+
+  it('deriveSessionCatalog prefers reasoning_effort over legacy extraModes', () => {
+    const session = deriveSessionCatalog({
+      configOptions: [{
+        id: 'reasoning_effort',
+        name: 'Reasoning Effort',
+        category: 'thought_level',
+        type: 'select',
+        currentValue: 'low',
+        options: [
+          { value: 'high', name: 'High' },
+          { value: 'low', name: 'Low' },
+        ],
+      }],
+      extraModes: [{ id: 'medium', name: 'Medium', description: '' }],
+      selectedModeId: 'medium',
+      modeConfigId: null,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    })
+    expect(session.modeConfigId).toBe('reasoning_effort')
+    expect(session.modes.map((mode) => mode.id)).toEqual(['low', 'high'])
+    expect(session.selectedModeId).toBe('low')
+  })
 })
 
 describe('buildSetModelParams', () => {
@@ -494,6 +633,20 @@ describe('buildSetModelParams', () => {
       sessionId: 's1',
       modelId: 'm',
     })
+  })
+
+  it('sends contextWindow only when the caller picked one, including an invalid number', () => {
+    expect(buildSetModelParams('s1', 'grok-4.5', { contextWindow: 256000 })).toEqual({
+      sessionId: 's1',
+      modelId: 'grok-4.5',
+      _meta: { contextWindow: 256000 },
+    })
+    expect(buildSetModelParams('s1', 'grok-4.5', { contextWindow: 0, reasoningEffort: 'low' })).toEqual({
+      sessionId: 's1',
+      modelId: 'grok-4.5',
+      _meta: { reasoningEffort: 'low', contextWindow: 0 },
+    })
+    expect(buildSetModelParams('s1', 'grok-4.5')).not.toHaveProperty('_meta.contextWindow')
   })
 })
 

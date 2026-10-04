@@ -1,4 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+vi.mock('../harness/grok-launch', () => ({
+  resolveDesktopGrokLaunch: vi.fn(() => null),
+}))
 import { accessSync, constants, mkdtempSync, writeFileSync, chmodSync, rmSync } from 'fs'
 import { delimiter, join } from 'path'
 import { homedir, tmpdir } from 'os'
@@ -6,6 +10,7 @@ import { homedir, tmpdir } from 'os'
 vi.mock('../agent/resolve-cli', () => ({
 }))
 
+import { resolveDesktopGrokLaunch } from '../harness/grok-launch'
 import { detectBuiltinAgents, detectAgent } from './acp-detect'
 
 describe('acp-detect', () => {
@@ -39,6 +44,23 @@ describe('acp-detect', () => {
         expect(() => accessSync(a.resolvedPath!, constants.X_OK)).not.toThrow()
       }
     }
+  })
+
+  it('marks grok installed from the harness resolver when PATH has no grok', async () => {
+    vi.mocked(resolveDesktopGrokLaunch).mockReturnValueOnce({
+      command: '/harness/only/grok',
+      args: ['agent', 'stdio'],
+      source: 'explicit',
+    })
+    process.env.PATH = '/usr/bin:/bin'
+    const result = await detectAgent({
+      id: 'grok-build',
+      name: 'Grok Build',
+      command: 'grok',
+      args: ['agent', 'stdio'],
+    })
+    expect(result.installed).toBe(true)
+    expect(result.resolvedPath).toBe('/harness/only/grok')
   })
 
   it('finds grok via login PATH or known ~/.grok/bin even when process PATH is minimal', async () => {

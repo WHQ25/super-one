@@ -13,13 +13,14 @@ import {
   looksLikeComputerUseResult,
 } from '@superone/shared/computer-use-result-shape'
 import { isJevRunToolName, looksLikeJevRunResult } from '@superone/shared/jev-run-result-shape'
+import { withGrokAutoDenyPrefix } from '@superone/shared/grok-auto-deny'
 import {
   applyDescriptionPersonaLabel,
   formatAgentToolOutput,
   normalizeToolIdKey,
   uiToolNameFromId,
 } from '@superone/shared/tool-ui'
-import { extractModeConfig, extractModelConfig } from './acp-config'
+import { extractModelConfig, modesFromConfigOptions } from './acp-config'
 import { isHiddenAcpPermissionSlashCommand } from './acp-slash-filter'
 
 export interface AcpMapContext {
@@ -735,10 +736,12 @@ function toolResultFromUpdate(update: ToolCallUpdate, terminalOutput?: string): 
     .join('\n')
   const toolName = normalizeAcpTool(update)?.toolName
   const capped = shouldKeepFullToolResult(summary, toolName) ? summary : summary.slice(0, 4000)
+  const failed = update.status === 'failed'
+  const text = withGrokAutoDenyPrefix(capped || (failed ? 'failed' : 'done'), failed)
   return {
     type: 'tool_result',
     toolUseId: update.toolCallId,
-    summary: capped || (update.status === 'failed' ? 'failed' : 'done'),
+    summary: text,
     isError: update.status === 'failed',
   }
 }
@@ -1004,7 +1007,7 @@ export function mapSessionUpdate(
           status: 'ready',
         })
       }
-      const modes = extractModeConfig(configOptions)
+      const modes = modesFromConfigOptions(configOptions)
       if (modes) {
         events.push({
           type: 'acp_modes',

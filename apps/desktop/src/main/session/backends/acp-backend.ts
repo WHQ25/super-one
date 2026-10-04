@@ -10,6 +10,7 @@ import type {
   SendMessageRequest,
 } from '@superone/shared/agent-types'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { isAcpEffortConfigId } from '@superone/shared/effort-labels'
 import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk'
 import log from '../../logger'
 import {
@@ -20,9 +21,11 @@ import {
 import { resolveComputerUseGrant, rejectComputerUseGrant } from '../../computer-use/grant-request'
 import {
   asGrokReasoningEffort,
-  extractModeConfig,
   extractModelConfig,
   extractModelsFromAgentModelsField,
+  extractReasoningEffortConfig,
+  mergeModelConfig,
+  modesFromConfigOptions,
   type AcpModeConfig,
   type AcpModelConfig,
 } from '../../acp/acp-config'
@@ -33,6 +36,7 @@ import {
   upsertAcpAgentSlashCommands,
 } from '../../acp/acp-model-cache'
 import { createAcpRuntime, type AcpRuntime, type AcpRuntimeOptions } from '../../acp/acp-runtime'
+import { folderTrustDecision, type FolderTrustRequest } from '../../acp/folder-trust'
 import { describeAcpRequestFailure } from '../../acp/acp-request-error'
 import { notifySessionRecapReceived } from '../../acp/acp-recap-focus'
 import { mapPermissionDecision, mapPermissionRequest, type PendingPermissionOptions } from '../../acp/acp-permission-map'
@@ -215,6 +219,10 @@ export class AcpBackend implements SessionBackend {
     event: AgentEvent
   }>()
 
+  private pendingFolderTrust = new Map<string, {
+    resolve: (outcome: 'trust' | 'reject') => void
+  }>()
+
   private pendingQuestions = new Map<string, {
     resolve: (answer: GrokAskUserAnswer) => void
     event: AgentEvent
@@ -254,6 +262,20 @@ export class AcpBackend implements SessionBackend {
    * turn_completed); only the delta must be upserted or stats inflate.
    */
   private lastGrokUsageRecorded: { messageId: string; usage: UsageStepDelta } | null = null
+  /**
+   * Grok workflow runs. `usage.totalTokens` is the cumulative sum of agent
+   * `tokens_used` (input+output, cache already inside input). Agents that
+   * finish during the spawning prompt are folded into that prompt's
+   * `message_usage`; only growth after the prompt returns is session-only
+   * and must be written here. Those totals stay out of the context ring.
+   */
+  private grokWorkflowTaskIds = new Set<string>()
+  /** High-water cumulative total seen per workflow run. */
+  private grokWorkflowTokensSeen = new Map<string, number>()
+  /** Portion of that total already written to usage_daily. */
+  private grokWorkflowTokensBilled = new Map<string, number>()
+  /** Runs started while the spawning SuperOne prompt is still open. */
+  private grokWorkflowUnsettled = new Set<string>()
   /** Last known mode/effort options when configId is null (Grok reasoning effort). */
   private lastModeConfig: AcpModeConfig | null = null
   private ensureRuntimePromise: Promise<AcpRuntime> | null = null
@@ -452,7 +474,7 @@ export class AcpBackend implements SessionBackend {
     modeFallback?: AcpModeConfig | null,
   ): void {
     if (epoch !== this.runtimeEpoch) return
-    const extracted = extractModeConfig(configOptions)
+    const extracted = modesFromConfigOptions(configOptions)
       ?? (modeFallback && modeFallback.modes.length > 0 ? modeFallback : null)
     this.emitModes(extracted, agentId, epoch)
   }
@@ -466,10 +488,13 @@ export class AcpBackend implements SessionBackend {
       selectedModelId: string | null
       configId: string | null
     } | null,
+    modeFallback?: AcpModeConfig | null,
   ): void {
     if (epoch !== this.runtimeEpoch) return
-    const models = extractModelConfig(configOptions)
-      ?? (modelFallback && modelFallback.models.length > 0 ? modelFallback : null)
+    const fromOptions = extractModelConfig(configOptions)
+    const models = fromOptions
+      ? (modelFallback ? mergeModelConfig(fromOptions, modelFallback) : fromOptions)
+      : (modelFallback && modelFallback.models.length > 0 ? modelFallback : null)
     this.persistConfigCache(configOptions, models, agentId)
     if (models && models.models.length > 0) {
       this.emitModels(models, agentId, epoch)
@@ -484,21 +509,16 @@ export class AcpBackend implements SessionBackend {
         agentId,
       })
     }
-    this.emitModesFromConfigOptions(configOptions, agentId, epoch)
+    this.emitModesFromConfigOptions(configOptions, agentId, epoch, modeFallback)
   }
 
   private emitConfigFromRuntime(runtime: AcpRuntime, agentId: string | null, epoch: number): void {
     if (epoch !== this.runtimeEpoch) return
     const options = runtime.getConfigOptions()
     const modelFallback = runtime.getModelConfig() ?? extractModelConfig(options)
-    this.emitConfigFromOptions(options, agentId, epoch, modelFallback)
-    // Grok effort options live outside standard configOptions.
-    if (!this.modeConfigId) {
-      const modeFallback = runtime.getModeConfig()
-      if (modeFallback?.modes.length) {
-        this.emitModes(modeFallback, agentId, epoch)
-      }
-    }
+    // Pass the runtime catalog so a Grok effort list that is not a category=mode
+    // select is not wiped by an empty ready acp_modes event.
+    this.emitConfigFromOptions(options, agentId, epoch, modelFallback, runtime.getModeConfig())
   }
 
   private emitModelsError(error: string, agentId: string | null, epoch: number): void {
@@ -677,6 +697,13 @@ export class AcpBackend implements SessionBackend {
         // supplied it, so BackendStartOptions.additionalDirectories was dropped.
         additionalRoots: this.startOpts?.additionalDirectories,
         permissionMode: this.startOpts?.permissionMode,
+        onPermissionModeResolved: (mode) => {
+          for (const cb of this.permissionModeAppliedListeners) {
+            try { cb(mode) } catch (err) {
+              log.warn('[AcpBackend] permission mode rollback listener error:', err)
+            }
+          }
+        },
         reasoningEffort:
           asGrokReasoningEffort(this.grokReasoningEffort)
           ?? asGrokReasoningEffort(
@@ -688,6 +715,7 @@ export class AcpBackend implements SessionBackend {
         permission: {
           request: (params) => this.handlePermissionRequest(params),
         },
+        onFolderTrust: (request) => this.handleFolderTrust(request),
         askUserQuestion: {
           request: (params) => this.handleAskUserQuestion(params),
         },
@@ -764,6 +792,7 @@ export class AcpBackend implements SessionBackend {
 
   private routeSessionEvent(event: AgentEvent, agentId: string | null, epoch: number): void {
     if (epoch !== this.runtimeEpoch) return
+    if (agentId === 'grok-build') this.noteGrokWorkflowUsage(event)
     if (event.type === 'compact_boundary' || (event.type === 'status_indicator' && event.compactResult)) {
       this.compactingManual = false
     }
@@ -887,6 +916,28 @@ export class AcpBackend implements SessionBackend {
     const event: AgentEvent = { type: 'permission_request', request }
     return new Promise((resolve) => {
       this.pendingPermissions.set(request.requestId, { resolve, options, event })
+      this.emit(event)
+    })
+  }
+
+  private handleFolderTrust(request: FolderTrustRequest): Promise<'trust' | 'reject'> {
+    const requestId = `folder-trust-${request.sessionId || 'session'}-${Date.now()}`
+    const event: AgentEvent = {
+      type: 'permission_request',
+      request: {
+        requestId,
+        toolName: 'FolderTrust',
+        input: {
+          cwd: request.cwd,
+          workspace: request.workspace,
+          configKinds: request.configKinds,
+        },
+        allowAlwaysAllow: false,
+        requestKind: 'folder_trust',
+      },
+    }
+    return new Promise((resolve) => {
+      this.pendingFolderTrust.set(requestId, { resolve })
       this.emit(event)
     })
   }
@@ -1032,6 +1083,11 @@ export class AcpBackend implements SessionBackend {
     } finally {
       this.cronTaskIds.delete(taskId)
     }
+  }
+
+  private rejectPendingFolderTrust(): void {
+    for (const [, pending] of this.pendingFolderTrust) pending.resolve('reject')
+    this.pendingFolderTrust.clear()
   }
 
   private rejectPendingElicitations(): void {
@@ -1415,6 +1471,8 @@ export class AcpBackend implements SessionBackend {
 
   /** Clear turn bookkeeping and release the host queue. */
   private finishPrompt(): void {
+    // Prompt errors that never reach routeSessionEvent still end the Grok prompt.
+    this.settleGrokWorkflowUsage()
     this.activePrompt = null
     this.terminalPermissionAbort.abort()
     this.currentMessageId = null
@@ -1436,6 +1494,7 @@ export class AcpBackend implements SessionBackend {
     this.rejectPendingQuestions()
     this.rejectPendingPlanApprovals('abandoned')
     this.rejectPendingElicitations()
+    this.rejectPendingFolderTrust()
     this.cronTaskIds.clear()
     if (!this.runtime && this.ensureRuntimePromise) {
       // send() is parked on ensureRuntime(); a stalled spawn (Grok retrying its
@@ -1461,8 +1520,13 @@ export class AcpBackend implements SessionBackend {
     this.rejectPendingQuestions()
     this.rejectPendingPlanApprovals('abandoned')
     this.rejectPendingElicitations()
+    this.rejectPendingFolderTrust()
     this.cronTaskIds.clear()
     this.liveBackgroundTaskIds.clear()
+    this.grokWorkflowTaskIds.clear()
+    this.grokWorkflowTokensSeen.clear()
+    this.grokWorkflowTokensBilled.clear()
+    this.grokWorkflowUnsettled.clear()
     const pending = this.ensureRuntimePromise
     const abortController = this.runtimeAbortController
     this.runtimeEpoch += 1
@@ -1502,19 +1566,56 @@ export class AcpBackend implements SessionBackend {
   /**
    * Apply model selection: standard set_config_option when configId is known,
    * otherwise ACP session/set_model (Grok and similar).
-   * Grok effort lives in lastModeConfig (configId null) — re-attach it on
-   * set_model so pre-prompt model apply does not drop the user's effort pick.
+   * Grok effort is `reasoning_effort` when that option exists, else
+   * lastModeConfig (configId null) on set_model. Either way a model apply must
+   * not drop the user's pick or emit an empty effort catalog.
    * Explicit `opts.reasoningEffort` (e.g. send turn) wins over lastModeConfig.
    */
   private async applyModel(
     runtime: AcpRuntime,
     model: string,
-    opts?: { reasoningEffort?: string },
+    opts?: { reasoningEffort?: string; contextWindow?: number },
   ): Promise<void> {
     const epoch = this.runtimeEpoch
     const agentId = this.config.agentId ?? null
+    const preservedEffort = opts?.reasoningEffort?.trim()
+      || (isAcpEffortConfigId(this.modeConfigId)
+        ? this.lastModeConfig?.selectedModeId?.trim()
+        : '')
+      || ''
+    if (opts?.contextWindow != null && Number.isFinite(opts.contextWindow)) {
+      await runtime.setModel(model, {
+        ...(preservedEffort ? { reasoningEffort: preservedEffort } : {}),
+        contextWindow: opts.contextWindow,
+      })
+      if (preservedEffort && this.lastModeConfig) {
+        this.lastModeConfig = { ...this.lastModeConfig, selectedModeId: preservedEffort }
+      }
+      return
+    }
     if (this.modelConfigId) {
-      const next = await runtime.setConfigOption(this.modelConfigId, model)
+      let next = await runtime.setConfigOption(this.modelConfigId, model)
+      const effortId = this.modeConfigId && isAcpEffortConfigId(this.modeConfigId)
+        ? this.modeConfigId
+        : null
+      if (effortId && preservedEffort) {
+        try {
+          if (extractReasoningEffortConfig(next)?.selectedModeId !== preservedEffort) {
+            next = await runtime.setConfigOption(effortId, preservedEffort)
+          }
+        } catch (err) {
+          log.warn('[AcpBackend] preserve reasoning_effort after model change failed:', err)
+        }
+      } else if (!this.modeConfigId && preservedEffort) {
+        try {
+          await runtime.setModel(model, { reasoningEffort: preservedEffort })
+          if (this.lastModeConfig) {
+            this.lastModeConfig = { ...this.lastModeConfig, selectedModeId: preservedEffort }
+          }
+        } catch (err) {
+          log.warn('[AcpBackend] preserve reasoningEffort on set_model failed:', err)
+        }
+      }
       const extracted = extractModelConfig(next) ?? runtime.getModelConfig()
       const fallback = extracted
         ? {
@@ -1523,15 +1624,10 @@ export class AcpBackend implements SessionBackend {
             configId: extracted.configId,
           }
         : null
-      this.emitConfigFromOptions(next, agentId, epoch, fallback)
+      this.emitConfigFromOptions(next, agentId, epoch, fallback, runtime.getModeConfig())
       return
     }
-    const effort =
-      !this.modeConfigId
-        ? (opts?.reasoningEffort?.trim()
-          || this.lastModeConfig?.selectedModeId?.trim()
-          || undefined)
-        : undefined
+    const effort = preservedEffort || undefined
     await runtime.setModel(model, effort ? { reasoningEffort: effort } : undefined)
     if (effort && this.lastModeConfig) {
       this.lastModeConfig = { ...this.lastModeConfig, selectedModeId: effort }
@@ -1553,12 +1649,16 @@ export class AcpBackend implements SessionBackend {
     this.persistConfigCache(null, { ...cfg, selectedModelId: model }, agentId)
   }
 
-  async setModel(model: string): Promise<void> {
-    if (!this.runtime) return
+  async setModel(model: string, opts?: { contextWindow?: number }): Promise<void> {
+    if (!this.runtime) {
+      if (opts?.contextWindow != null) throw new Error('ACP runtime is not ready')
+      return
+    }
     try {
-      await this.applyModel(this.runtime, model)
+      await this.applyModel(this.runtime, model, opts)
     } catch (err) {
       log.warn('[AcpBackend] setModel failed:', err)
+      if (opts?.contextWindow != null) throw err
     }
   }
 
@@ -1571,14 +1671,17 @@ export class AcpBackend implements SessionBackend {
     try {
       if (this.modeConfigId) {
         const next = await this.runtime.setConfigOption(this.modeConfigId, modeId)
-        this.emitConfigFromOptions(next, agentId, epoch)
-        const extracted = extractModeConfig(next)
-        if (extracted && extracted.selectedModeId !== modeId) {
-          this.emitModes(
-            { ...extracted, selectedModeId: modeId },
-            agentId,
-            epoch,
-          )
+        this.emitConfigFromOptions(next, agentId, epoch, this.runtime.getModelConfig(), this.runtime.getModeConfig())
+        const extracted = modesFromConfigOptions(next)
+        if (!extracted || extracted.selectedModeId !== modeId) {
+          const base = extracted ?? this.lastModeConfig
+          if (base && base.modes.length > 0) {
+            this.emitModes(
+              { ...base, selectedModeId: modeId, configId: base.configId ?? this.modeConfigId },
+              agentId,
+              epoch,
+            )
+          }
         }
         return
       }
@@ -1669,6 +1772,12 @@ export class AcpBackend implements SessionBackend {
     decision?: 'cancel',
     formAnswers?: Record<string, unknown>,
   ): boolean {
+    const trust = this.pendingFolderTrust.get(requestId)
+    if (trust) {
+      this.pendingFolderTrust.delete(requestId)
+      trust.resolve(folderTrustDecision(allow, decision))
+      return true
+    }
     if (decision === 'cancel') {
       if (rejectComputerUseGrant(requestId, 'User cancelled')) return true
     }
@@ -1883,6 +1992,7 @@ export class AcpBackend implements SessionBackend {
       cwd: this.effectiveCwd(this.startOpts),
       superoneSessionId: this.startOpts.sessionId,
       agentCapabilities: runtime.getAgentCapabilities(),
+      includeProjectScope: runtime.allowsProjectMcp(),
     })
     const named = servers.filter((server) => {
       const name = server && typeof server === 'object' && 'name' in server ? server.name : undefined
@@ -1912,6 +2022,7 @@ export class AcpBackend implements SessionBackend {
       cwd: this.effectiveCwd(this.startOpts),
       superoneSessionId: this.startOpts.sessionId,
       agentCapabilities: runtime.getAgentCapabilities(),
+      includeProjectScope: runtime.allowsProjectMcp(),
     })
     await runtime.updateMcpServers(servers)
   }
@@ -1956,6 +2067,69 @@ export class AcpBackend implements SessionBackend {
       } catch (err) {
         log.warn('[AcpBackend] event listener error:', err)
       }
+    }
+  }
+
+  /**
+   * Bill Grok workflow tokens that the parent `message_usage` will not see.
+   * `tokens_used` is `UsageTotals::total_tokens()` (full input + output). The
+   * usage page sums every column, so the combined delta is stored as output
+   * and the other columns stay 0. Do not add it to context occupancy.
+   */
+  private noteGrokWorkflowUsage(event: AgentEvent): void {
+    if (
+      event.type === 'message_complete'
+      || event.type === 'message_interrupted'
+      || event.type === 'message_error'
+    ) {
+      this.settleGrokWorkflowUsage()
+      return
+    }
+    if (event.type === 'task_started') {
+      if (event.taskType !== 'workflow' || !event.taskId) return
+      this.grokWorkflowTaskIds.add(event.taskId)
+      if (this.currentMessageId) this.grokWorkflowUnsettled.add(event.taskId)
+      return
+    }
+    if (event.type !== 'task_progress' && event.type !== 'task_notification') return
+    const taskId = event.taskId
+    if (!taskId || !this.grokWorkflowTaskIds.has(taskId)) return
+    const total = event.type === 'task_progress'
+      ? event.usage.totalTokens
+      : event.usage?.totalTokens
+    if (total == null || !Number.isFinite(total) || total < 0) return
+    const seen = Math.max(this.grokWorkflowTokensSeen.get(taskId) ?? 0, total)
+    this.grokWorkflowTokensSeen.set(taskId, seen)
+    if (this.grokWorkflowUnsettled.has(taskId)) return
+    this.recordGrokWorkflowDelta(taskId, seen)
+  }
+
+  /** Treat tokens already visible during the spawning prompt as billed. */
+  private settleGrokWorkflowUsage(): void {
+    if (this.grokWorkflowUnsettled.size === 0) return
+    for (const taskId of this.grokWorkflowUnsettled) {
+      const seen = this.grokWorkflowTokensSeen.get(taskId) ?? 0
+      const billed = this.grokWorkflowTokensBilled.get(taskId) ?? 0
+      if (seen > billed) this.grokWorkflowTokensBilled.set(taskId, seen)
+    }
+    this.grokWorkflowUnsettled.clear()
+  }
+
+  private recordGrokWorkflowDelta(taskId: string, seen: number): void {
+    const billed = this.grokWorkflowTokensBilled.get(taskId) ?? 0
+    const delta = seen - billed
+    if (!(delta > 0)) return
+    this.grokWorkflowTokensBilled.set(taskId, seen)
+    const model = this.selectedModelId ?? this.startOpts?.model ?? 'grok'
+    try {
+      recordGrokFromUsage(
+        { inputTokens: 0, outputTokens: delta, cacheReadTokens: 0 },
+        model,
+        new Date(),
+      )
+    } catch (err) {
+      this.grokWorkflowTokensBilled.set(taskId, billed)
+      log.warn('[AcpBackend] Grok workflow usage stats write failed:', err)
     }
   }
 

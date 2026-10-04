@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   compactEffortLabel,
   formatEffortLabel,
+  isAcpEffortConfigId,
+  isAcpEffortConfigOption,
   isKnownEffortLevel,
   sortEffortsAscending,
 } from './effort-labels'
@@ -25,6 +27,17 @@ describe('compactEffortLabel', () => {
 
   it('keeps a name that is only the word Effort', () => {
     expect(compactEffortLabel('Effort')).toBe('Effort')
+  })
+})
+
+describe('isAcpEffortConfigId', () => {
+  it('keeps Grok effort catalogs on the model slider and leaves session modes alone', () => {
+    expect(isAcpEffortConfigId(null)).toBe(true)
+    expect(isAcpEffortConfigId('reasoning_effort')).toBe(true)
+    expect(isAcpEffortConfigId('thought_level')).toBe(true)
+    expect(isAcpEffortConfigId('mode')).toBe(false)
+    expect(isAcpEffortConfigOption({ id: 'reasoning_effort', category: 'thought_level' })).toBe(true)
+    expect(isAcpEffortConfigOption({ id: 'mode', category: 'mode' })).toBe(false)
   })
 })
 

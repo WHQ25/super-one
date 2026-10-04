@@ -1738,6 +1738,16 @@ export const zh: Messages = {
         description: '跳过常规提示，拒绝规则仍生效',
       },
       autoFailClosedToast: 'SuperOne 下的 Grok 自动模式会直接拒绝分类器拦截的操作，不会再询问。若要弹窗确认，请留在「询问」。',
+      folderTrustTitle: '信任此文件夹？',
+      folderTrustBody: '只有在你信任该文件夹之后，Grok 才会加载项目规则、MCP、hooks 和 skills。',
+      folderTrustWorkspace: '工作区',
+      folderTrustCwd: '目录',
+      folderTrustKinds: '配置',
+      folderTrustEmptyKinds: '没有列出项目配置类型。',
+      folderTrustAllow: '信任',
+      folderTrustReject: '不信任',
+      contextWindowLabel: '上下文窗口',
+      contextWindowPreserve: '保持当前',
     },
     cursorPermissionModes: {
       agent: {

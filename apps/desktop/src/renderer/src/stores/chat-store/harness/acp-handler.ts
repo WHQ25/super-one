@@ -6,6 +6,7 @@ import type {
   AcpSessionCatalog,
   ModelOption,
 } from '@superone/shared/agent-types'
+import { isAcpEffortConfigOption, sortEffortsAscending } from '@superone/shared/effort-labels'
 import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
 import type { ChatStore, PerSessionState } from '../types'
 
@@ -85,6 +86,21 @@ function extractSelectCategory(
   return { configId: chosen.id, options, selectedId: selected }
 }
 
+function extractReasoningEffort(
+  configOptions: AcpConfigOption[] | undefined,
+): { configId: string; options: ModelOption[]; selectedId: string | null } | null {
+  const chosen = configOptions?.find((option) => option.type === 'select' && isAcpEffortConfigOption(option))
+  if (!chosen) return null
+  const extracted = extractSelectCategory([chosen], chosen.category ?? 'thought_level', chosen.id)
+  if (!extracted) return null
+  const options = sortEffortsAscending(extracted.options.map((mode) => ({
+    value: mode.id,
+    label: mode.name,
+    mode,
+  }))).map((item) => item.mode)
+  return { ...extracted, options }
+}
+
 function sessionCatalogFromConfig(catalog: AcpAgentConfigCatalog): AcpSessionCatalog {
   const modelFromOptions = extractSelectCategory(catalog.configOptions, 'model', 'model')
   const models = modelFromOptions?.options.length
@@ -95,8 +111,10 @@ function sessionCatalogFromConfig(catalog: AcpAgentConfigCatalog): AcpSessionCat
       ?? catalog.selectedModelId
       ?? models[0]?.id
       ?? null)
-  const mode = extractSelectCategory(catalog.configOptions, 'mode', 'mode')
-  // Prefer standard configOptions modes; else Grok-style extraModes (modeConfigId may be null).
+  // Grok thought_level stays an effort catalog. OpenCode category=mode stays a session mode.
+  const effort = extractReasoningEffort(catalog.configOptions)
+  const mode = effort ?? extractSelectCategory(catalog.configOptions, 'mode', 'mode')
+  // Prefer configOptions; else Grok-style extraModes (modeConfigId may be null).
   const modes = mode?.options.length ? mode.options : (catalog.extraModes ?? [])
   const selectedModeId = mode?.selectedId
     ?? (catalog.selectedModeId && modes.some((m) => m.id === catalog.selectedModeId)

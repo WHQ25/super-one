@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('../../harness/grok-launch', () => ({
+  resolveDesktopGrokLaunch: vi.fn(() => null),
+}))
 import type { ForkContext, ForkSource } from '../types'
-import { forkAcpTranscript, grokForkInitializeParams, setGrokForkConnector } from './acp-fork'
+import { resolveDesktopGrokLaunch } from '../../harness/grok-launch'
+import { forkAcpTranscript, grokForkInitializeParams, resolveGrokForkLaunch, setGrokForkConnector } from './acp-fork'
 
 const connector = vi.fn(async () => 'forked-grok')
 
@@ -34,6 +39,32 @@ describe('grokForkInitializeParams', () => {
         exitPlanMode: true,
         clientIdentifier: 'superone',
       },
+    })
+  })
+})
+
+describe('resolveGrokForkLaunch', () => {
+  it('uses the chat resolver when no command override is set', () => {
+    vi.mocked(resolveDesktopGrokLaunch).mockReturnValueOnce({
+      command: '/resolved/grok',
+      args: ['agent', 'stdio'],
+      source: 'path',
+    })
+    expect(resolveGrokForkLaunch({})).toEqual({
+      command: '/resolved/grok',
+      args: ['agent', 'stdio'],
+    })
+  })
+
+  it('throws when the resolver has no grok binary', () => {
+    vi.mocked(resolveDesktopGrokLaunch).mockReturnValueOnce(null)
+    expect(() => resolveGrokForkLaunch({})).toThrow(/Grok command not found/)
+  })
+
+  it('keeps an explicit command', () => {
+    expect(resolveGrokForkLaunch({ command: '/custom/grok', args: ['--flag'] })).toEqual({
+      command: '/custom/grok',
+      args: ['--flag'],
     })
   })
 })

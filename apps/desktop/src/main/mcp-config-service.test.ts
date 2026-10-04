@@ -105,7 +105,7 @@ describe('extractServers (via listMcpConfigs)', () => {
     mockFiles({
       [USER_CONFIG]: {
         mcpServers: {
-          myHttp: { type: 'http', url: 'https://example.com', headers: { Authorization: 'Bearer tok' } },
+          myHttp: { type: 'http', url: 'https://example.com', headers: { Authorization: 'Bearer tok' }, bearerTokenFile: '/abs/token' },
         },
       },
     })
@@ -116,6 +116,7 @@ describe('extractServers (via listMcpConfigs)', () => {
       type: 'http',
       url: 'https://example.com',
       headers: { Authorization: 'Bearer tok' },
+      bearerTokenFile: '/abs/token',
     })
   })
 
@@ -205,6 +206,23 @@ describe('saveMcpConfig', () => {
       url: 'https://api.test',
       headers: { 'X-Key': 'abc' },
     })
+  })
+
+  it('persists an HTTP bearer token file path without copying the secret', () => {
+    mockFiles({ [USER_CONFIG]: {} })
+    saveMcpConfig(
+      'httpSrv',
+      { type: 'http', url: 'https://api.test', bearerTokenFile: '~/tokens/mcp' },
+      'user',
+      CWD,
+    )
+    const written = writtenJson()
+    expect(written.mcpServers.httpSrv).toEqual({
+      type: 'http',
+      url: 'https://api.test',
+      bearerTokenFile: '~/tokens/mcp',
+    })
+    expect(JSON.stringify(written)).not.toContain('secret')
   })
 
   it('should create mcpServers object if not exists', () => {

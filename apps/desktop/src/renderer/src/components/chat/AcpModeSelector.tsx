@@ -2,14 +2,14 @@ import { useState } from 'react'
 import { ChevronDown, Layers } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
+import { isAcpEffortConfigId } from '@superone/shared/effort-labels'
 import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 
 /**
  * ACP session-mode picker (configOptions category=mode), e.g. OpenCode-style modes.
  *
- * Grok reasoning-effort options also arrive as acpModes but with `acpModeConfigId === null`
- * and are switched via session/set_model + _meta.reasoningEffort — those render inside
- * GroupedModelEffortSelector (model row), not here.
+ * Grok reasoning effort also arrives as acpModes (`reasoning_effort` / null configId)
+ * and renders inside GroupedModelEffortSelector, not here.
  */
 export function AcpModeSelector({ compact = false }: { compact?: boolean }) {
   const { t } = useTranslation()
@@ -20,8 +20,8 @@ export function AcpModeSelector({ compact = false }: { compact?: boolean }) {
   const acpModesStatus = useActiveSession((s) => s.acpModesStatus)
   const { setSelectedAcpMode } = useScopedSessionActions()
 
-  // configId null ⇒ Grok effort catalog → AcpModelSelector / GroupedModelEffortSelector
-  if (!acpModeConfigId) return null
+  // Grok effort stays on the model selector, including configId `reasoning_effort`.
+  if (isAcpEffortConfigId(acpModeConfigId)) return null
   if (acpModesStatus === 'loading' && acpModes.length === 0) return null
   if (acpModes.length === 0) return null
 

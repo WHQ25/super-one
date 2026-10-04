@@ -23,6 +23,7 @@ import {
   extractToolError,
   unwrapMcpResultText,
 } from './tool-block-utils'
+import { grokAutoClassifierDenyText } from './grok-auto-deny'
 import { isWorkflowSmokeCheck } from './workflow-utils'
 import type { RemoteDiffTokens } from './remote-diff'
 import type { BashEditDiff, QuestionPreviewFormat } from '@superone/shared/agent-types'
@@ -209,8 +210,10 @@ export function GenericToolRowPresenter({
     : ''
   const fileToolName = fileToolPath ? fileToolPath.split('/').pop() || '' : ''
 
-  const isDenied = !!result && result.startsWith('[denied] ')
-  const rawResult = isDenied ? result.slice('[denied] '.length) : result
+  const autoDeny = isError ? grokAutoClassifierDenyText(result) : null
+  const prefixedDenied = !!result && result.startsWith('[denied] ')
+  const isDenied = prefixedDenied || autoDeny != null
+  const rawResult = prefixedDenied ? result.slice('[denied] '.length) : result
   const cleanResult = useMemo(
     () => (isMcp && rawResult ? unwrapMcpResultText(rawResult) : rawResult),
     [isMcp, rawResult],
@@ -219,7 +222,8 @@ export function GenericToolRowPresenter({
     () => (toolName === 'Artifact' ? resolveArtifactLink(params, isDenied ? null : cleanResult) : null),
     [toolName, params, isDenied, cleanResult],
   )
-  const deniedFeedback = isDenied && cleanResult !== 'User denied permission' ? cleanResult! : ''
+  const deniedFeedback = autoDeny
+    ?? (isDenied && cleanResult && cleanResult !== 'User denied permission' ? cleanResult : '')
   const feedbackRef = useRef<HTMLSpanElement>(null)
   const [feedbackIsBlock, setFeedbackIsBlock] = useState(false)
 
@@ -275,7 +279,7 @@ export function GenericToolRowPresenter({
   // ordinary outcome, not a refusal: the whole row keeps the default chrome and only the badge says so.
   const isQuestionDismissed = toolName === 'AskUserQuestion' && !!result && (isDenied || result.includes('dismissed'))
   const showDenied = isDenied && !isQuestionDismissed
-  const showError = !!isError && !isQuestionDismissed
+  const showError = !!isError && !showDenied && !isQuestionDismissed
   // These rows never draw their result, so a deferred detail has nothing to open either.
   const drawsResult = toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'
   const hasResult = !!cleanResult && drawsResult && (hasDeferredDetails || (!isStreaming && !isDenied))

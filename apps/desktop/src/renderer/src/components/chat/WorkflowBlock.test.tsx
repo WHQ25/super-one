@@ -415,6 +415,44 @@ describe('WorkflowBlock — Grok launch without transcript', () => {
   })
 })
 
+describe('WorkflowBlock — launch denied before a run exists', () => {
+  const denied = {
+    type: 'tool_result',
+    toolUseId: 'tc_wf',
+    isError: true,
+    summary: 'Tool `workflow` was not executed: Auto mode blocked this action',
+  } as ContentBlock
+
+  it('shows a failed start instead of Starting workflow and Workflow complete', () => {
+    render(
+      <WorkflowBlock
+        toolBlock={workflowTool({ source: { type: 'name', name: 'grok-build-parity' } })}
+        resultBlock={denied}
+        isStreaming={false}
+        defaultExpanded
+      />,
+    )
+    expect(screen.getByText('Workflow: grok-build-parity')).toBeInTheDocument()
+    expect(screen.queryByText(/Starting workflow/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Workflow complete/)).not.toBeInTheDocument()
+    expect(screen.getByText(/Workflow failed/)).toBeInTheDocument()
+    expect(screen.getByText(/was not executed/)).toBeInTheDocument()
+  })
+
+  it('keeps the failure on the collapsed header', () => {
+    render(
+      <WorkflowBlock
+        toolBlock={workflowTool({ source: { type: 'name', name: 'grok-build-parity' } })}
+        resultBlock={denied}
+        isStreaming={false}
+      />,
+    )
+    expect(screen.getByText('Workflow failed')).toBeInTheDocument()
+    expect(screen.queryByText(/Starting workflow/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Workflow complete/)).not.toBeInTheDocument()
+  })
+})
+
 describe('WorkflowBlock — Claude transcript regression', () => {
   it('treats launched transcript without live progress as historical complete and keeps full-view nav', () => {
     render(

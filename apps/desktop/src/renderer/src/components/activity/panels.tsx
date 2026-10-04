@@ -1,4 +1,7 @@
 import type { IDockviewPanelProps } from 'dockview-core'
+import { DesktopModUi } from '@/lib/mod-ui/DesktopModUi'
+import { ModPaneBody } from '@/components/chat/mod/ModSurfaces'
+import type { ModPaneTabParams } from './activity-panel-api'
 import { FilePreview } from '@/components/coding/FilePreview'
 import { MiniAppSlot } from '@/components/miniapp/MiniAppSlot'
 import { toolUiPreviewSlotKey } from '@/stores/miniapp-tool-preview'
@@ -38,7 +41,20 @@ function SideChatDockPanel(props: IDockviewPanelProps<{ projectPath: string; ses
   return <SideChatPanel projectPath={props.params.projectPath} sessionId={props.params.sessionId} />
 }
 
+function ModPaneDockPanel(props: IDockviewPanelProps<ModPaneTabParams>) {
+  const { projectPath, sessionId, paneId } = props.params
+  return (
+    <DesktopModUi projectPath={projectPath} sessionId={sessionId} enabled>
+      {/* Marks whose pane this is, so a composer's keys find its own session's pane. */}
+      <div className="contents" data-mod-pane-session={sessionId} data-mod-pane-id={paneId}>
+        <ModPaneBody paneId={paneId} placement="dock" className="h-full px-3 py-2" />
+      </div>
+    </DesktopModUi>
+  )
+}
+
 export const activityPanelComponents: Record<string, React.FunctionComponent<IDockviewPanelProps>> = {
+  'mod-pane': ModPaneDockPanel as React.FunctionComponent<IDockviewPanelProps>,
   'mcp-app': McpAppPanel as React.FunctionComponent<IDockviewPanelProps>,
   'file-preview': FilePreviewPanel,
   'miniapp': MiniAppPanel as React.FunctionComponent<IDockviewPanelProps>,

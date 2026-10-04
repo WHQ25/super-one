@@ -2,6 +2,7 @@ import type { McpAppsBinding, McpAppOrigin, McpAppsProvider } from '@superone/sh
 import type { SessionTurnEvent } from '@superone/shared/environment'
 import type { MessageDisplayFields } from '@superone/shared/message-display'
 import type { AgentEvent, PermissionRequest } from '@superone/shared/agent-types'
+import type { ModUiOp, ModUiRequest, ModUiResult } from '@superone/shared/mod-ui'
 
 export type SessionStatus =
   | 'idle'
@@ -234,6 +235,15 @@ export type TurnRunner = ((input: {
   getMcpAppsProvider?: (session: NodeSessionRecord, binding: McpAppsBinding, origin: McpAppOrigin,
     host?: { onElicitation: (interaction: PendingInteraction, signal: AbortSignal) => Promise<ElicitationDecision> }) => Promise<McpAppsProvider>
   disposeSession?: (sessionId: string) => void | Promise<void>
+  /**
+   * One op on the live runtime's mod surface (Claude Code mods). Never starts a
+   * runtime; rejects `mod-ui-unavailable` when none draws mods.
+   */
+  modUi?: <O extends ModUiOp>(session: NodeSessionRecord, op: O, request: ModUiRequest<O>) => Promise<ModUiResult<O>>
+  /** Whether a `mod_host_request` the session raised still waits for its client. */
+  isModHostRequestPending?: (sessionId: string, requestId: string) => boolean
+  /** Reloads plugins in every live process after a plugin change on disk. */
+  reloadPlugins?: () => Promise<void>
   /** Tear down all long-lived harness state (runtime stop). */
   disposeAll?: () => void | Promise<void>
   /** Snapshot long-lived harness state for the host's idle runtime reaper. */

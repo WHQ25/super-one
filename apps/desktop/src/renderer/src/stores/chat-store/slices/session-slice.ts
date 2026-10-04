@@ -1,6 +1,7 @@
 import type { StateCreator } from 'zustand'
 import type { ChatMessage, ClaudeSteerPriority, ContextUsageInfo, RewindFilesResult } from '@superone/shared/agent-types'
 import { useActivityViewStateStore } from '../../activity-view-state'
+import { disposeModUiClient } from '@/lib/mod-ui/registry'
 import type { ChatStore, PerSessionState, SessionWriteTarget, SetDraftTextOptions } from '../types'
 import { freshSubagentColorPool } from '../defaults'
 import {
@@ -213,5 +214,6 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
       },
     })
     useActivityViewStateStore.getState().clearForSession(sessionId)
+    disposeModUiClient(sessionId)
   },
 })

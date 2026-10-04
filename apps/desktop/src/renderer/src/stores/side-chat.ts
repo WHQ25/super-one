@@ -14,6 +14,7 @@ import { create } from 'zustand'
 import type { CodexReasoningEffort, EffortLevel, HarnessId } from '@superone/shared/agent-types'
 import { useChatStore, lastTouchedPane, markPaneTouched } from './chat'
 import { createDefaultPerSessionState } from './chat-store/defaults'
+import { disposeModUiClient } from '@/lib/mod-ui/registry'
 
 export interface SideChat {
   /** SuperOne session id of the side chat itself. */
@@ -150,6 +151,7 @@ function unregisterSession(projectPath: string, sessionId: string): void {
     markPaneTouched(null)
   }
   useChatStore.getState().unmountSession(projectPath, sessionId)
+  disposeModUiClient(sessionId)
   useChatStore.setState((s) => {
     const project = s.projectSessions[projectPath]
     if (!project?._sessions[sessionId]) return s

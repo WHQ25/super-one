@@ -687,6 +687,8 @@ const environmentAPI = {
     ),
   interruptSession: (connectionId: string, sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_INTERRUPT_SESSION, connectionId, sessionId),
+  modUi: (connectionId: string, sessionId: string, op: string, request: unknown) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_MOD_UI, connectionId, sessionId, op, request),
   renameSession: (connectionId: string, sessionId: string, title: string) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_RENAME_SESSION,
@@ -1395,6 +1397,14 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.PLUGINS_READ_FILE, projectPath, pluginKey, relativePath),
   deletePlugin: (projectPath: string, key: string, scope: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PLUGINS_DELETE, projectPath, key, scope),
+  setPluginEnabled: (projectPath: string, key: string, scope: string, enabled: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_SET_ENABLED, projectPath, key, scope, enabled),
+  reviewPluginMods: (projectPath: string, key: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_REVIEW_MODS, projectPath, key),
+  readPluginConfig: (projectPath: string, key: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_READ_CONFIG, projectPath, key),
+  savePluginConfig: (projectPath: string, key: string, values: Record<string, unknown>) =>
+    ipcRenderer.invoke(AgentIpcChannels.PLUGINS_SAVE_CONFIG, projectPath, key, values),
   listMarketplacePlugins: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.PLUGINS_LIST_MARKETPLACE, projectPath),
   installPlugin: (projectPath: string, key: string, scope: string) =>

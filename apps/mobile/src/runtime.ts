@@ -910,9 +910,9 @@ export class ChatRuntime {
   }
 
   /**
-   * The native sheet is a blocking Modal. Desktop continues as soon as the
-   * command is sent; waiting for `interaction_resolved` left the phone stuck
-   * on the question while the host was already streaming.
+   * Desktop continues as soon as the command is sent; waiting for
+   * `interaction_resolved` left the phone's card up (and answerable twice)
+   * while the host was already streaming.
    */
   private resolveQuestionLocally(requestId: string): void {
     this.ingest([{ type: 'interaction_resolved', interactionType: 'question', requestId }])

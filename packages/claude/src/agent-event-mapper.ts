@@ -9,7 +9,7 @@ import type { ClaudeToolApps } from './mcp-apps'
 import type { AgentEvent, MessageMetadata } from '@superone/shared/agent-types'
 import { createDeadStreamLedger } from '@superone/shared/dead-stream-ledger'
 import { createRetractionLedger, mapModelFallbackWire } from '@superone/shared/model-fallback-wire'
-import { readTerminalSlashCommands } from '@superone/shared/slash-commands'
+import { readTerminalSlashCommands, sdkSlashCommands } from '@superone/shared/slash-commands'
 import { sessionGoalFromClaudeActive } from '@superone/shared/session-goal'
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import { buildClaudeResultFailure, isClaudeResultError } from './result-failure'
@@ -34,6 +34,13 @@ export interface ClaudeAgentEventMapperOptions {
    * so a long-lived process shares one set across its per-turn mappers.
    */
   reportedPluginErrors?: Set<string>
+  /**
+   * The terminal-bound command names this runtime's latest init gave. Only init
+   * carries them, so per-turn mappers share the holder to tag later command lists.
+   */
+  terminalSlashCommands?: { names: string[] | undefined }
+  /** Returns true for a system message another owner consumed (the mod surface's pushes). */
+  onSystem?: (system: Raw) => boolean
 }
 
 export interface ClaudeAgentEventApplyResult {
@@ -211,6 +218,7 @@ export function createClaudeAgentEventMapper(
   const subagentTracking = new Map<string, { stepIds: Set<string>; input: number; output: number }>()
   const activeBackgroundTasks = new Map<string, { toolUseId?: string; description: string }>()
   const reportedPluginErrors = options.reportedPluginErrors ?? new Set<string>()
+  const terminalNames = options.terminalSlashCommands ?? { names: undefined }
   let lastAssistantUsage: Raw | null = null
   let lastTopLevelAssistantUuid = ''
   // SDK wire frame -> the blocks it put in our message, so a refusal fallback's
@@ -277,12 +285,17 @@ export function createClaudeAgentEventMapper(
   }
 
   const applySystem = (system: Raw) => {
+    if (options.onSystem?.(system)) return
     switch (system.subtype) {
+      case 'commands_changed':
+        if (Array.isArray(system.commands)) emit({ type: 'session_commands', commands: sdkSlashCommands(system.commands, terminalNames.names) })
+        break
       case 'init': {
         if (typeof system.session_id === 'string' && system.session_id) {
           options.onSessionId?.(system.session_id)
         }
         const terminalSlashCommands = readTerminalSlashCommands(system.terminal_slash_commands)
+        terminalNames.names = terminalSlashCommands
         emit({
           type: 'session_init',
           session: {

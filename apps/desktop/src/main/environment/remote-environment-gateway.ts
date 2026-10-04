@@ -384,6 +384,15 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     })
   }
 
+  async pluginsSetEnabled(
+    projectId: string,
+    key: string,
+    scope: 'user' | 'project',
+    enabled: boolean,
+  ): Promise<{ ok?: boolean; provider?: string }> {
+    return this.client.rpc('plugins.setEnabled', { projectId, provider: 'claude', key, scope, enabled })
+  }
+
   async pluginsInstall(
     projectId: string,
     key: string,
@@ -1179,6 +1188,15 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
             ...(effort !== undefined ? { effort } : {}),
             ...(apiProviderId !== undefined ? { apiProviderId } : {}),
           },
+        })
+      },
+      modUi: async ({ session, op, request, leaseId, generation }) => {
+        this.assertEnv(session.environmentId)
+        return this.client.rpc('session.modUi', {
+          sessionId: session.sessionId,
+          op,
+          request,
+          ...(leaseId ? { leaseId, generation } : {}),
         })
       },
       interrupt: async (ref: SessionRef, control: MutatingControlContext) => {

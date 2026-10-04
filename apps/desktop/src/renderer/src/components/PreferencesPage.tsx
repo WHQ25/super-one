@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown, X } from 'lucide-react'
+import { Button } from '@superone/ui/components/ui/button'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { DefaultProviderRow, ProviderOptionLabel } from '@/components/providers/DefaultProviderRow'
@@ -17,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
+import { Switch } from '@superone/ui/components/ui/switch'
 import { cn } from '@superone/ui/lib/utils'
 import {
   ClaudeModelList,
@@ -49,6 +52,8 @@ function ClaudePreferencesPage() {
   const [defaultModel, setDefaultModel] = useState('')
   const [defaultEffort, setDefaultEffort] = useState<EffortLevel | ''>('')
   const [askPreviewFormat, setAskPreviewFormat] = useState<QuestionPreviewFormat>('markdown')
+  const [drawMods, setDrawMods] = useState(true)
+  const [modDevFolders, setModDevFolders] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
@@ -67,6 +72,8 @@ function ClaudePreferencesPage() {
       setDefaultModel(claude.defaultModel)
       setDefaultEffort(claude.defaultEffort)
       setAskPreviewFormat(claude.askUserQuestionPreviewFormat)
+      setDrawMods(claude.drawModInterfaces)
+      setModDevFolders(claude.modDevFolders)
     }).finally(() => { if (mounted) setLoading(false) })
     return () => { mounted = false }
   }, [currentFolder])
@@ -75,6 +82,8 @@ function ClaudePreferencesPage() {
     defaultModel?: string
     defaultEffort?: EffortLevel | ''
     askUserQuestionPreviewFormat?: QuestionPreviewFormat
+    drawModInterfaces?: boolean
+    modDevFolders?: string[]
   }, successMessage: string) {
     if (saving) return
     setSaving(true)
@@ -85,6 +94,8 @@ function ClaudePreferencesPage() {
             defaultModel: patch.defaultModel ?? defaultModel,
             defaultEffort: patch.defaultEffort ?? defaultEffort,
             askUserQuestionPreviewFormat: patch.askUserQuestionPreviewFormat ?? askPreviewFormat,
+            ...(patch.drawModInterfaces === undefined ? {} : { drawModInterfaces: patch.drawModInterfaces }),
+            ...(patch.modDevFolders === undefined ? {} : { modDevFolders: patch.modDevFolders }),
           },
         },
       })
@@ -92,6 +103,8 @@ function ClaudePreferencesPage() {
       setDefaultModel(claude.defaultModel)
       setDefaultEffort(claude.defaultEffort)
       setAskPreviewFormat(claude.askUserQuestionPreviewFormat)
+      setDrawMods(claude.drawModInterfaces)
+      setModDevFolders(claude.modDevFolders)
       invalidateDefaultClaudePreferencesCache()
       toast.success(successMessage)
       setSaving(false)
@@ -296,6 +309,56 @@ function ClaudePreferencesPage() {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
+          </SettingsRow>
+
+          <SettingsRow
+            label={t('settings.preferences.drawModInterfaces.label')}
+            description={t('settings.preferences.drawModInterfaces.description')}
+          >
+            <Switch
+              checked={drawMods}
+              onCheckedChange={(checked) => void saveClaudeDefaults(
+                { drawModInterfaces: checked },
+                t(checked ? 'settings.preferences.drawModInterfaces.on' : 'settings.preferences.drawModInterfaces.off'),
+              )}
+              disabled={disabled}
+            />
+          </SettingsRow>
+
+          <SettingsRow
+            label={t('settings.preferences.modDevFolders.label')}
+            description={t('settings.preferences.modDevFolders.description')}
+            footer={modDevFolders.length > 0 ? (
+              <ul className="mt-2 space-y-1">
+                {modDevFolders.map((folder) => (
+                  <li key={folder} className="flex items-center gap-2 rounded-md bg-muted/50 px-2 py-1 text-xs">
+                    <span className="min-w-0 flex-1 truncate font-mono" title={folder}>{folder}</span>
+                    <IconButton
+                      size="xs"
+                      aria-label={t('settings.preferences.modDevFolders.remove', { folder })}
+                      disabled={disabled}
+                      onClick={() => void saveClaudeDefaults({ modDevFolders: modDevFolders.filter((f) => f !== folder) }, t('settings.preferences.modDevFolders.updated'))}
+                    >
+                      <X />
+                    </IconButton>
+                  </li>
+                ))}
+              </ul>
+            ) : undefined}
+          >
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={disabled}
+              onClick={async () => {
+                const folder = await window.app.selectFolder()
+                if (folder && !modDevFolders.includes(folder)) {
+                  await saveClaudeDefaults({ modDevFolders: [...modDevFolders, folder] }, t('settings.preferences.modDevFolders.updated'))
+                }
+              }}
+            >
+              {t('settings.preferences.modDevFolders.add')}
+            </Button>
           </SettingsRow>
         </SettingsSection>
       )}

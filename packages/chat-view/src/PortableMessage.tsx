@@ -14,6 +14,8 @@ import { ZERO_TURN_TOKENS, type TurnTokenCounts } from './presenters/turn-footer
 import { PortableCollabTaskBubble } from './PortableCollabTaskBubble'
 import { attachmentForBlock, PortableAttachmentChip } from './PortableAttachmentChip'
 import { PortableUserText } from './PortableUserText'
+import { ModSite } from './mod-ui/react'
+import { stringProp, userMessageProps } from './mod-ui/site-props'
 import { McpMentionSentProvider } from './presenters/McpMentionCard'
 import { PortableToolRow } from './PortableToolRow'
 import { PortableTurnFooter } from './PortableTurnFooter'
@@ -74,7 +76,11 @@ function PortableUserContent({
   )
   return <McpMentionSentProvider content={message.content}>{[chips, ...rest.map((block, index) => {
     if (block.type === 'text') {
-      return <PortableUserText key={index} text={block.text} mentionArtwork={mentionArtwork} />
+      return (
+        <ModSite key={index} component="UserMessage" instanceId={index === 0 ? message.id : `${message.id}:${index}`} props={userMessageProps(block.text)}>
+          {(p) => <PortableUserText text={stringProp(p, 'text', block.text)} mentionArtwork={mentionArtwork} />}
+        </ModSite>
+      )
     }
     if ('toolName' in block && 'toolUseId' in block && 'input' in block) {
       const result = results.get(block.toolUseId)

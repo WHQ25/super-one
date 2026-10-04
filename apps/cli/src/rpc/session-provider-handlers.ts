@@ -22,12 +22,6 @@ export interface SessionProviderRpcContext {
   sessionProviders: SessionProviderStore
 }
 
-export const SESSION_PROVIDER_MUTATING_METHODS = [
-  'sessionProviders.create',
-  'sessionProviders.update',
-  'sessionProviders.delete',
-] as const
-
 function requireScopes(
   client: AuthenticatedClient,
   scopes: readonly AuthScope[],

@@ -1502,6 +1502,19 @@ export const zh: Messages = {
         updated: '问题预览格式已更新',
         options: { markdown: 'Markdown', html: 'HTML' },
       },
+      drawModInterfaces: {
+        label: '显示 Mod 界面',
+        description: '显示 Claude Code mod 绘制的内容：面板、输入框上方的横条和重绘的消息行。关闭后 mod 的钩子仍会运行。',
+        on: '已显示 Mod 界面',
+        off: '已隐藏 Mod 界面',
+      },
+      modDevFolders: {
+        label: 'Mod 开发目录',
+        description: '直接从这些目录加载 mod，并在保存时热重载，用于开发 mod。Claude Code 会对每个目录询问一次再运行。新会话生效。',
+        add: '添加目录',
+        remove: '移除 {{folder}}',
+        updated: 'Mod 开发目录已更新',
+      },
     },
     usage: {
       title: '用量统计',
@@ -1568,6 +1581,13 @@ export const zh: Messages = {
     },
   },
   chat: {
+    mods: {
+      paneClosed: '这个面板已关闭。',
+      closePane: '关闭面板',
+      clientFault: '{{plugin}} 的这部分已停止：{{message}}',
+      spinnerWord: '处理中',
+      copiedToClipboard: '{{plugin}} 已将文本复制到剪贴板',
+    },
     realtimeVoice: {
       start: '开始语音对话',
       stop: '结束语音对话',
@@ -2352,6 +2372,7 @@ export const zh: Messages = {
       hintNote: '备注',
       hintSelect: '选择',
       hintDismiss: '关闭',
+      dismiss: '关闭',
     },
     filesPreviewer: {
       counter: '{{index}} / {{total}}',
@@ -3765,6 +3786,25 @@ export const zh: Messages = {
         mod: 'Mod',
         mcp: 'MCP',
         other: '其他',
+      },
+      modsActive: '已启用 {{count}} 个 mod',
+      toggleEnabled: '启用 {{name}}',
+      toggleFailed: '无法更新 {{name}}：{{error}}',
+      mods: {
+        title: 'Mod 钩子',
+        hooks: '钩子',
+        calls: '调用',
+        reviewing: '正在读取这个 mod 挂载的钩子…',
+        unavailable: 'Claude Code 无法报告这个 mod 挂载的钩子。',
+        toolApproval: '会自行应答工具调用：可以不经确认直接执行或拦截工具。',
+        promptSubmit: '能看到并改写你发送的每条消息。',
+      },
+      options: {
+        title: '选项',
+        save: '保存',
+        saved: '插件选项已保存',
+        saveFailed: '插件选项保存失败：{{error}}',
+        sensitive: '需在 Claude Code 中设置：{{names}}',
       },
     },
     hooks: {

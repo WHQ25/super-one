@@ -107,6 +107,11 @@ function NativeLink({ href, onClick, children, node: _node, ...props }: Componen
       />
     )
   }
+  return <NativeWebLink {...props} href={href} onClick={onClick} scheme={scheme}>{children}</NativeWebLink>
+}
+
+/** A web link as the phone draws it in chat: the site's favicon, opened by native. */
+export function NativeWebLink({ href, onClick, scheme, children, ...props }: ComponentProps<'a'> & { scheme: 'light' | 'dark' }) {
   return (
     <a
       {...props}

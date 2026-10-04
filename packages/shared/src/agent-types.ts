@@ -8,6 +8,7 @@ import type { GitMentionRefKind } from './git-mention-query'
 import type { McpAppHostOperation, McpAppHostRequest, ToolAppAttachment } from './mcp-apps'
 import type { WidgetLayout } from './generative-ui/types'
 import type { SchemaForm } from './schema-form'
+import type { ModHostRequest, ModInstanceRef, ModPaneRoster, ModScrollComponent, ModUiOp, ModUiRequest } from './mod-ui'
 
 // --- Image attachments ---
 
@@ -1936,6 +1937,23 @@ export type AgentEventBase =
    */
   | { type: 'plugin_notice'; kind: 'log' | 'toast' | 'status'; plugin: string; text: string | null; level?: 'error'; timeoutMs?: number }
   /**
+   * Claude Code mods drawn by SuperOne (`@superone/shared/mod-ui`). Transient
+   * view state: never reduced into the transcript. A node delivers them
+   * through its event log, a host request only while it is still awaited.
+   * `mod_ui_state` says whether the session can draw mods at all.
+   */
+  | { type: 'mod_ui_state'; available: boolean }
+  /** The pane roster the CLI holds; replaces the previous one. */
+  | { type: 'mod_panes'; roster: ModPaneRoster }
+  /** Drawn trees may be stale: `instances` narrows it to those, absent means all. */
+  | { type: 'mod_invalidate'; instances?: ModInstanceRef[] }
+  /** A plugin moved a site's scroll window for `clientId`. */
+  | { type: 'mod_scroll'; clientId: string; component: ModScrollComponent; instanceId: string; offset: number; followEnd?: boolean }
+  /** A plugin moved a site's focus ring for `clientId`. */
+  | { type: 'mod_focus'; clientId: string; component: ModScrollComponent; instanceId: string; plugin: string; key: string }
+  /** The CLI asks `clientId` to act for a plugin; that client answers with the `hostReply` op. */
+  | { type: 'mod_host_request'; clientId: string; requestId: string; request: ModHostRequest }
+  /**
    * Blocks the harness retracted from one of our messages (SDK
    * `retracted_message_uuids` / `supersedes` on a refusal fallback). One SDK
    * frame is a single API step, and our assistant message folds every step of
@@ -1997,6 +2015,12 @@ export type AgentEventBase =
    * is probed outside any project, for this session.
    */
   | { type: 'session_agents'; agents: OpenCodeAgentOption[] }
+  /**
+   * The session runtime's own slash commands after a change (a plugin reload, a
+   * mod registering one). Replaces the harness-level list, probed outside any
+   * session, for the session's project.
+   */
+  | { type: 'session_commands'; commands: SlashCommandInfo[] }
   /** ACP available_commands_update for slash-command popup. */
   | {
       type: 'acp_commands'
@@ -2511,6 +2535,8 @@ export interface PluginManifest {
   version?: string
   description: string
   author?: { name: string; email?: string }
+  /** Whether the plugin starts enabled with no explicit `enabledPlugins` value (default true). */
+  defaultEnabled?: boolean
 }
 
 export type PluginInstallPolicy = 'NOT_AVAILABLE' | 'AVAILABLE' | 'INSTALLED_BY_DEFAULT'
@@ -2576,6 +2602,41 @@ export interface PluginDetail extends PluginInfo {
   mcpServerConfigs?: Record<string, unknown>
   hookEvents?: Record<string, unknown>
   files: SkillFileEntry[]
+}
+
+/**
+ * A plugin's `userConfig` as a JSON schema SuperOne's schema form draws, and
+ * the values saved in user settings (`pluginConfigs[id].options`). Sensitive
+ * options live in Claude Code's secure storage and are listed, not edited.
+ */
+export interface PluginUserConfig {
+  schema: { type: 'object'; properties: Record<string, Record<string, unknown>>; required: string[] }
+  values: Record<string, unknown>
+  sensitive: string[]
+}
+
+/** One mod module's hooks and `$` calls, as `claude plugin validate --json` reports them. */
+export interface PluginModModule {
+  module: string
+  /** `event{matcher}` entries, e.g. `tool.call{tool=Bash}`. */
+  hooks: string[]
+  /** `$.noun.method` entries the module calls. */
+  calls: string[]
+}
+
+/** What a person should know before enabling a mod. */
+export type PluginModFlag =
+  /** Hooks `tool.check` / `tool.call`: it can answer a tool call, bypassing the approval prompt. */
+  | 'tool-approval'
+  /** Hooks `prompt.submit`: it sees and can rewrite every prompt. */
+  | 'prompt-submit'
+
+export interface PluginModReview {
+  ok: boolean
+  modules: PluginModModule[]
+  flags: PluginModFlag[]
+  errors: string[]
+  warnings: string[]
 }
 
 /** Scope of a marketplace declaration in settings.json (per Claude Code docs). */
@@ -3941,6 +4002,10 @@ export const AgentIpcChannels = {
   PLUGINS_READ: 'plugins:read',
   PLUGINS_READ_FILE: 'plugins:read-file',
   PLUGINS_DELETE: 'plugins:delete',
+  PLUGINS_SET_ENABLED: 'plugins:set-enabled',
+  PLUGINS_REVIEW_MODS: 'plugins:review-mods',
+  PLUGINS_READ_CONFIG: 'plugins:read-config',
+  PLUGINS_SAVE_CONFIG: 'plugins:save-config',
   PLUGINS_LIST_MARKETPLACE: 'plugins:list-marketplace',
   PLUGINS_INSTALL: 'plugins:install',
   PLUGINS_UPDATE: 'plugins:update',
@@ -4466,6 +4531,8 @@ export const AgentIpcChannels = {
   /** Paged denser message catalog (session.messages.list) for remote UI hydrate. */
   ENVIRONMENT_LIST_SESSION_MESSAGES: 'environment:listSessionMessages',
   ENVIRONMENT_INTERRUPT_SESSION: 'environment:interruptSession',
+  /** One op on a session's mod surface (`@superone/shared/mod-ui`), local or remote. */
+  ENVIRONMENT_MOD_UI: 'environment:modUi',
   ENVIRONMENT_RENAME_SESSION: 'environment:renameSession',
   ENVIRONMENT_REMOVE_SESSION: 'environment:removeSession',
   ENVIRONMENT_SET_SESSION_UI_FLAGS: 'environment:setSessionUiFlags',
@@ -4993,6 +5060,8 @@ export type RemoteCommand =
    * or resent: a tool call that times out has an unknown outcome.
    */
   | { type: 'mcp_app_request'; requestId: string; projectPath: string; sessionId: string; request: McpAppDeviceRequest }
+  /** A phone view's op on a session's mod surface; the desktop stamps the phone's surface and client id. */
+  | { type: 'mod_ui_request'; requestId: string; projectPath: string; sessionId: string; op: ModUiOp; request: ModUiRequest }
   /**
    * `mentions/search` across the session's MCP servers; answers an `McpMentionSearchResult`.
    * An older host never answers, which the device treats as no server items.
@@ -5456,6 +5525,10 @@ export interface AppSettings {
       tokenOverrides: TokenOverrides
       disabledSkills: string[]
       askUserQuestionPreviewFormat: QuestionPreviewFormat
+      /** Draw Claude Code mods' interface (panes, band, redrawn rows). Their hooks run either way. */
+      drawModInterfaces: boolean
+      /** Mod folders loaded from disk with hot reload (`CLAUDE_CODE_PLUGIN_DIRS`), for developing a mod. */
+      modDevFolders: string[]
     }
     codex: {
       defaultModel: string

@@ -4,7 +4,7 @@ import { resolveMappedClaudeModelId } from '@superone/shared/agent-types'
 import type { AgentEvent, ModelUsageInfo, PermissionMode, QuestionPreviewFormat, SandboxInfo, SendMessageRequest } from '@superone/shared/agent-types'
 import { createDeadStreamLedger } from '@superone/shared/dead-stream-ledger'
 import { createRetractionLedger, mapModelFallbackWire, MODEL_FALLBACK_SUBTYPES } from '@superone/shared/model-fallback-wire'
-import { readTerminalSlashCommands } from '@superone/shared/slash-commands'
+import { readTerminalSlashCommands, sdkSlashCommands } from '@superone/shared/slash-commands'
 import { sessionGoalFromClaudeActive } from '@superone/shared/session-goal'
 import { parseBashEditDiff } from '@superone/shared/bash-edit-diff'
 import {
@@ -16,6 +16,7 @@ import {
 } from '@superone/claude'
 import { withMcpAppsHostEnv, type ClaudeToolApps } from '@superone/claude/mcp-apps'
 import { mapPluginErrors, mapPluginUiMessage } from '@superone/claude/plugin-notice-wire'
+import { ModSurface, withModDevFoldersEnv, type ModSurfaceQuery } from '@superone/claude/mod-surface'
 import type { MessageBridge } from './message-bridge'
 import { withSubagentResumeSignal } from './subagent-resume-signal'
 import log from '../logger'
@@ -75,6 +76,10 @@ export interface SessionQueryOptions {
   systemPromptAppend?: string
   /** No approval surface: SDK `permissionPrompts: 'none'` (0.3.259+). */
   unattended?: boolean
+  /** The user's "draw mod interfaces" preference, read whenever availability is decided. */
+  modUiEnabled?: () => boolean
+  /** Mod folders to load from disk with hot reload (spawn-time; a change needs a new runtime). */
+  modDevFolders?: string[]
 }
 
 export const denySubagentSessionRename: HookCallback = async (input) => {
@@ -142,7 +147,7 @@ export function buildClaudeOptions(opts: SessionQueryOptions): Options {
     sessionId: opts.sessionId,
     abortController: opts.abortController,
     additionalDirectories: opts.additionalDirectories,
-    env: withMcpAppsHostEnv(opts.env),
+    env: withModDevFoldersEnv(withMcpAppsHostEnv(opts.env), opts.modDevFolders),
     // Derived from the same keys as `env`, so WarmupManager.keyOf needs no extra field.
     // `bashEditDiffEnabled` is constant: the CLI only defaults it on in auto /
     // bypassPermissions mode, and the chat renders Bash edits as file rows.
@@ -182,6 +187,8 @@ export interface BackgroundTaskInfo {
 
 export interface SessionQueryHandle {
   query: Query
+  /** The query's mod surface (Claude Code mods' interface); see `@superone/claude/mod-surface`. */
+  modSurface: ModSurface
   iterationDone: Promise<void>
   spawnAbortController: AbortController
   activeBackgroundTasks: Map<string, BackgroundTaskInfo>
@@ -229,6 +236,7 @@ export function createSessionQuery(
   }
 
   const activeBackgroundTasks = new Map<string, BackgroundTaskInfo>()
+  const modSurface = new ModSurface({ query: q as unknown as ModSurfaceQuery, emit, enabled: options.modUiEnabled })
   const iterationDone = iterateMessages(q, {
     emit,
     getCurrentMessageId,
@@ -244,9 +252,10 @@ export function createSessionQuery(
     activeBackgroundTasks,
     modelUsageBaseline: options.modelUsageBaseline,
     toolApps: options.toolApps,
+    modSurface,
   })
 
-  return { query: q, iterationDone, spawnAbortController, activeBackgroundTasks }
+  return { query: q, modSurface, iterationDone, spawnAbortController, activeBackgroundTasks }
 }
 
 export interface IterateMessagesOptions {
@@ -265,6 +274,8 @@ export interface IterateMessagesOptions {
   /** Cumulative usage the resumed transcript already carries; not recorded again. */
   modelUsageBaseline?: Record<string, ModelUsageInfo>
   toolApps?: ClaudeToolApps
+  /** Consumes the CLI's remote-surface pushes (`ui_invalidate`, `ui_panes`, …). */
+  modSurface?: ModSurface
 }
 
 export async function iterateMessages(q: Query, opts: IterateMessagesOptions): Promise<void> {
@@ -355,6 +366,8 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   let turnUserEchoSeen = false
   const timestampAppliedIds = new Set<string>()
   const reportedPluginErrors = new Set<string>()
+  // Only init names the terminal-bound commands; later command lists are tagged with them.
+  let terminalSlashCommands: string[] | undefined
 
   const activeBackgroundTasks = opts.activeBackgroundTasks ?? new Map<string, BackgroundTaskInfo>()
 
@@ -385,6 +398,8 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
       let messageId = turnMessageId
 
       if (getInterrupted() && msg.type !== 'result') {
+        // Mod pushes belong to the process, not the interrupted turn.
+        if (msg.type === 'system') opts.modSurface?.handleSystem(msg as Record<string, unknown>)
         trace('agent.sdk', `${msg.type}_ignored_after_interrupt`, msg, messageId)
         continue
       }
@@ -573,7 +588,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             log.info(`[iterateMessages] init mcp_servers=[${mcpNames}] widget_tools=[${widgetTools}]`)
             if (sys.session_id) onSessionId?.(sys.session_id)
             log.info('[session_init] outputStyle=%s availableOutputStyles=%j', sys.output_style, sys.available_output_styles)
-            const terminalSlashCommands = readTerminalSlashCommands(sys.terminal_slash_commands)
+            terminalSlashCommands = readTerminalSlashCommands(sys.terminal_slash_commands)
             emit({
               type: 'session_init',
               session: {
@@ -599,6 +614,10 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
               },
             })
             for (const notice of mapPluginErrors(sys.plugin_errors, reportedPluginErrors)) emit(notice)
+          } else if (sys.subtype === 'commands_changed' && Array.isArray(sys.commands)) {
+            emit({ type: 'session_commands', commands: sdkSlashCommands(sys.commands, terminalSlashCommands) })
+          } else if (opts.modSurface?.handleSystem(sys)) {
+            // A mod push (panes, invalidation, scroll, focus), emitted by the surface.
           } else if (sys.subtype === 'ui_log' || sys.subtype === 'ui_toast' || sys.subtype === 'ui_status') {
             const notice = mapPluginUiMessage(sys)
             if (notice) emit(notice)

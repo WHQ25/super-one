@@ -560,6 +560,11 @@ html:not(.dark) [data-sidebar-inner] .is-scrolling::-webkit-scrollbar-thumb:hove
   pointer-events: none;
 }
 
+.prompt-suggestion-hint {
+  display: block;
+  font-size: 12px;
+}
+
 .prompt-suggestion-badge {
   display: inline-block;
   vertical-align: middle;

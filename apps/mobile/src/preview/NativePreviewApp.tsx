@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { HARNESS_DEFAULT_BRAND_HUE } from '@superone/shared/harness-brand'
-import { PermissionSheet, PlanSheet, QuestionSheet } from '../sheets'
+import { PermissionSheet, PlanSheet } from '../sheets'
 import { PendingPromptBar } from '../ui/pending-prompt-bar'
 import type { PendingPrompt } from '../pending-prompt-state'
 import { CollabRequestScreen } from '../screens/collab-request-screen'
@@ -18,7 +18,7 @@ import { ShellPreview } from './ShellPreview'
 import { ToolCatalogPreview } from './ToolCatalogPreview'
 
 type ThemeChoice = 'system' | MobileColorScheme
-const categories = ['All', 'Permissions', 'Questions', 'Plans'] as const
+const categories = ['All', 'Permissions', 'Plans'] as const
 const harnesses = Object.keys(HARNESS_DEFAULT_BRAND_HUE) as HarnessId[]
 
 export default function NativePreviewApp() {
@@ -102,9 +102,8 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
   const collapseProps = { collapsed, onCollapse: () => setCollapsed(true) }
   const pendingPrompt: PendingPrompt | null = !visible || !selected ? null
     : selected.category === 'Permissions' && !selected.request.sessionAgentsConfirm ? { kind: 'permission', request: selected.request }
-      : selected.category === 'Questions' ? { kind: 'question', request: selected.request }
-        : selected.category === 'Plans' ? { kind: 'plan', request: selected.request }
-          : null
+      : selected.category === 'Plans' ? { kind: 'plan', request: selected.request }
+        : null
   const record = (action: string, payload: unknown) => {
     setActions((current) => [JSON.stringify({ scenario: selected?.id, action, payload }, null, 2), ...current].slice(0, 10))
     setVisible(false)
@@ -173,11 +172,6 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
         loadSystemInfo={async () => ({ models: [{ id: 'Preview model', name: 'Preview model', description: 'Offline preview model' }, { id: 'Review model', name: 'Review model', description: 'Offline review model' }], efforts: [{ value: 'low', label: 'Low' }, { value: 'high', label: 'High' }] })}
         onAllow={(id, formAnswers, alwaysAllow, selectedSuggestions) => record('allow', { id, formAnswers, alwaysAllow, selectedSuggestions })}
         onDeny={(id, reason) => record('deny', { id, reason })}
-      /> : null}
-      {visible && selected?.category === 'Questions' ? <QuestionSheet
-        key={revision} question={selected.request} {...collapseProps}
-        onSubmit={(id, answers, annotations) => record('submit', { id, answers, annotations })}
-        onDismiss={(id) => record('dismiss', { id })}
       /> : null}
       {visible && selected?.category === 'Plans' ? <PlanSheet
         key={revision} plan={selected.request} continueMode={selected.continueMode} {...collapseProps}

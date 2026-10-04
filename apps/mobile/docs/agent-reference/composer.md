@@ -7,8 +7,11 @@ provider/model selection, slash/mention overlays, and the IME-safe composer.
 **Composer surfaces are mutually exclusive, not stacked.** `ChatComposer` renders
 exactly one overlay above the input: `overlay` when a command owns the slot,
 otherwise the slash and mention lists. `MobileApp` picks it by priority from the
-panels a command opened — slash output, `/mcp`, `/workflows` — which also close
-each other, so the chain only settles ties. Stacking them is how a command list
+panels a command opened — `/mcp`, `/workflows` — which also close each other, so
+the chain only settles ties. A command's output and the pending question are not
+native panels: the chat document draws them in its bottom dock, directly above
+the composer (see [transcript](transcript.md)); opening `/mcp` or `/workflows`
+still dismisses the output. Stacking them is how a command list
 came to be painted under the panel that command had just opened.
 
 **Menus are a same-window portal, never RN `Modal`** (`ui/menu-host.tsx`): a native

@@ -17,7 +17,7 @@ import { Text } from '../ui/text'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import { WebView } from 'react-native-webview'
-import type { ChatMessage, HarnessId, ImageAttachment, ModelOption, RemoteHarnessOption, RemoteSystemInfo, SandboxInfo, SessionGoal, TodoItem, SessionAgentLaunchProposal } from '@superone/shared/agent-types'
+import type { AskUserQuestionRequest, ChatMessage, HarnessId, ImageAttachment, ModelOption, RemoteHarnessOption, RemoteSystemInfo, SandboxInfo, SessionGoal, TodoItem, SessionAgentLaunchProposal } from '@superone/shared/agent-types'
 import { resolveGoalCapability } from '@superone/shared/harness/harness-capabilities'
 import { MobileHeader, mobileHeaderTitle } from '../navigation/mobile-header'
 import { useMobileLocale } from '../i18n/context'
@@ -63,6 +63,18 @@ import { GitIndicatorGallery } from './GitIndicatorGallery'
 import { FilePreviewGallery } from './FilePreviewGallery'
 
 /** Two folders, one of them long enough to prove the hint row scrolls. */
+const PREVIEW_QUESTION: AskUserQuestionRequest = {
+  requestId: 'preview-question', previewFormat: 'markdown',
+  questions: [{
+    header: 'Layout', question: 'Which layout should we use?', multiSelect: false,
+    options: [
+      { label: 'Compact', description: 'Keep the conversation visible above the input.', preview: '### Compact\n\nTighter rows; more transcript on screen.' },
+      { label: 'Comfortable', description: 'Use more spacing between controls.', preview: '### Comfortable\n\nRoomier rows; easier to tap.' },
+    ],
+  }],
+}
+const PREVIEW_COMMAND_OUTPUT = { command: 'cost', content: 'Total cost:            $0.42\nTotal duration (API):  1m 12s\nTotal code changes:    48 lines added, 9 removed' }
+
 const PREVIEW_ADDITIONAL_DIRS = [
   '/Users/dev/Developer/Projects/super-one-design-system',
   '/Users/dev/Developer/Projects/shared-protocol-schemas',
@@ -373,6 +385,9 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   // sheet, and put away as the strip above the todos — the last is the one
   // worth seeing against the real composer and status row.
   const [pending, setPending] = useState<'none' | 'sheet' | 'collapsed'>('none')
+  // What the document draws above the composer: the pending question, a command's output, both.
+  const [dock, setDock] = useState<{ question: boolean; output: boolean }>({ question: false, output: false })
+  const [documentInputFocused, setDocumentInputFocused] = useState(false)
   const web = useRef<WebView>(null)
   const terminal = useRef<WebView>(null)
   const mcpApp = useMcpAppFullscreen(page === 'Chat')
@@ -384,14 +399,26 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
   const paintChat = () => {
     injectHostMessage(web, mobileWebViewTheme(tokens))
     injectHostMessage(web, { type: 'setViewport', fontScale, locale: 'en' })
-    injectHostMessage(web, { type: 'hydrate', ...transcriptProjection(transcript, messages), mentionArtwork: dynamicMentionArtworkSnapshot() })
+    injectHostMessage(web, { type: 'hydrate', ...transcriptProjection(transcript, messages), mentionArtwork: dynamicMentionArtworkSnapshot(),
+      pendingQuestion: dock.question ? PREVIEW_QUESTION : null, slashCommandOutput: dock.output ? PREVIEW_COMMAND_OUTPUT : null })
   }
-  useEffect(() => { paintChat(); injectHostMessage(terminal, mobileWebViewTheme(tokens)) }, [tokens, fontScale, messages, transcript])
+  useEffect(() => { paintChat(); injectHostMessage(terminal, mobileWebViewTheme(tokens)) }, [tokens, fontScale, messages, transcript, dock])
   /** The document's history requests, answered (slowly, or not at all) per transcript state. */
   const onChatMessage = (raw: string) => {
     const message = JSON.parse(raw)
     if (message.type === 'ready') { mcpApp.show(null); paintChat() }
     if (message.type !== 'requestNative') return
+    if (message.action === 'documentInputFocus') {
+      setDocumentInputFocused(message.payload?.focused === true)
+      injectHostMessage(web, { type: 'nativeActionResult', requestId: message.requestId, result: { ok: true } })
+      return
+    }
+    if (message.action === 'answerQuestion' || message.action === 'dismissQuestion' || message.action === 'dismissSlashOutput') {
+      console.info('[preview]', message.action, JSON.stringify(message.payload ?? {}))
+      setDock((current) => message.action === 'dismissSlashOutput' ? { ...current, output: false } : { ...current, question: false })
+      injectHostMessage(web, { type: 'nativeActionResult', requestId: message.requestId, result: { ok: true } })
+      return
+    }
     if (message.action === 'mcpAppFullscreen') {
       mcpApp.show(parseMcpAppFullscreen(message.payload))
       injectHostMessage(web, { type: 'nativeActionResult', requestId: message.requestId, result: { ok: true } })
@@ -432,6 +459,8 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
       <Text style={[styles.meta, { flex: 1 }]}>Offline preview · {Math.round(width)} px · font {fontScale.toFixed(2)}</Text>
       {chat ? <Button variant="ghost" label={nativeEditor ? 'Editor: native' : 'Editor: fallback'}
         onPress={() => setNativeEditor((value) => !value)} /> : null}
+      {page === 'Chat' ? <Button variant="ghost" label={`Dock: ${dock.question ? (dock.output ? 'both' : 'question') : dock.output ? 'output' : 'none'}`}
+        onPress={() => setDock((d) => !d.question && !d.output ? { question: true, output: false } : d.question && !d.output ? { question: false, output: true } : !d.question ? { question: true, output: true } : { question: false, output: false })} /> : null}
       {page === 'Chat' ? <Button variant="ghost" label={`Pending: ${pending}`}
         onPress={() => setPending((value) => value === 'none' ? 'sheet' : value === 'sheet' ? 'collapsed' : 'none')} /> : null}
       {page === 'Chat' && goalCapability ? <Button variant="ghost" label={`Goal: ${goal?.status ?? 'none'}`}
@@ -447,7 +476,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
       <SelectionField compact label="Transcript" value={transcript}
         options={transcriptStates.map((value) => ({ value, label: value }))} onChange={(value) => setTranscript(value as TranscriptState)} />
     </View> : null}
-    <MobileKeyboardFrame>
+    <MobileKeyboardFrame documentKeyboard={documentInputFocused}>
       <View style={styles.contentRow}>
         {tabletSidebar ? <WorkspaceSidebar {...previewWorkspace} deviceName="Preview desktop" deviceStatus="connectedLan" onDisconnect={() => setPage('Devices')} onOpenSettings={() => setPage('Settings')} /> : null}
         <View style={styles.mainPane}>
@@ -499,6 +528,7 @@ export function ShellPreview({ initialPage = 'New session', initialEffort, onClo
             webRef={web} permissionModes={['default', 'acceptEdits', 'plan']} permissionMode={mode} slashHits={slashDismissed ? [] : filterSlashCommands(chatDraft.draft, previewSlashCatalog, provider)} slashCatalogStatus={!slashDismissed && chatDraft.draft.startsWith('/') ? slashStatus : 'ready'} mentionRows={mentionRows} attachments={attachments} projectDirs={page === 'New session' ? previewDirs : []} sessionDirs={page === 'New session' ? previewSessionDirs : []} onManageDirectories={() => setPage('Additional folders')} queuedMessages={[]}
 todos={page === 'Chat' ? previewTodos : {}} draft={chatDraft.draft} streaming={page === 'Chat'}
             contextAttachments={page === 'Chat' && appContext ? [previewAppContext] : []} onRemoveContext={() => setAppContext(false)}
+            focused={documentInputFocused ? false : undefined}
             collapsedPrompts={page === 'Chat' && pending === 'collapsed' ? [{ kind: 'permission', request: ordinaryPermission }] : undefined}
             onExpandPrompt={() => setPending('sheet')}
             sandboxInfo={sandbox} contextTokens={82_400} contextWindow={200_000} totalCostUsd={0.4213}

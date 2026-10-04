@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import WebSocket from 'ws'
 import type { ControlLease, ExecutionEnvironmentDescriptor, TerminalReadResult } from '@superone/shared/environment'
 import { DATABASE_SCHEMA_GENERATION, PROTOCOL_GENERATION } from '@superone/shared/environment'
+import { isNodeMutatingCall } from '@superone/runtime/server/rpc-mutating-methods'
 import { signWithDeviceKey } from './node-auth-client'
 
 export interface NodeRpcClientOptions {
@@ -327,7 +328,7 @@ export class NodeRpcClient {
     if (!envId) {
       throw rpcResponseError('invalid_argument', 'environmentId required')
     }
-    const isMutating = isMutatingMethod(method)
+    const isMutating = isNodeMutatingCall(method, payload)
     // One key for the whole logical invocation, including transport retries.
     const idempotencyKey = isMutating ? commandKey || randomUUID() : undefined
 
@@ -640,53 +641,6 @@ export class NodeRpcClient {
       this.pending.delete(id)
     }
   }
-}
-
-function isMutatingMethod(method: string): boolean {
-  return (
-    method.includes('.create') ||
-    method.includes('.write') ||
-    method.includes('.send') ||
-    method.includes('.kill') ||
-    method.includes('.resize') ||
-    method.includes('.open') ||
-    method.includes('.remove') ||
-    method.includes('.rename') ||
-    method.includes('.move') ||
-    method.includes('.delete') ||
-    method.includes('.mkdir') ||
-    method.includes('setUiFlags') ||
-    method.includes('.interrupt') ||
-    method.includes('.respond') ||
-    method.includes('.claim') ||
-    method.includes('.acquire') ||
-    method.includes('.renew') ||
-    method.includes('.release') ||
-    method.includes('.close') ||
-    method.includes('watchStart') ||
-    method.includes('watchStop') ||
-    method.includes('tailWatchStart') ||
-    method.includes('tailWatchStop') ||
-    method.startsWith('collaboration.send') ||
-    // Git mutations: must not transport-retry without idempotency key
-    method === 'git.clone' ||
-    method === 'git.switchBranch' ||
-    method === 'git.createBranch' ||
-    method === 'git.worktreeActivate' ||
-    method === 'git.worktreeAssignBranch' ||
-    method === 'git.worktreeHandoff' ||
-    method === 'session.fork' ||
-    method === 'session.patchSettings' ||
-    method.includes('setCwd') ||
-    method.includes('session.set') ||
-    method === 'harness.enable' ||
-    method === 'harness.disable' ||
-    method === 'harness.probe' ||
-    // Provider store mutations on the node (not list/export reads)
-    (method.startsWith('provider.') &&
-      !method.includes('list') &&
-      !method.includes('export'))
-  )
 }
 
 /** Locally generated transport failure — safe to reconnect/resend with same key. */

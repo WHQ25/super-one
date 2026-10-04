@@ -1,4 +1,5 @@
 import type { ChatMessage as ChatMessageType, AgentStatus, ImageGenerationItem, VideoGenerationItem, ImageAttachment } from '@superone/shared/agent-types'
+import { ModMessageScope, ModSite, stringProp, userMessageProps } from '@superone/chat-view/mod-ui'
 import { useState, useEffect, useMemo, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
@@ -389,7 +390,11 @@ export const ChatMessage = memo(function ChatMessage({
               : null
           }
           return block.type === 'text'
-            ? <UserTextBlock key={index} text={goalObjective ?? block.text} isPaste={block.isPaste} />
+            ? (
+              <ModSite key={index} component="UserMessage" instanceId={index === 0 ? message.id : `${message.id}:${index}`} props={userMessageProps(goalObjective ?? block.text)}>
+                {(p) => <UserTextBlock text={stringProp(p, 'text', goalObjective ?? block.text)} isPaste={block.isPaste} />}
+              </ModSite>
+            )
             : (
               <ClaudeBlockPresenter
                 key={index}
@@ -414,14 +419,16 @@ export const ChatMessage = memo(function ChatMessage({
       footer={collapseEntireCodexTurn ? assistantFooter : undefined}
     />
   ) : (
-    <ClaudeTurnBodyPresenter
-      grouped={grouped!}
-      isStreaming={isStreaming}
-      detailChatMode={detailChatMode}
-      projectPath={projectPath}
-      parts={CLAUDE_TURN_PARTS}
-      runtime={CLAUDE_TURN_RUNTIME}
-    />
+    <ModMessageScope messageId={message.id}>
+      <ClaudeTurnBodyPresenter
+        grouped={grouped!}
+        isStreaming={isStreaming}
+        detailChatMode={detailChatMode}
+        projectPath={projectPath}
+        parts={CLAUDE_TURN_PARTS}
+        runtime={CLAUDE_TURN_RUNTIME}
+      />
+    </ModMessageScope>
   )
   const sendFailure = isUser ? message.metadata?.sendFailure : undefined
   const userActions = isUser && !hideCopyActions && (

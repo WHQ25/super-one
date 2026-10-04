@@ -1,4 +1,5 @@
 import { parseMessageDisplay } from '@superone/shared/message-display'
+import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
 import { dispatchMcpAppsRpc } from './mcp-apps-handlers'
 import { dirname as configDirname } from 'node:path'
 import {
@@ -23,6 +24,7 @@ import {
 } from '@superone/runtime/settings'
 import { probeSandboxRpc } from '@superone/runtime/sandbox'
 import type { RpcHostHooks } from '@superone/runtime/server'
+import { isNodeMutatingCall } from '@superone/runtime/server/rpc-mutating-methods'
 import { cloneRepository } from '@superone/shared/git-clone'
 import { isGitMentionRefKind } from '@superone/shared/git-mention-query'
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
@@ -44,24 +46,12 @@ import type { WorkspaceTailWatchService } from '../workspace/tail-watch-service'
 import type { IdempotencyService } from '../auth/idempotency'
 import type { ProviderStore } from '../provider/provider-store'
 import type { ConsumerBinding, ConsumerId, Platform } from '@superone/shared/platform-registry'
-import {
-  dispatchResourceRpc,
-  RESOURCE_MUTATING_METHODS,
-} from './resource-handlers'
-import {
-  AUTOMATION_MUTATING_METHODS,
-  dispatchAutomationRpc,
-} from './automation-handlers'
+import { dispatchResourceRpc } from './resource-handlers'
+import { dispatchAutomationRpc } from './automation-handlers'
 import { dispatchDraftRpc } from './draft-handlers'
 import { dispatchArtifactRpc } from './artifact-handlers'
-import {
-  CODEX_MUTATING_METHODS,
-  dispatchCodexRpc,
-} from './codex-handlers'
-import {
-  SESSION_PROVIDER_MUTATING_METHODS,
-  dispatchSessionProviderRpc,
-} from './session-provider-handlers'
+import { dispatchCodexRpc } from './codex-handlers'
+import { dispatchSessionProviderRpc } from './session-provider-handlers'
 import { dispatchHarnessResourcesRpc } from './harness-resources-handlers'
 import type { AutomationService } from '@superone/runtime/automations'
 import type { AutomationStore } from '@superone/runtime/automations'
@@ -97,14 +87,14 @@ export interface RpcContext {
   automations: AutomationStore
   /**
    * Unsent composer drafts stored on this node. Deliberately absent from
-   * MUTATING_METHODS: upsert/delete key off a controller-minted draft id, so
+   * the node's mutating set: upsert/delete key off a controller-minted draft id, so
    * they are idempotent by construction and the controller outbox can retry
    * a queued write freely without replay receipts.
    */
   drafts: DraftStore
   /**
    * Session sync zone under `<nodeHome>/sync` (`artifact.*`). Like drafts,
-   * absent from MUTATING_METHODS: `put` is idempotent by its offset contract.
+   * absent from the mutating set: `put` is idempotent by its offset contract.
    */
   artifacts: ArtifactZoneService
   /** Process-lifecycle scheduler + runNow executor. */
@@ -159,72 +149,8 @@ export function clearWatchBuffersForClient(clientSessionId: string): void {
  */
 const MAX_TURN_ADDITIONAL_DIRS = 64
 
-const MUTATING_METHODS = new Set([
-  'terminal.create',
-  'terminal.write',
-  'terminal.resize',
-  'terminal.kill',
-  'project.open',
-  'project.update',
-  'project.remove',
-  'workspace.writeFile',
-  'workspace.rename',
-  'workspace.move',
-  'workspace.delete',
-  'workspace.mkdir',
-  'workspace.watchStart',
-  'workspace.watchStop',
-  'workspace.tailWatchStart',
-  'workspace.tailWatchStop',
-  'git.clone',
-  'git.switchBranch',
-  'git.createBranch',
-  'git.worktreeActivate',
-  'git.worktreeAssignBranch',
-  'git.worktreeHandoff',
-  'session.create',
-  'session.setCwd',
-  'session.patchSettings',
-  'session.fork',
-  'session.send',
-  'session.interrupt',
-  'session.respondPermission',
-  'session.respondQuestion',
-  'session.respondPlan',
-  'session.claimHostAction',
-  'session.respondHostAction',
-  'harness.probe',
-  'session.acquireControl',
-  'session.renewControl',
-  'session.releaseControl',
-  'session.close',
-  'session.remove',
-  'session.rename',
-  'session.setTags',
-  'session.setUiFlags', // pin/hide
-  'terminal.acquireControl',
-  'terminal.renewControl',
-  'terminal.releaseControl',
-  'collaboration.request',
-  'collaboration.start',
-  'collaboration.send',
-  'provider.createCredential',
-  'provider.updateCredential',
-  'provider.deleteCredential',
-  'provider.setBinding',
-  'provider.clearBinding',
-  'provider.upsertCustomPlatform',
-  'provider.deleteCustomPlatform',
-  'provider.importBundle',
-  'settings.patch',
-  ...RESOURCE_MUTATING_METHODS,
-  ...AUTOMATION_MUTATING_METHODS,
-  ...SESSION_PROVIDER_MUTATING_METHODS,
-  ...CODEX_MUTATING_METHODS,
-])
-
 export async function dispatchRpc(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult> {
-  if (MUTATING_METHODS.has(method)) {
+  if (isNodeMutatingCall(method, payload)) {
     if (!ctx.idempotencyKey) {
       return {
         error: {
@@ -291,6 +217,8 @@ export async function dispatchRpc(method: string, payload: unknown, ctx: RpcCont
   return dispatchRpcInner(method, payload, ctx)
 }
 
+const PLUGIN_RELOAD_METHODS = new Set(['plugins.setEnabled', 'plugins.install', 'plugins.update', 'plugins.delete'])
+
 async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const resource = dispatchResourceRpc(method, payload, {
     client: ctx.client,
@@ -298,7 +226,12 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
     harnesses: ctx.harnesses,
     providers: ctx.providers,
   })
-  if (resource) return await resource
+  if (resource) {
+    const result = await resource
+    // A live Claude process loads plugins once; a change on disk reaches it by reload.
+    if (!result.error && PLUGIN_RELOAD_METHODS.has(method)) void ctx.sessions.reloadPlugins()
+    return result
+  }
 
   const automation = dispatchAutomationRpc(method, payload, {
     client: ctx.client,
@@ -483,6 +416,8 @@ async function dispatchRpcInner(method: string, payload: unknown, ctx: RpcContex
       return handleTerminalReleaseControl(payload, ctx)
     case 'session.send':
       return handleSessionSend(payload, ctx)
+    case 'session.modUi':
+      return handleSessionModUi(payload, ctx)
     case 'session.interrupt':
       return handleSessionInterrupt(payload, ctx)
     case 'session.respondPermission':
@@ -2571,6 +2506,35 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
   }
 }
 
+/**
+ * A desktop or phone view's op on a session's mod surface. Drawing needs read
+ * access; ops that change what a plugin sees or does need operate access and
+ * the control lease (checked by the runtime).
+ */
+async function handleSessionModUi(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const p = asRecord(payload)
+  const op = String(p.op ?? '') as ModUiOp
+  const denied = requireScopes(ctx.client, MOD_UI_MUTATING_OPS.has(op) ? OPERATION_SCOPES.operateSession : OPERATION_SCOPES.readSession)
+  if (denied) return denied
+  try {
+    const result = await ctx.sessions.modUi({
+      sessionId: String(p.sessionId ?? ''),
+      op,
+      request: asRecord(p.request) as ModUiRequest,
+      client: { clientSessionId: ctx.client.clientSessionId },
+      leaseId: typeof p.leaseId === 'string' ? p.leaseId : undefined,
+      generation: typeof p.generation === 'string' ? p.generation : undefined,
+    })
+    return { result }
+  } catch (err) {
+    // The name crosses the wire in the message, which is what views test for.
+    if ((err as { name?: string }).name === MOD_UI_UNAVAILABLE) {
+      return { error: { code: 'unavailable', message: `${MOD_UI_UNAVAILABLE}: ${(err as Error).message}` } }
+    }
+    return mapThrown(err)
+  }
+}
+
 function handleSessionInterrupt(payload: unknown, ctx: RpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied
@@ -2820,7 +2784,7 @@ function handleSessionEvents(payload: unknown, ctx: RpcContext): RpcResult {
   if (denied) return denied
   const p = asRecord(payload)
   const after = String(p.afterSequence ?? '0')
-  return { result: { events: ctx.sessions.listEventsAfter(after) } }
+  return { result: { events: ctx.sessions.listEventsAfter(after, ctx.client) } }
 }
 
 /**

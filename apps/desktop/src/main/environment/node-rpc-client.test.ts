@@ -110,6 +110,23 @@ describe('NodeRpcClient disconnect signaling', () => {
     await rejection
   })
 
+  it.each([
+    ['plugins.setEnabled', { projectId: 'p', key: 'a@m', enabled: false }, true],
+    ['mcp.toggle', { projectId: 'p', name: 'x', enabled: true }, true],
+    ['codex.setAuth', { projectId: 'p', mode: 'auto' }, true],
+    ['session.modUi', { sessionId: 's', op: 'press', request: {} }, true],
+    ['session.modUi', { sessionId: 's', op: 'render', request: {} }, false],
+    ['plugins.list', { projectId: 'p' }, false],
+  ])('keys %s exactly when the node requires it', async (method, payload, keyed) => {
+    const { client, ws } = await connectClient({ supervised: true })
+    const request = client.rpc(method, payload)
+    const rejection = expect(request).rejects.toThrow()
+    const frame = JSON.parse(ws.send.mock.calls.at(-1)![0])
+    expect(typeof frame.idempotencyKey === 'string').toBe(keyed)
+    client.close()
+    await rejection
+  })
+
   it('does not resend an App tool when the socket loses its completion reply', async () => {
     const { client, ws } = await connectClient({ supervised: false })
     const call = client.rpc('mcpApps.provider', { operation: 'callTool' })

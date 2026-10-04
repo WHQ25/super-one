@@ -244,8 +244,9 @@ module that runs inside the CLI process. Upstream docs:
 
 - **Behavior:** Mods are on by default and load with the user's plugins, so
   `settingSources` with `user` runs them in every SuperOne session. Their hooks
-  run; nothing they draw (panes, the band above the prompt, replaced rows)
-  reaches an SDK host. What reaches it: `ui_log` / `ui_toast` / `ui_status`
+  run; what they draw (panes, the band above the prompt, replaced rows)
+  reaches an SDK host only if it attaches as a surface (see "Mod UI rides a
+  private control protocol"). What reaches every host: `ui_log` / `ui_toast` / `ui_status`
   (raised in `session.start` they arrive before `system/init`), and the effects
   of their hooks. The CLI writes `.claude-plugin/types/` into the plugin
   directory when it loads one.
@@ -284,6 +285,124 @@ module that runs inside the CLI process. Upstream docs:
 - **Observed:** 0.3.287 live probe.
 - **Depends on it:** nothing; SuperOne can only show what `plugin_errors` reports.
 - **Guard:** unguarded.
+
+### Mod UI rides a private control protocol
+
+- **Behavior:** What mods draw reaches an SDK host only through control
+  requests `sdk.d.ts` does not declare (`ui_attach`, `ui_render`, `ui_press`,
+  `ui_input`, `ui_select`, `ui_panes`, `ui_pane_show`, `ui_pane_focus`,
+  `ui_close`, `ui_scroll`, `ui_focus`, `ui_client_module`, `ui_client_press`,
+  `ui_message`, `ui_prompt_edit`, `ui_detach`), sent with the runtime's
+  `Query.request()`, and CLI→host requests (`promptRead` / `promptFill` /
+  `promptSuggest` / `copy`) answered through `Query.setUiHost()`. Pushes are
+  `system/ui_invalidate`, `ui_panes`, `ui_scroll`, `ui_focus`. The CLI lists
+  `ui_surface_v1` in `initializationResult().capabilities` before any turn,
+  and `ui_render` answers in 0–9 ms. Surfaces are a closed set (`desktop`,
+  `mobile`, `vscode`); SuperOne attaches as `desktop` and each phone as
+  `mobile`. An error reply to a CLI→host request costs the CLI a 5 s wait.
+- **Observed:** 0.3.287 live probe and recordings.
+- **Depends on it:** `packages/claude/src/mod-surface/` (the only place that
+  touches `request` / `setUiHost`; it is unavailable when either is missing),
+  and every surface in [features/claude-mods.md](../../features/claude-mods.md).
+- **Guard:** `packages/claude/src/mod-surface/mod-surface.test.ts` (capability
+  gate, missing private API, recorded ops, pushes and host requests).
+
+### Only the first engine ref carries rewritten props
+
+- **Behavior:** A tree that holds several `engine` nodes (a hook that calls
+  `next` twice) answers refs 1, 2, …; only the first non-zero ref's rewritten
+  props cross in the response. `rewritten: true` is set even when a hook passed
+  the props through unchanged.
+- **Observed:** 0.3.287 live probe.
+- **Depends on it:** `packages/chat-view/src/mod-ui/ModTree.tsx` (the first ref
+  draws with the response props, later refs with the request props; nothing
+  reads `rewritten`); `engineOnce` sites (AskUserQuestion) draw SuperOne's own
+  unless exactly one ref is present.
+- **Guard:** `packages/chat-view/src/mod-ui/engine-refs.test.ts`.
+
+### Host props are not validated
+
+- **Behavior:** The CLI passes the props a host sends for a site to its hooks
+  unchecked; a missing field reaches the hook as `undefined`. `tool_use_id` is
+  filled from `instance_id`.
+- **Observed:** 0.3.287 live probe.
+- **Depends on it:** the site prop builders in
+  `packages/chat-view/src/mod-ui/site-props.ts`, which are the contract.
+- **Guard:** `packages/chat-view/src/mod-ui/site-props.test.ts`.
+
+### A mobile ask is filtered by the CLI
+
+- **Behavior:** A `mobile` render strips `Input`, `Select` and `Client` from the
+  tree; hooks on sites the phone never draws still run if asked.
+- **Observed:** 0.3.287 live probe.
+- **Depends on it:** the phone draws the CLI's tree with no host-side filter
+  and asks only the sites it shows (no `AbovePrompt`).
+- **Guard:** unguarded.
+
+### `$.ui.ask` and hot-reload consent arrive as AskUserQuestion
+
+- **Behavior:** `$.ui.ask` arrives as `canUseTool('AskUserQuestion')` with
+  `toolUseID` `toolu_plugin_<hex>` and no transcript row; the dev-folder consent
+  arrives the same way with `confirm_<uuid>` and `metadata.source:
+  'mod_hot_reload'`. An `updatedInput.answers` reply reaches the mod as the
+  chosen label.
+- **Observed:** 0.3.287 live probe; SuperOne's existing question prompt
+  answered both on 2026-10-04.
+- **Depends on it:** the AskUserQuestion path in `claude-permissions.ts` and
+  `SessionDecisionPrompts.tsx`, which must not assume a tool row.
+- **Guard:** unguarded.
+
+### Mod development folders hot-reload from the spawn environment
+
+- **Behavior:** `CLAUDE_CODE_PLUGIN_DIRS` loads plugin folders from disk and
+  `CLAUDE_CODE_PLUGIN_DIR_WATCH=1` reloads them on save: an un-narrowed
+  `ui_invalidate`, `session.start` again, and a `ui_log` "reloaded" line.
+- **Observed:** 0.3.287 live probe; SuperOne preference live on 2026-10-04.
+- **Depends on it:** `packages/claude/src/mod-surface/dev-folders.ts`, applied by
+  desktop `claude-query.ts`. Spawn-time only: a change rebuilds the session.
+- **Guard:** `packages/claude/src/mod-surface/dev-folders.test.ts`.
+
+### A mod command's reply is a synthetic assistant message
+
+- **Behavior:** A command a mod registered replies with an `assistant` message
+  of `model: "<synthetic>"` carrying `local_command_run: { command, args }`,
+  then a `result` with `num_turns: 0`. Commands are listed in
+  `initializationResult().commands`, without any `immediate` flag.
+- **Observed:** 0.3.287 live probe.
+- **Depends on it:** slash output in desktop `claude-query.ts`, wrapped as the
+  `CommandOutput` site. Commands a mod registers `immediate` still queue behind
+  a running turn in SuperOne.
+- **Guard:** `apps/desktop/src/main/agent/claude-query.test.ts` (slash output).
+
+### `Client` modules run on the host
+
+- **Behavior:** `ui_client_module` returns the plugin's surface modules plus
+  `claude:surface-runtime` and bounds (nodes 20000, depth 32, chars 100000).
+  The runtime's `install(host, limits)` takes `schedule`, `startTimer`,
+  `stopTimer` and `post`; the host drives it with `stage(id, kind, payload)`
+  (`render`, `pointer`, `key`, `tick`, `held`) then
+  `globalThis.__surface__.run()`, which returns the tree's JSON for `render`.
+  Pressables carry `held` handles: `ui_client_press` answers `reached`, then the
+  host stages `held`. `ui_message` answers the hooks module's new `props`.
+  Pointer events are `{ type, x, y, button?, shift?, alt?, ctrl? }` in the
+  Client's cells; keys use `onKey`'s names (`up`, `return`, `space`, …).
+- **Observed:** 0.3.287 recordings and binary strings.
+- **Depends on it:** `packages/chat-view/src/mod-ui/client-frame.ts` and
+  `ClientFrame.tsx` (an opaque sandboxed frame, nonce-only CSP).
+- **Guard:** `packages/chat-view/src/mod-ui/client-frame.test.ts` for SuperOne's
+  side; the runtime itself is unguarded against upstream change.
+
+### `ui_prompt_edit` answers whether or not a mod hooks it
+
+- **Behavior:** Every edit sent is answered: unhooked, the box comes back with
+  no runs; a newer edit from the same client answers the older one
+  `superseded`. A remote client gets no signal that `prompt.edit` is hooked. A
+  local round trip measured about 0.2 ms.
+- **Observed:** 0.3.287 live probe, 2026-10-04.
+- **Depends on it:** `packages/chat-view/src/mod-ui/prompt-edit.ts`, used by the
+  desktop composer for local sessions only.
+- **Guard:** `packages/chat-view/src/mod-ui/prompt-edit.test.ts` for the relay;
+  upstream behavior unguarded.
 
 ## MCP Apps
 

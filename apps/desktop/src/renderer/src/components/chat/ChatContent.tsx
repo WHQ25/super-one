@@ -34,6 +34,8 @@ import { RealtimeCallComposer } from './RealtimeCallComposer'
 import { ComposerSwitch } from './ComposerSwitch'
 import { extractTurnOutline } from './turn-outline'
 import { ChatRootContext } from './is-focus-in-chat'
+import { DesktopModUi } from '@/lib/mod-ui/DesktopModUi'
+import { ModPaneDockSync } from './mod/ModSurfaces'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
@@ -482,6 +484,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   })))
   const projectPath = scope?.projectPath ?? activeProject
   const isCodexSession = resolveProvider({ sessionProvider, preferredProvider }) === 'codex'
+  const drawsMods = HARNESS_CAPABILITIES[resolveProvider({ sessionProvider, preferredProvider })].modUi
   const realtime = useCodexRealtimeViewStore(
     (state) => displayedSessionId
       ? state.sessions[displayedSessionId] ?? EMPTY_CODEX_REALTIME_SESSION_VIEW
@@ -641,6 +644,8 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       style={densityStyle}
     >
       <ChatRootContext.Provider value={containerRef}>
+      <DesktopModUi projectPath={projectPath} sessionId={displayedSessionId ?? null} enabled={drawsMods}>
+      {foreground && drawsMods && projectPath && displayedSessionId ? <ModPaneDockSync projectPath={projectPath} sessionId={displayedSessionId} /> : null}
       {workflowView ? (
         <Suspense fallback={null}>
           <WorkflowFullView view={workflowView} />
@@ -704,6 +709,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
           />
         </>
       )}
+      </DesktopModUi>
       </ChatRootContext.Provider>
     </div>
     </PlanFullscreenContext.Provider>

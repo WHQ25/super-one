@@ -50,7 +50,7 @@ const hoisted = vi.hoisted(() => {
     mockQueryMcpServerStatus: vi.fn(async () => []),
     mockQueryReconnectMcpServer: vi.fn(async () => {}),
     mockQueryToggleMcpServer: vi.fn(async () => {}),
-    mockQueryReloadPlugins: vi.fn(async () => {}),
+    mockQueryReloadPlugins: vi.fn(async () => ({ commands: [], error_count: 0 })),
   }
   captured.createSessionQueryMock.mockImplementation(
     (bridge: unknown, opts: unknown, emit: (e: AgentEvent) => void, getMid: () => string, _getTs: () => number, getInterrupted: () => boolean, onSessionId: (id: string) => void, onQueuedTurnStart: (id: string) => void, onStepBoundary: () => void) => {

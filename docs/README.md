@@ -48,6 +48,7 @@ the same commit.
 - [terminal-agent-tools.md](features/terminal-agent-tools.md) — agent terminal control
 - [jev-fast-loop.md](features/jev-fast-loop.md) — Jev fast loop for browser, computer and device runs
 - [mcp-apps.md](features/mcp-apps.md) — hosting third-party MCP Apps Views (Codex, Claude; desktop, phone, remote)
+- [claude-mods.md](features/claude-mods.md) — drawing Claude Code mods (panes, band, transcript sites, `Client`; desktop, phone, remote)
 
 ### Development
 

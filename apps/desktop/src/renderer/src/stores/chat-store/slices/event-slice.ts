@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand'
+import { routeModEvent, showOrHoldModToast } from '@/lib/mod-ui/registry'
 import { toast } from 'sonner'
 import type {
   AgentEvent,
@@ -217,6 +218,8 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
     const projectPath = event.projectPath
     const eventSessionId = event.sessionId
     if (!projectPath) return
+    // Mod drawing state lives in the session's mod client, not in the transcript.
+    if (routeModEvent(event, projectPath, eventSessionId)) return
     if (event.type === 'additional_dirs_changed') {
       set((s) => updateProjectState(s, projectPath, (project) => {
         const targetSid = eventSessionId ?? project._activeSessionId
@@ -480,6 +483,15 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
           if (effort) updatedSession.selectedEffort = effort
           updatedProject._sessions = { ...updatedProject._sessions, [targetSid]: updatedSession }
         }
+      }
+
+      if (event.type === 'session_commands') {
+        const claudeRes = s.harnessResources.claude
+        updatedProject.slashCommands = buildSlashCommands(
+          event.commands, claudeRes?.skills ?? [], claudeRes?.commands ?? [],
+          project._projectSkills ?? [], project._projectCommands ?? [],
+          new Set(s.disabledSkills),
+        )
       }
 
       const effectiveSid = targetSid
@@ -779,7 +791,8 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       && projectPath === get().activeProject
       && eventSessionId === get().projectSessions[projectPath]?._activeSessionId
     ) {
-      toast(event.text, { description: event.plugin, ...(event.timeoutMs ? { duration: event.timeoutMs } : {}) })
+      const { text, plugin, timeoutMs } = event
+      showOrHoldModToast(eventSessionId, () => toast(text, { description: plugin, ...(timeoutMs ? { duration: timeoutMs } : {}) }))
     }
   },
 

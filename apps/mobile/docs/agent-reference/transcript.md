@@ -10,7 +10,18 @@ Paths below are relative to apps/mobile unless repository-qualified.
 | **Chat WebView** (`@superone/chat-view`) | DOM paint of reduction patches, scroll, expand | Re-reducing `AgentEvent`s |
 | **Terminal WebView** | xterm frames | Event ACK / seq |
 
-Never nest the chat WebView in an RN `ScrollView`. Input is native only.
+Never nest the chat WebView in an RN `ScrollView`. Input is native, except the
+document's bottom dock (`BottomDock`): mod panes, a command's output and the
+pending AskUserQuestion form, pinned above the composer so a Claude mod can wrap
+them (`ModCommandOutputSite`, `ModQuestionSite`). Their data rides the
+projection (`pendingQuestion`, `slashCommandOutput`); answers go back through
+the `answerQuestion` / `dismissQuestion` / `dismissSlashOutput` native actions.
+While a dock field holds the keyboard (`documentInputFocus`), iOS turns off
+`MobileKeyboardFrame`'s avoidance: WKWebView already insets its visible area by
+the keyboard, and shrinking the WebView too left it zero points tall. The
+composer's action bar stays collapsed then, since its own keyboard check cannot
+tell whose field raised it. Fields there are under 16px, so the document's
+viewport sets `maximum-scale=1` to stop WebKit zooming onto them.
 `Loading…` is only for switching to an existing session: the
 previous transcript must not stay on screen while restore runs. Keep the
 WebView mounted at opacity 0 under that cover *and* under the new-session

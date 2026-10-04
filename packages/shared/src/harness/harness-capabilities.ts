@@ -108,6 +108,12 @@ export interface HarnessCapabilities {
    * host hook (Cursor), so the executor raises the gate itself before typing anything.
    */
   terminalCommandApproval: 'harness' | 'executor'
+  /**
+   * Can host Claude Code mods' interface (panes, the band above the prompt,
+   * redrawn rows) through the CLI's remote-surface protocol. The per-session
+   * runtime fact is the `mod_ui_state` event; this is the static ceiling.
+   */
+  modUi: boolean
   /** User-facing display name for this harness. */
   displayName: string
 }
@@ -131,6 +137,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     // the goal is either live or cleared.
     goal: { lifecycleArgs: ['clear'], canPause: false, transport: 'slash', semantics: 'condition' },
     terminalCommandApproval: 'harness',
+    modUi: true,
     displayName: 'Claude',
   },
   codex: {
@@ -151,6 +158,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     // follow-up turns itself, so every transition is an explicit RPC.
     goal: { lifecycleArgs: [], canPause: true, transport: 'rpc', semantics: 'objective' },
     terminalCommandApproval: 'harness',
+    modUi: false,
     displayName: 'Codex',
   },
   acp: {
@@ -184,6 +192,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
       semantics: 'objective',
     },
     terminalCommandApproval: 'harness',
+    modUi: false,
     displayName: 'Others',
   },
   opencode: {
@@ -201,6 +210,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsFork: true,
     goal: null,
     terminalCommandApproval: 'harness',
+    modUi: false,
     displayName: 'OpenCode',
   },
   cursor: {
@@ -220,6 +230,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     goal: null,
     // The @cursor/sdk local executor auto-approves custom tools with no host hook.
     terminalCommandApproval: 'executor',
+    modUi: false,
     displayName: 'Cursor',
   },
   dsh: {
@@ -252,6 +263,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsFork: true,
     goal: null,
     terminalCommandApproval: 'harness',
+    modUi: false,
     displayName: 'DeepSeek',
   },
 }

@@ -1,4 +1,4 @@
-import type { AgentStatus, ChatMessage, Locale } from '@superone/shared/agent-types'
+import type { AgentEvent, AgentStatus, AskUserQuestionRequest, ChatMessage, Locale } from '@superone/shared/agent-types'
 import type { ChatWindowRange } from './chat-window'
 
 /** Wire shape of the retry banner; mirrors what `ApiRetryIndicator` renders. */
@@ -44,6 +44,10 @@ export interface SessionProjection {
    * so pinch-zoom cannot scale the chat document.
    */
   projectPath?: string | null
+  /** The question the session waits on; the document draws its form above the composer. */
+  pendingQuestion?: AskUserQuestionRequest | null
+  /** Output of a command that is not a chat message, shown above the composer until dismissed. */
+  slashCommandOutput?: { command: string; content: string } | null
 }
 
 export interface ReductionProjection extends SessionProjection {
@@ -89,6 +93,13 @@ export type HostInbound =
    * against it, as they do in the desktop's Markdown editor.
    */
   | { type: 'showMarkdownDocument'; text: string; directory: string }
+  /**
+   * The session the document draws mods for, as the client id the desktop
+   * stamps this phone with; `null` when the session's harness draws none.
+   */
+  | { type: 'setModSession'; sessionId: string | null; clientId: string | null }
+  /** A `mod_*` session event, which the native runtime does not reduce. */
+  | { type: 'modEvent'; event: AgentEvent }
   | { type: 'nativeActionResult'; requestId: string; result?: unknown; error?: string }
   | { type: 'nativeActionProgress'; requestId: string; progress: unknown }
 

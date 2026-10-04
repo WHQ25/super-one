@@ -1,4 +1,5 @@
 import type { CanUseTool, OnElicitation, Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import { sdkSlashCommands } from '@superone/shared/slash-commands'
 import { randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
 import { MessageBridge } from '../../agent/message-bridge'
@@ -52,6 +53,8 @@ import { getSandboxCapability } from '../../sandbox-platform'
 import { listSkills } from '../../skills-service'
 import { hasRunningDownloadTasks } from '../../browser/browser-download-tasks'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
+import type { ModSurface } from '@superone/claude/mod-surface'
+import { MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'
 
 interface ClaudeConfig {
   apiKey?: string
@@ -95,6 +98,7 @@ export class ClaudeBackend implements SessionBackend {
 
   private bridge: MessageBridge | null = null
   private query: Query | null = null
+  private modSurface: ModSurface | null = null
   private iterationDone: Promise<void> | null = null
   private spawnAbortController: AbortController | null = null
 
@@ -171,6 +175,7 @@ export class ClaudeBackend implements SessionBackend {
    * `_lastStartOpts`, whose baseline predates every turn this runtime ran.
    */
   private modelUsageBaseline: BackendStartOptions['modelUsageBaseline']
+  private terminalSlashCommands: string[] | undefined
   /** In-flight `rebuild()`; a revive waits for it instead of restarting the runtime it replaces. */
   private runtimeRebuild: Promise<void> | null = null
   private _spawnedAdditionalDirs: string[] = []
@@ -249,6 +254,8 @@ export class ClaudeBackend implements SessionBackend {
       settingsEnv,
       enabledSkills,
       askUserQuestionPreviewFormat: claudePref.askUserQuestionPreviewFormat,
+      modUiEnabled: () => readAppSettings().agentPreference.claude.drawModInterfaces,
+      modDevFolders: readAppSettings().agentPreference.claude.modDevFolders,
       systemPromptAppend: opts.systemPromptAppend,
       unattended: opts.unattended,
       toolApps: this.toolApps,
@@ -374,6 +381,7 @@ export class ClaudeBackend implements SessionBackend {
     )
 
     this.query = handle.query
+    this.modSurface = handle.modSurface
     this.iterationDone = handle.iterationDone
     this.spawnAbortController = handle.spawnAbortController
     this.activeBackgroundTasks = handle.activeBackgroundTasks ?? null
@@ -648,6 +656,8 @@ export class ClaudeBackend implements SessionBackend {
     const query = this.query
     const iterationDone = this.iterationDone
     const spawnAbortController = this.spawnAbortController
+    this.modSurface?.dispose()
+    this.modSurface = null
     this.bridge = null
     this.query = null
     this.iterationDone = null
@@ -1006,11 +1016,29 @@ export class ClaudeBackend implements SessionBackend {
     await query.toggleMcpServer(serverName, enabled)
   }
 
+  /**
+   * One op on the live runtime's mod surface. Never revives a released runtime:
+   * a view asking to draw must not keep an idle CLI alive. Views redraw when
+   * the next runtime announces `mod_ui_state`.
+   */
+  async modUi<O extends ModUiOp>(op: O, request: ModUiRequest<O>): Promise<ModUiResult<O>> {
+    if (!this.modSurface) throw Object.assign(new Error('No live Claude runtime for this session'), { name: MOD_UI_UNAVAILABLE })
+    return this.modSurface.call(op, request)
+  }
+
+  refreshModUi(): void {
+    this.modSurface?.refreshEnabled()
+  }
+
   async reloadPlugins(): Promise<boolean> {
     const query = await this.ensureQuery()
     if (!query) return false
     try {
-      await query.reloadPlugins()
+      const result = await query.reloadPlugins()
+      this.emit({ type: 'session_commands', commands: sdkSlashCommands(result.commands, this.terminalSlashCommands) })
+      if (result.error_count > 0) {
+        this.emit({ type: 'plugin_notice', kind: 'toast', plugin: 'Claude Code', text: `${result.error_count} plugin error(s) on reload; run /plugin for details`, level: 'error' })
+      }
       return true
     } catch {
       return false
@@ -1080,6 +1108,8 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private emitOne(event: AgentEvent): void {
+    // Only init names the terminal-bound commands; a plugin reload's list is tagged with them.
+    if (event.type === 'session_init') this.terminalSlashCommands = event.session.terminalSlashCommands
     if (
       this.stagedProviderSessionId
       && (event.type === 'content_delta' || event.type === 'message_complete' || event.type === 'message_interrupted')

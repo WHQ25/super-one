@@ -278,6 +278,22 @@ export async function deleteRemoteManagedPlugin(
   return true
 }
 
+/** `plugins.setEnabled`. Returns false when path is not remote. */
+export async function setRemotePluginEnabled(
+  host: EnvironmentHost,
+  folderPath: string,
+  key: string,
+  scope: Extract<ResourceScope, 'user' | 'project'>,
+  enabled: boolean,
+): Promise<boolean> {
+  const ctx = await resolveRemoteResourceContext(host, folderPath)
+  if (!ctx) return false
+  const gw = asRemoteGw(host, ctx.environmentId)
+  if (!gw) return false
+  await gw.pluginsSetEnabled(ctx.projectId, key, scope, enabled)
+  return true
+}
+
 /** `plugins.install`. Returns false when path is not remote. */
 export async function installRemoteManagedPlugin(
   host: EnvironmentHost,

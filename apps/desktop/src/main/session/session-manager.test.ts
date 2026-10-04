@@ -529,6 +529,24 @@ describe('SessionManager', () => {
       expect(hoisted.disposeDeviceAgentSession).toHaveBeenCalledWith(s.snapshot.id)
     })
 
+    it('overlapping disposals of one id keep the session recreated under it', async () => {
+      // Loaded once, so the teardown's tail import does not stall the second disposal.
+      await import('../mcp/superone-mcp-server')
+      const s = mgr.createSession({ projectPath: '/p', providerId: 'claude-base' })
+      // The first teardown is still closing the session's MCP transports when a send recreates the id.
+      let release: (() => void) | undefined
+      hoisted.closeMcpHttpSessions.mockImplementationOnce(() => new Promise<undefined>((r) => { release = () => r(undefined) }))
+      const first = mgr.disposeSession(s.id)
+      await vi.waitFor(() => expect(release).toBeDefined())
+      const recreated = mgr.disposeSession(s.id).then(() => mgr.createSession({ projectPath: '/p', providerId: 'claude-base', id: s.id }))
+      // Unguarded, the second teardown finishes and the id is recreated while the first still runs.
+      await Promise.race([recreated, new Promise((r) => setTimeout(r, 500))])
+      release!()
+      const fresh = await recreated
+      await first
+      expect(mgr.getSession(s.id)).toBe(fresh)
+    })
+
     it('disposeSession on unstarted session still closes the backend', async () => {
       const s = mgr.createSession({ projectPath: '/p', providerId: 'claude-base' })
       const backend = hoisted.backendsCreated[0] as FakeBackend

@@ -353,10 +353,3 @@ export function dispatchAutomationRpc(
       return null
   }
 }
-
-export const AUTOMATION_MUTATING_METHODS = [
-  'automation.create',
-  'automation.update',
-  'automation.delete',
-  'automation.runNow',
-] as const

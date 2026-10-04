@@ -5,7 +5,7 @@ import { renderWithTheme } from '../test-render'
 import { PendingPromptBar } from './pending-prompt-bar'
 
 const bash: PendingPrompt = { kind: 'permission', request: { requestId: 'perm-1', toolName: 'Bash', input: { command: 'bun run test' }, allowAlwaysAllow: true } }
-const question: PendingPrompt = { kind: 'question', request: { requestId: 'q-1', questions: [{ header: 'Lib', question: 'Which library?', options: [{ label: 'A', description: '' }], multiSelect: false }] } }
+const plan: PendingPrompt = { kind: 'plan', request: { requestId: 'plan-1', planContent: '# Plan', planFilePath: '/repo/.claude/plans/refactor.md', allowedPrompts: [] } }
 
 test('names the request and its one-line detail', async () => {
   await renderWithTheme(<PendingPromptBar prompt={bash} onExpand={() => {}} />)
@@ -15,10 +15,10 @@ test('names the request and its one-line detail', async () => {
 })
 
 test('translates the title the sheet header uses', async () => {
-  await renderWithTheme(<PendingPromptBar prompt={question} onExpand={() => {}} />, 'dark', 'zh')
+  await renderWithTheme(<PendingPromptBar prompt={plan} onExpand={() => {}} />, 'dark', 'zh')
 
-  expect(screen.getByText('问题')).toBeTruthy()
-  expect(screen.getByText('Which library?')).toBeTruthy()
+  expect(screen.getByText('计划审核')).toBeTruthy()
+  expect(screen.getByText('refactor.md')).toBeTruthy()
 })
 
 test('a tap anywhere reopens the request; there is no close on the strip', async () => {

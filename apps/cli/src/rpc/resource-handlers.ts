@@ -24,6 +24,7 @@ import {
   deleteManagedSkill,
   deleteMcpConfig,
   deletePlugin,
+  setPluginEnabled,
   discoverAllAgents,
   getManagedSkill,
   getSkillDirs,
@@ -586,6 +587,35 @@ export function handlePluginsDelete(payload: unknown, ctx: ResourceRpcContext): 
   }
 }
 
+export function handlePluginsSetEnabled(payload: unknown, ctx: ResourceRpcContext): ResourceRpcResult {
+  const baseDenied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
+  if (baseDenied) return baseDenied
+  const p = asRecord(payload)
+  try {
+    const projectId = String(p.projectId ?? '')
+    const cwd = projectRoot(ctx.projects, projectId)
+    const provider = parseClaudeProvider(p.provider)
+    if (!provider) {
+      return { error: { code: 'invalid_argument', message: 'provider must be claude' } }
+    }
+    const scope = parseScope(p.scope)
+    if (!scope) {
+      return { error: { code: 'invalid_argument', message: 'scope must be user or project' } }
+    }
+    const denied = requireResourceWrite(ctx.client, scope)
+    if (denied) return denied
+    const key = String(p.key ?? '')
+    if (!key || typeof p.enabled !== 'boolean') {
+      return { error: { code: 'invalid_argument', message: 'key and enabled are required' } }
+    }
+    setPluginEnabled(cwd, key, scope, p.enabled, manageOpts(ctx))
+    ctx.projects.touch(projectId)
+    return { result: { ok: true as const, provider } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
 export async function handlePluginsInstall(
   payload: unknown,
   ctx: ResourceRpcContext,
@@ -991,6 +1021,8 @@ export function dispatchResourceRpc(
       return handlePluginsReadFile(payload, ctx)
     case 'plugins.delete':
       return handlePluginsDelete(payload, ctx)
+    case 'plugins.setEnabled':
+      return handlePluginsSetEnabled(payload, ctx)
     case 'plugins.install':
       return handlePluginsInstall(payload, ctx)
     case 'plugins.update':
@@ -1021,19 +1053,3 @@ export function dispatchResourceRpc(
       return null
   }
 }
-
-export const RESOURCE_MUTATING_METHODS = [
-  'skills.delete',
-  'skills.install',
-  'mcp.save',
-  'mcp.toggle',
-  'mcp.delete',
-  'plugins.delete',
-  'plugins.install',
-  'plugins.update',
-  'plugins.addMarketplace',
-  'plugins.removeMarketplace',
-  'plugins.updateMarketplace',
-  'hooks.save',
-  'hooks.delete',
-] as const

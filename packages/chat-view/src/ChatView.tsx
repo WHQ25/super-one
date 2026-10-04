@@ -32,6 +32,9 @@ import { ZERO_TURN_TOKENS } from './presenters/turn-footer-model'
 import { CHAT_WINDOW, initialChatWindow, loadPreviousChatWindow, loadNextChatWindow, normalizeChatWindow, type ChatWindowRange } from './chat-window'
 import { exitMcpAppFullscreen, forgetMcpAppArrivals, noteMcpAppArrivals } from './mcp-app-document'
 import { installHostBridge, postHost, requestNativeAsync } from './bridge'
+import { MobileModPanes, MobileModUiProvider, useMobileModClient } from './mod-ui/MobileModUi'
+import { BottomDock } from './BottomDock'
+import { PortableCommandOutput, PortableQuestion } from './PortableDecisionCards'
 import { applyDocumentViewport } from './document-viewport'
 import { PortableMessage } from './PortableMessage'
 import { isRealtimeVoiceMessage } from '@superone/shared/realtime-transcript'
@@ -76,6 +79,8 @@ const EMPTY_SESSION: SessionFacts = {
   apiRetry: null,
   pendingTurn: null,
   projectPath: null,
+  pendingQuestion: null,
+  slashCommandOutput: null,
 }
 
 /** Take only the session keys the host actually sent; a patch omits what did not change. */
@@ -416,6 +421,9 @@ export function ChatView() {
     })
   }, [prepareNavigation])
 
+  const mods = useMobileModClient()
+  const modsRef = useRef(mods)
+  modsRef.current = mods
   const handleInbound = useCallback((message: HostInbound) => {
     switch (message.type) {
       case 'detailUpdate':
@@ -522,6 +530,12 @@ export function ChatView() {
       case 'scrollToTurn':
         jumpToMessage(message.turnId, message.behavior ?? 'smooth')
         return
+      case 'setModSession':
+        modsRef.current.setSession({ sessionId: message.sessionId, clientId: message.clientId })
+        return
+      case 'modEvent':
+        modsRef.current.handleEvent(message.event)
+        return
       case 'nativeActionProgress':
       case 'nativeActionResult':
         return
@@ -626,6 +640,7 @@ export function ChatView() {
   const topRetry = navigationRetry && navigationEdge === 'top' ? navigationRetry : null
   const bottomRetry = navigationRetry && navigationEdge === 'bottom' ? navigationRetry : null
   return (
+    <MobileModUiProvider client={mods.client} scheme={state.scheme}>
     <main
       className="chat-view-shell"
       data-mounted-turns={visible.length}
@@ -694,7 +709,13 @@ export function ChatView() {
       {state.session.compactError && <CompactErrorIndicator error={state.session.compactError} />}
       {state.session.isRecapping && <RecappingIndicator />}
       {state.session.apiRetry && <ApiRetryIndicator info={state.session.apiRetry} />}
+      <BottomDock>
+        <MobileModPanes />
+        {state.session.slashCommandOutput && <PortableCommandOutput output={state.session.slashCommandOutput} />}
+        {state.session.pendingQuestion && <PortableQuestion request={state.session.pendingQuestion} scheme={state.scheme} />}
+      </BottomDock>
     </main>
+    </MobileModUiProvider>
   )
 }
 

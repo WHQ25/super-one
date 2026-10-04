@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ModSite, spinnerProps, stringProp, type SpinnerMode } from '@superone/chat-view/mod-ui'
 import { useTranslation } from 'react-i18next'
 import { AlertTriangle, ArrowDown, ArrowUp, Check, Clock, Copy, Loader2 } from 'lucide-react'
 import type { ChatMessage } from '@superone/shared/agent-types'
@@ -207,15 +208,22 @@ export function DurationFooter({
           }
         </button>
       )}
-      {showDuration && (
+      {showDuration && (isStreaming ? (
+        <ModSpinner message={message}>
+          {(label) => (
+            <>
+              <Loader2 className="size-3 animate-spin" />
+              {label && <span>{label}</span>}
+              <span>{footer.durationLabel}</span>
+            </>
+          )}
+        </ModSpinner>
+      ) : (
         <>
-          {isStreaming
-            ? <Loader2 className="size-3 animate-spin" />
-            : <Clock className="size-3" />
-          }
+          <Clock className="size-3" />
           <span>{footer.durationLabel}</span>
         </>
-      )}
+      ))}
       {showSlashCommand && (
         <>
           {!showDuration && <Loader2 className="size-3 animate-spin" />}
@@ -280,5 +288,30 @@ export function DurationFooter({
         />
       )}
     </div>
+  )
+}
+
+/** What the turn is doing, in the Spinner site's terms. */
+function spinnerMode(message: ChatMessage): SpinnerMode {
+  const last = message.content.at(-1)
+  if (!last) return 'requesting'
+  if (last.type === 'thinking') return 'thinking'
+  if (last.type === 'tool_use') return last.status === 'streaming' ? 'tool-input' : 'tool-use'
+  return 'responding'
+}
+
+/**
+ * The running turn's indicator as the Spinner site. SuperOne draws no spinner
+ * word, so it shows one only when a mod rewrote the word, message or suffix.
+ */
+function ModSpinner({ message, children }: { message: ChatMessage; children: (label: string | null) => ReactNode }) {
+  const { t } = useTranslation()
+  const word = t('chat.mods.spinnerWord')
+  const mode = spinnerMode(message)
+  const props = useMemo(() => spinnerProps(word, null, mode), [word, mode])
+  return (
+    <ModSite component="Spinner" instanceId={message.id} props={props}>
+      {(p) => children(p === props ? null : `${stringProp(p, 'message', '') || stringProp(p, 'word', word)}${stringProp(p, 'suffix', '…')}`)}
+    </ModSite>
   )
 }

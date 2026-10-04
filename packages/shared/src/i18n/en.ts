@@ -1409,6 +1409,19 @@ export type Messages = {
         updated: string
         options: { markdown: string; html: string }
       }
+      drawModInterfaces: {
+        label: string
+        description: string
+        on: string
+        off: string
+      }
+      modDevFolders: {
+        label: string
+        description: string
+        add: string
+        remove: string
+        updated: string
+      }
     }
     usage: {
       title: string
@@ -1475,6 +1488,13 @@ export type Messages = {
     }
   }
   chat: {
+    mods: {
+      paneClosed: string
+      closePane: string
+      clientFault: string
+      spinnerWord: string
+      copiedToClipboard: string
+    }
     realtimeVoice: {
       start: string
       stop: string
@@ -2254,6 +2274,7 @@ export type Messages = {
       hintNote: string
       hintSelect: string
       hintDismiss: string
+      dismiss: string
     }
     filesPreviewer: {
       counter: string
@@ -3672,6 +3693,25 @@ export type Messages = {
         mod: string
         mcp: string
         other: string
+      }
+      modsActive: string
+      toggleEnabled: string
+      toggleFailed: string
+      mods: {
+        title: string
+        hooks: string
+        calls: string
+        reviewing: string
+        unavailable: string
+        toolApproval: string
+        promptSubmit: string
+      }
+      options: {
+        title: string
+        save: string
+        saved: string
+        saveFailed: string
+        sensitive: string
       }
     }
     hooks: {
@@ -5601,6 +5641,19 @@ export const en: Messages = {
         updated: 'Question preview format updated',
         options: { markdown: 'Markdown', html: 'HTML' },
       },
+      drawModInterfaces: {
+        label: 'Draw Mod Interfaces',
+        description: 'Show what Claude Code mods draw: their panes, the band above the composer, and redrawn rows. Their hooks run either way.',
+        on: 'Mod interfaces are shown',
+        off: 'Mod interfaces are hidden',
+      },
+      modDevFolders: {
+        label: 'Mod Development Folders',
+        description: 'Load mods straight from these folders and reload them on save, for building a mod. Claude Code asks once per folder before running it. New sessions pick up a change.',
+        add: 'Add Folder',
+        remove: 'Remove {{folder}}',
+        updated: 'Mod development folders updated',
+      },
     },
     usage: {
       title: 'Usage Statistics',
@@ -5667,6 +5720,13 @@ export const en: Messages = {
     },
   },
   chat: {
+    mods: {
+      paneClosed: 'This pane is closed.',
+      closePane: 'Close Pane',
+      clientFault: 'This part of {{plugin}} stopped: {{message}}',
+      spinnerWord: 'Working',
+      copiedToClipboard: '{{plugin}} copied text to the clipboard',
+    },
     realtimeVoice: {
       start: 'Start Voice Conversation',
       stop: 'Stop Voice Conversation',
@@ -6452,6 +6512,7 @@ export const en: Messages = {
       hintNote: 'note',
       hintSelect: 'select',
       hintDismiss: 'dismiss',
+      dismiss: 'Dismiss',
     },
     filesPreviewer: {
       counter: '{{index}} / {{total}}',
@@ -7868,6 +7929,25 @@ export const en: Messages = {
         mod: 'Mod',
         mcp: 'MCP',
         other: 'Other',
+      },
+      modsActive: '{{count}} mod(s) active',
+      toggleEnabled: 'Enable {{name}}',
+      toggleFailed: 'Could not update {{name}}: {{error}}',
+      mods: {
+        title: 'Mod Hooks',
+        hooks: 'Hooks',
+        calls: 'Calls',
+        reviewing: 'Reading what this mod hooks…',
+        unavailable: 'Claude Code could not report what this mod hooks.',
+        toolApproval: 'Answers tool calls itself: it can run or block a tool without the approval prompt.',
+        promptSubmit: 'Sees every prompt you send and can rewrite it.',
+      },
+      options: {
+        title: 'Options',
+        save: 'Save',
+        saved: 'Plugin options saved',
+        saveFailed: 'Could not save the plugin options: {{error}}',
+        sensitive: 'Set in Claude Code: {{names}}',
       },
     },
     hooks: {

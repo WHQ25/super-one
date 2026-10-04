@@ -91,6 +91,8 @@ export interface ClaudeLiveSessionOptions {
   queryFn?: ClaudeQueryFn
   /** Attaches MCP App state to tool rows of tools that declare a `ui://` resource. */
   toolApps?: ClaudeToolApps
+  /** Consumes system messages before they are mapped (the mod surface's `ui_*` pushes). */
+  onSystem?: (system: Record<string, unknown>) => boolean
 }
 
 interface PendingTurn {
@@ -311,6 +313,7 @@ export class ClaudeLiveSession {
   private readonly backgroundTaskIds = new Set<string>()
   private idleSystemMapper: ReturnType<typeof createClaudeAgentEventMapper> | null = null
   private readonly reportedPluginErrors = new Set<string>()
+  private readonly terminalNames: { names: string[] | undefined } = { names: undefined }
   private sdkSessionId: string | null
   private closed = false
   private readonly iterationDone: Promise<void>
@@ -325,6 +328,11 @@ export class ClaudeLiveSession {
    * provider). Null when a test `queryFn` yields a bare message stream.
    */
   readonly query: Query | null
+
+  /** The terminal-bound command names the latest init gave, to tag a reloaded command list. */
+  get terminalSlashCommands(): string[] | undefined {
+    return this.terminalNames.names
+  }
 
   private constructor(
     private readonly opts: ClaudeLiveSessionOptions,
@@ -540,7 +548,7 @@ export class ClaudeLiveSession {
       this.opts.onAmbientEvent?.({ type: 'status_change', status: 'streaming' })
       this.ambient = {
         messageId,
-        mapper: createClaudeAgentEventMapper({ messageId, emit: (event) => this.opts.onAmbientEvent?.(event), toolApps: this.opts.toolApps, reportedPluginErrors: this.reportedPluginErrors }),
+        mapper: createClaudeAgentEventMapper({ messageId, emit: (event) => this.opts.onAmbientEvent?.(event), toolApps: this.opts.toolApps, reportedPluginErrors: this.reportedPluginErrors, terminalSlashCommands: this.terminalNames, onSystem: this.opts.onSystem }),
       }
     }
     if (!this.ambient) return
@@ -573,6 +581,8 @@ export class ClaudeLiveSession {
               messageId: '',
               emit: (event) => this.opts.onAmbientEvent?.(event),
               reportedPluginErrors: this.reportedPluginErrors,
+              terminalSlashCommands: this.terminalNames,
+              onSystem: this.opts.onSystem,
             })
             this.idleSystemMapper.apply(msg)
           } else {
@@ -598,7 +608,9 @@ export class ClaudeLiveSession {
         if (cur.cancelled) {
           // Drain the SDK's current turn before allowing the next bridge
           // message to become active. A shared query cannot safely switch
-          // ownership in the middle of a result stream.
+          // ownership in the middle of a result stream. Mod pushes belong to
+          // the process, not the turn, so they still go out.
+          if (msg.type === 'system') this.opts.onSystem?.(msg as Record<string, unknown>)
           if (msg.type === 'result') {
             this.active = null
             this.permissionHandler = undefined
@@ -627,6 +639,8 @@ export class ClaudeLiveSession {
               isInterrupted: () => cur.input.signal?.aborted === true,
               toolApps: this.opts.toolApps,
               reportedPluginErrors: this.reportedPluginErrors,
+              terminalSlashCommands: this.terminalNames,
+              onSystem: this.opts.onSystem,
             })
           } else {
             holder._state = createSdkMapState(cur.messageId)

@@ -1,0 +1,1278 @@
+{
+ "cli": "2.1.287",
+ "note": "Scrubbed from a live SDK 0.3.287 session (probe-mod + token-weather); see docs/harness/claude/contracts.md § 'Mod UI rides a private control protocol'.",
+ "exchanges": [
+  {
+   "request": {
+    "subtype": "ui_attach",
+    "surface": "desktop",
+    "client_id": "superone-spike",
+    "viewport": {
+     "columns": 120,
+     "rows": 40,
+     "isFullscreen": true
+    },
+    "answers": [
+     "ui_copy",
+     "ui_prompt_read",
+     "ui_prompt_fill",
+     "ui_prompt_suggest"
+    ]
+   },
+   "response": {
+    "surfaces": [
+     "desktop"
+    ]
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_render",
+    "surface": "desktop",
+    "client_id": "superone-spike",
+    "component": "Pane",
+    "instance_id": "probe",
+    "props": {
+     "title": "Probe pane",
+     "isFocused": true,
+     "bodyColumns": 50,
+     "placement": "dock",
+     "scroll": {
+      "offset": 0,
+      "bodyRows": 12
+     },
+     "view": {}
+    },
+    "viewport": {
+     "columns": 120,
+     "rows": 40,
+     "isFullscreen": true
+    },
+    "content_rows": 30,
+    "keyed": [
+     {
+      "plugin": "probe-mod",
+      "key": "bottom",
+      "top": 28,
+      "bottom": 29
+     },
+     {
+      "plugin": "probe-mod",
+      "key": "name",
+      "top": 14,
+      "bottom": 15
+     }
+    ]
+   },
+   "response": {
+    "tree": {
+     "type": "Box",
+     "props": {
+      "flexDirection": "column",
+      "gap": 1
+     },
+     "children": [
+      {
+       "type": "Text",
+       "props": {
+        "bold": true,
+        "color": "green"
+       },
+       "children": [
+        "probe pane surface=desktop cols=50 placement=dock count=0"
+       ]
+      },
+      {
+       "type": "Button",
+       "props": {
+        "key": "go",
+        "label": "Go",
+        "hotkey": "g",
+        "variant": "primary"
+       },
+       "press": {
+        "plugin": "probe-mod",
+        "handle": 1
+       }
+      },
+      {
+       "type": "Button",
+       "props": {
+        "key": "dismiss",
+        "label": "Close",
+        "role": "dismiss"
+       },
+       "press": {
+        "plugin": "probe-mod",
+        "handle": 2
+       }
+      },
+      {
+       "type": "Markdown",
+       "props": {
+        "text": "See [docs](https://example.com/a) and **bold**",
+        "key": "md"
+       },
+       "press": {
+        "plugin": "probe-mod",
+        "handle": 3
+       }
+      },
+      {
+       "type": "Code",
+       "props": {
+        "source": "@@ -1,2 +1,2 @@\n-a\n+b\n c",
+        "format": "diff"
+       }
+      },
+      {
+       "type": "Link",
+       "props": {
+        "href": "https://example.com",
+        "label": "example"
+       }
+      },
+      {
+       "type": "Input",
+       "props": {
+        "key": "name",
+        "label": "Name",
+        "placeholder": "type",
+        "value": "",
+        "submitLabel": "add"
+       },
+       "press": {
+        "plugin": "probe-mod",
+        "handle": 4
+       }
+      },
+      {
+       "type": "Select",
+       "props": {
+        "key": "size",
+        "options": [
+         {
+          "value": "sm",
+          "label": "Small"
+         },
+         {
+          "value": "lg",
+          "label": "Large"
+         }
+        ],
+        "label": "Size",
+        "value": "sm"
+       },
+       "press": {
+        "plugin": "probe-mod",
+        "handle": 5
+       }
+      },
+      {
+       "type": "Svg",
+       "props": {
+        "source": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 2\"><rect width=\"10\" height=\"2\" fill=\"#2e7d32\"/></svg>",
+        "alt": "bar",
+        "width": 20,
+        "height": 4
+       }
+      },
+      {
+       "type": "Client",
+       "props": {
+        "key": "board",
+        "module": "hooks/board.mjs",
+        "props": {
+         "label": "hi"
+        },
+        "height": 3
+       },
+       "client": {
+        "plugin": "probe-mod"
+       }
+      },
+      {
+       "type": "Box",
+       "props": {
+        "key": "bottom"
+       },
+       "children": [
+        {
+         "type": "Text",
+         "props": {
+          "dimColor": true
+         },
+         "children": [
+          "bottom row"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    "props": {
+     "title": "Probe pane",
+     "isFocused": true,
+     "bodyColumns": 50,
+     "placement": "dock",
+     "scroll": {
+      "offset": 0,
+      "bodyRows": 12
+     },
+     "view": {}
+    },
+    "rewritten": false,
+    "hooked": true,
+    "client_modules": {
+     "probe-mod": "84325368c23c3f88a4095296ebaeff2f3ae410de10b51d8d782bf2959eec870f"
+    }
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_press",
+    "plugin": "probe-mod",
+    "handle": 1,
+    "key": "go",
+    "surface": "desktop",
+    "client_id": "superone-spike"
+   },
+   "response": {
+    "handled": true,
+    "element": "go"
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_press",
+    "plugin": "probe-mod",
+    "handle": 999999,
+    "key": "go"
+   },
+   "response": {
+    "handled": false
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_press",
+    "plugin": "probe-mod",
+    "handle": 3,
+    "key": "md",
+    "href": "https://example.com/a",
+    "surface": "desktop"
+   },
+   "response": {
+    "handled": true,
+    "element": "md"
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_input",
+    "plugin": "probe-mod",
+    "handle": 4,
+    "kind": "change",
+    "value": "ab",
+    "key": "name",
+    "component": "Pane",
+    "instance_id": "probe",
+    "surface": "desktop",
+    "client_id": "superone-spike"
+   },
+   "response": {
+    "handled": true,
+    "element": "name",
+    "value": "ab"
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_input",
+    "plugin": "probe-mod",
+    "handle": 4,
+    "kind": "submit",
+    "value": "abc",
+    "key": "name",
+    "component": "Pane",
+    "instance_id": "probe",
+    "surface": "desktop",
+    "client_id": "superone-spike"
+   },
+   "response": {
+    "handled": true,
+    "element": "name",
+    "value": "abc"
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_select",
+    "plugin": "probe-mod",
+    "handle": 5,
+    "value": "lg",
+    "key": "size",
+    "component": "Pane",
+    "instance_id": "probe",
+    "surface": "desktop",
+    "client_id": "superone-spike"
+   },
+   "response": {
+    "handled": true,
+    "element": "size",
+    "value": "lg"
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_select",
+    "plugin": "probe-mod",
+    "handle": 5,
+    "value": "xl",
+    "key": "size",
+    "component": "Pane",
+    "instance_id": "probe"
+   },
+   "response": {
+    "handled": false
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_client_module",
+    "plugin": "probe-mod"
+   },
+   "response": {
+    "plugin": "probe-mod",
+    "hash": "84325368c23c3f88a4095296ebaeff2f3ae410de10b51d8d782bf2959eec870f",
+    "modules": [
+     {
+      "module": "hooks/board.mjs",
+      "entry": "surface:///hooks/board.mjs",
+      "component": "default"
+     }
+    ],
+    "runtime": "claude:surface-runtime",
+    "limits": {
+     "nodes": 20000,
+     "depth": 32,
+     "chars": 100000,
+     "values": 20000,
+     "dataDepth": 32
+    },
+    "files": [
+     {
+      "key": "claude:surface-runtime",
+      "source": "const jsx = (() => {\n  'use strict'\n  const INTRINSIC = { Bo…"
+     },
+     {
+      "key": "claude:hooks-types",
+      "source": "// atom-brand/atom-brand.js\nconst ATOM_BRAND = Symbol.for('c…"
+     },
+     {
+      "key": "surface:///hooks/board.mjs",
+      "source": "// Client surface module: a tiny counter drawn locally, post…"
+     }
+    ]
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_message",
+    "plugin": "probe-mod",
+    "component": "Pane",
+    "instance_id": "probe",
+    "client": "board",
+    "module": "hooks/board.mjs",
+    "data": {
+     "clicked": [
+      1,
+      2
+     ]
+    }
+   },
+   "response": {
+    "handled": true,
+    "props": {
+     "label": "after-message"
+    }
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_client_press",
+    "plugin": "probe-mod",
+    "component": "Pane",
+    "instance_id": "probe",
+    "client": "board",
+    "module": "hooks/board.mjs",
+    "element": "client-btn",
+    "event": {
+     "type": "press"
+    }
+   },
+   "response": {
+    "handled": true,
+    "reached": {
+     "plugin": "probe-mod",
+     "element": "client-btn",
+     "component": "Pane",
+     "requestId": "probe",
+     "surface": "desktop"
+    }
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_scroll",
+    "component": "Pane",
+    "instance_id": "probe",
+    "offset": 3,
+    "by": 3,
+    "body_rows": 12,
+    "content_rows": 30,
+    "surface": "desktop",
+    "client_id": "superone-spike"
+   },
+   "response": {
+    "moved": true,
+    "offset": 3
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_focus",
+    "component": "Pane",
+    "instance_id": "probe",
+    "is_held": true,
+    "element": {
+     "plugin": "probe-mod",
+     "key": "go"
+    },
+    "by": "person",
+    "surface": "desktop",
+    "client_id": "superone-spike"
+   },
+   "response": {
+    "moved": true,
+    "element": {
+     "plugin": "probe-mod",
+     "key": "go"
+    }
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_render",
+    "surface": "desktop",
+    "client_id": "superone-spike",
+    "component": "AbovePrompt",
+    "instance_id": "above-prompt",
+    "props": {
+     "hasSurvey": false,
+     "isWorking": false,
+     "maxRows": 6,
+     "bodyColumns": 118,
+     "scroll": {
+      "offset": 0,
+      "bodyRows": 6
+     },
+     "view": {}
+    },
+    "viewport": {
+     "columns": 120,
+     "rows": 40,
+     "isFullscreen": true
+    }
+   },
+   "response": {
+    "tree": {
+     "type": "Box",
+     "props": {
+      "flexDirection": "row"
+     },
+     "children": [
+      {
+       "type": "Text",
+       "props": {
+        "bold": true
+       },
+       "children": [
+        "probe band count=0"
+       ]
+      }
+     ]
+    },
+    "props": {
+     "hasSurvey": false,
+     "isWorking": false,
+     "maxRows": 6,
+     "bodyColumns": 118,
+     "scroll": {
+      "offset": 0,
+      "bodyRows": 6
+     },
+     "view": {}
+    },
+    "rewritten": false,
+    "hooked": true
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_pane_show",
+    "id": "probe",
+    "surface": "desktop",
+    "client_id": "superone-spike"
+   },
+   "response": {
+    "shown_id": "probe"
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_pane_focus",
+    "id": null,
+    "surface": "desktop",
+    "client_id": "superone-spike"
+   },
+   "response": {
+    "focused_id": null
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_close",
+    "id": "probe",
+    "client_id": "superone-spike"
+   },
+   "response": {
+    "closed": true
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_render",
+    "surface": "desktop",
+    "client_id": "superone-spike",
+    "component": "ToolUse",
+    "instance_id": "toolu_012sJRzTpQVJbK78pXehZAK9",
+    "props": {
+     "tool_use_id": "toolu_012sJRzTpQVJbK78pXehZAK9",
+     "tool": "Bash",
+     "input": {
+      "command": "echo hi",
+      "description": "Echo hi"
+     },
+     "isRunning": false,
+     "isErrored": false,
+     "isInterrupted": false,
+     "output": "hi\n"
+    },
+    "viewport": {
+     "columns": 120,
+     "rows": 40,
+     "isFullscreen": true
+    }
+   },
+   "response": {
+    "tree": {
+     "type": "Box",
+     "props": {
+      "flexDirection": "column"
+     },
+     "children": [
+      {
+       "type": "engine",
+       "ref": 1
+      },
+      {
+       "type": "Text",
+       "props": {
+        "dimColor": true
+       },
+       "children": [
+        "probe saw Bash"
+       ]
+      }
+     ]
+    },
+    "props": {
+     "tool_use_id": "toolu_012sJRzTpQVJbK78pXehZAK9",
+     "tool": "Bash",
+     "input": {
+      "command": "echo hi",
+      "description": "Echo hi"
+     },
+     "isRunning": false,
+     "isErrored": false,
+     "isInterrupted": false,
+     "output": "hi\n"
+    },
+    "rewritten": true,
+    "hooked": true
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_render",
+    "surface": "desktop",
+    "client_id": "superone-spike",
+    "component": "ToolResult",
+    "instance_id": "toolu_012sJRzTpQVJbK78pXehZAK9",
+    "props": {
+     "tool_use_id": "toolu_012sJRzTpQVJbK78pXehZAK9",
+     "tool": "Bash",
+     "output": "hi\n",
+     "isErrored": false
+    },
+    "viewport": {
+     "columns": 120,
+     "rows": 40,
+     "isFullscreen": true
+    }
+   },
+   "response": {
+    "tree": {
+     "type": "engine",
+     "ref": 1
+    },
+    "props": {
+     "tool_use_id": "toolu_012sJRzTpQVJbK78pXehZAK9",
+     "tool": "Bash",
+     "output": "hi\n",
+     "isErrored": false
+    },
+    "rewritten": true,
+    "hooked": true
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_render",
+    "surface": "desktop",
+    "client_id": "superone-spike",
+    "component": "ToolGroup",
+    "instance_id": "toolu_012sJRzTpQVJbK78pXehZAK9",
+    "props": {
+     "calls": [
+      {
+       "tool_use_id": "toolu_012sJRzTpQVJbK78pXehZAK9",
+       "tool": "Bash",
+       "input": {
+        "command": "echo hi",
+        "description": "Echo hi"
+       },
+       "isRunning": false,
+       "isErrored": false
+      },
+      {
+       "tool_use_id": "toolu_013jpTVpm4Y7L5p7F4UuUXih",
+       "tool": "Bash",
+       "input": {
+        "command": "echo there",
+        "description": "Echo there"
+       },
+       "isRunning": false,
+       "isErrored": false
+      }
+     ],
+     "isActive": false,
+     "isExpanded": false
+    },
+    "viewport": {
+     "columns": 120,
+     "rows": 40,
+     "isFullscreen": true
+    }
+   },
+   "response": {
+    "tree": {
+     "type": "Box",
+     "children": [
+      {
+       "type": "Text",
+       "children": [
+        "group of 2"
+       ]
+      }
+     ]
+    },
+    "props": {
+     "calls": [
+      {
+       "tool_use_id": "toolu_012sJRzTpQVJbK78pXehZAK9",
+       "tool": "Bash",
+       "input": {
+        "command": "echo hi",
+        "description": "Echo hi"
+       },
+       "isRunning": false,
+       "isErrored": false
+      },
+      {
+       "tool_use_id": "toolu_013jpTVpm4Y7L5p7F4UuUXih",
+       "tool": "Bash",
+       "input": {
+        "command": "echo there",
+        "description": "Echo there"
+       },
+       "isRunning": false,
+       "isErrored": false
+      }
+     ],
+     "isActive": false,
+     "isExpanded": false
+    },
+    "rewritten": false,
+    "hooked": true
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_render",
+    "surface": "desktop",
+    "client_id": "superone-spike",
+    "component": "ToolUse",
+    "instance_id": "toolu_012sJRzTpQVJbK78pXehZAK9",
+    "props": {
+     "nope": true
+    },
+    "viewport": {
+     "columns": 120,
+     "rows": 40,
+     "isFullscreen": true
+    }
+   },
+   "response": {
+    "tree": {
+     "type": "Box",
+     "props": {
+      "flexDirection": "column"
+     },
+     "children": [
+      {
+       "type": "engine",
+       "ref": 1
+      },
+      {
+       "type": "Text",
+       "props": {
+        "dimColor": true
+       },
+       "children": [
+        "probe saw undefined"
+       ]
+      }
+     ]
+    },
+    "props": {
+     "nope": true,
+     "tool_use_id": "toolu_012sJRzTpQVJbK78pXehZAK9"
+    },
+    "rewritten": true,
+    "hooked": true
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_render",
+    "surface": "desktop",
+    "client_id": "superone-spike",
+    "component": "AssistantMessage",
+    "instance_id": "5dc38bc9-5922-4e7a-8c5b-96b2cd2d35ce",
+    "props": {
+     "text": "done",
+     "isFirstOfReply": true
+    },
+    "viewport": {
+     "columns": 120,
+     "rows": 40,
+     "isFullscreen": true
+    }
+   },
+   "response": {
+    "tree": {
+     "type": "Box",
+     "props": {
+      "flexDirection": "column"
+     },
+     "children": [
+      {
+       "type": "engine",
+       "ref": 1
+      },
+      {
+       "type": "Text",
+       "children": [
+        "between"
+       ]
+      },
+      {
+       "type": "engine",
+       "ref": 2
+      }
+     ]
+    },
+    "props": {
+     "text": "done",
+     "isFirstOfReply": true
+    },
+    "rewritten": true,
+    "hooked": true
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_render",
+    "surface": "desktop",
+    "client_id": "superone-spike",
+    "component": "UserMessage",
+    "instance_id": "user-1",
+    "props": {
+     "text": "hello",
+     "origin": {
+      "kind": "human"
+     },
+     "isExpanded": false
+    },
+    "viewport": {
+     "columns": 120,
+     "rows": 40,
+     "isFullscreen": true
+    }
+   },
+   "response": {
+    "tree": {
+     "type": "engine",
+     "ref": 1
+    },
+    "props": {
+     "text": "[probe] hello",
+     "origin": {
+      "kind": "human"
+     },
+     "isExpanded": false
+    },
+    "rewritten": true,
+    "hooked": true
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_render",
+    "surface": "desktop",
+    "client_id": "superone-spike",
+    "component": "Spinner",
+    "instance_id": "main",
+    "props": {
+     "word": "Working",
+     "message": null,
+     "suffix": "",
+     "mode": "responding"
+    },
+    "viewport": {
+     "columns": 120,
+     "rows": 40,
+     "isFullscreen": true
+    }
+   },
+   "response": {
+    "tree": {
+     "type": "engine",
+     "ref": 1
+    },
+    "props": {
+     "word": "Working",
+     "message": null,
+     "suffix": " · probe",
+     "mode": "responding"
+    },
+    "rewritten": true,
+    "hooked": true
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_render",
+    "surface": "desktop",
+    "client_id": "superone-spike",
+    "component": "SessionMode",
+    "instance_id": "session-mode",
+    "props": {
+     "modes": [
+      "default"
+     ]
+    },
+    "viewport": {
+     "columns": 120,
+     "rows": 40,
+     "isFullscreen": true
+    }
+   },
+   "response": {
+    "tree": {
+     "type": "Text",
+     "children": [
+      "probe modes: [\"default\"]"
+     ]
+    },
+    "props": {
+     "modes": [
+      "default"
+     ]
+    },
+    "rewritten": false,
+    "hooked": true
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_render",
+    "surface": "desktop",
+    "client_id": "superone-spike",
+    "component": "PromptHint",
+    "instance_id": "prompt-hint",
+    "props": {
+     "isDraft": false,
+     "isWorking": false,
+     "hint": "? for shortcuts"
+    },
+    "viewport": {
+     "columns": 120,
+     "rows": 40,
+     "isFullscreen": true
+    }
+   },
+   "response": {
+    "tree": {
+     "type": "Text",
+     "props": {
+      "dimColor": true
+     },
+     "children": [
+      "probe hint"
+     ]
+    },
+    "props": {
+     "isDraft": false,
+     "isWorking": false,
+     "hint": "? for shortcuts"
+    },
+    "rewritten": false,
+    "hooked": true
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_render",
+    "surface": "desktop",
+    "client_id": "superone-spike",
+    "component": "CommandOutput",
+    "instance_id": "cmd-1",
+    "props": {
+     "command": "probe-cmd",
+     "args": "",
+     "text": "hello from probe-cmd",
+     "isErrored": false
+    },
+    "viewport": {
+     "columns": 120,
+     "rows": 40,
+     "isFullscreen": true
+    }
+   },
+   "response": {
+    "tree": {
+     "type": "Text",
+     "props": {
+      "color": "cyan"
+     },
+     "children": [
+      "drawn: hello from probe-cmd"
+     ]
+    },
+    "props": {
+     "command": "probe-cmd",
+     "args": "",
+     "text": "hello from probe-cmd",
+     "isErrored": false
+    },
+    "rewritten": false,
+    "hooked": true
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_render",
+    "surface": "desktop",
+    "client_id": "superone-spike",
+    "component": "TurnDuration",
+    "instance_id": "td-1",
+    "props": {
+     "word": "Worked",
+     "durationMs": 1000
+    },
+    "viewport": {
+     "columns": 120,
+     "rows": 40,
+     "isFullscreen": true
+    }
+   },
+   "response": {
+    "tree": {
+     "type": "engine",
+     "ref": 0
+    },
+    "props": {
+     "word": "Worked",
+     "durationMs": 1000
+    },
+    "rewritten": false,
+    "hooked": false
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_render",
+    "surface": "desktop",
+    "client_id": "superone-spike",
+    "component": "AskUserQuestion",
+    "instance_id": "toolu_x",
+    "props": {
+     "tool": "AskUserQuestion",
+     "questions": [
+      {
+       "question": "Q?",
+       "header": "H",
+       "options": [
+        {
+         "label": "A",
+         "description": ""
+        },
+        {
+         "label": "B",
+         "description": ""
+        }
+       ],
+       "multiSelect": false
+      }
+     ]
+    },
+    "viewport": {
+     "columns": 120,
+     "rows": 40,
+     "isFullscreen": true
+    }
+   },
+   "response": {
+    "tree": {
+     "type": "Box",
+     "props": {
+      "flexDirection": "column"
+     },
+     "children": [
+      {
+       "type": "Text",
+       "children": [
+        "probe above ask source=undefined"
+       ]
+      },
+      {
+       "type": "engine",
+       "ref": 1
+      }
+     ]
+    },
+    "props": {
+     "tool": "AskUserQuestion",
+     "questions": [
+      {
+       "question": "Q?",
+       "header": "H",
+       "options": [
+        {
+         "label": "A",
+         "description": ""
+        },
+        {
+         "label": "B",
+         "description": ""
+        }
+       ],
+       "multiSelect": false
+      }
+     ]
+    },
+    "rewritten": true,
+    "hooked": true
+   }
+  },
+  {
+   "request": {
+    "subtype": "ui_detach",
+    "client_id": "superone-spike"
+   },
+   "response": {
+    "detached": true,
+    "surfaces": []
+   }
+  }
+ ],
+ "pushes": [
+  {
+   "type": "system",
+   "subtype": "ui_invalidate",
+   "event": "ui.render",
+   "uuid": "u",
+   "session_id": "s"
+  },
+  {
+   "type": "system",
+   "subtype": "ui_panes",
+   "panes": [],
+   "shown_id": null,
+   "focused_id": null,
+   "focus_requested_id": null,
+   "uuid": "u",
+   "session_id": "s"
+  },
+  {
+   "type": "system",
+   "subtype": "ui_panes",
+   "panes": [
+    {
+     "id": "probe",
+     "title": "Probe pane",
+     "plugin": "probe-mod",
+     "close_on_escape": true,
+     "hold_toasts": true,
+     "rows": 12,
+     "columns": 50
+    }
+   ],
+   "shown_id": "probe",
+   "focused_id": null,
+   "focus_requested_id": "probe",
+   "uuid": "u",
+   "session_id": "s"
+  },
+  {
+   "type": "system",
+   "subtype": "ui_scroll",
+   "client_id": "superone-spike",
+   "component": "Pane",
+   "instance_id": "probe",
+   "offset": 17,
+   "uuid": "u",
+   "session_id": "s"
+  },
+  {
+   "type": "system",
+   "subtype": "ui_focus",
+   "client_id": "superone-spike",
+   "component": "Pane",
+   "instance_id": "probe",
+   "plugin": "probe-mod",
+   "key": "name",
+   "uuid": "u",
+   "session_id": "s"
+  },
+  {
+   "type": "system",
+   "subtype": "ui_invalidate",
+   "event": "ui.render",
+   "instances": [
+    {
+     "surface": "desktop",
+     "component": "Pane",
+     "instance_id": "probe"
+    },
+    {
+     "surface": "desktop",
+     "component": "AbovePrompt",
+     "instance_id": "above-prompt"
+    }
+   ],
+   "uuid": "u",
+   "session_id": "s"
+  },
+  {
+   "type": "system",
+   "subtype": "ui_panes",
+   "panes": [
+    {
+     "id": "probe",
+     "title": "Probe pane",
+     "plugin": "probe-mod",
+     "close_on_escape": true,
+     "hold_toasts": true,
+     "rows": 12,
+     "columns": 50
+    }
+   ],
+   "shown_id": "probe",
+   "focused_id": null,
+   "focus_requested_id": null,
+   "uuid": "u",
+   "session_id": "s"
+  },
+  {
+   "type": "system",
+   "subtype": "ui_panes",
+   "panes": [],
+   "shown_id": null,
+   "focused_id": null,
+   "focus_requested_id": null,
+   "uuid": "u",
+   "session_id": "s"
+  },
+  {
+   "type": "system",
+   "subtype": "ui_invalidate",
+   "event": "ui.render",
+   "uuid": "u",
+   "session_id": "s"
+  }
+ ],
+ "hostRequests": [
+  {
+   "subtype": "ui_prompt_fill",
+   "surface": "desktop",
+   "client_id": "superone-spike",
+   "text": "filled by probe",
+   "mode": "replace",
+   "decorations": [
+    {
+     "start": 0,
+     "end": 6,
+     "color": "#e5484d",
+     "bold": true
+    }
+   ]
+  },
+  {
+   "subtype": "ui_prompt_read",
+   "surface": "desktop",
+   "client_id": "superone-spike"
+  },
+  {
+   "subtype": "ui_prompt_read",
+   "surface": "desktop",
+   "client_id": "superone-spike"
+  },
+  {
+   "subtype": "ui_prompt_suggest",
+   "surface": "desktop",
+   "client_id": "superone-spike",
+   "text": "suggested by probe"
+  },
+  {
+   "subtype": "ui_copy",
+   "surface": "desktop",
+   "client_id": "superone-spike",
+   "plugin": "probe-mod",
+   "text": "copied by probe"
+  }
+ ]
+}

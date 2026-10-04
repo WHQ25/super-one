@@ -1,4 +1,5 @@
 import { admitTurnAttachments } from '@superone/shared/attachment-turn'
+import { MOD_UI_UNAVAILABLE, asDeviceModUiRequest } from '@superone/shared/mod-ui'
 import { withTurnReceipt } from '../remote/turn-receipt'
 import { codexAccountStore } from '../codex/codex-account-store'
 import { loadSessionHistoryIndex, loadSessionMessageWindow } from '../session/history-navigation'
@@ -103,14 +104,15 @@ import { readAppSettings, saveAppSettings } from '../app-settings-service'
 import { queryHarnessSessionRanks } from '../usage-stats-service'
 import { listCodexMcpConfigs } from '../codex-config-service'
 import { discoverAllAgents, discoverProjectCommands, readAgentFile } from './discover-resources'
-import { listPlugins, readPluginContent, readPluginFile, deletePlugin, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace, addMarketplace, removeMarketplace, readMarketplacePluginContent, readMarketplacePluginFile, getGithubStars, listGithubReposForOwner, searchGithubRepositories, listMyGithubRepos } from '../plugins-service'
+import { listPlugins, readPluginContent, readPluginFile, deletePlugin, setPluginEnabled, readPluginUserConfig, savePluginUserConfig, reviewPluginMods, listMarketplacePlugins, installPlugin, updatePlugin, updateMarketplace, addMarketplace, removeMarketplace, readMarketplacePluginContent, readMarketplacePluginFile, getGithubStars, listGithubReposForOwner, searchGithubRepositories, listMyGithubRepos } from '../plugins-service'
 import { cacheRemoteImage } from '../image-cache'
 import { resolveFavicon, cacheCapturedFavicon } from '../favicon'
 import { deviceMcpAppHostRequest, executeDeviceMcpAppRequest } from '../mcp-apps/mobile-request'
 import { resolveSiteIdentity } from '../site-identity'
 import { backupMcpServers, listLibrary, deleteLibraryEntry, getLibraryEntry } from '../mcp-library-service'
 import { uninstallMcpbBundle } from '../mcpb/mcpb-installer'
-import type { HookSavePayload, SessionForkRequest, SideChatStartRequest, HarnessId, DshPluginInstallSource, ClaudeSteerPriority } from '@superone/shared/agent-types'
+import type { PluginModReview, HookSavePayload, SessionForkRequest, SideChatStartRequest, HarnessId, DshPluginInstallSource, ClaudeSteerPriority } from '@superone/shared/agent-types'
+import { tryResolveHarnessRuntime } from '../harness/resolve-runtime'
 import { forkSession } from '../session/session-fork'
 import { closeSideChat, startSideChat } from '../session/side-chat'
 import { loadRealtimeTimeline, reconcileRealtimeTimeline } from '../session/realtime-timeline-repo'
@@ -1333,6 +1335,22 @@ export class AgentService {
         }
         break
       }
+      case 'mod_ui_request': {
+        try {
+          if (!this.canAccessSession(command.projectPath, command.sessionId)) {
+            throw new Error(this.buildSessionAccessError(command.projectPath, command.sessionId))
+          }
+          // Remote-node sessions stream to the desktop window only; their mods draw there.
+          const session = this.sessionManager?.getSession(command.sessionId)
+          if (!session) throw Object.assign(new Error('No live session'), { name: MOD_UI_UNAVAILABLE })
+          const response = await session.modUi(command.op, asDeviceModUiRequest(command.request, deviceId))
+          await respond?.(command.requestId, { response })
+        } catch (err) {
+          const e = err as Error
+          await respond?.(command.requestId, { error: e.name === MOD_UI_UNAVAILABLE ? `${MOD_UI_UNAVAILABLE}: ${e.message}` : e.message })
+        }
+        break
+      }
       case 'search_mcp_mentions':
       case 'read_mcp_mentions': {
         try {
@@ -2378,6 +2396,13 @@ export class AgentService {
     this.mainWindow = mainWindow
   }
 
+  /** Live Claude runtimes pick up a plugin change now; released ones load it on their next start. */
+  private reloadLiveClaudePlugins(): void {
+    this.sessionManager?.forEachSession((session) => {
+      if (session.snapshot.harnessId === 'claude' && session.hasActiveRuntime()) void session.reloadPlugins()
+    })
+  }
+
   setSessionManager(sessionManager: import('../session/session-manager').SessionManagerImpl): void {
     this.sessionManager = sessionManager
     this.wireComputerUseStop()
@@ -3194,6 +3219,45 @@ export class AgentService {
         return
       }
       deletePlugin(key, scope, projectPath)
+    })
+
+    ipcMain.handle(AgentIpcChannels.PLUGINS_SET_ENABLED, async (_event, projectPath: string, key: string, scope: ResourceScope, enabled: boolean) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) {
+        if (scope !== 'user' && scope !== 'project') throw new Error('Remote plugin toggle only supports user or project scope')
+        const { getEnvironmentHost } = await import('../environment')
+        const { setRemotePluginEnabled } = await import('../environment/remote-resources')
+        if (!(await setRemotePluginEnabled(getEnvironmentHost(), projectPath, key, scope, enabled))) throw new Error('Remote plugin toggle failed')
+        return
+      }
+      setPluginEnabled(projectPath, key, scope, enabled)
+      this.reloadLiveClaudePlugins()
+    })
+
+    // Mod review and userConfig run the local CLI against the local install; a remote node has no route for them yet.
+    const modReviews = new Map<string, Promise<PluginModReview | null>>()
+    ipcMain.handle(AgentIpcChannels.PLUGINS_REVIEW_MODS, async (_event, projectPath: string, key: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) return null
+      const plugin = listPlugins(projectPath).find((p) => p.key === key)
+      const binary = plugin?.hasMod ? tryResolveHarnessRuntime('claude') : null
+      if (!plugin || !binary) return null
+      const cacheKey = `${plugin.installPath}@${plugin.version ?? ''}`
+      let review = modReviews.get(cacheKey)
+      if (!review) modReviews.set(cacheKey, (review = reviewPluginMods(binary, plugin.installPath)))
+      const result = await review
+      if (!result) modReviews.delete(cacheKey)
+      return result
+    })
+    ipcMain.handle(AgentIpcChannels.PLUGINS_READ_CONFIG, async (_event, projectPath: string, key: string) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      return parseRemoteProjectKey(projectPath) ? null : readPluginUserConfig(projectPath, key)
+    })
+    ipcMain.handle(AgentIpcChannels.PLUGINS_SAVE_CONFIG, async (_event, projectPath: string, key: string, values: Record<string, unknown>) => {
+      const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      if (parseRemoteProjectKey(projectPath)) throw new Error('Plugin options of a remote project are not editable yet')
+      savePluginUserConfig(key, values)
+      this.reloadLiveClaudePlugins()
     })
 
     ipcMain.handle(AgentIpcChannels.PLUGINS_LIST_MARKETPLACE, async (_event, projectPath: string) => {

@@ -70,10 +70,7 @@ import {
 } from './computer-use/computer-use-permission-window'
 import { scheduleMcpReload } from './mcp/mcp-reload-scheduler'
 import { query, type SDKResultMessage } from '@anthropic-ai/claude-agent-sdk'
-import {
-  markTerminalBoundSlashCommands,
-  readTerminalSlashCommandsFromInitMessage,
-} from '@superone/shared/slash-commands'
+import { readTerminalSlashCommandsFromInitMessage, sdkSlashCommands } from '@superone/shared/slash-commands'
 import { tryResolveHarnessRuntime } from './harness/resolve-runtime'
 import { disposeGlobalWarmupManager } from './agent/warmup-manager'
 import { resolveProbeCwd } from './agent/probe-cwd'
@@ -240,6 +237,7 @@ import { getInstallId } from './install-id'
 import { reportMainException, reportProcessGone } from './crash-telemetry'
 import { systemDownloadDir } from './agent/browser-download-store'
 import type { AppSettings, AppSettingsPatch, GitInfoResult, ScheduledSendPatch, ScheduledSendSessionInit, ThemeMode, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
+import { MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
 import { MINI_WINDOW_SIZE } from '@superone/shared/agent-types'
 import { foldWindow, unfoldWindow } from './window-fold'
 import { recordBrowserHistory, suggestBrowserHistory, deleteBrowserHistory } from './browser-history-service'
@@ -998,6 +996,15 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
     const { syncDshSubagentModelSelection } = await import('./deepseek/deepseek-runtime-host')
     await syncDshSubagentModelSelection().catch((error: unknown) => {
       log.warn('[deepseek] subagent model selection sync failed', error)
+    })
+  }
+  if (patch?.agentPreference?.claude?.drawModInterfaces !== undefined) {
+    sessionManager.forEachSession((session) => session.refreshModUi())
+  }
+  if (patch?.agentPreference?.claude?.modDevFolders !== undefined) {
+    // Spawn-time env: the next turn starts a runtime that loads the folders.
+    sessionManager.forEachSession((session) => {
+      if (session.snapshot.harnessId === 'claude') session.markNeedsRebuild()
     })
   }
   if (patch?.webmcpTrustedOrigins !== undefined) {
@@ -2092,6 +2099,20 @@ function registerIpcHandlers(): void {
     async (_e, connectionId: string, afterSequence?: string) => {
       const { getEnvironmentHost } = await import('./environment')
       return getEnvironmentHost().listSessionEvents(connectionId, afterSequence ?? '0')
+    },
+  )
+  ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_MOD_UI,
+    async (_e, connectionId: string, sessionId: string, op: ModUiOp, request: ModUiRequest) => {
+      if (connectionId === 'local') {
+        const session = sessionManager.getSession(sessionId)
+        if (!session) {
+          throw Object.assign(new Error('No such session'), { name: MOD_UI_UNAVAILABLE })
+        }
+        return session.modUi(op, request)
+      }
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().modUi(connectionId, sessionId, op, request)
     },
   )
   ipcMain.handle(
@@ -4793,15 +4814,7 @@ function registerIpcHandlers(): void {
         apiKeySource: accountInfo.apiKeySource,
         apiProvider: accountInfo.apiProvider,
       }
-      const slashCommands = markTerminalBoundSlashCommands(
-        commands.map((c) => ({
-          name: c.name,
-          description: c.description,
-          argumentHint: c.argumentHint,
-          isSkill: false,
-        })),
-        terminalSlashCommands,
-      )
+      const slashCommands = sdkSlashCommands(commands, terminalSlashCommands)
 
       const outputStyles = initResult.available_output_styles ?? []
 

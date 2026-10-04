@@ -26,6 +26,7 @@
     "./mcp-app-document": "./src/mcp-app-document.ts",
     "./portable-turn-context": "./src/portable-turn-context.ts",
     "./presenters/AppToolBlock": "./src/presenters/AppToolBlock.tsx",
+    "./presenters/AskUserQuestionForm": "./src/presenters/AskUserQuestionForm.tsx",
     "./presenters/AskUserQuestionResult": "./src/presenters/AskUserQuestionResult.tsx",
     "./presenters/AutomationToolBlock": "./src/presenters/AutomationToolBlock.tsx",
     "./presenters/BashTerminalPresenter": "./src/presenters/BashTerminalPresenter.tsx",
@@ -108,7 +109,8 @@
     "./presenters/turn-process-stats": "./src/presenters/turn-process-stats.ts",
     "./presenters/workflow-utils": "./src/presenters/workflow-utils.ts",
     "./terminal-html": "./src/terminal-html.ts",
-    "./transcript-rows": "./src/transcript-rows.ts"
+    "./transcript-rows": "./src/transcript-rows.ts",
+    "./mod-ui": "./src/mod-ui/index.ts"
   },
   "scripts": {
     "build": "vite build && vite build --config vite.terminal.config.ts && bun scripts/embed-host-html.ts",

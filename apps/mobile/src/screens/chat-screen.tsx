@@ -84,6 +84,8 @@ export function ChatScreen(props: {
   sessionDirs: string[]
   queuedMessages: ChatMessage[]
   todos: Record<string, TodoItem>
+  /** Pins the composer's phone action bar; see `ChatComposer`. */
+  focused?: boolean
   /** Prompts put away with an outside tap; each waits as a strip above the todos. */
   collapsedPrompts?: PendingPrompt[]
   onExpandPrompt?: (requestId: string) => void

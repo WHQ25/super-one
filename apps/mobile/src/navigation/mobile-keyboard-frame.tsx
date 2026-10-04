@@ -20,12 +20,17 @@ import { useMobileStyles } from '../theme/context'
  * Padding the frame by the live keyboard height has no such memory: the window
  * is edge-to-edge and does not resize for the IME, so the padding is exactly the
  * space the keyboard covers, and it is `0` the moment the keyboard is down.
+ *
+ * `documentKeyboard`: a field in the chat WebView holds the keyboard. On iOS
+ * WKWebView already insets its visible area by the keyboard it covers;
+ * shrinking the WebView as well counts the keyboard twice and leaves the
+ * document zero points tall. Android's WebView does not, so it keeps the padding.
  */
-export function MobileKeyboardFrame({ children }: PropsWithChildren) {
+export function MobileKeyboardFrame({ children, documentKeyboard = false }: PropsWithChildren<{ documentKeyboard?: boolean }>) {
   const styles = useMobileStyles()
   if (Platform.OS === 'ios') {
     return (
-      <KeyboardAvoidingView behavior="padding" style={styles.flex}>
+      <KeyboardAvoidingView behavior="padding" enabled={!documentKeyboard} style={styles.flex}>
         {children}
       </KeyboardAvoidingView>
     )

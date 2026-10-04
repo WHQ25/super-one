@@ -1,4 +1,4 @@
-import { Fragment, type ComponentType, type ReactNode } from 'react'
+import { Fragment, useMemo, type ComponentType, type ReactNode } from 'react'
 import { ImageIcon } from 'lucide-react'
 import type { BashEditDiff, ContentBlock } from '@superone/shared/agent-types'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
@@ -11,6 +11,8 @@ import {
 } from './compact-chat-mode'
 import type { GroupContentResult, RenderSegment } from './groupContent'
 import type { RunContinuation } from './run-display'
+import { ModSite, useModMessageId } from '../mod-ui/react'
+import { assistantMessageProps, stringProp, toolGroupProps, toolUseProps, type ToolCallFacts } from '../mod-ui/site-props'
 import type {
   CodexTurnDetailPresenterProps,
   CodexTurnProcessStats,
@@ -187,12 +189,16 @@ export function ClaudeBlockPresenter({
   switch (block.type) {
     case 'text':
       return (
-        <Text
-          text={block.text}
-          isStreaming={isStreaming}
-          projectPath={projectPath}
-          afterThinking={prevBlockType === 'thinking'}
-        />
+        <AssistantTextSite index={index} text={block.text} isFirstOfReply={prevBlockType === undefined}>
+          {(text) => (
+            <Text
+              text={text}
+              isStreaming={isStreaming}
+              projectPath={projectPath}
+              afterThinking={prevBlockType === 'thinking'}
+            />
+          )}
+        </AssistantTextSite>
       )
     case 'insight':
       return <Insight title={block.title} content={block.content} isStreaming={isStreaming} />
@@ -212,11 +218,13 @@ export function ClaudeBlockPresenter({
       )
     case 'tool_use':
       return (
+        <ToolUseSite call={toolCallFacts(block, toolResultMap, errorToolIds, isStreaming)} rawInput={block.input}>
+          {(input) => (
         <Tool
           remoteDetail={block.remoteDetail}
           toolName={block.toolName}
           toolUseId={block.toolUseId}
-          input={block.input}
+          input={input}
           toolSummary={block.toolSummary}
           filePath={block.toolFilePath}
           status={!isStreaming && block.status === 'streaming' ? undefined : block.status}
@@ -239,6 +247,8 @@ export function ClaudeBlockPresenter({
             isError: errorToolIds?.has(later.toolUseId),
           }))}
         />
+          )}
+        </ToolUseSite>
       )
     case 'thinking':
       return (
@@ -312,26 +322,7 @@ function renderSegments(
           />
         )
       }
-      return segment.blocks.map((block, blockIndex) => (
-        <ClaudeBlockPresenter
-          key={segment.startIndex + blockIndex}
-          block={block}
-          index={segment.startIndex + blockIndex}
-          isStreaming={options.isStreaming}
-          toolResultMap={options.toolResultMap}
-          timedOutToolIds={options.timedOutToolIds}
-          errorToolIds={options.errorToolIds}
-          outputPathMap={options.outputPathMap}
-          bashEditDiffMap={options.bashEditDiffMap}
-          toolAppMap={options.toolAppMap}
-          runContinuations={options.runContinuations}
-          nextBlockType={segment.blocks[blockIndex + 1]?.type}
-          prevBlockType={segment.blocks[blockIndex - 1]?.type}
-          projectPath={options.projectPath}
-          parts={parts}
-          runtime={options.runtime}
-        />
-      ))
+      return renderBlocks(segment.blocks, segment.startIndex, options)
     }
     if (segment.kind === 'thinking') {
       const text = segment.blocks
@@ -393,34 +384,41 @@ function renderSegments(
     const toolUseCount = segment.blocks.filter((block) => block.type === 'tool_use').length
     if (toolUseCount > 1) {
       return (
-        <parts.ToolGroup
+        <ToolGroupSite
           key={`tg-${segment.startIndex}`}
-          blocks={segment.blocks}
-          sealed={sealed}
-        />
+          calls={segment.blocks.flatMap((b) => b.type === 'tool_use' ? [toolCallFacts(b, options.toolResultMap, options.errorToolIds, options.isStreaming)] : [])}
+          isActive={!sealed}
+          expanded={() => renderBlocks(segment.blocks, segment.startIndex, options)}
+        >
+          <parts.ToolGroup blocks={segment.blocks} sealed={sealed} />
+        </ToolGroupSite>
       )
     }
-    return segment.blocks.map((block, blockIndex) => (
-      <ClaudeBlockPresenter
-        key={segment.startIndex + blockIndex}
-        block={block}
-        index={segment.startIndex + blockIndex}
-        isStreaming={options.isStreaming}
-        toolResultMap={options.toolResultMap}
-        timedOutToolIds={options.timedOutToolIds}
-        errorToolIds={options.errorToolIds}
-        outputPathMap={options.outputPathMap}
-        bashEditDiffMap={options.bashEditDiffMap}
-        toolAppMap={options.toolAppMap}
-        runContinuations={options.runContinuations}
-        nextBlockType={segment.blocks[blockIndex + 1]?.type}
-        prevBlockType={segment.blocks[blockIndex - 1]?.type}
-        projectPath={options.projectPath}
-        parts={parts}
-        runtime={options.runtime}
-      />
-    ))
+    return renderBlocks(segment.blocks, segment.startIndex, options)
   })
+}
+
+function renderBlocks(blocks: ContentBlock[], startIndex: number, options: RenderOptions): ReactNode[] {
+  return blocks.map((block, blockIndex) => (
+    <ClaudeBlockPresenter
+      key={startIndex + blockIndex}
+      block={block}
+      index={startIndex + blockIndex}
+      isStreaming={options.isStreaming}
+      toolResultMap={options.toolResultMap}
+      timedOutToolIds={options.timedOutToolIds}
+      errorToolIds={options.errorToolIds}
+      outputPathMap={options.outputPathMap}
+      bashEditDiffMap={options.bashEditDiffMap}
+      toolAppMap={options.toolAppMap}
+      runContinuations={options.runContinuations}
+      nextBlockType={blocks[blockIndex + 1]?.type}
+      prevBlockType={blocks[blockIndex - 1]?.type}
+      projectPath={options.projectPath}
+      parts={options.parts}
+      runtime={options.runtime}
+    />
+  ))
 }
 
 export function ClaudeTurnBodyPresenter({
@@ -485,4 +483,70 @@ export function ClaudeTurnBodyPresenter({
     )
   }
   return renderSegments(segments, options)
+}
+
+function parseToolInput(raw: string): unknown {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return raw
+  }
+}
+
+function toolCallFacts(
+  block: ContentBlock & { type: 'tool_use' },
+  toolResultMap: Map<string, string> | undefined,
+  errorToolIds: Set<string> | undefined,
+  isStreaming: boolean,
+): ToolCallFacts {
+  const output = toolResultMap?.get(block.toolUseId)
+  return {
+    toolUseId: block.toolUseId,
+    tool: block.toolName,
+    input: block.input,
+    isRunning: isStreaming && block.status === 'streaming',
+    isErrored: errorToolIds?.has(block.toolUseId) ?? false,
+    isInterrupted: false,
+    ...(output === undefined ? {} : { output }),
+  }
+}
+
+/** One assistant text block as a mod site (needs the message's id from `ModMessageScope`). */
+function AssistantTextSite({ index, text, isFirstOfReply, children }: { index: number; text: string; isFirstOfReply: boolean; children: (text: string) => ReactNode }) {
+  const messageId = useModMessageId()
+  const props = useMemo(() => assistantMessageProps(text, isFirstOfReply), [text, isFirstOfReply])
+  if (!messageId) return <>{children(text)}</>
+  return (
+    <ModSite component="AssistantMessage" instanceId={`${messageId}:${index}`} props={props}>
+      {(p) => children(stringProp(p, 'text', text))}
+    </ModSite>
+  )
+}
+
+/** A tool row as a mod site; its instance is the call's `tool_use_id`, as the CLI expects. */
+function ToolUseSite({ call, rawInput, children }: { call: ToolCallFacts; rawInput: string; children: (input: string) => ReactNode }) {
+  const { toolUseId, tool, isRunning, isErrored, output } = call
+  const props = useMemo(
+    () => toolUseProps({ toolUseId, tool, input: parseToolInput(rawInput), isRunning, isErrored, isInterrupted: false, output }),
+    [toolUseId, tool, rawInput, isRunning, isErrored, output],
+  )
+  return (
+    <ModSite component="ToolUse" instanceId={toolUseId} props={props}>
+      {(p) => children(p === props || p.input === undefined ? rawInput : JSON.stringify(p.input))}
+    </ModSite>
+  )
+}
+
+/** A folded run of tool calls; a plugin that sets `isExpanded` unfolds it into rows. */
+function ToolGroupSite({ calls, isActive, expanded, children }: { calls: ToolCallFacts[]; isActive: boolean; expanded: () => ReactNode; children: ReactNode }) {
+  const key = calls.map((c) => `${c.toolUseId}:${c.isRunning ? 1 : 0}:${c.isErrored ? 1 : 0}:${c.output === undefined ? 0 : 1}`).join('|')
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` covers what the props carry
+  const props = useMemo(() => toolGroupProps(calls.map((c) => ({ ...c, input: parseToolInput(c.input as string) })), isActive, false), [key, isActive])
+  const first = calls[0]?.toolUseId
+  if (!first) return <>{children}</>
+  return (
+    <ModSite component="ToolGroup" instanceId={first} props={props}>
+      {(p) => (p.isExpanded === true ? <>{expanded()}</> : children)}
+    </ModSite>
+  )
 }

@@ -1,4 +1,5 @@
 import { PortableCodexCommand } from './PortableCodexCommand'
+import { ModMessageScope } from './mod-ui/react'
 import { DeferredInteractiveTool, isPortableInteractiveTool } from './DeferredInteractiveTool'
 import { DeferredTool, DeferredCodexTool, DeferredDetailStatus, useDeferredToolDetail } from './DeferredTool'
 import { PortableAsyncQuestion } from './PortableAsyncQuestion'
@@ -853,7 +854,7 @@ export function PortableClaudeTurn({
   const portableContent = useMemo(() => portableToolBlocks(message.content), [message.content])
   const grouped = useMemo(() => groupContentPresenter(portableContent, GROUP_PORTS), [portableContent])
   return (
-    <TurnMessageIdContext.Provider value={message.id}><ClaudeTurnBodyPresenter
+    <TurnMessageIdContext.Provider value={message.id}><ModMessageScope messageId={message.id}><ClaudeTurnBodyPresenter
       grouped={grouped}
       isStreaming={isStreaming}
       detailChatMode={false}
@@ -863,7 +864,7 @@ export function PortableClaudeTurn({
       projectPath={null}
       parts={CLAUDE_PARTS}
       runtime={CLAUDE_RUNTIME}
-    /></TurnMessageIdContext.Provider>
+    /></ModMessageScope></TurnMessageIdContext.Provider>
   )
 }
 

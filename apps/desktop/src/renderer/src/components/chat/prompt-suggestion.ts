@@ -4,13 +4,15 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 
 export interface PromptSuggestionStorage {
   suggestion: string | null
+  /** A mod's composer hint, shown as a second line under the suggestion; Tab does not take it. */
+  hint: string | null
 }
 
 export const PromptSuggestion = Extension.create<object, PromptSuggestionStorage>({
   name: 'promptSuggestion',
 
   addStorage() {
-    return { suggestion: null }
+    return { suggestion: null, hint: null }
   },
 
   addProseMirrorPlugins() {
@@ -53,6 +55,14 @@ export const PromptSuggestion = Extension.create<object, PromptSuggestionStorage
                 badge.className = 'prompt-suggestion-badge'
                 badge.textContent = 'Tab'
                 container.appendChild(badge)
+
+                const hint = storage.hint
+                if (hint) {
+                  const line = document.createElement('span')
+                  line.className = 'prompt-suggestion-hint'
+                  line.textContent = hint
+                  container.appendChild(line)
+                }
 
                 return container
               },

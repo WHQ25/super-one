@@ -31,8 +31,15 @@ import { wrapMcpResourceMention } from '@superone/shared/mcp-app-mentions'
 import { useMcpAppFileRoute } from '@/components/mcp-apps/file-apps'
 import { DebugMentionDecoration, syncDebugMentionHint } from './debug-mention-decoration'
 import { PromptSuggestion } from './prompt-suggestion'
+import { ModPromptDecoration, applyModPromptEdit, caretTextOffset, setModPromptDecorations } from './chat-input/mod-prompt-decoration'
+import { registerModComposer } from '@/lib/mod-ui/composer-bridge'
+import { ModSessionMode } from './mod/ModStatusSites'
+import { relaysPromptEdits, sendPromptEdit } from '@/lib/mod-ui/registry'
+import { ModCommandOutputSite, PromptEditRelay, clientKeyEvent, promptHintProps, promptHintText, useModSite, type ClientKeyEvent } from '@superone/chat-view/mod-ui'
+import { MOD_PROMPT_HINT_INSTANCE } from '@superone/shared/mod-ui'
 import { PromptSuggestionChips } from './PromptSuggestionChips'
 import { PluginStatusLines } from './PluginNotice'
+import { ModAbovePrompt } from './mod/ModSurfaces'
 import { addBrowserImageToChat, extractDraggedImageUrl } from '../browser/browser-image'
 import type { MentionNodeAttrs } from './mention-node'
 import type { SlashCommandInfo, ImageAttachment } from '@superone/shared/agent-types'
@@ -268,6 +275,10 @@ export function ChatInput() {
     const matchingCommandsRef = useRef<typeof matchingCommands>([])
     const slashDismissedRef = useRef(false)
     const handleKeyDownRef = useRef<(e: KeyboardEvent) => boolean>(() => false)
+    // `prompt.edit` relay: the key behind the next edit, and who made it.
+    const promptRelayRef = useRef<{ sessionId: string; relay: PromptEditRelay } | null>(null)
+    const lastKeyRef = useRef<ClientKeyEvent | null>(null)
+    const modEditByRef = useRef<'app' | 'plugin' | null>(null)
     const promptSuggestionRef = useRef(promptSuggestion)
     promptSuggestionRef.current = promptSuggestion
 
@@ -1557,7 +1568,13 @@ export function ChatInput() {
         : shouldShowCodexRejectHint
           ? CODEX_REJECT_PLAN_PLACEHOLDER
           : providerPlaceholder
-    placeholderTextRef.current = placeholderText
+    // A mod's `PromptHint` takes the placeholder; under a suggestion it becomes the ghost's second line.
+    const isDraft = text.length > 0
+    const hintProps = useMemo(() => promptHintProps(isDraft, isStreaming, placeholderText), [isDraft, isStreaming, placeholderText])
+    const hintSite = useModSite('PromptHint', MOD_PROMPT_HINT_INSTANCE, hintProps)
+    const modHint = hintSite.status === 'ready' && hintSite.result ? promptHintText(hintSite.result, hintSite.props) : null
+    const shownPlaceholder = modHint ?? placeholderText
+    placeholderTextRef.current = shownPlaceholder
 
     const editor = useEditor({
       extensions: [
@@ -1584,6 +1601,7 @@ export function ChatInput() {
         GitMentionDecoration.configure({ context: gitPortals }),
         DebugMentionDecoration.configure({ hint: t('chat.placeholder.debugBug') }),
         PromptSuggestion,
+        ModPromptDecoration,
       ],
       content: '',
       editable: !isRemoteLocked,
@@ -1593,9 +1611,11 @@ export function ChatInput() {
           'data-chat-input-editor': 'true',
         },
         handleKeyDown: (_view, event) => {
+          lastKeyRef.current = clientKeyEvent(event)
           return handleKeyDownRef.current(event)
         },
         handlePaste: (_view, event) => {
+          lastKeyRef.current = null
           const plainText = event.clipboardData?.getData('text/plain')
           if (plainText) {
             const markers = findMiniAppMentionMarkers(plainText)
@@ -1665,6 +1685,13 @@ export function ChatInput() {
         // rebuilt from persisted session.attachments, not deleted by the user.
         const wasProgrammaticSet = isProgrammaticSetRef.current
         const plainText = ed.getText()
+        const relayed = promptRelayRef.current
+        if (relayed && relaysPromptEdits(relayed.sessionId) && !ed.view.composing && modEditByRef.current !== 'plugin') {
+          const box = { text: plainText, cursor: caretTextOffset(ed) }
+          if (wasProgrammaticSet || modEditByRef.current === 'app') relayed.relay.adopt(box)
+          else relayed.relay.edit(box, lastKeyRef.current ?? undefined)
+        }
+        lastKeyRef.current = null
         editorEchoTextRef.current = plainText
         setTextRef.current(plainText)
         // Snapshot the full doc (text + chip nodes + positions) so a session
@@ -1793,6 +1820,56 @@ export function ChatInput() {
       editor, text, draftJson, attachments, sessionId: displayedSessionId, readOnly: isRemoteLocked,
     })
 
+    // A mod's `$.prompt.read` / `fill` address this editor while it shows the session.
+    useEffect(() => {
+      if (!editor || !displayedSessionId || isRemoteLocked) return
+      return registerModComposer(displayedSessionId, {
+        caret: () => caretTextOffset(editor),
+        fill: (value, mode, decorations) => {
+          const content = plainTextToTiptapParagraphContent(value)
+          const chain = editor.chain().focus()
+          if (mode === 'replace') chain.setContent({ type: 'doc', content: [{ type: 'paragraph', content }] }, { emitUpdate: true }).focus('end')
+          else if (mode === 'append') chain.insertContentAt(editor.state.doc.content.size - 1, content)
+          else chain.insertContent(content)
+          modEditByRef.current = 'app'
+          chain.run()
+          modEditByRef.current = null
+          if (!decorations?.length) return
+          // Runs are offsets into the whole text after the fill.
+          const base = mode === 'replace' ? 0 : mode === 'append' ? editor.getText().length - value.length : caretTextOffset(editor) - value.length
+          setModPromptDecorations(editor, decorations.map((d) => ({ ...d, start: d.start + base, end: d.end + base })))
+        },
+      })
+    }, [editor, displayedSessionId, isRemoteLocked])
+
+    // Edits go to the session's `prompt.edit` chain; a plugin's rewrite repaints the draft.
+    useEffect(() => {
+      if (!editor || !displayedSessionId || isRemoteLocked) return
+      // An answer still in flight when the composer moves to another session (or
+      // goes away) belongs to the old one: it is never compared or painted.
+      let live = true
+      const relay = new PromptEditRelay({
+        send: (request) => sendPromptEdit(displayedSessionId, request),
+        current: () => (live && !editor.isDestroyed ? { text: editor.getText(), cursor: caretTextOffset(editor) } : { text: '', cursor: -1 }),
+        apply: (answer) => {
+          if (!live || editor.isDestroyed) return
+          // The CLI already holds its own answer as the box; it is not an edit to relay.
+          modEditByRef.current = 'plugin'
+          try {
+            applyModPromptEdit(editor, answer)
+          } finally {
+            modEditByRef.current = null
+          }
+        },
+      })
+      const relayed = { sessionId: displayedSessionId, relay }
+      promptRelayRef.current = relayed
+      return () => {
+        live = false
+        if (promptRelayRef.current === relayed) promptRelayRef.current = null
+      }
+    }, [editor, displayedSessionId, isRemoteLocked])
+
     useEffect(() => {
       if (!isRemoteLocked && !sessionScope && editor && !editor.isDestroyed && !showReviewPanel) {
         editor.commands.focus('end')
@@ -1859,17 +1936,19 @@ export function ChatInput() {
       if (editor && !editor.isDestroyed) {
         const active = status !== 'streaming' ? ghostSuggestion : null
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ;(editor.storage as any).promptSuggestion.suggestion = active
+        const storage = (editor.storage as any).promptSuggestion
+        storage.suggestion = active
+        storage.hint = active ? modHint : null
         editor.view.dom.classList.toggle('has-prompt-suggestion', !!active)
         editor.view.dispatch(editor.state.tr)
       }
-    }, [ghostSuggestion, status, editor])
+    }, [ghostSuggestion, modHint, status, editor])
 
     useEffect(() => {
       if (editor && !editor.isDestroyed) {
         editor.view.dispatch(editor.state.tr)
       }
-    }, [placeholderText, editor])
+    }, [shownPlaceholder, editor])
 
     useEffect(() => {
       syncDebugMentionHint(editor, t('chat.placeholder.debugBug'))
@@ -1901,12 +1980,16 @@ export function ChatInput() {
       setText(text)
     }, [setText])
 
+    // The document, not the DOM: a prompt suggestion's ghost text is a decoration.
+    const isComposerEmpty = useCallback(() => editorRef.current?.isEmpty ?? true, [])
+
     return (
       <div inert={isRemoteLocked} aria-disabled={isRemoteLocked} className={cn('relative', isRemoteLocked && 'opacity-60')}>
         {(activeProviderForResources === 'claude' || activeProviderForResources === 'codex') && <ChatInputDirsHint />}
         {status !== 'streaming' && (
           <PromptSuggestionChips suggestions={alternateSuggestions} onSelect={applySuggestion} />
         )}
+        <ModAbovePrompt isWorking={status === 'streaming'} sessionId={displayedSessionId ?? null} isComposerEmpty={isComposerEmpty} />
         <PluginStatusLines statuses={pluginStatus} />
         <div
           className={cn(
@@ -2014,7 +2097,9 @@ export function ChatInput() {
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto border-t border-border px-3 py-2">
-              <SlashCommandContent command={commandPopup.command} content={commandPopup.content} />
+              <ModCommandOutputSite command={commandPopup.command} content={commandPopup.content}>
+                {(text) => <SlashCommandContent command={commandPopup.command} content={text} />}
+              </ModCommandOutputSite>
             </div>
           </div>
         )}
@@ -2113,7 +2198,8 @@ export function ChatInput() {
             )}
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <ModSessionMode />
             <ContextUsage />
             {isStreaming && (
               <StopButton

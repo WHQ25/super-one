@@ -1950,6 +1950,38 @@ describe('Session read receipt', () => {
     expect(session.isRuntimeIdle(idleAt, 30_000)).toBe(true)
   })
 
+  it('does not count a mod redraw as agent activity', () => {
+    const { session, backend } = makeSession()
+    finishRun(backend)
+    backend.activeRuntime = true
+    const lastEventAt = session.snapshot.lastEventAt
+    const idleAt = Date.now() + 60_000
+    vi.setSystemTime(idleAt - 1_000)
+    try {
+      backend.emit({ type: 'mod_invalidate' })
+      backend.emit({ type: 'mod_ui_state', available: true })
+      expect(session.snapshot.lastEventAt).toBe(lastEventAt)
+      expect(session.isRuntimeIdle(idleAt, 30_000)).toBe(true)
+    } finally { vi.useRealTimers() }
+  })
+
+  it('detaches a mod client that attached through it, once', async () => {
+    const { session, backend } = makeSession()
+    const modUi = vi.fn(async () => ({ surfaces: [] }))
+    Object.assign(backend, { modUi })
+    void session.send({ content: 'hi' })
+    await vi.waitFor(() => expect(backend.started).toBe(true))
+
+    session.detachModClient('mobile:dev-A')
+    expect(modUi).not.toHaveBeenCalled()
+    await session.modUi('attach', { surface: 'mobile', clientId: 'mobile:dev-A' })
+    session.detachModClient('mobile:dev-A')
+    session.detachModClient('mobile:dev-A')
+    await vi.waitFor(() => expect(modUi).toHaveBeenCalledTimes(2))
+    expect(modUi).toHaveBeenLastCalledWith('detach', { clientId: 'mobile:dev-A' })
+    backend.resolveSend?.()
+  })
+
   it('leaves a run that finishes off screen unread until a client reports it', () => {
     const { session, backend } = makeSession()
     finishRun(backend)

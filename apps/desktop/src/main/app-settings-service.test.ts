@@ -39,6 +39,8 @@ describe('app-settings-service', () => {
     tokenOverrides: {},
     disabledSkills: [],
     askUserQuestionPreviewFormat: 'markdown',
+    drawModInterfaces: true,
+    modDevFolders: [],
   }
   const defaultCodex = {
     defaultModel: '',
@@ -261,6 +263,8 @@ describe('app-settings-service', () => {
             tokenOverrides: {},
             disabledSkills: [],
             askUserQuestionPreviewFormat: 'markdown',
+            drawModInterfaces: true,
+            modDevFolders: [],
           },
           codex: {
             defaultModel: 'gpt-5.4',

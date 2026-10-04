@@ -138,8 +138,9 @@ export type ChatComposerProps = {
    */
   tablet?: boolean
   /**
-   * Pin the focused phone action bar for stories. Unset in production — the
-   * input's focus and the keyboard decide.
+   * Pin the phone action bar open (stories) or closed (a field in the chat
+   * document holds the keyboard). Unset, the input's focus and the keyboard
+   * decide: the native editor reports no focus, so the keyboard stands in.
    */
   focused?: boolean
   /**

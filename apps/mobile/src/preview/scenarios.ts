@@ -1,21 +1,13 @@
-import type { AskUserQuestionRequest, PermissionRequest, PlanApprovalRequest } from '@superone/shared/agent-types'
+import type { PermissionRequest, PlanApprovalRequest } from '@superone/shared/agent-types'
 import { elicitationFormRequest } from '@superone/shared/schema-form'
 import { ordinaryPermission, permissionExamples, permissionRequest } from './permissions'
 
 type ScenarioMeta = { id: string; title: string; description: string }
 export type NativeScenario = ScenarioMeta & (
   | { category: 'Permissions'; request: PermissionRequest }
-  | { category: 'Questions'; request: AskUserQuestionRequest }
   | { category: 'Plans'; request: PlanApprovalRequest; continueMode?: 'auto' | 'acceptEdits' }
 )
 
-const choice = {
-  header: 'Layout', question: 'Which layout should we use?', multiSelect: false,
-  options: [
-    { label: 'Compact', description: 'Keep the conversation visible above the input.' },
-    { label: 'Comfortable', description: 'Use more spacing between controls for easier reading.' },
-  ],
-}
 const plan: PlanApprovalRequest = {
   requestId: 'preview-plan', planFilePath: '/workspace/docs/mobile-preview-plan.md',
   planContent: '# Native preview\n\n1. Render the existing native sheets.\n2. Add deterministic scenarios.\n3. Verify approval and rejection callbacks.\n\nNo desktop connection is required.\n\n## Acceptance\n\n- [x] Offline fixtures\n- [ ] Native review\n\n**Approval** and `rejection` must remain distinct.\n\n| Surface | Expected |\n| --- | --- |\n| Permission | Command and diff |\n| Plan | Rendered Markdown |',
@@ -57,18 +49,6 @@ export const nativeScenarios: NativeScenario[] = [
   { id: 'permission/delete-automation', category: 'Permissions', title: 'Delete automation', description: 'Destructive schedule confirmation.', request: {
     requestId: 'preview-delete-automation', toolName: 'mcp__superone__automation_delete', input: {}, allowAlwaysAllow: false, requestKind: 'automation_confirm',
     automationConfirm: { operation: 'delete', items: [{ name: 'Daily review', scheduleSummary: 'Every weekday at 09:00' }] },
-  } },
-  { id: 'question/single', category: 'Questions', title: 'Single choice', description: 'Selection, custom answer, submit, and dismiss.', request: { requestId: 'preview-question-single', questions: [choice] } },
-  { id: 'question/multiple', category: 'Questions', title: 'Multiple questions / multi-select', description: 'Question tabs, completion markers, and multiple answers.', request: {
-    requestId: 'preview-question-multiple', questions: [choice, { header: 'Platforms', question: 'Which platforms should be checked? / 检查哪些平台？', multiSelect: true, options: [
-      { label: 'iOS', description: 'Phone and tablet safe areas.' }, { label: 'Android', description: 'Back button and keyboard behavior.' },
-    ] }],
-  } },
-  { id: 'question/preview', category: 'Questions', title: 'Preview and notes', description: 'Option previews, default selection, and annotations.', request: {
-    requestId: 'preview-question-notes', previewFormat: 'markdown', questions: [{ ...choice, options: choice.options.map((option) => ({ ...option, preview: `# ${option.label}\n\n${option.description}\n\nAdd a note to explain your preference.` })) }],
-  } },
-  { id: 'question/html-preview', category: 'Questions', title: 'HTML option preview', description: 'The production embedded preview WebView inside a native sheet.', request: {
-    requestId: 'preview-question-html', previewFormat: 'html', questions: [{ ...choice, options: choice.options.map((option) => ({ ...option, preview: `<html><meta name="viewport" content="width=device-width, initial-scale=1"><body><h2>${option.label}</h2><p>${option.description}</p></body></html>` })) }],
   } },
   { id: 'plan/default', category: 'Plans', title: 'Plan approval', description: 'Approve, reject with feedback, or continue with accepted edits.', request: plan, continueMode: 'acceptEdits' },
   { id: 'plan/long', category: 'Plans', title: 'Long plan / auto continuation', description: 'Scroll a long plan and inspect the action footer.', continueMode: 'auto', request: {

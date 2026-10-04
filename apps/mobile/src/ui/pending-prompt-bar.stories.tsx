@@ -12,8 +12,6 @@ const bashRequest: PermissionRequest = { requestId: 'bash', toolName: 'Bash', in
 const bash: PendingPrompt = { kind: 'permission', request: bashRequest }
 const edit: PendingPrompt = { kind: 'permission', request: { requestId: 'edit', toolName: 'Edit', input: { file_path: '/Users/dev/super-one/apps/mobile/src/navigation/mobile-app.tsx', old_string: 'a', new_string: 'b' }, allowAlwaysAllow: false } }
 const app: PendingPrompt = { kind: 'permission', request: { requestId: 'cu', toolName: 'computer_use', requestKind: 'computer_use_grant', input: {}, allowAlwaysAllow: true, computerUseGrant: { app: 'Finder', bundleId: 'com.apple.finder', toolName: 'computer_use' } } }
-const question: PendingPrompt = { kind: 'question', request: { requestId: 'q', questions: [{ header: 'Library', question: 'Which date library should the composer use for relative timestamps?', options: [{ label: 'date-fns', description: '' }, { label: 'dayjs', description: '' }], multiSelect: false }] } }
-const questions: PendingPrompt = { kind: 'question', request: { requestId: 'qs', questions: [{ header: '接入', question: '这个功能要不要同时接入桌面端？', options: [{ label: '要', description: '' }], multiSelect: false }, { header: 'Tests', question: 'Add jest coverage?', options: [{ label: 'Yes', description: '' }], multiSelect: false }] } }
 const plan: PendingPrompt = { kind: 'plan', request: { requestId: 'plan', planContent: '# Plan', planFilePath: '/Users/dev/super-one/.claude/plans/collapsible-prompts.md', allowedPrompts: [] } }
 
 function Case({ label, children }: { label: string; children: ReactNode }) {
@@ -29,8 +27,6 @@ function Phone() {
       <Case label="Bash · tool name and command"><PendingPromptBar prompt={bash} onExpand={() => {}} /></Case>
       <Case label="Edit · file name, not the path"><PendingPromptBar prompt={edit} onExpand={() => {}} /></Case>
       <Case label="Structured kind · presentation title + description"><PendingPromptBar prompt={app} onExpand={() => {}} /></Case>
-      <Case label="Question · first question, truncated"><PendingPromptBar prompt={question} onExpand={() => {}} /></Case>
-      <Case label="Questions · CJK"><PendingPromptBar prompt={questions} onExpand={() => {}} /></Case>
       <Case label="Plan · file name"><PendingPromptBar prompt={plan} onExpand={() => {}} /></Case>
       <Case label="Over the todo strip, as in the chat column · the card is filled, the strip is not">
         <PendingPromptBar prompt={bash} onExpand={() => {}} />
@@ -44,7 +40,7 @@ function Tablet() {
   return <MobileThemeProvider>
     <View style={{ width: 820, paddingVertical: 12, gap: 20 }}>
       <Case label="Tablet · same card, wider"><PendingPromptBar prompt={bash} onExpand={() => {}} /></Case>
-      <Case label="Tablet · long question"><PendingPromptBar prompt={question} onExpand={() => {}} /></Case>
+      <Case label="Tablet · long file name"><PendingPromptBar prompt={edit} onExpand={() => {}} /></Case>
     </View>
   </MobileThemeProvider>
 }

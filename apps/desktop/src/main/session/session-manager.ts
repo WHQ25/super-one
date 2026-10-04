@@ -84,6 +84,8 @@ function resolveResumedCwd(data: LoadedSessionData): { cwd: string; missingWorkt
 
 export class SessionManagerImpl implements SessionManagerContract {
   private sessions = new Map<string, Session>()
+  /** Disposals in flight: a second caller waits for the first instead of running the teardown twice. */
+  private disposing = new Map<string, Promise<void>>()
   /** Read receipts of sessions disposed in this process, handed back once if one is resumed. */
   private disposedReceipts = new Map<string, string | null>()
   /**
@@ -479,9 +481,20 @@ export class SessionManagerImpl implements SessionManagerContract {
     await this.sessions.get(sessionId)?.stopBackgroundTasks()
   }
 
-  async disposeSession(sessionId: string): Promise<void> {
+  disposeSession(sessionId: string): Promise<void> {
+    // Two overlapping disposals of one id (reset, then a harness switch on
+    // send) would each finish by deleting the id, removing the session the
+    // caller of the first created under it meanwhile.
+    const inFlight = this.disposing.get(sessionId)
+    if (inFlight) return inFlight
     const session = this.sessions.get(sessionId)
-    if (!session) return
+    if (!session) return Promise.resolve()
+    const done = this.teardownSession(sessionId, session).finally(() => this.disposing.delete(sessionId))
+    this.disposing.set(sessionId, done)
+    return done
+  }
+
+  private async teardownSession(sessionId: string, session: Session): Promise<void> {
     const unsub = this.perSessionUnsub.get(sessionId)
     if (unsub) {
       try { unsub() } catch { /* ignore */ }

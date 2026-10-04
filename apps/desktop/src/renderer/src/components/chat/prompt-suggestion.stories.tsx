@@ -12,10 +12,13 @@ import { PromptSuggestion } from './prompt-suggestion'
  */
 function GhostComposer({
   suggestion,
+  hint = null,
   content = '',
   width = 560,
 }: {
   suggestion: string | null
+  /** A Claude Code mod's `PromptHint`, the ghost's second line. */
+  hint?: string | null
   content?: string
   width?: number
 }) {
@@ -52,9 +55,11 @@ function GhostComposer({
     // editor DOM so the placeholder steps aside, then force a decoration redraw.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(editor.storage as any).promptSuggestion.suggestion = suggestion
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(editor.storage as any).promptSuggestion.hint = suggestion ? hint : null
     editor.view.dom.classList.toggle('has-prompt-suggestion', !!suggestion)
     editor.view.dispatch(editor.state.tr)
-  }, [editor, suggestion])
+  }, [editor, suggestion, hint])
 
   return (
     <div className="rounded-xl border border-border px-3 py-2" style={{ width }}>
@@ -112,6 +117,14 @@ export const Gallery: Story = {
         note="Past the editor's max height the ghost scrolls with the editor; the badge still ends the final line."
       >
         <GhostComposer suggestion={LONG} />
+      </Section>
+
+      <Section title="With a mod hint" note="A Claude Code mod's PromptHint sits on its own line under the suggestion; Tab takes only the suggestion.">
+        <GhostComposer suggestion={SHORT} hint="Ctrl+R replays the last turn" />
+      </Section>
+
+      <Section title="Wrapped, with a mod hint">
+        <GhostComposer suggestion={WRAPPED} hint="Ctrl+R replays the last turn" width={360} />
       </Section>
 
       <Section title="Typing" note="A non-empty document suppresses the ghost entirely.">

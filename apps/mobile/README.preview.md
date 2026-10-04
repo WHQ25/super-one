@@ -26,10 +26,10 @@ Only local callbacks run, including for delete/spend/agent-launch fixtures.
 
 Coverage: ordinary approval plus all nine explicit permission kinds, configuration
 and automation deletion, long content, elicitation fields, collaboration modes,
-single/multiple questions, multi-select, Markdown/HTML option previews, annotations,
-and plan approval with both continuation modes.
+and plan approval with both continuation modes. Questions are a web form in the
+chat document; their states are in the chat-view Storybook.
 
-These are the production `PermissionSheet`, `QuestionSheet`, and `PlanSheet`.
+These are the production `PermissionSheet` and `PlanSheet`.
 The sheets share a keyboard-aware, rotatable native shell with fixed actions.
 Commands, file diffs, selection chips, and native Markdown use the production
 components. The preview retains the current English copy and does not claim

@@ -33,6 +33,9 @@ import { ClaudeMcpAppsCatalog, ClaudeToolApps, createClaudeMcpAppsProvider } fro
 import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
 import type { AgentEvent, PermissionMode } from '@superone/shared/agent-types'
 import { McpAppsError } from '@superone/shared/mcp-apps'
+import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE } from '@superone/shared/mod-ui'
+import { sdkSlashCommands } from '@superone/shared/slash-commands'
+import { ModSurface, type ModSurfaceQuery } from '@superone/claude/mod-surface'
 import { createSimulatedCodexRunner, type NodeSessionRecord, type TurnRunner } from '@superone/runtime/session'
 import type { HarnessCatalogReader } from '@superone/runtime/harness'
 import type { ProviderStore } from '../provider/provider-store'
@@ -197,6 +200,10 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     refreshMcpAppsCatalog: (force?: boolean) => Promise<void>
     /** Latest turn's sink; a process opened for an MCP App action has none yet. */
     onAmbientEvent?: (event: AgentEvent) => void
+    /** The process's mod surface (Claude Code mods drawn by remote views). */
+    modSurface: ModSurface | null
+    /** Mod events raised before the first turn gave the entry a sink. */
+    modBacklog: AgentEvent[]
     busyCount: number
     lastActivityAt: number
   }
@@ -207,6 +214,8 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
   const disposeEntry = async (sessionKey: string): Promise<void> => {
     const entry = lives.get(sessionKey)
     if (!entry) return
+    // While the entry is still live, so views hear `mod_ui_state: false`.
+    entry.modSurface?.dispose()
     lives.delete(sessionKey)
     await entry.live.dispose().catch(() => undefined)
     await entry.hostActionDispose?.().catch(() => undefined)
@@ -349,6 +358,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       queryFn: opts.queryFn,
       options: mcpOptions,
       toolApps,
+      onSystem: (system) => lives.get(sessionKey)?.modSurface?.handleSystem(system) ?? false,
     })
     const entry: LiveEntry = {
       live,
@@ -359,10 +369,24 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       mcpServers: merged.claudeMcpServers,
       mcpAppsCatalog,
       refreshMcpAppsCatalog: refreshCatalog,
+      modSurface: null,
+      modBacklog: [],
       busyCount: 0,
       lastActivityAt: Date.now(),
     }
     lives.set(sessionKey, entry)
+    if (live.query) {
+      // Mod redraws are not activity: they reach the session's sink without
+      // bumping `lastActivityAt`, so drawing never keeps an idle process alive.
+      entry.modSurface = new ModSurface({
+        query: live.query as unknown as ModSurfaceQuery,
+        emit: (event) => {
+          if (lives.get(sessionKey) !== entry) return
+          if (entry.onAmbientEvent) entry.onAmbientEvent(event)
+          else entry.modBacklog.push(event)
+        },
+      })
+    }
     return entry
   }
 
@@ -418,9 +442,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
         || entry.mcpDiskKey !== nextMcpDiskKey
         || entry.additionalDirsKey !== nextAdditionalDirsKey)
     ) {
-      await entry.live.dispose().catch(() => undefined)
-      await entry.hostActionDispose?.().catch(() => undefined)
-      lives.delete(sessionKey)
+      await disposeEntry(sessionKey)
       entry = undefined
     }
 
@@ -440,6 +462,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       apiProviderId: input.apiProviderId,
     })
     entry.onAmbientEvent = input.onAmbientEvent
+    if (input.onAmbientEvent) for (const event of entry.modBacklog.splice(0)) input.onAmbientEvent(event)
 
     const prepared = prepareTurnPrompt(input.text, cwd, input.images)
     const content =
@@ -574,6 +597,24 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
   runner.disposeSession = async (sessionId: string) => {
     await disposeEntry(sessionId)
   }
+
+  runner.reloadPlugins = async () => {
+    await Promise.all([...lives.values()].map(async (entry) => {
+      const result = await entry.live.query?.reloadPlugins().catch(() => null)
+      if (result) entry.onAmbientEvent?.({ type: 'session_commands', commands: sdkSlashCommands(result.commands, entry.live.terminalSlashCommands) })
+    }))
+  }
+
+  // Like the desktop: an op never revives a released process; views redraw
+  // when the next process announces `mod_ui_state`.
+  runner.modUi = async (session, op, request) => {
+    const entry = lives.get(session.sessionId)
+    if (!entry?.modSurface) throw Object.assign(new Error('No live Claude runtime for this session'), { name: MOD_UI_UNAVAILABLE, code: 'unavailable' })
+    if (MOD_UI_MUTATING_OPS.has(op)) entry.lastActivityAt = Date.now()
+    return entry.modSurface.call(op, request)
+  }
+
+  runner.isModHostRequestPending = (sessionId, requestId) => lives.get(sessionId)?.modSurface?.isHostRequestPending(requestId) ?? false
 
   runner.disposeAll = async () => {
     const keys = [...lives.keys()]

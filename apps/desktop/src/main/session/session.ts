@@ -1,4 +1,5 @@
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
+import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'
 import { updateMcpAppAttachments } from '@superone/shared/mcp-apps-state'
 import { withMcpAppContext } from './mcp-app-context'
 import { admitTurnAttachments } from '@superone/shared/attachment-turn'
@@ -233,6 +234,8 @@ export class Session implements SessionContract {
   private _providerSessionId: string | null = null
   private _lastUserMessageAt: number | null = null
   private _lastEventAt = 0
+  /** Mod clients attached through this session, so one whose device left can be detached. */
+  private readonly modClients = new Set<string>()
   private _lastRuntimeActivityAt = Date.now()
   private _runtimeRelease: Promise<boolean> | null = null
   private _needsRebuild = false
@@ -1291,6 +1294,27 @@ export class Session implements SessionContract {
     return this.backend.toggleMcpServer(serverName, enabled)
   }
 
+  async modUi<O extends ModUiOp>(op: O, request: ModUiRequest<O>): Promise<ModUiResult<O>> {
+    if (!this.backendStarted || !this.backend.modUi) {
+      throw Object.assign(new Error('This session draws no mod interfaces'), { name: MOD_UI_UNAVAILABLE })
+    }
+    // A person acting on a mod counts as activity; drawing alone must not keep an idle runtime alive.
+    if (MOD_UI_MUTATING_OPS.has(op)) this.touchRuntimeActivity()
+    const result = await this.backend.modUi(op, request)
+    if (op === 'attach') this.modClients.add((request as ModUiRequest<'attach'>).clientId)
+    else if (op === 'detach') this.modClients.delete((request as ModUiRequest<'detach'>).clientId)
+    return result
+  }
+
+  detachModClient(clientId: string): void {
+    if (!this.modClients.delete(clientId)) return
+    void this.modUi('detach', { clientId }).catch((err: unknown) => log.debug('[Session] mod client %s detach skipped: %s', clientId, (err as Error).message))
+  }
+
+  refreshModUi(): void {
+    if (this.backendStarted) this.backend.refreshModUi?.()
+  }
+
   async reloadPlugins(): Promise<boolean> {
     if (!this.backendStarted) return false
     this.touchRuntimeActivity()
@@ -1913,9 +1937,10 @@ export class Session implements SessionContract {
   }
 
   private forwardEvent(event: AgentEvent): AgentEvent {
-    // A read receipt is about the user, not the agent: it must neither bump
-    // the session's recency nor postpone its idle runtime release.
-    if (event.type !== 'session_seen') {
+    // A read receipt is about the user, not the agent, and a mod redrawing is
+    // not agent work: neither may bump the session's recency nor postpone its
+    // idle runtime release.
+    if (event.type !== 'session_seen' && !event.type.startsWith('mod_')) {
       this._lastEventAt = Date.now()
       this.touchRuntimeActivity()
     }

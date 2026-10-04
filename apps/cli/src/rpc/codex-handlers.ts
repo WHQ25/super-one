@@ -129,22 +129,6 @@ export async function dispatchCodexRpc(
   }
 }
 
-export const CODEX_MUTATING_METHODS = [
-  'codex.setDefaultAccount',
-  'codex.setAuth',
-  'codex.accountLoginStart',
-  'codex.accountLoginCancel',
-  'codex.accountLogout',
-  'codex.consumeRateLimitReset',
-  'codex.loginMcpOauth',
-  'codex.importExternalAgent',
-  'codex.plugins.install',
-  'codex.plugins.uninstall',
-  'codex.marketplace.add',
-  'codex.marketplace.remove',
-  'codex.marketplace.upgrade',
-] as const
-
 function handleGetAuthStatus(payload: unknown, ctx: CodexRpcContext): CodexRpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readEnvironment)
   if (denied) return denied

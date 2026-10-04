@@ -106,6 +106,11 @@ export interface SessionGateway {
    */
   listMessages?(input: SessionMessagesListRequest & { session: SessionRef }): Promise<SessionMessagesListResult>
   interrupt(ref: SessionRef, control: MutatingControlContext): Promise<void>
+  /**
+   * One op on a session's mod surface (`@superone/shared/mod-ui`). Mutating ops
+   * carry the control lease. Optional: older nodes draw no mods.
+   */
+  modUi?(input: { session: SessionRef; op: string; request: unknown } & Partial<MutatingControlContext>): Promise<unknown>
   close(ref: SessionRef, control?: MutatingControlContext): Promise<void>
   acquireControl(input: LeaseAcquireInput & { resource: SessionRef }): Promise<ControlLease>
   renewControl(input: LeaseRenewInput): Promise<ControlLease>

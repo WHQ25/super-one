@@ -1,8 +1,9 @@
 import type { RefObject } from 'react'
+import { parseModUiPayload, type ModUiPayload } from './mod-ui'
 import type { WebView } from 'react-native-webview'
 import type { HostInbound, HostOutbound } from '@superone/chat-view'
 import { isPreviewableMermaid } from '@superone/chat-view/mermaid-preview'
-import type { McpAppDeviceRequest, SaveWidgetTemplateRequest } from '@superone/shared/agent-types'
+import type { McpAppDeviceRequest, QuestionAnnotations, SaveWidgetTemplateRequest } from '@superone/shared/agent-types'
 import { parseWidgetLayout } from '@superone/shared/generative-ui/types'
 import { isPreviewableImageSource, parseImageGenerationInfo, type ImagePreviewTarget } from './image-preview-state'
 import { parseMcpAppDownloads, parseMcpAppRequest } from './mcp-apps'
@@ -90,6 +91,13 @@ export interface NativeActionPorts {
    * crosses the relay rather than writing anything on the phone.
    */
   saveWidgetTemplate(input: SaveWidgetTemplateRequest): Promise<void>
+  /** The pending AskUserQuestion's answers, from the form the document draws. */
+  answerQuestion(requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations): Promise<void>
+  dismissQuestion(requestId: string): Promise<void>
+  /** Close the command output the document shows above the composer. */
+  dismissSlashOutput(): Promise<void>
+  /** A field in the chat document took (or gave up) the keyboard. */
+  documentInputFocus(focused: boolean): Promise<void>
   codexAsyncQuestionAnswer(messageId: string, itemId: string, answers: string[]): Promise<void>
   codexPlanApproval(messageId: string, status: 'approved' | 'rejected', feedback?: string): Promise<void>
   /**
@@ -102,6 +110,8 @@ export interface NativeActionPorts {
    * result as is, including its refusals; see `requestMcpApp`.
    */
   mcpApp?(request: McpAppDeviceRequest): Promise<unknown>
+  /** One op on the session's mod surface (Claude Code mods), relayed to the desktop. */
+  modUi?(payload: ModUiPayload): Promise<unknown>
   /**
    * An MCP App View went fullscreen (`title` names it in the native header) or back (`null`);
    * native back and the edge swipe close it while open.
@@ -116,6 +126,27 @@ export interface NativeActionPorts {
   resendFailedMessage(messageId: string): Promise<void>
   /** Pull a user message the host never took back into the composer. */
   editFailedMessage(messageId: string): Promise<void>
+}
+
+/** A form's answers: question text → answer, every value a string. */
+function parseQuestionAnswers(message: NativeRequest): Record<string, string> {
+  const value = (message.payload as Record<string, unknown> | undefined)?.answers
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid answerQuestion answers')
+  const entries = Object.entries(value)
+  if (!entries.length || entries.some(([, answer]) => typeof answer !== 'string' || !answer.trim())) throw new Error('invalid answerQuestion answers')
+  return Object.fromEntries(entries) as Record<string, string>
+}
+
+/** Only the notes a form adds; the host folds in the selected option's preview itself. */
+function parseQuestionNotes(message: NativeRequest): QuestionAnnotations | undefined {
+  const value = (message.payload as Record<string, unknown> | undefined)?.annotations
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const notes: QuestionAnnotations = {}
+  for (const [question, annotation] of Object.entries(value)) {
+    const text = (annotation as { notes?: unknown } | null)?.notes
+    if (typeof text === 'string' && text.trim()) notes[question] = { notes: text }
+  }
+  return Object.keys(notes).length ? notes : undefined
 }
 
 function payloadString(message: NativeRequest, key: string): string {
@@ -249,6 +280,9 @@ export async function resolveNativeRequest(
       if (!ports.mcpApp) throw new Error('MCP Apps are unavailable')
       // Nested: the acknowledgement's `ok` below must not overwrite the host's.
       result = { response: await ports.mcpApp(parseMcpAppRequest(message.payload)) }
+    } else if (message.action === 'modUi') {
+      if (!ports.modUi) throw new Error('Mods are unavailable')
+      result = { response: await ports.modUi(parseModUiPayload(message.payload)) }
     } else if (message.action === 'mcpAppDownload') {
       if (!ports.mcpAppDownload) throw new Error('Downloads are unavailable')
       await ports.mcpAppDownload(parseMcpAppDownloads(message.payload))
@@ -262,6 +296,14 @@ export async function resolveNativeRequest(
       await ports.setDraft(payloadString(message, 'text'))
     } else if (message.action === 'saveWidgetTemplate') {
       await ports.saveWidgetTemplate(parseSaveWidgetTemplate(message))
+    } else if (message.action === 'answerQuestion') {
+      await ports.answerQuestion(payloadString(message, 'requestId'), parseQuestionAnswers(message), parseQuestionNotes(message))
+    } else if (message.action === 'dismissQuestion') {
+      await ports.dismissQuestion(payloadString(message, 'requestId'))
+    } else if (message.action === 'dismissSlashOutput') {
+      await ports.dismissSlashOutput()
+    } else if (message.action === 'documentInputFocus') {
+      await ports.documentInputFocus((message.payload as Record<string, unknown> | undefined)?.focused === true)
     } else if (message.action === 'codexAsyncQuestionAnswer') {
       const answers = (message.payload as Record<string, unknown> | undefined)?.answers
       if (!Array.isArray(answers) || !answers.length || answers.some(answer => typeof answer !== 'string' || !answer.trim())) {

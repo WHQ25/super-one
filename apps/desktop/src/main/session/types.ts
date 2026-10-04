@@ -1,4 +1,5 @@
 import type { McpAppsBinding, McpAppOrigin, McpAppsProvider } from '@superone/shared/mcp-apps'
+import type { ModUiOp, ModUiRequest, ModUiResult } from '@superone/shared/mod-ui'
 import type {
   AgentEvent,
   AgentStatus,
@@ -446,6 +447,10 @@ export interface SessionBackend {
   toggleMcpServer(serverName: string, enabled: boolean): Promise<void>
   reloadMcpServers(): Promise<void>
   reloadPlugins(): Promise<boolean>
+  /** One op on the session's mod surface (Claude Code mods). Absent: the harness draws no mods. */
+  modUi?<O extends ModUiOp>(op: O, request: ModUiRequest<O>): Promise<ModUiResult<O>>
+  /** Re-reads the "Draw mod interfaces" preference and re-announces `mod_ui_state`. */
+  refreshModUi?(): void
   /** Resume Codex's durable queue after an interrupted turn. */
   startQueuedMessages?(): Promise<boolean>
   dequeueMessage(clientMessageId: string): boolean | Promise<boolean>
@@ -546,6 +551,12 @@ export interface Session {
   toggleMcpServer(serverName: string, enabled: boolean): Promise<void>
   reloadMcpServers(): Promise<void>
   reloadPlugins(): Promise<boolean>
+  /** One op on the session's mod surface; rejects `mod-ui-unavailable` when it cannot draw mods. */
+  modUi<O extends ModUiOp>(op: O, request: ModUiRequest<O>): Promise<ModUiResult<O>>
+  /** Detaches a mod client whose view went away without saying so (its device disconnected). */
+  detachModClient(clientId: string): void
+  /** Re-reads the "Draw mod interfaces" preference; views follow `mod_ui_state`. */
+  refreshModUi(): void
   /** Resume Codex's durable queue after an interrupted turn. */
   startQueuedMessages(): Promise<boolean>
   /** Cursor local: expire wedged run via LocalSendOptions.force. Optional on other harnesses. */

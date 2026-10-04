@@ -7,7 +7,7 @@
   --rail-surface: transparent;
   --rail-fade: var(--background);
   position: fixed;
-  inset: calc(8px + var(--safe-area-top)) var(--safe-area-right) calc(8px + var(--safe-area-bottom)) auto;
+  inset: calc(8px + var(--safe-area-top)) var(--safe-area-right) calc(8px + var(--safe-area-bottom) + var(--bottom-dock, 0px)) auto;
   width: var(--rail-rest);
   z-index: 20;
   pointer-events: none;

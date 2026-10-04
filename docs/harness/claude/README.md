@@ -46,6 +46,19 @@ both; the ledger's Messages section says which mapper handles each.
 `packages/runtime/src/harness/managed-official-lockstep.test.ts` fails when the
 constant and the `packages/claude` dependency differ.
 
+## Upgrade checks
+
+Beyond the [shared workflow](../README.md#upgrade-workflow):
+
+- **Mods UI recording replay.** The mod surface speaks an undeclared protocol
+  (see [contracts](contracts.md#mod-ui-rides-a-private-control-protocol)). Diff
+  the `ui_*` schemas in the new binary against
+  `packages/claude/src/mod-surface/wire.ts`, run
+  `packages/claude/src/mod-surface/mod-surface.test.ts` against
+  `__recordings__/`, and re-record when the wire changed. Then smoke-test
+  Claude Code's example mods (token-weather, blast-radius, replay-theater)
+  through the "Mod development folders" preference.
+
 ## Documents
 
 - [api-surface.md](api-surface.md) — upstream interfaces and how SuperOne uses them

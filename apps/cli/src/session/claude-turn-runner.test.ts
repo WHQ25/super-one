@@ -658,6 +658,45 @@ describe('createNodeClaudeTurnRunner', () => {
     rmSync(home, { recursive: true, force: true })
   })
 
+  it('tells views the mod surface is gone when the process is disposed or restarted', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-mods-'))
+    const extra = mkdtempSync(join(tmpdir(), 'cbr-claude-mods-extra-'))
+    const home = mkdtempSync(join(tmpdir(), 'cbr-claude-mods-home-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+    const base = bridgeQuery(() => success('live-m', 'ok'))
+    // A query that serves remote surfaces, so each process gets a mod surface.
+    const queryFn = ((args: Parameters<ClaudeQueryFn>[0]) => Object.assign(base(args), {
+      mcpServerStatus: async () => [],
+      initializationResult: async () => ({ capabilities: ['ui_surface_v1'] }),
+      request: async () => ({}),
+      setUiHost: () => {},
+    })) as unknown as ClaudeQueryFn
+    const runner = createNodeClaudeTurnRunner({ binaryPath: bin, resolveProjectPath: () => dir, queryFn, allowSimulatedFallback: false, homeDir: home })
+    const states: boolean[] = []
+    const turn = (additionalDirectories?: string[]) => runner({
+      session: session({ sessionId: 'mods-s' }),
+      text: 'hi',
+      onDelta: () => {},
+      onAmbientEvent: (event: AgentEvent) => { if (event.type === 'mod_ui_state') states.push(event.available) },
+      signal: new AbortController().signal,
+      additionalDirectories,
+    })
+
+    await turn()
+    await vi.waitFor(() => expect(states).toEqual([true]))
+    // A changed directory set restarts the process.
+    await turn([extra])
+    await vi.waitFor(() => expect(states).toEqual([true, false, true]))
+    await runner.disposeSession?.('mods-s')
+    expect(states).toEqual([true, false, true, false])
+
+    rmSync(dir, { recursive: true, force: true })
+    rmSync(extra, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
+  })
+
   it('mid-turn inject reuses one SDK query and marks priority next on the second user message', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-inject-'))
     const bin = join(dir, 'claude')

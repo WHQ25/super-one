@@ -1,4 +1,4 @@
-import { Bot, CalendarClock, FilePenLine, FileText, FolderLock, Globe, MessageCircle, Monitor, Plug, Settings2, ShieldAlert, Smartphone, Terminal, Trash2, Video, type LucideIcon } from 'lucide-react-native'
+import { Bot, CalendarClock, FilePenLine, FileText, FolderLock, Globe, Monitor, Plug, Settings2, ShieldAlert, Smartphone, Terminal, Trash2, Video, type LucideIcon } from 'lucide-react-native'
 import type { PermissionRequest } from '@superone/shared/agent-types'
 import type { PendingPrompt } from '../pending-prompt-state'
 
@@ -22,7 +22,6 @@ export function permissionPromptIcon(request: PermissionRequest): LucideIcon {
 export function pendingPromptIcon(prompt: PendingPrompt): LucideIcon {
   switch (prompt.kind) {
     case 'permission': return permissionPromptIcon(prompt.request)
-    case 'question': return MessageCircle
     case 'plan': return FilePenLine
   }
 }

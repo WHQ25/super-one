@@ -30,6 +30,7 @@ import {
 import { GithubIcon } from '@superone/ui/components/ui/github-icon'
 import { motion, AnimatePresence } from 'motion/react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Streamdown } from 'streamdown'
 import { createCodePlugin } from '@streamdown/code'
 import { streamdownLinkSafety } from '@/components/chat/chat-shared'
@@ -64,6 +65,9 @@ import type {
   SkillFileEntry,
 } from '@superone/shared/agent-types'
 import { cn } from '@superone/ui/lib/utils'
+import { DetailGroup, MetaPill } from '@/components/plugins/plugin-detail-parts'
+import { PluginModSections } from '@/components/plugins/PluginModSections'
+import { Switch } from '@superone/ui/components/ui/switch'
 
 const codePlugin = createCodePlugin({ themes: ['github-dark', 'github-dark'] })
 const streamdownPlugins = { code: codePlugin }
@@ -291,23 +295,6 @@ function humanizePolicy(value: PluginInstallPolicy | PluginAuthPolicy | undefine
 
 function getPluginTitle(plugin: { name: string; displayName?: string }): string {
   return plugin.displayName || plugin.name
-}
-
-function MetaPill({ children }: { children: ReactNode }) {
-  return (
-    <span className="inline-flex items-center rounded-full bg-background px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-      {children}
-    </span>
-  )
-}
-
-function DetailGroup({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div>
-      <div className="mb-1.5 text-[11px] font-medium text-muted-foreground">{title}</div>
-      {children}
-    </div>
-  )
 }
 
 function DetailLink({ label, href }: { label: string; href?: string }) {
@@ -1043,7 +1030,9 @@ const pluginExplorerPanelClassName = 'overflow-hidden rounded-md bg-background'
 
 function PluginCard({ plugin }: { plugin: PluginInfo }) {
   const { t } = useTranslation()
-  const { pluginDetail, pluginFileContent, pluginFilePath, readPlugin, readPluginFile, clearPluginDetail } = useSettingsStore()
+  const { pluginDetail, pluginFileContent, pluginFilePath, readPlugin, readPluginFile, clearPluginDetail, setPluginEnabled } = useSettingsStore()
+  // Claude Code's own `enabledPlugins` switch; Codex reports `enabled` read-only.
+  const isClaude = useAppStore((s) => s.settingsProvider) === 'claude'
   const isExpanded = pluginDetail?.key === plugin.key
 
   const handleToggle = () => {
@@ -1089,6 +1078,19 @@ function PluginCard({ plugin }: { plugin: PluginInfo }) {
             <ContentBadges plugin={plugin} />
           </div>
         </div>
+        {isClaude && (
+          <div onClick={(e) => e.stopPropagation()} className="shrink-0">
+            <Switch
+              checked={plugin.enabled !== false}
+              onCheckedChange={(checked) => {
+                setPluginEnabled(plugin.key, plugin.scope, checked).catch((err: unknown) => {
+                  toast.error(t('resources.plugins.toggleFailed', { name: getPluginTitle(plugin), error: err instanceof Error ? err.message : String(err) }))
+                })
+              }}
+              aria-label={t('resources.plugins.toggleEnabled', { name: getPluginTitle(plugin) })}
+            />
+          </div>
+        )}
         <motion.div
           animate={{ rotate: isExpanded ? 90 : 0 }}
           transition={{ duration: 0.2, ease: 'easeOut' }}
@@ -1114,6 +1116,7 @@ function PluginCard({ plugin }: { plugin: PluginInfo }) {
                 apps={pluginDetail.apps}
                 skills={pluginDetail.skills}
               />
+              {isClaude && <PluginModSections plugin={plugin} />}
               <div className={pluginExplorerPanelClassName}>
                 <PluginResourceExplorer
                   files={pluginDetail.files}
@@ -1844,6 +1847,7 @@ export function PluginsPage() {
   const projectHosts = plugins.filter((p) => p.scope === 'project')
   const scopedPlugins = scope === 'user' ? userPlugins : projectHosts
   const updatablePlugins = scopedPlugins.filter((p) => p.hasUpdate)
+  const activeMods = scopedPlugins.filter((p) => p.hasMod && p.enabled !== false).length
   const [updatingAll, setUpdatingAll] = useState(false)
 
   const handleInstall = async (key: string, scope: ResourceScope) => {
@@ -1976,6 +1980,9 @@ export function PluginsPage() {
             </SettingsCard>
           ) : (
             <SettingsCard>
+              {!isCodex && activeMods > 0 && (
+                <SettingsRow label={t('resources.plugins.modsActive', { count: activeMods })} />
+              )}
               {!isCodex && updatablePlugins.length > 0 && (
                 <SettingsRow label={t('resources.plugins.updateAvailable', { count: updatablePlugins.length })}>
                   <Button

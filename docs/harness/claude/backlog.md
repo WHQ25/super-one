@@ -19,7 +19,7 @@ reason). Ledger rows: [api-surface.md](api-surface.md).
 | 9 | `system/memory_recall`, `system/thinking_tokens` | — | Recalled-memory row; live thinking-token estimate | Cosmetic | open |
 | 10 | `thinking.display: 'highlights'` | ≤0.3.278 | Highlighted thinking | Only works on Anthropic-hosted models; third-party providers get nothing | rejected |
 | 11 | `usage_EXPERIMENTAL_…()` | ≤0.3.278 | Structured `/usage` data | Marked experimental; `claude-usage-service` already covers plan usage | rejected |
-| 12 | Draw mod UI (panes, the band above the prompt) | 0.3.287 (2.1.287) | Mods' panes and controls in SuperOne, as Claude Desktop shows them | Only the internal control protocol carries it (`ui_attach`, `ui_render`, `ui_press`, `ui_input`, `ui_select`, `ui_close` and `system/ui_invalidate` / `ui_panes`); `sdk.d.ts` declares none and `Query` has no method to send them. `RenderSurface` is a closed set (`terminal`, `desktop`, `mobile`, `vscode`), so SuperOne would attach as `desktop`. Needs a renderer for the element tree (Box, Text, Button, Link, Code, Markdown, Input, Select, Svg) | open, wait for a public SDK API |
+| 12 | Draw mod UI (panes, the band above the prompt) | 0.3.287 (2.1.287) | Mods' panes, controls, transcript rewrites and `Client` parts in SuperOne, as Claude Desktop shows them | Rides an undeclared control protocol through `Query.request` / `setUiHost` (see [contracts](contracts.md#mod-ui-rides-a-private-control-protocol)); an SDK bump can break it silently, so each upgrade replays the recordings | adopt ([features/claude-mods.md](../../features/claude-mods.md)) |
 | 13 | `get_task_output` control request | 0.3.287 | Live tail of a background shell or Monitor task without reading its output file | No Query wrapper | open |
 
 ## Integration gaps
@@ -33,3 +33,6 @@ declares less than upstream offers.
 | G2 | Remote node sets no `onElicitation` | MCP elicitations on remote nodes are auto-declined | open |
 | G3 | Remote node does not forward `skipTranscript` / `isBackgrounded` / `spawnDepth` on `task_started` | Background and nested subagents render differently from desktop | open |
 | G4 | Shared `HookEventName` lacks `DirectoryAdded`, `MessageDisplay`, `PreModelSwitch`, `PostModelSwitch` | The settings.json hook editor cannot offer those events | open |
+| G5 | Mod commands registered `immediate: true` queue behind a running turn | The SDK command list carries no `immediate` flag, so SuperOne cannot tell them from other commands | open, wait for the flag in `initializationResult().commands` |
+| G6 | Remote-node composers do not relay `prompt.edit` | A mod's live draft rewrite works only for local desktop sessions; a keystroke per network round trip was judged too costly | open |
+| G7 | Mod review and plugin options are local only | The Plugins page shows the hooks review and the `userConfig` form only for this Mac's plugins | open |

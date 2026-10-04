@@ -58,7 +58,7 @@ a {
   padding:
     calc(12px + var(--safe-area-top))
     calc(14px + var(--safe-area-right))
-    calc(28px + var(--safe-area-bottom))
+    calc(28px + var(--safe-area-bottom) + var(--bottom-dock, 0px))
     calc(14px + var(--safe-area-left));
 }
 
@@ -104,7 +104,7 @@ a {
 }
 
 .chat-view-edge-fade[data-edge="bottom"] {
-  bottom: 0;
+  bottom: var(--bottom-dock, 0px);
   background: linear-gradient(to top, var(--background), transparent);
 }
 

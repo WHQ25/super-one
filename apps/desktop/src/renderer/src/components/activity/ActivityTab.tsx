@@ -2,7 +2,7 @@ import { mcpAppPresentationIcon } from '@superone/shared/mcp-apps-metadata'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { IDockviewPanelHeaderProps } from 'dockview-core'
-import { Bot, Bug, Globe, Maximize, MessageCirclePlus, RotateCw, Route, Shrink, Smartphone, Terminal as TerminalIcon, Volume2, VolumeOff, X } from 'lucide-react'
+import { Blocks, Bot, Bug, Globe, Maximize, MessageCirclePlus, RotateCw, Route, Shrink, Smartphone, Terminal as TerminalIcon, Volume2, VolumeOff, X } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { tabChipClass, TabTitle, TabActionButton } from './ActivityTabChrome'
 export { tabChipClass, TabTitle, TabActionButton } from './ActivityTabChrome'
@@ -308,6 +308,21 @@ export function SideChatTab(props: IDockviewPanelHeaderProps) {
   )
 }
 
+/** A Claude Code mod's pane: closing asks the plugin, which may keep it open. */
+export function ModPaneTab(props: IDockviewPanelHeaderProps) {
+  const active = useIsActive(props.api)
+  const title = usePanelTitle(props.api)
+  return (
+    <div className={tabChipClass(active)}>
+      <HoverCloseSlot onClose={() => props.api.close()}>
+        <Blocks className="size-3.5 shrink-0" />
+      </HoverCloseSlot>
+      <TabTitle>{title}</TabTitle>
+      <MaximizeTabAction api={props.api} active={active} />
+    </div>
+  )
+}
+
 export function McpAppTab(props: IDockviewPanelHeaderProps<{ appInstanceId: string }>) {
   const key = props.params.appInstanceId
   const owner = useMcpAppLayout(state => state.views[key])
@@ -334,4 +349,5 @@ export const activityTabComponents: Record<string, React.FunctionComponent<IDock
   'trajectory-tab': TrajectoryTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'device-tab': DeviceTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'side-chat-tab': SideChatTab,
+  'mod-pane-tab': ModPaneTab,
 }

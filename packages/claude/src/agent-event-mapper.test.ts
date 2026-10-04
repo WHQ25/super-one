@@ -29,6 +29,23 @@ describe('createClaudeAgentEventMapper', () => {
     ])
   })
 
+  it('tags a later command list with the terminal-bound names a previous turn\'s init gave', () => {
+    const events: AgentEvent[] = []
+    const terminalSlashCommands = { names: undefined }
+    const first = createClaudeAgentEventMapper({ messageId: 'turn-1', emit: (event) => events.push(event), terminalSlashCommands })
+    first.apply({ type: 'system', subtype: 'init', session_id: 's1', terminal_slash_commands: ['exit'] } as never)
+    const second = createClaudeAgentEventMapper({ messageId: 'turn-2', emit: (event) => events.push(event), terminalSlashCommands })
+    second.apply({ type: 'system', subtype: 'commands_changed', commands: [{ name: 'exit', description: '' }, { name: 'review', description: '' }] } as never)
+
+    expect(events.find((e) => e.type === 'session_commands')).toEqual({
+      type: 'session_commands',
+      commands: [
+        { name: 'exit', description: '', argumentHint: '', isSkill: false, terminalBound: true },
+        { name: 'review', description: '', argumentHint: '', isSkill: false },
+      ],
+    })
+  })
+
   it('maps streaming text, thinking, tool input, and stream boundaries like desktop', () => {
     const events: AgentEvent[] = []
     const mapper = createClaudeAgentEventMapper({

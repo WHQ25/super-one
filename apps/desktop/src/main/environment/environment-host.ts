@@ -1,4 +1,5 @@
 import { notifySessionClosed } from '../session-list-watch'
+import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
 import { parseMessageDisplay, type MessageDisplayFields } from '@superone/shared/message-display'
 import { remoteSuperoneHome, remoteNodePort } from './remote-data-path'
 import { app } from 'electron'
@@ -2073,6 +2074,21 @@ export class EnvironmentHost {
     sink: ((event: import('@superone/shared/agent-types').AgentEvent) => void) | null,
   ): void {
     this.agentEventSink = sink
+  }
+
+  /** One op on a remote session's mod surface; mutating ops take the control lease. */
+  async modUi(connectionId: string, sessionId: string, op: ModUiOp, request: ModUiRequest): Promise<unknown> {
+    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    if (!gateway.sessions.modUi) {
+      throw Object.assign(new Error('This node draws no mod interfaces'), { name: MOD_UI_UNAVAILABLE })
+    }
+    const control = MOD_UI_MUTATING_OPS.has(op) ? await this.ensureSessionLease(connectionId, sessionId) : null
+    return gateway.sessions.modUi({
+      session: { environmentId, sessionId },
+      op,
+      request,
+      ...(control ? { leaseId: control.leaseId, generation: control.generation } : {}),
+    })
   }
 
   async interruptSession(connectionId: string, sessionId: string): Promise<void> {

@@ -39,7 +39,7 @@ function settingsFor(): unknown {
   return {
     dshSubagentModelSelection: { enabled: false, allowedModels: [] },
     agentPreference: {
-      claude: { defaultModel: 'claude-opus-5-5', defaultEffort: 'high', defaultPermissionMode: '', defaultSandboxMode: '', askUserQuestionPreviewFormat: 'markdown' },
+      claude: { defaultModel: 'claude-opus-5-5', defaultEffort: 'high', defaultPermissionMode: '', defaultSandboxMode: '', askUserQuestionPreviewFormat: 'markdown', drawModInterfaces: true, modDevFolders: ['/Users/me/src/my-mod', '/Users/me/src/an-exceptionally-long-folder-name-for-a-work-in-progress-mod'] },
       codex: { defaultModel: 'gpt-5.5-codex', defaultReasoningEffort: 'medium', defaultPermissionPreset: '', defaultFastMode: false, realtimeVoice: 'cove' },
       opencode: { defaultPermissionMode: '' },
       acp: { defaultPermissionMode: '' },

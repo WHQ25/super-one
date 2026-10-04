@@ -1,4 +1,4 @@
-import type { AskUserQuestionRequest, PermissionRequest, PlanApprovalRequest } from '@superone/shared/agent-types'
+import type { PermissionRequest, PlanApprovalRequest } from '@superone/shared/agent-types'
 import { permissionSheetPresentation } from './permission-sheet-state'
 import { permissionToolContent } from './prompts/prompt-content'
 
@@ -10,7 +10,6 @@ import { permissionToolContent } from './prompts/prompt-content'
  */
 export type PendingPrompt =
   | { kind: 'permission'; request: PermissionRequest }
-  | { kind: 'question'; request: AskUserQuestionRequest }
   | { kind: 'plan'; request: PlanApprovalRequest }
 
 /** Title the sheet header and the strip share; detail is the strip's one-liner. */
@@ -30,12 +29,11 @@ export function expandPrompt(collapsed: ReadonlySet<string>, requestId: string):
 
 /** The put-away prompts still pending, in the order the strips stack. */
 export function collapsedPendingPrompts(
-  pending: { permission: PermissionRequest | null; plan: PlanApprovalRequest | null; question: AskUserQuestionRequest | null },
+  pending: { permission: PermissionRequest | null; plan: PlanApprovalRequest | null },
   collapsed: ReadonlySet<string>,
 ): PendingPrompt[] {
   const prompts: PendingPrompt[] = []
   if (pending.permission) prompts.push({ kind: 'permission', request: pending.permission })
-  if (pending.question) prompts.push({ kind: 'question', request: pending.question })
   if (pending.plan) prompts.push({ kind: 'plan', request: pending.plan })
   return prompts.filter((prompt) => collapsed.has(prompt.request.requestId))
 }
@@ -44,10 +42,6 @@ export function permissionPromptTitle(request: PermissionRequest): string {
   if (request.requestKind) return permissionSheetPresentation(request).title
   if (request.toolName === 'SandboxNetworkAccess') return 'Allow sandbox network access'
   return request.toolName.replace(/^mcp__.*?__/, '').replaceAll('_', ' ')
-}
-
-function firstLine(text: string): string {
-  return text.split('\n').find((line) => line.trim())?.trim() ?? ''
 }
 
 export function pendingPromptHeader(prompt: PendingPrompt): PendingPromptHeader {
@@ -60,13 +54,6 @@ export function pendingPromptHeader(prompt: PendingPrompt): PendingPromptHeader 
         detail: request.requestKind
           ? permissionSheetPresentation(request).description ?? ''
           : content.fileName || content.command || content.target || content.description,
-      }
-    }
-    case 'question': {
-      const { questions } = prompt.request
-      return {
-        title: questions.length === 1 ? 'Question' : 'Questions',
-        detail: firstLine(questions[0]?.question ?? ''),
       }
     }
     case 'plan':

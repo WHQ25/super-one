@@ -448,6 +448,72 @@ export function openSideChatTab(projectPath: string, sessionId: string, label: s
   })
 }
 
+const MOD_PANE_PREFIX = 'mod-pane:'
+/** Dock tabs the roster sync closes itself; their removal is not the person's close. */
+const syncClosingModPanes = new Set<string>()
+
+export function modPanePanelId(sessionId: string, paneId: string): string {
+  return `${MOD_PANE_PREFIX}${sessionId}:${paneId}`
+}
+
+export interface ModPaneTabParams {
+  projectPath: string
+  sessionId: string
+  paneId: string
+}
+
+/** Pane ids of the mod tabs the dock holds for one session. */
+export function listModPaneTabs(sessionId: string): string[] {
+  const prefix = `${MOD_PANE_PREFIX}${sessionId}:`
+  return (dockApi?.panels ?? []).filter((p) => p.id.startsWith(prefix)).map((p) => p.id.slice(prefix.length))
+}
+
+export function isModPaneTabOpen(sessionId: string, paneId: string): boolean {
+  return !!dockApi?.panels.some((p) => p.id === modPanePanelId(sessionId, paneId))
+}
+
+/**
+ * A Claude Code mod's pane as a dock tab. Idempotent: an open tab is retitled
+ * and, when `activate`, brought to the front. `reveal` shows a hidden dock (a
+ * pane opened with `focus`).
+ */
+export function openModPaneTab({ projectPath, sessionId, paneId, title, activate, reveal }: ModPaneTabParams & { title: string; activate?: boolean; reveal?: boolean }) {
+  if (reveal) ensureVisible()
+  execOrDefer(() => {
+    if (!dockApi) return
+    const id = modPanePanelId(sessionId, paneId)
+    const existing = dockApi.panels.find((p) => p.id === id)
+    if (existing) {
+      if (existing.title !== title) existing.api.setTitle(title)
+      if (activate && !existing.api.isActive) existing.api.setActive()
+      return
+    }
+    const position = positionInMaximizedGroup()
+    dockApi.addPanel({ id, component: 'mod-pane', tabComponent: 'mod-pane-tab', title, params: { projectPath, sessionId, paneId } satisfies ModPaneTabParams, ...(position ? { position } : {}) })
+  })
+}
+
+export function closeModPaneTab(sessionId: string, paneId: string) {
+  const id = modPanePanelId(sessionId, paneId)
+  const panel = dockApi?.panels.find((p) => p.id === id)
+  if (!panel) return
+  syncClosingModPanes.add(id)
+  try {
+    panel.api.close()
+  } finally {
+    syncClosingModPanes.delete(id)
+  }
+}
+
+export function isModPanePanel(panelId: string): boolean {
+  return panelId.startsWith(MOD_PANE_PREFIX)
+}
+
+/** The person closed a mod's dock tab (not a layout swap, not the roster sync). */
+export function isPersonClosingModPane(panelId: string): boolean {
+  return isModPanePanel(panelId) && !isLayoutSwapping() && !syncClosingModPanes.has(panelId)
+}
+
 export function closeSideChatTab() {
   dockApi?.panels.find((p) => p.id === SIDE_CHAT_PANEL_ID)?.api.close()
 }

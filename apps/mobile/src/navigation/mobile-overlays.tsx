@@ -1,13 +1,12 @@
 import type { RefObject } from 'react'
 import type {
-  AskUserQuestionRequest,
   PermissionRequest,
   PlanApprovalRequest,
 } from '@superone/shared/agent-types'
 import type { MarkdownDocumentPorts } from '../markdown-document-requests'
 import type { MediaPorts } from '../media-ports'
 import type { ChatRuntime } from '../runtime'
-import { PermissionSheet, PlanSheet, QuestionSheet } from '../sheets'
+import { PermissionSheet, PlanSheet } from '../sheets'
 import { runUiAction } from '../ui-action'
 import { FilePreviewModal } from '../ui/file-preview'
 import type { useFilePreview } from './use-file-preview'
@@ -18,7 +17,6 @@ export function MobileOverlays(props: {
   setStatus: (status: string) => void
   permission: PermissionRequest | null
   plan: PlanApprovalRequest | null
-  question: AskUserQuestionRequest | null
   planContinueMode?: string
   onPlanContinueMode: (mode: string) => void
   /** Request ids put away behind a strip; an outside tap on a sheet adds one. */
@@ -72,21 +70,6 @@ export function MobileOverlays(props: {
           () => runtime()?.respondPlan(id, false, feedback),
           props.setStatus,
           'plan response failed',
-        )}
-      />
-      <QuestionSheet
-        question={props.question}
-        collapsed={!!props.question && props.collapsedPrompts.has(props.question.requestId)}
-        onCollapse={props.onCollapsePrompt}
-        onSubmit={(id, answers, annotations) => runUiAction(
-          () => runtime()?.answerQuestion(id, answers, annotations),
-          props.setStatus,
-          'question response failed',
-        )}
-        onDismiss={(id) => runUiAction(
-          () => runtime()?.dismissQuestion(id),
-          props.setStatus,
-          'question response failed',
         )}
       />
       <WorkspaceDrawer {...props.workspace} />

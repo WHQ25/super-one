@@ -1,4 +1,4 @@
-import { useContext, useMemo, type ReactNode } from 'react'
+import { useContext, useMemo, useState, type ReactNode } from 'react'
 import { cn } from '@superone/ui/lib/utils'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { requestNative } from './bridge'
@@ -253,11 +253,44 @@ function PortableMiniAppTool({
   )
 }
 
-function PortableQuestionPreview({ content, format }: { content: string; format: QuestionPreviewFormat }) {
-  const { scheme } = useContext(PortableTurnContext)
-  if (format === 'html') {
-    return <pre className="overflow-auto whitespace-pre-wrap break-all text-muted-foreground">{content}</pre>
-  }
+/**
+ * The desktop's light "paper" for an option's HTML (`.ask-html-preview`): the
+ * model writes these fragments for a white page, so they stay readable in a
+ * dark theme.
+ */
+const QUESTION_HTML_PAPER = 'html{background:#f1f5f9;color:#1a202c;color-scheme:light}'
+  // The desktop's fragment inherits the form's `text-xs`; a frame starts from 16px.
+  + 'body{margin:0;padding:20px;display:flex;justify-content:center;align-items:flex-start;font:12px/16px system-ui,-apple-system,sans-serif}'
+  + ':is(img,video,canvas,svg,table){max-width:100%;height:auto}table{border-collapse:collapse}a{color:#2563eb;text-decoration:underline}'
+
+/**
+ * An option's HTML in a frame that runs no script. Same-origin only so the
+ * host can read its height: with no script inside, the frame can do nothing
+ * with it. The form's container caps and scrolls it, as on the desktop.
+ */
+function QuestionHtmlFrame({ content }: { content: string }) {
+  const [height, setHeight] = useState(160)
+  return (
+    <iframe
+      title="Preview"
+      sandbox="allow-same-origin"
+      srcDoc={`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>${QUESTION_HTML_PAPER}</style>${content}`}
+      onLoad={(event) => {
+        // The body, not the root: a root is never shorter than the frame it fills.
+        const body = event.currentTarget.contentDocument?.body
+        if (body) setHeight(Math.ceil(body.getBoundingClientRect().height))
+      }}
+      style={{ height }}
+      className="block w-full border-0"
+    />
+  )
+}
+
+/** An option's preview: Markdown in the transcript's renderer, HTML on paper in a frame. */
+export function PortableQuestionPreview({ content, format, scheme: own }: { content: string; format: QuestionPreviewFormat; scheme?: 'light' | 'dark' }) {
+  const turn = useContext(PortableTurnContext)
+  const scheme = own ?? turn.scheme
+  if (format === 'html') return <QuestionHtmlFrame key={content} content={content} />
   return <PortableMarkdown text={content} isStreaming={false} scheme={scheme} />
 }
 

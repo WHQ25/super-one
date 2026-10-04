@@ -41,7 +41,7 @@ function LinkFavicon({ href }: { href: string }) {
   return <LinkFaviconPresenter href={href} isDark={isDark} ports={faviconPorts} />
 }
 
-function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
+export function FileLink(props: React.AnchorHTMLAttributes<HTMLAnchorElement>) {
   const { href: rawHref, children, className, ...rest } = props
   const projectRoot = selectEffectiveProjectRoot(useAppStore.getState()) ?? ''
   // Expand ~/… (Grok often cites ~/.grok/sessions/… artifacts).

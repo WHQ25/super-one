@@ -14,7 +14,7 @@ import { ACTIVITY_PANEL_TRANSITION, LAYOUT } from '@/lib/layout-constants'
 import { ActivityHeaderPrefix } from './ActivityHeaderPrefix'
 import { ResizeHandleLine } from '@/components/ResizeHandleLine'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger } from '@superone/ui/components/ui/dropdown-menu'
-import { isLayoutSwapping, launchInGroup, restorePanelWidthAfterSideChat, setDockApi, SIDE_CHAT_PANEL_ID, toggleMaximizedActivityGroup } from './activity-panel-api'
+import { isLayoutSwapping, isModPanePanel, isPersonClosingModPane, launchInGroup, restorePanelWidthAfterSideChat, setDockApi, SIDE_CHAT_PANEL_ID, toggleMaximizedActivityGroup, type ModPaneTabParams } from './activity-panel-api'
 import { connectMcpAppTabs } from './mcp-app-tabs'
 import { useActivityLaunchTypes } from './activity-launch-types'
 import { activityPanelComponents } from './panels'
@@ -155,9 +155,21 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
         restorePanelWidthAfterSideChat()
         void import('@/lib/side-chat-actions').then((m) => m.handleSideChatTabRemoved(sessionId))
       }
+      // A mod pane lives as long as the plugin keeps it: the person's close asks
+      // the CLI, and a `ui.close` hook that keeps it open puts the tab back.
+      if (isPersonClosingModPane(panel.id)) {
+        void import('@/lib/mod-ui/pane-actions').then((m) => m.handleModPaneTabClosed(panel.params as ModPaneTabParams, panel.title ?? ''))
+      }
       if (event.api.panels.length === 0) {
         useActivityPanelStore.getState().setShowPanel(false)
       }
+    })
+
+    // The person picking a mod's tab shows that pane; the roster sync's own
+    // `setActive` is an `api` change and never echoes back.
+    const dActive = event.api.onDidActivePanelChange(({ panel, origin }) => {
+      if (origin !== 'user' || !panel || !isModPanePanel(panel.id) || isLayoutSwapping()) return
+      void import('@/lib/mod-ui/pane-actions').then((m) => m.handleModPaneTabActivated(panel.params as ModPaneTabParams))
     })
 
     const d2 = event.api.onWillShowOverlay((e) => {
@@ -218,7 +230,7 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
       useActivityPanelStore.getState().setMaximizedGroup(isMaximized ? group.id : null)
     })
 
-    return () => { dAdd.dispose(); d1.dispose(); d2.dispose(); d3.dispose(); d4.dispose(); d5.dispose() }
+    return () => { dAdd.dispose(); d1.dispose(); dActive.dispose(); d2.dispose(); d3.dispose(); d4.dispose(); d5.dispose() }
   }, [observeDockview])
 
   useEffect(() => {

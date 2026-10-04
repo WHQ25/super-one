@@ -1,4 +1,5 @@
 import { createCodexMcpAppsProvider, prewarmCodexMcpAppCatalog } from '@superone/codex/mcp-apps'
+import { MOD_UI_UNAVAILABLE } from '@superone/shared/mod-ui'
 import { McpAppsError } from '@superone/shared/mcp-apps'
 import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
 import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
@@ -568,6 +569,16 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
     if (!native?.getMcpAppsProvider) throw new McpAppsError('not_connected', 'Harness does not support MCP Apps')
     return native.getMcpAppsProvider(session, binding, origin, host)
   }
+  runner.reloadPlugins = async () => {
+    await claude.reloadPlugins?.()
+  }
+  runner.modUi = (session, op, request) => {
+    if (session.harnessId !== 'claude' || !claude.modUi) {
+      return Promise.reject(Object.assign(new Error('This harness draws no mod interfaces'), { name: MOD_UI_UNAVAILABLE, code: 'unavailable' }))
+    }
+    return claude.modUi(session, op, request)
+  }
+  runner.isModHostRequestPending = (sessionId, requestId) => claude.isModHostRequestPending?.(sessionId, requestId) ?? false
   runner.disposeSession = async (sessionId) => {
     await Promise.all([
       claude.disposeSession?.(sessionId),

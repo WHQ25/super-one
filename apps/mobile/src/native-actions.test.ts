@@ -19,6 +19,10 @@ function ports(): NativeActionPorts {
     saveWidgetTemplate: vi.fn(),
     codexPlanApproval: vi.fn(),
     codexAsyncQuestionAnswer: vi.fn(),
+    answerQuestion: vi.fn(),
+    dismissQuestion: vi.fn(),
+    dismissSlashOutput: vi.fn(),
+    documentInputFocus: vi.fn(),
     openSession: vi.fn(),
     resendFailedMessage: vi.fn(),
     editFailedMessage: vi.fn(),
@@ -66,6 +70,38 @@ describe('native chat actions', () => {
       type: 'requestNative', requestId: 'draft', action: 'setDraft', payload: { text: 'What if the rate were 10%?' },
     }, target)).resolves.toMatchObject({ result: { ok: true } })
     expect(target.setDraft).toHaveBeenCalledWith('What if the rate were 10%?')
+  })
+
+  it("answers the pending question with the form's answers and notes only", async () => {
+    const target = ports()
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'answer', action: 'answerQuestion',
+      payload: { requestId: 'q-1', answers: { 'Which library?': 'dayjs' }, annotations: { 'Which library?': { notes: 'smaller', preview: 'forged' }, Other: { notes: ' ' } } },
+    }, target)).resolves.toMatchObject({ result: { ok: true } })
+    expect(target.answerQuestion).toHaveBeenCalledWith('q-1', { 'Which library?': 'dayjs' }, { 'Which library?': { notes: 'smaller' } })
+  })
+
+  it.each([{ q: 1 }, { q: '  ' }])('rejects answers that are not all non-blank strings: %o', async (answers) => {
+    const target = ports()
+    await expect(resolveNativeRequest({
+      type: 'requestNative', requestId: 'answer', action: 'answerQuestion', payload: { requestId: 'q-1', answers },
+    }, target)).resolves.toMatchObject({ error: 'invalid answerQuestion answers' })
+    expect(target.answerQuestion).not.toHaveBeenCalled()
+  })
+
+  it('dismisses the question and the command output', async () => {
+    const target = ports()
+    await resolveNativeRequest({ type: 'requestNative', requestId: 'd', action: 'dismissQuestion', payload: { requestId: 'q-1' } }, target)
+    await resolveNativeRequest({ type: 'requestNative', requestId: 's', action: 'dismissSlashOutput' }, target)
+    expect(target.dismissQuestion).toHaveBeenCalledWith('q-1')
+    expect(target.dismissSlashOutput).toHaveBeenCalledOnce()
+  })
+
+  it("hears when a field in the document holds the keyboard; anything but true releases it", async () => {
+    const target = ports()
+    await resolveNativeRequest({ type: 'requestNative', requestId: 'f', action: 'documentInputFocus', payload: { focused: true } }, target)
+    await resolveNativeRequest({ type: 'requestNative', requestId: 'b', action: 'documentInputFocus', payload: { focused: 'yes' } }, target)
+    expect(vi.mocked(target.documentInputFocus).mock.calls).toEqual([[true], [false]])
   })
 
   it('forwards a widget template save with its scope intact', async () => {

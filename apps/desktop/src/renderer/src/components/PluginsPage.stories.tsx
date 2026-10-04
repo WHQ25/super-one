@@ -12,6 +12,8 @@ import type {
   MarketplacePluginDetail,
   PluginDetail,
   PluginInfo,
+  PluginModReview,
+  PluginUserConfig,
 } from '@superone/shared/agent-types'
 import { mockIpc } from '../../../../.storybook/mock-ipc'
 import { useAppStore } from '@/stores/app'
@@ -180,6 +182,37 @@ const LONG_MARKETPLACE: MarketplacePlugin[] = [
   })),
 ]
 
+const MODS: PluginInfo[] = [
+  installed({ name: 'blast-radius', marketplace: 'claude-code-mods', version: '1.0.0', description: 'Hold a risky shell command and show what it would change before it runs.', hasHooks: true, hasMod: true, enabled: true }),
+  installed({ name: 'token-weather', marketplace: 'claude-code-mods', version: '1.0.0', description: 'A live forecast of your context window above the prompt.', hasHooks: true, hasMod: true, enabled: true }),
+  installed({ name: 'replay-theater', marketplace: 'claude-code-mods', version: '1.0.0', description: 'Step through the edits Claude made in the last turn.', hasHooks: true, hasMod: true, hasCommands: true, enabled: false }),
+]
+
+const BLAST_REVIEW: PluginModReview = {
+  ok: true,
+  flags: ['tool-approval'],
+  errors: [],
+  warnings: [],
+  modules: [{
+    module: './blast-radius.mjs',
+    hooks: ['tool.call{tool=Bash}', 'ui.render{component=Pane}', 'ui.render{component=AbovePrompt}'],
+    calls: ['$.clock.now', '$.process.run', '$.session.cwd', '$.ui.close', '$.ui.open', '$.ui.toast'],
+  }],
+}
+
+const BLAST_CONFIG: PluginUserConfig = {
+  schema: {
+    type: 'object',
+    properties: {
+      holdMigrations: { type: 'boolean', title: 'Hold migrations', description: 'Also hold database migrations.', default: true },
+      maxFiles: { type: 'number', title: 'Files to list', description: 'How many paths the pane lists before summarizing.', minimum: 1, maximum: 200, default: 20 },
+    },
+    required: [],
+  },
+  values: { maxFiles: 40 },
+  sensitive: ['webhookToken'],
+}
+
 // Keeps avatars offline: remote logos resolve to an inline placeholder instead of a fetch.
 const PLACEHOLDER_LOGO = `data:image/svg+xml;utf8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" fill="gray"/></svg>')}`
 
@@ -189,6 +222,9 @@ interface Seed {
   plugins?: PluginInfo[] | 'pending' | 'error'
   marketplace?: MarketplacePlugin[] | 'pending' | 'error'
   addMarketplaceError?: string
+  /** `claude plugin validate` answer for a mod; null: the CLI could not report. */
+  review?: PluginModReview | null | 'pending'
+  config?: PluginUserConfig | null
 }
 
 const resolveSeed = <T,>(value: T[] | 'pending' | 'error' | undefined) => async (): Promise<T[]> => {
@@ -197,7 +233,7 @@ const resolveSeed = <T,>(value: T[] | 'pending' | 'error' | undefined) => async 
   return value ?? []
 }
 
-function seed({ plugins, marketplace, addMarketplaceError }: Seed) {
+function seed({ plugins, marketplace, addMarketplaceError, review = null, config = null }: Seed) {
   return (Story: () => ReactElement) => {
     const pluginList = Array.isArray(plugins) ? plugins : []
     mockIpc('app', 'listPlugins', resolveSeed(plugins))
@@ -220,6 +256,13 @@ function seed({ plugins, marketplace, addMarketplaceError }: Seed) {
     mockIpc('app', 'addMarketplace', async () => {
       if (addMarketplaceError) throw new Error(addMarketplaceError)
     })
+    mockIpc('app', 'setPluginEnabled', async (_pp: unknown, key: unknown, _scope: unknown, enabled: unknown) => {
+      const plugin = pluginList.find((p) => p.key === key)
+      if (plugin) plugin.enabled = enabled as boolean
+    })
+    mockIpc('app', 'reviewPluginMods', async () => (review === 'pending' ? new Promise(() => {}) : review))
+    mockIpc('app', 'readPluginConfig', async () => config)
+    mockIpc('app', 'savePluginConfig', async () => undefined)
     mockIpc('app', 'cacheRemoteImage', async () => PLACEHOLDER_LOGO)
     mockIpc('app', 'getGithubStars', async () => 12_480)
     useAppStore.setState({ settingsProvider: 'claude', currentFolder: null })
@@ -365,5 +408,46 @@ export const Narrow: Story = {
   ],
   play: async ({ canvasElement }) => {
     await openInstalledTab(canvasElement, LONG_INSTALLED.length)
+  },
+}
+
+/** Mods installed: the active count, and each plugin's Claude Code enable switch (replay-theater off). */
+export const InstalledMods: Story = {
+  decorators: [seed({ plugins: MODS.map((p) => ({ ...p })), marketplace: MARKETPLACE })],
+  play: async ({ canvasElement }) => {
+    await openInstalledTab(canvasElement, MODS.length)
+    await expect(await body(canvasElement).findByText(i18n.t('resources.plugins.modsActive', { count: 2 }))).toBeInTheDocument()
+  },
+}
+
+/** A mod expanded: what it hooks and calls, the approval-bypass warning, and its options form. */
+export const ModReviewAndOptions: Story = {
+  decorators: [seed({ plugins: MODS.map((p) => ({ ...p })), marketplace: MARKETPLACE, review: BLAST_REVIEW, config: BLAST_CONFIG })],
+  play: async ({ canvasElement }) => {
+    const screen = body(canvasElement)
+    await openInstalledTab(canvasElement, MODS.length)
+    await userEvent.click(await screen.findByText('blast-radius'))
+    await expect(await screen.findByText(i18n.t('resources.plugins.mods.toolApproval'))).toBeInTheDocument()
+    await expect(await screen.findByText('Files to list')).toBeInTheDocument()
+  },
+}
+
+/** The review is still running. */
+export const ModReviewLoading: Story = {
+  decorators: [seed({ plugins: MODS.map((p) => ({ ...p })), marketplace: MARKETPLACE, review: 'pending' })],
+  play: async ({ canvasElement }) => {
+    await openInstalledTab(canvasElement, MODS.length)
+    await userEvent.click(await body(canvasElement).findByText('blast-radius'))
+  },
+}
+
+/** The CLI could not report (missing harness, a remote project): the section says so. */
+export const ModReviewUnavailable: Story = {
+  decorators: [seed({ plugins: MODS.map((p) => ({ ...p })), marketplace: MARKETPLACE, review: null })],
+  play: async ({ canvasElement }) => {
+    const screen = body(canvasElement)
+    await openInstalledTab(canvasElement, MODS.length)
+    await userEvent.click(await screen.findByText('blast-radius'))
+    await expect(await screen.findByText(i18n.t('resources.plugins.mods.unavailable'))).toBeInTheDocument()
   },
 }

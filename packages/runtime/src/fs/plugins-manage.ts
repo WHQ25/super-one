@@ -22,6 +22,7 @@ import type {
   PluginDetail,
   PluginInfo,
   PluginManifest,
+  PluginUserConfig,
   ResourceScope,
   SkillFileEntry,
 } from '@superone/shared/agent-types'
@@ -347,6 +348,97 @@ function findPluginSourceDir(mpDir: string, pluginName: string): string | null {
   return null
 }
 
+/** Settings files that hold `enabledPlugins`, lowest precedence first (user < project < local). */
+function enabledPluginsSources(cwd: string, opts?: PluginsManageOptions): string[] {
+  return cwd ? [getUserSettingsPath(opts), getProjectSettingsPath(cwd), getLocalSettingsPath(cwd)] : [getUserSettingsPath(opts)]
+}
+
+function enabledPluginsEntry(filePath: string, key: string): unknown {
+  const map = readJsonObject(filePath).enabledPlugins
+  return map && typeof map === 'object' && !Array.isArray(map) ? (map as Record<string, unknown>)[key] : undefined
+}
+
+/**
+ * A plugin's enabled state as Claude Code computes it: the last explicit
+ * `enabledPlugins` value across the settings files wins (`true`, or a version
+ * constraint list, enables); with none, the manifest's `defaultEnabled`.
+ */
+export function isPluginEnabled(cwd: string, key: string, defaultEnabled: boolean | undefined, opts?: PluginsManageOptions): boolean {
+  let value: unknown
+  for (const file of enabledPluginsSources(cwd, opts)) {
+    const entry = enabledPluginsEntry(file, key)
+    if (entry !== undefined) value = entry
+  }
+  return value === undefined ? defaultEnabled !== false : value === true || Array.isArray(value)
+}
+
+/**
+ * Enables or disables a plugin for Claude Code. Writes the settings file that
+ * already decides it (the highest-precedence one with an entry), else the
+ * file of the plugin's scope, so the change always takes effect.
+ */
+export function setPluginEnabled(cwd: string, key: string, scope: ResourceScope, enabled: boolean, opts?: PluginsManageOptions): void {
+  const sources = enabledPluginsSources(cwd, opts)
+  const deciding = [...sources].reverse().find((file) => enabledPluginsEntry(file, key) !== undefined)
+  const target = deciding ?? (scope === 'user' || !cwd ? getUserSettingsPath(opts) : getProjectSettingsPath(cwd))
+  const data = readJsonObject(target)
+  const map = data.enabledPlugins && typeof data.enabledPlugins === 'object' && !Array.isArray(data.enabledPlugins)
+    ? data.enabledPlugins as Record<string, unknown>
+    : {}
+  writeSettingsJson(target, { ...data, enabledPlugins: { ...map, [key]: enabled } })
+}
+
+interface UserConfigOption {
+  type?: 'string' | 'number' | 'boolean' | 'directory' | 'file'
+  title?: string
+  description?: string
+  required?: boolean
+  default?: unknown
+  multiple?: boolean
+  sensitive?: boolean
+  min?: number
+  max?: number
+  options?: string[]
+}
+
+function userConfigProperty(option: UserConfigOption): Record<string, unknown> {
+  const base = { title: option.title, description: option.description, ...(option.default === undefined ? {} : { default: option.default }) }
+  if (option.type === 'number') return { ...base, type: 'number', minimum: option.min, maximum: option.max }
+  if (option.type === 'boolean') return { ...base, type: 'boolean' }
+  if (option.multiple) return { ...base, type: 'array', items: option.options ? { type: 'string', enum: option.options } : { type: 'string' } }
+  return { ...base, type: 'string', ...(option.options ? { enum: option.options } : {}) }
+}
+
+/** A plugin's `userConfig` and its saved non-sensitive values; null when it declares none. */
+export function readPluginUserConfig(cwd: string, key: string, opts?: PluginsManageOptions): PluginUserConfig | null {
+  const plugin = listPlugins(cwd, opts).find((p) => p.key === key)
+  if (!plugin) return null
+  const manifest = readJsonObject(join(plugin.installPath, '.claude-plugin', 'plugin.json'))
+  const declared = manifest.userConfig
+  if (!declared || typeof declared !== 'object' || Array.isArray(declared)) return null
+  const properties: Record<string, Record<string, unknown>> = {}
+  const required: string[] = []
+  const sensitive: string[] = []
+  for (const [name, raw] of Object.entries(declared as Record<string, UserConfigOption>)) {
+    if (raw?.sensitive) {
+      sensitive.push(name)
+      continue
+    }
+    properties[name] = userConfigProperty(raw ?? {})
+    if (raw?.required) required.push(name)
+  }
+  const configs = readJsonObject(getUserSettingsPath(opts)).pluginConfigs as Record<string, { options?: Record<string, unknown> }> | undefined
+  return { schema: { type: 'object', properties, required }, values: configs?.[key]?.options ?? {}, sensitive }
+}
+
+/** Saves non-sensitive `userConfig` values to user settings, as Claude Code's own dialog does. */
+export function savePluginUserConfig(key: string, values: Record<string, unknown>, opts?: PluginsManageOptions): void {
+  const file = getUserSettingsPath(opts)
+  const data = readJsonObject(file)
+  const configs = (data.pluginConfigs && typeof data.pluginConfigs === 'object' ? data.pluginConfigs : {}) as Record<string, Record<string, unknown>>
+  writeSettingsJson(file, { ...data, pluginConfigs: { ...configs, [key]: { ...configs[key], options: values } } })
+}
+
 export function listPlugins(cwd: string, opts?: PluginsManageOptions): PluginInfo[] {
   const data = readJson<InstalledPluginsData>(installedFile(opts))
   if (!data?.plugins) return []
@@ -382,6 +474,7 @@ export function listPlugins(cwd: string, opts?: PluginsManageOptions): PluginInf
         version,
         installPath: entry.installPath,
         installedAt: entry.installedAt,
+        enabled: isPluginEnabled(cwd, pluginKey, manifest?.defaultEnabled, opts),
         ...contents,
         latestVersion,
         hasUpdate,

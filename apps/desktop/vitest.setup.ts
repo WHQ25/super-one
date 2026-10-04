@@ -1,4 +1,5 @@
 import { vi } from 'vitest'
+import { MOD_UI_UNAVAILABLE } from '@superone/shared/mod-ui'
 
 // A SuperOne-launched shell (e.g. a chat session inside the alpha app) exports
 // SUPERONE_HOME / SUPERONE_VARIANT, and resolveSuperoneHome honours them ahead of
@@ -86,6 +87,8 @@ if (typeof globalThis.window !== 'undefined' && !(globalThis.window as unknown a
   // back a synchronous unsubscribe, while every query resolves to an empty list
   // so components can render their list state without a per-test stub.
   w.environment = shaped(() => Promise.resolve([]))
+  // No test session draws Claude mods: the gateway answers as for any other harness.
+  ;(w.environment as Record<string, unknown>).modUi = () => Promise.reject(Object.assign(new Error(MOD_UI_UNAVAILABLE), { name: MOD_UI_UNAVAILABLE }))
 }
 
 if (typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined') {

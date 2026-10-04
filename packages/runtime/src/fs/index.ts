@@ -90,6 +90,10 @@ export {
   readPluginContent,
   readPluginFile,
   deletePlugin,
+  isPluginEnabled,
+  setPluginEnabled,
+  readPluginUserConfig,
+  savePluginUserConfig,
   listMarketplacePlugins,
   installPlugin,
   updatePlugin,
@@ -100,6 +104,7 @@ export {
   readMarketplacePluginFile,
   type PluginsManageOptions,
 } from './plugins-manage'
+export { parsePluginValidateReport, reviewPluginMods } from './plugin-review'
 export {
   listHooks,
   saveHook,

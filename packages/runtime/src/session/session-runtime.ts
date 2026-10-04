@@ -9,6 +9,7 @@ import type { McpAppsResolvedAttachment } from '@superone/shared/environment/mcp
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@superone/shared/agent-types'
+import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, asNodeCallerModUiRequest, asNodeReaderModEvent, type ModUiOp, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'
 import { acceptedElicitationContent } from '@superone/shared/schema-form'
 import {
   DEFAULT_HOST_ACTION_TOOL_GROUPS,
@@ -23,6 +24,7 @@ import {
   type HostActionTerminalResult,
   type RespondHostActionResult,
   type SessionMessagesListResult,
+  type EnvironmentEventEnvelope,
   type SessionRef,
 } from '@superone/shared/environment'
 import {
@@ -224,6 +226,37 @@ export class SessionRuntime {
     return this.turnRunner.getMcpAppsProvider(session, binding, origin, {
       onElicitation: (interaction, signal) => this.requestElicitation(session.sessionId, interaction, signal),
     })
+  }
+
+  /**
+   * A view's op on the session's mod surface. Ops that change what a plugin
+   * sees or does need the control lease; drawing does not.
+   */
+  async modUi<O extends ModUiOp>(input: {
+    sessionId: string
+    op: O
+    request: ModUiRequest<O>
+    client: { clientSessionId: string }
+    leaseId?: string
+    generation?: string
+  }): Promise<ModUiResult<O>> {
+    const session = this.live.get(input.sessionId)
+    if (!session) throw Object.assign(new Error('session not found'), { code: 'not_found' })
+    if (MOD_UI_MUTATING_OPS.has(input.op)) {
+      this.leases.assertValid({
+        resource: { environmentId: this.environmentId, sessionId: input.sessionId },
+        leaseId: input.leaseId ?? '',
+        generation: input.generation ?? '',
+        holderClientId: input.client.clientSessionId,
+      })
+    }
+    if (!this.turnRunner.modUi) throw Object.assign(new Error('This harness draws no mod interfaces'), { name: MOD_UI_UNAVAILABLE, code: 'unavailable' })
+    return this.turnRunner.modUi(session, input.op, asNodeCallerModUiRequest(input.request, input.client.clientSessionId))
+  }
+
+  /** Live runtimes pick up a plugin change on disk; released ones load it at their next start. */
+  async reloadPlugins(): Promise<void> {
+    await this.turnRunner.reloadPlugins?.()
   }
 
   private readonly runtimeReleases = new Set<string>()
@@ -804,8 +837,24 @@ export class SessionRuntime {
     return this.events.headSequence()
   }
 
-  listEventsAfter(afterSequence: string) {
-    return this.events.listAfter(afterSequence)
+  /**
+   * Events after a cursor, as `reader` sees them. Mod events are delivered
+   * through this durable log although only their moment matters: a host
+   * request that no longer waits for its client is read without its event
+   * (the envelope stays so the cursor moves past it), so a clipboard write or
+   * composer fill is never replayed; mod client ids read as the reader's own.
+   */
+  listEventsAfter(afterSequence: string, reader?: { clientSessionId: string }): EnvironmentEventEnvelope[] {
+    return this.events.listAfter(afterSequence).map((envelope) => {
+      if (envelope.aggregateType !== 'session' || envelope.eventType !== SESSION_DURABLE_EVENT.agentEvent) return envelope
+      const payload = envelope.payload as { event?: AgentEvent } | null
+      const event = payload?.event
+      if (!event?.type.startsWith('mod_')) return envelope
+      if (event.type === 'mod_host_request' && !this.turnRunner.isModHostRequestPending?.(envelope.aggregateId, event.requestId)) {
+        return { ...envelope, payload: {} }
+      }
+      return reader ? { ...envelope, payload: { ...payload, event: asNodeReaderModEvent(event, reader.clientSessionId) } } : envelope
+    })
   }
 
   /**
@@ -1227,6 +1276,12 @@ export class SessionRuntime {
   private handleAmbientEvent(sessionId: string, event: AgentEvent): void {
     const session = this.live.get(sessionId)
     if (!session || session.closed || this.disposing) return
+    // A mod redrawing is not session activity: deliver it without touching the
+    // session's turn state or `updatedAt` (which orders the session list).
+    if (event.type.startsWith('mod_')) {
+      this.events.appendSession({ sessionId, eventType: SESSION_DURABLE_EVENT.agentEvent, payload: { event } })
+      return
+    }
     const activeUsers = this.activeTurnCounts.get(sessionId) ?? 0
     if (event.type === 'status_change' && event.status === 'idle' && activeUsers > 0) return
 

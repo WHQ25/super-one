@@ -1,3 +1,4 @@
+import { mobileModClientId } from '@superone/shared/mod-ui'
 import { setProgressiveSession } from './progressive-session'
 import log from '../logger'
 import type { SessionLeaveReason, SessionManager } from '../session/types'
@@ -30,6 +31,8 @@ export class DeviceRegistry {
         session.unsubscribe(deviceId, 'transport_disconnect')
         unsubscribedCount++
       }
+      // A killed app never detaches its mod client; the plugin would keep routing requests to it.
+      session.detachModClient(mobileModClientId(deviceId))
     })
     for (const item of this.terminalManager?.list() ?? []) {
       this.terminalManager?.get(item.terminalId)?.ownership.handleDeviceDisconnected(deviceId)

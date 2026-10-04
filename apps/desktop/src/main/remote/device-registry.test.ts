@@ -4,6 +4,7 @@ vi.mock('../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }))
 
+import { mobileModClientId } from '@superone/shared/mod-ui'
 import { DeviceRegistry } from './device-registry'
 import type { Session, SessionManager } from '../session/types'
 
@@ -20,6 +21,7 @@ function makeFakeSession(id: string): Session {
     },
     subscribe(deviceId) { subscribers.add(deviceId) },
     unsubscribe(deviceId) { subscribers.delete(deviceId) },
+    detachModClient: vi.fn(),
   } as unknown as Session
 }
 
@@ -30,6 +32,15 @@ function makeFakeManager(sessions: Session[]): SessionManager {
 }
 
 describe('DeviceRegistry', () => {
+  it('detaches the disconnected device\'s mod client from every session', () => {
+    const s1 = makeFakeSession('s1')
+    const registry = new DeviceRegistry(makeFakeManager([s1]))
+
+    registry.handleDeviceDisconnected('dev-A')
+
+    expect(s1.detachModClient).toHaveBeenCalledWith(mobileModClientId('dev-A'))
+  })
+
   it('releases sessions owned by the disconnected device', () => {
     const s1 = makeFakeSession('s1')
     const s2 = makeFakeSession('s2')

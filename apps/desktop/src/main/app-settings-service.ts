@@ -148,6 +148,8 @@ const defaults: AppSettings = {
       tokenOverrides: {},
       disabledSkills: [],
       askUserQuestionPreviewFormat: 'markdown',
+      drawModInterfaces: true,
+      modDevFolders: [],
     },
     codex: {
       defaultModel: '',
@@ -504,6 +506,12 @@ function readClaudePreference(data: Record<string, unknown>): ClaudePref {
     askUserQuestionPreviewFormat: isQuestionPreviewFormat(claudePreference?.askUserQuestionPreviewFormat)
       ? claudePreference.askUserQuestionPreviewFormat
       : defaults.agentPreference.claude.askUserQuestionPreviewFormat,
+    drawModInterfaces: typeof claudePreference?.drawModInterfaces === 'boolean'
+      ? claudePreference.drawModInterfaces
+      : defaults.agentPreference.claude.drawModInterfaces,
+    modDevFolders: Array.isArray(claudePreference?.modDevFolders)
+      ? claudePreference.modDevFolders.filter((f: unknown): f is string => typeof f === 'string' && f.length > 0)
+      : defaults.agentPreference.claude.modDevFolders,
   }
 }
 

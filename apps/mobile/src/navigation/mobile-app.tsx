@@ -1,9 +1,12 @@
 import { findMcpAppAttachment } from '@superone/shared/mcp-apps-state'
+import { invokeModUi } from '../mod-ui'
+import { mobileModClientId } from '@superone/shared/mod-ui'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import type { McpAppContextAttachment } from '@superone/shared/mcp-app-model-context'
 import { PersistedWorkspace } from '../persisted-workspace'
 import { mergeRestoredDraftText, userMessageText } from '@superone/chat-core'
 import { networkLedger } from '../network-ledger'
-import type { RemoteSystemInfo } from '@superone/shared/agent-types'
+import type { AgentEvent, RemoteSystemInfo } from '@superone/shared/agent-types'
 import { invalidateGitResources, requestGitResource } from '../git-resource-cache'
 import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import { refreshSessionCatalog } from '../session-catalog-refresh'
@@ -20,13 +23,13 @@ import { BackHandler, Linking, Pressable, useWindowDimensions, View } from 'reac
 import { StatusBanner } from '../ui/status-banner'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { WebView } from 'react-native-webview'
-import type { HostOutbound } from '@superone/chat-view'
+import type { HostInbound, HostOutbound } from '@superone/chat-view'
 import {
   checkRelayDesktopOnline, loadPairings, parseLanHostPort, parsePairQr, RelayClient, RestoreRejectedError, savePairings,
   startPairingHandshake, upsertPairing, type SavedPairing,
 } from '@superone/relay-client'
 import type {
-  AskUserQuestionRequest, ChatMessage, GitDirtyStatus, HarnessId, ImageAttachment, PermissionRequest,
+  ChatMessage, GitDirtyStatus, HarnessId, ImageAttachment, PermissionRequest,
   ListHarnessOptionsResponse, PlanApprovalRequest, RemoteCommand, RemoteHarnessOption,
   OpenCodeAgentOption, SandboxInfo, SandboxMode, SessionAgentLaunchProposal, SessionForkMode, SessionForkResult, SessionGoal, TodoItem, WorktreeInfo,
 } from '@superone/shared/agent-types'
@@ -40,7 +43,6 @@ import { randomId } from '../ids'
 import { newMessageId } from '@superone/shared/message-id'
 import { canSteerQueued, canSteerQueuedSoon, composerQueuedSendFields, queuedMessageText } from '../queued-send'
 import { mentionInsertText } from '../mentions'
-import { SlashOutputPanel } from '../ui/slash-output-panel'
 import { McpPanel } from '../ui/mcp-panel'
 import { AddDirScreen } from '../screens/add-dir-screen'
 import { CollabRequestScreen } from '../screens/collab-request-screen'
@@ -239,11 +241,12 @@ export function MobileApp() {
   const [queuedMessages, setQueuedMessages] = useState<ChatMessage[]>([])
   const [todos, setTodos] = useState<Record<string, TodoItem>>({})
   const [promptSuggestions, setPromptSuggestions] = useState<string[]>([])
+  /** A field in the chat document (the question form) holds the keyboard, not the composer. */
+  const [documentInputFocused, setDocumentInputFocused] = useState(false)
   // The follow-ups are host state and come back on every runtime sync, so a
   // dismissal remembers *which* list it hid; the next turn's list still shows.
   const [hiddenPromptSuggestions, setHiddenPromptSuggestions] = useState('')
   const promptSuggestionsKey = promptSuggestions.join('\u0000')
-  const [slashOutput, setSlashOutput] = useState<{ command: string; content: string } | null>(null)
   const [mcp, setMcp] = useState<{ open: boolean; loading: boolean; rows: McpServerRow[]; error?: string }>(
     { open: false, loading: false, rows: [] },
   )
@@ -299,7 +302,6 @@ export function MobileApp() {
   }, [models, selectedModel, selectedProvider, usage.contextWindow, cursorContextParam])
   const [perm, setPerm] = useState<PermissionRequest | null>(null)
   const [plan, setPlan] = useState<PlanApprovalRequest | null>(null)
-  const [question, setQuestion] = useState<AskUserQuestionRequest | null>(null)
   const mediaPorts = useMemo(() => createMediaPorts(), [])
   const webRef = useRef<WebView>(null)
   const termRef = useRef<WebView>(null)
@@ -457,6 +459,15 @@ export function MobileApp() {
   useEffect(() => {
     inject(webRef, { type: 'setViewport', fontScale, locale })
   }, [fontScale, locale])
+  // The document draws the session's mods as this phone; the desktop stamps the same id.
+  const modSession = useMemo<HostInbound>(() => ({
+    type: 'setModSession',
+    sessionId: sessionId ?? null,
+    clientId: sessionId && deviceId && HARNESS_CAPABILITIES[selectedProvider]?.modUi ? mobileModClientId(deviceId) : null,
+  }), [sessionId, deviceId, selectedProvider])
+  useEffect(() => {
+    inject(webRef, modSession)
+  }, [modSession])
   const transcriptSync = useTranscriptSync(webRef)
   const syncSheets = (runtime: ChatRuntime, hydrate = false) => {
     if (connectionRef.current.epoch !== runtime.epoch) {
@@ -491,6 +502,10 @@ export function MobileApp() {
       apiRetry: runtime.session.apiRetry,
       pendingTurn: runtime.pendingTurn,
       projectPath: runtime.projectPath || null,
+      // Drawn by the document above the composer; at most one patch is in flight, so
+      // resending them with every patch costs little and survives the delivery's own hydrates.
+      pendingQuestion: runtime.session.pendingQuestion,
+      slashCommandOutput: runtime.session.slashCommandOutput,
     }, hydrate)
     if (includeMentionArtwork) mentionArtworkRevisionRef.current = mentionArtworkRevision
     if (includeMcpIcons) mcpIconsRevisionRef.current = iconsRevision
@@ -500,7 +515,6 @@ export function MobileApp() {
     setQueuedMessages(runtime.session.queuedMessages)
     setTodos(runtime.session.todos)
     setPromptSuggestions(runtime.session.promptSuggestions)
-    setSlashOutput(runtime.session.slashCommandOutput)
     setPermMode(runtime.permissionMode)
     setSandboxInfo(runtime.sandboxInfo)
     setSessionGoal(runtime.session.sessionGoal)
@@ -522,7 +536,6 @@ export function MobileApp() {
     setRateLimit(runtime.session.rateLimitInfo)
     setPerm(pending ?? null)
     setPlan(runtime.session.pendingPlanApproval)
-    setQuestion(runtime.session.pendingQuestion)
     if (runtime.sessionTitle) {
       setActiveSessionTitle(runtime.sessionTitle)
       setSessions((current) => {
@@ -604,6 +617,19 @@ export function MobileApp() {
         setAttachments((current) => [...restored.filter((a) => !current.some((c) => c.id === a.id)), ...current])
       }
     },
+    // The document's form fires and forgets; a failed send shows in the status line.
+    answerQuestion: async (requestId, answers, annotations) => runUiAction(
+      () => runtimeRef.current?.answerQuestion(requestId, answers, annotations),
+      setStatus,
+      'question response failed',
+    ),
+    dismissQuestion: async (requestId) => runUiAction(
+      () => runtimeRef.current?.dismissQuestion(requestId),
+      setStatus,
+      'question response failed',
+    ),
+    dismissSlashOutput: async () => { runtimeRef.current?.clearSlashCommandOutput() },
+    documentInputFocus: async (focused) => { setDocumentInputFocused(focused) },
     codexAsyncQuestionAnswer: async (messageId, itemId, answers) => {
       const runtime = runtimeRef.current
       if (!runtime) throw new Error('no active session')
@@ -661,6 +687,11 @@ export function MobileApp() {
       const app = findMcpAppAttachment(runtimeRef.current?.messages ?? [], request.appInstanceId, request.messageId)?.app
       return requestMcpApp(client, { projectPath: project.path, sessionId }, request, app)
     },
+    modUi: async (payload) => {
+      const client = clientRef.current
+      if (!client || !project || !sessionId) throw new Error('no active session')
+      return invokeModUi(client, { projectPath: project.path, sessionId }, payload)
+    },
     mcpAppFullscreen: async (view) => { mcpApp.show(view) },
     mcpAppDownload: async (items) => {
       const files: CachedDownload[] = []
@@ -700,11 +731,13 @@ export function MobileApp() {
     }
     if (transcriptSync.receive(message)) return
     if (message.type === 'ready') {
-      // A new document has no View open, whatever the last one said.
+      // A new document has no View open or field focused, whatever the last one said.
       mcpApp.show(null)
+      setDocumentInputFocused(false)
       inject(webRef, webViewTheme)
       inject(webRef, { type: 'setViewport', fontScale, locale })
       inject(webRef, { type: 'setConnection', ...connectionRef.current })
+      inject(webRef, modSession)
       // The renderer can come up while a new session is still being created.
       // Theme still has to land; hydrate waits until the runtime exists.
       if (!runtimeRef.current) return
@@ -804,6 +837,11 @@ export function MobileApp() {
         }
         additionalDirsRef.current.ingest(events)
         runtimeRef.current?.ingest(events, epoch)
+        // The runtime does not reduce mod events; the document's mod client does.
+        const openSession = runtimeRef.current?.sessionId
+        for (const event of events as AgentEvent[]) {
+          if (event?.type?.startsWith('mod_') && event.sessionId === openSession) inject(webRef, { type: 'modEvent', event })
+        }
       },
       onTerminal: (payload) => termRuntimeRef.current?.ingest(payload),
       restore: async (activeClient) => {
@@ -1204,7 +1242,6 @@ export function MobileApp() {
     setSessionWorktree({ isWorktree: false, worktreePath: null, gitBranch: null, removed: false })
     setPerm(null)
     setPlan(null)
-    setQuestion(null)
     promptCollapse.reset()
     setStreaming(false)
     setHasTranscript(false)
@@ -1214,7 +1251,6 @@ export function MobileApp() {
     setRemovingContextViews([])
     setContextError('')
     setQueuedMessages([])
-    setSlashOutput(null)
     setSandboxInfo(null)
     setPendingSandboxMode(null)
     setUsage({ contextTokens: 0, contextWindow: null, totalCostUsd: 0 })
@@ -1720,7 +1756,7 @@ export function MobileApp() {
   /**
    * One panel at a time. These three are opened by a command, so opening the
    * next one is the user saying they are done with the last — including the
-   * previous command's output, which would otherwise outrank both.
+   * previous command's output, which the chat document shows above the composer.
    */
   const closeComposerPanels = () => {
     setMcp((current) => ({ ...current, open: false }))
@@ -2050,9 +2086,7 @@ export function MobileApp() {
    * list take the same slot inside `ChatComposer` — which is what stops a
    * command list from being painted under the panel that command opened.
    */
-  const composerOverlay = slashOutput ? (
-    <SlashOutputPanel output={slashOutput} onDismiss={() => runtimeRef.current?.clearSlashCommandOutput()} />
-  ) : mcp.open ? (
+  const composerOverlay = mcp.open ? (
     <McpPanel visible servers={mcp.rows} loading={mcp.loading} error={mcp.error}
       onDismiss={() => setMcp((current) => ({ ...current, open: false }))} />
     ) : workflowsOpen ? (
@@ -2064,7 +2098,7 @@ export function MobileApp() {
     <SessionActivityContext.Provider value={workspaceActivity.sessions}>
     <SafeAreaView style={styles.root}>
       <StatusBar style={tokens.scheme === 'dark' ? 'light' : 'dark'} />
-      <MobileKeyboardFrame>
+      <MobileKeyboardFrame documentKeyboard={documentInputFocused}>
         {/* Scenes (and their headers) live in the detail column so the
             persistent sidebar can occupy the full window height. On a phone
             the column is the whole frame, so the bar still sits at the top. */}
@@ -2268,6 +2302,7 @@ export function MobileApp() {
           usage={composerUsage}
           slashHits={slashHits}
           slashCatalogStatus={suggestions.slashCatalogStatus}
+          focused={documentInputFocused ? false : undefined}
           promptSuggestions={promptSuggestionsKey === hiddenPromptSuggestions ? [] : promptSuggestions}
           onPromptSuggestionsDismiss={() => setHiddenPromptSuggestions(promptSuggestionsKey)}
           // `writeCommandLine` rather than a whole-draft overwrite: it is the one
@@ -2299,7 +2334,7 @@ export function MobileApp() {
           onSteerQueued={(messageId) => runUiAction(() => runtimeRef.current?.steerQueuedMessage(messageId, 'now'), setStatus, 'steer failed')}
           onSteerQueuedSoon={(messageId) => runUiAction(() => runtimeRef.current?.steerQueuedMessage(messageId, 'next'), setStatus, 'steer failed')}
           todos={todos}
-          collapsedPrompts={collapsedPendingPrompts({ permission: collabRequestOf(perm) ? null : perm, plan, question }, promptCollapse.collapsed)}
+          collapsedPrompts={collapsedPendingPrompts({ permission: collabRequestOf(perm) ? null : perm, plan }, promptCollapse.collapsed)}
           onExpandPrompt={promptCollapse.expand}
           draft={draft}
           streaming={streaming}
@@ -2492,7 +2527,6 @@ export function MobileApp() {
         setStatus={setStatus}
         permission={collabRequestOf(perm) ? null : perm}
         plan={plan}
-        question={question}
         planContinueMode={selectedProvider === 'claude'
           ? (permModes.includes('auto') ? 'auto' : 'acceptEdits')
           : undefined}

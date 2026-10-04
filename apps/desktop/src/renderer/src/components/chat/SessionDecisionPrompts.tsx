@@ -1,3 +1,6 @@
+import { ModQuestionSite } from '@superone/chat-view/mod-ui'
+import { useActiveSession } from '@/stores/chat'
+import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
 import { PermissionPrompt } from './PermissionPrompt'
 import { AskUserQuestionPrompt } from './AskUserQuestionPrompt'
 
@@ -10,7 +13,19 @@ export function SessionDecisionPrompts() {
   return (
     <>
       <PermissionPrompt />
-      <AskUserQuestionPrompt />
+      <QuestionSite />
     </>
+  )
+}
+
+function QuestionSite() {
+  const question = useActiveSession((s) => s.pendingQuestion)
+  // Here, not in the prompt: a mod wrapping it remounts the prompt.
+  useRestoreChatInputFocus(!!question)
+  if (!question) return null
+  return (
+    <ModQuestionSite request={question}>
+      <AskUserQuestionPrompt />
+    </ModQuestionSite>
   )
 }

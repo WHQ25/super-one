@@ -134,6 +134,8 @@ interface SettingsState {
   readPluginFile: (pluginKey: string, relativePath: string) => Promise<void>
   clearPluginDetail: () => void
   deletePlugin: (key: string, scope: ResourceScope) => Promise<void>
+  /** Claude only: writes `enabledPlugins` and reloads live Claude sessions' plugins. */
+  setPluginEnabled: (key: string, scope: ResourceScope, enabled: boolean) => Promise<void>
   fetchMarketplacePlugins: () => Promise<void>
   installPlugin: (key: string, scope: ResourceScope) => Promise<void>
   readMarketplacePlugin: (marketplace: string, name: string) => Promise<void>
@@ -673,6 +675,21 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
     set({ pluginDetail: null, pluginFileContent: null, pluginFilePath: null })
     await get().fetchPlugins()
+  },
+
+  setPluginEnabled: async (key, scope, enabled) => {
+    // Optimistic: the switch moves at once; the refetch settles what the CLI will see.
+    const show = (value: boolean) => set((s) => ({ plugins: s.plugins.map((p) => (p.key === key && p.scope === scope ? { ...p, enabled: value } : p)) }))
+    show(enabled)
+    try {
+      await window.app.setPluginEnabled(getProjectPath(), key, scope, enabled)
+    } catch (err) {
+      // Rejects for the caller to report; the switch goes back even if the refetch fails too.
+      show(!enabled)
+      throw err
+    } finally {
+      await get().fetchPlugins().catch((err: unknown) => console.warn('[plugins] refetch failed:', err))
+    }
   },
 
   fetchMarketplacePlugins: async () => {

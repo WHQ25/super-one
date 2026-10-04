@@ -132,6 +132,29 @@ export const WithPreviews: Story = {
   )],
 }
 
+/** HTML option previews: fragments written for a white page, drawn on the light paper in either theme. */
+export const HtmlPreviews: Story = {
+  name: 'Prompt · HTML previews',
+  decorators: [(Story) => (
+    <>
+      <SeedQuestion request={{
+        requestId: 'q-html',
+        previewFormat: 'html',
+        questions: [{
+          question: 'Which card layout should the settings page use?',
+          header: 'Layout',
+          multiSelect: false,
+          options: [
+            { label: 'Compact', description: 'One dense card.', preview: `<div style="width:320px;font-family:system-ui;border:1px solid #cbd5e1;border-radius:8px;background:#fff"><div style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-weight:600">Compact</div><div style="padding:14px"><div style="height:10px;width:70%;background:#2563eb;border-radius:4px;margin-bottom:8px"></div><div style="height:10px;width:90%;background:#e2e8f0;border-radius:4px;margin-bottom:8px"></div><div style="height:10px;width:55%;background:#e2e8f0;border-radius:4px"></div></div></div>` },
+            { label: 'Spacious', description: 'Roomier rows.', preview: `<div style="width:320px;font-family:system-ui;border:1px solid #cbd5e1;border-radius:8px;background:#fff"><div style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-weight:600">Spacious</div><div style="padding:14px"><div style="height:10px;width:70%;background:#16a34a;border-radius:4px;margin-bottom:8px"></div><div style="height:10px;width:90%;background:#e2e8f0;border-radius:4px;margin-bottom:8px"></div><div style="height:10px;width:55%;background:#e2e8f0;border-radius:4px"></div></div></div>` },
+          ],
+        }],
+      }} />
+      <Story />
+    </>
+  )],
+}
+
 export const MultipleQuestions: Story = {
   name: 'Prompt · multiple questions',
   decorators: [(Story) => (

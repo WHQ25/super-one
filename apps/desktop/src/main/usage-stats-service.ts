@@ -65,6 +65,10 @@ function isZeroDelta(delta: UsageStepDelta): boolean {
     && delta.cacheCreationTokens === 0
 }
 
+function normalizeUsageModel(harness: HarnessKind, model: string): string {
+  return harness === 'claude' ? model.replace(/\[1m\]$/i, '') : model
+}
+
 function upsertUsage(
   day: string,
   harness: HarnessKind,
@@ -83,7 +87,7 @@ function upsertUsage(
   `).run(
     day,
     harness,
-    model,
+    normalizeUsageModel(harness, model),
     delta.inputTokens,
     delta.outputTokens,
     delta.cacheReadTokens,
@@ -276,7 +280,22 @@ export function queryUsage(range: UsageQueryRange = {}): UsageQueryResult {
     ORDER BY day DESC, harness, model
   `
   const rows = getDb().prepare(sql).all(...params) as UsageDailyRow[]
-  return { rows }
+  // Normalize existing records too, without rebuilding historical usage.
+  const byModel = new Map<string, UsageDailyRow>()
+  for (const row of rows) {
+    const model = normalizeUsageModel(row.harness, row.model)
+    const key = JSON.stringify([row.day, row.harness, model])
+    const existing = byModel.get(key)
+    if (existing) {
+      existing.input_tokens += row.input_tokens
+      existing.output_tokens += row.output_tokens
+      existing.cache_read_tokens += row.cache_read_tokens
+      existing.cache_creation_tokens += row.cache_creation_tokens
+    } else {
+      byModel.set(key, { ...row, model })
+    }
+  }
+  return { rows: Array.from(byModel.values()) }
 }
 
 const HARNESS_PROVIDERS = new Set<HarnessId>(['claude', 'codex', 'acp', 'opencode', 'cursor'])

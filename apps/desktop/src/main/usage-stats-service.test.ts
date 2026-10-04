@@ -348,6 +348,38 @@ describe('usage-stats-service: subtractDelta', () => {
 })
 
 describe('usage-stats-service: recordClaudeStepDeltas', () => {
+  it('merges Claude long-context suffix variants when recording usage', async () => {
+    const { recordClaudeStepDeltas, queryUsage } = await import('./usage-stats-service')
+    const delta = { inputTokens: 10, outputTokens: 20, cacheReadTokens: 30, cacheCreationTokens: 40 }
+    recordClaudeStepDeltas({ 'claude-opus-5-5[1M]': delta, 'claude-opus-5-5[1m]': delta, 'claude-opus-5-5': delta }, new Date(2026, 4, 4, 10))
+    expect(state.daily.size).toBe(1)
+    expect(queryUsage().rows).toEqual([{
+      day: '2026-05-04', harness: 'claude', model: 'claude-opus-5-5',
+      input_tokens: 30, output_tokens: 60, cache_read_tokens: 90, cache_creation_tokens: 120,
+    }])
+  })
+
+  it('merges historical Claude suffix rows without mutating stored usage or other harnesses', async () => {
+    const { queryUsage } = await import('./usage-stats-service')
+    for (const [harness, model] of [
+      ['claude', 'claude-opus-5-5'], ['claude', 'claude-opus-5-5[1M]'],
+      ['claude', 'claude-opus-5-5[1m]'], ['codex', 'custom[1M]'],
+      ['claude', 'custom[1m]-preview'],
+    ]) {
+      const row = { day: '2026-05-04', harness, model, input_tokens: 10, output_tokens: 20, cache_read_tokens: 30, cache_creation_tokens: 40 }
+      state.daily.set(dailyKey(row.day, harness, model), row)
+    }
+    const rows = queryUsage().rows
+    expect(rows).toHaveLength(3)
+    expect(rows.find((row) => row.model === 'claude-opus-5-5')).toMatchObject({
+      input_tokens: 30, output_tokens: 60, cache_read_tokens: 90, cache_creation_tokens: 120,
+    })
+    expect(rows.map((row) => row.model)).toContain('custom[1M]')
+    expect(rows.map((row) => row.model)).toContain('custom[1m]-preview')
+    expect(queryUsage().rows).toEqual(rows)
+    expect(state.daily.size).toBe(5)
+  })
+
   it('writes per-model delta into usage_daily', async () => {
     const { recordClaudeStepDeltas, queryUsage } = await import('./usage-stats-service')
     recordClaudeStepDeltas({ 'claude-sonnet-4-6': { inputTokens: 100, outputTokens: 200, cacheReadTokens: 50, cacheCreationTokens: 25 } }, new Date(2026, 4, 4, 10))

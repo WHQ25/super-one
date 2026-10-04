@@ -244,6 +244,24 @@ export function permissionSheetPresentation(request: PermissionRequest): Permiss
         items: [{ title: command, subtitle: cwd || 'Terminal' }],
       }
     }
+    case 'folder_trust': {
+      const workspace = typeof request.input.workspace === 'string' ? request.input.workspace : undefined
+      const cwd = typeof request.input.cwd === 'string' ? request.input.cwd : undefined
+      const kinds = Array.isArray(request.input.configKinds)
+        ? request.input.configKinds.filter((kind): kind is string => typeof kind === 'string')
+        : []
+      return {
+        title: 'Trust this folder?',
+        description: 'Grok loads project rules, MCP servers, hooks, and skills only after you trust the folder.',
+        approveLabel: 'Trust',
+        denyLabel: 'Don\'t trust',
+        items: [
+          ...(workspace ? [{ title: workspace, subtitle: 'Workspace' }] : []),
+          ...(cwd && cwd !== workspace ? [{ title: cwd, subtitle: 'Directory' }] : []),
+          { title: kinds.length ? kinds.join(', ') : 'No project config kinds were listed.', subtitle: 'Config' },
+        ],
+      }
+    }
     default:
       return {
         title: `Allow ${genericToolName(request.toolName)}?`,

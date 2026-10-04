@@ -1,4 +1,4 @@
-import { Bot, CalendarClock, FilePenLine, FileText, Globe, MessageCircle, Monitor, Plug, Settings2, ShieldAlert, Smartphone, Terminal, Trash2, Video, type LucideIcon } from 'lucide-react-native'
+import { Bot, CalendarClock, FilePenLine, FileText, FolderLock, Globe, MessageCircle, Monitor, Plug, Settings2, ShieldAlert, Smartphone, Terminal, Trash2, Video, type LucideIcon } from 'lucide-react-native'
 import type { PermissionRequest } from '@superone/shared/agent-types'
 import type { PendingPrompt } from '../pending-prompt-state'
 
@@ -6,7 +6,7 @@ const kindIcons: Record<NonNullable<PermissionRequest['requestKind']>, LucideIco
   mcp_elicitation: Plug, video_gen_confirm: Video, config_confirm: Settings2,
   session_agents_confirm: Bot, computer_use_grant: Monitor, session_cleanup_confirm: Trash2,
   automation_confirm: CalendarClock, webmcp_trust_confirm: Globe, device_control_confirm: Smartphone,
-  terminal_command_confirm: Terminal,
+  terminal_command_confirm: Terminal, folder_trust: FolderLock,
 }
 
 export function permissionPromptIcon(request: PermissionRequest): LucideIcon {

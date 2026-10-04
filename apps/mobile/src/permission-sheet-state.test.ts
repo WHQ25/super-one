@@ -19,6 +19,7 @@ const kindSet = {
   webmcp_trust_confirm: true,
   device_control_confirm: true,
   terminal_command_confirm: true,
+  folder_trust: true,
 } satisfies Record<NonNullable<PermissionRequest['requestKind']>, true>
 const kinds = Object.keys(kindSet) as NonNullable<PermissionRequest['requestKind']>[]
 
@@ -65,6 +66,22 @@ describe('permission sheet state', () => {
     close.allowAlwaysAllow = false
     close.input = { action: 'close', command: 'zsh', cwd: '/Users/me/app', tab: 'Terminal 2' }
     expect(permissionSheetPresentation(close)).toMatchObject({ title: 'Close terminal tab?', alwaysLabel: undefined })
+  })
+
+  it('lists the folder and the project config a folder trust unlocks', () => {
+    const trust = request('folder_trust')
+    trust.allowAlwaysAllow = false
+    trust.input = { cwd: '/Users/me/app/web', workspace: '/Users/me/app', configKinds: ['mcp', 'hooks'] }
+    expect(permissionSheetPresentation(trust)).toMatchObject({
+      title: 'Trust this folder?',
+      approveLabel: 'Trust',
+      denyLabel: 'Don\'t trust',
+      items: [
+        { title: '/Users/me/app', subtitle: 'Workspace' },
+        { title: '/Users/me/app/web', subtitle: 'Directory' },
+        { title: 'mcp, hooks', subtitle: 'Config' },
+      ],
+    })
   })
 
   it('keeps approve labels to a single word so the footer buttons stay on one line', () => {

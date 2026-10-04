@@ -108,6 +108,10 @@ export const permissionExamples = {
     toolName: 'mcp__superone__terminal_tabs', allowAlwaysAllow: true,
     input: { action: 'run', command: 'bun run storybook --ci', cwd: '/Users/me/app', rule: 'bun run storybook( .*)?', description: 'Start Storybook to check the new story.' },
   },
+  folder_trust: {
+    toolName: 'FolderTrust',
+    input: { cwd: '/Users/me/app/packages/web', workspace: '/Users/me/app', configKinds: ['rules', 'mcp', 'hooks', 'skills'] },
+  },
 } satisfies Record<PermissionKind, PermissionExample>
 
 export function permissionRequest(kind: PermissionKind): PermissionRequest {

@@ -45,6 +45,13 @@ function ContextMenu({ selected }: { selected: string }) {
 const meta = {
   title: 'Chat/ACP context window',
   component: GroupedModelEffortSelector,
+  args: {
+    selectedModelId: 'grok-4.7',
+    onSelectModel: () => undefined,
+    effortOptions: EFFORTS,
+    selectedEffort: 'high',
+    onSelectEffort: () => undefined,
+  },
 } satisfies Meta<typeof GroupedModelEffortSelector>
 
 export default meta

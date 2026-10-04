@@ -18,18 +18,24 @@ Every alpha release keeps its own notes on its GitHub Release.
 - OpenCode uses a native agent selector with its own refresh control, separate
   from model and effort. Permissions now follow OpenCode configuration instead
   of Claude-style presets on desktop and its mobile controller.
-
+- Grok Build 1.0.45: SuperOne asks before Grok loads a folder's project
+  rules, MCP servers, hooks and skills, on desktop and the phone, and
+  keeps project MCP servers off until the folder is trusted. A tool call
+  Grok's Auto mode blocks is marked denied on its tool card.
 - MCP Apps: the interactive UI an MCP server ships with a tool renders as
-  a View in place of its tool row, in Claude and Codex sessions, on
-  desktop, on the phone and for sessions on remote nodes. Views can open
-  in the activity panel, fullscreen or picture-in-picture, sign in
-  through the harness's own OAuth login, ask to send messages (approved
-  in the composer) and attach context to later sends. Cursor can route
-  local App servers through SuperOne after an explicit opt-in in its
-  preferences.
-- Elicitation forms render on desktop and phone with OpenAI extended
-  fields (thumbnails, option descriptions, suggested values, resource
-  pickers), and Codex offers form elicitation to MCP servers.
+  a View in place of its tool row, in Claude and Codex sessions
+  (including Codex subagents), on desktop, on the phone and for sessions
+  on remote nodes. Views can open in the activity panel, fullscreen or
+  picture-in-picture, sign in through the harness's own OAuth login, ask
+  to send messages (approved in the composer), attach context to later
+  sends, download files (saved on the desktop, shared from the phone) and
+  open files their server names. Restored Views stay collapsed until
+  opened. Cursor can route local App servers through SuperOne after an
+  explicit opt-in in its preferences.
+- Elicitation forms render on desktop and phone one step at a time, with
+  OpenAI extended fields (thumbnails, option descriptions, suggested
+  values, resource pickers), and Codex offers form elicitation to MCP
+  servers, including local file and resource pickers.
 - @ mentions search MCP servers that support `mentions/search`, on desktop
   and the phone; a picked item's text is inlined at send, and hovering its
   chip (tapping it on the phone) shows what the agent receives.
@@ -43,6 +49,10 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Files previewer cards fit their tallest image or video; composer
   context previews span the composer and are titled by their source; a
   bash block's edited-file list scrolls past a maximum height.
+- File mention chips open the file on click, drag the file out from
+  their icon and offer the file chip menu.
+- The phone's file preview renders Markdown with the chat's renderer,
+  including diagrams, math, highlighted code and images.
 
 ### Fixed
 
@@ -58,7 +68,21 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Mobile: frames inside the chat can no longer send native requests;
   the iOS chat no longer crashes when an embedded frame loads;
   collaboration children stay nested in the sidebar; the context ring
-  uses the model's real window.
+  uses the model's real window; drafts sent or deleted on the desktop
+  disappear after a reconnect, and a taken-over desktop draft sends; the
+  @ list opens already matching the desktop; mention names are no longer
+  clipped by long notes; widget borders stay visible on dark themes.
+- A session whose worktree was removed stops its live turn instead of
+  staying pending in the sidebar.
+- Replies that land in a pane opened from history count as read, so
+  phones no longer show them as unseen.
+- Grok: the main agent can use SuperOne session tools while a subagent
+  task runs.
+- Wide display math scrolls inside its own box instead of sliding the
+  phone transcript sideways.
+- The interrupted-turn label is translated.
+- Adding a project offers save-as-default only for a new clone path, and
+  the project selector uses the same add-project dialog.
 - Device and Computer Use previews appear when switching to a target
   that is already active.
 - The link dialog works inside the files previewer's fullscreen view,
@@ -72,6 +96,84 @@ Every alpha release keeps its own notes on its GitHub Release.
   mods now run in Claude sessions. Steering a running turn lets running
   commands finish instead of stopping them, and a reply cut short no
   longer looks like it is still streaming.
+- Usage turns red only when the quota will run out within a tenth of its
+  period or 30 minutes; running out before reset is a warning. Harness
+  chart bars no longer show totals.
+- Retired Kimi plans are no longer offered in the plan picker; existing
+  credentials keep working.
+
+## [0.71.0-alpha.1] - 2026-10-04
+
+### Added
+
+- Grok Build 1.0.45: SuperOne asks before Grok loads a folder's project
+  rules, MCP servers, hooks and skills, on desktop and the phone. Project
+  MCP servers stay off until the folder is trusted, including after a
+  reload or reconnect. A tool call Grok's Auto mode blocks is marked
+  denied on its tool card, and remote nodes run the Grok binary enabled
+  in SuperOne.
+- OpenCode 2 support, with a native agent selector (and its own refresh
+  control) in place of Claude-style permission presets on desktop and
+  the phone.
+- Elicitation forms ask one step at a time: each choice gets its own
+  step, typed fields share one, options are numbered rows (digits pick
+  them on the desktop), and the header shows the server's icon.
+- MCP Apps can download files: the desktop opens a save dialog for each
+  file, and the phone opens it in the file preview to save or share.
+- MCP App Views can open files their server names in the desktop file
+  preview; a file outside the session's project asks first.
+- Codex MCP forms can pick local files and preview resources.
+- Phone: MCP Apps share the desktop's View frame (collapse, fullscreen,
+  Activate) with an immersive fullscreen, and MCP resource mentions are
+  tappable.
+- The phone's file preview renders Markdown with the chat's renderer,
+  including diagrams, math, highlighted code and images.
+- File mention chips open the file on click, drag the file out from
+  their icon and offer the file chip menu.
+
+### Changed
+
+- Restored MCP App Views start as collapsed tool rows; expanding one
+  shows its snapshot and Activate reconnects it.
+- A failed MCP App call keeps the harness's own tool row with its error
+  instead of mounting the App.
+- Usage turns red only when the quota will run out within a tenth of its
+  period or 30 minutes; running out before reset is a warning, and
+  forecast alerts follow the same rule. Harness chart bars no longer show
+  totals.
+- Retired Kimi plans are no longer offered in the plan picker; existing
+  credentials keep working.
+
+### Fixed
+
+- OpenCode works again with OpenCode 2, while OpenCode 1 keeps working.
+- MCP App initial results up to 2 MiB reach live Views, and open the same
+  way after a restore and on the phone.
+- MCP App downloads over 1 MiB no longer stall, and linked downloads have
+  no size cap.
+- Closing a View on a remote session cancels its call on the node,
+  along with any form it raised.
+- Codex: MCP forms raised between model turns are handled, remote forms
+  survive waiting for an answer, and subagent MCP App Views render and
+  restore.
+- Grok: the main agent can use SuperOne session tools while a subagent
+  task runs.
+- A session whose worktree was removed stops its live turn instead of
+  staying pending in the sidebar.
+- Replies that land in a pane opened from history count as read, so
+  phones no longer show them as unseen.
+- Mobile: a taken-over desktop draft sends even when the desktop
+  prewarmed it; drafts sent or deleted on the desktop disappear after a
+  reconnect; the @ list opens already matching the desktop; context chips
+  are readable in the dark theme; mention names are no longer clipped by
+  long notes; widget borders stay visible on dark themes.
+- Wide display math scrolls inside its own box instead of sliding the
+  phone transcript sideways.
+- The interrupted-turn label is translated.
+- Adding a project offers save-as-default only for a new clone path, and
+  the project selector uses the same add-project dialog.
+- Elicitation form steps no longer show a focus ring after keyboard
+  navigation.
 
 ## [0.71.0-alpha] - 2026-10-02
 

@@ -11,17 +11,17 @@
   },
   "dependencies": {
     "@streamdown/code": "^1.0.1",
-    "@streamdown/math": "^1.0.2",
+    "@streamdown/math": "^1.0.3",
     "@superone/chat-view": "workspace:*",
     "@superone/ui": "workspace:*",
     "hast-util-sanitize": "^5.0.2",
-    "i18next": "^26.4.1",
+    "i18next": "^26.4.2",
     "@superone/shared": "workspace:*",
-    "katex": "^0.18.5",
+    "katex": "^0.19.0",
     "mermaid": "^11.17.2",
-    "react-i18next": "^17.0.13",
+    "react-i18next": "^17.0.15",
     "rehype-sanitize": "^6.0.0",
-    "streamdown": "^2.6.0"
+    "streamdown": "^2.7.0"
   },
   "peerDependencies": {
     "@lobehub/icons": "*",

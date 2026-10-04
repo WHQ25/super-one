@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^1.4.0",
+    "@agentclientprotocol/sdk": "^1.6.0",
     "@superone/runtime": "workspace:*",
     "@superone/shared": "workspace:*"
   },

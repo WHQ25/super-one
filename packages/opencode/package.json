@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@opencode-ai/sdk": "^1.18.26",
+    "@opencode-ai/sdk": "^1.18.34",
     "@superone/runtime": "workspace:*",
     "@superone/shared": "workspace:*"
   },

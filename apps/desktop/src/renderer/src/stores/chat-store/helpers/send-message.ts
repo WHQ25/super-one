@@ -328,6 +328,13 @@ export async function sendMessageImpl(
 
     // Assemble agent prompt like local (quotes, contexts, annotations, capability tags).
     const writeSess = getScopedPerSession(get(), writeTarget ?? { projectPath, sessionId: sid })
+    const codexSelectionForTurn = preferredHarness === 'codex'
+      ? resolveSessionCodexSelection(
+          getProject(get(), projectPath).codexModels,
+          writeSess.selectedCodexModel,
+          writeSess.selectedCodexReasoningEffort,
+        )
+      : undefined
     const annotations = writeSess.browserAnnotations ?? []
     const annotationImages: ImageAttachment[] = annotations
       .filter((a) => a.screenshot)
@@ -541,15 +548,13 @@ export async function sendMessageImpl(
       preferredHarness === 'claude' || preferredHarness === 'acp' || preferredHarness === 'opencode'
         ? writeSess.selectedModel || undefined
         : preferredHarness === 'codex'
-          ? (writeSess.codexModelUserChosen ? writeSess.selectedCodexModel || undefined : undefined)
+          ? codexSelectionForTurn?.modelId || undefined
           : undefined
     const effortForTurn =
       preferredHarness === 'claude' || preferredHarness === 'acp' || preferredHarness === 'opencode'
         ? writeSess.selectedEffort || undefined
         : preferredHarness === 'codex'
-          ? (writeSess.codexReasoningEffortUserChosen
-            ? writeSess.selectedCodexReasoningEffort || undefined
-            : undefined)
+          ? codexSelectionForTurn?.reasoningEffort
           : undefined
     const apiProviderIdForTurn = writeSess.apiProviderId ?? null
     const imagesForTurn = attachments.map((a) => ({
@@ -992,12 +997,11 @@ export async function sendMessageImpl(
     selectedCodexModel,
     selectedCodexReasoningEffort,
   )
-  const resolvedCodexModel = session.codexModelUserChosen
-    ? (resolvedCodexSelection.modelId || undefined)
-    : undefined
-  const resolvedCodexReasoningEffort = session.codexReasoningEffortUserChosen
-    ? resolvedCodexSelection.reasoningEffort
-    : undefined
+  // The selection shown by the picker already includes configured defaults.
+  // User-chosen flags control whether later preference changes may update this
+  // session; they must not decide which model/effort the current turn uses.
+  const resolvedCodexModel = resolvedCodexSelection.modelId || undefined
+  const resolvedCodexReasoningEffort = resolvedCodexSelection.reasoningEffort
   const isCodexDurableQueueSend = effectiveProvider === 'codex'
     && session.status === 'streaming'
     && resolvedCodexCommand?.kind === 'run'

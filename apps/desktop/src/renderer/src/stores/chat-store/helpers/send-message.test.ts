@@ -299,13 +299,33 @@ describe('sendMessageImpl: remote node', () => {
     seedProject(remotePath, 'draft-codex', {
       preferredProvider: 'codex',
       sessionProvider: 'codex',
+      selectedCodexModel: 'gpt-5.6',
+      selectedCodexReasoningEffort: 'xhigh',
     })
+    useChatStore.setState((state) => ({
+      projectSessions: {
+        ...state.projectSessions,
+        [remotePath]: {
+          ...state.projectSessions[remotePath],
+          codexModels: [{
+            id: 'gpt-5.6',
+            name: 'GPT-5.6',
+            description: '',
+            supportedReasoningEfforts: [{ value: 'xhigh', description: 'Extra High' }],
+          }],
+        },
+      },
+    }))
 
     await useChatStore.getState().sendMessage('hi codex')
 
     expect(mockEnvCreateSession).toHaveBeenCalledWith(
       'env-1',
       expect.objectContaining({ harnessId: 'codex' }),
+    )
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledWith(
+      'env-1',
+      expect.objectContaining({ model: 'gpt-5.6', effort: 'xhigh' }),
     )
   })
 
@@ -885,15 +905,53 @@ describe('sendMessageImpl: queued send (streaming)', () => {
     expect(mockRunCodexCommand).not.toHaveBeenCalled()
     expect(mockSendMessage).toHaveBeenCalledWith('/proj', expect.objectContaining({
       provider: 'codex',
-      model: undefined,
+      model: 'gpt-5.6',
+      effort: undefined,
       priority: 'next',
       codex: expect.objectContaining({
         mode: 'run',
         prompt: 'queued codex',
         threadId: 'thread-1',
+        reasoningEffort: 'max',
       }),
     }))
     expect(getActiveSession('/proj').queuedMessages).toHaveLength(1)
+  })
+
+  it('sends the displayed Codex default model and effort when they were not manually chosen', async () => {
+    seedProject('/proj', 'sid-1', {
+      sessionProvider: 'codex',
+      preferredProvider: 'codex',
+      selectedCodexModel: 'gpt-5.6',
+      selectedCodexReasoningEffort: 'xhigh',
+      codexModelUserChosen: false,
+      codexReasoningEffortUserChosen: false,
+    })
+    useChatStore.setState((state) => ({
+      projectSessions: {
+        ...state.projectSessions,
+        '/proj': {
+          ...state.projectSessions['/proj'],
+          codexModels: [{
+            id: 'gpt-5.6',
+            name: 'GPT-5.6',
+            description: '',
+            supportedReasoningEfforts: [{ value: 'xhigh', description: 'Extra High' }],
+          }],
+        },
+      },
+    }))
+
+    await useChatStore.getState().sendMessage('use configured default')
+
+    expect(mockRunCodexCommand).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        resolvedCodexModel: 'gpt-5.6',
+        resolvedCodexReasoningEffort: 'xhigh',
+      }),
+    )
   })
 
   it('sends an explicit Codex model when the user chose it', async () => {

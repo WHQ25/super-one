@@ -37,9 +37,11 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Desktop previews STEP and IGES CAD models.
 - Claude Code mods draw supported panes, transcript and tool
   decorations, composer hints and interactive controls on desktop and
-  phone, and in desktop sessions on remote nodes. Mod notifications
-  appear as toasts, plugin-load failures explain why, and the plugins
-  page identifies mods. Desktop preferences can disable mod rendering.
+  phone, and in desktop sessions on remote nodes. Phone controls use
+  touch-sized buttons without keyboard shortcut badges. Mod
+  notifications appear as toasts, plugin-load failures explain why,
+  and the plugins page identifies mods. Desktop preferences can
+  disable mod rendering.
 - ACP context windows are selected from the model menu, with the current
   window checked and the context ring reflecting the selection.
 - Files previewer cards fit their tallest image or video. Composer
@@ -98,6 +100,21 @@ Every alpha release keeps its own notes on its GitHub Release.
   period or 30 minutes; exhaustion before reset is a warning. Harness
   chart bars omit totals.
 - Retired Kimi plans leave the picker while existing credentials work.
+
+## [0.71.0-alpha.3] - 2026-10-05
+
+### Changed
+
+- Upgrade Codex runtime to 0.160.0 and Claude Agent SDK to 0.3.289
+  (Claude Code 2.1.289).
+- Phone mod buttons use touch-sized controls and the UI font, without
+  keyboard shortcut badges.
+
+### Fixed
+
+- Claude mod panes attach correctly on phones and remote nodes.
+- Mod bands wrap whole items, and bordered boxes retain inner spacing.
+- Focusing a desktop mod pane no longer leaves a line below its tabs.
 
 ## [0.71.0-alpha.2] - 2026-10-04
 

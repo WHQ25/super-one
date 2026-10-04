@@ -45,6 +45,15 @@
   color: oklch(0.72 0.17 250);
 }
 
+/* --- Collapsible sections --- */
+.chat-md details > summary {
+  cursor: pointer;
+  text-underline-offset: 2px;
+}
+.chat-md details > summary:hover {
+  text-decoration: underline;
+}
+
 /* --- Lists --- */
 .chat-md [data-streamdown="unordered-list"] {
   list-style-type: disc;

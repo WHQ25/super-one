@@ -68,6 +68,26 @@ const meta: Meta<typeof CopyableMarkdown> = {
 export default meta
 type Story = StoryObj<typeof CopyableMarkdown>
 
+export const CollapsibleSections: Story = {
+  args: {
+    text: [
+      '<details>',
+      '<summary>完整的 Unreleased 稳定候选说明</summary>',
+      '',
+      'Hover the title to see its underline, then click to expand this section.',
+      '',
+      '</details>',
+      '',
+      '<details open>',
+      '<summary>Expanded release notes</summary>',
+      '',
+      'The expanded title has the same hover treatment.',
+      '',
+      '</details>',
+    ].join('\n'),
+  },
+}
+
 export const BasicFormatting: Story = {
   args: {
     text: [

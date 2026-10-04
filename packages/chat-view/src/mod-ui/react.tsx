@@ -332,7 +332,7 @@ export function ModSurfaceFrame({ component, instanceId, props, plugin, onEscape
     <div
       ref={frameRef}
       data-mod-site={component}
-      className={`relative min-h-0 overflow-y-auto font-mono text-xs leading-[1.5] text-foreground outline-none ${className ?? ''}`}
+      className={`relative min-h-0 overflow-y-auto font-mono text-xs leading-[1.5] text-foreground outline-none focus-visible:shadow-none ${className ?? ''}`}
       style={fontStyle}
       tabIndex={-1}
       onScroll={onScroll}

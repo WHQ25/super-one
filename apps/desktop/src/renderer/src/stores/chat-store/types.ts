@@ -211,6 +211,11 @@ export interface PerSessionState extends ChatCoreSession {
   acpModes: ModelOption[]
   acpModeConfigId: string | null
   selectedAcpModeId: string | null
+  /**
+   * Window the user picked for this ACP model. The usage ring reads it ahead of
+   * the catalog. Null leaves the agent's current window alone.
+   */
+  selectedAcpContextWindow?: number | null
   acpModesStatus: 'idle' | 'loading' | 'ready' | 'error'
   /** Slash commands from ACP available_commands_update (lazy-loaded on / popup). */
   acpSlashCommands: SlashCommandInfo[]

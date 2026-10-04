@@ -168,4 +168,62 @@ describe('applyEventToSession: acp_models', () => {
     expect(patch.selectedModel).toBeUndefined()
     expect(patch.acpModels?.some((m) => m.id === 'stale-model')).toBe(true)
   })
+
+  it('keeps context windows when a later catalog omits them', () => {
+    const session = {
+      ...createDefaultPerSessionState(),
+      preferredProvider: 'acp' as const,
+      sessionProvider: 'acp' as const,
+      acpAgentId: 'grok-build',
+      selectedModel: 'grok-4.7',
+      modelUserChosen: true,
+      acpModels: [{
+        id: 'grok-4.7',
+        name: 'Grok 4.7',
+        description: 'Flagship',
+        contextWindow: 256_000,
+        contextWindows: [256_000, 500_000],
+      }],
+      acpModelsStatus: 'ready' as const,
+    }
+    const patch = applyEventToSession(session, {
+      type: 'acp_models',
+      agentId: 'grok-build',
+      models: [{ id: 'grok-4.7', name: 'Grok 4.7', description: 'Flagship' }],
+      selectedModelId: 'grok-4.7',
+      configId: 'model',
+      status: 'ready',
+    })
+    expect(patch.acpModels?.[0]?.contextWindows).toEqual([256_000, 500_000])
+    expect(patch.acpModels?.[0]?.contextWindow).toBe(256_000)
+  })
+
+  it('drops a window list when the model catalog reports one window', () => {
+    const session = {
+      ...createDefaultPerSessionState(),
+      preferredProvider: 'acp' as const,
+      sessionProvider: 'acp' as const,
+      acpAgentId: 'grok-build',
+      selectedModel: 'grok-4.7',
+      modelUserChosen: true,
+      acpModels: [{
+        id: 'grok-4.7',
+        name: 'Grok 4.7',
+        description: 'Flagship',
+        contextWindow: 256_000,
+        contextWindows: [256_000, 500_000],
+      }],
+      acpModelsStatus: 'ready' as const,
+    }
+    const patch = applyEventToSession(session, {
+      type: 'acp_models',
+      agentId: 'grok-build',
+      models: [{ id: 'grok-4.7', name: 'Grok 4.7', description: 'Flagship', contextWindow: 256_000 }],
+      selectedModelId: 'grok-4.7',
+      configId: null,
+      status: 'ready',
+    })
+    expect(patch.acpModels?.[0]?.contextWindow).toBe(256_000)
+    expect(patch.acpModels?.[0]?.contextWindows).toBeUndefined()
+  })
 })

@@ -265,10 +265,14 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     if (!projectPath) return false
     const provider = session.sessionProvider ?? session.preferredProvider
     if (provider !== 'acp') return false
+    const previous = session.selectedAcpContextWindow ?? null
+    if (previous === contextWindow) return true
+    set((s) => commitPerSession(s, target, () => ({ selectedAcpContextWindow: contextWindow })))
     try {
       await window.agent.setSessionSettings(projectPath, { contextWindow }, ipcSessionId)
       return true
     } catch (err) {
+      set((s) => commitPerSession(s, target, () => ({ selectedAcpContextWindow: previous })))
       toast.error(err instanceof Error ? err.message : String(err))
       return false
     }
@@ -285,6 +289,8 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
         selectedModel: model,
         modelUserChosen: true,
         contextWindow: null,
+        // Re-selecting the same model must not drop a window the user already picked.
+        ...(provider === 'acp' && session.selectedModel !== model ? { selectedAcpContextWindow: null } : {}),
       }
       if (provider === 'cursor') {
         const cursorModels = state.harnessResources.cursor?.models ?? []

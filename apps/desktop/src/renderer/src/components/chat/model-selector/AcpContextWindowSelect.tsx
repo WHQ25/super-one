@@ -1,36 +1,40 @@
-import { useTranslation } from 'react-i18next'
+import type { SelectorCatalogParam } from './GroupedModelEffortSelector'
 
-export function AcpContextWindowSelect({
-  windows,
-  value,
-  onChange,
-  disabled,
-}: {
-  windows: number[]
-  value: number | null
-  onChange: (contextWindow: number) => void
-  disabled?: boolean
-}) {
-  const { t } = useTranslation()
-  if (windows.length <= 1) return null
-  return (
-    <label className="flex items-center gap-1 text-xs text-muted-foreground">
-      <span className="sr-only">{t('chat.acpPermissionModes.contextWindowLabel')}</span>
-      <select
-        aria-label={t('chat.acpPermissionModes.contextWindowLabel')}
-        className="max-w-28 rounded-md border border-border bg-transparent px-1.5 py-1 text-xs"
-        value={value ?? ''}
-        disabled={disabled}
-        onChange={(event) => {
-          const next = Number(event.target.value)
-          if (Number.isFinite(next) && next > 0) onChange(next)
-        }}
-      >
-        <option value="">{t('chat.acpPermissionModes.contextWindowPreserve')}</option>
-        {windows.map((size) => (
-          <option key={size} value={size}>{size.toLocaleString()}</option>
-        ))}
-      </select>
-    </label>
-  )
+function formatContextWindowChoice(size: number): string {
+  if (size >= 1_000_000) {
+    const millions = size / 1_000_000
+    const rounded = Number.isInteger(millions) ? String(millions) : millions.toFixed(1).replace(/\.0$/, '')
+    return `${rounded}M`
+  }
+  if (size >= 1_000 && size % 1_000 === 0) return `${size / 1_000}K`
+  return size.toLocaleString('en-US')
+}
+
+/**
+ * Context rows for the model menu, same slot as Cursor's context parameter.
+ * Hidden unless the model lists more than one positive window.
+ * The checked row is the user's pick, else the model's current window when
+ * that size is listed, else the first listed size. Clicking the checked row
+ * sends nothing.
+ */
+export function acpContextWindowParam(
+  windows: number[] | undefined,
+  selected: number | null,
+  current: number | null,
+  label: string,
+): SelectorCatalogParam | null {
+  const listed = (windows ?? []).filter((size) => Number.isFinite(size) && size > 0)
+  if (listed.length <= 1) return null
+  const picked = selected != null && listed.includes(selected)
+    ? selected
+    : current != null && listed.includes(current)
+      ? current
+      : listed[0]!
+  return {
+    id: 'context',
+    label,
+    kind: 'choice',
+    values: listed.map((size) => ({ value: String(size), label: formatContextWindowChoice(size) })),
+    selected: String(picked),
+  }
 }

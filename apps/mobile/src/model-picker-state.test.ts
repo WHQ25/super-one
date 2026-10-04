@@ -217,6 +217,10 @@ describe('option params', () => {
     expect(optionParamSummary(optionParamsForModel('cursor', cursorModel))).toEqual([])
     expect(optionParamSummary(optionParamsForModel('cursor', cursorModel, { params: { optimize_for: 'speed' } })))
       .toEqual(['Speed'])
+    expect(optionParamSummary([{
+      id: 'context', label: 'Context window', kind: 'choice',
+      values: [{ value: '256000', label: '256K' }], selected: '256000',
+    }])).toEqual([])
   })
 })
 

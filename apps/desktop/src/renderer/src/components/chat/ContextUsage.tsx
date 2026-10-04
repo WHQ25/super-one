@@ -107,6 +107,7 @@ export function ContextUsage() {
   const contextWindowFromSession = useActiveSession((s) => s.contextWindow)
   const selectedModel = useActiveSession((s) => s.selectedModel)
   const cursorContextParam = useActiveSession((s) => s.cursorModelParams?.context)
+  const selectedAcpContextWindow = useActiveSession((s) => s.selectedAcpContextWindow)
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
   const totalCostUsd = useActiveSession((s) => s.totalCostUsd)
@@ -177,6 +178,7 @@ export function ContextUsage() {
   // Codex GPT-5.6 uses its managed 272k window; other models prefer models.dev.
   // Cursor uses the per-turn `context` param (300k / 1m), else the model row's
   // default (200k / 272k for GPT-5.6, set by mapCursorModel) and never models.dev.
+  // An ACP pick (`selectedAcpContextWindow`) outranks the catalog the same way.
   const contextWindow = resolveRingContextWindow({
     harnessId: activeProvider,
     modelId: selectedModel,
@@ -188,7 +190,9 @@ export function ContextUsage() {
     claudeFallback: activeProvider === 'claude',
     selectedContextWindow: isCursor
       ? resolveCursorSelectedContextWindow(cursorContextParam, currentModel)
-      : null,
+      : isAcp
+        ? selectedAcpContextWindow
+        : null,
   })
   const hasWindow = Boolean(contextWindow)
   const occupancyPct = contextWindow ? Math.min(effectiveTokens / contextWindow, 1) : 0

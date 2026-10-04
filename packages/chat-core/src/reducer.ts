@@ -18,6 +18,33 @@ import { reduceTodosUpdated } from './todos'
 import { reduceUsage } from './usage'
 
 /**
+ * A config-option model row is id/name/description only. Grok's window list
+ * lives on the models catalog, so a later `config_option_update` must not
+ * wipe `contextWindow` / `contextWindows` already stored for that id.
+ * A catalog row that names `contextWindow` is authoritative and may drop the list.
+ */
+function withKeptContextWindows<T extends { id: string; contextWindow?: number; contextWindows?: number[] }>(
+  previous: readonly T[],
+  incoming: readonly T[],
+): T[] {
+  if (previous.length === 0 || incoming.length === 0) return incoming as T[]
+  const prevById = new Map(previous.map((model) => [model.id, model]))
+  let changed = false
+  const models = incoming.map((model) => {
+    if (model.contextWindow != null || model.contextWindows != null) return model
+    const prior = prevById.get(model.id)
+    if (prior?.contextWindow == null && prior?.contextWindows == null) return model
+    changed = true
+    return {
+      ...model,
+      ...(prior?.contextWindow != null ? { contextWindow: prior.contextWindow } : {}),
+      ...(prior?.contextWindows != null ? { contextWindows: prior.contextWindows } : {}),
+    }
+  })
+  return changed ? models : incoming as T[]
+}
+
+/**
  * Apply one AgentEvent to a session, returning an exhaustive chat-core patch.
  *
  * Pure function — no side effects on Zustand state. Reducers in `./event-reducer/*`
@@ -142,8 +169,9 @@ export function applyEventToSession(
       if (status === 'loading' && session.acpModels.length > 0 && session.acpModelsStatus === 'ready') {
         return {}
       }
+      const models = withKeptContextWindows(session.acpModels, event.models)
       const patch: ChatCorePatch = {
-        acpModels: event.models,
+        acpModels: models,
         acpModelConfigId: event.configId,
         acpModelsStatus: status,
         acpModelsError: event.error ?? null,
@@ -163,7 +191,7 @@ export function applyEventToSession(
         && !event.models.some((m) => m.id === currentId)
       ) {
         patch.acpModels = [
-          ...event.models,
+          ...models,
           { id: currentId, name: currentId, description: 'Unavailable in current catalog' },
         ]
       }

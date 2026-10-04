@@ -125,6 +125,20 @@ const BLAST_RADIUS = {
   ],
 } as ModElement
 
+/** Token Weather's band as the mod sends it: one row, parts separated by their own leading spaces. */
+const TOKEN_WEATHER_BAND: ModElement = {
+  type: 'Box',
+  props: { flexDirection: 'row', paddingX: 1 },
+  children: [
+    T('☁  Cloudy', { bold: true, color: 'cyan' }),
+    T('  30% of context'),
+    T('  301.4k / 1M', { dimColor: true }),
+    T('   last turns ', { dimColor: true }),
+    T('▁▂▃▅▆', { color: 'cyan' }),
+    T('  ▲ +21.7k last turn', { dimColor: true }),
+  ],
+}
+
 const TOKEN_WEATHER = Row(T('☂  Showers', { bold: true, color: 'warning' }), T('67% of context'), T('134.4k / 200k', { dimColor: true }), T('last turns ▁▂█', { dimColor: true }), T('▲ +98.3k last turn', { color: 'error' }))
 
 const LONG_PANE = Col(...Array.from({ length: 60 }, (_, i) => T(`line ${i + 1} — ${'a long row that wraps in a narrow pane '.repeat(i % 3 === 0 ? 3 : 1)}`)), { type: 'Box', props: { key: 'bottom' }, children: [T('bottom row', { dimColor: true })] })
@@ -424,6 +438,16 @@ export const AbovePromptSinglePaneNarrow: Story = {
 /** The band alone, with digit hotkeys from the empty composer (1 Proceed, 2 Cancel). */
 export const AbovePromptBandHotkeys: Story = {
   render: () => <Composer answers={{ AbovePrompt: drawn(BLAST_RADIUS) }} />,
+}
+
+/** A one-line band above the composer. */
+export const AbovePromptBandLine: Story = {
+  render: () => <Composer answers={{ AbovePrompt: drawn(TOKEN_WEATHER_BAND) }} />,
+}
+
+/** Too narrow for one line: whole parts move to the next line, no word broken. */
+export const AbovePromptBandNarrow: Story = {
+  render: () => <Composer width={360} answers={{ AbovePrompt: drawn(TOKEN_WEATHER_BAND) }} />,
 }
 
 /** No mod draws above the composer: the band collapses and the toolbar shows no session mode. */

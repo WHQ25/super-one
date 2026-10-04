@@ -217,7 +217,9 @@ export function ModAbovePrompt({ isWorking, sessionId, isComposerEmpty }: { isWo
         viewport={windowViewport(true)}
         onDrawn={setDrawn}
         onEscape={returnKeyboard}
-        className={drawn ? 'max-h-[calc(8*var(--mod-row,18px))] rounded-lg px-1' : 'max-h-0 overflow-hidden'}
+        // A row too wide for the band moves whole items to the next line
+        // instead of breaking each text mid-word (a mod's own `flexWrap` wins).
+        className={drawn ? 'max-h-[calc(8*var(--mod-row,18px))] rounded-lg px-1 [&_div]:flex-wrap' : 'max-h-0 overflow-hidden'}
       />
     </div>
   )

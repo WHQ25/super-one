@@ -122,10 +122,19 @@ export function boxStyle(p: Record<string, ModPrimitive> = {}): CSSProperties {
     ...border(p.borderStyle, modColor(p.borderColor), p.borderDimColor === true),
   }
   const pad = (v: ModPrimitive | undefined, axis: 'x' | 'y') => (axis === 'x' ? cols(v) : rows(v))
-  style.paddingTop = pad(p.paddingTop ?? p.paddingY ?? p.padding, 'y')
-  style.paddingBottom = pad(p.paddingBottom ?? p.paddingY ?? p.padding, 'y')
-  style.paddingLeft = pad(p.paddingLeft ?? p.paddingX ?? p.padding, 'x')
-  style.paddingRight = pad(p.paddingRight ?? p.paddingX ?? p.padding, 'x')
+  // Ink draws a border in a cell of its own with the line through the middle,
+  // so text sits half a cell inside it; a 1px CSS border keeps that half cell as padding.
+  const bordered = typeof p.borderStyle === 'string' && p.borderStyle !== ''
+  const inset = (v: ModPrimitive | undefined, axis: 'x' | 'y') => {
+    const size = pad(v, axis)
+    if (!bordered) return size
+    const half = axis === 'x' ? '0.5ch' : `calc(0.5 * ${MOD_ROW})`
+    return size ? `calc(${size} + ${half})` : half
+  }
+  style.paddingTop = inset(p.paddingTop ?? p.paddingY ?? p.padding, 'y')
+  style.paddingBottom = inset(p.paddingBottom ?? p.paddingY ?? p.padding, 'y')
+  style.paddingLeft = inset(p.paddingLeft ?? p.paddingX ?? p.padding, 'x')
+  style.paddingRight = inset(p.paddingRight ?? p.paddingX ?? p.padding, 'x')
   style.marginTop = pad(p.marginTop ?? p.marginY ?? p.margin, 'y')
   style.marginBottom = pad(p.marginBottom ?? p.marginY ?? p.margin, 'y')
   style.marginLeft = pad(p.marginLeft ?? p.marginX ?? p.margin, 'x')

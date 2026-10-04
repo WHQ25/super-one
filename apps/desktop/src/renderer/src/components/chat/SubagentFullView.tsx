@@ -24,6 +24,7 @@ import {
   type JsonlEntry,
 } from './subagent-utils'
 import { SubagentBlock } from './SubagentBlock'
+import { ReasoningBlock } from './ReasoningBlock'
 import { useSubagentJsonl } from './use-subagent-jsonl'
 import {
   streamdownPlugins,
@@ -250,7 +251,8 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
                       isStreaming={isRunning}
                     />
                   ) : (
-                    renderFullViewBlock(item.block, i, isRunning, toolResultMap, toolErrorMaps)
+                    // Same sealing rule as the main turn: only the trailing block can still be live.
+                    renderFullViewBlock(item.block, i, isRunning, isRunning && i === childItems.length - 1, toolResultMap, toolErrorMaps)
                   )
                 )}
               </div>
@@ -312,6 +314,7 @@ function renderFullViewBlock(
   block: ContentBlock,
   index: number,
   isStreaming: boolean,
+  isLive: boolean,
   toolResultMap: Map<string, string>,
   errorMaps: ToolErrorMaps,
 ) {
@@ -333,10 +336,14 @@ function renderFullViewBlock(
       )
     case 'thinking':
       return (
-        <div key={index} className="rounded border border-border/30 bg-muted/20 px-2 py-1.5 text-xs leading-relaxed text-muted-foreground">
-          <div className="mb-1 text-xs font-medium uppercase tracking-wide">thinking</div>
-          <div className="whitespace-pre-wrap">{block.thinking}</div>
-        </div>
+        <ReasoningBlock
+          key={index}
+          text={block.thinking}
+          startedAt={block.startedAt}
+          endedAt={block.endedAt}
+          blockDone={!isLive}
+          showContent={block.thinking.trim().length > 0}
+        />
       )
     case 'tool_use':
       return (

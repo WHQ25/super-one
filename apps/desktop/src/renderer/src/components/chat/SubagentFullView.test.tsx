@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 
 const hoisted = vi.hoisted(() => ({
@@ -92,6 +92,24 @@ describe('SubagentFullView', () => {
     render(<SubagentFullView view={{ toolUseId: 'task-1' }} />)
 
     expect(screen.getByTestId('tool-block').getAttribute('data-timeout')).toBe('true')
+  })
+
+  it('collapses a finished child thinking block into a reasoning row, like the main chat', () => {
+    hoisted.sessionState.messages = [{
+      role: 'assistant',
+      content: [
+        { type: 'tool_use', toolUseId: 'task-1', toolName: 'Agent', input: taskInput({ subagent_type: 'reviewer', description: 'Review code' }) },
+        { type: 'thinking', thinking: 'private chain of thought', parentToolUseId: 'task-1' },
+        { type: 'tool_result', toolUseId: 'task-1', summary: 'done' },
+      ],
+    }]
+
+    render(<SubagentFullView view={{ toolUseId: 'task-1' }} />)
+
+    expect(screen.getByText('chat.reasoning.thought')).toBeTruthy()
+    expect(screen.queryByText('private chain of thought')).toBeNull()
+    fireEvent.click(screen.getByText('chat.reasoning.thought'))
+    expect(screen.getByText('private chain of thought')).toBeTruthy()
   })
 
   it('renders tool calls for an async (background) subagent from progress history', () => {

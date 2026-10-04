@@ -79,6 +79,19 @@ describe('partitionTurnForCompactMode', () => {
     expect(shape(runs)).toEqual(['c:early', 'p:ask', 'c:late', 'p:answer'])
   })
 
+  it('pins subagent and workflow cards — delegated work stays visible outside Detail', () => {
+    const items = [
+      { kind: 'tools', id: 'early' },
+      { kind: 'subagent', id: 'agent' },
+      { kind: 'thinking', id: 'mid' },
+      { kind: 'workflow', id: 'workflow' },
+      { kind: 'tools', id: 'late' },
+      text('answer'),
+    ]
+    const runs = partitionTurnForCompactMode(items, isClaudePinnedSegment)
+    expect(shape(runs)).toEqual(['c:early', 'p:agent', 'c:mid', 'p:workflow', 'c:late', 'p:answer'])
+  })
+
   it('does not pin an ordinary tool call', () => {
     const items = [
       { kind: 'block', block: { type: 'tool_use', toolName: 'Read' }, id: 'read' },
@@ -139,6 +152,17 @@ describe('isCodexPinnedSegment', () => {
     ]
     const runs = partitionTurnForCompactMode(segs, (s) => isCodexPinnedSegment(s, itemAt(items)))
     expect(shape(runs)).toEqual(['c:cmd-1', 'p:widget', 'c:cmd-2', 'p:msg'])
+  })
+
+  it('pins subagent cards', () => {
+    const items = [{ type: 'command_execution' }, { type: 'collab_tool_call' }, { type: 'agent_message' }]
+    const segs = [
+      { kind: 'item' as const, index: 0, id: 'cmd' },
+      { kind: 'subagent' as const, index: 1, id: 'agent' },
+      { kind: 'item' as const, index: 2, id: 'msg' },
+    ]
+    expect(shape(partitionTurnForCompactMode(segs, (s) => isCodexPinnedSegment(s, itemAt(items)))))
+      .toEqual(['c:cmd', 'p:agent,msg'])
   })
 
   it('does not pin other mcp calls', () => {

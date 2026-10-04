@@ -8,9 +8,10 @@ export interface CompactChatModePorts {
  * disclosure; pinned content stays visible at its original position, so
  * expanding Detail restores the turn's real order instead of re-ordering it.
  *
- * Pinned = the agent's own prose (markdown) and tools whose call *is* addressed
- * to the user (widget_show, AskUserQuestion), wherever they appear — mid-turn
- * narration is content, not process. Everything after the last pinned item is
+ * Pinned = the agent's own prose (markdown), tools whose call *is* addressed
+ * to the user (widget_show, AskUserQuestion), and delegated work (subagents,
+ * workflows), wherever they appear — mid-turn narration is content, not
+ * process, and a delegation card is the user's handle on its own work. Everything after the last pinned item is
  * pinned too, so an interrupted turn that ends mid-tool still surfaces its
  * incomplete tail.
  *
@@ -78,14 +79,15 @@ export function collapsibleItems<T>(runs: ReadonlyArray<TurnRun<T>>): T[] {
 }
 
 /**
- * Claude / ACP content segments: the agent's prose and user-facing tool calls
- * are pinned. Remote surfaces receive insight callouts pre-split out of `text`
- * (see remote-content), so they count as prose too.
+ * Claude / ACP content segments: the agent's prose, user-facing tool calls and
+ * subagent / workflow cards are pinned. Remote surfaces receive insight
+ * callouts pre-split out of `text` (see remote-content), so they count as prose too.
  */
 export function isClaudePinnedSegment(seg: {
   kind: string
   block?: { type: string; toolName?: string; app?: unknown }
 }, ports: CompactChatModePorts): boolean {
+  if (seg.kind === 'subagent' || seg.kind === 'workflow') return true
   if (seg.kind !== 'block' || !seg.block) return false
   if (seg.block.type === 'text' || seg.block.type === 'insight') return true
   // An MCP App View is addressed to the user, like a widget.
@@ -93,14 +95,16 @@ export function isClaudePinnedSegment(seg: {
 }
 
 /**
- * Codex topology segments: agent_message / plan / user-facing tool items are pinned.
- * `itemAt` resolves a segment index into the full codex item list.
+ * Codex topology segments: agent_message / plan / user-facing tool items and
+ * subagent cards are pinned. `itemAt` resolves a segment index into the full
+ * codex item list.
  */
 export function isCodexPinnedSegment(
   seg: { kind: string; index?: number },
   itemAt: (index: number) => { type: string; server?: string; tool?: string; app?: unknown } | undefined,
   ports: CompactChatModePorts,
 ): boolean {
+  if (seg.kind === 'subagent') return true
   if (seg.kind !== 'item' || seg.index == null) return false
   const item = itemAt(seg.index)
   if (!item) return false

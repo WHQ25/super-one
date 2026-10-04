@@ -189,7 +189,7 @@ export function CodexCloudMark({
   )
 }
 
-export function CodexSessionIcon({ status, size, renderLevel = 'rich' }: SessionIconProps) {
+export function CodexSessionIcon({ status, size, renderLevel = 'rich', runningGlyph }: SessionIconProps) {
   // Mirrors ClaudeSessionIcon: resting states drop their interpolating animations
   // (`codex-session-scale` ≈ float, `warm`/`spec` ≈ the leg wiggle) at `compact`.
   // The step-end `codex-session-cursor` is this icon's blink — it stays on.
@@ -206,10 +206,12 @@ export function CodexSessionIcon({ status, size, renderLevel = 'rich' }: Session
   if (status === 'running') {
     return (
       <CodexCloudMark size={size} motion="running">
-        <svg viewBox="1 1 22 22" className="w-3 h-3 overflow-visible" style={svgStyle(size)} aria-hidden>
-          <path d={SLASH} fill="#fff" />
-          <path className="codex-session-cursor-run" d={UNDERSCORE} fill="#fff" />
-        </svg>
+        {runningGlyph ?? (
+          <svg viewBox="1 1 22 22" className="w-3 h-3 overflow-visible" style={svgStyle(size)} aria-hidden>
+            <path d={SLASH} fill="#fff" />
+            <path className="codex-session-cursor-run" d={UNDERSCORE} fill="#fff" />
+          </svg>
+        )}
       </CodexCloudMark>
     )
   }

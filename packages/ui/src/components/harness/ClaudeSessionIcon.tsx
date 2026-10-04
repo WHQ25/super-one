@@ -9,6 +9,8 @@ export interface SessionIconProps {
   active?: boolean
   size?: number
   renderLevel?: SessionIconRenderLevel
+  /** Optional center glyph for Codex's running mark. Other harness icons ignore it. */
+  runningGlyph?: React.ReactNode
 }
 
 const BODY_COLOR = '#E07B4A'

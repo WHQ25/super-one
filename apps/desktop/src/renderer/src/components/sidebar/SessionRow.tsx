@@ -1,13 +1,15 @@
 import { memo, useCallback } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from 'react-i18next'
-import { Bot, ChevronDown, ChevronRight, Clock, CornerDownRight, Eye, EyeOff, Loader2, MessageSquare, Pin, Smartphone } from 'lucide-react'
+import { Bot, ChevronDown, ChevronRight, Clock, CornerDownRight, Eye, EyeOff, Loader2, MessageSquare, Mic, Pin, Smartphone } from 'lucide-react'
 import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { MarqueeText } from '@superone/ui/components/ui/marquee-text'
 import { cn } from '@superone/ui/lib/utils'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore, useHasRealProject } from '@/stores/app'
+import { useRealtimeCallStore } from '@/stores/realtime-call'
+import { REALTIME_VOICE_GLYPH_SCALE } from '@/lib/realtime-voice-visuals'
 import { armedSendFor, useScheduledSendsStore } from '@/stores/scheduled-sends'
 import { formatSendWhen } from '@/components/chat/scheduled-send-time'
 import { useStallLevel, getStallColor, useEllipsisRepaintKey, type StallLevel } from '@/lib/stall-utils'
@@ -90,6 +92,10 @@ export const SessionRow = memo(function SessionRow({
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const hasRealProject = useHasRealProject()
+  const realtimeCall = useRealtimeCallStore(useShallow((s) => ({
+    sessionId: s.sessionId,
+    state: s.state,
+  })))
   const remoteSessionIds = useChatStore((s) => s.remoteSessions[folderPath] ?? EMPTY_REMOTE_SESSION_IDS)
   // Deliberately does NOT select `lastEventAt` — it changes on every content
   // delta; stall level reads it lazily via getState() once per second.
@@ -108,6 +114,9 @@ export const SessionRow = memo(function SessionRow({
   const pendingReason = getPendingReason(pendingPermissions, pendingQuestion, pendingPlanApproval, t)
 
   const isProjectActive = hasRealProject && folderPath === currentFolder
+  const isRealtimeVoiceSession = session.provider === 'codex'
+    && realtimeCall.sessionId === session.sessionId
+    && realtimeCall.state !== 'idle'
   const isRunning = status === 'streaming'
   const isBackground = status === 'background'
   const isSessionActive = isProjectActive && activeSid === session.sessionId
@@ -132,6 +141,17 @@ export const SessionRow = memo(function SessionRow({
           : 'default'
   const HarnessIcon = resolveSessionIcon(session.provider, session.acpAgentId)
   const scheduled = useScheduledSendsStore((s) => armedSendFor(s.bySession, session.sessionId))
+  const voiceGlyph = isRealtimeVoiceSession
+    ? <Mic
+        strokeWidth={2}
+        className="text-white"
+        style={{
+          width: `${REALTIME_VOICE_GLYPH_SCALE * 100}%`,
+          height: `${REALTIME_VOICE_GLYPH_SCALE * 100}%`,
+        }}
+        aria-hidden
+      />
+    : undefined
 
   const { rowRef, dragHandlers, dragPreview } = useSessionDragOut({
     folderPath,
@@ -170,13 +190,20 @@ export const SessionRow = memo(function SessionRow({
                 {session.isHidden ? <Eye className="size-3" /> : <EyeOff className="size-3" />}
               </button>
               <span className="pointer-events-none transition-opacity group-hover/session:opacity-0">
-                {remoteSessionIds.includes(session.sessionId)
-                  ? <Smartphone className="size-3 text-sidebar-foreground/70" />
-                  : HarnessIcon && harnessStatus !== 'default'
-                    ? <HarnessIcon status={harnessStatus} active={isSessionActive} renderLevel="compact" />
-                    : isRunning
-                      ? <SessionStatusSpinner stallLevel={stallLevel} />
-                      : <MessageSquare className="size-3 text-sidebar-foreground/70" />
+                {isRealtimeVoiceSession && HarnessIcon
+                  ? <HarnessIcon
+                      status="running"
+                      active={isSessionActive}
+                      renderLevel="compact"
+                      runningGlyph={voiceGlyph}
+                    />
+                  : remoteSessionIds.includes(session.sessionId)
+                    ? <Smartphone className="size-3 text-sidebar-foreground/70" />
+                    : HarnessIcon && harnessStatus !== 'default'
+                      ? <HarnessIcon status={harnessStatus} active={isSessionActive} renderLevel="compact" />
+                      : isRunning
+                        ? <SessionStatusSpinner stallLevel={stallLevel} />
+                        : <MessageSquare className="size-3 text-sidebar-foreground/70" />
                 }
               </span>
             </div>

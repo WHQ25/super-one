@@ -5,13 +5,12 @@ import { CodexCloudMark, CodexCloudOutline } from '@superone/ui/components/harne
 import { cn } from '@superone/ui/lib/utils'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { useRealtimeCallStore, type RealtimeCallState } from '@/stores/realtime-call'
+import { REALTIME_VOICE_GLYPH_SIZE, REALTIME_VOICE_MARK_SIZE } from '@/lib/realtime-voice-visuals'
 
-const MARK_SIZE = 84
-const GLYPH_SIZE = 30
 const NO_LIVE_ITEMS: never[] = []
 
 /** Matches the cloud, so the three columns share one baseline box. */
-const CAPTION_BOX: CSSProperties = { height: MARK_SIZE }
+const CAPTION_BOX: CSSProperties = { height: REALTIME_VOICE_MARK_SIZE }
 
 /**
  * One side's live caption: cloud-height, vertically centred while it fits, and
@@ -115,22 +114,22 @@ export function RealtimeCallIndicator({ frozenState }: RealtimeCallIndicatorProp
         style={{ '--voice-level': inputLevel } as CSSProperties}
       >
         <span className="realtime-voice-halo" aria-hidden>
-          <CodexCloudOutline size={MARK_SIZE} className="realtime-voice-halo-outline" />
+          <CodexCloudOutline size={REALTIME_VOICE_MARK_SIZE} className="realtime-voice-halo-outline" />
           <CodexCloudOutline
-            size={MARK_SIZE}
+            size={REALTIME_VOICE_MARK_SIZE}
             className="realtime-voice-halo-outline realtime-voice-halo-wave"
           />
           <CodexCloudOutline
-            size={MARK_SIZE}
+            size={REALTIME_VOICE_MARK_SIZE}
             className="realtime-voice-halo-outline realtime-voice-halo-wave"
           />
         </span>
         <span className="realtime-voice-mark-shell">
-          <CodexCloudMark size={MARK_SIZE} motion={connecting ? 'pulse' : 'still'}>
+          <CodexCloudMark size={REALTIME_VOICE_MARK_SIZE} motion={connecting ? 'pulse' : 'still'}>
             <AudioLines
               className="text-white"
               strokeWidth={2}
-              style={{ width: GLYPH_SIZE, height: GLYPH_SIZE }}
+              style={{ width: REALTIME_VOICE_GLYPH_SIZE, height: REALTIME_VOICE_GLYPH_SIZE }}
               aria-hidden
             />
           </CodexCloudMark>

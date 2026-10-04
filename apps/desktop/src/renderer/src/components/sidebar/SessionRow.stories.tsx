@@ -3,6 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
+import { useRealtimeCallStore } from '@/stores/realtime-call'
 import { useScheduledSendsStore } from '@/stores/scheduled-sends'
 import { SessionRow } from './SessionRow'
 
@@ -43,11 +44,13 @@ function Preview({
   rows,
   activeId,
   scheduledIds = [],
+  voiceCallSessionId,
   width = 280,
 }: {
   rows: RowSpec[]
   activeId?: string
   scheduledIds?: string[]
+  voiceCallSessionId?: string
   width?: number
 }) {
   const scheduledKey = scheduledIds.join(',')
@@ -56,6 +59,7 @@ function Preview({
     const prevApp = useAppStore.getState()
     const prevChat = useChatStore.getState()
     const prevSched = useScheduledSendsStore.getState()
+    const prevRealtimeCall = useRealtimeCallStore.getState()
     const project = createDefaultProjectState()
     project._activeSessionId = activeId ?? null
     for (const row of rows) {
@@ -81,12 +85,18 @@ function Preview({
     useScheduledSendsStore.setState({
       bySession: Object.fromEntries(scheduledIds.map((id) => [id, armed(id)])),
     })
+    useRealtimeCallStore.setState({
+      ...prevRealtimeCall,
+      sessionId: voiceCallSessionId ?? null,
+      state: voiceCallSessionId ? 'active' : 'idle',
+    })
     return () => {
       useAppStore.setState(prevApp)
       useChatStore.setState(prevChat)
       useScheduledSendsStore.setState(prevSched)
+      useRealtimeCallStore.setState(prevRealtimeCall)
     }
-  }, [activeId, scheduledKey, liveKey])
+  }, [activeId, scheduledKey, liveKey, voiceCallSessionId])
 
   return (
     <div className="bg-sidebar p-1.5 text-sidebar-foreground" style={{ width }} data-sidebar-inner>
@@ -154,6 +164,27 @@ export const Running: Story = {
     <Preview
       activeId="run"
       rows={[{ session: entry('run', 'Streaming a long turn'), status: 'streaming' }]}
+    />
+  ),
+}
+
+export const VoiceCallWhileIdle: Story = {
+  name: 'Voice call while Codex is idle',
+  render: () => (
+    <Preview
+      voiceCallSessionId="voice-idle"
+      rows={[{ session: entry('voice-idle', 'Realtime voice session', { provider: 'codex' }) }]}
+    />
+  ),
+}
+
+export const VoiceCallWhileWorking: Story = {
+  name: 'Voice call while Codex is working',
+  render: () => (
+    <Preview
+      activeId="voice-working"
+      voiceCallSessionId="voice-working"
+      rows={[{ session: entry('voice-working', 'Realtime voice session', { provider: 'codex' }), status: 'streaming' }]}
     />
   ),
 }

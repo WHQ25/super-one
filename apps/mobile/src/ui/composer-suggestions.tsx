@@ -18,7 +18,7 @@ import { mentionGlyphArtwork } from './mention-glyph-data'
 import { useMobileLocale } from '../i18n/context'
 import { mcpMentionGroupKey, mcpMentionHasStatus, type McpMentionSearchState } from '@superone/shared/mcp-app-mentions'
 
-function MatchText({ text, indices = [], muted }: { text: string; indices?: number[]; muted?: boolean }) {
+function MatchRuns({ text, indices = [] }: { text: string; indices?: number[] }) {
   const { tokens: { colors } } = useMobileTheme()
   const matching = new Set(indices)
   const runs: { value: string; matched: boolean }[] = []
@@ -30,12 +30,30 @@ function MatchText({ text, indices = [], muted }: { text: string; indices?: numb
     else runs.push({ value: char, matched })
     offset += char.length
   }
+  return runs.map((run, index) => <Text key={index} style={run.matched ? { color: colors.primary, fontWeight: '700' } : undefined}>{run.value}</Text>)
+}
+
+/**
+ * `note` is nested in the same line rather than a sibling, as the desktop's
+ * single `truncate` span: the line is cut at its end, so the name stays whole
+ * and a long note gives way first. Two shrinking siblings would share the
+ * shortfall and clip the name instead.
+ */
+function MatchText({ text, indices, muted, note }: {
+  text: string
+  indices?: number[]
+  muted?: boolean
+  note?: { text: string; indices: number[] }
+}) {
+  const { tokens: { colors } } = useMobileTheme()
+  const mutedStyle = { color: colors.mutedForeground, fontSize: 12, fontWeight: '400' } as const
   // `flexShrink` because RN's default is 0: in a row, a long name would
   // otherwise overflow its line and paint over whatever sits beside it.
   return <Text numberOfLines={1} style={muted
-    ? { flexShrink: 1, color: colors.mutedForeground, fontSize: 12 }
+    ? { flexShrink: 1, ...mutedStyle }
     : { flexShrink: 1, color: colors.foreground, fontSize: 13, fontWeight: '500' }}>
-    {runs.map((run, index) => <Text key={index} style={run.matched ? { color: colors.primary, fontWeight: '700' } : undefined}>{run.value}</Text>)}
+    <MatchRuns text={text} indices={indices} />
+    {note ? <Text style={mutedStyle}>{'  '}<MatchRuns text={note.text} indices={note.indices} /></Text> : null}
   </Text>
 }
 
@@ -272,10 +290,8 @@ export function MentionSuggestions({ rows, onSelect, search, onRetry, onLoadMore
                   what distinguishes it pushed to the end. Only a switched-off
                   capability or a commit adds a second line. */}
               <View style={{ flex: 1, gap: 2 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-                  <MatchText text={label} indices={labelIndices} />
-                  {inline ? <MatchText text={inline} indices={inlineMatchIndices} muted /> : null}
-                </View>
+                <MatchText text={label} indices={labelIndices}
+                  note={inline ? { text: inline, indices: inlineMatchIndices } : undefined} />
                 {hint ? <MatchText text={hint} indices={hintIndices} muted /> : null}
               </View>
               {trailing ? <Text numberOfLines={1} style={{ maxWidth: 96, color: colors.mutedForeground, fontSize: 11 }}>{trailing}</Text> : null}

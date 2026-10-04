@@ -2,7 +2,7 @@ import { useState, type ComponentProps } from 'react'
 import { MCP_MENTION_SEARCH_IDLE, type McpMentionSource } from '@superone/shared/mcp-app-mentions'
 import { View } from 'react-native'
 import { buildMentionRows } from '../mention-rows'
-import { gitRefItems } from '../git-mention'
+import { gitKindItems, gitRefItems } from '../git-mention'
 import { browseItems } from '../mention-browse'
 import {
   previewAgentProfiles, previewCapabilityIds, previewNestedEntries, previewRootMentionItems,
@@ -62,6 +62,12 @@ export const NarrowLongNames = { args: {
 export const InsideDirectory = { args: {
   rows: buildMentionRows('', { remote: browseItems(previewNestedEntries, 'src/ui/'), agentProfiles: [], scoped: true }),
   breadcrumbs: [{ label: 'src', query: 'src/' }, { label: 'ui', query: 'src/ui/' }],
+} }
+
+/** `@git` on a phone: each kind name stays whole and its `@handle · hint` note is cut at the end. */
+export const GitKindsNarrow = { args: {
+  width: 320,
+  rows: buildMentionRows('', { remote: gitKindItems('git', ''), agentProfiles: [], scoped: true }),
 } }
 
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()

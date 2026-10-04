@@ -1,10 +1,10 @@
 # Codex API surface
 
-Ledger version: `0.159.0` · Check: `bun scripts/harness-api-inventory.ts codex`
+Ledger version: `0.160.0` · Check: `bun scripts/harness-api-inventory.ts codex`
 
 Inventoried from the pinned npm binary, with and without `--experimental`. The
 checker covers RPC method names; field-level changes and feature flags are
-reviewed in [the upgrade record](upgrades/0.159.0.md). A notification appearing
+reviewed in [the upgrade record](upgrades/0.160.0.md). A notification appearing
 in the stable generated schema does not make its underlying feature stable.
 
 Statuses describe actual SuperOne integration, not every upstream field. `used`

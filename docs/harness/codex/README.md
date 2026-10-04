@@ -1,6 +1,6 @@
 # Codex integration
 
-Pin: `@openai/codex` `0.159.0` · Ledger version: `0.159.0` · Last updated: 2026-09-30
+Pin: `@openai/codex` `0.160.0` · Ledger version: `0.160.0` · Last updated: 2026-10-05
 
 ## Upstream
 
@@ -43,6 +43,7 @@ Desktop spawns `codex app-server` and speaks JSON-RPC over stdio with
 
 | Version | Date | Status | Upgrade doc | Commit |
 |---|---|---|---|---|
+| 0.160.0 | 2026-10-05 | executed | [0.160.0](upgrades/0.160.0.md) | — |
 | 0.159.0 | 2026-09-30 | executed | [0.159.0](upgrades/0.159.0.md) | — |
 | 0.155.1 | 2026-09-22 | executed | — | `a9291b513` |
 | 0.154.0 | 2026-09-12 | executed | [0.154](upgrades/0.154/README.md) | `18654457f` |

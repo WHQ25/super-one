@@ -23,6 +23,8 @@ reason). Behavior these rows rely on: [contracts.md](contracts.md).
 | 13 | `Model.availableAccessPrograms` | ≤0.159.0 | Describe model-specific access programs in the picker | Metadata is currently ignored; semantics and account/UI states need verification | open |
 | 14 | Saved `disabledPluginIds` on thread/turn settings | ≤0.159.0 | Future plugin selection per conversation | Upstream schema explicitly says the IDs do not yet filter plugin capabilities; a toggle would promise behavior the runtime does not enforce | open; wait for enforced filtering before exposing controls |
 | 15 | `rollout/compress` | ≤0.159.0 | Compress persisted provider rollouts | Experimental storage operation; separate from context compaction and SuperOne's session lifecycle | open; no current call |
+| 16 | `features.guardian_conversation_history_tools` | 0.160.0 | Recover earlier user authorization and revocations during automatic review | Under development, off by default; requires parent Apps `user_message.search_messages/read_messages`, per-call policy checks and bounded outputs; does not expose SuperOne local history automatically | open; deferred in [0.160.0](upgrades/0.160.0.md) |
+| 17 | `features.guardian_root_handoff_context` | 0.160.0 | Select worker-relevant root context and retain recent cancellation messages | Off by default; validate delegation, ancestor handoffs and authorization revocations before enabling | open; deferred in [0.160.0](upgrades/0.160.0.md) |
 
 The 0.159.0 review also includes runtime-native transparent image generation and
 file-backed image edits (0.158.0). Existing attachment/image-result paths can carry

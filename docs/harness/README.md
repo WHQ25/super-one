@@ -13,7 +13,7 @@ downloaded, installed and gated is in [runtime-delivery.md](runtime-delivery.md)
 | Harness | Pin | Ledger |
 |---|---|---|
 | [claude](claude/README.md) | `@anthropic-ai/claude-agent-sdk` 0.3.287 | 0.3.287, script-checked |
-| [codex](codex/README.md) | `@openai/codex` 0.159.0 | 0.159.0, script-checked |
+| [codex](codex/README.md) | `@openai/codex` 0.160.0 | 0.160.0, script-checked |
 | [dsh](dsh/README.md) | `@deepseek-ai/dsh-*` 0.1.7-rc.1 | not started |
 | [cursor](cursor/README.md) | `@cursor/sdk` 1.0.30 | not started |
 | [opencode](opencode/README.md) | `@opencode-ai/sdk` ^1.18.26; runtime 1.x and 2.x | not started |

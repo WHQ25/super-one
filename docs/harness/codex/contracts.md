@@ -20,6 +20,20 @@ enabled by `apps/desktop/src/main/codex/app-server-connection.ts`).
 - **Guard:** `packages/runtime/src/harness/managed-official-lockstep.test.ts`
   guards pin equality; entitlement and live catalog visibility require a live check.
 
+### Explicit provider catalogs are authoritative
+
+- **Behavior:** With `model_catalog_url`, 0.160.0 does not merge bundled models,
+  matches metadata by exact model ID, requires unique non-empty slugs, and clears
+  runtime/disk catalog entries after failed refresh. An empty catalog without an
+  explicitly configured model fails startup rather than choosing a bundled model.
+- **Observed:** 0.160.0 upstream [PR #49135](https://github.com/openai/codex/pull/49135)
+  and its regression tests; not exercised against a live custom catalog here.
+- **Depends on it:** `apps/desktop/src/main/codex/codex-experiment-service.ts#fetchModelsFromAppServer`
+  for app-server catalog configurations. SuperOne's custom-provider `/models`
+  fetch and application cache are separate and do not inherit this behavior.
+- **Guard:** Upstream model-manager/model-list tests; SuperOne custom-provider
+  tests guard its separate path. No dedicated live explicit-catalog check.
+
 ### Legacy fork boundaries resolve against provider turns before creating a fork
 
 - **Behavior:** 0.159.0 removes `thread/rollback`. For old SuperOne messages without

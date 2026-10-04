@@ -180,7 +180,7 @@
     "@modelcontextprotocol/ext-apps": "1.7.5",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@musistudio/llms": "1.0.53",
-    "@openai/codex": "0.159.0",
+    "@openai/codex": "0.160.0",
     "@opencode-ai/models": "^0.0.62",
     "@opencode-ai/sdk": "^1.18.26",
     "@streamdown/math": "^1.0.2",

@@ -20,6 +20,7 @@ reason). Ledger rows: [api-surface.md](api-surface.md).
 | 10 | `thinking.display: 'highlights'` | ≤0.3.278 | Highlighted thinking | Only works on Anthropic-hosted models; third-party providers get nothing | rejected |
 | 11 | `usage_EXPERIMENTAL_…()` | ≤0.3.278 | Structured `/usage` data | Marked experimental; `claude-usage-service` already covers plan usage | rejected |
 | 12 | Draw mod UI (panes, the band above the prompt) | 0.3.287 (2.1.287) | Mods' panes, controls, transcript rewrites and `Client` parts in SuperOne, as Claude Desktop shows them | Rides an undeclared control protocol through `Query.request` / `setUiHost` (see [contracts](contracts.md#mod-ui-rides-a-private-control-protocol)); an SDK bump can break it silently, so each upgrade replays the recordings | adopt ([features/claude-mods.md](../../features/claude-mods.md)) |
+| 14 | `ui_read_selection` mod host request | 0.3.289 (native schema observed) | Lets a mod read the selection on a remote surface | Needs host request mapping and selection capture on desktop and phone | open |
 | 13 | `get_task_output` control request | 0.3.287 | Live tail of a background shell or Monitor task without reading its output file | No Query wrapper | open |
 
 ## Integration gaps
@@ -36,3 +37,7 @@ declares less than upstream offers.
 | G5 | Mod commands registered `immediate: true` queue behind a running turn | The SDK command list carries no `immediate` flag, so SuperOne cannot tell them from other commands | open, wait for the flag in `initializationResult().commands` |
 | G6 | Remote-node composers do not relay `prompt.edit` | A mod's live draft rewrite works only for local desktop sessions; a keystroke per network round trip was judged too costly | open |
 | G7 | Mod review and plugin options are local only | The Plugins page shows the hooks review and the `userConfig` form only for this Mac's plugins | open |
+
+SDK 0.3.289 adds an optional opaque `tag` to informational messages (item 1)
+and per-model `autoCompactWindow` settings. Both retain their existing handling;
+no host UI is added in this upgrade.

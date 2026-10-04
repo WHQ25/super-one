@@ -1,6 +1,6 @@
 # Claude Agent SDK API surface
 
-Ledger version: `0.3.287` · Check: `bun scripts/harness-api-inventory.ts claude`
+Ledger version: `0.3.289` · Check: `bun scripts/harness-api-inventory.ts claude`
 
 Every upstream interface of `@anthropic-ai/claude-agent-sdk` and how SuperOne uses it. Runtimes: **desktop** (local sessions), **node** (remote node CLI through `packages/claude`), **probe** (catalog queries with `maxTurns: 0`). Status vocabulary and row format: [docs/harness/README.md](../README.md#ledger-api-surfacemd). Undeclared messages and methods SuperOne relies on are in [contracts.md](contracts.md#typed-messages-may-not-be-emitted-untyped-ones-may-be).
 

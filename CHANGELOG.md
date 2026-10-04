@@ -87,8 +87,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 - Codex runtime upgraded to 0.160.0, improving startup reliability,
   plugin loading and explicit provider model catalogs.
-
-- Claude Agent SDK 0.3.287 (Claude Code 2.1.287) runs installed mods.
+- Claude Agent SDK 0.3.289 (Claude Code 2.1.289) runs installed mods.
   Steering lets running commands finish, and interrupted replies no
   longer appear to keep streaming.
 - Subagent and workflow cards remain visible outside compact details;

@@ -447,7 +447,7 @@ module that runs inside the CLI process. Upstream docs:
   rejects the request with `control_request_failed`, indistinguishable from
   "could not run". An `AbortSignal` sends `control_cancel_request`, and the
   server gets `notifications/cancelled`.
-- **Observed:** 0.3.287, live fixture server.
+- **Observed:** 0.3.287 and 0.3.289, live fixture server.
 - **Depends on it:** the dispatch gate in
   `packages/runtime/src/mcp-apps/provider-rpc.ts` enforces app visibility
   before the provider; `createClaudeMcpAppsProvider` reports a rejected call

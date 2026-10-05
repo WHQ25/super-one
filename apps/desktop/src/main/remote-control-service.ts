@@ -99,6 +99,29 @@ export interface RemoteControlCallbacks {
 type DeviceTransport = 'lan' | 'relay'
 type ConnectedDevice = { name: string; transports: Set<DeviceTransport> }
 
+/** One session's in-flight tool calls, keyed by tool_use id; reset when the session starts a reply. */
+interface LiveToolState {
+  bashCommands: Map<string, string>
+  todoInputs: Map<string, { toolName: string; input: string }>
+  widgetIds: Set<string>
+  agentIds: Set<string>
+  agentOutputFiles: Map<string, string>
+  workflowIds: Set<string>
+  workflowTranscriptDirs: Map<string, string>
+}
+
+function emptyLiveToolState(): LiveToolState {
+  return {
+    bashCommands: new Map(),
+    todoInputs: new Map(),
+    widgetIds: new Set(),
+    agentIds: new Set(),
+    agentOutputFiles: new Map(),
+    workflowIds: new Set(),
+    workflowTranscriptDirs: new Map(),
+  }
+}
+
 export class RemoteControlService {
   private relayWs: WebSocket | null = null
   private keys: { channelKeyHex: string; aesKey: webcrypto.CryptoKey } | null = null
@@ -118,13 +141,13 @@ export class RemoteControlService {
   private intentionallyClosed = false
 
   private lastThrottledAt = new Map<string, number>()
-  private bashToolCommands = new Map<string, string>()
-  private todoToolInputs = new Map<string, { toolName: string; input: string }>()
-  private widgetToolIds = new Set<string>()
-  private agentToolIds = new Set<string>()
-  private agentOutputFiles = new Map<string, string>()
-  private workflowToolIds = new Set<string>()
-  private workflowTranscriptDirs = new Map<string, string>()
+  /**
+   * What each live tool_result needs to know about its tool_use, per session: one
+   * service carries every session's stream, so a `message_start` in one session
+   * must not drop another session's in-flight calls (a widget result would then
+   * be truncated like any other and reach the phone as unparseable JSON).
+   */
+  private liveTools = new Map<string, LiveToolState>()
 
   private relayUrl = ''
   private lastLanActive = false
@@ -676,7 +699,7 @@ export class RemoteControlService {
     trace('remote.debug', 'sendAgentEvent:pass', { eventType: event.type, eventProject: event.projectPath, eventSession: event.sessionId, targets: targetDeviceIds })
 
     if (event.type === 'tool_input_delta' && 'toolUseId' in event) {
-      const entry = this.todoToolInputs.get(event.toolUseId as string)
+      const entry = this.liveTools.get(event.sessionId ?? '')?.todoInputs.get(event.toolUseId as string)
       if (entry) entry.input += (event as { partialJson: string }).partialJson
     }
 
@@ -694,15 +717,9 @@ export class RemoteControlService {
       this.lastThrottledAt.set(event.type, now)
     }
 
-    if (event.type === 'message_start') {
-      this.bashToolCommands.clear()
-      this.todoToolInputs.clear()
-      this.widgetToolIds.clear()
-      this.agentToolIds.clear()
-      this.agentOutputFiles.clear()
-      this.workflowToolIds.clear()
-      this.workflowTranscriptDirs.clear()
-    }
+    const sessionKey = event.sessionId ?? ''
+    if (event.type === 'message_start') this.liveTools.set(sessionKey, emptyLiveToolState())
+    const tools = this.liveToolsOf(sessionKey)
 
     if (event.type === 'content_delta') {
       if (event.delta.type === 'text' || event.delta.type === 'thinking') {
@@ -713,38 +730,38 @@ export class RemoteControlService {
         return
       }
       if (event.delta.type === 'tool_use' && event.delta.toolName === 'Bash') {
-        try { const p = JSON.parse(event.delta.input); this.bashToolCommands.set(event.delta.toolUseId, String(p.command ?? '')) } catch {}
+        try { const p = JSON.parse(event.delta.input); tools.bashCommands.set(event.delta.toolUseId, String(p.command ?? '')) } catch {}
       }
       if (event.delta.type === 'tool_use' && event.delta.toolName.endsWith('__widget_show')) {
-        this.widgetToolIds.add(event.delta.toolUseId)
+        tools.widgetIds.add(event.delta.toolUseId)
       }
       if (event.delta.type === 'tool_use' && isSubagentToolName(event.delta.toolName)) {
-        this.agentToolIds.add(event.delta.toolUseId)
+        tools.agentIds.add(event.delta.toolUseId)
       }
       if (event.delta.type === 'tool_use' && event.delta.toolName === 'Workflow') {
-        this.workflowToolIds.add(event.delta.toolUseId)
+        tools.workflowIds.add(event.delta.toolUseId)
       }
       if (event.delta.type === 'tool_use' && TODO_TOOLS.has(event.delta.toolName)) {
-        this.todoToolInputs.set(event.delta.toolUseId, { toolName: event.delta.toolName, input: event.delta.input })
+        tools.todoInputs.set(event.delta.toolUseId, { toolName: event.delta.toolName, input: event.delta.input })
         return
       }
       let stripped: AgentEvent
-      if (event.delta.type === 'tool_result' && this.todoToolInputs.has(event.delta.toolUseId)) {
-        const entry = this.todoToolInputs.get(event.delta.toolUseId)!
+      if (event.delta.type === 'tool_result' && tools.todoInputs.has(event.delta.toolUseId)) {
+        const entry = tools.todoInputs.get(event.delta.toolUseId)!
         const toolTodos = resolveTodoToolTodos(entry.toolName, entry.input, event.delta.toolTodos)
         stripped = { ...event, delta: { type: 'todo_result', toolUseId: event.delta.toolUseId, summary: event.delta.summary, parentToolUseId: event.delta.parentToolUseId, todoToolName: entry.toolName, toolTodos } }
-      } else if (event.delta.type === 'tool_result' && this.widgetToolIds.has(event.delta.toolUseId)) {
+      } else if (event.delta.type === 'tool_result' && tools.widgetIds.has(event.delta.toolUseId)) {
         stripped = { ...event, delta: event.delta }
-      } else if (event.delta.type === 'tool_result' && this.bashToolCommands.has(event.delta.toolUseId)) {
+      } else if (event.delta.type === 'tool_result' && tools.bashCommands.has(event.delta.toolUseId)) {
         const output = truncateBashOutput(event.delta.summary)
         stripped = { ...event, delta: { type: 'bash_result', toolUseId: event.delta.toolUseId, summary: output, parentToolUseId: event.delta.parentToolUseId, outputTokens: parseAnsiTokens(output) } }
-      } else if (event.delta.type === 'tool_result' && this.agentToolIds.has(event.delta.toolUseId)) {
+      } else if (event.delta.type === 'tool_result' && tools.agentIds.has(event.delta.toolUseId)) {
         const outputMatch = event.delta.summary?.match(/output_file:\s*(\S+)/)
-        if (outputMatch) this.agentOutputFiles.set(event.delta.toolUseId, outputMatch[1])
+        if (outputMatch) tools.agentOutputFiles.set(event.delta.toolUseId, outputMatch[1])
         stripped = { ...event, delta: event.delta }
-      } else if (event.delta.type === 'tool_result' && this.workflowToolIds.has(event.delta.toolUseId)) {
+      } else if (event.delta.type === 'tool_result' && tools.workflowIds.has(event.delta.toolUseId)) {
         const dir = parseWorkflowTranscriptDir(event.delta.summary)
-        if (dir) this.workflowTranscriptDirs.set(event.delta.toolUseId, dir)
+        if (dir) tools.workflowTranscriptDirs.set(event.delta.toolUseId, dir)
         stripped = stripEventForRemote(event, event.projectPath)
       } else {
         stripped = stripEventForRemote(event, event.projectPath)
@@ -756,14 +773,14 @@ export class RemoteControlService {
 
     let enriched = event
     if (event.remoteView !== 'summary' && event.type === 'task_progress' && event.toolUseId) {
-      const outputFile = this.agentOutputFiles.get(event.toolUseId)
+      const outputFile = tools.agentOutputFiles.get(event.toolUseId)
       if (outputFile) {
         const { resultText: activityText, toolEntries } = readOutputFile(outputFile, event.projectPath)
         enriched = { ...event, ...(activityText ? { activityText } : {}), ...(toolEntries.length > 0 ? { toolEntries } : {}) }
       }
     }
-    if (event.remoteView !== 'summary' && (enriched.type === 'task_progress' || enriched.type === 'task_notification') && enriched.toolUseId && this.workflowToolIds.has(enriched.toolUseId)) {
-      const dir = this.workflowTranscriptDirs.get(enriched.toolUseId)
+    if (event.remoteView !== 'summary' && (enriched.type === 'task_progress' || enriched.type === 'task_notification') && enriched.toolUseId && tools.workflowIds.has(enriched.toolUseId)) {
+      const dir = tools.workflowTranscriptDirs.get(enriched.toolUseId)
       if (dir) {
         const workflowAgents = listWorkflowAgentsSync(dir)
         if (workflowAgents.length > 0) enriched = { ...enriched, workflowAgents }
@@ -796,6 +813,12 @@ export class RemoteControlService {
     } catch (err) {
       log.error('[RemoteControl] Failed to send response:', err)
     }
+  }
+
+  private liveToolsOf(sessionKey: string): LiveToolState {
+    let state = this.liveTools.get(sessionKey)
+    if (!state) this.liveTools.set(sessionKey, state = emptyLiveToolState())
+    return state
   }
 
   private queueSend(events: AgentEvent[], targetDeviceIds?: string[]): void {

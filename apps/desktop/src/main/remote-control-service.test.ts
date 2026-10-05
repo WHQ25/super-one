@@ -539,6 +539,20 @@ describe('RemoteControlService content_delta ordering', () => {
     },
   )
 
+  it('keeps a live widget result whole while another session starts a reply', async () => {
+    const { service, captured } = makeService()
+    const summary = JSON.stringify({ title: 'w', widget_code: `<div>${'x'.repeat(400)}</div>`, width: 800, height: 600, isSVG: false })
+    await service.sendAgentEvent({ type: 'content_delta', sessionId: 's1', messageId: 'm1',
+      delta: toolUseBlock('mcp__superone__widget_show', { title: 'w' }, 'widget-1') } as AgentEvent)
+    await service.sendAgentEvent({ type: 'message_start', sessionId: 's2',
+      message: { id: 'm2', role: 'assistant', status: 'streaming', createdAt: '', providerId: 'claude', content: [] } } as AgentEvent)
+    await service.sendAgentEvent({ type: 'content_delta', sessionId: 's1', messageId: 'm1',
+      delta: { type: 'tool_result', toolUseId: 'widget-1', summary } } as AgentEvent)
+    expect(captured).toContainEqual(expect.objectContaining({
+      type: 'content_delta', delta: expect.objectContaining({ type: 'tool_result', toolUseId: 'widget-1', summary }),
+    }))
+  })
+
   function deltaSig(e: AgentEvent): string {
     if (e.type !== 'content_delta') return e.type
     const d = (e as Extract<AgentEvent, { type: 'content_delta' }>).delta

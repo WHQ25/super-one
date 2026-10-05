@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { PortableWidgetBlock } from './PortableWidgetBlock'
+import { PortableToolRow } from './PortableToolRow'
 import { PortableTurnContext } from './portable-turn-context'
 import type { WidgetData } from '@superone/shared/generative-ui/types'
 import { SETTINGS_MOCKUP_WIDGET } from './fixtures/widget-mockup'
@@ -170,5 +171,20 @@ export const Blended: Story = {
         <p style="margin:0;color:var(--color-text-secondary)">Only the transcript behind it.</p>
       </div>`,
     }),
+  },
+}
+
+export const Lifecycle: Story = {
+  name: 'Tool row lifecycle · generating, then the widget',
+  // The phone stops at the desktop's first stage while the call streams — it never
+  // receives the partial input — and swaps in the widget once the result lands.
+  render: () => {
+    const result = JSON.stringify(widget())
+    return (
+      <div className="space-y-4">
+        <PortableToolRow toolName="mcp__superone__widget_show" toolUseId="widget-streaming" input="" status="streaming" />
+        <PortableToolRow toolName="mcp__superone__widget_show" toolUseId="widget-complete" input={result} status="complete" result={result} />
+      </div>
+    )
   },
 }

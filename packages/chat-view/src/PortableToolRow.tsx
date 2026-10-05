@@ -1,4 +1,5 @@
 import { useContext, useMemo, useState, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { requestNative } from './bridge'
@@ -21,6 +22,7 @@ import { AppToolBlockPresenter } from './presenters/AppToolBlock'
 import { FileChipShell } from './presenters/FileChipShell'
 import { AnsiText } from './presenters/ansi'
 import { ToolIcon } from './presenters/ToolIcon'
+import { CompactLabeledToolRow } from './presenters/ToolRow'
 import { BashTerminalPresenter } from './presenters/BashTerminalPresenter'
 import type { BashEditToolUse } from '@superone/shared/bash-edit-diff'
 import { parseNativeDiff, type NativeDiffLine } from './presenters/remote-diff'
@@ -228,6 +230,22 @@ function parseMiniAppIdentity(input: string): { appId: string; tool: string } | 
 }
 
 function PortableMiniAppTool({
+/**
+ * The desktop's first widget stage. The phone never receives the streamed input
+ * (`tool_input_delta` stays on the desktop), so it holds this row until the result
+ * lands instead of drawing a partial widget.
+ */
+function PortableWidgetGenerating() {
+  const { t } = useTranslation()
+  return (
+    <CompactLabeledToolRow
+      icon={<ToolIcon icon="canvas" className="size-3 shrink-0 text-muted-foreground" />}
+      label={t('chat.toolBlock.generatingWidget')}
+      streaming
+    />
+  )
+}
+
   identity,
   result,
   status,
@@ -375,6 +393,7 @@ export function PortableToolRow({ allowExpand = true, ...props }: PortableToolRo
     return (
       <PortableMiniAppTool
         identity={miniApp}
+  if (isWidgetTool && props.status === 'streaming') return <PortableWidgetGenerating />
         result={props.result}
         status={props.status}
         allowExpand={allowExpand}

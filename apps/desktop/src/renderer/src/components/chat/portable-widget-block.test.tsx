@@ -74,7 +74,9 @@ describe('code widget on the phone', () => {
     expect(container.querySelector('iframe')!.style.height).toBe('420px')
   })
 
-  it('keeps the ordinary row while the call is still streaming', () => {
+  it('shows the desktop generating row while the call is still streaming', () => {
+    // The phone gets no partial input, so it stops at the desktop's first stage
+    // rather than falling back to the generic `superone · widget show` row.
     const { container } = renderWidgetRow({ status: 'streaming', result: undefined })
     expect(container.querySelector('iframe')).toBeNull()
   })
@@ -103,6 +105,8 @@ describe('code widget on the phone', () => {
         result={widgetResult({ templateId: 'composer-options' })}
       />,
     )
+    expect(container.textContent).toContain('Generating widget…')
+    expect(container.textContent).not.toContain('widget show')
     expect(container.querySelector('[aria-label="Update template"]')).not.toBeNull()
   })
 

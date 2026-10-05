@@ -13,6 +13,13 @@ interface GateEntry {
 
 const gates = new Map<string, GateEntry>()
 
+/**
+ * How long a widget call waits for the desktop iframe. The wait only keeps the desktop
+ * transcript from racing ahead of a loading frame; a frame that never reports (a
+ * hidden or throttled window) must not hold the agent's turn hostage.
+ */
+export const WIDGET_READY_TIMEOUT_MS = 10_000
+
 function entryFor(widgetId: string): GateEntry {
   const existing = gates.get(widgetId)
   if (existing) return existing
@@ -25,7 +32,7 @@ function dropIfIdle(widgetId: string, entry: GateEntry): void {
   if (entry.waiters.length === 0 && entry.ready === 0) gates.delete(widgetId)
 }
 
-export function waitForWidgetReady(widgetId: string): Promise<void> {
+export function waitForWidgetReady(widgetId: string, timeoutMs = WIDGET_READY_TIMEOUT_MS): Promise<void> {
   const entry = entryFor(widgetId)
   if (entry.ready > 0) {
     entry.ready--
@@ -37,7 +44,17 @@ export function waitForWidgetReady(widgetId: string): Promise<void> {
   log.info(`[widget-gate] wait title="${widgetId}"`)
   trace('widget.gate', 'wait', { title: widgetId })
   return new Promise<void>((resolve) => {
-    entry.waiters.push({ resolve, startMs: Date.now() })
+    const timer = setTimeout(() => {
+      const index = entry.waiters.indexOf(waiter)
+      if (index < 0) return
+      entry.waiters.splice(index, 1)
+      log.warn(`[widget-gate] timeout title="${widgetId}" after ${timeoutMs}ms`)
+      trace('widget.gate', 'timeout', { title: widgetId, timeoutMs })
+      dropIfIdle(widgetId, entry)
+      resolve()
+    }, timeoutMs)
+    const waiter: Waiter = { resolve: () => { clearTimeout(timer); resolve() }, startMs: Date.now() }
+    entry.waiters.push(waiter)
   })
 }
 

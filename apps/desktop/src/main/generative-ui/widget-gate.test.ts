@@ -49,6 +49,23 @@ describe('widget ready gate', () => {
     expect(await settled(second)).toBe(false)
   })
 
+  it('gives up on a frame that never reports, so the agent turn moves on', async () => {
+    vi.useFakeTimers()
+    try {
+      const waiting = waitForWidgetReady('hidden_window', 10_000)
+      await vi.advanceTimersByTimeAsync(9_999)
+      expect(await settled(waiting)).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(await settled(waiting)).toBe(true)
+      // The timed-out waiter left the queue: a late notify is banked, not delivered to it.
+      const next = waitForWidgetReady('hidden_window', 10_000)
+      notifyWidgetReady('hidden_window')
+      expect(await settled(next)).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('unblocks every pending waiter on teardown so tool calls never hang', async () => {
     const first = waitForWidgetReady('a')
     const second = waitForWidgetReady('a')

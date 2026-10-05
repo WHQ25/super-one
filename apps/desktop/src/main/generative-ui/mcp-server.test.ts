@@ -15,6 +15,7 @@ import { parseNativeWidgetResult } from '@superone/shared/generative-ui/native-w
 import { executeWidgetShowTool, listWidgetTemplatesHandler } from './mcp-server'
 import { saveTemplate } from './template-store'
 import { markZoneOwner } from '../environment/zone-owner'
+import { clearAllGates, notifyWidgetReady } from './widget-gate'
 
 const created: string[] = []
 
@@ -49,6 +50,28 @@ describe('widget_show rendering a native SuperOne surface', () => {
   // Called here without the tool call scope the MCP surface would give it:
   // the zone marker says the session is this desktop's own.
   beforeEach(() => markZoneOwner('sess-native', null))
+
+  it('returns at once when no desktop view draws the session, so a phone-driven call cannot hang', async () => {
+    const result = await executeWidgetShowTool(
+      { title: 'phone_only', widget_code: '<div>hi</div>' },
+      { sessionId: 'sess-phone', isShownOnDesktop: () => false },
+    )
+    expect(result.content[0]!.text).toContain('phone_only')
+  })
+
+  it('waits for the desktop frame while a desktop view draws the session', async () => {
+    let settled = false
+    const call = executeWidgetShowTool(
+      { title: 'desktop_shown', widget_code: '<div>hi</div>' },
+      { sessionId: 'sess-desktop', isShownOnDesktop: () => true },
+    ).then(() => { settled = true })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(settled).toBe(false)
+    notifyWidgetReady('desktop_shown')
+    await call
+    expect(settled).toBe(true)
+    clearAllGates()
+  })
 
   it('returns a payload the chat gallery owns, instead of widget code for a frame', async () => {
     const result = await executeWidgetShowTool({

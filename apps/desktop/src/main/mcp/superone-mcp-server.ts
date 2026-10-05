@@ -229,6 +229,11 @@ export function getSessionHost(): SessionTitleHost | null {
   return sessionHostProvider?.() ?? null
 }
 
+/** `widget_show`'s ready gate applies only while a desktop view draws the session. */
+export function isShownOnDesktop(sessionId: string): () => boolean {
+  return () => getSessionHost()?.isSessionForeground?.(sessionId) ?? false
+}
+
 type AppSettingsApplier = BuiltInSuperoneToolDeps['applyAppSettings']
 
 let appSettingsApplier: AppSettingsApplier | null = null
@@ -288,6 +293,7 @@ export function createSuperoneMcpServer(sessionId: string, projectPath?: string)
   registerWidgetTools(server, {
     projectPath,
     sessionId,
+    isShownOnDesktop: isShownOnDesktop(sessionId),
     resolveSessionRoot: () => getSessionHost()?.getSession(sessionId)?.cwd || projectPath,
   })
   registerBrowserTools(server, sessionId)

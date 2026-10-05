@@ -155,6 +155,8 @@ export interface SessionTitleHost {
   getSession(sessionId: string): SessionTitleSetter | null
 }
 
+  /** A desktop view (pane, mosaic tile or mini window) is drawing this session. */
+  isSessionForeground?(sessionId: string): boolean
 function collaborationHost(deps: BuiltInSuperoneToolDeps): SessionManager {
   const host = deps.sessionHost as SessionManager | null
   if (!host?.createSession || !host?.disposeSession) throw new Error('Session collaboration host is unavailable')

@@ -596,6 +596,10 @@ export class SessionManagerImpl implements SessionManagerContract {
     for (let views = this.foregroundViews.get(session.id) ?? 0; views > 0; views--) session.setForeground(true)
   }
 
+  isSessionForeground(sessionId: string): boolean {
+    return this.foregroundViews.has(sessionId)
+  }
+
   setSessionForeground(sessionId: string, visible: boolean): void {
     const views = Math.max(0, (this.foregroundViews.get(sessionId) ?? 0) + (visible ? 1 : -1))
     if (views > 0) this.foregroundViews.set(sessionId, views)

@@ -26,6 +26,7 @@ import {
   getSessionHost,
   getAppSettingsApplier,
   getTerminalToolDeps,
+  isShownOnDesktop,
   miniappToolDepsForSurface,
   notifyDevAppReady,
 } from './superone-mcp-server'
@@ -227,6 +228,7 @@ async function runSuperoneMcpTool(
     return executeWidgetShowTool(args, {
       projectPath,
       sessionId,
+      isShownOnDesktop: isShownOnDesktop(sessionId),
       resolveSessionRoot: () => getSessionHost()?.getSession(sessionId)?.cwd || projectPath,
       // A remote Host Action has no local SessionManager entry; the previewer's
       // context comes from the owning node instead (inline-files-previewer.md §2.2).

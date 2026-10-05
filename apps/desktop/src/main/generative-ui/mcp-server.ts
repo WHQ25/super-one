@@ -11,6 +11,12 @@ import type { TemplateRoots } from './template-store'
 
 interface WidgetToolsOptions {
   skipWidgetGate?: boolean
+  /**
+   * Whether a desktop view is drawing this session right now. The ready gate only
+   * exists for that view; a session driven from the phone with nothing open on the
+   * desktop has no frame to wait for, and waiting would hang the call.
+   */
+  isShownOnDesktop?: () => boolean
   projectPath?: string
   /** Scopes where agent-supplied media bytes are written, mirroring media_generate_*. */
   sessionId?: string
@@ -143,7 +149,7 @@ export async function executeWidgetShowTool(
       text: `⚠️ CDN VIOLATION: The following URLs were blocked (not in allowlist: ${['cdnjs.cloudflare.com', 'esm.sh', 'cdn.jsdelivr.net', 'unpkg.com'].join(', ')}):\n${violations.map((u) => `  - ${u}`).join('\n')}\nThe widget will render without these resources. Re-call widget_show with corrected URLs from the allowlist.`,
     })
   }
-  if (!opts?.skipWidgetGate && !template) {
+  if (!opts?.skipWidgetGate && !template && opts?.isShownOnDesktop?.()) {
     const { waitForWidgetReady } = await import('./widget-gate')
     await waitForWidgetReady(title)
   }

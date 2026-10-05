@@ -8,6 +8,8 @@ import { Button } from '@superone/ui/components/ui/button'
 import { AutoResizeTextarea } from '@superone/ui/components/ui/auto-resize-textarea'
 import { Label } from '@superone/ui/components/ui/label'
 import { PNG_ATTACHMENT } from '@superone/shared/test-fixtures/attachments'
+import type { MediaComposerAPI } from '@superone/shared/media-composer'
+import sampleVideo from '../../../../../../mobile/assets/preview/sample-clip.mp4?url'
 import { elicitationFormRequest } from '@superone/shared/schema-form'
 import { mockIpc } from '../../../../../.storybook/mock-ipc'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
@@ -42,12 +44,12 @@ const draft = '这是尚未发送的草稿，审批结束后应完整恢复。'
 const draftDoc: JSONContent = plainTextToTiptapDoc(draft)
 draftDoc.content!.push({ type: 'paragraph', content: [{ type: 'attachment', attrs: { id: PNG_ATTACHMENT.id } }] })
 
-type ComposerFlowScenario = 'text' | 'voice' | 'consent' | 'elicitation' | 'stack'
+type ComposerFlowScenario = 'text' | 'voice' | 'consent' | 'elicitation' | 'stack' | 'image' | 'video'
 
 function enqueueDecisions(scenario: ComposerFlowScenario) {
   const questionOnly = scenario === 'voice'
   const elicitation = scenario === 'elicitation'
-  const stack = scenario === 'stack'
+  const stack = scenario === 'stack' || scenario === 'image' || scenario === 'video'
   useChatStore.setState((state) => {
     const project = state.projectSessions[projectPath]
     if (!project) return state
@@ -109,6 +111,21 @@ function ComposerFlow({ narrow = false, scenario = 'text' }: { narrow?: boolean;
     const previousCatalog = useAppStore.getState().harnessCatalog
     const previousCalls = useRealtimeCallStore.getState()
     const previousRealtime = useCodexRealtimeViewStore.getState()
+    const media = scenario === 'image' || scenario === 'video'
+    const previousMedia = window.environment
+    let videoChecks = 0
+    const fixtureMedia: MediaComposerAPI = {
+      mediaModels: async kind => [{ providerId: 'fixture', providerLabel: 'Preview', model: `${kind}-model`, label: kind === 'image' ? 'Image Model' : 'Video Model', default: true }],
+      mediaGenerate: async request => {
+        await new Promise(resolve => setTimeout(resolve, request.kind === 'image' ? 600 : 0))
+        return { generationId: request.requestId, kind: request.kind, status: request.kind === 'image' ? 'succeeded' : 'running', files: request.kind === 'image'
+          ? [{ path: '/preview/generated.png', agentPath: '/preview/generated.png', mediaType: PNG_ATTACHMENT.mimeType, base64: PNG_ATTACHMENT.base64 }] : [] }
+      },
+      mediaCancel: async () => {}, mediaPendingVideos: async () => [],
+      mediaVideoStatus: async (_target, generationId) => ({ generationId, kind: 'video', status: ++videoChecks > 1 ? 'succeeded' : 'running',
+        files: videoChecks > 1 ? [{ path: new URL(sampleVideo, location.href).href, agentPath: '/preview/generated.mp4', mediaType: 'video/mp4' }] : [] }),
+    }
+    if (media) window.environment = { ...window.environment, ...fixtureMedia }
     const project = createDefaultProjectState()
     const session = createDefaultPerSessionState()
     Object.assign(session, {
@@ -137,6 +154,7 @@ function ComposerFlow({ narrow = false, scenario = 'text' }: { narrow?: boolean;
       useCodexRealtimeViewStore.setState(previousRealtime)
       useChatStore.setState(previous)
       useAppStore.setState({ harnessCatalog: previousCatalog })
+      if (media) window.environment = previousMedia
     }
   }, [scenario])
   const queue = () => {
@@ -225,3 +243,44 @@ export const ComposerStack: Story = {
   },
 }
 export const ComposerStackNarrow: Story = { ...ComposerStack, args: { scenario: 'stack', narrow: true } }
+
+export const NativeImage: Story = {
+  args: { scenario: 'image' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: i18n.t('mediaComposer.mode') }))
+    await userEvent.click(within(document.body).getByRole('menuitem', { name: i18n.t('mediaComposer.image') }))
+    const field = await canvas.findByRole('textbox', { name: i18n.t('mediaComposer.prompt') }, { timeout: 4_000 })
+    await waitFor(() => expect(canvas.getByTestId('composer-switch')).toHaveAttribute('data-phase', 'steady'))
+    await fireEvent.change(field, { target: { value: 'A watercolor mountain with a small cabin\nWarm light at dusk' } })
+    await userEvent.click(canvas.getByRole('button', { name: i18n.t('mediaComposer.generate') }))
+    await userEvent.click(canvas.getByRole('button', { name: '加入决策队列' }))
+    await userEvent.click(await canvas.findByRole('button', { name: name => name.startsWith(i18n.t('chat.permission.allow')) }, { timeout: 4_000 }))
+    await waitFor(() => expect(canvas.getByTestId('composer-switch')).toHaveAttribute('data-phase', 'steady'))
+    await expect(await canvas.findByRole('textbox', { name: i18n.t('mediaComposer.prompt') })).toHaveValue('A watercolor mountain with a small cabin\nWarm light at dusk')
+    await userEvent.click(await canvas.findByRole('button', { name: i18n.t('mediaComposer.insert') }, { timeout: 4_000 }))
+    await waitFor(() => expect(canvasElement.querySelector('[data-chat-input-editor]')).toHaveTextContent(draft), { timeout: 4_000 })
+    await expect(useChatStore.getState().projectSessions[projectPath]._sessions[sessionId].attachments).toHaveLength(2)
+  },
+}
+export const NativeImageNarrow: Story = { ...NativeImage, args: { scenario: 'image', narrow: true } }
+export const NativeVideo: Story = {
+  args: { scenario: 'video' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByRole('button', { name: i18n.t('mediaComposer.mode') }))
+    await userEvent.click(within(document.body).getByRole('menuitem', { name: i18n.t('mediaComposer.video') }))
+    const field = await canvas.findByRole('textbox', { name: i18n.t('mediaComposer.prompt') }, { timeout: 4_000 })
+    await waitFor(() => expect(canvas.getByTestId('composer-switch')).toHaveAttribute('data-phase', 'steady'))
+    await fireEvent.change(field, { target: { value: 'A slow camera move through a forest' } })
+    await userEvent.click(canvas.getByRole('button', { name: i18n.t('mediaComposer.generate') }))
+    await userEvent.click(await canvas.findByRole('button', { name: i18n.t('mediaComposer.stopPolling') }))
+    await userEvent.click(canvas.getByRole('button', { name: i18n.t('mediaComposer.check') }))
+    await waitFor(() => expect(canvas.getByRole('button', { name: i18n.t('mediaComposer.check') })).toBeEnabled())
+    await userEvent.click(canvas.getByRole('button', { name: i18n.t('mediaComposer.check') }))
+    await userEvent.click(await canvas.findByRole('button', { name: i18n.t('mediaComposer.insert') }))
+    await waitFor(() => expect(canvasElement.querySelector('[data-chat-input-editor]')).toHaveTextContent('/preview/generated.mp4'), { timeout: 4_000 })
+    await expect(canvasElement.querySelector('[data-chat-input-editor]')).toHaveTextContent(draft)
+  },
+}
+export const NativeVideoNarrow: Story = { ...NativeVideo, args: { scenario: 'video', narrow: true } }

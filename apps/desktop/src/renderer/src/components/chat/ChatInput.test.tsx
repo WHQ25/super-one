@@ -1219,10 +1219,10 @@ describe('ChatInput slash command grouping', () => {
 
     // Claude accepts extra roots, so the host `/add-dir` entry joins the
     // commands group — skills still come after every command.
-    expect(order.slice(0, 4).sort()).toEqual([
-      '/add-dir[project|session] [dir]', '/clear', '/compact', '/goal<condition>',
+    expect(order.slice(0, 6).sort()).toEqual([
+      '/add-dir[project|session] [dir]', '/clear', '/compact', '/goal<condition>', '/image', '/video',
     ])
-    expect(order.slice(4, 6).sort()).toEqual(['/release', '/tdd'])
+    expect(order.slice(6, 8).sort()).toEqual(['/release', '/tdd'])
   })
 
   it('limits slash command and skill descriptions to two lines', () => {

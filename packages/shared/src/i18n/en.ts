@@ -1,4 +1,5 @@
 import { interactionMemoryEn } from './interaction-memory'
+import { mediaComposerEn } from './media-composer'
 /**
  * One device-setup dialog's worth of copy.
  *
@@ -14,6 +15,7 @@ type SetupAdvice = {
 }
 
 export type Messages = {
+  mediaComposer: typeof mediaComposerEn
   grokAuth: {
     title: string
     signedOut: string
@@ -4128,6 +4130,7 @@ export type Messages = {
 }
 
 export const en: Messages = {
+  mediaComposer: mediaComposerEn,
   grokAuth: {
     title: "Grok Account",
     signedOut: "Not Signed In",

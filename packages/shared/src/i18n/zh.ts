@@ -1,7 +1,9 @@
 import { interactionMemoryZh } from './interaction-memory'
+import { mediaComposerZh } from './media-composer'
 import type { Messages } from './en'
 
 export const zh: Messages = {
+  mediaComposer: mediaComposerZh,
   grokAuth: {
     title: "Grok 账户",
     signedOut: "未登录",

@@ -46,6 +46,54 @@ even after a sticky submission, and unregistering a component closes its entries
 in every session. Cancellation settles each promise once and removes listeners.
 This state is transient renderer state; it is not saved across app restarts.
 
+## Native image and video generation
+
+The toolbar's composer mode picker and host slash commands `/image` and `/video`
+open persistent native composers on every desktop harness. `/image <prompt>` and
+`/video <prompt>` seed the generation prompt. Existing chat text, rich content and
+attachments stay in the chat draft; supported attached images also seed the
+reference list. The prompt starts at one row and grows with content; Enter
+generates, while Shift+Enter and Alt+Enter insert a newline.
+
+`openMediaComposer(target, kind, { lifetime, prompt, references, output, signal })`
+loads and registers `superone.image` / `superone.video` lazily, then opens the
+session's stack. `caller` keeps the completed result in the composer with Copy,
+Save, Insert into Draft, Send to Agent and Use Results actions. Use Results
+resolves the open promise; a temporary composer pops and a persistent one stays.
+`agent` inserts the result into the owning chat draft and sends it through the
+ordinary session send path. Image attachments, paste chips and mentions preserve
+their order. A failed admission leaves the draft available; retrying insertion
+does not duplicate generated attachments. Later edits are not erased by a send
+acknowledgement. Insert into Draft returns to the ordinary chat composer.
+
+Models are enabled models from the existing `media:image` and `media:video`
+consumers, filtered independently by capability and usable credentials. The
+selected credential/model pair is validated again before generation; a removed
+model does not silently fall back. An empty picker links to Settings → Providers.
+Image controls include reference images, size and aspect ratio. Video controls
+add duration, resolution and reference / first-frame / last-frame roles.
+
+The preload `window.environment` media API owns generation, cancellation, video
+status and unfinished-job recovery. Provider SDKs and secrets stay on the desktop
+Host, which calls the existing media-gen services with `source: 'human'`. Remote
+sessions use the same Host credentials and sync-zone artifact delivery as agent
+media tools. Desktop paths are retained for previews and saving; remote video
+links can enter the agent draft only after delivery to the node finishes.
+An unsent remote draft first gets a node session without starting an agent turn;
+its latest draft and mosaic pane then adopt that identity before the media mode
+opens. Navigation during this preparation does not redirect the request.
+
+Generation runs survive approval or consent preemption without restarting or
+sending twice. Closing an entry or destroying its window aborts its image request
+or in-flight video submission. Once a video has been submitted, its provider task
+id is durable: checks run every 30 seconds while the composer is active, can be
+paused or requested manually, and resume from unfinished human jobs when the
+composer reopens. Pausing or closing stops future checks; it does not cancel the
+provider's render. Concurrent status checks share one fetch/download. Transport
+errors retain the pending job for retry. Composer form drafts remain renderer
+local; only the submitted video handle survives an app restart. `session` output
+and the declarative external composer API remain proposal open questions.
+
 ## Decision queue
 
 Each session owns its pending decisions. Desktop displays them in this stable

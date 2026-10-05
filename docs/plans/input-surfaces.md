@@ -115,16 +115,16 @@ the AI gateway exists, then migrate the routing when the gateway is available.
 
 - [x] 2.1 Composer stack: a per-session store with `open(id, opts)` → Promise,
   `once` push/pop and `sticky` base replacement. Decision tier still wins.
-- 2.2 Main: `media:generate` IPC over `generateAndRecord({ source: 'human' })`,
+- [x] 2.2 Main: `media:generate` IPC over `generateAndRecord({ source: 'human' })`,
   abortable, routed through `window.environment` for remote nodes.
-- 2.3 `ImageComposer`: prompt, reference images, size/aspect, model picker from
+- [x] 2.3 `ImageComposer`: prompt, reference images, size/aspect, model picker from
   the `media:image` consumer; `sticky` mode with a toggle back to chat.
-- 2.4 Entry points: host slash command `/image` (added next to `/add-dir`,
+- [x] 2.4 Entry points: host slash command `/image` (added next to `/add-dir`,
   `/side`, `/goal`) and a composer-toolbar mode button.
-- 2.5 Output: `agent` — attach the generated images to the chat draft and send;
+- [x] 2.5 Output: `agent` — attach the generated images to the chat draft and send;
   `caller` — results stay in the composer with copy / save / insert-to-draft.
   `session` output waits for proposal open question 1.
-- Video composer follows the same shape once 2.x lands; generation is async
+- [x] Video composer follows the same shape; generation is async
   (`media_video_status`), so it needs a pending result row.
 
 ## Phase 3–4 — prerequisites only
@@ -158,14 +158,15 @@ focus restoration after a direct plan, and a later return without focus steal.
 - [x] 1.4 Draft and misfire rules
 - [x] 1.5 Docs and cleanup
 - [x] 2.1 Composer stack
-- [ ] 2.2–2.5 Image generation, composer, entry points and output
+- [x] 2.2–2.5 Image generation, composer, entry points and output
+- [x] Native video composer and durable pending jobs
 
 Phase 1 delivered on 2026-10-05. Desktop now resolves and renders the decision,
 MCP App consent, realtime voice, and text composers through the registry. The
 decision composer queues permissions and questions without a position counter;
 plan approval follows in the original full-screen review. Draft restoration,
-focus handoff, and shortcut guards are covered by focused tests. The rest of
-phase 2 and phases 3–4 remain future work.
+focus handoff, and shortcut guards are covered by focused tests. Phase 2 is
+delivered; phases 3–4 remain future work.
 
 Step 2.1 adds a renderer-local stack keyed by project and session, native
 registration, and `composerForSession(target).open(id, opts)`. Temporary entries
@@ -181,6 +182,30 @@ Step 2.1 verification:
 - `ComposerSlotFlow` production stories cover persistent → temporary → permission
   → temporary → persistent → text, preserving both form drafts and the chat draft
   with its attachment. Checked wide light/en and narrow dark/zh layouts.
+
+Steps 2.2–2.5 and video delivered on 2026-10-06. The native modes use the
+existing media-gen consumers and human history records. Both toolbar and slash
+entry points capture the session before loading. Results support copying,
+saving, rich-draft insertion and ordinary agent sending. Images are abortable;
+video submission returns a durable task id with manual / 30-second checks,
+pause and recovery. Remote files use the existing Host sync zone; unsynced video
+paths are withheld from agent drafts. The `session` output question stays parked.
+
+Phase 2 verification:
+
+- `bun run typecheck:web` and `bun run typecheck:node`.
+- Ten focused Vitest files, 120 tests: human generation, model filtering,
+  cancellation isolation, real sync-zone delivery against a fake remote RPC,
+  video recovery / coalesced checks, UI preemption, ordinary chat input, composer
+  stacks and rich result insertion / sending.
+  Remote draft preparation is covered too: no agent turn, coalesced opens,
+  retained edits and navigation, and no new conversation on transport failure.
+- Production `ComposerSlotFlow` image and video stories pass in wide light/en
+  and 320px dark/zh panes. Image generation completes behind a permission and
+  returns without losing its prompt; both media kinds insert results while
+  retaining the original chat draft and attachment.
+- Provider generation is stubbed at the external boundary for verification;
+  no paid image or video generation requests were made.
 
 Verification completed:
 

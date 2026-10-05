@@ -29,7 +29,7 @@ Related: [miniapp-event-api.md](miniapp-event-api.md),
 | Composer slot | `ComposerSwitch` plus `composer-slot/resolve-composer.ts` and `composer-registry.tsx` | Registry selects decision, MCP App consent, realtime voice, or text; the slot keeps its hand-off animation and height alignment |
 | Decision prompts | `DecisionComposer` (`PermissionPrompt`, `AskUserQuestionPrompt`) and `PlanApprovalPrompt` | Permissions and questions replace the base composer and run one at a time without a counter. Plan approval retains the original full-screen review after those decisions |
 | Tool intercepts | `manifest.tools[].renderer.intercept` | WebView input before a mini-app tool runs, rendered in the transcript |
-| Media generation | `media_*` MCP tools | Agent-only; no direct user surface |
+| Media generation | `media_*` MCP tools and native image/video composers | Users open native modes from the toolbar or `/image` / `/video`; results support caller and agent output. Models use the existing media-gen consumers |
 | Mini window | `apps/desktop/src/renderer/src/components/MiniWindowApp.tsx` | Mounts a full `SessionPane`; it is not session-less today |
 | Phone | `apps/mobile/src/navigation/mobile-app.tsx`, `packages/chat-view/src/PortableDecisionCards.tsx`, and `pending-prompt-bar.tsx` | Permission and plan approvals use native sheets and can collapse into the pending-prompt bar; AskUserQuestion renders in the transcript. Phase 1 only changes desktop |
 
@@ -125,7 +125,7 @@ this proposal.
 1. Composer registry behind `ComposerSwitch`; decision prompts move into the
    slot as composers. **Delivered for desktop; see the [execution plan](../plans/input-surfaces.md).**
 2. Native image and video composers, opened by users (mode picker, slash
-   command) with `caller` and `agent` output. **Composer stack delivered; image generation and UI are next.**
+   command) with `caller` and `agent` output. **Delivered for desktop, including durable video jobs; see the [composer contract](../features/composer.md).**
 3. Declarative composer API for mini-apps, widgets and agents; phone rendering.
 4. WebView composers, absorbing tool intercepts; manifest entry points.
 

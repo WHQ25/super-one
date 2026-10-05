@@ -12,12 +12,14 @@ import { useDecisionComposerAvailability } from './useDecisionComposerAvailabili
 import {
   cancelComposer, clearSessionComposers, composerStackFor, pushComposer,
   removeRegisteredComposer, submitComposer, updateComposerValue, useComposerStacks,
-  type ComposerHandle, type ComposerValue, type OpenComposerOptions,
+  type ComposerHandle, type ComposerLifetime, type ComposerValue, type OpenComposerOptions,
 } from './composer-stack'
 
 export const COMPOSER_CONTENT_MAX_HEIGHT = 'min(45vh, 440px)'
 
 export interface OpenedComposerProps {
+  instanceId: string
+  lifetime: ComposerLifetime
   session: SessionWriteTarget
   value: ComposerValue
   onValueChange: (value: ComposerValue) => void
@@ -67,6 +69,8 @@ function OpenedComposer({ entry, Component }: { entry: ComposerHandle; Component
   return (
     <div inert={!active} data-opened-composer={entry.id} className="min-h-0 overflow-y-auto" style={{ maxHeight: COMPOSER_CONTENT_MAX_HEIGHT }}>
       <Component
+        instanceId={entry.key}
+        lifetime={entry.lifetime}
         session={entry.target}
         value={lastValue.current}
         onValueChange={value => updateComposerValue(entry, value)}

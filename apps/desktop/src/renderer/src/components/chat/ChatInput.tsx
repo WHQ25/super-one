@@ -10,12 +10,15 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Loader2, Paperclip, X } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
-import { wrapAgentMention } from '@superone/shared/agent-mention-tags'
 import { ContextUsage } from './ContextUsage'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
 import { useShallow } from 'zustand/react/shallow'
 import { useEditor, EditorContent, type JSONContent } from '@tiptap/react'
 import { useComposerDraftSync } from './chat-input/useComposerDraftSync'
+import { serializeComposerDocument } from './chat-input/serializeComposerDocument'
+import { MediaModeButton } from './media-composer/MediaModeButton'
+import { openMediaComposer } from './media-composer/open-media-composer'
+import { mediaSlashCommand } from './media-composer/media-commands'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { MentionNode } from './mention-node'
@@ -26,8 +29,6 @@ import { SlashDecoration } from './slash-decoration'
 import { SessionMentionDecoration, syncPortalMentionDismissed } from './session-mention-decoration'
 import { GitMentionDecoration } from './git-mention-decoration'
 import { useEnabledGitMentionPortals } from './use-git-mention-capabilities'
-import { wrapGitMention } from '@superone/shared/git-mention-tags'
-import { wrapMcpResourceMention } from '@superone/shared/mcp-app-mentions'
 import { useMcpAppFileRoute } from '@/components/mcp-apps/file-apps'
 import { DebugMentionDecoration, syncDebugMentionHint } from './debug-mention-decoration'
 import { PromptSuggestion } from './prompt-suggestion'
@@ -94,7 +95,6 @@ import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { GoalIndicator } from './GoalIndicator'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { buildSessionProjectOptions, mentionQueryAllowsSpaces } from './session-mention-query'
-import { wrapPathRefMention } from './user-mention-parser'
 import { chatInputAPI } from './chat-input-api'
 import { isUnsentSession } from '@/stores/chat-store/helpers/session-liveness'
 import { useResolvedProviderId } from './model-selector/useSelectorProviders'
@@ -519,8 +519,10 @@ export function ChatInput({
           }]
         // `/goal` follows the same single-gate rule. Claude already reports its
         // own `goal` command, so dedupe rather than offering the row twice.
-        if (!goalCapability || withSide.some((c) => c.name === 'goal')) return withSide
-        return [...withSide, {
+        const withMedia = [...withSide.filter(c => c.name !== 'image' && c.name !== 'video'),
+          ...(['image', 'video'] as const).map(name => ({ name, description: t(`mediaComposer.${name}Command`), argumentHint: '', isSkill: false }))]
+        if (!goalCapability || withMedia.some((c) => c.name === 'goal')) return withMedia
+        return [...withMedia, {
           name: 'goal',
           description: t('chat.goal.commandDesc'),
           argumentHint: t(`chat.goal.${goalCapability.semantics}.argumentHint`),
@@ -709,9 +711,21 @@ export function ChatInput({
       }
     }, [goalActions, replaceEditorTextPreservingTrailingSpace, setText, t])
 
+    const openMediaMode = useCallback((kind: 'image' | 'video', prompt = '') => {
+      const target = sessionScope ?? (activeProject && displayedSessionId ? { projectPath: activeProject, sessionId: displayedSessionId } : null)
+      if (!target || isRemoteLocked) return
+      void openMediaComposer(target, kind, { prompt }).catch(error => toast.error(String(error)))
+    }, [sessionScope, activeProject, displayedSessionId, isRemoteLocked])
+
     const selectSlashCommand = useCallback(
       (cmd: SlashCommandInfo | string) => {
         const name = typeof cmd === 'string' ? cmd : cmd.name.replace(/^\//, '').trim()
+        if (name === 'image' || name === 'video') {
+          clearFirstLine()
+          setSlashIndex(-1)
+          openMediaMode(name)
+          return
+        }
         if (name === 'provider') {
           clearFirstLine()
           setSlashIndex(-1)
@@ -796,7 +810,7 @@ export function ChatInput({
         replaceFirstLineWith(`/${name} `)
         setSlashIndex(-1)
       },
-      [activeProviderForResources, clearAttachments, mentions, removeMention, setShowReviewPanel, clearFirstLine, replaceFirstLineWith, replaceEditorTextPreservingTrailingSpace, setText, cursorSlashCommands, sessionScope, goalCapability, enterGoalCompose]
+      [activeProviderForResources, clearAttachments, mentions, removeMention, setShowReviewPanel, clearFirstLine, replaceFirstLineWith, replaceEditorTextPreservingTrailingSpace, setText, cursorSlashCommands, sessionScope, goalCapability, enterGoalCompose, openMediaMode]
     )
 
     const addDirParse = useMemo(() => {
@@ -1006,65 +1020,7 @@ export function ChatInput({
      */
     const serializeDraft = useCallback(() => {
       const ed = editorRef.current
-      const segments: InputSegment[] = []
-      const collectedMentions: MentionNodeAttrs[] = []
-      let current = ''
-      if (ed) {
-        ed.state.doc.descendants((node) => {
-          if (node.isText) {
-            current += node.text ?? ''
-          } else if (node.type.name === 'mention') {
-            const attrs = node.attrs as MentionNodeAttrs
-            collectedMentions.push(attrs)
-            if (attrs.kind === 'miniapp') {
-              current += ` <superone-miniapp><appname>${attrs.displayName}</appname><appid>${attrs.value}</appid></superone-miniapp> `
-            } else if (attrs.kind === 'desktop-app') {
-              current += ` <superone-desktop-app><name>${attrs.displayName}</name><bundleId>${attrs.value}</bundleId></superone-desktop-app> `
-            } else if (attrs.kind === 'session') {
-              current += ` <superone-session><title>${attrs.displayName}</title><sessionId>${attrs.value}</sessionId></superone-session> `
-            } else if (attrs.kind === 'git') {
-              current += ` ${wrapGitMention(attrs.value, attrs.displayName)} `
-            } else if (attrs.kind === 'mcp-resource') {
-              current += ` ${wrapMcpResourceMention(attrs.value, attrs.displayName)} `
-            } else if (attrs.kind === 'agent-profile') {
-              current += ` ${wrapAgentMention(attrs.value, attrs.displayName)} `
-            } else if (isBuiltinCapabilityId(attrs.kind)) {
-              current += ` <superone-capability><name>${attrs.displayName}</name><id>${attrs.kind}</id></superone-capability> `
-            } else {
-              // Structured tag so only popup-selected path/agent mentions become
-              // chips on render — bare `@foo` typed as text stays plain text.
-              let value = attrs.value
-              if (attrs.kind === 'directory' && value && !value.endsWith('/')) value += '/'
-              const kind =
-                attrs.kind === 'directory' || attrs.kind === 'agent' || attrs.kind === 'file'
-                  ? attrs.kind
-                  : 'file'
-              current += ` ${wrapPathRefMention(kind, value, attrs.displayName || value)} `
-            }
-          } else if (node.type.name === 'attachment') {
-            if (current.trim()) segments.push({ text: current.trim(), isPaste: false })
-            current = ''
-            segments.push({ attachmentId: (node.attrs as { id: string }).id })
-          } else if (node.type.name === 'hardBreak') {
-            current += '\n'
-          } else if (node.type.name === 'pasteChip') {
-            if (current.trim()) segments.push({ text: current.trim(), isPaste: false })
-            current = ''
-            segments.push({ text: (node.attrs as { text: string }).text, isPaste: true })
-          } else if (node.isBlock && current.length > 0) {
-            current += '\n'
-          }
-        })
-        if (current.trim()) segments.push({ text: current.trim(), isPaste: false })
-      } else if (text.trim()) {
-        segments.push({ text: text.trim(), isPaste: false })
-      }
-      // Resolve the inline attachment refs to their stored bytes, in doc order.
-      const orderedAttachments = segments
-        .flatMap((s) => ('attachmentId' in s ? [s.attachmentId] : []))
-        .map((id) => attachmentsRef.current.find((a) => a.id === id))
-        .filter((a): a is ImageAttachment => !!a)
-      return { segments, mentions: collectedMentions, attachments: orderedAttachments }
+      return serializeComposerDocument(ed?.getJSON() ?? null, text, attachmentsRef.current)
     }, [text])
 
     /** Empty the composer and every popup state that hangs off its content. */
@@ -1162,6 +1118,12 @@ export function ChatInput({
       try { validateTurnAttachments(attachmentsRef.current, text) }
       catch (error) { toast.error(error instanceof Error ? error.message : 'Invalid attachment'); return }
       const trimmed = text.trim()
+      const media = !goalComposing && mediaSlashCommand(trimmed)
+      if (media) {
+        clearFirstLine()
+        openMediaMode(media.kind, media.prompt)
+        return
+      }
       if (goalCapability) {
         // In goal mode the whole draft is the objective; outside it, a typed
         // `/goal …` line is routed the same way the slash row would be.
@@ -1207,7 +1169,7 @@ export function ChatInput({
       ).catch((err) => {
         console.error('[ChatInput] sendMessage failed:', err)
       })
-    }, [goalCapability, goalComposing, goalActions, enterGoalCompose, t, canSend, sendMessage, serializeAndClear, sessionScope, text, displayedSessionId, activeProviderForResources, realtimeVoiceEngaged])
+    }, [openMediaMode, clearFirstLine, goalCapability, goalComposing, goalActions, enterGoalCompose, t, canSend, sendMessage, serializeAndClear, sessionScope, text, displayedSessionId, activeProviderForResources, realtimeVoiceEngaged])
 
     const handleKeyDownCore = useCallback(
       (e: KeyboardEvent | React.KeyboardEvent): boolean => {
@@ -2239,6 +2201,7 @@ export function ChatInput({
               <Paperclip />
             </IconButton>
 
+            <MediaModeButton target={isRemoteLocked ? null : sessionScope ?? (activeProject && displayedSessionId ? { projectPath: activeProject, sessionId: displayedSessionId } : null)} />
             <ModelSelector onCloseAutoFocus={(e) => { e.preventDefault(); if (editor && !editor.isDestroyed) editor.commands.focus() }} />
             {goalCapability && goalActions && (sessionGoal || goalComposing) && (
               <GoalIndicator

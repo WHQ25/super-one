@@ -2,12 +2,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { handleAnnotationMessage } from './browser-annotate-flow'
 import { browserExecJs, browserCapture } from './browser-host-api'
+import { useBrowserStore } from '@/stores/browser'
 
 const { mockStore } = vi.hoisted(() => ({
   mockStore: {
     addBrowserAnnotation: vi.fn(),
     updateBrowserAnnotation: vi.fn(),
     removeBrowserAnnotation: vi.fn(),
+    projectSessions: { '/repo': { _sessions: { owner: {} } } },
   },
 }))
 
@@ -59,7 +61,7 @@ describe('handleAnnotationMessage dispatch', () => {
       comment: 'c2',
       styleChanges: [{ property: 'color', previousValue: '#000', value: '#f00' }],
       screenshot: 'YWJj',
-    })
+    }, undefined)
     expect(browserCapture).toHaveBeenCalledWith('/b', RECT)
     expect(mockStore.addBrowserAnnotation).not.toHaveBeenCalled()
   })
@@ -69,14 +71,20 @@ describe('handleAnnotationMessage dispatch', () => {
       op: 'update', id: 'a1', kind: 'element', rect: RECT, selector: '#b',
       comment: 'c2', wantScreenshot: false, styleChanges: [], pageUrl: '', pageTitle: '',
     })
-    expect(mockStore.updateBrowserAnnotation).toHaveBeenCalledWith('a1', { comment: 'c2', styleChanges: [], screenshot: null })
+    expect(mockStore.updateBrowserAnnotation).toHaveBeenCalledWith('a1', { comment: 'c2', styleChanges: [], screenshot: null }, undefined)
     expect(browserCapture).not.toHaveBeenCalled()
   })
 
   it('delete routes to removeBrowserAnnotation', async () => {
     await handleAnnotationMessage('/b', { op: 'delete', id: 'a1' })
-    expect(mockStore.removeBrowserAnnotation).toHaveBeenCalledWith('a1')
+    expect(mockStore.removeBrowserAnnotation).toHaveBeenCalledWith('a1', undefined)
     expect(mockStore.addBrowserAnnotation).not.toHaveBeenCalled()
+  })
+
+  it('marks the session that owns the tab, not the one this window shows', async () => {
+    useBrowserStore.getState().ensure('/owned', 'about:blank', 'owner')
+    await handleAnnotationMessage('/owned', { op: 'delete', id: 'a1' })
+    expect(mockStore.removeBrowserAnnotation).toHaveBeenCalledWith('a1', { projectPath: '/repo', sessionId: 'owner' })
   })
 
   it('malformed payload is ignored', async () => {

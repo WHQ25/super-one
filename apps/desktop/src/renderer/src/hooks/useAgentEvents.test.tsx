@@ -36,6 +36,8 @@ vi.stubGlobal('window', {
       onBashSubscribers.push(cb)
       return () => {}
     },
+    onComposerDraftChanged: () => () => {},
+    getComposerDrafts: async () => ({}),
   },
   environment: {
     onDraftOpenRequested: () => () => {},

@@ -179,6 +179,14 @@ export function updateActivePerSession(
   return updatePerSession(state, key, sid, updater)
 }
 
+/** The project holding a session id in this window's store, if loaded here. */
+export function findSessionTarget(state: Pick<ChatStore, 'projectSessions'>, sessionId: string): SessionWriteTarget | null {
+  for (const [projectPath, project] of Object.entries(state.projectSessions)) {
+    if (project._sessions[sessionId]) return { projectPath, sessionId }
+  }
+  return null
+}
+
 export function resolveActiveSessionId(project: ProjectState): string | null {
   return project._activeSessionId ?? null
 }

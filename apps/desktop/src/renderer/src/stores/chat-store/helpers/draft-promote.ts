@@ -461,8 +461,7 @@ export function buildUpsertFromSession(
   worktree?: WorktreeHint | null,
 ): DraftUpsertRequest {
   const target = resolveDraftTarget(projectPath)
-  const draftId = draftIdBySession.get(sessionId) ?? session.draftId ?? crypto.randomUUID()
-  draftIdBySession.set(sessionId, draftId)
+  const draftId = ensureDraftIdForSession(sessionId, session)
   const settings = snapshotDraftSettings(session, project, worktree === undefined ? readAppWorktree(projectPath) : worktree)
   return {
     id: draftId,
@@ -619,6 +618,13 @@ export async function promoteAllUnsentDrafts(store: ChatStore): Promise<void> {
  * Hand a draft over to a freshly minted session. Called after the draft's text
  * has been loaded into the composer, so the drafts group stops showing it.
  */
+/** The environment draft row this unsent session autosaves into, minted on first use. */
+export function ensureDraftIdForSession(sessionId: string, session: PerSessionState): string {
+  const draftId = draftIdBySession.get(sessionId) ?? session.draftId ?? crypto.randomUUID()
+  draftIdBySession.set(sessionId, draftId)
+  return draftId
+}
+
 export function claimDraftForSession(sessionId: string, draftId: string): void {
   draftIdBySession.set(sessionId, draftId)
 }

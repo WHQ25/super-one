@@ -2342,6 +2342,17 @@ const appAPI = {
       ipcRenderer.removeListener(AgentIpcChannels.SCHEDULED_SEND_CHANGED, handler)
     }
   },
+  getComposerDrafts: () =>
+    ipcRenderer.invoke(AgentIpcChannels.COMPOSER_DRAFTS_GET) as Promise<Record<string, Record<string, unknown>>>,
+  publishComposerDraft: (sessionId: string, patch: Record<string, unknown>) =>
+    ipcRenderer.send(AgentIpcChannels.COMPOSER_DRAFT_PUBLISH, sessionId, patch),
+  onComposerDraftChanged: (callback: (sessionId: string, patch: Record<string, unknown>) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, sessionId: string, patch: Record<string, unknown>) => callback(sessionId, patch)
+    ipcRenderer.on(AgentIpcChannels.COMPOSER_DRAFT_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.COMPOSER_DRAFT_CHANGED, handler)
+    }
+  },
   hideSession: (sessionId: string, hidden: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.SESSIONS_HIDE, sessionId, hidden),
   listPinnedSessions: () =>

@@ -758,6 +758,10 @@ interface AppAPI {
   setScheduledSend(sessionId: string, patch: ScheduledSendPatch, init?: ScheduledSendSessionInit): Promise<ScheduledSend | null>
   clearScheduledSend(sessionId: string): Promise<void>
   onScheduledSendChanged(callback: (event: { sessionId: string; scheduled: ScheduledSend | null; delivered: boolean }) => void): () => void
+  /** Composer drafts other windows published this run, keyed by session id. */
+  getComposerDrafts(): Promise<Record<string, Record<string, unknown>>>
+  publishComposerDraft(sessionId: string, patch: Record<string, unknown>): void
+  onComposerDraftChanged(callback: (sessionId: string, patch: Record<string, unknown>) => void): () => void
   hideSession(sessionId: string, hidden: boolean): Promise<void>
   listPinnedSessions(): Promise<PinnedSessionEntry[]>
 

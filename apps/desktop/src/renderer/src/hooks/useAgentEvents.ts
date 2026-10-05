@@ -7,6 +7,7 @@ import { buildToolRendererUrl } from '@superone/shared/miniapp-types'
 import { buildMiniAppUrlHost } from '@superone/shared/miniapp-url'
 import { coalesceAgentEventBatch } from '@/lib/agent-event-batcher'
 import { applyDraftChange, flushDraftBeforeOpen, startDraftAutosave } from '@/lib/draft-sync'
+import { startComposerDraftMirror } from '@/lib/composer-draft-mirror'
 import { useDraftsStore } from '@/stores/drafts'
 
 export function useAgentEvents(): void {
@@ -14,6 +15,7 @@ export function useAgentEvents(): void {
 
   useEffect(() => {
     const stop = startDraftAutosave()
+    const stopMirror = startComposerDraftMirror()
     const stopHandover = window.environment.onDraftOpenRequested?.(flushDraftBeforeOpen)
     const unsub = window.agent.onAgentEvent((event) => {
       if (event.type === 'draft_changed') applyDraftChange(event)
@@ -23,7 +25,7 @@ export function useAgentEvents(): void {
         if (draft.controllerDeviceId) applyDraftChange({ type: 'draft_changed', draftId: draft.id, draft, reason: 'opened' })
       }
     })
-    return () => { stop(); unsub(); stopHandover?.() }
+    return () => { stop(); stopMirror(); unsub(); stopHandover?.() }
   }, [])
 
   useEffect(() => {

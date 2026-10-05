@@ -1,5 +1,6 @@
 import { useChatStore } from '@/stores/chat'
-import { browserTabCanvas, type AnnotateQuickMode } from '@/stores/browser'
+import { browserTabCanvas, useBrowserStore, type AnnotateQuickMode } from '@/stores/browser'
+import { findSessionTarget } from '@/stores/chat-store/helpers/store-helpers'
 import { browserExecJs, browserCapture } from './browser-host-api'
 import { flattenBrowserCapture } from './browser-canvas'
 import {
@@ -79,8 +80,12 @@ async function captureClean(browserId: string, rect: AnnotateMessage['rect']): P
 export async function handleAnnotationMessage(browserId: string, payload: unknown): Promise<void> {
   if (!isAnnotateMessage(payload)) return
   const store = useChatStore.getState()
+  // Marks belong to the session that owns the tab, which need not be the one
+  // this window shows — its composer may be open in a mini window instead.
+  const owner = useBrowserStore.getState().tabs[browserId]?.owner
+  const target = (owner && findSessionTarget(store, owner)) || undefined
   if (payload.op === 'delete') {
-    store.removeBrowserAnnotation(payload.id)
+    store.removeBrowserAnnotation(payload.id, target)
     return
   }
   if (payload.op === 'update') {
@@ -89,7 +94,7 @@ export async function handleAnnotationMessage(browserId: string, payload: unknow
       comment: payload.comment,
       styleChanges: payload.styleChanges,
       screenshot,
-    })
+    }, target)
     return
   }
   const screenshot = payload.wantScreenshot ? await captureClean(browserId, payload.rect) : null
@@ -102,7 +107,7 @@ export async function handleAnnotationMessage(browserId: string, payload: unknow
     pageTitle: payload.pageTitle,
     screenshot,
     styleChanges: payload.styleChanges,
-  })
+  }, target)
 }
 
 export function notifyAnnotationRemoved(browserId: string, id: string): void {

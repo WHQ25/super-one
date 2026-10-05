@@ -96,6 +96,7 @@ import { watchSessionDeletes, watchSessionList } from './session-list-watch'
 import { localDraftStore } from './db-drafts'
 import { withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-content'
 import { installDraftOpenFlush } from './remote/draft-open-flush'
+import { installComposerDraftMirror } from './composer-draft-mirror'
 import { NotificationService } from './notifications/notification-service'
 import { DesktopNotificationChannel } from './notifications/desktop-notification-channel'
 import { PresenceCoordinator } from './remote/presence-coordinator'
@@ -4583,7 +4584,9 @@ function registerIpcHandlers(): void {
     })
   })
 
+  const composerDrafts = installComposerDraftMirror(allWindows)
   watchSessionDeletes((sessionIds) => {
+    composerDrafts.forget(sessionIds)
     void import('./environment/session-zone-reclaim').then(({ removeSessionZone }) =>
       Promise.all(sessionIds.map((id) => removeSessionZone(id).catch((err: unknown) => {
         log.warn('[main] sync zone cleanup failed sid=%s: %s', id, err instanceof Error ? err.message : String(err))

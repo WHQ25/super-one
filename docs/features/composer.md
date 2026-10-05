@@ -90,6 +90,13 @@ second, and the base composer does not auto-focus on return when no focus needs
 restoring. The restore request targets the owning session and is issued after
 the editor mounts; old restore requests do not take focus on later mounts.
 
+A session open in more than one window (the main window and a spawned mini
+window) shares one draft: text, chips, attachments, browser annotations, and
+selections are relayed through the main process, which also seeds a window that
+opens the session later. Browser annotations go to the session that owns the
+browser tab, so marking a page in the main window fills that session's composer
+wherever it is shown.
+
 Enter, Space, and digit shortcuts are ignored for 500 ms after a decision
 appears. High-risk permission requests—terminal commands, Bash-like tools, and
 decline-first requests—require a click or Command+Enter for approval. Keyboard

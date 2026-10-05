@@ -36,6 +36,6 @@ export const AttachmentNode = Node.create({
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(AttachmentChipNode, { as: 'span', className: 'attachment-chip-wrapper' })
+    return ReactNodeViewRenderer(AttachmentChipNode, { as: 'span', className: 'mention-chip-wrapper' })
   },
 })

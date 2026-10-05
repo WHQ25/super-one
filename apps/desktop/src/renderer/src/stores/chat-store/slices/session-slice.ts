@@ -15,13 +15,13 @@ import {
 } from '../index'
 import { toastSendFailure } from '../helpers/send-error-toast'
 import { dropSendReplay, replayFailedSend } from '../helpers/send-replay'
-import { userMessageText } from '@superone/chat-core'
 import { restoreSentDraft } from '@/components/chat/chat-input/restore-sent-draft'
+import { messageDraft } from '@/components/chat/chat-input/message-draft'
 
 /** Put a user message the host never ran back into the composer, after anything typed since. */
 function composerDraftFrom(current: PerSessionState, msg: ChatMessage): Partial<PerSessionState> {
   return {
-    ...restoreSentDraft(current, { text: userMessageText(msg), doc: null, attachments: msg.attachments ?? [] }),
+    ...restoreSentDraft(current, messageDraft(msg)),
     codexPlanRejectHintActive: false,
   }
 }

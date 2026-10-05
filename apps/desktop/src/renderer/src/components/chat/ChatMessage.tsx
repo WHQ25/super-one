@@ -1,9 +1,9 @@
-import type { ChatMessage as ChatMessageType, AgentStatus, ImageGenerationItem, VideoGenerationItem, ImageAttachment } from '@superone/shared/agent-types'
+import type { ChatMessage as ChatMessageType, AgentStatus, ImageGenerationItem, VideoGenerationItem } from '@superone/shared/agent-types'
 import { ModMessageScope, ModSite, stringProp, userMessageProps } from '@superone/chat-view/mod-ui'
 import { useState, useEffect, useMemo, memo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
-import { FileText, Folder, Pencil } from 'lucide-react'
+import { Pencil } from 'lucide-react'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
@@ -20,18 +20,18 @@ import { WorkflowBlock } from './WorkflowBlock'
 import { CodexTurnView } from './CodexTurnView'
 import { ImageGalleryBlock } from './ImageGalleryBlock'
 import { VideoGalleryBlock } from './VideoGalleryBlock'
-import { AttachmentChip, AttachmentPreviewDialog } from './attachment-chip'
+import { AttachmentChip } from './attachment-chip'
 import { ContextAttachments } from '@superone/ui/components/ui/context-attachments'
 import { TooltipProvider } from '@superone/ui/components/ui/tooltip'
 import { UserSelectionChip } from './UserSelectionChip'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
-import { MentionChipContent, isBlendedMentionKind, mentionChipIcon, useFileMentionActions } from './MentionChip'
+import { MentionChipContent, isLabelMentionKind, mentionChipIcon, useFileMentionActions } from './MentionChip'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { hasTextSelection } from '@/lib/file-link'
 import { McpMentionSentHover } from './McpMentionSent'
 import { McpMentionSentProvider } from '@superone/chat-view/presenters/McpMentionCard'
-import { PasteChipPreview } from './PasteChipPreview'
-import { PASTE_CHIP_LINE_THRESHOLD, PASTE_CHIP_CHAR_THRESHOLD } from './paste-chip-node'
+import { PasteChip } from './paste-chip'
+import { isLongPaste } from './paste-chip-node'
 import { getActiveSessionView, useChatStore, useSessionScope } from '@/stores/chat'
 import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 import { getAssistantCopyText } from './chat-message/getAssistantCopyText'
@@ -40,7 +40,10 @@ import { RewindButton } from './RewindButton'
 import { SendFailureResendButton } from '@superone/chat-view/presenters/SendFailureResendButton'
 import { CopyableMarkdown, InsightBlock } from './CopyableMarkdown'
 import { CollabTaskBubble } from './CollabTaskBubble'
-import { CopyButton, useCopyText } from './chat-message/copy-button'
+import { CopyButton, useCopyFeedback } from './chat-message/copy-button'
+import { mentionCopyText, userCopyHtml } from './chat-message/user-copy-html'
+import { attachmentForBlock, userMessageParts } from './chat-message/user-message-parts'
+import { tryCopy, tryCopyRich, type CopiedMention } from '@/lib/clipboard'
 import { fileLinkComponents } from './chat-markdown-components'
 import { ReasoningBlock } from './ReasoningBlock'
 import { parseUserMentions, type UserMentionKind } from './user-mention-parser'
@@ -124,32 +127,15 @@ const CLAUDE_TURN_RUNTIME: ClaudeTurnBodyPresenterRuntime = {
   summarizeProcess: summarizeClaudeProcess,
 }
 
-function LongTextChip({ text }: { text: string }) {
-  const [open, setOpen] = useState(false)
-  const lineCount = text.split('\n').length
-  const preview = text.slice(0, 60).replace(/\n/g, ' ')
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="mt-1 flex w-full items-center gap-2 rounded-lg border border-foreground/15 bg-foreground/5 px-3 py-2 text-left text-xs text-foreground/80 transition-colors hover:bg-foreground/10"
-      >
-        <FileText className="size-3.5 shrink-0" />
-        <span className="min-w-0 truncate">{preview}</span>
-        <span className="ml-auto shrink-0 text-foreground/50">{lineCount} lines</span>
-      </button>
-      <PasteChipPreview open={open} onOpenChange={setOpen} text={text} />
-    </>
-  )
-}
-
 function RestContent({ rest, forcePlain }: { rest: string; forcePlain?: boolean }) {
   if (forcePlain) return <span className="user-text-rest">{rest}</span>
-  const lineCount = rest.split('\n').length
-  if (lineCount >= PASTE_CHIP_LINE_THRESHOLD || rest.length >= PASTE_CHIP_CHAR_THRESHOLD) return <LongTextChip text={rest} />
+  if (isLongPaste(rest)) return <PasteChip text={rest} selectable />
   return <span className="user-text-rest">{rest}</span>
+}
+
+/** A bubble mention copies as its `@` text, and pastes back into the composer as the chip. */
+function mentionCopyProps(mention: CopiedMention) {
+  return { 'data-copy-text': mentionCopyText(mention), 'data-copy-mention': JSON.stringify(mention) }
 }
 
 function FileMentionInlineChip({ value, label }: { value: string; label: string }) {
@@ -158,10 +144,10 @@ function FileMentionInlineChip({ value, label }: { value: string; label: string 
     <AdaptiveContextMenu items={menu.items} onOpen={menu.onOpen} yieldWhen={hasTextSelection}>
       <MentionChipContent
         {...chipProps}
-        blended={false}
         kind="file"
         // Like FileChip: the name stays selectable text; only the icon drags the file.
         className="break-normal cursor-pointer select-text"
+        {...mentionCopyProps({ kind: 'file', value, displayName: label })}
         icon={mentionChipIcon('file', value, label)}
         label={label}
         iconProps={iconProps}
@@ -191,19 +177,10 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
     return () => { cancelled = true }
   }, [kind, value])
 
-  const isBlendedChip = isBlendedMentionKind(resolvedKind)
   const display =
-    resolvedKind === 'miniapp' || isBlendedChip
+    resolvedKind === 'miniapp' || isLabelMentionKind(resolvedKind)
       ? (displayName || value)
       : (value.replace(/\/$/, '').split('/').pop() || value)
-
-  if (resolvedKind === 'agent') {
-    return (
-      <span className="box-decoration-clone break-normal rounded-md border border-primary/40 bg-primary/15 px-1.5 py-0.5 text-xs leading-5 font-medium text-primary">
-        @{display}
-      </span>
-    )
-  }
 
   if (resolvedKind === 'file') return <FileMentionInlineChip value={value} label={display} />
 
@@ -211,14 +188,10 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
   // break-normal resists the bubble's break-all so labels wrap between words.
   const chip = (
     <MentionChipContent
-      blended={isBlendedChip}
       kind={resolvedKind}
-      className="break-normal"
-      icon={
-        resolvedKind === 'directory'
-          ? <Folder className="text-primary" />
-          : mentionChipIcon(resolvedKind, value, display)
-      }
+      className="break-normal select-text"
+      {...mentionCopyProps({ kind: resolvedKind, value, displayName: display })}
+      icon={mentionChipIcon(resolvedKind, value, display)}
       label={display}
     />
   )
@@ -226,7 +199,7 @@ function MentionInlineChip({ kind, value, displayName }: { kind: UserMentionKind
 }
 
 export function UserTextBlock({ text, isPaste }: { text: string; isPaste?: boolean }) {
-  if (isPaste === true) return <LongTextChip text={text} />
+  if (isPaste === true) return <PasteChip text={text} selectable />
   const segments = parseUserMentions(text)
   if (segments.length === 0) return null
   // Normal inline flow (see .user-text-with-mentions). Chip is display:inline
@@ -317,7 +290,6 @@ export const ChatMessage = memo(function ChatMessage({
   const assistantCopyText = isStreaming || hideCopyActions ? undefined : getAssistantCopyText(message)
 
   const apps = useMiniAppStore((s) => s.apps)
-  const [previewAtt, setPreviewAtt] = useState<ImageAttachment | null>(null)
   const grouped = useMemo(
     () => (isUser || isCodexMessage) ? null : groupContent(message.content, apps),
     [isUser, isCodexMessage, message.content, apps],
@@ -361,7 +333,15 @@ export const ChatMessage = memo(function ChatMessage({
       ...(turnId ? { turnId } : { messageId: message.id }),
     })
   }
-  const { copied: userCopied, copy: copyUserText } = useCopyText()
+  // Text, images, mentions and paste chips in message order: the copy's HTML
+  // flavour keeps each chip where it sat, so pasting restores the message.
+  const userCopyParts = useMemo(() => (isUser ? userMessageParts(message) : []), [isUser, message])
+  const hasUserImages = userCopyParts.some((part) => 'attachment' in part && part.attachment.mimeType.startsWith('image/'))
+  const hasUserChips = hasUserImages || userCopyParts.some((part) => 'mention' in part || 'paste' in part)
+  const { copied: userCopied, run: runUserCopy } = useCopyFeedback()
+  const copyUserMessage = () => runUserCopy(() => (hasUserChips
+    ? tryCopyRich(userText, userCopyHtml(userCopyParts))
+    : tryCopy(userText)))
   const assistantFooter = !isUser ? (
     <DurationFooter
       message={message}
@@ -382,11 +362,9 @@ export const ChatMessage = memo(function ChatMessage({
         )}
         {message.content.map((block, index) => {
           if (block.type === 'image' || block.type === 'document') {
-            const attachment = message.attachments?.find((item) => (
-              block.id ? item.id === block.id : item.name === block.name
-            ))
+            const attachment = attachmentForBlock(message, block)
             return attachment
-              ? <AttachmentChip key={index} att={attachment} onOpen={() => setPreviewAtt(attachment)} />
+              ? <AttachmentChip key={index} att={attachment} selectable />
               : null
           }
           return block.type === 'text'
@@ -406,7 +384,6 @@ export const ChatMessage = memo(function ChatMessage({
               />
             )
         })}
-        <AttachmentPreviewDialog attachment={previewAtt} onClose={() => setPreviewAtt(null)} />
       </TooltipProvider>
     </McpMentionSentProvider>
   ) : isCodexMessage ? (
@@ -442,10 +419,10 @@ export const ChatMessage = memo(function ChatMessage({
           className="opacity-100"
         />
       )}
-      {userText.length > 0 && (
+      {(userText.length > 0 || hasUserImages) && (
         <CopyButton
           copied={userCopied}
-          onClick={() => copyUserText(userText)}
+          onClick={() => void copyUserMessage()}
           className="opacity-100"
         />
       )}

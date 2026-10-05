@@ -184,7 +184,7 @@ export function MermaidBlockPresenter({ code, isComplete, scheme, theme, ports }
 
   if (error) {
     return (
-      <div data-chat-codeblock className="my-1.5 overflow-hidden rounded-md border border-destructive/30 bg-destructive/5">
+      <div data-chat-codeblock data-code-source={code} className="my-1.5 overflow-hidden rounded-md border border-destructive/30 bg-destructive/5">
         {toolbar}
         <p className="px-3 pb-3 text-xs text-destructive">Mermaid Error: {error}</p>
       </div>
@@ -193,7 +193,7 @@ export function MermaidBlockPresenter({ code, isComplete, scheme, theme, ports }
 
   if (!svg) {
     return (
-      <div data-chat-codeblock className="my-1.5 overflow-hidden rounded-md bg-muted/30">
+      <div data-chat-codeblock data-code-source={code} className="my-1.5 overflow-hidden rounded-md bg-muted/30">
         {toolbar}
         <div className="flex items-center justify-center py-8">
           <Loader2 className="size-4 animate-spin text-muted-foreground" />
@@ -204,7 +204,7 @@ export function MermaidBlockPresenter({ code, isComplete, scheme, theme, ports }
 
   return (
     <>
-      <div data-chat-codeblock className="my-1.5 overflow-hidden rounded-md bg-muted/30">
+      <div data-chat-codeblock data-code-source={code} className="my-1.5 overflow-hidden rounded-md bg-muted/30">
         {toolbar}
         {showSource
           ? (

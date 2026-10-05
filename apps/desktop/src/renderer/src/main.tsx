@@ -10,6 +10,8 @@ import { ComputerUsePermissionFloat } from './components/ComputerUsePermissionFl
 import { initI18n } from './i18n'
 import './styles/index.css'
 import './utils/scroll-overlay'
+import './utils/selection-fill'
+import './utils/selection-copy'
 import { markStartup } from '@superone/shared/startup-marks'
 
 markStartup('renderer-evaluated')

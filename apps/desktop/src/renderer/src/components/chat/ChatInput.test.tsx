@@ -120,6 +120,9 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     setContentCalls: [] as unknown[],
     onUpdate: null as null | ((payload: { editor: unknown }) => void),
     handleKeyDown: null as null | ((view: unknown, event: KeyboardEvent) => boolean),
+    handlePaste: null as null | ((view: unknown, event: ClipboardEvent) => boolean),
+    /** Every value handed to `chain().insertContent`, newest last. */
+    insertContentCalls: [] as unknown[],
     editor: null as unknown,
     composing: false,
     destroyed: false,
@@ -186,7 +189,10 @@ vi.mock('@tiptap/react', () => {
             editorState.text = ''
             return chain
           },
-          insertContent: () => chain,
+          insertContent: (value: unknown) => {
+            editorState.insertContentCalls.push(value)
+            return chain
+          },
           insertContentAt: () => chain,
           deleteRange: () => chain,
           setHardBreak: () => chain,
@@ -235,7 +241,7 @@ vi.mock('@tiptap/react', () => {
       view: {
         dispatch: vi.fn(),
         hasFocus: vi.fn(() => false),
-        dom: { classList: { toggle: vi.fn() } },
+        dom: document.createElement('div'),
         get composing() {
           return editorState.composing
         },
@@ -255,10 +261,14 @@ vi.mock('@tiptap/react', () => {
   return {
     useEditor: (config: {
       onUpdate?: (payload: { editor: unknown }) => void
-      editorProps?: { handleKeyDown?: (view: unknown, event: KeyboardEvent) => boolean }
+      editorProps?: {
+        handleKeyDown?: (view: unknown, event: KeyboardEvent) => boolean
+        handlePaste?: (view: unknown, event: ClipboardEvent) => boolean
+      }
     }) => {
       editorState.onUpdate = config.onUpdate ?? null
       editorState.handleKeyDown = config.editorProps?.handleKeyDown ?? null
+      editorState.handlePaste = config.editorProps?.handlePaste ?? null
       // Real `useEditor` hands back the same instance across renders. Handing
       // back a fresh one would re-run every effect that depends on the editor,
       // hiding bugs that only show when an effect legitimately does not re-run.
@@ -296,10 +306,13 @@ vi.mock('./mention-node', () => ({
   MentionNode: {},
 }))
 
+vi.mock('./image-compress', () => ({
+  buildImageAttachment: async (file: File) => ({ name: file.name, mimeType: file.type, base64: 'QUJD' }),
+  buildImageAttachmentFromBase64: async () => null,
+}))
+
 vi.mock('./paste-chip-node', () => ({
   PasteChipNode: {},
-  PASTE_CHIP_LINE_THRESHOLD: 10,
-  PASTE_CHIP_CHAR_THRESHOLD: 1000,
 }))
 
 vi.mock('./slash-decoration', () => ({
@@ -436,6 +449,8 @@ beforeEach(() => {
   editorState.setContentCalls = []
   editorState.onUpdate = null
   editorState.handleKeyDown = null
+  editorState.handlePaste = null
+  editorState.insertContentCalls = []
   editorState.editor = null
   editorState.composing = false
   editorState.destroyed = false
@@ -1613,5 +1628,94 @@ describe('ChatInput scheduled send', () => {
 
     expect(scheduledSend.clear).toHaveBeenCalledWith('session-1')
     expect(scheduledSend.set).not.toHaveBeenCalled()
+  })
+})
+
+describe('ChatInput paste', () => {
+  it('pastes a copied message back with its chips where they were', async () => {
+    render(<ChatInput />)
+    const mention = '{&quot;kind&quot;:&quot;file&quot;,&quot;value&quot;:&quot;src/a.ts&quot;,&quot;displayName&quot;:&quot;a.ts&quot;}'
+    const html = `<div data-superone-copy=""><img src="data:image/png;base64,QUJD" alt="shot.png"> see  <span data-superone-mention="${mention}">@src/a.ts</span>  and<div data-superone-paste="">l1<br>l2</div></div>`
+    const clipboardData = {
+      getData: (type: string) => (type === 'text/html' ? html : type === 'text/plain' ? 'see this' : ''),
+      items: [],
+    }
+    const preventDefault = vi.fn()
+    let handled = false
+    act(() => {
+      handled = editorState.handlePaste!(null, { clipboardData, preventDefault } as unknown as ClipboardEvent)
+    })
+
+    expect(handled).toBe(true)
+    expect(preventDefault).toHaveBeenCalled()
+    // One insert, every chip in its copied place; text stays text, minus the
+    // space sending padded each mention with.
+    await waitFor(() => expect(editorState.insertContentCalls).toHaveLength(1))
+    expect(editorState.insertContentCalls[0]).toEqual([
+      { type: 'attachment', attrs: { id: expect.any(String) } },
+      { type: 'text', text: ' see ' },
+      { type: 'mention', attrs: { kind: 'file', value: 'src/a.ts', displayName: 'a.ts' } },
+      { type: 'text', text: ' and' },
+      { type: 'pasteChip', attrs: { text: 'l1\nl2' } },
+    ])
+    expect(chatActions.addMention.mock.calls[0]?.[0]).toEqual({ kind: 'file', value: 'src/a.ts', displayName: 'a.ts' })
+    // The scoped action passes the session target as a second argument.
+    expect(chatActions.addAttachment.mock.calls[0]?.[0]).toMatchObject({ name: 'shot.png', mimeType: 'image/png' })
+  })
+
+  it('pastes text copied from the composer back through the editor, chips and all', () => {
+    render(<ChatInput />)
+    const copied = 'see @src/a.ts'
+    const dom = (editorState.editor as { view: { dom: HTMLElement } }).view.dom
+    const copy = new Event('copy') as ClipboardEvent
+    Object.defineProperty(copy, 'clipboardData', { value: { getData: (type: string) => (type === 'text/plain' ? copied : '') } })
+    dom.dispatchEvent(copy)
+
+    const clipboardData = { getData: (type: string) => (type === 'text/plain' ? copied : '<p data-pm-slice="1 1 []">see</p>'), items: [] }
+    let handled = true
+    act(() => {
+      handled = editorState.handlePaste!(null, { clipboardData, preventDefault: vi.fn() } as unknown as ClipboardEvent)
+    })
+
+    expect(handled).toBe(false)
+    expect(editorState.insertContentCalls).toEqual([])
+  })
+
+  it('turns pasted text of any length into a paste chip', () => {
+    render(<ChatInput />)
+    const clipboardData = { getData: (type: string) => (type === 'text/plain' ? 'one word' : ''), items: [] }
+    const preventDefault = vi.fn()
+    act(() => {
+      editorState.handlePaste!(null, { clipboardData, preventDefault } as unknown as ClipboardEvent)
+    })
+
+    expect(preventDefault).toHaveBeenCalled()
+    expect(editorState.insertContentCalls).toEqual([{ type: 'pasteChip', attrs: { text: 'one word' } }])
+  })
+
+  it('attaches a copied file instead of chipping the name it carries as text', () => {
+    render(<ChatInput />)
+    const clipboardData = {
+      getData: (type: string) => (type === 'text/plain' ? 'a.png' : ''),
+      items: [{ kind: 'file', type: 'image/png', getAsFile: () => new File(['x'], 'a.png', { type: 'image/png' }) }],
+    }
+    act(() => {
+      editorState.handlePaste!(null, { clipboardData, preventDefault: vi.fn() } as unknown as ClipboardEvent)
+    })
+
+    expect(editorState.insertContentCalls).toEqual([])
+  })
+
+  it('leaves a paste with real image files to the file path', () => {
+    render(<ChatInput />)
+    const clipboardData = {
+      getData: (type: string) => (type === 'text/html' ? '<div data-superone-copy=""><img src="data:image/png;base64,QUJD"></div>' : ''),
+      items: [{ kind: 'file', type: 'image/png', getAsFile: () => new File(['x'], 'a.png', { type: 'image/png' }) }],
+    }
+    act(() => {
+      editorState.handlePaste!(null, { clipboardData, preventDefault: vi.fn() } as unknown as ClipboardEvent)
+    })
+
+    expect(editorState.insertContentCalls).toEqual([])
   })
 })

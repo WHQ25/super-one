@@ -7,6 +7,8 @@ import type { SessionWriteTarget } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { showNativeContextMenu } from '@/lib/native-context-menu'
 import { requestSideChat, useCanOpenSideChat } from '@/lib/side-chat-actions'
+import { tryCopyRich } from '@/lib/clipboard'
+import { selectionCopy } from '@/utils/selection-copy'
 
 export interface SelectionMenuPos {
   x: number
@@ -118,6 +120,7 @@ interface MenuState {
   x: number
   y: number
   text: string
+  html?: string
 }
 
 export function useSelectionMenu(target?: SessionWriteTarget) {
@@ -132,12 +135,18 @@ export function useSelectionMenu(target?: SessionWriteTarget) {
   // second question about a second selection is a follow-up, not a new thread.
   const askInSideChat = (text: string) => { void requestSideChat({ quote: text, reuseOpen: true }) }
 
-  const openMenu = (text: string, x: number, y: number) => {
+  // Copy matches Cmd+C: the HTML flavour carries chips back into the composer.
+  const copy = (text: string, html?: string) => {
+    void (html ? tryCopyRich(text, html) : navigator.clipboard.writeText(text))
+  }
+
+  /** `text` is the selection as copying writes it (Markdown for a reply); `html` its rich flavour. */
+  const openMenu = (text: string, x: number, y: number, html?: string) => {
     const selText = text.trim()
     if (!selText) return
     if (liquidGlass) {
       void showNativeContextMenu([
-        { id: 'copy', label: t('chat.selectionMenu.copy'), icon: Copy, onSelect: () => navigator.clipboard.writeText(selText) },
+        { id: 'copy', label: t('chat.selectionMenu.copy'), icon: Copy, onSelect: () => copy(selText, html) },
         { id: 'addToChat', label: t('chat.selectionMenu.addToChat'), icon: MessageSquarePlus, onSelect: () => addToChat(selText) },
         ...(canSideChat
           ? [{ id: 'askInSideChat', label: t('chat.selectionMenu.askInSideChat'), icon: MessageCirclePlus, onSelect: () => askInSideChat(selText) }]
@@ -145,13 +154,13 @@ export function useSelectionMenu(target?: SessionWriteTarget) {
       ])
       return
     }
-    setMenu({ x, y, text: selText })
+    setMenu({ x, y, text: selText, html })
   }
 
   const menuNode = menu ? (
     <SelectionMenu
       pos={{ x: menu.x, y: menu.y }}
-      onCopy={() => navigator.clipboard.writeText(menu.text)}
+      onCopy={() => copy(menu.text, menu.html)}
       onAddToChat={() => addToChat(menu.text)}
       onAskInSideChat={canSideChat ? () => askInSideChat(menu.text) : undefined}
       onClose={() => setMenu(null)}
@@ -172,7 +181,10 @@ export function SelectionContextMenuZone({ children, className }: SelectionConte
 
   const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault()
-    openMenu(window.getSelection()?.toString() ?? '', event.clientX, event.clientY)
+    const selection = window.getSelection()
+    // Same text Cmd+C would copy: a reply as Markdown, chips as what they stand for.
+    const copied = selectionCopy(selection)
+    openMenu(copied?.plain ?? selection?.toString() ?? '', event.clientX, event.clientY, copied?.html)
   }
 
   return (

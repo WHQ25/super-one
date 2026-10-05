@@ -611,7 +611,78 @@ html:not(.dark) [data-sidebar-inner] .is-scrolling::-webkit-scrollbar-thumb:hove
   margin: 0;
 }
 
-.paste-chip-wrapper {
-  display: block;
-  margin: 4px 1px;
+/* Composer chips sit in a node-view wrapper. Their side spacing moves from the
+   chip's margin to the wrapper's padding so the selection fill covers it. */
+[data-chat-input-editor] .mention-chip-wrapper {
+  padding-inline: 0.25em;
+}
+[data-chat-input-editor] .mention-chip {
+  margin-inline: 0;
+}
+/* Chips the native highlight skips or leaves gaps around are filled by hand:
+   ChipSelection in the composer, utils/selection-fill.ts in read-only chat.
+   Text and chips share one colour so a selection reads continuous. */
+::selection,
+[data-chat-input-editor] .mention-chip-wrapper.chip-in-selection,
+.selection-filled--inline,
+.selection-filled--box::before,
+.selection-filled--block::after,
+.selection-marker::before {
+  background-color: color-mix(in oklab, Highlight 60%, transparent);
+}
+.selection-filled::selection,
+.selection-filled ::selection {
+  background-color: transparent;
+}
+/* Inline box: margins become padding (same advance) and vertical padding,
+   which never moves layout, reaches the line box. */
+.selection-filled--inline {
+  margin-inline: 0;
+  padding: var(--fill-top) var(--fill-right) var(--fill-bottom) var(--fill-left);
+  border-radius: 0;
+}
+/* Atomic box: padding would resize it, so paint a layer behind it instead. */
+.selection-filled--box {
+  position: relative;
+  isolation: isolate;
+  background-color: transparent;
+}
+/* Block with its own chrome (code block, table, display math): a tint laid
+   over it, so header rows and cell fills take the selection too. */
+.selection-filled--block {
+  position: relative;
+}
+.selection-filled--block::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+/* List item whose marker the selection spans (::marker takes no highlight). */
+.selection-marker {
+  position: relative;
+  isolation: isolate;
+}
+.selection-marker::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: var(--marker-left);
+  top: var(--marker-top);
+  width: var(--marker-width);
+  height: var(--marker-height);
+  pointer-events: none;
+}
+.selection-filled--box::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: calc(-1 * var(--fill-top)) calc(-1 * var(--fill-right)) calc(-1 * var(--fill-bottom)) calc(-1 * var(--fill-left));
+  pointer-events: none;
+}
+/* An inline background spans only the font's ascent + descent; pad each line
+   fragment to the full line height like the native highlight. Vertical padding
+   on an inline box does not move layout, so chips still wrap mid-label. */
+[data-chat-input-editor] .mention-chip-wrapper.chip-in-selection {
+  padding-block: calc((1lh - var(--chip-text-height, 1lh)) / 2);
 }

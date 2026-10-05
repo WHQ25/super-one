@@ -14,14 +14,14 @@ import { wrapAgentMention } from '@superone/shared/agent-mention-tags'
 import { ContextUsage } from './ContextUsage'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
 import { useShallow } from 'zustand/react/shallow'
-import { useEditor, EditorContent } from '@tiptap/react'
+import { useEditor, EditorContent, type JSONContent } from '@tiptap/react'
 import { useComposerDraftSync } from './chat-input/useComposerDraftSync'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { MentionNode } from './mention-node'
 import { findMiniAppMentionMarkers } from '@superone/shared/miniapp-mention-marker'
 import { useMiniAppStore } from '@/stores/miniapp'
-import { PasteChipNode, PASTE_CHIP_LINE_THRESHOLD, PASTE_CHIP_CHAR_THRESHOLD } from './paste-chip-node'
+import { PasteChipNode } from './paste-chip-node'
 import { SlashDecoration } from './slash-decoration'
 import { SessionMentionDecoration, syncPortalMentionDismissed } from './session-mention-decoration'
 import { GitMentionDecoration } from './git-mention-decoration'
@@ -52,6 +52,7 @@ import { HighlightedText } from '@superone/ui/components/ui/HighlightedText'
 import { toMentionPath } from './chat-input-utils'
 import { internalDragSource } from '@/components/sidebar/drag-drop-utils'
 import { AttachmentNode } from './attachment-node'
+import { ChipSelection } from './chip-selection'
 import { BrowserAnnotationChips } from '../browser/BrowserAnnotationChips'
 import { notifyAnnotationRemoved, notifyAnnotationsCleared } from '../browser/browser-annotate-flow'
 import { useBrowserStore } from '@/stores/browser'
@@ -84,6 +85,9 @@ import { useScheduledSend } from '@/hooks/useScheduledSend'
 import { groupItems, PopupSectionHeader } from './popup-groups'
 import { computeMatchingSlashCommands } from './chat-input/computeMatchingSlashCommands'
 import { plainTextToTiptapDoc, plainTextToTiptapParagraphContent } from './chat-input/plainTextToTiptapDoc'
+import { draftInlineContent, type DraftPart } from './chat-input/message-draft'
+import { segmentsText } from './chat-input/segments-text'
+import { pastePartsFromHtml, type PastePart } from '@/lib/clipboard'
 import { resolveSlashCommandsForProvider } from './chat-input/resolveSlashCommandsForProvider'
 import { requestSideChat, useCanOpenSideChat } from '@/lib/side-chat-actions'
 import { resolveChatInputPlaceholder } from './chat-input/resolveChatInputPlaceholder'
@@ -99,6 +103,13 @@ import { useResolvedProviderId } from './model-selector/useSelectorProviders'
 
 export { chatInputAPI } from './chat-input-api'
 
+
+/**
+ * The plain text a composer last put on the clipboard. Pasting it back goes
+ * through ProseMirror's own paste, which rebuilds its chips from the copied
+ * HTML, instead of wrapping it all in one paste chip.
+ */
+let lastComposerCopy: string | null = null
 
 export function ChatInput() {
     const { t } = useTranslation()
@@ -270,6 +281,7 @@ export function ChatInput() {
     const addMentionRef = useRef(addMention)
     addMentionRef.current = addMention
     const processSelectedFilesRef = useRef<(files: FileList | File[]) => void>(() => {})
+    const pastePartsRef = useRef<(parts: PastePart[]) => Promise<void>>(async () => {})
     const setTextRef = useRef(setText)
     setTextRef.current = setText
     const matchingCommandsRef = useRef<typeof matchingCommands>([])
@@ -1083,7 +1095,7 @@ export function ChatInput() {
      */
     const draftMessage = useCallback(() => {
       const { segments } = serializeDraft()
-      return segments.flatMap((seg) => ('attachmentId' in seg ? [] : [seg.text])).join('\n').trim() || null
+      return segmentsText(segments).trim() || null
     }, [serializeDraft])
 
     /** Queue what is in the composer — without taking it away. */
@@ -1179,7 +1191,7 @@ export function ChatInput() {
         }
       }
       const { segments, mentions: editorMentions, attachments: sentAttachments } = serializeAndClear()
-      const fullText = segments.flatMap((s) => ('attachmentId' in s ? [] : [s.text])).join('\n')
+      const fullText = segmentsText(segments)
       // A typed turn never enters the voice timeline, so a composer shown under the
       // voice view (only possible between calls) follows its turn into the thread.
       if (displayedSessionId && activeProviderForResources === 'codex' && !realtimeVoiceEngaged) {
@@ -1444,6 +1456,28 @@ export function ChatInput() {
       [addAttachment]
     )
 
+    // A copied chat message pastes back as it was sent: every image is read
+    // first, then text, mentions, paste chips and attachments go in with one
+    // insert at the caret.
+    const pasteParts = useCallback(
+      async (parts: PastePart[]) => {
+        const attachments = await Promise.all(parts.map((part) => ('file' in part ? buildImageAttachment(part.file) : null)))
+        const draft = parts.flatMap((part, index): DraftPart[] => {
+          if ('mention' in part) addMention({ ...part.mention, kind: part.mention.kind as MentionKind })
+          if (!('file' in part)) return [part]
+          const att = attachments[index]
+          if (!att) return []
+          const id = crypto.randomUUID()
+          addAttachment({ ...att, id })
+          return [{ attachmentId: id }]
+        })
+        const content = draftInlineContent(draft)
+        editorRef.current?.chain().focus().insertContent(content).run()
+      },
+      [addAttachment, addMention]
+    )
+    pastePartsRef.current = pasteParts
+
     const processSelectedFiles = useCallback(
       (files: FileList | File[]) => {
         for (const file of Array.from(files)) {
@@ -1596,6 +1630,7 @@ export function ChatInput() {
         MentionNode,
         AttachmentNode,
         PasteChipNode,
+        ChipSelection,
         SlashDecoration.configure({ slashCommands: activeSlashCommands }),
         SessionMentionDecoration.configure({ context: sessionProjectOptions }),
         GitMentionDecoration.configure({ context: gitPortals }),
@@ -1617,6 +1652,17 @@ export function ChatInput() {
         handlePaste: (_view, event) => {
           lastKeyRef.current = null
           const plainText = event.clipboardData?.getData('text/plain')
+          const items = event.clipboardData?.items
+          const hasFiles = Array.from(items ?? []).some((item) => item.kind === 'file')
+          // A copied chat message carries its images inside the HTML flavour:
+          // paste its text and images back in their original order.
+          const parts = hasFiles ? null : pastePartsFromHtml(event.clipboardData?.getData('text/html') ?? '')
+          if (parts) {
+            event.preventDefault()
+            void pastePartsRef.current(parts)
+            return true
+          }
+          if (plainText && plainText === lastComposerCopy) return false
           if (plainText) {
             const markers = findMiniAppMentionMarkers(plainText)
             if (markers.length > 0) {
@@ -1642,22 +1688,9 @@ export function ChatInput() {
               return true
             }
           }
-          if (plainText && plainText.trim()) {
-            const lineCount = plainText.split('\n').length
-            if (lineCount >= PASTE_CHIP_LINE_THRESHOLD || plainText.length >= PASTE_CHIP_CHAR_THRESHOLD) {
-              event.preventDefault()
-              const preview = plainText.slice(0, 60).replace(/\n/g, ' ')
-              editorRef.current?.chain().focus().insertContent([
-                { type: 'pasteChip', attrs: { text: plainText, lineCount, preview } },
-                { type: 'paragraph' },
-              ]).run()
-              return true
-            }
-          }
-          const items = event.clipboardData?.items
-          if (!items) return false
+          // Files first: a copied file also carries its name as text.
           const attachableFiles: File[] = []
-          for (const item of Array.from(items)) {
+          for (const item of Array.from(items ?? [])) {
             if (item.type.startsWith('image/') || item.type === 'application/pdf') {
               const file = item.getAsFile()
               if (file) attachableFiles.push(file)
@@ -1666,6 +1699,12 @@ export function ChatInput() {
           if (attachableFiles.length > 0) {
             event.preventDefault()
             processSelectedFilesRef.current(attachableFiles)
+            return true
+          }
+          // Pasted text of any length lands as a chip, kept apart from what is typed.
+          if (plainText?.trim()) {
+            event.preventDefault()
+            editorRef.current?.chain().focus().insertContent({ type: 'pasteChip', attrs: { text: plainText } }).run()
             return true
           }
           return false
@@ -1931,6 +1970,21 @@ export function ChatInput() {
       () => promptSuggestions.filter((s) => s !== promptSuggestion),
       [promptSuggestions, promptSuggestion],
     )
+
+    useEffect(() => {
+      if (!editor || editor.isDestroyed) return
+      const dom = editor.view.dom
+      // Registered after ProseMirror's own copy handler, so the clipboard is filled.
+      const remember = (event: ClipboardEvent) => {
+        lastComposerCopy = event.clipboardData?.getData('text/plain') || null
+      }
+      dom.addEventListener('copy', remember)
+      dom.addEventListener('cut', remember)
+      return () => {
+        dom.removeEventListener('copy', remember)
+        dom.removeEventListener('cut', remember)
+      }
+    }, [editor])
 
     useEffect(() => {
       if (editor && !editor.isDestroyed) {

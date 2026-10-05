@@ -1907,6 +1907,12 @@ export const zh: Messages = {
       title_one: '已粘贴文本 · {{count}} 行',
       title_other: '已粘贴文本 · {{count}} 行',
       unsaved: '（未保存）',
+      view: '查看全文',
+      viewEdit: '查看与编辑',
+      copy: '复制',
+    },
+    attachmentChip: {
+      open: '打开预览',
     },
     userSelectionChip: {
       title_one: '{{count}} 条引用',

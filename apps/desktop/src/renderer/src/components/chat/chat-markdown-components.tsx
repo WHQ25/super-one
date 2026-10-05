@@ -20,6 +20,9 @@ export function InlineFileChip({ name, filePath, lineNumber, endLine }: { name: 
           role="button"
           onClick={handleClick}
           title={filePath}
+          data-selection-fill=""
+          // Copies back as the Markdown link it was rendered from.
+          data-copy-text={`[${name}](${filePath}${lineNumber != null ? formatLineRange(lineNumber, endLine) : ''})`}
           className="inline-flex max-w-full cursor-pointer items-center gap-0.5 rounded bg-muted px-1 text-[0.9em] text-foreground whitespace-nowrap align-baseline translate-y-[1px] hover:bg-muted/80 transition-colors"
         >
           <DraggableFileIcon name={name} filePath={filePath} dragEndRef={dragEndRef} />

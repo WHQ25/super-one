@@ -1,13 +1,22 @@
-import { Node, mergeAttributes } from '@tiptap/core'
+import { Node, mergeAttributes, type JSONContent } from '@tiptap/core'
 import { ReactNodeViewRenderer } from '@tiptap/react'
 import { PasteChipView } from './PasteChipView'
 
-export const PASTE_CHIP_LINE_THRESHOLD = 10
-export const PASTE_CHIP_CHAR_THRESHOLD = 500
+const PASTE_CHIP_LINE_THRESHOLD = 10
+const PASTE_CHIP_CHAR_THRESHOLD = 500
+
+/**
+ * A message from before pastes were marked (`isPaste`) shows its long text
+ * runs as a paste chip; the composer chips every paste.
+ */
+export function isLongPaste(text: string): boolean {
+  return text.split('\n').length >= PASTE_CHIP_LINE_THRESHOLD || text.length >= PASTE_CHIP_CHAR_THRESHOLD
+}
 
 export const PasteChipNode = Node.create({
   name: 'pasteChip',
-  group: 'block',
+  group: 'inline',
+  inline: true,
   atom: true,
   selectable: true,
   draggable: false,
@@ -15,20 +24,30 @@ export const PasteChipNode = Node.create({
   addAttributes() {
     return {
       text: { default: '' },
-      lineCount: { default: 0 },
-      preview: { default: '' },
     }
   },
 
   parseHTML() {
-    return [{ tag: 'div[data-paste-chip]' }]
+    return [{ tag: 'span[data-paste-chip]' }]
   },
 
   renderHTML({ HTMLAttributes }) {
-    return ['div', mergeAttributes({ 'data-paste-chip': '' }, HTMLAttributes)]
+    return ['span', mergeAttributes({ 'data-paste-chip': '' }, HTMLAttributes)]
   },
 
   addNodeView() {
-    return ReactNodeViewRenderer(PasteChipView, { as: 'div', className: 'paste-chip-wrapper' })
+    return ReactNodeViewRenderer(PasteChipView, { as: 'span', className: 'mention-chip-wrapper' })
   },
 })
+
+/**
+ * Paste chips used to be top-level blocks; saved drafts can still hold them
+ * there. Wrap each in a paragraph so the doc fits the inline schema.
+ */
+export function liftBlockPasteChips(doc: JSONContent): JSONContent {
+  if (!doc.content?.some((node) => node.type === 'pasteChip')) return doc
+  return {
+    ...doc,
+    content: doc.content.map((node) => (node.type === 'pasteChip' ? { type: 'paragraph', content: [node] } : node)),
+  }
+}

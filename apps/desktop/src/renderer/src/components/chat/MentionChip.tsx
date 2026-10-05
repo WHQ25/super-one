@@ -19,12 +19,12 @@ import { hasTextSelection } from '@/lib/file-link'
 import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
 
 /**
- * Chips that carry a human label rather than a path: they render "blended"
- * (no resource border) and show `displayName`, never the raw value. Shared so
- * the composer NodeView and the sent-bubble chip cannot disagree — they did,
- * and an @agent chip rendered as `codex-base` in the bubble.
+ * Chips that carry a human label rather than a path: they show `displayName`,
+ * never the raw value. Shared so the composer NodeView and the sent-bubble chip
+ * cannot disagree — they did, and an @agent chip rendered as `codex-base` in
+ * the bubble.
  */
-export function isBlendedMentionKind(kind: string): boolean {
+export function isLabelMentionKind(kind: string): boolean {
   return (
     isStoredCapabilityId(kind)
     || kind === 'desktop-app'
@@ -36,14 +36,14 @@ export function isBlendedMentionKind(kind: string): boolean {
 }
 
 /**
- * Shared shell for composer + bubble mention chips.
+ * Shared shell for every desktop chat chip (mentions, attachments, pasted
+ * text), composer + bubble: `[icon] [label]` in the blended style, no fill.
  * Bubble: parent .user-text-with-mentions is normal inline flow.
  * Composer: .mention-chip uses vertical-align: baseline in the paragraph.
  * Remaining props and `ref` land on the outer span, so a file chip can take its
  * click and Radix `asChild` context-menu trigger; `iconProps` make the icon its drag handle.
  */
 export function MentionChipContent({
-  blended,
   kind,
   icon,
   label,
@@ -51,7 +51,6 @@ export function MentionChipContent({
   className,
   ...rest
 }: Omit<ComponentPropsWithRef<'span'>, 'children'> & {
-  blended: boolean
   kind?: string
   icon: ReactNode
   label: string
@@ -61,11 +60,8 @@ export function MentionChipContent({
     <span
       {...rest}
       data-mention-kind={kind}
-      className={cn(
-        'mention-chip select-none',
-        blended ? 'mention-chip--blended' : 'mention-chip--resource',
-        className,
-      )}
+      data-selection-fill=""
+      className={cn('mention-chip mention-chip--blended select-none', className)}
     >
       <MentionChipBody icon={icon} label={label} iconProps={iconProps} />
     </span>
@@ -112,7 +108,7 @@ function FileMentionNodeView({ value, label }: { value: string; label: string })
         data-mention=""
         data-mention-kind="file"
         {...chipProps}
-        className="mention-chip mention-chip--resource cursor-pointer select-none"
+        className="mention-chip mention-chip--blended cursor-pointer select-none"
       >
         <MentionChipBody icon={mentionChipIcon('file', value, label)} label={label} iconProps={iconProps} />
       </NodeViewWrapper>
@@ -123,7 +119,6 @@ function FileMentionNodeView({ value, label }: { value: string; label: string })
 export function MentionChip({ node }: NodeViewProps) {
   const { kind, value, displayName } = node.attrs as MentionNodeAttrs
   if (kind === 'file') return <FileMentionNodeView value={value} label={displayName} />
-  const isBlendedChip = isBlendedMentionKind(kind)
   const label = kind === 'agent' && displayName.includes(':') ? displayName.split(':').pop()! : displayName
 
   return (
@@ -132,10 +127,7 @@ export function MentionChip({ node }: NodeViewProps) {
       contentEditable={false}
       data-mention=""
       data-mention-kind={kind}
-      className={cn(
-        'mention-chip select-none',
-        isBlendedChip ? 'mention-chip--blended' : 'mention-chip--resource',
-      )}
+      className="mention-chip mention-chip--blended select-none"
     >
       {kind === 'mcp-resource' ? (
         <McpMentionPreviewHover value={value}>

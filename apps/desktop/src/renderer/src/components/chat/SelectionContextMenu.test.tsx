@@ -27,11 +27,22 @@ Object.assign(navigator, {
   clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
 })
 
+/** Select the first occurrence of `text` in the page, or clear the selection. */
 function mockSelection(text: string) {
-  vi.spyOn(window, 'getSelection').mockReturnValue({
-    rangeCount: text ? 1 : 0,
-    toString: () => text,
-  } as unknown as Selection)
+  const selection = document.getSelection()!
+  selection.removeAllRanges()
+  if (!text) return
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const at = node.textContent!.indexOf(text)
+    if (at < 0) continue
+    const range = document.createRange()
+    range.setStart(node, at)
+    range.setEnd(node, at + text.length)
+    selection.addRange(range)
+    return
+  }
+  throw new Error(`no text ${text}`)
 }
 
 describe('SelectionContextMenuZone', () => {
@@ -94,6 +105,27 @@ describe('SelectionContextMenuZone', () => {
     })
 
     expect(addUserSelection).toHaveBeenCalledWith('hello', undefined)
+  })
+
+  it('"添加到聊天" adds a selection in a reply as Markdown, as copying it would', () => {
+    render(
+      <SelectionContextMenuZone>
+        <div className="chat-md"><ol><li>first <strong>bold</strong> step</li><li>second</li></ol></div>
+      </SelectionContextMenuZone>,
+    )
+
+    const selection = document.getSelection()!
+    const range = document.createRange()
+    range.selectNodeContents(document.querySelector('.chat-md')!)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    fireEvent.contextMenu(screen.getByText('second'), { clientX: 0, clientY: 0 })
+
+    act(() => {
+      screen.getByText('添加到聊天').click()
+    })
+
+    expect(addUserSelection).toHaveBeenCalledWith('1. first **bold** step\n2. second', undefined)
   })
 
   it('"复制" writes selected text to clipboard and closes the menu', () => {

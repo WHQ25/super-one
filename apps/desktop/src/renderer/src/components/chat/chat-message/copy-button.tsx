@@ -17,13 +17,19 @@ export function CopyButton({ copied, onClick, className }: { copied: boolean; on
   )
 }
 
-export function useCopyText() {
+/** `copied` flips on for a moment after `run`'s copy succeeds. */
+export function useCopyFeedback() {
   const [copied, setCopied] = useState(false)
-  const copy = useCallback(async (text: string) => {
-    if (window.getSelection()?.toString()) return
-    if (!(await tryCopy(text))) return
+  const run = useCallback(async (copy: () => Promise<boolean>) => {
+    if (!(await copy())) return
     setCopied(true)
     setTimeout(() => setCopied(false), 1500)
   }, [])
+  return { copied, run }
+}
+
+export function useCopyText() {
+  const { copied, run } = useCopyFeedback()
+  const copy = useCallback((text: string) => run(() => tryCopy(text)), [run])
   return { copied, copy }
 }

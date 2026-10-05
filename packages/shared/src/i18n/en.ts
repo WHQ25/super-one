@@ -1799,6 +1799,12 @@ export type Messages = {
       title_one: string
       title_other: string
       unsaved: string
+      view: string
+      viewEdit: string
+      copy: string
+    }
+    attachmentChip: {
+      open: string
     }
     userSelectionChip: {
       title_one: string
@@ -6048,6 +6054,12 @@ export const en: Messages = {
       title_one: 'Pasted text · {{count}} line',
       title_other: 'Pasted text · {{count}} lines',
       unsaved: '(unsaved)',
+      view: 'View Full Text',
+      viewEdit: 'View & Edit',
+      copy: 'Copy',
+    },
+    attachmentChip: {
+      open: 'Open Preview',
     },
     userSelectionChip: {
       title_one: '{{count}} quote',

@@ -1,7 +1,5 @@
 import { superoneHome } from '../superone-home'
 import { INTERACTION_MEMORY_TOOL_DEFS, memoryActor } from '@superone/shared/interaction-memory'
-import { INPUT_REQUEST_TOOL_DEFS } from '@superone/shared/environment/host-action-input-request-descriptors'
-import { composerRequestHandler } from './input-request-tools'
 import { InteractionMemoryStore, executeInteractionMemoryTool } from '@superone/runtime/fs/interaction-memory'
 import { jsonSchemaToZodShape } from './json-schema-zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -311,8 +309,6 @@ export async function executeBuiltInSuperoneTool(
     case 'device_memory_read':
     case 'device_memory_write':
       return executeInteractionMemoryTool(toolName, args, new InteractionMemoryStore(superoneHome(), sessionMemoryActor(deps)), deps.signal)
-    case 'composer_request':
-      return composerRequestHandler(args, deps)
     case 'read_manual':
       return manualReadHandler(args as { domain?: string; topic?: string; modules?: string[] })
     case 'miniapp_dev_setup':
@@ -481,10 +477,6 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
     },
   )
 
-  for (const def of INPUT_REQUEST_TOOL_DEFS) {
-    server.registerTool(def.name, { description: def.description, inputSchema: jsonSchemaToZodShape(def.inputSchema) },
-      (args, extra) => composerRequestHandler(args, { ...deps, signal: extra.signal ?? deps.signal }))
-  }
   for (const def of INTERACTION_MEMORY_TOOL_DEFS) {
     server.registerTool(def.name, { description: def.description, inputSchema: jsonSchemaToZodShape(def.inputSchema) },
       (args, extra) => executeInteractionMemoryTool(def.name, args, new InteractionMemoryStore(superoneHome()), extra.signal))

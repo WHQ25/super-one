@@ -201,9 +201,6 @@ cancellation or owner/session disposal releases the form. An unrelated agent
 interruption preserves app/widget forms. Drafts are local to each client and do
 not persist across app restarts.
 
-- `composer_request` collects values in the agent's own local or remote-node
-  session. Submit returns `{ status: 'submitted', values }` to the tool; Cancel
-  returns a neutral outcome. It sends no additional user message.
 - Mini-app frontends and widgets call `window.superone.composer.open(spec,
   { output? })`. Default `caller` output returns `{ status: 'submitted', values }`
   only to the opening view. `agent` sends a normal user message and returns

@@ -1,6 +1,6 @@
 /**
  * Input requests: a declarative form shown in a session's composer slot on
- * behalf of the agent (`composer_request`), a mini-app, or a widget.
+ * behalf of a mini-app or a widget.
  *
  * The form is a flat elicitation `requestedSchema`, admitted only through
  * `parseSchemaForm`, so every renderer and validator already understands it.
@@ -11,10 +11,10 @@
 import type { SuperOneComposerOutcome } from './composer-api'
 import { parseSchemaForm, type SchemaForm, type SchemaFormField, type SchemaFormValue } from './schema-form'
 
-/** Bare agent tool name; chat shows it as `mcp__superone__composer_request`. */
-export const INPUT_REQUEST_TOOL_NAME = 'composer_request'
 /** `PermissionRequest.toolName` for forms opened by a mini-app or widget. */
 export const INPUT_REQUEST_HOST_TOOL_NAME = 'superone_input_request'
+/** Historical tool identity accepted when rendering input requests from older nodes. */
+export const INPUT_REQUEST_TOOL_NAME = 'composer_request'
 
 export interface InputRequestSpec {
   title: string
@@ -67,15 +67,6 @@ export function inputRequestMeta(spec: InputRequestSpec, origin: InputRequestMet
 /** What a mini-app or widget opener receives: an `agent` answer's values went to the agent only. */
 export function composerOutcome(output: InputRequestOutput, outcome: InputRequestOutcome): SuperOneComposerOutcome {
   return output === 'agent' && outcome.status === 'submitted' ? { status: 'submitted' } : outcome
-}
-
-/** What `composer_request` returns to the turn, on desktop and on nodes. */
-export function composerRequestResultValue(outcome: InputRequestOutcome): Record<string, unknown> {
-  if (outcome.status === 'submitted') return outcome
-  return {
-    ...outcome,
-    hint: 'The user closed the form without submitting it. Do not reopen it on your own — wait for the user.',
-  }
 }
 
 export type InputRequestErrorCode = 'invalid' | 'already_resolved' | 'not_found'

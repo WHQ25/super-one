@@ -11,7 +11,6 @@ import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, asNodeCallerModUiRequest, asNodeReaderModEvent, type ModUiOp, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'
 import { acceptedElicitationContent } from '@superone/shared/schema-form'
-import type { InputRequestForm, InputRequestMeta, InputRequestOutcome } from '@superone/shared/input-request'
 import {
   DEFAULT_HOST_ACTION_TOOL_GROUPS,
   HOST_ACTION_CAPABILITY_VERSION,
@@ -131,12 +130,6 @@ interface PlanWaiter {
   }) => void
 }
 
-interface InputRequestWaiter {
-  sessionId: string
-  interaction: PendingInteraction
-  settle: (outcome: InputRequestOutcome) => void
-}
-
 interface AgentsConfirmWaiter {
   sessionId: string
   settle: (result: {
@@ -216,12 +209,6 @@ export class SessionRuntime {
   private readonly questionWaiters = new Map<string, QuestionWaiter>()
   private readonly planWaiters = new Map<string, PlanWaiter>()
   private readonly agentsConfirmWaiters = new Map<string, AgentsConfirmWaiter>()
-  /**
-   * Input forms (`composer_request`), kept apart from the single `pendingInteraction`
-   * slot so a form and a harness permission never evict each other. In memory only:
-   * a restart ends the turn that waited, and snapshots stop listing the form.
-   */
-  private readonly inputRequests = new Map<string, InputRequestWaiter>()
   private readonly defaultApiProviderId?: (harnessId: string) => string | null
   private readonly agentsConfirmTimeoutMs: number
   private readonly mcpAppResources?: McpAppResourceStore
@@ -382,7 +369,6 @@ export class SessionRuntime {
       if (
         session?.status === 'streaming'
         || session?.pendingInteraction != null
-        || this.hasInputRequests(entry.sessionId)
         || (this.activeTurnCounts.get(entry.sessionId) ?? 0) > 0
       ) continue
 
@@ -1556,7 +1542,6 @@ export class SessionRuntime {
     session.closed = true
     session.status = 'ended'
     this.rejectPendingPermission(session)
-    this.cancelInputRequests(sessionId)
     this.cancelHostActionsForSession(sessionId, 'session_closed')
     session.updatedAt = Date.now()
     this.persist(session)
@@ -1666,7 +1651,6 @@ export class SessionRuntime {
     for (const abort of aborts ?? []) abort.abort()
     // Standalone View forms can be pending while no model turn owns an abort.
     this.rejectPendingPermission(session)
-    this.cancelInputRequests(sessionId)
     // Cancel outstanding host actions so the desktop can abort local work (AbortSignal).
     this.cancelHostActionsForSession(sessionId, 'interrupt')
     if (session.status === 'streaming') {
@@ -2104,21 +2088,6 @@ export class SessionRuntime {
       generation: input.generation,
       holderClientId: input.client.clientSessionId,
     })
-    const form = this.inputRequests.get(input.interactionId)
-    if (form && form.sessionId === input.sessionId) {
-      if (input.cancel === true || input.decision === 'deny') {
-        form.settle({ status: 'cancelled', reason: 'user' })
-        return
-      }
-      // A client that does not understand the form sends no values; the form stays open.
-      const accepted = input.formAnswers && typeof input.formAnswers === 'object'
-        ? acceptedElicitationContent(form.interaction.schemaForm, input.formAnswers)
-        : { ok: false as const, reason: 'the answer carries no form values' }
-      if (!accepted.ok) throw Object.assign(new Error(accepted.reason), { code: 'failed_precondition' })
-      form.settle({ status: 'submitted', values: accepted.content })
-      return
-    }
-
     const pending = session.pendingInteraction
     if (!pending || pending.interactionId !== input.interactionId) {
       throw Object.assign(new Error('no matching pending permission'), { code: 'failed_precondition' })
@@ -2189,83 +2158,6 @@ export class SessionRuntime {
     if (!accepted.ok) return { action: 'cancel', content: null, _meta: null }
     return { action: 'accept', content: interaction.schemaForm ? accepted.content : null,
       _meta: !interaction.schemaForm && interaction.supportsAlwaysPersist && result.clientDecision === 'allow_always' ? { persist: 'always' } : null }
-  }
-
-  /**
-   * Show a `composer_request` form and wait for the user, with no deadline. It uses
-   * the durable permission events, so every client presents and resolves it like a
-   * prompt, but never touches `pendingInteraction`.
-   */
-  requestInput(input: {
-    sessionId: string
-    meta: InputRequestMeta
-    form: InputRequestForm
-    signal?: AbortSignal
-    requestId?: string
-  }): Promise<InputRequestOutcome> {
-    const session = this.live.get(input.sessionId)
-    if (!session || session.closed || input.signal?.aborted) {
-      return Promise.resolve({ status: 'cancelled', reason: 'aborted' })
-    }
-    const interaction: PendingInteraction = {
-      interactionId: `inputrequest_${Date.now()}_${randomUUID().slice(0, 8)}`,
-      kind: 'permission',
-      toolName: 'composer_request',
-      input: {},
-      createdAt: Date.now(),
-      requestKind: 'input_request',
-      serverName: 'superone',
-      message: input.meta.title,
-      allowAlwaysAllow: false,
-      schemaForm: input.form,
-      inputRequest: input.meta,
-    }
-    return new Promise<InputRequestOutcome>((resolve) => {
-      const onAbort = () => settle({ status: 'cancelled', reason: 'aborted' })
-      const settle = (outcome: InputRequestOutcome): void => {
-        if (this.inputRequests.get(interaction.interactionId) !== waiter) return
-        this.inputRequests.delete(interaction.interactionId)
-        input.signal?.removeEventListener('abort', onAbort)
-        this.events.appendSession({
-          sessionId: session.sessionId,
-          eventType: outcome.status === 'submitted' || outcome.reason === 'user'
-            ? SESSION_DURABLE_EVENT.permissionResponded
-            : SESSION_DURABLE_EVENT.permissionAborted,
-          payload: {
-            interactionId: interaction.interactionId,
-            decision: outcome.status === 'submitted' ? 'allow' : 'cancel',
-          },
-        })
-        resolve(outcome)
-      }
-      const waiter: InputRequestWaiter = { sessionId: session.sessionId, interaction, settle }
-      this.inputRequests.set(interaction.interactionId, waiter)
-      this.events.appendSession({
-        sessionId: session.sessionId,
-        eventType: SESSION_DURABLE_EVENT.permissionRequested,
-        payload: interaction,
-        causationRequestId: input.requestId,
-      })
-      input.signal?.addEventListener('abort', onAbort, { once: true })
-    })
-  }
-
-  /** Open input forms for snapshots (`session.get`), oldest first. */
-  pendingInputRequests(sessionId: string): PendingInteraction[] {
-    return [...this.inputRequests.values()]
-      .filter(waiter => waiter.sessionId === sessionId)
-      .map(waiter => waiter.interaction)
-  }
-
-  private hasInputRequests(sessionId: string): boolean {
-    for (const waiter of this.inputRequests.values()) if (waiter.sessionId === sessionId) return true
-    return false
-  }
-
-  private cancelInputRequests(sessionId: string): void {
-    for (const waiter of [...this.inputRequests.values()]) {
-      if (waiter.sessionId === sessionId) waiter.settle({ status: 'cancelled', reason: 'aborted' })
-    }
   }
 
   /**

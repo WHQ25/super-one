@@ -1,6 +1,6 @@
 /**
  * Host-owned input requests for local sessions: declarative forms the agent
- * (`composer_request`), a mini-app or a widget shows in a session's composer.
+ * a mini-app or a widget shows in a session's composer.
  *
  * Each request is a host `permission_request` (`requestKind: 'input_request'`)
  * parked in a `HostConfirmRegistry`, so every client of the session — main and

@@ -8,7 +8,6 @@
  * - Node-local *_memory_* tools read/write the node user’s personal files.
  * - Node-local session_collab_* tools call CollaborationService in-process
  *   (no Host Action claim on the desktop).
- * - Node-local composer_request waits on SessionRuntime input forms.
  */
 
 import { INTERACTION_MEMORY_TOOL_DEFS } from '@superone/shared/interaction-memory'
@@ -22,15 +21,6 @@ import {
   type HostActionReplayPolicy,
   type HostActionTerminalResult,
 } from '@superone/shared/environment'
-import { INPUT_REQUEST_TOOL_DEFS } from '@superone/shared/environment/host-action-input-request-descriptors'
-import {
-  admitInputRequestSpec,
-  composerRequestResultValue,
-  inputRequestMeta,
-  type InputRequestForm,
-  type InputRequestMeta,
-  type InputRequestOutcome,
-} from '@superone/shared/input-request'
 import { jsonSchemaToZodShape } from './json-schema-to-zod'
 
 /** Public MCP server name harnesses attach as. */
@@ -59,20 +49,11 @@ export interface NodeCollabToolHandlers {
   retrieve: (sessionId: string, args: unknown) => Promise<unknown>
 }
 
-/** Node-local `composer_request`: the SessionRuntime shows the form and waits for the user. */
-export type NodeInputRequestHandler = (input: {
-  sessionId: string
-  meta: InputRequestMeta
-  form: InputRequestForm
-  signal?: AbortSignal
-}) => Promise<InputRequestOutcome>
-
 export interface CreateHostActionMcpServerOptions {
   memory?: InteractionMemoryStore
   /** OKF actor for notes this session writes; resolved per call so a model switch is reflected. */
   resolveActor?: (sessionId: string) => string | undefined
   collab?: NodeCollabToolHandlers
-  requestInput?: NodeInputRequestHandler
 }
 
 function toolResultJson(value: unknown, isError = false) {
@@ -136,34 +117,7 @@ export function createHostActionMcpServer(
   if (opts?.collab) {
     registerNodeCollabTools(server, superoneSessionId, opts.collab)
   }
-  if (opts?.requestInput) {
-    registerNodeInputRequestTool(server, superoneSessionId, opts.requestInput)
-  }
   return server
-}
-
-/** Remote sessions cannot prove a user-picked file yet, so file fields are rejected at admission. */
-export function registerNodeInputRequestTool(
-  server: McpServer,
-  superoneSessionId: string,
-  requestInput: NodeInputRequestHandler,
-): void {
-  for (const def of INPUT_REQUEST_TOOL_DEFS) {
-    server.registerTool(def.name, { description: def.description, inputSchema: jsonSchemaToZodShape(def.inputSchema) },
-      async (args, extra) => {
-        const admitted = admitInputRequestSpec(args, { userResources: false })
-        if (!admitted.ok) {
-          return { content: [{ type: 'text' as const, text: `[Error] ${admitted.error}. Fix the form and call composer_request again.` }], isError: true as const }
-        }
-        const outcome = await requestInput({
-          sessionId: superoneSessionId,
-          meta: inputRequestMeta(admitted.spec, { kind: 'agent' }, 'caller'),
-          form: admitted.form,
-          signal: extra.signal,
-        })
-        return toolResultJson(composerRequestResultValue(outcome))
-      })
-  }
 }
 
 export function registerHostActionTools(

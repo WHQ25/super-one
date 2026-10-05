@@ -106,7 +106,7 @@ class SuperoneIpcClient {
         notifyCancelled()
         reject(new Error(`SuperOne MCP bridge request cancelled: ${method}`))
       }
-      // A tool call may wait for a person (composer_request, host confirms): the harness
+      // A tool call may wait for a person (host confirms): the harness
       // owns its timeout and cancels through `signal`; a lost host closes the socket.
       const timer = method === 'tools/call' ? undefined : setTimeout(() => {
         const pending = this.pending.get(id)

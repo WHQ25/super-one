@@ -66,7 +66,6 @@ export const NODE_LOCAL_SUPERONE_TOOL_NAMES = [
   'session_collab_start',
   'session_collab_send',
   'session_collab_retrieve',
-  'composer_request',
 ] as const
 
 export type NodeLocalSuperoneToolName = (typeof NODE_LOCAL_SUPERONE_TOOL_NAMES)[number]

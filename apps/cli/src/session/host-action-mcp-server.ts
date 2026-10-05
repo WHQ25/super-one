@@ -41,7 +41,6 @@ import {
   HOST_ACTION_MCP_NAME,
   type HostActionRequestFn,
   type NodeCollabToolHandlers,
-  type NodeInputRequestHandler,
 } from './host-action-mcp-core'
 
 const MAX_HTTP_BODY_BYTES = 1024 * 1024
@@ -52,8 +51,6 @@ export interface HostActionMcpServerOptions {
   requestHostAction: HostActionRequestFn
   /** Node-local session_collab_* (SessionRuntime collab service). */
   collab?: NodeCollabToolHandlers
-  /** Node-local composer_request (SessionRuntime input forms). */
-  requestInput?: NodeInputRequestHandler
   /** OKF actor for interaction-memory notes (harness + model of the session). */
   resolveActor?: (sessionId: string) => string | undefined
   /** Injectable for tests. */
@@ -207,7 +204,6 @@ export async function startHostActionMcpServer(
       try {
         const server = createHostActionMcpServer(superoneSessionId, opts.requestHostAction, {
           collab: opts.collab,
-          requestInput: opts.requestInput,
           resolveActor: opts.resolveActor,
         })
         let sessionRef: HttpMcpSession | undefined
@@ -296,7 +292,6 @@ export async function startHostActionMcpServer(
     createClaudeSdkMcp(sessionId: string): ClaudeSdkMcpHandle {
       const server = createHostActionMcpServer(sessionId, opts.requestHostAction, {
         collab: opts.collab,
-        requestInput: opts.requestInput,
         resolveActor: opts.resolveActor,
       })
       const entry = {

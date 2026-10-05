@@ -2031,8 +2031,7 @@ function handleSessionGet(payload: unknown, ctx: RpcContext): RpcResult {
   if (denied) return denied
   const sessionId = String(asRecord(payload).sessionId ?? '')
   const session = ctx.sessions.get(sessionId)
-  // Input forms live beside the single pendingInteraction slot.
-  return { result: session && { ...session, pendingInputRequests: ctx.sessions.pendingInputRequests(sessionId) } }
+  return { result: session }
 }
 
 /**

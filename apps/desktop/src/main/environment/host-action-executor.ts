@@ -40,7 +40,6 @@ const REMOTE_SESSION_SCOPED_TOOLS = new Set(['session_rename'])
  * Catalog no longer advertises them; reject stale claims with failed_precondition.
  */
 const NODE_LOCAL_COLLAB_TOOLS = new Set([
-  'composer_request',
   'session_collab_list_agents',
   'session_collab_request',
   'session_collab_start',

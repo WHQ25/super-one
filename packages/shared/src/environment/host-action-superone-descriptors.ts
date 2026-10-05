@@ -2,7 +2,6 @@
  * Shared description constants prevent prompt drift; parity tests guard schemas. */
 import { INTERACTION_MEMORY_TOOL_DEFS } from '../interaction-memory'
 import { HOST_ACTION_COLLABORATION_DESCRIPTORS } from './host-action-collaboration-descriptors'
-import { INPUT_REQUEST_TOOL_DEFS } from './host-action-input-request-descriptors'
 import { HOST_ACTION_SETUP_DESCRIPTORS } from './host-action-setup-descriptors'
 import { HOST_ACTION_ARCHIVE_DESCRIPTORS } from './host-action-archive-descriptors'
 import { HOST_ACTION_MEDIA_DESCRIPTORS } from './host-action-media-descriptors'
@@ -26,7 +25,6 @@ export interface HostActionSuperoneToolDescriptor {
 export const HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS: HostActionSuperoneToolDescriptor[] = [
   ...INTERACTION_MEMORY_TOOL_DEFS,
   ...HOST_ACTION_COLLABORATION_DESCRIPTORS,
-  ...INPUT_REQUEST_TOOL_DEFS,
   ...HOST_ACTION_SETUP_DESCRIPTORS,
   ...HOST_ACTION_ARCHIVE_DESCRIPTORS,
   ...HOST_ACTION_MEDIA_DESCRIPTORS,

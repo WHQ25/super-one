@@ -250,18 +250,3 @@ export const TERMINAL_ACT_DESCRIPTION =
 export const TERMINAL_WAIT_FOR_DESCRIPTION =
   'Block until a terminal tab reaches a state; conditions AND-combine: text (substring visible on screen or in new output), textGone, idleMs (no output for that long), exited (foreground command finished). ' +
   'Use after terminal_tabs run or terminal_act when output arrives asynchronously (a server banner, a watch rebuild finishing). timeoutMs default 15000, max 120000. Do not sleep+poll with terminal_snapshot yourself.'
-
-export const COMPOSER_REQUEST_DESCRIPTION =
-  'Ask the user to fill in a form in this session\'s composer and wait for their answer. ' +
-  'Use it when you need several typed values at once (text, numbers, choices, yes/no, files); ' +
-  'for a single ordinary question, use your built-in question tool. ' +
-  'Returns the submitted values. On `cancelled`, wait for the user; do not reopen the form on your own.'
-export const COMPOSER_REQUEST_TITLE_DESCRIPTION = 'Short heading shown above the form.'
-export const COMPOSER_REQUEST_FORM_DESCRIPTION = 'Optional context shown under the title.'
-export const COMPOSER_REQUEST_SCHEMA_DESCRIPTION =
-  'Flat JSON Schema object, as in MCP elicitation `requestedSchema`: `properties` of string (optional `format`: email, uri, date, date-time; ' +
-  '`enum` or `oneOf` [{ const, title }] for choices), number/integer (`minimum`/`maximum`), boolean, or string array (`items.enum` for multi-select); ' +
-  'each with `title`, `description`, `default`; `required` names mandatory fields. No nested objects. ' +
-  'For local files, a string array with `items: { type: "string", format: "uri" }` and ' +
-  '`x-openai-input: { type: "file", options: [], userOptions: { kind: "file", accept: [".png"] } }`; the answer is file URIs.'
-export const COMPOSER_REQUEST_SUBMIT_LABEL_DESCRIPTION = 'Optional submit button text.'

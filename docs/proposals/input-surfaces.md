@@ -36,7 +36,7 @@ Related: [miniapp-event-api.md](miniapp-event-api.md),
 | Tool intercepts | `manifest.tools[].renderer.intercept` | WebView input before a mini-app tool runs, rendered in the transcript |
 | Media generation | `media_*` MCP tools and native image/video composers | Users open native modes from the toolbar or `/image` / `/video`; results support caller and agent output. Models use the existing media-gen consumers |
 | Mini window | `apps/desktop/src/renderer/src/components/MiniWindowApp.tsx` | Mounts a full `SessionPane`; it is not session-less today |
-| Declarative input | `composer_request`, frontend `window.superone.composer.open`, Node `context.composer.open` | Once-only Host-owned forms reuse schema validation and pending restore. Frontends share default caller output and explicit agent output |
+| Declarative input | Frontend `window.superone.composer.open`, Node `context.composer.open` | Once-only Host-owned forms reuse schema validation and pending restore. Frontends share default caller output and explicit agent output |
 | Phone | `apps/mobile/src/navigation/mobile-app.tsx`, `InputRequestComposer`, `packages/chat-view/src/PortableDecisionCards.tsx`, and `pending-prompt-bar.tsx` | New local-host forms render in the native composer slot with growing text and bound file uploads. Permission/plan sheets and transcript questions retain their entry points |
 
 ## 3. Composer model
@@ -180,7 +180,6 @@ interface InputRequestMeta {
 
 | Caller | Entry | v1 result and ownership |
 |---|---|---|
-| Agent | `composer_request({ title, requestedSchema, description?, submitLabel? })` | Once/caller; local and node sessions; result returns to the running tool call |
 | Mini-app frontend and Widget | `window.superone.composer.open(spec, { output? })` | Shared once-only contract; default caller returns values, agent sends a user message and returns status only; host-bound identity |
 | Mini-app Node Host | `context.composer.open(spec, { output?, session?, signal? })` | Same spec/output/outcome contract plus trusted session and AbortSignal; desktop-owned local sessions |
 | Legacy Widget | `window.requestInput(spec)` | Agent output with opening-only acknowledgement, retained for compatibility |
@@ -246,18 +245,17 @@ with no automatic retry. Duplicate or late answers cannot settle twice.
 
 ### 9.4 Human wait and file proof
 
-`composer_request` is node-local on remote nodes, excluded from generic Host
-Action claim/dispatch. Keep AskUserQuestion alongside it. Internal harness
-children sharing a parent's MCP session cannot place a form in that parent;
-a distinct authenticated SuperOne child session owns its own form.
+Agent questions remain on each harness's built-in question path. Declarative
+forms are available to mini-apps and widgets through their composer APIs.
 
 Mini-app forms use dedicated child/main messages, not the renderer Host Action
 bridge with its 60-second timer. `open()` may remain pending independently of a
 mini-app tool invocation. A handler can start a form, return, then consume the
 outcome in its long-lived Node Host. If it awaits inline or passes `ctx.signal`,
 the existing 120-second tool budget/abort still applies. Do not extend generic
-Host Action deadlines, claim leases or mini-app execution timeouts. An agent
-that needs input inside its current turn uses `composer_request` itself.
+Host Action deadlines, claim leases or mini-app execution timeouts. Mini-apps
+that need input inside their current turn use their composer API from the
+calling context.
 Verify pinned MCP client timeout configuration; source/config checks do not
 substitute for a paid live harness run.
 
@@ -324,8 +322,8 @@ explicitly. Phase 3 is delivered only after these paths are usable and checked.
 1. `session` output: record user-initiated results as a new event (e.g.
    `user_action`) that enters the agent's context with the next message, show
    them without entering context, or drop `session` and route through the agent.
-2. Resolved for Phase 3 v1: `composer_request` complements AskUserQuestion;
-   reuse the Host prompt/schema-form pipeline and render new phone forms in
-   the native composer slot (§9).
+2. Resolved for Phase 3 v1: app and widget composer APIs reuse the Host
+   prompt/schema-form pipeline and render new phone forms in the native slot
+   (§9). No agent-facing form MCP tool is exposed.
 3. WebView composers on the phone: fallback UI or a mobile WebView path.
 4. Guard length and shortcut design for the misfire rule.

@@ -174,10 +174,9 @@ Host Action deadline extension.
 
 ### 3.2 Node and agent tool — Claude
 
-- [x] Register composer_request on desktop and as node-local on remote nodes,
-  using one shared schema/description and canonical tool identity.
-- [x] Integrate a separate node input collection with answer leases, snapshot
-  projection, busy/idle/reaper and terminal cleanup; never evict native prompts.
+- [x] (Historical) Register composer_request on desktop and as node-local on
+  remote nodes. This agent-facing MCP entry point has since been removed; the
+  shared mini-app/widget composer APIs remain.
 - [x] Preserve own-session/internal-child guards and neutral cancellation.
 - [x] Verify descriptor/admission parity and Claude/Codex/Grok pinned MCP timeout
   configuration. Test node permission/form concurrency and waits/abort without

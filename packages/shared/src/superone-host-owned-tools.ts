@@ -156,7 +156,6 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   'session_collab_start',
   'session_collab_send',
   'session_collab_retrieve',
-  'composer_request',
   'media_list_providers',
   'media_generate_image',
   'media_generate_video',
@@ -185,8 +184,6 @@ export const MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES = [
   'session_tag',
   'session_collab_send',
   'session_collab_retrieve',
-  // A subagent's form would occupy its parent's composer.
-  'composer_request',
 ] as const
 
 export function superoneBareToolName(name: string): string {

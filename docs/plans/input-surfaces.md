@@ -1,6 +1,6 @@
 # Input surfaces: execution
 
-Status: in-progress · Updated: 2026-10-05
+Status: in-progress · Updated: 2026-10-06
 Goal: Turn the desktop composer slot into a registry of composers, move permissions and questions into it while preserving full-screen plan review, then let users open native image composers through the same slot.
 Proposal: [input-surfaces.md](../proposals/input-surfaces.md)
 Long-term docs affected: new `docs/features/composer.md` (slot, priority, decision-prompt rules); [apps/desktop/CLAUDE.md](../../apps/desktop/CLAUDE.md) routing row
@@ -110,10 +110,10 @@ No stack yet: every Phase 1 composer is derived from session state. The
 
 ## Phase 2 — native image composer (desktop)
 
-Prerequisite: decide where image composers get their models before the AI
-gateway exists (see "Decisions needed").
+Model source decided on 2026-10-06: use the existing media-gen registry before
+the AI gateway exists, then migrate the routing when the gateway is available.
 
-- 2.1 Composer stack: a per-session store with `open(id, opts)` → Promise,
+- [x] 2.1 Composer stack: a per-session store with `open(id, opts)` → Promise,
   `once` push/pop and `sticky` base replacement. Decision tier still wins.
 - 2.2 Main: `media:generate` IPC over `generateAndRecord({ source: 'human' })`,
   abortable, routed through `window.environment` for remote nodes.
@@ -157,14 +157,30 @@ focus restoration after a direct plan, and a later return without focus steal.
 - [x] 1.3 Preserve full-screen plan approval
 - [x] 1.4 Draft and misfire rules
 - [x] 1.5 Docs and cleanup
-- [ ] 2.1–2.5 Image composer
+- [x] 2.1 Composer stack
+- [ ] 2.2–2.5 Image generation, composer, entry points and output
 
 Phase 1 delivered on 2026-10-05. Desktop now resolves and renders the decision,
 MCP App consent, realtime voice, and text composers through the registry. The
 decision composer queues permissions and questions without a position counter;
 plan approval follows in the original full-screen review. Draft restoration,
-focus handoff, and shortcut guards are covered by focused tests. Phases 2–4
-remain future work.
+focus handoff, and shortcut guards are covered by focused tests. The rest of
+phase 2 and phases 3–4 remain future work.
+
+Step 2.1 adds a renderer-local stack keyed by project and session, native
+registration, and `composerForSession(target).open(id, opts)`. Temporary entries
+return to the previous mode, persistent modes stay after their first submission,
+and approvals retain priority. Draft state survives preemption; abort, session
+removal, mode replacement and registration disposal settle requests safely.
+
+Step 2.1 verification:
+
+- `bun run typecheck:web`.
+- Six focused Vitest files, 71 tests passed: stack lifecycle, composer priority,
+  slot transitions, ChatContent, focus restoration and draft restoration.
+- `ComposerSlotFlow` production stories cover persistent → temporary → permission
+  → temporary → persistent → text, preserving both form drafts and the chat draft
+  with its attachment. Checked wide light/en and narrow dark/zh layouts.
 
 Verification completed:
 
@@ -178,8 +194,7 @@ Verification completed:
 
 ## Decisions needed
 
-1. Phase 2 model source before the AI gateway: call the existing media-gen
-   registry now and swap later, or wait for the gateway.
+1. Resolved: phase 2 uses the existing media-gen registry and migrates later.
 2. Phone decision prompts: keep sheets through phase 2, or move them into the
    composer bar alongside desktop phase 1.
-3. Proposal status: mark it `accepted` for phases 1–2 and link this plan.
+3. Resolved: the proposal is accepted for phases 1–2 and links this plan.

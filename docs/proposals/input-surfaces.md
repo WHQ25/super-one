@@ -1,6 +1,6 @@
 # Input surfaces: composers and entry points
 
-Status: draft · Updated: 2026-10-05
+Status: accepted for phases 1–2 · Updated: 2026-10-06
 
 Scope: make the composer slot programmable. A **composer** is a self-contained
 input surface that produces one submission — the chat composer, a permission
@@ -125,7 +125,7 @@ this proposal.
 1. Composer registry behind `ComposerSwitch`; decision prompts move into the
    slot as composers. **Delivered for desktop; see the [execution plan](../plans/input-surfaces.md).**
 2. Native image and video composers, opened by users (mode picker, slash
-   command) with `caller` and `agent` output.
+   command) with `caller` and `agent` output. **Composer stack delivered; image generation and UI are next.**
 3. Declarative composer API for mini-apps, widgets and agents; phone rendering.
 4. WebView composers, absorbing tool intercepts; manifest entry points.
 

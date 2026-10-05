@@ -31,7 +31,8 @@ import { mergeCodexThreadMessages } from './codex-realtime-messages'
 import { CodexRealtimeTranscript } from './CodexRealtimeTranscript'
 import { ComposerSwitch } from './ComposerSwitch'
 import { resolveComposer } from './composer-slot/resolve-composer'
-import { renderComposer } from './composer-slot/composer-registry'
+import { COMPOSER_CONTENT_MAX_HEIGHT, renderComposer } from './composer-slot/composer-registry'
+import { topComposer, useComposerStacks } from './composer-slot/composer-stack'
 import { buildDecisionQueue } from './composer-slot/decision-queue'
 import { useDecisionComposerAvailability } from './composer-slot/useDecisionComposerAvailability'
 import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
@@ -522,10 +523,16 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   const consentHead = useMcpAppConsents(state => state.pending.find(item => item.sessionId === displayedSessionId))
   const appConsent = Boolean(consentHead) && (!needsDecision || decisionAvailable)
   const decision = buildDecisionQueue(pendingPermissions ?? [], pendingQuestion ?? null)[0] ?? null
-  const composerKind = resolveComposer({ needsDecision, decisionAvailable, appConsent, voiceEngaged: showRealtimeComposer })
+  // Draft edits stay inside the opened composer; the transcript only follows identity changes.
+  const openedComposer = useComposerStacks(useShallow(state => {
+    const entry = projectPath && displayedSessionId ? topComposer({ projectPath, sessionId: displayedSessionId }, state) : null
+    return entry ? { key: entry.key, id: entry.id, target: entry.target, lifetime: entry.lifetime } : null
+  }))
+  const composerKind = resolveComposer({ needsDecision, decisionAvailable, appConsent, voiceEngaged: showRealtimeComposer, openedComposerId: openedComposer?.id })
   const composerKey = composerKind === 'decision' && decision
     ? `${decision.kind}:${decision.request.requestId}`
-    : composerKind === 'app-consent' && consentHead ? `app-consent:${consentHead.id}` : composerKind
+    : composerKind === 'app-consent' && consentHead ? `app-consent:${consentHead.id}`
+    : openedComposer?.id === composerKind ? openedComposer.key : composerKind
   // The local snapshot needs no backing thread, so every Codex session on screen
   // restores it; only the provider reconcile waits for the thread id, because
   // reaching Codex would otherwise start a backend just to read history.
@@ -578,7 +585,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   }), [])
 
   const containerRef = useRef<HTMLDivElement>(null)
-  const composerFocus = useRestoreChatInputFocus(needsDecision && decisionAvailable, containerRef,
+  const composerFocus = useRestoreChatInputFocus((needsDecision || !!openedComposer) && decisionAvailable, containerRef,
     projectPath && displayedSessionId ? { projectPath, sessionId: displayedSessionId } : undefined)
   const computeAutoScale = useCallback((w: number) => w >= 672 ? 1.15 : w >= 512 ? 1.1 : 1, [])
   const [autoScale, setAutoScale] = useState(1)
@@ -717,7 +724,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             kind={composerKind}
             transitionKey={composerKey}
             alignTo="text"
-            maxHeight={needsDecision && decisionAvailable ? 'min(45vh, 440px)' : undefined}
+            maxHeight={(needsDecision || !!openedComposer) && decisionAvailable ? COMPOSER_CONTENT_MAX_HEIGHT : undefined}
             render={(kind) => renderComposer(kind, displayedSessionId ?? '', {
               showTodoPopup: true,
               autoFocusOnMount: composerFocus.autoFocusOnMount,
@@ -725,6 +732,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
               microphoneShortcutEnabled: showRealtimeComposer && !appConsent,
               decision,
               appConsent: consentHead,
+              openedComposer,
             })}
           />
         </>

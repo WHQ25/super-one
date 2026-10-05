@@ -2,9 +2,49 @@
 
 Desktop chat renders one composer in a shared slot below the transcript. The
 slot's registry resolves the current entry by priority: session decisions,
-MCP App consent, realtime voice, then the regular text composer. A decision
-pauses the lower-priority composer until it clears. Plan approval retains its
+MCP App consent, an explicitly opened composer, realtime voice, then the regular
+text composer. A decision pauses the lower-priority composer until it clears. Plan approval retains its
 original full-screen review in the chat pane.
+
+## Opening native composers
+
+Native composers register with `registerComposer(id, Component)` and open through
+an explicitly scoped `composerForSession({ projectPath, sessionId })` handle:
+
+```ts
+const composer = composerForSession({ projectPath, sessionId })
+const result = await composer.open('superone.image', {
+  lifetime: 'sticky',
+  prefill: { prompt: 'A quiet mountain lake' },
+  signal,
+})
+```
+
+The image id in this example must be registered by the image feature before use.
+Unknown ids and missing sessions reject without changing the slot.
+Registrations are in-process native components, not a
+mini-app or agent API.
+
+Each project/session pair owns a persistent base and a stack of temporary
+entries. `once` (the default) pushes an entry; submitting returns its value and
+pops it, and cancelling returns `null`. `sticky` replaces the persistent base
+without disturbing temporary entries above it. Its first submission resolves
+`open()` but leaves the mode visible; cancelling, replacing it, or calling
+`returnToChat()` closes it. That method closes all entries for the owning session
+and returns to its derived text/voice composer.
+
+Entries expose controlled `value` / `onValueChange` draft state to the component,
+so decisions and MCP App consent can temporarily replace it without losing edits.
+The component receives `active` and guarded submit/cancel callbacks; outgoing or
+covered forms are inert and must not bind active keyboard shortcuts. Read-only
+session gates suppress opened composers too. Draft edits update the composer
+without rerendering the transcript.
+
+Switching projects, sessions or panes preserves each stack. Deleting its owning
+session or project cancels all its requests. An abort signal closes its entry
+even after a sticky submission, and unregistering a component closes its entries
+in every session. Cancellation settles each promise once and removes listeners.
+This state is transient renderer state; it is not saved across app restarts.
 
 ## Decision queue
 
@@ -43,7 +83,8 @@ the harness backend. MCP elicitation forms use the same permission composer.
 
 The text, rich-text document, and attachments remain in the per-session chat
 store while the regular composer unmounts. When the queue clears, the editor
-restores focus only if that editor held focus before the first decision arrived.
+restores focus only if that editor held focus before a decision or opened composer
+displaced it.
 Decision buttons and newly mounted MCP form fields do not take focus when the editor was focused within the last
 second, and the base composer does not auto-focus on return when no focus needs
 restoring. The restore request targets the owning session and is issued after

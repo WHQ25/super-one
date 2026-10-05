@@ -216,11 +216,12 @@ describe('browser tool registration under experimental gates', () => {
     for (const d of descriptors) {
       expect(d.description.length).toBeGreaterThan(0)
       expect(d.inputSchema).toMatchObject({ type: 'object' })
+      expect(d.inputSchema.required, d.name).toContain('description')
       expect(isBrowserToolName(d.name)).toBe(true)
     }
   })
 
-  it('offers an optional human summary on browser_tools_call for the chat row', () => {
+  it('requires a human summary on browser_tools_call while allowing the host to report a missing name', () => {
     gates.webmcp = true
     setBrowserToolSurfaceForTests('legacy')
     const schema = getBrowserToolDescriptors()
@@ -229,11 +230,10 @@ describe('browser tool registration under experimental gates', () => {
         required?: string[]
       }
     expect(schema.properties?.description?.description).toBe(BROWSER_TOOLS_CALL_SUMMARY_DESCRIPTION)
-    // `description` is optional: a page tool call must never stall waiting for the model to
-    // narrate it. `name` is optional too, but for a different reason — declared required, the MCP
+    // `name` stays optional — declared required, the MCP
     // layer rejects a missing name before the host runs and the chat row gets an unattributable
     // `MCP error -32602`. The host answers it instead, with the origin and the available names.
-    expect(schema.required).toEqual(['input'])
+    expect(schema.required).toEqual(['description', 'input'])
   })
 
   it('does not advertise browser_tools_list when WebMCP is disabled', () => {
@@ -598,7 +598,7 @@ describe('browser tool registration under experimental gates', () => {
 
   it('returns a non-error disabled hint for a stale browser_tools_list call', async () => {
     clearBrowserToolHandlers('sess-disabled-webmcp')
-    const reply = await executeBrowserTool('sess-disabled-webmcp', 'browser_tools_list', {})
+    const reply = await executeBrowserTool('sess-disabled-webmcp', 'browser_tools_list', { description: 'List page tools' })
     expect(reply.isError).not.toBe(true)
     expect(JSON.parse(resultText(reply))).toEqual({
       count: 0,
@@ -609,6 +609,7 @@ describe('browser tool registration under experimental gates', () => {
   it('returns a non-error disabled hint for a stale browser_tools_call', async () => {
     clearBrowserToolHandlers('sess-disabled-webmcp-call')
     const reply = await executeBrowserTool('sess-disabled-webmcp-call', 'browser_tools_call', {
+      description: 'Add a todo item',
       name: 'add-todo',
       input: {},
     })
@@ -622,7 +623,7 @@ describe('browser tool registration under experimental gates', () => {
   it('executes browser tools via the stdio-facing dispatcher', async () => {
     clearBrowserToolHandlers('sess-stdio')
     vi.mocked(browserAutomationCall).mockResolvedValueOnce({ ok: true, selector: '#x' })
-    const reply = await executeBrowserTool('sess-stdio', 'browser_hover', { selector: '#x' })
+    const reply = await executeBrowserTool('sess-stdio', 'browser_hover', { selector: '#x', description: 'Inspect the menu' })
     expect(reply.isError).not.toBe(true)
     expect(vi.mocked(browserAutomationCall)).toHaveBeenCalledWith(
       'sess-stdio',
@@ -910,7 +911,7 @@ describe('browser_download', () => {
       stat,
       get: async () => { throw new Error('not called') },
     }
-    const run = (tool: string, args: Record<string, unknown>) => withInputMapping(deps, () => executeBrowserTool('sess-1', tool, args))
+    const run = (tool: string, args: Record<string, unknown>) => withInputMapping(deps, () => executeBrowserTool('sess-1', tool, { description: 'Process the report', ...args }))
 
     vi.mocked(startUrlDownloadTask).mockClear()
     const direct = await run('browser_network', { action: 'download', url: 'https://x.test/a.png', dir: nodeDir })
@@ -939,7 +940,9 @@ describe('browser_download', () => {
     expect(stat).not.toHaveBeenCalled()
 
     vi.mocked(startUrlDownloadTask).mockClear()
-    const done = await run('browser_action', { action: 'do', domain: 'x.test', name: 'export' })
+    // Saved-action descriptions allow 1000 characters; internal primitive
+    // narration must fit the shorter operation-summary contract.
+    const done = await run('browser_action', { action: 'do', domain: 'x.test', name: 'export', description: 'Download the export. '.repeat(20) })
     expect(done.isError).toBeUndefined()
     expect(startUrlDownloadTask).toHaveBeenCalledTimes(1)
     expect(startUrlDownloadTask).toHaveBeenCalledWith('sess-1', 'https://x.test/a.png', undefined, desktopDir)
@@ -961,7 +964,7 @@ describe('browser_download', () => {
       stat,
       get: async () => ({ chunk: node.bytes.toString('base64'), total: node.bytes.length, mtimeMs: node.mtimeMs, eof: true }),
     }
-    const run = (tool: string, args: Record<string, unknown>) => withInputMapping(deps, () => executeBrowserTool('sess-1', tool, args))
+    const run = (tool: string, args: Record<string, unknown>) => withInputMapping(deps, () => executeBrowserTool('sess-1', tool, { description: 'Process the report', ...args }))
 
     const saved = await run('browser_action', {
       action: 'save',
@@ -1086,7 +1089,32 @@ describe('compact browser surface', () => {
     for (const d of descriptors) {
       expect(d.description.length, d.name).toBeGreaterThan(0)
       expect(d.description.length, d.name).toBeLessThanOrEqual(700)
+      expect(d.inputSchema.required, d.name).toContain('description')
     }
+  })
+
+  it.each([undefined, '', '   '])('rejects snapshot description %j before capturing the page', async (description) => {
+    vi.mocked(browserAutomationCall).mockClear()
+    const reply = await executeBrowserTool('sess-1', 'browser_snapshot', { description, include: ['screenshot'] })
+    expect(reply.isError).toBe(true)
+    expect(resultText(reply)).toContain('description')
+    expect(browserAutomationCall).not.toHaveBeenCalled()
+  })
+
+  it('returns page data and a screenshot after validating the required summary', async () => {
+    vi.mocked(browserAutomationCall).mockImplementation(async (_session, op) =>
+      op === 'screenshot'
+        ? { data: 'image-bytes', mimeType: 'image/png', width: 800, height: 600 }
+        : { title: 'Checkout', url: 'https://example.com/checkout' },
+    )
+    const reply = await executeBrowserTool('sess-1', 'browser_snapshot', {
+      description: 'Inspect checkout', include: ['meta', 'screenshot'],
+    })
+    expect(reply.isError).not.toBe(true)
+    expect(JSON.parse(resultText(reply))).toMatchObject({
+      screenshot: { path: '/tmp/shot.png', width: 800, height: 600 },
+      page: expect.stringContaining('Checkout'),
+    })
   })
 
   // The node advertises browser tools from a checked-in dump, not from this module, so
@@ -1108,7 +1136,7 @@ describe('compact browser surface', () => {
     expect(buildCompact().has('browser_run')).toBe(false)
     expect(getBrowserToolDescriptors().map((d) => d.name)).not.toContain('browser_run')
     // A thread that snapshotted the list while the loop was on reaches the union executor.
-    const reply = await executeBrowserTool('sess-1', 'browser_run', { goal: 'open the issues tab' })
+    const reply = await executeBrowserTool('sess-1', 'browser_run', { description: 'Open the issues tab', goal: 'open the issues tab' })
     expect(reply.isError).toBe(true)
     expect(resultText(reply)).toContain("'Jev fast inner loop' experimental tool is disabled")
   })
@@ -1122,7 +1150,7 @@ describe('compact browser surface', () => {
 
   it('still executes legacy primitive aliases', async () => {
     vi.mocked(browserAutomationCall).mockResolvedValueOnce({ ok: true, selector: '#x' })
-    const reply = await executeBrowserTool('sess-1', 'browser_hover', { selector: '#x' })
+    const reply = await executeBrowserTool('sess-1', 'browser_hover', { selector: '#x', description: 'Inspect the menu' })
     expect(reply.isError).not.toBe(true)
     expect(vi.mocked(browserAutomationCall)).toHaveBeenCalledWith(
       'sess-1',
@@ -1307,7 +1335,10 @@ describe('compact browser surface', () => {
       expect(names).toContain('browser_act')
       expect(names).not.toContain('browser_click')
 
-      const result = await client.callTool({ name: 'browser_click', arguments: { selector: '#x' } })
+      const missingSummary = await client.callTool({ name: 'browser_snapshot', arguments: { include: ['screenshot'] } })
+      expect(missingSummary.isError).toBe(true)
+      expect(browserAutomationCall).not.toHaveBeenCalled()
+      const result = await client.callTool({ name: 'browser_click', arguments: { selector: '#x', description: 'Open the menu' } })
       expect(result.isError).not.toBe(true)
       const text = (result.content as Array<{ type: string; text?: string }>)
         .map((c) => c.text ?? '')

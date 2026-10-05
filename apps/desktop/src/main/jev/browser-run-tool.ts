@@ -17,6 +17,7 @@ import { type Answer, FastRun, type RunDeps, type RunResult } from './loop'
 import { type PausedRun, storePausedRun, takePausedRun } from './run-store'
 import { runReporter } from './run-events'
 import { isJevFastLoopEnabled, jevClient, PAUSE_NEXT_HINT, reportRun, runInputShape } from './run-tool-common'
+import { browserDescriptionField } from '../mcp/browser-tool-registration'
 
 export const BROWSER_RUN_DESCRIPTION =
   'Experimental (requires the Jev fast loop setting): delegate a multi-step page goal — clicks, typing, scrolling — to a fast model that chooses each step and judges completion itself, so you do not pay a turn per click. '
@@ -26,6 +27,7 @@ export const BROWSER_RUN_DESCRIPTION =
 
 export const browserRunInputShape = {
   ...runInputShape,
+  ...browserDescriptionField,
   tab: z.string().optional().describe('Browser view id. Omit to target the focused browser view.'),
   done_when: z.object({
     selector: z.string().optional(),

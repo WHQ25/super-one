@@ -246,6 +246,7 @@ function BrowserOperationBlock({
   pendingDetails,
 }: BrowserToolBlockPresenterProps) {
   const { t } = useTranslation()
+  const [resultExpanded, setResultExpanded] = useState(false)
   const verb = t(`chat.toolBlock.browser.${browserVerbKey(op, isStreaming)}`)
   const description = typeof params.description === 'string' ? params.description.trim() : ''
   const inputSummary = browserInputSummary(op, params) || toolSummary?.trim() || ''
@@ -253,7 +254,7 @@ function BrowserOperationBlock({
   const denied = !!isDenied || info.status === 'denied'
   const failed = info.status === 'error' || denied
   const tone: ToolRowTone = denied ? 'denied' : failed ? 'error' : 'default'
-  const hasScreenshot = op === 'screenshot' && !!info.imagePath && !isStreaming && !failed
+  const hasScreenshot = !!info.imagePath && !isStreaming && !failed
   const countLabel = info.count
     ? t(`chat.toolBlock.browser.${info.count.kind === 'tabs' ? 'tabsCount' : info.count.kind === 'cookies' ? 'cookiesCount' : info.count.kind}`, { count: info.count.n })
     : info.notFound
@@ -262,9 +263,8 @@ function BrowserOperationBlock({
   const primary = failed
     ? (denied ? (description || inputSummary) : (info.errorText || description || inputSummary))
     : (description || inputSummary)
-  const middle = primary || countLabel
+  const middle = primary || countLabel || (hasScreenshot ? t('chat.toolBlock.browser.viewport') : '')
   const rightCount = !failed && primary && countLabel ? countLabel : ''
-  const screenshotLabel = hasScreenshot ? (primary || t('chat.toolBlock.browser.viewport')) : ''
   const isMockDetail = op === 'mock' && params.clear !== true && !failed
   const expandable = allowExpand
     && !isStreaming
@@ -273,10 +273,26 @@ function BrowserOperationBlock({
   if (recording) {
     details = recording
   } else if (hasScreenshot && renderScreenshot) {
-    details = renderScreenshot(
-      info.imagePath!,
-      t('chat.toolBlock.browser.screenshot'),
-      t('chat.toolBlock.browser.screenshotUnavailable'),
+    details = (
+      <div className="flex flex-col gap-1.5">
+        {renderScreenshot(
+          info.imagePath!,
+          t('chat.toolBlock.browser.screenshot'),
+          t('chat.toolBlock.browser.screenshotUnavailable'),
+        )}
+        {op === 'snapshot' && result && (
+          <details
+            className="rounded bg-muted/30"
+            open={resultExpanded}
+            onToggle={(event) => setResultExpanded(event.currentTarget.open)}
+          >
+            <summary className="cursor-pointer px-1 py-1 text-xs text-muted-foreground">
+              {t('chat.toolBlock.browser.result')}
+            </summary>
+            {resultExpanded && <div className="px-1 pb-1">{renderDetail({ kind: 'json', result })}</div>}
+          </details>
+        )}
+      </div>
     )
   } else if (pendingDetails != null && !result) {
     details = pendingDetails
@@ -314,18 +330,14 @@ function BrowserOperationBlock({
       trailing={(
         <div className="flex shrink-0 items-center gap-1.5">
           {rightCount ? <span className="text-muted-foreground/70">{rightCount}</span> : null}
+          {hasScreenshot ? <ImageIcon className="size-3 text-muted-foreground/70" aria-label={t('chat.toolBlock.browser.screenshot')} /> : null}
           {recording ? <Video className="size-3 text-muted-foreground/70" aria-label="Action recording" /> : null}
           {isStreaming ? elapsed(elapsedSeconds, elapsedClassName) : null}
         </div>
       )}
     >
       <ToolName streaming={isStreaming && !denied} tone={tone}>{isStreaming ? `${verb}…` : verb}</ToolName>
-      {hasScreenshot ? (
-        <span className="inline-flex min-w-0 items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-foreground">
-          <ImageIcon className="size-3 shrink-0 text-muted-foreground" />
-          <span className="truncate">{screenshotLabel}</span>
-        </span>
-      ) : middle ? <ToolSummary>{middle}</ToolSummary> : null}
+      {middle ? <ToolSummary>{middle}</ToolSummary> : null}
     </ToolRow>
   )
 }

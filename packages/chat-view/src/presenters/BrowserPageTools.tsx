@@ -130,7 +130,8 @@ export function BrowserPageToolsListBlockPresenter({
         : t('chat.toolBlock.browser.pageToolsEmpty')
   const summary = denied || errored
     ? outcome.message
-    : originHost(info?.origin) || (count === 0 ? info?.hint ?? toolSummary ?? '' : '')
+    : (typeof params.description === 'string' ? params.description.trim() : '')
+      || toolSummary || originHost(info?.origin) || (count === 0 ? info?.hint ?? '' : '')
 
   return (
     <ToolRow

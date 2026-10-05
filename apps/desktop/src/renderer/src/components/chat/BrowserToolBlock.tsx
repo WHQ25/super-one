@@ -20,6 +20,7 @@ interface BrowserToolBlockProps {
   op: BrowserOp
   params: Record<string, unknown>
   result?: string
+  toolSummary?: string
   isStreaming: boolean
   isError?: boolean
   isDenied?: boolean

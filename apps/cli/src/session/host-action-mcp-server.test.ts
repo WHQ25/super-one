@@ -82,9 +82,12 @@ describe('Host Action MCP server', () => {
     expect(names).not.toContain('session_collab_retrieve')
     expect(names.length).toBeGreaterThanOrEqual(45)
 
+    const invalid = await client.callTool({ name: 'browser_snapshot', arguments: { include: ['meta'] } })
+    expect(invalid.isError).toBe(true)
+    expect(calls).toHaveLength(0)
     const result = (await client.callTool({
       name: 'browser_snapshot',
-      arguments: { include: ['meta'] },
+      arguments: { include: ['meta'], description: 'Read the page' },
     })) as { content: Array<{ text: string }> }
     expect(result.content[0]!.text).toBe('snapshot-ok')
     expect(calls).toHaveLength(1)
@@ -115,11 +118,11 @@ describe('Host Action MCP server', () => {
     const b = await connectClient(h, 'sess-b')
     const ra = (await a.client.callTool({
       name: 'browser_snapshot',
-      arguments: {},
+      arguments: { description: 'Read the page' },
     })) as { content: Array<{ text: string }> }
     const rb = (await b.client.callTool({
       name: 'browser_snapshot',
-      arguments: {},
+      arguments: { description: 'Read the page' },
     })) as { content: Array<{ text: string }> }
     expect(ra.content[0]!.text).toBe('sess-a')
     expect(rb.content[0]!.text).toBe('sess-b')
@@ -206,7 +209,7 @@ describe('Host Action MCP server', () => {
     const { client } = await connectClient(h, 'sess-nav')
     await client.callTool({
       name: 'browser_act',
-      arguments: { actions: [{ type: 'click', selector: '#go' }] },
+      arguments: { description: 'Continue', actions: [{ type: 'click', selector: '#go' }] },
     })
     expect(seen).toEqual([
       {
@@ -254,7 +257,7 @@ describe('Host Action MCP server', () => {
       error: { code: 'cancelled', reason: 'interrupt' },
     }))
     const { client } = await connectClient(h, 'sess-c')
-    const result = await client.callTool({ name: 'browser_snapshot', arguments: {} })
+    const result = await client.callTool({ name: 'browser_snapshot', arguments: { description: 'Read the page' } })
     expect(result.isError).toBe(true)
     await client.close()
   })

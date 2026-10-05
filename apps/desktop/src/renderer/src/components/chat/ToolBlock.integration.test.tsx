@@ -144,6 +144,7 @@ Object.defineProperty(window, 'app', {
     trace: vi.fn(),
     showInFolder: vi.fn(),
     resolveFavicon: vi.fn().mockResolvedValue(null),
+    readFileAsDataUri: vi.fn().mockResolvedValue({ ok: true, dataUri: 'data:image/png;base64,iVBORw0KGgo=' }),
   },
   configurable: true,
 })
@@ -151,6 +152,30 @@ Object.defineProperty(window, 'app', {
 vi.mock('../mcp-apps/McpAppView', () => ({ default: () => <div data-testid="mcp-app-view" /> }))
 
 const { ToolBlock } = await import('./ToolBlock')
+
+describe('ToolBlock browser snapshot routing', () => {
+  it('opens a mixed snapshot screenshot and its full image preview', async () => {
+    const { container } = render(
+      <ToolBlock
+        toolName="mcp__superone__browser_snapshot"
+        input={JSON.stringify({ include: ['meta', 'screenshot'], description: 'Inspect checkout' })}
+        result={JSON.stringify({ screenshot: { path: '/tmp/checkout.png' }, page: 'title: Checkout' })}
+        status="complete"
+      />,
+    )
+    expect(screen.getByText('Inspect checkout')).toBeInTheDocument()
+    fireEvent.click(container.querySelector('.tool-node > div')!)
+    const image = await screen.findByRole('img', { name: 'Screenshot' })
+    expect(window.app.readFileAsDataUri).toHaveBeenCalledWith('/tmp/checkout.png')
+    fireEvent.click(image)
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+  })
+
+  it.each(['browser_snapshot', 'device_snapshot'])('preserves the harness summary for historical %s calls without descriptions', (tool) => {
+    render(<ToolBlock toolName={`mcp__superone__${tool}`} input="{}" toolSummary="Inspect checkout" status="complete" />)
+    expect(screen.getByText('Inspect checkout')).toBeInTheDocument()
+  })
+})
 
 describe('ToolBlock diff content lifecycle', () => {
   it('keeps streaming edit collapsed by default and expands on click', async () => {

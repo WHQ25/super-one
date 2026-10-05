@@ -109,8 +109,8 @@ describe('Host Action E2E via MCP + RPC', () => {
 
     // Fire two tool calls in parallel — both create host actions and wait.
     // Use schema field `filter` as a correlator (unknown keys are stripped by Zod).
-    const p1 = mcpClient.callTool({ name: 'browser_snapshot', arguments: { filter: 'one' } })
-    const p2 = mcpClient.callTool({ name: 'browser_snapshot', arguments: { filter: 'two' } })
+    const p1 = mcpClient.callTool({ name: 'browser_snapshot', arguments: { filter: 'one', description: 'Read the first section' } })
+    const p2 = mcpClient.callTool({ name: 'browser_snapshot', arguments: { filter: 'two', description: 'Read the second section' } })
     await new Promise((r) => setTimeout(r, 50))
 
     const poll = (await client.rpc('session.hostActionsPoll', {})) as {

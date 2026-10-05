@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import type { AgentEvent } from '@superone/shared/agent-types'
-import { z, toJSONSchema, type ZodTypeAny } from 'zod'
+import { z } from 'zod'
 import { browserAutomationCall, browserFocusGuard, noteTabDriver, requireTabDriver, resolveBrowserWebContentsId, resolvePointForSession, type BrowserAutomationOp } from '../browser/browser-automation-bridge'
 import { existsSync } from 'fs'
 import { isCdpEnabled, isCdpCookiesEnabled, isCdpMockEnabled, isCdpEmulateEnabled, resolveCdpTarget, cdpClick, cdpHover, cdpDrag, cdpPress, cdpType, cdpEmulate, cdpGetCookies, cdpSetFileInput } from '../browser/browser-cdp'
@@ -52,6 +52,7 @@ import {
 import { readAppSettings, saveAppSettings } from '../app-settings-service'
 import { imageNote } from './show-your-work-notes'
 import { BROWSER_RUN_DESCRIPTION, browserRunInputShape, executeBrowserRun } from '../jev/browser-run-tool'
+import { browserDescriptionField as descriptionField, browserTabField as tabField, makeBrowserCapturingServer, type BrowserToolHandler } from './browser-tool-registration'
 export { BROWSER_TOOL_NAMES, BROWSER_COMPACT_TOOL_NAMES, BROWSER_LEGACY_TOOL_NAMES }
 
 interface ScreenshotResult {
@@ -505,77 +506,15 @@ async function browserSnapshotWithWebMcpHint(
   }
 }
 
-const tabField = {
-  tab: z
-    .string()
-    .optional()
-    .describe('Browser view id, or a development mini-app view id: miniapp:<appId> for its panel, or one returned by miniapp_dev_preview or browser_tabs. Omit to target the focused browser view (errors if multiple are open).'),
-}
-
-const descriptionField = {
-  description: z
-    .string()
-    .optional()
-    .describe(
-      "A short, human-friendly explanation of what this action accomplishes, phrased for the end user watching (e.g. 'Fill in the login email', 'Submit the checkout form'). Shown in the UI in place of the raw selector. Write it in the conversation's language.",
-    ),
-}
-
-type BrowserToolHandler = (args: Record<string, unknown>) => Promise<ToolReply>
-
-interface CapturingServer {
-  registerTool: (
-    name: string,
-    config: { description: string; inputSchema?: Record<string, ZodTypeAny> },
-    handler: BrowserToolHandler,
-  ) => unknown
-}
-
 const browserHandlerCache = new Map<string, Map<string, BrowserToolHandler>>()
 const primitiveHandlerCache = new Map<string, Map<string, BrowserToolHandler>>()
 const browserToolDescriptors = new Map<string, SuperoneMcpToolDescriptor[]>()
 
-function zodShapeToJsonSchema(shape: Record<string, ZodTypeAny> | undefined): Record<string, unknown> {
-  const schema = toJSONSchema(z.object(shape ?? {})) as Record<string, unknown>
-  const { $schema: _schema, ...rest } = schema
-  return rest
-}
-
-function makeCapturingServer(): {
-  server: CapturingServer
+function captureLegacyTools(sessionId: string, webMcpEnabled: boolean, jevEnabled: boolean, internal = false): {
   descriptors: SuperoneMcpToolDescriptor[]
   handlers: Map<string, BrowserToolHandler>
 } {
-  const descriptors: SuperoneMcpToolDescriptor[] = []
-  const handlers = new Map<string, BrowserToolHandler>()
-  const server: CapturingServer = {
-    registerTool: (name, config, handler) => {
-      const shape = config.inputSchema ?? {}
-      const schema = z.object(shape)
-      descriptors.push({
-        name,
-        description: config.description,
-        inputSchema: zodShapeToJsonSchema(shape),
-      })
-      // Stdio path does not run the MCP SDK's Zod parse, so apply defaults here.
-      handlers.set(name, async (args) => {
-        try {
-          return await handler(schema.parse(args ?? {}) as Record<string, unknown>)
-        } catch (err) {
-          return errorReply(err)
-        }
-      })
-      return { remove: () => {} }
-    },
-  }
-  return { server, descriptors, handlers }
-}
-
-function captureLegacyTools(sessionId: string, webMcpEnabled: boolean, jevEnabled: boolean): {
-  descriptors: SuperoneMcpToolDescriptor[]
-  handlers: Map<string, BrowserToolHandler>
-} {
-  const capturing = makeCapturingServer()
+  const capturing = makeBrowserCapturingServer(internal)
   registerLegacyBrowserTools(capturing.server as unknown as McpServer, sessionId, webMcpEnabled, jevEnabled)
   return { descriptors: capturing.descriptors, handlers: capturing.handlers }
 }
@@ -587,7 +526,7 @@ async function runPrimitive(
 ): Promise<ToolReply> {
   let primitives = primitiveHandlerCache.get(sessionId)
   if (!primitives) {
-    primitives = captureLegacyTools(sessionId, true, true).handlers
+    primitives = captureLegacyTools(sessionId, true, true, true).handlers
     primitiveHandlerCache.set(sessionId, primitives)
   }
   const handler = primitives.get(name)
@@ -620,7 +559,7 @@ function captureCompactTools(sessionId: string, webMcpEnabled: boolean, jevEnabl
   descriptors: SuperoneMcpToolDescriptor[]
   handlers: Map<string, BrowserToolHandler>
 } {
-  const capturing = makeCapturingServer()
+  const capturing = makeBrowserCapturingServer()
   registerCompactBrowserTools(
     capturing.server as unknown as McpServer,
     sessionId,
@@ -637,7 +576,7 @@ function ensureAllHandlers(sessionId: string): Map<string, BrowserToolHandler> {
   // Handlers stay complete regardless of settings: listing is what a setting
   // hides, and each tool fails closed on its own gate when called unlisted.
   const primitives = captureLegacyTools(sessionId, true, true).handlers
-  primitiveHandlerCache.set(sessionId, primitives)
+  primitiveHandlerCache.set(sessionId, captureLegacyTools(sessionId, true, true, true).handlers)
   const compact = captureCompactTools(sessionId, true, true).handlers
   // Compact supersets overwrite snapshot/query/tabs; primitives remain as aliases.
   handlers = new Map([...primitives, ...compact])
@@ -742,7 +681,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
       'browser_tools_list',
       {
         description: BROWSER_TOOLS_LIST_DESCRIPTION,
-        inputSchema: { ...tabField },
+        inputSchema: { ...tabField, ...descriptionField },
       },
       async (args) => {
         if (!isWebMcpEnabled()) {
@@ -772,7 +711,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         description: BROWSER_TOOLS_CALL_DESCRIPTION,
         inputSchema: {
           ...tabField,
-          description: z.string().optional().describe(BROWSER_TOOLS_CALL_SUMMARY_DESCRIPTION),
+          description: descriptionField.description.describe(BROWSER_TOOLS_CALL_SUMMARY_DESCRIPTION),
           // Typed optional on purpose. Declared required, the MCP layer rejects a missing `name`
           // before the host runs, and the agent gets an `MCP error -32602` the chat row cannot
           // attribute to any page — no origin, no favicon, no available-tool list. Letting the
@@ -794,6 +733,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
       description:
         "Inspect the current browser page. Pick which data sections to return via `include`: 'meta' (url/title/loading), 'elements' (flat list of top interactive elements + CSS selectors + total count), 'tree' (hierarchical accessibility tree of landmarks/headings/interactive nodes — use when you need page STRUCTURE and nesting, not just a flat list), 'text' (truncated visible text), 'console' (recent console entries, filterable). Default include is ['meta','elements','console'] (lean, warning+error console only). Fetch just logs with include:['console'] — that skips the DOM scan entirely. Call this first to orient. The result is TOON, not JSON: arrays render as a header row `name[N]{col,col}:` followed by one indented CSV-style row per item.",
       inputSchema: {
+        ...descriptionField,
         ...tabField,
         include: z
           .array(z.enum(['meta', 'elements', 'tree', 'text', 'console']))
@@ -1268,7 +1208,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
     {
       description:
         'List the browser tabs available to this session, each with its tab id, url, title, and loading state (result in TOON: a `tabs[N]{...}:` table). Use the returned tab id as the "tab" argument to target a specific tab. Only tabs belonging to this session are listed.',
-      inputSchema: {},
+      inputSchema: { ...descriptionField },
     },
     () => dataTool(sessionId, 'tabs', {}, toonReply),
   )
@@ -1339,6 +1279,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
       description:
         'Stop a recording started with browser_network_start and return a lean manifest of what it captured, as TOON (a compact tabular format — read the rows top-to-bottom). Each row has requestId, method, status, resourceType, url, and bodyBytes — enough to scan and pick which requests matter. It deliberately does NOT include headers, the request payload, or the response body: read one request\'s full detail (headers + payload + response body) on demand with browser_network_body({ recordingId, requestId }), so a many-request recording never floods context. Bodies stay readable after stop (recent recordings are retained). Pass keep:true to read the manifest so far WITHOUT stopping (peek during a long-running action).',
       inputSchema: {
+        ...descriptionField,
         recordingId: z.string().describe('The id returned by browser_network_start.'),
         keep: z.boolean().default(false).describe('Keep recording (peek) instead of stopping. Default false: stop and tear down capture.'),
       },

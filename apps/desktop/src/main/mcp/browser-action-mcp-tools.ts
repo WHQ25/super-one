@@ -9,6 +9,7 @@ import {
   summarizeBrowserAction,
 } from '../browser/browser-actions'
 import { browserErrorReply, browserTextReply, type BrowserToolReply } from './browser-mcp-replies'
+import { BROWSER_DESCRIPTION_MAX_LENGTH, browserDescriptionField } from './browser-tool-registration'
 
 export function registerBrowserActionTools(
   server: McpServer,
@@ -21,6 +22,7 @@ export function registerBrowserActionTools(
       description:
         'List saved semantic browser actions. Omit domain to list all actions, or pass a domain for an exact normalized-domain match. Returns compact summaries by default; set includeSteps:true before replacing an existing action when you need its complete definition.',
       inputSchema: {
+        ...browserDescriptionField,
         name: z.string().optional(),
         includeArchived: z.boolean().optional(),
         domain: z.string().optional().describe('Optional domain filter, e.g. github.com. Scheme, path, case, and a trailing dot are normalized away.'),
@@ -48,7 +50,7 @@ export function registerBrowserActionTools(
       inputSchema: {
         domain: browserActionSchema.shape.domain,
         name: browserActionSchema.shape.name.describe('Stable lowercase action name using letters, numbers, underscores, or hyphens.'),
-        description: browserActionSchema.shape.description.describe('Concise explanation of the action outcome and when to use it. Do not embed credentials or other secrets in steps; pass them as action inputs.'),
+        description: browserActionSchema.shape.description.trim().describe('Concise explanation of the action outcome and when to use it. Do not embed credentials or other secrets in steps; pass them as action inputs.'),
         parameters: browserActionSchema.shape.parameters.describe('Inputs accepted by browser_action_do. Values are referenced in steps as ${input.name}.'),
         steps: browserActionSchema.shape.steps.describe('Ordered flow steps. set writes to shared vars; if runs then or else; forEach exposes item and index; repeat exposes index. Loops allow at most 50 iterations, definitions at most 50 total steps, and execution at most 100 cumulative steps. Execution is fail-fast.'),
       },
@@ -71,7 +73,7 @@ export function registerBrowserActionTools(
     'browser_action_archive',
     {
       description: 'Archive or restore one saved browser action. Archived actions remain readable but cannot execute.',
-      inputSchema: { domain: z.string(), name: z.string(), archived: z.boolean().default(true) },
+      inputSchema: { ...browserDescriptionField, domain: z.string(), name: z.string(), archived: z.boolean().default(true) },
     },
     async ({ domain, name, archived }) => {
       try { return browserTextReply({ ok: true, action: summarizeBrowserAction(archiveBrowserAction(domain, name, archived)) }) }
@@ -85,20 +87,24 @@ export function registerBrowserActionTools(
       description:
         'Execute one saved semantic browser action, including flow control and nested actions. Call browser_action_list first when you do not know its parameters. Variables are shared across nested actions for the duration of this call. Execution is sequential and fail-fast, detects recursive action cycles, and returns the last primitive tool result plus the actual step count. The domain is a semantic namespace only and does not restrict navigation.',
       inputSchema: {
+        ...browserDescriptionField,
         domain: z.string().describe('Action domain namespace. Normalized before lookup.'),
         name: z.string().describe('Saved action name.'),
         input: z.record(z.string(), z.unknown()).default({}).describe('Values for the action parameters.'),
         tab: z.string().optional().describe('Browser view id inherited by tab-scoped primitive steps unless a step sets its own tab.'),
       },
     },
-    async ({ domain, name, input, tab }) => {
+    async ({ domain, name, input, tab, description }) => {
       try {
         const result = await executeBrowserAction({
           domain,
           name,
           input,
           tab,
-          executeTool: (tool, args) => executeTool(sessionId, tool, args),
+          executeTool: (tool, args) => executeTool(sessionId, tool, {
+            description: (description ?? `${domain}/${name}`).slice(0, BROWSER_DESCRIPTION_MAX_LENGTH),
+            ...args,
+          }),
         })
         const reply = browserTextReply(result)
         if (!result.ok) reply.isError = true

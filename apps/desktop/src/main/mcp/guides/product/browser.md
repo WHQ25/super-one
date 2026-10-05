@@ -7,6 +7,20 @@ Browser tools drive the browser inside SuperOne. Page tools take an optional
 `tab`; omit it and the session's current tab is used. Memory tools use an explicit
 website domain and run on the agent's node independently of the browser host.
 
+Every browser operation requires a non-empty `description`: a short summary in
+the conversation's language for the user watching. It appears next to the tool
+name. This also applies to page-tool discovery/calls and `browser_run` resumes.
+Saved flow steps can omit narration; they inherit their calling action's summary.
+For `browser_action({action:"save"})`, `description` also describes the saved
+action's outcome and when to use it. The examples below omit routine descriptions
+for brevity; include one in agent-facing calls.
+
+Snapshot screenshots are saved files. Both `include:["screenshot"]` and mixed
+requests such as `include:["meta","screenshot"]` show an image indicator on the
+right of the chat header; expand the row to preview the image. Mixed snapshots
+also keep the page result behind a separate disclosure. This preview does not
+load pixels into the agent's context: Read the returned path when pixels matter.
+
 ```
 browser_tabs      open / navigate / list / back / forward / reload / close
 browser_snapshot  read the page (meta, elements, tree, text, console, screenshot)

@@ -118,10 +118,10 @@ describe('built-in superone tool registration surfaces', () => {
     const call = HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS.find((def) => def.name === 'browser_tools_call')
 
     expect(list?.description).toBe(BROWSER_TOOLS_LIST_DESCRIPTION)
-    expect(list?.inputSchema.required).toBeUndefined()
+    expect(list?.inputSchema.required).toEqual(['description'])
     expect(call?.description).toBe(BROWSER_TOOLS_CALL_DESCRIPTION)
     // `name` is deliberately optional — see browser-mcp-tools.test.ts for why.
-    expect(call?.inputSchema.required).toEqual(['input'])
+    expect(call?.inputSchema.required).toEqual(['description', 'input'])
     // The chat row shows this summary instead of the page-author tool name, so a remote node
     // that dropped the field would silently degrade the desktop UI it feeds.
     const callProps = call?.inputSchema.properties as Record<string, { description?: string }>

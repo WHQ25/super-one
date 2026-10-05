@@ -461,7 +461,11 @@ function parseToonResult(op: BrowserOp, result: string): BrowserResultInfo {
 export function parseBrowserResult(op: BrowserOp, result: string | undefined, isError: boolean): BrowserResultInfo {
   if (isError) return { status: 'error', errorText: cleanError(result) }
   if (!result) return { status: 'neutral' }
-  if (TOON_RESULT_OPS.has(op)) return parseToonResult(op, result)
+  // A snapshot with page sections and a screenshot is a JSON envelope; a plain
+  // page snapshot remains TOON. Do not discard the envelope's screenshot path.
+  if (TOON_RESULT_OPS.has(op) && !(op === 'snapshot' && result.trimStart().startsWith('{'))) {
+    return parseToonResult(op, result)
+  }
 
   let data: unknown
   try { data = JSON.parse(result) } catch { return { status: 'neutral' } }
@@ -494,12 +498,13 @@ export function parseBrowserResult(op: BrowserOp, result: string | undefined, is
           }
         : { status: 'neutral' }
     }
+    case 'snapshot':
     case 'screenshot': {
       const nested = obj?.screenshot && typeof obj.screenshot === 'object' && !Array.isArray(obj.screenshot)
         ? (obj.screenshot as Record<string, unknown>).path
         : undefined
       return {
-        status: 'ok',
+        status: op === 'screenshot' ? 'ok' : 'neutral',
         imagePath: typeof obj?.path === 'string' ? obj.path : typeof nested === 'string' ? nested : undefined,
       }
     }

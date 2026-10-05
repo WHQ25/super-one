@@ -20,22 +20,7 @@ import {
 } from './browser-webmcp-tool-defs'
 import { imageNote, recordingNote } from './show-your-work-notes'
 import { BROWSER_RUN_DESCRIPTION, browserRunInputShape, executeBrowserRun } from '../jev/browser-run-tool'
-
-const tabField = {
-  tab: z
-    .string()
-    .optional()
-    .describe('Browser view id, or a development mini-app view id: miniapp:<appId> for its panel, or one returned by miniapp_dev_preview or browser_tabs. Omit to target the focused browser view (errors if multiple are open).'),
-}
-
-const descriptionField = {
-  description: z
-    .string()
-    .optional()
-    .describe(
-      "A short, human-friendly explanation of what this action accomplishes, phrased for the end user watching. Shown in the UI in place of the raw selector. Write it in the conversation's language.",
-    ),
-}
+import { BROWSER_DESCRIPTION_MAX_LENGTH, browserDescriptionField as descriptionField, browserTabField as tabField } from './browser-tool-registration'
 
 const NETWORK_ACTIONS = [
   'start',
@@ -151,7 +136,7 @@ export function registerCompactBrowserTools(
       'browser_tools_list',
       {
         description: BROWSER_TOOLS_LIST_DESCRIPTION,
-        inputSchema: { ...tabField },
+        inputSchema: { ...tabField, ...descriptionField },
       },
       (args) => runPrimitive('browser_tools_list', args),
     )
@@ -161,7 +146,7 @@ export function registerCompactBrowserTools(
         description: BROWSER_TOOLS_CALL_DESCRIPTION,
         inputSchema: {
           ...tabField,
-          description: z.string().optional().describe(BROWSER_TOOLS_CALL_SUMMARY_DESCRIPTION),
+          description: descriptionField.description.describe(BROWSER_TOOLS_CALL_SUMMARY_DESCRIPTION),
           // Typed optional on purpose. Declared required, the MCP layer rejects a missing `name`
           // before the host runs, and the agent gets an `MCP error -32602` the chat row cannot
           // attribute to any page — no origin, no favicon, no available-tool list. Letting the
@@ -572,7 +557,9 @@ export function registerCompactBrowserTools(
         domain: browserActionSchema.shape.domain.optional(),
         name: z.string().optional(),
         includeSteps: z.boolean().optional(),
-        description: browserActionSchema.shape.description.optional(),
+        description: browserActionSchema.shape.description.trim().describe(
+          "Short explanation for the user watching, in the conversation's language. For save, also describes the saved action's outcome and when to use it.",
+        ),
         parameters: browserActionSchema.shape.parameters.optional(),
         // Deliberately loose: the real grammar is a recursive discriminated union whose
         // $defs cost ~1.2k tokens on EVERY turn, to serve `action=save` alone. The full
@@ -608,6 +595,7 @@ export function registerCompactBrowserTools(
         })
       }
       return runPrimitive('browser_action_do', {
+        description: args.description.slice(0, BROWSER_DESCRIPTION_MAX_LENGTH),
         domain: args.domain,
         name: args.name,
         input: args.input ?? {},

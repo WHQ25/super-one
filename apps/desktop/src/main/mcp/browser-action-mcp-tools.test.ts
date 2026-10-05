@@ -93,6 +93,7 @@ describe('browser action MCP tools', () => {
     expect(reply.isError).toBeUndefined()
     expect(JSON.parse(text(reply))).toMatchObject({ ok: true, action: 'example.com/search', stepsExecuted: 1 })
     expect(executeTool).toHaveBeenCalledWith('session-1', 'browser_type', {
+      description: 'example.com/search',
       selector: '#q',
       text: 'browser actions',
       tab: 'tab-1',
@@ -129,8 +130,8 @@ describe('browser action MCP tools', () => {
 
     expect(reply.isError).toBeUndefined()
     expect(JSON.parse(text(reply))).toMatchObject({ ok: true, stepsExecuted: 3 })
-    expect(dispatcher).toHaveBeenNthCalledWith(1, 'session-1', 'browser_query', { selector: '.item' })
-    expect(dispatcher).toHaveBeenNthCalledWith(2, 'session-1', 'browser_click', { selector: '.item' })
+    expect(dispatcher).toHaveBeenNthCalledWith(1, 'session-1', 'browser_query', { selector: '.item', description: 'example.com/open_when_ready' })
+    expect(dispatcher).toHaveBeenNthCalledWith(2, 'session-1', 'browser_click', { selector: '.item', description: 'example.com/open_when_ready' })
   })
 
   it('marks lookup and child execution failures as MCP errors', async () => {

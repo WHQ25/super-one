@@ -13,7 +13,9 @@ export const HOST_ACTION_BROWSER_PERF_DESCRIPTORS: HostActionSuperoneToolDescrip
         },
         "description": {
           "description": "A short, human-friendly explanation of what this action accomplishes, phrased for the end user watching. Shown in the UI in place of the raw selector. Write it in the conversation's language.",
-          "type": "string"
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
         },
         "target": {
           "description": "'tab' (default) = a browser view. 'app' = SuperOne's own renderer; sample mode only.",
@@ -77,7 +79,10 @@ export const HOST_ACTION_BROWSER_PERF_DESCRIPTORS: HostActionSuperoneToolDescrip
           "maximum": 9007199254740991
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "required": [
+        "description"
+      ]
     }
   }
 ]

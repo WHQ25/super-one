@@ -232,6 +232,13 @@ describe('parseBrowserResult', () => {
     expect(info.imagePath).toBe('/tmp/nested.png')
   })
 
+  it('extracts a screenshot from a mixed snapshot while keeping the snapshot op', () => {
+    const op = getBrowserOp('browser_snapshot', { include: ['meta', 'screenshot'] })!
+    expect(op).toBe('snapshot')
+    expect(parseBrowserResult(op, JSON.stringify({ screenshot: { path: '/tmp/mixed.png' }, page: 'title: Checkout' }), false))
+      .toEqual({ status: 'neutral', imagePath: '/tmp/mixed.png' })
+  })
+
   it('counts network requests and cookies, and marks CDP actions ok', () => {
     expect(parseBrowserResult('network_stop', 'count: 3\nrequests[3]{requestId,method}:\n  a,GET', false).count).toEqual({ kind: 'requests', n: 3 })
     expect(parseBrowserResult('network_start', 'recordingId: r\ncapturing: true', false).status).toBe('ok')

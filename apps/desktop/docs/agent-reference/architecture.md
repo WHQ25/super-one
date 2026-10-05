@@ -137,6 +137,18 @@ Tables: `projects`, `sessions`, `chat_messages`. Messages stored as JSON blobs.
 - Background sessions: streaming sessions parked to `_bgSessions` when switching projects, restored on `resumeSession()`
 - `_historySessionId` tracks which DB session is loaded (enables resume from sidebar history)
 
+Codex voice transcripts are stored separately in `session_realtime_timelines`.
+When rebuilding the backing thread, keep `chat_messages.sort_order` as the
+message spine: it includes local compaction markers and the assistant segments
+created by a mid-turn steer. Overlay matching provider turns and insert missing
+provider history between shared anchors. Starting from the provider timeline
+and appending local-only rows moves compaction markers after saved replies;
+the transcript then hides those replies as earlier history. A steered user row
+may have different local/provider ids, including `providerId: 'remote'` for phone
+input; match its text one-to-one only between shared anchors, never globally.
+This projection is handled by `codex-realtime-messages.ts` and does not rewrite
+the stored transcript.
+
 #### Schema changes (⚠️ read before touching `database-migrations.ts`)
 
 **Migrations are additive-only.** A user can install any build at any time, and builds that already shipped contain no recovery code — they will read a newer database fine *as long as nothing they query was taken away*. That property, not the backup layer, is what makes "reinstall the previous version" work.

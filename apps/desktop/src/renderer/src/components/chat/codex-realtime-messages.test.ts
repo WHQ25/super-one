@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { EMPTY_CODEX_REALTIME_SESSION_VIEW } from '@/stores/codex-realtime-view'
+import { parseCompactMarker } from '@superone/chat-view/presenters/ChatMessageIndicators'
+import { codexThreadRestoreFixture } from './codex-thread-restore-fixture'
 import {
   isRealtimeDelegationMessage,
   isRealtimeVoiceMessage,
@@ -97,6 +99,78 @@ describe('Codex realtime/thread separation', () => {
     expect(result).toHaveLength(1)
     expect(result[0]?.id).toBe('canonical')
     expect(result[0]?.content).toEqual([{ type: 'text', text: 'Current' }])
+  })
+
+  it('keeps restored replies after their local compaction boundaries and steered prompts', () => {
+    const { messages, timeline } = codexThreadRestoreFixture()
+    const result = mergeCodexThreadMessages(messages, timeline)
+
+    expect(result.map((row) => row.id)).toEqual([
+      'request', 'compact-1', 'progress', 'feedback', 'canonical-reply',
+      'followup', 'compact-2', 'canonical-final',
+    ])
+    // The transcript hides rows before its latest boundary. A boundary appended
+    // after the answer made a saved response look lost on every cold restore.
+    const latestBoundary = result.findLastIndex((row) => parseCompactMarker(row) !== null)
+    expect(result.slice(latestBoundary).map((row) => row.id)).toEqual(['compact-2', 'canonical-final'])
+    expect(result[4]?.content).toEqual(messages[4]?.content)
+  })
+
+  it('restores provider-only history between shared anchors without moving local rows', () => {
+    const first = message('first', 'user', 'First request')
+    const last = message('last', 'user', 'Last request')
+    const marker = { ...message('compact', 'assistant', '__compact__:auto:1::1'), providerId: 'system' }
+    const restored = message('restored', 'assistant', 'Restored answer')
+    const result = mergeCodexThreadMessages([first, marker, last], {
+      threadMessages: [message('prefix', 'user', 'Older request'), first, restored, last, message('suffix', 'assistant', 'New answer')],
+    })
+
+    expect(result.map((row) => row.id)).toEqual(['prefix', 'first', 'compact', 'restored', 'last', 'suffix'])
+  })
+
+  it('matches repeated steered text one-to-one only within shared turn anchors', () => {
+    const first = message('first', 'user', 'Start')
+    const repeated = message('repeat-1', 'user', 'Continue')
+    const another = message('repeat-2', 'user', 'Continue')
+    const last = delegated('last', 'turn-1', 'Done', 30)
+    const unrelated = message('outside', 'user', 'Continue')
+    const result = mergeCodexThreadMessages([first, repeated, another, last, unrelated], {
+      threadMessages: [first, { ...repeated, id: 'provider-1' }, { ...another, id: 'provider-2' }, { ...last, id: 'canonical' }],
+    })
+
+    expect(result.map((row) => row.id)).toEqual(['first', 'repeat-1', 'repeat-2', 'canonical', 'outside'])
+  })
+
+  it('keeps multiple local assistant segments from the same provider turn', () => {
+    const first = delegated('segment-1', 'turn-1', 'Before steer', 10)
+    const steer = message('steer', 'user', 'Change direction')
+    const last = delegated('segment-2', 'turn-1', 'After steer', 30)
+
+    const result = mergeCodexThreadMessages([first, steer, last], {
+      threadMessages: [delegated('canonical', 'turn-1', 'After steer', 30)],
+    })
+
+    expect(result.map((row) => row.id)).toEqual(['segment-1', 'steer', 'canonical'])
+    expect(result[0]?.content).toEqual(first.content)
+  })
+
+  it('places an older snapshot suffix before a later local user turn', () => {
+    const request = message('request', 'user', 'Review the work')
+    const compact = { ...message('compact', 'assistant', '__compact__:auto:1::1'), providerId: 'system' }
+    const later = message('later', 'user', 'Now fix it')
+    const result = mergeCodexThreadMessages([request, compact, later], {
+      threadMessages: [request, delegated('restored-work', 'turn-1', 'Review done', 20)],
+    })
+
+    expect(result.map((row) => row.id)).toEqual(['request', 'compact', 'restored-work', 'later'])
+  })
+
+  it('does not collapse identical user text without two shared anchors', () => {
+    const local = message('local', 'user', 'Continue')
+    const canonical = message('canonical', 'user', 'Continue')
+
+    expect(mergeCodexThreadMessages([local], { threadMessages: [canonical] }).map((row) => row.id))
+      .toEqual(['canonical', 'local'])
   })
 
   it('renders only completed live items and replaces them by provider item id', () => {

@@ -674,7 +674,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
           {/* The fade belongs to arriving at a different session. Switching between
               the voice timeline and the backing thread keeps the frame. */}
           <div
-            key={displayedSessionId ?? 'default'}
+            key={`transcript:${displayedSessionId ?? 'default'}`}
             data-transcript-frame=""
             className="flex min-h-0 min-w-0 flex-1 flex-col animate-[fade-in_150ms_ease-out]"
           >
@@ -701,6 +701,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             )}
           </div>
           <ComposerSwitch
+            key={`composer:${displayedSessionId ?? projectPath ?? 'draft'}`}
             className="mx-auto w-full min-w-0 max-w-3xl"
             kind={appConsent ? 'app-consent' : showRealtimeComposer ? 'voice' : 'text'}
             alignTo="text"

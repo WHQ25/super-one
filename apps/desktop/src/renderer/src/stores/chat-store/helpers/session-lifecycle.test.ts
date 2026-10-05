@@ -595,13 +595,63 @@ describe('setPreferredProviderImpl', () => {
   })
   it('is a no-op when sessionProvider already matches the requested provider', () => {
     setupProject()
-    patchSession({ sessionProvider: 'claude', preferredProvider: 'claude' })
+    patchSession({ sessionProvider: 'claude', preferredProvider: 'claude', contextTokens: 1359 })
     const beforeSid = activeProjectState()._activeSessionId
 
     useChatStore.getState().setPreferredProvider('claude')
 
     expect(activeProjectState()._activeSessionId).toBe(beforeSid)
+    expect(activeSession().contextTokens).toBe(1359)
     expect(mockSeedFromCurrent).not.toHaveBeenCalled()
+  })
+
+  it.each(['claude', 'codex', 'opencode', 'cursor', 'dsh', 'acp'] as const)(
+    'drops prior runtime usage and cached breakdown when switching an empty draft to %s',
+    (provider) => {
+      setupProject()
+      const source = provider === 'acp' ? 'codex' : 'acp'
+      const codexUsage = {
+        totalInputTokens: 1359, totalCachedInputTokens: 0, totalOutputTokens: 10,
+        lastInputTokens: 1359, lastCachedInputTokens: 0, lastOutputTokens: 10,
+        reasoningOutputTokens: 0, contextWindow: 500_000,
+      }
+      patchSession({
+        sessionProvider: source,
+        preferredProvider: source,
+        contextTokens: 1359,
+        contextWindow: 500_000,
+        detailedUsage: { totalTokens: 2000, maxTokens: 500_000, percentage: 0, model: 'grok', categories: [] },
+        totalCostUsd: 0.01,
+        streamingTokens: { input: 1359, output: 10 },
+        codexUsageSnapshot: codexUsage,
+        codexTurnLastUsage: codexUsage,
+      })
+      const sid = activeProjectState()._activeSessionId
+
+      useChatStore.getState().setPreferredProvider(provider)
+
+      expect(activeProjectState()._activeSessionId).toBe(sid)
+      expect(activeSession()).toMatchObject({
+        sessionProvider: provider,
+        contextTokens: 0,
+        contextWindow: null,
+        detailedUsage: null,
+        totalCostUsd: 0,
+        streamingTokens: { input: 0, output: 0 },
+        codexUsageSnapshot: null,
+        codexTurnLastUsage: null,
+      })
+    },
+  )
+
+  it('preserves usage when a harness switch is rejected on a conversation with messages', () => {
+    setupProject()
+    patchSession({ sessionProvider: 'claude', preferredProvider: 'claude', messages: [userMsg('u1')], contextTokens: 1359 })
+
+    useChatStore.getState().setPreferredProvider('codex')
+
+    expect(activeSession()).toMatchObject({ sessionProvider: 'claude', contextTokens: 1359 })
+    expect(mockWindowAgent.resetSession).not.toHaveBeenCalled()
   })
 
   it('keeps the same session id when switching harness on an empty draft', () => {

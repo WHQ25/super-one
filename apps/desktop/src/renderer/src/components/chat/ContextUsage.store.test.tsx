@@ -12,7 +12,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 
 vi.mock('@/hooks/useModelCatalog', () => ({
   useModelCatalog: () => ({
@@ -84,4 +84,64 @@ describe('ContextUsage with an unloaded Cursor catalog', () => {
       })
     }).not.toThrow()
   })
+})
+
+describe('ContextUsage when switching an empty session to another harness', () => {
+  it.each(['claude', 'codex', 'opencode', 'cursor', 'dsh'] as const)(
+    'hides Grok initialization usage after switching to %s',
+    async (provider) => {
+      useChatStore.setState({ projectSessions: {}, activeProject: null })
+      seedSession()
+      useChatStore.setState({ initializedHarnesses: new Set([provider]) })
+      const sid = useChatStore.getState().projectSessions[WIN_PATH]._activeSessionId!
+      useChatStore.setState((state) => {
+        const project = state.projectSessions[WIN_PATH]
+        return {
+          projectSessions: {
+            ...state.projectSessions,
+            [WIN_PATH]: {
+              ...project,
+              _sessions: {
+                ...project._sessions,
+                [sid]: {
+                  ...project._sessions[sid],
+                  sessionProvider: 'acp',
+                  preferredProvider: 'acp',
+                  acpAgentId: 'grok-build',
+                },
+              },
+            },
+          },
+        }
+      })
+      useChatStore.getState().handleAgentEvent({
+        type: 'message_usage',
+        projectPath: WIN_PATH,
+        sessionId: sid,
+        messageId: 'acp_session_grok',
+        inputTokens: 0,
+        outputTokens: 0,
+        contextTokens: 1359,
+        contextWindow: 500_000,
+      })
+      render(<ContextUsage />)
+      fireEvent.click(screen.getByRole('button'))
+      expect(screen.getByText('1.4k / 500.0k')).toBeTruthy()
+
+      await act(async () => {
+        useChatStore.getState().setPreferredProvider(provider)
+      })
+
+      expect(screen.queryByRole('button')).toBeNull()
+      expect(screen.queryByText(/1\.4k/)).toBeNull()
+      const project = useChatStore.getState().projectSessions[WIN_PATH]
+      expect(project._activeSessionId).toBe(sid)
+      expect(project._sessions[sid]).toMatchObject({
+        sessionProvider: provider,
+        messages: [],
+        contextTokens: 0,
+        contextWindow: null,
+      })
+    },
+  )
 })

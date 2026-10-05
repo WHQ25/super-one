@@ -14,7 +14,8 @@ import { MiniAppHostGroup } from './MiniAppHostGroup'
 import { cn } from '@superone/ui/lib/utils'
 import { homePath } from '@/lib/path-utils'
 import type { Automation, RecentFolder, ScheduledSend, SessionHistoryEntry } from '@superone/shared/agent-types'
-import { DEFAULT_SESSION_TITLE, getSessionTitle, isEphemeralSession, isLiveSession, withLiveSessionBrand } from './session-state-utils'
+import { getSessionTitle, isEphemeralSession, isLiveSession, withLiveSessionBrand } from './session-state-utils'
+import { selectSessionTitle } from '@/lib/session-title'
 import { AutomationDialog } from '../AutomationDialog'
 import { SessionRow, type SessionRowCallbacks } from './SessionRow'
 import { ProjectHistoryList } from './ProjectHistoryList'
@@ -215,6 +216,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           data.session?.sessionId ?? '',
           data._gitBranch ?? '',
           data._worktreePath ?? '',
+          data._title ?? '',
           getSessionTitle(data.messages) ?? '',
           hasRealtimeTimeline ? 1 : 0,
         ].join('\x01')
@@ -269,17 +271,17 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
         if (isEphemeralSession(data)) continue
         const hasRealtimeTimeline = useCodexRealtimeViewStore.getState().sessions[sid]?.hasTimeline ?? false
         if (data.messages.length === 0 && !hasRealtimeTimeline) continue
-        const title = getSessionTitle(data.messages)
+        const title = selectSessionTitle(useChatStore.getState(), folder.path, sid)
         const dbEntry = dbSessionById.get(sid)
         if (dbEntry?.isHidden) continue
         if (dbEntry) continue
         const isUnseen = projectSession.unseenCompletedSessions.has(sid)
         const isForeground = sid === foregroundSessionId
         if (!hasRealtimeTimeline && !isForeground && !isLiveSession(data, isUnseen)) continue
-        if (!title && !data._historyHydrated) continue
+        if (!data._title && !getSessionTitle(data.messages) && !data._historyHydrated) continue
         live.push({
           sessionId: sid,
-          title: title ?? DEFAULT_SESSION_TITLE,
+          title,
           lastActiveAt: new Date().toISOString(),
           provider: data.sessionProvider ?? undefined,
           ...(data.acpAgentId ? { acpAgentId: data.acpAgentId } : {}),

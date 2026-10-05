@@ -17,7 +17,8 @@ import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { getPendingReason } from './session-state-utils'
 import { useSessionDragOut } from './useSessionDragOut'
-import { SessionTitleAnimated, useSessionTitleByAgent } from './AnimatedSessionTitle'
+import { SessionTitleAnimated } from './AnimatedSessionTitle'
+import { useSessionTitle } from '@/hooks/useSessionTitle'
 import { useSessionMenuItems, type SessionMenuCallbacks } from './useSessionMenuItems'
 
 const EMPTY_REMOTE_SESSION_IDS: string[] = []
@@ -52,8 +53,8 @@ function SessionStatusSpinner({ stallLevel }: { stallLevel: StallLevel }) {
   return <Loader2 className={cn('size-3 animate-spin', getStallColor(stallLevel, 'text-sidebar-foreground/70'))} />
 }
 
-function PlainSessionTitle({ sessionId, fallback, className }: { sessionId: string; fallback: string; className?: string }) {
-  const title = useSessionTitleByAgent(sessionId, fallback)
+function PlainSessionTitle({ projectPath, sessionId, fallback, className }: { projectPath: string; sessionId: string; fallback: string; className?: string }) {
+  const title = useSessionTitle(projectPath, sessionId, fallback)
   const repaintKey = useEllipsisRepaintKey(className ?? '')
   return (
     <MarqueeText key={repaintKey} className={cn('session-row-title min-w-0 flex-1 text-[13px]', className)}>
@@ -208,8 +209,8 @@ export const SessionRow = memo(function SessionRow({
               </span>
             </div>
             {animateTitle
-              ? <SessionTitleAnimated sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
-              : <PlainSessionTitle sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
+              ? <SessionTitleAnimated projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
+              : <PlainSessionTitle projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
             }
             <div className="ml-auto flex shrink-0 items-center">
               {/* Why this row is at the top of the list. Always visible — the

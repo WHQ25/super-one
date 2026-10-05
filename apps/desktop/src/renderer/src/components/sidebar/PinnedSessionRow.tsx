@@ -84,7 +84,7 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
             </span>
           )}
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <SessionTitleAnimated sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
+            <SessionTitleAnimated projectPath={session.folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
             <span className="min-w-0 truncate text-[11px] text-sidebar-foreground/50">{session.folderName}</span>
           </div>
           <button

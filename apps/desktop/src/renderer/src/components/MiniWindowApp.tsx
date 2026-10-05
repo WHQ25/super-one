@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Maximize, Pin, PinOff } from 'lucide-react'
-import { useActiveSession, extractSessionTitle } from '@/stores/chat'
+import { useActiveSession, useChatStore } from '@/stores/chat'
 import { SessionPane } from '@/components/chat/SessionPane'
 import { useStandaloneSessionBoot } from '@/hooks/useStandaloneSessionBoot'
 import { exitMiniWindow } from '@/stores/window-mini-mode'
 import { useWindowChromeSync } from '@/hooks/useWindowChromeSync'
 import { ExternalLinkConfirm } from '@/components/ExternalLinkConfirm'
-import { SessionTitleAnimated, useSessionTitleByAgent } from '@/components/sidebar/AnimatedSessionTitle'
+import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
+import { useSessionTitle } from '@/hooks/useSessionTitle'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { cn } from '@superone/ui/lib/utils'
@@ -34,12 +35,9 @@ function truncateForDock(s: string): string {
 
 /** Shared by spawned mini windows and full windows converted in place. */
 export function MiniWindowHeader({ initialTitle, canRestore, transparentBackground = false }: MiniWindowHeaderProps): React.JSX.Element {
-  // `initialTitle` is the persisted session title as of window open, so it outranks the
-  // first-user-message derivation — that one is only for a session the DB has yet to title.
-  const sessionFallback = useActiveSession((s) => s._title ?? initialTitle ?? extractSessionTitle(s.messages))
+  const projectPath = useChatStore((s) => s.activeProject)
   const activeSessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId)
-  const liveTitle = useSessionTitleByAgent(activeSessionId, sessionFallback)
-  const displayTitle = liveTitle || initialTitle || 'Session'
+  const displayTitle = useSessionTitle(projectPath, activeSessionId, initialTitle)
   const isMac = window.app.platform === 'darwin'
   const isWindows = window.app.platform === 'win32'
 
@@ -85,8 +83,9 @@ export function MiniWindowHeader({ initialTitle, canRestore, transparentBackgrou
     >
       {isMac && <div className="w-[66px] shrink-0" />}
       <SessionTitleAnimated
+        projectPath={projectPath}
         sessionId={activeSessionId}
-        fallback={displayTitle}
+        fallback={initialTitle}
         className="min-w-0 flex-1 text-xs text-muted-foreground"
       />
       {canRestore && (

@@ -5,7 +5,6 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { SessionPane } from '@/components/chat/SessionPane'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
-import { useChatStore, extractSessionTitle } from '@/stores/chat'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { HeaderSessionMenu } from '@/components/chat/HeaderSessionMenu'
 import { useFullscreen } from '@/hooks/useFullscreen'
@@ -33,10 +32,6 @@ function MosaicTile({ tile, ctx }: { tile: MosaicLeaf; ctx: RenderCtx }) {
   const { t } = useTranslation()
   const focused = useMosaicStore((s) => s.focusedTileId === tile.id)
   const dragging = useMosaicStore((s) => s.draggingSession)
-  const titleFallback = useChatStore((s) => {
-    const sess = s.projectSessions[tile.projectPath]?._sessions[tile.sessionId]
-    return (sess?._title ?? (sess ? extractSessionTitle(sess.messages) : null)) ?? 'New Session'
-  })
   const isTopLeft = tile.id === ctx.topLeftId
   return (
     <div
@@ -48,7 +43,7 @@ function MosaicTile({ tile, ctx }: { tile: MosaicLeaf; ctx: RenderCtx }) {
         {ctx.reserveTrafficLights && isTopLeft && <div className="w-[60px] shrink-0" />}
         {isTopLeft && !ctx.showSidebar && <LayoutToggle />}
         <div className="group/htitle flex min-w-0 items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <SessionTitleAnimated sessionId={tile.sessionId} fallback={titleFallback} className="min-w-0 text-xs text-muted-foreground" />
+          <SessionTitleAnimated projectPath={tile.projectPath} sessionId={tile.sessionId} className="min-w-0 text-xs text-muted-foreground" />
           <HeaderSessionMenu sessionId={tile.sessionId} folderPath={tile.projectPath} />
         </div>
         <div className="flex-1" />

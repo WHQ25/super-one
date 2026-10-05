@@ -841,6 +841,9 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
         }
         const mergedSession: PerSessionState = {
           ...prevSession,
+          // Live hydration skips the DB load, so restore its title here too.
+          // A rename already received by this renderer still wins the race.
+          _title: prevSession._title ?? entry.snapshot.title ?? null,
           cwd: entry.snapshot.cwd,
           messages: mergedMessages,
           totalCostUsd: Math.max(prevSession.totalCostUsd, entry.snapshot.totalCostUsd),

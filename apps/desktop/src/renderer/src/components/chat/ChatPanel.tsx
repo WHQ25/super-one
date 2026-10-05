@@ -1,7 +1,7 @@
 import { useRef, useCallback, useEffect, useState, useLayoutEffect, memo } from 'react'
 import { motion, useMotionValue, animate } from 'motion/react'
 import { useTranslation } from 'react-i18next'
-import { useChatStore, useActiveSession, extractSessionTitle } from '@/stores/chat'
+import { useChatStore, useActiveSession } from '@/stores/chat'
 import { ChevronDown, Plus } from 'lucide-react'
 import { ChatContent } from './ChatContent'
 import { CollapsedChatPanelView, COLLAPSED_SIZE, COLLAPSED_PENDING_MAX_W } from './CollapsedChatPanelView'
@@ -90,7 +90,7 @@ export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchor
   const toggleOpen = useChatStore((s) => s.toggleOpen)
   const sessionStatus = useActiveSession((s) => s.status)
   const sessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId ?? '')
-  const sessionFallback = useActiveSession((s) => s._title ?? extractSessionTitle(s.messages))
+  const projectPath = useChatStore((s) => s.activeProject)
   const pendingPermissions = useActiveSession((s) => s.pendingPermissions)
   const pendingQuestion = useActiveSession((s) => s.pendingQuestion)
   const pendingPlanApproval = useActiveSession((s) => s.pendingPlanApproval)
@@ -445,8 +445,8 @@ export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchor
               <ChevronDown className="size-3.5" />
             </button>
             <SessionTitleAnimated
+              projectPath={projectPath}
               sessionId={sessionId}
-              fallback={sessionFallback ?? 'New Session'}
               className="min-w-0 flex-1 pr-3 text-xs text-muted-foreground"
             />
             <button

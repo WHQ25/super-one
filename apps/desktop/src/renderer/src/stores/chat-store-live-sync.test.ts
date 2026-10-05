@@ -58,6 +58,7 @@ vi.stubGlobal('window', {
 vi.stubGlobal('localStorage', mockLocalStorage)
 
 const { useChatStore, mergeMessagesByMaxSeq, defaultPrefsCache } = await import('./chat')
+const { selectSessionTitle } = await import('@/lib/session-title')
 
 const TEST_EPOCH = 1
 
@@ -85,7 +86,7 @@ function delta(messageId: string, text: string, seq?: number, epoch: number = TE
 }
 
 function resetStore() {
-  useChatStore.setState({ projectSessions: {}, activeProject: null })
+  useChatStore.setState({ projectSessions: {}, activeProject: null, agentTitles: {} })
 }
 
 beforeEach(() => {
@@ -227,6 +228,7 @@ function makeSnapshotEntry(overrides: Partial<{
   acpAgentId: string | null
   selectedModel: string | null
   selectedEffort: string | null
+  title: string | null
   uiSettings: Record<string, unknown>
 }> = {}) {
   return {
@@ -259,7 +261,7 @@ function makeSnapshotEntry(overrides: Partial<{
       messages: overrides.messages ?? [],
       totalCostUsd: overrides.totalCostUsd ?? 0,
       contextTokens: overrides.contextTokens ?? 0,
-      title: null,
+      title: overrides.title ?? null,
       isWorktree: false,
       worktreePath: null,
       gitBranch: null,
@@ -275,6 +277,55 @@ function makeSnapshotEntry(overrides: Partial<{
 }
 
 describe('syncLiveSnapshots', () => {
+  it.each([false, true])('restores a voice title after reopening the renderer (backing messages=%s)', async (hasBackingMessages) => {
+    const voiceTitle = 'Plan the next release'
+    const messages: ChatMessage[] = hasBackingMessages
+      ? [{ ...makeMessage('delegation', 'You are the coding agent behind a voice conversation'), role: 'user', providerId: 'codex' }]
+      : []
+    // Closing the frontend loses both its per-session title and the live rename
+    // cache. Main survives with the voice title; the sidebar reloads it from DB.
+    useChatStore.setState({ activeProject: '/p' })
+    mockGetLiveSnapshots.mockResolvedValueOnce([
+      makeSnapshotEntry({ harnessId: 'codex', isStreaming: false, messages, title: voiceTitle }),
+    ])
+
+    await useChatStore.getState().syncLiveSnapshots()
+
+    const restored = useChatStore.getState().projectSessions['/p']._sessions['sid-1']
+    expect(restored._historyHydrated).toBe(true)
+    expect(selectSessionTitle(useChatStore.getState(), '/p', 'sid-1')).toBe(voiceTitle)
+    expect(restored.messages).toEqual(messages)
+  })
+
+  it('keeps a title renamed while the live snapshot is in flight', async () => {
+    useChatStore.setState({ activeProject: '/p', projectSessions: { '/p': {
+      ...projectExtras(), _activeSessionId: 'sid-1', _sessions: { 'sid-1': createEmptySession() },
+    } } as never })
+    let finish!: (entries: ReturnType<typeof makeSnapshotEntry>[]) => void
+    mockGetLiveSnapshots.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    const syncing = useChatStore.getState().syncLiveSnapshots()
+    useChatStore.getState().handleAgentEvent({
+      type: 'session_title_changed', projectPath: '/p', sessionId: 'sid-1', title: 'New voice title', source: 'user',
+    })
+    finish([makeSnapshotEntry({ harnessId: 'codex', title: 'Older voice title' })])
+
+    await syncing
+
+    expect(useChatStore.getState().projectSessions['/p']._sessions['sid-1']._title).toBe('New voice title')
+    expect(useChatStore.getState().agentTitles['sid-1']).toBe('New voice title')
+  })
+
+  it('keeps the message-derived title when the live snapshot has no title', async () => {
+    const messages: ChatMessage[] = [{ ...makeMessage('user', 'Untitled conversation'), role: 'user' }]
+    mockGetLiveSnapshots.mockResolvedValueOnce([makeSnapshotEntry({ messages })])
+
+    await useChatStore.getState().syncLiveSnapshots()
+
+    const restored = useChatStore.getState().projectSessions['/p']._sessions['sid-1']
+    expect(restored._title).toBeNull()
+    expect(selectSessionTitle(useChatStore.getState(), '/p', 'sid-1')).toBe('Untitled conversation')
+  })
+
   it('marks a host message as owned before a harness has emitted init_ready', () => {
     useChatStore.setState({ activeProject: '/p', projectSessions: { '/p': {
       ...projectExtras(), _activeSessionId: 'sid-1', _sessions: { 'sid-1': { ...createEmptySession(), sessionProvider: 'codex', preferredProvider: 'codex' } },

@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { SessionTitleAnimated } from './AnimatedSessionTitle'
 
 vi.mock('@/stores/chat', () => ({
-  useChatStore: (selector: (state: { agentTitles: Record<string, string> }) => unknown) =>
-    selector({ agentTitles: {} }),
+  useChatStore: (selector: (state: { agentTitles: Record<string, string>; projectSessions: Record<string, never> }) => unknown) =>
+    selector({ agentTitles: {}, projectSessions: {} }),
 }))
 
 const TITLE = 'a session title long enough to be truncated in the sidebar'
@@ -20,22 +20,22 @@ describe('sidebar session title — stall color repaint', () => {
     // glyph after a color-only change, so a recovered session showed white text
     // with a red "…" until the row was hovered. The keyed remount is the fix.
     const { container, rerender } = render(
-      <SessionTitleAnimated sessionId="s1" fallback={TITLE} className="text-red-500" />,
+      <SessionTitleAnimated projectPath="/p" sessionId="s1" fallback={TITLE} className="text-red-500" />,
     )
     const before = container.querySelector('.animated-title-inner')
 
-    rerender(<SessionTitleAnimated sessionId="s1" fallback={TITLE} className="" />)
+    rerender(<SessionTitleAnimated projectPath="/p" sessionId="s1" fallback={TITLE} className="" />)
 
     expect(container.querySelector('.animated-title-inner')).not.toBe(before)
   })
 
   it('keeps the same element while the color is unchanged', () => {
     const { container, rerender } = render(
-      <SessionTitleAnimated sessionId="s1" fallback={TITLE} className="text-red-500" />,
+      <SessionTitleAnimated projectPath="/p" sessionId="s1" fallback={TITLE} className="text-red-500" />,
     )
     const before = container.querySelector('.animated-title-inner')
 
-    rerender(<SessionTitleAnimated sessionId="s1" fallback={TITLE} className="text-red-500" />)
+    rerender(<SessionTitleAnimated projectPath="/p" sessionId="s1" fallback={TITLE} className="text-red-500" />)
 
     act(() => { vi.advanceTimersByTime(1000) })
 
@@ -49,10 +49,10 @@ describe('sidebar session title — stall color repaint', () => {
     // repaint the glyph for that. A second remount after the transition settles
     // is what actually lands the recovered color.
     const { container, rerender } = render(
-      <SessionTitleAnimated sessionId="s1" fallback={TITLE} className="text-red-500 transition-colors duration-500" />,
+      <SessionTitleAnimated projectPath="/p" sessionId="s1" fallback={TITLE} className="text-red-500 transition-colors duration-500" />,
     )
 
-    rerender(<SessionTitleAnimated sessionId="s1" fallback={TITLE} className="transition-colors duration-500" />)
+    rerender(<SessionTitleAnimated projectPath="/p" sessionId="s1" fallback={TITLE} className="transition-colors duration-500" />)
     const duringTransition = container.querySelector('.animated-title-inner')
 
     act(() => { vi.advanceTimersByTime(600) })
@@ -63,7 +63,7 @@ describe('sidebar session title — stall color repaint', () => {
 
 describe('sidebar session title — hover marquee', () => {
   function renderOverflowing(visibleWidth: number, textWidth: number) {
-    const { container } = render(<SessionTitleAnimated sessionId="s1" fallback={TITLE} className="" />)
+    const { container } = render(<SessionTitleAnimated projectPath="/p" sessionId="s1" fallback={TITLE} className="" />)
     const wrap = container.querySelector('.animated-title-wrap') as HTMLElement
     const inner = container.querySelector('.animated-title-inner') as HTMLElement
     // jsdom has no layout — both metrics read 0, so the overflow has to be faked.

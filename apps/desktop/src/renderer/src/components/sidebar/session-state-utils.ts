@@ -1,12 +1,11 @@
 import type {
   AskUserQuestionRequest,
-  ChatMessage,
   HarnessId,
   PermissionRequest,
   PlanApprovalRequest,
   SessionHistoryEntry,
 } from '@superone/shared/agent-types'
-import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
+export { DEFAULT_SESSION_TITLE, getSessionTitle, resolveSessionTitle } from '@/lib/session-title'
 
 // Pending-interaction copy moved to `@superone/shared/pending-interaction` so the
 // main process can build notification bodies from the same source. Re-exported
@@ -62,22 +61,6 @@ export function isLiveSession(
     || !!session?.awaitingAssistantReply
 }
 
-export function getSessionTitle(messages: ChatMessage[] | undefined): string | null {
-  if (!messages?.length) return null
-  for (const message of messages) {
-    if (message.role !== 'user') continue
-    const text = message.content
-      .flatMap((block) => block.type === 'text' ? [block.text.trim()] : [])
-      .filter(Boolean)
-      .join(' ')
-      .trim()
-    if (text) return text.slice(0, SESSION_TITLE_MAX_CHARS)
-  }
-  return null
-}
-
-export const DEFAULT_SESSION_TITLE = 'New session'
-
 /**
  * Overlay live session brand onto a history row. Mobile-created ACP sessions
  * often land in the sidebar from `_sessions` before (or without) a DB row that
@@ -99,22 +82,4 @@ export function withLiveSessionBrand(
     ...(provider ? { provider } : {}),
     ...(acpAgentId ? { acpAgentId } : {}),
   }
-}
-
-/**
- * Canonical session-title precedence, shared by every surface that renders a
- * session title (sidebar rows, Ctrl+Tab switcher, mini window):
- * an explicit agent/user rename wins, then the first-user-message derivation,
- * then the persisted DB title, then `terminal`.
- *
- * `terminal` defaults to {@link DEFAULT_SESSION_TITLE}; pass `''` when the caller
- * layers its own further fallback on top (e.g. the mini-window title bar).
- */
-export function resolveSessionTitle(
-  agentTitle: string | null | undefined,
-  messages: ChatMessage[] | undefined,
-  dbTitle: string | null | undefined,
-  terminal: string = DEFAULT_SESSION_TITLE,
-): string {
-  return agentTitle ?? getSessionTitle(messages) ?? dbTitle ?? terminal
 }

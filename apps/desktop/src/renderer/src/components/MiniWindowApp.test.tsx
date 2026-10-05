@@ -4,7 +4,9 @@ import { render } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/stores/chat', () => ({
-  extractSessionTitle: () => 'Session',
+  useChatStore: (selector: (state: unknown) => unknown) => selector({
+    activeProject: '/p', projectSessions: {}, agentTitles: { 'session-1': 'Session' },
+  }),
   useActiveSession: (selector: (state: unknown) => unknown) => selector({
     _title: 'Session',
     _activeSessionId: 'session-1',
@@ -13,7 +15,6 @@ vi.mock('@/stores/chat', () => ({
 }))
 vi.mock('@/components/sidebar/AnimatedSessionTitle', () => ({
   SessionTitleAnimated: () => <span>Session</span>,
-  useSessionTitleByAgent: () => 'Session',
 }))
 vi.mock('@/hooks/useWindowChromeSync', () => ({ useWindowChromeSync: () => undefined }))
 vi.mock('@/hooks/useStandaloneSessionBoot', () => ({ useStandaloneSessionBoot: () => undefined }))

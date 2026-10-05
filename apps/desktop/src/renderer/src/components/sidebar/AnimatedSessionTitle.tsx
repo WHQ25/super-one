@@ -2,8 +2,7 @@ import { useEffect, useInsertionEffect, useRef, useState } from 'react'
 import { cn } from '@superone/ui/lib/utils'
 import { useHoverMarquee } from '@superone/ui/components/ui/marquee-text'
 import { useEllipsisRepaintKey } from '@/lib/stall-utils'
-import { useChatStore } from '@/stores/chat'
-import { resolveSessionTitle } from './session-state-utils'
+import { useSessionTitle } from '@/hooks/useSessionTitle'
 
 import {
   sessionTitleAnimationCss,
@@ -15,21 +14,14 @@ import {
 
 type Phase = 'idle' | 'out' | 'in'
 
-export function useSessionTitleByAgent(
-  sessionId: string | null | undefined,
-  fallback: string | null | undefined,
-): string {
-  const agentTitle = useChatStore((s) => (sessionId ? s.agentTitles[sessionId] : undefined))
-  return resolveSessionTitle(agentTitle, undefined, fallback, '')
-}
-
 interface SessionTitleAnimatedProps {
+  projectPath: string | null | undefined
   sessionId: string | null | undefined
-  fallback: string | null | undefined
+  fallback?: string | null
   className?: string
 }
 
-export function SessionTitleAnimated({ sessionId, fallback, className }: SessionTitleAnimatedProps) {
+export function SessionTitleAnimated({ projectPath, sessionId, fallback, className }: SessionTitleAnimatedProps) {
   useInsertionEffect(() => {
     if (document.getElementById('session-title-animation-style')) return
     const style = document.createElement('style')
@@ -37,7 +29,7 @@ export function SessionTitleAnimated({ sessionId, fallback, className }: Session
     style.textContent = sessionTitleAnimationCss
     document.head.appendChild(style)
   }, [])
-  const targetTitle = useSessionTitleByAgent(sessionId, fallback)
+  const targetTitle = useSessionTitle(projectPath, sessionId, fallback)
   const [displayTitle, setDisplayTitle] = useState(targetTitle)
   const [phase, setPhase] = useState<Phase>('idle')
   const [writeKey, setWriteKey] = useState(0)

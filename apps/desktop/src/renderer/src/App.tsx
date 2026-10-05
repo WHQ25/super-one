@@ -52,7 +52,7 @@ import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useActivityViewStateStore } from '@/stores/activity-view-state'
 import { useTerminalPanel } from '@/hooks/useTerminalPanel'
 import { useTerminalStore } from '@/stores/terminal'
-import { useActiveSession, extractSessionTitle, useChatStore } from '@/stores/chat'
+import { useActiveSession, useChatStore } from '@/stores/chat'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { HeaderSessionMenu } from '@/components/chat/HeaderSessionMenu'
 import { CodexConversationViewToggle } from '@/components/chat/CodexConversationViewToggle'
@@ -536,7 +536,6 @@ function App(): React.JSX.Element {
   }, [])
 
   const sessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId ?? '')
-  const sessionFallback = useActiveSession((s) => s._title ?? extractSessionTitle(s.messages))
   const isCodexSession = useActiveSession((s) => resolveProvider({
     sessionProvider: s.sessionProvider,
     preferredProvider: s.preferredProvider,
@@ -674,7 +673,7 @@ function App(): React.JSX.Element {
         )} style={{ order: 1, minWidth: inMiniWindow ? 0 : MIN_MAIN }}>
         {/* Main header — drag region (hidden in mosaic; each tile carries its own) */}
         {compactMiniShell
-          ? <MiniWindowHeader initialTitle={sessionFallback ?? undefined} canRestore transparentBackground={liquidGlass} />
+          ? <MiniWindowHeader canRestore transparentBackground={liquidGlass} />
           : mosaicMode !== 'mosaic' && (
         <div
           className={cn('flex h-[34px] shrink-0 items-center transition-[padding-left] duration-300 ease-in-out', !isMac || (isFullscreen && !hasLeftPanel) ? 'pl-2' : 'pl-[18px]')}
@@ -682,7 +681,7 @@ function App(): React.JSX.Element {
         >
           {isMac && <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', isFullscreen || hasLeftPanel ? 'w-0' : 'w-[60px]')} />}
           {(!isMac || !showSidebar) && !(showActivityPanel && activitySide === 'left') && <LayoutToggle />}
-          <HeaderTitle sessionId={sessionId} sessionFallback={sessionFallback} folderPath={currentFolder} />
+          <HeaderTitle sessionId={sessionId} folderPath={currentFolder} />
 
           <div className="flex-1" />
 
@@ -807,15 +806,16 @@ function MosaicSingleDropOverlay({ wrapperRef, canRestoreMosaic }: { wrapperRef:
   )
 }
 
-function HeaderTitle({ sessionId, sessionFallback, folderPath }: { sessionId: string; sessionFallback: string | null | undefined; folderPath: string | null }) {
+function HeaderTitle({ sessionId, folderPath }: { sessionId: string; folderPath: string | null }) {
+  const projectPath = useChatStore((s) => s.activeProject)
   return (
     <div
       className="group/htitle flex min-w-0 items-center gap-1"
       style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
     >
       <SessionTitleAnimated
+        projectPath={projectPath}
         sessionId={sessionId}
-        fallback={sessionFallback ?? 'New Session'}
         className="max-w-[300px] text-xs text-muted-foreground"
       />
       {sessionId && folderPath ? <HeaderSessionMenu sessionId={sessionId} folderPath={folderPath} /> : null}

@@ -1,19 +1,11 @@
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { compareMessageSeq } from '@superone/shared/event-seq-utils'
-import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
-import { SESSION_TITLE_MAX_CHARS } from '@superone/shared/session-title'
+import { getSessionTitle } from '@/lib/session-title'
 import { applyContentDelta } from '@superone/shared/content-delta'
 
 export const applyDelta = applyContentDelta
 
-export function extractSessionTitle(messages: ChatMessage[]): string | null {
-  const firstUserMsg = messages.find((m) => m.role === 'user')
-  const text = firstUserMsg?.content
-    .filter((b) => b.type === 'text')
-    .map((b) => (b as { text: string }).text)
-    .join(' ') ?? ''
-  return stripMiniAppMarkup(text).slice(0, SESSION_TITLE_MAX_CHARS) || null
-}
+export const extractSessionTitle = getSessionTitle
 
 export function mergeMessagesByMaxSeq(snap: ChatMessage[], existing: ChatMessage[]): ChatMessage[] {
   const existingById = new Map(existing.map((m) => [m.id, m]))

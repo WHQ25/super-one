@@ -7,7 +7,8 @@ import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSes
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { useChatStore, type PerSessionState, type ProjectState } from '@/stores/chat'
 import { useCtrlTabSwitcher } from '@/hooks/useCtrlTabSwitcher'
-import { getPendingReason, isEphemeralSession, isLiveSession, resolveSessionTitle, type PendingReasonT } from '@/components/sidebar/session-state-utils'
+import { getPendingReason, isEphemeralSession, isLiveSession, type PendingReasonT } from '@/components/sidebar/session-state-utils'
+import { selectSessionTitle } from '@/lib/session-title'
 import { useStallLevel, getStallColor, useEllipsisRepaintKey, type StallLevel } from '@/lib/stall-utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { cn } from '@superone/ui/lib/utils'
@@ -66,12 +67,11 @@ interface BuildRowArgs {
   isCurrent: boolean
   isPrevious: boolean
   isUnseen: boolean
-  agentTitle: string | undefined
+  title: string
 }
 
-function buildRow({ projectPath, sid, data, dbById, remoteSet, isCurrent, isPrevious, isUnseen, agentTitle }: BuildRowArgs): ActiveRow {
+function buildRow({ projectPath, sid, data, dbById, remoteSet, isCurrent, isPrevious, isUnseen, title }: BuildRowArgs): ActiveRow {
   const dbEntry = dbById.get(sid)
-  const title = resolveSessionTitle(agentTitle, data.messages, dbEntry?.title)
   return {
     projectPath,
     sessionId: sid,
@@ -111,7 +111,8 @@ export function collectAllActiveRows(input: CollectActiveRowsInput): ActiveRow[]
         if (!isLiveSession(data, isUnseen)) continue
         if (data.messages.length === 0 && !data._historyHydrated) continue
       }
-      rows.push(buildRow({ projectPath, sid, data, dbById, remoteSet, isCurrent, isPrevious, isUnseen, agentTitle: agentTitles[sid] }))
+      rows.push(buildRow({ projectPath, sid, data, dbById, remoteSet, isCurrent, isPrevious, isUnseen,
+        title: selectSessionTitle({ projectSessions, agentTitles }, projectPath, sid) }))
     }
   }
 
@@ -132,7 +133,7 @@ export function collectAllActiveRows(input: CollectActiveRowsInput): ActiveRow[]
         isCurrent: false,
         isPrevious: true,
         isUnseen,
-        agentTitle: agentTitles[prevKey.sessionId],
+        title: selectSessionTitle({ projectSessions, agentTitles }, prevKey.projectPath, prevKey.sessionId),
       }))
     }
   }

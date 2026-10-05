@@ -381,11 +381,14 @@ describe('withLiveSessionBrand', () => {
 })
 
 describe('resolveSessionTitle', () => {
-  it('prefers agent title then message then db then terminal', () => {
+  it('prefers agent title then db then message then terminal', () => {
     expect(resolveSessionTitle('Agent', undefined, 'DB', 'term')).toBe('Agent')
     expect(resolveSessionTitle(null, [
       { id: '1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'From msg' }], createdAt: '2026-03-02T00:00:00.000Z', providerId: 'claude' },
-    ], 'DB', 'term')).toBe('From msg')
+    ], 'DB', 'term')).toBe('DB')
+    expect(resolveSessionTitle(null, [
+      { id: '1', role: 'user', status: 'complete', content: [{ type: 'text', text: 'From msg' }], createdAt: '2026-03-02T00:00:00.000Z', providerId: 'claude' },
+    ], null, 'term')).toBe('From msg')
     expect(resolveSessionTitle(null, undefined, 'DB', 'term')).toBe('DB')
     expect(resolveSessionTitle(null, undefined, null, 'term')).toBe('term')
     expect(resolveSessionTitle(null, undefined, null)).toBe(DEFAULT_SESSION_TITLE)

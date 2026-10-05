@@ -33,6 +33,7 @@ import { WorkDirLabel, workDirTitle, type WorkDirState } from './work-dir-label'
 import { GroupedModelEffortSelector } from './model-selector/GroupedModelEffortSelector'
 import { useCollabLaunchModelSelector } from './model-selector/useCollabLaunchModelSelector'
 import { isFocusInChat, useChatRootRef } from './is-focus-in-chat'
+import { shouldSuppressDecisionShortcut } from './composer-slot/decision-composer-policy'
 
 interface Props {
   payload: SessionAgentRequestPayload
@@ -307,7 +308,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
   const [summaryExpanded, setSummaryExpanded] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [feedbackFocused, setFeedbackFocused] = useState(false)
-  const feedbackRef = useRef<HTMLInputElement>(null)
+  const feedbackRef = useRef<HTMLTextAreaElement>(null)
   const chatRootRef = useChatRootRef()
 
   const { launches, profiles } = payload
@@ -342,6 +343,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
+      if (shouldSuppressDecisionShortcut(event, chatRootRef?.current)) return
       if (hasOpenRadixOverlay()) return
       const typing = document.activeElement === feedbackRef.current
 

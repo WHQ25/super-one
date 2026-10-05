@@ -5,7 +5,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resetRealtimeCallForTests, useRealtimeCallStore } from '@/stores/realtime-call'
 import { RealtimeCallComposer } from './RealtimeCallComposer'
 
-vi.mock('./SessionDecisionPrompts', () => ({ SessionDecisionPrompts: () => <div data-testid="decision-prompts" /> }))
 vi.mock('./RealtimeCallIndicator', () => ({ RealtimeCallIndicator: () => <div data-testid="realtime-call-indicator" /> }))
 vi.mock('./RealtimeCallControls', () => ({
   RealtimeCallControls: ({ disabled }: { disabled?: boolean }) => <div data-testid="call-controls" data-disabled={String(!!disabled)} />,
@@ -20,7 +19,7 @@ describe('RealtimeCallComposer', () => {
   it('shows the mark with a connecting line, and no controls, while the offer is out', () => {
     useRealtimeCallStore.setState({ sessionId: 'sid', state: 'starting' })
     render(<RealtimeCallComposer />)
-    expect(screen.getByTestId('decision-prompts')).toBeInTheDocument()
+    expect(screen.queryByTestId('decision-prompts')).toBeNull()
     const composer = screen.getByTestId('realtime-call-composer')
     expect(composer).toHaveAttribute('data-call-state', 'starting')
     expect(composer.contains(screen.getByTestId('realtime-call-indicator'))).toBe(true)

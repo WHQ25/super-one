@@ -10,6 +10,31 @@ vi.mock('@/components/MarkdownPreview', () => ({
 }))
 
 describe('CodexPlanFullscreenView', () => {
+  it.each([{ shiftKey: true }, { altKey: true }])('keeps multiline feedback without approving the plan %j', (modifier) => {
+    const onClose = vi.fn()
+    const onApprovePlan = vi.fn()
+    const onRejectPlan = vi.fn()
+    render(
+      <div data-chat-root="">
+        <CodexPlanFullscreenView text="## Plan" onClose={onClose} onApprovePlan={onApprovePlan} onRejectPlan={onRejectPlan} />
+      </div>,
+    )
+    const feedback = screen.getByPlaceholderText('Reject feedback (optional, Enter to submit)') as HTMLTextAreaElement
+    fireEvent.change(feedback, { target: { value: 'Keep the scope minimal.' } })
+    feedback.focus()
+    feedback.setSelectionRange(feedback.value.length, feedback.value.length)
+    fireEvent.keyDown(feedback, { key: 'Enter', ...modifier })
+    expect(feedback.value).toBe('Keep the scope minimal.\n')
+    expect(onApprovePlan).not.toHaveBeenCalled()
+    expect(onRejectPlan).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+    fireEvent.change(feedback, { target: { value: `${feedback.value}Preserve existing files.` } })
+    fireEvent.keyDown(feedback, { key: 'Enter' })
+    expect(onRejectPlan).toHaveBeenCalledExactlyOnceWith('Keep the scope minimal.\nPreserve existing files.')
+    expect(onClose).toHaveBeenCalledExactlyOnceWith('reject')
+    expect(onApprovePlan).not.toHaveBeenCalled()
+  })
+
   it('submits footer feedback when rejecting from fullscreen', () => {
     const onClose = vi.fn()
     const onApprovePlan = vi.fn()
@@ -87,7 +112,7 @@ describe('CodexPlanFullscreenView', () => {
     )
     ;(view.container.querySelector('[data-chat-root]') as HTMLElement).focus()
 
-    const feedback = screen.getByPlaceholderText('Reject feedback (optional, Enter to submit)') as HTMLInputElement
+    const feedback = screen.getByPlaceholderText('Reject feedback (optional, Enter to submit)') as HTMLTextAreaElement
     const rejectButton = screen.getByRole('button', { name: /Reject/i })
     expect(within(rejectButton).getByText('esc')).toBeTruthy()
 

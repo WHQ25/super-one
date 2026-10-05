@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { Trans, useTranslation } from 'react-i18next'
 import type { TerminalCommandRuleScope } from '@superone/shared/terminal-command-rules'
+import type { PermissionRequest } from '@superone/shared/agent-types'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { useChatStore, useActiveSession, selectClaudeModels, selectClaudeAccount, useScopedSessionActions } from '@/stores/chat'
@@ -17,7 +18,6 @@ import { useMcpServerIcon } from './use-mcp-server-icon'
 import { deviceToolVerbKey } from './device-tool-display'
 import { EditDiff, WriteDiff } from './ToolBlock'
 import { modes as permissionModes } from './PermissionModeSelector'
-import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
 import { eligibilityFromStore } from '@/lib/auto-mode-eligibility'
 import { SchemaFormComposer } from '../schema-form/SchemaFormComposer'
 import { useMcpFormResources } from '../schema-form/use-mcp-form-resources'
@@ -32,6 +32,7 @@ import { WebMcpTrustPrompt } from './WebMcpTrustPrompt'
 import { FolderTrustPrompt } from './FolderTrustPrompt'
 import { ApproveRejectBar, PermissionActionButton } from './PermissionActionBar'
 import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
+import { isHighRiskPermission, shouldSuppressDecisionShortcut, wasChatInputFocusedRecently } from './composer-slot/decision-composer-policy'
 
 interface MiniAppToolInfo {
   appId: string
@@ -126,9 +127,10 @@ function SuggestionContent({ s }: { s: Record<string, unknown> }) {
   }
 }
 
-export function PermissionPrompt() {
+export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
   const { t } = useTranslation()
-  const pendingPermission = useActiveSession((s) => s.pendingPermissions[0] ?? null)
+  const livePermission = useActiveSession((s) => s.pendingPermissions[0])
+  const pendingPermission = request === undefined ? livePermission : request
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
   const { respondToPermission, setPermissionMode } = useScopedSessionActions()
   const cwd = useActiveSession((s) => s.cwd)
@@ -142,15 +144,16 @@ export function PermissionPrompt() {
   const [isFeedbackFocused, setIsFeedbackFocused] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
   const btnRefs = useRef<(HTMLButtonElement | null)[]>([])
-  const feedbackRef = useRef<HTMLInputElement>(null)
+  const feedbackRef = useRef<HTMLTextAreaElement>(null)
   const chatRootRef = useChatRootRef()
 
   const requestId = pendingPermission?.requestId
   const toolName = pendingPermission?.toolName
-  const allowAlwaysAllow = pendingPermission?.allowAlwaysAllow
+  const allowAlwaysAllow = pendingPermission?.allowAlwaysAllow ?? false
   // Harness asked for a decline-first prompt: focus lands on Deny and Enter must
   // not approve. Only the two-button Claude row honours it; Codex never sets it.
   const defaultToNo = pendingPermission?.defaultToNo === true
+  const requireExplicitApproval = isHighRiskPermission(pendingPermission)
   const isElicitation = pendingPermission?.requestKind === 'mcp_elicitation'
   const formResources = useMcpFormResources(requestId, isElicitation && sessionProvider === 'codex')
   const isVideoGenConfirm = pendingPermission?.requestKind === 'video_gen_confirm'
@@ -191,7 +194,6 @@ export function PermissionPrompt() {
   const [urlOpened, setUrlOpened] = useState(false)
   useEffect(() => { setUrlOpened(false) }, [requestId])
   const supportsAlwaysPersist = pendingPermission?.supportsAlwaysPersist ?? false
-  useRestoreChatInputFocus(!!requestId)
   const promptConfig = getPermissionPromptConfig(
     sessionProvider,
     allowAlwaysAllow,
@@ -247,7 +249,7 @@ export function PermissionPrompt() {
     // session's permission prompt cannot steal the composer caret.
     if (requestId && !isCollapsed && !isSelfManagedConfirm) {
       requestAnimationFrame(() => {
-        if (!canAutofocusInChatRoot(chatRootRef?.current)) return
+        if (!canAutofocusInChatRoot(chatRootRef?.current) || wasChatInputFocusedRecently(chatRootRef?.current)) return
         // Deny sits at index 1 on the standard row (index 2 when device-control adds
         // its always-allow button between approve and reject).
         const denyIdx = hasHostAlwaysButton ? 2 : 1
@@ -362,6 +364,19 @@ export function PermissionPrompt() {
       // Enter/Esc/Space/digits must not fire while the user types in another panel
       // or in a sibling mosaic chat pane.
       if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
+      if (shouldSuppressDecisionShortcut(e, chatRootRef?.current)) return
+
+      if (
+        e.key === 'Enter'
+        && e.metaKey
+        && isHighRiskPermission(pendingPermission)
+        && !e.isComposing
+      ) {
+        e.preventDefault()
+        handleAllow()
+        return
+      }
+      if (isHighRiskPermission(pendingPermission) && (e.ctrlKey || e.metaKey || e.altKey)) return
 
       if (isCollapsed) {
         if (e.key === ' ') {
@@ -451,7 +466,7 @@ export function PermissionPrompt() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, handleAlwaysAllow, isCodexDecisionPrompt, hasHostAlwaysButton, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef, defaultToNo, terminalRule, toggleRememberRule])
+  }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, handleAlwaysAllow, isCodexDecisionPrompt, hasHostAlwaysButton, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef, defaultToNo, terminalRule, toggleRememberRule, pendingPermission])
 
   if (!pendingPermission) return null
 
@@ -810,7 +825,7 @@ export function PermissionPrompt() {
                     <PermissionActionButton
                       ref={(el) => { btnRefs.current[0] = el }}
                       tone="approve"
-                      kbd="⏎"
+                      kbd={requireExplicitApproval ? '⌘↵' : '⏎'}
                       onClick={handleAllow}
                     >
                       {t('chat.permission.allow')}
@@ -818,7 +833,7 @@ export function PermissionPrompt() {
                     <PermissionActionButton
                       ref={(el) => { btnRefs.current[1] = el }}
                       tone="primary"
-                      kbd="⇧↵"
+                      kbd={requireExplicitApproval ? undefined : '⇧↵'}
                       onClick={handleAlwaysAllow}
                     >
                       {t('chat.permission.allowForSession')}
@@ -847,6 +862,7 @@ export function PermissionPrompt() {
                     onApprove={handleAllow}
                     onReject={handleDeny}
                     enterApproves={!defaultToNo}
+                    requireExplicitApproval={requireExplicitApproval}
                     // Two answers that differ only in lifetime read as the same word
                     // unless both say theirs. "Allow" next to "Always Allow" invites
                     // the user to assume the first one also sticks.
@@ -858,7 +874,7 @@ export function PermissionPrompt() {
                       <PermissionActionButton
                         ref={(el) => { btnRefs.current[1] = el }}
                         tone="primary"
-                        kbd="⇧⏎"
+                        kbd={requireExplicitApproval ? undefined : '⇧⏎'}
                         onClick={handleAlwaysAllow}
                       >
                         {t('chat.permission.alwaysAllowDevice')}
@@ -898,7 +914,7 @@ export function PermissionPrompt() {
                               components={{ rule: <span className="font-mono font-medium" /> }}
                             />
                           </span>
-                          <Kbd variant="square" className="ml-auto">{kbd}</Kbd>
+                          {!requireExplicitApproval && <Kbd variant="square" className="ml-auto">{kbd}</Kbd>}
                         </button>
                       )
                     })}
@@ -929,7 +945,7 @@ export function PermissionPrompt() {
                             : <Circle className="size-3.5 shrink-0 text-muted-foreground/40" />
                           }
                           <span className="flex min-w-0 items-center gap-1 truncate"><SuggestionContent s={s} /></span>
-                          <Kbd variant="square" className="ml-auto">{i + 1}</Kbd>
+                          {!requireExplicitApproval && <Kbd variant="square" className="ml-auto">{i + 1}</Kbd>}
                         </button>
                       )
                     })}

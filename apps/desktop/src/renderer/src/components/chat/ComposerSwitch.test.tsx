@@ -71,6 +71,17 @@ describe('ComposerSwitch', () => {
     expect(screen.getByTestId('composer-slot')).not.toHaveClass('overflow-hidden')
   })
 
+  it('applies a height cap to tall composers', () => {
+    render(
+      <ComposerSwitch
+        kind="text"
+        maxHeight={440}
+        render={() => <div>text</div>}
+      />,
+    )
+    expect((screen.getByTestId('composer-slot') as HTMLDivElement).style.maxHeight).toBe('440px')
+  })
+
   it('cancels the hand-off when the target flips back mid-exit', () => {
     stubMotion(false)
     const { rerender } = render(render_('text'))
@@ -91,5 +102,57 @@ describe('ComposerSwitch', () => {
     Object.defineProperty(window, 'matchMedia', { configurable: true, value: undefined })
     rerender(render_('voice'))
     expect(screen.getByTestId('voice-composer')).toBeInTheDocument()
+  })
+
+  it('animates consecutive requests of the same kind without replacing the outgoing content', () => {
+    stubMotion(false)
+    const request = (id: string) => <ComposerSwitch kind="decision" transitionKey={id} render={() => <div>{id}</div>} />
+    const { rerender } = render(request('permission-1'))
+    rerender(request('permission-2'))
+    const stage = screen.getByTestId('composer-switch')
+    expect(stage).toHaveAttribute('data-phase', 'leaving')
+    expect(screen.getByText('permission-1')).toBeInTheDocument()
+    expect(screen.queryByText('permission-2')).toBeNull()
+    endAnimation(stage)
+    expect(stage).toHaveAttribute('data-phase', 'entering')
+    expect(screen.getByText('permission-2')).toBeInTheDocument()
+    endAnimation(stage)
+
+    rerender(request('question-1'))
+    expect(stage).toHaveAttribute('data-phase', 'leaving')
+    expect(screen.getByText('permission-2')).toBeInTheDocument()
+    endAnimation(stage)
+    expect(screen.getByText('question-1')).toBeInTheDocument()
+  })
+
+  it('keeps the entering snapshot intact when another request arrives mid-rise', () => {
+    stubMotion(false)
+    const request = (id: string) => <ComposerSwitch kind="decision" transitionKey={id} render={() => <div>{id}</div>} />
+    const { rerender } = render(request('first'))
+    rerender(request('second'))
+    const stage = screen.getByTestId('composer-switch')
+    endAnimation(stage)
+    rerender(request('third'))
+    expect(stage).toHaveAttribute('data-phase', 'entering')
+    expect(screen.getByText('second')).toBeInTheDocument()
+    expect(screen.queryByText('third')).toBeNull()
+    endAnimation(stage)
+    expect(stage).toHaveAttribute('data-phase', 'leaving')
+    endAnimation(stage)
+    expect(screen.getByText('third')).toBeInTheDocument()
+  })
+
+  it('cancels a keyed exit and switches keyed requests directly with reduced motion', () => {
+    stubMotion(false)
+    const request = (id: string) => <ComposerSwitch kind="decision" transitionKey={id} render={() => <div>{id}</div>} />
+    const { rerender } = render(request('first'))
+    rerender(request('second'))
+    rerender(request('first'))
+    expect(screen.getByTestId('composer-switch')).toHaveAttribute('data-phase', 'steady')
+    expect(screen.getByText('first')).toBeInTheDocument()
+    stubMotion(true)
+    rerender(request('second'))
+    expect(screen.getByTestId('composer-switch')).toHaveAttribute('data-phase', 'steady')
+    expect(screen.getByText('second')).toBeInTheDocument()
   })
 })

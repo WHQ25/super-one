@@ -1,10 +1,12 @@
-import { useState, useEffect, useRef, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronUp, Settings2, Video as VideoIcon } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
 import { Input } from '@superone/ui/components/ui/input'
 import { Textarea } from '@superone/ui/components/ui/textarea'
 import { Switch } from '@superone/ui/components/ui/switch'
+import { PermissionFeedbackInput } from './PermissionActionBar'
+import { PermissionActionsLayout } from './PermissionActionsLayout'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@superone/ui/components/ui/select'
 import type {
@@ -13,6 +15,7 @@ import type {
   VideoGenReferenceImage,
 } from '@superone/shared/agent-types'
 import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
+import { shouldSuppressDecisionShortcut, wasChatInputFocusedRecently } from './composer-slot/decision-composer-policy'
 
 // Canonical definitions live in @superone/shared/agent-types (main + renderer share them);
 // re-exported here so existing importers (Storybook stories) keep working unchanged.
@@ -64,7 +67,7 @@ export function VideoGenConfirmPrompt({ params, providers, referenceImages = [],
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [isFeedbackFocused, setIsFeedbackFocused] = useState(false)
   const confirmBtnRef = useRef<HTMLButtonElement>(null)
-  const feedbackRef = useRef<HTMLInputElement>(null)
+  const feedbackRef = useRef<HTMLTextAreaElement>(null)
   const chatRootRef = useChatRootRef()
 
   const provider = providers.find((p) => p.id === form.provider) ?? providers[0]
@@ -94,7 +97,7 @@ export function VideoGenConfirmPrompt({ params, providers, referenceImages = [],
   useEffect(() => {
     if (isCollapsed) return
     requestAnimationFrame(() => {
-      if (!canAutofocusInChatRoot(chatRootRef?.current)) return
+      if (!canAutofocusInChatRoot(chatRootRef?.current) || wasChatInputFocusedRecently(chatRootRef?.current)) return
       confirmBtnRef.current?.focus()
     })
   }, [isCollapsed, chatRootRef])
@@ -103,6 +106,7 @@ export function VideoGenConfirmPrompt({ params, providers, referenceImages = [],
     if (isCollapsed) return
     function onKeyDown(e: KeyboardEvent): void {
       if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
+      if (shouldSuppressDecisionShortcut(e, chatRootRef?.current)) return
       if (hasOpenPopover()) return
       if (isEditableElement(document.activeElement)) return
       if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -118,16 +122,6 @@ export function VideoGenConfirmPrompt({ params, providers, referenceImages = [],
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isCollapsed, canReject, feedback, onReject, chatRootRef])
-
-  const handleFeedbackKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>): void => {
-    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-      e.preventDefault()
-      if (canReject) onReject(feedback.trim())
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      feedbackRef.current?.blur()
-    }
-  }
 
   let referenceCount = 0
 
@@ -288,7 +282,17 @@ export function VideoGenConfirmPrompt({ params, providers, referenceImages = [],
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-2">
+        <PermissionActionsLayout feedbackValue={feedback} feedback={
+          <PermissionFeedbackInput
+            ref={feedbackRef}
+            value={feedback}
+            onChange={setFeedback}
+            onFocusChange={setIsFeedbackFocused}
+            placeholder={t('chat.videoGenConfirm.feedbackPlaceholder')}
+            onSubmit={() => { if (canReject) onReject(feedback.trim()) }}
+            onEscape={() => feedbackRef.current?.blur()}
+          />
+        }>
           <Button
             ref={confirmBtnRef}
             size="sm"
@@ -312,21 +316,7 @@ export function VideoGenConfirmPrompt({ params, providers, referenceImages = [],
               <Kbd variant="inline" className="ml-1 text-destructive-foreground/70">{isFeedbackFocused ? '↵' : 'esc'}</Kbd>
             )}
           </Button>
-          <div className="relative flex min-w-0 basis-full items-center @lg:basis-0 @lg:flex-1">
-            <input
-              ref={feedbackRef}
-              type="text"
-              value={feedback}
-              onChange={(e) => setFeedback(e.target.value)}
-              onFocus={() => setIsFeedbackFocused(true)}
-              onBlur={() => setIsFeedbackFocused(false)}
-              onKeyDown={handleFeedbackKeyDown}
-              placeholder={t('chat.videoGenConfirm.feedbackPlaceholder')}
-              className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-            <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
-          </div>
-        </div>
+        </PermissionActionsLayout>
       </div>
     </div>
   )

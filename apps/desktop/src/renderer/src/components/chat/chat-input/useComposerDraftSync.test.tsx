@@ -33,3 +33,44 @@ it('observes chip changes with unchanged text and restores editing after disconn
     editor.destroy()
   }
 })
+
+it('restores text, rich document structure, and attachments after the editor remounts', async () => {
+  const attachmentNode = TiptapNode.create({
+    name: 'attachment', group: 'inline', inline: true, atom: true,
+    addAttributes: () => ({ id: { default: '' } }),
+    renderHTML: ({ HTMLAttributes }) => ['span', HTMLAttributes],
+    renderText: () => '',
+  })
+  const editorExtensions = [StarterKit, attachmentNode]
+  const attachment = { id: 'image-1', mimeType: 'image/png', base64: 'aW1hZ2U=', name: 'photo.png' }
+  const draftJson = { type: 'doc', content: [{ type: 'paragraph', content: [
+    { type: 'text', text: 'Keep this draft ' },
+    { type: 'attachment', attrs: { id: 'image-1' } },
+  ] }] }
+  const props = {
+    text: 'Keep this draft ',
+    draftJson,
+    attachments: [attachment],
+    sessionId: 'draft-remount',
+    readOnly: false,
+  }
+
+  const firstEditor = new Editor({ extensions: editorExtensions })
+  const firstView = renderHook(useComposerDraftSync, { initialProps: { ...props, editor: firstEditor } })
+  try {
+    await waitFor(() => expect(firstEditor.getJSON()).toEqual(draftJson))
+  } finally {
+    firstView.unmount()
+    firstEditor.destroy()
+  }
+
+  const nextEditor = new Editor({ extensions: [StarterKit, attachmentNode] })
+  const nextView = renderHook(useComposerDraftSync, { initialProps: { ...props, editor: nextEditor } })
+  try {
+    await waitFor(() => expect(nextEditor.getJSON()).toEqual(draftJson))
+    expect(nextEditor.getText()).toBe('Keep this draft ')
+  } finally {
+    nextView.unmount()
+    nextEditor.destroy()
+  }
+})

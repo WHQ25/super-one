@@ -29,6 +29,7 @@ export function isFocusInChat(
   root?: Element | null,
 ): boolean {
   if (!(active instanceof Element)) return false
+  if (active.closest('[inert]')) return false
   if (root != null) return root.contains(active)
   return active.closest('[data-chat-root]') != null
 }

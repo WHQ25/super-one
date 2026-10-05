@@ -1,19 +1,17 @@
 import { memo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useRealtimeCallStore, type RealtimeCallState } from '@/stores/realtime-call'
-import { SessionDecisionPrompts } from './SessionDecisionPrompts'
 import { RealtimeCallIndicator } from './RealtimeCallIndicator'
 import { RealtimeCallControls } from './RealtimeCallControls'
 
 /**
  * Composer stack for the voice view while a call runs.
  *
- * Voice has no text input: what the user says is the input. The stack keeps the
- * session-level decision prompts (a delegated Codex turn can still ask for
- * permission), the live call indicator, and — directly under the voice mark —
- * the call's own controls. Everything else in the ordinary composer (editor,
- * harness pickers, queue) belongs to the backing thread and returns with
- * `ChatComposerShell` once the call ends.
+ * Voice has no text input: what the user says is the input. Session decisions
+ * replace this composer through the slot registry. Otherwise this view contains
+ * the live call indicator and — directly under the voice mark — the call's own
+ * controls. The ordinary composer (editor, harness pickers, queue) belongs to
+ * the backing thread and returns with `ChatComposerShell` once the call ends.
  */
 export const RealtimeCallComposer = memo(function RealtimeCallComposer({ microphoneShortcutEnabled = true }: { microphoneShortcutEnabled?: boolean }) {
   const { t } = useTranslation()
@@ -28,7 +26,6 @@ export const RealtimeCallComposer = memo(function RealtimeCallComposer({ microph
 
   return (
     <>
-      <SessionDecisionPrompts />
       {/* Grows to the text composer's resting height (see ComposerSwitch `alignTo`):
           the mark sits where the editor's top edge was, the controls at its foot. */}
       <div

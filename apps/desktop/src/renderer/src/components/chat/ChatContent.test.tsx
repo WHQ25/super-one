@@ -2,6 +2,7 @@
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { AskUserQuestionRequest, PermissionRequest, PlanApprovalRequest } from '@superone/shared/agent-types'
 
 interface FakeSessionState {
   draftRemoteDeviceId?: string | null
@@ -10,7 +11,9 @@ interface FakeSessionState {
   isRecapping: boolean
   rateLimitInfo: null
   apiRetry: null
-  pendingPlanApproval: null
+  pendingPermissions: PermissionRequest[]
+  pendingQuestion: AskUserQuestionRequest | null
+  pendingPlanApproval: PlanApprovalRequest | null
   _activeSessionId: string | null
   _providerSessionId: string | null
   session: unknown
@@ -34,6 +37,8 @@ const hoisted = vi.hoisted(() => {
     isRecapping: false,
     rateLimitInfo: null,
     apiRetry: null,
+    pendingPermissions: [],
+    pendingQuestion: null,
     pendingPlanApproval: null,
     _activeSessionId: 'sid-1',
     _providerSessionId: null,
@@ -83,6 +88,7 @@ vi.mock('@/stores/chat', () => ({
       steerQueuedMessage: hoisted.steerQueuedMessage,
       startQueuedMessages: hoisted.startQueuedMessages,
       disconnectRemoteSession: vi.fn(),
+      requestChatInputFocusRestore: vi.fn(),
       // Read by selectClaudeModels for model-fallback display names.
       activeProject: '/tmp/project',
       projectSessions: {},
@@ -204,7 +210,7 @@ vi.mock('./ChatSuggestions', async () => {
     },
   }
 })
-vi.mock('./PermissionPrompt', () => ({ PermissionPrompt: () => <div data-testid="permission-prompt" /> }))
+vi.mock('./PermissionPrompt', () => ({ PermissionPrompt: ({ request }: { request?: PermissionRequest }) => <div data-testid="permission-prompt" data-request-tool={request?.toolName} /> }))
 vi.mock('./RealtimeCallIndicator', () => ({ RealtimeCallIndicator: () => <div data-testid="realtime-call-indicator" /> }))
 vi.mock('./AskUserQuestionPrompt', () => ({ AskUserQuestionPrompt: () => <div data-testid="ask-user-question" /> }))
 vi.mock('./CursorApiKeyDialog', () => ({ CursorApiKeyDialog: () => <div data-testid="cursor-api-key-dialog" /> }))
@@ -255,6 +261,21 @@ function renderContent() {
   return render(<ChatContent scrollViewportRef={ref} />)
 }
 
+it('discards the outgoing approval snapshot when switching sessions, even if request ids coincide', () => {
+  hoisted.sessionState._worktreeRemoved = false
+  hoisted.sessionState._activeSessionId = 'sid-1'
+  hoisted.sessionState.pendingPermissions = [{ requestId: 'same-id', toolName: 'Read', input: {}, allowAlwaysAllow: false }]
+  useAppStore.setState({ harnessCatalog: null })
+  const { rerender } = renderContent()
+  const previousSlot = screen.getByTestId('composer-slot')
+  hoisted.sessionState._activeSessionId = 'sid-2'
+  hoisted.sessionState.pendingPermissions = [{ requestId: 'same-id', toolName: 'Bash', input: {}, allowAlwaysAllow: false }]
+  rerender(<ChatContent scrollViewportRef={createRef<HTMLDivElement>()} />)
+  expect(screen.getByTestId('composer-slot')).not.toBe(previousSlot)
+  expect(screen.getByTestId('permission-prompt')).toHaveAttribute('data-request-tool', 'Bash')
+  hoisted.sessionState._activeSessionId = 'sid-1'
+})
+
 afterEach(() => {
   hoisted.sessionState.draftRemoteDeviceId = null
   hoisted.isRemoteLocked.value = false
@@ -262,6 +283,9 @@ afterEach(() => {
   resetCodexRealtimeHydrationForTests()
   resetRealtimeCallForTests()
   hoisted.sessionState.queuedMessages = []
+  hoisted.sessionState.pendingPermissions = []
+  hoisted.sessionState.pendingQuestion = null
+  hoisted.sessionState.pendingPlanApproval = null
   hoisted.sessionState.sessionProvider = 'claude'
   hoisted.sessionState.preferredProvider = 'claude'
   hoisted.sessionState.acpAgentId = null
@@ -273,6 +297,7 @@ it('keeps the remote draft composer below its observation notice and disconnect 
   hoisted.sessionState._worktreeRemoved = false
   hoisted.sessionState.draftId = 'draft-remote'
   hoisted.sessionState.draftRemoteDeviceId = 'phone'
+  hoisted.sessionState.pendingPermissions = [{ requestId: 'remote-prompt', toolName: 'Bash', input: {}, allowAlwaysAllow: false }]
   hoisted.isRemoteLocked.value = true
   useAppStore.setState({ harnessCatalog: null })
   const disconnect = vi.fn(async () => {})
@@ -281,6 +306,8 @@ it('keeps the remote draft composer below its observation notice and disconnect 
   const editor = screen.getByTestId('chat-input')
   const notice = screen.getByText('Remote draft active — observation mode.')
   expect(notice.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(screen.queryByTestId('decision-composer')).toBeNull()
+  expect(screen.queryByTestId('permission-prompt')).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }))
   await waitFor(() => expect(disconnect).toHaveBeenCalledWith('local', 'draft-remote'))
   hoisted.sessionState.draftId = null
@@ -292,6 +319,7 @@ it('keeps the remote draft composer below its observation notice and disconnect 
 describe('ChatContent harness-disabled banner', () => {
   it('names the disabled harness and deep-links Re-enable to its settings row', () => {
     hoisted.sessionState._worktreeRemoved = false
+    hoisted.sessionState.pendingPermissions = [{ requestId: 'disabled-prompt', toolName: 'Read', input: {}, allowAlwaysAllow: false }]
     hoisted.sessionState.session = { sessionId: 'sid-1' }
     hoisted.sessionState.sessionProvider = 'claude'
     hoisted.isRemoteLocked.value = false
@@ -307,6 +335,8 @@ describe('ChatContent harness-disabled banner', () => {
     expect(screen.getByText(/READ ONLY/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Re-enable Claude Code/i })).toBeInTheDocument()
     expect(screen.queryByTestId('chat-input')).toBeNull()
+    expect(screen.queryByTestId('decision-composer')).toBeNull()
+    expect(screen.queryByTestId('permission-prompt')).toBeNull()
 
     screen.getByRole('button', { name: /Re-enable Claude Code/i }).click()
 
@@ -347,6 +377,7 @@ describe('ChatContent harness-disabled banner', () => {
 describe('ChatContent worktree-removed banner', () => {
   it('renders READ ONLY notice and hides ChatInput when _worktreeRemoved=true', () => {
     hoisted.sessionState._worktreeRemoved = true
+    hoisted.sessionState.pendingPermissions = [{ requestId: 'removed-prompt', toolName: 'Read', input: {}, allowAlwaysAllow: false }]
     hoisted.sessionState.session = null
     hoisted.sessionState.messages = []
     hoisted.isRemoteLocked.value = false
@@ -372,10 +403,10 @@ describe('ChatContent worktree-removed banner', () => {
     expect(screen.queryByText(/worktree has been removed/i)).toBeNull()
     expect(screen.queryByText(/READ ONLY/i)).toBeNull()
     expect(screen.getByTestId('chat-input')).toBeInTheDocument()
-    expect(screen.getByTestId('permission-prompt')).toBeInTheDocument()
+    expect(screen.queryByTestId('permission-prompt')).toBeNull()
   })
 
-  it('stacks the voice composer as decision prompts, then indicator with hover-revealed controls', () => {
+  it('keeps decisions out of the voice composer and renders the voice controls', () => {
     hoisted.sessionState._worktreeRemoved = false
     hoisted.sessionState.session = { sessionId: 'sid-1' }
     hoisted.sessionState.messages = []
@@ -388,9 +419,7 @@ describe('ChatContent worktree-removed banner', () => {
     renderContent()
 
     const composer = screen.getByTestId('realtime-call-composer')
-    const siblings = [...composer.parentElement!.children]
-    expect(siblings.indexOf(screen.getByTestId('permission-prompt')))
-      .toBeLessThan(siblings.indexOf(composer))
+    expect(screen.queryByTestId('permission-prompt')).toBeNull()
     // The indicator shares the composer's hover group with the controls.
     expect(composer.contains(screen.getByTestId('realtime-call-indicator'))).toBe(true)
     expect(screen.queryByTestId('chat-input')).toBeNull()
@@ -415,13 +444,44 @@ describe('ChatContent worktree-removed banner', () => {
 
     Object.assign(hoisted.sessionState, { pendingPermissions: [{ requestId: 'r1' }] })
     rerender(<ChatContent scrollViewportRef={createRef<HTMLDivElement>()} />)
-    expect(screen.getByTestId('chat-input')).toBeInTheDocument()
+    expect(screen.getByTestId('decision-composer')).toBeInTheDocument()
+    expect(screen.getByTestId('permission-prompt')).toBeInTheDocument()
+    expect(screen.queryByTestId('chat-input')).toBeNull()
     expect(screen.queryByText('hello from the app')).toBeNull()
 
     Object.assign(hoisted.sessionState, { pendingPermissions: undefined })
     controller.abort()
     expect(await answer).toBeNull()
     expect(await other).toBeNull()
+  })
+
+  it('keeps plan approval in its original full-screen review after other decisions', async () => {
+    hoisted.sessionState._worktreeRemoved = false
+    hoisted.sessionState.session = { sessionId: 'sid-1' }
+    hoisted.sessionState.messages = [{
+      id: 'history-1',
+      role: 'user',
+      content: [{ type: 'text', text: 'Earlier conversation' }],
+    }]
+    hoisted.sessionState.pendingPlanApproval = {
+      requestId: 'plan-1',
+      planContent: 'A plan to review',
+      planFilePath: '/tmp/plan.md',
+      allowedPrompts: [],
+    }
+
+    hoisted.sessionState.pendingPermissions = [{ requestId: 'r1', toolName: 'Read', input: {}, allowAlwaysAllow: false }]
+    const { container, rerender } = renderContent()
+
+    expect(screen.getByTestId('permission-prompt')).toBeInTheDocument()
+    expect(screen.queryByTestId('plan-approval')).toBeNull()
+    hoisted.sessionState.pendingPermissions = []
+    rerender(<ChatContent scrollViewportRef={createRef<HTMLDivElement>()} />)
+
+    expect(await screen.findByTestId('plan-approval')).toBeInTheDocument()
+    expect(screen.queryByTestId('decision-composer')).toBeNull()
+    expect(container.querySelector('[data-transcript-frame]')).toBeNull()
+    expect(screen.queryByTestId('scroll-area')).toBeNull()
   })
 })
 

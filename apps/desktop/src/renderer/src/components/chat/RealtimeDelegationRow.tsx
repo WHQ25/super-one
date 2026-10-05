@@ -4,7 +4,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { formatCompactDuration } from '@superone/chat-view/presenters/duration-format'
 import { useWorkingDuration } from '@superone/chat-view/use-working-duration'
 import { useActiveSession, useChatStore } from '@/stores/chat'
-import { usePlanFullscreen } from './codex-item-renderer'
+import { usePlanFullscreen } from './plan-fullscreen-context'
 import { CodexPlanImplementFooter } from './CodexPlanImplementFooter'
 import type { RealtimeTurnActivity } from './realtime-turn-activities'
 

@@ -711,6 +711,14 @@ function sessionOf(sid: string) {
 }
 
 describe('per-session writers: scoped target isolation', () => {
+  it('restores focus in the scoped pane without changing the active session nonce', () => {
+    const { active, other } = setupTwoSessions()
+    const activeNonce = sessionOf(active).chatInputRestoreFocusNonce
+    const otherNonce = sessionOf(other).chatInputRestoreFocusNonce
+    useChatStore.getState().requestChatInputFocusRestore({ projectPath: PATH, sessionId: other })
+    expect(sessionOf(other).chatInputRestoreFocusNonce).toBe(otherNonce + 1)
+    expect(sessionOf(active).chatInputRestoreFocusNonce).toBe(activeNonce)
+  })
   it('addAttachment lands on the scoped pane, leaving the active session untouched', () => {
     const { active, other } = setupTwoSessions()
     const att = { mimeType: 'image/png', base64: 'aaaa', name: 'a.png' }

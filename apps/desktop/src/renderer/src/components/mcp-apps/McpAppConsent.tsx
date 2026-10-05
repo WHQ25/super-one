@@ -8,8 +8,6 @@ import { useMcpAppConsents, type PendingMcpConsent } from './consent-store'
 
 interface McpAppConsentPromptProps {
   pending: PendingMcpConsent
-  /** Approvals still waiting in this session, this one included. */
-  total?: number
   /** False when the host surface already draws the card (the collapsed floating chat). */
   framed?: boolean
   /** Settled and on its way out of the slot: shown, but no longer answerable. */
@@ -22,7 +20,7 @@ interface McpAppConsentPromptProps {
  * Enter is never bound: the slot can swap in while the user is typing, and a
  * keystroke meant for the chat must not send on the App's behalf. Escape declines.
  */
-export function McpAppConsentPrompt({ pending, total = 1, framed = true, stale = false }: McpAppConsentPromptProps) {
+export function McpAppConsentPrompt({ pending, framed = true, stale = false }: McpAppConsentPromptProps) {
   const { t } = useTranslation()
   const { prompt, finish } = pending
   const message = prompt.kind === 'sendMessage' ? prompt : undefined
@@ -58,7 +56,6 @@ export function McpAppConsentPrompt({ pending, total = 1, framed = true, stale =
           </div>
           <div className="mt-0.5 text-xs text-muted-foreground">{message?.target === 'new' ? t('mcpApp.newConversation') : prompt.server}</div>
         </div>
-        {total > 1 && <span data-mcp-app-consent-queue="" className="shrink-0 pt-0.5 text-2xs tabular-nums text-muted-foreground">1/{total}</span>}
       </div>
       <div className="space-y-2 px-3.5 py-3">
         {detail && <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-muted/40 px-2.5 py-2 text-xs">{detail}</pre>}
@@ -74,12 +71,12 @@ export function McpAppConsentPrompt({ pending, total = 1, framed = true, stale =
 }
 
 /** The session's oldest pending App message approval, as a composer. */
-export function McpAppConsentComposer({ sessionId, framed }: { sessionId: string; framed?: boolean }) {
+export function McpAppConsentComposer({ sessionId, framed, pending }: { sessionId: string; framed?: boolean; pending?: PendingMcpConsent }) {
   const head = useMcpAppConsents(state => state.pending.find(item => item.sessionId === sessionId))
-  const total = useMcpAppConsents(state => state.pending.filter(item => item.sessionId === sessionId).length)
   // The slot animates the composer out after it settles; keep drawing the last one until then.
   const [shown, setShown] = useState(head)
-  if (head && head !== shown) setShown(head)
-  if (!shown) return null
-  return <McpAppConsentPrompt key={shown.id} pending={shown} total={total} framed={framed} stale={!head} />
+  if (!pending && head && head !== shown) setShown(head)
+  const displayed = pending ?? shown
+  if (!displayed) return null
+  return <McpAppConsentPrompt key={displayed.id} pending={displayed} framed={framed} stale={displayed.id !== head?.id} />
 }

@@ -12,7 +12,7 @@ import { commitPerSession, updateActivePerSession, updateProjectState } from '..
 export interface CoreSlice {
   toggleOpen: () => void
   setCorner: (corner: ChatStore['corner']) => void
-  requestChatInputFocusRestore: () => void
+  requestChatInputFocusRestore: (target?: SessionWriteTarget) => void
   dismissSlashCommandOutput: (target?: SessionWriteTarget) => void
   dismissCompactError: () => void
   openProviderPopup: () => void
@@ -45,8 +45,8 @@ export const createCoreSlice: StateCreator<ChatStore, [], [], CoreSlice> = (set,
   toggleOpen: () => set((s) => ({ isOpen: !s.isOpen })),
   setCorner: (corner) => set({ corner }),
 
-  requestChatInputFocusRestore: () => {
-    set((s) => updateActivePerSession(s, (sess) => ({
+  requestChatInputFocusRestore: (target) => {
+    set((s) => commitPerSession(s, target, (sess) => ({
       chatInputRestoreFocusNonce: sess.chatInputRestoreFocusNonce + 1,
     })))
   },

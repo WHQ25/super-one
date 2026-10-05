@@ -2,7 +2,9 @@ import { forwardRef, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { Kbd } from '@superone/ui/components/ui/kbd'
+import { AutoResizeTextarea } from '@superone/ui/components/ui/auto-resize-textarea'
 import { cn } from '@superone/ui/lib/utils'
+import { PermissionActionsLayout } from './PermissionActionsLayout'
 
 /**
  * The approve / reject / feedback vocabulary shared by every prompt that asks the user to
@@ -57,39 +59,45 @@ export const PermissionActionButton = forwardRef<
 })
 
 /**
- * Free-text note that rides along with the decision. Enter submits a rejection (the reason
- * only matters when you are saying no), which is why the trailing hint flips to ↵ on focus.
+ * Free-text note accompanying a decision. Enter submits; composer modifiers insert a newline.
  */
 export const PermissionFeedbackInput = forwardRef<
-  HTMLInputElement,
+  HTMLTextAreaElement,
   {
     value: string
     onChange: (value: string) => void
-    focused: boolean
     onFocusChange: (focused: boolean) => void
     placeholder: string
+    onSubmit: () => void
+    onEscape?: () => void
   }
->(function PermissionFeedbackInput({ value, onChange, focused, onFocusChange, placeholder }, ref) {
+>(function PermissionFeedbackInput({ value, onChange, onFocusChange, placeholder, onSubmit, onEscape }, ref) {
   return (
-    <div className="relative flex min-w-0 basis-full items-center @lg:basis-0 @lg:flex-1">
-      <input
+    <div className="relative w-full min-w-0">
+      <AutoResizeTextarea
         ref={ref}
         data-feedback
-        type="text"
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onValueChange={onChange}
+        onSubmit={onSubmit}
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape' || !onEscape) return
+          event.preventDefault()
+          event.stopPropagation()
+          onEscape()
+        }}
         onFocus={() => onFocusChange(true)}
         onBlur={() => onFocusChange(false)}
         placeholder={placeholder}
-        className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        aria-label={placeholder}
+        className="min-h-7 w-full rounded border-0 bg-muted px-2 py-1.5 text-xs leading-4 text-foreground shadow-none placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
       />
-      <Kbd className="pointer-events-none absolute right-2">{focused ? '↵' : '⇥'}</Kbd>
     </div>
   )
 })
 
 /**
- * The canonical decision row: approve, reject, and an optional reason. Enter approves unless
+ * The canonical decision actions, with feedback expanding above the buttons when needed. Enter approves unless
  * the reason box has focus or `enterApproves` is false, in which case it rejects — the
  * reject hint reflects that.
  */
@@ -100,6 +108,7 @@ export function ApproveRejectBar({
   rejectLabel,
   approveDisabled,
   enterApproves = true,
+  requireExplicitApproval = false,
   approveSuffix,
   extraActions,
   feedback,
@@ -117,6 +126,8 @@ export function ApproveRejectBar({
    * `defaultToNo`: the approve button then carries no key hint and Enter rejects.
    */
   enterApproves?: boolean
+  /** The parent requires a click or Command+Enter rather than bare Enter. */
+  requireExplicitApproval?: boolean
   /** Extra content inside the approve button, e.g. a selected-suggestion count. */
   approveSuffix?: ReactNode
   /**
@@ -132,7 +143,7 @@ export function ApproveRejectBar({
     onFocusChange: (focused: boolean) => void
     placeholder?: string
   }
-  feedbackRef?: React.Ref<HTMLInputElement>
+  feedbackRef?: React.Ref<HTMLTextAreaElement>
   approveRef?: React.Ref<HTMLButtonElement>
   rejectRef?: React.Ref<HTMLButtonElement>
 }) {
@@ -140,32 +151,39 @@ export function ApproveRejectBar({
   const focused = feedback?.focused ?? false
   const enterRejects = focused || !enterApproves
 
-  return (
-    <div className="flex flex-wrap items-center gap-2">
+  const feedbackInput = feedback && (
+    <PermissionFeedbackInput
+      ref={feedbackRef}
+      value={feedback.value}
+      onChange={feedback.onChange}
+      onFocusChange={feedback.onFocusChange}
+      placeholder={feedback.placeholder ?? t('chat.permission.denyReasonPlaceholder')}
+      onSubmit={onReject}
+    />
+  )
+  const actions = (
+    <>
       <PermissionActionButton
         ref={approveRef}
         tone="approve"
         disabled={approveDisabled}
         onClick={onApprove}
-        kbd={enterRejects ? undefined : '⏎'}
+        kbd={requireExplicitApproval ? '⌘↵' : enterRejects ? undefined : '⏎'}
       >
         {approveLabel ?? t('chat.permission.allow')}
         {approveSuffix}
       </PermissionActionButton>
       {extraActions}
-      <PermissionActionButton ref={rejectRef} tone="reject" onClick={onReject} kbd={enterRejects ? '↵' : 'esc'}>
+      <PermissionActionButton ref={rejectRef} tone="reject" onClick={onReject} kbd={!requireExplicitApproval && enterRejects ? '↵' : 'esc'}>
         {rejectLabel ?? t('chat.permission.deny')}
       </PermissionActionButton>
-      {feedback && (
-        <PermissionFeedbackInput
-          ref={feedbackRef}
-          value={feedback.value}
-          onChange={feedback.onChange}
-          focused={focused}
-          onFocusChange={feedback.onFocusChange}
-          placeholder={feedback.placeholder ?? t('chat.permission.denyReasonPlaceholder')}
-        />
-      )}
-    </div>
+    </>
+  )
+  return feedback ? (
+    <PermissionActionsLayout feedback={feedbackInput} feedbackValue={feedback.value}>
+      {actions}
+    </PermissionActionsLayout>
+  ) : (
+    <div className="flex flex-wrap items-center gap-2">{actions}</div>
   )
 }

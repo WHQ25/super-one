@@ -61,6 +61,14 @@ const meta: Meta<typeof Composer> = {
 export default meta
 type Story = StoryObj<typeof Composer>
 
+export const MultilineText: Story = {
+  args: { schema: { type: 'object', properties: {
+    name: { type: 'string', title: 'Release name', maxLength: 40, default: 'Input improvements' },
+    note: { type: 'string', title: 'Review notes', default: 'Keep the existing shortcuts.\nPreserve feedback while editing.\nCheck long answers in a narrow pane.' },
+    email: { type: 'string', title: 'Notify', format: 'email' },
+  } } },
+}
+
 const ALL_KINDS = {
   type: 'object',
   required: ['name', 'environment', 'replicas'],

@@ -200,7 +200,7 @@ describe('MCP App desktop View lifecycle', () => {
     let first!: Promise<unknown>, second!: Promise<unknown>
     act(() => { first = send('first'); second = send('second') })
     await screen.findByText('first')
-    expect(document.querySelector('[data-mcp-app-consent-queue]')).toHaveTextContent('1/2')
+    expect(document.querySelector('[data-mcp-app-consent-queue]')).toBeNull()
     fireEvent.keyDown(document.querySelector('[data-mcp-app-consent]')!, { key: 'Escape' })
     expect(await first).toMatchObject({ code: 'denied' })
     await screen.findByText('second')

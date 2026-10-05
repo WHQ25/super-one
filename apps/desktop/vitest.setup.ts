@@ -41,6 +41,19 @@ const isDom = typeof document !== 'undefined'
 if (isDom) {
   await import('@testing-library/jest-dom/vitest')
 
+  // jsdom has no native text editing commands. Undo/redo is verified in browser stories.
+  Object.defineProperty(document, 'execCommand', {
+    configurable: true,
+    writable: true,
+    value: (command: string, _showUI: boolean, text?: string): boolean => {
+      const field = document.activeElement
+      if (command !== 'insertText' || typeof text !== 'string' || !(field instanceof HTMLTextAreaElement)) return false
+      field.setRangeText(text, field.selectionStart, field.selectionEnd, 'end')
+      field.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }))
+      return true
+    },
+  })
+
   const [{ default: i18n }, { initReactI18next }, { resources }] = await Promise.all([
     import('i18next'),
     import('react-i18next'),

@@ -4,6 +4,7 @@ import type { ConfigFieldType } from '@superone/shared/agent-types'
 import { Input } from '@superone/ui/components/ui/input'
 import { Switch } from '@superone/ui/components/ui/switch'
 import { Textarea } from '@superone/ui/components/ui/textarea'
+import { AutoResizeTextarea } from '@superone/ui/components/ui/auto-resize-textarea'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,9 +33,10 @@ export interface SettingFieldProps {
   onChange: (value: SettingFieldValue) => void
   size?: 'compact' | 'default'
   disabled?: boolean
+  multiline?: boolean
 }
 
-export function SettingField({ field, value, onChange, size = 'default', disabled }: SettingFieldProps) {
+export function SettingField({ field, value, onChange, size = 'default', disabled, multiline = false }: SettingFieldProps) {
   const { t } = useTranslation()
   const isCompact = size === 'compact'
 
@@ -93,6 +95,18 @@ export function SettingField({ field, value, onChange, size = 'default', disable
       )
 
     case 'string':
+      if (multiline && !field.secret) {
+        return (
+          <AutoResizeTextarea
+            disabled={disabled}
+            aria-label={field.label}
+            value={value == null ? '' : String(value)}
+            onValueChange={(text) => onChange(text === '' && field.clearable ? null : text)}
+            onSubmit={() => { /* Configuration edits are confirmed by the action button. */ }}
+            className={isCompact ? 'min-h-7 w-full px-3 py-1 text-xs leading-[18px]' : 'w-full'}
+          />
+        )
+      }
       return (
         <Input
           type={field.secret ? 'password' : 'text'}

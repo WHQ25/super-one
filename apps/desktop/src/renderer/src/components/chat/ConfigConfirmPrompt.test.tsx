@@ -89,6 +89,40 @@ describe('config confirm dialog — appearance theme previews', () => {
 })
 
 describe('config confirm dialog — structured provider fields', () => {
+  it('edits descriptive fields across lines while keeping identifiers single-line', () => {
+    const onConfirm = vi.fn()
+    const onReject = vi.fn()
+    render(<ConfigConfirmPrompt payload={{ fields: [
+      { key: 'notes', domain: 'credential', label: 'Notes', type: 'string', currentValue: '', proposedValue: 'Team credential' },
+      { key: 'name', domain: 'credential', label: 'Name', type: 'string', currentValue: '', proposedValue: 'Production' },
+    ] }} onConfirm={onConfirm} onReject={onReject} />)
+    const notes = screen.getByRole('textbox', { name: 'Notes' }) as HTMLTextAreaElement
+    expect(notes.tagName).toBe('TEXTAREA')
+    expect(screen.getByDisplayValue('Production').tagName).toBe('INPUT')
+    notes.focus()
+    notes.setSelectionRange(notes.value.length, notes.value.length)
+    fireEvent.keyDown(notes, { key: 'Enter', altKey: true })
+    fireEvent.change(notes, { target: { value: `${notes.value}Shared with the build service` } })
+    fireEvent.keyDown(notes, { key: 'Enter' })
+    expect(onReject).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: /Confirm & Apply/ }))
+    expect(onConfirm).toHaveBeenCalledWith({ notes: 'Team credential\nShared with the build service', name: 'Production' })
+  })
+
+  it('inserts newlines in reject feedback without rejecting the configuration', () => {
+    const onReject = vi.fn()
+    render(<ConfigConfirmPrompt payload={envPayload()} onConfirm={vi.fn()} onReject={onReject} />)
+    const feedback = screen.getByPlaceholderText(/feedback/i) as HTMLTextAreaElement
+    feedback.focus()
+    fireEvent.change(feedback, { target: { value: 'Keep the timeout' } })
+    feedback.setSelectionRange(feedback.value.length, feedback.value.length)
+    fireEvent.keyDown(feedback, { key: 'Enter', shiftKey: true })
+    fireEvent.change(feedback, { target: { value: `${feedback.value}Keep the existing variables` } })
+    expect(onReject).not.toHaveBeenCalled()
+    fireEvent.keyDown(feedback, { key: 'Enter' })
+    expect(onReject).toHaveBeenCalledWith('Keep the timeout\nKeep the existing variables')
+  })
+
   it('edits an env override through the settings env table instead of a JSON blob', () => {
     const onConfirm = vi.fn()
     render(<ConfigConfirmPrompt payload={envPayload()} onConfirm={onConfirm} onReject={vi.fn()} />)

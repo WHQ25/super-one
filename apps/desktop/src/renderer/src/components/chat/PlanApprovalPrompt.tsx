@@ -1,11 +1,12 @@
-import { useRef, useState, useEffect, useCallback, useMemo, useId } from 'react'
+import { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo, useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { useChatStore, useActiveSession, useSessionScope, selectClaudeModels, selectClaudeAccount, useScopedSessionActions } from '@/stores/chat'
 import { PenLine, Check, X, FastForward, Zap, Circle, CheckCircle2 } from 'lucide-react'
+import { PermissionFeedbackInput } from './PermissionActionBar'
+import { PermissionActionsLayout } from './PermissionActionsLayout'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
-import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
 import type { PermissionMode } from '@superone/shared/agent-types'
 import {
   formatApprovedPlanReviewMessage,
@@ -14,6 +15,7 @@ import {
 } from './plan-feedback'
 import { PlanLineReview } from './PlanLineReview'
 import { isFocusInChat, useChatRootRef } from './is-focus-in-chat'
+import { setDecisionKeyboardPolicy, shouldSuppressDecisionShortcut } from './composer-slot/decision-composer-policy'
 
 export function PlanApprovalPrompt() {
   const { t } = useTranslation()
@@ -40,7 +42,6 @@ export function PlanApprovalPrompt() {
   const [switchAfterApproval, setSwitchAfterApproval] = useState(false)
   const requestId = pending?.requestId
   const idPrefix = useId()
-  useRestoreChatInputFocus(!!requestId)
   const planContent = pending?.planContent ?? ''
   const planFilePath = pending?.planFilePath ?? ''
   const allowedPrompts = pending?.allowedPrompts ?? []
@@ -122,6 +123,12 @@ export function PlanApprovalPrompt() {
     respond(requestId, false, feedback || undefined)
   }, [composedFeedback, requestId, respond])
 
+  useLayoutEffect(() => {
+    const root = chatRootRef?.current ?? containerRef.current?.closest<HTMLElement>('[data-chat-root]')
+    if (!root || !requestId) return
+    return setDecisionKeyboardPolicy(root, `plan:${requestId}`, false)
+  }, [chatRootRef, requestId])
+
   const focusVisibleFeedbackInput = useCallback(() => {
     const inputs = containerRef.current?.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
       'input[data-feedback], textarea[data-feedback]',
@@ -138,8 +145,9 @@ export function PlanApprovalPrompt() {
     if (!requestId) return
 
     function onKeyDown(e: KeyboardEvent) {
-      if (e.ctrlKey || e.metaKey || e.altKey) return
       if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
+      if (shouldSuppressDecisionShortcut(e, chatRootRef?.current)) return
+      if (e.ctrlKey || e.metaKey || e.altKey) return
 
       const active = document.activeElement
       const inPrompt = !!(active && containerRef.current?.contains(active))
@@ -218,7 +226,7 @@ export function PlanApprovalPrompt() {
     : t('chat.plan.feedbackPlaceholder')
 
   return (
-    <div ref={containerRef} className="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div ref={containerRef} data-testid="plan-approval" className="@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2">
         <PenLine className="size-4 text-primary" />
         <span className="text-sm font-medium text-foreground">{t('chat.plan.review')}</span>
@@ -257,44 +265,26 @@ export function PlanApprovalPrompt() {
           </div>
         )}
 
-        <div className="hidden items-center gap-2 @xl:flex">
-          <ApproveButton
-            switchAfterApproval={switchAfterApproval && showPostApprovalModeToggle}
-            isAutoTarget={isAutoTarget}
-            showKbd={!isFeedbackFocused}
-            onClick={handleApprove}
+        <PermissionActionsLayout feedbackValue={freeform} minInlineWidth={640} feedback={
+          <PermissionFeedbackInput
+            value={freeform}
+            onChange={setFreeform}
+            onFocusChange={setIsFeedbackFocused}
+            placeholder={freeformPlaceholder}
+            onSubmit={handleReject}
           />
-          <RejectButton showKbd showEnterWhenFocused={isFeedbackFocused} onClick={handleReject} />
-          <div className="relative flex flex-1 items-center">
-            <input
-              data-feedback
-              type="text"
-              value={freeform}
-              onChange={(e) => setFreeform(e.target.value)}
-              onFocus={() => setIsFeedbackFocused(true)}
-              onBlur={() => setIsFeedbackFocused(false)}
-              placeholder={freeformPlaceholder}
-              className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        }>
+          <div className="hidden items-center gap-2 @xl:flex">
+            <ApproveButton
+              switchAfterApproval={switchAfterApproval && showPostApprovalModeToggle}
+              isAutoTarget={isAutoTarget}
+              showKbd={!isFeedbackFocused}
+              onClick={handleApprove}
             />
-            <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
+            <RejectButton showKbd showEnterWhenFocused={isFeedbackFocused} onClick={handleReject} />
           </div>
-        </div>
 
-        <div className="space-y-2 @xl:hidden">
-          <div className="relative flex items-center">
-            <input
-              data-feedback
-              type="text"
-              value={freeform}
-              onChange={(e) => setFreeform(e.target.value)}
-              onFocus={() => setIsFeedbackFocused(true)}
-              onBlur={() => setIsFeedbackFocused(false)}
-              placeholder={freeformPlaceholder}
-              className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-            <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
-          </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full items-center gap-2 @xl:hidden">
             <ApproveButton
               className="flex-1"
               switchAfterApproval={switchAfterApproval && showPostApprovalModeToggle}
@@ -304,7 +294,7 @@ export function PlanApprovalPrompt() {
             />
             <RejectButton className="flex-1" showKbd={false} onClick={handleReject} />
           </div>
-        </div>
+        </PermissionActionsLayout>
 
         {showPostApprovalModeToggle && (
           <button

@@ -19,6 +19,7 @@ import { useAppStore } from '@/stores/app'
 import { useChatStore, useScopedSessionActions } from '@/stores/chat'
 import { ApproveRejectBar } from './PermissionActionBar'
 import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
+import { shouldSuppressDecisionShortcut, wasChatInputFocusedRecently } from './composer-slot/decision-composer-policy'
 
 /** Mosaic-aware open; resolve projectId → path in the host (not in agent payloads). */
 function openSessionFromConfirm(sessionId: string, projectId?: string | null) {
@@ -165,13 +166,13 @@ export function SessionCleanupConfirmPrompt({
   const chatRootRef = useChatRootRef()
   const approveRef = useRef<HTMLButtonElement>(null)
   const rejectRef = useRef<HTMLButtonElement>(null)
-  const feedbackRef = useRef<HTMLInputElement>(null)
+  const feedbackRef = useRef<HTMLTextAreaElement>(null)
   const [feedback, setFeedback] = useState('')
   const [feedbackFocused, setFeedbackFocused] = useState(false)
 
   useEffect(() => {
     requestAnimationFrame(() => {
-      if (!canAutofocusInChatRoot(chatRootRef?.current)) return
+      if (!canAutofocusInChatRoot(chatRootRef?.current) || wasChatInputFocusedRecently(chatRootRef?.current)) return
       approveRef.current?.focus()
     })
   }, [chatRootRef, count])
@@ -179,7 +180,8 @@ export function SessionCleanupConfirmPrompt({
   // Same Enter / Esc grammar as PermissionPrompt + SessionAgentsConfirmPrompt
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!isFocusInChat(chatRootRef?.current)) return
+      if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
+      if (shouldSuppressDecisionShortcut(e, chatRootRef?.current)) return
       if (e.key === 'Enter' && !e.isComposing) {
         e.preventDefault()
         if (feedbackFocused) {

@@ -1,7 +1,9 @@
-import { useState, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronUp, SlidersHorizontal } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
+import { PermissionFeedbackInput } from './PermissionActionBar'
+import { PermissionActionsLayout } from './PermissionActionsLayout'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import type { ConfigConfirmPayload } from '@superone/shared/agent-types'
 import { SettingField, type SettingFieldValue } from '../settings/SettingField'
@@ -24,6 +26,7 @@ import { DEFAULT_TERMINAL_FONT_SIZE } from '@/components/coding/terminal-palette
 import { diffConfigFieldValue, formatSettingsFieldDisplay } from '@/lib/config-field-summary'
 import { hasOpenRadixOverlay } from '@/lib/radix-overlay'
 import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
+import { shouldSuppressDecisionShortcut, wasChatInputFocusedRecently } from './composer-slot/decision-composer-policy'
 
 type ConfigValue = unknown
 
@@ -60,7 +63,7 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [isFeedbackFocused, setIsFeedbackFocused] = useState(false)
   const confirmBtnRef = useRef<HTMLButtonElement>(null)
-  const feedbackRef = useRef<HTMLInputElement>(null)
+  const feedbackRef = useRef<HTMLTextAreaElement>(null)
   const chatRootRef = useChatRootRef()
   // Preview sibling font settings: prefer values from this confirm batch, else live app store.
   const storeTerminalFontSize = useAppStore((s) => s.terminalFontSize)
@@ -89,7 +92,7 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
   useEffect(() => {
     if (isCollapsed) return
     requestAnimationFrame(() => {
-      if (!canAutofocusInChatRoot(chatRootRef?.current)) return
+      if (!canAutofocusInChatRoot(chatRootRef?.current) || wasChatInputFocusedRecently(chatRootRef?.current)) return
       confirmBtnRef.current?.focus()
     })
   }, [isCollapsed, chatRootRef])
@@ -98,6 +101,7 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
     if (isCollapsed) return
     function onKeyDown(e: KeyboardEvent): void {
       if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
+      if (shouldSuppressDecisionShortcut(e, chatRootRef?.current)) return
       if (hasOpenPopover()) return
       if (isEditableElement(document.activeElement)) return
       if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -114,16 +118,6 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isCollapsed, feedback, onReject, chatRootRef])
-
-  const handleFeedbackKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>): void => {
-    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-      e.preventDefault()
-      onReject(feedback.trim())
-    } else if (e.key === 'Escape') {
-      e.preventDefault()
-      onReject(feedback.trim())
-    }
-  }
 
   const emptyLabel = t('chat.configConfirm.emptyValue')
 
@@ -176,6 +170,7 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
           <div className="mb-3 flex flex-col divide-y divide-border/60 rounded border border-border/60 bg-muted/20">
             {fields.map((field) => {
               const structured = isStructuredFieldType(field.type)
+              const multiline = field.type === 'string' && !field.secret && (field.key === 'notes' || field.key === 'description')
               const terminalScheme = terminalPaletteSchemeForKey(field.key)
               const mermaidScheme = mermaidThemeSchemeForKey(field.key)
               const themePreview = terminalScheme !== null || mermaidScheme !== null
@@ -248,7 +243,9 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
                   <StructuredSettingField field={field} value={values[field.key]} onChange={(v) => setValue(field.key, v)} />
                 </div>
               ) : (
-                <div key={field.key} className="flex items-center justify-between gap-3 px-2.5 py-2">
+                <div key={field.key} className={multiline
+                  ? 'flex flex-col gap-2 px-2.5 py-2'
+                  : 'flex items-center justify-between gap-3 px-2.5 py-2'}>
                   {meta}
                   <div className="flex-none">
                     <SettingField
@@ -256,6 +253,7 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
                       value={values[field.key] as SettingFieldValue}
                       onChange={(v) => setValue(field.key, v)}
                       size="compact"
+                      multiline={multiline}
                     />
                   </div>
                 </div>
@@ -264,7 +262,17 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-2">
+        <PermissionActionsLayout feedbackValue={feedback} feedback={
+          <PermissionFeedbackInput
+            ref={feedbackRef}
+            value={feedback}
+            onChange={setFeedback}
+            onFocusChange={setIsFeedbackFocused}
+            placeholder={t('chat.configConfirm.feedbackPlaceholder')}
+            onSubmit={() => onReject(feedback.trim())}
+            onEscape={() => onReject(feedback.trim())}
+          />
+        }>
           <Button
             ref={confirmBtnRef}
             size="sm"
@@ -290,21 +298,7 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
               {isFeedbackFocused ? '↵' : 'esc'}
             </Kbd>
           </Button>
-          <div className="relative flex min-w-0 basis-full items-center @lg:basis-0 @lg:flex-1">
-            <input
-              ref={feedbackRef}
-              type="text"
-              value={feedback}
-              onChange={(e) => setFeedback(e.target.value)}
-              onFocus={() => setIsFeedbackFocused(true)}
-              onBlur={() => setIsFeedbackFocused(false)}
-              onKeyDown={handleFeedbackKeyDown}
-              placeholder={t('chat.configConfirm.feedbackPlaceholder')}
-              className="h-7 w-full rounded bg-muted px-2 pr-12 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-            <Kbd className="pointer-events-none absolute right-2">{isFeedbackFocused ? '↵' : '⇥'}</Kbd>
-          </div>
-        </div>
+        </PermissionActionsLayout>
       </div>
     </div>
   )

@@ -1,11 +1,14 @@
 /** @vitest-environment jsdom */
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { createRef } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { parseSchemaForm } from '@superone/shared/schema-form'
 import { SchemaFormComposer } from './SchemaFormComposer'
 import type { McpFormResourceActions } from '@superone/shared/mcp-form-resources'
 import type { McpAppReadResult } from '@superone/shared/mcp-apps'
+import { ChatRootContext } from '../chat/is-focus-in-chat'
+import { noteChatInputFocused } from '../chat/composer-slot/decision-composer-policy'
 
 function renderForm(schema: unknown) {
   const handlers = { onSubmit: vi.fn(), onDecline: vi.fn(), onCancel: vi.fn() }
@@ -29,6 +32,49 @@ const REVIEW = {
 }
 
 describe('SchemaFormComposer', () => {
+  it('leaves recent composer focus alone on arrival, but focuses the next step after a user pick', () => {
+    const root = createRef<HTMLDivElement>()
+    const form = parseSchemaForm({ type: 'object', properties: {
+      priority: { type: 'string', title: 'Priority', enum: ['low', 'high'] },
+      note: { type: 'string', title: 'Note' },
+    } })
+    const view = (show: boolean) => (
+      <ChatRootContext.Provider value={root}>
+        <div ref={root} data-chat-root>
+          <textarea aria-label="Composer draft" data-chat-input-editor defaultValue="Unsent draft" />
+          {show && <SchemaFormComposer form={form} requester="fixture" onSubmit={vi.fn()} onDecline={vi.fn()} onCancel={vi.fn()} />}
+        </div>
+      </ChatRootContext.Provider>
+    )
+    const { rerender } = render(view(false))
+    const editor = screen.getByRole('textbox', { name: 'Composer draft' })
+    editor.focus()
+    noteChatInputFocused(root.current!)
+    rerender(view(true))
+    expect(editor).toHaveFocus()
+    fireEvent.click(screen.getByRole('radio', { name: /high/ }))
+    expect(screen.getByRole('textbox', { name: 'Note' })).toHaveFocus()
+  })
+
+  it('keeps free-text newlines in elicitation answers and preserves short and formatted fields', () => {
+    const { onSubmit } = renderForm({ type: 'object', properties: {
+      note: { type: 'string', title: 'Note' },
+      name: { type: 'string', title: 'Name', maxLength: 40 },
+      email: { type: 'string', title: 'Email', format: 'email' },
+    } })
+    const note = screen.getByLabelText('Note') as HTMLTextAreaElement
+    expect(note.tagName).toBe('TEXTAREA')
+    expect(screen.getByLabelText('Name').tagName).toBe('INPUT')
+    expect(screen.getByLabelText('Email')).toHaveAttribute('type', 'email')
+    fireEvent.change(note, { target: { value: 'Check the dimensions' } })
+    note.setSelectionRange(note.value.length, note.value.length)
+    fireEvent.keyDown(note, { key: 'Enter', altKey: true })
+    fireEvent.change(note, { target: { value: `${note.value}Keep the original material` } })
+    expect(onSubmit).not.toHaveBeenCalled()
+    fireEvent.keyDown(note, { key: 'Enter' })
+    expect(onSubmit).toHaveBeenCalledWith({ note: 'Check the dimensions\nKeep the original material' })
+  })
+
   it('asks typed fields together, then each choice, and submits on the last step', () => {
     const { onSubmit } = renderForm(REVIEW)
     expect(screen.getByLabelText('Step 1 of 2')).toBeTruthy()

@@ -42,6 +42,7 @@ import {
   streamdownPlugins,
 } from './chat-shared'
 import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
+import { shouldSuppressDecisionShortcut, wasChatInputFocusedRecently } from './composer-slot/decision-composer-policy'
 
 /** Editable agent knobs — same surface as collab launch confirm. */
 type EditableAgent = Pick<
@@ -519,7 +520,7 @@ export function AutomationConfirmPrompt({
   const chatRootRef = useChatRootRef()
   const approveRef = useRef<HTMLButtonElement>(null)
   const rejectRef = useRef<HTMLButtonElement>(null)
-  const feedbackRef = useRef<HTMLInputElement>(null)
+  const feedbackRef = useRef<HTMLTextAreaElement>(null)
   const [feedback, setFeedback] = useState('')
   const [feedbackFocused, setFeedbackFocused] = useState(false)
 
@@ -550,7 +551,7 @@ export function AutomationConfirmPrompt({
 
   useEffect(() => {
     requestAnimationFrame(() => {
-      if (!canAutofocusInChatRoot(chatRootRef?.current)) return
+      if (!canAutofocusInChatRoot(chatRootRef?.current) || wasChatInputFocusedRecently(chatRootRef?.current)) return
       approveRef.current?.focus()
     })
   }, [chatRootRef, op, items.length])
@@ -558,6 +559,7 @@ export function AutomationConfirmPrompt({
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
+      if (shouldSuppressDecisionShortcut(e, chatRootRef?.current)) return
       if (hasOpenRadixOverlay()) return
       if (e.key === 'Enter' && !e.isComposing) {
         e.preventDefault()

@@ -6,6 +6,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { useAppIcon } from '@/hooks/use-app-icon'
 import { PermissionActionButton } from './PermissionActionBar'
 import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
+import { shouldSuppressDecisionShortcut, wasChatInputFocusedRecently } from './composer-slot/decision-composer-policy'
 
 interface Props {
   request: PermissionRequest
@@ -95,7 +96,7 @@ export function ComputerUseGrantPrompt({
   useEffect(() => {
     if (!isCollapsed) {
       requestAnimationFrame(() => {
-        if (!canAutofocusInChatRoot(chatRootRef?.current)) return
+        if (!canAutofocusInChatRoot(chatRootRef?.current) || wasChatInputFocusedRecently(chatRootRef?.current)) return
         btnRefs.current[0]?.focus()
       })
     }
@@ -104,6 +105,7 @@ export function ComputerUseGrantPrompt({
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
+      if (shouldSuppressDecisionShortcut(e, chatRootRef?.current)) return
       if (isCollapsed) {
         if (e.key === ' ') {
           e.preventDefault()

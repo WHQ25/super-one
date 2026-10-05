@@ -1,8 +1,7 @@
-import { ChatComposerShell } from './ChatComposerShell'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { isCodexAsyncAnswer } from '@superone/shared/codex-async-question'
 import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback, lazy, Suspense, memo } from 'react'
-import { useChatStore, useActiveSession, useIsRemoteLocked, useSessionScope } from '@/stores/chat'
+import { useChatStore, useActiveSession, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { useShallow } from 'zustand/react/shallow'
@@ -18,7 +17,7 @@ import { selectClaudeModels } from '@/stores/chat-store/selectors'
 import { ChatSuggestions } from './ChatSuggestions'
 import { SideChatEmptyState } from './SideChatEmptyState'
 import { PlanApprovalPrompt } from './PlanApprovalPrompt'
-import { PlanFullscreenContext } from './codex-item-renderer'
+import { PlanFullscreenContext } from './plan-fullscreen-context'
 import { CodexPlanFullscreenView } from './CodexPlanFullscreenView'
 import { ForkNavigationContext, type ForkViewState } from './fork-navigation-context'
 import { ForkedThreadView } from './ForkedThreadView'
@@ -30,8 +29,12 @@ import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { ChatScrollIndicator } from './ChatScrollIndicator'
 import { mergeCodexThreadMessages } from './codex-realtime-messages'
 import { CodexRealtimeTranscript } from './CodexRealtimeTranscript'
-import { RealtimeCallComposer } from './RealtimeCallComposer'
 import { ComposerSwitch } from './ComposerSwitch'
+import { resolveComposer } from './composer-slot/resolve-composer'
+import { renderComposer } from './composer-slot/composer-registry'
+import { buildDecisionQueue } from './composer-slot/decision-queue'
+import { useDecisionComposerAvailability } from './composer-slot/useDecisionComposerAvailability'
+import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
 import { extractTurnOutline } from './turn-outline'
 import { ChatRootContext } from './is-focus-in-chat'
 import { DesktopModUi } from '@/lib/mod-ui/DesktopModUi'
@@ -47,8 +50,7 @@ import {
   useCodexRealtimeViewStore,
 } from '@/stores/codex-realtime-view'
 import { useRealtimeCallStore } from '@/stores/realtime-call'
-import { useHasMcpAppConsent } from '@/components/mcp-apps/consent-store'
-import { McpAppConsentComposer } from '@/components/mcp-apps/McpAppConsent'
+import { useMcpAppConsents } from '@/components/mcp-apps/consent-store'
 
 interface ChatContentProps {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
@@ -514,9 +516,16 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   const needsDecision = (pendingPermissions?.length ?? 0) > 0
     || pendingQuestion != null
     || pendingPlanApproval != null
-  // An App asking to send a message takes the slot, but never over the agent's
-  // own decisions: those are answered in the composer underneath first.
-  const appConsent = useHasMcpAppConsent(displayedSessionId) && !needsDecision
+  const decisionAvailable = useDecisionComposerAvailability()
+  // Consent stays queued behind decisions. If a read-only gate suppresses the
+  // decision composer, keep consent hidden too, matching the old composer gates.
+  const consentHead = useMcpAppConsents(state => state.pending.find(item => item.sessionId === displayedSessionId))
+  const appConsent = Boolean(consentHead) && (!needsDecision || decisionAvailable)
+  const decision = buildDecisionQueue(pendingPermissions ?? [], pendingQuestion ?? null)[0] ?? null
+  const composerKind = resolveComposer({ needsDecision, decisionAvailable, appConsent, voiceEngaged: showRealtimeComposer })
+  const composerKey = composerKind === 'decision' && decision
+    ? `${decision.kind}:${decision.request.requestId}`
+    : composerKind === 'app-consent' && consentHead ? `app-consent:${consentHead.id}` : composerKind
   // The local snapshot needs no backing thread, so every Codex session on screen
   // restores it; only the provider reconcile waits for the thread id, because
   // reaching Codex would otherwise start a backend just to read history.
@@ -569,6 +578,8 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   }), [])
 
   const containerRef = useRef<HTMLDivElement>(null)
+  const composerFocus = useRestoreChatInputFocus(needsDecision && decisionAvailable, containerRef,
+    projectPath && displayedSessionId ? { projectPath, sessionId: displayedSessionId } : undefined)
   const computeAutoScale = useCallback((w: number) => w >= 672 ? 1.15 : w >= 512 ? 1.1 : 1, [])
   const [autoScale, setAutoScale] = useState(1)
   const [manualScaleOffset, setManualScaleOffset] = useState(0)
@@ -667,7 +678,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             }
           }}
         />
-      ) : pendingPlanApproval ? (
+      ) : pendingPlanApproval && decisionAvailable && !(pendingPermissions?.length) && !pendingQuestion ? (
         <PlanApprovalPrompt />
       ) : (
         <>
@@ -703,13 +714,18 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
           <ComposerSwitch
             key={`composer:${displayedSessionId ?? projectPath ?? 'draft'}`}
             className="mx-auto w-full min-w-0 max-w-3xl"
-            kind={appConsent ? 'app-consent' : showRealtimeComposer ? 'voice' : 'text'}
+            kind={composerKind}
+            transitionKey={composerKey}
             alignTo="text"
-            render={(kind) => (
-              kind === 'app-consent' ? <McpAppConsentComposer sessionId={displayedSessionId!} />
-                : kind === 'voice' ? <RealtimeCallComposer microphoneShortcutEnabled={showRealtimeComposer && !appConsent} />
-                : <ChatComposerShell showTodoPopup />
-            )}
+            maxHeight={needsDecision && decisionAvailable ? 'min(45vh, 440px)' : undefined}
+            render={(kind) => renderComposer(kind, displayedSessionId ?? '', {
+              showTodoPopup: true,
+              autoFocusOnMount: composerFocus.autoFocusOnMount,
+              onBaseComposerMounted: composerFocus.onBaseComposerMounted,
+              microphoneShortcutEnabled: showRealtimeComposer && !appConsent,
+              decision,
+              appConsent: consentHead,
+            })}
           />
         </>
       )}

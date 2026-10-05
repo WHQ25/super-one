@@ -1,6 +1,6 @@
 # Input surfaces: composers and entry points
 
-Status: draft · Updated: 2026-10-01
+Status: draft · Updated: 2026-10-05
 
 Scope: make the composer slot programmable. A **composer** is a self-contained
 input surface that produces one submission — the chat composer, a permission
@@ -18,7 +18,7 @@ Related: [miniapp-event-api.md](miniapp-event-api.md),
 | Unit | A composer: a self-contained input surface carrying every input it needs (text, choices, attachments, parameters) and producing one submission. |
 | Slot | The composer slot shows exactly one composer. No stacking of prompts above the chat composer. |
 | Default composer | Today's chat composer — one registry entry, not a special case. |
-| Decision prompts | Permission, AskUserQuestion, plan approval and tool intercepts are composers. When one appears it replaces the default composer in the slot. |
+| Decision prompts | Permission and AskUserQuestion replace the default composer in the slot. Plan approval keeps its original full-screen review. Pending decisions are processed one at a time without a queue counter. |
 | Reuse | Built-in patterns (image, video, decision prompts) are registered composers any caller can open. |
 | Cross-platform | Declarative composers are preferred: the host renders them with native controls on desktop and phone. |
 
@@ -26,12 +26,12 @@ Related: [miniapp-event-api.md](miniapp-event-api.md),
 
 | Piece | Where | State |
 |---|---|---|
-| Composer slot | `ComposerSwitch` in `apps/desktop/src/renderer/src/components/chat/ChatContent.tsx` | Swaps `'text' \| 'voice'` (`ChatComposerShell` / `RealtimeCallComposer`) with a hand-off animation and height alignment; kinds are hard-coded |
-| Decision prompts | `SessionDecisionPrompts` (`PermissionPrompt`, `AskUserQuestionPrompt`) inside `ChatComposerShell` | Rendered above `ChatInput`; both occupy space while a prompt is pending |
+| Composer slot | `ComposerSwitch` plus `composer-slot/resolve-composer.ts` and `composer-registry.tsx` | Registry selects decision, MCP App consent, realtime voice, or text; the slot keeps its hand-off animation and height alignment |
+| Decision prompts | `DecisionComposer` (`PermissionPrompt`, `AskUserQuestionPrompt`) and `PlanApprovalPrompt` | Permissions and questions replace the base composer and run one at a time without a counter. Plan approval retains the original full-screen review after those decisions |
 | Tool intercepts | `manifest.tools[].renderer.intercept` | WebView input before a mini-app tool runs, rendered in the transcript |
 | Media generation | `media_*` MCP tools | Agent-only; no direct user surface |
-| Mini window | `apps/desktop/src/renderer/src/components/MiniWindowApp.tsx` | A session-less surface that could host composers |
-| Phone | `apps/mobile/src/ui/composer-panel.tsx` | Composer-adjacent panels render inline above the input, never as sheets |
+| Mini window | `apps/desktop/src/renderer/src/components/MiniWindowApp.tsx` | Mounts a full `SessionPane`; it is not session-less today |
+| Phone | `apps/mobile/src/navigation/mobile-app.tsx`, `packages/chat-view/src/PortableDecisionCards.tsx`, and `pending-prompt-bar.tsx` | Permission and plan approvals use native sheets and can collapse into the pending-prompt bar; AskUserQuestion renders in the transcript. Phase 1 only changes desktop |
 
 ## 3. Composer model
 
@@ -65,9 +65,10 @@ await composer.open('superone.image', { prefill: { prompt } })
   pops back to what was underneath. A `sticky` composer replaces the base.
 - HITL composers (permission, question, plan approval) take priority over
   everything else. An app or widget composer never covers them.
-- Several pending prompts queue inside the prompt composer (`1/3`) and are
-  answered one by one.
-- The slot may grow up to a cap for tall content (a plan, a diff) so the
+- Several pending prompts are answered one by one without a position counter.
+  Plan approval retains its original full-screen review (user decision,
+  2026-10-05).
+- The slot may grow up to a cap for tall content (a form, a diff) so the
   transcript above stays visible. `ComposerSwitch` already owns the height
   hand-off.
 
@@ -122,7 +123,7 @@ this proposal.
 ## 9. Phases
 
 1. Composer registry behind `ComposerSwitch`; decision prompts move into the
-   slot as composers.
+   slot as composers. **Delivered for desktop; see the [execution plan](../plans/input-surfaces.md).**
 2. Native image and video composers, opened by users (mode picker, slash
    command) with `caller` and `agent` output.
 3. Declarative composer API for mini-apps, widgets and agents; phone rendering.

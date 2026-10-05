@@ -2,6 +2,7 @@ import { useId, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus, X } from 'lucide-react'
 import { Input } from '@superone/ui/components/ui/input'
+import { AutoResizeTextarea } from '@superone/ui/components/ui/auto-resize-textarea'
 import { cn } from '@superone/ui/lib/utils'
 import type {
   SchemaFormError,
@@ -118,7 +119,7 @@ function asList(value: SchemaFormValue | undefined): string[] {
 
 const INPUT_TYPE: Record<string, string> = { email: 'email', date: 'date' }
 
-function TextField({ field, value, invalid, describedBy, onChange, id }: FieldProps<'text'> & { id: string }) {
+function TextField({ field, value, invalid, describedBy, onChange, id, onSubmit }: FieldProps<'text'> & { id: string; onSubmit?: () => void }) {
   const { t } = useTranslation()
   const text = typeof value === 'string' ? value : ''
   const placeholder = field.format === 'date-time' ? t('chat.schemaForm.dateTimePlaceholder')
@@ -126,7 +127,18 @@ function TextField({ field, value, invalid, describedBy, onChange, id }: FieldPr
       : undefined
   return (
     <div className="flex flex-col gap-1.5">
-      <Input
+      {!field.format && !field.pattern && (field.maxLength === undefined || field.maxLength > 80) ? (
+        <AutoResizeTextarea
+          id={id}
+          value={text}
+          aria-invalid={invalid || undefined}
+          aria-describedby={describedBy}
+          maxLength={field.maxLength}
+          onValueChange={onChange}
+          onSubmit={onSubmit}
+          className="min-h-7 px-3 py-1 text-xs leading-[18px]"
+        />
+      ) : <Input
         id={id}
         type={(field.format && INPUT_TYPE[field.format]) ?? 'text'}
         value={text}
@@ -136,7 +148,7 @@ function TextField({ field, value, invalid, describedBy, onChange, id }: FieldPr
         maxLength={field.maxLength}
         onChange={(e) => onChange(e.target.value)}
         className="h-7 text-xs"
-      />
+      />}
       {field.suggestions && (
         <Suggestions options={field.suggestions} isActive={(v) => v === text} onPick={(v) => onChange(v)} />
       )}
@@ -322,12 +334,13 @@ export function pickNumberedChoice(field: SchemaFormField, current: SchemaFormVa
 }
 
 /** Every field of a parsed form, with the errors the caller chose to show. */
-export function SchemaFormFields({ fields, values, errors, onChange, resources, typed }: {
+export function SchemaFormFields({ fields, values, errors, onChange, onSubmit, resources, typed }: {
   fields: readonly SchemaFormField[]
   resources?: McpFormResourceActions
   values: SchemaFormValues
   errors: Record<string, SchemaFormError>
   onChange: (name: string, value: SchemaFormValue | undefined) => void
+  onSubmit?: () => void
   /** Digits typed toward an option number; set only when the composer handles number keys. */
   typed?: string
 }) {
@@ -360,7 +373,7 @@ export function SchemaFormFields({ fields, values, errors, onChange, resources, 
             onToggle={(v) => props.onChange(v === 'true')}
           />
         )
-          : field.kind === 'text' ? <TextField field={field} id={id} {...props} />
+          : field.kind === 'text' ? <TextField field={field} id={id} onSubmit={onSubmit} {...props} />
           : field.kind === 'number' ? <NumberField field={field} id={id} {...props} />
             : field.kind === 'select' ? <SelectField field={field} numbers={numbers} {...props} />
               : field.kind === 'multiselect' ? (

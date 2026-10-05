@@ -16,6 +16,7 @@ test scope, commit rules, and UI story coverage.
 | Simulator/Android platform integration | [devices.md](docs/agent-reference/devices.md) |
 | Mini-app Host, WebView, bridge APIs, packaging | [miniapps.md](docs/agent-reference/miniapps.md) |
 | New dependencies, feature entry points, startup work, bundle size | [performance.md](docs/agent-reference/performance.md) |
+| Composer slot, decision prompts, focus and draft rules | [composer.md](../../docs/features/composer.md) |
 
 ## Boundaries
 

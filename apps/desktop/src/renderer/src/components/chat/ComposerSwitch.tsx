@@ -8,6 +8,8 @@ const ANIMATION_DEADLINE_MS = 600
 interface ComposerSwitchProps<K extends string> {
   /** Which composer should be on screen. */
   kind: K
+  /** Distinguishes consecutive requests that use the same composer. */
+  transitionKey?: string
   render: (kind: K) => ReactNode
   /**
    * A composer whose resting height every other composer should at least fill,
@@ -15,6 +17,8 @@ interface ComposerSwitchProps<K extends string> {
    */
   alignTo?: K
   className?: string
+  /** Caps a tall composer while keeping its contents inside a scrollable slot. */
+  maxHeight?: number | string
 }
 
 /** Motion is a preference, and jsdom has no animations to end — both mean "switch now". */
@@ -39,11 +43,16 @@ function motionEnabled(): boolean {
  * The outgoing composer stays mounted until its exit animation ends, so a call
  * that ends mid-caption still slides away intact instead of vanishing.
  */
-export function ComposerSwitch<K extends string>({ kind, render, alignTo, className }: ComposerSwitchProps<K>) {
+export function ComposerSwitch<K extends string>({ kind, transitionKey = kind, render, alignTo, className, maxHeight }: ComposerSwitchProps<K>) {
   const [shown, setShown] = useState(kind)
+  const [shownKey, setShownKey] = useState(transitionKey)
   const [phase, setPhase] = useState<Phase>('steady')
   const [height, setHeight] = useState<number | null>(null)
   const stageRef = useRef<HTMLDivElement>(null)
+  // Keep the outgoing request's props intact until it drops out. Reading the
+  // latest render closure would replace its contents before the animation starts.
+  const shownRender = useRef(render)
+  const sameEntry = kind === shown && transitionKey === shownKey
   // Height of each composer as last seen at rest. The commit that flips `kind` can
   // also be the commit that empties the outgoing composer (hanging up drops the
   // call store to idle, and the voice mark reads that store), so measuring at
@@ -51,20 +60,23 @@ export function ComposerSwitch<K extends string>({ kind, render, alignTo, classN
   // changing hands.
   const restingHeights = useRef<Partial<Record<K, number>>>({})
   useLayoutEffect(() => {
-    if (phase === 'steady' && kind === shown && stageRef.current) {
+    if (phase === 'steady' && sameEntry && stageRef.current) {
+      shownRender.current = render
       restingHeights.current[shown] = stageRef.current.offsetHeight
     }
   })
   const floor = alignTo !== undefined && alignTo !== shown ? restingHeights.current[alignTo] : undefined
 
   useEffect(() => {
-    if (kind === shown) {
+    if (sameEntry) {
       // Flipped back before the exit finished: nothing to hand off any more.
       if (phase === 'leaving') setPhase('steady')
       return
     }
     if (!motionEnabled()) {
+      shownRender.current = render
       setShown(kind)
+      setShownKey(transitionKey)
       setPhase('steady')
       return
     }
@@ -72,7 +84,7 @@ export function ComposerSwitch<K extends string>({ kind, render, alignTo, classN
       setHeight(restingHeights.current[shown] ?? stageRef.current?.offsetHeight ?? null)
       setPhase('leaving')
     }
-  }, [kind, phase, shown])
+  }, [kind, transitionKey, phase, shown, sameEntry, render])
 
   // The newcomer has settled: now ease the slot to its height, then let it go.
   // A slot already at that height has nothing to transition and goes straight to rest.
@@ -89,7 +101,9 @@ export function ComposerSwitch<K extends string>({ kind, render, alignTo, classN
 
   const advance = () => {
     if (phase === 'leaving') {
+      shownRender.current = render
       setShown(kind)
+      setShownKey(transitionKey)
       setPhase('entering')
     } else if (phase === 'entering') {
       setPhase('settling')
@@ -109,7 +123,7 @@ export function ComposerSwitch<K extends string>({ kind, render, alignTo, classN
     if (phase === 'steady') return
     const deadline = window.setTimeout(advance, ANIMATION_DEADLINE_MS)
     return () => window.clearTimeout(deadline)
-  }, [phase, kind]) // `advance` only reads phase/kind
+  }, [phase, kind, transitionKey]) // the deadline follows the latest target
 
   return (
     <div
@@ -124,10 +138,14 @@ export function ComposerSwitch<K extends string>({ kind, render, alignTo, classN
         // composer's popups (@ mentions, / commands, todo) sit above the slot with
         // `absolute bottom-full`, and a standing overflow clip would hide them.
         phase !== 'steady' && 'overflow-hidden',
+        maxHeight !== undefined && 'overflow-hidden',
         phase === 'settling' && 'transition-[height] duration-200 ease-out',
         className,
       )}
-      style={height === null ? undefined : { height }}
+      style={{
+        ...(height === null ? {} : { height }),
+        ...(maxHeight === undefined ? {} : { maxHeight }),
+      }}
     >
       <div
         ref={stageRef}
@@ -141,7 +159,7 @@ export function ComposerSwitch<K extends string>({ kind, render, alignTo, classN
           phase === 'entering' && 'animate-[composer-rise_240ms_ease-out]',
         )}
       >
-        {render(shown)}
+        {(phase === 'steady' && sameEntry ? render : shownRender.current)(shown)}
       </div>
     </div>
   )

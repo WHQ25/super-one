@@ -16,7 +16,7 @@ import { CodexPlanImplementFooter } from './CodexPlanImplementFooter'
 import { CodexPlanBlockPresenter } from './presenters/CodexPlanBlock'
 import { CodexImageGenerationBlock } from './CodexImageGenerationBlock'
 import { fileLinkComponents } from './chat-markdown-components'
-import { createContext, memo, useContext, useState, useEffect, useRef } from 'react'
+import { memo, useState, useEffect, useRef } from 'react'
 import { ChevronRight } from 'lucide-react'
 import type { CodexCollabToolCallItem } from '@superone/shared/agent-types'
 import { TerminalCommandOutput } from './TerminalCommandOutput'
@@ -24,17 +24,8 @@ import { CompactLabeledToolRow, ToolName, ToolRow, ToolSummary, toolOutcomeLabel
 import { isCodexCommandToolError } from './codex-command-status'
 import { CodexAsyncQuestionBlock } from './CodexAsyncQuestionBlock'
 import { CodexMcpAuthAction, hasCodexMcpAuthChallenge } from './CodexMcpAuthAction'
-
-interface PlanFooterActions {
-  onApprove?: () => void
-  onReject?: (feedback?: string) => void
-  planApproval?: CodexPlanApprovalState
-}
-
-type PlanFullscreenCtx = { open: (text: string, actions?: PlanFooterActions) => void }
-const PlanFullscreenContext = createContext<PlanFullscreenCtx>({ open: () => {} })
-export const usePlanFullscreen = () => useContext(PlanFullscreenContext)
-export { PlanFullscreenContext }
+import { usePlanFullscreen } from './plan-fullscreen-context'
+export { PlanFullscreenContext, usePlanFullscreen } from './plan-fullscreen-context'
 
 function safeStringify(value: unknown): string {
   try {

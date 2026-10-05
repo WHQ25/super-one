@@ -1,10 +1,12 @@
 /** @vitest-environment jsdom */
 
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { createRef } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionCleanupConfirmSession } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
 import { SessionCleanupConfirmPrompt } from './SessionCleanupConfirmPrompt'
+import { ChatRootContext } from './is-focus-in-chat'
 
 const FOLDERS = [
   { id: 'proj-1', path: '/tmp/proj', name: 'proj', addedAt: '2026-01-01', lastOpened: '2026-01-03' },
@@ -66,5 +68,35 @@ describe('confirming a cross-project session delete', () => {
     renderPrompt([session('s1', 'Mine', 'proj-1'), session('s2', 'Orphan', 'proj-gone')])
 
     expect(screen.getByText('Unknown project')).toBeInTheDocument()
+  })
+
+  it('handles shortcuts only in its own active chat pane, never in an inert outgoing prompt', () => {
+    const root = createRef<HTMLDivElement>()
+    const onConfirm = vi.fn()
+    const onReject = vi.fn()
+    render(<>
+      <input aria-label="outside" />
+      <div data-chat-root=""><input aria-label="sibling" /></div>
+      <ChatRootContext.Provider value={root}>
+        <div ref={root} data-chat-root="">
+          <div data-testid="outgoing"><SessionCleanupConfirmPrompt payload={{ sessions: [session('s1', 'Mine', 'proj-1')] }} onConfirm={onConfirm} onReject={onReject} /></div>
+        </div>
+      </ChatRootContext.Provider>
+    </>)
+    for (const name of ['outside', 'sibling']) {
+      screen.getByRole('textbox', { name }).focus()
+      fireEvent.keyDown(window, { key: 'Enter' })
+      fireEvent.keyDown(window, { key: 'Escape' })
+    }
+    expect(onConfirm).not.toHaveBeenCalled()
+    expect(onReject).not.toHaveBeenCalled()
+    screen.getByRole('button', { name: 'Mine' }).focus()
+    fireEvent.keyDown(window, { key: 'Enter' })
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+    screen.getByTestId('outgoing').setAttribute('inert', '')
+    fireEvent.keyDown(window, { key: 'Enter' })
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onConfirm).toHaveBeenCalledTimes(1)
+    expect(onReject).not.toHaveBeenCalled()
   })
 })

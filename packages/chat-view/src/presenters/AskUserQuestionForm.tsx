@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { Kbd } from '@superone/ui/components/ui/kbd'
+import { AutoResizeTextarea } from '@superone/ui/components/ui/auto-resize-textarea'
 import { cn } from '@superone/ui/lib/utils'
 import type { AskUserQuestionRequest, QuestionAnnotations, QuestionPreviewFormat, UserQuestion } from '@superone/shared/agent-types'
 
@@ -18,7 +19,7 @@ export interface AskUserQuestionFormProps {
    * keyboard. `inScope` says whether a key belongs to this form. A touch host
    * omits it and gets a Dismiss button instead.
    */
-  keyboard?: { inScope: () => boolean }
+  keyboard?: { inScope: (event?: KeyboardEvent) => boolean }
 }
 
 function questionKey(q: UserQuestion): string {
@@ -75,7 +76,7 @@ function isSelected(q: UserQuestion, selections: Record<string, string>, label: 
 const OPTION = 'cursor-pointer rounded text-left whitespace-normal transition'
 /** Option-sized controls: compact beside their shortcuts, a finger's width on touch. */
 const optionSize = (keys: boolean) => (keys ? 'px-2 py-1 text-xs' : 'px-3 py-2 text-sm')
-const INPUT = 'w-full rounded bg-muted pr-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring'
+const INPUT = 'w-full rounded border-0 bg-muted pr-2 text-foreground shadow-none placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring'
 
 function OptionButtons({ q, selections, onSelect, keys, className }: {
   q: UserQuestion
@@ -118,27 +119,29 @@ function OptionDescription({ q, selections }: { q: UserQuestion; selections: Rec
 function KeyedInput({ keys, shortcut, inputRef, ...props }: {
   keys: boolean
   shortcut?: ReactNode
-  inputRef: RefObject<HTMLInputElement | null>
+  inputRef: RefObject<HTMLTextAreaElement | null>
   placeholder: string
   value: string
   onChange: (value: string) => void
   onFocus?: () => void
   onBlur?: () => void
+  onSubmit?: () => void
 }) {
   return (
     <div className="relative mt-2">
       {shortcut != null && (
-        <Kbd variant="square" className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2">{shortcut}</Kbd>
+        <Kbd variant="square" className="pointer-events-none absolute left-2 top-1.5">{shortcut}</Kbd>
       )}
-      <input
+      <AutoResizeTextarea
         ref={inputRef}
-        type="text"
         placeholder={props.placeholder}
+        aria-label={props.placeholder}
         value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
+        onValueChange={props.onChange}
+        onSubmit={keys ? props.onSubmit : undefined}
         onFocus={props.onFocus}
         onBlur={props.onBlur}
-        className={cn(INPUT, keys ? 'py-1 text-xs' : 'py-2 text-sm', shortcut != null ? 'pl-[30px]' : keys ? 'pl-2' : 'pl-3')}
+        className={cn(INPUT, keys ? 'min-h-7 py-1.5 text-xs leading-4' : 'py-2 text-sm', shortcut != null ? 'pl-[30px]' : keys ? 'pl-2' : 'pl-3')}
       />
     </div>
   )
@@ -161,7 +164,7 @@ function PreviewBox({ content, format, renderPreview }: { content: string; forma
 }
 
 /** Desktop: options beside (or above, for HTML) the preview; Other is a shortcut that swaps in a text field. */
-function PreviewQuestionPanel({ q, previewFormat, selections, notesTexts, onSelect, onNotes, onOtherFocus, onNoteFocus, onNoteBlur, notesInputRef, renderPreview }: {
+function PreviewQuestionPanel({ q, previewFormat, selections, notesTexts, onSelect, onNotes, onOtherFocus, onNoteFocus, onNoteBlur, notesInputRef, renderPreview, onSubmit }: {
   q: UserQuestion
   previewFormat: QuestionPreviewFormat
   selections: Record<string, string>
@@ -171,8 +174,9 @@ function PreviewQuestionPanel({ q, previewFormat, selections, notesTexts, onSele
   onOtherFocus: () => void
   onNoteFocus: () => void
   onNoteBlur: () => void
-  notesInputRef: RefObject<HTMLInputElement | null>
+  notesInputRef: RefObject<HTMLTextAreaElement | null>
   renderPreview: RenderPreview
+  onSubmit: () => void
 }) {
   const { t } = useTranslation()
   const key = questionKey(q)
@@ -206,6 +210,7 @@ function PreviewQuestionPanel({ q, previewFormat, selections, notesTexts, onSele
           {previewContent && selections[key] && (
             <KeyedInput
               keys
+              onSubmit={onSubmit}
               shortcut="n"
               inputRef={notesInputRef}
               placeholder={t('chat.askUser.noteOptionalPlaceholder')}
@@ -222,13 +227,14 @@ function PreviewQuestionPanel({ q, previewFormat, selections, notesTexts, onSele
 }
 
 /** Desktop: options and an Other field, each with its digit. */
-function SimpleQuestionPanel({ q, selections, otherTexts, onSelect, onOther, otherInputRef }: {
+function SimpleQuestionPanel({ q, selections, otherTexts, onSelect, onOther, otherInputRef, onSubmit }: {
   q: UserQuestion
   selections: Record<string, string>
   otherTexts: Record<string, string>
   onSelect: (q: UserQuestion, label: string) => void
   onOther: (q: UserQuestion, text: string) => void
-  otherInputRef: RefObject<HTMLInputElement | null>
+  otherInputRef: RefObject<HTMLTextAreaElement | null>
+  onSubmit: () => void
 }) {
   const { t } = useTranslation()
   return (
@@ -237,6 +243,7 @@ function SimpleQuestionPanel({ q, selections, otherTexts, onSelect, onOther, oth
       <OptionButtons q={q} selections={selections} onSelect={onSelect} keys className="flex flex-wrap gap-1.5" />
       <KeyedInput
         keys
+        onSubmit={onSubmit}
         shortcut={q.options.length + 1}
         inputRef={otherInputRef}
         placeholder={t('chat.askUser.otherOption')}
@@ -262,8 +269,8 @@ function TouchQuestionPanel({ q, previewFormat, selections, otherTexts, notesTex
   onSelect: (q: UserQuestion, label: string) => void
   onOther: (q: UserQuestion, text: string) => void
   onNotes: (q: UserQuestion, text: string) => void
-  otherInputRef: RefObject<HTMLInputElement | null>
-  notesInputRef: RefObject<HTMLInputElement | null>
+  otherInputRef: RefObject<HTMLTextAreaElement | null>
+  notesInputRef: RefObject<HTMLTextAreaElement | null>
   renderPreview: RenderPreview
 }) {
   const { t } = useTranslation()
@@ -311,8 +318,8 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
   const [activeTab, setActiveTab] = useState(0)
   const [otherFocused, setOtherFocused] = useState(false)
   const [noteFocused, setNoteFocused] = useState(false)
-  const otherInputRef = useRef<HTMLInputElement>(null)
-  const notesInputRef = useRef<HTMLInputElement>(null)
+  const otherInputRef = useRef<HTMLTextAreaElement>(null)
+  const notesInputRef = useRef<HTMLTextAreaElement>(null)
 
   const selectOption = useCallback((q: UserQuestion, label: string) => {
     const key = questionKey(q)
@@ -349,7 +356,7 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     // A key something else already took (a mod's hotkey band) is not ours.
-    if (e.defaultPrevented || !keyboard?.inScope()) return
+    if (e.defaultPrevented || !keyboard?.inScope(e)) return
     const typing = document.activeElement === otherInputRef.current || document.activeElement === notesInputRef.current
 
     if (e.key === 'Escape') {
@@ -366,7 +373,7 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
       return
     }
 
-    if (e.key === 'Enter' && !e.isComposing) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.isComposing) {
       if (allAnswered) {
         e.preventDefault()
         submit()
@@ -478,6 +485,7 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
           }}
           onNoteFocus={() => setNoteFocused(true)}
           onNoteBlur={() => setNoteFocused(false)}
+          onSubmit={() => { if (allAnswered && keyboard?.inScope()) submit() }}
           notesInputRef={notesInputRef}
           renderPreview={renderPreview}
         />
@@ -489,6 +497,7 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
           onSelect={selectOption}
           onOther={setOther}
           otherInputRef={otherInputRef}
+          onSubmit={() => { if (allAnswered && keyboard?.inScope()) submit() }}
         />
       )}
       {/* Touch: the two actions share the row, as the phone's prompt sheets drew them. */}

@@ -74,6 +74,39 @@ beforeEach(() => {
 })
 
 describe('AskUserQuestionPrompt', () => {
+  it('submits a multiline Other answer only on plain Enter', () => {
+    renderInChat(<AskUserQuestionPrompt />)
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement
+    input.focus()
+    fireEvent.change(input, { target: { value: 'Use the built-in APIs' } })
+    input.setSelectionRange(input.value.length, input.value.length)
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
+    fireEvent.change(input, { target: { value: `${input.value}Avoid another dependency` } })
+    input.setSelectionRange(input.value.length, input.value.length)
+    fireEvent.keyDown(input, { key: 'Enter', altKey: true })
+    expect(chatState.answerQuestion).not.toHaveBeenCalled()
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(chatState.answerQuestion).toHaveBeenCalledWith(
+      'q-1', { 'Which library?': 'Use the built-in APIs\nAvoid another dependency' }, undefined,
+    )
+  })
+
+  it('preserves multiline notes on a selected preview option', () => {
+    activeSessionState.pendingQuestion!.questions[0].options[0].preview = '# Library details'
+    renderInChat(<AskUserQuestionPrompt />)
+    const input = screen.getByPlaceholderText(/note/i) as HTMLTextAreaElement
+    input.focus()
+    fireEvent.change(input, { target: { value: 'Keep the selected library' } })
+    input.setSelectionRange(input.value.length, input.value.length)
+    fireEvent.keyDown(input, { key: 'Enter', altKey: true })
+    fireEvent.change(input, { target: { value: `${input.value}Add timezone coverage` } })
+    expect(chatState.answerQuestion).not.toHaveBeenCalled()
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(chatState.answerQuestion).toHaveBeenCalledWith('q-1', { 'Which library?': 'date-fns' }, {
+      'Which library?': { notes: 'Keep the selected library\nAdd timezone coverage' },
+    })
+  })
+
   it('renders options and submits the selected answer', () => {
     renderInChat(<AskUserQuestionPrompt />)
     fireEvent.click(screen.getByRole('button', { name: /date-fns/i }))

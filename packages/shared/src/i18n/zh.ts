@@ -2136,6 +2136,7 @@ export const zh: Messages = {
       decline: '拒绝',
       deny: '拒绝',
       denyReasonPlaceholder: '拒绝原因（可选，按 Enter 提交）',
+      feedbackNewlineHint: '换行',
       alwaysAllow: '总是允许',
       alwaysAllowDevice: '始终允许',
       terminal: {

@@ -111,7 +111,11 @@ export { chatInputAPI } from './chat-input-api'
  */
 let lastComposerCopy: string | null = null
 
-export function ChatInput() {
+export function ChatInput({
+  autoFocusOnMount = true,
+  onMounted,
+}: { autoFocusOnMount?: boolean; onMounted?: () => void } = {}) {
+    const initialAutoFocusOnMount = useRef(autoFocusOnMount)
     const { t } = useTranslation()
     const activeProject = useChatStore((s) => s.activeProject)
     const recentFolders = useAppStore((s) => s.recentFolders)
@@ -187,6 +191,8 @@ export function ChatInput() {
       showReviewPanel: s.showReviewPanel,
       displayedSessionId: sessionScope?.sessionId ?? s._activeSessionId,
     })))
+    const focusMountSessionRef = useRef(displayedSessionId)
+    const previousRestoreFocusNonceRef = useRef(chatInputRestoreFocusNonce)
     const realtimeVoiceEngaged = useCodexRealtimeViewStore((state) => {
       if (!displayedSessionId) return false
       const realtime = state.sessions[displayedSessionId]
@@ -1910,11 +1916,19 @@ export function ChatInput() {
     }, [editor, displayedSessionId, isRemoteLocked])
 
     useEffect(() => {
-      if (!isRemoteLocked && !sessionScope && editor && !editor.isDestroyed && !showReviewPanel) {
+      if (focusMountSessionRef.current !== displayedSessionId) {
+        focusMountSessionRef.current = displayedSessionId
+        initialAutoFocusOnMount.current = true
+      }
+      if (initialAutoFocusOnMount.current && !isRemoteLocked && !sessionScope && editor && !editor.isDestroyed && !showReviewPanel) {
         editor.commands.focus('end')
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [editor, showReviewPanel, displayedSessionId, sessionScope])
+
+    useEffect(() => {
+      if (editor && !editor.isDestroyed) onMounted?.()
+    }, [editor, onMounted])
 
     useEffect(() => {
       if (!chatInputFocusNonce) return
@@ -1924,7 +1938,9 @@ export function ChatInput() {
     }, [chatInputFocusNonce, editor, showReviewPanel])
 
     useEffect(() => {
-      if (!chatInputRestoreFocusNonce) return
+      const changed = previousRestoreFocusNonceRef.current !== chatInputRestoreFocusNonce
+      previousRestoreFocusNonceRef.current = chatInputRestoreFocusNonce
+      if (!changed) return
       if (!isRemoteLocked && editor && !editor.isDestroyed && !showReviewPanel) {
         editor.commands.focus()
       }

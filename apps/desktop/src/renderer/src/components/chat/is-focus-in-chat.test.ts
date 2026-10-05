@@ -40,6 +40,19 @@ describe('isFocusInChat', () => {
     expect(isFocusInChat(null)).toBe(false)
   })
 
+  it('does not enable shortcuts on an inert outgoing approval', () => {
+    const root = document.createElement('div')
+    root.setAttribute('data-chat-root', '')
+    const outgoing = document.createElement('div')
+    outgoing.setAttribute('inert', '')
+    const button = document.createElement('button')
+    outgoing.appendChild(button)
+    root.appendChild(outgoing)
+    document.body.appendChild(root)
+    expect(isFocusInChat(button, root)).toBe(false)
+    expect(isFocusInChat(button)).toBe(false)
+  })
+
   it('scopes to a specific root when provided (mosaic isolation)', () => {
     const rootA = document.createElement('div')
     rootA.setAttribute('data-chat-root', '')

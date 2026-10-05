@@ -19,6 +19,7 @@ import {
 import type { McpFormResourceActions } from '@superone/shared/mcp-form-resources'
 import { PermissionActionButton } from '../chat/PermissionActionBar'
 import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from '../chat/is-focus-in-chat'
+import { wasChatInputFocusedRecently } from '../chat/composer-slot/decision-composer-policy'
 import { numberedChoiceCount, pickNumberedChoice, SchemaFormFields } from './SchemaFormFields'
 import { NUMBERED_PICK_WAIT_MS, readNumberedPick, typeNumberedPick } from './numbered-pick'
 
@@ -62,6 +63,7 @@ export function SchemaFormComposer({ form: requestedForm, requester, onSubmit, o
     ? { ...field, options: [...field.options, ...added.get(field.name)!.filter(option => !field.options.some(original => original.uri === option.uri))] } : field) : [], [form, added])
   const steps = useMemo(() => schemaFormSteps(fields), [fields])
   const [stepIndex, setStepIndex] = useState(0)
+  const previousFocusStep = useRef(stepIndex)
   const step = steps[stepIndex] ?? []
   const lastStep = stepIndex >= steps.length - 1
   const [values, setValues] = useState<SchemaFormValues>(() => initialSchemaFormValues(fields))
@@ -114,7 +116,10 @@ export function SchemaFormComposer({ form: requestedForm, requester, onSubmit, o
 
   // Land on each step ready for keys: its first input, else the step itself.
   useEffect(() => {
+    const changedStep = previousFocusStep.current !== stepIndex
+    previousFocusStep.current = stepIndex
     if (!active || !form.supported || !canAutofocusInChatRoot(chatRootRef?.current)) return
+    if (!changedStep && wasChatInputFocusedRecently(chatRootRef?.current)) return
     const root = rootRef.current
     const target = root?.querySelector<HTMLElement>('[data-step] input:not([type=hidden]), [data-step] textarea') ?? root
     target?.focus({ preventScroll: true })
@@ -228,7 +233,7 @@ export function SchemaFormComposer({ form: requestedForm, requester, onSubmit, o
       )}
       {/* The transcript above stays visible however long a step is. */}
       <div key={stepIndex} data-step className="-mx-1 max-h-[min(28rem,50vh)] overflow-y-auto px-1 py-0.5">
-        <SchemaFormFields fields={step} values={values} errors={shownErrors} onChange={choose} resources={resourceActions} typed={pickField ? typed : undefined} />
+        <SchemaFormFields fields={step} values={values} errors={shownErrors} onChange={choose} onSubmit={() => { if (active) next() }} resources={resourceActions} typed={pickField ? typed : undefined} />
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {stepIndex > 0 && (

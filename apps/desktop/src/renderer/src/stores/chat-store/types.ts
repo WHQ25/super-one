@@ -434,7 +434,7 @@ export interface ChatStore {
   disconnectRemoteSession: () => void
 
   toggleOpen: () => void
-  requestChatInputFocusRestore: () => void
+  requestChatInputFocusRestore: (target?: SessionWriteTarget) => void
   setCorner: (corner: Corner) => void
   clearMessages: () => void
   resetSession: () => Promise<void>

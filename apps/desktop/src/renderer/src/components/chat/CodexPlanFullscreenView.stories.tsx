@@ -71,6 +71,11 @@ export const WithApproveReject: Story = {
   },
 }
 
+export const Narrow: Story = {
+  ...WithApproveReject,
+  decorators: [(Story) => <div className="@container flex h-[600px] flex-col" style={{ width: 320, maxWidth: '100%' }}><Story /></div>],
+}
+
 export const Approved: Story = {
   args: {
     text: PLAN_TEXT,

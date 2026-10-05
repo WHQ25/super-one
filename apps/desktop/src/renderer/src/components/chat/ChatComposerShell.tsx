@@ -10,7 +10,6 @@ import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
 import { RemoteComposerBanner } from './RemoteComposerBanner'
-import { SessionDecisionPrompts } from './SessionDecisionPrompts'
 import { CursorApiKeyDialog } from './CursorApiKeyDialog'
 import { TodoPopup } from './TodoPopup'
 
@@ -18,7 +17,15 @@ import { TodoPopup } from './TodoPopup'
  * Composer stack — owns NO messages subscription. Stream ticks that only update
  * transcript text should not re-render TipTap / status chrome.
  */
-export const ChatComposerShell = memo(function ChatComposerShell({ showTodoPopup }: { showTodoPopup: boolean }) {
+export const ChatComposerShell = memo(function ChatComposerShell({
+  showTodoPopup,
+  autoFocusOnMount = true,
+  onMounted,
+}: {
+  showTodoPopup: boolean
+  autoFocusOnMount?: boolean
+  onMounted?: () => void
+}) {
   const { t } = useTranslation()
   const worktreeRemoved = useActiveSession((s) => s._worktreeRemoved)
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
@@ -105,10 +112,9 @@ export const ChatComposerShell = memo(function ChatComposerShell({ showTodoPopup
   }
   return (
     <>
-      <SessionDecisionPrompts />
       <CursorApiKeyDialog />
       {showTodoPopup && <TodoPopup />}
-      <ChatInput />
+      <ChatInput autoFocusOnMount={autoFocusOnMount} onMounted={onMounted} />
       <ChatStatusBar />
     </>
   )

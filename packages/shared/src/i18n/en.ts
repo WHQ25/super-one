@@ -2028,6 +2028,7 @@ export type Messages = {
       decline: string
       deny: string
       denyReasonPlaceholder: string
+      feedbackNewlineHint: string
       alwaysAllow: string
       /** device_control_confirm only — persists the grant for every session. */
       alwaysAllowDevice: string
@@ -6283,6 +6284,7 @@ export const en: Messages = {
       decline: 'Decline',
       deny: 'Deny',
       denyReasonPlaceholder: 'Deny reason (optional, Enter to submit)',
+      feedbackNewlineHint: 'Newline',
       alwaysAllow: 'Always Allow',
       alwaysAllowDevice: 'Always Allow',
       terminal: {

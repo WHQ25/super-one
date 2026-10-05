@@ -312,6 +312,22 @@ describe('PlanApprovalPrompt — integration', () => {
     expect(mockWindowAgent.setPermissionMode).not.toHaveBeenCalled()
   })
 
+  it.each([{ shiftKey: true }, { altKey: true }])('keeps plan feedback newlines without approving or rejecting %j', (modifier) => {
+    seedPlanApprovalState('plan', { sessionProvider: 'claude' })
+    render(<PlanApprovalPrompt />)
+    const input = screen.getAllByPlaceholderText(/Reject feedback|拒绝反馈/)[0] as HTMLTextAreaElement
+    input.focus()
+    fireEvent.change(input, { target: { value: 'Add error handling' } })
+    input.setSelectionRange(input.value.length, input.value.length)
+    fireEvent.keyDown(input, { key: 'Enter', ...modifier })
+    fireEvent.change(input, { target: { value: `${input.value}Preserve the original data` } })
+    expect(mockWindowAgent.respondToPlanApproval).not.toHaveBeenCalled()
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(mockWindowAgent.respondToPlanApproval).toHaveBeenCalledWith(
+      expect.any(String), 'plan-req-1', false, 'Add error handling\nPreserve the original data',
+    )
+  })
+
   it('scenario: sticky line comment is serialized into reject feedback', async () => {
     seedPlanApprovalState('plan', { sessionProvider: 'claude' })
     render(<PlanApprovalPrompt />)

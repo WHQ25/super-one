@@ -5,6 +5,7 @@ import type { PermissionRequest, WebmcpTrustConfirmPayload } from '@superone/sha
 import { cn } from '@superone/ui/lib/utils'
 import { PermissionActionButton } from './PermissionActionBar'
 import { canAutofocusInChatRoot, isFocusInChat, useChatRootRef } from './is-focus-in-chat'
+import { shouldSuppressDecisionShortcut, wasChatInputFocusedRecently } from './composer-slot/decision-composer-policy'
 
 export type WebMcpTrustScope = 'session' | 'always'
 
@@ -72,7 +73,7 @@ export function WebMcpTrustPrompt({ request, onTrust, onDeny }: Props) {
   useEffect(() => {
     if (!isCollapsed) {
       requestAnimationFrame(() => {
-        if (!canAutofocusInChatRoot(chatRootRef?.current)) return
+        if (!canAutofocusInChatRoot(chatRootRef?.current) || wasChatInputFocusedRecently(chatRootRef?.current)) return
         btnRefs.current[0]?.focus()
       })
     }
@@ -81,6 +82,7 @@ export function WebMcpTrustPrompt({ request, onTrust, onDeny }: Props) {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (!isFocusInChat(document.activeElement, chatRootRef?.current)) return
+      if (shouldSuppressDecisionShortcut(e, chatRootRef?.current)) return
       if (isCollapsed) {
         if (e.key === ' ') {
           e.preventDefault()

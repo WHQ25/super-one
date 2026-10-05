@@ -2,11 +2,12 @@
 
 import { createRef, type RefObject } from 'react'
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ButtonHTMLAttributes, ReactElement, ReactNode } from 'react'
 import type { PermissionRequest } from '@superone/shared/agent-types'
 import { elicitationFormRequest } from '@superone/shared/schema-form'
 import { ChatRootContext } from './is-focus-in-chat'
+import { setDecisionKeyboardPolicy } from './composer-slot/decision-composer-policy'
 
 const chatState = {
   respondToPermission: vi.fn(),
@@ -84,7 +85,7 @@ function renderInChat(ui: ReactElement) {
     </div>,
   )
   ;(result.container.querySelector('[data-chat-root]') as HTMLElement).focus()
-  return result
+  return { ...result, rootRef }
 }
 
 beforeEach(() => {
@@ -98,7 +99,45 @@ beforeEach(() => {
   }]
 })
 
+afterEach(() => vi.useRealTimers())
+
 describe('PermissionPrompt', () => {
+  it('submits high-risk feedback on Command+Enter without approving the command', () => {
+    activeSessionState.sessionProvider = 'claude'
+    renderInChat(<PermissionPrompt />)
+    const input = screen.getByRole('textbox')
+    act(() => input.focus())
+    fireEvent.change(input, { target: { value: 'Choose a safer command' } })
+    fireEvent.keyDown(input, { key: 'Enter', metaKey: true })
+    expect(chatState.respondToPermission).toHaveBeenCalledExactlyOnceWith(
+      'req-1', false, undefined, 'Choose a safer command',
+    )
+  })
+
+  it.each([{ shiftKey: true }, { altKey: true }])('keeps high-risk feedback editable with composer newline shortcuts %j', (modifier) => {
+    vi.useFakeTimers()
+    activeSessionState.sessionProvider = 'claude'
+    const { rootRef } = renderInChat(<PermissionPrompt />)
+    const clear = setDecisionKeyboardPolicy(rootRef.current!, 'permission:feedback', true)
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement
+    act(() => input.focus())
+    fireEvent.change(input, { target: { value: 'Use a safer command' } })
+    input.setSelectionRange(input.value.length, input.value.length)
+
+    fireEvent.keyDown(input, { key: 'Enter', ...modifier })
+    expect(input.value).toBe('Use a safer command\n')
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(chatState.respondToPermission).not.toHaveBeenCalled()
+
+    act(() => vi.advanceTimersByTime(501))
+    fireEvent.change(input, { target: { value: `${input.value}Keep the existing files` } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(chatState.respondToPermission).toHaveBeenCalledWith(
+      'req-1', false, undefined, 'Use a safer command\nKeep the existing files',
+    )
+    clear()
+  })
+
   it('shows four codex decision buttons without feedback input', () => {
     renderInChat(<PermissionPrompt />)
 
@@ -123,6 +162,25 @@ describe('PermissionPrompt', () => {
     fireEvent.keyDown(window, { key: 'Enter', shiftKey: true })
 
     expect(chatState.respondToPermission).toHaveBeenCalledWith('req-1', true, true)
+  })
+
+  it('ignores an arriving decision shortcut and requires Command+Enter for a risky command', () => {
+    vi.useFakeTimers()
+    const { rootRef } = renderInChat(<PermissionPrompt />)
+    const clearPolicy = setDecisionKeyboardPolicy(rootRef.current!, 'permission:req-1', true)
+    try {
+      fireEvent.keyDown(window, { key: 'Enter' })
+      expect(chatState.respondToPermission).not.toHaveBeenCalled()
+
+      vi.advanceTimersByTime(501)
+      fireEvent.keyDown(window, { key: 'Enter' })
+      expect(chatState.respondToPermission).not.toHaveBeenCalled()
+
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true })
+      expect(chatState.respondToPermission).toHaveBeenCalledWith('req-1', true)
+    } finally {
+      clearPolicy()
+    }
   })
 
   it('ignores Escape when focus is outside the chat pane', () => {
@@ -355,8 +413,8 @@ describe('PermissionPrompt', () => {
 
     const sessionRow = () => screen.getByRole('button', { name: /allow npm run\( \.\*\)\? for this session/i })
     const projectRow = () => screen.getByRole('button', { name: /always allow npm run\( \.\*\)\? in this project/i })
-    // The approve button reads "Allow⏎", or "Allow+1⏎" once a rule row is on.
-    const allowButton = () => screen.getByRole('button', { name: /^allow(\+1)?⏎$/i })
+    // Terminal approvals use the explicit Command+Enter shortcut.
+    const allowButton = () => screen.getByRole('button', { name: /^allow(\+1)?⌘↵$/i })
 
     it('keeps Allow / Deny and offers the rule for the session or the project, both off by default', () => {
       renderInChat(<PermissionPrompt />)

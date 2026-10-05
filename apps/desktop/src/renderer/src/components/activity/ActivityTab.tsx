@@ -1,5 +1,5 @@
 import { mcpAppPresentationIcon } from '@superone/shared/mcp-apps-metadata'
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { IDockviewPanelHeaderProps } from 'dockview-core'
 import { Blocks, Bot, Bug, Globe, Maximize, MessageCirclePlus, RotateCw, Route, Shrink, Smartphone, Terminal as TerminalIcon, Volume2, VolumeOff, X } from 'lucide-react'
@@ -26,6 +26,35 @@ import { useMcpServerIcon } from '@/components/chat/use-mcp-server-icon'
 import { getToolDisplay } from '@/components/chat/tool-display'
 import { useMcpAppLayout } from '@/components/mcp-apps/layout-store'
 
+/** Matches the edge fade on `.dv-tabs-container` in dockview-theme.css. */
+const TAB_STRIP_EDGE_FADE_PX = 24
+
+/**
+ * Keeps the active tab wholly inside the strip. dockview scrolls a newly active
+ * tab into view synchronously, but dockview-react fills the tab through a portal
+ * that renders later — so it measures an empty tab, sees it "fits", and the real
+ * chip then spills past the edge. The tab growing to the active max-width does
+ * the same. Watching the tab's size catches both, after layout and before paint.
+ */
+function useRevealActiveTab(api: IDockviewPanelHeaderProps['api'], active: boolean) {
+  useLayoutEffect(() => {
+    if (!active) return
+    const tab = api.group.element.querySelector<HTMLElement>('.dv-tab[aria-selected="true"]')
+    const strip = tab?.parentElement
+    if (!tab || !strip) return
+    const reveal = () => {
+      const start = tab.offsetLeft - TAB_STRIP_EDGE_FADE_PX
+      const end = tab.offsetLeft + tab.offsetWidth + TAB_STRIP_EDGE_FADE_PX
+      if (start < strip.scrollLeft) strip.scrollLeft = start
+      else if (end > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = end - strip.clientWidth
+    }
+    const observer = new ResizeObserver(reveal)
+    observer.observe(tab)
+    return () => observer.disconnect()
+  }, [api, active])
+}
+
+/** Every tab reads its active state here, which is also what keeps it revealed. */
 function useIsActive(api: IDockviewPanelHeaderProps['api']) {
   const [active, setActive] = useState(api.isActive)
   useEffect(() => {
@@ -33,6 +62,7 @@ function useIsActive(api: IDockviewPanelHeaderProps['api']) {
     const d = api.onDidActiveChange((e) => setActive(e.isActive))
     return () => d.dispose()
   }, [api])
+  useRevealActiveTab(api, active)
   return active
 }
 

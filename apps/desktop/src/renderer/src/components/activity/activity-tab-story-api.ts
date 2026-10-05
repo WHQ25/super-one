@@ -6,7 +6,8 @@ export function fakeTabApi(title: string, isActive: boolean): IDockviewPanelHead
     id: `panel-${title}`,
     title,
     isActive,
-    group: { id: 'storybook-group' },
+    // Detached, so the active tab's reveal finds no strip to scroll.
+    group: { id: 'storybook-group', element: document.createElement('div') },
     onDidActiveChange: () => ({ dispose: () => {} }),
     onDidTitleChange: () => ({ dispose: () => {} }),
   } as unknown as IDockviewPanelHeaderProps['api']

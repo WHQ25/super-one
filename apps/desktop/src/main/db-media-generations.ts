@@ -29,6 +29,7 @@ export interface MediaGenerationRow {
 export interface MediaGenerationEntry {
   id: string
   sessionId: string | null
+  projectId: string | null
   source: 'agent' | 'human'
   providerId: string
   model: string
@@ -82,6 +83,7 @@ function toEntry(row: MediaGenerationRow): MediaGenerationEntry {
   return {
     id: row.id,
     sessionId: row.session_id,
+    projectId: row.project_id,
     source: row.source,
     providerId: row.provider_id,
     model: row.model,
@@ -95,16 +97,18 @@ function toEntry(row: MediaGenerationRow): MediaGenerationEntry {
   }
 }
 
-export function listMediaGenerations(opts?: { sessionId?: string; limit?: number }): MediaGenerationEntry[] {
+export function listMediaGenerations(opts?: {
+  sessionId?: string; projectId?: string; mediaType?: string; source?: 'human' | 'agent'; status?: MediaGenerationStatus; limit?: number
+}): MediaGenerationEntry[] {
   const db = getDb()
   const limit = opts?.limit ?? 100
-  const rows = (
-    opts?.sessionId
-      ? db
-          .prepare('SELECT * FROM media_generations WHERE session_id = ? ORDER BY created_at DESC LIMIT ?')
-          .all(opts.sessionId, limit)
-      : db.prepare('SELECT * FROM media_generations ORDER BY created_at DESC LIMIT ?').all(limit)
-  ) as MediaGenerationRow[]
+  const filters: Array<[string, string | undefined]> = [
+    ['session_id', opts?.sessionId], ['project_id', opts?.projectId], ['media_type', opts?.mediaType], ['source', opts?.source], ['status', opts?.status],
+  ]
+  const selected = filters.filter((filter): filter is [string, string] => filter[1] !== undefined)
+  const where = selected.length ? ` WHERE ${selected.map(([column]) => `${column} = ?`).join(' AND ')}` : ''
+  const rows = db.prepare(`SELECT * FROM media_generations${where} ORDER BY created_at DESC LIMIT ?`)
+    .all(...selected.map(([, value]) => value), limit) as MediaGenerationRow[]
   return rows.map(toEntry)
 }
 

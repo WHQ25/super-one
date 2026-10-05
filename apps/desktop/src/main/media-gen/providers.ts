@@ -120,8 +120,8 @@ function resolveDefaultProviderIdFor(spec: MediaConsumerSpec): string {
 }
 
 /** Resolve an image provider from a credential id (or the global `media:image` binding when omitted). */
-export async function resolveMediaProvider(credentialId?: string | null): Promise<MediaProviderConfig> {
-  return resolveProvider(IMAGE, credentialId)
+export async function resolveMediaProvider(credentialId?: string | null, modelId?: string | null): Promise<MediaProviderConfig> {
+  return resolveProvider(IMAGE, credentialId, modelId)
 }
 
 export async function resolveDefaultModel(credentialId?: string | null): Promise<string> {

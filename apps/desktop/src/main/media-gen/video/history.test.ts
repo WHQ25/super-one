@@ -30,6 +30,7 @@ vi.mock('../../db-media-generations', () => ({
     return {
       id: row.id,
       sessionId: row.session_id,
+      projectId: row.project_id,
       source: row.source,
       providerId: row.provider_id,
       model: row.model,

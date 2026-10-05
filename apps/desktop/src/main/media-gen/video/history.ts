@@ -10,7 +10,7 @@ import { resolveVideoProvider } from '../providers'
 import { fetchVideoTask, persistVideoTask, submitVideoTask, type GenerateVideoCoreParams } from './service'
 
 export interface SubmitVideoParams
-  extends Omit<GenerateVideoCoreParams, 'provider' | 'model' | 'abortSignal'> {
+  extends Omit<GenerateVideoCoreParams, 'provider' | 'model'> {
   providerId: string
   model: string
   sessionId?: string

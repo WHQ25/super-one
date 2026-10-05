@@ -1,5 +1,6 @@
 import type { CodexAccount, CodexManagedLoginStart } from '@superone/shared/codex-accounts'
 import type { CollaborationMailboxAPI } from '@superone/shared/collaboration-mailbox'
+import type { MediaComposerAPI } from '@superone/shared/media-composer'
 import type { TerminalCommandRule } from '@superone/shared/terminal-command-rules'
 import type { ElectronAPI } from '@electron-toolkit/preload'
 import type { AppMetricsSnapshot } from '@superone/shared/agent-types'
@@ -864,7 +865,7 @@ interface TerminalAPI {
 }
 
 /** Multi-environment / remote node — Main EnvironmentHost product path. */
-export interface EnvironmentAPI {
+export interface EnvironmentAPI extends MediaComposerAPI {
   mcpAppRequest(projectPath: string, sessionId: string, request: import('@superone/shared/mcp-apps').McpAppViewRequest, context?: import('@superone/shared/mcp-apps-desktop').McpAppDesktopRequestContext): Promise<import('@superone/shared/mcp-apps').McpAppHostResult>
   mcpAppRegister(projectPath: string, sessionId: string, target: { appInstanceId: string; messageId?: string }): Promise<import('@superone/shared/mcp-apps').McpAppHostResult<import('@superone/shared/mcp-apps-desktop').McpAppPreparedDocument>>
   mcpAppRelease(documentId: string): Promise<void>

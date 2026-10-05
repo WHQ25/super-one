@@ -29,7 +29,7 @@ export interface GenerateAndRecordResult {
 }
 
 export async function generateAndRecord(params: GenerateAndRecordParams): Promise<GenerateAndRecordResult> {
-  const provider = await resolveMediaProvider(params.providerId)
+  const provider = await resolveMediaProvider(params.providerId, params.model)
   const generationId = randomUUID()
   const createdAt = new Date().toISOString()
   const paramsJson = JSON.stringify({

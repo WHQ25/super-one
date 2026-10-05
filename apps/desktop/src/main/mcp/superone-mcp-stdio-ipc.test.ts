@@ -344,6 +344,7 @@ describe('superone-mcp-stdio-ipc', () => {
       'test-app',
       'do_thing',
       { x: 'hello' },
+      PROJ,
     )
     expect(res.result?.content?.[0]?.text).toContain('"ok":true')
     client.close()

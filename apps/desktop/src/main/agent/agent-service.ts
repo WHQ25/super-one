@@ -115,6 +115,9 @@ import type { PluginModReview, HookSavePayload, SessionForkRequest, SideChatStar
 import { tryResolveHarnessRuntime } from '../harness/resolve-runtime'
 import { forkSession } from '../session/session-fork'
 import { closeSideChat, startSideChat } from '../session/side-chat'
+import { answerInputRequest, composerOpenResult, InputRequestOpenError, isInputRequestId, openWidgetInputRequest, type OpenedInputRequest } from '../session/input-requests'
+import { awaitComposerForm, cancelComposerForms, composerFormOutcome, openComposerForm, releaseComposerClient, type ComposerClient } from '../session/composer-delivery'
+import type { MiniAppInputRequest } from '../miniapp/miniapp-input-requests'
 import { loadRealtimeTimeline, reconcileRealtimeTimeline } from '../session/realtime-timeline-repo'
 
 export class AgentService {
@@ -166,6 +169,14 @@ export class AgentService {
     this.remoteControlService = svc
   }
 
+  private openMiniAppForm?: (request: MiniAppInputRequest) => OpenedInputRequest
+  /** Opens a mini-app WebView's form with the same rules as its MiniApp Host. */
+  setMiniAppFormOpener(open: (request: MiniAppInputRequest) => OpenedInputRequest): void {
+    this.openMiniAppForm = open
+  }
+
+  private readonly composerWindows = new Set<number>()
+
   setMobileReceiveService(svc: import('../remote/mobile-receive-service').MobileReceiveService): void {
     this.mobileReceiveService = svc
   }
@@ -215,6 +226,21 @@ export class AgentService {
     if (session.owner.kind === 'remote') return true
     if (session.subscribers.size > 0) return true
     return false
+  }
+
+  /** A window's forms close with its page (reload or close): their answers have nowhere else to go. */
+  private composerWindow(sender: Electron.WebContents): ComposerClient {
+    const client: ComposerClient = { kind: 'window', id: sender.id }
+    if (!this.composerWindows.has(sender.id)) {
+      this.composerWindows.add(sender.id)
+      const release = () => releaseComposerClient(client)
+      sender.on('did-navigate', release)
+      sender.once('destroyed', () => {
+        this.composerWindows.delete(client.id)
+        release()
+      })
+    }
+    return client
   }
 
   private throwIfRemoteLocked(projectPath: string): void {
@@ -522,7 +548,7 @@ export class AgentService {
     })
   }
 
-  private async runCodexRemoteTurn(projectPath: string, sessionId: string, deviceId: string, command: { content: string; userMessageContent?: SendMessageRequest['userMessageContent']; contexts?: SendMessageRequest['contexts']; model?: string; effort?: string; serviceTier?: string | null; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null; clientMessageId?: string; priority?: 'now' | 'next' | 'later' }, onAccepted?: () => void): Promise<void> {
+  private async runCodexRemoteTurn(projectPath: string, sessionId: string, deviceId: string, command: { content: string; userMessageContent?: SendMessageRequest['userMessageContent']; contexts?: SendMessageRequest['contexts']; model?: string; effort?: string; serviceTier?: string | null; permissionPreset?: string; collaborationMode?: string; threadId?: string; images?: SendMessageRequest['images']; gitBranch?: string | null; worktreeBranch?: string | null; clientMessageId?: string; priority?: 'now' | 'next' | 'later'; inputRequest?: SendMessageRequest['inputRequest'] }, onAccepted?: () => void): Promise<void> {
     const userMessageId = newMessageId('user')
     const assistantMessageId = newMessageId('remote')
     const mgr = this.requireSessionManager()
@@ -545,6 +571,7 @@ export class AgentService {
           content: command.content,
           clientMessageId: command.clientMessageId ?? userMessageId,
           assistantMessageId,
+          ...(command.inputRequest ? { inputRequest: command.inputRequest } : {}),
           ...(command.priority ? { priority: command.priority } : {}),
           images: command.images,
           userMessageContent: command.userMessageContent,
@@ -784,6 +811,7 @@ export class AgentService {
                   contexts: command.contexts,
                   priority: command.priority,
                   clientMessageId: command.clientMessageId,
+                  ...(command.inputRequest ? { inputRequest: command.inputRequest } : {}),
                   ...(command.agent ? { agent: command.agent } : {}),
                   ...(command.modelParams ? { cursor: { params: command.modelParams } } : {}),
                 }, { providerOrigin: 'remote', ...(onAccepted ? { onAccepted } : {}) })
@@ -919,18 +947,62 @@ export class AgentService {
         }
         break
       }
+      case 'open_widget_input_request': {
+        if (!respond) break
+        const projectPath = this.resolveRemoteProjectPath(command.projectPath, command.sessionId)
+        if (!projectPath || !this.canAccessSession(projectPath, command.sessionId)) {
+          await respond(command.requestId, { ok: false, error: { code: 'not_found', message: 'The session is not available' } })
+          break
+        }
+        const session = this.findSessionBySid(projectPath, command.sessionId)
+        await respond(command.requestId, composerOpenResult(() => openWidgetInputRequest(session, { ...command, projectPath, output: 'agent' })))
+        break
+      }
+      case 'composer_open': {
+        if (!respond) break
+        const projectPath = this.resolveRemoteProjectPath(command.projectPath, command.sessionId)
+        if (!projectPath || !this.canAccessSession(projectPath, command.sessionId)) {
+          await respond(command.requestId, { ok: false, error: { code: 'not_found', message: 'The session is not available' } })
+          break
+        }
+        const session = this.findSessionBySid(projectPath, command.sessionId)
+        await respond(command.requestId, openComposerForm({ kind: 'device', id: deviceId }, command, output =>
+          openWidgetInputRequest(session, { projectPath, sessionId: command.sessionId, messageId: command.messageId, spec: command.spec, output })))
+        break
+      }
+      case 'composer_cancel':
+        cancelComposerForms({ kind: 'device', id: deviceId }, command.viewId, command.localId)
+        break
+      case 'composer_outcome':
+        await respond?.(command.requestId, composerFormOutcome({ kind: 'device', id: deviceId }, command.inputRequestId))
+        break
       case 'respond_permission': {
+        // Callers that `request` it learn whether the answer settled the prompt; a form
+        // rejected for missing or invalid values stays open. `send` callers ignore this.
+        const reply = (handled: boolean, error?: string) =>
+          respond?.(command.requestId, handled ? { handled } : { handled, ...(error ? { error } : {}) })
         const projectPath = this.resolveRemoteProjectPath(command.projectPath, command.sessionId)
         if (!projectPath) {
           log.warn('[AgentService] respond_permission: missing projectPath and no subscribed session for sid=%s requestId=%s', command.sessionId, command.requestId)
+          await reply(false, 'The session is not available')
           break
         }
         if (!this.canAccessSession(projectPath, command.sessionId)) {
           log.warn('[AgentService] %s', this.buildSessionAccessError(projectPath, command.sessionId))
+          await reply(false, 'The session is not available')
           break
         }
         const agent = this.findSessionBySid(projectPath, command.sessionId)
-        if (agent) {
+        if (agent && isInputRequestId(command.requestId)) {
+          const result = answerInputRequest(agent.id, command.requestId, {
+            allow: command.decision,
+            ...(command.formAnswers ? { formAnswers: command.formAnswers } : {}),
+          })
+          if (result.ok) {
+            this.publishSyntheticEvent({ type: 'interaction_resolved', interactionType: 'permission', requestId: command.requestId, projectPath, sessionId: command.sessionId })
+          }
+          await reply(result.ok, result.ok ? undefined : result.error)
+        } else if (agent) {
           const handled = agent.respondToPermission(
             command.requestId,
             command.decision,
@@ -945,8 +1017,10 @@ export class AgentService {
           } else {
             log.warn('[AgentService] respond_permission: request %s not found for session %s', command.requestId, command.sessionId)
           }
+          await reply(handled, handled ? undefined : 'This prompt is no longer open')
         } else {
           log.warn('[AgentService] respond_permission: no agent for session %s', command.sessionId)
+          await reply(false, 'The session is not available')
         }
         break
       }
@@ -2032,6 +2106,7 @@ export class AgentService {
           requestId: command.requestId,
           sessionId: command.sessionId,
           targetDir: command.targetDir,
+          ...(command.inputRequest ? { inputRequest: command.inputRequest } : {}),
           name: command.name,
           mimeType: command.mimeType,
           size: command.size,
@@ -2822,6 +2897,38 @@ export class AgentService {
       this.throwIfRemoteLocked(session.snapshot.projectPath)
       await session.dispatchBackendCommand({ kind: 'claude.stop_task', taskId })
       return true
+    })
+
+    ipcMain.handle(AgentIpcChannels.OPEN_WIDGET_INPUT_REQUEST, (_event, input: { projectPath: string; sessionId: string; messageId: string; spec: unknown }) => {
+      const session = this.sessionManager?.getSession(input.sessionId)
+      if (session) this.throwIfRemoteLocked(session.snapshot.projectPath)
+      return composerOpenResult(() => openWidgetInputRequest(session, { ...input, output: 'agent' }))
+    })
+
+    // The trusted container names the source; the frame supplies only the spec and output.
+    ipcMain.handle(AgentIpcChannels.COMPOSER_OPEN, (event, request: import('@superone/shared/agent-types').ComposerOpenRequest) => {
+      const client = this.composerWindow(event.sender)
+      const source = request.source
+      return openComposerForm(client, request, (output) => {
+        if (source.kind === 'widget') {
+          return openWidgetInputRequest(this.sessionManager?.getSession(source.sessionId), {
+            projectPath: source.projectPath, sessionId: source.sessionId, messageId: source.messageId, spec: request.spec, output,
+          })
+        }
+        if (!this.openMiniAppForm) throw new InputRequestOpenError('unsupported', 'Mini-app forms are unavailable')
+        return this.openMiniAppForm({
+          appId: source.appId,
+          projectDir: source.projectDir,
+          ...(source.sessionId ? { sessionId: source.sessionId } : {}),
+          spec: request.spec,
+          output,
+        })
+      })
+    })
+    ipcMain.handle(AgentIpcChannels.COMPOSER_AWAIT, (event, requestId: string) =>
+      awaitComposerForm({ kind: 'window', id: event.sender.id }, requestId))
+    ipcMain.handle(AgentIpcChannels.COMPOSER_CANCEL, (event, viewId: string, localId?: string) => {
+      cancelComposerForms({ kind: 'window', id: event.sender.id }, viewId, localId)
     })
 
     ipcMain.handle(AgentIpcChannels.PERMISSION_RESPONSE, (_event, sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>) => {
@@ -4218,6 +4325,10 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.GET_REALTIME_TIMELINE)
     ipcMain.removeHandler(AgentIpcChannels.STOP_TASK)
     ipcMain.removeHandler(AgentIpcChannels.PERMISSION_RESPONSE)
+    ipcMain.removeHandler(AgentIpcChannels.OPEN_WIDGET_INPUT_REQUEST)
+    ipcMain.removeHandler(AgentIpcChannels.COMPOSER_OPEN)
+    ipcMain.removeHandler(AgentIpcChannels.COMPOSER_AWAIT)
+    ipcMain.removeHandler(AgentIpcChannels.COMPOSER_CANCEL)
     ipcMain.removeHandler(AgentIpcChannels.SET_PERMISSION_MODE)
     ipcMain.removeHandler(AgentIpcChannels.SET_SESSION_SETTINGS)
     ipcMain.removeHandler(AgentIpcChannels.SET_SESSION_API_PROVIDER)

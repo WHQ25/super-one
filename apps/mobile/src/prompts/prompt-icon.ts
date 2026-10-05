@@ -3,7 +3,7 @@ import type { PermissionRequest } from '@superone/shared/agent-types'
 import type { PendingPrompt } from '../pending-prompt-state'
 
 const kindIcons: Record<NonNullable<PermissionRequest['requestKind']>, LucideIcon> = {
-  mcp_elicitation: Plug, video_gen_confirm: Video, config_confirm: Settings2,
+  input_request: FilePenLine, mcp_elicitation: Plug, video_gen_confirm: Video, config_confirm: Settings2,
   session_agents_confirm: Bot, computer_use_grant: Monitor, session_cleanup_confirm: Trash2,
   automation_confirm: CalendarClock, webmcp_trust_confirm: Globe, device_control_confirm: Smartphone,
   terminal_command_confirm: Terminal, folder_trust: FolderLock,

@@ -279,6 +279,7 @@ function OverlayPopover({
         <MiniAppWebview
           ref={webviewRef}
           appId={state.appId}
+          projectDir={state.projectDir}
           src={state.templateUrl}
           onMessage={handleMessage}
           className="block w-full border-0"

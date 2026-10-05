@@ -1,3 +1,6 @@
+import type { SuperOneComposerOpenOptions, SuperOneComposerOutcome, SuperOneComposerSpec } from './composer-api'
+export type { SuperOneComposerOpenOptions, SuperOneComposerOutcome, SuperOneComposerSpec } from './composer-api'
+
 export interface SuperOneThemeVars {
   [key: string]: string
 }
@@ -60,9 +63,21 @@ export interface SuperOneNodeBridge {
   onMessage(handler: (message: unknown) => void): () => void
 }
 
+export interface SuperOneComposerApi {
+  /**
+   * Opens a form in the host-bound session and waits for submission or cancellation.
+   * Defaults to caller: submitted values return here. Agent output sends the values
+   * to the session and returns submitted status. Invalid or unavailable forms reject.
+   * Closing/reloading this surface releases its caller forms. Agent-output forms
+   * remain in their session. Waiting for human input has no automatic timeout.
+   */
+  open(spec: SuperOneComposerSpec, options?: SuperOneComposerOpenOptions): Promise<SuperOneComposerOutcome>
+}
+
 export interface SuperOne {
   readonly version: string
   readonly node: SuperOneNodeBridge
+  readonly composer: SuperOneComposerApi
   locale: {
     get(): SuperOneLocale
     onChange(callback: (locale: SuperOneLocale) => void): () => void

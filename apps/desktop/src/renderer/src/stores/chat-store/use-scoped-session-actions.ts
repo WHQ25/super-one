@@ -9,6 +9,7 @@ import type {
   QuestionAnnotations,
   SandboxMode,
 } from '@superone/shared/agent-types'
+import type { SchemaFormValue } from '@superone/shared/schema-form'
 import { useChatStore } from './index'
 import { useSessionScope } from './session-scope'
 
@@ -56,6 +57,7 @@ export function useScopedSessionActions() {
     togglePlanModeShortcut: s.togglePlanModeShortcut,
     // Interaction replies and turn control
     respondToPermission: s.respondToPermission,
+    sendInputRequest: s.sendInputRequest,
     answerQuestion: s.answerQuestion,
     dismissQuestion: s.dismissQuestion,
     respondToPlanApproval: s.respondToPlanApproval,
@@ -97,6 +99,7 @@ export function useScopedSessionActions() {
         decision?: 'cancel',
         formAnswers?: Record<string, unknown>,
       ) => actions.respondToPermission(requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers, target),
+      sendInputRequest: (requestId: string, values: Record<string, SchemaFormValue>) => actions.sendInputRequest(requestId, values, target),
       answerQuestion: (requestId: string, answers: Record<string, string>, annotations?: QuestionAnnotations) =>
         actions.answerQuestion(requestId, answers, annotations, target),
       dismissQuestion: (requestId: string) => actions.dismissQuestion(requestId, target),

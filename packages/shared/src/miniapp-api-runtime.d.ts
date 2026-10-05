@@ -1,4 +1,4 @@
-import type { SuperOne, SuperOneLocale } from './miniapp-author-api'
+import type { SuperOne, SuperOneComposerApi, SuperOneLocale } from './miniapp-author-api'
 
 export type {
   SuperOneLocale as MiniAppLocale,
@@ -18,6 +18,7 @@ export interface MiniAppTransport {
 }
 
 export function createSuperoneApi(transport: MiniAppTransport, version: string, opts?: { initialLocale?: SuperOneLocale }): SuperOne
+export function createComposerApi(transport: Pick<MiniAppTransport, 'send' | 'on'>): SuperOneComposerApi
 export function startSuperoneResize(transport: MiniAppTransport): void
 export function installSuperoneMediaProbe(transport: MiniAppTransport): void
 export function startSuperoneReady(transport: MiniAppTransport): void

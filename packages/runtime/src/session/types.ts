@@ -102,7 +102,7 @@ export interface TranscriptBlock extends MessageDisplayFields {
   createdAt: number
 }
 
-export interface PendingInteraction extends Pick<PermissionRequest, 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist'> {
+export interface PendingInteraction extends Pick<PermissionRequest, 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist' | 'inputRequest'> {
   interactionId: string
   kind: 'permission' | 'question' | 'plan' | 'session_agents_confirm'
   toolName?: string

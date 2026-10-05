@@ -51,7 +51,7 @@ const BROWSER_ACT_PREFIX = 'browser_'
 const COMPUTER_PREFIX = 'computer_'
 
 /**
- * Node-local SuperOne tools (personal browser memory and session collaboration).
+ * Node-local SuperOne tools (personal browser memory, session collaboration, input forms).
  * Never advertised as Host Actions — remote agents call them in-process on the node.
  */
 export const NODE_LOCAL_SUPERONE_TOOL_NAMES = [
@@ -66,6 +66,7 @@ export const NODE_LOCAL_SUPERONE_TOOL_NAMES = [
   'session_collab_start',
   'session_collab_send',
   'session_collab_retrieve',
+  'composer_request',
 ] as const
 
 export type NodeLocalSuperoneToolName = (typeof NODE_LOCAL_SUPERONE_TOOL_NAMES)[number]

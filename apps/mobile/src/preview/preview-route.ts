@@ -1,4 +1,4 @@
-import type { HarnessId } from '@superone/shared/agent-types'
+import type { HarnessId, Locale } from '@superone/shared/agent-types'
 import { isKnownEffortLevel } from '@superone/shared/effort-labels'
 import { HARNESS_DEFAULT_BRAND_HUE } from '@superone/shared/harness-brand'
 import { nativeScenarios } from './scenarios'
@@ -25,12 +25,15 @@ export function parsePreviewRoute(raw: string) {
     if (!Object.hasOwn(HARNESS_DEFAULT_BRAND_HUE, harness)) return null
     const theme = url.searchParams.get('theme') ?? 'light'
     if (theme !== 'light' && theme !== 'dark') return null
+    const locale = url.searchParams.get('locale')
+    if (locale !== null && locale !== 'en' && locale !== 'zh') return null
+    const language: { locale?: Locale } = locale ? { locale } : {}
     const scenarioId = url.searchParams.get('scenario')
     const pageName = url.searchParams.get('page')
     if (scenarioId && pageName) return null
     if (scenarioId) {
       const scenario = nativeScenarios.find((item) => item.id === scenarioId)
-      return scenario ? { kind: 'scenario' as const, scenario, harness: harness as HarnessId, theme: theme as 'light' | 'dark' } : null
+      return scenario ? { kind: 'scenario' as const, scenario, harness: harness as HarnessId, theme: theme as 'light' | 'dark', ...language } : null
     }
     if (pageName) {
       const page = shellPreviewPages.find((item) => item === pageName)
@@ -39,7 +42,7 @@ export function parsePreviewRoute(raw: string) {
       // every reload — the two Claude easter eggs above all.
       const effort = url.searchParams.get('effort')
       if (effort && !isKnownEffortLevel(effort)) return null
-      return { kind: 'shell' as const, page, harness: harness as HarnessId, theme: theme as 'light' | 'dark', effort: effort ?? undefined }
+      return { kind: 'shell' as const, page, harness: harness as HarnessId, theme: theme as 'light' | 'dark', effort: effort ?? undefined, ...language }
     }
     return null
   } catch { return null }

@@ -3,6 +3,8 @@ import { COMPOSER_IDS, type BuiltinComposerId, type ComposerId } from './resolve
 import type { DecisionQueueItem } from './decision-queue'
 import { ChatComposerShell } from '../ChatComposerShell'
 import { DecisionComposer } from '../DecisionComposer'
+import { InputRequestComposer } from '../InputRequestComposer'
+import type { PermissionRequest } from '@superone/shared/agent-types'
 import { RealtimeCallComposer } from '../RealtimeCallComposer'
 import { McpAppConsentComposer } from '@/components/mcp-apps/McpAppConsent'
 import { useHasMcpAppConsent } from '@/components/mcp-apps/consent-store'
@@ -89,6 +91,7 @@ export interface ComposerRenderOptions {
   microphoneShortcutEnabled: boolean
   decision?: DecisionQueueItem | null
   appConsent?: PendingMcpConsent
+  appInput?: PermissionRequest | null
   openedComposer?: ComposerHandle | null
 }
 
@@ -97,6 +100,7 @@ type ComposerFactory = (sessionId: string, options: ComposerRenderOptions) => Re
 const composerRegistry: Record<BuiltinComposerId, ComposerFactory> = {
   decision: (_sessionId, options) => <DecisionComposer item={options.decision} />,
   'app-consent': (sessionId, options) => <McpAppConsentComposer sessionId={sessionId} pending={options.appConsent} />,
+  'app-input': (_sessionId, options) => <InputRequestComposer request={options.appInput} />,
   voice: (_sessionId, options) => (
     <RealtimeCallComposer microphoneShortcutEnabled={options.microphoneShortcutEnabled} />
   ),

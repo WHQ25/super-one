@@ -4,15 +4,58 @@
  * Types only — `@superone/shared/miniapp-host-api` has no runtime `default`
  * export, so always `import type`. A value import fails at runtime.
  */
+import type { SuperOneComposerOpenOptions, SuperOneComposerOutcome, SuperOneComposerSpec } from './composer-api'
+
+export type * from './composer-api'
+
 export interface SuperOneMiniAppDisposable {
   dispose(): void | Promise<void>
+}
+
+/** A session that invoked this app, as SuperOne identified it. */
+export interface SuperOneMiniAppSessionRef {
+  readonly sessionId: string
+}
+
+/** Trusted facts about one tool call, supplied by SuperOne rather than the caller's arguments. */
+export interface SuperOneMiniAppToolContext {
+  /** The session whose agent called the tool. */
+  readonly session: SuperOneMiniAppSessionRef
+  readonly callId: string
+  /** Aborted when the call ends without a result, e.g. after its 120-second limit. */
+  readonly signal: AbortSignal
 }
 
 export interface SuperOneMiniAppTools {
   handle(
     name: string,
-    handler: (args: Record<string, unknown>) => unknown | Promise<unknown>,
+    handler: (args: Record<string, unknown>, ctx: SuperOneMiniAppToolContext) => unknown | Promise<unknown>,
   ): SuperOneMiniAppDisposable
+}
+
+/** Kept for existing apps; the same as `SuperOneComposerSpec`. */
+export type SuperOneMiniAppInputRequestSpec = SuperOneComposerSpec
+/** Kept for existing apps; the same as `SuperOneComposerOutcome`. */
+export type SuperOneMiniAppInputRequestOutcome = SuperOneComposerOutcome
+
+export interface SuperOneMiniAppComposerOpenOptions extends SuperOneComposerOpenOptions {
+  /** Defaults to the only session this app is open in; pass `ctx.session` from a tool call. */
+  session?: SuperOneMiniAppSessionRef
+  /** Closes the form when aborted, e.g. `ctx.signal`. */
+  signal?: AbortSignal
+}
+
+export interface SuperOneMiniAppComposer {
+  /**
+   * Shows a form in a session's composer and resolves with the user's answer.
+   * `caller` output (the default) returns the values only to this app; `agent`
+   * output sends them to the session's agent as a user message and resolves
+   * `{ status: 'submitted' }`. There is no deadline, so do not await it inside a
+   * tool handler past the call's 120-second limit: start it, return, and handle the
+   * outcome later — or pass `ctx.signal` to close the form with the call.
+   * Local desktop sessions only. Rejects when the form is invalid or cannot be shown.
+   */
+  open(spec: SuperOneComposerSpec, options?: SuperOneMiniAppComposerOpenOptions): Promise<SuperOneComposerOutcome>
 }
 
 export interface SuperOneMiniAppWebview {
@@ -98,6 +141,7 @@ export interface SuperOneMiniAppContext {
   readonly tools: SuperOneMiniAppTools
   readonly webview: SuperOneMiniAppWebview
   readonly agent: SuperOneMiniAppAgentApi
+  readonly composer: SuperOneMiniAppComposer
   readonly host: SuperOneMiniAppHostApi
   readonly locale: SuperOneMiniAppLocaleApi
   readonly subscriptions: SuperOneMiniAppDisposable[]

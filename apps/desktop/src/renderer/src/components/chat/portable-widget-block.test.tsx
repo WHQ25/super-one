@@ -1,8 +1,11 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { fireEvent, render, waitFor } from '@testing-library/react'
+import { act } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import { PortableToolRow } from '@superone/chat-view/PortableToolRow'
+import { installHostBridge } from '@superone/chat-view/bridge'
+import { TurnMessageIdContext } from '@superone/chat-view/portable-turn-context'
 import { buildWidgetSrcdoc, widgetThemeVars } from '@superone/shared/generative-ui/widget-srcdoc'
 
 /**
@@ -37,6 +40,53 @@ function renderWidgetRow(props: { result?: string; status?: 'streaming' | 'compl
 }
 
 describe('code widget on the phone', () => {
+  it('keeps composer completion separate from the short opening receipt', async () => {
+    vi.useFakeTimers()
+    const disconnect = installHostBridge(() => {}), host = vi.spyOn(window.parent, 'postMessage')
+    try {
+      const { container } = render(<TurnMessageIdContext.Provider value="assistant-1"><PortableToolRow
+        toolName="mcp__superone__widget_show" toolUseId="widget-1" input={widgetResult()} result={widgetResult()} status="complete"
+      /></TurnMessageIdContext.Provider>)
+      const frame = container.querySelector('iframe')!.contentWindow!, reply = vi.spyOn(frame, 'postMessage')
+      host.mockClear()
+      const spec = { title: 'Notes', requestedSchema: { type: 'object', properties: { notes: { type: 'string' } } } }
+      act(() => window.dispatchEvent(new MessageEvent('message', { source: frame, data: { type: 'widget-composer-open', id: 'call', spec } })))
+      const native = host.mock.calls.find(([message]) => message?.action === 'composerOpen')![0]
+      expect(native.payload).toEqual({ viewId: expect.any(String), localId: 'call', messageId: 'assistant-1', output: 'caller', spec })
+      act(() => window.dispatchEvent(new MessageEvent('message', { data: { type: 'nativeActionResult', requestId: native.requestId, result: { ok: true, requestId: 'form' } } })))
+      await vi.advanceTimersByTimeAsync(180_000)
+      expect(reply.mock.calls.filter(([message]) => message?.type === 'widget-composer-result')).toEqual([])
+      act(() => window.dispatchEvent(new MessageEvent('message', { data: { type: 'composerSettled', viewId: 'foreign', localId: 'call', outcome: { status: 'submitted', values: { notes: 'wrong' } } } })))
+      expect(reply.mock.calls.filter(([message]) => message?.type === 'widget-composer-result')).toEqual([])
+      act(() => window.dispatchEvent(new MessageEvent('message', { data: { type: 'composerSettled', viewId: native.payload.viewId, localId: 'call', outcome: { status: 'submitted', values: { notes: 'answer' } } } })))
+      await Promise.resolve()
+      expect(reply).toHaveBeenCalledWith({ type: 'widget-composer-result', id: 'call', outcome: { status: 'submitted', values: { notes: 'answer' } } }, '*')
+    } finally { disconnect(); host.mockRestore(); vi.useRealTimers() }
+  })
+  it.each([undefined, 'Host refused this form'])('opens forms through the native bridge and replies only to its own iframe (%s)', async error => {
+    const disconnect = installHostBridge(() => {})
+    const host = vi.spyOn(window.parent, 'postMessage')
+    try {
+      const { container } = render(<TurnMessageIdContext.Provider value="assistant-1"><PortableToolRow
+        toolName="mcp__superone__widget_show" toolUseId="widget-1" input={widgetResult()} result={widgetResult()} status="complete"
+      /></TurnMessageIdContext.Provider>)
+      const frame = container.querySelector('iframe')!.contentWindow!
+      const reply = vi.spyOn(frame, 'postMessage')
+      host.mockClear()
+      const spec = { title: 'Notes', requestedSchema: { type: 'object', properties: { notes: { type: 'string' } } } }
+      window.dispatchEvent(new MessageEvent('message', { source: window, data: { type: 'widget-requestInput', requestId: 'foreign', spec } }))
+      expect(host).not.toHaveBeenCalled()
+      window.dispatchEvent(new MessageEvent('message', { source: frame, data: { type: 'widget-requestInput', requestId: 'own', spec } }))
+      await waitFor(() => expect(host).toHaveBeenCalledWith(expect.objectContaining({ type: 'requestNative', action: 'requestInput', payload: { messageId: 'assistant-1', spec } }), '*'))
+      const request = host.mock.calls.find(([message]) => message?.action === 'requestInput')![0]
+      window.dispatchEvent(new MessageEvent('message', { data: { type: 'nativeActionResult', requestId: request.requestId, ...(error ? { error } : { result: { ok: true } }) } }))
+      await waitFor(() => expect(reply).toHaveBeenCalledWith({ type: 'widget-input-result', requestId: 'own', ...(error ? { error } : {}) }, '*'))
+    } finally {
+      disconnect()
+      host.mockRestore()
+    }
+  })
+
   it('mounts the widget in a sandboxed frame instead of a plain tool row', () => {
     const { container } = renderWidgetRow()
     const frame = container.querySelector('iframe')
@@ -79,6 +129,8 @@ describe('code widget on the phone', () => {
     // rather than falling back to the generic `superone · widget show` row.
     const { container } = renderWidgetRow({ status: 'streaming', result: undefined })
     expect(container.querySelector('iframe')).toBeNull()
+    expect(container.textContent).toContain('Generating widget…')
+    expect(container.textContent).not.toContain('widget show')
   })
 
   it('keeps the ordinary row for a failed call, which is the only one that says why', () => {
@@ -105,8 +157,6 @@ describe('code widget on the phone', () => {
         result={widgetResult({ templateId: 'composer-options' })}
       />,
     )
-    expect(container.textContent).toContain('Generating widget…')
-    expect(container.textContent).not.toContain('widget show')
     expect(container.querySelector('[aria-label="Update template"]')).not.toBeNull()
   })
 

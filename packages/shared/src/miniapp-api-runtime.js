@@ -11,6 +11,49 @@
  * @returns {object} The window.superone API object
  */
 
+/** Self-contained so the same composer client can be embedded in a sandboxed widget. */
+function createComposerApi(transport) {
+  const calls = new Map()
+  const prefix = typeof globalThis.crypto?.randomUUID === 'function'
+    ? globalThis.crypto.randomUUID() : Date.now().toString(36) + '-' + Math.random().toString(36).slice(2)
+  let sequence = 0
+  let disposed = false
+  transport.on('composer-result', (data) => {
+    const call = calls.get(data && data.id)
+    if (!call) return
+    calls.delete(data.id)
+    if (data.error) call.reject(new Error(String(data.error)))
+    else if (data.outcome && (data.outcome.status === 'submitted' || data.outcome.status === 'cancelled')) call.resolve(data.outcome)
+    else call.reject(new Error('Invalid composer result'))
+  })
+  if (typeof globalThis.addEventListener === 'function') {
+    globalThis.addEventListener('pagehide', () => {
+      disposed = true
+      if (calls.size) {
+        try { transport.send('composer-dispose', { ids: Array.from(calls.keys()) }) } catch (_) { /* host already went away */ }
+      }
+      for (const call of calls.values()) call.resolve({ status: 'cancelled', reason: 'owner_disposed' })
+      calls.clear()
+    }, { once: true })
+  }
+  return {
+    open(spec, options = {}) {
+      if (disposed) return Promise.resolve({ status: 'cancelled', reason: 'owner_disposed' })
+      if (!options || typeof options !== 'object' || Array.isArray(options)
+        || Object.keys(options).some(key => key !== 'output')) return Promise.reject(new Error('Invalid composer options'))
+      const output = options.output === undefined ? 'caller' : options.output
+      if (output !== 'caller' && output !== 'agent') return Promise.reject(new Error('Invalid composer output'))
+      if (calls.size >= 32) return Promise.reject(new Error('Too many pending input requests'))
+      const id = prefix + ':' + String(++sequence)
+      return new Promise((resolve, reject) => {
+        calls.set(id, { resolve, reject })
+        try { transport.send('composer-open', { id, spec, output }) }
+        catch (error) { calls.delete(id); reject(error) }
+      })
+    },
+  }
+}
+
 // eslint-disable-next-line no-unused-vars
 function createSuperoneApi(transport, version, opts) {
   const darkModeListeners = []
@@ -121,6 +164,7 @@ function createSuperoneApi(transport, version, opts) {
 
   return {
     version: version || '0.0.0',
+    composer: createComposerApi(transport),
     node: {
       postMessage(message) { transport.send('miniapp-node-post-message', { payload: message }) },
       onMessage(handler) {
@@ -319,7 +363,7 @@ function startSuperoneReady(transport) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createSuperoneApi, startSuperoneResize, installSuperoneMediaProbe, startSuperoneReady }
+  module.exports = { createComposerApi, createSuperoneApi, startSuperoneResize, installSuperoneMediaProbe, startSuperoneReady }
 }
 
-export { createSuperoneApi, startSuperoneResize, installSuperoneMediaProbe, startSuperoneReady }
+export { createComposerApi, createSuperoneApi, startSuperoneResize, installSuperoneMediaProbe, startSuperoneReady }

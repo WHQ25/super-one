@@ -208,6 +208,18 @@ describe('generateSuperoneDts', () => {
   })
 })
 
+describe('shared composer types in generated declarations', () => {
+  it('inlines them once in place of the shared-file imports', () => {
+    for (const dts of [generateSuperoneDts(), generateHostDts()]) {
+      expect(dts).not.toContain('composer-api')
+      expect(dts.match(/interface SuperOneComposerSpec\b/g)).toHaveLength(1)
+      expect(dts.match(/type SuperOneComposerOutcome\b/g)).toHaveLength(1)
+    }
+    expect(generateHostDts()).toContain('export interface SuperOneComposerSpec')
+    expect(generateSuperoneDts()).not.toMatch(/^export (?!\{\})/m)
+  })
+})
+
 describe('generateHostDts', () => {
   it('covers MiniApp Host tools, state, and storage paths', () => {
     const dts = generateHostDts()

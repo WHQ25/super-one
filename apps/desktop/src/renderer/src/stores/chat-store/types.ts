@@ -38,6 +38,7 @@ import type {
   SubagentRetryInfo,
   TodoItem,
 } from '@superone/shared/agent-types'
+import type { SchemaFormValue } from '@superone/shared/schema-form'
 import type { BuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import type { ChatCoreSession } from '@superone/chat-core'
 import type { BrowserAnnotation } from './helpers/browser-annotation'
@@ -428,6 +429,7 @@ export interface ChatStore {
   ensureSession: (projectPath: string) => void
 
   sendMessage: (content: string, segments?: InputSegment[], explicitMentions?: Mention[], attachments?: ImageAttachment[], target?: SessionWriteTarget) => Promise<void>
+  sendInputRequest: (requestId: string, values: Record<string, SchemaFormValue>, target?: SessionWriteTarget) => Promise<boolean>
   approveCodexPlan: () => Promise<void>
   rejectCodexPlan: (feedback?: string) => Promise<void>
   interrupt: (target?: SessionWriteTarget) => Promise<void>

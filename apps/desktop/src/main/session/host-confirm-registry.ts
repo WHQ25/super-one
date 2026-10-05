@@ -22,7 +22,7 @@ export interface HostConfirmEmitter {
 interface PendingEntry<T> {
   resolve: (value: T) => void
   reject: (error: Error) => void
-  timer: ReturnType<typeof setTimeout>
+  timer?: ReturnType<typeof setTimeout>
   emitter: HostConfirmEmitter
   /** Detach the abort listener — a settled prompt must stop reacting to its turn ending. */
   unlisten?: () => void
@@ -31,8 +31,9 @@ interface PendingEntry<T> {
 export interface HostConfirmRegistryOptions {
   /** requestId namespace, e.g. `configconfirm` — descriptive only; routing is by map lookup. */
   idPrefix: string
-  timeoutMs: number
-  timeoutError: (requestId: string) => Error
+  /** Omit for prompts that wait for a human without a deadline, like harness permissions. */
+  timeoutMs?: number
+  timeoutError?: (requestId: string) => Error
 }
 
 export interface HostConfirmOpenOptions {
@@ -64,9 +65,9 @@ export class HostConfirmRegistry<T> {
 
     const requestId = `${this.options.idPrefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.fail(requestId, (options.timeoutError ?? this.options.timeoutError)(requestId))
-      }, this.options.timeoutMs)
+      const { timeoutMs } = this.options
+      const timeoutError = options.timeoutError ?? this.options.timeoutError ?? (() => new Error('Request timed out'))
+      const timer = timeoutMs === undefined ? undefined : setTimeout(() => this.fail(requestId, timeoutError(requestId)), timeoutMs)
 
       const entry: PendingEntry<T> = { resolve, reject, timer, emitter }
       if (options.signal) {

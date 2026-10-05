@@ -78,6 +78,8 @@ export function permissionSuggestionLabel(suggestion: Record<string, unknown>): 
 
 export function permissionSheetPresentation(request: PermissionRequest): PermissionSheetPresentation {
   switch (request.requestKind) {
+    case 'input_request':
+      return { title: request.inputRequest?.title ?? request.message ?? 'Input requested', description: request.inputRequest?.description, approveLabel: request.inputRequest?.submitLabel ?? 'Submit', denyLabel: 'Cancel', items: [] }
     case 'mcp_elicitation':
       return {
         title: request.message || `Allow ${request.serverName || genericToolName(request.toolName)}?`,

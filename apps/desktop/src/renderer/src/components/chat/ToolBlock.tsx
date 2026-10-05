@@ -56,6 +56,7 @@ import { ToolRendererFrame } from './ToolRendererFrame'
 import { getToolLabel, parseMcpToolName } from './tool-display'
 import { unwrapMcpResultText } from './presenters/tool-block-utils'
 import { useMcpServerIcon } from './use-mcp-server-icon'
+import { useWidgetInputs } from './use-widget-input-request'
 
 const McpAppView = lazy(() => import('../mcp-apps/McpAppView'))
 
@@ -285,6 +286,7 @@ function renderDesktopMiniAppTool(
 }
 
 export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
+  const { requestInput: onWidgetRequestInput, composerPorts: widgetComposerPorts } = useWidgetInputs(props.toolUseId)
   const { t } = useTranslation()
   const nestedDefaults = useNestedToolDefaults()
   const autoExpandFileDiffs = useAppStore((state) => state.autoExpandFileDiffs)
@@ -317,6 +319,8 @@ export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
     onWidgetInputComplete: ({ title, inputLength }) => {
       window.app.trace?.('widget.ui', 'input_complete_early', { title, inputLen: inputLength })
     },
+    onWidgetRequestInput,
+    widgetComposerPorts,
     renderBash: (bashProps) => <BashTerminalView {...bashProps} />,
     renderFileChip: (fileProps) => <FileChip {...fileProps} />,
     renderFileDiff: ({ toolName, params, isStreaming: diffStreaming, useCanvasEdit }) => {
@@ -340,7 +344,7 @@ export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
       showInFolder: (directory, filename) => window.app.showInFolder(directory, filename),
       t,
     }),
-  }), [cwd, homedir, mcpIconSrc, miniApps, stallLevel, streamingInputPreview, switchSession, t, toolInterceptState])
+  }), [cwd, homedir, mcpIconSrc, miniApps, stallLevel, streamingInputPreview, switchSession, t, toolInterceptState, onWidgetRequestInput, widgetComposerPorts])
 
   const renderRow = () => <ToolBlockPresenter
       {...props}

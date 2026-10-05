@@ -29,6 +29,27 @@ The mini-app preload is the privileged bridge, and it never reaches an arbitrary
 
 Agent tools are declared in `manifest.tools` and implemented with `context.tools.handle()` from `manifest.main`. MCP calls route directly to the MiniApp Host and never wait for a mounted WebView. The WebView and MiniApp Host communicate through `context.webview` / `window.superone.node` structured messages.
 
+Handlers receive trusted `ctx.session`, `ctx.callId` and abort `ctx.signal` as
+their second argument. Mini-app HTML and widgets use
+`window.superone.composer.open(spec, { output? })`; the Node Host keeps
+`context.composer.open(spec, { output?, session?, signal? })` with the same shared
+contract. Default caller output returns values; agent output sends a user
+message and returns submission status only. Only Node accepts session/signal;
+frontend identity comes from its container. An omitted session requires exactly
+one authorized holder; ambiguous or remote targets fail. Host and views share
+four live forms per app/session; see [api-host](../../src/main/mcp/guides/api/host.md).
+
+Reloading/closing a WebView cancels its caller forms; agent forms stay in the
+session. Host exit closes only forms opened by that Host. Standalone tool views
+that open a form stay mounted outside the viewport until transcript disposal.
+Main handles these forms independently of the renderer Host Action timer.
+
+Form waiting has no host deadline, but an awaited tool retains its fixed 120-second
+timeout, which aborts `ctx.signal`. For longer human
+waits, start the form without the call signal, return from the tool, and handle
+its promise separately. Existing Host Actions retain their 60-second deadline.
+Caller output returns only to the app; agent output never returns its values.
+
 **Capability split (VS Code-shaped):** host capabilities live Node-side on `context` — `agent.*` (prompt / context card), `host.toast / revealInFolder / openExternal / clipboard`, `locale`, `version` — so a background app can reach the user with no UI open. They execute in the renderer (`lib/miniapp-host-actions.ts`, mounted globally by `useMiniAppHostActions`), routed via `miniapp-host-action-bridge.ts`; main only addresses the request, so clipboard and external-link consent prompts are never bypassed. The WebView keeps only what needs DOM coordinates — `ui.showTooltip / showContextMenu / showPopover / startDrag` — plus theme, locale, and `superone.node`.
 
 **Adding a new mini-app bridge API:**

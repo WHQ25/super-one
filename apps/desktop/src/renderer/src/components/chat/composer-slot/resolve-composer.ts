@@ -1,4 +1,4 @@
-export const COMPOSER_IDS = ['decision', 'app-consent', 'voice', 'text'] as const
+export const COMPOSER_IDS = ['decision', 'app-consent', 'app-input', 'voice', 'text'] as const
 
 export type BuiltinComposerId = (typeof COMPOSER_IDS)[number]
 export type ComposerId = BuiltinComposerId | (string & {})
@@ -7,6 +7,7 @@ export interface ComposerInputs {
   needsDecision: boolean
   decisionAvailable?: boolean
   appConsent: boolean
+  appInput?: boolean
   voiceEngaged: boolean
   openedComposerId?: string | null
 }
@@ -16,11 +17,13 @@ export function resolveComposer({
   needsDecision,
   decisionAvailable = true,
   appConsent,
+  appInput,
   voiceEngaged,
   openedComposerId,
 }: ComposerInputs): ComposerId {
   if (needsDecision && decisionAvailable) return 'decision'
   if (appConsent) return 'app-consent'
+  if (decisionAvailable && appInput) return 'app-input'
   if (decisionAvailable && openedComposerId) return openedComposerId
   if (voiceEngaged) return 'voice'
   return 'text'

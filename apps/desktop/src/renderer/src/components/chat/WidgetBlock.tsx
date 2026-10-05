@@ -10,6 +10,7 @@ import { useChatStore } from '@/stores/chat'
 import { WidgetSaveDialog } from './WidgetSaveDialog'
 import { EmbeddedToolView } from '@superone/ui/components/ui/embedded-tool-view'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
+import { ComposerViewBridge, type ComposerViewPorts } from '@superone/shared/composer-view-bridge'
 
 const THROTTLE_MS = 150
 
@@ -124,11 +125,17 @@ function ShadowWidget({ html, isSVG }: { html: string; isSVG: boolean }) {
   )
 }
 
-function AutoIframe({ srcdoc, title, fallbackHeight, hidden, onReady }: {
+function AutoIframe({ srcdoc, title, fallbackHeight, hidden, onReady, onRequestInput, composerPorts }: {
   srcdoc: string; title: string; fallbackHeight: number; hidden?: boolean; onReady?: () => void
+  onRequestInput?: (spec: unknown) => Promise<void>
+  composerPorts?: ComposerViewPorts
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [height, setHeight] = useState(fallbackHeight)
+  const composer = useMemo(() => new ComposerViewBridge(composerPorts ?? {
+    open: async () => { throw new Error('Input requests are unavailable in this view.') }, release: () => {},
+  }), [composerPorts])
+  useLayoutEffect(() => { composer.reset(); return () => composer.dispose() }, [composer, srcdoc])
 
   const postTheme = useCallback(() => {
     iframeRef.current?.contentWindow?.postMessage(
@@ -148,8 +155,13 @@ function AutoIframe({ srcdoc, title, fallbackHeight, hidden, onReady }: {
       if (e.source !== iframeRef.current?.contentWindow) return
       const { data } = e
       if (!data?.type) return
+      const source = iframeRef.current?.contentWindow
+      if (typeof data.type === 'string' && composer.handle(data.type.replace(/^widget-/, ''), data, result => {
+        source?.postMessage({ ...result, type: 'widget-composer-result' }, '*')
+      })) return
       switch (data.type) {
         case 'widget-ready':
+          composer.reset()
           postTheme()
           break
         case 'widget-resize':
@@ -158,6 +170,19 @@ function AutoIframe({ srcdoc, title, fallbackHeight, hidden, onReady }: {
         case 'widget-sendPrompt':
           if (typeof data.text === 'string') useChatStore.getState().setDraftText(data.text)
           break
+        case 'widget-requestInput': {
+          if (typeof data.requestId !== 'string' || data.requestId.length > 128) break
+          const source = iframeRef.current?.contentWindow
+          const requestId = data.requestId
+          void (async () => {
+            try {
+              if (!onRequestInput) throw new Error('Input requests are unavailable in this view.')
+              await onRequestInput(data.spec)
+              source?.postMessage({ type: 'widget-input-result', requestId }, '*')
+            } catch (error) { source?.postMessage({ type: 'widget-input-result', requestId, error: error instanceof Error ? error.message : String(error) }, '*') }
+          })()
+          break
+        }
         case 'widget-openLink':
           if (typeof data.url === 'string') window.open(data.url, '_blank')
           break
@@ -168,7 +193,7 @@ function AutoIframe({ srcdoc, title, fallbackHeight, hidden, onReady }: {
     }
     window.addEventListener('message', handler)
     return () => window.removeEventListener('message', handler)
-  }, [postTheme])
+  }, [postTheme, onRequestInput, composer])
 
   const handleLoad = useCallback(() => {
     onReady?.()
@@ -192,6 +217,8 @@ function AutoIframe({ srcdoc, title, fallbackHeight, hidden, onReady }: {
 interface WidgetBlockProps {
   data: WidgetData
   streaming?: boolean
+  onRequestInput?: (spec: unknown) => Promise<void>
+  composerPorts?: ComposerViewPorts
 }
 
 function downloadWidget(srcdoc: string, title: string, e: { stopPropagation(): void }) {
@@ -205,7 +232,7 @@ function downloadWidget(srcdoc: string, title: string, e: { stopPropagation(): v
   URL.revokeObjectURL(url)
 }
 
-export function WidgetBlock({ data, streaming }: WidgetBlockProps) {
+export function WidgetBlock({ data, streaming, onRequestInput, composerPorts }: WidgetBlockProps) {
   const { t } = useTranslation()
   const displayCode = useThrottledValue(data.widget_code, streaming ? THROTTLE_MS : 0)
   const finalSrcdoc = useMemo(() => buildWidgetSrcdoc(data.widget_code, data.isSVG), [data.widget_code, data.isSVG])
@@ -257,6 +284,8 @@ export function WidgetBlock({ data, streaming }: WidgetBlockProps) {
           )}
           {mountIframe && (
             <AutoIframe
+              onRequestInput={onRequestInput}
+              composerPorts={composerPorts}
               srcdoc={finalSrcdoc}
               title={displayTitle}
               fallbackHeight={data.height}

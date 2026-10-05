@@ -27,11 +27,13 @@ vi.mock('@/components/miniapp/MiniAppWebview', () => ({
 
 class VisibleIntersectionObserver {
   constructor(callback: IntersectionObserverCallback) {
+    visibility = visible => callback([{ isIntersecting: visible } as IntersectionObserverEntry], this as never)
     queueMicrotask(() => callback([{ isIntersecting: true } as IntersectionObserverEntry], this as never))
   }
   observe() {}
   disconnect() {}
 }
+let visibility: (visible: boolean) => void
 
 function renderBlock(result?: string) {
   return render(
@@ -82,5 +84,12 @@ describe('StandaloneToolBlock WebView result lifecycle', () => {
       result: { ok: true, value: 2 },
       error: null,
     })
+  })
+
+  it('retains a composer caller when its tool scrolls outside the viewport', () => {
+    const { queryByTestId } = renderBlock()
+    act(() => (webviewProps.onComposerActivity as () => void)())
+    act(() => visibility(false))
+    expect(queryByTestId('webview')).not.toBeNull()
   })
 })

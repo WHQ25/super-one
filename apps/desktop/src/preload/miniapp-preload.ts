@@ -29,6 +29,9 @@ const transport: MiniAppTransport = {
 }
 
 ipcRenderer.on('miniapp-ui-contextmenu-result', (_e, data) => dispatchResponse(data))
+ipcRenderer.on('composer-result', (_e, data) => {
+  eventHandlers.get('composer-result')?.(data)
+})
 
 function dispatchResponse(data: Record<string, unknown>) {
   const key = `${data.type}:${data.id}`

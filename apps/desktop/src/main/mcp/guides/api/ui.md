@@ -10,6 +10,11 @@ Everything that needs no coordinates lives Node-side instead: `context.host.toas
 `context.agent.*` (see `api-agent`). To trigger one from here, send a message
 through `superone.node.postMessage(...)`.
 
+Session forms can be opened directly through
+`window.superone.composer.open(spec, { output? })`. Mini-app HTML and widgets
+share this API; the Node Host retains the same contract with extra trusted
+session/signal options. See session input forms in `api-host`.
+
 ## ui.showTooltip / ui.hideTooltip
 
 Show a host-rendered tooltip anchored to an element inside the WebView. Call `hideTooltip` when the element is no longer hovered.

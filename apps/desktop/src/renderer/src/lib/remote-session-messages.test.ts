@@ -129,6 +129,20 @@ describe('node pending question/plan + live drain helpers', () => {
     expect(nodeSnapshotNeedsLiveDrain({ status: 'streaming' })).toBe(true)
     expect(nodeSnapshotNeedsLiveDrain({ status: 'idle', pendingInteraction: null })).toBe(false)
   })
+
+  it('lists input forms after the harness prompt and keeps their metadata', () => {
+    const inputRequest = { title: 'Deploy', origin: { kind: 'agent' as const }, output: 'caller' as const }
+    const form = {
+      interactionId: 'f1', kind: 'permission' as const, requestKind: 'input_request', toolName: 'composer_request',
+      message: 'Deploy', inputRequest, ...elicitationFormRequest({ type: 'object', properties: { env: { type: 'string' } } }),
+    }
+    const fields = nodePendingInteractionFields({ interactionId: 'p1', kind: 'permission', toolName: 'Bash', input: {} }, [form])
+    expect(fields.pendingPermissions.map(p => p.requestId)).toEqual(['p1', 'f1'])
+    expect(fields.pendingPermissions[1]).toMatchObject({ requestKind: 'input_request', allowAlwaysAllow: false, inputRequest, schemaForm: { supported: true } })
+    expect(nodePendingInteractionFields(null, [form]).awaitingAssistantReply).toBe(true)
+    expect(nodeSnapshotNeedsLiveDrain({ status: 'idle', pendingInteraction: null, pendingInputRequests: [form] })).toBe(true)
+    expect(nodePendingInteractionFields(null, [{ ...form, inputRequest: undefined }]).pendingPermissions).toEqual([])
+  })
 })
 
 describe('transcript helpers', () => {

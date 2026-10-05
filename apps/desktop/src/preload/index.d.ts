@@ -46,6 +46,14 @@ interface AgentAPI {
   getRealtimeTimeline(projectPath: string, sessionId: string): Promise<RealtimeTimelineResult>
   stopTask(sessionId: string, taskId: string): Promise<boolean>
   respondToPermission(sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>): Promise<boolean>
+  /** Local sessions only: a completed widget message opens its `agent`-output form in the composer. */
+  openWidgetInputRequest(input: { projectPath: string; sessionId: string; messageId: string; spec: import('@superone/shared/input-request').InputRequestSpec }): Promise<import('@superone/shared/agent-types').OpenWidgetInputRequestResult>
+  /** Opens a mini-app or widget form; resolves once it is shown (or refused), not when it is answered. */
+  composerOpen(request: import('@superone/shared/agent-types').ComposerOpenRequest): Promise<import('@superone/shared/agent-types').ComposerOpenResult>
+  /** The answer to a form this window opened. No timeout; rejects at once for an unknown form or another window's form. */
+  composerAwait(requestId: string): Promise<import('@superone/shared/composer-api').SuperOneComposerOutcome>
+  /** Cancels one form of the view, or with no `localId` releases the view: its `caller` forms close, `agent` forms stay. */
+  composerCancel(viewId: string, localId?: string): Promise<void>
   setPermissionMode(projectPath: string, sessionId: string, mode: PermissionMode): Promise<boolean>
   /** `sessionId` targets one session (a mosaic pane, a side chat); omit it for the project's active session. */
   setSandboxMode(projectPath: string, mode: SandboxMode, sessionId?: string): Promise<SandboxInfo>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronLeft, CircleSlash } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
@@ -23,16 +23,28 @@ import { wasChatInputFocusedRecently } from '../chat/composer-slot/decision-comp
 import { numberedChoiceCount, pickNumberedChoice, SchemaFormFields } from './SchemaFormFields'
 import { NUMBERED_PICK_WAIT_MS, readNumberedPick, typeNumberedPick } from './numbered-pick'
 
+export interface SchemaFormComposerDraft {
+  values: SchemaFormValues
+  added: Map<string, SchemaFormResource[]>
+  stepIndex: number
+  touched: ReadonlySet<string>
+}
+
 export interface SchemaFormComposerProps {
   form: SchemaForm
   /** Who asked, for the unsupported notice. */
   requester: string
   onSubmit: (content: Record<string, SchemaFormValue>) => void
-  onDecline: () => void
+  onDecline?: () => void
   onCancel: () => void
   resources?: McpFormResourceActions
   /** False while the card is collapsed: answers are kept, keys go elsewhere. */
   active?: boolean
+  disabled?: boolean
+  submitLabel?: string
+  /** A request-owned draft survives a higher-priority composer taking this slot. */
+  draft?: SchemaFormComposerDraft
+  onDraftChange?: (draft: SchemaFormComposerDraft) => void
 }
 
 function isEditable(element: Element | null): element is HTMLElement {
@@ -52,21 +64,21 @@ function isEditable(element: Element | null): element is HTMLElement {
  * A form SuperOne cannot fully render is reported, never partially shown; the only
  * action left is to dismiss it, which tells the server the form was cancelled.
  */
-export function SchemaFormComposer({ form: requestedForm, requester, onSubmit, onDecline, onCancel, resources, active = true }: SchemaFormComposerProps) {
+export function SchemaFormComposer({ form: requestedForm, requester, onSubmit, onDecline, onCancel, resources, active = true, disabled = false, submitLabel, draft, onDraftChange }: SchemaFormComposerProps) {
   const { t } = useTranslation()
   const chatRootRef = useChatRootRef()
   const rootRef = useRef<HTMLDivElement>(null)
   const form = useMemo(() => schemaFormForResourceHost(requestedForm, Boolean(resources)), [requestedForm, resources])
-  const [added, setAdded] = useState(() => new Map<string, SchemaFormResource[]>())
+  const [added, setAdded] = useState(() => draft?.added ?? new Map<string, SchemaFormResource[]>())
   const [picking, setPicking] = useState(0)
   const fields = useMemo(() => form.supported ? form.fields.map(field => field.kind === 'resource' && added.has(field.name)
     ? { ...field, options: [...field.options, ...added.get(field.name)!.filter(option => !field.options.some(original => original.uri === option.uri))] } : field) : [], [form, added])
   const steps = useMemo(() => schemaFormSteps(fields), [fields])
-  const [stepIndex, setStepIndex] = useState(0)
+  const [stepIndex, setStepIndex] = useState(() => draft?.stepIndex ?? 0)
   const previousFocusStep = useRef(stepIndex)
   const step = steps[stepIndex] ?? []
   const lastStep = stepIndex >= steps.length - 1
-  const [values, setValues] = useState<SchemaFormValues>(() => initialSchemaFormValues(fields))
+  const [values, setValues] = useState<SchemaFormValues>(() => draft?.values ?? initialSchemaFormValues(fields))
   const resourceActions = useMemo<McpFormResourceActions | undefined>(() => resources && ({
     preview: resources.preview,
     pick: async field => {
@@ -79,7 +91,10 @@ export function SchemaFormComposer({ form: requestedForm, requester, onSubmit, o
     },
   }), [resources])
   // Errors appear per field once it is edited, and for a whole step when moving on fails.
-  const [touched, setTouched] = useState<ReadonlySet<string>>(() => new Set())
+  const [touched, setTouched] = useState<ReadonlySet<string>>(() => draft?.touched ?? new Set())
+  useLayoutEffect(() => {
+    onDraftChange?.({ values, added, stepIndex, touched })
+  }, [values, added, stepIndex, touched, onDraftChange])
   const errors = useMemo(() => validateSchemaForm(fields, values), [fields, values])
   const shownErrors = useMemo(
     () => Object.fromEntries(Object.entries(errors).filter(([name]) => touched.has(name))),
@@ -107,7 +122,7 @@ export function SchemaFormComposer({ form: requestedForm, requester, onSubmit, o
       && !Object.keys(validateSchemaForm(step, { ...values, [name]: value })).length) setStepIndex(stepIndex + 1)
   }
   const next = () => {
-    if (picking) return
+    if (!active || disabled || picking) return
     const invalid = step.filter(field => errors[field.name])
     if (invalid.length) return reveal(invalid.map(field => field.name))
     if (!lastStep) return setStepIndex(stepIndex + 1)
@@ -150,7 +165,7 @@ export function SchemaFormComposer({ form: requestedForm, requester, onSubmit, o
 
   const onKey = useRef<(event: KeyboardEvent) => void>(() => {})
   onKey.current = (event) => {
-    if (!active || event.defaultPrevented || event.isComposing) return
+    if (!active || disabled || event.defaultPrevented || event.isComposing) return
     const focused = document.activeElement
     if (!isFocusInChat(focused, chatRootRef?.current)) return
     const editing = isEditable(focused)
@@ -218,7 +233,7 @@ export function SchemaFormComposer({ form: requestedForm, requester, onSubmit, o
   }
 
   return (
-    <div ref={rootRef} tabIndex={-1} className="flex flex-col gap-3 outline-none focus-visible:shadow-none">
+    <div ref={rootRef} tabIndex={-1} inert={disabled || !active} aria-busy={disabled || picking > 0} className="flex flex-col gap-3 outline-none focus-visible:shadow-none">
       {steps.length > 1 && (
         <div className="flex items-center gap-2">
           <div className="flex flex-1 gap-1" aria-hidden>
@@ -245,9 +260,9 @@ export function SchemaFormComposer({ form: requestedForm, requester, onSubmit, o
           {pickField && <><Kbd className="tabular-nums">{typed ? `${typed}_` : 'num'}</Kbd>{t('chat.schemaForm.hintSelect')}<span className="opacity-40">·</span></>}
           {cancelHint}
         </span>
-        <PermissionActionButton tone="neutral" onClick={onDecline}>{t('chat.permission.decline')}</PermissionActionButton>
-        <PermissionActionButton tone="primary" disabled={picking > 0} onClick={next} kbd="↵">
-          {lastStep ? t('chat.schemaForm.submit') : t('chat.schemaForm.next')}
+        {onDecline && <PermissionActionButton tone="neutral" onClick={onDecline}>{t('chat.permission.decline')}</PermissionActionButton>}
+        <PermissionActionButton tone="primary" disabled={disabled || picking > 0} onClick={next} kbd="↵">
+          {lastStep ? submitLabel ?? t('chat.schemaForm.submit') : t('chat.schemaForm.next')}
         </PermissionActionButton>
       </div>
     </div>

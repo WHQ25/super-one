@@ -30,6 +30,38 @@ function ports(): NativeActionPorts {
 }
 
 describe('native chat actions', () => {
+  it('validates the unified composer output and forwards only trusted bridge fields', async () => {
+    const target = { ...ports(), composerOpen: vi.fn(async () => ({ ok: true as const, requestId: 'form' })) }
+    const spec = { title: 'Notes', requestedSchema: { type: 'object', properties: { notes: { type: 'string' } } } }
+    const message = { type: 'requestNative' as const, requestId: 'native', action: 'composerOpen', payload: {
+      viewId: 'view', localId: 'local', messageId: 'assistant', spec, sessionId: 'forged', output: 'caller',
+    } }
+    await expect(resolveNativeRequest(message, target)).resolves.toMatchObject({ result: { ok: true, requestId: 'form' } })
+    expect(target.composerOpen).toHaveBeenCalledExactlyOnceWith({ viewId: 'view', localId: 'local', messageId: 'assistant', spec, output: 'caller' })
+    await expect(resolveNativeRequest({ ...message, payload: { ...message.payload, output: 'other' } }, target)).resolves.toHaveProperty('error')
+    expect(target.composerOpen).toHaveBeenCalledTimes(1)
+  })
+  it('opens a validated widget form through the native host with its captured message', async () => {
+    const target = { ...ports(), requestInput: vi.fn(async () => {}) }
+    const spec = { title: 'Notes', requestedSchema: { type: 'object', properties: { notes: { type: 'string' } } } }
+    await expect(resolveNativeRequest({ type: 'requestNative', requestId: 'form', action: 'requestInput',
+      payload: { messageId: 'assistant-1', spec, sessionId: 'forged-session' },
+    }, target)).resolves.toMatchObject({ requestId: 'form', result: { ok: true } })
+    expect(target.requestInput).toHaveBeenCalledExactlyOnceWith('assistant-1', spec)
+    expect(target.setDraft).not.toHaveBeenCalled()
+  })
+
+  it('returns admission and host errors to the widget without opening an unsupported form', async () => {
+    const target = { ...ports(), requestInput: vi.fn(async () => { throw new Error('This widget already has a form.') }) }
+    await expect(resolveNativeRequest({ type: 'requestNative', requestId: 'invalid', action: 'requestInput',
+      payload: { messageId: 'assistant-1', spec: {} },
+    }, target)).resolves.toHaveProperty('error')
+    expect(target.requestInput).not.toHaveBeenCalled()
+    await expect(resolveNativeRequest({ type: 'requestNative', requestId: 'busy', action: 'requestInput',
+      payload: { messageId: 'assistant-1', spec: { title: 'Notes', requestedSchema: { type: 'object', properties: { notes: { type: 'string' } } } } },
+    }, target)).resolves.toMatchObject({ requestId: 'busy', error: 'This widget already has a form.' })
+  })
+
   it('routes Resend and Edit on a failed bubble to the shell', async () => {
     const target = ports()
     await expect(resolveNativeRequest({

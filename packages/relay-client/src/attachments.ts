@@ -1,4 +1,5 @@
 import type {
+  InputRequestUploadBinding,
   RemoteCommand,
   UploadFileCompleteResponse,
   UploadFileResponse,
@@ -18,6 +19,8 @@ export type UploadBytesOptions = {
   projectPath?: string
   sessionId?: string
   targetDir: string
+  /** Answers an input-request file field; the host chooses the directory. */
+  inputRequest?: InputRequestUploadBinding
   name: string
   mimeType: string
   bytes: Uint8Array
@@ -105,6 +108,7 @@ export async function uploadBytes(opts: UploadBytesOptions): Promise<string> {
     mimeType: opts.mimeType,
     size,
     ...(size <= INLINE_UPLOAD_MAX_BYTES ? { inlineBase64: bytesToBase64String(opts.bytes) } : {}),
+    ...(opts.inputRequest ? { inputRequest: opts.inputRequest } : {}),
   }
   const response = parseUploadResponse(await opts.request(command, 180_000))
   if (!response.ok || response.status === 'saved') {

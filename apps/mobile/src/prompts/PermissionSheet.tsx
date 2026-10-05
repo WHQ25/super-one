@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Linking, View } from 'react-native'
 import { Text } from '../ui/text'
 import type { HarnessId, RemoteSystemInfo, PermissionRequest } from '@superone/shared/agent-types'
-import { initialSchemaFormValues, schemaFormContent, schemaFormStepAdvancesOnPick, schemaFormSteps, validateSchemaForm, type SchemaFormValue, type SchemaFormValues } from '@superone/shared/schema-form'
+import { schemaFormContent } from '@superone/shared/schema-form'
 import { permissionSchemaForm, permissionSheetPresentation, permissionSuggestionLabel } from '../permission-sheet-state'
 import { permissionPromptTitle } from '../pending-prompt-state'
 import { permissionPromptIcon } from './prompt-icon'
@@ -15,6 +15,7 @@ import { editablePermission, editedPermissionAnswers, permissionEditsValid } fro
 import { showRememberPermission } from './prompt-content'
 import { monospace, usePromptStyles } from './styles'
 import { SchemaFormFields } from './SchemaFormFields'
+import { useSchemaFormState } from './use-schema-form-state'
 import { useMobileLocale } from '../i18n/context'
 import { useMobileTheme } from '../theme/context'
 
@@ -37,24 +38,16 @@ export function PermissionSheet(props: {
   const legacyForm = perm?.elicitationForm
   const form = useMemo(() => permissionSchemaForm({ schemaForm, elicitationForm: legacyForm }), [schemaForm, legacyForm])
   const fields = useMemo(() => (form?.supported ? form.fields : []), [form])
-  // A form is asked one step at a time, as on the desktop; see `schemaFormSteps`.
-  const steps = useMemo(() => schemaFormSteps(fields), [fields])
-  const [stepIndex, setStepIndex] = useState(0)
-  const step = steps[stepIndex] ?? []
-  const lastStep = stepIndex >= steps.length - 1
-  const [values, setValues] = useState<SchemaFormValues>({})
-  // Errors show per field once it is edited; the approve button stays off until all pass.
-  const [touched, setTouched] = useState<ReadonlySet<string>>(new Set())
+  const { stepIndex, setStepIndex, step, lastStep, values, errors: stepErrors, shownErrors, setField, steps } = useSchemaFormState(fields, perm?.requestId ?? '')
   const [feedback, setFeedback] = useState('')
   // Which remember choice is on: the prompt's "always" (project / persistent) or, for a
   // terminal command, the session-only lifetime. One at a time, like the desktop rows.
   const [remember, setRemember] = useState<'always' | 'session' | null>(null)
   const [suggestions, setSuggestions] = useState<Set<number>>(new Set())
   useEffect(() => {
-    setValues(initialSchemaFormValues(fields)); setStepIndex(0); setTouched(new Set()); setFeedback(''); setRemember(null); setSuggestions(new Set())
+    setFeedback(''); setRemember(null); setSuggestions(new Set())
   }, [fields, perm?.requestId])
   // Earlier steps were valid to move on, and only this step's fields can change.
-  const stepErrors = validateSchemaForm(step, values)
   if (!perm) return null
   const unsupportedForm = form && !form.supported ? form : null
   const presentation = permissionSheetPresentation(perm)
@@ -70,11 +63,6 @@ export function PermissionSheet(props: {
         : perm.requestKind === 'mcp_elicitation' ? schemaFormContent(fields, values)
           : editedPermissionAnswers(perm)
     props.onAllow(perm.requestId, formAnswers, allowRemember && remember === 'always', suggestions.size ? [...suggestions].sort((a, b) => a - b) : undefined)
-  }
-  const setField = (name: string, value: SchemaFormValue | undefined) => {
-    setValues((current) => ({ ...current, [name]: value })); setTouched((current) => new Set(current).add(name))
-    // Picking the one answer a step asks for moves on, except on the last step.
-    if (!lastStep && schemaFormStepAdvancesOnPick(step) && !Object.keys(validateSchemaForm(step, { ...values, [name]: value })).length) setStepIndex(stepIndex + 1)
   }
   const stepping = !lastStep && fields.length > 0
   const approveLabel = stepping ? 'Next' : allowRemember && remember === 'always' ? presentation.alwaysLabel!
@@ -106,7 +94,7 @@ export function PermissionSheet(props: {
       <Text style={[styles.meta, { fontFamily: monospace }]}>{unsupportedForm.field ? `${unsupportedForm.field}: ${unsupportedForm.reason}` : unsupportedForm.reason}</Text>
     </View> : fields.length ? <>
       {steps.length > 1 ? <StepProgress current={stepIndex} total={steps.length} /> : null}
-      <SchemaFormFields key={stepIndex} fields={step} values={values} errors={Object.fromEntries(Object.entries(stepErrors).filter(([name]) => touched.has(name)))} onChange={setField} />
+      <SchemaFormFields key={stepIndex} fields={step} values={values} errors={shownErrors} onChange={setField} />
     </> : null}
     {!perm.requestKind && perm.suggestions?.length ? <View style={styles.tight}>
       <Text style={styles.label}>{t('Permissions to remember')}</Text>

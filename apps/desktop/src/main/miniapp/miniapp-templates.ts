@@ -1,5 +1,6 @@
 import { MINIAPP_DEV_SERVER_FILE, type MiniAppManifest } from '@superone/shared/miniapp-types'
 import authorDts from '@superone/shared/miniapp-author-api.d.ts?raw'
+import composerDts from '@superone/shared/composer-api.d.ts?raw'
 import hostDts from '@superone/shared/miniapp-host-api.d.ts?raw'
 
 export interface GeneratedFile {
@@ -265,8 +266,15 @@ export async function deactivate() {}
 `
 }
 
+/** Generated files cannot reach `./composer-api`, so its declarations are inlined in place of imports and re-exports of it. */
+const COMPOSER_API_REFERENCE = /^(?:import|export) type (?:\{[^}]*\}|\*)(?: as \w+)? from '\.\/composer-api';?\n/gm
+
+function withComposerApi(dts: string): string {
+  return `${composerDts}\n${dts.replace(COMPOSER_API_REFERENCE, '')}`
+}
+
 export function generateSuperoneDts(): string {
-  const body = authorDts.replace(/^export /gm, '')
+  const body = withComposerApi(authorDts).replace(/^export /gm, '')
   return `${body}
 declare global {
   interface Window {
@@ -279,7 +287,7 @@ export {}
 }
 
 export function generateHostDts(): string {
-  return hostDts
+  return withComposerApi(hostDts)
 }
 
 export function slugify(name: string): string {

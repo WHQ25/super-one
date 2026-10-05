@@ -2171,6 +2171,12 @@ export const zh: Messages = {
       automationEnabledOff: '关',
       automationChangeFromTo: '{{from}} → {{to}}',
     },
+    inputRequest: {
+      originAgent: '智能体',
+      originWidget: '小组件',
+      submitFailed: '未能提交，请重试。',
+      tool: { waiting: '等待输入', submitted: '已提交输入', cancelled: '已取消输入', closed: '输入已结束', failed: '输入请求失败' },
+    },
     schemaForm: {
       submit: '提交',
       dismiss: '关闭',

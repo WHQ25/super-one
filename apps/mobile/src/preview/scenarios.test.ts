@@ -9,7 +9,10 @@ describe('native preview fixtures', () => {
     const permissions = nativeScenarios.filter((scenario) => scenario.category === 'Permissions')
     expect(permissions.some((scenario) => !scenario.request.requestKind)).toBe(true)
     const kinds = new Set(permissions.map((scenario) => scenario.request.requestKind).filter(Boolean))
-    expect([...kinds].sort()).toEqual(Object.keys(permissionExamples).sort())
+    expect([...kinds].sort()).toEqual(Object.keys(permissionExamples).filter(kind => kind !== 'input_request').sort())
+    const forms = nativeScenarios.filter(scenario => scenario.category === 'Input forms')
+    expect(forms.length).toBeGreaterThanOrEqual(6)
+    expect(forms.every(scenario => scenario.request.requestKind === 'input_request')).toBe(true)
     for (const scenario of permissions) {
       expect(permissionSheetPresentation(scenario.request).title).toBeTruthy()
     }

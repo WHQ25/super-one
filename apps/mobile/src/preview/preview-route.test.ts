@@ -5,6 +5,11 @@ it('opens a known offline fixture with deterministic theme and harness', () => {
   expect(parsePreviewRoute('superone://native-preview?scenario=permission%2Fedit-diff&theme=dark&harness=codex')).toMatchObject({ kind: 'scenario', scenario: { id: 'permission/edit-diff' }, theme: 'dark', harness: 'codex' })
 })
 
+it('opens native input forms in a requested language and rejects unknown locales', () => {
+  expect(parsePreviewRoute('superone-dev://native-preview?scenario=input/retry&theme=dark&locale=zh')).toMatchObject({ kind: 'scenario', scenario: { id: 'input/retry' }, locale: 'zh' })
+  expect(parsePreviewRoute('superone-dev://native-preview?scenario=input/default&locale=unknown')).toBeNull()
+})
+
 it('opens a named application-page fixture', () => {
   expect(parsePreviewRoute('superone://native-preview?page=New%20session&theme=light&harness=claude')).toEqual({ kind: 'shell', page: 'New session', theme: 'light', harness: 'claude' })
 })

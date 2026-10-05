@@ -342,6 +342,8 @@ type AppToolExecutor = (
   appId: string,
   toolName: string,
   args: Record<string, unknown>,
+  /** The invoking session, handed to the tool handler as trusted context. */
+  sessionId: string,
 ) => Promise<unknown>
 
 let appToolExecutor: AppToolExecutor | null = null
@@ -355,9 +357,17 @@ function executeInMiniAppHost(
   appId: string,
   toolName: string,
   args: Record<string, unknown>,
+  sessionId: string,
 ): Promise<unknown> {
   if (!appToolExecutor) throw new Error('Mini-app MiniApp Host is unavailable')
-  return appToolExecutor(projectDir, appId, toolName, args)
+  return appToolExecutor(projectDir, appId, toolName, args, sessionId)
+}
+
+/** Sessions in `projectDir` where `appId` is authorized — the trusted owners of its forms. */
+export function sessionsAuthorizingApp(projectDir: string, appId: string): string[] {
+  return [...appToolDefs.values()]
+    .filter(entry => entry.projectDir === projectDir && entry.appId === appId)
+    .map(entry => entry.sessionId)
 }
 
 /**
@@ -635,7 +645,7 @@ export async function executeStandaloneTool(
     }
   }
 
-  return executeInMiniAppHost(projectDir, appId, toolName, finalInput)
+  return executeInMiniAppHost(projectDir, appId, toolName, finalInput, sessionId)
 }
 
 export async function executeAppTool(
@@ -683,7 +693,7 @@ export async function executeAppTool(
     }
   }
 
-  return executeInMiniAppHost(projectDir, appId, toolName, finalInput)
+  return executeInMiniAppHost(projectDir, appId, toolName, finalInput, sessionId)
 }
 
 /**

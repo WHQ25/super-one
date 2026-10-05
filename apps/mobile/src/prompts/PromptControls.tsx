@@ -43,11 +43,12 @@ export function PromptPill({ label, selected, onPress, multi = false }: { label:
  */
 export type PromptActionsTone = 'decision' | 'submit'
 
-export function PromptActions({ onApprove, onReject, onBack, approveLabel, rejectLabel, disabled, tone = 'decision', feedback, children }: {
+export function PromptActions({ onApprove, onReject, onBack, approveLabel, rejectLabel, disabled, rejectDisabled, tone = 'decision', feedback, children }: {
   onApprove: () => void; onReject: () => void; approveLabel: string; rejectLabel: string
   /** A stepped prompt's way back, first in the action row; omit on the first step. */
   onBack?: () => void
   disabled?: boolean; tone?: PromptActionsTone
+  rejectDisabled?: boolean
   feedback?: { value: string; onChange: (text: string) => void; placeholder?: string }
   children?: ReactNode
 }) {
@@ -63,7 +64,7 @@ export function PromptActions({ onApprove, onReject, onBack, approveLabel, rejec
         <ChevronLeft size={18} color={colors.mutedForeground} />
       </Pressable> : null}
       <Action testID="prompt-approve" label={t(approveLabel)} icon={Check} onPress={onApprove} disabled={disabled} tone={tone === 'decision' ? 'approve' : 'primary'} />
-      <Action testID="prompt-reject" label={t(rejectLabel)} icon={X} onPress={onReject} tone={tone === 'decision' ? 'reject' : 'neutral'} />
+      <Action testID="prompt-reject" label={t(rejectLabel)} icon={X} onPress={onReject} disabled={rejectDisabled} tone={tone === 'decision' ? 'reject' : 'neutral'} />
     </View>
   </View>
 }

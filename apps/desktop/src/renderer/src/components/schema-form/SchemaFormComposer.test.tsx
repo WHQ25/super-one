@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createRef } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { parseSchemaForm } from '@superone/shared/schema-form'
-import { SchemaFormComposer } from './SchemaFormComposer'
+import { SchemaFormComposer, type SchemaFormComposerDraft } from './SchemaFormComposer'
 import type { McpFormResourceActions } from '@superone/shared/mcp-form-resources'
 import type { McpAppReadResult } from '@superone/shared/mcp-apps'
 import { ChatRootContext } from '../chat/is-focus-in-chat'
@@ -32,6 +32,25 @@ const REVIEW = {
 }
 
 describe('SchemaFormComposer', () => {
+  it('restores typed answers and the current step after a higher-priority prompt unmounts it', () => {
+    const form = parseSchemaForm({ type: 'object', required: ['notes', 'priority'], properties: {
+      notes: { type: 'string', title: 'Notes' },
+      priority: { type: 'string', title: 'Priority', enum: ['low', 'high'] },
+    } })
+    let draft: SchemaFormComposerDraft | undefined
+    const onDraftChange = (value: SchemaFormComposerDraft) => { draft = value }
+    const handlers = { onSubmit: vi.fn(), onCancel: vi.fn() }
+    const view = render(<div data-chat-root><SchemaFormComposer form={form} requester="agent" {...handlers} onDraftChange={onDraftChange} /></div>)
+    fireEvent.change(screen.getByLabelText(/Notes/), { target: { value: 'Keep this\nand this' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Next/ }))
+    view.unmount()
+    render(<div data-chat-root><SchemaFormComposer form={form} requester="agent" {...handlers} draft={draft} onDraftChange={onDraftChange} /></div>)
+    expect(screen.getByLabelText('Step 2 of 2')).toBeTruthy()
+    fireEvent.click(screen.getByRole('radio', { name: /high/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^Submit/ }))
+    expect(handlers.onSubmit).toHaveBeenCalledWith({ notes: 'Keep this\nand this', priority: 'high' })
+  })
+
   it('leaves recent composer focus alone on arrival, but focuses the next step after a user pick', () => {
     const root = createRef<HTMLDivElement>()
     const form = parseSchemaForm({ type: 'object', properties: {

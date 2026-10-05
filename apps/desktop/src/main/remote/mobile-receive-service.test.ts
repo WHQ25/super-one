@@ -53,6 +53,27 @@ describe('MobileReceiveService', () => {
     }
   })
 
+  it('writes a file bound to an input request into its host-chosen directory, ignoring targetDir', async () => {
+    const formDir = join(workspace, 'form', 'r', 'shot')
+    const resolveInputRequestUploadDir = vi.fn(() => formDir)
+    const bound = new MobileReceiveService(makeDeps({ resolveInputRequestUploadDir }))
+    const res = await bound.handleUploadFile({
+      requestId: 'f1', sessionId: 's1', targetDir: projectRoot, inputRequest: { requestId: 'r', field: 'shot' },
+      name: 'a.png', mimeType: 'image/png', size: 1, inlineBase64: Buffer.from('x').toString('base64'),
+    })
+    expect(resolveInputRequestUploadDir).toHaveBeenCalledWith('s1', { requestId: 'r', field: 'shot' }, 'a.png')
+    expect(res).toMatchObject({ ok: true, status: 'saved', savedPath: join(formDir, 'a.png') })
+  })
+
+  it('refuses a bound upload the form no longer asks for', async () => {
+    const bound = new MobileReceiveService(makeDeps({ resolveInputRequestUploadDir: () => { throw new Error('The form is no longer pending') } }))
+    const res = await bound.handleUploadFile({
+      requestId: 'f2', targetDir: projectRoot, inputRequest: { requestId: 'r', field: 'shot' },
+      name: 'a.png', mimeType: 'image/png', size: 1, inlineBase64: 'eA==',
+    })
+    expect(res).toEqual({ ok: false, error: 'forbidden_path', message: 'The form is no longer pending' })
+  })
+
   it('returns a LAN upload url for large files when reached over LAN (no R2)', async () => {
     const res = await service.handleUploadFile({
       requestId: 'r2', targetDir: projectRoot, name: 'big.bin', mimeType: 'application/octet-stream', size: 999999,

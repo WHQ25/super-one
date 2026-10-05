@@ -15,6 +15,7 @@ import { Text } from '../ui/text'
 import { useMobileTheme } from '../theme/context'
 import { useMobileLocale } from '../i18n/context'
 import { PromptInput, PromptPill } from './PromptControls'
+import { GrowingPromptInput } from './GrowingPromptInput'
 import { usePromptStyles } from './styles'
 
 type FieldOf<K extends SchemaFormField['kind']> = Extract<SchemaFormField, { kind: K }>
@@ -101,12 +102,13 @@ function Suggestions({ options, isActive, onPick }: { options: SchemaFormOption[
 
 const KEYBOARD: Partial<Record<string, KeyboardTypeOptions>> = { email: 'email-address', uri: 'url' }
 
-function TextField({ field, value, onChange }: { field: FieldOf<'text'>; value: SchemaFormValue | undefined; onChange: (value: SchemaFormValue | undefined) => void }) {
+function TextField({ field, value, onChange, disabled }: { field: FieldOf<'text'>; value: SchemaFormValue | undefined; onChange: (value: SchemaFormValue | undefined) => void; disabled?: boolean }) {
   const styles = usePromptStyles()
   const text = typeof value === 'string' ? value : ''
   const placeholder = field.format === 'date' ? 'YYYY-MM-DD' : field.format === 'date-time' ? '2026-01-31T09:00:00Z' : undefined
+  const Input = !field.format && !field.pattern && (field.maxLength === undefined || field.maxLength > 80) ? GrowingPromptInput : PromptInput
   return <View style={styles.tight}>
-    <PromptInput testID={`prompt-field-${field.name}`} accessibilityLabel={field.label} value={text} placeholder={placeholder}
+    <Input testID={`prompt-field-${field.name}`} accessibilityLabel={field.label} value={text} placeholder={placeholder} editable={!disabled}
       keyboardType={field.format ? KEYBOARD[field.format] : undefined} autoCapitalize={field.format ? 'none' : 'sentences'} autoCorrect={!field.format}
       maxLength={field.maxLength} onChangeText={(next) => onChange(next)} />
     {field.suggestions ? <Suggestions options={field.suggestions} isActive={(v) => v === text} onPick={(v) => onChange(v)} /> : null}
@@ -169,24 +171,35 @@ function ResourceRow({ resource, selected, multi, onPress }: { resource: SchemaF
       : <View style={[local.fileIcon, { backgroundColor: colors.muted, borderRadius: radius.sm }]}><FileText size={18} color={colors.mutedForeground} /></View>} />
 }
 
-function ResourceField({ field, value, onChange }: { field: FieldOf<'resource'>; value: SchemaFormValue | undefined; onChange: (value: SchemaFormValue | undefined) => void }) {
+function ResourceField({ field, value, onChange, onPickFiles, picking }: { field: FieldOf<'resource'>; value: SchemaFormValue | undefined; onChange: (value: SchemaFormValue | undefined) => void; onPickFiles?: (field: string) => Promise<SchemaFormResource[]>; picking?: boolean }) {
   const styles = usePromptStyles()
   const multi = field.selection !== 'single'
   const selected = multi ? asList(value) : typeof value === 'string' ? [value] : []
   const { t } = useMobileLocale()
-  if (!field.options.length) return <Text style={styles.meta}>{t('Nothing to choose from.')}</Text>
+  const pick = async () => {
+    const chosen = await onPickFiles?.(field.name)
+    if (!chosen?.length) return
+    onChange(multi ? [...new Set([...selected, ...chosen.map(resource => resource.uri)])] : chosen[0]!.uri)
+  }
   return <View style={local.list}>
+    {!field.options.length && !(field.userOptions?.kind === 'file' && onPickFiles) ? <Text style={styles.meta}>{t('Nothing to choose from.')}</Text> : null}
     {field.options.map((resource) => <ResourceRow key={resource.uri} resource={resource} multi={multi} selected={selected.includes(resource.uri)}
-      onPress={() => onChange(multi ? toggle(selected, resource.uri) : resource.uri)} />)}
+      onPress={() => onChange(multi ? toggle(selected, resource.uri) : selected.includes(resource.uri) ? undefined : resource.uri)} />)}
+    {field.userOptions?.kind === 'file' && onPickFiles ? <Pressable testID={`prompt-pick-${field.name}`} accessibilityRole="button" accessibilityLabel={t('Add files…')} accessibilityState={{ disabled: picking }} disabled={picking} onPress={() => { void pick() }} style={[styles.pill, styles.row]}>
+      <Plus size={16} /><Text style={styles.body}>{t('Add files…')}</Text>
+    </Pressable> : null}
   </View>
 }
 
 /** The phone renderer of a parsed schema form; `errors` are the ones the caller chose to show. */
-export function SchemaFormFields({ fields, values, errors, onChange }: {
+export function SchemaFormFields({ fields, values, errors, onChange, onPickFiles, picking, disabled }: {
   fields: readonly SchemaFormField[]
   values: SchemaFormValues
   errors: Record<string, SchemaFormError>
   onChange: (name: string, value: SchemaFormValue | undefined) => void
+  onPickFiles?: (field: string) => Promise<SchemaFormResource[]>
+  picking?: boolean
+  disabled?: boolean
 }) {
   const styles = usePromptStyles()
   const { tokens: { colors } } = useMobileTheme()
@@ -205,12 +218,12 @@ export function SchemaFormFields({ fields, values, errors, onChange }: {
         {field.description ? <Text style={styles.meta}>{field.description}</Text> : null}
         {field.kind === 'boolean' ? <Choices options={[{ value: 'true', label: t('Yes') }, { value: 'false', label: t('No') }]} multi={false}
           selected={typeof value === 'boolean' ? [String(value)] : []} onToggle={(v) => set(v === 'true')} />
-          : field.kind === 'text' ? <TextField field={field} value={value} onChange={set} />
+          : field.kind === 'text' ? <TextField field={field} value={value} onChange={set} disabled={disabled} />
           : field.kind === 'number' ? <NumberField field={field} value={value} onChange={set} />
             : field.kind === 'select' ? <Choices options={field.options} multi={false} selected={typeof value === 'string' ? [value] : []} onToggle={set} />
               : field.kind === 'multiselect' ? <Choices options={field.options} multi selected={asList(value)} onToggle={(v) => set(toggle(asList(value), v))} />
                 : field.kind === 'text-list' ? <TextListField field={field} value={value} onChange={set} />
-                  : <ResourceField field={field} value={value} onChange={set} />}
+                  : <ResourceField field={field} value={value} onChange={set} onPickFiles={onPickFiles} picking={picking || disabled} />}
         {error ? <Text style={[styles.meta, { color: colors.destructive }]}>{errorText(error)}</Text> : null}
       </View>
     })}

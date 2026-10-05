@@ -9,6 +9,7 @@ import {
 } from './permission-sheet-state'
 
 const kindSet = {
+  input_request: true,
   mcp_elicitation: true,
   video_gen_confirm: true,
   config_confirm: true,

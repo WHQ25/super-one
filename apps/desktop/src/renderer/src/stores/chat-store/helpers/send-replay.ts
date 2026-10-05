@@ -36,6 +36,9 @@ export interface UserSendDelivery<T> {
   retryState?: (s: PerSessionState) => Partial<PerSessionState>
   /** Extra state to settle once the send is known to have failed. */
   failureState?: (s: PerSessionState) => Partial<PerSessionState>
+  /** A rejected form may restore its input surface instead of keeping an immutable retry. */
+  onRejected?: (error: string) => boolean
+  retryable?: (error: string) => boolean
 }
 
 /**
@@ -49,10 +52,12 @@ export async function deliverUserSend<T>(delivery: UserSendDelivery<T>): Promise
     result = await delivery.deliver()
   } catch (err) {
     const error = unwrapIpcInvokeError(err instanceof Error ? err.message : String(err))
+    if (delivery.onRejected?.(error)) return
     patchSession((s) => ({
       ...reduceUserMessageSendFailed(s, { type: 'user_message_send_failed', clientMessageId: messageId, error }),
       ...delivery.failureState?.(s),
     }))
+    if (delivery.retryable?.(error) === false) { replays.delete(messageId); return }
     replays.set(messageId, async () => {
       patchSession((s) => ({
         messages: s.messages.map((m) => (m.id === messageId ? withoutSendFailure(m) : m)),

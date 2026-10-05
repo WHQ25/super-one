@@ -5,6 +5,9 @@ import { AgentIpcChannels } from '@superone/shared/agent-types'
 import type { MiniAppHostInfo, MiniAppHostLogEvent } from '@superone/shared/miniapp-types'
 import log from '../logger'
 import { closeMiniAppStatePaths, handleMiniAppStateRequest, type MiniAppStateOp, type MiniAppStateScope, type MiniAppStoragePaths } from './miniapp-state'
+import { admitInputRequestOutput, composerOutcome } from '@superone/shared/input-request'
+import { cancelInputRequest, type OpenedInputRequest } from '../session/input-requests'
+import type { MiniAppInputRequest } from './miniapp-input-requests'
 
 const TOOL_TIMEOUT_MS = 120_000
 const ACTION_TIMEOUT_MS = 60_000
@@ -37,6 +40,15 @@ export function setMiniAppHostActionRunner(runner: MiniAppHostActionRunner): voi
   runHostAction = runner
 }
 
+/** Shows `context.composer.open` forms. Main-handled: a human wait must not hit the host-action timeout. */
+export type MiniAppInputRequestOpener = (request: MiniAppInputRequest) => OpenedInputRequest
+
+let openInputRequest: MiniAppInputRequestOpener | null = null
+
+export function setMiniAppInputRequestOpener(opener: MiniAppInputRequestOpener): void {
+  openInputRequest = opener
+}
+
 interface PendingCall {
   resolve(value: unknown): void
   reject(error: Error): void
@@ -58,6 +70,8 @@ interface MiniAppHostInstance extends MiniAppHostStartArgs {
   rejectReady(error: Error): void
   statusText: string
   pending: Map<string, PendingCall>
+  /** The app's local form ids → host request ids, for `input-request-cancel`. */
+  inputRequests: Map<string, string>
 }
 
 let getMainWindow: (() => BrowserWindow | null) | null = null
@@ -69,6 +83,16 @@ const instances = new Map<string, MiniAppHostInstance>()
  * where staying down is the user's intent.
  */
 const restartArgs = new Map<string, MiniAppHostStartArgs>()
+
+/** Only this Host's forms: the app's WebView forms belong to their views. */
+function cancelHostInputRequests(instance: { inputRequests: Map<string, string> }): void {
+  for (const requestId of [...instance.inputRequests.values()]) cancelInputRequest(requestId, 'owner_disposed')
+}
+
+/** The display name of a running app, for forms its WebView opens. */
+export function miniAppHostName(projectDir: string, appId: string): string | undefined {
+  return instances.get(key(projectDir, appId))?.name
+}
 
 function key(projectDir: string, appId: string): string {
   return `${projectDir}::${appId}`
@@ -186,6 +210,36 @@ function handleMessage(instance: MiniAppHostInstance, raw: unknown): void {
         })
       return
     }
+    case 'input-request-open': {
+      const localId = String(message.localId ?? '')
+      const settle = (payload: Record<string, unknown>) => {
+        instance.inputRequests.delete(localId)
+        if (instance.alive) instance.process.postMessage({ type: 'input-request-settled', localId, ...payload })
+      }
+      try {
+        if (!openInputRequest) throw new Error('composer.open: forms are unavailable')
+        const output = admitInputRequestOutput(message.output)
+        if (!output) throw new Error('composer.open: "output" must be "caller" or "agent"')
+        const { requestId, outcome } = openInputRequest({
+          appId: instance.appId,
+          appName: instance.name,
+          projectDir: instance.projectDir,
+          ...(typeof message.sessionId === 'string' ? { sessionId: message.sessionId } : {}),
+          spec: message.spec,
+          output,
+        })
+        instance.inputRequests.set(localId, requestId)
+        void outcome.then(result => settle({ outcome: composerOutcome(output, result) }))
+      } catch (error) {
+        settle({ error: error instanceof Error ? error.message : String(error) })
+      }
+      return
+    }
+    case 'input-request-cancel': {
+      const requestId = instance.inputRequests.get(String(message.localId ?? ''))
+      if (requestId) cancelInputRequest(requestId, 'aborted')
+      return
+    }
     case 'status':
       instance.statusText = String(message.text ?? '').slice(0, 120)
       emitState()
@@ -236,6 +290,7 @@ export function startMiniAppHost(args: MiniAppHostStartArgs): MiniAppHostInfo {
     rejectReady,
     statusText: '',
     pending: new Map(),
+    inputRequests: new Map(),
   }
   instances.set(instanceKey, instance)
 
@@ -247,6 +302,7 @@ export function startMiniAppHost(args: MiniAppHostStartArgs): MiniAppHostInfo {
     emitDevLog(instance, 'error', error.message)
     if (!instance.ready) instance.rejectReady(error)
     rejectPending(instance, error.message)
+    cancelHostInputRequests(instance)
     instances.delete(instanceKey)
     closeMiniAppStatePaths(instance)
     emitState()
@@ -312,6 +368,7 @@ export function executeMiniAppTool(
   appId: string,
   tool: string,
   args: Record<string, unknown>,
+  sessionId?: string,
 ): Promise<unknown> {
   const instance = resolveRunningInstance(projectDir, appId)
   if (!instance) return Promise.reject(new Error(`MiniApp Host is not running for '${appId}'`))
@@ -321,10 +378,12 @@ export function executeMiniAppTool(
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         instance.pending.delete(callId)
+        // Fires the handler's `ctx.signal`, so work and forms bound to it stop too.
+        if (instance.alive) instance.process.postMessage({ type: 'tool-abort', callId })
         reject(new Error(`Mini-app tool timed out after ${TOOL_TIMEOUT_MS}ms: ${tool}`))
       }, TOOL_TIMEOUT_MS)
       instance.pending.set(callId, { resolve, reject, timer })
-      instance.process.postMessage({ type: 'tool-call', callId, tool, args })
+      instance.process.postMessage({ type: 'tool-call', callId, tool, args, ...(sessionId ? { session: { sessionId } } : {}) })
     })
   })
 }
@@ -388,6 +447,7 @@ export function stopMiniAppHost(projectDir: string, appId: string, options?: Min
   closeMiniAppStatePaths(instance)
   if (!instance.ready) instance.rejectReady(new Error(`Mini-app '${appId}' stopped`))
   rejectPending(instance, `Mini-app '${appId}' stopped`)
+  cancelHostInputRequests(instance)
   // A host stopped inside its spawn window has no pid to talk to yet; waiting
   // for 'spawn' is what keeps it from surviving as an orphan.
   if (instance.process.pid === undefined) instance.process.once('spawn', () => terminate(instance))

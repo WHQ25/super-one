@@ -1,4 +1,6 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { ComposerViewBridge } from '@superone/shared/composer-view-bridge'
+import { desktopComposerPorts } from '@/lib/composer-view-ports'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useBrowserStore } from '@/stores/browser'
 import { isDevAppEntry } from '@superone/shared/miniapp-types'
@@ -16,6 +18,11 @@ interface MiniAppWebviewProps {
   src: string
   className?: string
   style?: React.CSSProperties
+  /** Captured by the trusted container; never read from guest messages. */
+  projectDir?: string
+  sessionId?: string
+  /** Interactive standalone views must survive transcript visibility changes. */
+  onComposerActivity?: () => void
   onMessage?: (channel: string, data: Record<string, unknown>, send: (message: unknown) => void) => void
   /** Lets `browser_*` tools drive this view while the app is in development. */
   automation?: Omit<MiniAppTargetRegistration, 'appId'>
@@ -23,7 +30,7 @@ interface MiniAppWebviewProps {
 
 /** The only renderer container used for mini-app-owned HTML. */
 export const MiniAppWebview = forwardRef<MiniAppWebviewHandle, MiniAppWebviewProps>(
-  function MiniAppWebview({ appId, src, className, style, onMessage, automation }, ref) {
+  function MiniAppWebview({ appId, src, className, style, projectDir, sessionId, onComposerActivity, onMessage, automation }, ref) {
     const elementRef = useRef<Electron.WebviewTag>(null)
     const targetRef = useRef<MiniAppTargetHandle | null>(null)
     const isDevApp = useMiniAppStore((s) => s.apps.some((app) => app.id === appId && isDevAppEntry(app)))
@@ -33,6 +40,11 @@ export const MiniAppWebview = forwardRef<MiniAppWebviewHandle, MiniAppWebviewPro
     // queue instead of dropping the message into an unhandled rejection.
     const domReadyRef = useRef(false)
     const queueRef = useRef<unknown[]>([])
+    const composerProject = projectDir ?? automation?.projectDir
+    const composer = useMemo(() => new ComposerViewBridge(desktopComposerPorts(() => composerProject
+      ? { kind: 'miniapp', appId, projectDir: composerProject, ...(sessionId ? { sessionId } : {}) } : null)),
+    [appId, composerProject, sessionId])
+    useEffect(() => { composer.reset(); return () => composer.dispose() }, [composer])
 
     useEffect(() => {
       window.miniapp.getPreloadPath().then(setPreloadPath)
@@ -62,7 +74,12 @@ export const MiniAppWebview = forwardRef<MiniAppWebviewHandle, MiniAppWebviewPro
       const element = elementRef.current
       if (!element) return
       const handleIpcMessage = (event: Electron.IpcMessageEvent) => {
-        onMessage?.(event.channel, (event.args[0] ?? {}) as Record<string, unknown>, send)
+        const data = (event.args[0] ?? {}) as Record<string, unknown>
+        if (composer.handle(event.channel, data, send)) {
+          if (event.channel === 'composer-open') onComposerActivity?.()
+          return
+        }
+        onMessage?.(event.channel, data, send)
       }
       const handleDomReady = () => {
         domReadyRef.current = true
@@ -72,22 +89,25 @@ export const MiniAppWebview = forwardRef<MiniAppWebviewHandle, MiniAppWebviewPro
       }
       // A reload or in-app navigation tears the guest frame down; anything sent
       // before the next dom-ready would be lost, so re-arm the queue.
-      const handleStartLoading = () => {
+      const handleStartNavigation = (event: Electron.DidStartNavigationEvent) => {
+        if (!event.isMainFrame || event.isInPlace) return
+        composer.reset()
+        queueRef.current = []
         domReadyRef.current = false
         targetRef.current?.setReady(false)
       }
       const suppressContextMenu = (event: Event) => event.preventDefault()
       element.addEventListener('ipc-message', handleIpcMessage)
       element.addEventListener('dom-ready', handleDomReady)
-      element.addEventListener('did-start-loading', handleStartLoading)
+      element.addEventListener('did-start-navigation', handleStartNavigation)
       element.addEventListener('context-menu', suppressContextMenu)
       return () => {
         element.removeEventListener('ipc-message', handleIpcMessage)
         element.removeEventListener('dom-ready', handleDomReady)
-        element.removeEventListener('did-start-loading', handleStartLoading)
+        element.removeEventListener('did-start-navigation', handleStartNavigation)
         element.removeEventListener('context-menu', suppressContextMenu)
       }
-    }, [deliver, onMessage, preloadPath, send])
+    }, [composer, deliver, onComposerActivity, onMessage, preloadPath, send])
 
     const targetId = automation?.targetId
     const targetProjectDir = automation?.projectDir

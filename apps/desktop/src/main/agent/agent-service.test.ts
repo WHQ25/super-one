@@ -2335,6 +2335,32 @@ describe('AgentService.handleRemoteCommand', () => {
     })
   })
 
+  it('respond_permission answers a form request and keeps the form open on a rejected answer', async () => {
+    const { openInputRequest, clearInputRequestsForTests, isInputRequestId } = await import('../session/input-requests')
+    const { admitInputRequestSpec, inputRequestMeta } = await import('@superone/shared/input-request')
+    const admitted = admitInputRequestSpec({ title: 'Env', requestedSchema: { type: 'object', properties: { env: { type: 'string' } }, required: ['env'] } }, { userResources: true })
+    if (!admitted.ok) throw new Error(admitted.error)
+    const activeSession = makeMockSession({ id: 'sid-1', projectPath: '/p', respondToPermission: vi.fn(() => false) })
+    const service = new AgentService()
+    ;(service as { sessionManager: unknown }).sessionManager = { getActiveSession: vi.fn(() => activeSession), getSession: vi.fn(() => activeSession) }
+    ;(service as unknown as { broadcastEventToRenderer: (e: unknown) => void }).broadcastEventToRenderer = () => {}
+    service.setRemoteControlService({ getSubscribedSession: () => ({ projectPath: '/p', sessionId: 'sid-1' }), setRemoteSessionFilter: vi.fn(), clearRemoteSessionFilter: vi.fn() } as never)
+    const { requestId, outcome } = openInputRequest({ id: 'sid-1', emitHostEvent: () => {} }, { meta: inputRequestMeta(admitted.spec, { kind: 'agent' }, 'caller'), form: admitted.form })
+    const respond = vi.fn(async () => {})
+    try {
+      await service.handleRemoteCommand({ type: 'respond_permission', requestId, decision: true, sessionId: 'sid-1', projectPath: '/p' } as never, respond)
+      expect(respond).toHaveBeenLastCalledWith(requestId, { handled: false, error: 'The answer carries no form values' })
+      expect(isInputRequestId(requestId)).toBe(true)
+      await service.handleRemoteCommand({ type: 'respond_permission', requestId, decision: true, sessionId: 'sid-1', projectPath: '/p', formAnswers: { env: 'prod' } } as never, respond)
+      expect(respond).toHaveBeenLastCalledWith(requestId, { handled: true })
+      await expect(outcome).resolves.toEqual({ status: 'submitted', values: { env: 'prod' } })
+      await service.handleRemoteCommand({ type: 'respond_permission', requestId, decision: true, sessionId: 'sid-1', projectPath: '/p', formAnswers: { env: 'prod' } } as never, respond)
+      expect(respond).toHaveBeenLastCalledWith(requestId, { handled: false, error: 'This prompt is no longer open' })
+    } finally {
+      clearInputRequestsForTests()
+    }
+  })
+
   it('remote question and plan responses publish resolution events to mobile subscribers', async () => {
     const session = makeMockSession({
       id: 'sid-1',

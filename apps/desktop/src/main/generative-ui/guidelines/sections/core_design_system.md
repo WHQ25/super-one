@@ -65,5 +65,36 @@ A global function injected into every widget. Sends a message to chat as if the 
 ### openLink(url)
 Opens a URL in the system browser. Use for external references.
 
+### superone.composer.open(spec, options?)
+
+Opens a once-only form in the local session owning this completed widget:
+
+```js
+const result = await window.superone.composer.open({
+  title: 'Review notes',
+  requestedSchema: {
+    type: 'object', required: ['notes'],
+    properties: { notes: { type: 'string', title: 'Notes' } },
+  },
+})
+```
+
+This is the same frontend API as mini-app HTML. Default caller output waits for
+submission and returns `{ status: 'submitted', values }` only to this widget.
+Pass `{ output: 'agent' }` to send a normal user message instead; completion
+returns `{ status: 'submitted' }` without values. Cancel returns
+`{ status: 'cancelled', reason }` and sends nothing. Handle admission rejections
+in the widget. Options accept only output; the host supplies session/message.
+
+One live form per completed widget message is allowed. Closing/reloading the
+widget cancels its caller forms; agent forms remain in the session. Desktop and
+phone widgets backed by desktop-owned sessions share the API. Nested schemas,
+OpenAI previews, sticky forms and remote-node widget forms are unsupported.
+Keep local filtering/sorting in JavaScript.
+
+Legacy `window.requestInput(spec)` keeps agent output, opening-only
+acknowledgement and no values. Prefer `window.superone.composer.open` for new
+widgets.
+
 ### Links
 `<a href="https://...">` clicks are automatically intercepted and opened in the system browser. Or call `openLink(url)` directly from JS.

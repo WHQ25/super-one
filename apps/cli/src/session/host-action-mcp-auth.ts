@@ -5,6 +5,7 @@
  * `{ url, headers }` (and Codex `http_headers`) shapes stay identical.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto'
+import { SUPERONE_MCP_TOOL_TIMEOUT_SEC } from '@superone/shared/superone-mcp-timeouts'
 import { HOST_ACTION_MCP_NAME } from './host-action-mcp-core'
 
 export const SUPERONE_MCP_SESSION_HEADER = 'X-SuperOne-Session-Id'
@@ -41,6 +42,7 @@ export interface CodexSuperoneMcpConfig {
   url: string
   http_headers: Record<string, string>
   startup_timeout_sec: number
+  tool_timeout_sec: number
 }
 
 /** OpenCode `mcp.add` remote config. */
@@ -84,6 +86,7 @@ export function buildCodexSuperoneMcpConfig(
     url: base.url,
     http_headers: base.headers,
     startup_timeout_sec: SUPERONE_MCP_STARTUP_TIMEOUT_SEC,
+    tool_timeout_sec: SUPERONE_MCP_TOOL_TIMEOUT_SEC,
   }
 }
 

@@ -22,6 +22,14 @@ describe('resolveComposer', () => {
     expect(resolveComposer({ needsDecision: false, appConsent: false, voiceEngaged: true })).toBe('voice')
   })
 
+  it('places app input below decisions and consent but above native and voice modes', () => {
+    const inputs = { needsDecision: false, appConsent: false, appInput: true, voiceEngaged: true, openedComposerId: 'superone.image' }
+    expect(resolveComposer(inputs)).toBe('app-input')
+    expect(resolveComposer({ ...inputs, needsDecision: true })).toBe('decision')
+    expect(resolveComposer({ ...inputs, appConsent: true })).toBe('app-consent')
+    expect(resolveComposer({ ...inputs, decisionAvailable: false })).toBe('voice')
+  })
+
   it('keeps decisions and app consent above an explicitly opened mode', () => {
     const inputs = { needsDecision: false, appConsent: false, voiceEngaged: true, openedComposerId: 'superone.image' }
     expect(resolveComposer(inputs)).toBe('superone.image')

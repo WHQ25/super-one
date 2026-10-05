@@ -291,6 +291,7 @@ describe('standalone tool dispatch', () => {
       'weather',
       'forecast',
       { city: 'Tokyo' },
+      expect.any(String),
     )
     expect(JSON.parse(result.content[0].text)).toEqual({ ok: true, temp: 22 })
   })
@@ -299,7 +300,7 @@ describe('standalone tool dispatch', () => {
     registerAppToolsPreapproved(PROJ_A, PROJ_A, 'standalone-app', [makeStandaloneTool('do_thing')])
     await callMiniapp('standalone-app', 'do_thing', {})
 
-    expect(pluginExecutor).toHaveBeenCalledWith(PROJ_A, 'standalone-app', 'do_thing', {})
+    expect(pluginExecutor).toHaveBeenCalledWith(PROJ_A, 'standalone-app', 'do_thing', {}, expect.any(String))
     expect(sentMessages).toEqual([])
   })
 
@@ -355,6 +356,7 @@ describe('standalone tool dispatch', () => {
         'hitl-app',
         'confirm_increment',
         { by: 5 },
+        expect.any(String),
       )
       expect(JSON.parse(result.content[0].text)).toEqual({ ok: true, value: 5 })
     })
@@ -455,6 +457,7 @@ describe('tool handler rejects closed app', () => {
       'test-app',
       'do_thing',
       { x: 'hello' },
+      expect.any(String),
     )
     expect(result.content[0].text).toContain('"ok":true')
   })
@@ -551,6 +554,7 @@ describe('stdio SuperOne MCP tool surface', () => {
       'test-app',
       'do_thing',
       { x: 'hello' },
+      expect.any(String),
     )
     expect(result.content[0].text).toContain('"ok":true')
   })
@@ -569,6 +573,7 @@ describe('stdio SuperOne MCP tool surface', () => {
       'lazy-codex-app',
       'do_thing',
       { x: 'hi' },
+      expect.any(String),
     )
     expect(sentMessages).toEqual([])
     expect(result.content[0].text).toContain('"ok":true')
@@ -599,8 +604,8 @@ describe('clearSessionPendingCalls — cross-project isolation', () => {
       executeAppTool(PROJ_B, 'test-app', 'do_thing', { x: 'b' }),
     ])).resolves.toEqual([{ projectDir: PROJ_A }, { projectDir: PROJ_B }])
 
-    expect(pluginExecutor).toHaveBeenNthCalledWith(1, PROJ_A, 'test-app', 'do_thing', { x: 'a' })
-    expect(pluginExecutor).toHaveBeenNthCalledWith(2, PROJ_B, 'test-app', 'do_thing', { x: 'b' })
+    expect(pluginExecutor).toHaveBeenNthCalledWith(1, PROJ_A, 'test-app', 'do_thing', { x: 'a' }, expect.any(String))
+    expect(pluginExecutor).toHaveBeenNthCalledWith(2, PROJ_B, 'test-app', 'do_thing', { x: 'b' }, expect.any(String))
   })
 
   it('emits MINIAPP_TOOL_INTERCEPT_CLEAR with only this project\'s callIds', async () => {
@@ -644,6 +649,7 @@ describe('clearSessionPendingCalls — cross-project isolation', () => {
       'test-app',
       'confirm_action',
       { x: 'b', user: 'ok' },
+      expect.any(String),
     )
   })
 })
@@ -713,6 +719,7 @@ describe('executeAppTool with renderer.intercept', () => {
       'test-app',
       'confirm_action',
       { agent_field: 'from_agent', user_field: 'from_user' },
+      expect.any(String),
     )
     expect(result.content[0].text).toContain('"ok":true')
   })
@@ -760,6 +767,7 @@ describe('executeAppTool with renderer.intercept', () => {
       'test-app',
       'confirm_action',
       { only_user: 'yes' },
+      expect.any(String),
     )
   })
 

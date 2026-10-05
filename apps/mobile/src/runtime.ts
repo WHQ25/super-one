@@ -1,3 +1,9 @@
+import type { ChatRuntimeHooks, CreateSessionOptions, SessionWorktreeFacts, SystemInfo, SendMessageOptions } from './runtime-types'
+export type { ChatRuntimeHooks, CreateSessionOptions, SessionTranscriptCache, SessionWorktreeFacts, SystemInfo, SendMessageOptions } from './runtime-types'
+import { InputRequestSends } from './runtime-input-request-sends'
+import { localUserMessage } from './runtime-user-message'
+import { WidgetComposerClient } from './widget-composer-client'
+import { parseInputRequestError } from '@superone/shared/input-request'
 import { networkLedger } from './network-ledger'
 import { requestHarnessResource } from './harness-resource-cache'
 import { McpAppContextAttachments } from './mcp-app-context-attachments'
@@ -9,13 +15,11 @@ import type {
   AgentEvent,
   ChatMessage,
   CodexGoalStatus,
-  ContentBlock,
   HarnessId,
   QuestionAnnotations,
   ImageAttachment,
   PermissionRequest,
   RemoteCommand,
-  RemoteSystemInfo,
   SandboxInfo,
   SaveWidgetTemplateRequest,
   SavedWidgetTemplate,
@@ -31,81 +35,7 @@ import { newMessageId } from '@superone/shared/message-id'
 
 type SessionState = ReturnType<typeof createDefaultChatCoreSession>
 
-export type SessionTranscriptCache = {
-  get(pairingId: string, projectPath: string, sessionId: string): CachedTranscript | null
-  put(pairingId: string, projectPath: string, sessionId: string, transcript: CachedTranscript): void
-}
-
-export type ChatRuntimeHooks = {
-  onCachedHydrate?: () => void
-  onDetail?: (event: Extract<AgentEvent, { type: 'remote_detail' }>) => void
-  onSessionRecap?: (sessionId: string) => void
-  transcripts?: SessionTranscriptCache
-  pairingId?: () => string | null
-}
-
-export type SystemInfo = RemoteSystemInfo
-
-/** The worktree half of the restore snapshot, kept together so it updates atomically. */
-export type SessionWorktreeFacts = {
-  isWorktree: boolean
-  worktreePath: string | null
-  /** Branch recorded at creation; for a worktree session, the worktree's own. */
-  gitBranch: string | null
-}
-
 const NO_WORKTREE: SessionWorktreeFacts = { isWorktree: false, worktreePath: null, gitBranch: null }
-
-export type CreateSessionOptions = {
-  draftId?: string
-  draftLeaseId?: string
-  sandboxMode?: import('@superone/shared/agent-types').SandboxMode
-  /** Client-chosen id so the shell can leave the landing before the host answers. */
-  sessionId?: string
-  provider?: HarnessId
-  acpAgentId?: string
-  permissionMode?: string
-  effort?: string
-  model?: string
-  gitBranch?: string
-  worktreePath?: string
-  worktreeBranch?: string
-  worktreeMode?: 'branch' | 'attach' | 'detach'
-  worktreeBranchName?: string
-  worktreeCarryLocalChanges?: boolean
-  additionalDirectories?: string[]
-  /** ACP session mode picked on the draft. */
-  mode?: string
-  /** DeepSeek preset picked on the draft. */
-  agentPreset?: string
-  /** Credential the draft resolved to; `null` is the host default. */
-  apiProviderId?: string | null
-}
-
-/**
- * The bubble painted before the host echoes it. Shaped like the host's own
- * `buildUserMessage` (attachment blocks first, then the text) because the echo
- * is deduplicated away by id: whatever is drawn here is what stays, and a
- * reopened session must look the same.
- */
-function localUserMessage(id: string, text: string, images?: ImageAttachment[]): ChatMessage {
-  return {
-    id,
-    role: 'user',
-    status: 'complete',
-    content: [
-      ...(images ?? []).map((attachment): ContentBlock => (
-        attachment.mimeType === 'application/pdf'
-          ? { type: 'document', name: attachment.name, id: attachment.id }
-          : { type: 'image', name: attachment.name, id: attachment.id }
-      )),
-      { type: 'text', text },
-    ],
-    createdAt: new Date().toISOString(),
-    providerId: 'local',
-    ...(images?.length ? { attachments: images } : {}),
-  }
-}
 
 type SendMessageCommand = Extract<RemoteCommand, { type: 'send_message' }>
 
@@ -150,6 +80,7 @@ export class ChatRuntime {
    * memory like the desktop's: a failed bubble is not cached, so it and its
    * replay disappear together.
    */
+  readonly inputRequestSends = new InputRequestSends()
   private readonly failedSends = new Map<string, SendMessageCommand>()
   /** `create_session` is in flight: a staged turn reads "creating" rather than "sending". */
   private creating = false
@@ -157,15 +88,20 @@ export class ChatRuntime {
   /** Request ids the phone already answered, so a replayed `ask_user_question` cannot reopen the sheet. */
   private resolvedQuestionIds = new Set<string>()
   private resolvedPermissionIds = new Set<string>()
+  readonly widgetComposers: WidgetComposerClient
 
   constructor(
     private readonly client: RelayClient,
     private readonly onPaint: (session: SessionState, hydrate: boolean) => void,
     private readonly hooks: ChatRuntimeHooks = {},
-  ) {}
+  ) {
+    this.widgetComposers = new WidgetComposerClient(client, () => ({ projectPath: this.projectPath, sessionId: this.sessionId }),
+      result => this.hooks.onComposerResult?.(result))
+  }
 
   async open(projectPath: string, sessionId: string): Promise<void> {
     this.persistTranscript()
+    if (this.projectPath !== projectPath || this.sessionId !== sessionId) this.widgetComposers.releaseAll()
     this.projectPath = projectPath
     this.sessionId = sessionId
     this.appContexts.restore(undefined)
@@ -333,6 +269,7 @@ export class ChatRuntime {
 
   reopen(): Promise<void> {
     if (!this.projectPath || !this.sessionId) return Promise.resolve()
+    void this.widgetComposers.recover()
     return this.open(this.projectPath, this.sessionId)
   }
 
@@ -456,6 +393,8 @@ export class ChatRuntime {
   }
 
   dispose(): void {
+    this.widgetComposers.dispose()
+    this.inputRequestSends.clear()
     this.persistTranscript()
     this.restoreGeneration += 1
     if (this.timer) clearTimeout(this.timer)
@@ -488,21 +427,10 @@ export class ChatRuntime {
     })
   }
 
-  send(content: string, extra: {
-    collaborationMode?: string
-    images?: ImageAttachment[]; model?: string; effort?: string
-    /** OpenCode primary agent for this turn. */
-    agent?: string | null
-    /** Codex Fast service tier. */
-    serviceTier?: string | null
-    /** Cursor catalog params (param id → value). */
-    modelParams?: Record<string, string>
-    clientMessageId?: string
-    priority?: 'now' | 'next' | 'later'
-    /** Park then steer in one host command — composer Stair. */
-    steer?: 'now' | 'next'
-  } = {}): void {
+  send(content: string, extra: SendMessageOptions = {}): void {
     const clientMessageId = extra.clientMessageId ?? newMessageId('user')
+    const inputRequest = extra.inputRequest && this.session.pendingPermissions.find(request => request.requestId === extra.inputRequest!.requestId)
+    if (inputRequest) this.inputRequestSends.capture(clientMessageId, inputRequest)
     const cmd: SendMessageCommand = {
       type: 'send_message',
       sessionId: this.sessionId,
@@ -519,6 +447,7 @@ export class ChatRuntime {
         ? { modelParams: extra.modelParams }
         : {}),
       clientMessageId,
+      ...(extra.inputRequest ? { inputRequest: extra.inputRequest } : {}),
       ...(extra.priority ? { priority: extra.priority } : {}),
       ...(extra.steer ? { steer: extra.steer } : {}),
     }
@@ -529,6 +458,7 @@ export class ChatRuntime {
       : null
     this.session = {
       ...this.session,
+      ...(inputRequest ? { pendingPermissions: this.session.pendingPermissions.filter(request => request.requestId !== inputRequest.requestId) } : {}),
       _pendingSlashCommand: pendingSlashCommandFrom(content),
       // Same rule as the desktop composer: the boundary reducer drops this bubble
       // and the turn's blank reply instead of leaving "/compact" in the transcript.
@@ -553,9 +483,17 @@ export class ChatRuntime {
       const result = await this.client.request({ ...cmd, requestId: randomId() })
       const error = (result as { error?: string } | null)?.error
       if (error) throw new Error(error)
+      if (generation === this.restoreGeneration && cmd.clientMessageId) {
+        this.inputRequestSends.complete(cmd.clientMessageId)
+        if (cmd.inputRequest) { this.dirty = true; this.flush() }
+      }
     } catch (error) {
       if (generation !== this.restoreGeneration || !cmd.clientMessageId) return
-      this.failedSends.set(cmd.clientMessageId, cmd)
+      const errorText = error instanceof Error ? error.message : String(error)
+      const restored = this.inputRequestSends.reject(this.session, cmd.clientMessageId, errorText, cmd.priority === 'next')
+      if (restored) { this.session = { ...this.session, ...restored }; this.dirty = true; this.flush(); return }
+      if (!parseInputRequestError(errorText)) this.failedSends.set(cmd.clientMessageId, cmd)
+      else this.inputRequestSends.complete(cmd.clientMessageId)
       this.ingest([{
         type: 'user_message_send_failed',
         clientMessageId: cmd.clientMessageId,
@@ -854,7 +792,9 @@ export class ChatRuntime {
       ...(formAnswers ? { formAnswers } : {}),
     }
     this.client.send(cmd)
-    this.ingest([{ type: 'interaction_resolved', interactionType: 'permission', requestId }])
+    if (this.session.pendingPermissions.find(request => request.requestId === requestId)?.requestKind !== 'input_request') {
+      this.ingest([{ type: 'interaction_resolved', interactionType: 'permission', requestId }])
+    }
     this.flush()
   }
 
@@ -965,6 +905,15 @@ export class ChatRuntime {
 
   private apply(event: AgentEvent): void {
     if (event.sessionId && event.sessionId !== this.sessionId) return
+    if (event.type === 'user_message_send_failed') {
+      const queued = this.session.queuedMessages.some(message => message.id === event.clientMessageId)
+      const restored = this.inputRequestSends.reject(this.session, event.clientMessageId, event.error, queued)
+      if (restored) {
+        this.failedSends.delete(event.clientMessageId)
+        this.session = { ...this.session, ...restored }; this.dirty = true
+        return
+      }
+    }
     if (event.type === 'session_title_changed' && event.sessionId === this.sessionId) {
       this.sessionTitle = event.title
     }
@@ -1001,6 +950,7 @@ export class ChatRuntime {
   }
 
   private handleSideEvent(event: AgentEvent): boolean {
+    if (this.widgetComposers.consume(event)) return true
     if (event.type === 'remote_detail') {
       if (event.sessionId === this.sessionId) this.hooks.onDetail?.(event)
       return true

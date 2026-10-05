@@ -273,6 +273,7 @@ export { runCodexCommand } from './codex/runner'
 import { runCodexCommand } from './codex/runner'
 import { approveCodexPlanImpl, rejectCodexPlanImpl } from './codex/plan-actions'
 import { sendMessageImpl } from './helpers/send-message'
+import { sendInputRequestImpl } from './helpers/input-request-send'
 import { promoteDraftIfUnsent } from './helpers/draft-promote'
 import {
   clearMessagesImpl,
@@ -482,6 +483,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
 
   sendMessage: async (content, segments, explicitMentions, attachments, target) => sendMessageImpl(set, get, content, segments, explicitMentions, attachments, target),
 
+  sendInputRequest: async (requestId, values, target) => sendInputRequestImpl(set, get, requestId, values, target),
   approveCodexPlan: async () => approveCodexPlanImpl(set, get),
 
   rejectCodexPlan: async (feedback) => rejectCodexPlanImpl(set, get, feedback),

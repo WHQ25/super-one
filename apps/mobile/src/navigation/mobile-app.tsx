@@ -1,3 +1,5 @@
+import { openWidgetInputRequest } from '../widget-input-request'
+import { setComposerConnection } from '../widget-composer-client'
 import { findMcpAppAttachment } from '@superone/shared/mcp-apps-state'
 import { invokeModUi } from '../mod-ui'
 import { mobileModClientId } from '@superone/shared/mod-ui'
@@ -10,6 +12,7 @@ import type { AgentEvent, RemoteSystemInfo } from '@superone/shared/agent-types'
 import { invalidateGitResources, requestGitResource } from '../git-resource-cache'
 import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import { refreshSessionCatalog } from '../session-catalog-refresh'
+import { useNativeInputRequests } from './use-native-input-requests'
 import { useComposerSend } from './use-composer-send'
 import { useMcpAppFullscreen } from './use-mcp-app-fullscreen'
 import { useTranscriptSync } from './use-transcript-sync'
@@ -381,6 +384,16 @@ export function MobileApp() {
     showDraft: (title) => { setActiveSessionTitle(title); setScreen('chat') },
     showWorkspace: returnToWorkspace, onError: setStatus,
   })
+  const nativeInputs = useNativeInputRequests({
+    runtimeRef, clientRef, connected: connectionState === 'connected', pairingId: activePairingId,
+    projectPath: project?.path, sessionId,
+    sendOptions: {
+      model: selectedModel || undefined, effort: selectedEffort || undefined,
+      ...(selectedProvider === 'codex' ? { serviceTier: harnessSelection.serviceTier, collaborationMode: remoteDrafts.settings?.codexCollaborationMode ?? undefined } : {}),
+      ...(selectedProvider === 'opencode' ? { agent: harnessSelection.selectedAgentId } : {}),
+      modelParams: harnessSelection.modelParams,
+    },
+  })
   const remoteDraftsRef = useRef(remoteDrafts)
   remoteDraftsRef.current = remoteDrafts
   /**
@@ -475,7 +488,8 @@ export function MobileApp() {
       setConnectionState('connected')
       inject(webRef, { type: 'setConnection', ...connectionRef.current })
     }
-    const pending = runtime.session.pendingPermissions[0]
+    const surfaces = nativeInputs.sync(runtime)
+    const pending = surfaces.permission ?? surfaces.input
     const mentionArtworkRevision = dynamicMentionArtworkRevision()
     const includeMentionArtwork = hydrate || mentionArtworkRevision !== mentionArtworkRevisionRef.current
     const mentionArtwork = includeMentionArtwork ? dynamicMentionArtworkSnapshot() : undefined
@@ -534,8 +548,8 @@ export function MobileApp() {
         : { contextTokens: runtime.contextTokens, contextWindow: runtime.contextWindow, totalCostUsd: runtime.totalCostUsd }
     ))
     setRateLimit(runtime.session.rateLimitInfo)
-    setPerm(pending ?? null)
-    setPlan(runtime.session.pendingPlanApproval)
+    setPerm(surfaces.permission)
+    setPlan(surfaces.showPlan ? runtime.session.pendingPlanApproval : null)
     if (runtime.sessionTitle) {
       setActiveSessionTitle(runtime.sessionTitle)
       setSessions((current) => {
@@ -556,6 +570,18 @@ export function MobileApp() {
     }, 250)
   }
   const nativeActionPorts: NativeActionPorts = {
+    composerOpen: request => {
+      const runtime = runtimeRef.current
+      if (!runtime) return Promise.reject(new Error('No active session'))
+      return runtime.widgetComposers.open(request)
+    },
+    composerRelease: viewId => runtimeRef.current?.widgetComposers.release(viewId),
+    requestInput: async (messageId, spec) => {
+      const runtime = runtimeRef.current
+      const client = clientRef.current
+      if (!runtime || !client) throw new Error('No active session')
+      await openWidgetInputRequest(client, { projectPath: runtime.projectPath, sessionId: runtime.sessionId }, messageId, spec)
+    },
     subscribeDetail: async (detailRef, subscriptionId) => {
       const runtime = runtimeRef.current
       if (!runtime) throw new Error('no active session')
@@ -845,6 +871,7 @@ export function MobileApp() {
       },
       onTerminal: (payload) => termRuntimeRef.current?.ingest(payload),
       restore: async (activeClient) => {
+        setComposerConnection(activeClient, true)
         invalidateGitResources(activeClient)
         await remoteDraftsRef.current.reconnect().catch((error) => setStatus(error instanceof Error ? error.message : 'Could not restore drafts'))
         markHarnessResourcesStale(activeClient)
@@ -869,6 +896,7 @@ export function MobileApp() {
       currentEpoch: (activeClient) => runtimeRef.current?.epoch ?? activeClient.buffer.epoch,
       onConnection: (state, epoch) => {
         if (connectGeneration !== connectGenerationRef.current) return
+        setComposerConnection(client, state === 'connected')
         // A socket that was down missed every invalidation sent meanwhile.
         if (state === 'connected' && connectionRef.current?.state !== 'connected') {
           cache.invalidateAll()
@@ -1200,6 +1228,7 @@ export function MobileApp() {
     }, {
       onCachedHydrate: () => { if (runtimeRef.current === runtime) setSessionLoading(false) },
       onDetail: (event) => { if (runtimeRef.current === runtime) inject(webRef, { ...event, type: 'detailUpdate' }) },
+      onComposerResult: result => { if (runtimeRef.current === runtime) inject(webRef, { type: 'composerSettled', ...result }) },
       onSessionRecap: (sid) => autoRecap.markRecapShown(sid),
       transcripts: sessionTranscriptCache,
       pairingId: () => activePairingIdRef.current,
@@ -1241,6 +1270,7 @@ export function MobileApp() {
     systemInfoRequestRef.current++
     setSessionWorktree({ isWorktree: false, worktreePath: null, gitBranch: null, removed: false })
     setPerm(null)
+    nativeInputs.resetView()
     setPlan(null)
     promptCollapse.reset()
     setStreaming(false)
@@ -2250,7 +2280,8 @@ export function MobileApp() {
             })
           }}
           loadingConversation={sessionLoading || remoteDrafts.opening}
-          composerHidden={!!mcpApp.view && !mcpApp.composerOpen}
+          composerHidden={!!mcpApp.view && !mcpApp.composerOpen && !nativeInputs.slot}
+          inputComposer={nativeInputs.slot}
           // The tablet keeps the session list on screen, so it has nothing to
           // pull out and the gutter stays free for the transcript.
           onEdgeSwipe={mcpApp.view ? exitMcpAppFullscreen : tabletMultiPane ? undefined : () => setSessionSwitcherOpen(true)}

@@ -3,6 +3,7 @@
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { PortableToolRow } from '@superone/chat-view/PortableToolRow'
+import { PortableMessage } from '@superone/chat-view/PortableMessage'
 import { FileChip } from './FileChip'
 
 /**
@@ -234,6 +235,27 @@ describe('portable tool row', () => {
     expect(screen.getByText('Google home')).toBeInTheDocument()
     fireEvent.click(container.querySelector('.tool-node > div')!)
     expect(container.textContent).not.toContain('"include"')
+  })
+
+  it('marks a mixed browser snapshot with the same right-hand screenshot indicator on the phone', async () => {
+    const { container } = render(
+      <PortableMessage
+        message={{
+          id: 'browser-mixed', role: 'assistant', status: 'complete', providerId: 'claude', createdAt: '2026-10-05T00:00:00Z',
+          content: [
+            { type: 'tool_use', toolName: 'mcp__superone__browser_snapshot', toolUseId: 'shot', input: JSON.stringify({ include: ['meta', 'screenshot'], description: 'Inspect checkout' }), status: 'complete' },
+            { type: 'tool_result', toolUseId: 'shot', summary: JSON.stringify({ screenshot: { path: '/tmp/checkout.png' }, page: 'title: Checkout' }) },
+          ],
+        }}
+        scheme="light"
+        pendingPermission={null}
+      />,
+    )
+    await screen.findByLabelText('Screenshot')
+    const header = container.querySelector('.tool-node > div') as HTMLElement
+    expect(within(header).getByLabelText('Screenshot').closest('.ml-auto')).not.toBeNull()
+    fireEvent.click(header)
+    expect(await screen.findByText('Result')).toBeInTheDocument()
   })
 
   it('keeps a deferred Grep header from the pattern and does not dump args JSON', () => {

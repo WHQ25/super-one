@@ -16,9 +16,12 @@ import { parsePreviewRoute, type PreviewRoute, type ShellPreviewPage } from './p
 import { nativeScenarios, type NativeScenario } from './scenarios'
 import { ShellPreview } from './ShellPreview'
 import { ToolCatalogPreview } from './ToolCatalogPreview'
+import { InputRequestPreview } from './InputRequestPreview'
+import { MobileKeyboardFrame } from '../navigation/mobile-keyboard-frame'
+import { useMobileLocale } from '../i18n/context'
 
 type ThemeChoice = 'system' | MobileColorScheme
-const categories = ['All', 'Permissions', 'Plans'] as const
+const categories = ['All', 'Permissions', 'Plans', 'Input forms'] as const
 const harnesses = Object.keys(HARNESS_DEFAULT_BRAND_HUE) as HarnessId[]
 
 export default function NativePreviewApp() {
@@ -45,6 +48,7 @@ export default function NativePreviewApp() {
 
 function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme: (theme: ThemeChoice) => void; route: PreviewRoute | null }) {
   const { tokens, setHarness } = useMobileTheme()
+  const { locale, setLocale } = useMobileLocale()
   const { width, height, fontScale } = useWindowDimensions()
   const [harness, selectHarness] = useState<HarnessId>('claude')
   const [category, setCategory] = useState<typeof categories[number]>('All')
@@ -62,6 +66,7 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
     if (!route) return
     Keyboard.dismiss()
     setHarness(route.harness); selectHarness(route.harness)
+    if (route.locale) setLocale(route.locale)
     if (route.kind === 'shell') {
       setShellPreview(route.page)
       return
@@ -70,7 +75,7 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
     setCategory('All'); setSearch(route.scenario.id); setActions([])
     setSelected(route.scenario); setRevision((value) => value + 1); setVisible(true); setCollapsed(false)
     list.current?.scrollToOffset({ offset: 0, animated: false })
-  }, [route, setHarness])
+  }, [route, setHarness, setLocale])
   const styles = useMemo(() => {
     const { colors, spacing, radius, type } = tokens
     return StyleSheet.create({
@@ -119,7 +124,7 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
     initialEffort={route?.kind === 'shell' ? route.effort : undefined}
     onClose={() => setShellPreview(null)} onTheme={() => onTheme(tokens.scheme === 'dark' ? 'light' : 'dark')} />
   return (
-    <SafeAreaView style={styles.root}>
+    <MobileKeyboardFrame><SafeAreaView style={styles.root}>
       <StatusBar style={tokens.scheme === 'dark' ? 'light' : 'dark'} />
       <FlatList
         ref={list}
@@ -135,6 +140,9 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
           <Button label="Tool catalog" variant="secondary" onPress={() => setShellPreview('Tool catalog')} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
             {(['system', 'light', 'dark'] as const).map((value) => <Chip key={value} label={value} selected={theme === value} onPress={() => onTheme(value)} />)}
+          </ScrollView>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+            {(['en', 'zh'] as const).map(value => <Chip key={value} label={value} selected={locale === value} onPress={() => setLocale(value)} />)}
           </ScrollView>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
             {harnesses.map((value) => <Chip key={value} label={value} selected={harness === value} onPress={() => { selectHarness(value); setHarness(value) }} />)}
@@ -179,6 +187,7 @@ function NativeCatalog({ theme, onTheme, route }: { theme: ThemeChoice; onTheme:
         onApproveAndContinue={(id, mode) => record('approve-and-continue', { id, mode })}
         onReject={(id, feedback) => record('reject', { id, feedback })}
       /> : null}
-    </SafeAreaView>
+      {visible && selected?.category === 'Input forms' ? <InputRequestPreview key={revision} scenario={selected} onAction={record} /> : null}
+    </SafeAreaView></MobileKeyboardFrame>
   )
 }

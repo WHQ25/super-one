@@ -2069,6 +2069,12 @@ export type Messages = {
       automationChangeFromTo: string
     }
     /** Declarative forms (MCP elicitation, OpenAI extended forms). */
+    inputRequest: {
+      originAgent: string
+      originWidget: string
+      submitFailed: string
+      tool: { waiting: string; submitted: string; cancelled: string; closed: string; failed: string }
+    }
     schemaForm: {
       submit: string
       dismiss: string
@@ -6319,6 +6325,12 @@ export const en: Messages = {
       automationEnabledOn: 'on',
       automationEnabledOff: 'off',
       automationChangeFromTo: '{{from}} → {{to}}',
+    },
+    inputRequest: {
+      originAgent: 'Agent',
+      originWidget: 'Widget',
+      submitFailed: 'Could not submit. Please try again.',
+      tool: { waiting: 'Waiting for input', submitted: 'Input Submitted', cancelled: 'Input Cancelled', closed: 'Input Closed', failed: 'Input Request Failed' },
     },
     schemaForm: {
       submit: 'Submit',

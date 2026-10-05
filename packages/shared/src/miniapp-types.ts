@@ -236,6 +236,9 @@ export interface MiniAppContextData {
 }
 
 export type MiniAppBridgeMessageType =
+  | 'composer-open'
+  | 'composer-result'
+  | 'composer-dispose'
   | 'miniapp-node-post-message'
   | 'miniapp-node-message'
   | 'miniapp-theme'

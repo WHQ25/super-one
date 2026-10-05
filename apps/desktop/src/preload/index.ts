@@ -81,6 +81,15 @@ const agentAPI = {
   respondToPermission: (sessionId: string, requestId: string, allow: boolean, alwaysAllow?: boolean, reason?: string, selectedSuggestions?: number[], decision?: 'cancel', formAnswers?: Record<string, unknown>) =>
     ipcRenderer.invoke(AgentIpcChannels.PERMISSION_RESPONSE, sessionId, requestId, allow, alwaysAllow, reason, selectedSuggestions, decision, formAnswers) as Promise<boolean>,
 
+  openWidgetInputRequest: (input: { projectPath: string; sessionId: string; messageId: string; spec: import('@superone/shared/input-request').InputRequestSpec }) =>
+    ipcRenderer.invoke(AgentIpcChannels.OPEN_WIDGET_INPUT_REQUEST, input) as Promise<import('@superone/shared/agent-types').OpenWidgetInputRequestResult>,
+  composerOpen: (request: import('@superone/shared/agent-types').ComposerOpenRequest) =>
+    ipcRenderer.invoke(AgentIpcChannels.COMPOSER_OPEN, request) as Promise<import('@superone/shared/agent-types').ComposerOpenResult>,
+  composerAwait: (requestId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.COMPOSER_AWAIT, requestId) as Promise<import('@superone/shared/composer-api').SuperOneComposerOutcome>,
+  composerCancel: (viewId: string, localId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.COMPOSER_CANCEL, viewId, localId) as Promise<void>,
+
   setPermissionMode: (projectPath: string, sessionId: string, mode: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SET_PERMISSION_MODE, projectPath, sessionId, mode) as Promise<boolean>,
 

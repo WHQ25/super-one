@@ -1,4 +1,6 @@
 import { parseHostInbound, type HostInbound, type HostOutbound } from './protocol'
+import type { ComposerViewRequest } from '@superone/shared/composer-view-bridge'
+import type { SuperOneComposerOutcome } from '@superone/shared/composer-api'
 
 interface WebViewGlobal extends Window {
   ReactNativeWebView?: { postMessage(message: string): void }
@@ -38,6 +40,34 @@ export function requestNative(action: string, payload?: unknown): string {
 }
 
 const pendingRequests = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>()
+const pendingComposers = new Map<string, { viewId: string; resolve: (outcome: SuperOneComposerOutcome) => void; reject: (error: Error) => void }>()
+
+/** Opening uses an ordinary short RPC; human input arrives through a dedicated native push. */
+export function openNativeComposer(request: ComposerViewRequest & { messageId: string }): Promise<SuperOneComposerOutcome> {
+  const key = `${request.viewId}:${request.localId}`
+  if (pendingComposers.has(key)) return Promise.reject(new Error('This input request is already open'))
+  if (pendingComposers.size >= 128) return Promise.reject(new Error('Too many pending input requests'))
+  return new Promise((resolve, reject) => {
+    pendingComposers.set(key, { viewId: request.viewId, resolve, reject })
+    void requestNativeAsync('composerOpen', request).then(value => {
+      const result = value as { ok?: boolean; requestId?: string; error?: { message?: string } } | undefined
+      if (result?.ok !== true || !result.requestId) throw new Error(result?.error?.message ?? 'Could not open this input form')
+    }).catch(error => {
+      const pending = pendingComposers.get(key)
+      pendingComposers.delete(key)
+      pending?.reject(error instanceof Error ? error : new Error(String(error)))
+    })
+  })
+}
+
+export function releaseNativeComposer(viewId: string): void {
+  try { requestNative('composerRelease', { viewId }) } catch { /* native host gone */ }
+  for (const [key, pending] of pendingComposers) {
+    if (pending.viewId !== viewId) continue
+    pendingComposers.delete(key)
+    pending.resolve({ status: 'cancelled', reason: 'owner_disposed' })
+  }
+}
 
 export class NativeRequestTimeout extends Error {
   constructor() {
@@ -91,6 +121,14 @@ export function installHostBridge(onMessage: (message: HostInbound) => void): ()
       if (message.error) pending?.reject(new Error(message.error))
       else pending?.resolve(message.result)
     }
+    if (message?.type === 'composerSettled') {
+      const key = `${message.viewId}:${message.localId}`
+      const pending = pendingComposers.get(key)
+      pendingComposers.delete(key)
+      if (message.error) pending?.reject(new Error(message.error))
+      else if (message.outcome) pending?.resolve(message.outcome)
+      else pending?.reject(new Error('Invalid composer result'))
+    }
     if (message) onMessage(message)
     if (delivery) {
       sequence = delivery.sequence
@@ -115,6 +153,8 @@ export function installHostBridge(onMessage: (message: HostInbound) => void): ()
   return () => {
     for (const pending of pendingRequests.values()) pending.reject(new Error('Chat view disconnected'))
     pendingRequests.clear()
+    for (const pending of pendingComposers.values()) pending.reject(new Error('Chat view disconnected'))
+    pendingComposers.clear()
     if (browser.__applyHost === accept) delete browser.__applyHost
     browser.removeEventListener('message', handleMessage)
     document.removeEventListener('message', handleDocumentMessage)

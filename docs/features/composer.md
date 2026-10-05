@@ -2,7 +2,7 @@
 
 Desktop chat renders one composer in a shared slot below the transcript. The
 slot's registry resolves the current entry by priority: session decisions,
-MCP App consent, an explicitly opened composer, realtime voice, then the regular
+MCP App consent, app/widget input forms, an explicitly opened composer, realtime voice, then the regular
 text composer. A decision pauses the lower-priority composer until it clears. Plan approval retains its
 original full-screen review in the chat pane.
 
@@ -98,7 +98,8 @@ and the declarative external composer API remain proposal open questions.
 
 Each session owns its pending decisions. Desktop displays them in this stable
 order: permissions in arrival order, then AskUserQuestion, then full-screen plan
-approval. Only the first item is interactive. Answering an item advances the
+approval. Agent input forms follow AskUserQuestion and precede plan approval.
+Only the first item is interactive. Answering an item advances the
 queue without displaying a position or remaining-count indicator.
 
 Permissions continue to use `PermissionPrompt`, including MCP elicitation
@@ -182,3 +183,70 @@ scalar settings stay single-line. MCP form free text grows unless it declares a
 format, a pattern, or a maximum length of 80 characters or fewer. Those constrained
 fields and list-item entry keep their original controls and validation. Touch
 question forms retain native Return for newlines and their explicit submit button.
+
+## Declarative input requests
+
+An input request is a session-owned, once-only form with a title, optional
+description/submit label, and flat MCP elicitation `requestedSchema`. It reuses
+shared parsing, validation, fields and steps. Nested objects and OpenAI preview
+descriptors are rejected. The `permission_request` transport carries
+`requestKind: 'input_request'` and trusted origin/output metadata; it represents
+input rather than approval.
+
+The complete priority is real permissions → questions → agent input → full-screen
+plan → MCP App consent → app/widget input → opened native composer → voice/text.
+App/widget forms do not block questions, plans or consent. Covered forms retain
+values, current step and picked resources across session navigation. Submission,
+cancellation or owner/session disposal releases the form. An unrelated agent
+interruption preserves app/widget forms. Drafts are local to each client and do
+not persist across app restarts.
+
+- `composer_request` collects values in the agent's own local or remote-node
+  session. Submit returns `{ status: 'submitted', values }` to the tool; Cancel
+  returns a neutral outcome. It sends no additional user message.
+- Mini-app frontends and widgets call `window.superone.composer.open(spec,
+  { output? })`. Default `caller` output returns `{ status: 'submitted', values }`
+  only to the opening view. `agent` sends a normal user message and returns
+  `{ status: 'submitted' }` without values. Both wait for submission or neutral
+  cancellation; admission failures reject. The container supplies identity.
+- A local mini-app Node Host uses the same spec/output/outcome contract at
+  `context.composer.open(spec, { output?, session?, signal? })`. The session must
+  authorize the app; an omitted session requires exactly one authorized holder.
+  Only Node accepts trusted session and AbortSignal options.
+- Legacy widget `window.requestInput(spec)` keeps `agent` output and opening-only
+  acknowledgement. It receives no values.
+
+Closing/reloading a frontend cancels its caller forms. Its agent forms remain
+in the session, without delivering values to that view. Host exit closes only
+forms the Host opened. Standalone tool views that open a form remain mounted
+when scrolled off screen. Host and views share the four-form app/session quota;
+widgets retain one live form per completed message.
+
+Phone widgets use a short opening receipt and completion pushed only to the
+opening device/view. Human input has no RPC deadline. Disconnect preserves the
+form; reconnect reads its outcome once, without polling. Offline releases keep
+the original session and are sent when the desktop connection is restored.
+
+The host validates values and generates agent-output message content before accepting
+the send. The first accepted submission wins; retrying with its original
+`clientMessageId` is idempotent. The unrelated chat draft, mentions and attachments
+stay intact. Invalid values restore the editable form with an error and discard
+the rejected bubble. Transport errors retain a failed-send bubble and the
+original submission for retry. Permanently settled requests have no resend
+action. Tool rows show status without duplicating the active form.
+
+File fields use supplied choices and optional `userOptions.kind: 'file'`. Native
+picker results or uploads staged for the exact request/field prove selection;
+an arbitrary existing path is insufficient. The phone supports files but reports
+unsupported directory fields and offers cancellation. Node-owned forms reject
+file-picker fields. Native phone forms occupy the composer slot, keep the regular
+editor mounted with its draft, and use explicit Submit/Cancel; existing sheets
+and transcript questions retain their entry points.
+
+External sticky forms, remote-node mini-app/widget forms and remote-node file
+picking are unsupported. Mini-app WebViews on the phone, WebView composer content
+and manifest contributions remain separate future work. Form waiters
+have no host-owned deadline; generic Host Action and mini-app tool deadlines
+remain unchanged. Pinned Codex uses a 24-hour MCP tool limit; the stdio bridge
+omits its former short timer for tool calls. Claude SDK and Grok/ACP client
+timeout behavior has not been verified with live provider calls.

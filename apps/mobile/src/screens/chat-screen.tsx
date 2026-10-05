@@ -114,6 +114,8 @@ export function ChatScreen(props: {
    * they wait on an answer.
    */
   composerHidden?: boolean
+  /** A host input request owns the composer slot while the native editor keeps its draft. */
+  inputComposer?: ReactNode
   mentionQuery?: string | null
   mentionGroupLabels?: Partial<Record<string, string>>
   mcpMentions?: McpMentionSearchState
@@ -246,7 +248,8 @@ export function ChatScreen(props: {
             onSteerSoon={(id) => props.onSteerQueuedSoon?.(id)}
           />
         ) : null}
-        <ChatComposer {...props} />
+        {props.inputComposer}
+        <View style={props.inputComposer ? { display: 'none' } : undefined}><ChatComposer {...props} /></View>
       </View>
     </View>
   )

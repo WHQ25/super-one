@@ -55,6 +55,7 @@ import {
 } from '@superone/chat-view/presenters/GenericToolRow'
 import { VideoGenToolBlock } from './VideoGenToolBlock'
 import { WidgetBlock } from './WidgetBlock'
+import type { ComposerViewPorts } from '@superone/shared/composer-view-bridge'
 import { FilesPreviewer } from './files-previewer/FilesPreviewer'
 import { isWorkflowSmokeCheck } from './workflow-utils'
 import type { RunContinuation } from '@superone/chat-view/presenters/run-display'
@@ -69,6 +70,7 @@ import {
   SetupMiniAppDevBlock,
 } from './tool-block-presenters/ConfigToolBlocks'
 import { SuperoneCompactToolRowPresenter } from '@superone/chat-view/presenters/SuperoneCompactToolRow'
+import { InputRequestToolRow } from '@superone/chat-view/presenters/InputRequestToolRow'
 import { superoneToolDescriptor } from '@superone/chat-view/presenters/superone-tool-display'
 
 function isCompleteJson(s: string): boolean {
@@ -155,6 +157,8 @@ export interface ToolFamilyRenderResult {
 export interface ToolBlockPresenterPorts extends GenericToolRowPorts {
   onOpenSession: (sessionId: string) => void | Promise<void>
   onWidgetInputComplete?: (data: { title?: string; inputLength: number }) => void
+  onWidgetRequestInput?: (spec: unknown) => Promise<void>
+  widgetComposerPorts?: ComposerViewPorts
   renderBash: (props: BashToolPresenterProps) => ReactNode
   renderExitPlanMode: (result?: string) => ReactNode
   renderMiniAppTool: (props: MiniAppToolPresenterProps) => ToolFamilyRenderResult
@@ -288,6 +292,10 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
     )
   }
   if (mcpInfo?.serverName === SUPERONE_SERVER) {
+    if (mcpInfo.mcpToolName === 'composer_request') {
+      return <InputRequestToolRow title={typeof params.title === 'string' ? params.title : undefined}
+        result={cleanResult} streaming={isStreaming} isError={isError} isDenied={isDenied} />
+    }
     const browserOp = getBrowserOp(mcpInfo.mcpToolName, params)
     if (browserOp) {
       return (
@@ -541,7 +549,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
         />
       )
     }
-    if (widgetData) return <WidgetBlock data={widgetData} streaming={!inputComplete} />
+    if (widgetData) return <WidgetBlock data={widgetData} streaming={!inputComplete} onRequestInput={ports.onWidgetRequestInput} composerPorts={ports.widgetComposerPorts} />
     return (
       <CompactLabeledToolRow
         icon={<ToolIcon icon="canvas" className="size-3 shrink-0 text-muted-foreground" />}

@@ -24,7 +24,7 @@ Approve, deny, submit, and dismiss close the sheet and append the exact callback
 arguments to Actions. Reset and reopen remounts the sheet with the original data.
 Only local callbacks run, including for delete/spend/agent-launch fixtures.
 
-Coverage: ordinary approval plus all nine explicit permission kinds, configuration
+Coverage: ordinary approval plus explicit permission kinds, configuration
 and automation deletion, long content, elicitation fields, collaboration modes,
 and plan approval with both continuation modes. Questions are a web form in the
 chat document; their states are in the chat-view Storybook.
@@ -32,9 +32,15 @@ chat document; their states are in the chat-view Storybook.
 These are the production `PermissionSheet` and `PlanSheet`.
 The sheets share a keyboard-aware, rotatable native shell with fixed actions.
 Commands, file diffs, selection chips, and native Markdown use the production
-components. The preview retains the current English copy and does not claim
-localization parity.
+components. Language chips select English or Chinese; deep links accept
+`locale=en` or `locale=zh`.
 Rotate the device or change OS text size to inspect native layout behavior.
+
+The **Input forms** category renders production `InputRequestComposer` in the
+native composer slot. It covers default, pending, retry, offline, file-upload
+failure and unsupported-directory states. Try
+`superone-dev://native-preview?scenario=input/retry&theme=dark&locale=zh`.
+File choices are offline fixtures; real upload proof remains a host/transport check.
 
 Application-page fixtures also accept deterministic deep links such as
 `superone://native-preview?page=Chat&theme=dark&harness=codex`. Only names in

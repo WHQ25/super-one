@@ -1,3 +1,4 @@
+import { parseSchemaForm } from '@superone/shared/schema-form'
 import type { PermissionRequest } from '@superone/shared/agent-types'
 import { elicitationFormRequest } from '@superone/shared/schema-form'
 
@@ -107,6 +108,11 @@ export const permissionExamples = {
   terminal_command_confirm: {
     toolName: 'mcp__superone__terminal_tabs', allowAlwaysAllow: true,
     input: { action: 'run', command: 'bun run storybook --ci', cwd: '/Users/me/app', rule: 'bun run storybook( .*)?', description: 'Start Storybook to check the new story.' },
+  },
+  input_request: {
+    toolName: 'superone_input_request', input: {}, message: 'Review notes',
+    inputRequest: { title: 'Review notes', description: 'Add context before the next change.', origin: { kind: 'agent' }, output: 'caller' },
+    schemaForm: parseSchemaForm({ type: 'object', required: ['notes'], properties: { notes: { type: 'string', title: 'Notes' } } }),
   },
   folder_trust: {
     toolName: 'FolderTrust',

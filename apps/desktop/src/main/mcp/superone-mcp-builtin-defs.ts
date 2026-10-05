@@ -1,3 +1,4 @@
+import { INPUT_REQUEST_TOOL_DEFS } from '@superone/shared/environment/host-action-input-request-descriptors'
 import { INTERACTION_MEMORY_TOOL_DEFS } from '@superone/shared/interaction-memory'
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
 import { READ_MANUAL_INPUT_SCHEMA } from './manual-tool-defs'
@@ -307,6 +308,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
       additionalProperties: false,
     },
   },
+  ...INPUT_REQUEST_TOOL_DEFS,
   {
     name: 'read_manual',
     description: MANUAL_READ_DESCRIPTION,

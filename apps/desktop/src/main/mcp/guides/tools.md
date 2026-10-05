@@ -49,6 +49,12 @@ The handler name must exactly match the manifest declaration. It can use Node.js
 
 Tool execution waits for `activate()` but never waits for a panel WebView. If the panel is open, `context.webview.postMessage` can update it; if no WebView is mounted, computation still completes.
 
+The handler's second argument supplies trusted `ctx.session`, `ctx.callId` and
+`ctx.signal`. Use `context.composer.open(spec, { session: ctx.session, signal:
+ctx.signal })` for session input; see `read_manual({ domain: 'miniapp', topic:
+'api-host' })`. Its answer returns to the app. Awaiting it retains the tool's
+timeout; start it and handle the outcome separately for a longer human wait.
+
 ## Display metadata
 
 | Field | Purpose |

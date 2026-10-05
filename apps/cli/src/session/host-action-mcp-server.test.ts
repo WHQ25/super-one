@@ -150,6 +150,7 @@ describe('Host Action MCP server', () => {
       url: http.url,
       http_headers: http.headers,
       startup_timeout_sec: 60,
+      tool_timeout_sec: 86_400,
     })
     expect(opencode).toEqual({
       type: 'remote',

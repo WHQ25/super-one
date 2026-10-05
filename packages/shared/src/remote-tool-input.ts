@@ -291,6 +291,7 @@ function sanitizeCollabInput(toolName: string, input: string): string {
  * subject on the phone and a complete one on the desktop.
  */
 const SUPERONE_TOOL_SUMMARY_FIELDS: Record<string, readonly string[]> = {
+  composer_request: ['title'],
   config_read: ['domain'],
   read_manual: ['domain', 'topic'],
   miniapp_dev_register: ['name', 'directory', 'appDir'],

@@ -20,6 +20,7 @@ import { EditDiff, WriteDiff } from './ToolBlock'
 import { modes as permissionModes } from './PermissionModeSelector'
 import { eligibilityFromStore } from '@/lib/auto-mode-eligibility'
 import { SchemaFormComposer } from '../schema-form/SchemaFormComposer'
+import { InputRequestPrompt } from './InputRequestPrompt'
 import { useMcpFormResources } from '../schema-form/use-mcp-form-resources'
 import { getPermissionPromptConfig } from './permission-prompt/permission-prompt-config'
 import { VideoGenConfirmPromptContainer } from './VideoGenConfirmPromptContainer'
@@ -155,6 +156,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
   const defaultToNo = pendingPermission?.defaultToNo === true
   const requireExplicitApproval = isHighRiskPermission(pendingPermission)
   const isElicitation = pendingPermission?.requestKind === 'mcp_elicitation'
+  const isInputRequest = pendingPermission?.requestKind === 'input_request'
   const formResources = useMcpFormResources(requestId, isElicitation && sessionProvider === 'codex')
   const isVideoGenConfirm = pendingPermission?.requestKind === 'video_gen_confirm'
   const isConfigConfirm = pendingPermission?.requestKind === 'config_confirm'
@@ -191,6 +193,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
     || isSessionCleanupConfirm
     || isAutomationConfirm
     || isSchemaFormElicitation
+    || isInputRequest
   const [urlOpened, setUrlOpened] = useState(false)
   useEffect(() => { setUrlOpened(false) }, [requestId])
   const supportsAlwaysPersist = pendingPermission?.supportsAlwaysPersist ?? false
@@ -469,6 +472,8 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
   }, [requestId, btnCount, handleCancel, handleDeny, handleAcceptEdit, handleAllow, handleAlwaysAllow, isCodexDecisionPrompt, hasHostAlwaysButton, isEditTool, isCollapsed, suggestionsCount, toggleSuggestion, isSelfManagedConfirm, chatRootRef, defaultToNo, terminalRule, toggleRememberRule, pendingPermission])
 
   if (!pendingPermission) return null
+
+  if (isInputRequest) return <InputRequestPrompt request={pendingPermission} />
 
   if (pendingPermission.requestKind === 'folder_trust') {
     return (

@@ -8,6 +8,8 @@ import type { GitMentionRefKind } from './git-mention-query'
 import type { McpAppHostOperation, McpAppHostRequest, ToolAppAttachment } from './mcp-apps'
 import type { WidgetLayout } from './generative-ui/types'
 import type { SchemaForm } from './schema-form'
+import type { SuperOneComposerOutcome } from './composer-api'
+import type { InputRequestMeta, InputRequestOutput, InputRequestSpec, InputRequestSubmission } from './input-request'
 import type { ModHostRequest, ModInstanceRef, ModPaneRoster, ModScrollComponent, ModUiOp, ModUiRequest } from './mod-ui'
 
 // --- Image attachments ---
@@ -1135,6 +1137,7 @@ export interface PermissionRequest {
     | 'device_control_confirm'
     | 'terminal_command_confirm'
     | 'folder_trust'
+    | 'input_request'
   serverName?: string
   message?: string
   subtitle?: string
@@ -1161,6 +1164,8 @@ export interface PermissionRequest {
   sessionCleanupConfirm?: SessionCleanupConfirmPayload
   /** Present only when requestKind === 'automation_confirm'. */
   automationConfirm?: AutomationConfirmPayload
+  /** Present only when requestKind === 'input_request'; the form itself is `schemaForm`. */
+  inputRequest?: InputRequestMeta
 }
 
 /** HITL payload for automation create / update / delete (structured confirm UI). */
@@ -2237,6 +2242,13 @@ export interface SendMessageRequest {
     /** @deprecated Prefer `params.fast`. */
     fast?: boolean
   }
+  /**
+   * Submits an `agent`-output input request with this send. The host validates the
+   * values, claims the request first-wins, and replaces `content` with
+   * `inputRequestMessageText`. Requires `clientMessageId`; a retry with the same id
+   * is accepted again.
+   */
+  inputRequest?: InputRequestSubmission
 }
 
 export interface CodexSendExtras {
@@ -3974,6 +3986,11 @@ export const AgentIpcChannels = {
   ANSWER_QUESTION: 'agent:answer-question',
   DISMISS_QUESTION: 'agent:dismiss-question',
   RESPOND_PLAN_APPROVAL: 'agent:respond-plan-approval',
+  /** A widget opens its `agent`-output form in a local session's composer. */
+  OPEN_WIDGET_INPUT_REQUEST: 'agent:open-widget-input-request',
+  COMPOSER_OPEN: 'agent:composer-open',
+  COMPOSER_AWAIT: 'agent:composer-await',
+  COMPOSER_CANCEL: 'agent:composer-cancel',
   RESET_SESSION: 'agent:reset-session',
   /** Grok ACP manual `/recap` → `x.ai/recap` (auto=false). */
   REQUEST_SESSION_RECAP: 'agent:request-session-recap',
@@ -4891,7 +4908,7 @@ export type RemoteCommand =
   | import('./environment/draft-rpc').DraftRemoteCommand
   | import('./codex-async-question').CodexAsyncQuestionAnswerCommand
   | { type: 'create_session'; draftId?: string; draftLeaseId?: string; requestId: string; sessionId: string; projectPath: string; provider?: HarnessId; acpAgentId?: string; permissionMode?: string; effort?: string; model?: string; mode?: string; agentPreset?: string; apiProviderId?: string | null; gitBranch?: string; worktreePath?: string; worktreeBranch?: string; worktreeMode?: WorktreeMode; worktreeBranchName?: string; worktreeCarryLocalChanges?: boolean; additionalDirectories?: string[]; /** Sandbox the picker chose before the session existed (Claude / Cursor). */ sandboxMode?: SandboxMode }
-  | { type: 'send_message'; /** Receipt for admission (before turn execution); without it a failed send is only reported as a `user_message_send_failed` event. */ requestId?: string; sessionId: string; projectPath: string; content: string; userMessageContent?: ContentBlock[]; contexts?: ChatMessageContext[]; provider?: HarnessId; model?: string; effort?: string; images?: ImageAttachment[]; permissionPreset?: string; collaborationMode?: string; threadId?: string; clientMessageId?: string; priority?: 'now' | 'next' | 'later'; /** Park then steer in this command so Stair cannot race a follow-up RPC. */ steer?: 'now' | 'next'; /** OpenCode primary agent for this turn. */ agent?: string; /** Codex service tier (`fast`). */ serviceTier?: string | null; /** Cursor catalog params (param id → value). */ modelParams?: Record<string, string> }
+  | { type: 'send_message'; /** Receipt for admission (before turn execution); without it a failed send is only reported as a `user_message_send_failed` event. */ requestId?: string; sessionId: string; projectPath: string; content: string; userMessageContent?: ContentBlock[]; contexts?: ChatMessageContext[]; provider?: HarnessId; model?: string; effort?: string; images?: ImageAttachment[]; permissionPreset?: string; collaborationMode?: string; threadId?: string; clientMessageId?: string; priority?: 'now' | 'next' | 'later'; /** Park then steer in this command so Stair cannot race a follow-up RPC. */ steer?: 'now' | 'next'; /** OpenCode primary agent for this turn. */ agent?: string; /** Codex service tier (`fast`). */ serviceTier?: string | null; /** Cursor catalog params (param id → value). */ modelParams?: Record<string, string>; /** See `SendMessageRequest.inputRequest`. */ inputRequest?: InputRequestSubmission }
   /**
    * Grok ACP session recap → `x.ai/recap`.
    * `auto` defaults false (manual `/recap`). Mobile/desktop auto recap pass true.
@@ -5095,7 +5112,19 @@ export type RemoteCommand =
    * never needs the LAN URL or relay staging the file itself would.
    */
   | { type: 'read_video_poster'; requestId: string; projectPath?: string; sessionId?: string; root?: string; path: string }
-  | { type: 'upload_file'; requestId: string; projectPath?: string; sessionId?: string; targetDir: string; name: string; mimeType: string; size: number; inlineBase64?: string }
+  | { type: 'upload_file'; requestId: string; projectPath?: string; sessionId?: string; targetDir: string; name: string; mimeType: string; size: number; inlineBase64?: string; /** Binds the file to an input-request field; the host then picks the directory and ignores `targetDir`. */ inputRequest?: InputRequestUploadBinding }
+  /** Opens a widget's `agent`-output form in that session's composer. Responds with `OpenWidgetInputRequestResult`. */
+  | { type: 'open_widget_input_request'; requestId: string; projectPath: string; sessionId: string; messageId: string; spec: InputRequestSpec }
+  /**
+   * Opens a form for a widget this phone renders (`viewId`/`localId` are the phone's own ids).
+   * Responds with `ComposerOpenResult`; the answer arrives later as a `ComposerSettledEvent`
+   * sent to this device only.
+   */
+  | { type: 'composer_open'; requestId: string; projectPath: string; sessionId: string; messageId: string; viewId: string; localId: string; spec: InputRequestSpec; output?: InputRequestOutput }
+  /** Cancels one of this device's forms (`localId`) or releases every `caller` form of the view. */
+  | { type: 'composer_cancel'; projectPath: string; sessionId: string; viewId: string; localId?: string }
+  /** Once after reconnecting: the answer to a form this device opened, if its push was missed. Responds with `ComposerOutcomeResult`. */
+  | { type: 'composer_outcome'; requestId: string; projectPath: string; sessionId: string; inputRequestId: string }
   | { type: 'upload_file_complete'; requestId: string }
   | { type: 'list_providers'; requestId: string }
   /**
@@ -5226,6 +5255,50 @@ export type UploadFileResponse =
   | { ok: true; status: 'need_lan_put'; uploadUrl: string; savedPath: string }
   | { ok: true; status: 'need_r2_put'; uploadUrl: string; key: string; savedPath: string }
   | UploadFileError
+
+/** `upload_file` → a file answering one field of a pending input request. */
+export interface InputRequestUploadBinding {
+  requestId: string
+  field: string
+}
+
+export type ComposerOpenResult =
+  | { ok: true; requestId: string }
+  | { ok: false; error: { code: 'invalid' | 'unsupported' | 'busy' | 'not_found' | 'denied'; message: string } }
+
+/** The legacy widget `requestInput` acknowledgement. */
+export type OpenWidgetInputRequestResult = ComposerOpenResult
+
+/** Who opens a form from the desktop renderer; the trusted container supplies it, never the frame. */
+export type ComposerSource =
+  | { kind: 'widget'; projectPath: string; sessionId: string; messageId: string }
+  /** `sessionId` when the container is bound to one; otherwise the app's only authorized local session. */
+  | { kind: 'miniapp'; projectDir: string; appId: string; sessionId?: string }
+
+/** `window.agent.composerOpen`. `viewId` scopes cancellation to one frame; `localId` is unique within it. */
+export interface ComposerOpenRequest {
+  source: ComposerSource
+  viewId: string
+  localId: string
+  spec: unknown
+  output?: InputRequestOutput
+}
+
+export type ComposerOutcomeResult =
+  | { state: 'pending' }
+  | { state: 'settled'; outcome: SuperOneComposerOutcome }
+  /** Never opened by this device, already fetched, or forgotten. */
+  | { state: 'unknown' }
+
+/** Pushed only to the device that opened the form; not part of the session's event stream. */
+export interface ComposerSettledEvent {
+  type: 'composer_settled'
+  sessionId: string
+  requestId: string
+  viewId: string
+  localId: string
+  outcome: SuperOneComposerOutcome
+}
 
 export type UploadFileCompleteResponse =
   | { ok: true; savedPath: string }

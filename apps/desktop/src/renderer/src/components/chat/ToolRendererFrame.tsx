@@ -40,7 +40,7 @@ export function ToolRendererFrame(props: Props) {
   const [height, setHeight] = useState(DEFAULT_HEIGHT)
   const submit = useChatStore((s) => s.submitToolIntercept)
   const cancel = useChatStore((s) => s.cancelToolIntercept)
-  const { projectDir, projectId } = useMiniAppProjectScope()
+  const { projectDir, projectId, sessionId } = useMiniAppProjectScope()
   const isDark = useIsDark()
   const appId = props.phase === 'intercept' ? props.state.appId : props.appId
   const expectedCallId = props.phase === 'intercept' ? props.state.callId : props.callId
@@ -88,6 +88,8 @@ export function ToolRendererFrame(props: Props) {
       <MiniAppWebview
         ref={webviewRef}
         appId={appId}
+        projectDir={projectDir}
+        sessionId={sessionId}
         src={src}
         onMessage={handleMessage}
         automation={automation}

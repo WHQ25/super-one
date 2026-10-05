@@ -31,12 +31,17 @@ interface Props {
 /** A result-only WebView; all tool computation runs in the Node MiniApp Host. */
 export function StandaloneToolBlock(props: Props) {
   const { appId, toolUseId, toolName, appName, toolReadableName, args, result, isStreaming, templatePath, automation: automationOverride } = props
-  const { projectDir, projectId } = useMiniAppProjectScope()
+  const { projectDir, projectId, sessionId } = useMiniAppProjectScope()
   const isDark = useIsDark()
   const containerRef = useRef<HTMLDivElement>(null)
   const webviewRef = useRef<MiniAppWebviewHandle>(null)
   const readyRef = useRef(false)
   const [inViewport, setInViewport] = useState(true)
+  const [composerActive, setComposerActive] = useState(false)
+  const retainComposerView = useCallback(() => setComposerActive(true), [])
+  // Keep the guest's completion handlers alive until the transcript removes it,
+  // including the interval after an asynchronous result is sent to the guest.
+  const keepView = inViewport || composerActive
   const [height, setHeight] = useState(DEFAULT_HEIGHT)
 
   const automation = useMiniAppToolTarget(appId, toolUseId, `${toolName} (standalone)`, projectDir, automationOverride)
@@ -78,7 +83,7 @@ export function StandaloneToolBlock(props: Props) {
   useEffect(sendData, [sendData])
 
   useEffect(() => {
-    if (!inViewport) {
+    if (!keepView) {
       readyRef.current = false
       return
     }
@@ -87,7 +92,7 @@ export function StandaloneToolBlock(props: Props) {
         webviewRef.current?.send({ type: 'miniapp-node-message', payload: event.payload })
       }
     })
-  }, [appId, inViewport, projectDir])
+  }, [appId, keepView, projectDir])
 
   useEffect(() => {
     const element = containerRef.current
@@ -102,11 +107,14 @@ export function StandaloneToolBlock(props: Props) {
 
   return (
     <div ref={containerRef} className="my-0.5">
-      {inViewport ? (
+      {keepView ? (
         <div className="w-full overflow-hidden rounded-md border border-border bg-background" style={{ height }}>
           <MiniAppWebview
             ref={webviewRef}
             appId={appId}
+            projectDir={projectDir}
+            sessionId={sessionId}
+            onComposerActivity={retainComposerView}
             src={src}
             onMessage={handleMessage}
             automation={automation}

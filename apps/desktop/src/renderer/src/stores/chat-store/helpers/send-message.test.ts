@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { parseSchemaForm } from '@superone/shared/schema-form'
 
 const mockSetActiveWorktree = vi.fn()
 const mockWorktreeState: {
@@ -747,6 +748,69 @@ describe('sendMessageImpl: mosaic session scope', () => {
 })
 
 describe('sendMessageImpl: IPC dispatch + rollback', () => {
+  it('restores a host-invalid widget form and drops its rejected optimistic message', async () => {
+    const schemaForm = parseSchemaForm({ type: 'object', properties: { note: { type: 'string' } } })
+    const request = { requestId: 'invalid-form', toolName: 'superone_input_request', input: {}, allowAlwaysAllow: false,
+      requestKind: 'input_request' as const, schemaForm,
+      inputRequest: { title: 'Review', output: 'agent' as const, origin: { kind: 'widget' as const, messageId: 'widget' } },
+    }
+    seedProject('/proj', 'owner', { sessionProvider: 'claude', draftText: 'Keep my chat draft', pendingPermissions: [request] })
+    mockSendMessage.mockRejectedValueOnce(new Error('IPC failed: [input_request:invalid] Choose a valid file'))
+    await useChatStore.getState().sendInputRequest('invalid-form', { note: 'draft' })
+    const session = getActiveSession('/proj')
+    expect(session.pendingPermissions).toEqual([request])
+    expect(session.messages).toEqual([])
+    expect(session.queuedMessages).toEqual([])
+    expect(session.awaitingAssistantReply).toBe(false)
+    expect(session.draftText).toBe('Keep my chat draft')
+  })
+
+  it('keeps a permanently closed widget submission as a failed bubble without enabling replay', async () => {
+    seedProject('/proj', 'owner', { sessionProvider: 'claude', pendingPermissions: [{
+      requestId: 'closed', toolName: 'superone_input_request', input: {}, allowAlwaysAllow: false, requestKind: 'input_request',
+      schemaForm: parseSchemaForm({ type: 'object', properties: { note: { type: 'string' } } }),
+      inputRequest: { title: 'Review', output: 'agent', origin: { kind: 'widget', messageId: 'widget' } },
+    }] })
+    mockSendMessage.mockRejectedValueOnce(new Error('[input_request:already_resolved] Already answered'))
+    await useChatStore.getState().sendInputRequest('closed', { note: 'draft' })
+    const session = getActiveSession('/proj')
+    expect(session.pendingPermissions).toEqual([])
+    expect(session.messages[0].metadata?.sendFailure?.error).toContain('already_resolved')
+    await useChatStore.getState().resendFailedMessage(session.messages[0].id)
+    expect(mockSendMessage).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends a widget form to its captured pane and replays its metadata without consuming the draft', async () => {
+    const schemaForm = parseSchemaForm({ type: 'object', properties: { note: { type: 'string', title: 'Note' } } })
+    seedProject('/proj', 'other', { draftText: 'Other pane draft' })
+    const project = useChatStore.getState().projectSessions['/proj']
+    useChatStore.setState({ projectSessions: { '/proj': { ...project, _sessions: {
+      ...project._sessions,
+      owner: { ...createDefaultPerSessionState(), sessionProvider: 'claude', draftText: 'Unsent composer draft',
+        mentions: [{ kind: 'file', value: '/keep', displayName: 'keep' }],
+        pendingPermissions: [{ requestId: 'widget-form', toolName: 'superone_input_request', input: {}, allowAlwaysAllow: false,
+          requestKind: 'input_request', schemaForm,
+          inputRequest: { title: 'Review', output: 'agent', origin: { kind: 'widget', messageId: 'widget-1' } },
+        }],
+      },
+    } } } })
+    mockSendMessage.mockRejectedValueOnce(new Error('network down'))
+    await useChatStore.getState().sendInputRequest('widget-form', { note: 'First\nSecond' }, { projectPath: '/proj', sessionId: 'owner' })
+    const firstRequest = mockSendMessage.mock.calls[0][1]
+    expect(firstRequest).toMatchObject({ sessionId: 'owner', content: 'Review\nNote:\n  First\n  Second', inputRequest: { requestId: 'widget-form', values: { note: 'First\nSecond' } } })
+    const owner = useChatStore.getState().projectSessions['/proj']._sessions.owner
+    expect(owner.draftText).toBe('Unsent composer draft')
+    expect(owner.mentions).toHaveLength(1)
+    expect(owner.pendingPermissions).toHaveLength(0)
+    expect(owner.messages[0].metadata?.sendFailure).toEqual({ error: 'network down' })
+    expect(getActiveSession('/proj').draftText).toBe('Other pane draft')
+    await useChatStore.getState().resendFailedMessage(owner.messages[0].id)
+    expect(mockSendMessage.mock.calls[1][1]).toEqual(firstRequest)
+    expect(useChatStore.getState().projectSessions['/proj']._sessions.owner.messages).toHaveLength(1)
+    expect(await useChatStore.getState().sendInputRequest('widget-form', { note: 'duplicate' }, { projectPath: '/proj', sessionId: 'owner' })).toBe(false)
+    expect(mockSendMessage).toHaveBeenCalledTimes(2)
+  })
+
   it('sends the first Claude message when the draft session is not persisted yet', async () => {
     seedProject('/proj', 'draft-sid', {
       sessionProvider: 'claude',

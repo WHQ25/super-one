@@ -3,10 +3,12 @@ import { parseModUiPayload, type ModUiPayload } from './mod-ui'
 import type { WebView } from 'react-native-webview'
 import type { HostInbound, HostOutbound } from '@superone/chat-view'
 import { isPreviewableMermaid } from '@superone/chat-view/mermaid-preview'
-import type { McpAppDeviceRequest, QuestionAnnotations, SaveWidgetTemplateRequest } from '@superone/shared/agent-types'
+import type { ComposerOpenResult, McpAppDeviceRequest, QuestionAnnotations, SaveWidgetTemplateRequest } from '@superone/shared/agent-types'
 import { parseWidgetLayout } from '@superone/shared/generative-ui/types'
 import { isPreviewableImageSource, parseImageGenerationInfo, type ImagePreviewTarget } from './image-preview-state'
 import { parseMcpAppDownloads, parseMcpAppRequest } from './mcp-apps'
+import { admitInputRequestOutput, admitInputRequestSpec, type InputRequestSpec } from '@superone/shared/input-request'
+import type { ComposerViewRequest } from '@superone/shared/composer-view-bridge'
 import type { McpAppLocalDownload } from '@superone/shared/mcp-app-download'
 import type { TextFileResult } from './text-files'
 import type { VideoPosterResult } from './video-posters'
@@ -19,6 +21,9 @@ export type HapticStyle = 'light' | 'medium' | 'heavy'
 const HAPTIC_STYLES: ReadonlySet<string> = new Set<HapticStyle>(['light', 'medium', 'heavy'])
 
 export interface NativeActionPorts {
+  composerOpen?(request: ComposerViewRequest & { messageId: string }): Promise<ComposerOpenResult>
+  composerRelease?(viewId: string): Promise<void> | void
+  requestInput?(messageId: string, spec: InputRequestSpec): Promise<void>
   subscribeDetail?(detailRef: string, subscriptionId: string): Promise<Record<string, unknown>>
   unsubscribeDetail?(subscriptionId: string): Promise<void>
   loadNavigationIndex?(): Promise<import('@superone/shared/session-history-index').SessionHistoryIndex>
@@ -294,6 +299,25 @@ export async function resolveNativeRequest(
       await ports.haptic(typeof style === 'string' && HAPTIC_STYLES.has(style) ? style as HapticStyle : 'medium')
     } else if (message.action === 'setDraft') {
       await ports.setDraft(payloadString(message, 'text'))
+    } else if (message.action === 'requestInput') {
+      if (!ports.requestInput) throw new Error('Input requests are unavailable')
+      const spec = admitInputRequestSpec((message.payload as Record<string, unknown> | undefined)?.spec, { userResources: true })
+      if (!spec.ok) throw new Error(spec.error)
+      await ports.requestInput(payloadString(message, 'messageId'), spec.spec)
+    } else if (message.action === 'composerOpen') {
+      if (!ports.composerOpen) throw new Error('Input requests are unavailable')
+      const payload = message.payload as Record<string, unknown> | undefined
+      const spec = admitInputRequestSpec(payload?.spec, { userResources: true })
+      if (!spec.ok) throw new Error(spec.error)
+      const output = admitInputRequestOutput(payload?.output)
+      if (!output) throw new Error('"output" must be "caller" or "agent"')
+      const viewId = payloadString(message, 'viewId'), localId = payloadString(message, 'localId')
+      if (viewId.length > 128 || localId.length > 128) throw new Error('Invalid composer identity')
+      result = { ...await ports.composerOpen({ messageId: payloadString(message, 'messageId'), viewId, localId, spec: spec.spec, output }) }
+    } else if (message.action === 'composerRelease') {
+      const viewId = payloadString(message, 'viewId')
+      if (viewId.length > 128) throw new Error('Invalid composer identity')
+      await ports.composerRelease?.(viewId)
     } else if (message.action === 'saveWidgetTemplate') {
       await ports.saveWidgetTemplate(parseSaveWidgetTemplate(message))
     } else if (message.action === 'answerQuestion') {

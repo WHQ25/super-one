@@ -96,7 +96,7 @@ export async function hydrateRemotePerSession(
     snap?.transcript,
     providerId,
   )
-  const pendingFields = nodePendingInteractionFields(snap?.pendingInteraction)
+  const pendingFields = nodePendingInteractionFields(snap?.pendingInteraction, snap?.pendingInputRequests)
   const isLive =
     snap?.status === 'streaming' || pendingFields.awaitingAssistantReply
   const chatProvider = (providerId === 'claude' || providerId === 'codex'

@@ -74,6 +74,8 @@ export function collabPendingReason(
 
 export function permissionPendingReason(permission: PermissionRequest, t: PendingReasonT): string {
   switch (permission.requestKind) {
+    case 'input_request':
+      return permission.inputRequest?.title.trim() || permission.message?.trim() || t('sidebar.pending.waitingInput')
     case 'session_agents_confirm':
       return collabPendingReason(permission.sessionAgentsConfirm, t)
     case 'computer_use_grant': {

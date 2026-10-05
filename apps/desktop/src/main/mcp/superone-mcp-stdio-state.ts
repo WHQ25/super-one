@@ -13,6 +13,7 @@ import {
   SUPERONE_MCP_SESSION_ID_ENV,
   SUPERONE_MCP_STARTUP_TIMEOUT_SEC,
 } from './superone-mcp-stdio-env'
+import { SUPERONE_MCP_TOOL_TIMEOUT_SEC } from '@superone/shared/superone-mcp-timeouts'
 
 export {
   SUPERONE_MCP_IPC_ENDPOINT_ENV,
@@ -42,6 +43,7 @@ export interface CodexSuperoneMcpConfig {
   url: string
   http_headers: Record<string, string>
   startup_timeout_sec: number
+  tool_timeout_sec: number
   tools: Record<string, { approval_mode: CodexToolApprovalMode }>
 }
 
@@ -106,6 +108,7 @@ export function getCodexSuperoneMcpConfig(sessionId: string): CodexSuperoneMcpCo
     url: base.url,
     http_headers: base.headers,
     startup_timeout_sec: SUPERONE_MCP_STARTUP_TIMEOUT_SEC,
+    tool_timeout_sec: SUPERONE_MCP_TOOL_TIMEOUT_SEC,
     // Approve only the existing static host-owned set before Codex auto-review.
     // A server-wide default would also admit dynamic mini-app tools that still
     // require the normal preapproval path.

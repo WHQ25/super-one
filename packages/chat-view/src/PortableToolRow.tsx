@@ -27,6 +27,7 @@ import { BashTerminalPresenter } from './presenters/BashTerminalPresenter'
 import type { BashEditToolUse } from '@superone/shared/bash-edit-diff'
 import { parseNativeDiff, type NativeDiffLine } from './presenters/remote-diff'
 import { tryPrettifyJson } from './presenters/tool-block-utils'
+import { InputRequestToolRow } from './presenters/InputRequestToolRow'
 import type { BashEditDiff, QuestionPreviewFormat } from '@superone/shared/agent-types'
 
 /**
@@ -229,7 +230,6 @@ function parseMiniAppIdentity(input: string): { appId: string; tool: string } | 
   } catch { return null }
 }
 
-function PortableMiniAppTool({
 /**
  * The desktop's first widget stage. The phone never receives the streamed input
  * (`tool_input_delta` stays on the desktop), so it holds this row until the result
@@ -246,6 +246,7 @@ function PortableWidgetGenerating() {
   )
 }
 
+function PortableMiniAppTool({
   identity,
   result,
   status,
@@ -376,6 +377,11 @@ export function PortableToolRow({ allowExpand = true, ...props }: PortableToolRo
     () => ({ ...PORTABLE_TOOL_ROW_PORTS, mcpIconSrc }),
     [mcpIconSrc],
   )
+  if (props.toolName === 'mcp__superone__composer_request') {
+    let title: string | undefined
+    try { const parsed = JSON.parse(props.input); title = typeof parsed?.title === 'string' ? parsed.title : undefined } catch { /* projected or partial input */ }
+    return <InputRequestToolRow title={title} result={props.result} streaming={props.status === 'streaming'} isError={props.isError} />
+  }
   // Dispatch on the native type, never on "it parsed": the gallery draws images or videos and
   // would show a previewer payload as an empty video strip. An unknown native type keeps the
   // ordinary tool row, which is the only one that can still say what the call was.
@@ -387,13 +393,13 @@ export function PortableToolRow({ allowExpand = true, ...props }: PortableToolRo
   if (codeWidget && props.status !== 'streaming' && !props.isError) {
     return <PortableWidgetBlock data={codeWidget} />
   }
+  if (isWidgetTool && props.status === 'streaming') return <PortableWidgetGenerating />
   // A projection that lost the appId cannot name the call, so it falls through to the
   // shared row rather than rendering a card with no identity.
   if (props.toolName === 'mcp__superone__miniapp_call' && miniApp) {
     return (
       <PortableMiniAppTool
         identity={miniApp}
-  if (isWidgetTool && props.status === 'streaming') return <PortableWidgetGenerating />
         result={props.result}
         status={props.status}
         allowExpand={allowExpand}

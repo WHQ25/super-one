@@ -3,8 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { Bookmark, Check, Loader2 } from 'lucide-react'
 import type { WidgetData } from '@superone/shared/generative-ui/types'
 import { buildWidgetSrcdoc, widgetThemeVars, WIDGET_FRAME_WIDTH } from '@superone/shared/generative-ui/widget-srcdoc'
-import { requestNative, requestNativeAsync } from './bridge'
-import { PortableTurnContext } from './portable-turn-context'
+import { requestNative, requestNativeAsync, openNativeComposer, releaseNativeComposer } from './bridge'
+import { ComposerViewBridge } from '@superone/shared/composer-view-bridge'
+import { PortableTurnContext, TurnMessageIdContext } from './portable-turn-context'
 import { WidgetLayoutFrame } from './WidgetLayoutFrame'
 import { PORTABLE_BLOCK_CLASS, PortableBlockHeader, PortableBlockHeaderButton } from './PortableBlockHeader'
 
@@ -147,6 +148,14 @@ function SaveForm({ data, onDone }: { data: WidgetData; onDone: (state: SaveStat
 export function PortableWidgetBlock({ data }: { data: WidgetData }) {
   const { t } = useTranslation()
   const { scheme } = useContext(PortableTurnContext)
+  const messageId = useContext(TurnMessageIdContext)
+  const composer = useMemo(() => new ComposerViewBridge({
+    open: request => {
+      if (!messageId) return Promise.reject(new Error('This widget has no active message.'))
+      return openNativeComposer({ ...request, messageId })
+    },
+    release: releaseNativeComposer,
+  }), [messageId])
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [height, setHeight] = useState(Math.max(MIN_HEIGHT, data.height))
   const [save, setSave] = useState<SaveState>({ kind: 'idle' })
@@ -171,13 +180,23 @@ export function PortableWidgetBlock({ data }: { data: WidgetData }) {
   useEffect(() => { postTheme() }, [postTheme])
 
   useLayoutEffect(() => {
+    composer.reset()
+    return () => composer.dispose()
+  }, [composer, srcdoc])
+
+  useLayoutEffect(() => {
     const handler = (event: MessageEvent) => {
       // The chat document's own host bridge listens on this same window, so a widget
       // frame must be identified by source rather than by message shape.
       if (event.source !== iframeRef.current?.contentWindow) return
-      const message = event.data as { type?: string; height?: number; text?: string; url?: string; deltaY?: number }
+      const message = event.data as { type?: string; height?: number; text?: string; url?: string; deltaY?: number; requestId?: string; spec?: unknown }
+      const source = iframeRef.current?.contentWindow
+      if (typeof message?.type === 'string' && composer.handle(message.type.replace(/^widget-/, ''), message as Record<string, unknown>, result => {
+        source?.postMessage({ ...result, type: 'widget-composer-result' }, '*')
+      })) return
       switch (message?.type) {
         case 'widget-ready':
+          composer.reset()
           postTheme()
           break
         case 'widget-resize':
@@ -188,6 +207,19 @@ export function PortableWidgetBlock({ data }: { data: WidgetData }) {
         case 'widget-sendPrompt':
           if (typeof message.text === 'string') requestNative('setDraft', { text: message.text })
           break
+        case 'widget-requestInput': {
+          if (typeof message.requestId !== 'string' || message.requestId.length > 128) break
+          const source = iframeRef.current?.contentWindow
+          const requestId = message.requestId
+          void (async () => {
+            try {
+              if (!messageId) throw new Error('This widget has no active message.')
+              await requestNativeAsync('requestInput', { messageId, spec: message.spec })
+              source?.postMessage({ type: 'widget-input-result', requestId }, '*')
+            } catch (error) { source?.postMessage({ type: 'widget-input-result', requestId, error: error instanceof Error ? error.message : String(error) }, '*') }
+          })()
+          break
+        }
         case 'widget-openLink':
           if (typeof message.url === 'string') requestNative('openLink', { url: message.url })
           break
@@ -204,7 +236,7 @@ export function PortableWidgetBlock({ data }: { data: WidgetData }) {
     }
     globalThis.addEventListener('message', handler)
     return () => globalThis.removeEventListener('message', handler)
-  }, [postTheme])
+  }, [postTheme, messageId, composer])
 
   const displayTitle = data.title.replace(/_/g, ' ')
   const saveLabel = data.templateId ? t('widget.save.updateTitle') : t('widget.save.title')

@@ -9,11 +9,17 @@
  */
 import { SVG_STYLES } from './svg-styles'
 import { rewriteCdnUrls } from './cdn-allowlist'
+import { createComposerApi } from '../miniapp-api-runtime'
 
 export const WIDGET_MESSAGE_TYPES = [
   'widget-ready',
   'widget-resize',
   'widget-sendPrompt',
+  'widget-requestInput',
+  'widget-input-result',
+  'widget-composer-open',
+  'widget-composer-result',
+  'widget-composer-dispose',
   'widget-openLink',
   'widget-wheel',
   'widget-touch-scroll',
@@ -74,14 +80,36 @@ const TOUCH_SCROLL_SCRIPT = `
 function bridgeScript(touchScroll: boolean): string {
   return `<script>
 (function(){
+  var inputCalls=new Map(),inputSequence=0;
+  var composerOnResult;
+  var composer=(${createComposerApi.toString()})({
+    send:function(type,data){parent.postMessage(Object.assign({type:'widget-'+type},data),'*')},
+    on:function(type,handler){if(type==='composer-result')composerOnResult=handler}
+  });
+  window.superone=Object.assign(window.superone||{},{composer:composer});
   window.addEventListener('message',function(e){
     var d=e.data;
+    if(e.source===parent&&d&&d.type==='widget-composer-result'){
+      composerOnResult(d);return;
+    }
+    if(e.source===parent&&d&&d.type==='widget-input-result'){
+      var call=inputCalls.get(d.requestId);if(!call)return;inputCalls.delete(d.requestId);
+      if(d.error)call.reject(new Error(d.error));else call.resolve();return;
+    }
     if(!d||d.type!=='widget-theme')return;
     document.documentElement.classList.toggle('dark',!!d.dark);
     if(d.colorScheme)document.documentElement.style.colorScheme=d.colorScheme;
     if(d.vars)for(var k in d.vars)document.documentElement.style.setProperty(k,d.vars[k]);
   });
   window.sendPrompt=function(t){parent.postMessage({type:'widget-sendPrompt',text:String(t)},'*')};
+  window.requestInput=function(spec){
+    if(inputCalls.size>=32)return Promise.reject(new Error('Too many pending input requests'));
+    var id=String(++inputSequence);
+    return new Promise(function(resolve,reject){inputCalls.set(id,{resolve:resolve,reject:reject});
+      try{parent.postMessage({type:'widget-requestInput',requestId:id,spec:spec},'*')}
+      catch(error){inputCalls.delete(id);reject(error)}
+    });
+  };
   window.openLink=function(u){parent.postMessage({type:'widget-openLink',url:String(u)},'*')};
   document.addEventListener('click',function(e){
     var a=e.target.closest('a[href]');

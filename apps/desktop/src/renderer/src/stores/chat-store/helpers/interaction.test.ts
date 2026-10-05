@@ -124,6 +124,29 @@ beforeEach(() => {
 })
 
 describe('respondToPermissionImpl', () => {
+  it('finishes an acknowledgement in the original session after the user switches sessions', async () => {
+    let finish!: (handled: boolean) => void
+    mockAgent.respondToPermission.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const request = { requestId: 'form', toolName: 'composer_request', input: {}, allowAlwaysAllow: false } as never
+    seedSession('owner', { pendingPermissions: [request] })
+    const pending = useChatStore.getState().respondToPermission('form', true)
+    const project = useChatStore.getState().projectSessions['/p1']
+    useChatStore.setState({ projectSessions: { '/p1': { ...project, _activeSessionId: 'other', _sessions: {
+      ...project._sessions, other: { ...createDefaultPerSessionState(), pendingPermissions: [request] },
+    } } } })
+    finish(true)
+    expect(await pending).toBe(true)
+    const sessions = useChatStore.getState().projectSessions['/p1']._sessions
+    expect(sessions.owner.pendingPermissions).toEqual([])
+    expect(sessions.other.pendingPermissions).toEqual([request])
+  })
+
+  it('keeps an input form pending when the host rejects its answer', async () => {
+    mockAgent.respondToPermission.mockResolvedValueOnce(false)
+    seedSession('owner', { pendingPermissions: [{ requestId: 'form', toolName: 'composer_request', input: {}, allowAlwaysAllow: false, requestKind: 'input_request' }] })
+    expect(await useChatStore.getState().respondToPermission('form', true, undefined, undefined, undefined, undefined, { notes: 'draft' })).toBe(false)
+    expect(activeSession().pendingPermissions[0]?.requestId).toBe('form')
+  })
   it('approves and removes the matching request, leaving siblings intact', async () => {
     seedSession('sid-1', {
       pendingPermissions: [

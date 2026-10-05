@@ -33,6 +33,7 @@ import { ComposerSwitch } from './ComposerSwitch'
 import { resolveComposer } from './composer-slot/resolve-composer'
 import { COMPOSER_CONTENT_MAX_HEIGHT, renderComposer } from './composer-slot/composer-registry'
 import { topComposer, useComposerStacks } from './composer-slot/composer-stack'
+import { groupPendingPermissions } from '@superone/shared/input-request-presentation'
 import { buildDecisionQueue } from './composer-slot/decision-queue'
 import { useDecisionComposerAvailability } from './composer-slot/useDecisionComposerAvailability'
 import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
@@ -514,24 +515,24 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     store.sessionId !== null && store.sessionId === displayedSessionId && store.state !== 'idle'
   ))
   const showRealtimeComposer = showRealtime && callEngaged
-  const needsDecision = (pendingPermissions?.length ?? 0) > 0
-    || pendingQuestion != null
-    || pendingPlanApproval != null
+  const decision = buildDecisionQueue(pendingPermissions ?? [], pendingQuestion ?? null)[0] ?? null
+  const appInput = groupPendingPermissions(pendingPermissions ?? []).appInputs[0] ?? null
+  const needsDecision = decision != null || pendingPlanApproval != null
   const decisionAvailable = useDecisionComposerAvailability()
   // Consent stays queued behind decisions. If a read-only gate suppresses the
   // decision composer, keep consent hidden too, matching the old composer gates.
   const consentHead = useMcpAppConsents(state => state.pending.find(item => item.sessionId === displayedSessionId))
   const appConsent = Boolean(consentHead) && (!needsDecision || decisionAvailable)
-  const decision = buildDecisionQueue(pendingPermissions ?? [], pendingQuestion ?? null)[0] ?? null
   // Draft edits stay inside the opened composer; the transcript only follows identity changes.
   const openedComposer = useComposerStacks(useShallow(state => {
     const entry = projectPath && displayedSessionId ? topComposer({ projectPath, sessionId: displayedSessionId }, state) : null
     return entry ? { key: entry.key, id: entry.id, target: entry.target, lifetime: entry.lifetime } : null
   }))
-  const composerKind = resolveComposer({ needsDecision, decisionAvailable, appConsent, voiceEngaged: showRealtimeComposer, openedComposerId: openedComposer?.id })
+  const composerKind = resolveComposer({ needsDecision, decisionAvailable, appConsent, appInput: !!appInput, voiceEngaged: showRealtimeComposer, openedComposerId: openedComposer?.id })
   const composerKey = composerKind === 'decision' && decision
     ? `${decision.kind}:${decision.request.requestId}`
     : composerKind === 'app-consent' && consentHead ? `app-consent:${consentHead.id}`
+    : composerKind === 'app-input' && appInput ? `app-input:${appInput.requestId}`
     : openedComposer?.id === composerKind ? openedComposer.key : composerKind
   // The local snapshot needs no backing thread, so every Codex session on screen
   // restores it; only the provider reconcile waits for the thread id, because
@@ -585,7 +586,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   }), [])
 
   const containerRef = useRef<HTMLDivElement>(null)
-  const composerFocus = useRestoreChatInputFocus((needsDecision || !!openedComposer) && decisionAvailable, containerRef,
+  const composerFocus = useRestoreChatInputFocus((needsDecision || !!appInput || !!openedComposer) && decisionAvailable, containerRef,
     projectPath && displayedSessionId ? { projectPath, sessionId: displayedSessionId } : undefined)
   const computeAutoScale = useCallback((w: number) => w >= 672 ? 1.15 : w >= 512 ? 1.1 : 1, [])
   const [autoScale, setAutoScale] = useState(1)
@@ -685,7 +686,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             }
           }}
         />
-      ) : pendingPlanApproval && decisionAvailable && !(pendingPermissions?.length) && !pendingQuestion ? (
+      ) : pendingPlanApproval && decisionAvailable && !decision ? (
         <PlanApprovalPrompt />
       ) : (
         <>
@@ -724,7 +725,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             kind={composerKind}
             transitionKey={composerKey}
             alignTo="text"
-            maxHeight={(needsDecision || !!openedComposer) && decisionAvailable ? COMPOSER_CONTENT_MAX_HEIGHT : undefined}
+            maxHeight={(needsDecision || !!appInput || !!openedComposer) && decisionAvailable ? COMPOSER_CONTENT_MAX_HEIGHT : undefined}
             render={(kind) => renderComposer(kind, displayedSessionId ?? '', {
               showTodoPopup: true,
               autoFocusOnMount: composerFocus.autoFocusOnMount,
@@ -732,6 +733,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
               microphoneShortcutEnabled: showRealtimeComposer && !appConsent,
               decision,
               appConsent: consentHead,
+              appInput,
               openedComposer,
             })}
           />

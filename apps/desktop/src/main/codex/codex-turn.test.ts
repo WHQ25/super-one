@@ -648,6 +648,8 @@ describe('resolveThread fallback', () => {
           'X-SuperOne-Session-Id': session.superoneSessionId,
         },
         startup_timeout_sec: 60,
+        // Human waits (composer_request, host confirms) outlive Codex's 300 s default.
+        tool_timeout_sec: 86_400,
         tools: expect.objectContaining({
           session_collab_request: { approval_mode: 'approve' },
           config_apply: { approval_mode: 'approve' },

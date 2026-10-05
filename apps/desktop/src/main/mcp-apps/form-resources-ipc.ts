@@ -7,11 +7,18 @@ import { matchesResourceAccept } from '@superone/shared/mcp-form-resources'
 import { McpAppsError, type McpAppReadResult } from '@superone/shared/mcp-apps'
 import type { SchemaFormField, SchemaFormResource } from '@superone/shared/schema-form'
 import type { Session } from '../session/types'
+import { inputRequestPickContext } from '../session/input-requests'
+import type { PermissionRequest } from '@superone/shared/agent-types'
 import { codexFormResources, type CodexFormResources } from '../codex/codex-form-resources'
 import { inferMimeType } from '../file-bridge'
 import { assertHostRenderer, hostProvider, hostRpcFailure, untilAborted } from './host-tools'
 
-function resourceField(context: CodexFormResources, name: string): Extract<SchemaFormField, { kind: 'resource' }> {
+/** What the native picker needs: a pending Codex elicitation or a host input request. */
+export type FormResourcePickContext = Pick<CodexFormResources, 'localFiles' | 'picked' | 'picking' | 'assertCurrent'> & {
+  request: Pick<PermissionRequest, 'schemaForm' | 'serverName' | 'inputRequest'>
+}
+
+function resourceField(context: Pick<FormResourcePickContext, 'request' | 'assertCurrent'>, name: string): Extract<SchemaFormField, { kind: 'resource' }> {
   context.assertCurrent()
   const form = context.request.schemaForm
   const field = form?.supported ? form.fields.find(candidate => candidate.name === name) : undefined
@@ -20,7 +27,7 @@ function resourceField(context: CodexFormResources, name: string): Extract<Schem
 }
 
 /** The native picker is the only source of new paths. No renderer path/URI is an input. */
-export async function pickFormResources(context: CodexFormResources, fieldName: string, pick: (options: OpenDialogOptions) => Promise<{ canceled: boolean; filePaths: string[] }>): Promise<SchemaFormResource[]> {
+export async function pickFormResources(context: FormResourcePickContext, fieldName: string, pick: (options: OpenDialogOptions) => Promise<{ canceled: boolean; filePaths: string[] }>): Promise<SchemaFormResource[]> {
   const field = resourceField(context, fieldName)
   if (!context.localFiles || !field.userOptions) throw new McpAppsError('denied', 'This form cannot add local resources')
   if (context.picking) throw new McpAppsError('denied', 'A file picker is already open for this form')
@@ -28,8 +35,10 @@ export async function pickFormResources(context: CodexFormResources, fieldName: 
   try {
     const { kind, accept } = field.userOptions
     const options: OpenDialogOptions = {
-      title: `${context.request.serverName} · ${field.label}`,
-      message: 'The selected paths will be shared with this local MCP server when you submit the form.',
+      title: `${context.request.inputRequest?.title ?? context.request.serverName} · ${field.label}`,
+      message: context.request.inputRequest
+        ? 'The selected paths will be shared with whoever opened this form when you submit it.'
+        : 'The selected paths will be shared with this local MCP server when you submit the form.',
       properties: [kind === 'directory' ? 'openDirectory' : 'openFile', ...(field.selection === 'single' ? [] : ['multiSelections' as const])],
       // Filters are a convenience only. Mixed MIME/extension rules are checked below.
       ...(accept?.length && accept.every(rule => rule.startsWith('.'))
@@ -78,7 +87,7 @@ export function registerMcpFormResourceIpc(getSession: (id: string) => Session |
   ipcMain.handle(AgentIpcChannels.MCP_FORM_PICK_RESOURCES, async (event, sessionId: string, requestId: string, field: string) => {
     try {
       assertHostRenderer(event)
-      const context = codexFormResources(sessionId, requestId)
+      const context = inputRequestPickContext(sessionId, requestId) ?? codexFormResources(sessionId, requestId)
       const parent = BrowserWindow.fromWebContents(event.sender)
       return { ok: true, value: await pickFormResources(context, field, options => parent ? dialog.showOpenDialog(parent, options) : dialog.showOpenDialog(options)) }
     } catch (error) { return hostRpcFailure(error) }
@@ -86,6 +95,8 @@ export function registerMcpFormResourceIpc(getSession: (id: string) => Session |
   ipcMain.handle(AgentIpcChannels.MCP_FORM_PREVIEW_RESOURCE, async (event, sessionId: string, requestId: string, field: string, optionUri: string) => {
     try {
       assertHostRenderer(event)
+      // Admission refuses preview targets on input forms; there is no server to read them from.
+      if (inputRequestPickContext(sessionId, requestId)) throw new McpAppsError('denied', 'Input forms have no previews')
       const session = getSession(sessionId)
       if (!session) throw new McpAppsError('inactive', 'The form session is unavailable')
       return { ok: true, value: await previewFormResource(session, codexFormResources(sessionId, requestId), field, optionUri) }

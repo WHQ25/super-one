@@ -1,11 +1,12 @@
 import type { PermissionRequest, PlanApprovalRequest } from '@superone/shared/agent-types'
-import { elicitationFormRequest } from '@superone/shared/schema-form'
+import { elicitationFormRequest, parseSchemaForm } from '@superone/shared/schema-form'
 import { ordinaryPermission, permissionExamples, permissionRequest } from './permissions'
 
 type ScenarioMeta = { id: string; title: string; description: string }
 export type NativeScenario = ScenarioMeta & (
   | { category: 'Permissions'; request: PermissionRequest }
   | { category: 'Plans'; request: PlanApprovalRequest; continueMode?: 'auto' | 'acceptEdits' }
+  | { category: 'Input forms'; request: PermissionRequest; behavior?: 'retry' | 'pending' | 'offline' | 'upload-failed' }
 )
 
 const plan: PlanApprovalRequest = {
@@ -34,10 +35,24 @@ export const nativeScenarios: NativeScenario[] = [
   { id: 'permission/network', category: 'Permissions', title: 'Network permission', description: 'Requested host and reason.', request: {
     ...ordinaryPermission, requestId: 'preview-network', toolName: 'SandboxNetworkAccess', suggestions: [], input: { host: 'registry.npmjs.org' }, decisionReason: 'Download the package required by this project.',
   } },
-  ...Object.keys(permissionExamples).map((key): NativeScenario => {
+  ...Object.keys(permissionExamples).filter(key => key !== 'input_request').map((key): NativeScenario => {
     const kind = key as NonNullable<PermissionRequest['requestKind']>
     return { id: `permission/${kind}`, category: 'Permissions', title: kind.replaceAll('_', ' '), description: `Production PermissionSheet · ${kind}`, request: permissionRequest(kind) }
   }),
+  ...(['default', 'retry', 'pending', 'offline'] as const).map((behavior): NativeScenario => ({
+    id: `input/${behavior}`, category: 'Input forms', title: `Composer form · ${behavior}`, description: 'Native composer-slot form with growing text and an explicit submit action.',
+    request: permissionRequest('input_request'), ...(behavior === 'default' ? {} : { behavior }),
+  })),
+  { id: 'input/files', category: 'Input forms', title: 'Widget file upload', description: 'Upload a file bound to this form; submit sends a user message.', request: {
+    ...permissionRequest('input_request'), inputRequest: { title: 'Attach a reference', output: 'agent', origin: { kind: 'widget', messageId: 'preview-widget' } },
+    schemaForm: parseSchemaForm({ type: 'object', properties: { files: { type: 'array', title: 'Reference files', items: { type: 'string', format: 'uri' }, 'x-openai-input': { type: 'file', options: [], userOptions: { kind: 'file' } } } } }, { userResources: true }),
+  } },
+  { id: 'input/upload-failed', category: 'Input forms', title: 'Upload failure', description: 'A failed upload leaves the form editable.', behavior: 'upload-failed', request: {
+    ...permissionRequest('input_request'), schemaForm: parseSchemaForm({ type: 'object', properties: { files: { type: 'array', items: { type: 'string', format: 'uri' }, 'x-openai-input': { type: 'file', options: [], userOptions: { kind: 'file' } } } } }, { userResources: true }),
+  } },
+  { id: 'input/unsupported-directory', category: 'Input forms', title: 'Unsupported directory', description: 'The phone explains the capability boundary and allows cancellation.', request: {
+    ...permissionRequest('input_request'), schemaForm: parseSchemaForm({ type: 'object', properties: { directory: { type: 'string', 'x-openai-input': { type: 'file', options: [], userOptions: { kind: 'directory' } } } } }, { userResources: true }),
+  } },
   { id: 'permission/mcp-form-unsupported', category: 'Permissions', title: 'Unsupported form', description: 'A form with an input the phone cannot render is reported, never partially shown.', request: {
     requestId: 'preview-form-unsupported', toolName: 'bits-and-bolts', input: {}, allowAlwaysAllow: false, requestKind: 'mcp_elicitation', serverName: 'Bits & Bolts', message: 'Choose CAD references',
     ...elicitationFormRequest({ type: 'object', properties: { references: { type: 'array', items: { type: 'string', format: 'uri' }, 'x-openai-input': { type: 'resource', selection: 'implicit', options: [] } } } }),

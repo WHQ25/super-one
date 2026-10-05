@@ -15,11 +15,12 @@ export function projectIdForDir(state: AppProjects, projectDir: string): string 
  * The project of the chat pane rendering a tool UI. A side pane can show a
  * session of another project than the one selected in the app.
  */
-export function useMiniAppProjectScope(): { projectDir: string; projectId: string | null } {
-  const scopedDir = useSessionScope()?.projectPath
+export function useMiniAppProjectScope(): { projectDir: string; projectId: string | null; sessionId?: string } {
+  const scope = useSessionScope()
+  const scopedDir = scope?.projectPath
   const projectDir = useAppStore((s) => scopedDir ?? s.currentFolder) ?? ''
   const projectId = useAppStore((s) => projectIdForDir(s, projectDir))
-  return { projectDir, projectId }
+  return { projectDir, projectId, ...(scope?.sessionId ? { sessionId: scope.sessionId } : {}) }
 }
 
 /** The `browser_*` target of a tool UI in chat, unless the caller supplies its own. */

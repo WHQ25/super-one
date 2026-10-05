@@ -1,3 +1,4 @@
+import { isAppInputRequest } from '@superone/shared/input-request-presentation'
 import type { PermissionMode, SandboxInfo } from '@superone/shared/agent-types'
 import { useAppStore } from '../../app'
 import { applyDefaultModel } from './agent-defaults'
@@ -410,9 +411,9 @@ export async function interruptImpl(
     interrupted = false
   }
   if (!interrupted) {
-    set((s) => commitPerSession(s, target, () => ({
+    set((s) => commitPerSession(s, target, current => ({
       status: 'idle',
-      pendingPermissions: [],
+      pendingPermissions: current.pendingPermissions.filter(isAppInputRequest),
       pendingQuestion: null,
       pendingPlanApproval: null,
     })))
@@ -444,9 +445,9 @@ function armInterruptSettleWatchdog(
     if (session?.status !== 'streaming') return
     if ((session.messages[session.messages.length - 1]?.id ?? null) !== turnTailId) return
     console.warn('[interrupt] no terminal event after interrupt; forcing idle', { projectPath, sessionId })
-    set((s) => updatePerSession(s, projectPath, sessionId, () => ({
+    set((s) => updatePerSession(s, projectPath, sessionId, current => ({
       status: 'idle',
-      pendingPermissions: [],
+      pendingPermissions: current.pendingPermissions.filter(isAppInputRequest),
       pendingQuestion: null,
       pendingPlanApproval: null,
     })))

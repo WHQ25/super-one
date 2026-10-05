@@ -101,6 +101,7 @@ export const MiniAppWebviewPanel = forwardRef<MiniAppWebviewPanelHandle, MiniApp
         <MiniAppWebview
           ref={webviewRef}
           appId={appId}
+          projectDir={projectDir}
           src={src}
           onMessage={handleIpcMessage}
           automation={automation}

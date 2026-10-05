@@ -43,6 +43,7 @@ The entry must export `activate(context)`. `deactivate()` is optional.
 | `workspaceState` | Small JSON-serializable state tied to the workspace. |
 | `globalState` | Small JSON-serializable state shared across workspaces. |
 | `tools.handle(name, handler)` | Register the implementation of a tool declared in `manifest.tools`. Returns a disposable. |
+| `composer.open(spec, { output?, session?, signal? })` | Shared frontend spec/outcome contract: default caller returns values; agent sends a user message and returns status only. Local desktop sessions only. |
 | `webview.postMessage(value)` | Send structured-cloneable data to every mounted WebView for this app/project. Queued until the WebView is ready; dropped when no WebView is open, so treat it as notification, not state transfer. |
 | `webview.onMessage(handler)` | Receive `window.superone.node.postMessage(...)` from the WebView. Returns a disposable. |
 | `subscriptions` | Push disposables here for automatic reverse-order cleanup. |
@@ -51,6 +52,65 @@ The entry must export `activate(context)`. `deactivate()` is optional.
 | `locale.get / onChange` | Current SuperOne language. |
 | `version` | SuperOne version running this mini-app. |
 | `setStatus(text)` | Show a short runtime status in the sidebar. A host with a status set also counts as a background task, so quitting SuperOne asks for confirmation — pass `''` when the work is done. |
+
+## Session input forms
+
+A handler receives trusted `(args, ctx)`: `ctx.session` identifies the invoking
+session, `ctx.callId` identifies this call, and `ctx.signal` aborts when the call
+fails, times out or is cancelled. These facts come from SuperOne, not arguments.
+
+```js
+context.tools.handle('review_notes', async (_args, ctx) => {
+  return context.composer.open({
+    title: 'Review notes',
+    requestedSchema: {
+      type: 'object', required: ['notes'],
+      properties: { notes: { type: 'string', title: 'Notes' } },
+    },
+  }, { session: ctx.session, signal: ctx.signal })
+})
+```
+
+Default caller output resolves `{ status: 'submitted', values }`; agent output
+sends a user message and resolves `{ status: 'submitted' }` without values.
+Cancel resolves `{ status: 'cancelled', reason }`. Fields reuse flat
+MCP elicitation JSON Schema, including resource choices and native file picking.
+Nested objects and OpenAI previews are rejected. Do not duplicate the form in a
+tool result or panel.
+
+Pass `ctx.session` when the app has multiple holders. Without a session, exactly
+one authorized local holder is required. Unauthorized or remote targets and a
+fifth live app/session form reject. Host and frontend share this quota. Host
+disposal and an optional signal close only forms opened by that Host.
+
+Mini-app HTML and widgets share the frontend entry:
+
+```js
+const result = await window.superone.composer.open({
+  title: 'Review notes',
+  requestedSchema: {
+    type: 'object', required: ['notes'],
+    properties: { notes: { type: 'string', title: 'Notes' } },
+  },
+})
+if (result.status === 'submitted' && 'values' in result) {
+  applyNotes(result.values.notes)
+}
+```
+
+Frontend options accept only `output`; the container binds the target session
+and app/message. Both frontends default to caller and wait for the terminal
+outcome. Pass `{ output: 'agent' }` to send the answer to the agent instead.
+Admission failures reject. Closing/reloading a frontend cancels its caller
+forms; agent forms remain in the session. Node-only session/signal options are
+unavailable in HTML. Legacy widget `requestInput(spec)` keeps agent output and
+opening-only acknowledgement.
+
+The form has no host deadline. An inline awaited tool retains its fixed
+120-second limit; use `ctx.signal` to close its form with
+the call. For longer human waits, start the form, return from the tool, and handle
+its promise separately without that call signal. This does not extend the
+60-second Host Action deadline.
 
 ## WebView side
 

@@ -38,6 +38,14 @@ describe('mapNodeSessionEvents (text-only)', () => {
     } })], ctx)
     expect(events).toMatchObject([{ type: 'permission_request', request: { ...form, subtitle: 'Part', riskLevel: 'low', supportsAlwaysPersist: true, allowAlwaysAllow: false } }])
   })
+  it('keeps input-request metadata in durable permission replay', () => {
+    const form = elicitationFormRequest({ type: 'object', properties: { env: { type: 'string' } } })
+    const inputRequest = { title: 'Deploy', origin: { kind: 'agent' }, output: 'caller' }
+    const events = mapNodeSessionEvents([envelope({ eventType: 'session.permission_requested', payload: {
+      interactionId: 'f1', requestKind: 'input_request', toolName: 'composer_request', message: 'Deploy', allowAlwaysAllow: false, inputRequest, ...form,
+    } })], ctx)
+    expect(events).toMatchObject([{ type: 'permission_request', request: { requestId: 'f1', requestKind: 'input_request', inputRequest, allowAlwaysAllow: false } }])
+  })
   it('echoes a host-origin rich message during an existing optimistic send drain', () => {
     const contexts = [{ appId: 'mcp:part', appName: 'CAD', summary: 'Dial', content: '{"part":"dial"}' }]
     const events = mapNodeSessionEvents([envelope({ eventType: 'session.user_message', payload: { blockId: 'u1', text: '{"part":"dial"}', userMessageContent: [], contexts, echoUserMessage: true } })], { ...ctx, skipUserMessage: true })

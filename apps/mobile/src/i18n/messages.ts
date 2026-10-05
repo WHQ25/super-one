@@ -8,6 +8,14 @@ type Copy = Record<string, string>
  * and in-progress states use sentence case.
  */
 const en: Copy = {
+  'Widget': 'Widget',
+  'Add files…': 'Add Files…',
+  'Uploading…': 'Uploading…',
+  'Submitting…': 'Submitting…',
+  'This form cannot be completed on this phone.': 'This form cannot be completed on this phone.',
+  'Reconnect to submit this form.': 'Reconnect to submit this form.',
+  'Could not submit. Please try again.': 'Could not submit. Please try again.',
+  'Could not upload. Please try again.': 'Could not upload. Please try again.',
   'Drafts': 'Drafts',
   'Untitled draft': 'Untitled Draft',
   'Delete draft': 'Delete Draft',
@@ -513,6 +521,14 @@ const en: Copy = {
 }
 
 const zh: Copy = {
+  'Widget': '小组件',
+  'Add files…': '添加文件…',
+  'Uploading…': '正在上传…',
+  'Submitting…': '正在提交…',
+  'This form cannot be completed on this phone.': '此表单暂时无法在手机上完成。',
+  'Reconnect to submit this form.': '重新连接后可以提交表单。',
+  'Could not submit. Please try again.': '未能提交，请重试。',
+  'Could not upload. Please try again.': '未能上传，请重试。',
   'Drafts': '草稿',
   'Untitled draft': '未命名草稿',
   'Delete draft': '删除草稿',

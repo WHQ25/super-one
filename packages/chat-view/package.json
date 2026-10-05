@@ -51,6 +51,7 @@
     "./presenters/DeviceToolBlock": "./src/presenters/DeviceToolBlock.tsx",
     "./presenters/FileChipShell": "./src/presenters/FileChipShell.tsx",
     "./presenters/GenericToolRow": "./src/presenters/GenericToolRow.tsx",
+    "./presenters/InputRequestToolRow": "./src/presenters/InputRequestToolRow.tsx",
     "./presenters/ImageGenToolBlock": "./src/presenters/ImageGenToolBlock.tsx",
     "./presenters/LinkFavicon": "./src/presenters/LinkFavicon.tsx",
     "./presenters/ListAgentsToolBlock": "./src/presenters/ListAgentsToolBlock.tsx",

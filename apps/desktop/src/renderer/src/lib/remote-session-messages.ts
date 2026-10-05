@@ -20,7 +20,7 @@ export type NodeTranscriptBlock = {
   createdAt?: number
 }
 
-export type NodePendingInteraction = Pick<PermissionRequest, 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist'> & {
+export type NodePendingInteraction = Pick<PermissionRequest, 'schemaForm' | 'elicitationForm' | 'subtitle' | 'riskLevel' | 'supportsAlwaysPersist' | 'inputRequest'> & {
   interactionId: string
   kind?: 'permission' | 'question' | 'plan' | 'session_agents_confirm'
   toolName?: string
@@ -51,6 +51,8 @@ export type NodeSessionSnapshot = {
   cwd?: string | null
   transcript?: NodeTranscriptBlock[]
   pendingInteraction?: NodePendingInteraction | null
+  /** Open `composer_request` forms; they never occupy `pendingInteraction`. */
+  pendingInputRequests?: NodePendingInteraction[]
   updatedAt?: number
   /**
    * Prefixed harness resume token from SessionRuntime
@@ -93,6 +95,21 @@ export function nodePendingToPermissionRequest(
   }
   // Permission UI only — question/plan use dedicated mappers below.
   if (pending.kind && pending.kind !== 'permission') return null
+  if (pending.requestKind === 'input_request') {
+    if (!pending.inputRequest || !pending.schemaForm) return null
+    return {
+      requestId: pending.interactionId,
+      toolName: pending.toolName || 'composer_request',
+      toolUseId: pending.toolUseId ?? pending.interactionId,
+      input: {},
+      allowAlwaysAllow: false,
+      requestKind: 'input_request',
+      serverName: pending.serverName || 'superone',
+      message: pending.message || pending.inputRequest.title,
+      schemaForm: pending.schemaForm,
+      inputRequest: pending.inputRequest,
+    }
+  }
   const input = pending.input && typeof pending.input === 'object' ? pending.input : {}
   const elicitationUrl = typeof input.elicitationUrl === 'string' ? input.elicitationUrl : undefined
   const elicitationId = typeof input.elicitationId === 'string' ? input.elicitationId : undefined
@@ -240,16 +257,18 @@ export function nodePendingToPlanPayload(
 
 /** Whether a node snapshot still needs a live event drain (local Session parity). */
 export function nodeSnapshotNeedsLiveDrain(
-  snap: Pick<NodeSessionSnapshot, 'status' | 'pendingInteraction'> | null | undefined,
+  snap: Pick<NodeSessionSnapshot, 'status' | 'pendingInteraction' | 'pendingInputRequests'> | null | undefined,
 ): boolean {
   if (!snap) return false
   if (snap.status === 'streaming') return true
-  return Boolean(snap.pendingInteraction?.interactionId)
+  return Boolean(snap.pendingInteraction?.interactionId || snap.pendingInputRequests?.length)
 }
 
 /** Build pending interaction fields for chat-store from a node session snapshot. */
 export function nodePendingInteractionFields(
   pending: NodePendingInteraction | null | undefined,
+  /** `NodeSessionSnapshot.pendingInputRequests`; listed after the harness prompt. */
+  inputRequests: readonly NodePendingInteraction[] = [],
 ): {
   pendingPermissions: PermissionRequest[]
   pendingQuestion: AskUserQuestionRequest | null
@@ -259,11 +278,12 @@ export function nodePendingInteractionFields(
   const perm = nodePendingToPermissionRequest(pending)
   const question = nodePendingToQuestionRequest(pending)
   const plan = nodePendingToPlanApprovalRequest(pending)
+  const forms = inputRequests.flatMap(request => nodePendingToPermissionRequest(request) ?? [])
   return {
-    pendingPermissions: perm ? [perm] : [],
+    pendingPermissions: [...(perm ? [perm] : []), ...forms],
     pendingQuestion: question,
     pendingPlanApproval: plan,
-    awaitingAssistantReply: Boolean(perm || question || plan),
+    awaitingAssistantReply: Boolean(perm || question || plan || forms.length),
   }
 }
 

@@ -66,6 +66,7 @@ describe('getCodexSuperoneMcpConfig', () => {
         'X-SuperOne-Session-Id': 'session-1',
       },
       startup_timeout_sec: 60,
+      tool_timeout_sec: 86_400,
       tools: expectedCodexToolApprovals,
     })
   })

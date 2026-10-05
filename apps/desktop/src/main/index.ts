@@ -36,7 +36,7 @@ import { MCP_APP_SCHEME_PRIVILEGES, registerMcpAppProtocol, isMcpAppUrl } from '
 import { attachMcpAppFrameGuards, deniesMcpAppPermission } from './mcp-apps/frame-security'
 import { initMiniAppHostActionBridge, runMiniAppHostAction, settleMiniAppHostAction } from './miniapp/miniapp-host-action-bridge'
 import { isPathExposableByApp } from './miniapp/miniapp-path-exposure'
-import { executeMiniAppTool, hasActiveMiniAppHosts, initMiniAppHost, listMiniAppHosts, notifyMiniAppContextConsumed, postMiniAppWebviewMessage, releaseMiniAppHost, restartMiniAppHost, setMiniAppHostActionRunner, startMiniAppHost, stopAllMiniAppHosts, stopMiniAppHost, stopMiniAppHostsByAppId } from './miniapp/miniapp-host'
+import { executeMiniAppTool, hasActiveMiniAppHosts, initMiniAppHost, listMiniAppHosts, miniAppHostName, notifyMiniAppContextConsumed, postMiniAppWebviewMessage, releaseMiniAppHost, restartMiniAppHost, setMiniAppHostActionRunner, setMiniAppInputRequestOpener, startMiniAppHost, stopAllMiniAppHosts, stopMiniAppHost, stopMiniAppHostsByAppId } from './miniapp/miniapp-host'
 import { setMiniAppHostReloader } from './mcp/miniapp-dev-debug-tools'
 import { closeAllMiniAppState } from './miniapp/miniapp-state'
 import { prepareMiniAppHostLaunch, type MiniAppHostLaunch } from './miniapp/miniapp-host-launch'
@@ -48,8 +48,11 @@ import { registerBrowserPopupRedirect } from './browser-popup-redirect'
 import { fetchBrowserBytes, registerBrowserDownloadCapture } from './browser/browser-downloads'
 import { registerBrowserWebAuthn } from './browser/browser-webauthn'
 import { setBrowserDownloadTaskHost } from './browser/browser-download-tasks'
-import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, loadPreapprovedTools, updatePreapprovedTools, refreshAppDefinitions, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, setAppSettingsApplier, setTerminalToolDeps, isAppStillAuthorizedInProject, addToolsChangedListener, setAppToolExecutor } from './mcp/superone-mcp-server'
+import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, loadPreapprovedTools, updatePreapprovedTools, refreshAppDefinitions, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, setAppSettingsApplier, setTerminalToolDeps, isAppStillAuthorizedInProject, addToolsChangedListener, setAppToolExecutor, sessionsAuthorizingApp } from './mcp/superone-mcp-server'
 import { MobileReceiveService, type MobileReceiveTarget } from './remote/mobile-receive-service'
+import { inputRequestUploadTarget } from './session/input-requests'
+import { openMiniAppInputRequest, type MiniAppInputRequest } from './miniapp/miniapp-input-requests'
+import { setComposerDevicePush } from './session/composer-delivery'
 import { startSuperoneMcpStdioBridge, stopSuperoneMcpStdioBridge } from './mcp/superone-mcp-stdio-ipc'
 import {
   getComputerUsePermissionStatus,
@@ -804,6 +807,8 @@ const mobileReceiveService = new MobileReceiveService({
       ],
     }
   },
+  resolveInputRequestUploadDir: (sessionId, binding, fileName) =>
+    inputRequestUploadTarget(sessionId, binding.requestId, binding.field, fileName),
   signLanUploadUrl: (savedPath) => remoteControlService.signLanUploadUrl(savedPath, { ttlMs: 60_000 }),
   computeRelayKey: (name) => remoteControlService.computeRelayUploadKey(name),
   signRelayUploadUrl: (key) => remoteControlService.signRelayUploadUrl(key),
@@ -1208,6 +1213,13 @@ function createWindow(): void {
   initMiniAppHost(() => mainWindow, () => getCurrentLocale())
   initMiniAppHostActionBridge(() => mainWindow)
   setMiniAppHostActionRunner(runMiniAppHostAction)
+  const openMiniAppForm = (request: MiniAppInputRequest) => openMiniAppInputRequest({
+    getSession: (sessionId) => sessionManager.getSession(sessionId) ?? null,
+    sessionsAuthorizingApp,
+  }, { ...request, appName: request.appName ?? miniAppHostName(request.projectDir, request.appId) })
+  setMiniAppInputRequestOpener(openMiniAppForm)
+  agentService.setMiniAppFormOpener(openMiniAppForm)
+  setComposerDevicePush((deviceId, event) => { void remoteControlService.sendEventToMobile({ ...event }, [deviceId]) })
   setAppToolExecutor(executeMiniAppTool)
   setMiniAppHostReloader(async (projectDir, appId) => {
     const { manifest, args } = await prepareMiniAppHostLaunch(appId, projectDir)

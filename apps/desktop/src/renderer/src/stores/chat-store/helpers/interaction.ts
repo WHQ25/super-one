@@ -86,7 +86,7 @@ function applyRemoteQuestionSnapshot(
   set((s) => {
     const proj = s.projectSessions[projectPath]
     if (!proj?._sessions[targetSid]) return {}
-    const pendingFields = remoteMsgs.nodePendingInteractionFields(nodeSnap?.pendingInteraction)
+    const pendingFields = remoteMsgs.nodePendingInteractionFields(nodeSnap?.pendingInteraction, nodeSnap?.pendingInputRequests)
     const stillLive =
       pendingFields.awaitingAssistantReply || nodeSnap?.status === 'streaming'
     const providerId = nodeSnap?.harnessId || nodeSnap?.providerId || 'codex'
@@ -232,6 +232,7 @@ export async function respondToPermissionImpl(
   }
   window.app.trace?.('permission.flow', 'user_click', { allow, activeSid: targetSid, provider: session.sessionProvider }, requestId)
   const activeSid = targetSid ?? undefined
+  const owner = targetSid ? { projectPath: activeProject, sessionId: targetSid } : target
   let handled = false
   try {
     const remote = parseRemoteProjectKey(activeProject)
@@ -241,7 +242,7 @@ export async function respondToPermissionImpl(
       // continueDrain joins (or, after a reload, re-owns) the session's event drain
       // so tool_use blocks after allow keep streaming.
       // formAnswers carries multi-launch edits (session_agents_confirm).
-      void window.environment
+      const response = window.environment
         .respondSessionPermission(remote.connectionId, {
           sessionId: targetSid,
           interactionId: requestId,
@@ -263,12 +264,13 @@ export async function respondToPermissionImpl(
               ))) as NodeSessionSnapshot | null
             const pendingFields = remoteMsgs.nodePendingInteractionFields(
               nodeSnap?.pendingInteraction,
+              nodeSnap?.pendingInputRequests,
             )
             const stillLive =
               pendingFields.awaitingAssistantReply || nodeSnap?.status === 'streaming'
             const providerId = nodeSnap?.harnessId || nodeSnap?.providerId || 'codex'
-            set((s) =>
-              commitPerSession(s, target, (sess) => ({
+            set((s) => owner && !s.projectSessions[owner.projectPath]?._sessions[owner.sessionId] ? {} :
+              commitPerSession(s, owner, (sess) => ({
                 messages: remoteMsgs.reconcileTranscriptWithLocalMessages(
                   sess.messages,
                   nodeSnap?.transcript,
@@ -288,6 +290,8 @@ export async function respondToPermissionImpl(
             console.warn('[chat] remote permission post-respond hydrate failed:', err)
           }
         })
+      if (respondedRequest.requestKind === 'input_request') await response
+      else void response.catch(error => { console.warn('[chat] remote permission response failed:', error) })
       handled = true
     } else if (targetSid) {
       handled = await window.agent.respondToPermission(
@@ -310,7 +314,8 @@ export async function respondToPermissionImpl(
     return false
   }
   set((s) => {
-    const perSessionUpdate = commitPerSession(s, target, (sess) => {
+    if (owner && !s.projectSessions[owner.projectPath]?._sessions[owner.sessionId]) return {}
+    const perSessionUpdate = commitPerSession(s, owner, (sess) => {
       const updates: Partial<PerSessionState> = {
         pendingPermissions: sess.pendingPermissions.filter((p) => p.requestId !== requestId),
       }

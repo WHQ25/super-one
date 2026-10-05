@@ -65,6 +65,7 @@ import { resolveAutomationConfirm, rejectAutomationConfirm } from '../mcp/automa
 import { resolveDeviceControlConfirm, rejectDeviceControlConfirm } from '../device-agent/control-confirm'
 import { resolveComputerUseGrant, rejectComputerUseGrant } from '../computer-use/grant-request'
 import { rejectTerminalCommandConfirm, resolveTerminalCommandConfirm } from '../mcp/terminal-command-confirm'
+import { cancelInputRequestsForSession, claimInputRequestForSend, isInputRequestId, respondToInputRequest } from './input-requests'
 import { forgetSessionTerminalCommandRules } from '../mcp/terminal-session-rules'
 import { nextEventSeq } from './event-seq'
 import { notifySessionRecapForeground, notifySessionRecapSessionRemoved } from '../acp/acp-recap-focus'
@@ -756,6 +757,8 @@ export class Session implements SessionContract {
     const providerOrigin = opts?.providerOrigin ?? 'local'
     this.assertNotDisposed()
     this.assertCanSend(providerOrigin)
+    // A submitted agent-output form claims its request before the message is admitted.
+    request = claimInputRequestForSend(this.id, request)
     admitTurnAttachments(request.content, request.images)
     this.touchRuntimeActivity()
     request = this.prepareFirstTurnPreamble(request)
@@ -1118,6 +1121,7 @@ export class Session implements SessionContract {
     // Host-owned confirms (config / video / miniapp / WebMCP / collab) must resolve here
     // *before* backends so every harness unblocks the waiting tool executor.
     // Claude/Codex backends also call these for history; second resolve is a no-op.
+    if (isInputRequestId(requestId)) return respondToInputRequest(this.id, requestId, { allow, decision, formAnswers })
     if (decision === 'cancel') {
       if (rejectSessionAgentsConfirm(requestId, 'User cancelled')) return true
       if (rejectMiniappCallConfirm(requestId, reason ?? 'User cancelled')) return true
@@ -1623,6 +1627,8 @@ export class Session implements SessionContract {
       notifySessionRecapSessionRemoved(this.id)
     }
     trace('session.lifecycle', 'dispose', { sid: this.id, owner: this._owner.kind === 'remote' ? this._owner.deviceId : 'local', subscribers: [...this._subscribers] })
+    // Before the status flips: clients still hear each form's resolution.
+    cancelInputRequestsForSession(this.id)
     this._status = 'disposed'
     this.liveness.reset()
     this._pendingQueuedRequests.clear()

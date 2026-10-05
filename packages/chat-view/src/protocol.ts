@@ -102,6 +102,8 @@ export type HostInbound =
   | { type: 'modEvent'; event: AgentEvent }
   | { type: 'nativeActionResult'; requestId: string; result?: unknown; error?: string }
   | { type: 'nativeActionProgress'; requestId: string; progress: unknown }
+  /** A private composer result for the widget frame that opened it. */
+  | { type: 'composerSettled'; viewId: string; localId: string; outcome?: import('@superone/shared/composer-api').SuperOneComposerOutcome; error?: string }
 
 export type HostOutbound =
   | { type: 'ready' }

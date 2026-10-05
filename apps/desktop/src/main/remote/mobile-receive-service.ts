@@ -1,5 +1,5 @@
-import { writeFile } from 'node:fs/promises'
-import type { MobileUploadProgress, UploadFileCompleteResponse, UploadFileError, UploadFileResponse } from '@superone/shared/agent-types'
+import { mkdir, writeFile } from 'node:fs/promises'
+import type { InputRequestUploadBinding, MobileUploadProgress, UploadFileCompleteResponse, UploadFileError, UploadFileResponse } from '@superone/shared/agent-types'
 import { authorizeWriteTarget, FileBridgeError } from '../file-bridge'
 import log from '../logger'
 
@@ -12,6 +12,8 @@ export interface MobileReceiveTarget {
 
 export interface MobileReceiveServiceDeps {
   resolveTarget(sessionId: string | undefined): MobileReceiveTarget | null
+  /** Host-chosen directory for a file answering an input-request field; throws when the form no longer asks for it. */
+  resolveInputRequestUploadDir?(sessionId: string | undefined, binding: InputRequestUploadBinding, fileName: string): string
   signLanUploadUrl(savedPath: string): Promise<string | null>
   computeRelayKey(name: string): Promise<string>
   signRelayUploadUrl(key: string, meta: { mimeType: string; size: number }): Promise<string>
@@ -25,6 +27,8 @@ export interface UploadFileRequest {
   requestId: string
   sessionId?: string
   targetDir: string
+  /** When set, `targetDir` is ignored in favour of the request's staging directory. */
+  inputRequest?: InputRequestUploadBinding
   name: string
   mimeType: string
   size: number
@@ -85,9 +89,22 @@ export class MobileReceiveService {
       return { ok: false, error: 'no_session', message: 'No mobile session is connected.' }
     }
 
+    let targetDir = req.targetDir
+    let allowedRoots = target.allowedRoots
+    if (req.inputRequest) {
+      try {
+        if (!this.deps.resolveInputRequestUploadDir) throw new Error('Form uploads are unavailable')
+        targetDir = this.deps.resolveInputRequestUploadDir(req.sessionId, req.inputRequest, req.name)
+        await mkdir(targetDir, { recursive: true })
+      } catch (err) {
+        return { ok: false, error: 'forbidden_path', message: (err as Error).message }
+      }
+      allowedRoots = [targetDir]
+    }
+
     let savedPath: string
     try {
-      const authorized = await authorizeWriteTarget(req.targetDir, req.name, { allowedRoots: target.allowedRoots })
+      const authorized = await authorizeWriteTarget(targetDir, req.name, { allowedRoots })
       savedPath = authorized.savedPath
     } catch (err) {
       if (err instanceof FileBridgeError) return mapFileBridgeError(err)
@@ -98,7 +115,7 @@ export class MobileReceiveService {
       requestId: req.requestId,
       deviceId: target.deviceId,
       deviceName: target.deviceName,
-      targetDir: req.targetDir,
+      targetDir,
       fileName: req.name,
       savedPath,
       size: req.size,

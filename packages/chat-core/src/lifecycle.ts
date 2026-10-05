@@ -1,5 +1,6 @@
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { insertCodexTimelineRow, stampCodexTimelineOrder } from '@superone/shared/codex-timeline-rows'
+import { isAppInputRequest } from '@superone/shared/input-request-presentation'
 import { DEFAULT_PROVIDER } from './transformers'
 import type { ChatCoreSession } from './types'
 import { retractContentBlocks, sealCodexMetadata, sealStreamingTools } from './shared'
@@ -134,7 +135,8 @@ export function reduceLifecycle(
             content: sealStreamingTools(msg.content),
           }
         }),
-        pendingPermissions: [],
+        // App and widget forms belong to their opener, not the turn.
+        pendingPermissions: session.pendingPermissions.filter(isAppInputRequest),
         pendingQuestion: null,
         pendingPlanApproval: null,
         awaitingAssistantReply: false,

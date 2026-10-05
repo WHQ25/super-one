@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
-import { RotateCw } from 'lucide-react'
+import { CircleAlert, RotateCw } from 'lucide-react'
+import { parseInputRequestError } from '@superone/shared/input-request'
 import { isTransportSendError } from '@superone/shared/send-failure'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 
@@ -16,7 +17,9 @@ export interface SendFailureResendButtonProps {
 export function SendFailureResendButton({ error, onResend }: SendFailureResendButtonProps) {
   const { t } = useTranslation()
   const label = t('chat.sendFailure.resend')
-  const reason = isTransportSendError(error) ? null : error
+  const formError = parseInputRequestError(error)
+  const retryable = !formError
+  const reason = isTransportSendError(error) ? null : formError?.message ?? error
   return (
     <TooltipProvider>
       <Tooltip>
@@ -24,19 +27,20 @@ export function SendFailureResendButton({ error, onResend }: SendFailureResendBu
           <button
             type="button"
             data-send-failure
-            aria-label={label}
-            onClick={onResend}
+            aria-label={retryable ? label : reason ?? label}
+            onClick={retryable ? onResend : undefined}
+            aria-disabled={!retryable}
             // Tailwind v4 `hover:` only matches hover-capable pointers, so a tap on
             // the phone never leaves the button stuck filled.
             className="shrink-0 rounded-full p-1 text-error transition-colors hover:bg-error hover:text-error-foreground"
           >
-            <RotateCw className="size-4" aria-hidden />
+            {retryable ? <RotateCw className="size-4" aria-hidden /> : <CircleAlert className="size-4" aria-hidden />}
           </button>
         </TooltipTrigger>
         {/* Above and growing leftward, so it never covers the bubble — a left-side
             tooltip flips onto the text when a long message leaves no room. */}
         <TooltipContent side="top" align="end" className="max-w-72">
-          <p>{label}</p>
+          {retryable && <p>{label}</p>}
           {reason && <p className="mt-0.5 break-words opacity-70">{reason}</p>}
         </TooltipContent>
       </Tooltip>

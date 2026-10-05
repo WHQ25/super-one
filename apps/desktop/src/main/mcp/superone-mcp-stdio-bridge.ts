@@ -33,7 +33,7 @@ interface IpcResponse {
 interface PendingRequest {
   resolve: (value: unknown) => void
   reject: (error: Error) => void
-  timer: ReturnType<typeof setTimeout>
+  timer: ReturnType<typeof setTimeout> | undefined
   cleanup: () => void
 }
 
@@ -106,7 +106,9 @@ class SuperoneIpcClient {
         notifyCancelled()
         reject(new Error(`SuperOne MCP bridge request cancelled: ${method}`))
       }
-      const timer = setTimeout(() => {
+      // A tool call may wait for a person (composer_request, host confirms): the harness
+      // owns its timeout and cancels through `signal`; a lost host closes the socket.
+      const timer = method === 'tools/call' ? undefined : setTimeout(() => {
         const pending = this.pending.get(id)
         if (!pending) return
         this.pending.delete(id)

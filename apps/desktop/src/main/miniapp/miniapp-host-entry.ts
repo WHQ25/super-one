@@ -1,10 +1,13 @@
 import { pathToFileURL } from 'url'
+import { randomUUID } from 'crypto'
 import type {
   SuperOneMiniAppContext,
   SuperOneMiniAppDisposable,
+  SuperOneMiniAppInputRequestOutcome,
   SuperOneMiniAppLocale,
   SuperOneMiniAppModule,
   SuperOneMiniAppToastType,
+  SuperOneMiniAppToolContext,
 } from '@superone/shared/miniapp-host-api'
 
 interface ParentPort {
@@ -13,7 +16,9 @@ interface ParentPort {
 }
 
 type HostMessage =
-  | { type: 'tool-call'; callId: string; tool: string; args: Record<string, unknown> }
+  | { type: 'tool-call'; callId: string; tool: string; args: Record<string, unknown>; session?: { sessionId: string } }
+  | { type: 'tool-abort'; callId: string }
+  | { type: 'input-request-settled'; localId: string; outcome?: SuperOneMiniAppInputRequestOutcome; error?: string }
   | { type: 'webview-message'; payload: unknown }
   | { type: 'state-response'; requestId: string; result?: unknown; error?: string }
   | { type: 'action-response'; requestId: string; result?: unknown; error?: string }
@@ -52,7 +57,10 @@ const env: MiniAppHostEnv = {
   locale: requiredEnv('locale'),
 }
 
-const toolHandlers = new Map<string, (args: Record<string, unknown>) => unknown | Promise<unknown>>()
+const toolHandlers = new Map<string, (args: Record<string, unknown>, ctx: SuperOneMiniAppToolContext) => unknown | Promise<unknown>>()
+/** Running tool calls, aborted by `tool-abort`. */
+const toolCalls = new Map<string, AbortController>()
+const pendingInputRequests = new Map<string, { resolve(outcome: SuperOneMiniAppInputRequestOutcome): void; reject(error: Error): void }>()
 const webviewHandlers = new Set<(message: unknown) => void>()
 const subscriptions: SuperOneMiniAppDisposable[] = []
 let appModule: SuperOneMiniAppModule | null = null
@@ -128,6 +136,23 @@ const context: SuperOneMiniAppContext = {
       return disposable(() => { webviewHandlers.delete(handler) })
     },
   },
+  composer: {
+    open(spec, options = {}) {
+      const { signal, session, output } = options
+      if (signal?.aborted) return Promise.resolve({ status: 'cancelled', reason: 'aborted' })
+      const localId = randomUUID()
+      return new Promise((resolve, reject) => {
+        const onAbort = () => parentPort.postMessage({ type: 'input-request-cancel', localId })
+        const done = () => signal?.removeEventListener('abort', onAbort)
+        pendingInputRequests.set(localId, {
+          resolve(outcome) { done(); resolve(outcome) },
+          reject(error) { done(); reject(error) },
+        })
+        signal?.addEventListener('abort', onAbort, { once: true })
+        parentPort.postMessage({ type: 'input-request-open', localId, spec, ...(session ? { sessionId: session.sessionId } : {}), ...(output !== undefined ? { output } : {}) })
+      })
+    },
+  },
   agent: {
     sendPrompt(text) { return requestAction('agent.sendPrompt', { text: String(text) }) as Promise<void> },
     setContext(opts) { return requestAction('agent.setContext', { ...opts }) as Promise<void> },
@@ -175,6 +200,8 @@ async function deactivate(): Promise<void> {
     pendingActionRequests.clear()
     for (const pending of pendingStateRequests.values()) pending.reject(new Error('MiniApp Host is shutting down'))
     pendingStateRequests.clear()
+    for (const pending of pendingInputRequests.values()) pending.resolve({ status: 'cancelled', reason: 'owner_disposed' })
+    pendingInputRequests.clear()
   }
 }
 
@@ -187,8 +214,14 @@ parentPort.on('message', async (event) => {
       parentPort.postMessage({ type: 'tool-result', callId: message.callId, error: `Mini-app did not register tool: ${message.tool}` })
       return
     }
+    const controller = new AbortController()
+    toolCalls.set(message.callId, controller)
     try {
-      const result = await handler(message.args ?? {})
+      const result = await handler(message.args ?? {}, {
+        session: { sessionId: message.session?.sessionId ?? '' },
+        callId: message.callId,
+        signal: controller.signal,
+      })
       parentPort.postMessage({ type: 'tool-result', callId: message.callId, result })
     } catch (error) {
       parentPort.postMessage({
@@ -196,7 +229,21 @@ parentPort.on('message', async (event) => {
         callId: message.callId,
         error: error instanceof Error ? error.message : String(error),
       })
+    } finally {
+      toolCalls.delete(message.callId)
     }
+    return
+  }
+  if (message.type === 'tool-abort') {
+    toolCalls.get(message.callId)?.abort()
+    return
+  }
+  if (message.type === 'input-request-settled') {
+    const pending = pendingInputRequests.get(message.localId)
+    if (!pending) return
+    pendingInputRequests.delete(message.localId)
+    if (message.outcome) pending.resolve(message.outcome)
+    else pending.reject(new Error(message.error ?? 'composer.open failed'))
     return
   }
   if (message.type === 'action-response') {

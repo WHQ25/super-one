@@ -133,6 +133,10 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
       const session = sessionsRef?.get(sessionId)
       return session ? memoryActor(session.harnessId, session.model) : undefined
     },
+    requestInput: (input) => {
+      if (!sessionsRef) return Promise.resolve({ status: 'cancelled', reason: 'aborted' })
+      return sessionsRef.requestInput(input)
+    },
     collab: {
       listAgents: () => {
         if (!collaborationRef) throw Object.assign(new Error('collab not ready'), { code: 'failed_precondition' })

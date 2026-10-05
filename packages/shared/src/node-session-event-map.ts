@@ -529,6 +529,9 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
           ...(asString(payload.message) ? { message: asString(payload.message)! } : {}),
           ...(sessionAgentsConfirm ? { sessionAgentsConfirm } : {}),
           ...(webmcpTrustConfirm ? { webmcpTrustConfirm } : {}),
+          ...(payload.inputRequest && typeof payload.inputRequest === 'object'
+            ? { inputRequest: payload.inputRequest as PermissionRequest['inputRequest'] }
+            : {}),
           ...(payload.schemaForm && typeof payload.schemaForm === 'object' ? { schemaForm: payload.schemaForm as PermissionRequest['schemaForm'], allowAlwaysAllow: false } : {}),
           ...(Array.isArray(payload.elicitationForm) ? { elicitationForm: payload.elicitationForm as PermissionRequest['elicitationForm'] } : {}),
           ...(asString(payload.subtitle) ? { subtitle: asString(payload.subtitle)! } : {}),

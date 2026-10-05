@@ -178,3 +178,50 @@ Route every user-triggered RPC or fire-and-forget transport command through
 `runUiAction` unless the called function already catches and surfaces its own errors.
 It must catch both synchronous `RelayClient.send` failures and rejected promises; never
 discard either with a bare `void` from a press or submit handler.
+
+## Declarative session forms
+
+`permission_request.requestKind: 'input_request'` renders native
+`InputRequestComposer` in the composer slot. The editor remains mounted but
+hidden with its separate draft. Existing permissions/plans use sheets; questions
+stay in the transcript. Priority is real permissions, questions, agent forms,
+plan, then app/widget forms. Values, step and picked files survive preemption
+and session navigation.
+
+Free text starts at one row, grows to 144 points, then scrolls. Native Return
+inserts a newline; Submit is explicit. The keyboard-aware shell scrolls the body
+and keeps actions visible. Pending/disconnected forms cannot submit. Directory
+fields explain the unsupported phone capability and offer cancellation.
+
+Caller output sends `formAnswers` through an acknowledged `respond_permission`;
+a false/missing acknowledgement retains the form. Agent output uses normal
+`send_message` with captured `inputRequest` values, current model/effort settings
+and a stable message id. Invalid values restore the form; transport retry sends
+the same values/id; permanently settled requests have no resend action. The
+unrelated chat draft stays intact.
+
+`pickInputRequestFile` uses the native document picker and bound relay upload.
+The host chooses staging and validates request/field ownership and file types.
+Cancellation changes nothing; upload errors are visible and retryable. Transfers
+retain existing size limits and LAN/relay behavior. This surface addresses
+desktop-owned local sessions; phone/node forms and file picking are unsupported.
+
+Widget HTML shares the mini-app frontend API:
+`window.superone.composer.open(spec, { output? })`. Default caller output waits
+for values or neutral cancellation. Agent output waits for completion but
+returns no values; legacy `requestInput(spec)` still acknowledges opening with
+agent output. Mini-app WebViews on the phone are separate future work.
+
+`composerOpen` bridges a short `composer_open` RPC. Completion uses
+`composer_settled`, pushed only to the opening device and consumed by
+`WidgetComposerClient` before reduction. Native `composerSettled` replies route
+to the opening view/local id; values never enter transcript state. Human input
+has no timer. Reconnect reads `composer_outcome` once per waiting form, without
+polling. Disconnect preserves forms; view teardown releases caller forms and
+keeps agent forms. Offline releases retain their original session and flush on
+restored desktop connectivity, even after the old runtime is disposed.
+
+Offline previews expose `input/default`, `input/retry`, `input/pending`,
+`input/offline`, `input/files`, `input/upload-failed` and
+`input/unsupported-directory`. Deep links accept `locale=en|zh` and
+`theme=light|dark`. Real host file proof and paired transport need separate checks.

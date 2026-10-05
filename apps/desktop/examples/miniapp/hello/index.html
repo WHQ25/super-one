@@ -33,7 +33,9 @@
   <div style="display:flex;gap:8px;flex-wrap:wrap">
     <button id="ask-btn">Ask Agent to Greet</button>
     <button id="ask-buy-btn">Ask Agent to Buy (HITL)</button>
+    <button id="composer-btn">Review Notes</button>
   </div>
+  <pre id="composer-result" style="margin-top:8px;white-space:pre-wrap;word-break:break-word"></pre>
   <div id="system-api" style="margin-top:20px">
     <h2 style="font-size:16px;margin-bottom:8px">System APIs</h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -91,6 +93,22 @@
   </div>
   <div id="files"></div>
   <script>
+    document.getElementById('composer-btn').onclick = async function () {
+      this.disabled = true;
+      var resultElement = document.getElementById('composer-result');
+      try {
+        var result = await window.superone.composer.open({
+          title: 'Review notes',
+          requestedSchema: {
+            type: 'object', required: ['notes'],
+            properties: { notes: { type: 'string', title: 'Notes' } }
+          }
+        });
+        resultElement.textContent = JSON.stringify(result, null, 2);
+      } catch (error) { resultElement.textContent = error.message; }
+      finally { this.disabled = false; }
+    };
+
     superone.node.onMessage(function(message) {
       if (!message) return;
       if (message.type === 'workspace-files') {

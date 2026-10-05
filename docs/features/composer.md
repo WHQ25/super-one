@@ -95,7 +95,8 @@ window) shares one draft: text, chips, attachments, browser annotations, and
 selections are relayed through the main process, which also seeds a window that
 opens the session later. Browser annotations go to the session that owns the
 browser tab, so marking a page in the main window fills that session's composer
-wherever it is shown.
+wherever it is shown. The page's marks follow the chips: removing a chip in any
+window, or sending it, drops its mark from the page.
 
 Enter, Space, and digit shortcuts are ignored for 500 ms after a decision
 appears. High-risk permission requests—terminal commands, Bash-like tools, and

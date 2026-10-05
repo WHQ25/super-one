@@ -1,6 +1,7 @@
 import { useChatStore } from '@/stores/chat'
 import { browserTabCanvas, useBrowserStore, type AnnotateQuickMode } from '@/stores/browser'
-import { findSessionTarget } from '@/stores/chat-store/helpers/store-helpers'
+import { findSessionTarget, getScopedPerSession } from '@/stores/chat-store/helpers/store-helpers'
+import type { SessionWriteTarget } from '@/stores/chat-store/types'
 import { browserExecJs, browserCapture } from './browser-host-api'
 import { flattenBrowserCapture } from './browser-canvas'
 import {
@@ -77,13 +78,19 @@ async function captureClean(browserId: string, rect: AnnotateMessage['rect']): P
   return base64
 }
 
+/**
+ * Marks belong to the session that owns the tab, which need not be the one this
+ * window shows — its composer may be open in a mini window instead.
+ */
+function annotationTarget(browserId: string): SessionWriteTarget | undefined {
+  const owner = useBrowserStore.getState().tabs[browserId]?.owner
+  return (owner && findSessionTarget(useChatStore.getState(), owner)) || undefined
+}
+
 export async function handleAnnotationMessage(browserId: string, payload: unknown): Promise<void> {
   if (!isAnnotateMessage(payload)) return
   const store = useChatStore.getState()
-  // Marks belong to the session that owns the tab, which need not be the one
-  // this window shows — its composer may be open in a mini window instead.
-  const owner = useBrowserStore.getState().tabs[browserId]?.owner
-  const target = (owner && findSessionTarget(store, owner)) || undefined
+  const target = annotationTarget(browserId)
   if (payload.op === 'delete') {
     store.removeBrowserAnnotation(payload.id, target)
     return
@@ -110,10 +117,23 @@ export async function handleAnnotationMessage(browserId: string, payload: unknow
   }, target)
 }
 
-export function notifyAnnotationRemoved(browserId: string, id: string): void {
-  void browserExecJs(browserId, `window.__superoneAnnotateRemoveMark && window.__superoneAnnotateRemoveMark(${JSON.stringify(id)})`)
-}
-
-export function notifyAnnotationsCleared(browserId: string): void {
-  void browserExecJs(browserId, 'window.__superoneAnnotateClearMarks && window.__superoneAnnotateClearMarks()')
+/**
+ * Drop a page mark once its chip leaves the composer, however that happens: its
+ * ×, a send, or the same session's composer in another window.
+ */
+export function watchAnnotationMarks(browserId: string): () => void {
+  const store = useChatStore.getState()
+  const activeSessionId = store.activeProject ? store.projectSessions[store.activeProject]?._activeSessionId : null
+  const target = annotationTarget(browserId)
+    ?? (store.activeProject && activeSessionId ? { projectPath: store.activeProject, sessionId: activeSessionId } : undefined)
+  let previous = getScopedPerSession(store, target).browserAnnotations
+  return useChatStore.subscribe((state) => {
+    const next = getScopedPerSession(state, target).browserAnnotations
+    if (next === previous) return
+    const kept = new Set(next.map((annotation) => annotation.id))
+    for (const { id } of previous) {
+      if (!kept.has(id)) void browserExecJs(browserId, `window.__superoneAnnotateRemoveMark && window.__superoneAnnotateRemoveMark(${JSON.stringify(id)})`)
+    }
+    previous = next
+  })
 }

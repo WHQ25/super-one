@@ -54,8 +54,6 @@ import { internalDragSource } from '@/components/sidebar/drag-drop-utils'
 import { AttachmentNode } from './attachment-node'
 import { ChipSelection } from './chip-selection'
 import { BrowserAnnotationChips } from '../browser/BrowserAnnotationChips'
-import { notifyAnnotationRemoved, notifyAnnotationsCleared } from '../browser/browser-annotate-flow'
-import { useBrowserStore } from '@/stores/browser'
 import { buildImageAttachment } from './image-compress'
 import { ChatInputDirsHint } from './ChatInputDirsHint'
 import { ContextBar } from './ContextBar'
@@ -222,16 +220,8 @@ export function ChatInput({
         removeAttachment: (i: number) => storeActions.removeAttachment(i, target),
         removeAttachmentById: (id: string) => storeActions.removeAttachmentById(id, target),
         clearAttachments: () => storeActions.clearAttachments(target),
-        removeBrowserAnnotation: (id: string) => {
-          storeActions.removeBrowserAnnotation(id, target)
-          const bid = useBrowserStore.getState().annotatingId
-          if (bid) notifyAnnotationRemoved(bid, id)
-        },
-        clearBrowserAnnotations: () => {
-          storeActions.clearBrowserAnnotations(target)
-          const bid = useBrowserStore.getState().annotatingId
-          if (bid) notifyAnnotationsCleared(bid)
-        },
+        removeBrowserAnnotation: (id: string) => storeActions.removeBrowserAnnotation(id, target),
+        clearBrowserAnnotations: () => storeActions.clearBrowserAnnotations(target),
         addMention: (m: Parameters<typeof storeActions.addMention>[0]) => storeActions.addMention(m, target),
         removeMention: (v: string) => storeActions.removeMention(v, target),
         dismissCommandPopup: () => storeActions.dismissCommandPopup(target),

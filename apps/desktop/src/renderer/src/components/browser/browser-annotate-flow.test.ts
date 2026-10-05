@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { handleAnnotationMessage } from './browser-annotate-flow'
+import { handleAnnotationMessage, watchAnnotationMarks } from './browser-annotate-flow'
 import { browserExecJs, browserCapture } from './browser-host-api'
 import { useBrowserStore } from '@/stores/browser'
 
-const { mockStore } = vi.hoisted(() => ({
+const { mockStore, listeners } = vi.hoisted(() => ({
+  listeners: [] as Array<(state: unknown) => void>,
   mockStore: {
     addBrowserAnnotation: vi.fn(),
     updateBrowserAnnotation: vi.fn(),
@@ -13,7 +14,10 @@ const { mockStore } = vi.hoisted(() => ({
   },
 }))
 
-vi.mock('@/stores/chat', () => ({ useChatStore: { getState: () => mockStore } }))
+vi.mock('@/stores/chat', () => ({ useChatStore: {
+  getState: () => mockStore,
+  subscribe: (listener: (state: unknown) => void) => { listeners.push(listener); return () => listeners.splice(listeners.indexOf(listener), 1) },
+} }))
 vi.mock('./browser-host-api', () => ({
   browserExecJs: vi.fn().mockResolvedValue(undefined),
   browserCapture: vi.fn().mockResolvedValue({
@@ -90,5 +94,20 @@ describe('handleAnnotationMessage dispatch', () => {
   it('malformed payload is ignored', async () => {
     await handleAnnotationMessage('/b', { op: 'commit', id: 'a1' })
     expect(mockStore.addBrowserAnnotation).not.toHaveBeenCalled()
+  })
+})
+
+describe('watchAnnotationMarks', () => {
+  it('drops the page mark of a chip removed from the owning session in any window', () => {
+    useBrowserStore.getState().ensure('/owned', 'about:blank', 'owner')
+    const annotation = (id: string) => ({ id })
+    const withAnnotations = (ids: string[]) => ({ ...mockStore, projectSessions: { '/repo': { _sessions: { owner: { browserAnnotations: ids.map(annotation) } } } } })
+    Object.assign(mockStore, withAnnotations(['a1', 'a2']))
+    vi.mocked(browserExecJs).mockClear()
+    const stop = watchAnnotationMarks('/owned')
+    listeners.forEach((listener) => listener(withAnnotations(['a2'])))
+    expect(vi.mocked(browserExecJs).mock.calls).toEqual([['/owned', expect.stringContaining('RemoveMark("a1")')]])
+    stop()
+    expect(listeners).toHaveLength(0)
   })
 })

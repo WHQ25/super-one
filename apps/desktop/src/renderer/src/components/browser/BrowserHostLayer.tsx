@@ -11,7 +11,7 @@ import { useGlobalDragging } from '@/hooks/useGlobalDragging'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { registerBrowserWebview, browserExecJs, pushBrowserConsole, clearBrowserConsole, browserIdByWebContentsId } from './browser-host-api'
 import { useBrowserAutomationHost } from './browser-automation-runtime'
-import { buildSessionScript, handleAnnotationMessage } from './browser-annotate-flow'
+import { buildSessionScript, handleAnnotationMessage, watchAnnotationMarks } from './browser-annotate-flow'
 import { ANNOTATE_CANCEL_SCRIPT, ANNOTATE_CTX_TRACKER_SCRIPT, ANNOTATE_MSG_PREFIX } from './browser-annotate-script'
 import { isBlankUrl, sameOrigin } from './browser-url'
 import { BROWSER_CANVAS_PROBE, BROWSER_LIGHT_CANVAS, browserCanvasColor, isBrowserCanvasProbe } from './browser-canvas'
@@ -137,6 +137,7 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
       }
     }
     wv.addEventListener('console-message', onConsole)
+    const stopMarks = watchAnnotationMarks(browserId)
     const script = buildSessionScript({
       placeholder: t('chat.browser.annotatePlaceholder'),
       confirm: t('chat.browser.annotateConfirm'),
@@ -153,11 +154,13 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
       if (done) return
       done = true
       wv.removeEventListener('console-message', onConsole)
+      stopMarks()
       useBrowserStore.getState().stopAnnotate()
     })
     return () => {
       done = true
       wv.removeEventListener('console-message', onConsole)
+      stopMarks()
       void browserExecJs(browserId, ANNOTATE_CANCEL_SCRIPT)
     }
   }, [annotating, browserId, t])

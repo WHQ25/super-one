@@ -15,6 +15,7 @@ vi.mock('./browser-host-api', () => ({
 vi.mock('./browser-annotate-flow', () => ({
   buildSessionScript: () => '',
   handleAnnotationMessage: vi.fn(),
+  watchAnnotationMarks: () => () => {},
 }))
 vi.mock('./browser-annotate-script', () => ({
   ANNOTATE_CANCEL_SCRIPT: '',

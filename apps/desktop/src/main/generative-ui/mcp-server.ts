@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { checkCdnViolations } from '@superone/shared/generative-ui/cdn-allowlist'
 import { isNativeTemplateId, nativeTypeFromTemplateId, NATIVE_WIDGET_TYPES } from '@superone/shared/generative-ui/native-widgets'
 import { WIDGET_LAYOUT_DESCRIPTION, WIDGET_SHOW_DESCRIPTION } from '@superone/shared/generative-ui/widget-tool-descriptions'
-import { readWidgetShowArgs } from '@superone/shared/generative-ui/widget-data'
+import { readWidgetShowArgs, widgetCdnWarning, widgetShowShortContent } from '@superone/shared/generative-ui/widget-data'
 import { buildWidgetPayload } from './widget-payload'
 import type { TemplateRoots } from './template-store'
 
@@ -32,6 +32,11 @@ interface WidgetToolsOptions {
    * undefined the local `resolveSessionRoot` path is used.
    */
   resolvePreviewerContext?: () => Promise<import('./files-previewer-payload').PreviewerBuildContext | undefined>
+  /**
+   * Whether this call's model gets the short acknowledgement instead of the payload.
+   * Read at call time: it depends on who is calling. Absent means the full payload.
+   */
+  shortensResult?: () => boolean
 }
 
 function templateRoots(opts?: WidgetToolsOptions): TemplateRoots {
@@ -117,17 +122,14 @@ export async function executeWidgetShowTool(
     return { content: [{ type: 'text' as const, text: built.error ?? 'widget_show failed.' }], isError: true }
   }
   const content: { type: 'text'; text: string }[] = [{ type: 'text', text: JSON.stringify(built.payload) }]
-  const violations = widget_code ? checkCdnViolations(widget_code) : []
-  if (violations.length > 0) {
-    content.push({
-      type: 'text',
-      text: `⚠️ CDN VIOLATION: The following URLs were blocked (not in allowlist: ${['cdnjs.cloudflare.com', 'esm.sh', 'cdn.jsdelivr.net', 'unpkg.com'].join(', ')}):\n${violations.map((u) => `  - ${u}`).join('\n')}\nThe widget will render without these resources. Re-call widget_show with corrected URLs from the allowlist.`,
-    })
-  }
+  const warning = widget_code ? widgetCdnWarning(checkCdnViolations(widget_code)) : null
+  if (warning) content.push({ type: 'text', text: warning })
   if (!opts?.skipWidgetGate && !template && opts?.isShownOnDesktop?.()) {
     const { waitForWidgetReady } = await import('./widget-gate')
     await waitForWidgetReady(title)
   }
+  // A `widget_code` call's surfaces redraw it from the input; a template's code is not in it.
+  if (widget_code && opts?.shortensResult?.()) return { content: widgetShowShortContent(showArgs) }
   return { content }
 }
 

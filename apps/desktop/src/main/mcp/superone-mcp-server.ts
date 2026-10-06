@@ -17,6 +17,7 @@ import {
   type SessionTitleHost,
 } from './superone-mcp-builtins'
 import { registerWidgetTools } from '../generative-ui/mcp-server'
+import { shortensWidgetResult } from '../generative-ui/widget-short-result'
 import {
   clearBrowserToolHandlers,
   registerBrowserTools,
@@ -234,6 +235,11 @@ export function isShownOnDesktop(sessionId: string): () => boolean {
   return () => getSessionHost()?.isSessionForeground?.(sessionId) ?? false
 }
 
+/** `widget_show`'s short result follows the harness of this session as it is when the call runs. */
+export function shortensSessionWidgetResult(sessionId: string): () => boolean {
+  return shortensWidgetResult(() => getSessionHost()?.getSession(sessionId)?.harnessId)
+}
+
 type AppSettingsApplier = BuiltInSuperoneToolDeps['applyAppSettings']
 
 let appSettingsApplier: AppSettingsApplier | null = null
@@ -294,6 +300,7 @@ export function createSuperoneMcpServer(sessionId: string, projectPath?: string)
     projectPath,
     sessionId,
     isShownOnDesktop: isShownOnDesktop(sessionId),
+    shortensResult: shortensSessionWidgetResult(sessionId),
     resolveSessionRoot: () => getSessionHost()?.getSession(sessionId)?.cwd || projectPath,
   })
   registerBrowserTools(server, sessionId)

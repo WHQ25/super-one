@@ -53,6 +53,8 @@ export interface HostActionMcpServerOptions {
   collab?: NodeCollabToolHandlers
   /** OKF actor for interaction-memory notes (harness + model of the session). */
   resolveActor?: (sessionId: string) => string | undefined
+  /** The harness running a session, read per call; decides whether `widget_show` replies are shortened. */
+  resolveHarnessId?: (sessionId: string) => string | undefined
   /** Injectable for tests. */
   masterToken?: string
 }
@@ -205,6 +207,7 @@ export async function startHostActionMcpServer(
         const server = createHostActionMcpServer(superoneSessionId, opts.requestHostAction, {
           collab: opts.collab,
           resolveActor: opts.resolveActor,
+          resolveHarnessId: opts.resolveHarnessId,
         })
         let sessionRef: HttpMcpSession | undefined
         const transport = new StreamableHTTPServerTransport({
@@ -293,6 +296,7 @@ export async function startHostActionMcpServer(
       const server = createHostActionMcpServer(sessionId, opts.requestHostAction, {
         collab: opts.collab,
         resolveActor: opts.resolveActor,
+        resolveHarnessId: opts.resolveHarnessId,
       })
       const entry = {
         type: 'sdk' as const,

@@ -21,6 +21,8 @@ import {
   type HostActionReplayPolicy,
   type HostActionTerminalResult,
 } from '@superone/shared/environment'
+import { supportsShortWidgetResult } from '@superone/shared/harness/harness-capabilities'
+import { readWidgetShowArgs, widgetShowShortContent } from '@superone/shared/generative-ui/widget-data'
 import { jsonSchemaToZodShape } from './json-schema-to-zod'
 
 /** Public MCP server name harnesses attach as. */
@@ -54,6 +56,12 @@ export interface CreateHostActionMcpServerOptions {
   /** OKF actor for notes this session writes; resolved per call so a model switch is reflected. */
   resolveActor?: (sessionId: string) => string | undefined
   collab?: NodeCollabToolHandlers
+  /** The harness running a session, read per call; decides whether `widget_show` replies are shortened. */
+  resolveHarnessId?: (sessionId: string) => string | undefined
+}
+
+export interface RegisterHostActionToolsOptions {
+  resolveHarnessId?: (sessionId: string) => string | undefined
 }
 
 function toolResultJson(value: unknown, isError = false) {
@@ -107,7 +115,7 @@ export function createHostActionMcpServer(
   opts?: CreateHostActionMcpServerOptions,
 ): McpServer {
   const server = new McpServer({ name: 'superone-host-action', version: '1.0.0' })
-  registerHostActionTools(server, superoneSessionId, requestHostAction)
+  registerHostActionTools(server, superoneSessionId, requestHostAction, { resolveHarnessId: opts?.resolveHarnessId })
   const memory = opts?.memory ?? new InteractionMemoryStore()
   const memoryFor = () => { const actor = opts?.resolveActor?.(superoneSessionId); return actor ? memory.withActor(actor) : memory }
   for (const def of INTERACTION_MEMORY_TOOL_DEFS) {
@@ -120,10 +128,28 @@ export function createHostActionMcpServer(
   return server
 }
 
+/**
+ * The desktop answers a remote session's `widget_show` in full; the node owns the harness,
+ * so it shortens a successful `widget_code` reply when the harness keeps the call's
+ * complete input. An unknown harness, a template call and an error stay as they are.
+ */
+function shortenWidgetShowReply(
+  reply: ReturnType<typeof terminalToMcpContent>,
+  args: unknown,
+  harnessId: string | undefined,
+): ReturnType<typeof terminalToMcpContent> {
+  if (reply.isError || !supportsShortWidgetResult(harnessId)) return reply
+  const record = args && typeof args === 'object' && !Array.isArray(args) ? args as Record<string, unknown> : {}
+  const showArgs = readWidgetShowArgs(record)
+  if (!showArgs.widget_code || showArgs.template) return reply
+  return { content: widgetShowShortContent(showArgs) }
+}
+
 export function registerHostActionTools(
   server: McpServer,
   superoneSessionId: string,
   requestHostAction: HostActionRequestFn,
+  opts?: RegisterHostActionToolsOptions,
 ): void {
   for (const tool of listHostActionSuperoneTools()) {
     // Defensive: catalog already excludes node-local tools.
@@ -145,7 +171,10 @@ export function registerHostActionTools(
           replayPolicy: tool.replayPolicy,
           signal: extra?.signal,
         })
-        return terminalToMcpContent(terminal)
+        const reply = terminalToMcpContent(terminal)
+        return tool.name === 'widget_show'
+          ? shortenWidgetShowReply(reply, args, opts?.resolveHarnessId?.(superoneSessionId))
+          : reply
       },
     )
   }

@@ -139,6 +139,8 @@ export interface SessionTitleSetter {
   readonly projectPath?: string
   /** Directory the agent works in — a worktree when it has one (present on the real Session object). */
   readonly cwd?: string
+  /** The harness running this session (present on the real Session object). */
+  readonly harnessId?: import('@superone/shared/harness/harness-id').HarnessId
   /** Host-emitted AgentEvents (e.g. browser download task lifecycle). */
   emitHostEvent?(event: import('@superone/shared/agent-types').AgentEvent): void
   /**

@@ -114,6 +114,13 @@ export interface HarnessCapabilities {
    * runtime fact is the `mod_ui_state` event; this is the static ceiling.
    */
   modUi: boolean
+  /**
+   * `widget_show` answers a `widget_code` call with a short acknowledgement instead of the
+   * render payload: the transcript carries the call's complete input, so surfaces render
+   * the widget from it. Off where the reported input may be partial (ACP's `rawInput` is
+   * optional), which keeps the full result.
+   */
+  supportsShortWidgetResult: boolean
   /** User-facing display name for this harness. */
   displayName: string
 }
@@ -138,6 +145,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     goal: { lifecycleArgs: ['clear'], canPause: false, transport: 'slash', semantics: 'condition' },
     terminalCommandApproval: 'harness',
     modUi: true,
+    supportsShortWidgetResult: true,
     displayName: 'Claude',
   },
   codex: {
@@ -159,6 +167,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     goal: { lifecycleArgs: [], canPause: true, transport: 'rpc', semantics: 'objective' },
     terminalCommandApproval: 'harness',
     modUi: false,
+    supportsShortWidgetResult: true,
     displayName: 'Codex',
   },
   acp: {
@@ -193,6 +202,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     },
     terminalCommandApproval: 'harness',
     modUi: false,
+    supportsShortWidgetResult: false,
     displayName: 'Others',
   },
   opencode: {
@@ -211,6 +221,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     goal: null,
     terminalCommandApproval: 'harness',
     modUi: false,
+    supportsShortWidgetResult: false,
     displayName: 'OpenCode',
   },
   cursor: {
@@ -231,6 +242,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     // The @cursor/sdk local executor auto-approves custom tools with no host hook.
     terminalCommandApproval: 'executor',
     modUi: false,
+    supportsShortWidgetResult: false,
     displayName: 'Cursor',
   },
   dsh: {
@@ -264,6 +276,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     goal: null,
     terminalCommandApproval: 'harness',
     modUi: false,
+    supportsShortWidgetResult: false,
     displayName: 'DeepSeek',
   },
 }
@@ -294,4 +307,13 @@ export function resolveGoalCapability(
     return isGrokAcpAgent(acpAgentId) ? HARNESS_CAPABILITIES.acp.goal : null
   }
   return HARNESS_CAPABILITIES[harnessId]?.goal ?? null
+}
+
+/**
+ * Whether `widget_show` answers this harness's `widget_code` calls with the short
+ * acknowledgement. Takes any id a runtime reports; an unknown one keeps the full result.
+ */
+export function supportsShortWidgetResult(harnessId: string | null | undefined): boolean {
+  return !!harnessId && Object.hasOwn(HARNESS_CAPABILITIES, harnessId)
+    && HARNESS_CAPABILITIES[harnessId as HarnessId].supportsShortWidgetResult
 }

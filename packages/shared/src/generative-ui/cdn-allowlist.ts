@@ -1,4 +1,5 @@
-const ALLOWED_HOSTS = [
+/** Hosts a widget may load scripts and styles from. */
+export const CDN_ALLOWED_HOSTS = [
   'cdnjs.cloudflare.com',
   'esm.sh',
   'cdn.jsdelivr.net',
@@ -27,7 +28,7 @@ const CDN_VERSIONS: Record<string, { pattern: RegExp; replacement: string }> = {
 function isAllowedUrl(url: string): boolean {
   try {
     const host = new URL(url).hostname
-    return ALLOWED_HOSTS.includes(host)
+    return CDN_ALLOWED_HOSTS.includes(host)
   } catch {
     return false
   }

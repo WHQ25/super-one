@@ -43,6 +43,7 @@ the same commit.
 ### Features
 
 - [subscription-usage.md](features/subscription-usage.md) — quota estimates and reset-aware warnings
+- [widgets.md](features/widgets.md) — `widget_show`: the short model result, drawing widgets from the call input, templates
 - [inline-files-previewer.md](features/inline-files-previewer.md) — `@native/files-previewer`
 - [3d-model-preview.md](features/3d-model-preview.md) — 3D formats, samples, USDZ composition
 - [terminal-agent-tools.md](features/terminal-agent-tools.md) — agent terminal control

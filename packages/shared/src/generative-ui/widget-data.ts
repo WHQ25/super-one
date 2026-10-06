@@ -1,3 +1,4 @@
+import { CDN_ALLOWED_HOSTS, checkCdnViolations } from './cdn-allowlist'
 import { parsePartialWidgetInput, parseWidgetLayout, parseWidgetResult, type WidgetData, type WidgetLayout, type WidgetReusableHint } from './types'
 
 /** `widget_show` arguments, read the same way by the host that runs a call and a surface that redraws it. */
@@ -115,4 +116,42 @@ export function resolveWidgetCall(input: string, result: string | undefined, set
   const fromResult = result ? parseWidgetResult(result) : null
   if (fromResult) return fromResult
   return widgetDataFromInput(input) ?? (settled ? null : parsePartialWidgetInput(input))
+}
+
+const ACK_TITLE_MAX = 120
+const CDN_EXAMPLES_MAX = 5
+const CDN_URL_MAX = 160
+
+function capText(text: string, max: number): string {
+  const chars = Array.from(text)
+  return chars.length > max ? `${chars.slice(0, max - 1).join('')}…` : text
+}
+
+/**
+ * The allowlist warning a `widget_show` reply carries when the code loads resources from
+ * elsewhere. Bounded whatever the code holds: the count, a few shortened URLs, the fix.
+ */
+export function widgetCdnWarning(violations: string[]): string | null {
+  if (violations.length === 0) return null
+  const shown = violations.slice(0, CDN_EXAMPLES_MAX).map((url) => `  - ${capText(url, CDN_URL_MAX)}`)
+  const omitted = violations.length - shown.length
+  return [
+    `⚠️ CDN VIOLATION: ${violations.length} URL${violations.length === 1 ? ' was' : 's were'} blocked (not in allowlist: ${CDN_ALLOWED_HOSTS.join(', ')}):`,
+    ...shown,
+    ...(omitted > 0 ? [`  … and ${omitted} more`] : []),
+    'The widget will render without these resources. Re-call widget_show with corrected URLs from the allowlist.',
+  ].join('\n')
+}
+
+/**
+ * What the model reads back from a successful `widget_code` call on a harness with
+ * `supportsShortWidgetResult`: surfaces draw the widget from the call's input, so the
+ * reply only acknowledges it, plus the allowlist warning when there is one.
+ */
+export function widgetShowShortContent(args: WidgetShowArgs): Array<{ type: 'text'; text: string }> {
+  const warning = widgetCdnWarning(checkCdnViolations(args.widget_code ?? ''))
+  return [
+    { type: 'text', text: `Rendered widget ${JSON.stringify(capText(args.title, ACK_TITLE_MAX))}.` },
+    ...(warning ? [{ type: 'text' as const, text: warning }] : []),
+  ]
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildWidgetData, injectWidgetData, readWidgetShowArgs, resolveWidgetCall, stripInjectedWidgetData, widgetDataFromInput } from './widget-data'
+import { buildWidgetData, injectWidgetData, readWidgetShowArgs, resolveWidgetCall, stripInjectedWidgetData, widgetDataFromInput, widgetShowShortContent } from './widget-data'
 
 describe('readWidgetShowArgs', () => {
   it('keeps well-typed fields and drops the rest', () => {
@@ -122,5 +122,24 @@ describe('stripInjectedWidgetData', () => {
     const own = '<script>window.widget={data:{n:1}}</script><div/>'
     expect(stripInjectedWidgetData(own)).toBe(own)
     expect(stripInjectedWidgetData(injectWidgetData(own, { n: 2 }))).toBe(own)
+  })
+})
+
+describe('widgetShowShortContent', () => {
+  it('acknowledges a call by its quoted title and nothing else', () => {
+    expect(widgetShowShortContent({ title: 'release "builds"', widget_code: '<div>big widget</div>' }))
+      .toEqual([{ type: 'text', text: 'Rendered widget "release \\"builds\\"".' }])
+  })
+
+  it('stays bounded whatever the widget holds', () => {
+    const urls = Array.from({ length: 40 }, (_, i) => `https://evil.example/${'x'.repeat(i === 0 ? 5000 : 10)}${i}.js`)
+    const title = '🧩发布'.repeat(400)
+    const content = widgetShowShortContent({ title, widget_code: urls.map((url) => `<script src="${url}"></script>`).join('') })
+    expect(content.map((part) => part.text).join('\n').length).toBeLessThan(2000)
+    // The title is cut on a character, never inside a surrogate pair.
+    expect(Array.from(JSON.parse(content[0]!.text.slice('Rendered widget '.length, -1)) as string)).toHaveLength(120)
+    expect(content[1]!.text).toContain('40 URLs were blocked')
+    expect(content[1]!.text).toContain('… and 35 more')
+    expect(content[1]!.text).toContain('Re-call widget_show with corrected URLs')
   })
 })

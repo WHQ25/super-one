@@ -8,7 +8,8 @@ import { Download, Bookmark } from 'lucide-react'
 import { WidgetLayoutFrame } from '@superone/chat-view/WidgetLayoutFrame'
 import { useChatStore } from '@/stores/chat'
 import { WidgetSaveDialog } from './WidgetSaveDialog'
-import { EmbeddedToolView } from '@superone/ui/components/ui/embedded-tool-view'
+import { ToolIcon } from './ToolIcon'
+import { EmbeddedToolBody, EmbeddedToolView } from '@superone/ui/components/ui/embedded-tool-view'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { ComposerViewBridge, type ComposerViewPorts } from '@superone/shared/composer-view-bridge'
 
@@ -239,6 +240,7 @@ export function WidgetBlock({ data, streaming, onRequestInput, composerPorts }: 
   const [iframeReady, setIframeReady] = useState(false)
   const [mountIframe, setMountIframe] = useState(!streaming)
   const [saveOpen, setSaveOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
   const gateNotifiedRef = useRef(false)
 
   useEffect(() => {
@@ -261,40 +263,45 @@ export function WidgetBlock({ data, streaming, onRequestInput, composerPorts }: 
   const displayTitle = data.title.replace(/_/g, ' ')
 
   return (
-    <EmbeddedToolView title={displayTitle} actions={mountIframe && iframeReady && (
-          <>
-            <IconButton size="xs" variant="ghost"
-              onClick={(e) => downloadWidget(finalSrcdoc, displayTitle, e)}
-              tooltip={t('tooltips.saveAsHtml')}
-            >
-              <Download className="size-3.5" />
-            </IconButton>
-            <IconButton size="xs" variant="ghost"
-              onClick={(e) => { e.stopPropagation(); setSaveOpen(true) }}
-              tooltip={data.templateId ? t('widget.save.updateTitle') : t('widget.save.title')}
-            >
-              <Bookmark className="size-3.5" />
-            </IconButton>
-          </>
-        )}>
-      <WidgetLayoutFrame layout={data.layout}>
-        <div className="relative">
-          {showShadow && (
-            <ShadowWidget html={displayCode} isSVG={data.isSVG} />
-          )}
-          {mountIframe && (
-            <AutoIframe
-              onRequestInput={onRequestInput}
-              composerPorts={composerPorts}
-              srcdoc={finalSrcdoc}
-              title={displayTitle}
-              fallbackHeight={data.height}
-              hidden={!iframeReady}
-              onReady={handleIframeReady}
-            />
-          )}
-        </div>
-      </WidgetLayoutFrame>
+    <EmbeddedToolView title={displayTitle} icon={<ToolIcon icon="widget" className="size-3 shrink-0" />}
+      collapsed={collapsed} onToggleCollapsed={() => setCollapsed(value => !value)}
+      expandLabel={t('tooltips.expandView')} collapseLabel={t('tooltips.collapseView')}
+      actions={mountIframe && iframeReady && (
+        <>
+          <IconButton size="xs" variant="ghost"
+            onClick={(e) => downloadWidget(finalSrcdoc, displayTitle, e)}
+            tooltip={t('tooltips.saveAsHtml')}
+          >
+            <Download className="size-3" />
+          </IconButton>
+          <IconButton size="xs" variant="ghost"
+            onClick={(e) => { e.stopPropagation(); setSaveOpen(true) }}
+            tooltip={data.templateId ? t('widget.save.updateTitle') : t('widget.save.title')}
+          >
+            <Bookmark className="size-3" />
+          </IconButton>
+        </>
+      )}>
+      <EmbeddedToolBody collapsed={collapsed}>
+        <WidgetLayoutFrame layout={data.layout}>
+          <div className="relative">
+            {showShadow && (
+              <ShadowWidget html={displayCode} isSVG={data.isSVG} />
+            )}
+            {mountIframe && (
+              <AutoIframe
+                onRequestInput={onRequestInput}
+                composerPorts={composerPorts}
+                srcdoc={finalSrcdoc}
+                title={displayTitle}
+                fallbackHeight={data.height}
+                hidden={!iframeReady}
+                onReady={handleIframeReady}
+              />
+            )}
+          </div>
+        </WidgetLayoutFrame>
+      </EmbeddedToolBody>
       {saveOpen && <WidgetSaveDialog data={data} open={saveOpen} onOpenChange={setSaveOpen} />}
     </EmbeddedToolView>
   )

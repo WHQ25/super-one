@@ -226,3 +226,24 @@ export const ShortResult: Story = {
     )
   },
 }
+
+export const Collapse: Story = {
+  name: 'widget_show · collapsed and expanded, like an MCP App View',
+  render: () => (
+    <div className="space-y-6">
+      <Note>The header stays pinned with the widget glyph before the title. The title or the trailing chevron folds the widget into a tool row and back; the frame stays mounted, so the widget keeps its state.</Note>
+      <Section title="Expanded">
+        {block({ title: 'storybook_coverage_gauge', widget_code: SVG_GAUGE, width: 200, height: 120, isSVG: true })}
+      </Section>
+      <Section title="Collapsed">
+        <div data-story-collapsed>{block({ title: 'build_summary_card', widget_code: SVG_GAUGE, width: 200, height: 120, isSVG: true })}</div>
+      </Section>
+      <Section title="Collapsed · long title in a narrow pane">
+        <div data-story-collapsed style={{ width: 320 }}>{block({ title: 'mobile_composer_attachment_and_send_button_layout_options', widget_code: SVG_GAUGE, width: 200, height: 120, isSVG: true })}</div>
+      </Section>
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    for (const title of canvasElement.querySelectorAll<HTMLElement>('[data-story-collapsed] [data-embedded-tool-title]')) title.click()
+  },
+}

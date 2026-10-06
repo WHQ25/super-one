@@ -343,8 +343,8 @@ revokes the bridge (the View shows Restart).
   a main-registered handle. Navigation, release and window close abort its
   pending work.
 - **Presentation**: an available View replaces its tool row, in the same
-  borderless frame as widgets (`EmbeddedToolView`), with the header pinned
-  instead of revealed on hover. Inline Views have no host height cap. The
+  borderless frame as widgets (`EmbeddedToolView`), with the header pinned.
+  Inline Views have no host height cap. The
   header shows the server icon (`ToolBrandIcon`, tool icons then server icons
   then the MCP fallback),
   `server title · tool title` (tool title → annotations.title → name) and a
@@ -390,9 +390,8 @@ revokes the bridge (the View shows Restart).
   the chat header for the View's (back exits, a toggle shows the composer,
   which starts hidden and hides again after a send) and Android back and the
   iOS edge swipe exit it. A restored View stays inline until activated.
-  Presentation mirrors desktop, with an
-  always-visible muted header (`PortableBlockHeader`) and the row's `trailing`
-  slot.
+  Presentation mirrors desktop through the same `EmbeddedToolView`
+  (`McpAppChrome`), with the row's `trailing` slot.
 
 ## Sign-in
 

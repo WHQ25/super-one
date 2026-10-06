@@ -172,7 +172,7 @@ export function McpAppController({ owner }: { owner: McpAppOwner }) {
     : null
   const row = <>
     <div>
-      <EmbeddedToolView pinnedHeader collapsed={dormant || collapsed} expandLabel={t('tooltips.expandView')} collapseLabel={t('tooltips.collapseView')} onToggleCollapsed={dormant ? () => setOpened(true) : !available ? undefined : () => { if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) setCollapsing(true); setCollapsed(value => !value) }} title={mcpAppHeaderTitle(mcpAppServerTitle(app), app.presentation?.toolTitle ?? owner.title ?? app.resourceUri)} icon={<ToolBrandIcon src={icon} alt={app.binding.server} icon={getToolDisplay(toolName, {}).icon} />} actions={<>
+      <EmbeddedToolView collapsed={dormant || collapsed} expandLabel={t('tooltips.expandView')} collapseLabel={t('tooltips.collapseView')} onToggleCollapsed={dormant ? () => setOpened(true) : !available ? undefined : () => { if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) setCollapsing(true); setCollapsed(value => !value) }} title={mcpAppHeaderTitle(mcpAppServerTitle(app), app.presentation?.toolTitle ?? owner.title ?? app.resourceUri)} icon={<ToolBrandIcon src={icon} alt={app.binding.server} icon={getToolDisplay(toolName, {}).icon} />} actions={<>
         {canExpand && <>
           <IconButton size="xs" variant="ghost" tooltip={t('mcpApp.openInPanel')} onClick={() => void openSurface(false)}><Maximize2 className="size-3" /></IconButton>
           <IconButton size="xs" variant="ghost" tooltip={t('tooltips.maximizeActivityPanel')} onClick={() => void openSurface(true)}><Maximize className="size-3" /></IconButton>

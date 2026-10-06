@@ -207,3 +207,19 @@ export const ShortResult: Story = {
     )
   },
 }
+
+export const Collapsed: Story = {
+  name: 'Collapsed · folded into a tool row, like an MCP App View',
+  // The title or the trailing chevron folds the widget; the frame stays mounted.
+  play: async ({ canvasElement }) => {
+    canvasElement.querySelector<HTMLElement>('[data-embedded-tool-title]')?.click()
+  },
+}
+
+export const CollapsedLongTitle: Story = {
+  name: 'Collapsed · long title truncates before the actions',
+  args: { data: widget({ title: 'mobile_composer_attachment_and_send_button_layout_options' }) },
+  play: async ({ canvasElement }) => {
+    canvasElement.querySelector<HTMLElement>('[data-embedded-tool-title]')?.click()
+  },
+}

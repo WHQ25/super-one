@@ -66,6 +66,12 @@ while its input streamed. Codex items reach the same branch with their
 `arguments` (a string is kept as it is) and their `result.isError`, through
 `codexMcpItemInput` and `codexMcpItemIsError`.
 
+A drawn widget is framed like an MCP App View (`EmbeddedToolView`): a pinned
+header with the widget glyph before the title, the save actions, and a trailing
+chevron. The title or the chevron folds the widget into a tool row and back;
+`EmbeddedToolBody` keeps the frame mounted while folded, so the widget keeps its
+state.
+
 A subagent's compact card on the desktop stays a summary; its full view draws the
 widget.
 

@@ -7,7 +7,9 @@ import { requestNative, requestNativeAsync, openNativeComposer, releaseNativeCom
 import { ComposerViewBridge } from '@superone/shared/composer-view-bridge'
 import { PortableTurnContext, TurnMessageIdContext } from './portable-turn-context'
 import { WidgetLayoutFrame } from './WidgetLayoutFrame'
-import { PORTABLE_BLOCK_CLASS, PortableBlockHeader, PortableBlockHeaderButton } from './PortableBlockHeader'
+import { EmbeddedToolBody, EmbeddedToolView } from '@superone/ui/components/ui/embedded-tool-view'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
+import { ToolIcon } from './presenters/ToolIcon'
 
 /**
  * A code widget on the phone.
@@ -17,15 +19,13 @@ import { PORTABLE_BLOCK_CLASS, PortableBlockHeader, PortableBlockHeaderButton } 
  * WebView, so the widget lives in an iframe *inside* it — the sandbox attribute is
  * what keeps agent-authored code off the chat document, exactly as on the desktop.
  *
- * Three things differ, and all three come from being on a phone:
+ * Two things differ, and both come from being on a phone:
  *
  *  - **Scrolling.** The widget document sets `overflow:hidden` and reports its height,
  *    so the iframe is always as tall as its content and never scrolls internally. On a
  *    desktop that leaves the wheel bridge to move the page; on a phone a drag inside
  *    the frame would simply do nothing, stranding the transcript. `touchScroll` forwards
  *    non-interactive vertical drags so the chat keeps scrolling under the widget.
- *  - **Chrome is always visible.** The desktop reveals the title and actions on hover.
- *    There is no hover on a phone, so hiding them would hide them permanently.
  *  - **Links, prompts and saving** cross the native bridge: opening a browser tab is not
  *    possible from this document, there is no chat store to write a draft into, and the
  *    template store lives on the host's disk rather than the phone's.
@@ -159,6 +159,7 @@ export function PortableWidgetBlock({ data }: { data: WidgetData }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [height, setHeight] = useState(Math.max(MIN_HEIGHT, data.height))
   const [save, setSave] = useState<SaveState>({ kind: 'idle' })
+  const [collapsed, setCollapsed] = useState(false)
   // The chat document stamps `color-scheme` from the host theme, so the widget has to
   // declare the same one or the engine stops compositing the frame transparently and
   // paints its own light canvas behind the widget's transparent body.
@@ -245,37 +246,48 @@ export function PortableWidgetBlock({ data }: { data: WidgetData }) {
     // The horizontal inset is the block's own: the transcript's padding stops here, and
     // a frame running to the screen edge is part of what made a widget read as a panel
     // dropped into the conversation rather than as part of the reply.
-    <div ref={setRoot} className={PORTABLE_BLOCK_CLASS} data-widget-title={data.title}>
-      <PortableBlockHeader title={displayTitle}>
-        {save.kind === 'saving' ? (
-          <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground/70" aria-label={saveLabel} />
+    <div ref={setRoot} className="w-full px-1" data-widget-title={data.title}>
+      <EmbeddedToolView
+        title={displayTitle}
+        icon={<ToolIcon icon="widget" className="size-3 shrink-0" />}
+        collapsed={collapsed}
+        onToggleCollapsed={() => setCollapsed((value) => !value)}
+        expandLabel={t('tooltips.expandView')}
+        collapseLabel={t('tooltips.collapseView')}
+        actions={save.kind === 'saving' ? (
+          <Loader2 className="size-3 shrink-0 animate-spin" aria-label={saveLabel} />
         ) : save.kind === 'saved' ? (
-          <Check className="size-3.5 shrink-0 text-success" aria-label={t('widget.save.confirm')} />
+          <Check className="size-3 shrink-0 text-success" aria-label={t('widget.save.confirm')} />
         ) : (
-          <PortableBlockHeaderButton
-            label={saveLabel}
-            expanded={save.kind === 'editing'}
-            onPress={() => setSave(save.kind === 'editing' ? { kind: 'idle' } : { kind: 'editing' })}
+          <IconButton
+            size="xs"
+            variant="ghost"
+            tooltip={saveLabel}
+            aria-expanded={save.kind === 'editing'}
+            onClick={() => setSave(save.kind === 'editing' ? { kind: 'idle' } : { kind: 'editing' })}
           >
-            <Bookmark className={`size-3.5 ${data.templateId ? 'fill-current' : ''}`} />
-          </PortableBlockHeaderButton>
+            <Bookmark className={`size-3 ${data.templateId ? 'fill-current' : ''}`} />
+          </IconButton>
         )}
-      </PortableBlockHeader>
-      <WidgetLayoutFrame layout={data.layout}>
-        <iframe
-          ref={iframeRef}
-          title={displayTitle}
-          srcDoc={srcdoc}
-          onLoad={postTheme}
-          sandbox="allow-scripts"
-          className="rounded-md border-0"
-          style={{ width: WIDGET_FRAME_WIDTH, height }}
-        />
-      </WidgetLayoutFrame>
-      {save.kind === 'editing' ? <SaveForm data={data} onDone={setSave} /> : null}
-      {save.kind === 'failed' ? (
-        <p className="mt-1 px-0.5 text-xs text-error">{t('widget.save.failed', { error: save.message })}</p>
-      ) : null}
+      >
+        <EmbeddedToolBody collapsed={collapsed}>
+          <WidgetLayoutFrame layout={data.layout}>
+            <iframe
+              ref={iframeRef}
+              title={displayTitle}
+              srcDoc={srcdoc}
+              onLoad={postTheme}
+              sandbox="allow-scripts"
+              className="rounded-md border-0"
+              style={{ width: WIDGET_FRAME_WIDTH, height }}
+            />
+          </WidgetLayoutFrame>
+          {save.kind === 'editing' ? <SaveForm data={data} onDone={setSave} /> : null}
+          {save.kind === 'failed' ? (
+            <p className="mt-1 px-0.5 text-xs text-error">{t('widget.save.failed', { error: save.message })}</p>
+          ) : null}
+        </EmbeddedToolBody>
+      </EmbeddedToolView>
     </div>
   )
 }

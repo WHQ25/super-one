@@ -37,7 +37,6 @@ export function McpAppChrome({ app, toolName, details, state, actions, activatio
   const tool = parseMcpToolName(toolName)
   return (
     <EmbeddedToolView
-      pinnedHeader
       className={className}
       collapsed={collapsed}
       onToggleCollapsed={onToggleCollapsed}

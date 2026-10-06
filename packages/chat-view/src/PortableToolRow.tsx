@@ -8,7 +8,7 @@ import { PortableFilesPreviewer } from './PortableFilesPreviewer'
 import { PortableNativeGallery } from './PortableNativeGallery'
 import { PortableWidgetBlock } from './PortableWidgetBlock'
 import { isGalleryPayload, parsePortableNativeWidgetResult } from './portable-native-widget'
-import { parseWidgetResult } from '@superone/shared/generative-ui/types'
+import { resolveWidgetCall } from '@superone/shared/generative-ui/widget-data'
 import { PortableTurnContext } from './portable-turn-context'
 import { parseMcpToolName } from './presenters/tool-display'
 import { resolveMcpServerIconFromMap } from '@superone/shared/mcp-server-icon'
@@ -232,8 +232,8 @@ function parseMiniAppIdentity(input: string): { appId: string; tool: string } | 
 
 /**
  * The desktop's first widget stage. The phone never receives the streamed input
- * (`tool_input_delta` stays on the desktop), so it holds this row until the result
- * lands instead of drawing a partial widget.
+ * (`tool_input_delta` stays on the desktop), so it holds this row until the call
+ * settles instead of drawing a partial widget.
  */
 function PortableWidgetGenerating() {
   const { t } = useTranslation()
@@ -364,13 +364,13 @@ export function PortableToolRow({ allowExpand = true, ...props }: PortableToolRo
     () => (isWidgetTool ? parsePortableNativeWidgetResult(props.result) : null),
     [isWidgetTool, props.result],
   )
-  // A code widget only ever arrives whole: `widget_code` is kept intact by
-  // `shouldKeepRemoteToolInput`, and the settled result is exempt from the 200-char
-  // tool-result truncation. So the phone parses the same result the desktop does —
-  // there is no partial-input path to mirror, and nothing to render until it lands.
+  // The phone resolves a code widget as the desktop does: `shouldKeepRemoteToolInput`
+  // keeps the whole input, which is what a short result leaves to draw from. It shows
+  // nothing until the call settles, so a partial input never becomes a preview here.
+  const settled = props.status !== 'streaming'
   const codeWidget = useMemo(
-    () => (isWidgetTool && !nativeWidget && props.result ? parseWidgetResult(props.result) : null),
-    [isWidgetTool, nativeWidget, props.result],
+    () => (isWidgetTool && !nativeWidget && settled ? resolveWidgetCall(props.input, props.result, true) : null),
+    [isWidgetTool, nativeWidget, settled, props.input, props.result],
   )
   const mcpIconSrc = useMcpToolIconSrc(props.toolName)
   const ports = useMemo<GenericToolRowPorts>(
@@ -390,7 +390,7 @@ export function PortableToolRow({ allowExpand = true, ...props }: PortableToolRo
     if (nativeWidget.nativeType === 'files-previewer') return <PortableFilesPreviewer payload={nativeWidget} toolUseId={props.toolUseId} />
   }
   // Denied and failed calls keep the ordinary row: it is the only one that says why.
-  if (codeWidget && props.status !== 'streaming' && !props.isError) {
+  if (codeWidget && !props.isError && !props.result?.startsWith('[denied] ')) {
     return <PortableWidgetBlock data={codeWidget} />
   }
   if (isWidgetTool && props.status === 'streaming') return <PortableWidgetGenerating />

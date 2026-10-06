@@ -3,7 +3,7 @@ import { PortableWidgetBlock } from './PortableWidgetBlock'
 import { PortableToolRow } from './PortableToolRow'
 import { PortableTurnContext } from './portable-turn-context'
 import type { WidgetData } from '@superone/shared/generative-ui/types'
-import { SETTINGS_MOCKUP_WIDGET } from './fixtures/widget-mockup'
+import { SETTINGS_MOCKUP_WIDGET, SHORT_RESULT_WIDGET_CALL } from './fixtures/widget-mockup'
 
 /**
  * The phone's widget frame. Stories render the real component with real agent-shaped
@@ -176,14 +176,33 @@ export const Blended: Story = {
 
 export const Lifecycle: Story = {
   name: 'Tool row lifecycle · generating, then the widget',
-  // The phone stops at the desktop's first stage while the call streams — it never
-  // receives the partial input — and swaps in the widget once the result lands.
+  // The phone stops at the desktop's first stage while the call streams, with no partial
+  // preview, and swaps in the widget once the call settles with a result.
   render: () => {
     const result = JSON.stringify(widget())
     return (
       <div className="space-y-4">
         <PortableToolRow toolName="mcp__superone__widget_show" toolUseId="widget-streaming" input="" status="streaming" />
         <PortableToolRow toolName="mcp__superone__widget_show" toolUseId="widget-complete" input={result} status="complete" result={result} />
+      </div>
+    )
+  },
+}
+
+export const ShortResult: Story = {
+  name: 'Short result · drawn from the call input',
+  // Claude and Codex calls return only an acknowledgement. The phone keeps the whole input
+  // and draws from it, data included, once the call settles. A call interrupted while its
+  // input streamed and a denied call keep the ordinary row.
+  render: () => {
+    const { input, result } = SHORT_RESULT_WIDGET_CALL
+    return (
+      <div className="space-y-4">
+        <PortableToolRow toolName="mcp__superone__widget_show" toolUseId="short-streaming" input={input} status="streaming" />
+        <PortableToolRow toolName="mcp__superone__widget_show" toolUseId="short-result" input={input} status="complete" result={result} />
+        <PortableToolRow toolName="mcp__superone__widget_show" toolUseId="short-sealed" input={input} status="complete" />
+        <PortableToolRow toolName="mcp__superone__widget_show" toolUseId="short-half" input={input.slice(0, 150)} status="complete" />
+        <PortableToolRow toolName="mcp__superone__widget_show" toolUseId="short-denied" input={input} status="complete" result="[denied] The user declined this call." isError />
       </div>
     )
   },

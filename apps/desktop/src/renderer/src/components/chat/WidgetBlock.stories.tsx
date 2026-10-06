@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ReactNode } from 'react'
 import { WidgetBlock } from './WidgetBlock'
 import { ToolBlock } from './ToolBlock'
-import { SETTINGS_MOCKUP_WIDGET } from '@superone/chat-view/fixtures/widget-mockup'
+import { SETTINGS_MOCKUP_WIDGET, SHORT_RESULT_WIDGET_CALL } from '@superone/chat-view/fixtures/widget-mockup'
 
 function StoryShell({ children, width = 720 }: { children: ReactNode; width?: number }) {
   return (
@@ -31,16 +31,18 @@ function block(data: { title: string; widget_code: string; width: number; height
 
 function mcpBlock(
   tool: 'widget_list_templates' | 'widget_show',
-  input: Record<string, unknown>,
+  input: Record<string, unknown> | string,
   result?: string,
   status: 'streaming' | 'complete' = 'complete',
+  isError?: boolean,
 ) {
   return (
     <ToolBlock
       toolName={`mcp__superone__${tool}`}
-      input={JSON.stringify(input)}
+      input={typeof input === 'string' ? input : JSON.stringify(input)}
       status={status}
       result={result}
+      isError={isError}
     />
   )
 }
@@ -192,4 +194,35 @@ export const WidgetShow: Story = {
       </Section>
     </StoryShell>
   ),
+}
+
+export const ShortResult: Story = {
+  name: 'widget_show · short result, drawn from the input',
+  render: () => {
+    const { input, result } = SHORT_RESULT_WIDGET_CALL
+    return (
+      <StoryShell width={780}>
+        <Note>Claude and Codex calls return only an acknowledgement, so the row draws the widget from the call input, data included. A call interrupted once its input was complete keeps the widget it drew; failed, denied and half-streamed calls keep the ordinary row.</Note>
+        <Section title="Streaming · partial input preview">
+          {mcpBlock('widget_show', input.slice(0, 150), undefined, 'streaming')}
+        </Section>
+        <Section title="Input complete · frame mounted before the result">
+          {mcpBlock('widget_show', input, undefined, 'streaming')}
+        </Section>
+        <Section title="Short result">
+          {mcpBlock('widget_show', input, result)}
+        </Section>
+        <Section title="Interrupted after the input completed · the widget stays">
+          {mcpBlock('widget_show', input)}
+        </Section>
+        <Section title="Interrupted while the input streamed · ordinary row">
+          {mcpBlock('widget_show', input.slice(0, 150))}
+        </Section>
+        <Section title="Failed · denied">
+          {mcpBlock('widget_show', input, 'widget_show failed.', 'complete', true)}
+          {mcpBlock('widget_show', input, '[denied] The user declined this call.', 'complete', true)}
+        </Section>
+      </StoryShell>
+    )
+  },
 }

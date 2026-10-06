@@ -11,7 +11,7 @@ import { useForkNavigation } from './fork-navigation-context'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { getSubagentColorClasses } from './subagent-colors'
 import { ToolBlock } from './ToolBlock'
-import { codexMcpItemResultText } from './presenters/CodexTurnView'
+import { codexMcpItemInput, codexMcpItemIsError, codexMcpItemResultText } from './presenters/CodexTurnView'
 import {
   CodexCollabBlockPresenter,
   CodexCollabMiniTool,
@@ -374,8 +374,8 @@ function CodexCollabActivityTool({ item }: { item: CodexThreadItem }) {
   if (item.type === 'collab_tool_call') return <CodexSubagentMarker item={item} />
   if (item.type === 'mcp_tool_call' && item.app) return <ToolBlock
     toolName={`mcp__${item.server}__${item.tool}`} toolUseId={item.id} app={item.app}
-    input={typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments)} result={codexMcpItemResultText(item)}
-    status={item.status === 'in_progress' ? 'streaming' : 'complete'} isError={item.status === 'failed' || !!item.error} />
+    input={codexMcpItemInput(item)} result={codexMcpItemResultText(item)}
+    status={item.status === 'in_progress' ? 'streaming' : 'complete'} isError={codexMcpItemIsError(item)} />
   return <CodexCollabMiniTool item={item} />
 }
 

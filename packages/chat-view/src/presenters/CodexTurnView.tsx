@@ -135,6 +135,16 @@ export function codexMcpItemResultText(item: CodexMcpToolCallItem): string | und
   return text.length > 0 ? text : undefined
 }
 
+/** The call's input as a tool row reads it. String arguments are the serialized input already. */
+export function codexMcpItemInput(item: CodexMcpToolCallItem): string {
+  return typeof item.arguments === 'string' ? item.arguments : safeStringify(item.arguments ?? {})
+}
+
+/** A tool's own error reply completes the call with a flagged result, so the status alone misses it. */
+export function codexMcpItemIsError(item: CodexMcpToolCallItem): boolean {
+  return item.status === 'failed' || Boolean(item.error) || item.result?.isError === true
+}
+
 /**
  * Codex counterpart of `isHiddenToolBlock`: a generation whose card the turn-end
  * gallery will render loses its item, everything else keeps it. Result-dependent,
@@ -217,10 +227,10 @@ const CodexAppToolGroup = memo(function CodexAppToolGroup({
               toolName={`mcp__${item.server}__${item.tool}`}
               remoteDetail={item.type === 'mcp_tool_call' ? item.remoteDetail : undefined}
                   toolUseId={item.id}
-              input={safeStringify(item.arguments)}
+              input={codexMcpItemInput(item)}
               status={codexMcpToolStatus(item.status)}
               result={codexMcpItemResultText(item)}
-              isError={item.status === 'failed' || !!item.error}
+              isError={codexMcpItemIsError(item)}
               grouped
             />
           ))}
@@ -232,9 +242,9 @@ const CodexAppToolGroup = memo(function CodexAppToolGroup({
           <Tool
             toolName={`mcp__${runningItem.server}__${runningItem.tool}`}
             toolUseId={runningItem.id}
-            input={safeStringify(runningItem.arguments)}
+            input={codexMcpItemInput(runningItem)}
             status={codexMcpToolStatus(runningItem.status)}
-            isError={runningItem.status === 'failed' || !!runningItem.error}
+            isError={codexMcpItemIsError(runningItem)}
             grouped
           />
         </div>

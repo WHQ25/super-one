@@ -3,7 +3,7 @@ import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from
 import { useTranslation } from 'react-i18next'
 import { Ban, ChevronRight, TriangleAlert } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
-import { parsePartialWidgetInput, parseWidgetResult } from '@superone/shared/generative-ui/types'
+import { resolveWidgetCall } from '@superone/shared/generative-ui/widget-data'
 import { parseNativeWidgetResult } from '@superone/shared/generative-ui/native-widgets'
 import { AutomationToolBlock, isAutomationToolName } from './AutomationToolBlock'
 import { BrowserToolBlock } from './BrowserToolBlock'
@@ -531,34 +531,37 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
     if (nativeWidget?.nativeType === 'files-previewer') {
       return <FilesPreviewer payload={nativeWidget} projectPath={nativeWidget.root} />
     }
-    const widgetData = (result ? parseWidgetResult(result) : null) ?? parsePartialWidgetInput(input)
-    const jsonComplete = isCompleteJson(input)
-    const inputComplete = !isStreaming || jsonComplete
-    if (isStreaming && jsonComplete && widgetData) {
-      ports.onWidgetInputComplete?.({ title: widgetData.title, inputLength: input.length })
-    }
-    // Subagent card: never mount the full widget UI — header-only stub.
-    if (!allowExpand) {
-      const title = widgetData && typeof (widgetData as { title?: unknown }).title === 'string'
-        ? (widgetData as { title: string }).title
-        : ''
+    const widgetData = resolveWidgetCall(input, result, !isStreaming)
+    // Interrupted while its input streamed, a call drew no widget and keeps the default row.
+    if (isStreaming || result || widgetData) {
+      const jsonComplete = isCompleteJson(input)
+      const inputComplete = !isStreaming || jsonComplete
+      if (isStreaming && jsonComplete && widgetData) {
+        ports.onWidgetInputComplete?.({ title: widgetData.title, inputLength: input.length })
+      }
+      // Subagent card: never mount the full widget UI — header-only stub.
+      if (!allowExpand) {
+        const title = widgetData && typeof (widgetData as { title?: unknown }).title === 'string'
+          ? (widgetData as { title: string }).title
+          : ''
+        return (
+          <CompactLabeledToolRow
+            icon={<ToolIcon icon="widget" className="size-3 shrink-0 text-muted-foreground" />}
+            label={isStreaming ? t('chat.toolBlock.generatingWidget') : t('chat.toolBlock.generateWidget')}
+            streaming={isStreaming}
+            summary={title || undefined}
+          />
+        )
+      }
+      if (widgetData) return <WidgetBlock data={widgetData} streaming={!inputComplete} onRequestInput={ports.onWidgetRequestInput} composerPorts={ports.widgetComposerPorts} />
       return (
         <CompactLabeledToolRow
           icon={<ToolIcon icon="widget" className="size-3 shrink-0 text-muted-foreground" />}
           label={isStreaming ? t('chat.toolBlock.generatingWidget') : t('chat.toolBlock.generateWidget')}
           streaming={isStreaming}
-          summary={title || undefined}
         />
       )
     }
-    if (widgetData) return <WidgetBlock data={widgetData} streaming={!inputComplete} onRequestInput={ports.onWidgetRequestInput} composerPorts={ports.widgetComposerPorts} />
-    return (
-      <CompactLabeledToolRow
-        icon={<ToolIcon icon="widget" className="size-3 shrink-0 text-muted-foreground" />}
-        label={isStreaming ? t('chat.toolBlock.generatingWidget') : t('chat.toolBlock.generateWidget')}
-        streaming={isStreaming}
-      />
-    )
   }
 
   return (

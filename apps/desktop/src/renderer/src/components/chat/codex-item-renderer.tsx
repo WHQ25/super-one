@@ -14,6 +14,7 @@ import { AnsiText } from '@/lib/ansi'
 import { FileChip } from './ToolBlock'
 import { CodexPlanImplementFooter } from './CodexPlanImplementFooter'
 import { CodexPlanBlockPresenter } from './presenters/CodexPlanBlock'
+import { codexMcpItemInput, codexMcpItemIsError, codexMcpItemResultText } from './presenters/CodexTurnView'
 import { CodexImageGenerationBlock } from './CodexImageGenerationBlock'
 import { fileLinkComponents } from './chat-markdown-components'
 import { memo, useState, useEffect, useRef } from 'react'
@@ -26,14 +27,6 @@ import { CodexAsyncQuestionBlock } from './CodexAsyncQuestionBlock'
 import { CodexMcpAuthAction, hasCodexMcpAuthChallenge } from './CodexMcpAuthAction'
 import { usePlanFullscreen } from './plan-fullscreen-context'
 export { PlanFullscreenContext, usePlanFullscreen } from './plan-fullscreen-context'
-
-function safeStringify(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return '[unserializable payload]'
-  }
-}
 
 type ItemStatus = 'in_progress' | 'completed' | 'failed'
 
@@ -295,24 +288,16 @@ export function renderCodexItem(
 
     case 'mcp_tool_call':
       {
-        const chunks: string[] = []
-        if (item.result) {
-          const contentArr = item.result.content as Array<{ type: string; text: string }> | undefined
-          const textParts = contentArr?.filter((c) => c.type === 'text').map((c) => c.text)
-          chunks.push(textParts?.length ? textParts.join('\n') : safeStringify(item.result))
-        }
-        if (item.error) chunks.push(`Error: ${item.error.message}`)
-        const result = chunks.join('\n\n').trim()
         const authChallenge = hasCodexMcpAuthChallenge(item)
         return (
           <div key={`${item.id}-${index}`} className="my-0.5 space-y-0.5">
             <ToolBlock
               toolName={`mcp__${item.server}__${item.tool}`}
               app={item.app}
-              input={safeStringify(item.arguments)}
+              input={codexMcpItemInput(item)}
               status={toToolStatus(item.status)}
-              result={result || undefined}
-              isError={item.status === 'failed' || !!item.error}
+              result={codexMcpItemResultText(item)}
+              isError={codexMcpItemIsError(item)}
             />
             {authChallenge ? <CodexMcpAuthAction item={item} /> : null}
           </div>

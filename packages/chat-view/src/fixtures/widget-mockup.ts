@@ -26,3 +26,18 @@ export const SETTINGS_MOCKUP_WIDGET = `<style>
 </div>
 </div>
 <div style="display:flex;justify-content:flex-end;margin-top:12px"><button>Ship this layout ↗</button></div>`
+
+/**
+ * A `widget_code` call whose result only acknowledges it, as Claude and Codex sessions
+ * record it. The code and its `data` live in the input, which is what the row draws.
+ */
+export const SHORT_RESULT_WIDGET_CALL = {
+  input: JSON.stringify({
+    title: 'release_builds',
+    widget_code: '<div style="padding:12px 0;font:14px system-ui;color:var(--color-text-primary)">Builds shipped today: <b id="n"></b></div>'
+      + '<script>n.textContent=window.widget.data.builds</script>',
+    data: { builds: 3 },
+    height: 80,
+  }),
+  result: 'Rendered widget "release_builds".',
+}

@@ -1,4 +1,4 @@
-import { parseWidgetLayout, type WidgetData, type WidgetLayout, type WidgetReusableHint } from './types'
+import { parsePartialWidgetInput, parseWidgetLayout, parseWidgetResult, type WidgetData, type WidgetLayout, type WidgetReusableHint } from './types'
 
 /** `widget_show` arguments, read the same way by the host that runs a call and a surface that redraws it. */
 export interface WidgetShowArgs {
@@ -77,4 +77,17 @@ export function widgetDataFromInput(input: string | Record<string, unknown>): Wi
   const { widget_code, template, ...args } = readWidgetShowArgs(record)
   if (!widget_code || template) return null
   return buildWidgetData({ ...args, source: widget_code })
+}
+
+/**
+ * The widget a `widget_show` call draws on desktop and phone. A result that carries the
+ * payload wins: older transcripts, template calls, and harnesses that keep the full result.
+ * Otherwise the payload is rebuilt from the call's complete input, also for a call sealed
+ * without a result: its widget was already on screen once the input was complete. A partial
+ * input is only a preview while the call runs. Callers rule out failed and denied calls first.
+ */
+export function resolveWidgetCall(input: string, result: string | undefined, settled: boolean): WidgetData | null {
+  const fromResult = result ? parseWidgetResult(result) : null
+  if (fromResult) return fromResult
+  return widgetDataFromInput(input) ?? (settled ? null : parsePartialWidgetInput(input))
 }

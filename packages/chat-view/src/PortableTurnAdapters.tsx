@@ -49,6 +49,8 @@ import {
 } from './presenters/ClaudeTurnBody'
 import {
   CodexTurnViewPresenter,
+  codexMcpItemInput,
+  codexMcpItemIsError,
   codexMcpItemResultText,
   isHiddenCodexMcpItem,
   type CodexItemPresenterProps,
@@ -899,10 +901,10 @@ function claudePropsFromCodexMcp(item: CodexMcpToolCallItem): ClaudeToolPresente
   return {
     toolName: `mcp__${item.server}__${item.tool}`,
     toolUseId: item.id,
-    input: typeof item.arguments === 'string' ? item.arguments : stringify(item.arguments ?? {}),
+    input: codexMcpItemInput(item),
     result: codexMcpItemResultText(item),
     status: item.status === 'in_progress' ? 'streaming' : 'complete',
-    isError: item.status === 'failed' || Boolean(item.error),
+    isError: codexMcpItemIsError(item),
     app: item.app,
   }
 }

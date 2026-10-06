@@ -2290,6 +2290,7 @@ export type Messages = {
       hintNote: string
       hintSelect: string
       hintDismiss: string
+      hintNewline: string
       dismiss: string
     }
     filesPreviewer: {
@@ -6543,6 +6544,7 @@ export const en: Messages = {
       hintNote: 'note',
       hintSelect: 'select',
       hintDismiss: 'dismiss',
+      hintNewline: 'newline',
       dismiss: 'Dismiss',
     },
     filesPreviewer: {

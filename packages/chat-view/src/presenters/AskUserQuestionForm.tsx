@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
-import { Kbd } from '@superone/ui/components/ui/kbd'
+import { Kbd, NewlineKeys } from '@superone/ui/components/ui/kbd'
 import { AutoResizeTextarea } from '@superone/ui/components/ui/auto-resize-textarea'
 import { cn } from '@superone/ui/lib/utils'
 import type { AskUserQuestionRequest, QuestionAnnotations, QuestionPreviewFormat, UserQuestion } from '@superone/shared/agent-types'
@@ -16,10 +16,10 @@ export interface AskUserQuestionFormProps {
   renderPreview: RenderPreview
   /**
    * Digit, Tab, Enter and Escape shortcuts with their hints, for hosts with a
-   * keyboard. `inScope` says whether a key belongs to this form. A touch host
-   * omits it and gets a Dismiss button instead.
+   * keyboard. `inScope` says whether a key belongs to this form; `mac` picks the
+   * key glyphs. A touch host omits it and gets a Dismiss button instead.
    */
-  keyboard?: { inScope: (event?: KeyboardEvent) => boolean }
+  keyboard?: { inScope: (event?: KeyboardEvent) => boolean; mac: boolean }
 }
 
 function questionKey(q: UserQuestion): string {
@@ -227,12 +227,14 @@ function PreviewQuestionPanel({ q, previewFormat, selections, notesTexts, onSele
 }
 
 /** Desktop: options and an Other field, each with its digit. */
-function SimpleQuestionPanel({ q, selections, otherTexts, onSelect, onOther, otherInputRef, onSubmit }: {
+function SimpleQuestionPanel({ q, selections, otherTexts, onSelect, onOther, onOtherFocus, onOtherBlur, otherInputRef, onSubmit }: {
   q: UserQuestion
   selections: Record<string, string>
   otherTexts: Record<string, string>
   onSelect: (q: UserQuestion, label: string) => void
   onOther: (q: UserQuestion, text: string) => void
+  onOtherFocus: () => void
+  onOtherBlur: () => void
   otherInputRef: RefObject<HTMLTextAreaElement | null>
   onSubmit: () => void
 }) {
@@ -249,6 +251,8 @@ function SimpleQuestionPanel({ q, selections, otherTexts, onSelect, onOther, oth
         placeholder={t('chat.askUser.otherOption')}
         value={otherTexts[questionKey(q)] ?? ''}
         onChange={(text) => onOther(q, text)}
+        onFocus={onOtherFocus}
+        onBlur={onOtherBlur}
       />
       <OptionDescription q={q} selections={selections} />
     </div>
@@ -317,7 +321,8 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
   const [notesTexts, setNotesTexts] = useState<Record<string, string>>({})
   const [activeTab, setActiveTab] = useState(0)
   const [otherFocused, setOtherFocused] = useState(false)
-  const [noteFocused, setNoteFocused] = useState(false)
+  // Either text field: digits type there, so the hints switch to ctrl+digit and newline keys.
+  const [textFocused, setTextFocused] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const otherInputRef = useRef<HTMLTextAreaElement>(null)
   const notesInputRef = useRef<HTMLTextAreaElement>(null)
@@ -486,8 +491,8 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
             setSelections((s) => ({ ...s, [questionKey(activeQuestion)]: '' }))
             setOtherFocused(true)
           }}
-          onNoteFocus={() => setNoteFocused(true)}
-          onNoteBlur={() => setNoteFocused(false)}
+          onNoteFocus={() => setTextFocused(true)}
+          onNoteBlur={() => setTextFocused(false)}
           onSubmit={() => { if (allAnswered && keyboard?.inScope()) submit() }}
           notesInputRef={notesInputRef}
           renderPreview={renderPreview}
@@ -499,6 +504,8 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
           otherTexts={otherTexts}
           onSelect={selectOption}
           onOther={setOther}
+          onOtherFocus={() => setTextFocused(true)}
+          onOtherBlur={() => setTextFocused(false)}
           otherInputRef={otherInputRef}
           onSubmit={() => { if (allAnswered && keyboard?.inScope()) submit() }}
         />
@@ -518,7 +525,8 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
           <span className="text-xs text-muted-foreground">
             {!singleQuestion && <><Kbd>⇥</Kbd><span className="ml-0.5">{t('chat.askUser.hintSwitch')}</span>{separator}</>}
             {isPreview && selections[questionKey(activeQuestion)] && <><Kbd>n</Kbd><span className="ml-0.5">{t('chat.askUser.hintNote')}</span>{separator}</>}
-            {otherFocused || noteFocused
+            {textFocused && <><span className="inline-flex items-center gap-0.5"><NewlineKeys label={t('chat.askUser.hintNewline')} mac={keyboard.mac} /></span>{separator}</>}
+            {textFocused
               ? <><Kbd>ctrl</Kbd>+<Kbd>num</Kbd><span className="ml-0.5">{t('chat.askUser.hintSelect')}</span>{separator}</>
               : <><Kbd>num</Kbd><span className="ml-0.5">{t('chat.askUser.hintSelect')}</span>{separator}</>}
             <Kbd>esc</Kbd><span className="ml-0.5">{t('chat.askUser.hintDismiss')}</span>

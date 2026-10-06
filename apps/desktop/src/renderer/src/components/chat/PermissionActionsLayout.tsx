@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
-import { Kbd } from '@superone/ui/components/ui/kbd'
+import { NewlineKeys } from '@superone/ui/components/ui/kbd'
 
 const TRANSITION = { duration: 0.2, ease: [0.2, 0, 0, 1] as const }
 const TEXT_METRICS = [
@@ -109,10 +109,7 @@ export function PermissionActionsLayout({
               transition={{ ...TRANSITION, duration: reduceMotion ? 0 : 0.16 }}
               className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-[10px] text-muted-foreground"
             >
-              <Kbd aria-label="Shift+Enter">{isMac ? '⇧↵' : 'Shift+Enter'}</Kbd>
-              <span>/</span>
-              <Kbd aria-label={isMac ? 'Option+Enter' : 'Alt+Enter'}>{isMac ? '⌥↵' : 'Alt+Enter'}</Kbd>
-              <span>{t('chat.permission.feedbackNewlineHint')}</span>
+              <NewlineKeys label={t('chat.permission.feedbackNewlineHint')} mac={isMac} />
             </motion.span>
           )}
         </AnimatePresence>

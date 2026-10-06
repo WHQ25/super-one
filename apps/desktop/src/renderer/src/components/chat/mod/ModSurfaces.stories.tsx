@@ -259,7 +259,7 @@ function QuestionCard({ answer, touch }: { answer: Answer; touch?: boolean }) {
       <div style={{ width: touch ? 390 : 640, maxWidth: '100%' }}>
         <ModQuestionSite request={QUESTION}>
           <AskUserQuestionForm request={QUESTION} onSubmit={log} onDismiss={() => log('dismiss')}
-            renderPreview={({ content }) => <pre>{content}</pre>} keyboard={touch ? undefined : { inScope: () => false }} />
+            renderPreview={({ content }) => <pre>{content}</pre>} keyboard={touch ? undefined : { inScope: () => false, mac: true }} />
         </ModQuestionSite>
       </div>
     </Session>

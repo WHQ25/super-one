@@ -24,4 +24,16 @@ function Kbd({
   )
 }
 
-export { Kbd }
+/** Shift+Enter / Alt+Enter, the keys `AutoResizeTextarea` turns into a newline, followed by `label`. */
+function NewlineKeys({ label, mac }: { label: string; mac: boolean }) {
+  return (
+    <>
+      <Kbd aria-label="Shift+Enter">{mac ? '⇧↵' : 'Shift+Enter'}</Kbd>
+      <span>/</span>
+      <Kbd aria-label={mac ? 'Option+Enter' : 'Alt+Enter'}>{mac ? '⌥↵' : 'Alt+Enter'}</Kbd>
+      <span>{label}</span>
+    </>
+  )
+}
+
+export { Kbd, NewlineKeys }

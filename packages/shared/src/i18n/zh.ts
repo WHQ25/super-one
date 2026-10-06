@@ -2388,6 +2388,7 @@ export const zh: Messages = {
       hintNote: '备注',
       hintSelect: '选择',
       hintDismiss: '关闭',
+      hintNewline: '换行',
       dismiss: '关闭',
     },
     filesPreviewer: {

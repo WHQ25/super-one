@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { createRef, type RefObject } from 'react'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ButtonHTMLAttributes, ReactElement, ReactNode } from 'react'
 import type { AskUserQuestionRequest } from '@superone/shared/agent-types'
@@ -131,6 +131,19 @@ describe('AskUserQuestionPrompt', () => {
 
   it('dismisses on Escape', () => {
     renderInChat(<AskUserQuestionPrompt />)
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(chatState.dismissQuestion).toHaveBeenCalledWith('q-1')
+  })
+
+  it('leaves the Other field on the first Escape and dismisses on the second', () => {
+    renderInChat(<AskUserQuestionPrompt />)
+    const input = screen.getByRole('textbox')
+    act(() => input.focus())
+    expect(screen.getByText('newline')).toBeTruthy()
+    act(() => { fireEvent.keyDown(input, { key: 'Escape' }) })
+    expect(document.activeElement).toBe(document.querySelector('[data-ask-user-question]'))
+    expect(screen.queryByText('newline')).toBeNull()
+    expect(chatState.dismissQuestion).not.toHaveBeenCalled()
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(chatState.dismissQuestion).toHaveBeenCalledWith('q-1')
   })

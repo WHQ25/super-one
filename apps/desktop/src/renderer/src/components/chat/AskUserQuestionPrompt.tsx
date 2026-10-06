@@ -20,6 +20,7 @@ export function AskUserQuestionPrompt({ request }: { request?: AskUserQuestionRe
     inScope: (event?: KeyboardEvent) => pendingQuestion?.requestId === liveQuestion?.requestId
       && isFocusInChat(document.activeElement, chatRootRef?.current)
       && !(event && shouldSuppressDecisionShortcut(event, chatRootRef?.current)),
+    mac: window.app?.platform === 'darwin',
   }), [chatRootRef, pendingQuestion?.requestId, liveQuestion?.requestId])
   if (!pendingQuestion) return null
   const { requestId } = pendingQuestion

@@ -8,7 +8,7 @@ import { AskUserQuestionResultPresenter } from './AskUserQuestionResult'
 import { resolveArtifactLink } from './artifact-link'
 import { getStallColor, type StallLevel } from './stall-color'
 import { ToolBrandIcon } from './ToolIcon'
-import { ToolName } from './ToolRow'
+import { ToolErrorText, ToolName } from './ToolRow'
 import {
   formatReadMeta,
   getToolDisplay,
@@ -224,15 +224,6 @@ export function GenericToolRowPresenter({
   )
   const deniedFeedback = autoDeny
     ?? (isDenied && cleanResult && cleanResult !== 'User denied permission' ? cleanResult : '')
-  const feedbackRef = useRef<HTMLSpanElement>(null)
-  const [feedbackIsBlock, setFeedbackIsBlock] = useState(false)
-
-  useLayoutEffect(() => {
-    if (!deniedFeedback) { setFeedbackIsBlock(false); return }
-    const el = feedbackRef.current
-    if (!el) return
-    setFeedbackIsBlock(el.scrollWidth > el.clientWidth)
-  }, [deniedFeedback])
 
   const lineDelta = useMemo(() => {
     if (isDenied || isError) return null
@@ -280,11 +271,13 @@ export function GenericToolRowPresenter({
   const isQuestionDismissed = toolName === 'AskUserQuestion' && !!result && (isDenied || result.includes('dismissed'))
   const showDenied = isDenied && !isQuestionDismissed
   const showError = !!isError && !showDenied && !isQuestionDismissed
+  // The reason a call was denied sits at the bottom of the expanded row, as a failure's does.
+  const showDeniedFeedback = showDenied && !!deniedFeedback
   // These rows never draw their result, so a deferred detail has nothing to open either.
   const drawsResult = toolName !== 'Read' && toolName !== 'Skill' && toolName !== 'AskUserQuestion'
   const hasResult = !!cleanResult && drawsResult && (hasDeferredDetails || (!isStreaming && !isDenied))
   const hasQA = toolName === 'AskUserQuestion' && !!cleanResult && !isStreaming && !isQuestionDismissed
-  const expandable = allowExpand && ((hasDeferredDetails && drawsResult) || hasDiff || hasResult || hasQA)
+  const expandable = allowExpand && ((hasDeferredDetails && drawsResult) || hasDiff || hasResult || hasQA || showDeniedFeedback)
 
   // Prefer parsed input summary; fall back to ACP/main toolSummary (Grok title / raw_output).
   // Remote surfaces invert that — see `preferSentSummary`.
@@ -354,9 +347,6 @@ export function GenericToolRowPresenter({
               <span className="min-w-0 truncate text-muted-foreground">{summary}</span>
             ) : null}
             <span className="shrink-0 rounded bg-error/20 px-1 py-px text-xs text-error">{t('chat.toolBlock.denied')}</span>
-            {deniedFeedback && !feedbackIsBlock && (
-              <span ref={feedbackRef} className="min-w-0 truncate text-error/70">{deniedFeedback}</span>
-            )}
           </>
         ) : isError ? (
           <>
@@ -409,10 +399,6 @@ export function GenericToolRowPresenter({
         )}
       </div>
 
-      {deniedFeedback && feedbackIsBlock && (
-        <div className="px-2 pb-1.5 text-xs text-error/70">{deniedFeedback}</div>
-      )}
-
       {expandable && (
         <div
           ref={gridRef}
@@ -438,9 +424,10 @@ export function GenericToolRowPresenter({
                     toolDiff,
                     toolDiffTokens,
                   })}
-                  {isError && cleanResult && (
+                  {showError && cleanResult && (
                     <div className="text-xs text-warning/90">{extractToolError(cleanResult)}</div>
                   )}
+                  {showDeniedFeedback && <ToolErrorText className="text-error/70">{deniedFeedback}</ToolErrorText>}
                   {hasResult && !isError && (!hasDiff || toolName === 'FileChange') && (
                     <div onClick={(e) => e.stopPropagation()}>
                       {isMcp ? (

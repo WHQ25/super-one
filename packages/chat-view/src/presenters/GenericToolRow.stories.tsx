@@ -42,6 +42,18 @@ export const DeniedPrefix: Story = {
   },
 }
 
+export const DeniedWithReason: Story = {
+  name: 'Denied with a reason · expanded',
+  // The header only says it was denied; the reason sits at the bottom of the expanded row.
+  args: {
+    isError: true,
+    result: '[denied] Keep the build folder, the release script still reads it.',
+  },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByText('Denied'))
+  },
+}
+
 export const Error: Story = {
   args: {
     isError: true,

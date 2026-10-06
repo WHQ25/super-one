@@ -23,7 +23,7 @@ import { SchemaFormComposer } from '../schema-form/SchemaFormComposer'
 import { InputRequestPrompt } from './InputRequestPrompt'
 import { useMcpFormResources } from '../schema-form/use-mcp-form-resources'
 import { getPermissionPromptConfig } from './permission-prompt/permission-prompt-config'
-import { VideoGenConfirmPromptContainer } from './VideoGenConfirmPromptContainer'
+import { VideoConfirmComposer } from './media-composer/VideoConfirmComposer'
 import { ConfigConfirmPromptContainer } from './ConfigConfirmPromptContainer'
 import { SessionAgentsConfirmPromptContainer } from './SessionAgentsConfirmPromptContainer'
 import { SessionCleanupConfirmPromptContainer } from './SessionCleanupConfirmPrompt'
@@ -246,8 +246,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
   }, [requestId, suggestionsCount])
 
   useEffect(() => {
-    // VideoGenConfirmPrompt mounts its own window keydown listener and manages its
-    // own focus — this autofocus effect must not fight it.
+    // Self-managed confirms own their focus — this autofocus effect must not fight them.
     // Also skip when another mosaic chat pane owns keyboard focus so a background
     // session's permission prompt cannot steal the composer caret.
     if (requestId && !isCollapsed && !isSelfManagedConfirm) {
@@ -358,9 +357,9 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
   }, [elicitationUrl])
 
   useEffect(() => {
-    // VideoGenConfirmPrompt has its own window keydown listener (Tab/Enter/Escape).
-    // Without this gate both listeners fire and Enter/Escape would additionally
-    // trigger handleAllow/handleDeny here with the wrong payload.
+    // Self-managed confirms own their keys (the video composer's prompt submits on
+    // Enter). Without this gate Enter/Escape would additionally trigger
+    // handleAllow/handleDeny here with the wrong payload.
     if (!requestId || isSelfManagedConfirm) return
 
     function onKeyDown(e: KeyboardEvent) {
@@ -486,7 +485,8 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
   }
 
   if (isVideoGenConfirm) {
-    return <VideoGenConfirmPromptContainer request={pendingPermission} />
+    const videoGenConfirm = pendingPermission.videoGenConfirm
+    return videoGenConfirm ? <VideoConfirmComposer key={pendingPermission.requestId} request={{ ...pendingPermission, videoGenConfirm }} /> : null
   }
 
   if (isConfigConfirm) {

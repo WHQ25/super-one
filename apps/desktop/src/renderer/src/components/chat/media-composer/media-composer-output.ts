@@ -1,5 +1,5 @@
 import type { JSONContent } from '@tiptap/react'
-import type { MediaComposerResult } from '@superone/shared/media-composer'
+import type { MediaComposerKind, MediaComposerModel, MediaComposerReference, MediaComposerResult } from '@superone/shared/media-composer'
 import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { useChatStore, type SessionWriteTarget } from '@/stores/chat'
@@ -50,4 +50,52 @@ export async function sendMediaToAgent(target: SessionWriteTarget, result: Media
     store.setDraftText('', target)
     store.setDraftJson(null, target)
   }
+}
+
+export interface MediaDelegation {
+  kind: MediaComposerKind
+  model?: Pick<MediaComposerModel, 'providerId' | 'providerLabel' | 'model' | 'label'>
+  prompt: string
+  references: MediaComposerReference[]
+  aspectRatio?: string
+  size?: string
+  duration?: number
+  resolution?: string
+  seed?: number
+  generateAudio?: boolean
+  watermark?: boolean
+  cameraFixed?: boolean
+}
+
+/** The agent-facing request: tool argument names, so the agent can call the media tool as asked. */
+export function buildMediaDelegationText({ kind, model, prompt, references, aspectRatio, size, duration, resolution, seed, generateAudio, watermark, cameraFixed }: MediaDelegation): string {
+  const numbered = (role: MediaComposerReference['role']) => references.flatMap((ref, index) => (ref.role ?? 'reference') === role ? [index + 1] : [])
+  const images = (indexes: number[]) => indexes.length === 1 ? `attached image ${indexes[0]}` : `attached images ${indexes.join(', ')}`
+  const settings: [string, string | number | boolean | undefined][] = [
+    ['provider', model && `${model.providerId} (${model.providerLabel})`],
+    ['model', model && `${model.model} (${model.label})`],
+    ['aspect_ratio', aspectRatio],
+    ...(kind === 'image'
+      ? [['size', size]] as [string, string | undefined][]
+      : [['duration', duration], ['resolution', resolution], ['seed', seed], ['generate_audio', generateAudio],
+          ['watermark', watermark], ['camera_fixed', cameraFixed],
+          ['first_frame_path', numbered('first').length ? images(numbered('first')) : undefined],
+          ['last_frame_path', numbered('last').length ? images(numbered('last')) : undefined]] as [string, string | number | boolean | undefined][]),
+    ['reference_image_paths', numbered('reference').length ? images(numbered('reference')) : undefined],
+  ]
+  const lines = settings.filter(([, value]) => value !== undefined && value !== '').map(([name, value]) => `- ${name}: ${value}`)
+  return [`Generate ${kind === 'image' ? 'an image' : 'a video'} with the media_generate_${kind} tool.`, '', 'Prompt:', prompt.trim(),
+    ...(lines.length ? ['', 'Settings:', ...lines] : [])].join('\n')
+}
+
+/** Sends the request as an ordinary user message, leaving the chat draft untouched. */
+export async function delegateMediaToAgent(target: SessionWriteTarget, request: MediaDelegation) {
+  const attachments = await Promise.all(request.references.map(async (ref, index) => {
+    const image = await buildImageAttachmentFromBase64(ref.base64, ref.mediaType, ref.name)
+    if (!image) throw new Error(`Cannot read reference image ${ref.name}`)
+    return { ...image, id: `media-reference-${crypto.randomUUID()}-${index}` }
+  }))
+  validateTurnAttachments(attachments, request.prompt)
+  const text = buildMediaDelegationText(request)
+  await useChatStore.getState().sendMessage(text, [{ text, isPaste: false }, ...attachments.map(image => ({ attachmentId: image.id }))], [], attachments, target)
 }

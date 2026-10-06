@@ -2181,30 +2181,6 @@ export type Messages = {
       alwaysAllow: string
       deny: string
     }
-    videoGenConfirm: {
-      title: string
-      promptLabel: string
-      promptPlaceholder: string
-      providerLabel: string
-      modelLabel: string
-      aspectRatioLabel: string
-      resolutionLabel: string
-      durationLabel: string
-      advancedOptions: string
-      fpsLabel: string
-      fpsPlaceholder: string
-      seedLabel: string
-      seedPlaceholder: string
-      generateAudio: string
-      watermark: string
-      lockCamera: string
-      confirm: string
-      reject: string
-      feedbackPlaceholder: string
-      startFrame: string
-      endFrame: string
-      reference: string
-    }
     videoGenToolBlock: {
       label: string
       generating: string
@@ -6438,30 +6414,6 @@ export const en: Messages = {
       allowSession: 'Allow this session',
       alwaysAllow: 'Always allow',
       deny: 'Deny',
-    },
-    videoGenConfirm: {
-      title: 'Confirm Video Generation',
-      promptLabel: 'Prompt',
-      promptPlaceholder: 'Describe the scene, motion, and camera direction…',
-      providerLabel: 'Provider',
-      modelLabel: 'Model',
-      aspectRatioLabel: 'Aspect Ratio',
-      resolutionLabel: 'Resolution',
-      durationLabel: 'Duration (s)',
-      advancedOptions: 'Advanced Options',
-      fpsLabel: 'FPS',
-      fpsPlaceholder: 'Auto',
-      seedLabel: 'Seed',
-      seedPlaceholder: 'Random',
-      generateAudio: 'Generate Audio',
-      watermark: 'Watermark',
-      lockCamera: 'Lock Camera',
-      confirm: 'Confirm & Generate',
-      reject: 'Reject',
-      feedbackPlaceholder: 'Feedback (required, Enter to submit)',
-      startFrame: 'Start Frame',
-      endFrame: 'End Frame',
-      reference: 'Reference {{index}}',
     },
     videoGenToolBlock: {
       label: 'Video Generated',

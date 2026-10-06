@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { MediaComposerResult } from '@superone/shared/media-composer'
 import { PNG_ATTACHMENT } from '@superone/shared/test-fixtures/attachments'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
-import { insertMediaIntoDraft, sendMediaToAgent } from './media-composer-output'
+import { buildMediaDelegationText, delegateMediaToAgent, insertMediaIntoDraft, sendMediaToAgent } from './media-composer-output'
 
 const previous = useChatStore.getState()
 const owner = { projectPath: '/media-output', sessionId: 'first' }
@@ -55,4 +55,25 @@ it('requires completed remote delivery before inserting a video for the remote a
   const video: MediaComposerResult = { generationId: 'video', kind: 'video', status: 'succeeded', files: [{ path: '/host/video.mp4', agentPath: '/host/video.mp4', mediaType: 'video/mp4' }] }
   await expect(insertMediaIntoDraft(remote, video)).rejects.toThrow('remoteVideoUnavailable')
   expect(send).not.toHaveBeenCalled()
+})
+
+const model = { providerId: 'ark-key', providerLabel: 'Ark', model: 'seedance', label: 'Seedance' }
+const reference = (name: string, role: 'reference' | 'first' | 'last') => ({ name, mediaType: PNG_ATTACHMENT.mimeType, base64: PNG_ATTACHMENT.base64, role })
+it('describes a delegated video with tool argument names and numbered attachment roles', () => {
+  expect(buildMediaDelegationText({ kind: 'video', model, prompt: ' A fox in snow ', aspectRatio: '9:16', duration: 8, resolution: '',
+    references: [reference('style.png', 'reference'), reference('start.png', 'first'), reference('pose.png', 'reference')] })).toBe([
+    'Generate a video with the media_generate_video tool.', '', 'Prompt:', 'A fox in snow', '', 'Settings:',
+    '- provider: ark-key (Ark)', '- model: seedance (Seedance)', '- aspect_ratio: 9:16', '- duration: 8',
+    '- first_frame_path: attached image 2', '- reference_image_paths: attached images 1, 3',
+  ].join('\n'))
+})
+it('sends a delegated request as its own message and keeps the draft', async () => {
+  await delegateMediaToAgent(owner, { kind: 'image', model, prompt: 'A cabin', references: [reference('ref.png', 'reference')], size: '2K' })
+  const [text, segments, mentions, attachments, target] = send.mock.calls[0]!
+  expect(text).toContain('- size: 2K')
+  expect(segments).toEqual([{ text, isPaste: false }, { attachmentId: attachments[0].id }])
+  expect(mentions).toEqual([])
+  expect(attachments).toHaveLength(1)
+  expect(target).toBe(owner)
+  expect(useChatStore.getState().projectSessions[owner.projectPath]._sessions.first.draftText).toBe('Review README pasted text')
 })

@@ -112,16 +112,18 @@ interface GroupedModelEffortSelectorProps {
   className?: string
 }
 
-function ModelRow({
+export function ModelRow({
   model,
   selected,
   keepOpen,
   onSelect,
+  leading,
 }: {
   model: SelectorModelOption
   selected: boolean
   keepOpen: boolean
   onSelect: () => void
+  leading?: ReactNode
 }) {
   return (
     <DropdownMenuItem
@@ -131,6 +133,7 @@ function ModelRow({
       }}
       className={cn('items-center gap-2 px-2 py-1.5', ITEM_FOCUS, selected && 'bg-muted')}
     >
+      {leading}
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium leading-tight">{model.name}</div>
         {model.description && (
@@ -256,6 +259,8 @@ function ModelList({
 const THUMB_PX = 28
 const STOP_INSET_PX = THUMB_PX / 2
 const ITEM_FOCUS = 'focus:bg-muted focus:text-foreground'
+/** Composer toolbar selector trigger, shared with the media generation selectors. */
+export const SELECTOR_TRIGGER_CLASS = 'group flex min-w-0 max-w-xl items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground'
 const MORPH = {
   initial: { height: 0, opacity: 0 },
   animate: { height: 'auto', opacity: 1 },
@@ -263,15 +268,16 @@ const MORPH = {
   transition: { duration: 0.24, ease: [0.32, 0.72, 0, 1] },
 } as const
 
-function EffortSlider({
+export function EffortSlider({
   effortOptions,
   selectedEffort,
   selectedEffortLabel,
   onSelectEffort,
-}: Pick<GroupedModelEffortSelectorProps, 'effortOptions' | 'selectedEffort' | 'selectedEffortLabel' | 'onSelectEffort'>) {
+  label = 'Effort',
+}: Pick<GroupedModelEffortSelectorProps, 'effortOptions' | 'selectedEffort' | 'selectedEffortLabel' | 'onSelectEffort'> & { label?: string }) {
   const selectedIndex = Math.max(0, effortOptions.findIndex((option) => option.value === selectedEffort))
   const selectedOption = effortOptions[selectedIndex]
-  const selectedLabel = selectedEffortLabel ?? selectedOption?.label ?? 'Effort'
+  const selectedLabel = selectedEffortLabel ?? selectedOption?.label ?? label
   const lastIndex = effortOptions.length - 1
 
   if (effortOptions.length === 0) return null
@@ -283,7 +289,7 @@ function EffortSlider({
   return (
     <div className="px-2 pb-2 pt-1.5">
       <div className="mb-2 flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">Effort</span>
+        <span className="text-muted-foreground">{label}</span>
         <span className="font-medium text-primary">{selectedLabel}</span>
       </div>
       <div className="relative flex h-6 items-center">
@@ -307,7 +313,7 @@ function EffortSlider({
           max={lastIndex}
           step={1}
           value={selectedIndex}
-          aria-label="Effort"
+          aria-label={label}
           className="group/effort relative z-10 h-6 w-full cursor-pointer appearance-none bg-transparent [&::-moz-range-thumb]:size-7 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-black/10 [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:shadow-md [&::-moz-range-thumb]:transition-[width,height] [&::-moz-range-track]:h-6 [&::-moz-range-track]:bg-transparent [&::-webkit-slider-runnable-track]:h-6 [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:-mt-0.5 [&::-webkit-slider-thumb]:size-7 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-black/10 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:transition-[width,height,margin] hover:[&::-moz-range-thumb]:size-8 hover:[&::-webkit-slider-thumb]:-mt-1 hover:[&::-webkit-slider-thumb]:size-8"
           onChange={(event) => onSelectEffort(effortOptions[Number(event.currentTarget.value)]!.value)}
         />
@@ -506,7 +512,7 @@ export function GroupedModelEffortSelector({
           }
           className={cn(
             // Prefer showing the full label when space allows; parent flex can still constrain.
-            'group flex min-w-0 max-w-xl items-center gap-1 rounded-lg px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
+            SELECTOR_TRIGGER_CLASS,
             className,
           )}
         >

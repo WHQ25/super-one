@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { MediaComposerRequest, MediaComposerResult } from '@superone/shared/media-composer'
 import { useComposerStacks } from '../composer-slot/composer-stack'
 
-export interface MediaRun { requestId?: string; result?: MediaComposerResult; error?: string; delivery?: 'sending' | 'sent' | 'failed' }
+export interface MediaRun { requestId?: string; result?: MediaComposerResult; error?: string }
 export const useMediaRuns = create<{ runs: Record<string, MediaRun> }>(() => ({ runs: {} }))
 let unwatch: (() => void) | undefined
 
@@ -36,10 +36,6 @@ function watchEntries() {
 }
 
 export function setMediaResult(instanceId: string, result: MediaComposerResult) { patch(instanceId, { result }) }
-export function markMediaDelivery(instanceId: string, delivery: MediaRun['delivery'], error?: string) {
-  const run = useMediaRuns.getState().runs[instanceId]
-  if (run) patch(instanceId, { ...run, delivery, error })
-}
 
 export async function cancelMediaGeneration(instanceId: string) {
   const id = useMediaRuns.getState().runs[instanceId]?.requestId

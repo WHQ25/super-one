@@ -7,7 +7,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { CLAUDE_INTERCEPTED_COMMAND_NAMES, CODEX_REJECT_PLAN_PLACEHOLDER, getLatestCodexThreadId, runClaudeInterceptedCommand, selectActiveCodexSkills, selectActiveCursorSlashItems, selectCodexPrompts, selectOpenCodeCommands, useChatStore, useActiveSession, useIsRemoteLocked, useSessionScope } from '@/stores/chat'
 import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
-import { Loader2, Paperclip, X } from 'lucide-react'
+import { Loader2, X } from 'lucide-react'
 import type { MentionKind } from '@/stores/chat'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { ContextUsage } from './ContextUsage'
@@ -16,9 +16,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useEditor, EditorContent, type JSONContent } from '@tiptap/react'
 import { useComposerDraftSync } from './chat-input/useComposerDraftSync'
 import { serializeComposerDocument } from './chat-input/serializeComposerDocument'
-import { MediaModeButton } from './media-composer/MediaModeButton'
-import { openMediaComposer } from './media-composer/open-media-composer'
-import { mediaSlashCommand } from './media-composer/media-commands'
+import { ComposerActionsButton } from './media-composer/ComposerActionsButton'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { MentionNode } from './mention-node'
@@ -519,8 +517,7 @@ export function ChatInput({
           }]
         // `/goal` follows the same single-gate rule. Claude already reports its
         // own `goal` command, so dedupe rather than offering the row twice.
-        const withMedia = [...withSide.filter(c => c.name !== 'image' && c.name !== 'video'),
-          ...(['image', 'video'] as const).map(name => ({ name, description: t(`mediaComposer.${name}Command`), argumentHint: '', isSkill: false }))]
+        const withMedia = withSide
         if (!goalCapability || withMedia.some((c) => c.name === 'goal')) return withMedia
         return [...withMedia, {
           name: 'goal',
@@ -711,21 +708,9 @@ export function ChatInput({
       }
     }, [goalActions, replaceEditorTextPreservingTrailingSpace, setText, t])
 
-    const openMediaMode = useCallback((kind: 'image' | 'video', prompt = '') => {
-      const target = sessionScope ?? (activeProject && displayedSessionId ? { projectPath: activeProject, sessionId: displayedSessionId } : null)
-      if (!target || isRemoteLocked) return
-      void openMediaComposer(target, kind, { prompt }).catch(error => toast.error(String(error)))
-    }, [sessionScope, activeProject, displayedSessionId, isRemoteLocked])
-
     const selectSlashCommand = useCallback(
       (cmd: SlashCommandInfo | string) => {
         const name = typeof cmd === 'string' ? cmd : cmd.name.replace(/^\//, '').trim()
-        if (name === 'image' || name === 'video') {
-          clearFirstLine()
-          setSlashIndex(-1)
-          openMediaMode(name)
-          return
-        }
         if (name === 'provider') {
           clearFirstLine()
           setSlashIndex(-1)
@@ -810,7 +795,7 @@ export function ChatInput({
         replaceFirstLineWith(`/${name} `)
         setSlashIndex(-1)
       },
-      [activeProviderForResources, clearAttachments, mentions, removeMention, setShowReviewPanel, clearFirstLine, replaceFirstLineWith, replaceEditorTextPreservingTrailingSpace, setText, cursorSlashCommands, sessionScope, goalCapability, enterGoalCompose, openMediaMode]
+      [activeProviderForResources, clearAttachments, mentions, removeMention, setShowReviewPanel, clearFirstLine, replaceFirstLineWith, replaceEditorTextPreservingTrailingSpace, setText, cursorSlashCommands, sessionScope, goalCapability, enterGoalCompose]
     )
 
     const addDirParse = useMemo(() => {
@@ -1118,12 +1103,6 @@ export function ChatInput({
       try { validateTurnAttachments(attachmentsRef.current, text) }
       catch (error) { toast.error(error instanceof Error ? error.message : 'Invalid attachment'); return }
       const trimmed = text.trim()
-      const media = !goalComposing && mediaSlashCommand(trimmed)
-      if (media) {
-        clearFirstLine()
-        openMediaMode(media.kind, media.prompt)
-        return
-      }
       if (goalCapability) {
         // In goal mode the whole draft is the objective; outside it, a typed
         // `/goal …` line is routed the same way the slash row would be.
@@ -1169,7 +1148,7 @@ export function ChatInput({
       ).catch((err) => {
         console.error('[ChatInput] sendMessage failed:', err)
       })
-    }, [openMediaMode, clearFirstLine, goalCapability, goalComposing, goalActions, enterGoalCompose, t, canSend, sendMessage, serializeAndClear, sessionScope, text, displayedSessionId, activeProviderForResources, realtimeVoiceEngaged])
+    }, [clearFirstLine, goalCapability, goalComposing, goalActions, enterGoalCompose, t, canSend, sendMessage, serializeAndClear, sessionScope, text, displayedSessionId, activeProviderForResources, realtimeVoiceEngaged])
 
     const handleKeyDownCore = useCallback(
       (e: KeyboardEvent | React.KeyboardEvent): boolean => {
@@ -2197,11 +2176,7 @@ export function ChatInput({
               onChange={handleFileSelect}
               className="hidden"
             />
-            <IconButton size="sm" onClick={() => fileInputRef.current?.click()}>
-              <Paperclip />
-            </IconButton>
-
-            <MediaModeButton target={isRemoteLocked ? null : sessionScope ?? (activeProject && displayedSessionId ? { projectPath: activeProject, sessionId: displayedSessionId } : null)} />
+            <ComposerActionsButton onAttach={() => fileInputRef.current?.click()} target={isRemoteLocked ? null : sessionScope ?? (activeProject && displayedSessionId ? { projectPath: activeProject, sessionId: displayedSessionId } : null)} />
             <ModelSelector onCloseAutoFocus={(e) => { e.preventDefault(); if (editor && !editor.isDestroyed) editor.commands.focus() }} />
             {goalCapability && goalActions && (sessionGoal || goalComposing) && (
               <GoalIndicator

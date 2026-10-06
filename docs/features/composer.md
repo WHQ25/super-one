@@ -48,30 +48,74 @@ This state is transient renderer state; it is not saved across app restarts.
 
 ## Native image and video generation
 
-The toolbar's composer mode picker and host slash commands `/image` and `/video`
-open persistent native composers on every desktop harness. `/image <prompt>` and
-`/video <prompt>` seed the generation prompt. Existing chat text, rich content and
+The toolbar's attachment icon opens a shared action menu with Add Attachment,
+Generate Image and Generate Video. The generation actions open persistent native
+composers on every desktop harness. Image and video are separate composers
+(`superone.image`, `superone.video`) built from shared parts and laid out like the
+chat composer: an Image or Video mode chip whose icon turns into a close control
+on hover (the same chip as Codex plan mode), selectors styled like the model
+selector, and a status row under the box. Existing chat text, rich content and
 attachments stay in the chat draft; supported attached images also seed the
 reference list. The prompt starts at one row and grows with content; Enter
 generates, while Shift+Enter and Alt+Enter insert a newline.
 
-`openMediaComposer(target, kind, { lifetime, prompt, references, output, signal })`
-loads and registers `superone.image` / `superone.video` lazily, then opens the
-session's stack. `caller` keeps the completed result in the composer with Copy,
+Reference images (PNG, JPEG, WebP; up to 8 and 24 MB) are dropped or pasted
+anywhere on the box, or picked from the reference area. Video references can be
+marked as start frame, end frame or reference; start and end frames are unique.
+
+
+The controls follow the selected model. Each model reports the capabilities of
+the adapter that serves it (`media-gen/capabilities.ts`, keyed by adapter kind
+and, for New API, by the vendor behind the model id): image aspect ratios and
+sizes (pixel sizes or the 1K/2K/4K tiers), and video aspect ratios, resolutions,
+durations, seed, audio, watermark, fixed camera, and which reference roles it
+reads. A control the model does not read is not shown, and a video model without
+image inputs hides the reference area. Switching models keeps values the new
+model accepts and resets the rest to Auto. Video resolutions are sent as pixel
+sizes, which every adapter maps onto its own tiers; Sora has no ratio control
+because its size carries the orientation. A model whose endpoint no adapter
+serves gets the common controls.
+
+The toolbar shows at most four controls on one row, in priority order (model,
+ratio, size or resolution, duration). The rest (audio, seed, fixed camera,
+watermark), and any of the four that do not fit at the current width, live in a
+More Settings panel behind a sliders button, where each appears as a labelled
+row; on/off options become switches.
+Widths come from an invisible copy of the controls, so changing a label or the
+pane width re-fits the row.
+
+`openMediaComposer(target, kind, { lifetime, prompt, references, prefill, signal })`
+loads and registers both composers lazily, then opens the session's stack. Next
+to Generate, a user-started request chooses Generate Here or Ask Agent. Generate
+Here calls the provider and keeps the completed result in the composer with Copy,
 Save, Insert into Draft, Send to Agent and Use Results actions. Use Results
 resolves the open promise; a temporary composer pops and a persistent one stays.
-`agent` inserts the result into the owning chat draft and sends it through the
-ordinary session send path. Image attachments, paste chips and mentions preserve
-their order. A failed admission leaves the draft available; retrying insertion
-does not duplicate generated attachments. Later edits are not erased by a send
-acknowledgement. Insert into Draft returns to the ordinary chat composer.
+Send to Agent inserts the result into the owning chat draft and sends it through
+the ordinary session send path. Image attachments, paste chips and mentions
+preserve their order. A failed admission leaves the draft available; retrying
+insertion does not duplicate generated attachments. Later edits are not erased by
+a send acknowledgement. Insert into Draft returns to the ordinary chat composer.
+Ask Agent sends one new user message instead: the prompt and the chosen settings
+under the media tool's argument names, with the references as image attachments
+whose roles are given by attachment number. The chat draft is left untouched and
+the composer closes after the message is admitted.
+
+An agent's `media_generate_video` call is reviewed in the same video composer,
+shown in the decision slot instead of opened on the stack. It starts from the
+agent's parameters fitted to the chosen model's capabilities (carried per model
+in the confirmation payload) and its reference frames (read-only), and offers the
+same controls as a user-started video. There is no run-mode choice, no Auto
+values, and no exit chip. Generate replies with the edited parameters in
+`formAnswers.paramsJson`, which the tool submits; Reject replies with optional
+feedback for the agent. Agent-started image generation has no confirmation yet;
+the image composer's selectors and frame are independent of the stack so a
+future confirmation can reuse them the same way.
 
 Models are enabled models from the existing `media:image` and `media:video`
 consumers, filtered independently by capability and usable credentials. The
 selected credential/model pair is validated again before generation; a removed
-model does not silently fall back. An empty picker links to Settings → Providers.
-Image controls include reference images, size and aspect ratio. Video controls
-add duration, resolution and reference / first-frame / last-frame roles.
+model does not silently fall back. With no enabled model, the status row links
+to Settings → Providers and offers Retry.
 
 The preload `window.environment` media API owns generation, cancellation, video
 status and unfinished-job recovery. Provider SDKs and secrets stay on the desktop

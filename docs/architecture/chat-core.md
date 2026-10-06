@@ -120,7 +120,7 @@ The host drops some events before they reach any phone: `SKIPPED_EVENTS` in
 `apps/desktop/src/main/remote-control-service.ts`. They feed desktop-only state
 or bookkeeping the phone does not render (hooks, persisted-file notices,
 elicitation completion, checkpoints, stream start/stop markers, streaming tool
-input, subagent token usage, queued-message restore). Consequences for the phone's
+input, subagent token usage). Consequences for the phone's
 reduced state:
 
 - `_streamingToolInputPreviews` stays empty (no `tool_input_delta`).

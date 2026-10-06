@@ -1609,9 +1609,44 @@ describe('Session state machine', () => {
       providerOrigin: 'local',
     })
 
+    const events: AgentEvent[] = []
+    s.on((event, replay) => { if (!replay) events.push(event) })
+
     b.emit({ type: 'queued_messages_restored', messages: [] })
 
     expect(internals._pendingQueuedRequests.size).toBe(0)
+    expect(events.map((event) => event.type)).toEqual(['queued_messages_changed'])
+    expect(events[0]).toMatchObject({ messages: [] })
+  })
+
+  it('broadcasts the host queue with attachments to every client and replays it to late subscribers', async () => {
+    const { session: s, backend: b } = makeSession()
+    const events: AgentEvent[] = []
+    s.on((event) => { events.push(event) })
+    const first = s.send({ content: 'first', clientMessageId: 'u1' })
+    await vi.waitFor(() => expect(b.sendCalls).toHaveLength(1))
+    b.emit({ type: 'status_change', status: 'streaming' })
+    const resolveFirst = b.resolveSend
+
+    const image = { id: 'att-1', name: 'shot.png', mimeType: 'image/png', base64: 'iVBORw0KGgoAAAANSUhEUg==' }
+    void s.send({ content: 'look', images: [image], clientMessageId: 'u2', priority: 'next' }, { providerOrigin: 'remote' })
+    await vi.waitFor(() => expect(b.sendCalls).toHaveLength(2))
+
+    const added = events.filter((event) => event.type === 'queued_messages_changed')
+    expect(added).toHaveLength(1)
+    expect(added[0]).toMatchObject({
+      sessionId: 'sess-1',
+      messages: [{ id: 'u2', role: 'user', providerId: 'remote', attachments: [image] }],
+    })
+    expect(s.getReplayEvents()).toContainEqual(expect.objectContaining({ type: 'queued_messages_changed', messages: [expect.objectContaining({ id: 'u2' })] }))
+
+    b.dequeueMessage = () => true
+    await expect(s.dequeueMessage('u2')).resolves.toBe(true)
+    expect(events.filter((event) => event.type === 'queued_messages_changed').at(-1)).toMatchObject({ messages: [] })
+    expect(s.getReplayEvents().some((event) => event.type === 'queued_messages_changed')).toBe(false)
+
+    resolveFirst?.()
+    await first
   })
 
   it('starts an interrupted Codex durable queue through the session state machine', async () => {

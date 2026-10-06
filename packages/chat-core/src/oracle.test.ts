@@ -75,15 +75,6 @@ describe('recorded remote.out reducer oracle', () => {
 })
 
 describe('remote batch field contracts', () => {
-  it('uses the reducer clock for restored queued messages', () => {
-    const state = reduce([{
-      type: 'queued_messages_restored',
-      messages: [{ clientMessageId: 'queued-1', content: 'continue' }],
-    }])
-
-    expect(state.queuedMessages[0]?.createdAt).toBe('2023-11-14T22:13:20.000Z')
-  })
-
   it('reduces a mixed-seq multi-event envelope without conflating event seq', () => {
     const events = [
       { type: 'message_start', message: { id: 'm', role: 'assistant', status: 'streaming', content: [], createdAt: '2026-01-01T00:00:00.000Z', providerId: 'claude' }, seq: 40 },

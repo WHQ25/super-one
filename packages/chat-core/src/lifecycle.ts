@@ -9,7 +9,7 @@ import { defaultChatCorePorts, type ChatCorePorts } from './ports'
 type LifecycleEvent = Extract<AgentEvent, {
   type:
     | 'queued_message_consumed'
-    | 'queued_messages_restored'
+    | 'queued_messages_changed'
     | 'message_start'
     | 'message_timestamp'
     | 'content_retracted'
@@ -29,20 +29,12 @@ export function reduceLifecycle(
   ports: ChatCorePorts = defaultChatCorePorts,
 ): Partial<ChatCoreSession> {
   switch (event.type) {
-    case 'queued_messages_restored': {
-      // The snapshot owns queue membership and order but carries text only, so a
-      // bubble this client already holds keeps its own content and attachments.
+    case 'queued_messages_changed': {
+      // The host owns membership and order. A bubble this client already holds
+      // keeps its own copy: the sender has full attachment bytes, while a phone
+      // receives previews only.
       const local = new Map(session.queuedMessages.map((m) => [m.id, m]))
-      return {
-        queuedMessages: event.messages.map((message) => local.get(message.clientMessageId) ?? ({
-          id: message.clientMessageId,
-          role: 'user' as const,
-          status: 'complete' as const,
-          content: [{ type: 'text' as const, text: message.content }],
-          createdAt: new Date(ports.now()).toISOString(),
-          providerId: 'local',
-        })),
-      }
+      return { queuedMessages: event.messages.map((message) => local.get(message.id) ?? message) }
     }
     case 'queued_message_consumed': {
       const idx = session.queuedMessages.findIndex((m) => m.id === event.clientMessageId)

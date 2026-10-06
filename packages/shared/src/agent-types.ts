@@ -1992,7 +1992,10 @@ export type AgentEventBase =
    */
   | { type: 'content_retracted'; messageId: string; blocks: RetractedBlockRef[] }
   | { type: 'queued_message_consumed'; clientMessageId: string }
+  /** Backend → Session only: a harness-owned durable queue reloaded. Session republishes it as `queued_messages_changed`. */
   | { type: 'queued_messages_restored'; messages: Array<{ clientMessageId: string; content: string }> }
+  /** The host's queued user messages, in order — every client's queue follows it, whichever client queued them. */
+  | { type: 'queued_messages_changed'; messages: ChatMessage[] }
   | { type: 'worktree_missing'; worktreePath: string; fallbackCwd: string }
   | { type: 'session_title_changed'; sessionId: string; title: string; source: 'user' | 'agent' }
   /**
@@ -2113,6 +2116,7 @@ export type JevRunActionOutcome = 'worked' | 'didnt' | 'unknown'
 export type JevRunOutcome = 'paused' | 'done' | 'aborted'
 
 export type AgentEvent = AgentEventBase & { remoteView?: 'summary'; projectPath?: string; sessionId?: string; draftSessionId?: string; seq?: number; epoch?: number }
+export type QueuedMessagesChangedEvent = Extract<AgentEvent, { type: 'queued_messages_changed' }>
 
 export type AgentStatus = 'idle' | 'streaming' | 'background' | 'error'
 

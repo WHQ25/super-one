@@ -58,7 +58,7 @@ export function applyEventToSession(
 ): ChatCorePatch {
   switch (event.type) {
     case 'queued_message_consumed':
-    case 'queued_messages_restored':
+    case 'queued_messages_changed':
     case 'message_start':
     case 'message_timestamp':
     case 'content_retracted':

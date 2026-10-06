@@ -15,6 +15,7 @@ import type {
   ModelUsageInfo,
   PermissionMode,
   QuestionAnnotations,
+  QueuedMessagesChangedEvent,
   RewindFilesResult,
   SandboxInfo,
   SandboxMode,
@@ -563,6 +564,8 @@ export interface Session {
   forceRecoverRun?(message?: string): Promise<void>
   prewarm(hint?: PrewarmHint): void
   dequeueMessage(clientMessageId: string): Promise<boolean>
+  /** `queued_messages_changed` for the current host queue; null when it is empty. */
+  getQueuedMessagesEvent(): QueuedMessagesChangedEvent | null
   getPendingInteractions(): AgentEvent[]
   getCodexGoal(threadId: string | null): Promise<CodexGoal | null>
   setCodexGoal(threadId: string | null, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>

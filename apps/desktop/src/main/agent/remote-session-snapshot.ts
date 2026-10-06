@@ -10,7 +10,10 @@ export async function buildRemoteSessionSnapshot(session: Session | undefined | 
   await whenHighlighterReady()
   const snapshot = session?.snapshot
   const inProgressMessages = stripMessagesForRemote(remoteRestoreMessages(snapshot?.messages ?? []).map(message => progressive ? projectProgressiveMessage(message) : message), projectPath)
-  const pendingInteractions = session?.getPendingInteractions().map((event) => stripEventForRemote(event, projectPath)) ?? []
+  const queued = session?.getQueuedMessagesEvent()
+  // Replayed by the phone on restore, so a queue built before it subscribed shows up.
+  const pendingInteractions = [...(session?.getPendingInteractions() ?? []), ...(queued ? [queued] : [])]
+    .map((event) => stripEventForRemote(event, projectPath))
   const status = session?.isStreaming() ? 'streaming' : 'idle'
   const sandboxInfo = snapshot?.harnessId === 'acp'
     ? await import('../acp/grok-sandbox').then((m) => m.currentGrokSandbox()).catch(() => undefined)

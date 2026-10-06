@@ -1517,9 +1517,11 @@ export class AgentService {
           break
         }
         // The transcript carried a thumbnail; the bytes are in the live session
-        // when the turn is still running, otherwise in the persisted message.
-        const message = this.findSessionBySid(command.projectPath, command.sessionId)?.snapshot.messages
-          .find((item) => item.id === command.messageId)
+        // when the turn is still running or the message is still queued,
+        // otherwise in the persisted message.
+        const live = this.findSessionBySid(command.projectPath, command.sessionId)
+        const message = live?.snapshot.messages.find((item) => item.id === command.messageId)
+          ?? live?.getQueuedMessagesEvent()?.messages.find((item) => item.id === command.messageId)
           ?? loadSessionMessage(command.sessionId, command.messageId)
         const attachment = message ? findAttachment(message, command) : undefined
         if (!attachment?.base64) {

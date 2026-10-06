@@ -1426,6 +1426,7 @@ describe('AgentService.handleRemoteCommand', () => {
         projectPath: '/p',
         isStreaming: () => false,
         getPendingInteractions: () => [],
+        getQueuedMessagesEvent: () => null,
         getCurrentPermissionMode: () => 'default',
         getCurrentSandboxInfo: () => ({ enabled: true, autoAllowBash: false }),
         setSandboxMode: vi.fn(async () => ({ enabled: true, autoAllowBash: true })),
@@ -1462,6 +1463,24 @@ describe('AgentService.handleRemoteCommand', () => {
         totalCostUsd: 0.4213,
         sandboxInfo: { enabled: true, autoAllowBash: false },
       }))
+    })
+
+    it('get_attachment serves the original behind a queued message thumbnail', async () => {
+      const picture = { id: 'a1', name: 'shot.png', mimeType: 'image/png', base64: 'iVBORw0KGgo=' }
+      const { service } = serviceWithSession({
+        getQueuedMessagesEvent: () => ({
+          type: 'queued_messages_changed',
+          messages: [{ id: 'q1', role: 'user', status: 'complete', createdAt: '', providerId: 'local', content: [], attachments: [picture] }],
+        }),
+      })
+      const respond = vi.fn()
+
+      await service.handleRemoteCommand(
+        { type: 'get_attachment', requestId: 'r3', projectPath: '/p', sessionId: 'sid-1', messageId: 'q1', attachmentId: 'a1', name: 'shot.png' },
+        respond,
+      )
+
+      expect(respond).toHaveBeenCalledWith('r3', { attachment: picture })
     })
 
     it('set_sandbox_mode echoes back the sandbox the session actually applied', async () => {

@@ -586,6 +586,9 @@ export function stripEventForRemote(event: AgentEvent, projectPath?: string): Ag
     const message = withAttachmentPreviews(event.message)
     return message === event.message ? event : { ...event, message }
   }
+  if (event.type === 'queued_messages_changed') {
+    return { ...event, messages: event.messages.map((message) => withAttachmentPreviews(message)) }
+  }
   if (event.type === 'task_notification' && event.outputFile) {
     const { resultText, toolEntries } = readOutputFile(event.outputFile, projectPath)
     if (resultText || toolEntries.length > 0) return { ...event, ...(resultText ? { resultText } : {}), ...(toolEntries.length > 0 ? { toolEntries } : {}) }

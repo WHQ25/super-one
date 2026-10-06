@@ -56,7 +56,7 @@ describe('attachment thumbnails for the phone transcript', () => {
     expect(findAttachment(message, { attachmentId: 'nope', name: 'IMG_0005.jpg' })).toBeUndefined()
   })
 
-  it('shrinks pictures on both remote projections: history pages and the live echo', () => {
+  it('shrinks pictures on every remote projection: history pages, the live echo and the queue', () => {
     const [page] = stripMessagesForRemote([sent([picture])])
     expect(page.attachments?.[0]).toMatchObject({ preview: true })
     expect(page.attachments?.[0].base64).not.toBe(FULL)
@@ -64,5 +64,9 @@ describe('attachment thumbnails for the phone transcript', () => {
     const live = stripEventForRemote({ type: 'user_message_appended', sessionId: 's1', projectPath: '/p', message: sent([picture], 'user_2') })
     expect(live.type === 'user_message_appended' && live.message.attachments?.[0]).toMatchObject({ preview: true })
     expect(live.type === 'user_message_appended' && live.message.attachments?.[0].base64).not.toBe(FULL)
+
+    const queued = stripEventForRemote({ type: 'queued_messages_changed', sessionId: 's1', projectPath: '/p', messages: [sent([picture], 'user_3')] })
+    expect(queued.type === 'queued_messages_changed' && queued.messages[0].attachments?.[0]).toMatchObject({ preview: true })
+    expect(queued.type === 'queued_messages_changed' && queued.messages[0].attachments?.[0].base64).not.toBe(FULL)
   })
 })

@@ -44,7 +44,6 @@ const MAX_RECONNECT_DELAY_MS = 30_000
 const SKIPPED_EVENTS = new Set([
   'files_persisted', 'elicitation_complete', 'tool_input_delta',
   'subagent_usage', 'checkpoint_captured', 'hook_started', 'hook_complete', 'hook_progress',
-  'queued_messages_restored',
   'stream_message_start', 'stream_message_stop',
 ])
 /**

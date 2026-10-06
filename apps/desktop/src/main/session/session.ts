@@ -25,6 +25,7 @@ import type {
   McpServerInfo,
   PermissionMode,
   QuestionAnnotations,
+  QueuedMessagesChangedEvent,
   RemoteActiveProvider,
   RewindFilesResult,
   SandboxInfo,
@@ -784,13 +785,16 @@ export class Session implements SessionContract {
       } else {
         if (request.clientMessageId) {
           this._pendingQueuedRequests.set(request.clientMessageId, { request, providerOrigin })
+          this.emitQueuedMessages()
         }
         try {
           this.flushFirstTurnPreamble()
           opts?.onAccepted?.()
           await this.backend.send(withMcpAppContext(request, this._messages))
         } catch (error) {
-          if (request.clientMessageId) this._pendingQueuedRequests.delete(request.clientMessageId)
+          if (request.clientMessageId && this._pendingQueuedRequests.delete(request.clientMessageId)) {
+            this.emitQueuedMessages()
+          }
           throw error
         }
         return
@@ -1461,8 +1465,26 @@ export class Session implements SessionContract {
   async dequeueMessage(clientMessageId: string): Promise<boolean> {
     if (!this.backendStarted) return false
     const removed = await this.backend.dequeueMessage(clientMessageId)
-    if (removed) this._pendingQueuedRequests.delete(clientMessageId)
+    if (removed && this._pendingQueuedRequests.delete(clientMessageId)) this.emitQueuedMessages()
     return removed
+  }
+
+  /**
+   * The queue as every client should show it. Membership changes are broadcast;
+   * consumption is not — each client moves the bubble on `queued_message_consumed`.
+   */
+  getQueuedMessagesEvent(): QueuedMessagesChangedEvent | null {
+    if (this._pendingQueuedRequests.size === 0) return null
+    return {
+      type: 'queued_messages_changed',
+      messages: [...this._pendingQueuedRequests.values()].map(({ request, providerOrigin }) => this.userMessageFor(request, providerOrigin)),
+      sessionId: this.id,
+      projectPath: this.projectPath,
+    }
+  }
+
+  private emitQueuedMessages(): AgentEvent {
+    return this.forwardEvent(this.getQueuedMessagesEvent() ?? { type: 'queued_messages_changed', messages: [] })
   }
 
   getPendingInteractions(): AgentEvent[] {
@@ -1703,6 +1725,8 @@ export class Session implements SessionContract {
     if (this._compacting) {
       out.push({ type: 'status_indicator', indicator: 'compacting', sessionId: this.id, projectPath: this.projectPath })
     }
+    const queued = this.getQueuedMessagesEvent()
+    if (queued) out.push(queued)
     return out
   }
 
@@ -1992,6 +2016,8 @@ export class Session implements SessionContract {
         })
       }
       this._pendingQueuedRequests = nextPending
+      // Clients follow the host queue, which carries attachments the text-only restore lacks.
+      return this.emitQueuedMessages()
     } else if (event.type === 'message_start') {
       this._currentMessageId = event.message.id
       // Scope the swap dedup to one turn: the same fallback recurring in a later
@@ -2373,8 +2399,7 @@ export class Session implements SessionContract {
     this.pendingPreamble = null
   }
 
-  private appendUserMessage(request: SendMessageRequest, providerOrigin: SendProviderOrigin): void {
-    if (isModelOnlyTaskNotification(request)) return
+  private userMessageFor(request: SendMessageRequest, providerOrigin: SendProviderOrigin): ChatMessage {
     // Transcript providerId is local|remote only; host wakes are local-origin bubbles.
     const messageOrigin = providerOrigin === 'remote' ? 'remote' : 'local'
     // Provider still receives the full request.content; the bubble drops host framing.
@@ -2384,7 +2409,12 @@ export class Session implements SessionContract {
           userMessageContent: [{ type: 'text' as const, text: taskNotificationDisplayText(request.content) }],
         }
       : request
-    const userMsg = buildClaudeUserMessage(displayRequest, messageOrigin)
+    return buildClaudeUserMessage(displayRequest, messageOrigin)
+  }
+
+  private appendUserMessage(request: SendMessageRequest, providerOrigin: SendProviderOrigin): void {
+    if (isModelOnlyTaskNotification(request)) return
+    const userMsg = this.userMessageFor(request, providerOrigin)
     if (isCompactSlashSend(this.harnessId, request.content)) {
       this._pendingCompactUserId = userMsg.id
     }

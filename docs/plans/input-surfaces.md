@@ -15,7 +15,7 @@ wait for the full MiniappAgentAPI/EventAPI or to migrate existing phone sheets.
 Facts the proposal's "current state" table does not yet reflect:
 
 - `ComposerSwitch` (`components/chat/ComposerSwitch.tsx`) is already generic over
-  a string union and owns the drop/rise hand-off, height pinning and `alignTo`.
+  a string union and owns the drop/rise hand-off, height pinning and `align`.
   It has three kinds: `text`, `voice`, `app-consent`. The kind is derived inline
   in `ChatContent.tsx` (`appConsent ? … : showRealtimeComposer ? … : 'text'`).
 - `McpAppConsentComposer` is the first composer that already follows the model:

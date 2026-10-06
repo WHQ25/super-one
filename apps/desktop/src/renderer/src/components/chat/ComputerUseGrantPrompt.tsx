@@ -137,7 +137,7 @@ export function ComputerUseGrantPrompt({
 
   if (isCollapsed) {
     return (
-      <div className="mx-3 mb-2">
+      <div className="mx-3 mb-1">
         <button
           type="button"
           onClick={handleExpand}
@@ -161,7 +161,7 @@ export function ComputerUseGrantPrompt({
   }
 
   return (
-    <div className="mx-3 mb-2">
+    <div className="mx-3 mb-1">
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         {/* Identity header */}
         <button

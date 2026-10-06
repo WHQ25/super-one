@@ -92,6 +92,20 @@ describe('ComposerSwitch', () => {
     expect(screen.getByTestId('text-composer')).toBeInTheDocument()
   })
 
+  it('grows only the aligned composer to the text composer height', () => {
+    stubMotion(true)
+    const offsetHeight = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(120)
+    const slot = (kind: 'text' | 'voice' | 'decision') => (
+      <ComposerSwitch kind={kind} align={{ kind: 'voice', to: 'text' }} render={(k) => <div data-testid={`${k}-composer`} />} />
+    )
+    const { rerender } = render(slot('text'))
+    rerender(slot('decision'))
+    expect(screen.getByTestId('composer-switch').style.minHeight).toBe('')
+    rerender(slot('voice'))
+    expect(screen.getByTestId('composer-switch').style.minHeight).toBe('120px')
+    offsetHeight.mockRestore()
+  })
+
   it('switches at once under reduced motion or without animation support', () => {
     stubMotion(true)
     const { rerender } = render(render_('voice'))

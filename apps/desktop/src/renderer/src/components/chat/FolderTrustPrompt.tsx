@@ -20,7 +20,7 @@ export function FolderTrustPrompt({
     : []
 
   return (
-    <div className="mx-3 mb-2 rounded-lg border border-border bg-background p-3 text-xs">
+    <div className="mx-3 mb-1 rounded-lg border border-border bg-background p-3 text-xs">
       <div className="mb-2 flex items-center gap-2 font-medium text-foreground">
         <FolderLock className="size-3.5 shrink-0" />
         {t('chat.acpPermissionModes.folderTrustTitle')}

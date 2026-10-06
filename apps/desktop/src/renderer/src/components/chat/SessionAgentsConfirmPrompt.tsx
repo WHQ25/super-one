@@ -397,7 +397,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
   return (
     <div
       className={cn(
-        '@container mx-3 mb-2 flex flex-col overflow-hidden rounded-lg border border-primary/40 bg-card',
+        '@container mx-3 mb-1 flex flex-col overflow-hidden rounded-lg border border-primary/40 bg-card',
         // Cap the whole confirm card so an expanded summary never leaves the viewport.
         'max-h-[min(80vh,calc(100dvh-5rem))]',
       )}

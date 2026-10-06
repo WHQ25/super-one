@@ -25,7 +25,7 @@ export function AskUserQuestionPrompt({ request }: { request?: AskUserQuestionRe
   if (!pendingQuestion) return null
   const { requestId } = pendingQuestion
   return (
-    <div className="mx-3 mb-2">
+    <div className="mx-3 mb-1">
       <AskUserQuestionForm
         key={requestId}
         request={pendingQuestion}

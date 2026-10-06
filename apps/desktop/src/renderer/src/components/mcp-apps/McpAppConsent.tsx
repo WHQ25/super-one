@@ -37,7 +37,7 @@ export function McpAppConsentPrompt({ pending, framed = true, stale = false }: M
     tabIndex={-1}
     inert={stale}
     data-mcp-app-consent=""
-    className={cn('outline-none', framed && 'mx-3 mb-2')}
+    className={cn('outline-none', framed && 'mx-3 mb-1')}
     onKeyDown={event => {
       if (event.key !== 'Escape' || event.nativeEvent.isComposing) return
       event.preventDefault()

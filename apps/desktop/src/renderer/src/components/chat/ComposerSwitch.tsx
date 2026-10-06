@@ -12,10 +12,11 @@ interface ComposerSwitchProps<K extends string> {
   transitionKey?: string
   render: (kind: K) => ReactNode
   /**
-   * A composer whose resting height every other composer should at least fill,
-   * so their top edges line up and the hand-off does not change the slot.
+   * `kind` grows to at least `to`'s resting height, so their top edges line up and
+   * the hand-off does not change the slot. Every other composer keeps its own height;
+   * the slot eases to it once the newcomer has risen.
    */
-  alignTo?: K
+  align?: { kind: K; to: K }
   className?: string
   /** Caps a tall composer while keeping its contents inside a scrollable slot. */
   maxHeight?: number | string
@@ -43,7 +44,7 @@ function motionEnabled(): boolean {
  * The outgoing composer stays mounted until its exit animation ends, so a call
  * that ends mid-caption still slides away intact instead of vanishing.
  */
-export function ComposerSwitch<K extends string>({ kind, transitionKey = kind, render, alignTo, className, maxHeight }: ComposerSwitchProps<K>) {
+export function ComposerSwitch<K extends string>({ kind, transitionKey = kind, render, align, className, maxHeight }: ComposerSwitchProps<K>) {
   const [shown, setShown] = useState(kind)
   const [shownKey, setShownKey] = useState(transitionKey)
   const [phase, setPhase] = useState<Phase>('steady')
@@ -65,7 +66,7 @@ export function ComposerSwitch<K extends string>({ kind, transitionKey = kind, r
       restingHeights.current[shown] = stageRef.current.offsetHeight
     }
   })
-  const floor = alignTo !== undefined && alignTo !== shown ? restingHeights.current[alignTo] : undefined
+  const floor = align?.kind === shown ? restingHeights.current[align.to] : undefined
 
   useEffect(() => {
     if (sameEntry) {

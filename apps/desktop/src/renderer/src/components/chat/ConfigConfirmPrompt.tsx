@@ -123,7 +123,7 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
 
   if (isCollapsed) {
     return (
-      <div className="mx-3 mb-2">
+      <div className="mx-3 mb-1">
         <button
           type="button"
           onClick={() => setIsCollapsed(false)}
@@ -141,7 +141,7 @@ export function ConfigConfirmPrompt({ payload, onConfirm, onReject }: ConfigConf
   }
 
   return (
-    <div className="mx-3 mb-2">
+    <div className="mx-3 mb-1">
       <div className="rounded-lg border border-border bg-card p-3">
         <button
           type="button"

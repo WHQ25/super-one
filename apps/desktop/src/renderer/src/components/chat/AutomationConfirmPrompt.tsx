@@ -599,7 +599,7 @@ export function AutomationConfirmPrompt({
   const showAgentStrip = !!editableSource
 
   return (
-    <div className="mx-3 mb-2">
+    <div className="mx-3 mb-1">
       <div className="rounded-lg border border-border bg-card p-3">
         <div className="mb-2 flex items-center gap-1.5 text-xs">
           <Icon className={cn('size-3.5 shrink-0', iconClass)} />

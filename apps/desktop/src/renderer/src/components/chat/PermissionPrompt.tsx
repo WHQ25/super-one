@@ -559,7 +559,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
         : <McpAppIcon src={mcpIconSrc} className={`${className} text-muted-foreground`} fallback={<ToolIcon icon="mcp" className={`${className} text-muted-foreground`} />} />
 
     return (
-      <div className="mx-3 mb-2">
+      <div className="mx-3 mb-1">
         {isCollapsed && (
           <button
             type="button"
@@ -682,7 +682,7 @@ export function PermissionPrompt({ request }: { request?: PermissionRequest }) {
     : (display.summary || '')
 
   return (
-    <div className="mx-3 mb-2">
+    <div className="mx-3 mb-1">
       {isCollapsed ? (
         <button
           type="button"

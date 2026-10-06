@@ -21,7 +21,7 @@ function ComposerSwitchPreview() {
       </div>
       <ComposerSwitch
         kind={kind}
-        alignTo="text"
+        align={{ kind: 'voice', to: 'text' }}
         maxHeight={kind === 'decision' ? 'min(45vh, 440px)' : undefined}
         render={(id) => (
           <div className="rounded-lg border border-border bg-card p-4">

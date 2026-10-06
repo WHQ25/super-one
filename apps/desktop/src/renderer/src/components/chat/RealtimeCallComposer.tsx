@@ -26,7 +26,7 @@ export const RealtimeCallComposer = memo(function RealtimeCallComposer({ microph
 
   return (
     <>
-      {/* Grows to the text composer's resting height (see ComposerSwitch `alignTo`):
+      {/* Grows to the text composer's resting height (see ComposerSwitch `align`):
           the mark sits where the editor's top edge was, the controls at its foot. */}
       <div
         data-testid="realtime-call-composer"

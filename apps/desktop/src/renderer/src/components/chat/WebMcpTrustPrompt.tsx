@@ -115,7 +115,7 @@ export function WebMcpTrustPrompt({ request, onTrust, onDeny }: Props) {
 
   if (isCollapsed) {
     return (
-      <div className="mx-3 mb-2">
+      <div className="mx-3 mb-1">
         <button
           type="button"
           onClick={handleExpand}
@@ -134,7 +134,7 @@ export function WebMcpTrustPrompt({ request, onTrust, onDeny }: Props) {
   }
 
   return (
-    <div className="mx-3 mb-2">
+    <div className="mx-3 mb-1">
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         <button
           type="button"

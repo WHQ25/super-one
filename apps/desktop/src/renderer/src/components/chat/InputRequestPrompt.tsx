@@ -43,7 +43,7 @@ export function InputRequestForm({ meta, form, onSubmit, onCancel, error: hostEr
     }
   }
   return (
-    <section className="@container flex min-w-0 flex-col gap-3 p-3" aria-label={meta.title}>
+    <section className="@container flex min-w-0 flex-col gap-3 px-3 pt-3 pb-1" aria-label={meta.title}>
       <div className="min-w-0">
         <p className="mb-1 break-words text-[11px] text-muted-foreground">{meta.origin.kind === 'miniapp'
           ? meta.origin.appName ?? meta.origin.appId

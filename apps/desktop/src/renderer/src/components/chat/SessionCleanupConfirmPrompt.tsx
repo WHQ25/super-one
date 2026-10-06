@@ -206,7 +206,7 @@ export function SessionCleanupConfirmPrompt({
   }, [chatRootRef, feedback, feedbackFocused, onConfirm, onReject])
 
   return (
-    <div className="mx-3 mb-2">
+    <div className="mx-3 mb-1">
       <div className="rounded-lg border border-border bg-card p-3">
         <div className="mb-2 flex items-center gap-1.5 text-xs">
           <Trash2 className="size-3.5 shrink-0 text-destructive" />

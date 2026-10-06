@@ -724,7 +724,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             className="mx-auto w-full min-w-0 max-w-3xl"
             kind={composerKind}
             transitionKey={composerKey}
-            alignTo="text"
+            align={{ kind: 'voice', to: 'text' }}
             maxHeight={(needsDecision || !!appInput || !!openedComposer) && decisionAvailable ? COMPOSER_CONTENT_MAX_HEIGHT : undefined}
             render={(kind) => renderComposer(kind, displayedSessionId ?? '', {
               showTodoPopup: true,

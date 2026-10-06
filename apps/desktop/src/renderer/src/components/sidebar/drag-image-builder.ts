@@ -37,12 +37,12 @@ export interface DragImageData {
   scaleFactor: number
 }
 
-export function buildDragImagePng(name: string, isDirectory: boolean, customIcon?: HTMLImageElement | null): DragImageData | null {
+export function buildDragImagePng(name: string, isDirectory: boolean, customIcon?: HTMLImageElement | null, thumbnail = false): DragImageData | null {
   const fallback = isDirectory ? folderIcon : fileIcon
   const icon = (customIcon && customIcon.complete && customIcon.naturalWidth > 0) ? customIcon : fallback
   if (!icon || !icon.complete || icon.naturalWidth === 0) return null
 
-  const ICON_SIZE = 18
+  const ICON_SIZE = thumbnail ? 32 : 18
   const PAD_X = 12
   const PAD_Y = 8
   const GAP = 6
@@ -90,14 +90,27 @@ export function buildDragImagePng(name: string, isDirectory: boolean, customIcon
   ctx.closePath()
   ctx.fill()
 
-  ctx.drawImage(icon, PAD_X, (height - ICON_SIZE) / 2, ICON_SIZE, ICON_SIZE)
+  if (thumbnail) {
+    const scale = Math.min(ICON_SIZE / icon.naturalWidth, ICON_SIZE / icon.naturalHeight)
+    const imageWidth = icon.naturalWidth * scale
+    const imageHeight = icon.naturalHeight * scale
+    ctx.drawImage(icon, PAD_X + (ICON_SIZE - imageWidth) / 2, (height - imageHeight) / 2, imageWidth, imageHeight)
+  } else {
+    ctx.drawImage(icon, PAD_X, (height - ICON_SIZE) / 2, ICON_SIZE, ICON_SIZE)
+  }
 
   ctx.fillStyle = 'rgb(245,245,245)'
   ctx.font = FONT
   ctx.textBaseline = 'middle'
   ctx.fillText(display, PAD_X + ICON_SIZE + GAP, height / 2)
 
-  const dataURL = canvas.toDataURL('image/png')
+  let dataURL: string
+  try {
+    dataURL = canvas.toDataURL('image/png')
+  } catch {
+    // An unavailable or cross-origin thumbnail must never prevent native file dragging.
+    return null
+  }
   const base64 = dataURL.split(',')[1]
   if (!base64) return null
   const binary = atob(base64)

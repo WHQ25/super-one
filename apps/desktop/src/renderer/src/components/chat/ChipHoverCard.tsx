@@ -7,17 +7,19 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@superone/ui/comp
  * buttons — Backspace removes them in the composer — so anything beyond click
  * lives here.
  */
-export function ChipHoverCard({ children, onOpen, title, actions, card }: {
+export function ChipHoverCard({ children, onOpen, title, actions, card, open, onOpenChange }: {
   children: ReactNode
   onOpen?: () => void
   title?: ReactNode
   actions?: ReactNode
   card?: ReactNode
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
   return (
-    <HoverCard openDelay={250} closeDelay={80} onOpenChange={(open) => { if (open) onOpen?.() }}>
+    <HoverCard open={open} openDelay={250} closeDelay={80} onOpenChange={(open) => { onOpenChange?.(open); if (open) onOpen?.() }}>
       <HoverCardTrigger asChild>
-        <span className="cursor-default">{children}</span>
+        <span className="cursor-inherit">{children}</span>
       </HoverCardTrigger>
       <HoverCardContent align="start" className="w-[min(28rem,80vw)] space-y-2 p-3 text-xs">
         {(title || actions) && (

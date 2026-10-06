@@ -1,5 +1,5 @@
 import { useRef, type DragEvent, type MouseEvent, type MutableRefObject } from 'react'
-import { FileIcon } from '@superone/ui/components/ui/FileIcon'
+import { FileChipIcon } from './FileChipIcon'
 import { cn } from '@superone/ui/lib/utils'
 import { buildDragImagePng, preloadDragIcons, loadIconFromSvgElement } from '@/components/sidebar/drag-image-builder'
 
@@ -7,22 +7,27 @@ preloadDragIcons()
 
 /**
  * Props that make an element drag `filePath` out as a real file. The drag image
- * reuses the first `<svg>` inside the element, so put them on whatever holds the
+ * reuses the thumbnail or first `<svg>` inside the element, so put them on whatever holds the
  * file icon. `dragEndRef` records when the drag ended, for click suppression.
  */
 export function useFileDragProps(name: string, filePath: string | undefined, dragEndRef?: MutableRefObject<number>) {
   const dragIconRef = useRef<HTMLImageElement | null>(null)
+  const thumbnailRef = useRef(false)
   if (!filePath) return undefined
 
   const onMouseDown = (e: MouseEvent): void => {
     if (e.button !== 0) return
     const svg = e.currentTarget.querySelector('svg')
-    if (svg) dragIconRef.current = loadIconFromSvgElement(svg)
+    const thumbnail = e.currentTarget.querySelector<HTMLImageElement>('img[data-file-thumbnail]')
+    thumbnailRef.current = Boolean(thumbnail?.complete && thumbnail.naturalWidth > 0)
+    dragIconRef.current = thumbnailRef.current ? thumbnail : svg ? loadIconFromSvgElement(svg) : null
   }
   const onDragStart = (e: DragEvent): void => {
     e.preventDefault()
     e.stopPropagation()
-    const dragImage = buildDragImagePng(name, false, dragIconRef.current)
+    const dragName = thumbnailRef.current ? filePath.split(/[/\\]/).pop() || name : name
+    const dragImage = buildDragImagePng(dragName, false, dragIconRef.current, thumbnailRef.current)
+      ?? (thumbnailRef.current ? buildDragImagePng(dragName, false) : null)
     if (dragImage) window.app.startDrag([filePath], { png: dragImage.buffer, scaleFactor: dragImage.scaleFactor })
     else window.app.startDrag([filePath])
     const cleanup = (): void => {
@@ -55,14 +60,14 @@ export function DraggableFileIcon({
   // there so a custom link text can't downgrade the chip to the default icon.
   const iconName = filePath?.split(/[/\\]/).pop() || name
 
-  if (!dragProps) return <FileIcon name={iconName} size={size} className={cn('shrink-0', className)} />
+  if (!dragProps) return <span className={cn('shrink-0', className)}><FileChipIcon name={iconName} filePath={filePath} size={size} /></span>
 
   return (
     <span
       {...dragProps}
       className={cn('inline-flex items-center cursor-grab active:cursor-grabbing', className)}
     >
-      <FileIcon name={iconName} size={size} className="shrink-0" />
+      <FileChipIcon name={iconName} filePath={filePath} size={size} />
     </span>
   )
 }

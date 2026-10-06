@@ -182,6 +182,9 @@ bun run typecheck      # type check every workspace
 bun run build:mac      # or build:win / build:linux
 ```
 
+The desktop development app leaves DevTools closed by default. Run
+`bun run dev -- --devtools` to open DevTools automatically at startup.
+
 Package map:
 
 - `apps/desktop` — Electron app (main / preload / renderer)

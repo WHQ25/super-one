@@ -1,5 +1,14 @@
 ## Debugging
 
+The desktop development app leaves DevTools closed by default. Pass `--devtools`
+after `--` to forward the flag to Electron and open DevTools automatically:
+
+```bash
+bun run dev -- --devtools
+```
+
+`SUPERONE_E2E` continues to suppress automatic DevTools opening.
+
 To show raw input/output for specific tool calls in the chat UI, set the `RENDERER_VITE_DEBUG_TOOL_NAMES` environment variable before running dev:
 
 ```bash

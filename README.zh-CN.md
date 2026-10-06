@@ -182,6 +182,8 @@ bun run typecheck      # 全 workspace 类型检查
 bun run build:mac      # 或 build:win / build:linux
 ```
 
+桌面开发版默认不自动打开 DevTools。使用 `bun run dev -- --devtools` 可在启动时自动打开。
+
 包结构：
 
 - `apps/desktop` — Electron 应用（main / preload / renderer）

@@ -39,6 +39,31 @@ export function injectWidgetData(code: string, data?: Record<string, unknown>): 
   return `${DATA_PRELUDE_START}${json}${DATA_PRELUDE_END}${code}`
 }
 
+/**
+ * The widget's own source: `code` without the leading preludes `injectWidgetData` wrote,
+ * which a rendered widget carries and a template must not store, or its old data would
+ * overwrite the data of every later render. Only the exact form `injectWidgetData` writes
+ * for a record is removed; any other script stays. The data escapes `<`, so a prelude
+ * ends at its first `</script>`.
+ */
+export function stripInjectedWidgetData(code: string): string {
+  let rest = code
+  while (rest.startsWith(DATA_PRELUDE_START)) {
+    const end = rest.indexOf('</script>') + '</script>'.length
+    const prelude = rest.slice(0, end)
+    if (!prelude.endsWith(DATA_PRELUDE_END)) break
+    let data: Record<string, unknown> | undefined
+    try {
+      data = asRecord(JSON.parse(prelude.slice(DATA_PRELUDE_START.length, -DATA_PRELUDE_END.length)))
+    } catch {
+      break
+    }
+    if (!data || injectWidgetData('', data) !== prelude) break
+    rest = rest.slice(end)
+  }
+  return rest
+}
+
 export interface WidgetDataSource extends Omit<WidgetShowArgs, 'widget_code' | 'template'> {
   /** The widget's own code: the call's `widget_code`, or a saved template's source. */
   source: string

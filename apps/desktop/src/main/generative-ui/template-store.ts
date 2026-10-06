@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { parseWidgetLayout, type WidgetLayout } from '@superone/shared/generative-ui/types'
+import { stripInjectedWidgetData } from '@superone/shared/generative-ui/widget-data'
 
 export type TemplateScope = 'project' | 'user'
 
@@ -61,7 +62,8 @@ function loadFrom(root: string, scope: TemplateScope, id: string): WidgetTemplat
   const dir = join(widgetDir(root, scope), id)
   try {
     const meta = JSON.parse(readFileSync(join(dir, 'template.json'), 'utf-8')) as Partial<WidgetTemplate>
-    const code = readFileSync(join(dir, 'widget.html'), 'utf-8')
+    // Templates saved before the store stripped the data prelude still carry it.
+    const code = stripInjectedWidgetData(readFileSync(join(dir, 'widget.html'), 'utf-8'))
     return {
       id,
       scope,
@@ -148,8 +150,13 @@ export function templateExists(roots: TemplateRoots, id: string, scope: Template
   return existsSync(join(widgetDir(rootFor(roots, scope), scope), id, 'template.json'))
 }
 
+/**
+ * The one writer behind the desktop dialog, the phone and `widget_save`. Both save actions
+ * send the code a widget rendered with, so the store keeps only the widget's own source.
+ */
 export function saveTemplate(roots: TemplateRoots, input: SaveTemplateInput): WidgetTemplate {
   if (!isValidTemplateId(input.id)) throw new Error(`invalid widget template id: ${input.id}`)
+  const code = stripInjectedWidgetData(input.code)
   const dir = join(widgetDir(rootFor(roots, input.scope), input.scope), input.id)
   const previous = loadFrom(rootFor(roots, input.scope), input.scope, input.id)
   const now = new Date().toISOString()
@@ -164,7 +171,7 @@ export function saveTemplate(roots: TemplateRoots, input: SaveTemplateInput): Wi
     updatedAt: now,
   }
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, 'widget.html'), input.code)
+  writeFileSync(join(dir, 'widget.html'), code)
   writeFileSync(join(dir, 'template.json'), `${JSON.stringify(meta, null, 2)}\n`)
-  return { ...meta, scope: input.scope, code: input.code }
+  return { ...meta, scope: input.scope, code }
 }

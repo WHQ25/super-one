@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildWidgetData, injectWidgetData, readWidgetShowArgs, resolveWidgetCall, widgetDataFromInput } from './widget-data'
+import { buildWidgetData, injectWidgetData, readWidgetShowArgs, resolveWidgetCall, stripInjectedWidgetData, widgetDataFromInput } from './widget-data'
 
 describe('readWidgetShowArgs', () => {
   it('keeps well-typed fields and drops the rest', () => {
@@ -95,5 +95,32 @@ describe('resolveWidgetCall', () => {
     const template = JSON.stringify({ title: 'panel', template: 'panel-a1b2c3d4', data: { n: 1 } })
     expect(resolveWidgetCall(template, ack, true)).toBeNull()
     expect(resolveWidgetCall(template, undefined, false)).toBeNull()
+  })
+})
+
+describe('stripInjectedWidgetData', () => {
+  const PRELUDE = '<script>window.widget=Object.assign(window.widget||{},{data:'
+
+  it('gives back the source a render injected data into', () => {
+    expect(stripInjectedWidgetData(injectWidgetData('<div id="t"></div>', { rows: [1, 2], note: '</script><b>' }))).toBe('<div id="t"></div>')
+  })
+
+  it('removes every prelude stacked by saving a rendered template again', () => {
+    expect(stripInjectedWidgetData(injectWidgetData(injectWidgetData('<svg/>', { n: 1 }), { n: 2 }))).toBe('<svg/>')
+  })
+
+  it('keeps a script that only resembles the prelude', () => {
+    for (const code of [
+      `${PRELUDE}[1,2]})</script><div/>`,
+      `${PRELUDE}{oops})</script><div/>`,
+      `${PRELUDE}{ "n": 1 }})</script><div/>`,
+      `${PRELUDE}{"n":1}})`,
+    ]) expect(stripInjectedWidgetData(code)).toBe(code)
+  })
+
+  it('leaves the widget\'s own scripts alone', () => {
+    const own = '<script>window.widget={data:{n:1}}</script><div/>'
+    expect(stripInjectedWidgetData(own)).toBe(own)
+    expect(stripInjectedWidgetData(injectWidgetData(own, { n: 2 }))).toBe(own)
   })
 })

@@ -68,6 +68,7 @@ import { searchFiles, searchMentions, EXCLUDED_DIRS, type AgentEntry } from './f
 import { SessionClaimConflictError, SessionLockedError, type BackendCommand, type Session as SessionContract } from '../session/types'
 import { claimAutoRecapDispatch, finishAutoRecapDispatch, installAcpRecapFocus } from '../acp/acp-recap-focus'
 import { harnessProviderCatalog } from './remote-selector-catalog'
+import { claudeAccountStore } from './claude-account-store'
 import { listAccounts as listClaudeAccounts } from './claude-account-service'
 import { getCurrentLocale } from '../i18n'
 import { buildRemoteHarnessSystemInfo } from './remote-harness-system-info'
@@ -1787,8 +1788,7 @@ export class AgentService {
       case 'get_system_info': {
         try {
           const settings = readAppSettings()
-          // Only Claude expands its default row per account, and only when there
-          // is a second one; every other harness pays nothing for this.
+          // Claude account choices retain their credential domain even with one account.
           const claudeAccounts = command.provider === 'claude'
             ? (await listClaudeAccounts().catch(() => [])).filter((account) => account.loggedIn)
             : []
@@ -1827,7 +1827,7 @@ export class AgentService {
                 platformDisplay,
                 claudeAccounts,
                 codexAccounts: harnessId === 'codex' ? codexAccountStore().list() : [],
-                selectedProviderId: resolveChatService(harnessId, null, options)?.credentialId ?? (harnessId === 'codex' ? codexAccountStore().defaultProviderId() : null),
+                selectedProviderId: resolveChatService(harnessId, null, options)?.credentialId ?? (harnessId === 'codex' ? codexAccountStore().defaultProviderId() : claudeAccountStore().defaultProviderId()),
               })
               } catch (err) {
                 log.warn('[get_system_info] provider catalog unavailable: %s', err instanceof Error ? err.message : String(err))

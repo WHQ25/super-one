@@ -481,3 +481,39 @@ module that runs inside the CLI process. Upstream docs:
 - **Depends on it:** `apps/desktop/src/main/agent/warmup-manager.ts#keyOf`, a
   hand-kept list of spawn-time options. A new spawn-time option must be added.
 - **Guard:** `apps/desktop/src/main/agent/warmup-manager.test.ts`.
+
+
+## Subscription credential domains
+
+- **Behavior:** `CLAUDE_SECURESTORAGE_CONFIG_DIR` redirects credentials but does
+  not redirect `oauthAccount` or transcript configuration. CLI `auth status`
+  uses the config profile's email/org and can say `loggedIn: true` even with a
+  synthetic credential; it is not a credential identity check.
+- **Observed:** Claude Code 2.1.289 native binary and an isolated temporary-home
+  probe: two different synthetic tokens return the shared profile, adding
+  `CLAUDE_CONFIG_DIR` changes the profile and `projectsDirectory`, and an empty
+  config returns null email/org. Issue #71 reports the same failure on 2.1.291.
+- **Depends on it:** Managed auth and model sessions isolate both directories.
+  Their `projects` directory links to the ambient CLI transcript root, preserving
+  history/fork/resume. User settings/resources and MCP definitions/project
+  approvals are inherited; OAuth profile fields remain account-local. Existing
+  `claude-account:<directory>` IDs remain valid; `claude-account:cli` explicitly
+  selects the external CLI, while a fresh session pins the chosen default.
+- **Identity:** The CLI's embedded `/api/oauth/profile` request uses a Bearer
+  token and expects `account.uuid`, `account.email`, and `organization.uuid`.
+  Identity/deduplication uses account UUID plus organization UUID. Profiles are
+  cached against a credential fingerprint; unknown, signed-out and unavailable
+  domains are retained. Only confirmed matching identities are merged. Last
+  verified identity belongs only to its token, and a late response cannot label
+  replacement credentials. A managed profile keeps its original owner across
+  re-login attempts; an unverified replacement token cannot spend quota under
+  the previous owner. The account registry stores metadata, never tokens.
+- **Guard:** `claude-account-service.test.ts`, `claude-usage-service.test.ts`,
+  session default/restore tests, account-card and sidebar tests, and
+  `ClaudeAccountsPanel.stories.tsx` (default switch, narrow, dark, loading/error,
+  browser login and signed-out states).
+- **Verification boundary:** Profile/renewal HTTP and auth subprocesses have
+  fixture integration coverage. This checkout had no available default OAuth
+  credential for a live profile request; real two-account browser login and
+  model inference still require live acceptance. No CLI version upgrade is part
+  of this change.

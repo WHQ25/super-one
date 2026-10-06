@@ -1,3 +1,4 @@
+import { providerSettingsEnv } from '@superone/claude'
 import { registerComputerUseViewfinderIpc } from './computer-use/viewfinder-ipc'
 import { registerMediaComposerIpc } from './media-gen/composer-ipc'
 import { registerAttachmentOriginalsIpc } from './attachment-originals'
@@ -120,7 +121,7 @@ import type { ProxyUpstream } from './providers/llm-proxy-manager'
 import { shutdownAll as shutdownAllProxies } from './providers/llm-proxy-manager'
 import { getBinding } from './providers/credential-store'
 import type { Session as SessionContract, SessionProvider } from './session/types'
-import { claudeAccountCredentialDir, expandProviderModelEnv } from '@superone/shared/agent-types'
+import { expandProviderModelEnv } from '@superone/shared/agent-types'
 import { claudeThirdPartyEnv, PROXY_TRANSFORMERS_ENV } from '@superone/shared/platform-registry'
 import { detectBuiltinAgents } from './acp/acp-detect'
 import { getBuiltinAgent } from './acp/agent-catalog'
@@ -201,12 +202,9 @@ import {
 import { mapModelInfo } from './agent/claude-models'
 import { CLAUDE_METADATA_PROBE_PROMPT } from '@superone/claude'
 import { getClaudeRateLimits } from './agent/claude-usage-service'
-import {
-  createAccountDir as createClaudeAccountDir,
-  listAccounts as listClaudeAccounts,
-  signInAccount as signInClaudeAccount,
-  signOutAccount as signOutClaudeAccount,
-} from './agent/claude-account-service'
+import { claudeAccountConfig, listAccounts as listClaudeAccounts } from './agent/claude-account-service'
+import { claudeAccountStore } from './agent/claude-account-store'
+import { registerClaudeAccountIpc } from './agent/claude-account-ipc'
 import { getProviderRateLimits } from './agent/provider-usage-service'
 import { getRecentFolders, getRecentFoldersWithPresence, addRecentFolder, removeRecentFolder, getProjectExtraDirs, getProjectId, getProjectPathById } from './recent-folders'
 import { PATH_EXISTS_OPEN_TIMEOUT_MS, pathExistsBounded } from './path-exists-bounded'
@@ -389,12 +387,9 @@ function resolveBaseProviderConfig(provider: SessionProvider, apiProviderId: str
       || 'grok-build'
     return { ...base, agentId }
   }
-  // A non-default Claude account is still the first-party OAuth login -- no key, no base url.
-  // It only needs the credential domain, which redirects the CLI's keychain entry while leaving
-  // CLAUDE_CONFIG_DIR alone so transcripts stay shared and resume keeps working.
-  const claudeAccountDir = claudeAccountCredentialDir(apiProviderId)
-  if (claudeAccountDir) {
-    return { extraEnv: { CLAUDE_SECURESTORAGE_CONFIG_DIR: claudeAccountDir } }
+  if (provider.harnessId === 'claude') {
+    const account = claudeAccountConfig(apiProviderId)
+    if (account) return account
   }
 
   const resolved = resolveChatService(provider.harnessId, apiProviderId, {
@@ -525,7 +520,7 @@ const sessionManager = new SessionManagerImpl({
   getActiveDefaultApiProviderId: (harnessId) => {
     if (harnessId === 'acp' || harnessId === 'opencode' || harnessId === 'cursor' || harnessId === 'dsh') return null
     return getBinding(harnessId === 'codex' ? 'chat:codex' : 'chat:claude')?.credentialId
-      ?? (harnessId === 'codex' ? codexAccountStore().defaultProviderId() : null)
+      ?? (harnessId === 'codex' ? codexAccountStore().defaultProviderId() : claudeAccountStore().defaultProviderId())
   },
   onBeforeInterrupt: (sessionId) => {
     clearAllGates()
@@ -2717,20 +2712,11 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS, (_event, force?: boolean, credentialDir?: string | null) => {
+    if (credentialDir) claudeAccountStore().assertManaged(credentialDir)
     return getClaudeRateLimits(force ?? false, credentialDir ?? null)
   })
 
-  ipcMain.handle(AgentIpcChannels.CLAUDE_LIST_ACCOUNTS, (_event, force?: boolean) => {
-    return listClaudeAccounts(force ?? false)
-  })
-
-  ipcMain.handle(AgentIpcChannels.CLAUDE_SIGN_IN_ACCOUNT, (_event, email?: string | null) => {
-    return signInClaudeAccount(createClaudeAccountDir(), email)
-  })
-
-  ipcMain.handle(AgentIpcChannels.CLAUDE_SIGN_OUT_ACCOUNT, (_event, credentialDir: string) => {
-    return signOutClaudeAccount(credentialDir)
-  })
+  registerClaudeAccountIpc()
 
   ipcMain.handle(AgentIpcChannels.PROVIDER_GET_RATE_LIMITS, (_event, apiProviderId: string, force?: boolean) => {
     return getProviderRateLimits(apiProviderId, force ?? false)
@@ -4749,12 +4735,14 @@ function registerIpcHandlers(): void {
     return probeSandboxDependencies()
   })
 
-  ipcMain.handle(AgentIpcChannels.CONNECT_CLAUDE, async (_e, force?: boolean): Promise<ClaudeResources> => {
+  ipcMain.handle(AgentIpcChannels.CONNECT_CLAUDE, async (_e, force?: boolean, apiProviderId?: string | null): Promise<ClaudeResources> => {
     const skills = discoverUserSkills()
     const userCommands = discoverUserCommands()
     const agents = discoverUserAgents()
     const claudeBinary = tryResolveHarnessRuntime('claude')
-    const cacheKey = (claudeBinary && harnessRuntimeCacheKey(claudeBinary)) || undefined
+    const providerId = apiProviderId ?? (getBinding('chat:claude')?.credentialId ? null : claudeAccountStore().defaultProviderId())
+    const accountEnv = claudeAccountConfig(providerId)?.extraEnv
+    const cacheKey = claudeBinary ? `${harnessRuntimeCacheKey(claudeBinary)}:${providerId ?? 'default'}` : undefined
     const cacheHit = getFreshHarnessResources('claude', { force, cacheKey })
     if (cacheHit) {
       log.info('[CONNECT_CLAUDE] cache fresh (ageMs=%d), skipping CLI query', cacheHit.ageMs)
@@ -4784,7 +4772,9 @@ function registerIpcHandlers(): void {
     log.info('[CONNECT_CLAUDE] platform=%s arch=%s', process.platform, process.arch)
     const q = query({
       prompt: CLAUDE_METADATA_PROBE_PROMPT,
-      options: { cwd: probeCwd, pathToClaudeCodeExecutable: claudeBinary, maxTurns: 0, permissionMode: 'default', persistSession: false },
+      options: { cwd: probeCwd, pathToClaudeCodeExecutable: claudeBinary, maxTurns: 0, permissionMode: 'default', persistSession: false,
+        ...(accountEnv ? { env: buildSafeEnv(accountEnv), settings: { env: providerSettingsEnv(accountEnv) } } : {}),
+      },
     })
     try {
       log.info('[CONNECT_CLAUDE] Fetching models, account, commands...')

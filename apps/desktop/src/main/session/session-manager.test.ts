@@ -320,6 +320,27 @@ describe('SessionManager', () => {
       await manager.disposeAllSessions()
     })
 
+    it('pins the Claude default and restores the chosen account after the default changes', async () => {
+      seedProvider('claude-base', 'claude')
+      const a = 'claude-account:/accounts/a'
+      const b = 'claude-account:/accounts/b'
+      let defaultId = a
+      const manager = new SessionManagerImpl({
+        getActiveDefaultApiProviderId: () => defaultId,
+        loadSession: () => ({ projectPath: '/project', providerId: 'claude-base', providerSessionId: 'thread-a', apiProviderId: a, messages: [], totalCostUsd: 0, contextTokens: 0 }),
+      })
+      const first = manager.createSession({ projectPath: '/project', providerId: 'claude-base' })
+      defaultId = b
+      const second = manager.createSession({ projectPath: '/project', providerId: 'claude-base' })
+      expect(first.snapshot.apiProviderId).toBe(a)
+      expect(second.snapshot.apiProviderId).toBe(b)
+      const restored = manager.resumeSession('restored')
+      expect(restored.snapshot.apiProviderId).toBe(a)
+      const cold = manager.createSession({ id: 'cold', projectPath: '/project', providerId: 'claude-base' })
+      expect(cold.snapshot.apiProviderId).toBe(a)
+      await manager.disposeAllSessions()
+    })
+
     it('rejects an account switch after messages exist without changing the bound account', async () => {
       seedProvider('codex-base', 'codex')
       const a = 'codex-account:11111111-1111-4111-8111-111111111111'

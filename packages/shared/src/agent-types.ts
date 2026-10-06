@@ -3375,19 +3375,22 @@ export interface RemoteUsage extends ProviderRateLimits {
 }
 
 /**
- * One signed-in Claude subscription, as reported by `claude auth status --json`.
+ * One Claude credential domain, with identity verified against its own OAuth token.
  *
  * A credential domain is selected with `CLAUDE_SECURESTORAGE_CONFIG_DIR`, which redirects the
- * keychain entry and `.credentials.json` **without** moving `CLAUDE_CONFIG_DIR` — so transcripts
- * and `~/.claude/projects` stay shared and resuming a session across accounts keeps working.
+ * keychain entry and `.credentials.json`. Managed homes also isolate `CLAUDE_CONFIG_DIR` and
+ * link their `projects` directory to the shared transcript root for cross-account resume.
  */
 export interface ClaudeAccount {
+  accountUuid?: string | null
+  isDefault?: boolean
+  identityStatus?: 'verified' | 'unavailable' | 'signedOut'
   /** Credential domain directory, or `null` for the CLI's own default login. */
   credentialDir: string | null
   loggedIn: boolean
   /**
-   * `email|orgId`, lowercased — `null` when the account can't be identified.
-   * Plans are org-scoped, so one email with a personal org and a company org is two accounts
+   * `accountUuid|orgId`, lowercased — `null` when the account cannot be identified.
+   * Plans are org-scoped, so one user with a personal org and a company org is two accounts
    * with two separate usage pools; keying on email alone would merge them.
    */
   identityKey: string | null
@@ -3396,7 +3399,7 @@ export interface ClaudeAccount {
   orgName: string | null
   /** Plan name as the CLI reports it (e.g. "max"), or `null` when signed out. */
   subscriptionType: string | null
-  /** Where the CLI resolves transcripts to. Expected to be identical across accounts. */
+  /** Optional CLI transcript path; managed homes share its contents through a directory link. */
   projectsDirectory: string | null
 }
 
@@ -3405,13 +3408,18 @@ export interface ClaudeAccount {
  * account is expressed with this prefix instead, so one field keeps carrying "which credential
  * does this session use" for both kinds without a second session column.
  *
- * The CLI's own login stays `null`, which is what every existing session already stores.
+ * The CLI's own login has an explicit `cli` ID. Legacy null follows the active default.
  */
 export const CLAUDE_ACCOUNT_PROVIDER_PREFIX = 'claude-account:'
+export const CLAUDE_CLI_ACCOUNT_PROVIDER_ID = `${CLAUDE_ACCOUNT_PROVIDER_PREFIX}cli`
 
-/** `apiProviderId` for a Claude account, or `null` for the default domain (which stays `null`). */
+export function isClaudeAccountProvider(id: string | null | undefined): boolean {
+  return !!id?.startsWith(CLAUDE_ACCOUNT_PROVIDER_PREFIX) && id.length > CLAUDE_ACCOUNT_PROVIDER_PREFIX.length
+}
+
+/** `apiProviderId` for a Claude account, or an explicit `cli` ID for the external CLI domain. */
 export function claudeAccountProviderId(credentialDir: string | null): string | null {
-  return credentialDir ? `${CLAUDE_ACCOUNT_PROVIDER_PREFIX}${credentialDir}` : null
+  return credentialDir ? `${CLAUDE_ACCOUNT_PROVIDER_PREFIX}${credentialDir}` : CLAUDE_CLI_ACCOUNT_PROVIDER_ID
 }
 
 /**
@@ -3419,8 +3427,8 @@ export function claudeAccountProviderId(credentialDir: string | null): string | 
  * (the default login, or a third-party credential id).
  */
 export function claudeAccountCredentialDir(apiProviderId: string | null | undefined): string | null {
-  if (!apiProviderId?.startsWith(CLAUDE_ACCOUNT_PROVIDER_PREFIX)) return null
-  return apiProviderId.slice(CLAUDE_ACCOUNT_PROVIDER_PREFIX.length) || null
+  if (!isClaudeAccountProvider(apiProviderId) || apiProviderId === CLAUDE_CLI_ACCOUNT_PROVIDER_ID) return null
+  return apiProviderId!.slice(CLAUDE_ACCOUNT_PROVIDER_PREFIX.length) || null
 }
 
 export type CodexHookEventName =
@@ -3986,6 +3994,8 @@ export const AgentIpcChannels = {
   CLAUDE_LIST_ACCOUNTS: 'claude:list-accounts',
   CLAUDE_SIGN_IN_ACCOUNT: 'claude:sign-in-account',
   CLAUDE_SIGN_OUT_ACCOUNT: 'claude:sign-out-account',
+  CLAUDE_SET_DEFAULT_ACCOUNT: 'claude:set-default-account',
+  CLAUDE_CANCEL_SIGN_IN: 'claude:cancel-sign-in',
 
   // Third-party provider usage channels
   PROVIDER_GET_RATE_LIMITS: 'provider:get-rate-limits',

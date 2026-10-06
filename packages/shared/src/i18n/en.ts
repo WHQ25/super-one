@@ -3336,6 +3336,12 @@ export type Messages = {
       accountSignIn: string
       accountNotSignedIn: string
       accountLoading: string
+      claudeAccountsTitle: string
+      claudeSignInAccount: string
+      claudePendingAccount: string
+      claudeIdentityUnavailable: string
+      claudeUsageUnavailable: string
+      claudeSigningIn: string
       claudeAddAccount: string
       claudeSignOutAccount: string
       claudeAccountAdded: string
@@ -7572,6 +7578,12 @@ export const en: Messages = {
       accountSignIn: 'Sign-In',
       accountNotSignedIn: 'Not Signed In',
       accountLoading: 'Loading account…',
+      claudeAccountsTitle: 'Claude Accounts',
+      claudeSignInAccount: 'Sign In with Claude',
+      claudePendingAccount: 'Account identity pending',
+      claudeIdentityUnavailable: 'Unable to verify account identity. Refresh to retry.',
+      claudeUsageUnavailable: 'Usage unavailable. Refresh to retry.',
+      claudeSigningIn: 'Complete sign-in in your browser…',
       claudeAddAccount: 'Add account',
       claudeSignOutAccount: 'Sign out',
       claudeAccountAdded: 'Signed in as {{email}}',

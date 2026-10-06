@@ -302,3 +302,14 @@ Control-protocol request subtypes. Most are sent by a `Query` method or an `Opti
 | `set_permission_mode` | used | via `setPermissionMode`; desktop mode switches (plan, default, bypass, etc.). | `apps/desktop/src/main/session/backends/claude-backend.ts` |
 | `stop_task` | used | via `stopTask`; desktop per-task stop for background tasks. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
 | `update_settings` | unused | via `updateSettings` (never called); would write settings files through the CLI's own writer. | — |
+
+
+## Subscription account authentication
+
+| Name | Status | Usage | Code |
+|---|---|---|---|
+| CLI `auth login --claudeai` / `auth logout` | used | Managed domains isolate both `CLAUDE_CONFIG_DIR` and `CLAUDE_SECURESTORAGE_CONFIG_DIR`; auth subprocesses are cancellable. The external CLI login is not logged out from the account panel. | `apps/desktop/src/main/agent/claude-account-service.ts` |
+| CLI `auth status --json` | unused | Its email/org come from config, not proof of the selected credential's identity. SuperOne resolves each domain from its OAuth token. | `apps/desktop/src/main/agent/claude-account-profile.ts` |
+| `GET /api/oauth/profile` | used | Bearer token profile establishes account UUID, email, organization UUID/name; a fingerprint-bound metadata cache preserves cards through outages. This is an internal CLI endpoint, not a public SDK method. | `apps/desktop/src/main/agent/claude-account-profile.ts` |
+| `GET /api/oauth/usage` | used | Only the selected domain drives the sidebar meter; provider settings load each account independently. Cache, backoff and history are scoped to the domain and verified identity. | `apps/desktop/src/main/agent/claude-usage-service.ts` |
+| `POST /v1/oauth/token` | used | Shared credential renewal for profile and usage writes back to the original keychain/file domain. | `apps/desktop/src/main/agent/claude-oauth.ts` |

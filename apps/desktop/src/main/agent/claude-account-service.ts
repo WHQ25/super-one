@@ -1,133 +1,112 @@
-import { superoneHome } from '../superone-home'
 import { execFile } from 'node:child_process'
-import { mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { ClaudeAccount } from '@superone/shared/agent-types'
-import log from '../logger'
+import { isClaudeAccountProvider, claudeAccountCredentialDir } from '@superone/shared/agent-types'
 import { resolveSdkClaudeBinary } from './claude-binary'
-import { dedupeAccounts, parseAuthStatus } from './claude-account-parse'
+import { dedupeAccounts } from './claude-account-parse'
+import { claudeAccountStore } from './claude-account-store'
+import { readClaudeAccount } from './claude-account-profile'
+import { loadCredentials } from './claude-oauth'
 
-/**
- * Multi-account support rides on `CLAUDE_SECURESTORAGE_CONFIG_DIR`, which redirects the keychain
- * entry and `.credentials.json` on its own — `CLAUDE_CONFIG_DIR` is deliberately left alone, so
- * `~/.claude/projects` and every transcript stay shared and resume keeps working across accounts.
- *
- * That variable is undocumented (Anthropic groups it with KUBECONFIG / SSH_AUTH_SOCK as a
- * credential-redirect var). Treat it as load-bearing but unverified: always confirm which account
- * a domain actually resolves to via `claude auth status --json` instead of assuming the env took.
- */
-const SECURESTORAGE_ENV = 'CLAUDE_SECURESTORAGE_CONFIG_DIR'
-const ACCOUNTS_DIRNAME = 'claude-accounts'
 const STATUS_TIMEOUT_MS = 15_000
-/** Sign-in waits on a human in a browser, so it gets a far longer leash than a status read. */
 const LOGIN_TIMEOUT_MS = 5 * 60_000
+let login: AbortController | null = null
+export function accountsRoot(): string { return claudeAccountStore().root }
 
-/** Managed credentials are isolated with the personal data root. */
-export function accountsRoot(): string {
-  return join(superoneHome(), ACCOUNTS_DIRNAME)
-}
-
-function authEnv(credentialDir: string | null): NodeJS.ProcessEnv {
+/** Auth commands isolate both stores. Sessions share transcripts through the managed home. */
+export function authEnv(dir: string | null): NodeJS.ProcessEnv {
   const env = { ...process.env }
-  if (credentialDir) env[SECURESTORAGE_ENV] = credentialDir
-  else delete env[SECURESTORAGE_ENV]
+  for (const name of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_SECURESTORAGE_CONFIG_DIR']) delete env[name]
+  if (dir) { env.CLAUDE_SECURESTORAGE_CONFIG_DIR = dir; env.CLAUDE_CONFIG_DIR = dir }
   return env
 }
-
-function runAuth(args: string[], credentialDir: string | null, timeoutMs: number): Promise<string | null> {
+function runAuth(args: string[], dir: string, timeout: number, signal?: AbortSignal): Promise<void> {
   const binary = resolveSdkClaudeBinary()
-  if (!binary) {
-    log.warn('[claude-account] no claude binary resolved; skipping %s', args.join(' '))
-    return Promise.resolve(null)
-  }
-  return new Promise((resolve) => {
-    execFile(binary, ['auth', ...args], { env: authEnv(credentialDir), timeout: timeoutMs, encoding: 'utf8' }, (error, stdout, stderr) => {
-      // `auth status` exits 0 for a signed-out domain and still prints JSON, so a non-zero exit is
-      // a real failure (missing binary, timeout, crash) — but stdout may still carry a usable body.
-      if (error && !stdout) {
-        log.warn('[claude-account] auth %s failed: %s', args[0], (stderr || String(error)).trim())
-        resolve(null)
-        return
-      }
-      resolve(stdout)
+  if (!binary) throw new Error('Claude runtime is unavailable')
+  return new Promise((resolve, reject) => {
+    execFile(binary, ['auth', ...args], { env: authEnv(dir), timeout, signal, encoding: 'utf8' }, (error) => {
+      // Never include CLI output: it may carry a login URL or credentials.
+      if (error) reject(new Error(signal?.aborted ? 'Claude sign-in cancelled' : `Claude auth ${args[0]} failed`))
+      else resolve()
     })
   })
 }
-
-/** Identity of one credential domain. `null` reads the CLI's own default login. */
-export async function readAccount(credentialDir: string | null): Promise<ClaudeAccount | null> {
-  const stdout = await runAuth(['status', '--json'], credentialDir, STATUS_TIMEOUT_MS)
-  if (stdout == null) return null
-  return parseAuthStatus(stdout, credentialDir)
-}
-
-function managedAccountDirs(): string[] {
-  try {
-    return readdirSync(accountsRoot(), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => join(accountsRoot(), entry.name))
-      .sort()
-  } catch {
-    return []
-  }
-}
-
-/**
- * Cached because each entry costs one `claude auth status` subprocess, and the provider dropdown
- * asks on every mount. Sign-in / sign-out invalidate it directly, so the TTL only covers changes
- * made outside SuperOne (a `claude /login` in the user's own terminal).
- */
+export const readAccount = readClaudeAccount
 const LIST_CACHE_TTL_MS = 60_000
+let listGeneration = 0
 let listCache: { accounts: ClaudeAccount[]; at: number } | null = null
-
-export function invalidateAccountListCache(): void {
-  listCache = null
-}
-
-/**
- * Every account SuperOne can see: the CLI's default login first (it stays `apiProviderId: null`,
- * so existing sessions keep their meaning), then each managed credential domain.
- */
+export function invalidateAccountListCache(): void { listCache = null; listGeneration++ }
 export async function listAccounts(force = false): Promise<ClaudeAccount[]> {
   if (!force && listCache && Date.now() - listCache.at < LIST_CACHE_TTL_MS) return listCache.accounts
-  const dirs: Array<string | null> = [null, ...managedAccountDirs()]
-  const accounts = await Promise.all(dirs.map((dir) => readAccount(dir)))
-  const resolved = dedupeAccounts(accounts.filter((account): account is ClaudeAccount => account != null))
-  listCache = { accounts: resolved, at: Date.now() }
+  const store = claudeAccountStore()
+  const generation = listGeneration
+  // Read the external CLI first so existing installations retain their initial default.
+  const cli = await readAccount(null, force)
+  const accounts = [...(cli.loggedIn || cli.email ? [cli] : []), ...await Promise.all(store.dirs().map((dir) => readAccount(dir, force)))]
+  const resolved = dedupeAccounts(accounts).map((account) => ({ ...account, isDefault: store.isDefault(account.credentialDir) }))
+  if (generation === listGeneration) listCache = { accounts: resolved, at: Date.now() }
   return resolved
 }
-
-/** Allocate an empty credential domain for a sign-in that hasn't happened yet. */
 export function createAccountDir(): string {
   const dir = join(accountsRoot(), randomUUID())
-  mkdirSync(dir, { recursive: true })
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
   return dir
 }
-
-/**
- * Drive `claude auth login` inside a credential domain. The CLI starts its own OAuth callback
- * server and opens the browser, so there is nothing for us to relay — we just wait, then report
- * what the domain actually resolves to.
- */
-export async function signInAccount(credentialDir: string, email?: string | null): Promise<ClaudeAccount | null> {
-  const args = ['login', '--claudeai']
-  const trimmed = email?.trim()
-  if (trimmed) args.push('--email', trimmed)
-  await runAuth(args, credentialDir, LOGIN_TIMEOUT_MS)
+export async function signInAccount(dir: string, email?: string | null): Promise<ClaudeAccount | null> {
+  const store = claudeAccountStore()
+  store.assertManaged(dir)
+  if (login) throw new Error('A Claude sign-in is already in progress')
+  const previousIdentity = store.get(dir)?.account.identityKey
+  const controller = new AbortController()
+  login = controller
+  try {
+    const args = ['login', '--claudeai']
+    if (email?.trim()) args.push('--email', email.trim())
+    await runAuth(args, dir, LOGIN_TIMEOUT_MS, controller.signal)
+    const account = await readAccount(dir, true)
+    if (store.get(dir)?.identityMismatch) throw new Error('This profile belongs to another Claude account. Add the other account separately.')
+    if (!account.loggedIn) throw new Error('Claude sign-in did not complete')
+    if (previousIdentity && account.identityKey && previousIdentity !== account.identityKey) {
+      store.update(dir, { account: { ...account, loggedIn: false, identityStatus: 'signedOut' } })
+      throw new Error('This profile belongs to another Claude account. Add the other account separately.')
+    }
+    return account
+  } finally { if (login === controller) login = null; invalidateAccountListCache() }
+}
+export function cancelSignIn(): void { login?.abort() }
+export async function signOutAccount(dir: string): Promise<void> {
+  claudeAccountStore().assertManaged(dir)
+  await runAuth(['logout'], dir, STATUS_TIMEOUT_MS)
+  // Keep the domain and last identity so the user can reauthenticate the same card/session.
+  await readAccount(dir, true)
   invalidateAccountListCache()
-  return readAccount(credentialDir)
+}
+export async function setDefaultAccount(dir: string | null): Promise<void> {
+  const account = await readAccount(dir)
+  if (!account.loggedIn) throw new Error('Sign in before selecting a default Claude account')
+  claudeAccountStore().setDefault(dir)
+  invalidateAccountListCache()
 }
 
-/**
- * Sign a managed domain out and drop its directory. Refuses the default domain: that is the CLI's
- * own login, and taking it away here would sign the user out of `claude` in their terminal too.
- */
-export async function signOutAccount(credentialDir: string): Promise<void> {
-  if (!credentialDir.startsWith(accountsRoot())) {
-    throw new Error('Refusing to sign out a credential domain SuperOne does not manage')
+/** An explicit OAuth choice must override inherited proxy/API/environment credentials. */
+export function claudeAccountConfig(id: string | null): { extraEnv: Record<string, string> } | null {
+  if (!isClaudeAccountProvider(id)) return null
+  const dir = claudeAccountCredentialDir(id)
+  if (dir) {
+    const store = claudeAccountStore()
+    store.assertManaged(dir)
+    if (!loadCredentials(dir)?.oauth.accessToken || store.get(dir)?.account.loggedIn === false) throw new Error('Please sign in to this Claude account before continuing')
+    const known = store.get(dir)
+    if (known?.ownerIdentity && !known.account.identityKey) throw new Error('Unable to verify this Claude account. Refresh accounts before continuing.')
+    store.prepareSessionHome(dir)
   }
-  await runAuth(['logout'], credentialDir, STATUS_TIMEOUT_MS)
-  rmSync(credentialDir, { recursive: true, force: true })
-  invalidateAccountListCache()
+  return { extraEnv: {
+    CLAUDE_SECURESTORAGE_CONFIG_DIR: dir ?? process.env.CLAUDE_SECURESTORAGE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR ?? '',
+    ...(dir ? { CLAUDE_CONFIG_DIR: dir } : {}),
+    ANTHROPIC_API_KEY: '', ANTHROPIC_AUTH_TOKEN: '', ANTHROPIC_BASE_URL: '',
+    CLAUDE_CODE_OAUTH_TOKEN: dir ? '' : process.env.CLAUDE_CODE_OAUTH_TOKEN ?? '',
+    CLAUDE_CODE_USE_BEDROCK: '0', CLAUDE_CODE_USE_VERTEX: '0', CLAUDE_CODE_USE_FOUNDRY: '0',
+  } }
 }

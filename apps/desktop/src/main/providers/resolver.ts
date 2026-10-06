@@ -1,3 +1,4 @@
+import { isClaudeAccountProvider } from '@superone/shared/agent-types'
 import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import { expandProviderModelEnv, type EffortLevel, type RemoteActiveProvider } from '@superone/shared/agent-types'
 import {
@@ -40,7 +41,7 @@ function credentialApiKey(cred: Credential): string {
  * Dynamic-follow: an explicit override.credentialId that no longer resolves falls back to the global binding.
  */
 export function resolveService(consumer: ConsumerId, override?: ResolveOverride): ResolvedService | null {
-  if (isCodexAccountProvider(override?.credentialId)) return null
+  if (isCodexAccountProvider(override?.credentialId) || isClaudeAccountProvider(override?.credentialId)) return null
   const binding = getBinding(consumer)
 
   const tryCredential = (id: string | null | undefined): Credential | undefined =>

@@ -2,7 +2,7 @@ import { Plus, Copy, ExternalLink, Loader2, LogIn, LogOut, RefreshCw, Star, X } 
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
-import { Badge } from '@superone/ui/components/ui/badge'
+import { ProviderAccountHeader } from './ProviderAccountHeader'
 import { Alert, AlertDescription } from '@superone/ui/components/ui/alert'
 import { Skeleton } from '@superone/ui/components/ui/skeleton'
 import { cn } from '@superone/ui/lib/utils'
@@ -64,20 +64,13 @@ export function CodexAccountsPanel({ accounts, meters = {}, loading, busy, disab
         <ul className="rounded-[inherit]">
           {rows.map((account) => (
             <li key={account.id} className={cn(settingsRowClassName, 'flex min-w-0 flex-col gap-3')}>
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="min-w-0 text-sm break-all" title={account.email ?? account.id}>{account.email || t('settings.harnesses.codexAccount.pendingAccount')}</span>
-                    {account.isDefault && <Badge variant="secondary">{t('settings.harnesses.codexAccount.defaultAccount')}</Badge>}
-                  </div>
-                  {(account.unavailable || (!account.signedIn && pending?.accountId !== account.id)) && <span className="text-xs text-muted-foreground">
-                    {t(account.unavailable ? 'settings.harnesses.codexAccount.unavailable' : 'settings.harnesses.codexAccount.signedOut')}
-                  </span>}
-                </div>
-                {account.signedIn && <span className="shrink-0 text-xs text-muted-foreground">
-                  {account.planType || meters[account.id]?.limits?.planType || 'ChatGPT'}
-                </span>}
-              </div>
+              <ProviderAccountHeader
+                email={account.email || t('settings.harnesses.codexAccount.pendingAccount')}
+                isDefault={account.isDefault} defaultLabel={t('settings.harnesses.codexAccount.defaultAccount')}
+                plan={account.signedIn ? account.planType || meters[account.id]?.limits?.planType || 'ChatGPT' : null}
+                state={account.unavailable || (!account.signedIn && pending?.accountId !== account.id)
+                  ? t(account.unavailable ? 'settings.harnesses.codexAccount.unavailable' : 'settings.harnesses.codexAccount.signedOut') : null}
+              />
               {account.signedIn && !account.unavailable && <CodexAccountMeters {...meters[account.id]} />}
               {pending?.accountId === account.id && loginPanel}
               {pending?.accountId !== account.id && <div className="flex flex-wrap items-center justify-end gap-2">

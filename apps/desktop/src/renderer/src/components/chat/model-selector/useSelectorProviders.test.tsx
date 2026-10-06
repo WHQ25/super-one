@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { renderHook, cleanup } from '@testing-library/react'
+import { renderHook, cleanup, act, waitFor } from '@testing-library/react'
 import type { Credential, Platform } from '@superone/shared/platform-registry'
 
 // Hoisted: `vi.mock` factories run before module-level consts are initialized.
@@ -39,7 +39,7 @@ const fixtures = vi.hoisted(() => {
     notes: '',
     sortOrder: 0,
   }
-  return { FAVICON, CUSTOM_PLATFORM, CREDENTIAL }
+  return { FAVICON, CUSTOM_PLATFORM, CREDENTIAL, session: { apiProviderId: null as string | null } }
 })
 
 const CUSTOM_PLATFORM = fixtures.CUSTOM_PLATFORM as Platform
@@ -72,7 +72,7 @@ vi.mock('@/stores/app', () => {
 })
 
 vi.mock('@/stores/chat', () => {
-  const session = { apiProviderId: null }
+  const session = fixtures.session
   const chat = { activeProject: '/project', setSessionApiProviderId: vi.fn() }
   return {
     useActiveSession: (selector: (s: typeof session) => unknown) => selector(session),
@@ -85,6 +85,8 @@ import { useSelectorProviders } from './useSelectorProviders'
 
 afterEach(() => {
   cleanup()
+  vi.unstubAllGlobals()
+  fixtures.session.apiProviderId = null
 })
 
 describe('model-selector provider options for a custom platform', () => {
@@ -97,5 +99,21 @@ describe('model-selector provider options for a custom platform', () => {
       icon: fixtures.FAVICON,
       keyName: CREDENTIAL.name,
     })
+  })
+})
+
+describe('Claude account provider choices', () => {
+  it('uses the sole managed domain and updates the default without overriding an explicit session choice', async () => {
+    const account = (dir: string) => ({ credentialDir: dir, loggedIn: true, isDefault: true, email: `${dir.slice(-1)}@example.test`, identityKey: `${dir}|org`, orgId: 'org', orgName: 'Personal', subscriptionType: 'max', projectsDirectory: null })
+    let accounts = [account('/accounts/b')]
+    vi.stubGlobal('app', { claudeListAccounts: vi.fn(async () => accounts) })
+    const { result, rerender } = renderHook(() => useSelectorProviders('claude'))
+    await waitFor(() => expect(result.current.selectedProviderId).toBe('claude-account:/accounts/b'))
+    expect(result.current.providers[0]).toMatchObject({ id: 'claude-account:/accounts/b', keyName: 'b@example.test' })
+    accounts = [account('/accounts/c')]
+    await act(async () => { window.dispatchEvent(new Event('claude-accounts-changed')) })
+    await waitFor(() => expect(result.current.selectedProviderId).toBe('claude-account:/accounts/c'))
+    fixtures.session.apiProviderId = 'claude-account:/accounts/b'; rerender()
+    expect(result.current.selectedProviderId).toBe('claude-account:/accounts/b')
   })
 })

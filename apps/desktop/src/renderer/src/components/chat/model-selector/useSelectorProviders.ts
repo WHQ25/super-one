@@ -1,3 +1,4 @@
+import { useClaudeAccounts } from '@/hooks/useClaudeAccounts'
 import { codexAccountProviderId, type CodexAccount } from '@superone/shared/codex-accounts'
 import { useChatStore } from '@/stores/chat'
 import { useEffect, useMemo, useState } from 'react'
@@ -33,12 +34,15 @@ export function useResolvedProviderId(harness: HarnessId): string | null {
   const experimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.experimentalClaudeOpenAiChatEnabled)
   const consumer = consumerForHarness(harness)
 
-  return useMemo(
+  const accounts = useClaudeAccounts(harness === 'claude')
+  const resolved = useMemo(
     () => resolveEffectiveProviderId(platforms, credentials, bindings, consumer, apiProviderId, {
       experimentalClaudeOpenAiChatEnabled,
     }),
     [apiProviderId, platforms, credentials, bindings, consumer, experimentalClaudeOpenAiChatEnabled],
   )
+  const defaultAccount = accounts.find((a) => a.isDefault)
+  return resolved ?? (harness === 'claude' && defaultAccount ? claudeAccountProviderId(defaultAccount.credentialDir) : null)
 }
 
 export function useSelectorProviders(harness: HarnessId) {
@@ -70,16 +74,7 @@ export function useSelectorProviders(harness: HarnessId) {
     void fetchProviderData()
   }, [fetchProviderData, providerScope])
 
-  const [claudeAccounts, setClaudeAccounts] = useState<ClaudeAccount[]>([])
-  useEffect(() => {
-    if (harness !== 'claude') return
-    let cancelled = false
-    window.app.claudeListAccounts()
-      .then((accounts) => { if (!cancelled) setClaudeAccounts(accounts.filter((a) => a.loggedIn)) })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [harness])
-
+  const claudeAccounts = useClaudeAccounts(harness === 'claude')
   const projectPath = useChatStore((s) => s.activeProject)
   const [codexAccounts, setCodexAccounts] = useState<CodexAccount[]>([])
   useEffect(() => {
@@ -104,17 +99,14 @@ export function useSelectorProviders(harness: HarnessId) {
     const defaultLabel = harness === 'codex'
       ? t('resources.providers.defaultLabelCodex')
       : t('resources.providers.defaultLabelClaude')
-    // With one Claude account the list is byte-identical to before multi-account existed: the
-    // default login as a single unlabelled row. The email column only appears once there is a
-    // second account to tell apart, so single-account users never see the feature.
     const list: SelectorProviderOption[] =
       harness === 'codex' && codexAccounts.length > 0
         ? codexAccounts.filter((account) => account.signedIn || codexAccountProviderId(account.id) === resolvedProviderId).map((account) => ({
             id: codexAccountProviderId(account.id), brand: 'openai', name: defaultLabel,
             keyName: [account.email || account.id, account.signedIn ? account.planType : t('settings.harnesses.codexAccount.signedOut')].filter(Boolean).join(' · '),
           }))
-        : harness === 'claude' && claudeAccounts.length > 1
-        ? claudeAccounts.map((account) => ({
+        : harness === 'claude' && claudeAccounts.length > 0
+        ? claudeAccounts.filter((account) => account.loggedIn || claudeAccountProviderId(account.credentialDir) === resolvedProviderId).map((account) => ({
             id: claudeAccountProviderId(account.credentialDir),
             brand: 'claude',
             name: defaultLabel,

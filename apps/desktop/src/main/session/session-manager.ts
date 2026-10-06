@@ -206,7 +206,7 @@ export class SessionManagerImpl implements SessionManagerContract {
     let resumedProviderSessionId = opts.providerSessionId?.trim() || null
     let selectedModel = opts.model
     let selectedEffort = opts.effort
-    let restoredCodexSession = false
+    let restoredAccountSession = false
     if (opts.id && this.persistence.loadSession) {
       try {
         const prior = this.persistence.loadSession(opts.id)
@@ -223,8 +223,8 @@ export class SessionManagerImpl implements SessionManagerContract {
             missingWorktreePath = resumed.missingWorktreePath
             gitBranch = opts.gitBranch ?? prior.gitBranch ?? null
           }
-          if (provider.harnessId === 'codex') {
-            restoredCodexSession = true
+          if (provider.harnessId === 'codex' || provider.harnessId === 'claude') {
+            restoredAccountSession = true
             apiProviderId = prior.apiProviderId ?? null
           }
           if (!resumedProviderSessionId && prior.providerSessionId?.trim()) {
@@ -244,8 +244,8 @@ export class SessionManagerImpl implements SessionManagerContract {
         log.debug('[SessionManager] createSession loadSession hydrate skipped:', err)
       }
     }
-    if (provider.harnessId === 'codex' && apiProviderId === null && !restoredCodexSession && !resumedProviderSessionId) {
-      apiProviderId = this.persistence.getActiveDefaultApiProviderId?.('codex') ?? null
+    if ((provider.harnessId === 'codex' || provider.harnessId === 'claude') && apiProviderId === null && !restoredAccountSession && !resumedProviderSessionId) {
+      apiProviderId = this.persistence.getActiveDefaultApiProviderId?.(provider.harnessId) ?? null
     }
     const providerConfig = resolveProviderConfig
       ? resolveProviderConfig(provider, apiProviderId)

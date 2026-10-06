@@ -756,5 +756,7 @@ export async function setSessionApiProviderIdImpl(
     void get().refreshCodexModels(false)
   } else if (isRemote) {
     void get().refreshClaudeResources(false)
+  } else {
+    void get().loadClaudeModels(activeProject, apiProviderId, true).catch(() => {})
   }
 }

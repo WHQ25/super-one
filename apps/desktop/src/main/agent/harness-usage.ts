@@ -18,7 +18,7 @@ import type {
   ProviderRateLimits,
   RemoteUsage,
 } from '@superone/shared/agent-types'
-import { claudeAccountCredentialDir } from '@superone/shared/agent-types'
+import { claudeAccountCredentialDir, isClaudeAccountProvider } from '@superone/shared/agent-types'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
 
@@ -95,12 +95,12 @@ export async function readHarnessUsage(request: HarnessUsageRequest, deps: Harne
     // A non-default Claude account carries an apiProviderId too, so "has an id" does not
     // mean "third-party gateway": the account prefix keeps those on the OAuth meter.
     const credentialDir = claudeAccountCredentialDir(apiProviderId)
-    if (apiProviderId && !credentialDir) {
+    if (apiProviderId && !isClaudeAccountProvider(apiProviderId)) {
       const limits = await deps.providerRateLimits(apiProviderId, force)
       if (!limits || limits.windows.length === 0) return null
       return { ...limits, kind: 'provider', account: null }
     }
-    if (deps.claudeApiProvider() !== 'firstParty') return null
+    if (!isClaudeAccountProvider(apiProviderId) && deps.claudeApiProvider() !== 'firstParty') return null
     const limits = await deps.claudeRateLimits(force, credentialDir)
     if (!limits || limits.windows.length === 0) return null
     const accounts = await deps.claudeAccounts().catch(() => [] as ClaudeAccount[])

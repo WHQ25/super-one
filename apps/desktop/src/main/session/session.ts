@@ -711,9 +711,10 @@ export class Session implements SessionContract {
     this.assertNotDisposed()
     if (this._apiProviderId === apiProviderId) return
     if (this.harnessId === 'codex') assertCodexAccountSwitchAllowed(this._apiProviderId, apiProviderId, this._messages.length > 0 || this.isStreaming())
+    const nextConfig = this.resolveProviderConfigForApiProvider?.(apiProviderId)
     this._apiProviderId = apiProviderId
     if (this.resolveProviderConfigForApiProvider) {
-      this.providerConfig = this.resolveProviderConfigForApiProvider(apiProviderId)
+      this.providerConfig = nextConfig
       this.applyAcpAgentToConfig()
     }
     this._needsRebuild = true
@@ -731,9 +732,9 @@ export class Session implements SessionContract {
     if (!this.getActiveDefaultApiProviderId) return
     const id = this.getActiveDefaultApiProviderId(this.harnessId)
     if (!id) return
+    const nextConfig = this.resolveProviderConfigForApiProvider?.(id)
     this._apiProviderId = id
     if (this.resolveProviderConfigForApiProvider) {
-      const nextConfig = this.resolveProviderConfigForApiProvider(id)
       let changed = false
       try {
         changed = JSON.stringify(this.providerConfig) !== JSON.stringify(nextConfig)

@@ -920,7 +920,7 @@ export class ClaudeBackend implements SessionBackend {
       },
     })
     if (!binding.hostClient) return native
-    const credentialDir = () => (this._lastStartOpts?.config as ClaudeConfig | undefined)?.extraEnv?.CLAUDE_SECURESTORAGE_CONFIG_DIR ?? null
+    const credentialDir = () => (this._lastStartOpts?.config as ClaudeConfig | undefined)?.extraEnv?.CLAUDE_SECURESTORAGE_CONFIG_DIR || null
     const host = this.hostClients.provider(binding, {
       config: () => this.hostClientConfig(binding.server),
       cwd: () => this._lastStartOpts?.cwd,

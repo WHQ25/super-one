@@ -1411,6 +1411,12 @@ describe('Session state machine', () => {
     await p2
   })
 
+  it('keeps the current account when resolving an unavailable account fails', () => {
+    const { session } = makeSession({ apiProviderId: 'claude-account:/accounts/a', resolveProviderConfigForApiProvider: () => { throw new Error('Please sign in') } })
+    expect(() => session.setApiProviderId('claude-account:/accounts/b')).toThrow('Please sign in')
+    expect(session.snapshot.apiProviderId).toBe('claude-account:/accounts/a')
+  })
+
   it('setApiProviderId emits agent_setting_change with apiProviderId patch', async () => {
     const events: AgentEvent[] = []
     session.on((e) => events.push(e))

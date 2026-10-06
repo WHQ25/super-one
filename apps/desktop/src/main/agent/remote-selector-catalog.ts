@@ -130,7 +130,7 @@ export function harnessProviderCatalog(
   const codexAccounts = harness === 'codex' ? (source.codexAccounts ?? []).filter((a) => a.signedIn) : []
   const providers: RemoteProviderOption[] = codexAccounts.length > 0
     ? codexAccounts.map((account) => ({ id: codexAccountProviderId(account.id), name: defaultName, brand: 'openai', keyName: [account.email, account.planType].filter(Boolean).join(' · ') }))
-    : accounts.length > 1
+    : accounts.length > 0
     ? accounts.map((account) => ({
         id: claudeAccountProviderId(account.credentialDir),
         name: defaultName,

@@ -167,7 +167,7 @@ describe('provider catalog', () => {
     expect(harnessProviderCatalog('opencode', source).providers).toEqual([])
   })
 
-  it('expands the Claude default row per account only once there are two', () => {
+  it('preserves the real Claude provider identity even with one account', () => {
     const accounts: ClaudeAccount[] = [
       { credentialDir: null, email: 'a@example.com', loggedIn: true } as ClaudeAccount,
       { credentialDir: 'dir-2', email: 'b@example.com', loggedIn: true } as ClaudeAccount,
@@ -175,7 +175,7 @@ describe('provider catalog', () => {
     const single = harnessProviderCatalog('claude', { ...source, claudeAccounts: [accounts[0]!] })
     const many = harnessProviderCatalog('claude', { ...source, claudeAccounts: accounts })
 
-    expect(single.providers[0]).toEqual({ id: null, name: 'Claude', brand: 'claude' })
+    expect(single.providers[0]).toEqual({ id: 'claude-account:cli', name: 'Claude', brand: 'claude', keyName: 'a@example.com' })
     expect(many.providers.slice(0, 2).map((provider) => provider.keyName))
       .toEqual(['a@example.com', 'b@example.com'])
   })

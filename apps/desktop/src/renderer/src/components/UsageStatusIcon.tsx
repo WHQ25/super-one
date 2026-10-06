@@ -1,3 +1,4 @@
+import { useResolvedProviderId } from './chat/model-selector/useSelectorProviders'
 import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -10,7 +11,7 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
 import { getLatestCodexThreadId, useActiveSession, useChatStore } from '@/stores/chat'
-import { claudeAccountCredentialDir } from '@superone/shared/agent-types'
+import { claudeAccountCredentialDir, isClaudeAccountProvider } from '@superone/shared/agent-types'
 import type { ClaudeExtraUsage, ClaudeRateLimits, CodexAccountUsage, CodexRateLimits, CodexRateLimitResetCredit, CodexRateLimitResetOutcome, ProviderRateLimits } from '@superone/shared/agent-types'
 import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { ProviderLabel } from './ProviderLabel'
@@ -471,18 +472,21 @@ function ClaudeRateLimitIcon({ credentialDir, status, tip: liveTip }: { credenti
   // request each per popover open; the Providers settings panel is where the full picture lives.
   const [accountEmail, setAccountEmail] = useState<string | null>(null)
 
-  const fetchLimits = useCallback(() => {
-    window.app.claudeGetRateLimits(false, credentialDir).then(setLimits).catch(() => {}).finally(() => setLoaded(true))
+  const requestVersion = useRef(0)
+  useEffect(() => () => { requestVersion.current++ }, [])
+  const requestLimits = useCallback(async (force: boolean) => {
+    const version = ++requestVersion.current
+    if (force) setRefreshing(true)
+    try {
+      const next = await window.app.claudeGetRateLimits(force, credentialDir)
+      if (version === requestVersion.current) setLimits(next)
+    } catch { /* The retry control remains available. */ }
+    finally {
+      if (version === requestVersion.current) { setLoaded(true); setRefreshing(false) }
+    }
   }, [credentialDir])
-
-  const refresh = useCallback(() => {
-    setRefreshing(true)
-    window.app
-      .claudeGetRateLimits(true, credentialDir)
-      .then(setLimits)
-      .catch(() => {})
-      .finally(() => setRefreshing(false))
-  }, [credentialDir])
+  const fetchLimits = useCallback(() => { void requestLimits(false) }, [requestLimits])
+  const refresh = useCallback(() => { void requestLimits(true) }, [requestLimits])
 
   useEffect(() => {
     setLimits(null)
@@ -668,13 +672,15 @@ export function UsageStatusIcon() {
   const sessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId ?? null)
   const sessionProvider = useActiveSession((s) => s.sessionProvider)
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
-  const apiProviderId = useActiveSession((s) => s.apiProviderId)
+  const sessionApiProviderId = useActiveSession((s) => s.apiProviderId)
   const codexThreadId = useActiveSession((s) => getLatestCodexThreadId(s.messages) ?? null)
   const acpAgentId = useActiveSession((s) => s.acpAgentId)
   const status = useActiveSession((s) => s.status)
   const rateLimitInfo = useActiveSession((s) => s.rateLimitInfo)
   const claudeApiProvider = useChatStore((s) => s.harnessResources.claude?.account?.apiProvider)
   const activeProvider = sessionProvider ?? preferredProvider
+  const resolvedProviderId = useResolvedProviderId(activeProvider ?? 'claude')
+  const apiProviderId = activeProvider === 'claude' ? resolvedProviderId : sessionApiProviderId
 
   const tip = useRateLimitTip(sessionId, rateLimitInfo)
   const highlight: GaugeHighlight = tip
@@ -692,11 +698,11 @@ export function UsageStatusIcon() {
   // meter instead of sending them down the provider path, which would ask a usage endpoint that
   // does not exist for them and silently drop the gauge.
   const claudeAccountDir = claudeAccountCredentialDir(apiProviderId)
-  if (activeProvider === 'claude' && claudeApiProvider === 'firstParty' && (!apiProviderId || claudeAccountDir)) {
+  if (activeProvider === 'claude' && (isClaudeAccountProvider(apiProviderId) || (!apiProviderId && claudeApiProvider === 'firstParty'))) {
     return <ClaudeRateLimitIcon key={claudeAccountDir ?? 'default'} credentialDir={claudeAccountDir} status={status} tip={rateLimitInfo} />
   }
 
-  if (activeProvider === 'claude' && apiProviderId && !claudeAccountDir) {
+  if (activeProvider === 'claude' && apiProviderId && !isClaudeAccountProvider(apiProviderId)) {
     return <ProviderRateLimitIcon apiProviderId={apiProviderId} status={status} tip={tip} highlight={highlight} />
   }
 

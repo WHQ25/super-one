@@ -35,6 +35,8 @@ vi.mock('@/stores/chat', () => ({
   useActiveSession: (selector: (s: typeof hoisted.sessionState) => unknown) => selector(hoisted.sessionState),
 }))
 
+vi.mock('./chat/model-selector/useSelectorProviders', () => ({ useResolvedProviderId: () => hoisted.sessionState.apiProviderId }))
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, opts?: Record<string, unknown>) => {
@@ -117,6 +119,7 @@ describe('UsageStatusIcon rate-limit tip', () => {
     hoisted.sessionState.preferredProvider = 'claude'
     hoisted.sessionState.acpAgentId = null
     hoisted.sessionState.apiProviderId = null
+    hoisted.chatState.harnessResources.claude.account.apiProvider = 'firstParty'
     hoisted.sessionState._activeSessionId = 'session-a'
     hoisted.sessionState.session = null
     hoisted.codexThreadId = null
@@ -262,6 +265,7 @@ describe('UsageStatusIcon rate-limit tip', () => {
     // route it to providerGetRateLimits — an endpoint it has no entry in — and drop the gauge.
     hoisted.sessionState.apiProviderId = 'claude-account:/domains/work'
 
+    hoisted.chatState.harnessResources.claude.account.apiProvider = 'bedrock'
     render(<UsageStatusIcon />)
     await act(async () => {
       await Promise.resolve()
@@ -374,6 +378,7 @@ describe('UsageStatusIcon rate-limit tip', () => {
     expect(screen.queryByRole('status')).toBeNull()
 
     // Return to the original session — same episode must not reappear.
+    hoisted.chatState.harnessResources.claude.account.apiProvider = 'firstParty'
     hoisted.sessionState._activeSessionId = 'session-a'
     hoisted.sessionState.rateLimitInfo = warning
     rerender(<UsageStatusIcon />)

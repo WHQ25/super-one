@@ -955,8 +955,8 @@ const terminalAPI = {
 
 const appAPI = {
   collaborationMailbox,
-  connectClaude: (force?: boolean) =>
-    ipcRenderer.invoke(AgentIpcChannels.CONNECT_CLAUDE, force),
+  connectClaude: (force?: boolean, apiProviderId?: string | null) =>
+    ipcRenderer.invoke(AgentIpcChannels.CONNECT_CLAUDE, force, apiProviderId),
 
   connectCodex: () =>
     ipcRenderer.invoke(AgentIpcChannels.CONNECT_CODEX),
@@ -1337,7 +1337,9 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.CLAUDE_GET_RATE_LIMITS, force, credentialDir),
 
   claudeListAccounts: (force?: boolean) => ipcRenderer.invoke(AgentIpcChannels.CLAUDE_LIST_ACCOUNTS, force),
-  claudeSignInAccount: (email?: string | null) => ipcRenderer.invoke(AgentIpcChannels.CLAUDE_SIGN_IN_ACCOUNT, email),
+  claudeSignInAccount: (email?: string | null, dir?: string) => ipcRenderer.invoke(AgentIpcChannels.CLAUDE_SIGN_IN_ACCOUNT, email, dir),
+  claudeSetDefaultAccount: (dir: string | null) => ipcRenderer.invoke(AgentIpcChannels.CLAUDE_SET_DEFAULT_ACCOUNT, dir),
+  claudeCancelSignIn: () => ipcRenderer.invoke(AgentIpcChannels.CLAUDE_CANCEL_SIGN_IN),
   claudeSignOutAccount: (credentialDir: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CLAUDE_SIGN_OUT_ACCOUNT, credentialDir),
 

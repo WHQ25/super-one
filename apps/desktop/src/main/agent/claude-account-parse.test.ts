@@ -1,85 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { createHash } from 'node:crypto'
 import { claudeAccountCredentialDir, claudeAccountProviderId } from '@superone/shared/agent-types'
-import { parseAuthStatus, accountIdentityKey, dedupeAccounts, keychainServiceNames } from './claude-account-parse'
-
-const SIGNED_IN = JSON.stringify({
-  loggedIn: true,
-  authMethod: 'claude.ai',
-  apiProvider: 'firstParty',
-  projectsDirectory: '/Users/me/.claude/projects',
-  email: 'Me@Example.com',
-  orgId: 'A988580C-3315',
-  orgName: "me's Organization",
-  subscriptionType: 'max',
-})
-
-describe('parseAuthStatus (claude auth status --json → ClaudeAccount)', () => {
-  it('maps a signed-in account and lowercases the identity key', () => {
-    expect(parseAuthStatus(SIGNED_IN, null)).toEqual({
-      credentialDir: null,
-      loggedIn: true,
-      identityKey: 'me@example.com|a988580c-3315',
-      email: 'Me@Example.com',
-      orgId: 'A988580C-3315',
-      orgName: "me's Organization",
-      subscriptionType: 'max',
-      projectsDirectory: '/Users/me/.claude/projects',
-    })
-  })
-
-  it('carries the credential dir through so the caller can key accounts by domain', () => {
-    expect(parseAuthStatus(SIGNED_IN, '/accounts/work')?.credentialDir).toBe('/accounts/work')
-  })
-
-  it('maps a signed-out domain with no identity rather than dropping it', () => {
-    const out = parseAuthStatus(
-      JSON.stringify({ loggedIn: false, authMethod: 'none', projectsDirectory: '/Users/me/.claude/projects' }),
-      '/accounts/stale',
-    )
-
-    expect(out).toEqual({
-      credentialDir: '/accounts/stale',
-      loggedIn: false,
-      identityKey: null,
-      email: null,
-      orgId: null,
-      orgName: null,
-      subscriptionType: null,
-      projectsDirectory: '/Users/me/.claude/projects',
-    })
-  })
-
-  it('treats a signed-in account missing an org as unidentifiable', () => {
-    const out = parseAuthStatus(JSON.stringify({ loggedIn: true, email: 'me@example.com' }), null)
-
-    expect(out?.loggedIn).toBe(true)
-    expect(out?.identityKey).toBeNull()
-  })
-
-  it('returns null for output that is not JSON, or is JSON but not an object', () => {
-    expect(parseAuthStatus('Not logged in · Please run /login', null)).toBeNull()
-    expect(parseAuthStatus('', null)).toBeNull()
-    expect(parseAuthStatus('[1,2]', null)).toBeNull()
-  })
-
-  it('tolerates log lines printed before the JSON body', () => {
-    expect(parseAuthStatus(`warning: something\n${SIGNED_IN}`, null)?.email).toBe('Me@Example.com')
-  })
-})
-
-describe('accountIdentityKey', () => {
-  it('joins email and org so two orgs under one email stay distinct', () => {
-    expect(accountIdentityKey('me@example.com', 'org-a')).toBe('me@example.com|org-a')
-    expect(accountIdentityKey('me@example.com', 'org-b')).not.toBe(accountIdentityKey('me@example.com', 'org-a'))
-  })
-
-  it('is null unless both parts are present and non-blank', () => {
-    expect(accountIdentityKey('me@example.com', null)).toBeNull()
-    expect(accountIdentityKey(null, 'org-a')).toBeNull()
-    expect(accountIdentityKey('  ', 'org-a')).toBeNull()
-  })
-})
+import { dedupeAccounts, keychainServiceNames } from './claude-account-parse'
 
 describe('dedupeAccounts', () => {
   const at = (credentialDir: string | null, identityKey: string | null): Parameters<typeof dedupeAccounts>[0][number] =>
@@ -160,8 +82,9 @@ describe('claude account apiProviderId codec', () => {
     expect(claudeAccountCredentialDir(claudeAccountProviderId(dir))).toBe(dir)
   })
 
-  it('keeps the default domain as null so existing sessions keep their meaning', () => {
-    expect(claudeAccountProviderId(null)).toBeNull()
+  it('gives the external CLI a selectable identity while accepting legacy null', () => {
+    expect(claudeAccountProviderId(null)).toBe('claude-account:cli')
+    expect(claudeAccountCredentialDir('claude-account:cli')).toBeNull()
     expect(claudeAccountCredentialDir(null)).toBeNull()
   })
 

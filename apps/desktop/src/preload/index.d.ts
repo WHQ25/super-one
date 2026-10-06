@@ -96,7 +96,7 @@ interface AppAPI {
   collaborationMailbox: CollaborationMailboxAPI
   platform: NodeJS.Platform
   supportsLiquidGlass: boolean
-  connectClaude(force?: boolean): Promise<ClaudeResources>
+  connectClaude(force?: boolean, apiProviderId?: string | null): Promise<ClaudeResources>
   connectCodex(): Promise<CodexResources>
   connectOpenCode(force?: boolean): Promise<OpenCodeResources>
   connectCursor(force?: boolean): Promise<import('@superone/shared/agent-types').CursorResources>
@@ -263,7 +263,9 @@ interface AppAPI {
   claudeGetRateLimits(force?: boolean, credentialDir?: string | null): Promise<ClaudeRateLimits | null>
   claudeListAccounts(force?: boolean): Promise<ClaudeAccount[]>
   /** Allocates a fresh credential domain, then drives `claude auth login` inside it. */
-  claudeSignInAccount(email?: string | null): Promise<ClaudeAccount | null>
+  claudeSignInAccount(email?: string | null, credentialDir?: string): Promise<ClaudeAccount | null>
+  claudeSetDefaultAccount(credentialDir: string | null): Promise<void>
+  claudeCancelSignIn(): Promise<void>
   claudeSignOutAccount(credentialDir: string): Promise<void>
   providerGetRateLimits(apiProviderId: string, force?: boolean): Promise<ProviderRateLimits | null>
   acpGetRateLimits(projectPath: string, agentId: string, force?: boolean): Promise<ProviderRateLimits | null>

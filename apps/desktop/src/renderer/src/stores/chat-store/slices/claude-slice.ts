@@ -93,8 +93,12 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     if (get().claudeResourcesLoading) return
     set({ claudeResourcesLoading: true })
     try {
-      const resources = await window.app.connectClaude(force)
-      get().setHarnessResources('claude', resources)
+      const project = getProject(get(), activeProject)
+      const selected = project._activeSessionId ? project._sessions[project._activeSessionId]?.apiProviderId : null
+      const resources = selected ? await window.app.connectClaude(force, selected) : await window.app.connectClaude(force)
+      const current = getProject(get(), activeProject)
+      const currentId = current._activeSessionId ? current._sessions[current._activeSessionId]?.apiProviderId : null
+      if (currentId === selected) get().setHarnessResources('claude', resources)
     } catch (error) {
       console.warn('[refreshClaudeResources] Failed:', error)
     } finally {
@@ -105,8 +109,10 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
   loadClaudeModels: async (projectPath, apiProviderId, force = false) => {
     const remote = parseRemoteProjectKey(projectPath)
     if (!remote) {
-      const resources = await window.app.connectClaude(force)
-      get().setHarnessResources('claude', resources)
+      const resources = apiProviderId ? await window.app.connectClaude(force, apiProviderId) : await window.app.connectClaude(force)
+      const project = getProject(get(), projectPath)
+      const selected = project._activeSessionId ? project._sessions[project._activeSessionId]?.apiProviderId ?? null : null
+      if (selected === apiProviderId) get().setHarnessResources('claude', resources)
       return resources.models ?? []
     }
 

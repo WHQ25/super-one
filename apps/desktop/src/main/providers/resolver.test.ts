@@ -347,3 +347,12 @@ describe('media:video on a relay serving two video wires', () => {
     expect(resolved?.protocol).toBe('newapi-video')
   })
 })
+
+
+it('does not fall back to a globally bound API key for an explicitly selected Claude subscription', () => {
+  vi.mocked(getBinding).mockReturnValue({ consumer: 'chat:claude', credentialId: 'cred1' })
+  vi.mocked(getCredentialDecrypted).mockReturnValue(cred)
+  vi.mocked(getPlatforms).mockReturnValue([platform])
+  expect(resolveService('chat:claude', { credentialId: 'claude-account:/accounts/b' })).toBeNull()
+  expect(resolveService('chat:claude', { credentialId: 'claude-account:cli' })).toBeNull()
+})

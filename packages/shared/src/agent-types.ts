@@ -8,6 +8,7 @@ import type { GitMentionRefKind } from './git-mention-query'
 import type { McpAppHostOperation, McpAppHostRequest, ToolAppAttachment } from './mcp-apps'
 import type { WidgetLayout } from './generative-ui/types'
 import type { SchemaForm } from './schema-form'
+import type { MediaVideoCapabilities } from './media-composer'
 import type { SuperOneComposerOutcome } from './composer-api'
 import type { InputRequestMeta, InputRequestOutput, InputRequestSpec, InputRequestSubmission } from './input-request'
 import type { ModHostRequest, ModInstanceRef, ModPaneRoster, ModScrollComponent, ModUiOp, ModUiRequest } from './mod-ui'
@@ -847,7 +848,8 @@ export interface VideoGenReferenceImage {
 export interface VideoGenProviderOption {
   id: string
   label: string
-  models: { id: string; label: string }[]
+  /** `capabilities` drives which controls the desktop confirmation shows for that model. */
+  models: { id: string; label: string; capabilities?: MediaVideoCapabilities }[]
   aspectRatios: string[]
   resolutions: string[]
 }

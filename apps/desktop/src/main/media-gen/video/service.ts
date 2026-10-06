@@ -30,6 +30,17 @@ export interface GenerateVideoCoreParams {
 }
 
 /**
+ * `watermark`, `cameraFixed` and reference video/audio are Ark-wire options (also read by the
+ * New API Doubao relay); they ride `providerOptions.ark`. Returns undefined when none is set.
+ */
+export function arkVideoProviderOptions(options: {
+  watermark?: boolean; cameraFixed?: boolean; referenceVideos?: string[]; referenceAudios?: string[]
+}): ProviderOptions | undefined {
+  const ark = Object.fromEntries(Object.entries(options).filter(([, value]) => value != null))
+  return Object.keys(ark).length > 0 ? { ark } : undefined
+}
+
+/**
  * Submit a video job and return its provider-side handle.
  *
  * Nothing is kept running afterwards: the handle is the entire continuation, and `fetchVideoTask`

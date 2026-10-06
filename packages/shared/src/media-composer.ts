@@ -1,12 +1,34 @@
 /** Human media generation. Credentials and provider SDKs stay on the desktop Host. */
 export type MediaComposerKind = 'image' | 'video'
 export interface MediaComposerTarget { projectPath: string; sessionId: string }
+/** What an image adapter reads. An empty list means the control does not apply. */
+export interface MediaImageCapabilities {
+  aspectRatios: string[]
+  /** `size` values: pixel sizes (`1024x1536`) or resolution tiers (`2K`). */
+  sizes: string[]
+}
+/** What a video adapter reads. An empty list or `false` means the control does not apply. */
+export interface MediaVideoCapabilities {
+  aspectRatios: string[]
+  /** `resolution` values, always pixel sizes; adapters map them onto their own tiers. */
+  resolutions: string[]
+  durations: number[]
+  seed: boolean
+  generateAudio: boolean
+  watermark: boolean
+  cameraFixed: boolean
+  firstFrame: boolean
+  lastFrame: boolean
+  references: boolean
+}
 export interface MediaComposerModel {
   providerId: string
   providerLabel: string
   model: string
   label: string
   default: boolean
+  image?: MediaImageCapabilities
+  video?: MediaVideoCapabilities
 }
 export interface MediaComposerReference {
   name: string
@@ -25,6 +47,10 @@ export interface MediaComposerRequest extends MediaComposerTarget {
   aspectRatio?: string
   duration?: number
   resolution?: string
+  seed?: number
+  generateAudio?: boolean
+  watermark?: boolean
+  cameraFixed?: boolean
 }
 export interface MediaComposerFile {
   /** Desktop path, for preview, copying and saving. */

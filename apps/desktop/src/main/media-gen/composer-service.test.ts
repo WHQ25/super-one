@@ -29,7 +29,7 @@ describe('native media generation', () => {
     await expect(generateComposerMedia({ ...request, providerId: 'deleted' }, new AbortController().signal)).rejects.toThrow('no longer enabled')
     expect(f.image).not.toHaveBeenCalled()
   })
-  it.each([{ size: 'huge' }, { duration: 0 }, { aspectRatio: 'oops' }, { sessionId: '../other' }, { references: [{ name: 'a', mediaType: 'text/plain', base64: 'aGVsbG8=' }] }])('rejects invalid inputs before a provider call: %j', async patch => {
+  it.each([{ size: 'huge' }, { duration: 0 }, { aspectRatio: 'oops' }, { resolution: '720p' }, { seed: -1 }, { watermark: 'yes' }, { sessionId: '../other' }, { references: [{ name: 'a', mediaType: 'text/plain', base64: 'aGVsbG8=' }] }])('rejects invalid inputs before a provider call: %j', async patch => {
     await expect(generateComposerMedia({ ...request, ...patch } as MediaComposerRequest, new AbortController().signal)).rejects.toThrow()
     expect(f.image).not.toHaveBeenCalled(); expect(f.video).not.toHaveBeenCalled()
   })
@@ -45,6 +45,15 @@ describe('native media generation', () => {
     ] }, new AbortController().signal)
     expect(f.video).toHaveBeenCalledWith(expect.objectContaining({ source: 'human', frameImages: [{ frameType: 'first_frame', image: Buffer.from('hello') }], inputReferences: [Buffer.from('hello')] }))
     expect(result).toEqual({ generationId: 'video-result', kind: 'video', status: 'running', files: [] })
+  })
+  it('accepts size tiers that Seedream and Gemini read', async () => {
+    await generateComposerMedia({ ...request, size: '2K' }, new AbortController().signal)
+    expect(f.image).toHaveBeenCalledWith(expect.objectContaining({ size: '2K' }))
+  })
+  it('sends video settings, with the Ark switches as provider options', async () => {
+    await generateComposerMedia({ ...request, kind: 'video', model: 'video-model', resolution: '1280x720', seed: 7, generateAudio: true, watermark: false, cameraFixed: true },
+      new AbortController().signal)
+    expect(f.video).toHaveBeenCalledWith(expect.objectContaining({ resolution: '1280x720', seed: 7, generateAudio: true, providerOptions: { ark: { watermark: false, cameraFixed: true } } }))
   })
   it('requires matching project, session and human video source before polling', async () => {
     for (const patch of [{ sessionId: 'other' }, { projectId: 'remote:node:/repo' }, { source: 'agent' }, { mediaType: 'image' }]) {

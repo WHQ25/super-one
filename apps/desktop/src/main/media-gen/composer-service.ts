@@ -3,6 +3,7 @@ import { getMediaGeneration, listMediaGenerations } from '../db-media-generation
 import { mediaComposerModels } from './composer-models'
 import { generateAndRecord } from './history'
 import { readVideoGeneration, submitVideoGeneration } from './video/history'
+import { arkVideoProviderOptions } from './video/service'
 
 export function validateMediaTarget(target: MediaComposerTarget): void {
   if (!target || typeof target.projectPath !== 'string' || !target.projectPath ||
@@ -16,10 +17,14 @@ export function validateMediaRequest(request: MediaComposerRequest): void {
   if (!mediaComposerModels(request.kind).some(m => m.providerId === request.providerId && m.model === request.model)) {
     throw new Error('The selected media model is no longer enabled. Check Settings → Providers.')
   }
-  if (request.size && !/^\d{2,5}x\d{2,5}$/.test(request.size)) throw new Error('Invalid image size')
+  if (request.size && !/^(\d{2,5}x\d{2,5}|[124]K)$/.test(request.size)) throw new Error('Invalid image size')
   if (request.aspectRatio && !/^\d{1,3}:\d{1,3}$/.test(request.aspectRatio)) throw new Error('Invalid aspect ratio')
   if (request.duration !== undefined && (!Number.isInteger(request.duration) || request.duration < 1 || request.duration > 120)) throw new Error('Invalid duration')
-  if (request.resolution && !/^\d{3,4}p$/.test(request.resolution)) throw new Error('Invalid resolution')
+  if (request.resolution && !/^\d{2,5}x\d{2,5}$/.test(request.resolution)) throw new Error('Invalid resolution')
+  if (request.seed !== undefined && (!Number.isSafeInteger(request.seed) || request.seed < 0)) throw new Error('Invalid seed')
+  for (const flag of [request.generateAudio, request.watermark, request.cameraFixed]) {
+    if (flag !== undefined && typeof flag !== 'boolean') throw new Error('Invalid video option')
+  }
   const refs = request.references ?? []
   if (!Array.isArray(refs) || refs.length > 8) throw new Error('Too many reference images')
   let bytes = 0
@@ -47,8 +52,10 @@ export async function generateComposerMedia(request: MediaComposerRequest, signa
     })) }
   }
   const refs = request.references ?? []
+  const providerOptions = arkVideoProviderOptions({ watermark: request.watermark, cameraFixed: request.cameraFixed })
   const generationId = await submitVideoGeneration({ ...common, duration: request.duration,
-    resolution: request.resolution || undefined,
+    resolution: request.resolution || undefined, seed: request.seed, generateAudio: request.generateAudio,
+    ...(providerOptions ? { providerOptions } : {}),
     frameImages: refs.filter(ref => ref.role === 'first' || ref.role === 'last').map(ref => ({
       frameType: ref.role === 'first' ? 'first_frame' : 'last_frame', image: Buffer.from(ref.base64, 'base64'),
     })),

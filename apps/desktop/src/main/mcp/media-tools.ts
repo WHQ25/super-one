@@ -8,6 +8,7 @@ import {
   type VideoGenProviderOption,
   type VideoGenReferenceImageRef,
 } from '@superone/shared/agent-types'
+import type { MediaVideoCapabilities } from '@superone/shared/media-composer'
 import log from '../logger'
 import { trace } from '../agent/event-trace'
 import { detectImageMime } from '../image-cache'
@@ -22,7 +23,9 @@ import { getMediaProviderStatuses } from '../media-gen/settings-service'
 import { readVideoGeneration, submitVideoGeneration } from '../media-gen/video/history'
 import { registerZoneArtifact } from '../media-gen/zone-artifact'
 import { HostConfirmRegistry } from '../session/host-confirm-registry'
-import type { VideoFrameInput } from '../media-gen/video/service'
+import { arkVideoProviderOptions, type VideoFrameInput } from '../media-gen/video/service'
+import { modelCapabilities } from '../media-gen/capabilities'
+import { resolveService } from '../providers/resolver'
 import {
   GENERATE_IMAGE_DESCRIPTION,
   GENERATE_VIDEO_DESCRIPTION,
@@ -74,7 +77,7 @@ export async function listMediaProvidersHandler(args: ListMediaProvidersArgs = {
       ...(sizeNoteForKind(status.kind) ? { sizeNote: sizeNoteForKind(status.kind) } : {}),
       supportsMask: status.kind === 'openai',
       defaultModel: status.defaultModel,
-      models: status.models.map((model) => ({ id: model.id, label: model.label })),
+      models: status.models.map((model) => ({ id: model.id, label: model.label, ...videoModelCapabilities(status.id, model.id) })),
     }))
   return { content: [{ type: 'text' as const, text: JSON.stringify({ providers }) }] }
 }
@@ -181,6 +184,13 @@ function toolResult(payload: unknown) {
 const COMMON_ASPECT_RATIOS = ['16:9', '9:16', '1:1', '4:3', '3:4']
 const COMMON_RESOLUTIONS = ['480p', '720p', '1080p']
 
+/** The confirmation offers only the controls the serving adapter reads; unknown endpoints get the static lists. */
+function videoModelCapabilities(credentialId: string, modelId: string): { capabilities?: MediaVideoCapabilities } {
+  const resolved = resolveService('media:video', { credentialId, modelId })
+  const capabilities = resolved?.credentialId === credentialId ? modelCapabilities('video', resolved, modelId).video : undefined
+  return capabilities ? { capabilities } : {}
+}
+
 /** Same underlying query as media_list_providers, projected to the confirm dialog's shape. */
 async function buildVideoGenProviderOptions(): Promise<VideoGenProviderOption[]> {
   const statuses = await getMediaProviderStatuses()
@@ -203,7 +213,7 @@ function buildInitialVideoGenParams(args: GenerateVideoArgs, providerId: string,
     provider: providerId,
     model,
     aspectRatio: args.aspect_ratio ?? '16:9',
-    resolution: args.resolution ?? '720p',
+    resolution: args.resolution ?? '1280x720',
     duration: args.duration ?? 5,
     ...(args.fps != null ? { fps: args.fps } : {}),
     ...(args.seed != null ? { seed: args.seed } : {}),
@@ -385,12 +395,7 @@ export async function generateVideoToolHandler(args: GenerateVideoArgs, deps: Bu
 
     const referenceVideos = dataUris(args.reference_video_paths, 'video/mp4')
     const referenceAudios = dataUris(args.reference_audio_paths, 'audio/mpeg')
-    const arkOptions = {
-      ...(args.watermark != null ? { watermark: args.watermark } : {}),
-      ...(args.camera_fixed != null ? { cameraFixed: args.camera_fixed } : {}),
-      ...(referenceVideos ? { referenceVideos } : {}),
-      ...(referenceAudios ? { referenceAudios } : {}),
-    }
+    const providerOptions = arkVideoProviderOptions({ watermark: args.watermark, cameraFixed: args.camera_fixed, referenceVideos, referenceAudios })
 
     const generationId = await submitVideoGeneration({
       providerId: finalProviderId,
@@ -404,7 +409,7 @@ export async function generateVideoToolHandler(args: GenerateVideoArgs, deps: Bu
       fps: args.fps,
       seed: args.seed,
       generateAudio: args.generate_audio,
-      ...(Object.keys(arkOptions).length > 0 ? { providerOptions: { ark: arkOptions } } : {}),
+      ...(providerOptions ? { providerOptions } : {}),
       sessionId: deps.sessionId,
       source: 'agent',
     })

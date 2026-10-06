@@ -65,7 +65,17 @@ export function getToolVerb(toolName: string): string {
 
 /** Shared tool name → icon key + summary extraction for ToolBlock & PermissionPrompt. */
 
-export type ToolIcon = 'terminal' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'download' | 'message-circle' | 'wrench' | 'mcp' | 'plug' | 'clipboard-list' | 'bot' | 'book-open' | 'canvas' | 'toolbox' | 'package' | 'pencil' | 'image' | 'smartphone'
+const WIDGET_TOOLS = new Set(['widget_show', 'widget_list_templates', 'widget_save'])
+
+/**
+ * The glyph a SuperOne tool draws instead of the server's brand: a capability with an
+ * identity of its own, the one its mention chip shows. `null` keeps the brand.
+ */
+export function superoneToolGlyph(mcpToolName: string): ToolIcon | null {
+  return WIDGET_TOOLS.has(mcpToolName) ? 'widget' : null
+}
+
+export type ToolIcon = 'terminal' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'download' | 'message-circle' | 'wrench' | 'mcp' | 'plug' | 'clipboard-list' | 'bot' | 'book-open' | 'canvas' | 'toolbox' | 'package' | 'pencil' | 'image' | 'smartphone' | 'widget'
 
 export interface ToolDisplay {
   icon: ToolIcon
@@ -193,8 +203,10 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
   if (deviceSummary !== null) return { icon: 'smartphone', summary: deviceSummary }
 
   // MCP tools: `mcp__{server}__{tool}` (Claude/Codex) or `{server}__{tool}` (Grok).
-  if (parseMcpToolName(toolName)) {
-    return { icon: 'mcp', summary: '' }
+  const mcpTool = parseMcpToolName(toolName)
+  if (mcpTool) {
+    const glyph = mcpTool.serverName === 'superone' ? superoneToolGlyph(mcpTool.mcpToolName) : null
+    return { icon: glyph ?? 'mcp', summary: '' }
   }
 
   switch (toolName) {

@@ -120,7 +120,7 @@ export const SUPERONE_TOOL_DESCRIPTORS: Record<string, SuperoneToolDescriptor> =
     summary: (params) => str(params.appId),
   },
   widget_list_templates: {
-    icon: 'canvas',
+    icon: 'widget',
     streamingKey: 'chat.toolBlock.listingWidgetTemplates',
     actionKey: 'chat.toolBlock.listWidgetTemplates',
     doneKey: 'chat.toolBlock.listedWidgetTemplates',

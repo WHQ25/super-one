@@ -239,7 +239,7 @@ function PortableWidgetGenerating() {
   const { t } = useTranslation()
   return (
     <CompactLabeledToolRow
-      icon={<ToolIcon icon="canvas" className="size-3 shrink-0 text-muted-foreground" />}
+      icon={<ToolIcon icon="widget" className="size-3 shrink-0 text-muted-foreground" />}
       label={t('chat.toolBlock.generatingWidget')}
       streaming
     />

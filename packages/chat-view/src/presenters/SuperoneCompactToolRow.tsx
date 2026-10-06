@@ -7,6 +7,7 @@ import {
   withStreamingEllipsis,
 } from './ToolRow'
 import { superoneToolDescriptor } from './superone-tool-display'
+import { superoneToolGlyph } from './tool-display'
 
 export interface SuperoneCompactToolRowPresenterProps {
   /** Bare tool name — `config_read`, not `mcp__superone__config_read`. */
@@ -16,7 +17,7 @@ export interface SuperoneCompactToolRowPresenterProps {
   isStreaming: boolean
   isError?: boolean
   isDenied?: boolean
-  /** MCP server brand image when the host has one; otherwise the descriptor icon. */
+  /** MCP server brand image when the host has one; otherwise the descriptor icon. A tool with a glyph of its own ignores it. */
   brandIconSrc?: string
 }
 
@@ -40,6 +41,7 @@ export function SuperoneCompactToolRowPresenter({
   const { t } = useTranslation()
   const descriptor = superoneToolDescriptor(mcpToolName)
   if (!descriptor) return null
+  const glyph = superoneToolGlyph(mcpToolName)
 
   // A streaming call has no result yet, and a denied one carries a refusal rather
   // than the payload the summary would read.
@@ -49,9 +51,9 @@ export function SuperoneCompactToolRowPresenter({
 
   return (
     <CompactLabeledToolRow
-      icon={brandIconSrc
+      icon={brandIconSrc && !glyph
         ? <img src={brandIconSrc} alt="" className="size-3.5 shrink-0 rounded-sm object-cover" />
-        : <ToolIcon icon={descriptor.icon} className="size-3 shrink-0 text-muted-foreground" />}
+        : <ToolIcon icon={glyph ?? descriptor.icon} className="size-3 shrink-0 text-muted-foreground" />}
       label={withStreamingEllipsis(
         toolOutcomeLabel({
           streaming: isStreaming,

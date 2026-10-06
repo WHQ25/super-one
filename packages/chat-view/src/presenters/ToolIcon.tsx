@@ -1,4 +1,4 @@
-import { Terminal, FileText, FileEdit, FilePlus, Search, FolderSearch, Globe, Download, MessageCircleQuestion, Wrench, Plug, ClipboardList, Bot, BookOpen, Paintbrush, Toolbox, Package, Pencil, Image as ImageIcon, Smartphone } from 'lucide-react'
+import { Terminal, FileText, FileEdit, FilePlus, Search, FolderSearch, Globe, Download, MessageCircleQuestion, Wrench, Plug, ClipboardList, Bot, BookOpen, Paintbrush, Toolbox, Package, Pencil, Image as ImageIcon, Smartphone, LayoutDashboard } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { McpIcon } from '@superone/ui/components/ui/McpIcon'
 import { McpAppIcon } from '@superone/ui/components/ui/mcp-app-icon'
@@ -28,6 +28,8 @@ const iconComponents: Record<ToolIconName, React.FC<{ className?: string }>> = {
   'pencil': Pencil,
   'image': ImageIcon,
   'smartphone': Smartphone,
+  // The widget capability: the glyph of its mention chip (`staticMentionIcon('widget')`).
+  'widget': LayoutDashboard,
 }
 
 interface ToolIconProps {

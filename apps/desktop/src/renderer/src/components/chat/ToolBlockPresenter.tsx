@@ -544,7 +544,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
         : ''
       return (
         <CompactLabeledToolRow
-          icon={<ToolIcon icon="canvas" className="size-3 shrink-0 text-muted-foreground" />}
+          icon={<ToolIcon icon="widget" className="size-3 shrink-0 text-muted-foreground" />}
           label={isStreaming ? t('chat.toolBlock.generatingWidget') : t('chat.toolBlock.generateWidget')}
           streaming={isStreaming}
           summary={title || undefined}
@@ -554,7 +554,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
     if (widgetData) return <WidgetBlock data={widgetData} streaming={!inputComplete} onRequestInput={ports.onWidgetRequestInput} composerPorts={ports.widgetComposerPorts} />
     return (
       <CompactLabeledToolRow
-        icon={<ToolIcon icon="canvas" className="size-3 shrink-0 text-muted-foreground" />}
+        icon={<ToolIcon icon="widget" className="size-3 shrink-0 text-muted-foreground" />}
         label={isStreaming ? t('chat.toolBlock.generatingWidget') : t('chat.toolBlock.generateWidget')}
         streaming={isStreaming}
       />

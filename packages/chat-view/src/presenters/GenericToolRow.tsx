@@ -331,7 +331,8 @@ export function GenericToolRowPresenter({
         ) : showError ? (
           <TriangleAlert className="size-3 shrink-0 text-warning" />
         ) : (
-          <ToolBrandIcon src={isMcp ? mcpAppPresentationIcon(presentation) ?? ports.mcpIconSrc : undefined} alt={mcpInfo?.serverName ?? ''} icon={display.icon} />
+          // A tool with a glyph of its own (widgets, devices) keeps it rather than the server's brand.
+          <ToolBrandIcon src={isMcp && display.icon === 'mcp' ? mcpAppPresentationIcon(presentation) ?? ports.mcpIconSrc : undefined} alt={mcpInfo?.serverName ?? ''} icon={display.icon} />
         )}
         <ToolName
           streaming={isStreaming}

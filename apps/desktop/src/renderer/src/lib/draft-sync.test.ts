@@ -23,6 +23,32 @@ beforeEach(() => {
 })
 
 describe('desktop watching a mobile draft editor', () => {
+  it('keeps side-chat input in its composer without autosaving it as an environment draft', async () => {
+    vi.useFakeTimers()
+    const save = vi.fn().mockImplementation(async (_connectionId, input) => ({ ...draft, ...input, controllerDeviceId: null }))
+    window.environment.upsertDraft = save
+    useChatStore.setState((state) => ({ projectSessions: { '/repo': {
+      ...state.projectSessions['/repo'], _sessions: {
+        ...state.projectSessions['/repo']._sessions,
+        side: { ...createDefaultPerSessionState(), _sideChatParentId: 'parent' },
+      },
+    } } }))
+    const stop = startDraftAutosave()
+    try {
+      const target = { projectPath: '/repo', sessionId: 'side' }
+      useChatStore.getState().setDraftText('temporary question', target)
+      const doc = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'temporary question' }] }] }
+      useChatStore.getState().setDraftJson(doc, target)
+      await vi.advanceTimersByTimeAsync(300)
+      expect(save.mock.calls.some(([, input]) => input.originSessionId === 'side')).toBe(false)
+      expect(save.mock.calls.some(([, input]) => input.originSessionId === 'other')).toBe(true)
+      expect(useChatStore.getState().projectSessions['/repo']._sessions.side).toMatchObject({
+        draftText: 'temporary question', draftJson: doc, draftId: null,
+      })
+    } finally {
+      stop(); vi.useRealTimers()
+    }
+  })
   it('replaces a pending first save when the draft is cleared before its id reaches the session', async () => {
     vi.useFakeTimers()
     const save = vi.fn().mockImplementation(async (_connectionId, input) => ({ ...draft, ...input, controllerDeviceId: null }))

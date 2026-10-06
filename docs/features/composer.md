@@ -189,6 +189,9 @@ The text, rich-text document, and attachments remain in the per-session chat
 store while the regular composer unmounts. When the queue clears, the editor
 restores focus only if that editor held focus before a decision or opened composer
 displaced it.
+Side-chat input stays in that transient session store. It never becomes an
+environment draft through autosave, navigation, project carry, or quit flush,
+even before its first visible message.
 Decision buttons and newly mounted MCP form fields do not take focus when the editor was focused within the last
 second. The decision prompt's container takes it instead, so the pane keeps its
 keyboard shortcuts after the editor unmounts; it leaves focus alone when the person

@@ -78,4 +78,19 @@ describe('composer draft mirror', () => {
     expect(getDraftIdForSession('fresh')).toBe(draftId)
     expect(session('fresh')).not.toHaveProperty('persistDraftId')
   })
+
+  it('mirrors a side-chat edit without assigning an environment draft id', async () => {
+    useChatStore.setState((state) => ({ projectSessions: { '/repo': {
+      ...state.projectSessions['/repo'], _sessions: {
+        ...state.projectSessions['/repo']._sessions,
+        side: { ...createDefaultPerSessionState(), _sideChatParentId: 'live' },
+      },
+    } } }))
+    stop = startComposerDraftMirror()
+    await flush()
+    useChatStore.getState().setDraftText('temporary question', { projectPath: '/repo', sessionId: 'side' })
+    expect(publish).toHaveBeenCalledWith('side', { draftText: 'temporary question' })
+    expect(getDraftIdForSession('side')).toBeUndefined()
+    expect(session('side').draftText).toBe('temporary question')
+  })
 })

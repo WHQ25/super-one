@@ -93,6 +93,14 @@ describe('unsent session detection', () => {
 })
 
 describe('promoting a draft on navigate away', () => {
+  it('does not promote or carry an idle side chat with an empty visible transcript', async () => {
+    const store = storeWith({ _sideChatParentId: 'parent', draftText: 'temporary question' })
+    await promoteDraftIfUnsent(store, '/repo', 'sid-1')
+    expect(captureOpenDraft(store, '/repo', 'sid-1')).toBeNull()
+    expect(saveDraft).not.toHaveBeenCalled()
+    expect(getDraftIdForSession('sid-1')).toBeUndefined()
+    expect(store.projectSessions['/repo']._sessions['sid-1'].draftText).toBe('temporary question')
+  })
   it('saves the composer text and full new-session config when leaving an unsent session', async () => {
     await promoteDraftIfUnsent(
       storeWith({
@@ -188,6 +196,7 @@ describe('flushing every unsent composer', () => {
           _sessions: {
             s1: session({ draftText: 'from a' }),
             s2: session({ draftText: '' }),
+            side: session({ _sideChatParentId: 's1', draftText: 'temporary question' }),
           },
         },
         '/b': {

@@ -14,13 +14,15 @@ export function _isBusyStatus(status: PerSessionState['status']): boolean {
 
 /**
  * True when the session has no conversation on any host yet.
+ * Side chats already forked a host conversation even when their visible
+ * transcript is empty; their temporary composer must never become a draft.
  *
  * Lives here rather than in `draft-promote` so a component can ask "has this
  * conversation started?" without dragging the whole draft pipeline — and the
  * stores it imports — into its module graph.
  */
 export function isUnsentSession(session: PerSessionState | undefined): boolean {
-  return !!session && session.messages.length === 0 && !_isLiveSession(session)
+  return !!session && !session._sideChatParentId && session.messages.length === 0 && !_isLiveSession(session)
 }
 
 /** A session with a backend turn, or anything waiting on the user, in flight. */

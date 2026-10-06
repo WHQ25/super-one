@@ -72,8 +72,9 @@ chevron. The title or the chevron folds the widget into a tool row and back;
 `EmbeddedToolBody` keeps the frame mounted while folded, so the widget keeps its
 state.
 
-A subagent's compact card on the desktop stays a summary; its full view draws the
-widget.
+A subagent's card stays a summary on desktop and phone: a widget call in it is a
+`WidgetToolRow` ("Widget Generated" and the title), Claude and Codex alike. The
+desktop's subagent full view draws the widget; the phone has no full view.
 
 The phone keeps a `widget_show` call's whole input (`shouldKeepRemoteToolInput`),
 so with the short result the code reaches the phone once per call. A phone build

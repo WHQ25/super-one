@@ -667,7 +667,7 @@ function PortableSubagent({
       const childResult = results.get(block.toolUseId)
       if (block.remoteDetail) return [<DeferredTool key={`${block.toolUseId}-${index}`} remoteDetail={block.remoteDetail}
         toolName={block.toolName} toolUseId={block.toolUseId} input={block.input} status={block.status}
-        toolSummary={block.toolSummary} filePath={block.toolFilePath} toolLineDelta={block.toolLineDelta} />]
+        toolSummary={block.toolSummary} filePath={block.toolFilePath} toolLineDelta={block.toolLineDelta} inSubagent />]
       return [(
         <PortableToolRow
           key={`${block.toolUseId}-${index}`}
@@ -681,6 +681,7 @@ function PortableSubagent({
           toolDiff={block.toolDiff}
           toolDiffTokens={block.toolDiffTokens}
           toolLineDelta={block.toolLineDelta}
+          inSubagent
         />
       )]
     })

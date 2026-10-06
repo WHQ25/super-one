@@ -76,6 +76,7 @@
     "./presenters/ToolRow": "./src/presenters/ToolRow.tsx",
     "./presenters/ToolScreenshotView": "./src/presenters/ToolScreenshotView.tsx",
     "./presenters/VideoGenToolBlock": "./src/presenters/VideoGenToolBlock.tsx",
+    "./presenters/WidgetToolRow": "./src/presenters/WidgetToolRow.tsx",
     "./presenters/WorkflowBlock": "./src/presenters/WorkflowBlock.tsx",
     "./presenters/agent-error-presentation": "./src/presenters/agent-error-presentation.ts",
     "./presenters/ansi": "./src/presenters/ansi.tsx",

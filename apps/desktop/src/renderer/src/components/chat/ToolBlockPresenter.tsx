@@ -71,6 +71,7 @@ import {
 } from './tool-block-presenters/ConfigToolBlocks'
 import { SuperoneCompactToolRowPresenter } from '@superone/chat-view/presenters/SuperoneCompactToolRow'
 import { InputRequestToolRow } from '@superone/chat-view/presenters/InputRequestToolRow'
+import { WidgetToolRow } from '@superone/chat-view/presenters/WidgetToolRow'
 import { superoneToolDescriptor } from '@superone/chat-view/presenters/superone-tool-display'
 
 function isCompleteJson(s: string): boolean {
@@ -540,27 +541,9 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
         ports.onWidgetInputComplete?.({ title: widgetData.title, inputLength: input.length })
       }
       // Subagent card: never mount the full widget UI — header-only stub.
-      if (!allowExpand) {
-        const title = widgetData && typeof (widgetData as { title?: unknown }).title === 'string'
-          ? (widgetData as { title: string }).title
-          : ''
-        return (
-          <CompactLabeledToolRow
-            icon={<ToolIcon icon="widget" className="size-3 shrink-0 text-muted-foreground" />}
-            label={isStreaming ? t('chat.toolBlock.generatingWidget') : t('chat.toolBlock.generateWidget')}
-            streaming={isStreaming}
-            summary={title || undefined}
-          />
-        )
-      }
+      if (!allowExpand) return <WidgetToolRow title={widgetData?.title} streaming={isStreaming} />
       if (widgetData) return <WidgetBlock data={widgetData} streaming={!inputComplete} onRequestInput={ports.onWidgetRequestInput} composerPorts={ports.widgetComposerPorts} />
-      return (
-        <CompactLabeledToolRow
-          icon={<ToolIcon icon="widget" className="size-3 shrink-0 text-muted-foreground" />}
-          label={isStreaming ? t('chat.toolBlock.generatingWidget') : t('chat.toolBlock.generateWidget')}
-          streaming={isStreaming}
-        />
-      )
+      return <WidgetToolRow streaming={isStreaming} />
     }
   }
 

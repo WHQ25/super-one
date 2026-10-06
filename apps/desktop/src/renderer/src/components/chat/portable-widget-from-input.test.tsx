@@ -1,14 +1,16 @@
 /** @vitest-environment jsdom */
 
-import { render } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { act, fireEvent, render, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it } from 'vitest'
 import { PortableMessage } from '@superone/chat-view/PortableMessage'
-import type { ChatMessage, CodexMcpToolCallItem, CodexThreadItem, ContentBlock } from '@superone/shared/agent-types'
+import { installFakeNativeHost } from '@superone/chat-view/fixtures/native-host'
+import type { ChatMessage, CodexCollabToolCallItem, CodexMcpToolCallItem, CodexThreadItem, ContentBlock } from '@superone/shared/agent-types'
 
 /**
  * A `widget_code` call can come back with only the short acknowledgement the model read.
  * The phone keeps the call's whole input (`shouldKeepRemoteToolInput`), so it draws the
- * widget from that, through every adapter a call reaches the phone by.
+ * widget from that, through every adapter a call reaches the phone by. A subagent's card
+ * stays a summary, as on the desktop, so a widget there keeps its tool row.
  */
 const WIDGET = 'mcp__superone__widget_show'
 const ARGS = { title: 'releases', widget_code: '<div id="chart">Release chart</div>', data: { builds: 3 } }
@@ -54,7 +56,25 @@ function renderTurn(message: ChatMessage) {
   return render(<PortableMessage message={message} scheme="dark" pendingPermission={null} />)
 }
 
+/** Answers each `subscribeDetail` with the detail the desktop projects for that reference. */
+function serveDetails(details: Record<string, unknown>): () => void {
+  return installFakeNativeHost((message, reply) => {
+    if (message.action !== 'subscribeDetail') return
+    const detail = details[String(message.payload?.detailRef ?? '')]
+    queueMicrotask(() => reply(detail === undefined
+      ? { error: 'Tool not found' }
+      : { result: { subscriptionId: message.payload?.subscriptionId, revision: 0, offset: 0, text: JSON.stringify(detail) } }))
+  })
+}
+
+async function expandCard(container: HTMLElement): Promise<void> {
+  await act(async () => { fireEvent.click(container.querySelector('.subagent-container > button')!) })
+}
+
 describe('a phone widget drawn from its call input', () => {
+  let restore = () => {}
+  afterEach(() => { restore(); restore = () => {} })
+
   it('draws a Claude call whose result is only the acknowledgement, with its data', () => {
     const { container } = renderTurn(claudeWidgetTurn({}))
     expect(widgetDocument(container)).toContain('Release chart')
@@ -78,6 +98,33 @@ describe('a phone widget drawn from its call input', () => {
     expect(container.querySelector('.denied')).not.toBeNull()
   })
 
+  it('keeps a widget a subagent showed as a tool row once its card is opened, like the desktop', async () => {
+    const ref = JSON.stringify(['turn-1', 'tool', 'agent-claude'])
+    restore = serveDetails({
+      [ref]: {
+        input: JSON.stringify({ description: 'Chart the releases', subagent_type: 'general-purpose', prompt: 'Chart them' }),
+        result: 'Done.',
+        // The child projection clears child results, as `toolDetail` sends them.
+        childBlocks: [
+          { type: 'tool_use', toolName: WIDGET, toolUseId: 'w', input: INPUT, status: 'complete', parentToolUseId: 'agent-claude' },
+          { type: 'tool_result', toolUseId: 'w', summary: '', parentToolUseId: 'agent-claude' },
+        ],
+      },
+    })
+    const { container } = renderTurn(turn({
+      providerId: 'claude',
+      content: [
+        { type: 'tool_use', toolName: 'Agent', toolUseId: 'agent-claude', input: JSON.stringify({ description: 'Chart the releases', subagent_type: 'general-purpose' }), status: 'complete', remoteDetail: ref },
+        { type: 'tool_result', toolUseId: 'agent-claude', summary: 'Done.' },
+      ],
+    }))
+    await expandCard(container)
+    await waitFor(() => expect(container.textContent).toContain('Widget Generated'))
+    expect(container.textContent).toContain('releases')
+    expect(container.querySelector('.lucide-layout-dashboard')).not.toBeNull()
+    expect(widgetDocument(container)).toBeNull()
+  })
+
   it.each([
     ['object', ARGS],
     ['string', INPUT],
@@ -92,5 +139,29 @@ describe('a phone widget drawn from its call input', () => {
     })]))
     expect(widgetDocument(container)).toBeNull()
     expect(container.querySelector('.errored')).not.toBeNull()
+  })
+
+  it('keeps a widget a Codex subagent showed as a tool row once its deferred card is opened', async () => {
+    const ref = JSON.stringify(['turn-1', 'tool', 'collab-1'])
+    const collab: CodexCollabToolCallItem = {
+      type: 'collab_tool_call',
+      id: 'collab-1',
+      tool: 'spawnAgent',
+      status: 'completed',
+      receiverThreadIds: ['child'],
+      agentsStates: {},
+    }
+    restore = serveDetails({
+      [ref]: {
+        item: { ...collab, agentsStates: { child: { status: 'completed', nickname: 'charts' } }, childItems: { child: [codexWidget({ arguments: INPUT })] } },
+        input: JSON.stringify({ prompt: 'Chart them' }),
+        result: '{}',
+      },
+    })
+    const { container } = renderTurn(codexTurn([{ ...collab, remoteDetail: ref }]))
+    await expandCard(container)
+    await waitFor(() => expect(container.textContent).toContain('Widget Generated'))
+    expect(container.textContent).toContain('releases')
+    expect(widgetDocument(container)).toBeNull()
   })
 })

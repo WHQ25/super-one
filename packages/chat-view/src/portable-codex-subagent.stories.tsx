@@ -4,7 +4,8 @@ import { PortableMessage } from './PortableMessage'
 
 /**
  * A Codex subagent card on the phone. Its activity list matches the desktop card:
- * one compact, non-expandable row per call (Bash / Edit / `server` + tool / Web search).
+ * one compact, non-expandable row per call (Bash / Edit / `server` + tool / Web search),
+ * and a widget call keeps its widget row instead of drawing the widget.
  */
 const RECEIVER = 'thread-reviewer'
 
@@ -13,6 +14,7 @@ const ACTIVITY: CodexThreadItem[] = [
   { id: 'patch', type: 'file_change', status: 'completed', changes: [{ path: 'packages/chat-view/src/DeferredTool.tsx', kind: 'update' }] },
   { id: 'snap', type: 'mcp_tool_call', server: 'superone', tool: 'browser_snapshot', arguments: {}, status: 'completed', remoteDetail: '["turn","nested-item","[]"]' },
   { id: 'search', type: 'web_search', query: 'React Compiler bail out reasons', status: 'completed' },
+  { id: 'widget', type: 'mcp_tool_call', server: 'superone', tool: 'widget_show', arguments: { title: 'nesting_report', widget_code: '<div>Nesting report</div>' }, status: 'completed', result: { content: [{ type: 'text', text: 'Rendered widget "nesting_report".' }], structuredContent: null } },
   { id: 'fail', type: 'command_execution', command: 'bun run typecheck:web', aggregatedOutput: '', status: 'failed', exitCode: 2 },
 ]
 

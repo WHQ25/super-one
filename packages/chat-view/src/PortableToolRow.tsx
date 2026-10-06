@@ -22,7 +22,7 @@ import { AppToolBlockPresenter } from './presenters/AppToolBlock'
 import { FileChipShell } from './presenters/FileChipShell'
 import { AnsiText } from './presenters/ansi'
 import { ToolIcon } from './presenters/ToolIcon'
-import { CompactLabeledToolRow } from './presenters/ToolRow'
+import { WidgetToolRow, widgetTitleFromInput } from './presenters/WidgetToolRow'
 import { BashTerminalPresenter } from './presenters/BashTerminalPresenter'
 import type { BashEditToolUse } from '@superone/shared/bash-edit-diff'
 import { parseNativeDiff, type NativeDiffLine } from './presenters/remote-diff'
@@ -230,22 +230,6 @@ function parseMiniAppIdentity(input: string): { appId: string; tool: string } | 
   } catch { return null }
 }
 
-/**
- * The desktop's first widget stage. The phone never receives the streamed input
- * (`tool_input_delta` stays on the desktop), so it holds this row until the call
- * settles instead of drawing a partial widget.
- */
-function PortableWidgetGenerating() {
-  const { t } = useTranslation()
-  return (
-    <CompactLabeledToolRow
-      icon={<ToolIcon icon="widget" className="size-3 shrink-0 text-muted-foreground" />}
-      label={t('chat.toolBlock.generatingWidget')}
-      streaming
-    />
-  )
-}
-
 function PortableMiniAppTool({
   identity,
   result,
@@ -341,7 +325,11 @@ const PORTABLE_TOOL_ROW_PORTS: GenericToolRowPorts = {
 }
 
 export type PortableToolRowProps = Omit<GenericToolRowProps, 'ports' | 'allowExpand' | 'autoExpandFileDiffs'>
-  & { allowExpand?: boolean }
+  & {
+    allowExpand?: boolean
+    /** A row inside a subagent's card, which stays a summary: a widget call keeps its tool row. */
+    inSubagent?: boolean
+  }
 
 /** The brand icon of the MCP server behind a tool, when the host knows one. */
 export function useMcpToolIconSrc(toolName: string): string | undefined {
@@ -352,7 +340,7 @@ export function useMcpToolIconSrc(toolName: string): string | undefined {
   }, [mcpIcons, toolName])
 }
 
-export function PortableToolRow({ allowExpand = true, ...props }: PortableToolRowProps) {
+export function PortableToolRow({ allowExpand = true, inSubagent = false, ...props }: PortableToolRowProps) {
   // The desktop mounts `WidgetBlock` for a settled widget call; the phone renders the
   // same payload natively, so the short-circuit lives here rather than in the shared row.
   const miniApp = useMemo(
@@ -382,6 +370,12 @@ export function PortableToolRow({ allowExpand = true, ...props }: PortableToolRo
     try { const parsed = JSON.parse(props.input); title = typeof parsed?.title === 'string' ? parsed.title : undefined } catch { /* projected or partial input */ }
     return <InputRequestToolRow title={title} result={props.result} streaming={props.status === 'streaming'} isError={props.isError} />
   }
+  const isDenied = Boolean(props.result?.startsWith('[denied] '))
+  // Like the desktop's subagent card, the phone's never mounts a widget. Denied and failed
+  // calls keep the ordinary row: it is the only one that says why.
+  if (isWidgetTool && inSubagent && !props.isError && !isDenied) {
+    return <WidgetToolRow title={widgetTitleFromInput(props.input)} streaming={props.status === 'streaming'} />
+  }
   // Dispatch on the native type, never on "it parsed": the gallery draws images or videos and
   // would show a previewer payload as an empty video strip. An unknown native type keeps the
   // ordinary tool row, which is the only one that can still say what the call was.
@@ -389,11 +383,10 @@ export function PortableToolRow({ allowExpand = true, ...props }: PortableToolRo
     if (isGalleryPayload(nativeWidget)) return <PortableNativeGallery payload={nativeWidget} toolUseId={props.toolUseId} />
     if (nativeWidget.nativeType === 'files-previewer') return <PortableFilesPreviewer payload={nativeWidget} toolUseId={props.toolUseId} />
   }
-  // Denied and failed calls keep the ordinary row: it is the only one that says why.
-  if (codeWidget && !props.isError && !props.result?.startsWith('[denied] ')) {
-    return <PortableWidgetBlock data={codeWidget} />
-  }
-  if (isWidgetTool && props.status === 'streaming') return <PortableWidgetGenerating />
+  if (codeWidget && !props.isError && !isDenied) return <PortableWidgetBlock data={codeWidget} />
+  // The phone never receives the streamed input (`tool_input_delta` stays on the desktop),
+  // so it holds this row until the call settles instead of drawing a partial widget.
+  if (isWidgetTool && props.status === 'streaming') return <WidgetToolRow streaming />
   // A projection that lost the appId cannot name the call, so it falls through to the
   // shared row rather than rendering a card with no identity.
   if (props.toolName === 'mcp__superone__miniapp_call' && miniApp) {

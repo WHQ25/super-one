@@ -48,6 +48,17 @@ function childRows(count: number): ContentBlock[] {
   }).flat()
 }
 
+/** Widget calls the subagent made; its card keeps them as tool rows, like the desktop card. */
+function widgetChildren(): ContentBlock[] {
+  const input = JSON.stringify({ title: 'presenter_map', widget_code: '<div>Presenter map</div>' })
+  return [
+    { type: 'tool_use', toolName: 'mcp__superone__widget_show', toolUseId: 'widget-ok', parentToolUseId: TASK_ID, status: 'complete', input } as ContentBlock,
+    { type: 'tool_result', toolUseId: 'widget-ok', parentToolUseId: TASK_ID, summary: 'Rendered widget "presenter_map".' } as ContentBlock,
+    { type: 'tool_use', toolName: 'mcp__superone__widget_show', toolUseId: 'widget-denied', parentToolUseId: TASK_ID, status: 'complete', input } as ContentBlock,
+    { type: 'tool_result', toolUseId: 'widget-denied', parentToolUseId: TASK_ID, summary: '[denied] Not in this turn.', isError: true } as ContentBlock,
+  ]
+}
+
 function turn(content: ContentBlock[], status: 'streaming' | 'complete'): ChatMessage {
   return {
     id: 'subagent-turn',
@@ -99,11 +110,12 @@ function backgroundShell(finished: boolean): ContentBlock[] {
   ]
 }
 
-function SubagentTurn({ childCount, running, named = 0, background }: {
+function SubagentTurn({ childCount, running, named = 0, background, widgets = false }: {
   childCount: number
   running: boolean
   named?: number
   background?: 'running' | 'finished'
+  widgets?: boolean
 }) {
   const status = running ? 'streaming' : 'complete'
   const content: ContentBlock[] = background
@@ -120,6 +132,7 @@ function SubagentTurn({ childCount, running, named = 0, background }: {
         { type: 'text', text: 'Delegating the search to a subagent.' } as ContentBlock,
         taskBlock(status),
         ...childRows(childCount),
+        ...(widgets ? widgetChildren() : []),
         ...(running
           ? []
           : [{ type: 'tool_result', toolUseId: TASK_ID, summary: 'Found 12 presenters under `presenters/`.' } as ContentBlock]),
@@ -178,4 +191,12 @@ export const BackgroundRunningAfterTurn: Story = {
 export const BackgroundFinished: Story = {
   name: 'Background · finished once the task notification lands',
   args: { childCount: 0, running: false, background: 'finished' },
+}
+
+export const WidgetCalls: Story = {
+  name: 'Expanded · widget calls stay tool rows, a denied one keeps its reason',
+  args: { childCount: 2, running: false, widgets: true },
+  play: async ({ canvasElement }) => {
+    canvasElement.querySelector<HTMLElement>('.subagent-container > button')?.click()
+  },
 }

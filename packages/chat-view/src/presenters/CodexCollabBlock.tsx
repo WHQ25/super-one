@@ -3,6 +3,7 @@ import { Bot, FileEdit, Search, Terminal, TriangleAlert, Wrench } from 'lucide-r
 import { useTranslation } from 'react-i18next'
 import type {
   CodexCollabToolCallItem,
+  CodexMcpToolCallItem,
   CodexThreadItem,
 } from '@superone/shared/agent-types'
 import {
@@ -12,6 +13,8 @@ import {
 } from './SubagentBlock'
 import { isCodexCommandToolError } from '@superone/shared/codex-command-status'
 import { CompactLabeledToolRow, ToolName, ToolRow, ToolSummary } from './ToolRow'
+import { WidgetToolRow, widgetTitleFromInput } from './WidgetToolRow'
+import { codexMcpItemInput, codexMcpItemIsError } from './CodexTurnView'
 
 export const CODEX_COLLAB_ACTIVITY_TYPES = new Set<CodexThreadItem['type']>([
   'command_execution',
@@ -77,6 +80,11 @@ export function codexCollabViewModel(item: CodexCollabToolCallItem): CodexCollab
   }
 }
 
+/** A SuperOne `widget_show` call that has not failed: like the desktop's subagent stub, a failure keeps the MCP row. */
+function isSucceedingWidgetCall(item: CodexMcpToolCallItem): boolean {
+  return item.server === 'superone' && item.tool === 'widget_show' && !codexMcpItemIsError(item)
+}
+
 /** One compact, non-expandable row per subagent tool call — the card summarizes; the full view has the detail. */
 export function CodexCollabMiniTool({ item }: { item: CodexThreadItem }) {
   const { t } = useTranslation()
@@ -101,6 +109,9 @@ export function CodexCollabMiniTool({ item }: { item: CodexThreadItem }) {
         tone={item.status === 'failed' ? 'error' : 'default'}
       />
     )
+  }
+  if (item.type === 'mcp_tool_call' && isSucceedingWidgetCall(item)) {
+    return <WidgetToolRow title={widgetTitleFromInput(codexMcpItemInput(item))} streaming={item.status === 'in_progress'} />
   }
   if (item.type === 'mcp_tool_call') {
     return (

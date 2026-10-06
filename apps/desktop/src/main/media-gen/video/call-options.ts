@@ -12,7 +12,7 @@ const MAGIC_BYTES: Array<{ mediaType: string; test: (b: Uint8Array) => boolean }
   },
 ]
 
-function detectMediaType(bytes: Uint8Array): string {
+export function detectMediaType(bytes: Uint8Array): string {
   return MAGIC_BYTES.find((candidate) => candidate.test(bytes))?.mediaType ?? 'image/png'
 }
 

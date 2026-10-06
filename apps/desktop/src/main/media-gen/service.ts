@@ -1,9 +1,11 @@
 import { generateImage } from 'ai'
 import { resolveGoogleImageGenerateOptions } from './google-image-options'
+import { referenceImageLimits } from './capabilities'
 import { attachImagePreviews } from './image-preview'
+import { fitReferenceImages } from './reference-fit'
 import { resolveImageModel } from './registry'
 import { persistImages } from './storage'
-import type { GenerateMediaCoreParams, MediaCoreResult } from './types'
+import type { GenerateMediaCoreParams, MediaCoreResult, ReferenceImage } from './types'
 
 export async function generateMedia(
   params: GenerateMediaCoreParams,
@@ -11,10 +13,11 @@ export async function generateMedia(
 ): Promise<MediaCoreResult> {
   const model = resolveImageModel(params.provider, params.model)
 
-  const prompt = params.referenceImages?.length
+  const references = params.referenceImages?.length ? fitReferences(params.referenceImages, params.model) : undefined
+  const prompt = references
     ? {
         text: params.prompt,
-        images: params.referenceImages.map((ref) => ref.data),
+        images: references,
         ...(params.mask ? { mask: params.mask } : {}),
       }
     : params.prompt
@@ -37,4 +40,12 @@ export async function generateMedia(
   // Persist full-res originals, then attach a cheap preview for chat thumbs + agent Read.
   const images = attachImagePreviews(persistImages(result.images, opts.outputDir, opts.generationId))
   return { images, warnings: result.warnings, providerMetadata: result.providerMetadata }
+}
+
+/** Binary references are fitted to the model's limits; base64 strings are passed through as given. */
+function fitReferences(refs: ReferenceImage[], model: string): Array<Uint8Array | string> {
+  const binary = refs.flatMap(ref => typeof ref.data === 'string' ? [] : [{ mediaType: ref.mediaType, data: ref.data }])
+  const fitted = fitReferenceImages(binary, referenceImageLimits(model))
+  let index = 0
+  return refs.map(ref => typeof ref.data === 'string' ? ref.data : fitted[index++]!.data)
 }

@@ -64,6 +64,40 @@ export function imageCapabilities(kind: MediaProviderKind, model: string): Media
   }
 }
 
+/**
+ * Input image limits from each model's official API docs, matched by model id so a relay serving the
+ * same model follows the same rules. Only limits that shrinking can satisfy are listed; minimum sides
+ * and aspect bounds are left to the provider's own error.
+ */
+export interface ReferenceImageLimits {
+  /** Bytes per image. */
+  maxBytes: number
+  maxPixels?: number
+  /** Longest side in pixels. */
+  maxSide?: number
+  /** Raw bytes across every image of one request, where the request body is capped. */
+  maxTotalBytes?: number
+}
+
+const MB = 1024 * 1024
+
+export function referenceImageLimits(model: string): ReferenceImageLimits {
+  // OpenAI images/edits: each image under 50 MB.
+  if (/^gpt-image/i.test(model)) return { maxBytes: 50 * MB }
+  // Volcengine Seedream: under 30 MB and at most 36 MP (6000×6000).
+  if (/seedream/i.test(model)) return { maxBytes: 30 * MB, maxPixels: 36_000_000 }
+  // Volcengine Seedance: under 30 MB, sides up to 6000 px, a 64 MB request body that carries base64.
+  if (/seedance/i.test(model)) return { maxBytes: 30 * MB, maxSide: 6000, maxTotalBytes: 46 * MB }
+  // Gemini API inline data: 100 MB per request, base64-encoded.
+  if (/^gemini/i.test(model)) return { maxBytes: 72 * MB, maxTotalBytes: 72 * MB }
+  // Veo image input: 20 MB per image.
+  if (/^veo/i.test(model)) return { maxBytes: 20 * MB }
+  // Kling image input: 10 MB.
+  if (/^kling/i.test(model)) return { maxBytes: 10 * MB }
+  // Unrecognised models get the tightest common limit rather than a guess at a generous one.
+  return { maxBytes: 10 * MB, maxSide: 4096 }
+}
+
 /** Capabilities of the endpoint resolved for one model; an endpoint no adapter serves gets none. */
 export function modelCapabilities(kind: MediaComposerKind, resolved: ResolvedService, model: string): Pick<MediaComposerModel, 'image' | 'video'> {
   try {

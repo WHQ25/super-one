@@ -63,6 +63,15 @@ Reference images (PNG, JPEG, WebP; up to 8 and 24 MB) are dropped or pasted
 anywhere on the box, or picked from the reference area. Video references can be
 marked as start frame, end frame or reference; start and end frames are unique.
 
+Reference images reach the provider at full size unless they exceed the model's
+input limits. The image and video services shrink only those
+(`media-gen/reference-fit.ts`), to the limits in `referenceImageLimits`
+(`media-gen/capabilities.ts`).
+- The limits follow each model's official API documentation: bytes per image,
+  pixel count, longest side, and a request-body cap shared across images.
+- They are matched by model id, so a relay serving the model gets the same rules.
+- An unrecognised model gets the tightest common limit: 10 MB, 4096 px.
+- Minimum sides and aspect bounds are left to the provider's error.
 
 The controls follow the selected model. Each model reports the capabilities of
 the adapter that serves it (`media-gen/capabilities.ts`, keyed by adapter kind

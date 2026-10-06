@@ -3,7 +3,9 @@ import type { DataContent } from 'ai'
 import { persistVideos } from '../storage'
 import type { MediaProviderConfig, SavedImage } from '../types'
 import type { VideoTask } from './ark/response'
-import { buildVideoCallOptions } from './call-options'
+import { referenceImageLimits } from '../capabilities'
+import { fitReferenceImages } from '../reference-fit'
+import { buildVideoCallOptions, detectMediaType } from './call-options'
 import { resolveVideoDriver } from './registry'
 import type { VideoModelV4FrameType } from './sdk-types'
 
@@ -51,9 +53,28 @@ export async function submitVideoTask(
   params: GenerateVideoCoreParams,
 ): Promise<{ taskId: string; warnings: unknown[] }> {
   const driver = resolveVideoDriver(params.provider, params.model)
-  const { options, warnings: inputWarnings } = buildVideoCallOptions(params)
+  const { options, warnings: inputWarnings } = buildVideoCallOptions(fitVideoImages(params))
   const { taskId, warnings } = await driver.submit(options)
   return { taskId, warnings: [...inputWarnings, ...warnings] }
+}
+
+/** Fits binary frame and reference images to the model's input limits; URLs and base64 strings pass through. */
+function fitVideoImages(params: GenerateVideoCoreParams): GenerateVideoCoreParams {
+  const contents = [...(params.frameImages ?? []).map(frame => frame.image), ...(params.inputReferences ?? [])]
+  const binary = contents.flatMap(content => typeof content === 'string' ? [] : [toBytes(content)])
+  if (!binary.length) return params
+  const fitted = fitReferenceImages(binary.map(data => ({ mediaType: detectMediaType(data), data })), referenceImageLimits(params.model))
+  let index = 0
+  const fit = (content: DataContent): DataContent => typeof content === 'string' ? content : fitted[index++]!.data
+  return {
+    ...params,
+    ...(params.frameImages ? { frameImages: params.frameImages.map(frame => ({ ...frame, image: fit(frame.image) })) } : {}),
+    ...(params.inputReferences ? { inputReferences: params.inputReferences.map(fit) } : {}),
+  }
+}
+
+function toBytes(content: Exclude<DataContent, string>): Uint8Array {
+  return content instanceof Uint8Array ? content : new Uint8Array(content)
 }
 
 /** Ask the provider once what state a previously submitted job is in. */
